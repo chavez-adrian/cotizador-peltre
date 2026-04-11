@@ -1,0 +1,7 @@
+[
+  { "id": 1, "name": "Adrian Chavez", "pin": "0000", "role": "admin" },
+  { "id": 2, "name": "Vendedor 1", "pin": "1111", "role": "vendedor" },
+  { "id": 3, "name": "Vendedor 2", "pin": "2222", "role": "vendedor" },
+  { "id": 4, "name": "Vendedor 3", "pin": "3333", "role": "vendedor" },
+  { "id": 5, "name": "Vendedor 4", "pin": "4444", "role": "vendedor" }
+]

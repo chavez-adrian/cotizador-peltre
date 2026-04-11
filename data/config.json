@@ -1,0 +1,18 @@
+{
+  "tiposActivos": [
+    "PH",
+    "PL",
+    "PV",
+    "SA",
+    "SC",
+    "TA",
+    "VA",
+    "VT"
+  ],
+  "texturasActivas": [
+    1,
+    2,
+    3,
+    7
+  ]
+}

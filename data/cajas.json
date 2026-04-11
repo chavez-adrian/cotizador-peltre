@@ -1,0 +1,100 @@
+{
+  "EMPVA056P": {
+    "descripcion": "Empaque portavasos 5cm (6 pzas)",
+    "largo_cm": 20.7,
+    "ancho_cm": 15.4,
+    "alto_cm": 6.2,
+    "tara_kg": 0.078
+  },
+  "EMPVA086P": {
+    "descripcion": "Empaque tazas 8-9cm (6 pzas)",
+    "largo_cm": 30.4,
+    "ancho_cm": 20.5,
+    "alto_cm": 10.2,
+    "tara_kg": 0.182
+  },
+  "EMPVA096P": {
+    "descripcion": "Empaque tazas 9cm (6 pzas)",
+    "largo_cm": 35.5,
+    "ancho_cm": 23.5,
+    "alto_cm": 10.8,
+    "tara_kg": 0.215
+  },
+  "EMPTA146P": {
+    "descripcion": "Empaque platos 14cm (6 pzas)",
+    "largo_cm": 16.8,
+    "ancho_cm": 16.5,
+    "alto_cm": 12.5,
+    "tara_kg": 0.068
+  },
+  "EMPPL206P": {
+    "descripcion": "Empaque platos 20cm (6 pzas)",
+    "largo_cm": 22,
+    "ancho_cm": 22,
+    "alto_cm": 4,
+    "tara_kg": 0.055
+  },
+  "EMPPL246P": {
+    "descripcion": "Empaque platos 24cm (6 pzas)",
+    "largo_cm": 26,
+    "ancho_cm": 26,
+    "alto_cm": 5,
+    "tara_kg": 0.072
+  },
+  "E-10": {
+    "descripcion": "Caja master E-10",
+    "largo_cm": 28.5,
+    "ancho_cm": 28.5,
+    "alto_cm": 21,
+    "tara_kg": 0.4
+  },
+  "E-7": {
+    "descripcion": "Caja master E-7",
+    "largo_cm": 33.5,
+    "ancho_cm": 33.5,
+    "alto_cm": 24.3,
+    "tara_kg": 0.5
+  },
+  "RM-40": {
+    "descripcion": "Caja RM-40",
+    "largo_cm": 32,
+    "ancho_cm": 32,
+    "alto_cm": 14.5,
+    "tara_kg": 0.3
+  },
+  "RM-32": {
+    "descripcion": "Caja RM-32",
+    "largo_cm": 38.5,
+    "ancho_cm": 25,
+    "alto_cm": 18.5,
+    "tara_kg": 0.283
+  },
+  "RM-26": {
+    "descripcion": "Caja RM-26",
+    "largo_cm": 31.5,
+    "ancho_cm": 31.5,
+    "alto_cm": 31.5,
+    "tara_kg": 0.4
+  },
+  "RM-54": {
+    "descripcion": "Caja RM-54",
+    "largo_cm": 50,
+    "ancho_cm": 35,
+    "alto_cm": 30,
+    "tara_kg": 0.5
+  },
+  "RM-90": {
+    "descripcion": "Caja RM-90",
+    "largo_cm": 40,
+    "ancho_cm": 40,
+    "alto_cm": 40,
+    "tara_kg": 0.618
+  },
+  "RM-200 42ECT": {
+    "descripcion": "Caja RM-200",
+    "largo_cm": 66,
+    "ancho_cm": 55,
+    "alto_cm": 50,
+    "tara_kg": 1.0
+  }
+}

@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Cotizador - Peltre Nacional</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<div id="login-view" class="login-container">
+  <div class="login-card">
+    <h1>Peltre Nacional</h1>
+    <p class="subtitle">Cotizador</p>
+    <div class="form-group">
+      <label>Vendedor</label>
+      <select id="login-vendedor"></select>
+    </div>
+    <div class="form-group">
+      <label>PIN</label>
+      <input type="password" id="login-pin" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="0000">
+    </div>
+    <div id="login-error" class="alert alert-error" style="display:none"></div>
+    <button class="btn btn-primary btn-block" id="login-btn">Entrar</button>
+  </div>
+</div>
+
+<div id="app-view" style="display:none">
+  <header class="app-header">
+    <div>
+      <h1>Peltre Nacional</h1>
+      <div class="prices-date" id="prices-date"></div>
+    </div>
+    <div style="text-align:right;display:flex;align-items:center;gap:8px">
+      <div class="user-info" id="user-name"></div>
+      <button class="btn btn-sm btn-secondary" id="btn-historial">Historial</button>
+      <a href="/admin" id="admin-link" style="display:none" class="btn btn-sm btn-secondary">Admin</a>
+      <button class="btn btn-sm btn-secondary" id="logout-btn">Salir</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="cliente">Cliente<span class="tab-dot" id="dot-cliente"></span></button>
+    <button class="tab" data-tab="productos">Productos<span class="tab-dot" id="dot-productos"></span></button>
+    <button class="tab" data-tab="envio">Envio<span class="tab-dot" id="dot-envio"></span></button>
+    <button class="tab" data-tab="resumen">Cotizacion</button>
+  </nav>
+
+  <!-- TAB: CLIENTE -->
+  <div class="tab-content active" id="tab-cliente">
+    <div class="section-header">Datos de facturacion</div>
+    <div class="form-group">
+      <label>Razon social</label>
+      <input type="text" id="cl-razon-social" placeholder="Nombre completo para factura">
+    </div>
+    <div class="form-group">
+      <label>Nombre corto</label>
+      <input type="text" id="cl-nombre-corto" placeholder="Nombre breve para imprimir en cotizacion">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>RFC</label>
+        <input type="text" id="cl-rfc" placeholder="XAXX010101000">
+      </div>
+      <div class="form-group">
+        <label>CP domicilio fiscal</label>
+        <input type="text" id="cl-cp-fiscal" placeholder="00000" maxlength="5" inputmode="numeric">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Telefono</label>
+        <input type="tel" id="cl-telefono">
+      </div>
+      <div class="form-group">
+        <label>Condiciones de pago</label>
+        <select id="cl-condiciones">
+          <option value="Anticipo 50%">Anticipo 50%</option>
+          <option value="100% anticipado">100% anticipado</option>
+          <option value="Neto 30">Neto 30</option>
+          <option value="otro">Otro (especificar en notas)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section-header">Datos de entrega</div>
+    <div class="form-group">
+      <label>Entregar a (nombre completo)</label>
+      <input type="text" id="cl-nombre-entrega">
+    </div>
+    <div class="form-group">
+      <label>Calle y numero exterior</label>
+      <input type="text" id="cl-calle" placeholder="Ej. Av. Reforma 123">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Numero interior <span style="font-weight:400;color:var(--light)">(opcional)</span></label>
+        <input type="text" id="cl-num-int" placeholder="Depto, of., etc.">
+      </div>
+      <div class="form-group">
+        <label>Colonia</label>
+        <input type="text" id="cl-colonia">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>CP</label>
+        <input type="text" id="cl-cp-entrega" placeholder="00000" maxlength="5" inputmode="numeric">
+      </div>
+      <div class="form-group">
+        <label>Municipio / Alcaldia</label>
+        <input type="text" id="cl-municipio">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Estado</label>
+      <input type="text" id="cl-estado" placeholder="Ej. Ciudad de Mexico">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Celular (con lada)</label>
+        <input type="tel" id="cl-cel-entrega" placeholder="55 1234 5678">
+      </div>
+      <div class="form-group">
+        <label>Correo</label>
+        <input type="email" id="cl-email-entrega">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Referencias</label>
+      <textarea id="cl-referencias" rows="2" placeholder="Entre calles, punto de referencia, indicaciones especiales..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>Referencia del cliente</label>
+      <input type="text" id="cl-referencia" placeholder="Nombre del proyecto, evento, etc.">
+    </div>
+    <button class="btn btn-primary btn-block" id="btn-sig-cliente" style="margin-top:16px">Siguiente &rsaquo;</button>
+  </div>
+
+  <!-- TAB: PRODUCTOS -->
+  <div class="tab-content" id="tab-productos">
+    <div class="tier-bar" id="tier-bar">
+      <div>
+        <span class="tier-label" id="tier-label">Sin productos</span>
+        <span class="tier-next" id="tier-next"></span>
+      </div>
+      <span class="tier-stats" id="tier-stats"></span>
+    </div>
+
+    <div>
+
+      <!-- BUSQUEDA LIBRE -->
+      <div class="section-header" style="margin-bottom:6px">Buscar articulo</div>
+      <div class="search-container" style="margin-bottom:14px">
+        <div class="search-input-wrap">
+          <input type="text" id="search-input" placeholder="Codigo o nombre del articulo..." autocomplete="off">
+          <div id="search-dropdown" class="search-dropdown" style="display:none"></div>
+        </div>
+        <div id="search-selected" style="display:none"></div>
+      </div>
+
+      <!-- FLUJO GUIADO + RESULTADO lado a lado -->
+      <div class="section-header" style="margin-bottom:8px">Armar articulo</div>
+      <div class="flujo-container">
+        <div id="flujo-guiado" style="width:50%;min-width:480px;flex-shrink:0"></div>
+        <div id="flujo-resultado-container" style="flex:1;min-width:200px"></div>
+      </div>
+
+      <!-- ARTICULOS COTIZADOS -->
+      <div id="cart-lines-section" style="display:none; margin-top:14px">
+        <div class="section-header" style="margin-top:0">Articulos cotizados</div>
+        <div class="cart-lines-table">
+          <div class="cart-lines-head">
+            <span>Codigo</span>
+            <span>Descripcion</span>
+            <span class="col-num">Cant.</span>
+            <span class="col-num">Precio</span>
+            <span class="col-num">Total</span>
+            <span class="col-del"></span>
+          </div>
+          <div id="cart-lines"></div>
+        </div>
+        <div class="cart-lines-subtotal" id="cart-lines-subtotal"></div>
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-sig-productos" style="margin-top:16px">Siguiente &rsaquo;</button>
+    </div>
+  </div>
+
+  <!-- TAB: ENVIO -->
+  <div class="tab-content" id="tab-envio">
+    <div class="section-header">Envio</div>
+    <div id="shipping-summary" class="alert alert-info">
+      Agrega productos para ver el resumen de envio.
+    </div>
+    <div class="form-group">
+      <label>Opcion de envio</label>
+      <select id="shipping-option">
+        <option value="none">Sin envio (cliente recoge o arregla envio)</option>
+        <option value="envia">Cotizar con envia.com</option>
+        <option value="manual">Agregar costo manualmente</option>
+      </select>
+    </div>
+
+    <!-- ENVIA.COM -->
+    <div id="shipping-envia" style="display:none">
+      <div class="form-row" style="align-items:flex-end;margin-bottom:10px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>CP destino</label>
+          <input type="text" id="envia-cp" maxlength="5" inputmode="numeric" placeholder="00000">
+        </div>
+        <button class="btn btn-primary" id="btn-cotizar-envia" style="height:38px">Cotizar</button>
+      </div>
+      <div id="envia-error" class="alert alert-error" style="display:none"></div>
+      <div id="envia-resumen" style="display:none;margin-bottom:8px;font-size:12px;color:var(--text-light)"></div>
+      <div id="envia-results"></div>
+    </div>
+
+    <!-- MANUAL -->
+    <div id="shipping-manual" style="display:none">
+      <div class="form-group">
+        <label>Concepto de envio</label>
+        <input type="text" id="shipping-desc" placeholder="Ej: Envio FedEx Ground Foraneo" value="Envio">
+      </div>
+      <div class="form-group">
+        <label>Costo de envio (sin IVA)</label>
+        <input type="number" id="shipping-cost" min="0" step="0.01" placeholder="0.00">
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" id="btn-sig-envio" style="margin-top:16px">Siguiente &rsaquo;</button>
+  </div>
+
+  <!-- TAB: RESUMEN -->
+  <div class="tab-content" id="tab-resumen">
+    <div id="resumen-shipping-alert" class="alert alert-warning" style="display:none">
+      Recuerda cotizar el envio antes de generar el PDF. Revisa el tab Envio.
+    </div>
+    <div id="resumen-empty" class="empty-state">
+      <p>Agrega productos para ver el resumen de la cotizacion.</p>
+    </div>
+    <div id="resumen-content" style="display:none">
+      <div class="section-header">Productos</div>
+      <div id="resumen-items"></div>
+
+      <div id="resumen-shipping" style="display:none">
+        <div class="section-header">Envio</div>
+        <div id="resumen-shipping-detail" class="cart-item"></div>
+      </div>
+
+      <div class="section-header">Totales</div>
+      <table class="totals-table">
+        <tr><td>Subtotal</td><td id="resumen-subtotal"></td></tr>
+        <tr><td>IVA 16%</td><td id="resumen-iva"></td></tr>
+        <tr class="total-row"><td>TOTAL MXN</td><td id="resumen-total"></td></tr>
+      </table>
+
+      <div class="notes-box" style="margin-top:16px">
+        <h3>Notas</h3>
+        <textarea id="resumen-notas" rows="5" style="width:100%">- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.
+- Envio a costo y riesgo del cliente.
+- Tiempo de entrega: 6 semanas contadas a partir del pago del anticipo.
+- Se requiere 50% de anticipo para comenzar la produccion.
+- Pago del saldo previo a la entrega.</textarea>
+      </div>
+
+      <div class="form-row" style="margin-top:12px">
+        <div class="form-group">
+          <label>Vigencia (dias)</label>
+          <input type="number" id="resumen-vigencia" value="30" min="1">
+        </div>
+      </div>
+
+      <div style="margin-top:16px;margin-bottom:10px">
+        <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="incluir-fotos" style="width:16px;height:16px;accent-color:var(--primary)">
+          Incluir fotos en la cotizacion (cuando esten disponibles)
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-pdf" style="flex:1">Generar PDF</button>
+        <button class="btn btn-secondary" id="btn-html" style="flex:1">Ver HTML</button>
+        <button class="btn btn-success" id="btn-whatsapp" style="flex:1">WhatsApp</button>
+      </div>
+      <button class="btn btn-secondary btn-block" id="btn-nueva" style="margin-top:8px">Nueva cotizacion</button>
+    </div>
+  </div>
+
+  <!-- CART SUMMARY BAR (fixed bottom) -->
+  <div class="cart-summary" id="cart-summary" style="display:none">
+    <div>
+      <div class="cart-total" id="cart-total">$0.00</div>
+      <div class="cart-count" id="cart-count">0 productos, 0 piezas</div>
+    </div>
+  </div>
+</div>
+
+<!-- HISTORIAL VIEW -->
+<div id="historial-view" style="display:none">
+  <header class="historial-header">
+    <h1>Historial de cotizaciones</h1>
+    <button class="btn btn-sm btn-secondary" id="btn-volver-app">Volver</button>
+  </header>
+  <div style="padding:16px">
+    <div id="historial-loading" style="color:var(--light);font-size:13px">Cargando...</div>
+    <div id="historial-list"></div>
+  </div>
+</div>
+
+<script src="/js/app.js" type="module"></script>
+</body>
+</html>

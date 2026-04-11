@@ -1,0 +1,6 @@
+node_modules/
+.env
+data/cotizaciones.json
+data/pdfs/
+data/htmls/
+data/shopify-images-raw.json

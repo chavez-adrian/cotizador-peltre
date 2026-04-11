@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - Cotizador Peltre Nacional</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .admin-container { max-width: 600px; margin: 0 auto; padding: 16px; }
+  .admin-section { background: var(--white); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+  .admin-section h2 { font-size: 15px; color: var(--primary-dark); margin-bottom: 12px; font-weight: 700; }
+  .diff-summary { font-size: 13px; line-height: 1.8; }
+  .diff-summary strong { color: var(--primary-dark); }
+  .vendedor-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .vendedor-row input { flex: 1; padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
+  .vendedor-row .pin-input { width: 70px; flex: none; }
+  .vendedor-row select { width: 100px; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
+  .toggle-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+    border: 1px solid var(--border); border-radius: 20px; font-size: 13px; cursor: pointer;
+    background: var(--white); color: var(--text); user-select: none; transition: all 0.15s; }
+  .toggle-chip.active { background: var(--primary); color: var(--white); border-color: var(--primary); }
+  .toggle-chip input { display: none; }
+</style>
+</head>
+<body>
+
+<div id="admin-login" class="login-container">
+  <div class="login-card">
+    <h1>Admin</h1>
+    <p class="subtitle">Panel de administracion</p>
+    <div class="form-group">
+      <label>PIN de administrador</label>
+      <input type="password" id="admin-pin" maxlength="4" inputmode="numeric">
+    </div>
+    <div id="admin-error" class="alert alert-error" style="display:none"></div>
+    <button class="btn btn-primary btn-block" id="admin-login-btn">Entrar</button>
+  </div>
+</div>
+
+<div id="admin-app" style="display:none">
+  <header class="app-header">
+    <h1>Admin - Cotizador</h1>
+    <div>
+      <a href="/" class="btn btn-sm btn-secondary">Ir al cotizador</a>
+      <button class="btn btn-sm btn-secondary" id="admin-logout">Salir</button>
+    </div>
+  </header>
+
+  <div class="admin-container">
+    <!-- Precios -->
+    <div class="admin-section">
+      <h2>Actualizar precios</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Sube el archivo Excel maestro de precios (.xlsx). El sistema lo procesara y actualizara los precios del cotizador.
+      </p>
+      <div class="form-group">
+        <input type="file" id="excel-file" accept=".xlsx,.xls">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" id="btn-preview">Vista previa</button>
+        <button class="btn btn-primary" id="btn-apply" disabled>Aplicar cambios</button>
+      </div>
+      <div id="diff-result" style="display:none;margin-top:12px"></div>
+    </div>
+
+    <!-- Catalogo cotizable -->
+    <div class="admin-section">
+      <h2>Catalogo cotizable</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Activa o desactiva los tipos de producto y texturas que aparecen en el flujo guiado de los vendedores.
+      </p>
+      <div id="config-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="config-content" style="display:none">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Tipos de producto</div>
+        <div id="tipos-toggles" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Texturas</div>
+        <div id="texturas-toggles" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
+        <button class="btn btn-primary btn-sm" id="btn-save-config">Guardar</button>
+        <div id="config-msg" style="display:none;margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- Vendedores -->
+    <div class="admin-section">
+      <h2>Vendedores</h2>
+      <div id="vendedores-list"></div>
+      <button class="btn btn-secondary btn-sm" id="btn-add-vendedor" style="margin-top:8px">+ Agregar vendedor</button>
+      <button class="btn btn-primary btn-sm" id="btn-save-vendedores" style="margin-top:8px">Guardar cambios</button>
+      <div id="vendedores-msg" style="display:none;margin-top:8px"></div>
+    </div>
+
+    <!-- Cajas de empaque -->
+    <div class="admin-section">
+      <h2>Cajas de empaque</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Medidas físicas de cada tipo de caja. Necesarias para cotizar con envia.com.<br>
+        Mide las cajas cerradas con productos adentro (largo × ancho × alto en cm). Tara = peso de la caja vacía en kg.
+      </p>
+      <div id="cajas-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="cajas-content" style="display:none">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg);text-align:left">
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Caja</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Descripción</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">Largo cm</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">Ancho cm</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">Alto cm</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">Tara kg</th>
+            </tr>
+          </thead>
+          <tbody id="cajas-rows"></tbody>
+        </table>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary btn-sm" id="btn-save-cajas">Guardar</button>
+          <div id="cajas-msg" style="display:none;font-size:12px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cotizaciones log -->
+    <div class="admin-section">
+      <h2>Cotizaciones generadas</h2>
+      <div id="cotizaciones-log" style="font-size:12px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let adminToken = null;
+
+async function adminLogin() {
+  const pin = document.getElementById('admin-pin').value;
+  const errEl = document.getElementById('admin-error');
+  errEl.style.display = 'none';
+
+  // Find admin user (id 1)
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vendedorId: 1, pin }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.user?.role !== 'admin') {
+    errEl.textContent = 'PIN incorrecto o no es administrador';
+    errEl.style.display = 'block';
+    return;
+  }
+  adminToken = data.token;
+  document.getElementById('admin-login').style.display = 'none';
+  document.getElementById('admin-app').style.display = 'block';
+  loadVendedores();
+  loadCotizaciones();
+  loadConfig();
+  loadCajas();
+}
+
+function adminApi(url, opts = {}) {
+  const headers = { Authorization: `Bearer ${adminToken}`, ...opts.headers };
+  if (opts.body && !(opts.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  return fetch(url, { ...opts, headers });
+}
+
+// --- Precios ---
+let pendingData = null;
+
+async function previewExcel() {
+  const file = document.getElementById('excel-file').files[0];
+  if (!file) return alert('Selecciona un archivo');
+
+  const fd = new FormData();
+  fd.append('excel', file);
+
+  const res = await adminApi('/api/admin/precios?preview=1', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok) { alert('Error: ' + data.error); return; }
+
+  pendingData = data;
+  const d = data.diff;
+  const el = document.getElementById('diff-result');
+  el.style.display = 'block';
+
+  if (!d) {
+    el.innerHTML = `<div class="alert alert-info">Primera carga. Version: <strong>${data.newVersion}</strong></div>`;
+  } else {
+    el.innerHTML = `
+      <div class="alert alert-info diff-summary">
+        Version: <strong>${data.newVersion}</strong><br>
+        Productos: <strong>${d.totalProducts}</strong> | Calcas: <strong>${d.totalCalcas}</strong><br>
+        Sin cambios: <strong>${d.unchanged}</strong> |
+        Precios cambiados: <strong>${d.priceChanges}</strong> |
+        Nuevos: <strong>${d.added}</strong> |
+        Eliminados: <strong>${d.removed}</strong>
+      </div>
+    `;
+  }
+  document.getElementById('btn-apply').disabled = false;
+}
+
+async function applyExcel() {
+  const file = document.getElementById('excel-file').files[0];
+  if (!file) return;
+  if (!confirm('Se actualizaran los precios del cotizador. Continuar?')) return;
+
+  const fd = new FormData();
+  fd.append('excel', file);
+
+  const res = await adminApi('/api/admin/precios', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok) { alert('Error: ' + data.error); return; }
+
+  document.getElementById('diff-result').innerHTML = '<div class="alert alert-success">Precios actualizados correctamente.</div>';
+  document.getElementById('btn-apply').disabled = true;
+}
+
+// --- Vendedores ---
+let vendedoresData = [];
+
+async function loadVendedores() {
+  const res = await adminApi('/api/admin/vendedores');
+  vendedoresData = await res.json();
+  renderVendedores();
+}
+
+function renderVendedores() {
+  const el = document.getElementById('vendedores-list');
+  el.innerHTML = vendedoresData.map((v, i) => `
+    <div class="vendedor-row">
+      <input type="text" value="${v.name}" onchange="vendedoresData[${i}].name=this.value" placeholder="Nombre">
+      <input type="text" class="pin-input" value="${v.pin}" onchange="vendedoresData[${i}].pin=this.value" placeholder="PIN" maxlength="4">
+      <select onchange="vendedoresData[${i}].role=this.value">
+        <option value="vendedor" ${v.role==='vendedor'?'selected':''}>Vendedor</option>
+        <option value="admin" ${v.role==='admin'?'selected':''}>Admin</option>
+      </select>
+      ${v.role !== 'admin' ? `<button class="btn btn-danger btn-sm" onclick="removeVendedor(${i})">X</button>` : '<div style="width:32px"></div>'}
+    </div>
+  `).join('');
+}
+
+function removeVendedor(i) {
+  if (!confirm('Eliminar vendedor?')) return;
+  vendedoresData.splice(i, 1);
+  renderVendedores();
+}
+
+function addVendedor() {
+  const maxId = Math.max(...vendedoresData.map(v => v.id), 0);
+  vendedoresData.push({ id: maxId + 1, name: '', pin: '', role: 'vendedor' });
+  renderVendedores();
+}
+
+async function saveVendedores() {
+  const invalid = vendedoresData.find(v => !v.name || !v.pin || v.pin.length !== 4);
+  if (invalid) { alert('Todos los vendedores necesitan nombre y PIN de 4 digitos'); return; }
+
+  const res = await adminApi('/api/admin/vendedores', {
+    method: 'PUT',
+    body: vendedoresData,
+  });
+  const data = await res.json();
+  const msg = document.getElementById('vendedores-msg');
+  if (res.ok) {
+    msg.className = 'alert alert-success';
+    msg.textContent = 'Vendedores guardados';
+  } else {
+    msg.className = 'alert alert-error';
+    msg.textContent = 'Error: ' + data.error;
+  }
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', 3000);
+}
+
+// --- Cotizaciones log ---
+async function loadCotizaciones() {
+  try {
+    const res = await adminApi('/api/precios'); // Reuse auth, get log separately
+    // There's no dedicated endpoint for log, let's read from a simple fetch
+    // For now just show the info we have
+    const el = document.getElementById('cotizaciones-log');
+    el.innerHTML = '<span style="color:var(--text-light)">El log de cotizaciones se guarda en el servidor (data/cotizaciones.json)</span>';
+  } catch (e) {
+    document.getElementById('cotizaciones-log').textContent = 'No se pudo cargar';
+  }
+}
+
+// --- Config catalogo ---
+let configData = null;
+
+async function loadConfig() {
+  const res = await adminApi('/api/admin/config');
+  const data = await res.json();
+  configData = data;
+
+  const tiposEl = document.getElementById('tipos-toggles');
+  const texturasEl = document.getElementById('texturas-toggles');
+
+  // Construir lookup tipo corto → nombre (tiposNombre tiene claves como "PL14", no "PL")
+  const tipoLabel = {};
+  for (const [modelo, nombre] of Object.entries(data.tiposNombre || {})) {
+    const prefijo = modelo.slice(0, 2);
+    if (!tipoLabel[prefijo]) {
+      tipoLabel[prefijo] = nombre.replace(/\s+\d[\d.]*\s*(cm|lt|lts|pz|piezas)?.*$/i, '').trim();
+    }
+  }
+
+  tiposEl.innerHTML = data.tiposDisponibles.map(t => {
+    const activo = data.config.tiposActivos.includes(t);
+    const nombre = tipoLabel[t] || t;
+    return `<label class="toggle-chip${activo?' active':''}">
+      <input type="checkbox" value="${t}"${activo?' checked':''} onchange="this.closest('.toggle-chip').classList.toggle('active',this.checked)">
+      ${nombre}
+    </label>`;
+  }).join('');
+
+  const texNombres = { 1:'Sólido', 2:'Manchas', 3:'Moteado', 4:'Lunares', 5:'Marmoleado', 6:'Difuminado', 7:'Salpicado' };
+  const texsDisp = Object.entries(data.texturasDisponibles)
+    .map(([k]) => parseInt(k)).filter(t => ![0,8,9].includes(t)).sort((a,b)=>a-b);
+  texturasEl.innerHTML = texsDisp.map(t => {
+    const activo = data.config.texturasActivas.includes(t);
+    const nombre = texNombres[t] || data.texturasDisponibles[t] || t;
+    return `<label class="toggle-chip${activo?' active':''}">
+      <input type="checkbox" value="${t}"${activo?' checked':''} onchange="this.closest('.toggle-chip').classList.toggle('active',this.checked)">
+      ${nombre}
+    </label>`;
+  }).join('');
+
+  document.getElementById('config-loading').style.display = 'none';
+  document.getElementById('config-content').style.display = 'block';
+}
+
+async function saveConfig() {
+  const tiposActivos = [...document.querySelectorAll('#tipos-toggles input:checked')].map(el => el.value);
+  const texturasActivas = [...document.querySelectorAll('#texturas-toggles input:checked')].map(el => parseInt(el.value));
+  const res = await adminApi('/api/admin/config', { method: 'POST', body: { tiposActivos, texturasActivas } });
+  const data = await res.json();
+  const msg = document.getElementById('config-msg');
+  msg.className = res.ok ? 'alert alert-success' : 'alert alert-error';
+  msg.textContent = res.ok ? 'Guardado correctamente' : 'Error: ' + data.error;
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', 3000);
+}
+
+// --- Cajas ---
+let cajasData = {};
+
+async function loadCajas() {
+  const res = await adminApi('/api/admin/cajas');
+  cajasData = await res.json();
+  renderCajas();
+  document.getElementById('cajas-loading').style.display = 'none';
+  document.getElementById('cajas-content').style.display = 'block';
+}
+
+function renderCajas() {
+  const tbody = document.getElementById('cajas-rows');
+  tbody.innerHTML = Object.entries(cajasData).map(([code, info]) => `
+    <tr>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);font-weight:700;color:var(--primary-dark)">${code}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">
+        <input type="text" value="${info.descripcion || ''}" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px"
+          onchange="cajasData['${code}'].descripcion=this.value">
+      </td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">
+        <input type="number" min="0" step="0.1" value="${info.largo_cm || ''}" placeholder="0"
+          style="width:70px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;text-align:right"
+          onchange="cajasData['${code}'].largo_cm=parseFloat(this.value)||0">
+      </td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">
+        <input type="number" min="0" step="0.1" value="${info.ancho_cm || ''}" placeholder="0"
+          style="width:70px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;text-align:right"
+          onchange="cajasData['${code}'].ancho_cm=parseFloat(this.value)||0">
+      </td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">
+        <input type="number" min="0" step="0.1" value="${info.alto_cm || ''}" placeholder="0"
+          style="width:70px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;text-align:right"
+          onchange="cajasData['${code}'].alto_cm=parseFloat(this.value)||0">
+      </td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">
+        <input type="number" min="0" step="0.01" value="${info.tara_kg || ''}" placeholder="0"
+          style="width:70px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;text-align:right"
+          onchange="cajasData['${code}'].tara_kg=parseFloat(this.value)||0">
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function saveCajas() {
+  const res = await adminApi('/api/admin/cajas', { method: 'PUT', body: cajasData });
+  const data = await res.json();
+  const msg = document.getElementById('cajas-msg');
+  msg.className = res.ok ? 'alert alert-success' : 'alert alert-error';
+  msg.textContent = res.ok ? 'Guardado' : 'Error: ' + data.error;
+  msg.style.display = 'inline-block';
+  setTimeout(() => msg.style.display = 'none', 3000);
+}
+
+// --- Events ---
+document.getElementById('admin-login-btn').addEventListener('click', adminLogin);
+document.getElementById('admin-pin').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
+document.getElementById('admin-logout').addEventListener('click', () => location.reload());
+document.getElementById('btn-preview').addEventListener('click', previewExcel);
+document.getElementById('btn-apply').addEventListener('click', applyExcel);
+document.getElementById('btn-add-vendedor').addEventListener('click', addVendedor);
+document.getElementById('btn-save-vendedores').addEventListener('click', saveVendedores);
+document.getElementById('btn-save-config').addEventListener('click', saveConfig);
+document.getElementById('btn-save-cajas').addEventListener('click', saveCajas);
+</script>
+</body>
+</html>
