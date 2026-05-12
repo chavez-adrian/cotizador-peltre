@@ -50,6 +50,14 @@
   <div class="tab-content active" id="tab-cliente">
     <div class="section-header">Datos de facturacion</div>
     <div class="form-group">
+      <label>Pais</label>
+      <select id="cl-pais">
+        <option value="MX" selected>Mexico</option>
+        <option value="US">Estados Unidos</option>
+        <option value="CA">Canada</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label>Razon social</label>
       <input type="text" id="cl-razon-social" placeholder="Nombre completo para factura">
     </div>
@@ -203,10 +211,18 @@
 
     <!-- ENVIA.COM -->
     <div id="shipping-envia" style="display:none">
+      <div class="form-group">
+        <label>Pais de destino</label>
+        <select id="envia-pais">
+          <option value="MX" selected>Mexico</option>
+          <option value="US">Estados Unidos</option>
+          <option value="CA">Canada</option>
+        </select>
+      </div>
       <div class="form-row" style="align-items:flex-end;margin-bottom:10px">
         <div class="form-group" style="margin-bottom:0">
           <label>CP destino</label>
-          <input type="text" id="envia-cp" maxlength="5" inputmode="numeric" placeholder="00000">
+          <input type="text" id="envia-cp" placeholder="00000">
         </div>
         <button class="btn btn-primary" id="btn-cotizar-envia" style="height:38px">Cotizar</button>
       </div>

@@ -312,7 +312,7 @@ const ENVIA_ORIGIN = {
 };
 
 app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
-  const { cpDestino, items, totalConIVA } = req.body;
+  const { cpDestino, paisDestino, items, totalConIVA } = req.body;
 
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
   if (!items?.length) return res.status(400).json({ error: 'Carrito vacío' });
@@ -335,7 +335,7 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
     name: 'Destinatario',
     city: 'Destino',
     state: 'DF',
-    country: 'MX',
+    country: paisDestino || 'MX',
     postalCode: cpDestino,
   };
 
@@ -417,6 +417,8 @@ app.get('*', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Cotizador corriendo en http://localhost:${PORT}`);
-});
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) {
+  app.listen(PORT, () => console.log(`Cotizador corriendo en http://localhost:${PORT}`));
+}
+export { app };

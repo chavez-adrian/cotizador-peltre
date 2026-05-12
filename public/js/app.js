@@ -555,8 +555,12 @@ async function cotizarEnvia() {
   enviaRateSeleccionado = null;
 
   const cp = document.getElementById('envia-cp')?.value?.trim();
-  if (!cp || cp.length !== 5 || !/^\d{5}$/.test(cp)) {
-    errEl.textContent = 'Ingresa un CP de 5 dígitos válido';
+  const pais = document.getElementById('envia-pais')?.value || 'MX';
+  const cpValido = pais === 'CA'
+    ? /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/.test(cp)
+    : /^\d{5}$/.test(cp);
+  if (!cp || !cpValido) {
+    errEl.textContent = pais === 'CA' ? 'Ingresa un codigo postal canadiense valido (ej. K1A 0A9)' : 'Ingresa un CP de 5 digitos valido';
     errEl.style.display = 'block';
     return;
   }
@@ -584,7 +588,7 @@ async function cotizarEnvia() {
   try {
     const res = await api('/api/cotizacion/envio', {
       method: 'POST',
-      body: { cpDestino: cp, items, totalConIVA },
+      body: { cpDestino: cp, paisDestino: pais, items, totalConIVA },
     });
     const data = await res.json();
 
@@ -904,6 +908,7 @@ async function generatePDF() {
         emailEntrega: document.getElementById('cl-email-entrega').value,
         referencias: document.getElementById('cl-referencias').value,
         referencia: document.getElementById('cl-referencia').value,
+        pais: document.getElementById('cl-pais')?.value || 'MX',
       },
       condicionesPago: document.getElementById('cl-condiciones').value,
       items,
@@ -1007,6 +1012,7 @@ async function generateHTML() {
         emailEntrega: document.getElementById('cl-email-entrega').value,
         referencias: document.getElementById('cl-referencias').value,
         referencia: document.getElementById('cl-referencia').value,
+        pais: document.getElementById('cl-pais')?.value || 'MX',
       },
       condicionesPago: document.getElementById('cl-condiciones').value,
       items,
@@ -1073,6 +1079,8 @@ function nuevaCotizacion() {
     if (el) el.value = '';
   }
   document.getElementById('cl-condiciones').value = 'Anticipo 50%';
+  const paisEl = document.getElementById('cl-pais');
+  if (paisEl) paisEl.value = 'MX';
   document.getElementById('shipping-option').value = 'none';
   document.getElementById('shipping-cost').value = '';
   document.getElementById('shipping-desc').value = 'Envio';
@@ -1082,6 +1090,8 @@ function nuevaCotizacion() {
   document.getElementById('envia-error').style.display = 'none';
   document.getElementById('envia-resumen').style.display = 'none';
   document.getElementById('envia-cp').value = '';
+  const envPaisEl = document.getElementById('envia-pais');
+  if (envPaisEl) envPaisEl.value = 'MX';
   enviaRateSeleccionado = null;
   resetFlujoGuiado();
   switchTab('cliente');
@@ -1387,6 +1397,8 @@ async function cargarCotizacion(id) {
       if (el) el.value = val;
     }
     if (cot.condicionesPago) document.getElementById('cl-condiciones').value = cot.condicionesPago;
+    const paisEl = document.getElementById('cl-pais');
+    if (paisEl) paisEl.value = c.pais || 'MX';
 
     // Poblar carrito
     state.cart.clear();
