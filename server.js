@@ -8,6 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam } from './lib/operam-client.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -402,6 +403,48 @@ app.get('/api/admin/cotizaciones', authMiddleware, adminMiddleware, (req, res) =
   res.json(log.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier }) =>
     ({ id, fecha, vendedor, cliente, totalPiezas, total, tier })
   ));
+});
+
+// --- Operam: buscar clientes ---
+
+app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
+  const q = req.query.q || '';
+  if (!q.trim()) return res.json([]);
+  try {
+    const clientes = await buscarClientes(q);
+    res.json(Array.isArray(clientes) ? clientes : []);
+  } catch (err) {
+    if (err.message.includes('Operam')) {
+      res.status(503).json({ error: 'Operam no disponible: ' + err.message });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) => {
+  try {
+    const domicilios = await obtenerDomicilios(req.params.id);
+    res.json(domicilios);
+  } catch (err) {
+    res.status(503).json({ error: 'Operam no disponible' });
+  }
+});
+
+// --- Operam: subir cotizacion ---
+
+app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const log = readJSON('cotizaciones.json') || [];
+  const entry = log.find(c => c.id === id);
+  if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+
+  try {
+    const folio = await subirCotizacionOperam(entry.data);
+    res.json({ ok: true, folio });
+  } catch (err) {
+    res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+  }
 });
 
 // --- Admin page ---

@@ -48,6 +48,18 @@
 
   <!-- TAB: CLIENTE -->
   <div class="tab-content active" id="tab-cliente">
+    <div class="section-header">Buscar cliente</div>
+    <div class="form-group" style="position:relative">
+      <input type="text" id="operam-search" placeholder="Buscar por nombre, RFC o empresa...">
+      <div id="operam-dropdown" class="search-dropdown" style="display:none"></div>
+    </div>
+    <div id="operam-domicilios" style="display:none">
+      <label>Domicilio de entrega</label>
+      <select id="operam-domicilio-select"></select>
+      <button class="btn btn-secondary btn-sm" id="btn-usar-domicilio">Usar este domicilio</button>
+    </div>
+    <div id="historial-cliente-panel" style="display:none;margin-bottom:12px;"></div>
+    <div class="section-divider">- o captura manualmente -</div>
     <div class="section-header">Datos de facturacion</div>
     <div class="form-group">
       <label>Pais</label>
@@ -295,6 +307,7 @@
         <button class="btn btn-primary" id="btn-pdf" style="flex:1">Generar PDF</button>
         <button class="btn btn-secondary" id="btn-html" style="flex:1">Ver HTML</button>
         <button class="btn btn-success" id="btn-whatsapp" style="flex:1">WhatsApp</button>
+        <button class="btn btn-secondary" id="btn-subir-operam" style="flex:1">Subir a Operam</button>
       </div>
       <button class="btn btn-secondary btn-block" id="btn-nueva" style="margin-top:8px">Nueva cotizacion</button>
     </div>

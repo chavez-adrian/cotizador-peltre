@@ -1102,6 +1102,124 @@ function nuevaCotizacion() {
   renderCartLines();
 }
 
+// === OPERAM: buscar cliente ===
+let operamClienteSeleccionado = null;
+
+async function buscarClienteOperam(query) {
+  if (query.length < 2) {
+    document.getElementById('operam-dropdown').style.display = 'none';
+    return;
+  }
+  try {
+    const res = await api(`/api/operam/clientes?q=${encodeURIComponent(query)}`);
+    if (!res.ok) return;
+    const clientes = await res.json();
+    renderOperamDropdown(clientes);
+  } catch {}
+}
+
+function renderOperamDropdown(clientes) {
+  const dd = document.getElementById('operam-dropdown');
+  if (!clientes.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = clientes.slice(0, 10).map(c =>
+    `<div class="dropdown-item" onmousedown="seleccionarClienteOperam(${JSON.stringify(c).replace(/"/g, '&quot;')})">
+      <span class="dropdown-item-name">${c.name || c.CustName || ''}</span>
+      <span class="dropdown-item-sku">${c.rfc || ''}</span>
+    </div>`
+  ).join('');
+  dd.style.display = 'block';
+}
+
+async function seleccionarClienteOperam(cliente) {
+  operamClienteSeleccionado = cliente;
+  document.getElementById('operam-dropdown').style.display = 'none';
+  document.getElementById('operam-search').value = cliente.name || cliente.CustName || '';
+
+  const razonEl = document.getElementById('cl-razon-social');
+  if (razonEl) razonEl.value = cliente.CustName || cliente.name || '';
+  const rfcEl = document.getElementById('cl-rfc');
+  if (rfcEl) rfcEl.value = cliente.rfc || '';
+
+  // Cargar domicilios
+  try {
+    const res = await api(`/api/operam/clientes/${cliente.id || cliente.debtorno}/domicilios`);
+    if (!res.ok) return;
+    const domicilios = await res.json();
+    if (domicilios.length > 0) {
+      const sel = document.getElementById('operam-domicilio-select');
+      sel.innerHTML = domicilios.map((d, i) =>
+        `<option value="${i}">${d.descripcion || JSON.stringify(d)}</option>`
+      ).join('');
+      document.getElementById('operam-domicilios').style.display = 'block';
+      window._operamDomicilios = domicilios;
+    }
+  } catch {}
+
+  // Mostrar historial de cotizaciones para este cliente
+  const nombreCliente = (cliente.CustName || cliente.name || '').toLowerCase();
+  const rfcCliente = (cliente.rfc || '').toLowerCase();
+  try {
+    const r = await api('/api/cotizaciones');
+    const todas = await r.json();
+    const previas = todas.filter(c => {
+      const n = (c.cliente || '').toLowerCase();
+      return n.includes(nombreCliente.slice(0, 10)) ||
+        (rfcCliente && n.includes(rfcCliente));
+    });
+    if (previas.length > 0) {
+      renderHistorialCliente(previas);
+    }
+  } catch {}
+}
+
+window.seleccionarClienteOperam = seleccionarClienteOperam;
+
+function usarDomicilioOperam() {
+  const idx = parseInt(document.getElementById('operam-domicilio-select')?.value) || 0;
+  const d = window._operamDomicilios?.[idx];
+  if (!d) return;
+  if (d.calle) document.getElementById('cl-calle').value = d.calle;
+  if (d.colonia) document.getElementById('cl-colonia').value = d.colonia;
+  if (d.cp) document.getElementById('cl-cp-entrega').value = d.cp;
+  if (d.municipio) document.getElementById('cl-municipio').value = d.municipio;
+  if (d.estado) document.getElementById('cl-estado').value = d.estado;
+  document.getElementById('operam-domicilios').style.display = 'none';
+}
+window.usarDomicilioOperam = usarDomicilioOperam;
+
+function renderHistorialCliente(cotizaciones) {
+  const panel = document.getElementById('historial-cliente-panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+  panel.innerHTML = `<div class="section-header">Cotizaciones previas (${cotizaciones.length})</div>` +
+    cotizaciones.slice(-5).reverse().map(c => {
+      const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+      return `<div class="cot-mini">
+        <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+        ${c.hasData ? `<button class="btn btn-sm btn-secondary" onclick="cargarCotizacion(${c.id})">Cargar</button>` : ''}
+        ${c.hasPdf ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-sm btn-secondary">PDF</a>` : ''}
+        <button class="btn btn-sm btn-primary" onclick="subirCotizacionOperam(${c.id})">Subir a Operam</button>
+      </div>`;
+    }).join('');
+}
+window.renderHistorialCliente = renderHistorialCliente;
+
+async function subirCotizacionOperam(id) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Subiendo...'; }
+  try {
+    const res = await api(`/api/cotizacion/operam/${id}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error');
+    alert(`Cotizacion subida a Operam${data.folio ? ' - Folio: ' + data.folio : ''}`);
+  } catch (e) {
+    alert('Error al subir: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Subir a Operam'; }
+  }
+}
+window.subirCotizacionOperam = subirCotizacionOperam;
+
 // === TABS ===
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
@@ -1501,11 +1619,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('shipping-cost').addEventListener('input', () => updateResumen());
   document.getElementById('shipping-desc').addEventListener('input', () => updateResumen());
 
+  // Operam: buscar cliente
+  const operamSearchEl = document.getElementById('operam-search');
+  if (operamSearchEl) {
+    let operamTimer;
+    operamSearchEl.addEventListener('input', e => {
+      clearTimeout(operamTimer);
+      operamTimer = setTimeout(() => buscarClienteOperam(e.target.value), 300);
+    });
+    operamSearchEl.addEventListener('blur', () => {
+      setTimeout(() => {
+        document.getElementById('operam-dropdown').style.display = 'none';
+      }, 150);
+    });
+  }
+  const btnUsarDom = document.getElementById('btn-usar-domicilio');
+  if (btnUsarDom) btnUsarDom.addEventListener('click', usarDomicilioOperam);
+
   // PDF, HTML & WhatsApp
   document.getElementById('btn-pdf').addEventListener('click', generatePDF);
   document.getElementById('btn-html').addEventListener('click', generateHTML);
   document.getElementById('btn-whatsapp').addEventListener('click', shareWhatsApp);
   document.getElementById('btn-nueva').addEventListener('click', nuevaCotizacion);
+
+  // Subir a Operam
+  document.getElementById('btn-subir-operam')?.addEventListener('click', () => {
+    if (!state.lastCotizacionId) { alert('Genera el PDF primero'); return; }
+    subirCotizacionOperam(state.lastCotizacionId);
+  });
 
   // Historial
   document.getElementById('btn-historial').addEventListener('click', showHistorial);
