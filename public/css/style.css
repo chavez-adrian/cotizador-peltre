@@ -628,10 +628,10 @@ body {
 
 .flujo-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(90px, 1fr));
   gap: 8px;
-  width: 50%;
-  min-width: 480px;
+  width: 65%;
+  min-width: 630px;
   flex-shrink: 0;
 }
 
@@ -956,6 +956,10 @@ body {
 @media (max-width: 480px) {
   .form-row { grid-template-columns: 1fr; }
   .tab { font-size: 11px; padding: 8px 4px; }
-  .flujo-paso { min-width: 100px; }
+  .flujo-grid {
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+    min-width: 0;
+  }
   .search-selected-item { flex-direction: column; align-items: flex-start; }
 }
