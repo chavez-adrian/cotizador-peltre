@@ -62,10 +62,14 @@
 
     <!-- Panel: Buscar en Operam -->
     <div id="panel-buscar" class="cliente-panel">
-      <div class="form-group" style="position:relative">
-        <input type="text" id="operam-search" placeholder="Buscar por nombre, RFC o empresa...">
-        <div id="operam-dropdown" class="search-dropdown" style="display:none"></div>
+      <div class="form-row" style="align-items:flex-end;margin-bottom:0">
+        <div class="form-group" style="margin-bottom:0;position:relative;flex:1">
+          <input type="text" id="operam-search" placeholder="Buscar por nombre, RFC o empresa...">
+          <div id="operam-dropdown" class="search-dropdown" style="display:none"></div>
+        </div>
+        <button class="btn btn-primary" id="btn-buscar-operam" style="height:38px">Buscar</button>
       </div>
+      <div id="operam-search-status" style="display:none;font-size:12px;margin-top:4px"></div>
       <div id="operam-domicilios" style="display:none">
         <label>Domicilio de entrega</label>
         <select id="operam-domicilio-select"></select>

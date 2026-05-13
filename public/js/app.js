@@ -1294,16 +1294,34 @@ window.cancelarCSF = cancelarCSF;
 let operamClienteSeleccionado = null;
 
 async function buscarClienteOperam(query) {
+  const statusEl = document.getElementById('operam-search-status');
+  const setStatus = (msg, color = 'var(--text-light)') => {
+    if (!statusEl) return;
+    if (msg) { statusEl.style.display = 'block'; statusEl.style.color = color; statusEl.textContent = msg; }
+    else statusEl.style.display = 'none';
+  };
+
   if (query.length < 2) {
     document.getElementById('operam-dropdown').style.display = 'none';
+    setStatus(null);
     return;
   }
+
+  setStatus('Buscando...');
+  const btn = document.getElementById('btn-buscar-operam');
+  if (btn) btn.disabled = true;
+
   try {
     const res = await api(`/api/operam/clientes?q=${encodeURIComponent(query)}`);
-    if (!res.ok) return;
+    if (!res.ok) { setStatus('Error al buscar', '#c00'); return; }
     const clientes = await res.json();
     renderOperamDropdown(clientes);
-  } catch {}
+    setStatus(clientes.length ? null : 'Sin resultados');
+  } catch {
+    setStatus('Error de conexion', '#c00');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function renderOperamDropdown(clientes) {
@@ -1815,12 +1833,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       clearTimeout(operamTimer);
       operamTimer = setTimeout(() => buscarClienteOperam(e.target.value), 300);
     });
+    operamSearchEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { clearTimeout(operamTimer); buscarClienteOperam(e.target.value); }
+    });
     operamSearchEl.addEventListener('blur', () => {
       setTimeout(() => {
         document.getElementById('operam-dropdown').style.display = 'none';
       }, 150);
     });
   }
+  document.getElementById('btn-buscar-operam')?.addEventListener('click', () => {
+    buscarClienteOperam(document.getElementById('operam-search').value);
+  });
   const btnUsarDom = document.getElementById('btn-usar-domicilio');
   if (btnUsarDom) btnUsarDom.addEventListener('click', usarDomicilioOperam);
 
