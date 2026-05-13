@@ -48,18 +48,57 @@
 
   <!-- TAB: CLIENTE -->
   <div class="tab-content active" id="tab-cliente">
-    <div class="section-header">Buscar cliente</div>
-    <div class="form-group" style="position:relative">
-      <input type="text" id="operam-search" placeholder="Buscar por nombre, RFC o empresa...">
-      <div id="operam-dropdown" class="search-dropdown" style="display:none"></div>
+    <div class="cliente-modos">
+      <button class="modo-btn active" data-modo="buscar" onclick="setClienteModo('buscar')">
+        Buscar en Operam
+      </button>
+      <button class="modo-btn" data-modo="csf" onclick="setClienteModo('csf')">
+        Crear desde CSF
+      </button>
+      <button class="modo-btn" data-modo="manual" onclick="setClienteModo('manual')">
+        Captura manual
+      </button>
     </div>
-    <div id="operam-domicilios" style="display:none">
-      <label>Domicilio de entrega</label>
-      <select id="operam-domicilio-select"></select>
-      <button class="btn btn-secondary btn-sm" id="btn-usar-domicilio">Usar este domicilio</button>
+
+    <!-- Panel: Buscar en Operam -->
+    <div id="panel-buscar" class="cliente-panel">
+      <div class="form-group" style="position:relative">
+        <input type="text" id="operam-search" placeholder="Buscar por nombre, RFC o empresa...">
+        <div id="operam-dropdown" class="search-dropdown" style="display:none"></div>
+      </div>
+      <div id="operam-domicilios" style="display:none">
+        <label>Domicilio de entrega</label>
+        <select id="operam-domicilio-select"></select>
+        <button class="btn btn-secondary btn-sm" id="btn-usar-domicilio">Usar este domicilio</button>
+      </div>
+      <div id="historial-cliente-panel" style="display:none;margin-bottom:12px;"></div>
     </div>
-    <div id="historial-cliente-panel" style="display:none;margin-bottom:12px;"></div>
-    <div class="section-divider">- o captura manualmente -</div>
+
+    <!-- Panel: Crear desde CSF -->
+    <div id="panel-csf" class="cliente-panel" style="display:none">
+      <div class="form-group">
+        <label>Sube la Constancia de Situacion Fiscal (PDF)</label>
+        <input type="file" id="csf-file" accept=".pdf" onchange="procesarCSF(this)">
+      </div>
+      <div id="csf-status" style="display:none"></div>
+      <div id="csf-preview" style="display:none">
+        <div class="alert alert-info" id="csf-datos-preview"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" id="btn-crear-csf" onclick="crearClienteDesdeCSF()">
+            Crear cliente en Operam y continuar
+          </button>
+          <button class="btn btn-secondary" onclick="cancelarCSF()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel: Captura manual -->
+    <div id="panel-manual" class="cliente-panel" style="display:none">
+      <div class="section-divider" style="margin-bottom:12px;color:var(--text-light);font-size:12px">
+        Captura manual - para clientes extranjeros o sin CSF disponible
+      </div>
+    </div>
+
     <div class="section-header">Datos de facturacion</div>
     <div class="form-group">
       <label>Pais</label>
@@ -334,6 +373,8 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script src="/js/app.js" type="module"></script>
 </body>
 </html>

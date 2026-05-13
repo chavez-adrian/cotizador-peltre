@@ -1093,6 +1093,14 @@ function nuevaCotizacion() {
   const envPaisEl = document.getElementById('envia-pais');
   if (envPaisEl) envPaisEl.value = 'MX';
   enviaRateSeleccionado = null;
+  setClienteModo('buscar');
+  csfDatosExtraidos = null;
+  const csfFile = document.getElementById('csf-file');
+  if (csfFile) csfFile.value = '';
+  const csfStatus = document.getElementById('csf-status');
+  if (csfStatus) csfStatus.style.display = 'none';
+  const csfPreview = document.getElementById('csf-preview');
+  if (csfPreview) csfPreview.style.display = 'none';
   resetFlujoGuiado();
   switchTab('cliente');
   renderProducts();
@@ -1101,6 +1109,186 @@ function nuevaCotizacion() {
   updateResumen();
   renderCartLines();
 }
+
+// === MODO CLIENTE ===
+function setClienteModo(modo) {
+  document.querySelectorAll('.modo-btn').forEach(b => b.classList.toggle('active', b.dataset.modo === modo));
+  document.querySelectorAll('.cliente-panel').forEach(p => p.style.display = 'none');
+  document.getElementById(`panel-${modo}`).style.display = 'block';
+}
+window.setClienteModo = setClienteModo;
+
+// === CSF ===
+let csfDatosExtraidos = null;
+
+async function procesarCSF(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById('csf-status');
+  const previewEl = document.getElementById('csf-preview');
+  statusEl.style.display = 'block';
+  statusEl.className = 'alert alert-info';
+  statusEl.textContent = 'Leyendo PDF...';
+  previewEl.style.display = 'none';
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let textoTotal = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      textoTotal += content.items.map(item => item.str).join(' ') + '\n';
+    }
+
+    const datos = parsearCSFTexto(textoTotal);
+    if (!datos.rfc) {
+      statusEl.className = 'alert alert-error';
+      statusEl.textContent = 'No se pudo extraer el RFC. Verifica que el PDF sea una CSF valida.';
+      return;
+    }
+
+    csfDatosExtraidos = datos;
+    statusEl.style.display = 'none';
+    previewEl.style.display = 'block';
+
+    document.getElementById('csf-datos-preview').innerHTML = `
+      <strong>${datos.razonSocial}</strong><br>
+      RFC: ${datos.rfc}<br>
+      Domicilio: ${[datos.calle, datos.numExt, datos.colonia, datos.cp, datos.municipio, datos.estado].filter(Boolean).join(', ')}<br>
+      Regimen: ${datos.regimenFiscal}
+    `;
+  } catch (e) {
+    statusEl.className = 'alert alert-error';
+    statusEl.textContent = 'Error leyendo el PDF: ' + e.message;
+  }
+}
+window.procesarCSF = procesarCSF;
+
+function parsearCSFTexto(texto) {
+  const get = (regex) => { const m = texto.match(regex); return m ? m[1].trim() : ''; };
+
+  const rfc = get(/R\.?F\.?C\.?\s*:?\s*([A-Z&Ñ][A-Z0-9]{10,12})/i);
+
+  const razonSocial = (() => {
+    const pm = get(/Denominaci[oó]n\/?Raz[oó]n\s*Social\s*:\s*(.+?)(?=\s*R\.?F\.?C|\s*idCIF)/is);
+    if (pm) return pm.replace(/\s+/g, ' ').trim();
+    const nombre = get(/Nombre\s*(?:\(s\))?\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\s+(?:Primer|R\.?F\.?C))/i);
+    const ap1 = get(/Primer\s*Apellido\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\n|\s{2,})/i);
+    const ap2 = get(/Segundo\s*Apellido\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\n|\s{2,})/i);
+    return [nombre, ap1, ap2].filter(Boolean).join(' ').trim();
+  })();
+
+  return {
+    rfc,
+    razonSocial,
+    nombreCorto: razonSocial.split(' ').slice(0, 3).join(' '),
+    idcif: get(/idCIF\s*:\s*(\d+)/i),
+    cp: get(/C[oó]digo\s*Postal\s*:?\s*(\d{5})/i),
+    calle: get(/Nombre\s*de\s*(?:la\s*)?Vialidad\s*:\s*([^\n]+)/i),
+    numExt: get(/N[uú]mero\s*Exterior\s*:\s*([^\n]+)/i),
+    numInt: get(/N[uú]mero\s*Interior\s*:\s*([^\n]*)/i) || '',
+    colonia: get(/Nombre\s*de\s*la\s*Colonia\s*:\s*([^\n]+)/i),
+    municipio: get(/Nombre\s*del\s*Municipio[^\n:]*:\s*([^\n]+)/i),
+    estado: get(/Nombre\s*de\s*la\s*Entidad\s*Federativa\s*:\s*([^\n]+)/i),
+    regimenFiscal: (texto.match(/R[eé]gimen\s*Fiscal\s*:\s*(\d{3})/i) || [])[1] || '',
+    pais: 'MX',
+  };
+}
+
+async function crearClienteDesdeCSF() {
+  if (!csfDatosExtraidos) return;
+  const btn = document.getElementById('btn-crear-csf');
+  btn.disabled = true;
+  btn.textContent = 'Creando cliente...';
+  const statusEl = document.getElementById('csf-status');
+  statusEl.style.display = 'none';
+
+  try {
+    const payload = {
+      CustName: csfDatosExtraidos.razonSocial,
+      cust_ref: csfDatosExtraidos.nombreCorto,
+      tax_id: csfDatosExtraidos.rfc,
+      idcif: csfDatosExtraidos.idcif,
+      street: csfDatosExtraidos.calle,
+      street_number: csfDatosExtraidos.numExt,
+      suite_number: csfDatosExtraidos.numInt,
+      district: csfDatosExtraidos.colonia,
+      postal_code: csfDatosExtraidos.cp,
+      city: csfDatosExtraidos.municipio,
+      state: csfDatosExtraidos.estado,
+      country: 'Mexico',
+      cfdi_regimen_fiscal: csfDatosExtraidos.regimenFiscal,
+      salesman: String(state.user.id || '1'),
+      segmento_id: '1',
+      timbrado_uso_cfdi: 'S01',
+      actividades: [],
+      csf_fecha: '',
+      phone: '',
+      email: '',
+    };
+
+    const res = await fetch('https://operam-server.onrender.com/api/crear-cliente', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (data.error) throw new Error(data.error);
+
+    const d = csfDatosExtraidos;
+    const mapa = {
+      'cl-razon-social': d.razonSocial,
+      'cl-nombre-corto': data.nombre || d.nombreCorto,
+      'cl-rfc': d.rfc,
+      'cl-cp-fiscal': d.cp,
+      'cl-calle': d.calle,
+      'cl-num-int': d.numInt,
+      'cl-colonia': d.colonia,
+      'cl-cp-entrega': d.cp,
+      'cl-municipio': d.municipio,
+      'cl-estado': d.estado,
+    };
+    for (const [id, val] of Object.entries(mapa)) {
+      const el = document.getElementById(id);
+      if (el && val) el.value = val;
+    }
+    const paisEl = document.getElementById('cl-pais');
+    if (paisEl) paisEl.value = 'MX';
+
+    statusEl.style.display = 'block';
+    statusEl.className = data.duplicado
+      ? 'alert alert-warning'
+      : 'alert alert-success';
+    statusEl.textContent = data.duplicado
+      ? `Cliente ya existia en Operam (ID ${data.cliente_id}). Datos cargados.`
+      : `Cliente creado en Operam (ID ${data.cliente_id}). Formulario listo.`;
+
+    document.getElementById('csf-preview').style.display = 'none';
+    csfDatosExtraidos = null;
+
+    setTimeout(() => setClienteModo('manual'), 800);
+
+  } catch (e) {
+    statusEl.style.display = 'block';
+    statusEl.className = 'alert alert-error';
+    statusEl.textContent = 'Error al crear cliente: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crear cliente en Operam y continuar';
+  }
+}
+window.crearClienteDesdeCSF = crearClienteDesdeCSF;
+
+function cancelarCSF() {
+  csfDatosExtraidos = null;
+  document.getElementById('csf-file').value = '';
+  document.getElementById('csf-preview').style.display = 'none';
+  document.getElementById('csf-status').style.display = 'none';
+}
+window.cancelarCSF = cancelarCSF;
 
 // === OPERAM: buscar cliente ===
 let operamClienteSeleccionado = null;

@@ -963,3 +963,32 @@ body {
   }
   .search-selected-item { flex-direction: column; align-items: flex-start; }
 }
+
+/* === CLIENTE MODOS === */
+.cliente-modos {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.modo-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  background: var(--white);
+  color: var(--text-light);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.modo-btn.active {
+  background: var(--primary);
+  color: var(--white);
+  border-color: var(--primary);
+}
+
+.cliente-panel { margin-bottom: 12px; }
