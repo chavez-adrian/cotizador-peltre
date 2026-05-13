@@ -68,13 +68,15 @@ test('10. Datos de Facturacion shows cpFiscal when provided', () => {
   assert.ok(html.includes('06600'), 'cpFiscal should appear in billing section');
 });
 
-test('11. Datos de entrega shows celEntrega and emailEntrega on separate lines', () => {
+test('11. Datos de entrega shows celEntrega and emailEntrega on same line (formato Operam)', () => {
   const html = generateQuoteHTML({
     cliente: { celEntrega: '55 1234 5678', emailEntrega: 'cliente@test.com' },
   });
   assert.ok(html.includes('55 1234 5678'), 'celEntrega should appear');
   assert.ok(html.includes('cliente@test.com'), 'emailEntrega should appear');
-  assert.ok(!html.includes('5678 , Correo'), 'phone and email should NOT be joined with comma+space');
+  // Telefono y Correo deben aparecer en el mismo bloque de linea (formato Operam)
+  assert.ok(html.includes('Telefono:'), 'should have Telefono label');
+  assert.ok(html.includes('Correo:'), 'should have Correo label');
 });
 
 test('12. Numeric product columns use class="num" for right-alignment', () => {
