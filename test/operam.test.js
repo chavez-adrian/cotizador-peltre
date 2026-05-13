@@ -1,8 +1,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import jwt from 'jsonwebtoken';
 import supertest from 'supertest';
 
@@ -26,10 +26,56 @@ const { resetSession } = await import('../lib/operam-client.js');
 const TOKEN = jwt.sign({ id: 1, name: 'Test', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 const req = supertest(app);
 
-function mockFetch(impl) {
+// Respuesta de login real
+const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
+
+// Respuesta real de busqueda de clientes
+const CLIENTES_RESPONSE = {
+  total: 1,
+  data: [{
+    customer_id: '42',
+    CustName: 'BANCO DE MEXICO FIDEICOMISO',
+    cust_ref: 'Banco de Mexico',
+    tax_id: 'BMF821130AR3',
+    postal_code: '06000',
+    branches: [{
+      branch_code: '1',
+      branch_ref: 'PRINCIPAL',
+      br_name: 'Museo Frida Kahlo',
+      contact_name: 'Adriana Urena',
+      phone: '55 1072 7542',
+      email: 'a.urena@museofridakahlo.org.mx',
+    }]
+  }]
+};
+
+// Respuesta real de detalle de cliente
+const CLIENTE_DETALLE_RESPONSE = { data: [CLIENTES_RESPONSE.data[0]] };
+
+// Respuesta real de crear cotizacion
+const QUOTE_RESPONSE = {
+  result: true,
+  quote_id: 1128,
+  factura_no: 1128,
+  ref: 'RC1128',
+  messages: ['Cotizacion insertada exitosamente'],
+};
+
+// Mock de fetch por URL
+function mockFetchByUrl(urlHandlers) {
   const original = globalThis.fetch;
-  globalThis.fetch = impl;
+  globalThis.fetch = async (url, opts) => {
+    const urlStr = typeof url === 'string' ? url : url.toString();
+    for (const [pattern, handler] of Object.entries(urlHandlers)) {
+      if (urlStr.includes(pattern)) return handler(url, opts);
+    }
+    throw new Error(`Unmocked fetch: ${urlStr}`);
+  };
   return () => { globalThis.fetch = original; };
+}
+
+function jsonResponse(data, status = 200) {
+  return { ok: status < 400, status, json: async () => data };
 }
 
 function readCots() {
@@ -51,149 +97,115 @@ after(() => {
   writeCots(savedCots);
 });
 
-// === B1: GET /api/operam/clientes?q=banco retorna array ===
-test('B1: GET /api/operam/clientes?q=banco retorna array con elementos', async () => {
+// B1: GET /api/operam/clientes?q=banco retorna objetos con customer_id, CustName, tax_id
+
+test('B1: buscarClientes retorna array con campos de API v3', async () => {
   resetSession();
-  let loginDone = false;
-  const restore = mockFetch(async (url, opts) => {
-    if (!loginDone && opts?.method === 'POST') {
-      loginDone = true;
-      return { headers: { get: () => 'PHPSESSID=abc123' }, status: 302, ok: false };
-    }
-    if (!loginDone) {
-      return { headers: { get: () => 'PHPSESSID=abc123' }, ok: true, redirected: false };
-    }
-    if (url.includes('customers.ajax.php')) {
-      return { ok: true, status: 200, redirected: false, json: async () => [{ id: '1', name: 'Banco X', rfc: 'XAXX010101000' }] };
-    }
-    return { ok: true, status: 200, redirected: false, json: async () => [] };
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse(CLIENTES_RESPONSE),
   });
-
   try {
-    const res = await req
-      .get('/api/operam/clientes?q=banco')
-      .set('Authorization', `Bearer ${TOKEN}`);
-
-    assert.strictEqual(res.status, 200);
-    assert.ok(Array.isArray(res.body), 'debe ser array');
-    assert.ok(res.body.length >= 1, 'debe tener al menos un elemento');
-    assert.ok(res.body[0].name, 'elemento debe tener campo name');
-  } finally {
-    restore();
-  }
+    const res = await req.get('/api/operam/clientes?q=banco').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body));
+    assert.ok(res.body.length > 0);
+    assert.ok(res.body[0].customer_id);
+    assert.ok(res.body[0].CustName);
+    assert.ok(res.body[0].tax_id);
+  } finally { restore(); }
 });
 
-// === B2: Sin token retorna 401 ===
-test('B2: GET /api/operam/clientes sin token retorna 401', async () => {
-  const res = await req.get('/api/operam/clientes?q=test');
-  assert.strictEqual(res.status, 401);
+// B2: Sin token retorna 401
+
+test('B2: sin auth token retorna 401', async () => {
+  const res = await req.get('/api/operam/clientes?q=banco');
+  assert.equal(res.status, 401);
 });
 
-// === B3: GET /api/operam/clientes/:id/domicilios retorna array ===
-test('B3: GET /api/operam/clientes/:id/domicilios retorna array', async () => {
-  // Session may already be valid from B1 — just ensure fetch returns OK
-  const restore = mockFetch(async (url, opts) => {
-    if (url.includes('customers.ajax.php')) {
-      return { ok: true, status: 200, redirected: false, json: async () => [] };
-    }
-    if (url.includes('customers.php')) {
-      return { ok: true, status: 200, text: async () => '<html><body>Sin domicilios</body></html>' };
-    }
-    // login or other
-    if (opts?.method === 'POST' && !url.includes('customers')) {
-      return { headers: { get: () => 'PHPSESSID=dom123' }, status: 302, ok: false };
-    }
-    return { headers: { get: () => 'PHPSESSID=dom123' }, ok: true, redirected: false };
+// B3: GET /api/operam/clientes/:id/domicilios retorna array con campos de branches
+
+test('B3: domicilios retorna branches mapeados con campos reales', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/42': () => jsonResponse(CLIENTE_DETALLE_RESPONSE),
   });
-
   try {
-    const res = await req
-      .get('/api/operam/clientes/123/domicilios')
-      .set('Authorization', `Bearer ${TOKEN}`);
-
-    assert.strictEqual(res.status, 200);
-    assert.ok(Array.isArray(res.body), 'debe ser array');
-  } finally {
-    restore();
-  }
+    const res = await req.get('/api/operam/clientes/42/domicilios').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body));
+    assert.ok(res.body.length > 0);
+    const d = res.body[0];
+    assert.ok('descripcion' in d);
+    assert.ok('cp' in d);
+    assert.ok('email' in d);
+  } finally { restore(); }
 });
 
-// === B4: Operam no responde => 503 ===
+// B4: Operam no responde => 503
+
 test('B4: Operam no responde => 503', async () => {
   resetSession();
-  const restore = mockFetch(async () => {
-    throw new Error('Operam 500');
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => { throw new Error('ECONNREFUSED'); },
   });
-
   try {
-    const res = await req
-      .get('/api/operam/clientes?q=test')
-      .set('Authorization', `Bearer ${TOKEN}`);
-
-    assert.strictEqual(res.status, 503);
-  } finally {
-    restore();
-  }
+    const res = await req.get('/api/operam/clientes?q=test').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 503);
+  } finally { restore(); }
 });
 
-// === B5: POST /api/cotizacion/operam/:id llama a Operam ===
-test('B5: POST /api/cotizacion/operam/:id llama a Operam con cotizacion existente', async () => {
-  // Crear entrada de prueba en cotizaciones.json
+// B5: POST /api/cotizacion/operam/:id llama a /api/v3/sales/quote con payload correcto
+
+test('B5: subirCotizacionOperam llama POST /api/v3/sales/quote', async () => {
+  resetSession();
+  let quotePayload = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse(CLIENTES_RESPONSE),
+    '/api/v3/sales/quote': (url, opts) => {
+      quotePayload = JSON.parse(opts.body);
+      return jsonResponse(QUOTE_RESPONSE);
+    },
+  });
+
   const snap = readCots();
-  const id = snap.length + 1;
-  const entry = {
-    id,
+  const testEntry = {
+    id: 9999,
     fecha: new Date().toISOString(),
     vendedor: 'Test',
-    cliente: 'Test SA',
+    cliente: 'BANCO DE MEXICO',
     totalPiezas: 2,
-    total: 1000,
-    tier: 'Mayoreo',
+    total: 100,
+    tier: 'Menudeo',
     data: {
-      cliente: { razonSocial: 'Test SA', rfc: 'XAXX010101000' },
-      items: [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 2, precio: 500 }],
+      fecha: '2026-05-12',
+      cliente: { razonSocial: 'BANCO DE MEXICO', rfc: 'BMF821130AR3', calle: 'Av. 5 de Mayo' },
+      items: [{ codigo: 'VA08G1N1M0', descripcion: 'Vaso 8', cantidad: 2, precio: 50 }],
+      notas: ['Tiempo de entrega: 4 semanas'],
     },
   };
-  writeCots([...snap, entry]);
-
-  const calledUrls = [];
-  let callCount = 0;
-  const restore = mockFetch(async (url, opts) => {
-    calledUrls.push(url);
-    callCount++;
-    // login init
-    if (callCount === 1) return { headers: { get: () => 'PHPSESSID=b5test' }, ok: true, redirected: false, json: async () => [] };
-    // login POST
-    if (callCount === 2) return { headers: { get: () => 'PHPSESSID=b5test' }, status: 302, ok: false };
-    // ensureSession
-    if (callCount === 3) return { status: 200, ok: true, redirected: false, json: async () => [] };
-    // buscarClientes
-    if (url.includes('customers.ajax.php')) return { ok: true, status: 200, json: async () => [{ id: '42', name: 'Test SA', rfc: 'XAXX010101000' }] };
-    // saleshdr.php
-    return { ok: true, status: 200, text: async () => 'Cotizacion 999 creada' };
-  });
+  writeCots([...snap, testEntry]);
 
   try {
-    const res = await req
-      .post(`/api/cotizacion/operam/${id}`)
-      .set('Authorization', `Bearer ${TOKEN}`);
-
-    assert.ok([200, 503].includes(res.status), `status debe ser 200 o 503, fue ${res.status}`);
-    assert.ok(
-      calledUrls.some(u => u.includes('operam.pro')),
-      'debe haber llamado a operam.pro'
-    );
+    const res = await req.post('/api/cotizacion/operam/9999').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.ok(res.body.ok);
+    assert.ok(quotePayload !== null, 'fetch a /api/v3/sales/quote no fue llamado');
+    assert.equal(quotePayload.customer_id, 42);
+    assert.ok(Array.isArray(quotePayload.items));
+    assert.equal(quotePayload.items[0].stock_id, 'VA08G1N1M0');
   } finally {
     restore();
-    writeCots(snap);
+    const cleanLog = JSON.parse(readFileSync(COTS_PATH, 'utf8')).filter(e => e.id !== 9999);
+    writeFileSync(COTS_PATH, JSON.stringify(cleanLog, null, 2));
   }
 });
 
-// === B6: POST /api/cotizacion/operam/:id con id inexistente retorna 404 ===
-test('B6: POST /api/cotizacion/operam/:id con id inexistente retorna 404', async () => {
-  const res = await req
-    .post('/api/cotizacion/operam/99999')
-    .set('Authorization', `Bearer ${TOKEN}`);
+// B6: ID inexistente retorna 404
 
-  assert.strictEqual(res.status, 404);
+test('B6: cotizacion inexistente retorna 404', async () => {
+  const res = await req.post('/api/cotizacion/operam/99998').set('Authorization', `Bearer ${TOKEN}`);
+  assert.equal(res.status, 404);
 });

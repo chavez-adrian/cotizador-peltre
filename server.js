@@ -414,11 +414,7 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
     const clientes = await buscarClientes(q);
     res.json(Array.isArray(clientes) ? clientes : []);
   } catch (err) {
-    if (err.message.includes('Operam')) {
-      res.status(503).json({ error: 'Operam no disponible: ' + err.message });
-    } else {
-      res.status(500).json({ error: err.message });
-    }
+    res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }
 });
 
