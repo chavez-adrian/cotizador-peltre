@@ -1313,7 +1313,11 @@ async function buscarClienteOperam(query) {
 
   try {
     const res = await api(`/api/operam/clientes?q=${encodeURIComponent(query)}`);
-    if (!res.ok) { setStatus('Error al buscar', '#c00'); return; }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setStatus(err.error || 'Error al buscar', '#c00');
+      return;
+    }
     const clientes = await res.json();
     renderOperamDropdown(clientes);
     setStatus(clientes.length ? null : 'Sin resultados');
