@@ -37,7 +37,13 @@ const CLIENTES_RESPONSE = {
     CustName: 'BANCO DE MEXICO FIDEICOMISO',
     cust_ref: 'Banco de Mexico',
     tax_id: 'BMF821130AR3',
+    street: 'Av. 5 de Mayo',
+    street_number: '2',
+    suite_number: 'Piso 3',
+    district: 'Centro Historico',
     postal_code: '06000',
+    city: 'Cuauhtemoc',
+    state: 'Ciudad de Mexico',
     branches: [{
       branch_code: '1',
       branch_ref: 'PRINCIPAL',
@@ -99,7 +105,7 @@ after(() => {
 
 // B1: GET /api/operam/clientes?q=banco retorna objetos con customer_id, CustName, tax_id
 
-test('B1: buscarClientes retorna array con campos de API v3', async () => {
+test('B1: buscarClientes retorna array con campos normalizados', async () => {
   resetSession();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
@@ -110,9 +116,9 @@ test('B1: buscarClientes retorna array con campos de API v3', async () => {
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(res.body));
     assert.ok(res.body.length > 0);
-    assert.ok(res.body[0].customer_id);
-    assert.ok(res.body[0].CustName);
-    assert.ok(res.body[0].tax_id);
+    assert.ok(res.body[0].id);
+    assert.ok(res.body[0].name);
+    assert.ok(res.body[0].rfc);
   } finally { restore(); }
 });
 
@@ -208,4 +214,32 @@ test('B5: subirCotizacionOperam llama POST /api/v3/sales/quote', async () => {
 test('B6: cotizacion inexistente retorna 404', async () => {
   const res = await req.post('/api/cotizacion/operam/99998').set('Authorization', `Bearer ${TOKEN}`);
   assert.equal(res.status, 404);
+});
+
+// B7: buscarClientes normaliza campos para que el cliente JS pueda llenar el formulario sin mapeo adicional
+
+test('B7: buscarClientes normaliza campos: id, name, rfc, calle, cp, municipio, estado, telefono, email, nombreEntrega', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse(CLIENTES_RESPONSE),
+  });
+  try {
+    const res = await req.get('/api/operam/clientes?q=banco').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    const c = res.body[0];
+    assert.equal(c.id, '42',                         'id = customer_id');
+    assert.equal(c.name, 'BANCO DE MEXICO FIDEICOMISO', 'name = CustName');
+    assert.equal(c.ref, 'Banco de Mexico',           'ref = cust_ref');
+    assert.equal(c.rfc, 'BMF821130AR3',              'rfc = tax_id');
+    assert.equal(c.calle, 'Av. 5 de Mayo 2',         'calle = street + street_number');
+    assert.equal(c.numInt, 'Piso 3',                 'numInt = suite_number');
+    assert.equal(c.colonia, 'Centro Historico',      'colonia = district');
+    assert.equal(c.cp, '06000',                      'cp = postal_code');
+    assert.equal(c.municipio, 'Cuauhtemoc',          'municipio = city');
+    assert.equal(c.estado, 'Ciudad de Mexico',       'estado = state');
+    assert.equal(c.telefono, '55 1072 7542',         'telefono = branches[0].phone');
+    assert.equal(c.email, 'a.urena@museofridakahlo.org.mx', 'email = branches[0].email');
+    assert.equal(c.nombreEntrega, 'Museo Frida Kahlo', 'nombreEntrega = branches[0].br_name');
+  } finally { restore(); }
 });

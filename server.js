@@ -411,8 +411,26 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
   const q = req.query.q || '';
   if (!q.trim()) return res.json([]);
   try {
-    const clientes = await buscarClientes(q);
-    res.json(Array.isArray(clientes) ? clientes : []);
+    const raw = await buscarClientes(q);
+    const clientes = (Array.isArray(raw) ? raw : []).map(c => {
+      const branch = c.branches?.[0] || {};
+      return {
+        id: c.customer_id,
+        name: c.CustName || '',
+        ref: c.cust_ref || '',
+        rfc: c.tax_id || '',
+        calle: [c.street, c.street_number].filter(Boolean).join(' '),
+        numInt: c.suite_number || '',
+        colonia: c.district || '',
+        cp: c.postal_code || '',
+        municipio: c.city || '',
+        estado: c.state || '',
+        telefono: branch.phone || c.contacts?.[0]?.phone || '',
+        email: branch.email || c.contacts?.[0]?.email || '',
+        nombreEntrega: branch.br_name || branch.contact_name || '',
+      };
+    });
+    res.json(clientes);
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }

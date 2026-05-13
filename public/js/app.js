@@ -1333,7 +1333,7 @@ function renderOperamDropdown(clientes) {
   if (!clientes.length) { dd.style.display = 'none'; return; }
   dd.innerHTML = clientes.slice(0, 10).map(c =>
     `<div class="dropdown-item" onmousedown="seleccionarClienteOperam(${JSON.stringify(c).replace(/"/g, '&quot;')})">
-      <span class="dropdown-item-name">${c.name || c.CustName || ''}</span>
+      <span class="dropdown-item-name">${c.name || ''}</span>
       <span class="dropdown-item-sku">${c.rfc || ''}</span>
     </div>`
   ).join('');
@@ -1343,22 +1343,35 @@ function renderOperamDropdown(clientes) {
 async function seleccionarClienteOperam(cliente) {
   operamClienteSeleccionado = cliente;
   document.getElementById('operam-dropdown').style.display = 'none';
-  document.getElementById('operam-search').value = cliente.name || cliente.CustName || '';
+  document.getElementById('operam-search-status').style.display = 'none';
+  document.getElementById('operam-search').value = cliente.name || '';
 
-  const razonEl = document.getElementById('cl-razon-social');
-  if (razonEl) razonEl.value = cliente.CustName || cliente.name || '';
-  const rfcEl = document.getElementById('cl-rfc');
-  if (rfcEl) rfcEl.value = cliente.rfc || '';
+  const fill = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  fill('cl-razon-social',   cliente.name);
+  fill('cl-nombre-corto',   cliente.ref);
+  fill('cl-rfc',            cliente.rfc);
+  fill('cl-cp-fiscal',      cliente.cp);
+  fill('cl-telefono',       cliente.telefono);
+  fill('cl-nombre-entrega', cliente.nombreEntrega);
+  fill('cl-calle',          cliente.calle);
+  fill('cl-num-int',        cliente.numInt);
+  fill('cl-colonia',        cliente.colonia);
+  fill('cl-cp-entrega',     cliente.cp);
+  fill('cl-municipio',      cliente.municipio);
+  fill('cl-estado',         cliente.estado);
+  fill('cl-cel-entrega',    cliente.telefono);
+  fill('cl-email-entrega',  cliente.email);
+  updateTabIndicators();
 
-  // Cargar domicilios
+  // Cargar domicilios adicionales (si tiene más de uno)
   try {
-    const res = await api(`/api/operam/clientes/${cliente.id || cliente.debtorno}/domicilios`);
+    const res = await api(`/api/operam/clientes/${cliente.id}/domicilios`);
     if (!res.ok) return;
     const domicilios = await res.json();
-    if (domicilios.length > 0) {
+    if (domicilios.length > 1) {
       const sel = document.getElementById('operam-domicilio-select');
       sel.innerHTML = domicilios.map((d, i) =>
-        `<option value="${i}">${d.descripcion || JSON.stringify(d)}</option>`
+        `<option value="${i}">${d.descripcion || d.calle || ''}</option>`
       ).join('');
       document.getElementById('operam-domicilios').style.display = 'block';
       window._operamDomicilios = domicilios;
@@ -1366,7 +1379,7 @@ async function seleccionarClienteOperam(cliente) {
   } catch {}
 
   // Mostrar historial de cotizaciones para este cliente
-  const nombreCliente = (cliente.CustName || cliente.name || '').toLowerCase();
+  const nombreCliente = (cliente.name || '').toLowerCase();
   const rfcCliente = (cliente.rfc || '').toLowerCase();
   try {
     const r = await api('/api/cotizaciones');
