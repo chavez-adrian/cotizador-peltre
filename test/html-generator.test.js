@@ -58,9 +58,9 @@ test('8. Header shows company email, not website URL', () => {
   assert.ok(!html.includes('e-Mail: www.'), 'should NOT show website URL as e-Mail');
 });
 
-test('9. Logo img tag uses /logo_pn.png', () => {
+test('9. Logo img tag is embedded as data URL (works in blob context)', () => {
   const html = generateQuoteHTML({});
-  assert.ok(html.includes('/logo_pn.png'), 'should have img src /logo_pn.png');
+  assert.ok(html.includes('data:image/png;base64,'), 'logo should be embedded as base64 data URL');
 });
 
 test('10. Datos de Facturacion shows cpFiscal when provided', () => {
