@@ -51,3 +51,42 @@ test('7. Footer contains bank info: "Banco: Banorte" and CLABE', () => {
   assert.ok(html.includes('Banco: Banorte'), 'should contain "Banco: Banorte"');
   assert.ok(html.includes('002180700947054340'), 'should contain CLABE 002180700947054340');
 });
+
+test('8. Header shows company email, not website URL', () => {
+  const html = generateQuoteHTML({});
+  assert.ok(html.includes('contacto@pppeltre.mx'), 'should show email contacto@pppeltre.mx');
+  assert.ok(!html.includes('e-Mail: www.'), 'should NOT show website URL as e-Mail');
+});
+
+test('9. Logo img tag uses /logo_pn.png', () => {
+  const html = generateQuoteHTML({});
+  assert.ok(html.includes('/logo_pn.png'), 'should have img src /logo_pn.png');
+});
+
+test('10. Datos de Facturacion shows cpFiscal when provided', () => {
+  const html = generateQuoteHTML({ cliente: { razonSocial: 'Test SA', rfc: 'TST010101AAA', cpFiscal: '06600' } });
+  assert.ok(html.includes('06600'), 'cpFiscal should appear in billing section');
+});
+
+test('11. Datos de entrega shows celEntrega and emailEntrega on separate lines', () => {
+  const html = generateQuoteHTML({
+    cliente: { celEntrega: '55 1234 5678', emailEntrega: 'cliente@test.com' },
+  });
+  assert.ok(html.includes('55 1234 5678'), 'celEntrega should appear');
+  assert.ok(html.includes('cliente@test.com'), 'emailEntrega should appear');
+  assert.ok(!html.includes('5678 , Correo'), 'phone and email should NOT be joined with comma+space');
+});
+
+test('12. Numeric product columns use class="num" for right-alignment', () => {
+  const html = generateQuoteHTML({
+    items: [{ codigo: 'A001', descripcion: 'Item', cantidad: 5, unidad: 'pza', precio: 100, descuento: 0 }],
+  });
+  assert.ok(html.includes('class="num"'), 'numeric cells should have class="num"');
+  assert.ok(html.includes('td-code'), 'codigo column should have class td-code');
+});
+
+test('13. Total row has class total-row for bold styling', () => {
+  const html = generateQuoteHTML({ subtotal: 100, iva: 16, total: 116 });
+  assert.ok(html.includes('class="total-row"'), 'TOTAL row should have class total-row');
+  assert.ok(html.includes('>TOTAL<'), 'TOTAL label should be present');
+});
