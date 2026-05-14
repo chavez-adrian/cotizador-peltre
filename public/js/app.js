@@ -1,3 +1,13 @@
+// === UTILS ===
+function toTitleCase(str) {
+  if (!str) return str;
+  const lower = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'o', 'a', 'en', 'al', 'el', 'por', 'con', 'sin']);
+  return str.trim().toLowerCase().split(/\s+/).map((w, i) => {
+    if (i > 0 && lower.has(w)) return w;
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
+}
+
 // === STATE ===
 const state = {
   token: localStorage.getItem('token'),
@@ -1211,13 +1221,13 @@ async function crearClienteDesdeCSF() {
       cust_ref: csfDatosExtraidos.nombreCorto,
       tax_id: csfDatosExtraidos.rfc,
       idcif: csfDatosExtraidos.idcif,
-      street: csfDatosExtraidos.calle,
+      street: toTitleCase(csfDatosExtraidos.calle),
       street_number: csfDatosExtraidos.numExt,
       suite_number: csfDatosExtraidos.numInt,
-      district: csfDatosExtraidos.colonia,
+      district: toTitleCase(csfDatosExtraidos.colonia),
       postal_code: csfDatosExtraidos.cp,
-      city: csfDatosExtraidos.municipio,
-      state: csfDatosExtraidos.estado,
+      city: toTitleCase(csfDatosExtraidos.municipio),
+      state: toTitleCase(csfDatosExtraidos.estado),
       country: 'Mexico',
       cfdi_regimen_fiscal: csfDatosExtraidos.regimenFiscal,
       salesman: String(state.user.id || '1'),
