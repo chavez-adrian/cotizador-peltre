@@ -407,6 +407,15 @@ app.get('/api/admin/cotizaciones', authMiddleware, adminMiddleware, (req, res) =
 
 // --- Operam: buscar clientes ---
 
+function titleCase(str) {
+  if (!str) return '';
+  const lower = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'o', 'a', 'en', 'al', 'el', 'por', 'con', 'sin']);
+  return str.trim().toLowerCase().split(/\s+/).map((w, i) => {
+    if (i > 0 && lower.has(w)) return w;
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
+}
+
 app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
   const q = req.query.q || '';
   if (!q.trim()) return res.json([]);
@@ -419,12 +428,13 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
         name: c.CustName || '',
         ref: c.cust_ref || '',
         rfc: c.tax_id || '',
-        calle: [c.street, c.street_number].filter(Boolean).join(' '),
+        // Dirección fiscal (CFDI) en title case como fallback — se sobreescribe con branch si existe
+        calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),
         numInt: c.suite_number || '',
-        colonia: c.district || '',
+        colonia: titleCase(c.district || ''),
         cp: c.postal_code || '',
-        municipio: c.city || '',
-        estado: c.state || '',
+        municipio: titleCase(c.city || ''),
+        estado: titleCase(c.state || ''),
         telefono: branch.phone || c.contacts?.[0]?.phone || '',
         email: branch.email || c.contacts?.[0]?.email || '',
         nombreEntrega: branch.br_name || branch.contact_name || '',

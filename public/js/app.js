@@ -1373,18 +1373,25 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-email-entrega',  cliente.email);
   updateTabIndicators();
 
-  // Cargar domicilios adicionales (si tiene más de uno)
+  // Cargar domicilios con dirección correcta desde el branch
   try {
     const res = await api(`/api/operam/clientes/${cliente.id}/domicilios`);
     if (!res.ok) return;
     const domicilios = await res.json();
-    if (domicilios.length > 1) {
+    window._operamDomicilios = domicilios;
+
+    if (domicilios.length === 1) {
+      // Branch único: aplicar automáticamente la dirección de entrega
+      aplicarDomicilio(domicilios[0]);
+    } else if (domicilios.length > 1) {
+      // Múltiples branches: mostrar selector
       const sel = document.getElementById('operam-domicilio-select');
       sel.innerHTML = domicilios.map((d, i) =>
         `<option value="${i}">${d.descripcion || d.calle || ''}</option>`
       ).join('');
       document.getElementById('operam-domicilios').style.display = 'block';
-      window._operamDomicilios = domicilios;
+      // Precargar el primero
+      aplicarDomicilio(domicilios[0]);
     }
   } catch {}
 
@@ -1407,15 +1414,23 @@ async function seleccionarClienteOperam(cliente) {
 
 window.seleccionarClienteOperam = seleccionarClienteOperam;
 
+function aplicarDomicilio(d) {
+  if (!d) return;
+  const f = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  f('cl-calle',       d.calle);
+  f('cl-num-int',     d.numInt);
+  f('cl-colonia',     d.colonia);
+  f('cl-cp-entrega',  d.cp);
+  f('cl-municipio',   d.municipio);
+  f('cl-estado',      d.estado);
+  if (d.telefono) f('cl-cel-entrega', d.telefono);
+  if (d.email)    f('cl-email-entrega', d.email);
+  if (d.contacto) f('cl-nombre-entrega', d.contacto);
+}
+
 function usarDomicilioOperam() {
   const idx = parseInt(document.getElementById('operam-domicilio-select')?.value) || 0;
-  const d = window._operamDomicilios?.[idx];
-  if (!d) return;
-  if (d.calle) document.getElementById('cl-calle').value = d.calle;
-  if (d.colonia) document.getElementById('cl-colonia').value = d.colonia;
-  if (d.cp) document.getElementById('cl-cp-entrega').value = d.cp;
-  if (d.municipio) document.getElementById('cl-municipio').value = d.municipio;
-  if (d.estado) document.getElementById('cl-estado').value = d.estado;
+  aplicarDomicilio(window._operamDomicilios?.[idx]);
   document.getElementById('operam-domicilios').style.display = 'none';
 }
 window.usarDomicilioOperam = usarDomicilioOperam;
