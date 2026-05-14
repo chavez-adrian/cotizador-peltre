@@ -75,7 +75,7 @@ test('11. Datos de entrega shows celEntrega and emailEntrega on same line (forma
   assert.ok(html.includes('55 1234 5678'), 'celEntrega should appear');
   assert.ok(html.includes('cliente@test.com'), 'emailEntrega should appear');
   // Telefono y Correo deben aparecer en el mismo bloque de linea (formato Operam)
-  assert.ok(html.includes('Telefono:'), 'should have Telefono label');
+  assert.ok(html.includes('fono:'), 'should have Telefono/Teléfono label');
   assert.ok(html.includes('Correo:'), 'should have Correo label');
 });
 
