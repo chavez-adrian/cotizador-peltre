@@ -18,6 +18,20 @@ Régimen Fiscal : 601 General de Ley Personas Morales
 Fecha de emisión de este documento : A 8 DE MAYO DE 2026
 `;
 
+const CSF_RFC_SIN_SUFIJO_EXTRA = `
+CONSTANCIA DE SITUACION FISCAL
+Denominación/Razón Social : SAGO MEDICAL SERVICE
+RFC: SMS200716NZ4 Denominación/Razón Social : SAGO MEDICAL SERVICE
+idCIF : 20090146505
+Nombre de la Vialidad : NAYARIT
+Número Exterior : 56
+Nombre de la Colonia : ROMA SUR
+Código Postal : 06760
+Nombre del Municipio o Demarcación Territorial : CUAUHTEMOC
+Nombre de la Entidad Federativa : CIUDAD DE MEXICO
+Régimen Fiscal : 601 General de Ley Personas Morales
+`;
+
 const CSF_PERSONA_FISICA = `
 CONSTANCIA DE SITUACION FISCAL
 Nombre (s) : ADRIANA
@@ -59,5 +73,9 @@ describe('parsearCSF', () => {
 
   it('B6: regimenFiscal solo el codigo numerico', () => {
     assert.equal(parsearCSF(CSF_PERSONA_MORAL).regimenFiscal, '601');
+  });
+
+  it('B7: RFC no captura caracteres extra cuando el texto siguiente empieza con letra', () => {
+    assert.equal(parsearCSF(CSF_RFC_SIN_SUFIJO_EXTRA).rfc, 'SMS200716NZ4');
   });
 });
