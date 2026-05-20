@@ -1237,6 +1237,7 @@ async function crearClienteDesdeCSF() {
       csf_fecha: '',
       phone: '',
       email: '',
+      fuente: 'cotizador',
     };
 
     const res = await fetch('https://operam-server.onrender.com/api/crear-cliente', {
