@@ -1255,6 +1255,7 @@ async function crearClienteDesdeCSF() {
   statusEl.style.display = 'none';
 
   try {
+    const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
     const payload = {
       CustName: csfDatosExtraidos.razonSocial,
       cust_ref: csfDatosExtraidos.nombreCorto,
@@ -1277,6 +1278,7 @@ async function crearClienteDesdeCSF() {
       phone: '',
       email: '',
       fuente: 'cotizador',
+      entrega: buildEntregaPayload(getVal),
     };
 
     const res = await fetch('https://operam-server.onrender.com/api/crear-cliente', {
@@ -1288,25 +1290,8 @@ async function crearClienteDesdeCSF() {
 
     if (data.error) throw new Error(data.error);
 
-    const d = csfDatosExtraidos;
-    const mapa = {
-      'cl-razon-social': d.razonSocial,
-      'cl-nombre-corto': data.nombre || d.nombreCorto,
-      'cl-rfc': d.rfc,
-      'cl-cp-fiscal': d.cp,
-      'cl-calle': d.calle,
-      'cl-num-int': d.numInt,
-      'cl-colonia': d.colonia,
-      'cl-cp-entrega': d.cp,
-      'cl-municipio': d.municipio,
-      'cl-estado': d.estado,
-    };
-    for (const [id, val] of Object.entries(mapa)) {
-      const el = document.getElementById(id);
-      if (el && val) el.value = val;
-    }
-    const paisEl = document.getElementById('cl-pais');
-    if (paisEl) paisEl.value = 'MX';
+    const nombreCortoEl = document.getElementById('cl-nombre-corto');
+    if (nombreCortoEl && data.nombre) nombreCortoEl.value = data.nombre;
 
     statusEl.style.display = 'block';
     statusEl.className = data.duplicado

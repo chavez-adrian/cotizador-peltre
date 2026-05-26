@@ -35,4 +35,31 @@ function buildEntregaPayload(getVal) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload };
+function buildCsfPayload(datos, getVal, userId) {
+  return {
+    CustName: datos.razonSocial,
+    cust_ref: datos.nombreCorto,
+    tax_id: datos.rfc,
+    idcif: datos.idcif,
+    street: datos.calle,
+    street_number: datos.numExt,
+    suite_number: datos.numInt,
+    district: datos.colonia,
+    postal_code: datos.cp,
+    city: datos.municipio,
+    state: datos.estado,
+    country: 'Mexico',
+    cfdi_regimen_fiscal: datos.regimenFiscal,
+    salesman: String(userId),
+    segmento_id: '1',
+    timbrado_uso_cfdi: 'S01',
+    actividades: [],
+    csf_fecha: '',
+    phone: '',
+    email: '',
+    fuente: 'cotizador',
+    entrega: buildEntregaPayload(getVal),
+  };
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload };
