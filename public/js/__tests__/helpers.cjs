@@ -62,4 +62,13 @@ function buildCsfPayload(datos, getVal, userId) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload };
+const AREA_POR_PAIS_CJ = { MX: '1', US: '5', CA: '7' };
+
+function buildPaisConfig(pais) {
+  if (!pais || pais === 'MX') {
+    return { country: 'MX', curr_code: 'MXN', area_pais: '1' };
+  }
+  return { country: pais, curr_code: 'USD', area_pais: AREA_POR_PAIS_CJ[pais] || '6' };
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig };

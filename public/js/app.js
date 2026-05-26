@@ -1152,6 +1152,15 @@ export function applyPreFillMap(mapa, getEl) {
   }
 }
 
+const _AREA_POR_PAIS = { MX: '1', US: '5', CA: '7' };
+
+export function buildPaisConfig(pais) {
+  if (!pais || pais === 'MX') {
+    return { country: 'MX', curr_code: 'MXN', area_pais: '1' };
+  }
+  return { country: pais, curr_code: 'USD', area_pais: _AREA_POR_PAIS[pais] || '6' };
+}
+
 export function buildEntregaPayload(getVal) {
   return {
     br_name: getVal('cl-nombre-entrega'),
@@ -1256,6 +1265,9 @@ async function crearClienteDesdeCSF() {
 
   try {
     const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+    const paisVal = getVal('cl-pais') || 'MX';
+    const paisConfig = buildPaisConfig(paisVal);
+    const invoice_tax_id = getVal('cl-tax-id-ext') || '';
     const payload = {
       CustName: csfDatosExtraidos.razonSocial,
       cust_ref: csfDatosExtraidos.nombreCorto,
@@ -1268,7 +1280,10 @@ async function crearClienteDesdeCSF() {
       postal_code: csfDatosExtraidos.cp,
       city: toTitleCase(csfDatosExtraidos.municipio),
       state: toTitleCase(csfDatosExtraidos.estado),
-      country: 'Mexico',
+      country: paisConfig.country,
+      curr_code: paisConfig.curr_code,
+      area_pais: paisConfig.area_pais,
+      invoice_tax_id,
       cfdi_regimen_fiscal: csfDatosExtraidos.regimenFiscal,
       salesman: String(state.user.id || '1'),
       segmento_id: '1',
@@ -1933,6 +1948,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('historial-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
   });
+
+  // Selector de pais: adapta formulario para clientes extranjeros
+  const clPaisEl = document.getElementById('cl-pais');
+  if (clPaisEl) {
+    clPaisEl.addEventListener('change', () => {
+      const pais = clPaisEl.value;
+      const esExtranjero = pais !== 'MX';
+      const rfcInput = document.getElementById('cl-rfc');
+      const taxIdExtWrap = document.getElementById('cl-tax-id-ext-wrap');
+
+      if (esExtranjero) {
+        if (rfcInput) { rfcInput.value = 'XEXX010101000'; rfcInput.readOnly = true; }
+        if (taxIdExtWrap) taxIdExtWrap.style.display = '';
+      } else {
+        if (rfcInput) { rfcInput.value = ''; rfcInput.readOnly = false; }
+        if (taxIdExtWrap) taxIdExtWrap.style.display = 'none';
+      }
+    });
+  }
 
   // Auto-login if token exists
   if (state.token && state.user) {
