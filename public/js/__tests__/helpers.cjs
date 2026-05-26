@@ -57,6 +57,7 @@ function buildCsfPayload(datos, getVal, userId) {
     csf_fecha: '',
     phone: '',
     email: '',
+    invoice_email: getVal('cl-email-factura'),
     fuente: 'cotizador',
     entrega: buildEntregaPayload(getVal),
   };

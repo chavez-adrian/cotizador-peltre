@@ -1268,6 +1268,7 @@ async function crearClienteDesdeCSF() {
     const paisVal = getVal('cl-pais') || 'MX';
     const paisConfig = buildPaisConfig(paisVal);
     const invoice_tax_id = getVal('cl-tax-id-ext') || '';
+    const invoice_email = getVal('cl-email-factura') || '';
     const payload = {
       CustName: csfDatosExtraidos.razonSocial,
       cust_ref: csfDatosExtraidos.nombreCorto,
@@ -1284,6 +1285,7 @@ async function crearClienteDesdeCSF() {
       curr_code: paisConfig.curr_code,
       area_pais: paisConfig.area_pais,
       invoice_tax_id,
+      invoice_email,
       cfdi_regimen_fiscal: csfDatosExtraidos.regimenFiscal,
       salesman: String(state.user.id || '1'),
       segmento_id: '1',

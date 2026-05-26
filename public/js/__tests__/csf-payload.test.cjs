@@ -69,6 +69,33 @@ test('buildCsfPayload includes billing fields', () => {
   assert.equal(payload.salesman, '1');
 });
 
+test('buildCsfPayload: incluye invoice_email cuando cl-email-factura tiene valor', () => {
+  const datos = {
+    razonSocial: 'EMPRESA SA DE CV', rfc: 'EMP010101BBB', idcif: '',
+    calle: 'C', numExt: '1', numInt: '', colonia: 'COL', cp: '01234',
+    municipio: 'CDMX', estado: 'CDMX', regimenFiscal: '612', nombreCorto: 'EMPRESA',
+  };
+  const fields = { 'cl-email-factura': 'facturas@empresa.com' };
+  const getVal = (id) => fields[id] || '';
+
+  const payload = buildCsfPayload(datos, getVal, '1');
+
+  assert.equal(payload.invoice_email, 'facturas@empresa.com', 'payload debe incluir invoice_email');
+});
+
+test('buildCsfPayload: invoice_email es string vacio cuando cl-email-factura no tiene valor', () => {
+  const datos = {
+    razonSocial: 'EMPRESA SA DE CV', rfc: 'EMP010101BBB', idcif: '',
+    calle: 'C', numExt: '1', numInt: '', colonia: 'COL', cp: '01234',
+    municipio: 'CDMX', estado: 'CDMX', regimenFiscal: '612', nombreCorto: 'EMPRESA',
+  };
+  const getVal = () => '';
+
+  const payload = buildCsfPayload(datos, getVal, '1');
+
+  assert.equal(payload.invoice_email, '', 'invoice_email debe ser string vacio si no hay valor');
+});
+
 test('buildCsfPayload entrega has all expected keys', () => {
   const datos = {
     razonSocial: 'X',
