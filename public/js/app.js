@@ -1145,6 +1145,13 @@ export function buildPreFillMap(datos) {
   };
 }
 
+export function applyPreFillMap(mapa, getEl) {
+  for (const [id, val] of Object.entries(mapa)) {
+    const el = getEl(id);
+    if (el) el.value = val;
+  }
+}
+
 async function procesarCSF(input) {
   const file = input.files[0];
   if (!file) return;
@@ -1174,6 +1181,10 @@ async function procesarCSF(input) {
     }
 
     csfDatosExtraidos = datos;
+    applyPreFillMap(
+      { ...buildPreFillMap(datos), 'cl-pais': 'MX' },
+      (id) => document.getElementById(id)
+    );
     statusEl.style.display = 'none';
     previewEl.style.display = 'block';
 

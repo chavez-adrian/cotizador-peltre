@@ -14,4 +14,11 @@ function buildPreFillMap(datos) {
   };
 }
 
-module.exports = { buildPreFillMap };
+function applyPreFillMap(mapa, getEl) {
+  for (const [id, val] of Object.entries(mapa)) {
+    const el = getEl(id);
+    if (el) el.value = val;
+  }
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap };
