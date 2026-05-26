@@ -21,4 +21,18 @@ function applyPreFillMap(mapa, getEl) {
   }
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap };
+function buildEntregaPayload(getVal) {
+  return {
+    br_name: getVal('cl-nombre-entrega'),
+    addr_street: getVal('cl-calle'),
+    addr_interior: getVal('cl-num-int'),
+    addr_colony: getVal('cl-colonia'),
+    addr_zip: getVal('cl-cp-entrega'),
+    addr_city: getVal('cl-municipio'),
+    addr_state: getVal('cl-estado'),
+    phone: getVal('cl-cel-entrega'),
+    email: getVal('cl-email-entrega'),
+  };
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload };
