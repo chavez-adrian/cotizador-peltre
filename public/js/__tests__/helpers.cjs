@@ -109,4 +109,17 @@ function findRfcMatch(clientes, rfc) {
   return clientes.find(c => (c.rfc || '').toLowerCase() === rfcNorm) || null;
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch };
+function calcularDiff(snapshot, formValues) {
+  const diff = {};
+  for (const id of Object.keys(snapshot)) {
+    if (!(id in formValues)) continue;
+    const anterior = String(snapshot[id] == null ? '' : snapshot[id]).trim();
+    const nuevo = String(formValues[id] == null ? '' : formValues[id]).trim();
+    if (anterior !== nuevo) {
+      diff[id] = { anterior, nuevo };
+    }
+  }
+  return diff;
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff };
