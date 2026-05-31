@@ -1130,6 +1130,13 @@ window.setClienteModo = setClienteModo;
 
 // === CSF ===
 let csfDatosExtraidos = null;
+let csfClienteExistente = null;
+
+const CSF_FORM_FIELD_IDS = [
+  'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-telefono',
+  'cl-nombre-entrega', 'cl-calle', 'cl-num-int', 'cl-colonia', 'cl-cp-entrega',
+  'cl-municipio', 'cl-estado', 'cl-cel-entrega', 'cl-email-entrega',
+];
 
 export function buildPreFillMap(datos) {
   return {
@@ -1241,10 +1248,47 @@ async function procesarCSF(input) {
     }
 
     csfDatosExtraidos = datos;
+    csfClienteExistente = null;
+
+    // Pre-fill form with CSF data first
     applyPreFillMap(
       { ...buildPreFillMap(datos), 'cl-pais': 'MX' },
       (id) => document.getElementById(id)
     );
+
+    // Guard: buscar RFC en Operam antes de mostrar boton Crear
+    statusEl.style.display = 'block';
+    statusEl.className = 'alert alert-info';
+    statusEl.textContent = 'Verificando RFC en Operam...';
+
+    try {
+      const rfcRes = await api('/api/operam/clientes?q=' + encodeURIComponent(datos.rfc));
+      if (rfcRes.ok) {
+        const clientes = await rfcRes.json();
+        const match = findRfcMatch(clientes, datos.rfc);
+        if (match) {
+          const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+          applyPreFillMap(buildOperamPreFillMap(match), (id) => document.getElementById(id));
+          const snap = buildClienteSnapshot(CSF_FORM_FIELD_IDS, getVal);
+          csfClienteExistente = { id: match.id, nombre: match.name, snapshot: snap };
+          const btnCrear = document.getElementById('btn-crear-csf');
+          if (btnCrear) btnCrear.textContent = 'Actualizar en Operam';
+          statusEl.style.display = 'block';
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = buildCsfDuplicadoBanner(match);
+          previewEl.style.display = 'block';
+          document.getElementById('csf-datos-preview').innerHTML = `
+            <strong>${datos.razonSocial}</strong><br>
+            RFC: ${datos.rfc}<br>
+            Domicilio: ${[datos.calle, datos.numExt, datos.colonia, datos.cp, datos.municipio, datos.estado].filter(Boolean).join(', ')}<br>
+            Regimen: ${datos.regimenFiscal}
+          `;
+          return;
+        }
+      }
+    } catch {}
+
+    // No match: flujo de creacion normal
     statusEl.style.display = 'none';
     previewEl.style.display = 'block';
 
@@ -1357,6 +1401,7 @@ async function crearClienteDesdeCSF() {
 
     document.getElementById('csf-preview').style.display = 'none';
     csfDatosExtraidos = null;
+    csfClienteExistente = null;
 
     setTimeout(() => setClienteModo('manual'), 800);
 
@@ -1373,6 +1418,9 @@ window.crearClienteDesdeCSF = crearClienteDesdeCSF;
 
 function cancelarCSF() {
   csfDatosExtraidos = null;
+  csfClienteExistente = null;
+  const btnCrear = document.getElementById('btn-crear-csf');
+  if (btnCrear) btnCrear.textContent = 'Crear cliente en Operam y continuar';
   document.getElementById('csf-file').value = '';
   document.getElementById('csf-preview').style.display = 'none';
   document.getElementById('csf-status').style.display = 'none';
