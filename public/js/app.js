@@ -1161,6 +1161,12 @@ export function buildPaisConfig(pais) {
   return { country: pais, curr_code: 'USD', area_pais: _AREA_POR_PAIS[pais] || '6' };
 }
 
+export function findRfcMatch(clientes, rfc) {
+  if (!rfc) return null;
+  const rfcNorm = rfc.toLowerCase();
+  return clientes.find(c => (c.rfc || '').toLowerCase() === rfcNorm) || null;
+}
+
 export function buildCsfDuplicadoBanner(cliente) {
   return 'Este cliente ya esta registrado en Operam (ID ' + cliente.id + ' -- ' + cliente.name + '). Sus datos han sido cargados en el formulario.';
 }

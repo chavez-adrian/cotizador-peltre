@@ -103,4 +103,10 @@ function buildClienteSnapshot(fieldIds, getVal) {
   return snap;
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot };
+function findRfcMatch(clientes, rfc) {
+  if (!rfc) return null;
+  const rfcNorm = rfc.toLowerCase();
+  return clientes.find(c => (c.rfc || '').toLowerCase() === rfcNorm) || null;
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch };
