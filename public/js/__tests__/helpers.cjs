@@ -109,6 +109,11 @@ function findRfcMatch(clientes, rfc) {
   return clientes.find(c => (c.rfc || '').toLowerCase() === rfcNorm) || null;
 }
 
+function shouldTriggerRfcSearch(rfc) {
+  if (!rfc) return false;
+  return rfc.trim().length >= 12;
+}
+
 function calcularDiff(snapshot, formValues) {
   const diff = {};
   for (const id of Object.keys(snapshot)) {
@@ -148,4 +153,4 @@ function buildConfirmacionItems(diff) {
   }));
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch };

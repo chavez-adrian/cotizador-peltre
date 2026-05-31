@@ -1174,6 +1174,11 @@ export function findRfcMatch(clientes, rfc) {
   return clientes.find(c => (c.rfc || '').toLowerCase() === rfcNorm) || null;
 }
 
+export function shouldTriggerRfcSearch(rfc) {
+  if (!rfc) return false;
+  return rfc.trim().length >= 12;
+}
+
 export function buildCsfDuplicadoBanner(cliente) {
   return 'Este cliente ya esta registrado en Operam (ID ' + cliente.id + ' -- ' + cliente.name + '). Sus datos han sido cargados en el formulario.';
 }
