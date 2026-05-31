@@ -1161,6 +1161,25 @@ export function buildPaisConfig(pais) {
   return { country: pais, curr_code: 'USD', area_pais: _AREA_POR_PAIS[pais] || '6' };
 }
 
+export function buildOperamPreFillMap(cliente) {
+  return {
+    'cl-razon-social':   cliente.name,
+    'cl-nombre-corto':   cliente.ref,
+    'cl-rfc':            cliente.rfc,
+    'cl-cp-fiscal':      cliente.cp,
+    'cl-telefono':       cliente.telefono,
+    'cl-nombre-entrega': cliente.nombreEntrega,
+    'cl-calle':          cliente.calle,
+    'cl-num-int':        cliente.numInt,
+    'cl-colonia':        cliente.colonia,
+    'cl-cp-entrega':     cliente.cp,
+    'cl-municipio':      cliente.municipio,
+    'cl-estado':         cliente.estado,
+    'cl-cel-entrega':    cliente.telefono,
+    'cl-email-entrega':  cliente.email,
+  };
+}
+
 export function buildEntregaPayload(getVal) {
   return {
     br_name: getVal('cl-nombre-entrega'),
