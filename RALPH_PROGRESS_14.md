@@ -58,4 +58,4 @@ Iteraciones completadas: 6 / 6 - COMPLETO
 - [x] Error de Operam muestra mensaje claro
 - [x] Todos los tests pasan (105/105)
 - [x] Commit por iteracion (5 commits de funcionalidad + 1 final)
-- [ ] Push a main
+- [x] Push a main

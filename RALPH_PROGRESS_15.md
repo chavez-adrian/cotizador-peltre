@@ -46,3 +46,4 @@ Iteraciones completadas: 5 / 5 - COMPLETO
 - [x] nuevaCotizacion limpia estado manual
 - [x] Tests unitarios para logica de deteccion (119/119)
 - [x] Commit por iteracion (4 commits de funcionalidad + 1 final)
+- [x] Push a main

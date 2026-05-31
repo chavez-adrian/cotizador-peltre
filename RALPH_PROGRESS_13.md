@@ -44,4 +44,4 @@ Iteraciones completadas: 5 / 5 - COMPLETO
 - [x] Flujo sin match sigue igual
 - [x] Todos los tests pasan (82/82)
 - [x] Commit por iteracion (5 commits)
-- [ ] Push a main (pendiente)
+- [x] Push a main
