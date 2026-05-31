@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente } from './lib/operam-client.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -452,6 +452,19 @@ app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) 
     res.json(domicilios);
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible' });
+  }
+});
+
+app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
+  const { diff } = req.body || {};
+  if (!diff || typeof diff !== 'object') {
+    return res.status(400).json({ error: 'diff requerido' });
+  }
+  try {
+    await actualizarCliente(req.params.id, diff);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
   }
 });
 
