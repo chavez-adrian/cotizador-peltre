@@ -1558,6 +1558,102 @@ function cancelarCSF() {
 }
 window.cancelarCSF = cancelarCSF;
 
+// === MANUAL RFC GUARD ===
+
+function cancelarConfirmacionManual() {
+  csfDiffPendiente = null;
+  csfClienteExistente = null;
+  const panelAct = document.getElementById('manual-panel-actualizar');
+  if (panelAct) panelAct.style.display = 'none';
+  const panelConf = document.getElementById('manual-panel-confirmacion');
+  if (panelConf) panelConf.style.display = 'none';
+  const statusEl = document.getElementById('manual-rfc-status');
+  if (statusEl) statusEl.style.display = 'none';
+}
+window.cancelarConfirmacionManual = cancelarConfirmacionManual;
+
+function actualizarDesdeManual() {
+  if (!csfClienteExistente) return;
+  const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const formValues = {};
+  for (const id of CSF_FORM_FIELD_IDS) formValues[id] = getVal(id);
+  const diff = calcularDiff(csfClienteExistente.snapshot, formValues);
+
+  const statusEl = document.getElementById('manual-rfc-status');
+  if (Object.keys(diff).length === 0) {
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.className = 'alert alert-info'; statusEl.textContent = 'No hay cambios que guardar.'; }
+    return;
+  }
+
+  csfDiffPendiente = diff;
+  const items = buildConfirmacionItems(diff);
+  const listaEl = document.getElementById('manual-lista-cambios');
+  if (listaEl) {
+    listaEl.innerHTML = items.map(item =>
+      `<div><strong>${item.label}:</strong> ${item.anterior || '(vacio)'} &rarr; ${item.nuevo || '(vacio)'}</div>`
+    ).join('');
+  }
+  const panelAct = document.getElementById('manual-panel-actualizar');
+  if (panelAct) panelAct.style.display = 'none';
+  const panelConf = document.getElementById('manual-panel-confirmacion');
+  if (panelConf) panelConf.style.display = 'block';
+}
+window.actualizarDesdeManual = actualizarDesdeManual;
+
+async function confirmarCambiosManual() {
+  if (!csfClienteExistente || !csfDiffPendiente) return;
+  const btn = document.getElementById('btn-manual-confirmar-cambios');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const statusEl = document.getElementById('manual-rfc-status');
+
+  try {
+    const res = await api(`/api/operam/clientes/${csfClienteExistente.id}`, {
+      method: 'PATCH',
+      body: { diff: csfDiffPendiente },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al actualizar');
+
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.className = 'alert alert-success'; statusEl.textContent = 'Datos del cliente actualizados en Operam.'; }
+    const panelConf = document.getElementById('manual-panel-confirmacion');
+    if (panelConf) panelConf.style.display = 'none';
+    csfClienteExistente = null;
+    csfDiffPendiente = null;
+  } catch (e) {
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.className = 'alert alert-error'; statusEl.textContent = 'Error al actualizar cliente: ' + e.message; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar cambios'; }
+  }
+}
+window.confirmarCambiosManual = confirmarCambiosManual;
+
+async function buscarRfcEnManual(rfc) {
+  const statusEl = document.getElementById('manual-rfc-status');
+  const setStatus = (msg, cls) => {
+    if (!statusEl) return;
+    if (msg) { statusEl.style.display = 'block'; statusEl.className = 'alert ' + cls; statusEl.textContent = msg; }
+    else statusEl.style.display = 'none';
+  };
+
+  try {
+    const res = await api('/api/operam/clientes?q=' + encodeURIComponent(rfc));
+    if (!res.ok) { setStatus('No se pudo verificar en Operam', 'alert-warning'); return; }
+    const clientes = await res.json();
+    const match = findRfcMatch(clientes, rfc);
+    if (!match) return;
+
+    const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+    applyPreFillMap(buildOperamPreFillMap(match), (id) => document.getElementById(id));
+    const snap = buildClienteSnapshot(CSF_FORM_FIELD_IDS, getVal);
+    csfClienteExistente = { id: match.id, nombre: match.name, snapshot: snap };
+    setStatus(buildCsfDuplicadoBanner(match), 'alert-warning');
+    const panelAct = document.getElementById('manual-panel-actualizar');
+    if (panelAct) panelAct.style.display = 'block';
+  } catch {
+    setStatus('No se pudo verificar en Operam', 'alert-warning');
+  }
+}
+
 // === OPERAM: buscar cliente ===
 let operamClienteSeleccionado = null;
 
@@ -2166,6 +2262,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('historial-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
   });
+
+  // RFC blur guard for manual panel
+  const clRfcEl = document.getElementById('cl-rfc');
+  if (clRfcEl) {
+    clRfcEl.addEventListener('blur', () => {
+      const panelManual = document.getElementById('panel-manual');
+      if (!panelManual || panelManual.style.display === 'none') return;
+      const rfc = clRfcEl.value;
+      if (shouldTriggerRfcSearch(rfc)) buscarRfcEnManual(rfc);
+    });
+  }
 
   // Selector de pais: adapta formulario para clientes extranjeros
   const clPaisEl = document.getElementById('cl-pais');
