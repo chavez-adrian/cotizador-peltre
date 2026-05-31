@@ -109,6 +109,15 @@
       <div class="section-divider" style="margin-bottom:12px;color:var(--text-light);font-size:12px">
         Captura manual - para clientes extranjeros o sin CSF disponible
       </div>
+      <div id="manual-rfc-status" style="display:none"></div>
+      <div id="manual-panel-confirmacion" style="display:none">
+        <div class="alert alert-warning">Se van a modificar los datos del cliente en Operam</div>
+        <div id="manual-lista-cambios" style="margin:8px 0;font-size:13px"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" id="btn-manual-confirmar-cambios" onclick="confirmarCambios()">Confirmar cambios</button>
+          <button class="btn btn-secondary" onclick="cancelarConfirmacionManual()">Cancelar</button>
+        </div>
+      </div>
     </div>
 
     <div class="section-header">Datos de facturacion</div>
