@@ -1161,6 +1161,18 @@ export function buildPaisConfig(pais) {
   return { country: pais, curr_code: 'USD', area_pais: _AREA_POR_PAIS[pais] || '6' };
 }
 
+export function buildCsfDuplicadoBanner(cliente) {
+  return 'Este cliente ya esta registrado en Operam (ID ' + cliente.id + ' -- ' + cliente.name + '). Sus datos han sido cargados en el formulario.';
+}
+
+export function buildClienteSnapshot(fieldIds, getVal) {
+  const snap = {};
+  for (const id of fieldIds) {
+    snap[id] = getVal(id);
+  }
+  return snap;
+}
+
 export function buildOperamPreFillMap(cliente) {
   return {
     'cl-razon-social':   cliente.name,

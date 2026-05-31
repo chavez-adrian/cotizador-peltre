@@ -91,4 +91,16 @@ function buildOperamPreFillMap(cliente) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap };
+function buildCsfDuplicadoBanner(cliente) {
+  return 'Este cliente ya esta registrado en Operam (ID ' + cliente.id + ' -- ' + cliente.name + '). Sus datos han sido cargados en el formulario.';
+}
+
+function buildClienteSnapshot(fieldIds, getVal) {
+  const snap = {};
+  for (const id of fieldIds) {
+    snap[id] = getVal(id);
+  }
+  return snap;
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot };
