@@ -1219,6 +1219,45 @@ export function buildEntregaPayload(getVal) {
   };
 }
 
+export function calcularDiff(snapshot, formValues) {
+  const diff = {};
+  for (const id of Object.keys(snapshot)) {
+    if (!(id in formValues)) continue;
+    const anterior = String(snapshot[id] == null ? '' : snapshot[id]).trim();
+    const nuevo = String(formValues[id] == null ? '' : formValues[id]).trim();
+    if (anterior !== nuevo) {
+      diff[id] = { anterior, nuevo };
+    }
+  }
+  return diff;
+}
+
+const CSF_FIELD_LABELS = {
+  'cl-razon-social':   'Razon Social',
+  'cl-nombre-corto':   'Nombre Corto',
+  'cl-rfc':            'RFC',
+  'cl-cp-fiscal':      'CP Fiscal',
+  'cl-telefono':       'Telefono',
+  'cl-nombre-entrega': 'Nombre de Entrega',
+  'cl-calle':          'Calle',
+  'cl-num-int':        'Num Interior',
+  'cl-colonia':        'Colonia',
+  'cl-cp-entrega':     'CP Entrega',
+  'cl-municipio':      'Municipio',
+  'cl-estado':         'Estado',
+  'cl-cel-entrega':    'Celular Entrega',
+  'cl-email-entrega':  'Email Entrega',
+};
+
+export function buildConfirmacionItems(diff) {
+  return Object.entries(diff).map(([fieldId, { anterior, nuevo }]) => ({
+    fieldId,
+    label: CSF_FIELD_LABELS[fieldId] || fieldId,
+    anterior,
+    nuevo,
+  }));
+}
+
 async function procesarCSF(input) {
   const file = input.files[0];
   if (!file) return;
@@ -1336,8 +1375,31 @@ function parsearCSFTexto(texto) {
   };
 }
 
+let csfDiffPendiente = null;
+
 async function crearClienteDesdeCSF() {
   if (!csfDatosExtraidos) return;
+
+  // Modo actualizacion: cliente existente detectado
+  if (csfClienteExistente) {
+    const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+    const formValues = {};
+    for (const id of CSF_FORM_FIELD_IDS) formValues[id] = getVal(id);
+    const diff = calcularDiff(csfClienteExistente.snapshot, formValues);
+
+    const statusEl = document.getElementById('csf-status');
+    if (Object.keys(diff).length === 0) {
+      statusEl.style.display = 'block';
+      statusEl.className = 'alert alert-info';
+      statusEl.textContent = 'No hay cambios que guardar.';
+      return;
+    }
+
+    csfDiffPendiente = diff;
+    mostrarPanelConfirmacion(diff);
+    return;
+  }
+
   const btn = document.getElementById('btn-crear-csf');
   btn.disabled = true;
   btn.textContent = 'Creando cliente...';
@@ -1416,13 +1478,77 @@ async function crearClienteDesdeCSF() {
 }
 window.crearClienteDesdeCSF = crearClienteDesdeCSF;
 
+function mostrarPanelConfirmacion(diff) {
+  const items = buildConfirmacionItems(diff);
+  const listaEl = document.getElementById('csf-lista-cambios');
+  if (listaEl) {
+    listaEl.innerHTML = items.map(item =>
+      `<div><strong>${item.label}:</strong> ${item.anterior || '(vacio)'} &rarr; ${item.nuevo || '(vacio)'}</div>`
+    ).join('');
+  }
+  const panel = document.getElementById('csf-panel-confirmacion');
+  if (panel) panel.style.display = 'block';
+  const previewEl = document.getElementById('csf-preview');
+  if (previewEl) previewEl.style.display = 'none';
+}
+window.mostrarPanelConfirmacion = mostrarPanelConfirmacion;
+
+async function confirmarCambios() {
+  if (!csfClienteExistente || !csfDiffPendiente) return;
+  const btn = document.getElementById('btn-confirmar-cambios');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const statusEl = document.getElementById('csf-status');
+
+  try {
+    const res = await api(`/api/operam/clientes/${csfClienteExistente.id}`, {
+      method: 'PATCH',
+      body: { diff: csfDiffPendiente },
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'Error al actualizar');
+
+    statusEl.style.display = 'block';
+    statusEl.className = 'alert alert-success';
+    statusEl.textContent = 'Datos del cliente actualizados en Operam.';
+
+    const panel = document.getElementById('csf-panel-confirmacion');
+    if (panel) panel.style.display = 'none';
+    document.getElementById('csf-preview').style.display = 'none';
+    csfDatosExtraidos = null;
+    csfClienteExistente = null;
+    csfDiffPendiente = null;
+
+    setTimeout(() => setClienteModo('manual'), 800);
+  } catch (e) {
+    statusEl.style.display = 'block';
+    statusEl.className = 'alert alert-error';
+    statusEl.textContent = 'Error al actualizar cliente: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar cambios'; }
+  }
+}
+window.confirmarCambios = confirmarCambios;
+
+function cancelarConfirmacion() {
+  csfDiffPendiente = null;
+  const panel = document.getElementById('csf-panel-confirmacion');
+  if (panel) panel.style.display = 'none';
+  const previewEl = document.getElementById('csf-preview');
+  if (previewEl) previewEl.style.display = 'block';
+}
+window.cancelarConfirmacion = cancelarConfirmacion;
+
 function cancelarCSF() {
   csfDatosExtraidos = null;
   csfClienteExistente = null;
+  csfDiffPendiente = null;
   const btnCrear = document.getElementById('btn-crear-csf');
   if (btnCrear) btnCrear.textContent = 'Crear cliente en Operam y continuar';
   document.getElementById('csf-file').value = '';
   document.getElementById('csf-preview').style.display = 'none';
+  const panelConf = document.getElementById('csf-panel-confirmacion');
+  if (panelConf) panelConf.style.display = 'none';
   document.getElementById('csf-status').style.display = 'none';
 }
 window.cancelarCSF = cancelarCSF;

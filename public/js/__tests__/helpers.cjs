@@ -122,4 +122,30 @@ function calcularDiff(snapshot, formValues) {
   return diff;
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff };
+const FIELD_LABELS = {
+  'cl-razon-social':   'Razon Social',
+  'cl-nombre-corto':   'Nombre Corto',
+  'cl-rfc':            'RFC',
+  'cl-cp-fiscal':      'CP Fiscal',
+  'cl-telefono':       'Telefono',
+  'cl-nombre-entrega': 'Nombre de Entrega',
+  'cl-calle':          'Calle',
+  'cl-num-int':        'Num Interior',
+  'cl-colonia':        'Colonia',
+  'cl-cp-entrega':     'CP Entrega',
+  'cl-municipio':      'Municipio',
+  'cl-estado':         'Estado',
+  'cl-cel-entrega':    'Celular Entrega',
+  'cl-email-entrega':  'Email Entrega',
+};
+
+function buildConfirmacionItems(diff) {
+  return Object.entries(diff).map(([fieldId, { anterior, nuevo }]) => ({
+    fieldId,
+    label: FIELD_LABELS[fieldId] || fieldId,
+    anterior,
+    nuevo,
+  }));
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems };

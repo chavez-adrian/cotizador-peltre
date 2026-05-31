@@ -94,6 +94,14 @@
           <button class="btn btn-secondary" onclick="cancelarCSF()">Cancelar</button>
         </div>
       </div>
+      <div id="csf-panel-confirmacion" style="display:none">
+        <div class="alert alert-warning">Se van a modificar los datos del cliente en Operam</div>
+        <div id="csf-lista-cambios" style="margin:8px 0;font-size:13px"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" id="btn-confirmar-cambios" onclick="confirmarCambios()">Confirmar cambios</button>
+          <button class="btn btn-secondary" onclick="cancelarConfirmacion()">Cancelar</button>
+        </div>
+      </div>
     </div>
 
     <!-- Panel: Captura manual -->
