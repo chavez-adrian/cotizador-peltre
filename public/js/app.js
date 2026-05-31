@@ -1105,6 +1105,14 @@ function nuevaCotizacion() {
   enviaRateSeleccionado = null;
   setClienteModo('buscar');
   csfDatosExtraidos = null;
+  csfClienteExistente = null;
+  csfDiffPendiente = null;
+  const manualStatus = document.getElementById('manual-rfc-status');
+  if (manualStatus) manualStatus.style.display = 'none';
+  const manualPanelAct = document.getElementById('manual-panel-actualizar');
+  if (manualPanelAct) manualPanelAct.style.display = 'none';
+  const manualPanelConf = document.getElementById('manual-panel-confirmacion');
+  if (manualPanelConf) manualPanelConf.style.display = 'none';
   const csfFile = document.getElementById('csf-file');
   if (csfFile) csfFile.value = '';
   const csfStatus = document.getElementById('csf-status');
@@ -2269,6 +2277,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     clRfcEl.addEventListener('blur', () => {
       const panelManual = document.getElementById('panel-manual');
       if (!panelManual || panelManual.style.display === 'none') return;
+      if (clRfcEl.readOnly) return;
       const rfc = clRfcEl.value;
       if (shouldTriggerRfcSearch(rfc)) buscarRfcEnManual(rfc);
     });

@@ -75,3 +75,32 @@ test('findRfcMatch returns null when RFC typed in manual mode has no match', () 
   const match = findRfcMatch(clientes, 'RFC_DIFERENTE123');
   assert.equal(match, null);
 });
+
+// Edge cases for shouldTriggerRfcSearch with generic/foreign RFC
+test('shouldTriggerRfcSearch returns true for XEXX010101000 (foreign RFC placeholder)', () => {
+  // This is 13 chars, would trigger - but the blur handler checks readOnly separately
+  assert.equal(shouldTriggerRfcSearch('XEXX010101000'), true);
+});
+
+test('shouldTriggerRfcSearch returns true for XAXX010101000 (no-RFC placeholder)', () => {
+  assert.equal(shouldTriggerRfcSearch('XAXX010101000'), true);
+});
+
+// Verifying that buildOperamPreFillMap maps all CSF_FORM_FIELD_IDS fields
+test('buildOperamPreFillMap returns all expected field IDs', () => {
+  const cliente = {
+    name: 'EMPRESA TEST', ref: 'EMP TEST', rfc: 'EMP010101AAA',
+    cp: '01234', telefono: '5512345678', nombreEntrega: 'Juan Perez',
+    calle: 'Av. Test 100', numInt: 'Depto 1', colonia: 'Centro',
+    municipio: 'Cuauhtemoc', estado: 'CDMX', email: 'test@test.com',
+  };
+  const mapa = buildOperamPreFillMap(cliente);
+  const expectedKeys = [
+    'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-telefono',
+    'cl-nombre-entrega', 'cl-calle', 'cl-num-int', 'cl-colonia', 'cl-cp-entrega',
+    'cl-municipio', 'cl-estado', 'cl-cel-entrega', 'cl-email-entrega',
+  ];
+  for (const key of expectedKeys) {
+    assert.ok(key in mapa, `mapa should have key ${key}`);
+  }
+});
