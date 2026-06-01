@@ -38,6 +38,8 @@ app.use(express.static(PUBLIC_DIR));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
 // --- Helpers ---
 
 function readJSON(filename) {
