@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, resetSession } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientePorRFC, resetSession } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -102,5 +102,64 @@ test('actualizarCliente: usa OPERAM_URL del env cuando se llama', async () => {
   } finally {
     restore();
     process.env.OPERAM_URL = originalUrl;
+  }
+});
+
+test('buscarClientePorRFC: retorna encontrado:true con datos del cliente', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{
+        customer_id: 101,
+        CustName: 'Test SA de CV',
+        tax_id: 'TST010101ABC',
+        street: 'Insurgentes Sur',
+        street_number: '1234',
+        suite_number: '',
+        district: 'Del Valle',
+        postal_code: '03100',
+        city: 'Benito Juarez',
+        state: 'CDMX',
+        cfdi_regimen_fiscal: '601',
+        branches: [{
+          br_name: 'Test SA de CV',
+          addr_street: 'Insurgentes Sur',
+          addr_colony: 'Del Valle',
+          addr_zip: '03100',
+          addr_city: 'Benito Juarez',
+          addr_state: 'CDMX',
+          phone: '5512345678',
+          email: 'contacto@test.com',
+        }],
+      }],
+    }),
+  });
+  try {
+    const res = await buscarClientePorRFC('TST010101ABC');
+    assert.equal(res.encontrado, true);
+    assert.equal(res.cliente_id, 101);
+    assert.equal(res.CustName, 'Test SA de CV');
+    assert.equal(res.tax_id, 'TST010101ABC');
+    assert.equal(res.branch.br_name, 'Test SA de CV');
+    assert.equal(res.branch.addr_zip, '03100');
+  } finally {
+    restore();
+  }
+});
+
+test('buscarClientePorRFC: retorna {encontrado:false} cuando Operam no tiene el RFC', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 0, data: [] }),
+  });
+  try {
+    const res = await buscarClientePorRFC('RFC000000000');
+    assert.equal(res.encontrado, false);
+    assert.equal(Object.keys(res).length, 1);
+  } finally {
+    restore();
   }
 });
