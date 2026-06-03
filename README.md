@@ -1,6 +1,9 @@
 # cotizador-peltre
 
-Herramienta interna de cotizacion para vendedores de Peltre Nacional SA de CV. Genera cotizaciones de productos de acero esmaltado, calcula envio y las comparte por PDF o WhatsApp. Disenada para uso movil en campo.
+Herramienta interna de Peltre Nacional SA de CV. Combina dos funciones:
+
+1. **Cotizador** — vendedores generan cotizaciones de acero esmaltado en campo, calculan envio y comparten PDF o HTML por WhatsApp.
+2. **Alta de clientes** — equipo administrativo sube CSF del SAT, el sistema extrae RFC y domicilio, crea o actualiza el cliente en Operam ERP con un clic.
 
 **Produccion:** https://cotizador-peltre.onrender.com
 
@@ -9,8 +12,10 @@ Herramienta interna de cotizacion para vendedores de Peltre Nacional SA de CV. G
 - Node.js >= 20 / Express — ES modules
 - Frontend: HTML + CSS + JS vanilla (sin frameworks)
 - PDF: pdfkit
-- Autenticacion: JWT (30 dias)
-- Integracion: Operam ERP v3, envia.com (cotizacion de envio)
+- Autenticacion cotizador: JWT (30 dias)
+- Alta de clientes (csf-upload.html): sin autenticacion
+- Base de datos: Neon Postgres (solo log de auditoría de altas)
+- Integraciones: Operam ERP v3, envia.com, Dropbox, SAT (proxy QR)
 
 ## Requisitos
 
@@ -23,35 +28,43 @@ Copiar `.env.example` a `.env` y completar las variables:
 
 | Variable | Descripcion |
 |----------|-------------|
-| `JWT_SECRET` | Clave secreta para JWT |
+| `JWT_SECRET` | Clave secreta para JWT del cotizador |
 | `OPERAM_URL` | URL base de Operam (ej. `https://peltrenacional.operam.pro`) |
 | `OPERAM_USER` | Usuario API Operam |
 | `OPERAM_PASSWORD` | Contrasena API Operam |
 | `ENVIA_API_KEY` | API key de envia.com para cotizar envio |
+| `DATABASE_URL` | Connection string Neon Postgres (tabla clientes_log) |
+| `DROPBOX_REFRESH_TOKEN` | OAuth refresh token de Dropbox |
+| `DROPBOX_APP_KEY` | App key de Dropbox |
+| `DROPBOX_APP_SECRET` | App secret de Dropbox |
 
 ## Uso
 
 ```bash
 npm start        # produccion
 npm run dev      # desarrollo con --watch
-npm test         # todos los tests
+npm test         # todos los tests (160, 0 fallas)
 ```
 
 ## Estructura
 
 ```
-server.js              # API Express + auth + rutas
+server.js              # API Express + auth + todas las rutas
 lib/
-  operam-client.js     # cliente Operam v3 (buscar, actualizar, subir cotizacion)
+  operam-client.js     # cliente Operam v3 (buscar, crear, actualizar, cotizar)
+  db.js                # pool Neon Postgres — query() + auto-crea clientes_log
+  dropbox.js           # backup de PDFs de CSF en Dropbox
   pdf-generator.js     # genera PDF de cotizacion
   html-generator.js    # genera HTML de cotizacion (para WhatsApp link)
   calcular-envio.js    # calcula paquetes para envia.com
   extract-prices.js    # extrae precios desde Excel
   parsear-csf.js       # extrae datos de PDF de Constancia de Situacion Fiscal
+  validar-cp.js        # valida codigo postal por pais
 public/
-  index.html           # app principal (SPA)
+  index.html           # app cotizador (SPA)
   admin.html           # panel de administracion
-  js/app.js            # logica frontend (ES modules, ~2500 lineas)
+  csf-upload.html      # herramienta standalone de alta de clientes via CSF
+  js/app.js            # logica frontend cotizador (~2500 lineas)
   js/__tests__/        # tests de funciones puras del frontend
 data/
   precios.json         # catalogo de precios (cargado via admin)
@@ -64,33 +77,29 @@ test/                  # tests de backend (supertest + node:test)
 
 ## Flujos principales
 
-### Cotizar
+### Cotizar (vendedores)
 1. Login con ID de vendedor + PIN
 2. Seleccionar cliente (buscar en Operam, captura manual, o desde CSF)
 3. Agregar productos al carrito (tier de precio calculado automaticamente)
 4. Cotizar envio con envia.com (opcional)
 5. Generar PDF o HTML, compartir por WhatsApp
 
-### Alta de cliente desde CSF
-1. Subir PDF de Constancia de Situacion Fiscal
-2. El sistema extrae RFC, razon social y domicilio automaticamente
-3. **Guard de duplicado:** si el RFC ya existe en Operam, carga los datos existentes y ofrece actualizacion
-4. Si es cliente nuevo: crear en Operam con un clic
-
-### Guard de RFC duplicado
-Implementado en tres puntos de entrada:
-- **Flujo CSF:** al parsear el PDF, antes de mostrar el boton "Crear en Operam"
-- **Captura manual:** al salir del campo RFC (blur), si tiene >= 12 caracteres
-- En ambos casos: banner de aviso, carga de datos existentes, flujo de actualizacion con diff y confirmacion
+### Alta de cliente desde CSF (equipo admin — `csf-upload.html`)
+1. Abrir `/csf-upload.html` (sin login ni PIN)
+2. Subir PDF de Constancia de Situacion Fiscal
+3. El sistema extrae RFC, razon social y domicilio automaticamente
+4. Si el RFC ya existe en Operam: carga datos existentes, permite actualizacion con diff y confirmacion
+5. Si es cliente nuevo: crear en Operam con un clic, log en Neon, backup PDF en Dropbox
 
 ### Actualizar cliente existente
-1. Se detecta cliente existente (por RFC)
-2. Vendedor puede editar campos en el formulario
-3. Al hacer clic en "Actualizar en Operam": se calcula diff con valores originales
-4. Se muestra panel de confirmacion con lista de campos que van a cambiar
-5. Al confirmar: se envian a Operam solo los campos modificados
+1. Se detecta cliente existente (por RFC, en cualquier flujo)
+2. Se editan los campos necesarios en el formulario
+3. Al confirmar: se envian a Operam solo los campos modificados (diff)
+4. El evento queda registrado en `clientes_log` en Neon
 
 ## API endpoints
+
+### Cotizador (requieren JWT)
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
@@ -104,19 +113,39 @@ Implementado en tres puntos de entrada:
 | POST | `/api/cotizacion/envio` | Cotizar envio con envia.com |
 | GET | `/api/operam/clientes` | Buscar clientes en Operam |
 | GET | `/api/operam/clientes/:id/domicilios` | Domicilios de un cliente |
-| PATCH | `/api/operam/clientes/:id` | Actualizar cliente en Operam (solo campos del diff) |
+| PATCH | `/api/operam/clientes/:id` | Actualizar cliente en Operam |
 | POST | `/api/cotizacion/operam/:id` | Subir cotizacion a Operam |
 | POST | `/api/admin/precios` | Actualizar precios desde Excel (admin) |
-| GET/POST | `/api/admin/config` | Configuracion de catalogo cotizable (admin) |
+| GET/POST | `/api/admin/config` | Configuracion de catalogo (admin) |
 | GET/PUT | `/api/admin/vendedores` | Gestion de vendedores (admin) |
 | GET/PUT | `/api/admin/cajas` | Configuracion de cajas de empaque (admin) |
+
+### Alta de clientes — csf-upload.html (sin JWT)
+
+| Metodo | Ruta | Descripcion |
+|--------|------|-------------|
+| POST | `/api/crear-cliente` | Crear cliente en Operam desde datos CSF; log en Neon; backup PDF en Dropbox |
+| GET | `/api/buscar-cliente?rfc=` | Buscar cliente por RFC exacto en Operam |
+| PUT | `/api/actualizar-cliente/:id` | Actualizar campos de cliente en Operam |
+| GET | `/api/log` | Ultimas 200 entradas de clientes_log en Neon |
+| POST | `/api/csf-from-url` | Proxy: consulta URL del QR del SAT y devuelve texto plano |
 
 ## Tests
 
 ```bash
 npm test
-# 119 tests, 0 fallas
+# 160 tests, 0 fallas
 ```
 
-Tests de backend en `test/` (supertest + node:test, ES modules).
-Tests de frontend en `public/js/__tests__/` (node:test, CommonJS helpers).
+- `test/` — backend (supertest + node:test, ES modules)
+- `public/js/__tests__/` — frontend puro (node:test, CommonJS helpers)
+- `test/operam-client.test.js` — patron `mockFetchByUrl` para Operam
+- `test/server.test.js` — integration HTTP con `mockOperamFetch`
+- `public/js/__tests__/csf-upload-alta.test.cjs` — tests migrados de operam-server
+
+## Notas de arquitectura
+
+- `public/csf-upload.html` usa `API_BASE = ''` — todas las llamadas son paths relativos al mismo servidor.
+- El backup de Dropbox en `/api/crear-cliente` es fire-and-forget: si falla, la respuesta HTTP no se bloquea.
+- `lib/db.js` retorna `null` si `DATABASE_URL` no esta configurada (graceful degradation para desarrollo local).
+- El schema de `clientes_log` se auto-crea al iniciar el servidor si hay `DATABASE_URL`.
