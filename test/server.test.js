@@ -87,6 +87,48 @@ function mockOperamFetch(handlers) {
   return () => { globalThis.fetch = original; };
 }
 
+// === GET /api/log ===
+
+test('GET /api/log retorna 503 cuando no hay DATABASE_URL', async () => {
+  const res = await supertest(app).get('/api/log');
+  assert.strictEqual(res.status, 503);
+});
+
+// === PUT /api/actualizar-cliente/:id ===
+
+test('PUT /api/actualizar-cliente/:id actualiza cliente y retorna { ok:true }', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente/42').send({ street: 'Reforma', postal_code: '06600' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+  } finally {
+    restore();
+  }
+});
+
+test('PUT /api/actualizar-cliente/:id sin campos retorna 400', async () => {
+  const res = await supertest(app).put('/api/actualizar-cliente/42').send({});
+  assert.strictEqual(res.status, 400);
+  assert.ok(res.body.error);
+});
+
+test('PUT /api/actualizar-cliente/:id Operam error retorna 503', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ result: false, messages: ['RFC invalido'] }) }),
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente/42').send({ street: 'X' });
+    assert.strictEqual(res.status, 503);
+  } finally {
+    restore();
+  }
+});
+
 // === POST /api/crear-cliente ===
 
 test('POST /api/crear-cliente sin tax_id retorna 400', async () => {
