@@ -365,6 +365,34 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// --- CSF: proxy QR del SAT (sin JWT) ---
+
+app.post('/api/csf-from-url', async (req, res) => {
+  const { url } = req.body || {};
+  if (!url || typeof url !== 'string') return res.status(400).json({ error: 'Falta url' });
+  let parsed;
+  try { parsed = new URL(url); } catch { return res.status(400).json({ error: 'URL invalida' }); }
+  if (!/\.sat\.gob\.mx$/i.test(parsed.hostname) && parsed.hostname !== 'sat.gob.mx') {
+    return res.status(400).json({ error: 'URL no pertenece al SAT' });
+  }
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PeltreBot/1.0)' } });
+    if (!r.ok) return res.status(502).json({ error: `SAT respondio ${r.status}` });
+    const html = await r.text();
+    const texto = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(tr|div|p|li|td|th)>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
+      .replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n').trim();
+    res.json({ ok: true, texto });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- CSF: historial de auditoria (sin JWT) ---
 
 app.get('/api/log', async (req, res) => {

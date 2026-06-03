@@ -87,6 +87,27 @@ function mockOperamFetch(handlers) {
   return () => { globalThis.fetch = original; };
 }
 
+// === POST /api/crear-cliente + Dropbox (#24) ===
+
+test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 200', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 88 }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .send({ tax_id: 'DRB010101ABC', CustName: 'Dropbox Test SA', pdf_base64: 'AAAA' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.cliente_id, 88);
+  } finally {
+    restore();
+  }
+});
+
 // === GET /api/log ===
 
 test('GET /api/log retorna 503 cuando no hay DATABASE_URL', async () => {

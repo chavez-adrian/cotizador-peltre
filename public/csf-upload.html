@@ -1,0 +1,1183 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Alta de Cliente — pp.peltre</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f5f5;
+    color: #222;
+    min-height: 100vh;
+  }
+  header {
+    background: #1a1a1a;
+    color: #fff;
+    padding: 16px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  main { padding: 20px; max-width: 520px; margin: 0 auto; }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed #ccc;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    margin-bottom: 20px;
+  }
+  .upload-zone.dragover { border-color: #1a1a1a; background: #f0f0f0; }
+  .upload-zone input { display: none; }
+  .upload-zone .icon { font-size: 40px; margin-bottom: 12px; }
+  .upload-zone p { color: #666; font-size: 14px; margin-top: 6px; }
+  .upload-zone strong { color: #1a1a1a; font-size: 16px; }
+
+  /* Card */
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .card h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    margin-bottom: 14px;
+  }
+
+  /* Fields */
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; }
+  .field input, .field textarea, .field select {
+    width: 100%;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 15px;
+    font-family: inherit;
+    background: #fafafa;
+    color: #222;
+    transition: border-color 0.15s;
+  }
+  .field select {
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23888' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    outline: none;
+    border-color: #1a1a1a;
+    background: #fff;
+  }
+  .field textarea { resize: vertical; min-height: 80px; font-size: 13px; line-height: 1.5; }
+
+  /* Buttons */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn-primary { background: #1a1a1a; color: #fff; }
+  .btn-primary:not(:disabled):hover { opacity: 0.85; }
+  .btn-reset { background: #f0f0f0; color: #555; margin-top: 10px; font-size: 14px; padding: 12px; }
+
+  /* Status */
+  .status {
+    text-align: center;
+    padding: 16px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .status.loading { background: #f0f4ff; color: #3366cc; display: block; }
+  .status.ok      { background: #e8f5e9; color: #2e7d32; display: block; }
+  .status.error   { background: #ffeaea; color: #c62828; display: block; }
+  .status.warn    { background: #fff8e1; color: #e65100; display: block; }
+
+  /* Progress bar */
+  .progress-wrap {
+    display: none;
+    margin-bottom: 16px;
+  }
+  .progress-wrap.active { display: block; }
+  .progress-label {
+    font-size: 13px;
+    color: #555;
+    margin-bottom: 6px;
+    text-align: center;
+  }
+  .progress-track {
+    background: #e0e0e0;
+    border-radius: 6px;
+    height: 8px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    background: #1a1a1a;
+    height: 100%;
+    width: 0%;
+    transition: width 0.25s ease;
+  }
+
+  .hidden { display: none; }
+  .spinner { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .phone-row { display: flex; gap: 8px; }
+  .phone-row select {
+    flex: 0 0 115px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 10px 8px;
+    font-size: 14px;
+    font-family: inherit;
+    background: #fafafa;
+    color: #222;
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 24px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23888' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+  }
+  .phone-row input { flex: 1; }
+</style>
+</head>
+<body>
+
+<header>pp.peltre — Alta de Cliente</header>
+<main>
+
+  <!-- Upload -->
+  <div class="upload-zone" id="uploadZone">
+    <input type="file" id="pdfInput" accept="application/pdf">
+    <div class="icon">📄</div>
+    <strong>Subir Constancia de Situación Fiscal</strong>
+    <p>Toca aquí o arrastra el PDF</p>
+  </div>
+
+  <!-- Banner cliente duplicado -->
+  <div class="status warn hidden" id="bannerDuplicado"></div>
+
+  <!-- Status superior -->
+  <div class="status" id="status"></div>
+
+  <!-- Barra de progreso superior -->
+  <div class="progress-wrap" id="progressTop">
+    <div class="progress-label" id="progressLabelTop"></div>
+    <div class="progress-track"><div class="progress-bar" id="progressBarTop"></div></div>
+  </div>
+
+  <!-- Form (hidden until PDF parsed) -->
+  <div id="formSection" class="hidden">
+
+    <div class="card">
+      <h3>Datos del contribuyente</h3>
+      <div class="field"><label>Nombre completo</label><input id="f_CustName" type="text"></div>
+      <div class="field"><label>Nombre corto (en Operam)</label><input id="f_cust_ref" type="text"></div>
+      <div class="field">
+        <label>Pais</label>
+        <select id="f_pais">
+          <option value="MX" selected>Mexico</option>
+          <option value="US">EUA (Estados Unidos)</option>
+          <option value="CA">Canada</option>
+          <option value="other">Otro</option>
+        </select>
+      </div>
+      <div class="field"><label>RFC</label><input id="f_tax_id" type="text"></div>
+      <div class="field" id="f_tax_id_ext_wrap" style="display:none"><label>Tax ID / EIN / VAT</label><input id="f_tax_id_ext" type="text" placeholder="EJ: 12-3456789"></div>
+      <div class="field"><label>SAT IdCIF</label><input id="f_idcif" type="text"></div>
+    </div>
+
+    <div class="card">
+      <h3>Domicilio fiscal</h3>
+      <div class="field"><label>Calle</label><input id="f_street" type="text"></div>
+      <div class="field"><label>Número exterior</label><input id="f_street_number" type="text"></div>
+      <div class="field"><label>Número interior</label><input id="f_suite_number" type="text"></div>
+      <div class="field"><label>Colonia</label><input id="f_district" type="text"></div>
+      <div class="field"><label>Código postal</label><input id="f_postal_code" type="text" inputmode="numeric"></div>
+      <div class="field"><label>Ciudad / Municipio</label><input id="f_city" type="text"></div>
+      <div class="field"><label>Estado</label><input id="f_state" type="text"></div>
+    </div>
+
+    <div class="card card-fiscal">
+      <h3>Fiscal</h3>
+      <div class="field"><label>Régimen fiscal</label><input id="f_regimen_text" type="text" readonly style="color:#888;font-size:13px"></div>
+      <div class="field"><label>Código régimen SAT</label><input id="f_cfdi_regimen_fiscal" type="text"></div>
+      <div class="field">
+        <label>Uso de CFDI</label>
+        <select id="f_timbrado_uso_cfdi">
+          <option value="G01">G01 - Adquisición de mercancías</option>
+          <option value="G02">G02 - Devoluciones, descuentos o bonificaciones</option>
+          <option value="G03">G03 - Gastos en general</option>
+          <option value="I01">I01 - Construcciones</option>
+          <option value="I02">I02 - Mobiliario y equipo de oficina</option>
+          <option value="I03">I03 - Equipo de transporte</option>
+          <option value="I04">I04 - Equipo de cómputo y accesorios</option>
+          <option value="I05">I05 - Dados, troqueles, moldes, matrices</option>
+          <option value="I06">I06 - Comunicaciones telefónicas</option>
+          <option value="I07">I07 - Comunicaciones satelitales</option>
+          <option value="I08">I08 - Otra maquinaria y equipo</option>
+          <option value="D01">D01 - Honorarios médicos y gastos hospitalarios</option>
+          <option value="D02">D02 - Gastos médicos por incapacidad</option>
+          <option value="D03">D03 - Gastos funerales</option>
+          <option value="D04">D04 - Donativos</option>
+          <option value="D05">D05 - Intereses por créditos hipotecarios</option>
+          <option value="D06">D06 - Aportaciones voluntarias al SAR</option>
+          <option value="D07">D07 - Primas por seguros de gastos médicos</option>
+          <option value="D08">D08 - Gastos de transportación escolar</option>
+          <option value="D09">D09 - Depósitos en cuentas para el ahorro</option>
+          <option value="D10">D10 - Pagos por servicios educativos</option>
+          <option value="S01" selected>S01 - Sin efectos fiscales</option>
+          <option value="CP01">CP01 - Pagos</option>
+          <option value="CN01">CN01 - Nómina</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Actividades y notas</h3>
+      <div class="field"><label>Notas (se copian a Operam)</label><textarea id="f_notes"></textarea></div>
+      <div class="field"><label>Fecha CSF</label><input id="f_csf_fecha" type="text"></div>
+    </div>
+
+    <div class="card">
+      <h3>Domicilio de entrega</h3>
+      <div class="field"><label>Entregar a</label><input id="f_del_name" type="text" placeholder="Nombre del destinatario"></div>
+      <div class="field"><label>Calle</label><input id="f_del_street" type="text"></div>
+      <div class="row-2">
+        <div class="field"><label>Num. exterior</label><input id="f_del_ext" type="text"></div>
+        <div class="field"><label>Num. interior</label><input id="f_del_int" type="text" placeholder="Opcional"></div>
+      </div>
+      <div class="field"><label>Colonia</label><input id="f_del_colony" type="text"></div>
+      <div class="row-2">
+        <div class="field"><label>Codigo postal</label><input id="f_del_zip" type="text" inputmode="numeric"></div>
+        <div class="field"><label>Ciudad / Municipio</label><input id="f_del_city" type="text"></div>
+      </div>
+      <div class="field"><label>Estado</label><input id="f_del_state" type="text"></div>
+      <div class="field"><label>Telefono de entrega</label><input id="f_del_phone" type="tel" inputmode="tel"></div>
+      <div class="field"><label>Correo de entrega</label><input id="f_del_email" type="email" inputmode="email"></div>
+    </div>
+
+    <div class="card">
+      <h3>Contacto y vendedor</h3>
+      <div class="field">
+        <label>Celular (opcional)</label>
+        <div class="phone-row">
+          <select id="f_phone_code">
+            <option value="+1">EUA +1</option>
+            <option value="+52" selected>MX +52</option>
+            <option value="+49">Alemania +49</option>
+            <option value="+54">Argentina +54</option>
+            <option value="+55">Brasil +55</option>
+            <option value="+1">Canadá +1</option>
+            <option value="+56">Chile +56</option>
+            <option value="+57">Colombia +57</option>
+            <option value="+34">España +34</option>
+            <option value="+33">Francia +33</option>
+            <option value="+502">Guatemala +502</option>
+            <option value="+39">Italia +39</option>
+            <option value="+51">Perú +51</option>
+            <option value="+44">Reino Unido +44</option>
+            <option value="+58">Venezuela +58</option>
+          </select>
+          <input id="f_phone_number" type="tel" inputmode="tel" placeholder="55 1234 5678">
+        </div>
+      </div>
+      <div class="field"><label>Email</label><input id="f_email" type="email" inputmode="email"></div>
+      <div class="field">
+        <label>Correo para factura <span style="opacity:0.5">(opcional)</span></label>
+        <input id="f_invoice_email" type="email" inputmode="email" placeholder="facturacion@empresa.com">
+      </div>
+      <div class="field">
+        <label>Vendedor</label>
+        <select id="f_salesman">
+          <option value="">— Seleccionar —</option>
+          <option value="1">Adrián Chávez</option>
+          <option value="9">Alejandro Castañón</option>
+          <option value="2">Alejandro Chávez</option>
+          <option value="6">Amazon</option>
+          <option value="10">Jaime Abaroa Santos</option>
+          <option value="5">Mercado Libre</option>
+          <option value="7">Mostrador</option>
+          <option value="8">Oswaldo Chávez</option>
+          <option value="3">Shopify</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Segmento de cliente</label>
+        <select id="f_segmento_id">
+          <option value="">— Seleccionar —</option>
+          <option value="1">000 - Sin segmento</option>
+          <option value="14">100 - Distribuidores</option>
+          <option value="8">200 - Menudistas</option>
+          <option value="10">300 - Restaurantes, hoteles</option>
+          <option value="12">400 - Agencias | Marcas</option>
+          <option value="11">500 - e-commerce</option>
+          <option value="15">600 - Eventos</option>
+          <option value="16">700 - Consumidor final</option>
+          <option value="13">800 - Empleados</option>
+          <option value="9">900 - Familia y Amigos</option>
+          <option value="17">1000 - Maquila</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Panel de confirmacion de cambios -->
+    <div id="panelConfirmacion" class="hidden" style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:16px;margin-bottom:16px;">
+      <p style="font-weight:600;margin-bottom:10px;">Se van a modificar los datos del cliente en Operam</p>
+      <div id="listaCambios" style="font-size:13px;line-height:1.7;margin-bottom:14px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button id="btnConfirmar" class="btn btn-primary" style="flex:1;" onclick="confirmarCambios()">Confirmar cambios</button>
+        <button id="btnCancelarConfirmacion" class="btn btn-reset" style="flex:1;" onclick="cancelarConfirmacion()">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- Status inferior (arriba del botón) -->
+    <div class="status" id="statusBottom"></div>
+
+    <!-- Barra de progreso inferior -->
+    <div class="progress-wrap" id="progressBottom">
+      <div class="progress-label" id="progressLabelBottom"></div>
+      <div class="progress-track"><div class="progress-bar" id="progressBarBottom"></div></div>
+    </div>
+
+    <button class="btn btn-primary" id="btnCrear" onclick="crearCliente()">
+      Crear cliente en Operam
+    </button>
+    <button class="btn btn-reset" onclick="resetForm()">Subir otra CSF</button>
+  </div>
+
+</main>
+
+<!-- PDF.js 4.x como módulo ES -->
+<script type="module">
+  import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
+  window.pdfjsLib = pdfjsLib;
+  window.dispatchEvent(new Event('pdfjs-ready'));
+</script>
+<!-- jsQR para leer QR del SAT (fallback preferido) -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<!-- Tesseract.js para OCR (último recurso si tampoco hay QR) -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+// ─── Archivo PDF actual ───────────────────────────────────────────────────────
+let _pdfFile = null;
+
+// ─── Estado cliente existente ─────────────────────────────────────────────────
+let _clienteExistente = null;
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+const API_BASE        = '';
+const API_URL         = `${API_BASE}/api/crear-cliente`;
+const API_QR          = `${API_BASE}/api/csf-from-url`;
+const API_BUSCAR      = `${API_BASE}/api/buscar-cliente`;
+const API_ACTUALIZAR  = `${API_BASE}/api/actualizar-cliente`;
+
+// ─── Mapa de regímenes ────────────────────────────────────────────────────────
+const REGIMENES = {
+  'General de Ley Personas Morales':                                   '601',
+  'Personas Morales con Fines no Lucrativos':                          '603',
+  'Sueldos y Salarios e Ingresos Asimilados a Salarios':               '605',
+  'Arrendamiento':                                                      '606',
+  'Enajenación o Adquisición de Bienes':                               '607',
+  'Demás ingresos':                                                     '608',
+  'Residentes en el Extranjero sin Establecimiento Permanente':         '610',
+  'Ingresos por Dividendos':                                            '611',
+  'Personas Físicas con Actividades Empresariales y Profesionales':     '612',
+  'Ingresos por intereses':                                             '614',
+  'Sin obligaciones fiscales':                                          '616',
+  'Incorporación Fiscal':                                               '621',
+  'Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras':           '622',
+  'Plataformas Tecnológicas':                                           '625',
+  'Régimen Simplificado de Confianza':                                  '626',
+};
+
+// Prioridad: cuando hay múltiples regímenes en la CSF, se usa el de mayor prioridad
+const PRIORIDAD = ['601','603','612','621','626','606','622','607','608','605','614','611','610','616','625'];
+
+function detectarRegimen(texto) {
+  const encontrados = [];
+  for (const [clave, codigo] of Object.entries(REGIMENES)) {
+    if (texto.includes(clave)) encontrados.push({ texto: clave, codigo });
+  }
+  if (encontrados.length === 0) return { texto: '', codigo: '612' };
+  encontrados.sort((a, b) => PRIORIDAD.indexOf(a.codigo) - PRIORIDAD.indexOf(b.codigo));
+  return encontrados[0];
+}
+
+// ─── Parser de CSF ────────────────────────────────────────────────────────────
+function parsearCSF(texto) {
+  const get = (pattern, group = 1) => {
+    const m = texto.match(pattern);
+    return m ? m[group].trim() : '';
+  };
+
+  const esMoral = /Denominaci[oó]n\/?Raz[oó]n Social/i.test(texto);
+  let nombre_s, primer_apellido, segundo_apellido;
+  if (esMoral) {
+    nombre_s         = get(/Denominaci[oó]n\/?Raz[oó]n Social\s*:\s*(.+?)(?=\s*(?:R[eé]gimen Capital|Nombre Comercial|Fecha|RFC)\s*:|\n\n|$)/is);
+    primer_apellido  = '';
+    segundo_apellido = '';
+  } else {
+    // "Nombre (s):" (PDF CSF) o "Nombre:" (portal SAT por QR)
+    nombre_s         = get(/(?:^|\s)Nombre\s*(?:\(s\))?\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\s*(?:Primer Apellido|Apellido Paterno|Apellido|RFC|Fecha|$))/i);
+    // "Primer Apellido:" (PDF) o "Apellido Paterno:" (portal SAT)
+    primer_apellido  = get(/(?:Primer Apellido|Apellido Paterno)\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\s*(?:Segundo Apellido|Apellido Materno|RFC|Fecha|$))/i);
+    // "Segundo Apellido:" (PDF) o "Apellido Materno:" (portal SAT)
+    segundo_apellido = get(/(?:Segundo Apellido|Apellido Materno)\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\s*(?:RFC|CURP|Fecha|$))/i);
+  }
+  // RFC: acepta "RFC", "R.F.C.", con o sin dos puntos, con o sin espacios internos
+  let rfc = '';
+  const mRfc = texto.match(/R\.?F\.?C\.?\s*:?\s*([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3})/i);
+  if (mRfc) rfc = mRfc[1].toUpperCase();
+  // Fallback: buscar por formato directo (3-4 letras + 6 dígitos + 3 alfanum)
+  if (rfc.length < 12) {
+    const mFmt = texto.match(/\b([A-ZÁÉÍÓÚÑ&]{3,4}\d{6}[A-Z0-9]{3})\b/i);
+    if (mFmt) rfc = mFmt[1].toUpperCase();
+  }
+  console.log('[CSF] RFC extraído:', rfc || '(vacío)');
+  console.log('[CSF] texto completo:\n', texto);
+  const idcif            = get(/idCIF\s*:\s*(\d+)/i);
+  // Código postal: "Código Postal:" (PDF) o "CP:" (portal SAT)
+  const cp               = get(/(?:C[oó]digo Postal|\bCP)\s*:?\s*(\d{5})/i);
+  // Vialidad: "Nombre de Vialidad:" (PDF) o "Nombre de la Vialidad:" (portal SAT)
+  const vialidad         = get(/Nombre de (?:la )?Vialidad\s*:\s*([A-ZÁÉÍÓÚÑ0-9 ]+?)(?=\s*(?:N[uú]mero|Tipo de|Nombre|Colonia|Entre Calle|$))/i);
+  const num_ext          = get(/N[uú]mero [Ee]xterior\s*:\s*([^\n]+?)(?=\s*(?:N[uú]mero|Nombre|Colonia|CP|C[oó]digo|Entre|$))/i);
+  const num_int_raw      = get(/N[uú]mero [Ii]nterior\s*:\s*([^\n]*?)(?=\s*(?:Nombre|Colonia|CP|C[oó]digo|Municipio|Entidad|Entre|Correo|$))/i);
+  const num_int          = /^\s*CP\b/i.test(num_int_raw) ? '' : num_int_raw;
+  // Colonia: "Nombre de la Colonia:" (PDF) o "Colonia:" (portal SAT)
+  const colonia          = get(/(?:Nombre de la )?Colonia\s*:\s*([A-ZÁÉÍÓÚÑ0-9 ]+?)(?=\s*(?:Nombre|Tipo de|CP|C[oó]digo|Municipio|Entidad|Entre|$))/i);
+  // Municipio: "Nombre del Municipio o Demarcación Territorial:" (PDF) o "Municipio o delegación:" (portal SAT)
+  const municipio        = get(/(?:Nombre del )?Municipio(?:\s+o\s+(?:Demarcaci[oó]n Territorial|delegaci[oó]n))?\s*:\s*([A-ZÁÉÍÓÚÑ0-9 ]+?)(?=\s*(?:Nombre|Colonia|Entidad|Tipo|$))/i);
+  // Estado: "Nombre de la Entidad Federativa:" (PDF) o "Entidad Federativa:" (portal SAT)
+  const estado           = get(/(?:Nombre de la )?Entidad Federativa\s*:\s*([A-ZÁÉÍÓÚÑ0-9 ]+?)(?=\s*(?:Entre Calle|Y Calle|Correo|Caracter[ií]sticas|Municipio|Colonia|$))/i);
+
+  // Fecha de emisión (ej: "A 02 DE ENERO DE 2026" o "A 15 DE MARZO DE 2025")
+  const MESES = {enero:'01',febrero:'02',marzo:'03',abril:'04',mayo:'05',junio:'06',
+                 julio:'07',agosto:'08',septiembre:'09',octubre:'10',noviembre:'11',diciembre:'12'};
+  let csf_fecha = '';
+  const mFecha = texto.match(/A\s+(\d{1,2})\s+DE\s+([A-ZÁÉÍÓÚÑ]+)\s+DE\s+(\d{4})/i);
+  if (mFecha) {
+    const mes = MESES[mFecha[2].toLowerCase()] || '01';
+    csf_fecha = `${mFecha[3]}-${mes}-${mFecha[1].padStart(2,'0')}`;
+  }
+  // Fallback (portal SAT por QR): "Fecha del último cambio de situación: DD-MM-YYYY"
+  if (!csf_fecha) {
+    const mFecha2 = texto.match(/Fecha del [uú]ltimo cambio de situaci[oó]n\s*:?\s*(\d{2})-(\d{2})-(\d{4})/i)
+                 || texto.match(/Fecha de Inicio de operaciones\s*:?\s*(\d{2})-(\d{2})-(\d{4})/i);
+    if (mFecha2) csf_fecha = `${mFecha2[3]}-${mFecha2[2]}-${mFecha2[1]}`;
+  }
+  // Último fallback: fecha de hoy
+  if (!csf_fecha) csf_fecha = new Date().toISOString().slice(0, 10);
+
+  // Actividades económicas (formato PDF CSF: "num DESC pct DD/MM/YYYY")
+  const actividades = [];
+  const actRegex = /(\d+)\s+([A-ZÁÉÍÓÚÑ][^\n]+?)\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})/g;
+  let mAct;
+  while ((mAct = actRegex.exec(texto)) !== null) {
+    const desc = mAct[2].trim();
+    const pct  = mAct[3];
+    if (!actividades.some(a => a.includes(desc))) {
+      actividades.push(`${desc} (${pct}%)`);
+    }
+  }
+
+  // Regímenes con fecha de alta (formato portal SAT por QR)
+  const regimenesDetalle = [];
+  const regRegex = /R[eé]gimen\s*:\s*(R[eé]gimen [^\n]+?)\s+Fecha de alta\s*:\s*(\d{2})-(\d{2})-(\d{4})/gi;
+  let mReg;
+  while ((mReg = regRegex.exec(texto)) !== null) {
+    const nombre = mReg[1].trim().replace(/\s+/g, ' ');
+    const fecha  = `${mReg[4]}-${mReg[3]}-${mReg[2]}`;
+    regimenesDetalle.push(`${nombre} (alta ${fecha})`);
+  }
+
+  // Régimen fiscal principal (el primero que aparezca)
+  const { texto: regTexto, codigo: regCodigo } = detectarRegimen(texto);
+
+  const toTC = s => s.toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
+  const CustName = [nombre_s, primer_apellido, segundo_apellido].filter(Boolean).join(' ');
+  // Persona Moral: cust_ref = razón social en Title Case
+  // Persona Física: cust_ref = Nombre + Primer Apellido en Title Case
+  const cust_ref = esMoral ? toTC(nombre_s) : toTC(`${nombre_s} ${primer_apellido}`);
+
+  let notes = '';
+  if (actividades.length) {
+    notes = `Actividades económicas (CSF ${csf_fecha}):\n` + actividades.map(a => `- ${a}`).join('\n');
+  } else if (regimenesDetalle.length) {
+    notes = `Regímenes fiscales (portal SAT ${csf_fecha}):\n` + regimenesDetalle.map(r => `- ${r}`).join('\n');
+  }
+
+  return {
+    CustName, cust_ref,
+    nombre_s, primer_apellido, segundo_apellido,
+    tax_id:   rfc,
+    idcif,
+    street:        vialidad,
+    street_number: num_ext,
+    suite_number:  num_int,
+    district:      colonia,
+    postal_code:   cp,
+    city:          municipio,
+    state:         estado,
+    country:       'México',
+    cfdi_regimen_fiscal: regCodigo,
+    regimen_text:  regTexto,
+    actividades,
+    csf_fecha,
+    notes,
+    phone: '',
+    email: '',
+  };
+}
+
+// ─── Leer PDF ─────────────────────────────────────────────────────────────────
+function esperarPdfJs() {
+  return new Promise(resolve => {
+    if (window.pdfjsLib) return resolve();
+    window.addEventListener('pdfjs-ready', () => resolve(), { once: true });
+  });
+}
+
+async function leerPDF(file) {
+  await esperarPdfJs();
+
+  const PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/pdf.worker.min.mjs`;
+
+  const buffer = await file.arrayBuffer();
+  const pdf    = await pdfjsLib.getDocument({
+    data: buffer,
+    cMapUrl: `${PDFJS_BASE}/cmaps/`,
+    cMapPacked: true,
+    standardFontDataUrl: `${PDFJS_BASE}/standard_fonts/`,
+  }).promise;
+
+  const totalPaginas = Math.min(pdf.numPages, 2);
+  console.log('[CSF] PDF cargado, páginas:', pdf.numPages);
+
+  // Intento 1: extraer texto nativo del PDF
+  let textoTotal = '';
+  let itemsTotal = 0;
+
+  for (let i = 1; i <= totalPaginas; i++) {
+    setProgress((i / totalPaginas) * 50, `Leyendo texto de página ${i} de ${totalPaginas}...`);
+    const page    = await pdf.getPage(i);
+    const content = await page.getTextContent({ includeMarkedContent: true });
+    console.log(`[CSF] Página ${i}: ${content.items.length} items`);
+    itemsTotal += content.items.length;
+    textoTotal += content.items
+      .filter(item => item.str !== undefined)
+      .map(item => item.str)
+      .join(' ') + '\n';
+  }
+
+  // Fallback 1: QR code del SAT (más rápido y preciso que OCR)
+  if (itemsTotal === 0 || textoTotal.trim().length < 50) {
+    console.log('[CSF] PDF sin texto — buscando QR del SAT');
+    const urlQR = await detectarQR(pdf, totalPaginas);
+    if (urlQR) {
+      console.log('[CSF] QR detectado:', urlQR);
+      setStatus('loading', 'QR del SAT detectado — consultando datos...');
+      setProgress(50, 'Consultando portal del SAT...');
+      try {
+        const r = await fetch(API_QR, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: urlQR }),
+        });
+        const data = await r.json();
+        if (data.ok && data.texto) {
+          console.log('[CSF] Texto recibido del SAT:', data.texto.length, 'caracteres');
+          setProgress(100, 'Datos recibidos del SAT');
+          // Extraer IdCIF del URL del QR (portal SAT no lo incluye en el texto)
+          const idcifDelQR = extraerIdCifDeUrl(urlQR);
+          if (idcifDelQR) {
+            console.log('[CSF] IdCIF extraído del QR:', idcifDelQR);
+            return `idCIF: ${idcifDelQR}\n${data.texto}`;
+          }
+          return data.texto;
+        }
+        console.warn('[CSF] Respuesta del SAT sin texto:', data);
+      } catch (err) {
+        console.error('[CSF] Error al consultar SAT:', err);
+      }
+    }
+
+    // Fallback 2: OCR como último recurso
+    console.log('[CSF] Sin QR útil — usando OCR');
+    textoTotal = await ocrPDF(pdf, totalPaginas);
+  }
+
+  return textoTotal;
+}
+
+// ─── Extraer IdCIF del URL del QR (parámetro D3) ─────────────────────────────
+// Formato típico: D3=10_RFC_IDCIF o similar. El IdCIF es una secuencia de 10-12 dígitos.
+function extraerIdCifDeUrl(url) {
+  try {
+    const u = new URL(url);
+    // Probar todos los parámetros de query
+    for (const [, val] of u.searchParams) {
+      const partes = val.split(/[_\-|]/);
+      for (const p of partes) {
+        if (/^\d{10,12}$/.test(p)) return p;
+      }
+    }
+    // Fallback: buscar en el path
+    const match = url.match(/\b(\d{10,12})\b/);
+    return match ? match[1] : '';
+  } catch {
+    return '';
+  }
+}
+
+// ─── Detección de QR en PDF ───────────────────────────────────────────────────
+async function detectarQR(pdf, totalPaginas) {
+  if (typeof jsQR === 'undefined') {
+    console.warn('[CSF] jsQR no cargado');
+    return null;
+  }
+
+  for (let i = 1; i <= totalPaginas; i++) {
+    setProgress((i / totalPaginas) * 100, `Buscando QR en página ${i} de ${totalPaginas}...`);
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if (code && code.data && code.data.includes('sat.gob.mx')) {
+      return code.data;
+    }
+  }
+  return null;
+}
+
+// ─── OCR fallback con Tesseract.js ────────────────────────────────────────────
+async function ocrPDF(pdf, totalPaginas) {
+  if (typeof Tesseract === 'undefined') {
+    throw new Error('Tesseract.js no cargó. Verifica la conexión a internet.');
+  }
+
+  setStatus('loading', 'PDF sin texto — iniciando OCR (puede tardar)...');
+  setProgress(0, 'Inicializando OCR...');
+
+  const worker = await Tesseract.createWorker('spa', 1, {
+    logger: m => {
+      if (m.status === 'recognizing text') {
+        const pct = Math.round(m.progress * 100);
+        setProgress(pct, `OCR en progreso: ${pct}%`);
+      }
+    },
+  });
+
+  let textoTotal = '';
+
+  for (let i = 1; i <= totalPaginas; i++) {
+    setProgress(0, `Renderizando página ${i} de ${totalPaginas}...`);
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2.5 });
+    const canvas = document.createElement('canvas');
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+
+    setStatus('loading', `OCR página ${i} de ${totalPaginas}...`);
+    const { data: { text } } = await worker.recognize(canvas);
+    console.log(`[CSF-OCR] Página ${i}: ${text.length} caracteres`);
+    textoTotal += text + '\n';
+  }
+
+  await worker.terminate();
+  setProgress(null);
+  return textoTotal;
+}
+
+// ─── Poblar formulario ────────────────────────────────────────────────────────
+function buildEntregaPreFill(data) {
+  return {
+    f_del_name:   data.CustName     || '',
+    f_del_street: data.street       || '',
+    f_del_ext:    data.street_number || '',
+    f_del_int:    data.suite_number  || '',
+    f_del_colony: data.district     || '',
+    f_del_zip:    data.postal_code  || '',
+    f_del_city:   data.city         || '',
+    f_del_state:  data.state        || '',
+  };
+}
+
+function poblarForm(data) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('f_CustName',            data.CustName);
+  set('f_cust_ref',            data.cust_ref);
+  set('f_tax_id',              data.tax_id);
+  set('f_idcif',               data.idcif);
+  set('f_street',              data.street);
+  set('f_street_number',       data.street_number);
+  set('f_suite_number',        data.suite_number);
+  set('f_district',            data.district);
+  set('f_postal_code',         data.postal_code);
+  set('f_city',                data.city);
+  set('f_state',               data.state);
+  set('f_regimen_text',        data.regimen_text);
+  set('f_cfdi_regimen_fiscal', data.cfdi_regimen_fiscal);
+  set('f_notes',               data.notes);
+  set('f_csf_fecha',           data.csf_fecha);
+
+  const entregaFields = buildEntregaPreFill(data);
+  for (const [id, val] of Object.entries(entregaFields)) {
+    set(id, val);
+  }
+}
+
+// ─── Sub-objeto entrega ───────────────────────────────────────────────────────
+function buildEntregaPayload(get) {
+  return {
+    br_name:       get('f_del_name'),
+    addr_street:   get('f_del_street'),
+    addr_exterior: get('f_del_ext'),
+    addr_interior: get('f_del_int'),
+    addr_colony:   get('f_del_colony'),
+    addr_zip:      get('f_del_zip'),
+    addr_city:     get('f_del_city'),
+    addr_state:    get('f_del_state'),
+    phone:         get('f_del_phone'),
+    email:         get('f_del_email'),
+  };
+}
+
+// ─── Leer formulario ──────────────────────────────────────────────────────────
+function leerForm() {
+  const get = id => document.getElementById(id)?.value?.trim() || '';
+  const notasRaw = get('f_notes');
+  // Extraer actividades del textarea
+  const actividades = notasRaw
+    .split('\n')
+    .filter(l => l.startsWith('- '))
+    .map(l => l.slice(2));
+
+  const paisVal = get('f_pais') || 'MX';
+  const AREA_POR_PAIS_F = { MX: '1', US: '5', CA: '7' };
+  const area_pais = AREA_POR_PAIS_F[paisVal] || '6';
+  const curr_code = paisVal === 'MX' ? 'MXN' : 'USD';
+  const invoice_tax_id = get('f_tax_id_ext') || '';
+
+  return {
+    CustName:          get('f_CustName'),
+    cust_ref:          get('f_cust_ref'),
+    tax_id:            get('f_tax_id'),
+    idcif:             get('f_idcif'),
+    street:            get('f_street'),
+    street_number:     get('f_street_number'),
+    suite_number:      get('f_suite_number'),
+    district:          get('f_district'),
+    postal_code:       get('f_postal_code'),
+    city:              get('f_city'),
+    state:             get('f_state'),
+    country:           paisVal,
+    curr_code,
+    area_pais,
+    invoice_tax_id,
+    cfdi_regimen_fiscal: get('f_cfdi_regimen_fiscal'),
+    actividades,
+    csf_fecha:         get('f_csf_fecha'),
+    phone:             (() => {
+      const code   = document.getElementById('f_phone_code')?.value || '+52';
+      const number = get('f_phone_number');
+      return number ? `${code} ${number}` : '';
+    })(),
+    email:             get('f_email'),
+    invoice_email:     get('f_invoice_email'),
+    salesman:            get('f_salesman'),
+    segmento_id:         get('f_segmento_id'),
+    timbrado_uso_cfdi:   get('f_timbrado_uso_cfdi'),
+  };
+}
+
+// ─── Buscar cliente existente por RFC ────────────────────────────────────────
+async function buscarClienteExistente(rfc) {
+  try {
+    const r = await fetch(`${API_BUSCAR}?rfc=${encodeURIComponent(rfc)}`);
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.encontrado ? data : null;
+  } catch (err) {
+    console.warn('[buscar-cliente] Error:', err.message);
+    return null;
+  }
+}
+
+function poblarFormDesdeOperam(datos) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('f_CustName',            datos.CustName);
+  set('f_cust_ref',            datos.CustName);
+  set('f_tax_id',              datos.tax_id);
+  set('f_street',              datos.street);
+  set('f_street_number',       datos.street_number);
+  set('f_suite_number',        datos.suite_number);
+  set('f_district',            datos.district);
+  set('f_postal_code',         datos.postal_code);
+  set('f_city',                datos.city);
+  set('f_state',               datos.state);
+  set('f_cfdi_regimen_fiscal', datos.cfdi_regimen_fiscal);
+
+  const b = datos.branch || {};
+  set('f_del_name',   b.br_name    || datos.CustName);
+  set('f_del_street', b.addr_street || datos.street);
+  set('f_del_colony', b.addr_colony || datos.district);
+  set('f_del_zip',    b.addr_zip    || datos.postal_code);
+  set('f_del_city',   b.addr_city   || datos.city);
+  set('f_del_state',  b.addr_state  || datos.state);
+  set('f_del_phone',  b.phone);
+  set('f_del_email',  b.email);
+}
+
+// ─── Mostrar status (arriba y abajo) ──────────────────────────────────────────
+function setStatus(tipo, msg) {
+  ['status', 'statusBottom'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = `status ${tipo}`;
+    el.textContent = msg;
+    el.style.display = tipo ? '' : 'none';
+  });
+}
+
+// ─── Barra de progreso (arriba y abajo) ───────────────────────────────────────
+function setProgress(pct, label) {
+  const show = pct !== null;
+  ['progressTop', 'progressBottom'].forEach(id => {
+    document.getElementById(id).classList.toggle('active', show);
+  });
+  if (!show) return;
+  const clamped = Math.max(0, Math.min(100, pct));
+  document.getElementById('progressBarTop').style.width    = `${clamped}%`;
+  document.getElementById('progressBarBottom').style.width = `${clamped}%`;
+  document.getElementById('progressLabelTop').textContent    = label || '';
+  document.getElementById('progressLabelBottom').textContent = label || '';
+}
+
+// ─── Eventos ──────────────────────────────────────────────────────────────────
+const uploadZone = document.getElementById('uploadZone');
+const pdfInput   = document.getElementById('pdfInput');
+
+uploadZone.addEventListener('click', () => pdfInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file?.type === 'application/pdf') procesarPDF(file);
+});
+pdfInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) procesarPDF(file);
+});
+
+async function procesarPDF(file) {
+  _pdfFile = file;
+  _clienteExistente = null;
+  const banner = document.getElementById('bannerDuplicado');
+  if (banner) { banner.className = 'status warn hidden'; banner.textContent = ''; }
+  const btn = document.getElementById('btnCrear');
+  if (btn) btn.textContent = 'Crear cliente en Operam';
+  setStatus('loading', 'Leyendo PDF...');
+  setProgress(0, 'Cargando archivo...');
+  uploadZone.style.display = 'none';
+  try {
+    const texto = await leerPDF(file);
+    const data  = parsearCSF(texto);
+    poblarForm(data);
+    document.getElementById('formSection').classList.remove('hidden');
+    setProgress(null);
+    if (!data.tax_id) {
+      setStatus('error', 'No se pudo extraer el RFC. Verifica los campos manualmente.');
+    } else {
+      setStatus('loading', `RFC ${data.tax_id} extraido. Verificando en Operam...`);
+      const existente = await buscarClienteExistente(data.tax_id);
+      if (existente) {
+        _clienteExistente = { cliente_id: existente.cliente_id, snapshot: Object.assign({}, existente) };
+        poblarFormDesdeOperam(existente);
+        if (banner) {
+          banner.className = 'status warn';
+          banner.textContent = `Este cliente ya esta registrado en Operam (ID ${existente.cliente_id} — ${existente.CustName}). Sus datos han sido cargados.`;
+        }
+        if (btn) btn.textContent = 'Actualizar cliente';
+        setStatus('', '');
+      } else {
+        setStatus('ok', `Datos extraidos correctamente. RFC: ${data.tax_id}`);
+      }
+    }
+  } catch (err) {
+    setProgress(null);
+    setStatus('error', `Error al leer el PDF: ${err.message}`);
+    uploadZone.style.display = '';
+  }
+}
+
+// ─── Mapa de campos: formKey -> { label, snapshotKey } ───────────────────────
+// snapshotKey puede ser 'campo' (raiz) o 'branch.campo' (en branch)
+const CAMPOS_LEGIBLES = {
+  f_CustName:            { label: 'Nombre completo',       snapshotKey: 'CustName' },
+  f_street:              { label: 'Calle',                 snapshotKey: 'street' },
+  f_street_number:       { label: 'Num. exterior',         snapshotKey: 'street_number' },
+  f_suite_number:        { label: 'Num. interior',         snapshotKey: 'suite_number' },
+  f_district:            { label: 'Colonia',               snapshotKey: 'district' },
+  f_postal_code:         { label: 'Codigo postal',         snapshotKey: 'postal_code' },
+  f_city:                { label: 'Ciudad / Municipio',    snapshotKey: 'city' },
+  f_state:               { label: 'Estado',                snapshotKey: 'state' },
+  f_cfdi_regimen_fiscal: { label: 'Regimen fiscal',        snapshotKey: 'cfdi_regimen_fiscal' },
+  f_del_name:            { label: 'Entregar a',            snapshotKey: 'branch.br_name' },
+  f_del_street:          { label: 'Calle entrega',         snapshotKey: 'branch.addr_street' },
+  f_del_colony:          { label: 'Colonia entrega',       snapshotKey: 'branch.addr_colony' },
+  f_del_zip:             { label: 'CP entrega',            snapshotKey: 'branch.addr_zip' },
+  f_del_city:            { label: 'Ciudad entrega',        snapshotKey: 'branch.addr_city' },
+  f_del_state:           { label: 'Estado entrega',        snapshotKey: 'branch.addr_state' },
+  f_del_phone:           { label: 'Telefono entrega',      snapshotKey: 'branch.phone' },
+  f_del_email:           { label: 'Correo entrega',        snapshotKey: 'branch.email' },
+};
+
+// Mapa de snapshotKey a nombre de campo en la API de Operam para el PUT
+const SNAPSHOT_KEY_TO_API = {
+  'CustName':                'CustName',
+  'street':                  'street',
+  'street_number':           'street_number',
+  'suite_number':            'suite_number',
+  'district':                'district',
+  'postal_code':             'postal_code',
+  'city':                    'city',
+  'state':                   'state',
+  'cfdi_regimen_fiscal':     'cfdi_regimen_fiscal',
+  'branch.br_name':          'br_name',
+  'branch.addr_street':      'addr_street',
+  'branch.addr_colony':      'addr_colony',
+  'branch.addr_zip':         'addr_zip',
+  'branch.addr_city':        'addr_city',
+  'branch.addr_state':       'addr_state',
+  'branch.phone':            'phone',
+  'branch.email':            'email',
+};
+
+function calcularDiffFormulario() {
+  const get = id => document.getElementById(id)?.value?.trim() || '';
+  const snap = _clienteExistente.snapshot;
+  const diff = [];
+
+  for (const [fieldId, { label, snapshotKey }] of Object.entries(CAMPOS_LEGIBLES)) {
+    const valorActual = get(fieldId);
+    let valorAnterior;
+    if (snapshotKey.startsWith('branch.')) {
+      const branchField = snapshotKey.slice('branch.'.length);
+      valorAnterior = String((snap.branch && snap.branch[branchField]) || '').trim();
+    } else {
+      valorAnterior = String(snap[snapshotKey] == null ? '' : snap[snapshotKey]).trim();
+    }
+    if (valorAnterior !== valorActual) {
+      diff.push({ fieldId, label, snapshotKey, anterior: valorAnterior, nuevo: valorActual });
+    }
+  }
+  return diff;
+}
+
+function mostrarPanelConfirmacion(cambios) {
+  const lista = document.getElementById('listaCambios');
+  if (lista) {
+    lista.innerHTML = cambios.map(c =>
+      `<div><strong>${c.label}:</strong> "${c.anterior || '(vacio)'}" &rarr; "${c.nuevo || '(vacio)'}"</div>`
+    ).join('');
+  }
+  const panel = document.getElementById('panelConfirmacion');
+  if (panel) panel.classList.remove('hidden');
+  document.getElementById('btnCrear').style.display = 'none';
+}
+
+function cancelarConfirmacion() {
+  const panel = document.getElementById('panelConfirmacion');
+  if (panel) panel.classList.add('hidden');
+  document.getElementById('btnCrear').style.display = '';
+}
+
+async function confirmarCambios() {
+  const cambios = calcularDiffFormulario();
+  if (cambios.length === 0) return;
+
+  const payload = {};
+  for (const c of cambios) {
+    const apiKey = SNAPSHOT_KEY_TO_API[c.snapshotKey];
+    if (apiKey) payload[apiKey] = c.nuevo;
+  }
+
+  const cliente_id = _clienteExistente.cliente_id;
+  const btnConf = document.getElementById('btnConfirmar');
+  btnConf.disabled = true;
+  btnConf.textContent = 'Guardando...';
+
+  try {
+    const resp = await fetch(`${API_ACTUALIZAR}/${cliente_id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await resp.json();
+
+    cancelarConfirmacion();
+
+    if (!resp.ok || result.error) {
+      setStatus('error', `Error al actualizar: ${result.error || 'Error desconocido'}`);
+    } else {
+      setStatus('ok', 'Datos del cliente actualizados en Operam.');
+    }
+  } catch (err) {
+    setStatus('error', `No se pudo conectar con el servidor: ${err.message}`);
+  } finally {
+    btnConf.disabled = false;
+    btnConf.textContent = 'Confirmar cambios';
+  }
+}
+
+async function crearCliente() {
+  // Si hay cliente existente, calcular diff y mostrar panel de confirmacion
+  if (_clienteExistente) {
+    const cambios = calcularDiffFormulario();
+    if (cambios.length === 0) {
+      setStatus('warn', 'No hay cambios que guardar.');
+      return;
+    }
+    mostrarPanelConfirmacion(cambios);
+    return;
+  }
+
+  const datos = leerForm();
+  const get = id => document.getElementById(id)?.value?.trim() || '';
+  datos.entrega = buildEntregaPayload(get);
+  if (_pdfFile) {
+    datos.pdf_base64 = await fileToBase64(_pdfFile);
+    datos.fuente = 'operam-csf';
+  } else {
+    datos.fuente = 'operam-manual';
+  }
+  if (!datos.tax_id) {
+    setStatus('error', 'El RFC es obligatorio.');
+    return;
+  }
+
+  const btn = document.getElementById('btnCrear');
+  btn.disabled = true;
+  btn.textContent = '⏳ Creando...';
+  setStatus('loading', 'Conectando con Operam... (puede tardar hasta 60 segundos)');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180000); // 3 min
+
+  try {
+    const resp = await fetch(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(datos),
+      signal:  controller.signal,
+    });
+    const result = await resp.json();
+
+    if (!resp.ok || result.error) {
+      setStatus('error', `Error: ${result.error || 'Error desconocido'}`);
+    } else if (result.warn) {
+      setStatus('warn', result.mensaje);
+    } else if (result.duplicado) {
+      setStatus('warn', `El RFC ${datos.tax_id} ya esta registrado en Operam (${result.nombre}). No se realizo ningun cambio.`);
+    } else {
+      setStatus('ok', `Cliente creado: ${result.nombre} - ID ${result.cliente_id ?? '-'}`);
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      setStatus('error', 'Tiempo de espera agotado. Verifica en Operam si el cliente fue creado.');
+    } else {
+      setStatus('error', `No se pudo conectar con el servidor: ${err.message}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+    btn.disabled = false;
+    btn.textContent = 'Crear cliente en Operam';
+  }
+}
+
+function resetForm() {
+  _pdfFile = null;
+  _clienteExistente = null;
+  pdfInput.value = '';
+  document.getElementById('formSection').classList.add('hidden');
+  const banner = document.getElementById('bannerDuplicado');
+  if (banner) { banner.className = 'status warn hidden'; banner.textContent = ''; }
+  const btn = document.getElementById('btnCrear');
+  if (btn) btn.textContent = 'Crear cliente en Operam';
+  setStatus('', '');
+  setProgress(null);
+  uploadZone.style.display = '';
+}
+
+// ─── Selector de pais: adapta formulario para clientes extranjeros ────────────
+const RFC_EXTRANJERO = 'XEXX010101000';
+
+document.addEventListener('DOMContentLoaded', () => {
+  const fPais = document.getElementById('f_pais');
+  if (!fPais) return;
+  fPais.addEventListener('change', () => {
+    const pais = fPais.value;
+    const esExtranjero = pais !== 'MX';
+    const rfcInput = document.getElementById('f_tax_id');
+    const taxIdExtWrap = document.getElementById('f_tax_id_ext_wrap');
+    const cardFiscal = document.querySelector('.card-fiscal');
+
+    if (esExtranjero) {
+      if (rfcInput) { rfcInput.value = RFC_EXTRANJERO; rfcInput.readOnly = true; }
+      if (taxIdExtWrap) taxIdExtWrap.style.display = '';
+      if (cardFiscal) cardFiscal.style.display = 'none';
+    } else {
+      if (rfcInput) { rfcInput.value = ''; rfcInput.readOnly = false; }
+      if (taxIdExtWrap) taxIdExtWrap.style.display = 'none';
+      if (cardFiscal) cardFiscal.style.display = '';
+    }
+  });
+});
+</script>
+</body>
+</html>
