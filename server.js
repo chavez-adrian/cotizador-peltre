@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, buscarClientePorRFC } from './lib/operam-client.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -16,11 +16,9 @@ const PUBLIC_DIR = join(__dirname, 'public');
 const PDFS_DIR = join(DATA_DIR, 'pdfs');
 const HTMLS_DIR = join(DATA_DIR, 'htmls');
 
-// Asegurar que los directorios existan
 if (!existsSync(PDFS_DIR)) mkdirSync(PDFS_DIR, { recursive: true });
 if (!existsSync(HTMLS_DIR)) mkdirSync(HTMLS_DIR, { recursive: true });
 
-// .env manual (sin dotenv para mantenerlo simple)
 const envFile = join(__dirname, '.env');
 if (existsSync(envFile)) {
   for (const line of readFileSync(envFile, 'utf8').split('\n')) {
@@ -107,7 +105,6 @@ app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
     const data = req.body;
     data.vendedor = req.user.name;
 
-    // Log de cotizacion (con datos completos para historial)
     const logPath = join(DATA_DIR, 'cotizaciones.json');
     const log = existsSync(logPath) ? JSON.parse(readFileSync(logPath, 'utf8')) : [];
     const id = log.length + 1;
@@ -119,14 +116,12 @@ app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
       totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
       total: data.total || 0,
       tier: data.tier || '',
-      data, // datos completos para poder recargar
+      data,
     };
     log.push(entry);
     writeJSON('cotizaciones.json', log);
 
     const pdfBuffer = await generateQuotePDF(data);
-
-    // Guardar PDF en disco para WhatsApp link
     const pdfPath = join(PDFS_DIR, `cot_${id}.pdf`);
     writeFileSync(pdfPath, pdfBuffer);
 
@@ -149,7 +144,6 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
     const data = req.body;
     data.vendedor = req.user.name;
 
-    // Reusar o crear entrada en cotizaciones.json
     const logPath = join(DATA_DIR, 'cotizaciones.json');
     const log = existsSync(logPath) ? JSON.parse(readFileSync(logPath, 'utf8')) : [];
     const id = log.length + 1;
@@ -169,15 +163,10 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
     const incluirFotos = !!data.incluirFotos;
     data.id = id;
     const html = generateQuoteHTML(data, { incluirFotos });
-
-    // Guardar HTML en disco
     const htmlPath = join(HTMLS_DIR, `cot_${id}.html`);
     writeFileSync(htmlPath, html, 'utf8');
 
-    res.set({
-      'Content-Type': 'text/html; charset=utf-8',
-      'X-Cotizacion-Id': String(id),
-    });
+    res.set({ 'Content-Type': 'text/html; charset=utf-8', 'X-Cotizacion-Id': String(id) });
     res.send(html);
   } catch (err) {
     console.error('Error generando HTML:', err);
@@ -185,26 +174,20 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
   }
 });
 
-// Servir HTML guardado por ID
 app.get('/api/cotizacion/html/:id', (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
-
   const htmlPath = join(HTMLS_DIR, `cot_${id}.html`);
   if (!existsSync(htmlPath)) return res.status(404).send('<p>HTML no encontrado</p>');
-
   res.set({ 'Content-Type': 'text/html; charset=utf-8' });
   res.sendFile(htmlPath);
 });
 
-// Servir PDF guardado por ID (sin auth — el ID es suficientemente opaco para uso interno)
 app.get('/api/cotizacion/pdf/:id', (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
-
   const pdfPath = join(PDFS_DIR, `cot_${id}.pdf`);
   if (!existsSync(pdfPath)) return res.status(404).json({ error: 'PDF no encontrado' });
-
   res.set({
     'Content-Type': 'application/pdf',
     'Content-Disposition': `inline; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
@@ -231,12 +214,9 @@ app.get('/api/cotizaciones/:id', authMiddleware, (req, res) => {
   const log = readJSON('cotizaciones.json') || [];
   const entry = log.find(c => c.id === id);
   if (!entry) return res.status(404).json({ error: 'No encontrada' });
-
-  // Solo el vendedor dueño o admin pueden acceder
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
-
   res.json(entry.data);
 });
 
@@ -244,16 +224,11 @@ app.get('/api/cotizaciones/:id', authMiddleware, (req, res) => {
 
 app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('excel'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se recibio archivo' });
-
   try {
     const newData = extractPrices(req.file.buffer);
     const oldData = readJSON('precios.json');
     const diff = oldData ? diffPrices(oldData, newData) : null;
-
-    if (req.query.preview === '1') {
-      return res.json({ preview: true, diff, newVersion: newData.version });
-    }
-
+    if (req.query.preview === '1') return res.json({ preview: true, diff, newVersion: newData.version });
     writeJSON('precios.json', newData);
     res.json({ saved: true, diff, version: newData.version });
   } catch (err) {
@@ -262,7 +237,7 @@ app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('e
   }
 });
 
-// --- Admin: Config catálogo cotizable ---
+// --- Admin: Config catalogo cotizable ---
 
 app.get('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
   const config = readJSON('config.json') || { tiposActivos: [], texturasActivas: [] };
@@ -298,7 +273,7 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => 
   res.json({ saved: true });
 });
 
-// --- Cotizar envío con envia.com ---
+// --- Cotizar envio con envia.com ---
 
 const ENVIA_ORIGIN = {
   name: 'Peltre Nacional',
@@ -316,9 +291,8 @@ const ENVIA_ORIGIN = {
 
 app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
   const { cpDestino, paisDestino, items, totalConIVA } = req.body;
-
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
-  if (!items?.length) return res.status(400).json({ error: 'Carrito vacío' });
+  if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
 
   const ENVIA_API_KEY = process.env.ENVIA_API_KEY;
   if (!ENVIA_API_KEY) return res.status(500).json({ error: 'ENVIA_API_KEY no configurado en .env' });
@@ -330,33 +304,20 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: err.message });
   }
 
-  if (packages.length === 0) {
-    return res.status(400).json({ error: 'No se calcularon paquetes', warnings });
-  }
+  if (packages.length === 0) return res.status(400).json({ error: 'No se calcularon paquetes', warnings });
 
   const destination = {
-    name: 'Destinatario',
-    city: 'Destino',
-    state: 'DF',
-    country: paisDestino || 'MX',
-    postalCode: cpDestino,
+    name: 'Destinatario', city: 'Destino', state: 'DF',
+    country: paisDestino || 'MX', postalCode: cpDestino,
   };
 
   const CARRIERS = ['fedex', 'dhl', 'ups'];
 
   const queryCarrier = async (carrier) => {
-    const payload = {
-      origin: ENVIA_ORIGIN,
-      destination,
-      packages,
-      shipment: { carrier, type: 1 },
-    };
+    const payload = { origin: ENVIA_ORIGIN, destination, packages, shipment: { carrier, type: 1 } };
     const r = await fetch('https://api.envia.com/ship/rate/', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${ENVIA_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Authorization': `Bearer ${ENVIA_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const data = await r.json();
@@ -366,19 +327,13 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
 
   try {
     const results = await Promise.allSettled(CARRIERS.map(queryCarrier));
-    const rates = results
-      .filter(r => r.status === 'fulfilled')
-      .flatMap(r => r.value);
+    const rates = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
     rates.sort((a, b) => (a.totalPrice ?? a.rate ?? 0) - (b.totalPrice ?? b.rate ?? 0));
-
-    if (rates.length === 0 && warnings.length === 0) {
-      warnings.push('No se obtuvieron tarifas de ninguna paquetería');
-    }
-
+    if (rates.length === 0 && warnings.length === 0) warnings.push('No se obtuvieron tarifas de ninguna paqueteria');
     res.json({ rates, resumen, warnings });
   } catch (err) {
-    console.error('Error cotizando envío:', err);
-    res.status(500).json({ error: 'Error de conexión con envia.com: ' + err.message });
+    console.error('Error cotizando envio:', err);
+    res.status(500).json({ error: 'Error de conexion con envia.com: ' + err.message });
   }
 });
 
@@ -392,7 +347,7 @@ app.get('/api/admin/cajas', authMiddleware, adminMiddleware, (req, res) => {
 app.put('/api/admin/cajas', authMiddleware, adminMiddleware, (req, res) => {
   const cajas = req.body;
   if (typeof cajas !== 'object' || Array.isArray(cajas)) {
-    return res.status(400).json({ error: 'Formato inválido' });
+    return res.status(400).json({ error: 'Formato invalido' });
   }
   writeJSON('cajas.json', cajas);
   res.json({ saved: true });
@@ -430,7 +385,6 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
         name: c.CustName || '',
         ref: c.cust_ref || '',
         rfc: c.tax_id || '',
-        // Dirección fiscal (CFDI) en title case como fallback — se sobreescribe con branch si existe
         calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),
         numInt: c.suite_number || '',
         colonia: titleCase(c.district || ''),
@@ -452,16 +406,14 @@ app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) 
   try {
     const domicilios = await obtenerDomicilios(req.params.id);
     res.json(domicilios);
-  } catch (err) {
+  } catch {
     res.status(503).json({ error: 'Operam no disponible' });
   }
 });
 
 app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
   const { diff } = req.body || {};
-  if (!diff || typeof diff !== 'object') {
-    return res.status(400).json({ error: 'diff requerido' });
-  }
+  if (!diff || typeof diff !== 'object') return res.status(400).json({ error: 'diff requerido' });
   try {
     await actualizarCliente(req.params.id, diff);
     res.json({ ok: true });
@@ -477,12 +429,24 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const log = readJSON('cotizaciones.json') || [];
   const entry = log.find(c => c.id === id);
   if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
-
   try {
     const folio = await subirCotizacionOperam(entry.data);
     res.json({ ok: true, folio });
   } catch (err) {
     res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+  }
+});
+
+// --- CSF: buscar cliente por RFC (sin JWT) ---
+
+app.get('/api/buscar-cliente', async (req, res) => {
+  const { rfc } = req.query;
+  if (!rfc) return res.status(400).json({ error: 'Falta el parametro rfc' });
+  try {
+    const resultado = await buscarClientePorRFC(rfc);
+    res.json(resultado);
+  } catch (err) {
+    res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }
 });
 
