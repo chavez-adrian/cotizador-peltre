@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, buscarClientePorRFC, crearCliente } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente } from './lib/operam-client.js';
 import { query as dbQuery } from './lib/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -227,8 +227,7 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
 });
 
 app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => {
-  const vendedores = readJSON('vendedores.json');
-  res.json(vendedores);
+  res.json(readJSON('vendedores.json'));
 });
 
 app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => {
@@ -363,6 +362,31 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     res.json({ ok: true, folio });
   } catch (err) {
     res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+  }
+});
+
+// --- CSF: historial de auditoria (sin JWT) ---
+
+app.get('/api/log', async (req, res) => {
+  const rows = await dbQuery(
+    'SELECT id, created_at, rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, error_msg FROM clientes_log ORDER BY created_at DESC LIMIT 200'
+  );
+  if (rows === null) return res.status(503).json({ error: 'Base de datos no configurada' });
+  res.json(rows.rows);
+});
+
+// --- CSF: actualizar cliente existente (sin JWT) ---
+
+app.put('/api/actualizar-cliente/:id', async (req, res) => {
+  const campos = req.body;
+  if (!campos || Object.keys(campos).length === 0) {
+    return res.status(400).json({ error: 'No se enviaron campos a actualizar' });
+  }
+  try {
+    await actualizarClienteDirecto(req.params.id, campos);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
   }
 });
 
