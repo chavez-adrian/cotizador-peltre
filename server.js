@@ -8,7 +8,8 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, buscarClientePorRFC } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, buscarClientePorRFC, crearCliente } from './lib/operam-client.js';
+import { query as dbQuery } from './lib/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -38,8 +39,6 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-// --- Helpers ---
-
 function readJSON(filename) {
   const path = join(DATA_DIR, filename);
   if (!existsSync(path)) return null;
@@ -66,16 +65,12 @@ function adminMiddleware(req, res, next) {
   next();
 }
 
-// --- Auth ---
-
 app.post('/api/login', (req, res) => {
   const { vendedorId, pin } = req.body;
   const vendedores = readJSON('vendedores.json');
   if (!vendedores) return res.status(500).json({ error: 'Vendedores no configurados' });
-
   const v = vendedores.find(v => v.id === vendedorId && v.pin === pin);
   if (!v) return res.status(401).json({ error: 'PIN incorrecto' });
-
   const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '30d' });
   res.json({ token, user: { id: v.id, name: v.name, role: v.role } });
 });
@@ -85,8 +80,6 @@ app.get('/api/vendedores', (req, res) => {
   if (!vendedores) return res.status(500).json({ error: 'Vendedores no configurados' });
   res.json(vendedores.map(v => ({ id: v.id, name: v.name })));
 });
-
-// --- Precios ---
 
 app.get('/api/precios', authMiddleware, (req, res) => {
   const precios = readJSON('precios.json');
@@ -98,33 +91,23 @@ app.get('/api/precios', authMiddleware, (req, res) => {
   res.json({ ...precios, config });
 });
 
-// --- Cotizacion PDF ---
-
 app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-
     const logPath = join(DATA_DIR, 'cotizaciones.json');
     const log = existsSync(logPath) ? JSON.parse(readFileSync(logPath, 'utf8')) : [];
     const id = log.length + 1;
     const entry = {
-      id,
-      fecha: new Date().toISOString(),
-      vendedor: req.user.name,
+      id, fecha: new Date().toISOString(), vendedor: req.user.name,
       cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
       totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
-      total: data.total || 0,
-      tier: data.tier || '',
-      data,
+      total: data.total || 0, tier: data.tier || '', data,
     };
     log.push(entry);
     writeJSON('cotizaciones.json', log);
-
     const pdfBuffer = await generateQuotePDF(data);
-    const pdfPath = join(PDFS_DIR, `cot_${id}.pdf`);
-    writeFileSync(pdfPath, pdfBuffer);
-
+    writeFileSync(join(PDFS_DIR, `cot_${id}.pdf`), pdfBuffer);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
@@ -137,35 +120,25 @@ app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
   }
 });
 
-// --- Cotizacion HTML ---
-
 app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-
     const logPath = join(DATA_DIR, 'cotizaciones.json');
     const log = existsSync(logPath) ? JSON.parse(readFileSync(logPath, 'utf8')) : [];
     const id = log.length + 1;
     const entry = {
-      id,
-      fecha: new Date().toISOString(),
-      vendedor: req.user.name,
+      id, fecha: new Date().toISOString(), vendedor: req.user.name,
       cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
       totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
-      total: data.total || 0,
-      tier: data.tier || '',
-      data,
+      total: data.total || 0, tier: data.tier || '', data,
     };
     log.push(entry);
     writeJSON('cotizaciones.json', log);
-
     const incluirFotos = !!data.incluirFotos;
     data.id = id;
     const html = generateQuoteHTML(data, { incluirFotos });
-    const htmlPath = join(HTMLS_DIR, `cot_${id}.html`);
-    writeFileSync(htmlPath, html, 'utf8');
-
+    writeFileSync(join(HTMLS_DIR, `cot_${id}.html`), html, 'utf8');
     res.set({ 'Content-Type': 'text/html; charset=utf-8', 'X-Cotizacion-Id': String(id) });
     res.send(html);
   } catch (err) {
@@ -195,8 +168,6 @@ app.get('/api/cotizacion/pdf/:id', (req, res) => {
   res.sendFile(pdfPath);
 });
 
-// --- Cotizaciones historial ---
-
 app.get('/api/cotizaciones', authMiddleware, (req, res) => {
   const log = readJSON('cotizaciones.json') || [];
   const filtradas = req.user.role === 'admin'
@@ -220,8 +191,6 @@ app.get('/api/cotizaciones/:id', authMiddleware, (req, res) => {
   res.json(entry.data);
 });
 
-// --- Admin: Upload precios ---
-
 app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('excel'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se recibio archivo' });
   try {
@@ -236,8 +205,6 @@ app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('e
     res.status(400).json({ error: 'Error procesando archivo: ' + err.message });
   }
 });
-
-// --- Admin: Config catalogo cotizable ---
 
 app.get('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
   const config = readJSON('config.json') || { tiposActivos: [], texturasActivas: [] };
@@ -259,8 +226,6 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
   res.json({ saved: true });
 });
 
-// --- Admin: Vendedores ---
-
 app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => {
   const vendedores = readJSON('vendedores.json');
   res.json(vendedores);
@@ -273,46 +238,29 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => 
   res.json({ saved: true });
 });
 
-// --- Cotizar envio con envia.com ---
-
 const ENVIA_ORIGIN = {
-  name: 'Peltre Nacional',
-  company: 'Peltre Nacional SA de CV',
-  email: 'contacto@pppeltre.mx',
-  phone: '5573151197',
-  street: 'Roberto Fierro',
-  number: 'MZ42 LT13',
-  district: 'Alfredo del Mazo',
-  city: 'Ixtapaluca',
-  state: 'MEX',
-  country: 'MX',
-  postalCode: '56577',
+  name: 'Peltre Nacional', company: 'Peltre Nacional SA de CV',
+  email: 'contacto@pppeltre.mx', phone: '5573151197',
+  street: 'Roberto Fierro', number: 'MZ42 LT13',
+  district: 'Alfredo del Mazo', city: 'Ixtapaluca',
+  state: 'MEX', country: 'MX', postalCode: '56577',
 };
 
 app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
   const { cpDestino, paisDestino, items, totalConIVA } = req.body;
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
   if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
-
   const ENVIA_API_KEY = process.env.ENVIA_API_KEY;
   if (!ENVIA_API_KEY) return res.status(500).json({ error: 'ENVIA_API_KEY no configurado en .env' });
-
   let packages, resumen, warnings;
   try {
     ({ packages, resumen, warnings } = calcularPaquetes(items, totalConIVA || 0));
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
-
   if (packages.length === 0) return res.status(400).json({ error: 'No se calcularon paquetes', warnings });
-
-  const destination = {
-    name: 'Destinatario', city: 'Destino', state: 'DF',
-    country: paisDestino || 'MX', postalCode: cpDestino,
-  };
-
+  const destination = { name: 'Destinatario', city: 'Destino', state: 'DF', country: paisDestino || 'MX', postalCode: cpDestino };
   const CARRIERS = ['fedex', 'dhl', 'ups'];
-
   const queryCarrier = async (carrier) => {
     const payload = { origin: ENVIA_ORIGIN, destination, packages, shipment: { carrier, type: 1 } };
     const r = await fetch('https://api.envia.com/ship/rate/', {
@@ -324,7 +272,6 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
     if (!r.ok || data.meta === 'error') return [];
     return Array.isArray(data) ? data : (data.data || []);
   };
-
   try {
     const results = await Promise.allSettled(CARRIERS.map(queryCarrier));
     const rates = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
@@ -337,23 +284,16 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
   }
 });
 
-// --- Admin: Cajas ---
-
 app.get('/api/admin/cajas', authMiddleware, adminMiddleware, (req, res) => {
-  const cajas = readJSON('cajas.json') || {};
-  res.json(cajas);
+  res.json(readJSON('cajas.json') || {});
 });
 
 app.put('/api/admin/cajas', authMiddleware, adminMiddleware, (req, res) => {
   const cajas = req.body;
-  if (typeof cajas !== 'object' || Array.isArray(cajas)) {
-    return res.status(400).json({ error: 'Formato invalido' });
-  }
+  if (typeof cajas !== 'object' || Array.isArray(cajas)) return res.status(400).json({ error: 'Formato invalido' });
   writeJSON('cajas.json', cajas);
   res.json({ saved: true });
 });
-
-// --- Admin: Cotizaciones log ---
 
 app.get('/api/admin/cotizaciones', authMiddleware, adminMiddleware, (req, res) => {
   const log = readJSON('cotizaciones.json') || [];
@@ -361,8 +301,6 @@ app.get('/api/admin/cotizaciones', authMiddleware, adminMiddleware, (req, res) =
     ({ id, fecha, vendedor, cliente, totalPiezas, total, tier })
   ));
 });
-
-// --- Operam: buscar clientes ---
 
 function titleCase(str) {
   if (!str) return '';
@@ -381,16 +319,10 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
     const clientes = (Array.isArray(raw) ? raw : []).map(c => {
       const branch = c.branches?.[0] || {};
       return {
-        id: c.customer_id,
-        name: c.CustName || '',
-        ref: c.cust_ref || '',
-        rfc: c.tax_id || '',
+        id: c.customer_id, name: c.CustName || '', ref: c.cust_ref || '', rfc: c.tax_id || '',
         calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),
-        numInt: c.suite_number || '',
-        colonia: titleCase(c.district || ''),
-        cp: c.postal_code || '',
-        municipio: titleCase(c.city || ''),
-        estado: titleCase(c.state || ''),
+        numInt: c.suite_number || '', colonia: titleCase(c.district || ''),
+        cp: c.postal_code || '', municipio: titleCase(c.city || ''), estado: titleCase(c.state || ''),
         telefono: branch.phone || c.contacts?.[0]?.phone || '',
         email: branch.email || c.contacts?.[0]?.email || '',
         nombreEntrega: branch.br_name || branch.contact_name || '',
@@ -404,8 +336,7 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
 
 app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) => {
   try {
-    const domicilios = await obtenerDomicilios(req.params.id);
-    res.json(domicilios);
+    res.json(await obtenerDomicilios(req.params.id));
   } catch {
     res.status(503).json({ error: 'Operam no disponible' });
   }
@@ -422,8 +353,6 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// --- Operam: subir cotizacion ---
-
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
   const log = readJSON('cotizaciones.json') || [];
@@ -437,26 +366,50 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// --- CSF: crear cliente desde datos de CSF (sin JWT) ---
+
+function logCliente(rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, error_msg) {
+  dbQuery(
+    'INSERT INTO clientes_log (rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, error_msg) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [rfc, nombre || null, resultado, cliente_id || null, fuente || null, dropbox_ok ?? null, error_msg || null]
+  ).catch(err => console.error('[db] Error insertando log:', err.message));
+}
+
+app.post('/api/crear-cliente', async (req, res) => {
+  const cliente = req.body;
+  if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
+  const fuente = cliente.fuente || (cliente.pdf_base64 ? 'csf-upload' : 'cotizador');
+  try {
+    const resultado = await crearCliente(cliente);
+    logCliente(cliente.tax_id, cliente.CustName, resultado.duplicado ? 'duplicado' : 'creado', resultado.cliente_id, fuente, null, null);
+    if (!resultado.duplicado && cliente.pdf_base64) {
+      import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
+        subirCsfDropbox(cliente.pdf_base64, cliente.tax_id, cliente.CustName)
+          .catch(err => console.error('[dropbox]', err.message))
+      );
+    }
+    res.json({ ok: true, ...resultado });
+  } catch (err) {
+    logCliente(cliente.tax_id, cliente.CustName, 'error', null, fuente, null, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- CSF: buscar cliente por RFC (sin JWT) ---
 
 app.get('/api/buscar-cliente', async (req, res) => {
   const { rfc } = req.query;
   if (!rfc) return res.status(400).json({ error: 'Falta el parametro rfc' });
   try {
-    const resultado = await buscarClientePorRFC(rfc);
-    res.json(resultado);
+    res.json(await buscarClientePorRFC(rfc));
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }
 });
 
-// --- Admin page ---
-
 app.get('/admin', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'admin.html'));
 });
-
-// --- SPA fallback ---
 
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
