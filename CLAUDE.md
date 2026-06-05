@@ -18,6 +18,16 @@ node --test --test-concurrency=1 public/js/__tests__/csf-upload-alta.test.cjs
 
 > `--test-concurrency=1` es obligatorio cuando los tests comparten estado global (`globalThis.fetch` mock o `cotizaciones.json`). Sin el los tests se interfieren.
 
+## Documentos de contexto del proceso comercial
+
+Antes de trabajar en cambios al flujo de clientes, leer:
+
+- `PROCESO_COMERCIAL_AS_IS.md` — narrativa completa del proceso comercial de Peltre Nacional (mayoreo, sistemas, cotización, producción, envío).
+- `SOP_crear_cliente_operam.md` — procedimiento oficial de 45 pasos para dar de alta un cliente en Operam, con checklist de validación.
+- `MAPEO_CAMPOS_CLIENTE.md` — mapeo cruzado de campos entre SOP, formularios del cotizador, API de Operam y Neon DB. Incluye gaps y valores hardcodeados vs SOP. Es la base del PRD pendiente.
+
+---
+
 ## Arquitectura
 
 El proyecto es un servidor Express monolitico (`server.js`) con frontend vanilla JS (`public/js/app.js`, ~2500 lineas) y una herramienta standalone de alta de clientes (`public/csf-upload.html`). Sin frameworks frontend, sin bundlers.
