@@ -186,3 +186,27 @@ test('D6: detectarDuplicados ordena candidatos por similitud descendente', () =>
   }
   assert.ok(result.candidatos.length >= 1);
 });
+
+// AC5 — nombre identico sin acentos detecta candidato
+test('D7: detectarDuplicados detecta candidato con nombre identico pero sin acentos (AC5)', () => {
+  // "Comercio General SA de CV" en Operam; input escrito sin acento en 'e': igual tras NFD
+  const clientes = [
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Distribuciones Rapidas SA de CV', cust_ref: 'DISRAP', id: 10 },
+  ];
+  // Input con tilde: 'Distribuciones Rápidas' — deberia matchear igual
+  const result = detectarDuplicados('XAXX010101000', 'Distribuciones Rapidas SA de CV', clientes);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.ok(result.candidatos.some(c => c.id === 10), 'debe encontrar el candidato');
+});
+
+// AC5 — nombre con articulos y sufijos corporativos
+test('D8: detectarDuplicados detecta candidato con articulos/sufijos en nombre (AC5)', () => {
+  const clientes = [
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'El Aguila SA de CV', cust_ref: 'AGUILA', id: 20 },
+  ];
+  // Input con articulos: "Distribuidora El Aguila SA" -> tokens: [distribuidora, aguila]
+  // CustName tokens: [aguila] -> solapamiento=1
+  const result = detectarDuplicados('XAXX010101000', 'Distribuidora El Aguila SA de CV', clientes);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.ok(result.candidatos.some(c => c.id === 20), 'debe encontrar candidato El Aguila');
+});
