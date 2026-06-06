@@ -2655,6 +2655,130 @@ function altaConfirmarDomicilio() {
 
 window.altaConfirmarDomicilio = altaConfirmarDomicilio;
 
+// === Seccion 4: Dar de alta (progreso POST+GET+PUT) ===
+
+const ALTA_PASO_NOMBRES = ['POST customer', 'GET branch_id', 'PUT branch'];
+const ALTA_ICO_PENDING = '○';
+const ALTA_ICO_SPIN = '◔';
+const ALTA_ICO_OK = '✓';
+const ALTA_ICO_ERR = '✗';
+
+function altaPasoSetStatus(idx, status, msg) {
+  const ico = document.getElementById(`alta-paso-ico-${idx}`);
+  const msgEl = document.getElementById(`alta-paso-msg-${idx}`);
+  const row = document.getElementById(`alta-paso-${idx}`);
+  if (ico) {
+    ico.textContent = status === 'ok' ? ALTA_ICO_OK : status === 'error' ? ALTA_ICO_ERR : status === 'loading' ? ALTA_ICO_SPIN : ALTA_ICO_PENDING;
+    ico.style.color = status === 'ok' ? 'var(--success, #22c55e)' : status === 'error' ? 'var(--danger)' : '';
+  }
+  if (msgEl) {
+    if (msg && status === 'error') { msgEl.textContent = msg; msgEl.style.display = ''; }
+    else { msgEl.style.display = 'none'; }
+  }
+  if (row) row.style.background = status === 'error' ? '#fff5f5' : '';
+}
+
+function altaPasosReset() {
+  [0, 1, 2].forEach(i => altaPasoSetStatus(i, 'pending', ''));
+}
+
+function altaDarDeAlta() {
+  const btn = document.getElementById('alta-btn-dar-alta');
+  const reintBtn = document.getElementById('alta-btn-reintentar');
+  const exitoDiv = document.getElementById('alta-btns-exito');
+  if (btn) btn.disabled = true;
+  if (reintBtn) reintBtn.style.display = 'none';
+  if (exitoDiv) exitoDiv.style.display = 'none';
+
+  altaPasosReset();
+
+  const csfDatos = altaCsfState.datos || {};
+  const getComercial = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const domicilio = altaState.domicilio || {};
+  const payload = {
+    tax_id: csfDatos.rfc || '',
+    CustName: csfDatos.razonSocial || '',
+    cust_ref: csfDatos.nombreCorto || '',
+    idcif: csfDatos.idcif || '',
+    street: csfDatos.calle || '',
+    street_number: csfDatos.numExt || '',
+    suite_number: csfDatos.numInt || '',
+    district: csfDatos.colonia || '',
+    postal_code: csfDatos.cp || '',
+    city: csfDatos.municipio || '',
+    state: csfDatos.estado || '',
+    cfdi_regimen_fiscal: csfDatos.regimenFiscal || '',
+    timbrado_uso_cfdi: getComercial('alta-uso-cfdi'),
+    sales_type: getComercial('alta-lista-precios'),
+    segmento_id: getComercial('alta-segmento'),
+    salesman: getComercial('alta-vendedor'),
+    pais: domicilio.pais || 'MX',
+    entrega: { ...domicilio },
+    customer_id: altaState.customer_id || null,
+    branch_id: altaState.branch_id || null,
+    fuente: 'cotizador',
+  };
+
+  [0, 1, 2].forEach(i => altaPasoSetStatus(i, 'loading'));
+
+  const token = window._authToken || localStorage.getItem('token') || '';
+  fetch('/api/crear-cliente', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  })
+    .then(r => r.json())
+    .then(data => {
+      altaState.customer_id = data.customer_id;
+      altaState.branch_id = data.branch_id;
+
+      const stepNames = ['POST customer', 'GET branch_id', 'PUT branch'];
+      (data.steps || []).forEach((step, i) => {
+        altaPasoSetStatus(i, step.status === 'ok' ? 'ok' : 'error', step.error || '');
+      });
+
+      if (data.ok) {
+        if (exitoDiv) { exitoDiv.style.display = 'flex'; }
+      } else {
+        if (reintBtn) reintBtn.style.display = '';
+        if (btn) btn.disabled = false;
+      }
+    })
+    .catch(err => {
+      altaPasoSetStatus(0, 'error', err.message);
+      if (reintBtn) reintBtn.style.display = '';
+      if (btn) btn.disabled = false;
+    });
+}
+
+function altaReintentar() {
+  altaDarDeAlta();
+}
+
+function altaCotizarAhora() {
+  const customerId = altaState.customer_id;
+  if (!customerId) return;
+  const panel = document.getElementById('panel-alta');
+  if (panel) panel.style.display = 'none';
+  const buscarPanel = document.getElementById('panel-buscar');
+  if (buscarPanel) buscarPanel.style.display = 'none';
+  const searchInput = document.getElementById('operam-search');
+  if (searchInput) { searchInput.value = altaCsfState.datos?.rfc || ''; }
+  document.getElementById('btn-buscar-operam')?.click();
+}
+
+function altaTerminar() {
+  const panel = document.getElementById('panel-alta');
+  if (panel) panel.style.display = 'none';
+  const btnNuevo = document.getElementById('btn-nuevo-cliente');
+  if (btnNuevo) btnNuevo.textContent = 'Nuevo cliente';
+}
+
+window.altaDarDeAlta = altaDarDeAlta;
+window.altaReintentar = altaReintentar;
+window.altaCotizarAhora = altaCotizarAhora;
+window.altaTerminar = altaTerminar;
+
 // Wiring del dropzone
 document.addEventListener('DOMContentLoaded', () => {
   const zone = document.getElementById('csf-dropzone');

@@ -300,15 +300,58 @@
 
           <!-- Seccion 4: Confirmacion y alta (bloqueada) -->
           <div class="alta-seccion alta-seccion-bloqueada" id="alta-sec-4" data-sec="4">
-            <div class="alta-sec-header" style="cursor:not-allowed">
+            <div class="alta-sec-header" id="alta-hd-4" onclick="altaToggleSeccion(4)" style="cursor:not-allowed">
               <div style="display:flex;align-items:center;gap:10px">
                 <div class="alta-sec-num" id="alta-num-4">4</div>
                 <span class="alta-sec-titulo">Confirmacion y alta</span>
               </div>
-              <span class="alta-sec-icono">&#128274;</span>
+              <span class="alta-sec-icono" id="alta-ico-4">&#128274;</span>
             </div>
             <div class="alta-sec-body" id="alta-body-4" style="display:none">
-              <p style="color:var(--text-light);font-size:13px;padding:8px 0">[Seccion 4 — placeholder: Confirmacion y alta]</p>
+              <!-- Filas de progreso POST+GET+PUT -->
+              <div id="alta-pasos" style="margin-bottom:16px">
+                <div class="alta-paso" id="alta-paso-0" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+                  <div class="alta-paso-icono" id="alta-paso-ico-0" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Crear cliente</div>
+                    <div style="font-size:11px;color:var(--text-light)">POST /api/v3/sales/customers</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-0" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
+                <div class="alta-paso" id="alta-paso-1" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+                  <div class="alta-paso-icono" id="alta-paso-ico-1" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Obtener domicilio</div>
+                    <div style="font-size:11px;color:var(--text-light)">GET /customers/{id} &mdash; branch_id</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-1" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
+                <div class="alta-paso" id="alta-paso-2" style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                  <div class="alta-paso-icono" id="alta-paso-ico-2" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Configurar domicilio</div>
+                    <div style="font-size:11px;color:var(--text-light)">PUT /branches/{branch_id}</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-2" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
+              </div>
+              <!-- Boton principal -->
+              <button class="btn btn-primary" id="alta-btn-dar-alta" style="width:100%;margin-bottom:8px" onclick="altaDarDeAlta()">
+                Dar de alta
+              </button>
+              <!-- Botones post-exito (ocultos hasta completar) -->
+              <div id="alta-btns-exito" style="display:none;gap:8px;margin-top:8px">
+                <button class="btn btn-primary" style="flex:1" id="alta-btn-cotizar" onclick="altaCotizarAhora()">
+                  Cotizar ahora
+                </button>
+                <button class="btn btn-secondary" style="flex:1" id="alta-btn-terminar" onclick="altaTerminar()">
+                  Terminar
+                </button>
+              </div>
+              <!-- Boton reintentar (oculto hasta error) -->
+              <button class="btn btn-secondary" id="alta-btn-reintentar" style="display:none;width:100%;margin-top:8px" onclick="altaReintentar()">
+                Reintentar
+              </button>
             </div>
           </div>
 

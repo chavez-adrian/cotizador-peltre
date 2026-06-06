@@ -302,4 +302,30 @@ function validarAltaDomicilio(getVal) {
   return null;
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio };
+function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId) {
+  return {
+    tax_id: csfDatos.rfc || '',
+    CustName: csfDatos.razonSocial || '',
+    cust_ref: csfDatos.nombreCorto || '',
+    idcif: csfDatos.idcif || '',
+    street: csfDatos.calle || '',
+    street_number: csfDatos.numExt || '',
+    suite_number: csfDatos.numInt || '',
+    district: csfDatos.colonia || '',
+    postal_code: csfDatos.cp || '',
+    city: csfDatos.municipio || '',
+    state: csfDatos.estado || '',
+    cfdi_regimen_fiscal: csfDatos.regimenFiscal || '',
+    timbrado_uso_cfdi: comercial.uso_cfdi || 'S01',
+    sales_type: comercial.sales_type || '',
+    segmento_id: comercial.segmento_id || '',
+    salesman: comercial.salesman || '',
+    pais: domicilio.pais || 'MX',
+    entrega: { ...domicilio },
+    customer_id: customerId || null,
+    branch_id: branchId || null,
+    fuente: 'cotizador',
+  };
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload };
