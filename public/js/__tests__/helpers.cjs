@@ -302,6 +302,41 @@ function validarAltaDomicilio(getVal) {
   return null;
 }
 
+// RFC regex: 3-4 letras/& seguido de 6 digitos seguido de 3 chars alfanumericos
+// 12 chars = persona moral, 13 chars = persona fisica
+const RFC_MX_REGEX = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/i;
+const RFC_GENERICOS_MX = new Set(['XAXX010101000', 'XEXX010101000']);
+
+function validarRfcManual(rfc, pais) {
+  if (pais && pais !== 'MX') return null;
+  if (!rfc) return 'El RFC es obligatorio';
+  if (RFC_GENERICOS_MX.has(rfc.toUpperCase())) return null;
+  if (!RFC_MX_REGEX.test(rfc)) return 'El RFC no tiene formato valido (12 o 13 caracteres alfanumericos)';
+  return null;
+}
+
+const MANUAL_CAMPOS_REQUERIDOS = ['rfc', 'razonSocial', 'nombreCorto'];
+
+function buildManualDatosExtraidos(campos) {
+  for (const campo of MANUAL_CAMPOS_REQUERIDOS) {
+    if (!campos[campo]) {
+      return { error: `Campo requerido faltante: ${campo}` };
+    }
+  }
+  return {
+    rfc: campos.rfc,
+    razonSocial: campos.razonSocial,
+    nombreCorto: campos.nombreCorto,
+    idcif: campos.idcif || '',
+    cp: campos.cp || '',
+    municipio: campos.municipio || '',
+    estado: campos.estado || '',
+    regimenFiscal: campos.regimenFiscal || '',
+    usoCfdi: campos.usoCfdi || 'S01',
+    pais: campos.pais || 'MX',
+  };
+}
+
 function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId) {
   return {
     tax_id: csfDatos.rfc || '',
@@ -328,4 +363,4 @@ function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, b
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos };
