@@ -185,4 +185,40 @@ function buildAltaComercialPayload(getVal) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload };
+function buildCsfDropzoneState(estado, accion) {
+  switch (accion.type) {
+    case 'LOADING':
+      return { ...estado, status: 'loading', spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' };
+    case 'SUCCESS':
+      return { ...estado, status: 'success', rfc: accion.rfc, fileName: accion.fileName };
+    case 'ERROR':
+      return { ...estado, status: 'error', mensaje: accion.mensaje };
+    case 'RESET':
+      return { status: 'idle', rfc: null, fileName: null, mensaje: null };
+    default:
+      return { ...estado };
+  }
+}
+
+const CSF_CAMPOS_REQUERIDOS = ['rfc', 'razonSocial', 'nombreCorto'];
+
+function buildCsfDatosExtraidos(datos) {
+  for (const campo of CSF_CAMPOS_REQUERIDOS) {
+    if (!datos[campo]) {
+      return { error: `Campo requerido faltante: ${campo}` };
+    }
+  }
+  return {
+    rfc: datos.rfc,
+    razonSocial: datos.razonSocial,
+    nombreCorto: datos.nombreCorto,
+    idcif: datos.idcif || '',
+    cp: datos.cp || '',
+    municipio: datos.municipio || '',
+    estado: datos.estado || '',
+    regimenFiscal: datos.regimenFiscal || '',
+    usoCfdi: datos.usoCfdi || 'S01',
+  };
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos };
