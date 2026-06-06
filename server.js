@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
 import { query as dbQuery } from './lib/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -449,16 +449,67 @@ app.post('/api/crear-cliente', async (req, res) => {
   const cliente = req.body;
   if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
   const fuente = cliente.fuente || (cliente.pdf_base64 ? 'csf-upload' : 'cotizador');
+  const steps = [];
+  let customer_id = cliente.customer_id || null;
+  let branch_id = cliente.branch_id || null;
+
   try {
-    const resultado = await crearCliente(cliente);
-    logCliente(cliente.tax_id, cliente.CustName, resultado.duplicado ? 'duplicado' : 'creado', resultado.cliente_id, fuente, null, null);
-    if (!resultado.duplicado && cliente.pdf_base64) {
-      import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
-        subirCsfDropbox(cliente.pdf_base64, cliente.tax_id, cliente.CustName)
-          .catch(err => console.error('[dropbox]', err.message))
-      );
+    // Step 1: POST customer (skip if customer_id already known — reintento)
+    if (!customer_id) {
+      try {
+        const resultado = await crearCliente(cliente);
+        if (resultado.duplicado) {
+          steps.push({ name: 'POST customer', status: 'ok', info: 'duplicado' });
+          logCliente(cliente.tax_id, cliente.CustName, 'duplicado', resultado.cliente_id, fuente, null, null);
+          return res.json({ ok: true, customer_id: resultado.cliente_id, branch_id, duplicado: true, steps });
+        }
+        customer_id = resultado.cliente_id;
+        steps.push({ name: 'POST customer', status: 'ok' });
+        if (cliente.pdf_base64) {
+          import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
+            subirCsfDropbox(cliente.pdf_base64, cliente.tax_id, cliente.CustName)
+              .catch(err => console.error('[dropbox]', err.message))
+          );
+        }
+      } catch (err) {
+        steps.push({ name: 'POST customer', status: 'error', error: err.message });
+        logCliente(cliente.tax_id, cliente.CustName, 'error', null, fuente, null, err.message);
+        return res.json({ ok: false, customer_id, branch_id, steps });
+      }
+    } else {
+      steps.push({ name: 'POST customer', status: 'ok', info: 'reintento' });
     }
-    res.json({ ok: true, ...resultado });
+
+    // Step 2: GET customer to resolve branch_id
+    if (!branch_id) {
+      try {
+        branch_id = await obtenerBranchId(customer_id);
+        steps.push({ name: 'GET branch_id', status: 'ok' });
+      } catch (err) {
+        steps.push({ name: 'GET branch_id', status: 'error', error: err.message });
+        return res.json({ ok: false, customer_id, branch_id, steps });
+      }
+    } else {
+      steps.push({ name: 'GET branch_id', status: 'ok', info: 'reintento' });
+    }
+
+    // Step 3: PUT branch — configure domicilio
+    try {
+      const entrega = cliente.entrega || {};
+      await actualizarBranchCliente(customer_id, branch_id, {
+        ...entrega,
+        pais: entrega.pais || cliente.pais || 'MX',
+        salesman: cliente.salesman,
+      });
+      steps.push({ name: 'PUT branch', status: 'ok' });
+    } catch (err) {
+      steps.push({ name: 'PUT branch', status: 'error', error: err.message });
+      logCliente(cliente.tax_id, cliente.CustName, 'error', customer_id, fuente, null, err.message);
+      return res.json({ ok: false, customer_id, branch_id, steps });
+    }
+
+    logCliente(cliente.tax_id, cliente.CustName, 'creado', customer_id, fuente, null, null);
+    res.json({ ok: true, customer_id, branch_id, duplicado: false, steps });
   } catch (err) {
     logCliente(cliente.tax_id, cliente.CustName, 'error', null, fuente, null, err.message);
     res.status(500).json({ error: err.message });

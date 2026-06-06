@@ -94,15 +94,19 @@ test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 2
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 88 }) };
+      if (u.includes('/88')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 188 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
+    '/api/v3/sales/branches/188': () => ({ ok: true, json: async () => ({ result: true }) }),
   });
   try {
     const res = await supertest(app).post('/api/crear-cliente')
-      .send({ tax_id: 'DRB010101ABC', CustName: 'Dropbox Test SA', pdf_base64: 'AAAA' });
+      .send({ tax_id: 'DRB010101ABC', CustName: 'Dropbox Test SA', pdf_base64: 'AAAA',
+              entrega: { br_name: 'DRB', br_ref: 'DRB', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
+              salesman: 47 });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
-    assert.strictEqual(res.body.cliente_id, 88);
+    assert.strictEqual(res.body.customer_id, 88);
   } finally {
     restore();
   }
@@ -158,19 +162,25 @@ test('POST /api/crear-cliente sin tax_id retorna 400', async () => {
   assert.ok(res.body.error);
 });
 
-test('POST /api/crear-cliente crea cliente nuevo y retorna { ok:true, cliente_id }', async () => {
+test('POST /api/crear-cliente crea cliente nuevo y retorna { ok:true, customer_id }', async () => {
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 77 }) };
+      if (u.includes('/77')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 177 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
+    '/api/v3/sales/branches/177': () => ({ ok: true, json: async () => ({ result: true }) }),
   });
   try {
-    const res = await supertest(app).post('/api/crear-cliente').send({ tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV' });
+    const res = await supertest(app).post('/api/crear-cliente').send({
+      tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV',
+      entrega: { br_name: 'Almacen', br_ref: 'ALM', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
+      salesman: 47,
+    });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
-    assert.strictEqual(res.body.cliente_id, 77);
+    assert.strictEqual(res.body.customer_id, 77);
     assert.strictEqual(res.body.duplicado, false);
   } finally {
     restore();
@@ -187,7 +197,7 @@ test('POST /api/crear-cliente con RFC duplicado retorna duplicado:true con datos
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
     assert.strictEqual(res.body.duplicado, true);
-    assert.strictEqual(res.body.cliente_id, 55);
+    assert.strictEqual(res.body.customer_id, 55);
   } finally {
     restore();
   }
