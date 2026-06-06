@@ -185,6 +185,28 @@ function buildAltaComercialPayload(getVal) {
   };
 }
 
+// CJS wrapper alrededor de la logica de lib/parsear-csf.js
+// Duplica la logica pura para poder testear desde CJS sin importar ES modules
+function parsearCsfDesdeTexto(texto) {
+  const get = (regex) => { const m = texto.match(regex); return m ? m[1].trim() : ''; };
+  const rfc = get(/R\.?F\.?C\.?\s*:?\s*([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3})/i);
+  const razonSocial = (() => {
+    const pm = get(/Denominaci[oó]n\/?Raz[oó]n\s*Social\s*:\s*(.+?)(?=\n|R\.?F\.?C)/is);
+    if (pm) return pm.trim();
+    const nombre = get(/Nombre\s*(?:\(s\))?\s*:\s*([A-ZÀ-ÿ ]+?)(?=\n)/i);
+    const ap1 = get(/Primer\s*Apellido\s*:\s*([A-ZÀ-ÿ ]+?)(?=\n)/i);
+    const ap2 = get(/Segundo\s*Apellido\s*:\s*([A-ZÀ-ÿ ]+?)(?=\n)/i);
+    return [nombre, ap1, ap2].filter(Boolean).join(' ').trim();
+  })();
+  const idcif = get(/idCIF\s*:\s*(\d+)/i);
+  const cp = get(/C[oó]digo\s*Postal\s*:?\s*(\d{5})/i);
+  const municipio = get(/Nombre\s*del\s*Municipio[^\n:]*:\s*([^\n]+)/i);
+  const estado = get(/Nombre\s*de\s*la\s*Entidad\s*Federativa\s*:\s*([^\n]+)/i);
+  const regimenFiscal = (() => { const m = texto.match(/R[eé]gimen\s*Fiscal\s*:\s*(\d{3})/i); return m ? m[1] : ''; })();
+  const nombreCorto = razonSocial.split(' ').slice(0, 3).join(' ');
+  return { rfc, razonSocial, nombreCorto, idcif, cp, municipio, estado, regimenFiscal };
+}
+
 function altaCheckpointState(estado, n, done) {
   return { ...estado, checkpoints: { ...estado.checkpoints, [n]: done } };
 }
@@ -252,4 +274,4 @@ function buildCsfDatosExtraidos(datos) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto };

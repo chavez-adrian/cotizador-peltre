@@ -217,3 +217,56 @@ test('C22: validarCsfCampos con RFC vacio retorna error aunque otros campos este
   assert.ok(err, 'debe haber error');
   assert.ok(err.toUpperCase().includes('RFC'), 'error menciona RFC');
 });
+
+// ─── AC final: parseo CSF retorna campos canonicos (issue #28 AC9) ─────────────
+// lib/parsear-csf.js es ES module — probamos via alias en helpers para CJS
+const { parsearCsfDesdeTexto } = require('./helpers.cjs');
+
+const CSF_TEXTO_PERSONA_MORAL = `
+CONSTANCIA DE SITUACION FISCAL
+Denominacion/Razon Social : SAGO MEDICAL SERVICE SA DE CV
+R.F.C. : SMS200716NZ4
+idCIF : 20090146505
+Nombre de la Vialidad : NAYARIT
+Numero Exterior : 56
+Nombre de la Colonia : ROMA SUR
+Codigo Postal : 06760
+Nombre del Municipio o Demarcacion Territorial : CUAUHTEMOC
+Nombre de la Entidad Federativa : CIUDAD DE MEXICO
+Regimen Fiscal : 601 General de Ley Personas Morales
+`;
+
+test('C23: parsearCsfDesdeTexto retorna rfc correcto', () => {
+  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
+  assert.strictEqual(r.rfc, 'SMS200716NZ4');
+});
+
+test('C24: parsearCsfDesdeTexto retorna razonSocial', () => {
+  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
+  assert.ok(r.razonSocial.includes('SAGO'), `razonSocial: ${r.razonSocial}`);
+});
+
+test('C25: parsearCsfDesdeTexto retorna cp', () => {
+  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
+  assert.strictEqual(r.cp, '06760');
+});
+
+test('C26: parsearCsfDesdeTexto retorna municipio', () => {
+  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
+  assert.ok(r.municipio.includes('CUAUHTEMOC'), `municipio: ${r.municipio}`);
+});
+
+test('C27: parsearCsfDesdeTexto retorna estado', () => {
+  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
+  assert.ok(r.estado.includes('CIUDAD DE MEXICO'), `estado: ${r.estado}`);
+});
+
+test('C28: parsearCsfDesdeTexto retorna regimenFiscal como codigo numerico', () => {
+  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
+  assert.strictEqual(r.regimenFiscal, '601');
+});
+
+test('C29: parsearCsfDesdeTexto retorna idcif (sat_id_cif)', () => {
+  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
+  assert.strictEqual(r.idcif, '20090146505');
+});
