@@ -357,3 +357,91 @@ test('C7: GET /api/catalogos vendedores cada entrada tiene { id, name, operam_id
     restore();
   }
 });
+
+// === POST /api/crear-cliente flujo atomico POST+GET+PUT (issue #29) ===
+
+const BASE_CLIENTE = {
+  tax_id: 'NUE010101ABC', CustName: 'Nueva SA de CV',
+  pais: 'MX', sales_type: 'M350', segmento_id: '3', salesman: 47,
+  timbrado_uso_cfdi: 'G03',
+  entrega: {
+    br_name: 'Almacen Central', br_ref: 'ALMCEN',
+    addr_street: 'Reforma', addr_exterior: '1', addr_interior: '',
+    addr_colony: 'Juarez', addr_city: 'CDMX', addr_state: 'CDMX',
+    addr_zip: '06600', addr_reference: '',
+    phone: '5512345678', email: 'entrega@nueva.com', pais: 'MX',
+  },
+};
+
+test('D1: POST /api/crear-cliente flujo completo retorna customer_id, branch_id y steps', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 500 }) };
+      if (u.includes('/500')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 600 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/600': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente').send(BASE_CLIENTE);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.customer_id, 500, 'debe retornar customer_id');
+    assert.strictEqual(res.body.branch_id, 600, 'debe retornar branch_id');
+    assert.ok(Array.isArray(res.body.steps), 'debe retornar array steps');
+    assert.strictEqual(res.body.steps.length, 3, 'debe tener 3 steps');
+    assert.ok(res.body.steps.every(s => s.name && s.status), 'cada step debe tener name y status');
+    assert.ok(res.body.steps.every(s => s.status === 'ok'), 'todos los steps deben ser ok');
+  } finally {
+    restore();
+  }
+});
+
+test('D2: POST /api/crear-cliente fallo en PUT branch retorna steps con error y customer_id/branch_id', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 501 }) };
+      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 601 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/601': () => ({ ok: true, json: async () => ({ result: false, messages: ['Error en branch'] }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente').send(BASE_CLIENTE);
+    assert.strictEqual(res.status, 200, 'respuesta debe ser 200 incluso con fallo en PUT');
+    assert.strictEqual(res.body.ok, false, 'ok debe ser false cuando falla un paso');
+    assert.strictEqual(res.body.customer_id, 501, 'debe retornar customer_id aunque falle el PUT');
+    assert.strictEqual(res.body.branch_id, 601, 'debe retornar branch_id aunque falle el PUT');
+    const putStep = res.body.steps.find(s => s.name === 'PUT branch');
+    assert.ok(putStep, 'debe existir step PUT branch');
+    assert.strictEqual(putStep.status, 'error', 'el step de PUT branch debe tener status error');
+    assert.ok(putStep.error, 'el step de PUT branch debe incluir mensaje de error');
+  } finally {
+    restore();
+  }
+});
+
+test('D3: POST /api/crear-cliente con customer_id existente salta POST y no duplica cliente', async () => {
+  let postCustomerCalled = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomerCalled = true; return { ok: true, json: async () => ({ result: true, customer_id: 999 }) }; }
+      if (u.includes('/502')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 602 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/602': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .send({ ...BASE_CLIENTE, customer_id: 502 });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.customer_id, 502, 'debe usar el customer_id existente');
+    assert.ok(!postCustomerCalled, 'NO debe hacer POST /customers cuando ya se conoce el customer_id');
+  } finally {
+    restore();
+  }
+});
