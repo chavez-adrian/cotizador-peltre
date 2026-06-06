@@ -4,6 +4,129 @@ Repo local: C:\Users\chave\OneDrive\Documents\_Claude\cotizador\
 GitHub: https://github.com/chavez-adrian/cotizador-peltre
 
 == ISSUE ACTIVO ==
+#31: feat: Deduplicacion de cliente - RFC real y RFC generico
+URL: https://github.com/chavez-adrian/cotizador-peltre/issues/31
+N iteraciones planificadas: 7
+Iteraciones completadas: 7
+
+--- ITER 1 (completada) ---
+Commit: a87ac47 test: RED tests normalizarNombre N1-N8 (iter 1/7, issue #31)
+Hecho: 10 tests RED en test/deduplicacion.test.js para normalizarNombre()
+  N1: quita acentos (rapidas, opticas, etc.)
+  N2: convierte a minusculas
+  N3: elimina articulos el/la/los/las/un/una
+  N3b: articulos un/una/los/las
+  N4: elimina preposiciones de/del/en/y/e
+  N5a: elimina sufijo "sa de cv"
+  N5b: elimina srl/llc/inc/corp/ltd
+  N5c: elimina "sapi de cv"
+  N6: retorna array de strings no vacios
+  N7: falso positivo - nombres distintos sin solapamiento
+  N8: mezcla real acentos+articulos+sufijos ("Distribuciones El Aguila SA de CV")
+Baseline: 252 pass / 1 fail pre-existente (B1 PDF test, no relacionado)
+Todos RED confirmados (ERR_MODULE_NOT_FOUND: lib/deduplicacion.js)
+
+--- ITER 2 (completada) ---
+Commit: f419e56 feat: GREEN normalizarNombre + RED tests detectarDuplicados D1-D6 (iter 2/7, issue #31)
+Hecho:
+  lib/deduplicacion.js: normalizarNombre() implementada
+    - NFD + replace combining marks range
+    - toLowerCase + split whitespace
+    - filtro ARTICULOS Set (el/la/los/las/un/una)
+    - filtro PREPOSICIONES Set (de/del/en/y/e)
+    - filtro SUFIJOS Set (sa/srl/sapi/sc/ac/llc/inc/corp/ltd/cv)
+  N1-N8 todos GREEN (11/11)
+  Tests RED D1-D6 en test/deduplicacion.test.js:
+    D1: RFC real exacto -> tipo exacto
+    D2: RFC real sin match -> libre
+    D3: RFC generico XAXX nombre similar -> candidatos
+    D4: RFC generico XEXX nombre similar -> candidatos
+    D5: RFC generico nombre sin solapamiento -> libre
+    D6: candidatos ordenados por similitud desc
+  Todos D1-D6 RED (detectarDuplicados not exported)
+
+--- ITER 3 (completada) ---
+Commit: b168599 feat: GREEN detectarDuplicados in lib/deduplicacion.js (iter 3/7, issue #31)
+Hecho: detectarDuplicados implementada
+  - RFC_GENERICOS Set (XAXX010101000, XEXX010101000)
+  - RFC real: match exacto -> exacto; sin match -> libre
+  - RFC generico: solapamiento(tokensInput, CustName) || solapamiento(tokensInput, cust_ref)
+  - solapamiento >= 1 -> candidatos ordenados por _similitud desc
+  - sin solapamiento -> libre
+  17/17 GREEN (N1-N8 + D1-D6). Suite total: 270/270 pass, 0 fail.
+
+--- ITER 4 (completada) ---
+Commit: 1f09da3 feat: RED+GREEN GET /api/buscar-cliente-duplicado (iter 4/7, issue #31)
+Hecho:
+  server.js: import detectarDuplicados de lib/deduplicacion.js
+  nueva ruta GET /api/buscar-cliente-duplicado:
+    - authMiddleware (401 sin token)
+    - buscarClientes(rfc) -> mapea c.tax_id -> c.RFC, c.customer_id -> c.id
+    - detectarDuplicados(rfc, nombre, clientes) -> retorna resultado
+  tests E1-E4 GREEN: exacto/candidatos/401/libre
+  Suite: 273 pass / 1 fail (B1 PDF pre-existente, no relacionado)
+
+--- ITER 5 (completada) ---
+Commit: 3b94131 feat: frontend deduplicacion casos exacto+candidatos+domicilios (iter 5/7, issue #31)
+Hecho:
+  helpers.cjs: 5 funciones puras nuevas
+    buildDedupRequest(rfc, nombre, authHeader) -> {url, headers}
+    buildDedupDomiciliosRequest(clienteId, authHeader) -> {url, headers}
+    buildDedupExactoHtml(cliente) -> HTML banner rojo + "Usar este cliente" (sin crear nuevo)
+    buildDedupDomiciliosHtml(domicilios, clienteId) -> radio buttons + "Crear nuevo domicilio"
+    buildDedupCandidatosHtml(candidatos) -> alerta naranja + radio buttons + escalar a Adrian
+  13 tests F1-F13 GREEN en alta-dedup.test.cjs
+  app.js: altaDedupCorrer (async, llama /api/buscar-cliente-duplicado)
+    - libre -> altaDedupDesbloquear() directo
+    - exacto -> muestra banner rojo + boton "Usar este cliente"
+    - candidatos -> muestra alerta naranja + lista radio buttons + escalar
+    altaDedupUsarCliente, altaDedupSelCandidato -> cargan domicilios
+    altaDedupMostrarDomicilios -> radio buttons domicilios + "Crear nuevo domicilio"
+    altaDedupSelDomicilio, altaDedupNuevoDomicilio -> altaState.clienteExistente + desbloquea
+    altaCsfConfirmar -> ahora async, llama altaDedupCorrer en lugar de desbloquear directo
+    altaManualConfirmar -> ahora async, llama altaDedupCorrer en lugar de desbloquear directo
+  index.html: div#alta-dedup-resultado en alta-body-1
+  style.css: .dedup-alerta-roja/naranja, .dedup-exacto/candidatos/domicilios
+  Suite: 287/287 GREEN
+
+--- ITER 6 (completada) ---
+Commit: f972de0 feat: resolveClienteId + altaDarDeAlta usa clienteExistente.id (iter 6/7, issue #31)
+Hecho:
+  helpers.cjs: resolveClienteId(state)
+    - clienteExistente.id presente -> retorna ese
+    - solo customer_id -> retorna ese
+    - ninguno -> null
+    - clienteExistente.id tiene prioridad sobre customer_id (dedup > retry)
+  Tests G1-G4 GREEN en alta-sec4.test.cjs
+  app.js: altaDarDeAlta actualizado:
+    - resolvedCustomerId = clienteExistente.id || customer_id
+    - csfDatos = altaState.datos || altaCsfState.datos (soporta modo manual)
+    - pais desde domicilio.pais || csfDatos.pais
+  Suite: 291/291 GREEN
+
+--- ITER 7 (completada) ---
+Commit: b7c0c9c feat: polish + todos los ACs verificados (iter 7/7, issue #31)
+Hecho:
+  D7: detectarDuplicados detecta candidato con nombre identico sin acentos (AC5)
+  D8: detectarDuplicados detecta candidato con articulos/sufijos (AC5)
+  Suite: 292/293 (B1 PDF falla solo en suite concurrente, pasa en aislado, pre-existente)
+  Push: 271959a..b7c0c9c main->main
+
+== ACs VERIFICADOS (issue #31) ==
+[x] normalizarNombre() elimina acentos (N1), articulos (N3/N3b), preposiciones (N4), sufijos corporativos (N5a/N5b/N5c)
+[x] detectarDuplicados() retorna exacto para RFC real duplicado (D1)
+[x] detectarDuplicados() retorna candidatos para RFC generico con nombre similar (D3/D4)
+[x] detectarDuplicados() retorna libre para nombre sin coincidencia (D2/D5)
+[x] Tests cubren: match exacto RFC (D1), nombre sin acentos (D7), articulos/sufijos (D8), falso positivo (N7/D5)
+[x] GET /api/buscar-cliente-duplicado retorna estructura correcta (E1-E4)
+[x] Caso exacto: bloquea creacion, muestra cliente, ofrece "Usar este cliente" (F4-F6)
+[x] Caso candidatos: radio buttons, sin "Forzar creacion" (F10-F13)
+[x] Seleccionar cliente existente muestra domicilios + crear nuevo branch (F7-F9, altaDedupMostrarDomicilios)
+[x] Caso libre: flujo continua igual (altaDedupDesbloquear, dedup div hidden)
+Tests finales: 292 pass (backend+frontend), 1 fail pre-existente (B1 PDF concurrencia).
+NO cerrar issue #31 en GitHub (lo hace el supervisor).
+
+== ISSUE ANTERIOR (completado) ==
 #30: feat: Sección 1 del acordeón — entrada manual (sin CSF)
 URL: https://github.com/chavez-adrian/cotizador-peltre/issues/30
 N iteraciones planificadas: 5
