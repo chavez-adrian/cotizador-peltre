@@ -19,7 +19,7 @@ if (existsSync(envPath)) {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const { app } = await import('../server.js');
+const { app, cargarListasPrecios } = await import('../server.js');
 const TEST_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
 function readCots() {
@@ -258,12 +258,17 @@ const SALES_TYPES_MOCK = [
   { sales_type_id: 'OTRO',  description: 'Otro' },
 ];
 
-test('C1: GET /api/catalogos retorna 200 con estructura { segmentos, vendedores, listas_precios }', async () => {
-  const restore = mockOperamFetch({
+function mockCatalogos() {
+  return mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok' }) }),
     '/api/v3/sales/sales_types': () => ({ ok: true, json: async () => ({ data: SALES_TYPES_MOCK }) }),
   });
+}
+
+test('C1: GET /api/catalogos retorna 200 con estructura { segmentos, vendedores, listas_precios }', async () => {
+  const restore = mockCatalogos();
   try {
+    await cargarListasPrecios();
     const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.status, 200);
     assert.ok(Array.isArray(res.body.segmentos), 'segmentos debe ser array');
@@ -275,11 +280,9 @@ test('C1: GET /api/catalogos retorna 200 con estructura { segmentos, vendedores,
 });
 
 test('C2: GET /api/catalogos segmentos contiene exactamente 11 entradas con { id:0, nombre:"Sin segmento" }', async () => {
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok' }) }),
-    '/api/v3/sales/sales_types': () => ({ ok: true, json: async () => ({ data: SALES_TYPES_MOCK }) }),
-  });
+  const restore = mockCatalogos();
   try {
+    await cargarListasPrecios();
     const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.body.segmentos.length, 11);
     const sinSegmento = res.body.segmentos.find(s => s.id === 0);
@@ -291,11 +294,9 @@ test('C2: GET /api/catalogos segmentos contiene exactamente 11 entradas con { id
 });
 
 test('C3: GET /api/catalogos vendedores excluye entradas con operam_id null', async () => {
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok' }) }),
-    '/api/v3/sales/sales_types': () => ({ ok: true, json: async () => ({ data: SALES_TYPES_MOCK }) }),
-  });
+  const restore = mockCatalogos();
   try {
+    await cargarListasPrecios();
     const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
     const conNull = res.body.vendedores.filter(v => v.operam_id === null);
     assert.strictEqual(conNull.length, 0, 'ningun vendedor debe tener operam_id null');
@@ -306,11 +307,9 @@ test('C3: GET /api/catalogos vendedores excluye entradas con operam_id null', as
 });
 
 test('C4: GET /api/catalogos listas_precios contiene solo codigos mayoreo y excluye menudeo', async () => {
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok' }) }),
-    '/api/v3/sales/sales_types': () => ({ ok: true, json: async () => ({ data: SALES_TYPES_MOCK }) }),
-  });
+  const restore = mockCatalogos();
   try {
+    await cargarListasPrecios();
     const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
     const ids = res.body.listas_precios.map(l => l.id);
     const MAYOREO = ['M100', 'M350', 'M550', 'M1500', 'M6000', 'M6001', 'US100', 'US350', 'US550', 'US1500', 'US6000'];

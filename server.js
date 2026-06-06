@@ -31,6 +31,24 @@ if (existsSync(envFile)) {
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const PORT = process.env.PORT || 3000;
 
+const SEGMENTOS = [
+  { id: 0,  nombre: 'Sin segmento' },
+  { id: 1,  nombre: 'Ferreteria' },
+  { id: 2,  nombre: 'Tienda de abarrotes' },
+  { id: 3,  nombre: 'Supermercado / cadena' },
+  { id: 4,  nombre: 'Tienda de regalos / bazar' },
+  { id: 5,  nombre: 'Restaurante / hosteleria' },
+  { id: 6,  nombre: 'Distribuidor' },
+  { id: 7,  nombre: 'Exportacion' },
+  { id: 8,  nombre: 'Gobierno / institucional' },
+  { id: 9,  nombre: 'E-commerce / marketplace' },
+  { id: 10, nombre: 'Otro' },
+];
+
+const MAYOREO_CODES = new Set(['M100','M350','M550','M1500','M6000','M6001','US100','US350','US550','US1500','US6000']);
+
+let listasPrecios = [];
+
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(PUBLIC_DIR));
@@ -459,6 +477,13 @@ app.get('/api/buscar-cliente', async (req, res) => {
   }
 });
 
+app.get('/api/catalogos', authMiddleware, (_req, res) => {
+  const vendedores = (readJSON('vendedores.json') || [])
+    .filter(v => v.operam_id != null)
+    .map(v => ({ id: v.id, name: v.name, operam_id: v.operam_id }));
+  res.json({ segmentos: SEGMENTOS, vendedores, listas_precios: listasPrecios });
+});
+
 app.get('/admin', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'admin.html'));
 });
@@ -468,8 +493,33 @@ app.get('*', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'index.html'));
 });
 
+async function cargarListasPrecios() {
+  try {
+    const r = await fetch(`${process.env.OPERAM_URL}/api/v3/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: '346', user: process.env.OPERAM_USER, pass: process.env.OPERAM_PASSWORD }),
+    });
+    const login = await r.json();
+    if (!login.token) throw new Error('Login fallido al cargar listas');
+    const r2 = await fetch(`${process.env.OPERAM_URL}/api/v3/sales/sales_types`, {
+      headers: { 'Authorization': `Bearer ${login.token}`, 'Content-Type': 'application/json' },
+    });
+    const data = await r2.json();
+    const tipos = Array.isArray(data.data) ? data.data : [];
+    listasPrecios = tipos
+      .filter(t => MAYOREO_CODES.has(t.sales_type_id))
+      .map(t => ({ id: t.sales_type_id, nombre: t.description || t.sales_type_id }));
+  } catch (err) {
+    console.error('[catalogos] No se pudieron cargar listas_precios:', err.message);
+    listasPrecios = [];
+  }
+}
+
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
-  app.listen(PORT, () => console.log(`Cotizador corriendo en http://localhost:${PORT}`));
+  cargarListasPrecios().then(() => {
+    app.listen(PORT, () => console.log(`Cotizador corriendo en http://localhost:${PORT}`));
+  });
 }
-export { app };
+export { app, cargarListasPrecios };
