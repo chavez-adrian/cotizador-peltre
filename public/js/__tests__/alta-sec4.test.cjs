@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAltaDarDeAltaPayload } = require('./helpers.cjs');
+const { buildAltaDarDeAltaPayload, resolveClienteId } = require('./helpers.cjs');
 
 test('F1: buildAltaDarDeAltaPayload incluye campos comerciales y domicilio', () => {
   const csfDatos = {
@@ -32,4 +32,26 @@ test('F2: buildAltaDarDeAltaPayload pasa customer_id y branch_id para reintento'
   const payload = buildAltaDarDeAltaPayload({}, {}, {}, 502, 602);
   assert.strictEqual(payload.customer_id, 502);
   assert.strictEqual(payload.branch_id, 602);
+});
+
+// === resolveClienteId (issue #31) ===
+
+test('G1: resolveClienteId retorna clienteExistente.id cuando esta definido', () => {
+  const state = { clienteExistente: { id: 77, branchIdx: 0 }, customer_id: null };
+  assert.strictEqual(resolveClienteId(state), 77);
+});
+
+test('G2: resolveClienteId retorna customer_id cuando no hay clienteExistente', () => {
+  const state = { clienteExistente: null, customer_id: 502 };
+  assert.strictEqual(resolveClienteId(state), 502);
+});
+
+test('G3: resolveClienteId retorna null cuando no hay ninguno', () => {
+  const state = { clienteExistente: null, customer_id: null };
+  assert.strictEqual(resolveClienteId(state), null);
+});
+
+test('G4: resolveClienteId prefiere clienteExistente.id sobre customer_id en reintento', () => {
+  const state = { clienteExistente: { id: 88 }, customer_id: 502 };
+  assert.strictEqual(resolveClienteId(state), 88);
 });

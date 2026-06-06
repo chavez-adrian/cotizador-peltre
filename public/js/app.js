@@ -2924,9 +2924,12 @@ function altaDarDeAlta() {
 
   altaPasosReset();
 
-  const csfDatos = altaCsfState.datos || {};
+  const csfDatos = altaState.datos || altaCsfState.datos || {};
   const getComercial = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   const domicilio = altaState.domicilio || {};
+  const resolvedCustomerId = (altaState.clienteExistente && altaState.clienteExistente.id != null)
+    ? altaState.clienteExistente.id
+    : (altaState.customer_id || null);
   const payload = {
     tax_id: csfDatos.rfc || '',
     CustName: csfDatos.razonSocial || '',
@@ -2944,9 +2947,9 @@ function altaDarDeAlta() {
     sales_type: getComercial('alta-lista-precios'),
     segmento_id: getComercial('alta-segmento'),
     salesman: getComercial('alta-vendedor'),
-    pais: domicilio.pais || 'MX',
+    pais: domicilio.pais || csfDatos.pais || 'MX',
     entrega: { ...domicilio },
-    customer_id: altaState.customer_id || null,
+    customer_id: resolvedCustomerId,
     branch_id: altaState.branch_id || null,
     fuente: 'cotizador',
   };
