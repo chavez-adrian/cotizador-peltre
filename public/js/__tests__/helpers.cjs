@@ -378,4 +378,64 @@ function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, b
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload };
+function buildDedupRequest(rfc, nombre, authHeader) {
+  const params = new URLSearchParams({ rfc, nombre: nombre || '' });
+  return {
+    url: '/api/buscar-cliente-duplicado?' + params.toString(),
+    headers: { 'Authorization': authHeader },
+  };
+}
+
+function buildDedupDomiciliosRequest(clienteId, authHeader) {
+  return {
+    url: '/api/operam/clientes/' + clienteId + '/domicilios',
+    headers: { 'Authorization': authHeader },
+  };
+}
+
+function buildDedupExactoHtml(cliente) {
+  const nombre = cliente.CustName || cliente.name || '';
+  const id = cliente.id || cliente.customer_id || '';
+  const rfc = cliente.RFC || cliente.rfc || cliente.tax_id || '';
+  return '<div class="dedup-exacto">' +
+    '<p class="dedup-alerta-roja">Este RFC ya existe en Operam</p>' +
+    '<p><strong>' + nombre + '</strong> (ID: ' + id + ', RFC: ' + rfc + ')</p>' +
+    '<button type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este cliente</button>' +
+    '</div>';
+}
+
+function buildDedupDomiciliosHtml(domicilios, clienteId) {
+  const items = domicilios.map((d, i) =>
+    '<label>' +
+    '<input type="radio" name="dedup-domicilio" value="' + i + '" onclick="altaDedupSelDomicilio(' + clienteId + ',' + i + ')">' +
+    ' ' + (d.descripcion || d.br_name || 'Domicilio ' + (i + 1)) +
+    ' — ' + (d.calle || '') + ', ' + (d.municipio || '') +
+    '</label><br>'
+  ).join('');
+  const crearOpcion =
+    '<label>' +
+    '<input type="radio" name="dedup-domicilio" value="nuevo" onclick="altaDedupNuevoDomicilio(' + clienteId + ')">' +
+    ' Crear nuevo domicilio' +
+    '</label>';
+  return '<div class="dedup-domicilios">' + items + crearOpcion + '</div>';
+}
+
+function buildDedupCandidatosHtml(candidatos) {
+  const items = candidatos.map((c, i) =>
+    '<label>' +
+    '<input type="radio" name="dedup-candidato" value="' + c.id + '" onclick="altaDedupSelCandidato(' + c.id + ')">' +
+    ' ' + (c.CustName || c.name || '') + ' (' + (c.cust_ref || '') + ')' +
+    '</label><br>'
+  ).join('');
+  const escalarOpcion =
+    '<label>' +
+    '<input type="radio" name="dedup-candidato" value="escalar">' +
+    ' Ninguno es el mismo cliente - escalar a Adrian' +
+    '</label>';
+  return '<div class="dedup-candidatos">' +
+    '<p class="dedup-alerta-naranja">Posibles clientes existentes</p>' +
+    items + escalarOpcion +
+    '</div>';
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml };

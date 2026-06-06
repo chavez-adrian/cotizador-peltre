@@ -1214,3 +1214,38 @@ body {
   background: var(--primary);
   color: var(--white);
 }
+
+/* === DEDUPLICACION (issue #31) === */
+
+.dedup-alerta-roja {
+  background: #ffeaea;
+  color: var(--danger);
+  border-left: 4px solid var(--danger);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.dedup-alerta-naranja {
+  background: #fff3e0;
+  color: #e65100;
+  border-left: 4px solid #e65100;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.dedup-exacto, .dedup-candidatos, .dedup-domicilios {
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.dedup-domicilios label, .dedup-candidatos label {
+  display: block;
+  padding: 6px 0;
+  cursor: pointer;
+}

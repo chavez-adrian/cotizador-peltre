@@ -2544,7 +2544,7 @@ function altaCsfLeerFormulario() {
   };
 }
 
-function altaCsfConfirmar() {
+async function altaCsfConfirmar() {
   const errDiv = document.getElementById('csf-campos-error');
   const err = altaCsfValidarCampos();
   if (err) {
@@ -2557,20 +2557,8 @@ function altaCsfConfirmar() {
   altaCsfState.datos = datos;
   altaCsfState.confirmado = true;
 
-  // Marcar checkpoint 1 en sidebar
-  const dot = document.getElementById('chkdot-1');
-  if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
-
-  // Desbloquear seccion 2: quitar clase bloqueada y restaurar cursor
-  const sec2 = document.getElementById('alta-sec-2');
-  if (sec2) {
-    sec2.classList.remove('alta-seccion-bloqueada');
-    const hdr = document.getElementById('alta-hd-2');
-    if (hdr) hdr.style.cursor = '';
-  }
-
-  // Navegar a seccion 2
-  altaToggleSeccion(2);
+  altaState.datos = { ...datos };
+  await altaDedupCorrer(datos.rfc, datos.razonSocial);
 }
 
 window.altaCsfConfirmar = altaCsfConfirmar;
@@ -2683,22 +2671,141 @@ function altaManualConfirmar() {
   };
   altaState.modo = 'manual';
 
+  await altaDedupCorrer(datos.rfc, datos.razonSocial);
+}
+
+window.altaManualSetPais = altaManualSetPais;
+window.altaManualValidarRfc = altaManualValidarRfc;
+window.altaManualConfirmar = altaManualConfirmar;
+
+// === Seccion 1: Deduplicacion (issue #31) ===
+
+function altaDedupDesbloquear() {
   const dot = document.getElementById('chkdot-1');
   if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
-
   const sec2 = document.getElementById('alta-sec-2');
   if (sec2) {
     sec2.classList.remove('alta-seccion-bloqueada');
     const hdr = document.getElementById('alta-hd-2');
     if (hdr) hdr.style.cursor = '';
   }
-
   altaToggleSeccion(2);
 }
 
-window.altaManualSetPais = altaManualSetPais;
-window.altaManualValidarRfc = altaManualValidarRfc;
-window.altaManualConfirmar = altaManualConfirmar;
+async function altaDedupCorrer(rfc, razonSocial) {
+  const dedupDiv = document.getElementById('alta-dedup-resultado');
+  if (!dedupDiv) { altaDedupDesbloquear(); return; }
+
+  dedupDiv.innerHTML = '<p style="font-size:13px;color:var(--text-light)">Verificando duplicados...</p>';
+  dedupDiv.style.display = '';
+
+  try {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+    const params = new URLSearchParams({ rfc, nombre: razonSocial || '' });
+    const res = await api('/api/buscar-cliente-duplicado?' + params.toString());
+    if (!res.ok) throw new Error('Error ' + res.status);
+    const resultado = await res.json();
+
+    if (resultado.tipo === 'libre') {
+      dedupDiv.style.display = 'none';
+      altaDedupDesbloquear();
+      return;
+    }
+
+    if (resultado.tipo === 'exacto') {
+      const c = resultado.cliente;
+      const nombre = c.CustName || c.name || '';
+      const id = c.id || c.customer_id || '';
+      const rfcC = c.RFC || c.rfc || c.tax_id || '';
+      dedupDiv.innerHTML =
+        '<div class="dedup-exacto">' +
+        '<p class="dedup-alerta-roja">Este RFC ya existe en Operam</p>' +
+        '<p><strong>' + nombre + '</strong> (ID: ' + id + ', RFC: ' + rfcC + ')</p>' +
+        '<button class="btn btn-secondary" type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este cliente</button>' +
+        '</div>';
+      return;
+    }
+
+    if (resultado.tipo === 'candidatos') {
+      const items = resultado.candidatos.map(c =>
+        '<label style="display:block;padding:4px 0;cursor:pointer">' +
+        '<input type="radio" name="dedup-candidato" value="' + c.id + '" onchange="altaDedupSelCandidato(' + c.id + ')">' +
+        ' <strong>' + (c.CustName || '') + '</strong> (' + (c.cust_ref || '') + ')' +
+        '</label>'
+      ).join('');
+      dedupDiv.innerHTML =
+        '<div class="dedup-candidatos">' +
+        '<p class="dedup-alerta-naranja">Posibles clientes existentes</p>' +
+        items +
+        '<label style="display:block;padding:4px 0;cursor:pointer">' +
+        '<input type="radio" name="dedup-candidato" value="escalar">' +
+        ' Ninguno es el mismo cliente - escalar a Adrian' +
+        '</label>' +
+        '</div>';
+      return;
+    }
+  } catch (err) {
+    dedupDiv.innerHTML = '<p style="color:var(--danger);font-size:12px">Error al verificar duplicados: ' + err.message + '</p>';
+  }
+}
+
+async function altaDedupUsarCliente(clienteId) {
+  altaState.clienteExistente = { id: clienteId };
+  const dedupDiv = document.getElementById('alta-dedup-resultado');
+  if (dedupDiv) {
+    dedupDiv.innerHTML += '<p style="font-size:12px;color:var(--text-light)">Cargando domicilios...</p>';
+  }
+  try {
+    const res = await api('/api/operam/clientes/' + clienteId + '/domicilios');
+    if (!res.ok) throw new Error('Error ' + res.status);
+    const domicilios = await res.json();
+    altaDedupMostrarDomicilios(clienteId, domicilios);
+  } catch (err) {
+    if (dedupDiv) dedupDiv.innerHTML += '<p style="color:var(--danger);font-size:12px">Error al cargar domicilios: ' + err.message + '</p>';
+  }
+}
+
+async function altaDedupSelCandidato(clienteId) {
+  altaState.clienteExistente = { id: clienteId };
+  await altaDedupUsarCliente(clienteId);
+}
+
+function altaDedupMostrarDomicilios(clienteId, domicilios) {
+  const dedupDiv = document.getElementById('alta-dedup-resultado');
+  if (!dedupDiv) return;
+  const items = domicilios.map((d, i) =>
+    '<label style="display:block;padding:4px 0;cursor:pointer">' +
+    '<input type="radio" name="dedup-domicilio" value="' + i + '" onchange="altaDedupSelDomicilio(' + clienteId + ',' + i + ')">' +
+    ' ' + (d.descripcion || 'Domicilio ' + (i + 1)) + ' - ' + (d.calle || '') + ', ' + (d.municipio || '') +
+    '</label>'
+  ).join('');
+  const crearOpcion =
+    '<label style="display:block;padding:4px 0;cursor:pointer">' +
+    '<input type="radio" name="dedup-domicilio" value="nuevo" onchange="altaDedupNuevoDomicilio(' + clienteId + ')">' +
+    ' Crear nuevo domicilio' +
+    '</label>';
+  const existingDedup = dedupDiv.querySelector('.dedup-exacto, .dedup-candidatos');
+  const domDiv = document.createElement('div');
+  domDiv.className = 'dedup-domicilios';
+  domDiv.innerHTML = '<p style="font-weight:600;font-size:13px;margin-top:12px">Selecciona un domicilio de entrega:</p>' + items + crearOpcion;
+  if (existingDedup) existingDedup.appendChild(domDiv);
+  else dedupDiv.appendChild(domDiv);
+}
+
+function altaDedupSelDomicilio(clienteId, domicilioIdx) {
+  altaState.clienteExistente = { id: clienteId, branchIdx: domicilioIdx };
+  altaDedupDesbloquear();
+}
+
+function altaDedupNuevoDomicilio(clienteId) {
+  altaState.clienteExistente = { id: clienteId, branchIdx: 'nuevo' };
+  altaDedupDesbloquear();
+}
+
+window.altaDedupUsarCliente = altaDedupUsarCliente;
+window.altaDedupSelCandidato = altaDedupSelCandidato;
+window.altaDedupSelDomicilio = altaDedupSelDomicilio;
+window.altaDedupNuevoDomicilio = altaDedupNuevoDomicilio;
 
 // === Seccion 2: Confirmar config comercial ===
 
