@@ -2520,6 +2520,61 @@ async function altaCsfProcesarArchivo(file) {
   }
 }
 
+function altaCsfValidarCampos() {
+  const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  if (!getVal('csf-rfc')) return 'El RFC es obligatorio';
+  if (!getVal('csf-razon-social')) return 'La razon social es obligatoria';
+  if (!getVal('csf-nombre-corto')) return 'El nombre corto es obligatorio';
+  return null;
+}
+
+function altaCsfLeerFormulario() {
+  const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  return {
+    rfc: getVal('csf-rfc'),
+    razonSocial: getVal('csf-razon-social'),
+    nombreCorto: getVal('csf-nombre-corto'),
+    idcif: getVal('csf-idcif'),
+    regimenFiscal: getVal('csf-regimen-fiscal'),
+    usoCfdi: getVal('csf-uso-cfdi'),
+    cp: getVal('csf-cp'),
+    municipio: getVal('csf-municipio'),
+    estado: getVal('csf-estado'),
+  };
+}
+
+function altaCsfConfirmar() {
+  const errDiv = document.getElementById('csf-campos-error');
+  const err = altaCsfValidarCampos();
+  if (err) {
+    if (errDiv) { errDiv.textContent = err; errDiv.style.display = ''; }
+    return;
+  }
+  if (errDiv) errDiv.style.display = 'none';
+
+  const datos = altaCsfLeerFormulario();
+  altaCsfState.datos = datos;
+  altaCsfState.confirmado = true;
+
+  // Marcar checkpoint 1 en sidebar
+  const dot = document.getElementById('chkdot-1');
+  if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+
+  // Desbloquear seccion 2: quitar clase bloqueada y restaurar cursor
+  const sec2 = document.getElementById('alta-sec-2');
+  if (sec2) {
+    sec2.classList.remove('alta-seccion-bloqueada');
+    const hdr = document.getElementById('alta-hd-2');
+    if (hdr) hdr.style.cursor = '';
+  }
+
+  // Eliminar seccion 2 de locked y abrirla
+  const idx = [3, 4];
+  altaToggleSeccion(2);
+}
+
+window.altaCsfConfirmar = altaCsfConfirmar;
+
 // Wiring del dropzone
 document.addEventListener('DOMContentLoaded', () => {
   const zone = document.getElementById('csf-dropzone');

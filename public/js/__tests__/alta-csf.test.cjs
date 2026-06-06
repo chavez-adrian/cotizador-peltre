@@ -112,3 +112,69 @@ test('C12: buildCsfDatosExtraidos campos opcionales ausentes no generan error', 
   assert.strictEqual(payload.estado, '');
   assert.strictEqual(payload.regimenFiscal, '');
 });
+
+// ─── validarCsfCampos ─────────────────────────────────────────────────────────
+const { validarCsfCampos } = require('./helpers.cjs');
+
+test('C13: validarCsfCampos con todos los campos requeridos retorna null', () => {
+  const getVal = id => ({ 'csf-rfc': 'BMF821130AR3', 'csf-razon-social': 'BANCO DE MEXICO', 'csf-nombre-corto': 'BANCO' })[id] || '';
+  const err = validarCsfCampos(getVal);
+  assert.strictEqual(err, null);
+});
+
+test('C14: validarCsfCampos sin RFC retorna mensaje de error con "RFC"', () => {
+  const getVal = id => ({ 'csf-razon-social': 'BANCO DE MEXICO', 'csf-nombre-corto': 'BANCO' })[id] || '';
+  const err = validarCsfCampos(getVal);
+  assert.ok(err, 'debe retornar error');
+  assert.ok(err.includes('RFC'), 'menciona RFC');
+});
+
+test('C15: validarCsfCampos sin razon social retorna mensaje de error', () => {
+  const getVal = id => ({ 'csf-rfc': 'BMF821130AR3', 'csf-nombre-corto': 'BANCO' })[id] || '';
+  const err = validarCsfCampos(getVal);
+  assert.ok(err, 'debe retornar error');
+  assert.ok(err.toLowerCase().includes('razon'), 'menciona razon social');
+});
+
+test('C16: validarCsfCampos sin nombre corto retorna mensaje de error', () => {
+  const getVal = id => ({ 'csf-rfc': 'BMF821130AR3', 'csf-razon-social': 'BANCO DE MEXICO' })[id] || '';
+  const err = validarCsfCampos(getVal);
+  assert.ok(err, 'debe retornar error');
+  assert.ok(err.toLowerCase().includes('nombre corto') || err.toLowerCase().includes('nombre'), 'menciona nombre corto');
+});
+
+// ─── buildCsfConfirmarPayload ─────────────────────────────────────────────────
+const { buildCsfConfirmarPayload } = require('./helpers.cjs');
+
+test('C17: buildCsfConfirmarPayload extrae todos los campos del formulario', () => {
+  const vals = {
+    'csf-rfc': 'BMF821130AR3',
+    'csf-razon-social': 'BANCO DE MEXICO',
+    'csf-nombre-corto': 'BANCO',
+    'csf-idcif': '12345678901',
+    'csf-regimen-fiscal': '601',
+    'csf-uso-cfdi': 'G01',
+    'csf-cp': '06000',
+    'csf-municipio': 'CUAUHTEMOC',
+    'csf-estado': 'CIUDAD DE MEXICO',
+  };
+  const getVal = id => vals[id] || '';
+  const payload = buildCsfConfirmarPayload(getVal);
+  assert.strictEqual(payload.rfc, 'BMF821130AR3');
+  assert.strictEqual(payload.razonSocial, 'BANCO DE MEXICO');
+  assert.strictEqual(payload.nombreCorto, 'BANCO');
+  assert.strictEqual(payload.idcif, '12345678901');
+  assert.strictEqual(payload.regimenFiscal, '601');
+  assert.strictEqual(payload.usoCfdi, 'G01');
+  assert.strictEqual(payload.cp, '06000');
+  assert.strictEqual(payload.municipio, 'CUAUHTEMOC');
+  assert.strictEqual(payload.estado, 'CIUDAD DE MEXICO');
+});
+
+test('C18: buildCsfConfirmarPayload con campos vacios retorna strings vacios', () => {
+  const getVal = () => '';
+  const payload = buildCsfConfirmarPayload(getVal);
+  assert.strictEqual(payload.rfc, '');
+  assert.strictEqual(payload.razonSocial, '');
+  assert.strictEqual(payload.nombreCorto, '');
+});

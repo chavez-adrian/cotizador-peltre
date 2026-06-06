@@ -185,6 +185,27 @@ function buildAltaComercialPayload(getVal) {
   };
 }
 
+function validarCsfCampos(getVal) {
+  if (!getVal('csf-rfc')) return 'El RFC es obligatorio';
+  if (!getVal('csf-razon-social')) return 'La razon social es obligatoria';
+  if (!getVal('csf-nombre-corto')) return 'El nombre corto es obligatorio';
+  return null;
+}
+
+function buildCsfConfirmarPayload(getVal) {
+  return {
+    rfc: getVal('csf-rfc'),
+    razonSocial: getVal('csf-razon-social'),
+    nombreCorto: getVal('csf-nombre-corto'),
+    idcif: getVal('csf-idcif'),
+    regimenFiscal: getVal('csf-regimen-fiscal'),
+    usoCfdi: getVal('csf-uso-cfdi'),
+    cp: getVal('csf-cp'),
+    municipio: getVal('csf-municipio'),
+    estado: getVal('csf-estado'),
+  };
+}
+
 function buildCsfDropzoneState(estado, accion) {
   switch (accion.type) {
     case 'LOADING':
@@ -221,4 +242,4 @@ function buildCsfDatosExtraidos(datos) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload };
