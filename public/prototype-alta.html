@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PROTOTIPO] Alta de Cliente</title>
+<style>
+:root {
+  --primary: #418FFF; --primary-dark: #2D65B5; --primary-light: #EBF3FF;
+  --bg: #F4F8FE; --border: #EBEBEB; --white: #FFFFFF;
+  --text: #333333; --text-light: #888888;
+  --danger: #E53E3E; --success: #38A169; --warning: #D69E2E;
+  --radius: 12px; --radius-input: 20px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100dvh; }
+.wrap { width: 66vw; min-width: 820px; margin: 0 auto; }
+.app-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.app-header h1 { font-size: 16px; color: var(--primary-dark); font-weight: 700; }
+.app-header .sub { font-size: 11px; color: var(--text-light); }
+.tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); }
+.tab { padding: 10px 20px; background: none; border: none; font-size: 13px; color: var(--text-light); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; font-weight: 600; }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.btn { padding: 8px 16px; border-radius: var(--radius-input); border: none; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; transition: background .15s; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-dark); }
+.btn-secondary { background: #fff; border: 1.5px solid var(--border); color: var(--text); }
+.btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-lg { padding: 12px 24px; font-size: 14px; justify-content: center; }
+.btn-block { display: flex; width: 100%; justify-content: center; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.fg { margin-bottom: 14px; }
+.fg label { display: block; font-size: 11px; font-weight: 700; color: var(--text-light); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .03em; }
+.fg input, .fg select, .fg textarea { width: 100%; padding: 9px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-input); font-size: 13px; outline: none; background: #fff; color: var(--text); }
+.fg input:focus, .fg select:focus { border-color: var(--primary); }
+.row { display: flex; gap: 12px; }
+.row .fg { flex: 1; }
+.card { background: #fff; border-radius: var(--radius); border: 1px solid var(--border); padding: 20px; margin-bottom: 16px; }
+.card-title { font-size: 14px; font-weight: 700; color: var(--primary-dark); margin-bottom: 16px; }
+.alert { padding: 10px 14px; border-radius: var(--radius); margin-bottom: 12px; font-size: 13px; }
+.alert-warn { background: #FFFBEB; border: 1px solid #F6E05E; color: #744210; }
+.alert-info { background: var(--primary-light); border: 1px solid #BEE3F8; color: var(--primary-dark); }
+.alert-ok { background: #F0FFF4; border: 1px solid #9AE6B4; color: #276749; }
+.variant-content { display: none; }
+.variant-content.active { display: block; }
+.proto-bar { background: #1A202C; color: #A0AEC0; padding: 5px 12px; font-size: 11px; font-family: monospace; text-align: center; letter-spacing: .04em; }
+#switcher { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1A202C; color: #fff; border-radius: 999px; padding: 8px 18px; display: flex; align-items: center; gap: 14px; box-shadow: 0 4px 20px rgba(0,0,0,.35); z-index: 9999; font-size: 13px; user-select: none; }
+#switcher button { background: none; border: none; color: #fff; cursor: pointer; font-size: 20px; opacity: .7; line-height: 1; }
+#switcher button:hover { opacity: 1; }
+#switcher .lbl { min-width: 170px; text-align: center; font-weight: 600; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; }
+.step-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #fff; border: 1.5px solid var(--border); border-radius: var(--radius); transition: border-color .2s; }
+.step-icon { width: 22px; height: 22px; border-radius: 50%; background: var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; transition: background .2s; }
+</style>
+</head>
+<body>
+
+<div class="proto-bar">[PROTOTIPO THROWAWAY] Alta de Cliente — Issue #26 | Usa &larr; &rarr; para cambiar variante</div>
+
+<div class="wrap">
+  <header class="app-header">
+    <div><h1>Peltre Nacional</h1><div class="sub">Cotizador</div></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:12px;color:var(--text-light)">Alejandro Chavez</span>
+      <button class="btn btn-sm btn-secondary">Historial</button>
+      <button class="btn btn-sm btn-secondary">Salir</button>
+    </div>
+  </header>
+  <nav class="tabs">
+    <button class="tab active">Cliente</button>
+    <button class="tab">Productos</button>
+    <button class="tab">Envio</button>
+    <button class="tab">Cotizacion</button>
+  </nav>
+
+  <div class="variant-content" id="va"></div>
+  <div class="variant-content" id="vb"></div>
+  <div class="variant-content" id="vc"></div>
+</div>
+
+<div id="switcher">
+  <button id="sprev">&#8592;</button>
+  <div class="lbl" id="slbl">A — Wizard lineal</div>
+  <button id="snext">&#8594;</button>
+</div>
+
+<script>
+// ── shared mock data ──────────────────────────────────────────
+const DUPS = [
+  { id:101, rfc:'XAXX010101000', cust_name:'PANIFICADORA EL AMANECER SA DE CV', cust_ref:'El Amanecer', doms:2 },
+  { id:102, rfc:'XAXX010101000', cust_name:'AMANECER FOODS GROUP S DE RL DE CV', cust_ref:'Amanecer Foods', doms:1 },
+];
+const SEGS = ['Sin segmento','Hoteles y restaurantes','Mayoristas','Minoristas','Exportacion','Gobierno','Industria','Educacion','Salud','ONG','Otro'];
+const LISTS = ['M100','M350','M550','M1500','M6000','M6001','US100','US350','US550','US1500','US6000'];
+const VENDS = ['Adrian Chavez','Alejandro Chavez','Oswaldo Chavez','Alejandro Castanon'];
+
+function sel(opts, val) { return opts.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join(''); }
+function fmtIcon(done, active, n) {
+  const bg = done ? 'var(--success)' : active ? 'var(--primary)' : 'var(--border)';
+  const col = (done||active) ? '#fff' : 'var(--text-light)';
+  return `<div style="width:28px;height:28px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;color:${col};font-size:11px;font-weight:700;flex-shrink:0">${done?'&#10003;':n}</div>`;
+}
+
+// ── VARIANT A: wizard lineal ──────────────────────────────────
+const A = (() => {
+  const STEPS = ['Buscar','Verificar','Datos fiscales','Comercial','Domicilio','Crear'];
+  let step = 0;
+  let hasDups = false;
+  let selDup = null;
+
+  function stepsBar() {
+    return `<div style="display:flex;align-items:center;margin-bottom:20px">${
+      STEPS.map((s,i) => {
+        const done = i < step, active = i === step;
+        const lc = done?'var(--success)':active?'var(--primary)':'var(--border)';
+        return `<div style="display:flex;align-items:center;flex:1">
+          ${i>0?`<div style="height:2px;flex:1;background:${i<=step?'var(--primary)':'var(--border)'}"></div>`:''}
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+            ${fmtIcon(done,active,i+1)}
+            <span style="font-size:10px;color:${active?'var(--primary)':done?'var(--success)':'var(--text-light)'};font-weight:${active?700:400};white-space:nowrap">${s}</span>
+          </div>
+        </div>`;
+      }).join('')
+    }</div>`;
+  }
+
+  function body() {
+    switch(step) {
+      case 0: return `
+        <div class="card-title">Verificar RFC antes de crear</div>
+        <div class="alert alert-info">Ingresa el RFC para detectar si el cliente ya existe. RFC generico (XAXX/XEXX) dispara verificacion por nombre.</div>
+        <div class="row"><div class="fg" style="flex:2"><label>RFC</label><input id="a-rfc" value="XAXX010101000" style="text-transform:uppercase"></div><div class="fg"><label>Pais</label><select><option>Mexico</option><option>EUA</option><option>Canada</option><option>Otro</option></select></div></div>
+        <div class="fg"><label>Nombre / Razon Social</label><input id="a-nom" placeholder="EMPRESA SA DE CV"></div>
+        <div style="margin-top:auto;padding-top:16px"><button class="btn btn-primary" id="a-go">Verificar duplicados &rarr;</button></div>`;
+      case 1:
+        if (hasDups) return `
+          <div class="card-title">Posibles duplicados encontrados</div>
+          <div class="alert alert-warn">Se encontraron clientes similares. Selecciona si alguno corresponde al cliente que quieres dar de alta.</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+            ${DUPS.map(d=>`<div class="dup-card" data-id="${d.id}" style="border:2px solid ${selDup===d.id?'var(--primary)':'var(--border)'};background:${selDup===d.id?'var(--primary-light)':'#fff'};border-radius:var(--radius);padding:12px;cursor:pointer">
+              <div style="font-weight:700">${d.cust_name}</div>
+              <div style="font-size:12px;color:var(--text-light)">${d.cust_ref} &middot; RFC: ${d.rfc} &middot; ${d.doms} domicilio(s)</div>
+            </div>`).join('')}
+            <div class="dup-card" data-id="0" style="border:2px solid ${selDup===0?'var(--primary)':'var(--border)'};background:${selDup===0?'var(--primary-light)':'#fff'};border-radius:var(--radius);padding:12px;cursor:pointer">
+              <div style="font-weight:700;color:var(--primary)">+ Crear nuevo cliente</div>
+              <div style="font-size:12px;color:var(--text-light)">Ningun candidato corresponde</div>
+            </div>
+          </div>`;
+        return `
+          <div class="card-title">Sin duplicados</div>
+          <div class="alert alert-ok">No se encontro ningun cliente con RFC o nombre similar. Puedes continuar con el alta.</div>
+          <div style="text-align:center;padding:32px 0;color:var(--text-light)"><div style="font-size:48px;color:var(--success)">&#10003;</div><div style="margin-top:8px">Libre para crear</div></div>`;
+      case 2: return `
+        <div class="card-title">Datos fiscales</div>
+        <div class="row"><div class="fg" style="flex:2"><label>Razon Social (CustName)</label><input value="PANIFICADORA EL AMANECER SA DE CV"></div><div class="fg" style="flex:.8"><label>RFC</label><input value="XAXX010101000"></div></div>
+        <div class="row"><div class="fg"><label>Nombre corto (cust_ref)</label><input value="El Amanecer"></div><div class="fg"><label>SAT IdCIF</label><input placeholder="Opcional"></div></div>
+        <div class="row"><div class="fg"><label>Regimen fiscal</label><select><option>612 - Pers. Fisicas</option><option>601 - Personas Morales</option></select></div><div class="fg"><label>Uso de CFDI</label><select><option>S01 - Sin efectos fiscales</option><option>G03 - Gastos en general</option></select></div></div>
+        <div class="row"><div class="fg" style="flex:.6"><label>C.P. fiscal</label><input value="06600"></div><div class="fg"><label>Municipio</label><input value="Cuauhtemoc"></div><div class="fg"><label>Estado</label><input value="Ciudad de Mexico"></div></div>`;
+      case 3: return `
+        <div class="card-title">Configuracion comercial</div>
+        <div class="alert alert-info">Estos campos llegan directamente a Operam via API y determinan precios, descuentos y seguimiento.</div>
+        <div class="row"><div class="fg"><label>Lista de precios</label><select>${sel(LISTS,'M350')}</select></div><div class="fg"><label>Segmento</label><select>${sel(SEGS,'Hoteles y restaurantes')}</select></div></div>
+        <div class="row"><div class="fg"><label>Vendedor asignado</label><select>${sel(VENDS,'Alejandro Chavez')}</select></div><div class="fg"><label>Moneda</label><select><option>MXN - Pesos mexicanos</option><option>USD - Dolares</option></select></div></div>
+        <div class="row"><div class="fg"><label>Email de facturacion</label><input value="facturas@elamanecer.com"></div><div class="fg"><label>Celular del contacto</label><input value="+52 55 1234 5678"><div style="font-size:10px;color:var(--text-light);margin-top:2px">Se guarda en notas &mdash; completar en Operam UI</div></div></div>`;
+      case 4: return `
+        <div class="card-title">Domicilio de entrega</div>
+        <div class="row"><div class="fg" style="flex:2"><label>Quien recibe (br_name)</label><input value="Juan Garcia Lopez"></div><div class="fg"><label>Ref corta (br_ref)</label><input value="Amanecer CDMX"></div></div>
+        <div class="row"><div class="fg" style="flex:3"><label>Calle</label><input value="Av. Insurgentes Sur"></div><div class="fg" style="flex:.6"><label>Num. ext.</label><input value="1234"></div><div class="fg" style="flex:.6"><label>Num. int.</label><input value=""></div></div>
+        <div class="row"><div class="fg"><label>Colonia</label><input value="Del Valle"></div><div class="fg" style="flex:.6"><label>C.P.</label><input value="03100"></div><div class="fg"><label>Ciudad</label><input value="Benito Juarez"></div></div>
+        <div class="fg"><label>Referencias de entrega</label><input value="Entre Xola y Eje 5, portero en puerta azul"></div>
+        <div class="row"><div class="fg"><label>Telefono entrega</label><div style="display:flex;gap:6px"><select style="width:72px;border-radius:var(--radius-input);border:1.5px solid var(--border);font-size:13px;padding:9px 6px"><option>+52</option><option>+1</option></select><input value="55 9876 5432" style="flex:1"></div></div><div class="fg"><label>Email entrega</label><input value="bodega@elamanecer.com"></div></div>
+        <div style="background:var(--primary-light);border-radius:var(--radius);padding:8px 14px;font-size:12px;color:var(--primary-dark)"><strong>Auto:</strong> IVA 16% (tax_group_id=1) &middot; Almacen PT (location=40) &middot; Zona Mexico (area=1)</div>`;
+      case 5: return `
+        <div class="card-title" id="a-ptitle">Creando cliente en Operam...</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin:16px 0">
+          <div class="step-row" id="asr0"><div class="step-icon"></div><span>1. POST /api/v3/sales/customers</span></div>
+          <div class="step-row" id="asr1"><div class="step-icon"></div><span>2. GET /customers/{id} &mdash; obtener branch_id</span></div>
+          <div class="step-row" id="asr2"><div class="step-icon"></div><span>3. PUT /branches/{branch_id} &mdash; configurar domicilio</span></div>
+        </div>
+        <div id="a-done" style="display:none">
+          <div class="alert alert-ok"><strong>Cliente creado exitosamente.</strong><br>Operam auto-genero contacto General. Pasos manuales pendientes en Operam: Celular, contacto Invoices, contacto Deliveries.</div>
+          <div class="row" style="margin-top:16px"><button class="btn btn-primary btn-lg" style="flex:1">&#128203; Cotizar ahora</button><button class="btn btn-secondary btn-lg" style="flex:1">&#10003; Terminar</button></div>
+        </div>`;
+    }
+    return '';
+  }
+
+  function nav() {
+    if (step === 5) return '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding-top:16px;border-top:1px solid var(--border);margin-top:16px">
+      <button class="btn btn-secondary" id="a-prev" ${step===0?'disabled':''}>&#8592; Anterior</button>
+      <span style="font-size:12px;color:var(--text-light)">Paso ${step+1} de ${STEPS.length}</span>
+      ${step < STEPS.length-2
+        ? `<button class="btn btn-primary" id="a-next">Siguiente &#8594;</button>`
+        : `<button class="btn btn-primary" id="a-next">Crear cliente en Operam</button>`}
+    </div>`;
+  }
+
+  function render() {
+    document.getElementById('va').innerHTML = stepsBar() + `<div class="card" style="min-height:360px;display:flex;flex-direction:column">${body()}${nav()}</div>`;
+    bind();
+  }
+
+  function bind() {
+    const go = document.getElementById('a-go');
+    if (go) go.onclick = () => { hasDups = true; selDup = null; step = 1; render(); };
+    document.querySelectorAll('#va .dup-card').forEach(c => {
+      c.onclick = () => { selDup = +c.dataset.id; render(); };
+    });
+    const prev = document.getElementById('a-prev');
+    const next = document.getElementById('a-next');
+    if (prev) prev.onclick = () => { step = Math.max(0, step-1); render(); };
+    if (next) next.onclick = () => {
+      if (step===1 && hasDups && selDup===null) { alert('Selecciona un candidato o "Crear nuevo cliente".'); return; }
+      step++; render();
+      if (step===5) runProgress();
+    };
+  }
+
+  function runProgress() {
+    const rows = ['asr0','asr1','asr2'];
+    let i = 0;
+    (function tick() {
+      if (i > 0) {
+        const prev = document.getElementById(rows[i-1]);
+        const ic = prev.querySelector('.step-icon');
+        ic.style.background = 'var(--success)';
+        ic.innerHTML = '<span style="color:#fff;font-weight:700">&#10003;</span>';
+        prev.querySelector('span').style.color = 'var(--text)';
+        prev.style.borderColor = 'var(--border)';
+      }
+      if (i >= rows.length) {
+        document.getElementById('a-ptitle').textContent = 'Cliente creado correctamente';
+        document.getElementById('a-done').style.display = 'block';
+        return;
+      }
+      const cur = document.getElementById(rows[i]);
+      cur.style.borderColor = 'var(--primary)';
+      const ic = cur.querySelector('.step-icon');
+      ic.style.background = 'var(--primary)';
+      ic.innerHTML = '<div class="spinner"></div>';
+      cur.querySelector('span').style.color = 'var(--primary)';
+      i++;
+      setTimeout(tick, 1100);
+    })();
+  }
+
+  return { render };
+})();
+
+// ── VARIANT B: acordeon ───────────────────────────────────────
+const B = (() => {
+  let open = 'rfc';
+  let done = { rfc:false, comercial:false, domicilio:false };
+  // rfcMode: 'entry' | 'csf-drop' | 'csf-parsing' | 'csf-dups' | 'manual' | 'manual-dups' | 'form'
+  let rfcMode = 'entry';
+  let created = false;
+
+  function canOpen(id) {
+    const order = ['rfc','comercial','domicilio','confirmar'];
+    const i = order.indexOf(id);
+    if (i === 0) return true;
+    return done[order[i-1]];
+  }
+
+  function section(id, title, content) {
+    const isOpen = open === id;
+    const isDone = done[id];
+    const locked = !isOpen && !isDone && !canOpen(id);
+    const borderColor = isOpen ? 'var(--primary)' : isDone ? 'var(--success)' : 'var(--border)';
+    const headBg = isOpen ? 'var(--primary-light)' : isDone ? '#F0FFF4' : '#fff';
+    const n = ['rfc','comercial','domicilio','confirmar'].indexOf(id)+1;
+    return `<div style="margin-bottom:8px;border:2px solid ${borderColor};border-radius:var(--radius);overflow:hidden;opacity:${locked?.5:1}">
+      <div class="acc-hd" data-id="${id}" style="display:flex;justify-content:space-between;align-items:center;padding:13px 16px;cursor:${locked?'not-allowed':'pointer'};background:${headBg}">
+        <div style="display:flex;align-items:center;gap:10px">
+          ${fmtIcon(isDone, isOpen, n)}
+          <span style="font-weight:700;font-size:13px;color:${isOpen?'var(--primary-dark)':isDone?'var(--success)':locked?'var(--text-light)':'var(--text)'}">${title}</span>
+        </div>
+        <span style="font-size:18px;color:var(--text-light)">${isOpen?'&minus;':locked?'&#128274;':'+'}</span>
+      </div>
+      ${isOpen?`<div style="padding:16px;background:#fff;border-top:1px solid var(--border)">${content}</div>`:''}
+    </div>`;
+  }
+
+  function rfcContent() {
+    if (rfcMode === 'entry') return `
+      <div style="text-align:center;padding:4px 0 8px">
+        <div style="color:var(--text-light);font-size:13px;margin-bottom:16px">Como quieres capturar los datos fiscales?</div>
+        <div class="row" style="justify-content:center;gap:16px">
+          <div id="b-csf-btn" style="flex:1;max-width:210px;border:2px dashed var(--primary);border-radius:var(--radius);padding:20px 16px;text-align:center;cursor:pointer;background:var(--primary-light)">
+            <div style="font-size:28px;margin-bottom:8px">&#128206;</div>
+            <div style="font-weight:700;color:var(--primary-dark)">Cargar CSF</div>
+            <div style="font-size:12px;color:var(--text-light);margin-top:4px">Constancia de Situacion Fiscal (PDF) — pre-llena los campos</div>
+          </div>
+          <div id="b-manual-btn" style="flex:1;max-width:210px;border:2px solid var(--border);border-radius:var(--radius);padding:20px 16px;text-align:center;cursor:pointer;background:#fff">
+            <div style="font-size:28px;margin-bottom:8px">&#9998;</div>
+            <div style="font-weight:700;color:var(--text)">Captura manual</div>
+            <div style="font-size:12px;color:var(--text-light);margin-top:4px">Clientes extranjeros o sin CSF disponible</div>
+          </div>
+        </div>
+      </div>`;
+
+    if (rfcMode === 'csf-drop') return `
+      <button class="btn btn-secondary btn-sm" id="b-back-entry" style="margin-bottom:12px">&#8592; Cambiar metodo</button>
+      <div style="border:2px dashed var(--border);border-radius:var(--radius);padding:28px;text-align:center;color:var(--text-light);margin-bottom:12px">
+        <div style="font-size:32px;margin-bottom:8px">&#128196;</div>
+        <div style="margin-bottom:10px">Arrastra el PDF aqui o</div>
+        <label style="cursor:pointer"><input type="file" accept=".pdf" style="display:none"><span class="btn btn-secondary">Seleccionar archivo</span></label>
+      </div>
+      <button class="btn btn-primary" id="b-csf-simulate">Simular carga &#8594;</button>`;
+
+    if (rfcMode === 'csf-parsing') return `
+      <div style="text-align:center;padding:28px">
+        <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto 16px"></div>
+        <div style="font-weight:700;color:var(--primary-dark)">Extrayendo datos de la constancia...</div>
+        <div style="font-size:12px;color:var(--text-light);margin-top:6px">RFC, razon social, domicilio fiscal, regimen, SAT IdCIF</div>
+      </div>`;
+
+    if (rfcMode === 'csf-dups') return `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:10px 14px;background:#F0FFF4;border:1px solid #9AE6B4;border-radius:var(--radius)">
+        <span style="color:var(--success);font-size:16px;font-weight:700">&#10003;</span>
+        <div style="flex:1">
+          <div style="font-weight:700;color:var(--success);font-size:13px">CSF parseada correctamente</div>
+          <div style="font-size:11px;color:var(--text-light)">constancia_sat.pdf &middot; Subida 06/06/2026 &middot; RFC: XAXX010101000</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="b-back-entry">Cambiar</button>
+      </div>
+      <div class="alert alert-warn" style="margin-bottom:10px">
+        <strong>RFC generico — verificacion por nombre:</strong> Se encontraron 2 clientes similares a "PANIFICADORA EL AMANECER" en Operam.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+        ${DUPS.map(d=>`<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--radius);cursor:pointer;background:#fff"><input type="radio" name="b-dup" value="${d.id}" style="margin-top:2px"><div><div style="font-weight:700">${d.cust_name}</div><div style="font-size:12px;color:var(--text-light)">${d.cust_ref} &middot; ${d.doms} dom.</div></div></label>`).join('')}
+        <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--radius);cursor:pointer;background:#fff"><input type="radio" name="b-dup" value="0" style="margin-top:2px"><div><div style="font-weight:700;color:var(--primary)">+ Crear nuevo cliente</div><div style="font-size:12px;color:var(--text-light)">Ningun duplicado corresponde</div></div></label>
+      </div>
+      <details style="margin-bottom:14px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <summary style="padding:9px 14px;cursor:pointer;font-size:12px;font-weight:700;color:var(--text-light);background:#fafafa;user-select:none;list-style:none">
+          &#9660; Campos extraidos de la CSF — revisa y edita si es necesario
+        </summary>
+        <div style="padding:14px">
+          <div class="row"><div class="fg" style="flex:2"><label>Razon Social</label><input value="PANIFICADORA EL AMANECER SA DE CV"></div><div class="fg" style="flex:.8"><label>RFC</label><input value="XAXX010101000"></div></div>
+          <div class="row"><div class="fg"><label>Nombre corto</label><input value="El Amanecer"></div><div class="fg"><label>SAT IdCIF</label><input value="AI240601M34"></div></div>
+          <div class="row"><div class="fg" style="flex:2"><label>Regimen fiscal</label><input value="612 - Personas Fisicas con Actividad Empresarial"></div><div class="fg"><label>C.P. fiscal</label><input value="06600"></div></div>
+          <div class="row"><div class="fg"><label>Municipio</label><input value="Cuauhtemoc"></div><div class="fg"><label>Estado</label><input value="Ciudad de Mexico"></div></div>
+          <div class="fg"><label>Uso de CFDI</label><select><option>S01 - Sin efectos fiscales</option><option>G03 - Gastos en general</option></select></div>
+        </div>
+      </details>
+      <button class="btn btn-primary" id="b-ok-dup">Confirmar y continuar</button>`;
+
+    if (rfcMode === 'manual') return `
+      <button class="btn btn-secondary btn-sm" id="b-back-entry" style="margin-bottom:12px">&#8592; Cambiar metodo</button>
+      <div class="row"><div class="fg" style="flex:2"><label>RFC</label><input id="b-rfc-input" value="XAXX010101000" style="text-transform:uppercase"></div><div class="fg"><label>Pais</label><select><option>Mexico</option><option>EUA</option><option>Canada</option></select></div></div>
+      <div class="fg"><label>Razon Social</label><input value="EL AMANECER"></div>
+      <button class="btn btn-primary" id="b-check-rfc">Verificar duplicados &#8594;</button>`;
+
+    if (rfcMode === 'manual-dups') return `
+      <button class="btn btn-secondary btn-sm" id="b-back-entry" style="margin-bottom:12px">&#8592; Cambiar metodo</button>
+      <div class="alert alert-warn"><strong>2 posibles duplicados:</strong></div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+        ${DUPS.map(d=>`<label style="display:flex;align-items:flex-start;gap:10px;padding:10px;border:1.5px solid var(--border);border-radius:var(--radius);cursor:pointer"><input type="radio" name="b-dup" value="${d.id}" style="margin-top:2px"><div><div style="font-weight:700">${d.cust_name}</div><div style="font-size:12px;color:var(--text-light)">${d.cust_ref} &middot; ${d.doms} dom.</div></div></label>`).join('')}
+        <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;border:1.5px solid var(--border);border-radius:var(--radius);cursor:pointer"><input type="radio" name="b-dup" value="0" style="margin-top:2px"><div><div style="font-weight:700;color:var(--primary)">+ Crear nuevo cliente</div><div style="font-size:12px;color:var(--text-light)">Ningun duplicado corresponde</div></div></label>
+      </div>
+      <button class="btn btn-primary" id="b-ok-dup">Confirmar y continuar</button>`;
+
+    // 'form' — ambas rutas (CSF y manual) desembocan aqui
+    return `
+      <div style="margin-bottom:12px;font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.04em">Datos fiscales confirmados</div>
+      <div class="row"><div class="fg" style="flex:2"><label>Razon Social</label><input value="PANIFICADORA EL AMANECER SA DE CV"></div><div class="fg" style="flex:.8"><label>RFC</label><input value="XAXX010101000"></div></div>
+      <div class="row"><div class="fg"><label>Nombre corto</label><input value="El Amanecer"></div><div class="fg"><label>SAT IdCIF</label><input value="AI240601M34"></div></div>
+      <div class="row"><div class="fg"><label>Regimen</label><select><option>612 - Pers. Fisicas</option><option>601 - Personas Morales</option></select></div><div class="fg"><label>Uso CFDI</label><select><option>S01 - Sin efectos</option><option>G03 - Gastos</option></select></div></div>
+      <div style="margin-top:8px"><button class="btn btn-primary" id="b-save-rfc">Guardar datos fiscales</button></div>`;
+  }
+
+  function comercialContent() {
+    return `
+      <div class="row"><div class="fg"><label>Lista de precios</label><select>${sel(LISTS,'M350')}</select></div><div class="fg"><label>Segmento</label><select>${sel(SEGS,'Hoteles y restaurantes')}</select></div></div>
+      <div class="row"><div class="fg"><label>Vendedor</label><select>${sel(VENDS,'Alejandro Chavez')}</select></div><div class="fg"><label>Moneda</label><select><option>MXN</option><option>USD</option></select></div></div>
+      <div class="row"><div class="fg"><label>Email facturacion</label><input value="facturas@elamanecer.com"></div><div class="fg"><label>Celular</label><input value="+52 55 1234 5678"><div style="font-size:10px;color:var(--text-light);margin-top:2px">Se guarda en notas</div></div></div>
+      <button class="btn btn-primary" id="b-save-com">Guardar configuracion comercial</button>`;
+  }
+
+  function domContent() {
+    return `
+      <div class="row"><div class="fg" style="flex:2"><label>Quien recibe</label><input value="Juan Garcia Lopez"></div><div class="fg"><label>Ref. corta</label><input value="Amanecer CDMX"></div></div>
+      <div class="row"><div class="fg" style="flex:3"><label>Calle</label><input value="Av. Insurgentes Sur"></div><div class="fg" style="flex:.5"><label>Ext.</label><input value="1234"></div><div class="fg" style="flex:.5"><label>Int.</label><input value=""></div></div>
+      <div class="row"><div class="fg"><label>Colonia</label><input value="Del Valle"></div><div class="fg" style="flex:.6"><label>C.P.</label><input value="03100"></div><div class="fg"><label>Ciudad</label><input value="Benito Juarez"></div></div>
+      <div class="fg"><label>Referencias</label><input value="Entre Xola y Eje 5"></div>
+      <div style="background:var(--primary-light);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--primary-dark);margin-bottom:12px">Auto: IVA 16% &middot; PT (40) &middot; Zona Mexico</div>
+      <button class="btn btn-primary" id="b-save-dom">Guardar domicilio</button>`;
+  }
+
+  function confirmarContent() {
+    if (created) return `
+      <div class="alert alert-ok"><strong>Cliente creado en Operam.</strong></div>
+      <div class="row" style="margin-top:12px"><button class="btn btn-primary btn-lg" style="flex:1">Cotizar ahora</button><button class="btn btn-secondary btn-lg" style="flex:1">Terminar</button></div>`;
+    return `<div style="color:var(--text-light);text-align:center;padding:16px">Completa las secciones anteriores para continuar.</div>`;
+  }
+
+  function sidebar() {
+    const items = [{id:'rfc',lbl:'RFC y datos fiscales'},{id:'comercial',lbl:'Config. comercial'},{id:'domicilio',lbl:'Domicilio de entrega'}];
+    return `<div class="card" style="position:sticky;top:16px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px">Progreso del alta</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${items.map(it=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px">
+          <div style="width:16px;height:16px;border-radius:50%;background:${done[it.id]?'var(--success)':'var(--border)'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700;flex-shrink:0">${done[it.id]?'&#10003;':''}</div>
+          <span style="color:${done[it.id]?'var(--text)':'var(--text-light)'}">${it.lbl}</span>
+        </div>`).join('')}
+      </div>
+      ${Object.values(done).every(Boolean)?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--text-light)">
+        <div style="font-weight:700;margin-bottom:6px">Pasos manuales post-alta:</div>
+        &#9744; Celular en contacto General<br>&#9744; Contacto tipo Invoices<br>&#9744; Contacto tipo Deliveries
+      </div>`:''}
+    </div>`;
+  }
+
+  function render() {
+    document.getElementById('vb').innerHTML = `<div style="display:flex;gap:16px;align-items:flex-start">
+      <div style="flex:1">
+        ${section('rfc','RFC y datos fiscales',rfcContent())}
+        ${section('comercial','Configuracion comercial',comercialContent())}
+        ${section('domicilio','Domicilio de entrega',domContent())}
+        ${section('confirmar','Confirmacion y alta',confirmarContent())}
+      </div>
+      <div style="width:220px;flex-shrink:0">${sidebar()}</div>
+    </div>`;
+    bind();
+  }
+
+  function bind() {
+    document.querySelectorAll('#vb .acc-hd').forEach(h => {
+      h.onclick = () => {
+        if (!canOpen(h.dataset.id)) return;
+        open = open === h.dataset.id ? null : h.dataset.id;
+        render();
+      };
+    });
+    // entry choice
+    const csfBtn = document.getElementById('b-csf-btn');
+    if (csfBtn) csfBtn.onclick = () => { rfcMode = 'csf-drop'; render(); };
+    const manBtn = document.getElementById('b-manual-btn');
+    if (manBtn) manBtn.onclick = () => { rfcMode = 'manual'; render(); };
+    // back to entry
+    const backBtn = document.getElementById('b-back-entry');
+    if (backBtn) backBtn.onclick = () => { rfcMode = 'entry'; render(); };
+    // CSF simulate
+    const sim = document.getElementById('b-csf-simulate');
+    if (sim) sim.onclick = () => {
+      rfcMode = 'csf-parsing'; render();
+      setTimeout(() => { rfcMode = 'csf-dups'; render(); }, 1800);
+    };
+    // manual check
+    const checkRfc = document.getElementById('b-check-rfc');
+    if (checkRfc) checkRfc.onclick = () => { rfcMode = 'manual-dups'; render(); };
+    // confirm duplicate selection (both CSF and manual paths)
+    const okDup = document.getElementById('b-ok-dup');
+    if (okDup) okDup.onclick = () => {
+      if (!document.querySelector('input[name="b-dup"]:checked')) { alert('Selecciona una opcion.'); return; }
+      rfcMode = 'form'; render();
+    };
+    const saveRfc = document.getElementById('b-save-rfc');
+    if (saveRfc) saveRfc.onclick = () => { done.rfc = true; open = 'comercial'; render(); };
+    const saveCom = document.getElementById('b-save-com');
+    if (saveCom) saveCom.onclick = () => { done.comercial = true; open = 'domicilio'; render(); };
+    const saveDom = document.getElementById('b-save-dom');
+    if (saveDom) saveDom.onclick = () => {
+      done.domicilio = true; open = 'confirmar';
+      setTimeout(() => { created = true; render(); }, 900);
+      render();
+    };
+  }
+
+  return { render };
+})();
+
+// ── VARIANT C: flujo integrado en tab Cliente ─────────────────
+const C = (() => {
+  let phase = 'inicio'; // inicio | dups | form | creating | done
+  let rfcVal = '';
+
+  function render() {
+    const el = document.getElementById('vc');
+    el.innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn ${phase!=='buscar'?'btn-primary':'btn-secondary'}" id="c-btn-nuevo">+ Nuevo cliente</button>
+        <button class="btn ${phase==='buscar'?'btn-primary':'btn-secondary'}" id="c-btn-buscar">Buscar en Operam</button>
+      </div>
+      ${phase === 'buscar' ? buscarPanel() : newClientPanel()}
+    `;
+    bind();
+  }
+
+  function buscarPanel() {
+    return `<div class="card">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <div class="fg" style="flex:1;margin:0"><input placeholder="Nombre, RFC o empresa..."></div>
+        <button class="btn btn-primary">Buscar</button>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:var(--text-light)">Ingresa el nombre o RFC del cliente para buscarlo en Operam.</div>
+    </div>`;
+  }
+
+  function newClientPanel() {
+    if (phase === 'inicio' || phase === 'rfc') return `
+      <div class="card">
+        <div class="card-title">RFC del cliente</div>
+        <div class="alert alert-info">El sistema verifica duplicados antes de crear. RFC generico (XAXX/XEXX) activa busqueda por nombre.</div>
+        <div class="row" style="align-items:flex-end">
+          <div class="fg" style="flex:2;margin:0"><label>RFC</label><input id="c-rfc" value="XAXX010101000" style="text-transform:uppercase"></div>
+          <div class="fg" style="flex:1;margin:0"><label>Pais</label><select><option>Mexico</option><option>EUA</option><option>Canada</option></select></div>
+          <button class="btn btn-primary" id="c-check" style="flex-shrink:0">Verificar &rarr;</button>
+        </div>
+      </div>`;
+
+    if (phase === 'dups') return `
+      <div class="card">
+        <div class="card-title">RFC verificado &mdash; Posibles duplicados</div>
+        <div class="alert alert-warn">Se encontraron ${DUPS.length} clientes similares a <strong>XAXX010101000</strong>. Selecciona si alguno corresponde.</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+          ${DUPS.map(d=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);background:#fff">
+            <div><div style="font-weight:600">${d.cust_name}</div><div style="font-size:12px;color:var(--text-light)">${d.cust_ref} &middot; ${d.doms} domicilio(s)</div></div>
+            <button class="btn btn-secondary btn-sm">Usar este</button>
+          </div>`).join('')}
+        </div>
+        <button class="btn btn-secondary" id="c-skip-dups">Ningun duplicado coincide &mdash; Crear nuevo</button>
+      </div>`;
+
+    if (phase === 'form') return `
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <!-- main: datos fiscales + domicilio -->
+        <div style="flex:1">
+          <div class="card">
+            <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px">Datos fiscales</div>
+            <div class="row"><div class="fg" style="flex:2"><label>Razon Social</label><input value="PANIFICADORA EL AMANECER SA DE CV"></div><div class="fg" style="flex:.8"><label>RFC</label><input value="XAXX010101000"></div></div>
+            <div class="row"><div class="fg"><label>Nombre corto</label><input value="El Amanecer"></div><div class="fg" style="flex:.6"><label>SAT IdCIF</label><input placeholder="Opcional"></div></div>
+            <div class="row"><div class="fg"><label>Regimen fiscal</label><select><option>612 - Pers. Fisicas</option><option>601 - Personas Morales</option></select></div><div class="fg"><label>Uso de CFDI</label><select><option>S01 - Sin efectos</option><option>G03 - Gastos</option></select></div></div>
+          </div>
+          <div class="card">
+            <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px">Domicilio de entrega</div>
+            <div class="row"><div class="fg" style="flex:2"><label>Quien recibe</label><input value="Juan Garcia Lopez"></div><div class="fg"><label>Ref. corta</label><input value="Amanecer CDMX"></div></div>
+            <div class="row"><div class="fg" style="flex:3"><label>Calle</label><input value="Av. Insurgentes Sur"></div><div class="fg" style="flex:.5"><label>Ext.</label><input value="1234"></div><div class="fg" style="flex:.5"><label>Int.</label><input value=""></div></div>
+            <div class="row"><div class="fg"><label>Colonia</label><input value="Del Valle"></div><div class="fg" style="flex:.5"><label>C.P.</label><input value="03100"></div><div class="fg"><label>Ciudad</label><input value="Benito Juarez"></div></div>
+            <div class="fg"><label>Referencias de entrega</label><input value="Entre Xola y Eje 5, portero en puerta azul"></div>
+            <div class="row"><div class="fg"><label>Tel entrega</label><div style="display:flex;gap:6px"><select style="width:70px;border-radius:var(--radius-input);border:1.5px solid var(--border);font-size:13px;padding:9px 6px"><option>+52</option><option>+1</option></select><input value="55 9876 5432" style="flex:1"></div></div><div class="fg"><label>Email entrega</label><input value="bodega@elamanecer.com"></div></div>
+          </div>
+        </div>
+        <!-- sidebar: config comercial + boton -->
+        <div style="width:260px;flex-shrink:0">
+          <div class="card" style="position:sticky;top:16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px">Config. comercial</div>
+            <div class="fg"><label>Lista de precios</label><select>${sel(LISTS,'M350')}</select></div>
+            <div class="fg"><label>Segmento</label><select>${sel(SEGS,'Hoteles y restaurantes')}</select></div>
+            <div class="fg"><label>Vendedor</label><select>${sel(VENDS,'Alejandro Chavez')}</select></div>
+            <div class="fg"><label>Email facturacion</label><input value="facturas@elamanecer.com"></div>
+            <div class="fg"><label>Celular del contacto</label><input value="+52 55 1234 5678"><div style="font-size:10px;color:var(--text-light);margin-top:2px">Se guarda en notas</div></div>
+            <div style="background:var(--primary-light);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--primary-dark);margin-bottom:12px">Auto: IVA 16% &middot; PT (40) &middot; Zona MX</div>
+            <button class="btn btn-primary btn-block" id="c-crear">Crear en Operam</button>
+          </div>
+        </div>
+      </div>`;
+
+    if (phase === 'creating') return `
+      <div class="card" style="text-align:center;padding:32px">
+        <div style="font-size:15px;font-weight:700;color:var(--primary-dark);margin-bottom:24px">Creando cliente en Operam...</div>
+        <div style="display:flex;flex-direction:column;gap:8px;max-width:420px;margin:0 auto">
+          <div class="step-row" id="csr0"><div class="step-icon"></div><span>POST /api/v3/sales/customers</span></div>
+          <div class="step-row" id="csr1"><div class="step-icon"></div><span>GET /customers/{id} &mdash; obtener branch_id</span></div>
+          <div class="step-row" id="csr2"><div class="step-icon"></div><span>PUT /branches/{branch_id} &mdash; configurar domicilio</span></div>
+        </div>
+      </div>`;
+
+    if (phase === 'done') return `
+      <div class="card" style="text-align:center;padding:32px">
+        <div style="font-size:40px;color:var(--success);margin-bottom:12px">&#10003;</div>
+        <div style="font-size:16px;font-weight:700;color:var(--primary-dark);margin-bottom:16px">Cliente creado en Operam</div>
+        <div class="alert alert-ok" style="text-align:left">
+          <strong>PANIFICADORA EL AMANECER SA DE CV</strong> fue dado de alta exitosamente.<br>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-light)">Pasos manuales en Operam UI: Celular en contacto General &middot; Contacto Invoices &middot; Contacto Deliveries</div>
+        </div>
+        <div class="row" style="justify-content:center;margin-top:16px">
+          <button class="btn btn-primary btn-lg">&#128203; Cotizar ahora</button>
+          <button class="btn btn-secondary btn-lg">&#10003; Terminar</button>
+        </div>
+      </div>`;
+    return '';
+  }
+
+  function bind() {
+    const btnNuevo = document.getElementById('c-btn-nuevo');
+    const btnBuscar = document.getElementById('c-btn-buscar');
+    if (btnNuevo) btnNuevo.onclick = () => { phase = 'rfc'; render(); };
+    if (btnBuscar) btnBuscar.onclick = () => { phase = 'buscar'; render(); };
+    const check = document.getElementById('c-check');
+    if (check) check.onclick = () => {
+      const v = document.getElementById('c-rfc').value;
+      phase = (v.startsWith('XAXX')||v.startsWith('XEXX')||v==='') ? 'dups' : 'form';
+      render();
+    };
+    const skip = document.getElementById('c-skip-dups');
+    if (skip) skip.onclick = () => { phase = 'form'; render(); };
+    const crear = document.getElementById('c-crear');
+    if (crear) crear.onclick = () => { phase = 'creating'; render(); runProgressC(); };
+  }
+
+  function runProgressC() {
+    const ids = ['csr0','csr1','csr2'];
+    let i = 0;
+    (function tick() {
+      if (i > 0) {
+        const prev = document.getElementById(ids[i-1]);
+        if (!prev) return;
+        const ic = prev.querySelector('.step-icon');
+        ic.style.background = 'var(--success)';
+        ic.innerHTML = '<span style="color:#fff;font-weight:700">&#10003;</span>';
+        prev.style.borderColor = 'var(--border)';
+      }
+      if (i >= ids.length) { phase = 'done'; render(); return; }
+      const cur = document.getElementById(ids[i]);
+      if (!cur) return;
+      cur.style.borderColor = 'var(--primary)';
+      const ic = cur.querySelector('.step-icon');
+      ic.style.background = 'var(--primary)';
+      ic.innerHTML = '<div class="spinner"></div>';
+      i++;
+      setTimeout(tick, 1000);
+    })();
+  }
+
+  return { render };
+})();
+
+// ── switcher ──────────────────────────────────────────────────
+const VARIANTS = [
+  { id:'va', lbl:'A — Wizard lineal', obj:A },
+  { id:'vb', lbl:'B — Acordeon', obj:B },
+  { id:'vc', lbl:'C — Flujo integrado', obj:C },
+];
+let cur = 0;
+
+const qp = new URLSearchParams(location.search).get('v');
+if (qp) { const i = parseInt(qp); if (i>=0&&i<VARIANTS.length) cur=i; }
+
+VARIANTS.forEach(v => v.obj.render());
+
+function show(idx) {
+  document.querySelectorAll('.variant-content').forEach(el => el.classList.remove('active'));
+  document.getElementById(VARIANTS[idx].id).classList.add('active');
+  document.getElementById('slbl').textContent = VARIANTS[idx].lbl;
+  const u = new URL(location); u.searchParams.set('v', idx); history.replaceState({}, '', u);
+}
+
+document.getElementById('sprev').onclick = () => { cur=(cur-1+VARIANTS.length)%VARIANTS.length; show(cur); };
+document.getElementById('snext').onclick = () => { cur=(cur+1)%VARIANTS.length; show(cur); };
+document.addEventListener('keydown', e => {
+  if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+  if (e.key==='ArrowLeft') { cur=(cur-1+VARIANTS.length)%VARIANTS.length; show(cur); }
+  if (e.key==='ArrowRight') { cur=(cur+1)%VARIANTS.length; show(cur); }
+});
+
+show(cur);
+</script>
+</body>
+</html>

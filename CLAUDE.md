@@ -49,7 +49,7 @@ Browser (csf-upload.html) → /api/crear-cliente   → lib/operam-client.js → 
 
 | Modulo | Que hace |
 |--------|----------|
-| `operam-client.js` | Bearer token auth con auto-refresh en 401. Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `resetSession` |
+| `operam-client.js` | Bearer token auth con auto-refresh en 401. Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `resetSession` |
 | `db.js` | Pool pg con DATABASE_URL. Exporta `query(sql, params)`. Retorna null si no hay pool (graceful). Auto-crea tabla `clientes_log` en Neon al iniciar. |
 | `dropbox.js` | OAuth token refresh. Exporta `upload(path, content)` y `subirCsfDropbox(pdfBase64, rfc, nombre)` |
 | `parsear-csf.js` | Funcion pura — extrae RFC, razon social, domicilio, regimen de texto de PDF de CSF del SAT |
@@ -58,6 +58,15 @@ Browser (csf-upload.html) → /api/crear-cliente   → lib/operam-client.js → 
 | `calcular-envio.js` | Convierte carrito en paquetes fisicos para envia.com; lee `data/cajas.json` y `data/precios.json` (campo `boxMap`) |
 | `extract-prices.js` | Parsea Excel maestro de precios (hoja `precios_pna`) → `data/precios.json` |
 | `validar-cp.js` | Funcion pura para validar CP por pais |
+
+### Catalogos
+
+`GET /api/catalogos` — sirve datos para los selectores del formulario de alta:
+- `segmentos`: hardcodeados (11 segmentos; ID=0 es "Sin segmento")
+- `vendedores`: de `data/vendedores.json` filtrando `operam_id != null`
+- `listas_precios`: de `GET /api/v3/sales/sales_types`, filtradas a mayoreo: M100/350/550/1500/6000/6001 + US100/350/550/1500/6000
+
+> `data/vendedores.json` tiene dos espacios de ID: `id` (interno del cotizador, secuencial) y `operam_id` (ID en Operam, no secuencial). El campo `salesman` que va al body de Operam usa `operam_id`.
 
 ### Persistencia
 

@@ -1,7 +1,7 @@
 [
-  { "id": 1, "name": "Adrián Chávez", "pin": "0000", "role": "admin" },
-  { "id": 2, "name": "Vendedor 1", "pin": "1111", "role": "vendedor" },
-  { "id": 3, "name": "Vendedor 2", "pin": "2222", "role": "vendedor" },
-  { "id": 4, "name": "Vendedor 3", "pin": "3333", "role": "vendedor" },
-  { "id": 5, "name": "Vendedor 4", "pin": "4444", "role": "vendedor" }
+  { "id": 1, "name": "Adrián Chávez",      "pin": "0000", "role": "admin",    "operam_id": 1 },
+  { "id": 2, "name": "Alejandro Chávez",   "pin": "1111", "role": "vendedor", "operam_id": 2 },
+  { "id": 3, "name": "Oswaldo Chávez",     "pin": "2222", "role": "vendedor", "operam_id": 8 },
+  { "id": 4, "name": "Alejandro Castañón", "pin": "3333", "role": "vendedor", "operam_id": 9 },
+  { "id": 5, "name": "Jaime Abaroa",       "pin": "4444", "role": "vendedor", "operam_id": null }
 ]
