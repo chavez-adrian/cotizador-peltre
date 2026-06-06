@@ -80,6 +80,15 @@
             </div>
             <div class="alta-sec-body" id="alta-body-1" style="display:none">
 
+              <!-- Tab switcher: Cargar CSF / Captura manual -->
+              <div class="alta-tab-switcher" id="alta-tab-switcher">
+                <button class="alta-tab-btn active" id="alta-tab-btn-csf" onclick="altaTabSwitch('csf')">Cargar CSF</button>
+                <button class="alta-tab-btn" id="alta-tab-btn-manual" onclick="altaTabSwitch('manual')">Captura manual</button>
+              </div>
+
+              <!-- Panel A: Cargar CSF -->
+              <div id="alta-panel-csf">
+
               <!-- Dropzone -->
               <div class="csf-dropzone" id="csf-dropzone" onclick="document.getElementById('csf-input').click()">
                 <input type="file" id="csf-input" accept="application/pdf" style="display:none">
@@ -155,6 +164,69 @@
                   Confirmar datos fiscales
                 </button>
               </details>
+
+              </div><!-- /alta-panel-csf -->
+
+              <!-- Panel B: Captura manual -->
+              <div id="alta-panel-manual" style="display:none">
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <div class="form-group">
+                    <label>Pais</label>
+                    <select id="manual-pais" onchange="altaManualSetPais(this.value)">
+                      <option value="MX">Mexico (MX)</option>
+                      <option value="US">Estados Unidos (US)</option>
+                      <option value="CA">Canada (CA)</option>
+                      <option value="Otro">Otro</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>RFC</label>
+                    <input type="text" id="manual-rfc" style="text-transform:uppercase" placeholder="Ej: SMS200716NZ4" onblur="altaManualValidarRfc()">
+                    <div id="manual-rfc-error" style="display:none;color:var(--danger);font-size:12px;margin-top:4px"></div>
+                  </div>
+                  <div class="form-group">
+                    <label>Razon social</label>
+                    <input type="text" id="manual-razon-social" placeholder="Nombre fiscal completo">
+                  </div>
+                  <div class="form-group">
+                    <label>Nombre corto (en Operam)</label>
+                    <input type="text" id="manual-nombre-corto" placeholder="Alias, max 3 palabras">
+                  </div>
+                  <div class="form-group">
+                    <label>SAT IdCIF <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
+                    <input type="text" id="manual-idcif" inputmode="numeric" placeholder="Ej: 20090146505">
+                  </div>
+                  <div class="form-group">
+                    <label>Regimen fiscal (codigo)</label>
+                    <input type="text" id="manual-regimen-fiscal" placeholder="Ej: 601">
+                  </div>
+                  <div class="form-group">
+                    <label>Uso de CFDI</label>
+                    <select id="manual-uso-cfdi">
+                      <option value="G01">G01 - Adquisicion de mercancias</option>
+                      <option value="G03">G03 - Gastos en general</option>
+                      <option value="S01" selected>S01 - Sin efectos fiscales</option>
+                      <option value="CP01">CP01 - Pagos</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Codigo postal</label>
+                    <input type="text" id="manual-cp" inputmode="numeric" placeholder="Ej: 06760">
+                  </div>
+                  <div class="form-group">
+                    <label>Municipio</label>
+                    <input type="text" id="manual-municipio" placeholder="Ej: Cuauhtemoc">
+                  </div>
+                  <div class="form-group">
+                    <label>Estado</label>
+                    <input type="text" id="manual-estado" placeholder="Ej: Ciudad de Mexico">
+                  </div>
+                </div>
+                <div id="manual-campos-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
+                <button class="btn btn-primary" id="manual-btn-confirmar" style="margin-top:16px;width:100%" onclick="altaManualConfirmar()">
+                  Verificar y confirmar
+                </button>
+              </div><!-- /alta-panel-manual -->
 
             </div>
           </div>

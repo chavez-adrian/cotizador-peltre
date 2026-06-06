@@ -1182,3 +1182,35 @@ body {
   font-weight: 500;
   margin-bottom: 4px;
 }
+
+/* === TAB SWITCHER (issue #30) === */
+
+.alta-tab-switcher {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.alta-tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--white);
+  color: var(--text-light);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.alta-tab-btn + .alta-tab-btn {
+  border-left: 1px solid var(--border);
+}
+
+.alta-tab-btn.active {
+  background: var(--primary);
+  color: var(--white);
+}

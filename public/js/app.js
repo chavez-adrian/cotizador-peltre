@@ -2575,6 +2575,131 @@ function altaCsfConfirmar() {
 
 window.altaCsfConfirmar = altaCsfConfirmar;
 
+// === Seccion 1: Tab switcher (CSF / Manual) ===
+
+function altaTabSwitch(modo) {
+  const panelCsf = document.getElementById('alta-panel-csf');
+  const panelManual = document.getElementById('alta-panel-manual');
+  const btnCsf = document.getElementById('alta-tab-btn-csf');
+  const btnManual = document.getElementById('alta-tab-btn-manual');
+  if (!panelCsf || !panelManual) return;
+  const isCsf = modo === 'csf';
+  panelCsf.style.display = isCsf ? '' : 'none';
+  panelManual.style.display = isCsf ? 'none' : '';
+  if (btnCsf) btnCsf.classList.toggle('active', isCsf);
+  if (btnManual) btnManual.classList.toggle('active', !isCsf);
+}
+
+window.altaTabSwitch = altaTabSwitch;
+
+// === Seccion 1: Modo manual ===
+
+const RFC_MX_REGEX_APP = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/i;
+const RFC_GENERICOS_MX_APP = new Set(['XAXX010101000', 'XEXX010101000']);
+
+function altaManualSetPais(pais) {
+  const rfcInput = document.getElementById('manual-rfc');
+  if (!rfcInput) return;
+  if (pais && pais !== 'MX') {
+    rfcInput.placeholder = 'Tax ID o usar XEXX010101000';
+  } else {
+    rfcInput.placeholder = 'Ej: SMS200716NZ4';
+  }
+  const errDiv = document.getElementById('manual-rfc-error');
+  if (errDiv) errDiv.style.display = 'none';
+}
+
+function altaManualValidarRfc() {
+  const rfcInput = document.getElementById('manual-rfc');
+  const paisSelect = document.getElementById('manual-pais');
+  const errDiv = document.getElementById('manual-rfc-error');
+  if (!rfcInput || !errDiv) return null;
+  const rfc = rfcInput.value.trim().toUpperCase();
+  const pais = paisSelect ? paisSelect.value : 'MX';
+  if (pais !== 'MX') { errDiv.style.display = 'none'; return null; }
+  if (!rfc) { errDiv.textContent = 'El RFC es obligatorio'; errDiv.style.display = ''; return 'El RFC es obligatorio'; }
+  if (RFC_GENERICOS_MX_APP.has(rfc)) { errDiv.style.display = 'none'; return null; }
+  if (!RFC_MX_REGEX_APP.test(rfc)) {
+    const msg = 'El RFC no tiene formato valido (12 o 13 caracteres alfanumericos)';
+    errDiv.textContent = msg; errDiv.style.display = '';
+    return msg;
+  }
+  errDiv.style.display = 'none';
+  return null;
+}
+
+function altaManualLeerFormulario() {
+  const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  return {
+    rfc: getVal('manual-rfc').toUpperCase(),
+    razonSocial: getVal('manual-razon-social'),
+    nombreCorto: getVal('manual-nombre-corto'),
+    idcif: getVal('manual-idcif'),
+    regimenFiscal: getVal('manual-regimen-fiscal'),
+    usoCfdi: getVal('manual-uso-cfdi'),
+    cp: getVal('manual-cp'),
+    municipio: getVal('manual-municipio'),
+    estado: getVal('manual-estado'),
+    pais: getVal('manual-pais'),
+  };
+}
+
+function altaManualConfirmar() {
+  const errDiv = document.getElementById('manual-campos-error');
+  const rfcErr = altaManualValidarRfc();
+  if (rfcErr) {
+    if (errDiv) { errDiv.textContent = rfcErr; errDiv.style.display = ''; }
+    return;
+  }
+  const datos = altaManualLeerFormulario();
+  if (!datos.rfc) {
+    const msg = 'El RFC es obligatorio';
+    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
+    return;
+  }
+  if (!datos.razonSocial) {
+    const msg = 'La razon social es obligatoria';
+    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
+    return;
+  }
+  if (!datos.nombreCorto) {
+    const msg = 'El nombre corto es obligatorio';
+    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
+    return;
+  }
+  if (errDiv) errDiv.style.display = 'none';
+
+  altaState.datos = {
+    rfc: datos.rfc,
+    razonSocial: datos.razonSocial,
+    nombreCorto: datos.nombreCorto,
+    idcif: datos.idcif || '',
+    regimenFiscal: datos.regimenFiscal || '',
+    usoCfdi: datos.usoCfdi || 'S01',
+    cp: datos.cp || '',
+    municipio: datos.municipio || '',
+    estado: datos.estado || '',
+    pais: datos.pais || 'MX',
+  };
+  altaState.modo = 'manual';
+
+  const dot = document.getElementById('chkdot-1');
+  if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+
+  const sec2 = document.getElementById('alta-sec-2');
+  if (sec2) {
+    sec2.classList.remove('alta-seccion-bloqueada');
+    const hdr = document.getElementById('alta-hd-2');
+    if (hdr) hdr.style.cursor = '';
+  }
+
+  altaToggleSeccion(2);
+}
+
+window.altaManualSetPais = altaManualSetPais;
+window.altaManualValidarRfc = altaManualValidarRfc;
+window.altaManualConfirmar = altaManualConfirmar;
+
 // === Seccion 2: Confirmar config comercial ===
 
 function altaConfirmarComercial() {
