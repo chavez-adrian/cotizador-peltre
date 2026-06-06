@@ -4,10 +4,13 @@ Repo local: C:\Users\chave\OneDrive\Documents\_Claude\cotizador\
 GitHub: https://github.com/chavez-adrian/cotizador-peltre
 
 == ISSUE ACTIVO ==
-#27: feat: GET /api/catalogos + acordeón de alta con catálogos cargados
-URL: https://github.com/chavez-adrian/cotizador-peltre/issues/27
-N iteraciones planificadas: 6
-Iteraciones completadas: 6
+#28: feat: Sección 1 del acordeón — entrada vía CSF
+URL: https://github.com/chavez-adrian/cotizador-peltre/issues/28
+N iteraciones planificadas: 5
+Iteraciones completadas: 0
+
+== ISSUES COMPLETADOS ==
+#27: feat: GET /api/catalogos + acordeón skeleton — CERRADO
 
 == HISTORIAL DE ITERACIONES ==
 
@@ -95,6 +98,67 @@ Hecho: polish final + verificacion de todos los acceptance criteria
     [x] Tests 12/12 frontend + 22/22 server GREEN
   Pushed to main: 400bea6..db55b68
 
-== ESTADO FINAL ==
+== ISSUE ACTIVO: #28 ==
+Sección 1 acordeón — entrada vía CSF
+N iteraciones: 5
+Iteraciones completadas: 5
+
+--- ITER 1 (completada) ---
+Commit: e1e212e test: RED+GREEN tests buildCsfDropzoneState + buildCsfDatosExtraidos (iter 1/5, issue #28)
+Hecho: 12 tests C1-C12 en alta-csf.test.cjs + 2 funciones puras en helpers.cjs
+  - buildCsfDropzoneState(estado, accion): state machine idle/loading/success/error/reset
+  - buildCsfDatosExtraidos(datos): valida requeridos (rfc/razonSocial/nombreCorto), retorna payload
+Archivos: public/js/__tests__/alta-csf.test.cjs, public/js/__tests__/helpers.cjs
+
+--- ITER 2 (completada) ---
+Commit: f0944be feat: CSF dropzone + spinner + PDF parsing en seccion 1 acordeon (iter 2/5, issue #28)
+Hecho: HTML dropzone en alta-body-1 + CSS + JS en app.js
+  - index.html: csf-dropzone, csf-spinner, csf-banner-ok/err, <details> con 9 campos editables
+  - style.css: .csf-dropzone, .csf-spinner-wrap, .csf-spinner, .csf-banner-ok/err
+  - app.js: altaCsfState, altaCsfSetStatus, altaCsfPonerDatos, altaCsfParsearTexto,
+    altaCsfExtraerQR, altaCsfExtraerIdCifDeUrl, altaCsfLeerPDF, altaCsfProcesarArchivo
+  - Dropzone wiring en DOMContentLoaded (drag+drop+click)
+  - Endpoint reusado: /api/csf-from-url para QR fallback
+Archivos: public/index.html, public/css/style.css, public/js/app.js
+
+--- ITER 3 (completada) ---
+Commit: 44acc91 feat: validar campos + confirmar datos fiscales en seccion 1 (iter 3/5, issue #28)
+Hecho: validarCsfCampos + buildCsfConfirmarPayload + altaCsfConfirmar
+  - helpers.cjs: validarCsfCampos(getVal) — valida RFC/razonSocial/nombreCorto; null si ok
+  - helpers.cjs: buildCsfConfirmarPayload(getVal) — lee 9 campos del formulario
+  - app.js: altaCsfValidarCampos(), altaCsfLeerFormulario(), altaCsfConfirmar()
+  - altaCsfConfirmar: valida → marca chkdot-1.done → altaToggleSeccion(2)
+Archivos: helpers.cjs, alta-csf.test.cjs, app.js
+
+--- ITER 4 (completada) ---
+Commit: deaf111 feat: checkpoint 1 verde + desbloqueo seccion 2 (iter 4/5, issue #28)
+Hecho: altaCheckpointState + altaDesbloqueaSeccion puras + fix en altaCsfConfirmar
+  - helpers.cjs: altaCheckpointState(estado, n, done) — state machine de checkpoints
+  - helpers.cjs: altaDesbloqueaSeccion(locked, seccionCompletada) — desbloquea siguiente
+  - app.js: eliminado dead code const idx = [3, 4]
+  - Tests C19-C22: checkpoint state, desbloqueo secuencial, validación RFC
+Archivos: helpers.cjs, alta-csf.test.cjs, app.js
+
+--- ITER 5 (completada) ---
+Commit: 5721843 feat: polish + todos los ACs verificados (iter 5/5, issue #28)
+Hecho: fix regex parser + parsearCsfDesdeTexto en helpers + tests AC finales C23-C29
+  - app.js: regex del parser corregidas (acentos: [oó], [eé], [À-ÿ], &Ñ)
+  - helpers.cjs: parsearCsfDesdeTexto(texto) — wrapper CJS de la logica del parser
+  - C23-C29: rfc, razonSocial, cp, municipio, estado, regimenFiscal, idcif verificados
+Pushed: abc5394..5721843
+
+== ACs VERIFICADOS (issue #28) ==
+[x] Zona drag-and-drop acepta PDF y llama a /api/csf-from-url (QR fallback)
+[x] Spinner visible durante parseo
+[x] Banner verde con RFC detectado tras parseo exitoso
+[x] <details> colapsable con 9 campos editables: razonSocial, RFC, nombreCorto, idcif, regimenFiscal, usoCfdi, cp, municipio, estado
+[x] Campos requeridos validados: RFC, razon social, nombre corto
+[x] "Confirmar datos fiscales": checkpoint 1 verde + seccion 2 activa
+[x] Secciones 3 y 4 permanecen bloqueadas (ALTA_LOCKED_SECCIONES=[3,4])
+[x] Test: parseo CSF retorna {rfc, razonSocial, cp, municipio, estado, regimenFiscal, idcif}
+Tests totales: 41 frontend + 22 server = 63 GREEN, 0 fail.
+NO cerrar issue #28 en GitHub (lo hace el supervisor).
+
+== ESTADO FINAL (issue #27) ==
 Issue #27: TODOS LOS ACs CUMPLIDOS. NO cerrar en GitHub (lo hace el supervisor).
 Tests totales: 22 server + 12 frontend = 34 GREEN, 0 fail.
