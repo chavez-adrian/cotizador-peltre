@@ -178,3 +178,42 @@ test('C18: buildCsfConfirmarPayload con campos vacios retorna strings vacios', (
   assert.strictEqual(payload.razonSocial, '');
   assert.strictEqual(payload.nombreCorto, '');
 });
+
+// ─── altaCheckpointState ──────────────────────────────────────────────────────
+const { altaCheckpointState, altaDesbloqueaSeccion } = require('./helpers.cjs');
+
+test('C19: altaCheckpointState marca checkpoint 1 como done al confirmar seccion 1', () => {
+  const estado = { checkpoints: { 1: false, 2: false, 3: false } };
+  const siguiente = altaCheckpointState(estado, 1, true);
+  assert.strictEqual(siguiente.checkpoints[1], true);
+  assert.strictEqual(siguiente.checkpoints[2], false);
+});
+
+test('C20: altaCheckpointState no modifica checkpoints no indicados', () => {
+  const estado = { checkpoints: { 1: true, 2: false, 3: false } };
+  const siguiente = altaCheckpointState(estado, 2, true);
+  assert.strictEqual(siguiente.checkpoints[1], true);
+  assert.strictEqual(siguiente.checkpoints[2], true);
+  assert.strictEqual(siguiente.checkpoints[3], false);
+});
+
+test('C21: altaDesbloqueaSeccion retorna secciones desbloqueadas al completar la anterior', () => {
+  const lockedInicial = [3, 4];
+  // Completar seccion 1 no cambia los locked (2 ya estaba disponible)
+  const locked1 = altaDesbloqueaSeccion(lockedInicial, 1);
+  assert.deepStrictEqual(locked1, [3, 4]);
+  // Completar seccion 2 desbloquea seccion 3
+  const locked2 = altaDesbloqueaSeccion(lockedInicial, 2);
+  assert.deepStrictEqual(locked2, [4]);
+  // Completar seccion 3 desbloquea seccion 4
+  const locked3 = altaDesbloqueaSeccion([4], 3);
+  assert.deepStrictEqual(locked3, []);
+});
+
+test('C22: validarCsfCampos con RFC vacio retorna error aunque otros campos esten llenos', () => {
+  const { validarCsfCampos } = require('./helpers.cjs');
+  const getVal = id => ({ 'csf-razon-social': 'EMPRESA SA', 'csf-nombre-corto': 'EMPRESA' })[id] || '';
+  const err = validarCsfCampos(getVal);
+  assert.ok(err, 'debe haber error');
+  assert.ok(err.toUpperCase().includes('RFC'), 'error menciona RFC');
+});

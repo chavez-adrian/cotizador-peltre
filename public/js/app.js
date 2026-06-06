@@ -2568,8 +2568,7 @@ function altaCsfConfirmar() {
     if (hdr) hdr.style.cursor = '';
   }
 
-  // Eliminar seccion 2 de locked y abrirla
-  const idx = [3, 4];
+  // Navegar a seccion 2
   altaToggleSeccion(2);
 }
 

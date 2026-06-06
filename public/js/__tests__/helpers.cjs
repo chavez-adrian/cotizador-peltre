@@ -185,6 +185,16 @@ function buildAltaComercialPayload(getVal) {
   };
 }
 
+function altaCheckpointState(estado, n, done) {
+  return { ...estado, checkpoints: { ...estado.checkpoints, [n]: done } };
+}
+
+// Completar la seccion n desbloquea seccion n+1 si estaba en locked
+function altaDesbloqueaSeccion(locked, seccionCompletada) {
+  const siguiente = seccionCompletada + 1;
+  return locked.filter(s => s !== siguiente);
+}
+
 function validarCsfCampos(getVal) {
   if (!getVal('csf-rfc')) return 'El RFC es obligatorio';
   if (!getVal('csf-razon-social')) return 'La razon social es obligatoria';
@@ -242,4 +252,4 @@ function buildCsfDatosExtraidos(datos) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion };
