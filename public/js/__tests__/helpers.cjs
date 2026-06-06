@@ -274,4 +274,32 @@ function buildCsfDatosExtraidos(datos) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto };
+function buildAltaDomicilioPayload(getVal) {
+  return {
+    br_name: getVal('alta-br-name'),
+    br_ref: getVal('alta-br-ref'),
+    addr_street: getVal('alta-addr-street'),
+    addr_exterior: getVal('alta-addr-exterior'),
+    addr_interior: getVal('alta-addr-interior'),
+    addr_colony: getVal('alta-addr-colony'),
+    addr_zip: getVal('alta-addr-zip'),
+    addr_city: getVal('alta-addr-city'),
+    addr_state: getVal('alta-addr-state'),
+    pais: getVal('alta-pais'),
+    phone: getVal('alta-addr-phone'),
+    addr_reference: getVal('alta-addr-reference'),
+    email: getVal('alta-addr-email'),
+  };
+}
+
+function validarAltaDomicilio(getVal) {
+  if (!getVal('alta-br-name')) return 'El nombre del domicilio (br_name) es obligatorio';
+  if (!getVal('alta-br-ref')) return 'La referencia corta (br_ref) es obligatoria';
+  if (!getVal('alta-addr-street')) return 'La calle es obligatoria';
+  if (!getVal('alta-addr-zip')) return 'El codigo postal es obligatorio';
+  if (!getVal('alta-addr-city')) return 'La ciudad es obligatoria';
+  if (!getVal('alta-addr-state')) return 'El estado es obligatorio';
+  return null;
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio };

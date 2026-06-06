@@ -189,20 +189,112 @@
                 <label>Celular <span style="font-size:11px;color:var(--text-light)">(se registra en notas; completar manualmente en Operam)</span></label>
                 <input type="tel" id="alta-celular" placeholder="55 1234 5678">
               </div>
+              <div class="form-group">
+                <label>Uso de CFDI</label>
+                <select id="alta-uso-cfdi">
+                  <option value="G03">G03 - Gastos en general</option>
+                  <option value="S01">S01 - Sin efectos fiscales</option>
+                  <option value="G01">G01 - Adquisicion de mercancias</option>
+                  <option value="G02">G02 - Devoluciones, descuentos o bonificaciones</option>
+                  <option value="I01">I01 - Construcciones</option>
+                  <option value="P01">P01 - Por definir</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="altaConfirmarComercial()">
+                Confirmar config comercial
+              </button>
             </div>
           </div>
 
           <!-- Seccion 3: Domicilio de entrega (bloqueada) -->
           <div class="alta-seccion alta-seccion-bloqueada" id="alta-sec-3" data-sec="3">
-            <div class="alta-sec-header" style="cursor:not-allowed">
+            <div class="alta-sec-header" id="alta-hd-3" onclick="altaToggleSeccion(3)" style="cursor:not-allowed">
               <div style="display:flex;align-items:center;gap:10px">
                 <div class="alta-sec-num" id="alta-num-3">3</div>
                 <span class="alta-sec-titulo">Domicilio de entrega</span>
               </div>
-              <span class="alta-sec-icono">&#128274;</span>
+              <span class="alta-sec-icono" id="alta-ico-3">&#128274;</span>
             </div>
             <div class="alta-sec-body" id="alta-body-3" style="display:none">
-              <p style="color:var(--text-light);font-size:13px;padding:8px 0">[Seccion 3 — placeholder: Domicilio de entrega]</p>
+              <div class="form-row">
+                <div class="form-group" style="flex:1">
+                  <label>Nombre del domicilio <span style="color:var(--danger)">*</span></label>
+                  <input type="text" id="alta-br-name" placeholder="Almacen Central, Tienda Norte...">
+                </div>
+                <div class="form-group" style="flex:0 0 140px">
+                  <label>Referencia corta <span style="color:var(--danger)">*</span></label>
+                  <input type="text" id="alta-br-ref" placeholder="ALMCEN">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:1">
+                  <label>Calle <span style="color:var(--danger)">*</span></label>
+                  <input type="text" id="alta-addr-street" placeholder="Nombre de la calle">
+                </div>
+                <div class="form-group" style="flex:0 0 100px">
+                  <label>Num. exterior</label>
+                  <input type="text" id="alta-addr-exterior" placeholder="100">
+                </div>
+                <div class="form-group" style="flex:0 0 100px">
+                  <label>Num. interior</label>
+                  <input type="text" id="alta-addr-interior" placeholder="2A">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:1">
+                  <label>Colonia</label>
+                  <input type="text" id="alta-addr-colony" placeholder="Colonia o fraccionamiento">
+                </div>
+                <div class="form-group" style="flex:0 0 100px">
+                  <label>CP <span style="color:var(--danger)">*</span></label>
+                  <input type="text" id="alta-addr-zip" inputmode="numeric" placeholder="06600">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:1">
+                  <label>Ciudad / Municipio <span style="color:var(--danger)">*</span></label>
+                  <input type="text" id="alta-addr-city" placeholder="Ciudad de Mexico">
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label>Estado <span style="color:var(--danger)">*</span></label>
+                  <input type="text" id="alta-addr-state" placeholder="CDMX">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:0 0 120px">
+                  <label>Pais</label>
+                  <select id="alta-pais">
+                    <option value="MX">Mexico</option>
+                    <option value="US">Estados Unidos</option>
+                    <option value="CA">Canada</option>
+                    <option value="OT">Otro</option>
+                  </select>
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label>Telefono (con codigo de pais)</label>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <select id="alta-addr-phone-code" style="flex:0 0 80px">
+                      <option value="+52">+52</option>
+                      <option value="+1">+1</option>
+                      <option value="+1-CA">+1 CA</option>
+                      <option value="+">Otro</option>
+                    </select>
+                    <input type="tel" id="alta-addr-phone" placeholder="55 1234 5678" style="flex:1">
+                  </div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Referencias <span style="font-size:11px;color:var(--text-light)">(entre calles, punto de referencia, indicaciones)</span></label>
+                <input type="text" id="alta-addr-reference" placeholder="Entre Insurgentes y Sonora, frente a la papeleria...">
+              </div>
+              <div class="form-group">
+                <label>Email de entrega <span style="font-size:11px;color:var(--text-light)">(para avisos de envio)</span></label>
+                <input type="email" id="alta-addr-email" placeholder="entregas@empresa.com">
+              </div>
+              <div id="alta-domicilio-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
+              <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="altaConfirmarDomicilio()">
+                Confirmar domicilio
+              </button>
             </div>
           </div>
 

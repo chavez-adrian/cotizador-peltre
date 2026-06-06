@@ -2356,21 +2356,22 @@ function abrirAcordeonAlta() {
 }
 
 function altaToggleSeccion(n) {
-  const locked = [3, 4];
-  if (locked.includes(n)) return;
+  const sec = document.getElementById(`alta-sec-${n}`);
+  if (sec && sec.classList.contains('alta-seccion-bloqueada')) return;
 
   const prev = altaState.seccionAbierta;
   altaState.seccionAbierta = (prev === n) ? null : n;
 
   [1, 2, 3, 4].forEach(i => {
-    const sec = document.getElementById(`alta-sec-${i}`);
+    const s = document.getElementById(`alta-sec-${i}`);
     const body = document.getElementById(`alta-body-${i}`);
     const ico = document.getElementById(`alta-ico-${i}`);
-    if (!sec || !body) return;
+    if (!s || !body) return;
     const isOpen = altaState.seccionAbierta === i;
+    const isLocked = s.classList.contains('alta-seccion-bloqueada');
     body.style.display = isOpen ? 'block' : 'none';
-    sec.classList.toggle('alta-sec-activa', isOpen);
-    if (ico && !locked.includes(i)) ico.textContent = isOpen ? '-' : '+';
+    s.classList.toggle('alta-sec-activa', isOpen);
+    if (ico && !isLocked) ico.textContent = isOpen ? '-' : '+';
   });
 }
 
@@ -2573,6 +2574,86 @@ function altaCsfConfirmar() {
 }
 
 window.altaCsfConfirmar = altaCsfConfirmar;
+
+// === Seccion 2: Confirmar config comercial ===
+
+function altaConfirmarComercial() {
+  const dot = document.getElementById('chkdot-2');
+  if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+
+  const sec3 = document.getElementById('alta-sec-3');
+  if (sec3) {
+    sec3.classList.remove('alta-seccion-bloqueada');
+    const hdr = document.getElementById('alta-hd-3');
+    if (hdr) hdr.style.cursor = '';
+    const ico = document.getElementById('alta-ico-3');
+    if (ico) { ico.textContent = '+'; }
+  }
+
+  altaToggleSeccion(3);
+}
+
+window.altaConfirmarComercial = altaConfirmarComercial;
+
+// === Seccion 3: Confirmar domicilio de entrega ===
+
+function altaLeerDomicilio() {
+  const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  return {
+    br_name: getVal('alta-br-name'),
+    br_ref: getVal('alta-br-ref'),
+    addr_street: getVal('alta-addr-street'),
+    addr_exterior: getVal('alta-addr-exterior'),
+    addr_interior: getVal('alta-addr-interior'),
+    addr_colony: getVal('alta-addr-colony'),
+    addr_zip: getVal('alta-addr-zip'),
+    addr_city: getVal('alta-addr-city'),
+    addr_state: getVal('alta-addr-state'),
+    pais: getVal('alta-pais'),
+    phone: getVal('alta-addr-phone'),
+    addr_reference: getVal('alta-addr-reference'),
+    email: getVal('alta-addr-email'),
+  };
+}
+
+function altaValidarDomicilio() {
+  const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  if (!getVal('alta-br-name')) return 'El nombre del domicilio es obligatorio';
+  if (!getVal('alta-br-ref')) return 'La referencia corta es obligatoria';
+  if (!getVal('alta-addr-street')) return 'La calle es obligatoria';
+  if (!getVal('alta-addr-zip')) return 'El codigo postal es obligatorio';
+  if (!getVal('alta-addr-city')) return 'La ciudad es obligatoria';
+  if (!getVal('alta-addr-state')) return 'El estado es obligatorio';
+  return null;
+}
+
+function altaConfirmarDomicilio() {
+  const errDiv = document.getElementById('alta-domicilio-error');
+  const err = altaValidarDomicilio();
+  if (err) {
+    if (errDiv) { errDiv.textContent = err; errDiv.style.display = ''; }
+    return;
+  }
+  if (errDiv) errDiv.style.display = 'none';
+
+  altaState.domicilio = altaLeerDomicilio();
+
+  const dot = document.getElementById('chkdot-3');
+  if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+
+  const sec4 = document.getElementById('alta-sec-4');
+  if (sec4) {
+    sec4.classList.remove('alta-seccion-bloqueada');
+    const hdr = document.getElementById('alta-hd-4');
+    if (hdr) hdr.style.cursor = '';
+    const ico = document.getElementById('alta-ico-4');
+    if (ico) { ico.textContent = '+'; }
+  }
+
+  altaToggleSeccion(4);
+}
+
+window.altaConfirmarDomicilio = altaConfirmarDomicilio;
 
 // Wiring del dropzone
 document.addEventListener('DOMContentLoaded', () => {
