@@ -2311,3 +2311,68 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 });
+
+// === ACORDEON ALTA CLIENTE (issue #27) ===
+
+const altaState = {
+  seccionAbierta: null,
+  catalogos: null,
+};
+
+async function cargarCatalogos() {
+  if (altaState.catalogos) return altaState.catalogos;
+  const res = await api('/api/catalogos');
+  altaState.catalogos = await res.json();
+  return altaState.catalogos;
+}
+
+function altaPoblarSelectores(catalogos) {
+  const selLista = document.getElementById('alta-lista-precios');
+  const selSeg = document.getElementById('alta-segmento');
+  const selVend = document.getElementById('alta-vendedor');
+  if (!selLista || !selSeg || !selVend) return;
+
+  selLista.innerHTML = '<option value="">-- Selecciona --</option>' +
+    catalogos.listas_precios.map(l => `<option value="${l.id}">${l.id} — ${l.nombre}</option>`).join('');
+
+  selSeg.innerHTML = '<option value="">-- Selecciona --</option>' +
+    catalogos.segmentos.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+
+  selVend.innerHTML = '<option value="">-- Selecciona --</option>' +
+    catalogos.vendedores.map(v => `<option value="${v.operam_id}">${v.name}</option>`).join('');
+}
+
+function abrirAcordeonAlta() {
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel) return;
+  const visible = panel.style.display !== 'none';
+  if (visible) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  altaToggleSeccion(1);
+  cargarCatalogos().then(altaPoblarSelectores).catch(() => {});
+}
+
+function altaToggleSeccion(n) {
+  const locked = [3, 4];
+  if (locked.includes(n)) return;
+
+  const prev = altaState.seccionAbierta;
+  altaState.seccionAbierta = (prev === n) ? null : n;
+
+  [1, 2, 3, 4].forEach(i => {
+    const sec = document.getElementById(`alta-sec-${i}`);
+    const body = document.getElementById(`alta-body-${i}`);
+    const ico = document.getElementById(`alta-ico-${i}`);
+    if (!sec || !body) return;
+    const isOpen = altaState.seccionAbierta === i;
+    body.style.display = isOpen ? 'block' : 'none';
+    sec.classList.toggle('alta-sec-activa', isOpen);
+    if (ico && !locked.includes(i)) ico.textContent = isOpen ? '-' : '+';
+  });
+}
+
+window.abrirAcordeonAlta = abrirAcordeonAlta;
+window.altaToggleSeccion = altaToggleSeccion;

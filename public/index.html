@@ -48,16 +48,118 @@
 
   <!-- TAB: CLIENTE -->
   <div class="tab-content active" id="tab-cliente">
-    <div class="cliente-modos">
-      <button class="modo-btn active" data-modo="buscar" onclick="setClienteModo('buscar')">
-        Buscar en Operam
-      </button>
-      <button class="modo-btn" data-modo="csf" onclick="setClienteModo('csf')">
-        Crear desde CSF
-      </button>
-      <button class="modo-btn" data-modo="manual" onclick="setClienteModo('manual')">
-        Captura manual
-      </button>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="cliente-modos" style="margin-bottom:0">
+        <button class="modo-btn active" data-modo="buscar" onclick="setClienteModo('buscar')">
+          Buscar en Operam
+        </button>
+        <button class="modo-btn" data-modo="csf" onclick="setClienteModo('csf')">
+          Crear desde CSF
+        </button>
+        <button class="modo-btn" data-modo="manual" onclick="setClienteModo('manual')">
+          Captura manual
+        </button>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-nuevo-cliente" onclick="abrirAcordeonAlta()">+ Nuevo cliente</button>
+    </div>
+
+    <!-- Acordeon de alta de cliente (issue #27) -->
+    <div id="panel-alta-cliente" style="display:none;margin-bottom:16px">
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <!-- Acordeon columna izquierda -->
+        <div style="flex:1" id="alta-acordeon">
+
+          <!-- Seccion 1: RFC y datos fiscales -->
+          <div class="alta-seccion" id="alta-sec-1" data-sec="1">
+            <div class="alta-sec-header" onclick="altaToggleSeccion(1)">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div class="alta-sec-num" id="alta-num-1">1</div>
+                <span class="alta-sec-titulo">RFC y datos fiscales</span>
+              </div>
+              <span class="alta-sec-icono" id="alta-ico-1">+</span>
+            </div>
+            <div class="alta-sec-body" id="alta-body-1" style="display:none">
+              <p style="color:var(--text-light);font-size:13px;padding:8px 0">[Seccion 1 — placeholder: RFC y datos fiscales]</p>
+            </div>
+          </div>
+
+          <!-- Seccion 2: Configuracion comercial (funcional) -->
+          <div class="alta-seccion" id="alta-sec-2" data-sec="2">
+            <div class="alta-sec-header" id="alta-hd-2" onclick="altaToggleSeccion(2)">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div class="alta-sec-num" id="alta-num-2">2</div>
+                <span class="alta-sec-titulo">Configuracion comercial</span>
+              </div>
+              <span class="alta-sec-icono" id="alta-ico-2">&#128274;</span>
+            </div>
+            <div class="alta-sec-body" id="alta-body-2" style="display:none">
+              <div class="form-group">
+                <label>Lista de precios</label>
+                <select id="alta-lista-precios"><option value="">Cargando...</option></select>
+              </div>
+              <div class="form-group">
+                <label>Segmento</label>
+                <select id="alta-segmento"><option value="">Cargando...</option></select>
+              </div>
+              <div class="form-group">
+                <label>Vendedor asignado</label>
+                <select id="alta-vendedor"><option value="">Cargando...</option></select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Seccion 3: Domicilio de entrega (bloqueada) -->
+          <div class="alta-seccion alta-seccion-bloqueada" id="alta-sec-3" data-sec="3">
+            <div class="alta-sec-header" style="cursor:not-allowed">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div class="alta-sec-num" id="alta-num-3">3</div>
+                <span class="alta-sec-titulo">Domicilio de entrega</span>
+              </div>
+              <span class="alta-sec-icono">&#128274;</span>
+            </div>
+            <div class="alta-sec-body" id="alta-body-3" style="display:none">
+              <p style="color:var(--text-light);font-size:13px;padding:8px 0">[Seccion 3 — placeholder: Domicilio de entrega]</p>
+            </div>
+          </div>
+
+          <!-- Seccion 4: Confirmacion y alta (bloqueada) -->
+          <div class="alta-seccion alta-seccion-bloqueada" id="alta-sec-4" data-sec="4">
+            <div class="alta-sec-header" style="cursor:not-allowed">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div class="alta-sec-num" id="alta-num-4">4</div>
+                <span class="alta-sec-titulo">Confirmacion y alta</span>
+              </div>
+              <span class="alta-sec-icono">&#128274;</span>
+            </div>
+            <div class="alta-sec-body" id="alta-body-4" style="display:none">
+              <p style="color:var(--text-light);font-size:13px;padding:8px 0">[Seccion 4 — placeholder: Confirmacion y alta]</p>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Sidebar sticky de progreso -->
+        <div id="alta-sidebar" style="width:210px;flex-shrink:0;position:sticky;top:16px">
+          <div style="background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px">Progreso del alta</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="alta-checkpoint" id="chk-1">
+                <div class="alta-chk-dot" id="chkdot-1"></div>
+                <span class="alta-chk-label">RFC y datos fiscales</span>
+              </div>
+              <div class="alta-checkpoint" id="chk-2">
+                <div class="alta-chk-dot" id="chkdot-2"></div>
+                <span class="alta-chk-label">Configuracion comercial</span>
+              </div>
+              <div class="alta-checkpoint" id="chk-3">
+                <div class="alta-chk-dot" id="chkdot-3"></div>
+                <span class="alta-chk-label">Domicilio de entrega</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
 
     <!-- Panel: Buscar en Operam -->
