@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -228,4 +228,134 @@ test('buildClienteBody: timbrado_uso_cfdi fallback S01 cuando viene vacio', () =
 test('buildClienteBody: timbrado_uso_cfdi fallback S01 cuando no viene', () => {
   const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
   assert.strictEqual(body.timbrado_uso_cfdi, 'S01', 'fallback S01 cuando timbrado_uso_cfdi no esta en input');
+});
+
+// === actualizarBranchCliente() — issue #29 ===
+
+test('actualizarBranchCliente: PUT /api/v3/sales/branches/:id con location:40 y ship_via:1 como enteros', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/200': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 200, {
+      br_name: 'Almacen Central', br_ref: 'ALMCEN',
+      pais: 'MX', salesman: 47,
+      addr_street: 'Reforma', addr_exterior: '1', addr_interior: '', addr_colony: 'Juarez',
+      addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '',
+      phone: '5512345678', email: 'entrega@test.com',
+    });
+    assert.strictEqual(typeof putBody.location, 'number', 'location debe ser number');
+    assert.strictEqual(putBody.location, 40, 'location debe ser 40');
+    assert.strictEqual(typeof putBody.ship_via, 'number', 'ship_via debe ser number');
+    assert.strictEqual(putBody.ship_via, 1, 'ship_via debe ser 1');
+  } finally {
+    restore();
+  }
+});
+
+test('actualizarBranchCliente: tax_group_id 1 para MX', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/200': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 200, {
+      br_name: 'Almacen', br_ref: 'ALM', pais: 'MX', salesman: 47,
+      addr_street: 'X', addr_exterior: '1', addr_interior: '', addr_colony: 'X',
+      addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '',
+      phone: '', email: '',
+    });
+    assert.strictEqual(putBody.tax_group_id, 1, 'tax_group_id debe ser 1 para MX');
+  } finally {
+    restore();
+  }
+});
+
+test('actualizarBranchCliente: tax_group_id 2 para pais extranjero', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/201': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 201, {
+      br_name: 'USA Branch', br_ref: 'USA', pais: 'US', salesman: 47,
+      addr_street: 'Main St', addr_exterior: '10', addr_interior: '', addr_colony: '',
+      addr_city: 'Los Angeles', addr_state: 'CA', addr_zip: '90001', addr_reference: '',
+      phone: '', email: '',
+    });
+    assert.strictEqual(putBody.tax_group_id, 2, 'tax_group_id debe ser 2 para pais extranjero');
+  } finally {
+    restore();
+  }
+});
+
+test('actualizarBranchCliente: NO incluye sales_account en el body del PUT', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/200': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 200, {
+      br_name: 'Almacen', br_ref: 'ALM', pais: 'MX', salesman: 47,
+      addr_street: 'X', addr_exterior: '1', addr_interior: '', addr_colony: 'X',
+      addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '',
+      phone: '', email: '',
+    });
+    assert.ok(!('sales_account' in putBody), 'sales_account NO debe estar en el body del PUT');
+  } finally {
+    restore();
+  }
+});
+
+test('actualizarBranchCliente: cuando branchId es null hace GET customer para obtener branch_code', async () => {
+  resetSession();
+  let getCustomerCalled = false;
+  let putBranchUrl = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/100': (url, opts) => {
+      if (!opts || opts.method !== 'POST') {
+        getCustomerCalled = true;
+        return jsonResponse({ data: [{ branches: [{ branch_code: 300 }] }] });
+      }
+      return jsonResponse({ result: true, customer_id: 100 });
+    },
+    '/api/v3/sales/branches/300': (url, opts) => {
+      putBranchUrl = url;
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, null, {
+      br_name: 'Almacen', br_ref: 'ALM', pais: 'MX', salesman: 47,
+      addr_street: 'X', addr_exterior: '1', addr_interior: '', addr_colony: 'X',
+      addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '',
+      phone: '', email: '',
+    });
+    assert.ok(getCustomerCalled, 'debe haber llamado GET /customers/:id para obtener branch_code');
+    assert.ok(putBranchUrl && putBranchUrl.includes('/branches/300'), 'debe hacer PUT al branch_code obtenido');
+  } finally {
+    restore();
+  }
 });
