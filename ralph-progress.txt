@@ -4,10 +4,53 @@ Repo local: C:\Users\chave\OneDrive\Documents\_Claude\cotizador\
 GitHub: https://github.com/chavez-adrian/cotizador-peltre
 
 == ISSUE ACTIVO ==
-#29: feat: Backend atómico de alta + secciones 2-3-4 del acordeón
-URL: https://github.com/chavez-adrian/cotizador-peltre/issues/29
-N iteraciones planificadas: 8
-Iteraciones completadas: 8 (COMPLETO)
+#30: feat: Sección 1 del acordeón — entrada manual (sin CSF)
+URL: https://github.com/chavez-adrian/cotizador-peltre/issues/30
+N iteraciones planificadas: 5
+Iteraciones completadas: 5
+
+== ACs VERIFICADOS (issue #30) ==
+[x] Seccion 1 muestra dos modos seleccionables: "Cargar CSF" y "Captura manual"
+[x] Cambiar entre modos no resetea datos ya ingresados (altaTabSwitch solo toggle display)
+[x] Modo manual incluye todos los campos: RFC, razon social, nombre corto, SAT IdCIF, regimen, uso CFDI, CP, municipio, estado, pais
+[x] RFC con pais MX valida formato (acepta XAXX010101000 y XEXX010101000)
+[x] "Verificar y confirmar" valida campos requeridos antes de desbloquear seccion 2
+[x] El resultado produce los mismos campos que confirmar via CSF (test M16/M20)
+[x] Test: formulario manual RFC MX valido -> misma estructura que parseo CSF (M20)
+Tests finales: 162 frontend + 48 backend = 210 total GREEN, 0 fail.
+NO cerrar issue #30 en GitHub (lo hace el supervisor).
+
+== HISTORIAL DE ITERACIONES (issue #30) ==
+
+--- ITER 1 (completada) ---
+Commit: 3112904 test: RED tests validarRfcManual + buildManualDatosExtraidos (iter 1/5, issue #30)
+Hecho: 17 tests RED M1-M17 en alta-manual.test.cjs
+  - validarRfcManual(rfc, pais): UEGA persona fisica, SMS persona moral, XAXX/XEXX genericos, 123 invalido, extranjero
+  - buildManualDatosExtraidos(campos): completo, error si falta rfc/razonSocial/nombreCorto, opcionales vacios, misma estructura que CSF, campo pais
+
+--- ITER 2 (completada) ---
+Commit: f5017a3 feat: GREEN validarRfcManual + buildManualDatosExtraidos in helpers (iter 2/5, issue #30)
+Hecho: funciones implementadas en helpers.cjs
+  - RFC_MX_REGEX = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/i, RFC_GENERICOS_MX Set
+  - validarRfcManual: extranjero -> null siempre; MX: genericos ok, regex check
+  - buildManualDatosExtraidos: misma estructura que buildCsfDatosExtraidos + campo pais
+  - 17/17 M1-M17 GREEN, todos los tests anteriores siguen GREEN (62)
+
+--- ITER 3-4 (completada) ---
+Commit: f0a251a feat: HTML tab switcher + manual form + JS logic in sec1 (iter 3-4/5, issue #30)
+Hecho: HTML+CSS+JS para modo manual
+  - index.html: .alta-tab-switcher con 2 botones, alta-panel-csf (wrapper CSF existente), alta-panel-manual con 10 campos (pais, rfc, razon social, nombre corto, idcif, regimen, uso cfdi, cp, municipio, estado)
+  - style.css: .alta-tab-switcher, .alta-tab-btn, .alta-tab-btn.active
+  - app.js: altaTabSwitch(modo), altaManualSetPais(pais), altaManualValidarRfc(), altaManualLeerFormulario(), altaManualConfirmar()
+  - altaManualConfirmar: valida RFC+requeridos -> altaState.datos mismo shape que CSF -> chkdot-1 done -> desbloquea sec2 -> navega sec2
+
+--- ITER 5 (completada) ---
+Commit: 1e4ad5a feat: polish + buildManualConfirmarPayload + todos los ACs verificados (iter 5/5, issue #30)
+Hecho: buildManualConfirmarPayload(getVal) + tests M18-M20
+  - helpers.cjs: buildManualConfirmarPayload lee 10 campos manual-* del DOM
+  - M18: extrae todos los campos; M19: campos vacios; M20: AC final misma estructura canonica
+  - 162 frontend + 48 backend = 210 total GREEN
+Pushed: b77a6c7..1e4ad5a main->main
 
 == ACs VERIFICADOS (issue #29) ==
 [x] buildClienteBody() incluye sales_type, segmento_id, salesman (operam_id), area derivada, timbrado_uso_cfdi desde input
@@ -27,6 +70,7 @@ NO cerrar issue #29 en GitHub (lo hace el supervisor).
 == ISSUES COMPLETADOS ==
 #27: feat: GET /api/catalogos + acordeón skeleton — CERRADO
 #28: feat: Sección 1 acordeón — entrada vía CSF — CERRADO
+#29: feat: Backend atómico + secciones 2-3-4 — CERRADO
 
 == HISTORIAL DE ITERACIONES ==
 
