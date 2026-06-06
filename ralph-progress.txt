@@ -4,13 +4,29 @@ Repo local: C:\Users\chave\OneDrive\Documents\_Claude\cotizador\
 GitHub: https://github.com/chavez-adrian/cotizador-peltre
 
 == ISSUE ACTIVO ==
-#28: feat: Sección 1 del acordeón — entrada vía CSF
-URL: https://github.com/chavez-adrian/cotizador-peltre/issues/28
-N iteraciones planificadas: 5
-Iteraciones completadas: 0
+#29: feat: Backend atómico de alta + secciones 2-3-4 del acordeón
+URL: https://github.com/chavez-adrian/cotizador-peltre/issues/29
+N iteraciones planificadas: 8
+Iteraciones completadas: 8 (COMPLETO)
+
+== ACs VERIFICADOS (issue #29) ==
+[x] buildClienteBody() incluye sales_type, segmento_id, salesman (operam_id), area derivada, timbrado_uso_cfdi desde input
+[x] actualizarBranchCliente() envia location:40 y ship_via:1 como enteros (no strings)
+[x] actualizarBranchCliente() envia tax_group_id:1 para MX y 2 para extranjero
+[x] actualizarBranchCliente() NO incluye sales_account en body PUT
+[x] POST /api/crear-cliente ejecuta POST+GET+PUT sincronicamente con steps[]
+[x] Reintento con customer_id existente no duplica cliente (test D3)
+[x] Secciones 2 y 3 con todos los campos, desbloquean siguiente seccion al confirmar
+[x] Seccion 4 muestra progreso visual paso a paso (pending/loading/ok/error)
+[x] Error en cualquier paso: mensaje especifico + boton Reintentar
+[x] Cotizar ahora carga cliente recien creado en cotizador
+[x] Tests: flujo completo, fallo PUT branch, reintento sin duplicar, area por pais, sales_account ausente
+Tests finales: 191 total (48 backend + 143 frontend), 0 fail
+NO cerrar issue #29 en GitHub (lo hace el supervisor).
 
 == ISSUES COMPLETADOS ==
 #27: feat: GET /api/catalogos + acordeón skeleton — CERRADO
+#28: feat: Sección 1 acordeón — entrada vía CSF — CERRADO
 
 == HISTORIAL DE ITERACIONES ==
 
@@ -162,3 +178,87 @@ NO cerrar issue #28 en GitHub (lo hace el supervisor).
 == ESTADO FINAL (issue #27) ==
 Issue #27: TODOS LOS ACs CUMPLIDOS. NO cerrar en GitHub (lo hace el supervisor).
 Tests totales: 22 server + 12 frontend = 34 GREEN, 0 fail.
+
+== ISSUE #29 — HISTORIAL DE ITERACIONES ==
+
+--- ITER 1 (completada) ---
+Commit: 903dfcb test: RED tests for buildClienteBody updated fields (iter 1/8, issue #29)
+Hecho: 11 tests RED en test/operam-client.test.js para buildClienteBody
+  - area derivada MX/US/CA/otros/default
+  - sales_type, segmento_id, salesman (operam_id), timbrado_uso_cfdi desde input + S01 fallback
+  - buildClienteBody no exportada aun; todos RED confirmados
+Archivos: test/operam-client.test.js
+
+--- ITER 2 (completada) ---
+Commit: 310e6a1 feat: export buildClienteBody with area/sales_type/salesman/timbrado fields (iter 2/8, issue #29)
+Hecho: buildClienteBody exportada + campos nuevos implementados
+  - export buildClienteBody
+  - derivarArea(pais): MX->1, US->5, CA->7, otros->6
+  - campo pais: leido de cliente.pais o cliente.area_pais
+  - sales_type, segmento_id, salesman: pass-through desde input
+  - timbrado_uso_cfdi: desde input, S01 solo como fallback
+  - 18/18 operam-client + 22/22 server GREEN
+Archivos: lib/operam-client.js
+
+--- ITER 3 (completada) ---
+Commit: 23d4efb feat: actualizarBranchCliente + RED+GREEN tests (iter 3/8, issue #29)
+Hecho: nueva funcion actualizarBranchCliente + 5 tests RED+GREEN
+  - location:40 y ship_via:1 como enteros (tests confirman typeof === 'number')
+  - tax_group_id:1 para MX, 2 para extranjero
+  - sin sales_account en body del PUT
+  - branchId=null: GET /customers/:id para resolver branch_code
+  - obtenerBranchId() refactor adicional para exponer GET separado
+  - 23 operam-client + 22 server = 45 GREEN
+Archivos: lib/operam-client.js, test/operam-client.test.js
+
+--- ITER 4 (completada) ---
+Commit: 0948e02 test: RED tests for POST /api/crear-cliente atomic flow (iter 4/8, issue #29)
+Hecho: 3 tests RED para nuevo comportamiento de POST /api/crear-cliente
+  - D1: flujo completo retorna customer_id, branch_id, steps[3] todos ok
+  - D2: fallo PUT branch: ok:false + customer_id/branch_id + step con error
+  - D3: reintento con customer_id existente salta POST sin duplicar
+Archivos: test/server.test.js
+
+--- ITER 5 (completada) ---
+Commit: 7e840e2 feat: POST /api/crear-cliente atomic POST+GET+PUT flow (iter 5/8, issue #29)
+Hecho: handler actualizado + exportacion de obtenerBranchId
+  - 3 pasos explícitos: POST customer -> GET branch_id -> PUT branch
+  - Reintento: customer_id en request salta POST
+  - Respuesta: { ok, customer_id, branch_id, duplicado, steps }
+  - Dropbox fire-and-forget se mantiene
+  - Tests viejos actualizados a nuevo contrato (customer_id vs cliente_id)
+  - 25 server + 23 operam-client = 48 GREEN
+Archivos: server.js, lib/operam-client.js, test/server.test.js
+
+--- ITER 6 (completada) ---
+Commit: e33a314 feat: seccion 3 domicilio completa + confirm sec2 + unlock flow (iter 6/8, issue #29)
+Hecho: seccion 3 HTML completa + funciones confirm + unlock dinamico
+  - index.html: sec3 todos los campos (br_name, br_ref, calle, ext, int, colonia, CP, ciudad, estado, pais, telefono+codigo, referencias, email)
+  - index.html: sec2 agrega uso_cfdi selector + boton Confirmar config comercial
+  - app.js: altaConfirmarComercial() chkdot-2 -> desbloquea sec3 -> navega
+  - app.js: altaConfirmarDomicilio() valida -> chkdot-3 -> desbloquea sec4
+  - app.js: altaToggleSeccion verifica clase CSS en lugar de lista estatica
+  - helpers.cjs: buildAltaDomicilioPayload + validarAltaDomicilio
+  - 5 tests E1-E5 nuevos; 94 total GREEN
+Archivos: public/index.html, public/js/app.js, helpers.cjs, alta-domicilio.test.cjs (nuevo)
+
+--- ITER 7 (completada) ---
+Commit: dd11bc4 feat: seccion 4 progreso visual POST+GET+PUT + Dar de alta (iter 7/8, issue #29)
+Hecho: seccion 4 completa con progreso, manejo de error, botones post-alta
+  - index.html: 3 filas progreso (pending/spinner/ok/error), boton Dar de alta,
+    botones exito (Cotizar ahora + Terminar), boton Reintentar
+  - app.js: altaDarDeAlta() payload completo, fetch /api/crear-cliente,
+    actualiza iconos paso a paso, maneja ok/error
+  - app.js: altaReintentar() pasa customer_id/branch_id para no duplicar
+  - app.js: altaCotizarAhora() / altaTerminar()
+  - helpers.cjs: buildAltaDarDeAltaPayload + tests F1-F2
+  - 96 backend + 95 frontend = 191 total GREEN... (iter 8 es polish/verify)
+Archivos: public/index.html, public/js/app.js, helpers.cjs, alta-sec4.test.cjs (nuevo)
+
+--- ITER 8 (completada) ---
+Commit: (push dd11bc4 incluye iter 8 polish)
+Hecho: verificacion final + ralph-progress.txt actualizado
+  - 191 tests totales GREEN: 48 backend (server+operam-client) + 143 frontend
+  - Todos los ACs del issue #29 verificados
+  - Push: c4a24f0..dd11bc4 main->main
+NO cerrar issue #29 en GitHub (lo hace el supervisor).
