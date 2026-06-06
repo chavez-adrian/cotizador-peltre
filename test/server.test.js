@@ -323,3 +323,37 @@ test('C4: GET /api/catalogos listas_precios contiene solo codigos mayoreo y excl
     restore();
   }
 });
+
+test('C5: GET /api/catalogos sin token retorna 401', async () => {
+  const res = await supertest(app).get('/api/catalogos');
+  assert.strictEqual(res.status, 401);
+});
+
+test('C6: GET /api/catalogos listas_precios cada entrada tiene { id, nombre }', async () => {
+  const restore = mockCatalogos();
+  try {
+    await cargarListasPrecios();
+    const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
+    for (const lista of res.body.listas_precios) {
+      assert.ok(lista.id, 'cada lista debe tener id');
+      assert.ok(lista.nombre !== undefined, 'cada lista debe tener nombre');
+    }
+  } finally {
+    restore();
+  }
+});
+
+test('C7: GET /api/catalogos vendedores cada entrada tiene { id, name, operam_id }', async () => {
+  const restore = mockCatalogos();
+  try {
+    await cargarListasPrecios();
+    const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
+    for (const v of res.body.vendedores) {
+      assert.ok(v.id, 'cada vendedor debe tener id');
+      assert.ok(v.name, 'cada vendedor debe tener name');
+      assert.ok(v.operam_id != null, 'operam_id no debe ser null');
+    }
+  } finally {
+    restore();
+  }
+});
