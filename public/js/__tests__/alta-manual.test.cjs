@@ -156,3 +156,67 @@ test('M17: buildManualDatosExtraidos incluye campo pais que no existe en CSF', (
   assert.ok('pais' in payload, 'modo manual debe incluir campo pais');
   assert.strictEqual(payload.pais, 'MX');
 });
+
+// ─── buildManualConfirmarPayload ──────────────────────────────────────────────
+const { buildManualConfirmarPayload } = require('./helpers.cjs');
+
+test('M18: buildManualConfirmarPayload extrae todos los campos del formulario manual', () => {
+  const vals = {
+    'manual-rfc': 'SMS200716NZ4',
+    'manual-razon-social': 'SAGO MEDICAL SERVICE SA DE CV',
+    'manual-nombre-corto': 'SAGO MEDICAL',
+    'manual-idcif': '20090146505',
+    'manual-regimen-fiscal': '601',
+    'manual-uso-cfdi': 'G01',
+    'manual-cp': '06760',
+    'manual-municipio': 'CUAUHTEMOC',
+    'manual-estado': 'CIUDAD DE MEXICO',
+    'manual-pais': 'MX',
+  };
+  const getVal = id => vals[id] || '';
+  const payload = buildManualConfirmarPayload(getVal);
+  assert.strictEqual(payload.rfc, 'SMS200716NZ4');
+  assert.strictEqual(payload.razonSocial, 'SAGO MEDICAL SERVICE SA DE CV');
+  assert.strictEqual(payload.nombreCorto, 'SAGO MEDICAL');
+  assert.strictEqual(payload.idcif, '20090146505');
+  assert.strictEqual(payload.regimenFiscal, '601');
+  assert.strictEqual(payload.usoCfdi, 'G01');
+  assert.strictEqual(payload.cp, '06760');
+  assert.strictEqual(payload.municipio, 'CUAUHTEMOC');
+  assert.strictEqual(payload.estado, 'CIUDAD DE MEXICO');
+  assert.strictEqual(payload.pais, 'MX');
+});
+
+test('M19: buildManualConfirmarPayload con campos vacios retorna strings vacios', () => {
+  const getVal = () => '';
+  const payload = buildManualConfirmarPayload(getVal);
+  assert.strictEqual(payload.rfc, '');
+  assert.strictEqual(payload.razonSocial, '');
+  assert.strictEqual(payload.nombreCorto, '');
+  assert.strictEqual(payload.pais, '');
+});
+
+test('M20: AC final: modo manual RFC MX valido produce misma estructura canonica que CSF', () => {
+  // Ambos modos llegan a seccion 2 con el mismo conjunto de campos
+  const csfDatos = buildCsfDatosExtraidos({
+    rfc: 'SMS200716NZ4', razonSocial: 'SAGO MEDICAL SERVICE SA DE CV',
+    nombreCorto: 'SAGO MEDICAL', idcif: '20090146505', cp: '06760',
+    municipio: 'CUAUHTEMOC', estado: 'CIUDAD DE MEXICO', regimenFiscal: '601', usoCfdi: 'G01',
+  });
+  const manualDatos = buildManualDatosExtraidos({
+    rfc: 'SMS200716NZ4', razonSocial: 'SAGO MEDICAL SERVICE SA DE CV',
+    nombreCorto: 'SAGO MEDICAL', idcif: '20090146505', cp: '06760',
+    municipio: 'CUAUHTEMOC', estado: 'CIUDAD DE MEXICO', regimenFiscal: '601', usoCfdi: 'G01',
+    pais: 'MX',
+  });
+
+  const camposCanonicos = ['rfc', 'razonSocial', 'nombreCorto', 'idcif', 'cp', 'municipio', 'estado', 'regimenFiscal', 'usoCfdi'];
+  assert.ok(!csfDatos.error, 'CSF sin error');
+  assert.ok(!manualDatos.error, 'Manual sin error');
+  for (const campo of camposCanonicos) {
+    assert.strictEqual(manualDatos[campo], csfDatos[campo], `campo ${campo} identico en ambos modos`);
+  }
+  // Modo manual tiene pais adicional
+  assert.ok('pais' in manualDatos, 'manual incluye pais');
+  assert.strictEqual(manualDatos.pais, 'MX');
+});

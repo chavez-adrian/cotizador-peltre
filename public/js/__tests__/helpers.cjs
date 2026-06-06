@@ -337,6 +337,21 @@ function buildManualDatosExtraidos(campos) {
   };
 }
 
+function buildManualConfirmarPayload(getVal) {
+  return {
+    rfc: getVal('manual-rfc'),
+    razonSocial: getVal('manual-razon-social'),
+    nombreCorto: getVal('manual-nombre-corto'),
+    idcif: getVal('manual-idcif'),
+    regimenFiscal: getVal('manual-regimen-fiscal'),
+    usoCfdi: getVal('manual-uso-cfdi'),
+    cp: getVal('manual-cp'),
+    municipio: getVal('manual-municipio'),
+    estado: getVal('manual-estado'),
+    pais: getVal('manual-pais'),
+  };
+}
+
 function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId) {
   return {
     tax_id: csfDatos.rfc || '',
@@ -363,4 +378,4 @@ function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, b
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, parsearCsfDesdeTexto, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload };
