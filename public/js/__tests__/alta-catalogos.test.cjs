@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest } = require('./helpers.cjs');
+const { buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload } = require('./helpers.cjs');
 
 const CATALOGOS_MOCK = {
   listas_precios: [
@@ -80,4 +80,29 @@ test('A9: buildCargarCatalogosRequest incluye URL /api/catalogos y Authorization
   const req = buildCargarCatalogosRequest('Bearer tok123');
   assert.strictEqual(req.url, '/api/catalogos');
   assert.strictEqual(req.headers['Authorization'], 'Bearer tok123');
+});
+
+test('B1: buildAltaComercialPayload extrae lista_precios, segmento_id y salesman del formulario', () => {
+  const getVal = id => ({ 'alta-lista-precios': 'M350', 'alta-segmento': '2', 'alta-vendedor': '5', 'alta-email-factura': '', 'alta-celular': '' })[id] || '';
+  const payload = buildAltaComercialPayload(getVal);
+  assert.strictEqual(payload.sales_type, 'M350');
+  assert.strictEqual(payload.segmento_id, '2');
+  assert.strictEqual(payload.salesman, '5');
+});
+
+test('B2: buildAltaComercialPayload incluye invoice_email y celular_nota', () => {
+  const getVal = id => ({ 'alta-lista-precios': 'US100', 'alta-segmento': '0', 'alta-vendedor': '1', 'alta-email-factura': 'fact@empresa.com', 'alta-celular': '5512345678' })[id] || '';
+  const payload = buildAltaComercialPayload(getVal);
+  assert.strictEqual(payload.invoice_email, 'fact@empresa.com');
+  assert.strictEqual(payload.celular_nota, '5512345678');
+});
+
+test('B3: buildAltaComercialPayload con campos vacios retorna strings vacios', () => {
+  const getVal = () => '';
+  const payload = buildAltaComercialPayload(getVal);
+  assert.strictEqual(payload.sales_type, '');
+  assert.strictEqual(payload.segmento_id, '');
+  assert.strictEqual(payload.salesman, '');
+  assert.strictEqual(payload.invoice_email, '');
+  assert.strictEqual(payload.celular_nota, '');
 });

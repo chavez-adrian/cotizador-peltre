@@ -175,4 +175,14 @@ function buildCargarCatalogosRequest(authHeader) {
   };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest };
+function buildAltaComercialPayload(getVal) {
+  return {
+    sales_type: getVal('alta-lista-precios'),
+    segmento_id: getVal('alta-segmento'),
+    salesman: getVal('alta-vendedor'),
+    invoice_email: getVal('alta-email-factura'),
+    celular_nota: getVal('alta-celular'),
+  };
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload };
