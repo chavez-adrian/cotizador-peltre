@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientePorRFC, crearCliente, resetSession } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -171,4 +171,61 @@ test('crearCliente: retorna { duplicado:true } con datos cuando RFC ya existe', 
   } finally {
     restore();
   }
+});
+
+// === buildClienteBody() — campos nuevos (issue #29) ===
+
+test('buildClienteBody: area derivada MX -> 1', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'MX' });
+  assert.strictEqual(body.area, 1, 'area debe ser entero 1 para MX');
+});
+
+test('buildClienteBody: area derivada US -> 5', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'US' });
+  assert.strictEqual(body.area, 5, 'area debe ser entero 5 para US');
+});
+
+test('buildClienteBody: area derivada CA -> 7', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'CA' });
+  assert.strictEqual(body.area, 7, 'area debe ser entero 7 para CA');
+});
+
+test('buildClienteBody: area derivada pais desconocido -> 6', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'DE' });
+  assert.strictEqual(body.area, 6, 'area debe ser entero 6 para pais desconocido');
+});
+
+test('buildClienteBody: area default (sin pais) -> 1', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.strictEqual(body.area, 1, 'area default debe ser 1 (MX)');
+});
+
+test('buildClienteBody: incluye sales_type desde input', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', sales_type: 'M350' });
+  assert.strictEqual(body.sales_type, 'M350', 'sales_type debe venir del input');
+});
+
+test('buildClienteBody: incluye segmento_id desde input', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', segmento_id: '3' });
+  assert.strictEqual(body.segmento_id, '3', 'segmento_id debe venir del input');
+});
+
+test('buildClienteBody: salesman usa operam_id, no id interno', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', salesman: 47 });
+  assert.strictEqual(body.salesman, 47, 'salesman debe usar operam_id pasado como campo salesman');
+});
+
+test('buildClienteBody: timbrado_uso_cfdi desde input cuando viene', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', timbrado_uso_cfdi: 'G03' });
+  assert.strictEqual(body.timbrado_uso_cfdi, 'G03', 'timbrado_uso_cfdi debe ser el del input');
+});
+
+test('buildClienteBody: timbrado_uso_cfdi fallback S01 cuando viene vacio', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', timbrado_uso_cfdi: '' });
+  assert.strictEqual(body.timbrado_uso_cfdi, 'S01', 'fallback S01 cuando timbrado_uso_cfdi es string vacio');
+});
+
+test('buildClienteBody: timbrado_uso_cfdi fallback S01 cuando no viene', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.strictEqual(body.timbrado_uso_cfdi, 'S01', 'fallback S01 cuando timbrado_uso_cfdi no esta en input');
 });
