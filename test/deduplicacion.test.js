@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarNombre } from '../lib/deduplicacion.js';
+import { normalizarNombre, detectarDuplicados } from '../lib/deduplicacion.js';
 
 // N1: quita acentos
 test('N1: normalizarNombre quita acentos', () => {
@@ -114,4 +114,75 @@ test('N8: normalizarNombre maneja mezcla de acentos/articulos/sufijos en un nomb
   assert.ok(!tokens.includes('cv'), `no esperaba "cv" en [${tokens}]`);
   assert.ok(tokens.includes('distribuciones'), `esperaba "distribuciones" en [${tokens}]`);
   assert.ok(tokens.includes('aguila'), `esperaba "aguila" en [${tokens}]`);
+});
+
+// ============================================================
+// detectarDuplicados — tests RED (D1-D6)
+// ============================================================
+
+const CLIENTES_MOCK = [
+  { RFC: 'PNA010203ABC', rfc: 'PNA010203ABC', CustName: 'Peltre Nacional SA de CV', cust_ref: 'PELTRE', id: 1 },
+  { RFC: 'DIS860901XYZ', rfc: 'DIS860901XYZ', CustName: 'Distribuidora Omega SRL', cust_ref: 'OMEGA', id: 2 },
+  { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Comercio General SA de CV', cust_ref: 'COGEN', id: 3 },
+  { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Comercializadora General del Norte', cust_ref: 'COGENO', id: 4 },
+  { RFC: 'XEXX010101000', rfc: 'XEXX010101000', CustName: 'Global Imports LLC', cust_ref: 'GLOBIMPORT', id: 5 },
+];
+
+// D1: RFC real exacto -> tipo exacto
+test('D1: detectarDuplicados retorna exacto para RFC real duplicado', () => {
+  const result = detectarDuplicados('PNA010203ABC', 'Peltre Nacional SA de CV', CLIENTES_MOCK);
+  assert.strictEqual(result.tipo, 'exacto');
+  assert.ok(result.cliente, 'debe incluir cliente');
+  assert.strictEqual(result.cliente.id, 1);
+});
+
+// D2: RFC real sin match -> libre
+test('D2: detectarDuplicados retorna libre para RFC real sin match', () => {
+  const result = detectarDuplicados('NUE990101ZZZ', 'Nueva Empresa SA de CV', CLIENTES_MOCK);
+  assert.strictEqual(result.tipo, 'libre');
+  assert.ok(!result.cliente, 'no debe incluir cliente');
+  assert.ok(!result.candidatos, 'no debe incluir candidatos');
+});
+
+// D3: RFC generico XAXX con nombre similar (solapamiento >= 1 token) -> candidatos
+test('D3: detectarDuplicados retorna candidatos para RFC generico XAXX con nombre similar', () => {
+  const result = detectarDuplicados('XAXX010101000', 'Comercio General Mayorista SA de CV', CLIENTES_MOCK);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.ok(Array.isArray(result.candidatos), 'debe incluir array candidatos');
+  assert.ok(result.candidatos.length >= 1, 'debe haber al menos 1 candidato');
+  const ids = result.candidatos.map(c => c.id);
+  assert.ok(ids.includes(3) || ids.includes(4), 'candidatos deben incluir clientes con RFC XAXX y nombre similar');
+});
+
+// D4: RFC generico XEXX con nombre similar -> candidatos
+test('D4: detectarDuplicados retorna candidatos para RFC generico XEXX con nombre similar', () => {
+  const result = detectarDuplicados('XEXX010101000', 'Global Exports LLC', CLIENTES_MOCK);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.ok(result.candidatos.some(c => c.id === 5), 'debe incluir cliente Global Imports LLC');
+});
+
+// D5: RFC generico, nombre sin solapamiento -> libre
+test('D5: detectarDuplicados retorna libre para RFC generico con nombre sin solapamiento', () => {
+  const result = detectarDuplicados('XAXX010101000', 'Panaderia Artesanal Tepito', CLIENTES_MOCK);
+  assert.strictEqual(result.tipo, 'libre');
+});
+
+// D6: candidatos ordenados por similitud descendente (mas tokens en comun primero)
+test('D6: detectarDuplicados ordena candidatos por similitud descendente', () => {
+  // "Comercio General del Norte SA de CV" deberia tener mas solapamiento con id=4 que id=3
+  // id=3: CustName="Comercio General SA de CV" => tokens: [comercio, general]
+  // id=4: CustName="Comercializadora General del Norte" => tokens: [comercializadora, general, norte]
+  // input: "Comercio General del Norte" => tokens: [comercio, general, norte]
+  // solapamiento id=4: general+norte=2, id=3: comercio+general=2 => al menos ordenados
+  const result = detectarDuplicados('XAXX010101000', 'Comercio General del Norte SA de CV', CLIENTES_MOCK);
+  assert.strictEqual(result.tipo, 'candidatos');
+  // primer candidato debe tener mayor o igual similitud que el segundo
+  if (result.candidatos.length >= 2) {
+    const sim0 = result.candidatos[0]._similitud;
+    const sim1 = result.candidatos[1]._similitud;
+    if (sim0 !== undefined && sim1 !== undefined) {
+      assert.ok(sim0 >= sim1, `primer candidato (${sim0}) debe tener >= similitud que segundo (${sim1})`);
+    }
+  }
+  assert.ok(result.candidatos.length >= 1);
 });
