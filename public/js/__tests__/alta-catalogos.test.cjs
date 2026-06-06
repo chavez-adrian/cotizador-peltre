@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAltaSelectoresOpts } = require('./helpers.cjs');
+const { buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest } = require('./helpers.cjs');
 
 const CATALOGOS_MOCK = {
   listas_precios: [
@@ -48,4 +48,36 @@ test('A4: buildAltaSelectoresOpts con catalogos vacios retorna arrays vacios', (
   assert.strictEqual(opts.listas.length, 0);
   assert.strictEqual(opts.segmentos.length, 0);
   assert.strictEqual(opts.vendedores.length, 0);
+});
+
+test('A5: altaToggleSeccionState abre seccion 1 desde estado inicial', () => {
+  const estado = { seccionAbierta: null };
+  const siguiente = altaToggleSeccionState(estado, 1);
+  assert.strictEqual(siguiente.seccionAbierta, 1);
+});
+
+test('A6: altaToggleSeccionState cierra seccion si ya esta abierta', () => {
+  const estado = { seccionAbierta: 2 };
+  const siguiente = altaToggleSeccionState(estado, 2);
+  assert.strictEqual(siguiente.seccionAbierta, null);
+});
+
+test('A7: altaToggleSeccionState NO abre secciones bloqueadas (3 y 4)', () => {
+  const estado = { seccionAbierta: null };
+  const sig3 = altaToggleSeccionState(estado, 3);
+  assert.strictEqual(sig3.seccionAbierta, null);
+  const sig4 = altaToggleSeccionState(estado, 4);
+  assert.strictEqual(sig4.seccionAbierta, null);
+});
+
+test('A8: altaToggleSeccionState cambia de seccion 1 a seccion 2', () => {
+  const estado = { seccionAbierta: 1 };
+  const siguiente = altaToggleSeccionState(estado, 2);
+  assert.strictEqual(siguiente.seccionAbierta, 2);
+});
+
+test('A9: buildCargarCatalogosRequest incluye URL /api/catalogos y Authorization header', () => {
+  const req = buildCargarCatalogosRequest('Bearer tok123');
+  assert.strictEqual(req.url, '/api/catalogos');
+  assert.strictEqual(req.headers['Authorization'], 'Bearer tok123');
 });

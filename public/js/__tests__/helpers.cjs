@@ -160,4 +160,19 @@ function buildAltaSelectoresOpts(catalogos) {
   return { listas, segmentos, vendedores };
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts };
+const ALTA_LOCKED_SECCIONES = [3, 4];
+
+function altaToggleSeccionState(estado, n) {
+  if (ALTA_LOCKED_SECCIONES.includes(n)) return { ...estado };
+  const nuevo = estado.seccionAbierta === n ? null : n;
+  return { ...estado, seccionAbierta: nuevo };
+}
+
+function buildCargarCatalogosRequest(authHeader) {
+  return {
+    url: '/api/catalogos',
+    headers: { 'Authorization': authHeader },
+  };
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest };
