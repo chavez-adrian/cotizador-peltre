@@ -1,0 +1,100 @@
+RALPH LOOP — cotizador-peltre
+PRD: issue #26 (https://github.com/chavez-adrian/cotizador-peltre/issues/26)
+Repo local: C:\Users\chave\OneDrive\Documents\_Claude\cotizador\
+GitHub: https://github.com/chavez-adrian/cotizador-peltre
+
+== ISSUE ACTIVO ==
+#27: feat: GET /api/catalogos + acordeón de alta con catálogos cargados
+URL: https://github.com/chavez-adrian/cotizador-peltre/issues/27
+N iteraciones planificadas: 6
+Iteraciones completadas: 6
+
+== HISTORIAL DE ITERACIONES ==
+
+--- ITER 1 (completada) ---
+Commit: 1b0e953 test: RED tests for GET /api/catalogos (iter 1/6, issue #27)
+Hecho: 4 tests RED en test/server.test.js para GET /api/catalogos
+  - C1: estructura { segmentos, vendedores, listas_precios } con 200
+  - C2: segmentos exactamente 11 entradas, { id:0, nombre:"Sin segmento" } presente
+  - C3: vendedores excluye operam_id null (Jaime Abaroa)
+  - C4: listas_precios solo 11 codigos mayoreo, excluye menudeo
+PRD ref: issue #27 AC1-AC4 / PRD #26 seccion "Nuevo endpoint GET /api/catalogos"
+Archivos modificados: test/server.test.js
+Decisiones: mockOperamFetch intercepta /api/v3/sales/sales_types; mock incluye
+  codigos menudeo (MEN50, OTRO) para probar el filtro; listas_precios.id = sales_type_id
+Estado: todos RED confirmados (exit 1, 4 failing)
+
+--- ITER 2 (completada) ---
+Commit: cbf5047 feat: implement GET /api/catalogos (iter 2/6, issue #27)
+Hecho: GET /api/catalogos implementado en server.js
+  - SEGMENTOS: array modulo 11 entradas hardcodeadas
+  - MAYOREO_CODES: Set para filtrado de sales_types
+  - listasPrecios: variable modulo, poblada por cargarListasPrecios()
+  - cargarListasPrecios(): fetch login + sales_types, filtra por MAYOREO_CODES, graceful fallback []
+  - Startup: isMain llama cargarListasPrecios() antes de listen()
+  - Route: GET /api/catalogos con authMiddleware
+  - Tests: importan cargarListasPrecios y la llaman dentro del mock para poblar listasPrecios
+  - 19/19 tests GREEN, 0 fail
+PRD ref: issue #27 AC1-AC4 / PRD #26 "GET /api/catalogos"
+Archivos modificados: server.js, test/server.test.js
+Decisiones: cargarListasPrecios() exportada para test injection; no reusa apiCall
+  de operam-client.js para evitar estado compartido del token durante tests
+
+--- ITER 3 (completada) ---
+Commit: 6298546 feat: HTML accordion skeleton + sidebar sticky in index.html
+Hecho: acordeon de 4 secciones + sidebar sticky en index.html
+  - Boton "Nuevo cliente" junto a .cliente-modos (toggle show/hide)
+  - 4 secciones: sec1 RFC placeholder, sec2 3 selectors (vacios), sec3+4 bloqueadas
+  - Secciones 3+4: opacity 0.5, cursor:not-allowed, icono candado
+  - Sidebar sticky: 3 checkpoints en estado inicial (sin marcar)
+  - CSS: .alta-seccion, .alta-sec-header, .alta-seccion-bloqueada, .alta-checkpoint, etc.
+  - JS: abrirAcordeonAlta(), altaToggleSeccion(n), cargarCatalogos(), altaPoblarSelectores()
+  - altaState.catalogos cacheado para no hacer fetch multiple
+  - 19/19 tests siguen pasando
+PRD ref: PRD #26 "Patron validado: Acordeon de 4 secciones con sidebar de progreso"
+Archivos modificados: public/index.html, public/css/style.css, public/js/app.js
+
+--- ITER 4 (completada) ---
+Commit: 0649928 test: frontend tests for altaToggleSeccionState + cargarCatalogos (iter 4/6, issue #27)
+Hecho: tests A5-A9 en alta-catalogos.test.cjs + funciones en helpers.cjs
+  - A5: altaToggleSeccionState abre seccion 1 desde estado inicial
+  - A6: altaToggleSeccionState cierra seccion si ya esta abierta
+  - A7: altaToggleSeccionState NO abre secciones bloqueadas (3 y 4)
+  - A8: altaToggleSeccionState cambia de seccion 1 a seccion 2
+  - A9: buildCargarCatalogosRequest incluye URL /api/catalogos y Authorization header
+  - helpers.cjs: altaToggleSeccionState(estado, n) pura, ALTA_LOCKED_SECCIONES=[3,4]
+  - helpers.cjs: buildCargarCatalogosRequest(authHeader) retorna { url, headers }
+  - 9/9 tests frontend GREEN, 22/22 server tests GREEN
+PRD ref: issue #27 AC5-AC8 (comportamiento del acordeon)
+Archivos modificados: public/js/__tests__/alta-catalogos.test.cjs, public/js/__tests__/helpers.cjs
+
+--- ITER 5 (completada) ---
+Commit: b1563d0 feat: seccion 2 completa con email facturacion y celular (iter 5/6, issue #27)
+Hecho: seccion 2 completamente funcional con todos los campos del PRD
+  - index.html: agrega alta-email-factura (input type=email) y alta-celular (input type=tel)
+  - Celular lleva nota "se registra en notas; completar manualmente en Operam"
+  - helpers.cjs: buildAltaComercialPayload(getVal) extrae { sales_type, segmento_id, salesman, invoice_email, celular_nota }
+  - Tests B1-B3: payload extrae correctamente los 5 campos, con campos vacios
+  - 12/12 tests frontend GREEN, 22/22 server tests GREEN
+PRD ref: PRD #26 "Seccion 2 - Configuracion comercial" + user stories 9, 17, 18
+Archivos modificados: public/index.html, public/js/__tests__/alta-catalogos.test.cjs, public/js/__tests__/helpers.cjs
+
+--- ITER 6 (completada) ---
+Commit: db55b68 fix: seccion 2 muestra icono + en lugar de candado (iter 6/6, issue #27)
+Hecho: polish final + verificacion de todos los acceptance criteria
+  - index.html: seccion 2 icono cambia de candado a + (no esta bloqueada)
+  - Verificacion AC issue #27:
+    [x] GET /api/catalogos responde 200 con { segmentos, vendedores, listas_precios } (tests C1-C7)
+    [x] segmentos exactamente 11 incluyendo { id:0, nombre:"Sin segmento" } (test C2)
+    [x] vendedores excluye operam_id null (test C3)
+    [x] listas_precios solo mayoreo M100-M6001/US100-US6000 (test C4)
+    [x] Boton "Nuevo cliente" abre acordeon 4 secciones (HTML + JS)
+    [x] Seccion 2 renderiza 3 selectores + email + celular con datos reales (HTML + cargarCatalogos)
+    [x] Secciones 3+4 bloqueadas: opacity 0.5 + cursor:not-allowed + candado (HTML + CSS)
+    [x] Sidebar sticky con 3 checkpoints estado inicial (HTML + CSS)
+    [x] Tests 12/12 frontend + 22/22 server GREEN
+  Pushed to main: 400bea6..db55b68
+
+== ESTADO FINAL ==
+Issue #27: TODOS LOS ACs CUMPLIDOS. NO cerrar en GitHub (lo hace el supervisor).
+Tests totales: 22 server + 12 frontend = 34 GREEN, 0 fail.
