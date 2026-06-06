@@ -79,7 +79,83 @@
               <span class="alta-sec-icono" id="alta-ico-1">+</span>
             </div>
             <div class="alta-sec-body" id="alta-body-1" style="display:none">
-              <p style="color:var(--text-light);font-size:13px;padding:8px 0">[Seccion 1 — placeholder: RFC y datos fiscales]</p>
+
+              <!-- Dropzone -->
+              <div class="csf-dropzone" id="csf-dropzone" onclick="document.getElementById('csf-input').click()">
+                <input type="file" id="csf-input" accept="application/pdf" style="display:none">
+                <div class="csf-drop-icon">&#128196;</div>
+                <strong>Subir Constancia de Situacion Fiscal</strong>
+                <p>Toca aqui o arrastra el PDF</p>
+              </div>
+
+              <!-- Spinner -->
+              <div class="csf-spinner-wrap" id="csf-spinner" style="display:none">
+                <div class="csf-spinner"></div>
+                <p id="csf-spinner-text">Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...</p>
+              </div>
+
+              <!-- Banner exito -->
+              <div class="csf-banner-ok" id="csf-banner-ok" style="display:none">
+                <span id="csf-banner-txt"></span>
+              </div>
+
+              <!-- Banner error -->
+              <div class="csf-banner-err" id="csf-banner-err" style="display:none">
+                <span id="csf-banner-err-txt"></span>
+              </div>
+
+              <!-- Detalles colapsable con campos editables -->
+              <details id="csf-detalles" style="display:none;margin-top:12px">
+                <summary style="font-size:13px;font-weight:600;cursor:pointer;padding:8px 0;color:var(--primary-dark)">Campos extraidos &mdash; revisa y edita si es necesario</summary>
+                <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+                  <div class="form-group">
+                    <label>Razon social</label>
+                    <input type="text" id="csf-razon-social">
+                  </div>
+                  <div class="form-group">
+                    <label>RFC</label>
+                    <input type="text" id="csf-rfc" style="text-transform:uppercase">
+                  </div>
+                  <div class="form-group">
+                    <label>Nombre corto (en Operam)</label>
+                    <input type="text" id="csf-nombre-corto">
+                  </div>
+                  <div class="form-group">
+                    <label>SAT IdCIF</label>
+                    <input type="text" id="csf-idcif">
+                  </div>
+                  <div class="form-group">
+                    <label>Regimen fiscal (codigo)</label>
+                    <input type="text" id="csf-regimen-fiscal">
+                  </div>
+                  <div class="form-group">
+                    <label>Uso de CFDI</label>
+                    <select id="csf-uso-cfdi">
+                      <option value="G01">G01 - Adquisicion de mercancias</option>
+                      <option value="G03">G03 - Gastos en general</option>
+                      <option value="S01" selected>S01 - Sin efectos fiscales</option>
+                      <option value="CP01">CP01 - Pagos</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Codigo postal</label>
+                    <input type="text" id="csf-cp" inputmode="numeric">
+                  </div>
+                  <div class="form-group">
+                    <label>Municipio</label>
+                    <input type="text" id="csf-municipio">
+                  </div>
+                  <div class="form-group">
+                    <label>Estado</label>
+                    <input type="text" id="csf-estado">
+                  </div>
+                </div>
+                <div id="csf-campos-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
+                <button class="btn btn-primary" id="csf-btn-confirmar" style="margin-top:16px;width:100%" onclick="altaCsfConfirmar()">
+                  Confirmar datos fiscales
+                </button>
+              </details>
+
             </div>
           </div>
 

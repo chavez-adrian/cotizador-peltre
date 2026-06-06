@@ -2376,3 +2376,166 @@ function altaToggleSeccion(n) {
 
 window.abrirAcordeonAlta = abrirAcordeonAlta;
 window.altaToggleSeccion = altaToggleSeccion;
+
+// === CSF DROPZONE — Seccion 1 (issue #28) ===
+
+const altaCsfState = {
+  status: 'idle',
+  rfc: null,
+  fileName: null,
+  mensaje: null,
+  datos: null,
+};
+
+function altaCsfSetStatus(status, opts = {}) {
+  altaCsfState.status = status;
+  const dropzone = document.getElementById('csf-dropzone');
+  const spinner = document.getElementById('csf-spinner');
+  const bannerOk = document.getElementById('csf-banner-ok');
+  const bannerErr = document.getElementById('csf-banner-err');
+  const detalles = document.getElementById('csf-detalles');
+
+  if (dropzone) dropzone.style.display = status === 'idle' ? '' : 'none';
+  if (spinner) spinner.style.display = status === 'loading' ? '' : 'none';
+  if (bannerOk) bannerOk.style.display = status === 'success' ? '' : 'none';
+  if (bannerErr) bannerErr.style.display = status === 'error' ? '' : 'none';
+  if (detalles) detalles.style.display = status === 'success' ? '' : 'none';
+
+  if (status === 'loading') {
+    const txt = document.getElementById('csf-spinner-text');
+    if (txt) txt.textContent = opts.spinnerText || 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...';
+  }
+  if (status === 'success') {
+    const txt = document.getElementById('csf-banner-txt');
+    if (txt) txt.textContent = opts.bannerText || '';
+  }
+  if (status === 'error') {
+    const txt = document.getElementById('csf-banner-err-txt');
+    if (txt) txt.textContent = opts.mensaje || 'Error al procesar el PDF';
+  }
+}
+
+function altaCsfPonerDatos(datos) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('csf-razon-social', datos.razonSocial);
+  set('csf-rfc', datos.rfc);
+  set('csf-nombre-corto', datos.nombreCorto);
+  set('csf-idcif', datos.idcif);
+  set('csf-regimen-fiscal', datos.regimenFiscal);
+  set('csf-cp', datos.cp);
+  set('csf-municipio', datos.municipio);
+  set('csf-estado', datos.estado);
+}
+
+// Cliente-side parser (mirrors lib/parsear-csf.js)
+function altaCsfParsearTexto(texto) {
+  const get = (regex) => { const m = texto.match(regex); return m ? m[1].trim() : ''; };
+  const rfc = get(/R\.?F\.?C\.?\s*:?\s*([A-Z&N]{3,4}\d{6}[A-Z0-9]{3})/i);
+  const razonSocial = (() => {
+    const pm = get(/Denominaci[on]\/Raz[on]\s*Social\s*:\s*(.+?)(?=\n|R\.?F\.?C)/is);
+    if (pm) return pm.trim();
+    const nombre = get(/Nombre\s*(?:\(s\))?\s*:\s*([A-ZAEIOUNY ]+?)(?=\n)/i);
+    const ap1 = get(/Primer\s*Apellido\s*:\s*([A-ZAEIOUNY ]+?)(?=\n)/i);
+    const ap2 = get(/Segundo\s*Apellido\s*:\s*([A-ZAEIOUNY ]+?)(?=\n)/i);
+    return [nombre, ap1, ap2].filter(Boolean).join(' ').trim();
+  })();
+  const idcif = get(/idCIF\s*:\s*(\d+)/i);
+  const cp = get(/C[o]digo\s*Postal\s*:?\s*(\d{5})/i);
+  const municipio = get(/Nombre\s*del\s*Municipio[^\n:]*:\s*([^\n]+)/i);
+  const estado = get(/Nombre\s*de\s*la\s*Entidad\s*Federativa\s*:\s*([^\n]+)/i);
+  const regimenFiscal = (() => { const m = texto.match(/R[e]gimen\s*Fiscal\s*:\s*(\d{3})/i); return m ? m[1] : ''; })();
+  const nombreCorto = razonSocial.split(' ').slice(0, 3).join(' ');
+  return { rfc, razonSocial, nombreCorto, idcif, cp, municipio, estado, regimenFiscal };
+}
+
+async function altaCsfExtraerQR(pdfDoc) {
+  if (typeof jsQR === 'undefined') return null;
+  const totalPaginas = Math.min(pdfDoc.numPages, 2);
+  for (let i = 1; i <= totalPaginas; i++) {
+    const page = await pdfDoc.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if (code && code.data && code.data.includes('sat.gob.mx')) return code.data;
+  }
+  return null;
+}
+
+function altaCsfExtraerIdCifDeUrl(url) {
+  try {
+    const u = new URL(url);
+    for (const [, val] of u.searchParams) {
+      const partes = val.split(/[_\-|]/);
+      for (const p of partes) { if (/^\d{10,12}$/.test(p)) return p; }
+    }
+    const match = url.match(/\b(\d{10,12})\b/);
+    return match ? match[1] : '';
+  } catch { return ''; }
+}
+
+async function altaCsfLeerPDF(file) {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const totalPaginas = Math.min(pdf.numPages, 2);
+  let textoTotal = '';
+  let itemsTotal = 0;
+  for (let i = 1; i <= totalPaginas; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent({ includeMarkedContent: true });
+    itemsTotal += content.items.length;
+    textoTotal += content.items.filter(it => it.str !== undefined).map(it => it.str).join(' ') + '\n';
+  }
+  if (itemsTotal === 0 || textoTotal.trim().length < 50) {
+    const urlQR = await altaCsfExtraerQR(pdf);
+    if (urlQR) {
+      const r = await fetch('/api/csf-from-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: urlQR }) });
+      const data = await r.json();
+      if (data.ok && data.texto) {
+        const idcifDelQR = altaCsfExtraerIdCifDeUrl(urlQR);
+        return idcifDelQR ? `idCIF: ${idcifDelQR}\n${data.texto}` : data.texto;
+      }
+    }
+  }
+  return textoTotal;
+}
+
+async function altaCsfProcesarArchivo(file) {
+  altaCsfSetStatus('loading', { spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' });
+  try {
+    const texto = await altaCsfLeerPDF(file);
+    const datos = altaCsfParsearTexto(texto);
+    altaCsfState.datos = datos;
+    altaCsfPonerDatos(datos);
+    altaCsfSetStatus('success', { bannerText: `${file.name} -- RFC: ${datos.rfc || '(no detectado)'}` });
+    if (datos.rfc) {
+      altaCsfState.rfc = datos.rfc;
+      altaCsfState.fileName = file.name;
+    }
+  } catch (err) {
+    altaCsfSetStatus('error', { mensaje: 'Error al leer el PDF: ' + err.message });
+  }
+}
+
+// Wiring del dropzone
+document.addEventListener('DOMContentLoaded', () => {
+  const zone = document.getElementById('csf-dropzone');
+  const input = document.getElementById('csf-input');
+  if (!zone || !input) return;
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') altaCsfProcesarArchivo(file);
+  });
+  input.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) altaCsfProcesarArchivo(file);
+  });
+});

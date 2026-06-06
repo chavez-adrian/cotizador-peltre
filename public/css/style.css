@@ -1105,3 +1105,80 @@ body {
 .alta-chk-dot.done + .alta-chk-label {
   color: var(--text);
 }
+
+/* === CSF DROPZONE (issue #28) === */
+
+.csf-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px 16px;
+  text-align: center;
+  background: var(--bg);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin-bottom: 12px;
+}
+
+.csf-dropzone.dragover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.csf-drop-icon {
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+
+.csf-dropzone strong {
+  display: block;
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.csf-dropzone p {
+  font-size: 13px;
+  color: var(--text-light);
+}
+
+.csf-spinner-wrap {
+  text-align: center;
+  padding: 20px 0;
+  color: var(--primary-dark);
+  font-size: 13px;
+}
+
+.csf-spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--primary-light);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: csf-spin 0.8s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes csf-spin {
+  to { transform: rotate(360deg); }
+}
+
+.csf-banner-ok {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.csf-banner-err {
+  background: #ffeaea;
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
