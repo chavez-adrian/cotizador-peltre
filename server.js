@@ -9,6 +9,7 @@ import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
+import { detectarDuplicados } from './lib/deduplicacion.js';
 import { query as dbQuery } from './lib/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -523,6 +524,23 @@ app.get('/api/buscar-cliente', async (req, res) => {
   if (!rfc) return res.status(400).json({ error: 'Falta el parametro rfc' });
   try {
     res.json(await buscarClientePorRFC(rfc));
+  } catch (err) {
+    res.status(503).json({ error: 'Operam no disponible: ' + err.message });
+  }
+});
+
+app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
+  const { rfc, nombre } = req.query;
+  if (!rfc) return res.status(400).json({ error: 'Falta el parametro rfc' });
+  try {
+    const raw = await buscarClientes(rfc);
+    const clientes = (Array.isArray(raw) ? raw : []).map(c => ({
+      ...c,
+      RFC: c.tax_id || c.RFC || c.rfc || '',
+      id: c.customer_id,
+    }));
+    const resultado = detectarDuplicados(rfc, nombre || '', clientes);
+    res.json(resultado);
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }

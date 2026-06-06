@@ -455,3 +455,71 @@ test('D3: POST /api/crear-cliente con customer_id existente salta POST y no dupl
     restore();
   }
 });
+
+// === GET /api/buscar-cliente-duplicado (issue #31) ===
+
+test('E1: GET /api/buscar-cliente-duplicado retorna exacto cuando RFC real ya existe en Operam', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({
+      total: 1,
+      data: [{ customer_id: 77, CustName: 'Peltre Nacional SA de CV', cust_ref: 'PELTRE', tax_id: 'PNA010203ABC' }],
+    }) }),
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=PNA010203ABC&nombre=Peltre+Nacional')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'exacto');
+    assert.ok(res.body.cliente, 'debe incluir cliente');
+    assert.strictEqual(res.body.cliente.id, 77);
+  } finally {
+    restore();
+  }
+});
+
+test('E2: GET /api/buscar-cliente-duplicado retorna candidatos para RFC generico con nombre similar', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({
+      total: 2,
+      data: [
+        { customer_id: 10, CustName: 'Comercio General SA de CV', cust_ref: 'COGEN', tax_id: 'XAXX010101000' },
+        { customer_id: 11, CustName: 'Comercializadora Norte SA de CV', cust_ref: 'COGNOR', tax_id: 'XAXX010101000' },
+      ],
+    }) }),
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=XAXX010101000&nombre=Comercio+General+Mayorista')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'candidatos');
+    assert.ok(Array.isArray(res.body.candidatos), 'debe incluir array candidatos');
+    assert.ok(res.body.candidatos.length >= 1);
+  } finally {
+    restore();
+  }
+});
+
+test('E3: GET /api/buscar-cliente-duplicado sin token retorna 401', async () => {
+  const res = await supertest(app).get('/api/buscar-cliente-duplicado?rfc=PNA010203ABC&nombre=Peltre');
+  assert.strictEqual(res.status, 401);
+});
+
+test('E4: GET /api/buscar-cliente-duplicado retorna libre cuando no hay match', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 0, data: [] }) }),
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=NUE990101ZZZ&nombre=Nueva+Empresa')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'libre');
+  } finally {
+    restore();
+  }
+});
