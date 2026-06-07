@@ -1309,3 +1309,70 @@ implementar altaDiffFiscalConfirmar (PATCH /api/operam/clientes/:id) y altaDiffF
 guardar el cliente crudo de Operam (resultado.cliente de altaDedupCorrer) y poder re-confirmar
 despues. CSS: agregar .diff-fiscal-panel/.diff-fiscal-fila/.diff-fiscal-anterior/.diff-fiscal-nuevo/
 .diff-fiscal-acciones a style.css (clases ya usadas en el HTML generado, hoy sin estilos).
+
+--- ITER 2 (completada) -- wiring: altaDedupCorrer + altaDiffFiscalConfirmar/Descartar (TDD RED->GREEN) ---
+Hecho: agregue 3 tests (G12-G14) para buildDedupExactoConDiffHtml -- compone el banner
+"RFC ya existe en Operam" (con boton "Usar este cliente" SIEMPRE presente, AC3) + el
+panel de diff fiscal (buildDiffFiscalHtml) SOLO cuando calcularDiffFiscal detecta
+diferencias (AC4: sin diff -> sin panel -> cero friccion). RED confirmado, luego:
+  - Implemente buildDedupExactoConDiffHtml en app.js (exportada) + mirror en helpers.cjs
+  - Reescribi la rama tipo:'exacto' de altaDedupCorrer [app.js ~2802] para usar
+    altaState.datos (los datos de la CSF/manual recien confirmados) + calcularDiffFiscal
+    + buildDedupExactoConDiffHtml, guardando {cliente, diff} en altaDiffFiscalState
+    (estado nuevo, separado de altaState.clienteExistente -- ver razonamiento abajo)
+  - altaDiffFiscalConfirmar(): PATCH /api/operam/clientes/:id {diff} via api() [reusa
+    la ruta JWT existente, lib/operam-client.js::actualizarCliente, SIN tocarla] ->
+    en exito reemplaza el panel con mensaje de confirmacion + limpia altaDiffFiscalState;
+    en error muestra mensaje inline y reactiva el boton
+  - altaDiffFiscalDescartar(): remueve el panel del DOM, limpia altaDiffFiscalState,
+    NO hace ninguna llamada -- el flujo "Usar este cliente" sigue intacto (AC3)
+  - CSS: agregue .diff-fiscal-panel/.diff-fiscal-fila/.diff-fiscal-anterior/
+    .diff-fiscal-nuevo/.diff-fiscal-acciones a style.css junto a .dedup-* existentes
+    (mismo patron visual: alerta naranja .dedup-alerta-naranja para el encabezado del diff)
+
+DECISION DE DISENO #2 -- BLOQUEA O ES PARALELO/OPCIONAL (la pregunta que el issue #38
+dejo pendiente de resolver) -- RESUELTA: ES NO BLOQUEANTE / PARALELO. Razonamiento:
+  El boton "Usar este cliente" permanece visible y funcional inmediatamente, sin esperar
+  a que el vendedor resuelva el panel de diff. Por que NO bloquear:
+  (a) El vendedor esta en medio de un flujo de ALTA DE CLIENTE PARA COTIZAR -- su objetivo
+      inmediato es avanzar a cotizar, no auditar datos fiscales. Forzar una decision
+      bloqueante sobre CustName/domicilio-fiscal/regimen en ese momento es friccion
+      desproporcionada al objetivo de la tarea.
+  (b) El dato desactualizado en Operam YA EXISTIA antes de subir esta CSF -- el vendedor
+      no lo "rompe" al avanzar sin resolverlo, solo no lo arregla en este momento. No hay
+      perdida de informacion: el panel queda visible (no se autocierra) hasta que el
+      vendedor explicitamente confirma o descarta, incluso si ya hizo click en "Usar
+      este cliente" y avanzo a la seccion 2 (el banner+diff siguen rendereados en
+      alta-dedup-resultado, visible si vuelve a la seccion 1).
+  (c) Bloquear introduce un nuevo modo de fallo: que pasa si Operam esta caido justo
+      cuando el vendedor sube la CSF? Con diseno no-bloqueante, un fallo de PATCH
+      (ej. 503 Operam no disponible) no impide dar de alta al cliente -- solo se
+      muestra el error inline y el vendedor puede reintentar o descartar.
+  Contraargumento considerado y descartado: "si no bloqueo, el vendedor lo va a ignorar
+  siempre". Respuesta: el flujo viejo (mostrarPanelConfirmacion) TAMPOCO bloqueaba --
+  era un panel adicional que aparecia despues de "Crear cliente" pero el vendedor podia
+  cancelarlo (cancelarConfirmacion) sin consecuencia. Mantener ese mismo nivel de
+  friccion es consistente con el patron ya validado en produccion durante meses.
+
+DECISION DE DISENO #3 -- altaDiffFiscalState SEPARADO de altaState.clienteExistente:
+  El diff se calcula en el momento en que altaDedupCorrer detecta tipo:'exacto' --
+  ANTES de que el vendedor decida "Usar este cliente". Si yo guardara {cliente, diff}
+  dentro de altaState.clienteExistente, lo pisaria altaDedupUsarCliente/altaDedupSelDomicilio
+  (que reasignan altaState.clienteExistente = {id, branchIdx}) en cuanto el vendedor
+  elige domicilio de entrega -- perdiendo el diff pendiente. Mantenerlos separados
+  evita ese acoplamiento accidental entre dos ciclos de vida independientes (elegir
+  domicilio de entrega vs. resolver diff fiscal).
+
+Archivos modificados: public/js/app.js (altaDedupCorrer reescrito, +altaDiffFiscalState,
+  +altaDiffFiscalConfirmar, +altaDiffFiscalDescartar, +buildDedupExactoConDiffHtml export),
+  public/js/__tests__/helpers.cjs (mirror buildDedupExactoConDiffHtml),
+  public/js/__tests__/alta-dedup-fiscal.test.cjs (+G12-G14),
+  public/css/style.css (+.diff-fiscal-* reglas)
+node --check public/js/app.js -> Syntax OK. Suite completa: 324/324 GREEN (310+14 nuevos).
+Commit: (ver git log -- "feat: integrar diff fiscal al banner..."). Push: OK.
+
+PENDIENTE proxima iteracion: verificacion manual en navegador (chrome-devtools si
+disponible) -- abrir acordeon, simular CSF de cliente existente con cambios fiscales,
+confirmar que el panel aparece, probar Confirmar (PATCH real o mock) y Descartar.
+Revisar si altaDiffFiscalState debe limpiarse en nuevaCotizacion()/cancelarCSF-equivalente
+del acordeon (evitar estado fantasma entre altas sucesivas).
