@@ -250,6 +250,26 @@ test('GET /api/buscar-cliente retorna 503 si Operam lanza error', async () => {
   }
 });
 
+// === POST /api/csf-from-url (issue #33: reusa parsearCSF) ===
+
+test('POST /api/csf-from-url responde texto crudo y datos parseados de la CSF', async () => {
+  const html = '<html><body>R.F.C. : UEGA850312KL5<br>Nombre (s) : ADRIANA<br>Primer Apellido : URENA</body></html>';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.ok(String(url).includes('sat.gob.mx'));
+    return { ok: true, text: async () => html };
+  };
+  try {
+    const res = await supertest(app).post('/api/csf-from-url').send({ url: 'https://siat.sat.gob.mx/qr?id=123' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.ok(res.body.texto.includes('UEGA850312KL5'));
+    assert.strictEqual(res.body.datos.rfc, 'UEGA850312KL5');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // === POST /api/parsear-csf (issue #33) ===
 
 const CSF_PERSONA_FISICA_TXT = `

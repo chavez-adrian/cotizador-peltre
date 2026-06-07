@@ -407,7 +407,7 @@ app.post('/api/csf-from-url', async (req, res) => {
       .replace(/<[^>]+>/g, ' ')
       .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
       .replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n').trim();
-    res.json({ ok: true, texto });
+    res.json({ ok: true, texto, datos: parsearCSF(texto) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
