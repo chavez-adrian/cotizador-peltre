@@ -128,13 +128,14 @@ test/                  # tests de backend (supertest + node:test)
 | GET | `/api/buscar-cliente?rfc=` | Buscar cliente por RFC exacto en Operam |
 | PUT | `/api/actualizar-cliente/:id` | Actualizar campos de cliente en Operam |
 | GET | `/api/log` | Ultimas 200 entradas de clientes_log en Neon |
-| POST | `/api/csf-from-url` | Proxy: consulta URL del QR del SAT y devuelve texto plano |
+| POST | `/api/csf-from-url` | Proxy: consulta URL del QR del SAT, devuelve texto plano y `datos` parseados (via `parsearCSF`) |
+| POST | `/api/parsear-csf` | Recibe `{ texto }` y devuelve `{ ok, datos }` con la estructura completa extraida por `lib/parsear-csf.js::parsearCSF` (RFC, razon social, domicilio fiscal, regimen) |
 
 ## Tests
 
 ```bash
 npm test
-# 160 tests, 0 fallas
+# 301 tests, 0 fallas
 ```
 
 - `test/` — backend (supertest + node:test, ES modules)
