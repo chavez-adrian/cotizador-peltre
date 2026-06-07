@@ -262,3 +262,34 @@ test('C32: buildCsfDatosDesdeRespuesta con respuesta vacia/malformada retorna er
   assert.strictEqual(r.datos, undefined);
   assert.ok(r.error, 'debe traer un mensaje de error');
 });
+
+// ─── altaCsfResultadoParseo: decide que mostrar/poblar tras llamar al endpoint (issue #34) ──
+// El parser viejo (altaCsfParsearTexto) NUNCA fallaba -- siempre devolvia un objeto (con
+// rfc:'' si no detectaba nada), dejando csf-detalles visible para captura manual. El endpoint
+// centralizado SI puede responder ok:false (422, "no se detecto RFC"). Sin esta capa, ese caso
+// se traduciria en pantalla de error sin salida (csf-detalles oculto, banner de error sin
+// boton para continuar) -- regresion de UX vs el flujo viejo. Esta funcion pura decide:
+// si hay datos (con o sin RFC) -> mostrar success + poblar formulario para revision manual;
+// si la llamada al endpoint fallo de plano (red/parseo malformado) -> mostrar error.
+const { altaCsfResultadoParseo } = require('./helpers.cjs');
+
+test('C33: con datos completos -> resultado success, puebla formulario con los datos', () => {
+  const r = altaCsfResultadoParseo({ datos: { rfc: 'SMS200716NZ4', razonSocial: 'SAGO SA' } }, 'archivo.pdf');
+  assert.strictEqual(r.status, 'success');
+  assert.strictEqual(r.datos.rfc, 'SMS200716NZ4');
+  assert.ok(r.bannerText.includes('SMS200716NZ4'), `bannerText: ${r.bannerText}`);
+});
+
+test('C34: sin RFC detectado (422 del endpoint) -> sigue siendo success con datos vacios editables (NO error sin salida)', () => {
+  const r = altaCsfResultadoParseo({ error: 'No se detecto un RFC en el texto' }, 'archivo.pdf');
+  assert.strictEqual(r.status, 'success');
+  assert.strictEqual(r.datos.rfc, '');
+  assert.ok(r.bannerText.includes('no detectado'), `bannerText: ${r.bannerText}`);
+});
+
+test('C35: datos vacios producen un objeto datos con todas las claves esperadas (formulario no truena)', () => {
+  const r = altaCsfResultadoParseo({ error: 'algo' }, 'x.pdf');
+  for (const k of ['rfc','razonSocial','nombreCorto','idcif','regimenFiscal','calle','numExt','numInt','colonia','cp','municipio','estado']) {
+    assert.strictEqual(r.datos[k], '', `${k} deberia ser string vacio`);
+  }
+});

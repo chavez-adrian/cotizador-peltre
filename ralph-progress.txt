@@ -895,3 +895,56 @@ Siguiente: ITER 5-8 son polish/doble-verificacion redundante o cierre anticipado
 [x] parsearCsfDesdeTexto eliminada de helpers.cjs; tests actualizados (mirrors puros sin DOM)
 [x] npm test completo en verde -- 303/303
 [x] Verificacion manual documentada (trace end-to-end, navegador no disponible documentado explicitamente)
+
+--- ITER 5 (completada) -- REGRESION DE UX DETECTADA Y CORREGIDA (TDD: C33-C35) ---
+Hallazgo durante la auditoria de iter4/iter5: la migracion al endpoint centralizado introdujo
+una regresion de UX no cubierta por los 7 ACs textuales pero si por su espiritu ("no degradar
+el flujo existente"):
+  - El parser viejo altaCsfParsearTexto NUNCA fallaba: siempre devolvia un objeto datos
+    usable (con rfc:'' si no detectaba nada), dejando <details id="csf-detalles"> visible
+    (status:'success') para captura manual.
+  - El nuevo altaCsfParsearEnServidor SI puede recibir {ok:false} del endpoint (HTTP 422,
+    "No se detecto un RFC en el texto") y lanzaba throw -> el catch de altaCsfProcesarArchivo
+    ponia status:'error' -> altaCsfSetStatus oculta csf-detalles
+    (`detalles.style.display = status === 'success' ? '' : 'none'`) -> dead-end: el
+    vendedor no puede capturar nada manualmente y re-subir el mismo PDF falla identico.
+
+TDD aplicado (RED-GREEN):
+  RED:   Agregadas 3 pruebas a alta-csf.test.cjs (C33, C34, C35) para una nueva funcion pura
+         altaCsfResultadoParseo(respuestaInterpretada, fileName) que decide status/datos/banner
+         SIEMPRE como 'success' (con datos vacios editables si no hubo deteccion). Confirmado
+         RED: "TypeError: altaCsfResultadoParseo is not a function" en las 3.
+  GREEN: Implementada altaCsfResultadoParseo en helpers.cjs (skeleton CSF_DATOS_VACIOS con las
+         12 claves esperadas + merge con datos reales si existen; bannerText incluye RFC o
+         "no detectado"). Agregada a module.exports. Confirmado GREEN: 28/28 en
+         alta-csf.test.cjs (306 total en la suite completa, 303+3).
+REFACTOR (wiring en produccion, app.js):
+  - altaCsfParsearEnServidor ya NO lanza throw en {ok:false}: retorna {datos} o {error}
+    (mismo patron que buildCsfDatosDesdeRespuesta).
+  - Agregada la misma altaCsfResultadoParseo (mirror) + ALTA_CSF_DATOS_VACIOS en app.js.
+  - altaCsfProcesarArchivo reescrita: llama altaCsfParsearEnServidor -> altaCsfResultadoParseo
+    -> SIEMPRE altaCsfSetStatus('success', {bannerText}) + altaCsfPonerDatos(datos completos,
+    incluso vacios) -- el panel queda visible y editable en TODOS los casos. El catch ahora
+    solo cubre fallos reales de lectura del PDF (altaCsfLeerPDF), no respuestas {ok:false}
+    del endpoint.
+
+Archivos modificados:
+  - public/js/__tests__/alta-csf.test.cjs (tests C33-C35, RED)
+  - public/js/__tests__/helpers.cjs (altaCsfResultadoParseo + CSF_DATOS_VACIOS + export, GREEN)
+  - public/js/app.js (altaCsfParsearEnServidor ya no lanza; altaCsfResultadoParseo +
+    ALTA_CSF_DATOS_VACIOS agregadas; altaCsfProcesarArchivo reescrita para nunca dejar
+    csf-detalles oculto tras un parseo sin RFC)
+
+Suite completa: 306/306 GREEN (303 + 3 nuevas C33-C35; sin regresiones)
+
+Decision: esta correccion es estrictamente necesaria para que la migracion de #34 NO empeore
+la experiencia respecto al flujo viejo -- sin ella, cualquier CSF cuyo texto no tenga RFC
+extraible (PDFs escaneados con OCR imperfecto, formatos atipicos del SAT, etc.) dejaria al
+vendedor sin forma de continuar el alta. Es coherente con el AC implicito "mantener paridad
+funcional con el flujo anterior" y no toca el endpoint/lib/parsear-csf.js (sigue intacto).
+
+Siguiente: ITER 6 -- verificacion adicional: confirmar que altaCsfResultadoParseo no introduce
+  shape-mismatches con altaCsfPonerDatos/buildCsfConfirmarPayload (las 12 claves del skeleton
+  deben cubrir exactamente lo que el formulario espera poblar). Tambien revisar si csf-upload.html
+  tiene una regresion analoga (su flujo via mapearDatosCsfDesdeEndpoint/parsearCSF -- confirmar
+  si throw ahi tambien rompe UX o si ese flujo siempre tuvo manejo de error apropiado).

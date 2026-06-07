@@ -192,6 +192,31 @@ function buildCsfDatosDesdeRespuesta(json) {
   return { error: 'Respuesta invalida del servidor al parsear la CSF' };
 }
 
+const CSF_DATOS_VACIOS = {
+  rfc: '', razonSocial: '', nombreCorto: '', idcif: '', regimenFiscal: '',
+  calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '',
+};
+
+// Decide que mostrar/poblar tras llamar a /api/parsear-csf (issue #34): a diferencia del
+// parser viejo (que nunca fallaba), el endpoint puede responder ok:false. Para no dejar al
+// usuario sin salida (csf-detalles oculto), siempre se devuelve status 'success' con un
+// objeto datos completo (vacio si no hubo deteccion) para captura/edicion manual.
+function altaCsfResultadoParseo(respuestaInterpretada, fileName) {
+  if (respuestaInterpretada && respuestaInterpretada.datos) {
+    const datos = { ...CSF_DATOS_VACIOS, ...respuestaInterpretada.datos };
+    return {
+      status: 'success',
+      datos,
+      bannerText: `${fileName} -- RFC: ${datos.rfc || '(no detectado)'}`,
+    };
+  }
+  return {
+    status: 'success',
+    datos: { ...CSF_DATOS_VACIOS },
+    bannerText: `${fileName} -- RFC no detectado, captura los datos manualmente`,
+  };
+}
+
 // ─── csf-upload.html: mapeo del endpoint centralizado al shape esperado por poblarForm ──
 // Mapa de regimenes -> codigo (para el label legible regimen_text; el endpoint solo da el codigo)
 const CSF_UPLOAD_REGIMENES = {
@@ -539,4 +564,4 @@ function buildDedupCandidatosHtml(candidatos) {
     '</div>';
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, buildCsfUploadDatosDesdeEndpoint, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, buildCsfUploadDatosDesdeEndpoint, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };

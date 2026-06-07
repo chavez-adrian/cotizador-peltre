@@ -2440,8 +2440,33 @@ async function altaCsfParsearEnServidor(texto) {
     body: JSON.stringify({ texto }),
   });
   const json = await r.json();
-  if (json && json.ok && json.datos) return json.datos;
-  throw new Error((json && json.error) || 'No se pudo parsear la CSF');
+  if (json && json.ok && json.datos) return { datos: json.datos };
+  return { error: (json && json.error) || 'No se pudo parsear la CSF' };
+}
+
+const ALTA_CSF_DATOS_VACIOS = {
+  rfc: '', razonSocial: '', nombreCorto: '', idcif: '', regimenFiscal: '',
+  calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '',
+};
+
+// El endpoint centralizado puede responder ok:false (sin RFC detectado). A diferencia del
+// parser viejo (que nunca fallaba), no queremos dejar al usuario sin salida -- siempre se
+// devuelve success con un objeto datos completo (vacio si no hubo deteccion) para captura
+// y edicion manual (issue #34).
+function altaCsfResultadoParseo(respuestaInterpretada, fileName) {
+  if (respuestaInterpretada && respuestaInterpretada.datos) {
+    const datos = { ...ALTA_CSF_DATOS_VACIOS, ...respuestaInterpretada.datos };
+    return {
+      status: 'success',
+      datos,
+      bannerText: `${fileName} -- RFC: ${datos.rfc || '(no detectado)'}`,
+    };
+  }
+  return {
+    status: 'success',
+    datos: { ...ALTA_CSF_DATOS_VACIOS },
+    bannerText: `${fileName} -- RFC no detectado, captura los datos manualmente`,
+  };
 }
 
 async function altaCsfExtraerQR(pdfDoc) {
@@ -2503,12 +2528,13 @@ async function altaCsfProcesarArchivo(file) {
   altaCsfSetStatus('loading', { spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' });
   try {
     const texto = await altaCsfLeerPDF(file);
-    const datos = await altaCsfParsearEnServidor(texto);
-    altaCsfState.datos = datos;
-    altaCsfPonerDatos(datos);
-    altaCsfSetStatus('success', { bannerText: `${file.name} -- RFC: ${datos.rfc || '(no detectado)'}` });
-    if (datos.rfc) {
-      altaCsfState.rfc = datos.rfc;
+    const respuesta = await altaCsfParsearEnServidor(texto);
+    const resultado = altaCsfResultadoParseo(respuesta, file.name);
+    altaCsfState.datos = resultado.datos;
+    altaCsfPonerDatos(resultado.datos);
+    altaCsfSetStatus(resultado.status, { bannerText: resultado.bannerText });
+    if (resultado.datos.rfc) {
+      altaCsfState.rfc = resultado.datos.rfc;
       altaCsfState.fileName = file.name;
     }
   } catch (err) {
