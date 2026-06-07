@@ -531,3 +531,31 @@ Siguiente: ITER 4 -- revisar si falta algo del "what to build" punto 1: el issue
   rutas (probablemente no necesitan cambio), doble-check lib/parsear-csf.js intacto con git diff,
   y preparar cierre. Si todo esta cubierto ya en iter 3, las iteraciones 4-6 son polish/verificacion
   exhaustiva + posible ISSUE #33 LISTO PARA CIERRE en iter 6.
+
+--- ITER 4 (completada) ---
+Commit: bce857b test: confirma POST /api/parsear-csf no requiere JWT, patron consistente con rutas CSF (iter 4/6, issue #33)
+Pushed: c11c178..bce857b (fast-forward a origin/main)
+Hecho: test explicito de contrato de auth, cierra AC "endpoint sigue patron de auth consistente
+  con /api/csf-from-url y /api/buscar-cliente" -- documentado tambien en CLAUDE.md tabla "Rutas CSF"
+  - test: POST sin header Authorization -> NO 401, SI 200 { ok:true }
+  - confirma explicitamente que la ruta NO usa authMiddleware (decision tomada en iter1, ahora
+    con test dedicado que fija el contrato -- antes solo se infería porque los demas tests
+    tampoco mandaban el header)
+  - RED->ya GREEN sin cambios de codigo: mismo patron que iter3 (test de contrato/regresion que
+    blinda una decision de diseño ya tomada contra refactors futuros que accidentalmente agreguen
+    authMiddleware a la ruta)
+Archivos modificados: test/server.test.js
+Suite completa: 301/301 GREEN (npm test, --test-concurrency=1)
+Estado de ACs de #33 (TODOS cumplidos a esta altura):
+  [x] Endpoint POST /api/parsear-csf envuelve parsearCSF, estructura completa incl calle/numExt/numInt/colonia
+  [x] Tests cubren persona fisica, persona moral, RFC con sufijo espurio, texto invalido (incl whitespace-only) -- todos GREEN
+  [x] Auth: patron consistente con /api/csf-from-url y /api/buscar-cliente (sin JWT) -- ahora con test dedicado
+  [x] lib/parsear-csf.js y su test suite NO modificados (verificado con git diff, vacio)
+  [x] npm test completo en verde -- 301/301
+Siguiente: ITER 5-6 -- son polish/verificacion exhaustiva. Posibles focos:
+  - Re-leer issue #33 completo una vez mas buscando algun detalle perdido (p.ej. nombres exactos
+    de campos en la respuesta, formato de mensajes de error)
+  - Verificar que CONTEXT.md / docs no necesiten actualizacion (probablemente CLAUDE.md ya cubre,
+    pero revisar si hay un doc de rutas API que liste endpoints uno por uno)
+  - Confirmar que git diff de lib/parsear-csf.js y test/parsear-csf.test.js sigue vacio (restriccion dura)
+  - Si todo verificado y suite verde: iter 6 escribe "ISSUE #33 LISTO PARA CIERRE"
