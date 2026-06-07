@@ -620,13 +620,14 @@ const DIFF_FISCAL_LABELS = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, label }) =>
 function buildDiffFiscalHtml(diff) {
   const campos = Object.keys(diff);
   if (campos.length === 0) return '';
+  const mostrar = valor => valor || '(vacio)';
   const filas = campos.map(fieldId => {
     const { anterior, nuevo, label } = diff[fieldId];
     return '<div class="diff-fiscal-fila">' +
       '<strong>' + (label || DIFF_FISCAL_LABELS[fieldId] || fieldId) + ':</strong> ' +
-      '<span class="diff-fiscal-anterior">' + (anterior || '(vacio)') + '</span>' +
+      '<span class="diff-fiscal-anterior">' + mostrar(anterior) + '</span>' +
       ' &rarr; ' +
-      '<span class="diff-fiscal-nuevo">' + (nuevo || '(vacio)') + '</span>' +
+      '<span class="diff-fiscal-nuevo">' + mostrar(nuevo) + '</span>' +
       '</div>';
   }).join('');
   return '<div class="diff-fiscal-panel">' +

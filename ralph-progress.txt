@@ -1544,3 +1544,23 @@ lo piden). El guard en calcularDiffFiscal es la solucion correcta y minima: hace
 diff sea fiel a lo que el vendedor pudo capturar, sin importar el origen del alta --
 "ausencia de dato" != "cambio a vacio". Decision consistente con "sin friccion" (AC4):
 mejor mostrar MENOS diff (preciso) que mas diff (ruidoso/falso).
+
+== ITERACION 6 (test de regresion para "(vacio)" + refactor DRY) ==
+
+RED/GREEN: agregue G8b para fijar con un test el comportamiento "(vacio)" que solo
+habia verificado MANUALMENTE en el navegador (iter 4, AC1) pero que no tenia cobertura
+TDD -- riesgo de regresion silenciosa si alguien cambia buildDiffFiscalHtml despues.
+El test verifica que tanto un "anterior" vacio como un "nuevo" vacio se muestren como
+literal "(vacio)" (cuenta 2 ocurrencias en el HTML). Paso en verde de inmediato porque
+la implementacion ya era correcta -- el valor del test es DOCUMENTAR Y PROTEGER ese
+comportamiento, no corregir un bug (practica legitima de TDD: tambien se escriben tests
+para casos ya-correctos pero sin cobertura, especialmente los que vienen de verificacion
+manual).
+
+REFACTOR: extraje `const mostrar = valor => valor || '(vacio)'` dentro de
+buildDiffFiscalHtml para eliminar la duplicacion `(anterior || '(vacio)')` /
+`(nuevo || '(vacio)')`. Cambio cosmetico minimo, sin alterar comportamiento (G8b sigue
+en verde). Aplicado en app.js y su espejo en helpers.cjs.
+
+node --check public/js/app.js -> Syntax OK.
+19/19 GREEN en alta-dedup-fiscal.test.cjs. Suite completa: 329/329 GREEN.

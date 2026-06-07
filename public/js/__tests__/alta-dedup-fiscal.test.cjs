@@ -155,6 +155,19 @@ test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', 
   assert.ok(html.includes('601') && html.includes('612'), 'debe mostrar cambio de regimen');
 });
 
+test('G8b: buildDiffFiscalHtml muestra "(vacio)" cuando el valor anterior o nuevo es cadena vacia (legibilidad del diff, AC1)', () => {
+  // Observado manualmente en navegador (iter 4): un campo que pasa de tener valor a
+  // cadena vacia (o viceversa) debe mostrarse como "(vacio)", no como un hueco en blanco
+  // que el vendedor podria interpretar como un error de renderizado.
+  const diff = {
+    idcif: { anterior: '', nuevo: 'IDCIF999', label: 'IdCIF (SAT)' },
+    street: { anterior: 'Reforma 100', nuevo: '', label: 'Calle' },
+  };
+  const html = buildDiffFiscalHtml(diff);
+  const ocurrencias = (html.match(/\(vacio\)/g) || []).length;
+  assert.equal(ocurrencias, 2, 'debe mostrar "(vacio)" tanto para anterior vacio como para nuevo vacio');
+});
+
 test('G9: buildDiffFiscalHtml usa etiquetas legibles, no nombres crudos de campo Operam', () => {
   const diff = { CustName: { anterior: 'A', nuevo: 'B' }, tax_id: { anterior: 'X', nuevo: 'Y' } };
   const html = buildDiffFiscalHtml(diff);
