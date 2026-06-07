@@ -1564,3 +1564,40 @@ en verde). Aplicado en app.js y su espejo en helpers.cjs.
 
 node --check public/js/app.js -> Syntax OK.
 19/19 GREEN en alta-dedup-fiscal.test.cjs. Suite completa: 329/329 GREEN.
+
+== ITERACION 7 (test de contrato estructural: coexistencia diff-panel + selector domicilio) ==
+
+Investigue una posible interaccion problematica: que pasa con el .diff-fiscal-panel
+cuando el vendedor hace click en "Usar este cliente" (altaDedupUsarCliente, linea ~2923)
+ANTES de confirmar/descartar el diff? Traza:
+- altaDedupUsarCliente hace dedupDiv.innerHTML += '<p>Cargando domicilios...</p>' (nota:
+  es += , no = -- preserva el contenido existente, incluido el panel de diff)
+- altaDedupMostrarDomicilios busca dedupDiv.querySelector('.dedup-exacto, .dedup-candidatos')
+  y le hace appendChild(domDiv) -- el selector de domicilio queda DENTRO de .dedup-exacto
+
+Confirme (leyendo buildDedupExactoConDiffHtml linea 2778-2790) que .diff-fiscal-panel se
+concatena como HERMANO de .dedup-exacto (`base + buildDiffFiscalHtml(diff)`), no anidado
+dentro. Resultado: cuando el vendedor usa "Usar este cliente" sin resolver el diff, el
+selector de domicilio aparece DENTRO de .dedup-exacto y el panel de diff permanece visible
+como hermano debajo -- ambos coexisten correctamente, consistente con la decision de
+diseno "no bloqueante" (iter 2). Las funciones altaDiffFiscalConfirmar/Descartar siguen
+funcionando porque buscan el panel con dedupDiv.querySelector('.diff-fiscal-panel') en
+cada invocacion (no guardan referencias DOM obsoletas).
+
+CONCLUSION: no es un bug -- es el comportamiento correcto y deseado, pero NO TENIA
+COBERTURA DE TEST (ninguno de G12-G14 verifica la relacion estructural entre
+.dedup-exacto y .diff-fiscal-panel, solo que ambos textos/clases existan en el HTML).
+Si alguien en el futuro envuelve ambos en un contenedor comun (ej. para "limpiar" el
+HTML), podria romper silenciosamente esta coexistencia sin que ningun test lo detecte.
+
+Agregue G14b: verifica que '.diff-fiscal-panel' aparece en el HTML DESPUES del cierre
+de '.dedup-exacto' (hermano, no anidado) -- fija el contrato estructural del que depende
+la coexistencia "Usar este cliente" + diff pendiente (AC3).
+
+node --check public/js/app.js -> Syntax OK.
+20/20 GREEN en alta-dedup-fiscal.test.cjs. Suite completa: 330/330 GREEN.
+
+Nota: esta iteracion fue principalmente de INVESTIGACION (trazar una interaccion no
+obvia entre dos features para confirmar que no hay bug) + un test que documenta/protege
+el hallazgo. Es valioso porque sin ese test, un refactor futuro de cualquiera de las dos
+funciones podria romper AC3 sin que la suite lo note.

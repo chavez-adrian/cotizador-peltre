@@ -223,6 +223,26 @@ test('G14: buildDedupExactoConDiffHtml sin csfDatos (undefined) no truena y omit
   assert.ok(!html.includes('diff-fiscal-panel'));
 });
 
+test('G14b: buildDedupExactoConDiffHtml produce .dedup-exacto y .diff-fiscal-panel como hermanos (no anidados) -- contrato estructural para que altaDedupMostrarDomicilios pueda agregar el selector de domicilio sin ocultar el panel de diff (AC3, no bloqueante)', () => {
+  // altaDedupMostrarDomicilios (app.js ~2944) hace
+  // dedupDiv.querySelector('.dedup-exacto, .dedup-candidatos').appendChild(domDiv) --
+  // si el panel de diff quedara ANIDADO dentro de .dedup-exacto, ese querySelector lo
+  // encontraria igual, pero si algun dia alguien envuelve ambos en un contenedor comun
+  // el comportamiento de "Usar este cliente" + diff coexistiendo (decision iter 2:
+  // paso paralelo/opcional) podria romperse silenciosamente. Este test fija la forma
+  // esperada: concatenacion de hermanos, ambos hijos directos del contenedor del dedup.
+  const csfDatosConCambios = {
+    razonSocial: 'Peltre Nacional Industrias SA de CV', rfc: 'PNA010203ABC', idcif: '',
+    calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '', regimenFiscal: '',
+  };
+  const html = buildDedupExactoConDiffHtml(clienteExacto, csfDatosConCambios);
+  const idxExacto = html.indexOf('class="dedup-exacto"');
+  const idxCierreExacto = html.indexOf('</div>', idxExacto);
+  const idxPanel = html.indexOf('diff-fiscal-panel');
+  assert.ok(idxExacto >= 0 && idxPanel >= 0, 'ambos elementos deben existir');
+  assert.ok(idxPanel > idxCierreExacto, '.diff-fiscal-panel debe aparecer DESPUES de cerrar .dedup-exacto (hermano, no anidado)');
+});
+
 // === buildActualizarFiscalRequest ===
 // Construye la forma de la peticion PATCH /api/operam/clientes/:id {diff} (AC2).
 // Consume la ruta backend YA EXISTENTE (lib/operam-client.js::actualizarCliente,
