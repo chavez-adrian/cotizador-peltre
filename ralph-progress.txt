@@ -471,3 +471,33 @@ Siguiente: ITER 2 -- refactorizar /api/csf-from-url para que reuse parsearCSF in
   (lineamiento (b) del issue: devolver tambien `datos` ya parseados ademas del texto crudo del SAT).
   Mantener compat: el campo `texto` crudo lo siguen consumiendo otros flujos (verificar app.js/
   csf-upload.html antes de quitar nada -- pero NO migrar consumidores, eso es #34, fuera de mi alcance).
+
+--- ITER 2 (completada) ---
+Commit: 38b9084 feat: /api/csf-from-url reusa parsearCSF y devuelve datos parseados (iter 2/6, issue #33)
+Pushed: c6cc8b3..38b9084 (fast-forward a origin/main)
+Hecho: refactor /api/csf-from-url, lineamiento (b) del issue #33 + AC "un solo punto de parseo"
+  - server.js: tras limpiar el HTML del SAT a texto plano, ahora llama parsearCSF(texto) y agrega
+    `datos` al JSON de respuesta junto al `texto` crudo ya existente -- { ok:true, texto, datos }
+  - Verificado ANTES de tocar nada: unico consumidor real es altaCsfExtraerTextoDePDF en app.js
+    (linea ~2496-2501), solo lee data.texto -- compat retro garantizada, no rompe nada (no migre
+    consumidores, eso es #34 fuera de mi alcance, solo verifique que el cambio aditivo no rompe)
+Test TDD en test/server.test.js (1 nuevo, RED->GREEN):
+  - mockea globalThis.fetch directo (no mockOperamFetch -- esa ruta no llama a Operam, llama al SAT)
+    devolviendo HTML con tags; verifica que la respuesta trae texto crudo (incluye RFC) Y
+    datos.rfc ya parseado correctamente
+Decisiones clave:
+  - Aditivo, no reemplazo: mantener `texto` en la respuesta es deliberado -- el PRD #36 / issue #33
+    dice "un solo punto de parseo sin importar el origen del texto", pero migrar csf-upload.html y
+    el acordeon a usar `datos` en vez de re-parsear `texto` en frontend es trabajo de #34 (issue
+    hermano). Mi entrega solo deja la tuberia lista; no toco app.js ni csf-upload.html.
+  - Una sola llamada a parsearCSF: ambas rutas (/api/parsear-csf y /api/csf-from-url) ahora
+    invocan exactamente la misma funcion pura -- cumple "un solo punto de parseo sin importar
+    el origen del texto (PDF con texto extraible vs HTML del SAT via QR)" del issue.
+Archivos modificados: server.js, test/server.test.js
+Suite completa: 299/299 GREEN (npm test, --test-concurrency=1)
+Siguiente: ITER 3 -- revisar ACs restantes de #33: confirmar que no falta ningun caso de test
+  pedido explicitamente (persona fisica/moral/sufijo espurio/sin RFC ya cubiertos en iter 1).
+  Posible foco: polish, edge cases adicionales (ej. texto vacio/whitespace-only en /api/parsear-csf),
+  o verificacion de que la respuesta de /api/parsear-csf documenta bien el contrato { ok, datos }.
+  Revisar tambien si README/CLAUDE.md necesitan mencion del nuevo endpoint (probablemente no,
+  CLAUDE.md ya tiene tabla de rutas CSF generica).
