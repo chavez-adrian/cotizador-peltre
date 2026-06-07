@@ -1734,3 +1734,66 @@ Archivos modificados (8 commits, iter 1-8):
 NO se toco: lib/parsear-csf.js, csf-upload.html, codigo de #32/#35, ni la ruta backend
 PATCH /api/operam/clientes/:id ni lib/operam-client.js::actualizarCliente (solo
 consumidos desde el frontend, como se pidio).
+
+=== RETOMA #32 -- REMOCION (AC2-AC7), AC1 YA RESUELTA POR #38 (cerrado y verificado) ===
+Branch: worktree-agent-abbd89ee1bc05dac1. Confirmado por el orquestador: el gap de
+"detectar+actualizar datos fiscales de cliente existente al subir CSF" quedo resuelto
+en #38 (8 iteraciones, verificado con clicks reales en navegador, cerrado). Comentario
+en #32 confirma "Ya no hay gap de funcionalidad. Procede el trabajo de remocion (AC2-AC7)".
+NO se repite la auditoria de paridad (ya documentada arriba, AC1 cumplida).
+
+--- ITER 1 (completada) -- AC6 parcial: 14 suites huerfanas + helpers del flujo viejo ---
+Commit: 307a078 test: eliminar 14 suites huerfanas del flujo viejo de alta + sus helpers (iter 1/7, issue #32)
+Hecho:
+  - Eliminados 14 archivos test/*.cjs (lista exacta predicha en auditoria, confirmada
+    1:1): pais-config, manual-rfc-guard, csf, csf-rfc-match, csf-prefill, csf-operam-fill,
+    csf-payload, csf-guard-edge, csf-guard, csf-entrega, csf-edge, csf-diff, csf-diff-edge,
+    csf-actualizar (.test.cjs)
+  - helpers.cjs: removidas 12 funciones + 2 constantes privadas que esos tests probaban:
+    buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig,
+    buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch,
+    calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch (+ AREA_POR_PAIS_CJ,
+    FIELD_LABELS privadas) -- actualizado module.exports
+Verificacion previa (grep exhaustivo en app.js de cada nombre): CERO uso fuera del
+rango app.js:1075-1664 (flujo viejo) -- confirma que ninguna es compartida con el
+acordeon nuevo ni con #38 (calcularDiffFiscal es funcion DISTINTA, ver comentario
+inline app.js:2710 que documenta por que sus llaves son nombres de campo Operam,
+no ids de DOM como el calcularDiff viejo)
+Suite: 259/259 GREEN (330 - 71 tests de los archivos eliminados = 259, exacto)
+Push: OK (rama worktree-agent-abbd89ee1bc05dac1, upstream creado)
+Siguiente: ITER 2 -- remover funciones/estado/constantes del flujo viejo de app.js
+  (procesarCSF, parsearCSFTexto, crearClienteDesdeCSF, mostrarPanelConfirmacion,
+  confirmarCambios, cancelarConfirmacion, cancelarCSF, cancelarConfirmacionManual,
+  actualizarDesdeManual, confirmarCambiosManual, buscarRfcEnManual, setClienteModo,
+  csfDatosExtraidos/csfClienteExistente/csfDiffPendiente/CSF_FORM_FIELD_IDS/
+  CSF_FIELD_LABELS, los 12 export function ya quitados de helpers van tambien de
+  app.js) + arreglar nuevaCotizacion (quitar setClienteModo y limpieza de estado
+  huerfano, restaurar panel-buscar via display directo) + quitar wiring blur cl-rfc.
+
+--- ITER 2 (completada) -- AC3: funciones/estado del flujo viejo eliminados de app.js ---
+Commit: ffb4178 refactor: eliminar funciones y estado del flujo viejo de alta de cliente (iter 2/7, issue #32)
+Hecho:
+  - Removido el bloque completo app.js (antes lineas ~1116-1648, 534 lineas + wiring):
+    setClienteModo, procesarCSF, parsearCSFTexto, crearClienteDesdeCSF,
+    mostrarPanelConfirmacion, confirmarCambios, cancelarConfirmacion, cancelarCSF,
+    cancelarConfirmacionManual, actualizarDesdeManual, confirmarCambiosManual,
+    buscarRfcEnManual (+ window.X de cada una), buildPreFillMap, applyPreFillMap,
+    buildPaisConfig, findRfcMatch, shouldTriggerRfcSearch, buildCsfDuplicadoBanner,
+    buildClienteSnapshot, buildOperamPreFillMap, buildEntregaPayload, calcularDiff,
+    buildConfirmacionItems, csfDatosExtraidos, csfClienteExistente, csfDiffPendiente,
+    CSF_FORM_FIELD_IDS, CSF_FIELD_LABELS
+  - Wiring removido: listener blur #cl-rfc -> buscarRfcEnManual (solo aplicaba a panel-manual)
+  - nuevaCotizacion(): removida limpieza de estado/elementos huerfanos, reemplazado
+    setClienteModo('buscar') por document.getElementById('panel-buscar').style.display='block'
+    (exactamente como predijo la auditoria -- mismo efecto, sin pasar por la maquina
+    de modos que desaparece)
+Verificacion post-remocion (grep de cada simbolo + 'modo-btn'/'panel-csf'/'panel-manual'/
+'cliente-modos'): CERO residuos huerfanos -- los unicos matches de calcularDiff son
+calcularDiffFiscal (funcion de #38, viva, distinta) y los de panel-csf/panel-manual
+son alta-panel-csf/alta-panel-manual (acordeon nuevo, vivo)
+node --check public/js/app.js -> Syntax OK (verificado ANTES de cada commit, regla #37)
+Suite: 259/259 GREEN, identica a iter1 (remocion pura de codigo muerto, sin tests propios)
+Push: pendiente (se hace junto con iter 3)
+Siguiente: ITER 3 -- remover markup de index.html (cliente-modos+3 modo-btn,
+  panel-csf, panel-manual) y CSS (.cliente-modos/.modo-btn/.modo-btn.active),
+  conservando .cliente-panel (lo usa panel-buscar) y panel-buscar intacto (AC2/AC4).
