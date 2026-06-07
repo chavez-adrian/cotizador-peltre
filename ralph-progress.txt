@@ -994,3 +994,86 @@ Archivos modificados:
 Suite completa: 310/310 GREEN (306 + 4 nuevas U7-U10; sin regresiones)
 Siguiente: ITER 2 -- verificacion final + cierre (revalidar 7 ACs de #34, trace del dead-end
   cerrado, declarar ISSUE #34 LISTO PARA CIERRE si todo en orden).
+
+--- ITER 2 (completada) -- VERIFICACION FINAL + CIERRE ---
+npm test completo re-corrido: 310/310 GREEN (sin cambios desde iter1 de esta corrida, sin
+regresiones).
+
+Revalidacion de los 7 ACs de #34 uno por uno contra el estado real (commit 06ce153 nuevo):
+  [x] altaCsfParsearTexto eliminada de app.js; altaCsfProcesarArchivo consume endpoint
+      centralizado -- intacto desde iter1 corrida 1, esta corrida no lo toco
+  [x] Panel CSF del acordeon tiene inputs calle/numExt/numInt/colonia, poblados y editables --
+      intacto, esta corrida no lo toco
+  [x] Verificado con alta de prueba: street/street_number/suite_number/district llegan con
+      valor real (no vacio) -- trace end-to-end de iter3 corrida 1 sigue valido (esta corrida
+      NO modifico buildAltaDarDeAltaPayload ni el mapeo de domicilio del acordeon)
+  [x] parsearCSF local de csf-upload.html eliminada (~123 lineas); usa endpoint centralizado,
+      QR/OCR intactos -- sigue cierto: esta corrida corrigio COMO se interpreta la respuesta
+      del endpoint ({ok:false} ya no lanza), no reintrodujo parseo SAT local
+  [x] parsearCsfDesdeTexto eliminada de helpers.cjs; tests actualizados -- sigue cierto
+  [x] npm test completo en verde -- 310/310 (306 al cierre de corrida 1 [iter5] + U7-U10 de
+      esta corrida = 310)
+  [x] Verificacion manual documentada -- trace end-to-end de iter3 corrida 1 sigue valido;
+      esta corrida ademas cierra el ultimo gap de UX (trace completo abajo)
+
+TRACE DEL DEAD-END CERRADO -- que pasa AHORA cuando /api/parsear-csf responde {ok:false}:
+  1. Vendedor sube PDF de CSF -> procesarPDF(file) (csf-upload.html linea 876)
+  2. texto = await leerPDF(file) -- extrae texto del PDF (QR/OCR si hace falta, sin cambios)
+  3. data = await parsearCSF(texto) (linea 892):
+     a. POST /api/parsear-csf {texto} -> server.js:421 -> lib/parsear-csf.js -> responde
+        HTTP 422 {ok:false, error:"No se detecto un RFC en el texto"} (texto sin RFC
+        detectable: PDF escaneado con OCR imperfecto, formato atipico del SAT, etc.)
+     b. r.json() parsea exitosamente {ok:false,...} -- es una respuesta HTTP valida, NO lanza
+     c. datos = (json && json.ok && json.datos) ? json.datos : {} -> datos = {} (NO LANZA)
+     d. return mapearDatosCsfDesdeEndpoint({}, texto) -> objeto completo con tax_id/CustName/
+        street/street_number/suite_number/district/etc TODOS en '' PERO con derivados
+        poblados desde el texto crudo (csf_fecha, regimen_text si se detecta, notes con
+        actividades/regimenes) -- igual que el parser local viejo (~123 lineas, eliminado
+        en iter2 corrida 1) siempre devolvia
+  4. poblarForm(data) -- puebla el formulario con los campos centrales vacios (editables)
+     mas los derivados de presentacion
+  5. document.getElementById('formSection').classList.remove('hidden') -- FORMULARIO VISIBLE
+     (ya no se salta por un throw)
+  6. if (!data.tax_id) es true (tax_id === '') -> setStatus('error', 'No se pudo extraer el
+     RFC. Verifica los campos manualmente.') -- mensaje claro, formulario habilitado
+  7. Vendedor completa RFC/razon social/domicilio a mano y da clic en "Crear cliente en
+     Operam" -- el flujo continua con normalidad, SIN dead-end. Re-subir el mismo PDF ya
+     no falla identico (sigue mostrando el formulario editable, no un error que oculta todo)
+  CONTRASTE CON ANTES (bug): pasos 3a-3b identicos, pero 3c era
+  "throw new Error(json.error)" -> catch de procesarPDF (linea 914) ->
+  setStatus('error', 'Error al leer el PDF: ' + err.message) +
+  uploadZone.style.display = '' -- formSection NUNCA se mostraba, vendedor sin forma
+  de continuar ni de capturar nada manualmente.
+
+Decisiones clave de esta correccion (corrida 2):
+  - NO se creo una funcion tipo altaCsfResultadoParseo (banner/mensaje especial): a diferencia
+    del acordeon (iter5 corrida1), csf-upload.html YA TENIA el camino if (!data.tax_id) con su
+    propio mensaje apropiado de captura manual, ya conectado a formSection visible. Crear algo
+    nuevo habria sido duplicacion/sobre-ingenieria -- la correccion minima y correcta fue
+    simplemente dejar de lanzar en parsearCSF y permitir que el flujo existente convergiera.
+    Mismo PRINCIPIO que iter5 (nunca dejar al vendedor sin salida; distinguir RED real del
+    endpoint vs error genuino de lectura de PDF/red), forma de codigo distinta -- tal como
+    advirtio el orquestador ("los flujos tienen forma distinta").
+  - buildCsfUploadDatosParseo (nueva, helpers.cjs) reusa buildCsfUploadDatosDesdeEndpoint
+    (no reimplementa mapeo/derivados) -- decision pura y testeable que captura "interpreta
+    la respuesta del endpoint -> datos usables, nunca lanza" sin duplicar U1-U6.
+  - Errores de red/parseo genuinos (fetch lanza, r.json() lanza por respuesta no-JSON) siguen
+    propagandose al catch de procesarPDF como errores reales (uploadZone reaparece, mensaje
+    "Error al leer el PDF") -- la distincion RED-del-endpoint vs error-de-lectura que pidio
+    el orquestador queda preservada e intencional.
+
+Restricciones respetadas: NO se toco lib/parsear-csf.js, su test suite, el endpoint
+/api/parsear-csf en server.js, ni codigo de los issues hermanos #32/#35.
+
+== ACs DE #34 -- ESTADO FINAL DE LA CORRIDA 2 (los 7 confirmados) ==
+[x] altaCsfParsearTexto eliminada de app.js; altaCsfProcesarArchivo consume endpoint centralizado
+[x] Panel CSF del acordeon tiene inputs calle/numExt/numInt/colonia, poblados y editables
+[x] Verificado con alta de prueba: street/street_number/suite_number/district llegan con valor real
+[x] parsearCSF local de csf-upload.html eliminada (~123 lineas); endpoint centralizado, QR/OCR intactos
+[x] parsearCsfDesdeTexto eliminada de helpers.cjs; tests actualizados (mirrors puros sin DOM)
+[x] npm test completo en verde -- 310/310
+[x] Verificacion manual documentada (trace end-to-end con codigo real; navegador no disponible
+    en el entorno, documentado explicitamente en iter3 corrida 1; esta corrida ademas trace
+    el ultimo gap de UX cerrado paso a paso, ver arriba)
+
+ISSUE #34 LISTO PARA CIERRE (corrida 2 -- gap de csf-upload.html cerrado)
