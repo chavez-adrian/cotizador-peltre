@@ -501,3 +501,33 @@ Siguiente: ITER 3 -- revisar ACs restantes de #33: confirmar que no falta ningun
   o verificacion de que la respuesta de /api/parsear-csf documenta bien el contrato { ok, datos }.
   Revisar tambien si README/CLAUDE.md necesitan mencion del nuevo endpoint (probablemente no,
   CLAUDE.md ya tiene tabla de rutas CSF generica).
+
+--- ITER 3 (completada) ---
+Commit: 149ddcd test: edge case texto solo espacios en blanco -> 422 sin datos vacios (iter 3/6, issue #33)
+Pushed: 8215a3f..149ddcd (fast-forward a origin/main)
+Hecho: test de regresion/contrato para POST /api/parsear-csf, refuerza AC4 ("texto sin RFC
+  detectable debe responder con error claro, no con datos vacios silenciosos")
+  - test nuevo: { texto: '   \n\n   ' } (solo whitespace) -> 422 { ok:false, error, datos:undefined }
+  - confirmado RED->ya GREEN sin tocar codigo: la guarda `!texto || typeof texto !== 'string'`
+    NO captura whitespace-only (string truthy no vacio), pero el flujo natural lo resuelve:
+    parsearCSF('   ') retorna { rfc:'', ... } -> !datos.rfc -> 422. Cero codigo nuevo necesario.
+Decision clave: documentar el comportamiento con un test explicito en vez de "dejarlo pasar"
+  silenciosamente -- school of thought: un test que pasa sin cambios de codigo SIGUE siendo valioso
+  si fija un contrato que podria romperse en refactors futuros (p.ej. si alguien cambia la guarda
+  inicial a `!texto?.trim()`, este test asegura que el codigo de status siga siendo 422 con
+  estructura { ok:false, error } y no, digamos, 400).
+Archivos modificados: test/server.test.js
+Suite completa: 300/300 GREEN (npm test, --test-concurrency=1)
+Estado de ACs de #33 a esta altura:
+  [x] Endpoint POST /api/parsear-csf envuelve parsearCSF, estructura completa incl calle/numExt/numInt/colonia (iter1)
+  [x] Tests cubren persona fisica/moral/sufijo espurio/texto invalido (iter1) + whitespace-only (iter3)
+  [x] Auth: sin JWT, mismo patron que /api/csf-from-url y /api/buscar-cliente (iter1)
+  [x] lib/parsear-csf.js y su test suite NO modificados (verificado: git diff vacio en esos 2 archivos)
+  [x] /api/csf-from-url ahora reusa parsearCSF internamente, devuelve datos+texto (iter2, lineamiento b)
+  [ ] npm test completo en verde -- 300/300 SI, pendiente de re-confirmar en iter final
+Siguiente: ITER 4 -- revisar si falta algo del "what to build" punto 1: el issue sugiere (a) como
+  ruta canonica y (b) como extension que la reutiliza -- AMBAS YA HECHAS. Posible foco iter 4-6:
+  polish final, verificar que no hay nada mas pendiente, revisar README/CONTEXT.md si documentan
+  rutas (probablemente no necesitan cambio), doble-check lib/parsear-csf.js intacto con git diff,
+  y preparar cierre. Si todo esta cubierto ya en iter 3, las iteraciones 4-6 son polish/verificacion
+  exhaustiva + posible ISSUE #33 LISTO PARA CIERRE en iter 6.
