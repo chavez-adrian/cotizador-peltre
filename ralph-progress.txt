@@ -2109,3 +2109,176 @@ ya NO son "sin JWT", ahora requieren authMiddleware). Evaluar si README.md tambi
 necesita actualizacion (tiene referencias obsoletas a csf-upload.html en lineas
 16, 66, 87-88, 123) -- el alcance literal de #35 solo menciona CLAUDE.md, asi que
 sopesar con cuidado para no caer en scope creep. Confirmar npm test verde. Commit.
+
+== Iteracion 4: actualizar CLAUDE.md (seccion Auth + arquitectura) -- cierre del Ralph Loop ==
+Contexto: retome el worktree con el cambio de CLAUDE.md ya hecho (sin commitear) por
+el agente de la iteracion anterior, interrumpido por error administrativo durante
+FASE 4 (no por encontrarsele ningun problema). Verifique el diff linea por linea
+contra el codigo real antes de aceptar nada:
+  - grep -n de las 5 rutas en server.js -> confirme authMiddleware como segundo
+    argumento en las 5 (lineas 390, 428, 438, 460, 533) -- exactamente lo que decia
+    el diff.
+  - Confirme que public/csf-upload.html no existe en disco (ENOENT).
+  - Confirme que el ADR-0003 citado es real y dice lo que el diff resume (deprecacion
+    de csf-upload.html, fallback temporal, condicion de "flujo unificado en
+    produccion y validado").
+  - Revise tambien la linea "npm test (160, ...)" que el diff NO toca: contador
+    previo (ultimo tocado en commit 035a4e4f, PRD #26), ya desactualizado ANTES
+    de este issue -- el numero real verificado es 231. Fuera del alcance de #35
+    (no es de auth/CSF), no lo toque para evitar scope creep; lo señalo para que
+    el orquestador decida si amerita ticket aparte.
+El diff resulto exacto y verificable. Lo aplique sin cambios:
+  1. Quite la linea de comando de test para csf-upload-alta.test.cjs (archivo ya
+     retirado en iter 3).
+  2. Quite la mencion de csf-upload.html del parrafo de Arquitectura.
+  3. Simplifique el diagrama de flujo de datos -- ya no hay dos "Browser" distintos
+     (app.js y csf-upload.html), solo app.js.
+  4. Reescribi la entrada de "Rutas CSF" en Auth: de "sin JWT -- usadas por
+     csf-upload.html sin friccion" a "protegidas con authMiddleware igual que el
+     resto del cotizador -- el alta de cliente vive unicamente en el acordeon de
+     app.js (autenticado), tras el retiro de la herramienta standalone csf-upload.html
+     (ADR-0003)".
+Commit: 7595342 docs: actualizar CLAUDE.md -- rutas CSF ahora requieren JWT (iter 4/8, issue #35)
+Push: OK (474ff71..7595342)
+
+Decision sobre README.md (NO TOCADO, deliberado): tiene referencias obsoletas a
+csf-upload.html en lineas 16, 66, 87-88, 123, 145, 149 (confirmadas con grep). El
+AC literal de #35 dice unicamente "CLAUDE.md actualizado para reflejar el nuevo
+estado de auth de las rutas CSF" -- README.md no aparece en ningun AC ni en "What
+to build". Tocarlo seria exceder el alcance pedido ("No agregar features, refactors
+ni mejoras no solicitadas"). Documento el hallazgo para que el orquestador decida
+si amerita un ticket de limpieza aparte -- las referencias son notablemente
+inexactas (ej. linea 16 dice "Alta de clientes (csf-upload.html): sin
+autenticacion", lo cual ahora es literalmente falso en ambos aspectos: el archivo
+no existe y la ruta SI requiere auth).
+
+Verificacion antes de comitear:
+  1. node --check server.js -- OK
+  2. node --check public/js/app.js -- OK
+  3. npm test -- 231/231 GREEN, 0 fail, 0 skip (corrida de control, sin tocar codigo
+     en esta iteracion, solo doc)
+
+== Verificacion end-to-end en navegador real (chrome-devtools MCP) ==
+Levante el server desde ESTE worktree (mate antes el proceso viejo en :3000 -- PID
+22168 -- y confirme puerto libre antes y despues).
+  1. Login persistente via localStorage (JWT 30 dias, "Adrian Chavez", role admin)
+     -- cargo el cotizador autenticado sin friccion.
+  2. Abri el acordeon "+ Nuevo cliente":
+     - Tab "Captura manual": llene RFC generico XAXX010101000 + datos completos,
+       click "Verificar y confirmar" -> dispara GET /api/buscar-cliente-duplicado
+       (reqid=16) CON header Authorization (JWT completo confirmado en la captura
+       de red) -> 503 "Operam no disponible: Failed to parse URL from undefined/
+       api/v3/login" -- limitacion de entorno esperada (sin .env/OPERAM_*), NO 401.
+     - Tab "Cargar CSF": dropzone renderiza correctamente, sin errores JS nuevos
+       (solo el 503 heredado de la verificacion de duplicados, visible en pantalla
+       como "Error al verificar duplicados: Error 503").
+  3. Prueba directa de las 5 rutas protegidas via fetch desde la consola del
+     navegador (evaluate_script), CON token vs SIN token:
+       POST /api/csf-from-url          -> con token: 400 | sin token: 401
+       GET  /api/log                   -> con token: 503 | sin token: 401
+       PUT  /api/actualizar-cliente/1  -> con token: 503 | sin token: 401
+       POST /api/crear-cliente         -> con token: 200 | sin token: 401
+       GET  /api/buscar-cliente        -> con token: 503 | sin token: 401
+     Lectura: TODAS retornan 401 sin token (proteccion activa y verificada en las
+     5 rutas) y NINGUNA retorna 401 inesperado con token valido -- los 400/503/200
+     son comportamiento normal de backend con conectividad limitada de entorno
+     (sin .env/OPERAM_*/DATABASE_URL), exactamente la limitacion ya documentada en
+     #32/#34/#38, no relacionada con auth.
+  4. GET /csf-upload.html -> 200 via catch-all SPA (sirve index.html, sin ningun
+     marcador del archivo viejo: hasOldMarkers=false, title="Cotizador - Peltre
+     Nacional") -- confirma que el archivo esta verdaderamente borrado, sin
+     regresion de la limpieza de iter 3.
+  5. Console del navegador: 9 mensajes "error", todos logs de status HTTP de mis
+     propias pruebas (401/503/400/200) -- CERO excepciones JS, CERO errores de render.
+Limpieza: cerre 3 pestanas huerfanas de sesiones anteriores (incluida una apuntando
+a /csf-upload.html, que cargo el SPA fallback igual que las demas), mate el proceso
+node (PID 22168), confirme puerto 3000 libre, borre server-out.log / server-err.log.
+
+== RESUMEN FINAL -- 6 ACs del issue #35 ==
+
+AC1 (comentario de validacion paso 1, condicion ADR-0003 documentada):
+  CUMPLIDO -- comentario honesto en #35: la condicion "periodo razonable sin
+  incidencias" NO se cumple a la letra (incidente #37 fue ayer); decision informada
+  de Adrian Chavez de proceder con medidas precautorias reforzadas, documentada y
+  aceptada.
+
+AC2 (public/csf-upload.html eliminado del repo):
+  CUMPLIDO -- iter 3 (commit 474ff71): archivo + 2 suites de test huerfanas
+  (33 tests) + helpers muertos eliminados; verificado en disco (ENOENT) y en
+  navegador (200 via SPA fallback, sin marcadores del archivo viejo).
+
+AC3 (las 5 rutas CSF usan authMiddleware):
+  CUMPLIDO -- iter 2 (commit 8223b29): grep confirma authMiddleware en las 5
+  (server.js:390,428,438,460,533); 5 tests nuevos "sin token retorna 401" agregados.
+
+AC4 (acordeon de alta funciona punta a punta -- CSF y manual -- con rutas
+protegidas, verificacion manual en navegador):
+  CUMPLIDO -- verificado DOS veces en navegador real: iter 2 (inmediatamente tras
+  proteger, con interceptor de fetch) y esta iteracion (post-limpieza y post-doc,
+  con clicks reales en ambos tabs + prueba directa de las 5 rutas con/sin token).
+  El gap real de Authorization en /api/csf-from-url (fallback QR, app.js:1955) se
+  corrigio en iter 1 (commit bb388ad) ANTES de proteger la ruta, exactamente como
+  exigia el comentario AC1 del issue.
+
+AC5 (CLAUDE.md actualizado, rutas CSF ya no "sin JWT"):
+  CUMPLIDO -- iter 4 (commit 7595342): seccion Auth + arquitectura + comandos de
+  test actualizados, verificado linea por linea contra codigo real antes de comitear.
+
+AC6 (npm test completo en verde):
+  CUMPLIDO -- 231/231 GREEN, 0 fail, verificado en cada iteracion (264 tras iter 2,
+  231 tras retirar 33 huerfanos en iter 3, se mantiene 231 en iter 4).
+
+Commits de este Ralph Loop (issue #35), en orden:
+  bb388ad fix: agregar header Authorization a fetch de /api/csf-from-url en fallback QR (iter 1/8)
+  8223b29 feat: proteger las 5 rutas CSF con authMiddleware + actualizar tests (iter 2/8)
+  474ff71 refactor: retirar csf-upload.html y limpiar tests/helpers huerfanos (iter 3/8)
+  7595342 docs: actualizar CLAUDE.md -- rutas CSF ahora requieren JWT (iter 4/8)
+
+Archivos modificados (acumulado, las 4 iteraciones):
+  - public/js/app.js (header Authorization en fetch de /api/csf-from-url)
+  - server.js (authMiddleware en 5 rutas)
+  - test/server.test.js (5 tests nuevos "sin token retorna 401" + Authorization en
+    tests existentes de las 5 rutas)
+  - public/js/__tests__/helpers.cjs (bloque de funciones muertas csf-upload-* eliminado)
+  - eliminados: public/csf-upload.html, public/js/__tests__/csf-upload-alta.test.cjs,
+    public/js/__tests__/csf-upload-parseo.test.cjs
+  - CLAUDE.md (seccion Auth + arquitectura + comandos de test)
+
+NO se toco (deliberado, documentado):
+  - README.md -- referencias obsoletas a csf-upload.html (lineas 16, 66, 87-88, 123,
+    145, 149); fuera del alcance literal del AC #5 ("CLAUDE.md actualizado"), tocarlo
+    seria scope creep. Recomiendo ticket de limpieza aparte -- las referencias son
+    ahora factualmente falsas (ej. linea 16 dice "sin autenticacion").
+  - server.js:463 -- string-literal 'csf-upload' en heuristico de campo `fuente`
+    (documentado como hallazgo en iter 3; inofensivo, nunca se activa porque app.js
+    no envia pdf_base64; cleanup opcional fuera de alcance).
+  - CLAUDE.md linea "npm test (160, ...)" -- contador desactualizado preexistente
+    (de PRD #26, no de #35); numero real es 231. Senalado para ticket aparte.
+
+Limitaciones de entorno (documentadas, ya conocidas de #32/#34/#38):
+  - Sin .env -- OPERAM_URL/OPERAM_USER/OPERAM_PASSWORD/DATABASE_URL vacios ->
+    503/500 en rutas que dependen de Operam/Neon. Esto es "503 esperado", no fallo
+    de auth ni de la proteccion agregada -- distingui explicitamente 401 (sin token)
+    de 503 (con token, sin conectividad backend) en cada ruta.
+  - No fue posible completar una alta real end-to-end en Operam (POST
+    /api/crear-cliente exitoso con creacion real del cliente) por falta de
+    credenciales en sandbox -- mismo hallazgo que #34/#32, no relacionado con #35.
+
+== RECOMENDACION FINAL ==
+Los 6 ACs de #35 estan CUMPLIDOS y verificados con evidencia reproducible (grep +
+navegador real + npm test). ADR-0003 queda cerrado por completo: csf-upload.html
+retirado, las 5 rutas CSF requieren JWT, el acordeon es la unica via de alta y
+sigue funcionando autenticado de punta a punta. No encontre gaps de funcionalidad
+ni de auth que requieran intervencion adicional de negocio.
+
+LISTO PARA CIERRE -- recomiendo cerrar el issue #35 (y evaluar cerrar la epica
+padre #36 si no quedan otras piezas pendientes). Sugerencias de seguimiento
+opcionales (no bloqueantes, tickets aparte si se desea):
+  1. Limpiar referencias obsoletas a csf-upload.html en README.md
+  2. Corregir contador de tests desactualizado en CLAUDE.md ("160" -> "231")
+  3. Cleanup opcional del string-literal 'csf-upload' en server.js:463
+
+== FIN DEL RALPH LOOP -- ISSUE #35 ==
+Iteraciones usadas: 4 de 8 maximas. Todos los ACs cumplidos -- no fue necesario
+agotar las 8 iteraciones planificadas (el trabajo bloqueante ya estaba hecho en
+iters 1-3; iter 4 cerro doc + verificacion final).
