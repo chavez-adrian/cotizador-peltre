@@ -439,83 +439,37 @@ function detectarRegimen(texto) {
 }
 
 // ─── Parser de CSF ────────────────────────────────────────────────────────────
-function parsearCSF(texto) {
-  const get = (pattern, group = 1) => {
-    const m = texto.match(pattern);
-    return m ? m[group].trim() : '';
-  };
-
-  const esMoral = /Denominaci[oó]n\/?Raz[oó]n Social/i.test(texto);
-  let nombre_s, primer_apellido, segundo_apellido;
-  if (esMoral) {
-    nombre_s         = get(/Denominaci[oó]n\/?Raz[oó]n Social\s*:\s*(.+?)(?=\s*(?:R[eé]gimen Capital|Nombre Comercial|Fecha|RFC)\s*:|\n\n|$)/is);
-    primer_apellido  = '';
-    segundo_apellido = '';
-  } else {
-    // "Nombre (s):" (PDF CSF) o "Nombre:" (portal SAT por QR)
-    nombre_s         = get(/(?:^|\s)Nombre\s*(?:\(s\))?\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\s*(?:Primer Apellido|Apellido Paterno|Apellido|RFC|Fecha|$))/i);
-    // "Primer Apellido:" (PDF) o "Apellido Paterno:" (portal SAT)
-    primer_apellido  = get(/(?:Primer Apellido|Apellido Paterno)\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\s*(?:Segundo Apellido|Apellido Materno|RFC|Fecha|$))/i);
-    // "Segundo Apellido:" (PDF) o "Apellido Materno:" (portal SAT)
-    segundo_apellido = get(/(?:Segundo Apellido|Apellido Materno)\s*:\s*([A-ZÁÉÍÓÚÑ ]+?)(?=\s*(?:RFC|CURP|Fecha|$))/i);
-  }
-  // RFC: acepta "RFC", "R.F.C.", con o sin dos puntos, con o sin espacios internos
-  let rfc = '';
-  const mRfc = texto.match(/R\.?F\.?C\.?\s*:?\s*([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3})/i);
-  if (mRfc) rfc = mRfc[1].toUpperCase();
-  // Fallback: buscar por formato directo (3-4 letras + 6 dígitos + 3 alfanum)
-  if (rfc.length < 12) {
-    const mFmt = texto.match(/\b([A-ZÁÉÍÓÚÑ&]{3,4}\d{6}[A-Z0-9]{3})\b/i);
-    if (mFmt) rfc = mFmt[1].toUpperCase();
-  }
-  console.log('[CSF] RFC extraído:', rfc || '(vacío)');
-  console.log('[CSF] texto completo:\n', texto);
-  const idcif            = get(/idCIF\s*:\s*(\d+)/i);
-  // Código postal: "Código Postal:" (PDF) o "CP:" (portal SAT)
-  const cp               = get(/(?:C[oó]digo Postal|\bCP)\s*:?\s*(\d{5})/i);
-  // Vialidad: "Nombre de Vialidad:" (PDF) o "Nombre de la Vialidad:" (portal SAT)
-  const vialidad         = get(/Nombre de (?:la )?Vialidad\s*:\s*([A-ZÁÉÍÓÚÑ0-9 ]+?)(?=\s*(?:N[uú]mero|Tipo de|Nombre|Colonia|Entre Calle|$))/i);
-  const num_ext          = get(/N[uú]mero [Ee]xterior\s*:\s*([^\n]+?)(?=\s*(?:N[uú]mero|Nombre|Colonia|CP|C[oó]digo|Entre|$))/i);
-  const num_int_raw      = get(/N[uú]mero [Ii]nterior\s*:\s*([^\n]*?)(?=\s*(?:Nombre|Colonia|CP|C[oó]digo|Municipio|Entidad|Entre|Correo|$))/i);
-  const num_int          = /^\s*CP\b/i.test(num_int_raw) ? '' : num_int_raw;
-  // Colonia: "Nombre de la Colonia:" (PDF) o "Colonia:" (portal SAT)
-  const colonia          = get(/(?:Nombre de la )?Colonia\s*:\s*([A-ZÁÉÍÓÚÑ0-9 ]+?)(?=\s*(?:Nombre|Tipo de|CP|C[oó]digo|Municipio|Entidad|Entre|$))/i);
-  // Municipio: "Nombre del Municipio o Demarcación Territorial:" (PDF) o "Municipio o delegación:" (portal SAT)
-  const municipio        = get(/(?:Nombre del )?Municipio(?:\s+o\s+(?:Demarcaci[oó]n Territorial|delegaci[oó]n))?\s*:\s*([A-ZÁÉÍÓÚÑ0-9 ]+?)(?=\s*(?:Nombre|Colonia|Entidad|Tipo|$))/i);
-  // Estado: "Nombre de la Entidad Federativa:" (PDF) o "Entidad Federativa:" (portal SAT)
-  const estado           = get(/(?:Nombre de la )?Entidad Federativa\s*:\s*([A-ZÁÉÍÓÚÑ0-9 ]+?)(?=\s*(?:Entre Calle|Y Calle|Correo|Caracter[ií]sticas|Municipio|Colonia|$))/i);
-
-  // Fecha de emisión (ej: "A 02 DE ENERO DE 2026" o "A 15 DE MARZO DE 2025")
+// El parseo de RFC/razon social/domicilio fiscal/regimen ya no vive aqui -- se centralizo
+// en el backend (lib/parsear-csf.js via POST /api/parsear-csf, issues #33/#34). Esta funcion
+// solo deriva presentacion/metadatos que el endpoint NO produce (regimen_text legible,
+// actividades economicas, fecha de emision, notas) a partir del texto crudo, y mapea el
+// resultado del endpoint al shape que poblarForm() espera.
+function csfFechaDesdeTexto(texto) {
   const MESES = {enero:'01',febrero:'02',marzo:'03',abril:'04',mayo:'05',junio:'06',
                  julio:'07',agosto:'08',septiembre:'09',octubre:'10',noviembre:'11',diciembre:'12'};
-  let csf_fecha = '';
   const mFecha = texto.match(/A\s+(\d{1,2})\s+DE\s+([A-ZÁÉÍÓÚÑ]+)\s+DE\s+(\d{4})/i);
   if (mFecha) {
     const mes = MESES[mFecha[2].toLowerCase()] || '01';
-    csf_fecha = `${mFecha[3]}-${mes}-${mFecha[1].padStart(2,'0')}`;
+    return `${mFecha[3]}-${mes}-${mFecha[1].padStart(2,'0')}`;
   }
-  // Fallback (portal SAT por QR): "Fecha del último cambio de situación: DD-MM-YYYY"
-  if (!csf_fecha) {
-    const mFecha2 = texto.match(/Fecha del [uú]ltimo cambio de situaci[oó]n\s*:?\s*(\d{2})-(\d{2})-(\d{4})/i)
-                 || texto.match(/Fecha de Inicio de operaciones\s*:?\s*(\d{2})-(\d{2})-(\d{4})/i);
-    if (mFecha2) csf_fecha = `${mFecha2[3]}-${mFecha2[2]}-${mFecha2[1]}`;
-  }
-  // Último fallback: fecha de hoy
-  if (!csf_fecha) csf_fecha = new Date().toISOString().slice(0, 10);
+  const mFecha2 = texto.match(/Fecha del [uú]ltimo cambio de situaci[oó]n\s*:?\s*(\d{2})-(\d{2})-(\d{4})/i)
+               || texto.match(/Fecha de Inicio de operaciones\s*:?\s*(\d{2})-(\d{2})-(\d{4})/i);
+  if (mFecha2) return `${mFecha2[3]}-${mFecha2[2]}-${mFecha2[1]}`;
+  return new Date().toISOString().slice(0, 10);
+}
 
-  // Actividades económicas (formato PDF CSF: "num DESC pct DD/MM/YYYY")
+function csfNotesDesdeTexto(texto, csf_fecha) {
   const actividades = [];
   const actRegex = /(\d+)\s+([A-ZÁÉÍÓÚÑ][^\n]+?)\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})/g;
   let mAct;
   while ((mAct = actRegex.exec(texto)) !== null) {
     const desc = mAct[2].trim();
     const pct  = mAct[3];
-    if (!actividades.some(a => a.includes(desc))) {
-      actividades.push(`${desc} (${pct}%)`);
-    }
+    if (!actividades.some(a => a.includes(desc))) actividades.push(`${desc} (${pct}%)`);
   }
-
-  // Regímenes con fecha de alta (formato portal SAT por QR)
+  if (actividades.length) {
+    return `Actividades económicas (CSF ${csf_fecha}):\n` + actividades.map(a => `- ${a}`).join('\n');
+  }
   const regimenesDetalle = [];
   const regRegex = /R[eé]gimen\s*:\s*(R[eé]gimen [^\n]+?)\s+Fecha de alta\s*:\s*(\d{2})-(\d{2})-(\d{4})/gi;
   let mReg;
@@ -524,44 +478,49 @@ function parsearCSF(texto) {
     const fecha  = `${mReg[4]}-${mReg[3]}-${mReg[2]}`;
     regimenesDetalle.push(`${nombre} (alta ${fecha})`);
   }
-
-  // Régimen fiscal principal (el primero que aparezca)
-  const { texto: regTexto, codigo: regCodigo } = detectarRegimen(texto);
-
-  const toTC = s => s.toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
-  const CustName = [nombre_s, primer_apellido, segundo_apellido].filter(Boolean).join(' ');
-  // Persona Moral: cust_ref = razón social en Title Case
-  // Persona Física: cust_ref = Nombre + Primer Apellido en Title Case
-  const cust_ref = esMoral ? toTC(nombre_s) : toTC(`${nombre_s} ${primer_apellido}`);
-
-  let notes = '';
-  if (actividades.length) {
-    notes = `Actividades económicas (CSF ${csf_fecha}):\n` + actividades.map(a => `- ${a}`).join('\n');
-  } else if (regimenesDetalle.length) {
-    notes = `Regímenes fiscales (portal SAT ${csf_fecha}):\n` + regimenesDetalle.map(r => `- ${r}`).join('\n');
+  if (regimenesDetalle.length) {
+    return `Regímenes fiscales (portal SAT ${csf_fecha}):\n` + regimenesDetalle.map(r => `- ${r}`).join('\n');
   }
+  return '';
+}
 
+function mapearDatosCsfDesdeEndpoint(datos, texto) {
+  const d = datos || {};
+  const csf_fecha = csfFechaDesdeTexto(texto);
+  const { texto: regTexto } = detectarRegimen(texto);
   return {
-    CustName, cust_ref,
-    nombre_s, primer_apellido, segundo_apellido,
-    tax_id:   rfc,
-    idcif,
-    street:        vialidad,
-    street_number: num_ext,
-    suite_number:  num_int,
-    district:      colonia,
-    postal_code:   cp,
-    city:          municipio,
-    state:         estado,
+    CustName: d.razonSocial || '',
+    cust_ref: d.nombreCorto || '',
+    tax_id:   d.rfc || '',
+    idcif:    d.idcif || '',
+    street:        d.calle || '',
+    street_number: d.numExt || '',
+    suite_number:  d.numInt || '',
+    district:      d.colonia || '',
+    postal_code:   d.cp || '',
+    city:          d.municipio || '',
+    state:         d.estado || '',
     country:       'México',
-    cfdi_regimen_fiscal: regCodigo,
+    cfdi_regimen_fiscal: d.regimenFiscal || '',
     regimen_text:  regTexto,
-    actividades,
     csf_fecha,
-    notes,
+    notes: csfNotesDesdeTexto(texto, csf_fecha),
     phone: '',
     email: '',
   };
+}
+
+async function parsearCSF(texto) {
+  const r = await fetch(`${API_BASE}/api/parsear-csf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ texto }),
+  });
+  const json = await r.json();
+  if (!json || !json.ok || !json.datos) {
+    throw new Error((json && json.error) || 'No se pudo parsear la CSF');
+  }
+  return mapearDatosCsfDesdeEndpoint(json.datos, texto);
 }
 
 // ─── Leer PDF ─────────────────────────────────────────────────────────────────
@@ -926,7 +885,7 @@ async function procesarPDF(file) {
   uploadZone.style.display = 'none';
   try {
     const texto = await leerPDF(file);
-    const data  = parsearCSF(texto);
+    const data  = await parsearCSF(texto);
     poblarForm(data);
     document.getElementById('formSection').classList.remove('hidden');
     setProgress(null);

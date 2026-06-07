@@ -192,6 +192,111 @@ function buildCsfDatosDesdeRespuesta(json) {
   return { error: 'Respuesta invalida del servidor al parsear la CSF' };
 }
 
+// ─── csf-upload.html: mapeo del endpoint centralizado al shape esperado por poblarForm ──
+// Mapa de regimenes -> codigo (para el label legible regimen_text; el endpoint solo da el codigo)
+const CSF_UPLOAD_REGIMENES = {
+  'General de Ley Personas Morales':                                   '601',
+  'Personas Morales con Fines no Lucrativos':                          '603',
+  'Sueldos y Salarios e Ingresos Asimilados a Salarios':               '605',
+  'Arrendamiento':                                                      '606',
+  'Enajenación o Adquisición de Bienes':                               '607',
+  'Demás ingresos':                                                     '608',
+  'Residentes en el Extranjero sin Establecimiento Permanente':         '610',
+  'Ingresos por Dividendos':                                            '611',
+  'Personas Físicas con Actividades Empresariales y Profesionales':     '612',
+  'Ingresos por intereses':                                             '614',
+  'Sin obligaciones fiscales':                                          '616',
+  'Incorporación Fiscal':                                               '621',
+  'Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras':           '622',
+  'Plataformas Tecnológicas':                                           '625',
+  'Régimen Simplificado de Confianza':                                  '626',
+};
+const CSF_UPLOAD_PRIORIDAD = ['601','603','612','621','626','606','622','607','608','605','614','611','610','616','625'];
+
+function csfUploadDetectarRegimenTexto(texto, codigoEndpoint) {
+  const encontrados = [];
+  for (const [clave, codigo] of Object.entries(CSF_UPLOAD_REGIMENES)) {
+    if (texto.includes(clave)) encontrados.push({ texto: clave, codigo });
+  }
+  if (encontrados.length === 0) return '';
+  encontrados.sort((a, b) => CSF_UPLOAD_PRIORIDAD.indexOf(a.codigo) - CSF_UPLOAD_PRIORIDAD.indexOf(b.codigo));
+  // Preferir el que coincide con el codigo que ya retorno el endpoint (fuente de verdad)
+  const match = encontrados.find(e => e.codigo === codigoEndpoint);
+  return (match || encontrados[0]).texto;
+}
+
+const CSF_UPLOAD_MESES = { enero:'01',febrero:'02',marzo:'03',abril:'04',mayo:'05',junio:'06',
+  julio:'07',agosto:'08',septiembre:'09',octubre:'10',noviembre:'11',diciembre:'12' };
+
+function csfUploadExtraerFecha(texto) {
+  const mFecha = texto.match(/A\s+(\d{1,2})\s+DE\s+([A-ZÁÉÍÓÚÑ]+)\s+DE\s+(\d{4})/i);
+  if (mFecha) {
+    const mes = CSF_UPLOAD_MESES[mFecha[2].toLowerCase()] || '01';
+    return `${mFecha[3]}-${mes}-${mFecha[1].padStart(2, '0')}`;
+  }
+  const mFecha2 = texto.match(/Fecha del [uú]ltimo cambio de situaci[oó]n\s*:?\s*(\d{2})-(\d{2})-(\d{4})/i)
+               || texto.match(/Fecha de Inicio de operaciones\s*:?\s*(\d{2})-(\d{2})-(\d{4})/i);
+  if (mFecha2) return `${mFecha2[3]}-${mFecha2[2]}-${mFecha2[1]}`;
+  return new Date().toISOString().slice(0, 10);
+}
+
+function csfUploadExtraerNotes(texto) {
+  const actividades = [];
+  const actRegex = /(\d+)\s+([A-ZÁÉÍÓÚÑ][^\n]+?)\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})/g;
+  let mAct;
+  while ((mAct = actRegex.exec(texto)) !== null) {
+    const desc = mAct[2].trim();
+    const pct = mAct[3];
+    if (!actividades.some(a => a.includes(desc))) actividades.push(`${desc} (${pct}%)`);
+  }
+  if (actividades.length) {
+    const fecha = csfUploadExtraerFecha(texto);
+    return `Actividades económicas (CSF ${fecha}):\n` + actividades.map(a => `- ${a}`).join('\n');
+  }
+  const regimenesDetalle = [];
+  const regRegex = /R[eé]gimen\s*:\s*(R[eé]gimen [^\n]+?)\s+Fecha de alta\s*:\s*(\d{2})-(\d{2})-(\d{4})/gi;
+  let mReg;
+  while ((mReg = regRegex.exec(texto)) !== null) {
+    const nombre = mReg[1].trim().replace(/\s+/g, ' ');
+    const fecha = `${mReg[4]}-${mReg[3]}-${mReg[2]}`;
+    regimenesDetalle.push(`${nombre} (alta ${fecha})`);
+  }
+  if (regimenesDetalle.length) {
+    const fecha = csfUploadExtraerFecha(texto);
+    return `Regímenes fiscales (portal SAT ${fecha}):\n` + regimenesDetalle.map(r => `- ${r}`).join('\n');
+  }
+  return '';
+}
+
+// Mapea { rfc, razonSocial, nombreCorto, calle, numExt, numInt, colonia, municipio, estado,
+// cp, idcif, regimenFiscal, pais } (datos del endpoint /api/parsear-csf) + texto crudo
+// (para derivados de presentacion que el endpoint no produce: regimen_text/notes/csf_fecha)
+// al shape que poblarForm() de csf-upload.html espera.
+function buildCsfUploadDatosDesdeEndpoint(datos, texto) {
+  const d = datos || {};
+  const txt = texto || '';
+  return {
+    CustName: d.razonSocial || '',
+    cust_ref: d.nombreCorto || '',
+    tax_id: d.rfc || '',
+    idcif: d.idcif || '',
+    street: d.calle || '',
+    street_number: d.numExt || '',
+    suite_number: d.numInt || '',
+    district: d.colonia || '',
+    postal_code: d.cp || '',
+    city: d.municipio || '',
+    state: d.estado || '',
+    country: 'México',
+    cfdi_regimen_fiscal: d.regimenFiscal || '',
+    regimen_text: csfUploadDetectarRegimenTexto(txt, d.regimenFiscal || ''),
+    csf_fecha: csfUploadExtraerFecha(txt),
+    notes: csfUploadExtraerNotes(txt),
+    phone: '',
+    email: '',
+  };
+}
+
 function altaCheckpointState(estado, n, done) {
   return { ...estado, checkpoints: { ...estado.checkpoints, [n]: done } };
 }
@@ -434,4 +539,4 @@ function buildDedupCandidatosHtml(candidatos) {
     '</div>';
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, buildCsfUploadDatosDesdeEndpoint, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };

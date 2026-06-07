@@ -717,3 +717,68 @@ NOTA DE RIESGO para iter 2 (csf-upload.html) -- analisis ya hecho, NO es blocker
   exclusiva de esta herramienta (no esta duplicada en ningun otro lado) se queda como funciones
   pequenas y nombradas, no como parte de un parser monolitico.
 Siguiente: ITER 2 -- ejecutar el plan de arriba en csf-upload.html (item 4 del issue).
+
+--- ITER 2 (completada) ---
+Hecho: csf-upload.html migrado al endpoint centralizado -- AC4 de #34 (item 4 del issue)
+  - csf-upload.html: parsearCSF local (~123 lineas, regex de SAT duplicados, fn linea ~442)
+    ELIMINADA -- reemplazada por nueva parsearCSF(texto) async que hace
+    fetch(`${API_BASE}/api/parsear-csf`, {texto}) y mapea la respuesta -- mismo nombre de
+    funcion (parsearCSF) para minimizar el diff del call site, ahora async
+  - call site procesarPDF(): `const data = parsearCSF(texto)` -> `await parsearCSF(texto)`
+    (unico cambio en el resto del flujo -- QR/OCR/Tesseract intactos, como pide el AC)
+  - NUEVA mapearDatosCsfDesdeEndpoint(datos, texto): mapea datos del endpoint
+    {rfc,razonSocial,nombreCorto,calle,numExt,numInt,colonia,municipio,estado,cp,idcif,
+    regimenFiscal} -> shape de poblarForm {tax_id,CustName,cust_ref,street,street_number,
+    suite_number,district,postal_code,city,state,cfdi_regimen_fiscal,country:'México'}
+  - MANTENIDOS sin cambio (no son "parseo SAT", son derivados/presentacion exclusivos de
+    esta herramienta que el endpoint centralizado NO produce ni debe producir):
+    REGIMENES/PRIORIDAD/detectarRegimen (regimen_text legible), y nuevas funciones
+    csfFechaDesdeTexto/csfNotesDesdeTexto (extraidas del cuerpo de la vieja parsearCSF,
+    operan sobre `texto` crudo -- csf_fecha, notes con actividades/regimenesDetalle)
+  - helpers.cjs: nueva buildCsfUploadDatosDesdeEndpoint(datos, texto) -- mirror testeable
+    de mapearDatosCsfDesdeEndpoint + sus derivados (sigue patron del proyecto: mirror puro
+    en helpers.cjs para CJS, igual que parsearCsfDesdeTexto mirroreaba altaCsfParsearTexto
+    -- pero ESTE mirror documenta una funcion VIVA, no una a punto de eliminarse)
+  - nuevo archivo csf-upload-parseo.test.cjs: tests U1-U6 (mapeo campos centrales,
+    country hardcodeado, campos vacios->strings vacios, csf_fecha derivada, regimen_text
+    derivado, notes con actividades) -- TDD RED->GREEN, RED confirmado primero
+Decisiones clave:
+  - Resolvi la "nota de riesgo" documentada en iter1 EXACTAMENTE como se planeo: separar
+    "parseo core SAT" (ahora 100% del endpoint) de "derivados/presentacion exclusivos de
+    csf-upload.html" (regimen_text/csf_fecha/notes -- se quedan locales, el endpoint no
+    los produce y NO se debe extender lib/parsear-csf.js para producirlos, restriccion dura)
+  - cust_ref ahora viene de datos.nombreCorto (algoritmo del endpoint: primeras 3 palabras
+    de razonSocial) en vez del Title-Case local (toTC(nombre_s)+apellidos) -- ES EL PUNTO
+    de centralizar: una sola fuente de verdad para "como se deriva el nombre corto", aunque
+    el algoritmo cambie ligeramente. cust_ref sigue siendo editable por el operador en el
+    formulario (input#f_cust_ref) -- no es un valor final inmutable.
+  - nombre_s/primer_apellido/segundo_apellido eliminados del shape de salida: grep confirmo
+    que NO se usaban en ningun lado mas que para construir CustName/cust_ref (que ahora
+    vienen directo de datos.razonSocial/datos.nombreCorto del endpoint)
+  - actividades (array) eliminado del shape de salida: grep confirmo que solo se usaba
+    para construir `notes` (ahora compuesto directamente en csfNotesDesdeTexto)
+  - Mismo nombre de funcion (parsearCSF) en vez de renombrar: diff minimo, call site no
+    cambia de nombre, solo gana `await` -- coherente con "solo cambia de donde sale la
+    estructura final de datos" del issue
+Archivos modificados: public/csf-upload.html, public/js/__tests__/helpers.cjs,
+  public/js/__tests__/csf-upload-parseo.test.cjs (nuevo)
+Suite completa: 303/303 GREEN (npm test) -- 297 anterior + 6 (U1-U6) = 303
+Estado de ACs de #34 a esta altura:
+  [x] altaCsfParsearTexto eliminada de app.js; altaCsfProcesarArchivo consume endpoint (iter1)
+  [x] Panel CSF del acordeon tiene inputs calle/numExt/numInt/colonia, poblados y editables (iter1)
+  [ ] Verificado con alta de prueba real en navegador -- PENDIENTE (requiere navegador + CSF real)
+  [x] parsearCSF local de csf-upload.html eliminada (~123 lineas); usa endpoint, QR/OCR intactos (iter2)
+  [x] parsearCsfDesdeTexto eliminada de helpers.cjs; tests actualizados para mockear fetch (iter1,
+      via buildCsfDatosDesdeRespuesta) -- PERO falta verificar si "mockear fetch" literal en
+      altaCsfProcesarArchivo aplica o si el patron de funcion-pura-mirror (sin DOM, como el resto
+      del proyecto) satisface el espiritu del AC -- revisar en iter siguiente si hace falta mas
+  [ ] npm test completo en verde -- SI, 303/303
+  [ ] Verificacion manual en navegador documentada -- PENDIENTE
+Siguiente: ITER 3 -- (a) revisar si el AC "tests que mockean fetch" requiere algo mas alla de
+  buildCsfDatosDesdeRespuesta/buildCsfUploadDatosDesdeEndpoint (quizas un test que efectivamente
+  mockee globalThis.fetch y ejercite parsearCSF/altaCsfParsearEnServidor end-to-end -- evaluar
+  si el proyecto tiene precedente de eso en frontend, dado que NO usa jsdom); (b) intentar
+  verificacion manual en navegador (npm run dev + abrir cotizador + subir CSF real); (c) si
+  no se puede abrir navegador, documentar la verificacion mas fuerte posible (inspeccion
+  manual de la cadena de datos: endpoint -> altaCsfPonerDatos -> altaCsfLeerFormulario ->
+  altaState.datos -> altaDarDeAlta payload, con valores reales de un CSF de ejemplo).
