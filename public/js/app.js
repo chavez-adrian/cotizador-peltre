@@ -2657,7 +2657,7 @@ function altaManualLeerFormulario() {
   };
 }
 
-function altaManualConfirmar() {
+async function altaManualConfirmar() {
   const errDiv = document.getElementById('manual-campos-error');
   const rfcErr = altaManualValidarRfc();
   if (rfcErr) {
