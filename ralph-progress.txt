@@ -1252,3 +1252,60 @@ epica #36 (#33 cerrado, #34 cerrado, #35 esperando a que #32 cierre).
 ISSUE #32 BLOQUEADO -- AUDITORIA DE PARIDAD ENCONTRO GAP REAL, REQUIERE DECISION HUMANA
 NO cerrar issue #32 en GitHub. NO continuar las iteraciones 2-7 (instruccion del orquestador:
 "si encuentras un gap real... termina tu loop ahi reportando el blocker claramente").
+
+=== ISSUE #38 -- detectar+actualizar datos fiscales de cliente existente al subir CSF (acordeon) ===
+Branch: worktree-agent-a3fb1e39f79c83110. Arranca de baseline 310/310 GREEN confirmado.
+Lei: issue #38 completo, auditoria #32 (comentario referenciado), issue #36 (PRD/epica),
+ralph-progress.txt entradas sobre #34 y auditoria #32 (arriba). Mapa del gap confirmado:
+acordeon detecta tipo:'exacto' (RFC duplicado) -> "Usar este cliente" -> NUNCA compara
+datos fiscales CSF vs Operam ni ofrece actualizarlos. Backend PATCH /api/operam/clientes/:id
+(lib/operam-client.js::actualizarCliente) YA EXISTE y probado -- solo falta consumirlo.
+
+--- ITER 1 (completada) -- calcularDiffFiscal + buildDiffFiscalHtml (TDD RED->GREEN) ---
+Hecho: cree public/js/__tests__/alta-dedup-fiscal.test.cjs con 11 tests (G1-G11) cubriendo:
+  deteccion de diff (sin diff, CustName, domicilio fiscal completo, regimen, RFC+idcif,
+  trim de espacios, valores null/undefined del cliente Operam) + render HTML (antes->despues,
+  labels legibles, botones confirmar/descartar, diff vacio -> string vacio sin friccion).
+RED confirmado (calcularDiffFiscal/buildDiffFiscalHtml is not a function), luego implemente
+ambas en public/js/app.js (exportadas, antes de la seccion "Deduplicacion issue #31") +
+mirror en helpers.cjs (patron del repo). G9 fallo en primera pasada (label fallback a
+fieldId crudo cuando el diff de prueba no trae label) -> arregle agregando tabla
+DIFF_FISCAL_LABELS independiente que buildDiffFiscalHtml consulta como fallback. 11/11 GREEN.
+
+DECISION DE DISENO CLAVE (documentada inline en el codigo + aqui, por que importa):
+  El diff usa NOMBRES DE CAMPO DE OPERAM (CustName/tax_id/street/street_number/suite_number/
+  district/postal_code/city/state/cfdi_regimen_fiscal/idcif) como LLAVE -- NO ids de DOM
+  (cl-razon-social/cl-calle/...) como hacia el calcularDiff viejo (app.js:1235, sigue ahi).
+  Razon: actualizarCliente(id, diff) [lib/operam-client.js:111] hace `body[fieldId] = nuevo`
+  y manda ese body DIRECTO al PUT /api/v3/sales/customers/:id de Operam. Si la llave fuera
+  un id de DOM como 'cl-municipio', el PATCH mandaria {cl-municipio: 'ZAPOPAN', ...} a
+  Operam -- un campo que Operam NO reconoce, silenciosamente ignorado. Confirme esto
+  revisando test/operam-client.test.js linea 50-58 (el test viejo manda diff con llaves
+  cl-municipio/cl-cp-fiscal y solo verifica que esos MISMOS strings literales lleguen al
+  PUT body -- no verifica que Operam los vaya a aplicar de verdad). Es exactamente la
+  "deuda tecnica" que el issue #38 advirtio NO copiar ciegamente del codigo viejo: el
+  flujo viejo probablemente NUNCA actualizo de verdad los datos fiscales en Operam via
+  ese PATCH (los nombres de campo no calzan con el schema de customers), aunque el test
+  pasaba porque solo verifica passthrough, no semantica de Operam. Mapeo CSF->Operam
+  construido espejando buildAltaDarDeAltaPayload [app.js:2958-2970] que SI usa los
+  nombres de campo correctos de Operam para crear clientes nuevos.
+
+Mapeo DIFF_FISCAL_CAMPOS (CSF altaState.datos -> campo Operam -> label legible):
+  razonSocial->CustName, rfc->tax_id, idcif->idcif, calle->street, numExt->street_number,
+  numInt->suite_number, colonia->district, cp->postal_code, municipio->city, estado->state,
+  regimenFiscal->cfdi_regimen_fiscal
+
+Archivos modificados: public/js/__tests__/alta-dedup-fiscal.test.cjs (nuevo, 11 tests),
+  public/js/__tests__/helpers.cjs (mirror calcularDiffFiscal+buildDiffFiscalHtml+constantes),
+  public/js/app.js (implementacion real, exportada, lineas ~2706+, antes de "Deduplicacion #31")
+node --check public/js/app.js -> Syntax OK. Suite alta-dedup-fiscal: 11/11 GREEN.
+Commit: 05b12d5. Push: OK (rama worktree-agent-a3fb1e39f79c83110, upstream creado).
+
+PENDIENTE proxima iteracion: wiring -- llamar calcularDiffFiscal desde altaDedupCorrer
+cuando tipo:'exacto', mostrar buildDiffFiscalHtml en alta-dedup-resultado (paso NO bloqueante,
+boton "Usar este cliente" sigue visible/funcional en paralelo -- ver razonamiento AC3/AC4),
+implementar altaDiffFiscalConfirmar (PATCH /api/operam/clientes/:id) y altaDiffFiscalDescartar
+(oculta panel, no hace nada mas). Necesito altaState.clienteExistente.snapshot o similar para
+guardar el cliente crudo de Operam (resultado.cliente de altaDedupCorrer) y poder re-confirmar
+despues. CSS: agregar .diff-fiscal-panel/.diff-fiscal-fila/.diff-fiscal-anterior/.diff-fiscal-nuevo/
+.diff-fiscal-acciones a style.css (clases ya usadas en el HTML generado, hoy sin estilos).
