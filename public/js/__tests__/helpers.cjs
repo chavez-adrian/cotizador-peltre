@@ -576,4 +576,66 @@ function buildDedupCandidatosHtml(candidatos) {
     '</div>';
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, buildCsfUploadDatosDesdeEndpoint, buildCsfUploadDatosParseo, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };
+// === Diff fiscal sobre cliente existente al subir CSF (issue #38) ===
+//
+// Mapea los datos de la CSF (formato altaState.datos: razonSocial/rfc/calle/numExt/...)
+// contra los campos crudos del cliente en Operam (CustName/tax_id/street/...) y calcula
+// un diff cuyas LLAVES son nombres de campo de OPERAM -- a proposito distinto del
+// calcularDiff viejo (que usaba ids de DOM como cl-razon-social). actualizarCliente(id, diff)
+// hace body[fieldId] = nuevo y lo manda directo al PUT /customers/:id de Operam: si la
+// llave fuera un id de DOM, el PATCH mandaria campos que Operam no reconoce (silenciosamente
+// ignorados). Usar nombres de campo Operam es lo correcto para que el PATCH actualice algo real.
+const DIFF_FISCAL_CAMPOS = [
+  { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social' },
+  { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
+  { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
+  { operam: 'street',              csf: 'calle',         label: 'Calle' },
+  { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
+  { operam: 'suite_number',        csf: 'numInt',        label: 'Numero Interior' },
+  { operam: 'district',            csf: 'colonia',       label: 'Colonia' },
+  { operam: 'postal_code',         csf: 'cp',            label: 'Codigo Postal' },
+  { operam: 'city',                csf: 'municipio',     label: 'Municipio' },
+  { operam: 'state',               csf: 'estado',        label: 'Estado' },
+  { operam: 'cfdi_regimen_fiscal', csf: 'regimenFiscal', label: 'Regimen Fiscal' },
+];
+
+function calcularDiffFiscal(clienteOperam, csfDatos) {
+  const diff = {};
+  for (const { operam, csf, label } of DIFF_FISCAL_CAMPOS) {
+    const anterior = String(clienteOperam[operam] == null ? '' : clienteOperam[operam]).trim();
+    const nuevo = String(csfDatos[csf] == null ? '' : csfDatos[csf]).trim();
+    if (anterior !== nuevo) {
+      diff[operam] = { anterior, nuevo, label };
+    }
+  }
+  return diff;
+}
+
+const DIFF_FISCAL_LABELS = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, label }) => {
+  acc[operam] = label;
+  return acc;
+}, {});
+
+function buildDiffFiscalHtml(diff) {
+  const campos = Object.keys(diff);
+  if (campos.length === 0) return '';
+  const filas = campos.map(fieldId => {
+    const { anterior, nuevo, label } = diff[fieldId];
+    return '<div class="diff-fiscal-fila">' +
+      '<strong>' + (label || DIFF_FISCAL_LABELS[fieldId] || fieldId) + ':</strong> ' +
+      '<span class="diff-fiscal-anterior">' + (anterior || '(vacio)') + '</span>' +
+      ' &rarr; ' +
+      '<span class="diff-fiscal-nuevo">' + (nuevo || '(vacio)') + '</span>' +
+      '</div>';
+  }).join('');
+  return '<div class="diff-fiscal-panel">' +
+    '<p class="dedup-alerta-naranja">Los datos fiscales de la CSF no coinciden con los guardados en Operam</p>' +
+    filas +
+    '<div class="diff-fiscal-acciones">' +
+    '<button type="button" class="btn btn-secondary" onclick="altaDiffFiscalConfirmar()">Confirmar y actualizar en Operam</button> ' +
+    '<button type="button" class="btn btn-link" onclick="altaDiffFiscalDescartar()">Descartar y continuar sin actualizar</button>' +
+    '</div>' +
+    '</div>';
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, buildCsfUploadDatosDesdeEndpoint, buildCsfUploadDatosParseo, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId, calcularDiffFiscal, buildDiffFiscalHtml };
