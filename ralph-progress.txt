@@ -1376,3 +1376,45 @@ disponible) -- abrir acordeon, simular CSF de cliente existente con cambios fisc
 confirmar que el panel aparece, probar Confirmar (PATCH real o mock) y Descartar.
 Revisar si altaDiffFiscalState debe limpiarse en nuevaCotizacion()/cancelarCSF-equivalente
 del acordeon (evitar estado fantasma entre altas sucesivas).
+
+--- ITER 3 (completada) -- buildActualizarFiscalRequest: contrato del PATCH (TDD RED->GREEN, AC2) ---
+Hecho: agregue G15-G16 (RED) para buildActualizarFiscalRequest(clienteId, diff, authHeader)
+-> { url:'/api/operam/clientes/:id', method:'PATCH', body:{diff}, headers:{Authorization} }.
+Implemente en app.js (exportada) + mirror helpers.cjs. Es el MISMO PATRON que
+buildDedupRequest/buildDedupDomiciliosRequest: funcion pura que documenta/testea la FORMA
+de la peticion sin DOM/fetch -- la implementacion real (altaDiffFiscalConfirmar) sigue
+usando api() con URL inline, igual que altaDedupCorrer hace con /api/buscar-cliente-duplicado
+pese a que existe buildDedupRequest (confirme con grep que buildDedupRequest NO se usa en
+produccion, solo en tests -- consistencia de patron, no descuido).
+Nota: probe primero pasar authHeader explicito a traves de buildActualizarFiscalRequest
+hacia la llamada real, pero es redundante -- api() ya agrega Authorization desde state.token
+automaticamente (linea 32). Revertido a la forma simple `api(url, {method, body})`.
+
+16/16 GREEN en alta-dedup-fiscal.test.cjs. Suite completa: 326/326 GREEN (310+16 nuevos).
+Commit: "test: documentar forma de PATCH...". Push: OK.
+
+== ESTADO DE LOS 6 ACs DE #38 TRAS ITER 1-3 ==
+[~] AC1 (vendedor ve diff claro) -- IMPLEMENTADO en codigo (buildDiffFiscalHtml + wiring
+    en altaDedupCorrer), falta verificacion manual en navegador (iter futura)
+[~] AC2 (confirmar -> PATCH correcto -> Operam actualiza) -- IMPLEMENTADO
+    (altaDiffFiscalConfirmar -> api PATCH /api/operam/clientes/:id {diff}, diff con
+    llaves de campo Operam reales), falta verificacion manual end-to-end
+[x] AC3 (descartar -> continuar con "Usar este cliente" sin forzar) -- CUMPLIDO:
+    altaDiffFiscalDescartar no hace ninguna llamada, banner+boton "Usar este cliente"
+    nunca se ocultan ni deshabilitan (G13 lo afirma)
+[x] AC4 (sin diferencias -> sin pasos extra) -- CUMPLIDO: buildDedupExactoConDiffHtml
+    omite el panel cuando calcularDiffFiscal retorna {} (G12, G11)
+[~] AC5 (tests TDD: deteccion, render, confirmar->PATCH, descartar->continuar, sin diff)
+    -- 16 tests cubren deteccion(G1-G7)+render(G8-G11)+composicion no bloqueante(G12-G14)
+    +contrato PATCH(G15-G16). Confirmar->PATCH y descartar->continuar estan cubiertos a
+    nivel de CONTRATO (forma de la peticion, comportamiento de no-llamada) pero NO hay
+    test que ejerza altaDiffFiscalConfirmar/Descartar end-to-end con DOM+fetch mockeado
+    (el repo no tiene patron de tests DOM para app.js -- confirmar si vale la pena agregar
+    uno con jsdom o si el patron actual de "funciones puras + contrato" es suficiente)
+[ ] AC6 (verificacion manual en navegador) -- PENDIENTE, proxima iteracion
+
+PENDIENTE: decidir si agrego test DOM-level (requeriria jsdom, no es patron del repo) o
+si documento que la cobertura es a nivel de funciones puras + contrato (consistente con
+como se prueba el resto del acordeon -- alta-dedup.test.cjs tampoco ejerce
+altaDedupUsarCliente/altaDedupCorrer end-to-end, solo sus builders de HTML/requests).
+Luego: verificacion manual en navegador (chrome-devtools si disponible en este worktree).
