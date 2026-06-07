@@ -851,3 +851,47 @@ Estado de ACs de #34 (TODOS cumplidos):
 Siguiente: ITER 4 -- revisar si falta algo (ej. CLAUDE.md/README si documentan el flujo CSF del
   acordeon o csf-upload.html con detalles que cambiaron). Si todo esta cubierto: polish/doble-
   verificacion + posible cierre en iter 8 (o antes si todo esta confirmado).
+
+--- ITER 4 (completada) -- AUDITORIA LINEA POR LINEA, sin cambios de codigo ---
+Hecho: re-lectura de issue #34 punto por punto contra lo entregado en iter1-3, busqueda de gaps
+Verificaciones realizadas (todas OK, cero hallazgos que requieran cambio):
+  - grep "altaCsfParsearTexto|parsearCsfDesdeTexto|parsearCSFTexto|altaCsfParsearEnServidor|
+    mapearDatosCsfDesdeEndpoint" en README.md/CLAUDE.md/PROCESO_COMERCIAL_AS_IS.md/
+    SOP_crear_cliente_operam.md/MAPEO_CAMPOS_CLIENTE.md -> CERO matches, ningun doc
+    menciona las funciones eliminadas ni necesita actualizarse
+  - README.md tabla "Rutas CSF" (linea 132) ya documenta /api/parsear-csf correctamente
+    (la dejo #33) -- seccion "Alta de cliente desde CSF" (linea 87-92) es narrativa de
+    usuario ("El sistema extrae RFC, razon social y domicilio automaticamente"), correcta
+    sin importar donde vive el parseo -- no requiere cambio
+  - grep "Cliente-side parser|mirrors lib/parsear-csf|regex de SAT|copia local del parser"
+    en app.js/csf-upload.html/helpers.cjs -> CERO matches, sin comentarios obsoletos colgando
+  - grep "console.log.*CSF|console.log.*RFC" -> los unicos console.log restantes en
+    csf-upload.html son del flujo QR/OCR/lectura PDF (lineas 549-684, "[CSF] PDF cargado",
+    "[CSF] QR detectado", "[CSF-OCR]...") -- el issue pidio mantenerlos intactos, los
+    console.log de parsearCSF ('[CSF] RFC extraído', '[CSF] texto completo') SI se eliminaron
+    correctamente junto con la funcion (eran ruido de debug del parser viejo)
+  - grep "csf-calle|csf-num-ext|csf-num-int|csf-colonia" en index.html/app.js/helpers.cjs/
+    tests -> 100% consistente: 4 inputs en index.html, 4 set() en altaCsfPonerDatos, 4
+    getVal() en altaCsfLeerFormulario + buildCsfConfirmarPayload (helpers.cjs mirror), 4
+    en fixture de test C17 -- sin IDs huerfanos ni mismatches
+  - grep -o 'id="csf-[a-z-]*"' index.html | sort | uniq -d -> CERO IDs duplicados
+Archivos modificados: ralph-progress.txt (solo -- auditoria sin hallazgos, cero cambios de codigo)
+Suite completa: 303/303 GREEN (sin cambios desde iter2, re-confirmado)
+Conclusion: NO HAY GAPS PENDIENTES. Los 7 ACs de #34 estan cumplidos (ver checklist en iter3).
+Siguiente: ITER 5-8 son polish/doble-verificacion redundante o cierre anticipado. Dado que
+  TODOS los ACs estan confirmados y la suite esta verde desde iter2 sin regresiones en 2
+  corridas completas adicionales (iter3, iter4), considero declarar listo para cierre en
+  esta iteracion misma -- pero sigo el plan de 8 iteraciones del orquestador (puede haber
+  valor en mas verificacion redundante o en revisitar con ojos frescos). ITER 5: re-ejecutar
+  npm test una vez mas + revisar diff completo (iter1..HEAD) linea por linea contra los 7
+  ACs textuales del issue, documentar cualquier microscopico detalle no cubierto aun.
+
+== ACs DE #34 -- ESTADO FINAL (confirmado en iter3, re-confirmado en iter4) ==
+[x] altaCsfParsearTexto eliminada de app.js; altaCsfProcesarArchivo consume endpoint centralizado
+[x] Panel CSF del acordeon tiene inputs calle/numExt/numInt/colonia, poblados y editables
+[x] Verificado con alta de prueba: street/street_number/suite_number/district llegan con valor
+    real (no vacio) -- trace end-to-end con codigo real (navegador no disponible, documentado)
+[x] parsearCSF local de csf-upload.html eliminada (~123 lineas); endpoint centralizado, QR/OCR intactos
+[x] parsearCsfDesdeTexto eliminada de helpers.cjs; tests actualizados (mirrors puros sin DOM)
+[x] npm test completo en verde -- 303/303
+[x] Verificacion manual documentada (trace end-to-end, navegador no disponible documentado explicitamente)
