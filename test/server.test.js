@@ -356,6 +356,13 @@ test('POST /api/parsear-csf sin campo texto retorna 400', async () => {
   assert.ok(res.body.error);
 });
 
+test('POST /api/parsear-csf no requiere JWT (mismo patron que /api/csf-from-url y /api/buscar-cliente)', async () => {
+  const res = await supertest(app).post('/api/parsear-csf').send({ texto: CSF_PERSONA_FISICA_TXT });
+  assert.notStrictEqual(res.status, 401);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.ok, true);
+});
+
 test('POST /api/parsear-csf con texto solo de espacios en blanco retorna 422, no datos vacios', async () => {
   const res = await supertest(app).post('/api/parsear-csf').send({ texto: '   \n\n   ' });
   assert.strictEqual(res.status, 422);
