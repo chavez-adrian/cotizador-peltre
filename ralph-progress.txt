@@ -1077,3 +1077,178 @@ Restricciones respetadas: NO se toco lib/parsear-csf.js, su test suite, el endpo
     el ultimo gap de UX cerrado paso a paso, ver arriba)
 
 ISSUE #34 LISTO PARA CIERRE (corrida 2 -- gap de csf-upload.html cerrado)
+
+== ISSUE ACTIVO: #32 ==
+refactor: retirar flujo viejo de alta de cliente del cotizador (completar ADR-0003)
+Parent epica: #36. PRD: #36 (leido completo). Plan: 7 iteraciones, Paso 1 (auditoria) BLOQUEANTE.
+
+--- ITER 1 (completada) -- AUDITORIA DE PARIDAD: GAP REAL DETECTADO, ISSUE BLOQUEADO ---
+
+METODO: lei #36 + #32 completos, mapee linea por linea AMBOS flujos en index.html/app.js/server.js
+sin ejecutar codigo (analisis estatico de las cadenas de llamadas y endpoints consumidos).
+
+FLUJO VIEJO -- mapa completo (todo en index.html lineas 52-62, 493-539 + app.js 1132-1664):
+  UI: cliente-modos (3 botones modo-btn: buscar/csf/manual) -> setClienteModo(modo) ->
+      panel-csf (id 494) / panel-manual (id 520)
+  CSF: input file -> procesarCSF(input) [app.js:1274] -> parsearCSFTexto(texto) [1360, REGEX
+       LOCAL duplicado del parser -- al removerla, queda CERO regex de SAT duplicado fuera
+       de lib/parsear-csf.js]
+       -> busca RFC en Operam via /api/operam/clientes?q=RFC -> findRfcMatch()
+       -> SI MATCH: csfClienteExistente={id,nombre,snapshot} + boton cambia a "Actualizar en
+          Operam" -> crearClienteDesdeCSF() detecta csfClienteExistente -> calcularDiff(snapshot,
+          formValues) -> SI diff no vacio -> mostrarPanelConfirmacion(diff) [muestra
+          "Razon Social: ANTES -> AHORA", etc. via buildConfirmacionItems+CSF_FIELD_LABELS]
+          -> usuario confirma -> confirmarCambios() -> PATCH /api/operam/clientes/:id
+          {diff} [server.js:364, RUTA CON JWT, lib/operam-client.js::actualizarCliente]
+       -> SI NO MATCH: crearClienteDesdeCSF() arma payload inline (CustName/tax_id/idcif/
+          street/.../entrega) -> POST a operam-server.onrender.com/api/crear-cliente directo
+          (URL hardcodeada externa, NO la ruta /api/crear-cliente local atomica del acordeon)
+  MANUAL: panel-manual -> blur en cl-rfc -> shouldTriggerRfcSearch -> buscarRfcEnManual(rfc)
+       -> SI MATCH: csfClienteExistente=... + manual-panel-actualizar visible ->
+          actualizarDesdeManual() -> calcularDiff -> manual-panel-confirmacion ->
+          confirmarCambiosManual() -> PATCH /api/operam/clientes/:id {diff} [mismo endpoint JWT]
+
+FLUJO NUEVO (acordeon, #27-#31) -- mapa de la ruta "cliente existente":
+  altaCsfProcesarArchivo/altaManualConfirmar -> altaDedupCorrer(rfc, razonSocial)
+       -> GET /api/buscar-cliente-duplicado [server.js, usa detectarDuplicados, lib/deduplicacion.js]
+       -> tipo:'exacto' -> banner rojo "Este RFC ya existe en Operam" + boton
+          "Usar este cliente" -> altaDedupUsarCliente(clienteId) -> altaState.clienteExistente=
+          {id:clienteId} -> carga domicilios -> altaDedupMostrarDomicilios -> usuario elige
+          domicilio existente o "Crear nuevo domicilio" -> continua a seccion 2/3/4
+       -> altaDarDeAlta() [app.js:2942] -> resolvedCustomerId = clienteExistente.id ->
+          payload completo (incl. tax_id/CustName/cust_ref/idcif/street/.../entrega) ->
+          POST /api/crear-cliente [LOCAL, atomico, server.js:460, JWT via authMiddleware]
+       -> server.js:460 con customer_id YA CONOCIDO:
+            Step1 POST customer: SKIPPED (solo registra steps[]={info:'reintento'}, NO llama
+              crearCliente() -- por tanto CustName/tax_id/idcif/domicilio FISCAL del payload
+              SE IGNORAN POR COMPLETO para un cliente existente)
+            Step2 GET branch_id: resuelve branch_id del customer_id existente
+            Step3 PUT branch (actualizarBranchCliente): actualiza SOLO entrega/domicilio de
+              ENTREGA (br_name/calle/colonia/cp/ciudad/estado/telefono/email) + salesman +
+              location/ship_via/tax_group_id -- CERO campos fiscales (CustName/tax_id/idcif/
+              calle FISCAL/regimenFiscal/etc.)
+
+GAP CONFIRMADO -- linea por linea, sin ambiguedad:
+  El flujo viejo (crearClienteDesdeCSF + mostrarPanelConfirmacion + confirmarCambios,
+  y su espejo manual actualizarDesdeManual + confirmarCambiosManual) es la UNICA via
+  que permite: detectar que el RFC de una CSF recien subida YA EXISTE en Operam, calcular
+  un diff campo-por-campo entre los DATOS FISCALES de la CSF (razon social, RFC, CP fiscal,
+  domicilio fiscal: calle/numInt/colonia/municipio/estado, regimen, etc.) y lo que ya esta
+  guardado en Operam, mostrarle ese diff al vendedor para revision humana, y al confirmar,
+  EJECUTAR LA ACTUALIZACION via PATCH /api/operam/clientes/:id (-> lib/operam-client.js::
+  actualizarCliente -> Operam PUT customer real).
+
+  El flujo nuevo (acordeon, dedup ADR-0001) SOLO ofrece "Usar este cliente" que vincula
+  el customer_id existente y permite (re)configurar su DOMICILIO DE ENTREGA (branch/sucursal)
+  -- nunca toca CustName/tax_id/idcif/domicilio-fiscal/regimen del cliente. La ruta backend
+  que ejecutaria esa actualizacion fiscal (PATCH /api/operam/clientes/:id, JWT, lib/operam-
+  client.js::actualizarCliente) EXISTE y sigue viva en server.js:364 -- pero NINGUN codigo
+  del acordeon la invoca. grep "actualizarCliente|actualizarClienteDirecto|actualizar-cliente"
+  en app.js -> CERO matches.
+
+  Caso de uso real perdido si se retira el flujo viejo sin resolver esto: un vendedor sube
+  la CSF actualizada de un cliente que cambio de domicilio fiscal o de razon social (fusion,
+  cambio legal, etc.) -- el sistema detecta el RFC existente (dedup tipo:'exacto'), pero el
+  unico camino disponible es "Usar este cliente" -> avanzar -> dar de alta, lo cual NO
+  actualiza ningun dato fiscal en Operam (solo permite tocar el domicilio de ENTREGA). El
+  vendedor queda sin ninguna senal de que los datos fiscales del cliente en Operam estan
+  desactualizados respecto a la CSF que acaba de procesar, y sin forma de corregirlo desde
+  el cotizador.
+
+ALCANCE DEL GAP -- por que NO es un detalle menor:
+  - No es solo "falta un boton": es la perdida de una capacidad funcional completa
+    (deteccion de discrepancia + diff visual + actualizacion confirmada por humano de datos
+    fiscales) que el flujo viejo SI tenia, documentada explicitamente como punto critico a
+    verificar en el cuerpo del issue #32 ("Punto critico a verificar: crearClienteDesdeCSF +
+    mostrarPanelConfirmacion (viejo) detectan cliente existente, calculan un diff de cambios
+    y permiten actualizarlo via /api/actualizar-cliente. Confirmar si el acordeon nuevo cubre
+    ese caso").
+  - La ruta backend que se necesitaria (PATCH /api/operam/clientes/:id) YA EXISTE, con JWT,
+    probada (ver test/server.test.js "PATCH /api/operam/clientes/:id..."). No falta backend.
+    Falta SOLO la pieza frontend: deteccion+diff+confirmacion+invocacion, en el acordeon.
+  - Implementar esa pieza es trabajo de diseno de UX no trivial (donde en el acordeon mostrar
+    el diff? bloquea el flujo de alta o es un paso paralelo? que pasa si el vendedor decide
+    no actualizar?) -- exactamente el tipo de decision que el issue dice debe tomarse ANTES
+    de poder cerrar este issue ("Si hay un gap real de funcionalidad, este issue queda
+    bloqueado hasta cerrarlo -- puede implicar ampliar el acordeon antes de poder retirar
+    el flujo viejo").
+
+DECISION: NO invento ni implemento funcionalidad nueva para tapar este gap (instruccion
+explicita del orquestador: "eso es trabajo de otro issue/decision humana"). NO toco
+index.html/app.js/server.js en esta iteracion -- cero cambios de codigo. Termino el loop aqui.
+
+Archivos modificados en esta iteracion: ralph-progress.txt (solo, documentacion de auditoria)
+Suite: sin cambios, 310/310 GREEN (baseline confirmado al inicio de la iteracion, sin tocar codigo)
+
+== ESTADO FINAL DE LOS 7 ACs DE #32 (a falta de resolver el blocker) ==
+[x] AC1 -- Auditoria de paridad documentada: HECHA, CON GAP REAL DETECTADO (ver arriba).
+    El AC pide "documentada... sin gaps de funcionalidad sin resolver" -- el gap EXISTE y
+    NO esta resuelto, por tanto AC1 esta BLOQUEADO (no se puede marcar [x] sin resolver el gap)
+[ ] AC2 -- panel-csf/panel-manual/botones de modo removidos de index.html: NO HECHO
+    (bloqueado por AC1 -- removerlos ahora dejaria al vendedor sin forma de actualizar
+    datos fiscales de clientes existentes desde una CSF nueva)
+[ ] AC3 -- procesarCSF/parsearCSFTexto/crearClienteDesdeCSF/mostrarPanelConfirmacion
+    removidas de app.js: NO HECHO (mismo bloqueo -- son precisamente las funciones que
+    implementan la capacidad que falta en el flujo nuevo)
+[x] AC4 -- panel-buscar/"Buscar en Operam" sigue funcionando sin cambios: N/A, no se toco nada
+[x] AC5 -- acordeon de alta sigue pasando sus tests sin modificacion: N/A, no se toco nada
+    (310/310 GREEN, identico al baseline)
+[ ] AC6 -- tests huerfanos eliminados/adaptados, npm test en verde: NO HECHO (bloqueado,
+    ver lista de candidatos a huerfanos abajo -- quedan intactos hasta resolver el gap)
+[ ] AC7 -- verificacion manual en navegador alta CSF+manual sin flujo viejo: NO HECHO
+    (no aplica aun, no se removio nada)
+
+== MAPEO PRE-HECHO PARA CUANDO SE RESUELVA EL GAP (ahorra trabajo a la siguiente iteracion) ==
+
+Funciones a remover de app.js (confirmado via grep que SOLO se usan dentro del flujo viejo,
+lineas 1132-1664 + wiring linea 2274-2284, CERO usos en el acordeon ni en Buscar en Operam):
+  procesarCSF [1274], parsearCSFTexto [1360], crearClienteDesdeCSF [1393],
+  mostrarPanelConfirmacion [1494], confirmarCambios [1509], cancelarConfirmacion [1546],
+  cancelarCSF [1555], cancelarConfirmacionManual [1571], actualizarDesdeManual [1583],
+  confirmarCambiosManual [1611], buscarRfcEnManual [1638], setClienteModo [1132]
+  (+ sus window.X = X de exposicion global)
+Estado/constantes huerfanas: csfDatosExtraidos [1140], csfClienteExistente [1141],
+  csfDiffPendiente [1391], CSF_FORM_FIELD_IDS [1143], CSF_FIELD_LABELS [1248]
+Helpers "export function" SOLO usados por el flujo viejo (candidatos a remover de app.js
+  Y de su espejo en helpers.cjs, confirmado via grep -- CERO uso en acordeon/Buscar):
+  buildPreFillMap, applyPreFillMap, buildPaisConfig, findRfcMatch, shouldTriggerRfcSearch,
+  buildCsfDuplicadoBanner, buildClienteSnapshot, buildOperamPreFillMap, buildEntregaPayload,
+  calcularDiff, buildConfirmacionItems (+ buildCsfPayload, que YA NO EXISTE en app.js pero
+  SI tiene mirror huerfano en helpers.cjs:38 con su propio test csf-payload.test.cjs)
+Wiring a remover: listener blur de cl-rfc para panel-manual [app.js:2274-2284]
+Markup a remover de index.html: cliente-modos+3 modo-btn [52-62], panel-csf [494-517],
+  panel-manual [520-539]. CSS: .cliente-modos/.modo-btn/.modo-btn.active [style.css:968-992]
+  (.cliente-panel se queda, lo sigue usando panel-buscar)
+Tests 100% huerfanos (prueban SOLO funciones del flujo viejo, candidatos a eliminar):
+  pais-config.test.cjs, manual-rfc-guard.test.cjs, csf.test.cjs, csf-rfc-match.test.cjs,
+  csf-prefill.test.cjs, csf-operam-fill.test.cjs, csf-payload.test.cjs, csf-guard-edge.test.cjs,
+  csf-guard.test.cjs, csf-entrega.test.cjs, csf-edge.test.cjs, csf-diff.test.cjs,
+  csf-diff-edge.test.cjs, csf-actualizar.test.cjs (14 archivos; csf-upload-alta.test.cjs
+  NO es huerfano de #32 -- prueba csf-upload.html, eso es scope de #35, NO TOCAR)
+NOTA: nuevaCotizacion() [app.js:1106] llama setClienteModo('buscar') para restaurar
+  panel-buscar visible tras nueva cotizacion -- al remover setClienteModo, reemplazar por
+  asignacion directa: document.getElementById('panel-buscar').style.display = 'block'
+  (mismo efecto, sin pasar por la maquina de modos que desaparece)
+NOTA bug preexistente NO relacionado a #32 (no tocar, fuera de alcance): altaCotizarAhora/
+  altaTerminar [app.js:3021,3031] hacen getElementById('panel-alta') -- ese ID NO EXISTE
+  (el acordeon usa 'panel-alta-cliente', linea 67 index.html) -- el getElementById retorna
+  null, la asignacion .style.display es no-op silencioso. Es codigo del acordeon (#29),
+  no del flujo viejo -- dejarlo documentado para que el supervisor decida si vale un issue.
+
+== RECOMENDACION PARA EL ORQUESTADOR ==
+Este issue (#32) NO PUEDE CERRARSE sin antes resolver el gap de "actualizar datos fiscales
+de cliente existente desde CSF" -- ya sea:
+  (a) Decision de producto: "no es necesario, los vendedores pueden seguir usando
+      csf-upload.html / Operam directo para ese caso raro" -- documentar la decision y
+      desbloquear #32 para proceder con la remocion tal cual.
+  (b) Ampliar el acordeon: agregar un paso de deteccion+diff+confirmacion de cambios
+      fiscales cuando dedup detecta tipo:'exacto' y el vendedor confirma "Usar este cliente"
+      -- esto es trabajo de diseno + implementacion no trivial, candidato a ISSUE NUEVO
+      que bloquee a #32 (en la cadena de la epica #36).
+Ninguna de las dos opciones me corresponde decidir -- requieren juicio humano sobre
+frecuencia del caso de uso, riesgo de dejarlo sin cubrir, y prioridad vs. el resto de la
+epica #36 (#33 cerrado, #34 cerrado, #35 esperando a que #32 cierre).
+
+ISSUE #32 BLOQUEADO -- AUDITORIA DE PARIDAD ENCONTRO GAP REAL, REQUIERE DECISION HUMANA
+NO cerrar issue #32 en GitHub. NO continuar las iteraciones 2-7 (instruccion del orquestador:
+"si encuentras un gap real... termina tu loop ahi reportando el blocker claramente").
