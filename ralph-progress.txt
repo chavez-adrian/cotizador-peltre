@@ -429,3 +429,45 @@ Hecho: verificacion final + ralph-progress.txt actualizado
   - Todos los ACs del issue #29 verificados
   - Push: c4a24f0..dd11bc4 main->main
 NO cerrar issue #29 en GitHub (lo hace el supervisor).
+
+== ISSUE ACTIVO: #33 ==
+feat: centralizar parseo de CSF en el backend (endpoint sobre lib/parsear-csf.js)
+Parent epica: #36 (orden #32/#33 paralelo, sin bloqueos). Mi entrega es la pieza fundacional para #34.
+N iteraciones planificadas: 6
+
+--- ITER 1 (completada) ---
+Commit: 9c61c96 feat: endpoint POST /api/parsear-csf envuelve parsearCSF (iter 1/6, issue #33)
+Pushed: 656d19a..9c61c96 (branch worktree local -> origin/main, fast-forward limpio)
+Hecho: POST /api/parsear-csf nuevo en server.js, AC1 de #33 (PRD #36 "endpoint canonico de parseo")
+  - import { parsearCSF } from './lib/parsear-csf.js' agregado a server.js
+  - ruta delgada: recibe { texto }, valida string no vacio (400 si falta), invoca parsearCSF(texto)
+  - si !datos.rfc -> 422 { ok:false, error: 'No se detecto un RFC en el texto' } (caso "texto sin RFC", AC4)
+  - exito -> 200 { ok:true, datos } con estructura completa (incluye calle/numExt/numInt/colonia)
+  - SIN JWT: mismo bloque de codigo que /api/csf-from-url y /api/buscar-cliente (auth pattern AC3)
+  - colocado justo antes del comentario "--- CSF: historial de auditoria (sin JWT) ---"
+Tests TDD en test/server.test.js (5 nuevos, todos GREEN desde la 1ra corrida tras implementar):
+  - persona fisica: { ok:true, datos.rfc, datos.razonSocial } (fixture identica a parsear-csf.test.js)
+  - persona moral: estructura completa incl. calle/numExt/numInt/colonia/regimenFiscal
+  - RFC con sufijo espurio en misma linea (regresion historica B7 de parsear-csf.test.js)
+  - texto sin RFC -> 422 { ok:false, error } y datos===undefined (NO datos vacios silenciosos)
+  - sin campo texto -> 400 { error }
+Decisiones clave:
+  - Status 422 (Unprocessable Entity) para "texto sin RFC detectable" -- distingue de 400 (request
+    malformado: falta el campo texto) vs 422 (request bien formado pero el contenido no es parseable).
+    El issue pide "error claro, no datos vacios silenciosos"; 422+ok:false+error es inequivoco.
+  - Reuse de fixtures: copie las 3 constantes CSF_* de test/parsear-csf.test.js (persona moral, persona
+    fisica, RFC sufijo espurio) -- son el contrato de referencia del modulo, no invente texto nuevo.
+  - Quirk descubierto en parsearCSF (NO LO TOQUE, esta fuera de mi alcance): el regex de numInt
+    (\s* incluye \n) hace match greedy hacia la siguiente linea cuando "Numero Interior :" viene
+    vacio Y la siguiente linea existe -- numInt termina con el contenido de "Nombre de la Colonia :
+    ...". Esto SOLO ocurre si la linea "Numero Interior :" esta presente y vacia. Si la linea no
+    existe en el texto, numInt = '' limpio (caso normal en CSFs reales sin domicilio con interior).
+    Ajuste: quite esa linea de mi fixture de persona moral (igual que el fixture de persona fisica
+    en parsear-csf.test.js, que tampoco la incluye) para no acoplar mi test a ese detalle de
+    implementacion que no me corresponde arreglar (restriccion dura: no modificar lib/parsear-csf.js).
+Archivos modificados: server.js, test/server.test.js
+Suite completa: 298/298 GREEN (npm test, --test-concurrency=1)
+Siguiente: ITER 2 -- refactorizar /api/csf-from-url para que reuse parsearCSF internamente
+  (lineamiento (b) del issue: devolver tambien `datos` ya parseados ademas del texto crudo del SAT).
+  Mantener compat: el campo `texto` crudo lo siguen consumiendo otros flujos (verificar app.js/
+  csf-upload.html antes de quitar nada -- pero NO migrar consumidores, eso es #34, fuera de mi alcance).
