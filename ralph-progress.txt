@@ -1986,3 +1986,55 @@ Siguiente (iter 2): FASE 2 -- agregar authMiddleware a las 5 rutas en server.js
   (/api/csf-from-url, /api/log, /api/actualizar-cliente/:id, /api/crear-cliente,
   /api/buscar-cliente). Commit. Inmediatamente despues: verificacion en navegador real
   (login -> acordeon -> alta CSF -> alta manual) confirmando que nada retorna 401 inesperado.
+
+--- ITER 2 (completada) -- FASE 2: proteger las 5 rutas con authMiddleware ---
+Hecho:
+  server.js: agregado authMiddleware a las 5 rutas (con sus comentarios "(sin JWT)"
+  removidos, ya no aplica):
+    POST /api/csf-from-url
+    GET  /api/log
+    PUT  /api/actualizar-cliente/:id
+    POST /api/crear-cliente
+    GET  /api/buscar-cliente
+  test/server.test.js: actualizados todos los tests que llamaban estas rutas para
+  enviar `.set('Authorization', \`Bearer ${TEST_TOKEN}\`)` (TEST_TOKEN ya existia en
+  el archivo, mismo patron que C5/E3 "sin token retorna 401"). Agregados 5 tests
+  nuevos de contrato "sin token retorna 401" (uno por ruta), TDD RED->GREEN:
+    - GET /api/log sin token retorna 401
+    - PUT /api/actualizar-cliente/:id sin token retorna 401
+    - POST /api/crear-cliente sin token retorna 401
+    - GET /api/buscar-cliente sin token retorna 401
+    - POST /api/csf-from-url sin token retorna 401
+  (NOTA: el test "POST /api/parsear-csf no requiere JWT" de #33 se queda intacto --
+  esa ruta NO esta en la lista de las 5, sigue siendo correcta sin auth, fuera de
+  alcance de #35)
+Verificacion:
+  1. node --check public/js/app.js -- OK
+  2. node --check server.js -- OK
+  3. npm test -- 264/264 GREEN (259 + 5 nuevos), 0 fail
+  4. Navegador real (chrome-devtools MCP), INMEDIATAMENTE despues de proteger:
+     - server reiniciado, login real, abri el acordeon "+ Nuevo cliente"
+     - probe con interceptor de window.fetch + llamadas directas replicando
+       las 5 rutas CON token (Authorization presente) vs SIN token:
+         CON token  -> POST /api/csf-from-url:500(SAT mock invalido)/GET /api/log:503(sin DB)/
+                       PUT /api/actualizar-cliente/1:503(sin Operam)/POST /api/crear-cliente:200/
+                       GET /api/buscar-cliente:503(sin Operam) -- NINGUNO 401
+         SIN token  -> las 5 -> 401 en TODAS -- proteccion activa confirmada
+     - Los 500/503 son 100% de conectividad de entorno (no hay .env, OPERAM_URL/
+       OPERAM_USER/OPERAM_PASSWORD/DATABASE_URL vacios -- mismo hallazgo documentado
+       en #34 iter3), NO de autenticacion -- exactamente lo esperado en este sandbox
+     - Tab "Captura manual" del acordeon: lleno formulario completo (RFC generico
+       XAXX010101000), click "Verificar y confirmar" -> llama a
+       /api/buscar-cliente-duplicado (YA protegida desde #31, no es de las 5) CON
+       Authorization -- responde 503 por falta de Operam, NO 401 -- el flujo del
+       acordeon sigue intacto y autenticado
+     - Tab "Cargar CSF": dropzone renderiza correctamente, sin errores JS nuevos en
+       consola (los unicos console.error son las respuestas 401/500/503 de mis
+       propias pruebas con/sin token, esperadas)
+  No pude completar una alta real end-to-end (POST /api/crear-cliente exitoso con
+  alta en Operam) porque no hay .env con credenciales Operam en este entorno --
+  limitacion de entorno ya documentada en #34/#32, no relacionada con #35.
+Commit: feat: proteger las 5 rutas CSF con authMiddleware + actualizar tests (iter 2/8, issue #35)
+
+Siguiente (iter 3): FASE 3 -- eliminar public/csf-upload.html y revisar assets
+exclusivos (imagenes/CSS/JS propios). Commit.

@@ -101,6 +101,7 @@ test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 2
   });
   try {
     const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
       .send({ tax_id: 'DRB010101ABC', CustName: 'Dropbox Test SA', pdf_base64: 'AAAA',
               entrega: { br_name: 'DRB', br_ref: 'DRB', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
               salesman: 47 });
@@ -115,8 +116,13 @@ test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 2
 // === GET /api/log ===
 
 test('GET /api/log retorna 503 cuando no hay DATABASE_URL', async () => {
-  const res = await supertest(app).get('/api/log');
+  const res = await supertest(app).get('/api/log').set('Authorization', `Bearer ${TEST_TOKEN}`);
   assert.strictEqual(res.status, 503);
+});
+
+test('GET /api/log sin token retorna 401', async () => {
+  const res = await supertest(app).get('/api/log');
+  assert.strictEqual(res.status, 401);
 });
 
 // === PUT /api/actualizar-cliente/:id ===
@@ -127,7 +133,9 @@ test('PUT /api/actualizar-cliente/:id actualiza cliente y retorna { ok:true }', 
     '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ result: true }) }),
   });
   try {
-    const res = await supertest(app).put('/api/actualizar-cliente/42').send({ street: 'Reforma', postal_code: '06600' });
+    const res = await supertest(app).put('/api/actualizar-cliente/42')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ street: 'Reforma', postal_code: '06600' });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
   } finally {
@@ -136,9 +144,16 @@ test('PUT /api/actualizar-cliente/:id actualiza cliente y retorna { ok:true }', 
 });
 
 test('PUT /api/actualizar-cliente/:id sin campos retorna 400', async () => {
-  const res = await supertest(app).put('/api/actualizar-cliente/42').send({});
+  const res = await supertest(app).put('/api/actualizar-cliente/42')
+    .set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({});
   assert.strictEqual(res.status, 400);
   assert.ok(res.body.error);
+});
+
+test('PUT /api/actualizar-cliente/:id sin token retorna 401', async () => {
+  const res = await supertest(app).put('/api/actualizar-cliente/42').send({ street: 'X' });
+  assert.strictEqual(res.status, 401);
 });
 
 test('PUT /api/actualizar-cliente/:id Operam error retorna 503', async () => {
@@ -147,7 +162,9 @@ test('PUT /api/actualizar-cliente/:id Operam error retorna 503', async () => {
     '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ result: false, messages: ['RFC invalido'] }) }),
   });
   try {
-    const res = await supertest(app).put('/api/actualizar-cliente/42').send({ street: 'X' });
+    const res = await supertest(app).put('/api/actualizar-cliente/42')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ street: 'X' });
     assert.strictEqual(res.status, 503);
   } finally {
     restore();
@@ -157,9 +174,16 @@ test('PUT /api/actualizar-cliente/:id Operam error retorna 503', async () => {
 // === POST /api/crear-cliente ===
 
 test('POST /api/crear-cliente sin tax_id retorna 400', async () => {
-  const res = await supertest(app).post('/api/crear-cliente').send({ CustName: 'Sin RFC' });
+  const res = await supertest(app).post('/api/crear-cliente')
+    .set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ CustName: 'Sin RFC' });
   assert.strictEqual(res.status, 400);
   assert.ok(res.body.error);
+});
+
+test('POST /api/crear-cliente sin token retorna 401', async () => {
+  const res = await supertest(app).post('/api/crear-cliente').send({ tax_id: 'NVO010101ABC' });
+  assert.strictEqual(res.status, 401);
 });
 
 test('POST /api/crear-cliente crea cliente nuevo y retorna { ok:true, customer_id }', async () => {
@@ -173,11 +197,13 @@ test('POST /api/crear-cliente crea cliente nuevo y retorna { ok:true, customer_i
     '/api/v3/sales/branches/177': () => ({ ok: true, json: async () => ({ result: true }) }),
   });
   try {
-    const res = await supertest(app).post('/api/crear-cliente').send({
-      tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV',
-      entrega: { br_name: 'Almacen', br_ref: 'ALM', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
-      salesman: 47,
-    });
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({
+        tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV',
+        entrega: { br_name: 'Almacen', br_ref: 'ALM', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
+        salesman: 47,
+      });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
     assert.strictEqual(res.body.customer_id, 77);
@@ -193,7 +219,9 @@ test('POST /api/crear-cliente con RFC duplicado retorna duplicado:true con datos
     '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', tax_id: 'DUP010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', branches: [] }] }) }),
   });
   try {
-    const res = await supertest(app).post('/api/crear-cliente').send({ tax_id: 'DUP010101ABC', CustName: 'Duplicado SA' });
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ tax_id: 'DUP010101ABC', CustName: 'Duplicado SA' });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
     assert.strictEqual(res.body.duplicado, true);
@@ -206,9 +234,14 @@ test('POST /api/crear-cliente con RFC duplicado retorna duplicado:true con datos
 // === GET /api/buscar-cliente ===
 
 test('GET /api/buscar-cliente sin rfc retorna 400', async () => {
-  const res = await supertest(app).get('/api/buscar-cliente');
+  const res = await supertest(app).get('/api/buscar-cliente').set('Authorization', `Bearer ${TEST_TOKEN}`);
   assert.strictEqual(res.status, 400);
   assert.ok(res.body.error);
+});
+
+test('GET /api/buscar-cliente sin token retorna 401', async () => {
+  const res = await supertest(app).get('/api/buscar-cliente?rfc=ACE010101ABC');
+  assert.strictEqual(res.status, 401);
 });
 
 test('GET /api/buscar-cliente?rfc=... retorna 200 con datos cuando existe en Operam', async () => {
@@ -217,7 +250,7 @@ test('GET /api/buscar-cliente?rfc=... retorna 200 con datos cuando existe en Ope
     '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Aceros SA de CV', tax_id: 'ACE010101ABC', street: 'Reforma', street_number: '1', suite_number: '', district: 'Juarez', postal_code: '06600', city: 'CDMX', state: 'CDMX', cfdi_regimen_fiscal: '601', branches: [{ br_name: 'Aceros', addr_street: 'Reforma', addr_colony: 'Juarez', addr_zip: '06600', addr_city: 'CDMX', addr_state: 'CDMX', phone: '', email: '' }] }] }) }),
   });
   try {
-    const res = await supertest(app).get('/api/buscar-cliente?rfc=ACE010101ABC');
+    const res = await supertest(app).get('/api/buscar-cliente?rfc=ACE010101ABC').set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.encontrado, true);
     assert.strictEqual(res.body.cliente_id, 55);
@@ -232,7 +265,7 @@ test('GET /api/buscar-cliente?rfc=... retorna 200 {encontrado:false} cuando no e
     '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 0, data: [] }) }),
   });
   try {
-    const res = await supertest(app).get('/api/buscar-cliente?rfc=RFC000000000');
+    const res = await supertest(app).get('/api/buscar-cliente?rfc=RFC000000000').set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.encontrado, false);
   } finally {
@@ -243,7 +276,7 @@ test('GET /api/buscar-cliente?rfc=... retorna 200 {encontrado:false} cuando no e
 test('GET /api/buscar-cliente retorna 503 si Operam lanza error', async () => {
   const restore = mockOperamFetch({ '/api/v3/login': () => { throw new Error('timeout'); } });
   try {
-    const res = await supertest(app).get('/api/buscar-cliente?rfc=ACE010101ABC');
+    const res = await supertest(app).get('/api/buscar-cliente?rfc=ACE010101ABC').set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.status, 503);
   } finally {
     restore();
@@ -260,7 +293,9 @@ test('POST /api/csf-from-url responde texto crudo y datos parseados de la CSF', 
     return { ok: true, text: async () => html };
   };
   try {
-    const res = await supertest(app).post('/api/csf-from-url').send({ url: 'https://siat.sat.gob.mx/qr?id=123' });
+    const res = await supertest(app).post('/api/csf-from-url')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ url: 'https://siat.sat.gob.mx/qr?id=123' });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
     assert.ok(res.body.texto.includes('UEGA850312KL5'));
@@ -268,6 +303,11 @@ test('POST /api/csf-from-url responde texto crudo y datos parseados de la CSF', 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('POST /api/csf-from-url sin token retorna 401', async () => {
+  const res = await supertest(app).post('/api/csf-from-url').send({ url: 'https://siat.sat.gob.mx/qr?id=123' });
+  assert.strictEqual(res.status, 401);
 });
 
 // === POST /api/parsear-csf (issue #33) ===
@@ -515,7 +555,9 @@ test('D1: POST /api/crear-cliente flujo completo retorna customer_id, branch_id 
     '/api/v3/sales/branches/600': () => ({ ok: true, json: async () => ({ result: true }) }),
   });
   try {
-    const res = await supertest(app).post('/api/crear-cliente').send(BASE_CLIENTE);
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send(BASE_CLIENTE);
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
     assert.strictEqual(res.body.customer_id, 500, 'debe retornar customer_id');
@@ -540,7 +582,9 @@ test('D2: POST /api/crear-cliente fallo en PUT branch retorna steps con error y 
     '/api/v3/sales/branches/601': () => ({ ok: true, json: async () => ({ result: false, messages: ['Error en branch'] }) }),
   });
   try {
-    const res = await supertest(app).post('/api/crear-cliente').send(BASE_CLIENTE);
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send(BASE_CLIENTE);
     assert.strictEqual(res.status, 200, 'respuesta debe ser 200 incluso con fallo en PUT');
     assert.strictEqual(res.body.ok, false, 'ok debe ser false cuando falla un paso');
     assert.strictEqual(res.body.customer_id, 501, 'debe retornar customer_id aunque falle el PUT');
@@ -567,6 +611,7 @@ test('D3: POST /api/crear-cliente con customer_id existente salta POST y no dupl
   });
   try {
     const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
       .send({ ...BASE_CLIENTE, customer_id: 502 });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);

@@ -385,9 +385,9 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// --- CSF: proxy QR del SAT (sin JWT) ---
+// --- CSF: proxy QR del SAT ---
 
-app.post('/api/csf-from-url', async (req, res) => {
+app.post('/api/csf-from-url', authMiddleware, async (req, res) => {
   const { url } = req.body || {};
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'Falta url' });
   let parsed;
@@ -423,9 +423,9 @@ app.post('/api/parsear-csf', (req, res) => {
   res.json({ ok: true, datos });
 });
 
-// --- CSF: historial de auditoria (sin JWT) ---
+// --- CSF: historial de auditoria ---
 
-app.get('/api/log', async (req, res) => {
+app.get('/api/log', authMiddleware, async (req, res) => {
   const rows = await dbQuery(
     'SELECT id, created_at, rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, error_msg FROM clientes_log ORDER BY created_at DESC LIMIT 200'
   );
@@ -433,9 +433,9 @@ app.get('/api/log', async (req, res) => {
   res.json(rows.rows);
 });
 
-// --- CSF: actualizar cliente existente (sin JWT) ---
+// --- CSF: actualizar cliente existente ---
 
-app.put('/api/actualizar-cliente/:id', async (req, res) => {
+app.put('/api/actualizar-cliente/:id', authMiddleware, async (req, res) => {
   const campos = req.body;
   if (!campos || Object.keys(campos).length === 0) {
     return res.status(400).json({ error: 'No se enviaron campos a actualizar' });
@@ -448,7 +448,7 @@ app.put('/api/actualizar-cliente/:id', async (req, res) => {
   }
 });
 
-// --- CSF: crear cliente desde datos de CSF (sin JWT) ---
+// --- CSF: crear cliente desde datos de CSF ---
 
 function logCliente(rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, error_msg) {
   dbQuery(
@@ -457,7 +457,7 @@ function logCliente(rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, erro
   ).catch(err => console.error('[db] Error insertando log:', err.message));
 }
 
-app.post('/api/crear-cliente', async (req, res) => {
+app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   const cliente = req.body;
   if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
   const fuente = cliente.fuente || (cliente.pdf_base64 ? 'csf-upload' : 'cotizador');
@@ -528,9 +528,9 @@ app.post('/api/crear-cliente', async (req, res) => {
   }
 });
 
-// --- CSF: buscar cliente por RFC (sin JWT) ---
+// --- CSF: buscar cliente por RFC ---
 
-app.get('/api/buscar-cliente', async (req, res) => {
+app.get('/api/buscar-cliente', authMiddleware, async (req, res) => {
   const { rfc } = req.query;
   if (!rfc) return res.status(400).json({ error: 'Falta el parametro rfc' });
   try {
