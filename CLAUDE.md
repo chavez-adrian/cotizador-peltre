@@ -13,7 +13,6 @@ npm test             # todos los tests (160, ~0 fallas esperadas)
 node --test test/server.test.js
 node --test test/operam-client.test.js
 node --test --test-concurrency=1 public/js/__tests__/csf.test.cjs
-node --test --test-concurrency=1 public/js/__tests__/csf-upload-alta.test.cjs
 ```
 
 > `--test-concurrency=1` es obligatorio cuando los tests comparten estado global (`globalThis.fetch` mock o `cotizaciones.json`). Sin el los tests se interfieren.
@@ -30,19 +29,19 @@ Antes de trabajar en cambios al flujo de clientes, leer:
 
 ## Arquitectura
 
-El proyecto es un servidor Express monolitico (`server.js`) con frontend vanilla JS (`public/js/app.js`, ~2500 lineas) y una herramienta standalone de alta de clientes (`public/csf-upload.html`). Sin frameworks frontend, sin bundlers.
+El proyecto es un servidor Express monolitico (`server.js`) con frontend vanilla JS (`public/js/app.js`, ~2500 lineas). Sin frameworks frontend, sin bundlers.
 
 ### Flujo de datos principal
 
 ```
-Browser (app.js)          → /api/* → server.js → lib/* → Operam v3 API / envia.com
-                                              → data/*.json (persistencia en disco)
-                                              → pdfkit / html-generator
-Browser (csf-upload.html) → /api/crear-cliente   → lib/operam-client.js → Operam
-                          → /api/buscar-cliente   → lib/db.js            → Neon (clientes_log)
-                          → /api/actualizar-cliente/:id                  → lib/dropbox.js → Dropbox
-                          → /api/log
-                          → /api/csf-from-url     → SAT (proxy QR)
+Browser (app.js) → /api/*                        → server.js → lib/* → Operam v3 API / envia.com
+                                                             → data/*.json (persistencia en disco)
+                                                             → pdfkit / html-generator
+                 → /api/crear-cliente             → lib/operam-client.js → Operam
+                 → /api/buscar-cliente            → lib/db.js            → Neon (clientes_log)
+                 → /api/actualizar-cliente/:id                           → lib/dropbox.js → Dropbox
+                 → /api/log
+                 → /api/csf-from-url              → SAT (proxy QR)
 ```
 
 ### Modulos lib/
@@ -78,7 +77,7 @@ Dual:
 
 Dos niveles:
 - **Rutas del cotizador**: JWT de 30 dias. `vendedores.json` contiene ID + PIN. El rol `admin` desbloquea `/api/admin/*`.
-- **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/log`, `/api/csf-from-url`): sin JWT — usadas por `csf-upload.html` sin friccion.
+- **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/log`, `/api/csf-from-url`): protegidas con `authMiddleware` igual que el resto del cotizador — el alta de cliente vive unicamente en el acordeon de `app.js` (autenticado), tras el retiro de la herramienta standalone `csf-upload.html` (ADR-0003).
 
 `server.js` carga `.env` manualmente sin dotenv (patron en lineas 24-30).
 
