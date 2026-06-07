@@ -2734,6 +2734,7 @@ const DIFF_FISCAL_LABELS = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, label }) =>
 export function calcularDiffFiscal(clienteOperam, csfDatos) {
   const diff = {};
   for (const { operam, csf, label } of DIFF_FISCAL_CAMPOS) {
+    if (!(csf in csfDatos)) continue; // el formulario de captura no recolecta este campo (ej. alta manual no tiene domicilio fiscal completo) -- ausente != vacio, no es un cambio real
     const anterior = String(clienteOperam[operam] == null ? '' : clienteOperam[operam]).trim();
     const nuevo = String(csfDatos[csf] == null ? '' : csfDatos[csf]).trim();
     if (anterior !== nuevo) {

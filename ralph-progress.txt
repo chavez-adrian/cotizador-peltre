@@ -1503,3 +1503,44 @@ Actualizacion de estado de ACs tras iter 4:
     sobre por que no hay test DOM-level: consistente con el patron del repo)
 [x] AC6 -- CUMPLIDO con limitacion documentada (Operam real inalcanzable; usado mock de
     fetch para ejercer codigo de produccion real en navegador real)
+
+== ITERACION 5 (RED-GREEN: bug real encontrado en alta manual + domicilio fiscal) ==
+
+RED: al revisar altaManualLeerFormulario (linea ~2644) para confirmar que altaState.datos
+tiene la MISMA forma sin importar el origen (CSF vs captura manual), encontre que el
+formulario de captura manual NO recolecta calle/numExt/numInt/colonia (esos inputs solo
+existen en el panel de CSF -- altaCsfLeerFormulario si los lee). Es decir, altaState.datos
+para un alta manual carece COMPLETAMENTE de esas 4 llaves (ausentes, no '').
+
+calcularDiffFiscal (con String(csfDatos[csf] ?? '').trim()) trataba "ausente" igual que
+"presente pero vacio" -> false positive: cualquier cliente existente en Operam con
+domicilio fiscal completo apareceria con 4 cambios falsos "Calle: Reforma -> (vacio)",
+"Numero Exterior: 100 -> (vacio)", etc., aunque el vendedor jamas tuvo la oportunidad de
+capturar esos campos en el formulario manual. Esto rompe AC1 ("diff CLARO de cambios
+fiscales") -- el panel mostraria ruido, no senal, y empujaria al vendedor a "Confirmar"
+un PATCH que borraria el domicilio fiscal real del cliente en Operam. Bug real, no
+hipotetico: ocurriria en cada alta manual de un RFC ya existente con domicilio fiscal
+capturado (el caso comun).
+
+Agregue tests:
+- G7b: csfDatos con la forma exacta de altaState.datos de un alta manual (sin
+  calle/numExt/numInt/colonia) contra clienteOperamBase con domicilio fiscal completo
+  -> diff debe ser {} (RED: fallaba con 4 entradas falsas en el diff)
+- G7c: contraprueba -- si el campo SI esta presente mas vacio explicitamente ('calle': ''),
+  SI debe compararse y aparecer en el diff (distincion ausente vs vacio es real, no solo
+  un parche para callar el test)
+
+GREEN: agregue un guard `if (!(csf in csfDatos)) continue;` al inicio del loop de
+calcularDiffFiscal -- si el formulario de origen no recolecta ese campo, se omite
+silenciosamente (no es un cambio real, es ausencia de oportunidad de captura). Aplicado
+en app.js (linea ~2737) y su espejo en helpers.cjs.
+
+node --check public/js/app.js -> Syntax OK.
+18/18 GREEN en alta-dedup-fiscal.test.cjs (16 + G7b + G7c). Suite completa: 328/328 GREEN.
+
+Nota de diseno: NO intente "arreglar" el formulario manual agregando campos de domicilio
+fiscal (fuera de alcance de #38, tocaria UI/UX de #27-31 sin pedirlo, y el SOP/issue no
+lo piden). El guard en calcularDiffFiscal es la solucion correcta y minima: hace que el
+diff sea fiel a lo que el vendedor pudo capturar, sin importar el origen del alta --
+"ausencia de dato" != "cambio a vacio". Decision consistente con "sin friccion" (AC4):
+mejor mostrar MENOS diff (preciso) que mas diff (ruidoso/falso).

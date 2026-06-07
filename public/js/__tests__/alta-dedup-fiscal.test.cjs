@@ -111,6 +111,36 @@ test('G7: calcularDiffFiscal trata valores null/undefined del cliente Operam com
   assert.ok(!('CustName' in diff), 'sin diferencia real no debe aparecer en el diff');
 });
 
+test('G7b: calcularDiffFiscal omite campos de domicilio que el formulario de captura no recolecta (alta manual no tiene calle/numExt/numInt/colonia)', () => {
+  // altaManualLeerFormulario no incluye calle/numExt/numInt/colonia (esos campos solo
+  // existen en el formulario de CSF). altaState.datos para un alta manual por lo tanto
+  // NO TIENE esas llaves -- ausentes, no vacias. calcularDiffFiscal no debe reportarlas
+  // como "cambio a (vacio)" porque el vendedor nunca tuvo oportunidad de capturarlas;
+  // eso seria un falso positivo que generaria friccion y confusion (rompe AC1: "diff claro").
+  const csfDatosDeAltaManual = {
+    rfc: 'PNA010203ABC',
+    razonSocial: 'Peltre Nacional SA de CV',
+    idcif: 'IDCIF123',
+    cp: '06600',
+    municipio: 'CDMX',
+    estado: 'CDMX',
+    regimenFiscal: '601',
+    // sin calle, numExt, numInt, colonia -- ausentes, como produce altaManualLeerFormulario
+  };
+  const diff = calcularDiffFiscal(clienteOperamBase, csfDatosDeAltaManual);
+  assert.deepEqual(diff, {}, 'no debe reportar diferencias en campos que el formulario no recolecto');
+});
+
+test('G7c: calcularDiffFiscal SI reporta domicilio vacio cuando el campo fue capturado explicitamente como cadena vacia', () => {
+  // Distincion clave: si el campo SI esta presente mtu en csfDatos pero vacio (el
+  // formulario de CSF si lo recolecta y el vendedor lo dejo en blanco / la CSF no lo trae),
+  // SI debe compararse -- ahi si es una diferencia real digna de mostrarse.
+  const csfDatosConCalleVacia = { ...csfDatosIguales, calle: '' };
+  const diff = calcularDiffFiscal(clienteOperamBase, csfDatosConCalleVacia);
+  assert.equal(diff.street.anterior, 'Reforma');
+  assert.equal(diff.street.nuevo, '');
+});
+
 // === buildDiffFiscalHtml ===
 
 test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', () => {

@@ -602,6 +602,7 @@ const DIFF_FISCAL_CAMPOS = [
 function calcularDiffFiscal(clienteOperam, csfDatos) {
   const diff = {};
   for (const { operam, csf, label } of DIFF_FISCAL_CAMPOS) {
+    if (!(csf in csfDatos)) continue;
     const anterior = String(clienteOperam[operam] == null ? '' : clienteOperam[operam]).trim();
     const nuevo = String(csfDatos[csf] == null ? '' : csfDatos[csf]).trim();
     if (anterior !== nuevo) {
