@@ -559,3 +559,26 @@ Siguiente: ITER 5-6 -- son polish/verificacion exhaustiva. Posibles focos:
     pero revisar si hay un doc de rutas API que liste endpoints uno por uno)
   - Confirmar que git diff de lib/parsear-csf.js y test/parsear-csf.test.js sigue vacio (restriccion dura)
   - Si todo verificado y suite verde: iter 6 escribe "ISSUE #33 LISTO PARA CIERRE"
+
+--- ITER 5 (completada) ---
+Commit: 69774ab docs: documentar POST /api/parsear-csf y refactor de csf-from-url en README (iter 5/6, issue #33)
+Pushed: 86d5e99..69774ab (fast-forward a origin/main)
+Hecho: actualizacion de documentacion (README.md tabla "Alta de clientes — csf-upload.html (sin JWT)")
+  - agregada fila para POST /api/parsear-csf (descripcion: recibe {texto}, retorna {ok,datos}, estructura
+    completa via parsearCSF -- RFC/razon social/domicilio fiscal/regimen)
+  - actualizada descripcion de POST /api/csf-from-url: ahora menciona que ademas de texto plano
+    devuelve datos parseados via parsearCSF (refleja refactor de iter2)
+  - corregido contador de tests obsoleto: "160 tests" -> "301 tests" (estaba desactualizado desde
+    commit 53198ec, docs post-fusion #16-25; aproveche para corregirlo ya que tocaba esa seccion)
+Decision clave: документacion in-scope -- el README tiene una tabla explicita de rutas CSF que
+  ya listaba /api/csf-from-url; agregar la fila nueva y actualizar la descripcion del endpoint
+  modificado es continuacion directa del trabajo de #33 (no es scope creep, es mantener la
+  documentacion de la "tuberia" que el issue pide construir consistente con el codigo).
+Archivos modificados: README.md
+Suite completa: 301/301 GREEN (npm test, --test-concurrency=1) -- sin cambios de codigo, solo docs
+Estado de ACs de #33: TODOS cumplidos (ver iter4 para checklist completo, sin cambios desde entonces)
+Siguiente: ITER 6 -- verificacion final exhaustiva:
+  - re-confirmar git diff vacio en lib/parsear-csf.js y test/parsear-csf.test.js
+  - correr npm test completo una vez mas
+  - revisar issue #33 linea por linea contra lo entregado
+  - si todo en orden: escribir "ISSUE #33 LISTO PARA CIERRE"
