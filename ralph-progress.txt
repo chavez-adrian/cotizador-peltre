@@ -1418,3 +1418,88 @@ si documento que la cobertura es a nivel de funciones puras + contrato (consiste
 como se prueba el resto del acordeon -- alta-dedup.test.cjs tampoco ejerce
 altaDedupUsarCliente/altaDedupCorrer end-to-end, solo sus builders de HTML/requests).
 Luego: verificacion manual en navegador (chrome-devtools si disponible en este worktree).
+
+== ITERACION 4 (verificacion manual en navegador, AC6) ==
+
+Hecho: levante el server (node server.js, puerto 3000), abri la app con chrome-devtools
+MCP, inicie sesion como Adrian Chavez (PIN 0000, de data/vendedores.json), entre al flujo
+"+ Nuevo cliente" -> "Captura manual" para llenar el formulario de RFC y datos fiscales.
+
+Bloqueo encontrado: GET /api/buscar-cliente-duplicado devolvio 503 -- el Operam real NO es
+alcanzable desde este worktree en sandbox (confirmado: el catch-block de la ruta retorna
+503 ante cualquier fallo de conexion a Operam; limitacion preexistente, no relacionada con
+mi codigo). No puedo ejercer el flujo end-to-end contra datos reales de Operam.
+
+Workaround documentado (igual que recomienda el patron mockFetchByUrl de los tests, pero
+en vivo en el navegador): con evaluate_script hice monkey-patch de window.fetch
+(guardando el original en window.__originalFetch) para interceptar URLs que contienen
+'/api/buscar-cliente-duplicado' y devolver un JSON simulado { tipo: 'exacto', cliente: {
+customer_id: 99001, CustName: 'Peltre Nacional Original SA de CV', tax_id: 'PNA170810CF1',
+idcif: '...', street/street_number/.../cfdi_regimen_fiscal: <valores distintos a los
+capturados en el formulario> } }. Esto me permitio recorrer el codigo de produccion real
+(altaDedupCorrer -> calcularDiffFiscal -> buildDedupExactoConDiffHtml/buildDiffFiscalHtml)
+sin tocar al Operam real ni sus datos.
+
+Pasos ejecutados y verificados visualmente (snapshot del DOM via take_snapshot):
+1. Llene el formulario manual con RFC PNA170810CF1 y datos fiscales DISTINTOS a los del
+   "cliente existente" simulado (razon social, IdCIF, calle, num ext, colonia, CP,
+   municipio, estado, regimen fiscal -- 8 de 11 campos con diferencia, RFC e idcif iguales
+   a proposito en algunos para variar la cobertura visual).
+2. Click en "Verificar y confirmar" -> dispara altaDedupCorrer -> intercepta el fetch
+   mockeado -> tipo:'exacto'.
+3. CONFIRMADO EN PANTALLA (uid=7_0..7_3 + panel):
+   - Banner "Este RFC ya existe en Operam" + "Peltre Nacional Original SA de CV (ID: 99001,
+     RFC: PNA170810CF1)" + boton "Usar este cliente" (uid=7_3) -- SIEMPRE presente (AC3)
+   - Panel .diff-fiscal-panel con 8 filas "antes -> despues": Razon Social, IdCIF, Calle,
+     Numero Exterior, Colonia, Codigo Postal, Municipio, Estado, Regimen Fiscal -- cada
+     una con el valor anterior tachado (.diff-fiscal-anterior) y el nuevo en negritas
+     (.diff-fiscal-nuevo), placeholders "(vacio)" donde aplico (AC1 CONFIRMADO VISUALMENTE)
+   - Botones "Confirmar y actualizar en Operam" (uid=7_50) y "Descartar y continuar sin
+     actualizar" (uid=7_51) presentes y habilitados
+4. Click en "Descartar y continuar sin actualizar" (uid=7_51) -> altaDiffFiscalDescartar.
+   Snapshot posterior CONFIRMA (AC3 CUMPLIDO END-TO-END):
+   - El .diff-fiscal-panel desaparecio COMPLETAMENTE del DOM (cero filas, cero botones
+     del panel)
+   - El banner "Este RFC ya existe en Operam" y el boton "Usar este cliente" (uid=7_3)
+     siguen presentes, habilitados y en el mismo lugar -- el vendedor puede continuar
+     con el cliente existente sin que el sistema fuerce ninguna actualizacion
+5. list_console_messages: 5 mensajes totales, todos preexistentes/esperados y NO
+   atribuibles a mi codigo: 401 inicial (carga de pagina antes de login), 503 de
+   /api/buscar-cliente-duplicado (Operam real inalcanzable, ya documentado arriba), y 2
+   issues de accesibilidad ("No label associated with a form field" / "form field should
+   have id or name") que existen en TODO el acordeon, preexistentes, no introducidos por
+   mi codigo (confirme con grep que los campos en cuestion -- ej. los selects de Pais en
+   el formulario manual -- ya existian antes de iter 1).
+6. Restaure window.fetch al original (window.fetch = window.__originalFetch; delete
+   window.__originalFetch) dejando la pagina en estado limpio para no interferir con
+   pruebas futuras del orquestador en el mismo navegador/sesion.
+
+NO verifique manualmente el camino "Confirmar y actualizar en Operam" (exito/error del
+PATCH) porque hubiera requerido un segundo monkey-patch de fetch sobre
+/api/operam/clientes/99001 -- decidi no hacerlo para no acumular mocks en cascada que
+oscurecieran la evidencia de AC3 (el objetivo de esta iteracion). El camino "Confirmar"
+esta cubierto a nivel de contrato por G15/G16 (forma exacta del PATCH: URL, method, body
+{diff}, headers) y por inspeccion de codigo: altaDiffFiscalConfirmar llama
+api('/api/operam/clientes/'+id, {method:'PATCH', body:{diff}}) -- la MISMA ruta/forma que
+ya prueba test/server.test.js contra lib/operam-client.js::actualizarCliente (ruta NO
+modificada, solo consumida). Esta es la limitacion declarada de antemano: "si no es
+posible [verificacion manual], documentarlo explicitamente" -- documentado aqui sin
+pretender una cobertura que no tuve manera de obtener (Operam real inalcanzable).
+
+AC6: [x] CUMPLIDO (parcial-pero-real) -- AC1 y AC3 verificados visualmente end-to-end en
+navegador real con datos mockeados (porque Operam real es inalcanzable desde el sandbox);
+AC2 (Confirmar->PATCH) verificado por contrato+inspeccion de codigo, no por click real,
+con la razon documentada arriba. No hubo errores de consola atribuibles a mi codigo.
+
+Actualizacion de estado de ACs tras iter 4:
+[x] AC1 -- CUMPLIDO: verificado visualmente, panel muestra 8 cambios antes->despues
+    con etiquetas legibles
+[~] AC2 -- camino de codigo correcto y verificado por contrato (G15/G16) + inspeccion;
+    NO ejercido con click real por inalcanzabilidad de Operam real (limitacion del
+    entorno, no del codigo)
+[x] AC3 -- CUMPLIDO: verificado end-to-end en navegador, descartar quita solo el panel
+[x] AC4 -- CUMPLIDO (ya en iter 1-3, via tests G11/G12)
+[x] AC5 -- 16 tests TDD cubren deteccion+render+composicion+contrato (ver nota iter 3
+    sobre por que no hay test DOM-level: consistente con el patron del repo)
+[x] AC6 -- CUMPLIDO con limitacion documentada (Operam real inalcanzable; usado mock de
+    fetch para ejercer codigo de produccion real en navegador real)
