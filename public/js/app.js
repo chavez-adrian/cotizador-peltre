@@ -1952,7 +1952,8 @@ async function altaCsfLeerPDF(file) {
   if (itemsTotal === 0 || textoTotal.trim().length < 50) {
     const urlQR = await altaCsfExtraerQR(pdf);
     if (urlQR) {
-      const r = await fetch('/api/csf-from-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: urlQR }) });
+      const token = window._authToken || localStorage.getItem('token') || '';
+      const r = await fetch('/api/csf-from-url', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ url: urlQR }) });
       const data = await r.json();
       if (data.ok && data.texto) {
         const idcifDelQR = altaCsfExtraerIdCifDeUrl(urlQR);

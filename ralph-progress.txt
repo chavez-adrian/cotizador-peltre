@@ -1940,3 +1940,49 @@ alargo artificialmente: la remocion estaba completamente pre-mapeada por la
 auditoria previa, y cada incremento se completo sin sorpresas ni gaps nuevos).
 
 NO cerrar issue #32 en GitHub (lo hace el supervisor).
+
+== ISSUE ACTIVO: #35 ==
+retirar csf-upload.html y exigir JWT en rutas CSF (cierre completo de ADR-0003)
+Parent epica: #36 (orden #35 cierra la cadena #32->#33->#34->#35)
+N iteraciones planificadas: 8
+
+AC1 ya resuelto por el orquestador (comentario en el issue): incidente #37 documentado
+honestamente, decision informada de Adrian Chavez de proceder con medidas precautorias
+reforzadas. NO se repite esa auditoria.
+
+Gap real pre-mapeado por el orquestador (unico de las 5 rutas): app.js:1955
+fetch('/api/csf-from-url', ...) sin header Authorization, dentro del fallback QR de
+altaCsfLeerPDF (rama del acordeon que se activa cuando el PDF de CSF no tiene texto
+extraible).
+
+--- ITER 1 (completada) -- FASE 1: corregir gap de Authorization ---
+Hecho:
+  app.js linea ~1955 (dentro de altaCsfLeerPDF, rama fallback QR): agregado
+    const token = window._authToken || localStorage.getItem('token') || '';
+  al fetch('/api/csf-from-url', ...) se le agrego el header
+    'Authorization': `Bearer ${token}`
+  Mismo patron que ya existia en app.js:2569 (crear-cliente).
+Verificacion:
+  1. node --check public/js/app.js -- OK
+  2. node --check server.js -- OK
+  3. npm test -- 259/259 GREEN, 0 fail
+  4. Navegador real (chrome-devtools MCP):
+     - server levantado en :3000 (mate proceso viejo en el puerto primero)
+     - login real PIN 0000 (Adrian Chavez/admin), confirme window._authToken presente
+     - fetch('/js/app.js') desde el navegador y busque el snippet del fetch a
+       /api/csf-from-url: confirme que el codigo SERVIDO (no solo el archivo en disco)
+       ya incluye 'Authorization': `Bearer ${token}` -- el fix esta cargado en runtime
+     - ejecute fetch('/api/csf-from-url', {headers incluyendo Authorization}) replicando
+       el codigo parcheado: respuesta 500 (URL de prueba invalida, error esperado de
+       parsearCSF/SAT) pero NO 401 -- confirma que el header llega al handler sin
+       romper nada (la ruta aun no tiene authMiddleware, eso es fase 2)
+  No tengo PDF de CSF escaneado real (sin texto extraible + QR SAT real) para disparar
+  el branch QR end-to-end con datos de produccion; la combinacion de (a) inspeccion del
+  codigo SERVIDO confirmando el header presente y (b) la llamada directa replicando el
+  fetch exacto cubre el riesgo (que el header se mande) sin necesitar conectividad SAT real.
+Commit: fix: agregar header Authorization a fetch de /api/csf-from-url en fallback QR (iter 1/8, issue #35)
+
+Siguiente (iter 2): FASE 2 -- agregar authMiddleware a las 5 rutas en server.js
+  (/api/csf-from-url, /api/log, /api/actualizar-cliente/:id, /api/crear-cliente,
+  /api/buscar-cliente). Commit. Inmediatamente despues: verificacion en navegador real
+  (login -> acordeon -> alta CSF -> alta manual) confirmando que nada retorna 401 inesperado.
