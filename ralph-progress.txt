@@ -2038,3 +2038,74 @@ Commit: feat: proteger las 5 rutas CSF con authMiddleware + actualizar tests (it
 
 Siguiente (iter 3): FASE 3 -- eliminar public/csf-upload.html y revisar assets
 exclusivos (imagenes/CSS/JS propios). Commit.
+
+== Iteracion 3 (FASE 3 + parte de FASE 4): retirar csf-upload.html y limpiar tests/helpers huerfanos ==
+Contexto: FASE 2 quedo verde y verificada en navegador real (ver iter 2). Procedi
+a retirar la herramienta standalone tal como pide el AC de #35 ("retirar
+csf-upload.html"). Decidi fusionar la limpieza de tests huerfanos (originalmente
+prevista para FASE 4) en este MISMO commit -- razon: mantener `npm test` verde en
+cada frontera de commit es un invariante mas fuerte que separar rigidamente fases;
+dejar un commit con tests rotos (ENOENT al leer un archivo borrado) violaria el
+espiritu precautorio del propio plan. Esto es una desviacion deliberada y
+documentada del orden literal de fases.
+
+Cambios:
+1. Auditoria pre-borrado de assets exclusivos de csf-upload.html (1146 lineas):
+   solo referencia scripts via CDN (jsqr@1.4.0, tesseract.js@5) -- CERO imagenes/
+   CSS/JS locales exclusivos. Seguro borrar sin dejar huerfanos de assets.
+2. rm public/csf-upload.html
+3. rm public/js/__tests__/csf-upload-alta.test.cjs (99 lineas, 23 tests: 10
+   field-existence + 4 build-function + 9 named-string-checks -- el archivo leia
+   directamente csf-upload.html via fs.readFileSync y aserta sobre su contenido/
+   codigo fuente embebido; 100% especifico a la herramienta retirada)
+4. rm public/js/__tests__/csf-upload-parseo.test.cjs (112 lineas, 10 tests U1-U10
+   -- probaba funciones "espejo" que existian solo para reflejar la logica de
+   parseo de csf-upload.html, sin contraparte en codigo vivo)
+5. helpers.cjs: elimine bloque completo de funciones muertas (lineas ~67-182):
+   CSF_UPLOAD_REGIMENES, CSF_UPLOAD_PRIORIDAD, csfUploadDetectarRegimenTexto,
+   CSF_UPLOAD_MESES, csfUploadExtraerFecha, csfUploadExtraerNotes,
+   buildCsfUploadDatosDesdeEndpoint, buildCsfUploadDatosParseo
+   -- grep exhaustivo confirmo CERO uso en codigo de produccion (solo referenciadas
+   por los 2 archivos de test ahora eliminados). Actualice module.exports quitando
+   buildCsfUploadDatosDesdeEndpoint y buildCsfUploadDatosParseo de la lista.
+
+Verificacion:
+  1. node --check public/js/app.js -- OK
+  2. node --check server.js -- OK
+  3. npm test -- 231/231 GREEN, 0 fail (264 - 33 tests retirados = 231)
+  4. Navegador real (chrome-devtools MCP):
+     - server reiniciado (mato proceso viejo en :3000, lance node server.js limpio)
+     - GET /csf-upload.html -> 200, Content-Type text/html, title "Cotizador -
+       Peltre Nacional", 38297 bytes, SIN marcadores de csf-upload (poblarForm,
+       etc) -- es decir, el archivo esta verdaderamente borrado del disco
+       (confirmado tambien por ENOENT al correr los tests que lo leian antes de
+       borrarlos) y la respuesta 200 proviene de un catch-all PRE-EXISTENTE:
+         server.js:571-574
+           app.get('*', (req, res) => {
+             if (req.path.startsWith('/api/')) return res.status(404)...
+             res.sendFile(join(PUBLIC_DIR, 'index.html'));
+           });
+       Este wildcard (anterior a #35, sirve index.html para cualquier ruta no-API
+       no encontrada estaticamente) explica el 200 -- NO es una regresion, es
+       comportamiento SPA-fallback pre-existente. Confirmado via grep de
+       app.get/app.use/express.static/sendFile en server.js.
+
+Decision documentada (fuera de alcance, NO tocada): server.js:463 contiene
+  const fuente = cliente.fuente || (cliente.pdf_base64 ? 'csf-upload' : 'cotizador');
+Es un heuristico de string-literal para popular el campo `fuente` del log de
+auditoria -- confirme que app.js NUNCA envia pdf_base64 (solo csf-upload.html lo
+hacia). Dejarlo asi es inofensivo (simplemente nunca tomara la rama 'csf-upload'
+en adelante) y tocarlo seria un refactor no solicitado ("no agregar features,
+refactors ni mejoras no solicitadas"). Lo menciono para que el orquestador decida
+si amerita un cleanup futuro (ticket aparte).
+
+Limpieza de entorno: detuve el servidor de dev (puerto 3000 libre), borre
+server-out.log / server-err.log.
+
+Commit: refactor: retirar csf-upload.html y limpiar tests/helpers huerfanos (iter 3/8, issue #35)
+
+Siguiente (iter 4): FASE 4 -- actualizar seccion "Auth" de CLAUDE.md (las 5 rutas
+ya NO son "sin JWT", ahora requieren authMiddleware). Evaluar si README.md tambien
+necesita actualizacion (tiene referencias obsoletas a csf-upload.html en lineas
+16, 66, 87-88, 123) -- el alcance literal de #35 solo menciona CLAUDE.md, asi que
+sopesar con cuidado para no caer en scope creep. Confirmar npm test verde. Commit.
