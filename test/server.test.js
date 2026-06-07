@@ -250,6 +250,92 @@ test('GET /api/buscar-cliente retorna 503 si Operam lanza error', async () => {
   }
 });
 
+// === POST /api/parsear-csf (issue #33) ===
+
+const CSF_PERSONA_FISICA_TXT = `
+CONSTANCIA DE SITUACION FISCAL
+Nombre (s) : ADRIANA
+Primer Apellido : URENA
+Segundo Apellido : GARCIA
+R.F.C. : UEGA850312KL5
+idCIF : 98765432101
+Nombre de la Vialidad : INSURGENTES SUR
+Número Exterior : 123
+Nombre de la Colonia : DEL VALLE
+Código Postal : 03100
+Nombre del Municipio o Demarcación Territorial : BENITO JUAREZ
+Nombre de la Entidad Federativa : CIUDAD DE MEXICO
+Régimen Fiscal : 612 Personas Físicas con Actividades Empresariales
+`;
+
+test('POST /api/parsear-csf con texto de persona fisica retorna { ok:true, datos }', async () => {
+  const res = await supertest(app).post('/api/parsear-csf').send({ texto: CSF_PERSONA_FISICA_TXT });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.ok, true);
+  assert.strictEqual(res.body.datos.rfc, 'UEGA850312KL5');
+  assert.ok(res.body.datos.razonSocial.includes('ADRIANA'));
+});
+
+const CSF_PERSONA_MORAL_TXT = `
+CONSTANCIA DE SITUACION FISCAL
+Denominación/Razón Social : BANCO DE MEXICO FIDEICOMISO PARA LOS MUSEOS DIEGO RIVERA Y FRIDA KAHLO
+R.F.C. : BMF821130AR3
+idCIF : 12345678901
+Nombre de la Vialidad : AV 5 DE MAYO
+Número Exterior : 2
+Nombre de la Colonia : CENTRO DE LA CIUDAD DE MEXICO AREA 1
+Código Postal : 06000
+Nombre del Municipio o Demarcación Territorial : CUAUHTEMOC
+Nombre de la Entidad Federativa : CIUDAD DE MEXICO
+Régimen Fiscal : 601 General de Ley Personas Morales
+`;
+
+test('POST /api/parsear-csf con texto de persona moral retorna estructura completa con domicilio', async () => {
+  const res = await supertest(app).post('/api/parsear-csf').send({ texto: CSF_PERSONA_MORAL_TXT });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.datos.rfc, 'BMF821130AR3');
+  assert.ok(res.body.datos.razonSocial.includes('BANCO DE MEXICO'));
+  assert.strictEqual(res.body.datos.calle, 'AV 5 DE MAYO');
+  assert.strictEqual(res.body.datos.numExt, '2');
+  assert.strictEqual(res.body.datos.numInt, '');
+  assert.strictEqual(res.body.datos.colonia, 'CENTRO DE LA CIUDAD DE MEXICO AREA 1');
+  assert.strictEqual(res.body.datos.regimenFiscal, '601');
+});
+
+const CSF_RFC_SUFIJO_ESPURIO_TXT = `
+CONSTANCIA DE SITUACION FISCAL
+Denominación/Razón Social : SAGO MEDICAL SERVICE
+RFC: SMS200716NZ4 Denominación/Razón Social : SAGO MEDICAL SERVICE
+idCIF : 20090146505
+Nombre de la Vialidad : NAYARIT
+Número Exterior : 56
+Nombre de la Colonia : ROMA SUR
+Código Postal : 06760
+Nombre del Municipio o Demarcación Territorial : CUAUHTEMOC
+Nombre de la Entidad Federativa : CIUDAD DE MEXICO
+Régimen Fiscal : 601 General de Ley Personas Morales
+`;
+
+test('POST /api/parsear-csf con RFC seguido de texto en la misma linea no captura sufijo espurio', async () => {
+  const res = await supertest(app).post('/api/parsear-csf').send({ texto: CSF_RFC_SUFIJO_ESPURIO_TXT });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.datos.rfc, 'SMS200716NZ4');
+});
+
+test('POST /api/parsear-csf con texto sin RFC detectable retorna error claro, no datos vacios', async () => {
+  const res = await supertest(app).post('/api/parsear-csf').send({ texto: 'Este documento no es una CSF, es una factura cualquiera.' });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual(res.body.ok, false);
+  assert.ok(res.body.error);
+  assert.strictEqual(res.body.datos, undefined);
+});
+
+test('POST /api/parsear-csf sin campo texto retorna 400', async () => {
+  const res = await supertest(app).post('/api/parsear-csf').send({});
+  assert.strictEqual(res.status, 400);
+  assert.ok(res.body.error);
+});
+
 // === GET /api/catalogos (issue #27) ===
 
 const SALES_TYPES_MOCK = [

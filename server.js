@@ -10,6 +10,7 @@ import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
 import { detectarDuplicados } from './lib/deduplicacion.js';
+import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -410,6 +411,16 @@ app.post('/api/csf-from-url', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- CSF: parsear texto a estructura (sin JWT) ---
+
+app.post('/api/parsear-csf', (req, res) => {
+  const { texto } = req.body || {};
+  if (!texto || typeof texto !== 'string') return res.status(400).json({ error: 'Falta texto' });
+  const datos = parsearCSF(texto);
+  if (!datos.rfc) return res.status(422).json({ ok: false, error: 'No se detecto un RFC en el texto' });
+  res.json({ ok: true, datos });
 });
 
 // --- CSF: historial de auditoria (sin JWT) ---
