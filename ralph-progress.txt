@@ -1865,3 +1865,78 @@ Limpieza post-verificacion: borrados verificacion-ac7.png y .env temporal (no se
 commitean), proceso node detenido. git status limpio.
 
 Suite final: 259/259 GREEN, 0 fail.
+
+== ESTADO FINAL DE LOS 7 ACs DE #32 (Ralph Loop completo, 4 iteraciones) ==
+[x] AC1 -- Auditoria de paridad: CUMPLIDA (resuelta en iteracion previa + #38 cerro
+    el gap real detectado -- "Ya no hay gap de funcionalidad", confirmado por
+    comentario del orquestador en #32)
+[x] AC2 -- panel-csf/panel-manual/cliente-modos+3 modo-btn removidos de index.html;
+    panel-buscar/"Buscar en Operam" CONSERVADO (rotulo preservado via section-header
+    porque antes vivia solo en el boton de modo activo) -- iter 3
+[x] AC3 -- procesarCSF/parsearCSFTexto/crearClienteDesdeCSF/mostrarPanelConfirmacion/
+    confirmarCambios/cancelarConfirmacion/cancelarCSF/cancelarConfirmacionManual/
+    actualizarDesdeManual/confirmarCambiosManual/buscarRfcEnManual/setClienteModo +
+    estado/constantes huerfanas (csfDatosExtraidos/csfClienteExistente/csfDiffPendiente/
+    CSF_FORM_FIELD_IDS/CSF_FIELD_LABELS) + 12 helpers compartidos (buildPreFillMap,
+    applyPreFillMap, buildPaisConfig, findRfcMatch, shouldTriggerRfcSearch,
+    buildCsfDuplicadoBanner, buildClienteSnapshot, buildOperamPreFillMap,
+    buildEntregaPayload, calcularDiff, buildConfirmacionItems, buildCsfPayload)
+    removidas de app.js Y helpers.cjs -- iter 1-2
+[x] AC4 -- panel-buscar/"Buscar en Operam" sigue funcionando sin cambios de
+    comportamiento -- verificado en navegador (iter 4): input+boton Buscar visibles
+    y operativos, sin display:none, ya no depende de setClienteModo
+[x] AC5 -- acordeon de alta sigue pasando todos sus tests sin modificacion de su
+    logica -- 259/259 GREEN durante TODAS las iteraciones, identico antes/despues;
+    cero cambios a alta-*.test.cjs, alta-dedup-fiscal.test.cjs, helpers de #27-#31/#38
+[x] AC6 -- 14 suites huerfanas eliminadas (pais-config, manual-rfc-guard, csf,
+    csf-rfc-match, csf-prefill, csf-operam-fill, csf-payload, csf-guard-edge,
+    csf-guard, csf-entrega, csf-edge, csf-diff, csf-diff-edge, csf-actualizar
+    .test.cjs); npm test completo en verde -- 259/259, 0 fail (330 baseline -
+    71 tests de archivos eliminados = 259, exacto) -- iter 1
+[x] AC7 -- verificacion manual en navegador: alta de cliente nueva via CSF y via
+    manual, end-to-end dentro de lo verificable sin Operam real -- CONFIRMADO sin
+    flujo viejo visible, cero errores JS, formularios validan y llaman a los
+    endpoints correctos -- iter 4 (limitacion de entorno documentada: Operam
+    inalcanzable desde sandbox, igual que #38 iter4 -- NO bug, NO blocker)
+
+== RESUMEN DE COMMITS (Ralph Loop #32, retoma post-#38) ==
+307a078 test: eliminar 14 suites huerfanas del flujo viejo de alta + sus helpers (iter 1/7)
+ffb4178 refactor: eliminar funciones y estado del flujo viejo de alta de cliente (iter 2/7)
+a23a1be docs: registrar progreso iter1-2 issue #32 en ralph-progress.txt (iter 2/7)
+8d1c33d refactor: eliminar markup y CSS del flujo viejo de alta de cliente (iter 3/7)
+eec5bc4 docs: verificacion manual en navegador AC7 + cierre del Ralph Loop (iter 4/7)
+
+== ARCHIVOS MODIFICADOS (TODA LA CADENA) ==
+public/js/app.js (-563 lineas: funciones+estado+wiring del flujo viejo)
+public/index.html (-86/+25: markup cliente-modos/panel-csf/panel-manual removido,
+  section-header "Buscar en Operam" agregado para conservar el rotulo)
+public/css/style.css (-28: reglas .cliente-modos/.modo-btn/.modo-btn.active)
+public/js/__tests__/helpers.cjs (-152: 12 funciones + 2 constantes privadas)
+public/js/__tests__/*.test.cjs (-14 archivos, ~1166 lineas: suites huerfanas)
+ralph-progress.txt (este archivo)
+
+== NO TOCADO (verificado, fuera de alcance) ==
+lib/parsear-csf.js, su test suite, /api/parsear-csf (scope #33)
+csf-upload.html, csf-upload-alta.test.cjs, csf-upload-parseo.test.cjs (scope #35/#34)
+Codigo de #38: altaDiffFiscalState, altaDiffFiscalConfirmar/Descartar, calcularDiffFiscal,
+  buildDiffFiscalHtml, buildDedupExactoConDiffHtml, DIFF_FISCAL_CAMPOS/LABELS,
+  .diff-fiscal-panel CSS, alta-dedup-fiscal.test.cjs -- intactos, 100% de sus tests pasan
+
+== NOTA PARA EL ORQUESTADOR (bug preexistente, NO de este issue) ==
+altaCotizarAhora/altaTerminar [app.js] hacen getElementById('panel-alta') -- ese ID
+NO EXISTE (el acordeon usa 'panel-alta-cliente'). El getElementById retorna null,
+la asignacion .style.display es no-op silencioso. Es codigo del acordeon (#29), no
+del flujo viejo de #32 -- documentado para que el supervisor decida si vale un issue
+nuevo (bug cosmetico/silencioso, no rompe el flujo de alta).
+
+== RECOMENDACION PARA EL ORQUESTADOR ==
+TODOS LOS 7 ACs DE #32 ESTAN CUMPLIDOS. Suite completa 259/259 GREEN, 0 fail.
+node --check public/js/app.js -> Syntax OK (verificado en cada iteracion, regla #37).
+Verificacion manual en navegador completada (AC7) dentro de lo posible sin Operam
+real -- limitacion de entorno documentada explicitamente, no oculta.
+
+ISSUE #32 LISTO PARA CIERRE -- el Ralph Loop termino en 4/7 iteraciones (no se
+alargo artificialmente: la remocion estaba completamente pre-mapeada por la
+auditoria previa, y cada incremento se completo sin sorpresas ni gaps nuevos).
+
+NO cerrar issue #32 en GitHub (lo hace el supervisor).
