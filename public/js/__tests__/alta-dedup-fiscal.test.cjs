@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   calcularDiffFiscal,
   buildDiffFiscalHtml,
+  buildDedupExactoConDiffHtml,
 } = require('./helpers.cjs');
 
 // === calcularDiffFiscal ===
@@ -140,4 +141,40 @@ test('G10: buildDiffFiscalHtml incluye botones confirmar y descartar', () => {
 test('G11: buildDiffFiscalHtml con diff vacio retorna cadena vacia (sin friccion, AC4)', () => {
   const html = buildDiffFiscalHtml({});
   assert.equal(html, '', 'sin diferencias no debe renderizar ningun panel');
+});
+
+// === buildDedupExactoConDiffHtml ===
+// Compone el banner "RFC ya existe" (igual al flujo actual, AC3: "Usar este cliente"
+// SIEMPRE disponible) + el panel de diff fiscal cuando aplica (AC1/AC4: solo si hay
+// diferencias). Es deliberadamente NO bloqueante -- el vendedor puede usar el cliente
+// existente sin resolver el diff primero (decision de diseno: paso paralelo/opcional,
+// ver razonamiento en ralph-progress.txt iter 2).
+
+const clienteExacto = { id: 77, customer_id: 77, CustName: 'Peltre Nacional SA de CV', RFC: 'PNA010203ABC', tax_id: 'PNA010203ABC' };
+
+test('G12: buildDedupExactoConDiffHtml sin diferencias fiscales NO agrega panel de diff (AC4, sin friccion)', () => {
+  const csfDatosIgualesAlCliente = {
+    razonSocial: 'Peltre Nacional SA de CV', rfc: 'PNA010203ABC', idcif: '', calle: '',
+    numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '', regimenFiscal: '',
+  };
+  const html = buildDedupExactoConDiffHtml(clienteExacto, csfDatosIgualesAlCliente);
+  assert.ok(html.includes('Usar este cliente'), 'banner exacto debe seguir presente');
+  assert.ok(!html.includes('diff-fiscal-panel'), 'sin diferencias no debe renderizar panel de diff');
+});
+
+test('G13: buildDedupExactoConDiffHtml con diferencias fiscales agrega el panel de diff Y conserva "Usar este cliente" (AC1+AC3, no bloqueante)', () => {
+  const csfDatosConCambios = {
+    razonSocial: 'Peltre Nacional Industrias SA de CV', rfc: 'PNA010203ABC', idcif: '',
+    calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '', regimenFiscal: '',
+  };
+  const html = buildDedupExactoConDiffHtml(clienteExacto, csfDatosConCambios);
+  assert.ok(html.includes('Usar este cliente'), 'boton Usar este cliente debe seguir disponible (no bloquea)');
+  assert.ok(html.includes('diff-fiscal-panel'), 'con diferencias debe mostrar el panel de diff');
+  assert.ok(html.includes('Peltre Nacional Industrias SA de CV'), 'debe mostrar el valor nuevo de razon social');
+});
+
+test('G14: buildDedupExactoConDiffHtml sin csfDatos (undefined) no truena y omite el diff', () => {
+  const html = buildDedupExactoConDiffHtml(clienteExacto, undefined);
+  assert.ok(html.includes('Usar este cliente'));
+  assert.ok(!html.includes('diff-fiscal-panel'));
 });

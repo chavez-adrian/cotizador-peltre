@@ -2760,10 +2760,85 @@ export function buildDiffFiscalHtml(diff) {
     filas +
     '<div class="diff-fiscal-acciones">' +
     '<button type="button" class="btn btn-secondary" onclick="altaDiffFiscalConfirmar()">Confirmar y actualizar en Operam</button> ' +
-    '<button type="button" class="btn btn-link" onclick="altaDiffFiscalDescartar()">Descartar y continuar sin actualizar</button>' +
+    '<button type="button" class="btn btn-secondary diff-fiscal-btn-descartar" onclick="altaDiffFiscalDescartar()">Descartar y continuar sin actualizar</button>' +
     '</div>' +
     '</div>';
 }
+
+// Compone el banner "RFC ya existe" (igual al existente, "Usar este cliente" SIEMPRE
+// disponible -- AC3) + panel de diff fiscal cuando hay diferencias (AC1/AC4). Es
+// deliberadamente NO bloqueante: el vendedor puede avanzar con "Usar este cliente" sin
+// resolver el diff -- es un paso paralelo/opcional, no un gate (decision documentada en
+// ralph-progress.txt iter 2: bloquear forzaria al vendedor a decidir sobre datos fiscales
+// en medio de un flujo de cotizacion, friccion injustificada para un caso que no impide
+// continuar -- el dato sigue desactualizado en Operam pero el vendedor ya fue avisado y
+// puede resolverlo ahi mismo o despues).
+export function buildDedupExactoConDiffHtml(cliente, csfDatos) {
+  const nombre = cliente.CustName || cliente.name || '';
+  const id = cliente.id || cliente.customer_id || '';
+  const rfcC = cliente.RFC || cliente.rfc || cliente.tax_id || '';
+  const base =
+    '<div class="dedup-exacto">' +
+    '<p class="dedup-alerta-roja">Este RFC ya existe en Operam</p>' +
+    '<p><strong>' + nombre + '</strong> (ID: ' + id + ', RFC: ' + rfcC + ')</p>' +
+    '<button class="btn btn-secondary" type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este cliente</button>' +
+    '</div>';
+  if (!csfDatos) return base;
+  const diff = calcularDiffFiscal(cliente, csfDatos);
+  return base + buildDiffFiscalHtml(diff);
+}
+
+// Estado del diff fiscal pendiente (issue #38). Vive aparte de altaState.clienteExistente
+// porque el diff puede calcularse y descartarse/confirmarse ANTES de que el vendedor
+// elija "Usar este cliente" -- son ciclos de vida independientes.
+const altaDiffFiscalState = {
+  cliente: null,
+  diff: null,
+};
+
+async function altaDiffFiscalConfirmar() {
+  const { cliente, diff } = altaDiffFiscalState;
+  if (!cliente || !diff || Object.keys(diff).length === 0) return;
+  const id = cliente.id || cliente.customer_id;
+  const dedupDiv = document.getElementById('alta-dedup-resultado');
+  const panel = dedupDiv ? dedupDiv.querySelector('.diff-fiscal-panel') : null;
+  const btn = panel ? panel.querySelector('.diff-fiscal-acciones .btn-secondary:not(.diff-fiscal-btn-descartar)') : null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Actualizando...'; }
+
+  try {
+    const res = await api(`/api/operam/clientes/${id}`, {
+      method: 'PATCH',
+      body: { diff },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al actualizar');
+
+    if (panel) {
+      panel.innerHTML = '<p class="alert alert-success" style="margin:0">Datos fiscales actualizados en Operam.</p>';
+    }
+    altaDiffFiscalState.cliente = null;
+    altaDiffFiscalState.diff = null;
+  } catch (err) {
+    if (panel) {
+      const msgEl = document.createElement('p');
+      msgEl.className = 'alert alert-error';
+      msgEl.style.fontSize = '12px';
+      msgEl.textContent = 'Error al actualizar datos fiscales: ' + err.message;
+      panel.appendChild(msgEl);
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar y actualizar en Operam'; }
+  }
+}
+window.altaDiffFiscalConfirmar = altaDiffFiscalConfirmar;
+
+function altaDiffFiscalDescartar() {
+  const dedupDiv = document.getElementById('alta-dedup-resultado');
+  const panel = dedupDiv ? dedupDiv.querySelector('.diff-fiscal-panel') : null;
+  if (panel) panel.remove();
+  altaDiffFiscalState.cliente = null;
+  altaDiffFiscalState.diff = null;
+}
+window.altaDiffFiscalDescartar = altaDiffFiscalDescartar;
 
 // === Seccion 1: Deduplicacion (issue #31) ===
 
@@ -2801,15 +2876,10 @@ async function altaDedupCorrer(rfc, razonSocial) {
 
     if (resultado.tipo === 'exacto') {
       const c = resultado.cliente;
-      const nombre = c.CustName || c.name || '';
-      const id = c.id || c.customer_id || '';
-      const rfcC = c.RFC || c.rfc || c.tax_id || '';
-      dedupDiv.innerHTML =
-        '<div class="dedup-exacto">' +
-        '<p class="dedup-alerta-roja">Este RFC ya existe en Operam</p>' +
-        '<p><strong>' + nombre + '</strong> (ID: ' + id + ', RFC: ' + rfcC + ')</p>' +
-        '<button class="btn btn-secondary" type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este cliente</button>' +
-        '</div>';
+      const csfDatos = altaState.datos || null;
+      altaDiffFiscalState.cliente = c;
+      altaDiffFiscalState.diff = csfDatos ? calcularDiffFiscal(c, csfDatos) : {};
+      dedupDiv.innerHTML = buildDedupExactoConDiffHtml(c, csfDatos);
       return;
     }
 

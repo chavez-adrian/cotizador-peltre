@@ -1249,3 +1249,35 @@ body {
   padding: 6px 0;
   cursor: pointer;
 }
+
+/* === DIFF FISCAL al subir CSF de cliente existente (issue #38) === */
+
+.diff-fiscal-panel {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fff8f0;
+  border: 1px solid #fff3e0;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.diff-fiscal-fila {
+  padding: 4px 0;
+}
+
+.diff-fiscal-anterior {
+  color: var(--text-light);
+  text-decoration: line-through;
+}
+
+.diff-fiscal-nuevo {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.diff-fiscal-acciones {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

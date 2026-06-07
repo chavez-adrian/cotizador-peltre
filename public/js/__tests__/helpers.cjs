@@ -633,9 +633,27 @@ function buildDiffFiscalHtml(diff) {
     filas +
     '<div class="diff-fiscal-acciones">' +
     '<button type="button" class="btn btn-secondary" onclick="altaDiffFiscalConfirmar()">Confirmar y actualizar en Operam</button> ' +
-    '<button type="button" class="btn btn-link" onclick="altaDiffFiscalDescartar()">Descartar y continuar sin actualizar</button>' +
+    '<button type="button" class="btn btn-secondary diff-fiscal-btn-descartar" onclick="altaDiffFiscalDescartar()">Descartar y continuar sin actualizar</button>' +
     '</div>' +
     '</div>';
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, buildCsfUploadDatosDesdeEndpoint, buildCsfUploadDatosParseo, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId, calcularDiffFiscal, buildDiffFiscalHtml };
+// Compone el banner "RFC ya existe" + panel de diff fiscal cuando hay diferencias.
+// No bloqueante: "Usar este cliente" siempre presente (AC3). Ver razonamiento de diseno
+// (por que NO bloquea) en el comentario gemelo de app.js y en ralph-progress.txt iter 2.
+function buildDedupExactoConDiffHtml(cliente, csfDatos) {
+  const nombre = cliente.CustName || cliente.name || '';
+  const id = cliente.id || cliente.customer_id || '';
+  const rfcC = cliente.RFC || cliente.rfc || cliente.tax_id || '';
+  const base =
+    '<div class="dedup-exacto">' +
+    '<p class="dedup-alerta-roja">Este RFC ya existe en Operam</p>' +
+    '<p><strong>' + nombre + '</strong> (ID: ' + id + ', RFC: ' + rfcC + ')</p>' +
+    '<button class="btn btn-secondary" type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este cliente</button>' +
+    '</div>';
+  if (!csfDatos) return base;
+  const diff = calcularDiffFiscal(cliente, csfDatos);
+  return base + buildDiffFiscalHtml(diff);
+}
+
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, buildCsfUploadDatosDesdeEndpoint, buildCsfUploadDatosParseo, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId, calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml };
