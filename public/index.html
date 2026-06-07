@@ -49,17 +49,7 @@
   <!-- TAB: CLIENTE -->
   <div class="tab-content active" id="tab-cliente">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div class="cliente-modos" style="margin-bottom:0">
-        <button class="modo-btn active" data-modo="buscar" onclick="setClienteModo('buscar')">
-          Buscar en Operam
-        </button>
-        <button class="modo-btn" data-modo="csf" onclick="setClienteModo('csf')">
-          Crear desde CSF
-        </button>
-        <button class="modo-btn" data-modo="manual" onclick="setClienteModo('manual')">
-          Captura manual
-        </button>
-      </div>
+      <div class="section-header" style="margin-bottom:0">Buscar en Operam</div>
       <button class="btn btn-primary btn-sm" id="btn-nuevo-cliente" onclick="abrirAcordeonAlta()">+ Nuevo cliente</button>
     </div>
 
@@ -488,54 +478,6 @@
         <button class="btn btn-secondary btn-sm" id="btn-usar-domicilio">Usar este domicilio</button>
       </div>
       <div id="historial-cliente-panel" style="display:none;margin-bottom:12px;"></div>
-    </div>
-
-    <!-- Panel: Crear desde CSF -->
-    <div id="panel-csf" class="cliente-panel" style="display:none">
-      <div class="form-group">
-        <label>Sube la Constancia de Situacion Fiscal (PDF)</label>
-        <input type="file" id="csf-file" accept=".pdf" onchange="procesarCSF(this)">
-      </div>
-      <div id="csf-status" style="display:none"></div>
-      <div id="csf-preview" style="display:none">
-        <div class="alert alert-info" id="csf-datos-preview"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-primary" id="btn-crear-csf" onclick="crearClienteDesdeCSF()">
-            Crear cliente en Operam y continuar
-          </button>
-          <button class="btn btn-secondary" onclick="cancelarCSF()">Cancelar</button>
-        </div>
-      </div>
-      <div id="csf-panel-confirmacion" style="display:none">
-        <div class="alert alert-warning">Se van a modificar los datos del cliente en Operam</div>
-        <div id="csf-lista-cambios" style="margin:8px 0;font-size:13px"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-primary" id="btn-confirmar-cambios" onclick="confirmarCambios()">Confirmar cambios</button>
-          <button class="btn btn-secondary" onclick="cancelarConfirmacion()">Cancelar</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Panel: Captura manual -->
-    <div id="panel-manual" class="cliente-panel" style="display:none">
-      <div class="section-divider" style="margin-bottom:12px;color:var(--text-light);font-size:12px">
-        Captura manual - para clientes extranjeros o sin CSF disponible
-      </div>
-      <div id="manual-rfc-status" style="display:none"></div>
-      <div id="manual-panel-actualizar" style="display:none">
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-primary" id="btn-manual-actualizar" onclick="actualizarDesdeManual()">Actualizar en Operam</button>
-          <button class="btn btn-secondary" onclick="cancelarConfirmacionManual()">Cancelar</button>
-        </div>
-      </div>
-      <div id="manual-panel-confirmacion" style="display:none">
-        <div class="alert alert-warning">Se van a modificar los datos del cliente en Operam</div>
-        <div id="manual-lista-cambios" style="margin:8px 0;font-size:13px"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-primary" id="btn-manual-confirmar-cambios" onclick="confirmarCambiosManual()">Confirmar cambios</button>
-          <button class="btn btn-secondary" onclick="cancelarConfirmacionManual()">Cancelar</button>
-        </div>
-      </div>
     </div>
 
     <div class="section-header">Datos de facturacion</div>

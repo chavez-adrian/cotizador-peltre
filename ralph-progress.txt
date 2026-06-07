@@ -1797,3 +1797,27 @@ Push: pendiente (se hace junto con iter 3)
 Siguiente: ITER 3 -- remover markup de index.html (cliente-modos+3 modo-btn,
   panel-csf, panel-manual) y CSS (.cliente-modos/.modo-btn/.modo-btn.active),
   conservando .cliente-panel (lo usa panel-buscar) y panel-buscar intacto (AC2/AC4).
+
+--- ITER 3 (completada) -- AC2: markup y CSS del flujo viejo eliminados ---
+Hecho:
+  - index.html: removido <div class="cliente-modos"> con sus 3 <button class="modo-btn">
+    (Buscar en Operam / Crear desde CSF / Captura manual, onclick=setClienteModo)
+    -- reemplazado por <div class="section-header">Buscar en Operam</div> para
+    conservar el rotulo visible al vendedor (antes vivia solo en el boton de modo,
+    AC2 pide CONSERVAR "panel-buscar/Buscar en Operam"; sigue el patron .section-header
+    ya usado en el resto del tab: "Datos de facturacion"/"Datos de entrega"/"Envio")
+  - index.html: removidos <div id="panel-csf"> (dropzone CSF viejo + preview +
+    panel-confirmacion) y <div id="panel-manual"> (captura manual vieja + paneles
+    actualizar/confirmacion) -- ~57 lineas de markup huerfano
+  - style.css: removidas reglas .cliente-modos / .modo-btn / .modo-btn.active
+    (.cliente-panel se queda intacto, lo sigue usando #panel-buscar)
+Verificacion post-remocion: grep de panel-csf/panel-manual/cliente-modos/modo-btn/
+csf-file/csf-status/csf-preview/manual-rfc-status/etc en index.html+app.js+style.css
+-> CERO residuos (los unicos matches de "panel-csf"/"panel-manual" que quedan son
+alta-panel-csf/alta-panel-manual del acordeon nuevo, no relacionados)
+node --check public/js/app.js -> Syntax OK
+Suite: 259/259 GREEN, identica a iter1-2 (markup/CSS no afecta tests backend/frontend)
+Archivos modificados: public/index.html, public/css/style.css
+Siguiente: ITER 4 -- verificacion manual en navegador (chrome-devtools si disponible):
+  abrir cotizador, confirmar panel-buscar visible por defecto sin selector de modos,
+  flujo "+ Nuevo cliente" (CSF y manual) end-to-end sin el flujo viejo visible (AC7).
