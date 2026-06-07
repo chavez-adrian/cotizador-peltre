@@ -582,3 +582,46 @@ Siguiente: ITER 6 -- verificacion final exhaustiva:
   - correr npm test completo una vez mas
   - revisar issue #33 linea por linea contra lo entregado
   - si todo en orden: escribir "ISSUE #33 LISTO PARA CIERRE"
+
+--- ITER 6 (completada) -- VERIFICACION FINAL ---
+Hecho: verificacion exhaustiva final de issue #33, sin cambios de codigo (solo este append a progress)
+Checklist linea por linea contra issue #33:
+  [x] "Endpoint nuevo y delgado POST /api/parsear-csf, recibe {texto}, responde {ok:true, datos:{...}}
+      invocando parsearCSF(texto)" -- implementado en server.js linea ~418, opcion (a) recomendada
+  [x] "...incluidos rfc, razonSocial, nombreCorto, idcif, regimenFiscal, calle, numExt, numInt,
+      colonia, cp, municipio, estado" -- parsearCSF retorna esos + pais (superset), verificado con
+      test de persona moral que asevera calle/numExt/numInt/colonia explicitamente
+  [x] "(b) extender /api/csf-from-url para que devuelva tambien datos parseados (mismo parsearCSF
+      por dentro)" -- hecho en iter2: { ok:true, texto, datos } -- ambas rutas comparten una sola
+      llamada a parsearCSF, "un solo punto de parseo sin importar el origen del texto"
+  [x] "Auth: replicar patron de /api/csf-from-url y /api/buscar-cliente (sin JWT)" -- verificado
+      con test dedicado E (iter4): POST sin Authorization header -> 200, no 401
+  [x] "Tests del endpoint: persona fisica, persona moral, RFC con sufijo espurio, texto sin RFC
+      (error claro, no datos vacios)" -- 4 tests CORE (iter1) + 2 tests de contrato/regresion
+      adicionales (whitespace-only en iter3, no-JWT en iter4) = 8 tests dedicados, todos GREEN
+  [x] "No modificar lib/parsear-csf.js ni test/parsear-csf.test.js" -- git diff vacio confirmado
+      con `git diff 656d19a..HEAD -- lib/parsear-csf.js test/parsear-csf.test.js` (sin output)
+Verificacion final de git diff -- archivos tocados en TODA la cadena de iteraciones (656d19a..HEAD):
+  server.js, test/server.test.js, README.md, ralph-progress.txt
+  (NINGUN archivo de #32/#34/#35: sin tocar app.js, csf-upload.html, index.html, helpers.cjs)
+npm test completo: 301/301 GREEN, 0 fail, 0 cancelled, 0 skipped (--test-concurrency=1)
+Push final: e6d5178..HEAD a origin/main, fast-forward limpio en cada iteracion (sin merge commits,
+  sin conflictos -- branch worktree-agent-a624b94c082373936 siempre delante de origin/main)
+
+== ACs VERIFICADOS (issue #33) -- TODOS CUMPLIDOS ==
+[x] Endpoint que envuelve lib/parsear-csf.js::parsearCSF y devuelve estructura completa,
+    incluidos calle, numExt, numInt, colonia
+[x] Tests del endpoint cubren persona fisica, persona moral, RFC con sufijo espurio y
+    texto invalido -- todos en verde (+ 2 tests de contrato adicionales: whitespace-only, no-JWT)
+[x] El endpoint sigue un patron de auth consistente con las rutas CSF existentes
+    (/api/csf-from-url, /api/buscar-cliente) -- sin JWT, test dedicado lo confirma
+[x] lib/parsear-csf.js y su test suite no se modifican -- git diff vacio verificado
+[x] npm test completo en verde -- 301/301
+
+Bonus entregado (lineamiento (b) del issue, recomendado como complemento de (a)):
+  /api/csf-from-url ahora reusa parsearCSF internamente y devuelve datos+texto -- deja lista
+  la migracion de consumidores para #34 (no migre consumidores, eso es scope de #34)
+
+ISSUE #33 LISTO PARA CIERRE
+
+NO cerrar issue #33 en GitHub (lo hace el supervisor).
