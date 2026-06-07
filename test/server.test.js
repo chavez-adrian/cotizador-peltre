@@ -356,6 +356,14 @@ test('POST /api/parsear-csf sin campo texto retorna 400', async () => {
   assert.ok(res.body.error);
 });
 
+test('POST /api/parsear-csf con texto solo de espacios en blanco retorna 422, no datos vacios', async () => {
+  const res = await supertest(app).post('/api/parsear-csf').send({ texto: '   \n\n   ' });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual(res.body.ok, false);
+  assert.ok(res.body.error);
+  assert.strictEqual(res.body.datos, undefined);
+});
+
 // === GET /api/catalogos (issue #27) ===
 
 const SALES_TYPES_MOCK = [
