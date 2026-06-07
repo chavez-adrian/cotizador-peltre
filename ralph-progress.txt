@@ -1821,3 +1821,47 @@ Archivos modificados: public/index.html, public/css/style.css
 Siguiente: ITER 4 -- verificacion manual en navegador (chrome-devtools si disponible):
   abrir cotizador, confirmar panel-buscar visible por defecto sin selector de modos,
   flujo "+ Nuevo cliente" (CSF y manual) end-to-end sin el flujo viejo visible (AC7).
+
+--- ITER 4 (completada) -- AC7: verificacion manual en navegador + cierre del Ralph Loop ---
+Hecho: levante el server local (node server.js, .env minimo con JWT_SECRET temporal,
+sin OPERAM_* -- igual que iter4 de #38, Operam no es alcanzable desde este sandbox),
+abri con chrome-devtools MCP, inicie sesion (Adrian Chavez, PIN 0000):
+
+VERIFICADO EN NAVEGADOR (clicks reales, snapshot de accesibilidad + capturas):
+  1. Tab "Cliente" muestra por defecto: encabezado "Buscar en Operam" (section-header,
+     reemplazo del boton de modo activo removido) + boton "+ Nuevo cliente" + el
+     buscador de Operam (input + boton Buscar) -- SIN selector de modos viejo
+     (cliente-modos/modo-btn), SIN "Crear desde CSF"/"Captura manual" como botones
+     de nivel superior -- AC2/AC4 confirmados visualmente
+  2. "+ Nuevo cliente" abre el acordeon de 4 secciones (#27-#31, #38) intacto:
+     seccion 1 con su PROPIO tab-switcher "Cargar CSF"/"Captura manual" (alta-tab-*,
+     del acordeon, NO confundir con el cliente-modos viejo que se removio)
+  3. Tab "Captura manual" del acordeon: formulario completo (pais/RFC/razon social/
+     nombre corto/idcif/regimen/uso CFDI/CP/municipio/estado) -- llene con datos de
+     prueba (RFC generico XAXX010101000 + razon social ficticia), click "Verificar
+     y confirmar" -> el form valida correctamente y llama GET /api/buscar-cliente-
+     duplicado -> 503 (Operam no alcanzable desde sandbox, MISMO bloqueo documentado
+     en #38 iter4 -- "Error al verificar duplicados: Error 503", limitacion de
+     entorno, NO bug de produccion)
+  4. Tab "Cargar CSF" del acordeon: dropzone "Subir Constancia de Situacion Fiscal"
+     visible y funcional (icono + texto + zona de drop)
+  5. Panel "Buscar en Operam" (#panel-buscar): input + boton Buscar presentes y
+     visibles por defecto (sin display:none, ya no depende de setClienteModo) --
+     AC4 confirmado: sigue funcionando sin cambios de comportamiento
+  6. Consola del navegador: CERO errores de JavaScript -- los unicos 2 console.error
+     son de red (401 de un intento de login con PIN de placeholder antes de corregir
+     el fill, y 503 de Operam inalcanzable) -- NINGUNO relacionado con codigo removido
+     ni con el incidente #37 (la app cargo, el login funciono, el modulo ES parseo bien)
+  7. node --check public/js/app.js -> Syntax OK (verificado de nuevo, ultima vez)
+
+Limitacion de entorno (igual que #38 iter4, NO blocker): Operam real inalcanzable
+desde este worktree en sandbox -- no se pudo completar un alta end-to-end con
+PATCH/POST reales a Operam. Se verifico todo lo verificable sin esa conectividad:
+render correcto del UI sin flujo viejo, ausencia total de errores JS, validacion
+de formularios, llamadas a los endpoints correctos (503 = la llamada SE HIZO
+correctamente, solo el backend de Operam no respondio).
+
+Limpieza post-verificacion: borrados verificacion-ac7.png y .env temporal (no se
+commitean), proceso node detenido. git status limpio.
+
+Suite final: 259/259 GREEN, 0 fail.
