@@ -948,3 +948,49 @@ Siguiente: ITER 6 -- verificacion adicional: confirmar que altaCsfResultadoParse
   deben cubrir exactamente lo que el formulario espera poblar). Tambien revisar si csf-upload.html
   tiene una regresion analoga (su flujo via mapearDatosCsfDesdeEndpoint/parsearCSF -- confirmar
   si throw ahi tambien rompe UX o si ese flujo siempre tuvo manejo de error apropiado).
+
+=== CORRIDA 2 DE #34 (cierre, 2 iteraciones) ===
+
+--- ITER 1 (completada) -- GAP DE csf-upload.html CERRADO (TDD: U7-U10) ---
+Confirmado por orquestador (no re-investigado): csf-upload.html::parsearCSF(texto) (linea ~513,
+version migrada al endpoint en fb97e6d) hacia "if (!json.ok || !json.datos) throw new Error(...)".
+Cuando /api/parsear-csf responde {ok:false} (HTTP 422, "No se detecto un RFC en el texto"), esto
+disparaba el catch de procesarPDF -> setStatus('error',...) + uploadZone visible de nuevo ->
+formSection NUNCA se mostraba -- dead-end identico al ya arreglado en iter5 (altaCsfResultadoParseo)
+pero en el OTRO flujo (herramienta standalone csf-upload.html vs acordeon de app.js).
+
+Diferencia clave de forma vs iter5: csf-upload.html YA TENIA el camino de convergencia listo --
+procesarPDF linea 896 hace "if (!data.tax_id) setStatus('error', 'No se pudo extraer el RFC.
+Verifica los campos manualmente.')" DESPUES de formSection.classList.remove('hidden') (linea 894,
+incondicional). Es decir: si parsearCSF NO lanza y devuelve datos con tax_id vacio, el flujo
+normal YA muestra el formulario con mensaje de captura manual -- exactamente lo deseado.
+No hizo falta crear un mensaje nuevo ni una funcion tipo altaCsfResultadoParseo: la correccion
+correcta y minima es simplemente que parsearCSF deje de lanzar y empiece a devolver datos usables
+(shape mapeado con campos centrales vacios), convergiendo con codigo YA existente. Esto es
+precisamente lo que el orquestador sugirio explorar (revisar si la correccion puede converger
+con ese camino en vez de duplicar logica) -- confirmado que SI converge, sin tocar nada mas.
+
+TDD aplicado (RED-GREEN):
+  RED: 4 tests nuevos en csf-upload-parseo.test.cjs (U7-U10) para nueva funcion pura
+       buildCsfUploadDatosParseo(json, texto) -- mirror de la decision que parsearCSF debe tomar
+       (interpreta json de /api/parsear-csf -> datos mapeados, NUNCA lanza). Confirmado RED:
+       TypeError buildCsfUploadDatosParseo is not a function en las 4.
+  GREEN: implementada en helpers.cjs (8 lineas): datos = (json && json.ok && json.datos) ?
+       json.datos : {}; return buildCsfUploadDatosDesdeEndpoint(datos, texto) -- reusa el mapeo
+       ya testeado (U1-U6) sin duplicar logica de mapeo/derivados. Agregada a module.exports.
+       Confirmado GREEN: 10/10 en csf-upload-parseo.test.cjs.
+WIRING (csf-upload.html, parsearCSF reescrita, ~6 lineas):
+  ANTES: if (!json || !json.ok || !json.datos) throw new Error(...)
+  AHORA: const datos = (json && json.ok && json.datos) ? json.datos : {};
+         return mapearDatosCsfDesdeEndpoint(datos, texto);
+  -- nunca lanza ante una respuesta JSON valida del endpoint (ok:true o ok:false); solo
+  fallos genuinos de red/parseo de la respuesta (fetch/r.json() lanzando) siguen propagandose
+  como error real al catch de procesarPDF (paridad con "distingue RED real del endpoint vs
+  error genuino de lectura de PDF/red" pedido por el orquestador).
+Archivos modificados:
+  - public/js/__tests__/csf-upload-parseo.test.cjs (tests U7-U10, RED)
+  - public/js/__tests__/helpers.cjs (buildCsfUploadDatosParseo + export, GREEN)
+  - public/csf-upload.html (parsearCSF reescrita para nunca lanzar; comentario explicativo)
+Suite completa: 310/310 GREEN (306 + 4 nuevas U7-U10; sin regresiones)
+Siguiente: ITER 2 -- verificacion final + cierre (revalidar 7 ACs de #34, trace del dead-end
+  cerrado, declarar ISSUE #34 LISTO PARA CIERRE si todo en orden).

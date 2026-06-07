@@ -510,6 +510,12 @@ function mapearDatosCsfDesdeEndpoint(datos, texto) {
   };
 }
 
+// Nunca lanza ante una respuesta valida del endpoint, aun si {ok:false} (HTTP 422, "No se
+// detecto un RFC en el texto"): siempre devuelve un objeto datos mapeado y usable (con
+// campos centrales vacios si no hubo deteccion), igual que el parser local viejo. Esto deja
+// que procesarPDF tome el camino existente `if (!data.tax_id)` -- formSection visible,
+// mensaje de captura manual -- en vez de caer al catch (que oculta el formulario, dead-end).
+// Solo los fallos genuinos de red/lectura de la respuesta (fetch/json) se propagan como error.
 async function parsearCSF(texto) {
   const r = await fetch(`${API_BASE}/api/parsear-csf`, {
     method: 'POST',
@@ -517,10 +523,8 @@ async function parsearCSF(texto) {
     body: JSON.stringify({ texto }),
   });
   const json = await r.json();
-  if (!json || !json.ok || !json.datos) {
-    throw new Error((json && json.error) || 'No se pudo parsear la CSF');
-  }
-  return mapearDatosCsfDesdeEndpoint(json.datos, texto);
+  const datos = (json && json.ok && json.datos) ? json.datos : {};
+  return mapearDatosCsfDesdeEndpoint(datos, texto);
 }
 
 // ─── Leer PDF ─────────────────────────────────────────────────────────────────

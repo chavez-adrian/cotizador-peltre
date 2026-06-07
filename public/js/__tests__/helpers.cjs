@@ -322,6 +322,18 @@ function buildCsfUploadDatosDesdeEndpoint(datos, texto) {
   };
 }
 
+// Decide que devuelve parsearCSF(texto) tras llamar a /api/parsear-csf (issue #34, corrida 2):
+// el endpoint puede responder {ok:false} (HTTP 422, "No se detecto un RFC en el texto"). El
+// parser viejo de csf-upload.html NUNCA lanzaba (siempre devolvia datos usables, rfc:'' si no
+// detectaba nada). Esta funcion mirrorea la decision que parsearCSF debe tomar: SIEMPRE devolver
+// un objeto datos mapeado (shape de poblarForm) -- nunca lanzar -- para que procesarPDF muestre
+// formSection con captura manual habilitada (mismo principio que altaCsfResultadoParseo, iter5;
+// converge con el camino existente `if (!data.tax_id)` de procesarPDF, sin duplicar logica).
+function buildCsfUploadDatosParseo(json, texto) {
+  const datos = (json && json.ok && json.datos) ? json.datos : {};
+  return buildCsfUploadDatosDesdeEndpoint(datos, texto);
+}
+
 function altaCheckpointState(estado, n, done) {
   return { ...estado, checkpoints: { ...estado.checkpoints, [n]: done } };
 }
@@ -564,4 +576,4 @@ function buildDedupCandidatosHtml(candidatos) {
     '</div>';
 }
 
-module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, buildCsfUploadDatosDesdeEndpoint, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };
+module.exports = { buildPreFillMap, applyPreFillMap, buildEntregaPayload, buildCsfPayload, buildPaisConfig, buildOperamPreFillMap, buildCsfDuplicadoBanner, buildClienteSnapshot, findRfcMatch, calcularDiff, buildConfirmacionItems, shouldTriggerRfcSearch, buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, buildCsfUploadDatosDesdeEndpoint, buildCsfUploadDatosParseo, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };
