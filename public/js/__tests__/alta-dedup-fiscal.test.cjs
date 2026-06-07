@@ -5,6 +5,7 @@ const {
   calcularDiffFiscal,
   buildDiffFiscalHtml,
   buildDedupExactoConDiffHtml,
+  buildActualizarFiscalRequest,
 } = require('./helpers.cjs');
 
 // === calcularDiffFiscal ===
@@ -177,4 +178,30 @@ test('G14: buildDedupExactoConDiffHtml sin csfDatos (undefined) no truena y omit
   const html = buildDedupExactoConDiffHtml(clienteExacto, undefined);
   assert.ok(html.includes('Usar este cliente'));
   assert.ok(!html.includes('diff-fiscal-panel'));
+});
+
+// === buildActualizarFiscalRequest ===
+// Construye la forma de la peticion PATCH /api/operam/clientes/:id {diff} (AC2).
+// Consume la ruta backend YA EXISTENTE (lib/operam-client.js::actualizarCliente,
+// server.js:364, JWT) -- esta funcion NO la reimplementa, solo arma { url, method, body,
+// headers } de forma testeable sin DOM/fetch, igual que buildDedupRequest.
+
+test('G15: buildActualizarFiscalRequest arma PATCH a /api/operam/clientes/:id con el diff en el body', () => {
+  const diff = { CustName: { anterior: 'Antes SA', nuevo: 'Despues SA', label: 'Razon Social' } };
+  const req = buildActualizarFiscalRequest(77, diff, 'Bearer tok123');
+  assert.equal(req.method, 'PATCH');
+  assert.ok(req.url.includes('/api/operam/clientes/77'), 'URL debe incluir el id del cliente');
+  assert.deepEqual(req.body, { diff });
+  assert.equal(req.headers['Authorization'], 'Bearer tok123');
+});
+
+test('G16: buildActualizarFiscalRequest funciona con multiples campos en el diff', () => {
+  const diff = {
+    CustName: { anterior: 'A', nuevo: 'B', label: 'Razon Social' },
+    street: { anterior: 'X', nuevo: 'Y', label: 'Calle' },
+    cfdi_regimen_fiscal: { anterior: '601', nuevo: '612', label: 'Regimen Fiscal' },
+  };
+  const req = buildActualizarFiscalRequest(42, diff, 'Bearer tok');
+  assert.equal(Object.keys(req.body.diff).length, 3);
+  assert.equal(req.body.diff.cfdi_regimen_fiscal.nuevo, '612');
 });

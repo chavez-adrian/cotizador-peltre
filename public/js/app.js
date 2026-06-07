@@ -2788,6 +2788,21 @@ export function buildDedupExactoConDiffHtml(cliente, csfDatos) {
   return base + buildDiffFiscalHtml(diff);
 }
 
+// Documenta/testea la forma de la peticion PATCH /api/operam/clientes/:id {diff} (AC2)
+// que altaDiffFiscalConfirmar dispara via api(). Mismo patron que buildDedupRequest:
+// vive como funcion pura exportada para poder afirmar { url, method, body, headers } sin
+// DOM/fetch -- la implementacion real usa api() (que ya agrega Authorization desde
+// state.token) y construye la llamada inline, igual que altaDedupCorrer hace con
+// /api/buscar-cliente-duplicado pese a que existe buildDedupRequest.
+export function buildActualizarFiscalRequest(clienteId, diff, authHeader) {
+  return {
+    url: '/api/operam/clientes/' + clienteId,
+    method: 'PATCH',
+    body: { diff },
+    headers: { 'Authorization': authHeader },
+  };
+}
+
 // Estado del diff fiscal pendiente (issue #38). Vive aparte de altaState.clienteExistente
 // porque el diff puede calcularse y descartarse/confirmarse ANTES de que el vendedor
 // elija "Usar este cliente" -- son ciclos de vida independientes.
@@ -2806,10 +2821,7 @@ async function altaDiffFiscalConfirmar() {
   if (btn) { btn.disabled = true; btn.textContent = 'Actualizando...'; }
 
   try {
-    const res = await api(`/api/operam/clientes/${id}`, {
-      method: 'PATCH',
-      body: { diff },
-    });
+    const res = await api('/api/operam/clientes/' + id, { method: 'PATCH', body: { diff } });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error al actualizar');
 
