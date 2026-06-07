@@ -2423,30 +2423,25 @@ function altaCsfPonerDatos(datos) {
   set('csf-nombre-corto', datos.nombreCorto);
   set('csf-idcif', datos.idcif);
   set('csf-regimen-fiscal', datos.regimenFiscal);
+  set('csf-calle', datos.calle);
+  set('csf-num-ext', datos.numExt);
+  set('csf-num-int', datos.numInt);
+  set('csf-colonia', datos.colonia);
   set('csf-cp', datos.cp);
   set('csf-municipio', datos.municipio);
   set('csf-estado', datos.estado);
 }
 
-// Cliente-side parser (mirrors lib/parsear-csf.js)
-function altaCsfParsearTexto(texto) {
-  const get = (regex) => { const m = texto.match(regex); return m ? m[1].trim() : ''; };
-  const rfc = get(/R\.?F\.?C\.?\s*:?\s*([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3})/i);
-  const razonSocial = (() => {
-    const pm = get(/Denominaci[oó]n\/?Raz[oó]n\s*Social\s*:\s*(.+?)(?=\n|R\.?F\.?C)/is);
-    if (pm) return pm.trim();
-    const nombre = get(/Nombre\s*(?:\(s\))?\s*:\s*([A-ZÀ-ÿ ]+?)(?=\n)/i);
-    const ap1 = get(/Primer\s*Apellido\s*:\s*([A-ZÀ-ÿ ]+?)(?=\n)/i);
-    const ap2 = get(/Segundo\s*Apellido\s*:\s*([A-ZÀ-ÿ ]+?)(?=\n)/i);
-    return [nombre, ap1, ap2].filter(Boolean).join(' ').trim();
-  })();
-  const idcif = get(/idCIF\s*:\s*(\d+)/i);
-  const cp = get(/C[oó]digo\s*Postal\s*:?\s*(\d{5})/i);
-  const municipio = get(/Nombre\s*del\s*Municipio[^\n:]*:\s*([^\n]+)/i);
-  const estado = get(/Nombre\s*de\s*la\s*Entidad\s*Federativa\s*:\s*([^\n]+)/i);
-  const regimenFiscal = (() => { const m = texto.match(/R[eé]gimen\s*Fiscal\s*:\s*(\d{3})/i); return m ? m[1] : ''; })();
-  const nombreCorto = razonSocial.split(' ').slice(0, 3).join(' ');
-  return { rfc, razonSocial, nombreCorto, idcif, cp, municipio, estado, regimenFiscal };
+// Parseo de CSF centralizado en el backend (lib/parsear-csf.js via POST /api/parsear-csf, issue #33/#34)
+async function altaCsfParsearEnServidor(texto) {
+  const r = await fetch('/api/parsear-csf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ texto }),
+  });
+  const json = await r.json();
+  if (json && json.ok && json.datos) return json.datos;
+  throw new Error((json && json.error) || 'No se pudo parsear la CSF');
 }
 
 async function altaCsfExtraerQR(pdfDoc) {
@@ -2508,7 +2503,7 @@ async function altaCsfProcesarArchivo(file) {
   altaCsfSetStatus('loading', { spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' });
   try {
     const texto = await altaCsfLeerPDF(file);
-    const datos = altaCsfParsearTexto(texto);
+    const datos = await altaCsfParsearEnServidor(texto);
     altaCsfState.datos = datos;
     altaCsfPonerDatos(datos);
     altaCsfSetStatus('success', { bannerText: `${file.name} -- RFC: ${datos.rfc || '(no detectado)'}` });
@@ -2538,6 +2533,10 @@ function altaCsfLeerFormulario() {
     idcif: getVal('csf-idcif'),
     regimenFiscal: getVal('csf-regimen-fiscal'),
     usoCfdi: getVal('csf-uso-cfdi'),
+    calle: getVal('csf-calle'),
+    numExt: getVal('csf-num-ext'),
+    numInt: getVal('csf-num-int'),
+    colonia: getVal('csf-colonia'),
     cp: getVal('csf-cp'),
     municipio: getVal('csf-municipio'),
     estado: getVal('csf-estado'),

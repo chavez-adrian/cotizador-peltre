@@ -625,3 +625,95 @@ Bonus entregado (lineamiento (b) del issue, recomendado como complemento de (a))
 ISSUE #33 LISTO PARA CIERRE
 
 NO cerrar issue #33 en GitHub (lo hace el supervisor).
+
+== ISSUE ACTIVO: #34 ==
+refactor: migrar acordeon y csf-upload.html al parseo centralizado de CSF; fix domicilio fiscal vacio
+Parent epica: #36 (orden #34 espera #33, ya cerrado). Consumo el endpoint POST /api/parsear-csf
+construido por #33: { ok:true, datos:{ rfc,razonSocial,nombreCorto,idcif,regimenFiscal,
+calle,numExt,numInt,colonia,cp,municipio,estado,pais } } o { ok:false, error } (verificado en
+server.js linea ~418, NO lo toque).
+N iteraciones planificadas: 8
+
+--- ITER 1 (completada) ---
+Hecho: parte central del bug fix -- AC1 + AC2 (parcial) + AC5 (parcial) de #34
+  - app.js: eliminada altaCsfParsearTexto (regex local de SAT, ~19 lineas) -- CERO regex de SAT
+    queda en app.js para este flujo (verificado con grep, sin matches)
+  - app.js: nueva altaCsfParsearEnServidor(texto) -- async, fetch('/api/parsear-csf', {texto}),
+    retorna datos si {ok:true,datos}, throw Error(json.error) si no -- altaCsfProcesarArchivo
+    ahora hace `const datos = await altaCsfParsearEnServidor(texto)` (1 linea, antes sincrono)
+  - index.html: 4 inputs nuevos en <details id="csf-detalles"> -- csf-calle, csf-num-ext,
+    csf-num-int, csf-colonia -- mismo patron visual (form-group) que cp/municipio/estado,
+    insertados ANTES de esos 3 (orden logico: calle/numero/colonia -> cp/municipio/estado)
+  - app.js altaCsfPonerDatos(): agregado set() para los 4 campos nuevos (precarga desde datos
+    del endpoint -- AC2 "poblados desde la respuesta del endpoint")
+  - app.js altaCsfLeerFormulario() + helpers.cjs buildCsfConfirmarPayload(): agregados
+    calle/numExt/numInt/colonia -- altaCsfConfirmar() ya hace `altaState.datos = {...datos}`
+    con el resultado de altaCsfLeerFormulario(), y altaDarDeAlta() ya leia esos 4 campos de
+    csfDatos (era el bug -- ahora SI llegan poblados porque el endpoint los retorna y el
+    formulario los persiste) -- AC del bug principal resuelto end-to-end en la cadena de datos
+  - helpers.cjs: eliminada parsearCsfDesdeTexto (mirror muerto de altaCsfParsearTexto) +
+    tests C23-C29 que la probaban directamente (mismo regex que la funcion eliminada --
+    ya no aplica, el algoritmo lo prueba test/parsear-csf.test.js + test/server.test.js de #33)
+  - helpers.cjs: nueva buildCsfDatosDesdeRespuesta(json) -- pura, interpreta {ok,datos} o
+    {ok:false,error} o malformado -- es el helper testeable que representa "altaCsfProcesarArchivo
+    maneja la respuesta del endpoint" (sigue patron del proyecto: funciones puras en helpers.cjs,
+    sin DOM/fetch directo en tests, ver CLAUDE.md "Frontend: funciones puras se extraen...")
+  - alta-csf.test.cjs: tests C30-C32 nuevos (ok:true con domicilio completo, ok:false con error,
+    respuesta malformada) -- TDD RED->GREEN, RED confirmado primero (TypeError not a function)
+  - alta-csf.test.cjs: C17 extendido para cubrir calle/numExt/numInt/colonia en
+    buildCsfConfirmarPayload (extiende escenario existente, no test nuevo aislado)
+Decisiones clave:
+  - Patron "altaCsfParsearEnServidor" en vez de inline fetch: nombre simetrico a
+    altaCsfParsearTexto (la funcion que reemplaza), describe la operacion (parsear via servidor)
+    no el mecanismo (fetch) -- coherente con altaCsfExtraerTextoDePDF que ya usa /api/csf-from-url
+    sin exponer fetch en el nombre.
+  - buildCsfDatosDesdeRespuesta como capa de interpretacion pura: NO se puede testear
+    altaCsfProcesarArchivo directamente (es async, usa DOM via document.getElementById,
+    requiere mock de fetch+FileReader+pdfjsLib -- el proyecto NO usa jsdom, ningun test carga
+    app.js). La funcion pura captura exactamente "maneja la respuesta" (ok:true/ok:false/
+    malformado) que pide el AC de #34 punto 5, sin reinventar el patron de testing del proyecto.
+  - Orden de inputs nuevos en index.html: calle/numero ext/numero int/colonia ANTES de
+    cp/municipio/estado -- sigue el orden natural de un domicilio fiscal mexicano (calle+numero+
+    colonia -> CP -> municipio -> estado), mismo orden que usa lib/parsear-csf.js internamente.
+  - Elimine parsearCsfDesdeTexto Y sus tests C23-C29 en la MISMA iteracion que elimine
+    altaCsfParsearTexto (no esperar a iter 5 del plan original): dejar un mirror de una funcion
+    que ya no existe es deuda inmediata, no progresiva -- el algoritmo que probaban esos tests
+    sigue cubierto por test/parsear-csf.test.js (lib) y test/server.test.js (endpoint, de #33).
+Archivos modificados: public/js/app.js, public/index.html, public/js/__tests__/helpers.cjs,
+  public/js/__tests__/alta-csf.test.cjs
+Suite completa: 297/297 GREEN (npm test) -- 301 anterior - 7 (C23-C29 eliminados) + 3 (C30-C32) = 297
+Pendiente para iter 2+ (resto de #34, NO hecho aun):
+  - csf-upload.html: reemplazar parsearCSF local (~123 lineas, fn en linea ~442) por fetch al
+    endpoint -- OJO: gap de forma detectado, ver nota de riesgo abajo
+  - Verificacion manual en navegador (documentar en iter donde se complete csf-upload.html o antes)
+NOTA DE RIESGO para iter 2 (csf-upload.html) -- analisis ya hecho, NO es blocker, es plan:
+  El parsearCSF local de csf-upload.html retorna OTRA forma que el endpoint /api/parsear-csf:
+  { CustName, cust_ref, tax_id, street, street_number, suite_number, district, postal_code,
+    city, state, country, cfdi_regimen_fiscal, regimen_text, actividades, csf_fecha, notes,
+    phone, email, nombre_s, primer_apellido, segundo_apellido } -- vs el endpoint que retorna
+  el shape de lib/parsear-csf.js: { rfc, razonSocial, nombreCorto, calle, numExt, numInt,
+  colonia, municipio, estado, cp, idcif, regimenFiscal, pais }.
+  Campos como regimen_text (label humano via detectarRegimen+REGIMENES+PRIORIDAD), actividades
+  (regex sobre texto crudo), notes (compuesto de actividades/regimenesDetalle), csf_fecha
+  (regex de fecha de emision) NO existen en el output del endpoint -- son derivados/presentacion
+  que csf-upload.html calcula sobre el texto crudo, no parseo de RFC/domicilio/regimen-codigo
+  (que SI centraliza el endpoint). poblarForm() los inyecta a inputs visibles (f_regimen_text,
+  f_notes, f_csf_fecha) y notes se copia a Operam -- perderlos seria regresion silenciosa.
+  PLAN (no requiere tocar el endpoint ni lib/parsear-csf.js, restriccion dura respetada):
+    1. Mantener detectarRegimen/REGIMENES/PRIORIDAD y la extraccion de actividades/
+       regimenesDetalle/csf_fecha/notes como funciones locales que operan sobre `texto`
+       crudo (no son "parseo de RFC/razonSocial/domicilio" -- son derivados/presentacion
+       unicos de esta herramienta, el endpoint no los produce ni debe producirlos)
+    2. Reemplazar SOLO la extraccion de campos core (rfc/razonSocial/domicilio/regimenFiscal-
+       codigo, ahora mFmt/get/esMoral/nombre_s/etc) por `await fetch('/api/parsear-csf',{texto})`
+    3. Mapear datos.{rfc,razonSocial,nombreCorto,calle,numExt,numInt,colonia,municipio,estado,
+       cp,idcif,regimenFiscal} -> shape esperado por poblarForm: {tax_id,CustName,cust_ref,
+       street,street_number,suite_number,district,postal_code,city,state,cfdi_regimen_fiscal}
+       (cust_ref usa nombreCorto del endpoint -- pequeno cambio de algoritmo vs Title Case local,
+       ES EL PUNTO de centralizar: una sola fuente de verdad aunque el algoritmo difiera un poco)
+    4. country sigue hardcodeado 'México' (no viene de lib/parsear-csf.js, que usa pais:'MX')
+  Esto SI cumple "eliminar parsearCSF local (~100 lineas)" -- la funcion desaparece, su nucleo
+  de parseo SAT se sustituye por el endpoint, y la logica de presentacion/derivados que es
+  exclusiva de esta herramienta (no esta duplicada en ningun otro lado) se queda como funciones
+  pequenas y nombradas, no como parte de un parser monolitico.
+Siguiente: ITER 2 -- ejecutar el plan de arriba en csf-upload.html (item 4 del issue).

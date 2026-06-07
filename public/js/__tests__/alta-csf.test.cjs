@@ -154,6 +154,10 @@ test('C17: buildCsfConfirmarPayload extrae todos los campos del formulario', () 
     'csf-idcif': '12345678901',
     'csf-regimen-fiscal': '601',
     'csf-uso-cfdi': 'G01',
+    'csf-calle': 'NAYARIT',
+    'csf-num-ext': '56',
+    'csf-num-int': 'B',
+    'csf-colonia': 'ROMA SUR',
     'csf-cp': '06000',
     'csf-municipio': 'CUAUHTEMOC',
     'csf-estado': 'CIUDAD DE MEXICO',
@@ -166,6 +170,10 @@ test('C17: buildCsfConfirmarPayload extrae todos los campos del formulario', () 
   assert.strictEqual(payload.idcif, '12345678901');
   assert.strictEqual(payload.regimenFiscal, '601');
   assert.strictEqual(payload.usoCfdi, 'G01');
+  assert.strictEqual(payload.calle, 'NAYARIT');
+  assert.strictEqual(payload.numExt, '56');
+  assert.strictEqual(payload.numInt, 'B');
+  assert.strictEqual(payload.colonia, 'ROMA SUR');
   assert.strictEqual(payload.cp, '06000');
   assert.strictEqual(payload.municipio, 'CUAUHTEMOC');
   assert.strictEqual(payload.estado, 'CIUDAD DE MEXICO');
@@ -218,55 +226,39 @@ test('C22: validarCsfCampos con RFC vacio retorna error aunque otros campos este
   assert.ok(err.toUpperCase().includes('RFC'), 'error menciona RFC');
 });
 
-// ─── AC final: parseo CSF retorna campos canonicos (issue #28 AC9) ─────────────
-// lib/parsear-csf.js es ES module — probamos via alias en helpers para CJS
-const { parsearCsfDesdeTexto } = require('./helpers.cjs');
+// ─── buildCsfDatosDesdeRespuesta: maneja respuesta de POST /api/parsear-csf (issue #34) ──
+// altaCsfProcesarArchivo ya no parsea localmente -- consume el endpoint centralizado de #33
+// y usa esta funcion pura para interpretar { ok, datos } o { ok:false, error }.
+const { buildCsfDatosDesdeRespuesta } = require('./helpers.cjs');
 
-const CSF_TEXTO_PERSONA_MORAL = `
-CONSTANCIA DE SITUACION FISCAL
-Denominacion/Razon Social : SAGO MEDICAL SERVICE SA DE CV
-R.F.C. : SMS200716NZ4
-idCIF : 20090146505
-Nombre de la Vialidad : NAYARIT
-Numero Exterior : 56
-Nombre de la Colonia : ROMA SUR
-Codigo Postal : 06760
-Nombre del Municipio o Demarcacion Territorial : CUAUHTEMOC
-Nombre de la Entidad Federativa : CIUDAD DE MEXICO
-Regimen Fiscal : 601 General de Ley Personas Morales
-`;
-
-test('C23: parsearCsfDesdeTexto retorna rfc correcto', () => {
-  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
-  assert.strictEqual(r.rfc, 'SMS200716NZ4');
+test('C30: buildCsfDatosDesdeRespuesta con ok:true retorna los datos completos incl domicilio', () => {
+  const json = {
+    ok: true,
+    datos: {
+      rfc: 'SMS200716NZ4', razonSocial: 'SAGO MEDICAL SERVICE SA DE CV', nombreCorto: 'SAGO MEDICAL SERVICE',
+      idcif: '20090146505', regimenFiscal: '601',
+      calle: 'NAYARIT', numExt: '56', numInt: '', colonia: 'ROMA SUR',
+      cp: '06760', municipio: 'CUAUHTEMOC', estado: 'CIUDAD DE MEXICO', pais: 'MX',
+    },
+  };
+  const r = buildCsfDatosDesdeRespuesta(json);
+  assert.strictEqual(r.error, undefined);
+  assert.strictEqual(r.datos.rfc, 'SMS200716NZ4');
+  assert.strictEqual(r.datos.calle, 'NAYARIT');
+  assert.strictEqual(r.datos.numExt, '56');
+  assert.strictEqual(r.datos.numInt, '');
+  assert.strictEqual(r.datos.colonia, 'ROMA SUR');
 });
 
-test('C24: parsearCsfDesdeTexto retorna razonSocial', () => {
-  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
-  assert.ok(r.razonSocial.includes('SAGO'), `razonSocial: ${r.razonSocial}`);
+test('C31: buildCsfDatosDesdeRespuesta con ok:false retorna error sin datos', () => {
+  const json = { ok: false, error: 'No se detecto un RFC en el texto' };
+  const r = buildCsfDatosDesdeRespuesta(json);
+  assert.strictEqual(r.datos, undefined);
+  assert.strictEqual(r.error, 'No se detecto un RFC en el texto');
 });
 
-test('C25: parsearCsfDesdeTexto retorna cp', () => {
-  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
-  assert.strictEqual(r.cp, '06760');
-});
-
-test('C26: parsearCsfDesdeTexto retorna municipio', () => {
-  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
-  assert.ok(r.municipio.includes('CUAUHTEMOC'), `municipio: ${r.municipio}`);
-});
-
-test('C27: parsearCsfDesdeTexto retorna estado', () => {
-  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
-  assert.ok(r.estado.includes('CIUDAD DE MEXICO'), `estado: ${r.estado}`);
-});
-
-test('C28: parsearCsfDesdeTexto retorna regimenFiscal como codigo numerico', () => {
-  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
-  assert.strictEqual(r.regimenFiscal, '601');
-});
-
-test('C29: parsearCsfDesdeTexto retorna idcif (sat_id_cif)', () => {
-  const r = parsearCsfDesdeTexto(CSF_TEXTO_PERSONA_MORAL);
-  assert.strictEqual(r.idcif, '20090146505');
+test('C32: buildCsfDatosDesdeRespuesta con respuesta vacia/malformada retorna error generico', () => {
+  const r = buildCsfDatosDesdeRespuesta({});
+  assert.strictEqual(r.datos, undefined);
+  assert.ok(r.error, 'debe traer un mensaje de error');
 });
