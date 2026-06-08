@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — implementado y cerrado (2026-06-07, cadena #32/#33/#34/#35/#38, epica #36)
 
 ## Context
 
@@ -16,8 +16,8 @@ El vendedor inicia siempre en el cotizador. Si el cliente no existe en Operam, e
 
 ## Consequences
 
-- El vendedor tiene un solo punto de entrada para todo el flujo comercial: buscar cliente → (si no existe) dar de alta → cotizar.
-- `csf-upload.html` se mantiene temporalmente como fallback hasta que el flujo unificado esté en producción y validado.
-- El alta de cliente ahora requiere JWT (el vendedor debe estar autenticado). Esto es más seguro y consistente con el resto del cotizador.
-- La ruta `/api/crear-cliente` conserva su interfaz pero pasa a ser invocada desde el cotizador principal en vez de desde `csf-upload.html`.
-- El frontend de `index.html` crece significativamente. Considerar si alguna parte del flujo de alta merece extraerse como módulo JS independiente para mantener manejable `app.js`.
+- El vendedor tiene un solo punto de entrada para todo el flujo comercial: buscar cliente → (si no existe) dar de alta → cotizar. Implementado como acordeon "+ Nuevo cliente" con tabs "Cargar CSF"/"Captura manual" (#27-#31).
+- ~~`csf-upload.html` se mantiene temporalmente como fallback hasta que el flujo unificado esté en producción y validado.~~ Retirado por completo (#35) — el archivo ya no existe en disco; `GET /csf-upload.html` cae al catch-all SPA.
+- El alta de cliente ahora requiere JWT (el vendedor debe estar autenticado). Esto es más seguro y consistente con el resto del cotizador. Las 5 rutas CSF (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/log`, `/api/csf-from-url`) usan `authMiddleware`, verificado con sondeo real con/sin token (#35).
+- La ruta `/api/crear-cliente` conserva su interfaz, ahora invocada unicamente desde el acordeon del cotizador.
+- Gap real detectado durante el cierre (capacidad de actualizar datos fiscales de un cliente existente desde CSF, con diff y confirmación) se resolvió como #38 antes de cerrar la cadena.

@@ -3,7 +3,7 @@
 Herramienta interna de Peltre Nacional SA de CV. Combina dos funciones:
 
 1. **Cotizador** — vendedores generan cotizaciones de acero esmaltado en campo, calculan envio y comparten PDF o HTML por WhatsApp.
-2. **Alta de clientes** — equipo administrativo sube CSF del SAT, el sistema extrae RFC y domicilio, crea o actualiza el cliente en Operam ERP con un clic.
+2. **Alta de clientes** — desde el acordeon "+ Nuevo cliente" del cotizador, vendedores suben CSF del SAT o capturan datos manualmente; el sistema extrae RFC y domicilio, crea o actualiza el cliente en Operam ERP.
 
 **Produccion:** https://cotizador-peltre.onrender.com
 
@@ -13,7 +13,7 @@ Herramienta interna de Peltre Nacional SA de CV. Combina dos funciones:
 - Frontend: HTML + CSS + JS vanilla (sin frameworks)
 - PDF: pdfkit
 - Autenticacion cotizador: JWT (30 dias)
-- Alta de clientes (csf-upload.html): sin autenticacion
+- Alta de clientes: integrada al cotizador (acordeon), JWT requerido igual que el resto
 - Base de datos: Neon Postgres (solo log de auditoría de altas)
 - Integraciones: Operam ERP v3, envia.com, Dropbox, SAT (proxy QR)
 
@@ -43,7 +43,7 @@ Copiar `.env.example` a `.env` y completar las variables:
 ```bash
 npm start        # produccion
 npm run dev      # desarrollo con --watch
-npm test         # todos los tests (160, 0 fallas)
+npm test         # todos los tests (231, 0 fallas)
 ```
 
 ## Estructura
@@ -63,7 +63,6 @@ lib/
 public/
   index.html           # app cotizador (SPA)
   admin.html           # panel de administracion
-  csf-upload.html      # herramienta standalone de alta de clientes via CSF
   js/app.js            # logica frontend cotizador (~2500 lineas)
   js/__tests__/        # tests de funciones puras del frontend
 data/
@@ -84,12 +83,12 @@ test/                  # tests de backend (supertest + node:test)
 4. Cotizar envio con envia.com (opcional)
 5. Generar PDF o HTML, compartir por WhatsApp
 
-### Alta de cliente desde CSF (equipo admin — `csf-upload.html`)
-1. Abrir `/csf-upload.html` (sin login ni PIN)
-2. Subir PDF de Constancia de Situacion Fiscal
+### Alta de cliente desde CSF (acordeon "+ Nuevo cliente", autenticado)
+1. Login con ID de vendedor + PIN, pestana "Cliente" → "+ Nuevo cliente"
+2. Tab "Cargar CSF": subir PDF de Constancia de Situacion Fiscal (o "Captura manual")
 3. El sistema extrae RFC, razon social y domicilio automaticamente
-4. Si el RFC ya existe en Operam: carga datos existentes, permite actualizacion con diff y confirmacion
-5. Si es cliente nuevo: crear en Operam con un clic, log en Neon, backup PDF en Dropbox
+4. Si el RFC ya existe en Operam: muestra diff de datos fiscales, permite confirmar o descartar la actualizacion
+5. Si es cliente nuevo: crear en Operam, log en Neon, backup PDF en Dropbox
 
 ### Actualizar cliente existente
 1. Se detecta cliente existente (por RFC, en cualquier flujo)
@@ -120,7 +119,7 @@ test/                  # tests de backend (supertest + node:test)
 | GET/PUT | `/api/admin/vendedores` | Gestion de vendedores (admin) |
 | GET/PUT | `/api/admin/cajas` | Configuracion de cajas de empaque (admin) |
 
-### Alta de clientes — csf-upload.html (sin JWT)
+### Alta de clientes desde CSF (requieren JWT, igual que el resto)
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
@@ -135,18 +134,16 @@ test/                  # tests de backend (supertest + node:test)
 
 ```bash
 npm test
-# 301 tests, 0 fallas
+# 231 tests, 0 fallas
 ```
 
 - `test/` — backend (supertest + node:test, ES modules)
 - `public/js/__tests__/` — frontend puro (node:test, CommonJS helpers)
 - `test/operam-client.test.js` — patron `mockFetchByUrl` para Operam
 - `test/server.test.js` — integration HTTP con `mockOperamFetch`
-- `public/js/__tests__/csf-upload-alta.test.cjs` — tests migrados de operam-server
 
 ## Notas de arquitectura
 
-- `public/csf-upload.html` usa `API_BASE = ''` — todas las llamadas son paths relativos al mismo servidor.
 - El backup de Dropbox en `/api/crear-cliente` es fire-and-forget: si falla, la respuesta HTTP no se bloquea.
 - `lib/db.js` retorna `null` si `DATABASE_URL` no esta configurada (graceful degradation para desarrollo local).
 - El schema de `clientes_log` se auto-crea al iniciar el servidor si hay `DATABASE_URL`.

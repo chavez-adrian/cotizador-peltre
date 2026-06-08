@@ -10,7 +10,7 @@ Revisión final que hace **Adrián** antes de convertir una cotización en pedid
 
 ## Vendedor
 
-Actor que atiende prospectos, captura datos del cliente, crea el alta en Operam y genera cotizaciones. Usa el cotizador como herramienta principal. Tiene acceso a `csf-upload.html` para dar de alta clientes y al cotizador principal para generar cotizaciones.
+Actor que atiende prospectos, captura datos del cliente, crea el alta en Operam y genera cotizaciones. Usa el cotizador como herramienta principal — el alta de cliente (carga de CSF o captura manual) vive en el acordeon "+ Nuevo cliente" del propio cotizador, autenticado con el mismo JWT (ADR-0003; la herramienta standalone `csf-upload.html` fue retirada).
 
 ## Nombre de cliente (CustName)
 

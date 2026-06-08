@@ -2282,3 +2282,26 @@ opcionales (no bloqueantes, tickets aparte si se desea):
 Iteraciones usadas: 4 de 8 maximas. Todos los ACs cumplidos -- no fue necesario
 agotar las 8 iteraciones planificadas (el trabajo bloqueante ya estaba hecho en
 iters 1-3; iter 4 cerro doc + verificacion final).
+
+== CIERRE DE CADENA ADR-0003 (orquestador, 2026-06-07) ==
+#32 verificado y cerrado (segunda vuelta tras gap de #38), #35 lanzado con
+consentimiento informado del responsable pese a su propio AC1 en duda (incidente
+#37), verificado y cerrado, epica #36 cerrada. Cadena completa: #32 -> #38 -> #33
+-> #34 -> #35 -> #36. ADR-0003 cerrado de raiz.
+
+Limpieza final de pendientes senalados en el cierre de #35 (punto "RECOMENDACION
+FINAL" arriba), a peticion explicita del responsable ("actualiza todos los
+markdown, incluyendo progress Claude readme etc"):
+  1. README.md -- corregidas las 9 referencias obsoletas a csf-upload.html
+     (lineas 6, 16, 46, 66, 87-92, 123, 138, 145, 149): flujo de alta ahora descrito
+     como acordeon "+ Nuevo cliente" autenticado, contador de tests 160/301 -> 231,
+     tabla de rutas CSF marcada como "requieren JWT".
+  2. CLAUDE.md -- contador de tests corregido 160 -> 231.
+  3. CONTEXT.md -- glosario de "Vendedor" actualizado: ya no menciona acceso a
+     csf-upload.html, ahora describe el acordeon integrado.
+  4. docs/adr/0003-unificacion-alta-cliente-en-cotizador.md -- Status anotado como
+     "implementado y cerrado"; consecuencias actualizadas para reflejar el estado
+     final (csf-upload.html retirado, 5 rutas con authMiddleware, gap de #38 resuelto).
+  5. server.js:463 (string-literal 'csf-upload' en heuristico de campo `fuente`) --
+     deliberadamente NO tocado, es cleanup cosmetico fuera de alcance (rama muerta,
+     inofensiva, documentada en #35).
