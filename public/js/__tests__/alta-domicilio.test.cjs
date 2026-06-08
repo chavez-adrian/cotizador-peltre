@@ -1,9 +1,9 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAltaDomicilioPayload, validarAltaDomicilio } = require('./helpers.cjs');
+const { buildAltaDomicilioPayload, validarAltaDomicilio, combinarTelefonoConCodigo } = require('./helpers.cjs');
 
-test('E1: buildAltaDomicilioPayload extrae todos los campos de entrega', () => {
+test('E1: buildAltaDomicilioPayload extrae todos los campos de entrega y combina codigo de pais con telefono (issue #25)', () => {
   const vals = {
     'alta-br-name': 'Almacen Central',
     'alta-br-ref': 'ALMCEN',
@@ -15,6 +15,7 @@ test('E1: buildAltaDomicilioPayload extrae todos los campos de entrega', () => {
     'alta-addr-city': 'Cuauhtemoc',
     'alta-addr-state': 'CDMX',
     'alta-pais': 'MX',
+    'alta-addr-phone-code': '+52',
     'alta-addr-phone': '5512345678',
     'alta-addr-reference': 'Entre Insurgentes y Liverpool',
     'alta-addr-email': 'entrega@empresa.com',
@@ -31,9 +32,29 @@ test('E1: buildAltaDomicilioPayload extrae todos los campos de entrega', () => {
   assert.strictEqual(payload.addr_city, 'Cuauhtemoc');
   assert.strictEqual(payload.addr_state, 'CDMX');
   assert.strictEqual(payload.pais, 'MX');
-  assert.strictEqual(payload.phone, '5512345678');
+  assert.strictEqual(payload.phone, '+52 5512345678', 'phone debe incluir el codigo de pais');
   assert.strictEqual(payload.addr_reference, 'Entre Insurgentes y Liverpool');
   assert.strictEqual(payload.email, 'entrega@empresa.com');
+});
+
+test('E1b: combinarTelefonoConCodigo antepone el codigo al numero', () => {
+  assert.strictEqual(combinarTelefonoConCodigo('+52', '5512345678'), '+52 5512345678');
+});
+
+test('E1c: combinarTelefonoConCodigo descarta el sufijo -CA de la etiqueta +1-CA', () => {
+  assert.strictEqual(combinarTelefonoConCodigo('+1-CA', '4165551234'), '+1 4165551234');
+});
+
+test('E1d: combinarTelefonoConCodigo no duplica el prefijo si el numero ya trae +', () => {
+  assert.strictEqual(combinarTelefonoConCodigo('+52', '+525512345678'), '+525512345678');
+});
+
+test('E1e: combinarTelefonoConCodigo retorna vacio si no hay numero', () => {
+  assert.strictEqual(combinarTelefonoConCodigo('+52', ''), '');
+});
+
+test('E1f: combinarTelefonoConCodigo sin codigo (opcion "Otro") retorna el numero tal cual', () => {
+  assert.strictEqual(combinarTelefonoConCodigo('+', '5512345678'), '5512345678');
 });
 
 test('E2: buildAltaDomicilioPayload con campos vacios retorna strings vacios', () => {

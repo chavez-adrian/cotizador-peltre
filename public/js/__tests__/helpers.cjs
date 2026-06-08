@@ -135,6 +135,20 @@ function buildCsfDatosExtraidos(datos) {
   };
 }
 
+// Combina el codigo de pais del select alta-addr-phone-code con el numero capturado
+// (issue #25 / SOP paso 28). El select incluye "+1-CA" como etiqueta para distinguir
+// Canada de EUA visualmente, pero el codigo de marcado real es "+1" -- se descarta el
+// sufijo "-CA" antes de anteponerlo. Si el numero ya viene con "+" se respeta tal cual
+// (el vendedor pudo capturarlo completo) para no duplicar el prefijo.
+function combinarTelefonoConCodigo(code, phone) {
+  const tel = (phone || '').trim();
+  if (!tel) return '';
+  if (tel.startsWith('+')) return tel;
+  const prefijo = (code || '').replace(/-CA$/, '');
+  if (!prefijo || prefijo === '+') return tel;
+  return `${prefijo} ${tel}`;
+}
+
 function buildAltaDomicilioPayload(getVal) {
   return {
     br_name: getVal('alta-br-name'),
@@ -147,7 +161,7 @@ function buildAltaDomicilioPayload(getVal) {
     addr_city: getVal('alta-addr-city'),
     addr_state: getVal('alta-addr-state'),
     pais: getVal('alta-pais'),
-    phone: getVal('alta-addr-phone'),
+    phone: combinarTelefonoConCodigo(getVal('alta-addr-phone-code'), getVal('alta-addr-phone')),
     addr_reference: getVal('alta-addr-reference'),
     email: getVal('alta-addr-email'),
   };
@@ -231,6 +245,10 @@ function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, b
     sales_type: comercial.sales_type || '',
     segmento_id: comercial.segmento_id || '',
     salesman: comercial.salesman || '',
+    invoice_email: comercial.invoice_email || '',
+    celular_nota: comercial.celular_nota || '',
+    phone: domicilio.phone || '',
+    email: domicilio.email || '',
     pais: domicilio.pais || 'MX',
     entrega: { ...domicilio },
     customer_id: customerId || null,
@@ -399,4 +417,4 @@ function buildActualizarFiscalRequest(clienteId, diff, authHeader) {
   };
 }
 
-module.exports = { buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId, calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalRequest };
+module.exports = { buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, altaCsfResultadoParseo, combinarTelefonoConCodigo, buildAltaDomicilioPayload, validarAltaDomicilio, buildAltaDarDeAltaPayload, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupRequest, buildDedupDomiciliosRequest, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId, calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalRequest };

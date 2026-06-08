@@ -230,6 +230,32 @@ test('buildClienteBody: timbrado_uso_cfdi fallback S01 cuando no viene', () => {
   assert.strictEqual(body.timbrado_uso_cfdi, 'S01', 'fallback S01 cuando timbrado_uso_cfdi no esta en input');
 });
 
+// === buildClienteBody() — campos huerfanos #17/#18 y contacto principal #16 (issue #26) ===
+
+test('buildClienteBody: invoice_email se concatena en notes (issue #17)', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', invoice_email: 'facturacion@empresa.com' });
+  assert.ok(body.notes.includes('facturacion@empresa.com'), 'notes debe incluir el email de facturacion');
+  assert.ok(/email de facturaci[oó]n/i.test(body.notes), 'notes debe rotular el campo como email de facturacion');
+});
+
+test('buildClienteBody: celular_nota se concatena en notes (issue #18)', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', celular_nota: '5512345678' });
+  assert.ok(body.notes.includes('5512345678'), 'notes debe incluir el celular');
+  assert.ok(/celular/i.test(body.notes), 'notes debe rotular el campo como celular');
+});
+
+test('buildClienteBody: sin invoice_email ni celular_nota no agrega lineas vacias a notes', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.ok(!/email de facturaci[oó]n/i.test(body.notes), 'no debe mencionar email de facturacion si no vino');
+  assert.ok(!/celular/i.test(body.notes), 'no debe mencionar celular si no vino');
+});
+
+test('buildClienteBody: phone/email a nivel cliente vienen del input (issue #16)', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', phone: '5512345678', email: 'contacto@empresa.com' });
+  assert.strictEqual(body.phone, '5512345678', 'phone a nivel cliente debe venir del input');
+  assert.strictEqual(body.email, 'contacto@empresa.com', 'email a nivel cliente debe venir del input');
+});
+
 // === actualizarBranchCliente() — issue #29 ===
 
 test('actualizarBranchCliente: PUT /api/v3/sales/branches/:id con location:40 y ship_via:1 como enteros', async () => {

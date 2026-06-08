@@ -2305,3 +2305,80 @@ markdown, incluyendo progress Claude readme etc"):
   5. server.js:463 (string-literal 'csf-upload' en heuristico de campo `fuente`) --
      deliberadamente NO tocado, es cleanup cosmetico fuera de alcance (rama muerta,
      inofensiva, documentada en #35).
+
+== RALPH LOOP -- ISSUE #26 (gaps de auditoria), interrumpido por limite de sesion (orquestador retoma, 2026-06-07) ==
+
+El agente lanzado para cerrar los 6 gaps detectados en la auditoria de #26
+(comentario https://github.com/chavez-adrian/cotizador-peltre/issues/26#issuecomment-4644629639)
+llego al limite de uso de la sesion ("session limit, resets 10pm America/Mexico_City")
+a mitad de trabajo, SIN comitear. El orquestador retoma desde el worktree
+(agent-a571f73c6500e98f2, branch worktree-agent-a571f73c6500e98f2) y verifica
+independientemente lo que el agente dejo en el working tree antes de comitear.
+
+Hallazgo: el trabajo de codigo de las 6 piezas SI estaba completo y correcto en el
+working tree (sin commit). Verificacion independiente del orquestador:
+  - node --check: app.js, server.js, lib/operam-client.js -- los 3 OK
+  - npm test: 246/246 GREEN, 0 fail (era 231 antes; +15 tests nuevos de este loop)
+  - grep + lectura de diff: confirma las 6 piezas presentes y consistentes
+  - navegador real (puerto 3000, servidor corriendo del propio agente, recien
+    verificado con `Get-Process` que sigue vivo post-interrupcion): confirma
+    panel-alta-cliente existe en el DOM, panel-alta (el ID viejo/bug) YA NO existe;
+    select alta-addr-phone-code presente con opciones [+52, +1, +1-CA, +(Otro)];
+    alta-email-factura y alta-celular presentes. Cero excepciones JS en consola
+    (unico mensaje: 503 esperado por falta de credenciales Operam/DB en sandbox,
+    mismo hallazgo documentado ya en #32/#34/#35).
+
+Las 6 piezas verificadas en el diff:
+
+1. BUG panel-alta -> panel-alta-cliente (app.js: altaCotizarAhora, altaTerminar)
+   Las dos funciones de cierre del flujo de alta buscaban un ID de panel
+   ("panel-alta") que nunca existio en el HTML real (es "panel-alta-cliente"),
+   por lo que el panel nunca se ocultaba al terminar el alta o pasar a cotizar.
+   Fix de una linea x2.
+
+2. Issue #25 (SOP paso 28 -- codigo de pais + telefono del domicilio de entrega):
+   nueva funcion altaCombinarTelefono(code, phone) en app.js (duplicada en
+   helpers.cjs como combinarTelefonoConCodigo, mismo patron que el resto de
+   funciones puras del archivo). antepone el codigo de pais del select
+   alta-addr-phone-code al numero capturado en alta-addr-phone; descarta el
+   sufijo "-CA" de la etiqueta "+1-CA" (Canada vs EUA visualmente, mismo codigo
+   real +1); no duplica el prefijo si el numero ya viene con "+". 5 tests nuevos
+   (E1b-E1f) + ajuste de E1 en alta-domicilio.test.cjs.
+
+3. Issue #17 (campo huerfano alta-email-factura): se lee con getComercial() y
+   viaja como invoice_email en el payload de /api/crear-cliente; buildClienteBody
+   en operam-client.js lo concatena en `notes` rotulado "Email de facturacion: ".
+
+4. Issue #18 (campo huerfano alta-celular): se lee con getComercial() y viaja
+   como celular_nota; buildClienteBody lo concatena en `notes` rotulado "Celular: ".
+   Ambos (#17/#18) cubiertos con tests D1b (server.test.js) y 3 tests dedicados en
+   operam-client.test.js (incluye caso "sin ninguno de los dos no agrega lineas
+   vacias a notes").
+
+5. Issue #16 (contacto principal a nivel cliente -- phone/email del POST
+   /customers vacios): el formulario no tiene seccion separada de "contacto
+   principal", asi que se reusa phone/email YA COMBINADO del domicilio de entrega
+   (domicilio.phone/domicilio.email, que ya pasaron por altaCombinarTelefono) --
+   decision de diseno documentada en el payload con comentario explicito,
+   justificada porque en clientes de mayoreo PyME quien recibe en el domicilio
+   operativo suele ser tambien el contacto principal. Tests F1c (alta-sec4) y
+   dedicado en operam-client.test.js.
+
+6. Issue #11 (config comercial se pierde al elegir cliente existente via dedup):
+   nuevo Step 1b en POST /api/crear-cliente (server.js) -- cuando customer_id ya
+   viene resuelto al entrar (reintento O cliente existente elegido en deduplicacion,
+   #31), se ejecuta PUT /api/v3/sales/customers/:id con sales_type/segmento_id/
+   salesman/timbrado_uso_cfdi via actualizarClienteDirecto. Es idempotente para
+   el caso de reintento (mismos valores que ya viajaron en el POST original) y
+   cierra el gap real para el caso de cliente existente. No bloquea el flujo si
+   falla (el PUT branch del domicilio sigue siendo lo critico). Tests D4/D5/D6
+   en server.test.js cubren: cliente existente SI actualiza, cliente nuevo NO
+   duplica la llamada (ya viajo en el POST), y fallo en el PUT no bloquea el resto.
+
+NO se toco (fuera de alcance, documentado): nada de lo de #32/#34/#35/#38 --
+unicamente las 6 piezas mapeadas en la auditoria de #26.
+
+== CIERRE -- ISSUE #26 (orquestador retoma y completa el commit interrumpido) ==
+Las 6 piezas quedan comiteadas por el orquestador en un solo commit (el agente no
+alcanzo a comitear por limite de sesion). 246/246 tests GREEN. Verificacion de
+navegador real confirma cero regresiones. LISTO PARA MERGE A MAIN Y CIERRE DE #26.

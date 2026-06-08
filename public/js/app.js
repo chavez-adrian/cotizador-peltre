@@ -2440,6 +2440,22 @@ window.altaConfirmarComercial = altaConfirmarComercial;
 
 // === Seccion 3: Confirmar domicilio de entrega ===
 
+// Combina el codigo de pais del select alta-addr-phone-code con el numero capturado
+// (issue #25 / SOP paso 28). El select incluye "+1-CA" como etiqueta para distinguir
+// Canada de EUA visualmente, pero el codigo de marcado real es "+1" -- se descarta el
+// sufijo "-CA" antes de anteponerlo. Si el numero ya viene con "+" se respeta tal cual
+// (el vendedor pudo capturarlo completo) para no duplicar el prefijo. Mismo criterio
+// que combinarTelefonoConCodigo en helpers.cjs (duplicado deliberado: app.js no importa
+// de helpers.cjs, igual que el resto de funciones puras de este archivo).
+function altaCombinarTelefono(code, phone) {
+  const tel = (phone || '').trim();
+  if (!tel) return '';
+  if (tel.startsWith('+')) return tel;
+  const prefijo = (code || '').replace(/-CA$/, '');
+  if (!prefijo || prefijo === '+') return tel;
+  return `${prefijo} ${tel}`;
+}
+
 function altaLeerDomicilio() {
   const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   return {
@@ -2453,7 +2469,7 @@ function altaLeerDomicilio() {
     addr_city: getVal('alta-addr-city'),
     addr_state: getVal('alta-addr-state'),
     pais: getVal('alta-pais'),
-    phone: getVal('alta-addr-phone'),
+    phone: altaCombinarTelefono(getVal('alta-addr-phone-code'), getVal('alta-addr-phone')),
     addr_reference: getVal('alta-addr-reference'),
     email: getVal('alta-addr-email'),
   };
@@ -2558,6 +2574,15 @@ function altaDarDeAlta() {
     sales_type: getComercial('alta-lista-precios'),
     segmento_id: getComercial('alta-segmento'),
     salesman: getComercial('alta-vendedor'),
+    invoice_email: getComercial('alta-email-factura'),
+    celular_nota: getComercial('alta-celular'),
+    // Contacto principal a nivel cliente (issue #16): el formulario no tiene una
+    // seccion separada de "contacto principal" -- se reusa phone/email del domicilio
+    // de entrega (ya combinado con codigo de pais, ver altaCombinarTelefono) porque en
+    // clientes de mayoreo PyME quien recibe en el domicilio operativo suele ser tambien
+    // el contacto principal. Documentado en ralph-progress.txt (issue #26, item 5).
+    phone: domicilio.phone || '',
+    email: domicilio.email || '',
     pais: domicilio.pais || csfDatos.pais || 'MX',
     entrega: { ...domicilio },
     customer_id: resolvedCustomerId,
@@ -2604,7 +2629,7 @@ function altaReintentar() {
 function altaCotizarAhora() {
   const customerId = altaState.customer_id;
   if (!customerId) return;
-  const panel = document.getElementById('panel-alta');
+  const panel = document.getElementById('panel-alta-cliente');
   if (panel) panel.style.display = 'none';
   const buscarPanel = document.getElementById('panel-buscar');
   if (buscarPanel) buscarPanel.style.display = 'none';
@@ -2614,7 +2639,7 @@ function altaCotizarAhora() {
 }
 
 function altaTerminar() {
-  const panel = document.getElementById('panel-alta');
+  const panel = document.getElementById('panel-alta-cliente');
   if (panel) panel.style.display = 'none';
   const btnNuevo = document.getElementById('btn-nuevo-cliente');
   if (btnNuevo) btnNuevo.textContent = 'Nuevo cliente';
