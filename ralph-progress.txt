@@ -2382,3 +2382,10 @@ unicamente las 6 piezas mapeadas en la auditoria de #26.
 Las 6 piezas quedan comiteadas por el orquestador en un solo commit (el agente no
 alcanzo a comitear por limite de sesion). 246/246 tests GREEN. Verificacion de
 navegador real confirma cero regresiones. LISTO PARA MERGE A MAIN Y CIERRE DE #26.
+
+== ISSUE #26 CERRADO (confirmado por el responsable, 2026-06-08) ==
+chavez-adrian confirmo y cerro #26 tras revisar el comentario de cierre con
+evidencia AC-by-AC (#issuecomment-4645363969). PRD "Completar flujo de alta de
+clientes conforme al SOP-COM-OPERAM-001" queda completo. Contador de tests
+actualizado en CLAUDE.md/README.md: 231 -> 246 (suma de los +15 tests nuevos
+de este ultimo loop sobre los 6 gaps).
