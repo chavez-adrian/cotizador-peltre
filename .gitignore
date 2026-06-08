@@ -4,3 +4,4 @@ data/cotizaciones.json
 data/pdfs/
 data/htmls/
 data/shopify-images-raw.json
+.claude/worktrees/
