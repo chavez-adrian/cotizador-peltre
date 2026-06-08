@@ -1,7 +1,12 @@
 'use strict';
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildCsfDropzoneState, buildCsfDatosExtraidos } = require('./helpers.cjs');
+
+let altaCsfResultadoParseo;
+before(async () => {
+  ({ altaCsfResultadoParseo } = await import('../alta-logica.js'));
+});
 
 // ─── buildCsfDropzoneState ────────────────────────────────────────────────────
 
@@ -271,7 +276,6 @@ test('C32: buildCsfDatosDesdeRespuesta con respuesta vacia/malformada retorna er
 // boton para continuar) -- regresion de UX vs el flujo viejo. Esta funcion pura decide:
 // si hay datos (con o sin RFC) -> mostrar success + poblar formulario para revision manual;
 // si la llamada al endpoint fallo de plano (red/parseo malformado) -> mostrar error.
-const { altaCsfResultadoParseo } = require('./helpers.cjs');
 
 test('C33: con datos completos -> resultado success, puebla formulario con los datos', () => {
   const r = altaCsfResultadoParseo({ datos: { rfc: 'SMS200716NZ4', razonSocial: 'SAGO SA' } }, 'archivo.pdf');

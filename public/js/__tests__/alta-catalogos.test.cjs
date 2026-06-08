@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAltaSelectoresOpts, altaToggleSeccionState, buildCargarCatalogosRequest, buildAltaComercialPayload } = require('./helpers.cjs');
+const { buildAltaSelectoresOpts, altaToggleSeccionState, buildAltaComercialPayload } = require('./helpers.cjs');
 
 const CATALOGOS_MOCK = {
   listas_precios: [
@@ -74,12 +74,6 @@ test('A8: altaToggleSeccionState cambia de seccion 1 a seccion 2', () => {
   const estado = { seccionAbierta: 1 };
   const siguiente = altaToggleSeccionState(estado, 2);
   assert.strictEqual(siguiente.seccionAbierta, 2);
-});
-
-test('A9: buildCargarCatalogosRequest incluye URL /api/catalogos y Authorization header', () => {
-  const req = buildCargarCatalogosRequest('Bearer tok123');
-  assert.strictEqual(req.url, '/api/catalogos');
-  assert.strictEqual(req.headers['Authorization'], 'Bearer tok123');
 });
 
 test('B1: buildAltaComercialPayload extrae lista_precios, segmento_id y salesman del formulario', () => {

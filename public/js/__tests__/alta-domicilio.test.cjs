@@ -1,7 +1,12 @@
 'use strict';
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAltaDomicilioPayload, validarAltaDomicilio, combinarTelefonoConCodigo } = require('./helpers.cjs');
+const { buildAltaDomicilioPayload, validarAltaDomicilio } = require('./helpers.cjs');
+
+let combinarTelefonoConCodigo;
+before(async () => {
+  ({ combinarTelefonoConCodigo } = await import('../alta-logica.js'));
+});
 
 test('E1: buildAltaDomicilioPayload extrae todos los campos de entrega y combina codigo de pais con telefono (issue #25)', () => {
   const vals = {

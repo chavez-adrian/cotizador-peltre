@@ -2389,3 +2389,130 @@ evidencia AC-by-AC (#issuecomment-4645363969). PRD "Completar flujo de alta de
 clientes conforme al SOP-COM-OPERAM-001" queda completo. Contador de tests
 actualizado en CLAUDE.md/README.md: 231 -> 246 (suma de los +15 tests nuevos
 de este ultimo loop sobre los 6 gaps).
+
+== ISSUE #36 -- "Especie A" del Candidato 2 (espejo app.js/helpers.cjs) resuelta (2026-06-07) ==
+Reabierto #36 para retomar Candidatos 2 y 3 de architecture-review-cotizador-20260606.html.
+Antes de tocar codigo se construyo la taxonomia completa de los 8 pares espejo entre
+app.js y helpers.cjs, separandolos en dos especies con remedios distintos:
+
+- Especie A (gemelas reales -- 6 piezas, ambos lados implementan la MISMA logica de
+  produccion por duplicado): CSF_DATOS_VACIOS/ALTA_CSF_DATOS_VACIOS, altaCsfResultadoParseo,
+  combinarTelefonoConCodigo/altaCombinarTelefono, DIFF_FISCAL_CAMPOS+DIFF_FISCAL_LABELS+
+  calcularDiffFiscal+buildDiffFiscalHtml+buildDedupExactoConDiffHtml, buildAltaDarDeAltaPayload.
+  Remedio: extraer a un modulo ES compartido real, no mas copias.
+- Especie B (especificaciones huerfanas -- buildDedupRequest, buildActualizarFiscalRequest):
+  describen la forma de peticiones que la implementacion real arma inline dentro de api()
+  (que ya inyecta Authorization). No son gemelas de nada que exista como funcion real --
+  documentan un contrato, no espejean una implementacion. Quedan FUERA de este alcance
+  (necesitan decision aparte: borrar el spec o rediseñar el seam de api() para que sea
+  testeable sin mock de fetch).
+
+Bloqueador real identificado (no "vanilla JS sin bundler" como sugeria el reporte):
+app.js tiene efectos de borde de navegador en scope de modulo (`localStorage.getItem`,
+`window.x = fn`) que impiden importarlo en Node -- por eso la convencion "extraer a
+helpers.cjs" existia en primer lugar. La solucion real es un modulo intermedio SIN esos
+efectos que ambos lados puedan importar de verdad.
+
+RESOLUCION (alcance acotado a Especie A, decision explicita "resuelve A" -- Especie B y
+Candidato 3 (altaState) quedan para otra conversacion, #36 sigue abierto para ellos):
+
+1. Nuevo modulo public/js/alta-logica.js (ES, sin DOM/localStorage/window) con las 9
+   exportaciones canonicas (incluye DIFF_FISCAL_LABELS, derivada).
+2. app.js ahora IMPORTA de alta-logica.js -- se eliminaron sus 6 copias y se renombraron
+   las dos que tenian nombre distinto al canonico (altaCombinarTelefono->combinarTelefonoConCodigo,
+   ALTA_CSF_DATOS_VACIOS->CSF_DATOS_VACIOS). El payload inline de altaDarDeAlta ahora se
+   arma con buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, resolvedCustomerId,
+   altaState.branch_id).
+3. Bug latente descubierto y corregido de paso (NO disfrazado de refactor -- documentado
+   aqui explicitamente): el espejo de helpers.cjs para buildAltaDarDeAltaPayload tenia
+   defaults DIVERGENTES de la implementacion real -- timbrado_uso_cfdi: comercial.uso_cfdi
+   || 'S01' (real: || '') y pais: domicilio.pais || 'MX' (real: domicilio.pais ||
+   csfDatos.pais || 'MX'). El modulo compartido preserva el comportamiento REAL de
+   produccion -- los tests existentes (alta-sec4) no ejercian esos casos divergentes,
+   asi que quedaron en verde sin disfrazar un cambio de comportamiento.
+4. Tests (alta-csf, alta-domicilio, alta-sec4, alta-dedup-fiscal) migrados a consumir
+   alta-logica.js via `await import()` dentro de un hook before() -- decision confirmada
+   por el responsable ("import() dinamico, mantener .cjs") para no romper la convencion
+   CommonJS del resto de la suite frontend.
+5. helpers.cjs: eliminadas las 6 copias espejo + su entrada en module.exports. Caso especial:
+   buildAltaDomicilioPayload (un par espejo DISTINTO, fuera de alcance) usaba internamente
+   combinarTelefonoConCodigo -- se conservo como helper privado renombrado
+   combinarTelefonoLocal con comentario explicito de por que sigue ahi (el contrato
+   publico/testeado del telefono ahora vive solo en alta-logica.js).
+
+Verificacion: 246/246 tests GREEN (sin cambio en el conteo -- es refactor puro de
+produccion + reubicacion de tests, no tests nuevos). Navegador real (chrome-devtools MCP):
+app.js carga sin SyntaxError ni fallos de modulo ES, confirmando que el import nativo
+funciona en runtime real, no solo en Node.
+
+Documentado en CLAUDE.md (seccion Arquitectura + Tests): el patron "modulo ES compartido +
+import() dinamico en tests" queda como la via correcta para nueva logica pura que deba
+vivir en ambos lados -- reemplaza la vieja convencion de "extraer a helpers.cjs" para
+ese caso especifico (helpers.cjs sigue siendo correcto para especificaciones SOLO de test).
+
+PENDIENTE EN #36 (no tocado, deliberado): Especie B (buildDedupRequest,
+buildActualizarFiscalRequest) y Candidato 3 (altaState como bolsa de campos sueltos).
+
+== ISSUE #36 -- "Especie B" del Candidato 2 (specs huerfanas en helpers.cjs) resuelta (2026-06-08) ==
+Retomando #36 tras Especie A. Antes de borrar nada se pidieron DOS analisis independientes
+del remedio (el del orquestador + un subagente Opus con instrucciones de NO heredar la
+conclusion ajena), para contrastar antes de tocar codigo de produccion.
+
+Diagnostico confirmado por ambos analisis: las funciones `buildDedupRequest`,
+`buildDedupDomiciliosRequest`, `buildActualizarFiscalRequest` y `buildCargarCatalogosRequest`
+en helpers.cjs describian una forma ficticia `{ url, method, body, headers: { Authorization:
+authHeader } }` que el codigo real NUNCA construye -- `api()` (app.js ~linea 39) inyecta
+`Authorization: Bearer ${state.token}` internamente; ningun call site real arma ese objeto
+ni recibe/pasa un `authHeader`. Eran tests tautologicos: la funcion de test devuelve un
+literal y el test afirma ese mismo literal -- cero cobertura de app.js o del backend.
+
+El subagente (Opus) aporto tres hallazgos que ampliaron el alcance original (que solo
+contemplaba 2 de las 4 funciones, mas una propuesta de extraer buildDomiciliosUrl):
+1. `buildActualizarFiscalRequest` tenia una copia FISICA exportada y MUERTA en app.js
+   (~lineas 2130-2143), cuyo propio comentario admitia que solo existia para "documentar/
+   testear la forma" -- nadie la invocaba (altaDiffFiscalConfirmar llama api() inline).
+   Codigo en produccion que existia unicamente para sostener la ilusion del gemelo.
+2. `altaDedupCorrer` (app.js ~linea 2216) leia `token` de localStorage/sessionStorage y lo
+   descartaba sin usarlo -- residuo del mismo malentendido sobre quien arma Authorization.
+3. Existia una CUARTA funcion con identico patron ficticio no detectada en el barrido
+   inicial: `buildCargarCatalogosRequest` (helpers.cjs, test A9 en alta-catalogos.test.cjs).
+
+Sobre la propuesta de extraer `buildDomiciliosUrl(clienteId)` (la URL
+/api/operam/clientes/:id/domicilios SI esta genuinamente duplicada en 2 call sites reales,
+app.js lineas 1200 y 2267, con sintaxis distinta -- template literal vs concatenacion): el
+subagente disintio y el orquestador acepto la correccion. Dos sitios con una interpolacion
+de string trivial no cruzan el umbral de la propia regla del proyecto ("tres lineas
+similares > abstraccion prematura", CLAUDE.md). Extraerla cambiaria un literal autoevidente
+por una indireccion que hay que ir a buscar, a cambio de evitar repetir ~40 caracteres una
+vez. Riesgo de divergencia: nulo (un grep encuentra ambos sitios al instante si la ruta
+cambia). Se descarto la extraccion -- las URLs quedan como literales inline.
+
+RESOLUCION (alcance: las 4 funciones + limpieza de su rastro en produccion):
+1. helpers.cjs: eliminadas `buildDedupRequest`, `buildDedupDomiciliosRequest`,
+   `buildActualizarFiscalRequest`, `buildCargarCatalogosRequest` + sus 4 entradas en
+   module.exports. NINGUNA extraccion a alta-logica.js (no aplica el patron de Especie A --
+   no hay logica de produccion duplicada que compartir, solo URLs literales).
+2. app.js: eliminada la copia muerta exportada de buildActualizarFiscalRequest
+   (~lineas 2130-2143) junto con su comentario "ver gemelo en helpers.cjs / mismo patron
+   que buildDedupRequest" (afirmaba una relacion de espejo que nunca existio); eliminada
+   la lectura inutil de `token` en altaDedupCorrer (linea 2216).
+3. Tests fantasma eliminados: F1, F2 (alta-dedup.test.cjs, buildDedupRequest), F3
+   (alta-dedup.test.cjs, buildDedupDomiciliosRequest), G15, G16 (alta-dedup-fiscal.test.cjs,
+   buildActualizarFiscalRequest), A9 (alta-catalogos.test.cjs, buildCargarCatalogosRequest)
+   -- 6 tests en total, junto con sus imports.
+
+Verificacion: 240/240 tests GREEN (246 - 6 = 240; baja esperada por eliminar specs
+tautologicas, no regresion -- documentado tambien en CLAUDE.md linea 10).
+
+Nota sobre cobertura real: si en el futuro se requiere verificar que /api/buscar-cliente-
+duplicado, /api/operam/clientes/:id/domicilios o PATCH /api/operam/clientes/:id se invocan
+con la URL/metodo/body correctos, el lugar correcto es un test de integracion supertest en
+test/ (igual que test/server.test.js ya hace con mockOperamFetch), NO una funcion pura que
+repita el contrato sin ejercer app.js ni el backend real.
+
+Documentado en CLAUDE.md (seccion Tests/Frontend): la categoria "solo de test" se
+redefinio -- ya no incluye specs de forma de peticion HTTP (esas fueron Especie B y se
+eliminaron); ahora cubre unicamente specs de payload/HTML/estado CON contraparte real.
+
+#36 puede cerrarse en lo referente a Candidato 2 (Especies A y B resueltas). Queda
+PENDIENTE Candidato 3 (altaState como bolsa de campos sueltos) si se decide retomarlo.

@@ -2,35 +2,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  buildDedupRequest,
-  buildDedupDomiciliosRequest,
   buildDedupExactoHtml,
   buildDedupDomiciliosHtml,
   buildDedupCandidatosHtml,
 } = require('./helpers.cjs');
-
-// === buildDedupRequest ===
-
-test('F1: buildDedupRequest genera URL con rfc y nombre codificados', () => {
-  const req = buildDedupRequest('PNA010203ABC', 'Peltre Nacional SA de CV', 'Bearer tok123');
-  assert.ok(req.url.includes('/api/buscar-cliente-duplicado'), 'URL debe apuntar al endpoint');
-  assert.ok(req.url.includes('rfc=PNA010203ABC'), 'URL debe incluir rfc');
-  assert.ok(req.url.includes('nombre='), 'URL debe incluir nombre');
-  assert.strictEqual(req.headers['Authorization'], 'Bearer tok123');
-});
-
-test('F2: buildDedupRequest codifica espacios en nombre', () => {
-  const req = buildDedupRequest('XAXX010101000', 'Comercio General SA', 'Bearer x');
-  assert.ok(!req.url.includes(' '), 'URL no debe tener espacios sin codificar');
-});
-
-// === buildDedupDomiciliosRequest ===
-
-test('F3: buildDedupDomiciliosRequest genera URL con id de cliente', () => {
-  const req = buildDedupDomiciliosRequest(77, 'Bearer tok');
-  assert.ok(req.url.includes('/api/operam/clientes/77/domicilios'), 'URL debe incluir el id del cliente');
-  assert.strictEqual(req.headers['Authorization'], 'Bearer tok');
-});
 
 // === buildDedupExactoHtml (caso exacto) ===
 

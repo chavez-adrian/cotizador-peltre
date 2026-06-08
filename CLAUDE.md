@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # desarrollo con hot-reload (--watch)
 npm start            # produccion
-npm test             # todos los tests (246, 0 fallas esperadas)
+npm test             # todos los tests (240, 0 fallas esperadas)
 
 # Correr un test individual:
 node --test test/server.test.js
@@ -30,6 +30,8 @@ Antes de trabajar en cambios al flujo de clientes, leer:
 ## Arquitectura
 
 El proyecto es un servidor Express monolitico (`server.js`) con frontend vanilla JS (`public/js/app.js`, ~2500 lineas). Sin frameworks frontend, sin bundlers.
+
+`public/js/alta-logica.js` es un modulo ES sin efectos de navegador que concentra la logica pura del flujo de alta de cliente (parseo de CSF, diff fiscal, payload de `/api/crear-cliente`, combinacion de telefono). `app.js` lo importa de forma nativa (`<script type="module">`); los tests lo consumen via `import()` dinamico (ver seccion Tests) — un mismo modulo, dos consumidores, cero copias espejo (resolucion de "Especie A" del Candidato 2 de `architecture-review-cotizador-20260606.html`, issue #36).
 
 ### Flujo de datos principal
 
@@ -85,7 +87,9 @@ Dos niveles:
 
 **Backend** (`test/`): ES modules, `node:test` + `supertest`. El app se importa sin `listen()` gracias al guard `isMain` en `server.js`.
 
-**Frontend** (`public/js/__tests__/`): CommonJS (`.cjs`). Las funciones puras se extraen en `helpers.cjs` y se prueban directamente con `node:test`. No hay DOM.
+**Frontend** (`public/js/__tests__/`): CommonJS (`.cjs`). No hay DOM. Las funciones puras compartidas con `app.js` (ex-"Especie A": parseo CSF, diff fiscal, payload de alta, telefono) viven en `public/js/alta-logica.js` (modulo ES) y se importan en el test con `await import('../alta-logica.js')` dentro de un hook `before()` (`app.js` no puede importarse en Node por sus efectos de borde de navegador en scope de modulo — `localStorage`, `window.x = fn` — de ahi la necesidad de un modulo intermedio sin esos efectos). El resto de funciones puras (specs de estado/payloads/HTML con contraparte real, p.ej. `buildAltaDomicilioPayload`, `buildDedupExactoHtml`) viven en `helpers.cjs` y se prueban con `require`.
+
+> Eliminadas en la resolucion de "Especie B" (issue #36): `buildDedupRequest`, `buildDedupDomiciliosRequest`, `buildActualizarFiscalRequest`, `buildCargarCatalogosRequest` describian una forma `{ url, method, body, headers: { Authorization } }` que el codigo real NUNCA construye — `api()` (app.js) inyecta `Authorization` desde `state.token` internamente, sin que el caller arme ese objeto ni reciba un `authHeader`. Eran tests tautologicos (la funcion de test devolvia un literal y el test afirmaba ese mismo literal) que no cubrian comportamiento de `app.js` ni del backend. Si se requiere cobertura real de esas rutas, el lugar correcto es un test de integracion `supertest` en `test/`, no una funcion pura que repita el contrato.
 
 **Patron mock Operam**: `mockFetchByUrl(urlHandlers)` en los tests intercepta por substring de URL (`/login`, `/customers`, etc.) y restaura el original al terminar.
 

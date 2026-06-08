@@ -1,7 +1,12 @@
 'use strict';
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAltaDarDeAltaPayload, resolveClienteId } = require('./helpers.cjs');
+const { resolveClienteId } = require('./helpers.cjs');
+
+let buildAltaDarDeAltaPayload;
+before(async () => {
+  ({ buildAltaDarDeAltaPayload } = await import('../alta-logica.js'));
+});
 
 test('F1: buildAltaDarDeAltaPayload incluye campos comerciales y domicilio', () => {
   const csfDatos = {
