@@ -16,7 +16,7 @@ Cada vendedor ve únicamente sus propios prospectos; el rol admin ve todos — e
 
 ## Horas hábiles
 
-El reloj con el que se mide la espera de un prospecto: lunes a viernes 7:30–16:30, sábado 7:30–13:00, festivos mexicanos excluidos. Un prospecto que escribe en fin de semana o festivo no acumula espera; los prospectos aceptan respuesta a la mañana siguiente hábil sin molestia. Las cotizaciones, en cambio, se siguen midiendo en días naturales (cadencia día 2/7/21/vencida).
+El reloj con el que se mide la espera de un prospecto: lunes a viernes 10:00–18:00, sábado 10:00–14:00, festivos mexicanos excluidos. Un prospecto que escribe en fin de semana o festivo no acumula espera; los prospectos aceptan respuesta a la mañana siguiente hábil sin molestia. Las cotizaciones, en cambio, se siguen midiendo en días naturales (cadencia día 2/7/21/vencida).
 
 ## Cadencia de prospecto
 

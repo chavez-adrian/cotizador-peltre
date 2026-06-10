@@ -1,6 +1,12 @@
 # PROGRESS — módulo de prospectos (actualizado 2026-06-10, sesión 2)
 
-## Estado: grilling COMPLETO
+## Estado: grilling COMPLETO + PRD PUBLICADO
+
+**PRD publicado como issue #40** (`ready-for-agent`) en `chavez-adrian/cotizador-peltre` vía `/to-prd`. Cambios sobre lo grillado, decididos por Adrián al revisar los módulos:
+
+- **Horas hábiles cambiaron a L–V 10:00–18:00, sábado 10:00–14:00** (antes 7:30–16:30 / 7:30–13:00 — era horario de fábrica; el nuevo es horario comercial). `CONTEXT.md` ya actualizado.
+- Nombres de módulos: `seguimiento-prospectos` (no "cadencia-prospectos"), `importar-csv-prospectos` (no "importar-gafetes").
+- Tests: lógica + rutas (5 módulos puros con TDD + supertest para rutas; frontend solo lógica pura extraída).
 
 La sesión de `/grill-with-docs` del módulo de prospectos cerró. Todas las decisiones viven en `CONTEXT.md` (glosario) y `docs/adr/0004-crm-minimo-prospectos-en-cotizador.md`. Resoluciones de esta sesión:
 
@@ -11,9 +17,8 @@ La sesión de `/grill-with-docs` del módulo de prospectos cerró. Todas las dec
 
 ## Siguiente acción exacta
 
-1. `/to-prd` — PRD del módulo de prospectos (insumos: `CONTEXT.md`, ADR 0004, `ANALISIS_AUTOMATIZACION_VENTAS.md`, este archivo).
-2. `/to-issues` — issues en `chavez-adrian/cotizador-peltre`.
-3. Implementar con TDD (obligatorio en este repo).
+1. `/to-issues` — descomponer el PRD (issue #40) en issues implementables en `chavez-adrian/cotizador-peltre`.
+2. Implementar con TDD (obligatorio en este repo).
 
 ## Contexto vigente que no perder
 
