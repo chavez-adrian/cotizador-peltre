@@ -43,7 +43,7 @@ Copiar `.env.example` a `.env` y completar las variables:
 ```bash
 npm start        # produccion
 npm run dev      # desarrollo con --watch
-npm test         # todos los tests (246, 0 fallas)
+npm test         # todos los tests (261, 0 fallas)
 ```
 
 ## Estructura
@@ -109,6 +109,9 @@ test/                  # tests de backend (supertest + node:test)
 | GET | `/api/cotizacion/pdf/:id` | Descargar PDF por ID |
 | GET | `/api/cotizacion/html/:id` | Ver HTML por ID |
 | GET | `/api/cotizaciones` | Historial del vendedor (o todos si admin) |
+| GET | `/api/seguimiento` | Cola de seguimiento de cotizaciones (dia 2/7/21/vencida) |
+| POST | `/api/seguimiento/:id` | Registrar paso de seguimiento hecho |
+| PATCH | `/api/cotizacion/:id/estado` | Marcar cotizacion abierta/ganada/perdida/descartada |
 | POST | `/api/cotizacion/envio` | Cotizar envio con envia.com |
 | GET | `/api/operam/clientes` | Buscar clientes en Operam |
 | GET | `/api/operam/clientes/:id/domicilios` | Domicilios de un cliente |
@@ -134,7 +137,7 @@ test/                  # tests de backend (supertest + node:test)
 
 ```bash
 npm test
-# 246 tests, 0 fallas
+# 261 tests, 0 fallas
 ```
 
 - `test/` — backend (supertest + node:test, ES modules)

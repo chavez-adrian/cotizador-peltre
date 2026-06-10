@@ -93,6 +93,7 @@ function logout() {
   localStorage.removeItem('user');
   document.getElementById('app-view').style.display = 'none';
   document.getElementById('historial-view').style.display = 'none';
+  document.getElementById('seguimiento-view').style.display = 'none';
   document.getElementById('login-view').style.display = 'flex';
   document.getElementById('login-pin').value = '';
 }
@@ -115,6 +116,7 @@ async function showApp() {
   updateTierBar();
   updateCartSummary();
   switchTab('cliente');
+  cargarBadgeSeguimiento();
 }
 
 async function loadPrecios() {
@@ -1554,6 +1556,107 @@ async function showHistorial() {
   }
 }
 
+// === SEGUIMIENTO ===
+const PASO_LABELS = {
+  dia2: 'Primer seguimiento',
+  dia7: 'Segundo seguimiento',
+  dia21: 'Por vencer',
+  vencida: 'Vencida',
+};
+
+async function showSeguimiento() {
+  document.getElementById('app-view').style.display = 'none';
+  document.getElementById('seguimiento-view').style.display = 'block';
+
+  const loadingEl = document.getElementById('seguimiento-loading');
+  const listEl = document.getElementById('seguimiento-list');
+  loadingEl.style.display = 'block';
+  listEl.innerHTML = '';
+
+  try {
+    const res = await api('/api/seguimiento');
+    const cola = await res.json();
+    loadingEl.style.display = 'none';
+    actualizarBadgeSeguimiento(cola.length);
+
+    if (!cola.length) {
+      listEl.innerHTML = '<div class="empty-state"><p>Sin seguimientos pendientes. 🎉</p></div>';
+      return;
+    }
+
+    listEl.innerHTML = cola.map(item => {
+      const fecha = new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+      const btnWa = item.waLink
+        ? `<a href="${item.waLink}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`
+        : `<button class="btn btn-secondary btn-sm" disabled title="Sin telefono registrado">WhatsApp</button>`;
+      return `
+        <div class="cot-card">
+          <div class="cot-card-header">
+            <div>
+              <div class="cot-card-cliente">${item.cliente || 'Sin nombre'}</div>
+              <div class="cot-card-meta">${PASO_LABELS[item.paso] || item.paso} · cotizada el ${fecha} (hace ${item.dias} dias) · ${item.totalPiezas} pzs</div>
+            </div>
+            <div>
+              <div class="cot-card-total">$${fmt(item.total)}</div>
+            </div>
+          </div>
+          <div class="cot-card-actions">
+            ${btnWa}
+            <button class="btn btn-secondary btn-sm" onclick="marcarSeguimiento(${item.id}, '${item.paso}')">✓ Hecho</button>
+            <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'ganada')">Ganada</button>
+            <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'perdida')">Perdida</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    loadingEl.textContent = 'Error cargando seguimientos';
+  }
+}
+
+async function marcarSeguimiento(id, paso) {
+  try {
+    const res = await api(`/api/seguimiento/${id}`, { method: 'POST', body: { paso } });
+    if (!res.ok) { alert('No se pudo registrar el seguimiento'); return; }
+    showSeguimiento();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
+async function cambiarEstadoCotizacion(id, estado) {
+  try {
+    const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
+    if (!res.ok) { alert('No se pudo actualizar el estado'); return; }
+    showSeguimiento();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
+function actualizarBadgeSeguimiento(count) {
+  const badge = document.getElementById('seguimiento-badge');
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function cargarBadgeSeguimiento() {
+  try {
+    const res = await api('/api/seguimiento');
+    if (!res.ok) return;
+    const cola = await res.json();
+    actualizarBadgeSeguimiento(cola.length);
+  } catch (e) { /* sin red no hay badge */ }
+}
+
+window.marcarSeguimiento = marcarSeguimiento;
+window.cambiarEstadoCotizacion = cambiarEstadoCotizacion;
+
 async function cargarCotizacion(id) {
   try {
     const res = await api(`/api/cotizaciones/${id}`);
@@ -1728,6 +1831,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-historial').addEventListener('click', showHistorial);
   document.getElementById('btn-volver-app').addEventListener('click', () => {
     document.getElementById('historial-view').style.display = 'none';
+    document.getElementById('app-view').style.display = 'block';
+  });
+
+  // Seguimiento
+  document.getElementById('btn-seguimiento').addEventListener('click', showSeguimiento);
+  document.getElementById('btn-volver-seguimiento').addEventListener('click', () => {
+    document.getElementById('seguimiento-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
   });
 

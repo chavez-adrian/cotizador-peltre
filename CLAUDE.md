@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # desarrollo con hot-reload (--watch)
 npm start            # produccion
-npm test             # todos los tests (240, 0 fallas esperadas)
+npm test             # todos los tests (261, 0 fallas esperadas)
 
 # Correr un test individual:
 node --test test/server.test.js

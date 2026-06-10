@@ -12,6 +12,7 @@ import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCli
 import { detectarDuplicados } from './lib/deduplicacion.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
+import { calcularCola } from './lib/seguimiento.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -209,6 +210,47 @@ app.get('/api/cotizaciones/:id', authMiddleware, (req, res) => {
     return res.status(403).json({ error: 'Sin acceso' });
   }
   res.json(entry.data);
+});
+
+app.get('/api/seguimiento', authMiddleware, (req, res) => {
+  const log = readJSON('cotizaciones.json') || [];
+  const visibles = req.user.role === 'admin'
+    ? log
+    : log.filter(c => c.vendedor === req.user.name);
+  res.json(calcularCola(visibles));
+});
+
+const PASOS_VALIDOS = new Set(['dia2', 'dia7', 'dia21', 'vencida']);
+
+app.post('/api/seguimiento/:id', authMiddleware, (req, res) => {
+  const { paso } = req.body;
+  if (!PASOS_VALIDOS.has(paso)) return res.status(400).json({ error: 'Paso invalido' });
+  const log = readJSON('cotizaciones.json') || [];
+  const entry = log.find(c => c.id === parseInt(req.params.id));
+  if (!entry) return res.status(404).json({ error: 'No encontrada' });
+  if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
+    return res.status(403).json({ error: 'Sin acceso' });
+  }
+  entry.seguimientos = entry.seguimientos || [];
+  entry.seguimientos.push({ paso, fecha: new Date().toISOString(), vendedor: req.user.name });
+  writeJSON('cotizaciones.json', log);
+  res.json({ ok: true, seguimientos: entry.seguimientos });
+});
+
+const ESTADOS_VALIDOS = new Set(['abierta', 'ganada', 'perdida', 'descartada']);
+
+app.patch('/api/cotizacion/:id/estado', authMiddleware, (req, res) => {
+  const { estado } = req.body;
+  if (!ESTADOS_VALIDOS.has(estado)) return res.status(400).json({ error: 'Estado invalido' });
+  const log = readJSON('cotizaciones.json') || [];
+  const entry = log.find(c => c.id === parseInt(req.params.id));
+  if (!entry) return res.status(404).json({ error: 'No encontrada' });
+  if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
+    return res.status(403).json({ error: 'Sin acceso' });
+  }
+  entry.estado = estado;
+  writeJSON('cotizaciones.json', log);
+  res.json({ ok: true, estado });
 });
 
 app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('excel'), (req, res) => {
