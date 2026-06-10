@@ -63,6 +63,22 @@ test('buscarPorCelular encuentra por ultimos 10 digitos sin importar formato', a
   assert.equal(await buscarPorCelular(''), undefined);
 });
 
+test('crear rechaza un celular duplicado aunque la verificacion previa no lo viera (carrera)', async () => {
+  writeProspectos([]);
+  await crear({
+    fecha: '2026-06-10T00:00:00Z', vendedor: 'Ana',
+    celular: '+52 55 1234 5678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+  });
+  await assert.rejects(
+    crear({
+      fecha: '2026-06-10T00:00:01Z', vendedor: 'Memo',
+      celular: '5512345678', nombre: 'Laura Dos', ciudad: 'CDMX', canal: 'Referido',
+    }),
+    err => err.code === '23505'
+  );
+  assert.equal(readProspectos().length, 1);
+});
+
 test('listar devuelve todos los prospectos guardados', async () => {
   writeProspectos([
     { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', etapa: 'nuevo' },
