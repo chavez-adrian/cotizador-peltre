@@ -2,9 +2,11 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let CANALES, PIEZAS_ESTIMADAS, validarProspectoBody, buildProspectoPayload;
+let CANALES, PIEZAS_ESTIMADAS, validarProspectoBody, buildProspectoPayload,
+  buildProspectoCardHtml, buildProspectoExistenteHtml;
 before(async () => {
-  ({ CANALES, PIEZAS_ESTIMADAS, validarProspectoBody, buildProspectoPayload } = await import('../prospectos-logica.js'));
+  ({ CANALES, PIEZAS_ESTIMADAS, validarProspectoBody, buildProspectoPayload,
+    buildProspectoCardHtml, buildProspectoExistenteHtml } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -49,6 +51,37 @@ test('P5: validarProspectoBody exige nombre y ciudad', () => {
 test('P6: validarProspectoBody rechaza canal fuera del catalogo cerrado', () => {
   assert.match(validarProspectoBody({ celular: '+52 5512345678', nombre: 'L', ciudad: 'P', canal: 'TikTok' }), /canal/i);
   assert.match(validarProspectoBody({ celular: '+52 5512345678', nombre: 'L', ciudad: 'P' }), /canal/i);
+});
+
+const PROSPECTO = {
+  id: 3, fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo',
+  celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla',
+  canal: 'WhatsApp', etapa: 'nuevo', data: {},
+};
+
+test('P8: buildProspectoCardHtml muestra nombre, etapa Nuevo, vendedor, ciudad, canal y celular', () => {
+  const html = buildProspectoCardHtml(PROSPECTO);
+  assert.match(html, /Laura/);
+  assert.match(html, /Nuevo/);
+  assert.match(html, /Memo/);
+  assert.match(html, /Puebla/);
+  assert.match(html, /WhatsApp/);
+  assert.match(html, /\+52 5512345678/);
+});
+
+test('P9: buildProspectoCardHtml incluye empresa cuando existe y tolera data ausente', () => {
+  const conEmpresa = buildProspectoCardHtml({ ...PROSPECTO, data: { empresa: 'Hotel Azul' } });
+  assert.match(conEmpresa, /Hotel Azul/);
+  const sinData = buildProspectoCardHtml({ ...PROSPECTO, data: null });
+  assert.match(sinData, /Laura/);
+});
+
+test('P10: buildProspectoExistenteHtml muestra el prospecto propio del 409 y nada sin prospecto', () => {
+  const html = buildProspectoExistenteHtml({ error: 'Este celular ya es un prospecto', prospecto: PROSPECTO });
+  assert.match(html, /Laura/);
+  assert.match(html, /\+52 5512345678/);
+  assert.equal(buildProspectoExistenteHtml({ error: 'Este celular ya es un prospecto' }), '');
+  assert.equal(buildProspectoExistenteHtml(null), '');
 });
 
 test('P7: catalogos cerrados con los valores canonicos de CONTEXT.md', () => {

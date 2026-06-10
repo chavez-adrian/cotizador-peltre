@@ -37,6 +37,35 @@ export function validarProspectoBody(body) {
   return null;
 }
 
+const ETAPA_LABELS = { nuevo: 'Nuevo' };
+
+// Tarjeta de un prospecto en la lista (mismo formato visual que las cards de
+// historial/seguimiento de app.js). Funcion pura sin DOM: testeable en Node.
+export function buildProspectoCardHtml(p) {
+  const d = p.data || {};
+  const fecha = new Date(p.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+  const empresa = d.empresa ? ` · ${d.empresa}` : '';
+  return `
+    <div class="cot-card">
+      <div class="cot-card-header">
+        <div>
+          <div class="cot-card-cliente">${p.nombre}${empresa}</div>
+          <div class="cot-card-meta">${fecha} · ${p.vendedor} · ${p.ciudad} · ${p.canal} · ${p.celular}</div>
+        </div>
+        <div class="cot-card-tier">${ETAPA_LABELS[p.etapa] || p.etapa}</div>
+      </div>
+    </div>
+  `;
+}
+
+// Mapeo de la respuesta 409 de POST /api/prospectos: si el body trae el
+// prospecto existente (duplicado propio o admin), devuelve su tarjeta; si no
+// (prospecto de otro vendedor, issue #42), no hay nada que mostrar aqui.
+export function buildProspectoExistenteHtml(resp) {
+  if (!resp || !resp.prospecto) return '';
+  return buildProspectoCardHtml(resp.prospecto);
+}
+
 // Arma el body de POST /api/prospectos desde los campos del formulario de captura.
 // Los opcionales vacios no viajan.
 export function buildProspectoPayload(campos) {
