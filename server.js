@@ -14,6 +14,8 @@ import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido } from './lib/seguimiento.js';
 import * as cotStore from './lib/cotizaciones-store.js';
+import * as prospectosStore from './lib/prospectos-store.js';
+import { validarProspectoBody } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -253,6 +255,42 @@ app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
   }
   await cotStore.setEstado(entry.id, estado);
   res.json({ ok: true, estado });
+});
+
+// --- Prospectos (issue #41, ADR-0004) ---
+
+const PROSPECTO_OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas'];
+
+app.post('/api/prospectos', authMiddleware, async (req, res) => {
+  const body = req.body || {};
+  const error = validarProspectoBody(body);
+  if (error) return res.status(400).json({ error });
+  const existente = await prospectosStore.buscarPorCelular(body.celular);
+  if (existente) {
+    const visible = req.user.role === 'admin' || existente.vendedor === req.user.name;
+    return res.status(409).json({
+      error: 'Este celular ya es un prospecto',
+      ...(visible ? { prospecto: existente } : {}),
+    });
+  }
+  const data = {};
+  for (const k of PROSPECTO_OPCIONALES) {
+    if (body[k] !== undefined && body[k] !== null && body[k] !== '') data[k] = body[k];
+  }
+  const id = await prospectosStore.crear({
+    fecha: new Date().toISOString(), vendedor: req.user.name,
+    celular: body.celular.trim(), nombre: body.nombre.trim(),
+    ciudad: body.ciudad.trim(), canal: body.canal, data,
+  });
+  res.status(201).json({ ok: true, id });
+});
+
+app.get('/api/prospectos', authMiddleware, async (req, res) => {
+  const todos = await prospectosStore.listar();
+  const visibles = req.user.role === 'admin'
+    ? todos
+    : todos.filter(p => p.vendedor === req.user.name);
+  res.json(visibles);
 });
 
 app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('excel'), (req, res) => {
