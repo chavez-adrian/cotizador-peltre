@@ -1,4 +1,20 @@
-# PROGRESS — módulo de prospectos (actualizado 2026-06-10, sesión 2)
+# PROGRESS — módulo de prospectos (actualizado 2026-06-10, sesión 3)
+
+## ⚠️ ESTADO INMEDIATO (sesión 3, por si corta el límite — resetea 5:40pm)
+
+**Issue #41 IMPLEMENTADO, pendiente cierre.** Rama `issue-41-captura-prospectos` pusheada (5 commits: df9b305, e5546a4, 964654f, 683542a, 5796e51), suite 300/300 verde verificada por el orquestador. NO mergeada a main (Render auto-despliega main). Issue #41 ABIERTO a propósito.
+
+**Code-review COMPLETO.** Findings verificados (orden de severidad):
+1. **XSS almacenado (CONFIRMADO, arreglar antes de merge):** `buildProspectoCardHtml` (prospectos-logica.js:52-53) interpola nombre/empresa/ciudad/canal/celular sin escapar y app.js lo asigna a innerHTML (lista + pr-existente:1811). Mismo patrón crudo existe en cards de historial/seguimiento (app.js:1598/1655) pero ahí el dato lo captura el vendedor; el prospecto es dato de terceros (y #47 importará CSVs externos). Fix: helper `escapeHtml` en prospectos-logica.js con test.
+2. **Carrera TOCTOU en dedup (PLAUSIBLE, arreglar antes de merge):** sin UNIQUE en `celular10` (SCHEMA), dos POST concurrentes pasan ambos `buscarPorCelular` y rompen 1 celular = 1 prospecto. Fix: UNIQUE INDEX + capturar 23505 → 409.
+3. **OPCIONALES duplicado (CONFIRMADO):** server.js:262 `PROSPECTO_OPCIONALES` repite la lista de prospectos-logica.js:25 — exportarla e importarla (server ya importa validarProspectoBody del mismo módulo).
+4. leerJson/escribirJson/filaAEntrada duplican cotizaciones-store (cleanup, puede ir en #42+).
+5. ensureSchema cachea promise rechazada (patrón pre-existente copiado de cotizaciones-store; afecta ambos stores; baja prioridad).
+6. temperatura/segmento_id viajan como strings de los selects (deriva futura; coerción en buildProspectoPayload).
+7. showProspectos no oculta historial/seguimiento-view (asimetría inalcanzable hoy; generalizar navegación cuando #42+ agregue vistas).
+REFUTADOS: bypass de dedup sin dígitos (validarTelefono exige 11-15 dígitos), navegación a/b (header aislado), lista vieja tras guardar (muestra "Cargando..."), vendedor undefined en JWT propio, SELECT*+filtro JS (patrón del repo).
+
+**Al retomar:** aplicar fixes 1-3 en la rama con TDD → suite verde → demo de Adrián (npm run dev → login → botón Prospectos) → merge a main → cerrar #41 con comentario-resumen. Fixes 4-7 anotarlos en el cierre como deuda aceptada o issue de cleanup.
 
 ## Estado: grilling COMPLETO + PRD PUBLICADO
 
