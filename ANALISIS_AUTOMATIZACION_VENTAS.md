@@ -132,7 +132,22 @@ Commit `3493e93` en `cotizador-peltre`, en producción vía auto-deploy de Rende
 
 **Pendientes / deuda conocida:**
 
-1. **Migrar `cotizaciones.json` a Neon Postgres** — el archivo vive en disco de Render (free tier = filesystem efímero, se pierde en cada deploy/restart). Limitación pre-existente del historial, pero el seguimiento depende de él. Hacerlo antes de que el equipo confíe en la cola.
-2. La primera vez la cola muestra cotizaciones viejas como "Vencida" (incluye pruebas) — descartar una vez y queda limpia.
-3. El link de WhatsApp solo se prellena si el vendedor capturó el teléfono al cotizar — reforzar esa disciplina con el equipo.
+1. ~~Migrar `cotizaciones.json` a Neon Postgres~~ — **HECHO 2026-06-10** (ver abajo).
+2. La primera vez la cola muestra cotizaciones viejas como "Vencida" — descartar una vez y queda limpia (en el smoke test había 7 pendientes, pasos vencida/dia21).
+3. ~~El link de WhatsApp solo se prellena si el vendedor capturó el teléfono~~ — resuelto con el bloqueo duro de teléfono (ver abajo).
 4. Futuro: envío automático vía API de WhatsApp Business de Meta, reutilizando el mismo motor.
+
+### Complementos al #1 — bloqueo duro de teléfono y migración a Neon (2026-06-10)
+
+**Bloqueo duro de teléfono con código de país** (commit `68f700c`):
+- `validarTelefono` / `separarTelefonoCodigo` en `alta-logica.js`; selectores +52/+1/+1 CA/Otro en `cl-telefono` y `cl-cel-entrega`.
+- Gate server-side: `POST /api/cotizacion/pdf|html` responden 400 sin teléfono válido con código de país. El frontend bloquea antes con foco al campo.
+- Alta de cliente: teléfono del domicilio ahora obligatorio.
+- Motivación: era uno de los 6 puntos que Adrián revisaba a mano antes de convertir a pedido, y elimina el bug latente de tratar números US de 10 dígitos como mexicanos en el link de WhatsApp.
+
+**Migración de cotizaciones a Neon Postgres:**
+- DB confirmada con Adrián: la misma del cotizador en producción (`wandering-violet/neondb`, compartida con knowledge-base y bazaar — desorden conocido, se priorizó cero fricción de deploy). Tabla nueva: `cotizaciones`.
+- `lib/cotizaciones-store.js`: Postgres con `DATABASE_URL`, fallback a `data/cotizaciones.json` sin ella (dev/tests). Todas las rutas refactorizadas al store.
+- Hallazgo: `data/cotizaciones.json` no estaba en git → cada deploy de Render borraba el historial de producción. El historial local (53 entradas) era el más completo; se migraron 49 (4 excluidas por ser de la suite de tests, vendedor Test/Tester).
+- Smoke test contra la DB real: listar, cola, crear (id 50 = MAX+1), seguimiento JSONB, estado — todo OK.
+- Script idempotente: `scripts/migrar-cotizaciones-neon.mjs`.

@@ -13,6 +13,7 @@ import { detectarDuplicados } from './lib/deduplicacion.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido } from './lib/seguimiento.js';
+import * as cotStore from './lib/cotizaciones-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -130,17 +131,12 @@ app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-    const logPath = join(DATA_DIR, 'cotizaciones.json');
-    const log = existsSync(logPath) ? JSON.parse(readFileSync(logPath, 'utf8')) : [];
-    const id = log.length + 1;
-    const entry = {
-      id, fecha: new Date().toISOString(), vendedor: req.user.name,
+    const id = await cotStore.crear({
+      fecha: new Date().toISOString(), vendedor: req.user.name,
       cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
       totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
       total: data.total || 0, tier: data.tier || '', data,
-    };
-    log.push(entry);
-    writeJSON('cotizaciones.json', log);
+    });
     const pdfBuffer = await generateQuotePDF(data);
     writeFileSync(join(PDFS_DIR, `cot_${id}.pdf`), pdfBuffer);
     res.set({
@@ -160,17 +156,12 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-    const logPath = join(DATA_DIR, 'cotizaciones.json');
-    const log = existsSync(logPath) ? JSON.parse(readFileSync(logPath, 'utf8')) : [];
-    const id = log.length + 1;
-    const entry = {
-      id, fecha: new Date().toISOString(), vendedor: req.user.name,
+    const id = await cotStore.crear({
+      fecha: new Date().toISOString(), vendedor: req.user.name,
       cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
       totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
       total: data.total || 0, tier: data.tier || '', data,
-    };
-    log.push(entry);
-    writeJSON('cotizaciones.json', log);
+    });
     const incluirFotos = !!data.incluirFotos;
     data.id = id;
     const html = generateQuoteHTML(data, { incluirFotos });
@@ -204,8 +195,8 @@ app.get('/api/cotizacion/pdf/:id', (req, res) => {
   res.sendFile(pdfPath);
 });
 
-app.get('/api/cotizaciones', authMiddleware, (req, res) => {
-  const log = readJSON('cotizaciones.json') || [];
+app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
+  const log = await cotStore.listar();
   const filtradas = req.user.role === 'admin'
     ? log
     : log.filter(c => c.vendedor === req.user.name);
@@ -216,10 +207,9 @@ app.get('/api/cotizaciones', authMiddleware, (req, res) => {
   })));
 });
 
-app.get('/api/cotizaciones/:id', authMiddleware, (req, res) => {
+app.get('/api/cotizaciones/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
-  const log = readJSON('cotizaciones.json') || [];
-  const entry = log.find(c => c.id === id);
+  const entry = await cotStore.obtener(id);
   if (!entry) return res.status(404).json({ error: 'No encontrada' });
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
@@ -227,8 +217,8 @@ app.get('/api/cotizaciones/:id', authMiddleware, (req, res) => {
   res.json(entry.data);
 });
 
-app.get('/api/seguimiento', authMiddleware, (req, res) => {
-  const log = readJSON('cotizaciones.json') || [];
+app.get('/api/seguimiento', authMiddleware, async (req, res) => {
+  const log = await cotStore.listar();
   const visibles = req.user.role === 'admin'
     ? log
     : log.filter(c => c.vendedor === req.user.name);
@@ -237,34 +227,31 @@ app.get('/api/seguimiento', authMiddleware, (req, res) => {
 
 const PASOS_VALIDOS = new Set(['dia2', 'dia7', 'dia21', 'vencida']);
 
-app.post('/api/seguimiento/:id', authMiddleware, (req, res) => {
+app.post('/api/seguimiento/:id', authMiddleware, async (req, res) => {
   const { paso } = req.body;
   if (!PASOS_VALIDOS.has(paso)) return res.status(400).json({ error: 'Paso invalido' });
-  const log = readJSON('cotizaciones.json') || [];
-  const entry = log.find(c => c.id === parseInt(req.params.id));
+  const entry = await cotStore.obtener(parseInt(req.params.id));
   if (!entry) return res.status(404).json({ error: 'No encontrada' });
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
-  entry.seguimientos = entry.seguimientos || [];
-  entry.seguimientos.push({ paso, fecha: new Date().toISOString(), vendedor: req.user.name });
-  writeJSON('cotizaciones.json', log);
-  res.json({ ok: true, seguimientos: entry.seguimientos });
+  const seguimientos = await cotStore.registrarSeguimiento(entry.id, {
+    paso, fecha: new Date().toISOString(), vendedor: req.user.name,
+  });
+  res.json({ ok: true, seguimientos });
 });
 
 const ESTADOS_VALIDOS = new Set(['abierta', 'ganada', 'perdida', 'descartada']);
 
-app.patch('/api/cotizacion/:id/estado', authMiddleware, (req, res) => {
+app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
   const { estado } = req.body;
   if (!ESTADOS_VALIDOS.has(estado)) return res.status(400).json({ error: 'Estado invalido' });
-  const log = readJSON('cotizaciones.json') || [];
-  const entry = log.find(c => c.id === parseInt(req.params.id));
+  const entry = await cotStore.obtener(parseInt(req.params.id));
   if (!entry) return res.status(404).json({ error: 'No encontrada' });
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
-  entry.estado = estado;
-  writeJSON('cotizaciones.json', log);
+  await cotStore.setEstado(entry.id, estado);
   res.json({ ok: true, estado });
 });
 
@@ -371,8 +358,8 @@ app.put('/api/admin/cajas', authMiddleware, adminMiddleware, (req, res) => {
   res.json({ saved: true });
 });
 
-app.get('/api/admin/cotizaciones', authMiddleware, adminMiddleware, (req, res) => {
-  const log = readJSON('cotizaciones.json') || [];
+app.get('/api/admin/cotizaciones', authMiddleware, adminMiddleware, async (req, res) => {
+  const log = await cotStore.listar();
   res.json(log.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier }) =>
     ({ id, fecha, vendedor, cliente, totalPiezas, total, tier })
   ));
@@ -431,8 +418,7 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
 
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
-  const log = readJSON('cotizaciones.json') || [];
-  const entry = log.find(c => c.id === id);
+  const entry = await cotStore.obtener(id);
   if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
   try {
     const folio = await subirCotizacionOperam(entry.data);

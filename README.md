@@ -14,7 +14,7 @@ Herramienta interna de Peltre Nacional SA de CV. Combina dos funciones:
 - PDF: pdfkit
 - Autenticacion cotizador: JWT (30 dias)
 - Alta de clientes: integrada al cotizador (acordeon), JWT requerido igual que el resto
-- Base de datos: Neon Postgres (solo log de auditoría de altas)
+- Base de datos: Neon Postgres (cotizaciones + seguimientos + log de auditoría de altas; fallback a JSON local sin DATABASE_URL)
 - Integraciones: Operam ERP v3, envia.com, Dropbox, SAT (proxy QR)
 
 ## Requisitos
@@ -43,7 +43,7 @@ Copiar `.env.example` a `.env` y completar las variables:
 ```bash
 npm start        # produccion
 npm run dev      # desarrollo con --watch
-npm test         # todos los tests (276, 0 fallas)
+npm test         # todos los tests (280, 0 fallas)
 ```
 
 ## Estructura
@@ -137,7 +137,7 @@ test/                  # tests de backend (supertest + node:test)
 
 ```bash
 npm test
-# 276 tests, 0 fallas
+# 280 tests, 0 fallas
 ```
 
 - `test/` — backend (supertest + node:test, ES modules)

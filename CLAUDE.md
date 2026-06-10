@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # desarrollo con hot-reload (--watch)
 npm start            # produccion
-npm test             # todos los tests (276, 0 fallas esperadas)
+npm test             # todos los tests (280, 0 fallas esperadas)
 
 # Correr un test individual:
 node --test test/server.test.js
@@ -71,9 +71,9 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 
 ### Persistencia
 
-Dual:
-- `data/*.json` — cotizaciones, vendedores, precios, cajas. Leidos/escritos sincronicamente.
-- Neon Postgres (`DATABASE_URL`) — tabla `clientes_log` para auditoria de altas de clientes.
+- Neon Postgres (`DATABASE_URL`) — tablas `cotizaciones` (historial + seguimientos + estado, via `lib/cotizaciones-store.js`) y `clientes_log` (auditoria de altas). El store cae a `data/cotizaciones.json` cuando no hay `DATABASE_URL` (dev local y tests); el disco de Render es efimero, asi que en produccion la fuente de verdad es Neon.
+- `data/*.json` — vendedores, precios, cajas, config. Leidos/escritos sincronicamente.
+- Migracion historica: `scripts/migrar-cotizaciones-neon.mjs` (idempotente, corrida el 2026-06-10; excluyo entradas de vendedores Test/Tester).
 
 ### Auth
 
