@@ -151,3 +151,16 @@ Commit `3493e93` en `cotizador-peltre`, en producción vía auto-deploy de Rende
 - Hallazgo: `data/cotizaciones.json` no estaba en git → cada deploy de Render borraba el historial de producción. El historial local (53 entradas) era el más completo; se migraron 49 (4 excluidas por ser de la suite de tests, vendedor Test/Tester).
 - Smoke test contra la DB real: listar, cola, crear (id 50 = MAX+1), seguimiento JSONB, estado — todo OK.
 - Script idempotente: `scripts/migrar-cotizaciones-neon.mjs`.
+
+### ⚠️ BLOQUEADOR OPERATIVO descubierto (2026-06-10): Render suspendió los 6 servicios
+
+Al verificar el deploy se encontró que **Render suspendió los 6 servicios del workspace** (cotizador-peltre, operam-export, peltre-knowledge-base, peltre-report, dimensionamiento-geometrico, operam-server) alrededor del 8 de junio. El resume por API responde "only services suspended by a user can be resumed" → suspensión de plataforma, casi seguro por agotar las 750 hrs/mes del plan free.
+
+**Causa raíz:** los keepalives de cron-job.org (ping cada 10 min) mantienen los servicios despiertos 24/7 → ~720 hrs/mes POR SERVICIO, contra 750 hrs/mes para TODO el workspace. Con 6 servicios las horas se agotan en ~5 días de cada mes.
+
+**Implicación:** ningún push despliega y las herramientas de producción están caídas hasta resolver en el dashboard de Render. El código de hoy (seguimiento + teléfono + Neon) está pusheado y desplegará solo al reactivar (autoDeploy: yes). Los datos en Neon no se afectan (independiente de Render).
+
+**Opciones (decisión de Adrián):**
+1. Pagar Starter (~7 USD/mes por servicio) solo para los críticos (cotizador y operam-export como mínimo) y quitar keepalive de los demás para que duerman.
+2. Consolidar varios servicios en uno solo (un solo proceso Express puede montar cotizador + export + reportes).
+3. Quitar todos los keepalives y aceptar el arranque frío (~30-60 s) de los servicios free.
