@@ -160,7 +160,10 @@ Al verificar el deploy se encontró que **Render suspendió los 6 servicios del 
 
 **Implicación:** ningún push despliega y las herramientas de producción están caídas hasta resolver en el dashboard de Render. El código de hoy (seguimiento + teléfono + Neon) está pusheado y desplegará solo al reactivar (autoDeploy: yes). Los datos en Neon no se afectan (independiente de Render).
 
-**Opciones (decisión de Adrián):**
-1. Pagar Starter (~7 USD/mes por servicio) solo para los críticos (cotizador y operam-export como mínimo) y quitar keepalive de los demás para que duerman.
-2. Consolidar varios servicios en uno solo (un solo proceso Express puede montar cotizador + export + reportes).
-3. Quitar todos los keepalives y aceptar el arranque frío (~30-60 s) de los servicios free.
+**Decisión de Adrián (2026-06-10):** cambiar el servicio del cotizador a **Starter**.
+
+Pendiente al reactivar:
+1. Verificar que el auto-deploy tome el último commit (`5525433` o posterior) — los pushes de hoy quedaron en cola: seguimiento de cotizaciones, bloqueo duro de teléfono y persistencia en Neon.
+2. Verificar en producción que `/api/seguimiento` lea de Neon (debe mostrar las 49 cotizaciones migradas; la cola inicial traerá ~7 pendientes vencida/dia21 — descartar las viejas una vez).
+3. El keepalive de cron-job.org del cotizador ya no será necesario con Starter (no duerme); considerar quitarlo.
+4. Los otros 5 servicios siguen suspendidos hasta julio o hasta decidir su esquema (quitar keepalives para que duerman, consolidar, o pagar los críticos como operam-export).
