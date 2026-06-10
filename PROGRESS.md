@@ -14,7 +14,9 @@
 7. showProspectos no oculta historial/seguimiento-view (asimetría inalcanzable hoy; generalizar navegación cuando #42+ agregue vistas).
 REFUTADOS: bypass de dedup sin dígitos (validarTelefono exige 11-15 dígitos), navegación a/b (header aislado), lista vieja tras guardar (muestra "Cargando..."), vendedor undefined en JWT propio, SELECT*+filtro JS (patrón del repo).
 
-**Al retomar:** aplicar fixes 1-3 en la rama con TDD → suite verde → demo de Adrián (npm run dev → login → botón Prospectos) → merge a main → cerrar #41 con comentario-resumen. Fixes 4-7 anotarlos en el cierre como deuda aceptada o issue de cleanup.
+**Fixes 1-3 APLICADOS con TDD** (commits 915e330 y 8dc02bf, suite 302/302 verde, rama pusheada): escapeHtml en tarjetas, UNIQUE INDEX celular10 + 23505→409 (el fallback JSON también lanza 23505 para paridad), OPCIONALES exportado de prospectos-logica.js e importado en server.js.
+
+**Al retomar:** demo de Adrián (npm run dev → login vendedor → botón Prospectos → capturar, duplicar, probar admin) → con su visto bueno: merge de `issue-41-captura-prospectos` a main (dispara deploy a producción en Render) → cerrar #41 con comentario-resumen anotando findings 4-7 como deuda aceptada. Luego elegir siguiente issue (#42, #43 o #47, todos desbloqueados) y esperar confirmación.
 
 ## Estado: grilling COMPLETO + PRD PUBLICADO
 
