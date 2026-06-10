@@ -22,7 +22,15 @@ export const CANALES = [
 // Piezas estimadas -- mismos cortes que las listas de mayoreo.
 export const PIEZAS_ESTIMADAS = ['+100', '+350', '+550', '+1,500', '+6,000'];
 
-const OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas'];
+// Campos opcionales de la captura -- unica fuente; el servidor la importa para
+// armar data y el frontend para armar el payload.
+export const OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas'];
+
+const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+export function escapeHtml(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ESCAPES[ch]);
+}
 
 // Valida el body de POST /api/prospectos (celular ya combinado con codigo de pais).
 // La reusa el servidor y el frontend tras armar el payload. La validacion del
@@ -44,15 +52,15 @@ const ETAPA_LABELS = { nuevo: 'Nuevo' };
 export function buildProspectoCardHtml(p) {
   const d = p.data || {};
   const fecha = new Date(p.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
-  const empresa = d.empresa ? ` · ${d.empresa}` : '';
+  const empresa = d.empresa ? ` · ${escapeHtml(d.empresa)}` : '';
   return `
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${p.nombre}${empresa}</div>
-          <div class="cot-card-meta">${fecha} · ${p.vendedor} · ${p.ciudad} · ${p.canal} · ${p.celular}</div>
+          <div class="cot-card-cliente">${escapeHtml(p.nombre)}${empresa}</div>
+          <div class="cot-card-meta">${fecha} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
         </div>
-        <div class="cot-card-tier">${ETAPA_LABELS[p.etapa] || p.etapa}</div>
+        <div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>
       </div>
     </div>
   `;

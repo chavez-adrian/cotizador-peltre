@@ -15,7 +15,7 @@ import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido } from './lib/seguimiento.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
-import { validarProspectoBody } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -259,8 +259,6 @@ app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
 
 // --- Prospectos (issue #41, ADR-0004) ---
 
-const PROSPECTO_OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas'];
-
 app.post('/api/prospectos', authMiddleware, async (req, res) => {
   const body = req.body || {};
   const error = validarProspectoBody(body);
@@ -277,11 +275,22 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   for (const k of PROSPECTO_OPCIONALES) {
     if (body[k] !== undefined && body[k] !== null && body[k] !== '') data[k] = body[k];
   }
-  const id = await prospectosStore.crear({
-    fecha: new Date().toISOString(), vendedor: req.user.name,
-    celular: body.celular.trim(), nombre: body.nombre.trim(),
-    ciudad: body.ciudad.trim(), canal: body.canal, data,
-  });
+  let id;
+  try {
+    id = await prospectosStore.crear({
+      fecha: new Date().toISOString(), vendedor: req.user.name,
+      celular: body.celular.trim(), nombre: body.nombre.trim(),
+      ciudad: body.ciudad.trim(), canal: body.canal, data,
+    });
+  } catch (e) {
+    if (e.code !== '23505') throw e;
+    const dup = await prospectosStore.buscarPorCelular(body.celular);
+    const verlo = dup && (req.user.role === 'admin' || dup.vendedor === req.user.name);
+    return res.status(409).json({
+      error: 'Este celular ya es un prospecto',
+      ...(verlo ? { prospecto: dup } : {}),
+    });
+  }
   res.status(201).json({ ok: true, id });
 });
 

@@ -2,10 +2,10 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let CANALES, PIEZAS_ESTIMADAS, validarProspectoBody, buildProspectoPayload,
+let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
   buildProspectoCardHtml, buildProspectoExistenteHtml;
 before(async () => {
-  ({ CANALES, PIEZAS_ESTIMADAS, validarProspectoBody, buildProspectoPayload,
+  ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml } = await import('../prospectos-logica.js'));
 });
 
@@ -90,4 +90,18 @@ test('P7: catalogos cerrados con los valores canonicos de CONTEXT.md', () => {
     'Correo', 'Referido', 'Bazar Sábado', 'Feria/Expo',
   ]);
   assert.deepEqual(PIEZAS_ESTIMADAS, ['+100', '+350', '+550', '+1,500', '+6,000']);
+  assert.deepEqual(OPCIONALES, ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas']);
+});
+
+test('P11: buildProspectoCardHtml escapa HTML en los datos del prospecto', () => {
+  const html = buildProspectoCardHtml({
+    ...PROSPECTO,
+    nombre: '<img src=x onerror=alert(1)>',
+    ciudad: 'Puebla & "Cholula"',
+    data: { empresa: '<b>Hotel</b>' },
+  });
+  assert.equal(html.includes('<img'), false);
+  assert.match(html, /&lt;img/);
+  assert.equal(html.includes('<b>Hotel</b>'), false);
+  assert.match(html, /Puebla &amp; &quot;Cholula&quot;/);
 });
