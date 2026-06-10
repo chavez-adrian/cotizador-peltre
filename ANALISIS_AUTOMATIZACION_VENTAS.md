@@ -104,3 +104,35 @@ El flujo de personalización es el más largo (6 semanas), el de más margen, y 
 Los puntos 1–4 son el paquete del 2x: pura conversión y recompra sobre demanda que ya existe, con infraestructura que ya existe (Render, Neon, webhooks Operam, API v3, email-mcp). Los puntos 5, 8 y 9 son los que abren demanda nueva para la trayectoria 10x — pero ese objetivo va a depender igual o más de capacidad de producción y de canales (distribución, exportación) que de software.
 
 **Siguiente paso natural:** bajar el #1 (seguimiento de cotizaciones) a un diseño concreto — es el que menos cuesta y el que más rápido se nota en ventas.
+
+---
+
+## Avance de implementación
+
+### #1 Seguimiento automático de cotizaciones — ✅ IMPLEMENTADO (2026-06-10)
+
+Commit `3493e93` en `cotizador-peltre`, en producción vía auto-deploy de Render. 21 tests nuevos (suite total: 261, 0 fallas), desarrollado con TDD.
+
+**Decisión de diseño:** cola de seguimiento **asistida**, no envío automático. El envío automático requiere la API de WhatsApp Business de Meta (verificación de negocio, plantillas aprobadas) — otro proyecto. La cola calcula qué toca hoy y el vendedor dispara cada mensaje con un tap; mantiene tono humano y funciona con cero dependencias externas. El motor de cálculo es el mismo si después se conecta la API de Meta.
+
+**Qué se construyó:**
+
+- `lib/seguimiento.js` (lógica pura):
+  - `calcularCola(cotizaciones, hoy)` — pasos día 2 / día 7 / día 21 (por vencer) / día 28 (vencida, mensaje de reactivación).
+  - Reglas: solo la última cotización por cliente (clave: RFC, fallback nombre); solo el paso más avanzado pendiente (sin spam acumulado); pasos ya registrados no se repiten; ganada/perdida/descartada salen de la cola.
+  - `telefonoWa()` — normaliza a formato wa.me (10 dígitos MX → prefijo 52).
+  - `mensajeSeguimiento()` — texto redactado por paso.
+- API (JWT, mismo auth que el resto):
+  - `GET /api/seguimiento` — cola del vendedor (admin ve todo).
+  - `POST /api/seguimiento/:id` — registra paso hecho `{ paso, fecha, vendedor }`.
+  - `PATCH /api/cotizacion/:id/estado` — abierta / ganada / perdida / descartada.
+- Frontend: botón **Seguimiento** en header con badge de pendientes; tarjetas con link `wa.me` prellenado al teléfono del cliente y botones ✓ Hecho / Ganada / Perdida.
+
+**Subproducto:** el registro ganada/perdida empieza a acumular el dato de win rate (#3 del análisis sale casi gratis de aquí).
+
+**Pendientes / deuda conocida:**
+
+1. **Migrar `cotizaciones.json` a Neon Postgres** — el archivo vive en disco de Render (free tier = filesystem efímero, se pierde en cada deploy/restart). Limitación pre-existente del historial, pero el seguimiento depende de él. Hacerlo antes de que el equipo confíe en la cola.
+2. La primera vez la cola muestra cotizaciones viejas como "Vencida" (incluye pruebas) — descartar una vez y queda limpia.
+3. El link de WhatsApp solo se prellena si el vendedor capturó el teléfono al cotizar — reforzar esa disciplina con el equipo.
+4. Futuro: envío automático vía API de WhatsApp Business de Meta, reutilizando el mismo motor.
