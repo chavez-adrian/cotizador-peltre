@@ -17,8 +17,18 @@ La sesión de `/grill-with-docs` del módulo de prospectos cerró. Todas las dec
 
 ## Siguiente acción exacta
 
-1. `/to-issues` — descomponer el PRD (issue #40) en issues implementables en `chavez-adrian/cotizador-peltre`.
-2. Implementar con TDD (obligatorio en este repo).
+PRD #40 descompuesto en 8 slices verticales (2026-06-10, `/to-issues`; Adrián pidió re-corte más vertical — cada issue es un escenario demoable de punta a punta):
+
+- #41 Captura y lista (tracer bullet) — sin bloqueos, **empezar aquí**
+- #42 Frenos de frontera (otro vendedor / cliente Operam / ligar al convertir) — bloqueado por #41
+- #43 Trabajar el prospecto (etapas, toques, No útil, historial) — bloqueado por #41
+- #44 Cola de seguimiento con semáforo en horas hábiles — bloqueado por #43
+- #45 Reunión diagnóstico — bloqueado por #44
+- #46 Cotizar actualiza el embudo (Cotizado automático + auto-creación con canal) — bloqueado por #42 y #43
+- #47 Importación CSV Feria/Expo — bloqueado por #41
+- #48 Importación Bitrix one-time — **HITL** (`ready-for-human`), bloqueado por #41 y #43
+
+Ruta crítica: #41 → #43 → #44. Implementar con TDD (obligatorio en este repo).
 
 ## Contexto vigente que no perder
 
