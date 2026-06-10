@@ -39,7 +39,7 @@ test('B1: POST /api/cotizacion/pdf persiste cliente.pais', async () => {
   const snap = readCots();
   const body = {
     fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
-    cliente: { razonSocial: 'Test SA', nombreCorto: 'Test', pais: 'US' },
+    cliente: { razonSocial: 'Test SA', nombreCorto: 'Test', pais: 'US', telefono: '+1 5551234567' },
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
@@ -47,6 +47,43 @@ test('B1: POST /api/cotizacion/pdf persiste cliente.pais', async () => {
   const cots = readCots();
   assert.ok(cots.length > snap.length);
   assert.strictEqual(cots[cots.length - 1].data.cliente.pais, 'US');
+});
+
+test('B1b: POST /api/cotizacion/pdf sin telefono retorna 400 (bloqueo duro)', async () => {
+  const snap = readCots();
+  const body = {
+    fecha: '2026-01-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Test SA' },
+    items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 100, iva: 16, total: 116, notas: [],
+  };
+  const res = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  assert.strictEqual(res.status, 400);
+  assert.match(res.body.error, /tel.fono/i);
+  assert.strictEqual(readCots().length, snap.length);
+});
+
+test('B1c: POST /api/cotizacion/pdf con telefono sin codigo de pais retorna 400', async () => {
+  const body = {
+    fecha: '2026-01-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Test SA', telefono: '5512345678' },
+    items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 100, iva: 16, total: 116, notas: [],
+  };
+  const res = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  assert.strictEqual(res.status, 400);
+  assert.match(res.body.error, /c.digo de pa.s/i);
+});
+
+test('B1d: POST /api/cotizacion/html sin telefono valido retorna 400', async () => {
+  const body = {
+    fecha: '2026-01-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Test SA', telefono: '123' },
+    items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 100, iva: 16, total: 116, notas: [],
+  };
+  const res = await supertest(app).post('/api/cotizacion/html').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  assert.strictEqual(res.status, 400);
 });
 
 test('B2: GET /api/cotizaciones/:id sin campo pais no falla', async () => {

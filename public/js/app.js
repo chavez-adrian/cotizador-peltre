@@ -1,11 +1,43 @@
 import {
   altaCsfResultadoParseo,
   combinarTelefonoConCodigo,
+  validarTelefono,
+  separarTelefonoCodigo,
   calcularDiffFiscal,
   buildDiffFiscalHtml,
   buildDedupExactoConDiffHtml,
   buildAltaDarDeAltaPayload,
 } from './alta-logica.js';
+
+// === TELEFONOS (bloqueo duro con codigo de pais) ===
+function leerTelefono(inputId, codeId) {
+  return combinarTelefonoConCodigo(
+    document.getElementById(codeId)?.value,
+    document.getElementById(inputId)?.value
+  );
+}
+
+function setTelefonoCampos(inputId, codeId, telefono) {
+  const { code, numero } = separarTelefonoCodigo(telefono);
+  const codeEl = document.getElementById(codeId);
+  const inputEl = document.getElementById(inputId);
+  if (codeEl) codeEl.value = code;
+  if (inputEl) inputEl.value = numero;
+}
+
+function validarTelefonosCotizacion() {
+  const errTel = validarTelefono(
+    document.getElementById('cl-telefono-code')?.value,
+    document.getElementById('cl-telefono')?.value
+  );
+  if (errTel) return `Telefono: ${errTel}`;
+  const cel = document.getElementById('cl-cel-entrega')?.value?.trim();
+  if (cel) {
+    const errCel = validarTelefono(document.getElementById('cl-cel-entrega-code')?.value, cel);
+    if (errCel) return `Celular de entrega: ${errCel}`;
+  }
+  return null;
+}
 
 // === UTILS ===
 function toTitleCase(str) {
@@ -860,6 +892,13 @@ window.editarItemGuiado = editarItemGuiado;
 
 // === PDF GENERATION ===
 async function generatePDF() {
+  const telErr = validarTelefonosCotizacion();
+  if (telErr) {
+    alert(telErr);
+    switchTab('cliente');
+    document.getElementById('cl-telefono')?.focus();
+    return;
+  }
   const btn = document.getElementById('btn-pdf');
   btn.disabled = true;
   btn.textContent = 'Generando...';
@@ -917,7 +956,7 @@ async function generatePDF() {
         nombreCorto: document.getElementById('cl-nombre-corto').value,
         rfc: document.getElementById('cl-rfc').value,
         cpFiscal: document.getElementById('cl-cp-fiscal').value,
-        telefono: document.getElementById('cl-telefono').value,
+        telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
         nombreEntrega: document.getElementById('cl-nombre-entrega').value,
         calle: document.getElementById('cl-calle').value,
         numInt: document.getElementById('cl-num-int').value,
@@ -925,7 +964,7 @@ async function generatePDF() {
         cpEntrega: document.getElementById('cl-cp-entrega').value,
         municipio: document.getElementById('cl-municipio').value,
         estado: document.getElementById('cl-estado').value,
-        celEntrega: document.getElementById('cl-cel-entrega').value,
+        celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
         emailEntrega: document.getElementById('cl-email-entrega').value,
         referencias: document.getElementById('cl-referencias').value,
         referencia: document.getElementById('cl-referencia').value,
@@ -971,6 +1010,13 @@ async function generatePDF() {
 }
 
 async function generateHTML() {
+  const telErr = validarTelefonosCotizacion();
+  if (telErr) {
+    alert(telErr);
+    switchTab('cliente');
+    document.getElementById('cl-telefono')?.focus();
+    return;
+  }
   const btn = document.getElementById('btn-html');
   btn.disabled = true;
   btn.textContent = 'Generando...';
@@ -1021,7 +1067,7 @@ async function generateHTML() {
         nombreCorto: document.getElementById('cl-nombre-corto').value,
         rfc: document.getElementById('cl-rfc').value,
         cpFiscal: document.getElementById('cl-cp-fiscal').value,
-        telefono: document.getElementById('cl-telefono').value,
+        telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
         nombreEntrega: document.getElementById('cl-nombre-entrega').value,
         calle: document.getElementById('cl-calle').value,
         numInt: document.getElementById('cl-num-int').value,
@@ -1029,7 +1075,7 @@ async function generateHTML() {
         cpEntrega: document.getElementById('cl-cp-entrega').value,
         municipio: document.getElementById('cl-municipio').value,
         estado: document.getElementById('cl-estado').value,
-        celEntrega: document.getElementById('cl-cel-entrega').value,
+        celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
         emailEntrega: document.getElementById('cl-email-entrega').value,
         referencias: document.getElementById('cl-referencias').value,
         referencia: document.getElementById('cl-referencia').value,
@@ -1100,6 +1146,10 @@ function nuevaCotizacion() {
     if (el) el.value = '';
   }
   document.getElementById('cl-condiciones').value = 'Anticipo 50%';
+  const telCodeEl = document.getElementById('cl-telefono-code');
+  if (telCodeEl) telCodeEl.value = '+52';
+  const celCodeEl = document.getElementById('cl-cel-entrega-code');
+  if (celCodeEl) celCodeEl.value = '+52';
   const paisEl = document.getElementById('cl-pais');
   if (paisEl) paisEl.value = 'MX';
   document.getElementById('shipping-option').value = 'none';
@@ -1185,7 +1235,7 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-nombre-corto',   cliente.ref);
   fill('cl-rfc',            cliente.rfc);
   fill('cl-cp-fiscal',      cliente.cp);
-  fill('cl-telefono',       cliente.telefono);
+  if (cliente.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
   fill('cl-nombre-entrega', cliente.nombreEntrega);
   fill('cl-calle',          cliente.calle);
   fill('cl-num-int',        cliente.numInt);
@@ -1193,7 +1243,7 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-cp-entrega',     cliente.cp);
   fill('cl-municipio',      cliente.municipio);
   fill('cl-estado',         cliente.estado);
-  fill('cl-cel-entrega',    cliente.telefono);
+  if (cliente.telefono) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', cliente.telefono);
   fill('cl-email-entrega',  cliente.email);
   updateTabIndicators();
 
@@ -1247,7 +1297,7 @@ function aplicarDomicilio(d) {
   f('cl-cp-entrega',  d.cp);
   f('cl-municipio',   d.municipio);
   f('cl-estado',      d.estado);
-  if (d.telefono) f('cl-cel-entrega', d.telefono);
+  if (d.telefono) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', d.telefono);
   if (d.email)    f('cl-email-entrega', d.email);
   if (d.contacto) f('cl-nombre-entrega', d.contacto);
 }
@@ -1670,7 +1720,6 @@ async function cargarCotizacion(id) {
       'cl-nombre-corto': c.nombreCorto || '',
       'cl-rfc': c.rfc || '',
       'cl-cp-fiscal': c.cpFiscal || '',
-      'cl-telefono': c.telefono || '',
       'cl-nombre-entrega': c.nombreEntrega || '',
       'cl-calle': c.calle || '',
       'cl-num-int': c.numInt || '',
@@ -1678,7 +1727,6 @@ async function cargarCotizacion(id) {
       'cl-cp-entrega': c.cpEntrega || '',
       'cl-municipio': c.municipio || '',
       'cl-estado': c.estado || '',
-      'cl-cel-entrega': c.celEntrega || '',
       'cl-email-entrega': c.emailEntrega || '',
       'cl-referencias': c.referencias || '',
       'cl-referencia': c.referencia || '',
@@ -1687,6 +1735,8 @@ async function cargarCotizacion(id) {
       const el = document.getElementById(id);
       if (el) el.value = val;
     }
+    setTelefonoCampos('cl-telefono', 'cl-telefono-code', c.telefono || '');
+    setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', c.celEntrega || '');
     if (cot.condicionesPago) document.getElementById('cl-condiciones').value = cot.condicionesPago;
     const paisEl = document.getElementById('cl-pais');
     if (paisEl) paisEl.value = c.pais || 'MX';
@@ -2458,6 +2508,8 @@ function altaValidarDomicilio() {
   if (!getVal('alta-addr-zip')) return 'El codigo postal es obligatorio';
   if (!getVal('alta-addr-city')) return 'La ciudad es obligatoria';
   if (!getVal('alta-addr-state')) return 'El estado es obligatorio';
+  const telErr = validarTelefono(getVal('alta-addr-phone-code'), getVal('alta-addr-phone'));
+  if (telErr) return telErr;
   return null;
 }
 

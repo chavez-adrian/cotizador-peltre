@@ -12,7 +12,7 @@ import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCli
 import { detectarDuplicados } from './lib/deduplicacion.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
-import { calcularCola } from './lib/seguimiento.js';
+import { calcularCola, telefonoValido } from './lib/seguimiento.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -112,7 +112,21 @@ app.get('/api/precios', authMiddleware, (req, res) => {
   res.json({ ...precios, config });
 });
 
+function validarTelefonoCotizacion(req, res) {
+  const tel = req.body?.cliente?.telefono;
+  if (!tel) {
+    res.status(400).json({ error: 'El telefono del cliente es obligatorio' });
+    return false;
+  }
+  if (!telefonoValido(tel)) {
+    res.status(400).json({ error: 'El telefono debe incluir codigo de pais (ej. +52 55 1234 5678)' });
+    return false;
+  }
+  return true;
+}
+
 app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
+  if (!validarTelefonoCotizacion(req, res)) return;
   try {
     const data = req.body;
     data.vendedor = req.user.name;
@@ -142,6 +156,7 @@ app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
+  if (!validarTelefonoCotizacion(req, res)) return;
   try {
     const data = req.body;
     data.vendedor = req.user.name;

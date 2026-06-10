@@ -139,6 +139,7 @@ function validarAltaDomicilio(getVal) {
   if (!getVal('alta-addr-zip')) return 'El codigo postal es obligatorio';
   if (!getVal('alta-addr-city')) return 'La ciudad es obligatoria';
   if (!getVal('alta-addr-state')) return 'El estado es obligatorio';
+  if (!getVal('alta-addr-phone')) return 'El telefono es obligatorio (con codigo de pais)';
   return null;
 }
 

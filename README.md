@@ -43,7 +43,7 @@ Copiar `.env.example` a `.env` y completar las variables:
 ```bash
 npm start        # produccion
 npm run dev      # desarrollo con --watch
-npm test         # todos los tests (261, 0 fallas)
+npm test         # todos los tests (276, 0 fallas)
 ```
 
 ## Estructura
@@ -137,7 +137,7 @@ test/                  # tests de backend (supertest + node:test)
 
 ```bash
 npm test
-# 261 tests, 0 fallas
+# 276 tests, 0 fallas
 ```
 
 - `test/` — backend (supertest + node:test, ES modules)

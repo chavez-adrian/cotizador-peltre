@@ -43,6 +43,43 @@ export function combinarTelefonoConCodigo(code, phone) {
   return `${prefijo} ${tel}`;
 }
 
+// Validacion dura de telefono con codigo de pais. Para +52/+1/+1-CA el numero
+// nacional debe tener exactamente 10 digitos. Para "Otro" (+) el vendedor debe
+// capturar el numero internacional completo empezando con + (11-15 digitos).
+// Si el numero ya trae +, se valida por longitud total y el select se ignora.
+export function validarTelefono(code, phone) {
+  const tel = (phone || '').trim();
+  if (!tel) return 'El telefono es obligatorio (con codigo de pais)';
+  const digitos = tel.replace(/\D/g, '');
+  if (tel.startsWith('+') || (code || '') === '+' || !code) {
+    if (!tel.startsWith('+') || digitos.length < 11 || digitos.length > 15) {
+      return 'Captura el numero completo con codigo de pais (ej. +52 55 1234 5678)';
+    }
+    return null;
+  }
+  if (digitos.length !== 10) {
+    return `El numero debe tener 10 digitos despues del codigo ${code.replace(/-CA$/, '')} (tiene ${digitos.length})`;
+  }
+  return null;
+}
+
+// Inversa de combinarTelefonoConCodigo: separa un telefono guardado en
+// { code, numero } para repoblar el select + input. Prefijos conocidos: 52 y 1.
+// Numeros legacy de 10 digitos (guardados antes del bloqueo duro) asumen +52.
+export function separarTelefonoCodigo(telefono) {
+  const tel = (telefono || '').trim();
+  if (!tel) return { code: '+52', numero: '' };
+  if (tel.startsWith('+52 ')) return { code: '+52', numero: tel.slice(4).trim() };
+  if (tel.startsWith('+1 ')) return { code: '+1', numero: tel.slice(3).trim() };
+  const digitos = tel.replace(/\D/g, '');
+  if (!tel.startsWith('+')) {
+    if (digitos.length === 12 && digitos.startsWith('52')) return { code: '+52', numero: digitos.slice(2) };
+    if (digitos.length === 11 && digitos.startsWith('1')) return { code: '+1', numero: digitos.slice(1) };
+    if (digitos.length === 10) return { code: '+52', numero: digitos };
+  }
+  return { code: '+', numero: tel };
+}
+
 // === Diff fiscal sobre cliente existente al subir CSF (issue #38) ===
 //
 // Mapea los datos de la CSF (altaState.datos: razonSocial/rfc/calle/numExt/...) contra

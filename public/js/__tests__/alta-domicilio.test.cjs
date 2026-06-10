@@ -78,10 +78,26 @@ test('E3: validarAltaDomicilio retorna null cuando campos requeridos estan prese
     if (id === 'alta-addr-zip') return '06600';
     if (id === 'alta-addr-city') return 'CDMX';
     if (id === 'alta-addr-state') return 'CDMX';
+    if (id === 'alta-addr-phone') return '5512345678';
     return '';
   };
   const err = validarAltaDomicilio(getVal);
   assert.strictEqual(err, null, 'no debe haber error con campos requeridos presentes');
+});
+
+test('E6: validarAltaDomicilio retorna error cuando falta el telefono (bloqueo duro)', () => {
+  const getVal = (id) => {
+    if (id === 'alta-br-name') return 'Almacen';
+    if (id === 'alta-br-ref') return 'ALM';
+    if (id === 'alta-addr-street') return 'Reforma';
+    if (id === 'alta-addr-zip') return '06600';
+    if (id === 'alta-addr-city') return 'CDMX';
+    if (id === 'alta-addr-state') return 'CDMX';
+    return '';
+  };
+  const err = validarAltaDomicilio(getVal);
+  assert.ok(err, 'debe retornar error cuando falta el telefono');
+  assert.match(err, /telefono/i);
 });
 
 test('E4: validarAltaDomicilio retorna error cuando falta br_name', () => {

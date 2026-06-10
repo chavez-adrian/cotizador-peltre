@@ -510,8 +510,16 @@
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>Telefono</label>
-        <input type="tel" id="cl-telefono">
+        <label>Telefono (con codigo de pais) *</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="cl-telefono-code" style="flex:0 0 80px">
+            <option value="+52">+52</option>
+            <option value="+1">+1</option>
+            <option value="+1-CA">+1 CA</option>
+            <option value="+">Otro</option>
+          </select>
+          <input type="tel" id="cl-telefono" placeholder="55 1234 5678" style="flex:1">
+        </div>
       </div>
       <div class="form-group">
         <label>Condiciones de pago</label>
@@ -564,8 +572,16 @@
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>Celular (con lada)</label>
-        <input type="tel" id="cl-cel-entrega" placeholder="55 1234 5678">
+        <label>Celular de entrega (con codigo de pais)</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="cl-cel-entrega-code" style="flex:0 0 80px">
+            <option value="+52">+52</option>
+            <option value="+1">+1</option>
+            <option value="+1-CA">+1 CA</option>
+            <option value="+">Otro</option>
+          </select>
+          <input type="tel" id="cl-cel-entrega" placeholder="55 1234 5678" style="flex:1">
+        </div>
       </div>
       <div class="form-group">
         <label>Correo</label>

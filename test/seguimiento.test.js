@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calcularCola, telefonoWa } from '../lib/seguimiento.js';
+import { calcularCola, telefonoWa, telefonoValido } from '../lib/seguimiento.js';
 
 const HOY = new Date('2026-06-10T12:00:00Z');
 
@@ -87,6 +87,17 @@ test('cada paso genera un mensaje distinto', () => {
     return cola[0].mensaje;
   });
   assert.equal(new Set(mensajes).size, 4);
+});
+
+test('telefonoValido exige codigo de pais (11-15 digitos)', () => {
+  assert.equal(telefonoValido('+52 5512345678'), true);
+  assert.equal(telefonoValido('525512345678'), true);
+  assert.equal(telefonoValido('+1 5551234567'), true);
+  assert.equal(telefonoValido('5512345678'), false);
+  assert.equal(telefonoValido(''), false);
+  assert.equal(telefonoValido(undefined), false);
+  assert.equal(telefonoValido('+52 55 1234'), false);
+  assert.equal(telefonoValido('1234567890123456'), false);
 });
 
 test('telefonoWa normaliza numeros mexicanos de 10 digitos', () => {
