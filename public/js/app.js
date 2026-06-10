@@ -8,6 +8,14 @@ import {
   buildDedupExactoConDiffHtml,
   buildAltaDarDeAltaPayload,
 } from './alta-logica.js';
+import {
+  CANALES,
+  PIEZAS_ESTIMADAS,
+  validarProspectoBody,
+  buildProspectoPayload,
+  buildProspectoCardHtml,
+  buildProspectoExistenteHtml,
+} from './prospectos-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
 function leerTelefono(inputId, codeId) {
@@ -126,6 +134,7 @@ function logout() {
   document.getElementById('app-view').style.display = 'none';
   document.getElementById('historial-view').style.display = 'none';
   document.getElementById('seguimiento-view').style.display = 'none';
+  document.getElementById('prospectos-view').style.display = 'none';
   document.getElementById('login-view').style.display = 'flex';
   document.getElementById('login-pin').value = '';
 }
@@ -1707,6 +1716,114 @@ async function cargarBadgeSeguimiento() {
 window.marcarSeguimiento = marcarSeguimiento;
 window.cambiarEstadoCotizacion = cambiarEstadoCotizacion;
 
+// === PROSPECTOS (issue #41) ===
+let prospectoSelectoresListos = false;
+
+async function poblarSelectoresProspecto() {
+  if (prospectoSelectoresListos) return;
+  prospectoSelectoresListos = true;
+  document.getElementById('pr-canal').innerHTML =
+    '<option value="">-- Selecciona --</option>' +
+    CANALES.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('pr-piezas').innerHTML =
+    '<option value="">--</option>' +
+    PIEZAS_ESTIMADAS.map(p => `<option value="${p}">${p}</option>`).join('');
+  try {
+    const catalogos = await cargarCatalogos();
+    document.getElementById('pr-segmento').innerHTML =
+      '<option value="">--</option>' +
+      catalogos.segmentos.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+  } catch {
+    prospectoSelectoresListos = false;
+  }
+}
+
+function showProspectos() {
+  document.getElementById('app-view').style.display = 'none';
+  document.getElementById('prospectos-view').style.display = 'block';
+  poblarSelectoresProspecto();
+  cargarListaProspectos();
+}
+
+async function cargarListaProspectos() {
+  const loadingEl = document.getElementById('prospectos-loading');
+  const listEl = document.getElementById('prospectos-list');
+  loadingEl.style.display = 'block';
+  listEl.innerHTML = '';
+  try {
+    const res = await api('/api/prospectos');
+    const prospectos = await res.json();
+    loadingEl.style.display = 'none';
+    if (!prospectos.length) {
+      listEl.innerHTML = '<div class="empty-state"><p>Sin prospectos capturados.</p></div>';
+      return;
+    }
+    listEl.innerHTML = prospectos.slice().reverse().map(buildProspectoCardHtml).join('');
+  } catch (e) {
+    loadingEl.textContent = 'Error cargando prospectos';
+  }
+}
+
+function leerFormularioProspecto() {
+  const val = id => document.getElementById(id)?.value;
+  return buildProspectoPayload({
+    celularCode: val('pr-celular-code'),
+    celular: val('pr-celular'),
+    nombre: val('pr-nombre'),
+    ciudad: val('pr-ciudad'),
+    canal: val('pr-canal'),
+    empresa: val('pr-empresa'),
+    segmento_id: val('pr-segmento'),
+    piezas_estimadas: val('pr-piezas'),
+    correo: val('pr-correo'),
+    temperatura: val('pr-temperatura'),
+    notas: val('pr-notas'),
+  });
+}
+
+function mostrarErrorProspecto(msg) {
+  const errEl = document.getElementById('pr-error');
+  errEl.textContent = msg || '';
+  errEl.style.display = msg ? 'block' : 'none';
+}
+
+function limpiarFormularioProspecto() {
+  ['pr-celular', 'pr-nombre', 'pr-ciudad', 'pr-empresa', 'pr-correo', 'pr-notas',
+    'pr-canal', 'pr-segmento', 'pr-piezas', 'pr-temperatura'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  mostrarErrorProspecto(null);
+  document.getElementById('pr-existente').innerHTML = '';
+}
+
+async function guardarProspecto() {
+  mostrarErrorProspecto(null);
+  document.getElementById('pr-existente').innerHTML = '';
+  const payload = leerFormularioProspecto();
+  const error = validarProspectoBody(payload);
+  if (error) { mostrarErrorProspecto(error); return; }
+  try {
+    const res = await api('/api/prospectos', { method: 'POST', body: payload });
+    if (res.status === 409) {
+      const data = await res.json();
+      mostrarErrorProspecto(data.error || 'Este celular ya es un prospecto');
+      document.getElementById('pr-existente').innerHTML = buildProspectoExistenteHtml(data);
+      return;
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      mostrarErrorProspecto(data.error || 'No se pudo guardar el prospecto');
+      return;
+    }
+    limpiarFormularioProspecto();
+    document.getElementById('prospecto-form').style.display = 'none';
+    cargarListaProspectos();
+  } catch (e) {
+    mostrarErrorProspecto('Error de conexion');
+  }
+}
+
 async function cargarCotizacion(id) {
   try {
     const res = await api(`/api/cotizaciones/${id}`);
@@ -1890,6 +2007,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('seguimiento-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
   });
+
+  // Prospectos
+  document.getElementById('btn-prospectos').addEventListener('click', showProspectos);
+  document.getElementById('btn-volver-prospectos').addEventListener('click', () => {
+    document.getElementById('prospectos-view').style.display = 'none';
+    document.getElementById('app-view').style.display = 'block';
+  });
+  document.getElementById('btn-nuevo-prospecto').addEventListener('click', () => {
+    const form = document.getElementById('prospecto-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('btn-guardar-prospecto').addEventListener('click', guardarProspecto);
 
   // Selector de pais: adapta formulario para clientes extranjeros
   const clPaisEl = document.getElementById('cl-pais');

@@ -33,6 +33,7 @@
     </div>
     <div style="text-align:right;display:flex;align-items:center;gap:8px">
       <div class="user-info" id="user-name"></div>
+      <button class="btn btn-sm btn-secondary" id="btn-prospectos">Prospectos</button>
       <button class="btn btn-sm btn-secondary" id="btn-seguimiento" style="position:relative">Seguimiento<span id="seguimiento-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:#c0392b;color:#fff;border-radius:9px;font-size:10px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px"></span></button>
       <button class="btn btn-sm btn-secondary" id="btn-historial">Historial</button>
       <a href="/admin" id="admin-link" style="display:none" class="btn btn-sm btn-secondary">Admin</a>
@@ -773,6 +774,86 @@
   <div style="padding:16px">
     <div id="seguimiento-loading" style="color:var(--light);font-size:13px">Cargando...</div>
     <div id="seguimiento-list"></div>
+  </div>
+</div>
+
+<!-- PROSPECTOS VIEW (issue #41) -->
+<div id="prospectos-view" style="display:none">
+  <header class="historial-header">
+    <h1>Prospectos</h1>
+    <button class="btn btn-sm btn-secondary" id="btn-volver-prospectos">Volver</button>
+  </header>
+  <div style="padding:16px;max-width:520px">
+    <button class="btn btn-primary btn-sm" id="btn-nuevo-prospecto">+ Nuevo prospecto</button>
+
+    <div id="prospecto-form" style="display:none;margin-top:12px">
+      <div class="form-group">
+        <label>Celular (con codigo de pais) *</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="pr-celular-code" style="flex:0 0 80px">
+            <option value="+52">+52</option>
+            <option value="+1">+1</option>
+            <option value="+1-CA">+1 CA</option>
+            <option value="+">Otro</option>
+          </select>
+          <input type="tel" id="pr-celular" placeholder="55 1234 5678" style="flex:1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Nombre *</label>
+        <input type="text" id="pr-nombre" placeholder="Nombre (se acepta sin apellido)">
+      </div>
+      <div class="form-group">
+        <label>Ciudad *</label>
+        <input type="text" id="pr-ciudad" placeholder="Ciudad (para estimar envio)">
+      </div>
+      <div class="form-group">
+        <label>Canal de origen *</label>
+        <select id="pr-canal"></select>
+      </div>
+      <details style="margin-bottom:12px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--text-light)">Mas datos (opcional)</summary>
+        <div style="margin-top:8px">
+          <div class="form-group">
+            <label>Empresa</label>
+            <input type="text" id="pr-empresa">
+          </div>
+          <div class="form-group">
+            <label>Tipo de cliente</label>
+            <select id="pr-segmento"></select>
+          </div>
+          <div class="form-group">
+            <label>Piezas estimadas</label>
+            <select id="pr-piezas"></select>
+          </div>
+          <div class="form-group">
+            <label>Correo</label>
+            <input type="email" id="pr-correo">
+          </div>
+          <div class="form-group">
+            <label>Temperatura (1-5)</label>
+            <select id="pr-temperatura">
+              <option value="">--</option>
+              <option value="1">1 - Frio</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5 - Caliente</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Notas</label>
+            <textarea id="pr-notas" rows="2"></textarea>
+          </div>
+        </div>
+      </details>
+      <div id="pr-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
+      <div id="pr-existente" style="margin-bottom:8px"></div>
+      <button class="btn btn-primary" id="btn-guardar-prospecto">Guardar prospecto</button>
+    </div>
+
+    <div id="prospectos-loading" style="color:var(--light);font-size:13px;margin-top:16px">Cargando...</div>
+    <div id="prospectos-list" style="margin-top:16px"></div>
   </div>
 </div>
 
