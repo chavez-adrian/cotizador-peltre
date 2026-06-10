@@ -1,0 +1,106 @@
+# Análisis de automatización del proceso comercial — Peltre Nacional
+
+**Fecha:** 2026-06-10
+**Objetivo:** identificar qué partes del proceso comercial actual pueden automatizarse o convertirse en apps para vender más. Meta: 2x ventas en 1 año, 10x en 5 años.
+**Fuentes:** `PROCESO_COMERCIAL_AS_IS.md`, repo del cotizador, dossier de Peltre Nacional, inventario de proyectos existentes.
+
+---
+
+## Dónde está la oportunidad real
+
+El cotizador ya resolvió la parte de en medio del proceso (cotizar rápido, dar de alta clientes sin errores). Lo que sigue sin automatizar son **los dos extremos del embudo** — la entrada (captura y calificación de leads) y la salida (seguimiento, recompra, post-venta B2B) — y ahí es donde se vende más, no en el centro. Además hay un cuello estructural: **Adrián aparece 3 veces como aprobador manual en cada pedido** (confirmar anticipo, revisar datos, confirmar saldo). Eso no escala a 10x.
+
+**Advertencia honesta:** 2x en un año es alcanzable atacando conversión y recompra del flujo actual. 10x en 5 años **no sale de automatizar el proceso actual** — requiere canales nuevos (distribuidores, exportación, retail) y capacidad de fábrica. Las herramientas de abajo quitan fricción comercial; no fabrican piezas. El plan de inversión en maquinaria y gente tiene que correr en paralelo o la demanda extra solo alarga tiempos de entrega.
+
+---
+
+## Frente A — Convertir más de lo que ya llega (impacto en meses, palanca del 2x)
+
+### 1. Seguimiento automático de cotizaciones ⭐ el ROI más alto y más barato
+
+El AS-IS describe la etapa "Seguimiento" en Bitrix24 pero todo depende de la disciplina del vendedor. La cotización vence a las 4 semanas y nadie dispara recordatorios. En B2B la mayoría de las negociaciones no se pierden por precio — se mueren por silencio.
+
+- **Qué es:** motor que lee el historial de cotizaciones (ya está en Neon/`cotizaciones.json`) y dispara secuencia: día 2 ("¿dudas con la cotización?"), día 7, día 21 ("vence en una semana, ¿congelamos precio?"). Mensajes por WhatsApp/correo + alerta al vendedor para que llame.
+- **Por qué primero:** infraestructura ya existe (cotizador en Render, Neon, número de WhatsApp de ventas). Es extender lo construido, no construir de cero.
+
+### 2. Calificación y primera respuesta 24/7 en WhatsApp
+
+Hoy los leads llegan por 9 canales y un vendedor los registra a mano en Bitrix24 (9 campos). La velocidad de primera respuesta es el predictor número uno de conversión B2B — un lead contestado en 5 minutos convierte varias veces más que uno contestado en horas.
+
+- **Qué es:** agente sobre el WhatsApp de ventas que responde al instante, hace la calificación menudeo/mayoreo (la regla es trivial: <100 piezas → Shopify), pregunta los campos del registro (tipo de cliente, ciudad, piezas estimadas, modelos/colores), manda el catálogo, y **crea el lead en Bitrix24 automáticamente** con temperatura sugerida. El vendedor recibe el lead ya calificado y con contexto.
+- **Riesgo a cuidar:** que no se sienta robot frente a un comprador HoReCa serio. El agente califica y agenda; no negocia.
+
+### 3. Instrumentación del embudo (saber dónde se pierde)
+
+Hoy no se puede responder con datos: ¿cuántos leads/mes? ¿win rate por segmento? ¿por qué se pierde? La etapa "Analizar la falla" existe pero no hay feedback loop. Sin esto, las demás apuestas son a ciegas. Es un dashboard que cruce Bitrix24 + cotizaciones + pedidos de Operam — encaja naturalmente en `peltre-analisis-mensual` que ya está en desarrollo.
+
+---
+
+## Frente B — Generar demanda nueva (palanca del 10x)
+
+### 4. Cotizador self-service público / catálogo B2B interactivo
+
+La pieza con más potencial de venta nueva. El catálogo PDF es estático; las listas M100–M6000 son fórmulas simples (70%→40% del precio de lista). Nada impide que un prospecto arme su propio carrito en la web, vea el precio mayoreo en vivo según volumen, estime su envío, y deje sus datos para confirmar.
+
+- **Por qué funciona:** captura leads a las 2 AM sin vendedor, y el lead llega **con el carrito ya armado** — la mitad del trabajo comercial hecho. El motor de precios, tiers y cálculo de envío ya existe en el cotizador; es exponerlo con otra cara (sin login, sin datos sensibles, precio indicativo sujeto a confirmación).
+- Convierte Meta Ads de "manda WhatsApp y espera" a "cotiza ahora mismo" — eso cambia el costo por lead calificado.
+
+### 5. Calculadora para restaurantes (lead magnet)
+
+Está documentado en el dossier: los restauranteros preguntan cuántos platos comprar según asientos. Esa pregunta es una calculadora pública ("X asientos, Y rotación → necesitas Z piezas + reposición anual sugerida") que termina en cotización automática. Barata de hacer, alimenta el punto 4, y posiciona a pp.peltre como el proveedor que asesora — diferenciación de servicio que ya es la estrategia declarada frente a Cinsa/BISA.
+
+### 6. Motor de recompra B2B
+
+Hoy el post-venta B2B es cero (Revie solo cubre Shopify). Pero HoReCa es un negocio de **reposición**: las piezas se pierden, se rayan, el restaurante abre otra sucursal. Venderle a un cliente existente cuesta una fracción de adquirir uno nuevo.
+
+- **Qué es:** a los N meses de la entrega (dato que ya está en Operam), mensaje automático: "¿cómo va la vajilla? reposición al precio de tu lista, aquí tu pedido anterior para repetir en un clic". Con webhooks de Operam ya documentados, el trigger es directo.
+- Esta es probablemente la palanca más subestimada del 2x: la cartera actual ya compró una vez.
+
+### 7. Prospección saliente asistida por agente
+
+Para 10x hay que salir a buscar: aperturas de restaurantes/hoteles, distribuidores, retail especializado, museos (la lista de targets ya existe). Un agente que investigue aperturas y prospectos por ciudad/segmento, arme la lista en Bitrix24 y genere borradores de correo personalizados (email-mcp ya crea borradores, nunca envía — el humano aprueba). Esto es más proceso que app, pero el agente quita el 80% del trabajo tedioso que hace que la prospección nunca se haga.
+
+---
+
+## Frente C — Quitar cuellos de escala (lo que truena al crecer)
+
+### 8. Sincronización Operam → Bitrix24
+
+Los webhooks de Operam ya están documentados. Cotización subida → mover a "Presentar Cotización"; pedido creado → "Producción Liberada"; nota de entrega → "Producto entregado". Elimina la captura doble y — más importante — hace que el pipeline refleje la realidad sin depender de la disciplina del vendedor. Sin esto, el dashboard del punto 3 mide ficción.
+
+### 9. Reducir las 3 intervenciones de Adrián por pedido
+
+Hoy: Adrián confirma el depósito, revisa 6 campos antes de convertir a pedido, y confirma el saldo. Con 4 pedidos/semana funciona; con 40 es el cuello de botella de toda la empresa.
+
+- **Camino realista:** los guardrails del alta de cliente ya hicieron el trabajo duro (dedup, validaciones, cuenta de ventas automática). Extender esa lógica a la conversión cotización→pedido: un checklist automático que valide los 6 puntos y presente "todo verde, aprobar en 1 clic" — o solo escale las excepciones. La conciliación de pagos es más dura (Banorte no tiene API amigable), pero un semáforo semiautomático sobre el módulo Bancos de Operam ya quita la mitad de la fricción.
+
+### 10. Notificaciones de estado al cliente
+
+Webhooks de Operam → WhatsApp al cliente: "tu pedido entró a producción", "listo, falta saldo", "enviado, aquí tu guía". Mata las preguntas de "¿cómo va mi pedido?", resuelve el aviso manual de Lalamove, y profesionaliza la experiencia — relevante para que un hotel recomiende con otro hotel.
+
+### 11. Mini-app de calcas
+
+El flujo de personalización es el más largo (6 semanas), el de más margen, y el más manual: cotización con Vitromugs por WhatsApp, formato de posición en Illustrator, dummy, prueba en mufla. Dos piezas automatizables:
+
+- **(a)** cotizador de calca — la matriz ya está definida en el AS-IS (1/8 a 1/1, tintas, mínimo 100 iguales); hoy cada cotización espera respuesta de Vitromugs.
+- **(b)** previsualizador de mockup — el cliente sube su logo y lo ve sobre la pieza usando los wireframes existentes. Acortar el ciclo de aprobación visual de días a minutos cierra más proyectos promocionales.
+
+---
+
+## Priorización sugerida
+
+| # | Qué | Esfuerzo | Palanca |
+|---|-----|----------|---------|
+| 1 | Seguimiento automático de cotizaciones | Bajo (extiende cotizador) | Cerrar lo que hoy se muere en silencio |
+| 2 | Sync Operam → Bitrix24 | Bajo (webhooks listos) | Pipeline confiable, base para medir |
+| 3 | Bot de calificación WhatsApp → Bitrix24 | Medio | Velocidad de respuesta = conversión |
+| 4 | Motor de recompra B2B | Bajo-medio | Venta a cartera existente |
+| 5 | Cotizador self-service público + calculadora restaurantes | Medio (reusa el motor) | Demanda nueva 24/7 |
+| 6 | Checklist de aprobación de pedido (quitar cuello de Adrián) | Medio | Prerequisito para escalar volumen |
+| 7 | Notificaciones de estado al cliente | Bajo | Experiencia, recomendación |
+| 8 | Mini-app de calcas (cotizador + mockup) | Medio-alto | Más proyectos promocionales, mejor margen |
+| 9 | Prospección saliente asistida | Medio | El motor del 10x junto con el #5 |
+
+Los puntos 1–4 son el paquete del 2x: pura conversión y recompra sobre demanda que ya existe, con infraestructura que ya existe (Render, Neon, webhooks Operam, API v3, email-mcp). Los puntos 5, 8 y 9 son los que abren demanda nueva para la trayectoria 10x — pero ese objetivo va a depender igual o más de capacidad de producción y de canales (distribución, exportación) que de software.
+
+**Siguiente paso natural:** bajar el #1 (seguimiento de cotizaciones) a un diseño concreto — es el que menos cuesta y el que más rápido se nota en ventas.
