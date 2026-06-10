@@ -1,5 +1,29 @@
 # Glosario de dominio — Cotizador Peltre Nacional
 
+## Prospecto
+
+La persona o entidad detrás de un número de celular que mostró interés comercial pero aún no tiene alta de cliente en Operam. Un celular corresponde siempre a exactamente un prospecto. No existe una entidad "oportunidad" separada: cada cotización ligada al prospecto representa una oportunidad, y el historial del prospecto las acumula (una agencia que cotiza para dos clientes finales es un prospecto con dos cotizaciones; un restaurantero que vuelve meses después es el mismo prospecto con historial).
+
+Un cliente con alta en Operam nunca vuelve a ser prospecto: si el celular capturado pertenece a un cliente existente, el sistema lo señala (guardrail, mismo patrón que la deduplicación de clientes) y el vendedor cotiza sobre el cliente, no crea prospecto. Esa detección es "best effort": en Operam los teléfonos no viven en el cliente sino repartidos entre sus contactos y sus domicilios de entrega, en formatos inconsistentes; la comparación se hace por los últimos 10 dígitos del número nacional.
+
+## Etapas de prospecto
+
+Nuevo (capturado, sin atender) → Contactado (hubo primera conversación) → Calificado (se conoce tipo de cliente, piezas aproximadas y es mayoreo viable) → Cotizado. La transición a Cotizado es automática al ligarse una cotización al celular del prospecto; en ese momento el seguimiento de la cotización releva al seguimiento del prospecto — una persona nunca tiene dos colas activas. Salida en cualquier etapa: No útil, con motivo obligatorio de catálogo corto (menudeo, fuera de zona, sin presupuesto, spam, sin respuesta). El prospecto se asigna al vendedor que lo captura; un proceso de asignación manual o automático es evolución futura.
+
+## Horas hábiles
+
+El reloj con el que se mide la espera de un prospecto: lunes a viernes 7:30–16:30, sábado 7:30–13:00, festivos mexicanos excluidos. Un prospecto que escribe en fin de semana o festivo no acumula espera; los prospectos aceptan respuesta a la mañana siguiente hábil sin molestia. Las cotizaciones, en cambio, se siguen midiendo en días naturales (cadencia día 2/7/21/vencida).
+
+## Cadencia de prospecto
+
+Los tiempos de seguimiento de un prospecto corren en horas hábiles y dependen del canal: WhatsApp e Instagram esperan respuesta en horas (rojo a las 2 horas hábiles sin contactar); correo y formulario toleran más (rojo a las 8). Cada prospecto muestra una etiqueta visible de horas hábiles sin respuesta con semáforo (verde < 2, ámbar 2–8, rojo > 8). Tras 3 toques sin respuesta el sistema sugiere — nunca aplica solo — la salida a No útil (sin respuesta). Una reunión diagnóstico futura suprime la cadencia.
+
+## Captura de prospecto
+
+Registro mínimo de un prospecto, diseñado para hacerse en segundos desde el teléfono. Obligatorios: celular (con código de país), nombre (se acepta sin apellido) y ciudad (necesaria para estimar envío). Opcionales: empresa, tipo de cliente (segmentos existentes), piezas estimadas (+100/+350/+550/+1,500/+6,000), correo, temperatura (1–5) y notas. Canal de origen obligatorio, de catálogo cerrado: WhatsApp, Instagram, Facebook/Messenger, Meta Ads (pagado — se distingue del orgánico), Formulario web, Correo, Referido, Bazar Sábado, Feria/Expo. Los prospectos de Feria/Expo no se capturan a mano: la plataforma del evento entrega un CSV de gafetes escaneados que se importa deduplicando por celular.
+
+Actividad con fecha sobre un prospecto (no es etapa): llamada o videollamada que el prospecto solicita para explorar su proyecto. Mientras la reunión está en el futuro, la cadencia de seguimiento del prospecto se suprime; pasada la fecha, el seguimiento pide registrar el resultado (avanzar a Calificado o salir a No útil).
+
 ## Alta de cliente
 
 Proceso de registrar a un cliente nuevo en Operam con todos los campos requeridos por el SOP-COM-OPERAM-001: datos fiscales, configuración comercial, contacto y domicilio de entrega. La realiza el **vendedor**. Se considera completa cuando el cliente puede usarse para generar cotizaciones, pedidos y facturas sin correcciones posteriores.

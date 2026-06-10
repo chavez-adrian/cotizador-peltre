@@ -1,137 +1,42 @@
-# PROGRESS — Sesion grill-with-docs issue #26
+# PROGRESS — sesión 2026-06-10 (cortada por límite de tokens)
 
-**Fecha:** 2026-06-06  
-**Estado:** Fase de discovery y documentacion COMPLETA. Implementacion pendiente.
+## Qué se estaba haciendo y por qué
 
----
+Sesión de grilling (`/grill-with-docs`) para el **módulo de prospectos** del cotizador — el CRM mínimo que reemplazará a Bitrix24 como experimento de 4–6 semanas en paralelo. Flujo acordado con Adrián: `/grill-with-docs` → `/to-prd` → `/to-issues`, y después implementar.
 
-## Lo que se hizo
+Contexto completo del día (todo terminado y en producción): ver `ANALISIS_AUTOMATIZACION_VENTAS.md` sección "Avance de implementación" — seguimiento de cotizaciones (cola día 2/7/21/vencida), bloqueo duro de teléfono con código de país, migración de cotizaciones a Neon (`wandering-violet/neondb`, tabla `cotizaciones`, 49 migradas), cotizador en Render plan Starter (deploy `f0d92dd` live, verificado en producción), cron-jobs de keepalive desactivados por Adrián.
 
-Se realizó una sesion completa de `/grill-with-docs` para afinar el PRD del issue #26
-("Completar flujo de alta de clientes conforme al SOP-COM-OPERAM-001").
+## Estado exacto del grilling
 
-Durante la sesion se ejecutaron pruebas empiricas contra la API de Operam produccion
-para verificar o refutar suposiciones del PRD. Todos los hallazgos fueron persistidos
-en los archivos de documentacion.
+Las decisiones resueltas YA ESTÁN ESCRITAS en `CONTEXT.md` (glosario actualizado inline durante la sesión — leerlo es obligatorio antes de continuar). Resumen de lo resuelto:
 
----
+1. **Prospecto** = persona/entidad detrás del celular; 1 celular = 1 prospecto; sin entidad "oportunidad" (las cotizaciones ligadas son las oportunidades).
+2. **Cliente Operam nunca regresa a prospecto** — guardrail al capturar celular de cliente existente (verificado contra API real: en Operam los teléfonos viven en `contacts[].phone` Y `branches[].phone`, inconsistentes; match por últimos 10 dígitos; requiere índice local de teléfonos).
+3. **Etapas:** Nuevo → Contactado → Calificado → Cotizado (automática al ligarse cotización por celular; releva el seguimiento) + salida No útil con motivo obligatorio. Asignación = quien captura atiende; proceso de asignación es evolución futura.
+4. **Reunión diagnóstico** = actividad con fecha, NO etapa; suprime cadencia mientras es futura; al pasar pide registrar resultado.
+5. **Cadencia en horas hábiles** (L–V 7:30–16:30, sáb 7:30–13:00, festivos MX excluidos); etiqueta semáforo "X h hábiles sin respuesta" (verde <2, ámbar 2–8, rojo >8); WhatsApp/IG corren en horas, correo/formulario toleran más; 3 toques sin respuesta → sugerir No útil (nunca automático).
+6. **Captura:** obligatorios celular + nombre (sin apellido OK) + ciudad (para estimar envío) + canal. Canales: WhatsApp, Instagram, Facebook/Messenger, Meta Ads (pagado ≠ orgánico), Formulario web, Correo, Referido, Bazar Sábado, Feria/Expo (este último por importación CSV de gafetes escaneados, dedup por celular).
 
-## Hallazgos empiricos clave (verificados 2026-06-06)
+## Pregunta PENDIENTE de respuesta (retomar aquí)
 
-### Flujo correcto de creacion de cliente
+**Pregunta 6:** cotización creada directo sin prospecto previo (celular no matchea prospecto ni cliente Operam) — ¿auto-crear prospecto en etapa Cotizado con canal "Directo"? Recomendación dada: **sí (opción b)** — embudo completo sin disciplina extra; costo aceptado: se pierde el canal real de origen. **Adrián no había respondido aún.**
 
-```
-POST /api/v3/sales/customers
-  → Operam auto-crea branch ("Una sucursal por defecto ha sido creada automaticamente")
-  → Respuesta: {id: customer_id}
+## Preguntas que faltaban después de la 6
 
-GET /api/v3/sales/customers/{customer_id}
-  → branch_code = branch_id del branch auto-creado
+7. Visibilidad: ¿cada vendedor ve solo sus prospectos y admin todo (igual que cotizaciones)? (recomendación: sí, mismo modelo)
+8. Histórico de Bitrix: ¿importar los prospectos vivos (vía REST/CSV de Bitrix) o empezar de cero?
+9. Ofrecer **ADR 0004**: "CRM mínimo de prospectos dentro del cotizador en lugar de sincronizar con Bitrix24" — cumple los 3 criterios (difícil de revertir, sorprendente sin contexto, trade-off real). Redactarlo al cerrar el grilling.
 
-PUT /api/v3/sales/branches/{branch_id}
-  → Configurar branch con domicilio y parametros
-```
+## Siguiente acción exacta al retomar
 
-NO existe `POST /api/v3/sales/branches` como operacion de alta.
+1. Leer `CONTEXT.md`, este archivo y `ANALISIS_AUTOMATIZACION_VENTAS.md`.
+2. Re-hacer la Pregunta 6 a Adrián (texto arriba) y continuar con 7, 8 y el ADR 0004.
+3. Al terminar el grilling: `/to-prd` (PRD del módulo de prospectos) → `/to-issues` (issues en `chavez-adrian/cotizador-peltre`).
+4. Implementar con TDD (obligatorio en este repo).
 
-### Nombres de campos correctos en PUT /branches (NO son los de GET)
+## Decisiones/contexto extra descubiertos hoy (no perder)
 
-| Campo correcto | Campo incorrecto (de GET) |
-|---|---|
-| `br_ref` | `branch_ref` |
-| `location: 40` (entero) | `default_location: "40"` |
-| `ship_via: 1` (entero) | `default_ship_via: "1"` |
-
-### sales_account
-
-Siempre vacio en la API incluso en clientes bien configurados via UI.
-Operam lo deriva internamente del `tax_group_id`. NUNCA enviar `sales_account`.
-Setear solo `tax_group_id: 1` (MX) o `tax_group_id: 2` (extranjero).
-
-### Contactos
-
-- `POST /api/v3/sales/contacts` → 501
-- `PUT /api/v3/sales/customers/{id}` con array `contacts` → silenciosamente ignorado
-  (incluso con IDs de contactos existentes, verificado contra produccion)
-- Operam auto-genera un contacto General al crear el cliente
-  (usa cust_ref como nombre, phone y email del cliente)
-- Contactos Invoices/Deliveries y campo Celular: SOLO manual en UI de Operam
-
-### Catalogos
-
-- `GET /api/v3/sales/sales_types` → funciona; retorna todas las listas de precios
-- Endpoints de segmentos y vendedores de Operam → 501
-- Decision: endpoint propio `/api/catalogos` con segmentos y vendedores hardcodeados,
-  listas_precios dinamicas desde Operam
-
----
-
-## Archivos actualizados en esta sesion
-
-| Archivo | Que se actualizo |
-|---|---|
-| `data/vendedores.json` | Nombres reales + campo `operam_id` separado del `id` interno |
-| `CONTEXT.md` | Termino "Contacto de cliente" — API auto-genera General; PUT ignorado |
-| `MAPEO_CAMPOS_CLIENTE.md` | Gaps #2,#3,#4,#5,#6; seccion 2.4 comercial; seccion 4 hardcoded; nota header |
-| `docs/adr/0002-alta-cliente-operacion-atomica.md` | Flujo POST+GET+PUT; campos correctos; nota sales_account |
-| `CLAUDE.md` | operam-client exports (actualizarBranchCliente); seccion /api/catalogos |
-| `GitHub issue #26` | Reescritura completa con todas las decisiones de implementacion |
-
----
-
-## Estado de Jaime Abaroa Santos
-
-- Telefono: +524441769026
-- Email: abaroasantos@hotmail.com
-- `operam_id: null` en vendedores.json
-- **Accion pre-deploy:** dar de alta como vendedor en Operam UI y actualizar `operam_id`
-- Hasta entonces, /api/catalogos lo excluye del selector de vendedores
-
----
-
-## Proxima tarea: Implementacion
-
-El PRD del issue #26 esta listo para implementacion. Orden sugerido:
-
-### 1. Nuevo endpoint GET /api/catalogos (server.js)
-Segmentos y vendedores hardcodeados + listas_precios desde Operam.
-Test: verifica segmentos (11), vendedores solo con operam_id, listas mayoreo.
-
-### 2. actualizarBranchCliente() en lib/operam-client.js
-GET /customers/{id} para obtener branch_code + PUT /branches/{id} con campos correctos.
-Campos required: br_name, br_ref. Campos clave: location:40, ship_via:1, tax_group_id.
-NO incluir sales_account en el body.
-Test: body correcto para MX vs extranjero; sales_account ausente.
-
-### 3. buildClienteBody() en lib/operam-client.js
-Agregar: sales_type, segmento_id, salesman (operam_id).
-Cambiar: timbrado_uso_cfdi desde input (S01 como fallback).
-Cambiar: area derivado del pais (MX→1, US→5, CA→7, otros→6).
-Mantener: payment_terms: 9 hardcodeado.
-Test: area por pais, sales_type presente, salesman = operam_id.
-
-### 4. POST /api/crear-cliente (server.js)
-Flujo atomico: POST customer → GET branch_id → PUT branch.
-Manejo de estado parcial: si customer_id existe en el retry, skip POST.
-Test: alta completa, fallo en PUT branch, reintento sin duplicar.
-
-### 5. Modulo de deduplicacion (nuevo, puro)
-normalizarNombre() + detectarDuplicados().
-Test: RFC real duplicado, RFC generico con match de nombre, falso positivo.
-
-### 6. Frontend index.html + app.js
-Panel de alta integrado, selectores desde /api/catalogos, indicador de progreso,
-botones "Cotizar ahora" / "Terminar".
-
----
-
-## Segmentos (hardcoded en /api/catalogos)
-
-Obtener la lista confirmada de Operam antes de hardcodear.
-En la sesion de grill se confirmo que son 11 incluyendo "Sin segmento" (ID=0).
-IDs exactos pendientes de verificar.
-
-## Listas de precios mayoreo (filtro para /api/catalogos)
-
-M100, M350, M550, M1500, M6000, M6001, US100, US350, US550, US1500, US6000
-(las listas de menudeo y otras se excluyen del selector)
+- El bot de calificación WhatsApp (#3 del análisis) está diseñado a nivel concepto en `ANALISIS_AUTOMATIZACION_VENTAS.md` y en la conversación: Cloud API de Meta directo (sin Wazzup), receptor = cotizador Starter, Claude Haiku con tools (guardar_prospecto/enviar_catalogo/escalar_a_humano), no cotiza ni negocia, handoff limpio. Pendiente decidir: número nuevo dedicado vs migrar el actual. El módulo de prospectos es prerequisito (el bot deposita ahí).
+- Decisión estratégica: NO construir sync Operam↔Bitrix24 (era el punto #2 del análisis); en su lugar el módulo de prospectos como experimento para abandonar Bitrix. Si el experimento falla, el diseño del sync (tabla de vínculos por ID + conciliación con bandeja) quedó descrito en la conversación y en el análisis.
+- operam-export sigue suspendido en Render hasta julio o hasta decisión (si hay pedidos de exportación antes, subirlo a Starter o correr local).
+- Los 6 cron-jobs de cron-job.org están inactivos (Adrián los desactivó); no reactivarlos por default.
