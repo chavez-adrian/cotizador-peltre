@@ -30,7 +30,9 @@
 
 **Deuda nueva del review #47:** headers del XLSX se matchean exacto (columna renombrada → reporte confuso "todo teléfono inválido" en vez de "columna faltante"); import O(n²) solo en modo JSON local; NOTA #48: extraer el pipeline route-side (dedup store + clasificar + crear + reporte) al llegar el segundo import.
 
-**Siguiente:** solo queda #48 (importación Bitrix one-time, HITL — requiere sesión con Adrián y el export real de Bitrix: mapeo de etapas/canales y asignación de vendedores). Idea de Adrián sin issue aún: kanban estilo Bitrix (prospectos y cotizaciones).
+**Kanban (grilling 2026-06-11, decisiones en CONTEXT.md "Tablero de prospectos"/"Tablero de cotizaciones"):** arrastre respeta el dominio (un paso; No útil pide motivo; Cotizado no acepta drops), No útil como columna siempre visible, conmutador kanban⇄lista con "Qué toca hoy" fija sobre ambas, tablero de cotizaciones con columnas de cadencia+cierre (solo el cierre se arrastra), móvil con swipe horizontal, término canónico "Cotizaciones". Issues publicados: **#49** (kanban prospectos, ready-for-agent, sin bloqueos) y **#50** (kanban cotizaciones, bloqueado por #49).
+
+**Siguiente:** #49 → #50 (kanban) y #48 (importación Bitrix one-time, HITL — requiere sesión con Adrián y el export real de Bitrix: mapeo de etapas/canales y asignación de vendedores). Esperar confirmación de Adrián para arrancar.
 
 **Code-review COMPLETO.** Findings verificados (orden de severidad):
 1. **XSS almacenado (CONFIRMADO, arreglar antes de merge):** `buildProspectoCardHtml` (prospectos-logica.js:52-53) interpola nombre/empresa/ciudad/canal/celular sin escapar y app.js lo asigna a innerHTML (lista + pr-existente:1811). Mismo patrón crudo existe en cards de historial/seguimiento (app.js:1598/1655) pero ahí el dato lo captura el vendedor; el prospecto es dato de terceros (y #47 importará CSVs externos). Fix: helper `escapeHtml` en prospectos-logica.js con test.

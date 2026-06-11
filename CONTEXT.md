@@ -32,6 +32,14 @@ Registro mínimo de un prospecto, diseñado para hacerse en segundos desde el te
 
 Actividad con fecha sobre un prospecto (no es etapa): llamada o videollamada que el prospecto solicita para explorar su proyecto. Mientras la reunión está en el futuro, la cadencia de seguimiento del prospecto se suprime; pasada la fecha, el seguimiento pide registrar el resultado (avanzar a Calificado o salir a No útil).
 
+## Tablero de prospectos
+
+Vista kanban de los prospectos (conmutable con la vista de lista; la cola "Qué toca hoy" permanece fija sobre ambas). Cinco columnas siempre visibles: Nuevo, Contactado, Calificado, Cotizado y No útil (con su motivo en la tarjeta). El arrastre de tarjetas respeta las reglas del dominio — un paso adelante, soltar en No útil exige motivo, y Cotizado no acepta arrastres porque solo una cotización real mueve ahí (decisión 2026-06-11: se replica la experiencia de Bitrix24 sin sacrificar que el embudo mida verdad). Funciona también en el teléfono (desplazamiento horizontal por columna; en táctil el cambio de etapa puede seguir siendo por botón).
+
+## Tablero de cotizaciones
+
+Vista kanban de las cotizaciones cuyas columnas son la cadencia de seguimiento más el cierre: Recién enviada, Día 2, Día 7, Por vencer, Vencida, Ganada y Perdida. Las tarjetas avanzan solas con el tiempo (las columnas de cadencia no aceptan arrastres); solo el cierre se opera arrastrando a Ganada o Perdida. Se llama "Cotizaciones" — término canónico — aunque Bitrix24 le llamara negociaciones. Las etapas post-venta (producción, entrega) viven en Operam y no son columnas de este tablero.
+
 ## Alta de cliente
 
 Proceso de registrar a un cliente nuevo en Operam con todos los campos requeridos por el SOP-COM-OPERAM-001: datos fiscales, configuración comercial, contacto y domicilio de entrega. La realiza el **vendedor**. Se considera completa cuando el cliente puede usarse para generar cotizaciones, pedidos y facturas sin correcciones posteriores.
