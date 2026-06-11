@@ -162,7 +162,8 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
     }
     const clasificacion = await clasificarCelular(celular);
     if (clasificacion.tipo === 'prospecto') {
-      return pasarProspectoACotizado(clasificacion.prospecto, cotizacionId, vendedor);
+      await pasarProspectoACotizado(clasificacion.prospecto, cotizacionId, vendedor);
+      return;
     }
     if (clasificacion.tipo === 'cliente') return;
     const fecha = new Date().toISOString();
