@@ -17,6 +17,8 @@ import {
   buildProspectoExistenteHtml,
   buildMotivosNoUtilHtml,
   buildColaProspectosHtml,
+  buildReporteImportacionHtml,
+  escapeHtml,
   necesitaCanal,
   validarCanalCotizacion,
   buildCanalModalHtml,
@@ -1795,6 +1797,60 @@ function showProspectos() {
   poblarSelectoresProspecto();
   cargarListaProspectos();
   cargarMotivosNoUtil();
+  cargarImportarFeria();
+}
+
+// Importacion de Feria/Expo (issue #47): solo admin. El select trae el
+// vendedor default para las filas cuyo Dispositivo no matchea a nadie.
+async function cargarImportarFeria() {
+  const cont = document.getElementById('prospectos-importar-admin');
+  if (!cont || state.user.role !== 'admin') return;
+  cont.style.display = 'block';
+  const sel = document.getElementById('imp-feria-vendedor');
+  if (sel.options.length) return;
+  try {
+    const res = await api('/api/vendedores');
+    if (!res.ok) return;
+    const vendedores = await res.json();
+    sel.innerHTML = vendedores.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
+    sel.value = state.user.name;
+  } catch (e) { /* sin red no hay importacion */ }
+}
+
+async function importarFeria() {
+  const errEl = document.getElementById('imp-feria-error');
+  const reporteEl = document.getElementById('imp-feria-reporte');
+  const input = document.getElementById('imp-feria-archivo');
+  const btn = document.getElementById('btn-importar-feria');
+  errEl.style.display = 'none';
+  reporteEl.innerHTML = '';
+  const archivo = input.files[0];
+  if (!archivo) {
+    errEl.textContent = 'Selecciona el archivo XLSX de la expo';
+    errEl.style.display = 'block';
+    return;
+  }
+  const fd = new FormData();
+  fd.append('archivo', archivo);
+  fd.append('vendedor', document.getElementById('imp-feria-vendedor').value);
+  btn.disabled = true;
+  try {
+    const res = await api('/api/admin/prospectos/importar', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'No se pudo importar el archivo';
+      errEl.style.display = 'block';
+      return;
+    }
+    reporteEl.innerHTML = buildReporteImportacionHtml(data);
+    input.value = '';
+    cargarListaProspectos();
+  } catch (e) {
+    errEl.textContent = 'Error de conexion';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function cargarMotivosNoUtil() {
@@ -2207,6 +2263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     form.style.display = form.style.display === 'none' ? 'block' : 'none';
   });
   document.getElementById('btn-guardar-prospecto').addEventListener('click', guardarProspecto);
+  document.getElementById('btn-importar-feria').addEventListener('click', importarFeria);
   document.getElementById('pr-temperatura').addEventListener('click', e => {
     const v = e.target.dataset ? e.target.dataset.v : null;
     if (!v) return;

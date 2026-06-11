@@ -311,6 +311,26 @@ export function buildCanalModalHtml() {
   `;
 }
 
+// Reporte de la importacion de Feria/Expo (issue #47): que entro, a quien se
+// asigno y que se descarto con motivo. Respuesta de POST /api/admin/prospectos/importar.
+export function buildReporteImportacionHtml(reporte) {
+  const r = reporte || {};
+  const partes = [
+    `<div class="cot-card-meta"><strong>${r.importados || 0} prospectos importados</strong></div>`,
+  ];
+  for (const [vendedor, n] of Object.entries(r.porVendedor || {})) {
+    partes.push(`<div class="cot-card-meta">${escapeHtml(vendedor)}: ${n}</div>`);
+  }
+  const descartados = r.descartados || [];
+  if (descartados.length) {
+    partes.push(`<div class="cot-card-meta" style="margin-top:8px"><strong>${descartados.length} filas descartadas</strong></div>`);
+    for (const d of descartados) {
+      partes.push(`<div class="cot-card-meta">Fila ${d.fila}: ${escapeHtml(d.nombre || '(sin nombre)')} - ${escapeHtml(d.motivo)}</div>`);
+    }
+  }
+  return partes.join('');
+}
+
 // Arma el body de POST /api/prospectos desde los campos del formulario de captura.
 // Los opcionales vacios no viajan.
 export function buildProspectoPayload(campos) {
