@@ -197,6 +197,21 @@ test('T10: buildHistorialHtml tolera prospecto sin eventos y escapa datos de usu
   assert.equal(conXss.includes('<b>Ana</b>'), false);
 });
 
+test('T10b: buildHistorialHtml muestra la conversion a cliente con nombre e id, escapados', () => {
+  const html = buildHistorialHtml({
+    ...PROSPECTO,
+    eventos: [{ tipo: 'cliente', cliente_id: 88, nombre: 'LAURA SA <DE> CV', fecha: '2026-06-12T10:00:00.000Z', vendedor: 'Memo' }],
+  });
+  assert.match(html, /Convertido en cliente/);
+  assert.match(html, /LAURA SA &lt;DE&gt; CV/);
+  assert.match(html, /#88/);
+  const sinNombre = buildHistorialHtml({
+    ...PROSPECTO,
+    eventos: [{ tipo: 'cliente', cliente_id: 88, fecha: '2026-06-12T10:00:00.000Z', vendedor: 'Memo' }],
+  });
+  assert.match(sinNombre, /Convertido en cliente #88/);
+});
+
 test('T11: la card de un prospecto activo trae wa.me, avanzar etapa, toque, No util e historial', () => {
   const html = buildProspectoCardHtml(PROSPECTO);
   assert.match(html, /href="https:\/\/wa\.me\/525512345678"/);

@@ -94,6 +94,10 @@ function etiquetaEvento(e) {
   if (e.tipo === 'etapa') return `${escapeHtml(ETAPA_LABELS[e.de] || e.de)} → ${escapeHtml(ETAPA_LABELS[e.a] || e.a)} · ${escapeHtml(e.vendedor)}`;
   if (e.tipo === 'toque') return `Toque · ${escapeHtml(e.vendedor)}`;
   if (e.tipo === 'no_util') return `Salida a No útil (${escapeHtml(e.motivo)}) · ${escapeHtml(e.vendedor)}`;
+  if (e.tipo === 'cliente') {
+    const nombre = e.nombre ? `${escapeHtml(e.nombre)} (#${escapeHtml(e.cliente_id)})` : `#${escapeHtml(e.cliente_id)}`;
+    return `Convertido en cliente ${nombre} · ${escapeHtml(e.vendedor)}`;
+  }
   return escapeHtml(`${e.tipo} · ${e.vendedor}`);
 }
 
