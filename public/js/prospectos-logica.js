@@ -117,6 +117,12 @@ function fechaCorta(fecha) {
   return new Date(fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function fechaHora(fecha) {
+  return new Date(fecha).toLocaleString('es-MX', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
 const ETIQUETAS_EVENTO = {
   captura: e => `Capturado por ${escapeHtml(e.vendedor)}`,
   etapa: e => `${escapeHtml(ETAPA_LABELS[e.de] || e.de)} → ${escapeHtml(ETAPA_LABELS[e.a] || e.a)} · ${escapeHtml(e.vendedor)}`,
@@ -127,6 +133,7 @@ const ETIQUETAS_EVENTO = {
     return `Convertido en cliente ${nombre} · ${escapeHtml(e.vendedor)}`;
   },
   cotizacion: e => `Cotización #${escapeHtml(e.cotizacion_id)} · ${escapeHtml(e.vendedor)}`,
+  reunion: e => `Reunión agendada para ${escapeHtml(fechaHora(e.fecha_reunion))} · ${escapeHtml(e.vendedor)}`,
 };
 
 function etiquetaEvento(e) {
@@ -161,12 +168,15 @@ const CLIENTE_BADGE = '<span class="cliente-badge">Ya es cliente — falta cotiz
 // Las acciones llaman funciones globales de app.js (mismo patron que las
 // cards de seguimiento: onclick + window.fn). colaItem es el item del
 // prospecto en GET /api/prospectos/cola, si esta en la cola (issue #44).
-export function buildProspectoCardHtml(p, colaItem) {
+export function buildProspectoCardHtml(p, colaItem, ahora = new Date()) {
   const d = p.data || {};
   const empresa = d.empresa ? ` · ${escapeHtml(d.empresa)}` : '';
   const activo = p.etapa !== 'no_util' && p.etapa !== 'cotizado';
   const sig = siguienteEtapa(p.etapa);
   const wa = buildWaLink(p.celular);
+  // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
+  // viene en la cola) pero la card lo dice con su propia etiqueta.
+  const reunion = activo ? reunionFutura(p, ahora) : null;
   const acciones = [];
   if (wa) acciones.push(`<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`);
   if (activo && sig) {
@@ -174,6 +184,10 @@ export function buildProspectoCardHtml(p, colaItem) {
   }
   if (activo) {
     acciones.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">+ Toque</button>`);
+    acciones.push(
+      `<input type="datetime-local" id="pr-reunion-${p.id}" class="btn-sm">` +
+      `<button class="btn btn-secondary btn-sm" onclick="agendarReunionProspecto(${p.id})">Agendar reunión</button>`
+    );
     acciones.push(
       `<select id="pr-motivo-${p.id}" class="btn-sm"><option value="">Motivo...</option>` +
       MOTIVOS_NO_UTIL.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('') +
@@ -189,6 +203,7 @@ export function buildProspectoCardHtml(p, colaItem) {
           <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
           ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
           ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
+          ${reunion ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión el ${escapeHtml(fechaHora(reunion))}</span></div>` : ''}
         </div>
         <div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>
       </div>
@@ -208,9 +223,20 @@ export function buildColaProspectosHtml(cola) {
     const wa = buildWaLink(item.celular);
     const acciones = [];
     if (wa) acciones.push(`<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`);
-    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${item.id})">+ Toque</button>`);
-    if (item.sugerirNoUtil) {
-      acciones.push(`<button class="btn btn-secondary btn-sm" onclick="sugerirNoUtilProspecto(${item.id})">${item.toques} toques sin respuesta · ¿No útil?</button>`);
+    // Reunion vencida (issue #45): el item vuelve pidiendo registrar el
+    // resultado -- Calificado o No util con motivo -- en vez del toque normal.
+    if (item.reunionVencida) {
+      acciones.push(`<button class="btn btn-primary btn-sm" onclick="resultadoReunionProspecto(${item.id}, 'calificado')">→ Calificado</button>`);
+      acciones.push(
+        `<select id="cola-motivo-${item.id}" class="btn-sm"><option value="">Motivo...</option>` +
+        MOTIVOS_NO_UTIL.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('') +
+        `</select><button class="btn btn-secondary btn-sm" onclick="resultadoReunionNoUtilProspecto(${item.id})">No útil</button>`
+      );
+    } else {
+      acciones.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${item.id})">+ Toque</button>`);
+      if (item.sugerirNoUtil) {
+        acciones.push(`<button class="btn btn-secondary btn-sm" onclick="sugerirNoUtilProspecto(${item.id})">${item.toques} toques sin respuesta · ¿No útil?</button>`);
+      }
     }
     return `
       <div class="cot-card">
@@ -219,6 +245,7 @@ export function buildColaProspectosHtml(cola) {
             <div class="cot-card-cliente">${escapeHtml(item.nombre)}</div>
             <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[item.etapa] || item.etapa)} · ${escapeHtml(item.canal)} · ${escapeHtml(item.ciudad)} · ${escapeHtml(item.celular)}</div>
             <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}${item.yaEsCliente ? ` ${CLIENTE_BADGE}` : ''}</div>
+            ${item.reunionVencida ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión del ${escapeHtml(fechaHora(item.fechaReunion))} — registrar resultado</span></div>` : ''}
           </div>
         </div>
         <div class="cot-card-actions">${acciones.join(' ')}</div>

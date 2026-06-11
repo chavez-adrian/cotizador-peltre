@@ -978,6 +978,18 @@ body {
   vertical-align: middle;
 }
 
+/* Reunion diagnostico (issue #45) */
+.reunion-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: #8e44ad;
+  border-radius: 10px;
+  padding: 1px 7px;
+  vertical-align: middle;
+}
+
 /* === RESPONSIVE === */
 @media (max-width: 480px) {
   .form-row { grid-template-columns: 1fr; }

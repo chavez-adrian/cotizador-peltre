@@ -6,13 +6,14 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
   validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml,
   buildEsperaBadgeHtml, buildColaProspectosHtml, necesitaCanal, validarCanalCotizacion,
-  buildCanalModalHtml;
+  buildCanalModalHtml, reunionFutura, reunionPendienteResultado;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
     validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil,
     buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml,
-    necesitaCanal, validarCanalCotizacion, buildCanalModalHtml } = await import('../prospectos-logica.js'));
+    necesitaCanal, validarCanalCotizacion, buildCanalModalHtml,
+    reunionFutura, reunionPendienteResultado } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -373,6 +374,83 @@ test('C7: la cola muestra la etiqueta "Ya es cliente" cuando el item trae yaEsCl
   assert.match(html, /Ya es cliente — falta cotizar/);
   const sin = buildColaProspectosHtml([ITEM_COLA]);
   assert.equal(sin.includes('Ya es cliente'), false);
+});
+
+// === Issue #45: reunion diagnostico ===
+
+const AHORA = new Date('2026-06-10T18:00:00.000Z');
+const REUNION_FUTURA = { tipo: 'reunion', fecha_reunion: '2026-06-15T17:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
+const REUNION_PASADA = { tipo: 'reunion', fecha_reunion: '2026-06-09T17:00:00.000Z', fecha: '2026-06-08T12:00:00.000Z', vendedor: 'Memo' };
+
+test('RU1: el historial muestra el evento reunion con fecha agendada y vendedor, escapados', () => {
+  const html = buildHistorialHtml({ ...PROSPECTO, eventos: [REUNION_FUTURA] });
+  assert.match(html, /Reunión agendada para/);
+  assert.match(html, /2026/);
+  assert.match(html, /Memo/);
+  const xss = buildHistorialHtml({ ...PROSPECTO, eventos: [{ ...REUNION_FUTURA, vendedor: '<b>Memo</b>' }] });
+  assert.equal(xss.includes('<b>Memo</b>'), false);
+});
+
+test('RU2: la card activa ofrece agendar reunion con input datetime-local', () => {
+  const html = buildProspectoCardHtml(PROSPECTO);
+  assert.match(html, /type="datetime-local"/);
+  assert.match(html, /id="pr-reunion-3"/);
+  assert.match(html, /agendarReunionProspecto\(3\)/);
+  const noUtil = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'no_util' });
+  assert.equal(noUtil.includes('agendarReunionProspecto'), false);
+});
+
+test('RU3: la card muestra la etiqueta de reunion futura y convive con la de cliente', () => {
+  const p = { ...PROSPECTO, eventos: [REUNION_FUTURA], data: { cliente_id: 88 } };
+  const html = buildProspectoCardHtml(p, undefined, AHORA);
+  assert.match(html, /reunion-badge/);
+  assert.match(html, /Reunión el/);
+  assert.match(html, /Ya es cliente — falta cotizar/);
+  // pasada la fecha, la etiqueta de reunion futura desaparece de la card
+  const pasada = buildProspectoCardHtml({ ...PROSPECTO, eventos: [REUNION_PASADA] }, undefined, AHORA);
+  assert.equal(pasada.includes('Reunión el'), false);
+});
+
+test('RU4: el item de cola con reunion vencida pide registrar el resultado con ambos botones', () => {
+  const html = buildColaProspectosHtml([{
+    ...ITEM_COLA, reunionVencida: true, fechaReunion: '2026-06-09T17:00:00.000Z',
+  }]);
+  assert.match(html, /Reunión del/);
+  assert.match(html, /registrar resultado/);
+  assert.match(html, /resultadoReunionProspecto\(3, 'calificado'\)/);
+  assert.match(html, /Calificado/);
+  assert.match(html, /id="cola-motivo-3"/);
+  assert.match(html, /resultadoReunionNoUtilProspecto\(3\)/);
+  for (const m of MOTIVOS_NO_UTIL) assert.ok(html.includes(m), `falta motivo ${m}`);
+  // el flujo normal de toque se sustituye por el registro del resultado
+  assert.equal(html.includes('registrarToqueProspecto'), false);
+});
+
+test('RU5: el item de cola sin reunion vencida conserva el flujo normal y los badges conviven', () => {
+  const normal = buildColaProspectosHtml([ITEM_COLA]);
+  assert.equal(normal.includes('resultadoReunionProspecto'), false);
+  assert.equal(normal.includes('Reunión del'), false);
+  assert.match(normal, /registrarToqueProspecto\(3\)/);
+  const conTodo = buildColaProspectosHtml([{
+    ...ITEM_COLA, yaEsCliente: true, reunionVencida: true, fechaReunion: '2026-06-09T17:00:00.000Z',
+  }]);
+  assert.match(conTodo, /Ya es cliente — falta cotizar/);
+  assert.match(conTodo, /Reunión del/);
+});
+
+test('RU6: reunionFutura y reunionPendienteResultado obedecen a la ultima reunion', () => {
+  assert.equal(reunionFutura({ ...PROSPECTO, eventos: [REUNION_FUTURA] }, AHORA), REUNION_FUTURA.fecha_reunion);
+  assert.equal(reunionFutura({ ...PROSPECTO, eventos: [REUNION_PASADA] }, AHORA), null);
+  assert.equal(reunionFutura(PROSPECTO, AHORA), null);
+  assert.equal(reunionPendienteResultado({ ...PROSPECTO, eventos: [REUNION_PASADA] }, AHORA), REUNION_PASADA.fecha_reunion);
+  assert.equal(reunionPendienteResultado({ ...PROSPECTO, eventos: [REUNION_FUTURA] }, AHORA), null);
+  assert.equal(reunionPendienteResultado({ ...PROSPECTO, eventos: [
+    REUNION_PASADA,
+    { tipo: 'toque', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' },
+  ] }, AHORA), null);
+  // re-agendada: la ultima manda
+  assert.equal(reunionFutura({ ...PROSPECTO, eventos: [REUNION_PASADA, REUNION_FUTURA] }, AHORA), REUNION_FUTURA.fecha_reunion);
+  assert.equal(reunionPendienteResultado({ ...PROSPECTO, eventos: [REUNION_PASADA, REUNION_FUTURA] }, AHORA), null);
 });
 
 test('C5: buildColaProspectosHtml tolera cola vacia y escapa datos de usuario', () => {
