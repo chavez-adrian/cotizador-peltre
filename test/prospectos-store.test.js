@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, crear, buscarPorCelular } from '../lib/prospectos-store.js';
+import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa } from '../lib/prospectos-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
@@ -77,6 +77,42 @@ test('crear rechaza un celular duplicado aunque la verificacion previa no lo vie
     err => err.code === '23505'
   );
   assert.equal(readProspectos().length, 1);
+});
+
+test('obtener devuelve el prospecto por id y undefined si no existe', async () => {
+  writeProspectos([
+    { id: 7, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', etapa: 'nuevo', eventos: [] },
+  ]);
+  const p = await obtener(7);
+  assert.equal(p.nombre, 'A');
+  assert.equal(await obtener(99), undefined);
+});
+
+test('registrarEvento appendea al historial y devuelve los eventos; null si no existe', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', etapa: 'nuevo' },
+  ]);
+  const toque = { tipo: 'toque', fecha: '2026-06-11T10:00:00Z', vendedor: 'Memo' };
+  const eventos = await registrarEvento(1, toque);
+  assert.deepEqual(eventos, [toque]);
+  const segundo = { tipo: 'toque', fecha: '2026-06-12T10:00:00Z', vendedor: 'Ana' };
+  const dos = await registrarEvento(1, segundo);
+  assert.deepEqual(dos, [toque, segundo]);
+  assert.deepEqual(readProspectos()[0].eventos, [toque, segundo]);
+  assert.equal(await registrarEvento(99, toque), null);
+});
+
+test('cambiarEtapa actualiza la etapa y appendea el evento en una sola operacion', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', etapa: 'nuevo', eventos: [] },
+  ]);
+  const evento = { tipo: 'etapa', de: 'nuevo', a: 'contactado', fecha: '2026-06-11T10:00:00Z', vendedor: 'Memo' };
+  const ok = await cambiarEtapa(1, 'contactado', evento);
+  assert.equal(ok, true);
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.etapa, 'contactado');
+  assert.deepEqual(guardado.eventos, [evento]);
+  assert.equal(await cambiarEtapa(99, 'contactado', evento), false);
 });
 
 test('listar devuelve todos los prospectos guardados', async () => {
