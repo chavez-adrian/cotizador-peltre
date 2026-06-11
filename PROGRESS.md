@@ -2,7 +2,9 @@
 
 ## ESTADO (sesión 3, cierre)
 
-**#41, #42, #43, #44 y #46 TERMINADOS: demo aprobada, mergeados a main (deploy automático a Render) y cerrados.**
+**#41, #42, #43, #44, #45 y #46 TERMINADOS: demo aprobada, mergeados a main (deploy automático a Render) y cerrados.**
+
+#45: reunión diagnóstico — agendar (POST /:id/reunion, fecha futura), supresión de cadencia SOLO en el motor mientras es futura, reaparece al frente con `reunionVencida` pidiendo resultado (POST /:id/reunion-resultado: salto a Calificado válido solo ahí, o No útil con motivo), predicados compartidos ultimaReunion/reunionFutura/reunionPendienteResultado en prospectos-logica ("última" = la agendada más recientemente por fecha de registro — correcto para re-agendar a fecha más temprana). Suite 425/425. Review limpio sin fixes pre-merge; deuda: carrera ms en doble-click de resultado, select de motivos duplicado en 2 builders, validación de motivo duplicada en ruta resultado, badges inline (al 4º badge usar contenedor flex).
 
 #46: `lib/clasificar-celular.js` (clasificación reutilizable prospecto/cliente/libre — refactor transparente de la captura, 28 tests previos intactos), endpoint GET /api/prospectos/clasificar, hook best-effort en POST /api/cotizacion/pdf|html (prospecto→Cotizado incluso desde No útil; libre+canal→auto-crea en Cotizado con datos de la cotización; cliente Operam→nada; sin canal no consulta Operam ni auto-crea), modal de canal en frontend solo para celular libre, etiqueta "Ya es cliente — falta cotizar" (decisión B en CONTEXT.md), etiquetaEvento como lookup table. Fix del review: await en vez de return-promesa dentro del try del hook (el rechazo escapaba al catch y rompía la generación con 500). Suite 407/407.
 
@@ -24,7 +26,7 @@
 
 **Deuda nueva del review #46:** la generación de cotización puede cargar el timeout de 5 s del índice cuando viaja canal y Operam está caído (backoff pendiente, mismo trade que captura); listeners del modal de canal sin remoción explícita; las rutas pdf/html duplican el wrapper crear+hook. Notas de altitud para #47/#48: clasificarCelular es por-llamada (sin modo batch — para CSV grande refrescar índice una vez antes del loop); normalizar canal (trim) en imports.
 
-**Siguiente:** quedan #45 (reunión diagnóstico), #47 (CSV feria) y #48 (Bitrix, HITL con Adrián). El embudo core está completo. Esperar confirmación de Adrián. Idea de Adrián sin issue aún: kanban estilo Bitrix (prospectos y cotizaciones).
+**Siguiente:** quedan #47 (importación feria — OJO: el export real de Abastur es XLSX, no CSV; muestra en C:\Users\chave\.claude\uploads\271dd8f5-be5f-4962-a9ae-096fac17c257\9c8294fc-base_de_datos_lectoras_clientes_2024.xlsx) y #48 (Bitrix, HITL con Adrián). Idea de Adrián sin issue aún: kanban estilo Bitrix (prospectos y cotizaciones).
 
 **Code-review COMPLETO.** Findings verificados (orden de severidad):
 1. **XSS almacenado (CONFIRMADO, arreglar antes de merge):** `buildProspectoCardHtml` (prospectos-logica.js:52-53) interpola nombre/empresa/ciudad/canal/celular sin escapar y app.js lo asigna a innerHTML (lista + pr-existente:1811). Mismo patrón crudo existe en cards de historial/seguimiento (app.js:1598/1655) pero ahí el dato lo captura el vendedor; el prospecto es dato de terceros (y #47 importará CSVs externos). Fix: helper `escapeHtml` en prospectos-logica.js con test.
