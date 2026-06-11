@@ -37,18 +37,21 @@ if (existsSync(envFile)) {
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const PORT = process.env.PORT || 3000;
 
+// Segmentos reales de Operam (id interno, NO la clave 000-1000), recolectados
+// de los 440 clientes de produccion el 2026-06-10. Operam no expone catalogo
+// (GET segments -> 501); si se agrega un segmento en Operam hay que sumarlo aqui.
 const SEGMENTOS = [
-  { id: 0,  nombre: 'Sin segmento' },
-  { id: 1,  nombre: 'Ferreteria' },
-  { id: 2,  nombre: 'Tienda de abarrotes' },
-  { id: 3,  nombre: 'Supermercado / cadena' },
-  { id: 4,  nombre: 'Tienda de regalos / bazar' },
-  { id: 5,  nombre: 'Restaurante / hosteleria' },
-  { id: 6,  nombre: 'Distribuidor' },
-  { id: 7,  nombre: 'Exportacion' },
-  { id: 8,  nombre: 'Gobierno / institucional' },
-  { id: 9,  nombre: 'E-commerce / marketplace' },
-  { id: 10, nombre: 'Otro' },
+  { id: 1,  nombre: 'Sin segmento' },
+  { id: 14, nombre: 'Distribuidores' },
+  { id: 8,  nombre: 'Menudistas' },
+  { id: 10, nombre: 'Restaurantes, hoteles' },
+  { id: 12, nombre: 'Agencias | Marcas' },
+  { id: 11, nombre: 'e-commerce' },
+  { id: 15, nombre: 'Eventos' },
+  { id: 16, nombre: 'Consumidor final' },
+  { id: 13, nombre: 'Empleados' },
+  { id: 9,  nombre: 'Familia y Amigos' },
+  { id: 17, nombre: 'Maquila' },
 ];
 
 const MAYOREO_CODES = new Set(['M100','M350','M550','M1500','M6000','M6001','US100','US350','US550','US1500','US6000']);

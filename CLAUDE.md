@@ -63,7 +63,7 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 ### Catalogos
 
 `GET /api/catalogos` — sirve datos para los selectores del formulario de alta:
-- `segmentos`: hardcodeados (11 segmentos; ID=0 es "Sin segmento")
+- `segmentos`: hardcodeados con los ids internos REALES de Operam (11 segmentos; id=1 es "Sin segmento", id=14 "Distribuidores", etc. — la clave 000-1000 de la UI de Operam NO es el id de la API; verificado contra produccion 2026-06-10; Operam no expone catalogo de segmentos, GET segments responde 501)
 - `vendedores`: de `data/vendedores.json` filtrando `operam_id != null`
 - `listas_precios`: de `GET /api/v3/sales/sales_types`, filtradas a mayoreo: M100/350/550/1500/6000/6001 + US100/350/550/1500/6000
 

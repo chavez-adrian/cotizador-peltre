@@ -487,15 +487,24 @@ test('C1: GET /api/catalogos retorna 200 con estructura { segmentos, vendedores,
   }
 });
 
-test('C2: GET /api/catalogos segmentos contiene exactamente 11 entradas con { id:0, nombre:"Sin segmento" }', async () => {
+test('C2: GET /api/catalogos segmentos son los 11 reales de Operam con sus ids internos', async () => {
   const restore = mockCatalogos();
   try {
     await cargarListasPrecios();
     const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.body.segmentos.length, 11);
-    const sinSegmento = res.body.segmentos.find(s => s.id === 0);
-    assert.ok(sinSegmento, 'debe existir segmento con id=0');
-    assert.strictEqual(sinSegmento.nombre, 'Sin segmento');
+    const porNombre = Object.fromEntries(res.body.segmentos.map(s => [s.nombre, s.id]));
+    assert.strictEqual(porNombre['Sin segmento'], 1);
+    assert.strictEqual(porNombre['Distribuidores'], 14);
+    assert.strictEqual(porNombre['Menudistas'], 8);
+    assert.strictEqual(porNombre['Restaurantes, hoteles'], 10);
+    assert.strictEqual(porNombre['Agencias | Marcas'], 12);
+    assert.strictEqual(porNombre['e-commerce'], 11);
+    assert.strictEqual(porNombre['Eventos'], 15);
+    assert.strictEqual(porNombre['Consumidor final'], 16);
+    assert.strictEqual(porNombre['Empleados'], 13);
+    assert.strictEqual(porNombre['Familia y Amigos'], 9);
+    assert.strictEqual(porNombre['Maquila'], 17);
   } finally {
     restore();
   }
