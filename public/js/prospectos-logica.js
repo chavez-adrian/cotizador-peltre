@@ -254,6 +254,80 @@ export function buildColaProspectosHtml(cola) {
   }).join('');
 }
 
+// Tablero kanban de prospectos (issue #49, CONTEXT.md "Tablero de
+// prospectos"): cinco columnas siempre visibles. El arrastre respeta el
+// dominio -- un paso adelante o salida a No util; Cotizado no acepta
+// arrastres porque solo una cotizacion real mueve ahi.
+
+const ETAPAS_TABLERO = ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util'];
+
+export function agruparTablero(prospectos) {
+  const cols = {};
+  for (const etapa of ETAPAS_TABLERO) cols[etapa] = [];
+  for (const p of prospectos || []) {
+    if (cols[p.etapa]) cols[p.etapa].push(p);
+  }
+  for (const etapa of ETAPAS_TABLERO) {
+    cols[etapa].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  }
+  return cols;
+}
+
+export function puedeArrastrar(de, a) {
+  if (a === 'no_util') return de !== 'no_util';
+  return a === siguienteEtapa(de) && validarTransicion(de, a) === null;
+}
+
+// Motivo de la salida a No util: el ultimo evento no_util manda.
+function motivoNoUtil(p) {
+  let m = null;
+  for (const e of (p && p.eventos) || []) {
+    if (e.tipo === 'no_util' && (!m || new Date(e.fecha) > new Date(m.fecha))) m = e;
+  }
+  return m ? m.motivo : null;
+}
+
+export function buildTableroHtml(prospectos, colaPorId, ahora = new Date()) {
+  const cols = agruparTablero(prospectos);
+  return ETAPAS_TABLERO.map(etapa => {
+    const tarjetas = cols[etapa].map(p => {
+      const motivo = etapa === 'no_util' ? motivoNoUtil(p) : null;
+      const draggable = etapa !== 'no_util';
+      return `<div class="tablero-card" draggable="${draggable}" data-id="${p.id}" data-etapa="${etapa}">` +
+        (motivo ? `<div class="cot-card-meta" style="margin-bottom:4px">Motivo: ${escapeHtml(motivo)}</div>` : '') +
+        buildProspectoCardHtml(p, colaPorId && colaPorId.get(p.id), ahora) +
+        '</div>';
+    }).join('');
+    return `
+      <div class="tablero-col" data-etapa="${etapa}">
+        <div class="tablero-col-header">${escapeHtml(ETAPA_LABELS[etapa])} <span class="tablero-col-count">${cols[etapa].length}</span></div>
+        <div class="tablero-col-cards">${tarjetas}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Selector de motivo al soltar una tarjeta en No util (issue #49): mismo
+// patron que el modal de canal de #46. Cancelar regresa la tarjeta sin
+// llamar al servidor.
+export function buildMotivoNoUtilModalHtml() {
+  return `
+    <div style="background:#fff;border-radius:8px;padding:20px;max-width:340px;width:90%">
+      <div style="font-weight:600;margin-bottom:4px">Salida a No útil: ¿cuál es el motivo?</div>
+      <div class="cot-card-meta" style="margin-bottom:8px">El motivo es obligatorio (catálogo cerrado). Cancelar regresa la tarjeta a su columna.</div>
+      <select id="motivo-tablero-select" style="width:100%;margin-bottom:8px">
+        <option value="">-- Selecciona el motivo --</option>
+        ${MOTIVOS_NO_UTIL.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
+      </select>
+      <div id="motivo-tablero-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" id="motivo-tablero-cancelar">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="motivo-tablero-confirmar">Confirmar</button>
+      </div>
+    </div>
+  `;
+}
+
 // Conteo de motivos de No util acumulados (vista admin).
 export function contarMotivosNoUtil(prospectos) {
   const conteo = {};

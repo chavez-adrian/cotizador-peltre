@@ -6,14 +6,16 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
   validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml,
   buildEsperaBadgeHtml, buildColaProspectosHtml, necesitaCanal, validarCanalCotizacion,
-  buildCanalModalHtml, reunionFutura, reunionPendienteResultado;
+  buildCanalModalHtml, reunionFutura, reunionPendienteResultado,
+  agruparTablero, puedeArrastrar, buildTableroHtml, buildMotivoNoUtilModalHtml;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
     validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil,
     buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml,
     necesitaCanal, validarCanalCotizacion, buildCanalModalHtml,
-    reunionFutura, reunionPendienteResultado } = await import('../prospectos-logica.js'));
+    reunionFutura, reunionPendienteResultado,
+    agruparTablero, puedeArrastrar, buildTableroHtml, buildMotivoNoUtilModalHtml } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -451,6 +453,128 @@ test('RU6: reunionFutura y reunionPendienteResultado obedecen a la ultima reunio
   // re-agendada: la ultima manda
   assert.equal(reunionFutura({ ...PROSPECTO, eventos: [REUNION_PASADA, REUNION_FUTURA] }, AHORA), REUNION_FUTURA.fecha_reunion);
   assert.equal(reunionPendienteResultado({ ...PROSPECTO, eventos: [REUNION_PASADA, REUNION_FUTURA] }, AHORA), null);
+});
+
+// === Issue #49: tablero kanban de prospectos ===
+
+const TABLERO = [
+  { ...PROSPECTO, id: 1, nombre: 'Ana', etapa: 'nuevo', fecha: '2026-06-08T10:00:00.000Z' },
+  { ...PROSPECTO, id: 2, nombre: 'Beto', etapa: 'contactado', fecha: '2026-06-09T10:00:00.000Z' },
+  { ...PROSPECTO, id: 3, nombre: 'Carla', etapa: 'nuevo', fecha: '2026-06-10T10:00:00.000Z' },
+  { ...PROSPECTO, id: 4, nombre: 'Dario', etapa: 'cotizado', fecha: '2026-06-07T10:00:00.000Z' },
+  { ...PROSPECTO, id: 5, nombre: 'Elena', etapa: 'no_util', fecha: '2026-06-06T10:00:00.000Z',
+    eventos: [{ tipo: 'no_util', motivo: 'menudeo', fecha: '2026-06-07T10:00:00.000Z', vendedor: 'Memo' }] },
+];
+
+test('K1: agruparTablero reparte por etapa con las cinco columnas siempre presentes', () => {
+  const cols = agruparTablero(TABLERO);
+  assert.deepEqual(Object.keys(cols), ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util']);
+  assert.deepEqual(cols.nuevo.map(p => p.id), [3, 1]);
+  assert.deepEqual(cols.contactado.map(p => p.id), [2]);
+  assert.deepEqual(cols.calificado, []);
+  assert.deepEqual(cols.cotizado.map(p => p.id), [4]);
+  assert.deepEqual(cols.no_util.map(p => p.id), [5]);
+});
+
+test('K2: agruparTablero ordena cada columna del mas reciente al mas antiguo y tolera vacio', () => {
+  const cols = agruparTablero([
+    { ...PROSPECTO, id: 7, etapa: 'nuevo', fecha: '2026-06-01T10:00:00.000Z' },
+    { ...PROSPECTO, id: 8, etapa: 'nuevo', fecha: '2026-06-05T10:00:00.000Z' },
+    { ...PROSPECTO, id: 9, etapa: 'nuevo', fecha: '2026-06-03T10:00:00.000Z' },
+  ]);
+  assert.deepEqual(cols.nuevo.map(p => p.id), [8, 9, 7]);
+  const vacio = agruparTablero([]);
+  assert.deepEqual(Object.keys(vacio), ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util']);
+  assert.deepEqual(vacio.nuevo, []);
+  assert.deepEqual(agruparTablero(null).nuevo, []);
+});
+
+test('K3: puedeArrastrar permite un paso adelante y la salida a No util', () => {
+  assert.equal(puedeArrastrar('nuevo', 'contactado'), true);
+  assert.equal(puedeArrastrar('contactado', 'calificado'), true);
+  assert.equal(puedeArrastrar('nuevo', 'no_util'), true);
+  assert.equal(puedeArrastrar('contactado', 'no_util'), true);
+  assert.equal(puedeArrastrar('calificado', 'no_util'), true);
+  assert.equal(puedeArrastrar('cotizado', 'no_util'), true);
+});
+
+test('K4: puedeArrastrar rechaza saltos, retrocesos, cotizado como destino y no_util como origen', () => {
+  assert.equal(puedeArrastrar('nuevo', 'calificado'), false);
+  assert.equal(puedeArrastrar('nuevo', 'cotizado'), false);
+  assert.equal(puedeArrastrar('contactado', 'cotizado'), false);
+  assert.equal(puedeArrastrar('calificado', 'cotizado'), false);
+  assert.equal(puedeArrastrar('contactado', 'nuevo'), false);
+  assert.equal(puedeArrastrar('calificado', 'contactado'), false);
+  assert.equal(puedeArrastrar('cotizado', 'calificado'), false);
+  assert.equal(puedeArrastrar('nuevo', 'nuevo'), false);
+  assert.equal(puedeArrastrar('no_util', 'nuevo'), false);
+  assert.equal(puedeArrastrar('no_util', 'no_util'), false);
+  assert.equal(puedeArrastrar('no_util', 'contactado'), false);
+});
+
+test('K5: buildTableroHtml pinta las cinco columnas con label, contador y data-etapa', () => {
+  const html = buildTableroHtml(TABLERO);
+  for (const etapa of ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util']) {
+    assert.match(html, new RegExp(`data-etapa="${etapa}"`));
+  }
+  assert.match(html, /Nuevo/);
+  assert.match(html, /Contactado/);
+  assert.match(html, /Calificado/);
+  assert.match(html, /Cotizado/);
+  assert.match(html, /No útil/);
+  assert.match(html, /tablero-col-count">2</);
+  assert.match(html, /tablero-col-count">0</);
+});
+
+test('K6: buildTableroHtml envuelve cada tarjeta con data-id, data-etapa y draggable salvo no_util', () => {
+  const html = buildTableroHtml(TABLERO);
+  assert.match(html, /draggable="true"[^>]*data-id="1"[^>]*data-etapa="nuevo"/);
+  assert.match(html, /draggable="true"[^>]*data-id="4"[^>]*data-etapa="cotizado"/);
+  assert.match(html, /draggable="false"[^>]*data-id="5"[^>]*data-etapa="no_util"/);
+  assert.match(html, /Ana/);
+  assert.match(html, /Dario/);
+});
+
+test('K7: buildTableroHtml reutiliza la card existente y pasa el item de la cola por id', () => {
+  const colaPorId = new Map([[1, { ...ITEM_COLA, id: 1, horas: 3, color: 'rojo' }]]);
+  const html = buildTableroHtml(TABLERO, colaPorId);
+  assert.match(html, /espera-rojo/);
+  assert.match(html, /avanzarEtapaProspecto\(1, 'contactado'\)/);
+  assert.match(html, /toggleHistorialProspecto\(4\)/);
+  const sinCola = buildTableroHtml(TABLERO);
+  assert.equal(sinCola.includes('espera-'), false);
+});
+
+test('K8: las tarjetas de No util muestran el motivo del ultimo evento no_util, escapado', () => {
+  const html = buildTableroHtml(TABLERO);
+  assert.match(html, /Motivo: menudeo/);
+  const reincidente = buildTableroHtml([{
+    ...PROSPECTO, id: 6, etapa: 'no_util', eventos: [
+      { tipo: 'no_util', motivo: 'spam', fecha: '2026-06-07T10:00:00.000Z', vendedor: 'Memo' },
+      { tipo: 'toque', fecha: '2026-06-08T10:00:00.000Z', vendedor: 'Memo' },
+      { tipo: 'no_util', motivo: 'sin respuesta', fecha: '2026-06-09T10:00:00.000Z', vendedor: 'Memo' },
+    ],
+  }]);
+  assert.match(reincidente, /Motivo: sin respuesta/);
+  const sinEvento = buildTableroHtml([{ ...PROSPECTO, id: 7, etapa: 'no_util' }]);
+  assert.equal(sinEvento.includes('Motivo:'), false);
+  const xss = buildTableroHtml([{
+    ...PROSPECTO, id: 8, etapa: 'no_util',
+    eventos: [{ tipo: 'no_util', motivo: '<b>x</b>', fecha: '2026-06-07T10:00:00.000Z', vendedor: 'Memo' }],
+  }]);
+  assert.equal(xss.includes('Motivo: <b>x</b>'), false);
+});
+
+test('K9: buildMotivoNoUtilModalHtml trae el select con el catalogo cerrado y Confirmar/Cancelar', () => {
+  const html = buildMotivoNoUtilModalHtml();
+  assert.match(html, /id="motivo-tablero-select"/);
+  for (const m of MOTIVOS_NO_UTIL) assert.ok(html.includes(m), `falta motivo ${m}`);
+  assert.match(html, /option value=""/);
+  assert.match(html, /id="motivo-tablero-confirmar"/);
+  assert.match(html, /id="motivo-tablero-cancelar"/);
+  assert.match(html, /id="motivo-tablero-error"/);
+  assert.match(html, /Confirmar/);
+  assert.match(html, /Cancelar/);
 });
 
 test('C5: buildColaProspectosHtml tolera cola vacia y escapa datos de usuario', () => {
