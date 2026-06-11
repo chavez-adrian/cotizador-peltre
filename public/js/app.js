@@ -1932,25 +1932,26 @@ function setModoProspectos(modo) {
   renderProspectos();
 }
 
-// Drag & drop del tablero (issue #49): HTML5 nativo, sin librerias. La
-// validez la decide puedeArrastrar (logica pura); un drop invalido no llama
-// al servidor -- la tarjeta no se mueve y se avisa brevemente.
-let dragProspecto = null;
-
-function initTableroDrag() {
-  const tablero = document.getElementById('prospectos-tablero');
+// Drag & drop generico de tableros kanban (issues #49 y #50): HTML5 nativo,
+// sin librerias. Las columnas llevan data-<atributo> y las tarjetas data-id +
+// data-<atributo>; la validez la decide puedeSoltar (logica pura) y alSoltar
+// ejecuta el movimiento. Soltar en la columna de origen es un no-op silencioso;
+// un drop invalido no llama al servidor -- la tarjeta no se mueve y se avisa.
+function initDragEnTablero(containerId, { atributo, puedeSoltar, alSoltar }) {
+  const tablero = document.getElementById(containerId);
+  let dragOrigen = null;
   tablero.addEventListener('dragstart', e => {
     const card = e.target.closest('.tablero-card');
     if (!card || card.getAttribute('draggable') !== 'true') return;
-    dragProspecto = { id: parseInt(card.dataset.id, 10), etapa: card.dataset.etapa };
+    dragOrigen = { id: parseInt(card.dataset.id, 10), col: card.dataset[atributo] };
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', card.dataset.id);
   });
   tablero.addEventListener('dragover', e => {
     const col = e.target.closest('.tablero-col');
-    if (!col || !dragProspecto) return;
+    if (!col || !dragOrigen) return;
     e.preventDefault();
-    const valido = puedeArrastrar(dragProspecto.etapa, col.dataset.etapa);
+    const valido = puedeSoltar(dragOrigen.col, col.dataset[atributo]);
     e.dataTransfer.dropEffect = valido ? 'move' : 'none';
     col.classList.toggle('drop-ok', valido);
   });
@@ -1960,22 +1961,22 @@ function initTableroDrag() {
   });
   tablero.addEventListener('drop', e => {
     const col = e.target.closest('.tablero-col');
-    if (!col || !dragProspecto) return;
+    if (!col || !dragOrigen) return;
     e.preventDefault();
     col.classList.remove('drop-ok');
-    const origen = dragProspecto;
-    dragProspecto = null;
-    soltarEnColumna(origen, col.dataset.etapa);
+    const origen = dragOrigen;
+    dragOrigen = null;
+    if (col.dataset[atributo] === origen.col) return;
+    alSoltar(origen, col.dataset[atributo]);
   });
   tablero.addEventListener('dragend', () => {
-    dragProspecto = null;
+    dragOrigen = null;
     tablero.querySelectorAll('.tablero-col.drop-ok').forEach(c => c.classList.remove('drop-ok'));
   });
 }
 
 async function soltarEnColumna(origen, destino) {
-  if (destino === origen.etapa) return;
-  if (!puedeArrastrar(origen.etapa, destino)) {
+  if (!puedeArrastrar(origen.col, destino)) {
     avisoTablero(destino === 'cotizado'
       ? 'Cotizado no acepta arrastres: solo una cotización real mueve ahí'
       : 'Movimiento inválido: las etapas avanzan un paso a la vez');
@@ -2391,7 +2392,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-guardar-prospecto').addEventListener('click', guardarProspecto);
   document.getElementById('btn-modo-lista').addEventListener('click', () => setModoProspectos('lista'));
   document.getElementById('btn-modo-tablero').addEventListener('click', () => setModoProspectos('tablero'));
-  initTableroDrag();
+  initDragEnTablero('prospectos-tablero', {
+    atributo: 'etapa',
+    puedeSoltar: puedeArrastrar,
+    alSoltar: soltarEnColumna,
+  });
   document.getElementById('btn-importar-feria').addEventListener('click', importarFeria);
   document.getElementById('pr-temperatura').addEventListener('click', e => {
     const v = e.target.dataset ? e.target.dataset.v : null;
