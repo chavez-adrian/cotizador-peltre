@@ -330,6 +330,21 @@ app.get('/api/prospectos/cola', authMiddleware, async (req, res) => {
   res.json(calcularColaProspectos(visibles, new Date()));
 });
 
+// Pre-clasificacion de celular (issue #46): el frontend la consulta antes de
+// generar la cotizacion para decidir si pide el canal de origen (solo cuando
+// el celular es libre). Devuelve el tipo y datos minimos no sensibles; el
+// detalle del prospecto nunca viaja aqui (visibilidad, CONTEXT.md). Registrada
+// antes de cualquier ruta /api/prospectos/:id.
+app.get('/api/prospectos/clasificar', authMiddleware, async (req, res) => {
+  const celular = req.query.celular;
+  if (!celular) return res.status(400).json({ error: 'El celular es obligatorio' });
+  const clasificacion = await clasificarCelular(celular);
+  if (clasificacion.tipo === 'cliente') {
+    return res.json({ tipo: 'cliente', cust_name: clasificacion.cliente.cust_name });
+  }
+  res.json({ tipo: clasificacion.tipo });
+});
+
 // Trabajar el prospecto (issue #43): etapas manuales, toques y salida a No util.
 // Misma visibilidad que el PATCH de estado de cotizaciones: el vendedor solo
 // opera sus prospectos, admin todos.
