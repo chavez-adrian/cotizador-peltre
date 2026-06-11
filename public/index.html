@@ -859,7 +859,7 @@
     </div>
 
     <!-- Tablero kanban (issue #49): cinco columnas siempre visibles, conmutable con la lista -->
-    <div id="prospectos-tablero" class="prospectos-tablero" style="display:none"></div>
+    <div id="prospectos-tablero" class="tablero" style="display:none"></div>
 
     <div style="display:none;font-size:13px;font-weight:600;color:var(--text-light);margin-top:24px;margin-bottom:8px" id="prospectos-list-titulo">Todos los prospectos</div>
     <div id="prospectos-list"></div>
@@ -894,7 +894,14 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-app">Volver</button>
   </header>
   <div style="padding:16px">
+    <!-- Conmutador lista/tablero (issue #50): mismo patron que prospectos (#49) -->
+    <span id="historial-modo" style="display:inline-flex;gap:4px;margin-bottom:12px">
+      <button class="btn btn-sm btn-secondary" id="btn-cot-modo-lista">Lista</button>
+      <button class="btn btn-sm btn-secondary" id="btn-cot-modo-tablero">Tablero</button>
+    </span>
     <div id="historial-loading" style="color:var(--light);font-size:13px">Cargando...</div>
+    <!-- Tablero kanban (issue #50): cadencia de seguimiento + cierre, conmutable con la lista -->
+    <div id="cotizaciones-tablero" class="tablero" style="display:none"></div>
     <div id="historial-list"></div>
   </div>
 </div>

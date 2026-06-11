@@ -27,6 +27,10 @@ import {
   buildTableroHtml,
   buildMotivoNoUtilModalHtml,
 } from './prospectos-logica.js';
+import {
+  puedeArrastrarCotizacion,
+  buildTableroCotizacionesHtml,
+} from './cotizaciones-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
 function leerTelefono(inputId, codeId) {
@@ -1620,55 +1624,109 @@ window.agregarAlCarritoGuiado = agregarAlCarritoGuiado;
 window.resetFlujoGuiado = resetFlujoGuiado;
 
 // === HISTORIAL ===
+// Conmutador kanban/lista (issue #50): mismo patron que el tablero de
+// prospectos (#49); la preferencia del usuario se recuerda en localStorage.
+let cotizacionesModo = localStorage.getItem('cotizacionesModo') === 'tablero' ? 'tablero' : 'lista';
+let ultimasCotizaciones = [];
+
 async function showHistorial() {
   document.getElementById('app-view').style.display = 'none';
   document.getElementById('historial-view').style.display = 'block';
 
   const loadingEl = document.getElementById('historial-loading');
-  const listEl = document.getElementById('historial-list');
   loadingEl.style.display = 'block';
-  listEl.innerHTML = '';
+  document.getElementById('historial-list').innerHTML = '';
+  document.getElementById('cotizaciones-tablero').innerHTML = '';
 
   try {
     const res = await api('/api/cotizaciones');
-    const cots = await res.json();
-
+    ultimasCotizaciones = await res.json();
     loadingEl.style.display = 'none';
-
-    if (!cots.length) {
-      listEl.innerHTML = '<div class="empty-state"><p>Sin cotizaciones registradas.</p></div>';
-      return;
-    }
-
-    listEl.innerHTML = cots.slice().reverse().map(c => {
-      const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
-      const btnPdf = c.hasPdf
-        ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>`
-        : `<button class="btn btn-secondary btn-sm" disabled title="PDF no disponible">Ver PDF</button>`;
-      const btnCargar = c.hasData
-        ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id})">Cargar</button>`
-        : `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Cargar</button>`;
-      return `
-        <div class="cot-card">
-          <div class="cot-card-header">
-            <div>
-              <div class="cot-card-cliente">${c.cliente || 'Sin nombre'}</div>
-              <div class="cot-card-meta">${fecha} · ${c.vendedor} · ${c.totalPiezas} pzs</div>
-            </div>
-            <div>
-              <div class="cot-card-total">$${fmt(c.total)}</div>
-              <div class="cot-card-tier">${c.tier}</div>
-            </div>
-          </div>
-          <div class="cot-card-actions">
-            ${btnPdf}
-            ${btnCargar}
-          </div>
-        </div>
-      `;
-    }).join('');
+    renderHistorial();
   } catch (e) {
     loadingEl.textContent = 'Error cargando historial';
+  }
+}
+
+function renderHistorial() {
+  const listEl = document.getElementById('historial-list');
+  const tableroEl = document.getElementById('cotizaciones-tablero');
+  const esTablero = cotizacionesModo === 'tablero';
+  const btnLista = document.getElementById('btn-cot-modo-lista');
+  const btnTablero = document.getElementById('btn-cot-modo-tablero');
+  btnLista.classList.toggle('btn-primary', !esTablero);
+  btnLista.classList.toggle('btn-secondary', esTablero);
+  btnTablero.classList.toggle('btn-primary', esTablero);
+  btnTablero.classList.toggle('btn-secondary', !esTablero);
+  tableroEl.style.display = esTablero ? 'flex' : 'none';
+  listEl.style.display = esTablero ? 'none' : 'block';
+  if (esTablero) {
+    listEl.innerHTML = '';
+    tableroEl.innerHTML = buildTableroCotizacionesHtml(ultimasCotizaciones);
+    return;
+  }
+  tableroEl.innerHTML = '';
+
+  if (!ultimasCotizaciones.length) {
+    listEl.innerHTML = '<div class="empty-state"><p>Sin cotizaciones registradas.</p></div>';
+    return;
+  }
+
+  listEl.innerHTML = ultimasCotizaciones.slice().reverse().map(c => {
+    const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+    const btnPdf = c.hasPdf
+      ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>`
+      : `<button class="btn btn-secondary btn-sm" disabled title="PDF no disponible">Ver PDF</button>`;
+    const btnCargar = c.hasData
+      ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id})">Cargar</button>`
+      : `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Cargar</button>`;
+    return `
+      <div class="cot-card">
+        <div class="cot-card-header">
+          <div>
+            <div class="cot-card-cliente">${c.cliente || 'Sin nombre'}</div>
+            <div class="cot-card-meta">${fecha} · ${c.vendedor} · ${c.totalPiezas} pzs</div>
+          </div>
+          <div>
+            <div class="cot-card-total">$${fmt(c.total)}</div>
+            <div class="cot-card-tier">${c.tier}</div>
+          </div>
+        </div>
+        <div class="cot-card-actions">
+          ${btnPdf}
+          ${btnCargar}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function setModoCotizaciones(modo) {
+  cotizacionesModo = modo;
+  localStorage.setItem('cotizacionesModo', modo);
+  renderHistorial();
+}
+
+// Drop en el tablero de cotizaciones (issue #50): solo el cierre se opera
+// arrastrando -- Ganada o Perdida con confirmacion, via el PATCH de estado
+// existente. El tiempo no se arrastra: los drops a cadencia rebotan sin
+// llamar al servidor.
+async function soltarEnColumnaCotizacion(origen, destino) {
+  if (!puedeArrastrarCotizacion(origen.col, destino)) {
+    avisoTablero(origen.col === 'ganada' || origen.col === 'perdida'
+      ? 'Una cotización cerrada no se reabre arrastrando'
+      : 'El tiempo no se arrastra: las tarjetas avanzan solas con los días');
+    return;
+  }
+  const label = destino === 'ganada' ? 'Ganada' : 'Perdida';
+  const cot = ultimasCotizaciones.find(c => c.id === origen.id);
+  if (!confirm(`¿Marcar la cotización de ${cot?.cliente || 'este cliente'} como ${label}?`)) return;
+  try {
+    const res = await api(`/api/cotizacion/${origen.id}/estado`, { method: 'PATCH', body: { estado: destino } });
+    if (!res.ok) { avisoTablero('No se pudo actualizar el estado'); return; }
+    showHistorial();
+  } catch (e) {
+    avisoTablero('Error de conexion');
   }
 }
 
@@ -2370,6 +2428,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-volver-app').addEventListener('click', () => {
     document.getElementById('historial-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
+  });
+  document.getElementById('btn-cot-modo-lista').addEventListener('click', () => setModoCotizaciones('lista'));
+  document.getElementById('btn-cot-modo-tablero').addEventListener('click', () => setModoCotizaciones('tablero'));
+  initDragEnTablero('cotizaciones-tablero', {
+    atributo: 'col',
+    puedeSoltar: puedeArrastrarCotizacion,
+    alSoltar: soltarEnColumnaCotizacion,
   });
 
   // Seguimiento

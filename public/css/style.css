@@ -990,10 +990,10 @@ body {
   vertical-align: middle;
 }
 
-/* Tablero kanban de prospectos (issue #49) */
+/* Tableros kanban: prospectos (issue #49) y cotizaciones (issue #50) */
 #prospectos-contenido { max-width: 520px; }
 #prospectos-contenido.modo-tablero { max-width: none; }
-.prospectos-tablero {
+.tablero {
   display: flex;
   gap: 12px;
   align-items: flex-start;
