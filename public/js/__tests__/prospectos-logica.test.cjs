@@ -212,6 +212,20 @@ test('T10b: buildHistorialHtml muestra la conversion a cliente con nombre e id, 
   assert.match(sinNombre, /Convertido en cliente #88/);
 });
 
+test('T10c: buildHistorialHtml muestra el evento de cotizacion con id y quien la genero (#46)', () => {
+  const html = buildHistorialHtml({
+    ...PROSPECTO,
+    eventos: [{ tipo: 'cotizacion', cotizacion_id: 42, de: 'nuevo', fecha: '2026-06-12T10:00:00.000Z', vendedor: 'Memo' }],
+  });
+  assert.match(html, /Cotización #42/);
+  assert.match(html, /Memo/);
+  const xss = buildHistorialHtml({
+    ...PROSPECTO,
+    eventos: [{ tipo: 'cotizacion', cotizacion_id: 42, fecha: '2026-06-12T10:00:00.000Z', vendedor: '<b>Memo</b>' }],
+  });
+  assert.equal(xss.includes('<b>Memo</b>'), false);
+});
+
 test('T11: la card de un prospecto activo trae wa.me, avanzar etapa, toque, No util e historial', () => {
   const html = buildProspectoCardHtml(PROSPECTO);
   assert.match(html, /href="https:\/\/wa\.me\/525512345678"/);

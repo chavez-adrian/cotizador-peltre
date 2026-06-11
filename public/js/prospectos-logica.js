@@ -89,16 +89,21 @@ function fechaCorta(fecha) {
   return new Date(fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function etiquetaEvento(e) {
-  if (e.tipo === 'captura') return `Capturado por ${escapeHtml(e.vendedor)}`;
-  if (e.tipo === 'etapa') return `${escapeHtml(ETAPA_LABELS[e.de] || e.de)} → ${escapeHtml(ETAPA_LABELS[e.a] || e.a)} · ${escapeHtml(e.vendedor)}`;
-  if (e.tipo === 'toque') return `Toque · ${escapeHtml(e.vendedor)}`;
-  if (e.tipo === 'no_util') return `Salida a No útil (${escapeHtml(e.motivo)}) · ${escapeHtml(e.vendedor)}`;
-  if (e.tipo === 'cliente') {
+const ETIQUETAS_EVENTO = {
+  captura: e => `Capturado por ${escapeHtml(e.vendedor)}`,
+  etapa: e => `${escapeHtml(ETAPA_LABELS[e.de] || e.de)} → ${escapeHtml(ETAPA_LABELS[e.a] || e.a)} · ${escapeHtml(e.vendedor)}`,
+  toque: e => `Toque · ${escapeHtml(e.vendedor)}`,
+  no_util: e => `Salida a No útil (${escapeHtml(e.motivo)}) · ${escapeHtml(e.vendedor)}`,
+  cliente: e => {
     const nombre = e.nombre ? `${escapeHtml(e.nombre)} (#${escapeHtml(e.cliente_id)})` : `#${escapeHtml(e.cliente_id)}`;
     return `Convertido en cliente ${nombre} · ${escapeHtml(e.vendedor)}`;
-  }
-  return escapeHtml(`${e.tipo} · ${e.vendedor}`);
+  },
+  cotizacion: e => `Cotización #${escapeHtml(e.cotizacion_id)} · ${escapeHtml(e.vendedor)}`,
+};
+
+function etiquetaEvento(e) {
+  const etiqueta = ETIQUETAS_EVENTO[e.tipo];
+  return etiqueta ? etiqueta(e) : escapeHtml(`${e.tipo} · ${e.vendedor}`);
 }
 
 // Historial completo del prospecto en orden cronologico: la captura misma
