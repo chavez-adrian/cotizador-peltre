@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa } from '../lib/prospectos-store.js';
+import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, ultimos10 } from '../lib/prospectos-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
@@ -113,6 +113,23 @@ test('cambiarEtapa actualiza la etapa y appendea el evento en una sola operacion
   assert.equal(guardado.etapa, 'contactado');
   assert.deepEqual(guardado.eventos, [evento]);
   assert.equal(await cambiarEtapa(99, 'contactado', evento), false);
+});
+
+test('ultimos10 recorta extension y coma igual que el indice de telefonos', async () => {
+  assert.equal(ultimos10('+52(55)53952615,116'), '5553952615');
+  assert.equal(ultimos10('+52 55 5395 2615 ext.116'), '5553952615');
+  assert.equal(ultimos10('+52 55 5395 2615 EXT 9'), '5553952615');
+  assert.equal(ultimos10('+52 5512345678'), '5512345678');
+});
+
+test('buscarPorCelular encuentra al prospecto aunque el telefono buscado traiga extension', async () => {
+  writeProspectos([]);
+  await crear({
+    fecha: '2026-06-10T00:00:00Z', vendedor: 'Ana',
+    celular: '+52 55 5395 2615', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+  });
+  const conExt = await buscarPorCelular('+52(55)53952615,116');
+  assert.equal(conExt && conExt.nombre, 'Laura');
 });
 
 test('listar devuelve todos los prospectos guardados', async () => {
