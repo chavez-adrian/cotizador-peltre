@@ -30,6 +30,8 @@
 
 **Deuda nueva del review #47:** headers del XLSX se matchean exacto (columna renombrada → reporte confuso "todo teléfono inválido" en vez de "columna faltante"); import O(n²) solo en modo JSON local; NOTA #48: extraer el pipeline route-side (dedup store + clasificar + crear + reporte) al llegar el segundo import.
 
+**#49 TERMINADO (kanban prospectos): demo aprobada, mergeado y cerrado.** Conmutador lista⇄tablero con preferencia en localStorage, cola fija, 5 columnas con contadores, drag HTML5 delegado en contenedor persistente (initTableroDrag UNA vez), drops válidos vía PATCH existente, No útil con modal de motivo, móvil con scroll-snap. Fix del review: limpiar el contenedor inactivo al conmutar (IDs DOM duplicados entre vistas → botones operaban sobre el fantasma oculto). Suite 457/457. Deuda para #50: guard de===a vive en soltarEnColumna; initTableroDrag y CSS soldados a prospectos — parametrizar al construir #50.
+
 **Kanban (grilling 2026-06-11, decisiones en CONTEXT.md "Tablero de prospectos"/"Tablero de cotizaciones"):** arrastre respeta el dominio (un paso; No útil pide motivo; Cotizado no acepta drops), No útil como columna siempre visible, conmutador kanban⇄lista con "Qué toca hoy" fija sobre ambas, tablero de cotizaciones con columnas de cadencia+cierre (solo el cierre se arrastra), móvil con swipe horizontal, término canónico "Cotizaciones". Issues publicados: **#49** (kanban prospectos, ready-for-agent, sin bloqueos) y **#50** (kanban cotizaciones, bloqueado por #49).
 
 **Siguiente:** #49 → #50 (kanban) y #48 (importación Bitrix one-time, HITL — requiere sesión con Adrián y el export real de Bitrix: mapeo de etapas/canales y asignación de vendedores). Esperar confirmación de Adrián para arrancar.
