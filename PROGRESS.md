@@ -2,7 +2,9 @@
 
 ## ESTADO (sesión 3, cierre)
 
-**#41, #42, #43, #44, #45 y #46 TERMINADOS: demo aprobada, mergeados a main (deploy automático a Render) y cerrados.**
+**#41-#47 TERMINADOS (7 de 8): demo aprobada, mergeados a main (deploy automático a Render) y cerrados. Solo queda #48 (Bitrix, HITL).**
+
+#47: importación de Feria/Expo — el export real de Abastur es XLSX (no CSV): hoja "Contactos", Telefono numérico, Rankings Cold/Medium/Hot→temperatura 1/3/5 (Warm→2), "Sin definir por el usuario"=vacío, Dispositivo=quien escaneó→asignación automática de vendedor (match por nombre/primer nombre sin acentos; ambiguo→default elegido en la UI). `lib/importar-prospectos.js` (parser puro, fixture sintético en tests — el archivo real con datos personales JAMÁS se commitea), POST /api/admin/prospectos/importar (multer, índice Operam refrescado UNA vez antes del loop), UI admin con reporte. fecha del prospecto = momento de importación (escaneo en data.escaneado). Reimport idempotente (dedup contra store). Smoke real Abastur 2024: 326/347 importables (12 tel inválido, 6 dup, 3 ya-cliente). Suite 448/448.
 
 #45: reunión diagnóstico — agendar (POST /:id/reunion, fecha futura), supresión de cadencia SOLO en el motor mientras es futura, reaparece al frente con `reunionVencida` pidiendo resultado (POST /:id/reunion-resultado: salto a Calificado válido solo ahí, o No útil con motivo), predicados compartidos ultimaReunion/reunionFutura/reunionPendienteResultado en prospectos-logica ("última" = la agendada más recientemente por fecha de registro — correcto para re-agendar a fecha más temprana). Suite 425/425. Review limpio sin fixes pre-merge; deuda: carrera ms en doble-click de resultado, select de motivos duplicado en 2 builders, validación de motivo duplicada en ruta resultado, badges inline (al 4º badge usar contenedor flex).
 
@@ -26,7 +28,9 @@
 
 **Deuda nueva del review #46:** la generación de cotización puede cargar el timeout de 5 s del índice cuando viaja canal y Operam está caído (backoff pendiente, mismo trade que captura); listeners del modal de canal sin remoción explícita; las rutas pdf/html duplican el wrapper crear+hook. Notas de altitud para #47/#48: clasificarCelular es por-llamada (sin modo batch — para CSV grande refrescar índice una vez antes del loop); normalizar canal (trim) en imports.
 
-**Siguiente:** quedan #47 (importación feria — OJO: el export real de Abastur es XLSX, no CSV; muestra en C:\Users\chave\.claude\uploads\271dd8f5-be5f-4962-a9ae-096fac17c257\9c8294fc-base_de_datos_lectoras_clientes_2024.xlsx) y #48 (Bitrix, HITL con Adrián). Idea de Adrián sin issue aún: kanban estilo Bitrix (prospectos y cotizaciones).
+**Deuda nueva del review #47:** headers del XLSX se matchean exacto (columna renombrada → reporte confuso "todo teléfono inválido" en vez de "columna faltante"); import O(n²) solo en modo JSON local; NOTA #48: extraer el pipeline route-side (dedup store + clasificar + crear + reporte) al llegar el segundo import.
+
+**Siguiente:** solo queda #48 (importación Bitrix one-time, HITL — requiere sesión con Adrián y el export real de Bitrix: mapeo de etapas/canales y asignación de vendedores). Idea de Adrián sin issue aún: kanban estilo Bitrix (prospectos y cotizaciones).
 
 **Code-review COMPLETO.** Findings verificados (orden de severidad):
 1. **XSS almacenado (CONFIRMADO, arreglar antes de merge):** `buildProspectoCardHtml` (prospectos-logica.js:52-53) interpola nombre/empresa/ciudad/canal/celular sin escapar y app.js lo asigna a innerHTML (lista + pr-existente:1811). Mismo patrón crudo existe en cards de historial/seguimiento (app.js:1598/1655) pero ahí el dato lo captura el vendedor; el prospecto es dato de terceros (y #47 importará CSVs externos). Fix: helper `escapeHtml` en prospectos-logica.js con test.
