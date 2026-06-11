@@ -12,7 +12,7 @@ import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCli
 import { detectarDuplicados } from './lib/deduplicacion.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
-import { calcularCola, telefonoValido } from './lib/seguimiento.js';
+import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
@@ -257,8 +257,10 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   const filtradas = req.user.role === 'admin'
     ? log
     : log.filter(c => c.vendedor === req.user.name);
-  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data }) => ({
+  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
+    estado: estado || 'abierta',
+    telefono: telefonoWa(data?.cliente?.telefono),
     hasData: !!data,
     hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),
   })));

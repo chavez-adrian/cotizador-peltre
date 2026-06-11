@@ -128,6 +128,20 @@ test('PATCH estado abierta reabre una cotizacion cerrada', async () => {
   assert.equal(readCots().find(c => c.id === 1).estado, 'abierta');
 });
 
+test('GET /api/cotizaciones expone estado y telefono wa para el tablero (#50)', async () => {
+  const cots = fixture();
+  cots[1].estado = 'ganada';
+  delete cots[1].data.cliente.telefono;
+  writeCots(cots);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+  assert.equal(res.status, 200);
+  const [c1, c2] = res.body;
+  assert.equal(c1.estado, 'abierta');
+  assert.equal(c1.telefono, '525512345678');
+  assert.equal(c2.estado, 'ganada');
+  assert.equal(c2.telefono, null);
+});
+
 test('PATCH estado invalido responde 400 y ajeno 403', async () => {
   writeCots(fixture());
   const inv = await supertest(app).patch('/api/cotizacion/1/estado')
