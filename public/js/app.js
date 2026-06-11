@@ -1958,11 +1958,59 @@ function sugerirNoUtilProspecto(id) {
   patchEtapaProspecto(id, { etapa: 'no_util', motivo: 'sin respuesta' }, 'No se pudo registrar la salida');
 }
 
+// Reunion diagnostico (issue #45): agendar desde la card y registrar el
+// resultado desde la cola cuando la reunion ya paso.
+async function agendarReunionProspecto(id) {
+  const input = document.getElementById(`pr-reunion-${id}`);
+  const valor = input ? input.value : '';
+  if (!valor) { alert('Selecciona fecha y hora de la reunión'); return; }
+  try {
+    const res = await api(`/api/prospectos/${id}/reunion`, {
+      method: 'POST', body: { fecha: new Date(valor).toISOString() },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo agendar la reunión');
+      return;
+    }
+    cargarListaProspectos();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
+async function resultadoReunionProspecto(id, resultado, motivo) {
+  try {
+    const res = await api(`/api/prospectos/${id}/reunion-resultado`, {
+      method: 'POST', body: { resultado, motivo },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo registrar el resultado');
+      return;
+    }
+    cargarListaProspectos();
+    cargarMotivosNoUtil();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
+function resultadoReunionNoUtilProspecto(id) {
+  const sel = document.getElementById(`cola-motivo-${id}`);
+  const motivo = sel ? sel.value : '';
+  if (!motivo) { alert('Selecciona el motivo de No útil (catálogo cerrado)'); return; }
+  resultadoReunionProspecto(id, 'no_util', motivo);
+}
+
 window.avanzarEtapaProspecto = avanzarEtapaProspecto;
 window.marcarNoUtilProspecto = marcarNoUtilProspecto;
 window.registrarToqueProspecto = registrarToqueProspecto;
 window.toggleHistorialProspecto = toggleHistorialProspecto;
 window.sugerirNoUtilProspecto = sugerirNoUtilProspecto;
+window.agendarReunionProspecto = agendarReunionProspecto;
+window.resultadoReunionProspecto = resultadoReunionProspecto;
+window.resultadoReunionNoUtilProspecto = resultadoReunionNoUtilProspecto;
 
 async function cargarCotizacion(id) {
   try {
