@@ -15,6 +15,7 @@ import {
   buildProspectoPayload,
   buildProspectoCardHtml,
   buildProspectoExistenteHtml,
+  buildMotivosNoUtilHtml,
 } from './prospectos-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1743,6 +1744,19 @@ function showProspectos() {
   document.getElementById('prospectos-view').style.display = 'block';
   poblarSelectoresProspecto();
   cargarListaProspectos();
+  cargarMotivosNoUtil();
+}
+
+async function cargarMotivosNoUtil() {
+  const cont = document.getElementById('prospectos-no-util-admin');
+  if (!cont || state.user.role !== 'admin') return;
+  try {
+    const res = await api('/api/admin/prospectos/no-util');
+    if (!res.ok) return;
+    const conteo = await res.json();
+    document.getElementById('prospectos-no-util-list').innerHTML = buildMotivosNoUtilHtml(conteo);
+    cont.style.display = 'block';
+  } catch (e) { /* sin red no hay conteo */ }
 }
 
 async function cargarListaProspectos() {
@@ -1833,6 +1847,53 @@ async function guardarProspecto() {
     mostrarErrorProspecto('Error de conexion');
   }
 }
+
+// Trabajar el prospecto (issue #43): handlers de las acciones de la card.
+async function patchEtapaProspecto(id, body, msgError) {
+  try {
+    const res = await api(`/api/prospectos/${id}/etapa`, { method: 'PATCH', body });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || msgError);
+      return;
+    }
+    cargarListaProspectos();
+    cargarMotivosNoUtil();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
+function avanzarEtapaProspecto(id, etapa) {
+  patchEtapaProspecto(id, { etapa }, 'No se pudo avanzar la etapa');
+}
+
+function marcarNoUtilProspecto(id) {
+  const sel = document.getElementById(`pr-motivo-${id}`);
+  const motivo = sel ? sel.value : '';
+  if (!motivo) { alert('Selecciona el motivo de No útil (catálogo cerrado)'); return; }
+  patchEtapaProspecto(id, { etapa: 'no_util', motivo }, 'No se pudo registrar la salida');
+}
+
+async function registrarToqueProspecto(id) {
+  try {
+    const res = await api(`/api/prospectos/${id}/toques`, { method: 'POST' });
+    if (!res.ok) { alert('No se pudo registrar el toque'); return; }
+    cargarListaProspectos();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
+function toggleHistorialProspecto(id) {
+  const el = document.getElementById(`pr-historial-${id}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+window.avanzarEtapaProspecto = avanzarEtapaProspecto;
+window.marcarNoUtilProspecto = marcarNoUtilProspecto;
+window.registrarToqueProspecto = registrarToqueProspecto;
+window.toggleHistorialProspecto = toggleHistorialProspecto;
 
 async function cargarCotizacion(id) {
   try {
