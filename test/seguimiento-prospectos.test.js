@@ -150,3 +150,61 @@ test('S11: lista vacia o sin activos devuelve cola vacia', () => {
   assert.deepEqual(calcularColaProspectos([], AHORA), []);
   assert.deepEqual(calcularColaProspectos([prospecto({ etapa: 'cotizado' })], AHORA), []);
 });
+
+// === Issue #45: reunion diagnostico (CONTEXT.md, "Captura de prospecto") ===
+
+function reunion(fechaReunion, fecha = '2026-06-10T16:30:00Z') {
+  return { tipo: 'reunion', fecha_reunion: fechaReunion, fecha, vendedor: 'Memo' };
+}
+
+test('R1: reunion futura suprime al prospecto de la cola; la card normal no se ve afectada', () => {
+  const conReunion = prospecto({ eventos: [reunion('2026-06-12T17:00:00Z')] });
+  const normal = prospecto();
+  const cola = calcularColaProspectos([conReunion, normal], AHORA);
+  assert.equal(cola.length, 1);
+  assert.equal(cola[0].id, normal.id);
+});
+
+test('R2: reunion pasada sin evento posterior reaparece al frente con reunionVencida y fechaReunion', () => {
+  const vencida = prospecto({ eventos: [reunion('2026-06-10T17:00:00Z', '2026-06-09T16:00:00Z')] });
+  // capturado el lunes: mas urgente por horas, pero la reunion vencida va primero
+  const urgente = prospecto({ fecha: '2026-06-08T16:00:00Z' });
+  const cola = calcularColaProspectos([urgente, vencida], AHORA);
+  assert.equal(cola.length, 2);
+  assert.equal(cola[0].id, vencida.id);
+  assert.equal(cola[0].reunionVencida, true);
+  assert.equal(cola[0].fechaReunion, '2026-06-10T17:00:00Z');
+  assert.equal(cola[1].reunionVencida, false);
+});
+
+test('R3: cualquier evento posterior a la fecha de la reunion limpia el pendiente de resultado', () => {
+  const conToque = prospecto({ eventos: [
+    reunion('2026-06-10T16:30:00Z', '2026-06-09T16:00:00Z'),
+    toque('2026-06-10T17:00:00Z'),
+  ] });
+  const conEtapa = prospecto({ eventos: [
+    reunion('2026-06-10T16:30:00Z', '2026-06-09T16:00:00Z'),
+    { tipo: 'etapa', de: 'nuevo', a: 'contactado', fecha: '2026-06-10T17:00:00Z', vendedor: 'Memo' },
+  ], etapa: 'contactado' });
+  const cola = calcularColaProspectos([conToque, conEtapa], AHORA);
+  assert.equal(cola.length, 2);
+  assert.equal(cola.find(i => i.id === conToque.id).reunionVencida, false);
+  assert.equal(cola.find(i => i.id === conEtapa.id).reunionVencida, false);
+});
+
+test('R4: re-agendar manda la ultima reunion', () => {
+  // la primera paso pero se re-agendo al futuro -> suprimido
+  const reagendado = prospecto({ eventos: [
+    reunion('2026-06-10T16:00:00Z', '2026-06-09T16:00:00Z'),
+    reunion('2026-06-12T17:00:00Z', '2026-06-10T17:00:00Z'),
+  ] });
+  assert.deepEqual(calcularColaProspectos([reagendado], AHORA), []);
+  // ambas pasadas: el pendiente se mide contra la ultima
+  const dosVencidas = prospecto({ eventos: [
+    reunion('2026-06-09T17:00:00Z', '2026-06-09T16:00:00Z'),
+    reunion('2026-06-10T17:00:00Z', '2026-06-09T18:00:00Z'),
+  ] });
+  const cola = calcularColaProspectos([dosVencidas], AHORA);
+  assert.equal(cola[0].reunionVencida, true);
+  assert.equal(cola[0].fechaReunion, '2026-06-10T17:00:00Z');
+});

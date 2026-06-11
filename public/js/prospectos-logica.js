@@ -79,6 +79,34 @@ export function validarTransicion(actual, nueva, motivo) {
   return null;
 }
 
+// Reunion diagnostico (issue #45, CONTEXT.md "Captura de prospecto"): actividad
+// con fecha sobre el prospecto, NO una etapa. Re-agendar registra otro evento y
+// la ultima reunion manda. Mientras esta en el futuro la cadencia se suprime
+// (el filtro vive en lib/seguimiento-prospectos.js); pasada la fecha, el
+// seguimiento pide registrar el resultado.
+
+export function ultimaReunion(eventos) {
+  let r = null;
+  for (const e of eventos || []) {
+    if (e.tipo === 'reunion' && (!r || new Date(e.fecha) > new Date(r.fecha))) r = e;
+  }
+  return r;
+}
+
+export function reunionFutura(p, ahora) {
+  const r = ultimaReunion(p && p.eventos);
+  return r && new Date(r.fecha_reunion) > ahora ? r.fecha_reunion : null;
+}
+
+// Pendiente de resultado: ultima reunion con fecha pasada y ningun evento
+// posterior a esa fecha (cualquier evento posterior limpia la condicion).
+export function reunionPendienteResultado(p, ahora) {
+  const r = ultimaReunion(p && p.eventos);
+  if (!r || new Date(r.fecha_reunion) > ahora) return null;
+  const limpia = (p.eventos || []).some(e => new Date(e.fecha) > new Date(r.fecha_reunion));
+  return limpia ? null : r.fecha_reunion;
+}
+
 // Link wa.me en un tap: solo digitos, el celular del prospecto ya trae codigo de pais.
 export function buildWaLink(celular) {
   const digitos = String(celular || '').replace(/\D/g, '');
