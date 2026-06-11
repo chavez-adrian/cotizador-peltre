@@ -135,6 +135,17 @@ test('S10: la cola expone los datos que la UI necesita', () => {
   assert.equal(item.color, 'rojo');
 });
 
+test('S12: el prospecto convertido en cliente sigue en la cola con la bandera yaEsCliente (#46)', () => {
+  const convertido = prospecto({ etapa: 'contactado', data: { cliente_id: 88 } });
+  const normal = prospecto({ data: {} });
+  const sinData = prospecto({ data: null });
+  const cola = calcularColaProspectos([convertido, normal, sinData], AHORA);
+  assert.equal(cola.length, 3);
+  assert.equal(cola.find(i => i.id === convertido.id).yaEsCliente, true);
+  assert.equal(cola.find(i => i.id === normal.id).yaEsCliente, false);
+  assert.equal(cola.find(i => i.id === sinData.id).yaEsCliente, false);
+});
+
 test('S11: lista vacia o sin activos devuelve cola vacia', () => {
   assert.deepEqual(calcularColaProspectos([], AHORA), []);
   assert.deepEqual(calcularColaProspectos([prospecto({ etapa: 'cotizado' })], AHORA), []);

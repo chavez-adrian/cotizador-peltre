@@ -118,6 +118,11 @@ export function buildEsperaBadgeHtml(item) {
   return `<span class="espera-badge espera-${escapeHtml(item.color)}">${h} h hábiles sin respuesta</span>`;
 }
 
+// Etiqueta del prospecto convertido en cliente (#46, CONTEXT.md "Prospecto
+// convertido en cliente"): sigue en seguimiento hasta que una cotizacion lo
+// pase a Cotizado.
+const CLIENTE_BADGE = '<span class="cliente-badge">Ya es cliente — falta cotizar</span>';
+
 // Tarjeta de un prospecto en la lista (mismo formato visual que las cards de
 // historial/seguimiento de app.js). Funcion pura sin DOM: testeable en Node.
 // Las acciones llaman funciones globales de app.js (mismo patron que las
@@ -150,6 +155,7 @@ export function buildProspectoCardHtml(p, colaItem) {
           <div class="cot-card-cliente">${escapeHtml(p.nombre)}${empresa}</div>
           <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
           ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
+          ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
         </div>
         <div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>
       </div>
@@ -179,7 +185,7 @@ export function buildColaProspectosHtml(cola) {
           <div>
             <div class="cot-card-cliente">${escapeHtml(item.nombre)}</div>
             <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[item.etapa] || item.etapa)} · ${escapeHtml(item.canal)} · ${escapeHtml(item.ciudad)} · ${escapeHtml(item.celular)}</div>
-            <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}</div>
+            <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}${item.yaEsCliente ? ` ${CLIENTE_BADGE}` : ''}</div>
           </div>
         </div>
         <div class="cot-card-actions">${acciones.join(' ')}</div>

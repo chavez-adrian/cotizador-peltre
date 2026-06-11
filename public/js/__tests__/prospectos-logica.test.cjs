@@ -310,6 +310,22 @@ test('C4: buildColaProspectosHtml sugiere No util tras 3 toques con confirmacion
   assert.equal(sinSugerencia.includes('sugerirNoUtilProspecto'), false);
 });
 
+// === Issue #46: etiqueta de prospecto convertido en cliente ===
+
+test('C6: la card muestra la etiqueta "Ya es cliente" cuando el prospecto esta ligado a un cliente', () => {
+  const html = buildProspectoCardHtml({ ...PROSPECTO, data: { cliente_id: 88 } });
+  assert.match(html, /Ya es cliente — falta cotizar/);
+  const sin = buildProspectoCardHtml(PROSPECTO);
+  assert.equal(sin.includes('Ya es cliente'), false);
+});
+
+test('C7: la cola muestra la etiqueta "Ya es cliente" cuando el item trae yaEsCliente', () => {
+  const html = buildColaProspectosHtml([{ ...ITEM_COLA, yaEsCliente: true }]);
+  assert.match(html, /Ya es cliente — falta cotizar/);
+  const sin = buildColaProspectosHtml([ITEM_COLA]);
+  assert.equal(sin.includes('Ya es cliente'), false);
+});
+
 test('C5: buildColaProspectosHtml tolera cola vacia y escapa datos de usuario', () => {
   assert.match(buildColaProspectosHtml([]), /Nada pendiente/i);
   assert.match(buildColaProspectosHtml(null), /Nada pendiente/i);

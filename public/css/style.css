@@ -966,6 +966,18 @@ body {
 .espera-ambar { background: #e67e22; }
 .espera-rojo { background: #c0392b; }
 
+/* Prospecto convertido en cliente (issue #46) */
+.cliente-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: #2980b9;
+  border-radius: 10px;
+  padding: 1px 7px;
+  vertical-align: middle;
+}
+
 /* === RESPONSIVE === */
 @media (max-width: 480px) {
   .form-row { grid-template-columns: 1fr; }
