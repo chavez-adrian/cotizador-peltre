@@ -22,6 +22,10 @@ import {
   necesitaCanal,
   validarCanalCotizacion,
   buildCanalModalHtml,
+  MOTIVOS_NO_UTIL,
+  puedeArrastrar,
+  buildTableroHtml,
+  buildMotivoNoUtilModalHtml,
 } from './prospectos-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1865,34 +1869,154 @@ async function cargarMotivosNoUtil() {
   } catch (e) { /* sin red no hay conteo */ }
 }
 
+// Conmutador kanban/lista (issue #49): la cola "Que toca hoy" permanece fija
+// sobre ambas vistas; la preferencia del usuario se recuerda en localStorage.
+let prospectosModo = localStorage.getItem('prospectosModo') === 'tablero' ? 'tablero' : 'lista';
+let ultimosProspectos = [];
+let ultimaColaProspectos = [];
+
 async function cargarListaProspectos() {
   const loadingEl = document.getElementById('prospectos-loading');
-  const listEl = document.getElementById('prospectos-list');
   const colaSeccion = document.getElementById('prospectos-cola-seccion');
-  const tituloEl = document.getElementById('prospectos-list-titulo');
   loadingEl.style.display = 'block';
-  listEl.innerHTML = '';
+  document.getElementById('prospectos-list').innerHTML = '';
   try {
     const [res, resCola] = await Promise.all([
       api('/api/prospectos'),
       api('/api/prospectos/cola'),
     ]);
-    const prospectos = await res.json();
-    const cola = resCola.ok ? await resCola.json() : [];
+    ultimosProspectos = await res.json();
+    ultimaColaProspectos = resCola.ok ? await resCola.json() : [];
     loadingEl.style.display = 'none';
-    colaSeccion.style.display = prospectos.length ? 'block' : 'none';
-    tituloEl.style.display = prospectos.length ? 'block' : 'none';
-    document.getElementById('prospectos-cola').innerHTML = buildColaProspectosHtml(cola);
-    if (!prospectos.length) {
-      listEl.innerHTML = '<div class="empty-state"><p>Sin prospectos capturados.</p></div>';
-      return;
-    }
-    const colaPorId = new Map(cola.map(i => [i.id, i]));
-    listEl.innerHTML = prospectos.slice().reverse()
-      .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id))).join('');
+    colaSeccion.style.display = ultimosProspectos.length ? 'block' : 'none';
+    document.getElementById('prospectos-cola').innerHTML = buildColaProspectosHtml(ultimaColaProspectos);
+    renderProspectos();
   } catch (e) {
     loadingEl.textContent = 'Error cargando prospectos';
   }
+}
+
+function renderProspectos() {
+  const listEl = document.getElementById('prospectos-list');
+  const tituloEl = document.getElementById('prospectos-list-titulo');
+  const tableroEl = document.getElementById('prospectos-tablero');
+  const esTablero = prospectosModo === 'tablero';
+  document.getElementById('prospectos-contenido').classList.toggle('modo-tablero', esTablero);
+  const btnLista = document.getElementById('btn-modo-lista');
+  const btnTablero = document.getElementById('btn-modo-tablero');
+  btnLista.classList.toggle('btn-primary', !esTablero);
+  btnLista.classList.toggle('btn-secondary', esTablero);
+  btnTablero.classList.toggle('btn-primary', esTablero);
+  btnTablero.classList.toggle('btn-secondary', !esTablero);
+  tableroEl.style.display = esTablero ? 'flex' : 'none';
+  tituloEl.style.display = !esTablero && ultimosProspectos.length ? 'block' : 'none';
+  listEl.style.display = esTablero ? 'none' : 'block';
+  const colaPorId = new Map(ultimaColaProspectos.map(i => [i.id, i]));
+  if (esTablero) {
+    tableroEl.innerHTML = buildTableroHtml(ultimosProspectos, colaPorId);
+    return;
+  }
+  if (!ultimosProspectos.length) {
+    listEl.innerHTML = '<div class="empty-state"><p>Sin prospectos capturados.</p></div>';
+    return;
+  }
+  listEl.innerHTML = ultimosProspectos.slice().reverse()
+    .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id))).join('');
+}
+
+function setModoProspectos(modo) {
+  prospectosModo = modo;
+  localStorage.setItem('prospectosModo', modo);
+  renderProspectos();
+}
+
+// Drag & drop del tablero (issue #49): HTML5 nativo, sin librerias. La
+// validez la decide puedeArrastrar (logica pura); un drop invalido no llama
+// al servidor -- la tarjeta no se mueve y se avisa brevemente.
+let dragProspecto = null;
+
+function initTableroDrag() {
+  const tablero = document.getElementById('prospectos-tablero');
+  tablero.addEventListener('dragstart', e => {
+    const card = e.target.closest('.tablero-card');
+    if (!card || card.getAttribute('draggable') !== 'true') return;
+    dragProspecto = { id: parseInt(card.dataset.id, 10), etapa: card.dataset.etapa };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', card.dataset.id);
+  });
+  tablero.addEventListener('dragover', e => {
+    const col = e.target.closest('.tablero-col');
+    if (!col || !dragProspecto) return;
+    e.preventDefault();
+    const valido = puedeArrastrar(dragProspecto.etapa, col.dataset.etapa);
+    e.dataTransfer.dropEffect = valido ? 'move' : 'none';
+    col.classList.toggle('drop-ok', valido);
+  });
+  tablero.addEventListener('dragleave', e => {
+    const col = e.target.closest('.tablero-col');
+    if (col) col.classList.remove('drop-ok');
+  });
+  tablero.addEventListener('drop', e => {
+    const col = e.target.closest('.tablero-col');
+    if (!col || !dragProspecto) return;
+    e.preventDefault();
+    col.classList.remove('drop-ok');
+    const origen = dragProspecto;
+    dragProspecto = null;
+    soltarEnColumna(origen, col.dataset.etapa);
+  });
+  tablero.addEventListener('dragend', () => {
+    dragProspecto = null;
+    tablero.querySelectorAll('.tablero-col.drop-ok').forEach(c => c.classList.remove('drop-ok'));
+  });
+}
+
+async function soltarEnColumna(origen, destino) {
+  if (destino === origen.etapa) return;
+  if (!puedeArrastrar(origen.etapa, destino)) {
+    avisoTablero(destino === 'cotizado'
+      ? 'Cotizado no acepta arrastres: solo una cotización real mueve ahí'
+      : 'Movimiento inválido: las etapas avanzan un paso a la vez');
+    return;
+  }
+  if (destino === 'no_util') {
+    const motivo = await pedirMotivoNoUtil();
+    if (!motivo) return;
+    patchEtapaProspecto(origen.id, { etapa: 'no_util', motivo }, 'No se pudo registrar la salida');
+    return;
+  }
+  patchEtapaProspecto(origen.id, { etapa: destino }, 'No se pudo avanzar la etapa');
+}
+
+// Selector de motivo al soltar en No util: mismo patron que el modal de
+// canal de #46. Cancelar resuelve null y la tarjeta se queda donde estaba.
+function pedirMotivoNoUtil() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+    overlay.innerHTML = buildMotivoNoUtilModalHtml();
+    document.body.appendChild(overlay);
+    const cerrar = motivo => { overlay.remove(); resolve(motivo); };
+    document.getElementById('motivo-tablero-confirmar').addEventListener('click', () => {
+      const motivo = document.getElementById('motivo-tablero-select').value;
+      if (!MOTIVOS_NO_UTIL.includes(motivo)) {
+        const errEl = document.getElementById('motivo-tablero-error');
+        errEl.textContent = 'El motivo de No útil es obligatorio (catálogo cerrado)';
+        errEl.style.display = 'block';
+        return;
+      }
+      cerrar(motivo);
+    });
+    document.getElementById('motivo-tablero-cancelar').addEventListener('click', () => cerrar(null));
+  });
+}
+
+function avisoTablero(msg) {
+  const aviso = document.createElement('div');
+  aviso.className = 'tablero-aviso';
+  aviso.textContent = msg;
+  document.body.appendChild(aviso);
+  setTimeout(() => aviso.remove(), 2500);
 }
 
 function leerFormularioProspecto() {
@@ -2263,6 +2387,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     form.style.display = form.style.display === 'none' ? 'block' : 'none';
   });
   document.getElementById('btn-guardar-prospecto').addEventListener('click', guardarProspecto);
+  document.getElementById('btn-modo-lista').addEventListener('click', () => setModoProspectos('lista'));
+  document.getElementById('btn-modo-tablero').addEventListener('click', () => setModoProspectos('tablero'));
+  initTableroDrag();
   document.getElementById('btn-importar-feria').addEventListener('click', importarFeria);
   document.getElementById('pr-temperatura').addEventListener('click', e => {
     const v = e.target.dataset ? e.target.dataset.v : null;

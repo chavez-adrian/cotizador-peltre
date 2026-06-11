@@ -783,8 +783,13 @@
     <h1>Prospectos</h1>
     <button class="btn btn-sm btn-secondary" id="btn-volver-prospectos">Volver</button>
   </header>
-  <div style="padding:16px;max-width:520px">
+  <div id="prospectos-contenido" style="padding:16px">
     <button class="btn btn-primary btn-sm" id="btn-nuevo-prospecto">+ Nuevo prospecto</button>
+    <!-- Conmutador kanban/lista (issue #49): la preferencia se recuerda en localStorage -->
+    <span id="prospectos-modo" style="display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle">
+      <button class="btn btn-sm btn-secondary" id="btn-modo-lista">Lista</button>
+      <button class="btn btn-sm btn-secondary" id="btn-modo-tablero">Tablero</button>
+    </span>
 
     <div id="prospecto-form" style="display:none;margin-top:12px">
       <div class="form-group">
@@ -852,6 +857,9 @@
       <div style="font-size:13px;font-weight:600;color:var(--text-light);margin-bottom:8px">Qu&eacute; toca hoy</div>
       <div id="prospectos-cola"></div>
     </div>
+
+    <!-- Tablero kanban (issue #49): cinco columnas siempre visibles, conmutable con la lista -->
+    <div id="prospectos-tablero" class="prospectos-tablero" style="display:none"></div>
 
     <div style="display:none;font-size:13px;font-weight:600;color:var(--text-light);margin-top:24px;margin-bottom:8px" id="prospectos-list-titulo">Todos los prospectos</div>
     <div id="prospectos-list"></div>

@@ -990,6 +990,60 @@ body {
   vertical-align: middle;
 }
 
+/* Tablero kanban de prospectos (issue #49) */
+#prospectos-contenido { max-width: 520px; }
+#prospectos-contenido.modo-tablero { max-width: none; }
+.prospectos-tablero {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  margin-top: 24px;
+  padding-bottom: 8px;
+}
+.tablero-col {
+  flex: 0 0 280px;
+  min-width: 280px;
+  scroll-snap-align: start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+}
+.tablero-col.drop-ok { border-color: var(--primary); background: var(--primary-light); }
+.tablero-col-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-light);
+  margin-bottom: 8px;
+}
+.tablero-col-count {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 11px;
+  padding: 0 8px;
+}
+.tablero-col-cards { min-height: 40px; }
+.tablero-card[draggable="true"] { cursor: grab; }
+.tablero-card .cot-card-actions { flex-wrap: wrap; }
+.tablero-aviso {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--white);
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  z-index: 1100;
+}
+
 /* === RESPONSIVE === */
 @media (max-width: 480px) {
   .form-row { grid-template-columns: 1fr; }
