@@ -13,6 +13,7 @@ import { detectarDuplicados } from './lib/deduplicacion.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido } from './lib/seguimiento.js';
+import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
@@ -303,6 +304,16 @@ app.get('/api/prospectos', authMiddleware, async (req, res) => {
     ? todos
     : todos.filter(p => p.vendedor === req.user.name);
   res.json(visibles);
+});
+
+// Cola de seguimiento (issue #44). Registrada antes de cualquier ruta
+// /api/prospectos/:id para que "cola" nunca se interprete como un id.
+app.get('/api/prospectos/cola', authMiddleware, async (req, res) => {
+  const todos = await prospectosStore.listar();
+  const visibles = req.user.role === 'admin'
+    ? todos
+    : todos.filter(p => p.vendedor === req.user.name);
+  res.json(calcularColaProspectos(visibles, new Date()));
 });
 
 // Trabajar el prospecto (issue #43): etapas manuales, toques y salida a No util.

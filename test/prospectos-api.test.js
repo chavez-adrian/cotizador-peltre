@@ -248,6 +248,55 @@ test('salida a No util exige motivo del catalogo; sin motivo o fuera de catalogo
   assert.equal(despues.status, 400);
 });
 
+// === Issue #44: cola de seguimiento ===
+
+test('GET /api/prospectos/cola sin token responde 401', async () => {
+  writeProspectos([]);
+  const res = await supertest(app).get('/api/prospectos/cola');
+  assert.equal(res.status, 401);
+});
+
+test('la cola excluye cotizado y No util y respeta la visibilidad vendedor/admin', async () => {
+  writeProspectos([
+    prospectoDe('Memo', 'nuevo', { id: 1 }),
+    prospectoDe('Memo', 'cotizado', { id: 2, celular: '+52 5522222222', celular10: '5522222222' }),
+    prospectoDe('Memo', 'no_util', { id: 3, celular: '+52 5533333333', celular10: '5533333333' }),
+    prospectoDe('Ana', 'contactado', { id: 4, celular: '+52 5544444444', celular10: '5544444444' }),
+  ]);
+  const memo = await supertest(app).get('/api/prospectos/cola')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(memo.status, 200);
+  assert.deepEqual(memo.body.map(i => i.id), [1]);
+  const admin = await supertest(app).get('/api/prospectos/cola')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+  assert.deepEqual(admin.body.map(i => i.id).sort(), [1, 4]);
+});
+
+test('la cola trae horas habiles, semaforo y sugerencia de No util tras 3 toques, mas urgente primero', async () => {
+  // capturas viejas (2026-06-01): para cualquier "ahora" posterior ambos canales
+  // ya estan saturados, pero WhatsApp es mas urgente relativo a su umbral.
+  const toque = f => ({ tipo: 'toque', fecha: f, vendedor: 'Memo' });
+  writeProspectos([
+    prospectoDe('Memo', 'nuevo', { id: 1, canal: 'Correo' }),
+    prospectoDe('Memo', 'contactado', { id: 2, celular: '+52 5522222222', celular10: '5522222222', eventos: [
+      toque('2026-06-01T17:00:00Z'), toque('2026-06-02T17:00:00Z'), toque('2026-06-03T17:00:00Z'),
+    ] }),
+  ]);
+  const res = await supertest(app).get('/api/prospectos/cola')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.map(i => i.id), [2, 1]);
+  const [wa, correo] = res.body;
+  assert.equal(wa.canal, 'WhatsApp');
+  assert.ok(wa.horas >= 2);
+  assert.equal(wa.color, 'rojo');
+  assert.equal(wa.toques, 3);
+  assert.equal(wa.sugerirNoUtil, true);
+  assert.equal(correo.toques, 0);
+  assert.equal(correo.sugerirNoUtil, false);
+  assert.ok(correo.horas > 0);
+});
+
 test('admin consulta los motivos de No util acumulados; vendedor no', async () => {
   writeProspectos([
     prospectoDe('Memo', 'no_util', { eventos: [{ tipo: 'no_util', motivo: 'spam', fecha: '2026-06-11T10:00:00Z', vendedor: 'Memo' }] }),
