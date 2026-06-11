@@ -2,9 +2,17 @@
 
 ## ESTADO (sesión 3, cierre)
 
-**Issue #41 TERMINADO: demo aprobada por Adrián, mergeado a main (deploy automático a Render) y cerrado.** Incluyó además: ajustes de demo (banderas país, opcionales visibles, labels, temperatura en estrellas), corrección del catálogo de SEGMENTOS a los ids internos reales de Operam (verificados contra 440 clientes de producción; la clave 000-1000 de la UI NO es el id de la API), y corrección de los 2 únicos clientes afectados por el catálogo inventado (456 vía API, 457 vía UI por quirk de Operam — PUT responde 200 e ignora segmento_id en algunos registros, documentado en CLAUDE.md).
+**#41 y #43 TERMINADOS: demo aprobada, mergeados a main (deploy automático a Render) y cerrados.**
 
-**Siguiente:** elegir entre #42 (frenos de frontera), #43 (etapas/toques/No útil) o #47 (CSV feria) — los tres desbloqueados. Recomendación: #43 (ruta crítica hacia #44). Esperar confirmación de Adrián. Idea pendiente de Adrián sin issue aún: kanban/lista estilo Bitrix para prospectos (va con #43/#44) y para cotizaciones (alcance nuevo, requeriría issue propio).
+#41 incluyó además: ajustes de demo (banderas país, opcionales visibles, labels, temperatura en estrellas), corrección del catálogo de SEGMENTOS a los ids internos reales de Operam (la clave 000-1000 de la UI NO es el id de la API; verificado contra producción) y corrección de los 2 clientes afectados (456 vía API, 457 vía UI por quirk de Operam documentado en CLAUDE.md).
+
+#43: etapas manuales un-paso (validarTransicion compartida frontend/server), toques con fecha/autor, No útil con catálogo obligatorio, historial en eventos JSONB (migración ALTER TABLE auto en ensureSchema), conteo admin de motivos. Suite 327/327.
+
+**Deuda acumulada (findings menores de reviews #41+#43, atacar al tocar esos archivos):** leerJson/escribirJson/filaAEntrada y bloques fallback JSON duplicados entre stores y dentro de prospectos-store; ensureSchema cachea promise rechazada; temperatura/segmento_id como strings; showProspectos no oculta otras vistas; retorno de cambiarEtapa/registrarEvento sin verificar en rutas (carrera inalcanzable hoy — no hay borrado); buildWaLink duplica telefonoWa.
+
+**Notas de diseño para #45/#46:** extraer un builder de eventos cuando se agreguen tipos nuevos (hoy inline en la ruta PATCH etapa); el flag `activo` de la card excluye `cotizado` — #45 lo tendrá que revisar.
+
+**Siguiente:** desbloqueados #42 (frenos de frontera), #44 (cola/semáforo en horas hábiles), #47 (CSV feria) y #48 (Bitrix, HITL). Recomendación: #44 — completa la ruta crítica y es donde el módulo empieza a vender. Esperar confirmación de Adrián. Idea de Adrián sin issue aún: kanban estilo Bitrix (prospectos con #44; cotizaciones = issue nuevo).
 
 **Code-review COMPLETO.** Findings verificados (orden de severidad):
 1. **XSS almacenado (CONFIRMADO, arreglar antes de merge):** `buildProspectoCardHtml` (prospectos-logica.js:52-53) interpola nombre/empresa/ciudad/canal/celular sin escapar y app.js lo asigna a innerHTML (lista + pr-existente:1811). Mismo patrón crudo existe en cards de historial/seguimiento (app.js:1598/1655) pero ahí el dato lo captura el vendedor; el prospecto es dato de terceros (y #47 importará CSVs externos). Fix: helper `escapeHtml` en prospectos-logica.js con test.
