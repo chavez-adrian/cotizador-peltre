@@ -45,25 +45,124 @@ export function validarProspectoBody(body) {
   return null;
 }
 
-const ETAPA_LABELS = { nuevo: 'Nuevo' };
+const ETAPA_LABELS = {
+  nuevo: 'Nuevo',
+  contactado: 'Contactado',
+  calificado: 'Calificado',
+  cotizado: 'Cotizado',
+  no_util: 'No útil',
+};
+
+// Salida a No util -- motivo obligatorio de catalogo cerrado (CONTEXT.md,
+// Etapas de prospecto).
+export const MOTIVOS_NO_UTIL = ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta'];
+
+// Avance manual de etapa: un paso a la vez. La transicion a cotizado es
+// automatica (issue #46), nunca manual.
+export function siguienteEtapa(etapa) {
+  if (etapa === 'nuevo') return 'contactado';
+  if (etapa === 'contactado') return 'calificado';
+  return null;
+}
+
+// Valida una transicion de etapa solicitada por el vendedor. La reusa el
+// servidor (rechazo server-side) y el frontend.
+export function validarTransicion(actual, nueva, motivo) {
+  if (nueva === 'no_util') {
+    if (actual === 'no_util') return 'El prospecto ya salió a No útil';
+    if (!MOTIVOS_NO_UTIL.includes(motivo)) return 'El motivo de No útil es obligatorio (catálogo cerrado)';
+    return null;
+  }
+  if (!nueva || nueva !== siguienteEtapa(actual)) {
+    return `Transición inválida: ${ETAPA_LABELS[actual] || actual} → ${ETAPA_LABELS[nueva] || nueva}`;
+  }
+  return null;
+}
+
+// Link wa.me en un tap: solo digitos, el celular del prospecto ya trae codigo de pais.
+export function buildWaLink(celular) {
+  const digitos = String(celular || '').replace(/\D/g, '');
+  return digitos ? `https://wa.me/${digitos}` : null;
+}
+
+function fechaCorta(fecha) {
+  return new Date(fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function etiquetaEvento(e) {
+  if (e.tipo === 'captura') return `Capturado por ${escapeHtml(e.vendedor)}`;
+  if (e.tipo === 'etapa') return `${escapeHtml(ETAPA_LABELS[e.de] || e.de)} → ${escapeHtml(ETAPA_LABELS[e.a] || e.a)} · ${escapeHtml(e.vendedor)}`;
+  if (e.tipo === 'toque') return `Toque · ${escapeHtml(e.vendedor)}`;
+  if (e.tipo === 'no_util') return `Salida a No útil (${escapeHtml(e.motivo)}) · ${escapeHtml(e.vendedor)}`;
+  return escapeHtml(`${e.tipo} · ${e.vendedor}`);
+}
+
+// Historial completo del prospecto en orden cronologico: la captura misma
+// mas los eventos registrados (cambios de etapa, toques, salida a No util).
+export function buildHistorialHtml(p) {
+  const eventos = [{ tipo: 'captura', fecha: p.fecha, vendedor: p.vendedor }, ...(p.eventos || [])]
+    .slice().sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  return eventos.map(e =>
+    `<div class="cot-card-meta">${fechaCorta(e.fecha)} · ${etiquetaEvento(e)}</div>`
+  ).join('');
+}
 
 // Tarjeta de un prospecto en la lista (mismo formato visual que las cards de
 // historial/seguimiento de app.js). Funcion pura sin DOM: testeable en Node.
+// Las acciones llaman funciones globales de app.js (mismo patron que las
+// cards de seguimiento: onclick + window.fn).
 export function buildProspectoCardHtml(p) {
   const d = p.data || {};
-  const fecha = new Date(p.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
   const empresa = d.empresa ? ` · ${escapeHtml(d.empresa)}` : '';
+  const activo = p.etapa !== 'no_util' && p.etapa !== 'cotizado';
+  const sig = siguienteEtapa(p.etapa);
+  const wa = buildWaLink(p.celular);
+  const acciones = [];
+  if (wa) acciones.push(`<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`);
+  if (activo && sig) {
+    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="avanzarEtapaProspecto(${p.id}, '${sig}')">→ ${ETAPA_LABELS[sig]}</button>`);
+  }
+  if (activo) {
+    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">+ Toque</button>`);
+    acciones.push(
+      `<select id="pr-motivo-${p.id}" class="btn-sm"><option value="">Motivo...</option>` +
+      MOTIVOS_NO_UTIL.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('') +
+      `</select><button class="btn btn-secondary btn-sm" onclick="marcarNoUtilProspecto(${p.id})">No útil</button>`
+    );
+  }
+  acciones.push(`<button class="btn btn-secondary btn-sm" onclick="toggleHistorialProspecto(${p.id})">Historial</button>`);
   return `
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
           <div class="cot-card-cliente">${escapeHtml(p.nombre)}${empresa}</div>
-          <div class="cot-card-meta">${fecha} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
+          <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
         </div>
         <div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>
       </div>
+      <div class="cot-card-actions">${acciones.join(' ')}</div>
+      <div id="pr-historial-${p.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #eee">${buildHistorialHtml(p)}</div>
     </div>
   `;
+}
+
+// Conteo de motivos de No util acumulados (vista admin).
+export function contarMotivosNoUtil(prospectos) {
+  const conteo = {};
+  for (const p of prospectos || []) {
+    for (const e of p.eventos || []) {
+      if (e.tipo === 'no_util' && e.motivo) conteo[e.motivo] = (conteo[e.motivo] || 0) + 1;
+    }
+  }
+  return conteo;
+}
+
+export function buildMotivosNoUtilHtml(conteo) {
+  const entradas = Object.entries(conteo || {}).sort((a, b) => b[1] - a[1]);
+  if (!entradas.length) return '<div class="cot-card-meta">Sin salidas a No útil registradas.</div>';
+  return entradas.map(([motivo, n]) =>
+    `<div class="cot-card-meta">${escapeHtml(motivo)}: ${n}</div>`
+  ).join('');
 }
 
 // Mapeo de la respuesta 409 de POST /api/prospectos: si el body trae el
