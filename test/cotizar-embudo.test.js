@@ -148,3 +148,135 @@ test('E5: celular desconocido clasifica libre, tambien cuando Operam falla (best
     .set('Authorization', `Bearer ${MEMO_TOKEN}`);
   assert.deepEqual(caido.body, { tipo: 'libre' });
 });
+
+// === Hook al crear cotizacion (los tres caminos del issue #46) ===
+
+function bodyCotizacion(telefono, extra = {}) {
+  return {
+    fecha: '2026-06-11', vigencia: '2026-07-11', tier: 'Mayoreo',
+    cliente: {
+      razonSocial: 'LAURA SA DE CV', nombreCorto: 'Laura', telefono,
+      municipio: 'Puebla', estado: 'Puebla',
+    },
+    items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 10, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 1000, iva: 160, total: 1160, notas: [],
+    ...extra,
+  };
+}
+
+async function cotizarHtml(token, body) {
+  return supertest(app).post('/api/cotizacion/html')
+    .set('Authorization', `Bearer ${token}`).send(body);
+}
+
+test('H1: cotizar con el celular de un prospecto lo pasa a Cotizado con el evento de la cotizacion', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 55 1234 5678'));
+  assert.equal(res.status, 200);
+  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  assert.ok(cotizacionId > 0);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'cotizado');
+  const ev = p.eventos.find(e => e.tipo === 'cotizacion');
+  assert.ok(ev, 'evento de cotizacion registrado');
+  assert.equal(ev.cotizacion_id, cotizacionId);
+  assert.equal(ev.de, 'nuevo');
+  assert.equal(ev.vendedor, 'Memo');
+  assert.ok(ev.fecha);
+});
+
+test('H2: la transicion automatica a Cotizado aplica aunque el prospecto sea de otro vendedor', async () => {
+  writeProspectos([prospectoDe('Memo', 'contactado')]);
+  const res = await cotizarHtml(ANA_TOKEN, bodyCotizacion('+52 5512345678'));
+  assert.equal(res.status, 200);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'cotizado');
+  const ev = p.eventos.find(e => e.tipo === 'cotizacion');
+  assert.equal(ev.de, 'contactado');
+  assert.equal(ev.vendedor, 'Ana');
+});
+
+test('H3: cotizar revive un prospecto en No util y registra de donde venia', async () => {
+  writeProspectos([prospectoDe('Memo', 'no_util')]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
+  assert.equal(res.status, 200);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'cotizado');
+  const ev = p.eventos.find(e => e.tipo === 'cotizacion');
+  assert.equal(ev.de, 'no_util');
+});
+
+test('H4: cotizar a un prospecto ya Cotizado solo registra el evento nuevo (idempotente)', async () => {
+  writeProspectos([prospectoDe('Memo', 'cotizado', {
+    eventos: [{ tipo: 'cotizacion', cotizacion_id: 5, de: 'nuevo', fecha: '2026-06-10T10:00:00Z', vendedor: 'Memo' }],
+  })]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
+  assert.equal(res.status, 200);
+  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'cotizado');
+  const eventos = p.eventos.filter(e => e.tipo === 'cotizacion');
+  assert.equal(eventos.length, 2);
+  assert.equal(eventos[1].cotizacion_id, cotizacionId);
+  assert.equal(p.eventos.filter(e => e.tipo === 'etapa').length, 0);
+});
+
+test('H5: celular libre con canal valido auto-crea el prospecto en Cotizado con datos de la cotizacion', async () => {
+  writeProspectos([]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'Instagram' }));
+  assert.equal(res.status, 200);
+  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  const prospectos = readProspectos();
+  assert.equal(prospectos.length, 1);
+  const p = prospectos[0];
+  assert.equal(p.etapa, 'cotizado');
+  assert.equal(p.nombre, 'Laura');
+  assert.equal(p.ciudad, 'Puebla');
+  assert.equal(p.canal, 'Instagram');
+  assert.equal(p.vendedor, 'Memo');
+  assert.equal(p.celular, '+52 5599999999');
+  const ev = p.eventos.find(e => e.tipo === 'cotizacion');
+  assert.ok(ev, 'la cotizacion que lo origino queda en su historial');
+  assert.equal(ev.cotizacion_id, cotizacionId);
+});
+
+test('H6: celular libre sin canal en el body no auto-crea prospecto (API directa)', async () => {
+  writeProspectos([]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5599999999'));
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('H7: canal fuera del catalogo cerrado no auto-crea prospecto', async () => {
+  writeProspectos([]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'TikTok' }));
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('H8: celular de un cliente Operam no crea prospecto aunque venga canal', async () => {
+  writeProspectos([]);
+  mockListadoClientes([CLIENTE_OPERAM]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678', { canal: 'WhatsApp' }));
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('H9: un fallo del hook jamas rompe la generacion de la cotizacion', async () => {
+  writeFileSync(PROSPECTOS_PATH, '{corrupto');
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678', { canal: 'WhatsApp' }));
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Laura|LAURA/);
+  writeProspectos([]);
+});
+
+test('H10: el hook tambien corre al generar PDF', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  const res = await supertest(app).post('/api/cotizacion/pdf')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send(bodyCotizacion('+52 5512345678'));
+  assert.equal(res.status, 200);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'cotizado');
+  assert.ok(p.eventos.some(e => e.tipo === 'cotizacion'));
+});

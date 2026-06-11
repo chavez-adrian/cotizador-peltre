@@ -17,7 +17,7 @@ import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
-import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, CANALES, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -133,6 +133,51 @@ function validarTelefonoCotizacion(req, res) {
   return true;
 }
 
+// Hook de embudo al crear cotizacion (issue #46, CONTEXT.md "Etapas de
+// prospecto"): celular de prospecto -> pasa a Cotizado (revive desde No util;
+// si ya esta en Cotizado solo acumula el evento); celular libre con canal del
+// catalogo -> auto-crea el prospecto directo en Cotizado con los datos de la
+// cotizacion (sin canal no se crea: el frontend siempre lo manda, la API
+// directa sin canal no genera prospecto); celular de cliente Operam -> nada.
+// Best effort: un fallo aqui jamas rompe la generacion.
+async function pasarProspectoACotizado(p, cotizacionId, vendedor) {
+  const evento = {
+    tipo: 'cotizacion', cotizacion_id: cotizacionId, de: p.etapa,
+    fecha: new Date().toISOString(), vendedor,
+  };
+  if (p.etapa === 'cotizado') await prospectosStore.registrarEvento(p.id, evento);
+  else await prospectosStore.cambiarEtapa(p.id, 'cotizado', evento);
+}
+
+async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
+  try {
+    const celular = data.cliente?.telefono;
+    // Sin canal valido no puede haber auto-creacion: basta buscar el prospecto
+    // local, sin consultar el indice de Operam (el caso comun: cotizar a
+    // clientes existentes no toca Operam).
+    if (!CANALES.includes(data.canal)) {
+      const p = await prospectosStore.buscarPorCelular(celular);
+      if (p) await pasarProspectoACotizado(p, cotizacionId, vendedor);
+      return;
+    }
+    const clasificacion = await clasificarCelular(celular);
+    if (clasificacion.tipo === 'prospecto') {
+      return pasarProspectoACotizado(clasificacion.prospecto, cotizacionId, vendedor);
+    }
+    if (clasificacion.tipo === 'cliente') return;
+    const fecha = new Date().toISOString();
+    const id = await prospectosStore.crear({
+      fecha, vendedor, celular: celular.trim(),
+      nombre: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
+      ciudad: data.cliente?.municipio || data.cliente?.estado || '',
+      canal: data.canal, etapa: 'cotizado', data: {},
+    });
+    await prospectosStore.registrarEvento(id, { tipo: 'cotizacion', cotizacion_id: cotizacionId, fecha, vendedor });
+  } catch (err) {
+    console.warn('[prospectos] hook de cotizacion fallo:', err.message);
+  }
+}
+
 app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
   if (!validarTelefonoCotizacion(req, res)) return;
   try {
@@ -144,6 +189,7 @@ app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
       totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
       total: data.total || 0, tier: data.tier || '', data,
     });
+    await actualizarEmbudoPorCotizacion(data, id, req.user.name);
     const pdfBuffer = await generateQuotePDF(data);
     writeFileSync(join(PDFS_DIR, `cot_${id}.pdf`), pdfBuffer);
     res.set({
@@ -169,6 +215,7 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
       totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
       total: data.total || 0, tier: data.tier || '', data,
     });
+    await actualizarEmbudoPorCotizacion(data, id, req.user.name);
     const incluirFotos = !!data.incluirFotos;
     data.id = id;
     const html = generateQuoteHTML(data, { incluirFotos });
