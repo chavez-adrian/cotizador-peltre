@@ -16,7 +16,7 @@ import { calcularCola, telefonoValido } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
-import { matchCliente } from './lib/indice-telefonos.js';
+import { clasificarCelular } from './lib/clasificar-celular.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -280,15 +280,16 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   const body = req.body || {};
   const error = validarProspectoBody(body);
   if (error) return res.status(400).json({ error });
-  const existente = await prospectosStore.buscarPorCelular(body.celular);
-  if (existente) return respuestaProspectoExistente(res, existente, req.user);
   // Guardrail best effort (CONTEXT.md, Prospecto): un cliente con alta en Operam
-  // nunca vuelve a ser prospecto. matchCliente nunca lanza: si el indice falla o
-  // no esta listo, la captura procede.
-  const clienteOperam = await matchCliente(body.celular);
-  if (clienteOperam) {
+  // nunca vuelve a ser prospecto. Si el indice falla o no esta listo, la
+  // clasificacion cae a libre y la captura procede.
+  const clasificacion = await clasificarCelular(body.celular);
+  if (clasificacion.tipo === 'prospecto') {
+    return respuestaProspectoExistente(res, clasificacion.prospecto, req.user);
+  }
+  if (clasificacion.tipo === 'cliente') {
     return res.status(409).json({
-      error: `Este celular es del cliente ${clienteOperam.cust_name} - cotizale como cliente, no se crea prospecto`,
+      error: `Este celular es del cliente ${clasificacion.cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
     });
   }
   const data = {};
