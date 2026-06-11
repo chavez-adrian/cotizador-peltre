@@ -1,8 +1,10 @@
 # PROGRESS — módulo de prospectos (actualizado 2026-06-10, sesión 3)
 
-## ⚠️ ESTADO INMEDIATO (sesión 3, por si corta el límite — resetea 5:40pm)
+## ESTADO (sesión 3, cierre)
 
-**Issue #41 IMPLEMENTADO, pendiente cierre.** Rama `issue-41-captura-prospectos` pusheada (5 commits: df9b305, e5546a4, 964654f, 683542a, 5796e51), suite 300/300 verde verificada por el orquestador. NO mergeada a main (Render auto-despliega main). Issue #41 ABIERTO a propósito.
+**Issue #41 TERMINADO: demo aprobada por Adrián, mergeado a main (deploy automático a Render) y cerrado.** Incluyó además: ajustes de demo (banderas país, opcionales visibles, labels, temperatura en estrellas), corrección del catálogo de SEGMENTOS a los ids internos reales de Operam (verificados contra 440 clientes de producción; la clave 000-1000 de la UI NO es el id de la API), y corrección de los 2 únicos clientes afectados por el catálogo inventado (456 vía API, 457 vía UI por quirk de Operam — PUT responde 200 e ignora segmento_id en algunos registros, documentado en CLAUDE.md).
+
+**Siguiente:** elegir entre #42 (frenos de frontera), #43 (etapas/toques/No útil) o #47 (CSV feria) — los tres desbloqueados. Recomendación: #43 (ruta crítica hacia #44). Esperar confirmación de Adrián. Idea pendiente de Adrián sin issue aún: kanban/lista estilo Bitrix para prospectos (va con #43/#44) y para cotizaciones (alcance nuevo, requeriría issue propio).
 
 **Code-review COMPLETO.** Findings verificados (orden de severidad):
 1. **XSS almacenado (CONFIRMADO, arreglar antes de merge):** `buildProspectoCardHtml` (prospectos-logica.js:52-53) interpola nombre/empresa/ciudad/canal/celular sin escapar y app.js lo asigna a innerHTML (lista + pr-existente:1811). Mismo patrón crudo existe en cards de historial/seguimiento (app.js:1598/1655) pero ahí el dato lo captura el vendedor; el prospecto es dato de terceros (y #47 importará CSVs externos). Fix: helper `escapeHtml` en prospectos-logica.js con test.
