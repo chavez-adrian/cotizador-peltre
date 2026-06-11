@@ -17,6 +17,8 @@ import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
+import { importarProspectosFeria } from './lib/importar-prospectos.js';
+import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -481,6 +483,65 @@ app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, re
 app.get('/api/admin/prospectos/no-util', authMiddleware, adminMiddleware, async (req, res) => {
   const todos = await prospectosStore.listar();
   res.json(contarMotivosNoUtil(todos));
+});
+
+// Importacion de prospectos de Feria/Expo (issue #47, CONTEXT.md "Captura de
+// prospecto"): la plataforma del evento entrega un XLSX de gafetes escaneados
+// que se importa deduplicando por celular. La fecha del prospecto es el
+// momento de la importacion (la del escaneo queda en data.escaneado): con la
+// fecha original toda la cola naceria en rojo con horas habiles vencidas. El
+// indice de clientes Operam se refresca UNA VEZ antes del loop (leccion de
+// #46, no por fila); si falla, las filas se importan igual (best effort,
+// mismo trade-off que la captura manual).
+app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, upload.single('archivo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibio archivo' });
+  const vendedores = readJSON('vendedores.json') || [];
+  const vendedorDefault = req.body?.vendedor || req.user.name;
+  let parseo;
+  try {
+    parseo = importarProspectosFeria(req.file.buffer, { vendedores, vendedorDefault });
+  } catch (err) {
+    return res.status(400).json({ error: 'Error procesando archivo: ' + err.message });
+  }
+  const descartados = [...parseo.descartados];
+  let indiceListo = false;
+  try {
+    await refrescarIndice();
+    indiceListo = true;
+  } catch (err) {
+    console.warn('[prospectos] importacion sin indice Operam:', err.message);
+  }
+  const fecha = new Date().toISOString();
+  const porVendedor = {};
+  let importados = 0;
+  for (const p of parseo.listos) {
+    const existente = await prospectosStore.buscarPorCelular(p.celular);
+    if (existente) {
+      descartados.push({ fila: p.fila, nombre: p.nombre, motivo: 'ya es prospecto' });
+      continue;
+    }
+    if (indiceListo) {
+      const cliente = await matchCliente(p.celular);
+      if (cliente) {
+        descartados.push({ fila: p.fila, nombre: p.nombre, motivo: 'ya es cliente' });
+        continue;
+      }
+    }
+    try {
+      await prospectosStore.crear({
+        fecha, vendedor: p.vendedor, celular: p.celular, nombre: p.nombre,
+        ciudad: p.ciudad, canal: p.canal, data: p.data,
+      });
+    } catch (e) {
+      if (e.code !== '23505') throw e;
+      descartados.push({ fila: p.fila, nombre: p.nombre, motivo: 'ya es prospecto' });
+      continue;
+    }
+    importados++;
+    porVendedor[p.vendedor] = (porVendedor[p.vendedor] || 0) + 1;
+  }
+  descartados.sort((a, b) => a.fila - b.fila);
+  res.json({ importados, descartados, porVendedor });
 });
 
 app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('excel'), (req, res) => {
