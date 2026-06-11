@@ -1776,8 +1776,17 @@ function leerFormularioProspecto() {
     segmento_id: val('pr-segmento'),
     piezas_estimadas: val('pr-piezas'),
     correo: val('pr-correo'),
-    temperatura: val('pr-temperatura'),
+    temperatura: document.getElementById('pr-temperatura')?.dataset.valor,
     notas: val('pr-notas'),
+  });
+}
+
+function pintarTemperatura(valor) {
+  const cont = document.getElementById('pr-temperatura');
+  if (!cont) return;
+  cont.dataset.valor = valor || '';
+  cont.querySelectorAll('.pr-estrella').forEach(s => {
+    s.textContent = Number(s.dataset.v) <= Number(valor || 0) ? '★' : '☆';
   });
 }
 
@@ -1789,10 +1798,11 @@ function mostrarErrorProspecto(msg) {
 
 function limpiarFormularioProspecto() {
   ['pr-celular', 'pr-nombre', 'pr-ciudad', 'pr-empresa', 'pr-correo', 'pr-notas',
-    'pr-canal', 'pr-segmento', 'pr-piezas', 'pr-temperatura'].forEach(id => {
+    'pr-canal', 'pr-segmento', 'pr-piezas'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  pintarTemperatura('');
   mostrarErrorProspecto(null);
   document.getElementById('pr-existente').innerHTML = '';
 }
@@ -2019,6 +2029,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     form.style.display = form.style.display === 'none' ? 'block' : 'none';
   });
   document.getElementById('btn-guardar-prospecto').addEventListener('click', guardarProspecto);
+  document.getElementById('pr-temperatura').addEventListener('click', e => {
+    const v = e.target.dataset ? e.target.dataset.v : null;
+    if (!v) return;
+    const actual = document.getElementById('pr-temperatura').dataset.valor;
+    pintarTemperatura(v === actual ? '' : v);
+  });
 
   // Selector de pais: adapta formulario para clientes extranjeros
   const clPaisEl = document.getElementById('cl-pais');

@@ -790,11 +790,11 @@
       <div class="form-group">
         <label>Celular (con codigo de pais) *</label>
         <div style="display:flex;gap:6px;align-items:center">
-          <select id="pr-celular-code" style="flex:0 0 80px">
-            <option value="+52">+52</option>
-            <option value="+1">+1</option>
-            <option value="+1-CA">+1 CA</option>
-            <option value="+">Otro</option>
+          <select id="pr-celular-code" style="flex:0 0 110px">
+            <option value="+52">&#127474;&#127485; +52</option>
+            <option value="+1">&#127482;&#127480; +1</option>
+            <option value="+1-CA">&#127464;&#127462; +1</option>
+            <option value="+">&#127760; Otro</option>
           </select>
           <input type="tel" id="pr-celular" placeholder="55 1234 5678" style="flex:1">
         </div>
@@ -811,42 +811,35 @@
         <label>Canal de origen *</label>
         <select id="pr-canal"></select>
       </div>
-      <details style="margin-bottom:12px">
-        <summary style="cursor:pointer;font-size:13px;color:var(--text-light)">Mas datos (opcional)</summary>
-        <div style="margin-top:8px">
-          <div class="form-group">
-            <label>Empresa</label>
-            <input type="text" id="pr-empresa">
-          </div>
-          <div class="form-group">
-            <label>Tipo de cliente</label>
-            <select id="pr-segmento"></select>
-          </div>
-          <div class="form-group">
-            <label>Piezas estimadas</label>
-            <select id="pr-piezas"></select>
-          </div>
-          <div class="form-group">
-            <label>Correo</label>
-            <input type="email" id="pr-correo">
-          </div>
-          <div class="form-group">
-            <label>Temperatura (1-5)</label>
-            <select id="pr-temperatura">
-              <option value="">--</option>
-              <option value="1">1 - Frio</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5 - Caliente</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Notas</label>
-            <textarea id="pr-notas" rows="2"></textarea>
+      <div style="margin:16px 0 12px;padding-top:12px;border-top:1px solid #ddd">
+        <div style="font-size:13px;font-weight:600;color:var(--text-light);margin-bottom:8px">Datos opcionales &mdash; ayudan a calificar mejor, pero no detienen la captura</div>
+        <div class="form-group">
+          <label>Nombre de la empresa/proyecto (opcional)</label>
+          <input type="text" id="pr-empresa">
+        </div>
+        <div class="form-group">
+          <label>Segmento de cliente (opcional)</label>
+          <select id="pr-segmento"></select>
+        </div>
+        <div class="form-group">
+          <label>Piezas totales estimadas (opcional)</label>
+          <select id="pr-piezas"></select>
+        </div>
+        <div class="form-group">
+          <label>Correo (opcional)</label>
+          <input type="email" id="pr-correo">
+        </div>
+        <div class="form-group">
+          <label>Temperatura (opcional)</label>
+          <div id="pr-temperatura" data-valor="" style="font-size:24px;letter-spacing:4px;cursor:pointer;user-select:none">
+            <span class="pr-estrella" data-v="1">&#9734;</span><span class="pr-estrella" data-v="2">&#9734;</span><span class="pr-estrella" data-v="3">&#9734;</span><span class="pr-estrella" data-v="4">&#9734;</span><span class="pr-estrella" data-v="5">&#9734;</span>
           </div>
         </div>
-      </details>
+        <div class="form-group">
+          <label>Notas (opcional)</label>
+          <textarea id="pr-notas" rows="2"></textarea>
+        </div>
+      </div>
       <div id="pr-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
       <div id="pr-existente" style="margin-bottom:8px"></div>
       <button class="btn btn-primary" id="btn-guardar-prospecto">Guardar prospecto</button>
