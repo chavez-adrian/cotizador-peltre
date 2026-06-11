@@ -17,6 +17,9 @@ import {
   buildProspectoExistenteHtml,
   buildMotivosNoUtilHtml,
   buildColaProspectosHtml,
+  necesitaCanal,
+  validarCanalCotizacion,
+  buildCanalModalHtml,
 } from './prospectos-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -901,6 +904,46 @@ function editarItemGuiado(skuKey) {
 
 window.editarItemGuiado = editarItemGuiado;
 
+// === CANAL DE COTIZACION (issue #46) ===
+// Antes de generar, se pre-clasifica el celular: solo si es libre (ni
+// prospecto ni cliente Operam) se pide el canal de origen para que el
+// servidor auto-cree el prospecto en Cotizado. Cancelar genera la
+// cotizacion sin crear prospecto. Best effort: si la clasificacion falla,
+// se genera sin friccion.
+function pedirCanalCotizacion() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+    overlay.innerHTML = buildCanalModalHtml();
+    document.body.appendChild(overlay);
+    const cerrar = canal => { overlay.remove(); resolve(canal); };
+    document.getElementById('canal-cot-confirmar').addEventListener('click', () => {
+      const canal = document.getElementById('canal-cot-select').value;
+      const error = validarCanalCotizacion(canal);
+      if (error) {
+        const errEl = document.getElementById('canal-cot-error');
+        errEl.textContent = error;
+        errEl.style.display = 'block';
+        return;
+      }
+      cerrar(canal);
+    });
+    document.getElementById('canal-cot-cancelar').addEventListener('click', () => cerrar(null));
+  });
+}
+
+async function canalParaCotizacion(telefono) {
+  try {
+    const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(telefono)}`);
+    if (!res.ok) return null;
+    const clasificacion = await res.json();
+    if (!necesitaCanal(clasificacion)) return null;
+    return await pedirCanalCotizacion();
+  } catch (e) {
+    return null;
+  }
+}
+
 // === PDF GENERATION ===
 async function generatePDF() {
   const telErr = validarTelefonosCotizacion();
@@ -990,6 +1033,9 @@ async function generatePDF() {
     };
 
     body.incluirFotos = document.getElementById('incluir-fotos')?.checked || false;
+
+    const canal = await canalParaCotizacion(body.cliente.telefono);
+    if (canal) body.canal = canal;
 
     const res = await api('/api/cotizacion/pdf', {
       method: 'POST',
@@ -1099,6 +1145,9 @@ async function generateHTML() {
       total,
       notas,
     };
+
+    const canal = await canalParaCotizacion(body.cliente.telefono);
+    if (canal) body.canal = canal;
 
     const res = await api('/api/cotizacion/html', { method: 'POST', body });
 

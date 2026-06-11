@@ -226,6 +226,36 @@ export function buildProspectoExistenteHtml(resp) {
   return buildProspectoCardHtml(resp.prospecto);
 }
 
+// Modal de canal antes de generar cotizacion (issue #46): solo se pide canal
+// cuando el celular es libre (ni prospecto ni cliente Operam); con canal el
+// servidor auto-crea el prospecto directo en Cotizado.
+
+export function necesitaCanal(clasificacion) {
+  return !!clasificacion && clasificacion.tipo === 'libre';
+}
+
+export function validarCanalCotizacion(canal) {
+  return CANALES.includes(canal) ? null : 'El canal de origen es obligatorio (catálogo cerrado)';
+}
+
+export function buildCanalModalHtml() {
+  return `
+    <div style="background:#fff;border-radius:8px;padding:20px;max-width:340px;width:90%">
+      <div style="font-weight:600;margin-bottom:4px">Celular nuevo: ¿de qué canal llegó?</div>
+      <div class="cot-card-meta" style="margin-bottom:8px">Se creará el prospecto en Cotizado con los datos de la cotización. Cancelar genera la cotización sin crear prospecto.</div>
+      <select id="canal-cot-select" style="width:100%;margin-bottom:8px">
+        <option value="">-- Selecciona el canal --</option>
+        ${CANALES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+      </select>
+      <div id="canal-cot-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" id="canal-cot-cancelar">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="canal-cot-confirmar">Confirmar</button>
+      </div>
+    </div>
+  `;
+}
+
 // Arma el body de POST /api/prospectos desde los campos del formulario de captura.
 // Los opcionales vacios no viajan.
 export function buildProspectoPayload(campos) {

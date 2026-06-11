@@ -5,12 +5,14 @@ const assert = require('node:assert/strict');
 let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
   buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
   validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml,
-  buildEsperaBadgeHtml, buildColaProspectosHtml;
+  buildEsperaBadgeHtml, buildColaProspectosHtml, necesitaCanal, validarCanalCotizacion,
+  buildCanalModalHtml;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
     validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil,
-    buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml } = await import('../prospectos-logica.js'));
+    buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml,
+    necesitaCanal, validarCanalCotizacion, buildCanalModalHtml } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -322,6 +324,39 @@ test('C4: buildColaProspectosHtml sugiere No util tras 3 toques con confirmacion
   assert.match(html, /3 toques/);
   const sinSugerencia = buildColaProspectosHtml([{ ...ITEM_COLA, toques: 2 }]);
   assert.equal(sinSugerencia.includes('sugerirNoUtilProspecto'), false);
+});
+
+// === Issue #46: modal de canal antes de generar cotizacion ===
+
+test('M1: necesitaCanal solo cuando la clasificacion es libre', () => {
+  assert.equal(necesitaCanal({ tipo: 'libre' }), true);
+  assert.equal(necesitaCanal({ tipo: 'prospecto' }), false);
+  assert.equal(necesitaCanal({ tipo: 'cliente', cust_name: 'X' }), false);
+  assert.equal(necesitaCanal(null), false);
+  assert.equal(necesitaCanal(undefined), false);
+});
+
+test('M2: validarCanalCotizacion acepta el catalogo cerrado y rechaza lo demas', () => {
+  for (const canal of CANALES) {
+    assert.equal(validarCanalCotizacion(canal), null);
+  }
+  assert.match(validarCanalCotizacion(''), /canal/i);
+  assert.match(validarCanalCotizacion('TikTok'), /canal/i);
+  assert.match(validarCanalCotizacion(undefined), /canal/i);
+});
+
+test('M3: buildCanalModalHtml trae el select obligatorio con todos los canales y Confirmar/Cancelar', () => {
+  const html = buildCanalModalHtml();
+  assert.match(html, /id="canal-cot-select"/);
+  for (const canal of CANALES) {
+    assert.ok(html.includes(`>${canal}<`) || html.includes(canal), `falta canal ${canal}`);
+  }
+  assert.match(html, /option value=""/);
+  assert.match(html, /id="canal-cot-confirmar"/);
+  assert.match(html, /id="canal-cot-cancelar"/);
+  assert.match(html, /id="canal-cot-error"/);
+  assert.match(html, /Cancelar/);
+  assert.match(html, /Confirmar/);
 });
 
 // === Issue #46: etiqueta de prospecto convertido en cliente ===
