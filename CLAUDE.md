@@ -83,6 +83,8 @@ Dos niveles:
 
 `server.js` carga `.env` manualmente sin dotenv (patron en lineas 24-30).
 
+> Quirk de Operam (2026-06-10): `PUT /api/v3/sales/customers/{id}` puede responder 200 e ignorar `segmento_id` silenciosamente en algunos registros (cliente 457 lo ignoro 3 veces; cliente 456 lo acepto a la primera). Si una actualizacion de segmento "no pega", verificar releyendo y corregir en la UI de Operam.
+
 ### Tests
 
 **Backend** (`test/`): ES modules, `node:test` + `supertest`. El app se importa sin `listen()` gracias al guard `isMain` en `server.js`.
