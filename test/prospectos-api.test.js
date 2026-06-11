@@ -344,6 +344,148 @@ test('admin consulta los motivos de No util acumulados; vendedor no', async () =
   assert.equal(sinToken.status, 401);
 });
 
+// === Issue #45: reunion diagnostico ===
+
+const FUTURO = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+const PASADO = new Date(Date.now() - 3600 * 1000).toISOString();
+
+test('agendar reunion con fecha futura registra el evento y saca al prospecto de la cola', async () => {
+  writeProspectos([prospectoDe('Memo', 'contactado')]);
+  const res = await supertest(app).post('/api/prospectos/1/reunion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ fecha: FUTURO });
+  assert.equal(res.status, 200);
+  const ev = readProspectos()[0].eventos[0];
+  assert.equal(ev.tipo, 'reunion');
+  assert.equal(ev.fecha_reunion, FUTURO);
+  assert.equal(ev.vendedor, 'Memo');
+  assert.ok(ev.fecha);
+  const cola = await supertest(app).get('/api/prospectos/cola')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.deepEqual(cola.body, []);
+});
+
+test('agendar reunion rechaza fecha pasada, ausente o invalida con 400 y no registra nada', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  for (const body of [{ fecha: PASADO }, {}, { fecha: 'no-es-fecha' }]) {
+    const res = await supertest(app).post('/api/prospectos/1/reunion')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(body);
+    assert.equal(res.status, 400, `body ${JSON.stringify(body)} debio rechazarse`);
+  }
+  assert.equal(readProspectos()[0].eventos.length, 0);
+});
+
+test('reunion respeta visibilidad: otro vendedor 403, inexistente 404, sin token 401', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  const ana = await supertest(app).post('/api/prospectos/1/reunion')
+    .set('Authorization', `Bearer ${ANA_TOKEN}`).send({ fecha: FUTURO });
+  assert.equal(ana.status, 403);
+  const noExiste = await supertest(app).post('/api/prospectos/9/reunion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ fecha: FUTURO });
+  assert.equal(noExiste.status, 404);
+  const sinToken = await supertest(app).post('/api/prospectos/1/reunion').send({ fecha: FUTURO });
+  assert.equal(sinToken.status, 401);
+  const resultado = await supertest(app).post('/api/prospectos/1/reunion-resultado').send({ resultado: 'calificado' });
+  assert.equal(resultado.status, 401);
+  assert.equal(readProspectos()[0].eventos.length, 0);
+});
+
+function reunionPasada() {
+  return { tipo: 'reunion', fecha_reunion: PASADO, fecha: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), vendedor: 'Memo' };
+}
+
+test('con reunion pasada el prospecto reaparece en la cola al frente con reunionVencida', async () => {
+  writeProspectos([
+    prospectoDe('Memo', 'nuevo', { id: 1, eventos: [reunionPasada()] }),
+    prospectoDe('Memo', 'contactado', { id: 2, celular: '+52 5522222222', celular10: '5522222222', fecha: '2026-06-01T00:00:00Z' }),
+  ]);
+  const cola = await supertest(app).get('/api/prospectos/cola')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(cola.status, 200);
+  assert.deepEqual(cola.body.map(i => i.id), [1, 2]);
+  assert.equal(cola.body[0].reunionVencida, true);
+  assert.equal(cola.body[0].fechaReunion, PASADO);
+  assert.equal(cola.body[1].reunionVencida, false);
+});
+
+test('resultado calificado salta directo a calificado solo con reunion pendiente', async () => {
+  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [reunionPasada()] })]);
+  const res = await supertest(app).post('/api/prospectos/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
+  assert.equal(res.status, 200);
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.etapa, 'calificado');
+  const ev = guardado.eventos.find(e => e.tipo === 'etapa');
+  assert.equal(ev.de, 'nuevo');
+  assert.equal(ev.a, 'calificado');
+  assert.equal(ev.vendedor, 'Memo');
+  assert.ok(ev.fecha);
+  // y el PATCH manual sigue rechazando el salto nuevo -> calificado
+  writeProspectos([prospectoDe('Memo', 'nuevo')]);
+  const manual = await supertest(app).patch('/api/prospectos/1/etapa')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'calificado' });
+  assert.equal(manual.status, 400);
+});
+
+test('resultado no_util exige motivo del catalogo y registra la salida', async () => {
+  writeProspectos([prospectoDe('Memo', 'contactado', { eventos: [reunionPasada()] })]);
+  const sinMotivo = await supertest(app).post('/api/prospectos/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util' });
+  assert.equal(sinMotivo.status, 400);
+  const motivoInvalido = await supertest(app).post('/api/prospectos/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util', motivo: 'no me gusto' });
+  assert.equal(motivoInvalido.status, 400);
+  assert.equal(readProspectos()[0].etapa, 'contactado');
+  const ok = await supertest(app).post('/api/prospectos/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util', motivo: 'sin presupuesto' });
+  assert.equal(ok.status, 200);
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.etapa, 'no_util');
+  const ev = guardado.eventos.find(e => e.tipo === 'no_util');
+  assert.equal(ev.motivo, 'sin presupuesto');
+  assert.equal(ev.vendedor, 'Memo');
+});
+
+test('reunion-resultado rechaza sin reunion pendiente o con resultado invalido', async () => {
+  // sin reunion
+  writeProspectos([prospectoDe('Memo')]);
+  const sinReunion = await supertest(app).post('/api/prospectos/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
+  assert.equal(sinReunion.status, 400);
+  // reunion futura: aun no hay resultado que registrar
+  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [
+    { tipo: 'reunion', fecha_reunion: FUTURO, fecha: new Date().toISOString(), vendedor: 'Memo' },
+  ] })]);
+  const futura = await supertest(app).post('/api/prospectos/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
+  assert.equal(futura.status, 400);
+  // reunion pasada pero con evento posterior (la condicion se limpio)
+  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [
+    reunionPasada(),
+    { tipo: 'toque', fecha: new Date().toISOString(), vendedor: 'Memo' },
+  ] })]);
+  const limpiada = await supertest(app).post('/api/prospectos/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
+  assert.equal(limpiada.status, 400);
+  // resultado fuera de catalogo
+  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [reunionPasada()] })]);
+  const invalido = await supertest(app).post('/api/prospectos/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'cotizado' });
+  assert.equal(invalido.status, 400);
+  assert.equal(readProspectos()[0].etapa, 'nuevo');
+});
+
+test('re-agendar registra otro evento reunion y la ultima manda en la cola', async () => {
+  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [reunionPasada()] })]);
+  const res = await supertest(app).post('/api/prospectos/1/reunion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ fecha: FUTURO });
+  assert.equal(res.status, 200);
+  const eventos = readProspectos()[0].eventos.filter(e => e.tipo === 'reunion');
+  assert.equal(eventos.length, 2);
+  const cola = await supertest(app).get('/api/prospectos/cola')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.deepEqual(cola.body, []);
+});
+
 // === Issue #42: frenos de frontera ===
 
 const CLIENTE_OPERAM = {

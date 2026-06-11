@@ -17,7 +17,7 @@ import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
-import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, CANALES, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -430,6 +430,52 @@ app.post('/api/prospectos/:id/toques', authMiddleware, async (req, res) => {
     tipo: 'toque', fecha: new Date().toISOString(), vendedor: req.user.name,
   });
   res.json({ ok: true, eventos });
+});
+
+// Reunion diagnostico (issue #45, CONTEXT.md "Captura de prospecto"): actividad
+// con fecha, NO una etapa. Agendar registra el evento; re-agendar agrega otro
+// (la ultima manda). La supresion de cadencia vive en el motor de la cola.
+app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
+  const p = await prospectoOperable(req, res);
+  if (!p) return;
+  const { fecha } = req.body || {};
+  const f = fecha ? new Date(fecha) : null;
+  if (!f || isNaN(f)) return res.status(400).json({ error: 'La fecha de la reunión es obligatoria' });
+  if (f <= new Date()) return res.status(400).json({ error: 'La fecha de la reunión debe ser futura' });
+  await prospectosStore.registrarEvento(p.id, {
+    tipo: 'reunion', fecha_reunion: f.toISOString(),
+    fecha: new Date().toISOString(), vendedor: req.user.name,
+  });
+  res.json({ ok: true });
+});
+
+// Resultado de la reunion pasada: avanzar a Calificado (el salto desde
+// nuevo/contactado es valido SOLO como resultado de reunion -- cambiarEtapa
+// directo, igual que la transicion automatica de #46) o salir a No util con
+// motivo del catalogo.
+app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, res) => {
+  const { resultado, motivo } = req.body || {};
+  const p = await prospectoOperable(req, res);
+  if (!p) return;
+  if (!reunionPendienteResultado(p, new Date())) {
+    return res.status(400).json({ error: 'No hay reunión pendiente de resultado' });
+  }
+  if (resultado === 'calificado') {
+    await prospectosStore.cambiarEtapa(p.id, 'calificado', {
+      tipo: 'etapa', de: p.etapa, a: 'calificado', fecha: new Date().toISOString(), vendedor: req.user.name,
+    });
+    return res.json({ ok: true, etapa: 'calificado' });
+  }
+  if (resultado === 'no_util') {
+    if (!MOTIVOS_NO_UTIL.includes(motivo)) {
+      return res.status(400).json({ error: 'El motivo de No útil es obligatorio (catálogo cerrado)' });
+    }
+    await prospectosStore.cambiarEtapa(p.id, 'no_util', {
+      tipo: 'no_util', motivo, fecha: new Date().toISOString(), vendedor: req.user.name,
+    });
+    return res.json({ ok: true, etapa: 'no_util' });
+  }
+  res.status(400).json({ error: 'Resultado inválido: calificado o no_util' });
 });
 
 app.get('/api/admin/prospectos/no-util', authMiddleware, adminMiddleware, async (req, res) => {
