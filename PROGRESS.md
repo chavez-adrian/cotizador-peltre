@@ -2,7 +2,9 @@
 
 ## ESTADO (sesión 3, cierre)
 
-**#41, #43 y #44 TERMINADOS: demo aprobada, mergeados a main (deploy automático a Render) y cerrados.**
+**#41, #42, #43 y #44 TERMINADOS: demo aprobada, mergeados a main (deploy automático a Render) y cerrados.**
+
+#42: 409 con dueño en colisión entre vendedores (sin exponer datos); `lib/indice-telefonos.js` — índice celular→cliente Operam construido del listado paginado (contacts[].phone/phone2 + branches[].phone vienen inline; 5 requests por refresh, cache 1 h, timeout 5 s, stale-on-error, best effort: su fallo NUNCA bloquea la captura); liga prospecto→cliente al completar alta (evento tipo 'cliente' + data.cliente_id, fire-and-forget patrón Dropbox). Fix del review: normalización de teléfono unificada en `ultimos10` (recorta ext/coma — el índice y el store DEBEN coincidir o la liga falla en silencio). Suite 380/380.
 
 #44: módulo `horas-habiles` (L–V 10–18, sáb 10–14, festivos MX 2026-2027, evaluado en America/Mexico_City vía Intl — Render corre en UTC), motor `seguimiento-prospectos` (cola por urgencia relativa al umbral del canal; mensajería rojo 2 h / resto 8 h, ámbar = mitad; sugerencia No útil a los 3 toques, confirmada por el vendedor), ruta GET /api/prospectos/cola, sección "Qué toca hoy" + etiqueta semáforo en cards. Suite 360/360.
 
@@ -16,7 +18,9 @@
 
 **Notas de diseño para #45/#46:** extraer un builder de eventos cuando se agreguen tipos nuevos (hoy inline en la ruta PATCH etapa); el flag `activo` de la card excluye `cotizado` — #45 lo tendrá que revisar.
 
-**Siguiente:** ruta crítica completa (#41→#43→#44). Quedan #42 (frenos de frontera), #45 (reunión diagnóstico), #47 (CSV feria) y #48 (Bitrix, HITL). Esperar confirmación de Adrián para el siguiente. Idea de Adrián sin issue aún: kanban estilo Bitrix (prospectos y cotizaciones).
+**Deuda nueva del review #42:** con Operam caído y cache vacío cada captura espera el timeout de 5 s (backoff pendiente); clasificación de celular (propio/ajeno/cliente/libre) inline en la ruta — extraer al llegar #46; tres formas de 409 con literal duplicado; mocks de fetch duplicados entre archivos de test. **Punto abierto registrado en #46 (decisión de Adrián):** prospecto convertido en cliente sin cotizar sigue en la cola — resolverlo al implementar #46 (comentario en el issue).
+
+**Siguiente:** quedan #45 (reunión diagnóstico), #46 (cotizar actualiza el embudo — YA desbloqueado), #47 (CSV feria) y #48 (Bitrix, HITL). Esperar confirmación de Adrián. Idea de Adrián sin issue aún: kanban estilo Bitrix (prospectos y cotizaciones).
 
 **Code-review COMPLETO.** Findings verificados (orden de severidad):
 1. **XSS almacenado (CONFIRMADO, arreglar antes de merge):** `buildProspectoCardHtml` (prospectos-logica.js:52-53) interpola nombre/empresa/ciudad/canal/celular sin escapar y app.js lo asigna a innerHTML (lista + pr-existente:1811). Mismo patrón crudo existe en cards de historial/seguimiento (app.js:1598/1655) pero ahí el dato lo captura el vendedor; el prospecto es dato de terceros (y #47 importará CSVs externos). Fix: helper `escapeHtml` en prospectos-logica.js con test.
