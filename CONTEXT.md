@@ -10,6 +10,10 @@ Un cliente con alta en Operam nunca vuelve a ser prospecto: si el celular captur
 
 Nuevo (capturado, sin atender) → Contactado (hubo primera conversación) → Calificado (se conoce tipo de cliente, piezas aproximadas y es mayoreo viable) → Cotizado. La transición a Cotizado es automática al ligarse una cotización al celular del prospecto; en ese momento el seguimiento de la cotización releva al seguimiento del prospecto — una persona nunca tiene dos colas activas. Si se crea una cotización con un celular que no corresponde a ningún prospecto ni cliente de Operam, el sistema crea el prospecto automáticamente en etapa Cotizado, pidiendo al vendedor únicamente el canal de origen; el resto de los datos se toma de la cotización. Así el embudo queda completo sin perder el canal real. Salida en cualquier etapa: No útil, con motivo obligatorio de catálogo corto (menudeo, fuera de zona, sin presupuesto, spam, sin respuesta). El prospecto se asigna al vendedor que lo captura; un proceso de asignación manual o automático es evolución futura.
 
+## Prospecto convertido en cliente
+
+Un prospecto cuyo celular se dio de alta como cliente en Operam queda ligado a ese cliente, pero la conversión NO lo saca del seguimiento: permanece en la cola con la etiqueta "Ya es cliente — falta cotizar" hasta que una cotización lo pase a Cotizado (decisión 2026-06-11: la conversión real del negocio es la venta, no el alta; la cola vigila la fuga de altas que nunca cotizan).
+
 ## Visibilidad de prospectos
 
 Cada vendedor ve únicamente sus propios prospectos; el rol admin ve todos — el mismo modelo de visibilidad que las cotizaciones. Cuando un vendedor intenta capturar un celular que ya es prospecto de otro vendedor, el sistema rechaza la captura indicando quién lo atiende ("este celular ya lo atiende [vendedor]"), sin exponer más datos del prospecto; la coordinación entre vendedores ocurre fuera del sistema.
