@@ -4,12 +4,13 @@ const assert = require('node:assert/strict');
 
 let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
   buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
-  validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml;
+  validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml,
+  buildEsperaBadgeHtml, buildColaProspectosHtml;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
     validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil,
-    buildMotivosNoUtilHtml } = await import('../prospectos-logica.js'));
+    buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -246,4 +247,58 @@ test('T15: buildMotivosNoUtilHtml pinta el conteo ordenado de mayor a menor y to
   assert.match(html, /1/);
   assert.match(buildMotivosNoUtilHtml({}), /Sin salidas/i);
   assert.match(buildMotivosNoUtilHtml(null), /Sin salidas/i);
+});
+
+// === Issue #44: cola de seguimiento y etiqueta de espera ===
+
+const ITEM_COLA = {
+  id: 3, nombre: 'Laura', celular: '+52 5512345678', ciudad: 'Puebla',
+  canal: 'WhatsApp', etapa: 'nuevo', vendedor: 'Memo',
+  horas: 2, toques: 0, color: 'rojo', sugerirNoUtil: false,
+};
+
+test('C1: buildEsperaBadgeHtml pinta horas habiles sin respuesta con el color del semaforo', () => {
+  const html = buildEsperaBadgeHtml(ITEM_COLA);
+  assert.match(html, /2 h hábiles sin respuesta/);
+  assert.match(html, /espera-rojo/);
+  assert.match(buildEsperaBadgeHtml({ ...ITEM_COLA, horas: 0.5, color: 'verde' }), /espera-verde/);
+  assert.match(buildEsperaBadgeHtml({ ...ITEM_COLA, horas: 1.25, color: 'ambar' }), /1\.3 h/);
+  assert.match(buildEsperaBadgeHtml({ ...ITEM_COLA, horas: 1.25, color: 'ambar' }), /espera-ambar/);
+});
+
+test('C2: buildProspectoCardHtml incluye la etiqueta de espera cuando recibe el item de la cola', () => {
+  const con = buildProspectoCardHtml(PROSPECTO, ITEM_COLA);
+  assert.match(con, /espera-rojo/);
+  assert.match(con, /sin respuesta/);
+  const sin = buildProspectoCardHtml(PROSPECTO);
+  assert.equal(sin.includes('espera-'), false);
+});
+
+test('C3: buildColaProspectosHtml pinta los items en el orden recibido con badge, wa.me y toque', () => {
+  const html = buildColaProspectosHtml([
+    ITEM_COLA,
+    { ...ITEM_COLA, id: 4, nombre: 'Pedro', celular: '+52 5599999999', canal: 'Correo', etapa: 'contactado', horas: 5, color: 'ambar' },
+  ]);
+  assert.ok(html.indexOf('Laura') < html.indexOf('Pedro'));
+  assert.match(html, /espera-rojo/);
+  assert.match(html, /espera-ambar/);
+  assert.match(html, /https:\/\/wa\.me\/525512345678/);
+  assert.match(html, /registrarToqueProspecto\(3\)/);
+  assert.match(html, /Contactado/);
+});
+
+test('C4: buildColaProspectosHtml sugiere No util tras 3 toques con confirmacion del vendedor', () => {
+  const html = buildColaProspectosHtml([{ ...ITEM_COLA, toques: 3, sugerirNoUtil: true }]);
+  assert.match(html, /sugerirNoUtilProspecto\(3\)/);
+  assert.match(html, /3 toques/);
+  const sinSugerencia = buildColaProspectosHtml([{ ...ITEM_COLA, toques: 2 }]);
+  assert.equal(sinSugerencia.includes('sugerirNoUtilProspecto'), false);
+});
+
+test('C5: buildColaProspectosHtml tolera cola vacia y escapa datos de usuario', () => {
+  assert.match(buildColaProspectosHtml([]), /Nada pendiente/i);
+  assert.match(buildColaProspectosHtml(null), /Nada pendiente/i);
+  const html = buildColaProspectosHtml([{ ...ITEM_COLA, nombre: '<img src=x>' }]);
+  assert.equal(html.includes('<img'), false);
+  assert.match(html, /&lt;img/);
 });

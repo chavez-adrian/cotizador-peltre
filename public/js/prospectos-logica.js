@@ -107,11 +107,19 @@ export function buildHistorialHtml(p) {
   ).join('');
 }
 
+// Etiqueta de espera (issue #44): horas habiles sin respuesta con el color
+// del semaforo que calculo el motor (lib/seguimiento-prospectos.js).
+export function buildEsperaBadgeHtml(item) {
+  const h = Math.round((item.horas || 0) * 10) / 10;
+  return `<span class="espera-badge espera-${escapeHtml(item.color)}">${h} h hábiles sin respuesta</span>`;
+}
+
 // Tarjeta de un prospecto en la lista (mismo formato visual que las cards de
 // historial/seguimiento de app.js). Funcion pura sin DOM: testeable en Node.
 // Las acciones llaman funciones globales de app.js (mismo patron que las
-// cards de seguimiento: onclick + window.fn).
-export function buildProspectoCardHtml(p) {
+// cards de seguimiento: onclick + window.fn). colaItem es el item del
+// prospecto en GET /api/prospectos/cola, si esta en la cola (issue #44).
+export function buildProspectoCardHtml(p, colaItem) {
   const d = p.data || {};
   const empresa = d.empresa ? ` · ${escapeHtml(d.empresa)}` : '';
   const activo = p.etapa !== 'no_util' && p.etapa !== 'cotizado';
@@ -137,6 +145,7 @@ export function buildProspectoCardHtml(p) {
         <div>
           <div class="cot-card-cliente">${escapeHtml(p.nombre)}${empresa}</div>
           <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
+          ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
         </div>
         <div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>
       </div>
@@ -144,6 +153,35 @@ export function buildProspectoCardHtml(p) {
       <div id="pr-historial-${p.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #eee">${buildHistorialHtml(p)}</div>
     </div>
   `;
+}
+
+// Seccion "Que toca hoy" (issue #44): la cola llega ya ordenada por urgencia
+// desde GET /api/prospectos/cola. La sugerencia de No util tras 3 toques abre
+// la confirmacion del vendedor (sugerirNoUtilProspecto en app.js) -- nunca se
+// aplica sola.
+export function buildColaProspectosHtml(cola) {
+  if (!cola || !cola.length) return '<div class="cot-card-meta">Nada pendiente por ahora.</div>';
+  return cola.map(item => {
+    const wa = buildWaLink(item.celular);
+    const acciones = [];
+    if (wa) acciones.push(`<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`);
+    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${item.id})">+ Toque</button>`);
+    if (item.sugerirNoUtil) {
+      acciones.push(`<button class="btn btn-secondary btn-sm" onclick="sugerirNoUtilProspecto(${item.id})">${item.toques} toques sin respuesta · ¿No útil?</button>`);
+    }
+    return `
+      <div class="cot-card">
+        <div class="cot-card-header">
+          <div>
+            <div class="cot-card-cliente">${escapeHtml(item.nombre)}</div>
+            <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[item.etapa] || item.etapa)} · ${escapeHtml(item.canal)} · ${escapeHtml(item.ciudad)} · ${escapeHtml(item.celular)}</div>
+            <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}</div>
+          </div>
+        </div>
+        <div class="cot-card-actions">${acciones.join(' ')}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 // Conteo de motivos de No util acumulados (vista admin).

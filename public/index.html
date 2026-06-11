@@ -846,7 +846,15 @@
     </div>
 
     <div id="prospectos-loading" style="color:var(--light);font-size:13px;margin-top:16px">Cargando...</div>
-    <div id="prospectos-list" style="margin-top:16px"></div>
+
+    <!-- Cola de seguimiento (issue #44): que toca hoy, ordenado por urgencia -->
+    <div id="prospectos-cola-seccion" style="display:none;margin-top:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--text-light);margin-bottom:8px">Qu&eacute; toca hoy</div>
+      <div id="prospectos-cola"></div>
+    </div>
+
+    <div style="display:none;font-size:13px;font-weight:600;color:var(--text-light);margin-top:24px;margin-bottom:8px" id="prospectos-list-titulo">Todos los prospectos</div>
+    <div id="prospectos-list"></div>
 
     <!-- Solo admin (issue #43): motivos de No &uacute;til acumulados -->
     <div id="prospectos-no-util-admin" style="display:none;margin-top:24px;padding-top:12px;border-top:1px solid #ddd">

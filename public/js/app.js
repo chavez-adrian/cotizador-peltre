@@ -16,6 +16,7 @@ import {
   buildProspectoCardHtml,
   buildProspectoExistenteHtml,
   buildMotivosNoUtilHtml,
+  buildColaProspectosHtml,
 } from './prospectos-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1762,17 +1763,28 @@ async function cargarMotivosNoUtil() {
 async function cargarListaProspectos() {
   const loadingEl = document.getElementById('prospectos-loading');
   const listEl = document.getElementById('prospectos-list');
+  const colaSeccion = document.getElementById('prospectos-cola-seccion');
+  const tituloEl = document.getElementById('prospectos-list-titulo');
   loadingEl.style.display = 'block';
   listEl.innerHTML = '';
   try {
-    const res = await api('/api/prospectos');
+    const [res, resCola] = await Promise.all([
+      api('/api/prospectos'),
+      api('/api/prospectos/cola'),
+    ]);
     const prospectos = await res.json();
+    const cola = resCola.ok ? await resCola.json() : [];
     loadingEl.style.display = 'none';
+    colaSeccion.style.display = prospectos.length ? 'block' : 'none';
+    tituloEl.style.display = prospectos.length ? 'block' : 'none';
+    document.getElementById('prospectos-cola').innerHTML = buildColaProspectosHtml(cola);
     if (!prospectos.length) {
       listEl.innerHTML = '<div class="empty-state"><p>Sin prospectos capturados.</p></div>';
       return;
     }
-    listEl.innerHTML = prospectos.slice().reverse().map(buildProspectoCardHtml).join('');
+    const colaPorId = new Map(cola.map(i => [i.id, i]));
+    listEl.innerHTML = prospectos.slice().reverse()
+      .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id))).join('');
   } catch (e) {
     loadingEl.textContent = 'Error cargando prospectos';
   }
@@ -1890,10 +1902,18 @@ function toggleHistorialProspecto(id) {
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
+// Sugerencia de la cola tras 3 toques (issue #44): el vendedor confirma,
+// nunca se aplica sola.
+function sugerirNoUtilProspecto(id) {
+  if (!confirm('3 toques sin respuesta. ¿Marcar este prospecto como No útil (sin respuesta)?')) return;
+  patchEtapaProspecto(id, { etapa: 'no_util', motivo: 'sin respuesta' }, 'No se pudo registrar la salida');
+}
+
 window.avanzarEtapaProspecto = avanzarEtapaProspecto;
 window.marcarNoUtilProspecto = marcarNoUtilProspecto;
 window.registrarToqueProspecto = registrarToqueProspecto;
 window.toggleHistorialProspecto = toggleHistorialProspecto;
+window.sugerirNoUtilProspecto = sugerirNoUtilProspecto;
 
 async function cargarCotizacion(id) {
   try {

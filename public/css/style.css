@@ -952,6 +952,20 @@ body {
   vertical-align: middle;
 }
 
+/* Etiqueta de espera de prospectos (issue #44) */
+.espera-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 7px;
+  vertical-align: middle;
+}
+.espera-verde { background: #27ae60; }
+.espera-ambar { background: #e67e22; }
+.espera-rojo { background: #c0392b; }
+
 /* === RESPONSIVE === */
 @media (max-width: 480px) {
   .form-row { grid-template-columns: 1fr; }
