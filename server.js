@@ -15,7 +15,7 @@ import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido } from './lib/seguimiento.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
-import { validarProspectoBody, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -303,6 +303,50 @@ app.get('/api/prospectos', authMiddleware, async (req, res) => {
     ? todos
     : todos.filter(p => p.vendedor === req.user.name);
   res.json(visibles);
+});
+
+// Trabajar el prospecto (issue #43): etapas manuales, toques y salida a No util.
+// Misma visibilidad que el PATCH de estado de cotizaciones: el vendedor solo
+// opera sus prospectos, admin todos.
+
+async function prospectoOperable(req, res) {
+  const p = await prospectosStore.obtener(parseInt(req.params.id));
+  if (!p) {
+    res.status(404).json({ error: 'No encontrado' });
+    return null;
+  }
+  if (req.user.role !== 'admin' && p.vendedor !== req.user.name) {
+    res.status(403).json({ error: 'Sin acceso' });
+    return null;
+  }
+  return p;
+}
+
+app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
+  const { etapa, motivo } = req.body || {};
+  const p = await prospectoOperable(req, res);
+  if (!p) return;
+  const error = validarTransicion(p.etapa, etapa, motivo);
+  if (error) return res.status(400).json({ error });
+  const evento = etapa === 'no_util'
+    ? { tipo: 'no_util', motivo, fecha: new Date().toISOString(), vendedor: req.user.name }
+    : { tipo: 'etapa', de: p.etapa, a: etapa, fecha: new Date().toISOString(), vendedor: req.user.name };
+  await prospectosStore.cambiarEtapa(p.id, etapa, evento);
+  res.json({ ok: true, etapa });
+});
+
+app.post('/api/prospectos/:id/toques', authMiddleware, async (req, res) => {
+  const p = await prospectoOperable(req, res);
+  if (!p) return;
+  const eventos = await prospectosStore.registrarEvento(p.id, {
+    tipo: 'toque', fecha: new Date().toISOString(), vendedor: req.user.name,
+  });
+  res.json({ ok: true, eventos });
+});
+
+app.get('/api/admin/prospectos/no-util', authMiddleware, adminMiddleware, async (req, res) => {
+  const todos = await prospectosStore.listar();
+  res.json(contarMotivosNoUtil(todos));
 });
 
 app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('excel'), (req, res) => {
