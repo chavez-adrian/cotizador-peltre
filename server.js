@@ -16,6 +16,7 @@ import { calcularCola, telefonoValido } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
+import { matchCliente } from './lib/indice-telefonos.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -263,16 +264,31 @@ app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
 
 // --- Prospectos (issue #41, ADR-0004) ---
 
+// 409 de colision de captura: el duplicado propio (o visto por admin) muestra el
+// prospecto; el de otro vendedor solo dice quien lo atiende, sin mas datos
+// (CONTEXT.md, Visibilidad de prospectos).
+function respuestaProspectoExistente(res, existente, user) {
+  const visible = user.role === 'admin' || existente.vendedor === user.name;
+  return res.status(409).json(
+    visible
+      ? { error: 'Este celular ya es un prospecto', prospecto: existente }
+      : { error: `Este celular ya lo atiende ${existente.vendedor}` }
+  );
+}
+
 app.post('/api/prospectos', authMiddleware, async (req, res) => {
   const body = req.body || {};
   const error = validarProspectoBody(body);
   if (error) return res.status(400).json({ error });
   const existente = await prospectosStore.buscarPorCelular(body.celular);
-  if (existente) {
-    const visible = req.user.role === 'admin' || existente.vendedor === req.user.name;
+  if (existente) return respuestaProspectoExistente(res, existente, req.user);
+  // Guardrail best effort (CONTEXT.md, Prospecto): un cliente con alta en Operam
+  // nunca vuelve a ser prospecto. matchCliente nunca lanza: si el indice falla o
+  // no esta listo, la captura procede.
+  const clienteOperam = await matchCliente(body.celular);
+  if (clienteOperam) {
     return res.status(409).json({
-      error: 'Este celular ya es un prospecto',
-      ...(visible ? { prospecto: existente } : {}),
+      error: `Este celular es del cliente ${clienteOperam.cust_name} - cotizale como cliente, no se crea prospecto`,
     });
   }
   const data = {};
@@ -289,11 +305,8 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   } catch (e) {
     if (e.code !== '23505') throw e;
     const dup = await prospectosStore.buscarPorCelular(body.celular);
-    const verlo = dup && (req.user.role === 'admin' || dup.vendedor === req.user.name);
-    return res.status(409).json({
-      error: 'Este celular ya es un prospecto',
-      ...(verlo ? { prospecto: dup } : {}),
-    });
+    if (dup) return respuestaProspectoExistente(res, dup, req.user);
+    return res.status(409).json({ error: 'Este celular ya es un prospecto' });
   }
   res.status(201).json({ ok: true, id });
 });
@@ -605,6 +618,24 @@ function logCliente(rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, erro
   ).catch(err => console.error('[db] Error insertando log:', err.message));
 }
 
+// Conversion prospecto -> cliente (issue #42): si el telefono del cliente recien
+// dado de alta matchea un prospecto por ultimos 10 digitos, el prospecto queda
+// ligado al cliente y la conversion aparece en su historial. Fire-and-forget,
+// mismo patron que Dropbox: un fallo del store jamas rompe el alta.
+async function ligarProspectoACliente(cliente, customerId, vendedor) {
+  const telefonos = [cliente.phone, cliente.celular_nota, cliente.entrega?.phone].filter(Boolean);
+  for (const tel of telefonos) {
+    const p = await prospectosStore.buscarPorCelular(tel);
+    if (p) {
+      await prospectosStore.ligarCliente(p.id, customerId, {
+        tipo: 'cliente', cliente_id: customerId, nombre: cliente.CustName || '',
+        fecha: new Date().toISOString(), vendedor,
+      });
+      return;
+    }
+  }
+}
+
 app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   const cliente = req.body;
   if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
@@ -697,6 +728,8 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     }
 
     logCliente(cliente.tax_id, cliente.CustName, 'creado', customer_id, fuente, null, null);
+    ligarProspectoACliente(cliente, customer_id, req.user.name)
+      .catch(err => console.error('[prospectos] No se pudo ligar prospecto a cliente:', err.message));
     res.json({ ok: true, customer_id, branch_id, duplicado: false, steps });
   } catch (err) {
     logCliente(cliente.tax_id, cliente.CustName, 'error', null, fuente, null, err.message);

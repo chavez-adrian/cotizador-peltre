@@ -1,4 +1,4 @@
-import { test, before, after } from 'node:test';
+import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
@@ -19,6 +19,8 @@ if (existsSync(envPath)) {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app } = await import('../server.js');
+const { resetIndice } = await import('../lib/indice-telefonos.js');
+const { resetSession } = await import('../lib/operam-client.js');
 const ADMIN_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 const MEMO_TOKEN = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
 const ANA_TOKEN = jwt.sign({ id: 8, name: 'Ana', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
@@ -31,15 +33,42 @@ function writeProspectos(data) {
   writeFileSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
 }
 
+// Ningun test de este archivo pega a Operam real: fetch queda bloqueado por
+// defecto (el guardrail del indice es best effort y procede ante el fallo) y
+// cada test que necesita Operam instala sus propios handlers.
+const originalFetch = globalThis.fetch;
+const fetchBloqueado = async (url) => { throw new Error('fetch sin mock en tests: ' + url); };
+
+function mockOperamFetch(handlers) {
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    for (const [pat, fn] of Object.entries(handlers)) {
+      if (u.includes(pat)) return fn(u, opts);
+    }
+    throw new Error('Unmocked fetch: ' + u);
+  };
+}
+
+function jsonResponse(data, status = 200) {
+  return { ok: status < 400, status, json: async () => data };
+}
+
 let savedProspectos;
 let existia;
 before(() => {
   existia = existsSync(PROSPECTOS_PATH);
   savedProspectos = readProspectos();
+  globalThis.fetch = fetchBloqueado;
 });
 after(() => {
   if (existia) writeProspectos(savedProspectos);
   else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
+  globalThis.fetch = originalFetch;
+});
+beforeEach(() => {
+  globalThis.fetch = fetchBloqueado;
+  resetIndice();
+  resetSession();
 });
 
 const CAPTURA = {
@@ -106,15 +135,15 @@ test('capturar un celular que ya es prospecto propio responde 409 mostrando el e
   assert.equal(readProspectos().length, 1);
 });
 
-test('capturar un celular que ya es prospecto de otro vendedor responde 409 sin exponer datos', async () => {
+test('capturar un celular que ya es prospecto de otro vendedor responde 409 con el dueno y sin exponer datos', async () => {
   writeProspectos([]);
   await supertest(app).post('/api/prospectos')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA);
   const res = await supertest(app).post('/api/prospectos')
     .set('Authorization', `Bearer ${ANA_TOKEN}`).send(CAPTURA);
   assert.equal(res.status, 409);
-  assert.ok(res.body.error);
-  assert.equal('prospecto' in res.body, false);
+  assert.equal(res.body.error, 'Este celular ya lo atiende Memo');
+  assert.deepEqual(Object.keys(res.body), ['error']);
   assert.equal(readProspectos().length, 1);
 });
 
@@ -313,4 +342,109 @@ test('admin consulta los motivos de No util acumulados; vendedor no', async () =
   assert.equal(memo.status, 403);
   const sinToken = await supertest(app).get('/api/admin/prospectos/no-util');
   assert.equal(sinToken.status, 401);
+});
+
+// === Issue #42: frenos de frontera ===
+
+const CLIENTE_OPERAM = {
+  customer_id: '77', CustName: 'HOTELERA DEL SUR SA DE CV',
+  contacts: [{ phone: '+52 1 55 1234 5678 ext.4', phone2: '' }],
+  branches: [{ branch_code: '7', phone: '' }],
+};
+
+function mockListadoClientes(clientes) {
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: clientes.length, data: clientes }),
+  });
+}
+
+test('capturar un celular que matchea un cliente Operam responde 409 con aviso y no crea prospecto', async () => {
+  writeProspectos([]);
+  mockListadoClientes([CLIENTE_OPERAM]);
+  const res = await supertest(app).post('/api/prospectos')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA);
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /HOTELERA DEL SUR SA DE CV/);
+  assert.match(res.body.error, /como cliente/i);
+  assert.equal('prospecto' in res.body, false);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('si Operam falla, la captura procede sin bloquear (best effort)', async () => {
+  writeProspectos([]);
+  const res = await supertest(app).post('/api/prospectos')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA);
+  assert.equal(res.status, 201);
+  assert.equal(readProspectos().length, 1);
+});
+
+test('si el celular no matchea ningun cliente Operam, la captura procede', async () => {
+  writeProspectos([]);
+  mockListadoClientes([{ ...CLIENTE_OPERAM, contacts: [{ phone: '+52 5599887766' }] }]);
+  const res = await supertest(app).post('/api/prospectos')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA);
+  assert.equal(res.status, 201);
+  assert.equal(readProspectos().length, 1);
+});
+
+function mockAltaCliente() {
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/188': () => jsonResponse({ result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 88 });
+      if (u.includes('/88')) return jsonResponse({ data: [{ branches: [{ branch_code: 188 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+}
+
+async function esperarEventoCliente() {
+  for (let i = 0; i < 50; i++) {
+    const p = readProspectos()[0];
+    if (p && (p.eventos || []).some(e => e.tipo === 'cliente')) return p;
+    await new Promise(r => setTimeout(r, 10));
+  }
+  return readProspectos()[0];
+}
+
+test('al completar el alta de cliente, el prospecto con ese celular queda ligado al cliente', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  mockAltaCliente();
+  const res = await supertest(app).post('/api/crear-cliente')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', phone: '55 1234 5678', entrega: {} });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  const guardado = await esperarEventoCliente();
+  const ev = guardado.eventos.find(e => e.tipo === 'cliente');
+  assert.ok(ev, 'evento de conversion registrado');
+  assert.equal(ev.cliente_id, 88);
+  assert.equal(ev.nombre, 'LAURA SA DE CV');
+  assert.equal(ev.vendedor, 'Memo');
+  assert.ok(ev.fecha);
+  assert.equal(guardado.data.cliente_id, 88);
+});
+
+test('la conversion tambien liga por celular_nota cuando el payload no trae phone', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  mockAltaCliente();
+  const res = await supertest(app).post('/api/crear-cliente')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', celular_nota: '+52 55 1234 5678', entrega: {} });
+  assert.equal(res.status, 200);
+  const guardado = await esperarEventoCliente();
+  assert.ok(guardado.eventos.some(e => e.tipo === 'cliente' && e.cliente_id === 88));
+});
+
+test('un fallo del store de prospectos no rompe el alta de cliente (fire-and-forget)', async () => {
+  writeFileSync(PROSPECTOS_PATH, '{corrupto');
+  mockAltaCliente();
+  const res = await supertest(app).post('/api/crear-cliente')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', phone: '55 1234 5678', entrega: {} });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  writeProspectos([]);
 });
