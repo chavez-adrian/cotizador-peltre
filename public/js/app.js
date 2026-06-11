@@ -1913,9 +1913,11 @@ function renderProspectos() {
   listEl.style.display = esTablero ? 'none' : 'block';
   const colaPorId = new Map(ultimaColaProspectos.map(i => [i.id, i]));
   if (esTablero) {
+    listEl.innerHTML = '';
     tableroEl.innerHTML = buildTableroHtml(ultimosProspectos, colaPorId);
     return;
   }
+  tableroEl.innerHTML = '';
   if (!ultimosProspectos.length) {
     listEl.innerHTML = '<div class="empty-state"><p>Sin prospectos capturados.</p></div>';
     return;
