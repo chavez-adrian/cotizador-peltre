@@ -260,7 +260,7 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
     estado: estado || 'abierta',
-    telefono: telefonoWa(data?.cliente?.telefono),
+    telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
     hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),
   })));

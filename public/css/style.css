@@ -768,7 +768,8 @@ body {
 .cot-card-meta { font-size: 11px; color: var(--text-light); }
 .cot-card-total { font-size: 17px; font-weight: 700; color: var(--primary-dark); text-align: right; font-variant-numeric: tabular-nums; }
 .cot-card-tier { font-size: 11px; color: var(--primary); }
-.cot-card-actions { display: flex; gap: 6px; margin-top: 8px; }
+.cot-card-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.cot-card-actions input, .cot-card-actions select { max-width: 100%; }
 
 /* === RESUMEN ITEMS EDITABLE === */
 .cart-item-qty {

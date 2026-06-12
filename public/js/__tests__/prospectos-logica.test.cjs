@@ -603,6 +603,13 @@ test('K12b: en la card compacta el avance de etapa queda visible, no tras el tog
   assert.ok(avance > -1 && avance < ocultas);
 });
 
+test('K15: la card de un prospecto activo trae el boton Cotizar', () => {
+  const html = buildProspectoCardHtml(PROSPECTO, null, new Date(), { compacta: true });
+  assert.match(html, /cotizarProspecto\(3\)/);
+  const noUtil = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'no_util' });
+  assert.equal(noUtil.includes('cotizarProspecto'), false);
+});
+
 test('K14: una columna vacia del tablero pinta su estado vacio', () => {
   const html = buildTableroHtml([]);
   assert.match(html, /tablero-col-vacia/);

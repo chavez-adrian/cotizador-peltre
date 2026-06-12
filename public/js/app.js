@@ -17,7 +17,6 @@ import {
   buildProspectoExistenteHtml,
   buildMotivosNoUtilHtml,
   buildColaProspectosHtml,
-  buildReporteImportacionHtml,
   escapeHtml,
   necesitaCanal,
   validarCanalCotizacion,
@@ -1792,6 +1791,7 @@ async function marcarSeguimiento(id, paso) {
   try {
     const res = await api(`/api/seguimiento/${id}`, { method: 'POST', body: { paso } });
     if (!res.ok) { alert('No se pudo registrar el seguimiento'); return; }
+    avisoTablero('Registrado: la tarjeta sale de la cola y volverá cuando toque el siguiente paso (día 2 → 7 → 21 → vencida)');
     showSeguimiento();
   } catch (e) {
     alert('Error de conexion');
@@ -1859,60 +1859,6 @@ function showProspectos() {
   poblarSelectoresProspecto();
   cargarListaProspectos();
   cargarMotivosNoUtil();
-  cargarImportarFeria();
-}
-
-// Importacion de Feria/Expo (issue #47): solo admin. El select trae el
-// vendedor default para las filas cuyo Dispositivo no matchea a nadie.
-async function cargarImportarFeria() {
-  const cont = document.getElementById('prospectos-importar-admin');
-  if (!cont || state.user.role !== 'admin') return;
-  cont.style.display = 'block';
-  const sel = document.getElementById('imp-feria-vendedor');
-  if (sel.options.length) return;
-  try {
-    const res = await api('/api/vendedores');
-    if (!res.ok) return;
-    const vendedores = await res.json();
-    sel.innerHTML = vendedores.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
-    sel.value = state.user.name;
-  } catch (e) { /* sin red no hay importacion */ }
-}
-
-async function importarFeria() {
-  const errEl = document.getElementById('imp-feria-error');
-  const reporteEl = document.getElementById('imp-feria-reporte');
-  const input = document.getElementById('imp-feria-archivo');
-  const btn = document.getElementById('btn-importar-feria');
-  errEl.style.display = 'none';
-  reporteEl.innerHTML = '';
-  const archivo = input.files[0];
-  if (!archivo) {
-    errEl.textContent = 'Selecciona el archivo XLSX de la expo';
-    errEl.style.display = 'block';
-    return;
-  }
-  const fd = new FormData();
-  fd.append('archivo', archivo);
-  fd.append('vendedor', document.getElementById('imp-feria-vendedor').value);
-  btn.disabled = true;
-  try {
-    const res = await api('/api/admin/prospectos/importar', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) {
-      errEl.textContent = data.error || 'No se pudo importar el archivo';
-      errEl.style.display = 'block';
-      return;
-    }
-    reporteEl.innerHTML = buildReporteImportacionHtml(data);
-    input.value = '';
-    cargarListaProspectos();
-  } catch (e) {
-    errEl.textContent = 'Error de conexion';
-    errEl.style.display = 'block';
-  } finally {
-    btn.disabled = false;
-  }
 }
 
 async function cargarMotivosNoUtil() {
@@ -1981,7 +1927,7 @@ function renderProspectos() {
     return;
   }
   listEl.innerHTML = ultimosProspectos.slice().reverse()
-    .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id))).join('');
+    .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true })).join('');
 }
 
 function setModoProspectos(modo) {
@@ -2258,6 +2204,30 @@ window.sugerirNoUtilProspecto = sugerirNoUtilProspecto;
 window.agendarReunionProspecto = agendarReunionProspecto;
 window.resultadoReunionProspecto = resultadoReunionProspecto;
 window.resultadoReunionNoUtilProspecto = resultadoReunionNoUtilProspecto;
+window.cotizarProspecto = id => {
+  const p = ultimosProspectos.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('prospectos-view').style.display = 'none';
+  document.getElementById('app-view').style.display = 'block';
+  const nombre = document.getElementById('cl-nombre-corto');
+  if (nombre && !nombre.value) nombre.value = p.nombre;
+  const municipio = document.getElementById('cl-municipio');
+  if (municipio && !municipio.value) municipio.value = p.ciudad || '';
+  setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', p.celular);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+window.cerrarCotizacionTablero = async (id, estado) => {
+  const cot = ultimasCotizaciones.find(c => c.id === id);
+  const label = estado === 'ganada' ? 'Ganada' : 'Perdida';
+  if (!confirm(`¿Marcar la cotización de ${cot ? cot.cliente : 'este cliente'} como ${label}?`)) return;
+  try {
+    const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
+    if (!res.ok) { alert('No se pudo actualizar el estado'); return; }
+    showHistorial();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+};
 window.toggleAccionesProspecto = id => {
   const el = document.getElementById(`pr-acciones-${id}`);
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
@@ -2478,7 +2448,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     puedeSoltar: puedeArrastrar,
     alSoltar: soltarEnColumna,
   });
-  document.getElementById('btn-importar-feria').addEventListener('click', importarFeria);
   document.getElementById('pr-temperatura').addEventListener('click', e => {
     const v = e.target.dataset ? e.target.dataset.v : null;
     if (!v) return;

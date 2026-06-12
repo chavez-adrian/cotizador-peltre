@@ -175,6 +175,14 @@ test('Q13: cada columna del tablero muestra la suma de dinero de sus tarjetas', 
   assert.match(html, /tablero-col-suma">\$0\.00</);
 });
 
+test('Q16: las tarjetas de cadencia traen botones Ganada/Perdida y las cerradas no', () => {
+  const abierta = buildTableroCotizacionesHtml([cot(3, { id: 7 })], HOY);
+  assert.match(abierta, /cerrarCotizacionTablero\(7, 'ganada'\)/);
+  assert.match(abierta, /cerrarCotizacionTablero\(7, 'perdida'\)/);
+  const cerrada = buildTableroCotizacionesHtml([cot(3, { id: 8, estado: 'ganada' })], HOY);
+  assert.equal(cerrada.includes('cerrarCotizacionTablero(8'), false);
+});
+
 test('Q15: una columna vacia del tablero pinta su estado vacio', () => {
   const html = buildTableroCotizacionesHtml([], HOY);
   assert.match(html, /tablero-col-vacia/);

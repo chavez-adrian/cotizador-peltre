@@ -69,10 +69,16 @@ function fechaCorta(fecha) {
 // lib/seguimiento.telefonoWa). Solo las columnas de cadencia son arrastrables.
 function buildCotizacionCardHtml(c, col, hoy) {
   const dias = Math.floor((hoy - new Date(c.fecha)) / MS_DIA);
-  const wa = c.telefono
-    ? `<div class="cot-card-actions"><a href="https://wa.me/${escapeHtml(c.telefono)}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a></div>`
-    : '';
-  return `<div class="tablero-card" draggable="${!CERRADAS.has(col)}" data-id="${c.id}" data-col="${col}">
+  const abierta = !CERRADAS.has(col);
+  const acciones = [];
+  if (c.telefono) acciones.push(`<a href="https://wa.me/${escapeHtml(c.telefono)}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`);
+  // Cierre por boton ademas del arrastre: en tactil no hay drag (feedback de
+  // Adrian en la revision movil 2026-06-12).
+  if (abierta) {
+    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="cerrarCotizacionTablero(${c.id}, 'ganada')">Ganada</button>`);
+    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="cerrarCotizacionTablero(${c.id}, 'perdida')">Perdida</button>`);
+  }
+  return `<div class="tablero-card" draggable="${abierta}" data-id="${c.id}" data-col="${col}">
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
@@ -81,7 +87,7 @@ function buildCotizacionCardHtml(c, col, hoy) {
         </div>
         <div class="cot-card-total">$${fmtMoneda(c.total)}</div>
       </div>
-      ${wa}
+      ${acciones.length ? `<div class="cot-card-actions">${acciones.join(' ')}</div>` : ''}
     </div>
   </div>`;
 }

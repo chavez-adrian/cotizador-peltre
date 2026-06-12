@@ -72,6 +72,24 @@ test('cada item de cola trae cliente, vendedor, total, mensaje y waLink', () => 
   assert.ok(item.waLink.includes(encodeURIComponent('cotiza').slice(0, 6)));
 });
 
+test('el waLink prefiere el celular de entrega sobre el telefono del negocio', () => {
+  const c = cot({ data: { cliente: {
+    razonSocial: 'MUSEO FRIDA KAHLO', rfc: 'MFK200101AAA',
+    telefono: '+52 55 1111 1111', celEntrega: '+52 55 2222 2222',
+  }, items: [] } });
+  const cola = calcularCola([c], HOY);
+  assert.equal(cola[0].telefono, '525522222222');
+});
+
+test('el mensaje saluda por nombre, presenta al vendedor y no trae emoji', () => {
+  const cola = calcularCola([cot()], HOY);
+  const m = cola[0].mensaje;
+  assert.ok(m.startsWith('Hola RESTAURANTE LA LUPITA, te escribe Memo de pp.peltre'));
+  assert.ok(m.includes('cotización que te enviamos el'));
+  assert.equal(m.includes('😊'), false);
+  assert.equal(m.includes('�'), false);
+});
+
 test('sin telefono el item aparece con waLink null', () => {
   const c = cot({ data: { cliente: { razonSocial: 'RESTAURANTE LA LUPITA', rfc: 'RLU200101AAA' }, items: [] } });
   const cola = calcularCola([c], HOY);

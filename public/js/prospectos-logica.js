@@ -182,7 +182,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
     : '';
   const pesadas = [];
   if (activo) {
-    pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">+ Toque</button>`);
+    pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">Registrar contacto</button>`);
     pesadas.push(
       `<input type="datetime-local" id="pr-reunion-${p.id}" class="btn-sm">` +
       `<button class="btn btn-secondary btn-sm" onclick="agendarReunionProspecto(${p.id})">Agendar reunión</button>`
@@ -195,13 +195,16 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   }
   pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="toggleHistorialProspecto(${p.id})">Historial</button>`);
   const waBtn = wa ? `<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>` : '';
+  // Cotizar es el destino natural del prospecto (feedback de Adrian
+  // 2026-06-12): visible en toda card activa, prellena el cotizador.
+  const cotizarBtn = activo ? `<button class="btn btn-primary btn-sm" onclick="cotizarProspecto(${p.id})">Cotizar</button>` : '';
   // En el tablero la card es compacta (estilo Bitrix): info + chips + WhatsApp
   // + avance visible (en tactil no hay drag: la accion mas comun no se
   // esconde); el resto vive tras "Mas".
   const acciones = compacta
-    ? `<div class="cot-card-actions">${waBtn} ${avanceBtn} <button class="btn btn-secondary btn-sm" onclick="toggleAccionesProspecto(${p.id})">Más</button></div>` +
+    ? `<div class="cot-card-actions">${waBtn} ${cotizarBtn} ${avanceBtn} <button class="btn btn-secondary btn-sm" onclick="toggleAccionesProspecto(${p.id})">Más</button></div>` +
       `<div id="pr-acciones-${p.id}" style="display:none"><div class="cot-card-actions">${pesadas.join(' ')}</div></div>`
-    : `<div class="cot-card-actions">${waBtn} ${avanceBtn} ${pesadas.join(' ')}</div>`;
+    : `<div class="cot-card-actions">${waBtn} ${cotizarBtn} ${avanceBtn} ${pesadas.join(' ')}</div>`;
   return `
     <div class="cot-card">
       <div class="cot-card-header">
@@ -240,7 +243,7 @@ export function buildColaProspectosHtml(cola) {
         `</select><button class="btn btn-secondary btn-sm" onclick="resultadoReunionNoUtilProspecto(${item.id})">No útil</button>`
       );
     } else {
-      acciones.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${item.id})">+ Toque</button>`);
+      acciones.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${item.id})">Registrar contacto</button>`);
       if (item.sugerirNoUtil) {
         acciones.push(`<button class="btn btn-secondary btn-sm" onclick="sugerirNoUtilProspecto(${item.id})">${item.toques} toques sin respuesta · ¿No útil?</button>`);
       }

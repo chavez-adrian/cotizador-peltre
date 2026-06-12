@@ -63,6 +63,24 @@
       <div id="diff-result" style="display:none;margin-top:12px"></div>
     </div>
 
+    <!-- Importacion Abastur (issue #47; movida aqui desde Prospectos a peticion de Adrian) -->
+    <div class="admin-section">
+      <h2>Importar gafetes de Abastur</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Sube el XLSX que exporta la app de lectoras de Abastur (hoja "Contactos"). Solo aplica a ese layout; otros eventos necesitaran su propio importador. Los gafetes entran como prospectos en etapa Nuevo, canal Feria/Expo, deduplicados por celular.
+      </p>
+      <div class="form-group">
+        <input type="file" id="imp-feria-archivo" accept=".xlsx">
+      </div>
+      <div class="form-group">
+        <label>Vendedor default (filas que no se identifican por quien escane&oacute;)</label>
+        <select id="imp-feria-vendedor"></select>
+      </div>
+      <button class="btn btn-primary" id="btn-importar-feria">Importar</button>
+      <div id="imp-feria-error" style="display:none;color:var(--danger);font-size:13px;margin-top:8px"></div>
+      <div id="imp-feria-reporte" style="margin-top:8px"></div>
+    </div>
+
     <!-- Catalogo cotizable -->
     <div class="admin-section">
       <h2>Catalogo cotizable</h2>
@@ -153,6 +171,55 @@ async function adminLogin() {
   loadCotizaciones();
   loadConfig();
   loadCajas();
+  cargarVendedoresFeria();
+}
+
+// --- Importacion Abastur (issue #47) ---
+async function cargarVendedoresFeria() {
+  const sel = document.getElementById('imp-feria-vendedor');
+  if (!sel || sel.options.length) return;
+  try {
+    const res = await adminApi('/api/vendedores');
+    if (!res.ok) return;
+    const vendedores = await res.json();
+    sel.innerHTML = vendedores.map(v => `<option>${v.name.replace(/</g, '&lt;')}</option>`).join('');
+  } catch (e) { /* sin red no hay importacion */ }
+}
+
+async function importarFeria() {
+  const errEl = document.getElementById('imp-feria-error');
+  const reporteEl = document.getElementById('imp-feria-reporte');
+  const input = document.getElementById('imp-feria-archivo');
+  const btn = document.getElementById('btn-importar-feria');
+  errEl.style.display = 'none';
+  reporteEl.innerHTML = '';
+  const archivo = input.files[0];
+  if (!archivo) {
+    errEl.textContent = 'Selecciona el archivo XLSX de Abastur';
+    errEl.style.display = 'block';
+    return;
+  }
+  const fd = new FormData();
+  fd.append('archivo', archivo);
+  fd.append('vendedor', document.getElementById('imp-feria-vendedor').value);
+  btn.disabled = true;
+  try {
+    const res = await adminApi('/api/admin/prospectos/importar', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'No se pudo importar el archivo';
+      errEl.style.display = 'block';
+      return;
+    }
+    const { buildReporteImportacionHtml } = await import('/js/prospectos-logica.js');
+    reporteEl.innerHTML = buildReporteImportacionHtml(data);
+    input.value = '';
+  } catch (e) {
+    errEl.textContent = 'Error de conexion';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function adminApi(url, opts = {}) {
@@ -403,6 +470,7 @@ document.getElementById('admin-pin').addEventListener('keydown', e => { if (e.ke
 document.getElementById('admin-logout').addEventListener('click', () => location.reload());
 document.getElementById('btn-preview').addEventListener('click', previewExcel);
 document.getElementById('btn-apply').addEventListener('click', applyExcel);
+document.getElementById('btn-importar-feria').addEventListener('click', importarFeria);
 document.getElementById('btn-add-vendedor').addEventListener('click', addVendedor);
 document.getElementById('btn-save-vendedores').addEventListener('click', saveVendedores);
 document.getElementById('btn-save-config').addEventListener('click', saveConfig);
