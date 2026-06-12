@@ -584,3 +584,32 @@ test('C5: buildColaProspectosHtml tolera cola vacia y escapa datos de usuario', 
   assert.equal(html.includes('<img'), false);
   assert.match(html, /&lt;img/);
 });
+
+test('K12: la card compacta del tablero guarda las acciones pesadas tras un toggle', () => {
+  const compacta = buildProspectoCardHtml(PROSPECTO, null, new Date(), { compacta: true });
+  assert.match(compacta, /toggleAccionesProspecto\(3\)/);
+  assert.match(compacta, new RegExp('id="pr-acciones-3" style="display:none'));
+  assert.match(compacta, /Agendar reunión/);
+  assert.match(compacta, /wa\.me/);
+  const normal = buildProspectoCardHtml(PROSPECTO);
+  assert.equal(normal.includes('toggleAccionesProspecto'), false);
+});
+
+test('K13: el tablero usa cards compactas', () => {
+  const html = buildTableroHtml(TABLERO);
+  assert.match(html, /toggleAccionesProspecto\(/);
+});
+
+test('K10: el header de columna es un pill con clase por etapa', () => {
+  const html = buildTableroHtml(TABLERO);
+  for (const etapa of ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util']) {
+    assert.match(html, new RegExp('col-pill col-pill-' + etapa));
+  }
+});
+
+test('K11: la columna Nuevo trae el quick-add y las demas no', () => {
+  const html = buildTableroHtml(TABLERO);
+  const matches = html.match(/abrirCapturaRapida\(\)/g) || [];
+  assert.equal(matches.length, 1);
+  assert.match(html, /Prospecto rápido/);
+});

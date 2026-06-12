@@ -168,7 +168,7 @@ const CLIENTE_BADGE = '<span class="cliente-badge">Ya es cliente — falta cotiz
 // Las acciones llaman funciones globales de app.js (mismo patron que las
 // cards de seguimiento: onclick + window.fn). colaItem es el item del
 // prospecto en GET /api/prospectos/cola, si esta en la cola (issue #44).
-export function buildProspectoCardHtml(p, colaItem, ahora = new Date()) {
+export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compacta = false } = {}) {
   const d = p.data || {};
   const empresa = d.empresa ? ` · ${escapeHtml(d.empresa)}` : '';
   const activo = p.etapa !== 'no_util' && p.etapa !== 'cotizado';
@@ -177,24 +177,31 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date()) {
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.
   const reunion = activo ? reunionFutura(p, ahora) : null;
-  const acciones = [];
-  if (wa) acciones.push(`<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`);
+  const pesadas = [];
   if (activo && sig) {
-    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="avanzarEtapaProspecto(${p.id}, '${sig}')">→ ${ETAPA_LABELS[sig]}</button>`);
+    pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="avanzarEtapaProspecto(${p.id}, '${sig}')">→ ${ETAPA_LABELS[sig]}</button>`);
   }
   if (activo) {
-    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">+ Toque</button>`);
-    acciones.push(
+    pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">+ Toque</button>`);
+    pesadas.push(
       `<input type="datetime-local" id="pr-reunion-${p.id}" class="btn-sm">` +
       `<button class="btn btn-secondary btn-sm" onclick="agendarReunionProspecto(${p.id})">Agendar reunión</button>`
     );
-    acciones.push(
+    pesadas.push(
       `<select id="pr-motivo-${p.id}" class="btn-sm"><option value="">Motivo...</option>` +
       MOTIVOS_NO_UTIL.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('') +
       `</select><button class="btn btn-secondary btn-sm" onclick="marcarNoUtilProspecto(${p.id})">No útil</button>`
     );
   }
-  acciones.push(`<button class="btn btn-secondary btn-sm" onclick="toggleHistorialProspecto(${p.id})">Historial</button>`);
+  pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="toggleHistorialProspecto(${p.id})">Historial</button>`);
+  const waBtn = wa ? `<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>` : '';
+  // En el tablero la card es compacta (estilo Bitrix): info + chips + WhatsApp;
+  // las acciones pesadas viven tras el toggle "..." (el drag cubre el avance
+  // en desktop, los botones siguen ahi para tactil).
+  const acciones = compacta
+    ? `<div class="cot-card-actions">${waBtn} <button class="btn btn-secondary btn-sm" onclick="toggleAccionesProspecto(${p.id})">⋯</button></div>` +
+      `<div id="pr-acciones-${p.id}" style="display:none"><div class="cot-card-actions">${pesadas.join(' ')}</div></div>`
+    : `<div class="cot-card-actions">${waBtn} ${pesadas.join(' ')}</div>`;
   return `
     <div class="cot-card">
       <div class="cot-card-header">
@@ -205,9 +212,9 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date()) {
           ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
           ${reunion ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión el ${escapeHtml(fechaHora(reunion))}</span></div>` : ''}
         </div>
-        <div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>
+        ${compacta ? '' : `<div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>`}
       </div>
-      <div class="cot-card-actions">${acciones.join(' ')}</div>
+      ${acciones}
       <div id="pr-historial-${p.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #eee">${buildHistorialHtml(p)}</div>
     </div>
   `;
@@ -295,12 +302,16 @@ export function buildTableroHtml(prospectos, colaPorId, ahora = new Date()) {
       const draggable = etapa !== 'no_util';
       return `<div class="tablero-card" draggable="${draggable}" data-id="${p.id}" data-etapa="${etapa}">` +
         (motivo ? `<div class="cot-card-meta" style="margin-bottom:4px">Motivo: ${escapeHtml(motivo)}</div>` : '') +
-        buildProspectoCardHtml(p, colaPorId && colaPorId.get(p.id), ahora) +
+        buildProspectoCardHtml(p, colaPorId && colaPorId.get(p.id), ahora, { compacta: true }) +
         '</div>';
     }).join('');
+    const quickAdd = etapa === 'nuevo'
+      ? '<button class="tablero-quick-add" onclick="abrirCapturaRapida()">+ Prospecto rápido</button>'
+      : '';
     return `
       <div class="tablero-col" data-etapa="${etapa}">
-        <div class="tablero-col-header">${escapeHtml(ETAPA_LABELS[etapa])} <span class="tablero-col-count">${cols[etapa].length}</span></div>
+        <div class="tablero-col-header"><span class="col-pill col-pill-${etapa}">${escapeHtml(ETAPA_LABELS[etapa])} <span class="tablero-col-count">${cols[etapa].length}</span></span></div>
+        ${quickAdd}
         <div class="tablero-col-cards">${tarjetas}</div>
       </div>
     `;

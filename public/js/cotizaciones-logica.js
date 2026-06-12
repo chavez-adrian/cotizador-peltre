@@ -90,9 +90,11 @@ export function buildTableroCotizacionesHtml(cotizaciones, hoy = new Date()) {
   const cols = agruparTableroCotizaciones(cotizaciones, hoy);
   return COLUMNAS_COTIZACIONES.map(col => {
     const tarjetas = cols[col].map(c => buildCotizacionCardHtml(c, col, hoy)).join('');
+    const suma = cols[col].reduce((s, c) => s + (c.total || 0), 0);
     return `
       <div class="tablero-col" data-col="${col}">
-        <div class="tablero-col-header">${escapeHtml(COLUMNA_LABELS[col])} <span class="tablero-col-count">${cols[col].length}</span></div>
+        <div class="tablero-col-header"><span class="col-pill col-pill-${col}">${escapeHtml(COLUMNA_LABELS[col])} <span class="tablero-col-count">${cols[col].length}</span></span></div>
+        <div class="tablero-col-suma">$${fmtMoneda(suma)}</div>
         <div class="tablero-col-cards">${tarjetas}</div>
       </div>
     `;

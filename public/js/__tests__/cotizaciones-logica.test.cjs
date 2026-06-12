@@ -163,3 +163,20 @@ test('Q12: buildTableroCotizacionesHtml escapa datos de usuario', () => {
   assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
   assert.ok(html.includes('&lt;b&gt;v&lt;/b&gt;'));
 });
+
+test('Q13: cada columna del tablero muestra la suma de dinero de sus tarjetas', () => {
+  const html = buildTableroCotizacionesHtml([
+    cot(3, { id: 1, total: 1000 }),
+    cot(4, { id: 2, total: 2500.5 }),
+    cot(40, { id: 3, total: 99 }),
+  ], HOY);
+  assert.match(html, /tablero-col-suma">\$3,500\.50</);
+  assert.match(html, /tablero-col-suma">\$99\.00</);
+  assert.match(html, /tablero-col-suma">\$0\.00</);
+});
+
+test('Q14: el header de columna es un pill con clase por columna', () => {
+  const html = buildTableroCotizacionesHtml([cot(3)], HOY);
+  assert.match(html, /col-pill col-pill-dia2/);
+  assert.match(html, /col-pill col-pill-ganada/);
+});

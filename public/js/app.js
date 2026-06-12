@@ -2252,6 +2252,16 @@ window.sugerirNoUtilProspecto = sugerirNoUtilProspecto;
 window.agendarReunionProspecto = agendarReunionProspecto;
 window.resultadoReunionProspecto = resultadoReunionProspecto;
 window.resultadoReunionNoUtilProspecto = resultadoReunionNoUtilProspecto;
+window.toggleAccionesProspecto = id => {
+  const el = document.getElementById(`pr-acciones-${id}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+window.abrirCapturaRapida = () => {
+  const form = document.getElementById('prospecto-form');
+  form.style.display = 'block';
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('pr-celular').focus();
+};
 
 async function cargarCotizacion(id) {
   try {
