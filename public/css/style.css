@@ -16,10 +16,11 @@
   --radius: 12px;
   --radius-input: 20px;
 
-  /* Lienzo del tablero (canvas cobalto, tarjetas blancas encima) */
-  --canvas: oklch(0.34 0.1 262);
-  --canvas-hondo: oklch(0.27 0.09 264);
-  --sobre-canvas: oklch(0.93 0.02 262);
+  /* Lienzo del tablero: azul pizarra sereno (iteracion 2 con Adrian:
+     menos saturacion que el cobalto pleno), tarjetas blancas encima */
+  --canvas: oklch(0.42 0.04 255);
+  --canvas-hondo: oklch(0.34 0.035 257);
+  --sobre-canvas: oklch(0.94 0.01 255);
 
   /* Pills de etapa: fondo claro de color + texto oscuro del mismo matiz
      (legible a pleno sol, como los pills de Bitrix) */
@@ -1018,6 +1019,24 @@ body {
 .tablero-col.drop-ok {
   background: oklch(1 0 0 / 0.16);
   border-color: oklch(1 0 0 / 0.45);
+}
+/* Mientras se arrastra: las columnas validas se encienden y las invalidas
+   se apagan -- el tablero ensena a donde puede ir la tarjeta. */
+.tablero.arrastrando .tablero-col.drop-valido {
+  border-color: oklch(1 0 0 / 0.55);
+  border-style: dashed;
+  background: oklch(1 0 0 / 0.12);
+}
+.tablero.arrastrando .tablero-col:not(.drop-valido) {
+  opacity: 0.45;
+}
+.tablero-col-vacia {
+  border: 1px dashed oklch(1 0 0 / 0.25);
+  border-radius: 8px;
+  padding: 18px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: oklch(1 0 0 / 0.55);
 }
 .tablero-col-header { margin-bottom: 6px; }
 .col-pill {

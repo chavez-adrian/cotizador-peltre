@@ -95,7 +95,7 @@ export function buildTableroCotizacionesHtml(cotizaciones, hoy = new Date()) {
       <div class="tablero-col" data-col="${col}">
         <div class="tablero-col-header"><span class="col-pill col-pill-${col}">${escapeHtml(COLUMNA_LABELS[col])} <span class="tablero-col-count">${cols[col].length}</span></span></div>
         <div class="tablero-col-suma">$${fmtMoneda(suma)}</div>
-        <div class="tablero-col-cards">${tarjetas}</div>
+        <div class="tablero-col-cards">${tarjetas || '<div class="tablero-col-vacia">Sin cotizaciones</div>'}</div>
       </div>
     `;
   }).join('');

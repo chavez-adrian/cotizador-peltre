@@ -175,6 +175,11 @@ test('Q13: cada columna del tablero muestra la suma de dinero de sus tarjetas', 
   assert.match(html, /tablero-col-suma">\$0\.00</);
 });
 
+test('Q15: una columna vacia del tablero pinta su estado vacio', () => {
+  const html = buildTableroCotizacionesHtml([], HOY);
+  assert.match(html, /tablero-col-vacia/);
+});
+
 test('Q14: el header de columna es un pill con clase por columna', () => {
   const html = buildTableroCotizacionesHtml([cot(3)], HOY);
   assert.match(html, /col-pill col-pill-dia2/);

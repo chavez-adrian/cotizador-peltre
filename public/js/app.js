@@ -2004,6 +2004,11 @@ function initDragEnTablero(containerId, { atributo, puedeSoltar, alSoltar }) {
     dragOrigen = { id: parseInt(card.dataset.id, 10), col: card.dataset[atributo] };
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', card.dataset.id);
+    tablero.querySelectorAll('.tablero-col').forEach(c => {
+      const destino = c.dataset[atributo];
+      c.classList.toggle('drop-valido', destino !== dragOrigen.col && puedeSoltar(dragOrigen.col, destino));
+    });
+    tablero.classList.add('arrastrando');
   });
   tablero.addEventListener('dragover', e => {
     const col = e.target.closest('.tablero-col');
@@ -2029,7 +2034,8 @@ function initDragEnTablero(containerId, { atributo, puedeSoltar, alSoltar }) {
   });
   tablero.addEventListener('dragend', () => {
     dragOrigen = null;
-    tablero.querySelectorAll('.tablero-col.drop-ok').forEach(c => c.classList.remove('drop-ok'));
+    tablero.classList.remove('arrastrando');
+    tablero.querySelectorAll('.tablero-col').forEach(c => c.classList.remove('drop-ok', 'drop-valido'));
   });
 }
 

@@ -177,10 +177,10 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.
   const reunion = activo ? reunionFutura(p, ahora) : null;
+  const avanceBtn = activo && sig
+    ? `<button class="btn btn-secondary btn-sm" onclick="avanzarEtapaProspecto(${p.id}, '${sig}')">→ ${ETAPA_LABELS[sig]}</button>`
+    : '';
   const pesadas = [];
-  if (activo && sig) {
-    pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="avanzarEtapaProspecto(${p.id}, '${sig}')">→ ${ETAPA_LABELS[sig]}</button>`);
-  }
   if (activo) {
     pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">+ Toque</button>`);
     pesadas.push(
@@ -195,13 +195,13 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   }
   pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="toggleHistorialProspecto(${p.id})">Historial</button>`);
   const waBtn = wa ? `<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>` : '';
-  // En el tablero la card es compacta (estilo Bitrix): info + chips + WhatsApp;
-  // las acciones pesadas viven tras el toggle "..." (el drag cubre el avance
-  // en desktop, los botones siguen ahi para tactil).
+  // En el tablero la card es compacta (estilo Bitrix): info + chips + WhatsApp
+  // + avance visible (en tactil no hay drag: la accion mas comun no se
+  // esconde); el resto vive tras "Mas".
   const acciones = compacta
-    ? `<div class="cot-card-actions">${waBtn} <button class="btn btn-secondary btn-sm" onclick="toggleAccionesProspecto(${p.id})">⋯</button></div>` +
+    ? `<div class="cot-card-actions">${waBtn} ${avanceBtn} <button class="btn btn-secondary btn-sm" onclick="toggleAccionesProspecto(${p.id})">Más</button></div>` +
       `<div id="pr-acciones-${p.id}" style="display:none"><div class="cot-card-actions">${pesadas.join(' ')}</div></div>`
-    : `<div class="cot-card-actions">${waBtn} ${pesadas.join(' ')}</div>`;
+    : `<div class="cot-card-actions">${waBtn} ${avanceBtn} ${pesadas.join(' ')}</div>`;
   return `
     <div class="cot-card">
       <div class="cot-card-header">
@@ -312,7 +312,7 @@ export function buildTableroHtml(prospectos, colaPorId, ahora = new Date()) {
       <div class="tablero-col" data-etapa="${etapa}">
         <div class="tablero-col-header"><span class="col-pill col-pill-${etapa}">${escapeHtml(ETAPA_LABELS[etapa])} <span class="tablero-col-count">${cols[etapa].length}</span></span></div>
         ${quickAdd}
-        <div class="tablero-col-cards">${tarjetas}</div>
+        <div class="tablero-col-cards">${tarjetas || '<div class="tablero-col-vacia">Sin prospectos</div>'}</div>
       </div>
     `;
   }).join('');

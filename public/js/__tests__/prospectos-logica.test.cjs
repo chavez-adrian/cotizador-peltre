@@ -591,8 +591,21 @@ test('K12: la card compacta del tablero guarda las acciones pesadas tras un togg
   assert.match(compacta, new RegExp('id="pr-acciones-3" style="display:none'));
   assert.match(compacta, /Agendar reunión/);
   assert.match(compacta, /wa\.me/);
+  assert.match(compacta, />Más</);
   const normal = buildProspectoCardHtml(PROSPECTO);
   assert.equal(normal.includes('toggleAccionesProspecto'), false);
+});
+
+test('K12b: en la card compacta el avance de etapa queda visible, no tras el toggle', () => {
+  const compacta = buildProspectoCardHtml(PROSPECTO, null, new Date(), { compacta: true });
+  const avance = compacta.indexOf('avanzarEtapaProspecto');
+  const ocultas = compacta.indexOf('id="pr-acciones-3"');
+  assert.ok(avance > -1 && avance < ocultas);
+});
+
+test('K14: una columna vacia del tablero pinta su estado vacio', () => {
+  const html = buildTableroHtml([]);
+  assert.match(html, /tablero-col-vacia/);
 });
 
 test('K13: el tablero usa cards compactas', () => {
