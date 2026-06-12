@@ -1,24 +1,46 @@
 :root {
-  --primary: #418FFF;
-  --primary-dark: #2D65B5;
-  --primary-light: #EBF3FF;
-  --bg: #F4F8FE;
-  --border: #EBEBEB;
-  --white: #FFFFFF;
-  --text: #333333;
-  --text-light: #888888;
-  --danger: #E53E3E;
-  --success: #38A169;
-  --warning: #D69E2E;
-  --accent: #2C7A7B;
+  /* Cobalto de peltre esmaltado: el color firma del producto que se vende.
+     Neutros entibiados hacia el matiz de marca; nada de #000/#fff puros. */
+  --primary: oklch(0.47 0.15 262);
+  --primary-dark: oklch(0.37 0.13 262);
+  --primary-light: oklch(0.94 0.03 262);
+  --bg: oklch(0.97 0.006 85);
+  --border: oklch(0.9 0.01 85);
+  --white: oklch(0.995 0.003 85);
+  --text: oklch(0.28 0.015 75);
+  --text-light: oklch(0.54 0.02 75);
+  --danger: oklch(0.55 0.19 25);
+  --success: oklch(0.58 0.13 150);
+  --warning: oklch(0.68 0.13 80);
+  --accent: oklch(0.52 0.09 195);
   --radius: 12px;
   --radius-input: 20px;
+
+  /* Lienzo del tablero (canvas cobalto, tarjetas blancas encima) */
+  --canvas: oklch(0.34 0.1 262);
+  --canvas-hondo: oklch(0.27 0.09 264);
+  --sobre-canvas: oklch(0.93 0.02 262);
+
+  /* Pills de etapa: fondo claro de color + texto oscuro del mismo matiz
+     (legible a pleno sol, como los pills de Bitrix) */
+  --etapa-nuevo: oklch(0.87 0.11 85);
+  --etapa-nuevo-texto: oklch(0.35 0.07 70);
+  --etapa-contactado: oklch(0.85 0.07 245);
+  --etapa-contactado-texto: oklch(0.32 0.08 250);
+  --etapa-calificado: oklch(0.86 0.08 195);
+  --etapa-calificado-texto: oklch(0.3 0.06 200);
+  --etapa-cotizado: oklch(0.86 0.1 150);
+  --etapa-cotizado-texto: oklch(0.3 0.07 152);
+  --etapa-no_util: oklch(0.88 0.012 80);
+  --etapa-no_util-texto: oklch(0.4 0.015 75);
+  --col-vencida: oklch(0.86 0.07 28);
+  --col-vencida-texto: oklch(0.36 0.11 28);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
   font-size: 14px;
@@ -741,9 +763,9 @@ body {
   align-items: flex-start;
   margin-bottom: 6px;
 }
-.cot-card-cliente { font-size: 14px; font-weight: 700; color: var(--text); }
+.cot-card-cliente { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.3; }
 .cot-card-meta { font-size: 11px; color: var(--text-light); }
-.cot-card-total { font-size: 14px; font-weight: 700; color: var(--primary-dark); text-align: right; }
+.cot-card-total { font-size: 17px; font-weight: 700; color: var(--primary-dark); text-align: right; font-variant-numeric: tabular-nums; }
 .cot-card-tier { font-size: 11px; color: var(--primary); }
 .cot-card-actions { display: flex; gap: 6px; margin-top: 8px; }
 
@@ -952,83 +974,109 @@ body {
   vertical-align: middle;
 }
 
-/* Etiqueta de espera de prospectos (issue #44) */
-.espera-badge {
+/* Chips de estado: tinte claro + texto oscuro del mismo matiz (estilo
+   "NO LEIDO" de Bitrix; legible a pleno sol, WCAG AA en texto chico) */
+.espera-badge, .cliente-badge, .reunion-badge {
   display: inline-block;
   font-size: 10px;
-  font-weight: 600;
-  color: #fff;
-  border-radius: 10px;
-  padding: 1px 7px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 9px;
+  padding: 2px 8px;
   vertical-align: middle;
 }
-.espera-verde { background: #27ae60; }
-.espera-ambar { background: #e67e22; }
-.espera-rojo { background: #c0392b; }
-
-/* Prospecto convertido en cliente (issue #46) */
-.cliente-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  color: #fff;
-  background: #2980b9;
-  border-radius: 10px;
-  padding: 1px 7px;
-  vertical-align: middle;
-}
-
-/* Reunion diagnostico (issue #45) */
-.reunion-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  color: #fff;
-  background: #8e44ad;
-  border-radius: 10px;
-  padding: 1px 7px;
-  vertical-align: middle;
-}
+.espera-verde { background: oklch(0.9 0.08 150); color: oklch(0.3 0.08 152); }
+.espera-ambar { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); }
+.espera-rojo { background: oklch(0.87 0.08 28); color: oklch(0.36 0.12 28); }
+.cliente-badge { background: var(--etapa-contactado); color: var(--etapa-contactado-texto); }
+.reunion-badge { background: oklch(0.89 0.06 310); color: oklch(0.34 0.1 310); }
 
 /* Tableros kanban: prospectos (issue #49) y cotizaciones (issue #50) */
 #prospectos-contenido { max-width: 520px; }
 #prospectos-contenido.modo-tablero { max-width: none; }
 .tablero {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  margin-top: 24px;
-  padding-bottom: 8px;
+  margin-top: 16px;
+  padding: 16px 14px 20px;
+  border-radius: var(--radius);
+  background: linear-gradient(160deg, var(--canvas) 0%, var(--canvas-hondo) 100%);
 }
 .tablero-col {
   flex: 0 0 280px;
   min-width: 280px;
   scroll-snap-align: start;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.07);
+  border: 1px solid oklch(1 0 0 / 0.1);
   border-radius: var(--radius);
   padding: 8px;
+  transition: background 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.tablero-col.drop-ok { border-color: var(--primary); background: var(--primary-light); }
-.tablero-col-header {
+.tablero-col.drop-ok {
+  background: oklch(1 0 0 / 0.16);
+  border-color: oklch(1 0 0 / 0.45);
+}
+.tablero-col-header { margin-bottom: 6px; }
+.col-pill {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text-light);
-  margin-bottom: 8px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 6px 10px;
 }
+.col-pill-nuevo, .col-pill-dia7 { background: var(--etapa-nuevo); color: var(--etapa-nuevo-texto); }
+.col-pill-contactado, .col-pill-reciente { background: var(--etapa-contactado); color: var(--etapa-contactado-texto); }
+.col-pill-calificado, .col-pill-dia2 { background: var(--etapa-calificado); color: var(--etapa-calificado-texto); }
+.col-pill-cotizado, .col-pill-ganada { background: var(--etapa-cotizado); color: var(--etapa-cotizado-texto); }
+.col-pill-no_util, .col-pill-perdida { background: var(--etapa-no_util); color: var(--etapa-no_util-texto); }
+.col-pill-por_vencer, .col-pill-vencida { background: var(--col-vencida); color: var(--col-vencida-texto); }
 .tablero-col-count {
-  background: var(--white);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  background: oklch(0 0 0 / 0.12);
+  border-radius: 9px;
   font-size: 11px;
-  padding: 0 8px;
+  font-weight: 700;
+  padding: 1px 8px;
+}
+.tablero-col-suma {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--sobre-canvas);
+  background: oklch(1 0 0 / 0.1);
+  border-radius: 8px;
+  padding: 3px 8px;
+  margin-bottom: 6px;
+}
+.tablero-quick-add {
+  width: 100%;
+  border: 1px dashed oklch(1 0 0 / 0.4);
+  background: none;
+  color: var(--sobre-canvas);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 7px 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 150ms ease-out;
+}
+.tablero-quick-add:hover, .tablero-quick-add:focus-visible {
+  background: oklch(1 0 0 / 0.12);
 }
 .tablero-col-cards { min-height: 40px; }
+.tablero-col-cards .cot-card {
+  background: var(--white);
+  box-shadow: 0 1px 3px oklch(0.2 0.06 264 / 0.35);
+  border: none;
+  margin-bottom: 8px;
+}
 .tablero-card[draggable="true"] { cursor: grab; }
 .tablero-card .cot-card-actions { flex-wrap: wrap; }
 .tablero-aviso {
