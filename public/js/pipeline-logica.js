@@ -47,6 +47,34 @@ export function etiquetaFolioOperam(o) {
   return o && o.registroDesconocido ? '' : 'PRE';
 }
 
+// Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1): el disparador
+// "Completar" solo aplica mientras la cotizacion sigue siendo PRE. Reusa la regla
+// de dominio del badge: con folio ya esta registrada (#Operam N) y una historica
+// de registro desconocido se asume registrada -- ninguna ofrece "Completar".
+export function puedeCompletarPreCotizacion(cot) {
+  return !!cot && etiquetaFolioOperam(cot) === 'PRE';
+}
+
+// Decide el siguiente paso de la formalizacion a partir del resultado del
+// registro directo (POST /api/cotizacion/operam/:id). Si registro -> 'listo'
+// (folio, deja de ser PRE). Si Operam no halla al cliente -> 'alta' (el vendedor
+// lo da de alta primero y reintenta). Cualquier otro fallo -> 'error' (se reporta
+// sin mandar al alta). El marcador del caso "falta alta" es el mensaje exacto que
+// lanza subirCotizacionOperam ("Cliente no encontrado en Operam").
+export function siguientePasoFormalizacion(resultado) {
+  if (resultado && resultado.ok) return 'listo';
+  const error = (resultado && resultado.error) || '';
+  return /Cliente no encontrado en Operam/i.test(error) ? 'alta' : 'error';
+}
+
+// Boton "Completar" de la tarjeta de cotizacion (Historial / cola Hoy): formaliza
+// la pre-cotizacion (alta + registro, o registro directo si ya es cliente). Solo
+// aparece mientras la cotizacion es PRE; una registrada o historica no lo muestra.
+export function botonCompletarHtml(cot) {
+  if (!puedeCompletarPreCotizacion(cot)) return '';
+  return `<button class="btn btn-primary btn-sm" onclick="completarPreCotizacion(${cot.id})">Completar</button>`;
+}
+
 // Las oportunidades que viven en el pipeline (las 7 columnas): excluye las
 // salidas No util y Perdida, que viven en filtro/historial. Es la misma regla
 // que aplica el tablero (agruparPipeline ignora las salidas); la vista lista la

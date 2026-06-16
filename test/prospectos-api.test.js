@@ -257,6 +257,77 @@ test('salida a No util exige motivo del catalogo; sin motivo o fuera de catalogo
   assert.equal(despues.status, 400);
 });
 
+// === Issue #66: editar/complementar el prospecto desde su tarjeta ===
+
+test('PATCH /api/prospectos/:id edita nombre/ciudad y opcionales (empresa, tipo de cliente, piezas, correo, temperatura, notas)', async () => {
+  writeProspectos([prospectoDe('Memo', 'seguimiento', { data: { empresa: 'Hotel Azul' } })]);
+  const res = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({
+      nombre: 'Laura Perez', ciudad: 'CDMX', empresa: 'Hotel Verde',
+      segmento_id: 14, piezas_estimadas: '+550', correo: 'laura@hotel.mx',
+      temperatura: 5, notas: 'pidio catalogo',
+    });
+  assert.equal(res.status, 200);
+  const p = readProspectos()[0];
+  assert.equal(p.nombre, 'Laura Perez');
+  assert.equal(p.ciudad, 'CDMX');
+  assert.equal(p.data.empresa, 'Hotel Verde');
+  assert.equal(p.data.segmento_id, 14);
+  assert.equal(p.data.piezas_estimadas, '+550');
+  assert.equal(p.data.correo, 'laura@hotel.mx');
+  assert.equal(p.data.temperatura, 5);
+  assert.equal(p.data.notas, 'pidio catalogo');
+  // editar no mueve la etapa ni inventa eventos
+  assert.equal(p.etapa, 'seguimiento');
+  assert.equal(p.eventos.length, 0);
+});
+
+test('PATCH /api/prospectos/:id se permite en cualquier etapa activa pero no en una salida (No util/Perdida)', async () => {
+  // activa: post-venta tambien es editable
+  writeProspectos([prospectoDe('Memo', 'anticipo_pagado')]);
+  const activa = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ notas: 'al dia' });
+  assert.equal(activa.status, 200);
+  assert.equal(readProspectos()[0].data.notas, 'al dia');
+  // salida: no editable
+  writeProspectos([prospectoDe('Memo', 'no_util')]);
+  const salida = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ notas: 'tarde' });
+  assert.equal(salida.status, 400);
+  assert.equal(readProspectos()[0].data.notas, undefined);
+});
+
+test('PATCH /api/prospectos/:id rechaza vaciar un obligatorio (nombre/ciudad) sin persistir', async () => {
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
+  const sinNombre = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ nombre: '   ' });
+  assert.equal(sinNombre.status, 400);
+  const sinCiudad = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ciudad: '' });
+  assert.equal(sinCiudad.status, 400);
+  const p = readProspectos()[0];
+  assert.equal(p.nombre, 'Laura');
+  assert.equal(p.ciudad, 'Puebla');
+});
+
+test('PATCH /api/prospectos/:id respeta visibilidad: otro vendedor 403, inexistente 404, sin token 401', async () => {
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
+  const sinToken = await supertest(app).patch('/api/prospectos/1').send({ notas: 'x' });
+  assert.equal(sinToken.status, 401);
+  const ana = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${ANA_TOKEN}`).send({ notas: 'x' });
+  assert.equal(ana.status, 403);
+  const noExiste = await supertest(app).patch('/api/prospectos/9')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ notas: 'x' });
+  assert.equal(noExiste.status, 404);
+  // admin si puede editar el de cualquiera
+  const admin = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ notas: 'visto por admin' });
+  assert.equal(admin.status, 200);
+  assert.equal(readProspectos()[0].data.notas, 'visto por admin');
+});
+
 // === Issue #44: cola de seguimiento ===
 
 test('GET /api/prospectos/cola sin token responde 401', async () => {

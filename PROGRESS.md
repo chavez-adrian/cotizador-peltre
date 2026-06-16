@@ -22,7 +22,7 @@ Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de a
 - **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
 - #64 Hoy suma cotizaciones (fusión) — bloqueado por #58
 - #65 reunión re-encuadrada — bloqueado por #58
-- #66 formalizar pre-cotización + editar prospecto — desbloqueado (tras #63)
+- **#66 CERRADO** ✅ — formalizar pre-cotización (botón Completar en Historial) + editar prospecto. Mergeado a main.
 
 ## #53 — cierre
 Demo aprobada por Adrián (probó remoto vía túnel cloudflared, datos reales). Commits en main vía merge de `issue-53-tracer-embudo`:
@@ -100,4 +100,55 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53, #55 y #63 cerrados y en main (3 de 14). Candidatos: **#66** (formalizar pre-cotización + editar prospecto — desbloqueado por #63, completa el ciclo PRE→registrada; reusa `setFolioOperam` y el alta de cliente) · **#56** (mover a Seguimiento manual con folio — reusa `transicionPorCotizacion` y `setFolioOperam`) · **#58** (Hoy, desbloquea #64/#65 y cierra H4). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+#53, #55, #63 y #66 cerrados y en main (4 de 14). Toda la ruta de pre-cotización (PRE→registrada→formalizar) está en producción. Candidatos: **#58** (Hoy: prospectos por contactar — desbloquea #64/#65 y cierra H4; pantalla de rutina) · **#56** (mover a Seguimiento manual con folio — reusa `transicionPorCotizacion` y `setFolioOperam`) · **#54** (crear prospecto en Por Cotizar, botón + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+
+## #66 — formalizar pre-cotización + editar prospecto — CERRADO (aprobado por Adrián con evidencia; mergeado a main)
+
+### INVESTIGACIÓN (reusar, no reinventar)
+- **Formalizar = encadenar piezas existentes, NO un alta nueva.** Las dos piezas ya existen y son idempotentes/desacopladas:
+  1. Alta de cliente: `POST /api/crear-cliente` (server.js ~820). Guardrails + deduplicación por RFC (`crearCliente` en operam-client.js corta si el RFC ya existe → `duplicado:true`). Atómico (ADR-0002), idempotente al reintento. Al completar liga el prospecto (`ligarProspectoACliente`, evento `cliente` + `data.cliente_id`).
+  2. Registro de cotización + folio: `POST /api/cotizacion/operam/:id` (server.js 716). Busca el cliente por RFC/razón social (`subirCotizacionOperam`), registra el quote y persiste el folio con `setFolioOperam` → la cotización pierde el PRE. Ya probado por O1.
+- **Caso "ya es cliente Operam — falta cotizar" (CONTEXT.md):** NO hay alta nueva; solo registrar. Es exactamente `POST /api/cotizacion/operam/:id` directo (busca el cliente existente por RFC y registra). O1 ya lo cubre con un cliente que existe en Operam.
+- **Decisión de dominio "falla a mitad" (alta sí, registro no): YA resuelta por la arquitectura, no es decisión nueva.** Alta idempotente (no duplica por RFC) + registro independiente (O2: si falla, sigue PRE; el cliente dado de alta persiste en Operam). Reintentar el registro tras alta exitosa no re-da-de-alta. Coherente con ADR-0002. → encadeno en el FRONTEND (el acordeón de alta ya vive ahí, ADR-0003), preservando el desacople; NO creo una ruta transaccional nueva.
+- **Editar prospecto: NO existe ruta/función.** El store (prospectos-store.js) tiene `cambiarEtapa`, `registrarEvento`, `ligarCliente` — ninguna edita `data`/campos. La construyo: `actualizarDatos(id, campos)` (patrón de los otros updates: UPDATE Postgres + fallback JSON) + `PATCH /api/prospectos/:id` con validación. Campos del issue: nombre, ciudad (columnas propias) + opcionales en `data` (empresa, segmento_id=tipo cliente, piezas_estimadas, correo, temperatura, notas — = `OPCIONALES` de prospectos-logica.js). "Cualquier etapa activa" (CONTEXT.md): se permite en las 7 etapas, NO en salidas (no_util/perdida). La edición toca solo el prospecto local (CRM), no Operam.
+
+### Plan de ciclos (TDD, 1 AC por ciclo)
+- C1 (AC4 dominio): store `actualizarDatos(id, campos)` actualiza nombre/ciudad + merge en data; no toca etapa/eventos. Test en `prospectos-store.test.js`.
+- C2 (AC4 ruta): `PATCH /api/prospectos/:id` valida (obligatorios, opcionales), respeta visibilidad (404/403/401), rechaza en salidas, persiste. Test en `prospectos-api.test.js`.
+- C3 (AC1/AC2/AC3 ruta — formalizar): test end-to-end de ruta: una pre-cotización (sin folio) se registra vía `/api/cotizacion/operam/:id` con el cliente recién dado de alta → obtiene folio → deja de ser PRE. Cubre el caso "ya es cliente Operam". Guardrail del alta verificado vía `/api/crear-cliente` (dedup). Test en `cotizar-embudo.test.js` (reusa O1; agrega caso de formalización explícito).
+- C4 (frontend mínimo): botón "Editar"/"Completar después" en la tarjeta del prospecto/cotización + funciones que llaman las rutas. Lógica pura en prospectos-logica.js si aplica.
+
+### Estado: CERRADO. Todos los AC verdes, suite 540/540 (537 + 3 del botón Completar). Aprobado por Adrián con evidencia (sin demo manual, para no crear datos reales en Operam). Deuda menor anotada: el fallback al alta depende de un match de string del error `Cliente no encontrado en Operam` (operam-client.js:98) — frágil; idealmente un código de error.
+
+### Disparador "Completar" sobre la tarjeta PRE (AC1, decision de Adrian 2026-06-16)
+Antes la formalizacion solo era posible en dos pasos/dos pantallas (acordeon de alta + "Subir a Operam"). Ahora hay un boton **Completar** sobre la tarjeta de la pre-cotizacion en el **Historial** de cotizaciones (`renderHistorial`, app.js), junto a Cargar/Ver PDF, que tambien ahora muestra el chip **PRE / #Operam** (antes solo el tablero del pipeline y la cola Hoy lo pintaban).
+- Logica pura en `pipeline-logica.js` (probada en `.cjs`): `puedeCompletarPreCotizacion(cot)` (solo PRE: sin folio y no `registroDesconocido`), `botonCompletarHtml(cot)` (pinta el boton solo si PRE), `siguientePasoFormalizacion(resultado)` (`listo` | `alta` | `error` segun la respuesta del registro). Tests Q17/Q18/Q19.
+- Orquestacion en `completarPreCotizacion(id)` (app.js): registra directo via `POST /api/cotizacion/operam/:id`. Si OK -> folio, deja de ser PRE, refresca Historial (caso "ya es cliente Operam"). Si Operam responde "Cliente no encontrado en Operam" -> guia al alta: `cargarCotizacion(id)` prellena el formulario con los datos de la cotizacion y `abrirAcordeonAlta()` abre el alta; tras el alta el vendedor vuelve a tocar Completar y el registro procede. Cualquier otro fallo se reporta sin mandar al alta.
+- NO se toco el tablero del pipeline (solo-lectura por #53): el boton vive en el Historial / cotizaciones, donde el vendedor ya ve la cotizacion. Reusa `subirCotizacionOperam` (ruta) y el acordeon de alta existentes; no duplica rutas. El backend (alta + registro) ya estaba probado por F1/F2/O1/O2.
+
+### Commits (rama `issue-66-formalizar-precotizacion`)
+- cb44515 feat: store edita datos del prospecto sin tocar el embudo — `lib/prospectos-store.js`, `test/prospectos-store.test.js`
+- a8058ab feat: PATCH /api/prospectos/:id edita el prospecto en cualquier etapa activa — `server.js`, `public/js/prospectos-logica.js`, `test/prospectos-api.test.js`
+- 47627c0 test: formalizar una pre-cotizacion (alta + registro) le quita el PRE — `test/cotizar-embudo.test.js`
+- e73304a feat: editar el prospecto desde su tarjeta en cualquier etapa activa (frontend) — `public/js/prospectos-logica.js`, `public/js/app.js`, `public/js/__tests__/prospectos-logica.test.cjs`
+- b76e4f0 feat: completar una pre-cotizacion desde su tarjeta (logica pura) — `public/js/pipeline-logica.js`, `public/js/__tests__/pipeline-logica.test.cjs`
+- a1c4537 feat: boton Completar sobre la tarjeta PRE del Historial formaliza la cotizacion — `public/js/app.js`
+
+### Estado de cada AC (verificado contra tests corridos)
+- AC1 (formalizar = alta + registro, en pocos clics desde la tarjeta PRE): VERDE. Boton **Completar** sobre la card PRE del Historial: registro directo (`/api/cotizacion/operam/:id`) con fallback guiado al alta (`/api/crear-cliente` via acordeon prellenado). Logica pura Q17/Q18/Q19; backend F1/F2/O1/O2.
+- AC2 (pierde PRE, muestra folio): VERDE. El registro persiste el folio (`setFolioOperam`, #63) → `esPreCotizacion`=false. F1 + O1. Badge ya pintado por #63 (badgeFolioOperamHtml).
+- AC3 (alta conserva guardrails y dedup): VERDE. `crearCliente` corta por RFC existente (no duplica). Test F2 (caso "ya es cliente").
+- AC4 (editar/complementar en cualquier etapa activa): VERDE. Store `actualizarDatos` + `PATCH /api/prospectos/:id` + frontend (botón Editar en card, form inline). Tests de store (2), ruta (4), frontend (4).
+- AC5 (pruebas dominio + ruta): VERDE. Dominio: store (prospectos-store.test.js) + lógica pura (prospectos-logica.test.cjs ED1-ED4). Ruta: prospectos-api.test.js (4 PATCH) + cotizar-embudo.test.js (F1/F2).
+
+### Decisión de diseño clave (formalización)
+NO se construyó ruta transaccional nueva: la formalización encadena dos piezas EXISTENTES, idempotentes y desacopladas (alta atómica por RFC + registro independiente). Si el registro falla tras un alta exitosa, el cliente persiste en Operam y la cotización sigue PRE para reintentar solo el registro (O2). El frontend ya expone ambos pasos (acordeón "+ Nuevo cliente" + botón "Subir a Operam"). El caso "ya es cliente Operam" es solo el registro directo (busca por RFC, sin alta) — O1/F2.
+
+### Nota de alcance (frontend de formalización)
+Las tarjetas del **tablero del pipeline** siguen siendo solo-lectura (decisión #53: las acciones de tarjeta llegan en issues posteriores). El disparador "Completar" vive en el **Historial / cotizaciones** (`renderHistorial`), donde el vendedor ya ve la cotización con su chip PRE — NO en el tablero. Reusa los flujos existentes (registro via `subirCotizacionOperam` + acordeón de alta), no se construyó UI de acciones nueva en el tablero. Acoplamiento conocido (no bloqueante): `subirCotizacionOperam` busca el cliente por `data.cliente.rfc`/razonSocial; una PRE de Prospecto Mínimo sin RFC debe formalizarse dando primero de alta el cliente con datos que coincidan — ahora ese fallback es automático (al fallar el registro por "Cliente no encontrado" el botón abre el alta prellenado), pero el vendedor debe capturar el RFC en el alta para que el reintento del registro lo encuentre.
+
+### DEMO (2 min) para Adrián
+1. **Editar prospecto**: en Más → Prospectos, sobre una tarjeta activa (Por Cotizar o Seguimiento) tocar "Editar" (en compacta, primero "Más"). Cambiar empresa/temperatura/notas y "Guardar". La tarjeta recarga con los datos nuevos. Probar también en una tarjeta de etapa post-venta: también deja editar. En una de No útil/Perdida no aparece "Editar".
+2. **Formalizar una pre-cotización (un clic desde la tarjeta)**: en Más → Historial, sobre una cotización con chip ámbar **PRE**, tocar **Completar**.
+   - Caso "ya es cliente Operam": el registro corre directo, sale el folio y la tarjeta pasa a **#Operam N** (el botón Completar desaparece).
+   - Caso "falta dar de alta": Completar avisa que el cliente no está en Operam y abre el formulario de alta **prellenado** con los datos de la cotización; completar el alta (con RFC real; el guardrail de dedup avisa si ya existe y reutiliza), volver a Historial y tocar **Completar** otra vez → ahora registra y obtiene el folio.

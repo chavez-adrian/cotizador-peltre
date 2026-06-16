@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion } =
     await import('../pipeline-logica.js'));
 });
 
@@ -150,6 +150,47 @@ test('Q16: badgeFolioOperamHtml unifica el chip PRE / #Operam / vacio', () => {
   assert.match(badgeFolioOperamHtml({ folioOperam: '900' }), /badge-operam/);
   assert.match(badgeFolioOperamHtml({ folioOperam: '900' }), /#Operam 900/);
   assert.equal(badgeFolioOperamHtml({ folioOperam: null, registroDesconocido: true }), '');
+});
+
+// Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1): el boton
+// "Completar" solo aplica sobre una cotizacion que todavia es PRE (sin folio y
+// no historica de registro desconocido). Una cotizacion ya registrada (#Operam
+// N) o una historica no ofrece "Completar". Misma regla de dominio que el badge.
+test('Q17: puedeCompletarPreCotizacion solo es true para una cotizacion PRE (sin folio, no historica)', () => {
+  assert.equal(puedeCompletarPreCotizacion({ folioOperam: null }), true);
+  assert.equal(puedeCompletarPreCotizacion({}), true);
+  assert.equal(puedeCompletarPreCotizacion({ folioOperam: '' }), true);
+  assert.equal(puedeCompletarPreCotizacion({ folioOperam: '7788' }), false);
+  assert.equal(puedeCompletarPreCotizacion({ folioOperam: null, registroDesconocido: true }), false);
+  assert.equal(puedeCompletarPreCotizacion(null), false);
+});
+
+test('Q18: botonCompletarHtml pinta el boton Completar solo sobre una tarjeta PRE, con su disparador', () => {
+  const pre = botonCompletarHtml({ id: 42, folioOperam: null });
+  assert.match(pre, /Completar/);
+  assert.match(pre, /completarPreCotizacion\(42\)/);
+  // Una cotizacion ya registrada (#Operam N) no ofrece Completar.
+  assert.equal(botonCompletarHtml({ id: 7, folioOperam: '900' }), '');
+  // Una historica de registro desconocido tampoco.
+  assert.equal(botonCompletarHtml({ id: 9, folioOperam: null, registroDesconocido: true }), '');
+});
+
+// Encadenamiento de la formalizacion (issue #66, AC1): "Completar" intenta el
+// registro directo; el siguiente paso lo decide el resultado. Si Operam no halla
+// el cliente, el vendedor pasa al alta (flujo existente, prellenado); si el
+// registro funciono, queda listo (folio); cualquier otro fallo se reporta sin
+// mandar al alta. Funcion pura sobre la respuesta del servidor (status + error).
+test('Q19: siguientePasoFormalizacion encadena registro directo, fallback al alta o error', () => {
+  // Registro OK: la cotizacion obtuvo folio, ya no es PRE.
+  assert.equal(siguientePasoFormalizacion({ ok: true, folio: 77001 }), 'listo');
+  // Operam no halla al cliente -> hay que darlo de alta primero.
+  assert.equal(
+    siguientePasoFormalizacion({ ok: false, status: 503, error: 'No se pudo subir a Operam: Cliente no encontrado en Operam' }),
+    'alta',
+  );
+  // Cualquier otro fallo (Operam caido, 404, etc.) no manda al alta: se reporta.
+  assert.equal(siguientePasoFormalizacion({ ok: false, status: 503, error: 'No se pudo subir a Operam: Operam 500' }), 'error');
+  assert.equal(siguientePasoFormalizacion({ ok: false, status: 404, error: 'Cotizacion no encontrada' }), 'error');
 });
 
 test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma regla que el tablero, para la vista lista', () => {
