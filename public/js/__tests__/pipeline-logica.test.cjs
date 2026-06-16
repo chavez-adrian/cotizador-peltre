@@ -475,3 +475,30 @@ test('Q44: el tablero pinta los controles de salida en las tarjetas activas, no 
   // una cotizacion no ofrece No util (Modelo A)
   assert.equal(html.includes('marcarNoUtilTablero(10)'), false);
 });
+
+// === Issue #59 (AC3): filtro/historial de cerradas (No util / Perdida) ===
+
+test('Q45: buildCerradasHtml lista solo las oportunidades en salida con su tipo de cierre', () => {
+  const html = buildCerradasHtml([
+    prospecto({ id: 1, nombre: 'Laura', etapa: 'por_cotizar' }),
+    prospecto({ id: 2, nombre: 'Pedro', etapa: 'no_util', motivoNoUtil: 'spam' }),
+    cotizacion({ id: 10, cliente: 'Hotel Azul', etapa: 'perdida' }),
+  ]);
+  // las activas no aparecen
+  assert.equal(html.includes('Laura'), false);
+  // No util con su motivo
+  assert.match(html, /Pedro/);
+  assert.match(html, /No útil/);
+  assert.match(html, /spam/);
+  // Perdida
+  assert.match(html, /Hotel Azul/);
+  assert.match(html, /Perdida/);
+});
+
+test('Q46: buildCerradasHtml muestra un vacio cuando no hay cerradas y escapa datos de usuario', () => {
+  assert.match(buildCerradasHtml([]), /Sin/i);
+  assert.match(buildCerradasHtml([prospecto({ id: 1, etapa: 'por_cotizar' })]), /Sin/i);
+  const xss = buildCerradasHtml([prospecto({ id: 2, nombre: '<b>x</b>', etapa: 'no_util', motivoNoUtil: '<i>spam</i>' })]);
+  assert.equal(xss.includes('<b>x</b>'), false);
+  assert.equal(xss.includes('<i>spam</i>'), false);
+});

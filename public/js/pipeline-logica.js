@@ -324,3 +324,26 @@ export function buildColaHoyHtml(cola) {
     : buildColaProspectosHtml([item])
   ).join('');
 }
+
+// Filtro/historial de cerradas (issue #59, AC3, CONTEXT.md "Etapas del pipeline":
+// las salidas viven en filtro/historial, fuera del tablero activo). Lista las
+// oportunidades en salida (No util / Perdida) mostrando su nombre, el tipo de
+// cierre y, para No util, el motivo del catalogo (o.motivoNoUtil, derivado del
+// ultimo evento no_util por prospectoAOportunidad). Reusa el mismo criterio de
+// "que es salida" que el tablero (esSalida).
+const SALIDA_LABELS = { no_util: 'No útil', perdida: 'Perdida' };
+
+export function buildCerradasHtml(oportunidades) {
+  const cerradas = (oportunidades || []).filter(o => esSalida(o.etapa))
+    .slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+  if (!cerradas.length) return '<div class="cot-card-meta">Sin oportunidades cerradas.</div>';
+  return cerradas.map(o => {
+    const cierre = SALIDA_LABELS[o.etapa] || o.etapa;
+    const motivo = o.etapa === 'no_util' && o.motivoNoUtil ? ` · ${escapeHtml(o.motivoNoUtil)}` : '';
+    const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
+    return `<div class="cot-card"><div class="cot-card-header"><div>
+      <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}</div>
+      <div class="cot-card-meta">${escapeHtml(cierre)}${motivo}${meta ? ' · ' + meta : ''}</div>
+    </div></div></div>`;
+  }).join('');
+}

@@ -38,6 +38,7 @@ import {
   siguientePasoFormalizacion,
   buildColaHoyHtml,
   buildMenuNuevoHtml,
+  buildCerradasHtml,
 } from './pipeline-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1877,11 +1878,22 @@ function showProspectos() {
 // viene migrada del store); al cotizar, la cotizacion lleva la oportunidad por
 // el resto del embudo (su etapa la deriva el store del estado). El tablero las
 // reparte en sus 7 columnas; las salidas viven fuera. Conmutador lista/tablero.
-let pipelineModo = localStorage.getItem('pipelineModo') === 'lista' ? 'lista' : 'tablero';
+const PIPELINE_MODOS = new Set(['tablero', 'lista', 'cerradas']);
+let pipelineModo = PIPELINE_MODOS.has(localStorage.getItem('pipelineModo')) ? localStorage.getItem('pipelineModo') : 'tablero';
 let ultimasOportunidades = [];
 // Catalogo de vendedores para el control de asignar de la tarjeta No Asignado
 // (issue #57): solo lo carga el admin (la unica que ve esas tarjetas y asigna).
 let vendedoresPipeline = [];
+
+function motivoNoUtilDe(p) {
+  // El motivo de la salida a No util vive en el evento no_util (issue #59, AC3:
+  // el filtro de cerradas lo muestra). El ultimo evento no_util manda.
+  let motivo = null;
+  for (const e of p.eventos || []) {
+    if (e.tipo === 'no_util' && e.motivo) motivo = e.motivo;
+  }
+  return motivo;
+}
 
 function prospectoAOportunidad(p) {
   return {
@@ -1892,6 +1904,9 @@ function prospectoAOportunidad(p) {
     // data porque cotizo por fuera (no hay cotizacion en el sistema). La tarjeta
     // pinta "#Operam N" solo si hay folio (nunca PRE, eso es de cotizaciones).
     folioOperam: p.data?.folioOperam ?? null,
+    // Motivo de la salida a No util (issue #59, AC3): lo muestra el filtro de
+    // cerradas. Solo aplica a prospectos (Modelo A).
+    motivoNoUtil: motivoNoUtilDe(p),
   };
 }
 
@@ -1935,12 +1950,16 @@ function renderPipeline() {
   const tableroEl = document.getElementById('pipeline-tablero');
   const listEl = document.getElementById('pipeline-list');
   const esTablero = pipelineModo === 'tablero';
+  const esCerradas = pipelineModo === 'cerradas';
   const btnLista = document.getElementById('btn-pipeline-modo-lista');
   const btnTablero = document.getElementById('btn-pipeline-modo-tablero');
-  btnLista.classList.toggle('btn-primary', !esTablero);
-  btnLista.classList.toggle('btn-secondary', esTablero);
-  btnTablero.classList.toggle('btn-primary', esTablero);
-  btnTablero.classList.toggle('btn-secondary', !esTablero);
+  const btnCerradas = document.getElementById('btn-pipeline-modo-cerradas');
+  // El modo activo va en btn-primary, los otros en btn-secondary.
+  for (const [btn, activo] of [[btnTablero, esTablero], [btnLista, pipelineModo === 'lista'], [btnCerradas, esCerradas]]) {
+    if (!btn) continue;
+    btn.classList.toggle('btn-primary', activo);
+    btn.classList.toggle('btn-secondary', !activo);
+  }
   tableroEl.style.display = esTablero ? 'flex' : 'none';
   listEl.style.display = esTablero ? 'none' : 'block';
   if (esTablero) {
@@ -1951,6 +1970,12 @@ function renderPipeline() {
     return;
   }
   tableroEl.innerHTML = '';
+  // Modo Cerradas (issue #59, AC3): las salidas No util/Perdida que el tablero y
+  // la lista ocultan viven aqui, con su tipo de cierre y, para No util, el motivo.
+  if (esCerradas) {
+    listEl.innerHTML = buildCerradasHtml(ultimasOportunidades);
+    return;
+  }
   // Vista lista: las mismas oportunidades que pinta el tablero (sus 7 columnas),
   // mas reciente primero. Las salidas No util/Perdida NO se muestran aqui: viven
   // en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
@@ -2744,6 +2769,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
+  document.getElementById('btn-pipeline-modo-cerradas')?.addEventListener('click', () => setModoPipeline('cerradas'));
 
   // Volver a Cotizar desde Historial (la navegacion vive en el bottom-nav, issue #53)
   document.getElementById('btn-volver-app').addEventListener('click', () => {
