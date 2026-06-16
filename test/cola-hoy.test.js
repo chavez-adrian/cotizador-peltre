@@ -87,3 +87,21 @@ test('H5: una reunion de prospecto vencida encabeza la cola por encima de cualqu
   assert.equal(cola[0].tipo, 'prospecto');
   assert.equal(cola[0].reunionVencida, true);
 });
+
+test('H6: la cotizacion expone su accion (WhatsApp con mensaje de seguimiento)', () => {
+  const cola = calcularColaHoy([], [cotizacion()], AHORA);
+  const cot = cola.find(i => i.tipo === 'cotizacion');
+  assert.ok(cot.mensaje && cot.mensaje.length > 0);
+  assert.ok(cot.waLink && cot.waLink.startsWith('https://wa.me/'));
+  // El mensaje es de seguimiento del paso pendiente, no generico.
+  assert.equal(cot.paso, 'dia2');
+});
+
+test('H7: el prospecto expone su accion (registrar contacto: id y celular)', () => {
+  const cola = calcularColaHoy([prospecto({ celular: '+52 5598765432' })], [], AHORA);
+  const prosp = cola.find(i => i.tipo === 'prospecto');
+  assert.ok(prosp.id);
+  assert.equal(prosp.celular, '+52 5598765432');
+  // sugerirNoUtil viene del motor de prospectos (false sin 3 toques).
+  assert.equal(prosp.sugerirNoUtil, false);
+});
