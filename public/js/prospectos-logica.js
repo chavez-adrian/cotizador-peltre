@@ -133,13 +133,23 @@ export function siguienteEtapa() {
   return null;
 }
 
-// Valida una transicion de etapa solicitada por el vendedor. En este slice la
-// unica transicion manual viva es la salida a No util (con motivo de catalogo);
-// el avance entre etapas del embudo lo dirigen la cotizacion y Operam.
-export function validarTransicion(actual, nueva, motivo) {
+// Valida una transicion de etapa solicitada por el vendedor. Transiciones
+// manuales vivas: la salida a No util (con motivo de catalogo) y el avance
+// manual Por Cotizar -> Seguimiento cuando el vendedor cotizo POR FUERA (directo
+// en Operam) -- exige capturar el folio de Operam (issue #56, CONTEXT.md "Etapas
+// del pipeline": "manual solo capturando el numero de cotizacion de Operam; sin
+// folio no avanza"). Sin folio no procede; desde cualquier otra etapa la
+// transicion a Seguimiento sigue siendo invalida (Por Cotizar -> Seguimiento es
+// la unica arista manual forward). El resto del avance entre etapas lo dirigen
+// la cotizacion en el sistema y Operam.
+export function validarTransicion(actual, nueva, motivo, folio) {
   if (nueva === 'no_util') {
     if (actual === 'no_util') return 'El prospecto ya salió a No útil';
     if (!MOTIVOS_NO_UTIL.includes(motivo)) return 'El motivo de No útil es obligatorio (catálogo cerrado)';
+    return null;
+  }
+  if (nueva === 'seguimiento' && actual === 'por_cotizar') {
+    if (!String(folio == null ? '' : folio).trim()) return 'El folio de Operam es obligatorio para mover a Seguimiento a mano';
     return null;
   }
   return `Transición inválida: ${ETAPA_LABELS[actual] || actual} → ${ETAPA_LABELS[nueva] || nueva}`;
