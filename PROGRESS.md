@@ -118,6 +118,62 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 ## Siguiente
 #53, #54, #55, #58, #63, #64 y #66 cerrados y en main (7 de 14). Cola Hoy fusionada + ruta de pre-cotización + botón `+` global y alta manual de prospecto completas. Candidatos: **#57** (No Asignado + asignación — entrada del embudo por arriba, reusa la regla de dominio de #55) · **#56** (manual a Seguimiento con folio — primera acción de tarjeta en el tablero) · **#59** (salidas No útil/Perdida + filtro/historial) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL (escribe/lee Operam real).
 
+## #57 — No Asignado + asignación de vendedor — EN PROGRESO (rama issue-57-no-asignado)
+
+Slice: oportunidades que llegan sin dueño caen en No Asignado; un admin les asigna vendedor y la tarjeta pasa automáticamente a Por Cotizar (regla de dominio, espeja #55).
+
+### Decisiones tomadas (antes de codear)
+- **Regla de dominio (espeja transicionPorCotizacion #55)**: `transicionPorAsignacion(etapaActual)` en `lib/pipeline.js` → `'por_cotizar'` SOLO si `etapaActual==='no_asignado'`, else `null`. Función pura.
+- **Auth de la ruta de intake (decisión de seguridad de Adrián, ver prompt)**: NO se expone escritura pública. La ruta de alta sin asignar es **autenticada admin-only** (`POST /api/prospectos/sin-asignar`, adminMiddleware). El wiring del formulario web externo "Peltre de Mayoreo" y su token público es POSTERIOR y fuera de alcance. Reusa los guardrails de `clasificarCelular` (no duplica prospecto/cliente Operam).
+- **Asignación**: ruta `PATCH /api/prospectos/:id/asignar` admin-only (solo quien asigna ve No Asignado, CONTEXT.md Visibilidad). El store `asignarVendedor(id, vendedor, evento)` fija el vendedor; la transición de etapa la decide la regla de dominio en la RUTA (`transicionPorAsignacion` + `cambiarEtapa`), igual que el hook de #55 (la regla decide, la IO aplica).
+- **Visibilidad ya resuelta**: tarjetas No Asignado tienen `vendedor` null → no-admin no las ve (filtro existente `p.vendedor === req.user.name`), admin sí. Se agrega test que lo afirma; NO se cambia el filtro.
+- **Control de asignar en la tarjeta (primera acción de tarjeta del tablero)**: UI mínima admin-only (select de vendedores de `/api/catalogos` + asignar) sobre la tarjeta No Asignado. Lógica pura en pipeline-logica.js, cableado DOM en app.js.
+
+### Plan de ciclos (TDD)
+- C1 (AC4 dominio): `transicionPorAsignacion` + test en `test/pipeline.test.js`.
+- C2 (store): `asignarVendedor` + test en `test/prospectos-store.test.js`.
+- C3 (AC1 ruta): `POST /api/prospectos/sin-asignar` admin → no_asignado sin vendedor + test en `test/prospectos-api.test.js`.
+- C4 (AC3/AC4 ruta): `PATCH /api/prospectos/:id/asignar` admin → por_cotizar + test.
+- C5 (AC2 + visibilidad): test no-admin no ve No Asignado, admin sí + lógica pura del control de asignar (pipeline-logica.test.cjs).
+
+### Estado: CERRADO por el subagente (pendiente verificacion del orquestador + demo de Adrian). Suite 581/581 (561 baseline + 20 nuevos).
+
+### Estado de cada AC (verificado contra tests corridos)
+- AC1 (ruta de alta sin vendedor -> No Asignado): VERDE. `POST /api/prospectos/sin-asignar` admin-only crea en `no_asignado` sin vendedor, reusa guardrails. Tests en `prospectos-api.test.js` (5: alta, auth admin, validacion, dedup prospecto, guardrail cliente Operam).
+- AC2 (columna No Asignado lista las tarjetas sin dueno): YA-CUBIERTO (#53: `agruparPipeline`/`buildTableroPipelineHtml` ya pintan la columna; Q3 reparte `no_asignado`). Verificado + test de visibilidad nuevo ("No Asignado solo lo ve quien asigna") afirma que admin ve la tarjeta sin dueno y el no-admin no.
+- AC3 (asignar vendedor mueve a Por Cotizar auto): VERDE. `PATCH /api/prospectos/:id/asignar` -> `por_cotizar`. Test "mueve la tarjeta a Por Cotizar con el vendedor elegido".
+- AC4 (la transicion la valida la regla de dominio): VERDE. `transicionPorAsignacion` en `lib/pipeline.js` (espeja #55) + la ruta enruta por ella (regla decide, store aplica). Tests dominio en `pipeline.test.js` (3) + ruta "solo aplica desde No Asignado".
+- AC5 (alta sin asignar + asignacion con pruebas dominio + ruta): VERDE. Dominio: `pipeline.test.js` (transicionPorAsignacion) + `prospectos-store.test.js` (asignarVendedor). Ruta: `prospectos-api.test.js` (sin-asignar + asignar). Frontend: `pipeline-logica.test.cjs` Q27-Q31.
+- Visibilidad (CONTEXT.md): YA-CUBIERTA por el filtro existente (`p.vendedor === req.user.name`; null no matchea ningun nombre). NO se cambio el filtro; se agrego test que lo afirma.
+
+### Diseno (lo que no perder)
+- **Regla de dominio** `transicionPorAsignacion(etapaActual)` -> `'por_cotizar'` SOLO si `no_asignado`, else null. Pura, simetrica de `transicionPorCotizacion`.
+- **Store** `asignarVendedor(id, vendedor, etapa, evento)`: fija vendedor + etapa (que decide la regla en la RUTA) + appendea evento. La ruta llama `transicionPorAsignacion` y pasa el destino al store (regla decide, IO aplica; coherente con el hook de #55).
+- **Auth del intake**: `POST /api/prospectos/sin-asignar` es **admin-only** (NO escritura publica). El wiring del formulario web externo "Peltre de Mayoreo" y su token publico es POSTERIOR y fuera de alcance (decision de seguridad de Adrian). Documentado en comentario del codigo y aqui.
+- **Primera accion de tarjeta del tablero**: el control de asignar (`buildAsignarControlHtml`) es la primera accion sobre la tarjeta del tablero (antes solo-lectura, #53). Admin-only, solo sobre No Asignado. Pura en pipeline-logica.js (Q27-Q31), cableado DOM `asignarVendedorTablero` en app.js. `buildTableroPipelineHtml(oportunidades, {vendedores, esAdmin})` -- sin opts mantiene el comportamiento previo (no control), por eso no rompe tests existentes.
+- Validacion del vendedor en la ruta de asignar: contra `data/vendedores.json` filtrado por `operam_id != null` (misma fuente que `/api/catalogos` que pobla el selector).
+
+### Commits (rama issue-57-no-asignado)
+- 8f03131 feat: regla de dominio transicionPorAsignacion en pipeline (#57)
+- 9a4c2d4 feat: el store asigna vendedor y aplica la etapa destino (#57)
+- 7b4ba3d feat: alta de prospecto sin asignar cae en No Asignado (#57)
+- 8a9e288 feat: asignar vendedor mueve la tarjeta de No Asignado a Por Cotizar (#57)
+- 74b3136 feat: control de asignar vendedor en la tarjeta No Asignado del tablero (#57)
+
+### DEMO (2 min) para Adrian
+1. Login como **admin** (Adrian Chavez, PIN 0000).
+2. **Crear una tarjeta No Asignado** (simula el formulario "Peltre de Mayoreo"): no hay UI publica todavia, asi que se prueba la ruta directo. En la consola del navegador (F12), con sesion admin:
+   `fetch('/api/prospectos/sin-asignar',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')},body:JSON.stringify({celular:'+52 5587654321',nombre:'Mayoreo Web Demo',ciudad:'Toluca',canal:'Formulario web'})}).then(r=>r.json()).then(console.log)`
+   (o via curl/Postman con el JWT). Deberia responder `{ok:true,id:...}`.
+3. Ir a **Pipeline** (bottom-nav): la tarjeta aparece en la columna **No Asignado**, sin vendedor, con un selector "Asignar a..." + boton **Asignar** (solo visible como admin).
+4. Elegir un vendedor del selector (p. ej. Alejandro Chavez) y tocar **Asignar**: la tarjeta se mueve a **Por Cotizar** con ese vendedor (recarga el tablero). Aviso "Asignado a ...".
+5. Cerrar sesion y entrar como **vendedor** (NO admin): en Pipeline la columna No Asignado NO muestra tarjetas sin dueno (no son de su cartera); si se le asigno una, ahora la ve en Por Cotizar.
+
+### Deuda / pendientes
+- **Auth del intake externo (POSTERIOR, fuera de alcance):** la ruta de alta sin asignar es admin-only. El formulario web "Peltre de Mayoreo" y el bot necesitaran una entrada autenticada propia (token/API key publica) -- es decision de seguridad de Adrian, NO se expuso escritura publica.
+- No hay UI para disparar el alta sin asignar desde la app (es la entrada externa). El admin la prueba via consola/curl. Si Adrian quiere un boton manual de "alta sin asignar" en la app, es trabajo adicional no pedido por el issue.
+- El frontend del control de asignar no tiene test de DOM (patron del repo: sin DOM en tests); la logica pura si (Q27-Q31) y el cableado se valida en navegador.
+
 ## #66 — formalizar pre-cotización + editar prospecto — CERRADO (aprobado por Adrián con evidencia; mergeado a main)
 
 ### INVESTIGACIÓN (reusar, no reinventar)
