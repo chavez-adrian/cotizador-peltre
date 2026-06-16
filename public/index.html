@@ -785,11 +785,6 @@
   </header>
   <div id="prospectos-contenido" style="padding:16px">
     <button class="btn btn-primary btn-sm" id="btn-nuevo-prospecto">+ Nuevo prospecto</button>
-    <!-- Conmutador kanban/lista (issue #49): la preferencia se recuerda en localStorage -->
-    <span id="prospectos-modo" style="display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle">
-      <button class="btn btn-sm btn-secondary" id="btn-modo-lista">Lista</button>
-      <button class="btn btn-sm btn-secondary" id="btn-modo-tablero">Tablero</button>
-    </span>
 
     <div id="prospecto-form" style="display:none;margin-top:12px">
       <div class="form-group">
@@ -858,9 +853,6 @@
       <div id="prospectos-cola"></div>
     </div>
 
-    <!-- Tablero kanban (issue #49): cinco columnas siempre visibles, conmutable con la lista -->
-    <div id="prospectos-tablero" class="tablero" style="display:none"></div>
-
     <div style="display:none;font-size:13px;font-weight:600;color:var(--text-light);margin-top:24px;margin-bottom:8px" id="prospectos-list-titulo">Todos los prospectos</div>
     <div id="prospectos-list"></div>
 
@@ -891,6 +883,35 @@
     <div id="historial-list"></div>
   </div>
 </div>
+
+<!-- PIPELINE VIEW (issue #53): tablero unico de 7 etapas + conmutador lista/tablero -->
+<div id="pipeline-view" style="display:none">
+  <header class="historial-header">
+    <h1>Pipeline</h1>
+  </header>
+  <div style="padding:16px">
+    <span id="pipeline-modo" style="display:inline-flex;gap:4px;margin-bottom:12px">
+      <button class="btn btn-sm btn-secondary" id="btn-pipeline-modo-lista">Lista</button>
+      <button class="btn btn-sm btn-primary" id="btn-pipeline-modo-tablero">Tablero</button>
+    </span>
+    <div id="pipeline-loading" style="color:var(--light);font-size:13px">Cargando...</div>
+    <!-- Tablero unico de 7 columnas (las salidas viven en filtro/historial) -->
+    <div id="pipeline-tablero" class="tablero" style="display:none"></div>
+    <div id="pipeline-list"></div>
+  </div>
+</div>
+
+<!-- NAVEGACION INFERIOR (bottom-nav, issue #53): Cotizar / Hoy / Pipeline / Mas -->
+<nav class="bottom-nav" id="bottom-nav" style="display:none">
+  <div class="nav-mas-menu" id="nav-mas-menu" style="display:none">
+    <button class="btn btn-sm btn-secondary" id="mas-historial">Historial</button>
+    <button class="btn btn-sm btn-secondary" id="mas-prospectos">Prospectos</button>
+  </div>
+  <button class="bottom-nav-btn activo" id="nav-cotizar">Cotizar</button>
+  <button class="bottom-nav-btn" id="nav-hoy">Hoy</button>
+  <button class="bottom-nav-btn" id="nav-pipeline">Pipeline</button>
+  <button class="bottom-nav-btn" id="nav-mas">Más</button>
+</nav>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>

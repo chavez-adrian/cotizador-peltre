@@ -60,3 +60,18 @@ test('setEstado actualiza el estado y persiste', async () => {
   await setEstado(1, 'ganada');
   assert.equal((await obtener(1)).estado, 'ganada');
 });
+
+test('listar expone la etapa del pipeline derivada del estado de cada cotizacion (#53)', async () => {
+  writeCots([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'Abierta', data: {} },
+    { id: 2, fecha: '2026-06-02T00:00:00Z', vendedor: 'Ana', cliente: 'Ganada', estado: 'ganada', data: {} },
+    { id: 3, fecha: '2026-06-03T00:00:00Z', vendedor: 'Ana', cliente: 'Perdida', estado: 'perdida', data: {} },
+    { id: 4, fecha: '2026-06-04T00:00:00Z', vendedor: 'Ana', cliente: 'Descartada', estado: 'descartada', data: {} },
+  ]);
+  const porId = Object.fromEntries((await listar()).map(c => [c.id, c]));
+  assert.equal(porId[1].etapa, 'seguimiento');
+  assert.equal(porId[2].etapa, 'seguimiento');
+  assert.equal(porId[3].etapa, 'perdida');
+  assert.equal(porId[4].etapa, 'perdida');
+  assert.equal((await obtener(1)).etapa, 'seguimiento');
+});
