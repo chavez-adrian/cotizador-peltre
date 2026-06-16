@@ -152,3 +152,27 @@ Las tarjetas del **tablero del pipeline** siguen siendo solo-lectura (decisión 
 2. **Formalizar una pre-cotización (un clic desde la tarjeta)**: en Más → Historial, sobre una cotización con chip ámbar **PRE**, tocar **Completar**.
    - Caso "ya es cliente Operam": el registro corre directo, sale el folio y la tarjeta pasa a **#Operam N** (el botón Completar desaparece).
    - Caso "falta dar de alta": Completar avisa que el cliente no está en Operam y abre el formulario de alta **prellenado** con los datos de la cotización; completar el alta (con RFC real; el guardrail de dedup avisa si ya existe y reutiliza), volver a Historial y tocar **Completar** otra vez → ahora registra y obtiene el folio.
+
+## #58 — Hoy: prospectos por contactar (horas hábiles) — EN PROGRESO (rama `issue-58-hoy-prospectos`)
+
+Cierra el H4 de #53: reencauzar el destino **Hoy** a la cola de prospectos en Por Cotizar (horas hábiles), REUSANDO el motor #44 (`calcularColaProspectos`), la ruta (`GET /api/prospectos/cola`) y el HTML (`buildColaProspectosHtml`). NO se fusiona con la cola de cotizaciones (eso es #64).
+
+### Estado de cada AC
+- AC1 (Hoy muestra prospectos en Por Cotizar ordenados por urgencia): VERDE (Ciclo 2). `nav-hoy` -> `showHoy()` renderiza `buildColaProspectosHtml` de `/api/prospectos/cola`. Orden por urgencia: motor (S9) + ruta (`prospectos-api.test.js` "mas urgente primero"). Verificado en navegador: cola Laura/Pedro/Sofia con horas hábiles + semáforo.
+- AC2 (horas hábiles + semáforo por canal): YA-CUBIERTO-#44. Motor `lib/seguimiento-prospectos.js` + tests S2-S7. Se hereda al reusar la cola.
+- AC3 (registrar contacto + WhatsApp desde la cola): YA-CUBIERTO-#44. `buildColaProspectosHtml` (botones) + tests C3. Se hereda.
+- AC4 (sugerencia No útil a 3 toques): YA-CUBIERTO-#44. `buildColaProspectosHtml` + `sugerirNoUtilProspecto` + test C4. Se hereda.
+- AC5 (badge de Hoy = pendientes de prospectos): VERDE (Ciclo 1). `contarPendientesProspectos` + `cargarBadgeSeguimiento` ahora lee `/api/prospectos/cola`. Tests H1/H2 en `prospectos-logica.test.cjs`.
+- AC6 (motor con pruebas: orden, horas hábiles, semáforo, sugerencia 3 toques): YA-CUBIERTO-#44. `test/seguimiento-prospectos.test.js` (S1-S12, R1-R4) + ruta `test/prospectos-api.test.js`.
+
+### Decisión de producto resuelta (cola de cotizaciones al reencauzar Hoy)
+El prompt autoriza moverla "p. ej. desde Más". `nav-mas-menu` ya tiene Historial y Prospectos; se agrega **Seguimiento (cotizaciones)** ahí (= `showSeguimiento`, intacta). NO es decisión de dominio nueva (el prompt lo sugiere); NO se borra ni rompe `showSeguimiento`/`calcularCola`, para que #64 la fusione.
+
+### Commits (rama)
+- d9114c7 feat: el badge de Hoy cuenta los pendientes de prospectos (#58) — `prospectos-logica.js`, `prospectos-logica.test.cjs`, `app.js`
+- (Ciclo 2) feat: el destino Hoy muestra la cola de prospectos en Por Cotizar (#58) — `app.js`, `index.html`, `PROGRESS.md`
+
+### Verificación end-to-end (navegador, datos locales JSON migrados)
+Login admin, bottom-nav muestra "Hoy 3" (badge = 3 prospectos en Por Cotizar). Toco Hoy: cola Laura/Pedro/Sofia con "21.5 h hábiles sin respuesta" + semáforo + WhatsApp (wa.me) + Registrar contacto. "Registrar contacto" reinicia el reloj a 0 h y reordena (refresca Hoy). Tras 3 toques aparece "3 toques sin respuesta · ¿No útil?" (sugerencia, confirmada por el vendedor). Más → "Seguimiento cotizaciones" abre la cola de cotizaciones intacta (cadencia días naturales, Ganada/Perdida). Sin errores de consola.
+
+### CERRADO: todos los AC verdes/ya-cubiertos. Suite 542/542 (540 baseline + H1/H2). Listo para verificación del orquestador + demo de Adrián.

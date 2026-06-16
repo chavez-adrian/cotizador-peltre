@@ -762,7 +762,20 @@
   </div>
 </div>
 
-<!-- SEGUIMIENTO VIEW -->
+<!-- HOY VIEW (issue #58): cola de prospectos en Por Cotizar, horas habiles -->
+<div id="hoy-view" style="display:none">
+  <header class="historial-header">
+    <h1>Hoy</h1>
+    <button class="btn btn-sm btn-secondary" id="btn-volver-hoy">Volver</button>
+  </header>
+  <div style="padding:16px">
+    <div style="font-size:13px;font-weight:600;color:var(--text-light);margin-bottom:8px">Prospectos por contactar</div>
+    <div id="hoy-loading" style="color:var(--light);font-size:13px">Cargando...</div>
+    <div id="hoy-cola"></div>
+  </div>
+</div>
+
+<!-- SEGUIMIENTO VIEW (cola de cotizaciones en dias naturales; vive en Mas hasta la fusion #64) -->
 <div id="seguimiento-view" style="display:none">
   <header class="historial-header">
     <h1>Seguimiento de cotizaciones</h1>
@@ -903,6 +916,7 @@
   <div class="nav-mas-menu" id="nav-mas-menu" style="display:none">
     <button class="btn btn-sm btn-secondary" id="mas-historial">Historial</button>
     <button class="btn btn-sm btn-secondary" id="mas-prospectos">Prospectos</button>
+    <button class="btn btn-sm btn-secondary" id="mas-seguimiento">Seguimiento cotizaciones</button>
   </div>
   <button class="bottom-nav-btn activo" id="nav-cotizar">Cotizar</button>
   <button class="bottom-nav-btn" id="nav-hoy" style="position:relative">Hoy<span id="seguimiento-badge" style="display:none;position:absolute;top:2px;right:8px;background:#c0392b;color:#fff;border-radius:9px;font-size:10px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px"></span></button>
