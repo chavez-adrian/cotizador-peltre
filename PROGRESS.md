@@ -1,46 +1,45 @@
-# PROGRESS — issue #53 (tracer del embudo: bottom-nav + 7 etapas + migracion + tablero unico)
+# PROGRESS — rediseño del cotizador (PRD #52: pipeline unificado de 7 etapas + bottom-nav)
 
-Rama: `issue-53-tracer-embudo` (base main, commit fundacion 6e2ebc2 que alineo CONTEXT.md + ADR-0005). NO merge a main, NO push a main.
+Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de aceptación, orquestador verifica (suite + code-review + criterios contra código real) y Adrián hace la demo como gate de cierre.
 
-## Criterios de aceptacion (#53)
-- AC1: app abre con bottom-nav (Cotizar, Hoy, Pipeline, Mas)
-- AC2: Pipeline = 1 tablero de 7 columnas (+ salidas accesibles) con conmutador a lista
-- AC3: cada prospecto y cotizacion existente cae en la columna correcta (mapeo de migracion)
-- AC4: migracion idempotente y conserva historial de eventos
-- AC5: modulo pipeline con pruebas (vocabulario, orden, labels) + migracion con cobertura viejo->nuevo
+## Documentación de fundación (en main)
+- `CONTEXT.md` reescrito al modelo nuevo (oportunidad, 7 etapas, pre-cotización, decorados, cola Hoy fusionada, sync post-venta). El glosario manda.
+- `docs/adr/0005-pipeline-unificado-7-etapas.md`: supersede el modelo de etapas de ADR-0004 (resto de 0004 vigente: CRM mínimo, no-sync Bitrix).
+- Vocabulario canónico: `no_asignado, por_cotizar, seguimiento, anticipo_pagado, pedido_liberado, saldo_pagado, producto_entregado`; salidas `no_util, perdida`.
+- Identidad de tarjeta = **oportunidad**: antes de cotizar = prospecto; al cotizar la tarjeta lleva esa cotización; 2ª cotización del mismo prospecto = 2ª tarjeta (invariante 1 tarjeta post-venta = 1 pedido Operam).
 
-## Plan de ciclos (vertical, 1 test -> 1 impl, 1 commit, 1 checkpoint)
-1. lib/pipeline.js puro: etapas, salidas, orden, labels (AC5)
-2. lib/migrar-pipeline.js puro: mapeo etapa prospecto viejo->nuevo + estado cotizacion->etapa, idempotente, preserva eventos (AC3/AC4/AC5)
-3. stores adoptan vocabulario nuevo (default etapa por_cotizar) (AC3)
-4. tablero unico de 7 columnas (public/js/pipeline-logica.js) con agrupacion + conmutador lista (AC2)
-5. bottom-nav en index.html + app.js con Pipeline vivo (AC1)
+## Mapa de issues (#53–#66, todos hijos de #52)
+- **#53 CERRADO** ✅ — tracer: bottom-nav + 7 etapas + migración + tablero único. Mergeado a main (deploy Render).
+- #54 crear prospecto en Por Cotizar (+global) — bloqueado por #53 (ya desbloqueado)
+- #55 cotizar → Seguimiento auto — desbloqueado
+- #56 mover a Seguimiento manual con folio — desbloqueado
+- #57 No Asignado + asignación — desbloqueado
+- #58 Hoy: prospectos por contactar — desbloqueado (desbloquea #8/#9 = #64/#65)
+- #59 salidas No útil/Perdida + filtro — desbloqueado
+- #60 cotizar repensado (stepper) — desbloqueado
+- #61 decorados (checklist + gate + Dropbox) — desbloqueado
+- #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos)
+- #63 pre-cotización badge PRE — bloqueado por #55
+- #64 Hoy suma cotizaciones (fusión) — bloqueado por #58
+- #65 reunión re-encuadrada — bloqueado por #58
+- #66 formalizar pre-cotización + editar prospecto — bloqueado por #63
 
-## Baseline
-- `npm test` = 483 pass / 0 fail (verificado antes de empezar).
+## #53 — cierre
+Demo aprobada por Adrián (probó remoto vía túnel cloudflared, datos reales). Commits en main vía merge de `issue-53-tracer-embudo`:
+- 6e2ebc2 doc fundación · d5f777b pipeline.js · fcd3d90 migrar-pipeline.js · 50a7ddc stores+dominio · 7fc762b bottom-nav+tablero · 8df3446 PROGRESS
+- Fixes de code-review (hallazgos): 923e407 `oportunidadesActivas` (pura+test Q10) · 298c239 aplica hallazgos 1-3 en frontend.
+  - H1 (corrección): vista Lista del pipeline excluye salidas como el tablero (antes las mostraba).
+  - H2: una sola navegación — retirado el header viejo (Prospectos/Seguimiento/Historial) y sus listeners; badge de pendientes movido a Hoy.
+  - H3: se marca el destino activo al entrar desde Más y al volver a Cotizar.
+- **H4 (NO arreglado, por diseño): "Hoy" solo muestra cotizaciones; la cola de prospectos vive en Más→Prospectos. Es el contenido de #58 (#7) + #64 (#8). Decisión de Adrián: dejarlo para #58.**
+- Suite 497/497.
 
-## Estado actual: ISSUE #53 COMPLETO. Todos los AC verdes, suite 496/496.
-Ciclo 1 CERRADO (d5f777b): lib/pipeline.js, 5 tests. Vocabulario AC5.
-Ciclo 2 CERRADO (fcd3d90): lib/migrar-pipeline.js, 10 tests. Mapeo idempotente AC3/AC4/AC5.
-Ciclo 3 CERRADO (50a7ddc): stores + server + dominio + public/js/pipeline-logica.js (9 tests). AC2/AC3/AC4.
-Ciclo 4 CERRADO (7fc762b): cotizaciones-store migra al leer; bottom-nav + destino Pipeline vivo con tablero unico + conmutador lista/tablero. AC1/AC2.
+### Decisiones de #53 que no perder
+- Migración en la frontera de LECTURA del store (listar/obtener/buscarPorCelular en ambos backends), idempotente, no reescribe disco/Neon (mezcla física de vocabulario en Neon, normalizada en lectura — deuda aceptada).
+- `migrarCotizacion` respeta una etapa de pipeline ya presente; solo deriva del estado si no hay (deja la puerta al sync post-venta de #62).
+- Avance manual entre etapas de prospección ELIMINADO (ADR-0005). Única transición manual viva hoy: salida a No útil. `por_cotizar→seguimiento` la dispara el hook de cotización (auto, ya re-mapeado de #46) o folio Operam (será #56).
+- `oportunidadesActivas` (public/js/pipeline-logica.js) = única fuente de "qué es activo" (filtra salidas); la usan tablero y lista.
+- Tablero viejo de cotizaciones queda como pantalla legacy accesible desde Historial (no se eliminó su código; el destino Pipeline usa el tablero único).
 
-Verificado en browser (chrome-devtools, datos reales): bottom-nav Cotizar/Hoy/Pipeline/Mas; Pipeline 7 columnas (Por Cotizar 3, Seguimiento 55, $1.28M sumado); toggle lista/tablero; Hoy->seguimiento; Mas->Historial/Prospectos; 0 errores de consola. Screenshot en .temporales/pipeline-tablero.png.
-
-DEMO (2 min): npm start -> http://localhost:3000 -> login -> abre en Cotizar con barra inferior -> tocar Pipeline: tablero de 7 columnas con las cotizaciones en Seguimiento y los prospectos en Por Cotizar -> Lista/Tablero conmuta -> Hoy y Mas enlazan a las pantallas existentes.
-
-Decisiones ciclo 2/3:
-- migrarCotizacion respeta etapa ya presente del pipeline (idempotencia + futuro post-venta); solo deriva del estado si no hay etapa nueva. Default prospecto sin etapa -> por_cotizar.
-- Migracion en la frontera de LECTURA del store (no reescribe disco): idempotente, AC4 natural.
-- Avance manual de etapa de prospeccion (nuevo->contactado->calificado) ELIMINADO (ADR-0005). Unica transicion manual viva: salida a No util. por_cotizar->seguimiento la dispara la cotizacion (auto) o folio Operam (otro issue).
-- reunion-resultado: solo cierra a No util (calificado eliminado; CONTEXT.md "Reunion de diagnostico").
-- CONTRADICCION POTENCIAL evaluada y descartada: el issue dice "tarjetas se ven en su columna, NO transiciones especiales"; pero "stores adoptan vocabulario nuevo" obliga a tocar el hook/cola/transiciones existentes que usaban el vocabulario viejo. No invente reglas nuevas: solo reexprese las existentes al vocabulario nuevo y elimine lo que ADR-0005 obsoleta.
-
-## Notas de diseno / hallazgos
-- Datos prospectos.json: etapas nuevo/contactado/calificado/no_util, todos con vendedor.
-- cotizaciones.json: 55 filas, casi todas estado null (=> abierta). Una "abierta".
-- Mapeo ADR-0005: nuevo/contactado/calificado -> por_cotizar; cotizado -> seguimiento; no_util se conserva.
-  Estado cotizacion: abierta/null/ganada -> seguimiento (sin dato Operam post-venta en este slice); perdida/descartada -> perdida (salen del tablero).
-- Vocabulario canonico (CONTEXT.md): no_asignado, por_cotizar, seguimiento, anticipo_pagado, pedido_liberado, saldo_pagado, producto_entregado; salidas no_util, perdida.
-- Prior art: node:test+supertest, app sin listen() (isMain), logica pura frontend en .cjs via import() dinamico.
-- Alcance #53: tarjetas existen y se ven en su columna; NO transiciones especiales ni demas destinos completos.
+## Siguiente
+Issue por seleccionar/confirmar con Adrián. Candidatos fuertes: **#55** (ruta crítica hacia pre-cotización #63→#66, formaliza la transición central) o **#58** (Hoy, desbloquea #64/#65). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
