@@ -31,7 +31,7 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 - **#56 CERRADO** ✅ — mover a Seguimiento manual (botón en la tarjeta Por Cotizar) exigiendo folio Operam (rechazo server-side sin folio); el folio vive en `data.folioOperam` del prospecto, badge `#Operam N` (nunca PRE). Mergeado a main. Suite 593/593.
 - **#57 CERRADO** ✅ — entrada No Asignado (`POST /api/prospectos/sin-asignar` admin-only) + asignar vendedor (`PATCH .../asignar`) que mueve a Por Cotizar vía regla de dominio `transicionPorAsignacion`. Primera acción de tarjeta del tablero (asignar, solo admin). Mergeado a main. **Bug del botón de asignar (usaba id prefijado `p7`, roto en navegador) corregido en la rama de #56 — regresión Q38/Q39.**
 - **#58 CERRADO** ✅ — Hoy muestra la cola de prospectos en Por Cotizar (cierra el H4 de #53). Cola de cotizaciones reubicada en Más → "Seguimiento cotizaciones" hasta la fusión #64. Mergeado a main.
-- #59 salidas No útil/Perdida + filtro — desbloqueado
+- **#59 CERRADO** ✅ — salidas No útil (motivo de catálogo, solo prospectos — Modelo A) y Perdida (confirmación; cotización vía ruta de estado, prospecto vía ruta de etapa) + filtro "Cerradas" en el Pipeline. Cancelar sin motivo no toca el servidor. Mergeado a main. Suite 604/604.
 - #60 cotizar repensado (stepper) — desbloqueado
 - #61 decorados (checklist + gate + Dropbox) — desbloqueado
 - #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos)
@@ -115,7 +115,7 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 3. Sobre esa cotización, "Subir a Operam" (con un cliente real con RFC en Operam). Recargar Pipeline → el chip cambia a **#Operam N** (folio real). La tarjeta sigue en Seguimiento.
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
-## #59 — salidas No util / Perdida + filtro/historial — EN PROGRESO (rama issue-59-salidas)
+## #59 — salidas No util / Perdida + filtro/historial — CERRADO (aprobado por Adrian con evidencia; verificado por el orquestador; mergeado a main). Suite 604/604. Modelo A: No util solo prospectos, cotizacion solo Perdida. La leccion del bug de #57 fue aplicada por el subagente (refId + regresion Q43 con forma prefijada).
 
 Modelo A (decision de Adrian, NO reabrir): **No util** (motivo obligatorio de catalogo) aplica SOLO a PROSPECTOS sin cotizar; una COTIZACION sale del embudo SOLO por **Perdida** (con confirmacion), no por No util. Reusa rutas existentes.
 
@@ -172,7 +172,7 @@ Modelo A (decision de Adrian, NO reabrir): **No util** (motivo obligatorio de ca
 - data/prospectos.json y data/cotizaciones.json (gitignored) quedaron con el estado del demo en vivo (Laura/Pedro/cot55 cerrados) -- son fixtures locales, no se commitean.
 
 ## Siguiente
-#53, #54, #55, #56, #57, #58, #63, #64 y #66 cerrados y en main (9 de 14). Embudo: entradas (#54 con dueño, #57 sin asignar), avance manual Por Cotizar→Seguimiento con folio (#56) y automático al cotizar (#55). El tablero tiene 2 acciones de tarjeta (asignar #57, mover a Seguimiento #56). **Deuda de proceso: el bug de #57 (botón roto en navegador) se coló por aprobar UI de tablero sin demo en vivo; los controles de tarjeta deben verificarse en navegador, no solo por tests puros.** Candidatos: **#59** (salidas No útil/Perdida + filtro/historial — la otra punta del ciclo) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL (escribe/lee Operam real).
+#53, #54, #55, #56, #57, #58, #59, #63, #64 y #66 cerrados y en main (10 de 14). Ciclo de vida del embudo COMPLETO: entradas (#54 con dueño, #57 sin asignar), avances a Seguimiento (manual con folio #56, auto al cotizar #55) y salidas (No útil/Perdida + filtro Cerradas #59). El tablero tiene 3 acciones de tarjeta (asignar #57, mover a Seguimiento #56, salidas #59), todas con el patrón de cableado endurecido (refId + tests de forma prefijada). **Deuda de proceso: las acciones de tarjeta del tablero idealmente se verifican en navegador, no solo por tests puros (origen del bug de #57).** Faltan 4: **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados — checklist + gate a Pedido liberado + Dropbox) · **#65** (reunión re-encuadrada; desbloqueado por #58, el más acotado) · **#62** (sync Operam post-venta — de-riesga la dependencia abierta pero es HITL, lee/escribe Operam real).
 
 ## #57 — No Asignado + asignación de vendedor — EN PROGRESO (rama issue-57-no-asignado)
 
