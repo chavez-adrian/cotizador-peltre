@@ -26,7 +26,7 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 
 ## Mapa de issues (#53–#66, todos hijos de #52)
 - **#53 CERRADO** ✅ — tracer: bottom-nav + 7 etapas + migración + tablero único. Mergeado a main (deploy Render).
-- #54 crear prospecto en Por Cotizar (+global) — desbloqueado
+- #54 crear prospecto en Por Cotizar (+global) — **IMPLEMENTADO en rama `issue-54-crear-prospecto`** (pendiente verificación del orquestador + demo de Adrián). Suite 561/561.
 - **#55 CERRADO** ✅ — cotizar → Seguimiento auto (regla de dominio `transicionPorCotizacion`). Mergeado a main.
 - #56 mover a Seguimiento manual con folio — desbloqueado
 - #57 No Asignado + asignación — desbloqueado
@@ -229,3 +229,45 @@ En `pipeline-logica.js`, NO en prospectos-logica.js, por la dirección de depend
 3. Sobre un ítem **prospecto**: WhatsApp + "Registrar contacto" (y, si aplica, reunión vencida / "3 toques · ¿No útil?"). Registrar contacto reordena la cola.
 4. Sobre un ítem **cotización**: WhatsApp con el mensaje de seguimiento del paso (día 2/7/21/vencida), chip de folio (PRE / #Operam N), "✓ Hecho" (saca la tarjeta hasta el siguiente paso) y Ganada/Perdida.
 5. Ir a **Más**: ya NO aparece "Seguimiento cotizaciones" (su cola se fusionó en Hoy). Solo Historial y Prospectos.
+
+## #54 — crear prospecto en Por Cotizar (boton + global) — IMPLEMENTADO (rama `issue-54-crear-prospecto`, pendiente verificacion del orquestador + demo). Suite 561/561
+
+### INVESTIGACION (reusar, no reinventar) — el backend y la captura YA existian
+- **Ruta `POST /api/prospectos` (server.js ~357) ya hacia todo el trabajo de dominio**: no fija `etapa` (deja el default del store), auto-asigna `req.user.name`, y aplica los 3 guardrails via `clasificarCelular` (prospecto propio -> 409 con datos; prospecto de otro vendedor -> 409 "ya lo atiende X" sin exponer; cliente Operam -> 409 "cotizale como cliente"; dedup por celular10/indice unico). NO se reescribio.
+- **Store `crear(entry)` (lib/prospectos-store.js ~201)** ya nace en `por_cotizar` (`entry.etapa || 'por_cotizar'`). NO se toco.
+- **AC2, AC4, AC5 ya estaban CUBIERTOS por tests existentes** (verificado leyendo los tests, no el reporte):
+  - AC2 (auto-asign + nace en Por Cotizar): `test/prospectos-api.test.js:79` ("vendedor autenticado captura un prospecto y lo ve en su lista en Por Cotizar") afirma `etapa==='por_cotizar'` y `vendedor==='Memo'`.
+  - AC4 (guardrails): `test/prospectos-api.test.js:124` (propio 409+datos) y `:138` (otro vendedor 409 sin exponer); cliente Operam en `test/clasificar-celular.test.js`.
+  - AC5 dominio: `test/prospectos-store.test.js:34` ("un prospecto a mano nace en por_cotizar") afirma el default del store. AC5 ruta: el mismo `prospectos-api.test.js:79` afirma la etapa por defecto de la ruta.
+- **Captura frontend ya existia**: `prospecto-form` (index.html), `abrirCapturaRapida`/`guardarProspecto` (app.js). El + reusa ESTA captura, no una nueva.
+
+### Lo que SI se construyo (foco del slice: AC1 + AC3)
+- **AC1 (boton + global)**: boton circular cobalto `#nav-add` (aria-label "Crear") centrado en el bottom-nav (entre Hoy y Pipeline), visible en TODOS los destinos porque la barra es fija (`showApp` la muestra siempre). Al tocarlo abre `#nav-nuevo-menu` con dos botones armados por la logica pura `buildMenuNuevoHtml()`: "Nueva cotizacion" -> `nuevaCotizacion()` (vista de cotizar existente, igual que `nav-cotizar`); "Nuevo prospecto" -> `nuevoProspecto()` (`showProspectos()` + `abrirCapturaRapida()`, la captura EXISTENTE). Menus + y Mas mutuamente excluyentes (abrir uno cierra el otro); `ocultarTodasLasVistas` cierra ambos.
+- **AC3 (tarjeta en Por Cotizar sin recarga)**: `guardarProspecto` ya refrescaba la lista de Prospectos (`cargarListaProspectos`), donde el vendedor ve la tarjeta al instante. Para el TABLERO: `showPipeline()` re-fetchea `/api/prospectos` + `/api/cotizaciones` en cada navegacion del bottom-nav (no es recarga manual del navegador), asi que la tarjeta nueva sale en Por Cotizar al ir a Pipeline. NO se invento mecanismo nuevo de refresco. La regla pura que la coloca en la columna es `agruparPipeline` (ya probada por Q3).
+
+### Logica pura nueva (TDD, en pipeline-logica.js, probada en .cjs)
+- `ACCIONES_NUEVO` = `[{label:'Nueva cotizacion',accion:'nuevaCotizacion'},{label:'Nuevo prospecto',accion:'nuevoProspecto'}]`. `buildMenuNuevoHtml()` pinta un boton por accion con su `onclick`. Tests Q25/Q26 en `pipeline-logica.test.cjs`. Vive en pipeline-logica.js (modulo del shell/pipeline que ya agrega prospectos+cotizaciones; importa `escapeHtml` de prospectos-logica, respeta la direccion de imports).
+
+### Estado de cada AC (verificado: tests + navegador end-to-end con un vendedor real)
+- AC1 (+ global visible en todos los destinos, ofrece Nueva cotizacion/Nuevo prospecto): VERDE. Logica pura Q25/Q26 + verificado en navegador (Cotizar y Pipeline muestran el +; el menu abre ambas acciones; "Nuevo prospecto" abre la captura existente).
+- AC2 (a mano -> Por Cotizar auto-asignado): YA-CUBIERTO (`prospectos-api.test.js:79`). Verificado en navegador (tarjeta "Demo AC54 Prospecto · Alejandro Chavez · Toluca · WhatsApp").
+- AC3 (tarjeta en Por Cotizar sin recarga manual): VERDE. Verificado en navegador: tras guardar via el +, navegar a Pipeline muestra la tarjeta en la columna **Por Cotizar** (count 1), sin refresh del navegador. Regla pura `agruparPipeline` (Q3).
+- AC4 (guardrails siguen aplicando): YA-CUBIERTO (`prospectos-api.test.js:124`/`:138` + `clasificar-celular.test.js`). El + reusa la misma ruta, no la cambia.
+- AC5 (dominio + ruta con prueba de etapa por defecto): YA-CUBIERTO. Dominio: `prospectos-store.test.js:34`. Ruta: `prospectos-api.test.js:79`.
+
+### Commits (rama issue-54-crear-prospecto)
+- eb592b4 feat: menu del boton + global (logica pura) ofrece Nueva cotizacion y Nuevo prospecto (#54) — `pipeline-logica.js`, `pipeline-logica.test.cjs`
+- 05e41b7 feat: boton + global en el bottom-nav crea cotizacion o prospecto (#54) — `index.html`, `style.css`, `app.js`
+
+### DEMO (2 min) para Adrian
+1. Login. En CUALQUIER destino (Cotizar, Hoy, Pipeline, Mas) el bottom-nav muestra el boton **+** redondo cobalto al centro.
+2. Tocar **+**: aparece un menu con **Nueva cotizacion** y **Nuevo prospecto**.
+3. **Nueva cotizacion** -> vuelve a la vista de cotizar (home). **Nuevo prospecto** -> abre la captura minima existente (celular/nombre/ciudad/canal + opcionales), con el celular ya enfocado.
+4. Capturar un prospecto (celular nuevo + canal): se guarda auto-asignado al vendedor, nace en **Por Cotizar** y aparece en la lista de Prospectos.
+5. Ir a **Pipeline** (bottom-nav, sin recargar): la tarjeta esta en la columna **Por Cotizar**.
+6. Guardrails intactos: capturar un celular ya tuyo avisa que ya es prospecto; uno de otro vendedor dice "ya lo atiende X"; uno de un cliente Operam manda a cotizarle como cliente.
+
+### Notas / deuda
+- "Nueva cotizacion" simplemente lleva a la vista de cotizar tal cual (no toca un carrito a medias) — el rediseno del flujo de cotizar como stepper es #60, fuera de alcance aqui.
+- El boton + NO es una accion de tarjeta del tablero (el tablero sigue solo-lectura, decision #53).
+- El frontend del + no tiene test de DOM (no hay DOM en los tests, patron del repo); la logica pura del menu si (Q25/Q26) y el cableado se valido en navegador.
