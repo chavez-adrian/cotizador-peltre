@@ -19,6 +19,7 @@ import * as prospectosStore from './lib/prospectos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
+import { transicionPorCotizacion } from './lib/pipeline.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -136,19 +137,24 @@ function validarTelefonoCotizacion(req, res) {
 }
 
 // Hook de embudo al crear cotizacion (issue #46; vocabulario del pipeline
-// unificado, issue #53): celular de prospecto -> pasa a Seguimiento (revive
-// desde No util; si ya esta en Seguimiento solo acumula el evento); celular
-// libre con canal del catalogo -> auto-crea el prospecto directo en Seguimiento
-// con los datos de la cotizacion (sin canal no se crea: el frontend siempre lo
-// manda, la API directa sin canal no genera prospecto); celular de cliente
-// Operam -> nada. Best effort: un fallo aqui jamas rompe la generacion.
+// unificado, issue #53; regla de dominio formal, issue #55): la transicion la
+// gobierna transicionPorCotizacion (lib/pipeline.js), el mismo disparador que
+// usara el sync de Operam (#62). Desde Por Cotizar/No util -> Seguimiento; si ya
+// esta en Seguimiento (idempotente) o la regla no permite mover (No Asignado sin
+// vendedor, etapas post-venta que mueve Operam, Perdida) solo se acumula el
+// evento sin cambiar la etapa. Celular libre con canal del catalogo -> auto-crea
+// el prospecto directo en Seguimiento con los datos de la cotizacion (sin canal
+// no se crea: el frontend siempre lo manda, la API directa sin canal no genera
+// prospecto); celular de cliente Operam -> nada. Best effort: un fallo aqui jamas
+// rompe la generacion.
 async function pasarProspectoASeguimiento(p, cotizacionId, vendedor) {
   const evento = {
     tipo: 'cotizacion', cotizacion_id: cotizacionId, de: p.etapa,
     fecha: new Date().toISOString(), vendedor,
   };
-  if (p.etapa === 'seguimiento') await prospectosStore.registrarEvento(p.id, evento);
-  else await prospectosStore.cambiarEtapa(p.id, 'seguimiento', evento);
+  const destino = transicionPorCotizacion(p.etapa);
+  if (destino && destino !== p.etapa) await prospectosStore.cambiarEtapa(p.id, destino, evento);
+  else await prospectosStore.registrarEvento(p.id, evento);
 }
 
 async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
