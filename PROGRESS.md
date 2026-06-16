@@ -136,6 +136,41 @@ Modelo A (decision de Adrian, NO reabrir): **No util** (motivo obligatorio de ca
 - C4 (AC4 + cableado): app.js (cancelar = sin servidor).
 - C5 (AC3 filtro/historial): modo Cerradas (lista salidas con tipo + motivo). Test pura en pipeline-logica.test.cjs.
 
+### CERRADO por el subagente (pendiente verificacion del orquestador + demo de Adrian). Suite 604/604 (593 baseline + 11 nuevos). VERIFICADO EN NAVEGADOR (leccion #57).
+
+### Estado de cada AC
+- AC1 (No util exige motivo de catalogo, server-side, solo prospectos): VERDE. Dominio validarTransicion (ya validaba no_util, T5/T6). Ruta PATCH .../etapa (ya probada). Tablero: control con select de motivo solo en prospecto (Q40), nunca en cotizacion (Q41, Modelo A). Navegador: Laura -> no_util motivo "fuera de zona" persistido server-side.
+- AC2 (Perdida pide confirmacion): VERDE. Dominio validarTransicion permite perdida desde activa (T6b), rechaza desde salida (T6c). Ruta prospecto (perdida sin motivo) + ruta cotizacion (estado, ya existia). Confirm() en cerrarPerdidaTablero (app.js). Navegador: Pedro (prospecto) y cot 55 (cotizacion) cerrados con confirmacion.
+- AC3 (cerradas salen del tablero y viven en filtro/historial): VERDE. Tablero/lista ya excluyen salidas (oportunidadesActivas, #53). Tercer modo "Cerradas" lista las salidas con tipo + motivo (buildCerradasHtml, Q45/Q46). Navegador: Cerradas muestra Laura/No util/fuera de zona, Pedro/Perdida, cot55/Perdida; el activo ya no las pinta.
+- AC4 (cancelar No util regresa la tarjeta sin tocar el servidor): VERDE. Sin select de motivo no se llama al servidor (marcarNoUtilTablero corta). Navegador: click No util sin motivo -> Laura sigue en por_cotizar en disco (sin eventos nuevos).
+- AC5 (reglas con pruebas dominio + ruta): VERDE. Dominio: T6b/T6c (perdida). Ruta: 2 tests perdida prospecto en prospectos-api.test.js; no_util ya probado; cotizacion perdida via estado (seguimiento-api.test.js existente). Frontend pura: Q40-Q46.
+
+### Diseno (lo que no perder)
+- Dominio: `validarTransicion` extendido con rama `perdida` (permitida desde ETAPAS_ACTIVAS, derivadas de ETAPA_LABELS menos no_util/perdida; rechazada desde salida). NO se toco no_util ni por_cotizar->seguimiento (#56). Perdida sin motivo (la confirmacion es del frontend).
+- Ruta prospecto: PATCH .../etapa YA era generica (`no_util ? evento no_util : evento etapa`); perdida cae en la rama generica una vez que el dominio la permite. No requirio cambio de ruta (solo tests que lo fijan).
+- Ruta cotizacion: REUSADA `PATCH /api/cotizacion/:id/estado {estado:'perdida'}` (Modelo A). Una cotizacion perdida deriva etapa 'perdida' en la lectura (migrar-pipeline) y sale del tablero. NO se creo ruta ni se agrego no_util a estado.
+- Frontend pura (pipeline-logica.js): `buildSalidaControlHtml(o)` -- prospecto activo: select motivo + No util + Perdida; cotizacion activa: solo Perdida; salida: ''. Usa `o.refId ?? o.id` (leccion #57, Q43). `buildCerradasHtml(oportunidades)` filtra esSalida, ordena reciente primero, muestra tipo de cierre + motivo (o.motivoNoUtil).
+- Cableado (app.js): `marcarNoUtilTablero` (sin motivo = aviso, sin servidor = AC4), `cerrarPerdidaTablero` (confirm; resuelve tipo por id en ultimasOportunidades para elegir la ruta). `prospectoAOportunidad` ahora deriva `motivoNoUtil` del ultimo evento no_util. Tercer modo "Cerradas" en renderPipeline + boton en index.html + listener + PIPELINE_MODOS.
+
+### Commits (rama issue-59-salidas)
+- ddf0de7 feat: validarTransicion permite salida a Perdida desde etapa activa (#59)
+- 3778803 test: PATCH etapa a Perdida cierra el prospecto y rechaza desde una salida (#59)
+- 273007a feat: controles de salida No util/Perdida en la tarjeta del tablero (logica pura) (#59)
+- 9fcc286 feat: cableado de salidas No util/Perdida en el tablero; cancelar no toca el servidor (#59)
+- 7b039bc feat: filtro Cerradas en el Pipeline lista las salidas No util/Perdida con motivo (#59)
+
+### DEMO (2 min) para Adrian
+1. Login admin (Adrian Chavez, PIN 0000). Ir a Pipeline (bottom-nav), Tablero.
+2. En Por Cotizar, cada prospecto trae: "A Seguimiento (folio Operam)" (#56), select "Motivo No util...", boton "No util", boton "Perdida". Una cotizacion en Seguimiento solo trae "Perdida" (Modelo A: no No util para cotizaciones).
+3. Sacar a No util: elegir un motivo y tocar "No util" -> la tarjeta sale del tablero (queda en el historial con su motivo).
+4. Cancelar: tocar "No util" SIN elegir motivo -> aviso "Elige el motivo..."; la tarjeta NO se mueve (no se toca el servidor).
+5. Cerrar como Perdida: tocar "Perdida" en un prospecto o cotizacion -> confirmacion; al aceptar sale del tablero.
+6. Ver el filtro: tocar "Cerradas" -> lista las salidas con su tipo (No util / Perdida) y, para No util, el motivo.
+
+### Deuda / pendientes
+- El frontend (controles de tarjeta + modo Cerradas) no tiene test de DOM (patron del repo: sin DOM en tests); la logica pura si (Q40-Q46) y el cableado se verifico EN NAVEGADOR (Laura/Pedro/cot55 + cancelar). 
+- data/prospectos.json y data/cotizaciones.json (gitignored) quedaron con el estado del demo en vivo (Laura/Pedro/cot55 cerrados) -- son fixtures locales, no se commitean.
+
 ## Siguiente
 #53, #54, #55, #56, #57, #58, #63, #64 y #66 cerrados y en main (9 de 14). Embudo: entradas (#54 con dueño, #57 sin asignar), avance manual Por Cotizar→Seguimiento con folio (#56) y automático al cotizar (#55). El tablero tiene 2 acciones de tarjeta (asignar #57, mover a Seguimiento #56). **Deuda de proceso: el bug de #57 (botón roto en navegador) se coló por aprobar UI de tablero sin demo en vivo; los controles de tarjeta deben verificarse en navegador, no solo por tests puros.** Candidatos: **#59** (salidas No útil/Perdida + filtro/historial — la otra punta del ciclo) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL (escribe/lee Operam real).
 
