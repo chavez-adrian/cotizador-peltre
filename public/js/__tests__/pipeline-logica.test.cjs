@@ -400,3 +400,26 @@ test('Q37: el tablero pinta el boton de mover a Seguimiento en la tarjeta de pro
   assert.equal(html.includes('moverASeguimientoTablero(8)'), false);
   assert.equal(html.includes('moverASeguimientoTablero(10)'), false);
 });
+
+// Regresion (hallazgo del orquestador al verificar #56): prospectoAOportunidad
+// arma la oportunidad con id PREFIJADO ('p7') y el id numerico real en refId (7).
+// Los controles de tarjeta deben disparar la accion con el id NUMERICO (refId);
+// con el id prefijado el onclick queda "accion(p7)" -- un identificador sin
+// comillas que el navegador interpreta como variable undefined (el control no
+// hace nada). Los helpers de test usaban id numerico sin refId, por eso el bug de
+// #57 (asignar) no se cazo. Estos casos usan la forma real.
+test('Q38: buildAsignarControlHtml usa el id numerico (refId), no el id prefijado de la oportunidad', () => {
+  const o = { tipo: 'prospecto', id: 'p7', refId: 7, etapa: 'no_asignado' };
+  const html = buildAsignarControlHtml(o, VENDEDORES, true);
+  assert.match(html, /asignarVendedorTablero\(7\)/);
+  assert.match(html, /id="asignar-vendedor-7"/);
+  assert.equal(html.includes('asignarVendedorTablero(p7)'), false);
+  assert.equal(html.includes('asignar-vendedor-p7'), false);
+});
+
+test('Q39: buildMoverSeguimientoControlHtml usa el id numerico (refId) con la oportunidad prefijada', () => {
+  const o = { tipo: 'prospecto', id: 'p7', refId: 7, etapa: 'por_cotizar' };
+  const html = buildMoverSeguimientoControlHtml(o);
+  assert.match(html, /moverASeguimientoTablero\(7\)/);
+  assert.equal(html.includes('moverASeguimientoTablero(p7)'), false);
+});

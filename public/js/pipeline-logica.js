@@ -174,12 +174,16 @@ export function esAsignable(o) {
 // no se pinta. Funcion pura: el cableado DOM vive en app.js.
 export function buildAsignarControlHtml(o, vendedores, esAdmin) {
   if (!esAdmin || !esAsignable(o) || !(vendedores && vendedores.length)) return '';
+  // refId es el id numerico real del prospecto; o.id puede venir prefijado ("p7").
+  // El control debe disparar la accion con el id numerico (un identificador sin
+  // comillas como "p7" seria una variable undefined en el navegador).
+  const id = o.refId ?? o.id;
   const opciones = vendedores
     .map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`)
     .join('');
   return `<div class="cot-card-actions tablero-asignar">
-    <select id="asignar-vendedor-${o.id}" class="btn-sm"><option value="">Asignar a...</option>${opciones}</select>
-    <button class="btn btn-primary btn-sm" onclick="asignarVendedorTablero(${o.id})">Asignar</button>
+    <select id="asignar-vendedor-${id}" class="btn-sm"><option value="">Asignar a...</option>${opciones}</select>
+    <button class="btn btn-primary btn-sm" onclick="asignarVendedorTablero(${id})">Asignar</button>
   </div>`;
 }
 
