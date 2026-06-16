@@ -14,6 +14,7 @@ import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
+import { calcularColaHoy } from './lib/cola-hoy.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
@@ -293,6 +294,20 @@ app.get('/api/seguimiento', authMiddleware, async (req, res) => {
     ? log
     : log.filter(c => c.vendedor === req.user.name);
   res.json(calcularCola(visibles));
+});
+
+// Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): una sola cola del dia
+// que mezcla los prospectos en Por Cotizar (horas habiles) y las cotizaciones
+// en Seguimiento (dias naturales), ordenada por urgencia relativa al umbral de
+// cada tipo. Reusa los dos motores via lib/cola-hoy.js; la visibilidad por
+// vendedor es la misma de /api/prospectos/cola y /api/seguimiento.
+app.get('/api/hoy', authMiddleware, async (req, res) => {
+  const prospectos = await prospectosStore.listar();
+  const cotizaciones = await cotStore.listar();
+  const esAdmin = req.user.role === 'admin';
+  const prospectosVisibles = esAdmin ? prospectos : prospectos.filter(p => p.vendedor === req.user.name);
+  const cotizacionesVisibles = esAdmin ? cotizaciones : cotizaciones.filter(c => c.vendedor === req.user.name);
+  res.json(calcularColaHoy(prospectosVisibles, cotizacionesVisibles, new Date()));
 });
 
 const PASOS_VALIDOS = new Set(['dia2', 'dia7', 'dia21', 'vencida']);
