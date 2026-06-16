@@ -174,6 +174,44 @@ Modelo A (decision de Adrian, NO reabrir): **No util** (motivo obligatorio de ca
 ## Siguiente
 #53, #54, #55, #56, #57, #58, #59, #63, #64 y #66 cerrados y en main (10 de 14). Ciclo de vida del embudo COMPLETO: entradas (#54 con dueño, #57 sin asignar), avances a Seguimiento (manual con folio #56, auto al cotizar #55) y salidas (No útil/Perdida + filtro Cerradas #59). El tablero tiene 3 acciones de tarjeta (asignar #57, mover a Seguimiento #56, salidas #59), todas con el patrón de cableado endurecido (refId + tests de forma prefijada). **Deuda de proceso: las acciones de tarjeta del tablero idealmente se verifican en navegador, no solo por tests puros (origen del bug de #57).** Faltan 4: **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados — checklist + gate a Pedido liberado + Dropbox) · **#65** (reunión re-encuadrada; desbloqueado por #58, el más acotado) · **#62** (sync Operam post-venta — de-riesga la dependencia abierta pero es HITL, lee/escribe Operam real).
 
+## #60 — cotizar repensado (stepper guiado + alta como excepcion) — CERRADO por el subagente (rama issue-60-stepper; pendiente verificacion del orquestador + demo de Adrian). Suite 620/620 (604 baseline + 16 nuevos)
+
+Reframe de la barra de tabs del flujo de cotizar como STEPPER GUIADO con avance visible. NO reescribe el buscador de productos, el envio, el PDF/HTML ni el alta: solo la capa de navegacion/progreso + un modulo puro nuevo. El alta sigue siendo la excepcion ("+ Nuevo cliente" -> abrirAcordeonAlta), intacta (ADR-0002/0003).
+
+### Decision de producto (NO bloquea, solo guia)
+El stepper GUIA y MUESTRA progreso pero NO bloquea la navegacion: se llega a Cotizacion sin pasar por el alta (AC2) y el clic libre se preserva. estadoStepper NO expone ninguna nocion de "bloqueado" (test S16). Esto es lo que el prompt fijo por defecto; no se asumio restriccion fuerte.
+
+### Estado de cada AC (verificado contra tests + navegador)
+- AC1 (stepper de 4 pasos con avance visible): VERDE. Riel con numero por paso (1..4) + marca de completado + barra "Paso N de 4" + fill %. Verificado en navegador: Cliente->Productos->Envio->Cotizacion mostro Paso 1/2/3/4 y fill 25/50/75/100%, con checks verdes acumulandose. Captura .temporales/stepper-envio.png.
+- AC2 (cotizacion sin alta completa): VERDE. Recorrido end-to-end hasta resumen (Cotizacion) con panel-alta-cliente SIEMPRE en display:none (altaNuncaAbierta=true). El stepper no obliga al alta.
+- AC3 (alta disponible como excepcion, guardrails+dedup intactos): VERDE. "+ Nuevo cliente" abre el acordeon (none->block) con tabs CSF/manual intactos; NO se toco el interior. Ruta dedup reachable+autenticada (GET /api/buscar-cliente-duplicado dio 503 por falta de Operam en local, NO 401 -> auth ok; logica cubierta por E1-E4 del baseline). Cero cambios en abrirAcordeonAlta, CSF, captura manual, /api/crear-cliente, /api/buscar-cliente-duplicado.
+- AC4 (logica pura de avance/estado con pruebas): VERDE. `public/js/stepper-logica.js` (modulo ES browser-safe) + `public/js/__tests__/stepper-logica.test.cjs` (S1-S16). updateTabIndicators delega en estadoStepper (ya no calcula inline).
+
+### Diseno (lo que no perder)
+- Modulo puro `stepper-logica.js`: `PASOS_STEPPER=['cliente','productos','envio','resumen']`, `PASO_LABELS` (4o = 'Cotizacion'), `indicePaso`, `esPasoValido`, `siguientePaso`/`pasoAnterior` (clamp en extremos), `pasoCompleto(paso,estado)` (estado plano `{clienteListo,productosListos,envioListo}`, mismos criterios que el viejo updateTabIndicators; resumen no tiene criterio), `pasosCompletos`, `progresoStepper` ({actual 1-based,total,fraccion}), `textoProgreso` ("Paso N de M"), `estadoStepper(pasoActual,estado)` (riel: por paso numero/label/esActual/completo, SIN "bloqueado").
+- app.js: importa estadoStepper/textoProgreso. `pasoActualStepper()` lee el `.tab.active`; `estadoFlujoCotizar()` arma el estado plano (mismos getters de DOM de siempre). `updateTabIndicators` pinta clase `completo` (solo si completo y NO actual), dots por paso, texto y fill. `switchTab` ahora llama updateTabIndicators al final (el indicador sigue al paso actual).
+- index.html: nav.tabs gana clase `stepper`, cada tab un `<span class="step-num">N</span>`; debajo `#stepper-progress` (texto + riel + fill). style.css: `.step-num` (gris/azul-actual/verde-completo con "OK" ASCII via ::before), `.stepper-progress*` (sticky bajo el riel, fill primary con transition).
+- ASCII estricto: la marca de completado es "OK" (no checkmark Unicode) por la regla de encoding del CLAUDE.md.
+
+### Commits (rama issue-60-stepper)
+- c2256ea feat: logica pura del stepper del flujo de cotizar (#60) -- stepper-logica.js + stepper-logica.test.cjs
+- d2943f9 feat: stepper guiado con avance visible en el flujo de cotizar (#60) -- index.html, style.css, app.js
+
+### Archivos tocados
+- Nuevos: public/js/stepper-logica.js, public/js/__tests__/stepper-logica.test.cjs
+- Modificados: public/index.html (nav + barra de progreso), public/css/style.css (estilos stepper), public/js/app.js (import + updateTabIndicators delega + switchTab refresca)
+
+### DEMO (2 min) para Adrian
+1. Login (cualquier vendedor). Abre en Cotizar; arriba el stepper: "1 Cliente / 2 Productos / 3 Envio / 4 Cotizacion" + barra "Paso 1 de 4".
+2. En Cliente (por defecto "Buscar en Operam", NO el alta): escribir Razon Social -> Cliente se marca completo (check verde). Tocar "Siguiente": pasa a Productos, barra "Paso 2 de 4" (50%).
+3. Agregar un producto -> Productos completo. Siguiente -> Envio "Paso 3 de 4" (75%); elegir opcion de envio -> Envio completo. Siguiente -> Cotizacion "Paso 4 de 4" (100%). Se LLEGO a la cotizacion sin abrir el alta (AC2).
+4. Los tabs siguen siendo clickeables en cualquier orden (no bloquea). 
+5. Alta como excepcion (AC3): tocar "+ Nuevo cliente" -> abre el acordeon (CSF / captura manual) con dedup. NO cambio nada del alta; solo como se llega.
+
+### Deuda / pendientes
+- El indicador (riel + barra) no tiene test de DOM (patron del repo: sin DOM en tests); la logica pura si (S1-S16) y el cableado se verifico EN NAVEGADOR (recorrido completo + alta como excepcion). Deuda de proceso del repo (acciones de UI idealmente en navegador) atendida aqui.
+- AC3 dedup: en local da 503 (Operam no configurado); el comportamiento real de dedup esta cubierto por E1-E4 del baseline. La demo de Adrian NO escribe en Operam salvo que de de alta un cliente real desde el acordeon.
+
 ## #57 — No Asignado + asignación de vendedor — EN PROGRESO (rama issue-57-no-asignado)
 
 Slice: oportunidades que llegan sin dueño caen en No Asignado; un admin les asigna vendedor y la tarjeta pasa automáticamente a Por Cotizar (regla de dominio, espeja #55).
