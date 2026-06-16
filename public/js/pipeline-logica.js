@@ -138,10 +138,23 @@ export function badgeFolioOperamHtml(cot) {
   return `<span class="cot-badge ${clase}">${escapeHtml(etiqueta)}</span>`;
 }
 
-// En el tablero el badge solo lo lleva una cotizacion (oportunidad ya cotizada);
-// un prospecto que aun no cotiza no muestra badge.
+// Badge de folio de un PROSPECTO movido a mano a Seguimiento (issue #56, AC3,
+// CONTEXT.md "Etapas del pipeline"): el vendedor cotizo POR FUERA, asi que no hay
+// cotizacion en el sistema y el folio vive en el prospecto (data.folioOperam,
+// mapeado a o.folioOperam por prospectoAOportunidad). Muestra "#Operam N" SOLO si
+// hay folio; jamas "PRE" (PRE es un concepto de cotizacion, no de prospecto). Sin
+// folio no pinta nada. Reusa etiquetaFolioOperam unicamente cuando hay folio.
+export function badgeFolioOperamProspectoHtml(o) {
+  const folio = o && o.folioOperam;
+  if (folio == null || folio === '') return '';
+  return `<span class="cot-badge badge-operam">${escapeHtml(etiquetaFolioOperam({ folioOperam: folio }))}</span>`;
+}
+
+// El badge de la tarjeta del tablero depende del tipo de oportunidad: una
+// cotizacion lleva el chip PRE / #Operam (issue #63); un prospecto solo lleva
+// #Operam N si fue movido a mano con folio (issue #56), nunca PRE.
 function badgeFolioOperam(o) {
-  return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : '';
+  return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
 }
 
 // Asignar vendedor desde la tarjeta (issue #57, CONTEXT.md "Etapas del pipeline"

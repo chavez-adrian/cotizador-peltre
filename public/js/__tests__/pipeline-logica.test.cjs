@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -343,4 +343,29 @@ test('Q31: el tablero sin opciones (no-admin o sin vendedores) no pinta el contr
   assert.equal(html.includes('asignarVendedorTablero'), false);
   const noAdmin = buildTableroPipelineHtml([prospecto({ id: 7, etapa: 'no_asignado' })], { vendedores: VENDEDORES, esAdmin: false });
   assert.equal(noAdmin.includes('asignarVendedorTablero'), false);
+});
+
+// Folio de Operam de un PROSPECTO movido a mano (issue #56, AC3): el folio vive
+// en el prospecto (data.folioOperam, cotizo por fuera). La tarjeta muestra
+// "#Operam N" SOLO si hay folio; jamas pinta "PRE" (PRE es un concepto de
+// cotizacion, no de prospecto). Sin folio no muestra nada.
+test('Q32: badgeFolioOperamProspectoHtml pinta #Operam N solo con folio; nunca PRE', () => {
+  assert.match(badgeFolioOperamProspectoHtml({ folioOperam: '55123' }), /#Operam 55123/);
+  assert.match(badgeFolioOperamProspectoHtml({ folioOperam: '55123' }), /badge-operam/);
+  assert.equal(badgeFolioOperamProspectoHtml({ folioOperam: null }), '');
+  assert.equal(badgeFolioOperamProspectoHtml({ folioOperam: '' }), '');
+  assert.equal(badgeFolioOperamProspectoHtml({}), '');
+  assert.equal(/PRE/.test(badgeFolioOperamProspectoHtml({ folioOperam: null })), false);
+});
+
+test('Q33: la tarjeta de un prospecto movido a mano (con folio) muestra #Operam N y nunca PRE', () => {
+  const html = buildTableroPipelineHtml([prospecto({ id: 1, etapa: 'seguimiento', folioOperam: '55123' })]);
+  assert.match(html, /#Operam 55123/);
+  assert.equal(html.includes('PRE'), false);
+});
+
+test('Q34: un prospecto sin folio no muestra badge (ni PRE ni #Operam)', () => {
+  const html = buildTableroPipelineHtml([prospecto({ id: 1, etapa: 'por_cotizar', folioOperam: null })]);
+  assert.equal(html.includes('PRE'), false);
+  assert.equal(html.includes('#Operam'), false);
 });

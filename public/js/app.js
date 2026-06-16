@@ -33,6 +33,7 @@ import {
   buildTableroPipelineHtml,
   oportunidadesActivas,
   badgeFolioOperamHtml,
+  badgeFolioOperamProspectoHtml,
   botonCompletarHtml,
   siguientePasoFormalizacion,
   buildColaHoyHtml,
@@ -1887,6 +1888,10 @@ function prospectoAOportunidad(p) {
     tipo: 'prospecto', id: `p${p.id}`, refId: p.id, nombre: p.nombre,
     vendedor: p.vendedor, ciudad: p.ciudad, canal: p.canal, etapa: p.etapa,
     total: 0, fecha: p.fecha,
+    // Folio de Operam de un prospecto movido a mano (issue #56): vive en el bag
+    // data porque cotizo por fuera (no hay cotizacion en el sistema). La tarjeta
+    // pinta "#Operam N" solo si hay folio (nunca PRE, eso es de cotizaciones).
+    folioOperam: p.data?.folioOperam ?? null,
   };
 }
 
@@ -1958,7 +1963,7 @@ function renderPipeline() {
   listEl.innerHTML = activas.map(o => {
     const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
     const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
-    const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : '';
+    const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
