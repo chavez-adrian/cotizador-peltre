@@ -172,6 +172,154 @@ test('rutas de prospectos sin token responden 401', async () => {
   assert.equal(readProspectos().length, 0);
 });
 
+// === Issue #57: alta sin asignar (No Asignado) + asignacion de vendedor ===
+
+// La ruta de alta sin asignar es admin-only en este slice: la consumira el
+// formulario web "Peltre de Mayoreo" (y a futuro un bot), pero su auth publica
+// es una decision de seguridad posterior y fuera de alcance. No se expone una
+// escritura publica sin control.
+test('POST /api/prospectos/sin-asignar crea la tarjeta en No Asignado sin vendedor (admin)', async () => {
+  writeProspectos([]);
+  const res = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: 'Mayoreo Web', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(res.status, 201);
+  assert.ok(res.body.id);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'no_asignado');
+  assert.equal(p.vendedor, null);
+  assert.equal(p.nombre, 'Mayoreo Web');
+  assert.equal(p.canal, 'Formulario web');
+});
+
+test('POST /api/prospectos/sin-asignar exige admin: vendedor 403, sin token 401', async () => {
+  writeProspectos([]);
+  const sinToken = await supertest(app).post('/api/prospectos/sin-asignar')
+    .send({ celular: '+52 5512345678', nombre: 'X', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(sinToken.status, 401);
+  const vendedor = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: 'X', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(vendedor.status, 403);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('POST /api/prospectos/sin-asignar valida obligatorios y rechaza con 400', async () => {
+  writeProspectos([]);
+  const sinNombre = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: '', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(sinNombre.status, 400);
+  const canalInvalido = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: 'X', ciudad: 'Toluca', canal: 'TikTok' });
+  assert.equal(canalInvalido.status, 400);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('POST /api/prospectos/sin-asignar reusa los guardrails: un celular que ya es prospecto no se duplica', async () => {
+  // Un prospecto propio de Memo (ya con dueno): el alta sin asignar no lo duplica.
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
+  const res = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: 'Otro', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(res.status, 409);
+  assert.equal(readProspectos().length, 1);
+});
+
+test('POST /api/prospectos/sin-asignar reusa el guardrail de cliente Operam: no crea prospecto', async () => {
+  writeProspectos([]);
+  mockListadoClientes([CLIENTE_OPERAM]);
+  const res = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 1 55 1234 5678', nombre: 'X', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /como cliente/i);
+  assert.equal(readProspectos().length, 0);
+});
+
+function noAsignado(extra = {}) {
+  return {
+    id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: null, celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Mayoreo Web', ciudad: 'Toluca', canal: 'Formulario web',
+    etapa: 'no_asignado', eventos: [], data: {}, ...extra,
+  };
+}
+
+// El vendedor asignado debe ser uno del catalogo (data/vendedores.json, la misma
+// fuente que GET /api/catalogos que pobla el selector del admin).
+const VENDEDOR_CATALOGO = 'Alejandro Chávez';
+
+test('PATCH /api/prospectos/:id/asignar mueve la tarjeta a Por Cotizar con el vendedor elegido (admin)', async () => {
+  writeProspectos([noAsignado()]);
+  const res = await supertest(app).patch('/api/prospectos/1/asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: VENDEDOR_CATALOGO });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.etapa, 'por_cotizar');
+  const p = readProspectos()[0];
+  assert.equal(p.vendedor, VENDEDOR_CATALOGO);
+  assert.equal(p.etapa, 'por_cotizar');
+  const ev = p.eventos.find(e => e.tipo === 'asignacion');
+  assert.ok(ev, 'evento de asignacion registrado');
+  assert.equal(ev.a, VENDEDOR_CATALOGO);
+  assert.equal(ev.de, 'no_asignado');
+  assert.equal(ev.vendedor, 'Tester');
+});
+
+test('PATCH /api/prospectos/:id/asignar exige admin: vendedor 403, sin token 401', async () => {
+  writeProspectos([noAsignado()]);
+  const sinToken = await supertest(app).patch('/api/prospectos/1/asignar').send({ vendedor: VENDEDOR_CATALOGO });
+  assert.equal(sinToken.status, 401);
+  const vendedor = await supertest(app).patch('/api/prospectos/1/asignar')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ vendedor: VENDEDOR_CATALOGO });
+  assert.equal(vendedor.status, 403);
+  assert.equal(readProspectos()[0].etapa, 'no_asignado');
+});
+
+test('PATCH /api/prospectos/:id/asignar rechaza un vendedor fuera del catalogo con 400', async () => {
+  writeProspectos([noAsignado()]);
+  const res = await supertest(app).patch('/api/prospectos/1/asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Fantasma' });
+  assert.equal(res.status, 400);
+  const sinVendedor = await supertest(app).patch('/api/prospectos/1/asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({});
+  assert.equal(sinVendedor.status, 400);
+  assert.equal(readProspectos()[0].etapa, 'no_asignado');
+});
+
+test('PATCH /api/prospectos/:id/asignar solo aplica desde No Asignado (regla de dominio)', async () => {
+  // una tarjeta que ya tiene dueno (Por Cotizar) no se reasigna por esta ruta
+  writeProspectos([noAsignado({ vendedor: 'Memo', etapa: 'por_cotizar' })]);
+  const res = await supertest(app).patch('/api/prospectos/1/asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: VENDEDOR_CATALOGO });
+  assert.equal(res.status, 400);
+  const p = readProspectos()[0];
+  assert.equal(p.vendedor, 'Memo');
+  assert.equal(p.etapa, 'por_cotizar');
+});
+
+test('PATCH /api/prospectos/:id/asignar sobre tarjeta inexistente responde 404', async () => {
+  writeProspectos([]);
+  const res = await supertest(app).patch('/api/prospectos/9/asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: VENDEDOR_CATALOGO });
+  assert.equal(res.status, 404);
+});
+
+test('No Asignado solo lo ve quien asigna (admin); el vendedor no ve tarjetas sin dueno', async () => {
+  writeProspectos([
+    noAsignado({ id: 1 }),
+    { id: 2, fecha: '2026-06-02T00:00:00Z', vendedor: 'Memo', celular: '+52 5522222222', celular10: '5522222222', nombre: 'Mio', ciudad: 'CDMX', canal: 'WhatsApp', etapa: 'por_cotizar', eventos: [], data: {} },
+  ]);
+  const memo = await supertest(app).get('/api/prospectos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  // Memo solo ve la suya; la No Asignado (vendedor null) no aparece en su cartera
+  assert.deepEqual(memo.body.map(p => p.id), [2]);
+  const admin = await supertest(app).get('/api/prospectos').set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+  assert.deepEqual(admin.body.map(p => p.id).sort(), [1, 2]);
+  const sinDueno = admin.body.find(p => p.id === 1);
+  assert.equal(sinDueno.etapa, 'no_asignado');
+  assert.equal(sinDueno.vendedor, null);
+});
+
 // === Issue #43: etapas, toques, No util e historial ===
 
 function prospectoDe(vendedor, etapa = 'por_cotizar', extra = {}) {

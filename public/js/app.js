@@ -1878,6 +1878,9 @@ function showProspectos() {
 // reparte en sus 7 columnas; las salidas viven fuera. Conmutador lista/tablero.
 let pipelineModo = localStorage.getItem('pipelineModo') === 'lista' ? 'lista' : 'tablero';
 let ultimasOportunidades = [];
+// Catalogo de vendedores para el control de asignar de la tarjeta No Asignado
+// (issue #57): solo lo carga el admin (la unica que ve esas tarjetas y asigna).
+let vendedoresPipeline = [];
 
 function prospectoAOportunidad(p) {
   return {
@@ -1910,6 +1913,12 @@ async function showPipeline() {
       ...prospectos.map(prospectoAOportunidad),
       ...cotizaciones.map(cotizacionAOportunidad),
     ];
+    // Asignar vendedor a una tarjeta No Asignado (issue #57) es accion de admin:
+    // solo el admin necesita el catalogo de vendedores para el selector. El
+    // no-admin no ve tarjetas No Asignado (su cartera no incluye sin-dueno).
+    if (state.user.role === 'admin') {
+      try { vendedoresPipeline = (await cargarCatalogos()).vendedores || []; } catch { vendedoresPipeline = []; }
+    }
     loadingEl.style.display = 'none';
     renderPipeline();
   } catch (e) {
@@ -1931,7 +1940,9 @@ function renderPipeline() {
   listEl.style.display = esTablero ? 'none' : 'block';
   if (esTablero) {
     listEl.innerHTML = '';
-    tableroEl.innerHTML = buildTableroPipelineHtml(ultimasOportunidades);
+    tableroEl.innerHTML = buildTableroPipelineHtml(ultimasOportunidades, {
+      vendedores: vendedoresPipeline, esAdmin: state.user.role === 'admin',
+    });
     return;
   }
   tableroEl.innerHTML = '';
@@ -1961,6 +1972,31 @@ const PIPELINE_LABEL = {
   saldo_pagado: 'Saldo pagado', producto_entregado: 'Producto entregado',
   no_util: 'No útil', perdida: 'Perdida',
 };
+
+// Asignar vendedor a una tarjeta No Asignado desde el tablero (issue #57): la
+// PRIMERA accion de tarjeta (el tablero era solo-lectura hasta #53). Lee el
+// vendedor del selector que pinto buildAsignarControlHtml y llama PATCH
+// /api/prospectos/:id/asignar; el servidor aplica la regla de dominio
+// (no_asignado -> por_cotizar) y la tarjeta se mueve al recargar el pipeline.
+async function asignarVendedorTablero(id) {
+  const sel = document.getElementById(`asignar-vendedor-${id}`);
+  const vendedor = sel?.value;
+  if (!vendedor) { avisoTablero('Elige un vendedor para asignar'); return; }
+  try {
+    const res = await api(`/api/prospectos/${id}/asignar`, { method: 'PATCH', body: { vendedor } });
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch {}
+      avisoTablero(data.error || 'No se pudo asignar');
+      return;
+    }
+    avisoTablero(`Asignado a ${vendedor}`);
+    showPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.asignarVendedorTablero = asignarVendedorTablero;
 
 function setModoPipeline(modo) {
   pipelineModo = modo;

@@ -20,7 +20,7 @@ import * as prospectosStore from './lib/prospectos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
-import { transicionPorCotizacion, esSalida } from './lib/pipeline.js';
+import { transicionPorCotizacion, transicionPorAsignacion, esSalida } from './lib/pipeline.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -390,6 +390,48 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   res.status(201).json({ ok: true, id });
 });
 
+// Alta de prospecto SIN vendedor (issue #57, CONTEXT.md "Etapas del pipeline":
+// No Asignado). La tarjeta nace en no_asignado y sin dueno; la asigna luego el
+// admin (PATCH .../asignar) y entonces pasa a Por Cotizar. La consumira el
+// formulario web "Peltre de Mayoreo" (y a futuro un bot), pero exponer esa
+// escritura publica y su auth (token/API key) es una decision de seguridad
+// posterior y fuera de alcance: aqui la ruta es admin-only (solo quien asigna ve
+// No Asignado, CONTEXT.md "Visibilidad"). Reusa los mismos guardrails de
+// /api/prospectos via clasificarCelular: un celular que ya es prospecto o cliente
+// Operam no se duplica.
+app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (req, res) => {
+  const body = req.body || {};
+  const error = validarProspectoBody(body);
+  if (error) return res.status(400).json({ error });
+  const clasificacion = await clasificarCelular(body.celular);
+  if (clasificacion.tipo === 'prospecto') {
+    return respuestaProspectoExistente(res, clasificacion.prospecto, req.user);
+  }
+  if (clasificacion.tipo === 'cliente') {
+    return res.status(409).json({
+      error: `Este celular es del cliente ${clasificacion.cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
+    });
+  }
+  const data = {};
+  for (const k of PROSPECTO_OPCIONALES) {
+    if (body[k] !== undefined && body[k] !== null && body[k] !== '') data[k] = body[k];
+  }
+  let id;
+  try {
+    id = await prospectosStore.crear({
+      fecha: new Date().toISOString(), vendedor: null,
+      celular: body.celular.trim(), nombre: body.nombre.trim(),
+      ciudad: body.ciudad.trim(), canal: body.canal, etapa: 'no_asignado', data,
+    });
+  } catch (e) {
+    if (e.code !== '23505') throw e;
+    const dup = await prospectosStore.buscarPorCelular(body.celular);
+    if (dup) return respuestaProspectoExistente(res, dup, req.user);
+    return res.status(409).json({ error: 'Este celular ya es un prospecto' });
+  }
+  res.status(201).json({ ok: true, id });
+});
+
 app.get('/api/prospectos', authMiddleware, async (req, res) => {
   const todos = await prospectosStore.listar();
   const visibles = req.user.role === 'admin'
@@ -456,6 +498,31 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   if (error) return res.status(400).json({ error });
   await prospectosStore.actualizarDatos(p.id, buildEdicionProspectoDatos(req.body));
   res.json({ ok: true });
+});
+
+// Asignar un vendedor a una tarjeta en No Asignado (issue #57, CONTEXT.md
+// "Etapas del pipeline" + "Visibilidad"): admin-only (solo quien asigna ve No
+// Asignado). La transicion de etapa la decide la regla de dominio
+// (transicionPorAsignacion) -- desde no_asignado -> por_cotizar; la capa de IO
+// (asignarVendedor) la aplica. El vendedor elegido debe estar en el catalogo
+// (data/vendedores.json, la misma fuente que pobla el selector en /api/catalogos).
+app.patch('/api/prospectos/:id/asignar', authMiddleware, adminMiddleware, async (req, res) => {
+  const { vendedor } = req.body || {};
+  const catalogo = (readJSON('vendedores.json') || []).filter(v => v.operam_id != null);
+  if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
+    return res.status(400).json({ error: 'El vendedor a asignar debe ser uno del catálogo' });
+  }
+  const p = await prospectosStore.obtener(parseInt(req.params.id));
+  if (!p) return res.status(404).json({ error: 'No encontrado' });
+  const destino = transicionPorAsignacion(p.etapa);
+  if (!destino) {
+    return res.status(400).json({ error: 'Solo se asigna vendedor a una tarjeta en No Asignado' });
+  }
+  await prospectosStore.asignarVendedor(p.id, vendedor, destino, {
+    tipo: 'asignacion', de: p.etapa, a: vendedor,
+    fecha: new Date().toISOString(), vendedor: req.user.name,
+  });
+  res.json({ ok: true, etapa: destino });
 });
 
 app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {

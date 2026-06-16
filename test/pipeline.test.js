@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion, esPreCotizacion, etiquetaFolioOperam } from '../lib/pipeline.js';
+import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion, transicionPorAsignacion, esPreCotizacion, etiquetaFolioOperam } from '../lib/pipeline.js';
 
 // El vocabulario canonico de las 7 etapas del pipeline unificado (CONTEXT.md
 // "Etapas del pipeline", ADR-0005). El orden es el del embudo: del primer
@@ -87,6 +87,33 @@ test('transicionPorCotizacion: no salta etapas desde No Asignado ni desde post-v
 test('transicionPorCotizacion: una etapa desconocida no mueve la tarjeta', () => {
   assert.equal(transicionPorCotizacion('cotizado'), null);
   assert.equal(transicionPorCotizacion(undefined), null);
+});
+
+// La regla de dominio de la transicion automatica disparada por asignar un
+// vendedor (issue #57, CONTEXT.md "Etapas del pipeline": "No Asignado [...]
+// Requiere asignar un vendedor; al asignarlo, la tarjeta pasa automaticamente a
+// Por Cotizar"). Simetrica de transicionPorCotizacion: devuelve la etapa destino
+// o null si asignar un vendedor no debe mover la tarjeta desde la etapa actual.
+test('transicionPorAsignacion: No Asignado pasa a Por Cotizar al asignar vendedor', () => {
+  assert.equal(transicionPorAsignacion('no_asignado'), 'por_cotizar');
+});
+
+test('transicionPorAsignacion: asignar vendedor no mueve una tarjeta que ya tiene dueno', () => {
+  // Por Cotizar en adelante la tarjeta ya tiene vendedor: reasignar no la avanza.
+  assert.equal(transicionPorAsignacion('por_cotizar'), null);
+  assert.equal(transicionPorAsignacion('seguimiento'), null);
+  assert.equal(transicionPorAsignacion('anticipo_pagado'), null);
+  assert.equal(transicionPorAsignacion('pedido_liberado'), null);
+  assert.equal(transicionPorAsignacion('saldo_pagado'), null);
+  assert.equal(transicionPorAsignacion('producto_entregado'), null);
+  // Las salidas no reviven por asignar vendedor.
+  assert.equal(transicionPorAsignacion('no_util'), null);
+  assert.equal(transicionPorAsignacion('perdida'), null);
+});
+
+test('transicionPorAsignacion: una etapa desconocida no mueve la tarjeta', () => {
+  assert.equal(transicionPorAsignacion('cotizado'), null);
+  assert.equal(transicionPorAsignacion(undefined), null);
 });
 
 // Estado PRE / folio Operam nullable (issue #63, CONTEXT.md "Pre-cotizacion"):
