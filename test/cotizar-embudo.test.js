@@ -343,6 +343,79 @@ test('O3: generar una pre-cotizacion (celular libre, sin alta) mueve la tarjeta 
   assert.equal(esPreCotizacion(cot), true);
 });
 
+// === Formalizar pre-cotizacion: alta de cliente + registro (issue #66) ===
+// "Completar despues" desde la tarjeta encadena dos piezas existentes (alta de
+// cliente con guardrails/dedup + registro de la cotizacion). Idempotentes y
+// desacopladas: si el registro fallara el alta ya hecha persiste y la cotizacion
+// sigue PRE para reintentar (O2). Aqui el camino feliz end-to-end y el guardrail.
+
+test('F1: formalizar una pre-cotizacion da de alta el cliente y registra la cotizacion, que deja de ser PRE', async () => {
+  writeProspectos([]);
+  // Pre-cotizacion (sin folio = PRE), emitida con Prospecto Minimo y RFC capturado.
+  const id = await cotStore.crear({
+    fecha: '2026-06-16T00:00:00Z', vendedor: 'Memo', cliente: 'LAURA SA DE CV',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'LAURA SA DE CV', rfc: 'LAU010101AAA' }, items: [] },
+  });
+  assert.equal(esPreCotizacion(await cotStore.obtener(id)), true);
+
+  // Paso 1: alta de cliente en Operam (RFC nuevo: el guardrail de dedup deja pasar).
+  mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/600': () => jsonResponse({ result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 500 });
+      if (u.includes('/500')) return jsonResponse({ data: [{ branches: [{ branch_code: 600 }] }] });
+      return jsonResponse({ total: 0, data: [] }); // dedup: RFC no existe -> alta procede
+    },
+  });
+  const alta = await supertest(app).post('/api/crear-cliente')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', entrega: {} });
+  assert.equal(alta.status, 200);
+  assert.equal(alta.body.ok, true);
+  assert.equal(alta.body.duplicado, false);
+  assert.equal(alta.body.customer_id, 500);
+
+  // Paso 2: registrar la cotizacion (el cliente ya existe en Operam por RFC).
+  resetSession();
+  mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '500', tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', branches: [{ branch_code: '600' }] }] }),
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, quote_id: 77001 }),
+  });
+  const reg = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(reg.status, 200);
+  assert.equal(reg.body.folio, 77001);
+  // La pre-cotizacion se formalizo: tiene folio de Operam y ya no es PRE.
+  const cot = await cotStore.obtener(id);
+  assert.equal(cot.folioOperam, '77001');
+  assert.equal(esPreCotizacion(cot), false);
+});
+
+test('F2: el alta del paso de formalizacion conserva el guardrail de deduplicacion (RFC ya en Operam no duplica)', async () => {
+  writeProspectos([]);
+  // Caso "ya es cliente Operam": el RFC ya existe. El alta NO crea un duplicado;
+  // devuelve el cliente existente para que la formalizacion solo registre.
+  let postCustomerCalled = false;
+  mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomerCalled = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      // GET por tax_id (dedup): el cliente ya existe.
+      return jsonResponse({ total: 1, data: [{ customer_id: 500, CustName: 'LAURA SA DE CV', tax_id: 'LAU010101AAA', branches: [] }] });
+    },
+  });
+  const alta = await supertest(app).post('/api/crear-cliente')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', entrega: {} });
+  assert.equal(alta.status, 200);
+  assert.equal(alta.body.duplicado, true, 'el guardrail detecta el RFC existente');
+  assert.equal(alta.body.customer_id, 500, 'reutiliza el cliente existente');
+  assert.equal(postCustomerCalled, false, 'no crea un cliente duplicado');
+});
+
 test('O2: si la subida a Operam falla, la cotizacion sigue sin folio (sigue PRE)', async () => {
   writeProspectos([]);
   const id = await cotStore.crear({
