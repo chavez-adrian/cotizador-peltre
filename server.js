@@ -19,8 +19,8 @@ import * as prospectosStore from './lib/prospectos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
-import { transicionPorCotizacion } from './lib/pipeline.js';
-import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
+import { transicionPorCotizacion, esSalida } from './lib/pipeline.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -424,6 +424,24 @@ async function prospectoOperable(req, res) {
   }
   return p;
 }
+
+// Editar/complementar el prospecto desde su tarjeta (issue #66, CONTEXT.md
+// "Captura de prospecto"): enriquece nombre, ciudad y los opcionales conforme
+// avanza la conversacion. Permitido en cualquier etapa activa; no en una salida
+// (No util/Perdida viven en historial). Misma visibilidad que las demas
+// operaciones del prospecto. No mueve la etapa ni registra evento: la edicion
+// enriquece, no avanza el embudo.
+app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
+  const p = await prospectoOperable(req, res);
+  if (!p) return;
+  if (esSalida(p.etapa)) {
+    return res.status(400).json({ error: 'No se edita un prospecto que ya salió del pipeline (No útil/Perdida)' });
+  }
+  const error = validarEdicionProspecto(req.body);
+  if (error) return res.status(400).json({ error });
+  await prospectosStore.actualizarDatos(p.id, buildEdicionProspectoDatos(req.body));
+  res.json({ ok: true });
+});
 
 app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
   const { etapa, motivo } = req.body || {};

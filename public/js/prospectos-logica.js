@@ -45,6 +45,37 @@ export function validarProspectoBody(body) {
   return null;
 }
 
+// Edicion/complemento del prospecto desde su tarjeta (issue #66, CONTEXT.md
+// "Captura de prospecto"): el vendedor enriquece nombre, ciudad y los opcionales
+// (empresa, tipo de cliente, piezas, correo, temperatura, notas) conforme avanza
+// la conversacion. El celular (llave de identidad) y el canal (origen) no se
+// reeditan aqui. Si nombre o ciudad vienen en la edicion no pueden quedar vacios
+// (siguen siendo obligatorios, como en la captura). Reusa el servidor y el frontend.
+export function validarEdicionProspecto(body) {
+  const b = body || {};
+  if (b.nombre !== undefined && !String(b.nombre).trim()) return 'El nombre no puede quedar vacío';
+  if (b.ciudad !== undefined && !String(b.ciudad).trim()) return 'La ciudad no puede quedar vacía';
+  return null;
+}
+
+// Separa la edicion en columnas propias (nombre, ciudad) y el merge de data
+// (opcionales). Los campos ausentes no viajan; los presentes se recortan. Lo
+// consume el servidor para llamar al store y el frontend para armar el body.
+export function buildEdicionProspectoDatos(body) {
+  const b = body || {};
+  const datos = {};
+  if (b.nombre !== undefined) datos.nombre = String(b.nombre).trim();
+  if (b.ciudad !== undefined) datos.ciudad = String(b.ciudad).trim();
+  const data = {};
+  for (const k of OPCIONALES) {
+    if (b[k] === undefined) continue;
+    const v = typeof b[k] === 'string' ? b[k].trim() : b[k];
+    data[k] = v;
+  }
+  if (Object.keys(data).length) datos.data = data;
+  return datos;
+}
+
 // Labels de las etapas del pipeline unificado (issue #53, ADR-0005). La unica
 // fuente del vocabulario es lib/pipeline.js; aqui se reexpone para el frontend
 // (este modulo es browser-safe y no importa de lib/).
