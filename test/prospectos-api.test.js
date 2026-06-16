@@ -445,6 +445,30 @@ test('PATCH etapa a Seguimiento desde una etapa que no es Por Cotizar sigue inva
   assert.equal(readProspectos()[0].etapa, 'no_asignado');
 });
 
+// === Issue #59: salida a Perdida (sin motivo, con confirmacion en el frontend) ===
+
+test('PATCH etapa a Perdida cierra la tarjeta sin motivo y registra el evento (#59)', async () => {
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
+  const res = await supertest(app).patch('/api/prospectos/1/etapa')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'perdida' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.etapa, 'perdida');
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.etapa, 'perdida');
+  const ev = guardado.eventos.find(e => e.tipo === 'etapa');
+  assert.equal(ev.a, 'perdida');
+  assert.equal(ev.vendedor, 'Memo');
+  assert.equal(ev.motivo, undefined);
+});
+
+test('PATCH etapa a Perdida desde una salida se rechaza server-side (#59)', async () => {
+  writeProspectos([prospectoDe('Memo', 'no_util')]);
+  const res = await supertest(app).patch('/api/prospectos/1/etapa')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'perdida' });
+  assert.equal(res.status, 400);
+  assert.equal(readProspectos()[0].etapa, 'no_util');
+});
+
 // === Issue #66: editar/complementar el prospecto desde su tarjeta ===
 
 test('PATCH /api/prospectos/:id edita nombre/ciudad y opcionales (empresa, tipo de cliente, piezas, correo, temperatura, notas)', async () => {

@@ -38,6 +38,7 @@ import {
   siguientePasoFormalizacion,
   buildColaHoyHtml,
   buildMenuNuevoHtml,
+  buildCerradasHtml,
 } from './pipeline-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1877,11 +1878,22 @@ function showProspectos() {
 // viene migrada del store); al cotizar, la cotizacion lleva la oportunidad por
 // el resto del embudo (su etapa la deriva el store del estado). El tablero las
 // reparte en sus 7 columnas; las salidas viven fuera. Conmutador lista/tablero.
-let pipelineModo = localStorage.getItem('pipelineModo') === 'lista' ? 'lista' : 'tablero';
+const PIPELINE_MODOS = new Set(['tablero', 'lista', 'cerradas']);
+let pipelineModo = PIPELINE_MODOS.has(localStorage.getItem('pipelineModo')) ? localStorage.getItem('pipelineModo') : 'tablero';
 let ultimasOportunidades = [];
 // Catalogo de vendedores para el control de asignar de la tarjeta No Asignado
 // (issue #57): solo lo carga el admin (la unica que ve esas tarjetas y asigna).
 let vendedoresPipeline = [];
+
+function motivoNoUtilDe(p) {
+  // El motivo de la salida a No util vive en el evento no_util (issue #59, AC3:
+  // el filtro de cerradas lo muestra). El ultimo evento no_util manda.
+  let motivo = null;
+  for (const e of p.eventos || []) {
+    if (e.tipo === 'no_util' && e.motivo) motivo = e.motivo;
+  }
+  return motivo;
+}
 
 function prospectoAOportunidad(p) {
   return {
@@ -1892,6 +1904,9 @@ function prospectoAOportunidad(p) {
     // data porque cotizo por fuera (no hay cotizacion en el sistema). La tarjeta
     // pinta "#Operam N" solo si hay folio (nunca PRE, eso es de cotizaciones).
     folioOperam: p.data?.folioOperam ?? null,
+    // Motivo de la salida a No util (issue #59, AC3): lo muestra el filtro de
+    // cerradas. Solo aplica a prospectos (Modelo A).
+    motivoNoUtil: motivoNoUtilDe(p),
   };
 }
 
@@ -1935,12 +1950,16 @@ function renderPipeline() {
   const tableroEl = document.getElementById('pipeline-tablero');
   const listEl = document.getElementById('pipeline-list');
   const esTablero = pipelineModo === 'tablero';
+  const esCerradas = pipelineModo === 'cerradas';
   const btnLista = document.getElementById('btn-pipeline-modo-lista');
   const btnTablero = document.getElementById('btn-pipeline-modo-tablero');
-  btnLista.classList.toggle('btn-primary', !esTablero);
-  btnLista.classList.toggle('btn-secondary', esTablero);
-  btnTablero.classList.toggle('btn-primary', esTablero);
-  btnTablero.classList.toggle('btn-secondary', !esTablero);
+  const btnCerradas = document.getElementById('btn-pipeline-modo-cerradas');
+  // El modo activo va en btn-primary, los otros en btn-secondary.
+  for (const [btn, activo] of [[btnTablero, esTablero], [btnLista, pipelineModo === 'lista'], [btnCerradas, esCerradas]]) {
+    if (!btn) continue;
+    btn.classList.toggle('btn-primary', activo);
+    btn.classList.toggle('btn-secondary', !activo);
+  }
   tableroEl.style.display = esTablero ? 'flex' : 'none';
   listEl.style.display = esTablero ? 'none' : 'block';
   if (esTablero) {
@@ -1951,6 +1970,12 @@ function renderPipeline() {
     return;
   }
   tableroEl.innerHTML = '';
+  // Modo Cerradas (issue #59, AC3): las salidas No util/Perdida que el tablero y
+  // la lista ocultan viven aqui, con su tipo de cierre y, para No util, el motivo.
+  if (esCerradas) {
+    listEl.innerHTML = buildCerradasHtml(ultimasOportunidades);
+    return;
+  }
   // Vista lista: las mismas oportunidades que pinta el tablero (sus 7 columnas),
   // mas reciente primero. Las salidas No util/Perdida NO se muestran aqui: viven
   // en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
@@ -2027,6 +2052,65 @@ async function moverASeguimientoTablero(id) {
   }
 }
 window.moverASeguimientoTablero = moverASeguimientoTablero;
+
+// Salidas del embudo desde la tarjeta del tablero (issue #59, Modelo A). El
+// control pinta el id numerico (refId); aqui se ubica la oportunidad por ese id
+// para conocer su tipo (la salida de un prospecto y la de una cotizacion pegan a
+// rutas distintas).
+function oportunidadDeTablero(tipo, id) {
+  return ultimasOportunidades.find(o => o.tipo === tipo && (o.refId ?? o.id) === id);
+}
+
+// No util (solo PROSPECTOS, Modelo A): exige un motivo del catalogo. Si el select
+// quedo vacio, NO se llama al servidor y la tarjeta se queda donde esta (AC4:
+// cancelar regresa la tarjeta a su columna sin tocar el servidor). El servidor
+// vuelve a validar el motivo (catalogo cerrado).
+async function marcarNoUtilTablero(id) {
+  const motivo = document.getElementById(`salida-motivo-${id}`)?.value;
+  if (!motivo) { avisoTablero('Elige el motivo de No útil (catálogo cerrado)'); return; }
+  try {
+    const res = await api(`/api/prospectos/${id}/etapa`, { method: 'PATCH', body: { etapa: 'no_util', motivo } });
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch {}
+      avisoTablero(data.error || 'No se pudo registrar la salida');
+      return;
+    }
+    avisoTablero(`Salida a No útil (${motivo})`);
+    showPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.marcarNoUtilTablero = marcarNoUtilTablero;
+
+// Perdida (prospecto o cotizacion): pide confirmacion (AC2). Si el vendedor
+// cancela la confirmacion, no se llama al servidor. El prospecto cierra via
+// PATCH .../etapa {perdida}; la cotizacion via PATCH .../estado {perdida} (ruta
+// existente, Modelo A: una cotizacion sale del embudo solo por Perdida).
+async function cerrarPerdidaTablero(id) {
+  const o = oportunidadDeTablero('prospecto', id) || oportunidadDeTablero('cotizacion', id);
+  const nombre = o ? (o.nombre || 'esta oportunidad') : 'esta oportunidad';
+  if (!confirm(`¿Cerrar como Perdida ${nombre}? Sale del tablero y queda en el historial.`)) return;
+  const esCot = o && o.tipo === 'cotizacion';
+  const req = esCot
+    ? api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado: 'perdida' } })
+    : api(`/api/prospectos/${id}/etapa`, { method: 'PATCH', body: { etapa: 'perdida' } });
+  try {
+    const res = await req;
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch {}
+      avisoTablero(data.error || 'No se pudo cerrar como Perdida');
+      return;
+    }
+    avisoTablero('Cerrada como Perdida');
+    showPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.cerrarPerdidaTablero = cerrarPerdidaTablero;
 
 function setModoPipeline(modo) {
   pipelineModo = modo;
@@ -2685,6 +2769,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
+  document.getElementById('btn-pipeline-modo-cerradas')?.addEventListener('click', () => setModoPipeline('cerradas'));
 
   // Volver a Cotizar desde Historial (la navegacion vive en el bottom-nav, issue #53)
   document.getElementById('btn-volver-app').addEventListener('click', () => {

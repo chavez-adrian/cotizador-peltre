@@ -125,6 +125,13 @@ const ETAPA_LABELS = {
 // Etapas del pipeline).
 export const MOTIVOS_NO_UTIL = ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta'];
 
+// Las 7 etapas activas del embudo: las salidas (no_util, perdida) viven en
+// filtro/historial, no son etapas activas. Las dos salidas se descartan
+// derivandolas del catalogo de labels.
+const ETAPAS_ACTIVAS = new Set(
+  Object.keys(ETAPA_LABELS).filter(e => e !== 'no_util' && e !== 'perdida')
+);
+
 // En el pipeline unificado no hay avance manual de etapa antes de cotizar:
 // Por Cotizar -> Seguimiento es automatico (lo dispara generar una cotizacion)
 // o manual con folio de Operam (otro issue). Se conserva la firma para los
@@ -150,6 +157,13 @@ export function validarTransicion(actual, nueva, motivo, folio) {
   }
   if (nueva === 'seguimiento' && actual === 'por_cotizar') {
     if (!String(folio == null ? '' : folio).trim()) return 'El folio de Operam es obligatorio para mover a Seguimiento a mano';
+    return null;
+  }
+  // Salida a Perdida (issue #59, Modelo A): se cierra una oportunidad desde
+  // cualquier etapa ACTIVA, sin motivo (la confirmacion es del frontend). Una que
+  // ya salio del embudo (No util / Perdida) no se vuelve a cerrar.
+  if (nueva === 'perdida') {
+    if (!ETAPAS_ACTIVAS.has(actual)) return 'El prospecto ya salió del pipeline';
     return null;
   }
   return `Transición inválida: ${ETAPA_LABELS[actual] || actual} → ${ETAPA_LABELS[nueva] || nueva}`;
