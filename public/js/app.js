@@ -33,6 +33,7 @@ import {
   buildTableroPipelineHtml,
   oportunidadesActivas,
   badgeFolioOperamHtml,
+  badgeFolioOperamProspectoHtml,
   botonCompletarHtml,
   siguientePasoFormalizacion,
   buildColaHoyHtml,
@@ -1887,6 +1888,10 @@ function prospectoAOportunidad(p) {
     tipo: 'prospecto', id: `p${p.id}`, refId: p.id, nombre: p.nombre,
     vendedor: p.vendedor, ciudad: p.ciudad, canal: p.canal, etapa: p.etapa,
     total: 0, fecha: p.fecha,
+    // Folio de Operam de un prospecto movido a mano (issue #56): vive en el bag
+    // data porque cotizo por fuera (no hay cotizacion en el sistema). La tarjeta
+    // pinta "#Operam N" solo si hay folio (nunca PRE, eso es de cotizaciones).
+    folioOperam: p.data?.folioOperam ?? null,
   };
 }
 
@@ -1958,7 +1963,7 @@ function renderPipeline() {
   listEl.innerHTML = activas.map(o => {
     const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
     const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
-    const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : '';
+    const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
@@ -1997,6 +2002,31 @@ async function asignarVendedorTablero(id) {
   }
 }
 window.asignarVendedorTablero = asignarVendedorTablero;
+
+// Mover a Seguimiento a mano desde el tablero (issue #56): el vendedor cotizo POR
+// FUERA (directo en Operam), asi que captura el folio de Operam y la tarjeta pasa
+// de Por Cotizar a Seguimiento. Captura minima con prompt(); el guard del frontend
+// rechaza un folio vacio (sin pegarle al servidor) y la ruta vuelve a validarlo
+// server-side. El folio se guarda en el prospecto (data.folioOperam). La tarjeta
+// se mueve al recargar el pipeline.
+async function moverASeguimientoTablero(id) {
+  const folio = (prompt('Numero de cotizacion de Operam (folio):') || '').trim();
+  if (!folio) { avisoTablero('El folio de Operam es obligatorio para mover a Seguimiento'); return; }
+  try {
+    const res = await api(`/api/prospectos/${id}/etapa`, { method: 'PATCH', body: { etapa: 'seguimiento', folio } });
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch {}
+      avisoTablero(data.error || 'No se pudo mover a Seguimiento');
+      return;
+    }
+    avisoTablero(`Movido a Seguimiento (folio ${folio})`);
+    showPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.moverASeguimientoTablero = moverASeguimientoTablero;
 
 function setModoPipeline(modo) {
   pipelineModo = modo;

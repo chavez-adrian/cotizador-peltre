@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, ultimos10 } from '../lib/prospectos-store.js';
+import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, moverASeguimientoConFolio, ultimos10 } from '../lib/prospectos-store.js';
 import { ETAPAS, SALIDAS } from '../lib/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -165,6 +165,23 @@ test('asignarVendedor fija el vendedor, mueve a por_cotizar y appendea el evento
   assert.equal(guardado.etapa, 'por_cotizar');
   assert.deepEqual(guardado.eventos, [evento]);
   assert.equal(await asignarVendedor(99, 'Memo', 'por_cotizar', evento), false);
+});
+
+test('moverASeguimientoConFolio fija etapa seguimiento, guarda data.folioOperam y appendea el evento (#56)', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp', etapa: 'por_cotizar', eventos: [{ tipo: 'toque', fecha: '2026-06-10T10:00:00Z', vendedor: 'Memo' }], data: { empresa: 'Hotel Azul' } },
+  ]);
+  const evento = { tipo: 'etapa', de: 'por_cotizar', a: 'seguimiento', folio: '55123', fecha: '2026-06-11T10:00:00Z', vendedor: 'Memo' };
+  const ok = await moverASeguimientoConFolio(1, '55123', evento);
+  assert.equal(ok, true);
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.etapa, 'seguimiento');
+  assert.equal(guardado.data.folioOperam, '55123');
+  // el merge conserva lo no editado (empresa)
+  assert.equal(guardado.data.empresa, 'Hotel Azul');
+  // appendea el evento sin perder el historial previo
+  assert.deepEqual(guardado.eventos, [{ tipo: 'toque', fecha: '2026-06-10T10:00:00Z', vendedor: 'Memo' }, evento]);
+  assert.equal(await moverASeguimientoConFolio(99, '55123', evento), false);
 });
 
 test('ultimos10 recorta extension y coma igual que el indice de telefonos', async () => {

@@ -138,10 +138,23 @@ export function badgeFolioOperamHtml(cot) {
   return `<span class="cot-badge ${clase}">${escapeHtml(etiqueta)}</span>`;
 }
 
-// En el tablero el badge solo lo lleva una cotizacion (oportunidad ya cotizada);
-// un prospecto que aun no cotiza no muestra badge.
+// Badge de folio de un PROSPECTO movido a mano a Seguimiento (issue #56, AC3,
+// CONTEXT.md "Etapas del pipeline"): el vendedor cotizo POR FUERA, asi que no hay
+// cotizacion en el sistema y el folio vive en el prospecto (data.folioOperam,
+// mapeado a o.folioOperam por prospectoAOportunidad). Muestra "#Operam N" SOLO si
+// hay folio; jamas "PRE" (PRE es un concepto de cotizacion, no de prospecto). Sin
+// folio no pinta nada. Reusa etiquetaFolioOperam unicamente cuando hay folio.
+export function badgeFolioOperamProspectoHtml(o) {
+  const folio = o && o.folioOperam;
+  if (folio == null || folio === '') return '';
+  return `<span class="cot-badge badge-operam">${escapeHtml(etiquetaFolioOperam({ folioOperam: folio }))}</span>`;
+}
+
+// El badge de la tarjeta del tablero depende del tipo de oportunidad: una
+// cotizacion lleva el chip PRE / #Operam (issue #63); un prospecto solo lleva
+// #Operam N si fue movido a mano con folio (issue #56), nunca PRE.
 function badgeFolioOperam(o) {
-  return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : '';
+  return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
 }
 
 // Asignar vendedor desde la tarjeta (issue #57, CONTEXT.md "Etapas del pipeline"
@@ -161,12 +174,33 @@ export function esAsignable(o) {
 // no se pinta. Funcion pura: el cableado DOM vive en app.js.
 export function buildAsignarControlHtml(o, vendedores, esAdmin) {
   if (!esAdmin || !esAsignable(o) || !(vendedores && vendedores.length)) return '';
+  // refId es el id numerico real del prospecto; o.id puede venir prefijado ("p7").
+  // El control debe disparar la accion con el id numerico (un identificador sin
+  // comillas como "p7" seria una variable undefined en el navegador).
+  const id = o.refId ?? o.id;
   const opciones = vendedores
     .map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`)
     .join('');
   return `<div class="cot-card-actions tablero-asignar">
-    <select id="asignar-vendedor-${o.id}" class="btn-sm"><option value="">Asignar a...</option>${opciones}</select>
-    <button class="btn btn-primary btn-sm" onclick="asignarVendedorTablero(${o.id})">Asignar</button>
+    <select id="asignar-vendedor-${id}" class="btn-sm"><option value="">Asignar a...</option>${opciones}</select>
+    <button class="btn btn-primary btn-sm" onclick="asignarVendedorTablero(${id})">Asignar</button>
+  </div>`;
+}
+
+// Mover a Seguimiento a mano (issue #56, AC1): boton sobre la tarjeta de un
+// PROSPECTO en Por Cotizar que abre la captura del folio de Operam (el vendedor
+// cotizo POR FUERA). El trigger es un boton, no arrastre (fuera de alcance); al
+// confirmar, app.js (moverASeguimientoTablero) llama PATCH /api/prospectos/:id/etapa
+// con { etapa:'seguimiento', folio }. Lo ve quien opera la tarjeta (dueno o admin,
+// la ruta ya valida con prospectoOperable): NO es admin-only. Una cotizacion ya
+// avanza sola al cotizar en el sistema (#55), por eso no lleva este boton.
+export function buildMoverSeguimientoControlHtml(o) {
+  if (!o || o.tipo !== 'prospecto' || o.etapa !== 'por_cotizar') return '';
+  // refId es el id numerico del prospecto (la ruta espera el id real); o.id puede
+  // venir prefijado ("p7") cuando la oportunidad se arma desde un prospecto.
+  const id = o.refId ?? o.id;
+  return `<div class="cot-card-actions tablero-mover">
+    <button class="btn btn-primary btn-sm" onclick="moverASeguimientoTablero(${id})">A Seguimiento (folio Operam)</button>
   </div>`;
 }
 
@@ -175,6 +209,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
   const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
+  const mover = buildMoverSeguimientoControlHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -185,6 +220,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
         ${total}
       </div>
       ${asignar}
+      ${mover}
     </div>
   </div>`;
 }

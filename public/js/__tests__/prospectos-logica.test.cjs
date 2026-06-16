@@ -186,9 +186,15 @@ test('T2: en el pipeline unificado no hay avance manual de etapa antes de cotiza
   assert.equal(siguienteEtapa('no_util'), null);
 });
 
-test('T3: validarTransicion rechaza el avance manual entre etapas del embudo', () => {
-  assert.ok(validarTransicion('por_cotizar', 'seguimiento'));
-  assert.ok(validarTransicion('seguimiento', 'anticipo_pagado'));
+test('T3: validarTransicion permite Por Cotizar -> Seguimiento solo con folio; sin folio se rechaza', () => {
+  assert.equal(validarTransicion('por_cotizar', 'seguimiento', null, '55123'), null);
+  assert.match(validarTransicion('por_cotizar', 'seguimiento', null, ''), /folio/i);
+  assert.match(validarTransicion('por_cotizar', 'seguimiento', null), /folio/i);
+  assert.match(validarTransicion('por_cotizar', 'seguimiento', null, '   '), /folio/i);
+  // El resto de avances del embudo siguen siendo invalidos aun con folio.
+  assert.ok(validarTransicion('seguimiento', 'anticipo_pagado', null, '55123'));
+  assert.ok(validarTransicion('no_asignado', 'seguimiento', null, '55123'));
+  assert.ok(validarTransicion('seguimiento', 'seguimiento', null, '55123'));
 });
 
 test('T4: validarTransicion rechaza saltos, etapas inventadas y avances sin No util', () => {

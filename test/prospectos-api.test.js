@@ -405,6 +405,46 @@ test('salida a No util exige motivo del catalogo; sin motivo o fuera de catalogo
   assert.equal(despues.status, 400);
 });
 
+// === Issue #56: mover a Seguimiento a mano capturando folio Operam ===
+
+test('PATCH etapa a Seguimiento sin folio se rechaza server-side y la tarjeta no avanza (#56)', async () => {
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
+  const sinFolio = await supertest(app).patch('/api/prospectos/1/etapa')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'seguimiento' });
+  assert.equal(sinFolio.status, 400);
+  assert.match(sinFolio.body.error, /folio/i);
+  const folioVacio = await supertest(app).patch('/api/prospectos/1/etapa')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'seguimiento', folio: '   ' });
+  assert.equal(folioVacio.status, 400);
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.etapa, 'por_cotizar');
+  assert.equal(guardado.eventos.length, 0);
+});
+
+test('PATCH etapa a Seguimiento con folio mueve la tarjeta y guarda data.folioOperam (#56)', async () => {
+  writeProspectos([prospectoDe('Memo', 'por_cotizar', { data: { empresa: 'Hotel Azul' } })]);
+  const res = await supertest(app).patch('/api/prospectos/1/etapa')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'seguimiento', folio: '55123' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.etapa, 'seguimiento');
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.etapa, 'seguimiento');
+  assert.equal(guardado.data.folioOperam, '55123');
+  assert.equal(guardado.data.empresa, 'Hotel Azul');
+  const ev = guardado.eventos.find(e => e.tipo === 'etapa');
+  assert.equal(ev.a, 'seguimiento');
+  assert.equal(ev.folio, '55123');
+  assert.equal(ev.vendedor, 'Memo');
+});
+
+test('PATCH etapa a Seguimiento desde una etapa que no es Por Cotizar sigue invalido aun con folio (#56)', async () => {
+  writeProspectos([prospectoDe('Memo', 'no_asignado')]);
+  const res = await supertest(app).patch('/api/prospectos/1/etapa')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'seguimiento', folio: '55123' });
+  assert.equal(res.status, 400);
+  assert.equal(readProspectos()[0].etapa, 'no_asignado');
+});
+
 // === Issue #66: editar/complementar el prospecto desde su tarjeta ===
 
 test('PATCH /api/prospectos/:id edita nombre/ciudad y opcionales (empresa, tipo de cliente, piezas, correo, temperatura, notas)', async () => {

@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -343,4 +343,83 @@ test('Q31: el tablero sin opciones (no-admin o sin vendedores) no pinta el contr
   assert.equal(html.includes('asignarVendedorTablero'), false);
   const noAdmin = buildTableroPipelineHtml([prospecto({ id: 7, etapa: 'no_asignado' })], { vendedores: VENDEDORES, esAdmin: false });
   assert.equal(noAdmin.includes('asignarVendedorTablero'), false);
+});
+
+// Folio de Operam de un PROSPECTO movido a mano (issue #56, AC3): el folio vive
+// en el prospecto (data.folioOperam, cotizo por fuera). La tarjeta muestra
+// "#Operam N" SOLO si hay folio; jamas pinta "PRE" (PRE es un concepto de
+// cotizacion, no de prospecto). Sin folio no muestra nada.
+test('Q32: badgeFolioOperamProspectoHtml pinta #Operam N solo con folio; nunca PRE', () => {
+  assert.match(badgeFolioOperamProspectoHtml({ folioOperam: '55123' }), /#Operam 55123/);
+  assert.match(badgeFolioOperamProspectoHtml({ folioOperam: '55123' }), /badge-operam/);
+  assert.equal(badgeFolioOperamProspectoHtml({ folioOperam: null }), '');
+  assert.equal(badgeFolioOperamProspectoHtml({ folioOperam: '' }), '');
+  assert.equal(badgeFolioOperamProspectoHtml({}), '');
+  assert.equal(/PRE/.test(badgeFolioOperamProspectoHtml({ folioOperam: null })), false);
+});
+
+test('Q33: la tarjeta de un prospecto movido a mano (con folio) muestra #Operam N y nunca PRE', () => {
+  const html = buildTableroPipelineHtml([prospecto({ id: 1, etapa: 'seguimiento', folioOperam: '55123' })]);
+  assert.match(html, /#Operam 55123/);
+  assert.equal(html.includes('PRE'), false);
+});
+
+test('Q34: un prospecto sin folio no muestra badge (ni PRE ni #Operam)', () => {
+  const html = buildTableroPipelineHtml([prospecto({ id: 1, etapa: 'por_cotizar', folioOperam: null })]);
+  assert.equal(html.includes('PRE'), false);
+  assert.equal(html.includes('#Operam'), false);
+});
+
+// Mover a Seguimiento a mano desde la tarjeta (issue #56, AC1): un boton sobre la
+// tarjeta de un PROSPECTO en Por Cotizar abre la captura del folio (cotizo por
+// fuera). El arrastre esta fuera de alcance; el trigger es un boton (mismo patron
+// que el control de asignar de #57). Lo ve quien opera la tarjeta (dueno o admin),
+// NO es admin-only. Una cotizacion (ya cotizada en el sistema) no lo lleva: su
+// avance es automatico (#55).
+test('Q35: buildMoverSeguimientoControlHtml pinta el boton solo para un prospecto en Por Cotizar, con su disparador', () => {
+  const html = buildMoverSeguimientoControlHtml(prospecto({ id: 5, etapa: 'por_cotizar' }));
+  assert.match(html, /<button/);
+  assert.match(html, /moverASeguimientoTablero\(5\)/);
+  assert.match(html, /Seguimiento/);
+});
+
+test('Q36: buildMoverSeguimientoControlHtml no pinta el boton fuera de Por Cotizar ni para una cotizacion', () => {
+  assert.equal(buildMoverSeguimientoControlHtml(prospecto({ id: 5, etapa: 'no_asignado' })), '');
+  assert.equal(buildMoverSeguimientoControlHtml(prospecto({ id: 5, etapa: 'seguimiento' })), '');
+  assert.equal(buildMoverSeguimientoControlHtml(cotizacion({ id: 10, etapa: 'por_cotizar' })), '');
+  assert.equal(buildMoverSeguimientoControlHtml(undefined), '');
+});
+
+test('Q37: el tablero pinta el boton de mover a Seguimiento en la tarjeta de prospecto Por Cotizar', () => {
+  const html = buildTableroPipelineHtml([
+    prospecto({ id: 7, etapa: 'por_cotizar' }),
+    prospecto({ id: 8, etapa: 'no_asignado' }),
+    cotizacion({ id: 10, etapa: 'seguimiento' }),
+  ]);
+  assert.match(html, /moverASeguimientoTablero\(7\)/);
+  assert.equal(html.includes('moverASeguimientoTablero(8)'), false);
+  assert.equal(html.includes('moverASeguimientoTablero(10)'), false);
+});
+
+// Regresion (hallazgo del orquestador al verificar #56): prospectoAOportunidad
+// arma la oportunidad con id PREFIJADO ('p7') y el id numerico real en refId (7).
+// Los controles de tarjeta deben disparar la accion con el id NUMERICO (refId);
+// con el id prefijado el onclick queda "accion(p7)" -- un identificador sin
+// comillas que el navegador interpreta como variable undefined (el control no
+// hace nada). Los helpers de test usaban id numerico sin refId, por eso el bug de
+// #57 (asignar) no se cazo. Estos casos usan la forma real.
+test('Q38: buildAsignarControlHtml usa el id numerico (refId), no el id prefijado de la oportunidad', () => {
+  const o = { tipo: 'prospecto', id: 'p7', refId: 7, etapa: 'no_asignado' };
+  const html = buildAsignarControlHtml(o, VENDEDORES, true);
+  assert.match(html, /asignarVendedorTablero\(7\)/);
+  assert.match(html, /id="asignar-vendedor-7"/);
+  assert.equal(html.includes('asignarVendedorTablero(p7)'), false);
+  assert.equal(html.includes('asignar-vendedor-p7'), false);
+});
+
+test('Q39: buildMoverSeguimientoControlHtml usa el id numerico (refId) con la oportunidad prefijada', () => {
+  const o = { tipo: 'prospecto', id: 'p7', refId: 7, etapa: 'por_cotizar' };
+  const html = buildMoverSeguimientoControlHtml(o);
+  assert.match(html, /moverASeguimientoTablero\(7\)/);
+  assert.equal(html.includes('moverASeguimientoTablero(p7)'), false);
 });
