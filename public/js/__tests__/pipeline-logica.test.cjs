@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas } =
     await import('../pipeline-logica.js'));
 });
 
@@ -106,4 +106,17 @@ test('Q9: el tablero escapa los datos de usuario (XSS)', () => {
   const html = buildTableroPipelineHtml([prospecto({ id: 1, nombre: '<img src=x onerror=alert(1)>', etapa: 'por_cotizar' })]);
   assert.equal(html.includes('<img src=x'), false);
   assert.match(html, /&lt;img/);
+});
+
+test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma regla que el tablero, para la vista lista', () => {
+  const activas = oportunidadesActivas([
+    prospecto({ id: 1, etapa: 'por_cotizar' }),
+    prospecto({ id: 2, etapa: 'no_util' }),
+    cotizacion({ id: 10, etapa: 'seguimiento' }),
+    cotizacion({ id: 11, etapa: 'perdida' }),
+  ]);
+  assert.deepEqual(activas.map(o => o.id), [1, 10]);
+  assert.equal(activas.some(o => esSalida(o.etapa)), false);
+  assert.deepEqual(oportunidadesActivas([]), []);
+  assert.deepEqual(oportunidadesActivas(null), []);
 });

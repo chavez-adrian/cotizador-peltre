@@ -35,6 +35,15 @@ export function esSalida(etapa) {
   return SALIDAS.has(etapa);
 }
 
+// Las oportunidades que viven en el pipeline (las 7 columnas): excluye las
+// salidas No util y Perdida, que viven en filtro/historial. Es la misma regla
+// que aplica el tablero (agruparPipeline ignora las salidas); la vista lista la
+// usa para no mostrar lo que el tablero oculta. Una sola fuente de "que es
+// activo".
+export function oportunidadesActivas(oportunidades) {
+  return (oportunidades || []).filter(o => !esSalida(o.etapa));
+}
+
 // Reparte las oportunidades en las 7 columnas por su etapa. Las salidas quedan
 // fuera del tablero. Cada columna se ordena de la mas reciente a la mas antigua
 // cuando la oportunidad trae fecha.
