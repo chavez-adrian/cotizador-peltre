@@ -2,6 +2,22 @@
 
 Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de aceptación, orquestador verifica (suite + code-review + criterios contra código real) y Adrián hace la demo como gate de cierre.
 
+## CÓMO RETOMAR (protocolo de orquestación — leer esto primero)
+
+Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresco** (Agent tool, general-purpose), uno POR ISSUE. El PRD padre es el issue **#52** en `chavez-adrian/cotizador-peltre`. Pasos:
+
+1. **Elegir el siguiente issue** entre los disponibles (mapa abajo) — el de mayor prioridad (desbloquea a otros / ruta crítica / reduce riesgo), no necesariamente el menor. Respeta los "Blocked by". **Presenta la elección a Adrián y ESPERA SU CONFIRMACIÓN antes de lanzar el subagente** (usa AskUserQuestion con 2-3 candidatos). Decisiones de dominio/producto: pregúntale, no asumas.
+2. **Antes de lanzar**, revisa si el issue contradice CONTEXT.md/un ADR. CONTEXT.md + ADR-0005 YA están alineados al modelo nuevo, así que normalmente no hay conflicto; si lo hubiera, resuélvelo con Adrián primero.
+3. **Crear rama** `issue-NN-slug` desde `main` (`git checkout -b`). Si hay doc de fundación que tocar, commitearla ahí primero.
+4. **Lanzar el subagente** con un prompt que incluya: repo y rama exacta (no merge/push a main), entorno (Windows/PowerShell, `git -C`), baseline actual de `npm test` (**559 pass / 0 fail en main tras #64** — reconfírmalo con `npm test` y actualiza este número al cerrar cada issue), usar `/tdd` con **ciclos por criterio de aceptación**, leer issue+PRD+CONTEXT.md+ADRs antes de tocar código, commits por ciclo (conventional commits español ASCII, stage POR NOMBRE nunca `git add .`, terminar mensaje con `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`), checkpoints en PROGRESS.md, válvula de seguridad (parar y reportar si no converge o si toca una decisión de dominio), y reporte final con estado de cada AC + `npm test` + commits + demo de 2 min. Dile qué REUSAR (no reinventar) y qué está fuera de alcance.
+5. **Al volver el subagente, NO cierres el issue.** Verifica TÚ MISMO: (a) corre la suite completa (`npm test`, 0 fallas); (b) code-review del diff (`git diff main...issue-NN`), revisando lo eliminado/remapeado y que no se debilitaron tests; (c) verifica cada AC contra el CÓDIGO REAL, no el reporte; (d) prepara una demo de 2 min. Aplica tú los fixes de code-review si son acotados (con TDD).
+6. **La demo de Adrián es el gate de cierre.** Pregúntale cómo cerrar (AskUserQuestion): demo en vivo o aprobar con evidencia. Para slices visuales ofrece demo; para backend, "aprobar con evidencia" suele bastar. **Advierte si la demo escribe en Operam** (formalizar/alta crean datos reales).
+7. **Tras su visto bueno:** actualiza PROGRESS.md (mapa + estado del issue), commit; `git checkout main`; `git merge --no-ff issue-NN` con mensaje resumen; corre `npm test` en main; `git push origin main` (dispara deploy en Render); `gh issue close NN` con comentario-resumen + commits. Luego vuelve al paso 1 y ESPERA confirmación.
+
+**Demos remotas (Adrián fuera de Tlapacoya):** la app corre en esta máquina; para que entre, monta un túnel temporal — descarga `cloudflared` (binario oficial) a `%TEMP%`, `npm start` en background, `cloudflared tunnel --url http://localhost:3000`, dale la URL `*.trycloudflare.com` (protegida por su PIN). Bájalo al terminar (mata `cloudflared` y el `node` del puerto 3000). Advierte que es URL pública temporal.
+
+**Notas:** `.env` local NO tiene `DATABASE_URL` → dev/tests usan el fallback `data/*.json`; producción usa Neon. `gh` está disponible. Hay ramas de feature locales mergeadas sin borrar (limpieza opcional con `git branch -d`).
+
 ## Documentación de fundación (en main)
 - `CONTEXT.md` reescrito al modelo nuevo (oportunidad, 7 etapas, pre-cotización, decorados, cola Hoy fusionada, sync post-venta). El glosario manda.
 - `docs/adr/0005-pipeline-unificado-7-etapas.md`: supersede el modelo de etapas de ADR-0004 (resto de 0004 vigente: CRM mínimo, no-sync Bitrix).
@@ -10,7 +26,7 @@ Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de a
 
 ## Mapa de issues (#53–#66, todos hijos de #52)
 - **#53 CERRADO** ✅ — tracer: bottom-nav + 7 etapas + migración + tablero único. Mergeado a main (deploy Render).
-- #54 crear prospecto en Por Cotizar (+global) — bloqueado por #53 (ya desbloqueado)
+- #54 crear prospecto en Por Cotizar (+global) — desbloqueado
 - **#55 CERRADO** ✅ — cotizar → Seguimiento auto (regla de dominio `transicionPorCotizacion`). Mergeado a main.
 - #56 mover a Seguimiento manual con folio — desbloqueado
 - #57 No Asignado + asignación — desbloqueado
