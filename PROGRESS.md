@@ -20,7 +20,7 @@ Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de a
 - #61 decorados (checklist + gate + Dropbox) — desbloqueado
 - #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos)
 - **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
-- #64 Hoy suma cotizaciones (fusión) — desbloqueado (tras #58)
+- **#64 CERRADO** ✅ — Hoy suma cotizaciones (cola fusionada prospectos+cotizaciones por urgencia relativa). Eliminó la pantalla separada de seguimiento. Mergeado a main.
 - #65 reunión re-encuadrada — desbloqueado (tras #58)
 - **#66 CERRADO** ✅ — formalizar pre-cotización (botón Completar en Historial) + editar prospecto. Mergeado a main.
 
@@ -100,7 +100,7 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53, #55, #58, #63 y #66 cerrados y en main (5 de 14). Ruta de pre-cotización completa + Hoy con prospectos. Candidatos: **#64** (Hoy suma cotizaciones — fusiona la cola que quedó en Más; desbloqueado por #58) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#56** (manual a Seguimiento con folio) · **#54** (crear prospecto, + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+#53, #55, #58, #63, #64 y #66 cerrados y en main (6 de 14). Cola Hoy fusionada completa + ruta de pre-cotización completa. Candidatos: **#65** (reunión re-encuadrada; desbloqueado por #58) · **#56** (manual a Seguimiento con folio) · **#54** (crear prospecto, + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
 
 ## #66 — formalizar pre-cotización + editar prospecto — CERRADO (aprobado por Adrián con evidencia; mergeado a main)
 
@@ -177,7 +177,7 @@ Login admin, bottom-nav muestra "Hoy 3" (badge = 3 prospectos en Por Cotizar). T
 
 ### CERRADO: todos los AC verdes/ya-cubiertos. Suite 542/542 (540 baseline + H1/H2). Listo para verificación del orquestador + demo de Adrián.
 
-## #64 — Hoy suma cotizaciones (cola fusionada) — FRONTEND COMPLETO (backend ya estaba verde). Suite 559/559 (554 baseline + Q20-Q24). Pendiente: verificación del orquestador + demo de Adrián.
+## #64 — Hoy suma cotizaciones (cola fusionada) — CERRADO (aprobado por Adrián con evidencia; mergeado a main). Suite 559/559. Implementado en dos tandas (subagente 1 se cortó por límite tras el backend; subagente 2 hizo el frontend). `lib/cola-hoy.js` (urgencia relativa: prospecto horas/umbralRojo, cotización dias/28, reunión vencida primero) + GET /api/hoy + buildColaHoyHtml. Se eliminó por completo showSeguimiento/seguimiento-view (la cola de cotizaciones ya solo vive en Hoy).
 
 Fusiona en el destino **Hoy** la cola de prospectos (horas hábiles) con la de cotizaciones (días naturales) en un solo listado ordenado, REUSANDO el backend ya hecho (`lib/cola-hoy.js` + `GET /api/hoy`, no tocados).
 
