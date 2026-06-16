@@ -28,8 +28,8 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 - **#53 CERRADO** ✅ — tracer: bottom-nav + 7 etapas + migración + tablero único. Mergeado a main (deploy Render).
 - **#54 CERRADO** ✅ — botón `+` global (Nueva cotización / Nuevo prospecto) + crear prospecto a mano que nace en Por Cotizar auto-asignado. Mergeado a main (deploy Render). Suite 561/561.
 - **#55 CERRADO** ✅ — cotizar → Seguimiento auto (regla de dominio `transicionPorCotizacion`). Mergeado a main.
-- #56 mover a Seguimiento manual con folio — **EN PROGRESO (rama issue-56-seguimiento-folio, subagente terminado, pendiente verificacion del orquestador + demo)**. Suite 591/591.
-- **#57 CERRADO** ✅ — entrada No Asignado (`POST /api/prospectos/sin-asignar` admin-only) + asignar vendedor (`PATCH .../asignar`) que mueve a Por Cotizar vía regla de dominio `transicionPorAsignacion`. Primera acción de tarjeta del tablero (asignar, solo admin). Mergeado a main. Suite 581/581.
+- **#56 CERRADO** ✅ — mover a Seguimiento manual (botón en la tarjeta Por Cotizar) exigiendo folio Operam (rechazo server-side sin folio); el folio vive en `data.folioOperam` del prospecto, badge `#Operam N` (nunca PRE). Mergeado a main. Suite 593/593.
+- **#57 CERRADO** ✅ — entrada No Asignado (`POST /api/prospectos/sin-asignar` admin-only) + asignar vendedor (`PATCH .../asignar`) que mueve a Por Cotizar vía regla de dominio `transicionPorAsignacion`. Primera acción de tarjeta del tablero (asignar, solo admin). Mergeado a main. **Bug del botón de asignar (usaba id prefijado `p7`, roto en navegador) corregido en la rama de #56 — regresión Q38/Q39.**
 - **#58 CERRADO** ✅ — Hoy muestra la cola de prospectos en Por Cotizar (cierra el H4 de #53). Cola de cotizaciones reubicada en Más → "Seguimiento cotizaciones" hasta la fusión #64. Mergeado a main.
 - #59 salidas No útil/Perdida + filtro — desbloqueado
 - #60 cotizar repensado (stepper) — desbloqueado
@@ -116,7 +116,7 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53, #54, #55, #57, #58, #63, #64 y #66 cerrados y en main (8 de 14). Entradas del embudo completas (alta manual con dueño #54 + intake sin asignar #57). El tablero ya tiene su primera acción de tarjeta (asignar, #57). Candidatos: **#56** (manual a Seguimiento con folio — 2ª acción de tarjeta, captura de folio) · **#59** (salidas No útil/Perdida + filtro/historial — la otra punta del ciclo) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL (escribe/lee Operam real).
+#53, #54, #55, #56, #57, #58, #63, #64 y #66 cerrados y en main (9 de 14). Embudo: entradas (#54 con dueño, #57 sin asignar), avance manual Por Cotizar→Seguimiento con folio (#56) y automático al cotizar (#55). El tablero tiene 2 acciones de tarjeta (asignar #57, mover a Seguimiento #56). **Deuda de proceso: el bug de #57 (botón roto en navegador) se coló por aprobar UI de tablero sin demo en vivo; los controles de tarjeta deben verificarse en navegador, no solo por tests puros.** Candidatos: **#59** (salidas No útil/Perdida + filtro/historial — la otra punta del ciclo) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL (escribe/lee Operam real).
 
 ## #57 — No Asignado + asignación de vendedor — EN PROGRESO (rama issue-57-no-asignado)
 
@@ -328,7 +328,10 @@ En `pipeline-logica.js`, NO en prospectos-logica.js, por la dirección de depend
 - El boton + NO es una accion de tarjeta del tablero (el tablero sigue solo-lectura, decision #53).
 - El frontend del + no tiene test de DOM (no hay DOM en los tests, patron del repo); la logica pura del menu si (Q25/Q26) y el cableado se valido en navegador.
 
-## #56 — mover a Seguimiento manual capturando folio Operam — EN PROGRESO (rama issue-56-seguimiento-folio). Suite 591/591 (581 baseline + 10 nuevos)
+## #56 — mover a Seguimiento manual capturando folio Operam — CERRADO (aprobado por Adrian con evidencia; verificado por el orquestador; mergeado a main). Suite 593/593 (581 baseline + 10 de #56 + Q38/Q39 del fix de #57)
+
+### Fix de #57 incluido en este merge (hallazgo del orquestador)
+El boton de asignar vendedor de #57 estaba roto en el navegador: `buildAsignarControlHtml` emitia `onclick="asignarVendedorTablero(${o.id})"` con `o.id` prefijado (`p7`), un identificador sin comillas = variable undefined; el boton no hacia nada (la ruta si servia). Corregido a `o.refId ?? o.id` (como el control de mover de #56). Regresiones Q38 (asignar) y Q39 (mover) con la forma real prefijada (`id:'p7', refId:7`); los helpers de test usaban id numerico sin refId, por eso #57 no lo cazo. Leccion: las acciones de tarjeta del tablero se verifican EN NAVEGADOR, no solo por tests puros del string HTML.
 
 Reintroduce UNA transicion manual forward del embudo (Por Cotizar -> Seguimiento), gated por folio de Operam: el vendedor cotizo POR FUERA (directo en Operam), no hay cotizacion en el sistema, asi que captura el folio al mover y se guarda en el prospecto. NO es drag-and-drop (boton, fuera de alcance el arrastre). NO toca el flujo automatico de #55.
 
