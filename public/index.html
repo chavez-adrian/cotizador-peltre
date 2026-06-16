@@ -775,17 +775,8 @@
   </div>
 </div>
 
-<!-- SEGUIMIENTO VIEW (cola de cotizaciones en dias naturales; vive en Mas hasta la fusion #64) -->
-<div id="seguimiento-view" style="display:none">
-  <header class="historial-header">
-    <h1>Seguimiento de cotizaciones</h1>
-    <button class="btn btn-sm btn-secondary" id="btn-volver-seguimiento">Volver</button>
-  </header>
-  <div style="padding:16px">
-    <div id="seguimiento-loading" style="color:var(--light);font-size:13px">Cargando...</div>
-    <div id="seguimiento-list"></div>
-  </div>
-</div>
+<!-- La cola de cotizaciones (dias naturales) se fusiono con la cola Hoy (#64);
+     su vista propia y el acceso "Seguimiento cotizaciones" de Mas se retiraron. -->
 
 <!-- PROSPECTOS VIEW (issue #41) -->
 <div id="prospectos-view" style="display:none">
@@ -916,7 +907,6 @@
   <div class="nav-mas-menu" id="nav-mas-menu" style="display:none">
     <button class="btn btn-sm btn-secondary" id="mas-historial">Historial</button>
     <button class="btn btn-sm btn-secondary" id="mas-prospectos">Prospectos</button>
-    <button class="btn btn-sm btn-secondary" id="mas-seguimiento">Seguimiento cotizaciones</button>
   </div>
   <button class="bottom-nav-btn activo" id="nav-cotizar">Cotizar</button>
   <button class="bottom-nav-btn" id="nav-hoy" style="position:relative">Hoy<span id="seguimiento-badge" style="display:none;position:absolute;top:2px;right:8px;background:#c0392b;color:#fff;border-radius:9px;font-size:10px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px"></span></button>

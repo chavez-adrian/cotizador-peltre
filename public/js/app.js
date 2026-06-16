@@ -24,7 +24,6 @@ import {
   MOTIVOS_NO_UTIL,
   buildMotivoNoUtilModalHtml,
   validarEdicionProspecto,
-  contarPendientesProspectos,
 } from './prospectos-logica.js';
 import {
   puedeArrastrarCotizacion,
@@ -36,6 +35,7 @@ import {
   badgeFolioOperamHtml,
   botonCompletarHtml,
   siguientePasoFormalizacion,
+  buildColaHoyHtml,
 } from './pipeline-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -156,7 +156,6 @@ function logout() {
   document.getElementById('historial-view').style.display = 'none';
   const hv = document.getElementById('hoy-view');
   if (hv) hv.style.display = 'none';
-  document.getElementById('seguimiento-view').style.display = 'none';
   document.getElementById('prospectos-view').style.display = 'none';
   const pv = document.getElementById('pipeline-view');
   if (pv) pv.style.display = 'none';
@@ -1786,72 +1785,20 @@ async function soltarEnColumnaCotizacion(origen, destino) {
   }
 }
 
-// === SEGUIMIENTO ===
-const PASO_LABELS = {
-  dia2: 'Primer seguimiento',
-  dia7: 'Segundo seguimiento',
-  dia21: 'Por vencer',
-  vencida: 'Vencida',
-};
+// === SEGUIMIENTO DE COTIZACIONES ===
+// La cola de cotizaciones (cadencia de dias naturales) ya no tiene vista propia:
+// se fusiono con la cola Hoy (#64), donde cada cotizacion se pinta con
+// buildColaCotizacionItemHtml (pipeline-logica.js). Aqui solo quedan las acciones
+// sobre cada item (marcar el paso, cerrar el estado), que la cola Hoy invoca.
 
-async function showSeguimiento() {
-  ocultarTodasLasVistas();
-  document.getElementById('seguimiento-view').style.display = 'block';
-
-  const loadingEl = document.getElementById('seguimiento-loading');
-  const listEl = document.getElementById('seguimiento-list');
-  loadingEl.style.display = 'block';
-  listEl.innerHTML = '';
-
-  try {
-    const res = await api('/api/seguimiento');
-    const cola = await res.json();
-    loadingEl.style.display = 'none';
-    // El badge de Hoy lo alimenta la cola de prospectos (#58); la cola de
-    // cotizaciones (esta vista, ahora en Mas) ya no lo escribe.
-
-    if (!cola.length) {
-      listEl.innerHTML = '<div class="empty-state"><p>Sin seguimientos pendientes. 🎉</p></div>';
-      return;
-    }
-
-    listEl.innerHTML = cola.map(item => {
-      const fecha = new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
-      const btnWa = item.waLink
-        ? `<a href="${item.waLink}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`
-        : `<button class="btn btn-secondary btn-sm" disabled title="Sin telefono registrado">WhatsApp</button>`;
-      const badge = badgeFolioOperamHtml(item);
-      return `
-        <div class="cot-card">
-          <div class="cot-card-header">
-            <div>
-              <div class="cot-card-cliente">${escapeHtml(item.cliente || 'Sin nombre')}${badge}</div>
-              <div class="cot-card-meta">${PASO_LABELS[item.paso] || item.paso} · cotizada el ${fecha} (hace ${item.dias} dias) · ${item.totalPiezas} pzs</div>
-            </div>
-            <div>
-              <div class="cot-card-total">$${fmt(item.total)}</div>
-            </div>
-          </div>
-          <div class="cot-card-actions">
-            ${btnWa}
-            <button class="btn btn-secondary btn-sm" onclick="marcarSeguimiento(${item.id}, '${item.paso}')">✓ Hecho</button>
-            <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'ganada')">Ganada</button>
-            <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'perdida')">Perdida</button>
-          </div>
-        </div>
-      `;
-    }).join('');
-  } catch (e) {
-    loadingEl.textContent = 'Error cargando seguimientos';
-  }
-}
-
+// El seguimiento de cotizaciones vive ahora en la cola Hoy fusionada (#64): tras
+// registrar el paso o cerrar el estado, se refresca Hoy (su unico hogar).
 async function marcarSeguimiento(id, paso) {
   try {
     const res = await api(`/api/seguimiento/${id}`, { method: 'POST', body: { paso } });
     if (!res.ok) { alert('No se pudo registrar el seguimiento'); return; }
     avisoTablero('Registrado: la tarjeta sale de la cola y volverá cuando toque el siguiente paso (día 2 → 7 → 21 → vencida)');
-    showSeguimiento();
+    showHoy();
   } catch (e) {
     alert('Error de conexion');
   }
@@ -1861,7 +1808,7 @@ async function cambiarEstadoCotizacion(id, estado) {
   try {
     const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
     if (!res.ok) { alert('No se pudo actualizar el estado'); return; }
-    showSeguimiento();
+    showHoy();
   } catch (e) {
     alert('Error de conexion');
   }
@@ -1878,15 +1825,15 @@ function actualizarBadgeSeguimiento(count) {
   }
 }
 
-// El badge de Hoy cuenta los pendientes de la cola de prospectos en Por Cotizar
-// (issue #58): Hoy nace mostrando esa cola, asi que su contador la refleja. La
-// cola de cotizaciones en Seguimiento (dias naturales) se fusionara aqui en #64.
+// El badge de Hoy cuenta la cola UNICA del dia (issue #64): prospectos en Por
+// Cotizar + cotizaciones en Seguimiento, ya fusionadas por GET /api/hoy. El
+// contador es el tamano total de esa cola.
 async function cargarBadgeSeguimiento() {
   try {
-    const res = await api('/api/prospectos/cola');
+    const res = await api('/api/hoy');
     if (!res.ok) return;
     const cola = await res.json();
-    actualizarBadgeSeguimiento(contarPendientesProspectos(cola));
+    actualizarBadgeSeguimiento(cola.length);
   } catch (e) { /* sin red no hay badge */ }
 }
 
@@ -2021,7 +1968,7 @@ function setModoPipeline(modo) {
 }
 
 function ocultarTodasLasVistas() {
-  for (const v of ['app-view', 'historial-view', 'hoy-view', 'seguimiento-view', 'prospectos-view', 'pipeline-view']) {
+  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view']) {
     const el = document.getElementById(v);
     if (el) el.style.display = 'none';
   }
@@ -2089,11 +2036,12 @@ function renderProspectos() {
     .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true })).join('');
 }
 
-// === HOY (issue #58, ADR-0005 "Cola Hoy"): el destino Hoy muestra la cola de
-// prospectos en Por Cotizar, ordenada por urgencia en horas habiles. Reusa el
-// motor (calcularColaProspectos via GET /api/prospectos/cola) y el HTML
-// (buildColaProspectosHtml) ya probados (#44). La cola de cotizaciones en
-// Seguimiento (dias naturales) vive en Mas hasta la fusion #64.
+// === HOY (issue #64, ADR-0005 "Cola Hoy"): el destino Hoy muestra la cola UNICA
+// del dia, fusionada: prospectos en Por Cotizar (horas habiles) + cotizaciones en
+// Seguimiento (dias naturales), en un solo orden por urgencia relativa al umbral
+// de cada tipo. El backend (lib/cola-hoy.js via GET /api/hoy) ya fusiona y ordena;
+// el frontend solo pinta con buildColaHoyHtml, que delega por tipo (prospecto =
+// buildColaProspectosHtml; cotizacion = buildColaCotizacionItemHtml).
 async function showHoy() {
   ocultarTodasLasVistas();
   document.getElementById('hoy-view').style.display = 'block';
@@ -2102,11 +2050,11 @@ async function showHoy() {
   loadingEl.style.display = 'block';
   colaEl.innerHTML = '';
   try {
-    const res = await api('/api/prospectos/cola');
-    ultimaColaProspectos = res.ok ? await res.json() : [];
+    const res = await api('/api/hoy');
+    const cola = res.ok ? await res.json() : [];
     loadingEl.style.display = 'none';
-    actualizarBadgeSeguimiento(contarPendientesProspectos(ultimaColaProspectos));
-    colaEl.innerHTML = buildColaProspectosHtml(ultimaColaProspectos);
+    actualizarBadgeSeguimiento(cola.length);
+    colaEl.innerHTML = buildColaHoyHtml(cola);
   } catch (e) {
     loadingEl.textContent = 'Error cargando la cola de hoy';
   }
@@ -2630,7 +2578,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
-  document.getElementById('mas-seguimiento')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showSeguimiento(); });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
 
@@ -2650,13 +2597,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Volver a Cotizar desde Hoy
   document.getElementById('btn-volver-hoy')?.addEventListener('click', () => {
-    ocultarTodasLasVistas();
-    document.getElementById('app-view').style.display = 'block';
-    marcarNavActivo('nav-cotizar');
-  });
-
-  // Volver a Cotizar desde Seguimiento de cotizaciones (vive en Mas, #64)
-  document.getElementById('btn-volver-seguimiento').addEventListener('click', () => {
     ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
     marcarNavActivo('nav-cotizar');
