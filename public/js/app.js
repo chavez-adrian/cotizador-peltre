@@ -24,6 +24,7 @@ import {
   MOTIVOS_NO_UTIL,
   buildMotivoNoUtilModalHtml,
   validarEdicionProspecto,
+  contarPendientesProspectos,
 } from './prospectos-logica.js';
 import {
   puedeArrastrarCotizacion,
@@ -1874,12 +1875,15 @@ function actualizarBadgeSeguimiento(count) {
   }
 }
 
+// El badge de Hoy cuenta los pendientes de la cola de prospectos en Por Cotizar
+// (issue #58): Hoy nace mostrando esa cola, asi que su contador la refleja. La
+// cola de cotizaciones en Seguimiento (dias naturales) se fusionara aqui en #64.
 async function cargarBadgeSeguimiento() {
   try {
-    const res = await api('/api/seguimiento');
+    const res = await api('/api/prospectos/cola');
     if (!res.ok) return;
     const cola = await res.json();
-    actualizarBadgeSeguimiento(cola.length);
+    actualizarBadgeSeguimiento(contarPendientesProspectos(cola));
   } catch (e) { /* sin red no hay badge */ }
 }
 

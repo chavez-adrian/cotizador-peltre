@@ -7,7 +7,8 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml,
   buildEsperaBadgeHtml, buildColaProspectosHtml, necesitaCanal, validarCanalCotizacion,
   buildCanalModalHtml, reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
-  validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml;
+  validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml,
+  contarPendientesProspectos;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
@@ -15,7 +16,8 @@ before(async () => {
     buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml,
     necesitaCanal, validarCanalCotizacion, buildCanalModalHtml,
     reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
-    validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml } = await import('../prospectos-logica.js'));
+    validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml,
+    contarPendientesProspectos } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -529,6 +531,19 @@ test('C5: buildColaProspectosHtml tolera cola vacia y escapa datos de usuario', 
   const html = buildColaProspectosHtml([{ ...ITEM_COLA, nombre: '<img src=x>' }]);
   assert.equal(html.includes('<img'), false);
   assert.match(html, /&lt;img/);
+});
+
+// === Issue #58: el badge de Hoy cuenta los pendientes de prospectos ===
+
+test('H1: contarPendientesProspectos cuenta los items de la cola de prospectos', () => {
+  assert.equal(contarPendientesProspectos([ITEM_COLA, { ...ITEM_COLA, id: 4 }]), 2);
+  assert.equal(contarPendientesProspectos([ITEM_COLA]), 1);
+});
+
+test('H2: contarPendientesProspectos es 0 con cola vacia o nula', () => {
+  assert.equal(contarPendientesProspectos([]), 0);
+  assert.equal(contarPendientesProspectos(null), 0);
+  assert.equal(contarPendientesProspectos(undefined), 0);
 });
 
 test('K12: la card compacta del tablero guarda las acciones pesadas tras un toggle', () => {

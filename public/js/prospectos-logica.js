@@ -339,6 +339,14 @@ export function buildColaProspectosHtml(cola) {
   }).join('');
 }
 
+// Conteo de pendientes para el badge del destino Hoy (issue #58, CONTEXT.md
+// "Cola Hoy"): el badge en nav-hoy refleja cuantos prospectos en Por Cotizar
+// piden atencion hoy. La cola ya llega filtrada (horas habiles, reunion futura
+// suprimida) desde GET /api/prospectos/cola, asi que el conteo es su tamano.
+export function contarPendientesProspectos(cola) {
+  return (cola || []).length;
+}
+
 // El tablero kanban de prospectos del modelo previo (cinco columnas
 // nuevo/contactado/calificado/cotizado/no_util) se retiro: el pipeline
 // unificado de 7 etapas lo reemplaza con un solo tablero (public/js/
