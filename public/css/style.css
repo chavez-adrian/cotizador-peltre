@@ -1471,6 +1471,39 @@ body {
   padding: 8px;
   box-shadow: 0 4px 16px oklch(0.28 0.015 75 / 0.12);
 }
+/* Boton + global (issue #54): crear desde cualquier destino. Centrado en la
+   barra, cobalto de marca, sobresale para leerse como accion primaria. */
+.bottom-nav-add {
+  flex: 0 0 48px;
+  align-self: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 4px;
+  border: none;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--white);
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 400;
+  cursor: pointer;
+  box-shadow: 0 2px 8px oklch(0.28 0.015 75 / 0.18);
+}
+/* Menu del boton + (issue #54): centrado sobre el boton, mismo estilo que Mas. */
+.nav-nuevo-menu {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  box-shadow: 0 4px 16px oklch(0.28 0.015 75 / 0.12);
+}
 /* Deja espacio para que la barra fija no tape el contenido. */
 body {
   padding-bottom: 64px;
