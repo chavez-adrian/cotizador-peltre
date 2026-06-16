@@ -218,6 +218,17 @@ test('T6: validarTransicion rechaza No util sin motivo o con motivo fuera de cat
   assert.ok(validarTransicion('no_util', 'seguimiento'));
 });
 
+test('T6b: validarTransicion permite Perdida desde cualquier etapa activa sin motivo (#59)', () => {
+  for (const etapa of ['no_asignado', 'por_cotizar', 'seguimiento', 'anticipo_pagado', 'pedido_liberado', 'saldo_pagado', 'producto_entregado']) {
+    assert.equal(validarTransicion(etapa, 'perdida'), null, `Perdida debio permitirse desde ${etapa}`);
+  }
+});
+
+test('T6c: validarTransicion rechaza Perdida desde una salida (ya salio del embudo) (#59)', () => {
+  assert.ok(validarTransicion('no_util', 'perdida'));
+  assert.ok(validarTransicion('perdida', 'perdida'));
+});
+
 test('T7: buildWaLink arma el link wa.me con solo digitos del celular', () => {
   assert.equal(buildWaLink('+52 55 1234 5678'), 'https://wa.me/525512345678');
   assert.equal(buildWaLink('+1 (555) 123-4567'), 'https://wa.me/15551234567');
