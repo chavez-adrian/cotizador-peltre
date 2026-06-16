@@ -40,6 +40,10 @@ import {
   buildMenuNuevoHtml,
   buildCerradasHtml,
 } from './pipeline-logica.js';
+import {
+  estadoStepper,
+  textoProgreso,
+} from './stepper-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
 function leerTelefono(inputId, codeId) {
@@ -243,18 +247,40 @@ function updateTierBar() {
   updateTabIndicators();
 }
 
-// === TAB INDICATORS ===
-function updateTabIndicators() {
-  const dotProductos = document.getElementById('dot-productos');
-  const dotCliente = document.getElementById('dot-cliente');
-  const dotEnvio = document.getElementById('dot-envio');
+// === STEPPER INDICATOR (issue #60) ===
+// Deriva la completitud de cada paso con los mismos criterios de siempre
+// (cliente = razon social con valor, productos = carrito no vacio, envio =
+// opcion elegida) y delega el modelo de avance/estado a stepper-logica.js
+// (modulo puro, probado). Pinta el riel (numero/completo/actual + dots) y la
+// barra de progreso. Guia y muestra avance sin bloquear el clic libre (AC2).
+function pasoActualStepper() {
+  const activo = document.querySelector('.tab.active');
+  return activo?.dataset?.tab || 'cliente';
+}
 
-  if (dotProductos) dotProductos.classList.toggle('visible', state.cart.size > 0);
-  if (dotCliente) dotCliente.classList.toggle('visible', !!(document.getElementById('cl-razon-social')?.value?.trim()));
-  if (dotEnvio) {
-    const opt = document.getElementById('shipping-option')?.value;
-    dotEnvio.classList.toggle('visible', opt && opt !== 'none');
-  }
+function estadoFlujoCotizar() {
+  const opt = document.getElementById('shipping-option')?.value;
+  return {
+    clienteListo: !!(document.getElementById('cl-razon-social')?.value?.trim()),
+    productosListos: state.cart.size > 0,
+    envioListo: !!(opt && opt !== 'none'),
+  };
+}
+
+function updateTabIndicators() {
+  const vista = estadoStepper(pasoActualStepper(), estadoFlujoCotizar());
+
+  vista.pasos.forEach(p => {
+    const tab = document.querySelector(`.tab[data-tab="${p.paso}"]`);
+    if (tab) tab.classList.toggle('completo', p.completo && !p.esActual);
+    const dot = document.getElementById(`dot-${p.paso}`);
+    if (dot) dot.classList.toggle('visible', p.completo);
+  });
+
+  const texto = document.getElementById('stepper-progress-text');
+  if (texto) texto.textContent = textoProgreso(vista.actual);
+  const fill = document.getElementById('stepper-progress-fill');
+  if (fill) fill.style.width = `${Math.round(vista.progreso.fraccion * 100)}%`;
 }
 
 // === PRODUCTS / BUSCADOR TIPO OPERAM ===
@@ -1487,6 +1513,7 @@ function switchTab(name) {
       }
     }
   }
+  updateTabIndicators();
 }
 
 // === FORMAT ===
