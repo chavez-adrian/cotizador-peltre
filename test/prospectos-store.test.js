@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
 import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, ultimos10 } from '../lib/prospectos-store.js';
+import { ETAPAS, SALIDAS } from '../lib/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
@@ -30,8 +31,8 @@ after(() => {
   else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
 });
 
-test('crear asigna id secuencial y persiste el prospecto en etapa nuevo', async () => {
-  writeProspectos([{ id: 4, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'X', etapa: 'nuevo' }]);
+test('crear asigna id secuencial y un prospecto a mano nace en por_cotizar', async () => {
+  writeProspectos([{ id: 4, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'X', etapa: 'por_cotizar' }]);
   const id = await crear({
     fecha: '2026-06-10T00:00:00Z', vendedor: 'Ana',
     celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
@@ -42,7 +43,7 @@ test('crear asigna id secuencial y persiste el prospecto en etapa nuevo', async 
   assert.equal(guardado.nombre, 'Laura');
   assert.equal(guardado.ciudad, 'Puebla');
   assert.equal(guardado.canal, 'WhatsApp');
-  assert.equal(guardado.etapa, 'nuevo');
+  assert.equal(guardado.etapa, 'por_cotizar');
   assert.equal(guardado.celular10, '5512345678');
   assert.equal(guardado.data.empresa, 'Hotel Azul');
 });
@@ -134,10 +135,38 @@ test('buscarPorCelular encuentra al prospecto aunque el telefono buscado traiga 
 
 test('listar devuelve todos los prospectos guardados', async () => {
   writeProspectos([
-    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', etapa: 'nuevo' },
-    { id: 2, fecha: '2026-06-02T00:00:00Z', vendedor: 'Ana', celular: '+52 5522222222', celular10: '5522222222', nombre: 'B', etapa: 'nuevo' },
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', etapa: 'por_cotizar' },
+    { id: 2, fecha: '2026-06-02T00:00:00Z', vendedor: 'Ana', celular: '+52 5522222222', celular10: '5522222222', nombre: 'B', etapa: 'por_cotizar' },
   ]);
   const todos = await listar();
   assert.equal(todos.length, 2);
   assert.equal(todos[1].nombre, 'B');
+});
+
+test('listar migra etapas viejas al vocabulario del pipeline y conserva eventos', async () => {
+  const eventos = [{ tipo: 'etapa', de: 'nuevo', a: 'contactado', fecha: '2026-06-11T22:32:47.054Z', vendedor: 'Memo' }];
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'Nuevo', etapa: 'nuevo', eventos },
+    { id: 2, fecha: '2026-06-02T00:00:00Z', vendedor: 'Ana', celular: '+52 5522222222', celular10: '5522222222', nombre: 'Contactado', etapa: 'contactado', eventos: [] },
+    { id: 3, fecha: '2026-06-03T00:00:00Z', vendedor: 'Ana', celular: '+52 5533333333', celular10: '5533333333', nombre: 'Calificado', etapa: 'calificado', eventos: [] },
+    { id: 4, fecha: '2026-06-04T00:00:00Z', vendedor: 'Ana', celular: '+52 5544444444', celular10: '5544444444', nombre: 'Cotizado', etapa: 'cotizado', eventos: [] },
+    { id: 5, fecha: '2026-06-05T00:00:00Z', vendedor: 'Ana', celular: '+52 5555555555', celular10: '5555555555', nombre: 'NoUtil', etapa: 'no_util', eventos: [] },
+  ]);
+  const todos = await listar();
+  const porId = Object.fromEntries(todos.map(p => [p.id, p]));
+  assert.equal(porId[1].etapa, 'por_cotizar');
+  assert.equal(porId[2].etapa, 'por_cotizar');
+  assert.equal(porId[3].etapa, 'por_cotizar');
+  assert.equal(porId[4].etapa, 'seguimiento');
+  assert.equal(porId[5].etapa, 'no_util');
+  for (const p of todos) assert.ok(ETAPAS.includes(p.etapa) || SALIDAS.includes(p.etapa));
+  assert.deepEqual(porId[1].eventos, eventos);
+});
+
+test('obtener migra la etapa vieja del prospecto recuperado', async () => {
+  writeProspectos([
+    { id: 7, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', etapa: 'calificado', eventos: [] },
+  ]);
+  const p = await obtener(7);
+  assert.equal(p.etapa, 'por_cotizar');
 });

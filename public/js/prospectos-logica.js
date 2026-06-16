@@ -45,38 +45,43 @@ export function validarProspectoBody(body) {
   return null;
 }
 
+// Labels de las etapas del pipeline unificado (issue #53, ADR-0005). La unica
+// fuente del vocabulario es lib/pipeline.js; aqui se reexpone para el frontend
+// (este modulo es browser-safe y no importa de lib/).
 const ETAPA_LABELS = {
-  nuevo: 'Nuevo',
-  contactado: 'Contactado',
-  calificado: 'Calificado',
-  cotizado: 'Cotizado',
+  no_asignado: 'No Asignado',
+  por_cotizar: 'Por Cotizar',
+  seguimiento: 'Seguimiento',
+  anticipo_pagado: 'Anticipo pagado',
+  pedido_liberado: 'Pedido liberado',
+  saldo_pagado: 'Saldo pagado',
+  producto_entregado: 'Producto entregado',
   no_util: 'No útil',
+  perdida: 'Perdida',
 };
 
 // Salida a No util -- motivo obligatorio de catalogo cerrado (CONTEXT.md,
-// Etapas de prospecto).
+// Etapas del pipeline).
 export const MOTIVOS_NO_UTIL = ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta'];
 
-// Avance manual de etapa: un paso a la vez. La transicion a cotizado es
-// automatica (issue #46), nunca manual.
-export function siguienteEtapa(etapa) {
-  if (etapa === 'nuevo') return 'contactado';
-  if (etapa === 'contactado') return 'calificado';
+// En el pipeline unificado no hay avance manual de etapa antes de cotizar:
+// Por Cotizar -> Seguimiento es automatico (lo dispara generar una cotizacion)
+// o manual con folio de Operam (otro issue). Se conserva la firma para los
+// consumidores; hoy no ofrece ningun paso adelante.
+export function siguienteEtapa() {
   return null;
 }
 
-// Valida una transicion de etapa solicitada por el vendedor. La reusa el
-// servidor (rechazo server-side) y el frontend.
+// Valida una transicion de etapa solicitada por el vendedor. En este slice la
+// unica transicion manual viva es la salida a No util (con motivo de catalogo);
+// el avance entre etapas del embudo lo dirigen la cotizacion y Operam.
 export function validarTransicion(actual, nueva, motivo) {
   if (nueva === 'no_util') {
     if (actual === 'no_util') return 'El prospecto ya salió a No útil';
     if (!MOTIVOS_NO_UTIL.includes(motivo)) return 'El motivo de No útil es obligatorio (catálogo cerrado)';
     return null;
   }
-  if (!nueva || nueva !== siguienteEtapa(actual)) {
-    return `Transición inválida: ${ETAPA_LABELS[actual] || actual} → ${ETAPA_LABELS[nueva] || nueva}`;
-  }
-  return null;
+  return `Transición inválida: ${ETAPA_LABELS[actual] || actual} → ${ETAPA_LABELS[nueva] || nueva}`;
 }
 
 // Reunion diagnostico (issue #45, CONTEXT.md "Captura de prospecto"): actividad
@@ -171,15 +176,14 @@ const CLIENTE_BADGE = '<span class="cliente-badge">Ya es cliente — falta cotiz
 export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compacta = false } = {}) {
   const d = p.data || {};
   const empresa = d.empresa ? ` · ${escapeHtml(d.empresa)}` : '';
-  const activo = p.etapa !== 'no_util' && p.etapa !== 'cotizado';
-  const sig = siguienteEtapa(p.etapa);
+  // En el pipeline unificado el prospecto se trabaja en Por Cotizar (cadencia,
+  // reunion, salida a No util); al pasar a Seguimiento la oportunidad la lleva
+  // la cotizacion (otro tipo de tarjeta). El avance entre etapas ya no es manual.
+  const activo = p.etapa === 'por_cotizar';
   const wa = buildWaLink(p.celular);
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.
   const reunion = activo ? reunionFutura(p, ahora) : null;
-  const avanceBtn = activo && sig
-    ? `<button class="btn btn-secondary btn-sm" onclick="avanzarEtapaProspecto(${p.id}, '${sig}')">→ ${ETAPA_LABELS[sig]}</button>`
-    : '';
   const pesadas = [];
   if (activo) {
     pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">Registrar contacto</button>`);
@@ -199,12 +203,12 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // 2026-06-12): visible en toda card activa, prellena el cotizador.
   const cotizarBtn = activo ? `<button class="btn btn-primary btn-sm" onclick="cotizarProspecto(${p.id})">Cotizar</button>` : '';
   // En el tablero la card es compacta (estilo Bitrix): info + chips + WhatsApp
-  // + avance visible (en tactil no hay drag: la accion mas comun no se
-  // esconde); el resto vive tras "Mas".
+  // + Cotizar (en tactil no hay drag: la accion mas comun no se esconde); el
+  // resto vive tras "Mas".
   const acciones = compacta
-    ? `<div class="cot-card-actions">${waBtn} ${cotizarBtn} ${avanceBtn} <button class="btn btn-secondary btn-sm" onclick="toggleAccionesProspecto(${p.id})">Más</button></div>` +
+    ? `<div class="cot-card-actions">${waBtn} ${cotizarBtn} <button class="btn btn-secondary btn-sm" onclick="toggleAccionesProspecto(${p.id})">Más</button></div>` +
       `<div id="pr-acciones-${p.id}" style="display:none"><div class="cot-card-actions">${pesadas.join(' ')}</div></div>`
-    : `<div class="cot-card-actions">${waBtn} ${cotizarBtn} ${avanceBtn} ${pesadas.join(' ')}</div>`;
+    : `<div class="cot-card-actions">${waBtn} ${cotizarBtn} ${pesadas.join(' ')}</div>`;
   return `
     <div class="cot-card">
       <div class="cot-card-header">
@@ -234,9 +238,10 @@ export function buildColaProspectosHtml(cola) {
     const acciones = [];
     if (wa) acciones.push(`<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`);
     // Reunion vencida (issue #45): el item vuelve pidiendo registrar el
-    // resultado -- Calificado o No util con motivo -- en vez del toque normal.
+    // resultado. En el pipeline unificado el avance pertinente es cotizar
+    // (Por Cotizar -> Seguimiento); el unico cierre desde aqui es No util con
+    // motivo (ya no avanza a Calificado, etapa eliminada por ADR-0005).
     if (item.reunionVencida) {
-      acciones.push(`<button class="btn btn-primary btn-sm" onclick="resultadoReunionProspecto(${item.id}, 'calificado')">→ Calificado</button>`);
       acciones.push(
         `<select id="cola-motivo-${item.id}" class="btn-sm"><option value="">Motivo...</option>` +
         MOTIVOS_NO_UTIL.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('') +
@@ -264,62 +269,11 @@ export function buildColaProspectosHtml(cola) {
   }).join('');
 }
 
-// Tablero kanban de prospectos (issue #49, CONTEXT.md "Tablero de
-// prospectos"): cinco columnas siempre visibles. El arrastre respeta el
-// dominio -- un paso adelante o salida a No util; Cotizado no acepta
-// arrastres porque solo una cotizacion real mueve ahi.
-
-const ETAPAS_TABLERO = ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util'];
-
-export function agruparTablero(prospectos) {
-  const cols = {};
-  for (const etapa of ETAPAS_TABLERO) cols[etapa] = [];
-  for (const p of prospectos || []) {
-    if (cols[p.etapa]) cols[p.etapa].push(p);
-  }
-  for (const etapa of ETAPAS_TABLERO) {
-    cols[etapa].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-  }
-  return cols;
-}
-
-export function puedeArrastrar(de, a) {
-  if (a === 'no_util') return de !== 'no_util';
-  return a === siguienteEtapa(de) && validarTransicion(de, a) === null;
-}
-
-// Motivo de la salida a No util: el ultimo evento no_util manda.
-function motivoNoUtil(p) {
-  let m = null;
-  for (const e of (p && p.eventos) || []) {
-    if (e.tipo === 'no_util' && (!m || new Date(e.fecha) > new Date(m.fecha))) m = e;
-  }
-  return m ? m.motivo : null;
-}
-
-export function buildTableroHtml(prospectos, colaPorId, ahora = new Date()) {
-  const cols = agruparTablero(prospectos);
-  return ETAPAS_TABLERO.map(etapa => {
-    const tarjetas = cols[etapa].map(p => {
-      const motivo = etapa === 'no_util' ? motivoNoUtil(p) : null;
-      const draggable = etapa !== 'no_util';
-      return `<div class="tablero-card" draggable="${draggable}" data-id="${p.id}" data-etapa="${etapa}">` +
-        (motivo ? `<div class="cot-card-meta" style="margin-bottom:4px">Motivo: ${escapeHtml(motivo)}</div>` : '') +
-        buildProspectoCardHtml(p, colaPorId && colaPorId.get(p.id), ahora, { compacta: true }) +
-        '</div>';
-    }).join('');
-    const quickAdd = etapa === 'nuevo'
-      ? '<button class="tablero-quick-add" onclick="abrirCapturaRapida()">+ Prospecto rápido</button>'
-      : '';
-    return `
-      <div class="tablero-col" data-etapa="${etapa}">
-        <div class="tablero-col-header"><span class="col-pill col-pill-${etapa}">${escapeHtml(ETAPA_LABELS[etapa])} <span class="tablero-col-count">${cols[etapa].length}</span></span></div>
-        ${quickAdd}
-        <div class="tablero-col-cards">${tarjetas || '<div class="tablero-col-vacia">Sin prospectos</div>'}</div>
-      </div>
-    `;
-  }).join('');
-}
+// El tablero kanban de prospectos del modelo previo (cinco columnas
+// nuevo/contactado/calificado/cotizado/no_util) se retiro: el pipeline
+// unificado de 7 etapas lo reemplaza con un solo tablero (public/js/
+// pipeline-logica.js, issue #53, ADR-0005). La logica de tarjeta y cola
+// (buildProspectoCardHtml, buildColaProspectosHtml) se conserva.
 
 // Selector de motivo al soltar una tarjeta en No util (issue #49): mismo
 // patron que el modal de canal de #46. Cancelar regresa la tarjeta sin
