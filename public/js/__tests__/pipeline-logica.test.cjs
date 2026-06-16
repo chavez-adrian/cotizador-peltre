@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -422,4 +422,56 @@ test('Q39: buildMoverSeguimientoControlHtml usa el id numerico (refId) con la op
   const html = buildMoverSeguimientoControlHtml(o);
   assert.match(html, /moverASeguimientoTablero\(7\)/);
   assert.equal(html.includes('moverASeguimientoTablero(p7)'), false);
+});
+
+// === Issue #59: controles de salida en la tarjeta del tablero (Modelo A) ===
+// PROSPECTO activo: No util (select de motivo del catalogo) + Perdida (confirm).
+// COTIZACION activa: solo Perdida (confirm) -- una cotizacion sale del embudo solo
+// por Perdida, no por No util (Modelo A). Las salidas no llevan estos controles.
+
+test('Q40: buildSalidaControlHtml de un prospecto activo ofrece No util con motivo de catalogo y Perdida', () => {
+  const html = buildSalidaControlHtml(prospecto({ id: 5, etapa: 'por_cotizar' }));
+  assert.match(html, /marcarNoUtilTablero\(5\)/);
+  assert.match(html, /id="salida-motivo-5"/);
+  for (const m of ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta']) {
+    assert.ok(html.includes(m), `falta motivo ${m}`);
+  }
+  assert.match(html, /cerrarPerdidaTablero\(5\)/);
+});
+
+test('Q41: buildSalidaControlHtml de una cotizacion activa ofrece solo Perdida, no No util (Modelo A)', () => {
+  const html = buildSalidaControlHtml(cotizacion({ id: 10, etapa: 'seguimiento' }));
+  assert.match(html, /cerrarPerdidaTablero\(10\)/);
+  assert.equal(html.includes('marcarNoUtilTablero'), false);
+  assert.equal(html.includes('salida-motivo'), false);
+});
+
+test('Q42: buildSalidaControlHtml no pinta nada para una oportunidad ya en salida', () => {
+  assert.equal(buildSalidaControlHtml(prospecto({ id: 5, etapa: 'no_util' })), '');
+  assert.equal(buildSalidaControlHtml(cotizacion({ id: 10, etapa: 'perdida' })), '');
+  assert.equal(buildSalidaControlHtml(undefined), '');
+});
+
+test('Q43: buildSalidaControlHtml usa el id numerico (refId) con la oportunidad prefijada (#57)', () => {
+  const pros = buildSalidaControlHtml({ tipo: 'prospecto', id: 'p7', refId: 7, etapa: 'por_cotizar' });
+  assert.match(pros, /marcarNoUtilTablero\(7\)/);
+  assert.match(pros, /cerrarPerdidaTablero\(7\)/);
+  assert.match(pros, /id="salida-motivo-7"/);
+  assert.equal(pros.includes('(p7)'), false);
+  assert.equal(pros.includes('salida-motivo-p7'), false);
+  const cot = buildSalidaControlHtml({ tipo: 'cotizacion', id: 'c10', refId: 10, etapa: 'seguimiento' });
+  assert.match(cot, /cerrarPerdidaTablero\(10\)/);
+  assert.equal(cot.includes('(c10)'), false);
+});
+
+test('Q44: el tablero pinta los controles de salida en las tarjetas activas, no en las de salida', () => {
+  const html = buildTableroPipelineHtml([
+    prospecto({ id: 7, etapa: 'por_cotizar' }),
+    cotizacion({ id: 10, etapa: 'seguimiento' }),
+  ]);
+  assert.match(html, /marcarNoUtilTablero\(7\)/);
+  assert.match(html, /cerrarPerdidaTablero\(7\)/);
+  assert.match(html, /cerrarPerdidaTablero\(10\)/);
+  // una cotizacion no ofrece No util (Modelo A)
+  assert.equal(html.includes('marcarNoUtilTablero(10)'), false);
 });

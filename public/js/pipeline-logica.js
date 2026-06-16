@@ -10,7 +10,7 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml, buildColaProspectosHtml } from './prospectos-logica.js';
+import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL } from './prospectos-logica.js';
 
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,
 // Perdida) NO son columnas: viven en filtro/historial.
@@ -204,12 +204,38 @@ export function buildMoverSeguimientoControlHtml(o) {
   </div>`;
 }
 
+// Controles de salida del embudo en la tarjeta del tablero (issue #59, Modelo A,
+// CONTEXT.md "Etapas del pipeline"). Solo sobre oportunidades en etapa ACTIVA (las
+// que ya salieron no se vuelven a cerrar). Para un PROSPECTO sin cotizar: salida a
+// No util con motivo obligatorio del catalogo (select) -- cancelar el select no
+// llama al servidor (AC4) -- mas Perdida con confirmacion. Para una COTIZACION:
+// solo Perdida (una cotizacion real sale del embudo solo por Perdida, no por No
+// util; los motivos de No util son de descalificacion de prospecto). Usa el id
+// numerico (refId), nunca el prefijado ("p7"/"c10"), leccion del bug de #57.
+export function buildSalidaControlHtml(o) {
+  if (!o || esSalida(o.etapa)) return '';
+  const id = o.refId ?? o.id;
+  const perdida = `<button class="btn btn-secondary btn-sm" onclick="cerrarPerdidaTablero(${id})">Perdida</button>`;
+  if (o.tipo === 'cotizacion') {
+    return `<div class="cot-card-actions tablero-salida">${perdida}</div>`;
+  }
+  const motivos = MOTIVOS_NO_UTIL
+    .map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
+    .join('');
+  return `<div class="cot-card-actions tablero-salida">
+    <select id="salida-motivo-${id}" class="btn-sm"><option value="">Motivo No útil...</option>${motivos}</select>
+    <button class="btn btn-secondary btn-sm" onclick="marcarNoUtilTablero(${id})">No útil</button>
+    ${perdida}
+  </div>`;
+}
+
 function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
   const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
   const mover = buildMoverSeguimientoControlHtml(o);
+  const salida = buildSalidaControlHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -221,6 +247,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
       </div>
       ${asignar}
       ${mover}
+      ${salida}
     </div>
   </div>`;
 }
