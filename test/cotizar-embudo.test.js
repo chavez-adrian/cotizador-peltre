@@ -270,6 +270,21 @@ test('H9: un fallo del hook jamas rompe la generacion de la cotizacion', async (
   writeProspectos([]);
 });
 
+test('H11: la regla de dominio gobierna el hook: una cotizacion no retrocede una tarjeta post-venta', async () => {
+  // producto_entregado es post-venta: lo mueve Operam, no una cotizacion. El hook
+  // debe respetar transicionPorCotizacion (null) y NO regresar la tarjeta a
+  // Seguimiento; solo deja el evento de la cotizacion en el historial.
+  writeProspectos([prospectoDe('Memo', 'producto_entregado')]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
+  assert.equal(res.status, 200);
+  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'producto_entregado');
+  const ev = p.eventos.find(e => e.tipo === 'cotizacion');
+  assert.ok(ev, 'la cotizacion queda registrada aunque la etapa no cambie');
+  assert.equal(ev.cotizacion_id, cotizacionId);
+});
+
 test('H10: el hook tambien corre al generar PDF', async () => {
   writeProspectos([prospectoDe('Memo')]);
   const res = await supertest(app).post('/api/cotizacion/pdf')
