@@ -144,10 +144,37 @@ function badgeFolioOperam(o) {
   return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : '';
 }
 
-function buildOportunidadCardHtml(o) {
+// Asignar vendedor desde la tarjeta (issue #57, CONTEXT.md "Etapas del pipeline"
+// + "Visibilidad"): la PRIMERA accion de tarjeta del tablero, que hasta ahora era
+// solo-lectura (#53). Solo aplica a una oportunidad en No Asignado (la unica que
+// no tiene dueno). La regla de dominio simetrica vive en lib/pipeline
+// (transicionPorAsignacion); aqui solo se decide si la tarjeta admite el control.
+export function esAsignable(o) {
+  return !!o && o.etapa === 'no_asignado';
+}
+
+// Control de asignacion sobre la tarjeta No Asignado: un selector con los
+// vendedores del catalogo (GET /api/catalogos) + un boton que dispara
+// asignarVendedorTablero(id) en app.js (PATCH /api/prospectos/:id/asignar). Solo
+// lo ve el admin (quien asigna, CONTEXT.md "Visibilidad"); el no-admin no ve No
+// Asignado y la tarjeta sigue siendo solo-lectura. Sin vendedores en el catalogo
+// no se pinta. Funcion pura: el cableado DOM vive en app.js.
+export function buildAsignarControlHtml(o, vendedores, esAdmin) {
+  if (!esAdmin || !esAsignable(o) || !(vendedores && vendedores.length)) return '';
+  const opciones = vendedores
+    .map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`)
+    .join('');
+  return `<div class="cot-card-actions tablero-asignar">
+    <select id="asignar-vendedor-${o.id}" class="btn-sm"><option value="">Asignar a...</option>${opciones}</select>
+    <button class="btn btn-primary btn-sm" onclick="asignarVendedorTablero(${o.id})">Asignar</button>
+  </div>`;
+}
+
+function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
+  const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -157,14 +184,15 @@ function buildOportunidadCardHtml(o) {
         </div>
         ${total}
       </div>
+      ${asignar}
     </div>
   </div>`;
 }
 
-export function buildTableroPipelineHtml(oportunidades) {
+export function buildTableroPipelineHtml(oportunidades, { vendedores, esAdmin } = {}) {
   const cols = agruparPipeline(oportunidades);
   return COLUMNAS_PIPELINE.map(etapa => {
-    const tarjetas = cols[etapa].map(buildOportunidadCardHtml).join('');
+    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, esAdmin)).join('');
     const suma = cols[etapa].reduce((s, o) => s + (o.total || 0), 0);
     return `
       <div class="tablero-col" data-etapa="${etapa}">

@@ -1114,6 +1114,8 @@ body {
 }
 .tablero-card[draggable="true"] { cursor: grab; }
 .tablero-card .cot-card-actions { flex-wrap: wrap; }
+/* Control de asignar vendedor en la tarjeta No Asignado (issue #57) */
+.tablero-asignar { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .tablero-aviso {
   position: fixed;
   bottom: 24px;

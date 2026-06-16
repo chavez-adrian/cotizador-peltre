@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -297,4 +297,50 @@ test('Q26: buildMenuNuevoHtml pinta un boton por accion con su disparador', () =
   assert.match(html, /onclick="nuevoProspecto\(\)"/);
   // Un boton por accion, ninguno de mas.
   assert.equal((html.match(/<button/g) || []).length, ACCIONES_NUEVO.length);
+});
+
+// Asignar vendedor a una tarjeta en No Asignado (issue #57): la PRIMERA accion de
+// tarjeta del tablero (hasta ahora solo-lectura, #53). Solo aparece para el admin
+// (quien asigna) y solo sobre una oportunidad en no_asignado; al elegir un
+// vendedor y confirmar, app.js llama PATCH /api/prospectos/:id/asignar y la
+// tarjeta pasa a Por Cotizar (regla de dominio).
+const VENDEDORES = [{ id: 2, name: 'Alejandro Chavez' }, { id: 3, name: 'Oswaldo Chavez' }];
+
+test('Q27: esAsignable solo en no_asignado', () => {
+  assert.equal(esAsignable(prospecto({ etapa: 'no_asignado' })), true);
+  assert.equal(esAsignable(prospecto({ etapa: 'por_cotizar' })), false);
+  assert.equal(esAsignable(cotizacion({ etapa: 'seguimiento' })), false);
+  assert.equal(esAsignable(undefined), false);
+});
+
+test('Q28: buildAsignarControlHtml pinta el selector de vendedores y el boton solo para admin en No Asignado', () => {
+  const html = buildAsignarControlHtml(prospecto({ id: 5, etapa: 'no_asignado' }), VENDEDORES, true);
+  assert.match(html, /<select/);
+  assert.match(html, /Alejandro Chavez/);
+  assert.match(html, /Oswaldo Chavez/);
+  assert.match(html, /asignarVendedorTablero\(5\)/);
+  // el selector se identifica por el id de la tarjeta (lo lee app.js)
+  assert.match(html, /asignar-vendedor-5/);
+});
+
+test('Q29: buildAsignarControlHtml no pinta control fuera de No Asignado ni para no-admin', () => {
+  assert.equal(buildAsignarControlHtml(prospecto({ etapa: 'por_cotizar' }), VENDEDORES, true), '');
+  assert.equal(buildAsignarControlHtml(prospecto({ etapa: 'no_asignado' }), VENDEDORES, false), '');
+});
+
+test('Q30: el tablero pinta el control de asignar en la tarjeta No Asignado para admin', () => {
+  const html = buildTableroPipelineHtml(
+    [prospecto({ id: 7, etapa: 'no_asignado' }), prospecto({ id: 8, etapa: 'por_cotizar' })],
+    { vendedores: VENDEDORES, esAdmin: true }
+  );
+  assert.match(html, /asignarVendedorTablero\(7\)/);
+  // no aparece sobre la tarjeta que ya tiene dueno
+  assert.equal(html.includes('asignarVendedorTablero(8)'), false);
+});
+
+test('Q31: el tablero sin opciones (no-admin o sin vendedores) no pinta el control de asignar (read-only)', () => {
+  const html = buildTableroPipelineHtml([prospecto({ id: 7, etapa: 'no_asignado' })]);
+  assert.equal(html.includes('asignarVendedorTablero'), false);
+  const noAdmin = buildTableroPipelineHtml([prospecto({ id: 7, etapa: 'no_asignado' })], { vendedores: VENDEDORES, esAdmin: false });
+  assert.equal(noAdmin.includes('asignarVendedorTablero'), false);
 });
