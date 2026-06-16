@@ -85,3 +85,28 @@ test('migrarCotizacion es idempotente sobre una cotizacion ya migrada', () => {
   assert.equal(m.etapa, 'perdida');
   assert.deepEqual(migrarCotizacion(m), m);
 });
+
+// Corte de pre-cotizacion (#63, decision de Adrian 2026-06-16): el folio de
+// Operam no se guardaba historicamente, asi que una cotizacion anterior al
+// despliegue de #63 y sin folio NO se puede distinguir de una pre-cotizacion.
+// Se asume registrada (no PRE) marcandola registroDesconocido en la frontera de
+// lectura; las nuevas sin folio si son PRE.
+test('migrarCotizacion marca registroDesconocido una cotizacion historica sin folio', () => {
+  const m = migrarCotizacion({ id: 1, fecha: '2026-03-01T00:00:00Z', estado: 'abierta' });
+  assert.equal(m.registroDesconocido, true);
+});
+
+test('migrarCotizacion NO marca una cotizacion nueva sin folio (posterior al corte)', () => {
+  const m = migrarCotizacion({ id: 2, fecha: '2026-07-01T00:00:00Z', estado: 'abierta' });
+  assert.equal(m.registroDesconocido, undefined);
+});
+
+test('migrarCotizacion NO marca una cotizacion con folio (ya esta registrada)', () => {
+  const m = migrarCotizacion({ id: 3, fecha: '2026-03-01T00:00:00Z', folioOperam: '900', estado: 'abierta' });
+  assert.equal(m.registroDesconocido, undefined);
+});
+
+test('migrarCotizacion es idempotente sobre el flag de registro desconocido', () => {
+  const una = migrarCotizacion({ id: 4, fecha: '2026-03-01T00:00:00Z', estado: 'abierta' });
+  assert.deepEqual(migrarCotizacion(una), una);
+});

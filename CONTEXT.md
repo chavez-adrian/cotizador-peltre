@@ -29,6 +29,8 @@ Las etapas intermedias de prospección del modelo previo (Contactado, Calificado
 
 Una cotización emitida con datos mínimos (Prospecto Mínimo) y sin registro en Operam, para cotizar sin fricción con el cliente enfrente. No usa Cliente Genérico. Se modela con el folio de Operam ausente (nullable); esa ausencia define el estado "PRE". La distinción **PRE** vs **"#Operam N"** es visible en la tarjeta, en la cola Hoy y en el tablero. Generar una pre-cotización mueve la oportunidad a Seguimiento conservando el PRE. Se formaliza ("completar después") desde la tarjeta: completar los datos del prospecto, dar de alta el cliente en Operam y registrar la cotización; al obtener folio, pierde el PRE.
 
+Corte histórico (decisión 2026-06-16): el folio de Operam no se persistía antes del despliegue de #63, así que una cotización anterior a esa fecha y sin folio no se puede distinguir de una pre-cotización. Se asume **registrada** (no PRE) y no muestra badge — el badge PRE aplica solo a cotizaciones nuevas. El discriminante es la fecha (no el id, que no es contiguo) y vive en la migración de lectura del store.
+
 ## Prospecto Mínimo
 
 El conjunto mínimo de datos con el que se puede emitir una pre-cotización sin alta de cliente: lo necesario para identificar al prospecto y calcular la cotización (celular, nombre, ciudad para estimar envío) más el carrito. El alta fiscal completa en Operam se difiere a la formalización.

@@ -41,7 +41,10 @@ export function esSalida(etapa) {
 // (este modulo no importa de lib/, mismo criterio que el resto del vocabulario).
 export function etiquetaFolioOperam(o) {
   const folio = o && o.folioOperam;
-  return folio == null || folio === '' ? 'PRE' : `#Operam ${folio}`;
+  if (folio != null && folio !== '') return `#Operam ${folio}`;
+  // Historica de registro desconocido (anterior a #63): se asume registrada, sin
+  // badge (ni PRE ni #Operam). Las nuevas sin folio si son PRE.
+  return o && o.registroDesconocido ? '' : 'PRE';
 }
 
 // Las oportunidades que viven en el pipeline (las 7 columnas): excluye las
@@ -81,13 +84,21 @@ function nombreOportunidad(o) {
   return o.nombre || o.cliente || 'Sin nombre';
 }
 
-// Badge PRE / #Operam: solo lo lleva una cotizacion (una oportunidad ya
-// cotizada). Un prospecto que aun no cotiza no muestra badge.
-function badgeFolioOperam(o) {
-  if (o.tipo !== 'cotizacion') return '';
-  const etiqueta = etiquetaFolioOperam(o);
+// Badge HTML del estado de folio de una cotizacion: '' si es historica de
+// registro desconocido (sin etiqueta), si no el chip "PRE" (ambar) o "#Operam N"
+// (azul). Unica fuente del badge: la reusan el tablero, la cola Hoy y la vista
+// lista, para que las tres pinten lo mismo (incluido el caso sin badge).
+export function badgeFolioOperamHtml(cot) {
+  const etiqueta = etiquetaFolioOperam(cot);
+  if (!etiqueta) return '';
   const clase = etiqueta === 'PRE' ? 'badge-pre' : 'badge-operam';
   return `<span class="cot-badge ${clase}">${escapeHtml(etiqueta)}</span>`;
+}
+
+// En el tablero el badge solo lo lleva una cotizacion (oportunidad ya cotizada);
+// un prospecto que aun no cotiza no muestra badge.
+function badgeFolioOperam(o) {
+  return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : '';
 }
 
 function buildOportunidadCardHtml(o) {

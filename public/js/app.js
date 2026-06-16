@@ -31,7 +31,7 @@ import {
 import {
   buildTableroPipelineHtml,
   oportunidadesActivas,
-  etiquetaFolioOperam,
+  badgeFolioOperamHtml,
 } from './pipeline-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1771,8 +1771,7 @@ async function showSeguimiento() {
       const btnWa = item.waLink
         ? `<a href="${item.waLink}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`
         : `<button class="btn btn-secondary btn-sm" disabled title="Sin telefono registrado">WhatsApp</button>`;
-      const etq = etiquetaFolioOperam(item);
-      const badge = `<span class="cot-badge ${etq === 'PRE' ? 'badge-pre' : 'badge-operam'}">${escapeHtml(etq)}</span>`;
+      const badge = badgeFolioOperamHtml(item);
       return `
         <div class="cot-card">
           <div class="cot-card-header">
@@ -1948,11 +1947,7 @@ function renderPipeline() {
   listEl.innerHTML = activas.map(o => {
     const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
     const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
-    let badge = '';
-    if (o.tipo === 'cotizacion') {
-      const etq = etiquetaFolioOperam(o);
-      badge = `<span class="cot-badge ${etq === 'PRE' ? 'badge-pre' : 'badge-operam'}">${escapeHtml(etq)}</span>`;
-    }
+    const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : '';
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>

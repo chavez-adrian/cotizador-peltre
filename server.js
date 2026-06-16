@@ -263,12 +263,14 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   const filtradas = req.user.role === 'admin'
     ? log
     : log.filter(c => c.vendedor === req.user.name);
-  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam }) => ({
+  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
     estado: estado || 'abierta',
     etapa,
-    // Folio de Operam nullable (issue #63): null = pre-cotizacion (badge "PRE").
+    // Folio de Operam nullable (issue #63): null = pre-cotizacion (badge "PRE");
+    // registroDesconocido = historica anterior a #63 (se asume registrada, sin badge).
     folioOperam: folioOperam ?? null,
+    registroDesconocido: registroDesconocido ?? false,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
     hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),

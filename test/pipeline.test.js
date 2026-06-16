@@ -113,3 +113,14 @@ test('etiquetaFolioOperam: PRE sin folio, #Operam N con folio', () => {
   assert.equal(etiquetaFolioOperam({ folioOperam: 12345 }), '#Operam 12345');
   assert.equal(etiquetaFolioOperam({ folioOperam: '7788' }), '#Operam 7788');
 });
+
+// Cotizacion historica sin folio (registroDesconocido, ver migrar-pipeline): se
+// asume registrada en Operam (el folio no se capturaba antes de #63), asi que NO
+// es PRE y NO muestra badge (ni "PRE" ni "#Operam N").
+test('esPreCotizacion: una historica con registro desconocido no es PRE', () => {
+  assert.equal(esPreCotizacion({ folioOperam: null, registroDesconocido: true }), false);
+});
+
+test('etiquetaFolioOperam: una historica con registro desconocido no muestra etiqueta', () => {
+  assert.equal(etiquetaFolioOperam({ folioOperam: null, registroDesconocido: true }), '');
+});
