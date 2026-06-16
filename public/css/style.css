@@ -993,6 +993,21 @@ body {
 .cliente-badge { background: var(--etapa-contactado); color: var(--etapa-contactado-texto); }
 .reunion-badge { background: oklch(0.89 0.06 310); color: oklch(0.34 0.1 310); }
 
+/* PRE / #Operam (issue #63): una pre-cotizacion (sin folio de Operam) lleva el
+   chip ambar "PRE"; una cotizacion registrada lleva el chip azul "#Operam N". */
+.cot-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 9px;
+  padding: 2px 8px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.badge-pre { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); }
+.badge-operam { background: var(--primary-light); color: var(--primary-dark); }
+
 /* Tableros kanban: prospectos (issue #49) y cotizaciones (issue #50) */
 #prospectos-contenido { max-width: 520px; }
 #prospectos-contenido.modo-tablero { max-width: none; }

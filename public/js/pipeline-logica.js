@@ -35,6 +35,15 @@ export function esSalida(etapa) {
   return SALIDAS.has(etapa);
 }
 
+// Estado PRE / folio Operam (issue #63, CONTEXT.md "Pre-cotizacion"): la
+// ausencia del folio define el estado "PRE"; con folio la cotizacion muestra
+// "#Operam N". Reexpresion browser-safe de lib/pipeline.etiquetaFolioOperam
+// (este modulo no importa de lib/, mismo criterio que el resto del vocabulario).
+export function etiquetaFolioOperam(o) {
+  const folio = o && o.folioOperam;
+  return folio == null || folio === '' ? 'PRE' : `#Operam ${folio}`;
+}
+
 // Las oportunidades que viven en el pipeline (las 7 columnas): excluye las
 // salidas No util y Perdida, que viven en filtro/historial. Es la misma regla
 // que aplica el tablero (agruparPipeline ignora las salidas); la vista lista la
@@ -72,14 +81,24 @@ function nombreOportunidad(o) {
   return o.nombre || o.cliente || 'Sin nombre';
 }
 
+// Badge PRE / #Operam: solo lo lleva una cotizacion (una oportunidad ya
+// cotizada). Un prospecto que aun no cotiza no muestra badge.
+function badgeFolioOperam(o) {
+  if (o.tipo !== 'cotizacion') return '';
+  const etiqueta = etiquetaFolioOperam(o);
+  const clase = etiqueta === 'PRE' ? 'badge-pre' : 'badge-operam';
+  return `<span class="cot-badge ${clase}">${escapeHtml(etiqueta)}</span>`;
+}
+
 function buildOportunidadCardHtml(o) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
+  const badge = badgeFolioOperam(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
         </div>
         ${total}

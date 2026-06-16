@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam } =
     await import('../pipeline-logica.js'));
 });
 
@@ -106,6 +106,33 @@ test('Q9: el tablero escapa los datos de usuario (XSS)', () => {
   const html = buildTableroPipelineHtml([prospecto({ id: 1, nombre: '<img src=x onerror=alert(1)>', etapa: 'por_cotizar' })]);
   assert.equal(html.includes('<img src=x'), false);
   assert.match(html, /&lt;img/);
+});
+
+// Estado PRE / folio Operam (issue #63): la tarjeta del tablero distingue una
+// pre-cotizacion (badge "PRE") de una cotizacion registrada en Operam ("#Operam
+// N"). Reusa la regla pura del dominio (etiquetaFolioOperam).
+test('Q11: etiquetaFolioOperam reexpone la regla de dominio: PRE sin folio, #Operam N con folio', () => {
+  assert.equal(etiquetaFolioOperam({ folioOperam: null }), 'PRE');
+  assert.equal(etiquetaFolioOperam({}), 'PRE');
+  assert.equal(etiquetaFolioOperam({ folioOperam: '7788' }), '#Operam 7788');
+});
+
+test('Q12: la tarjeta de una cotizacion sin folio muestra el badge PRE', () => {
+  const html = buildTableroPipelineHtml([cotizacion({ id: 10, etapa: 'seguimiento', folioOperam: null })]);
+  assert.match(html, /PRE/);
+  assert.equal(html.includes('#Operam'), false);
+});
+
+test('Q13: la tarjeta de una cotizacion con folio muestra #Operam N en vez de PRE', () => {
+  const html = buildTableroPipelineHtml([cotizacion({ id: 10, etapa: 'seguimiento', folioOperam: '55123' })]);
+  assert.match(html, /#Operam 55123/);
+  assert.equal(/>PRE</.test(html), false);
+});
+
+test('Q14: un prospecto (aun sin cotizar) no muestra badge PRE/Operam', () => {
+  const html = buildTableroPipelineHtml([prospecto({ id: 1, etapa: 'por_cotizar' })]);
+  assert.equal(html.includes('PRE'), false);
+  assert.equal(html.includes('#Operam'), false);
 });
 
 test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma regla que el tablero, para la vista lista', () => {
