@@ -324,6 +324,25 @@ test('O1: subir una cotizacion a Operam le guarda el folio devuelto (deja de ser
   assert.equal(esPreCotizacion(await cotStore.obtener(id)), false);
 });
 
+test('O3: generar una pre-cotizacion (celular libre, sin alta) mueve la tarjeta a Seguimiento conservando el PRE', async () => {
+  // Prospecto Minimo: celular libre + canal del catalogo, sin alta de cliente en
+  // Operam. La cotizacion se genera, auto-crea el prospecto en Seguimiento (#46/#55)
+  // y nace SIN folio: es una pre-cotizacion (estado PRE) que conserva su PRE hasta
+  // formalizarse. Slice end-to-end del issue #63.
+  writeProspectos([]);
+  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'WhatsApp' }));
+  assert.equal(res.status, 200);
+  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  // La oportunidad esta en Seguimiento...
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'seguimiento');
+  assert.equal(p.celular, '+52 5599999999');
+  // ...y la cotizacion sigue siendo PRE (sin folio de Operam): no se registro nada.
+  const cot = await cotStore.obtener(cotizacionId);
+  assert.equal(cot.folioOperam, null);
+  assert.equal(esPreCotizacion(cot), true);
+});
+
 test('O2: si la subida a Operam falla, la cotizacion sigue sin folio (sigue PRE)', async () => {
   writeProspectos([]);
   const id = await cotStore.crear({
