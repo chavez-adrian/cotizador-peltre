@@ -33,6 +33,8 @@ import {
   buildTableroPipelineHtml,
   oportunidadesActivas,
   badgeFolioOperamHtml,
+  botonCompletarHtml,
+  siguientePasoFormalizacion,
 } from './pipeline-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1421,6 +1423,42 @@ async function subirCotizacionOperam(id) {
 }
 window.subirCotizacionOperam = subirCotizacionOperam;
 
+// Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1). Encadena las
+// dos piezas existentes y desacopladas: (1) registro directo de la cotizacion
+// (busca el cliente por RFC en Operam y persiste el folio -> deja de ser PRE);
+// (2) si Operam no halla al cliente, guia al vendedor al alta (flujo existente),
+// prellenando el formulario con los datos de la cotizacion via cargarCotizacion;
+// tras el alta, vuelve a tocar "Completar" para registrar. El paso lo decide la
+// regla pura siguientePasoFormalizacion sobre la respuesta del servidor.
+async function completarPreCotizacion(id) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Completando...'; }
+  let resultado;
+  try {
+    const res = await api(`/api/cotizacion/operam/${id}`, { method: 'POST' });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    resultado = { ok: res.ok, status: res.status, folio: data.folio, error: data.error };
+  } catch (e) {
+    resultado = { ok: false, status: 0, error: e.message };
+  }
+  const paso = siguientePasoFormalizacion(resultado);
+  if (paso === 'listo') {
+    alert(`Cotizacion registrada en Operam${resultado.folio ? ' - Folio: ' + resultado.folio : ''}`);
+    showHistorial();
+    return;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Completar'; }
+  if (paso === 'alta') {
+    alert('El cliente aun no esta en Operam. Damoslo de alta primero (el formulario se prellena con los datos de la cotizacion) y al terminar vuelve a tocar "Completar".');
+    await cargarCotizacion(id); // prellena el formulario y cambia a la vista Cotizar
+    abrirAcordeonAlta();
+    return;
+  }
+  alert('No se pudo completar: ' + (resultado.error || 'error desconocido'));
+}
+window.completarPreCotizacion = completarPreCotizacion;
+
 // === TABS ===
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
@@ -1689,11 +1727,16 @@ function renderHistorial() {
     const btnCargar = c.hasData
       ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id})">Cargar</button>`
       : `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Cargar</button>`;
+    // Estado PRE / #Operam (issue #63) visible en el Historial; "Completar"
+    // (issue #66) formaliza la pre-cotizacion desde su tarjeta. Solo aparece
+    // mientras la cotizacion sigue siendo PRE.
+    const badge = badgeFolioOperamHtml(c);
+    const btnCompletar = botonCompletarHtml(c);
     return `
       <div class="cot-card">
         <div class="cot-card-header">
           <div>
-            <div class="cot-card-cliente">${c.cliente || 'Sin nombre'}</div>
+            <div class="cot-card-cliente">${escapeHtml(c.cliente || 'Sin nombre')}${badge}</div>
             <div class="cot-card-meta">${fecha} · ${c.vendedor} · ${c.totalPiezas} pzs</div>
           </div>
           <div>
@@ -1704,6 +1747,7 @@ function renderHistorial() {
         <div class="cot-card-actions">
           ${btnPdf}
           ${btnCargar}
+          ${btnCompletar}
         </div>
       </div>
     `;
