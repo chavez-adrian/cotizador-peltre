@@ -2028,6 +2028,65 @@ async function moverASeguimientoTablero(id) {
 }
 window.moverASeguimientoTablero = moverASeguimientoTablero;
 
+// Salidas del embudo desde la tarjeta del tablero (issue #59, Modelo A). El
+// control pinta el id numerico (refId); aqui se ubica la oportunidad por ese id
+// para conocer su tipo (la salida de un prospecto y la de una cotizacion pegan a
+// rutas distintas).
+function oportunidadDeTablero(tipo, id) {
+  return ultimasOportunidades.find(o => o.tipo === tipo && (o.refId ?? o.id) === id);
+}
+
+// No util (solo PROSPECTOS, Modelo A): exige un motivo del catalogo. Si el select
+// quedo vacio, NO se llama al servidor y la tarjeta se queda donde esta (AC4:
+// cancelar regresa la tarjeta a su columna sin tocar el servidor). El servidor
+// vuelve a validar el motivo (catalogo cerrado).
+async function marcarNoUtilTablero(id) {
+  const motivo = document.getElementById(`salida-motivo-${id}`)?.value;
+  if (!motivo) { avisoTablero('Elige el motivo de No útil (catálogo cerrado)'); return; }
+  try {
+    const res = await api(`/api/prospectos/${id}/etapa`, { method: 'PATCH', body: { etapa: 'no_util', motivo } });
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch {}
+      avisoTablero(data.error || 'No se pudo registrar la salida');
+      return;
+    }
+    avisoTablero(`Salida a No útil (${motivo})`);
+    showPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.marcarNoUtilTablero = marcarNoUtilTablero;
+
+// Perdida (prospecto o cotizacion): pide confirmacion (AC2). Si el vendedor
+// cancela la confirmacion, no se llama al servidor. El prospecto cierra via
+// PATCH .../etapa {perdida}; la cotizacion via PATCH .../estado {perdida} (ruta
+// existente, Modelo A: una cotizacion sale del embudo solo por Perdida).
+async function cerrarPerdidaTablero(id) {
+  const o = oportunidadDeTablero('prospecto', id) || oportunidadDeTablero('cotizacion', id);
+  const nombre = o ? (o.nombre || 'esta oportunidad') : 'esta oportunidad';
+  if (!confirm(`¿Cerrar como Perdida ${nombre}? Sale del tablero y queda en el historial.`)) return;
+  const esCot = o && o.tipo === 'cotizacion';
+  const req = esCot
+    ? api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado: 'perdida' } })
+    : api(`/api/prospectos/${id}/etapa`, { method: 'PATCH', body: { etapa: 'perdida' } });
+  try {
+    const res = await req;
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch {}
+      avisoTablero(data.error || 'No se pudo cerrar como Perdida');
+      return;
+    }
+    avisoTablero('Cerrada como Perdida');
+    showPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.cerrarPerdidaTablero = cerrarPerdidaTablero;
+
 function setModoPipeline(modo) {
   pipelineModo = modo;
   localStorage.setItem('pipelineModo', modo);
