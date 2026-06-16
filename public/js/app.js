@@ -23,6 +23,7 @@ import {
   buildCanalModalHtml,
   MOTIVOS_NO_UTIL,
   buildMotivoNoUtilModalHtml,
+  validarEdicionProspecto,
 } from './prospectos-logica.js';
 import {
   puedeArrastrarCotizacion,
@@ -2277,6 +2278,40 @@ function resultadoReunionNoUtilProspecto(id) {
   resultadoReunionProspecto(id, 'no_util', motivo);
 }
 
+// Editar/complementar el prospecto desde su tarjeta (issue #66): el formulario
+// inline viene en la card (oculto); abrirEdicionProspecto lo muestra/oculta y
+// guardarEdicionProspecto lee los campos y persiste via PATCH /api/prospectos/:id.
+function abrirEdicionProspecto(id) {
+  const el = document.getElementById(`pr-edicion-${id}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+const EDICION_OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas'];
+
+async function guardarEdicionProspecto(id) {
+  const val = campo => {
+    const el = document.getElementById(`ed-${campo}-${id}`);
+    return el ? el.value : undefined;
+  };
+  const body = { nombre: val('nombre'), ciudad: val('ciudad') };
+  for (const k of EDICION_OPCIONALES) body[k] = val(k);
+  const error = validarEdicionProspecto(body);
+  if (error) { alert(error); return; }
+  try {
+    const res = await api(`/api/prospectos/${id}`, { method: 'PATCH', body });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudieron guardar los cambios');
+      return;
+    }
+    cargarListaProspectos();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
+window.abrirEdicionProspecto = abrirEdicionProspecto;
+window.guardarEdicionProspecto = guardarEdicionProspecto;
 window.marcarNoUtilProspecto = marcarNoUtilProspecto;
 window.registrarToqueProspecto = registrarToqueProspecto;
 window.toggleHistorialProspecto = toggleHistorialProspecto;

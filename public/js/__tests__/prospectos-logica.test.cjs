@@ -6,14 +6,16 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
   validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml,
   buildEsperaBadgeHtml, buildColaProspectosHtml, necesitaCanal, validarCanalCotizacion,
-  buildCanalModalHtml, reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml;
+  buildCanalModalHtml, reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
+  validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
     validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil,
     buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml,
     necesitaCanal, validarCanalCotizacion, buildCanalModalHtml,
-    reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml } = await import('../prospectos-logica.js'));
+    reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
+    validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -111,6 +113,63 @@ test('P11: buildProspectoCardHtml escapa HTML en los datos del prospecto', () =>
   assert.match(html, /&lt;img/);
   assert.equal(html.includes('<b>Hotel</b>'), false);
   assert.match(html, /Puebla &amp; &quot;Cholula&quot;/);
+});
+
+// === Issue #66: editar/complementar el prospecto desde su tarjeta ===
+
+test('ED1: validarEdicionProspecto rechaza vaciar nombre o ciudad pero acepta ediciones parciales', () => {
+  assert.match(validarEdicionProspecto({ nombre: '   ' }), /nombre/i);
+  assert.match(validarEdicionProspecto({ ciudad: '' }), /ciudad/i);
+  // editar solo opcionales (sin tocar obligatorios) es valido
+  assert.equal(validarEdicionProspecto({ notas: 'algo', temperatura: 5 }), null);
+  assert.equal(validarEdicionProspecto({ nombre: 'Laura', ciudad: 'CDMX' }), null);
+  assert.equal(validarEdicionProspecto({}), null);
+});
+
+test('ED2: buildEdicionProspectoDatos separa columnas (nombre/ciudad) y data, recorta y omite ausentes', () => {
+  const datos = buildEdicionProspectoDatos({
+    nombre: '  Laura Perez ', ciudad: ' CDMX ',
+    empresa: ' Hotel Verde ', temperatura: 5, correo: 'laura@hotel.mx', notas: '',
+  });
+  assert.equal(datos.nombre, 'Laura Perez');
+  assert.equal(datos.ciudad, 'CDMX');
+  assert.equal(datos.data.empresa, 'Hotel Verde');
+  assert.equal(datos.data.temperatura, 5);
+  assert.equal(datos.data.correo, 'laura@hotel.mx');
+  // un opcional vaciado a proposito viaja como '' (para borrar), pero un ausente no
+  assert.equal(datos.data.notas, '');
+  assert.equal('piezas_estimadas' in datos.data, false);
+  // sin opcionales no se crea la clave data
+  const soloNombre = buildEdicionProspectoDatos({ nombre: 'X' });
+  assert.equal('data' in soloNombre, false);
+});
+
+test('ED3: buildEdicionProspectoFormHtml prellena los datos actuales y guarda contra el id del prospecto', () => {
+  const html = buildEdicionProspectoFormHtml({
+    id: 3, nombre: 'Laura', ciudad: 'Puebla',
+    data: { empresa: 'Hotel Azul', temperatura: 4, notas: 'pidio catalogo' },
+  });
+  assert.match(html, /value="Laura"/);
+  assert.match(html, /value="Puebla"/);
+  assert.match(html, /value="Hotel Azul"/);
+  assert.match(html, /pidio catalogo/);
+  // los campos del catalogo de la captura (tipo cliente, piezas) estan presentes
+  assert.match(html, /ed-empresa-3/);
+  assert.match(html, /ed-correo-3/);
+  assert.match(html, /ed-temperatura-3/);
+  assert.match(html, /ed-notas-3/);
+  assert.match(html, /guardarEdicionProspecto\(3\)/);
+});
+
+test('ED4: la card de un prospecto en cualquier etapa activa ofrece Editar; en una salida no', () => {
+  for (const etapa of ['por_cotizar', 'seguimiento', 'anticipo_pagado', 'producto_entregado']) {
+    const html = buildProspectoCardHtml({ ...PROSPECTO, etapa }, null, new Date(), { compacta: true });
+    assert.match(html, /abrirEdicionProspecto\(3\)/, `etapa activa ${etapa} debe ofrecer Editar`);
+  }
+  for (const etapa of ['no_util', 'perdida']) {
+    const html = buildProspectoCardHtml({ ...PROSPECTO, etapa });
+    assert.equal(html.includes('abrirEdicionProspecto'), false, `salida ${etapa} no edita`);
+  }
 });
 
 // === Issue #43: etapas, toques, No util e historial ===

@@ -76,6 +76,36 @@ export function buildEdicionProspectoDatos(body) {
   return datos;
 }
 
+// Formulario inline de edicion del prospecto (issue #66): prellena los datos
+// actuales y guarda contra el id del prospecto. Los campos son los de la captura
+// (CONTEXT.md "Captura de prospecto") menos celular (llave de identidad) y canal
+// (origen). guardarEdicionProspecto(id) (en app.js) lee estos inputs y llama a
+// PATCH /api/prospectos/:id.
+export function buildEdicionProspectoFormHtml(p) {
+  const d = (p && p.data) || {};
+  const v = x => escapeHtml(x == null ? '' : x);
+  const opt = (sel, val, label) => `<option value="${escapeHtml(val)}"${String(sel) === String(val) ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+  const piezasOpts = ['', ...PIEZAS_ESTIMADAS].map(x => opt(d.piezas_estimadas || '', x, x || 'Piezas estimadas...')).join('');
+  return `
+    <div class="prospecto-edicion" style="margin-top:8px;padding-top:8px;border-top:1px solid #eee">
+      <div style="display:grid;gap:6px">
+        <input type="text" id="ed-nombre-${p.id}" value="${v(p.nombre)}" placeholder="Nombre">
+        <input type="text" id="ed-ciudad-${p.id}" value="${v(p.ciudad)}" placeholder="Ciudad">
+        <input type="text" id="ed-empresa-${p.id}" value="${v(d.empresa)}" placeholder="Empresa">
+        <input type="text" id="ed-segmento_id-${p.id}" value="${v(d.segmento_id)}" placeholder="Tipo de cliente">
+        <select id="ed-piezas_estimadas-${p.id}">${piezasOpts}</select>
+        <input type="email" id="ed-correo-${p.id}" value="${v(d.correo)}" placeholder="Correo">
+        <input type="number" id="ed-temperatura-${p.id}" min="1" max="5" value="${v(d.temperatura)}" placeholder="Temperatura (1-5)">
+        <textarea id="ed-notas-${p.id}" placeholder="Notas">${v(d.notas)}</textarea>
+      </div>
+      <div class="cot-card-actions" style="margin-top:6px">
+        <button class="btn btn-primary btn-sm" onclick="guardarEdicionProspecto(${p.id})">Guardar</button>
+        <button class="btn btn-secondary btn-sm" onclick="abrirEdicionProspecto(${p.id})">Cancelar</button>
+      </div>
+    </div>
+  `;
+}
+
 // Labels de las etapas del pipeline unificado (issue #53, ADR-0005). La unica
 // fuente del vocabulario es lib/pipeline.js; aqui se reexpone para el frontend
 // (este modulo es browser-safe y no importa de lib/).
@@ -211,6 +241,11 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // reunion, salida a No util); al pasar a Seguimiento la oportunidad la lleva
   // la cotizacion (otro tipo de tarjeta). El avance entre etapas ya no es manual.
   const activo = p.etapa === 'por_cotizar';
+  // Editar/complementar el prospecto (issue #66) se permite en cualquier etapa
+  // activa (las 7 del embudo), no en una salida (No util/Perdida viven en
+  // historial). Distinto de `activo`, que habilita el trabajo de prospeccion
+  // (toques, reunion) solo en Por Cotizar.
+  const editable = !['no_util', 'perdida'].includes(p.etapa);
   const wa = buildWaLink(p.celular);
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.
@@ -228,6 +263,9 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
       `</select><button class="btn btn-secondary btn-sm" onclick="marcarNoUtilProspecto(${p.id})">No útil</button>`
     );
   }
+  // Editar/complementar (issue #66): disponible en cualquier etapa activa, no
+  // solo en Por Cotizar. Abre el formulario inline que ya viene en la card.
+  if (editable) pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="abrirEdicionProspecto(${p.id})">Editar</button>`);
   pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="toggleHistorialProspecto(${p.id})">Historial</button>`);
   const waBtn = wa ? `<a href="${wa}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>` : '';
   // Cotizar es el destino natural del prospecto (feedback de Adrian
@@ -254,6 +292,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
       </div>
       ${acciones}
       <div id="pr-historial-${p.id}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #eee">${buildHistorialHtml(p)}</div>
+      ${editable ? `<div id="pr-edicion-${p.id}" style="display:none">${buildEdicionProspectoFormHtml(p)}</div>` : ''}
     </div>
   `;
 }
