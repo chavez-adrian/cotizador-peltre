@@ -183,11 +183,29 @@ export function buildAsignarControlHtml(o, vendedores, esAdmin) {
   </div>`;
 }
 
+// Mover a Seguimiento a mano (issue #56, AC1): boton sobre la tarjeta de un
+// PROSPECTO en Por Cotizar que abre la captura del folio de Operam (el vendedor
+// cotizo POR FUERA). El trigger es un boton, no arrastre (fuera de alcance); al
+// confirmar, app.js (moverASeguimientoTablero) llama PATCH /api/prospectos/:id/etapa
+// con { etapa:'seguimiento', folio }. Lo ve quien opera la tarjeta (dueno o admin,
+// la ruta ya valida con prospectoOperable): NO es admin-only. Una cotizacion ya
+// avanza sola al cotizar en el sistema (#55), por eso no lleva este boton.
+export function buildMoverSeguimientoControlHtml(o) {
+  if (!o || o.tipo !== 'prospecto' || o.etapa !== 'por_cotizar') return '';
+  // refId es el id numerico del prospecto (la ruta espera el id real); o.id puede
+  // venir prefijado ("p7") cuando la oportunidad se arma desde un prospecto.
+  const id = o.refId ?? o.id;
+  return `<div class="cot-card-actions tablero-mover">
+    <button class="btn btn-primary btn-sm" onclick="moverASeguimientoTablero(${id})">A Seguimiento (folio Operam)</button>
+  </div>`;
+}
+
 function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
   const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
+  const mover = buildMoverSeguimientoControlHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -198,6 +216,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
         ${total}
       </div>
       ${asignar}
+      ${mover}
     </div>
   </div>`;
 }

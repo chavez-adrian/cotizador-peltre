@@ -2003,6 +2003,31 @@ async function asignarVendedorTablero(id) {
 }
 window.asignarVendedorTablero = asignarVendedorTablero;
 
+// Mover a Seguimiento a mano desde el tablero (issue #56): el vendedor cotizo POR
+// FUERA (directo en Operam), asi que captura el folio de Operam y la tarjeta pasa
+// de Por Cotizar a Seguimiento. Captura minima con prompt(); el guard del frontend
+// rechaza un folio vacio (sin pegarle al servidor) y la ruta vuelve a validarlo
+// server-side. El folio se guarda en el prospecto (data.folioOperam). La tarjeta
+// se mueve al recargar el pipeline.
+async function moverASeguimientoTablero(id) {
+  const folio = (prompt('Numero de cotizacion de Operam (folio):') || '').trim();
+  if (!folio) { avisoTablero('El folio de Operam es obligatorio para mover a Seguimiento'); return; }
+  try {
+    const res = await api(`/api/prospectos/${id}/etapa`, { method: 'PATCH', body: { etapa: 'seguimiento', folio } });
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch {}
+      avisoTablero(data.error || 'No se pudo mover a Seguimiento');
+      return;
+    }
+    avisoTablero(`Movido a Seguimiento (folio ${folio})`);
+    showPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.moverASeguimientoTablero = moverASeguimientoTablero;
+
 function setModoPipeline(modo) {
   pipelineModo = modo;
   localStorage.setItem('pipelineModo', modo);

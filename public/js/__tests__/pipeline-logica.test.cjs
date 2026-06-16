@@ -369,3 +369,34 @@ test('Q34: un prospecto sin folio no muestra badge (ni PRE ni #Operam)', () => {
   assert.equal(html.includes('PRE'), false);
   assert.equal(html.includes('#Operam'), false);
 });
+
+// Mover a Seguimiento a mano desde la tarjeta (issue #56, AC1): un boton sobre la
+// tarjeta de un PROSPECTO en Por Cotizar abre la captura del folio (cotizo por
+// fuera). El arrastre esta fuera de alcance; el trigger es un boton (mismo patron
+// que el control de asignar de #57). Lo ve quien opera la tarjeta (dueno o admin),
+// NO es admin-only. Una cotizacion (ya cotizada en el sistema) no lo lleva: su
+// avance es automatico (#55).
+test('Q35: buildMoverSeguimientoControlHtml pinta el boton solo para un prospecto en Por Cotizar, con su disparador', () => {
+  const html = buildMoverSeguimientoControlHtml(prospecto({ id: 5, etapa: 'por_cotizar' }));
+  assert.match(html, /<button/);
+  assert.match(html, /moverASeguimientoTablero\(5\)/);
+  assert.match(html, /Seguimiento/);
+});
+
+test('Q36: buildMoverSeguimientoControlHtml no pinta el boton fuera de Por Cotizar ni para una cotizacion', () => {
+  assert.equal(buildMoverSeguimientoControlHtml(prospecto({ id: 5, etapa: 'no_asignado' })), '');
+  assert.equal(buildMoverSeguimientoControlHtml(prospecto({ id: 5, etapa: 'seguimiento' })), '');
+  assert.equal(buildMoverSeguimientoControlHtml(cotizacion({ id: 10, etapa: 'por_cotizar' })), '');
+  assert.equal(buildMoverSeguimientoControlHtml(undefined), '');
+});
+
+test('Q37: el tablero pinta el boton de mover a Seguimiento en la tarjeta de prospecto Por Cotizar', () => {
+  const html = buildTableroPipelineHtml([
+    prospecto({ id: 7, etapa: 'por_cotizar' }),
+    prospecto({ id: 8, etapa: 'no_asignado' }),
+    cotizacion({ id: 10, etapa: 'seguimiento' }),
+  ]);
+  assert.match(html, /moverASeguimientoTablero\(7\)/);
+  assert.equal(html.includes('moverASeguimientoTablero(8)'), false);
+  assert.equal(html.includes('moverASeguimientoTablero(10)'), false);
+});
