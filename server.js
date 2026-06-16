@@ -526,14 +526,26 @@ app.patch('/api/prospectos/:id/asignar', authMiddleware, adminMiddleware, async 
 });
 
 app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
-  const { etapa, motivo } = req.body || {};
+  const { etapa, motivo, folio } = req.body || {};
   const p = await prospectoOperable(req, res);
   if (!p) return;
-  const error = validarTransicion(p.etapa, etapa, motivo);
+  const error = validarTransicion(p.etapa, etapa, motivo, folio);
   if (error) return res.status(400).json({ error });
+  const fecha = new Date().toISOString();
+  // Mover a Seguimiento a mano (issue #56): el vendedor cotizo por fuera, asi
+  // que el folio de Operam se guarda en el prospecto (data.folioOperam). La
+  // regla de dominio (validarTransicion) ya valido que hay folio y que el origen
+  // es Por Cotizar; aqui se persiste etapa + folio + evento juntos.
+  if (etapa === 'seguimiento') {
+    const folioLimpio = String(folio).trim();
+    await prospectosStore.moverASeguimientoConFolio(p.id, folioLimpio, {
+      tipo: 'etapa', de: p.etapa, a: 'seguimiento', folio: folioLimpio, fecha, vendedor: req.user.name,
+    });
+    return res.json({ ok: true, etapa, folio: folioLimpio });
+  }
   const evento = etapa === 'no_util'
-    ? { tipo: 'no_util', motivo, fecha: new Date().toISOString(), vendedor: req.user.name }
-    : { tipo: 'etapa', de: p.etapa, a: etapa, fecha: new Date().toISOString(), vendedor: req.user.name };
+    ? { tipo: 'no_util', motivo, fecha, vendedor: req.user.name }
+    : { tipo: 'etapa', de: p.etapa, a: etapa, fecha, vendedor: req.user.name };
   await prospectosStore.cambiarEtapa(p.id, etapa, evento);
   res.json({ ok: true, etapa });
 });
