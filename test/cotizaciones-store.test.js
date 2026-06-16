@@ -78,8 +78,9 @@ test('setFolioOperam guarda el folio devuelto por Operam y obtener/listar lo exp
   writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
   const ok = await setFolioOperam(1, 7788);
   assert.equal(ok, true);
-  assert.equal((await obtener(1)).folioOperam, 7788);
-  assert.equal((await listar())[0].folioOperam, 7788);
+  // El folio se persiste como identificador (texto), igual en Postgres y en JSON.
+  assert.equal((await obtener(1)).folioOperam, '7788');
+  assert.equal((await listar())[0].folioOperam, '7788');
 });
 
 test('setFolioOperam sobre una cotizacion inexistente no rompe', async () => {

@@ -715,6 +715,8 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
   try {
     const folio = await subirCotizacionOperam(entry.data);
+    // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
+    if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
     res.json({ ok: true, folio });
   } catch (err) {
     res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });

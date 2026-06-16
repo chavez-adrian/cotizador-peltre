@@ -295,3 +295,48 @@ test('H10: el hook tambien corre al generar PDF', async () => {
   assert.equal(p.etapa, 'seguimiento');
   assert.ok(p.eventos.some(e => e.tipo === 'cotizacion'));
 });
+
+// === Subir a Operam guarda el folio (issue #63: la cotizacion deja de ser PRE) ===
+
+const cotStore = await import('../lib/cotizaciones-store.js');
+const { esPreCotizacion } = await import('../lib/pipeline.js');
+
+test('O1: subir una cotizacion a Operam le guarda el folio devuelto (deja de ser PRE)', async () => {
+  writeProspectos([]);
+  const id = await cotStore.crear({
+    fecha: '2026-06-10T00:00:00Z', vendedor: 'Memo', cliente: 'HOTELERA DEL SUR',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'HOTELERA DEL SUR SA DE CV', rfc: 'HSU010101AAA' }, items: [] },
+  });
+  // Pre-condicion: nace sin folio (pre-cotizacion).
+  assert.equal((await cotStore.obtener(id)).folioOperam, null);
+  mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '77', tax_id: 'HSU010101AAA', CustName: 'HOTELERA DEL SUR SA DE CV', branches: [{ branch_code: '1' }] }] }),
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, quote_id: 55123 }),
+  });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(res.status, 200);
+  assert.equal(res.body.folio, 55123);
+  // El folio quedo persistido como identificador (texto): la cotizacion ya no es PRE.
+  assert.equal((await cotStore.obtener(id)).folioOperam, '55123');
+  assert.equal(esPreCotizacion(await cotStore.obtener(id)), false);
+});
+
+test('O2: si la subida a Operam falla, la cotizacion sigue sin folio (sigue PRE)', async () => {
+  writeProspectos([]);
+  const id = await cotStore.crear({
+    fecha: '2026-06-10T00:00:00Z', vendedor: 'Memo', cliente: 'HOTELERA DEL SUR',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'HOTELERA DEL SUR SA DE CV', rfc: 'HSU010101AAA' }, items: [] },
+  });
+  mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 0, data: [] }),
+  });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(res.status, 503);
+  assert.equal((await cotStore.obtener(id)).folioOperam, null);
+});
