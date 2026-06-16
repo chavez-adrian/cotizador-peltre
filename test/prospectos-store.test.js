@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, ultimos10 } from '../lib/prospectos-store.js';
+import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, ultimos10 } from '../lib/prospectos-store.js';
 import { ETAPAS, SALIDAS } from '../lib/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -114,6 +114,43 @@ test('cambiarEtapa actualiza la etapa y appendea el evento en una sola operacion
   assert.equal(guardado.etapa, 'contactado');
   assert.deepEqual(guardado.eventos, [evento]);
   assert.equal(await cambiarEtapa(99, 'contactado', evento), false);
+});
+
+test('actualizarDatos edita nombre/ciudad y mergea campos en data sin tocar etapa ni eventos (#66)', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp', etapa: 'seguimiento', eventos: [{ tipo: 'toque', fecha: '2026-06-10T10:00:00Z', vendedor: 'Memo' }], data: { empresa: 'Hotel Azul', temperatura: 3 } },
+  ]);
+  const ok = await actualizarDatos(1, {
+    nombre: 'Laura Perez', ciudad: 'CDMX',
+    data: { empresa: 'Hotel Verde', temperatura: 5, notas: 'pidio catalogo' },
+  });
+  assert.equal(ok, true);
+  const guardado = readProspectos()[0];
+  // columnas propias actualizadas
+  assert.equal(guardado.nombre, 'Laura Perez');
+  assert.equal(guardado.ciudad, 'CDMX');
+  // data se mergea (no se reemplaza): empresa cambia, temperatura cambia, notas se agrega
+  assert.equal(guardado.data.empresa, 'Hotel Verde');
+  assert.equal(guardado.data.temperatura, 5);
+  assert.equal(guardado.data.notas, 'pidio catalogo');
+  // etapa y eventos intactos
+  assert.equal(guardado.etapa, 'seguimiento');
+  assert.equal(guardado.eventos.length, 1);
+  assert.equal(guardado.eventos[0].tipo, 'toque');
+});
+
+test('actualizarDatos preserva campos de data no incluidos en la edicion y devuelve false si no existe (#66)', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp', etapa: 'por_cotizar', eventos: [], data: { empresa: 'Hotel Azul', cliente_id: 88 } },
+  ]);
+  // editar solo correo: empresa y cliente_id (ligado al cliente Operam) deben sobrevivir
+  const ok = await actualizarDatos(1, { data: { correo: 'laura@hotel.mx' } });
+  assert.equal(ok, true);
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.data.empresa, 'Hotel Azul');
+  assert.equal(guardado.data.cliente_id, 88);
+  assert.equal(guardado.data.correo, 'laura@hotel.mx');
+  assert.equal(await actualizarDatos(99, { nombre: 'X' }), false);
 });
 
 test('ultimos10 recorta extension y coma igual que el indice de telefonos', async () => {
