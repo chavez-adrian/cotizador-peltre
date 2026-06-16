@@ -22,7 +22,7 @@ Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de a
 - **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
 - #64 Hoy suma cotizaciones (fusión) — bloqueado por #58
 - #65 reunión re-encuadrada — bloqueado por #58
-- #66 formalizar pre-cotización + editar prospecto — desbloqueado (tras #63)
+- **#66 CERRADO** ✅ — formalizar pre-cotización (botón Completar en Historial) + editar prospecto. Mergeado a main.
 
 ## #53 — cierre
 Demo aprobada por Adrián (probó remoto vía túnel cloudflared, datos reales). Commits en main vía merge de `issue-53-tracer-embudo`:
@@ -100,9 +100,9 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53, #55 y #63 cerrados y en main (3 de 14). Candidatos: **#66** (formalizar pre-cotización + editar prospecto — desbloqueado por #63, completa el ciclo PRE→registrada; reusa `setFolioOperam` y el alta de cliente) · **#56** (mover a Seguimiento manual con folio — reusa `transicionPorCotizacion` y `setFolioOperam`) · **#58** (Hoy, desbloquea #64/#65 y cierra H4). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+#53, #55, #63 y #66 cerrados y en main (4 de 14). Toda la ruta de pre-cotización (PRE→registrada→formalizar) está en producción. Candidatos: **#58** (Hoy: prospectos por contactar — desbloquea #64/#65 y cierra H4; pantalla de rutina) · **#56** (mover a Seguimiento manual con folio — reusa `transicionPorCotizacion` y `setFolioOperam`) · **#54** (crear prospecto en Por Cotizar, botón + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
 
-## #66 — formalizar pre-cotización + editar prospecto — EN CURSO (rama `issue-66-formalizar-precotizacion`)
+## #66 — formalizar pre-cotización + editar prospecto — CERRADO (aprobado por Adrián con evidencia; mergeado a main)
 
 ### INVESTIGACIÓN (reusar, no reinventar)
 - **Formalizar = encadenar piezas existentes, NO un alta nueva.** Las dos piezas ya existen y son idempotentes/desacopladas:
@@ -118,7 +118,7 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 - C3 (AC1/AC2/AC3 ruta — formalizar): test end-to-end de ruta: una pre-cotización (sin folio) se registra vía `/api/cotizacion/operam/:id` con el cliente recién dado de alta → obtiene folio → deja de ser PRE. Cubre el caso "ya es cliente Operam". Guardrail del alta verificado vía `/api/crear-cliente` (dedup). Test en `cotizar-embudo.test.js` (reusa O1; agrega caso de formalización explícito).
 - C4 (frontend mínimo): botón "Editar"/"Completar después" en la tarjeta del prospecto/cotización + funciones que llaman las rutas. Lógica pura en prospectos-logica.js si aplica.
 
-### Estado: TODOS LOS AC EN VERDE. Suite 540/540 (baseline 537 + 3 del boton Completar). Pendiente: review del orquestador + demo de Adrián.
+### Estado: CERRADO. Todos los AC verdes, suite 540/540 (537 + 3 del botón Completar). Aprobado por Adrián con evidencia (sin demo manual, para no crear datos reales en Operam). Deuda menor anotada: el fallback al alta depende de un match de string del error `Cliente no encontrado en Operam` (operam-client.js:98) — frágil; idealmente un código de error.
 
 ### Disparador "Completar" sobre la tarjeta PRE (AC1, decision de Adrian 2026-06-16)
 Antes la formalizacion solo era posible en dos pasos/dos pantallas (acordeon de alta + "Subir a Operam"). Ahora hay un boton **Completar** sobre la tarjeta de la pre-cotizacion en el **Historial** de cotizaciones (`renderHistorial`, app.js), junto a Cargar/Ver PDF, que tambien ahora muestra el chip **PRE / #Operam** (antes solo el tablero del pipeline y la cola Hoy lo pintaban).
