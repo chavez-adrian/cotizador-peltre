@@ -75,6 +75,21 @@ export function botonCompletarHtml(cot) {
   return `<button class="btn btn-primary btn-sm" onclick="completarPreCotizacion(${cot.id})">Completar</button>`;
 }
 
+// Boton + global (issue #54, PRD #52 historias 4-5): visible en todos los
+// destinos del bottom-nav, ofrece dos acciones -- "Nueva cotizacion" (la vista
+// de cotizar existente) y "Nuevo prospecto" (la captura minima existente).
+// Cada accion dispara la funcion homonima de app.js.
+export const ACCIONES_NUEVO = [
+  { label: 'Nueva cotizacion', accion: 'nuevaCotizacion' },
+  { label: 'Nuevo prospecto', accion: 'nuevoProspecto' },
+];
+
+export function buildMenuNuevoHtml() {
+  return ACCIONES_NUEVO
+    .map(a => `<button class="btn btn-sm btn-secondary" onclick="${a.accion}()">${escapeHtml(a.label)}</button>`)
+    .join('');
+}
+
 // Las oportunidades que viven en el pipeline (las 7 columnas): excluye las
 // salidas No util y Perdida, que viven en filtro/historial. Es la misma regla
 // que aplica el tablero (agruparPipeline ignora las salidas); la vista lista la

@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -277,4 +277,24 @@ test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma 
   assert.equal(activas.some(o => esSalida(o.etapa)), false);
   assert.deepEqual(oportunidadesActivas([]), []);
   assert.deepEqual(oportunidadesActivas(null), []);
+});
+
+// Boton + global (issue #54, PRD #52 historias 4-5, CONTEXT.md "Captura de
+// prospecto"): visible en todos los destinos del bottom-nav, ofrece dos
+// acciones -- "Nueva cotizacion" (la vista de cotizar existente) y "Nuevo
+// prospecto" (la captura minima existente). Logica pura de presentacion del
+// menu, sin DOM (mismo patron que el resto del modulo).
+test('Q25: ACCIONES_NUEVO ofrece exactamente Nueva cotizacion y Nuevo prospecto', () => {
+  assert.deepEqual(ACCIONES_NUEVO.map(a => a.label), ['Nueva cotizacion', 'Nuevo prospecto']);
+  assert.deepEqual(ACCIONES_NUEVO.map(a => a.accion), ['nuevaCotizacion', 'nuevoProspecto']);
+});
+
+test('Q26: buildMenuNuevoHtml pinta un boton por accion con su disparador', () => {
+  const html = buildMenuNuevoHtml();
+  assert.match(html, /Nueva cotizacion/);
+  assert.match(html, /Nuevo prospecto/);
+  assert.match(html, /onclick="nuevaCotizacion\(\)"/);
+  assert.match(html, /onclick="nuevoProspecto\(\)"/);
+  // Un boton por accion, ninguno de mas.
+  assert.equal((html.match(/<button/g) || []).length, ACCIONES_NUEVO.length);
 });
