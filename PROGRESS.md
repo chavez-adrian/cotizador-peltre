@@ -14,14 +14,14 @@ Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de a
 - **#55 CERRADO** ✅ — cotizar → Seguimiento auto (regla de dominio `transicionPorCotizacion`). Mergeado a main.
 - #56 mover a Seguimiento manual con folio — desbloqueado
 - #57 No Asignado + asignación — desbloqueado
-- #58 Hoy: prospectos por contactar — desbloqueado (desbloquea #8/#9 = #64/#65)
+- **#58 CERRADO** ✅ — Hoy muestra la cola de prospectos en Por Cotizar (cierra el H4 de #53). Cola de cotizaciones reubicada en Más → "Seguimiento cotizaciones" hasta la fusión #64. Mergeado a main.
 - #59 salidas No útil/Perdida + filtro — desbloqueado
 - #60 cotizar repensado (stepper) — desbloqueado
 - #61 decorados (checklist + gate + Dropbox) — desbloqueado
 - #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos)
 - **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
-- #64 Hoy suma cotizaciones (fusión) — bloqueado por #58
-- #65 reunión re-encuadrada — bloqueado por #58
+- #64 Hoy suma cotizaciones (fusión) — desbloqueado (tras #58)
+- #65 reunión re-encuadrada — desbloqueado (tras #58)
 - **#66 CERRADO** ✅ — formalizar pre-cotización (botón Completar en Historial) + editar prospecto. Mergeado a main.
 
 ## #53 — cierre
@@ -100,7 +100,7 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53, #55, #63 y #66 cerrados y en main (4 de 14). Toda la ruta de pre-cotización (PRE→registrada→formalizar) está en producción. Candidatos: **#58** (Hoy: prospectos por contactar — desbloquea #64/#65 y cierra H4; pantalla de rutina) · **#56** (mover a Seguimiento manual con folio — reusa `transicionPorCotizacion` y `setFolioOperam`) · **#54** (crear prospecto en Por Cotizar, botón + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+#53, #55, #58, #63 y #66 cerrados y en main (5 de 14). Ruta de pre-cotización completa + Hoy con prospectos. Candidatos: **#64** (Hoy suma cotizaciones — fusiona la cola que quedó en Más; desbloqueado por #58) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#56** (manual a Seguimiento con folio) · **#54** (crear prospecto, + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
 
 ## #66 — formalizar pre-cotización + editar prospecto — CERRADO (aprobado por Adrián con evidencia; mergeado a main)
 
@@ -153,7 +153,7 @@ Las tarjetas del **tablero del pipeline** siguen siendo solo-lectura (decisión 
    - Caso "ya es cliente Operam": el registro corre directo, sale el folio y la tarjeta pasa a **#Operam N** (el botón Completar desaparece).
    - Caso "falta dar de alta": Completar avisa que el cliente no está en Operam y abre el formulario de alta **prellenado** con los datos de la cotización; completar el alta (con RFC real; el guardrail de dedup avisa si ya existe y reutiliza), volver a Historial y tocar **Completar** otra vez → ahora registra y obtiene el folio.
 
-## #58 — Hoy: prospectos por contactar (horas hábiles) — EN PROGRESO (rama `issue-58-hoy-prospectos`)
+## #58 — Hoy: prospectos por contactar — CERRADO (aprobado por Adrián con evidencia; mergeado a main). Suite 542/542. Deuda menor: la cola de prospectos aparece en Hoy y en Más→Prospectos (redundante); cola de cotizaciones reubicada en Más→"Seguimiento cotizaciones" (hogar temporal hasta #64)
 
 Cierra el H4 de #53: reencauzar el destino **Hoy** a la cola de prospectos en Por Cotizar (horas hábiles), REUSANDO el motor #44 (`calcularColaProspectos`), la ruta (`GET /api/prospectos/cola`) y el HTML (`buildColaProspectosHtml`). NO se fusiona con la cola de cotizaciones (eso es #64).
 
