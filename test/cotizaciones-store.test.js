@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/cotizaciones.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, obtener, crear, registrarSeguimiento, setEstado } from '../lib/cotizaciones-store.js';
+import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam } from '../lib/cotizaciones-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -59,6 +59,33 @@ test('setEstado actualiza el estado y persiste', async () => {
   writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
   await setEstado(1, 'ganada');
   assert.equal((await obtener(1)).estado, 'ganada');
+});
+
+// Folio de Operam nullable (issue #63): una cotizacion nace sin folio (es una
+// pre-cotizacion); al registrarse en Operam se le guarda el folio. El store
+// persiste y expone folioOperam, frontera donde la presentacion decide PRE vs
+// #Operam.
+test('una cotizacion nace sin folio de Operam (es pre-cotizacion)', async () => {
+  writeCots([]);
+  const id = await crear({
+    fecha: '2026-06-10T00:00:00Z', vendedor: 'Ana', cliente: 'HOTEL AZUL',
+    totalPiezas: 100, total: 9000, tier: 'M100', data: {},
+  });
+  assert.equal((await obtener(id)).folioOperam, null);
+});
+
+test('setFolioOperam guarda el folio devuelto por Operam y obtener/listar lo exponen', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
+  const ok = await setFolioOperam(1, 7788);
+  assert.equal(ok, true);
+  // El folio se persiste como identificador (texto), igual en Postgres y en JSON.
+  assert.equal((await obtener(1)).folioOperam, '7788');
+  assert.equal((await listar())[0].folioOperam, '7788');
+});
+
+test('setFolioOperam sobre una cotizacion inexistente no rompe', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
+  assert.equal(await setFolioOperam(99, 7788), false);
 });
 
 test('listar expone la etapa del pipeline derivada del estado de cada cotizacion (#53)', async () => {

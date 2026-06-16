@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion } from '../lib/pipeline.js';
+import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion, esPreCotizacion, etiquetaFolioOperam } from '../lib/pipeline.js';
 
 // El vocabulario canonico de las 7 etapas del pipeline unificado (CONTEXT.md
 // "Etapas del pipeline", ADR-0005). El orden es el del embudo: del primer
@@ -87,4 +87,40 @@ test('transicionPorCotizacion: no salta etapas desde No Asignado ni desde post-v
 test('transicionPorCotizacion: una etapa desconocida no mueve la tarjeta', () => {
   assert.equal(transicionPorCotizacion('cotizado'), null);
   assert.equal(transicionPorCotizacion(undefined), null);
+});
+
+// Estado PRE / folio Operam nullable (issue #63, CONTEXT.md "Pre-cotizacion"):
+// una cotizacion sin folio de Operam es una pre-cotizacion (estado "PRE"); la
+// ausencia del folio define el estado. Con folio, la cotizacion esta registrada
+// en Operam y muestra "#Operam N". El folio puede valer 0 legitimamente? No:
+// Operam devuelve quote_id/factura_no, un identificador positivo; null/undefined
+// y cadena vacia cuentan como ausencia.
+test('esPreCotizacion: sin folio de Operam la cotizacion es PRE', () => {
+  assert.equal(esPreCotizacion({ folioOperam: null }), true);
+  assert.equal(esPreCotizacion({ folioOperam: undefined }), true);
+  assert.equal(esPreCotizacion({ folioOperam: '' }), true);
+  assert.equal(esPreCotizacion({}), true);
+});
+
+test('esPreCotizacion: con folio de Operam la cotizacion ya no es PRE', () => {
+  assert.equal(esPreCotizacion({ folioOperam: 12345 }), false);
+  assert.equal(esPreCotizacion({ folioOperam: '12345' }), false);
+});
+
+test('etiquetaFolioOperam: PRE sin folio, #Operam N con folio', () => {
+  assert.equal(etiquetaFolioOperam({ folioOperam: null }), 'PRE');
+  assert.equal(etiquetaFolioOperam({}), 'PRE');
+  assert.equal(etiquetaFolioOperam({ folioOperam: 12345 }), '#Operam 12345');
+  assert.equal(etiquetaFolioOperam({ folioOperam: '7788' }), '#Operam 7788');
+});
+
+// Cotizacion historica sin folio (registroDesconocido, ver migrar-pipeline): se
+// asume registrada en Operam (el folio no se capturaba antes de #63), asi que NO
+// es PRE y NO muestra badge (ni "PRE" ni "#Operam N").
+test('esPreCotizacion: una historica con registro desconocido no es PRE', () => {
+  assert.equal(esPreCotizacion({ folioOperam: null, registroDesconocido: true }), false);
+});
+
+test('etiquetaFolioOperam: una historica con registro desconocido no muestra etiqueta', () => {
+  assert.equal(etiquetaFolioOperam({ folioOperam: null, registroDesconocido: true }), '');
 });

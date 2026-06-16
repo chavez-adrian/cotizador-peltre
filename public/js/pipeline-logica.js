@@ -35,6 +35,18 @@ export function esSalida(etapa) {
   return SALIDAS.has(etapa);
 }
 
+// Estado PRE / folio Operam (issue #63, CONTEXT.md "Pre-cotizacion"): la
+// ausencia del folio define el estado "PRE"; con folio la cotizacion muestra
+// "#Operam N". Reexpresion browser-safe de lib/pipeline.etiquetaFolioOperam
+// (este modulo no importa de lib/, mismo criterio que el resto del vocabulario).
+export function etiquetaFolioOperam(o) {
+  const folio = o && o.folioOperam;
+  if (folio != null && folio !== '') return `#Operam ${folio}`;
+  // Historica de registro desconocido (anterior a #63): se asume registrada, sin
+  // badge (ni PRE ni #Operam). Las nuevas sin folio si son PRE.
+  return o && o.registroDesconocido ? '' : 'PRE';
+}
+
 // Las oportunidades que viven en el pipeline (las 7 columnas): excluye las
 // salidas No util y Perdida, que viven en filtro/historial. Es la misma regla
 // que aplica el tablero (agruparPipeline ignora las salidas); la vista lista la
@@ -72,14 +84,32 @@ function nombreOportunidad(o) {
   return o.nombre || o.cliente || 'Sin nombre';
 }
 
+// Badge HTML del estado de folio de una cotizacion: '' si es historica de
+// registro desconocido (sin etiqueta), si no el chip "PRE" (ambar) o "#Operam N"
+// (azul). Unica fuente del badge: la reusan el tablero, la cola Hoy y la vista
+// lista, para que las tres pinten lo mismo (incluido el caso sin badge).
+export function badgeFolioOperamHtml(cot) {
+  const etiqueta = etiquetaFolioOperam(cot);
+  if (!etiqueta) return '';
+  const clase = etiqueta === 'PRE' ? 'badge-pre' : 'badge-operam';
+  return `<span class="cot-badge ${clase}">${escapeHtml(etiqueta)}</span>`;
+}
+
+// En el tablero el badge solo lo lleva una cotizacion (oportunidad ya cotizada);
+// un prospecto que aun no cotiza no muestra badge.
+function badgeFolioOperam(o) {
+  return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : '';
+}
+
 function buildOportunidadCardHtml(o) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
+  const badge = badgeFolioOperam(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
         </div>
         ${total}

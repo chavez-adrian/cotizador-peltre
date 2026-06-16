@@ -263,10 +263,14 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   const filtradas = req.user.role === 'admin'
     ? log
     : log.filter(c => c.vendedor === req.user.name);
-  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa }) => ({
+  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
     estado: estado || 'abierta',
     etapa,
+    // Folio de Operam nullable (issue #63): null = pre-cotizacion (badge "PRE");
+    // registroDesconocido = historica anterior a #63 (se asume registrada, sin badge).
+    folioOperam: folioOperam ?? null,
+    registroDesconocido: registroDesconocido ?? false,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
     hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),
@@ -715,6 +719,8 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
   try {
     const folio = await subirCotizacionOperam(entry.data);
+    // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
+    if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
     res.json({ ok: true, folio });
   } catch (err) {
     res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
