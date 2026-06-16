@@ -30,6 +30,7 @@ import {
 } from './cotizaciones-logica.js';
 import {
   buildTableroPipelineHtml,
+  oportunidadesActivas,
 } from './pipeline-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1932,10 +1933,11 @@ function renderPipeline() {
     return;
   }
   tableroEl.innerHTML = '';
-  // Vista lista: las oportunidades activas, mas reciente primero (las salidas
-  // no_util/perdida no estan en ultimasOportunidades porque viven en el tablero
-  // solo como columnas; aqui se muestran las que el board agruparia).
-  const activas = ultimasOportunidades.slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+  // Vista lista: las mismas oportunidades que pinta el tablero (sus 7 columnas),
+  // mas reciente primero. Las salidas No util/Perdida NO se muestran aqui: viven
+  // en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
+  const activas = oportunidadesActivas(ultimasOportunidades)
+    .slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
   if (!activas.length) {
     listEl.innerHTML = '<div class="empty-state"><p>Sin oportunidades en el pipeline.</p></div>';
     return;
@@ -2504,16 +2506,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const menu = document.getElementById('nav-mas-menu');
     if (menu) menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
   });
-  document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); showHistorial(); });
-  document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); showProspectos(); });
+  document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
+  document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
 
-  // Historial
-  document.getElementById('btn-historial').addEventListener('click', showHistorial);
+  // Volver a Cotizar desde Historial (la navegacion vive en el bottom-nav, issue #53)
   document.getElementById('btn-volver-app').addEventListener('click', () => {
     ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
   });
   document.getElementById('btn-cot-modo-lista').addEventListener('click', () => setModoCotizaciones('lista'));
   document.getElementById('btn-cot-modo-tablero').addEventListener('click', () => setModoCotizaciones('tablero'));
@@ -2523,18 +2525,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     alSoltar: soltarEnColumnaCotizacion,
   });
 
-  // Seguimiento
-  document.getElementById('btn-seguimiento').addEventListener('click', showSeguimiento);
+  // Volver a Cotizar desde Hoy
   document.getElementById('btn-volver-seguimiento').addEventListener('click', () => {
-    document.getElementById('seguimiento-view').style.display = 'none';
+    ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
   });
 
-  // Prospectos
-  document.getElementById('btn-prospectos').addEventListener('click', showProspectos);
+  // Volver a Cotizar desde Prospectos
   document.getElementById('btn-volver-prospectos').addEventListener('click', () => {
-    document.getElementById('prospectos-view').style.display = 'none';
+    ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
   });
   document.getElementById('btn-nuevo-prospecto').addEventListener('click', () => {
     const form = document.getElementById('prospecto-form');

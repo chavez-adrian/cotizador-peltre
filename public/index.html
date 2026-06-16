@@ -33,9 +33,6 @@
     </div>
     <div style="text-align:right;display:flex;align-items:center;gap:8px">
       <div class="user-info" id="user-name"></div>
-      <button class="btn btn-sm btn-secondary" id="btn-prospectos">Prospectos</button>
-      <button class="btn btn-sm btn-secondary" id="btn-seguimiento" style="position:relative">Seguimiento<span id="seguimiento-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:#c0392b;color:#fff;border-radius:9px;font-size:10px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px"></span></button>
-      <button class="btn btn-sm btn-secondary" id="btn-historial">Historial</button>
       <a href="/admin" id="admin-link" style="display:none" class="btn btn-sm btn-secondary">Admin</a>
       <button class="btn btn-sm btn-secondary" id="logout-btn">Salir</button>
     </div>
@@ -908,7 +905,7 @@
     <button class="btn btn-sm btn-secondary" id="mas-prospectos">Prospectos</button>
   </div>
   <button class="bottom-nav-btn activo" id="nav-cotizar">Cotizar</button>
-  <button class="bottom-nav-btn" id="nav-hoy">Hoy</button>
+  <button class="bottom-nav-btn" id="nav-hoy" style="position:relative">Hoy<span id="seguimiento-badge" style="display:none;position:absolute;top:2px;right:8px;background:#c0392b;color:#fff;border-radius:9px;font-size:10px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px"></span></button>
   <button class="bottom-nav-btn" id="nav-pipeline">Pipeline</button>
   <button class="bottom-nav-btn" id="nav-mas">Más</button>
 </nav>
