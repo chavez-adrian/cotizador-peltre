@@ -19,10 +19,10 @@ Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de a
 - #60 cotizar repensado (stepper) — desbloqueado
 - #61 decorados (checklist + gate + Dropbox) — desbloqueado
 - #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos)
-- #63 pre-cotización badge PRE — desbloqueado (tras #55)
+- **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
 - #64 Hoy suma cotizaciones (fusión) — bloqueado por #58
 - #65 reunión re-encuadrada — bloqueado por #58
-- #66 formalizar pre-cotización + editar prospecto — bloqueado por #63
+- #66 formalizar pre-cotización + editar prospecto — desbloqueado (tras #63)
 
 ## #53 — cierre
 Demo aprobada por Adrián (probó remoto vía túnel cloudflared, datos reales). Commits en main vía merge de `issue-53-tracer-embudo`:
@@ -61,19 +61,15 @@ Núcleo: formalizó la regla de transición del pipeline (antes el hook movía a
 - dfeb18c feat: regla de dominio transicionPorCotizacion en pipeline (#55) — `lib/pipeline.js`, `test/pipeline.test.js`
 - 92b4d63 feat: el hook de cotizacion enruta por la regla de dominio del pipeline (#55) — `server.js`, `test/cotizar-embudo.test.js`
 
-## #63 — pre-cotización badge PRE — IMPLEMENTADO en rama `issue-63-precotizacion-pre`, suite 517/517 — pendiente decisión de datos históricos (orquestador) + demo de Adrián
+## #63 — pre-cotización badge PRE — CERRADO (aprobado por Adrián con evidencia; blocker de históricos resuelto; mergeado a main). Suite 525/525
 
 ### INVESTIGACIÓN (riesgo clave del prompt — hallazgo)
 - **El folio de Operam NUNCA se persistió.** `subirCotizacionOperam` (frontend `app.js`) lo recibía en la respuesta y lo mostraba en un `alert`; la ruta `/api/cotizacion/operam/:id` devolvía `{ok,folio}` sin escribir nada. El schema de `cotizaciones` no tenía columna folio. → ARREGLADO: ahora la ruta persiste el folio vía `setFolioOperam`.
 - **Las 55 cotizaciones históricas NO permiten distinguir PRE de registrada.** 0/55 tienen folio guardado; 0/55 tienen `customerId`/`operamId`; 39/55 tienen `data.cliente.rfc` (los otros 16 ni siquiera tienen `data`). La presencia de RFC NO prueba registro en Operam.
 - El flujo actual YA permite cotizar sin alta (celular libre / Prospecto Mínimo, auto-creación de prospecto al cotizar #46): "generar pre-cotización" NO requirió flujo nuevo, solo el folio nullable + presentación. Confirmado por el test O3.
 
-### BLOCKER ABIERTO (decisión del orquestador, NO la tomé yo)
-El default histórico está **aislado en una sola línea**: hoy las 55 cotizaciones históricas (sin `folioOperam`) se ven **PRE por defecto** (el campo ausente → null → PRE). Esto es probablemente INCORRECTO: marcar TODO el histórico como "PRE" confundiría a Adrián (muchas sí se registraron en Operam, solo que el folio nunca se guardó). Opciones para el orquestador:
-- (A) **Históricas sin folio = "registradas" por default** (sentinel/flag de migración en `migrar-pipeline.js`): asume que lo viejo ya pasó por Operam; las NUEVAS sin folio sí son PRE. Riesgo: marca como registrada alguna que de verdad fue pre-cotización informal.
-- (B) **Históricas = "sin determinar"** (tercer estado visual, ni PRE ni #Operam): honesto, pero agrega un estado al glosario (requiere tu visto bueno / CONTEXT.md).
-- (C) Dejar el default PRE actual (lo que está): simple, pero ruidoso para Adrián.
-Recomendación: (A) como corte de migración (una línea en `etapaCotizacionMigrada`/`migrarCotizacion`), porque el cohorte histórico es de cotizaciones formales emitidas a clientes con alta; pero es decisión de datos → la dejo al orquestador/Adrián. **La mecánica del badge NO depende de esto**: funciona perfecto para cotizaciones nuevas (nacen PRE, ganan #Operam al subir).
+### BLOCKER RESUELTO (decisión de Adrián 2026-06-16: opción A)
+Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`migrar-pipeline.migrarCotizacion`) marca `registroDesconocido=true` a las cotizaciones anteriores al corte `PRE_COTIZACION_DESDE` (`2026-06-16T00:00:00Z`) sin folio; el dominio (`esPreCotizacion`/`etiquetaFolioOperam`) no las trata como PRE ni les pinta badge. Las nuevas sin folio sí son PRE. Corte por **fecha** (los ids no son contiguos: 1..10000, frágil). El badge se unificó en `badgeFolioOperamHtml` (tablero/cola/lista, evita el chip vacío del caso sin-badge). Commit ed4ea75. Documentado en CONTEXT.md "Pre-cotización" (Corte histórico).
 
 ### Estado de cada AC (verificado contra tests corridos)
 - AC1 pre-cotización con Prospecto Mínimo sin alta — YA-CUBIERTO (#46) + verificado. Test O3 (`test/cotizar-embudo.test.js`).
@@ -104,4 +100,4 @@ Recomendación: (A) como corte de migración (una línea en `etapaCotizacionMigr
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53 y #55 cerrados y en main. #63 implementado en su rama (517/517), **con blocker de datos históricos para el orquestador** (default del histórico: PRE vs registrada vs sin-determinar). Tras resolverlo + demo de Adrián: merge. Otros candidatos: **#56** (mover a Seguimiento manual con folio — reusa `transicionPorCotizacion` y `setFolioOperam`) · **#58** (Hoy, desbloquea #64/#65 y cierra H4) · **#66** (formalizar pre-cotización, desbloqueado por #63). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+#53, #55 y #63 cerrados y en main (3 de 14). Candidatos: **#66** (formalizar pre-cotización + editar prospecto — desbloqueado por #63, completa el ciclo PRE→registrada; reusa `setFolioOperam` y el alta de cliente) · **#56** (mover a Seguimiento manual con folio — reusa `transicionPorCotizacion` y `setFolioOperam`) · **#58** (Hoy, desbloquea #64/#65 y cierra H4). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
