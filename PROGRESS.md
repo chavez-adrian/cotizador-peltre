@@ -41,5 +41,25 @@ Demo aprobada por Adrián (probó remoto vía túnel cloudflared, datos reales).
 - `oportunidadesActivas` (public/js/pipeline-logica.js) = única fuente de "qué es activo" (filtra salidas); la usan tablero y lista.
 - Tablero viejo de cotizaciones queda como pantalla legacy accesible desde Historial (no se eliminó su código; el destino Pipeline usa el tablero único).
 
+## #55 — cotizar -> Seguimiento auto (rama `issue-55-cotizar-seguimiento`, listo para gate de demo)
+Núcleo: formalizó la regla de transición del pipeline (antes el hook movía a ciegas). Suite 503/503.
+
+### Estado de cada AC (verificado contra tests corridos)
+- AC1 cotizar mueve a Seguimiento auto — VERDE (ya venía de #53/#46; ahora vía regla). Tests H1, H10 en `test/cotizar-embudo.test.js`.
+- AC2 la transición la valida la regla de dominio (no salta etapas) — VERDE (núcleo nuevo de #55). `transicionPorCotizacion` en `lib/pipeline.js` + hook enrutado + H11.
+- AC3 tarjeta queda en columna Seguimiento — YA-CUBIERTO-#53. H1 (`etapa==='seguimiento'`); el tablero lee la etapa del store (`oportunidadesActivas`), sin código nuevo.
+- AC4 hook best-effort — YA-CUBIERTO-#53. H9 (prospectos.json corrupto -> cotización 200).
+- AC5 regla auto + hook con pruebas (dominio + ruta) — VERDE. Dominio = `test/pipeline.test.js` (5 tests nuevos); ruta = `test/cotizar-embudo.test.js` (H1-H11).
+- "Cotizar real, no enlace viejo" — YA-CUBIERTO-#53. `app.js:2492` `nav-cotizar` muestra `app-view` (Cotizador real).
+- Disparador Operam — gancho preparado: la regla es agnóstica del disparador (Cotizador y Operam comparten `transicionPorCotizacion`); lectura real es #62, NO se construyó aquí.
+
+### Diseño de la regla (lo que no perder)
+- `transicionPorCotizacion(etapaActual) -> 'seguimiento' | null`. Orígenes válidos: `{por_cotizar, seguimiento, no_util}`. null en `no_asignado` (necesita vendedor primero), post-venta (las mueve Operam, no retroceden) y `perdida` (revivir es solo desde No util). Idempotente en `seguimiento`. Función pura, mismo disparador para Cotizador y Operam (#62).
+- Hook (`pasarProspectoASeguimiento`, server.js): `const destino = transicionPorCotizacion(p.etapa); if (destino && destino !== p.etapa) cambiarEtapa(destino, ev); else registrarEvento(ev);`. Simplificó el hook (se eliminó el caso especial `=== 'seguimiento'`). Auto-creación de celular libre sigue naciendo en `seguimiento` (nacimiento, no transición; coherente con la regla — H5).
+
+### Commits (rama)
+- dfeb18c feat: regla de dominio transicionPorCotizacion en pipeline (#55) — `lib/pipeline.js`, `test/pipeline.test.js`
+- 92b4d63 feat: el hook de cotizacion enruta por la regla de dominio del pipeline (#55) — `server.js`, `test/cotizar-embudo.test.js`
+
 ## Siguiente
-Issue por seleccionar/confirmar con Adrián. Candidatos fuertes: **#55** (ruta crítica hacia pre-cotización #63→#66, formaliza la transición central) o **#58** (Hoy, desbloquea #64/#65). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+#55 a gate de demo de Adrián. Tras merge: #56 (mover a Seguimiento manual con folio Operam — la otra vía de la transición), #63 (pre-cotización badge PRE, ya desbloqueado por #55). #58 (Hoy) sigue de candidato fuerte.
