@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -191,6 +191,79 @@ test('Q19: siguientePasoFormalizacion encadena registro directo, fallback al alt
   // Cualquier otro fallo (Operam caido, 404, etc.) no manda al alta: se reporta.
   assert.equal(siguientePasoFormalizacion({ ok: false, status: 503, error: 'No se pudo subir a Operam: Operam 500' }), 'error');
   assert.equal(siguientePasoFormalizacion({ ok: false, status: 404, error: 'Cotizacion no encontrada' }), 'error');
+});
+
+// Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): buildColaHoyHtml itera
+// la cola que ya viene fusionada y ordenada del backend (lib/cola-hoy.js) y
+// delega la pintura por tipo, PRESERVANDO el orden (no reagrupa por tipo). El
+// item de prospecto reusa buildColaProspectosHtml; el de cotizacion lleva su
+// mensaje de seguimiento por WhatsApp.
+function itemProspecto(extra) {
+  return {
+    tipo: 'prospecto', id: 1, nombre: 'Laura', celular: '+52 5512345678',
+    ciudad: 'Puebla', canal: 'WhatsApp', etapa: 'por_cotizar', vendedor: 'Memo',
+    horas: 30, toques: 1, color: 'rojo', sugerirNoUtil: false, yaEsCliente: false,
+    reunionVencida: false, fechaReunion: null, urgencia: 3, ...extra,
+  };
+}
+function itemCotizacion(extra) {
+  return {
+    tipo: 'cotizacion', id: 10, paso: 'dia7', dias: 9, cliente: 'Hotel Azul',
+    vendedor: 'Memo', total: 5000, totalPiezas: 50, fecha: '2026-06-07T00:00:00Z',
+    folioOperam: null, registroDesconocido: false, telefono: '525598765432',
+    mensaje: 'Hola Hotel Azul, te escribe Memo de pp.peltre sobre la cotizacion...',
+    waLink: 'https://wa.me/525598765432?text=Hola', urgencia: 0.32, ...extra,
+  };
+}
+
+test('Q20: buildColaHoyHtml pinta la cola fusionada en el ORDEN del backend, sin reagrupar por tipo', () => {
+  // El backend ya ordeno: cotizacion vencida primero, luego el prospecto.
+  const html = buildColaHoyHtml([itemCotizacion({ id: 10 }), itemProspecto({ id: 1 })]);
+  const posCot = html.indexOf('Hotel Azul');
+  const posPro = html.indexOf('Laura');
+  assert.ok(posCot >= 0 && posPro >= 0, 'pinta ambos items');
+  assert.ok(posCot < posPro, 'preserva el orden del backend (cotizacion antes que prospecto)');
+
+  // Mismo arreglo en orden inverso: el HTML invierte tambien.
+  const html2 = buildColaHoyHtml([itemProspecto({ id: 1 }), itemCotizacion({ id: 10 })]);
+  assert.ok(html2.indexOf('Laura') < html2.indexOf('Hotel Azul'), 'preserva el nuevo orden');
+});
+
+test('Q21: cada item de la cola Hoy expone la accion de su tipo', () => {
+  const html = buildColaHoyHtml([
+    itemProspecto({ id: 1 }),
+    itemCotizacion({ id: 10, waLink: 'https://wa.me/525598765432?text=Hola' }),
+  ]);
+  // Prospecto: registrar contacto (reusa buildColaProspectosHtml).
+  assert.match(html, /registrarToqueProspecto\(1\)/);
+  // Cotizacion: WhatsApp de seguimiento + marcar el paso hecho + cerrar estado.
+  assert.match(html, /href="https:\/\/wa\.me\/525598765432/);
+  assert.match(html, /marcarSeguimiento\(10, 'dia7'\)/);
+  assert.match(html, /cambiarEstadoCotizacion\(10, 'ganada'\)/);
+  assert.match(html, /cambiarEstadoCotizacion\(10, 'perdida'\)/);
+});
+
+test('Q22: el item de cotizacion en Hoy reutiliza un builder propio (WhatsApp, badge folio, paso, dias)', () => {
+  const html = buildColaCotizacionItemHtml(itemCotizacion({
+    id: 10, paso: 'vencida', dias: 30, total: 5000, cliente: 'Hotel Azul',
+    folioOperam: '7788', waLink: 'https://wa.me/525598765432?text=Hola',
+  }));
+  assert.match(html, /Hotel Azul/);
+  assert.match(html, /Operam 7788/);          // badge de folio (#Operam N)
+  assert.match(html, /Vencida/);               // etiqueta del paso
+  assert.match(html, /href="https:\/\/wa\.me\/525598765432/);
+  assert.match(html, /marcarSeguimiento\(10, 'vencida'\)/);
+});
+
+test('Q23: cotizacion sin telefono pinta WhatsApp deshabilitado, no un enlace roto', () => {
+  const html = buildColaCotizacionItemHtml(itemCotizacion({ id: 10, telefono: null, waLink: null }));
+  assert.match(html, /disabled/);
+  assert.equal(/href="https:\/\/wa\.me/.test(html), false);
+});
+
+test('Q24: buildColaHoyHtml con cola vacia muestra el estado vacio', () => {
+  assert.match(buildColaHoyHtml([]), /Nada pendiente/);
+  assert.match(buildColaHoyHtml(null), /Nada pendiente/);
 });
 
 test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma regla que el tablero, para la vista lista', () => {

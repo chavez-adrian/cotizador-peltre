@@ -10,7 +10,7 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml } from './prospectos-logica.js';
+import { escapeHtml, buildColaProspectosHtml } from './prospectos-logica.js';
 
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,
 // Perdida) NO son columnas: viven en filtro/historial.
@@ -159,4 +159,62 @@ export function buildTableroPipelineHtml(oportunidades) {
       </div>
     `;
   }).join('');
+}
+
+// Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): la cola del dia mezcla
+// prospectos por contactar (horas habiles) y cotizaciones por seguir (dias
+// naturales). El backend (lib/cola-hoy.js -> GET /api/hoy) ya la fusiona y
+// ordena por urgencia relativa al umbral de cada tipo, etiquetando cada item con
+// `tipo`. Aqui solo se pinta, delegando por tipo y PRESERVANDO ese orden (no se
+// reagrupa por tipo). El item de prospecto reusa buildColaProspectosHtml (con su
+// WhatsApp, registrar contacto, reunion vencida y sugerencia No util a 3 toques);
+// el de cotizacion lleva su mensaje de seguimiento por WhatsApp.
+
+// Etiquetas legibles del paso de seguimiento de una cotizacion (cadencia de dias
+// naturales 2/7/21/28, lib/seguimiento.js). Antes vivian inline en showSeguimiento.
+const PASO_LABELS = {
+  dia2: 'Primer seguimiento',
+  dia7: 'Segundo seguimiento',
+  dia21: 'Por vencer',
+  vencida: 'Vencida',
+};
+
+// Tarjeta de una cotizacion en la cola Hoy: WhatsApp con el mensaje de
+// seguimiento (item.waLink, sin telefono -> deshabilitado), marcar el paso hecho
+// y cerrar el estado (Ganada/Perdida). Extraido de showSeguimiento (app.js) para
+// reusarlo en la cola fusionada sin duplicar el markup.
+export function buildColaCotizacionItemHtml(item) {
+  const fecha = new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+  const btnWa = item.waLink
+    ? `<a href="${item.waLink}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`
+    : `<button class="btn btn-secondary btn-sm" disabled title="Sin telefono registrado">WhatsApp</button>`;
+  const badge = badgeFolioOperamHtml(item);
+  return `
+    <div class="cot-card">
+      <div class="cot-card-header">
+        <div>
+          <div class="cot-card-cliente">${escapeHtml(item.cliente || 'Sin nombre')}${badge}</div>
+          <div class="cot-card-meta">${escapeHtml(PASO_LABELS[item.paso] || item.paso)} · cotizada el ${escapeHtml(fecha)} (hace ${item.dias} dias) · ${item.totalPiezas} pzs</div>
+        </div>
+        <div>
+          <div class="cot-card-total">$${fmtMoneda(item.total)}</div>
+        </div>
+      </div>
+      <div class="cot-card-actions">
+        ${btnWa}
+        <button class="btn btn-secondary btn-sm" onclick="marcarSeguimiento(${item.id}, '${item.paso}')">✓ Hecho</button>
+        <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'ganada')">Ganada</button>
+        <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'perdida')">Perdida</button>
+      </div>
+    </div>
+  `;
+}
+
+export function buildColaHoyHtml(cola) {
+  if (!cola || !cola.length) return '<div class="cot-card-meta">Nada pendiente por ahora.</div>';
+  return cola.map(item => item.tipo === 'cotizacion'
+    ? buildColaCotizacionItemHtml(item)
+    // buildColaProspectosHtml itera una lista; un solo prospecto = lista de uno.
+    : buildColaProspectosHtml([item])
+  ).join('');
 }
