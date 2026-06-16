@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, ultimos10 } from '../lib/prospectos-store.js';
+import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, ultimos10 } from '../lib/prospectos-store.js';
 import { ETAPAS, SALIDAS } from '../lib/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -151,6 +151,20 @@ test('actualizarDatos preserva campos de data no incluidos en la edicion y devue
   assert.equal(guardado.data.cliente_id, 88);
   assert.equal(guardado.data.correo, 'laura@hotel.mx');
   assert.equal(await actualizarDatos(99, { nombre: 'X' }), false);
+});
+
+test('asignarVendedor fija el vendedor, mueve a por_cotizar y appendea el evento (#57)', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: null, celular: '+52 5511111111', celular10: '5511111111', nombre: 'Sin dueno', ciudad: 'CDMX', canal: 'Formulario web', etapa: 'no_asignado', eventos: [] },
+  ]);
+  const evento = { tipo: 'asignacion', a: 'Memo', de: 'no_asignado', fecha: '2026-06-11T10:00:00Z', vendedor: 'Adrián Chávez' };
+  const ok = await asignarVendedor(1, 'Memo', 'por_cotizar', evento);
+  assert.equal(ok, true);
+  const guardado = readProspectos()[0];
+  assert.equal(guardado.vendedor, 'Memo');
+  assert.equal(guardado.etapa, 'por_cotizar');
+  assert.deepEqual(guardado.eventos, [evento]);
+  assert.equal(await asignarVendedor(99, 'Memo', 'por_cotizar', evento), false);
 });
 
 test('ultimos10 recorta extension y coma igual que el indice de telefonos', async () => {
