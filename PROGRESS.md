@@ -28,7 +28,7 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 - **#53 CERRADO** ✅ — tracer: bottom-nav + 7 etapas + migración + tablero único. Mergeado a main (deploy Render).
 - **#54 CERRADO** ✅ — botón `+` global (Nueva cotización / Nuevo prospecto) + crear prospecto a mano que nace en Por Cotizar auto-asignado. Mergeado a main (deploy Render). Suite 561/561.
 - **#55 CERRADO** ✅ — cotizar → Seguimiento auto (regla de dominio `transicionPorCotizacion`). Mergeado a main.
-- #56 mover a Seguimiento manual con folio — desbloqueado
+- #56 mover a Seguimiento manual con folio — **EN PROGRESO (rama issue-56-seguimiento-folio, subagente terminado, pendiente verificacion del orquestador + demo)**. Suite 591/591.
 - **#57 CERRADO** ✅ — entrada No Asignado (`POST /api/prospectos/sin-asignar` admin-only) + asignar vendedor (`PATCH .../asignar`) que mueve a Por Cotizar vía regla de dominio `transicionPorAsignacion`. Primera acción de tarjeta del tablero (asignar, solo admin). Mergeado a main. Suite 581/581.
 - **#58 CERRADO** ✅ — Hoy muestra la cola de prospectos en Por Cotizar (cierra el H4 de #53). Cola de cotizaciones reubicada en Más → "Seguimiento cotizaciones" hasta la fusión #64. Mergeado a main.
 - #59 salidas No útil/Perdida + filtro — desbloqueado
@@ -327,3 +327,39 @@ En `pipeline-logica.js`, NO en prospectos-logica.js, por la dirección de depend
 - "Nueva cotizacion" simplemente lleva a la vista de cotizar tal cual (no toca un carrito a medias) — el rediseno del flujo de cotizar como stepper es #60, fuera de alcance aqui.
 - El boton + NO es una accion de tarjeta del tablero (el tablero sigue solo-lectura, decision #53).
 - El frontend del + no tiene test de DOM (no hay DOM en los tests, patron del repo); la logica pura del menu si (Q25/Q26) y el cableado se valido en navegador.
+
+## #56 — mover a Seguimiento manual capturando folio Operam — EN PROGRESO (rama issue-56-seguimiento-folio). Suite 591/591 (581 baseline + 10 nuevos)
+
+Reintroduce UNA transicion manual forward del embudo (Por Cotizar -> Seguimiento), gated por folio de Operam: el vendedor cotizo POR FUERA (directo en Operam), no hay cotizacion en el sistema, asi que captura el folio al mover y se guarda en el prospecto. NO es drag-and-drop (boton, fuera de alcance el arrastre). NO toca el flujo automatico de #55.
+
+### Estado de cada AC (verificado contra tests corridos)
+- AC1 (mover a mano abre la captura del folio): VERDE. Boton "A Seguimiento (folio Operam)" sobre la tarjeta de un prospecto en Por Cotizar (`buildMoverSeguimientoControlHtml`, pipeline-logica.js, Q35-Q37). `moverASeguimientoTablero(id)` (app.js) captura con prompt() y llama PATCH .../etapa. Logica pura testeada; cableado DOM por verificar en navegador.
+- AC2 (rechazo server-side sin folio): VERDE. `validarTransicion('por_cotizar','seguimiento',motivo,folio)` rechaza sin folio (regla de dominio, T3 en prospectos-logica.test.cjs); la ruta hereda el 400 (prospectos-api.test.js: "sin folio se rechaza server-side y la tarjeta no avanza"). Guard adicional en el frontend (moverASeguimientoTablero corta el prompt vacio).
+- AC3 (tarjeta movida muestra "#Operam N"): VERDE. `badgeFolioOperamProspectoHtml(o)` pinta #Operam N solo con folio, JAMAS PRE (Q32-Q34). `prospectoAOportunidad` mapea `folioOperam: p.data?.folioOperam ?? null`; tablero y vista lista lo pintan por tipo.
+- AC4 (prueba de dominio + prueba de ruta del rechazo sin folio): VERDE. Dominio: T3 (prospectos-logica.test.cjs) + moverASeguimientoConFolio (prospectos-store.test.js). Ruta: 3 tests en prospectos-api.test.js (sin folio 400, con folio mueve+guarda, desde no-PorCotizar 400 aun con folio).
+
+### Diseno (lo que no perder)
+- **Regla de dominio**: `validarTransicion(actual, nueva, motivo, folio)` — se anadio el 4o parametro `folio`. Nueva arista: `por_cotizar -> seguimiento` valida SOLO con folio no vacio (`String(folio).trim()`); sin folio devuelve "El folio de Operam es obligatorio...". Desde cualquier otra etapa (incl. seguimiento->seguimiento) sigue "Transicion invalida". El caso `no_util` NO se toco (folio irrelevante). Unico caller real: la ruta PATCH .../etapa.
+- **Folio en el PROSPECTO**: `data.folioOperam` (TEXT, identificador como #63, no columna nueva). Store: `moverASeguimientoConFolio(id, folio, evento)` (nuevo, espeja asignarVendedor) fija etapa='seguimiento' + merge data.folioOperam + appendea evento en una operacion (UPDATE Postgres + fallback JSON). El evento de etapa lleva el folio: `{ tipo:'etapa', de, a:'seguimiento', folio, fecha, vendedor }`.
+- **Ruta** PATCH /api/prospectos/:id/etapa: cuando `etapa==='seguimiento'` enruta por `moverASeguimientoConFolio` (etapa+folio+evento); el resto (no_util / otros) sigue por `cambiarEtapa`. validarTransicion ya rechazo sin folio y desde origen invalido.
+- **Badge de prospecto vs cotizacion**: `badgeFolioOperam(o)` (interno) = cotizacion -> `badgeFolioOperamHtml` (PRE/#Operam, comportamiento #63 intacto, Q12/Q13 verdes); prospecto -> `badgeFolioOperamProspectoHtml` (#Operam solo si folio, NUNCA PRE). PRE es concepto de COTIZACION, no de prospecto.
+- **Trigger = boton, no drag** (decision de alcance ya aprobada). El boton solo aparece sobre PROSPECTOS en por_cotizar (una cotizacion avanza sola, #55). Lo ve quien opera la tarjeta (dueno o admin; la ruta usa prospectoOperable) — NO admin-only (a diferencia del asignar de #57). `moverASeguimientoTablero` usa `o.refId ?? o.id` (id numerico real para la ruta).
+
+### Commits (rama issue-56-seguimiento-folio)
+- 4ab6098 feat: validarTransicion permite Por Cotizar a Seguimiento manual con folio (#56) — prospectos-logica.js, prospectos-logica.test.cjs
+- 45f06bf feat: el store mueve a Seguimiento guardando data.folioOperam (#56) — prospectos-store.js, prospectos-store.test.js
+- 47d0689 feat: PATCH etapa a Seguimiento exige folio y lo persiste server-side (#56) — server.js, prospectos-api.test.js
+- b7bd17e feat: la tarjeta de un prospecto movido a mano muestra #Operam N (#56) — pipeline-logica.js, app.js, pipeline-logica.test.cjs
+- b9366d8 feat: boton para mover a Seguimiento con folio en la tarjeta Por Cotizar (#56) — pipeline-logica.js, app.js, pipeline-logica.test.cjs
+
+### DEMO (2 min) para Adrian
+1. Login. Ir a **Pipeline** (bottom-nav), vista tablero. En la columna **Por Cotizar**, sobre una tarjeta de prospecto aparece el boton **"A Seguimiento (folio Operam)"**.
+2. Tocarlo: sale un prompt **"Numero de cotizacion de Operam (folio):"**.
+   - Si se deja vacio y se confirma: aviso "El folio de Operam es obligatorio..." y la tarjeta NO se mueve (guard del frontend). Si se forzara la peticion sin folio (consola), el servidor responde 400 (rechazo server-side).
+   - Escribir un folio (p. ej. `55123`) y confirmar: aviso "Movido a Seguimiento (folio 55123)"; la tarjeta pasa a la columna **Seguimiento** y muestra el chip azul **#Operam 55123** (nunca PRE). El folio queda en data.folioOperam del prospecto.
+3. Una cotizacion ya en el sistema NO lleva este boton (avanza sola al cotizar, #55). Una tarjeta en No Asignado tampoco (necesita vendedor primero).
+
+### Deuda / pendientes
+- **El folio NO se valida contra Operam** (fuera de alcance): se captura como texto libre; validar que el numero exista realmente en Operam es trabajo futuro (cuando se cierre el sync #62). Hoy un folio invalido se aceptaria.
+- El frontend (boton + prompt + moverASeguimientoTablero) no tiene test de DOM (patron del repo: sin DOM en tests); la logica pura si (Q35-Q37) y el cableado se valida en navegador.
+- `moverASeguimientoTablero` usa `o.refId` para el id real. El control de asignar de #57 usa `o.id` directo (posible id prefijado "p7"); si #57 funciona en produccion es porque su flujo difiere — NO se toco (fuera de alcance), pero anotado por si el asignar tuviera un latente.
