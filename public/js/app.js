@@ -24,6 +24,7 @@ import {
   MOTIVOS_NO_UTIL,
   buildMotivoNoUtilModalHtml,
   validarEdicionProspecto,
+  contarPendientesProspectos,
 } from './prospectos-logica.js';
 import {
   puedeArrastrarCotizacion,
@@ -153,6 +154,8 @@ function logout() {
   localStorage.removeItem('user');
   document.getElementById('app-view').style.display = 'none';
   document.getElementById('historial-view').style.display = 'none';
+  const hv = document.getElementById('hoy-view');
+  if (hv) hv.style.display = 'none';
   document.getElementById('seguimiento-view').style.display = 'none';
   document.getElementById('prospectos-view').style.display = 'none';
   const pv = document.getElementById('pipeline-view');
@@ -1804,7 +1807,8 @@ async function showSeguimiento() {
     const res = await api('/api/seguimiento');
     const cola = await res.json();
     loadingEl.style.display = 'none';
-    actualizarBadgeSeguimiento(cola.length);
+    // El badge de Hoy lo alimenta la cola de prospectos (#58); la cola de
+    // cotizaciones (esta vista, ahora en Mas) ya no lo escribe.
 
     if (!cola.length) {
       listEl.innerHTML = '<div class="empty-state"><p>Sin seguimientos pendientes. 🎉</p></div>';
@@ -1874,12 +1878,15 @@ function actualizarBadgeSeguimiento(count) {
   }
 }
 
+// El badge de Hoy cuenta los pendientes de la cola de prospectos en Por Cotizar
+// (issue #58): Hoy nace mostrando esa cola, asi que su contador la refleja. La
+// cola de cotizaciones en Seguimiento (dias naturales) se fusionara aqui en #64.
 async function cargarBadgeSeguimiento() {
   try {
-    const res = await api('/api/seguimiento');
+    const res = await api('/api/prospectos/cola');
     if (!res.ok) return;
     const cola = await res.json();
-    actualizarBadgeSeguimiento(cola.length);
+    actualizarBadgeSeguimiento(contarPendientesProspectos(cola));
   } catch (e) { /* sin red no hay badge */ }
 }
 
@@ -2014,7 +2021,7 @@ function setModoPipeline(modo) {
 }
 
 function ocultarTodasLasVistas() {
-  for (const v of ['app-view', 'historial-view', 'seguimiento-view', 'prospectos-view', 'pipeline-view']) {
+  for (const v of ['app-view', 'historial-view', 'hoy-view', 'seguimiento-view', 'prospectos-view', 'pipeline-view']) {
     const el = document.getElementById(v);
     if (el) el.style.display = 'none';
   }
@@ -2080,6 +2087,39 @@ function renderProspectos() {
   }
   listEl.innerHTML = ultimosProspectos.slice().reverse()
     .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true })).join('');
+}
+
+// === HOY (issue #58, ADR-0005 "Cola Hoy"): el destino Hoy muestra la cola de
+// prospectos en Por Cotizar, ordenada por urgencia en horas habiles. Reusa el
+// motor (calcularColaProspectos via GET /api/prospectos/cola) y el HTML
+// (buildColaProspectosHtml) ya probados (#44). La cola de cotizaciones en
+// Seguimiento (dias naturales) vive en Mas hasta la fusion #64.
+async function showHoy() {
+  ocultarTodasLasVistas();
+  document.getElementById('hoy-view').style.display = 'block';
+  const loadingEl = document.getElementById('hoy-loading');
+  const colaEl = document.getElementById('hoy-cola');
+  loadingEl.style.display = 'block';
+  colaEl.innerHTML = '';
+  try {
+    const res = await api('/api/prospectos/cola');
+    ultimaColaProspectos = res.ok ? await res.json() : [];
+    loadingEl.style.display = 'none';
+    actualizarBadgeSeguimiento(contarPendientesProspectos(ultimaColaProspectos));
+    colaEl.innerHTML = buildColaProspectosHtml(ultimaColaProspectos);
+  } catch (e) {
+    loadingEl.textContent = 'Error cargando la cola de hoy';
+  }
+}
+
+// Tras una accion sobre un prospecto, refresca la vista visible (Hoy o la lista
+// de Prospectos en Mas) sin asumir desde donde se disparo.
+function refrescarProspectos() {
+  if (document.getElementById('hoy-view')?.style.display === 'block') {
+    showHoy();
+  } else {
+    cargarListaProspectos();
+  }
 }
 
 // Drag & drop generico de tableros kanban (issues #49 y #50): HTML5 nativo,
@@ -2241,7 +2281,7 @@ async function patchEtapaProspecto(id, body, msgError) {
       alert(data.error || msgError);
       return;
     }
-    cargarListaProspectos();
+    refrescarProspectos();
     cargarMotivosNoUtil();
   } catch (e) {
     alert('Error de conexion');
@@ -2259,7 +2299,7 @@ async function registrarToqueProspecto(id) {
   try {
     const res = await api(`/api/prospectos/${id}/toques`, { method: 'POST' });
     if (!res.ok) { alert('No se pudo registrar el toque'); return; }
-    cargarListaProspectos();
+    refrescarProspectos();
   } catch (e) {
     alert('Error de conexion');
   }
@@ -2308,7 +2348,7 @@ async function resultadoReunionProspecto(id, resultado, motivo) {
       alert(data.error || 'No se pudo registrar el resultado');
       return;
     }
-    cargarListaProspectos();
+    refrescarProspectos();
     cargarMotivosNoUtil();
   } catch (e) {
     alert('Error de conexion');
@@ -2577,7 +2617,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     marcarNavActivo('nav-cotizar');
   });
   document.getElementById('nav-hoy')?.addEventListener('click', () => {
-    showSeguimiento();
+    showHoy();
     marcarNavActivo('nav-hoy');
   });
   document.getElementById('nav-pipeline')?.addEventListener('click', () => {
@@ -2590,6 +2630,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
+  document.getElementById('mas-seguimiento')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showSeguimiento(); });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
 
@@ -2608,6 +2649,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Volver a Cotizar desde Hoy
+  document.getElementById('btn-volver-hoy')?.addEventListener('click', () => {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
+  });
+
+  // Volver a Cotizar desde Seguimiento de cotizaciones (vive en Mas, #64)
   document.getElementById('btn-volver-seguimiento').addEventListener('click', () => {
     ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
