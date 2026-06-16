@@ -106,7 +106,7 @@ function importar(token, buffer, vendedor) {
   return req;
 }
 
-test('importar el XLSX crea prospectos en etapa nuevo, canal Feria/Expo, con fecha de importacion', async () => {
+test('importar el XLSX crea prospectos en Por Cotizar, canal Feria/Expo, con fecha de importacion', async () => {
   writeProspectos([]);
   const antes = new Date();
   const res = await importar(ADMIN_TOKEN, xlsxBuffer([
@@ -120,7 +120,7 @@ test('importar el XLSX crea prospectos en etapa nuevo, canal Feria/Expo, con fec
   const guardados = readProspectos();
   assert.equal(guardados.length, 2);
   const p = guardados[0];
-  assert.equal(p.etapa, 'nuevo');
+  assert.equal(p.etapa, 'por_cotizar');
   assert.equal(p.canal, 'Feria/Expo');
   assert.equal(p.celular, '+52 5512952080');
   assert.equal(p.vendedor, 'Jaime Abaroa');
@@ -135,7 +135,7 @@ test('celulares ya existentes como prospecto no se duplican y se reportan', asyn
   writeProspectos([{
     id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5512952080',
     celular10: '5512952080', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
-    etapa: 'nuevo', eventos: [], data: {},
+    etapa: 'por_cotizar', eventos: [], data: {},
   }]);
   const res = await importar(ADMIN_TOKEN, xlsxBuffer([
     fila(),

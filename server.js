@@ -135,20 +135,20 @@ function validarTelefonoCotizacion(req, res) {
   return true;
 }
 
-// Hook de embudo al crear cotizacion (issue #46, CONTEXT.md "Etapas de
-// prospecto"): celular de prospecto -> pasa a Cotizado (revive desde No util;
-// si ya esta en Cotizado solo acumula el evento); celular libre con canal del
-// catalogo -> auto-crea el prospecto directo en Cotizado con los datos de la
-// cotizacion (sin canal no se crea: el frontend siempre lo manda, la API
-// directa sin canal no genera prospecto); celular de cliente Operam -> nada.
-// Best effort: un fallo aqui jamas rompe la generacion.
-async function pasarProspectoACotizado(p, cotizacionId, vendedor) {
+// Hook de embudo al crear cotizacion (issue #46; vocabulario del pipeline
+// unificado, issue #53): celular de prospecto -> pasa a Seguimiento (revive
+// desde No util; si ya esta en Seguimiento solo acumula el evento); celular
+// libre con canal del catalogo -> auto-crea el prospecto directo en Seguimiento
+// con los datos de la cotizacion (sin canal no se crea: el frontend siempre lo
+// manda, la API directa sin canal no genera prospecto); celular de cliente
+// Operam -> nada. Best effort: un fallo aqui jamas rompe la generacion.
+async function pasarProspectoASeguimiento(p, cotizacionId, vendedor) {
   const evento = {
     tipo: 'cotizacion', cotizacion_id: cotizacionId, de: p.etapa,
     fecha: new Date().toISOString(), vendedor,
   };
-  if (p.etapa === 'cotizado') await prospectosStore.registrarEvento(p.id, evento);
-  else await prospectosStore.cambiarEtapa(p.id, 'cotizado', evento);
+  if (p.etapa === 'seguimiento') await prospectosStore.registrarEvento(p.id, evento);
+  else await prospectosStore.cambiarEtapa(p.id, 'seguimiento', evento);
 }
 
 async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
@@ -159,12 +159,12 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
     // clientes existentes no toca Operam).
     if (!CANALES.includes(data.canal)) {
       const p = await prospectosStore.buscarPorCelular(celular);
-      if (p) await pasarProspectoACotizado(p, cotizacionId, vendedor);
+      if (p) await pasarProspectoASeguimiento(p, cotizacionId, vendedor);
       return;
     }
     const clasificacion = await clasificarCelular(celular);
     if (clasificacion.tipo === 'prospecto') {
-      await pasarProspectoACotizado(clasificacion.prospecto, cotizacionId, vendedor);
+      await pasarProspectoASeguimiento(clasificacion.prospecto, cotizacionId, vendedor);
       return;
     }
     if (clasificacion.tipo === 'cliente') return;
@@ -173,7 +173,7 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
       fecha, vendedor, celular: celular.trim(),
       nombre: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
       ciudad: data.cliente?.municipio || data.cliente?.estado || '',
-      canal: data.canal, etapa: 'cotizado', data: {},
+      canal: data.canal, etapa: 'seguimiento', data: {},
     });
     await prospectosStore.registrarEvento(id, { tipo: 'cotizacion', cotizacion_id: cotizacionId, fecha, vendedor });
   } catch (err) {
@@ -257,9 +257,10 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   const filtradas = req.user.role === 'admin'
     ? log
     : log.filter(c => c.vendedor === req.user.name);
-  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado }) => ({
+  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
     estado: estado || 'abierta',
+    etapa,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
     hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),
@@ -453,22 +454,17 @@ app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Resultado de la reunion pasada: avanzar a Calificado (el salto desde
-// nuevo/contactado es valido SOLO como resultado de reunion -- cambiarEtapa
-// directo, igual que la transicion automatica de #46) o salir a No util con
-// motivo del catalogo.
+// Resultado de la reunion pasada: en el pipeline unificado el avance pertinente
+// lo dirige la cotizacion (Por Cotizar -> Seguimiento, otro issue); aqui el
+// unico resultado que cierra el ciclo de la reunion es la salida a No util con
+// motivo del catalogo (CONTEXT.md "Reunion de diagnostico": ya no avanza a
+// Calificado, etapa eliminada por ADR-0005).
 app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, res) => {
   const { resultado, motivo } = req.body || {};
   const p = await prospectoOperable(req, res);
   if (!p) return;
   if (!reunionPendienteResultado(p, new Date())) {
     return res.status(400).json({ error: 'No hay reunión pendiente de resultado' });
-  }
-  if (resultado === 'calificado') {
-    await prospectosStore.cambiarEtapa(p.id, 'calificado', {
-      tipo: 'etapa', de: p.etapa, a: 'calificado', fecha: new Date().toISOString(), vendedor: req.user.name,
-    });
-    return res.json({ ok: true, etapa: 'calificado' });
   }
   if (resultado === 'no_util') {
     if (!MOTIVOS_NO_UTIL.includes(motivo)) {
@@ -479,7 +475,7 @@ app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, re
     });
     return res.json({ ok: true, etapa: 'no_util' });
   }
-  res.status(400).json({ error: 'Resultado inválido: calificado o no_util' });
+  res.status(400).json({ error: 'Resultado inválido: no_util' });
 });
 
 app.get('/api/admin/prospectos/no-util', authMiddleware, adminMiddleware, async (req, res) => {

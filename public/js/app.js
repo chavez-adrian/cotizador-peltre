@@ -22,14 +22,16 @@ import {
   validarCanalCotizacion,
   buildCanalModalHtml,
   MOTIVOS_NO_UTIL,
-  puedeArrastrar,
-  buildTableroHtml,
   buildMotivoNoUtilModalHtml,
 } from './prospectos-logica.js';
 import {
   puedeArrastrarCotizacion,
   buildTableroCotizacionesHtml,
 } from './cotizaciones-logica.js';
+import {
+  buildTableroPipelineHtml,
+  oportunidadesActivas,
+} from './pipeline-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
 function leerTelefono(inputId, codeId) {
@@ -149,6 +151,10 @@ function logout() {
   document.getElementById('historial-view').style.display = 'none';
   document.getElementById('seguimiento-view').style.display = 'none';
   document.getElementById('prospectos-view').style.display = 'none';
+  const pv = document.getElementById('pipeline-view');
+  if (pv) pv.style.display = 'none';
+  const bn = document.getElementById('bottom-nav');
+  if (bn) bn.style.display = 'none';
   document.getElementById('login-view').style.display = 'flex';
   document.getElementById('login-pin').value = '';
 }
@@ -158,6 +164,8 @@ async function showApp() {
   document.getElementById('login-view').style.display = 'none';
   document.getElementById('historial-view').style.display = 'none';
   document.getElementById('app-view').style.display = 'block';
+  document.getElementById('bottom-nav').style.display = 'flex';
+  marcarNavActivo('nav-cotizar');
   document.getElementById('user-name').textContent = state.user.name;
 
   // Admin link visibility
@@ -1629,7 +1637,7 @@ let cotizacionesModo = localStorage.getItem('cotizacionesModo') === 'tablero' ? 
 let ultimasCotizaciones = [];
 
 async function showHistorial() {
-  document.getElementById('app-view').style.display = 'none';
+  ocultarTodasLasVistas();
   document.getElementById('historial-view').style.display = 'block';
 
   const loadingEl = document.getElementById('historial-loading');
@@ -1738,7 +1746,7 @@ const PASO_LABELS = {
 };
 
 async function showSeguimiento() {
-  document.getElementById('app-view').style.display = 'none';
+  ocultarTodasLasVistas();
   document.getElementById('seguimiento-view').style.display = 'block';
 
   const loadingEl = document.getElementById('seguimiento-loading');
@@ -1854,11 +1862,124 @@ async function poblarSelectoresProspecto() {
 }
 
 function showProspectos() {
-  document.getElementById('app-view').style.display = 'none';
+  ocultarTodasLasVistas();
   document.getElementById('prospectos-view').style.display = 'block';
   poblarSelectoresProspecto();
   cargarListaProspectos();
   cargarMotivosNoUtil();
+}
+
+// === PIPELINE (tablero unico de 7 etapas, issue #53) ===
+// Una oportunidad: antes de cotizar es el prospecto (su etapa del pipeline ya
+// viene migrada del store); al cotizar, la cotizacion lleva la oportunidad por
+// el resto del embudo (su etapa la deriva el store del estado). El tablero las
+// reparte en sus 7 columnas; las salidas viven fuera. Conmutador lista/tablero.
+let pipelineModo = localStorage.getItem('pipelineModo') === 'lista' ? 'lista' : 'tablero';
+let ultimasOportunidades = [];
+
+function prospectoAOportunidad(p) {
+  return {
+    tipo: 'prospecto', id: `p${p.id}`, refId: p.id, nombre: p.nombre,
+    vendedor: p.vendedor, ciudad: p.ciudad, canal: p.canal, etapa: p.etapa,
+    total: 0, fecha: p.fecha,
+  };
+}
+
+function cotizacionAOportunidad(c) {
+  return {
+    tipo: 'cotizacion', id: `c${c.id}`, refId: c.id, nombre: c.cliente,
+    vendedor: c.vendedor, etapa: c.etapa, total: c.total, totalPiezas: c.totalPiezas,
+    fecha: c.fecha,
+  };
+}
+
+async function showPipeline() {
+  ocultarTodasLasVistas();
+  document.getElementById('pipeline-view').style.display = 'block';
+  const loadingEl = document.getElementById('pipeline-loading');
+  loadingEl.style.display = 'block';
+  document.getElementById('pipeline-tablero').innerHTML = '';
+  document.getElementById('pipeline-list').innerHTML = '';
+  try {
+    const [resP, resC] = await Promise.all([api('/api/prospectos'), api('/api/cotizaciones')]);
+    const prospectos = resP.ok ? await resP.json() : [];
+    const cotizaciones = resC.ok ? await resC.json() : [];
+    ultimasOportunidades = [
+      ...prospectos.map(prospectoAOportunidad),
+      ...cotizaciones.map(cotizacionAOportunidad),
+    ];
+    loadingEl.style.display = 'none';
+    renderPipeline();
+  } catch (e) {
+    loadingEl.textContent = 'Error cargando el pipeline';
+  }
+}
+
+function renderPipeline() {
+  const tableroEl = document.getElementById('pipeline-tablero');
+  const listEl = document.getElementById('pipeline-list');
+  const esTablero = pipelineModo === 'tablero';
+  const btnLista = document.getElementById('btn-pipeline-modo-lista');
+  const btnTablero = document.getElementById('btn-pipeline-modo-tablero');
+  btnLista.classList.toggle('btn-primary', !esTablero);
+  btnLista.classList.toggle('btn-secondary', esTablero);
+  btnTablero.classList.toggle('btn-primary', esTablero);
+  btnTablero.classList.toggle('btn-secondary', !esTablero);
+  tableroEl.style.display = esTablero ? 'flex' : 'none';
+  listEl.style.display = esTablero ? 'none' : 'block';
+  if (esTablero) {
+    listEl.innerHTML = '';
+    tableroEl.innerHTML = buildTableroPipelineHtml(ultimasOportunidades);
+    return;
+  }
+  tableroEl.innerHTML = '';
+  // Vista lista: las mismas oportunidades que pinta el tablero (sus 7 columnas),
+  // mas reciente primero. Las salidas No util/Perdida NO se muestran aqui: viven
+  // en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
+  const activas = oportunidadesActivas(ultimasOportunidades)
+    .slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+  if (!activas.length) {
+    listEl.innerHTML = '<div class="empty-state"><p>Sin oportunidades en el pipeline.</p></div>';
+    return;
+  }
+  listEl.innerHTML = activas.map(o => {
+    const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
+    const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
+    return `<div class="cot-card"><div class="cot-card-header"><div>
+      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}</div>
+      <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
+    </div>${total}</div></div>`;
+  }).join('');
+}
+
+const PIPELINE_LABEL = {
+  no_asignado: 'No Asignado', por_cotizar: 'Por Cotizar', seguimiento: 'Seguimiento',
+  anticipo_pagado: 'Anticipo pagado', pedido_liberado: 'Pedido liberado',
+  saldo_pagado: 'Saldo pagado', producto_entregado: 'Producto entregado',
+  no_util: 'No útil', perdida: 'Perdida',
+};
+
+function setModoPipeline(modo) {
+  pipelineModo = modo;
+  localStorage.setItem('pipelineModo', modo);
+  renderPipeline();
+}
+
+function ocultarTodasLasVistas() {
+  for (const v of ['app-view', 'historial-view', 'seguimiento-view', 'prospectos-view', 'pipeline-view']) {
+    const el = document.getElementById(v);
+    if (el) el.style.display = 'none';
+  }
+  cerrarMenuMas();
+}
+
+function marcarNavActivo(id) {
+  document.querySelectorAll('.bottom-nav-btn').forEach(b => b.classList.toggle('activo', b.id === id));
+}
+
+function cerrarMenuMas() {
+  const menu = document.getElementById('nav-mas-menu');
+  if (menu) menu.style.display = 'none';
 }
 
 async function cargarMotivosNoUtil() {
@@ -1873,9 +1994,9 @@ async function cargarMotivosNoUtil() {
   } catch (e) { /* sin red no hay conteo */ }
 }
 
-// Conmutador kanban/lista (issue #49): la cola "Que toca hoy" permanece fija
-// sobre ambas vistas; la preferencia del usuario se recuerda en localStorage.
-let prospectosModo = localStorage.getItem('prospectosModo') === 'tablero' ? 'tablero' : 'lista';
+// El tablero kanban del modelo previo se movio al destino Pipeline (tablero
+// unico de 7 etapas, issue #53). La pantalla de prospectos queda como lista de
+// captura + cola "Que toca hoy", accesible desde "Mas".
 let ultimosProspectos = [];
 let ultimaColaProspectos = [];
 
@@ -1903,37 +2024,14 @@ async function cargarListaProspectos() {
 function renderProspectos() {
   const listEl = document.getElementById('prospectos-list');
   const tituloEl = document.getElementById('prospectos-list-titulo');
-  const tableroEl = document.getElementById('prospectos-tablero');
-  const esTablero = prospectosModo === 'tablero';
-  document.getElementById('prospectos-contenido').classList.toggle('modo-tablero', esTablero);
-  const btnLista = document.getElementById('btn-modo-lista');
-  const btnTablero = document.getElementById('btn-modo-tablero');
-  btnLista.classList.toggle('btn-primary', !esTablero);
-  btnLista.classList.toggle('btn-secondary', esTablero);
-  btnTablero.classList.toggle('btn-primary', esTablero);
-  btnTablero.classList.toggle('btn-secondary', !esTablero);
-  tableroEl.style.display = esTablero ? 'flex' : 'none';
-  tituloEl.style.display = !esTablero && ultimosProspectos.length ? 'block' : 'none';
-  listEl.style.display = esTablero ? 'none' : 'block';
+  tituloEl.style.display = ultimosProspectos.length ? 'block' : 'none';
   const colaPorId = new Map(ultimaColaProspectos.map(i => [i.id, i]));
-  if (esTablero) {
-    listEl.innerHTML = '';
-    tableroEl.innerHTML = buildTableroHtml(ultimosProspectos, colaPorId);
-    return;
-  }
-  tableroEl.innerHTML = '';
   if (!ultimosProspectos.length) {
     listEl.innerHTML = '<div class="empty-state"><p>Sin prospectos capturados.</p></div>';
     return;
   }
   listEl.innerHTML = ultimosProspectos.slice().reverse()
     .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true })).join('');
-}
-
-function setModoProspectos(modo) {
-  prospectosModo = modo;
-  localStorage.setItem('prospectosModo', modo);
-  renderProspectos();
 }
 
 // Drag & drop generico de tableros kanban (issues #49 y #50): HTML5 nativo,
@@ -1983,22 +2081,6 @@ function initDragEnTablero(containerId, { atributo, puedeSoltar, alSoltar }) {
     tablero.classList.remove('arrastrando');
     tablero.querySelectorAll('.tablero-col').forEach(c => c.classList.remove('drop-ok', 'drop-valido'));
   });
-}
-
-async function soltarEnColumna(origen, destino) {
-  if (!puedeArrastrar(origen.col, destino)) {
-    avisoTablero(destino === 'cotizado'
-      ? 'Cotizado no acepta arrastres: solo una cotización real mueve ahí'
-      : 'Movimiento inválido: las etapas avanzan un paso a la vez');
-    return;
-  }
-  if (destino === 'no_util') {
-    const motivo = await pedirMotivoNoUtil();
-    if (!motivo) return;
-    patchEtapaProspecto(origen.id, { etapa: 'no_util', motivo }, 'No se pudo registrar la salida');
-    return;
-  }
-  patchEtapaProspecto(origen.id, { etapa: destino }, 'No se pudo avanzar la etapa');
 }
 
 // Selector de motivo al soltar en No util: mismo patron que el modal de
@@ -2118,10 +2200,6 @@ async function patchEtapaProspecto(id, body, msgError) {
   }
 }
 
-function avanzarEtapaProspecto(id, etapa) {
-  patchEtapaProspecto(id, { etapa }, 'No se pudo avanzar la etapa');
-}
-
 function marcarNoUtilProspecto(id) {
   const sel = document.getElementById(`pr-motivo-${id}`);
   const motivo = sel ? sel.value : '';
@@ -2196,7 +2274,6 @@ function resultadoReunionNoUtilProspecto(id) {
   resultadoReunionProspecto(id, 'no_util', motivo);
 }
 
-window.avanzarEtapaProspecto = avanzarEtapaProspecto;
 window.marcarNoUtilProspecto = marcarNoUtilProspecto;
 window.registrarToqueProspecto = registrarToqueProspecto;
 window.toggleHistorialProspecto = toggleHistorialProspecto;
@@ -2409,11 +2486,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     subirCotizacionOperam(state.lastCotizacionId);
   });
 
-  // Historial
-  document.getElementById('btn-historial').addEventListener('click', showHistorial);
-  document.getElementById('btn-volver-app').addEventListener('click', () => {
-    document.getElementById('historial-view').style.display = 'none';
+  // Navegacion inferior (bottom-nav, issue #53): Cotizar / Hoy / Pipeline / Mas.
+  // Pipeline esta vivo (tablero unico de 7 etapas); los demas enlazan por ahora
+  // a las pantallas existentes. La app abre en Cotizar.
+  document.getElementById('nav-cotizar')?.addEventListener('click', () => {
+    ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
+  });
+  document.getElementById('nav-hoy')?.addEventListener('click', () => {
+    showSeguimiento();
+    marcarNavActivo('nav-hoy');
+  });
+  document.getElementById('nav-pipeline')?.addEventListener('click', () => {
+    showPipeline();
+    marcarNavActivo('nav-pipeline');
+  });
+  document.getElementById('nav-mas')?.addEventListener('click', () => {
+    const menu = document.getElementById('nav-mas-menu');
+    if (menu) menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
+  });
+  document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
+  document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
+  document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
+  document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
+
+  // Volver a Cotizar desde Historial (la navegacion vive en el bottom-nav, issue #53)
+  document.getElementById('btn-volver-app').addEventListener('click', () => {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
   });
   document.getElementById('btn-cot-modo-lista').addEventListener('click', () => setModoCotizaciones('lista'));
   document.getElementById('btn-cot-modo-tablero').addEventListener('click', () => setModoCotizaciones('tablero'));
@@ -2423,31 +2525,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     alSoltar: soltarEnColumnaCotizacion,
   });
 
-  // Seguimiento
-  document.getElementById('btn-seguimiento').addEventListener('click', showSeguimiento);
+  // Volver a Cotizar desde Hoy
   document.getElementById('btn-volver-seguimiento').addEventListener('click', () => {
-    document.getElementById('seguimiento-view').style.display = 'none';
+    ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
   });
 
-  // Prospectos
-  document.getElementById('btn-prospectos').addEventListener('click', showProspectos);
+  // Volver a Cotizar desde Prospectos
   document.getElementById('btn-volver-prospectos').addEventListener('click', () => {
-    document.getElementById('prospectos-view').style.display = 'none';
+    ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
   });
   document.getElementById('btn-nuevo-prospecto').addEventListener('click', () => {
     const form = document.getElementById('prospecto-form');
     form.style.display = form.style.display === 'none' ? 'block' : 'none';
   });
   document.getElementById('btn-guardar-prospecto').addEventListener('click', guardarProspecto);
-  document.getElementById('btn-modo-lista').addEventListener('click', () => setModoProspectos('lista'));
-  document.getElementById('btn-modo-tablero').addEventListener('click', () => setModoProspectos('tablero'));
-  initDragEnTablero('prospectos-tablero', {
-    atributo: 'etapa',
-    puedeSoltar: puedeArrastrar,
-    alSoltar: soltarEnColumna,
-  });
   document.getElementById('pr-temperatura').addEventListener('click', e => {
     const v = e.target.dataset ? e.target.dataset.v : null;
     if (!v) return;

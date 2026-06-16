@@ -1,44 +1,77 @@
 # Glosario de dominio — Cotizador Peltre Nacional
 
+## Pipeline
+
+El embudo comercial único, del primer interés al producto entregado. Reemplaza el modelo previo de dos mundos separados (etapas de prospecto por un lado, tablero de cotizaciones por otro). Una sola secuencia de etapas con dos salidas. La unidad que avanza por el pipeline es la **oportunidad**. Ver ADR-0005.
+
+## Oportunidad
+
+La unidad de trabajo del pipeline: una intención de compra que se sigue de punta a punta. Antes de cotizar, la oportunidad coincide con el **prospecto** (la persona o entidad detrás de un celular). Al generarse la primera cotización (pre-cotización o cotización), la oportunidad lleva esa cotización por el resto del embudo. Un mismo prospecto que cotiza una segunda vez (p. ej. una agencia que cotiza para dos clientes finales) genera una **segunda oportunidad** (segunda tarjeta). Esta es la invariante que mantiene limpio el sync con Operam: una tarjeta en etapas post-venta corresponde a un pedido. (Cambio respecto al modelo previo, que no reconocía "oportunidad" como entidad y trataba cada cotización solo como historial del prospecto: ver ADR-0005.)
+
 ## Prospecto
 
-La persona o entidad detrás de un número de celular que mostró interés comercial pero aún no tiene alta de cliente en Operam. Un celular corresponde siempre a exactamente un prospecto. No existe una entidad "oportunidad" separada: cada cotización ligada al prospecto representa una oportunidad, y el historial del prospecto las acumula (una agencia que cotiza para dos clientes finales es un prospecto con dos cotizaciones; un restaurantero que vuelve meses después es el mismo prospecto con historial).
+La persona o entidad detrás de un número de celular que mostró interés comercial pero aún no tiene alta de cliente en Operam. Un celular corresponde siempre a exactamente un prospecto. El prospecto es la cara de la oportunidad antes de cotizar; sus cotizaciones se acumulan en su historial y cada una, al existir, define una oportunidad en el pipeline.
 
 Un cliente con alta en Operam nunca vuelve a ser prospecto: si el celular capturado pertenece a un cliente existente, el sistema lo señala (guardrail, mismo patrón que la deduplicación de clientes) y el vendedor cotiza sobre el cliente, no crea prospecto. Esa detección es "best effort": en Operam los teléfonos no viven en el cliente sino repartidos entre sus contactos y sus domicilios de entrega, en formatos inconsistentes; la comparación se hace por los últimos 10 dígitos del número nacional.
 
-## Etapas de prospecto
+## Etapas del pipeline
 
-Nuevo (capturado, sin atender) → Contactado (hubo primera conversación) → Calificado (se conoce tipo de cliente, piezas aproximadas y es mayoreo viable) → Cotizado. La transición a Cotizado es automática al ligarse una cotización al celular del prospecto; en ese momento el seguimiento de la cotización releva al seguimiento del prospecto — una persona nunca tiene dos colas activas. Si se crea una cotización con un celular que no corresponde a ningún prospecto ni cliente de Operam, el sistema crea el prospecto automáticamente en etapa Cotizado, pidiendo al vendedor únicamente el canal de origen; el resto de los datos se toma de la cotización. Así el embudo queda completo sin perder el canal real. Salida en cualquier etapa: No útil, con motivo obligatorio de catálogo corto (menudeo, fuera de zona, sin presupuesto, spam, sin respuesta). El prospecto se asigna al vendedor que lo captura; un proceso de asignación manual o automático es evolución futura.
+`No Asignado → Por Cotizar → Seguimiento → Anticipo pagado → Pedido liberado → Saldo pagado → Producto entregado`. Dos salidas desde cualquier etapa activa: **No útil** (con motivo obligatorio de catálogo) y **Perdida** (con confirmación); ambas viven en filtro/historial, fuera del tablero activo.
+
+- **No Asignado**: la oportunidad entró sin vendedor. Ocurre con prospectos que llegan del formulario web "Peltre de Mayoreo" o, a futuro, de un bot (WhatsApp, redes, correo). Requiere asignar un vendedor; al asignarlo, la tarjeta pasa automáticamente a Por Cotizar.
+- **Por Cotizar**: la oportunidad ya tiene dueño y aún no se cotiza. Cuando el vendedor crea el prospecto a mano, nace aquí auto-asignado. Es donde corre la cadencia de prospecto en horas hábiles y donde se agenda la reunión de diagnóstico.
+- **Seguimiento**: existe una cotización (pre o formal). La transición Por Cotizar → Seguimiento es automática al generar una pre-cotización o cotización con el Cotizador, o cuando Operam reporta una cotización creada para la tarjeta; manual solo capturando el número de cotización de Operam (sin folio no avanza). Aquí corre la cadencia de cotización en días naturales.
+- **Anticipo pagado → Pedido liberado → Saldo pagado → Producto entregado**: etapas post-venta, dirigidas automáticamente por hechos en Operam (ver Sincronización post-venta con Operam). El vendedor no las captura a mano.
+
+Las etapas intermedias de prospección del modelo previo (Contactado, Calificado) se eliminan (ADR-0005). La transición a Cotizado del modelo previo se reemplaza por la transición a Seguimiento.
+
+## Pre-cotización
+
+Una cotización emitida con datos mínimos (Prospecto Mínimo) y sin registro en Operam, para cotizar sin fricción con el cliente enfrente. No usa Cliente Genérico. Se modela con el folio de Operam ausente (nullable); esa ausencia define el estado "PRE". La distinción **PRE** vs **"#Operam N"** es visible en la tarjeta, en la cola Hoy y en el tablero. Generar una pre-cotización mueve la oportunidad a Seguimiento conservando el PRE. Se formaliza ("completar después") desde la tarjeta: completar los datos del prospecto, dar de alta el cliente en Operam y registrar la cotización; al obtener folio, pierde el PRE.
+
+## Prospecto Mínimo
+
+El conjunto mínimo de datos con el que se puede emitir una pre-cotización sin alta de cliente: lo necesario para identificar al prospecto y calcular la cotización (celular, nombre, ciudad para estimar envío) más el carrito. El alta fiscal completa en Operam se difiere a la formalización.
+
+## Producto decorado (calca)
+
+Una cotización cuyo producto lleva calca (decorado) activa un proceso de autorizaciones con el proveedor de calca, representado como un checklist de 6 pasos en la tarjeta: (1) cotización con proveedor de calca, (2) posición de calca enviada al cliente para autorización, (3) arte final enviado al proveedor, (4) dummy del proveedor autorizado, (5) liberación de producción autorizada, (6) archivos de posición de calca subidos a Dropbox. Una oportunidad decorada no puede llegar a Pedido liberado con el checklist incompleto (gate).
 
 ## Prospecto convertido en cliente
 
-Un prospecto cuyo celular se dio de alta como cliente en Operam queda ligado a ese cliente, pero la conversión NO lo saca del seguimiento: permanece en la cola con la etiqueta "Ya es cliente — falta cotizar" hasta que una cotización lo pase a Cotizado (decisión 2026-06-11: la conversión real del negocio es la venta, no el alta; la cola vigila la fuga de altas que nunca cotizan).
+Un prospecto cuyo celular se dio de alta como cliente en Operam queda ligado a ese cliente, pero la conversión NO lo saca del seguimiento: la oportunidad permanece en Por Cotizar con la etiqueta "Ya es cliente — falta cotizar" hasta que una cotización la pase a Seguimiento (decisión 2026-06-11: la conversión real del negocio es la venta, no el alta; la cola vigila la fuga de altas que nunca cotizan).
 
-## Visibilidad de prospectos
+## Visibilidad
 
-Cada vendedor ve únicamente sus propios prospectos; el rol admin ve todos — el mismo modelo de visibilidad que las cotizaciones. Cuando un vendedor intenta capturar un celular que ya es prospecto de otro vendedor, el sistema rechaza la captura indicando quién lo atiende ("este celular ya lo atiende [vendedor]"), sin exponer más datos del prospecto; la coordinación entre vendedores ocurre fuera del sistema.
+Cada vendedor ve únicamente sus propias oportunidades; el rol admin ve todas y es quien asigna vendedor a las tarjetas en No Asignado. Cuando un vendedor intenta capturar un celular que ya es prospecto de otro vendedor, el sistema rechaza la captura indicando quién lo atiende ("este celular ya lo atiende [vendedor]"), sin exponer más datos; la coordinación entre vendedores ocurre fuera del sistema.
 
 ## Horas hábiles
 
-El reloj con el que se mide la espera de un prospecto: lunes a viernes 10:00–18:00, sábado 10:00–14:00, festivos mexicanos excluidos. Un prospecto que escribe en fin de semana o festivo no acumula espera; los prospectos aceptan respuesta a la mañana siguiente hábil sin molestia. Las cotizaciones, en cambio, se siguen midiendo en días naturales (cadencia día 2/7/21/vencida).
+El reloj con el que se mide la espera de un prospecto en Por Cotizar: lunes a viernes 10:00–18:00, sábado 10:00–14:00, festivos mexicanos excluidos. Un prospecto que escribe en fin de semana o festivo no acumula espera; acepta respuesta a la mañana siguiente hábil sin molestia. Las cotizaciones en Seguimiento, en cambio, se miden en días naturales (cadencia día 2/7/21/vencida).
 
 ## Cadencia de prospecto
 
-Los tiempos de seguimiento de un prospecto corren en horas hábiles y dependen del canal: WhatsApp e Instagram esperan respuesta en horas (rojo a las 2 horas hábiles sin contactar); correo y formulario toleran más (rojo a las 8). Cada prospecto muestra una etiqueta visible de horas hábiles sin respuesta con semáforo (verde < 2, ámbar 2–8, rojo > 8). Tras 3 toques sin respuesta el sistema sugiere — nunca aplica solo — la salida a No útil (sin respuesta). Una reunión diagnóstico futura suprime la cadencia.
+Los tiempos de seguimiento de un prospecto en Por Cotizar corren en horas hábiles y dependen del canal: WhatsApp e Instagram esperan respuesta en horas (rojo a las 2 horas hábiles sin contactar); correo y formulario toleran más (rojo a las 8). Cada prospecto muestra una etiqueta visible de horas hábiles sin respuesta con semáforo (verde < 2, ámbar 2–8, rojo > 8). Tras 3 toques sin respuesta el sistema sugiere — nunca aplica solo — la salida a No útil (sin respuesta). Una reunión de diagnóstico futura suprime la cadencia.
+
+## Cola Hoy (seguimiento fusionado)
+
+La cola única de pendientes del día: fusiona el seguimiento de prospectos en Por Cotizar (cadencia en horas hábiles, semáforo por canal) con el de cotizaciones en Seguimiento (cadencia en días naturales 2/7/21/28). Se ordena por urgencia relativa al umbral de cada tipo (cada reloj con su medida). Reemplaza las dos colas separadas del modelo previo. Permanece fija sobre el tablero y la vista de lista. Es el contenido del destino "Hoy" en la navegación.
 
 ## Captura de prospecto
 
-Registro mínimo de un prospecto, diseñado para hacerse en segundos desde el teléfono. Obligatorios: celular (con código de país), nombre (se acepta sin apellido) y ciudad (necesaria para estimar envío). Opcionales: empresa, tipo de cliente (segmentos existentes), piezas estimadas (+100/+350/+550/+1,500/+6,000), correo, temperatura (1–5) y notas. Canal de origen obligatorio, de catálogo cerrado: WhatsApp, Instagram, Facebook/Messenger, Meta Ads (pagado — se distingue del orgánico), Formulario web, Correo, Referido, Bazar Sábado, Feria/Expo. Los prospectos de Feria/Expo no se capturan a mano: la plataforma del evento entrega un CSV de gafetes escaneados que se importa deduplicando por celular.
+Registro mínimo de un prospecto, diseñado para hacerse en segundos desde el teléfono. Obligatorios: celular (con código de país), nombre (se acepta sin apellido) y ciudad (necesaria para estimar envío). Opcionales: empresa, tipo de cliente (segmentos existentes), piezas estimadas (+100/+350/+550/+1,500/+6,000), correo, temperatura (1–5) y notas. Canal de origen obligatorio, de catálogo cerrado: WhatsApp, Instagram, Facebook/Messenger, Meta Ads (pagado — se distingue del orgánico), Formulario web, Correo, Referido, Bazar Sábado, Feria/Expo. Los prospectos de Feria/Expo no se capturan a mano: la plataforma del evento entrega un CSV de gafetes escaneados que se importa deduplicando por celular. Un prospecto creado a mano por un vendedor nace en Por Cotizar, auto-asignado a ese vendedor.
 
-Actividad con fecha sobre un prospecto (no es etapa): llamada o videollamada que el prospecto solicita para explorar su proyecto. Mientras la reunión está en el futuro, la cadencia de seguimiento del prospecto se suprime; pasada la fecha, el seguimiento pide registrar el resultado (avanzar a Calificado o salir a No útil).
+## Reunión de diagnóstico
 
-## Tablero de prospectos
+Actividad con fecha sobre una oportunidad en Por Cotizar o Seguimiento (no es etapa): llamada o videollamada que el cliente solicita para explorar su proyecto. Mientras la reunión está en el futuro, la cadencia de seguimiento de esa tarjeta se suprime; pasada la fecha sin actividad posterior, la cola Hoy pide registrar el resultado (el avance pertinente o la salida a No útil — ya no avanza a "Calificado", etapa eliminada). Re-agendar registra otro evento y la última reunión manda.
 
-Vista kanban de los prospectos (conmutable con la vista de lista; la cola "Qué toca hoy" permanece fija sobre ambas). Cinco columnas siempre visibles: Nuevo, Contactado, Calificado, Cotizado y No útil (con su motivo en la tarjeta). El arrastre de tarjetas respeta las reglas del dominio — un paso adelante, soltar en No útil exige motivo, y Cotizado no acepta arrastres porque solo una cotización real mueve ahí (decisión 2026-06-11: se replica la experiencia de Bitrix24 sin sacrificar que el embudo mida verdad). Funciona también en el teléfono (desplazamiento horizontal por columna; en táctil el cambio de etapa puede seguir siendo por botón).
+## Tablero del pipeline
 
-## Tablero de cotizaciones
+Vista kanban única de las oportunidades, con las 7 etapas como columnas (las salidas No útil y Perdida viven en filtro/historial, no como columnas activas). Reemplaza los dos tableros separados del modelo previo (prospectos y cotizaciones). Conmutable con la vista de lista; la cola Hoy permanece fija sobre ambas. Muestra la suma en pesos por columna. El arrastre respeta las reglas del dominio del módulo de pipeline: un paso a la vez; soltar en No útil exige motivo; el paso manual a Seguimiento exige el número de cotización; las etapas post-venta no se arrastran porque las mueve Operam. Funciona también en el teléfono (desplazamiento horizontal por columna; en táctil las transiciones pueden ser por botón). Término canónico del destino y del tablero: **Pipeline**.
 
-Vista kanban de las cotizaciones cuyas columnas son la cadencia de seguimiento más el cierre: Recién enviada, Día 2, Día 7, Por vencer, Vencida, Ganada y Perdida. Las tarjetas avanzan solas con el tiempo (las columnas de cadencia no aceptan arrastres); solo el cierre se opera arrastrando a Ganada o Perdida. Se llama "Cotizaciones" — término canónico — aunque Bitrix24 le llamara negociaciones. Las etapas post-venta (producción, entrega) viven en Operam y no son columnas de este tablero.
+## Sincronización post-venta con Operam
+
+Las cuatro etapas post-venta (Anticipo pagado, Pedido liberado, Saldo pagado, Producto entregado) se mueven leyendo hechos de Operam (API v3 o webhooks): pagos, liberación de pedido y entrega. El tablero no contradice a Operam en estas etapas y el vendedor no captura doble. Dependencia técnica abierta: confirmar qué expone la API en la cadena cotización → pedido → pagos; las etapas cuyo dato no esté expuesto arrancan en modo manual con sugerencia y se automatizan al confirmarse.
 
 ## Alta de cliente
 

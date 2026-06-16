@@ -1414,3 +1414,49 @@ body {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* Navegacion inferior fija (bottom-nav, issue #53): 4 destinos con el pulgar.
+   Cobalto de marca para el activo; el resto neutro. */
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  background: var(--white);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 8px oklch(0.28 0.015 75 / 0.06);
+  z-index: 900;
+}
+.bottom-nav-btn {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 12px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+}
+.bottom-nav-btn.activo {
+  color: var(--primary);
+  box-shadow: inset 0 2px 0 var(--primary);
+}
+.nav-mas-menu {
+  position: absolute;
+  right: 8px;
+  bottom: 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  box-shadow: 0 4px 16px oklch(0.28 0.015 75 / 0.12);
+}
+/* Deja espacio para que la barra fija no tape el contenido. */
+body {
+  padding-bottom: 64px;
+}

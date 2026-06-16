@@ -76,7 +76,7 @@ const CAPTURA = {
   empresa: 'Hotel Azul', temperatura: 4,
 };
 
-test('vendedor autenticado captura un prospecto y lo ve en su lista en etapa nuevo', async () => {
+test('vendedor autenticado captura un prospecto y lo ve en su lista en Por Cotizar', async () => {
   writeProspectos([]);
   const res = await supertest(app).post('/api/prospectos')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA);
@@ -91,7 +91,7 @@ test('vendedor autenticado captura un prospecto y lo ve en su lista en etapa nue
   assert.equal(p.nombre, 'Laura');
   assert.equal(p.ciudad, 'Puebla');
   assert.equal(p.canal, 'WhatsApp');
-  assert.equal(p.etapa, 'nuevo');
+  assert.equal(p.etapa, 'por_cotizar');
   assert.equal(p.vendedor, 'Memo');
   assert.equal(p.celular, '+52 5512345678');
   assert.equal(p.data.empresa, 'Hotel Azul');
@@ -149,8 +149,8 @@ test('capturar un celular que ya es prospecto de otro vendedor responde 409 con 
 
 test('GET /api/prospectos muestra solo los del vendedor; admin ve todos', async () => {
   writeProspectos([
-    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', ciudad: 'CDMX', canal: 'WhatsApp', etapa: 'nuevo', data: {} },
-    { id: 2, fecha: '2026-06-02T00:00:00Z', vendedor: 'Ana', celular: '+52 5522222222', celular10: '5522222222', nombre: 'B', ciudad: 'Puebla', canal: 'Referido', etapa: 'nuevo', data: {} },
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', ciudad: 'CDMX', canal: 'WhatsApp', etapa: 'por_cotizar', data: {} },
+    { id: 2, fecha: '2026-06-02T00:00:00Z', vendedor: 'Ana', celular: '+52 5522222222', celular10: '5522222222', nombre: 'B', ciudad: 'Puebla', canal: 'Referido', etapa: 'por_cotizar', data: {} },
   ]);
   const memo = await supertest(app).get('/api/prospectos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
   assert.equal(memo.body.length, 1);
@@ -174,7 +174,7 @@ test('rutas de prospectos sin token responden 401', async () => {
 
 // === Issue #43: etapas, toques, No util e historial ===
 
-function prospectoDe(vendedor, etapa = 'nuevo', extra = {}) {
+function prospectoDe(vendedor, etapa = 'por_cotizar', extra = {}) {
   return {
     id: 1, fecha: '2026-06-01T00:00:00Z', vendedor, celular: '+52 5512345678',
     celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
@@ -182,49 +182,29 @@ function prospectoDe(vendedor, etapa = 'nuevo', extra = {}) {
   };
 }
 
-test('el vendedor avanza su prospecto nuevo -> contactado -> calificado y queda en el historial', async () => {
+test('en el pipeline unificado no hay avance manual de etapa antes de cotizar: el PATCH se rechaza', async () => {
   writeProspectos([prospectoDe('Memo')]);
-  const r1 = await supertest(app).patch('/api/prospectos/1/etapa')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'contactado' });
-  assert.equal(r1.status, 200);
-  assert.equal(r1.body.etapa, 'contactado');
-  const r2 = await supertest(app).patch('/api/prospectos/1/etapa')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'calificado' });
-  assert.equal(r2.status, 200);
-  const guardado = readProspectos()[0];
-  assert.equal(guardado.etapa, 'calificado');
-  assert.equal(guardado.eventos.length, 2);
-  assert.equal(guardado.eventos[0].tipo, 'etapa');
-  assert.equal(guardado.eventos[0].de, 'nuevo');
-  assert.equal(guardado.eventos[0].a, 'contactado');
-  assert.equal(guardado.eventos[0].vendedor, 'Memo');
-  assert.ok(guardado.eventos[0].fecha);
-  assert.equal(guardado.eventos[1].a, 'calificado');
-});
-
-test('transiciones invalidas de etapa se rechazan server-side con 400', async () => {
-  writeProspectos([prospectoDe('Memo')]);
-  for (const etapa of ['calificado', 'nuevo', 'cotizado', 'inventada', undefined]) {
+  for (const etapa of ['seguimiento', 'anticipo_pagado', 'por_cotizar', 'cotizado', 'inventada', undefined]) {
     const res = await supertest(app).patch('/api/prospectos/1/etapa')
       .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa });
     assert.equal(res.status, 400, `etapa ${etapa} debio rechazarse`);
   }
   const guardado = readProspectos()[0];
-  assert.equal(guardado.etapa, 'nuevo');
+  assert.equal(guardado.etapa, 'por_cotizar');
   assert.equal(guardado.eventos.length, 0);
 });
 
-test('un vendedor no puede operar el prospecto de otro; admin si puede', async () => {
+test('un vendedor no puede operar el prospecto de otro; admin si puede (salida a No util)', async () => {
   writeProspectos([prospectoDe('Memo')]);
   const ana = await supertest(app).patch('/api/prospectos/1/etapa')
-    .set('Authorization', `Bearer ${ANA_TOKEN}`).send({ etapa: 'contactado' });
+    .set('Authorization', `Bearer ${ANA_TOKEN}`).send({ etapa: 'no_util', motivo: 'spam' });
   assert.equal(ana.status, 403);
   const anaToque = await supertest(app).post('/api/prospectos/1/toques')
     .set('Authorization', `Bearer ${ANA_TOKEN}`);
   assert.equal(anaToque.status, 403);
   assert.equal(readProspectos()[0].eventos.length, 0);
   const admin = await supertest(app).patch('/api/prospectos/1/etapa')
-    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ etapa: 'contactado' });
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ etapa: 'no_util', motivo: 'spam' });
   assert.equal(admin.status, 200);
   assert.equal(readProspectos()[0].eventos[0].vendedor, 'Tester');
 });
@@ -232,7 +212,7 @@ test('un vendedor no puede operar el prospecto de otro; admin si puede', async (
 test('PATCH etapa y POST toques sobre prospecto inexistente responden 404', async () => {
   writeProspectos([]);
   const etapa = await supertest(app).patch('/api/prospectos/9/etapa')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'contactado' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'no_util', motivo: 'spam' });
   assert.equal(etapa.status, 404);
   const toque = await supertest(app).post('/api/prospectos/9/toques')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`);
@@ -240,7 +220,7 @@ test('PATCH etapa y POST toques sobre prospecto inexistente responden 404', asyn
 });
 
 test('registrar un toque guarda fecha y autor y aparece en la lista', async () => {
-  writeProspectos([prospectoDe('Memo', 'contactado')]);
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
   const res = await supertest(app).post('/api/prospectos/1/toques')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`);
   assert.equal(res.status, 200);
@@ -255,14 +235,14 @@ test('registrar un toque guarda fecha y autor y aparece en la lista', async () =
 });
 
 test('salida a No util exige motivo del catalogo; sin motivo o fuera de catalogo no procede', async () => {
-  writeProspectos([prospectoDe('Memo', 'contactado')]);
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
   const sinMotivo = await supertest(app).patch('/api/prospectos/1/etapa')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'no_util' });
   assert.equal(sinMotivo.status, 400);
   const motivoInvalido = await supertest(app).patch('/api/prospectos/1/etapa')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'no_util', motivo: 'no me gusto' });
   assert.equal(motivoInvalido.status, 400);
-  assert.equal(readProspectos()[0].etapa, 'contactado');
+  assert.equal(readProspectos()[0].etapa, 'por_cotizar');
   const ok = await supertest(app).patch('/api/prospectos/1/etapa')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'no_util', motivo: 'fuera de zona' });
   assert.equal(ok.status, 200);
@@ -285,12 +265,12 @@ test('GET /api/prospectos/cola sin token responde 401', async () => {
   assert.equal(res.status, 401);
 });
 
-test('la cola excluye cotizado y No util y respeta la visibilidad vendedor/admin', async () => {
+test('la cola excluye Seguimiento y No util y respeta la visibilidad vendedor/admin', async () => {
   writeProspectos([
-    prospectoDe('Memo', 'nuevo', { id: 1 }),
-    prospectoDe('Memo', 'cotizado', { id: 2, celular: '+52 5522222222', celular10: '5522222222' }),
+    prospectoDe('Memo', 'por_cotizar', { id: 1 }),
+    prospectoDe('Memo', 'seguimiento', { id: 2, celular: '+52 5522222222', celular10: '5522222222' }),
     prospectoDe('Memo', 'no_util', { id: 3, celular: '+52 5533333333', celular10: '5533333333' }),
-    prospectoDe('Ana', 'contactado', { id: 4, celular: '+52 5544444444', celular10: '5544444444' }),
+    prospectoDe('Ana', 'por_cotizar', { id: 4, celular: '+52 5544444444', celular10: '5544444444' }),
   ]);
   const memo = await supertest(app).get('/api/prospectos/cola')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`);
@@ -306,8 +286,8 @@ test('la cola trae horas habiles, semaforo y sugerencia de No util tras 3 toques
   // ya estan saturados, pero WhatsApp es mas urgente relativo a su umbral.
   const toque = f => ({ tipo: 'toque', fecha: f, vendedor: 'Memo' });
   writeProspectos([
-    prospectoDe('Memo', 'nuevo', { id: 1, canal: 'Correo' }),
-    prospectoDe('Memo', 'contactado', { id: 2, celular: '+52 5522222222', celular10: '5522222222', eventos: [
+    prospectoDe('Memo', 'por_cotizar', { id: 1, canal: 'Correo' }),
+    prospectoDe('Memo', 'por_cotizar', { id: 2, celular: '+52 5522222222', celular10: '5522222222', eventos: [
       toque('2026-06-01T17:00:00Z'), toque('2026-06-02T17:00:00Z'), toque('2026-06-03T17:00:00Z'),
     ] }),
   ]);
@@ -331,7 +311,7 @@ test('admin consulta los motivos de No util acumulados; vendedor no', async () =
     prospectoDe('Memo', 'no_util', { eventos: [{ tipo: 'no_util', motivo: 'spam', fecha: '2026-06-11T10:00:00Z', vendedor: 'Memo' }] }),
     prospectoDe('Ana', 'no_util', { id: 2, celular: '+52 5522222222', celular10: '5522222222', eventos: [{ tipo: 'no_util', motivo: 'spam', fecha: '2026-06-12T10:00:00Z', vendedor: 'Ana' }] }),
     prospectoDe('Ana', 'no_util', { id: 3, celular: '+52 5533333333', celular10: '5533333333', eventos: [{ tipo: 'no_util', motivo: 'menudeo', fecha: '2026-06-13T10:00:00Z', vendedor: 'Ana' }] }),
-    prospectoDe('Memo', 'nuevo', { id: 4, celular: '+52 5544444444', celular10: '5544444444' }),
+    prospectoDe('Memo', 'por_cotizar', { id: 4, celular: '+52 5544444444', celular10: '5544444444' }),
   ]);
   const admin = await supertest(app).get('/api/admin/prospectos/no-util')
     .set('Authorization', `Bearer ${ADMIN_TOKEN}`);
@@ -350,7 +330,7 @@ const FUTURO = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 const PASADO = new Date(Date.now() - 3600 * 1000).toISOString();
 
 test('agendar reunion con fecha futura registra el evento y saca al prospecto de la cola', async () => {
-  writeProspectos([prospectoDe('Memo', 'contactado')]);
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
   const res = await supertest(app).post('/api/prospectos/1/reunion')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ fecha: FUTURO });
   assert.equal(res.status, 200);
@@ -384,7 +364,7 @@ test('reunion respeta visibilidad: otro vendedor 403, inexistente 404, sin token
   assert.equal(noExiste.status, 404);
   const sinToken = await supertest(app).post('/api/prospectos/1/reunion').send({ fecha: FUTURO });
   assert.equal(sinToken.status, 401);
-  const resultado = await supertest(app).post('/api/prospectos/1/reunion-resultado').send({ resultado: 'calificado' });
+  const resultado = await supertest(app).post('/api/prospectos/1/reunion-resultado').send({ resultado: 'no_util' });
   assert.equal(resultado.status, 401);
   assert.equal(readProspectos()[0].eventos.length, 0);
 });
@@ -395,8 +375,8 @@ function reunionPasada() {
 
 test('con reunion pasada el prospecto reaparece en la cola al frente con reunionVencida', async () => {
   writeProspectos([
-    prospectoDe('Memo', 'nuevo', { id: 1, eventos: [reunionPasada()] }),
-    prospectoDe('Memo', 'contactado', { id: 2, celular: '+52 5522222222', celular10: '5522222222', fecha: '2026-06-01T00:00:00Z' }),
+    prospectoDe('Memo', 'por_cotizar', { id: 1, eventos: [reunionPasada()] }),
+    prospectoDe('Memo', 'por_cotizar', { id: 2, celular: '+52 5522222222', celular10: '5522222222', fecha: '2026-06-01T00:00:00Z' }),
   ]);
   const cola = await supertest(app).get('/api/prospectos/cola')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`);
@@ -407,34 +387,15 @@ test('con reunion pasada el prospecto reaparece en la cola al frente con reunion
   assert.equal(cola.body[1].reunionVencida, false);
 });
 
-test('resultado calificado salta directo a calificado solo con reunion pendiente', async () => {
-  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [reunionPasada()] })]);
-  const res = await supertest(app).post('/api/prospectos/1/reunion-resultado')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
-  assert.equal(res.status, 200);
-  const guardado = readProspectos()[0];
-  assert.equal(guardado.etapa, 'calificado');
-  const ev = guardado.eventos.find(e => e.tipo === 'etapa');
-  assert.equal(ev.de, 'nuevo');
-  assert.equal(ev.a, 'calificado');
-  assert.equal(ev.vendedor, 'Memo');
-  assert.ok(ev.fecha);
-  // y el PATCH manual sigue rechazando el salto nuevo -> calificado
-  writeProspectos([prospectoDe('Memo', 'nuevo')]);
-  const manual = await supertest(app).patch('/api/prospectos/1/etapa')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'calificado' });
-  assert.equal(manual.status, 400);
-});
-
 test('resultado no_util exige motivo del catalogo y registra la salida', async () => {
-  writeProspectos([prospectoDe('Memo', 'contactado', { eventos: [reunionPasada()] })]);
+  writeProspectos([prospectoDe('Memo', 'por_cotizar', { eventos: [reunionPasada()] })]);
   const sinMotivo = await supertest(app).post('/api/prospectos/1/reunion-resultado')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util' });
   assert.equal(sinMotivo.status, 400);
   const motivoInvalido = await supertest(app).post('/api/prospectos/1/reunion-resultado')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util', motivo: 'no me gusto' });
   assert.equal(motivoInvalido.status, 400);
-  assert.equal(readProspectos()[0].etapa, 'contactado');
+  assert.equal(readProspectos()[0].etapa, 'por_cotizar');
   const ok = await supertest(app).post('/api/prospectos/1/reunion-resultado')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util', motivo: 'sin presupuesto' });
   assert.equal(ok.status, 200);
@@ -449,33 +410,33 @@ test('reunion-resultado rechaza sin reunion pendiente o con resultado invalido',
   // sin reunion
   writeProspectos([prospectoDe('Memo')]);
   const sinReunion = await supertest(app).post('/api/prospectos/1/reunion-resultado')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util', motivo: 'spam' });
   assert.equal(sinReunion.status, 400);
   // reunion futura: aun no hay resultado que registrar
-  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [
+  writeProspectos([prospectoDe('Memo', 'por_cotizar', { eventos: [
     { tipo: 'reunion', fecha_reunion: FUTURO, fecha: new Date().toISOString(), vendedor: 'Memo' },
   ] })]);
   const futura = await supertest(app).post('/api/prospectos/1/reunion-resultado')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util', motivo: 'spam' });
   assert.equal(futura.status, 400);
   // reunion pasada pero con evento posterior (la condicion se limpio)
-  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [
+  writeProspectos([prospectoDe('Memo', 'por_cotizar', { eventos: [
     reunionPasada(),
     { tipo: 'toque', fecha: new Date().toISOString(), vendedor: 'Memo' },
   ] })]);
   const limpiada = await supertest(app).post('/api/prospectos/1/reunion-resultado')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util', motivo: 'spam' });
   assert.equal(limpiada.status, 400);
-  // resultado fuera de catalogo
-  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [reunionPasada()] })]);
+  // resultado fuera de catalogo (calificado se elimino del modelo, ADR-0005)
+  writeProspectos([prospectoDe('Memo', 'por_cotizar', { eventos: [reunionPasada()] })]);
   const invalido = await supertest(app).post('/api/prospectos/1/reunion-resultado')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'cotizado' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'calificado' });
   assert.equal(invalido.status, 400);
-  assert.equal(readProspectos()[0].etapa, 'nuevo');
+  assert.equal(readProspectos()[0].etapa, 'por_cotizar');
 });
 
 test('re-agendar registra otro evento reunion y la ultima manda en la cola', async () => {
-  writeProspectos([prospectoDe('Memo', 'nuevo', { eventos: [reunionPasada()] })]);
+  writeProspectos([prospectoDe('Memo', 'por_cotizar', { eventos: [reunionPasada()] })]);
   const res = await supertest(app).post('/api/prospectos/1/reunion')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ fecha: FUTURO });
   assert.equal(res.status, 200);

@@ -14,7 +14,7 @@ function prospecto(extra = {}) {
   return {
     id: nextId++, fecha: '2026-06-10T16:00:00Z', vendedor: 'Memo',
     celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla',
-    canal: 'WhatsApp', etapa: 'nuevo', eventos: [], data: {},
+    canal: 'WhatsApp', etapa: 'por_cotizar', eventos: [], data: {},
     ...extra,
   };
 }
@@ -23,16 +23,15 @@ function toque(fecha) {
   return { tipo: 'toque', fecha, vendedor: 'Memo' };
 }
 
-test('S1: solo entran prospectos en etapa nuevo, contactado o calificado', () => {
+test('S1: solo entran prospectos en Por Cotizar; Seguimiento y No util quedan fuera', () => {
   const cola = calcularColaProspectos([
-    prospecto({ etapa: 'nuevo' }),
-    prospecto({ etapa: 'contactado' }),
-    prospecto({ etapa: 'calificado' }),
-    prospecto({ etapa: 'cotizado' }),
+    prospecto({ etapa: 'por_cotizar' }),
+    prospecto({ etapa: 'por_cotizar' }),
+    prospecto({ etapa: 'seguimiento' }),
     prospecto({ etapa: 'no_util' }),
   ], AHORA);
-  assert.equal(cola.length, 3);
-  assert.deepEqual(cola.map(i => i.etapa).sort(), ['calificado', 'contactado', 'nuevo']);
+  assert.equal(cola.length, 2);
+  assert.deepEqual(cola.map(i => i.etapa), ['por_cotizar', 'por_cotizar']);
 });
 
 test('S2: sin toques las horas corren desde la captura', () => {
@@ -130,13 +129,13 @@ test('S10: la cola expone los datos que la UI necesita', () => {
   assert.equal(item.celular, '+52 5512345678');
   assert.equal(item.ciudad, 'Puebla');
   assert.equal(item.canal, 'WhatsApp');
-  assert.equal(item.etapa, 'nuevo');
+  assert.equal(item.etapa, 'por_cotizar');
   assert.equal(item.vendedor, 'Memo');
   assert.equal(item.color, 'rojo');
 });
 
 test('S12: el prospecto convertido en cliente sigue en la cola con la bandera yaEsCliente (#46)', () => {
-  const convertido = prospecto({ etapa: 'contactado', data: { cliente_id: 88 } });
+  const convertido = prospecto({ etapa: 'por_cotizar', data: { cliente_id: 88 } });
   const normal = prospecto({ data: {} });
   const sinData = prospecto({ data: null });
   const cola = calcularColaProspectos([convertido, normal, sinData], AHORA);
@@ -148,7 +147,7 @@ test('S12: el prospecto convertido en cliente sigue en la cola con la bandera ya
 
 test('S11: lista vacia o sin activos devuelve cola vacia', () => {
   assert.deepEqual(calcularColaProspectos([], AHORA), []);
-  assert.deepEqual(calcularColaProspectos([prospecto({ etapa: 'cotizado' })], AHORA), []);
+  assert.deepEqual(calcularColaProspectos([prospecto({ etapa: 'seguimiento' })], AHORA), []);
 });
 
 // === Issue #45: reunion diagnostico (CONTEXT.md, "Captura de prospecto") ===
@@ -184,8 +183,8 @@ test('R3: cualquier evento posterior a la fecha de la reunion limpia el pendient
   ] });
   const conEtapa = prospecto({ eventos: [
     reunion('2026-06-10T16:30:00Z', '2026-06-09T16:00:00Z'),
-    { tipo: 'etapa', de: 'nuevo', a: 'contactado', fecha: '2026-06-10T17:00:00Z', vendedor: 'Memo' },
-  ], etapa: 'contactado' });
+    { tipo: 'toque', fecha: '2026-06-10T17:00:00Z', vendedor: 'Memo' },
+  ], etapa: 'por_cotizar' });
   const cola = calcularColaProspectos([conToque, conEtapa], AHORA);
   assert.equal(cola.length, 2);
   assert.equal(cola.find(i => i.id === conToque.id).reunionVencida, false);

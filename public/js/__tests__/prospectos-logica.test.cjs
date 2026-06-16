@@ -6,16 +6,14 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
   validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml,
   buildEsperaBadgeHtml, buildColaProspectosHtml, necesitaCanal, validarCanalCotizacion,
-  buildCanalModalHtml, reunionFutura, reunionPendienteResultado,
-  agruparTablero, puedeArrastrar, buildTableroHtml, buildMotivoNoUtilModalHtml;
+  buildCanalModalHtml, reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
     validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil,
     buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml,
     necesitaCanal, validarCanalCotizacion, buildCanalModalHtml,
-    reunionFutura, reunionPendienteResultado,
-    agruparTablero, puedeArrastrar, buildTableroHtml, buildMotivoNoUtilModalHtml } = await import('../prospectos-logica.js'));
+    reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -65,13 +63,13 @@ test('P6: validarProspectoBody rechaza canal fuera del catalogo cerrado', () => 
 const PROSPECTO = {
   id: 3, fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo',
   celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla',
-  canal: 'WhatsApp', etapa: 'nuevo', data: {},
+  canal: 'WhatsApp', etapa: 'por_cotizar', data: {},
 };
 
-test('P8: buildProspectoCardHtml muestra nombre, etapa Nuevo, vendedor, ciudad, canal y celular', () => {
+test('P8: buildProspectoCardHtml muestra nombre, etapa Por Cotizar, vendedor, ciudad, canal y celular', () => {
   const html = buildProspectoCardHtml(PROSPECTO);
   assert.match(html, /Laura/);
-  assert.match(html, /Nuevo/);
+  assert.match(html, /Por Cotizar/);
   assert.match(html, /Memo/);
   assert.match(html, /Puebla/);
   assert.match(html, /WhatsApp/);
@@ -121,41 +119,36 @@ test('T1: MOTIVOS_NO_UTIL es el catalogo cerrado canonico de CONTEXT.md', () => 
   assert.deepEqual(MOTIVOS_NO_UTIL, ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta']);
 });
 
-test('T2: siguienteEtapa avanza un paso y se detiene en calificado', () => {
-  assert.equal(siguienteEtapa('nuevo'), 'contactado');
-  assert.equal(siguienteEtapa('contactado'), 'calificado');
-  assert.equal(siguienteEtapa('calificado'), null);
-  assert.equal(siguienteEtapa('cotizado'), null);
+test('T2: en el pipeline unificado no hay avance manual de etapa antes de cotizar', () => {
+  assert.equal(siguienteEtapa('por_cotizar'), null);
+  assert.equal(siguienteEtapa('seguimiento'), null);
   assert.equal(siguienteEtapa('no_util'), null);
 });
 
-test('T3: validarTransicion acepta los avances manuales validos', () => {
-  assert.equal(validarTransicion('nuevo', 'contactado'), null);
-  assert.equal(validarTransicion('contactado', 'calificado'), null);
+test('T3: validarTransicion rechaza el avance manual entre etapas del embudo', () => {
+  assert.ok(validarTransicion('por_cotizar', 'seguimiento'));
+  assert.ok(validarTransicion('seguimiento', 'anticipo_pagado'));
 });
 
-test('T4: validarTransicion rechaza retrocesos, saltos y cotizado manual', () => {
-  assert.ok(validarTransicion('contactado', 'nuevo'));
-  assert.ok(validarTransicion('calificado', 'contactado'));
-  assert.ok(validarTransicion('nuevo', 'calificado'));
-  assert.ok(validarTransicion('nuevo', 'nuevo'));
-  assert.ok(validarTransicion('calificado', 'cotizado'));
-  assert.ok(validarTransicion('nuevo', 'inventada'));
-  assert.ok(validarTransicion('nuevo', undefined));
+test('T4: validarTransicion rechaza saltos, etapas inventadas y avances sin No util', () => {
+  assert.ok(validarTransicion('por_cotizar', 'producto_entregado'));
+  assert.ok(validarTransicion('por_cotizar', 'por_cotizar'));
+  assert.ok(validarTransicion('por_cotizar', 'inventada'));
+  assert.ok(validarTransicion('por_cotizar', undefined));
 });
 
-test('T5: validarTransicion permite No util desde cualquier etapa con motivo del catalogo', () => {
-  for (const etapa of ['nuevo', 'contactado', 'calificado', 'cotizado']) {
+test('T5: validarTransicion permite No util desde cualquier etapa activa con motivo del catalogo', () => {
+  for (const etapa of ['por_cotizar', 'seguimiento', 'anticipo_pagado']) {
     assert.equal(validarTransicion(etapa, 'no_util', 'spam'), null);
   }
 });
 
 test('T6: validarTransicion rechaza No util sin motivo o con motivo fuera de catalogo', () => {
-  assert.match(validarTransicion('nuevo', 'no_util'), /motivo/i);
-  assert.match(validarTransicion('nuevo', 'no_util', ''), /motivo/i);
-  assert.match(validarTransicion('nuevo', 'no_util', 'no me cayo bien'), /motivo/i);
+  assert.match(validarTransicion('por_cotizar', 'no_util'), /motivo/i);
+  assert.match(validarTransicion('por_cotizar', 'no_util', ''), /motivo/i);
+  assert.match(validarTransicion('por_cotizar', 'no_util', 'no me cayo bien'), /motivo/i);
   assert.ok(validarTransicion('no_util', 'no_util', 'spam'));
-  assert.ok(validarTransicion('no_util', 'contactado'));
+  assert.ok(validarTransicion('no_util', 'seguimiento'));
 });
 
 test('T7: buildWaLink arma el link wa.me con solo digitos del celular', () => {
@@ -166,7 +159,7 @@ test('T7: buildWaLink arma el link wa.me con solo digitos del celular', () => {
 });
 
 const EVENTOS = [
-  { tipo: 'etapa', de: 'nuevo', a: 'contactado', fecha: '2026-06-11T10:00:00.000Z', vendedor: 'Memo' },
+  { tipo: 'cotizacion', cotizacion_id: 42, de: 'por_cotizar', fecha: '2026-06-11T10:00:00.000Z', vendedor: 'Memo' },
   { tipo: 'toque', fecha: '2026-06-12T10:00:00.000Z', vendedor: 'Ana' },
   { tipo: 'no_util', motivo: 'sin respuesta', fecha: '2026-06-13T10:00:00.000Z', vendedor: 'Memo' },
 ];
@@ -174,20 +167,20 @@ const EVENTOS = [
 test('T8: buildHistorialHtml lista captura y eventos en orden cronologico', () => {
   const html = buildHistorialHtml({ ...PROSPECTO, eventos: EVENTOS });
   const iCaptura = html.indexOf('Capturado');
-  const iEtapa = html.indexOf('Contactado');
+  const iCot = html.indexOf('Cotización');
   const iToque = html.indexOf('Toque');
   const iSalida = html.indexOf('sin respuesta');
-  assert.ok(iCaptura >= 0 && iEtapa > iCaptura && iToque > iEtapa && iSalida > iToque);
+  assert.ok(iCaptura >= 0 && iCot > iCaptura && iToque > iCot && iSalida > iToque);
   assert.match(html, /Memo/);
   assert.match(html, /Ana/);
 });
 
 test('T9: buildHistorialHtml ordena por fecha aunque los eventos lleguen desordenados', () => {
   const html = buildHistorialHtml({ ...PROSPECTO, eventos: [EVENTOS[2], EVENTOS[0], EVENTOS[1]] });
-  const iEtapa = html.indexOf('Contactado');
+  const iCot = html.indexOf('Cotización');
   const iToque = html.indexOf('Toque');
   const iSalida = html.indexOf('sin respuesta');
-  assert.ok(iEtapa >= 0 && iToque > iEtapa && iSalida > iToque);
+  assert.ok(iCot >= 0 && iToque > iCot && iSalida > iToque);
 });
 
 test('T10: buildHistorialHtml tolera prospecto sin eventos y escapa datos de usuario', () => {
@@ -231,11 +224,11 @@ test('T10c: buildHistorialHtml muestra el evento de cotizacion con id y quien la
   assert.equal(xss.includes('<b>Memo</b>'), false);
 });
 
-test('T11: la card de un prospecto activo trae wa.me, avanzar etapa, toque, No util e historial', () => {
+test('T11: la card de un prospecto en Por Cotizar trae wa.me, toque, No util, reunion e historial', () => {
   const html = buildProspectoCardHtml(PROSPECTO);
   assert.match(html, /href="https:\/\/wa\.me\/525512345678"/);
-  assert.match(html, /avanzarEtapaProspecto\(3, 'contactado'\)/);
-  assert.match(html, /Contactado/);
+  // En el pipeline unificado ya no hay boton de avance manual de etapa.
+  assert.equal(html.includes('avanzarEtapaProspecto'), false);
   assert.match(html, /registrarToqueProspecto\(3\)/);
   assert.match(html, /marcarNoUtilProspecto\(3\)/);
   assert.match(html, /pr-motivo-3/);
@@ -244,12 +237,12 @@ test('T11: la card de un prospecto activo trae wa.me, avanzar etapa, toque, No u
   assert.match(html, /pr-historial-3/);
 });
 
-test('T12: la card de contactado avanza a calificado y la de calificado ya no ofrece avance manual', () => {
-  const contactado = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'contactado' });
-  assert.match(contactado, /avanzarEtapaProspecto\(3, 'calificado'\)/);
-  const calificado = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'calificado' });
-  assert.equal(calificado.includes('avanzarEtapaProspecto'), false);
-  assert.match(calificado, /registrarToqueProspecto\(3\)/);
+test('T12: la card en Seguimiento ya no ofrece acciones de prospecto; la oportunidad la lleva la cotizacion', () => {
+  const seguimiento = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'seguimiento' });
+  assert.equal(seguimiento.includes('avanzarEtapaProspecto'), false);
+  assert.equal(seguimiento.includes('registrarToqueProspecto'), false);
+  assert.match(seguimiento, /Seguimiento/);
+  assert.match(seguimiento, /toggleHistorialProspecto\(3\)/);
 });
 
 test('T13: la card de un prospecto No util no ofrece acciones de trabajo pero si historial', () => {
@@ -287,7 +280,7 @@ test('T15: buildMotivosNoUtilHtml pinta el conteo ordenado de mayor a menor y to
 
 const ITEM_COLA = {
   id: 3, nombre: 'Laura', celular: '+52 5512345678', ciudad: 'Puebla',
-  canal: 'WhatsApp', etapa: 'nuevo', vendedor: 'Memo',
+  canal: 'WhatsApp', etapa: 'por_cotizar', vendedor: 'Memo',
   horas: 2, toques: 0, color: 'rojo', sugerirNoUtil: false,
 };
 
@@ -311,14 +304,14 @@ test('C2: buildProspectoCardHtml incluye la etiqueta de espera cuando recibe el 
 test('C3: buildColaProspectosHtml pinta los items en el orden recibido con badge, wa.me y toque', () => {
   const html = buildColaProspectosHtml([
     ITEM_COLA,
-    { ...ITEM_COLA, id: 4, nombre: 'Pedro', celular: '+52 5599999999', canal: 'Correo', etapa: 'contactado', horas: 5, color: 'ambar' },
+    { ...ITEM_COLA, id: 4, nombre: 'Pedro', celular: '+52 5599999999', canal: 'Correo', etapa: 'por_cotizar', horas: 5, color: 'ambar' },
   ]);
   assert.ok(html.indexOf('Laura') < html.indexOf('Pedro'));
   assert.match(html, /espera-rojo/);
   assert.match(html, /espera-ambar/);
   assert.match(html, /https:\/\/wa\.me\/525512345678/);
   assert.match(html, /registrarToqueProspecto\(3\)/);
-  assert.match(html, /Contactado/);
+  assert.match(html, /Por Cotizar/);
 });
 
 test('C4: buildColaProspectosHtml sugiere No util tras 3 toques con confirmacion del vendedor', () => {
@@ -413,14 +406,14 @@ test('RU3: la card muestra la etiqueta de reunion futura y convive con la de cli
   assert.equal(pasada.includes('Reunión el'), false);
 });
 
-test('RU4: el item de cola con reunion vencida pide registrar el resultado con ambos botones', () => {
+test('RU4: el item de cola con reunion vencida pide registrar el resultado (salida a No util)', () => {
   const html = buildColaProspectosHtml([{
     ...ITEM_COLA, reunionVencida: true, fechaReunion: '2026-06-09T17:00:00.000Z',
   }]);
   assert.match(html, /Reunión del/);
   assert.match(html, /registrar resultado/);
-  assert.match(html, /resultadoReunionProspecto\(3, 'calificado'\)/);
-  assert.match(html, /Calificado/);
+  // El avance a Calificado se elimino (ADR-0005): la card ya no lo ofrece.
+  assert.equal(html.includes("'calificado'"), false);
   assert.match(html, /id="cola-motivo-3"/);
   assert.match(html, /resultadoReunionNoUtilProspecto\(3\)/);
   for (const m of MOTIVOS_NO_UTIL) assert.ok(html.includes(m), `falta motivo ${m}`);
@@ -455,115 +448,9 @@ test('RU6: reunionFutura y reunionPendienteResultado obedecen a la ultima reunio
   assert.equal(reunionPendienteResultado({ ...PROSPECTO, eventos: [REUNION_PASADA, REUNION_FUTURA] }, AHORA), null);
 });
 
-// === Issue #49: tablero kanban de prospectos ===
-
-const TABLERO = [
-  { ...PROSPECTO, id: 1, nombre: 'Ana', etapa: 'nuevo', fecha: '2026-06-08T10:00:00.000Z' },
-  { ...PROSPECTO, id: 2, nombre: 'Beto', etapa: 'contactado', fecha: '2026-06-09T10:00:00.000Z' },
-  { ...PROSPECTO, id: 3, nombre: 'Carla', etapa: 'nuevo', fecha: '2026-06-10T10:00:00.000Z' },
-  { ...PROSPECTO, id: 4, nombre: 'Dario', etapa: 'cotizado', fecha: '2026-06-07T10:00:00.000Z' },
-  { ...PROSPECTO, id: 5, nombre: 'Elena', etapa: 'no_util', fecha: '2026-06-06T10:00:00.000Z',
-    eventos: [{ tipo: 'no_util', motivo: 'menudeo', fecha: '2026-06-07T10:00:00.000Z', vendedor: 'Memo' }] },
-];
-
-test('K1: agruparTablero reparte por etapa con las cinco columnas siempre presentes', () => {
-  const cols = agruparTablero(TABLERO);
-  assert.deepEqual(Object.keys(cols), ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util']);
-  assert.deepEqual(cols.nuevo.map(p => p.id), [3, 1]);
-  assert.deepEqual(cols.contactado.map(p => p.id), [2]);
-  assert.deepEqual(cols.calificado, []);
-  assert.deepEqual(cols.cotizado.map(p => p.id), [4]);
-  assert.deepEqual(cols.no_util.map(p => p.id), [5]);
-});
-
-test('K2: agruparTablero ordena cada columna del mas reciente al mas antiguo y tolera vacio', () => {
-  const cols = agruparTablero([
-    { ...PROSPECTO, id: 7, etapa: 'nuevo', fecha: '2026-06-01T10:00:00.000Z' },
-    { ...PROSPECTO, id: 8, etapa: 'nuevo', fecha: '2026-06-05T10:00:00.000Z' },
-    { ...PROSPECTO, id: 9, etapa: 'nuevo', fecha: '2026-06-03T10:00:00.000Z' },
-  ]);
-  assert.deepEqual(cols.nuevo.map(p => p.id), [8, 9, 7]);
-  const vacio = agruparTablero([]);
-  assert.deepEqual(Object.keys(vacio), ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util']);
-  assert.deepEqual(vacio.nuevo, []);
-  assert.deepEqual(agruparTablero(null).nuevo, []);
-});
-
-test('K3: puedeArrastrar permite un paso adelante y la salida a No util', () => {
-  assert.equal(puedeArrastrar('nuevo', 'contactado'), true);
-  assert.equal(puedeArrastrar('contactado', 'calificado'), true);
-  assert.equal(puedeArrastrar('nuevo', 'no_util'), true);
-  assert.equal(puedeArrastrar('contactado', 'no_util'), true);
-  assert.equal(puedeArrastrar('calificado', 'no_util'), true);
-  assert.equal(puedeArrastrar('cotizado', 'no_util'), true);
-});
-
-test('K4: puedeArrastrar rechaza saltos, retrocesos, cotizado como destino y no_util como origen', () => {
-  assert.equal(puedeArrastrar('nuevo', 'calificado'), false);
-  assert.equal(puedeArrastrar('nuevo', 'cotizado'), false);
-  assert.equal(puedeArrastrar('contactado', 'cotizado'), false);
-  assert.equal(puedeArrastrar('calificado', 'cotizado'), false);
-  assert.equal(puedeArrastrar('contactado', 'nuevo'), false);
-  assert.equal(puedeArrastrar('calificado', 'contactado'), false);
-  assert.equal(puedeArrastrar('cotizado', 'calificado'), false);
-  assert.equal(puedeArrastrar('nuevo', 'nuevo'), false);
-  assert.equal(puedeArrastrar('no_util', 'nuevo'), false);
-  assert.equal(puedeArrastrar('no_util', 'no_util'), false);
-  assert.equal(puedeArrastrar('no_util', 'contactado'), false);
-});
-
-test('K5: buildTableroHtml pinta las cinco columnas con label, contador y data-etapa', () => {
-  const html = buildTableroHtml(TABLERO);
-  for (const etapa of ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util']) {
-    assert.match(html, new RegExp(`data-etapa="${etapa}"`));
-  }
-  assert.match(html, /Nuevo/);
-  assert.match(html, /Contactado/);
-  assert.match(html, /Calificado/);
-  assert.match(html, /Cotizado/);
-  assert.match(html, /No útil/);
-  assert.match(html, /tablero-col-count">2</);
-  assert.match(html, /tablero-col-count">0</);
-});
-
-test('K6: buildTableroHtml envuelve cada tarjeta con data-id, data-etapa y draggable salvo no_util', () => {
-  const html = buildTableroHtml(TABLERO);
-  assert.match(html, /draggable="true"[^>]*data-id="1"[^>]*data-etapa="nuevo"/);
-  assert.match(html, /draggable="true"[^>]*data-id="4"[^>]*data-etapa="cotizado"/);
-  assert.match(html, /draggable="false"[^>]*data-id="5"[^>]*data-etapa="no_util"/);
-  assert.match(html, /Ana/);
-  assert.match(html, /Dario/);
-});
-
-test('K7: buildTableroHtml reutiliza la card existente y pasa el item de la cola por id', () => {
-  const colaPorId = new Map([[1, { ...ITEM_COLA, id: 1, horas: 3, color: 'rojo' }]]);
-  const html = buildTableroHtml(TABLERO, colaPorId);
-  assert.match(html, /espera-rojo/);
-  assert.match(html, /avanzarEtapaProspecto\(1, 'contactado'\)/);
-  assert.match(html, /toggleHistorialProspecto\(4\)/);
-  const sinCola = buildTableroHtml(TABLERO);
-  assert.equal(sinCola.includes('espera-'), false);
-});
-
-test('K8: las tarjetas de No util muestran el motivo del ultimo evento no_util, escapado', () => {
-  const html = buildTableroHtml(TABLERO);
-  assert.match(html, /Motivo: menudeo/);
-  const reincidente = buildTableroHtml([{
-    ...PROSPECTO, id: 6, etapa: 'no_util', eventos: [
-      { tipo: 'no_util', motivo: 'spam', fecha: '2026-06-07T10:00:00.000Z', vendedor: 'Memo' },
-      { tipo: 'toque', fecha: '2026-06-08T10:00:00.000Z', vendedor: 'Memo' },
-      { tipo: 'no_util', motivo: 'sin respuesta', fecha: '2026-06-09T10:00:00.000Z', vendedor: 'Memo' },
-    ],
-  }]);
-  assert.match(reincidente, /Motivo: sin respuesta/);
-  const sinEvento = buildTableroHtml([{ ...PROSPECTO, id: 7, etapa: 'no_util' }]);
-  assert.equal(sinEvento.includes('Motivo:'), false);
-  const xss = buildTableroHtml([{
-    ...PROSPECTO, id: 8, etapa: 'no_util',
-    eventos: [{ tipo: 'no_util', motivo: '<b>x</b>', fecha: '2026-06-07T10:00:00.000Z', vendedor: 'Memo' }],
-  }]);
-  assert.equal(xss.includes('Motivo: <b>x</b>'), false);
-});
+// === Issue #53: el tablero unico del pipeline reemplaza el kanban de
+// prospectos del modelo previo; su logica vive en pipeline-logica.js. Aqui se
+// conservan el modal de motivo (reusable), la card compacta y el boton Cotizar.
 
 test('K9: buildMotivoNoUtilModalHtml trae el select con el catalogo cerrado y Confirmar/Cancelar', () => {
   const html = buildMotivoNoUtilModalHtml();
@@ -596,11 +483,11 @@ test('K12: la card compacta del tablero guarda las acciones pesadas tras un togg
   assert.equal(normal.includes('toggleAccionesProspecto'), false);
 });
 
-test('K12b: en la card compacta el avance de etapa queda visible, no tras el toggle', () => {
+test('K12b: en la card compacta del prospecto el Cotizar queda visible, no tras el toggle', () => {
   const compacta = buildProspectoCardHtml(PROSPECTO, null, new Date(), { compacta: true });
-  const avance = compacta.indexOf('avanzarEtapaProspecto');
+  const cotizar = compacta.indexOf('cotizarProspecto');
   const ocultas = compacta.indexOf('id="pr-acciones-3"');
-  assert.ok(avance > -1 && avance < ocultas);
+  assert.ok(cotizar > -1 && cotizar < ocultas);
 });
 
 test('K15: la card de un prospecto activo trae el boton Cotizar', () => {
@@ -608,28 +495,4 @@ test('K15: la card de un prospecto activo trae el boton Cotizar', () => {
   assert.match(html, /cotizarProspecto\(3\)/);
   const noUtil = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'no_util' });
   assert.equal(noUtil.includes('cotizarProspecto'), false);
-});
-
-test('K14: una columna vacia del tablero pinta su estado vacio', () => {
-  const html = buildTableroHtml([]);
-  assert.match(html, /tablero-col-vacia/);
-});
-
-test('K13: el tablero usa cards compactas', () => {
-  const html = buildTableroHtml(TABLERO);
-  assert.match(html, /toggleAccionesProspecto\(/);
-});
-
-test('K10: el header de columna es un pill con clase por etapa', () => {
-  const html = buildTableroHtml(TABLERO);
-  for (const etapa of ['nuevo', 'contactado', 'calificado', 'cotizado', 'no_util']) {
-    assert.match(html, new RegExp('col-pill col-pill-' + etapa));
-  }
-});
-
-test('K11: la columna Nuevo trae el quick-add y las demas no', () => {
-  const html = buildTableroHtml(TABLERO);
-  const matches = html.match(/abrirCapturaRapida\(\)/g) || [];
-  assert.equal(matches.length, 1);
-  assert.match(html, /Prospecto rápido/);
 });
