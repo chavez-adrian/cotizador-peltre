@@ -20,7 +20,7 @@ import * as prospectosStore from './lib/prospectos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
-import { transicionPorCotizacion, esSalida } from './lib/pipeline.js';
+import { transicionPorCotizacion, transicionPorAsignacion, esSalida } from './lib/pipeline.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -498,6 +498,31 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   if (error) return res.status(400).json({ error });
   await prospectosStore.actualizarDatos(p.id, buildEdicionProspectoDatos(req.body));
   res.json({ ok: true });
+});
+
+// Asignar un vendedor a una tarjeta en No Asignado (issue #57, CONTEXT.md
+// "Etapas del pipeline" + "Visibilidad"): admin-only (solo quien asigna ve No
+// Asignado). La transicion de etapa la decide la regla de dominio
+// (transicionPorAsignacion) -- desde no_asignado -> por_cotizar; la capa de IO
+// (asignarVendedor) la aplica. El vendedor elegido debe estar en el catalogo
+// (data/vendedores.json, la misma fuente que pobla el selector en /api/catalogos).
+app.patch('/api/prospectos/:id/asignar', authMiddleware, adminMiddleware, async (req, res) => {
+  const { vendedor } = req.body || {};
+  const catalogo = (readJSON('vendedores.json') || []).filter(v => v.operam_id != null);
+  if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
+    return res.status(400).json({ error: 'El vendedor a asignar debe ser uno del catálogo' });
+  }
+  const p = await prospectosStore.obtener(parseInt(req.params.id));
+  if (!p) return res.status(404).json({ error: 'No encontrado' });
+  const destino = transicionPorAsignacion(p.etapa);
+  if (!destino) {
+    return res.status(400).json({ error: 'Solo se asigna vendedor a una tarjeta en No Asignado' });
+  }
+  await prospectosStore.asignarVendedor(p.id, vendedor, destino, {
+    tipo: 'asignacion', de: p.etapa, a: vendedor,
+    fecha: new Date().toISOString(), vendedor: req.user.name,
+  });
+  res.json({ ok: true, etapa: destino });
 });
 
 app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
