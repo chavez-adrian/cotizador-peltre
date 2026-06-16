@@ -390,6 +390,48 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   res.status(201).json({ ok: true, id });
 });
 
+// Alta de prospecto SIN vendedor (issue #57, CONTEXT.md "Etapas del pipeline":
+// No Asignado). La tarjeta nace en no_asignado y sin dueno; la asigna luego el
+// admin (PATCH .../asignar) y entonces pasa a Por Cotizar. La consumira el
+// formulario web "Peltre de Mayoreo" (y a futuro un bot), pero exponer esa
+// escritura publica y su auth (token/API key) es una decision de seguridad
+// posterior y fuera de alcance: aqui la ruta es admin-only (solo quien asigna ve
+// No Asignado, CONTEXT.md "Visibilidad"). Reusa los mismos guardrails de
+// /api/prospectos via clasificarCelular: un celular que ya es prospecto o cliente
+// Operam no se duplica.
+app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (req, res) => {
+  const body = req.body || {};
+  const error = validarProspectoBody(body);
+  if (error) return res.status(400).json({ error });
+  const clasificacion = await clasificarCelular(body.celular);
+  if (clasificacion.tipo === 'prospecto') {
+    return respuestaProspectoExistente(res, clasificacion.prospecto, req.user);
+  }
+  if (clasificacion.tipo === 'cliente') {
+    return res.status(409).json({
+      error: `Este celular es del cliente ${clasificacion.cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
+    });
+  }
+  const data = {};
+  for (const k of PROSPECTO_OPCIONALES) {
+    if (body[k] !== undefined && body[k] !== null && body[k] !== '') data[k] = body[k];
+  }
+  let id;
+  try {
+    id = await prospectosStore.crear({
+      fecha: new Date().toISOString(), vendedor: null,
+      celular: body.celular.trim(), nombre: body.nombre.trim(),
+      ciudad: body.ciudad.trim(), canal: body.canal, etapa: 'no_asignado', data,
+    });
+  } catch (e) {
+    if (e.code !== '23505') throw e;
+    const dup = await prospectosStore.buscarPorCelular(body.celular);
+    if (dup) return respuestaProspectoExistente(res, dup, req.user);
+    return res.status(409).json({ error: 'Este celular ya es un prospecto' });
+  }
+  res.status(201).json({ ok: true, id });
+});
+
 app.get('/api/prospectos', authMiddleware, async (req, res) => {
   const todos = await prospectosStore.listar();
   const visibles = req.user.role === 'admin'

@@ -172,6 +172,72 @@ test('rutas de prospectos sin token responden 401', async () => {
   assert.equal(readProspectos().length, 0);
 });
 
+// === Issue #57: alta sin asignar (No Asignado) + asignacion de vendedor ===
+
+// La ruta de alta sin asignar es admin-only en este slice: la consumira el
+// formulario web "Peltre de Mayoreo" (y a futuro un bot), pero su auth publica
+// es una decision de seguridad posterior y fuera de alcance. No se expone una
+// escritura publica sin control.
+test('POST /api/prospectos/sin-asignar crea la tarjeta en No Asignado sin vendedor (admin)', async () => {
+  writeProspectos([]);
+  const res = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: 'Mayoreo Web', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(res.status, 201);
+  assert.ok(res.body.id);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'no_asignado');
+  assert.equal(p.vendedor, null);
+  assert.equal(p.nombre, 'Mayoreo Web');
+  assert.equal(p.canal, 'Formulario web');
+});
+
+test('POST /api/prospectos/sin-asignar exige admin: vendedor 403, sin token 401', async () => {
+  writeProspectos([]);
+  const sinToken = await supertest(app).post('/api/prospectos/sin-asignar')
+    .send({ celular: '+52 5512345678', nombre: 'X', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(sinToken.status, 401);
+  const vendedor = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: 'X', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(vendedor.status, 403);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('POST /api/prospectos/sin-asignar valida obligatorios y rechaza con 400', async () => {
+  writeProspectos([]);
+  const sinNombre = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: '', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(sinNombre.status, 400);
+  const canalInvalido = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: 'X', ciudad: 'Toluca', canal: 'TikTok' });
+  assert.equal(canalInvalido.status, 400);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('POST /api/prospectos/sin-asignar reusa los guardrails: un celular que ya es prospecto no se duplica', async () => {
+  // Un prospecto propio de Memo (ya con dueno): el alta sin asignar no lo duplica.
+  writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
+  const res = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 5512345678', nombre: 'Otro', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(res.status, 409);
+  assert.equal(readProspectos().length, 1);
+});
+
+test('POST /api/prospectos/sin-asignar reusa el guardrail de cliente Operam: no crea prospecto', async () => {
+  writeProspectos([]);
+  mockListadoClientes([CLIENTE_OPERAM]);
+  const res = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({ celular: '+52 1 55 1234 5678', nombre: 'X', ciudad: 'Toluca', canal: 'Formulario web' });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /como cliente/i);
+  assert.equal(readProspectos().length, 0);
+});
+
 // === Issue #43: etapas, toques, No util e historial ===
 
 function prospectoDe(vendedor, etapa = 'por_cotizar', extra = {}) {
