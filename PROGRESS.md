@@ -26,7 +26,7 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 
 ## Mapa de issues (#53–#66, todos hijos de #52)
 - **#53 CERRADO** ✅ — tracer: bottom-nav + 7 etapas + migración + tablero único. Mergeado a main (deploy Render).
-- #54 crear prospecto en Por Cotizar (+global) — **IMPLEMENTADO en rama `issue-54-crear-prospecto`** (pendiente verificación del orquestador + demo de Adrián). Suite 561/561.
+- **#54 CERRADO** ✅ — botón `+` global (Nueva cotización / Nuevo prospecto) + crear prospecto a mano que nace en Por Cotizar auto-asignado. Mergeado a main (deploy Render). Suite 561/561.
 - **#55 CERRADO** ✅ — cotizar → Seguimiento auto (regla de dominio `transicionPorCotizacion`). Mergeado a main.
 - #56 mover a Seguimiento manual con folio — desbloqueado
 - #57 No Asignado + asignación — desbloqueado
@@ -116,7 +116,7 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53, #55, #58, #63, #64 y #66 cerrados y en main (6 de 14). Cola Hoy fusionada completa + ruta de pre-cotización completa. Candidatos: **#65** (reunión re-encuadrada; desbloqueado por #58) · **#56** (manual a Seguimiento con folio) · **#54** (crear prospecto, + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+#53, #54, #55, #58, #63, #64 y #66 cerrados y en main (7 de 14). Cola Hoy fusionada + ruta de pre-cotización + botón `+` global y alta manual de prospecto completas. Candidatos: **#57** (No Asignado + asignación — entrada del embudo por arriba, reusa la regla de dominio de #55) · **#56** (manual a Seguimiento con folio — primera acción de tarjeta en el tablero) · **#59** (salidas No útil/Perdida + filtro/historial) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL (escribe/lee Operam real).
 
 ## #66 — formalizar pre-cotización + editar prospecto — CERRADO (aprobado por Adrián con evidencia; mergeado a main)
 
@@ -230,7 +230,7 @@ En `pipeline-logica.js`, NO en prospectos-logica.js, por la dirección de depend
 4. Sobre un ítem **cotización**: WhatsApp con el mensaje de seguimiento del paso (día 2/7/21/vencida), chip de folio (PRE / #Operam N), "✓ Hecho" (saca la tarjeta hasta el siguiente paso) y Ganada/Perdida.
 5. Ir a **Más**: ya NO aparece "Seguimiento cotizaciones" (su cola se fusionó en Hoy). Solo Historial y Prospectos.
 
-## #54 — crear prospecto en Por Cotizar (boton + global) — IMPLEMENTADO (rama `issue-54-crear-prospecto`, pendiente verificacion del orquestador + demo). Suite 561/561
+## #54 — crear prospecto en Por Cotizar (boton + global) — CERRADO (aprobado por Adrian con evidencia; verificado por el orquestador contra el codigo real; mergeado a main). Suite 561/561
 
 ### INVESTIGACION (reusar, no reinventar) — el backend y la captura YA existian
 - **Ruta `POST /api/prospectos` (server.js ~357) ya hacia todo el trabajo de dominio**: no fija `etapa` (deja el default del store), auto-asigna `req.user.name`, y aplica los 3 guardrails via `clasificarCelular` (prospecto propio -> 409 con datos; prospecto de otro vendedor -> 409 "ya lo atiende X" sin exponer; cliente Operam -> 409 "cotizale como cliente"; dedup por celular10/indice unico). NO se reescribio.
