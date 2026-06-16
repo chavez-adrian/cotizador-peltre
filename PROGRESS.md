@@ -29,7 +29,7 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 - **#54 CERRADO** ✅ — botón `+` global (Nueva cotización / Nuevo prospecto) + crear prospecto a mano que nace en Por Cotizar auto-asignado. Mergeado a main (deploy Render). Suite 561/561.
 - **#55 CERRADO** ✅ — cotizar → Seguimiento auto (regla de dominio `transicionPorCotizacion`). Mergeado a main.
 - #56 mover a Seguimiento manual con folio — desbloqueado
-- #57 No Asignado + asignación — desbloqueado
+- **#57 CERRADO** ✅ — entrada No Asignado (`POST /api/prospectos/sin-asignar` admin-only) + asignar vendedor (`PATCH .../asignar`) que mueve a Por Cotizar vía regla de dominio `transicionPorAsignacion`. Primera acción de tarjeta del tablero (asignar, solo admin). Mergeado a main. Suite 581/581.
 - **#58 CERRADO** ✅ — Hoy muestra la cola de prospectos en Por Cotizar (cierra el H4 de #53). Cola de cotizaciones reubicada en Más → "Seguimiento cotizaciones" hasta la fusión #64. Mergeado a main.
 - #59 salidas No útil/Perdida + filtro — desbloqueado
 - #60 cotizar repensado (stepper) — desbloqueado
@@ -116,7 +116,7 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53, #54, #55, #58, #63, #64 y #66 cerrados y en main (7 de 14). Cola Hoy fusionada + ruta de pre-cotización + botón `+` global y alta manual de prospecto completas. Candidatos: **#57** (No Asignado + asignación — entrada del embudo por arriba, reusa la regla de dominio de #55) · **#56** (manual a Seguimiento con folio — primera acción de tarjeta en el tablero) · **#59** (salidas No útil/Perdida + filtro/historial) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL (escribe/lee Operam real).
+#53, #54, #55, #57, #58, #63, #64 y #66 cerrados y en main (8 de 14). Entradas del embudo completas (alta manual con dueño #54 + intake sin asignar #57). El tablero ya tiene su primera acción de tarjeta (asignar, #57). Candidatos: **#56** (manual a Seguimiento con folio — 2ª acción de tarjeta, captura de folio) · **#59** (salidas No útil/Perdida + filtro/historial — la otra punta del ciclo) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#60** (cotizar stepper — UX grande del flujo central) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL (escribe/lee Operam real).
 
 ## #57 — No Asignado + asignación de vendedor — EN PROGRESO (rama issue-57-no-asignado)
 
