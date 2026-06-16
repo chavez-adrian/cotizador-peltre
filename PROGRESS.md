@@ -20,7 +20,7 @@ Orquestación issue-por-issue: subagente fresco por issue, TDD por criterio de a
 - #61 decorados (checklist + gate + Dropbox) — desbloqueado
 - #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos)
 - **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
-- #64 Hoy suma cotizaciones (fusión) — desbloqueado (tras #58)
+- **#64 CERRADO** ✅ — Hoy suma cotizaciones (cola fusionada prospectos+cotizaciones por urgencia relativa). Eliminó la pantalla separada de seguimiento. Mergeado a main.
 - #65 reunión re-encuadrada — desbloqueado (tras #58)
 - **#66 CERRADO** ✅ — formalizar pre-cotización (botón Completar en Historial) + editar prospecto. Mergeado a main.
 
@@ -100,7 +100,7 @@ Históricas sin folio = **registradas (no PRE)**. La migración de lectura (`mig
 4. (Datos históricos) Mirar el tablero: hoy las viejas salen **PRE** — punto de decisión del orquestador (ver BLOCKER).
 
 ## Siguiente
-#53, #55, #58, #63 y #66 cerrados y en main (5 de 14). Ruta de pre-cotización completa + Hoy con prospectos. Candidatos: **#64** (Hoy suma cotizaciones — fusiona la cola que quedó en Más; desbloqueado por #58) · **#65** (reunión re-encuadrada; desbloqueado por #58) · **#56** (manual a Seguimiento con folio) · **#54** (crear prospecto, + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
+#53, #55, #58, #63, #64 y #66 cerrados y en main (6 de 14). Cola Hoy fusionada completa + ruta de pre-cotización completa. Candidatos: **#65** (reunión re-encuadrada; desbloqueado por #58) · **#56** (manual a Seguimiento con folio) · **#54** (crear prospecto, + global) · **#57** (No Asignado + asignación) · **#59** (salidas) · **#60** (cotizar stepper) · **#61** (decorados). #62 (sync Operam) de-riesga la dependencia abierta pero es HITL.
 
 ## #66 — formalizar pre-cotización + editar prospecto — CERRADO (aprobado por Adrián con evidencia; mergeado a main)
 
@@ -176,3 +176,40 @@ El prompt autoriza moverla "p. ej. desde Más". `nav-mas-menu` ya tiene Historia
 Login admin, bottom-nav muestra "Hoy 3" (badge = 3 prospectos en Por Cotizar). Toco Hoy: cola Laura/Pedro/Sofia con "21.5 h hábiles sin respuesta" + semáforo + WhatsApp (wa.me) + Registrar contacto. "Registrar contacto" reinicia el reloj a 0 h y reordena (refresca Hoy). Tras 3 toques aparece "3 toques sin respuesta · ¿No útil?" (sugerencia, confirmada por el vendedor). Más → "Seguimiento cotizaciones" abre la cola de cotizaciones intacta (cadencia días naturales, Ganada/Perdida). Sin errores de consola.
 
 ### CERRADO: todos los AC verdes/ya-cubiertos. Suite 542/542 (540 baseline + H1/H2). Listo para verificación del orquestador + demo de Adrián.
+
+## #64 — Hoy suma cotizaciones (cola fusionada) — CERRADO (aprobado por Adrián con evidencia; mergeado a main). Suite 559/559. Implementado en dos tandas (subagente 1 se cortó por límite tras el backend; subagente 2 hizo el frontend). `lib/cola-hoy.js` (urgencia relativa: prospecto horas/umbralRojo, cotización dias/28, reunión vencida primero) + GET /api/hoy + buildColaHoyHtml. Se eliminó por completo showSeguimiento/seguimiento-view (la cola de cotizaciones ya solo vive en Hoy).
+
+Fusiona en el destino **Hoy** la cola de prospectos (horas hábiles) con la de cotizaciones (días naturales) en un solo listado ordenado, REUSANDO el backend ya hecho (`lib/cola-hoy.js` + `GET /api/hoy`, no tocados).
+
+### Qué se construyó/reusó (frontend)
+- **`buildColaHoyHtml(cola)`** (NUEVO, en `public/js/pipeline-logica.js`): función pura de presentación. Itera la cola ya fusionada+ordenada del backend y delega por `tipo` PRESERVANDO el orden (no reagrupa). Prospecto → reusa `buildColaProspectosHtml([item])`; cotización → `buildColaCotizacionItemHtml`.
+- **`buildColaCotizacionItemHtml(item)`** (NUEVO, mismo módulo): extraído del markup inline de `showSeguimiento` (app.js). WhatsApp con `item.waLink` (sin teléfono → botón deshabilitado), badge de folio (`badgeFolioOperamHtml`), etiqueta del paso (`PASO_LABELS` movido aquí desde app.js), días, total, ✓ Hecho (`marcarSeguimiento`), Ganada/Perdida (`cambiarEstadoCotizacion`).
+- **`showHoy`** (app.js): ahora consume `GET /api/hoy` y pinta con `buildColaHoyHtml`. Antes leía `/api/prospectos/cola` + `buildColaProspectosHtml`.
+- **`cargarBadgeSeguimiento`** (app.js): ahora lee `GET /api/hoy` y el badge = `cola.length` (total fusionado). Antes contaba solo prospectos.
+- `marcarSeguimiento` / `cambiarEstadoCotizacion` ahora refrescan `showHoy()` (su nuevo hogar).
+
+### "Seguimiento cotizaciones" de Más — RETIRADO (decisión de diseño)
+La cola de cotizaciones ahora vive fusionada en Hoy, así que el acceso separado quedó redundante. Retirado en su totalidad (regla de proyecto: nada de código en desuso): botón `mas-seguimiento` + su listener, vista `seguimiento-view` (HTML), `showSeguimiento`, `btn-volver-seguimiento` + su listener, `PASO_LABELS` (movido a pipeline-logica.js). Las acciones `marcarSeguimiento`/`cambiarEstadoCotizacion` se conservan (las invoca la card de cotización en Hoy). Import de `contarPendientesProspectos` retirado de app.js (ya no se usa; sigue exportado y testeado en prospectos-logica para la lista de Más).
+
+### Decisión de diseño: dónde vive buildColaHoyHtml
+En `pipeline-logica.js`, NO en prospectos-logica.js, por la dirección de dependencias: `pipeline-logica` importa de `prospectos-logica` (no al revés). Necesita ambos: `buildColaProspectosHtml`/`escapeHtml` (de prospectos-logica) y `badgeFolioOperamHtml` (local a pipeline-logica). Ponerlo en prospectos-logica habría creado un ciclo de imports.
+
+### Estado de cada AC (verificado: tests + render end-to-end con datos locales)
+- AC1 (un solo listado ordenado prospectos+cotizaciones): VERDE. `/api/hoy` con datos locales devuelve 10 items (3 prospectos + 7 cotizaciones) INTERCALADOS por urgencia; `buildColaHoyHtml` los pinta en ese orden exacto (verificado por posición de los onclick: `p3 c1 p4 c2 c13 c48 c9999 c55 c10000 p2`, estrictamente creciente). Test Q20.
+- AC2 (cada reloj con su medida): YA-CUBIERTO (backend `cola-hoy.js`): prospecto urg=horas/umbralRojo, cotización urg=días/28. Heredado.
+- AC3 (orden por urgencia relativa): YA-CUBIERTO (backend). El frontend solo preserva el orden recibido (Q20).
+- AC4 (acción correcta por tipo): VERDE. Prospecto: Registrar contacto/WhatsApp/reunión vencida/sugerencia No útil (reusa buildColaProspectosHtml). Cotización: WhatsApp de seguimiento + ✓ Hecho + Ganada/Perdida. Tests Q21/Q22/Q23 + render real.
+- AC5 (módulo de cola fusionada con pruebas): VERDE (backend `test/cola-hoy.test.js` + `test/hoy-api.test.js`, 12 tests). Presentación: Q20-Q24 en `pipeline-logica.test.cjs`.
+- Badge cuenta ambos tipos: VERDE. `cargarBadgeSeguimiento` lee `/api/hoy`, badge=total (10 con datos locales).
+
+### Commits (rama issue-64-hoy-fusion)
+- 599e9f2 feat: buildColaHoyHtml pinta la cola Hoy fusionada delegando por tipo (#64) — `pipeline-logica.js`, `pipeline-logica.test.cjs`
+- b037682 feat: el destino Hoy muestra la cola fusionada del dia y retira el acceso separado (#64) — `app.js`, `index.html`
+- (backend previo, ya en rama: a821bdc / 712b0df / d1f11d7 / 2d18abc)
+
+### DEMO (2 min) para Adrián
+1. Login admin. El bottom-nav muestra **"Hoy 10"** (badge = cola fusionada completa: prospectos + cotizaciones, antes solo contaba prospectos).
+2. Tocar **Hoy**: un solo listado INTERCALADO por urgencia. Con los datos locales: Pedro (prospecto, urg 10.7) primero, luego "Test SA de CV" (cotización, urg 2.86), luego Sofia (prospecto), luego más cotizaciones... — los dos tipos compiten en la misma escala, cada uno con su reloj.
+3. Sobre un ítem **prospecto**: WhatsApp + "Registrar contacto" (y, si aplica, reunión vencida / "3 toques · ¿No útil?"). Registrar contacto reordena la cola.
+4. Sobre un ítem **cotización**: WhatsApp con el mensaje de seguimiento del paso (día 2/7/21/vencida), chip de folio (PRE / #Operam N), "✓ Hecho" (saca la tarjeta hasta el siguiente paso) y Ganada/Perdida.
+5. Ir a **Más**: ya NO aparece "Seguimiento cotizaciones" (su cola se fusionó en Hoy). Solo Historial y Prospectos.
