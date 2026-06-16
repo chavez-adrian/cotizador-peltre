@@ -902,14 +902,17 @@
   </div>
 </div>
 
-<!-- NAVEGACION INFERIOR (bottom-nav, issue #53): Cotizar / Hoy / Pipeline / Mas -->
+<!-- NAVEGACION INFERIOR (bottom-nav, issue #53): Cotizar / Hoy / + / Pipeline / Mas -->
 <nav class="bottom-nav" id="bottom-nav" style="display:none">
   <div class="nav-mas-menu" id="nav-mas-menu" style="display:none">
     <button class="btn btn-sm btn-secondary" id="mas-historial">Historial</button>
     <button class="btn btn-sm btn-secondary" id="mas-prospectos">Prospectos</button>
   </div>
+  <!-- Menu del boton + global (issue #54): Nueva cotizacion / Nuevo prospecto -->
+  <div class="nav-nuevo-menu" id="nav-nuevo-menu" style="display:none"></div>
   <button class="bottom-nav-btn activo" id="nav-cotizar">Cotizar</button>
   <button class="bottom-nav-btn" id="nav-hoy" style="position:relative">Hoy<span id="seguimiento-badge" style="display:none;position:absolute;top:2px;right:8px;background:#c0392b;color:#fff;border-radius:9px;font-size:10px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px"></span></button>
+  <button class="bottom-nav-add" id="nav-add" aria-label="Crear">+</button>
   <button class="bottom-nav-btn" id="nav-pipeline">Pipeline</button>
   <button class="bottom-nav-btn" id="nav-mas">Más</button>
 </nav>

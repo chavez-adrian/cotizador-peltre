@@ -36,6 +36,7 @@ import {
   botonCompletarHtml,
   siguientePasoFormalizacion,
   buildColaHoyHtml,
+  buildMenuNuevoHtml,
 } from './pipeline-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -1973,6 +1974,7 @@ function ocultarTodasLasVistas() {
     if (el) el.style.display = 'none';
   }
   cerrarMenuMas();
+  cerrarMenuNuevo();
 }
 
 function marcarNavActivo(id) {
@@ -1981,6 +1983,11 @@ function marcarNavActivo(id) {
 
 function cerrarMenuMas() {
   const menu = document.getElementById('nav-mas-menu');
+  if (menu) menu.style.display = 'none';
+}
+
+function cerrarMenuNuevo() {
+  const menu = document.getElementById('nav-nuevo-menu');
   if (menu) menu.style.display = 'none';
 }
 
@@ -2386,6 +2393,23 @@ window.abrirCapturaRapida = () => {
   document.getElementById('pr-celular').focus();
 };
 
+// Acciones del boton + global (issue #54). "Nueva cotizacion" lleva a la vista
+// de cotizar existente (la app abre ahi). "Nuevo prospecto" abre la captura
+// minima EXISTENTE: el formulario de prospecto que ya vive en la vista de
+// Prospectos. No se reinventa la captura ni la cotizacion: el + solo enruta.
+window.nuevaCotizacion = () => {
+  cerrarMenuNuevo();
+  ocultarTodasLasVistas();
+  document.getElementById('app-view').style.display = 'block';
+  marcarNavActivo('nav-cotizar');
+};
+window.nuevoProspecto = () => {
+  cerrarMenuNuevo();
+  showProspectos();
+  marcarNavActivo('nav-mas');
+  abrirCapturaRapida();
+};
+
 async function cargarCotizacion(id) {
   try {
     const res = await api(`/api/cotizaciones/${id}`);
@@ -2573,8 +2597,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     marcarNavActivo('nav-pipeline');
   });
   document.getElementById('nav-mas')?.addEventListener('click', () => {
+    cerrarMenuNuevo();
     const menu = document.getElementById('nav-mas-menu');
     if (menu) menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
+  });
+  // Boton + global (issue #54): visible en todos los destinos; ofrece "Nueva
+  // cotizacion" y "Nuevo prospecto". El menu se arma con la logica pura
+  // (buildMenuNuevoHtml); cada boton dispara la funcion global homonima.
+  document.getElementById('nav-add')?.addEventListener('click', () => {
+    cerrarMenuMas();
+    const menu = document.getElementById('nav-nuevo-menu');
+    if (!menu) return;
+    if (menu.style.display === 'none') {
+      menu.innerHTML = buildMenuNuevoHtml();
+      menu.style.display = 'flex';
+    } else {
+      menu.style.display = 'none';
+    }
   });
   document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
