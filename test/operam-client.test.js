@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -381,6 +381,103 @@ test('actualizarBranchCliente: cuando branchId es null hace GET customer para ob
     });
     assert.ok(getCustomerCalled, 'debe haber llamado GET /customers/:id para obtener branch_code');
     assert.ok(putBranchUrl && putBranchUrl.includes('/branches/300'), 'debe hacer PUT al branch_code obtenido');
+  } finally {
+    restore();
+  }
+});
+
+// === Lecturas para el sync post-venta (#62) ===
+// listarTransacciones -> GET /api/v3/sales/transactions; listarPedidos ->
+// GET /api/v3/sales/sales_orders. Endpoints confirmados contra el Postman v3 y
+// la API en vivo (peltre-operam.md seccion 12). Solo lectura.
+
+test('listarTransacciones: GET a /api/v3/sales/transactions con RFC y rango de fechas; devuelve data[]', async () => {
+  resetSession();
+  let getUrl = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/transactions': (url) => {
+      getUrl = String(url);
+      return jsonResponse({ total: 2, data: [
+        { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0' },
+        { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0' },
+      ] });
+    },
+  });
+  try {
+    const data = await listarTransacciones({ rfc: 'CPE921211N76', desde: '2026-01-01', hasta: '2026-06-17' });
+    assert.equal(data.length, 2);
+    assert.ok(getUrl.includes('/api/v3/sales/transactions'));
+    assert.ok(getUrl.includes('customer_rfc=CPE921211N76'));
+    assert.ok(getUrl.includes('since_date=2026-01-01'));
+    assert.ok(getUrl.includes('until_date=2026-06-17'));
+  } finally {
+    restore();
+  }
+});
+
+test('listarTransacciones: acepta customerId y filterType', async () => {
+  resetSession();
+  let getUrl = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/transactions': (url) => { getUrl = String(url); return jsonResponse({ data: [] }); },
+  });
+  try {
+    await listarTransacciones({ customerId: 345, filterType: '10', desde: '2026-01-01', hasta: '2026-06-17' });
+    assert.ok(getUrl.includes('customer_id=345'));
+    assert.ok(getUrl.includes('filterType=10'));
+  } finally {
+    restore();
+  }
+});
+
+test('listarTransacciones: devuelve [] si la respuesta no trae data', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/transactions': () => jsonResponse({ total: 0 }),
+  });
+  try {
+    const data = await listarTransacciones({ rfc: 'X', desde: '2026-01-01', hasta: '2026-06-17' });
+    assert.deepEqual(data, []);
+  } finally {
+    restore();
+  }
+});
+
+test('listarPedidos: GET a /api/v3/sales/sales_orders por debtor_no y rango; devuelve data[]', async () => {
+  resetSession();
+  let getUrl = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_orders': (url) => {
+      getUrl = String(url);
+      return jsonResponse({ total: 1, data: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '16954' }] });
+    },
+  });
+  try {
+    const data = await listarPedidos({ debtorNo: 345, desde: '2026-01-01', hasta: '2026-06-17' });
+    assert.equal(data.length, 1);
+    assert.equal(data[0].order_no, '7077');
+    assert.ok(getUrl.includes('/api/v3/sales/sales_orders'));
+    assert.ok(getUrl.includes('debtor_no=345'));
+    assert.ok(getUrl.includes('DateFrom=2026-01-01'));
+    assert.ok(getUrl.includes('DateTo=2026-06-17'));
+  } finally {
+    restore();
+  }
+});
+
+test('listarPedidos: devuelve [] si la respuesta no trae data', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_orders': () => jsonResponse({ total: 0 }),
+  });
+  try {
+    const data = await listarPedidos({ debtorNo: 1, desde: '2026-01-01', hasta: '2026-06-17' });
+    assert.deepEqual(data, []);
   } finally {
     restore();
   }
