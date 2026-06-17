@@ -179,12 +179,14 @@ export function validarTransicion(actual, nueva, motivo, folio) {
 // eventos para que prospecto y cotizacion compartan la misma logica. El prospecto
 // pasa su `p.eventos`; la cotizacion pasa su array de seguimientos (donde las
 // reuniones viven como entradas `{ tipo:'reunion', fecha_reunion, fecha }`). La
-// ultima reunion (por fecha_reunion) manda; cualquier evento con fecha posterior
-// a esa reunion limpia el pendiente de resultado.
+// ultima reunion REGISTRADA manda (por `fecha` de registro, no por la fecha de la
+// cita): re-agendar registra otro evento y ese ultimo gana, aunque su cita sea
+// mas temprana (CONTEXT.md "Reunion de diagnostico"). Cualquier evento con fecha
+// posterior a esa reunion limpia el pendiente de resultado.
 export function ultimaReunionDe(eventos) {
   let r = null;
   for (const e of eventos || []) {
-    if (e.tipo === 'reunion' && (!r || new Date(e.fecha_reunion) > new Date(r.fecha_reunion))) r = e;
+    if (e.tipo === 'reunion' && (!r || new Date(e.fecha) > new Date(r.fecha))) r = e;
   }
   return r;
 }

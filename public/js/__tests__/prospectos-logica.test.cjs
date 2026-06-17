@@ -538,7 +538,7 @@ test('RU7: el nucleo sobre el array obedece a la ultima reunion (futura/pendient
   assert.equal(ultimaReunionDe([]), null);
   assert.equal(reunionFuturaDe([], AHORA), null);
   assert.equal(reunionPendienteResultadoDe([], AHORA), null);
-  // ultima reunion = la de fecha_reunion mas reciente
+  // ultima reunion = la ultima registrada (REUNION_FUTURA se registro despues)
   assert.equal(ultimaReunionDe([REUNION_PASADA, REUNION_FUTURA]), REUNION_FUTURA);
   // futura suprime
   assert.equal(reunionFuturaDe([REUNION_FUTURA], AHORA), REUNION_FUTURA.fecha_reunion);
@@ -565,6 +565,17 @@ test('RU8: los wrappers de prospecto delegan en el nucleo del array (no rompe #4
     reunionPendienteResultado({ ...PROSPECTO, eventos: [REUNION_PASADA] }, AHORA),
     reunionPendienteResultadoDe([REUNION_PASADA], AHORA)
   );
+});
+
+test('RU9: re-agendar a una fecha mas temprana: manda la ultima reunion REGISTRADA, no la de cita mas lejana', () => {
+  // CONTEXT.md "Reunion de diagnostico": re-agendar registra otro evento y la
+  // ultima manda (la ultima accion del vendedor). Si re-agenda de 06-20 a 06-13
+  // (cita mas cercana) registrando despues, la activa es la de 06-13, aunque
+  // 06-20 sea una fecha de cita posterior.
+  const lejana = { tipo: 'reunion', fecha_reunion: '2026-06-20T17:00:00.000Z', fecha: '2026-06-10T08:00:00.000Z', vendedor: 'Memo' };
+  const reagendada = { tipo: 'reunion', fecha_reunion: '2026-06-13T17:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
+  assert.equal(ultimaReunionDe([lejana, reagendada]), reagendada);
+  assert.equal(reunionFuturaDe([lejana, reagendada], AHORA), reagendada.fecha_reunion);
 });
 
 // === Issue #53: el tablero unico del pipeline reemplaza el kanban de
