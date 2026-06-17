@@ -568,3 +568,20 @@ Decision de Adrian 2026-06-16: hacer la investigacion read-only YA (sin escribir
 
 ### Alcance de ESTE slice (solo nucleo puro)
 Funcion pura `payloadOperam/hechos -> etapa post-venta` con fixtures, SIN IO real, SIN escritura en Operam, SIN wiring al store/tablero. La capa de IO (webhooks o polling que mapean Operam crudo -> los hechos normalizados) y el movimiento real de la tarjeta son la sesion HITL posterior.
+
+### IMPLEMENTADO (rama issue-62-sync-core, 2026-06-16) — nucleo puro + tests
+- **`lib/sync-operam.js`** (nuevo, puro): `etapaPostVenta(hechos, oportunidad)` y `hechosDesdeOperam(transacciones)`. Importa `ETAPAS` de `./pipeline.js` (orden post-venta) y `puedeLiberar` de `../public/js/decorados-logica.js` (gate #61). Sin IO, sin red, sin escritura.
+- **`test/sync-operam.test.js`** (nuevo): 24 tests (node:test). Suite total 674 -> 698 pass / 0 fail.
+- **Forma de `hechos`** (ya normalizado por el IO layer): `{ pago: { allocated, outstanding, total }, tienePedido, tieneRemision }`.
+- **Reglas (decisiones de Adrian):** anticipo_pagado = `allocated>0 && outstanding>0`; pedido_liberado = `tienePedido`; saldo_pagado = `outstanding==0 && total>0`; producto_entregado = `tieneRemision`. Gana la mas avanzada (monotonia). null si ninguna aplica.
+- **Gate decorados:** si `puedeLiberar(oportunidad)` es false, el sync topa en la mayor etapa por DEBAJO de pedido_liberado (anticipo_pagado) o null; nunca libera ni avanza mas alla aunque Operam diga que hay pedido/saldo/remision.
+- **Monotonia/idempotencia:** si `oportunidad.etapa` ya es igual o mas avanzada que la calculada, devuelve null (no retrocede).
+- **`hechosDesdeOperam`**: normalizacion PROVISIONAL crudo->hechos para probar el nucleo. trans_type 11=pedido, 30=remision, 13=factura (agrega allocated/outstanding/total_amount). El IO real es HITL.
+
+### Frontera para la sesion HITL (lo que falta)
+La capa de IO solo tiene que: (1) leer Operam (webhook Payment/CustDelivery ADD o polling de `listar_transacciones` por el `order_` resuelto desde `quote_id` de #63), (2) mapear el crudo -> `hechos` (puede partir de `hechosDesdeOperam` y endurecerlo: definir la señal exacta de "pedido" = transaccion tipo 11 distinta del order_ de la etapa quote), (3) llamar a `etapaPostVenta(hechos, oportunidad)` y, si devuelve etapa, mover la tarjeta en el store/tablero. El nucleo ya respeta el gate de #61 y la monotonia, asi que el IO no decide reglas de dominio.
+
+### AC del issue #62 cubiertos por este slice
+- AC3 (nucleo payload->transicion con fixtures): COMPLETO.
+- AC1 (mapeo cotizacion->pedido->pagos): la investigacion read-only quedo registrada arriba; el nucleo la codifica.
+- PENDIENTE HITL: AC "un hecho de pago/liberacion/entrega mueve la tarjeta" (necesita IO + wiring al store), y AC "etapas sin dato expuesto en modo manual" (las 4 quedaron automatizables, no aplica modo manual). #62 NO se cierra.
