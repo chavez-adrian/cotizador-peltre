@@ -442,12 +442,19 @@ app.patch('/api/cotizacion/:id/calca-paso', authMiddleware, async (req, res) => 
 });
 
 function subirCalcaDropbox(entry, archivos) {
-  const CALCA_PATH = '/PELTRE NACIONAL/CALCAS/POSICIONES';
+  // Ruta y nombre confirmados por Adrian (#61): la posicion de calca vive en
+  // 1.0 Comercializacion/DISENO/CALCAS/OT Decorado y el archivo se nombra
+  // "<Nombre del proyecto> - Pedido <id>". El "Nombre del proyecto" es la
+  // referencia de la cotizacion (data.cliente.referencia); si falta, cae al
+  // cliente y luego al id. La extension original se conserva.
+  const CALCA_PATH = '/1.0 Comercialización/DISEÑO/CALCAS/OT Decorado';
+  const proyecto = String(entry.data?.cliente?.referencia || entry.cliente || `Pedido ${entry.id}`)
+    .replace(/[/\\:*?"<>|]/g, '').trim() || `Pedido ${entry.id}`;
   import('./lib/dropbox.js').then(({ upload }) => {
     for (const a of archivos) {
       if (!a || !a.nombre || !a.contenidoBase64) continue;
-      const nombreSano = String(a.nombre).replace(/[/\\:*?"<>|]/g, '').trim();
-      const path = `${CALCA_PATH}/Cot ${entry.id} - ${nombreSano}`;
+      const ext = (String(a.nombre).match(/\.[a-zA-Z0-9]+$/) || [''])[0];
+      const path = `${CALCA_PATH}/${proyecto} - Pedido ${entry.id}${ext}`;
       upload(path, Buffer.from(a.contenidoBase64, 'base64'), 'add')
         .catch(err => console.error('[dropbox][calca]', err.message));
     }
