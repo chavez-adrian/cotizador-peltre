@@ -547,3 +547,24 @@ Reintroduce UNA transicion manual forward del embudo (Por Cotizar -> Seguimiento
 - **El folio NO se valida contra Operam** (fuera de alcance): se captura como texto libre; validar que el numero exista realmente en Operam es trabajo futuro (cuando se cierre el sync #62). Hoy un folio invalido se aceptaria.
 - El frontend (boton + prompt + moverASeguimientoTablero) no tiene test de DOM (patron del repo: sin DOM en tests); la logica pura si (Q35-Q37) y el cableado se valida en navegador.
 - `moverASeguimientoTablero` usa `o.refId` para el id real. El control de asignar de #57 usa `o.id` directo (posible id prefijado "p7"); si #57 funciona en produccion es porque su flujo difiere — NO se toco (fuera de alcance), pero anotado por si el asignar tuviera un latente.
+
+## #62 — Sync Operam post-venta (HITL) — INVESTIGACION READ-ONLY HECHA (artefacto AC1) + NUCLEO PURO en construccion (rama issue-62-sync-core)
+
+Decision de Adrian 2026-06-16: hacer la investigacion read-only YA (sin escribir en Operam) y construir solo el NUCLEO PURO ahora (payload->transicion + fixtures + tests); la capa de IO real (webhooks/polling) y el wiring quedan para una sesion HITL dedicada. #62 NO se cierra con esto (queda parcial).
+
+### Hallazgos de la investigacion (consultas read-only via MCP operam-api, 2026-06-16)
+- **La llave de la cadena es el campo `order_`** (numero de sales_order). Verificado en vivo: una cotizacion (tipo 10) y su factura (tipo 13) comparten el mismo `order_` (ej. cotizacion trans_no 6782 y factura trans_no 7269, ambas `order_: 7139`); la remision tambien cuelga de ahi. `listar_transacciones` filtra por tipo: **10=cotizacion, 11=pedido, 13=factura, 30=remision, 32=devolucion**.
+- #63 ya guarda el folio de la cotizacion (`quote_id` de `POST /api/v3/sales/quote`) — es el handle de entrada para resolver el `order_`.
+- **Pagos (anticipo/saldo) EXPUESTOS**: cada transaccion trae `allocated` (asignado/pagado), `outstanding` (saldo) y `over_due`. anticipo_pagado = allocated>0 con outstanding>0 (pago parcial); saldo_pagado = outstanding==0. Webhook **Pago de Cliente (Payment) -> ADD** dispara en cada pago.
+- **Producto entregado EXPUESTO**: remision (trans_type 30) / webhook **Nota de Entrega (CustDelivery) -> ADD**. (listar_pedidos devuelve remisiones con trans_type 30.)
+- **Pedido liberado**: no se vio una señal limpia de "liberado a produccion". DECISION DE ADRIAN: **pedido_liberado = pedido creado en Operam** (existe un pedido para esa oportunidad). El IO layer (HITL) define la señal exacta (probable: existe una transaccion tipo 11 para ese `order_`, NO el `order_` de la etapa quote que ya existe desde #63).
+
+### Decisiones de dominio registradas (AC1)
+- anticipo_pagado: AUTO (allocated>0 && outstanding>0, o webhook Payment parcial).
+- pedido_liberado: AUTO (existe pedido en Operam) — decision de Adrian; respeta el gate `puedeLiberar` de #61 para oportunidades decoradas.
+- saldo_pagado: AUTO (outstanding==0).
+- producto_entregado: AUTO (remision / CustDelivery).
+- Las 4 son automatizables; ninguna queda manual (Adrian decidio la señal de pedido_liberado).
+
+### Alcance de ESTE slice (solo nucleo puro)
+Funcion pura `payloadOperam/hechos -> etapa post-venta` con fixtures, SIN IO real, SIN escritura en Operam, SIN wiring al store/tablero. La capa de IO (webhooks o polling que mapean Operam crudo -> los hechos normalizados) y el movimiento real de la tarjeta son la sesion HITL posterior.
