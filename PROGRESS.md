@@ -37,7 +37,7 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 - #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos)
 - **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
 - **#64 CERRADO** ✅ — Hoy suma cotizaciones (cola fusionada prospectos+cotizaciones por urgencia relativa). Eliminó la pantalla separada de seguimiento. Mergeado a main.
-- #65 reunión re-encuadrada — desbloqueado (tras #58)
+- **#65 CERRADO** ✅ — reunión de diagnóstico re-encuadrada al pipeline: sobre prospectos (Por Cotizar, ya de #45) Y cotizaciones (Seguimiento, NUEVO). Reunión futura suprime la cadencia, vencida reaparece en Hoy pidiendo resultado (avance/Perdida para cotización — Modelo A; avance/No útil para prospecto). Predicados generalizados a un core sobre el array de eventos. Mergeado a main. Suite 641/641. (Orquestador arregló una regresión sutil: la última reunión la decide la fecha de registro, no la de la cita — RU9.)
 - **#66 CERRADO** ✅ — formalizar pre-cotización (botón Completar en Historial) + editar prospecto. Mergeado a main.
 
 ## #53 — cierre
@@ -171,7 +171,7 @@ Modelo A (decision de Adrian, NO reabrir): **No util** (motivo obligatorio de ca
 - El frontend (controles de tarjeta + modo Cerradas) no tiene test de DOM (patron del repo: sin DOM en tests); la logica pura si (Q40-Q46) y el cableado se verifico EN NAVEGADOR (Laura/Pedro/cot55 + cancelar). 
 - data/prospectos.json y data/cotizaciones.json (gitignored) quedaron con el estado del demo en vivo (Laura/Pedro/cot55 cerrados) -- son fixtures locales, no se commitean.
 
-## #65 — reunion re-encuadrada (rama issue-65-reunion) — EN PROGRESO
+## #65 — reunion re-encuadrada — CERRADO (aprobado por Adrian con evidencia; verificado por el orquestador; mergeado a main). Suite 641/641 (620 baseline + 20 de #65 + RU9 del fix). Alcance COMPLETO: reunion sobre prospectos (Por Cotizar) y cotizaciones (Seguimiento). Fix del orquestador: ultimaReunionDe elige por fecha de registro (no por fecha de la cita), preservando "la ultima registrada manda" de #45 (regresion RU9 que los fixtures de RU7 no cazaban).
 
 Slice MEDIANO: la reunion sobre PROSPECTOS (Por Cotizar) ya existe (#45); FALTA la maquinaria simetrica sobre COTIZACIONES (Seguimiento). Baseline reconfirmado: 620 pass / 0 fail.
 
@@ -216,7 +216,7 @@ Slice MEDIANO: la reunion sobre PROSPECTOS (Por Cotizar) ya existe (#45); FALTA 
 - DEMO (2 min): 1) Login, ir a Hoy. 2) En una cotizacion en Seguimiento: "Agendar reunion" con fecha futura -> la cotizacion sale de Hoy. 3) (Vencer la fecha o usar fixture con reunion pasada) -> reaparece arriba con "Reunion del ... — registrar resultado" + botones Hecho/Perdida. 4) "Hecho" (avance) -> reanuda la cadencia; o "Perdida" -> cierra la cotizacion. 5) Confirmar que el prospecto sigue: en Por Cotizar agendar reunion futura -> sale de Hoy; vencida -> reaparece con No util (flujo #45 intacto).
 
 ## Siguiente
-#53, #54, #55, #56, #57, #58, #59, #60, #63, #64 y #66 cerrados y en main (11 de 14). Ciclo de vida del embudo COMPLETO + flujo de cotizar reencuadrado como stepper (#60). El tablero tiene 3 acciones de tarjeta (asignar #57, mover a Seguimiento #56, salidas #59), todas con el patrón de cableado endurecido (refId + tests de forma prefijada). **Deuda de proceso: las acciones de tarjeta del tablero / cambios visuales idealmente se verifican en navegador, no solo por tests puros (origen del bug de #57); ahora el orquestador puede capturar via chrome-devtools MCP + npm start local.** Faltan 3: **#65** (reunión re-encuadrada; desbloqueado por #58, el más acotado) · **#61** (decorados — checklist + gate a Pedido liberado + Dropbox) · **#62** (sync Operam post-venta — de-riesga la dependencia abierta pero es HITL, lee/escribe Operam real, requiere sesión con Adrián).
+#53, #54, #55, #56, #57, #58, #59, #60, #63, #64, #65 y #66 cerrados y en main (12 de 14). Ciclo de vida del embudo COMPLETO + cotizar como stepper (#60) + reunión de diagnóstico sobre prospectos y cotizaciones (#65). El tablero tiene 3 acciones de tarjeta (asignar #57, mover a Seguimiento #56, salidas #59), todas con el patrón de cableado endurecido (refId + tests de forma prefijada). **Deuda de proceso: las acciones de tarjeta / cambios visuales idealmente se verifican en navegador (origen del bug de #57); el orquestador puede capturar via chrome-devtools MCP + npm start local.** Faltan 2: **#61** (decorados — checklist de calca + gate a Pedido liberado + Dropbox; feature autocontenida, riesgo medio) · **#62** (sync Operam post-venta — de-riesga la dependencia técnica abierta pero es HITL, lee/escribe Operam real, requiere sesión con Adrián). #62 conviene dejarlo para el final / una sesión dedicada.
 
 ## #60 — cotizar repensado (stepper guiado + alta como excepcion) — CERRADO (aprobado por Adrian con CAPTURAS en vivo; verificado por el orquestador; mergeado a main). Suite 620/620 (604 baseline + 16 nuevos)
 
