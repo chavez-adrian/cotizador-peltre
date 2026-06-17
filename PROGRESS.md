@@ -224,6 +224,22 @@ Slice MEDIANO: la reunion sobre PROSPECTOS (Por Cotizar) ya existe (#45); FALTA 
 
 **Mejora propuesta — espejo de folios de la cadena (issue nuevo, sin abrir aún):** persistir en la oportunidad TODOS los identificadores de Operam asociados al pedido (cotización, pedido/`order_no`, factura nº+referencia, remisiones, pagos, notas de crédito). Da binding preciso permanente + trazabilidad completa desde la tarjeta. **Reto a resolver primero:** el eslabón cotización→pedido — el cotizador conoce el quote (folio) pero el `order_` se crea después en Operam sin referencia al quote; hay que decidir cómo poblar `data.orderOperam` (probable: el webhook `Order/ADD` trae `order_no` + cliente al crearse el pedido → ligar a la oportunidad activa del cliente; o `trans_no_from` del sales_order si liga al quote). Investigar antes de fijar el alcance.
 
+## Prueba integral (2026-06-17) — backlog de issues + hotfixes
+
+Adrián corrió una prueba integral del cotizador en producción. **3 hotfixes resueltos al vuelo + mergeados** (desbloqueaban la prueba): un 404 de búsqueda de cliente se trataba como error (503 en captura manual); Operam renombró `sales_type_id`→`sales_type` (lista de precios vacía); listas de precios mostraban id=código duplicado y filtraban "Precio de lista" (ahora todas las activas, id numérico + etiqueta). Suite 757.
+
+**Issues abiertos del backlog (atacar uno a uno con subagente fresco, en orden):**
+- **#68** Subir a Operam: crítico (cliente correcto, no `clientes[0]`) **MERGEADO parcial** (b062a87). Falta AC3 nativo: **vigencia** (campo real — verificar contra cotización 1156, label "Válido hasta"; +30d) y **línea de envío como partida** (mapeo: `250911001` foráneo fuera CDMX / `251021001` FedEx Ground CDMX-metro paquetería / `220906001-2-3` Lalamove metro CDMX; `FLETELOCALCDMX` en desuso). Hoy van en `comments`.
+- **#69** Formulario de cliente duplicado (estado no compartido alta↔cotización): "Cotizar ahora" abre vacío, PDF re-pide teléfono, búsqueda por celular no corre en el 1er formulario, y la **tarjeta de la cotización no aparece** tras cotizar (ACAI).
+- **#70** Documentos: PDF con diseño viejo (HTML ok) + etiqueta "Pre-cotización" cuando es PRE.
+- **#71** Domicilio de entrega: obligatorios solo CP+país (leyenda si Calle vacía) + paqueterías en Sentence case.
+- **#74** Alta en Operam: faltan dimensiones (D1=1, D2=5) y creación de domicilio según SOP (vendedor, área, almacén, grupo de impuestos exento si extranjero).
+- **#67** Espejo de folios + binding por `trans_no_from` (verificado: pedido 7269 ← cotización 1141).
+- **#72** Cotizar con Lalamove (envío local) — feature, definir mecanismo de tarifa.
+- **#73** Reconocer clientes existentes de Operam: canal "Cliente Actual" + índice de celulares (parte 2 a discutir).
+
+**Pendiente operativo (con cuidado, es producción/Neon):** borrar los datos de prueba que se subieron al cotizador (prospectos, pre-cotizaciones, cotizaciones en Historial) durante la prueba integral — definir criterio para distinguir prueba vs real antes de borrar.
+
 ## #61 — decorados (checklist de calca + gate a Pedido liberado + Dropbox) — CERRADO (aprobado por Adrian con evidencia; verificado por el orquestador; mergeado a main). Suite 674/674 (641 baseline + 33 nuevos). Ruta/nombre de Dropbox corregidos a la spec de Adrian antes del merge: `1.0 Comercialización/DISEÑO/CALCAS/OT Decorado` + `<referencia del proyecto> - Pedido <id>`. Gate `puedeLiberar` puro; el enforcement (POST /api/cotizacion/:id/liberar -> 409 si decorada+incompleta) es el punto que #62 reusara (no se modelo el estado->etapa post-venta).
 
 Feature autocontenida: una cotizacion se marca decorada y lleva un checklist de 6 pasos (calca) con progreso en su tarjeta; el gate impide llegar a Pedido liberado con el checklist incompleto; el paso 6 sube la posicion de calca a Dropbox (fire-and-forget). Baseline reconfirmado al empezar: 641/641.
