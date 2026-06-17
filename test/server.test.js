@@ -850,3 +850,128 @@ test('E4: GET /api/buscar-cliente-duplicado retorna libre cuando no hay match', 
     restore();
   }
 });
+
+// === Webhook de Operam (sync post-venta, #62) ===
+// Auth por header secreto (NO el JWT del cotizador: Operam no lo tiene). El webhook
+// es solo una señal; la reconciliacion lee la verdad por API. Sin DATABASE_URL el
+// log es graceful (no rompe). Responde 200 aunque no se ligue a una oportunidad.
+
+const WEBHOOK_SECRET = 'test-webhook-secret';
+
+test('W1: POST /api/webhooks/operam sin header secreto retorna 401', async () => {
+  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  const res = await supertest(app).post('/api/webhooks/operam').send({ order_: '7077' });
+  assert.strictEqual(res.status, 401);
+});
+
+test('W2: POST /api/webhooks/operam con header secreto incorrecto retorna 401', async () => {
+  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  const res = await supertest(app)
+    .post('/api/webhooks/operam')
+    .set('X-Operam-Webhook-Secret', 'mal')
+    .send({ order_: '7077' });
+  assert.strictEqual(res.status, 401);
+});
+
+test('W3: POST /api/webhooks/operam con secreto correcto pero RFC desconocido responde 200 sin mover nada', async () => {
+  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  const snap = readCots();
+  const res = await supertest(app)
+    .post('/api/webhooks/operam')
+    .set('X-Operam-Webhook-Secret', WEBHOOK_SECRET)
+    .send({ model: 'Payment', event: 'ADD', tax_id: 'ZZZ999999ZZZ', order_: '0' });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.ok, true);
+  // No se ligo a ninguna oportunidad.
+  assert.ok(Array.isArray(res.body.reconciliadas));
+  assert.strictEqual(res.body.reconciliadas.length, 0);
+  // No toco el store.
+  assert.deepEqual(readCots(), snap);
+});
+
+test('W4: POST /api/webhooks/operam liga por RFC y mueve la oportunidad leyendo Operam', async () => {
+  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  // Oportunidad en seguimiento del RFC del webhook.
+  writeCots([{ id: 5001, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'EL PENDULO',
+    etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } }]);
+  // Operam: factura (10) liquidada + remision (13) + pedido (30) -> producto_entregado.
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [
+      { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
+      { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
+    ] }) }),
+    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
+      { order_no: '7077', trans_type: '30', debtor_no: '345' },
+    ] }) }),
+  });
+  try {
+    const res = await supertest(app)
+      .post('/api/webhooks/operam')
+      .set('X-Operam-Webhook-Secret', WEBHOOK_SECRET)
+      .send({ model: 'CustDelivery', event: 'ADD', tax_id: 'CPE921211N76', order_: '7077' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.reconciliadas.length, 1);
+    assert.strictEqual(res.body.reconciliadas[0].etapa, 'producto_entregado');
+    const movida = readCots().find(c => c.id === 5001);
+    assert.strictEqual(movida.etapa, 'producto_entregado');
+  } finally {
+    restore();
+  }
+});
+
+test('W5: POST /api/webhooks/operam con Operam caido responde 200 (no truena el webhook)', async () => {
+  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  writeCots([{ id: 5002, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'X',
+    etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } }]);
+  const restore = mockOperamFetch({ '/api/v3/login': () => { throw new Error('timeout'); } });
+  try {
+    const res = await supertest(app)
+      .post('/api/webhooks/operam')
+      .set('X-Operam-Webhook-Secret', WEBHOOK_SECRET)
+      .send({ model: 'Payment', event: 'ADD', tax_id: 'CPE921211N76', order_: '7077' });
+    assert.strictEqual(res.status, 200);
+  } finally {
+    restore();
+  }
+});
+
+// === Reconciliacion on-demand (#62 F4, red de seguridad) ===
+// Ruta autenticada con el JWT del cotizador que reconcilia las oportunidades
+// activas no terminadas leyendo Operam. No recorre el historico, solo candidatas.
+
+test('S1: POST /api/sync-operam sin token retorna 401', async () => {
+  const res = await supertest(app).post('/api/sync-operam');
+  assert.strictEqual(res.status, 401);
+});
+
+test('S2: POST /api/sync-operam reconcilia las oportunidades activas y mueve las que avanzan', async () => {
+  writeCots([
+    { id: 6001, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'EL PENDULO',
+      etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } },
+    // Sin RFC: no es candidata a Operam, se ignora sin tronar.
+    { id: 6002, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'SIN RFC',
+      etapa: 'seguimiento', data: { cliente: {} } },
+    // Terminada: no se reconcilia.
+    { id: 6003, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'ENTREGADA',
+      etapa: 'producto_entregado', data: { cliente: { rfc: 'OTRO010101AAA' } } },
+  ]);
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [
+      { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
+    ] }) }),
+    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [] }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/sync-operam').set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    const movida = readCots().find(c => c.id === 6001);
+    assert.strictEqual(movida.etapa, 'anticipo_pagado');
+    // No movio la terminada.
+    assert.strictEqual(readCots().find(c => c.id === 6003).etapa, 'producto_entregado');
+  } finally {
+    restore();
+  }
+});
