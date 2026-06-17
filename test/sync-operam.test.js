@@ -65,6 +65,49 @@ test('etapaPostVenta devuelve anticipo_pagado si hay pago parcial', () => {
   assert.equal(etapaPostVenta(hechos), 'anticipo_pagado');
 });
 
+// --- Regla de pago derivada de allocated vs total, NO de outstanding ---
+// (el outstanding del listado de Operam no es fiable; sesion HITL #62)
+
+test('etapaPostVenta: factura pagada al 100% (allocated=total) con outstanding espurio -> saldo_pagado', () => {
+  // Caso real El Pendulo: allocated == total pero outstanding sale != 0 (127) en el
+  // listado. Con la regla por outstanding seria anticipo; por allocated vs total es saldo.
+  const hechos = {
+    pago: { allocated: 16954, outstanding: 127, total: 16954 },
+    tienePedido: false,
+    tieneRemision: false,
+  };
+  assert.equal(etapaPostVenta(hechos), 'saldo_pagado');
+});
+
+test('etapaPostVenta: pago de menos hasta 1% se considera liquidado (saldo_pagado)', () => {
+  // Cliente paga 0.5% de menos por error humano: dentro de la tolerancia.
+  const hechos = {
+    pago: { allocated: 995, outstanding: 5, total: 1000 },
+    tienePedido: false,
+    tieneRemision: false,
+  };
+  assert.equal(etapaPostVenta(hechos), 'saldo_pagado');
+});
+
+test('etapaPostVenta: pago de menos mayor al 1% sigue siendo anticipo_pagado', () => {
+  // Paga 2% de menos: fuera de la tolerancia, aun es anticipo.
+  const hechos = {
+    pago: { allocated: 980, outstanding: 20, total: 1000 },
+    tienePedido: false,
+    tieneRemision: false,
+  };
+  assert.equal(etapaPostVenta(hechos), 'anticipo_pagado');
+});
+
+test('etapaPostVenta: pago de mas (allocated > total) se considera liquidado (saldo_pagado)', () => {
+  const hechos = {
+    pago: { allocated: 1010, outstanding: 0, total: 1000 },
+    tienePedido: false,
+    tieneRemision: false,
+  };
+  assert.equal(etapaPostVenta(hechos), 'saldo_pagado');
+});
+
 // --- Sin hecho post-venta: null (sigue en Seguimiento) ---
 
 test('etapaPostVenta devuelve null si ningun hecho post-venta aplica', () => {
