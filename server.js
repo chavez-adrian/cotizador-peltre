@@ -1028,6 +1028,33 @@ app.post('/api/webhooks/operam', async (req, res) => {
   res.json({ ok: true, reconciliadas });
 });
 
+// Reconciliacion on-demand (#62 F4): red de seguridad por si un webhook se pierde
+// o no esta configurado. Recorre SOLO las oportunidades activas no terminadas con
+// RFC (las candidatas a tener movimiento post-venta en Operam), lee la verdad por
+// API y mueve las que avanzan. Autenticada con el JWT del cotizador. Best-effort:
+// el fallo de una oportunidad no aborta el resto.
+app.post('/api/sync-operam', authMiddleware, async (req, res) => {
+  let cotizaciones = [];
+  try {
+    cotizaciones = await cotStore.listar();
+  } catch (err) {
+    return res.status(503).json({ error: 'No se pudieron leer las cotizaciones: ' + err.message });
+  }
+  const candidatas = cotizaciones.filter(c =>
+    esActivaPostVentaCandidata(c) && c?.data?.cliente?.rfc
+  );
+  const movidas = [];
+  for (const op of candidatas) {
+    try {
+      const r = await reconciliarOportunidad(op);
+      if (r.movida) movidas.push({ id: op.id, etapa: r.etapa });
+    } catch (err) {
+      console.error('[sync-operam] oportunidad', op.id, err.message);
+    }
+  }
+  res.json({ ok: true, revisadas: candidatas.length, movidas });
+});
+
 // --- CSF: proxy QR del SAT ---
 
 app.post('/api/csf-from-url', authMiddleware, async (req, res) => {
