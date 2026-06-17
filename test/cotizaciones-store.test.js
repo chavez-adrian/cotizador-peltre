@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/cotizaciones.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos } from '../lib/cotizaciones-store.js';
+import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa } from '../lib/cotizaciones-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -112,6 +112,39 @@ test('actualizarDatos guarda el checklist de calca y lo expone en listar/obtener
 test('actualizarDatos sobre una cotizacion inexistente no rompe', async () => {
   writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
   assert.equal(await actualizarDatos(99, { decorado: true }), false);
+});
+
+// cambiarEtapa mueve la oportunidad (cotizacion) por el pipeline post-venta y
+// registra el evento (issue #62). Mismo patron que prospectos-store.cambiarEtapa.
+// El sync de Operam usa esto para mover la tarjeta cuando lee un hecho post-venta.
+test('cambiarEtapa fija la etapa de la cotizacion y obtener/listar la exponen', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
+  const ok = await cambiarEtapa(1, 'anticipo_pagado', { tipo: 'sync_operam', fecha: '2026-06-17T00:00:00Z' });
+  assert.equal(ok, true);
+  assert.equal((await obtener(1)).etapa, 'anticipo_pagado');
+  assert.equal((await listar())[0].etapa, 'anticipo_pagado');
+});
+
+test('cambiarEtapa registra el evento sin borrar los previos', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {}, eventos: [{ tipo: 'previo' }] }]);
+  await cambiarEtapa(1, 'pedido_liberado', { tipo: 'sync_operam', etapa: 'pedido_liberado' });
+  const c = await obtener(1);
+  assert.equal(c.eventos.length, 2);
+  assert.equal(c.eventos[1].etapa, 'pedido_liberado');
+});
+
+test('cambiarEtapa sobre una cotizacion inexistente no rompe', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
+  assert.equal(await cambiarEtapa(99, 'anticipo_pagado', { tipo: 'sync_operam' }), false);
+});
+
+// La etapa persistida sobrevive la migracion de lectura (migrarCotizacion respeta
+// una etapa de pipeline ya presente): una cotizacion movida a post-venta no se
+// recalcula a seguimiento.
+test('cambiarEtapa: la etapa post-venta persiste por encima del estado', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', estado: 'abierta', data: {} }]);
+  await cambiarEtapa(1, 'saldo_pagado', { tipo: 'sync_operam' });
+  assert.equal((await obtener(1)).etapa, 'saldo_pagado');
 });
 
 test('listar expone la etapa del pipeline derivada del estado de cada cotizacion (#53)', async () => {
