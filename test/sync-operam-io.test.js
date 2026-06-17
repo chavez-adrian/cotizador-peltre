@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hechosDeOperam, reconciliarOportunidad } from '../lib/sync-operam-io.js';
+import { hechosDeOperam, reconciliarOportunidad, reconciliarPorIdentificador, esActivaPostVentaCandidata } from '../lib/sync-operam-io.js';
 
 // Motor de reconciliacion del sync post-venta (issue #62, AC2). Lee Operam
 // (read-only), normaliza a hechos con el mapeo real (peltre-operam.md 12) y mueve
@@ -171,4 +171,72 @@ test('reconciliarOportunidad: sin RFC no mueve ni truena', async () => {
   const res = await reconciliarOportunidad(op, deps);
   assert.equal(res.movida, false);
   assert.equal(deps.movimientos.length, 0);
+});
+
+// --- esActivaPostVentaCandidata ---
+
+test('esActivaPostVentaCandidata: activas no terminadas si, terminadas y salidas no', () => {
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'seguimiento' }), true);
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'anticipo_pagado' }), true);
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'producto_entregado' }), false);
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'perdida' }), false);
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'no_util' }), false);
+});
+
+// --- reconciliarPorIdentificador (webhook -> oportunidades) ---
+
+test('reconciliarPorIdentificador: reconcilia la oportunidad del RFC del webhook', async () => {
+  const deps = depsMock({
+    transacciones: [
+      { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
+      { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
+    ],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+  });
+  const oportunidades = [
+    { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } },
+    { id: 2, etapa: 'seguimiento', data: { cliente: { rfc: 'OTRO010101AAA' } } }, // no matchea
+  ];
+  const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7077' }, oportunidades, deps);
+  assert.equal(res.length, 1);
+  assert.equal(res[0].id, 1);
+  assert.equal(res[0].etapa, 'producto_entregado');
+  assert.equal(deps.movimientos.length, 1);
+});
+
+test('reconciliarPorIdentificador: prioriza la oportunidad con order_ exacto cuando varias comparten RFC', async () => {
+  const deps = depsMock({
+    transacciones: [
+      { type: '10', order_: '7230', total_amount: '6153', allocated: '6153', outstanding: '0', debtor_no: '345' },
+    ],
+    pedidos: [{ order_no: '7230', trans_type: '30', debtor_no: '345' }],
+  });
+  const oportunidades = [
+    { id: 1, etapa: 'seguimiento', folioOperam: '7077', data: { cliente: { rfc: 'CPE921211N76' } } },
+    { id: 2, etapa: 'seguimiento', folioOperam: '7230', data: { cliente: { rfc: 'CPE921211N76' } } },
+  ];
+  const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7230' }, oportunidades, deps);
+  assert.equal(res.length, 1);
+  assert.equal(res[0].id, 2);
+});
+
+test('reconciliarPorIdentificador: sin candidata (RFC desconocido) devuelve vacio, no truena', async () => {
+  const deps = depsMock({});
+  const oportunidades = [{ id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'AAA010101AAA' } } }];
+  const res = await reconciliarPorIdentificador({ rfc: 'ZZZ999999ZZZ' }, oportunidades, deps);
+  assert.deepEqual(res, []);
+  assert.equal(deps.movimientos.length, 0);
+});
+
+test('reconciliarPorIdentificador: ignora oportunidades terminadas/salidas', async () => {
+  const deps = depsMock({
+    transacciones: [{ type: '10', order_: '1', total_amount: '100', allocated: '100', outstanding: '0', debtor_no: '9' }],
+    pedidos: [{ order_no: '1', trans_type: '30', debtor_no: '9' }],
+  });
+  const oportunidades = [
+    { id: 1, etapa: 'producto_entregado', data: { cliente: { rfc: 'AAA010101AAA' } } },
+    { id: 2, etapa: 'perdida', data: { cliente: { rfc: 'AAA010101AAA' } } },
+  ];
+  const res = await reconciliarPorIdentificador({ rfc: 'AAA010101AAA' }, oportunidades, deps);
+  assert.deepEqual(res, []);
 });

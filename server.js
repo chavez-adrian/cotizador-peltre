@@ -9,6 +9,8 @@ import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
+import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
+import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
 import { detectarDuplicados } from './lib/deduplicacion.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
@@ -980,6 +982,50 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   } catch (err) {
     res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
   }
+});
+
+// --- Webhook de Operam: sync post-venta (#62) ---
+// Operam dispara webhooks salientes (admin/web_hooks.php) en cada Pago / Pedido /
+// Remision. El webhook es solo una SEÑAL: aqui NO se confia en su payload (formato
+// aun no fijado); se loguea idempotentemente, se extrae un identificador de forma
+// defensiva y la RECONCILIACION lee el estado real por API y mueve la tarjeta.
+// Auth por header secreto (Operam no tiene el JWT del cotizador). Responde 200
+// aunque no se ligue a una oportunidad o Operam este caido (no truena el webhook).
+app.post('/api/webhooks/operam', async (req, res) => {
+  const secret = process.env.OPERAM_WEBHOOK_SECRET;
+  const recibido = req.headers['x-operam-webhook-secret'];
+  if (!secret || recibido !== secret) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+  const payload = req.body || {};
+  let event_key = null;
+  try {
+    // Log idempotente: si el evento ya se registro, no reprocesar (la monotonia del
+    // nucleo tambien lo cubre, pero asi se evita la lectura/escritura de mas).
+    const reg = await registrarEventoWebhook(payload);
+    event_key = reg.event_key;
+    if (!reg.nuevo) {
+      return res.json({ ok: true, duplicado: true, reconciliadas: [] });
+    }
+  } catch (err) {
+    console.error('[webhook][operam] log:', err.message);
+  }
+
+  let reconciliadas = [];
+  try {
+    const identificador = extraerIdentificador(payload);
+    const oportunidades = await cotStore.listar();
+    reconciliadas = await reconciliarPorIdentificador(identificador, oportunidades);
+  } catch (err) {
+    // Operam caido / lectura fallida: el webhook no truena. La reconciliacion
+    // on-demand (al abrir Pipeline/Hoy) es la red de seguridad.
+    console.error('[webhook][operam] reconciliacion:', err.message);
+  }
+  if (event_key) {
+    marcarProcesado(event_key, `reconciliadas:${reconciliadas.length}`)
+      .catch(err => console.error('[webhook][operam] marcar:', err.message));
+  }
+  res.json({ ok: true, reconciliadas });
 });
 
 // --- CSF: proxy QR del SAT ---
