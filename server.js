@@ -986,7 +986,7 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
 
 // --- Webhook de Operam: sync post-venta (#62) ---
 // Operam dispara webhooks salientes (admin/web_hooks.php) en cada Pago / Pedido /
-// Remision. El webhook es solo una SEÑAL: aqui NO se confia en su payload (formato
+// Remision. El webhook es solo una SENAL: aqui NO se confia en su payload (formato
 // aun no fijado); se loguea idempotentemente, se extrae un identificador de forma
 // defensiva y la RECONCILIACION lee el estado real por API y mueve la tarjeta.
 // Auth por header secreto (Operam no tiene el JWT del cotizador). Responde 200
