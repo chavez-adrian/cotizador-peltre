@@ -266,6 +266,44 @@ test('Q24: buildColaHoyHtml con cola vacia muestra el estado vacio', () => {
   assert.match(buildColaHoyHtml(null), /Nada pendiente/);
 });
 
+// === Issue #65: reunion de diagnostico sobre una cotizacion en la cola Hoy ===
+
+test('Q25: la card de cotizacion ofrece agendar reunion (input datetime + boton con el id numerico)', () => {
+  const html = buildColaCotizacionItemHtml(itemCotizacion({ id: 10 }));
+  assert.match(html, /type="datetime-local"/);
+  assert.match(html, /id="cot-reunion-10"/);
+  assert.match(html, /agendarReunionCotizacion\(10\)/);
+});
+
+test('Q26: una cotizacion con reunion vencida pide el resultado: avance (Hecho) o Perdida, nunca No util (Modelo A)', () => {
+  const html = buildColaCotizacionItemHtml(itemCotizacion({
+    id: 10, reunionVencida: true, fechaReunion: '2026-06-09T17:00:00Z',
+  }));
+  assert.match(html, /registrar resultado/i);
+  assert.match(html, /resultadoReunionCotizacion\(10, 'avance'\)/);
+  assert.match(html, /resultadoReunionCotizacion\(10, 'perdida'\)/);
+  // Modelo A: una cotizacion no sale por No util.
+  assert.equal(html.includes('No útil'), false);
+  assert.equal(html.includes('marcarNoUtil'), false);
+});
+
+test('Q27: una cotizacion sin reunion vencida conserva el flujo de seguimiento normal', () => {
+  const html = buildColaCotizacionItemHtml(itemCotizacion({ id: 10, paso: 'dia7', reunionVencida: false }));
+  assert.match(html, /marcarSeguimiento\(10, 'dia7'\)/);
+  assert.equal(html.includes('registrar resultado'), false);
+  assert.equal(html.includes('resultadoReunionCotizacion'), false);
+});
+
+test('Q28: una cotizacion que reaparece solo por reunion vencida (paso null) no pinta marcar Hecho roto', () => {
+  const html = buildColaCotizacionItemHtml(itemCotizacion({
+    id: 10, paso: null, reunionVencida: true, fechaReunion: '2026-06-09T17:00:00Z',
+  }));
+  // no debe quedar un onclick con 'null' como paso
+  assert.equal(/marcarSeguimiento\(10, 'null'\)/.test(html), false);
+  // el resultado de reunion sigue disponible
+  assert.match(html, /resultadoReunionCotizacion\(10, 'avance'\)/);
+});
+
 test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma regla que el tablero, para la vista lista', () => {
   const activas = oportunidadesActivas([
     prospecto({ id: 1, etapa: 'por_cotizar' }),

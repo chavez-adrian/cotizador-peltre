@@ -37,7 +37,7 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 - #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos)
 - **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
 - **#64 CERRADO** ✅ — Hoy suma cotizaciones (cola fusionada prospectos+cotizaciones por urgencia relativa). Eliminó la pantalla separada de seguimiento. Mergeado a main.
-- #65 reunión re-encuadrada — desbloqueado (tras #58)
+- **#65 CERRADO** ✅ — reunión de diagnóstico re-encuadrada al pipeline: sobre prospectos (Por Cotizar, ya de #45) Y cotizaciones (Seguimiento, NUEVO). Reunión futura suprime la cadencia, vencida reaparece en Hoy pidiendo resultado (avance/Perdida para cotización — Modelo A; avance/No útil para prospecto). Predicados generalizados a un core sobre el array de eventos. Mergeado a main. Suite 641/641. (Orquestador arregló una regresión sutil: la última reunión la decide la fecha de registro, no la de la cita — RU9.)
 - **#66 CERRADO** ✅ — formalizar pre-cotización (botón Completar en Historial) + editar prospecto. Mergeado a main.
 
 ## #53 — cierre
@@ -171,8 +171,52 @@ Modelo A (decision de Adrian, NO reabrir): **No util** (motivo obligatorio de ca
 - El frontend (controles de tarjeta + modo Cerradas) no tiene test de DOM (patron del repo: sin DOM en tests); la logica pura si (Q40-Q46) y el cableado se verifico EN NAVEGADOR (Laura/Pedro/cot55 + cancelar). 
 - data/prospectos.json y data/cotizaciones.json (gitignored) quedaron con el estado del demo en vivo (Laura/Pedro/cot55 cerrados) -- son fixtures locales, no se commitean.
 
+## #65 — reunion re-encuadrada — CERRADO (aprobado por Adrian con evidencia; verificado por el orquestador; mergeado a main). Suite 641/641 (620 baseline + 20 de #65 + RU9 del fix). Alcance COMPLETO: reunion sobre prospectos (Por Cotizar) y cotizaciones (Seguimiento). Fix del orquestador: ultimaReunionDe elige por fecha de registro (no por fecha de la cita), preservando "la ultima registrada manda" de #45 (regresion RU9 que los fixtures de RU7 no cazaban).
+
+Slice MEDIANO: la reunion sobre PROSPECTOS (Por Cotizar) ya existe (#45); FALTA la maquinaria simetrica sobre COTIZACIONES (Seguimiento). Baseline reconfirmado: 620 pass / 0 fail.
+
+### Plan de ciclos (TDD, 1 AC por ciclo)
+- C1 (AC5 nucleo): generalizar predicados a `ultimaReunionDe(eventos)`, `reunionFuturaDe(eventos, ahora)`, `reunionPendienteResultadoDe(eventos, ahora)` sobre ARRAY; reexpresar `reunionFutura(p)`/`reunionPendienteResultado(p)` como wrappers (NO romper #45/RU6). Tests en prospectos-logica.test.cjs.
+- C2 (AC2/AC3 cadencia cotizacion): `calcularCola` (lib/seguimiento.js) lee reuniones de `c.seguimientos` (entradas `{tipo:'reunion'}`): si futura -> continue (suprime); si pendiente -> emite item con `reunionVencida:true`+`fechaReunion` AUNQUE el paso de cadencia ya este hecho. Tests en seguimiento.test.js.
+- C3 (AC3 orden): `cola-hoy.js` ya ordena reunionVencida primero (condicion generica); confirmar con test que aplica a cotizaciones. Tests en cola-hoy.test.js.
+- C4 (AC1/AC4 rutas): POST /api/cotizacion/:id/reunion (agendar) + POST /api/cotizacion/:id/reunion-resultado (avance/Hecho o Perdida, NO No util — Modelo A). Reusa registrarSeguimiento + setEstado. Tests en seguimiento-api.test.js.
+- C5 (AC1/AC4 frontend): card de cotizacion de cola Hoy (buildColaCotizacionItemHtml) gana agendar reunion + (si reunionVencida) registrar resultado (Hecho/Perdida). Usa refId. Tests en pipeline-logica.test.cjs.
+
+### Decisiones de diseno (lo que no perder)
+- Los eventos de reunion de la cotizacion viven en el array `seguimientos` existente (entrada `{tipo:'reunion', fecha_reunion, fecha, vendedor}`). `calcularCola` hace `(c.seguimientos||[]).map(s=>s.paso)`: una entrada de reunion (sin paso) es ignorada por ese map, NO rompe la cadencia. Evita migracion de schema.
+- El nucleo lee `e.fecha` de cada entrada del array para "evento posterior limpia el pendiente": tanto reuniones como pasos de cadencia tienen `fecha`, asi que registrar el avance (marcar paso/Hecho) limpia el pendiente de reunion. Coherente con el Modelo A.
+- Resultado de reunion sobre COTIZACION: avance (registrar seguimiento/Hecho) o Perdida. NO No util (Modelo A #59: la cotizacion sale solo por Perdida).
+
+### Estado: CERRADO por el subagente (pendiente verificacion del orquestador + demo de Adrian). Suite 640/640 (620 baseline + 20 nuevos). C1-C5 VERDE.
+
+### Estado de cada AC
+- AC1 (agendar reunion en Por Cotizar y Seguimiento): VERDE. Prospecto YA-CUBIERTO (#45, RU2). Cotizacion NUEVO: ruta POST /api/cotizacion/:id/reunion (CR1) + card de cola Hoy con input datetime + agendarReunionCotizacion (Q25).
+- AC2 (reunion futura suprime la cadencia): VERDE. Prospecto YA-CUBIERTO (#45, R1). Cotizacion NUEVO: calcularCola hace continue si reunionFuturaDe (REU1, CR1 end-to-end).
+- AC3 (al vencer reaparece en Hoy pidiendo resultado): VERDE. Cotizacion NUEVO: calcularCola emite reunionVencida+fechaReunion aunque el paso de cadencia ya este hecho (REU2/REU3); cola-hoy la ordena arriba para ambos tipos (H8).
+- AC4 (resultado sin etapas eliminadas): VERDE. Cotizacion: avance (registra evento que reanuda cadencia) o Perdida; no_util RECHAZADO (Modelo A #59) -> CR4/CR5/CR6. Frontend Q26 (Hecho/Perdida, sin No util).
+- AC5 (predicados + supresion con pruebas para ambos tipos): VERDE. Nucleo: RU7/RU8 (array). Prospecto: R1-R4. Cotizacion: REU1-REU5 (cadencia) + CR1-CR8 (rutas) + Q25-Q28 (frontend) + H8 (orden).
+
+### Diseno (lo que no perder)
+- Nucleo generalizado en prospectos-logica.js: ultimaReunionDe/reunionFuturaDe/reunionPendienteResultadoDe operan sobre el ARRAY de eventos. reunionFutura(p)/reunionPendienteResultado(p) quedan como wrappers (pasan p.eventos). Cambio sutil: ultimaReunion ahora ordena por fecha_reunion (no fecha de registro) -- mas correcto, no rompe RU4/R4.
+- Las reuniones de la COTIZACION viven en el array `seguimientos` (entrada {tipo:'reunion', fecha_reunion, fecha, vendedor}). calcularCola hace map(s=>s.paso): una entrada de reunion (sin paso) NO interfiere con la cadencia. Sin migracion de schema.
+- calcularCola: si reunionFuturaDe -> continue; si reunionPendienteResultadoDe -> emite item con reunionVencida+fechaReunion AUNQUE el paso de cadencia este hecho (paso puede ser null si reaparece solo por reunion -> mensaje fallback 'dia2', card no pinta "Hecho").
+- Resultado de reunion de cotizacion (Modelo A): 'avance' registra {tipo:'reunion_resultado', fecha} (evento posterior limpia el pendiente y reanuda la cadencia); 'perdida' -> setEstado('perdida'). NO No util. Reusa registrarSeguimiento + setEstado, sin schema nuevo.
+- Rutas (server.js): POST /api/cotizacion/:id/reunion + /reunion-resultado, auth dueno-o-admin (helper cotizacionOperable, espeja /api/seguimiento/:id). Importa reunionPendienteResultadoDe.
+- Frontend: buildColaCotizacionItemHtml (pipeline-logica.js) con agendar + (si reunionVencida) Hecho/Perdida. Cableado agendarReunionCotizacion/resultadoReunionCotizacion en app.js (espeja agendarReunionProspecto, llaman showHoy al terminar).
+
+### Commits (rama issue-65-reunion)
+- e4f2e15 feat: generaliza los predicados de reunion sobre un array de eventos (#65)
+- fc8b2a2 feat: la cadencia de cotizacion respeta la reunion de diagnostico (#65)
+- b66f68b test: la reunion de cotizacion vencida encabeza la cola Hoy (#65)
+- 7f7c426 feat: rutas de reunion de diagnostico sobre una cotizacion (#65)
+- 549790b feat: agendar y resolver la reunion de una cotizacion en la cola Hoy (#65)
+
+### Deuda / pendientes
+- El frontend (card de cotizacion + cableado) no tiene test de DOM (patron del repo: sin DOM). La logica pura si (Q25-Q28) y el cableado espeja el patron ya probado de agendarReunionProspecto. Verificacion en navegador queda como deuda de proceso (igual que #59/#60); el orquestador puede capturar via chrome-devtools + npm start. NO se verifico en navegador para no crear datos de prueba en disco.
+- DEMO (2 min): 1) Login, ir a Hoy. 2) En una cotizacion en Seguimiento: "Agendar reunion" con fecha futura -> la cotizacion sale de Hoy. 3) (Vencer la fecha o usar fixture con reunion pasada) -> reaparece arriba con "Reunion del ... — registrar resultado" + botones Hecho/Perdida. 4) "Hecho" (avance) -> reanuda la cadencia; o "Perdida" -> cierra la cotizacion. 5) Confirmar que el prospecto sigue: en Por Cotizar agendar reunion futura -> sale de Hoy; vencida -> reaparece con No util (flujo #45 intacto).
+
 ## Siguiente
-#53, #54, #55, #56, #57, #58, #59, #60, #63, #64 y #66 cerrados y en main (11 de 14). Ciclo de vida del embudo COMPLETO + flujo de cotizar reencuadrado como stepper (#60). El tablero tiene 3 acciones de tarjeta (asignar #57, mover a Seguimiento #56, salidas #59), todas con el patrón de cableado endurecido (refId + tests de forma prefijada). **Deuda de proceso: las acciones de tarjeta del tablero / cambios visuales idealmente se verifican en navegador, no solo por tests puros (origen del bug de #57); ahora el orquestador puede capturar via chrome-devtools MCP + npm start local.** Faltan 3: **#65** (reunión re-encuadrada; desbloqueado por #58, el más acotado) · **#61** (decorados — checklist + gate a Pedido liberado + Dropbox) · **#62** (sync Operam post-venta — de-riesga la dependencia abierta pero es HITL, lee/escribe Operam real, requiere sesión con Adrián).
+#53, #54, #55, #56, #57, #58, #59, #60, #63, #64, #65 y #66 cerrados y en main (12 de 14). Ciclo de vida del embudo COMPLETO + cotizar como stepper (#60) + reunión de diagnóstico sobre prospectos y cotizaciones (#65). El tablero tiene 3 acciones de tarjeta (asignar #57, mover a Seguimiento #56, salidas #59), todas con el patrón de cableado endurecido (refId + tests de forma prefijada). **Deuda de proceso: las acciones de tarjeta / cambios visuales idealmente se verifican en navegador (origen del bug de #57); el orquestador puede capturar via chrome-devtools MCP + npm start local.** Faltan 2: **#61** (decorados — checklist de calca + gate a Pedido liberado + Dropbox; feature autocontenida, riesgo medio) · **#62** (sync Operam post-venta — de-riesga la dependencia técnica abierta pero es HITL, lee/escribe Operam real, requiere sesión con Adrián). #62 conviene dejarlo para el final / una sesión dedicada.
 
 ## #60 — cotizar repensado (stepper guiado + alta como excepcion) — CERRADO (aprobado por Adrian con CAPTURAS en vivo; verificado por el orquestador; mergeado a main). Suite 620/620 (604 baseline + 16 nuevos)
 

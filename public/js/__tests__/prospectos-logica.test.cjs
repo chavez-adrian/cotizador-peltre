@@ -8,7 +8,8 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   buildEsperaBadgeHtml, buildColaProspectosHtml, necesitaCanal, validarCanalCotizacion,
   buildCanalModalHtml, reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
   validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml,
-  contarPendientesProspectos;
+  contarPendientesProspectos,
+  ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
@@ -17,7 +18,8 @@ before(async () => {
     necesitaCanal, validarCanalCotizacion, buildCanalModalHtml,
     reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
     validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml,
-    contarPendientesProspectos } = await import('../prospectos-logica.js'));
+    contarPendientesProspectos,
+    ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -524,6 +526,56 @@ test('RU6: reunionFutura y reunionPendienteResultado obedecen a la ultima reunio
   // re-agendada: la ultima manda
   assert.equal(reunionFutura({ ...PROSPECTO, eventos: [REUNION_PASADA, REUNION_FUTURA] }, AHORA), REUNION_FUTURA.fecha_reunion);
   assert.equal(reunionPendienteResultado({ ...PROSPECTO, eventos: [REUNION_PASADA, REUNION_FUTURA] }, AHORA), null);
+});
+
+// === Issue #65: nucleo de predicados de reunion sobre un ARRAY de eventos ===
+// La reunion ya no es solo del prospecto: una COTIZACION en Seguimiento tambien la
+// agenda (su array de eventos vive en c.seguimientos). El nucleo opera sobre el
+// array directamente para que prospecto y cotizacion compartan la misma logica.
+
+test('RU7: el nucleo sobre el array obedece a la ultima reunion (futura/pendiente)', () => {
+  // sin eventos -> nada
+  assert.equal(ultimaReunionDe([]), null);
+  assert.equal(reunionFuturaDe([], AHORA), null);
+  assert.equal(reunionPendienteResultadoDe([], AHORA), null);
+  // ultima reunion = la ultima registrada (REUNION_FUTURA se registro despues)
+  assert.equal(ultimaReunionDe([REUNION_PASADA, REUNION_FUTURA]), REUNION_FUTURA);
+  // futura suprime
+  assert.equal(reunionFuturaDe([REUNION_FUTURA], AHORA), REUNION_FUTURA.fecha_reunion);
+  assert.equal(reunionFuturaDe([REUNION_PASADA], AHORA), null);
+  // pasada sin evento posterior -> pendiente
+  assert.equal(reunionPendienteResultadoDe([REUNION_PASADA], AHORA), REUNION_PASADA.fecha_reunion);
+  assert.equal(reunionPendienteResultadoDe([REUNION_FUTURA], AHORA), null);
+  // un evento posterior a la reunion (p.ej. un paso de cadencia con fecha) limpia el pendiente
+  assert.equal(reunionPendienteResultadoDe([
+    REUNION_PASADA,
+    { paso: 'dia7', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' },
+  ], AHORA), null);
+  // re-agendar al futuro suprime aunque haya una pasada antes
+  assert.equal(reunionFuturaDe([REUNION_PASADA, REUNION_FUTURA], AHORA), REUNION_FUTURA.fecha_reunion);
+});
+
+test('RU8: los wrappers de prospecto delegan en el nucleo del array (no rompe #45)', () => {
+  // reunionFutura(p)/reunionPendienteResultado(p) === nucleo(p.eventos)
+  assert.equal(
+    reunionFutura({ ...PROSPECTO, eventos: [REUNION_FUTURA] }, AHORA),
+    reunionFuturaDe([REUNION_FUTURA], AHORA)
+  );
+  assert.equal(
+    reunionPendienteResultado({ ...PROSPECTO, eventos: [REUNION_PASADA] }, AHORA),
+    reunionPendienteResultadoDe([REUNION_PASADA], AHORA)
+  );
+});
+
+test('RU9: re-agendar a una fecha mas temprana: manda la ultima reunion REGISTRADA, no la de cita mas lejana', () => {
+  // CONTEXT.md "Reunion de diagnostico": re-agendar registra otro evento y la
+  // ultima manda (la ultima accion del vendedor). Si re-agenda de 06-20 a 06-13
+  // (cita mas cercana) registrando despues, la activa es la de 06-13, aunque
+  // 06-20 sea una fecha de cita posterior.
+  const lejana = { tipo: 'reunion', fecha_reunion: '2026-06-20T17:00:00.000Z', fecha: '2026-06-10T08:00:00.000Z', vendedor: 'Memo' };
+  const reagendada = { tipo: 'reunion', fecha_reunion: '2026-06-13T17:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
+  assert.equal(ultimaReunionDe([lejana, reagendada]), reagendada);
+  assert.equal(reunionFuturaDe([lejana, reagendada], AHORA), reagendada.fecha_reunion);
 });
 
 // === Issue #53: el tablero unico del pipeline reemplaza el kanban de
