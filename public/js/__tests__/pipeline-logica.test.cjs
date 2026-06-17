@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -539,4 +539,56 @@ test('Q46: buildCerradasHtml muestra un vacio cuando no hay cerradas y escapa da
   const xss = buildCerradasHtml([prospecto({ id: 2, nombre: '<b>x</b>', etapa: 'no_util', motivoNoUtil: '<i>spam</i>' })]);
   assert.equal(xss.includes('<b>x</b>'), false);
   assert.equal(xss.includes('<i>spam</i>'), false);
+});
+
+// === Issue #61: control de decorado (calca) en la tarjeta de cotizacion ===
+// Marcar decorada + checklist de 6 pasos con progreso (3/6) + togglear pasos.
+// Solo aplica a cotizaciones (un prospecto sin cotizar no lleva calca). Usa el id
+// numerico (refId), nunca el prefijado ("c10"), leccion del bug de #57.
+
+test('Q47: buildDecoradoControlHtml ofrece marcar decorada en una cotizacion no decorada (sin checklist)', () => {
+  const html = buildDecoradoControlHtml(cotizacion({ decorado: false }));
+  assert.match(html, /decorada/i);
+  // no pinta el checklist de pasos si no esta decorada
+  assert.equal(/Arte final/i.test(html), false);
+});
+
+test('Q48: buildDecoradoControlHtml no pinta nada para un prospecto', () => {
+  assert.equal(buildDecoradoControlHtml(prospecto({})), '');
+});
+
+test('Q49: una cotizacion decorada muestra el checklist de 6 pasos con su progreso (3/6)', () => {
+  const checklist = [
+    { clave: 'cotizacion_proveedor', completo: true },
+    { clave: 'posicion_cliente', completo: true },
+    { clave: 'arte_final', completo: true },
+    { clave: 'dummy_autorizado', completo: false },
+    { clave: 'liberacion_produccion', completo: false },
+    { clave: 'archivos_dropbox', completo: false },
+  ];
+  const html = buildDecoradoControlHtml(cotizacion({ decorado: true, calcaChecklist: checklist }));
+  assert.match(html, /3\s*\/\s*6/);
+  // los 6 labels aparecen
+  assert.match(html, /Cotizacion con proveedor/i);
+  assert.match(html, /Arte final/i);
+  assert.match(html, /Archivos de posicion/i);
+});
+
+test('Q50: el control de decorado usa el id numerico (refId) con la oportunidad prefijada (#57)', () => {
+  const o = cotizacion({ id: 'c10', refId: 10, decorado: true, calcaChecklist: [{ clave: 'arte_final', completo: false }] });
+  const html = buildDecoradoControlHtml(o);
+  // las acciones togglean por id numerico 10, nunca por "c10"
+  assert.equal(html.includes('c10'), false);
+  assert.match(html, /\(10/);
+});
+
+test('Q51: el paso de archivos (paso 6) ofrece un input de archivo para subir a Dropbox', () => {
+  const o = cotizacion({ decorado: true, calcaChecklist: [{ clave: 'archivos_dropbox', completo: false }] });
+  const html = buildDecoradoControlHtml(o);
+  assert.match(html, /type="file"/i);
+});
+
+test('Q52: la tarjeta del tablero pinta el control de decorado en una cotizacion en Seguimiento', () => {
+  const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'seguimiento', decorado: true, calcaChecklist: [{ clave: 'arte_final', completo: true }] })]);
+  assert.match(tablero, /1\s*\/\s*6/);
 });

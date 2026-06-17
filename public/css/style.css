@@ -1178,6 +1178,13 @@ body {
 .tablero-card .cot-card-actions { flex-wrap: wrap; }
 /* Control de asignar vendedor en la tarjeta No Asignado (issue #57) */
 .tablero-asignar { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+/* Checklist de producto decorado / calca (issue #61) */
+.decorado-control { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.decorado-progreso { font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.calca-checklist { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.calca-paso { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.calca-paso-label { flex: 1 1 auto; min-width: 140px; }
+.calca-paso-hecho .calca-paso-label { color: var(--primary-dark); }
 .tablero-aviso {
   position: fixed;
   bottom: 24px;

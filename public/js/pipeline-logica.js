@@ -11,6 +11,7 @@
 // frontend, alineado a ese glosario.
 
 import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL } from './prospectos-logica.js';
+import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,
 // Perdida) NO son columnas: viven en filtro/historial.
@@ -229,6 +230,48 @@ export function buildSalidaControlHtml(o) {
   </div>`;
 }
 
+// Control de producto decorado / calca en la tarjeta de cotizacion (issue #61,
+// CONTEXT.md "Producto decorado (calca)"). Solo aplica a COTIZACIONES (un
+// prospecto sin cotizar no lleva calca). Una cotizacion no decorada ofrece
+// marcarla; una decorada muestra el checklist de 6 pasos con su progreso (p. ej.
+// 3/6), cada paso togglable. El paso 6 (archivos_dropbox) ofrece un input de
+// archivo que sube la posicion de calca a Dropbox. Usa el id numerico (refId),
+// nunca el prefijado ("c10"), leccion del bug de #57.
+export function buildDecoradoControlHtml(o) {
+  if (!o || o.tipo !== 'cotizacion') return '';
+  const id = o.refId ?? o.id;
+  if (!esDecorada(o)) {
+    return `<div class="cot-card-actions decorado-control">
+      <button class="btn btn-secondary btn-sm" onclick="marcarDecorada(${id}, true)">Marcar decorada (calca)</button>
+    </div>`;
+  }
+  const checklist = o.calcaChecklist || (o.data && o.data.calcaChecklist);
+  const { completos, total } = progresoDecorado(checklist);
+  const completoDe = clave => {
+    const ch = Array.isArray(checklist) ? checklist : [];
+    const hit = ch.find(p => p && p.clave === clave);
+    return !!(hit && hit.completo);
+  };
+  const pasos = PASOS_DECORADO.map(p => {
+    const hecho = completoDe(p.clave);
+    const toggle = `<button class="btn btn-sm ${hecho ? 'btn-secondary' : 'btn-primary'}" onclick="toggleCalcaPaso(${id}, '${p.clave}', ${hecho ? 'false' : 'true'})">${hecho ? 'Revertir' : 'Marcar'}</button>`;
+    const archivos = p.clave === 'archivos_dropbox'
+      ? `<input type="file" id="calca-archivos-${id}" class="btn-sm" multiple>
+         <button class="btn btn-sm btn-primary" onclick="subirCalcaArchivos(${id})">Subir a Dropbox</button>`
+      : '';
+    return `<li class="calca-paso ${hecho ? 'calca-paso-hecho' : ''}">
+      <span class="calca-paso-label">${hecho ? 'OK ' : ''}${escapeHtml(p.label)}</span>
+      ${toggle}${archivos}
+    </li>`;
+  }).join('');
+  return `<div class="cot-card-actions decorado-control">
+    <div class="decorado-progreso">Calca ${completos}/${total}
+      <button class="btn btn-secondary btn-sm" onclick="marcarDecorada(${id}, false)">Quitar decorada</button>
+    </div>
+    <ol class="calca-checklist">${pasos}</ol>
+  </div>`;
+}
+
 function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
@@ -236,6 +279,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
   const mover = buildMoverSeguimientoControlHtml(o);
   const salida = buildSalidaControlHtml(o);
+  const decorado = buildDecoradoControlHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -247,6 +291,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
       </div>
       ${asignar}
       ${mover}
+      ${decorado}
       ${salida}
     </div>
   </div>`;

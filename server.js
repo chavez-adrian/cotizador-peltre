@@ -273,6 +273,10 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // registroDesconocido = historica anterior a #63 (se asume registrada, sin badge).
     folioOperam: folioOperam ?? null,
     registroDesconocido: registroDesconocido ?? false,
+    // Producto decorado / calca (issue #61): el flag y el checklist viven en data;
+    // el tablero pinta el checklist con progreso en la tarjeta de cotizacion.
+    decorado: data?.decorado === true,
+    calcaChecklist: data?.calcaChecklist ?? null,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
     hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),

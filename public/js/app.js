@@ -1982,6 +1982,7 @@ function cotizacionAOportunidad(c) {
     tipo: 'cotizacion', id: `c${c.id}`, refId: c.id, nombre: c.cliente,
     vendedor: c.vendedor, etapa: c.etapa, total: c.total, totalPiezas: c.totalPiezas,
     fecha: c.fecha, folioOperam: c.folioOperam ?? null,
+    decorado: c.decorado === true, calcaChecklist: c.calcaChecklist ?? null,
   };
 }
 
@@ -2178,6 +2179,54 @@ async function cerrarPerdidaTablero(id) {
   }
 }
 window.cerrarPerdidaTablero = cerrarPerdidaTablero;
+
+// Producto decorado / calca (issue #61). Acciones de la tarjeta de cotizacion:
+// marcar/desmarcar decorada (activa el checklist 0/6), togglear un paso del
+// checklist y subir los archivos de posicion de calca a Dropbox (paso 6). El
+// control pinta el id numerico (refId); las rutas esperan el id real de la
+// cotizacion.
+async function marcarDecorada(id, decorado) {
+  try {
+    const res = await api(`/api/cotizacion/${id}/decorado`, { method: 'PATCH', body: { decorado: !!decorado } });
+    if (!res.ok) { avisoTablero('No se pudo actualizar decorada'); return; }
+    showPipeline();
+  } catch (e) { avisoTablero('Error de conexion'); }
+}
+window.marcarDecorada = marcarDecorada;
+
+async function toggleCalcaPaso(id, paso, completo) {
+  try {
+    const res = await api(`/api/cotizacion/${id}/calca-paso`, { method: 'PATCH', body: { paso, completo: !!completo } });
+    if (!res.ok) { avisoTablero('No se pudo actualizar el paso de calca'); return; }
+    showPipeline();
+  } catch (e) { avisoTablero('Error de conexion'); }
+}
+window.toggleCalcaPaso = toggleCalcaPaso;
+
+function leerArchivoBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+// Sube la posicion de calca a Dropbox y marca el paso 6. La subida es
+// fire-and-forget en el servidor: un fallo de Dropbox no impide marcar el paso.
+async function subirCalcaArchivos(id) {
+  const input = document.getElementById(`calca-archivos-${id}`);
+  const files = input && input.files ? Array.from(input.files) : [];
+  if (!files.length) { avisoTablero('Elige los archivos de posicion de calca'); return; }
+  try {
+    const archivos = await Promise.all(files.map(async f => ({ nombre: f.name, contenidoBase64: await leerArchivoBase64(f) })));
+    const res = await api(`/api/cotizacion/${id}/calca-paso`, { method: 'PATCH', body: { paso: 'archivos_dropbox', completo: true, archivos } });
+    if (!res.ok) { avisoTablero('No se pudo subir la posicion de calca'); return; }
+    avisoTablero('Archivos enviados a Dropbox');
+    showPipeline();
+  } catch (e) { avisoTablero('Error de conexion'); }
+}
+window.subirCalcaArchivos = subirCalcaArchivos;
 
 function setModoPipeline(modo) {
   pipelineModo = modo;
