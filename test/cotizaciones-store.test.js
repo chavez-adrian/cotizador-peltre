@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/cotizaciones.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam } from '../lib/cotizaciones-store.js';
+import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos } from '../lib/cotizaciones-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -86,6 +86,32 @@ test('setFolioOperam guarda el folio devuelto por Operam y obtener/listar lo exp
 test('setFolioOperam sobre una cotizacion inexistente no rompe', async () => {
   writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
   assert.equal(await setFolioOperam(99, 7788), false);
+});
+
+// Mergea campos en data sin reemplazar lo previo (issue #61, decorados): el flag
+// decorado y el checklist de calca viven en data.decorado / data.calcaChecklist.
+// Mismo patron que actualizarDatos de prospectos-store (merge JSONB + fallback).
+test('actualizarDatos mergea en data sin borrar lo previo', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: { cliente: { rfc: 'XAXX010101000' } } }]);
+  const ok = await actualizarDatos(1, { decorado: true });
+  assert.equal(ok, true);
+  const c = await obtener(1);
+  assert.equal(c.data.decorado, true);
+  // No borra lo que ya estaba en data
+  assert.equal(c.data.cliente.rfc, 'XAXX010101000');
+});
+
+test('actualizarDatos guarda el checklist de calca y lo expone en listar/obtener', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
+  const checklist = [{ clave: 'arte_final', completo: true }];
+  await actualizarDatos(1, { decorado: true, calcaChecklist: checklist });
+  assert.deepEqual((await obtener(1)).data.calcaChecklist, checklist);
+  assert.deepEqual((await listar())[0].data.calcaChecklist, checklist);
+});
+
+test('actualizarDatos sobre una cotizacion inexistente no rompe', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
+  assert.equal(await actualizarDatos(99, { decorado: true }), false);
 });
 
 test('listar expone la etapa del pipeline derivada del estado de cada cotizacion (#53)', async () => {

@@ -242,3 +242,135 @@ test('CR8: reunion-resultado sobre cotizacion ajena responde 403', async () => {
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'avance' });
   assert.equal(res.status, 403);
 });
+
+// === Issue #61: decorados (calca) — marcar decorada, checklist, gate, Dropbox ===
+
+const TODOS_LOS_PASOS = [
+  'cotizacion_proveedor', 'posicion_cliente', 'arte_final',
+  'dummy_autorizado', 'liberacion_produccion', 'archivos_dropbox',
+];
+
+test('DEC1: PATCH /api/cotizacion/:id/decorado marca decorada y activa el checklist 0/6', async () => {
+  writeCots(fixture());
+  const res = await supertest(app).patch('/api/cotizacion/1/decorado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ decorado: true });
+  assert.equal(res.status, 200);
+  const guardado = readCots().find(c => c.id === 1);
+  assert.equal(guardado.data.decorado, true);
+  assert.equal(guardado.data.calcaChecklist.length, 6);
+  assert.ok(guardado.data.calcaChecklist.every(p => p.completo === false));
+});
+
+test('DEC2: PATCH decorado=false desmarca la cotizacion', async () => {
+  const cots = fixture();
+  cots[0].data.decorado = true;
+  cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map(c => ({ clave: c, completo: false }));
+  writeCots(cots);
+  const res = await supertest(app).patch('/api/cotizacion/1/decorado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ decorado: false });
+  assert.equal(res.status, 200);
+  assert.equal(readCots().find(c => c.id === 1).data.decorado, false);
+});
+
+test('DEC3: decorado sobre cotizacion ajena responde 403, inexistente 404', async () => {
+  writeCots(fixture());
+  const ajena = await supertest(app).patch('/api/cotizacion/2/decorado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ decorado: true });
+  assert.equal(ajena.status, 403);
+  const noExiste = await supertest(app).patch('/api/cotizacion/999/decorado')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ decorado: true });
+  assert.equal(noExiste.status, 404);
+});
+
+test('DEC4: PATCH /api/cotizacion/:id/calca-paso marca un paso y reporta el progreso', async () => {
+  const cots = fixture();
+  cots[0].data.decorado = true;
+  cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map(c => ({ clave: c, completo: false }));
+  writeCots(cots);
+  const res = await supertest(app).patch('/api/cotizacion/1/calca-paso')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ paso: 'arte_final', completo: true });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.progreso, { completos: 1, total: 6 });
+  const guardado = readCots().find(c => c.id === 1);
+  assert.equal(guardado.data.calcaChecklist.find(p => p.clave === 'arte_final').completo, true);
+});
+
+test('DEC5: calca-paso revierte un paso completado', async () => {
+  const cots = fixture();
+  cots[0].data.decorado = true;
+  cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map(c => ({ clave: c, completo: true }));
+  writeCots(cots);
+  const res = await supertest(app).patch('/api/cotizacion/1/calca-paso')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ paso: 'dummy_autorizado', completo: false });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.progreso, { completos: 5, total: 6 });
+  assert.equal(readCots().find(c => c.id === 1).data.calcaChecklist.find(p => p.clave === 'dummy_autorizado').completo, false);
+});
+
+test('DEC6: calca-paso con un paso invalido responde 400', async () => {
+  const cots = fixture();
+  cots[0].data.decorado = true;
+  cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map(c => ({ clave: c, completo: false }));
+  writeCots(cots);
+  const res = await supertest(app).patch('/api/cotizacion/1/calca-paso')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ paso: 'no_existe', completo: true });
+  assert.equal(res.status, 400);
+});
+
+test('DEC7: el paso de archivos (paso 6) acepta contenido y marca el paso aunque Dropbox no este configurado', async () => {
+  const cots = fixture();
+  cots[0].data.decorado = true;
+  cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map(c => ({ clave: c, completo: false }));
+  writeCots(cots);
+  // En local Dropbox no esta configurado: la subida es fire-and-forget y NO debe
+  // bloquear ni romper la respuesta (mismo patron que subirCsfDropbox).
+  const res = await supertest(app).patch('/api/cotizacion/1/calca-paso')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ paso: 'archivos_dropbox', completo: true, archivos: [{ nombre: 'posicion.pdf', contenidoBase64: 'aGVsbG8=' }] });
+  assert.equal(res.status, 200);
+  assert.equal(readCots().find(c => c.id === 1).data.calcaChecklist.find(p => p.clave === 'archivos_dropbox').completo, true);
+});
+
+// --- AC3: gate server-side a Pedido liberado (#61). El sync Operam (#62) NO
+// existe aun; este es el punto de enforcement minimo que #62 reusara. ---
+
+test('DEC8: liberar una cotizacion decorada con checklist incompleto responde 409 (no avanza)', async () => {
+  const cots = fixture();
+  cots[0].data.decorado = true;
+  cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map((c, i) => ({ clave: c, completo: i < 3 }));
+  writeCots(cots);
+  const res = await supertest(app).post('/api/cotizacion/1/liberar')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(res.status, 409);
+  // no marca pedidoLiberado
+  assert.notEqual(readCots().find(c => c.id === 1).data.pedidoLiberado, true);
+});
+
+test('DEC9: liberar una cotizacion decorada con los 6 pasos completos responde 200 y marca el avance', async () => {
+  const cots = fixture();
+  cots[0].data.decorado = true;
+  cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map(c => ({ clave: c, completo: true }));
+  writeCots(cots);
+  const res = await supertest(app).post('/api/cotizacion/1/liberar')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(res.status, 200);
+  assert.equal(readCots().find(c => c.id === 1).data.pedidoLiberado, true);
+});
+
+test('DEC10: liberar una cotizacion NO decorada responde 200 (el gate no aplica)', async () => {
+  writeCots(fixture());
+  const res = await supertest(app).post('/api/cotizacion/1/liberar')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(res.status, 200);
+  assert.equal(readCots().find(c => c.id === 1).data.pedidoLiberado, true);
+});
+
+test('DEC11: liberar sobre cotizacion ajena responde 403, inexistente 404', async () => {
+  writeCots(fixture());
+  const ajena = await supertest(app).post('/api/cotizacion/2/liberar')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(ajena.status, 403);
+  const noExiste = await supertest(app).post('/api/cotizacion/999/liberar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({});
+  assert.equal(noExiste.status, 404);
+});
