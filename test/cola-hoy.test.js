@@ -105,3 +105,17 @@ test('H7: el prospecto expone su accion (registrar contacto: id y celular)', () 
   // sugerirNoUtil viene del motor de prospectos (false sin 3 toques).
   assert.equal(prosp.sugerirNoUtil, false);
 });
+
+test('H8: una reunion de COTIZACION vencida encabeza la cola por encima de cualquier urgencia (issue #65)', () => {
+  // cotizacion con reunion el 9 (vencida ahora 10); el reloj de cadencia es bajo
+  const cotReunion = cotizacion({
+    fecha: '2026-06-07T18:00:00Z',
+    seguimientos: [{ tipo: 'reunion', fecha: '2026-06-05T18:00:00Z', fecha_reunion: '2026-06-09T18:00:00Z', vendedor: 'Memo' }],
+  });
+  // prospecto WhatsApp en rojo (urgencia > 1) no debe ganarle a la reunion vencida
+  const prospRojo = prospecto({ fecha: '2026-06-10T15:00:00Z' });
+  const cola = calcularColaHoy([prospRojo], [cotReunion], AHORA);
+  assert.equal(cola[0].tipo, 'cotizacion');
+  assert.equal(cola[0].reunionVencida, true);
+  assert.equal(cola[0].fechaReunion, '2026-06-09T18:00:00Z');
+});
