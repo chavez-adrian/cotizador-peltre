@@ -68,7 +68,7 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 `GET /api/catalogos` — sirve datos para los selectores del formulario de alta:
 - `segmentos`: hardcodeados con los ids internos REALES de Operam (11 segmentos; id=1 es "Sin segmento", id=14 "Distribuidores", etc. — la clave 000-1000 de la UI de Operam NO es el id de la API; verificado contra produccion 2026-06-10; Operam no expone catalogo de segmentos, GET segments responde 501)
 - `vendedores`: de `data/vendedores.json` filtrando `operam_id != null`
-- `listas_precios`: de `GET /api/v3/sales/sales_types`, filtradas a mayoreo: M100/350/550/1500/6000/6001 + US100/350/550/1500/6000
+- `listas_precios`: de `GET /api/v3/sales/sales_types` (todas las activas). Operam entrega la etiqueta en `sales_type` (texto: M100, "Precio de lista", "Segundas", "Amazon"...) y el id numerico en `id` — que es lo que el cliente guarda en su campo `sales_type`. El catalogo expone `{ id: t.id (numerico), nombre: t.sales_type (etiqueta) }`; el selector muestra la etiqueta y manda el id numerico (verificado en vivo 2026-06-17; la API ya NO usa `sales_type_id` ni `description`)
 
 > `data/vendedores.json` tiene dos espacios de ID: `id` (interno del cotizador, secuencial) y `operam_id` (ID en Operam, no secuencial). El campo `salesman` que va al body de Operam usa `operam_id`.
 

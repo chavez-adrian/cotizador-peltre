@@ -450,22 +450,18 @@ test('POST /api/parsear-csf con texto solo de espacios en blanco retorna 422, no
 
 // === GET /api/catalogos (issue #27) ===
 
-// Formato REAL de Operam v3 (verificado en vivo 2026-06-17): el codigo viene en
-// `sales_type` (NO `sales_type_id`), el id numerico en `id`, y NO trae `description`.
+// Formato REAL de Operam v3 (verificado en vivo 2026-06-17): la etiqueta viene en
+// `sales_type` (NO `sales_type_id`), el id numerico en `id` (lo que el cliente
+// guarda), NO trae `description`, y `sales_type` es texto libre (M100, "Precio de
+// lista", "Segundas", "Amazon"...). El catalogo expone todas las activas.
 const SALES_TYPES_MOCK = [
-  { id: '1',  sales_type: 'M100',  inactive: '0' },
-  { id: '2',  sales_type: 'M350',  inactive: '0' },
-  { id: '3',  sales_type: 'M550',  inactive: '0' },
-  { id: '4',  sales_type: 'M1500', inactive: '0' },
-  { id: '5',  sales_type: 'M6000', inactive: '0' },
-  { id: '6',  sales_type: 'M6001', inactive: '0' },
-  { id: '7',  sales_type: 'US100', inactive: '0' },
-  { id: '8',  sales_type: 'US350', inactive: '0' },
-  { id: '9',  sales_type: 'US550', inactive: '0' },
-  { id: '10', sales_type: 'US1500', inactive: '0' },
-  { id: '11', sales_type: 'US6000', inactive: '0' },
-  { id: '12', sales_type: 'MEN50', inactive: '0' },
-  { id: '13', sales_type: 'OTRO',  inactive: '0' },
+  { id: '15', sales_type: 'M100',            inactive: '0' },
+  { id: '16', sales_type: 'M350',            inactive: '0' },
+  { id: '1',  sales_type: 'M550',            inactive: '0' },
+  { id: '12', sales_type: 'Precio de lista', inactive: '0' },
+  { id: '9',  sales_type: 'Segundas',        inactive: '0' },
+  { id: '19', sales_type: 'Amazon',          inactive: '0' },
+  { id: '98', sales_type: 'Vieja Inactiva',  inactive: '1' },
 ];
 
 function mockCatalogos() {
@@ -525,19 +521,19 @@ test('C3: GET /api/catalogos vendedores excluye entradas con operam_id null', as
   }
 });
 
-test('C4: GET /api/catalogos listas_precios contiene solo codigos mayoreo y excluye menudeo', async () => {
+test('C4: GET /api/catalogos listas_precios = todas las activas (id numerico + etiqueta), excluye inactivas', async () => {
   const restore = mockCatalogos();
   try {
     await cargarListasPrecios();
     const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
-    const ids = res.body.listas_precios.map(l => l.id);
-    const MAYOREO = ['M100', 'M350', 'M550', 'M1500', 'M6000', 'M6001', 'US100', 'US350', 'US550', 'US1500', 'US6000'];
-    for (const codigo of MAYOREO) {
-      assert.ok(ids.includes(codigo), `debe incluir ${codigo}`);
-    }
-    assert.ok(!ids.includes('MEN50'), 'no debe incluir MEN50 (menudeo)');
-    assert.ok(!ids.includes('OTRO'), 'no debe incluir OTRO');
-    assert.strictEqual(ids.length, 11);
+    // El id es el numerico de Operam (lo que el cliente guarda); el nombre es la
+    // etiqueta (sales_type). Se muestran todas las activas, incluida "Precio de lista".
+    const porId = Object.fromEntries(res.body.listas_precios.map(l => [l.id, l.nombre]));
+    assert.strictEqual(porId['15'], 'M100');
+    assert.strictEqual(porId['12'], 'Precio de lista');
+    assert.strictEqual(porId['9'], 'Segundas');
+    assert.ok(!('98' in porId), 'no debe incluir listas inactivas');
+    assert.strictEqual(res.body.listas_precios.length, 6);
   } finally {
     restore();
   }

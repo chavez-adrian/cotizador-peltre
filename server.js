@@ -63,8 +63,6 @@ const SEGMENTOS = [
   { id: 17, nombre: 'Maquila' },
 ];
 
-const MAYOREO_CODES = new Set(['M100','M350','M550','M1500','M6000','M6001','US100','US350','US550','US1500','US6000']);
-
 let listasPrecios = [];
 
 const app = express();
@@ -1305,12 +1303,14 @@ async function cargarListasPrecios() {
     });
     const data = await r2.json();
     const tipos = Array.isArray(data.data) ? data.data : [];
-    // Operam v3 entrega el codigo en `sales_type` (no `sales_type_id`) y sin
-    // `description` (verificado en vivo 2026-06-17). El id de la lista que usa el
-    // resto del sistema es el codigo (M550, US100...).
+    // Operam v3 (verificado en vivo 2026-06-17): la etiqueta viene en `sales_type`
+    // (texto libre: M100, "Precio de lista", "Segundas", "Amazon"...) y el id
+    // numerico en `id` -- que es lo que el cliente guarda en su campo sales_type.
+    // El selector debe mostrar la etiqueta y mandar el id numerico. Se exponen
+    // todas las listas activas.
     listasPrecios = tipos
-      .filter(t => MAYOREO_CODES.has(t.sales_type))
-      .map(t => ({ id: t.sales_type, nombre: t.description || t.sales_type }));
+      .filter(t => t.inactive !== '1' && t.inactive !== 1)
+      .map(t => ({ id: t.id, nombre: t.sales_type }));
   } catch (err) {
     console.error('[catalogos] No se pudieron cargar listas_precios:', err.message);
     listasPrecios = [];

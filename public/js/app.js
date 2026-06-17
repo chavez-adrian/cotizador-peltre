@@ -2976,7 +2976,7 @@ function altaPoblarSelectores(catalogos) {
   if (!selLista || !selSeg || !selVend) return;
 
   selLista.innerHTML = '<option value="">-- Selecciona --</option>' +
-    catalogos.listas_precios.map(l => `<option value="${l.id}">${l.id} — ${l.nombre}</option>`).join('');
+    catalogos.listas_precios.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
 
   selSeg.innerHTML = '<option value="">-- Selecciona --</option>' +
     catalogos.segmentos.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
