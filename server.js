@@ -21,7 +21,7 @@ import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida } from './lib/pipeline.js';
-import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -338,6 +338,61 @@ app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
   }
   await cotStore.setEstado(entry.id, estado);
   res.json({ ok: true, estado });
+});
+
+// Cotizacion accesible por el usuario autenticado (dueno o admin), mismo guardrail
+// que /api/seguimiento/:id. Responde 404/403 y devuelve undefined si no procede.
+async function cotizacionOperable(req, res) {
+  const entry = await cotStore.obtener(parseInt(req.params.id));
+  if (!entry) { res.status(404).json({ error: 'No encontrada' }); return undefined; }
+  if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
+    res.status(403).json({ error: 'Sin acceso' }); return undefined;
+  }
+  return entry;
+}
+
+// Reunion de diagnostico sobre una COTIZACION en Seguimiento (issue #65, CONTEXT.md
+// "Reunion de diagnostico"): simetrica a la del prospecto. La reunion vive en el
+// array seguimientos como entrada { tipo:'reunion', fecha_reunion, fecha }: una
+// entrada sin `paso` no interfiere con la cadencia. Mientras es futura suprime la
+// cadencia; al vencer reaparece en Hoy pidiendo el resultado (lib/seguimiento.js).
+app.post('/api/cotizacion/:id/reunion', authMiddleware, async (req, res) => {
+  const entry = await cotizacionOperable(req, res);
+  if (!entry) return;
+  const { fecha } = req.body || {};
+  const f = fecha ? new Date(fecha) : null;
+  if (!f || isNaN(f)) return res.status(400).json({ error: 'La fecha de la reunión es obligatoria' });
+  if (f <= new Date()) return res.status(400).json({ error: 'La fecha de la reunión debe ser futura' });
+  await cotStore.registrarSeguimiento(entry.id, {
+    tipo: 'reunion', fecha_reunion: f.toISOString(),
+    fecha: new Date().toISOString(), vendedor: req.user.name,
+  });
+  res.json({ ok: true });
+});
+
+// Resultado de la reunion pasada sobre una cotizacion (issue #65, Modelo A #59):
+// el avance pertinente registra un evento posterior a la reunion (que limpia el
+// pendiente, lib/seguimiento.js), o se cierra la cotizacion como Perdida. NO hay
+// salida a No util para una cotizacion (Modelo A: una cotizacion sale del embudo
+// solo por Perdida; No util es para descalificar prospectos sin cotizar).
+app.post('/api/cotizacion/:id/reunion-resultado', authMiddleware, async (req, res) => {
+  const { resultado } = req.body || {};
+  const entry = await cotizacionOperable(req, res);
+  if (!entry) return;
+  if (!reunionPendienteResultadoDe(entry.seguimientos || [], new Date())) {
+    return res.status(400).json({ error: 'No hay reunión pendiente de resultado' });
+  }
+  if (resultado === 'avance') {
+    await cotStore.registrarSeguimiento(entry.id, {
+      tipo: 'reunion_resultado', fecha: new Date().toISOString(), vendedor: req.user.name,
+    });
+    return res.json({ ok: true });
+  }
+  if (resultado === 'perdida') {
+    await cotStore.setEstado(entry.id, 'perdida');
+    return res.json({ ok: true, estado: 'perdida' });
+  }
+  res.status(400).json({ error: 'Resultado inválido: avance o perdida' });
 });
 
 // --- Prospectos (issue #41, ADR-0004) ---

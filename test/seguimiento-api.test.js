@@ -151,3 +151,94 @@ test('PATCH estado invalido responde 400 y ajeno 403', async () => {
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ estado: 'ganada' });
   assert.equal(ajeno.status, 403);
 });
+
+// === Issue #65: reunion de diagnostico sobre una COTIZACION en Seguimiento ===
+const hoyMas = (dias) => new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString();
+
+test('CR1: POST /api/cotizacion/:id/reunion agenda la reunion y la cotizacion sale de la cola', async () => {
+  writeCots(fixture());
+  const futura = hoyMas(2);
+  const res = await supertest(app).post('/api/cotizacion/1/reunion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ fecha: futura });
+  assert.equal(res.status, 200);
+  const guardado = readCots().find(c => c.id === 1);
+  const reunion = guardado.seguimientos.find(s => s.tipo === 'reunion');
+  assert.ok(reunion);
+  assert.equal(reunion.vendedor, 'Memo');
+  assert.ok(reunion.fecha_reunion);
+  // reunion futura suprime la cadencia -> sale de la cola
+  const cola = await supertest(app).get('/api/seguimiento').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(cola.body.find(i => i.id === 1), undefined);
+});
+
+test('CR2: POST /api/cotizacion/:id/reunion sin fecha futura responde 400', async () => {
+  writeCots(fixture());
+  const sinFecha = await supertest(app).post('/api/cotizacion/1/reunion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(sinFecha.status, 400);
+  const pasada = await supertest(app).post('/api/cotizacion/1/reunion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ fecha: hace(1) });
+  assert.equal(pasada.status, 400);
+});
+
+test('CR3: POST /api/cotizacion/:id/reunion sobre cotizacion ajena responde 403, inexistente 404', async () => {
+  writeCots(fixture());
+  const ajena = await supertest(app).post('/api/cotizacion/2/reunion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ fecha: hoyMas(2) });
+  assert.equal(ajena.status, 403);
+  const noExiste = await supertest(app).post('/api/cotizacion/999/reunion')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ fecha: hoyMas(2) });
+  assert.equal(noExiste.status, 404);
+});
+
+test('CR4: reunion-resultado avance registra el avance y la reunion deja de estar pendiente', async () => {
+  const cots = fixture();
+  // reunion ya vencida (ayer) sin evento posterior -> pendiente de resultado
+  cots[0].seguimientos = [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Memo' }];
+  writeCots(cots);
+  const res = await supertest(app).post('/api/cotizacion/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'avance' });
+  assert.equal(res.status, 200);
+  const guardado = readCots().find(c => c.id === 1);
+  // el avance se registra como un evento posterior a la reunion (limpia el pendiente)
+  assert.ok(guardado.seguimientos.length >= 2);
+  const ultimo = guardado.seguimientos[guardado.seguimientos.length - 1];
+  assert.ok(new Date(ultimo.fecha) > new Date(hace(1)));
+});
+
+test('CR5: reunion-resultado perdida cierra la cotizacion como Perdida (Modelo A)', async () => {
+  const cots = fixture();
+  cots[0].seguimientos = [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Memo' }];
+  writeCots(cots);
+  const res = await supertest(app).post('/api/cotizacion/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'perdida' });
+  assert.equal(res.status, 200);
+  assert.equal(readCots().find(c => c.id === 1).estado, 'perdida');
+});
+
+test('CR6: reunion-resultado no_util es invalido para una cotizacion (Modelo A: solo Perdida)', async () => {
+  const cots = fixture();
+  cots[0].seguimientos = [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Memo' }];
+  writeCots(cots);
+  const res = await supertest(app).post('/api/cotizacion/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'no_util', motivo: 'spam' });
+  assert.equal(res.status, 400);
+  // no se toco el estado
+  assert.equal(readCots().find(c => c.id === 1).estado, undefined);
+});
+
+test('CR7: reunion-resultado sin reunion pendiente responde 400', async () => {
+  writeCots(fixture()); // sin reuniones
+  const res = await supertest(app).post('/api/cotizacion/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'avance' });
+  assert.equal(res.status, 400);
+});
+
+test('CR8: reunion-resultado sobre cotizacion ajena responde 403', async () => {
+  const cots = fixture();
+  cots[1].seguimientos = [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Ana' }];
+  writeCots(cots);
+  const res = await supertest(app).post('/api/cotizacion/2/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'avance' });
+  assert.equal(res.status, 403);
+});
