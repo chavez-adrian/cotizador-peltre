@@ -58,9 +58,9 @@ test('hechosDeOperam: sin RFC en la oportunidad devuelve null (no se puede ligar
   assert.equal(await hechosDeOperam(op, deps), null);
 });
 
-test('hechosDeOperam: con order_ resuelto (folioOperam) filtra la cadena a ese order_', async () => {
+test('hechosDeOperam: con data.orderOperam filtra la cadena a ese order_', async () => {
   // Dos cadenas del mismo cliente: order_ 7077 (entregada) y order_ 7230 (solo
-  // factura con saldo). El folio liga a 7077 -> debe ver solo esa cadena.
+  // factura con saldo). data.orderOperam liga a 7077 -> debe ver solo esa cadena.
   const deps = depsMock({
     transacciones: [
       { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
@@ -72,7 +72,7 @@ test('hechosDeOperam: con order_ resuelto (folioOperam) filtra la cadena a ese o
       { order_no: '7230', trans_type: '30', debtor_no: '345' },
     ],
   });
-  const op = { id: 1, etapa: 'seguimiento', folioOperam: '7077', data: { cliente: { rfc: 'CPE921211N76' } } };
+  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
   const hechos = await hechosDeOperam(op, deps);
   // Solo la cadena 7077: liquidada (no el saldo de 7230).
   assert.equal(hechos.pago.allocated, 16954);
@@ -80,16 +80,28 @@ test('hechosDeOperam: con order_ resuelto (folioOperam) filtra la cadena a ese o
   assert.equal(hechos.tieneRemision, true);
 });
 
-test('hechosDeOperam: order_ explicito en data.orderOperam tiene prioridad sobre el folio', async () => {
+test('hechosDeOperam: el folio de cotizacion NO se usa como order_ (cotizacion != pedido)', async () => {
+  // El cliente tiene dos cadenas: order_ 7077 (entregada, liquidada) y order_ 8888
+  // (otra, con saldo). La oportunidad tiene folioOperam '8888' -- su numero de
+  // COTIZACION -- que coincide numericamente con el order_ de la OTRA cadena. Como
+  // el numero de cotizacion nunca es el de pedido, el folio NO debe filtrar a 8888;
+  // sin data.orderOperam se agrega por cliente (ambas cadenas).
   const deps = depsMock({
     transacciones: [
-      { type: '10', order_: '7230', total_amount: '6153', allocated: '3000', outstanding: '3153', debtor_no: '345' },
+      { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
+      { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
+      { type: '10', order_: '8888', total_amount: '500', allocated: '100', outstanding: '400', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7230', trans_type: '30', debtor_no: '345' }],
+    pedidos: [
+      { order_no: '7077', trans_type: '30', debtor_no: '345' },
+      { order_no: '8888', trans_type: '30', debtor_no: '345' },
+    ],
   });
-  const op = { id: 1, etapa: 'seguimiento', folioOperam: '999', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7230' } };
+  const op = { id: 1, etapa: 'seguimiento', folioOperam: '8888', data: { cliente: { rfc: 'CPE921211N76' } } };
   const hechos = await hechosDeOperam(op, deps);
-  assert.equal(hechos.pago.outstanding, 3153);
+  // Agregado por cliente: ve la remision de 7077 (si filtrara por el folio 8888 no la veria).
+  assert.equal(hechos.tieneRemision, true);
+  assert.equal(hechos.pago.allocated, 16954 + 100);
 });
 
 // --- reconciliarOportunidad: mueve la tarjeta ---
@@ -212,8 +224,8 @@ test('reconciliarPorIdentificador: prioriza la oportunidad con order_ exacto cua
     pedidos: [{ order_no: '7230', trans_type: '30', debtor_no: '345' }],
   });
   const oportunidades = [
-    { id: 1, etapa: 'seguimiento', folioOperam: '7077', data: { cliente: { rfc: 'CPE921211N76' } } },
-    { id: 2, etapa: 'seguimiento', folioOperam: '7230', data: { cliente: { rfc: 'CPE921211N76' } } },
+    { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } },
+    { id: 2, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7230' } },
   ];
   const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7230' }, oportunidades, deps);
   assert.equal(res.length, 1);
