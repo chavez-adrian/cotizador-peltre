@@ -1,9 +1,10 @@
 # cotizador-peltre
 
-Herramienta interna de Peltre Nacional SA de CV. Combina dos funciones:
+Herramienta interna de Peltre Nacional SA de CV. Combina tres funciones:
 
 1. **Cotizador** — vendedores generan cotizaciones de acero esmaltado en campo, calculan envio y comparten PDF o HTML por WhatsApp.
-2. **Alta de clientes** — desde el acordeon "+ Nuevo cliente" del cotizador, vendedores suben CSF del SAT o capturan datos manualmente; el sistema extrae RFC y domicilio, crea o actualiza el cliente en Operam ERP.
+2. **Pipeline comercial (CRM)** — tablero unico de oportunidades en 7 etapas (de prospecto a producto entregado) con cola "Hoy", seguimiento por cadencia, y **sincronizacion post-venta automatica con Operam** (webhooks + reconciliacion): pagos, pedido liberado y entrega mueven la tarjeta sin captura doble. Ver `CONTEXT.md` (glosario de dominio) y `PROGRESS.md` (PRD #52).
+3. **Alta de clientes** — desde el acordeon "+ Nuevo cliente" del cotizador, vendedores suben CSF del SAT o capturan datos manualmente; el sistema extrae RFC y domicilio, crea o actualiza el cliente en Operam ERP.
 
 **Produccion:** https://cotizador-peltre.onrender.com
 
@@ -33,17 +34,18 @@ Copiar `.env.example` a `.env` y completar las variables:
 | `OPERAM_USER` | Usuario API Operam |
 | `OPERAM_PASSWORD` | Contrasena API Operam |
 | `ENVIA_API_KEY` | API key de envia.com para cotizar envio |
-| `DATABASE_URL` | Connection string Neon Postgres (tabla clientes_log) |
+| `DATABASE_URL` | Connection string Neon Postgres (cotizaciones, clientes_log, operam_webhooks_log) |
 | `DROPBOX_REFRESH_TOKEN` | OAuth refresh token de Dropbox |
 | `DROPBOX_APP_KEY` | App key de Dropbox |
 | `DROPBOX_APP_SECRET` | App secret de Dropbox |
+| `OPERAM_WEBHOOK_SECRET` | Secreto compartido del webhook de sync post-venta (header `X-Operam-Webhook-Secret`). Sin el, el endpoint es fail-closed (401) |
 
 ## Uso
 
 ```bash
 npm start        # produccion
 npm run dev      # desarrollo con --watch
-npm test         # todos los tests (280, 0 fallas)
+npm test         # todos los tests (745, 0 fallas)
 ```
 
 ## Estructura
@@ -122,6 +124,15 @@ test/                  # tests de backend (supertest + node:test)
 | GET/PUT | `/api/admin/vendedores` | Gestion de vendedores (admin) |
 | GET/PUT | `/api/admin/cajas` | Configuracion de cajas de empaque (admin) |
 
+### Pipeline y sync post-venta
+
+| Metodo | Ruta | Descripcion |
+|--------|------|-------------|
+| POST | `/api/webhooks/operam` | Webhook de Operam (Pago de Cliente / Pedido / Remision -> Nuevo). Auth por header `X-Operam-Webhook-Secret`; log idempotente en Neon; reconcilia la oportunidad y mueve su etapa post-venta |
+| POST | `/api/sync-operam` | Reconciliacion on-demand (red de seguridad): lee Operam y mueve las oportunidades activas que avanzaron (JWT) |
+
+> El resto de rutas del pipeline (prospectos, asignacion, etapas, salidas, seguimiento, decorados) viven en `server.js`; el modelo de dominio esta en `CONTEXT.md` y el detalle del PRD en `PROGRESS.md`.
+
 ### Alta de clientes desde CSF (requieren JWT, igual que el resto)
 
 | Metodo | Ruta | Descripcion |
@@ -137,7 +148,7 @@ test/                  # tests de backend (supertest + node:test)
 
 ```bash
 npm test
-# 280 tests, 0 fallas
+# 745 tests, 0 fallas
 ```
 
 - `test/` — backend (supertest + node:test, ES modules)
@@ -149,4 +160,5 @@ npm test
 
 - El backup de Dropbox en `/api/crear-cliente` es fire-and-forget: si falla, la respuesta HTTP no se bloquea.
 - `lib/db.js` retorna `null` si `DATABASE_URL` no esta configurada (graceful degradation para desarrollo local).
-- El schema de `clientes_log` se auto-crea al iniciar el servidor si hay `DATABASE_URL`.
+- El schema de `clientes_log` (y `operam_webhooks_log`) se auto-crea al iniciar el servidor si hay `DATABASE_URL`.
+- **Sync post-venta**: el webhook de Operam es solo una *senal*; la logica corre en un motor de reconciliacion (`lib/sync-operam-io.js`) que lee el estado real por API y aplica el nucleo puro (`lib/sync-operam.js`). El mismo motor sirve al webhook y a la reconciliacion on-demand. El mapeo real de Operam (los tipos de transaccion, que el MCP etiqueta mal) esta en `peltre-operam.md` (raiz `_Claude/`).

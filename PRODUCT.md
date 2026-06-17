@@ -14,6 +14,8 @@ Contexto secundario: algunos vendedores trabajan desde oficina en desktop, pero 
 
 Herramienta interna para crear cotizaciones de productos de peltre esmaltado, calcular envío y compartirlas por WhatsApp o PDF. El éxito se mide en velocidad: del cliente al PDF listo en menos de 3 minutos. La app también sirve como palanca de credibilidad: cuando el vendedor la saca frente a un cliente, debe proyectar seriedad y calidad de la marca.
 
+Más allá de la cotización, la herramienta gestiona el **pipeline comercial completo** —de prospecto a producto entregado— en un tablero único con cola de trabajo diaria, y mantiene las etapas post-venta (anticipo, pedido liberado, saldo, entrega) **sincronizadas automáticamente con el ERP (Operam)** para que el vendedor no capture lo mismo dos veces. La cotización rápida sigue siendo el corazón; el pipeline le da seguimiento sin fricción.
+
 ## Brand Personality
 
 Artesanal · Mexicano · Cálido
