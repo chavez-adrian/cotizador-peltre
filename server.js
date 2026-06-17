@@ -22,6 +22,7 @@ import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida } from './lib/pipeline.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
+import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -393,6 +394,82 @@ app.post('/api/cotizacion/:id/reunion-resultado', authMiddleware, async (req, re
     return res.json({ ok: true, estado: 'perdida' });
   }
   res.status(400).json({ error: 'Resultado inválido: avance o perdida' });
+});
+
+// --- Producto decorado / calca (issue #61, CONTEXT.md "Producto decorado (calca)",
+// ADR-0005) ---
+// El flag decorado y el checklist de los 6 pasos viven en el data JSONB de la
+// cotizacion (data.decorado / data.calcaChecklist). El dominio puro
+// (decorados-logica.js) decide; estas rutas solo aplican: misma division que el
+// hook de cotizacion (#55) y la asignacion (#57).
+
+const CLAVES_PASO_CALCA = new Set(PASOS_DECORADO.map(p => p.clave));
+
+// Marca/desmarca una cotizacion como decorada. Marcarla activa el checklist
+// inicial (0/6); desmarcarla baja el flag (el checklist queda persistido por si
+// se vuelve a marcar, pero el gate ya no aplica).
+app.patch('/api/cotizacion/:id/decorado', authMiddleware, async (req, res) => {
+  const entry = await cotizacionOperable(req, res);
+  if (!entry) return;
+  const decorado = req.body && req.body.decorado === true;
+  const merge = decorado
+    ? { decorado: true, calcaChecklist: (entry.data && entry.data.calcaChecklist) || checklistInicial() }
+    : { decorado: false };
+  await cotStore.actualizarDatos(entry.id, merge);
+  res.json({ ok: true, decorado, progreso: progresoDecorado(merge.calcaChecklist) });
+});
+
+// Marca o revierte un paso del checklist de calca. El paso de archivos
+// (archivos_dropbox) sube la posicion de calca a Dropbox FIRE-AND-FORGET: un
+// fallo de Dropbox (o su ausencia en local) no bloquea la respuesta ni impide
+// marcar el paso (mismo patron que subirCsfDropbox).
+app.patch('/api/cotizacion/:id/calca-paso', authMiddleware, async (req, res) => {
+  const { paso, completo } = req.body || {};
+  if (!CLAVES_PASO_CALCA.has(paso)) return res.status(400).json({ error: 'Paso de calca invalido' });
+  const entry = await cotizacionOperable(req, res);
+  if (!entry) return;
+  const actual = (entry.data && entry.data.calcaChecklist) || checklistInicial();
+  const nuevo = completo === false ? revertirPaso(actual, paso) : marcarPaso(actual, paso);
+  await cotStore.actualizarDatos(entry.id, { calcaChecklist: nuevo });
+  if (paso === 'archivos_dropbox' && completo !== false && Array.isArray(req.body.archivos)) {
+    subirCalcaDropbox(entry, req.body.archivos);
+  }
+  res.json({ ok: true, progreso: progresoDecorado(nuevo) });
+});
+
+function subirCalcaDropbox(entry, archivos) {
+  const CALCA_PATH = '/PELTRE NACIONAL/CALCAS/POSICIONES';
+  import('./lib/dropbox.js').then(({ upload }) => {
+    for (const a of archivos) {
+      if (!a || !a.nombre || !a.contenidoBase64) continue;
+      const nombreSano = String(a.nombre).replace(/[/\\:*?"<>|]/g, '').trim();
+      const path = `${CALCA_PATH}/Cot ${entry.id} - ${nombreSano}`;
+      upload(path, Buffer.from(a.contenidoBase64, 'base64'), 'add')
+        .catch(err => console.error('[dropbox][calca]', err.message));
+    }
+  }).catch(err => console.error('[dropbox][calca]', err.message));
+}
+
+// Gate a Pedido liberado (issue #61, AC3). Punto de enforcement MINIMO: una
+// cotizacion decorada con el checklist incompleto NO avanza (409); no decorada o
+// checklist completo procede (marca data.pedidoLiberado). El gate vive en el
+// dominio puro (puedeLiberar); esta ruta solo lo aplica.
+//
+// IMPORTANTE: #62 (sync post-venta con Operam, AUN NO EXISTE) dirigira el disparo
+// REAL de Pedido liberado leyendo Operam y DEBE pasar por este mismo gate
+// (puedeLiberar) antes de mover una oportunidad decorada a pedido_liberado. NO se
+// modela aqui el mapeo completo estado->etapa post-venta: eso es #62.
+app.post('/api/cotizacion/:id/liberar', authMiddleware, async (req, res) => {
+  const entry = await cotizacionOperable(req, res);
+  if (!entry) return;
+  if (!puedeLiberar(entry)) {
+    return res.status(409).json({
+      error: 'No se puede liberar: el checklist de calca esta incompleto',
+      progreso: progresoDecorado(entry.data && entry.data.calcaChecklist),
+    });
+  }
+  await cotStore.actualizarDatos(entry.id, { pedidoLiberado: true });
+  res.json({ ok: true, pedidoLiberado: true });
 });
 
 // --- Prospectos (issue #41, ADR-0004) ---
