@@ -175,26 +175,46 @@ export function validarTransicion(actual, nueva, motivo, folio) {
 // (el filtro vive en lib/seguimiento-prospectos.js); pasada la fecha, el
 // seguimiento pide registrar el resultado.
 
-export function ultimaReunion(eventos) {
+// Nucleo de los predicados de reunion (issue #65): operan sobre el ARRAY de
+// eventos para que prospecto y cotizacion compartan la misma logica. El prospecto
+// pasa su `p.eventos`; la cotizacion pasa su array de seguimientos (donde las
+// reuniones viven como entradas `{ tipo:'reunion', fecha_reunion, fecha }`). La
+// ultima reunion (por fecha_reunion) manda; cualquier evento con fecha posterior
+// a esa reunion limpia el pendiente de resultado.
+export function ultimaReunionDe(eventos) {
   let r = null;
   for (const e of eventos || []) {
-    if (e.tipo === 'reunion' && (!r || new Date(e.fecha) > new Date(r.fecha))) r = e;
+    if (e.tipo === 'reunion' && (!r || new Date(e.fecha_reunion) > new Date(r.fecha_reunion))) r = e;
   }
   return r;
 }
 
-export function reunionFutura(p, ahora) {
-  const r = ultimaReunion(p && p.eventos);
+export function reunionFuturaDe(eventos, ahora) {
+  const r = ultimaReunionDe(eventos);
   return r && new Date(r.fecha_reunion) > ahora ? r.fecha_reunion : null;
+}
+
+export function reunionPendienteResultadoDe(eventos, ahora) {
+  const r = ultimaReunionDe(eventos);
+  if (!r || new Date(r.fecha_reunion) > ahora) return null;
+  const limpia = (eventos || []).some(e => new Date(e.fecha) > new Date(r.fecha_reunion));
+  return limpia ? null : r.fecha_reunion;
+}
+
+// Wrappers que conservan la firma de #45 (reciben el prospecto y leen p.eventos)
+// y delegan en el nucleo del array.
+export function ultimaReunion(eventos) {
+  return ultimaReunionDe(eventos);
+}
+
+export function reunionFutura(p, ahora) {
+  return reunionFuturaDe(p && p.eventos, ahora);
 }
 
 // Pendiente de resultado: ultima reunion con fecha pasada y ningun evento
 // posterior a esa fecha (cualquier evento posterior limpia la condicion).
 export function reunionPendienteResultado(p, ahora) {
-  const r = ultimaReunion(p && p.eventos);
-  if (!r || new Date(r.fecha_reunion) > ahora) return null;
-  const limpia = (p.eventos || []).some(e => new Date(e.fecha) > new Date(r.fecha_reunion));
-  return limpia ? null : r.fecha_reunion;
+  return reunionPendienteResultadoDe(p && p.eventos, ahora);
 }
 
 // Link wa.me en un tap: solo digitos, el celular del prospecto ya trae codigo de pais.
