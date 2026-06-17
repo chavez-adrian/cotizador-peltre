@@ -450,20 +450,22 @@ test('POST /api/parsear-csf con texto solo de espacios en blanco retorna 422, no
 
 // === GET /api/catalogos (issue #27) ===
 
+// Formato REAL de Operam v3 (verificado en vivo 2026-06-17): el codigo viene en
+// `sales_type` (NO `sales_type_id`), el id numerico en `id`, y NO trae `description`.
 const SALES_TYPES_MOCK = [
-  { sales_type_id: 'M100',  description: 'Mayoreo 100' },
-  { sales_type_id: 'M350',  description: 'Mayoreo 350' },
-  { sales_type_id: 'M550',  description: 'Mayoreo 550' },
-  { sales_type_id: 'M1500', description: 'Mayoreo 1500' },
-  { sales_type_id: 'M6000', description: 'Mayoreo 6000' },
-  { sales_type_id: 'M6001', description: 'Mayoreo 6001' },
-  { sales_type_id: 'US100', description: 'USA 100' },
-  { sales_type_id: 'US350', description: 'USA 350' },
-  { sales_type_id: 'US550', description: 'USA 550' },
-  { sales_type_id: 'US1500', description: 'USA 1500' },
-  { sales_type_id: 'US6000', description: 'USA 6000' },
-  { sales_type_id: 'MEN50', description: 'Menudeo 50' },
-  { sales_type_id: 'OTRO',  description: 'Otro' },
+  { id: '1',  sales_type: 'M100',  inactive: '0' },
+  { id: '2',  sales_type: 'M350',  inactive: '0' },
+  { id: '3',  sales_type: 'M550',  inactive: '0' },
+  { id: '4',  sales_type: 'M1500', inactive: '0' },
+  { id: '5',  sales_type: 'M6000', inactive: '0' },
+  { id: '6',  sales_type: 'M6001', inactive: '0' },
+  { id: '7',  sales_type: 'US100', inactive: '0' },
+  { id: '8',  sales_type: 'US350', inactive: '0' },
+  { id: '9',  sales_type: 'US550', inactive: '0' },
+  { id: '10', sales_type: 'US1500', inactive: '0' },
+  { id: '11', sales_type: 'US6000', inactive: '0' },
+  { id: '12', sales_type: 'MEN50', inactive: '0' },
+  { id: '13', sales_type: 'OTRO',  inactive: '0' },
 ];
 
 function mockCatalogos() {

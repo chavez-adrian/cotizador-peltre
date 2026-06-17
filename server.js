@@ -1305,9 +1305,12 @@ async function cargarListasPrecios() {
     });
     const data = await r2.json();
     const tipos = Array.isArray(data.data) ? data.data : [];
+    // Operam v3 entrega el codigo en `sales_type` (no `sales_type_id`) y sin
+    // `description` (verificado en vivo 2026-06-17). El id de la lista que usa el
+    // resto del sistema es el codigo (M550, US100...).
     listasPrecios = tipos
-      .filter(t => MAYOREO_CODES.has(t.sales_type_id))
-      .map(t => ({ id: t.sales_type_id, nombre: t.description || t.sales_type_id }));
+      .filter(t => MAYOREO_CODES.has(t.sales_type))
+      .map(t => ({ id: t.sales_type, nombre: t.description || t.sales_type }));
   } catch (err) {
     console.error('[catalogos] No se pudieron cargar listas_precios:', err.message);
     listasPrecios = [];
