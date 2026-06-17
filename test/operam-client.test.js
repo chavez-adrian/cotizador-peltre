@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -510,6 +510,227 @@ test('listarPedidos: devuelve [] si la respuesta no trae data', async () => {
   try {
     const data = await listarPedidos({ debtorNo: 1, desde: '2026-01-01', hasta: '2026-06-17' });
     assert.deepEqual(data, []);
+  } finally {
+    restore();
+  }
+});
+
+// === subirCotizacionOperam() — issue #68 (CRITICO: cliente correcto + campos completos) ===
+// Antes: si no habia match exacto de RFC caia a clientes[0] (cliente al azar) y subio
+// la cotizacion al cliente equivocado (Utilitario Mexicano, cot 1157). Ademas filtraba la
+// linea de envio y dejaba referencia/entregar-a/vigencia vacios.
+
+test('subirCotizacionOperam: RFC con match unico -> usa ESE customer_id (no clientes[0])', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'Cafebreria El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1200 });
+    },
+  });
+  try {
+    const folio = await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'Cafebreria El Pendulo' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    });
+    assert.equal(folio, 1200);
+    assert.equal(quoteBody.customer_id, 314, 'debe usar el customer_id del cliente que matchea por RFC exacto');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: cuando la cotizacion trae customer_id del cliente, lo usa directo', async () => {
+  resetSession();
+  let quoteBody = null;
+  let busquedaLlamada = false;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => { busquedaLlamada = true; return jsonResponse({ total: 0, data: [] }); },
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1300 });
+    },
+  });
+  try {
+    const folio = await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', customerId: 500, branchId: 77 },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
+    });
+    assert.equal(folio, 1300);
+    assert.equal(quoteBody.customer_id, 500, 'debe usar el customerId que ya trae la cotizacion');
+    assert.equal(busquedaLlamada, false, 'no debe buscar por RFC si ya tiene customerId');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: sin match de RFC -> lanza error claro y NO sube (no usa clientes[0])', async () => {
+  resetSession();
+  let quoteLlamado = false;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 0, data: [] }),
+    '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, quote_id: 1 }); },
+  });
+  try {
+    await assert.rejects(
+      () => subirCotizacionOperam({
+        fecha: '2026-06-17',
+        cliente: { rfc: 'NOEXISTE010101AAA', razonSocial: 'Fantasma SA' },
+        items: [{ codigo: 'X', descripcion: 'X', cantidad: 1, precio: 1 }],
+      }),
+      (err) => { assert.match(err.message, /cliente/i); return true; }
+    );
+    assert.equal(quoteLlamado, false, 'NO debe subir el quote si no se identifico el cliente');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: sin RFC -> lanza error claro y NO sube', async () => {
+  resetSession();
+  let quoteLlamado = false;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: 999, tax_id: 'AAA010101AAA', branches: [] }] }),
+    '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, quote_id: 1 }); },
+  });
+  try {
+    await assert.rejects(
+      () => subirCotizacionOperam({
+        fecha: '2026-06-17',
+        cliente: { rfc: '', razonSocial: 'Sin RFC SA' },
+        items: [{ codigo: 'X', descripcion: 'X', cantidad: 1, precio: 1 }],
+      }),
+      (err) => { assert.match(err.message, /cliente|RFC/i); return true; }
+    );
+    assert.equal(quoteLlamado, false, 'sin RFC no debe arriesgar el cliente equivocado');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: el branch_id sale del branch del cliente resuelto por RFC', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1500 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
+    });
+    assert.equal(quoteBody.branch_id, 88, 'branch_id debe ser el branch_code del cliente, no el fallback 1');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: el quote lleva cust_ref (referencia), deliver_to y vigencia', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 320, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1400 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      vigencia: '2026-07-17',
+      cliente: {
+        rfc: 'CPE921211N76', razonSocial: 'El Pendulo',
+        referencia: 'OC-4521', nombreEntrega: 'Almacen Roma',
+        calle: 'Hamburgo', colonia: 'Juarez', cpEntrega: '06600', municipio: 'CDMX', estado: 'CDMX',
+      },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    });
+    assert.equal(quoteBody.cust_ref, 'OC-4521', 'cust_ref debe venir de cliente.referencia');
+    assert.equal(quoteBody.deliver_to, 'Almacen Roma', 'deliver_to debe venir de cliente.nombreEntrega');
+    assert.ok(/2026-07-17/.test(JSON.stringify(quoteBody)), 'la vigencia (valido hasta) debe ir en el quote');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: sin vigencia explicita usa OrderDate + 30 dias', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 321, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1401 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
+    });
+    // 2026-06-17 + 30 dias = 2026-07-17
+    assert.ok(/2026-07-17/.test(JSON.stringify(quoteBody)), 'sin vigencia explicita debe ser fecha + 30 dias');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: la linea de envio (ENVIO) NO se pierde del quote', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 322, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1402 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Envio FedEx', cantidad: 1, precio: 350, descuento: 0 },
+      ],
+    });
+    const serializado = JSON.stringify(quoteBody);
+    assert.ok(/350/.test(serializado), 'el monto del envio (350) debe estar presente en el quote');
+    assert.ok(/[Ee]nvio/.test(serializado), 'la descripcion del envio debe estar presente en el quote');
   } finally {
     restore();
   }

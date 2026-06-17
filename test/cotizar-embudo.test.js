@@ -429,6 +429,8 @@ test('O2: si la subida a Operam falla, la cotizacion sigue sin folio (sigue PRE)
   });
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
-  assert.equal(res.status, 503);
+  // #68: cliente no identificado por RFC -> 422 (problema de datos), no se sube ni
+  // se persiste folio. Antes era 503 enmascarando un fallo de Operam inexistente.
+  assert.equal(res.status, 422);
   assert.equal((await cotStore.obtener(id)).folioOperam, null);
 });

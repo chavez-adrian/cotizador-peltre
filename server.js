@@ -978,6 +978,11 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
     res.json({ ok: true, folio });
   } catch (err) {
+    // Cliente no identificado (#68): es un problema de datos de la cotizacion,
+    // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
+    if (/identificar el cliente/i.test(err.message)) {
+      return res.status(422).json({ error: err.message });
+    }
     res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
   }
 });
