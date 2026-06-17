@@ -148,3 +148,61 @@ test('solo la ultima cotizacion por cliente entra a la cola', () => {
   const ids = cola.map(i => i.id).sort();
   assert.deepEqual(ids, [2, 3]);
 });
+
+// === Issue #65: reunion de diagnostico sobre una COTIZACION en Seguimiento ===
+// Las reuniones viven en el array seguimientos como entradas { tipo:'reunion',
+// fecha_reunion, fecha }. Una entrada de reunion no tiene `paso`, asi que no
+// interfiere con la cadencia (el map de pasos la ignora). HOY = 2026-06-10T12:00Z.
+
+function reunionSeg(fechaReunion, fecha = '2026-06-08T12:00:00Z') {
+  return { tipo: 'reunion', fecha_reunion: fechaReunion, fecha, vendedor: 'Memo' };
+}
+
+test('REU1: una reunion futura suprime la cotizacion de la cola', () => {
+  // cotizacion de 3 dias (tocaria dia2) pero con reunion el 12 -> fuera de la cola
+  const c = cot({ seguimientos: [reunionSeg('2026-06-12T17:00:00Z')] });
+  assert.deepEqual(calcularCola([c], HOY), []);
+});
+
+test('REU2: una reunion vencida reaparece con reunionVencida y fechaReunion', () => {
+  const c = cot({ seguimientos: [reunionSeg('2026-06-09T17:00:00Z', '2026-06-07T12:00:00Z')] });
+  const cola = calcularCola([c], HOY);
+  assert.equal(cola.length, 1);
+  assert.equal(cola[0].reunionVencida, true);
+  assert.equal(cola[0].fechaReunion, '2026-06-09T17:00:00Z');
+});
+
+test('REU3: una reunion vencida reaparece aunque el paso de cadencia ya este hecho', () => {
+  // a dia 3 toca dia2; con dia2 hecho normalmente saldria de la cola, pero la
+  // reunion vencida la trae de vuelta a registrar el resultado.
+  const c = cot({
+    seguimientos: [
+      { paso: 'dia2', fecha: '2026-06-09T15:00:00Z', vendedor: 'Memo' },
+      reunionSeg('2026-06-09T17:00:00Z', '2026-06-09T16:00:00Z'),
+    ],
+  });
+  const cola = calcularCola([c], HOY);
+  assert.equal(cola.length, 1);
+  assert.equal(cola[0].reunionVencida, true);
+  assert.equal(cola[0].fechaReunion, '2026-06-09T17:00:00Z');
+});
+
+test('REU4: registrar un seguimiento posterior a la reunion limpia el pendiente', () => {
+  const c = cot({
+    seguimientos: [
+      reunionSeg('2026-06-09T17:00:00Z', '2026-06-07T12:00:00Z'),
+      { paso: 'dia2', fecha: '2026-06-10T09:00:00Z', vendedor: 'Memo' },
+    ],
+  });
+  // el avance posterior a la reunion limpia el pendiente; a dia 3 con dia2 hecho
+  // no toca otro paso -> sale de la cola.
+  assert.deepEqual(calcularCola([c], HOY), []);
+});
+
+test('REU5: una cotizacion sin reunion conserva el flujo normal (sin flag de reunion)', () => {
+  const cola = calcularCola([cot()], HOY);
+  assert.equal(cola.length, 1);
+  assert.equal(cola[0].reunionVencida, false);
+  assert.equal(cola[0].fechaReunion, null);
+  assert.equal(cola[0].paso, 'dia2');
+});
