@@ -973,3 +973,69 @@ test('S2: POST /api/sync-operam reconcilia las oportunidades activas y mueve las
     restore();
   }
 });
+
+// === POST /api/cotizacion/operam/:id — issue #68 ===
+// Un cliente no identificado NO es un fallo de disponibilidad de Operam (503): es un
+// problema de datos de la cotizacion. Debe responder 422 con mensaje claro, no subir,
+// y no persistir folio. Un exito sube y persiste el folio.
+
+test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persiste folio', async () => {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  writeCots([...snap, {
+    id, fecha: '2026-06-17T00:00:00Z', vendedor: 'Tester', cliente: 'EL PENDULO',
+    totalPiezas: 10, total: 1000, tier: 'Mayoreo',
+    data: {
+      fecha: '2026-06-17', vigencia: '2026-07-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', referencia: 'OC-9', nombreEntrega: 'Almacen' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    },
+  }]);
+  let quoteBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }] }) }),
+    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, quote_id: 1600 }) }; },
+  });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.folio, 1600);
+    assert.strictEqual(quoteBody.customer_id, 314, 'el quote debe ir al cliente correcto');
+    const guardada = readCots().find(c => c.id === id);
+    assert.ok(String(guardada.data.folioOperam || guardada.folioOperam || '').includes('1600'), 'debe persistir el folio');
+  } finally {
+    restore();
+  }
+});
+
+test('O68: subir a Operam sin match de cliente responde 422 y NO sube ni persiste folio', async () => {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  writeCots([...snap, {
+    id, fecha: '2026-06-17T00:00:00Z', vendedor: 'Tester', cliente: 'FANTASMA',
+    totalPiezas: 1, total: 100, tier: 'Mayoreo',
+    data: {
+      fecha: '2026-06-17',
+      cliente: { rfc: 'NOEXISTE010101AAA', razonSocial: 'Fantasma SA' },
+      items: [{ codigo: 'X', descripcion: 'X', cantidad: 1, precio: 100, descuento: 0 }],
+    },
+  }]);
+  let quoteLlamado = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 0, data: [] }) }),
+    '/api/v3/sales/quote': () => { quoteLlamado = true; return { ok: true, json: async () => ({ result: true, quote_id: 1 }) }; },
+  });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 422);
+    assert.match(res.body.error, /cliente/i);
+    assert.strictEqual(quoteLlamado, false, 'NO debe subir el quote');
+    const guardada = readCots().find(c => c.id === id);
+    assert.ok(!guardada.folioOperam && !(guardada.data && guardada.data.folioOperam), 'no debe persistir folio');
+  } finally {
+    restore();
+  }
+});
