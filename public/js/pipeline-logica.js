@@ -289,28 +289,58 @@ const PASO_LABELS = {
 // seguimiento (item.waLink, sin telefono -> deshabilitado), marcar el paso hecho
 // y cerrar el estado (Ganada/Perdida). Extraido de showSeguimiento (app.js) para
 // reusarlo en la cola fusionada sin duplicar el markup.
+//
+// Reunion de diagnostico (issue #65, simetrica a la del prospecto): toda card de
+// cotizacion ofrece agendar una reunion (input datetime + boton). Cuando la
+// reunion vencio (item.reunionVencida), la card pide registrar el resultado:
+// avance (Hecho, registra un evento que reanuda la cadencia) o Perdida (Modelo A
+// #59: una cotizacion sale del embudo solo por Perdida, nunca por No util). Usa el
+// id numerico de la cotizacion (leccion del bug de #57; aqui el id no viene
+// prefijado, pero se documenta el criterio).
 export function buildColaCotizacionItemHtml(item) {
   const fecha = new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
   const btnWa = item.waLink
     ? `<a href="${item.waLink}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`
     : `<button class="btn btn-secondary btn-sm" disabled title="Sin telefono registrado">WhatsApp</button>`;
   const badge = badgeFolioOperamHtml(item);
+  const pasoLabel = item.paso ? (PASO_LABELS[item.paso] || item.paso) : 'Reunión pendiente';
+  const agendar =
+    `<input type="datetime-local" id="cot-reunion-${item.id}" class="btn-sm">` +
+    `<button class="btn btn-secondary btn-sm" onclick="agendarReunionCotizacion(${item.id})">Agendar reunión</button>`;
+  // Reunion vencida: la card pide el resultado (avance/Perdida); el flujo de
+  // seguimiento normal (marcar Hecho) cede el paso al cierre de la reunion. Si la
+  // cotizacion reaparece solo por la reunion (sin paso de cadencia pendiente), no
+  // se pinta "Hecho" (no hay paso que marcar).
+  let acciones;
+  if (item.reunionVencida) {
+    acciones = `${btnWa} ${agendar}
+      <button class="btn btn-secondary btn-sm" onclick="resultadoReunionCotizacion(${item.id}, 'avance')">✓ Hecho</button>
+      <button class="btn btn-secondary btn-sm" onclick="resultadoReunionCotizacion(${item.id}, 'perdida')">Perdida</button>`;
+  } else {
+    const btnHecho = item.paso
+      ? `<button class="btn btn-secondary btn-sm" onclick="marcarSeguimiento(${item.id}, '${item.paso}')">✓ Hecho</button>`
+      : '';
+    acciones = `${btnWa} ${agendar} ${btnHecho}
+      <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'ganada')">Ganada</button>
+      <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'perdida')">Perdida</button>`;
+  }
+  const reunionBadge = item.reunionVencida
+    ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión del ${escapeHtml(new Date(item.fechaReunion).toLocaleString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))} — registrar resultado</span></div>`
+    : '';
   return `
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
           <div class="cot-card-cliente">${escapeHtml(item.cliente || 'Sin nombre')}${badge}</div>
-          <div class="cot-card-meta">${escapeHtml(PASO_LABELS[item.paso] || item.paso)} · cotizada el ${escapeHtml(fecha)} (hace ${item.dias} dias) · ${item.totalPiezas} pzs</div>
+          <div class="cot-card-meta">${escapeHtml(pasoLabel)} · cotizada el ${escapeHtml(fecha)} (hace ${item.dias} dias) · ${item.totalPiezas} pzs</div>
+          ${reunionBadge}
         </div>
         <div>
           <div class="cot-card-total">$${fmtMoneda(item.total)}</div>
         </div>
       </div>
       <div class="cot-card-actions">
-        ${btnWa}
-        <button class="btn btn-secondary btn-sm" onclick="marcarSeguimiento(${item.id}, '${item.paso}')">✓ Hecho</button>
-        <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'ganada')">Ganada</button>
-        <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'perdida')">Perdida</button>
+        ${acciones}
       </div>
     </div>
   `;

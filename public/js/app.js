@@ -1844,6 +1844,44 @@ async function cambiarEstadoCotizacion(id, estado) {
   }
 }
 
+// Reunion de diagnostico sobre una cotizacion en la cola Hoy (issue #65): agendar
+// (input datetime de la card) o registrar el resultado (avance reanuda la cadencia,
+// Perdida cierra; Modelo A: no hay No util para cotizaciones).
+async function agendarReunionCotizacion(id) {
+  const input = document.getElementById(`cot-reunion-${id}`);
+  const valor = input ? input.value : '';
+  if (!valor) { alert('Selecciona fecha y hora de la reunión'); return; }
+  try {
+    const res = await api(`/api/cotizacion/${id}/reunion`, {
+      method: 'POST', body: { fecha: new Date(valor).toISOString() },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo agendar la reunión');
+      return;
+    }
+    showHoy();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
+async function resultadoReunionCotizacion(id, resultado) {
+  try {
+    const res = await api(`/api/cotizacion/${id}/reunion-resultado`, {
+      method: 'POST', body: { resultado },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo registrar el resultado');
+      return;
+    }
+    showHoy();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+
 function actualizarBadgeSeguimiento(count) {
   const badge = document.getElementById('seguimiento-badge');
   if (!badge) return;
@@ -1869,6 +1907,8 @@ async function cargarBadgeSeguimiento() {
 
 window.marcarSeguimiento = marcarSeguimiento;
 window.cambiarEstadoCotizacion = cambiarEstadoCotizacion;
+window.agendarReunionCotizacion = agendarReunionCotizacion;
+window.resultadoReunionCotizacion = resultadoReunionCotizacion;
 
 // === PROSPECTOS (issue #41) ===
 let prospectoSelectoresListos = false;
