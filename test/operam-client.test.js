@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -33,6 +33,38 @@ function mockFetchByUrl(urlHandlers) {
 function jsonResponse(data, status = 200) {
   return { ok: status < 400, status, json: async () => data };
 }
+
+// Operam responde 404 ("No customers found") cuando una busqueda de cliente no
+// tiene resultados (caso normal: cliente nuevo en captura manual). Eso NO es un
+// error: debe tratarse como "sin resultados" para que la verificacion de duplicados
+// no truene (era el 503 "Operam no disponible: Operam 404").
+test('buscarClientes: un 404 de Operam (sin resultados) devuelve lista vacia, no lanza', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({ errors: ['No customers found'] }, 404),
+  });
+  try {
+    const r = await buscarClientes('RFCQUENOEXISTE');
+    assert.deepEqual(r, []);
+  } finally {
+    restore();
+  }
+});
+
+test('buscarClientePorRFC: un 404 de Operam (RFC inexistente) devuelve { encontrado: false }', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({ errors: ['No customers found'] }, 404),
+  });
+  try {
+    const r = await buscarClientePorRFC('AAAA010101AAA');
+    assert.equal(r.encontrado, false);
+  } finally {
+    restore();
+  }
+});
 
 test('actualizarCliente: hace PUT a /api/v3/sales/customers/:id con los campos del diff', async () => {
   resetSession();
