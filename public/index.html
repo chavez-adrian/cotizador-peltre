@@ -38,12 +38,16 @@
     </div>
   </header>
 
-  <nav class="tabs">
-    <button class="tab active" data-tab="cliente">Cliente<span class="tab-dot" id="dot-cliente"></span></button>
-    <button class="tab" data-tab="productos">Productos<span class="tab-dot" id="dot-productos"></span></button>
-    <button class="tab" data-tab="envio">Envio<span class="tab-dot" id="dot-envio"></span></button>
-    <button class="tab" data-tab="resumen">Cotizacion</button>
+  <nav class="tabs stepper" id="stepper">
+    <button class="tab active" data-tab="cliente"><span class="step-num">1</span>Cliente<span class="tab-dot" id="dot-cliente"></span></button>
+    <button class="tab" data-tab="productos"><span class="step-num">2</span>Productos<span class="tab-dot" id="dot-productos"></span></button>
+    <button class="tab" data-tab="envio"><span class="step-num">3</span>Envio<span class="tab-dot" id="dot-envio"></span></button>
+    <button class="tab" data-tab="resumen"><span class="step-num">4</span>Cotizacion</button>
   </nav>
+  <div class="stepper-progress" id="stepper-progress">
+    <span class="stepper-progress-text" id="stepper-progress-text">Paso 1 de 4</span>
+    <div class="stepper-progress-rail"><div class="stepper-progress-fill" id="stepper-progress-fill"></div></div>
+  </div>
 
   <!-- TAB: CLIENTE -->
   <div class="tab-content active" id="tab-cliente">
