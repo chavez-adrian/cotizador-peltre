@@ -34,7 +34,7 @@ Tu rol es **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresc
 - **#59 CERRADO** ✅ — salidas No útil (motivo de catálogo, solo prospectos — Modelo A) y Perdida (confirmación; cotización vía ruta de estado, prospecto vía ruta de etapa) + filtro "Cerradas" en el Pipeline. Cancelar sin motivo no toca el servidor. Mergeado a main. Suite 604/604.
 - **#60 CERRADO** ✅ — cotizar como stepper guiado de 4 pasos (Cliente→Productos→Envío→Cotización) con avance visible ("Paso N de 4" + barra + marca de completado); alta de cliente como excepción (no punto de partida), guardrails/dedup intactos. Lógica pura `stepper-logica.js` (16 tests). Mergeado a main. Suite 620/620.
 - **#61 CERRADO** ✅ — producto decorado: checklist de calca (6 pasos) con progreso + gate `puedeLiberar` server-side a Pedido liberado (409 si incompleto; #62 pasará por este mismo gate) + paso 6 sube a Dropbox fire-and-forget (ruta `1.0 Comercialización/DISEÑO/CALCAS/OT Decorado`, archivo `<referencia> - Pedido <id>`). Módulo puro `decorados-logica.js`. Mergeado a main. Suite 674/674.
-- #62 sync Operam post-venta — **HITL**, desbloqueado (dependencia técnica abierta: validar cadena cotización→pedido→pagos). Reusa el gate puedeLiberar de #61.
+- **#62 PARCIAL** 🟡 (ABIERTO) — investigación read-only hecha (artefacto AC1) + **núcleo puro en main** (`lib/sync-operam.js`: `etapaPostVenta` payload→etapa con gate de #61 y monotonía; 24 tests). **Falta para cerrar (sesión HITL):** capa de IO real (webhooks Payment/CustDelivery o polling de `listar_transacciones` por `order_` resuelto del `quote_id` de #63) + movimiento real de la tarjeta en el store. Cadena Operam mapeada: `order_` une cotización(10)→factura(13)→remisión(30); pagos vía `allocated`/`outstanding`.
 - **#63 CERRADO** ✅ — pre-cotización badge PRE / #Operam (históricas sin folio = registradas, corte por fecha). Mergeado a main.
 - **#64 CERRADO** ✅ — Hoy suma cotizaciones (cola fusionada prospectos+cotizaciones por urgencia relativa). Eliminó la pantalla separada de seguimiento. Mergeado a main.
 - **#65 CERRADO** ✅ — reunión de diagnóstico re-encuadrada al pipeline: sobre prospectos (Por Cotizar, ya de #45) Y cotizaciones (Seguimiento, NUEVO). Reunión futura suprime la cadencia, vencida reaparece en Hoy pidiendo resultado (avance/Perdida para cotización — Modelo A; avance/No útil para prospecto). Predicados generalizados a un core sobre el array de eventos. Mergeado a main. Suite 641/641. (Orquestador arregló una regresión sutil: la última reunión la decide la fecha de registro, no la de la cita — RU9.)
@@ -216,7 +216,9 @@ Slice MEDIANO: la reunion sobre PROSPECTOS (Por Cotizar) ya existe (#45); FALTA 
 - DEMO (2 min): 1) Login, ir a Hoy. 2) En una cotizacion en Seguimiento: "Agendar reunion" con fecha futura -> la cotizacion sale de Hoy. 3) (Vencer la fecha o usar fixture con reunion pasada) -> reaparece arriba con "Reunion del ... — registrar resultado" + botones Hecho/Perdida. 4) "Hecho" (avance) -> reanuda la cadencia; o "Perdida" -> cierra la cotizacion. 5) Confirmar que el prospecto sigue: en Por Cotizar agendar reunion futura -> sale de Hoy; vencida -> reaparece con No util (flujo #45 intacto).
 
 ## Siguiente
-#53, #54, #55, #56, #57, #58, #59, #60, #61, #63, #64, #65 y #66 cerrados y en main (13 de 14). Embudo completo + cotizar stepper (#60) + reunión sobre prospectos y cotizaciones (#65) + decorados con gate y Dropbox (#61). El tablero tiene 4 acciones de tarjeta (asignar #57, mover a Seguimiento #56, salidas #59, decorado/calca #61), todas con refId + tests de forma prefijada. **Deuda de proceso: las acciones de tarjeta / cambios visuales idealmente se verifican en navegador (origen del bug de #57); el orquestador puede capturar via chrome-devtools MCP + npm start local.** Falta **SOLO 1**: **#62** (sync Operam post-venta — automatizar Anticipo pagado → Pedido liberado → Saldo pagado → Producto entregado leyendo Operam). Es **HITL**: requiere una sesión con Adrián para validar qué expone la API/webhooks de Operam (cadena cotización→pedido→pagos), y LEE/escribe datos reales de Operam. Su transición a Pedido liberado DEBE pasar por el gate `puedeLiberar` de #61. Dejar para una sesión dedicada.
+**#53–#61, #63–#66 cerrados (13 de 14).** Embudo completo + cotizar stepper (#60) + reunión sobre prospectos y cotizaciones (#65) + decorados con gate y Dropbox (#61). El tablero tiene 4 acciones de tarjeta (asignar #57, mover a Seguimiento #56, salidas #59, decorado/calca #61), todas con refId + tests de forma prefijada. **Deuda de proceso: las acciones de tarjeta / cambios visuales idealmente se verifican en navegador (origen del bug de #57); el orquestador puede capturar via chrome-devtools MCP + npm start local.**
+
+**Falta SOLO #62 (PARCIAL, abierto):** núcleo puro en main (`lib/sync-operam.js`) + investigación read-only registrada. Para CERRARLO queda la **sesión HITL**: construir la capa de IO (decidir webhooks vs polling; resolver el `order_` desde el `quote_id` que guarda #63; mapear Operam crudo → `hechos`) y el wiring que mueve la tarjeta en el store al recibir un hecho. El IO solo invoca `etapaPostVenta(hechos, oportunidad)` (reglas, gate y monotonía ya viven en el núcleo). Esa sesión necesita a Adrián disponible (valida contra Operam real / escribe). **Cómo retomar #62:** leer la sección "## #62" abajo (mapeo Operam + frontera HITL) y el reporte del subagente del núcleo.
 
 ## #61 — decorados (checklist de calca + gate a Pedido liberado + Dropbox) — CERRADO (aprobado por Adrian con evidencia; verificado por el orquestador; mergeado a main). Suite 674/674 (641 baseline + 33 nuevos). Ruta/nombre de Dropbox corregidos a la spec de Adrian antes del merge: `1.0 Comercialización/DISEÑO/CALCAS/OT Decorado` + `<referencia del proyecto> - Pedido <id>`. Gate `puedeLiberar` puro; el enforcement (POST /api/cotizacion/:id/liberar -> 409 si decorada+incompleta) es el punto que #62 reusara (no se modelo el estado->etapa post-venta).
 
@@ -547,3 +549,41 @@ Reintroduce UNA transicion manual forward del embudo (Por Cotizar -> Seguimiento
 - **El folio NO se valida contra Operam** (fuera de alcance): se captura como texto libre; validar que el numero exista realmente en Operam es trabajo futuro (cuando se cierre el sync #62). Hoy un folio invalido se aceptaria.
 - El frontend (boton + prompt + moverASeguimientoTablero) no tiene test de DOM (patron del repo: sin DOM en tests); la logica pura si (Q35-Q37) y el cableado se valida en navegador.
 - `moverASeguimientoTablero` usa `o.refId` para el id real. El control de asignar de #57 usa `o.id` directo (posible id prefijado "p7"); si #57 funciona en produccion es porque su flujo difiere — NO se toco (fuera de alcance), pero anotado por si el asignar tuviera un latente.
+
+## #62 — Sync Operam post-venta (HITL) — INVESTIGACION READ-ONLY HECHA (artefacto AC1) + NUCLEO PURO en construccion (rama issue-62-sync-core)
+
+Decision de Adrian 2026-06-16: hacer la investigacion read-only YA (sin escribir en Operam) y construir solo el NUCLEO PURO ahora (payload->transicion + fixtures + tests); la capa de IO real (webhooks/polling) y el wiring quedan para una sesion HITL dedicada. #62 NO se cierra con esto (queda parcial).
+
+### Hallazgos de la investigacion (consultas read-only via MCP operam-api, 2026-06-16)
+- **La llave de la cadena es el campo `order_`** (numero de sales_order). Verificado en vivo: una cotizacion (tipo 10) y su factura (tipo 13) comparten el mismo `order_` (ej. cotizacion trans_no 6782 y factura trans_no 7269, ambas `order_: 7139`); la remision tambien cuelga de ahi. `listar_transacciones` filtra por tipo: **10=cotizacion, 11=pedido, 13=factura, 30=remision, 32=devolucion**.
+- #63 ya guarda el folio de la cotizacion (`quote_id` de `POST /api/v3/sales/quote`) — es el handle de entrada para resolver el `order_`.
+- **Pagos (anticipo/saldo) EXPUESTOS**: cada transaccion trae `allocated` (asignado/pagado), `outstanding` (saldo) y `over_due`. anticipo_pagado = allocated>0 con outstanding>0 (pago parcial); saldo_pagado = outstanding==0. Webhook **Pago de Cliente (Payment) -> ADD** dispara en cada pago.
+- **Producto entregado EXPUESTO**: remision (trans_type 30) / webhook **Nota de Entrega (CustDelivery) -> ADD**. (listar_pedidos devuelve remisiones con trans_type 30.)
+- **Pedido liberado**: no se vio una señal limpia de "liberado a produccion". DECISION DE ADRIAN: **pedido_liberado = pedido creado en Operam** (existe un pedido para esa oportunidad). El IO layer (HITL) define la señal exacta (probable: existe una transaccion tipo 11 para ese `order_`, NO el `order_` de la etapa quote que ya existe desde #63).
+
+### Decisiones de dominio registradas (AC1)
+- anticipo_pagado: AUTO (allocated>0 && outstanding>0, o webhook Payment parcial).
+- pedido_liberado: AUTO (existe pedido en Operam) — decision de Adrian; respeta el gate `puedeLiberar` de #61 para oportunidades decoradas.
+- saldo_pagado: AUTO (outstanding==0).
+- producto_entregado: AUTO (remision / CustDelivery).
+- Las 4 son automatizables; ninguna queda manual (Adrian decidio la señal de pedido_liberado).
+
+### Alcance de ESTE slice (solo nucleo puro)
+Funcion pura `payloadOperam/hechos -> etapa post-venta` con fixtures, SIN IO real, SIN escritura en Operam, SIN wiring al store/tablero. La capa de IO (webhooks o polling que mapean Operam crudo -> los hechos normalizados) y el movimiento real de la tarjeta son la sesion HITL posterior.
+
+### IMPLEMENTADO (rama issue-62-sync-core, 2026-06-16) — nucleo puro + tests
+- **`lib/sync-operam.js`** (nuevo, puro): `etapaPostVenta(hechos, oportunidad)` y `hechosDesdeOperam(transacciones)`. Importa `ETAPAS` de `./pipeline.js` (orden post-venta) y `puedeLiberar` de `../public/js/decorados-logica.js` (gate #61). Sin IO, sin red, sin escritura.
+- **`test/sync-operam.test.js`** (nuevo): 24 tests (node:test). Suite total 674 -> 698 pass / 0 fail.
+- **Forma de `hechos`** (ya normalizado por el IO layer): `{ pago: { allocated, outstanding, total }, tienePedido, tieneRemision }`.
+- **Reglas (decisiones de Adrian):** anticipo_pagado = `allocated>0 && outstanding>0`; pedido_liberado = `tienePedido`; saldo_pagado = `outstanding==0 && total>0`; producto_entregado = `tieneRemision`. Gana la mas avanzada (monotonia). null si ninguna aplica.
+- **Gate decorados:** si `puedeLiberar(oportunidad)` es false, el sync topa en la mayor etapa por DEBAJO de pedido_liberado (anticipo_pagado) o null; nunca libera ni avanza mas alla aunque Operam diga que hay pedido/saldo/remision.
+- **Monotonia/idempotencia:** si `oportunidad.etapa` ya es igual o mas avanzada que la calculada, devuelve null (no retrocede).
+- **`hechosDesdeOperam`**: normalizacion PROVISIONAL crudo->hechos para probar el nucleo. trans_type 11=pedido, 30=remision, 13=factura (agrega allocated/outstanding/total_amount). El IO real es HITL.
+
+### Frontera para la sesion HITL (lo que falta)
+La capa de IO solo tiene que: (1) leer Operam (webhook Payment/CustDelivery ADD o polling de `listar_transacciones` por el `order_` resuelto desde `quote_id` de #63), (2) mapear el crudo -> `hechos` (puede partir de `hechosDesdeOperam` y endurecerlo: definir la señal exacta de "pedido" = transaccion tipo 11 distinta del order_ de la etapa quote), (3) llamar a `etapaPostVenta(hechos, oportunidad)` y, si devuelve etapa, mover la tarjeta en el store/tablero. El nucleo ya respeta el gate de #61 y la monotonia, asi que el IO no decide reglas de dominio.
+
+### AC del issue #62 cubiertos por este slice
+- AC3 (nucleo payload->transicion con fixtures): COMPLETO.
+- AC1 (mapeo cotizacion->pedido->pagos): la investigacion read-only quedo registrada arriba; el nucleo la codifica.
+- PENDIENTE HITL: AC "un hecho de pago/liberacion/entrega mueve la tarjeta" (necesita IO + wiring al store), y AC "etapas sin dato expuesto en modo manual" (las 4 quedaron automatizables, no aplica modo manual). #62 NO se cierra.
