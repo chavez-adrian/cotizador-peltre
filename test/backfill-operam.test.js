@@ -1,7 +1,10 @@
-import { test } from 'node:test';
+import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -116,6 +119,25 @@ const QUOTE = {
 };
 const DEBTOR = { debtor_no: '394', CustName: 'JUANA HERNANDEZ GARCIA', tax_id: 'HEGJ800101AB1', curr_code: 'MXN' };
 
+// --- folioYaExiste: idempotencia del backfill por folioOperam ---
+
+test('folioYaExiste: detecta un folioOperam ya presente en la lista (sin recrear)', () => {
+  const cots = [
+    { id: 1, folioOperam: '1140', data: {} },
+    { id: 2, folioOperam: '1141', data: {} },
+  ];
+  assert.equal(folioYaExiste(cots, '1141'), true);
+  assert.equal(folioYaExiste(cots, 1141), true);   // tolera numero
+  assert.equal(folioYaExiste(cots, '9999'), false);
+});
+
+test('folioYaExiste: lista vacia o folio nulo -> false', () => {
+  assert.equal(folioYaExiste([], '1141'), false);
+  assert.equal(folioYaExiste(null, '1141'), false);
+  assert.equal(folioYaExiste([{ id: 1, folioOperam: '1141' }], null), false);
+  assert.equal(folioYaExiste([{ id: 1, folioOperam: '1141' }], ''), false);
+});
+
 test('construirEntradaCotizacion: arma los campos de cabecera que pidio Adrian', () => {
   const entrada = construirEntradaCotizacion({
     pedido: PEDIDO, quote: QUOTE, debtor: DEBTOR, etapa: 'saldo_pagado', vendedores: VENDEDORES,
@@ -169,4 +191,36 @@ test('construirEntradaCotizacion: el RFC en data.cliente.rfc va en mayusculas (c
     pedido: PEDIDO, quote: QUOTE, debtor: debtorLower, etapa: 'seguimiento', vendedores: VENDEDORES,
   });
   assert.equal(entrada.data.cliente.rfc, 'HEGJ800101AB1');
+});
+
+// --- Idempotencia end-to-end contra el store JSON real (sin DATABASE_URL) ---
+// Crear con `crear` + `setFolioOperam`, releer con `listar` y comprobar que
+// folioYaExiste lo reconoce: re-correr el backfill no duplicaria.
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
+function readCots() {
+  if (!existsSync(COTS_PATH)) return [];
+  return JSON.parse(readFileSync(COTS_PATH, 'utf8'));
+}
+function writeCots(data) { writeFileSync(COTS_PATH, JSON.stringify(data, null, 2)); }
+
+let savedCots;
+before(() => { savedCots = readCots(); });
+after(() => { writeCots(savedCots); });
+
+test('idempotencia: tras crear+setFolioOperam, folioYaExiste lo reconoce en listar()', async () => {
+  writeCots([]);
+  const store = await import('../lib/cotizaciones-store.js');
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: QUOTE, debtor: DEBTOR, etapa: 'saldo_pagado', vendedores: VENDEDORES,
+  });
+  const id = await store.crear(entrada);
+  await store.setFolioOperam(id, entrada.folioOperam);
+
+  const cots = await store.listar();
+  // Segunda pasada del backfill ve el folio ya presente -> SKIP (no recrea).
+  assert.equal(folioYaExiste(cots, '1141'), true);
+  // El folio que aun no existe si pasaria.
+  assert.equal(folioYaExiste(cots, '1142'), false);
 });
