@@ -36,7 +36,7 @@ Issues abiertos (atacar uno a uno; los de bug etiquetados `ready-for-agent`):
 - **#72** Cotizar con Lalamove (envío local) — feature, definir mecanismo de tarifa.
 - **#73** Reconocer clientes existentes de Operam: canal "Cliente Actual" + índice de celulares (parte 2 a discutir).
 
-**Pendiente operativo (con cuidado, prod/Neon):** borrar datos de prueba subidos durante la prueba integral (prospectos, pre-cotizaciones, cotizaciones en Historial). Definir criterio (¿por fecha de hoy? ¿nombres ACAI/GODA/test?) antes de borrar; listar primero, confirmar, luego borrar.
+- **#75** Limpiar datos de prueba (prod/Neon, **destructivo, gate humano**): estrategia en 3 pasos — borrar lo obvio → consultar Operam (si existe = real, conservar) → lo dudoso, confirmar con Adrián. Dry-run primero + respaldo de lo borrado.
 
 ## Mapa de issues del PRD #52 — CERRADOS (detalle en git + comentario de cierre del issue)
 - **#53** tracer: bottom-nav + 7 etapas + migración de lectura + tablero único.
