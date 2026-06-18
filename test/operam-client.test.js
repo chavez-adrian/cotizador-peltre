@@ -778,7 +778,8 @@ test('subirCotizacionOperam: el quote lleva cust_ref (referencia), deliver_to y 
     });
     assert.equal(quoteBody.cust_ref, 'OC-4521', 'cust_ref debe venir de cliente.referencia');
     assert.equal(quoteBody.deliver_to, 'Almacen Roma', 'deliver_to debe venir de cliente.nombreEntrega');
-    assert.ok(/2026-07-17/.test(JSON.stringify(quoteBody)), 'la vigencia (valido hasta) debe ir en el quote');
+    // La vigencia va en comments: la API del quote no permite setear "Valido hasta" (HITL #68).
+    assert.ok(/Valido hasta: 2026-07-17/.test(quoteBody.comments || ''), 'la vigencia (valido hasta) va en comments');
   } finally {
     restore();
   }
@@ -804,8 +805,8 @@ test('subirCotizacionOperam: sin vigencia explicita usa OrderDate + 30 dias', as
       cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
       items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
     });
-    // 2026-06-17 + 30 dias = 2026-07-17
-    assert.ok(/2026-07-17/.test(JSON.stringify(quoteBody)), 'sin vigencia explicita debe ser fecha + 30 dias');
+    // 2026-06-17 + 30 dias = 2026-07-17, entregado en comments (la API no setea "Valido hasta")
+    assert.ok(/Valido hasta: 2026-07-17/.test(quoteBody.comments || ''), 'sin vigencia explicita: fecha+30 en comments');
   } finally {
     restore();
   }
