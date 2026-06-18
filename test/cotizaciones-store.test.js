@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/cotizaciones.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa, setEspejoOperam } from '../lib/cotizaciones-store.js';
+import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa, setEspejoOperam, borrar } from '../lib/cotizaciones-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -33,6 +33,23 @@ test('crear asigna id secuencial y persiste la entrada completa', async () => {
   const guardada = readCots().find(c => c.id === 8);
   assert.equal(guardada.cliente, 'HOTEL AZUL');
   assert.equal(guardada.data.cliente.telefono, '+52 5512345678');
+});
+
+// Borrado de cotizaciones (issue #75, limpieza de datos de prueba): elimina por id,
+// devuelve true si borro algo, false si no existia (idempotente). Lo usa el script
+// scripts/limpiar-datos-prueba.mjs (con respaldo previo).
+test('borrar elimina la cotizacion por id y es idempotente', async () => {
+  writeCots([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} },
+    { id: 2, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'B', data: {} },
+  ]);
+  assert.equal(await borrar(1), true);
+  const restantes = readCots();
+  assert.equal(restantes.length, 1);
+  assert.equal(restantes[0].id, 2);
+  // idempotente: borrar de nuevo no rompe ni toca lo demas
+  assert.equal(await borrar(1), false);
+  assert.equal(readCots().length, 1);
 });
 
 test('listar devuelve todas las entradas y obtener una por id', async () => {
