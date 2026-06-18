@@ -64,3 +64,22 @@ Issues abiertos (atacar uno a uno; los de bug etiquetados `ready-for-agent`):
 - **Sync #62 activo:** webhooks `Payment/Order/CustDelivery → /api/webhooks/operam` (header `X-Operam-Webhook-Secret`, secret en Render) + reconciliación on-demand `POST /api/sync-operam` (red de seguridad). Binding preciso solo vía `data.orderOperam`. Gate de #61 (`puedeLiberar`) respetado por el sync.
 - **Auth del intake (#57):** la ruta de alta sin asignar es **admin-only**; no se expone escritura pública (el formulario web externo "Peltre de Mayoreo" y su token son trabajo posterior).
 - **ASCII estricto** en código/commits (regla de encoding del CLAUDE.md): marca de completado "OK", sin acentos ni comillas tipográficas.
+
+## Subagente #74 (alta Operam: dimensiones + domicilio) - TODOS LOS ACs EN VERDE
+Rama `issue-74-dimensiones-domicilio-operam`. Hallazgo clave: el codigo de `lib/operam-client.js` YA implementa AC1 y AC2; el gap real era de COBERTURA (cero tests de dimensiones; los de branch no afirmaban el payload completo del domicilio). Issue trabaja con MOCKS, sin escritura real a Operam. NO se modifico codigo de lib/server: solo se agregaron tests.
+
+DECISION DE DOMINIO (cerrada): nombre real del campo de dimensiones en la API v3 REST = `dimension_id` (D1=1 TALLER CASINO DE LA SELVA) y `dimension2_id` (D2=5 CORPORATIVO), escalares. Fuentes: MAPEO_CAMPOS_CLIENTE.md 2.4/4 + codigo real. El `dimensiones_id[]` (array) de peltre-operam.md L55 es del flujo VIEJO de web-scraping del form PHP `/sales/manage/customers.php` (FormData multipart), NO de la API v3 que usa el cotizador. No aplica.
+
+Fuente de cada valor del domicilio (PUT /branches via actualizarBranchCliente):
+- vendedor (`salesman`) = operam_id del cliente, viene del alta (server.js pasa `cliente.salesman`). SOP pasos 10-11.
+- area/zona (`area`) = derivada del pais por `derivarArea`: MX->1, US->5, CA->7, otros->6. MAPEO 2.4 + SOP paso 24 (MX->10 Mexico). Hardcodeo derivado, ya existente.
+- almacen (`location`) = 40 (PT) entero. SOP pasos 21-22 + MAPEO gap#4 (verificado: campo es `location:40`, no `default_location`). Hardcodeo.
+- grupo impuestos (`tax_group_id`) = 1 MX (gravado) / 2 extranjero (exento), por pais del domicilio. CONTEXT.md L122 + ADR-0002 + SOP pasos 43-44. Operam deriva sales_account de aqui; NO enviar sales_account.
+
+AC1 CERRADO (commit 38a3c9f): +3 tests en test/operam-client.test.js fijan dimension_id/dimension2_id en buildClienteBody y en el body capturado del POST /customers. Sensibilidad verificada (comente las dimensiones -> los 3 fallan).
+AC2 CERRADO (commit 86e2c85): +2 tests en operam-client (PUT /branches captura salesman/area/location/tax_group, casos MX y US) y +2 en server (D1c/D1d, flujo /api/crear-cliente end-to-end propagando vendedor del alta + pais del domicilio al PUT branch). Sensibilidad verificada (comente salesman/area en actualizarBranchCliente -> fallan; el par MX/US prueba que server propaga el pais).
+AC3 CERRADO: lo cubren los tests de AC1+AC2 (mocks que capturan el body y fijan dimensiones + payload del domicilio).
+
+ESTADO: TODOS LOS ACs EN VERDE. Suite 773 pass / 0 fail (766 baseline + 3 AC1 + 4 AC2). Archivos tocados: test/operam-client.test.js, test/server.test.js, PROGRESS.md. Cero cambios en lib/ o server.js.
+
+VERIFICACION HITL READ-ONLY pendiente para el orquestador: confirmar contra Operam produccion (solo lectura, ver un cliente recien creado por este flujo) que la API v3 PERSISTE dimension_id=1/dimension2_id=5 y tax_group/area/salesman del branch. Recordar el quirk: Operam puede responder 200 e ignorar campos (paso con segmento_id en clientes 456/457). Los tests prueban que el cotizador MANDA los campos; no que Operam los GUARDE. El caso del issue (ACAI CON FRUTA, captura manual) pudo NO pasar por este flujo /api/crear-cliente, o haber topado con ese quirk de persistencia -- conviene rastrear como se creo ese cliente especifico.
