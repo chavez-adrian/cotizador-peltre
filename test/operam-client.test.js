@@ -288,6 +288,49 @@ test('buildClienteBody: phone/email a nivel cliente vienen del input (issue #16)
   assert.strictEqual(body.email, 'contacto@empresa.com', 'email a nivel cliente debe venir del input');
 });
 
+// === Dimensiones del cliente — issue #74 ===
+// Nombre real del campo en la API v3 REST: dimension_id (D1) y dimension2_id (D2),
+// campos escalares (MAPEO_CAMPOS_CLIENTE.md 2.4/4, lib/operam-client.js). El
+// dimensiones_id[] (array) de peltre-operam.md es del flujo viejo de web-scraping
+// del form PHP, NO de la API v3. SOP pasos 19-20: D1=1 (TALLER CASINO DE LA SELVA),
+// D2=5 (CORPORATIVO).
+
+test('buildClienteBody: dimension_id=1 (D1 TALLER CASINO DE LA SELVA) (issue #74)', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.strictEqual(body.dimension_id, 1, 'dimension_id debe ser 1 (D1 TALLER CASINO DE LA SELVA, SOP paso 19)');
+});
+
+test('buildClienteBody: dimension2_id=5 (D2 CORPORATIVO) (issue #74)', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.strictEqual(body.dimension2_id, 5, 'dimension2_id debe ser 5 (D2 CORPORATIVO, SOP paso 20)');
+});
+
+// El quirk de Operam (acepta 200 e ignora campos) significa que un mock que solo
+// devuelve {result:true} no prueba que las dimensiones se hayan MANDADO. Este test
+// CAPTURA el body real del POST /customers y afirma que las dimensiones viajan.
+test('crearCliente: el POST /customers envia dimension_id=1 y dimension2_id=5 (issue #74)', async () => {
+  resetSession();
+  let postBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': (url, opts) => {
+      if (opts && opts.method === 'POST') {
+        postBody = JSON.parse(opts.body);
+        return jsonResponse({ result: true, customer_id: 999 });
+      }
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  try {
+    await crearCliente({ tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV' });
+    assert.ok(postBody, 'debe haberse capturado el body del POST /customers');
+    assert.strictEqual(postBody.dimension_id, 1, 'el POST debe enviar dimension_id=1');
+    assert.strictEqual(postBody.dimension2_id, 5, 'el POST debe enviar dimension2_id=5');
+  } finally {
+    restore();
+  }
+});
+
 // === actualizarBranchCliente() — issue #29 ===
 
 test('actualizarBranchCliente: PUT /api/v3/sales/branches/:id con location:40 y ship_via:1 como enteros', async () => {
@@ -413,6 +456,69 @@ test('actualizarBranchCliente: cuando branchId es null hace GET customer para ob
     });
     assert.ok(getCustomerCalled, 'debe haber llamado GET /customers/:id para obtener branch_code');
     assert.ok(putBranchUrl && putBranchUrl.includes('/branches/300'), 'debe hacer PUT al branch_code obtenido');
+  } finally {
+    restore();
+  }
+});
+
+// === Domicilio del cliente (branch) — payload completo SOP — issue #74 ===
+// AC2: el domicilio creado debe llevar vendedor, area/zona, almacen predeterminado
+// y grupo de impuestos. Operam acepta 200 e ignora campos: se CAPTURA el body del
+// PUT /branches y se afirma el payload completo, no solo que devuelva 200.
+// Fuentes: salesman = operam_id del alta (SOP 10-11); area derivada del pais (SOP 24);
+// location = 40 PT (SOP 21-22); tax_group_id por pais del domicilio (ADR-0002, CONTEXT.md).
+
+test('actualizarBranchCliente: el PUT branch lleva vendedor, area, almacen y tax_group (domicilio MX) (issue #74)', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/200': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 200, {
+      br_name: 'Almacen Central', br_ref: 'ALMCEN', pais: 'MX', salesman: 47,
+      addr_street: 'Reforma', addr_exterior: '1', addr_interior: '', addr_colony: 'Juarez',
+      addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '',
+      phone: '5512345678', email: 'entrega@test.com',
+    });
+    assert.ok(putBody, 'debe haberse capturado el body del PUT /branches');
+    assert.strictEqual(putBody.customer_id, 100, 'el PUT branch debe llevar customer_id para no orfanar el branch (debtor_no->0)');
+    assert.strictEqual(putBody.salesman, 47, 'el domicilio debe llevar el vendedor (salesman) del alta');
+    assert.strictEqual(putBody.area, 1, 'el domicilio MX debe llevar area/zona 1 (10 Mexico)');
+    assert.strictEqual(putBody.location, 40, 'el domicilio debe llevar almacen predeterminado 40 (PT)');
+    assert.strictEqual(putBody.tax_group_id, 1, 'domicilio MX debe llevar tax_group_id 1 (gravado)');
+  } finally {
+    restore();
+  }
+});
+
+test('actualizarBranchCliente: el PUT branch usa area y tax_group de pais extranjero (US) (issue #74)', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/201': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 201, {
+      br_name: 'USA Branch', br_ref: 'USA', pais: 'US', salesman: 47,
+      addr_street: 'Main St', addr_exterior: '10', addr_interior: '', addr_colony: '',
+      addr_city: 'Los Angeles', addr_state: 'CA', addr_zip: '90001', addr_reference: '',
+      phone: '', email: '',
+    });
+    assert.ok(putBody, 'debe haberse capturado el body del PUT /branches');
+    assert.strictEqual(putBody.customer_id, 100, 'el PUT branch debe llevar customer_id para no orfanar el branch (debtor_no->0)');
+    assert.strictEqual(putBody.area, 5, 'domicilio US debe llevar area/zona 5 (20 USA)');
+    assert.strictEqual(putBody.tax_group_id, 2, 'domicilio extranjero debe llevar tax_group_id 2 (exento)');
+    assert.strictEqual(putBody.location, 40, 'el domicilio debe llevar almacen predeterminado 40 (PT)');
+    assert.strictEqual(putBody.salesman, 47, 'el domicilio debe llevar el vendedor (salesman) del alta');
   } finally {
     restore();
   }
