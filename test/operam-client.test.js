@@ -993,3 +993,61 @@ test('subirCotizacionOperam: CP de entrega ausente -> flete foraneo por defecto 
     restore();
   }
 });
+
+test('subirCotizacionOperam: sin linea de envio -> NO se agrega partida de flete', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 333, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1503 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '06700' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    });
+    assert.equal(partidaFlete(quoteBody), undefined, 'sin envio no debe haber partida de flete');
+    assert.equal((quoteBody.items || []).length, 1, 'solo la partida del producto');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (diferido a #72)', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 334, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1504 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '06700' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Lalamove auto', cantidad: 1, precio: 250, descuento: 0 },
+      ],
+    });
+    assert.equal(partidaFlete(quoteBody), undefined, 'Lalamove NO debe volverse partida de flete');
+    assert.ok(/Lalamove/i.test(quoteBody.comments || ''), 'Lalamove debe quedar en comments');
+    assert.ok(/250/.test(quoteBody.comments || ''), 'el monto de Lalamove debe quedar en comments');
+  } finally {
+    restore();
+  }
+});
