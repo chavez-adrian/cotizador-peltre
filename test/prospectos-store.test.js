@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, moverASeguimientoConFolio, ultimos10 } from '../lib/prospectos-store.js';
+import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, moverASeguimientoConFolio, ultimos10, borrar } from '../lib/prospectos-store.js';
 import { ETAPAS, SALIDAS } from '../lib/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +29,21 @@ before(() => {
 after(() => {
   if (existia) writeProspectos(savedProspectos);
   else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
+});
+
+// Borrado de prospectos (issue #75, limpieza de datos de prueba): elimina por id,
+// idempotente. Lo usa scripts/limpiar-datos-prueba.mjs (con respaldo previo).
+test('borrar elimina el prospecto por id y es idempotente', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'A', etapa: 'por_cotizar' },
+    { id: 2, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5522222222', celular10: '5522222222', nombre: 'B', etapa: 'por_cotizar' },
+  ]);
+  assert.equal(await borrar(1), true);
+  const restantes = readProspectos();
+  assert.equal(restantes.length, 1);
+  assert.equal(restantes[0].id, 2);
+  assert.equal(await borrar(1), false); // idempotente
+  assert.equal(readProspectos().length, 1);
 });
 
 test('crear asigna id secuencial y un prospecto a mano nace en por_cotizar', async () => {
