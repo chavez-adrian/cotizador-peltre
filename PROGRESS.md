@@ -28,7 +28,7 @@ Tu rol = **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresco
 
 Issues abiertos (atacar uno a uno; los de bug etiquetados `ready-for-agent`):
 - **#70** Documentos: PDF con diseño viejo (HTML ok) + etiqueta "Pre-cotización" cuando es PRE.
-- **#71** Domicilio de entrega: obligatorios solo CP+país (leyenda si Calle vacía) + paqueterías en Sentence case.
+- **#71** Domicilio de entrega: obligatorios solo CP+país (leyenda si Calle vacía) + paqueterías en Sentence case. **AC1 OK** (validarDomicilioEntrega en `public/js/cotizar-logica.js`: Calle opcional; leyenda "Favor de confirmar el domicilio de entrega" viaja en `body.cliente.leyendaDomicilio` y la pintan html/pdf-generator en Datos de entrega). **AC2 OK** (misma función bloquea si falta CP o país; wiring patrón-teléfono en generatePDF/generateHTML). **AC3 OK** (`sentenceCase` aplicado a carrier/servicio en tarjeta de tarifa y en el `desc` del documento). Suite **821/0**. Pendiente: verificación del orquestador + gate humano. Wiring de app.js no testeable en Node (efectos de navegador). Commit `8841709`.
 - **#72** Cotizar con Lalamove (envío local) — feature, definir mecanismo de tarifa.
 - **#73** Reconocer clientes existentes de Operam: canal "Cliente Actual" + índice de celulares (parte 2 a discutir).
 
