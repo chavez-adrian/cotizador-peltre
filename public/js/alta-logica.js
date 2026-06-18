@@ -167,6 +167,60 @@ export function buildDedupExactoConDiffHtml(cliente, csfDatos) {
   return base + buildDiffFiscalHtml(diff);
 }
 
+// === Estado compartido alta -> cotizador (issue #69) ===
+//
+// Tras dar de alta un cliente, "Cotizar ahora" debe abrir el cotizador con el cliente
+// YA cargado, sin re-pedir datos ni depender de un round-trip a Operam por RFC (que
+// puede no encontrar al cliente recien creado). Se reusa lo capturado en altaState:
+// los datos fiscales (datos) y el domicilio de entrega (domicilio, que ya trae el
+// telefono combinado con codigo de pais). El objeto resultante tiene la MISMA forma
+// que consume seleccionarClienteOperam en app.js (id/name/ref/rfc/calle/.../telefono),
+// de modo que el mismo prellenado de la pestana de cliente sirve para ambos caminos.
+export function buildClienteDesdeAlta(altaState) {
+  const st = altaState || {};
+  const datos = st.datos || {};
+  const dom = st.domicilio || {};
+  const calle = [dom.addr_street, dom.addr_exterior].filter(Boolean).join(' ');
+  return {
+    id: st.customer_id != null ? st.customer_id : null,
+    name: datos.razonSocial || '',
+    ref: datos.nombreCorto || '',
+    rfc: datos.rfc || '',
+    cpFiscal: datos.cp || '',
+    calle,
+    numInt: dom.addr_interior || '',
+    colonia: dom.addr_colony || '',
+    cp: dom.addr_zip || datos.cp || '',
+    municipio: dom.addr_city || datos.municipio || '',
+    estado: dom.addr_state || datos.estado || '',
+    nombreEntrega: dom.br_name || '',
+    telefono: dom.phone || '',
+    email: dom.email || '',
+  };
+}
+
+// Traduce la clasificacion de un celular (/api/prospectos/clasificar: {tipo:
+// 'cliente'|'prospecto'|'libre'}) a una decision para la UI del primer formulario
+// (issue #69 AC3). Mismo guardrail que la dedup por RFC: si el celular ya pertenece a
+// un prospecto o cliente, se avisa; libre o respuesta invalida no marca nada (best
+// effort: la clasificacion puede fallar y no debe bloquear el alta).
+export function mensajeBusquedaCelular(clasificacion) {
+  const c = clasificacion || {};
+  if (c.tipo === 'cliente') {
+    const nombre = c.cust_name || (c.cliente && c.cliente.cust_name) || '';
+    return { encontrado: true, tipo: 'cliente', mensaje: `Este celular ya es un cliente en Operam${nombre ? ': ' + nombre : ''}` };
+  }
+  if (c.tipo === 'prospecto') {
+    const p = c.prospecto || {};
+    const nombre = p.nombre || '';
+    const vendedor = p.vendedor || '';
+    let mensaje = `Este celular ya es un prospecto${nombre ? ': ' + nombre : ''}`;
+    if (vendedor) mensaje += ` (lo atiende ${vendedor})`;
+    return { encontrado: true, tipo: 'prospecto', mensaje };
+  }
+  return { encontrado: false, tipo: c.tipo || 'libre', mensaje: '' };
+}
+
 // Construye el body de POST /api/crear-cliente a partir de los datos fiscales (CSF),
 // los campos comerciales capturados y el domicilio de entrega. customerId/branchId
 // no nulos indican un reintento (issue #?): se reenvian para que el backend continue

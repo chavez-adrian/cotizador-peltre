@@ -7,6 +7,8 @@ import {
   buildDiffFiscalHtml,
   buildDedupExactoConDiffHtml,
   buildAltaDarDeAltaPayload,
+  buildClienteDesdeAlta,
+  mensajeBusquedaCelular,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -1346,7 +1348,7 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-razon-social',   cliente.name);
   fill('cl-nombre-corto',   cliente.ref);
   fill('cl-rfc',            cliente.rfc);
-  fill('cl-cp-fiscal',      cliente.cp);
+  fill('cl-cp-fiscal',      cliente.cpFiscal || cliente.cp);
   if (cliente.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
   fill('cl-nombre-entrega', cliente.nombreEntrega);
   fill('cl-calle',          cliente.calle);
@@ -3671,10 +3673,13 @@ function altaCotizarAhora() {
   const panel = document.getElementById('panel-alta-cliente');
   if (panel) panel.style.display = 'none';
   const buscarPanel = document.getElementById('panel-buscar');
-  if (buscarPanel) buscarPanel.style.display = 'none';
-  const searchInput = document.getElementById('operam-search');
-  if (searchInput) { searchInput.value = altaCsfState.datos?.rfc || ''; }
-  document.getElementById('btn-buscar-operam')?.click();
+  if (buscarPanel) buscarPanel.style.display = 'block';
+  // Estado compartido (#69): el cotizador abre con el cliente recien dado de alta
+  // YA cargado -- razon social, telefono (con codigo de pais) y domicilio prellenados
+  // desde lo capturado en el alta, sin re-pedir datos ni round-trip a Operam por RFC.
+  const cliente = buildClienteDesdeAlta(altaState);
+  seleccionarClienteOperam(cliente);
+  switchTab('cliente');
 }
 
 function altaTerminar() {
