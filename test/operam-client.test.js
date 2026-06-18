@@ -486,6 +486,7 @@ test('actualizarBranchCliente: el PUT branch lleva vendedor, area, almacen y tax
       phone: '5512345678', email: 'entrega@test.com',
     });
     assert.ok(putBody, 'debe haberse capturado el body del PUT /branches');
+    assert.strictEqual(putBody.customer_id, 100, 'el PUT branch debe llevar customer_id para no orfanar el branch (debtor_no->0)');
     assert.strictEqual(putBody.salesman, 47, 'el domicilio debe llevar el vendedor (salesman) del alta');
     assert.strictEqual(putBody.area, 1, 'el domicilio MX debe llevar area/zona 1 (10 Mexico)');
     assert.strictEqual(putBody.location, 40, 'el domicilio debe llevar almacen predeterminado 40 (PT)');
@@ -513,6 +514,7 @@ test('actualizarBranchCliente: el PUT branch usa area y tax_group de pais extran
       phone: '', email: '',
     });
     assert.ok(putBody, 'debe haberse capturado el body del PUT /branches');
+    assert.strictEqual(putBody.customer_id, 100, 'el PUT branch debe llevar customer_id para no orfanar el branch (debtor_no->0)');
     assert.strictEqual(putBody.area, 5, 'domicilio US debe llevar area/zona 5 (20 USA)');
     assert.strictEqual(putBody.tax_group_id, 2, 'domicilio extranjero debe llevar tax_group_id 2 (exento)');
     assert.strictEqual(putBody.location, 40, 'el domicilio debe llevar almacen predeterminado 40 (PT)');
