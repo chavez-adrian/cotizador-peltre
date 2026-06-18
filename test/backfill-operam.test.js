@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { esCandidatoBackfill } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esActivoParaImportar } from '../lib/backfill-operam.mjs';
 
 // Backfill de cotizaciones reales via pedidos (issue #76). Funciones PURAS;
 // el script scripts/backfill-operam.mjs las orquesta con IO inyectada. Sin
@@ -36,4 +36,24 @@ test('esCandidatoBackfill: pedido nulo o sin order_no no es candidato', () => {
   assert.equal(esCandidatoBackfill(null), false);
   assert.equal(esCandidatoBackfill(undefined), false);
   assert.equal(esCandidatoBackfill({ trans_no_from: '1300' }), false);
+});
+
+// --- esActivoParaImportar: solo se importan oportunidades activas ---
+
+test('esActivoParaImportar: producto_entregado NO se importa (oportunidad cerrada)', () => {
+  assert.equal(esActivoParaImportar('producto_entregado'), false);
+});
+
+test('esActivoParaImportar: etapas activas post-venta SI se importan', () => {
+  assert.equal(esActivoParaImportar('anticipo_pagado'), true);
+  assert.equal(esActivoParaImportar('pedido_liberado'), true);
+  assert.equal(esActivoParaImportar('saldo_pagado'), true);
+});
+
+test('esActivoParaImportar: seguimiento (sin etapa post-venta) SI se importa', () => {
+  // etapaPostVenta devuelve null cuando ningun hecho post-venta aplica; la
+  // cotizacion existe (hay pedido) pero la etapa base es seguimiento -> activa.
+  assert.equal(esActivoParaImportar('seguimiento'), true);
+  assert.equal(esActivoParaImportar(null), true);
+  assert.equal(esActivoParaImportar(undefined), true);
 });
