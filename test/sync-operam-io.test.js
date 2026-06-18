@@ -222,20 +222,35 @@ test('AC2: resolverOrderDeOportunidad reporta la fuente del binding', async () =
 // --- AC3 (#67): espejo de la cadena (construir + persistir) ---
 
 test('AC3: construirEspejoOperam arma la cadena de folios desde trans + pedidos filtrados', () => {
+  // transFiltradas ya viene filtrada al order_ 7269: factura (10) y remision (13)
+  // traen ese order_. Los pagos (12) y notas de credito (11) NO entran: en el
+  // listado de Operam traen order_=0 (no atribuibles a un pedido), por eso el filtro
+  // por order_ los deja fuera. El folio visible de cada eslabon es `reference`
+  // (A1907, 2142...), no `ref` (que no existe en la API). El estado de pago se deriva
+  // del allocated de la factura (decision Adrian #67), no de folios de pago.
   const trans = [
-    { type: '10', order_: '7269', trans_no: '6735', ref: 'A1907', total_amount: '16954', allocated: '16954', outstanding: '0' },
-    { type: '13', order_: '7269', trans_no: '7329', ref: 'D55' },
-    { type: '12', order_: '7269', trans_no: '8001', ref: 'S1886.1' },
-    { type: '11', order_: '7269', trans_no: '9001', ref: 'NC88' },
+    { type: '10', order_: '7269', trans_no: '6735', reference: 'A1907', total_amount: '16954', allocated: '16954', outstanding: '0' },
+    { type: '13', order_: '7269', trans_no: '7329', reference: '2142' },
   ];
   const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141' }];
   const espejo = construirEspejoOperam(trans, pedidos, '1141');
   assert.equal(espejo.cotizacion, '1141');
   assert.equal(espejo.pedido, '7269');
   assert.deepEqual(espejo.factura, { numero: '6735', ref: 'A1907' });
-  assert.deepEqual(espejo.remisiones, ['7329']);
-  assert.deepEqual(espejo.pagos, ['S1886.1']);
-  assert.deepEqual(espejo.notasCredito, ['NC88']);
+  assert.deepEqual(espejo.remisiones, ['2142']);
+  assert.equal(espejo.pago, 'pagado'); // 16954/16954 liquidado
+  // pagos/notasCredito NO son folios del espejo (no atribuibles por order_).
+  assert.equal('pagos' in espejo, false);
+  assert.equal('notasCredito' in espejo, false);
+});
+
+test('AC3: construirEspejoOperam deriva pago "anticipo" con pago parcial de la factura', () => {
+  const trans = [
+    { type: '10', order_: '7269', trans_no: '6735', reference: 'A1907', total_amount: '1000', allocated: '300', outstanding: '700' },
+  ];
+  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141' }];
+  const espejo = construirEspejoOperam(trans, pedidos, '1141');
+  assert.equal(espejo.pago, 'anticipo');
 });
 
 test('AC3: construirEspejoOperam solo incluye lo que existe (sin factura/remision/etc no inventa campos)', () => {
@@ -245,16 +260,15 @@ test('AC3: construirEspejoOperam solo incluye lo que existe (sin factura/remisio
   assert.equal(espejo.cotizacion, '1141');
   assert.equal(espejo.pedido, '7269');
   assert.equal('factura' in espejo, false);
+  assert.equal('pago' in espejo, false); // sin factura no hay estado de pago
   assert.deepEqual(espejo.remisiones, []);
-  assert.deepEqual(espejo.pagos, []);
-  assert.deepEqual(espejo.notasCredito, []);
 });
 
 test('AC3: reconciliarOportunidad persiste el espejo con la cadena resuelta por documento', async () => {
   const deps = depsMock({
     transacciones: [
-      { type: '10', order_: '7269', trans_no: '6735', ref: 'A1907', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '394' },
-      { type: '13', order_: '7269', trans_no: '7329', ref: 'D55', debtor_no: '394' },
+      { type: '10', order_: '7269', trans_no: '6735', reference: 'A1907', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '394' },
+      { type: '13', order_: '7269', trans_no: '7329', reference: '2142', debtor_no: '394' },
     ],
     pedidos: [{ order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141' }],
   });
@@ -265,7 +279,8 @@ test('AC3: reconciliarOportunidad persiste el espejo con la cadena resuelta por 
   assert.equal(deps.espejos[0].espejo.cotizacion, '1141');
   assert.equal(deps.espejos[0].espejo.pedido, '7269');
   assert.deepEqual(deps.espejos[0].espejo.factura, { numero: '6735', ref: 'A1907' });
-  assert.deepEqual(deps.espejos[0].espejo.remisiones, ['7329']);
+  assert.deepEqual(deps.espejos[0].espejo.remisiones, ['2142']);
+  assert.equal(deps.espejos[0].espejo.pago, 'pagado');
 });
 
 test('AC3: venta directa (trans_no_from vacio) NO persiste un espejo ligado por error a la cotizacion', async () => {

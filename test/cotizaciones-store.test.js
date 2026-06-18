@@ -148,15 +148,15 @@ test('cambiarEtapa: la etapa post-venta persiste por encima del estado', async (
 });
 
 // Espejo de la cadena Operam (issue #67, AC3): una vez resuelto el order_, se
-// persiste en data.espejoOperam la cadena de folios (cotizacion, pedido, factura,
-// remisiones, pagos, notas de credito) para trazabilidad. Mismo patron que
-// actualizarDatos (merge en data JSONB, no reemplaza lo previo).
+// persiste en data.espejoOperam la cadena de folios atribuibles (cotizacion, pedido,
+// factura num+ref, remisiones) + el estado de pago derivado de la factura, para
+// trazabilidad. Mismo patron que actualizarDatos (merge en data JSONB, no reemplaza).
 test('setEspejoOperam persiste el espejo de la cadena en data sin borrar lo previo', async () => {
   writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: { cliente: { rfc: 'XAXX010101000' } } }]);
   const espejo = {
     cotizacion: '1141', pedido: '7269',
     factura: { numero: '6735', ref: 'A1907' },
-    remisiones: ['7329'], pagos: ['S1886.1'], notasCredito: [],
+    remisiones: ['2142'], pago: 'pagado',
   };
   const ok = await setEspejoOperam(1, espejo);
   assert.equal(ok, true);

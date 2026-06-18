@@ -161,7 +161,9 @@ function badgeFolioOperam(o) {
 // Texto compacto de la cadena de folios de Operam (issue #67, AC4) a partir del
 // espejo persistido (data.espejoOperam de #67 AC3). Muestra SOLO los eslabones
 // presentes, en orden de la cadena post-venta: cotizacion -> pedido -> factura ->
-// remision -> pago -> nota de credito. Estilo del badge (denso, una linea):
+// remision -> estado de pago. El pago es un ESTADO derivado de la factura
+// ('anticipo'/'pagado'), no un folio (los pagos/notas no son atribuibles a un pedido
+// por la API, decision #67). Estilo del badge (denso, una linea):
 //   "Cot #1141 - Pedido #7269 - Factura A1907 - Remision - Pagado". Sin espejo o sin
 // eslabones devuelve cadena vacia (la tarjeta no pinta el elemento).
 export function cadenaOperamTexto(espejo) {
@@ -173,10 +175,8 @@ export function cadenaOperamTexto(espejo) {
     partes.push(`Factura ${espejo.factura.ref || espejo.factura.numero}`);
   }
   if (Array.isArray(espejo.remisiones) && espejo.remisiones.length > 0) partes.push('Remision');
-  if (Array.isArray(espejo.pagos) && espejo.pagos.length > 0) partes.push('Pagado');
-  if (Array.isArray(espejo.notasCredito) && espejo.notasCredito.length > 0) {
-    partes.push(`Nota de credito ${espejo.notasCredito[0]}`);
-  }
+  if (espejo.pago === 'pagado') partes.push('Pagado');
+  else if (espejo.pago === 'anticipo') partes.push('Anticipo');
   return partes.join(' - ');
 }
 

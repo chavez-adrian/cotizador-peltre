@@ -413,10 +413,12 @@ test('Q34: un prospecto sin folio no muestra badge (ni PRE ni #Operam)', () => {
 // trazabilidad sin entrar al ERP. Texto compacto, estilo badge; solo los eslabones
 // presentes. Logica pura aqui (texto/estructura); el wiring en app.js.
 test('Q34b: cadenaOperamTexto arma la cadena completa con solo los eslabones presentes', () => {
+  // El estado de pago es derivado (espejo.pago), no un folio: 'pagado'/'anticipo'
+  // (los pagos tipo 12 no son atribuibles a un pedido por la API, decision #67).
   const espejo = {
     cotizacion: '1141', pedido: '7269',
     factura: { numero: '6735', ref: 'A1907' },
-    remisiones: ['7329'], pagos: ['S1886.1'], notasCredito: [],
+    remisiones: ['2142'], pago: 'pagado',
   };
   assert.equal(
     cadenaOperamTexto(espejo),
@@ -427,18 +429,18 @@ test('Q34b: cadenaOperamTexto arma la cadena completa con solo los eslabones pre
 test('Q34c: cadenaOperamTexto muestra solo los eslabones que existen', () => {
   // Solo cotizacion + pedido (aun sin factura/remision/pago).
   assert.equal(
-    cadenaOperamTexto({ cotizacion: '1141', pedido: '7269', remisiones: [], pagos: [], notasCredito: [] }),
+    cadenaOperamTexto({ cotizacion: '1141', pedido: '7269', remisiones: [] }),
     'Cot #1141 - Pedido #7269'
   );
   // Factura con ref vacia: usa el numero como fallback.
   assert.equal(
-    cadenaOperamTexto({ pedido: '7269', factura: { numero: '6735', ref: '' }, remisiones: [], pagos: [], notasCredito: [] }),
+    cadenaOperamTexto({ pedido: '7269', factura: { numero: '6735', ref: '' }, remisiones: [] }),
     'Pedido #7269 - Factura 6735'
   );
-  // Nota de credito presente.
-  assert.match(
-    cadenaOperamTexto({ cotizacion: '1', notasCredito: ['NC88'], remisiones: [], pagos: [] }),
-    /Nota de credito NC88/
+  // Estado de pago "anticipo" (pago parcial de la factura).
+  assert.equal(
+    cadenaOperamTexto({ cotizacion: '1', pedido: '2', factura: { numero: '6735', ref: 'A1907' }, remisiones: [], pago: 'anticipo' }),
+    'Cot #1 - Pedido #2 - Factura A1907 - Anticipo'
   );
 });
 
@@ -446,11 +448,11 @@ test('Q34d: cadenaOperamTexto sin espejo (o vacio) devuelve cadena vacia', () =>
   assert.equal(cadenaOperamTexto(null), '');
   assert.equal(cadenaOperamTexto(undefined), '');
   assert.equal(cadenaOperamTexto({}), '');
-  assert.equal(cadenaOperamTexto({ remisiones: [], pagos: [], notasCredito: [] }), '');
+  assert.equal(cadenaOperamTexto({ remisiones: [] }), '');
 });
 
 test('Q34e: cadenaOperamHtml envuelve la cadena en un elemento solo si hay eslabones; escapa el texto', () => {
-  const espejo = { cotizacion: '1141', pedido: '7269', remisiones: [], pagos: [], notasCredito: [] };
+  const espejo = { cotizacion: '1141', pedido: '7269', remisiones: [] };
   const html = cadenaOperamHtml(espejo);
   assert.match(html, /Cot #1141 - Pedido #7269/);
   assert.match(html, /cot-cadena-operam/);
@@ -464,7 +466,7 @@ test('Q34f: la tarjeta de una cotizacion con espejoOperam muestra la cadena de f
     id: 10, etapa: 'producto_entregado', folioOperam: '1141',
     espejoOperam: {
       cotizacion: '1141', pedido: '7269', factura: { numero: '6735', ref: 'A1907' },
-      remisiones: ['7329'], pagos: ['S1886.1'], notasCredito: [],
+      remisiones: ['2142'], pago: 'pagado',
     },
   });
   const html = buildTableroPipelineHtml([op]);
