@@ -3,8 +3,8 @@
 > Este archivo es solo para **retomar**: estado, backlog activo, cómo orquestar, y decisiones/lecciones que NO viven en otro lado. El detalle de cada issue cerrado está en **git** (commits del merge) y en el **comentario de cierre del issue** en GitHub; las decisiones de dominio en **CONTEXT.md**/ADRs; el API de Operam en **peltre-operam.md**. No duplicar ese detalle aquí.
 
 ## Estado (2026-06-17)
-- **PRD #52 (pipeline unificado de 7 etapas) COMPLETO y operando**: #53–#66 cerrados + **#62 sync Operam post-venta activado** (webhooks reales configurados). Suite **757/0**.
-- **Trabajo activo = backlog de la prueba integral (#67–#74)**, atacar uno a uno con subagente fresco.
+- **PRD #52 (pipeline unificado de 7 etapas) COMPLETO y operando**: #53–#66 cerrados + **#62 sync Operam post-venta activado** (webhooks reales configurados). Suite **766/0**.
+- **Trabajo activo = backlog de la prueba integral**. **#69 CERRADO** (estado compartido alta↔cotizador + aviso de celular enriquecido; mergeado 0d1493a). Resto: atacar uno a uno con subagente fresco.
 
 ## Cómo retomar (protocolo de orquestación)
 Tu rol = **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresco** (Agent, general-purpose), uno por issue.
@@ -28,7 +28,6 @@ Tu rol = **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresco
 
 Issues abiertos (atacar uno a uno; los de bug etiquetados `ready-for-agent`):
 - **#68** Subir a Operam — crítico **MERGEADO parcial** (cliente correcto, ya no usa `clientes[0]`; 422 si no identifica). Falta AC3 nativo: **vigencia** (verificar campo real contra cotización 1156, label "Válido hasta", +30d) y **línea de envío como partida** (mapeo: `250911001` foráneo fuera CDMX · `251021001` FedEx Ground CDMX/metro paquetería · `220906001/2/3` Lalamove metro CDMX · `FLETELOCALCDMX` en desuso). Hoy van en `comments`.
-- **#69** Formulario de cliente duplicado (estado no compartido alta↔cotización): "Cotizar ahora" abre vacío, PDF re-pide teléfono, búsqueda por celular no corre en el 1er formulario, **la tarjeta de la cotización no aparece** tras cotizar. → raíz de varios; sugerido empezar por aquí.
 - **#70** Documentos: PDF con diseño viejo (HTML ok) + etiqueta "Pre-cotización" cuando es PRE.
 - **#71** Domicilio de entrega: obligatorios solo CP+país (leyenda si Calle vacía) + paqueterías en Sentence case.
 - **#74** Alta en Operam: faltan dimensiones (D1=1, D2=5) y creación de domicilio según SOP (vendedor, área, almacén, grupo de impuestos exento si extranjero).
@@ -38,16 +37,8 @@ Issues abiertos (atacar uno a uno; los de bug etiquetados `ready-for-agent`):
 
 - **#75** Limpiar datos de prueba (prod/Neon, **destructivo, gate humano**): estrategia en 3 pasos — borrar lo obvio → consultar Operam (si existe = real, conservar) → lo dudoso, confirmar con Adrián. Dry-run primero + respaldo de lo borrado.
 
-## #69 EN RAMA `issue-69-estado-cliente-compartido` (pendiente verificacion + merge)
-Subagente cerro los 3 ACs con TDD. Suite **766/0** (757 baseline + 9 nuevos). Commits: `7eabc23` (AC1/AC2), `ca08c50` (AC3). No mergeado.
-- **Raiz unica:** el alta (`alta-*`) y el cotizador (`cl-*`) son dos formularios que no compartian estado. `altaCotizarAhora` hacia round-trip a Operam por RFC (que no encuentra al cliente recien creado) y nunca auto-seleccionaba.
-- **AC1+AC2 (verde-test + cableado):** `buildClienteDesdeAlta(altaState)` (PURO, en `alta-logica.js`) mapea `datos`+`domicilio`+`customer_id` al MISMO objeto que consume `seleccionarClienteOperam`. `altaCotizarAhora` ahora prellena el cotizador desde lo capturado (sin round-trip). Telefono va combinado con codigo de pais -> Generar PDF ya no lo re-pide. `cl-cp-fiscal` usa el CP fiscal real (`datos.cp`), no el de entrega.
-- **4o sintoma (tarjeta no aparece) RESUELTO por AC1/AC2:** `validarTelefonoCotizacion` (server.js:128) **rechaza la cotizacion con 400 si falta telefono con codigo de pais** -> con el form vacio nunca se persistia (`cotStore.crear`) ni se creaba la oportunidad. Con el telefono prellenado, la cotizacion persiste y `actualizarEmbudoPorCotizacion` crea/mueve la tarjeta. Mecanismo probado por la compuerta server-side; confirmar end-to-end en demo.
-- **AC3 (verde-test + cableado):** `mensajeBusquedaCelular(clasificacion)` (PURO) traduce `/api/prospectos/clasificar` (cliente/prospecto/libre) a aviso. `alta-celular` ahora clasifica al perder foco (`blur`) y muestra `#alta-celular-aviso` (rojo=cliente, ambar=prospecto). Best effort: fallo no bloquea alta.
-- **Archivos:** `public/js/alta-logica.js` (+2 funciones puras), `public/js/app.js` (import + `altaCotizarAhora` reescrito + `cl-cp-fiscal` + `altaBuscarCelular` + 2 listeners DOMContentLoaded), `public/index.html` (`#alta-celular-aviso`), `public/js/__tests__/alta-cotizar.test.cjs` (nuevo, 9 tests).
-- **DEMO NAVEGADOR (2 min, chrome-devtools MCP + `npm start`, NO escribe a Operam salvo el alta real):** (1) Login. (2) "+ Nuevo cliente" -> Captura manual: RFC, razon social, nombre corto -> dedup -> config comercial (en Celular teclear un celular y SALIR del campo: si es prospecto/cliente existente aparece aviso = AC3) -> domicilio con calle/CP/ciudad/estado/telefono -> Dar de alta. (3) Tocar **Cotizar ahora**: la pestana Cliente debe abrir YA llena (razon social, telefono con +52, calle/colonia/CP/municipio/estado) = AC1. (4) Agregar un producto al carrito, **Generar PDF**: NO debe pedir telefono = AC2. (5) Tras generar, ir a Pipeline/Historial: la tarjeta/cotizacion debe aparecer = 4o sintoma.
-- **VERIFICADO EN NAVEGADOR (orquestador, 2026-06-17, chrome-devtools, sin escribir a Operam):** AC3 flujo real completo (aviso prospecto + control negativo libre). AC1/AC2 cableado real `buildClienteDesdeAlta`->`seleccionarClienteOperam` prellena la pestana cliente (CP fiscal 06600 != CP entrega 06700, telefono +52 separado en codigo+numero). Nota: `altaCotizarAhora` tiene guard `if(!customerId) return` (app.js:3702) -> solo opera tras alta real; el prellenado se verifico simulando estado post-alta. Evidencia: `.temporales/issue-69-*.png`.
-- **ENRIQUECIMIENTO (post-review, decision de dominio de Adrian 2026-06-17):** `GET /api/prospectos/clasificar` ahora devuelve `{tipo:'prospecto', prospecto:{nombre, vendedor}}` y el aviso muestra "...: [nombre] (lo atiende [vendedor])", sea propio o ajeno. Revierte la regla "sin exponer mas datos" SOLO para este endpoint; documentado en CONTEXT.md §Visibilidad. E3 reescrito, B2 reforzado. Suite 766/0.
+## Backlog prueba integral — CERRADOS (detalle en git + comentario de cierre del issue)
+- **#69** estado compartido alta↔cotizador: `buildClienteDesdeAlta`→`seleccionarClienteOperam` prellena el cotizador al "Cotizar ahora" (telefono con codigo → Generar PDF no lo re-pide; `cl-cp-fiscal` usa CP fiscal real, no el de entrega); aviso de celular en el 1er form (`mensajeBusquedaCelular`, clasifica al `blur`) que **expone nombre+vendedor del prospecto** (decision de dominio 2026-06-17, excepcion en CONTEXT.md §Visibilidad). 4o sintoma (tarjeta no aparecia) resuelto por el prellenado del telefono (la compuerta server-side rechazaba la cotizacion sin telefono). Merge **0d1493a**.
 
 ## Mapa de issues del PRD #52 — CERRADOS (detalle en git + comentario de cierre del issue)
 - **#53** tracer: bottom-nav + 7 etapas + migración de lectura + tablero único.
