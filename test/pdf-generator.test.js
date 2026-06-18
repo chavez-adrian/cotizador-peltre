@@ -41,3 +41,13 @@ test('B5: el PDF contiene datos bancarios de Banorte', async () => {
   // PDFKit kern-splits "Banorte" between 'r' and 't'; "Banor" is a reliable prefix
   assert.ok(text.includes(toHex('Banor')), '"Banorte" no encontrado en el PDF');
 });
+
+test('B6: (#71 AC1) el PDF pinta leyendaDomicilio cuando esta presente', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { cpEntrega: '06600', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' },
+  });
+  const text = result.toString('latin1');
+  // PDFKit kern-splittea "confirmar"; "domicilio" es una palabra contigua fiable de la leyenda
+  assert.ok(text.includes(toHex('domicilio')), 'leyenda de domicilio no encontrada en el PDF');
+});

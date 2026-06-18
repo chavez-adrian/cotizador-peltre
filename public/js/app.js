@@ -47,6 +47,11 @@ import {
   estadoStepper,
   textoProgreso,
 } from './stepper-logica.js';
+import {
+  validarDomicilioEntrega,
+  formatCarrier,
+  formatServicio,
+} from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
 function leerTelefono(inputId, codeId) {
@@ -76,6 +81,15 @@ function validarTelefonosCotizacion() {
     if (errCel) return `Celular de entrega: ${errCel}`;
   }
   return null;
+}
+
+// Lee el domicilio de entrega del DOM y delega en la funcion pura (#71).
+function validarDomicilioCotizacion() {
+  return validarDomicilioEntrega({
+    calle: document.getElementById('cl-calle')?.value,
+    cp: document.getElementById('cl-cp-entrega')?.value,
+    pais: document.getElementById('cl-pais')?.value || 'MX',
+  });
 }
 
 // === UTILS ===
@@ -771,8 +785,8 @@ async function cotizarEnvia() {
       card.className = 'envia-rate-card';
       card.innerHTML = `
         <div class="envia-rate-info">
-          <div class="envia-rate-carrier">${carrier}${esRecomendado ? ' <span class="badge-rec">Recomendado</span>' : ''}</div>
-          <div class="envia-rate-servicio">${servicio}${dias ? ' · ' + dias : ''}</div>
+          <div class="envia-rate-carrier">${formatCarrier(carrier)}${esRecomendado ? ' <span class="badge-rec">Recomendado</span>' : ''}</div>
+          <div class="envia-rate-servicio">${formatServicio(servicio)}${dias ? ' · ' + dias : ''}</div>
         </div>
         <div class="envia-rate-precio">$${fmt(precio)}</div>
       `;
@@ -797,7 +811,7 @@ function seleccionarEnviaRate(card, carrier, servicio, precio) {
   document.querySelectorAll('.envia-rate-card').forEach(c => c.classList.remove('selected'));
   card.classList.add('selected');
   enviaRateSeleccionado = {
-    desc: `${carrier} ${servicio}`.trim(),
+    desc: `${formatCarrier(carrier)} ${formatServicio(servicio)}`.trim(),
     cost: precio,
   };
   // Sincronizar con los campos manuales para que updateResumen los tome
@@ -1008,6 +1022,13 @@ async function generatePDF() {
     document.getElementById('cl-telefono')?.focus();
     return;
   }
+  const domio = validarDomicilioCotizacion();
+  if (!domio.ok) {
+    alert(domio.error);
+    switchTab('cliente');
+    document.getElementById('cl-cp-entrega')?.focus();
+    return;
+  }
   const btn = document.getElementById('btn-pdf');
   btn.disabled = true;
   btn.textContent = 'Generando...';
@@ -1078,6 +1099,7 @@ async function generatePDF() {
         referencias: document.getElementById('cl-referencias').value,
         referencia: document.getElementById('cl-referencia').value,
         pais: document.getElementById('cl-pais')?.value || 'MX',
+        leyendaDomicilio: domio.leyenda || '',
       },
       condicionesPago: document.getElementById('cl-condiciones').value,
       items,
@@ -1127,6 +1149,13 @@ async function generateHTML() {
     alert(telErr);
     switchTab('cliente');
     document.getElementById('cl-telefono')?.focus();
+    return;
+  }
+  const domio = validarDomicilioCotizacion();
+  if (!domio.ok) {
+    alert(domio.error);
+    switchTab('cliente');
+    document.getElementById('cl-cp-entrega')?.focus();
     return;
   }
   const btn = document.getElementById('btn-html');
@@ -1192,6 +1221,7 @@ async function generateHTML() {
         referencias: document.getElementById('cl-referencias').value,
         referencia: document.getElementById('cl-referencia').value,
         pais: document.getElementById('cl-pais')?.value || 'MX',
+        leyendaDomicilio: domio.leyenda || '',
       },
       condicionesPago: document.getElementById('cl-condiciones').value,
       items,
