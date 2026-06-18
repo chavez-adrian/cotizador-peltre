@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -778,7 +778,8 @@ test('subirCotizacionOperam: el quote lleva cust_ref (referencia), deliver_to y 
     });
     assert.equal(quoteBody.cust_ref, 'OC-4521', 'cust_ref debe venir de cliente.referencia');
     assert.equal(quoteBody.deliver_to, 'Almacen Roma', 'deliver_to debe venir de cliente.nombreEntrega');
-    assert.ok(/2026-07-17/.test(JSON.stringify(quoteBody)), 'la vigencia (valido hasta) debe ir en el quote');
+    // La vigencia va en comments: la API del quote no permite setear "Valido hasta" (HITL #68).
+    assert.ok(/Valido hasta: 2026-07-17/.test(quoteBody.comments || ''), 'la vigencia (valido hasta) va en comments');
   } finally {
     restore();
   }
@@ -804,8 +805,8 @@ test('subirCotizacionOperam: sin vigencia explicita usa OrderDate + 30 dias', as
       cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
       items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
     });
-    // 2026-06-17 + 30 dias = 2026-07-17
-    assert.ok(/2026-07-17/.test(JSON.stringify(quoteBody)), 'sin vigencia explicita debe ser fecha + 30 dias');
+    // 2026-06-17 + 30 dias = 2026-07-17, entregado en comments (la API no setea "Valido hasta")
+    assert.ok(/Valido hasta: 2026-07-17/.test(quoteBody.comments || ''), 'sin vigencia explicita: fecha+30 en comments');
   } finally {
     restore();
   }
@@ -837,6 +838,245 @@ test('subirCotizacionOperam: la linea de envio (ENVIO) NO se pierde del quote', 
     const serializado = JSON.stringify(quoteBody);
     assert.ok(/350/.test(serializado), 'el monto del envio (350) debe estar presente en el quote');
     assert.ok(/[Ee]nvio/.test(serializado), 'la descripcion del envio debe estar presente en el quote');
+  } finally {
+    restore();
+  }
+});
+
+// === esZonaMetroLocal() — issue #68 (clasificacion CP -> zona metro, funcion pura) ===
+// LOCAL: CDMX 01000-16999 + EdoMex metropolitano 52000-57999 (semilla confirmada por
+// Adrian). Todo lo demas (incluido valle de Toluca 50xxx-51xxx) = FORANEO. CP vacio o
+// invalido -> foraneo por defecto.
+
+const RANGOS_ZONA_METRO = [['01000', '16999'], ['52000', '57999']];
+
+test('esZonaMetroLocal: CP de CDMX (06700) es local', () => {
+  assert.equal(esZonaMetroLocal('06700', RANGOS_ZONA_METRO), true);
+});
+
+test('esZonaMetroLocal: CP de Neza/EdoMex metropolitano (57000) es local', () => {
+  assert.equal(esZonaMetroLocal('57000', RANGOS_ZONA_METRO), true);
+});
+
+test('esZonaMetroLocal: CP del valle de Toluca (50000) es foraneo', () => {
+  assert.equal(esZonaMetroLocal('50000', RANGOS_ZONA_METRO), false);
+});
+
+test('esZonaMetroLocal: CP de Guadalajara (44100) es foraneo', () => {
+  assert.equal(esZonaMetroLocal('44100', RANGOS_ZONA_METRO), false);
+});
+
+test('esZonaMetroLocal: limites inclusivos (01000 y 16999 son local; 17000 foraneo)', () => {
+  assert.equal(esZonaMetroLocal('01000', RANGOS_ZONA_METRO), true);
+  assert.equal(esZonaMetroLocal('16999', RANGOS_ZONA_METRO), true);
+  assert.equal(esZonaMetroLocal('17000', RANGOS_ZONA_METRO), false);
+});
+
+test('esZonaMetroLocal: CP vacio o invalido -> foraneo (false)', () => {
+  assert.equal(esZonaMetroLocal('', RANGOS_ZONA_METRO), false);
+  assert.equal(esZonaMetroLocal(null, RANGOS_ZONA_METRO), false);
+  assert.equal(esZonaMetroLocal('abc', RANGOS_ZONA_METRO), false);
+  assert.equal(esZonaMetroLocal('123', RANGOS_ZONA_METRO), false);
+});
+
+// === subirCotizacionOperam() — issue #68: envio como PARTIDA nativa del quote ===
+// La linea ENVIO de paqueteria deja de ir en comments y se vuelve una partida real
+// con el SKU de flete que corresponde a la zona del CP de entrega:
+//   local   (CDMX 06700, Neza 57000) -> stock_id 251021001 (FedEx Ground)
+//   foraneo (GDL 44100)               -> stock_id 251021002 (FedEx Ground Foraneo)
+// El carrier real va SOLO en stock_id_text. qty 1, price = precio del envio, Disc 0.
+
+function partidaFlete(quoteBody) {
+  return (quoteBody.items || []).find(i => i.stock_id === '251021001' || i.stock_id === '251021002');
+}
+
+test('subirCotizacionOperam: envio paqueteria con CP local -> partida flete stock_id 251021001', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 330, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1500 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '06700' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Envio FedEx Ground', cantidad: 1, precio: 350, descuento: 0 },
+      ],
+    });
+    const flete = partidaFlete(quoteBody);
+    assert.ok(flete, 'debe existir una partida de flete');
+    assert.equal(flete.stock_id, '251021001', 'CP local -> FedEx Ground 251021001');
+    assert.equal(flete.stock_id_text, 'Envio FedEx Ground', 'el carrier real va en stock_id_text');
+    assert.equal(flete.qty, 1);
+    assert.equal(flete.price, 350);
+    assert.equal(flete.Disc, 0);
+    // las partidas normales siguen ahi
+    assert.ok((quoteBody.items || []).some(i => i.stock_id === 'CR20-PLATO'), 'el producto normal sigue en el quote');
+    // el envio YA NO esta en comments
+    assert.ok(!/Envio:/.test(quoteBody.comments || ''), 'el envio ya no debe duplicarse en comments');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: envio paqueteria con CP foraneo -> partida flete stock_id 251021002', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 331, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1501 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '44100' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Envio DHL', cantidad: 1, precio: 480, descuento: 0 },
+      ],
+    });
+    const flete = partidaFlete(quoteBody);
+    assert.ok(flete, 'debe existir una partida de flete');
+    assert.equal(flete.stock_id, '251021002', 'CP foraneo (GDL 44100) -> FedEx Ground Foraneo 251021002');
+    assert.equal(flete.stock_id_text, 'Envio DHL', 'el carrier real (DHL) va en stock_id_text, no en stock_id');
+    assert.equal(flete.qty, 1);
+    assert.equal(flete.price, 480);
+    assert.ok(!/Envio:/.test(quoteBody.comments || ''), 'el envio ya no debe duplicarse en comments');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: CP de entrega ausente -> flete foraneo por defecto (251021002)', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 332, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1502 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Envio UPS', cantidad: 1, precio: 300, descuento: 0 },
+      ],
+    });
+    const flete = partidaFlete(quoteBody);
+    assert.ok(flete, 'debe existir una partida de flete');
+    assert.equal(flete.stock_id, '251021002', 'sin CP de entrega clasifica como foraneo (default seguro)');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: sin linea de envio -> NO se agrega partida de flete', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 333, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1503 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '06700' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    });
+    assert.equal(partidaFlete(quoteBody), undefined, 'sin envio no debe haber partida de flete');
+    assert.equal((quoteBody.items || []).length, 1, 'solo la partida del producto');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (diferido a #72)', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 334, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1504 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '06700' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Lalamove auto', cantidad: 1, precio: 250, descuento: 0 },
+      ],
+    });
+    assert.equal(partidaFlete(quoteBody), undefined, 'Lalamove NO debe volverse partida de flete');
+    assert.ok(/Lalamove/i.test(quoteBody.comments || ''), 'Lalamove debe quedar en comments');
+    assert.ok(/250/.test(quoteBody.comments || ''), 'el monto de Lalamove debe quedar en comments');
+  } finally {
+    restore();
+  }
+});
+
+// El POST /api/v3/sales/quote real responde { result, added_trans_type, added_trans_no,
+// ref } (verificado en vivo, quote 1160, issue #68). El folio del quote es added_trans_no;
+// la funcion debe devolverlo para que server.js persista el folio (setFolioOperam, #63).
+// Antes devolvia quote_id||factura_no (campos inexistentes en la respuesta) -> undefined.
+test('subirCotizacionOperam: devuelve el folio real del quote (added_trans_no)', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 14, tax_id: 'XAXX010101000', CustName: 'PUBLICO EN GENERAL', branches: [{ branch_code: 29 }] }],
+    }),
+    '/api/v3/sales/quote': () => jsonResponse({
+      result: true, added_trans_type: 32, added_trans_no: 1160, ref: 'C2606222',
+      messages: ['Cotizacion insertada exitosamente'],
+    }),
+  });
+  try {
+    const folio = await subirCotizacionOperam({
+      fecha: '2026-06-18',
+      cliente: { rfc: 'XAXX010101000', razonSocial: 'PUBLICO EN GENERAL', cpEntrega: '06700' },
+      items: [{ codigo: 'PV08P3001120', descripcion: 'Portavasos', cantidad: 10, precio: 45.26, descuento: 0 }],
+    });
+    assert.equal(folio, 1160, 'debe devolver added_trans_no (folio real), no undefined');
   } finally {
     restore();
   }
