@@ -3498,6 +3498,36 @@ window.altaDedupNuevoDomicilio = altaDedupNuevoDomicilio;
 
 // === Seccion 2: Confirmar config comercial ===
 
+// Busqueda por celular en el primer formulario (issue #69 AC3): al capturar el
+// celular en el alta se clasifica contra el embudo (mismo endpoint que la captura
+// de prospecto y el hook de cotizacion) y se avisa si ya es prospecto o cliente --
+// guardrail equivalente a la dedup por RFC. Best effort: si la clasificacion falla
+// no se bloquea el alta.
+async function altaBuscarCelular() {
+  const aviso = document.getElementById('alta-celular-aviso');
+  if (!aviso) return;
+  const codeEl = document.getElementById('alta-celular-code');
+  const celular = leerTelefono('alta-celular', codeEl ? 'alta-celular-code' : null) || (document.getElementById('alta-celular')?.value || '').trim();
+  if (!celular) { aviso.style.display = 'none'; aviso.textContent = ''; return; }
+  try {
+    const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(celular)}`);
+    const clasificacion = await res.json();
+    const r = mensajeBusquedaCelular(clasificacion);
+    if (r.encontrado) {
+      aviso.textContent = r.mensaje;
+      aviso.style.color = r.tipo === 'cliente' ? '#c00' : '#b45309';
+      aviso.style.display = 'block';
+    } else {
+      aviso.style.display = 'none';
+      aviso.textContent = '';
+    }
+  } catch {
+    aviso.style.display = 'none';
+    aviso.textContent = '';
+  }
+}
+window.altaBuscarCelular = altaBuscarCelular;
+
 function altaConfirmarComercial() {
   const dot = document.getElementById('chkdot-2');
   if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
@@ -3712,4 +3742,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const file = e.target.files[0];
     if (file) altaCsfProcesarArchivo(file);
   });
+});
+
+// Wiring de busqueda por celular en el primer formulario (issue #69 AC3).
+document.addEventListener('DOMContentLoaded', () => {
+  const cel = document.getElementById('alta-celular');
+  if (cel) cel.addEventListener('blur', altaBuscarCelular);
 });
