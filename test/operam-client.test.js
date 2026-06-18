@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerQuote, obtenerCliente } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -1077,6 +1077,85 @@ test('subirCotizacionOperam: devuelve el folio real del quote (added_trans_no)',
       items: [{ codigo: 'PV08P3001120', descripcion: 'Portavasos', cantidad: 10, precio: 45.26, descuento: 0 }],
     });
     assert.equal(folio, 1160, 'debe devolver added_trans_no (folio real), no undefined');
+  } finally {
+    restore();
+  }
+});
+
+// Lecturas read-only para el backfill (issue #76). GET de la cabecera de un quote
+// por id y GET del cliente (debtor) por id. Toleran que la respuesta venga
+// envuelta en `data` (array o no), como el resto de la API v3.
+
+test('obtenerQuote: GET /api/v3/sales/quote/:id devuelve la cabecera del quote', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/quote/1141': () => jsonResponse({
+      data: [{
+        trans_no: 1141, ord_date: '2026-05-20', delivery_date: '2026-06-19',
+        cust_ref: 'Tienda Juana', total: '16954', salesman: 8,
+        detalles: [{ stock_id: 'SA08A3001112', qty: 10 }],
+      }],
+    }),
+  });
+  try {
+    const q = await obtenerQuote(1141);
+    assert.equal(q.trans_no, 1141);
+    assert.equal(q.cust_ref, 'Tienda Juana');
+    assert.equal(q.delivery_date, '2026-06-19');
+    assert.equal(q.total, '16954');
+    assert.equal(q.salesman, 8);
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerQuote: tolera respuesta sin envoltura data (objeto directo)', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/quote/1200': () => jsonResponse({
+      trans_no: 1200, ord_date: '2026-06-01', total: '500',
+    }),
+  });
+  try {
+    const q = await obtenerQuote(1200);
+    assert.equal(q.trans_no, 1200);
+    assert.equal(q.total, '500');
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerCliente: GET /api/v3/sales/customers/:id devuelve el cliente (debtor) con RFC y moneda', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/394': () => jsonResponse({
+      data: [{
+        customer_id: 394, CustName: 'JUANA HERNANDEZ GARCIA', tax_id: 'HEGJ800101AB1',
+        curr_code: 'MXN', branches: [{ branch_code: 400 }],
+      }],
+    }),
+  });
+  try {
+    const c = await obtenerCliente(394);
+    assert.equal(c.CustName, 'JUANA HERNANDEZ GARCIA');
+    assert.equal(c.tax_id, 'HEGJ800101AB1');
+    assert.equal(c.curr_code, 'MXN');
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerCliente: un 404 (cliente inexistente) devuelve null, no lanza', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/999999': () => jsonResponse({ errors: ['No customers found'] }, 404),
+  });
+  try {
+    assert.equal(await obtenerCliente(999999), null);
   } finally {
     restore();
   }
