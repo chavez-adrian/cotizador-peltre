@@ -7,6 +7,8 @@ import {
   buildDiffFiscalHtml,
   buildDedupExactoConDiffHtml,
   buildAltaDarDeAltaPayload,
+  buildClienteDesdeAlta,
+  mensajeBusquedaCelular,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -1346,7 +1348,7 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-razon-social',   cliente.name);
   fill('cl-nombre-corto',   cliente.ref);
   fill('cl-rfc',            cliente.rfc);
-  fill('cl-cp-fiscal',      cliente.cp);
+  fill('cl-cp-fiscal',      cliente.cpFiscal || cliente.cp);
   if (cliente.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
   fill('cl-nombre-entrega', cliente.nombreEntrega);
   fill('cl-calle',          cliente.calle);
@@ -3496,6 +3498,36 @@ window.altaDedupNuevoDomicilio = altaDedupNuevoDomicilio;
 
 // === Seccion 2: Confirmar config comercial ===
 
+// Busqueda por celular en el primer formulario (issue #69 AC3): al capturar el
+// celular en el alta se clasifica contra el embudo (mismo endpoint que la captura
+// de prospecto y el hook de cotizacion) y se avisa si ya es prospecto o cliente --
+// guardrail equivalente a la dedup por RFC. Best effort: si la clasificacion falla
+// no se bloquea el alta.
+async function altaBuscarCelular() {
+  const aviso = document.getElementById('alta-celular-aviso');
+  if (!aviso) return;
+  const codeEl = document.getElementById('alta-celular-code');
+  const celular = leerTelefono('alta-celular', codeEl ? 'alta-celular-code' : null) || (document.getElementById('alta-celular')?.value || '').trim();
+  if (!celular) { aviso.style.display = 'none'; aviso.textContent = ''; return; }
+  try {
+    const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(celular)}`);
+    const clasificacion = await res.json();
+    const r = mensajeBusquedaCelular(clasificacion);
+    if (r.encontrado) {
+      aviso.textContent = r.mensaje;
+      aviso.style.color = r.tipo === 'cliente' ? '#c00' : '#b45309';
+      aviso.style.display = 'block';
+    } else {
+      aviso.style.display = 'none';
+      aviso.textContent = '';
+    }
+  } catch {
+    aviso.style.display = 'none';
+    aviso.textContent = '';
+  }
+}
+window.altaBuscarCelular = altaBuscarCelular;
+
 function altaConfirmarComercial() {
   const dot = document.getElementById('chkdot-2');
   if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
@@ -3671,10 +3703,13 @@ function altaCotizarAhora() {
   const panel = document.getElementById('panel-alta-cliente');
   if (panel) panel.style.display = 'none';
   const buscarPanel = document.getElementById('panel-buscar');
-  if (buscarPanel) buscarPanel.style.display = 'none';
-  const searchInput = document.getElementById('operam-search');
-  if (searchInput) { searchInput.value = altaCsfState.datos?.rfc || ''; }
-  document.getElementById('btn-buscar-operam')?.click();
+  if (buscarPanel) buscarPanel.style.display = 'block';
+  // Estado compartido (#69): el cotizador abre con el cliente recien dado de alta
+  // YA cargado -- razon social, telefono (con codigo de pais) y domicilio prellenados
+  // desde lo capturado en el alta, sin re-pedir datos ni round-trip a Operam por RFC.
+  const cliente = buildClienteDesdeAlta(altaState);
+  seleccionarClienteOperam(cliente);
+  switchTab('cliente');
 }
 
 function altaTerminar() {
@@ -3707,4 +3742,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const file = e.target.files[0];
     if (file) altaCsfProcesarArchivo(file);
   });
+});
+
+// Wiring de busqueda por celular en el primer formulario (issue #69 AC3).
+document.addEventListener('DOMContentLoaded', () => {
+  const cel = document.getElementById('alta-celular');
+  if (cel) cel.addEventListener('blur', altaBuscarCelular);
 });
