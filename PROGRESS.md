@@ -30,9 +30,7 @@ Issues abiertos (atacar uno a uno; los de bug etiquetados `ready-for-agent`):
 - **#70** Documentos: PDF con diseño viejo (HTML ok) + etiqueta "Pre-cotización" cuando es PRE.
 - **#72** Cotizar con Lalamove (envío local) — feature, definir mecanismo de tarifa.
 - **#73** Reconocer clientes existentes de Operam: canal "Cliente Actual" + índice de celulares (parte 2 a discutir).
-
-## Follow-up pedido por Adrian (2026-06-18, scopear como issue nuevo)
-- **Sync/backfill de Operam -> cotizador**: tras limpiar (#75) la BD quedo vacia. Adrian quiere traer cotizaciones y pedidos REALES de Operam al pipeline para tener info real. Es un BACKFILL (no la reconciliacion de #62, que solo mueve etapas de oportunidades existentes). Definir alcance: que entra (quotes tipo 32 / pedidos tipo 30), como se crean las oportunidades, identidad/dedupe. Crear issue.
+- **#76** Backfill: importar cotizaciones/pedidos REALES de Operam al pipeline (la BD quedo vacia tras #75). Distinto de #62 (que solo mueve etapas; este CREA oportunidades). **Tiene 5 decisiones de diseno pendientes** (enumeracion de quotes en Operam, alcance/anuladas, venta directa, items, one-time vs recurrente) — discutir con Adrian antes de `ready-for-agent`.
 
 ## Backlog prueba integral — CERRADOS (detalle en git + comentario de cierre del issue)
 - **#75** Limpiar datos de prueba (prod/Neon). **HECHO en vivo (2026-06-18).** `borrar(id)` en ambos stores (idempotente, scoped) + `scripts/limpiar-datos-prueba.mjs` (dry-run/--apply/--incluir-real, respaldo EXACTO previo, clasifica por Operam read-only). **BD del cotizador = Neon COMPARTIDA `@ep-wandering-violet` (creds en `peltre-bazaar-ventas/.env` y `peltre-knowledge-base/.env`; el `.env` del cotizador NO trae DATABASE_URL — vive en Render).** Inventario: 51 cotizaciones (50 prueba + 1 real `#49 Museo Frida Kahlo` cliente en Operam id 180) + 3 prospectos. **Decision Adrian: borrar TODO** (incluido #49). Borradas 51 cot + 3 prosp; respaldo en `backups/limpieza-*.json` (gitignored). Verificado: las 2 tablas en 0, el resto de la Neon compartida (transactions 22266, documents, chunks, clientes_log 5...) INTACTO. Sin escrituras a Operam.
