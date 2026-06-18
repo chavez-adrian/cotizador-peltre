@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -85,4 +85,88 @@ test('mapearSalesman: salesman sin match en vendedores -> null (sin inventar)', 
 test('mapearSalesman: no matchea contra operam_id null (Jaime Abaroa) por un salesman vacio', () => {
   // El vendedor sin operam_id no debe capturar salesman ausentes/nulos.
   assert.equal(mapearSalesman(null, VENDEDORES), null);
+});
+
+// --- subtotalDesdeTotal: el total de Operam incluye IVA 16% (peltre-operam.md 12.6) ---
+
+test('subtotalDesdeTotal: deriva el subtotal de total/1.16 cuando no hay subtotal nativo', () => {
+  // 16954 con IVA -> 14615.52 sin IVA
+  assert.equal(subtotalDesdeTotal(16954), Number((16954 / 1.16).toFixed(2)));
+});
+
+test('subtotalDesdeTotal: tolera string y total ausente', () => {
+  assert.equal(subtotalDesdeTotal('1160'), 1000);
+  assert.equal(subtotalDesdeTotal(0), 0);
+  assert.equal(subtotalDesdeTotal(null), 0);
+  assert.equal(subtotalDesdeTotal(undefined), 0);
+});
+
+// --- construirEntradaCotizacion: pedido + quote + debtor + etapa -> entrada del store ---
+
+// Caso de referencia tomado de la cadena verificada en vivo (peltre-operam.md 12.2):
+// cotizacion 1141 -> pedido order_no 7269 (Juana Hernandez, debtor 394).
+const PEDIDO = { order_no: '7269', trans_no_from: '1141', debtor_no: '394', total: '16954' };
+const QUOTE = {
+  trans_no: '1141',
+  ord_date: '2026-05-20',
+  delivery_date: '2026-06-19',
+  cust_ref: 'Tienda Juana',
+  total: '16954',
+  salesman: 8,
+};
+const DEBTOR = { debtor_no: '394', CustName: 'JUANA HERNANDEZ GARCIA', tax_id: 'HEGJ800101AB1', curr_code: 'MXN' };
+
+test('construirEntradaCotizacion: arma los campos de cabecera que pidio Adrian', () => {
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: QUOTE, debtor: DEBTOR, etapa: 'saldo_pagado', vendedores: VENDEDORES,
+  });
+  // Columnas fijas de la tabla cotizaciones
+  assert.equal(entrada.fecha, '2026-05-20');
+  assert.equal(entrada.vendedor, 'Oswaldo Chávez');     // salesman 8 -> operam_id 8
+  assert.equal(entrada.cliente, 'JUANA HERNANDEZ GARCIA');
+  assert.equal(entrada.total, 16954);
+  assert.equal(entrada.tier, null);                      // los quotes no traen el tier del cotizador
+  // folioOperam = numero de cotizacion = trans_no_from del pedido
+  assert.equal(entrada.folioOperam, '1141');
+  assert.equal(entrada.etapa, 'saldo_pagado');
+  // Campos extra en data (las columnas de la tabla son fijas)
+  assert.equal(entrada.data.cliente.rfc, 'HEGJ800101AB1');
+  assert.equal(entrada.data.cliente.customer_ref, 'Tienda Juana');
+  assert.equal(entrada.data.subtotal, Number((16954 / 1.16).toFixed(2)));
+  assert.equal(entrada.data.moneda, 'MXN');
+  assert.equal(entrada.data.validoHasta, '2026-06-19'); // delivery_date del quote
+  assert.equal(entrada.data.orderOperam, '7269');       // order_no del pedido (binding preciso)
+  assert.equal(entrada.data.backfill, true);
+});
+
+test('construirEntradaCotizacion: usa subtotal nativo del quote si viene', () => {
+  const quoteConSub = { ...QUOTE, subtotal: '14615.52' };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteConSub, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.data.subtotal, 14615.52);
+});
+
+test('construirEntradaCotizacion: customer_ref tolera nombre customer_ref ademas de cust_ref', () => {
+  const quoteAlt = { ...QUOTE, cust_ref: undefined, customer_ref: 'Ref Alterna' };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteAlt, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.data.cliente.customer_ref, 'Ref Alterna');
+});
+
+test('construirEntradaCotizacion: salesman sin match deja vendedor null (no inventa)', () => {
+  const quoteSinVend = { ...QUOTE, salesman: 77 };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteSinVend, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.vendedor, null);
+});
+
+test('construirEntradaCotizacion: el RFC en data.cliente.rfc va en mayusculas (clave de sync #62)', () => {
+  const debtorLower = { ...DEBTOR, tax_id: 'hegj800101ab1' };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: QUOTE, debtor: debtorLower, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.data.cliente.rfc, 'HEGJ800101AB1');
 });
