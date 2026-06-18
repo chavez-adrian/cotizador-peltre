@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hechosDeOperam, reconciliarOportunidad, reconciliarPorIdentificador, esActivaPostVentaCandidata, resolverOrderDeOportunidad } from '../lib/sync-operam-io.js';
+import { hechosDeOperam, reconciliarOportunidad, reconciliarPorIdentificador, esActivaPostVentaCandidata, resolverOrderDeOportunidad, construirEspejoOperam } from '../lib/sync-operam-io.js';
 
 // Motor de reconciliacion del sync post-venta (issue #62, AC2). Lee Operam
 // (read-only), normaliza a hechos con el mapeo real (peltre-operam.md 12) y mueve
@@ -10,13 +10,19 @@ import { hechosDeOperam, reconciliarOportunidad, reconciliarPorIdentificador, es
 
 function depsMock({ transacciones = [], pedidos = [], onCambiarEtapa } = {}) {
   const movimientos = [];
+  const espejos = [];
   return {
     movimientos,
+    espejos,
     listarTransacciones: async () => transacciones,
     listarPedidos: async () => pedidos,
     cambiarEtapa: async (id, etapa, evento) => {
       movimientos.push({ id, etapa, evento });
       if (onCambiarEtapa) onCambiarEtapa(id, etapa, evento);
+      return true;
+    },
+    setEspejoOperam: async (id, espejo) => {
+      espejos.push({ id, espejo });
       return true;
     },
   };
@@ -211,6 +217,79 @@ test('AC2: resolverOrderDeOportunidad reporta la fuente del binding', async () =
   );
   assert.equal(porExplicito.order, '7000');
   assert.equal(porExplicito.fuente, 'explicito');
+});
+
+// --- AC3 (#67): espejo de la cadena (construir + persistir) ---
+
+test('AC3: construirEspejoOperam arma la cadena de folios desde trans + pedidos filtrados', () => {
+  const trans = [
+    { type: '10', order_: '7269', trans_no: '6735', ref: 'A1907', total_amount: '16954', allocated: '16954', outstanding: '0' },
+    { type: '13', order_: '7269', trans_no: '7329', ref: 'D55' },
+    { type: '12', order_: '7269', trans_no: '8001', ref: 'S1886.1' },
+    { type: '11', order_: '7269', trans_no: '9001', ref: 'NC88' },
+  ];
+  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141' }];
+  const espejo = construirEspejoOperam(trans, pedidos, '1141');
+  assert.equal(espejo.cotizacion, '1141');
+  assert.equal(espejo.pedido, '7269');
+  assert.deepEqual(espejo.factura, { numero: '6735', ref: 'A1907' });
+  assert.deepEqual(espejo.remisiones, ['7329']);
+  assert.deepEqual(espejo.pagos, ['S1886.1']);
+  assert.deepEqual(espejo.notasCredito, ['NC88']);
+});
+
+test('AC3: construirEspejoOperam solo incluye lo que existe (sin factura/remision/etc no inventa campos)', () => {
+  const trans = []; // solo pedido, sin documentos colgando aun
+  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141' }];
+  const espejo = construirEspejoOperam(trans, pedidos, '1141');
+  assert.equal(espejo.cotizacion, '1141');
+  assert.equal(espejo.pedido, '7269');
+  assert.equal('factura' in espejo, false);
+  assert.deepEqual(espejo.remisiones, []);
+  assert.deepEqual(espejo.pagos, []);
+  assert.deepEqual(espejo.notasCredito, []);
+});
+
+test('AC3: reconciliarOportunidad persiste el espejo con la cadena resuelta por documento', async () => {
+  const deps = depsMock({
+    transacciones: [
+      { type: '10', order_: '7269', trans_no: '6735', ref: 'A1907', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '394' },
+      { type: '13', order_: '7269', trans_no: '7329', ref: 'D55', debtor_no: '394' },
+    ],
+    pedidos: [{ order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141' }],
+  });
+  const op = { id: 5, etapa: 'seguimiento', folioOperam: '1141', data: { cliente: { rfc: 'CPE921211N76' } } };
+  await reconciliarOportunidad(op, deps);
+  assert.equal(deps.espejos.length, 1);
+  assert.equal(deps.espejos[0].id, 5);
+  assert.equal(deps.espejos[0].espejo.cotizacion, '1141');
+  assert.equal(deps.espejos[0].espejo.pedido, '7269');
+  assert.deepEqual(deps.espejos[0].espejo.factura, { numero: '6735', ref: 'A1907' });
+  assert.deepEqual(deps.espejos[0].espejo.remisiones, ['7329']);
+});
+
+test('AC3: venta directa (trans_no_from vacio) NO persiste un espejo ligado por error a la cotizacion', async () => {
+  // La oportunidad tiene folioOperam pero su cotizacion nunca se convirtio en
+  // pedido; lo que hay en Operam es una venta directa (trans_no_from vacio). No hay
+  // liga por documento -> el espejo NO debe llevar el folio de cotizacion como
+  // pedido. Como no se resolvio order_ por documento, no se persiste espejo
+  // (no inventar una liga que no existe).
+  const deps = depsMock({
+    transacciones: [
+      { type: '10', order_: '9001', trans_no: '5000', ref: 'A2000', total_amount: '300', allocated: '300', outstanding: '0', debtor_no: '500' },
+    ],
+    pedidos: [{ order_no: '9001', trans_type: '30', debtor_no: '500', trans_no_from: '' }],
+  });
+  const op = { id: 6, etapa: 'seguimiento', folioOperam: '1141', data: { cliente: { rfc: 'VDX010101AAA' } } };
+  await reconciliarOportunidad(op, deps);
+  assert.equal(deps.espejos.length, 0);
+});
+
+test('AC3: sin RFC ni order resuelto no persiste espejo', async () => {
+  const deps = depsMock({});
+  const op = { id: 7, etapa: 'seguimiento', data: { cliente: {} } };
+  await reconciliarOportunidad(op, deps);
+  assert.equal(deps.espejos.length, 0);
 });
 
 // --- reconciliarOportunidad: mueve la tarjeta ---
