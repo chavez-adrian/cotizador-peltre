@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerQuote, obtenerCliente } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerQuote, obtenerCliente, _setBackoff429Base } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -49,6 +49,29 @@ test('buscarClientes: un 404 de Operam (sin resultados) devuelve lista vacia, no
     assert.deepEqual(r, []);
   } finally {
     restore();
+  }
+});
+
+// Rate limit de Operam (#76): una rafaga de lecturas (el backfill) dispara 429.
+// apiCall reintenta con backoff exponencial en vez de tronar.
+test('apiCall: reintenta ante 429 (rate limit) con backoff y luego responde', async () => {
+  resetSession();
+  _setBackoff429Base(1); // backoff casi instantaneo para no demorar el test
+  let llamadas = 0;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_orders': () => {
+      llamadas++;
+      return llamadas === 1 ? jsonResponse({}, 429) : jsonResponse({ data: [{ order_no: '7000' }] });
+    },
+  });
+  try {
+    const peds = await listarPedidos({ desde: '2026-01-01', hasta: '2026-06-18' });
+    assert.equal(llamadas, 2, 'debe reintentar tras el 429');
+    assert.equal(peds.length, 1);
+  } finally {
+    restore();
+    _setBackoff429Base(2000);
   }
 });
 
