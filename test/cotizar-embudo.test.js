@@ -110,17 +110,17 @@ test('E2: GET /api/prospectos/clasificar sin celular responde 400', async () => 
   assert.equal(res.status, 400);
 });
 
-test('E3: celular de prospecto clasifica como prospecto sin exponer sus datos, sea de quien sea', async () => {
+test('E3: celular de prospecto clasifica como prospecto exponiendo nombre y vendedor, sea de quien sea (#69)', async () => {
   writeProspectos([prospectoDe('Memo')]);
   const propio = await supertest(app).get('/api/prospectos/clasificar')
     .query({ celular: '+52 55 1234 5678' })
     .set('Authorization', `Bearer ${MEMO_TOKEN}`);
   assert.equal(propio.status, 200);
-  assert.deepEqual(propio.body, { tipo: 'prospecto' });
+  assert.deepEqual(propio.body, { tipo: 'prospecto', prospecto: { nombre: 'Laura', vendedor: 'Memo' } });
   const ajeno = await supertest(app).get('/api/prospectos/clasificar')
     .query({ celular: '+52 5512345678' })
     .set('Authorization', `Bearer ${ANA_TOKEN}`);
-  assert.deepEqual(ajeno.body, { tipo: 'prospecto' });
+  assert.deepEqual(ajeno.body, { tipo: 'prospecto', prospecto: { nombre: 'Laura', vendedor: 'Memo' } });
 });
 
 test('E4: celular de cliente Operam clasifica como cliente con su nombre', async () => {

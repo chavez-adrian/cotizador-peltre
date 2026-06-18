@@ -75,11 +75,13 @@ test('B1: mensajeBusquedaCelular reconoce un cliente existente', () => {
   assert.match(r.mensaje, /cliente/i);
 });
 
-test('B2: mensajeBusquedaCelular reconoce un prospecto existente', () => {
+test('B2: mensajeBusquedaCelular reconoce un prospecto existente y muestra nombre y vendedor (#69)', () => {
   const r = mensajeBusquedaCelular({ tipo: 'prospecto', prospecto: { nombre: 'Juan', vendedor: 'Ana' } });
   assert.strictEqual(r.encontrado, true);
   assert.strictEqual(r.tipo, 'prospecto');
   assert.match(r.mensaje, /prospecto/i);
+  assert.match(r.mensaje, /Juan/);
+  assert.match(r.mensaje, /Ana/);
 });
 
 test('B3: mensajeBusquedaCelular en celular libre no marca encontrado', () => {

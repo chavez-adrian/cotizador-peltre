@@ -605,6 +605,10 @@ app.get('/api/prospectos/clasificar', authMiddleware, async (req, res) => {
   if (clasificacion.tipo === 'cliente') {
     return res.json({ tipo: 'cliente', cust_name: clasificacion.cliente.cust_name });
   }
+  if (clasificacion.tipo === 'prospecto') {
+    const { nombre, vendedor } = clasificacion.prospecto;
+    return res.json({ tipo: 'prospecto', prospecto: { nombre, vendedor } });
+  }
   res.json({ tipo: clasificacion.tipo });
 });
 

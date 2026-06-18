@@ -47,6 +47,8 @@ Un prospecto cuyo celular se dio de alta como cliente en Operam queda ligado a e
 
 Cada vendedor ve únicamente sus propias oportunidades; el rol admin ve todas y es quien asigna vendedor a las tarjetas en No Asignado. Cuando un vendedor intenta capturar un celular que ya es prospecto de otro vendedor, el sistema rechaza la captura indicando quién lo atiende ("este celular ya lo atiende [vendedor]"), sin exponer más datos; la coordinación entre vendedores ocurre fuera del sistema.
 
+Excepción — pre-clasificación en el alta de cliente (decisión 2026-06-17, #69): el aviso de celular del formulario de alta (`GET /api/prospectos/clasificar`) sí expone el nombre del prospecto y el vendedor que lo atiende, sea propio o ajeno ("Este celular ya es un prospecto: [nombre] (lo atiende [vendedor])"), para que quien da de alta reconozca de inmediato un celular ya registrado. Decisión del dueño: entre el equipo de ventas de Peltre no se aplica la barrera de privacidad de prospectos en este punto; revierte para este endpoint la regla de "sin exponer más datos".
+
 ## Horas hábiles
 
 El reloj con el que se mide la espera de un prospecto en Por Cotizar: lunes a viernes 10:00–18:00, sábado 10:00–14:00, festivos mexicanos excluidos. Un prospecto que escribe en fin de semana o festivo no acumula espera; acepta respuesta a la mañana siguiente hábil sin molestia. Las cotizaciones en Seguimiento, en cambio, se miden en días naturales (cadencia día 2/7/21/vencida).
