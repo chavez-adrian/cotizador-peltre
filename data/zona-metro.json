@@ -1,0 +1,7 @@
+{
+  "_doc": "Rangos de CP (5 digitos, inclusivos) considerados zona metropolitana LOCAL para paqueteria. Un CP de entrega dentro de algun rango clasifica el envio como local (FedEx Ground, stock_id 251021001); fuera de todos = foraneo (FedEx Ground Foraneo, 251021002). Semilla confirmada por Adrian 2026-06-18: CDMX 01000-16999 + EdoMex metropolitano 52000-57999. El valle de Toluca (50xxx-51xxx) queda FORANEO a proposito. Ajustable sin tocar codigo.",
+  "rangos_local": [
+    ["01000", "16999"],
+    ["52000", "57999"]
+  ]
+}

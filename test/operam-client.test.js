@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -840,4 +840,40 @@ test('subirCotizacionOperam: la linea de envio (ENVIO) NO se pierde del quote', 
   } finally {
     restore();
   }
+});
+
+// === esZonaMetroLocal() — issue #68 (clasificacion CP -> zona metro, funcion pura) ===
+// LOCAL: CDMX 01000-16999 + EdoMex metropolitano 52000-57999 (semilla confirmada por
+// Adrian). Todo lo demas (incluido valle de Toluca 50xxx-51xxx) = FORANEO. CP vacio o
+// invalido -> foraneo por defecto.
+
+const RANGOS_ZONA_METRO = [['01000', '16999'], ['52000', '57999']];
+
+test('esZonaMetroLocal: CP de CDMX (06700) es local', () => {
+  assert.equal(esZonaMetroLocal('06700', RANGOS_ZONA_METRO), true);
+});
+
+test('esZonaMetroLocal: CP de Neza/EdoMex metropolitano (57000) es local', () => {
+  assert.equal(esZonaMetroLocal('57000', RANGOS_ZONA_METRO), true);
+});
+
+test('esZonaMetroLocal: CP del valle de Toluca (50000) es foraneo', () => {
+  assert.equal(esZonaMetroLocal('50000', RANGOS_ZONA_METRO), false);
+});
+
+test('esZonaMetroLocal: CP de Guadalajara (44100) es foraneo', () => {
+  assert.equal(esZonaMetroLocal('44100', RANGOS_ZONA_METRO), false);
+});
+
+test('esZonaMetroLocal: limites inclusivos (01000 y 16999 son local; 17000 foraneo)', () => {
+  assert.equal(esZonaMetroLocal('01000', RANGOS_ZONA_METRO), true);
+  assert.equal(esZonaMetroLocal('16999', RANGOS_ZONA_METRO), true);
+  assert.equal(esZonaMetroLocal('17000', RANGOS_ZONA_METRO), false);
+});
+
+test('esZonaMetroLocal: CP vacio o invalido -> foraneo (false)', () => {
+  assert.equal(esZonaMetroLocal('', RANGOS_ZONA_METRO), false);
+  assert.equal(esZonaMetroLocal(null, RANGOS_ZONA_METRO), false);
+  assert.equal(esZonaMetroLocal('abc', RANGOS_ZONA_METRO), false);
+  assert.equal(esZonaMetroLocal('123', RANGOS_ZONA_METRO), false);
 });
