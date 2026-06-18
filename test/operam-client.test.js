@@ -461,6 +461,67 @@ test('actualizarBranchCliente: cuando branchId es null hace GET customer para ob
   }
 });
 
+// === Domicilio del cliente (branch) — payload completo SOP — issue #74 ===
+// AC2: el domicilio creado debe llevar vendedor, area/zona, almacen predeterminado
+// y grupo de impuestos. Operam acepta 200 e ignora campos: se CAPTURA el body del
+// PUT /branches y se afirma el payload completo, no solo que devuelva 200.
+// Fuentes: salesman = operam_id del alta (SOP 10-11); area derivada del pais (SOP 24);
+// location = 40 PT (SOP 21-22); tax_group_id por pais del domicilio (ADR-0002, CONTEXT.md).
+
+test('actualizarBranchCliente: el PUT branch lleva vendedor, area, almacen y tax_group (domicilio MX) (issue #74)', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/200': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 200, {
+      br_name: 'Almacen Central', br_ref: 'ALMCEN', pais: 'MX', salesman: 47,
+      addr_street: 'Reforma', addr_exterior: '1', addr_interior: '', addr_colony: 'Juarez',
+      addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '',
+      phone: '5512345678', email: 'entrega@test.com',
+    });
+    assert.ok(putBody, 'debe haberse capturado el body del PUT /branches');
+    assert.strictEqual(putBody.salesman, 47, 'el domicilio debe llevar el vendedor (salesman) del alta');
+    assert.strictEqual(putBody.area, 1, 'el domicilio MX debe llevar area/zona 1 (10 Mexico)');
+    assert.strictEqual(putBody.location, 40, 'el domicilio debe llevar almacen predeterminado 40 (PT)');
+    assert.strictEqual(putBody.tax_group_id, 1, 'domicilio MX debe llevar tax_group_id 1 (gravado)');
+  } finally {
+    restore();
+  }
+});
+
+test('actualizarBranchCliente: el PUT branch usa area y tax_group de pais extranjero (US) (issue #74)', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/201': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 201, {
+      br_name: 'USA Branch', br_ref: 'USA', pais: 'US', salesman: 47,
+      addr_street: 'Main St', addr_exterior: '10', addr_interior: '', addr_colony: '',
+      addr_city: 'Los Angeles', addr_state: 'CA', addr_zip: '90001', addr_reference: '',
+      phone: '', email: '',
+    });
+    assert.ok(putBody, 'debe haberse capturado el body del PUT /branches');
+    assert.strictEqual(putBody.area, 5, 'domicilio US debe llevar area/zona 5 (20 USA)');
+    assert.strictEqual(putBody.tax_group_id, 2, 'domicilio extranjero debe llevar tax_group_id 2 (exento)');
+    assert.strictEqual(putBody.location, 40, 'el domicilio debe llevar almacen predeterminado 40 (PT)');
+    assert.strictEqual(putBody.salesman, 47, 'el domicilio debe llevar el vendedor (salesman) del alta');
+  } finally {
+    restore();
+  }
+});
+
 // === Lecturas para el sync post-venta (#62) ===
 // listarTransacciones -> GET /api/v3/sales/transactions; listarPedidos ->
 // GET /api/v3/sales/sales_orders. Endpoints confirmados contra el Postman v3 y

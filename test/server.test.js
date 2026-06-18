@@ -647,6 +647,64 @@ test('D1b: POST /api/crear-cliente envia invoice_email/celular_nota en notes y p
   }
 });
 
+test('D1c: POST /api/crear-cliente configura el domicilio con vendedor, area, almacen y tax_group (issue #74)', async () => {
+  let branchBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 520 }) };
+      if (u.includes('/520')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 620 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/620': (u, opts) => {
+      branchBody = JSON.parse(opts.body);
+      return { ok: true, json: async () => ({ result: true }) };
+    },
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send(BASE_CLIENTE);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.ok(branchBody, 'el alta debe configurar el domicilio (PUT /branches)');
+    assert.strictEqual(branchBody.salesman, 47, 'el domicilio debe llevar el vendedor del alta');
+    assert.strictEqual(branchBody.area, 1, 'el domicilio MX debe llevar area 1 (10 Mexico)');
+    assert.strictEqual(branchBody.location, 40, 'el domicilio debe llevar almacen 40 (PT)');
+    assert.strictEqual(branchBody.tax_group_id, 1, 'domicilio MX debe llevar tax_group_id 1 (gravado)');
+  } finally {
+    restore();
+  }
+});
+
+test('D1d: POST /api/crear-cliente con domicilio extranjero usa tax_group exento (issue #74)', async () => {
+  let branchBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 530 }) };
+      if (u.includes('/530')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 630 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/630': (u, opts) => {
+      branchBody = JSON.parse(opts.body);
+      return { ok: true, json: async () => ({ result: true }) };
+    },
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, entrega: { ...BASE_CLIENTE.entrega, pais: 'US' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.ok(branchBody, 'el alta debe configurar el domicilio (PUT /branches)');
+    assert.strictEqual(branchBody.tax_group_id, 2, 'domicilio extranjero debe llevar tax_group_id 2 (exento)');
+    assert.strictEqual(branchBody.area, 5, 'domicilio US debe llevar area 5 (20 USA)');
+  } finally {
+    restore();
+  }
+});
+
 test('D2: POST /api/crear-cliente fallo en PUT branch retorna steps con error y customer_id/branch_id', async () => {
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
