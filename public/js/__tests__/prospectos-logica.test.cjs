@@ -45,6 +45,15 @@ test('P2: buildProspectoPayload incluye opcionales solo si tienen valor', () => 
   assert.equal('piezas_estimadas' in payload, false);
 });
 
+test('P2b: "Cliente Actual" es un canal valido del catalogo (issue #73)', () => {
+  // Un cliente que ya nos compro abre una operacion nueva (a veces bajo otra razon
+  // social): el canal "Cliente Actual" debe estar disponible al capturar el prospecto.
+  assert.ok(CANALES.includes('Cliente Actual'));
+  assert.equal(validarProspectoBody({
+    celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'Cliente Actual',
+  }), null);
+});
+
 test('P3: validarProspectoBody acepta captura completa con celular con codigo de pais', () => {
   assert.equal(validarProspectoBody({
     celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
@@ -100,7 +109,7 @@ test('P10: buildProspectoExistenteHtml muestra el prospecto propio del 409 y nad
 test('P7: catalogos cerrados con los valores canonicos de CONTEXT.md', () => {
   assert.deepEqual(CANALES, [
     'WhatsApp', 'Instagram', 'Facebook/Messenger', 'Meta Ads', 'Formulario web',
-    'Correo', 'Referido', 'Bazar Sábado', 'Feria/Expo',
+    'Correo', 'Referido', 'Bazar Sábado', 'Feria/Expo', 'Cliente Actual',
   ]);
   assert.deepEqual(PIEZAS_ESTIMADAS, ['+100', '+350', '+550', '+1,500', '+6,000']);
   assert.deepEqual(OPCIONALES, ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas']);

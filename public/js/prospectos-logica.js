@@ -17,6 +17,7 @@ export const CANALES = [
   'Referido',
   'Bazar Sábado',
   'Feria/Expo',
+  'Cliente Actual',
 ];
 
 // Piezas estimadas -- mismos cortes que las listas de mayoreo.

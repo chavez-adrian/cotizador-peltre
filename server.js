@@ -1346,5 +1346,11 @@ if (isMain) {
   cargarListasPrecios().then(() => {
     app.listen(PORT, () => console.log(`Cotizador corriendo en http://localhost:${PORT}`));
   });
+  // Calienta el indice de telefonos de Operam al arrancar (issue #73 parte 2): el
+  // refresh tarda ~7s (440 clientes) y el lookup en cache frio se rinde a los 5s, por
+  // eso el PRIMER formulario no reconocia al cliente existente. Eager + fire-and-forget:
+  // para cuando el vendedor busca, el indice ya esta caliente. Un fallo no bloquea el
+  // arranque (matchCliente ya degrada a "libre" si el indice no esta).
+  refrescarIndice().catch(err => console.warn('[indice-telefonos] warm de arranque fallo:', err.message));
 }
 export { app, cargarListasPrecios };
