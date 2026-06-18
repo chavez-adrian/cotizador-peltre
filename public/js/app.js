@@ -49,7 +49,8 @@ import {
 } from './stepper-logica.js';
 import {
   validarDomicilioEntrega,
-  sentenceCase,
+  formatCarrier,
+  formatServicio,
 } from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -784,8 +785,8 @@ async function cotizarEnvia() {
       card.className = 'envia-rate-card';
       card.innerHTML = `
         <div class="envia-rate-info">
-          <div class="envia-rate-carrier">${sentenceCase(carrier)}${esRecomendado ? ' <span class="badge-rec">Recomendado</span>' : ''}</div>
-          <div class="envia-rate-servicio">${sentenceCase(servicio)}${dias ? ' · ' + dias : ''}</div>
+          <div class="envia-rate-carrier">${formatCarrier(carrier)}${esRecomendado ? ' <span class="badge-rec">Recomendado</span>' : ''}</div>
+          <div class="envia-rate-servicio">${formatServicio(servicio)}${dias ? ' · ' + dias : ''}</div>
         </div>
         <div class="envia-rate-precio">$${fmt(precio)}</div>
       `;
@@ -810,7 +811,7 @@ function seleccionarEnviaRate(card, carrier, servicio, precio) {
   document.querySelectorAll('.envia-rate-card').forEach(c => c.classList.remove('selected'));
   card.classList.add('selected');
   enviaRateSeleccionado = {
-    desc: sentenceCase(`${carrier} ${servicio}`),
+    desc: `${formatCarrier(carrier)} ${formatServicio(servicio)}`.trim(),
     cost: precio,
   };
   // Sincronizar con los campos manuales para que updateResumen los tome

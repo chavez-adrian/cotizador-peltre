@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let validarDomicilioEntrega, sentenceCase;
+let validarDomicilioEntrega, formatCarrier, formatServicio;
 before(async () => {
-  ({ validarDomicilioEntrega, sentenceCase } = await import('../cotizar-logica.js'));
+  ({ validarDomicilioEntrega, formatCarrier, formatServicio } = await import('../cotizar-logica.js'));
 });
 
 // === AC1: CP + pais sin Calle -> procede con leyenda ===
@@ -60,28 +60,35 @@ test('AC2-5: falta CP y falta pais -> ok:false', () => {
   assert.ok(r.error);
 });
 
-// === AC3: Sentence case ===
-test('AC3-1: minusculas -> primera letra mayuscula', () => {
-  assert.strictEqual(sentenceCase('fedex ground'), 'Fedex ground');
+// === AC3: nombres canonicos de paqueteria (carrier con su marca + servicio Title Case) ===
+test('AC3-1: carrier canonico preserva el acronimo/marca sin importar el case de entrada', () => {
+  assert.strictEqual(formatCarrier('fedex'), 'FedEx');
+  assert.strictEqual(formatCarrier('FEDEX'), 'FedEx');
+  assert.strictEqual(formatCarrier('FedEx'), 'FedEx');
+  assert.strictEqual(formatCarrier('dhl'), 'DHL');
+  assert.strictEqual(formatCarrier('DHL'), 'DHL');
+  assert.strictEqual(formatCarrier('ups'), 'UPS');
+  assert.strictEqual(formatCarrier('estafeta'), 'Estafeta');
 });
 
-test('AC3-2: mayusculas -> Sentence case', () => {
-  assert.strictEqual(sentenceCase('FEDEX GROUND'), 'Fedex ground');
+test('AC3-2: carrier desconocido -> Title Case (no rompe, presentable)', () => {
+  assert.strictEqual(formatCarrier('paqueteria local'), 'Paqueteria Local');
 });
 
-test('AC3-3: mixed case -> Sentence case', () => {
-  assert.strictEqual(sentenceCase('FedEx Ground'), 'Fedex ground');
+test('AC3-3: servicio en Title Case', () => {
+  assert.strictEqual(formatServicio('ground'), 'Ground');
+  assert.strictEqual(formatServicio('STANDARD OVERNIGHT'), 'Standard Overnight');
+  assert.strictEqual(formatServicio('Express'), 'Express');
 });
 
-test('AC3-4: cadena vacia -> cadena vacia', () => {
-  assert.strictEqual(sentenceCase(''), '');
+test('AC3-4: vacios / null / undefined -> cadena vacia', () => {
+  assert.strictEqual(formatCarrier(''), '');
+  assert.strictEqual(formatCarrier(null), '');
+  assert.strictEqual(formatServicio(undefined), '');
 });
 
-test('AC3-5: recorta espacios al inicio y fin', () => {
-  assert.strictEqual(sentenceCase('  dhl express  '), 'Dhl express');
-});
-
-test('AC3-6: null o undefined -> cadena vacia', () => {
-  assert.strictEqual(sentenceCase(null), '');
-  assert.strictEqual(sentenceCase(undefined), '');
+test('AC3-5: combinacion carrier + servicio (lo que va al documento)', () => {
+  assert.strictEqual(`${formatCarrier('fedex')} ${formatServicio('ground')}`.trim(), 'FedEx Ground');
+  assert.strictEqual(`${formatCarrier('DHL')} ${formatServicio('express')}`.trim(), 'DHL Express');
+  assert.strictEqual(`${formatCarrier('ups')} ${formatServicio('ground')}`.trim(), 'UPS Ground');
 });

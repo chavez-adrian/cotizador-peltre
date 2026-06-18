@@ -3,6 +3,8 @@
 
 const LEYENDA_DOMICILIO = 'Favor de confirmar el domicilio de entrega';
 
+// Espejo de lib/validar-cp.js (validarCP): la misma regla por pais, replicada aqui
+// porque lib/ NO se sirve al navegador (solo public/). Mantener ambas en sincronia.
 function cpValido(cp, pais) {
   if (pais === 'CA') return /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/.test(cp);
   return /^\d{5}$/.test(cp);
@@ -28,10 +30,27 @@ export function validarDomicilioEntrega({ calle, cp, pais } = {}) {
   return { ok: true };
 }
 
-// Sentence case: solo la primera letra en mayuscula, resto en minuscula.
-// Recorta espacios al inicio y fin. "fedex ground" -> "Fedex ground".
-export function sentenceCase(str) {
-  const s = (str || '').trim();
-  if (!s) return '';
-  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+// Nombres canonicos de paqueteria (issue #71, decision Adrian): el carrier se
+// muestra con su marca real (preserva acronimos: DHL, UPS, FedEx) y el servicio en
+// Title Case. Arregla el "fedex ground" feo sin convertir DHL->Dhl ni UPS->Ups.
+const CARRIERS_CANONICOS = {
+  fedex: 'FedEx', dhl: 'DHL', ups: 'UPS', estafeta: 'Estafeta',
+  redpack: 'Redpack', paquetexpress: 'Paquetexpress',
+};
+
+function tituloPalabras(str) {
+  return (str || '').trim().toLowerCase().split(/\s+/).filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// Carrier con su marca canonica si es conocido; si no, Title Case (presentable).
+export function formatCarrier(carrier) {
+  const c = (carrier || '').trim();
+  if (!c) return '';
+  return CARRIERS_CANONICOS[c.toLowerCase()] || tituloPalabras(c);
+}
+
+// Servicio de paqueteria en Title Case ("ground" -> "Ground").
+export function formatServicio(servicio) {
+  return tituloPalabras(servicio);
 }
