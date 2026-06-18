@@ -83,3 +83,13 @@ AC3 CERRADO: lo cubren los tests de AC1+AC2 (mocks que capturan el body y fijan 
 ESTADO: TODOS LOS ACs EN VERDE. Suite 773 pass / 0 fail (766 baseline + 3 AC1 + 4 AC2). Archivos tocados: test/operam-client.test.js, test/server.test.js, PROGRESS.md. Cero cambios en lib/ o server.js.
 
 VERIFICACION HITL READ-ONLY pendiente para el orquestador: confirmar contra Operam produccion (solo lectura, ver un cliente recien creado por este flujo) que la API v3 PERSISTE dimension_id=1/dimension2_id=5 y tax_group/area/salesman del branch. Recordar el quirk: Operam puede responder 200 e ignorar campos (paso con segmento_id en clientes 456/457). Los tests prueban que el cotizador MANDA los campos; no que Operam los GUARDE. El caso del issue (ACAI CON FRUTA, captura manual) pudo NO pasar por este flujo /api/crear-cliente, o haber topado con ese quirk de persistencia -- conviene rastrear como se creo ese cliente especifico.
+
+## Subagente #74 - FIX REAL (2da pasada, diagnostico en vivo del orquestador)
+El orquestador diagnostico en vivo contra Operam las dos causas raiz (confirma la sospecha del checkpoint anterior: Operam responde 200 e ignora campos). Esta pasada implementa el CODIGO REAL (no solo tests).
+
+CAUSA 1 (dimensiones): POST /api/v3/sales/customers IGNORA dimension_id/dimension2_id (los guarda en 0 aunque el body los lleve). Un PUT /customers/:id con {dimension_id,dimension2_id} SI persiste. En alta NUEVA nunca corria el PUT (el Step 1b solo corria con customerIdYaConocido) -> quedaban en 0.
+CAUSA 2 (domicilio): PUT /api/v3/sales/branches/:code RESETEA debtor_no a 0 (branch huerfano = cliente "sin domicilio") salvo que el body incluya customer_id. Con customer_id conserva el vinculo + default_location=40, ship_via=1, area, salesman, tax_group_id.
+
+CICLO A CERRADO (commit 0c4b201): +1 linea en lib/operam-client.js (customer_id: customerId al body del PUT branch). Reforce los 2 tests de payload de branch de #74 (MX y US) para exigir customer_id=100. Sensibilidad verificada (RED: undefined !== 100 antes del fix).
+
+CICLO B (pendiente en este checkpoint): PUT de dimensiones en alta NUEVA. Test RED en test/server.test.js + GREEN reusando actualizarClienteDirecto(id, {dimension_id:1, dimension2_id:5}) tras el POST de Step 1. Sin tocar el quirk de segmento_id (fuera de alcance).
