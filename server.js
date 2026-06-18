@@ -1213,6 +1213,17 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
       } catch (err) {
         steps.push({ name: 'PUT customer (config comercial)', status: 'error', error: err.message });
       }
+    } else {
+      // Step 1c: PUT customer — persistir dimensiones en un alta NUEVA. El POST
+      // /customers de Operam IGNORA dimension_id/dimension2_id (los guarda en 0,
+      // verificado en vivo #74); solo un PUT /customers/:id los persiste. No bloquea
+      // el flujo si falla -- el domicilio sigue siendo lo critico (issue #74).
+      try {
+        await actualizarClienteDirecto(customer_id, { dimension_id: 1, dimension2_id: 5 });
+        steps.push({ name: 'PUT customer (dimensiones)', status: 'ok' });
+      } catch (err) {
+        steps.push({ name: 'PUT customer (dimensiones)', status: 'error', error: err.message });
+      }
     }
 
     // Step 2: GET customer to resolve branch_id

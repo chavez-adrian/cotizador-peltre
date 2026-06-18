@@ -607,7 +607,8 @@ test('D1: POST /api/crear-cliente flujo completo retorna customer_id, branch_id 
     assert.strictEqual(res.body.customer_id, 500, 'debe retornar customer_id');
     assert.strictEqual(res.body.branch_id, 600, 'debe retornar branch_id');
     assert.ok(Array.isArray(res.body.steps), 'debe retornar array steps');
-    assert.strictEqual(res.body.steps.length, 3, 'debe tener 3 steps');
+    assert.strictEqual(res.body.steps.length, 4, 'debe tener 4 steps (POST, PUT dimensiones, GET branch_id, PUT branch)');
+    assert.ok(res.body.steps.find(s => s.name === 'PUT customer (dimensiones)'), 'el alta nueva debe incluir el step de dimensiones');
     assert.ok(res.body.steps.every(s => s.name && s.status), 'cada step debe tener name y status');
     assert.ok(res.body.steps.every(s => s.status === 'ok'), 'todos los steps deben ser ok');
   } finally {
@@ -705,6 +706,34 @@ test('D1d: POST /api/crear-cliente con domicilio extranjero usa tax_group exento
   }
 });
 
+test('D1e: POST /api/crear-cliente en alta NUEVA persiste dimension_id=1 y dimension2_id=5 via PUT /customers/:id (issue #74)', async () => {
+  // El POST /customers de Operam IGNORA dimension_id/dimension2_id (los guarda en 0).
+  // Solo un PUT /customers/:id los persiste. En un alta NUEVA debe correr ese PUT.
+  let dimPutBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 540 }) };
+      if (opts?.method === 'PUT' && u.includes('/540')) { dimPutBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('/540')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 640 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/640': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send(BASE_CLIENTE);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.ok(dimPutBody, 'el alta nueva debe hacer PUT /customers/:id para persistir dimensiones');
+    assert.strictEqual(dimPutBody.dimension_id, 1, 'el PUT debe persistir dimension_id=1 (D1 Taller Casino de la Selva)');
+    assert.strictEqual(dimPutBody.dimension2_id, 5, 'el PUT debe persistir dimension2_id=5 (D2 Corporativo)');
+  } finally {
+    restore();
+  }
+});
+
 test('D2: POST /api/crear-cliente fallo en PUT branch retorna steps con error y customer_id/branch_id', async () => {
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
@@ -789,11 +818,15 @@ test('D4: POST /api/crear-cliente con customer_id existente actualiza sales_type
 });
 
 test('D5: POST /api/crear-cliente cliente nuevo NO hace PUT customers/:id de config comercial (ya viaja en el POST)', async () => {
-  let putCustomerCalled = false;
+  // El alta nueva SI hace un PUT /customers/:id para persistir dimensiones (#74, el
+  // POST las ignora). Lo que NO debe hacer es un PUT de CONFIG COMERCIAL
+  // (sales_type/segmento_id/salesman/timbrado), que ya viajo en el POST. Se captura
+  // el body de cualquier PUT para verificar que solo lleva dimensiones.
+  let putCustomerBody = null;
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') { putCustomerCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
+      if (opts?.method === 'PUT') { putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 504 }) };
       if (u.includes('/504')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 604 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
@@ -805,8 +838,10 @@ test('D5: POST /api/crear-cliente cliente nuevo NO hace PUT customers/:id de con
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
       .send(BASE_CLIENTE);
     assert.strictEqual(res.status, 200);
-    assert.ok(!putCustomerCalled, 'NO debe hacer PUT /customers/:id cuando el cliente es nuevo (config ya va en el POST)');
-    assert.ok(!res.body.steps.find(s => s.name === 'PUT customer (config comercial)'), 'no debe existir el step para cliente nuevo');
+    assert.ok(!res.body.steps.find(s => s.name === 'PUT customer (config comercial)'), 'no debe existir el step de config comercial para cliente nuevo');
+    assert.ok(putCustomerBody, 'el alta nueva hace un PUT (de dimensiones)');
+    assert.ok(!('sales_type' in putCustomerBody), 'el PUT del alta nueva NO debe llevar config comercial (sales_type ya fue en el POST)');
+    assert.ok(!('segmento_id' in putCustomerBody), 'el PUT del alta nueva NO debe llevar config comercial (segmento_id ya fue en el POST)');
   } finally {
     restore();
   }
