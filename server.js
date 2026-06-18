@@ -277,6 +277,10 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // el tablero pinta el checklist con progreso en la tarjeta de cotizacion.
     decorado: data?.decorado === true,
     calcaChecklist: data?.calcaChecklist ?? null,
+    // Espejo de la cadena Operam (issue #67, AC3/AC4): cotizacion/pedido/factura/
+    // remisiones/pagos/notas que el sync persistio en data.espejoOperam; la tarjeta
+    // lo pinta como cadena de folios para trazabilidad.
+    espejoOperam: data?.espejoOperam ?? null,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
     hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),

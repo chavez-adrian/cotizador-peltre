@@ -36,6 +36,7 @@ import {
   oportunidadesActivas,
   badgeFolioOperamHtml,
   badgeFolioOperamProspectoHtml,
+  cadenaOperamHtml,
   botonCompletarHtml,
   siguientePasoFormalizacion,
   buildColaHoyHtml,
@@ -1985,6 +1986,9 @@ function cotizacionAOportunidad(c) {
     vendedor: c.vendedor, etapa: c.etapa, total: c.total, totalPiezas: c.totalPiezas,
     fecha: c.fecha, folioOperam: c.folioOperam ?? null,
     decorado: c.decorado === true, calcaChecklist: c.calcaChecklist ?? null,
+    // Cadena de folios de Operam (issue #67, AC4): el espejo persistido por el sync
+    // (data.espejoOperam) que la tarjeta pinta para trazabilidad.
+    espejoOperam: c.espejoOperam ?? null,
   };
 }
 
@@ -2059,9 +2063,11 @@ function renderPipeline() {
     const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
     const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
     const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
+    const cadena = cadenaOperamHtml(o.espejoOperam);
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
+      ${cadena}
     </div>${total}</div></div>`;
   }).join('');
 }

@@ -158,6 +158,37 @@ function badgeFolioOperam(o) {
   return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
 }
 
+// Texto compacto de la cadena de folios de Operam (issue #67, AC4) a partir del
+// espejo persistido (data.espejoOperam de #67 AC3). Muestra SOLO los eslabones
+// presentes, en orden de la cadena post-venta: cotizacion -> pedido -> factura ->
+// remision -> pago -> nota de credito. Estilo del badge (denso, una linea):
+//   "Cot #1141 - Pedido #7269 - Factura A1907 - Remision - Pagado". Sin espejo o sin
+// eslabones devuelve cadena vacia (la tarjeta no pinta el elemento).
+export function cadenaOperamTexto(espejo) {
+  if (!espejo || typeof espejo !== 'object') return '';
+  const partes = [];
+  if (espejo.cotizacion) partes.push(`Cot #${espejo.cotizacion}`);
+  if (espejo.pedido) partes.push(`Pedido #${espejo.pedido}`);
+  if (espejo.factura && (espejo.factura.ref || espejo.factura.numero)) {
+    partes.push(`Factura ${espejo.factura.ref || espejo.factura.numero}`);
+  }
+  if (Array.isArray(espejo.remisiones) && espejo.remisiones.length > 0) partes.push('Remision');
+  if (Array.isArray(espejo.pagos) && espejo.pagos.length > 0) partes.push('Pagado');
+  if (Array.isArray(espejo.notasCredito) && espejo.notasCredito.length > 0) {
+    partes.push(`Nota de credito ${espejo.notasCredito[0]}`);
+  }
+  return partes.join(' - ');
+}
+
+// Elemento HTML de la cadena de folios para la tarjeta (issue #67, AC4). Vacio si
+// no hay cadena (no ensucia la tarjeta de una oportunidad sin sync). Escapa el
+// texto (los folios/refs vienen de Operam).
+export function cadenaOperamHtml(espejo) {
+  const texto = cadenaOperamTexto(espejo);
+  if (!texto) return '';
+  return `<div class="cot-cadena-operam">${escapeHtml(texto)}</div>`;
+}
+
 // Asignar vendedor desde la tarjeta (issue #57, CONTEXT.md "Etapas del pipeline"
 // + "Visibilidad"): la PRIMERA accion de tarjeta del tablero, que hasta ahora era
 // solo-lectura (#53). Solo aplica a una oportunidad en No Asignado (la unica que
@@ -276,6 +307,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
+  const cadena = cadenaOperamHtml(o.espejoOperam);
   const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
   const mover = buildMoverSeguimientoControlHtml(o);
   const salida = buildSalidaControlHtml(o);
@@ -289,6 +321,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
         </div>
         ${total}
       </div>
+      ${cadena}
       ${asignar}
       ${mover}
       ${decorado}
