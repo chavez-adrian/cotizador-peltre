@@ -1,7 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { esCandidatoBackfill, esActivoParaImportar } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman } from '../lib/backfill-operam.mjs';
+
+// Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
+const VENDEDORES = [
+  { id: 1, name: 'Adrián Chávez', operam_id: 1 },
+  { id: 2, name: 'Alejandro Chávez', operam_id: 2 },
+  { id: 3, name: 'Oswaldo Chávez', operam_id: 8 },
+  { id: 4, name: 'Alejandro Castañón', operam_id: 9 },
+  { id: 5, name: 'Jaime Abaroa', operam_id: null },
+];
 
 // Backfill de cotizaciones reales via pedidos (issue #76). Funciones PURAS;
 // el script scripts/backfill-operam.mjs las orquesta con IO inyectada. Sin
@@ -56,4 +65,24 @@ test('esActivoParaImportar: seguimiento (sin etapa post-venta) SI se importa', (
   assert.equal(esActivoParaImportar('seguimiento'), true);
   assert.equal(esActivoParaImportar(null), true);
   assert.equal(esActivoParaImportar(undefined), true);
+});
+
+// --- mapearSalesman: salesman de Operam (operam_id) -> nombre de vendedor ---
+
+test('mapearSalesman: el salesman es el operam_id; devuelve el nombre del vendedor', () => {
+  assert.equal(mapearSalesman(8, VENDEDORES), 'Oswaldo Chávez');
+  assert.equal(mapearSalesman('9', VENDEDORES), 'Alejandro Castañón');
+  assert.equal(mapearSalesman(1, VENDEDORES), 'Adrián Chávez');
+});
+
+test('mapearSalesman: salesman sin match en vendedores -> null (sin inventar)', () => {
+  assert.equal(mapearSalesman(99, VENDEDORES), null);
+  assert.equal(mapearSalesman(null, VENDEDORES), null);
+  assert.equal(mapearSalesman('', VENDEDORES), null);
+  assert.equal(mapearSalesman(undefined, VENDEDORES), null);
+});
+
+test('mapearSalesman: no matchea contra operam_id null (Jaime Abaroa) por un salesman vacio', () => {
+  // El vendedor sin operam_id no debe capturar salesman ausentes/nulos.
+  assert.equal(mapearSalesman(null, VENDEDORES), null);
 });
