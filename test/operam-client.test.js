@@ -927,3 +927,69 @@ test('subirCotizacionOperam: envio paqueteria con CP local -> partida flete stoc
     restore();
   }
 });
+
+test('subirCotizacionOperam: envio paqueteria con CP foraneo -> partida flete stock_id 251021002', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 331, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1501 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '44100' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Envio DHL', cantidad: 1, precio: 480, descuento: 0 },
+      ],
+    });
+    const flete = partidaFlete(quoteBody);
+    assert.ok(flete, 'debe existir una partida de flete');
+    assert.equal(flete.stock_id, '251021002', 'CP foraneo (GDL 44100) -> FedEx Ground Foraneo 251021002');
+    assert.equal(flete.stock_id_text, 'Envio DHL', 'el carrier real (DHL) va en stock_id_text, no en stock_id');
+    assert.equal(flete.qty, 1);
+    assert.equal(flete.price, 480);
+    assert.ok(!/Envio:/.test(quoteBody.comments || ''), 'el envio ya no debe duplicarse en comments');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: CP de entrega ausente -> flete foraneo por defecto (251021002)', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 332, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1502 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Envio UPS', cantidad: 1, precio: 300, descuento: 0 },
+      ],
+    });
+    const flete = partidaFlete(quoteBody);
+    assert.ok(flete, 'debe existir una partida de flete');
+    assert.equal(flete.stock_id, '251021002', 'sin CP de entrega clasifica como foraneo (default seguro)');
+  } finally {
+    restore();
+  }
+});
