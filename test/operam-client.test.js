@@ -1051,3 +1051,32 @@ test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (di
     restore();
   }
 });
+
+// El POST /api/v3/sales/quote real responde { result, added_trans_type, added_trans_no,
+// ref } (verificado en vivo, quote 1160, issue #68). El folio del quote es added_trans_no;
+// la funcion debe devolverlo para que server.js persista el folio (setFolioOperam, #63).
+// Antes devolvia quote_id||factura_no (campos inexistentes en la respuesta) -> undefined.
+test('subirCotizacionOperam: devuelve el folio real del quote (added_trans_no)', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 14, tax_id: 'XAXX010101000', CustName: 'PUBLICO EN GENERAL', branches: [{ branch_code: 29 }] }],
+    }),
+    '/api/v3/sales/quote': () => jsonResponse({
+      result: true, added_trans_type: 32, added_trans_no: 1160, ref: 'C2606222',
+      messages: ['Cotizacion insertada exitosamente'],
+    }),
+  });
+  try {
+    const folio = await subirCotizacionOperam({
+      fecha: '2026-06-18',
+      cliente: { rfc: 'XAXX010101000', razonSocial: 'PUBLICO EN GENERAL', cpEntrega: '06700' },
+      items: [{ codigo: 'PV08P3001120', descripcion: 'Portavasos', cantidad: 10, precio: 45.26, descuento: 0 }],
+    });
+    assert.equal(folio, 1160, 'debe devolver added_trans_no (folio real), no undefined');
+  } finally {
+    restore();
+  }
+});
