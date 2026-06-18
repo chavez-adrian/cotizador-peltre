@@ -288,6 +288,49 @@ test('buildClienteBody: phone/email a nivel cliente vienen del input (issue #16)
   assert.strictEqual(body.email, 'contacto@empresa.com', 'email a nivel cliente debe venir del input');
 });
 
+// === Dimensiones del cliente — issue #74 ===
+// Nombre real del campo en la API v3 REST: dimension_id (D1) y dimension2_id (D2),
+// campos escalares (MAPEO_CAMPOS_CLIENTE.md 2.4/4, lib/operam-client.js). El
+// dimensiones_id[] (array) de peltre-operam.md es del flujo viejo de web-scraping
+// del form PHP, NO de la API v3. SOP pasos 19-20: D1=1 (TALLER CASINO DE LA SELVA),
+// D2=5 (CORPORATIVO).
+
+test('buildClienteBody: dimension_id=1 (D1 TALLER CASINO DE LA SELVA) (issue #74)', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.strictEqual(body.dimension_id, 1, 'dimension_id debe ser 1 (D1 TALLER CASINO DE LA SELVA, SOP paso 19)');
+});
+
+test('buildClienteBody: dimension2_id=5 (D2 CORPORATIVO) (issue #74)', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.strictEqual(body.dimension2_id, 5, 'dimension2_id debe ser 5 (D2 CORPORATIVO, SOP paso 20)');
+});
+
+// El quirk de Operam (acepta 200 e ignora campos) significa que un mock que solo
+// devuelve {result:true} no prueba que las dimensiones se hayan MANDADO. Este test
+// CAPTURA el body real del POST /customers y afirma que las dimensiones viajan.
+test('crearCliente: el POST /customers envia dimension_id=1 y dimension2_id=5 (issue #74)', async () => {
+  resetSession();
+  let postBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': (url, opts) => {
+      if (opts && opts.method === 'POST') {
+        postBody = JSON.parse(opts.body);
+        return jsonResponse({ result: true, customer_id: 999 });
+      }
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  try {
+    await crearCliente({ tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV' });
+    assert.ok(postBody, 'debe haberse capturado el body del POST /customers');
+    assert.strictEqual(postBody.dimension_id, 1, 'el POST debe enviar dimension_id=1');
+    assert.strictEqual(postBody.dimension2_id, 5, 'el POST debe enviar dimension2_id=5');
+  } finally {
+    restore();
+  }
+});
+
 // === actualizarBranchCliente() — issue #29 ===
 
 test('actualizarBranchCliente: PUT /api/v3/sales/branches/:id con location:40 y ship_via:1 como enteros', async () => {
