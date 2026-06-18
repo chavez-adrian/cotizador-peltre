@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/cotizaciones.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa } from '../lib/cotizaciones-store.js';
+import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa, setEspejoOperam } from '../lib/cotizaciones-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -145,6 +145,31 @@ test('cambiarEtapa: la etapa post-venta persiste por encima del estado', async (
   writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', estado: 'abierta', data: {} }]);
   await cambiarEtapa(1, 'saldo_pagado', { tipo: 'sync_operam' });
   assert.equal((await obtener(1)).etapa, 'saldo_pagado');
+});
+
+// Espejo de la cadena Operam (issue #67, AC3): una vez resuelto el order_, se
+// persiste en data.espejoOperam la cadena de folios atribuibles (cotizacion, pedido,
+// factura num+ref, remisiones) + el estado de pago derivado de la factura, para
+// trazabilidad. Mismo patron que actualizarDatos (merge en data JSONB, no reemplaza).
+test('setEspejoOperam persiste el espejo de la cadena en data sin borrar lo previo', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: { cliente: { rfc: 'XAXX010101000' } } }]);
+  const espejo = {
+    cotizacion: '1141', pedido: '7269',
+    factura: { numero: '6735', ref: 'A1907' },
+    remisiones: ['2142'], pago: 'pagado',
+  };
+  const ok = await setEspejoOperam(1, espejo);
+  assert.equal(ok, true);
+  const c = await obtener(1);
+  assert.deepEqual(c.data.espejoOperam, espejo);
+  // No borra lo que ya estaba en data.
+  assert.equal(c.data.cliente.rfc, 'XAXX010101000');
+  assert.deepEqual((await listar())[0].data.espejoOperam, espejo);
+});
+
+test('setEspejoOperam sobre una cotizacion inexistente no rompe', async () => {
+  writeCots([{ id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'A', data: {} }]);
+  assert.equal(await setEspejoOperam(99, { cotizacion: '1', pedido: '2' }), false);
 });
 
 test('listar expone la etapa del pipeline derivada del estado de cada cotizacion (#53)', async () => {
