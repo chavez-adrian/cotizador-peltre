@@ -877,3 +877,53 @@ test('esZonaMetroLocal: CP vacio o invalido -> foraneo (false)', () => {
   assert.equal(esZonaMetroLocal('abc', RANGOS_ZONA_METRO), false);
   assert.equal(esZonaMetroLocal('123', RANGOS_ZONA_METRO), false);
 });
+
+// === subirCotizacionOperam() — issue #68: envio como PARTIDA nativa del quote ===
+// La linea ENVIO de paqueteria deja de ir en comments y se vuelve una partida real
+// con el SKU de flete que corresponde a la zona del CP de entrega:
+//   local   (CDMX 06700, Neza 57000) -> stock_id 251021001 (FedEx Ground)
+//   foraneo (GDL 44100)               -> stock_id 251021002 (FedEx Ground Foraneo)
+// El carrier real va SOLO en stock_id_text. qty 1, price = precio del envio, Disc 0.
+
+function partidaFlete(quoteBody) {
+  return (quoteBody.items || []).find(i => i.stock_id === '251021001' || i.stock_id === '251021002');
+}
+
+test('subirCotizacionOperam: envio paqueteria con CP local -> partida flete stock_id 251021001', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 330, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1500 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '06700' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+        { codigo: 'ENVIO', descripcion: 'Envio FedEx Ground', cantidad: 1, precio: 350, descuento: 0 },
+      ],
+    });
+    const flete = partidaFlete(quoteBody);
+    assert.ok(flete, 'debe existir una partida de flete');
+    assert.equal(flete.stock_id, '251021001', 'CP local -> FedEx Ground 251021001');
+    assert.equal(flete.stock_id_text, 'Envio FedEx Ground', 'el carrier real va en stock_id_text');
+    assert.equal(flete.qty, 1);
+    assert.equal(flete.price, 350);
+    assert.equal(flete.Disc, 0);
+    // las partidas normales siguen ahi
+    assert.ok((quoteBody.items || []).some(i => i.stock_id === 'CR20-PLATO'), 'el producto normal sigue en el quote');
+    // el envio YA NO esta en comments
+    assert.ok(!/Envio:/.test(quoteBody.comments || ''), 'el envio ya no debe duplicarse en comments');
+  } finally {
+    restore();
+  }
+});
