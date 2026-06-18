@@ -358,3 +358,54 @@ test('idempotencia: tras crear+setFolioOperam, folioYaExiste lo reconoce en list
   // El folio que aun no existe si pasaria.
   assert.equal(folioYaExiste(cots, '1142'), false);
 });
+
+// Aplicacion del PLAN al store, end-to-end (mismo loop que el script con --apply):
+// crear -> setFolioOperam -> cambiarEtapa. Re-correr no duplica (idempotencia por
+// folioOperam via planearBackfill, que relee el store).
+async function aplicarPlan(store, plan) {
+  let creadas = 0;
+  for (const e of plan.importar) {
+    const id = await store.crear(e);
+    await store.setFolioOperam(id, e.folioOperam);
+    await store.cambiarEtapa(id, e.etapa, { tipo: 'backfill', etapa: e.etapa, fecha: '2026-06-18T00:00:00Z' });
+    creadas++;
+  }
+  return creadas;
+}
+
+test('apply end-to-end: crea la cotizacion con folio+etapa y re-correr NO duplica', async () => {
+  writeCots([]);
+  const store = await import('../lib/cotizaciones-store.js');
+  const buildDeps = () => planDeps({
+    pedidos: [PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    etapas: { '7269': 'saldo_pagado' },
+  }).deps;
+  // Deps reales para idempotencia: listarCotizaciones lee el store real.
+  function depsConStore() {
+    const d = buildDeps();
+    d.listarCotizaciones = () => store.listar();
+    return d;
+  }
+
+  // Primera corrida: plan importa 1, aplicar crea 1.
+  const plan1 = await planearBackfill(depsConStore());
+  assert.equal(plan1.importar.length, 1);
+  assert.equal(await aplicarPlan(store, plan1), 1);
+
+  const guardadas = await store.listar();
+  const c = guardadas.find(x => String(x.folioOperam) === '1141');
+  assert.ok(c, 'la cotizacion quedo persistida con su folio');
+  assert.equal(c.cliente, 'JUANA HERNANDEZ GARCIA');
+  assert.equal(c.etapa, 'saldo_pagado');
+  assert.equal(c.data.orderOperam, '7269');
+  assert.equal(c.data.backfill, true);
+
+  // Segunda corrida: el folio ya existe -> plan vacio (SKIP duplicado), nada nuevo.
+  const plan2 = await planearBackfill(depsConStore());
+  assert.equal(plan2.importar.length, 0);
+  assert.equal(plan2.skips.duplicado, 1);
+  assert.equal(await aplicarPlan(store, plan2), 0);
+  assert.equal((await store.listar()).filter(x => String(x.folioOperam) === '1141').length, 1);
+});
