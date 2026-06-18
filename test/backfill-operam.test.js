@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -191,6 +191,140 @@ test('construirEntradaCotizacion: el RFC en data.cliente.rfc va en mayusculas (c
     pedido: PEDIDO, quote: QUOTE, debtor: debtorLower, etapa: 'seguimiento', vendedores: VENDEDORES,
   });
   assert.equal(entrada.data.cliente.rfc, 'HEGJ800101AB1');
+});
+
+// --- planearBackfill: orquestacion pura del run con IO inyectada ---
+// Enumera pedidos (paginado), filtra candidatos, deriva etapa, lee cabecera del
+// quote + debtor y produce un PLAN: { importar: [entradas], skips: {...}, ... }.
+// Sin Operam real (todas las lecturas son mocks inyectados).
+
+// Helper: arma deps de planearBackfill con datos en memoria.
+function planDeps({ pedidos = [], debtors = {}, quotes = {}, etapas = {}, cotizaciones = [] } = {}) {
+  const llamadas = { quotes: [], debtors: [] };
+  // Pagina de 100: la primera pagina trae todo, las siguientes vacio.
+  const listarPedidosPagina = async ({ skip }) => (skip === 0 ? pedidos : []);
+  const obtenerDebtor = async (debtorNo) => { llamadas.debtors.push(String(debtorNo)); return debtors[String(debtorNo)] || null; };
+  const obtenerQuote = async (folio) => { llamadas.quotes.push(String(folio)); return quotes[String(folio)] || null; };
+  // etapaDe(op) simula hechosDeOperam+etapaPostVenta: devuelve la etapa por order_no.
+  const etapaDe = async (op) => etapas[String(op?.data?.orderOperam)] ?? 'seguimiento';
+  return {
+    llamadas,
+    deps: {
+      listarPedidosPagina,
+      obtenerDebtor,
+      obtenerQuote,
+      etapaDe,
+      listarCotizaciones: async () => cotizaciones,
+      vendedores: VENDEDORES,
+      desde: '2024-06-01', hasta: '2026-06-30',
+    },
+  };
+}
+
+test('planearBackfill: importa un candidato activo con cabecera completa', async () => {
+  const { deps } = planDeps({
+    pedidos: [PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    etapas: { '7269': 'saldo_pagado' },
+    cotizaciones: [],
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 1);
+  const e = plan.importar[0];
+  assert.equal(e.folioOperam, '1141');
+  assert.equal(e.etapa, 'saldo_pagado');
+  assert.equal(e.cliente, 'JUANA HERNANDEZ GARCIA');
+  assert.equal(e.data.orderOperam, '7269');
+  assert.equal(e.total, 16954);
+  assert.equal(plan.skips.entregado, 0);
+  assert.equal(plan.skips.duplicado, 0);
+  assert.equal(plan.skips.noCandidato, 0);
+});
+
+test('planearBackfill: SKIP entregado (producto_entregado no se importa)', async () => {
+  const { deps } = planDeps({
+    pedidos: [PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    etapas: { '7269': 'producto_entregado' },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.entregado, 1);
+});
+
+test('planearBackfill: SKIP duplicado (folioOperam ya existe en el store)', async () => {
+  const { deps } = planDeps({
+    pedidos: [PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    etapas: { '7269': 'saldo_pagado' },
+    cotizaciones: [{ id: 5, folioOperam: '1141', data: {} }],
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.duplicado, 1);
+});
+
+test('planearBackfill: SKIP no-candidato (venta directa y pedido de prueba) sin leer quote', async () => {
+  const ventaDirecta = { order_no: '8000', trans_no_from: '', debtor_no: '500' };
+  const prueba = { order_no: '7270', trans_no_from: '1163', debtor_no: '394' };
+  const { deps, llamadas } = planDeps({
+    pedidos: [ventaDirecta, prueba, PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    etapas: { '7269': 'seguimiento' },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.skips.noCandidato, 2);
+  // No debe leer el quote de los no-candidatos (read-only barato).
+  assert.deepEqual(llamadas.quotes, ['1141']);
+});
+
+test('planearBackfill: pagina (varias paginas de pedidos)', async () => {
+  // 100 candidatos en la primera pagina + 1 en la segunda: listarPedidosPagina
+  // debe llamarse hasta agotar.
+  const pagina1 = Array.from({ length: 100 }, (_, i) => ({
+    order_no: String(9000 + i), trans_no_from: String(2000 + i), debtor_no: '394',
+  }));
+  const pagina2 = [{ order_no: '9100', trans_no_from: '2100', debtor_no: '394' }];
+  const debtors = { '394': DEBTOR };
+  const quotes = {};
+  const etapas = {};
+  for (const p of [...pagina1, ...pagina2]) {
+    quotes[p.trans_no_from] = { ...QUOTE, trans_no: p.trans_no_from };
+    etapas[p.order_no] = 'seguimiento';
+  }
+  const deps = {
+    listarPedidosPagina: async ({ skip }) => (skip === 0 ? pagina1 : skip === 100 ? pagina2 : []),
+    obtenerDebtor: async () => DEBTOR,
+    obtenerQuote: async (folio) => quotes[String(folio)],
+    etapaDe: async (op) => etapas[String(op?.data?.orderOperam)],
+    listarCotizaciones: async () => [],
+    vendedores: VENDEDORES,
+    desde: '2024-06-01', hasta: '2026-06-30',
+  };
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.totalPedidos, 101);
+  assert.equal(plan.importar.length, 101);
+});
+
+test('planearBackfill: dos candidatos con el MISMO folio en la corrida no se duplican entre si', async () => {
+  // Idempotencia intra-corrida: aunque dos pedidos compartan trans_no_from (no
+  // deberia pasar, pero defensivo), solo se importa uno.
+  const p1 = { order_no: '7269', trans_no_from: '1141', debtor_no: '394' };
+  const p2 = { order_no: '7269', trans_no_from: '1141', debtor_no: '394' };
+  const { deps } = planDeps({
+    pedidos: [p1, p2],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    etapas: { '7269': 'seguimiento' },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.skips.duplicado, 1);
 });
 
 // --- Idempotencia end-to-end contra el store JSON real (sin DATABASE_URL) ---
