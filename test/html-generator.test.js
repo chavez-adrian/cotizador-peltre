@@ -92,3 +92,13 @@ test('13. Total row has class total-row for bold styling', () => {
   assert.ok(html.includes('class="total-row"'), 'TOTAL row should have class total-row');
   assert.ok(html.includes('>TOTAL<'), 'TOTAL label should be present');
 });
+
+test('14. (#71 AC1) leyendaDomicilio se pinta en datos de entrega cuando esta presente', () => {
+  const html = generateQuoteHTML({ cliente: { cpEntrega: '06600', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' } });
+  assert.ok(html.includes('Favor de confirmar el domicilio de entrega'), 'should contain la leyenda de domicilio');
+});
+
+test('15. (#71 AC1) sin leyendaDomicilio no se inventa la leyenda', () => {
+  const html = generateQuoteHTML({ cliente: { calle: 'Reforma 100', cpEntrega: '06600' } });
+  assert.ok(!html.includes('Favor de confirmar el domicilio de entrega'), 'should NOT contain la leyenda cuando hay calle');
+});
