@@ -185,6 +185,24 @@ test('construirEntradaCotizacion: salesman sin match deja vendedor null (no inve
   assert.equal(entrada.vendedor, null);
 });
 
+test('construirEntradaCotizacion: lee el salesman de branch.salesman cuando no viene top-level (#68)', () => {
+  // El quote real de Operam trae el vendedor anidado en branch.salesman, NO a
+  // nivel top (visto en #68). Sin este fallback el vendedor da null para todos.
+  const quoteBranch = { ...QUOTE, salesman: undefined, branch: { salesman: 8 } };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteBranch, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.vendedor, 'Oswaldo Chávez');
+});
+
+test('construirEntradaCotizacion: el salesman top-level tiene prioridad sobre branch.salesman', () => {
+  const quoteAmbos = { ...QUOTE, salesman: 9, branch: { salesman: 8 } };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteAmbos, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.vendedor, 'Alejandro Castañón');
+});
+
 test('construirEntradaCotizacion: el RFC en data.cliente.rfc va en mayusculas (clave de sync #62)', () => {
   const debtorLower = { ...DEBTOR, tax_id: 'hegj800101ab1' };
   const entrada = construirEntradaCotizacion({
