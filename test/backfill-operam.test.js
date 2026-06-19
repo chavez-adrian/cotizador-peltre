@@ -140,6 +140,26 @@ test('etapaBackfill: sin hecho post-venta cae a seguimiento (null de etapaPostVe
   assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'seguimiento');
 });
 
+// $0 (muestra/cortesia, decision Adrian): el pedido no se factura, asi que el pago NO
+// aplica; ademas el agregado del RFC generico lo contamina con pagos de otros clientes
+// (binding falso -> saldo_pagado erroneo, visto en vivo folio 669). Para total<=0 la
+// etapa se deriva SOLO de la existencia del pedido (pedido_liberado), ignorando pago y
+// remision. Los $0 entregados ya los cierra esCerrado antes de llegar aqui.
+test('etapaBackfill: $0 con pago contaminado (saldo_pagado) -> pedido_liberado, ignora el pago', () => {
+  const hechos = { tieneRemision: false, tienePedido: true, pago: { allocated: 99999, total: 99999 } };
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }, 0), 'pedido_liberado');
+});
+
+test('etapaBackfill: $0 sin pedido -> seguimiento (no inventa etapa de pago)', () => {
+  const hechos = { tieneRemision: false, tienePedido: false, pago: { allocated: 5000, total: 5000 } };
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }, 0), 'seguimiento');
+});
+
+test('etapaBackfill: total>0 conserva el comportamiento (saldo_pagado real, no se ignora)', () => {
+  const hechos = { tieneRemision: false, tienePedido: true, pago: { allocated: 100, total: 100 } };
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }, 100), 'saldo_pagado');
+});
+
 // --- esSucursalTlapacoya: CRITERIO 1 #76, solo se importa la sucursal 01 ---
 // Decision Adrian: importar SOLO sucursal 01 Tlapacoya; descartar Shopify (30),
 // Amazon (31/32) y Bazaar (02). La sucursal NO esta en el payload (verificado en
