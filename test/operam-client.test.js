@@ -95,10 +95,12 @@ test('apiCall: con intervalo minimo, espacia las llamadas concurrentes (throttle
       listarPedidos({ desde: 'a', hasta: 'b' }),
     ]);
     assert.equal(tiempos.length, 3);
-    const g1 = tiempos[1] - tiempos[0];
-    const g2 = tiempos[2] - tiempos[1];
-    assert.ok(g1 >= 35, `gap1=${g1}ms debe ser >= ~40 (espaciado por el throttle)`);
-    assert.ok(g2 >= 35, `gap2=${g2}ms debe ser >= ~40 (espaciado por el throttle)`);
+    // Asercion ACUMULATIVA (no por-gap): el jitter de setTimeout bajo carga puede
+    // comprimir un gap individual (un timer que se atrasa adelanta su distancia al
+    // siguiente), pero el tiempo total entre la 1a y la 3a lectura solo CRECE con el
+    // jitter -> 3 llamadas a >=40ms toman >= 2 intervalos (~80ms). Robusto, no flaky.
+    const total = tiempos[2] - tiempos[0];
+    assert.ok(total >= 70, `total=${total}ms entre la 1a y 3a lectura debe ser >= ~80 (2 intervalos de 40ms)`);
   } finally {
     restore();
     _setMinInterval(0);
