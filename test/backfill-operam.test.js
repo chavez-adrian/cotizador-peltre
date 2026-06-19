@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esActivoParaImportar, esSucursalTlapacoya, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -68,6 +68,55 @@ test('esActivoParaImportar: seguimiento (sin etapa post-venta) SI se importa', (
   assert.equal(esActivoParaImportar('seguimiento'), true);
   assert.equal(esActivoParaImportar(null), true);
   assert.equal(esActivoParaImportar(undefined), true);
+});
+
+// --- esSucursalTlapacoya: CRITERIO 1 #76, solo se importa la sucursal 01 ---
+// Decision Adrian: importar SOLO sucursal 01 Tlapacoya; descartar Shopify (30),
+// Amazon (31/32) y Bazaar (02). La sucursal NO esta en el payload (verificado en
+// vivo): el canal SOLO es inferible por marcadores de la transaccion (pedido o
+// quote): user.real_name === 'Shopify'; reference que empieza con S (Shopify) o A
+// (Amazon); from_stk_loc que empieza con B (Bazaar) o AZ (Amazon). Lo demas =
+// Tlapacoya (01) = se importa. Campos ausentes NO excluyen (defensivo).
+
+test('esSucursalTlapacoya: Shopify por user.real_name -> excluido', () => {
+  assert.equal(esSucursalTlapacoya({ user: { real_name: 'Shopify' }, from_stk_loc: '30' }), false);
+});
+
+test('esSucursalTlapacoya: Shopify por reference que empieza con S -> excluido', () => {
+  assert.equal(esSucursalTlapacoya({ reference: 'S1777' }), false);
+  assert.equal(esSucursalTlapacoya({ reference: 'S1781-R' }), false);
+  assert.equal(esSucursalTlapacoya({ reference: 's1781' }), false); // case-insensitive
+});
+
+test('esSucursalTlapacoya: Amazon por reference que empieza con A -> excluido', () => {
+  assert.equal(esSucursalTlapacoya({ reference: 'A4076261' }), false);
+});
+
+test('esSucursalTlapacoya: Amazon por from_stk_loc AZ (AZMX/AZUSA) -> excluido', () => {
+  assert.equal(esSucursalTlapacoya({ from_stk_loc: 'AZMX' }), false);
+  assert.equal(esSucursalTlapacoya({ from_stk_loc: 'AZUSA' }), false);
+});
+
+test('esSucursalTlapacoya: Bazaar por from_stk_loc que empieza con B -> excluido', () => {
+  assert.equal(esSucursalTlapacoya({ from_stk_loc: 'B1' }), false);
+  assert.equal(esSucursalTlapacoya({ from_stk_loc: 'B4' }), false);
+});
+
+test('esSucursalTlapacoya: Tlapacoya (loc 40, ref numerica, user real) -> incluido', () => {
+  assert.equal(esSucursalTlapacoya({ from_stk_loc: '40', reference: '2604696', user: { real_name: 'Adrian Chavez' } }), true);
+  assert.equal(esSucursalTlapacoya({ from_stk_loc: '40', reference: 'C2604151', user: { real_name: 'Alejandro Chavez' } }), true);
+});
+
+test('esSucursalTlapacoya: quote GENERICO TIENDAS DIGITALES por vendedor real (loc 40, ref C..) -> INCLUIDO', () => {
+  // Es justo lo que se rescata: un mismo debtor generico tiene tx en 01 y en 30; las
+  // de 01 (loc 40, ref C.., vendedor real) SI se importan. El filtro NO es por cliente.
+  assert.equal(esSucursalTlapacoya({ from_stk_loc: '40', reference: 'C2604999', user: { real_name: 'Oswaldo Chavez' } }), true);
+});
+
+test('esSucursalTlapacoya: campos ausentes NO excluyen (defensivo) -> incluido', () => {
+  assert.equal(esSucursalTlapacoya({}), true);
+  assert.equal(esSucursalTlapacoya(null), true);
+  assert.equal(esSucursalTlapacoya({ reference: '', from_stk_loc: '', user: {} }), true);
 });
 
 // --- mapearSalesman: salesman de Operam (operam_id) -> nombre de vendedor ---
@@ -341,6 +390,23 @@ test('planearBackfill: SKIP no-candidato (venta directa y pedido de prueba) sin 
   assert.deepEqual(llamadas.quotes, ['1141']);
 });
 
+test('planearBackfill: SKIP otraSucursal (Shopify/Amazon/Bazaar no se importan, CRITERIO 1)', async () => {
+  // Un pedido de Shopify (reference S..) es candidato pero NO es Tlapacoya -> skip.
+  // Un pedido Tlapacoya (loc 40) si entra. Filtro por marcadores de canal, no cliente.
+  const shopify = { order_no: '7300', trans_no_from: '1200', debtor_no: '394', reference: 'S1777', from_stk_loc: '30' };
+  const tlapacoya = { order_no: '7269', trans_no_from: '1141', debtor_no: '394', from_stk_loc: '40', reference: '2604696' };
+  const { deps } = planDeps({
+    pedidos: [shopify, tlapacoya],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE, '1200': { ...QUOTE, trans_no: '1200' } },
+    etapas: { '7269': 'seguimiento', '7300': 'seguimiento' },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.importar[0].folioOperam, '1141');
+  assert.equal(plan.skips.otraSucursal, 1);
+});
+
 test('planearBackfill: pagina (varias paginas de pedidos)', async () => {
   // 100 candidatos en la primera pagina + 1 en la segunda: listarPedidosPagina
   // debe llamarse hasta agotar.
@@ -565,6 +631,22 @@ test('planearBackfillSinPedido: SALTA folio ya existente en el store (idempotent
   const plan = await planearBackfillSinPedido(deps);
   assert.equal(plan.importar.length, 0);
   assert.equal(plan.skips.duplicado, 1);
+});
+
+test('planearBackfillSinPedido: SALTA un quote de otra sucursal (Shopify/Amazon/Bazaar, CRITERIO 1)', async () => {
+  // El quote tambien lleva los marcadores de canal (reference/from_stk_loc/user). Un
+  // quote sin pedido de Shopify (reference S..) no es Tlapacoya -> skip otraSucursal.
+  const shopify = { ...QUOTE_B, trans_no: '1151', reference: 'S1781' };
+  const { deps } = planBDeps({
+    quotes: { '1151': shopify, '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    folioMax: 1151,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  // Solo 1150 (Tlapacoya) importa; 1151 (Shopify) se salta.
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.importar[0].folioOperam, '1150');
+  assert.equal(plan.skips.otraSucursal, 1);
 });
 
 // --- Idempotencia end-to-end contra el store JSON real (sin DATABASE_URL) ---
