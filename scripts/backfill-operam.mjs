@@ -82,7 +82,7 @@ async function obtenerDebtor(debtorNo) {
 // (rfc / debtor_no) para que un mismo cliente se lea UNA sola vez en toda la
 // corrida (igual que ya se cachea obtenerCliente con debtorCache). Esto recorta
 // las ~840 lecturas en rafaga que disparaban el 429.
-const listarTransaccionesMemo = memoizarPorClave(listarTransacciones, ({ rfc }) => `tx:${rfc}`);
+const listarTransaccionesMemo = memoizarPorClave(listarTransacciones, ({ customerId, rfc }) => `tx:${customerId ?? rfc}`);
 const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo }) => `ped:${debtorNo}`);
 // El quote tambien se memoiza: la parte A lo lee por trans_no_from y la parte B
 // camina ids; un mismo folio no se lee dos veces entre ambas partes.

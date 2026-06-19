@@ -64,6 +64,35 @@ test('hechosDeOperam: sin RFC en la oportunidad devuelve null (no se puede ligar
   assert.equal(await hechosDeOperam(op, deps), null);
 });
 
+// Binding por customer_id (#76): el RFC generico (XAXX010101000) lo comparten muchos
+// clientes y la consulta por customer_rfc contamina los hechos con tx de otros debtors
+// (folios 669/1152 -> saldo_pagado falso). Cuando la oportunidad trae customerId, se
+// liga por customer_id (aislado) y NO se manda el customer_rfc generico.
+test('hechosDeOperam: con customerId liga por customer_id, no por el RFC generico', async () => {
+  let q = null;
+  const deps = {
+    listarTransacciones: async (query) => { q = query; return [{ type: '10', order_: '7251', total_amount: '1935', allocated: '1935', debtor_no: '461' }]; },
+    listarPedidos: async () => [{ order_no: '7251', trans_type: '30', debtor_no: '461' }],
+  };
+  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'XAXX010101000', customerId: '461' }, orderOperam: '7251' } };
+  const hechos = await hechosDeOperam(op, deps);
+  assert.equal(q.customerId, '461');
+  assert.equal(q.rfc, undefined, 'no manda el customer_rfc generico cuando hay customer_id');
+  assert.equal(hechos.tienePedido, true);
+});
+
+test('hechosDeOperam: sin customerId sigue ligando por RFC (comportamiento previo, #62)', async () => {
+  let q = null;
+  const deps = {
+    listarTransacciones: async (query) => { q = query; return []; },
+    listarPedidos: async () => [],
+  };
+  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } };
+  await hechosDeOperam(op, deps);
+  assert.equal(q.rfc, 'CPE921211N76');
+  assert.equal(q.customerId, undefined);
+});
+
 test('hechosDeOperam: con data.orderOperam filtra la cadena a ese order_', async () => {
   // Dos cadenas del mismo cliente: order_ 7077 (entregada) y order_ 7230 (solo
   // factura con saldo). data.orderOperam liga a 7077 -> debe ver solo esa cadena.
