@@ -57,22 +57,50 @@ test('esCandidatoBackfill: pedido nulo o sin order_no no es candidato', () => {
 // producto_entregado, que se veria cerrada). Reusa estadoPago de sync-operam.js.
 
 test('esCerrado: entregado (remision) Y pagado al 100% -> true (oportunidad cerrada)', () => {
-  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 100, total: 100 } }), true);
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 100, total: 100 } }, 16954), true);
 });
 
 test('esCerrado: entregado pero impago (pago parcial / sin pago) -> false (cobranza pendiente)', () => {
-  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 50, total: 100 } }), false);
-  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 0, total: 100 } }), false);
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 50, total: 100 } }, 16954), false);
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 0, total: 100 } }, 16954), false);
 });
 
 test('esCerrado: pagado al 100% pero NO entregado (sin remision) -> false', () => {
-  assert.equal(esCerrado({ tieneRemision: false, pago: { allocated: 100, total: 100 } }), false);
+  assert.equal(esCerrado({ tieneRemision: false, pago: { allocated: 100, total: 100 } }, 16954), false);
 });
 
 test('esCerrado: hechos nulo o vacio -> false (no cerrado)', () => {
-  assert.equal(esCerrado(null), false);
-  assert.equal(esCerrado(undefined), false);
-  assert.equal(esCerrado({}), false);
+  assert.equal(esCerrado(null, 16954), false);
+  assert.equal(esCerrado(undefined, 16954), false);
+  assert.equal(esCerrado({}, 16954), false);
+});
+
+test('esCerrado: total ausente conserva el comportamiento previo (exige pago al 100%)', () => {
+  // Compatibilidad: sin `total` (o total>0) la regla es la de antes -> entregado Y pagado.
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 100, total: 100 } }), true);
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 50, total: 100 } }), false);
+  assert.equal(esCerrado({ tieneRemision: false, pago: { allocated: 100, total: 100 } }), false);
+});
+
+// CRITERIO 2 #76 (decision Adrian): un pedido con total 0 (muestra/cortesia) NO se
+// factura; por lo tanto basta la ENTREGA (remision) para considerarlo cerrado, sin
+// exigir pago. Un $0 NO entregado sigue activo (muestra pendiente de envio).
+
+test('esCerrado: $0 entregado (remision) -> true (muestra/cortesia, no se factura)', () => {
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 0, total: 0 } }, 0), true);
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 0, total: 0 } }, '0'), true);
+});
+
+test('esCerrado: $0 SIN remision -> false (muestra pendiente de envio, sigue activa)', () => {
+  assert.equal(esCerrado({ tieneRemision: false, pago: { allocated: 0, total: 0 } }, 0), false);
+});
+
+test('esCerrado: >0 con remision impago -> false (cobranza, sigue activo, no aplica regla $0)', () => {
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 50, total: 100 } }, 100), false);
+});
+
+test('esCerrado: >0 con remision pagado al 100% -> true (cerrado normal)', () => {
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 100, total: 100 } }, 100), true);
 });
 
 test('etapaBackfill: entregado-impago deriva la etapa IGNORANDO la remision (no producto_entregado)', () => {
@@ -449,6 +477,9 @@ const HECHOS_SALDO_PAGADO = { pago: { allocated: 100, outstanding: 0, total: 100
 const HECHOS_SEGUIMIENTO = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
 const HECHOS_CERRADO = { pago: { allocated: 100, outstanding: 0, total: 100 }, tienePedido: true, tieneRemision: true };
 const HECHOS_ENTREGADO_IMPAGO = { pago: { allocated: 30, outstanding: 70, total: 100 }, tienePedido: true, tieneRemision: true };
+// CRITERIO 2 #76: muestra/cortesia $0 entregada (remision, sin pago). Con total<=0 del
+// pedido basta la remision -> cerrada. Sin remision sigue activa (pendiente de envio).
+const HECHOS_MUESTRA_ENTREGADA = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: true, tieneRemision: true };
 
 test('planearBackfill: importa un candidato activo con cabecera completa', async () => {
   const { deps } = planDeps({
@@ -499,6 +530,36 @@ test('planearBackfill: entregado-IMPAGO se importa con etapa NO producto_entrega
   // tienePedido + anticipo -> pedido_liberado (la mas avanzada al ignorar la remision).
   assert.equal(plan.importar[0].etapa, 'pedido_liberado');
   assert.notEqual(plan.importar[0].etapa, 'producto_entregado');
+});
+
+test('planearBackfill: SKIP cerrado para muestra $0 entregada (CRITERIO 2: total<=0 + remision)', async () => {
+  // Muestra/cortesia: el PEDIDO tiene total 0 y fue entregado (remision) -> cerrado,
+  // no se importa. El gate usa el `total` del pedido del listado (num(pedido.total)).
+  const muestra = { order_no: '7269', trans_no_from: '1141', debtor_no: '394', total: '0' };
+  const { deps } = planDeps({
+    pedidos: [muestra],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': { ...QUOTE, total: '0' } },
+    hechos: { '7269': HECHOS_MUESTRA_ENTREGADA },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.cerrado, 1);
+});
+
+test('planearBackfill: muestra $0 SIN entregar se importa (pendiente de envio, sigue activa)', async () => {
+  // $0 sin remision: NO es cerrado -> se importa (muestra pendiente de envio).
+  const muestra = { order_no: '7269', trans_no_from: '1141', debtor_no: '394', total: '0' };
+  const HECHOS_MUESTRA_PENDIENTE = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: true, tieneRemision: false };
+  const { deps } = planDeps({
+    pedidos: [muestra],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': { ...QUOTE, total: '0' } },
+    hechos: { '7269': HECHOS_MUESTRA_PENDIENTE },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.skips.cerrado, 0);
 });
 
 test('planearBackfill: SKIP duplicado (folioOperam ya existe en el store)', async () => {
