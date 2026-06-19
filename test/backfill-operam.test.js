@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -209,6 +209,46 @@ test('construirEntradaCotizacion: el RFC en data.cliente.rfc va en mayusculas (c
     pedido: PEDIDO, quote: QUOTE, debtor: debtorLower, etapa: 'seguimiento', vendedores: VENDEDORES,
   });
   assert.equal(entrada.data.cliente.rfc, 'HEGJ800101AB1');
+});
+
+// --- memoizarPorClave: cachea lecturas por clave para reducir el volumen (429) ---
+// El backfill re-lee transacciones/pedidos POR candidato y muchos candidatos
+// comparten el mismo debtor/RFC; sin cache se disparan ~840 lecturas en rafaga y
+// Operam responde 429. memoizarPorClave envuelve un lector async y lo invoca UNA
+// sola vez por clave (claveDe(args)).
+
+test('memoizarPorClave: el lector subyacente se llama 1 vez por clave aunque se pida N veces', async () => {
+  let llamadas = 0;
+  const lector = async ({ rfc }) => { llamadas++; return `data-${rfc}`; };
+  const memo = memoizarPorClave(lector, ({ rfc }) => rfc);
+  // Dos candidatos del mismo debtor (mismo RFC) -> el lector se llama 1 vez.
+  assert.equal(await memo({ rfc: 'AAA010101AB1' }), 'data-AAA010101AB1');
+  assert.equal(await memo({ rfc: 'AAA010101AB1' }), 'data-AAA010101AB1');
+  assert.equal(await memo({ rfc: 'AAA010101AB1' }), 'data-AAA010101AB1');
+  assert.equal(llamadas, 1);
+});
+
+test('memoizarPorClave: claves distintas se leen por separado (una vez cada una)', async () => {
+  let llamadas = 0;
+  const lector = async ({ debtorNo }) => { llamadas++; return debtorNo; };
+  const memo = memoizarPorClave(lector, ({ debtorNo }) => String(debtorNo));
+  await memo({ debtorNo: 1 });
+  await memo({ debtorNo: 2 });
+  await memo({ debtorNo: 1 });
+  await memo({ debtorNo: 2 });
+  assert.equal(llamadas, 2);
+});
+
+test('memoizarPorClave: peticiones concurrentes de la misma clave comparten una sola lectura', async () => {
+  // Sin esperar a que resuelva la primera, dos llamadas a la misma clave deben
+  // compartir la MISMA promesa (no disparar dos lecturas en rafaga).
+  let llamadas = 0;
+  const lector = async (k) => { llamadas++; await Promise.resolve(); return k; };
+  const memo = memoizarPorClave(lector, (k) => k);
+  const [a, b] = await Promise.all([memo('x'), memo('x')]);
+  assert.equal(a, 'x');
+  assert.equal(b, 'x');
+  assert.equal(llamadas, 1);
 });
 
 // --- planearBackfill: orquestacion pura del run con IO inyectada ---

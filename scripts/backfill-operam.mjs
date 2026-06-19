@@ -43,7 +43,7 @@ if (APPLY && !process.env.DATABASE_URL) {
 }
 
 const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente } = await import('../lib/operam-client.js');
-const { planearBackfill } = await import('../lib/backfill-operam.mjs');
+const { planearBackfill, memoizarPorClave } = await import('../lib/backfill-operam.mjs');
 const { hechosDeOperam } = await import('../lib/sync-operam-io.js');
 const { etapaPostVenta } = await import('../lib/sync-operam.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
@@ -65,13 +65,25 @@ async function obtenerDebtor(debtorNo) {
   return c;
 }
 
+// Control de VOLUMEN (issue #76, blocker 429): hechosDeOperam re-lee
+// transacciones (por RFC) y pedidos (por debtor_no) POR candidato, y muchos
+// candidatos comparten el mismo cliente. Memoizamos ambas lecturas por su clave
+// (rfc / debtor_no) para que un mismo cliente se lea UNA sola vez en toda la
+// corrida (igual que ya se cachea obtenerCliente con debtorCache). Esto recorta
+// las ~840 lecturas en rafaga que disparaban el 429.
+const listarTransaccionesMemo = memoizarPorClave(listarTransacciones, ({ rfc }) => `tx:${rfc}`);
+const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo }) => `ped:${debtorNo}`);
+
 // La etapa post-venta de la oportunidad: lee Operam (read-only) con binding
 // PRECISO (op.data.orderOperam = order_no del pedido) y aplica el nucleo puro.
 // etapaPostVenta devuelve null cuando ningun hecho post-venta aplica -> la
 // oportunidad queda en 'seguimiento' (existe la cotizacion/pedido pero sin senal
 // de pago/entrega todavia).
 async function etapaDe(op) {
-  const hechos = await hechosDeOperam(op, { listarTransacciones, listarPedidos });
+  const hechos = await hechosDeOperam(op, {
+    listarTransacciones: listarTransaccionesMemo,
+    listarPedidos: listarPedidosMemo,
+  });
   if (!hechos) return 'seguimiento';
   return etapaPostVenta(hechos, op) || 'seguimiento';
 }
