@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerQuote, obtenerCliente, _setBackoff429Base } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerQuote, obtenerCliente, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -72,6 +72,57 @@ test('apiCall: reintenta ante 429 (rate limit) con backoff y luego responde', as
   } finally {
     restore();
     _setBackoff429Base(2000);
+  }
+});
+
+// Throttle PROACTIVO anti-429 (#76): el backfill hace ~800-1000 lecturas; el backoff
+// REACTIVO no basta (el limite de Operam dura mas que la ventana de reintentos -> el
+// dry-run en vivo del 2026-06-19 trono). Un intervalo minimo entre llamadas evita
+// disparar el limite. apiCall serializa las llamadas (incluso concurrentes) con
+// >= minIntervalMs entre cada una reservando slots crecientes.
+test('apiCall: con intervalo minimo, espacia las llamadas concurrentes (throttle proactivo anti-429)', async () => {
+  resetSession();
+  _setMinInterval(40);
+  const tiempos = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_orders': () => { tiempos.push(Date.now()); return jsonResponse({ data: [] }); },
+  });
+  try {
+    await Promise.all([
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+    ]);
+    assert.equal(tiempos.length, 3);
+    const g1 = tiempos[1] - tiempos[0];
+    const g2 = tiempos[2] - tiempos[1];
+    assert.ok(g1 >= 35, `gap1=${g1}ms debe ser >= ~40 (espaciado por el throttle)`);
+    assert.ok(g2 >= 35, `gap2=${g2}ms debe ser >= ~40 (espaciado por el throttle)`);
+  } finally {
+    restore();
+    _setMinInterval(0);
+  }
+});
+
+// Sin intervalo (default 0) NO hay pacing: la app normal (no-backfill) no cambia.
+test('apiCall: intervalo 0 (default) no espacia (la app normal no se ve afectada)', async () => {
+  resetSession();
+  _setMinInterval(0);
+  const tiempos = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_orders': () => { tiempos.push(Date.now()); return jsonResponse({ data: [] }); },
+  });
+  try {
+    await Promise.all([
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+    ]);
+    assert.equal(tiempos.length, 2);
+    assert.ok((tiempos[1] - tiempos[0]) < 30, 'sin intervalo, sin espera apreciable entre llamadas');
+  } finally {
+    restore();
   }
 });
 

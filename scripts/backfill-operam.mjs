@@ -42,11 +42,20 @@ if (APPLY && !process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente } = await import('../lib/operam-client.js');
+const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente, _setMinInterval } = await import('../lib/operam-client.js');
 const { planearBackfill, planearBackfillSinPedido, descubrirFolioMax, memoizarPorClave } = await import('../lib/backfill-operam.mjs');
 const { hechosDeOperam } = await import('../lib/sync-operam-io.js');
 const { etapaPostVenta } = await import('../lib/sync-operam.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
+
+// Throttle PROACTIVO (issue #76): el backfill hace ~800-1000 lecturas y el rate-limit
+// de Operam se dispara por RAFAGA (el dry-run del 2026-06-19 trono: ~28 lecturas
+// seguidas bastaron, y una vez disparado dura >62s -> el backoff reactivo no convergio).
+// Paceamos TODAS las lecturas con un intervalo minimo para no disparar el limite. La
+// corrida es lenta (~1000 lecturas x intervalo) pero estable y de una sola vez.
+// Ajustable por env si el limite real difiere (BACKFILL_THROTTLE_MS).
+const THROTTLE_MS = Number(process.env.BACKFILL_THROTTLE_MS) || 1500;
+_setMinInterval(THROTTLE_MS);
 
 const vendedores = JSON.parse(readFileSync(join(ROOT, 'data', 'vendedores.json'), 'utf8'));
 
@@ -102,6 +111,7 @@ const deps = {
 };
 
 console.log(`\nBackfill #76 (${APPLY ? 'APPLY' : 'DRY-RUN'}) -- rango ${desde}..${hasta}`);
+console.log(`Throttle: ${THROTTLE_MS}ms entre lecturas de Operam (anti-429; ajustable con BACKFILL_THROTTLE_MS).`);
 console.log('PARTE A: leyendo pedidos de Operam (read-only, paginado)...\n');
 
 const plan = await planearBackfill(deps);
