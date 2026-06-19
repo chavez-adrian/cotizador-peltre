@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -181,6 +181,32 @@ test('mapearSalesman: no matchea contra operam_id null (Jaime Abaroa) por un sal
   assert.equal(mapearSalesman(null, VENDEDORES), null);
 });
 
+// --- mapearVendedorPorUsuario: CRITERIO 1 #76, fallback por el usuario creador ---
+// Decision Adrian: para las transacciones a cliente generico el `salesman` no mapea
+// ((sin mapear)), pero el vendedor se puede obtener del USUARIO CREADOR de la tx
+// (tx.user.real_name, casi siempre "Alejandro Chavez" o "Adrian Chavez", SIN acentos).
+// Normaliza (minusculas, sin diacriticos, trim) y compara contra vendedores[].name
+// (que SI llevan acentos); devuelve el name con acentos, o null sin match (no inventa).
+
+test('mapearVendedorPorUsuario: real_name sin acentos matchea el vendedor con acentos', () => {
+  assert.equal(mapearVendedorPorUsuario('Alejandro Chavez', VENDEDORES), 'Alejandro Chávez');
+  assert.equal(mapearVendedorPorUsuario('Adrian Chavez', VENDEDORES), 'Adrián Chávez');
+  assert.equal(mapearVendedorPorUsuario('Oswaldo Chavez', VENDEDORES), 'Oswaldo Chávez');
+});
+
+test('mapearVendedorPorUsuario: normaliza mayusculas/espacios extra (case/trim-insensitive)', () => {
+  assert.equal(mapearVendedorPorUsuario('  alejandro chavez  ', VENDEDORES), 'Alejandro Chávez');
+  assert.equal(mapearVendedorPorUsuario('ALEJANDRO CASTANON', VENDEDORES), 'Alejandro Castañón');
+});
+
+test('mapearVendedorPorUsuario: sin match -> null (no inventa)', () => {
+  assert.equal(mapearVendedorPorUsuario('Shopify', VENDEDORES), null);
+  assert.equal(mapearVendedorPorUsuario('Juan Perez', VENDEDORES), null);
+  assert.equal(mapearVendedorPorUsuario(null, VENDEDORES), null);
+  assert.equal(mapearVendedorPorUsuario('', VENDEDORES), null);
+  assert.equal(mapearVendedorPorUsuario(undefined, VENDEDORES), null);
+});
+
 // --- subtotalDesdeTotal: el total de Operam incluye IVA 16% (peltre-operam.md 12.6) ---
 
 test('subtotalDesdeTotal: deriva el subtotal de total/1.16 cuando no hay subtotal nativo', () => {
@@ -292,6 +318,46 @@ test('construirEntradaCotizacion: el salesman top-level tiene prioridad sobre br
     pedido: PEDIDO, quote: quoteAmbos, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
   });
   assert.equal(entrada.vendedor, 'Alejandro Castañón');
+});
+
+// CRITERIO 1 #76: si el salesman NO mapea, cae al USUARIO CREADOR (user.real_name)
+// del quote (o del pedido). El salesman mapeado SIGUE teniendo prioridad.
+
+test('construirEntradaCotizacion: salesman sin match cae al usuario creador del quote (CRITERIO 1)', () => {
+  // salesman 77 (no mapea) pero el quote lo creo "Alejandro Chavez" -> Alejandro Chávez.
+  const quoteGen = { ...QUOTE, salesman: 77, user: { real_name: 'Alejandro Chavez' } };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteGen, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.vendedor, 'Alejandro Chávez');
+});
+
+test('construirEntradaCotizacion: el salesman mapeado GANA sobre el usuario creador', () => {
+  // salesman 8 (Oswaldo) mapea; aunque el quote lo creo Adrian, gana el salesman.
+  const quoteAmbos = { ...QUOTE, salesman: 8, user: { real_name: 'Adrian Chavez' } };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteAmbos, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.vendedor, 'Oswaldo Chávez');
+});
+
+test('construirEntradaCotizacion: salesman sin match cae al usuario del PEDIDO si el quote no lo trae', () => {
+  // El quote no trae user; el pedido si (lo creo Adrian). Prioriza el creador del QUOTE,
+  // pero al faltar cae al del pedido.
+  const quoteGen = { ...QUOTE, salesman: 77, user: undefined };
+  const pedidoConUser = { ...PEDIDO, user: { real_name: 'Adrian Chavez' } };
+  const entrada = construirEntradaCotizacion({
+    pedido: pedidoConUser, quote: quoteGen, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.vendedor, 'Adrián Chávez');
+});
+
+test('construirEntradaCotizacion: ni salesman ni usuario mapean -> vendedor null (no inventa)', () => {
+  const quoteGen = { ...QUOTE, salesman: 77, user: { real_name: 'Shopify' } };
+  const entrada = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteGen, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES,
+  });
+  assert.equal(entrada.vendedor, null);
 });
 
 test('construirEntradaCotizacion: el RFC en data.cliente.rfc va en mayusculas (clave de sync #62)', () => {
