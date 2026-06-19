@@ -334,6 +334,23 @@ test('construirEntradaCotizacion: usa subtotal nativo del quote si viene', () =>
   assert.equal(entrada.data.subtotal, 14615.52);
 });
 
+// El total de la tarjeta de parte A es el del PEDIDO (lo que Operam muestra para la
+// orden), NO el del quote: pueden diferir (quote 1935 -> pedido 0 = muestra, folio
+// 7251 visto en vivo). Antes mostraba el del quote -> total enganoso ($1935 con el
+// pedido en $0). Parte B (pedido sintetico sin total) cae al total del quote.
+test('construirEntradaCotizacion: el total es el del PEDIDO cuando difiere del quote (folio 7251)', () => {
+  const pedido0 = { ...PEDIDO, total: '0' };
+  const quote1935 = { ...QUOTE, total: '1935' };
+  const entrada = construirEntradaCotizacion({ pedido: pedido0, quote: quote1935, debtor: DEBTOR, etapa: 'pedido_liberado', vendedores: VENDEDORES });
+  assert.equal(entrada.total, 0);
+});
+
+test('construirEntradaCotizacion: parte B (pedido sintetico sin total) usa el total del quote', () => {
+  const pedidoSintetico = { trans_no_from: '1150', order_no: null }; // como en planearBackfillSinPedido
+  const entrada = construirEntradaCotizacion({ pedido: pedidoSintetico, quote: { ...QUOTE, total: '5800' }, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES });
+  assert.equal(entrada.total, 5800);
+});
+
 test('construirEntradaCotizacion: customer_ref tolera nombre customer_ref ademas de cust_ref', () => {
   const quoteAlt = { ...QUOTE, cust_ref: undefined, customer_ref: 'Ref Alterna' };
   const entrada = construirEntradaCotizacion({
