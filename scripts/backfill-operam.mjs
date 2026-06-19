@@ -15,9 +15,12 @@
 // --apply exige DATABASE_URL: sin ella el store cae al fallback JSON local y
 // escribiria datos de dev. Read-only contra Operam siempre.
 //
-// Alcance (decision #76): solo ACTIVOS (etapa post-venta != producto_entregado);
-// cabecera completa SIN partidas; idempotente por folioOperam; excluye venta
-// directa, el pedido de prueba 7270 y los debtors 14 (PUBLICO EN GENERAL) y 1.
+// Alcance (decision #76): solo SUCURSAL 01 Tlapacoya (CRITERIO 1: descarta
+// Shopify/Amazon/Bazaar por marcadores de canal del pedido/quote) y solo NO-CERRADOS
+// (CRITERIO 2: cerrado = entregado Y pagado al 100%; el entregado-impago SI entra,
+// con etapa de avance de pago); cabecera completa SIN partidas; idempotente por
+// folioOperam; excluye venta directa, el pedido de prueba 7270 y los debtors 14
+// (PUBLICO EN GENERAL) y 1.
 import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -45,7 +48,6 @@ if (APPLY && !process.env.DATABASE_URL) {
 const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente, _setMinInterval } = await import('../lib/operam-client.js');
 const { planearBackfill, planearBackfillSinPedido, descubrirFolioMax, memoizarPorClave } = await import('../lib/backfill-operam.mjs');
 const { hechosDeOperam } = await import('../lib/sync-operam-io.js');
-const { etapaPostVenta } = await import('../lib/sync-operam.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
 
 // Throttle PROACTIVO (issue #76): el backfill hace ~800-1000 lecturas y el rate-limit
@@ -86,25 +88,26 @@ const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo }) => `ped
 // camina ids; un mismo folio no se lee dos veces entre ambas partes.
 const obtenerQuoteMemo = memoizarPorClave(obtenerQuote, (id) => `q:${id}`);
 
-// La etapa post-venta de la oportunidad: lee Operam (read-only) con binding
-// PRECISO (op.data.orderOperam = order_no del pedido) y aplica el nucleo puro.
-// etapaPostVenta devuelve null cuando ningun hecho post-venta aplica -> la
-// oportunidad queda en 'seguimiento' (existe la cotizacion/pedido pero sin senal
-// de pago/entrega todavia).
-async function etapaDe(op) {
+// Los HECHOS post-venta crudos de la oportunidad (CRITERIO 2): lee Operam
+// (read-only) con binding PRECISO (op.data.orderOperam = order_no del pedido) y
+// devuelve { pago, tienePedido, tieneRemision }. planearBackfill deriva el gate de
+// cerrado (esCerrado) y la etapa (etapaBackfill) a partir de estos hechos; el script
+// ya NO calcula la etapa. Si hechosDeOperam devuelve null (sin RFC), se trata como
+// hechos vacios (sin remision ni pago) -> no cerrado, etapa seguimiento.
+const HECHOS_VACIO = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
+async function obtenerHechos(op) {
   const hechos = await hechosDeOperam(op, {
     listarTransacciones: listarTransaccionesMemo,
     listarPedidos: listarPedidosMemo,
   });
-  if (!hechos) return 'seguimiento';
-  return etapaPostVenta(hechos, op) || 'seguimiento';
+  return hechos || HECHOS_VACIO;
 }
 
 const deps = {
   listarPedidosPagina: ({ skip }) => listarPedidos({ skip, limit: 100, desde, hasta }),
   obtenerDebtor,
   obtenerQuote: obtenerQuoteMemo,
-  etapaDe,
+  obtenerHechos,
   listarCotizaciones: () => cotStore.listar(),
   vendedores,
   desde, hasta,
@@ -118,10 +121,10 @@ const plan = await planearBackfill(deps);
 
 console.log(`Pedidos enumerados:   ${plan.totalPedidos}`);
 console.log(`Candidatos (cotizacion de origen, sucursal 01): ${plan.candidatos}`);
-console.log(`  Importables A (activos): ${plan.importar.length}`);
+console.log(`  Importables A (no cerrados): ${plan.importar.length}`);
 console.log(`  SKIP no-candidato (venta directa / prueba): ${plan.skips.noCandidato}`);
 console.log(`  SKIP otra-sucursal (Shopify/Amazon/Bazaar): ${plan.skips.otraSucursal}`);
-console.log(`  SKIP entregado (producto_entregado): ${plan.skips.entregado}`);
+console.log(`  SKIP cerrado (entregado Y pagado al 100%): ${plan.skips.cerrado}`);
 console.log(`  SKIP duplicado (folio ya en el store): ${plan.skips.duplicado}\n`);
 
 for (const e of plan.importar) {

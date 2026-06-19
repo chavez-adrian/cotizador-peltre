@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { esCandidatoBackfill, esActivoParaImportar, esSucursalTlapacoya, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -50,24 +50,66 @@ test('esCandidatoBackfill: pedido nulo o sin order_no no es candidato', () => {
   assert.equal(esCandidatoBackfill({ trans_no_from: '1300' }), false);
 });
 
-// --- esActivoParaImportar: solo se importan oportunidades activas ---
+// --- esCerrado / etapaBackfill: CRITERIO 2 #76, cerrado = entregado Y pagado 100% ---
+// Decision Adrian: un pedido esta CERRADO solo si entregado totalmente Y pagado en
+// su totalidad. Los entregados-impagos (remision sin pago al 100%) tienen cobranza
+// pendiente -> se INCLUYEN como activos, con etapa que refleje el avance de pago (NO
+// producto_entregado, que se veria cerrada). Reusa estadoPago de sync-operam.js.
 
-test('esActivoParaImportar: producto_entregado NO se importa (oportunidad cerrada)', () => {
-  assert.equal(esActivoParaImportar('producto_entregado'), false);
+test('esCerrado: entregado (remision) Y pagado al 100% -> true (oportunidad cerrada)', () => {
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 100, total: 100 } }), true);
 });
 
-test('esActivoParaImportar: etapas activas post-venta SI se importan', () => {
-  assert.equal(esActivoParaImportar('anticipo_pagado'), true);
-  assert.equal(esActivoParaImportar('pedido_liberado'), true);
-  assert.equal(esActivoParaImportar('saldo_pagado'), true);
+test('esCerrado: entregado pero impago (pago parcial / sin pago) -> false (cobranza pendiente)', () => {
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 50, total: 100 } }), false);
+  assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 0, total: 100 } }), false);
 });
 
-test('esActivoParaImportar: seguimiento (sin etapa post-venta) SI se importa', () => {
-  // etapaPostVenta devuelve null cuando ningun hecho post-venta aplica; la
-  // cotizacion existe (hay pedido) pero la etapa base es seguimiento -> activa.
-  assert.equal(esActivoParaImportar('seguimiento'), true);
-  assert.equal(esActivoParaImportar(null), true);
-  assert.equal(esActivoParaImportar(undefined), true);
+test('esCerrado: pagado al 100% pero NO entregado (sin remision) -> false', () => {
+  assert.equal(esCerrado({ tieneRemision: false, pago: { allocated: 100, total: 100 } }), false);
+});
+
+test('esCerrado: hechos nulo o vacio -> false (no cerrado)', () => {
+  assert.equal(esCerrado(null), false);
+  assert.equal(esCerrado(undefined), false);
+  assert.equal(esCerrado({}), false);
+});
+
+test('etapaBackfill: entregado-impago deriva la etapa IGNORANDO la remision (no producto_entregado)', () => {
+  // Remision + anticipo + pedido: ignora la remision y toma la etapa MAS avanzada de
+  // los hechos restantes (pedido_liberado > anticipo_pagado, orden del pipeline #62).
+  // Lo clave: NO es producto_entregado -> no se ve cerrada (refleja la cobranza viva).
+  const hechos = { tieneRemision: true, tienePedido: true, pago: { allocated: 30, total: 100 } };
+  const etapa = etapaBackfill(hechos, { etapa: 'seguimiento' });
+  assert.equal(etapa, 'pedido_liberado');
+  assert.notEqual(etapa, 'producto_entregado');
+});
+
+test('etapaBackfill: entregado-impago SIN pedido con anticipo cae a anticipo_pagado', () => {
+  // Sin pedido (tienePedido false) y pago parcial: la unica etapa implicada al ignorar
+  // la remision es anticipo_pagado (refleja el avance de pago, no cerrada).
+  const hechos = { tieneRemision: true, tienePedido: false, pago: { allocated: 30, total: 100 } };
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'anticipo_pagado');
+});
+
+test('etapaBackfill: entregado-impago sin anticipo cae a pedido_liberado (hay pedido)', () => {
+  const hechos = { tieneRemision: true, tienePedido: true, pago: { allocated: 0, total: 100 } };
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'pedido_liberado');
+});
+
+test('etapaBackfill: entregado-impago sin pedido ni pago cae a seguimiento', () => {
+  const hechos = { tieneRemision: true, tienePedido: false, pago: { allocated: 0, total: 0 } };
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'seguimiento');
+});
+
+test('etapaBackfill: no-entregado pagado al 100% -> saldo_pagado (etapa normal, sin tocar)', () => {
+  const hechos = { tieneRemision: false, tienePedido: true, pago: { allocated: 100, total: 100 } };
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'saldo_pagado');
+});
+
+test('etapaBackfill: sin hecho post-venta cae a seguimiento (null de etapaPostVenta)', () => {
+  const hechos = { tieneRemision: false, tienePedido: false, pago: { allocated: 0, total: 0 } };
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'seguimiento');
 });
 
 // --- esSucursalTlapacoya: CRITERIO 1 #76, solo se importa la sucursal 01 ---
@@ -306,21 +348,27 @@ test('memoizarPorClave: peticiones concurrentes de la misma clave comparten una 
 // Sin Operam real (todas las lecturas son mocks inyectados).
 
 // Helper: arma deps de planearBackfill con datos en memoria.
-function planDeps({ pedidos = [], debtors = {}, quotes = {}, etapas = {}, cotizaciones = [] } = {}) {
+// CRITERIO 2 #76: el dep `etapaDe(op)` (devolvia un string de etapa) cambio a
+// `obtenerHechos(op)` (devuelve los hechos crudos { pago, tienePedido,
+// tieneRemision }). La etapa la deriva planearBackfill via etapaBackfill, y el gate
+// de activo es !esCerrado(hechos). El helper acepta `hechos` (mapa por order_no);
+// el default es un hecho vacio (sin remision ni pago) -> seguimiento, no cerrado.
+function planDeps({ pedidos = [], debtors = {}, quotes = {}, hechos = {}, cotizaciones = [] } = {}) {
   const llamadas = { quotes: [], debtors: [] };
   // Pagina de 100: la primera pagina trae todo, las siguientes vacio.
   const listarPedidosPagina = async ({ skip }) => (skip === 0 ? pedidos : []);
   const obtenerDebtor = async (debtorNo) => { llamadas.debtors.push(String(debtorNo)); return debtors[String(debtorNo)] || null; };
   const obtenerQuote = async (folio) => { llamadas.quotes.push(String(folio)); return quotes[String(folio)] || null; };
-  // etapaDe(op) simula hechosDeOperam+etapaPostVenta: devuelve la etapa por order_no.
-  const etapaDe = async (op) => etapas[String(op?.data?.orderOperam)] ?? 'seguimiento';
+  const HECHOS_VACIO = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
+  // obtenerHechos(op) simula hechosDeOperam: devuelve los hechos crudos por order_no.
+  const obtenerHechos = async (op) => hechos[String(op?.data?.orderOperam)] ?? HECHOS_VACIO;
   return {
     llamadas,
     deps: {
       listarPedidosPagina,
       obtenerDebtor,
       obtenerQuote,
-      etapaDe,
+      obtenerHechos,
       listarCotizaciones: async () => cotizaciones,
       vendedores: VENDEDORES,
       desde: '2024-06-01', hasta: '2026-06-30',
@@ -328,12 +376,20 @@ function planDeps({ pedidos = [], debtors = {}, quotes = {}, etapas = {}, cotiza
   };
 }
 
+// Atajos de hechos para los tests de planearBackfill (CRITERIO 2): la etapa ya no
+// se inyecta como string; se inyectan los hechos crudos y planearBackfill deriva la
+// etapa. Estos cubren los casos antes expresados como etapas literales.
+const HECHOS_SALDO_PAGADO = { pago: { allocated: 100, outstanding: 0, total: 100 }, tienePedido: true, tieneRemision: false };
+const HECHOS_SEGUIMIENTO = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
+const HECHOS_CERRADO = { pago: { allocated: 100, outstanding: 0, total: 100 }, tienePedido: true, tieneRemision: true };
+const HECHOS_ENTREGADO_IMPAGO = { pago: { allocated: 30, outstanding: 70, total: 100 }, tienePedido: true, tieneRemision: true };
+
 test('planearBackfill: importa un candidato activo con cabecera completa', async () => {
   const { deps } = planDeps({
     pedidos: [PEDIDO],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE },
-    etapas: { '7269': 'saldo_pagado' },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
     cotizaciones: [],
   });
   const plan = await planearBackfill(deps);
@@ -344,21 +400,39 @@ test('planearBackfill: importa un candidato activo con cabecera completa', async
   assert.equal(e.cliente, 'JUANA HERNANDEZ GARCIA');
   assert.equal(e.data.orderOperam, '7269');
   assert.equal(e.total, 16954);
-  assert.equal(plan.skips.entregado, 0);
+  assert.equal(plan.skips.cerrado, 0);
   assert.equal(plan.skips.duplicado, 0);
   assert.equal(plan.skips.noCandidato, 0);
 });
 
-test('planearBackfill: SKIP entregado (producto_entregado no se importa)', async () => {
+test('planearBackfill: SKIP cerrado (entregado Y pagado al 100% no se importa)', async () => {
+  // CRITERIO 2: cerrado = tieneRemision Y pagado al 100%. Esos no se importan.
   const { deps } = planDeps({
     pedidos: [PEDIDO],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE },
-    etapas: { '7269': 'producto_entregado' },
+    hechos: { '7269': HECHOS_CERRADO },
   });
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 0);
-  assert.equal(plan.skips.entregado, 1);
+  assert.equal(plan.skips.cerrado, 1);
+});
+
+test('planearBackfill: entregado-IMPAGO se importa con etapa NO producto_entregado (CRITERIO 2)', async () => {
+  // Entregado pero pagado parcial -> cobranza pendiente -> SE importa. La etapa
+  // refleja el avance de pago (anticipo_pagado), no producto_entregado.
+  const { deps } = planDeps({
+    pedidos: [PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    hechos: { '7269': HECHOS_ENTREGADO_IMPAGO },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.skips.cerrado, 0);
+  // tienePedido + anticipo -> pedido_liberado (la mas avanzada al ignorar la remision).
+  assert.equal(plan.importar[0].etapa, 'pedido_liberado');
+  assert.notEqual(plan.importar[0].etapa, 'producto_entregado');
 });
 
 test('planearBackfill: SKIP duplicado (folioOperam ya existe en el store)', async () => {
@@ -366,7 +440,7 @@ test('planearBackfill: SKIP duplicado (folioOperam ya existe en el store)', asyn
     pedidos: [PEDIDO],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE },
-    etapas: { '7269': 'saldo_pagado' },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
     cotizaciones: [{ id: 5, folioOperam: '1141', data: {} }],
   });
   const plan = await planearBackfill(deps);
@@ -381,7 +455,7 @@ test('planearBackfill: SKIP no-candidato (venta directa y pedido de prueba) sin 
     pedidos: [ventaDirecta, prueba, PEDIDO],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE },
-    etapas: { '7269': 'seguimiento' },
+    hechos: { '7269': HECHOS_SEGUIMIENTO },
   });
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 1);
@@ -399,7 +473,7 @@ test('planearBackfill: SKIP otraSucursal (Shopify/Amazon/Bazaar no se importan, 
     pedidos: [shopify, tlapacoya],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE, '1200': { ...QUOTE, trans_no: '1200' } },
-    etapas: { '7269': 'seguimiento', '7300': 'seguimiento' },
+    hechos: { '7269': HECHOS_SEGUIMIENTO, '7300': HECHOS_SEGUIMIENTO },
   });
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 1);
@@ -416,16 +490,15 @@ test('planearBackfill: pagina (varias paginas de pedidos)', async () => {
   const pagina2 = [{ order_no: '9100', trans_no_from: '2100', debtor_no: '394' }];
   const debtors = { '394': DEBTOR };
   const quotes = {};
-  const etapas = {};
+  const HECHOS_VACIO = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
   for (const p of [...pagina1, ...pagina2]) {
     quotes[p.trans_no_from] = { ...QUOTE, trans_no: p.trans_no_from };
-    etapas[p.order_no] = 'seguimiento';
   }
   const deps = {
     listarPedidosPagina: async ({ skip }) => (skip === 0 ? pagina1 : skip === 100 ? pagina2 : []),
     obtenerDebtor: async () => DEBTOR,
     obtenerQuote: async (folio) => quotes[String(folio)],
-    etapaDe: async (op) => etapas[String(op?.data?.orderOperam)],
+    obtenerHechos: async () => HECHOS_VACIO,
     listarCotizaciones: async () => [],
     vendedores: VENDEDORES,
     desde: '2024-06-01', hasta: '2026-06-30',
@@ -435,24 +508,24 @@ test('planearBackfill: pagina (varias paginas de pedidos)', async () => {
   assert.equal(plan.importar.length, 101);
 });
 
-test('planearBackfill: expone foliosConPedido$ con TODOS los folios candidatos (incluso entregados/duplicados)', async () => {
+test('planearBackfill: expone foliosConPedido$ con TODOS los folios candidatos (incluso cerrados/duplicados)', async () => {
   // La parte B necesita el set de folios que SI se volvieron pedido para saltarlos.
-  // Debe incluir candidatos entregados (no importados) y duplicados, no solo los
+  // Debe incluir candidatos cerrados (no importados) y duplicados, no solo los
   // importables; si no, la parte B re-importaria como seguimiento un folio ya
-  // ordenado y entregado.
+  // ordenado y cerrado.
   const activo = { order_no: '7269', trans_no_from: '1141', debtor_no: '394' };
-  const entregado = { order_no: '7280', trans_no_from: '1145', debtor_no: '394' };
+  const cerrado = { order_no: '7280', trans_no_from: '1145', debtor_no: '394' };
   const ventaDirecta = { order_no: '8000', trans_no_from: '', debtor_no: '500' };
   const { deps } = planDeps({
-    pedidos: [activo, entregado, ventaDirecta],
+    pedidos: [activo, cerrado, ventaDirecta],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE, '1145': { ...QUOTE, trans_no: '1145' } },
-    etapas: { '7269': 'seguimiento', '7280': 'producto_entregado' },
+    hechos: { '7269': HECHOS_SEGUIMIENTO, '7280': HECHOS_CERRADO },
   });
   const plan = await planearBackfill(deps);
   assert.ok(plan.foliosConPedido instanceof Set);
   assert.equal(plan.foliosConPedido.has('1141'), true);  // activo, importado
-  assert.equal(plan.foliosConPedido.has('1145'), true);  // entregado, NO importado pero SI fue pedido
+  assert.equal(plan.foliosConPedido.has('1145'), true);  // cerrado, NO importado pero SI fue pedido
   assert.equal(plan.foliosConPedido.has(''), false);     // venta directa no aporta folio
 });
 
@@ -465,7 +538,7 @@ test('planearBackfill: dos candidatos con el MISMO folio en la corrida no se dup
     pedidos: [p1, p2],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE },
-    etapas: { '7269': 'seguimiento' },
+    hechos: { '7269': HECHOS_SEGUIMIENTO },
   });
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 1);
@@ -702,7 +775,7 @@ test('apply end-to-end: crea la cotizacion con folio+etapa y re-correr NO duplic
     pedidos: [PEDIDO],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE },
-    etapas: { '7269': 'saldo_pagado' },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
   }).deps;
   // Deps reales para idempotencia: listarCotizaciones lee el store real.
   function depsConStore() {
