@@ -128,6 +128,38 @@ test('apiCall: intervalo 0 (default) no espacia (la app normal no se ve afectada
   }
 });
 
+// Robustez del backfill (#76) y el sync #62: un cliente sin transacciones/pedidos en
+// el rango hace que Operam responda 404. Eso NO es error: es una lista vacia. Sin esto
+// el backfill truena a media corrida al toparse un cliente sin movimientos (visto en
+// vivo 2026-06-19: 404 en listarTransacciones aborto el dry-run).
+test('listarTransacciones: un 404 de Operam (cliente sin transacciones) devuelve [], no lanza', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/transactions': () => jsonResponse({ errors: ['No transactions found'] }, 404),
+  });
+  try {
+    const r = await listarTransacciones({ rfc: 'XAXX010101000', desde: '2025-01-01', hasta: '2026-01-01' });
+    assert.deepEqual(r, []);
+  } finally {
+    restore();
+  }
+});
+
+test('listarPedidos: un 404 de Operam (cliente sin pedidos) devuelve [], no lanza', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_orders': () => jsonResponse({ errors: ['No orders found'] }, 404),
+  });
+  try {
+    const r = await listarPedidos({ debtorNo: 999999, desde: '2025-01-01', hasta: '2026-01-01' });
+    assert.deepEqual(r, []);
+  } finally {
+    restore();
+  }
+});
+
 test('buscarClientePorRFC: un 404 de Operam (RFC inexistente) devuelve { encontrado: false }', async () => {
   resetSession();
   const restore = mockFetchByUrl({
