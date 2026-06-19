@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esActivoParaImportar, mapearSalesman, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -382,6 +382,167 @@ test('planearBackfill: dos candidatos con el MISMO folio en la corrida no se dup
   });
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 1);
+  assert.equal(plan.skips.duplicado, 1);
+});
+
+// --- PARTE B: descubrirFolioMax (probe acotado hacia arriba) ---
+// Descubre el folio mas alto de quotes probando GET /quote/{id} hacia arriba desde
+// un inicio, hasta acumular una racha de N 404 consecutivos (techo). Acotado: nunca
+// excede `limite` probes. Inyectable con un obtenerQuote mock (cero red).
+
+test('descubrirFolioMax: encuentra el ultimo folio existente antes de la racha de 404', async () => {
+  // Existen 1141..1145; de 1146 en adelante 404.
+  const existentes = new Set(['1141', '1142', '1143', '1144', '1145']);
+  const obtenerQuote = async (id) => (existentes.has(String(id)) ? { trans_no: String(id) } : null);
+  const max = await descubrirFolioMax({ obtenerQuote, inicio: 1141, maxRacha: 3, limite: 100 });
+  assert.equal(max, 1145);
+});
+
+test('descubrirFolioMax: salta huecos de 404 cortos (folios no contiguos)', async () => {
+  // 1141, (1142 hueco), 1143, 1144; corta tras 3 404 seguidos (1145,1146,1147).
+  const existentes = new Set(['1141', '1143', '1144']);
+  const obtenerQuote = async (id) => (existentes.has(String(id)) ? { trans_no: String(id) } : null);
+  const max = await descubrirFolioMax({ obtenerQuote, inicio: 1141, maxRacha: 3, limite: 100 });
+  assert.equal(max, 1144);
+});
+
+test('descubrirFolioMax: respeta el limite de probes (acotado, no corre sin fin)', async () => {
+  // Todos existen: sin limite caminaria sin fin. Con limite=5 desde 1000 -> 1004.
+  const obtenerQuote = async (id) => ({ trans_no: String(id) });
+  const max = await descubrirFolioMax({ obtenerQuote, inicio: 1000, maxRacha: 3, limite: 5 });
+  assert.equal(max, 1004);
+});
+
+test('descubrirFolioMax: el inicio no existe y nada mas tampoco -> devuelve null', async () => {
+  const obtenerQuote = async () => null;
+  const max = await descubrirFolioMax({ obtenerQuote, inicio: 5000, maxRacha: 3, limite: 100 });
+  assert.equal(max, null);
+});
+
+// --- PARTE B: planearBackfillSinPedido (id-walk de cotizaciones sin pedido) ---
+// Camina folios de quotes de folioMax hacia abajo: importa las cotizaciones que
+// NUNCA se volvieron pedido (no estan en foliosConPedido), en la ventana de los
+// ultimos 6 meses (ord_date >= fechaCorte), en etapa `seguimiento`.
+
+const QUOTE_B = {
+  trans_no: '1150', debtor_no: '394', ord_date: '2026-05-01', delivery_date: '2026-05-31',
+  cust_ref: 'Sin Pedido', total: '5800', salesman: 8,
+};
+
+function planBDeps({ quotes = {}, debtors = {}, foliosConPedido = [], cotizaciones = [], folioMax = 1155, fechaCorte = '2025-12-18' } = {}) {
+  const llamadas = { quotes: [], debtors: [] };
+  const obtenerQuote = async (id) => { llamadas.quotes.push(String(id)); return quotes[String(id)] || null; };
+  const obtenerDebtor = async (no) => { llamadas.debtors.push(String(no)); return debtors[String(no)] || null; };
+  return {
+    llamadas,
+    deps: {
+      obtenerQuote,
+      obtenerDebtor,
+      foliosConPedido: new Set(foliosConPedido.map(String)),
+      listarCotizaciones: async () => cotizaciones,
+      vendedores: VENDEDORES,
+      folioMax,
+      fechaCorte,
+    },
+  };
+}
+
+test('planearBackfillSinPedido: importa un quote sin pedido en la ventana, etapa seguimiento', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 1);
+  const e = plan.importar[0];
+  assert.equal(e.folioOperam, '1150');
+  assert.equal(e.etapa, 'seguimiento');
+  assert.equal(e.cliente, 'JUANA HERNANDEZ GARCIA');
+  assert.equal(e.data.cliente.rfc, 'HEGJ800101AB1');
+  assert.equal(e.data.orderOperam, null);   // nunca fue pedido
+  assert.equal(e.data.backfill, true);
+});
+
+test('planearBackfillSinPedido: SALTA el folio que SI se volvio pedido (entro por parte A)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    foliosConPedido: ['1150'],
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.conPedido, 1);
+});
+
+test('planearBackfillSinPedido: SALTA un folio 404 (inexistente/anulado) y sigue', async () => {
+  const { deps, llamadas } = planBDeps({
+    quotes: { '1150': QUOTE_B },   // 1151..1153 no existen
+    debtors: { '394': DEBTOR },
+    folioMax: 1153,
+  });
+  // maxRachaVacia=5 corta a los 5 404 seguidos: tras 1150 baja 1149..1145 y detiene.
+  deps.maxRachaVacia = 5;
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.importar[0].folioOperam, '1150');
+  // Lee 1153,1152,1151 (404), 1150 (existe), luego 1149..1145 (5 404) -> detiene.
+  assert.deepEqual(llamadas.quotes, ['1153', '1152', '1151', '1150', '1149', '1148', '1147', '1146', '1145']);
+});
+
+test('planearBackfillSinPedido: una racha larga de 404 hacia abajo DETIENE el walk (acota volumen)', async () => {
+  // folioMax muy alto sobre un hueco de 404: sin el techo de racha el walk bajaria
+  // hasta folioMin probando cientos de 404 (volumen -> 429). maxRachaVacia lo corta
+  // a los 10 404 seguidos -> 10 GET y para (no llega al 1150 que esta mas abajo).
+  const { deps, llamadas } = planBDeps({
+    quotes: { '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    folioMax: 1200,
+  });
+  deps.maxRachaVacia = 10;
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(llamadas.quotes.length, 10, 'corta a los 10 404 seguidos, no baja hasta folioMin');
+  assert.equal(plan.importar.length, 0, 'el 1150 queda por debajo de la racha -> no se alcanza');
+});
+
+test('planearBackfillSinPedido: DETIENE el walk cuando ord_date < fechaCorte (fuera de ventana)', async () => {
+  const viejo = { ...QUOTE_B, trans_no: '1149', ord_date: '2025-01-10' }; // anterior al corte
+  const { deps, llamadas } = planBDeps({
+    quotes: { '1150': QUOTE_B, '1149': viejo },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+    fechaCorte: '2025-12-18',
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  // 1150 entra; 1149 es viejo -> DETIENE (no lee 1148 hacia abajo).
+  assert.equal(plan.importar.length, 1);
+  assert.deepEqual(llamadas.quotes, ['1150', '1149']);
+});
+
+test('planearBackfillSinPedido: SALTA folios de prueba (1157, 1159-1163) y debtors 14/1', async () => {
+  const prueba1 = { ...QUOTE_B, trans_no: '1157' };
+  const prueba2 = { ...QUOTE_B, trans_no: '1160', debtor_no: '14' };
+  const { deps } = planBDeps({
+    quotes: { '1157': prueba1, '1160': prueba2, '1150': QUOTE_B },
+    debtors: { '394': DEBTOR, '14': { debtor_no: '14', CustName: 'PUBLICO EN GENERAL', tax_id: 'XAXX010101000', curr_code: 'MXN' } },
+    folioMax: 1160,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  // Solo 1150 importa; 1157 (folio prueba) y 1160 (debtor 14) se saltan.
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.importar[0].folioOperam, '1150');
+});
+
+test('planearBackfillSinPedido: SALTA folio ya existente en el store (idempotente)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    cotizaciones: [{ id: 9, folioOperam: '1150', data: {} }],
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
   assert.equal(plan.skips.duplicado, 1);
 });
 
