@@ -369,6 +369,27 @@ test('planearBackfill: pagina (varias paginas de pedidos)', async () => {
   assert.equal(plan.importar.length, 101);
 });
 
+test('planearBackfill: expone foliosConPedido$ con TODOS los folios candidatos (incluso entregados/duplicados)', async () => {
+  // La parte B necesita el set de folios que SI se volvieron pedido para saltarlos.
+  // Debe incluir candidatos entregados (no importados) y duplicados, no solo los
+  // importables; si no, la parte B re-importaria como seguimiento un folio ya
+  // ordenado y entregado.
+  const activo = { order_no: '7269', trans_no_from: '1141', debtor_no: '394' };
+  const entregado = { order_no: '7280', trans_no_from: '1145', debtor_no: '394' };
+  const ventaDirecta = { order_no: '8000', trans_no_from: '', debtor_no: '500' };
+  const { deps } = planDeps({
+    pedidos: [activo, entregado, ventaDirecta],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE, '1145': { ...QUOTE, trans_no: '1145' } },
+    etapas: { '7269': 'seguimiento', '7280': 'producto_entregado' },
+  });
+  const plan = await planearBackfill(deps);
+  assert.ok(plan.foliosConPedido instanceof Set);
+  assert.equal(plan.foliosConPedido.has('1141'), true);  // activo, importado
+  assert.equal(plan.foliosConPedido.has('1145'), true);  // entregado, NO importado pero SI fue pedido
+  assert.equal(plan.foliosConPedido.has(''), false);     // venta directa no aporta folio
+});
+
 test('planearBackfill: dos candidatos con el MISMO folio en la corrida no se duplican entre si', async () => {
   // Idempotencia intra-corrida: aunque dos pedidos compartan trans_no_from (no
   // deberia pasar, pero defensivo), solo se importa uno.

@@ -43,7 +43,7 @@ if (APPLY && !process.env.DATABASE_URL) {
 }
 
 const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente } = await import('../lib/operam-client.js');
-const { planearBackfill, memoizarPorClave } = await import('../lib/backfill-operam.mjs');
+const { planearBackfill, planearBackfillSinPedido, descubrirFolioMax, memoizarPorClave } = await import('../lib/backfill-operam.mjs');
 const { hechosDeOperam } = await import('../lib/sync-operam-io.js');
 const { etapaPostVenta } = await import('../lib/sync-operam.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
@@ -73,6 +73,9 @@ async function obtenerDebtor(debtorNo) {
 // las ~840 lecturas en rafaga que disparaban el 429.
 const listarTransaccionesMemo = memoizarPorClave(listarTransacciones, ({ rfc }) => `tx:${rfc}`);
 const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo }) => `ped:${debtorNo}`);
+// El quote tambien se memoiza: la parte A lo lee por trans_no_from y la parte B
+// camina ids; un mismo folio no se lee dos veces entre ambas partes.
+const obtenerQuoteMemo = memoizarPorClave(obtenerQuote, (id) => `q:${id}`);
 
 // La etapa post-venta de la oportunidad: lee Operam (read-only) con binding
 // PRECISO (op.data.orderOperam = order_no del pedido) y aplica el nucleo puro.
@@ -91,7 +94,7 @@ async function etapaDe(op) {
 const deps = {
   listarPedidosPagina: ({ skip }) => listarPedidos({ skip, limit: 100, desde, hasta }),
   obtenerDebtor,
-  obtenerQuote,
+  obtenerQuote: obtenerQuoteMemo,
   etapaDe,
   listarCotizaciones: () => cotStore.listar(),
   vendedores,
@@ -99,30 +102,80 @@ const deps = {
 };
 
 console.log(`\nBackfill #76 (${APPLY ? 'APPLY' : 'DRY-RUN'}) -- rango ${desde}..${hasta}`);
-console.log('Leyendo pedidos de Operam (read-only, paginado)...\n');
+console.log('PARTE A: leyendo pedidos de Operam (read-only, paginado)...\n');
 
 const plan = await planearBackfill(deps);
 
 console.log(`Pedidos enumerados:   ${plan.totalPedidos}`);
 console.log(`Candidatos (cotizacion de origen): ${plan.candidatos}`);
-console.log(`  Importables (activos): ${plan.importar.length}`);
+console.log(`  Importables A (activos): ${plan.importar.length}`);
 console.log(`  SKIP no-candidato (venta directa / prueba): ${plan.skips.noCandidato}`);
 console.log(`  SKIP entregado (producto_entregado): ${plan.skips.entregado}`);
 console.log(`  SKIP duplicado (folio ya en el store): ${plan.skips.duplicado}\n`);
 
 for (const e of plan.importar) {
-  console.log(`  IMPORTAR folio ${e.folioOperam} | order ${e.data.orderOperam} | ${e.etapa} | ${e.cliente} | $${e.total} | vendedor: ${e.vendedor ?? '(sin mapear)'}`);
+  console.log(`  [A] folio ${e.folioOperam} | order ${e.data.orderOperam} | ${e.etapa} | ${e.cliente} | $${e.total} | vendedor: ${e.vendedor ?? '(sin mapear)'}`);
 }
 
+// PARTE B (scope revisado #76): cotizaciones que NUNCA se volvieron pedido, ventana
+// ultimos 6 meses, en etapa seguimiento. Los quotes no son enumerables -> id-walk.
+// fechaCorte = hoy - 6 meses (corta por ord_date del quote).
+const fechaCorte = (() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return d.toISOString().slice(0, 10); })();
+
+// folioMax: el techo del rango de folios a caminar. Se DESCUBRE probando hacia
+// arriba (los quotes no se enumeran) desde el folio candidato mas alto de la parte A
+// (el ultimo quote que SI se volvio pedido); por encima de el solo pueden quedar
+// quotes recientes sin pedido. Si la parte A no hallo candidatos, no hay semilla
+// segura -> se omite la parte B (el orquestador define el techo a mano).
+const folioSeed = [...plan.foliosConPedido].map(Number).filter(Number.isFinite).reduce((a, b) => Math.max(a, b), 0);
+
+console.log(`\nPARTE B: id-walk de cotizaciones sin pedido (ventana desde ${fechaCorte})...`);
+let planB = { importar: [], skips: {}, folioMax: null };
+if (folioSeed > 0) {
+  const folioMax = await descubrirFolioMax({ obtenerQuote: obtenerQuoteMemo, inicio: folioSeed, maxRacha: 10, limite: 300 });
+  console.log(`  folioMax descubierto (probe desde ${folioSeed}): ${folioMax ?? '(ninguno)'}`);
+  planB = await planearBackfillSinPedido({
+    obtenerQuote: obtenerQuoteMemo,
+    obtenerDebtor,
+    foliosConPedido: plan.foliosConPedido,
+    listarCotizaciones: () => cotStore.listar(),
+    vendedores,
+    folioMax,
+    fechaCorte,
+  });
+} else {
+  console.log('  SKIP: la parte A no hallo candidatos -> sin semilla de folioMax (define el techo a mano).');
+}
+
+console.log(`  Importables B (seguimiento): ${planB.importar.length}`);
+console.log(`  SKIP con-pedido (ya entro por A): ${planB.skips.conPedido ?? 0}`);
+console.log(`  SKIP prueba (folio/debtor de prueba): ${planB.skips.prueba ?? 0}`);
+console.log(`  SKIP duplicado (folio ya en el store): ${planB.skips.duplicado ?? 0}\n`);
+
+for (const e of planB.importar) {
+  console.log(`  [B] folio ${e.folioOperam} | seguimiento | ${e.cliente} | $${e.total} | vendedor: ${e.vendedor ?? '(sin mapear)'}`);
+}
+
+// Fusion de ambas partes (A activos + B seguimiento). folioOperam es disjunto por
+// construccion (B salta los folios de A via foliosConPedido), pero defensivo: dedup
+// por folioOperam por si acaso.
+const porFolio = new Map();
+for (const e of [...plan.importar, ...planB.importar]) {
+  if (!porFolio.has(e.folioOperam)) porFolio.set(e.folioOperam, e);
+}
+const importar = [...porFolio.values()];
+
+console.log(`TOTAL a importar: ${importar.length} (A activos ${plan.importar.length} + B seguimiento ${planB.importar.length}).`);
+
 if (!APPLY) {
-  console.log(`\nDRY-RUN: se crearian ${plan.importar.length} cotizaciones. No se escribio nada (sin --apply).`);
+  console.log(`\nDRY-RUN: se crearian ${importar.length} cotizaciones. No se escribio nada (sin --apply).`);
   process.exit(0);
 }
 
 // APPLY: crea cada entrada en el store (crear -> setFolioOperam -> cambiarEtapa).
-console.log(`\nAPPLY: creando ${plan.importar.length} cotizaciones...`);
+console.log(`\nAPPLY: creando ${importar.length} cotizaciones...`);
 let creadas = 0;
-for (const e of plan.importar) {
+for (const e of importar) {
   const id = await cotStore.crear(e);
   await cotStore.setFolioOperam(id, e.folioOperam);
   await cotStore.cambiarEtapa(id, e.etapa, {
