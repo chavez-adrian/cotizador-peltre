@@ -77,13 +77,17 @@ async function obtenerDebtor(debtorNo) {
 }
 
 // Control de VOLUMEN (issue #76, blocker 429): hechosDeOperam re-lee
-// transacciones (por RFC) y pedidos (por debtor_no) POR candidato, y muchos
-// candidatos comparten el mismo cliente. Memoizamos ambas lecturas por su clave
-// (rfc / debtor_no) para que un mismo cliente se lea UNA sola vez en toda la
-// corrida (igual que ya se cachea obtenerCliente con debtorCache). Esto recorta
-// las ~840 lecturas en rafaga que disparaban el 429.
-const listarTransaccionesMemo = memoizarPorClave(listarTransacciones, ({ customerId, rfc }) => `tx:${customerId ?? rfc}`);
-const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo }) => `ped:${debtorNo}`);
+// transacciones (por customer_id/RFC) y pedidos (por debtor_no) POR candidato, y
+// muchos candidatos comparten el mismo cliente. Memoizamos ambas lecturas por su
+// clave para que un mismo cliente se lea UNA sola vez en toda la corrida (igual que
+// ya se cachea obtenerCliente con debtorCache). Esto recorta las ~840 lecturas en
+// rafaga que disparaban el 429. La clave incluye el `skip` de pagina: hechosDeOperam
+// ahora pagina la cuenta COMPLETA del cliente (clientes con >100 tx, p.ej. el
+// generico), asi cada pagina se cachea por separado y un segundo candidato del mismo
+// cliente reusa TODAS sus paginas sin re-leer (sin el skip en la clave las paginas
+// colisionarian y la paginacion entraria en loop).
+const listarTransaccionesMemo = memoizarPorClave(listarTransacciones, ({ customerId, rfc, skip = 0 }) => `tx:${customerId ?? rfc}:${skip}`);
+const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo, skip = 0 }) => `ped:${debtorNo}:${skip}`);
 // El quote tambien se memoiza: la parte A lo lee por trans_no_from y la parte B
 // camina ids; un mismo folio no se lee dos veces entre ambas partes.
 const obtenerQuoteMemo = memoizarPorClave(obtenerQuote, (id) => `q:${id}`);

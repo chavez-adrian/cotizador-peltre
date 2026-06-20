@@ -139,6 +139,40 @@ test('hechosDeOperam: el folio de cotizacion NO se usa como order_ (cotizacion !
   assert.equal(hechos.pago.allocated, 16954 + 100);
 });
 
+// Paginacion (#76): un cliente con >100 transacciones (el generico, 728 reales) tiene
+// la cadena del pedido objetivo fuera de la primera pagina. Leer solo la pagina 1
+// pierde la cadena, el binding por order_ falla y los hechos se contaminan con el
+// agregado de OTROS pedidos del mismo cliente (medido en vivo: 7 pedidos del generico
+// 184 mostrados como activos cuando estaban cerrados). El motor debe paginar la cuenta
+// completa (corte natural en pagina < 100, asi un cliente normal sigue costando 1 sola
+// lectura). Tambien afecta al sync #62 en produccion, no solo al backfill.
+test('hechosDeOperam: pagina la cuenta del cliente para hallar la cadena fuera de la pagina 1 (>100 tx)', async () => {
+  const ORDER = '5864';
+  // Pagina 1: 100 facturas RUIDO de otros pedidos (saldadas, sin remision).
+  const ruido = Array.from({ length: 100 }, (_, i) => ({
+    type: '10', order_: String(900000 + i), total_amount: '1000', allocated: '1000', outstanding: '0', debtor_no: '184',
+  }));
+  // Pagina 2: la cadena REAL del order objetivo (factura liquidada + remision).
+  const cadena = [
+    { type: '10', order_: ORDER, total_amount: '7800', allocated: '7800', outstanding: '0', debtor_no: '184' },
+    { type: '13', order_: ORDER, total_amount: '7800', allocated: '0', outstanding: '0', debtor_no: '184' },
+  ];
+  const todasTx = [...ruido, ...cadena];
+  const todosPed = [
+    ...Array.from({ length: 100 }, (_, i) => ({ order_no: String(900000 + i), trans_type: '30', debtor_no: '184' })),
+    { order_no: ORDER, trans_type: '30', debtor_no: '184' },
+  ];
+  const paginado = (arr) => async ({ skip = 0, limit = 100 } = {}) => arr.slice(skip, skip + limit);
+  const deps = { listarTransacciones: paginado(todasTx), listarPedidos: paginado(todosPed) };
+  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'XAXX010101000', customerId: '184' }, orderOperam: ORDER } };
+  const hechos = await hechosDeOperam(op, deps);
+  // Debe ver SOLO la cadena del order 5864 (no el ruido): liquidada + entregada.
+  assert.equal(hechos.pago.allocated, 7800);
+  assert.equal(hechos.pago.outstanding, 0);
+  assert.equal(hechos.tieneRemision, true);
+  assert.equal(hechos.tienePedido, true);
+});
+
 // --- AC2 (#67): binding por documento de origen (trans_no_from === folioOperam) ---
 
 test('AC2: resuelve el order_ por trans_no_from === folioOperam (filtra a esa cadena, varios pedidos del cliente)', async () => {
