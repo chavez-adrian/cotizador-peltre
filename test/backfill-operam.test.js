@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -159,6 +159,18 @@ test('etapaBackfill: $0 sin pedido -> seguimiento (no inventa etapa de pago)', (
 test('etapaBackfill: total>0 conserva el comportamiento (saldo_pagado real, no se ignora)', () => {
   const hechos = { tieneRemision: false, tienePedido: true, pago: { allocated: 100, total: 100 } };
   assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }, 100), 'saldo_pagado');
+});
+
+// --- entregaCompleta: una remision PARCIAL no es "entregado" (#76, caso 6988) ---
+// El detalle del pedido trae qty_sent vs quantity por renglon. La entrega es completa
+// solo si TODOS los renglones tienen qty_sent >= quantity. Un pedido con remision parcial
+// (6988: 33 de 51 piezas) + pagado 100% NO debe cerrarse (sigue abierto).
+test('entregaCompleta: true solo si todos los renglones tienen qty_sent >= quantity', () => {
+  assert.equal(entregaCompleta([{ quantity: '2', qty_sent: '2' }, { quantity: '1', qty_sent: '1' }]), true);
+  assert.equal(entregaCompleta([{ quantity: '2', qty_sent: '1' }, { quantity: '1', qty_sent: '1' }]), false); // parcial
+  assert.equal(entregaCompleta([{ quantity: '1', qty_sent: '0' }]), false);
+  assert.equal(entregaCompleta([]), false);   // sin renglones: no se afirma completa
+  assert.equal(entregaCompleta(null), false);
 });
 
 // --- esSucursalTlapacoya: CRITERIO 1 #76, solo se importa la sucursal 01 ---
@@ -560,16 +572,36 @@ test('planearBackfill: importa un candidato activo con cabecera completa', async
 });
 
 test('planearBackfill: SKIP cerrado (entregado Y pagado al 100% no se importa)', async () => {
-  // CRITERIO 2: cerrado = tieneRemision Y pagado al 100%. Esos no se importan.
+  // CRITERIO 2: cerrado = tieneRemision Y pagado al 100%. Esos no se importan. Con
+  // obtenerDetalle de entrega TOTAL (qty_sent>=quantity) la remision cierra normalmente.
   const { deps } = planDeps({
     pedidos: [PEDIDO],
     debtors: { '394': DEBTOR },
     quotes: { '1141': QUOTE },
     hechos: { '7269': HECHOS_CERRADO },
   });
+  deps.obtenerDetalle = async () => ({ detalles: [{ quantity: '5', qty_sent: '5' }] }); // entrega total
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 0);
   assert.equal(plan.skips.cerrado, 1);
+});
+
+test('planearBackfill: entrega PARCIAL + pagado NO se cierra (lee el detalle, #76 caso 6988)', async () => {
+  // 6988: remision parcial (33 de 51 piezas) + pagado 100% se cerraba mal. Ahora
+  // planearBackfill lee el detalle (obtenerDetalle); si la entrega no esta completa, la
+  // remision no cuenta -> NO cerrado, sigue abierto. Pagado 100% + no entregado completo
+  // -> saldo_pagado (no producto_entregado).
+  const { deps } = planDeps({
+    pedidos: [PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    hechos: { '7269': HECHOS_CERRADO }, // tieneRemision + pagado 100% -> seria cerrado
+  });
+  deps.obtenerDetalle = async (orderNo) => { assert.equal(String(orderNo), '7269'); return { detalles: [{ quantity: '10', qty_sent: '3' }] }; };
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.skips.cerrado, 0);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.importar[0].etapa, 'saldo_pagado');
 });
 
 test('planearBackfill: SKIP pedido cancelado (order_no en cancelados, no se importa)', async () => {

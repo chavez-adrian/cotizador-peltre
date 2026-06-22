@@ -45,7 +45,7 @@ if (APPLY && !process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente, _setMinInterval } = await import('../lib/operam-client.js');
+const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente, obtenerPedido, _setMinInterval } = await import('../lib/operam-client.js');
 const { planearBackfill, planearBackfillSinPedido, descubrirFolioMax, memoizarPorClave } = await import('../lib/backfill-operam.mjs');
 const { hechosDeOperam } = await import('../lib/sync-operam-io.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
@@ -104,6 +104,9 @@ const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo, skip = 0 
 // El quote tambien se memoiza: la parte A lo lee por trans_no_from y la parte B
 // camina ids; un mismo folio no se lee dos veces entre ambas partes.
 const obtenerQuoteMemo = memoizarPorClave(obtenerQuote, (id) => `q:${id}`);
+// Detalle del pedido (qty_sent vs quantity, #76 caso 6988): solo se lee para candidatos
+// con remision, para distinguir entrega TOTAL de PARCIAL. Memoizado por order_no.
+const obtenerPedidoMemo = memoizarPorClave(obtenerPedido, (orderNo) => `det:${orderNo}`);
 
 // Los HECHOS post-venta crudos de la oportunidad (CRITERIO 2): lee Operam
 // (read-only) con binding PRECISO (op.data.orderOperam = order_no del pedido) y
@@ -125,6 +128,7 @@ const deps = {
   obtenerDebtor,
   obtenerQuote: obtenerQuoteMemo,
   obtenerHechos,
+  obtenerDetalle: obtenerPedidoMemo,
   listarCotizaciones: () => cotStore.listar(),
   vendedores,
   cancelados: cancelados.orders || [],
