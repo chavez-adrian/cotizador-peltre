@@ -103,31 +103,32 @@ test('esCerrado: >0 con remision pagado al 100% -> true (cerrado normal)', () =>
   assert.equal(esCerrado({ tieneRemision: true, pago: { allocated: 100, total: 100 } }, 100), true);
 });
 
-test('etapaBackfill: entregado-impago deriva la etapa IGNORANDO la remision (no producto_entregado)', () => {
-  // Remision + anticipo + pedido: ignora la remision y toma la etapa MAS avanzada de
-  // los hechos restantes (pedido_liberado > anticipo_pagado, orden del pipeline #62).
-  // Lo clave: NO es producto_entregado -> no se ve cerrada (refleja la cobranza viva).
+test('etapaBackfill: entregado-impago -> producto_entregado (cumplimiento manda, #77)', () => {
+  // #77 (decision Adrian): el eje que manda en el pipeline es el CUMPLIMIENTO, no la
+  // cobranza. Un pedido con remision se ve como producto_entregado AUNQUE el pago no
+  // este liquidado: por politica no se entrega sin pago completo, asi que el faltante
+  // en el sistema es casi siempre el desfase de registro de la contadora. La cobranza
+  // pendiente se marca aparte (data.cobranza -> badge "Pago sin registrar"), sin
+  // retroceder la etapa. Antes esta funcion ignoraba la remision y daba pedido_liberado.
   const hechos = { tieneRemision: true, tienePedido: true, pago: { allocated: 30, total: 100 } };
-  const etapa = etapaBackfill(hechos, { etapa: 'seguimiento' });
-  assert.equal(etapa, 'pedido_liberado');
-  assert.notEqual(etapa, 'producto_entregado');
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'producto_entregado');
 });
 
-test('etapaBackfill: entregado-impago SIN pedido con anticipo cae a anticipo_pagado', () => {
-  // Sin pedido (tienePedido false) y pago parcial: la unica etapa implicada al ignorar
-  // la remision es anticipo_pagado (refleja el avance de pago, no cerrada).
+test('etapaBackfill: entregado-impago SIN pedido -> producto_entregado (la remision manda, #77)', () => {
+  // Aun sin pedido y con pago parcial, la remision es la senal mas avanzada: el
+  // producto salio. La cobranza (anticipo) se persiste aparte en data.cobranza.
   const hechos = { tieneRemision: true, tienePedido: false, pago: { allocated: 30, total: 100 } };
-  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'anticipo_pagado');
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'producto_entregado');
 });
 
-test('etapaBackfill: entregado-impago sin anticipo cae a pedido_liberado (hay pedido)', () => {
+test('etapaBackfill: entregado sin anticipo -> producto_entregado (#77)', () => {
   const hechos = { tieneRemision: true, tienePedido: true, pago: { allocated: 0, total: 100 } };
-  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'pedido_liberado');
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'producto_entregado');
 });
 
-test('etapaBackfill: entregado-impago sin pedido ni pago cae a seguimiento', () => {
+test('etapaBackfill: entregado sin pedido ni pago -> producto_entregado (#77)', () => {
   const hechos = { tieneRemision: true, tienePedido: false, pago: { allocated: 0, total: 0 } };
-  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'seguimiento');
+  assert.equal(etapaBackfill(hechos, { etapa: 'seguimiento' }), 'producto_entregado');
 });
 
 test('etapaBackfill: no-entregado pagado al 100% -> saldo_pagado (etapa normal, sin tocar)', () => {
@@ -552,9 +553,10 @@ test('planearBackfill: SKIP cerrado (entregado Y pagado al 100% no se importa)',
   assert.equal(plan.skips.cerrado, 1);
 });
 
-test('planearBackfill: entregado-IMPAGO se importa con etapa NO producto_entregado (CRITERIO 2)', async () => {
-  // Entregado pero pagado parcial -> cobranza pendiente -> SE importa. La etapa
-  // refleja el avance de pago (anticipo_pagado), no producto_entregado.
+test('planearBackfill: entregado-IMPAGO se importa como producto_entregado + cobranza (#77)', async () => {
+  // #77: entregado pero pagado parcial -> SE importa (no es cerrado). La etapa refleja
+  // el CUMPLIMIENTO (producto_entregado, la remision manda); la cobranza pendiente NO
+  // retrocede la etapa, se persiste en data.cobranza ('anticipo') para el badge.
   const { deps } = planDeps({
     pedidos: [PEDIDO],
     debtors: { '394': DEBTOR },
@@ -564,9 +566,8 @@ test('planearBackfill: entregado-IMPAGO se importa con etapa NO producto_entrega
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 1);
   assert.equal(plan.skips.cerrado, 0);
-  // tienePedido + anticipo -> pedido_liberado (la mas avanzada al ignorar la remision).
-  assert.equal(plan.importar[0].etapa, 'pedido_liberado');
-  assert.notEqual(plan.importar[0].etapa, 'producto_entregado');
+  assert.equal(plan.importar[0].etapa, 'producto_entregado');
+  assert.equal(plan.importar[0].data.cobranza, 'anticipo');
 });
 
 test('planearBackfill: SKIP cerrado para muestra $0 entregada (CRITERIO 2: total<=0 + remision)', async () => {
@@ -597,6 +598,26 @@ test('planearBackfill: muestra $0 SIN entregar se importa (pendiente de envio, s
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 1);
   assert.equal(plan.skips.cerrado, 0);
+  // $0 (muestra): la cobranza no aplica (no se factura) -> null, sin badge.
+  assert.equal(plan.importar[0].data.cobranza, null);
+});
+
+test('planearBackfill: entregado SIN pago registrado -> producto_entregado + cobranza pendiente (#77, caso desfase)', async () => {
+  // El caso tipico de #77: factura emitida (total>0) y producto entregado (remision),
+  // pero el pago aun NO esta registrado (allocated 0 = desfase de la contadora). La
+  // etapa refleja el cumplimiento (producto_entregado) y la cobranza queda 'pendiente'
+  // -> el frontend pinta el badge "Pago sin registrar".
+  const HECHOS_ENTREGADO_SINPAGO = { pago: { allocated: 0, outstanding: 100, total: 100 }, tienePedido: true, tieneRemision: true };
+  const { deps } = planDeps({
+    pedidos: [PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    hechos: { '7269': HECHOS_ENTREGADO_SINPAGO },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.importar[0].etapa, 'producto_entregado');
+  assert.equal(plan.importar[0].data.cobranza, 'pendiente');
 });
 
 test('planearBackfill: SKIP duplicado (folioOperam ya existe en el store)', async () => {
