@@ -29,15 +29,15 @@ c3a56b6 fix(#76): pagina la cuenta del cliente en hechosDeOperam
 
 **Hallazgos (no derivables del código):** detalle solo en `sales_order/{id}` singular. El detector frágil perdía cancelados al expirar la sesión web (5632, 6362) → arreglado con re-login + scrapear TODOS los candidatos. Los conteos de importables varían ±algunos entre corridas por datos en vivo (NO es bug).
 
-**Estado al escribir:** corriendo (puede haber terminado) la regeneración del HTML de revisión con 12 cancelados + entrega parcial + Prospecto/Proyecto del pedido. Total esperado ~**86** (Parte A ~16-18 + Parte B 70; 45 del genérico). Última corrida cerrada: 88 (18 A + 70 B) con 10 cancelados; con 12 baja ~2.
+**HTML final CONFIRMADO** (`backfill-revision.html`, enviado a Adrián): total **86** = 16 Parte A + 70 Parte B (BN 25 + BG **45 del genérico**). 12 cancelados excluidos (5632 y 6362 ya NO aparecen), 6988 rescatado (entrega parcial → `saldo_pagado`). skips A: cerrado 206, cancelado 12. entregados 7 (los 7 con "Pago sin registrar"). suma $2,745,502.47.
 
 **PENDIENTE — 2 decisiones que desbloquean el `--apply`:**
-1. **Import set:** ¿todo (A+B, ~86) o solo Parte A (~16-18)?
-2. **Genérico (debtor 184):** ~45 importables son GENERICO TIENDAS DIGITALES (casi todo Parte B). ¿Abrir issue para rescatarlos como prospectos (con `contactoEntrega`+`customer_ref`) o excluir el debtor 184? Ver memoria `decision-mostrador-vendedor`.
+1. **Import set:** ¿todo (A+B, **86**) o solo Parte A (**16**, "vivo y limpio")?
+2. **Genérico (debtor 184):** **45** importables son GENERICO TIENDAS DIGITALES (casi todo Parte B). ¿Abrir issue para rescatarlos como prospectos (con `contactoEntrega`+`customer_ref`) o excluir el debtor 184? Ver memoria `decision-mostrador-vendedor`.
 
 **Próxima acción al retomar:**
-1. Revisar `backfill-revision.html` / `_gen.log` para el conteo final; confirmar que 5632 y 6362 ya NO aparecen; enviar a Adrián. Borrar temporales `_gen-html.tmp.mjs`/`_gen.log` si quedaron.
-2. Retomar las 2 decisiones del `--apply`. **NO correr `--apply` sin go-ahead explícito.**
+1. (HECHO) HTML final enviado a Adrián: 86 (16 A + 70 B); 5632/6362 fuera, 6988 dentro. Temporales borrados. → **Retomar directamente en las 2 decisiones de abajo.**
+2. Resolver las 2 decisiones del `--apply` (import set + genérico). **NO correr `--apply` sin go-ahead explícito.**
 3. Si Adrián reporta otro caso: sondear en vivo (script temporal `_probe-*.tmp.mjs`: login API + `hechosDeOperam`/`esCerrado`/`etapaBackfill`, borrar al terminar), diagnosticar, fix con TDD, commit.
 
 **Comandos:** `npm test` · `node scripts/detectar-cancelados.mjs` (regenera cancelados.json, ~3 min) · `node scripts/backfill-operam.mjs` (dry-run, ~6 min) · el generador del HTML se recrea como `_gen-html.tmp.mjs` (inyecta `obtenerDetalle` + `cancelados`; Prospecto=`contactoEntrega`, Proyecto=`customer_ref`).
