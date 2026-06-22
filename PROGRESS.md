@@ -2,6 +2,48 @@
 
 > Este archivo es solo para **retomar**: estado, backlog activo, cómo orquestar, y decisiones/lecciones que NO viven en otro lado. El detalle de cada issue cerrado está en **git** (commits del merge) y en el **comentario de cierre del issue** en GitHub; las decisiones de dominio en **CONTEXT.md**/ADRs; el API de Operam en **peltre-operam.md**. No duplicar ese detalle aquí.
 
+## CHECKPOINT 2026-06-22 — Revisión del backfill con Adrián (SESIÓN ACTIVA, retomar aquí)
+
+Rama **`issue-76-backfill`** (NO mergeada, NO pusheada). DRY-RUN; **NADA escrito a producción**. Tests **931/931 verde**. El `--apply` exige `DATABASE_URL` (Neon real, solo en Render) y sigue **bloqueado** a la espera de 2 decisiones (abajo).
+
+**Commits de la sesión (orden):**
+```
+8accee7 chore(#76): cancelados.json regenerado con detector robusto (12 pedidos)
+735956e fix(#76): detector de cancelados robusto (re-login + todos los candidatos)
+275bf65 fix(#76): no cierra pedidos con entrega PARCIAL (lee qty_sent vs quantity)
+23af3d7 chore(#76): data/cancelados.json (10)  [superado por 8accee7]
+ec96f6b fix: reintenta lecturas ante caidas de red (ECONNRESET)
+af12a6e fix(#76): customer_ref y contacto de entrega vienen del pedido, no del quote
+185f56c feat(#76): excluye pedidos/cotizaciones cancelados del backfill
+4eb52b6 feat(#77): badge "Pago sin registrar" en producto_entregado no pagado
+f5ff658 feat(#77): entregado-impago = producto_entregado + data.cobranza
+c3a56b6 fix(#76): pagina la cuenta del cliente en hechosDeOperam
+```
+
+**Decisiones (Adrián):**
+1. **#77 — cumplimiento manda sobre cobranza.** Entregado (con remisión) → `producto_entregado` aunque el pago no esté registrado; la cobranza pendiente es un badge **"Pago sin registrar"**, no retrocede la etapa. `data.cobranza` (`pagado|anticipo|pendiente|null`) + `cobranzaSinRegistrar`/`badgePagoSinRegistrarHtml` en `pipeline-logica.js`. El motor #62 ya priorizaba cumplimiento; solo el backfill lo invertía (corregido en `etapaBackfill`).
+2. **Límite de #77 (NO rediseñar pipeline):** pagado-100%-no-entregado (p.ej. 7273) se queda en `saldo_pagado`, no `pedido_liberado`. Adrián decidió **mantener `anticipo_pagado`/`saldo_pagado` como columnas** (no pasar cobranza a badges). Inconsistente con #77 pero estable.
+3. **Cancelados:** la API v3 NO expone cancelación (luce igual que activo, sin transacciones). Solo la web legacy `view_sales_order.php` (lee `0_voided` de FA). `lib/operam-web.js` (login FA `c.code`, `estaCanceladoHtml`, `esLoginHtml`, re-login) + `scripts/detectar-cancelados.mjs` → `data/cancelados.json` `{orders,quotes}`. El backfill lo lee y excluye (`skips.cancelado`); NO scrapea en runtime.
+4. **Entrega parcial:** `esCerrado` exigía solo `tieneRemision`. Una remisión PARCIAL + pagado 100% se cerraba mal (6988: 33/51 piezas). Ahora `obtenerPedido(orderNo)` lee el detalle (`qty_sent` vs `quantity`); `entregaCompleta(detalles)`; si parcial → `tieneRemision=false` → no cierra (queda `saldo_pagado`). `planearBackfill` recibe dep `obtenerDetalle`.
+5. **Prospecto/Proyecto del PEDIDO, no del quote:** `customer_ref` + nuevo `data.cliente.contactoEntrega` (deliver_to) del pedido para Parte A (caso 5960: el quote conserva el cliente original). Helper `primeroNoVacio`.
+
+**Hallazgos (no derivables del código):** detalle solo en `sales_order/{id}` singular. El detector frágil perdía cancelados al expirar la sesión web (5632, 6362) → arreglado con re-login + scrapear TODOS los candidatos. Los conteos de importables varían ±algunos entre corridas por datos en vivo (NO es bug).
+
+**Estado al escribir:** corriendo (puede haber terminado) la regeneración del HTML de revisión con 12 cancelados + entrega parcial + Prospecto/Proyecto del pedido. Total esperado ~**86** (Parte A ~16-18 + Parte B 70; 45 del genérico). Última corrida cerrada: 88 (18 A + 70 B) con 10 cancelados; con 12 baja ~2.
+
+**PENDIENTE — 2 decisiones que desbloquean el `--apply`:**
+1. **Import set:** ¿todo (A+B, ~86) o solo Parte A (~16-18)?
+2. **Genérico (debtor 184):** ~45 importables son GENERICO TIENDAS DIGITALES (casi todo Parte B). ¿Abrir issue para rescatarlos como prospectos (con `contactoEntrega`+`customer_ref`) o excluir el debtor 184? Ver memoria `decision-mostrador-vendedor`.
+
+**Próxima acción al retomar:**
+1. Revisar `backfill-revision.html` / `_gen.log` para el conteo final; confirmar que 5632 y 6362 ya NO aparecen; enviar a Adrián. Borrar temporales `_gen-html.tmp.mjs`/`_gen.log` si quedaron.
+2. Retomar las 2 decisiones del `--apply`. **NO correr `--apply` sin go-ahead explícito.**
+3. Si Adrián reporta otro caso: sondear en vivo (script temporal `_probe-*.tmp.mjs`: login API + `hechosDeOperam`/`esCerrado`/`etapaBackfill`, borrar al terminar), diagnosticar, fix con TDD, commit.
+
+**Comandos:** `npm test` · `node scripts/detectar-cancelados.mjs` (regenera cancelados.json, ~3 min) · `node scripts/backfill-operam.mjs` (dry-run, ~6 min) · el generador del HTML se recrea como `_gen-html.tmp.mjs` (inyecta `obtenerDetalle` + `cancelados`; Prospecto=`contactoEntrega`, Proyecto=`customer_ref`).
+
+---
+
 ## Estado (2026-06-17)
 - **PRD #52 (pipeline unificado de 7 etapas) COMPLETO y operando**: #53–#66 cerrados + **#62 sync Operam post-venta activado** (webhooks reales configurados). Suite **766/0**.
 - **Trabajo activo = backlog de la prueba integral**. **#69, #74, #68, #67, #71, #75 y #73 CERRADOS**. Resto: atacar uno a uno con subagente fresco.

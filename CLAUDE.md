@@ -50,7 +50,9 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 
 | Modulo | Que hace |
 |--------|----------|
-| `operam-client.js` | Bearer token auth con auto-refresh en 401. Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `listarTransacciones`, `listarPedidos`, `resetSession` |
+| `operam-client.js` | Bearer token auth con auto-refresh en 401 + retry ante caidas de red (ECONNRESET). Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `listarTransacciones`, `listarPedidos`, `obtenerPedido` (detalle con `qty_sent`/`quantity` para entrega total vs parcial, #76), `resetSession` |
+| `operam-web.js` | Acceso a la **web legacy** de Operam (FrontAccounting) para lo que la API v3 NO expone: el estado de **cancelacion** (#76, la API muestra un anulado igual que un activo). Login FA con cookie (`c.code`/company 346); `estaCanceladoHtml`/`esLoginHtml` (puros); `abrirSesionWeb` (re-loguea si la sesion expira a mitad de una corrida). Lo usa `scripts/detectar-cancelados.mjs`; el backfill NO scrapea en runtime |
+| `backfill-operam.mjs` | Nucleo PURO del backfill (#76): `planearBackfill`/`planearBackfillSinPedido` (planes A/B), `esCerrado`/`etapaBackfill` (gate cerrado + etapa; #77 cumplimiento manda), `entregaCompleta` (detalle parcial no cierra), `construirEntradaCotizacion` (Prospecto/Proyecto del PEDIDO), `mapearSalesman`, `memoizarPorClave`, `descubrirFolioMax`. Excluye cancelados de `data/cancelados.json` |
 | `sync-operam.js` | Nucleo PURO del sync post-venta (#62): `etapaPostVenta(hechos, op)` (hechos normalizados → etapa, con gate de #61 y monotonia) + `hechosDesdeOperam` (transacciones crudas → hechos). **Mapeo REAL de tipos de Operam: ver `peltre-operam.md` §12** (el MCP `operam-api` los etiqueta mal). Pago por `allocated` vs `total` (tolerancia 1%), no por `outstanding`. Sin IO. |
 | `sync-operam-io.js` | Motor de reconciliacion: lee Operam read-only (`listarTransacciones`/`listarPedidos`), normaliza, aplica el nucleo y mueve la tarjeta. Binding por `data.orderOperam` (el folio de cotizacion NUNCA es el `order_`). Lo usan el webhook y `/api/sync-operam`. |
 | `sync-operam-webhook.js` | Webhook de Operam: extraccion defensiva del identificador, clave idempotente, log en Neon. |
@@ -75,7 +77,7 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 ### Persistencia
 
 - Neon Postgres (`DATABASE_URL`) — tablas `cotizaciones` (historial + seguimientos + estado, via `lib/cotizaciones-store.js`) y `clientes_log` (auditoria de altas). El store cae a `data/cotizaciones.json` cuando no hay `DATABASE_URL` (dev local y tests); el disco de Render es efimero, asi que en produccion la fuente de verdad es Neon.
-- `data/*.json` — vendedores, precios, cajas, config. Leidos/escritos sincronicamente.
+- `data/*.json` — vendedores, precios, cajas, config. Leidos/escritos sincronicamente. `data/cancelados.json` (`{orders, quotes}`) lista los pedidos/cotizaciones ANULADOS en Operam (la API no los marca; generado por `scripts/detectar-cancelados.mjs` via scraping de la web legacy); el backfill lo lee y los excluye.
 - Migracion historica: `scripts/migrar-cotizaciones-neon.mjs` (idempotente, corrida el 2026-06-10; excluyo entradas de vendedores Test/Tester).
 
 ### Auth
