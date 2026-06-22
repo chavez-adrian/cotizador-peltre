@@ -360,6 +360,25 @@ test('construirEntradaCotizacion: customer_ref tolera nombre customer_ref ademas
   assert.equal(entrada.data.cliente.customer_ref, 'Ref Alterna');
 });
 
+test('construirEntradaCotizacion: customer_ref/contacto VIGENTES son los del PEDIDO, no del quote (#76, caso 5960)', () => {
+  // El pedido se edita tras convertir el quote: el quote puede quedar con el cliente
+  // ORIGINAL. Visto en 5960: quote = Cristian Ortiz / Hoteles Rodavento; pedido = Olga
+  // Pinales / Asesoria Creativa. El dato vigente es el del pedido (parte A tiene pedido real).
+  const pedidoEditado = { ...PEDIDO, customer_ref: 'Asesoria Creativa en Vent', deliver_to: 'Olga Pinales' };
+  const quoteOriginal = { ...QUOTE, cust_ref: 'Hoteles Rodavento', deliver_to: 'Cristian Ortiz' };
+  const entrada = construirEntradaCotizacion({ pedido: pedidoEditado, quote: quoteOriginal, debtor: DEBTOR, etapa: 'pedido_liberado', vendedores: VENDEDORES });
+  assert.equal(entrada.data.cliente.customer_ref, 'Asesoria Creativa en Vent');
+  assert.equal(entrada.data.cliente.contactoEntrega, 'Olga Pinales');
+});
+
+test('construirEntradaCotizacion: parte B (pedido sintetico sin customer_ref/deliver_to) cae al quote', () => {
+  const pedidoSintetico = { trans_no_from: '1150', order_no: null };
+  const quote = { ...QUOTE, cust_ref: 'Proyecto Quote', deliver_to: 'Contacto Quote' };
+  const entrada = construirEntradaCotizacion({ pedido: pedidoSintetico, quote, debtor: DEBTOR, etapa: 'seguimiento', vendedores: VENDEDORES });
+  assert.equal(entrada.data.cliente.customer_ref, 'Proyecto Quote');
+  assert.equal(entrada.data.cliente.contactoEntrega, 'Contacto Quote');
+});
+
 test('construirEntradaCotizacion: salesman sin match deja vendedor null (no inventa)', () => {
   const quoteSinVend = { ...QUOTE, salesman: 77 };
   const entrada = construirEntradaCotizacion({
