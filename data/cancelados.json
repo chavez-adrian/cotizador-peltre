@@ -1,13 +1,15 @@
 {
-  "generado": "2026-06-22T19:54:22.040Z",
-  "nota": "Pedidos (orders, trans_type 30) y cotizaciones (quotes, trans_type 32) ANULADOS en Operam. La API no expone la cancelacion; detectado por scraping de la web legacy (view_sales_order.php). Generado por scripts/detectar-cancelados.mjs.",
+  "generado": "2026-06-22T22:18:59.377Z",
+  "nota": "Pedidos (orders, trans_type 30) y cotizaciones (quotes, trans_type 32) ANULADOS en Operam. La API no expone la cancelacion; detectado por scraping de la web legacy (view_sales_order.php) sobre TODOS los candidatos. Generado por scripts/detectar-cancelados.mjs.",
   "orders": [
+    "5632",
     "5960",
     "5985",
     "6092",
     "6152",
     "6263",
     "6321",
+    "6362",
     "6985",
     "7021",
     "7043",
