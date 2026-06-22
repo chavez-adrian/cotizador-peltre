@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, cobranzaSinRegistrar, badgePagoSinRegistrarHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, cobranzaSinRegistrar, badgePagoSinRegistrarHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -657,4 +657,41 @@ test('Q51: el paso de archivos (paso 6) ofrece un input de archivo para subir a 
 test('Q52: la tarjeta del tablero pinta el control de decorado en una cotizacion en Seguimiento', () => {
   const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'seguimiento', decorado: true, calcaChecklist: [{ clave: 'arte_final', completo: true }] })]);
   assert.match(tablero, /1\s*\/\s*6/);
+});
+
+// === Issue #77: badge "Pago sin registrar" (eje secundario de cobranza) ===
+// El eje que manda en el pipeline es el cumplimiento: un pedido entregado se ve como
+// producto_entregado aunque el pago no este registrado (desfase de la contadora). La
+// cobranza pendiente se senala con un badge, sin retroceder la etapa. La senal de pago
+// es el espejo del sync (#67, fresco) con respaldo en data.cobranza (snapshot del
+// backfill #77); pagado en cualquiera de los dos -> sin badge.
+test('Q53: cobranzaSinRegistrar solo en producto_entregado con pago no liquidado', () => {
+  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', cobranza: 'pendiente' })), true);
+  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', cobranza: 'anticipo' })), true);
+  // entregado y pagado -> no hay nada que registrar
+  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', cobranza: 'pagado' })), false);
+  // no entregado -> el badge es de entrega, no aplica aunque el pago falte
+  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'pedido_liberado', cobranza: 'pendiente' })), false);
+  // sin ninguna senal de pago -> no se afirma cobranza pendiente
+  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado' })), false);
+  assert.equal(cobranzaSinRegistrar(undefined), false);
+});
+
+test('Q54: cobranzaSinRegistrar prioriza el espejo del sync (fresco) sobre data.cobranza (snapshot)', () => {
+  // el sync ya registro el pago (espejo.pago=pagado) aunque el snapshot del backfill diga pendiente -> sin badge
+  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', cobranza: 'pendiente', espejoOperam: { pago: 'pagado' } })), false);
+  // el espejo dice anticipo -> sigue pendiente de registro -> badge
+  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', espejoOperam: { pago: 'anticipo' } })), true);
+});
+
+test('Q55: badgePagoSinRegistrarHtml pinta el chip "Pago sin registrar" solo cuando aplica', () => {
+  assert.match(badgePagoSinRegistrarHtml(cotizacion({ etapa: 'producto_entregado', cobranza: 'pendiente' })), /Pago sin registrar/);
+  assert.match(badgePagoSinRegistrarHtml(cotizacion({ etapa: 'producto_entregado', cobranza: 'pendiente' })), /cot-badge/);
+  assert.equal(badgePagoSinRegistrarHtml(cotizacion({ etapa: 'producto_entregado', cobranza: 'pagado' })), '');
+  assert.equal(badgePagoSinRegistrarHtml(cotizacion({ etapa: 'seguimiento' })), '');
+});
+
+test('Q56: la tarjeta del tablero en Producto entregado con cobranza pendiente muestra el badge', () => {
+  const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'producto_entregado', cobranza: 'pendiente' })]);
+  assert.match(tablero, /Pago sin registrar/);
 });

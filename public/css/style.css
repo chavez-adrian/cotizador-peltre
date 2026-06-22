@@ -1070,6 +1070,9 @@ body {
 }
 .badge-pre { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); }
 .badge-operam { background: var(--primary-light); color: var(--primary-dark); }
+/* Pago sin registrar (issue #77): producto entregado cuyo pago aun no figura
+   registrado. Tono de alerta (rojo) -- es un pendiente administrativo a regularizar. */
+.badge-cobranza { background: oklch(0.88 0.08 25); color: oklch(0.42 0.16 28); }
 
 /* Tableros kanban: prospectos (issue #49) y cotizaciones (issue #50) */
 #prospectos-contenido { max-width: 520px; }

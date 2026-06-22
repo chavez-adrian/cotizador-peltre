@@ -281,6 +281,9 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // remisiones/pagos/notas que el sync persistio en data.espejoOperam; la tarjeta
     // lo pinta como cadena de folios para trazabilidad.
     espejoOperam: data?.espejoOperam ?? null,
+    // Estado de cobranza (issue #77): eje secundario que el backfill persiste; la
+    // tarjeta pinta el badge "Pago sin registrar" en producto_entregado no pagado.
+    cobranza: data?.cobranza ?? null,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
     hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),

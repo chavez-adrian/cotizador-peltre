@@ -36,6 +36,7 @@ import {
   oportunidadesActivas,
   badgeFolioOperamHtml,
   badgeFolioOperamProspectoHtml,
+  badgePagoSinRegistrarHtml,
   cadenaOperamHtml,
   botonCompletarHtml,
   siguientePasoFormalizacion,
@@ -2019,6 +2020,9 @@ function cotizacionAOportunidad(c) {
     // Cadena de folios de Operam (issue #67, AC4): el espejo persistido por el sync
     // (data.espejoOperam) que la tarjeta pinta para trazabilidad.
     espejoOperam: c.espejoOperam ?? null,
+    // Estado de cobranza (issue #77): insumo del badge "Pago sin registrar" en la
+    // tarjeta entregada cuyo pago aun no figura registrado.
+    cobranza: c.cobranza ?? null,
   };
 }
 
@@ -2093,9 +2097,10 @@ function renderPipeline() {
     const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
     const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
     const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
+    const badgeCobranza = badgePagoSinRegistrarHtml(o);
     const cadena = cadenaOperamHtml(o.espejoOperam);
     return `<div class="cot-card"><div class="cot-card-header"><div>
-      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}</div>
+      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgeCobranza}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
       ${cadena}
     </div>${total}</div></div>`;

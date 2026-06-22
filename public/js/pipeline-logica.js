@@ -151,6 +151,34 @@ export function badgeFolioOperamProspectoHtml(o) {
   return `<span class="cot-badge badge-operam">${escapeHtml(etiquetaFolioOperam({ folioOperam: folio }))}</span>`;
 }
 
+// Eje SECUNDARIO de cobranza (issue #77): el eje que manda en el pipeline es el
+// CUMPLIMIENTO -- un pedido entregado se ve como producto_entregado aunque el pago no
+// este registrado (por politica no se entrega sin pago completo, asi que el faltante es
+// casi siempre el desfase de registro de la contadora, no cobranza real). Este predicado
+// decide si la tarjeta entregada lleva la marca de cobranza pendiente. Senal de pago: el
+// espejo del sync (#67, fresco) manda; como respaldo, el snapshot data.cobranza del
+// backfill (#77) cuando aun no hubo sync. Pagado en cualquiera de los dos -> sin marca.
+// Sin ninguna senal no se afirma cobranza pendiente (conservador). Solo producto_entregado
+// (el badge es de entrega, no de etapas previas donde el pago aun se espera).
+export function cobranzaSinRegistrar(o) {
+  if (!o || o.etapa !== 'producto_entregado') return false;
+  const pagoEspejo = o.espejoOperam && o.espejoOperam.pago;
+  if (pagoEspejo) return pagoEspejo !== 'pagado';
+  const cob = o.cobranza ?? (o.data && o.data.cobranza);
+  if (cob != null) return cob !== 'pagado';
+  return false;
+}
+
+// Chip HTML de la marca de cobranza pendiente (#77): '' si no aplica (la tarjeta no
+// pinta el elemento), si no el badge "Pago sin registrar". Mismo patron visual que el
+// badge de folio (cot-badge). El wording es neutro a proposito: el sistema no puede
+// afirmar que ya esta pagado, solo que el saldo no figura registrado -> es un pendiente
+// administrativo (verificar/regularizar con la contadora), no un sello de pagado.
+export function badgePagoSinRegistrarHtml(o) {
+  if (!cobranzaSinRegistrar(o)) return '';
+  return `<span class="cot-badge badge-cobranza" title="Producto entregado con el pago aun no registrado en el sistema">Pago sin registrar</span>`;
+}
+
 // El badge de la tarjeta del tablero depende del tipo de oportunidad: una
 // cotizacion lleva el chip PRE / #Operam (issue #63); un prospecto solo lleva
 // #Operam N si fue movido a mano con folio (issue #56), nunca PRE.
@@ -307,6 +335,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
+  const badgeCobranza = badgePagoSinRegistrarHtml(o);
   const cadena = cadenaOperamHtml(o.espejoOperam);
   const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
   const mover = buildMoverSeguimientoControlHtml(o);
@@ -316,7 +345,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgeCobranza}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
         </div>
         ${total}
