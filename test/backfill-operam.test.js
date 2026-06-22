@@ -553,6 +553,23 @@ test('planearBackfill: SKIP cerrado (entregado Y pagado al 100% no se importa)',
   assert.equal(plan.skips.cerrado, 1);
 });
 
+test('planearBackfill: SKIP pedido cancelado (order_no en cancelados, no se importa)', async () => {
+  // La cancelacion no la expone la API; el set viene de data/cancelados.json (scraping
+  // de la web legacy). Un pedido anulado en Operam no se importa, aunque sea candidato.
+  const { deps } = planDeps({
+    pedidos: [PEDIDO],
+    debtors: { '394': DEBTOR },
+    quotes: { '1141': QUOTE },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
+  });
+  deps.cancelados = ['7269']; // PEDIDO.order_no
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.cancelado, 1);
+  // el folio queda en foliosConPedido para que la parte B tampoco lo re-evalue
+  assert.equal(plan.foliosConPedido.has('1141'), true);
+});
+
 test('planearBackfill: entregado-IMPAGO se importa como producto_entregado + cobranza (#77)', async () => {
   // #77: entregado pero pagado parcial -> SE importa (no es cerrado). La etapa refleja
   // el CUMPLIMIENTO (producto_entregado, la remision manda); la cobranza pendiente NO
@@ -819,6 +836,18 @@ test('planearBackfillSinPedido: SALTA el folio que SI se volvio pedido (entro po
   const plan = await planearBackfillSinPedido(deps);
   assert.equal(plan.importar.length, 0);
   assert.equal(plan.skips.conPedido, 1);
+});
+
+test('planearBackfillSinPedido: SALTA un quote cancelado (folio en cancelados)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  deps.cancelados = ['1150']; // quote anulado en Operam
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.cancelado, 1);
 });
 
 test('planearBackfillSinPedido: SALTA un folio 404 (inexistente/anulado) y sigue', async () => {

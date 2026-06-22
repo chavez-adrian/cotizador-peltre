@@ -61,6 +61,19 @@ _setMinInterval(THROTTLE_MS);
 
 const vendedores = JSON.parse(readFileSync(join(ROOT, 'data', 'vendedores.json'), 'utf8'));
 
+// Pedidos/cotizaciones ANULADOS en Operam (#76/#77). La API NO expone la cancelacion; la
+// lista la genera scripts/detectar-cancelados.mjs (scraping de la web legacy) en
+// data/cancelados.json: { orders: [order_no de pedidos], quotes: [folios de cotizacion] }.
+// Sin el archivo no se filtran cancelados (se avisa). El backfill no scrapea en runtime.
+let cancelados = { orders: [], quotes: [] };
+const canceladosPath = join(ROOT, 'data', 'cancelados.json');
+if (existsSync(canceladosPath)) {
+  cancelados = JSON.parse(readFileSync(canceladosPath, 'utf8'));
+} else {
+  console.warn('AVISO: data/cancelados.json no existe -> NO se filtran pedidos cancelados.\n' +
+    'Corre primero: node scripts/detectar-cancelados.mjs');
+}
+
 // Rango amplio (la API exige fechas): los pedidos con cotizacion de origen del
 // historial caben en ~2 anios hacia atras (decision #76: 2024-06..hoy = 238/2777).
 const hasta = new Date().toISOString().slice(0, 10);
@@ -114,6 +127,7 @@ const deps = {
   obtenerHechos,
   listarCotizaciones: () => cotStore.listar(),
   vendedores,
+  cancelados: cancelados.orders || [],
   desde, hasta,
 };
 
@@ -129,6 +143,7 @@ console.log(`  Importables A (no cerrados): ${plan.importar.length}`);
 console.log(`  SKIP no-candidato (venta directa / prueba): ${plan.skips.noCandidato}`);
 console.log(`  SKIP otra-sucursal (Shopify/Amazon/Bazaar): ${plan.skips.otraSucursal}`);
 console.log(`  SKIP cerrado (entregado Y pagado al 100%): ${plan.skips.cerrado}`);
+console.log(`  SKIP cancelado (anulado en Operam): ${plan.skips.cancelado}`);
 console.log(`  SKIP duplicado (folio ya en el store): ${plan.skips.duplicado}\n`);
 
 for (const e of plan.importar) {
@@ -158,6 +173,7 @@ if (folioSeed > 0) {
     foliosConPedido: plan.foliosConPedido,
     listarCotizaciones: () => cotStore.listar(),
     vendedores,
+    cancelados: cancelados.quotes || [],
     folioMax,
     fechaCorte,
   });
@@ -169,6 +185,7 @@ console.log(`  Importables B (seguimiento): ${planB.importar.length}`);
 console.log(`  SKIP con-pedido (ya entro por A): ${planB.skips.conPedido ?? 0}`);
 console.log(`  SKIP otra-sucursal (Shopify/Amazon/Bazaar): ${planB.skips.otraSucursal ?? 0}`);
 console.log(`  SKIP prueba (folio/debtor de prueba): ${planB.skips.prueba ?? 0}`);
+console.log(`  SKIP cancelado (anulado en Operam): ${planB.skips.cancelado ?? 0}`);
 console.log(`  SKIP duplicado (folio ya en el store): ${planB.skips.duplicado ?? 0}\n`);
 
 for (const e of planB.importar) {
