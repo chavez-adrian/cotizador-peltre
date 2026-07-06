@@ -34,13 +34,26 @@ export function altaCsfResultadoParseo(respuestaInterpretada, fileName) {
 // Canada de EUA visualmente, pero el codigo de marcado real es "+1" -- se descarta el
 // sufijo "-CA" antes de anteponerlo. Si el numero ya viene con "+" se respeta tal cual
 // (el vendedor pudo capturarlo completo) para no duplicar el prefijo.
+// Los numeros +52 arrastran a veces el "1" de movil mexicano heredado
+// (+52 1 55 xxxx xxxx) y los +1 el "1" del codigo de pais. Cuando el numero
+// nacional trae 11 digitos empezando con 1, el "1" sobra: los 10 significativos
+// son los restantes. Devuelve el telefono sin ese "1" lider (conservando el
+// resto del formato); si no aplica, lo deja igual.
+function quitarUnoLider(tel) {
+  const digitos = tel.replace(/\D/g, '');
+  if (digitos.length === 11 && digitos.startsWith('1')) {
+    return tel.replace(/^\s*1[\s-]*/, '');
+  }
+  return tel;
+}
+
 export function combinarTelefonoConCodigo(code, phone) {
   const tel = (phone || '').trim();
   if (!tel) return '';
   if (tel.startsWith('+')) return tel;
   const prefijo = (code || '').replace(/-CA$/, '');
   if (!prefijo || prefijo === '+') return tel;
-  return `${prefijo} ${tel}`;
+  return `${prefijo} ${quitarUnoLider(tel)}`;
 }
 
 // Validacion dura de telefono con codigo de pais. Para +52/+1/+1-CA el numero
@@ -57,7 +70,8 @@ export function validarTelefono(code, phone) {
     }
     return null;
   }
-  if (digitos.length !== 10) {
+  const nacional = (digitos.length === 11 && digitos.startsWith('1')) ? digitos.slice(1) : digitos;
+  if (nacional.length !== 10) {
     return `El numero debe tener 10 digitos despues del codigo ${code.replace(/-CA$/, '')} (tiene ${digitos.length})`;
   }
   return null;

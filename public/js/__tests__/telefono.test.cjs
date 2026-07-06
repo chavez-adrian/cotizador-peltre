@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let validarTelefono, separarTelefonoCodigo;
+let validarTelefono, separarTelefonoCodigo, combinarTelefonoConCodigo;
 before(async () => {
-  ({ validarTelefono, separarTelefonoCodigo } = await import('../alta-logica.js'));
+  ({ validarTelefono, separarTelefonoCodigo, combinarTelefonoConCodigo } = await import('../alta-logica.js'));
 });
 
 test('T1: validarTelefono con codigo +52 y 10 digitos retorna null', () => {
@@ -55,4 +55,20 @@ test('T10: separarTelefonoCodigo vacio o desconocido no truena', () => {
   assert.deepStrictEqual(separarTelefonoCodigo(''), { code: '+52', numero: '' });
   assert.deepStrictEqual(separarTelefonoCodigo(undefined), { code: '+52', numero: '' });
   assert.deepStrictEqual(separarTelefonoCodigo('+34 612 345 678'), { code: '+', numero: '+34 612 345 678' });
+});
+
+test('T11: validarTelefono acepta el "1" de movil mexicano heredado (+52 1 + 10 digitos)', () => {
+  assert.strictEqual(validarTelefono('+52', '13222320749'), null);
+  assert.strictEqual(validarTelefono('+52', '1 322 232 0749'), null);
+  assert.strictEqual(validarTelefono('+1', '13222320749'), null); // "1" = codigo de pais US
+  // 11 digitos que NO empiezan con 1 siguen siendo invalidos
+  assert.match(validarTelefono('+52', '55512345678'), /10 digitos/i);
+});
+
+test('T12: combinarTelefonoConCodigo normaliza quitando el "1" lider', () => {
+  assert.strictEqual(combinarTelefonoConCodigo('+52', '13222320749'), '+52 3222320749');
+  assert.strictEqual(combinarTelefonoConCodigo('+52', '1 322 232 0749'), '+52 322 232 0749');
+  assert.strictEqual(combinarTelefonoConCodigo('+1', '13222320749'), '+1 3222320749');
+  // numero normal de 10 digitos no se toca
+  assert.strictEqual(combinarTelefonoConCodigo('+52', '3222320749'), '+52 3222320749');
 });
