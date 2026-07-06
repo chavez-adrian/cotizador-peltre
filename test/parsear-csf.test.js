@@ -105,14 +105,24 @@ describe('parsearCSF', () => {
       assert.equal(d.estado, 'BAJA CALIFORNIA SUR'));
     it('regimenFiscal mapeado desde el texto cuando la CSF no trae codigo', () =>
       assert.equal(d.regimenFiscal, '601'));
+    it('regimenFiscalLabel legible del codigo mapeado', () =>
+      assert.equal(d.regimenFiscalLabel, 'General de Ley Personas Morales'));
   });
 
   it('B9: regimenFiscal por texto en persona fisica (RESICO)', () => {
     const t = 'Regímenes: Régimen Régimen Simplificado de Confianza 01/01/2022';
-    assert.equal(parsearCSF(t).regimenFiscal, '626');
+    const d = parsearCSF(t);
+    assert.equal(d.regimenFiscal, '626');
+    assert.equal(d.regimenFiscalLabel, 'Regimen Simplificado de Confianza');
   });
 
   it('B10: formato viejo con codigo numerico sigue teniendo prioridad', () => {
-    assert.equal(parsearCSF(CSF_PERSONA_FISICA).regimenFiscal, '612');
+    const d = parsearCSF(CSF_PERSONA_FISICA);
+    assert.equal(d.regimenFiscal, '612');
+    assert.equal(d.regimenFiscalLabel, 'Personas Fisicas con Actividades Empresariales y Profesionales');
+  });
+
+  it('B11: sin regimen, regimenFiscalLabel vacio', () => {
+    assert.equal(parsearCSF('RFC: XAXX010101000').regimenFiscalLabel, '');
   });
 });

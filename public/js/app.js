@@ -3104,6 +3104,8 @@ function altaCsfPonerDatos(datos) {
   set('csf-nombre-corto', datos.nombreCorto);
   set('csf-idcif', datos.idcif);
   set('csf-regimen-fiscal', datos.regimenFiscal);
+  const regLabel = document.getElementById('csf-regimen-fiscal-label');
+  if (regLabel) regLabel.textContent = datos.regimenFiscalLabel || '';
   set('csf-calle', datos.calle);
   set('csf-num-ext', datos.numExt);
   set('csf-num-int', datos.numInt);
