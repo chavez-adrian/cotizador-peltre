@@ -36,7 +36,7 @@ Régimen Fiscal : 601 General de Ley Personas Morales
 // queda en UNA sola linea y ademas el SAT pone dos campos por renglon
 // ("Codigo Postal:23405 Tipo de Vialidad: ..."). Sin saltos de linea que
 // delimiten el fin de cada campo. Fuente: Csf_ISI1801183Z4 (IMPORTACIONES SISCANI).
-const CSF_UNA_LINEA = `Pagina [1] de [2] CEDULA DE IDENTIFICACION FISCAL ISI1801183Z4 Registro Federal de Contribuyentes IMPORTACIONES SISCANI Nombre, denominacion o razon social idCIF: 18020373831 CONSTANCIA DE SITUACION FISCAL Datos de Identificacion del Contribuyente: RFC: ISI1801183Z4 Denominación/Razón Social: IMPORTACIONES SISCANI Régimen Capital: SOCIEDAD ANONIMA DE CAPITAL VARIABLE Nombre Comercial: IMPORTACIONES SISCANI Fecha inicio de operaciones: 18 DE ENERO DE 2018 Estatus en el padrón: ACTIVO Fecha de último cambio de estado: 18 DE ENERO DE 2018 Datos del domicilio registrado Código Postal:23405 Tipo de Vialidad: CARRETERA (CARR.) Nombre de Vialidad: TRANSPENINSULAR Número Exterior: MODULO L 12 Número Interior:LOCAL 11 Y 12 Nombre de la Colonia: CABO COLORADO Nombre de la Localidad: SAN JOSE DEL CABO Nombre del Municipio o Demarcación Territorial: LOS CABOS Nombre de la Entidad Federativa: BAJA CALIFORNIA SUR Entre Calle: CALLE LOMA ENCANTADA Y Calle: REFERENCIA FRESKO PALMILLA Actividades Económicas: `;
+const CSF_UNA_LINEA = `Pagina [1] de [2] CEDULA DE IDENTIFICACION FISCAL ISI1801183Z4 Registro Federal de Contribuyentes IMPORTACIONES SISCANI Nombre, denominacion o razon social idCIF: 18020373831 CONSTANCIA DE SITUACION FISCAL Datos de Identificacion del Contribuyente: RFC: ISI1801183Z4 Denominación/Razón Social: IMPORTACIONES SISCANI Régimen Capital: SOCIEDAD ANONIMA DE CAPITAL VARIABLE Nombre Comercial: IMPORTACIONES SISCANI Fecha inicio de operaciones: 18 DE ENERO DE 2018 Estatus en el padrón: ACTIVO Fecha de último cambio de estado: 18 DE ENERO DE 2018 Datos del domicilio registrado Código Postal:23405 Tipo de Vialidad: CARRETERA (CARR.) Nombre de Vialidad: TRANSPENINSULAR Número Exterior: MODULO L 12 Número Interior:LOCAL 11 Y 12 Nombre de la Colonia: CABO COLORADO Nombre de la Localidad: SAN JOSE DEL CABO Nombre del Municipio o Demarcación Territorial: LOS CABOS Nombre de la Entidad Federativa: BAJA CALIFORNIA SUR Entre Calle: CALLE LOMA ENCANTADA Y Calle: REFERENCIA FRESKO PALMILLA Actividades Económicas: Orden Actividad Económica Porcentaje Fecha Inicio Fecha Fin 1 Otros intermediarios del comercio al por menor 100 18/01/2018 Regímenes: Régimen Fecha Inicio Fecha Fin Régimen General de Ley Personas Morales 18/01/2018 Obligaciones: `;
 
 const CSF_PERSONA_FISICA = `
 CONSTANCIA DE SITUACION FISCAL
@@ -103,5 +103,16 @@ describe('parsearCSF', () => {
       assert.equal(d.municipio, 'LOS CABOS'));
     it('estado sin arrastrar Entre Calle', () =>
       assert.equal(d.estado, 'BAJA CALIFORNIA SUR'));
+    it('regimenFiscal mapeado desde el texto cuando la CSF no trae codigo', () =>
+      assert.equal(d.regimenFiscal, '601'));
+  });
+
+  it('B9: regimenFiscal por texto en persona fisica (RESICO)', () => {
+    const t = 'Regímenes: Régimen Régimen Simplificado de Confianza 01/01/2022';
+    assert.equal(parsearCSF(t).regimenFiscal, '626');
+  });
+
+  it('B10: formato viejo con codigo numerico sigue teniendo prioridad', () => {
+    assert.equal(parsearCSF(CSF_PERSONA_FISICA).regimenFiscal, '612');
   });
 });
