@@ -27,13 +27,13 @@ Las etapas intermedias de prospección del modelo previo (Contactado, Calificado
 
 ## Pre-cotización
 
-Una cotización emitida con datos mínimos (Prospecto Mínimo) y sin registro en Operam, para cotizar sin fricción con el cliente enfrente. No usa Cliente Genérico. Se modela con el folio de Operam ausente (nullable); esa ausencia define el estado "PRE". La distinción **PRE** vs **"#Operam N"** es visible en la tarjeta, en la cola Hoy y en el tablero. Generar una pre-cotización mueve la oportunidad a Seguimiento conservando el PRE. Se formaliza ("completar después") desde la tarjeta: completar los datos del prospecto, dar de alta el cliente en Operam y registrar la cotización; al obtener folio, pierde el PRE.
+Deja de ser un modo de trabajo elegible (ADR-0006): toda cotización nueva se sube automáticamente a Operam al generarse, creando de paso un Cliente Genérico si la oportunidad todavía no tiene cliente. **PRE** queda solo como estado de excepción — el folio de Operam está ausente únicamente cuando Operam falló al generar la cotización (caída de red, error de API), con reintento idempotente sobre el mismo intento. La distinción **PRE** vs **"#Operam N"** se conserva visible en la tarjeta, en la cola Hoy y en el tablero, pero en operación normal debería ser rara y transitoria, no un estado en el que una cotización permanezca a propósito.
 
 Corte histórico (decisión 2026-06-16): el folio de Operam no se persistía antes del despliegue de #63, así que una cotización anterior a esa fecha y sin folio no se puede distinguir de una pre-cotización. Se asume **registrada** (no PRE) y no muestra badge — el badge PRE aplica solo a cotizaciones nuevas. El discriminante es la fecha (no el id, que no es contiguo) y vive en la migración de lectura del store.
 
 ## Prospecto Mínimo
 
-El conjunto mínimo de datos con el que se puede emitir una pre-cotización sin alta de cliente: lo necesario para identificar al prospecto y calcular la cotización (celular, nombre, ciudad para estimar envío) más el carrito. El alta fiscal completa en Operam se difiere a la formalización.
+El conjunto mínimo de datos con el que se puede emitir una cotización sin que el prospecto haya completado su alta fiscal: lo necesario para identificar al prospecto y calcular la cotización (celular, nombre, ciudad para estimar envío) más el carrito. Ya no difiere el alta en Operam (ADR-0006): al generar la primera cotización, el sistema crea automáticamente el Cliente Genérico correspondiente. El alta fiscal completa se difiere al upgrade por CSF, no al alta del cliente en sí.
 
 ## Producto decorado (calca)
 
@@ -42,6 +42,16 @@ Una cotización cuyo producto lleva calca (decorado) activa un proceso de autori
 ## Prospecto convertido en cliente
 
 Un prospecto cuyo celular se dio de alta como cliente en Operam queda ligado a ese cliente, pero la conversión NO lo saca del seguimiento: la oportunidad permanece en Por Cotizar con la etiqueta "Ya es cliente — falta cotizar" hasta que una cotización la pase a Seguimiento (decisión 2026-06-11: la conversión real del negocio es la venta, no el alta; la cola vigila la fuga de altas que nunca cotizan).
+
+## Cliente genérico
+
+Cliente real en Operam, dado de alta con RFC genérico (`XAXX010101000` nacional, `XEXX010101000` extranjero) como marcador de "datos fiscales pendientes" — no un placeholder ni un segmento especial (ADR-0006). Nace en el servidor al generarse la primera cotización de una oportunidad que aún no tiene cliente en Operam, con nombre real del contacto y vendedor real; la cotización se sube a su nombre en el mismo momento, de forma atómica, y nunca se reasigna después.
+
+La certeza contra duplicados depende de que el cotizador sea el único punto de entrada de clientes genéricos, con deduplicación en capas: celular contra la base propia de prospectos (invariante 1 celular = 1 prospecto, más el registro de altas en Neon con mapeo celular → `customer_id`), nombre normalizado contra Operam (ADR-0001) y, en el upgrade, RFC exacto. Un alta genérica hecha manualmente en la UI de Operam, fuera del cotizador, queda fuera de esta garantía.
+
+Al llegar la Constancia de Situación Fiscal, el cliente genérico se actualiza (`PUT`), nunca se re-crea: es un upgrade con gate anti-fusión (si el RFC real ya existe en Operam con otro cliente, se frena y se avisa para fusión manual) y verificación posterior por el quirk conocido de Operam (`PUT` 200 que ignora campos en silencio).
+
+Higiene: reporte admin de clientes con RFC genérico sin actividad (≥6 meses), como candidatos a inactivación manual en Operam — Operam acepta múltiples clientes con el mismo RFC genérico, así que la acumulación no se detecta como error, solo se vigila.
 
 ## Visibilidad
 
