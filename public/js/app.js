@@ -1930,7 +1930,6 @@ function pcRenderTarjeta() {
 }
 
 function pcContinuar() {
-  document.getElementById('pc-entrega-wrap')?.classList.remove('pc-entrega-inline');
   switchTab('productos');
 }
 window.pcContinuar = pcContinuar;
@@ -1942,8 +1941,10 @@ function pcCambiarDomicilio() {
 }
 window.pcCambiarDomicilio = pcCambiarDomicilio;
 
-// Revela el bloque de entrega (opcional, #82; migra al paso Envio en #84). Se
-// mueve inline bajo la tarjeta para que la edicion quede a la vista.
+// Revela el bloque de entrega (opcional, #82; migra al paso Envio en #84). El
+// bloque vive en el HTML como HERMANO de #pc-root (nunca dentro: los innerHTML
+// de #pc-root lo desconectarian del documento para siempre); aqui SOLO se
+// togglea su display.
 function pcToggleEntrega() {
   pcState.entregaAbierta = !pcState.entregaAbierta;
   pcMostrarEntrega(pcState.entregaAbierta);
@@ -1952,18 +1953,11 @@ window.pcToggleEntrega = pcToggleEntrega;
 
 function pcMostrarEntrega(mostrar) {
   const wrap = document.getElementById('pc-entrega-wrap');
-  const root = pcEl();
-  if (!wrap || !root) return;
-  if (mostrar) {
-    wrap.style.display = 'block';
-    wrap.classList.add('pc-entrega-inline');
-    root.appendChild(wrap);
-    if (!wrap.dataset.pcBound) {
-      wrap.addEventListener('input', pcRenderChips);
-      wrap.dataset.pcBound = '1';
-    }
-  } else {
-    wrap.style.display = 'none';
+  if (!wrap) return;
+  wrap.style.display = mostrar ? 'block' : 'none';
+  if (mostrar && !wrap.dataset.pcBound) {
+    wrap.addEventListener('input', pcRenderChips);
+    wrap.dataset.pcBound = '1';
   }
 }
 
