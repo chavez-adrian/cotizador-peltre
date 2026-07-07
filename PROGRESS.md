@@ -5,16 +5,9 @@
 ## Estado (2026-07-06)
 - **PRD #52 (pipeline unificado) COMPLETO**; prueba integral: #69, #74, #68, #67, #71, #75, #73 cerrados. Pendientes previos: #70, #72, #76 (rama `issue-76-backfill` parcial, ver abajo).
 - **Trabajo activo = PRD #79** (rediseño paso Cliente + cliente RFC genérico temprano, ADR-0006): issues #80–#86 publicados con sugerencia de modelo/esfuerzo por issue. **#80 CERRADO** (ADR-0006 + glosario, commit e3d4597 en main). Prototipo variante B elegido: `public/prototype-cliente.html` (main).
-- **#81 EN CURSO — rama `issue-81-orquestacion`, working tree SIN commit**: implementación base completa (suite 853/0): `lib/alta-generica.js` + `crearClienteDirecto` (operam-client) + `subirConAltaGenerica`/gate en `POST /api/cotizacion/operam/:id` (server.js) + `test/alta-generica.test.js` + `test/operam-generico.test.js`. Revisión de 8 ángulos hecha; **PENDIENTE: aplicar fixes F1–F6** (especificados en el transcript del agente `a6224cf463f1a549c`, que murió por límite de sesión):
-  - F1 gate de datos mínimos (nombre resoluble Y teléfono, si no → camino viejo 422; evita cliente fantasma CustName '' desde el botón del historial);
-  - F2 `ligarCliente` no bloqueante (hoy: throw tras POST customer → 503 y el retry nunca re-liga el prospecto → dedup por celular muerta para ese contacto);
-  - F3 `customerIdElegido`: 409 si cotización ya tiene customerId distinto; 409 si prospecto ligado tiene cliente_id distinto; con elegido SIEMPRE `obtenerBranchId(elegido)` (nunca reutilizar c.branchId persistido);
-  - F4 `buscarClientes(query, limit=10)` opcional; dedup genérica con 100;
-  - F5 mapping candidatos con fallback `tax_id || RFC || rfc`;
-  - F6 `crearCliente`: RFC genérico salta la dedup por RFC exacto → `crearClienteDirecto` (mina del alta manual XEXX).
-  Diferidos (no aplicar): UI del 409/candidatos (deuda para #83), listasPrecios caché en boot, mockOperamFetch duplicado en tests, helper dimensiones ×3, branch-resolution duplicada, PUT+GET secuencial.
-  **Contrato nuevo de la ruta**: 409 `{ error, candidatos }` en colisión de nombre; retry con body `{ customerId }`; fallo parcial → status error + `{ customer_id, steps }`.
-  **Siguiente acción**: aplicar F1–F6 (reanudar agente o directo) → `npm test` verde → commit `feat(#81)...` en la rama → **visto bueno de Adrián** → merge a main + push + cerrar #81. Luego: #82 (Opus alto, desbloquea #84); #83/#86 se desbloquean con #81.
+- **#81 CERRADO** (merge a main 2026-07-06, commit 042f4fc; suite 860/0; fixes F1–F6 de la revisión de 8 ángulos aplicados con TDD). **Contrato de la ruta** `POST /api/cotizacion/operam/:id`: sin cliente en Operam y con datos mínimos (nombre + teléfono) → alta genérica + subida atómica; 409 `{ error, candidatos }` en colisión de nombre (ADR-0001, sin escape); retry con body `{ customerId }` validado contra cotización y prospecto; fallo parcial → status error + `{ customer_id, steps }`; reintento idempotente (customerId persistido antes de subir). **Desde este merge el botón "Subir a Operam" crea clientes genéricos reales** en cotizaciones de contactos sin alta (la auto-subida total llega con #83).
+  Deuda diferida consciente: UI del 409/candidatos (va en #83), listasPrecios caché de boot sin retry, mockOperamFetch duplicado en tests, helper de dimensiones ×3, branch-resolution duplicada server.js/operam-client, PUT dims + GET branch secuenciales.
+  **Siguiente**: #82 (rediseño paso Cliente variante B — Opus 4.8 alto; desbloquea #84) y en paralelo #83/#86 (desbloqueados por #81: Opus medio / Sonnet bajo).
 
 ## Cómo retomar (protocolo de orquestación)
 Tu rol = **ORQUESTADOR**. El trabajo de cada issue lo hace un **subagente fresco** (Agent, general-purpose), uno por issue.
