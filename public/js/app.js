@@ -1402,7 +1402,7 @@ function aplicarDomicilio(d) {
 }
 
 // ============================================================================
-// PASO CLIENTE — variante B (issue #82)
+// PASO CLIENTE -- variante B (issue #82)
 // ----------------------------------------------------------------------------
 // La entrada del paso Cliente: dos caminos ("Ya lo conozco" / "Contacto nuevo")
 // + nota de diferimiento; buscador unificado (Operam + prospectos) con recientes;
@@ -1480,6 +1480,7 @@ function pcPrepararSeleccion() {
 // --- Entrada: dos caminos ---
 function pcRenderInicio() {
   pcPrepararSeleccion();
+  pcProspectosCache = null; // se refrescan al abrir una nueva captura/busqueda
   const root = pcEl();
   if (!root) return;
   root.innerHTML =
@@ -1546,18 +1547,40 @@ async function pcRenderRecientes() {
     ).join('');
 }
 
-async function pcBuscar() {
-  const q = document.getElementById('pc-q')?.value || '';
-  const zona = document.getElementById('pc-zona');
-  if (!zona) return;
-  if (q.trim().length < 2) { await pcRenderRecientes(); return; }
-  zona.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
-  // Los dos origenes en paralelo; se mezclan con la funcion pura (sin endpoint nuevo).
+// Fetch compartido de los dos origenes (Operam + prospectos) + mezcla con la
+// funcion pura, sin endpoint nuevo. Lo usan el buscador y las sugerencias de
+// nombre. Secuenciado con un token incremental: si mientras la consulta estaba
+// en vuelo se disparo otra (tecla siguiente), la respuesta vieja se descarta
+// devolviendo null -- sin esto, una respuesta lenta pisa a la nueva y
+// pcResultadosCache queda desfasado del render (elegir por indice = cliente
+// equivocado). Los prospectos se cachean por sesion de captura (se invalidan al
+// volver a la entrada y al crear un prospecto); Operam se consulta por query.
+let pcProspectosCache = null;
+let pcBusquedaSeq = 0;
+
+async function pcBuscarMezclado(q) {
+  const seq = ++pcBusquedaSeq;
   const [clientes, prospectos] = await Promise.all([
     api(`/api/operam/clientes?q=${encodeURIComponent(q)}`).then(r => r.ok ? r.json() : []).catch(() => []),
-    api('/api/prospectos').then(r => r.ok ? r.json() : []).catch(() => []),
+    pcProspectosCache
+      ? Promise.resolve(pcProspectosCache)
+      : api('/api/prospectos').then(r => r.ok ? r.json() : []).catch(() => [])
+          .then(p => { pcProspectosCache = p; return p; }),
   ]);
-  const rows = mezclarResultadosBusqueda(clientes, prospectos, q);
+  if (seq !== pcBusquedaSeq) return null;
+  return mezclarResultadosBusqueda(clientes, prospectos, q);
+}
+
+async function pcBuscar() {
+  const q = document.getElementById('pc-q')?.value || '';
+  if (q.trim().length < 2) { await pcRenderRecientes(); return; }
+  const zonaAntes = document.getElementById('pc-zona');
+  if (!zonaAntes) return;
+  zonaAntes.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
+  const rows = await pcBuscarMezclado(q);
+  if (!rows) return; // respuesta vieja descartada (llego una busqueda mas nueva)
+  const zona = document.getElementById('pc-zona');
+  if (!zona) return; // el vendedor ya salio de la pantalla de busqueda
   pcResultadosCache = rows;
   const vista = decidirVistaTrasBusqueda(q, rows);
   if (vista === 'resultados') {
@@ -1700,14 +1723,16 @@ window.pcCaminoNuevo = pcCaminoNuevo;
 
 async function pcSugerenciasNombre() {
   const q = document.getElementById('pc-nombre')?.value || '';
+  if (q.trim().length < 2) {
+    const sugAntes = document.getElementById('pc-sug');
+    if (sugAntes) sugAntes.innerHTML = '';
+    return;
+  }
+  const todos = await pcBuscarMezclado(q);
+  if (!todos) return; // respuesta vieja descartada
   const sug = document.getElementById('pc-sug');
   if (!sug) return;
-  if (q.trim().length < 2) { sug.innerHTML = ''; return; }
-  const [clientes, prospectos] = await Promise.all([
-    api(`/api/operam/clientes?q=${encodeURIComponent(q)}`).then(r => r.ok ? r.json() : []).catch(() => []),
-    api('/api/prospectos').then(r => r.ok ? r.json() : []).catch(() => []),
-  ]);
-  const rows = mezclarResultadosBusqueda(clientes, prospectos, q).slice(0, 3);
+  const rows = todos.slice(0, 3);
   pcResultadosCache = rows;
   if (!rows.length) { sug.innerHTML = ''; return; }
   sug.innerHTML = '<div class="pc-sug-titulo">&iquest;Es alguno de estos?</div>' +
@@ -1815,6 +1840,7 @@ async function pcGuardarContactoNuevo() {
       restaurarBtn();
       return;
     }
+    pcProspectosCache = null; // hay un prospecto nuevo: invalida la cache de busqueda
     pcPrepararSeleccion();
     pcLlenarCamposContacto(cliente);
     pcState.cliente = cliente;
@@ -1827,22 +1853,30 @@ async function pcGuardarContactoNuevo() {
 window.pcGuardarContactoNuevo = pcGuardarContactoNuevo;
 
 // --- Tarjeta del cliente seleccionado ---
+
+// Fila unica de los 3 chips de completitud (la usan la tarjeta y el re-pintado
+// en vivo); el chip Entrega es boton porque abre el bloque opcional de entrega.
+function pcChipsHtml(chips) {
+  const chip = (ok, okLabel, pendLabel) => ok
+    ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
+    : `<span class="pc-chip pend">${pendLabel}</span>`;
+  return chip(chips.contacto, 'Contacto', 'Contacto') +
+    `<button type="button" class="pc-chip-btn" onclick="pcToggleEntrega()">${chip(chips.entrega, 'Entrega', 'Entrega &middot; agregar')}</button>` +
+    chip(chips.fiscal, 'Fiscal', 'Fiscal &middot; al subir a Operam');
+}
+
 function pcRenderTarjeta() {
   const root = pcEl();
   const c = pcClienteActual();
   const esOperam = pcState.cliente?.tipo === 'operam';
   const chips = chipsCompletitud(c);
   // Cada parte se escapa ANTES de unir con la entidad &middot; (escapar el join
-  // completo la rompería); telefono/ciudad son datos (p. ej. CSV de feria) y van
+  // completo la romperia); telefono/ciudad son datos (p. ej. CSV de feria) y van
   // a innerHTML: sin escape seria un stored XSS.
   const subPartes = esOperam
     ? [c.rfc, 'Cliente en Operam']
     : [c.telefono, pcState.cliente?.ciudad, 'Contacto nuevo'];
   const sub = subPartes.filter(Boolean).map(escapeHtml).join(' &middot; ');
-
-  const chip = (ok, okLabel, pendLabel) => ok
-    ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
-    : `<span class="pc-chip pend">${pendLabel}</span>`;
 
   // Selector de domicilio para cliente Operam con varios branches.
   let domHtml = '';
@@ -1859,11 +1893,7 @@ function pcRenderTarjeta() {
     '<div class="pc-cli-card">' +
     `<div class="pc-cli-nombre">${escapeHtml(c.name || 'Sin nombre')}</div>` +
     `<div class="pc-cli-sub">${sub}</div>` +
-    '<div class="pc-chips">' +
-    chip(chips.contacto, 'Contacto', 'Contacto') +
-    `<button type="button" class="pc-chip-btn" onclick="pcToggleEntrega()">${chip(chips.entrega, 'Entrega', 'Entrega &middot; agregar')}</button>` +
-    chip(chips.fiscal, 'Fiscal', 'Fiscal &middot; al subir a Operam') +
-    '</div>' +
+    `<div class="pc-chips">${pcChipsHtml(chips)}</div>` +
     (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
     domHtml +
     '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>' +
@@ -1910,16 +1940,9 @@ function pcMostrarEntrega(mostrar) {
 
 // Re-pinta solo los chips (sin re-render completo, para no perder foco al editar).
 function pcRenderChips() {
-  const chips = chipsCompletitud(pcClienteActual());
   const cont = pcEl()?.querySelector('.pc-chips');
   if (!cont) return;
-  const chip = (ok, okLabel, pendLabel) => ok
-    ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
-    : `<span class="pc-chip pend">${pendLabel}</span>`;
-  cont.innerHTML =
-    chip(chips.contacto, 'Contacto', 'Contacto') +
-    `<button type="button" class="pc-chip-btn" onclick="pcToggleEntrega()">${chip(chips.entrega, 'Entrega', 'Entrega &middot; agregar')}</button>` +
-    chip(chips.fiscal, 'Fiscal', 'Fiscal &middot; al subir a Operam');
+  cont.innerHTML = pcChipsHtml(chipsCompletitud(pcClienteActual()));
 }
 
 function renderHistorialCliente(cotizaciones) {

@@ -296,7 +296,7 @@ function normalizarProspecto(p) {
   return {
     tipo: 'prospecto', id: p.id, nombre: p.nombre || '',
     ciudad: p.ciudad || '', celular: p.celular || '', etapa: p.etapa || '',
-    sub: [p.ciudad, p.celular].filter(Boolean).join(' · '), raw: p,
+    sub: [p.ciudad, p.celular].filter(Boolean).join(' - '), raw: p,
   };
 }
 
