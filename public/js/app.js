@@ -9,6 +9,13 @@ import {
   buildAltaDarDeAltaPayload,
   buildClienteDesdeAlta,
   mensajeBusquedaCelular,
+  mezclarResultadosBusqueda,
+  recientesDesdeCotizaciones,
+  chipsCompletitud,
+  buildClienteDesdeContactoNuevo,
+  clienteDesdeProspecto,
+  accionCelularContactoNuevo,
+  decidirVistaTrasBusqueda,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -209,6 +216,7 @@ async function showApp() {
   updateTierBar();
   updateCartSummary();
   switchTab('cliente');
+  pcRenderInicio();
   cargarBadgeSeguimiento();
 }
 
@@ -1309,7 +1317,13 @@ function nuevaCotizacion() {
   const envPaisEl = document.getElementById('envia-pais');
   if (envPaisEl) envPaisEl.value = 'MX';
   enviaRateSeleccionado = null;
-  document.getElementById('panel-buscar').style.display = 'block';
+  // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos.
+  pcRecientesCache = null;
+  pcState.cliente = null;
+  pcState.entregaAbierta = false;
+  const entregaWrap = document.getElementById('pc-entrega-wrap');
+  if (entregaWrap) entregaWrap.style.display = 'none';
+  pcRenderInicio();
   resetFlujoGuiado();
   switchTab('cliente');
   renderProducts();
@@ -1453,6 +1467,467 @@ function usarDomicilioOperam() {
   document.getElementById('operam-domicilios').style.display = 'none';
 }
 window.usarDomicilioOperam = usarDomicilioOperam;
+
+// ============================================================================
+// PASO CLIENTE — variante B (issue #82)
+// ----------------------------------------------------------------------------
+// La entrada del paso Cliente: dos caminos ("Ya lo conozco" / "Contacto nuevo")
+// + nota de diferimiento; buscador unificado (Operam + prospectos) con recientes;
+// captura minima del contacto nuevo (crea/usa prospecto); y la tarjeta del cliente
+// seleccionado con chips de completitud y CTA a Productos. El render es tonto: toda
+// la decision vive en alta-logica.js (mezclar/recientes/chips/guardrails). Ver
+// prototype-cliente.html (variante B) y CONTEXT.md.
+// ============================================================================
+
+const pcState = { cliente: null };
+
+function pcEl() { return document.getElementById('pc-root'); }
+
+// Estado vivo del cliente para los chips: mezcla el cliente elegido con lo que hay
+// ahora en los campos cl-* (el bloque de entrega puede cambiar CP/pais despues).
+function pcClienteActual() {
+  const base = pcState.cliente || {};
+  return {
+    ...base,
+    name: document.getElementById('cl-razon-social')?.value || base.name || '',
+    ref: document.getElementById('cl-nombre-corto')?.value || base.ref || '',
+    telefono: leerTelefono('cl-telefono', 'cl-telefono-code') || base.telefono || '',
+    cp: document.getElementById('cl-cp-entrega')?.value || '',
+    pais: document.getElementById('cl-pais')?.value || base.pais || 'MX',
+    rfc: document.getElementById('cl-rfc')?.value || base.rfc || '',
+  };
+}
+
+function pcIniciales(nombre) {
+  const p = String(nombre || '').split(/\s+/).filter(Boolean);
+  return ((p[0] || ' ')[0] + ((p[1] || ' ')[0] || '')).toUpperCase().trim() || '?';
+}
+
+function pcNota() {
+  return '<div class="pc-nota"><span>&#9432;</span><span>' +
+    'La <b>direccion de entrega</b> se captura en el paso Envio. ' +
+    'Los <b>datos fiscales</b> (CSF / RFC) solo se piden si subes el cliente a Operam o factura.' +
+    '</span></div>';
+}
+
+// --- Entrada: dos caminos ---
+function pcRenderInicio() {
+  pcState.cliente = null;
+  const root = pcEl();
+  if (!root) return;
+  root.innerHTML =
+    '<div class="pc-pregunta">&iquest;Para quien es la cotizacion?</div>' +
+    '<button type="button" class="pc-camino" onclick="pcCaminoBuscar()">' +
+    '<span class="pc-camino-ico">&#128269;</span>' +
+    '<span class="pc-camino-txt"><span class="pc-camino-tit">Ya lo conozco</span>' +
+    '<span class="pc-camino-desc">Buscar en Operam o en mis prospectos</span></span>' +
+    '<span class="pc-camino-fl">&rsaquo;</span></button>' +
+    '<button type="button" class="pc-camino" onclick="pcCaminoNuevo()">' +
+    '<span class="pc-camino-ico">+</span>' +
+    '<span class="pc-camino-txt"><span class="pc-camino-tit">Contacto nuevo</span>' +
+    '<span class="pc-camino-desc">Solo nombre, celular y ciudad</span></span>' +
+    '<span class="pc-camino-fl">&rsaquo;</span></button>' +
+    pcNota();
+}
+window.pcRenderInicio = pcRenderInicio;
+
+// --- Camino buscar ---
+let pcRecientesCache = null;
+let pcBuscarTimer = null;
+
+async function pcCaminoBuscar() {
+  const root = pcEl();
+  root.innerHTML =
+    '<div class="pc-pregunta">Buscar cliente<small>Operam y prospectos en una sola busqueda.</small></div>' +
+    '<div class="pc-search"><input type="text" id="pc-q" class="pc-input-lg" ' +
+    'placeholder="Nombre, empresa, RFC o celular..." autocomplete="off"></div>' +
+    '<div id="pc-zona"></div>' +
+    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Volver</button>';
+  const input = document.getElementById('pc-q');
+  input.addEventListener('input', () => {
+    clearTimeout(pcBuscarTimer);
+    pcBuscarTimer = setTimeout(pcBuscar, 250);
+  });
+  input.focus();
+  await pcRenderRecientes();
+}
+window.pcCaminoBuscar = pcCaminoBuscar;
+
+async function pcCargarRecientes() {
+  if (pcRecientesCache) return pcRecientesCache;
+  try {
+    const res = await api('/api/cotizaciones');
+    const cots = await res.json();
+    pcRecientesCache = recientesDesdeCotizaciones(cots);
+  } catch {
+    pcRecientesCache = [];
+  }
+  return pcRecientesCache;
+}
+
+async function pcRenderRecientes() {
+  const zona = document.getElementById('pc-zona');
+  if (!zona) return;
+  const recientes = await pcCargarRecientes();
+  if (!recientes.length) { zona.innerHTML = ''; return; }
+  zona.innerHTML = '<div class="pc-res-titulo">Recientes</div>' +
+    recientes.map((r, i) =>
+      `<button type="button" class="pc-res-row" onclick="pcElegirReciente(${r.cotizacionId})">` +
+      `<span class="pc-res-ini">${escapeHtml(pcIniciales(r.nombre))}</span>` +
+      `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(r.nombre)}</span>` +
+      `<span class="pc-res-sub">${escapeHtml(r.telefono || 'Cotizado antes')}</span></span></button>`
+    ).join('');
+}
+
+async function pcBuscar() {
+  const q = document.getElementById('pc-q')?.value || '';
+  const zona = document.getElementById('pc-zona');
+  if (!zona) return;
+  if (q.trim().length < 2) { await pcRenderRecientes(); return; }
+  zona.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
+  // Los dos origenes en paralelo; se mezclan con la funcion pura (sin endpoint nuevo).
+  const [clientes, prospectos] = await Promise.all([
+    api(`/api/operam/clientes?q=${encodeURIComponent(q)}`).then(r => r.ok ? r.json() : []).catch(() => []),
+    api('/api/prospectos').then(r => r.ok ? r.json() : []).catch(() => []),
+  ]);
+  const rows = mezclarResultadosBusqueda(clientes, prospectos, q);
+  pcResultadosCache = rows;
+  const vista = decidirVistaTrasBusqueda(q, rows);
+  if (vista === 'resultados') {
+    zona.innerHTML = '<div class="pc-res-titulo">Resultados</div>' +
+      rows.map((r, i) => pcFilaResultado(r, i)).join('') +
+      pcFilaCrear(q);
+  } else {
+    zona.innerHTML = pcFilaCrear(q);
+  }
+}
+
+let pcResultadosCache = [];
+
+function pcFilaResultado(r, i) {
+  const tag = r.tipo === 'operam'
+    ? '<span class="pc-tag operam">Operam</span>'
+    : '<span class="pc-tag prospecto">Prospecto</span>';
+  return `<button type="button" class="pc-res-row" onclick="pcElegirResultado(${i})">` +
+    `<span class="pc-res-ini ${r.tipo}">${escapeHtml(pcIniciales(r.nombre))}</span>` +
+    `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(r.nombre)}</span>` +
+    `<span class="pc-res-sub">${escapeHtml(r.sub || '')}</span></span>${tag}</button>`;
+}
+
+function pcFilaCrear(query) {
+  const q = query.trim();
+  return `<button type="button" class="pc-res-row pc-crear" onclick="pcCaminoNuevo(${JSON.stringify(q).replace(/"/g, '&quot;')})">` +
+    '<span class="pc-res-ini">+</span>' +
+    `<span class="pc-res-main"><span class="pc-res-nombre">Crear contacto &laquo;${escapeHtml(q)}&raquo;</span>` +
+    '<span class="pc-res-sub">Solo nombre, celular y ciudad &mdash; suficiente para cotizar</span></span></button>';
+}
+
+function pcElegirResultado(i) {
+  const r = pcResultadosCache[i];
+  if (!r) return;
+  if (r.tipo === 'operam') pcElegirOperam(r.raw);
+  else pcElegirProspecto(r.raw);
+}
+window.pcElegirResultado = pcElegirResultado;
+
+async function pcElegirOperam(raw) {
+  const root = pcEl();
+  root.innerHTML = '<div class="pc-pregunta">Cargando cliente...</div>';
+  await seleccionarClienteOperam(raw); // llena cl-* + carga domicilios/historial
+  pcState.cliente = { ...raw, tipo: 'operam' };
+  pcRenderTarjeta();
+}
+
+function pcLlenarCamposContacto(cliente) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('cl-razon-social', cliente.name);
+  set('cl-nombre-corto', cliente.ref);
+  set('cl-rfc', cliente.rfc || '');
+  set('cl-municipio', cliente.municipio || '');
+  if (cliente.email) set('cl-email-entrega', cliente.email);
+  const pais = document.getElementById('cl-pais');
+  if (pais && cliente.pais) pais.value = cliente.pais;
+  if (cliente.telefono) {
+    setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
+    setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', cliente.telefono);
+  }
+}
+
+function pcElegirProspecto(raw) {
+  const cliente = clienteDesdeProspecto(raw);
+  pcLlenarCamposContacto(cliente);
+  pcState.cliente = cliente;
+  pcRenderTarjeta();
+}
+
+async function pcElegirReciente(cotizacionId) {
+  const root = pcEl();
+  root.innerHTML = '<div class="pc-pregunta">Cargando...</div>';
+  try {
+    const res = await api(`/api/cotizaciones/${cotizacionId}`);
+    const data = await res.json();
+    const c = data.cliente || {};
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+    set('cl-razon-social', c.razonSocial);
+    set('cl-nombre-corto', c.nombreCorto);
+    set('cl-rfc', c.rfc);
+    set('cl-cp-fiscal', c.cpFiscal);
+    set('cl-nombre-entrega', c.nombreEntrega);
+    set('cl-calle', c.calle);
+    set('cl-num-int', c.numInt);
+    set('cl-colonia', c.colonia);
+    set('cl-cp-entrega', c.cpEntrega);
+    set('cl-municipio', c.municipio);
+    set('cl-estado', c.estado);
+    set('cl-email-entrega', c.emailEntrega);
+    const pais = document.getElementById('cl-pais');
+    if (pais) pais.value = c.pais || 'MX';
+    if (c.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', c.telefono);
+    if (c.celEntrega) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', c.celEntrega);
+    pcState.cliente = {
+      tipo: c.rfc ? 'operam' : 'nuevo',
+      name: c.razonSocial || c.nombreCorto || '', ref: c.nombreCorto || '',
+      rfc: c.rfc || '', telefono: c.telefono || '', cp: c.cpEntrega || '', pais: c.pais || 'MX',
+    };
+    pcRenderTarjeta();
+  } catch {
+    pcRenderInicio();
+    alert('No se pudo cargar la cotizacion');
+  }
+}
+window.pcElegirReciente = pcElegirReciente;
+
+// --- Camino contacto nuevo ---
+function pcCaminoNuevo(prefill) {
+  const root = pcEl();
+  const nombre = typeof prefill === 'string' ? prefill : '';
+  const canales = CANALES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  root.innerHTML =
+    '<div class="pc-pregunta">Contacto nuevo<small>Lo minimo para cotizar. Queda guardado como prospecto.</small></div>' +
+    `<div class="form-group"><label>Nombre *</label>` +
+    `<input type="text" id="pc-nombre" value="${escapeHtml(nombre)}" placeholder="Nombre (se acepta sin apellido)" autocomplete="off"></div>` +
+    '<div id="pc-sug" class="pc-sugerencias"></div>' +
+    '<div class="form-group"><label>Celular *</label>' +
+    '<div style="display:flex;gap:8px"><select id="pc-cel-code" style="flex:0 0 92px">' +
+    '<option value="+52">+52</option><option value="+1">+1</option><option value="+1-CA">+1 CA</option><option value="+">Otro</option></select>' +
+    '<input type="tel" id="pc-cel" inputmode="tel" placeholder="55 1234 5678" style="flex:1"></div>' +
+    '<div id="pc-cel-aviso" class="pc-cel-aviso" style="display:none"></div></div>' +
+    '<div class="form-group"><label>Ciudad *</label>' +
+    '<input type="text" id="pc-ciudad" placeholder="Para estimar envio"></div>' +
+    `<div class="form-group"><label>Canal de origen *</label><select id="pc-canal"><option value="">-- Selecciona --</option>${canales}</select></div>` +
+    '<div id="pc-nuevo-error" class="pc-error" style="display:none"></div>' +
+    '<button type="button" class="btn btn-primary btn-block" id="pc-guardar" onclick="pcGuardarContactoNuevo()">Guardar y continuar</button>' +
+    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Volver</button>';
+  let sugTimer;
+  document.getElementById('pc-nombre').addEventListener('input', () => {
+    clearTimeout(sugTimer);
+    sugTimer = setTimeout(pcSugerenciasNombre, 250);
+  });
+  document.getElementById('pc-cel').addEventListener('blur', pcClasificarCelular);
+  document.getElementById('pc-nombre').focus();
+}
+window.pcCaminoNuevo = pcCaminoNuevo;
+
+async function pcSugerenciasNombre() {
+  const q = document.getElementById('pc-nombre')?.value || '';
+  const sug = document.getElementById('pc-sug');
+  if (!sug) return;
+  if (q.trim().length < 2) { sug.innerHTML = ''; return; }
+  const [clientes, prospectos] = await Promise.all([
+    api(`/api/operam/clientes?q=${encodeURIComponent(q)}`).then(r => r.ok ? r.json() : []).catch(() => []),
+    api('/api/prospectos').then(r => r.ok ? r.json() : []).catch(() => []),
+  ]);
+  const rows = mezclarResultadosBusqueda(clientes, prospectos, q).slice(0, 3);
+  pcResultadosCache = rows;
+  if (!rows.length) { sug.innerHTML = ''; return; }
+  sug.innerHTML = '<div class="pc-sug-titulo">&iquest;Es alguno de estos?</div>' +
+    rows.map((r, i) => pcFilaResultado(r, i)).join('');
+}
+
+async function pcClasificarCelular() {
+  const aviso = document.getElementById('pc-cel-aviso');
+  if (!aviso) return;
+  const tel = combinarTelefonoConCodigo(
+    document.getElementById('pc-cel-code')?.value,
+    document.getElementById('pc-cel')?.value
+  );
+  if (!tel) { aviso.style.display = 'none'; return; }
+  let clasificacion = null;
+  try {
+    const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(tel)}`);
+    if (res.ok) clasificacion = await res.json();
+  } catch { /* best effort */ }
+  const decision = accionCelularContactoNuevo(clasificacion, state.user?.name);
+  pcCelDecision = decision;
+  if (decision.accion === 'crear') { aviso.style.display = 'none'; return; }
+  aviso.style.display = 'block';
+  aviso.className = 'pc-cel-aviso ' + (decision.accion === 'bloquear' ? 'pc-aviso-rojo' : 'pc-aviso-ambar');
+  let extra = '';
+  if (decision.accion === 'cotizar_cliente') {
+    extra = ` <button type="button" class="pc-link" onclick="pcCotizarComoCliente(${JSON.stringify(decision.cust_name || '').replace(/"/g, '&quot;')})">Cotizar sobre ese cliente</button>`;
+  }
+  aviso.innerHTML = escapeHtml(decision.mensaje) + extra;
+}
+
+let pcCelDecision = { accion: 'crear' };
+
+async function pcCotizarComoCliente(custName) {
+  // El celular pertenece a un cliente Operam: se busca por nombre para cotizar
+  // sobre el (la clasificacion solo devuelve el nombre; la API v3 no da el id aqui).
+  const root = pcEl();
+  await pcCaminoBuscar();
+  const input = document.getElementById('pc-q');
+  if (input && custName) { input.value = custName; await pcBuscar(); }
+}
+window.pcCotizarComoCliente = pcCotizarComoCliente;
+
+async function pcGuardarContactoNuevo() {
+  const err = document.getElementById('pc-nuevo-error');
+  const nombre = document.getElementById('pc-nombre')?.value || '';
+  const celNum = document.getElementById('pc-cel')?.value || '';
+  const celCode = document.getElementById('pc-cel-code')?.value || '+52';
+  const ciudad = document.getElementById('pc-ciudad')?.value || '';
+  const canal = document.getElementById('pc-canal')?.value || '';
+  const telefono = combinarTelefonoConCodigo(celCode, celNum);
+
+  const showErr = m => { if (err) { err.textContent = m; err.style.display = 'block'; } };
+  if (err) err.style.display = 'none';
+
+  // Guardrail de celular ajeno (#69/Visibilidad): no se captura sobre otro vendedor.
+  if (pcCelDecision.accion === 'bloquear') { showErr(pcCelDecision.mensaje); return; }
+
+  const payload = buildProspectoPayload({ celularCode: celCode, celular: celNum, nombre, ciudad, canal });
+  const errVal = validarProspectoBody(payload);
+  if (errVal) { showErr(errVal); return; }
+
+  const cliente = buildClienteDesdeContactoNuevo({ nombre, telefono, ciudad, canal, pais: celCode === '+1' || celCode === '+1-CA' ? 'US' : 'MX' });
+
+  const btn = document.getElementById('pc-guardar');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  try {
+    const res = await api('/api/prospectos', { method: 'POST', body: payload });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409) {
+      // Ya existe: si es cliente Operam, cotizar sobre el; si es prospecto propio,
+      // se usa igual (1 celular = 1 prospecto). El aviso ya lo explico.
+      if (/cliente/i.test(data.error || '') && !/prospecto/i.test(data.error || '')) {
+        showErr(data.error || 'Este celular ya es un cliente');
+        if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; }
+        return;
+      }
+      // prospecto propio/duplicado: continua con el contacto minimo capturado.
+    } else if (!res.ok) {
+      showErr(data.error || 'No se pudo guardar el contacto');
+      if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; }
+      return;
+    }
+    pcLlenarCamposContacto(cliente);
+    pcState.cliente = cliente;
+    pcRenderTarjeta();
+  } catch (e) {
+    showErr('Error de conexion');
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; }
+  }
+}
+window.pcGuardarContactoNuevo = pcGuardarContactoNuevo;
+
+// --- Tarjeta del cliente seleccionado ---
+function pcRenderTarjeta() {
+  const root = pcEl();
+  const c = pcClienteActual();
+  const esOperam = pcState.cliente?.tipo === 'operam';
+  const chips = chipsCompletitud(c);
+  const sub = esOperam
+    ? [c.rfc, 'Cliente en Operam'].filter(Boolean).join(' &middot; ')
+    : [c.telefono, pcState.cliente?.ciudad, 'Contacto nuevo'].filter(Boolean).join(' &middot; ');
+
+  const chip = (ok, okLabel, pendLabel) => ok
+    ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
+    : `<span class="pc-chip pend">${pendLabel}</span>`;
+
+  // Selector de domicilio para cliente Operam con varios branches.
+  let domHtml = '';
+  const doms = window._operamDomicilios;
+  if (esOperam && Array.isArray(doms) && doms.length > 1) {
+    domHtml = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
+      '<select id="pc-dom-select" onchange="pcCambiarDomicilio()">' +
+      doms.map((d, i) => `<option value="${i}">${escapeHtml(d.descripcion || d.calle || ('Domicilio ' + (i + 1)))}</option>`).join('') +
+      '</select></div>';
+  }
+
+  root.innerHTML =
+    '<div class="pc-pregunta">Cliente seleccionado</div>' +
+    '<div class="pc-cli-card">' +
+    `<div class="pc-cli-nombre">${escapeHtml(c.name || 'Sin nombre')}</div>` +
+    `<div class="pc-cli-sub">${sub}</div>` +
+    '<div class="pc-chips">' +
+    chip(chips.contacto, 'Contacto', 'Contacto') +
+    `<button type="button" class="pc-chip-btn" onclick="pcToggleEntrega()">${chip(chips.entrega, 'Entrega', 'Entrega &middot; agregar')}</button>` +
+    chip(chips.fiscal, 'Fiscal', 'Fiscal &middot; al subir a Operam') +
+    '</div>' +
+    (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
+    domHtml +
+    '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>' +
+    '</div>' +
+    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Cambiar de cliente</button>';
+
+  // Reengancha el bloque de entrega (que vive en el form legacy) bajo la tarjeta
+  // cuando el vendedor lo abrio antes; se mantiene abierto tras re-render.
+  if (pcState.entregaAbierta) pcMostrarEntrega(true);
+  updateTabIndicators();
+}
+
+function pcContinuar() {
+  document.getElementById('pc-entrega-wrap')?.classList.remove('pc-entrega-inline');
+  switchTab('productos');
+}
+window.pcContinuar = pcContinuar;
+
+function pcCambiarDomicilio() {
+  const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
+  aplicarDomicilio(window._operamDomicilios?.[idx]);
+  pcRenderChips();
+}
+window.pcCambiarDomicilio = pcCambiarDomicilio;
+
+// Revela el bloque de entrega (opcional, #82; migra al paso Envio en #84). Se
+// mueve inline bajo la tarjeta para que la edicion quede a la vista.
+function pcToggleEntrega() {
+  pcState.entregaAbierta = !pcState.entregaAbierta;
+  pcMostrarEntrega(pcState.entregaAbierta);
+}
+window.pcToggleEntrega = pcToggleEntrega;
+
+function pcMostrarEntrega(mostrar) {
+  const wrap = document.getElementById('pc-entrega-wrap');
+  const root = pcEl();
+  if (!wrap || !root) return;
+  if (mostrar) {
+    wrap.style.display = 'block';
+    wrap.classList.add('pc-entrega-inline');
+    root.appendChild(wrap);
+    if (!wrap.dataset.pcBound) {
+      wrap.addEventListener('input', pcRenderChips);
+      wrap.dataset.pcBound = '1';
+    }
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+// Re-pinta solo los chips (sin re-render completo, para no perder foco al editar).
+function pcRenderChips() {
+  const chips = chipsCompletitud(pcClienteActual());
+  const cont = pcEl()?.querySelector('.pc-chips');
+  if (!cont) return;
+  const chip = (ok, okLabel, pendLabel) => ok
+    ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
+    : `<span class="pc-chip pend">${pendLabel}</span>`;
+  cont.innerHTML =
+    chip(chips.contacto, 'Contacto', 'Contacto') +
+    `<button type="button" class="pc-chip-btn" onclick="pcToggleEntrega()">${chip(chips.entrega, 'Entrega', 'Entrega &middot; agregar')}</button>` +
+    chip(chips.fiscal, 'Fiscal', 'Fiscal &middot; al subir a Operam');
+}
 
 function renderHistorialCliente(cotizaciones) {
   const panel = document.getElementById('historial-cliente-panel');
@@ -2665,13 +3140,12 @@ window.resultadoReunionNoUtilProspecto = resultadoReunionNoUtilProspecto;
 window.cotizarProspecto = id => {
   const p = ultimosProspectos.find(x => x.id === id);
   if (!p) return;
-  document.getElementById('prospectos-view').style.display = 'none';
+  ocultarTodasLasVistas();
   document.getElementById('app-view').style.display = 'block';
-  const nombre = document.getElementById('cl-nombre-corto');
-  if (nombre && !nombre.value) nombre.value = p.nombre;
-  const municipio = document.getElementById('cl-municipio');
-  if (municipio && !municipio.value) municipio.value = p.ciudad || '';
-  setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', p.celular);
+  marcarNavActivo('nav-cotizar');
+  switchTab('cliente');
+  // Entra directo a la tarjeta del prospecto (variante B, #82).
+  pcElegirProspecto(p);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 window.cerrarCotizacionTablero = async (id, estado) => {
@@ -3735,19 +4209,20 @@ function altaReintentar() {
   altaDarDeAlta();
 }
 
-function altaCotizarAhora() {
+async function altaCotizarAhora() {
   const customerId = altaState.customer_id;
   if (!customerId) return;
   const panel = document.getElementById('panel-alta-cliente');
   if (panel) panel.style.display = 'none';
-  const buscarPanel = document.getElementById('panel-buscar');
-  if (buscarPanel) buscarPanel.style.display = 'block';
   // Estado compartido (#69): el cotizador abre con el cliente recien dado de alta
   // YA cargado -- razon social, telefono (con codigo de pais) y domicilio prellenados
   // desde lo capturado en el alta, sin re-pedir datos ni round-trip a Operam por RFC.
   const cliente = buildClienteDesdeAlta(altaState);
-  seleccionarClienteOperam(cliente);
   switchTab('cliente');
+  await seleccionarClienteOperam(cliente);
+  // Muestra la tarjeta del cliente (variante B, #82) en vez del form plano.
+  pcState.cliente = { ...cliente, tipo: 'operam' };
+  pcRenderTarjeta();
 }
 
 function altaTerminar() {
