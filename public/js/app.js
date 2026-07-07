@@ -1510,9 +1510,31 @@ function pcNota() {
     '</span></div>';
 }
 
+// Limpia los campos cl-* del cliente para que cada seleccion empiece en blanco
+// (evita que el CP/domicilio del cliente anterior se filtre al siguiente y pinte
+// mal el chip Entrega). No toca el carrito ni el resto del flujo de cotizacion.
+function pcLimpiarCamposCliente() {
+  const campos = [
+    'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-telefono',
+    'cl-referencia', 'cl-nombre-entrega', 'cl-calle', 'cl-num-int', 'cl-colonia',
+    'cl-cp-entrega', 'cl-municipio', 'cl-estado', 'cl-cel-entrega', 'cl-email-entrega',
+    'cl-email-factura', 'cl-referencias',
+  ];
+  for (const id of campos) { const el = document.getElementById(id); if (el) el.value = ''; }
+  const telCode = document.getElementById('cl-telefono-code'); if (telCode) telCode.value = '+52';
+  const celCode = document.getElementById('cl-cel-entrega-code'); if (celCode) celCode.value = '+52';
+  const pais = document.getElementById('cl-pais'); if (pais) pais.value = 'MX';
+  const rfc = document.getElementById('cl-rfc'); if (rfc) rfc.readOnly = false;
+  window._operamDomicilios = null;
+}
+
 // --- Entrada: dos caminos ---
 function pcRenderInicio() {
   pcState.cliente = null;
+  pcState.entregaAbierta = false;
+  const entregaWrap = document.getElementById('pc-entrega-wrap');
+  if (entregaWrap) entregaWrap.style.display = 'none';
+  pcLimpiarCamposCliente();
   const root = pcEl();
   if (!root) return;
   root.innerHTML =
