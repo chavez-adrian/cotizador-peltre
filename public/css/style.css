@@ -1201,6 +1201,9 @@ body {
 
 /* === RESPONSIVE === */
 @media (max-width: 480px) {
+  /* El shell de 66vw/800px es de escritorio; en telefono el paso Cliente (#82)
+     exige ancho fluido sin scroll horizontal (PRODUCT.md movil primero). */
+  #app-view, #historial-view { width: 100vw; min-width: 0; padding: 0 4px; }
   .form-row { grid-template-columns: 1fr; }
   .tab { font-size: 11px; padding: 8px 4px; }
   .flujo-grid {
