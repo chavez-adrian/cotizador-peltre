@@ -1824,7 +1824,7 @@ async function pcGuardarContactoNuevo() {
   const errVal = validarProspectoBody(payload);
   if (errVal) { showErr(errVal); return; }
 
-  const cliente = buildClienteDesdeContactoNuevo({ nombre, telefono, ciudad, canal, pais: celCode === '+1' || celCode === '+1-CA' ? 'US' : 'MX' });
+  const cliente = buildClienteDesdeContactoNuevo({ nombre, telefono, ciudad, canal, pais: paisDesdeCodigoTelefono(celCode) });
 
   const btn = document.getElementById('pc-guardar');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
