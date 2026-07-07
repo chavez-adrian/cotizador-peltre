@@ -2012,8 +2012,18 @@ function slotOperamDesde(el) {
 // pura interpretarSubidaOperam + buildOperamStatusHtml (folio | PRE + Reintentar
 // | candidatos inline | PRE sin datos). El documento ya se genero: un fallo de
 // subida NUNCA lo bloquea, solo deja la cotizacion en PRE.
+// Subidas en vuelo por id (F3 de la revision): un doble click en Reintentar /
+// Elegir, o un Reintentar con la auto-subida original aun en vuelo, no dispara
+// un segundo POST (el server ademas tiene su lock por id, que es la proteccion
+// real; esto evita el 425 en el caso comun). El id se normaliza a string (llega
+// como string del header X-Cotizacion-Id y como numero de los onclick).
+const subidasOperamEnVuelo = new Set();
+
 async function autoSubirOperam(id, slot, extraBody) {
   if (!id) return;
+  const key = String(id);
+  if (subidasOperamEnVuelo.has(key)) return;
+  subidasOperamEnVuelo.add(key);
   if (slot) slot.innerHTML = '<span class="operam-status">Subiendo a Operam...</span>';
   let resultado;
   try {
@@ -2025,6 +2035,8 @@ async function autoSubirOperam(id, slot, extraBody) {
     resultado = { ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida, error: data.error, candidatos: data.candidatos };
   } catch (e) {
     resultado = { ok: false, status: 0, error: e.message };
+  } finally {
+    subidasOperamEnVuelo.delete(key);
   }
   const vista = interpretarSubidaOperam(resultado);
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);

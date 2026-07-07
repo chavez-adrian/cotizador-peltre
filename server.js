@@ -1141,38 +1141,55 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
   }
 }
 
+// Lock en memoria por id de cotizacion (F3 de la revision de #83): la
+// idempotencia de la subida cubre reintentos SECUENCIALES, no concurrencia --
+// dos requests EN VUELO al mismo id (auto-subida + Reintentar del Historial, o
+// doble click en Elegir candidato) leerian ambos customerId null y crearian DOS
+// clientes genericos. Proceso Node unico (Render free tier): un Set basta. El
+// segundo request recibe 425 claro y reintenta cuando el primero termine.
+const subidasOperamEnCurso = new Set();
+
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
-  const entry = await cotStore.obtener(id);
-  if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
-  // Ya subida (#83, F1c): los quotes de Operam no se editan por API -- re-subir
-  // duplicaria el quote. Se devuelve el folio existente sin tocar Operam;
-  // yaSubida le dice al frontend que los cambios locales de una regeneracion no
-  // viajan a la cotizacion ya registrada.
-  if (entry.folioOperam != null && entry.folioOperam !== '') {
-    return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true });
+  if (subidasOperamEnCurso.has(id)) {
+    return res.status(425).json({ error: 'Ya hay una subida a Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
   }
-  // Alta temprana de cliente generico (#81, ADR-0006): sin cliente en Operam se
-  // crea uno con RFC generico y la cotizacion nace a su nombre. customerId en el
-  // body = el vendedor resolvio la dedup de nombre eligiendo un candidato
-  // (ADR-0001). Con customerId o RFC real en la cotizacion -- o sin los datos
-  // minimos del contacto (nombre + telefono) -- el camino de siempre.
-  const customerIdElegido = req.body?.customerId ?? null;
-  if (customerIdElegido != null || necesitaAltaGenerica(entry)) {
-    return subirConAltaGenerica(res, id, entry, customerIdElegido);
-  }
+  subidasOperamEnCurso.add(id);
   try {
-    const folio = await subirCotizacionOperam(entry.data);
-    // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
-    if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
-    res.json({ ok: true, folio });
-  } catch (err) {
-    // Cliente no identificado (#68): es un problema de datos de la cotizacion,
-    // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
-    if (/identificar el cliente/i.test(err.message)) {
-      return res.status(422).json({ error: err.message });
+    const entry = await cotStore.obtener(id);
+    if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+    // Ya subida (#83, F1c): los quotes de Operam no se editan por API -- re-subir
+    // duplicaria el quote. Se devuelve el folio existente sin tocar Operam;
+    // yaSubida le dice al frontend que los cambios locales de una regeneracion no
+    // viajan a la cotizacion ya registrada.
+    if (entry.folioOperam != null && entry.folioOperam !== '') {
+      return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true });
     }
-    res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+    // Alta temprana de cliente generico (#81, ADR-0006): sin cliente en Operam se
+    // crea uno con RFC generico y la cotizacion nace a su nombre. customerId en el
+    // body = el vendedor resolvio la dedup de nombre eligiendo un candidato
+    // (ADR-0001). Con customerId o RFC real en la cotizacion -- o sin los datos
+    // minimos del contacto (nombre + telefono) -- el camino de siempre.
+    const customerIdElegido = req.body?.customerId ?? null;
+    if (customerIdElegido != null || necesitaAltaGenerica(entry)) {
+      // await: el finally debe liberar el lock hasta que la operacion termine.
+      return await subirConAltaGenerica(res, id, entry, customerIdElegido);
+    }
+    try {
+      const folio = await subirCotizacionOperam(entry.data);
+      // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
+      if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
+      res.json({ ok: true, folio });
+    } catch (err) {
+      // Cliente no identificado (#68): es un problema de datos de la cotizacion,
+      // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
+      if (/identificar el cliente/i.test(err.message)) {
+        return res.status(422).json({ error: err.message });
+      }
+      res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+    }
+  } finally {
+    subidasOperamEnCurso.delete(id);
   }
 });
 

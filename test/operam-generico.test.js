@@ -457,3 +457,75 @@ test('F6: POST /api/crear-cliente con RFC generico NO deduplica por RFC exacto',
   assert.equal(res.body.customer_id, 940);
   assert.equal(taxIdLookup, false, 'con RFC generico no debe consultar por tax_id exacto');
 });
+
+// === Concurrencia (F3 de la revision de #83): lock por id de cotizacion ===
+// La auto-subida es fire-and-forget: el vendedor puede llegar al Historial y
+// clickear "Reintentar" con la subida original EN VUELO, o doble-clickear
+// "Elegir" candidato. Sin lock, dos requests concurrentes leen customerId null
+// y crean DOS clientes genericos (la idempotencia de #81 cubre reintentos
+// SECUENCIALES, no concurrencia). El server rechaza al segundo con 425 claro.
+
+test('C1: dos requests concurrentes al mismo id crean UN solo cliente generico (lock por id)', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  let postCustomers = 0;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': async (u, opts) => {
+      if (opts?.method === 'POST') {
+        postCustomers++;
+        // Mantiene al primer request EN VUELO para que el segundo lo alcance.
+        await new Promise(r => setTimeout(r, 80));
+        return jsonResponse({ result: true, customer_id: 930 });
+      }
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/930')) return jsonResponse({ data: [{ branches: [{ branch_code: 931 }] }] });
+      return jsonResponse({ total: 0, data: [] }); // dedup por nombre: libre
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1750 }),
+  });
+
+  const [r1, r2] = await Promise.all([
+    supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TOKEN}`).send({}),
+    supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TOKEN}`).send({}),
+  ]);
+
+  const statuses = [r1.status, r2.status].sort((a, b) => a - b);
+  assert.deepEqual(statuses, [200, 425], 'uno completa, el otro recibe 425 (subida en curso)');
+  assert.equal(postCustomers, 1, 'UN solo POST customer: no se duplico el cliente generico');
+  const rechazado = r1.status === 425 ? r1 : r2;
+  assert.match(rechazado.body.error, /en curso/i, 'el 425 explica que hay una subida en curso');
+  // El lock se libero al terminar: la cotizacion quedo con su folio (el ganador).
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(String(cot.folioOperam), '1750');
+});
+
+test('C2: el lock se libera tras un fallo (el reintento posterior NO recibe 425)', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion();
+  // Primer intento: Operam caido en el POST customer -> 503.
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ error: 'boom' }, 500);
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  const intento1 = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  assert.equal(intento1.status, 503);
+  // Reintento secuencial: el lock ya no esta tomado.
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 940 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/940')) return jsonResponse({ data: [{ branches: [{ branch_code: 941 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1751 }),
+  });
+  const intento2 = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  assert.equal(intento2.status, 200, 'el lock no quedo tomado tras el fallo');
+});
