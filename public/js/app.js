@@ -1768,21 +1768,28 @@ async function pcSugerenciasNombre() {
     rows.map((r, i) => pcFilaResultado(r, i)).join('');
 }
 
-async function pcClasificarCelular() {
-  const aviso = document.getElementById('pc-cel-aviso');
-  if (!aviso) return;
+// Clasifica el celular tecleado y devuelve la decision del guardrail (#69).
+// La consumen DOS momentos: el blur (pinta el aviso, best effort) y el guardado
+// (que la espera con await -- el blur async no garantiza haber terminado cuando
+// el vendedor pega el celular y toca Guardar de inmediato).
+async function pcObtenerDecisionCelular() {
   const tel = combinarTelefonoConCodigo(
     document.getElementById('pc-cel-code')?.value,
     document.getElementById('pc-cel')?.value
   );
-  if (!tel) { aviso.style.display = 'none'; return; }
+  if (!tel) return { accion: 'crear', tipo: 'libre', mensaje: '' };
   let clasificacion = null;
   try {
     const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(tel)}`);
     if (res.ok) clasificacion = await res.json();
-  } catch { /* best effort */ }
-  const decision = accionCelularContactoNuevo(clasificacion, state.user?.name);
-  pcCelDecision = decision;
+  } catch { /* best effort: si la clasificacion falla, decide el 409 del server */ }
+  return accionCelularContactoNuevo(clasificacion, state.user?.name);
+}
+
+async function pcClasificarCelular() {
+  const aviso = document.getElementById('pc-cel-aviso');
+  if (!aviso) return;
+  const decision = await pcObtenerDecisionCelular();
   if (decision.accion === 'crear') { aviso.style.display = 'none'; return; }
   aviso.style.display = 'block';
   aviso.className = 'pc-cel-aviso ' + (decision.accion === 'bloquear' ? 'pc-aviso-rojo' : 'pc-aviso-ambar');
@@ -1792,8 +1799,6 @@ async function pcClasificarCelular() {
   }
   aviso.innerHTML = escapeHtml(decision.mensaje) + extra;
 }
-
-let pcCelDecision = { accion: 'crear' };
 
 async function pcCotizarComoCliente(custName) {
   // El celular pertenece a un cliente Operam: se busca por nombre para cotizar
@@ -1817,9 +1822,6 @@ async function pcGuardarContactoNuevo() {
   const showErr = m => { if (err) { err.textContent = m; err.style.display = 'block'; } };
   if (err) err.style.display = 'none';
 
-  // Guardrail de celular ajeno (#69/Visibilidad): no se captura sobre otro vendedor.
-  if (pcCelDecision.accion === 'bloquear') { showErr(pcCelDecision.mensaje); return; }
-
   const payload = buildProspectoPayload({ celularCode: celCode, celular: celNum, nombre, ciudad, canal });
   const errVal = validarProspectoBody(payload);
   if (errVal) { showErr(errVal); return; }
@@ -1829,6 +1831,14 @@ async function pcGuardarContactoNuevo() {
   const btn = document.getElementById('pc-guardar');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
   const restaurarBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; } };
+
+  // Guardrail de celular ajeno (#69/Visibilidad): se ESPERA la clasificacion aqui
+  // (no se confia en la del blur, que puede seguir en vuelo si el vendedor pego el
+  // celular y toco Guardar de inmediato). El 409 estructurado del server queda de
+  // backstop si esta consulta falla.
+  const decisionCel = await pcObtenerDecisionCelular();
+  if (decisionCel.accion === 'bloquear') { showErr(decisionCel.mensaje); restaurarBtn(); return; }
+
   try {
     const res = await api('/api/prospectos', { method: 'POST', body: payload });
     const data = await res.json().catch(() => ({}));
