@@ -56,24 +56,93 @@ export function puedeCompletarPreCotizacion(cot) {
   return !!cot && etiquetaFolioOperam(cot) === 'PRE';
 }
 
-// Decide el siguiente paso de la formalizacion a partir del resultado del
-// registro directo (POST /api/cotizacion/operam/:id). Si registro -> 'listo'
-// (folio, deja de ser PRE). Si Operam no halla al cliente -> 'alta' (el vendedor
-// lo da de alta primero y reintenta). Cualquier otro fallo -> 'error' (se reporta
-// sin mandar al alta). El marcador del caso "falta alta" es el mensaje exacto que
-// lanza subirCotizacionOperam ("Cliente no encontrado en Operam").
-export function siguientePasoFormalizacion(resultado) {
-  if (resultado && resultado.ok) return 'listo';
-  const error = (resultado && resultado.error) || '';
-  return /Cliente no encontrado en Operam/i.test(error) ? 'alta' : 'error';
+// Interpreta la respuesta de POST /api/cotizacion/operam/:id (auto-subida, #83)
+// en un estado de UI, por status + campos estructurados -- NUNCA parseando el
+// string de error (misma disciplina que accionProspecto409 de alta-logica, #82).
+// El endpoint de #81 (ADR-0006) es la unica fuente:
+//   200 { ok, folio }             -> 'folio'      (subio; deja de ser PRE)
+//   409 { error, candidatos: [] } -> 'candidatos' (dedup por nombre: elegir uno)
+//   422 { error }                 -> 'sin_datos'  (cotizacion legacy sin datos
+//                                                   minimos: queda PRE, reintento inutil)
+//   503 / red / cualquier otro    -> 'pre'        (Operam fallo: PRE + Reintentar
+//                                                   idempotente)
+// Un 409 de conflicto (customerId que contradice lo ligado, sin lista de
+// candidatos) cae a 'pre' con su mensaje: no hay lista que ofrecer.
+export function interpretarSubidaOperam(resultado) {
+  const r = resultado || {};
+  // yaSubida (#83 F1c): la cotizacion ya tenia folio y el endpoint NO re-subio
+  // (los quotes de Operam no se editan por API): folio + nota de que una
+  // regeneracion local no viaja a la cotizacion ya registrada.
+  if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida };
+  const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];
+  if (r.status === 409 && candidatos.length) {
+    return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay clientes con nombre similar en Operam' };
+  }
+  if (r.status === 422) {
+    return { estado: 'sin_datos', mensaje: r.error || 'Faltan datos minimos para dar de alta el cliente' };
+  }
+  return { estado: 'pre', mensaje: r.error || 'No se pudo subir a Operam' };
 }
 
-// Boton "Completar" de la tarjeta de cotizacion (Historial / cola Hoy): formaliza
-// la pre-cotizacion (alta + registro, o registro directo si ya es cliente). Solo
-// aparece mientras la cotizacion es PRE; una registrada o historica no lo muestra.
+// Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001):
+// el vendedor elige el cliente correcto o deja la cotizacion como PRE sin bloquear
+// el documento. Cada boton dispara elegirCandidatoOperam(id, customerId, this) en
+// app.js (re-llama el endpoint con { customerId }); "Dejar como PRE" solo cierra
+// la lista. Los botones pasan `this` -- NUNCA un id de contenedor: la misma
+// cotizacion puede estar pintada en dos paneles a la vez (Historial y
+// cotizaciones previas del cliente) y un id duplicado haria que getElementById
+// pintara siempre en el primero, posiblemente oculto (F2 de la revision). app.js
+// resuelve el slot relativo al elemento clickeado.
+export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
+  const items = (candidatos || []).map(c => {
+    const nombre = escapeHtml(c.CustName || c.cust_name || 'Sin nombre');
+    const ref = c.cust_ref ? ` · ${escapeHtml(c.cust_ref)}` : '';
+    return `<li class="operam-candidato">
+      <span>${nombre}${ref}</span>
+      <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
+    </li>`;
+  }).join('');
+  return `<div class="operam-status operam-status-candidatos">
+    <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el cliente correcto en Operam:')}</div>
+    <ul class="operam-candidatos-lista">${items}</ul>
+    <button class="btn btn-sm btn-secondary" onclick="dejarPreOperam(${id}, this)">Dejar como PRE</button>
+  </div>`;
+}
+
+// Estado de la auto-subida (#83) para pintar en el resumen (al generar) o en la
+// tarjeta del historial (al reintentar). Unica fuente del bloque de estado, sobre
+// la vista pura de interpretarSubidaOperam. 'folio' = subio (verde), con nota si
+// yaSubida (F1c: la regeneracion local no viaja a Operam); 'candidatos' = lista
+// de dedup; 'sin_datos' = PRE sin reintento (falta de datos, no de Operam);
+// 'pre' = fallo transitorio de Operam con Reintentar idempotente. Los botones
+// pasan `this` (ver buildCandidatosOperamHtml).
+export function buildOperamStatusHtml(id, vista) {
+  const v = vista || {};
+  if (v.estado === 'folio') {
+    const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
+    const nota = v.yaSubida
+      ? ` <span class="operam-status-nota">Los cambios locales no actualizan la cotizacion ya subida a Operam.</span>`
+      : '';
+    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}`;
+  }
+  if (v.estado === 'candidatos') {
+    return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje);
+  }
+  if (v.estado === 'sin_datos') {
+    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>`;
+  }
+  return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || 'No se pudo subir a Operam')}</span>` +
+    ` <button class="btn btn-sm btn-primary" onclick="reintentarSubidaOperam(${id}, this)">Reintentar</button>`;
+}
+
+// Boton "Reintentar subida" de la tarjeta de cotizacion (Historial): reintenta la
+// auto-subida idempotente (#81) cuando la cotizacion quedo PRE. Con ADR-0006 PRE
+// pasa de ser un modo elegido ("Completar") a un fallo transitorio a reintentar;
+// solo aparece mientras la cotizacion es PRE (sin folio, no historica). Dispara
+// completarPreCotizacion(id, this) en app.js, que resuelve el slot de SU tarjeta.
 export function botonCompletarHtml(cot) {
   if (!puedeCompletarPreCotizacion(cot)) return '';
-  return `<button class="btn btn-primary btn-sm" onclick="completarPreCotizacion(${cot.id})">Completar</button>`;
+  return `<button class="btn btn-primary btn-sm" onclick="completarPreCotizacion(${cot.id}, this)">Reintentar subida</button>`;
 }
 
 // Boton + global (issue #54, PRD #52 historias 4-5): visible en todos los

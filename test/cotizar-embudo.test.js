@@ -434,3 +434,96 @@ test('O2: si la subida a Operam falla, la cotizacion sigue sin folio (sigue PRE)
   assert.equal(res.status, 422);
   assert.equal((await cotStore.obtener(id)).folioOperam, null);
 });
+
+// === Regeneracion sin duplicar (issue #83, F1): 1 oportunidad = 1 cotizacion ===
+// Generar PDF y luego HTML del mismo carrito (flujo normal: PDF para archivo +
+// HTML para WhatsApp) NO debe crear dos entries: los POST /pdf y /html aceptan un
+// cotizacionId opcional y, si el entry existe, lo ACTUALIZAN devolviendo el mismo
+// id. Con folio ya persistido, la subida a Operam no se repite (los quotes de
+// Operam no se editan por API): el endpoint devuelve el folio existente.
+
+test('R1: POST /html con el cotizacionId del PDF actualiza el mismo entry (no crea otro)', async () => {
+  writeProspectos([]);
+  const antes = readCots().length;
+  const pdf = await supertest(app).post('/api/cotizacion/pdf')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send(bodyCotizacion('+52 5599999999'));
+  assert.equal(pdf.status, 200);
+  const id = Number(pdf.headers['x-cotizacion-id']);
+  assert.ok(id > 0);
+  assert.equal(readCots().length, antes + 1);
+
+  // Mismo carrito, ahora con una nota extra y total cambiado: HTML para WhatsApp.
+  const html = await supertest(app).post('/api/cotizacion/html')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ ...bodyCotizacion('+52 5599999999'), cotizacionId: id, total: 2320, subtotal: 2000, iva: 320 });
+  assert.equal(html.status, 200);
+  assert.equal(Number(html.headers['x-cotizacion-id']), id, 'devuelve el MISMO id');
+  assert.equal(readCots().length, antes + 1, 'no se creo un segundo entry');
+  const entry = await cotStore.obtener(id);
+  assert.equal(entry.total, 2320, 'el entry se actualizo con el contenido regenerado');
+});
+
+test('R2: cotizacionId inexistente cae al camino de crear (no truena)', async () => {
+  writeProspectos([]);
+  const antes = readCots().length;
+  const res = await supertest(app).post('/api/cotizacion/html')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ ...bodyCotizacion('+52 5599999999'), cotizacionId: 999999 });
+  assert.equal(res.status, 200);
+  const id = Number(res.headers['x-cotizacion-id']);
+  assert.notEqual(id, 999999);
+  assert.equal(readCots().length, antes + 1);
+});
+
+test('R3: la actualizacion preserva customerId/branchId ya ligados y las claves ajenas del data', async () => {
+  writeProspectos([]);
+  const pdf = await supertest(app).post('/api/cotizacion/pdf')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send(bodyCotizacion('+52 5599999999'));
+  const id = Number(pdf.headers['x-cotizacion-id']);
+  // La subida (#81) persistio el cliente ligado; el checklist de calca (#61) vive
+  // en data.decorado. Una regeneracion (que no trae esos campos) no debe borrarlos.
+  await cotStore.actualizarDatos(id, {
+    cliente: { ...(await cotStore.obtener(id)).data.cliente, customerId: 501, branchId: 601 },
+    decorado: true,
+  });
+  const html = await supertest(app).post('/api/cotizacion/html')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ ...bodyCotizacion('+52 5599999999'), cotizacionId: id });
+  assert.equal(html.status, 200);
+  const entry = await cotStore.obtener(id);
+  assert.equal(entry.data.cliente.customerId, 501, 'customerId ligado sobrevive la regeneracion');
+  assert.equal(entry.data.cliente.branchId, 601, 'branchId ligado sobrevive la regeneracion');
+  assert.equal(entry.data.decorado, true, 'las claves ajenas del data sobreviven (merge, no replace)');
+});
+
+test('R4: el hook del embudo NO se repite al regenerar (un solo evento de cotizacion)', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  const pdf = await supertest(app).post('/api/cotizacion/pdf')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send(bodyCotizacion('+52 5512345678'));
+  const id = Number(pdf.headers['x-cotizacion-id']);
+  await supertest(app).post('/api/cotizacion/html')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ ...bodyCotizacion('+52 5512345678'), cotizacionId: id });
+  const p = readProspectos()[0];
+  assert.equal(p.eventos.filter(e => e.tipo === 'cotizacion').length, 1, 'la regeneracion no duplica el evento');
+});
+
+test('O4: subir una cotizacion que YA tiene folio no re-sube (cero fetch) y devuelve el folio existente', async () => {
+  writeProspectos([]);
+  const id = await cotStore.crear({
+    fecha: '2026-07-07T00:00:00Z', vendedor: 'Memo', cliente: 'HOTELERA DEL SUR',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'HOTELERA DEL SUR SA DE CV', rfc: 'HSU010101AAA' }, items: [] },
+  });
+  await cotStore.setFolioOperam(id, 55123);
+  // fetch sigue BLOQUEADO (beforeEach): si el endpoint tocara Operam, tronaria.
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.folio, '55123');
+  assert.equal(res.body.yaSubida, true, 'senala que no hubo subida nueva');
+});

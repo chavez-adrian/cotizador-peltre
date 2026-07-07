@@ -190,18 +190,47 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
   }
 }
 
+// Crea la cotizacion, o -- si el body trae un cotizacionId de un entry existente
+// (issue #83, F1) -- ACTUALIZA ese entry y devuelve el mismo id: regenerar el
+// mismo carrito en otro formato (PDF para archivo + HTML para WhatsApp) o con
+// ajustes es UNA sola cotizacion, no dos. En la actualizacion se copian al data
+// nuevo el customerId/branchId ya ligados por la subida (#81) -- la regeneracion
+// del formulario no los trae y el merge del store reemplaza data.cliente
+// completo -- y NO se repite el hook del embudo (el prospecto ya se movio y
+// tendria un evento duplicado). cotizacionId invalido o inexistente cae al
+// camino de crear.
+async function crearOActualizarCotizacion(data, vendedor) {
+  const idPrevio = parseInt(data.cotizacionId, 10);
+  delete data.cotizacionId; // campo de control: no persistirlo dentro de data
+  const entry = {
+    fecha: new Date().toISOString(), vendedor,
+    cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
+    totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
+    total: data.total || 0, tier: data.tier || '', data,
+  };
+  if (Number.isInteger(idPrevio) && idPrevio > 0) {
+    const prev = await cotStore.obtener(idPrevio);
+    if (prev) {
+      const prevCli = prev.data?.cliente || {};
+      if (data.cliente) {
+        if (data.cliente.customerId == null && prevCli.customerId != null) data.cliente.customerId = prevCli.customerId;
+        if (data.cliente.branchId == null && prevCli.branchId != null) data.cliente.branchId = prevCli.branchId;
+      }
+      await cotStore.actualizarCotizacion(idPrevio, entry);
+      return idPrevio;
+    }
+  }
+  const id = await cotStore.crear(entry);
+  await actualizarEmbudoPorCotizacion(data, id, vendedor);
+  return id;
+}
+
 app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
   if (!validarTelefonoCotizacion(req, res)) return;
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-    const id = await cotStore.crear({
-      fecha: new Date().toISOString(), vendedor: req.user.name,
-      cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
-      totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
-      total: data.total || 0, tier: data.tier || '', data,
-    });
-    await actualizarEmbudoPorCotizacion(data, id, req.user.name);
+    const id = await crearOActualizarCotizacion(data, req.user.name);
     const pdfBuffer = await generateQuotePDF(data);
     writeFileSync(join(PDFS_DIR, `cot_${id}.pdf`), pdfBuffer);
     res.set({
@@ -221,13 +250,7 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-    const id = await cotStore.crear({
-      fecha: new Date().toISOString(), vendedor: req.user.name,
-      cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
-      totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
-      total: data.total || 0, tier: data.tier || '', data,
-    });
-    await actualizarEmbudoPorCotizacion(data, id, req.user.name);
+    const id = await crearOActualizarCotizacion(data, req.user.name);
     const incluirFotos = !!data.incluirFotos;
     data.id = id;
     const html = generateQuoteHTML(data, { incluirFotos });
@@ -1118,31 +1141,55 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
   }
 }
 
+// Lock en memoria por id de cotizacion (F3 de la revision de #83): la
+// idempotencia de la subida cubre reintentos SECUENCIALES, no concurrencia --
+// dos requests EN VUELO al mismo id (auto-subida + Reintentar del Historial, o
+// doble click en Elegir candidato) leerian ambos customerId null y crearian DOS
+// clientes genericos. Proceso Node unico (Render free tier): un Set basta. El
+// segundo request recibe 425 claro y reintenta cuando el primero termine.
+const subidasOperamEnCurso = new Set();
+
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
-  const entry = await cotStore.obtener(id);
-  if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
-  // Alta temprana de cliente generico (#81, ADR-0006): sin cliente en Operam se
-  // crea uno con RFC generico y la cotizacion nace a su nombre. customerId en el
-  // body = el vendedor resolvio la dedup de nombre eligiendo un candidato
-  // (ADR-0001). Con customerId o RFC real en la cotizacion -- o sin los datos
-  // minimos del contacto (nombre + telefono) -- el camino de siempre.
-  const customerIdElegido = req.body?.customerId ?? null;
-  if (customerIdElegido != null || necesitaAltaGenerica(entry)) {
-    return subirConAltaGenerica(res, id, entry, customerIdElegido);
+  if (subidasOperamEnCurso.has(id)) {
+    return res.status(425).json({ error: 'Ya hay una subida a Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
   }
+  subidasOperamEnCurso.add(id);
   try {
-    const folio = await subirCotizacionOperam(entry.data);
-    // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
-    if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
-    res.json({ ok: true, folio });
-  } catch (err) {
-    // Cliente no identificado (#68): es un problema de datos de la cotizacion,
-    // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
-    if (/identificar el cliente/i.test(err.message)) {
-      return res.status(422).json({ error: err.message });
+    const entry = await cotStore.obtener(id);
+    if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+    // Ya subida (#83, F1c): los quotes de Operam no se editan por API -- re-subir
+    // duplicaria el quote. Se devuelve el folio existente sin tocar Operam;
+    // yaSubida le dice al frontend que los cambios locales de una regeneracion no
+    // viajan a la cotizacion ya registrada.
+    if (entry.folioOperam != null && entry.folioOperam !== '') {
+      return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true });
     }
-    res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+    // Alta temprana de cliente generico (#81, ADR-0006): sin cliente en Operam se
+    // crea uno con RFC generico y la cotizacion nace a su nombre. customerId en el
+    // body = el vendedor resolvio la dedup de nombre eligiendo un candidato
+    // (ADR-0001). Con customerId o RFC real en la cotizacion -- o sin los datos
+    // minimos del contacto (nombre + telefono) -- el camino de siempre.
+    const customerIdElegido = req.body?.customerId ?? null;
+    if (customerIdElegido != null || necesitaAltaGenerica(entry)) {
+      // await: el finally debe liberar el lock hasta que la operacion termine.
+      return await subirConAltaGenerica(res, id, entry, customerIdElegido);
+    }
+    try {
+      const folio = await subirCotizacionOperam(entry.data);
+      // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
+      if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
+      res.json({ ok: true, folio });
+    } catch (err) {
+      // Cliente no identificado (#68): es un problema de datos de la cotizacion,
+      // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
+      if (/identificar el cliente/i.test(err.message)) {
+        return res.status(422).json({ error: err.message });
+      }
+      res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+    }
+  } finally {
+    subidasOperamEnCurso.delete(id);
   }
 });
 

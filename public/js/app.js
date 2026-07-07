@@ -47,7 +47,8 @@ import {
   badgeFolioOperamProspectoHtml,
   cadenaOperamHtml,
   botonCompletarHtml,
-  siguientePasoFormalizacion,
+  interpretarSubidaOperam,
+  buildOperamStatusHtml,
   buildColaHoyHtml,
   buildMenuNuevoHtml,
   buildCerradasHtml,
@@ -1124,6 +1125,11 @@ async function generatePDF() {
     const canal = await canalParaCotizacion(body.cliente.telefono);
     if (canal) body.canal = canal;
 
+    // Regeneracion en la misma sesion de cotizacion (#83, F1): PDF + HTML del
+    // mismo carrito son UNA cotizacion. El id de la primera generacion se reenvia
+    // y el server actualiza el entry en vez de crear otro.
+    if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
+
     const res = await api('/api/cotizacion/pdf', {
       method: 'POST',
       body,
@@ -1145,6 +1151,10 @@ async function generatePDF() {
     a.download = `Cotizacion_PeltreNacional_${state.lastCotizacionId || 'nuevo'}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
+    // Auto-subida a Operam (#83, ADR-0006): la generacion REAL del documento la
+    // sube sola. No bloquea la entrega del PDF (ya se descargo); el estado (folio
+    // o PRE + Reintentar / candidatos) se pinta en el slot del resumen.
+    autoSubirOperam(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
   } catch (e) {
     alert('Error generando PDF: ' + e.message);
   } finally {
@@ -1244,6 +1254,10 @@ async function generateHTML() {
     const canal = await canalParaCotizacion(body.cliente.telefono);
     if (canal) body.canal = canal;
 
+    // Misma sesion de cotizacion (#83, F1): reusar el entry ya creado por el PDF
+    // (o una generacion previa) en vez de duplicar la cotizacion.
+    if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
+
     const res = await api('/api/cotizacion/html', { method: 'POST', body });
 
     if (!res.ok) {
@@ -1259,6 +1273,9 @@ async function generateHTML() {
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+    // Auto-subida a Operam (#83): el HTML es el formato WhatsApp del documento;
+    // generarlo tambien sube la cotizacion sola (mismo endpoint idempotente).
+    autoSubirOperam(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
   } catch (e) {
     alert('Error generando HTML: ' + e.message);
   } finally {
@@ -1319,6 +1336,8 @@ function nuevaCotizacion() {
   const envPaisEl = document.getElementById('envia-pais');
   if (envPaisEl) envPaisEl.value = 'MX';
   enviaRateSeleccionado = null;
+  const operamStatus = document.getElementById('operam-status-cotizar');
+  if (operamStatus) operamStatus.innerHTML = '';
   // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
   // pcRenderInicio ya limpia campos y colapsa entrega (pcPrepararSeleccion).
   pcRecientesCache = null;
@@ -1475,6 +1494,12 @@ function pcPrepararSeleccion() {
   // seleccionarClienteOperam lo re-renderiza si el nuevo cliente tiene previas.
   const hist = document.getElementById('historial-cliente-panel');
   if (hist) { hist.style.display = 'none'; hist.innerHTML = ''; }
+  // Cambio de cliente = fin de la sesion de cotizacion (#83, F1): la proxima
+  // generacion crea SU entry, no actualiza el del cliente anterior. El estado de
+  // subida del resumen tambien era del anterior.
+  state.lastCotizacionId = null;
+  const operamStatus = document.getElementById('operam-status-cotizar');
+  if (operamStatus) operamStatus.innerHTML = '';
 }
 
 // --- Entrada: dos caminos ---
@@ -1952,65 +1977,86 @@ function renderHistorialCliente(cotizaciones) {
   panel.innerHTML = `<div class="section-header">Cotizaciones previas (${cotizaciones.length})</div>` +
     cotizaciones.slice(-5).reverse().map(c => {
       const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+      // "Reintentar subida" solo si la cotizacion sigue en PRE (sin folio); una ya
+      // registrada (#Operam N) o historica no lo ofrece (#83, AC6). El contenedor
+      // por-cotizacion recibe el estado al reintentar.
       return `<div class="cot-mini">
-        <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+        <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}${badgeFolioOperamHtml(c)}</span>
         ${c.hasData ? `<button class="btn btn-sm btn-secondary" onclick="cargarCotizacion(${c.id})">Cargar</button>` : ''}
         ${c.hasPdf ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-sm btn-secondary">PDF</a>` : ''}
-        <button class="btn btn-sm btn-primary" onclick="subirCotizacionOperam(${c.id})">Subir a Operam</button>
+        ${botonCompletarHtml(c)}
+        <div class="operam-status-slot"></div>
       </div>`;
     }).join('');
 }
 window.renderHistorialCliente = renderHistorialCliente;
 
-async function subirCotizacionOperam(id) {
-  const btn = event?.target;
-  if (btn) { btn.disabled = true; btn.textContent = 'Subiendo...'; }
-  try {
-    const res = await api(`/api/cotizacion/operam/${id}`, { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error');
-    alert(`Cotizacion subida a Operam${data.folio ? ' - Folio: ' + data.folio : ''}`);
-  } catch (e) {
-    alert('Error al subir: ' + e.message);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Subir a Operam'; }
-  }
+// Resuelve el slot de estado RELATIVO al elemento clickeado (F2 de la revision
+// de #83): la misma cotizacion puede estar pintada en dos paneles a la vez
+// (Historial y cotizaciones previas del cliente, ambos vivos en el DOM con
+// display:none), asi que un id global operam-status-cot-N seria duplicado y
+// getElementById pintaria siempre en el primero -- posiblemente el oculto. Un
+// boton dentro del slot (Reintentar/Elegir/Dejar como PRE) resuelve a su propio
+// slot; el boton "Reintentar subida" de las acciones de la tarjeta resuelve al
+// slot hermano dentro de la misma tarjeta (.cot-card / .cot-mini).
+function slotOperamDesde(el) {
+  if (!el || !el.closest) return null;
+  return el.closest('.operam-status-slot') ||
+    el.closest('.cot-card, .cot-mini')?.querySelector('.operam-status-slot') || null;
 }
-window.subirCotizacionOperam = subirCotizacionOperam;
 
-// Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1). Encadena las
-// dos piezas existentes y desacopladas: (1) registro directo de la cotizacion
-// (busca el cliente por RFC en Operam y persiste el folio -> deja de ser PRE);
-// (2) si Operam no halla al cliente, guia al vendedor al alta (flujo existente),
-// prellenando el formulario con los datos de la cotizacion via cargarCotizacion;
-// tras el alta, vuelve a tocar "Completar" para registrar. El paso lo decide la
-// regla pura siguientePasoFormalizacion sobre la respuesta del servidor.
-async function completarPreCotizacion(id) {
-  const btn = event?.target;
-  if (btn) { btn.disabled = true; btn.textContent = 'Completando...'; }
+// Auto-subida a Operam (#83, ADR-0006): al generar una cotizacion (PDF/HTML) se
+// sube sola via el endpoint idempotente de #81 -- sin boton manual. La misma
+// funcion sirve para el reintento y para resolver la dedup por nombre (extraBody
+// = { customerId }). El resultado se pinta en el slot (nodo DOM) con la vista
+// pura interpretarSubidaOperam + buildOperamStatusHtml (folio | PRE + Reintentar
+// | candidatos inline | PRE sin datos). El documento ya se genero: un fallo de
+// subida NUNCA lo bloquea, solo deja la cotizacion en PRE.
+// Subidas en vuelo por id (F3 de la revision): un doble click en Reintentar /
+// Elegir, o un Reintentar con la auto-subida original aun en vuelo, no dispara
+// un segundo POST (el server ademas tiene su lock por id, que es la proteccion
+// real; esto evita el 425 en el caso comun). El id se normaliza a string (llega
+// como string del header X-Cotizacion-Id y como numero de los onclick).
+const subidasOperamEnVuelo = new Set();
+
+async function autoSubirOperam(id, slot, extraBody) {
+  if (!id) return;
+  const key = String(id);
+  if (subidasOperamEnVuelo.has(key)) return;
+  subidasOperamEnVuelo.add(key);
+  if (slot) slot.innerHTML = '<span class="operam-status">Subiendo a Operam...</span>';
   let resultado;
   try {
-    const res = await api(`/api/cotizacion/operam/${id}`, { method: 'POST' });
+    const opts = { method: 'POST' };
+    if (extraBody) opts.body = extraBody;
+    const res = await api(`/api/cotizacion/operam/${id}`, opts);
     let data = {};
     try { data = await res.json(); } catch {}
-    resultado = { ok: res.ok, status: res.status, folio: data.folio, error: data.error };
+    resultado = { ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida, error: data.error, candidatos: data.candidatos };
   } catch (e) {
     resultado = { ok: false, status: 0, error: e.message };
+  } finally {
+    subidasOperamEnVuelo.delete(key);
   }
-  const paso = siguientePasoFormalizacion(resultado);
-  if (paso === 'listo') {
-    alert(`Cotizacion registrada en Operam${resultado.folio ? ' - Folio: ' + resultado.folio : ''}`);
-    showHistorial();
-    return;
-  }
-  if (btn) { btn.disabled = false; btn.textContent = 'Completar'; }
-  if (paso === 'alta') {
-    alert('El cliente aun no esta en Operam. Damoslo de alta primero (el formulario se prellena con los datos de la cotizacion) y al terminar vuelve a tocar "Completar".');
-    await cargarCotizacion(id); // prellena el formulario y cambia a la vista Cotizar
-    abrirAcordeonAlta();
-    return;
-  }
-  alert('No se pudo completar: ' + (resultado.error || 'error desconocido'));
+  const vista = interpretarSubidaOperam(resultado);
+  if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
+  return vista;
+}
+window.reintentarSubidaOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el));
+window.elegirCandidatoOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { customerId });
+window.dejarPreOperam = (id, el) => {
+  const slot = slotOperamDesde(el);
+  if (slot) slot.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' });
+};
+
+// Reintentar la subida de una cotizacion PRE desde su tarjeta (boton "Reintentar
+// subida", #83). Reusa la auto-subida idempotente pintando el resultado en el
+// slot de SU tarjeta (resuelto desde el boton clickeado, F2) -- sin navegar (F4):
+// el retry puede salir del panel de cotizaciones previas en plena captura y
+// arrancar al vendedor al Historial seria robarle la pantalla. El folio queda
+// visible in situ; el badge de la tarjeta se actualiza en el proximo render.
+function completarPreCotizacion(id, el) {
+  return autoSubirOperam(id, slotOperamDesde(el));
 }
 window.completarPreCotizacion = completarPreCotizacion;
 
@@ -2305,6 +2351,7 @@ function renderHistorial() {
           ${btnCargar}
           ${btnCompletar}
         </div>
+        <div class="operam-status-slot"></div>
       </div>
     `;
   }).join('');
@@ -3262,6 +3309,13 @@ async function cargarCotizacion(id) {
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');
 
+    // Cargar una cotizacion previa inicia una sesion NUEVA (#83, F1): generar
+    // desde aqui crea su propio entry -- nunca sobreescribe el historico cargado
+    // ni el de la sesion anterior. El estado de subida del resumen ya no aplica.
+    state.lastCotizacionId = null;
+    const operamStatus = document.getElementById('operam-status-cotizar');
+    if (operamStatus) operamStatus.innerHTML = '';
+
     // Volver a la app
     document.getElementById('historial-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
@@ -3344,12 +3398,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-html').addEventListener('click', generateHTML);
   document.getElementById('btn-whatsapp').addEventListener('click', shareWhatsApp);
   document.getElementById('btn-nueva').addEventListener('click', nuevaCotizacion);
-
-  // Subir a Operam
-  document.getElementById('btn-subir-operam')?.addEventListener('click', () => {
-    if (!state.lastCotizacionId) { alert('Genera el PDF primero'); return; }
-    subirCotizacionOperam(state.lastCotizacionId);
-  });
 
   // Navegacion inferior (bottom-nav, issue #53): Cotizar / Hoy / Pipeline / Mas.
   // Pipeline esta vivo (tablero unico de 7 etapas); los demas enlazan por ahora

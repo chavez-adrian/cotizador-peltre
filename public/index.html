@@ -132,15 +132,14 @@
       </div>
     </div>
 
-    <!-- Cotizaciones previas del cliente seleccionado (Cargar / PDF / Subir a
-         Operam). Hermano de #pc-root: lo llena renderHistorialCliente al elegir
+    <!-- Cotizaciones previas del cliente seleccionado (Cargar / PDF / Reintentar
+         subida). Hermano de #pc-root: lo llena renderHistorialCliente al elegir
          un cliente Operam con historial y se muestra bajo la tarjeta. -->
     <div id="historial-cliente-panel" style="display:none"></div>
 
-    <!-- Acordeon de alta de cliente (issue #27). Se conserva (lo reorienta #85);
-         ya no se abre desde la entrada del paso Cliente, solo desde la
-         formalizacion (completarPreCotizacion -> abrirAcordeonAlta). -->
-    <!-- Acordeon de alta de cliente (issue #27) -->
+    <!-- Acordeon de alta de cliente (issue #27). Se conserva (lo reorienta #85).
+         Con la auto-subida (#83) la formalizacion ya no lo abre; la subida crea el
+         cliente generico server-side (ADR-0006). -->
     <div id="panel-alta-cliente" style="display:none;margin-bottom:16px">
       <div style="display:flex;gap:16px;align-items:flex-start">
         <!-- Acordeon columna izquierda -->
@@ -760,8 +759,10 @@
         <button class="btn btn-primary" id="btn-pdf" style="flex:1">Generar PDF</button>
         <button class="btn btn-secondary" id="btn-html" style="flex:1">Ver HTML</button>
         <button class="btn btn-success" id="btn-whatsapp" style="flex:1">WhatsApp</button>
-        <button class="btn btn-secondary" id="btn-subir-operam" style="flex:1">Subir a Operam</button>
       </div>
+      <!-- Auto-subida a Operam (#83): al generar, aqui aparece el folio, o PRE +
+           Reintentar / candidatos si Operam fallo. Reemplaza al boton manual. -->
+      <div id="operam-status-cotizar" class="operam-status-slot" style="margin-top:8px"></div>
       <button class="btn btn-secondary btn-block" id="btn-nueva" style="margin-top:8px">Nueva cotizacion</button>
     </div>
   </div>
