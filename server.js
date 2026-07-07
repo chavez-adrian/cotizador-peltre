@@ -8,7 +8,8 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
+import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, FUENTE_ALTA_GENERICA } from './lib/alta-generica.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
 import { detectarDuplicados } from './lib/deduplicacion.js';
@@ -976,10 +977,153 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Subida de una cotizacion cuya oportunidad NO tiene cliente en Operam (issue #81,
+// ADR-0006): una sola operacion server-side con reporte de pasos (estilo
+// /api/crear-cliente, ADR-0002). Dedup en capas ANTES de crear:
+//   1. celular contra prospectos: un prospecto convertido ya mapea celular ->
+//      customer_id (data.cliente_id) y se reutiliza;
+//   2. nombre normalizado contra los genericos de Operam (ADR-0001): con
+//      candidatos la operacion SE DETIENE (409 { candidatos }, sin escape); el
+//      vendedor resuelve reintentando con { customerId } elegido -- el documento
+//      local no se bloquea.
+// El customer_id se persiste (cotizacion y prospecto) ANTES de subir: un reintento
+// tras fallo parcial entra por el camino normal con el id persistido y NO crea un
+// segundo cliente.
+async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
+  const c = entry.data?.cliente || {};
+  const steps = [];
+  let customerId = customerIdElegido ?? null;
+  let creadoNuevo = false;
+  try {
+    const prospecto = await prospectosStore.buscarPorCelular(c.telefono);
+
+    if (customerId != null) {
+      // El customerId elegido no puede contradecir lo ya ligado -- ni el de la
+      // cotizacion (reintento con otro cliente) ni el del prospecto (celular ya
+      // convertido). Mejor frenar que mezclar cuentas.
+      if (c.customerId != null && String(c.customerId) !== String(customerId)) {
+        return res.status(409).json({ error: `La cotizacion ya esta ligada al cliente ${c.customerId} en Operam y difiere del elegido (${customerId})` });
+      }
+      if (prospecto?.data?.cliente_id != null && String(prospecto.data.cliente_id) !== String(customerId)) {
+        return res.status(409).json({ error: `El celular de la cotizacion ya esta ligado al cliente ${prospecto.data.cliente_id} en Operam y difiere del elegido (${customerId})` });
+      }
+      steps.push({ name: 'dedup', status: 'ok', info: 'candidato elegido' });
+    } else if (prospecto?.data?.cliente_id != null) {
+      customerId = prospecto.data.cliente_id;
+      steps.push({ name: 'dedup', status: 'ok', info: 'cliente reutilizado por celular' });
+    } else {
+      const rfcGenerico = rfcGenericoPara(c.pais);
+      const nombre = c.razonSocial || c.nombreCorto || entry.cliente || '';
+      // limit 100: el pool de genericos crece por diseno (#81); con el default 10
+      // un match real fuera de los primeros 10 volveria la dedup 'libre'.
+      const raw = await buscarClientes(rfcGenerico, 100);
+      const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
+      const dedup = detectarDuplicados(rfcGenerico, nombre, clientes);
+      if (dedup.tipo === 'candidatos') {
+        return res.status(409).json({
+          error: 'Hay clientes con RFC generico y nombre similar en Operam: elige uno para continuar',
+          candidatos: dedup.candidatos.map(k => ({ id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id })),
+        });
+      }
+      steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
+
+      const salesman = (readJSON('vendedores.json') || []).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
+      const salesTypeId = listasPrecios.find(l => l.nombre === entry.tier)?.id;
+      let creado;
+      try {
+        // crearClienteDirecto: SIN la dedup por RFC exacto de crearCliente (con
+        // RFC generico devolveria cualquier generico existente; la dedup correcta
+        // por nombre ya corrio arriba).
+        creado = await crearClienteDirecto(buildClienteGenerico(entry, { salesman, salesTypeId }));
+      } catch (err) {
+        steps.push({ name: 'POST customer', status: 'error', error: err.message });
+        logCliente(rfcGenerico, nombre, 'error', null, FUENTE_ALTA_GENERICA, null, err.message);
+        return res.status(503).json({ error: 'No se pudo crear el cliente generico en Operam: ' + err.message, steps });
+      }
+      customerId = creado.cliente_id;
+      creadoNuevo = true;
+      steps.push({ name: 'POST customer', status: 'ok' });
+      logCliente(rfcGenerico, nombre, 'creado', customerId, FUENTE_ALTA_GENERICA, null, null);
+      steps.push({ name: 'log auditoria', status: 'ok', info: FUENTE_ALTA_GENERICA });
+    }
+
+    // Con customerId elegido NUNCA se reutiliza un branchId persistido (pudo
+    // capturarse para OTRO cliente): se resuelve siempre el branch del elegido.
+    let branchId = customerIdElegido != null ? null : (c.branchId ?? c.branch_id ?? null);
+
+    // Persistir ANTES de subir (idempotencia): la cotizacion queda ligada al
+    // cliente aunque la subida falle.
+    await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
+    steps.push({ name: 'persistir customer_id', status: 'ok' });
+    // Ligar el prospecto es fire-and-forget (mismo trato que Dropbox): el cliente
+    // YA existe y la subida debe completarse; un fallo del store solo se reporta.
+    // Si abortara aqui, el reintento entraria por el camino normal (customerId ya
+    // persistido) y el prospecto quedaria sin mapear para siempre.
+    if (prospecto && prospecto.data?.cliente_id == null) {
+      try {
+        await prospectosStore.ligarCliente(prospecto.id, customerId, {
+          tipo: 'cliente', cliente_id: customerId, nombre: c.razonSocial || c.nombreCorto || '',
+          fecha: new Date().toISOString(), vendedor: entry.vendedor,
+        });
+        steps.push({ name: 'ligar prospecto', status: 'ok' });
+      } catch (err) {
+        console.error('[prospectos] No se pudo ligar prospecto al cliente generico:', err.message);
+        steps.push({ name: 'ligar prospecto', status: 'error', error: err.message });
+      }
+    }
+
+    // El POST de Operam ignora dimension_id/dimension2_id (#74): persistirlas via
+    // PUT, no bloqueante (mismo trato que en /api/crear-cliente).
+    if (creadoNuevo) {
+      try {
+        await actualizarClienteDirecto(customerId, { dimension_id: 1, dimension2_id: 5 });
+        steps.push({ name: 'PUT customer (dimensiones)', status: 'ok' });
+      } catch (err) {
+        steps.push({ name: 'PUT customer (dimensiones)', status: 'error', error: err.message });
+      }
+    }
+
+    // El quote debe ir al branch del cliente (Operam lo auto-crea en el POST), no
+    // al fallback branch_id 1 de subirCotizacionOperam. Se persiste para que un
+    // reintento (camino normal por customerId) tambien lo use.
+    if (branchId == null) {
+      try {
+        branchId = await obtenerBranchId(customerId);
+        steps.push({ name: 'GET branch_id', status: 'ok' });
+        await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
+      } catch (err) {
+        steps.push({ name: 'GET branch_id', status: 'error', error: err.message });
+        return res.status(503).json({ error: 'No se pudo obtener el domicilio del cliente en Operam: ' + err.message, customer_id: customerId, steps });
+      }
+    }
+
+    try {
+      const folio = await subirCotizacionOperam({ ...entry.data, cliente: { ...c, customerId, branchId } });
+      if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
+      steps.push({ name: 'POST quote', status: 'ok' });
+      return res.json({ ok: true, folio, customer_id: customerId, steps });
+    } catch (err) {
+      steps.push({ name: 'POST quote', status: 'error', error: err.message });
+      return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps });
+    }
+  } catch (err) {
+    return res.status(503).json({ error: 'No se pudo completar la subida con alta generica: ' + err.message, steps });
+  }
+}
+
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
   const entry = await cotStore.obtener(id);
   if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+  // Alta temprana de cliente generico (#81, ADR-0006): sin cliente en Operam se
+  // crea uno con RFC generico y la cotizacion nace a su nombre. customerId en el
+  // body = el vendedor resolvio la dedup de nombre eligiendo un candidato
+  // (ADR-0001). Con customerId o RFC real en la cotizacion -- o sin los datos
+  // minimos del contacto (nombre + telefono) -- el camino de siempre.
+  const customerIdElegido = req.body?.customerId ?? null;
+  if (customerIdElegido != null || necesitaAltaGenerica(entry)) {
+    return subirConAltaGenerica(res, id, entry, customerIdElegido);
+  }
   try {
     const folio = await subirCotizacionOperam(entry.data);
     // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
