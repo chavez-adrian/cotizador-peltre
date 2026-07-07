@@ -70,7 +70,10 @@ export function puedeCompletarPreCotizacion(cot) {
 // candidatos) cae a 'pre' con su mensaje: no hay lista que ofrecer.
 export function interpretarSubidaOperam(resultado) {
   const r = resultado || {};
-  if (r.ok) return { estado: 'folio', folio: r.folio ?? null };
+  // yaSubida (#83 F1c): la cotizacion ya tenia folio y el endpoint NO re-subio
+  // (los quotes de Operam no se editan por API): folio + nota de que una
+  // regeneracion local no viaja a la cotizacion ya registrada.
+  if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida };
   const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];
   if (r.status === 409 && candidatos.length) {
     return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay clientes con nombre similar en Operam' };
@@ -114,7 +117,10 @@ export function buildOperamStatusHtml(id, vista, containerId = '') {
   const cid = String(containerId);
   if (v.estado === 'folio') {
     const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
-    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>`;
+    const nota = v.yaSubida
+      ? ` <span class="operam-status-nota">Los cambios locales no actualizan la cotizacion ya subida a Operam.</span>`
+      : '';
+    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}`;
   }
   if (v.estado === 'candidatos') {
     return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje, cid);

@@ -1125,6 +1125,11 @@ async function generatePDF() {
     const canal = await canalParaCotizacion(body.cliente.telefono);
     if (canal) body.canal = canal;
 
+    // Regeneracion en la misma sesion de cotizacion (#83, F1): PDF + HTML del
+    // mismo carrito son UNA cotizacion. El id de la primera generacion se reenvia
+    // y el server actualiza el entry en vez de crear otro.
+    if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
+
     const res = await api('/api/cotizacion/pdf', {
       method: 'POST',
       body,
@@ -1248,6 +1253,10 @@ async function generateHTML() {
 
     const canal = await canalParaCotizacion(body.cliente.telefono);
     if (canal) body.canal = canal;
+
+    // Misma sesion de cotizacion (#83, F1): reusar el entry ya creado por el PDF
+    // (o una generacion previa) en vez de duplicar la cotizacion.
+    if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
 
     const res = await api('/api/cotizacion/html', { method: 'POST', body });
 
@@ -1485,6 +1494,12 @@ function pcPrepararSeleccion() {
   // seleccionarClienteOperam lo re-renderiza si el nuevo cliente tiene previas.
   const hist = document.getElementById('historial-cliente-panel');
   if (hist) { hist.style.display = 'none'; hist.innerHTML = ''; }
+  // Cambio de cliente = fin de la sesion de cotizacion (#83, F1): la proxima
+  // generacion crea SU entry, no actualiza el del cliente anterior. El estado de
+  // subida del resumen tambien era del anterior.
+  state.lastCotizacionId = null;
+  const operamStatus = document.getElementById('operam-status-cotizar');
+  if (operamStatus) operamStatus.innerHTML = '';
 }
 
 // --- Entrada: dos caminos ---
@@ -3270,6 +3285,13 @@ async function cargarCotizacion(id) {
 
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');
+
+    // Cargar una cotizacion previa inicia una sesion NUEVA (#83, F1): generar
+    // desde aqui crea su propio entry -- nunca sobreescribe el historico cargado
+    // ni el de la sesion anterior. El estado de subida del resumen ya no aplica.
+    state.lastCotizacionId = null;
+    const operamStatus = document.getElementById('operam-status-cotizar');
+    if (operamStatus) operamStatus.innerHTML = '';
 
     // Volver a la app
     document.getElementById('historial-view').style.display = 'none';

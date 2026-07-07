@@ -181,8 +181,11 @@ test('Q18: botonCompletarHtml pinta "Reintentar subida" solo sobre una tarjeta P
 // candidatos; 422 -> sin_datos (PRE sin reintento util); 503/red/409-conflicto ->
 // pre (reintento idempotente).
 test('Q19: interpretarSubidaOperam clasifica la respuesta del endpoint por status y campos', () => {
-  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001 });
-  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001, yaSubida: false });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null, yaSubida: false });
+  // yaSubida (#83 F1c): ya habia folio, el endpoint no re-subio (los quotes de
+  // Operam no se editan por API; una regeneracion local no viaja a Operam).
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: '55123', yaSubida: true }), { estado: 'folio', folio: '55123', yaSubida: true });
 
   const cand = interpretarSubidaOperam({ ok: false, status: 409, error: 'Elige uno', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] });
   assert.equal(cand.estado, 'candidatos');
@@ -203,6 +206,14 @@ test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candi
   const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 }, 'operam-status-cotizar');
   assert.match(ok, /#Operam 77001/);
   assert.doesNotMatch(ok, /Reintentar/);
+  assert.doesNotMatch(ok, /cambios locales/, 'sin nota cuando la subida fue nueva');
+
+  // Ya subida antes (#83 F1c): folio + nota de que la regeneracion local no viaja
+  // a la cotizacion ya registrada en Operam (no editable por API).
+  const ya = buildOperamStatusHtml(5, { estado: 'folio', folio: '55123', yaSubida: true }, 'operam-status-cotizar');
+  assert.match(ya, /#Operam 55123/);
+  assert.match(ya, /cambios locales no actualizan/);
+  assert.doesNotMatch(ya, /Reintentar/);
 
   const pre = buildOperamStatusHtml(5, { estado: 'pre', mensaje: 'Operam caido' }, 'operam-status-cotizar');
   assert.match(pre, /badge-pre/);
