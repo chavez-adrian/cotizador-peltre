@@ -2050,14 +2050,13 @@ window.dejarPreOperam = (id, el) => {
 };
 
 // Reintentar la subida de una cotizacion PRE desde su tarjeta (boton "Reintentar
-// subida", #83). Reusa la auto-subida idempotente pintando el estado en el slot
-// de SU tarjeta (resuelto desde el boton clickeado, F2); al obtener folio
-// refresca el historial (aparece #Operam N y desaparece el boton).
-async function completarPreCotizacion(id, el) {
-  const vista = await autoSubirOperam(id, slotOperamDesde(el));
-  if (vista && vista.estado === 'folio') {
-    setTimeout(() => showHistorial(), 1200);
-  }
+// subida", #83). Reusa la auto-subida idempotente pintando el resultado en el
+// slot de SU tarjeta (resuelto desde el boton clickeado, F2) -- sin navegar (F4):
+// el retry puede salir del panel de cotizaciones previas en plena captura y
+// arrancar al vendedor al Historial seria robarle la pantalla. El folio queda
+// visible in situ; el badge de la tarjeta se actualiza en el proximo render.
+function completarPreCotizacion(id, el) {
+  return autoSubirOperam(id, slotOperamDesde(el));
 }
 window.completarPreCotizacion = completarPreCotizacion;
 
