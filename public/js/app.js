@@ -1153,8 +1153,8 @@ async function generatePDF() {
     URL.revokeObjectURL(url);
     // Auto-subida a Operam (#83, ADR-0006): la generacion REAL del documento la
     // sube sola. No bloquea la entrega del PDF (ya se descargo); el estado (folio
-    // o PRE + Reintentar / candidatos) se pinta en #operam-status-cotizar.
-    autoSubirOperam(state.lastCotizacionId, 'operam-status-cotizar');
+    // o PRE + Reintentar / candidatos) se pinta en el slot del resumen.
+    autoSubirOperam(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
   } catch (e) {
     alert('Error generando PDF: ' + e.message);
   } finally {
@@ -1275,7 +1275,7 @@ async function generateHTML() {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     // Auto-subida a Operam (#83): el HTML es el formato WhatsApp del documento;
     // generarlo tambien sube la cotizacion sola (mismo endpoint idempotente).
-    autoSubirOperam(state.lastCotizacionId, 'operam-status-cotizar');
+    autoSubirOperam(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
   } catch (e) {
     alert('Error generando HTML: ' + e.message);
   } finally {
@@ -1985,23 +1985,36 @@ function renderHistorialCliente(cotizaciones) {
         ${c.hasData ? `<button class="btn btn-sm btn-secondary" onclick="cargarCotizacion(${c.id})">Cargar</button>` : ''}
         ${c.hasPdf ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-sm btn-secondary">PDF</a>` : ''}
         ${botonCompletarHtml(c)}
-        <div id="operam-status-cot-${c.id}" class="operam-status-slot"></div>
+        <div class="operam-status-slot"></div>
       </div>`;
     }).join('');
 }
 window.renderHistorialCliente = renderHistorialCliente;
 
+// Resuelve el slot de estado RELATIVO al elemento clickeado (F2 de la revision
+// de #83): la misma cotizacion puede estar pintada en dos paneles a la vez
+// (Historial y cotizaciones previas del cliente, ambos vivos en el DOM con
+// display:none), asi que un id global operam-status-cot-N seria duplicado y
+// getElementById pintaria siempre en el primero -- posiblemente el oculto. Un
+// boton dentro del slot (Reintentar/Elegir/Dejar como PRE) resuelve a su propio
+// slot; el boton "Reintentar subida" de las acciones de la tarjeta resuelve al
+// slot hermano dentro de la misma tarjeta (.cot-card / .cot-mini).
+function slotOperamDesde(el) {
+  if (!el || !el.closest) return null;
+  return el.closest('.operam-status-slot') ||
+    el.closest('.cot-card, .cot-mini')?.querySelector('.operam-status-slot') || null;
+}
+
 // Auto-subida a Operam (#83, ADR-0006): al generar una cotizacion (PDF/HTML) se
 // sube sola via el endpoint idempotente de #81 -- sin boton manual. La misma
 // funcion sirve para el reintento y para resolver la dedup por nombre (extraBody
-// = { customerId }). El resultado se pinta en el contenedor containerId con la
-// vista pura interpretarSubidaOperam + buildOperamStatusHtml (folio | PRE +
-// Reintentar | candidatos inline | PRE sin datos). El documento ya se genero: un
-// fallo de subida NUNCA lo bloquea, solo deja la cotizacion en PRE.
-async function autoSubirOperam(id, containerId, extraBody) {
+// = { customerId }). El resultado se pinta en el slot (nodo DOM) con la vista
+// pura interpretarSubidaOperam + buildOperamStatusHtml (folio | PRE + Reintentar
+// | candidatos inline | PRE sin datos). El documento ya se genero: un fallo de
+// subida NUNCA lo bloquea, solo deja la cotizacion en PRE.
+async function autoSubirOperam(id, slot, extraBody) {
   if (!id) return;
-  const cont = containerId ? document.getElementById(containerId) : null;
-  if (cont) cont.innerHTML = '<span class="operam-status">Subiendo a Operam...</span>';
+  if (slot) slot.innerHTML = '<span class="operam-status">Subiendo a Operam...</span>';
   let resultado;
   try {
     const opts = { method: 'POST' };
@@ -2009,28 +2022,27 @@ async function autoSubirOperam(id, containerId, extraBody) {
     const res = await api(`/api/cotizacion/operam/${id}`, opts);
     let data = {};
     try { data = await res.json(); } catch {}
-    resultado = { ok: res.ok, status: res.status, folio: data.folio, error: data.error, candidatos: data.candidatos };
+    resultado = { ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida, error: data.error, candidatos: data.candidatos };
   } catch (e) {
     resultado = { ok: false, status: 0, error: e.message };
   }
   const vista = interpretarSubidaOperam(resultado);
-  if (cont) cont.innerHTML = buildOperamStatusHtml(id, vista, containerId);
+  if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
   return vista;
 }
-window.reintentarSubidaOperam = (id, containerId) => autoSubirOperam(id, containerId);
-window.elegirCandidatoOperam = (id, customerId, containerId) => autoSubirOperam(id, containerId, { customerId });
-window.dejarPreOperam = (id, containerId) => {
-  const cont = document.getElementById(containerId);
-  if (cont) cont.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' }, containerId);
+window.reintentarSubidaOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el));
+window.elegirCandidatoOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { customerId });
+window.dejarPreOperam = (id, el) => {
+  const slot = slotOperamDesde(el);
+  if (slot) slot.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' });
 };
 
-// Reintentar la subida de una cotizacion PRE desde su tarjeta del historial
-// (boton "Reintentar subida", #83). Reusa la auto-subida idempotente pintando el
-// estado en el contenedor de la tarjeta; al obtener folio refresca el historial
-// (aparece #Operam N y desaparece el boton).
-async function completarPreCotizacion(id) {
-  const containerId = `operam-status-cot-${id}`;
-  const vista = await autoSubirOperam(id, containerId);
+// Reintentar la subida de una cotizacion PRE desde su tarjeta (boton "Reintentar
+// subida", #83). Reusa la auto-subida idempotente pintando el estado en el slot
+// de SU tarjeta (resuelto desde el boton clickeado, F2); al obtener folio
+// refresca el historial (aparece #Operam N y desaparece el boton).
+async function completarPreCotizacion(id, el) {
+  const vista = await autoSubirOperam(id, slotOperamDesde(el));
   if (vista && vista.estado === 'folio') {
     setTimeout(() => showHistorial(), 1200);
   }
@@ -2328,7 +2340,7 @@ function renderHistorial() {
           ${btnCargar}
           ${btnCompletar}
         </div>
-        <div id="operam-status-cot-${c.id}" class="operam-status-slot"></div>
+        <div class="operam-status-slot"></div>
       </div>
     `;
   }).join('');

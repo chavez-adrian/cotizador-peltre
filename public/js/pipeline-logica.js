@@ -86,35 +86,38 @@ export function interpretarSubidaOperam(resultado) {
 
 // Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001):
 // el vendedor elige el cliente correcto o deja la cotizacion como PRE sin bloquear
-// el documento. Cada boton dispara elegirCandidatoOperam(id, customerId, containerId)
-// en app.js (re-llama el endpoint con { customerId }); "Dejar como PRE" solo cierra
-// la lista. containerId identifica el contenedor donde se repinta el estado (el del
-// resumen al generar, o el de la tarjeta del historial al reintentar).
-export function buildCandidatosOperamHtml(id, candidatos, mensaje, containerId = '') {
-  const cid = String(containerId);
+// el documento. Cada boton dispara elegirCandidatoOperam(id, customerId, this) en
+// app.js (re-llama el endpoint con { customerId }); "Dejar como PRE" solo cierra
+// la lista. Los botones pasan `this` -- NUNCA un id de contenedor: la misma
+// cotizacion puede estar pintada en dos paneles a la vez (Historial y
+// cotizaciones previas del cliente) y un id duplicado haria que getElementById
+// pintara siempre en el primero, posiblemente oculto (F2 de la revision). app.js
+// resuelve el slot relativo al elemento clickeado.
+export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
   const items = (candidatos || []).map(c => {
     const nombre = escapeHtml(c.CustName || c.cust_name || 'Sin nombre');
     const ref = c.cust_ref ? ` · ${escapeHtml(c.cust_ref)}` : '';
     return `<li class="operam-candidato">
       <span>${nombre}${ref}</span>
-      <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, '${cid}')">Elegir</button>
+      <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
     </li>`;
   }).join('');
   return `<div class="operam-status operam-status-candidatos">
     <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el cliente correcto en Operam:')}</div>
     <ul class="operam-candidatos-lista">${items}</ul>
-    <button class="btn btn-sm btn-secondary" onclick="dejarPreOperam(${id}, '${cid}')">Dejar como PRE</button>
+    <button class="btn btn-sm btn-secondary" onclick="dejarPreOperam(${id}, this)">Dejar como PRE</button>
   </div>`;
 }
 
 // Estado de la auto-subida (#83) para pintar en el resumen (al generar) o en la
 // tarjeta del historial (al reintentar). Unica fuente del bloque de estado, sobre
-// la vista pura de interpretarSubidaOperam. 'folio' = subio (verde); 'candidatos'
-// = lista de dedup; 'sin_datos' = PRE sin reintento (falta de datos, no de Operam);
-// 'pre' = fallo transitorio de Operam con Reintentar idempotente.
-export function buildOperamStatusHtml(id, vista, containerId = '') {
+// la vista pura de interpretarSubidaOperam. 'folio' = subio (verde), con nota si
+// yaSubida (F1c: la regeneracion local no viaja a Operam); 'candidatos' = lista
+// de dedup; 'sin_datos' = PRE sin reintento (falta de datos, no de Operam);
+// 'pre' = fallo transitorio de Operam con Reintentar idempotente. Los botones
+// pasan `this` (ver buildCandidatosOperamHtml).
+export function buildOperamStatusHtml(id, vista) {
   const v = vista || {};
-  const cid = String(containerId);
   if (v.estado === 'folio') {
     const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
     const nota = v.yaSubida
@@ -123,23 +126,23 @@ export function buildOperamStatusHtml(id, vista, containerId = '') {
     return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}`;
   }
   if (v.estado === 'candidatos') {
-    return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje, cid);
+    return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje);
   }
   if (v.estado === 'sin_datos') {
     return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>`;
   }
   return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || 'No se pudo subir a Operam')}</span>` +
-    ` <button class="btn btn-sm btn-primary" onclick="reintentarSubidaOperam(${id}, '${cid}')">Reintentar</button>`;
+    ` <button class="btn btn-sm btn-primary" onclick="reintentarSubidaOperam(${id}, this)">Reintentar</button>`;
 }
 
 // Boton "Reintentar subida" de la tarjeta de cotizacion (Historial): reintenta la
 // auto-subida idempotente (#81) cuando la cotizacion quedo PRE. Con ADR-0006 PRE
 // pasa de ser un modo elegido ("Completar") a un fallo transitorio a reintentar;
 // solo aparece mientras la cotizacion es PRE (sin folio, no historica). Dispara
-// completarPreCotizacion(id) en app.js.
+// completarPreCotizacion(id, this) en app.js, que resuelve el slot de SU tarjeta.
 export function botonCompletarHtml(cot) {
   if (!puedeCompletarPreCotizacion(cot)) return '';
-  return `<button class="btn btn-primary btn-sm" onclick="completarPreCotizacion(${cot.id})">Reintentar subida</button>`;
+  return `<button class="btn btn-primary btn-sm" onclick="completarPreCotizacion(${cot.id}, this)">Reintentar subida</button>`;
 }
 
 // Boton + global (issue #54, PRD #52 historias 4-5): visible en todos los

@@ -168,7 +168,9 @@ test('Q17: puedeCompletarPreCotizacion solo es true para una cotizacion PRE (sin
 test('Q18: botonCompletarHtml pinta "Reintentar subida" solo sobre una tarjeta PRE, con su disparador', () => {
   const pre = botonCompletarHtml({ id: 42, folioOperam: null });
   assert.match(pre, /Reintentar subida/);
-  assert.match(pre, /completarPreCotizacion\(42\)/);
+  // Pasa `this` para que app.js resuelva el slot de SU tarjeta (F2: la misma
+  // cotizacion puede estar pintada en dos paneles a la vez).
+  assert.match(pre, /completarPreCotizacion\(42, this\)/);
   // Una cotizacion ya registrada (#Operam N) no ofrece reintento.
   assert.equal(botonCompletarHtml({ id: 7, folioOperam: '900' }), '');
   // Una historica de registro desconocido tampoco.
@@ -202,41 +204,46 @@ test('Q19: interpretarSubidaOperam clasifica la respuesta del endpoint por statu
   assert.equal(interpretarSubidaOperam({ ok: false, status: 409, error: 'La cotizacion ya esta ligada a otro cliente' }).estado, 'pre');
 });
 
+// Los botones del bloque de estado pasan `this` (el elemento clickeado), no un
+// id de contenedor: la MISMA cotizacion puede pintarse en dos paneles a la vez
+// (Historial y cotizaciones previas del cliente) y un id duplicado haria que
+// getElementById pintara siempre en el primero -- posiblemente oculto (F2 de la
+// revision de #83). app.js resuelve el slot relativo al disparador.
 test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candidatos', () => {
-  const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 }, 'operam-status-cotizar');
+  const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 });
   assert.match(ok, /#Operam 77001/);
   assert.doesNotMatch(ok, /Reintentar/);
   assert.doesNotMatch(ok, /cambios locales/, 'sin nota cuando la subida fue nueva');
 
   // Ya subida antes (#83 F1c): folio + nota de que la regeneracion local no viaja
   // a la cotizacion ya registrada en Operam (no editable por API).
-  const ya = buildOperamStatusHtml(5, { estado: 'folio', folio: '55123', yaSubida: true }, 'operam-status-cotizar');
+  const ya = buildOperamStatusHtml(5, { estado: 'folio', folio: '55123', yaSubida: true });
   assert.match(ya, /#Operam 55123/);
   assert.match(ya, /cambios locales no actualizan/);
   assert.doesNotMatch(ya, /Reintentar/);
 
-  const pre = buildOperamStatusHtml(5, { estado: 'pre', mensaje: 'Operam caido' }, 'operam-status-cotizar');
+  const pre = buildOperamStatusHtml(5, { estado: 'pre', mensaje: 'Operam caido' });
   assert.match(pre, /badge-pre/);
   assert.match(pre, /PRE/);
-  assert.match(pre, /reintentarSubidaOperam\(5, 'operam-status-cotizar'\)/);
+  assert.match(pre, /reintentarSubidaOperam\(5, this\)/);
 
   // sin_datos: PRE claro, SIN boton de reintento (seria inutil).
-  const sd = buildOperamStatusHtml(5, { estado: 'sin_datos', mensaje: 'Faltan datos' }, 'operam-status-cotizar');
+  const sd = buildOperamStatusHtml(5, { estado: 'sin_datos', mensaje: 'Faltan datos' });
   assert.match(sd, /PRE/);
   assert.doesNotMatch(sd, /Reintentar/);
 
-  const cands = buildOperamStatusHtml(5, { estado: 'candidatos', mensaje: 'Elige', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] }, 'operam-status-cotizar');
+  const cands = buildOperamStatusHtml(5, { estado: 'candidatos', mensaje: 'Elige', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] });
   assert.match(cands, /ABARROTES SA/);
   assert.match(cands, /ABA/);
-  assert.match(cands, /elegirCandidatoOperam\(5, 10, 'operam-status-cotizar'\)/);
-  assert.match(cands, /dejarPreOperam\(5, 'operam-status-cotizar'\)/);
+  assert.match(cands, /elegirCandidatoOperam\(5, 10, this\)/);
+  assert.match(cands, /dejarPreOperam\(5, this\)/);
 });
 
 test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece dejar como PRE', () => {
-  const html = buildCandidatosOperamHtml(9, [{ id: 3, CustName: 'A & B <SA>', cust_ref: 'AB' }], 'Elige el cliente', 'operam-status-cot-9');
+  const html = buildCandidatosOperamHtml(9, [{ id: 3, CustName: 'A & B <SA>', cust_ref: 'AB' }], 'Elige el cliente');
   assert.match(html, /A &amp; B &lt;SA&gt;/);
   assert.match(html, /Dejar como PRE/);
-  assert.match(html, /elegirCandidatoOperam\(9, 3, 'operam-status-cot-9'\)/);
+  assert.match(html, /elegirCandidatoOperam\(9, 3, this\)/);
 });
 
 // Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): buildColaHoyHtml itera
