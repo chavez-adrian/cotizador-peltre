@@ -492,14 +492,25 @@ app.post('/api/cotizacion/:id/liberar', authMiddleware, async (req, res) => {
 
 // 409 de colision de captura: el duplicado propio (o visto por admin) muestra el
 // prospecto; el de otro vendedor solo dice quien lo atiende, sin mas datos
-// (CONTEXT.md, Visibilidad de prospectos).
+// (CONTEXT.md, Visibilidad de prospectos). Lleva un campo estructurado `tipo`
+// (#82): el frontend decide por el (prospecto_propio -> usar el existente;
+// prospecto_ajeno -> bloquear; cliente -> cotizar sobre el cliente), nunca
+// parseando el string de error.
 function respuestaProspectoExistente(res, existente, user) {
   const visible = user.role === 'admin' || existente.vendedor === user.name;
   return res.status(409).json(
     visible
-      ? { error: 'Este celular ya es un prospecto', prospecto: existente }
-      : { error: `Este celular ya lo atiende ${existente.vendedor}` }
+      ? { error: 'Este celular ya es un prospecto', tipo: 'prospecto_propio', prospecto: existente }
+      : { error: `Este celular ya lo atiende ${existente.vendedor}`, tipo: 'prospecto_ajeno' }
   );
+}
+
+function respuestaCelularDeCliente(res, cliente) {
+  return res.status(409).json({
+    error: `Este celular es del cliente ${cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
+    tipo: 'cliente',
+    cust_name: cliente.cust_name,
+  });
 }
 
 app.post('/api/prospectos', authMiddleware, async (req, res) => {
@@ -514,9 +525,7 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
     return respuestaProspectoExistente(res, clasificacion.prospecto, req.user);
   }
   if (clasificacion.tipo === 'cliente') {
-    return res.status(409).json({
-      error: `Este celular es del cliente ${clasificacion.cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
-    });
+    return respuestaCelularDeCliente(res, clasificacion.cliente);
   }
   const data = {};
   for (const k of PROSPECTO_OPCIONALES) {
@@ -556,9 +565,7 @@ app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (
     return respuestaProspectoExistente(res, clasificacion.prospecto, req.user);
   }
   if (clasificacion.tipo === 'cliente') {
-    return res.status(409).json({
-      error: `Este celular es del cliente ${clasificacion.cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
-    });
+    return respuestaCelularDeCliente(res, clasificacion.cliente);
   }
   const data = {};
   for (const k of PROSPECTO_OPCIONALES) {

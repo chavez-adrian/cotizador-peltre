@@ -16,6 +16,8 @@ import {
   clienteDesdeProspecto,
   accionCelularContactoNuevo,
   decidirVistaTrasBusqueda,
+  accionProspecto409,
+  paisDesdeCodigoTelefono,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -1826,21 +1828,35 @@ async function pcGuardarContactoNuevo() {
 
   const btn = document.getElementById('pc-guardar');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const restaurarBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; } };
   try {
     const res = await api('/api/prospectos', { method: 'POST', body: payload });
     const data = await res.json().catch(() => ({}));
     if (res.status === 409) {
-      // Ya existe: si es cliente Operam, cotizar sobre el; si es prospecto propio,
-      // se usa igual (1 celular = 1 prospecto). El aviso ya lo explico.
-      if (/cliente/i.test(data.error || '') && !/prospecto/i.test(data.error || '')) {
-        showErr(data.error || 'Este celular ya es un cliente');
-        if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; }
+      // Decision por el campo estructurado `tipo` del server (accionProspecto409,
+      // #82) -- nunca parseando el string de error.
+      const decision = accionProspecto409(data);
+      if (decision.accion === 'usar_prospecto' && decision.prospecto) {
+        // 1 celular = 1 prospecto: se cotiza sobre el EXISTENTE (identidad del
+        // server), no sobre lo tecleado.
+        pcElegirProspecto(decision.prospecto);
         return;
       }
-      // prospecto propio/duplicado: continua con el contacto minimo capturado.
-    } else if (!res.ok) {
+      if (decision.accion === 'cotizar_cliente' && decision.cust_name && err) {
+        // Celular de cliente Operam: no se crea prospecto; se ofrece cotizar
+        // sobre ese cliente (mismo destino que el aviso del blur).
+        err.innerHTML = escapeHtml(decision.mensaje) +
+          ` <button type="button" class="pc-link" onclick="pcCotizarComoCliente(${JSON.stringify(decision.cust_name).replace(/"/g, '&quot;')})">Cotizar sobre ese cliente</button>`;
+        err.style.display = 'block';
+      } else {
+        showErr(decision.mensaje);
+      }
+      restaurarBtn();
+      return;
+    }
+    if (!res.ok) {
       showErr(data.error || 'No se pudo guardar el contacto');
-      if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; }
+      restaurarBtn();
       return;
     }
     pcLlenarCamposContacto(cliente);
@@ -1848,7 +1864,7 @@ async function pcGuardarContactoNuevo() {
     pcRenderTarjeta();
   } catch (e) {
     showErr('Error de conexion');
-    if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; }
+    restaurarBtn();
   }
 }
 window.pcGuardarContactoNuevo = pcGuardarContactoNuevo;

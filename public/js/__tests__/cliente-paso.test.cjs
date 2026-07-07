@@ -8,13 +8,13 @@ const assert = require('node:assert/strict');
 
 let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
-  decidirVistaTrasBusqueda;
+  decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono;
 
 before(async () => {
   ({
     mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
     buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
-    decidirVistaTrasBusqueda,
+    decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
   } = await import('../alta-logica.js'));
 });
 
@@ -198,4 +198,47 @@ test('V2: con resultados -> resultados', () => {
 });
 test('V3: sin resultados -> crear', () => {
   assert.strictEqual(decidirVistaTrasBusqueda('zzz', []), 'crear');
+});
+
+// === accionProspecto409: decision del frontend ante el 409 estructurado de
+// POST /api/prospectos (tipo, no parsing de strings de error) ===
+
+test('Q1: 409 tipo cliente -> cotizar sobre ese cliente, sin continuar la captura', () => {
+  const r = accionProspecto409({ tipo: 'cliente', cust_name: 'HOTELERA DEL SUR SA DE CV', error: 'Este celular es del cliente...' });
+  assert.strictEqual(r.accion, 'cotizar_cliente');
+  assert.strictEqual(r.cust_name, 'HOTELERA DEL SUR SA DE CV');
+  assert.ok(r.mensaje);
+});
+
+test('Q2: 409 tipo prospecto_propio -> usar el prospecto existente (1 celular = 1 prospecto)', () => {
+  const p = { id: 4, nombre: 'Laura', ciudad: 'Puebla', celular: '+52 5512345678' };
+  const r = accionProspecto409({ tipo: 'prospecto_propio', prospecto: p, error: 'ya es un prospecto' });
+  assert.strictEqual(r.accion, 'usar_prospecto');
+  assert.deepStrictEqual(r.prospecto, p);
+});
+
+test('Q3: 409 tipo prospecto_ajeno -> bloquear con el mensaje del server', () => {
+  const r = accionProspecto409({ tipo: 'prospecto_ajeno', error: 'Este celular ya lo atiende Memo' });
+  assert.strictEqual(r.accion, 'bloquear');
+  assert.match(r.mensaje, /Memo/);
+});
+
+test('Q4: 409 sin tipo (server viejo/desconocido) -> bloquear, nunca crear contacto fantasma', () => {
+  const r = accionProspecto409({ error: 'Este celular es del cliente X - cotizale como cliente, no se crea prospecto' });
+  assert.strictEqual(r.accion, 'bloquear');
+  assert.strictEqual(accionProspecto409(null).accion, 'bloquear');
+});
+
+// === paisDesdeCodigoTelefono: +1-CA debe dar CA, no US (CP canadiense valido) ===
+
+test('T1: +52 -> MX, +1 -> US, +1-CA -> CA', () => {
+  assert.strictEqual(paisDesdeCodigoTelefono('+52'), 'MX');
+  assert.strictEqual(paisDesdeCodigoTelefono('+1'), 'US');
+  assert.strictEqual(paisDesdeCodigoTelefono('+1-CA'), 'CA');
+});
+
+test('T2: codigo desconocido o vacio -> MX (default del negocio)', () => {
+  assert.strictEqual(paisDesdeCodigoTelefono('+'), 'MX');
+  assert.strictEqual(paisDesdeCodigoTelefono(''), 'MX');
+  assert.strictEqual(paisDesdeCodigoTelefono(undefined), 'MX');
 });

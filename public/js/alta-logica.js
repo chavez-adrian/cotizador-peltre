@@ -390,6 +390,32 @@ export function decidirVistaTrasBusqueda(query, resultados) {
   return (resultados && resultados.length) ? 'resultados' : 'crear';
 }
 
+// Decision ante el 409 de POST /api/prospectos, por el campo estructurado `tipo`
+// del server (#82) -- NUNCA parseando el string de error (el mensaje de "es un
+// cliente" contiene la palabra "prospecto"; cualquier regex se rompe con el copy).
+// Sin tipo reconocible se bloquea: fail-safe, no se crea un contacto fantasma
+// sobre un estado desconocido.
+export function accionProspecto409(data) {
+  const d = data || {};
+  if (d.tipo === 'cliente') {
+    return { accion: 'cotizar_cliente', cust_name: d.cust_name || '', mensaje: d.error || 'Este celular ya es un cliente en Operam' };
+  }
+  if (d.tipo === 'prospecto_propio') {
+    return { accion: 'usar_prospecto', prospecto: d.prospecto || null, mensaje: d.error || '' };
+  }
+  return { accion: 'bloquear', mensaje: d.error || 'No se pudo guardar el contacto' };
+}
+
+// Pais del contacto a partir del codigo de marcado del select. +1 y +1-CA
+// comparten el codigo real +1 pero son paises distintos: el CP canadiense
+// (K1A 0A9) solo valida con pais CA (cpValido, #71). "Otro" y vacio caen a MX
+// (default del negocio; el select de pais de entrega solo tiene MX/US/CA).
+export function paisDesdeCodigoTelefono(code) {
+  if (code === '+1') return 'US';
+  if (code === '+1-CA') return 'CA';
+  return 'MX';
+}
+
 // Construye el body de POST /api/crear-cliente a partir de los datos fiscales (CSF),
 // los campos comerciales capturados y el domicilio de entrega. customerId/branchId
 // no nulos indican un reintento (issue #?): se reenvian para que el backend continue
