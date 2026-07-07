@@ -1071,6 +1071,26 @@ body {
 .badge-pre { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); }
 .badge-operam { background: var(--primary-light); color: var(--primary-dark); }
 
+/* Estado de auto-subida a Operam (#83): bloque bajo los botones de generar y en
+   las tarjetas del historial. Vacio cuando no hay subida en curso. */
+.operam-status-slot:empty { display: none; }
+.operam-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface-2, #f4f4f5);
+}
+.operam-status-ok { background: oklch(0.93 0.06 150); color: oklch(0.38 0.09 150); font-weight: 600; }
+.operam-status-pre { background: oklch(0.95 0.05 80); color: oklch(0.36 0.08 70); }
+.operam-status-candidatos { display: block; }
+.operam-candidatos-msg { font-weight: 600; margin-bottom: 6px; }
+.operam-candidatos-lista { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.operam-candidato { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
 /* Tableros kanban: prospectos (issue #49) y cotizaciones (issue #50) */
 #prospectos-contenido { max-width: 520px; }
 #prospectos-contenido.modo-tablero { max-width: none; }

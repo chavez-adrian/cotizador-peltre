@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -165,32 +165,67 @@ test('Q17: puedeCompletarPreCotizacion solo es true para una cotizacion PRE (sin
   assert.equal(puedeCompletarPreCotizacion(null), false);
 });
 
-test('Q18: botonCompletarHtml pinta el boton Completar solo sobre una tarjeta PRE, con su disparador', () => {
+test('Q18: botonCompletarHtml pinta "Reintentar subida" solo sobre una tarjeta PRE, con su disparador', () => {
   const pre = botonCompletarHtml({ id: 42, folioOperam: null });
-  assert.match(pre, /Completar/);
+  assert.match(pre, /Reintentar subida/);
   assert.match(pre, /completarPreCotizacion\(42\)/);
-  // Una cotizacion ya registrada (#Operam N) no ofrece Completar.
+  // Una cotizacion ya registrada (#Operam N) no ofrece reintento.
   assert.equal(botonCompletarHtml({ id: 7, folioOperam: '900' }), '');
   // Una historica de registro desconocido tampoco.
   assert.equal(botonCompletarHtml({ id: 9, folioOperam: null, registroDesconocido: true }), '');
 });
 
-// Encadenamiento de la formalizacion (issue #66, AC1): "Completar" intenta el
-// registro directo; el siguiente paso lo decide el resultado. Si Operam no halla
-// el cliente, el vendedor pasa al alta (flujo existente, prellenado); si el
-// registro funciono, queda listo (folio); cualquier otro fallo se reporta sin
-// mandar al alta. Funcion pura sobre la respuesta del servidor (status + error).
-test('Q19: siguientePasoFormalizacion encadena registro directo, fallback al alta o error', () => {
-  // Registro OK: la cotizacion obtuvo folio, ya no es PRE.
-  assert.equal(siguientePasoFormalizacion({ ok: true, folio: 77001 }), 'listo');
-  // Operam no halla al cliente -> hay que darlo de alta primero.
-  assert.equal(
-    siguientePasoFormalizacion({ ok: false, status: 503, error: 'No se pudo subir a Operam: Cliente no encontrado en Operam' }),
-    'alta',
-  );
-  // Cualquier otro fallo (Operam caido, 404, etc.) no manda al alta: se reporta.
-  assert.equal(siguientePasoFormalizacion({ ok: false, status: 503, error: 'No se pudo subir a Operam: Operam 500' }), 'error');
-  assert.equal(siguientePasoFormalizacion({ ok: false, status: 404, error: 'Cotizacion no encontrada' }), 'error');
+// Auto-subida (#83, ADR-0006): interpretarSubidaOperam clasifica la respuesta del
+// endpoint de #81 por status + campos estructurados, nunca por el string de error
+// (misma disciplina que accionProspecto409). 200 -> folio; 409 con candidatos ->
+// candidatos; 422 -> sin_datos (PRE sin reintento util); 503/red/409-conflicto ->
+// pre (reintento idempotente).
+test('Q19: interpretarSubidaOperam clasifica la respuesta del endpoint por status y campos', () => {
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001 });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null });
+
+  const cand = interpretarSubidaOperam({ ok: false, status: 409, error: 'Elige uno', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] });
+  assert.equal(cand.estado, 'candidatos');
+  assert.equal(cand.candidatos.length, 1);
+
+  // 422: cotizacion legacy sin datos minimos -> PRE, sin reintento.
+  assert.equal(interpretarSubidaOperam({ ok: false, status: 422, error: 'No se pudo identificar el cliente' }).estado, 'sin_datos');
+
+  // 503 (Operam caido) y red (status 0) -> pre con reintento.
+  assert.equal(interpretarSubidaOperam({ ok: false, status: 503, error: 'No se pudo subir a Operam: Operam 500' }).estado, 'pre');
+  assert.equal(interpretarSubidaOperam({ ok: false, status: 0, error: 'Failed to fetch' }).estado, 'pre');
+
+  // 409 de conflicto (sin lista de candidatos) -> pre, no candidatos.
+  assert.equal(interpretarSubidaOperam({ ok: false, status: 409, error: 'La cotizacion ya esta ligada a otro cliente' }).estado, 'pre');
+});
+
+test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candidatos', () => {
+  const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 }, 'operam-status-cotizar');
+  assert.match(ok, /#Operam 77001/);
+  assert.doesNotMatch(ok, /Reintentar/);
+
+  const pre = buildOperamStatusHtml(5, { estado: 'pre', mensaje: 'Operam caido' }, 'operam-status-cotizar');
+  assert.match(pre, /badge-pre/);
+  assert.match(pre, /PRE/);
+  assert.match(pre, /reintentarSubidaOperam\(5, 'operam-status-cotizar'\)/);
+
+  // sin_datos: PRE claro, SIN boton de reintento (seria inutil).
+  const sd = buildOperamStatusHtml(5, { estado: 'sin_datos', mensaje: 'Faltan datos' }, 'operam-status-cotizar');
+  assert.match(sd, /PRE/);
+  assert.doesNotMatch(sd, /Reintentar/);
+
+  const cands = buildOperamStatusHtml(5, { estado: 'candidatos', mensaje: 'Elige', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] }, 'operam-status-cotizar');
+  assert.match(cands, /ABARROTES SA/);
+  assert.match(cands, /ABA/);
+  assert.match(cands, /elegirCandidatoOperam\(5, 10, 'operam-status-cotizar'\)/);
+  assert.match(cands, /dejarPreOperam\(5, 'operam-status-cotizar'\)/);
+});
+
+test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece dejar como PRE', () => {
+  const html = buildCandidatosOperamHtml(9, [{ id: 3, CustName: 'A & B <SA>', cust_ref: 'AB' }], 'Elige el cliente', 'operam-status-cot-9');
+  assert.match(html, /A &amp; B &lt;SA&gt;/);
+  assert.match(html, /Dejar como PRE/);
+  assert.match(html, /elegirCandidatoOperam\(9, 3, 'operam-status-cot-9'\)/);
 });
 
 // Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): buildColaHoyHtml itera
