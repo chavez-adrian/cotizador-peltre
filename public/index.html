@@ -51,11 +51,95 @@
 
   <!-- TAB: CLIENTE -->
   <div class="tab-content active" id="tab-cliente">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div class="section-header" style="margin-bottom:0">Buscar en Operam</div>
-      <button class="btn btn-primary btn-sm" id="btn-nuevo-cliente" onclick="abrirAcordeonAlta()">+ Nuevo cliente</button>
+
+    <!-- Entrada variante B (#82): al entrar solo se ven los dos caminos + nota de
+         diferimiento; el render lo maneja app.js (pcRenderInicio). -->
+    <div id="pc-root"></div>
+
+    <!-- Datos de entrega (opcional, #82): colapsado; el chip "Entrega" de la
+         tarjeta lo revela (solo toggle de display). Vive como HERMANO de #pc-root
+         -- nunca dentro: los innerHTML de #pc-root lo destruirian del documento.
+         CP + pais al frente (lo que exige validar #71). Este bloque migra por
+         completo al paso Envio en #84. -->
+    <div id="pc-entrega-wrap" class="pc-entrega-inline" style="display:none">
+      <div class="section-header">Domicilio de entrega <span style="font-weight:400;color:var(--text-light);font-size:12px">(opcional para cotizar)</span></div>
+      <div class="pc-nota" style="margin-bottom:12px">La direccion se puede dejar para el paso Envio; se necesita al calcular la paqueteria.</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:0 0 120px">
+          <label>Pais</label>
+          <select id="cl-pais">
+            <option value="MX" selected>Mexico</option>
+            <option value="US">Estados Unidos</option>
+            <option value="CA">Canada</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>CP</label>
+          <input type="text" id="cl-cp-entrega" placeholder="00000" maxlength="5" inputmode="numeric">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Entregar a (nombre completo)</label>
+        <input type="text" id="cl-nombre-entrega">
+      </div>
+      <div class="form-group">
+        <label>Calle y numero exterior</label>
+        <input type="text" id="cl-calle" placeholder="Ej. Av. Reforma 123">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Numero interior <span style="font-weight:400;color:var(--light)">(opcional)</span></label>
+          <input type="text" id="cl-num-int" placeholder="Depto, of., etc.">
+        </div>
+        <div class="form-group">
+          <label>Colonia</label>
+          <input type="text" id="cl-colonia">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Municipio / Alcaldia</label>
+        <input type="text" id="cl-municipio">
+      </div>
+      <div class="form-group">
+        <label>Estado</label>
+        <input type="text" id="cl-estado" placeholder="Ej. Ciudad de Mexico">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Celular de entrega (con codigo de pais)</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="cl-cel-entrega-code" style="flex:0 0 80px">
+              <option value="+52">+52</option>
+              <option value="+1">+1</option>
+              <option value="+1-CA">+1 CA</option>
+              <option value="+">Otro</option>
+            </select>
+            <input type="tel" id="cl-cel-entrega" placeholder="55 1234 5678" style="flex:1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Correo</label>
+          <input type="email" id="cl-email-entrega">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Correo para factura <span style="opacity:0.6;font-weight:normal">(opcional)</span></label>
+        <input type="email" id="cl-email-factura" placeholder="facturacion@empresa.com">
+      </div>
+      <div class="form-group">
+        <label>Referencias</label>
+        <textarea id="cl-referencias" rows="2" placeholder="Entre calles, punto de referencia, indicaciones especiales..."></textarea>
+      </div>
     </div>
 
+    <!-- Cotizaciones previas del cliente seleccionado (Cargar / PDF / Subir a
+         Operam). Hermano de #pc-root: lo llena renderHistorialCliente al elegir
+         un cliente Operam con historial y se muestra bajo la tarjeta. -->
+    <div id="historial-cliente-panel" style="display:none"></div>
+
+    <!-- Acordeon de alta de cliente (issue #27). Se conserva (lo reorienta #85);
+         ya no se abre desde la entrada del paso Cliente, solo desde la
+         formalizacion (completarPreCotizacion -> abrirAcordeonAlta). -->
     <!-- Acordeon de alta de cliente (issue #27) -->
     <div id="panel-alta-cliente" style="display:none;margin-bottom:16px">
       <div style="display:flex;gap:16px;align-items:flex-start">
@@ -467,140 +551,63 @@
       </div>
     </div>
 
-    <!-- Panel: Buscar en Operam -->
-    <div id="panel-buscar" class="cliente-panel">
-      <div class="form-row" style="align-items:flex-end;margin-bottom:0">
-        <div class="form-group" style="margin-bottom:0;position:relative;flex:1">
-          <input type="text" id="operam-search" placeholder="Buscar por nombre, RFC o empresa...">
-          <div id="operam-dropdown" class="search-dropdown" style="display:none"></div>
-        </div>
-        <button class="btn btn-primary" id="btn-buscar-operam" style="height:38px">Buscar</button>
-      </div>
-      <div id="operam-search-status" style="display:none;font-size:12px;margin-top:4px"></div>
-      <div id="operam-domicilios" style="display:none">
-        <label>Domicilio de entrega</label>
-        <select id="operam-domicilio-select"></select>
-        <button class="btn btn-secondary btn-sm" id="btn-usar-domicilio">Usar este domicilio</button>
-      </div>
-      <div id="historial-cliente-panel" style="display:none;margin-bottom:12px;"></div>
-    </div>
+    <!-- Formulario legacy (#82): fuente unica de los campos cl-* de facturacion
+         que consumen los generadores de PDF/HTML/WhatsApp y la validacion de
+         telefono (#81). No se muestra como formulario plano de ~20 campos (AC);
+         lo llenan los tres caminos del paso (Operam / prospecto / contacto
+         nuevo). Los campos de entrega viven arriba, en #pc-entrega-wrap. -->
+    <div id="cliente-form-legacy">
 
-    <div class="section-header">Datos de facturacion</div>
-    <div class="form-group">
-      <label>Pais</label>
-      <select id="cl-pais">
-        <option value="MX" selected>Mexico</option>
-        <option value="US">Estados Unidos</option>
-        <option value="CA">Canada</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Razon social</label>
-      <input type="text" id="cl-razon-social" placeholder="Nombre completo para factura">
-    </div>
-    <div class="form-group">
-      <label>Nombre corto</label>
-      <input type="text" id="cl-nombre-corto" placeholder="Nombre breve para imprimir en cotizacion" maxlength="100">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>RFC</label>
-        <input type="text" id="cl-rfc" placeholder="XAXX010101000">
-      </div>
-      <div class="form-group">
-        <label>CP domicilio fiscal</label>
-        <input type="text" id="cl-cp-fiscal" placeholder="00000" maxlength="5" inputmode="numeric">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Telefono (con codigo de pais) *</label>
-        <div style="display:flex;gap:6px;align-items:center">
-          <select id="cl-telefono-code" style="flex:0 0 80px">
-            <option value="+52">+52</option>
-            <option value="+1">+1</option>
-            <option value="+1-CA">+1 CA</option>
-            <option value="+">Otro</option>
+      <!-- Datos de facturacion: los llena el camino elegido; no se muestran en la
+           entrada (los datos fiscales se completan al subir a Operam, ADR-0006). -->
+      <div id="pc-factura-hidden" style="display:none">
+        <div class="form-group">
+          <label>Razon social</label>
+          <input type="text" id="cl-razon-social" placeholder="Nombre completo para factura">
+        </div>
+        <div class="form-group">
+          <label>Nombre corto</label>
+          <input type="text" id="cl-nombre-corto" placeholder="Nombre breve para imprimir en cotizacion" maxlength="100">
+        </div>
+        <div class="form-group">
+          <label>RFC</label>
+          <input type="text" id="cl-rfc" placeholder="XAXX010101000">
+        </div>
+        <div class="form-group">
+          <label>CP domicilio fiscal</label>
+          <input type="text" id="cl-cp-fiscal" placeholder="00000" maxlength="5" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label>Telefono (con codigo de pais)</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="cl-telefono-code" style="flex:0 0 80px">
+              <option value="+52">+52</option>
+              <option value="+1">+1</option>
+              <option value="+1-CA">+1 CA</option>
+              <option value="+">Otro</option>
+            </select>
+            <input type="tel" id="cl-telefono" placeholder="55 1234 5678" style="flex:1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Condiciones de pago</label>
+          <select id="cl-condiciones">
+            <option value="Anticipo 50%">Anticipo 50%</option>
+            <option value="100% anticipado">100% anticipado</option>
+            <option value="Neto 30">Neto 30</option>
+            <option value="otro">Otro (especificar en notas)</option>
           </select>
-          <input type="tel" id="cl-telefono" placeholder="55 1234 5678" style="flex:1">
+        </div>
+        <div class="form-group">
+          <label>Referencia del cliente</label>
+          <input type="text" id="cl-referencia" placeholder="Nombre del proyecto, evento, etc." maxlength="50">
         </div>
       </div>
-      <div class="form-group">
-        <label>Condiciones de pago</label>
-        <select id="cl-condiciones">
-          <option value="Anticipo 50%">Anticipo 50%</option>
-          <option value="100% anticipado">100% anticipado</option>
-          <option value="Neto 30">Neto 30</option>
-          <option value="otro">Otro (especificar en notas)</option>
-        </select>
-      </div>
-    </div>
 
-    <div class="form-group">
-      <label>Referencia del cliente</label>
-      <input type="text" id="cl-referencia" placeholder="Nombre del proyecto, evento, etc." maxlength="50">
+      <!-- Conserva el listener existente (switchTab productos); ya no es el CTA
+           visible: la tarjeta del cliente ofrece "Continuar a Productos". -->
+      <button class="btn btn-primary btn-block" id="btn-sig-cliente" style="display:none">Siguiente &rsaquo;</button>
     </div>
-
-    <div class="section-header">Datos de entrega</div>
-    <div class="form-group">
-      <label>Entregar a (nombre completo)</label>
-      <input type="text" id="cl-nombre-entrega">
-    </div>
-    <div class="form-group">
-      <label>Calle y numero exterior</label>
-      <input type="text" id="cl-calle" placeholder="Ej. Av. Reforma 123">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Numero interior <span style="font-weight:400;color:var(--light)">(opcional)</span></label>
-        <input type="text" id="cl-num-int" placeholder="Depto, of., etc.">
-      </div>
-      <div class="form-group">
-        <label>Colonia</label>
-        <input type="text" id="cl-colonia">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>CP</label>
-        <input type="text" id="cl-cp-entrega" placeholder="00000" maxlength="5" inputmode="numeric">
-      </div>
-      <div class="form-group">
-        <label>Municipio / Alcaldia</label>
-        <input type="text" id="cl-municipio">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Estado</label>
-      <input type="text" id="cl-estado" placeholder="Ej. Ciudad de Mexico">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Celular de entrega (con codigo de pais)</label>
-        <div style="display:flex;gap:6px;align-items:center">
-          <select id="cl-cel-entrega-code" style="flex:0 0 80px">
-            <option value="+52">+52</option>
-            <option value="+1">+1</option>
-            <option value="+1-CA">+1 CA</option>
-            <option value="+">Otro</option>
-          </select>
-          <input type="tel" id="cl-cel-entrega" placeholder="55 1234 5678" style="flex:1">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Correo</label>
-        <input type="email" id="cl-email-entrega">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Correo para factura <span style="opacity:0.6;font-weight:normal">(opcional)</span></label>
-      <input type="email" id="cl-email-factura" placeholder="facturacion@empresa.com">
-    </div>
-    <div class="form-group">
-      <label>Referencias</label>
-      <textarea id="cl-referencias" rows="2" placeholder="Entre calles, punto de referencia, indicaciones especiales..."></textarea>
-    </div>
-    <button class="btn btn-primary btn-block" id="btn-sig-cliente" style="margin-top:16px">Siguiente &rsaquo;</button>
   </div>
 
   <!-- TAB: PRODUCTOS -->

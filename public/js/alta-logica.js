@@ -235,6 +235,187 @@ export function mensajeBusquedaCelular(clasificacion) {
   return { encontrado: false, tipo: c.tipo || 'libre', mensaje: '' };
 }
 
+// === Paso Cliente variante B (issue #82) ===
+//
+// Toda la logica decisional del rediseno del paso Cliente vive aqui (el render de
+// app.js es tonto): mezcla de busqueda Operam+prospectos, derivacion de recientes,
+// estado de chips, payload del contacto nuevo y guardrails del celular. Ver
+// prototype-cliente.html (variante B) y CONTEXT.md.
+
+const RFC_GENERICOS_BROWSER = new Set(['XAXX010101000', 'XEXX010101000']);
+
+// Un contacto nuevo (persona detras de un celular) y un prospecto se normalizan al
+// MISMO objeto cliente que consume seleccionarClienteOperam (name/ref/telefono/...),
+// para que el prellenado de los campos cl-* y el gate #81 (necesitaAltaGenerica:
+// razonSocial||nombreCorto Y telefono) sirvan igual por los tres caminos. La ciudad
+// va a `municipio` como pista para estimar envio; el domicilio de entrega (CP+pais)
+// se difiere al bloque opcional de la tarjeta (migra al paso Envio en #84).
+export function buildClienteDesdeContactoNuevo(campos) {
+  const c = campos || {};
+  const nombre = (c.nombre || '').trim();
+  const ciudad = (c.ciudad || '').trim();
+  return {
+    tipo: 'nuevo',
+    id: null,
+    name: nombre,
+    ref: nombre,
+    rfc: '',
+    telefono: c.telefono || '',
+    municipio: ciudad,
+    ciudad,
+    pais: c.pais || 'MX',
+    canal: c.canal || '',
+    email: c.email || '',
+  };
+}
+
+export function clienteDesdeProspecto(prospecto) {
+  const p = prospecto || {};
+  const ciudad = p.ciudad || '';
+  return {
+    tipo: 'prospecto',
+    id: null,
+    prospectoId: p.id != null ? p.id : null,
+    name: p.nombre || '',
+    ref: p.nombre || '',
+    rfc: '',
+    telefono: p.celular || '',
+    municipio: ciudad,
+    ciudad,
+    pais: 'MX',
+    etapa: p.etapa || '',
+    email: (p.data && p.data.correo) || '',
+  };
+}
+
+function normalizarOperam(c) {
+  return { tipo: 'operam', id: c.id, nombre: c.name || '', rfc: c.rfc || '', sub: c.rfc || '', raw: c };
+}
+
+function normalizarProspecto(p) {
+  return {
+    tipo: 'prospecto', id: p.id, nombre: p.nombre || '',
+    ciudad: p.ciudad || '', celular: p.celular || '', etapa: p.etapa || '',
+    sub: [p.ciudad, p.celular].filter(Boolean).join(' - '), raw: p,
+  };
+}
+
+// Un solo buscador que encuentra a la vez clientes de Operam y prospectos del
+// vendedor, distinguibles por tipo (AC2). Query < 2 chars -> [] (el caller muestra
+// recientes). Operam matchea por nombre o RFC; el prospecto por nombre, ciudad o los
+// digitos del celular. Ordena coincidencias por prefijo antes que internas (mezcla
+// los tipos, no los agrupa: "distinguibles" no es "separados").
+export function mezclarResultadosBusqueda(clientesOperam, prospectos, query) {
+  const q = String(query || '').toLowerCase().trim();
+  if (q.length < 2) return [];
+  const qDigitos = q.replace(/\D/g, '');
+  const filas = [
+    ...(clientesOperam || []).map(normalizarOperam).filter(r =>
+      r.nombre.toLowerCase().includes(q) || r.rfc.toLowerCase().includes(q)),
+    ...(prospectos || []).map(normalizarProspecto).filter(r =>
+      r.nombre.toLowerCase().includes(q) ||
+      r.ciudad.toLowerCase().includes(q) ||
+      (qDigitos.length >= 2 && r.celular.replace(/\D/g, '').includes(qDigitos))),
+  ];
+  return filas.sort((a, b) => {
+    const pa = a.nombre.toLowerCase().startsWith(q) ? 0 : 1;
+    const pb = b.nombre.toLowerCase().startsWith(q) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    return a.nombre.localeCompare(b.nombre);
+  });
+}
+
+// Los ultimos clientes/prospectos cotizados por el vendedor, derivados de
+// GET /api/cotizaciones (cada entrada: { id, fecha, cliente, telefono }). Deduplica
+// por nombre (conserva la mas reciente), ordena por fecha desc y recorta al limite.
+export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
+  const ordenadas = (cotizaciones || [])
+    .filter(c => c && (c.cliente || '').trim())
+    .slice()
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const vistos = new Set();
+  const out = [];
+  for (const c of ordenadas) {
+    const clave = c.cliente.trim().toLowerCase();
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    out.push({ nombre: c.cliente, telefono: c.telefono || '', cotizacionId: c.id, fecha: c.fecha });
+    if (out.length >= limite) break;
+  }
+  return out;
+}
+
+// Estado de los chips de completitud de la tarjeta (AC6), desde datos reales:
+//  - Contacto: nombre resoluble (name||ref) Y telefono (lo minimo para cotizar).
+//  - Entrega: CP + pais presentes (el domicilio de entrega; Operam ya lo trae).
+//  - Fiscal: RFC real (presente y NO generico -- el generico ES "pendiente fiscal").
+export function chipsCompletitud(cliente) {
+  const c = cliente || {};
+  const nombre = (c.name || c.ref || '').trim();
+  const telefono = (c.telefono || '').trim();
+  const cp = (c.cp || c.cpEntrega || '').trim();
+  const pais = (c.pais || '').trim();
+  const rfc = (c.rfc || '').toUpperCase().trim();
+  return {
+    contacto: !!(nombre && telefono),
+    entrega: !!(cp && pais),
+    fiscal: !!(rfc && !RFC_GENERICOS_BROWSER.has(rfc)),
+  };
+}
+
+// Decide que hacer cuando, en el camino "Contacto nuevo", se clasifica el celular
+// (GET /api/prospectos/clasificar) al blur (AC3/AC4, #69, CONTEXT.md "Visibilidad"):
+//  - cliente Operam  -> cotizar sobre ese cliente (se busca por nombre en Operam).
+//  - prospecto propio -> usar ese prospecto (no se duplica; 1 celular = 1 prospecto).
+//  - prospecto ajeno  -> bloquear la captura indicando quien lo atiende.
+//  - libre/nulo       -> crear normalmente.
+export function accionCelularContactoNuevo(clasificacion, usuarioActual) {
+  const c = clasificacion || {};
+  const msg = mensajeBusquedaCelular(c);
+  if (c.tipo === 'cliente') {
+    return { accion: 'cotizar_cliente', tipo: 'cliente', cust_name: msg.encontrado ? (c.cust_name || (c.cliente && c.cliente.cust_name) || '') : '', mensaje: msg.mensaje };
+  }
+  if (c.tipo === 'prospecto') {
+    const vendedor = (c.prospecto && c.prospecto.vendedor) || '';
+    const ajeno = vendedor && usuarioActual && vendedor !== usuarioActual;
+    return { accion: ajeno ? 'bloquear' : 'usar_prospecto', tipo: 'prospecto', prospecto: c.prospecto || null, mensaje: msg.mensaje };
+  }
+  return { accion: 'crear', tipo: 'libre', mensaje: '' };
+}
+
+// Que renderiza el camino "Ya lo conozco" tras teclear: recientes (query corta),
+// la lista de resultados, o la oferta de crear el contacto (sin resultados, AC).
+export function decidirVistaTrasBusqueda(query, resultados) {
+  if (String(query || '').trim().length < 2) return 'recientes';
+  return (resultados && resultados.length) ? 'resultados' : 'crear';
+}
+
+// Decision ante el 409 de POST /api/prospectos, por el campo estructurado `tipo`
+// del server (#82) -- NUNCA parseando el string de error (el mensaje de "es un
+// cliente" contiene la palabra "prospecto"; cualquier regex se rompe con el copy).
+// Sin tipo reconocible se bloquea: fail-safe, no se crea un contacto fantasma
+// sobre un estado desconocido.
+export function accionProspecto409(data) {
+  const d = data || {};
+  if (d.tipo === 'cliente') {
+    return { accion: 'cotizar_cliente', cust_name: d.cust_name || '', mensaje: d.error || 'Este celular ya es un cliente en Operam' };
+  }
+  if (d.tipo === 'prospecto_propio') {
+    return { accion: 'usar_prospecto', prospecto: d.prospecto || null, mensaje: d.error || '' };
+  }
+  return { accion: 'bloquear', mensaje: d.error || 'No se pudo guardar el contacto' };
+}
+
+// Pais del contacto a partir del codigo de marcado del select. +1 y +1-CA
+// comparten el codigo real +1 pero son paises distintos: el CP canadiense
+// (K1A 0A9) solo valida con pais CA (cpValido, #71). "Otro" y vacio caen a MX
+// (default del negocio; el select de pais de entrega solo tiene MX/US/CA).
+export function paisDesdeCodigoTelefono(code) {
+  if (code === '+1') return 'US';
+  if (code === '+1-CA') return 'CA';
+  return 'MX';
+}
+
 // Construye el body de POST /api/crear-cliente a partir de los datos fiscales (CSF),
 // los campos comerciales capturados y el domicilio de entrega. customerId/branchId
 // no nulos indican un reintento (issue #?): se reenvian para que el backend continue

@@ -132,6 +132,8 @@ test('capturar un celular que ya es prospecto propio responde 409 mostrando el e
   assert.equal(res.status, 409);
   assert.ok(res.body.error);
   assert.equal(res.body.prospecto.nombre, 'Laura');
+  // Campo estructurado (#82): el frontend decide por tipo, no parseando el error.
+  assert.equal(res.body.tipo, 'prospecto_propio');
   assert.equal(readProspectos().length, 1);
 });
 
@@ -143,7 +145,10 @@ test('capturar un celular que ya es prospecto de otro vendedor responde 409 con 
     .set('Authorization', `Bearer ${ANA_TOKEN}`).send(CAPTURA);
   assert.equal(res.status, 409);
   assert.equal(res.body.error, 'Este celular ya lo atiende Memo');
-  assert.deepEqual(Object.keys(res.body), ['error']);
+  // Campo estructurado (#82) sin exponer datos del prospecto ajeno.
+  assert.equal(res.body.tipo, 'prospecto_ajeno');
+  assert.equal('prospecto' in res.body, false);
+  assert.deepEqual(Object.keys(res.body).sort(), ['error', 'tipo']);
   assert.equal(readProspectos().length, 1);
 });
 
@@ -753,6 +758,10 @@ test('capturar un celular que matchea un cliente Operam responde 409 con aviso y
   assert.equal(res.status, 409);
   assert.match(res.body.error, /HOTELERA DEL SUR SA DE CV/);
   assert.match(res.body.error, /como cliente/i);
+  // Campo estructurado (#82): tipo + cust_name para que el frontend lleve al
+  // vendedor a cotizar sobre ese cliente sin parsear el string de error.
+  assert.equal(res.body.tipo, 'cliente');
+  assert.equal(res.body.cust_name, 'HOTELERA DEL SUR SA DE CV');
   assert.equal('prospecto' in res.body, false);
   assert.equal(readProspectos().length, 0);
 });
