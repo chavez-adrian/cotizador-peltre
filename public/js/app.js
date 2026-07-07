@@ -1885,9 +1885,13 @@ function pcRenderTarjeta() {
   const c = pcClienteActual();
   const esOperam = pcState.cliente?.tipo === 'operam';
   const chips = chipsCompletitud(c);
-  const sub = esOperam
-    ? [c.rfc, 'Cliente en Operam'].filter(Boolean).join(' &middot; ')
-    : [c.telefono, pcState.cliente?.ciudad, 'Contacto nuevo'].filter(Boolean).join(' &middot; ');
+  // Cada parte se escapa ANTES de unir con la entidad &middot; (escapar el join
+  // completo la rompería); telefono/ciudad son datos (p. ej. CSV de feria) y van
+  // a innerHTML: sin escape seria un stored XSS.
+  const subPartes = esOperam
+    ? [c.rfc, 'Cliente en Operam']
+    : [c.telefono, pcState.cliente?.ciudad, 'Contacto nuevo'];
+  const sub = subPartes.filter(Boolean).map(escapeHtml).join(' &middot; ');
 
   const chip = (ok, okLabel, pendLabel) => ok
     ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
