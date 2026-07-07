@@ -132,6 +132,11 @@
       </div>
     </div>
 
+    <!-- Cotizaciones previas del cliente seleccionado (Cargar / PDF / Subir a
+         Operam). Hermano de #pc-root: lo llena renderHistorialCliente al elegir
+         un cliente Operam con historial y se muestra bajo la tarjeta. -->
+    <div id="historial-cliente-panel" style="display:none"></div>
+
     <!-- Acordeon de alta de cliente (issue #27). Se conserva (lo reorienta #85);
          ya no se abre desde la entrada del paso Cliente, solo desde la
          formalizacion (completarPreCotizacion -> abrirAcordeonAlta). -->
@@ -552,21 +557,6 @@
          lo llenan los tres caminos del paso (Operam / prospecto / contacto
          nuevo). Los campos de entrega viven arriba, en #pc-entrega-wrap. -->
     <div id="cliente-form-legacy">
-
-      <!-- Helpers de la busqueda en Operam: los manipula seleccionarClienteOperam
-           (fija el valor, oculta el dropdown, carga domicilios/historial). El
-           buscador visible del paso vive en #pc-root y llama a los endpoints. -->
-      <div id="panel-buscar" class="cliente-panel" style="display:none">
-        <input type="text" id="operam-search" autocomplete="off">
-        <div id="operam-dropdown" class="search-dropdown" style="display:none"></div>
-        <button class="btn btn-primary" id="btn-buscar-operam" style="display:none">Buscar</button>
-        <div id="operam-search-status" style="display:none"></div>
-        <div id="operam-domicilios" style="display:none">
-          <select id="operam-domicilio-select"></select>
-          <button class="btn btn-secondary btn-sm" id="btn-usar-domicilio">Usar este domicilio</button>
-        </div>
-        <div id="historial-cliente-panel" style="display:none"></div>
-      </div>
 
       <!-- Datos de facturacion: los llena el camino elegido; no se muestran en la
            entrada (los datos fiscales se completan al subir a Operam, ADR-0006). -->

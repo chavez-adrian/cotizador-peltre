@@ -1332,61 +1332,13 @@ function nuevaCotizacion() {
   renderCartLines();
 }
 
-// === OPERAM: buscar cliente ===
+// === OPERAM: cliente seleccionado ===
+// (El buscador visible del paso vive en #pc-root, #82; el panel viejo de
+// busqueda con dropdown propio se retiro junto con su markup.)
 let operamClienteSeleccionado = null;
-
-async function buscarClienteOperam(query) {
-  const statusEl = document.getElementById('operam-search-status');
-  const setStatus = (msg, color = 'var(--text-light)') => {
-    if (!statusEl) return;
-    if (msg) { statusEl.style.display = 'block'; statusEl.style.color = color; statusEl.textContent = msg; }
-    else statusEl.style.display = 'none';
-  };
-
-  if (query.length < 2) {
-    document.getElementById('operam-dropdown').style.display = 'none';
-    setStatus(null);
-    return;
-  }
-
-  setStatus('Buscando...');
-  const btn = document.getElementById('btn-buscar-operam');
-  if (btn) btn.disabled = true;
-
-  try {
-    const res = await api(`/api/operam/clientes?q=${encodeURIComponent(query)}`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setStatus(err.error || 'Error al buscar', '#c00');
-      return;
-    }
-    const clientes = await res.json();
-    renderOperamDropdown(clientes);
-    setStatus(clientes.length ? null : 'Sin resultados');
-  } catch {
-    setStatus('Error de conexion', '#c00');
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-function renderOperamDropdown(clientes) {
-  const dd = document.getElementById('operam-dropdown');
-  if (!clientes.length) { dd.style.display = 'none'; return; }
-  dd.innerHTML = clientes.slice(0, 10).map(c =>
-    `<div class="dropdown-item" onmousedown="seleccionarClienteOperam(${JSON.stringify(c).replace(/"/g, '&quot;')})">
-      <span class="dropdown-item-name">${c.name || ''}</span>
-      <span class="dropdown-item-sku">${c.rfc || ''}</span>
-    </div>`
-  ).join('');
-  dd.style.display = 'block';
-}
 
 async function seleccionarClienteOperam(cliente) {
   operamClienteSeleccionado = cliente;
-  document.getElementById('operam-dropdown').style.display = 'none';
-  document.getElementById('operam-search-status').style.display = 'none';
-  document.getElementById('operam-search').value = cliente.name || '';
 
   const fill = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
   fill('cl-razon-social',   cliente.name);
@@ -1405,26 +1357,15 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-email-entrega',  cliente.email);
   updateTabIndicators();
 
-  // Cargar domicilios con dirección correcta desde el branch
+  // Cargar domicilios con la direccion correcta desde el branch. Se precarga el
+  // primero; con varios, la tarjeta (pcRenderTarjeta) ofrece su propio selector
+  // sobre window._operamDomicilios.
   try {
     const res = await api(`/api/operam/clientes/${cliente.id}/domicilios`);
     if (!res.ok) return;
     const domicilios = await res.json();
     window._operamDomicilios = domicilios;
-
-    if (domicilios.length === 1) {
-      // Branch único: aplicar automáticamente la dirección de entrega
-      aplicarDomicilio(domicilios[0]);
-    } else if (domicilios.length > 1) {
-      // Múltiples branches: mostrar selector
-      const sel = document.getElementById('operam-domicilio-select');
-      sel.innerHTML = domicilios.map((d, i) =>
-        `<option value="${i}">${d.descripcion || d.calle || ''}</option>`
-      ).join('');
-      document.getElementById('operam-domicilios').style.display = 'block';
-      // Precargar el primero
-      aplicarDomicilio(domicilios[0]);
-    }
+    if (domicilios.length >= 1) aplicarDomicilio(domicilios[0]);
   } catch {}
 
   // Mostrar historial de cotizaciones para este cliente
@@ -1459,13 +1400,6 @@ function aplicarDomicilio(d) {
   if (d.email)    f('cl-email-entrega', d.email);
   if (d.contacto) f('cl-nombre-entrega', d.contacto);
 }
-
-function usarDomicilioOperam() {
-  const idx = parseInt(document.getElementById('operam-domicilio-select')?.value) || 0;
-  aplicarDomicilio(window._operamDomicilios?.[idx]);
-  document.getElementById('operam-domicilios').style.display = 'none';
-}
-window.usarDomicilioOperam = usarDomicilioOperam;
 
 // ============================================================================
 // PASO CLIENTE — variante B (issue #82)
@@ -1537,6 +1471,10 @@ function pcPrepararSeleccion() {
   pcState.entregaAbierta = false;
   pcMostrarEntrega(false);
   pcLimpiarCamposCliente();
+  // El historial de cotizaciones previas es del cliente anterior: se oculta y
+  // seleccionarClienteOperam lo re-renderiza si el nuevo cliente tiene previas.
+  const hist = document.getElementById('historial-cliente-panel');
+  if (hist) { hist.style.display = 'none'; hist.innerHTML = ''; }
 }
 
 // --- Entrada: dos caminos ---
@@ -3377,29 +3315,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('envia-cp').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
   document.getElementById('shipping-cost').addEventListener('input', () => updateResumen());
   document.getElementById('shipping-desc').addEventListener('input', () => updateResumen());
-
-  // Operam: buscar cliente
-  const operamSearchEl = document.getElementById('operam-search');
-  if (operamSearchEl) {
-    let operamTimer;
-    operamSearchEl.addEventListener('input', e => {
-      clearTimeout(operamTimer);
-      operamTimer = setTimeout(() => buscarClienteOperam(e.target.value), 300);
-    });
-    operamSearchEl.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { clearTimeout(operamTimer); buscarClienteOperam(e.target.value); }
-    });
-    operamSearchEl.addEventListener('blur', () => {
-      setTimeout(() => {
-        document.getElementById('operam-dropdown').style.display = 'none';
-      }, 150);
-    });
-  }
-  document.getElementById('btn-buscar-operam')?.addEventListener('click', () => {
-    buscarClienteOperam(document.getElementById('operam-search').value);
-  });
-  const btnUsarDom = document.getElementById('btn-usar-domicilio');
-  if (btnUsarDom) btnUsarDom.addEventListener('click', usarDomicilioOperam);
 
   // PDF, HTML & WhatsApp
   document.getElementById('btn-pdf').addEventListener('click', generatePDF);
