@@ -1319,12 +1319,9 @@ function nuevaCotizacion() {
   const envPaisEl = document.getElementById('envia-pais');
   if (envPaisEl) envPaisEl.value = 'MX';
   enviaRateSeleccionado = null;
-  // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos.
+  // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
+  // pcRenderInicio ya limpia campos y colapsa entrega (pcPrepararSeleccion).
   pcRecientesCache = null;
-  pcState.cliente = null;
-  pcState.entregaAbierta = false;
-  const entregaWrap = document.getElementById('pc-entrega-wrap');
-  if (entregaWrap) entregaWrap.style.display = 'none';
   pcRenderInicio();
   resetFlujoGuiado();
   switchTab('cliente');
@@ -1530,13 +1527,21 @@ function pcLimpiarCamposCliente() {
   window._operamDomicilios = null;
 }
 
-// --- Entrada: dos caminos ---
-function pcRenderInicio() {
+// Punto UNICO de preparacion antes de seleccionar/crear un cliente: limpia los
+// campos cl-* y colapsa el bloque de entrega. TODOS los entry points de seleccion
+// (busqueda, reciente, prospecto, cotizarProspecto, altaCotizarAhora, contacto
+// nuevo) pasan por aqui -- sin esto, la direccion del cliente A se filtra a los
+// cl-* del cliente B y su PDF puede salir con la direccion equivocada.
+function pcPrepararSeleccion() {
   pcState.cliente = null;
   pcState.entregaAbierta = false;
-  const entregaWrap = document.getElementById('pc-entrega-wrap');
-  if (entregaWrap) entregaWrap.style.display = 'none';
+  pcMostrarEntrega(false);
   pcLimpiarCamposCliente();
+}
+
+// --- Entrada: dos caminos ---
+function pcRenderInicio() {
+  pcPrepararSeleccion();
   const root = pcEl();
   if (!root) return;
   root.innerHTML =
@@ -1655,6 +1660,7 @@ function pcElegirResultado(i) {
 window.pcElegirResultado = pcElegirResultado;
 
 async function pcElegirOperam(raw) {
+  pcPrepararSeleccion();
   const root = pcEl();
   root.innerHTML = '<div class="pc-pregunta">Cargando cliente...</div>';
   await seleccionarClienteOperam(raw); // llena cl-* + carga domicilios/historial
@@ -1678,6 +1684,7 @@ function pcLlenarCamposContacto(cliente) {
 }
 
 function pcElegirProspecto(raw) {
+  pcPrepararSeleccion();
   const cliente = clienteDesdeProspecto(raw);
   pcLlenarCamposContacto(cliente);
   pcState.cliente = cliente;
@@ -1685,6 +1692,7 @@ function pcElegirProspecto(raw) {
 }
 
 async function pcElegirReciente(cotizacionId) {
+  pcPrepararSeleccion();
   const root = pcEl();
   root.innerHTML = '<div class="pc-pregunta">Cargando...</div>';
   try {
@@ -1869,6 +1877,7 @@ async function pcGuardarContactoNuevo() {
       restaurarBtn();
       return;
     }
+    pcPrepararSeleccion();
     pcLlenarCamposContacto(cliente);
     pcState.cliente = cliente;
     pcRenderTarjeta();
@@ -4263,12 +4272,11 @@ async function altaCotizarAhora() {
   // Estado compartido (#69): el cotizador abre con el cliente recien dado de alta
   // YA cargado -- razon social, telefono (con codigo de pais) y domicilio prellenados
   // desde lo capturado en el alta, sin re-pedir datos ni round-trip a Operam por RFC.
+  // pcElegirOperam es el punto central de seleccion (#82): limpia los campos del
+  // cliente anterior y muestra la tarjeta.
   const cliente = buildClienteDesdeAlta(altaState);
   switchTab('cliente');
-  await seleccionarClienteOperam(cliente);
-  // Muestra la tarjeta del cliente (variante B, #82) en vez del form plano.
-  pcState.cliente = { ...cliente, tipo: 'operam' };
-  pcRenderTarjeta();
+  await pcElegirOperam(cliente);
 }
 
 function altaTerminar() {
