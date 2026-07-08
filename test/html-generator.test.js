@@ -102,3 +102,31 @@ test('15. (#71 AC1) sin leyendaDomicilio no se inventa la leyenda', () => {
   const html = generateQuoteHTML({ cliente: { calle: 'Reforma 100', cpEntrega: '06600' } });
   assert.ok(!html.includes('Favor de confirmar el domicilio de entrega'), 'should NOT contain la leyenda cuando hay calle');
 });
+
+// === #84 AC4: entrega ausente/parcial/completa, sin secciones vacias ni "undefined" ===
+
+test('16. (#84) entrega totalmente ausente -> HTML sin "undefined", con la leyenda', () => {
+  const html = generateQuoteHTML({ cliente: { razonSocial: 'Cliente Test', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' } });
+  assert.ok(!html.includes('undefined'), 'no debe imprimir "undefined"');
+  assert.ok(html.includes('Favor de confirmar el domicilio de entrega'), 'debe traer la leyenda de confirmacion');
+});
+
+test('17. (#84) entrega parcial (solo CP) -> muestra el CP y la leyenda, sin "undefined"', () => {
+  const html = generateQuoteHTML({ cliente: { cpEntrega: '06600', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' } });
+  assert.ok(html.includes('06600'), 'debe mostrar el CP capturado');
+  assert.ok(html.includes('Favor de confirmar el domicilio de entrega'), 'debe traer la leyenda de confirmacion');
+  assert.ok(!html.includes('undefined'), 'no debe imprimir "undefined"');
+});
+
+test('18. (#84) entrega parcial (solo ciudad/municipio) -> muestra el municipio y la leyenda', () => {
+  const html = generateQuoteHTML({ cliente: { municipio: 'Puebla', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' } });
+  assert.ok(html.includes('Puebla'), 'debe mostrar el municipio capturado');
+  assert.ok(html.includes('Favor de confirmar el domicilio de entrega'), 'debe traer la leyenda de confirmacion');
+  assert.ok(!html.includes('undefined'), 'no debe imprimir "undefined"');
+});
+
+test('19. (#84) entrega completa -> no imprime la leyenda de confirmacion', () => {
+  const html = generateQuoteHTML({ cliente: { calle: 'Reforma 100', cpEntrega: '06600', municipio: 'CDMX', leyendaDomicilio: '' } });
+  assert.ok(!html.includes('Favor de confirmar el domicilio de entrega'), 'no debe traer la leyenda cuando la entrega esta completa');
+  assert.ok(!html.includes('undefined'), 'no debe imprimir "undefined"');
+});

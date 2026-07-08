@@ -2,9 +2,10 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-// Logica pura del rediseno del paso Cliente (variante B, issue #82). Todo lo
-// decisional del paso vive en alta-logica.js y se prueba aqui; el render en
-// app.js es tonto (sin DOM en Node, no se prueba). Ver prototype-cliente.html.
+// Logica pura del rediseno del paso Cliente (variante B, issue #82; entrega
+// diferida al paso Envio en #84). Todo lo decisional del paso vive en
+// alta-logica.js y se prueba aqui; el render en app.js es tonto (sin DOM en
+// Node, no se prueba). Ver CONTEXT.md.
 
 let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
@@ -101,18 +102,18 @@ test('R3: tolera lista nula', () => {
   assert.deepStrictEqual(recientesDesdeCotizaciones(null), []);
 });
 
-// === chipsCompletitud: estado de chips desde datos reales (AC6) ===
+// === chipsCompletitud: estado de chips desde datos reales (AC6, tri-estado #84) ===
 
-test('C1: cliente Operam completo -> los tres chips en verde', () => {
-  const c = { name: 'La Vasija', telefono: '+52 55 1234 5678', cp: '06600', pais: 'MX', rfc: 'VAZ990101QX3' };
-  assert.deepStrictEqual(chipsCompletitud(c), { contacto: true, entrega: true, fiscal: true });
+test('C1: cliente Operam completo -> Contacto y Fiscal en verde, Entrega completo', () => {
+  const c = { name: 'La Vasija', telefono: '+52 55 1234 5678', cp: '06600', pais: 'MX', calle: 'Reforma 100', rfc: 'VAZ990101QX3' };
+  assert.deepStrictEqual(chipsCompletitud(c), { contacto: true, entrega: 'completo', fiscal: true });
 });
 
-test('C2: contacto nuevo -> solo Contacto; Entrega y Fiscal pendientes', () => {
+test('C2: contacto nuevo -> solo Contacto; Entrega pendiente (sin CP) y Fiscal pendiente', () => {
   const c = buildClienteDesdeContactoNuevo({ nombre: 'Juan', telefono: '+52 55 1234 5678', ciudad: 'CDMX' });
   const chips = chipsCompletitud(c);
   assert.strictEqual(chips.contacto, true);
-  assert.strictEqual(chips.entrega, false, 'ciudad no es domicilio de entrega (CP+pais)');
+  assert.strictEqual(chips.entrega, 'pendiente', 'ciudad no es domicilio de entrega (CP+pais)');
   assert.strictEqual(chips.fiscal, false, 'sin RFC real');
 });
 
@@ -125,6 +126,25 @@ test('C3: RFC generico no cuenta como fiscal completo', () => {
 
 test('C4: sin telefono no hay chip de Contacto', () => {
   assert.strictEqual(chipsCompletitud({ name: 'X' }).contacto, false);
+});
+
+test('C5: CP + pais validos sin Calle -> entrega "cp" (#84)', () => {
+  const c = { name: 'X', telefono: '+52 5555555555', cp: '06600', pais: 'MX' };
+  assert.strictEqual(chipsCompletitud(c).entrega, 'cp');
+});
+
+test('C6: CP con formato invalido -> entrega "pendiente" aunque haya algo tecleado', () => {
+  const c = { name: 'X', telefono: '+52 5555555555', cp: '123', pais: 'MX' };
+  assert.strictEqual(chipsCompletitud(c).entrega, 'pendiente');
+});
+
+test('C7: CP valido canadiense + Calle -> entrega "completo"', () => {
+  const c = { name: 'X', telefono: '+52 5555555555', cp: 'K1A 0A9', pais: 'CA', calle: 'Main St 1' };
+  assert.strictEqual(chipsCompletitud(c).entrega, 'completo');
+});
+
+test('C8: sin nada de entrega -> "pendiente"', () => {
+  assert.strictEqual(chipsCompletitud({ name: 'X', telefono: '+52 5555555555' }).entrega, 'pendiente');
 });
 
 // === buildClienteDesdeContactoNuevo: alimenta gate #81 y cl-* ===

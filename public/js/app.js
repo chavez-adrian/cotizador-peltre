@@ -61,6 +61,7 @@ import {
   validarDomicilioEntrega,
   formatCarrier,
   formatServicio,
+  cpValido,
 } from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -93,13 +94,39 @@ function validarTelefonosCotizacion() {
   return null;
 }
 
-// Lee el domicilio de entrega del DOM y delega en la funcion pura (#71).
+// Lee el domicilio de entrega del DOM y delega en la funcion pura (#71/#84).
+// Ya no bloquea la generacion (#84 AC4): solo decide si hace falta la leyenda
+// de confirmacion cuando falta Calle.
 function validarDomicilioCotizacion() {
   return validarDomicilioEntrega({
     calle: document.getElementById('cl-calle')?.value,
-    cp: document.getElementById('cl-cp-entrega')?.value,
-    pais: document.getElementById('cl-pais')?.value || 'MX',
   });
+}
+
+// Lee los campos cl-* del cliente/domicilio para el body de /api/cotizacion/pdf
+// y /api/cotizacion/html (idénticos en ambos -- un solo lugar, #84). `leyenda`
+// es el resultado de validarDomicilioCotizacion().
+function leerClienteFormulario(leyenda) {
+  return {
+    razonSocial: document.getElementById('cl-razon-social').value,
+    nombreCorto: document.getElementById('cl-nombre-corto').value,
+    rfc: document.getElementById('cl-rfc').value,
+    cpFiscal: document.getElementById('cl-cp-fiscal').value,
+    telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
+    nombreEntrega: document.getElementById('cl-nombre-entrega').value,
+    calle: document.getElementById('cl-calle').value,
+    numInt: document.getElementById('cl-num-int').value,
+    colonia: document.getElementById('cl-colonia').value,
+    cpEntrega: document.getElementById('cl-cp-entrega').value,
+    municipio: document.getElementById('cl-municipio').value,
+    estado: document.getElementById('cl-estado').value,
+    celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
+    emailEntrega: document.getElementById('cl-email-entrega').value,
+    referencias: document.getElementById('cl-referencias').value,
+    referencia: document.getElementById('cl-referencia').value,
+    pais: document.getElementById('cl-pais')?.value || 'MX',
+    leyendaDomicilio: leyenda || '',
+  };
 }
 
 // === UTILS ===
@@ -679,11 +706,6 @@ function updateShippingSummary() {
   el.innerHTML = `<strong>${totalPzs} piezas</strong> — Peso estimado: <strong>${totalWeight.toFixed(1)} kg</strong>`;
   el.className = 'alert alert-info';
 
-  // Si hay CP del cliente, pre-llenarlo en el campo de envia
-  const cpCliente = document.getElementById('cl-cp-entrega')?.value?.trim();
-  const cpEnvia = document.getElementById('envia-cp');
-  if (cpEnvia && cpCliente && !cpEnvia.value) cpEnvia.value = cpCliente;
-
   updateTabIndicators();
 }
 
@@ -701,12 +723,11 @@ async function cotizarEnvia() {
   resumenEl.style.display = 'none';
   enviaRateSeleccionado = null;
 
-  const cp = document.getElementById('envia-cp')?.value?.trim();
-  const pais = document.getElementById('envia-pais')?.value || 'MX';
-  const cpValido = pais === 'CA'
-    ? /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/.test(cp)
-    : /^\d{5}$/.test(cp);
-  if (!cp || !cpValido) {
+  // CP + pais UNICOS (#84 AC3): el mismo bloque de domicilio de entrega, ya no
+  // hay un envia-cp/envia-pais aparte.
+  const cp = document.getElementById('cl-cp-entrega')?.value?.trim();
+  const pais = document.getElementById('cl-pais')?.value || 'MX';
+  if (!cp || !cpValido(cp, pais)) {
     errEl.textContent = pais === 'CA' ? 'Ingresa un codigo postal canadiense valido (ej. K1A 0A9)' : 'Ingresa un CP de 5 digitos valido';
     errEl.style.display = 'block';
     return;
@@ -1034,12 +1055,6 @@ async function generatePDF() {
     return;
   }
   const domio = validarDomicilioCotizacion();
-  if (!domio.ok) {
-    alert(domio.error);
-    switchTab('cliente');
-    document.getElementById('cl-cp-entrega')?.focus();
-    return;
-  }
   const btn = document.getElementById('btn-pdf');
   btn.disabled = true;
   btn.textContent = 'Generando...';
@@ -1092,26 +1107,7 @@ async function generatePDF() {
       fecha: new Date().toISOString().split('T')[0],
       vigencia: vigenciaDate.toISOString().split('T')[0],
       tier: tier.id,
-      cliente: {
-        razonSocial: document.getElementById('cl-razon-social').value,
-        nombreCorto: document.getElementById('cl-nombre-corto').value,
-        rfc: document.getElementById('cl-rfc').value,
-        cpFiscal: document.getElementById('cl-cp-fiscal').value,
-        telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
-        nombreEntrega: document.getElementById('cl-nombre-entrega').value,
-        calle: document.getElementById('cl-calle').value,
-        numInt: document.getElementById('cl-num-int').value,
-        colonia: document.getElementById('cl-colonia').value,
-        cpEntrega: document.getElementById('cl-cp-entrega').value,
-        municipio: document.getElementById('cl-municipio').value,
-        estado: document.getElementById('cl-estado').value,
-        celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
-        emailEntrega: document.getElementById('cl-email-entrega').value,
-        referencias: document.getElementById('cl-referencias').value,
-        referencia: document.getElementById('cl-referencia').value,
-        pais: document.getElementById('cl-pais')?.value || 'MX',
-        leyendaDomicilio: domio.leyenda || '',
-      },
+      cliente: leerClienteFormulario(domio.leyenda),
       condicionesPago: document.getElementById('cl-condiciones').value,
       items,
       subtotal,
@@ -1172,12 +1168,6 @@ async function generateHTML() {
     return;
   }
   const domio = validarDomicilioCotizacion();
-  if (!domio.ok) {
-    alert(domio.error);
-    switchTab('cliente');
-    document.getElementById('cl-cp-entrega')?.focus();
-    return;
-  }
   const btn = document.getElementById('btn-html');
   btn.disabled = true;
   btn.textContent = 'Generando...';
@@ -1223,26 +1213,7 @@ async function generateHTML() {
       vigencia: vigenciaDate.toISOString().split('T')[0],
       tier: tier.id,
       incluirFotos: document.getElementById('incluir-fotos')?.checked || false,
-      cliente: {
-        razonSocial: document.getElementById('cl-razon-social').value,
-        nombreCorto: document.getElementById('cl-nombre-corto').value,
-        rfc: document.getElementById('cl-rfc').value,
-        cpFiscal: document.getElementById('cl-cp-fiscal').value,
-        telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
-        nombreEntrega: document.getElementById('cl-nombre-entrega').value,
-        calle: document.getElementById('cl-calle').value,
-        numInt: document.getElementById('cl-num-int').value,
-        colonia: document.getElementById('cl-colonia').value,
-        cpEntrega: document.getElementById('cl-cp-entrega').value,
-        municipio: document.getElementById('cl-municipio').value,
-        estado: document.getElementById('cl-estado').value,
-        celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
-        emailEntrega: document.getElementById('cl-email-entrega').value,
-        referencias: document.getElementById('cl-referencias').value,
-        referencia: document.getElementById('cl-referencia').value,
-        pais: document.getElementById('cl-pais')?.value || 'MX',
-        leyendaDomicilio: domio.leyenda || '',
-      },
+      cliente: leerClienteFormulario(domio.leyenda),
       condicionesPago: document.getElementById('cl-condiciones').value,
       items,
       subtotal,
@@ -1332,14 +1303,12 @@ function nuevaCotizacion() {
   document.getElementById('envia-results').innerHTML = '';
   document.getElementById('envia-error').style.display = 'none';
   document.getElementById('envia-resumen').style.display = 'none';
-  document.getElementById('envia-cp').value = '';
-  const envPaisEl = document.getElementById('envia-pais');
-  if (envPaisEl) envPaisEl.value = 'MX';
   enviaRateSeleccionado = null;
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
   // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
-  // pcRenderInicio ya limpia campos y colapsa entrega (pcPrepararSeleccion).
+  // pcRenderInicio ya limpia los campos del cliente y de entrega via
+  // pcPrepararSeleccion (el bloque de entrega vive en el paso Envio desde #84).
   pcRecientesCache = null;
   pcRenderInicio();
   resetFlujoGuiado();
@@ -1377,8 +1346,8 @@ async function seleccionarClienteOperam(cliente) {
   updateTabIndicators();
 
   // Cargar domicilios con la direccion correcta desde el branch. Se precarga el
-  // primero; con varios, la tarjeta (pcRenderTarjeta) ofrece su propio selector
-  // sobre window._operamDomicilios.
+  // primero; con varios, el paso Envio ofrece su propio selector (pcRenderDomSelect,
+  // #84) sobre window._operamDomicilios.
   try {
     const res = await api(`/api/operam/clientes/${cliente.id}/domicilios`);
     if (!res.ok) return;
@@ -1421,14 +1390,16 @@ function aplicarDomicilio(d) {
 }
 
 // ============================================================================
-// PASO CLIENTE -- variante B (issue #82)
+// PASO CLIENTE -- variante B (issue #82; entrega diferida al paso Envio en #84)
 // ----------------------------------------------------------------------------
 // La entrada del paso Cliente: dos caminos ("Ya lo conozco" / "Contacto nuevo")
 // + nota de diferimiento; buscador unificado (Operam + prospectos) con recientes;
 // captura minima del contacto nuevo (crea/usa prospecto); y la tarjeta del cliente
-// seleccionado con chips de completitud y CTA a Productos. El render es tonto: toda
-// la decision vive en alta-logica.js (mezclar/recientes/chips/guardrails). Ver
-// prototype-cliente.html (variante B) y CONTEXT.md.
+// seleccionado con chips de completitud y CTA a Productos. El domicilio de entrega
+// (#pc-entrega-wrap) ya NO vive aqui: se captura/confirma en el paso Envio (#84);
+// el chip Entrega de la tarjeta es informativo y lleva alla (switchTab('envio')).
+// El render es tonto: toda la decision vive en alta-logica.js
+// (mezclar/recientes/chips/guardrails). Ver CONTEXT.md.
 // ============================================================================
 
 const pcState = { cliente: null };
@@ -1446,6 +1417,7 @@ function pcClienteActual() {
     telefono: leerTelefono('cl-telefono', 'cl-telefono-code') || base.telefono || '',
     cp: document.getElementById('cl-cp-entrega')?.value || '',
     pais: document.getElementById('cl-pais')?.value || base.pais || 'MX',
+    calle: document.getElementById('cl-calle')?.value || '',
     rfc: document.getElementById('cl-rfc')?.value || base.rfc || '',
   };
 }
@@ -1481,15 +1453,15 @@ function pcLimpiarCamposCliente() {
 }
 
 // Punto UNICO de preparacion antes de seleccionar/crear un cliente: limpia los
-// campos cl-* y colapsa el bloque de entrega. TODOS los entry points de seleccion
-// (busqueda, reciente, prospecto, cotizarProspecto, altaCotizarAhora, contacto
-// nuevo) pasan por aqui -- sin esto, la direccion del cliente A se filtra a los
-// cl-* del cliente B y su PDF puede salir con la direccion equivocada.
+// campos cl-* (incluido el bloque de entrega, que desde #84 vive siempre visible
+// en el paso Envio). TODOS los entry points de seleccion (busqueda, reciente,
+// prospecto, cotizarProspecto, altaCotizarAhora, contacto nuevo) pasan por aqui
+// -- sin esto, la direccion del cliente A se filtra a los cl-* del cliente B y
+// su PDF puede salir con la direccion equivocada.
 function pcPrepararSeleccion() {
   pcState.cliente = null;
-  pcState.entregaAbierta = false;
-  pcMostrarEntrega(false);
   pcLimpiarCamposCliente();
+  pcRenderDomSelect();
   // El historial de cotizaciones previas es del cliente anterior: se oculta y
   // seleccionarClienteOperam lo re-renderiza si el nuevo cliente tiene previas.
   const hist = document.getElementById('historial-cliente-panel');
@@ -1880,13 +1852,20 @@ window.pcGuardarContactoNuevo = pcGuardarContactoNuevo;
 // --- Tarjeta del cliente seleccionado ---
 
 // Fila unica de los 3 chips de completitud (la usan la tarjeta y el re-pintado
-// en vivo); el chip Entrega es boton porque abre el bloque opcional de entrega.
+// en vivo). El chip Entrega es tri-estado (#84): pendiente / CP capturado /
+// domicilio completo; ya no abre un bloque local -- tocarlo lleva al paso Envio,
+// que es donde vive el domicilio desde #84.
 function pcChipsHtml(chips) {
   const chip = (ok, okLabel, pendLabel) => ok
     ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
     : `<span class="pc-chip pend">${pendLabel}</span>`;
+  const entregaChip = chips.entrega === 'completo'
+    ? '<span class="pc-chip ok">&#10003; Entrega</span>'
+    : chips.entrega === 'cp'
+      ? '<span class="pc-chip parcial">Entrega &middot; CP</span>'
+      : '<span class="pc-chip pend">Entrega &middot; pendiente</span>';
   return chip(chips.contacto, 'Contacto', 'Contacto') +
-    `<button type="button" class="pc-chip-btn" onclick="pcToggleEntrega()">${chip(chips.entrega, 'Entrega', 'Entrega &middot; agregar')}</button>` +
+    `<button type="button" class="pc-chip-btn" onclick="switchTab('envio')">${entregaChip}</button>` +
     chip(chips.fiscal, 'Fiscal', 'Fiscal &middot; al subir a Operam');
 }
 
@@ -1900,18 +1879,8 @@ function pcRenderTarjeta() {
   // a innerHTML: sin escape seria un stored XSS.
   const subPartes = esOperam
     ? [c.rfc, 'Cliente en Operam']
-    : [c.telefono, pcState.cliente?.ciudad, 'Contacto nuevo'];
+    : [c.telefono, pcState.cliente?.ciudad, 'Prospecto'];
   const sub = subPartes.filter(Boolean).map(escapeHtml).join(' &middot; ');
-
-  // Selector de domicilio para cliente Operam con varios branches.
-  let domHtml = '';
-  const doms = window._operamDomicilios;
-  if (esOperam && Array.isArray(doms) && doms.length > 1) {
-    domHtml = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
-      '<select id="pc-dom-select" onchange="pcCambiarDomicilio()">' +
-      doms.map((d, i) => `<option value="${i}">${escapeHtml(d.descripcion || d.calle || ('Domicilio ' + (i + 1)))}</option>`).join('') +
-      '</select></div>';
-  }
 
   root.innerHTML =
     '<div class="pc-pregunta">Cliente seleccionado</div>' +
@@ -1920,14 +1889,11 @@ function pcRenderTarjeta() {
     `<div class="pc-cli-sub">${sub}</div>` +
     `<div class="pc-chips">${pcChipsHtml(chips)}</div>` +
     (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
-    domHtml +
     '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>' +
     '</div>' +
     '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Cambiar de cliente</button>';
 
-  // Reengancha el bloque de entrega (que vive en el form legacy) bajo la tarjeta
-  // cuando el vendedor lo abrio antes; se mantiene abierto tras re-render.
-  if (pcState.entregaAbierta) pcMostrarEntrega(true);
+  pcRenderDomSelect();
   updateTabIndicators();
 }
 
@@ -1936,32 +1902,30 @@ function pcContinuar() {
 }
 window.pcContinuar = pcContinuar;
 
+// Selector de domicilio para cliente Operam con varios branches (#84: vive en
+// el paso Envio, dentro de #pc-dom-slot -- HERMANO de #pc-root igual que antes
+// de #84, ahora en otra pestana; los innerHTML de #pc-root nunca lo tocan).
+function pcRenderDomSelect() {
+  const slot = document.getElementById('pc-dom-slot');
+  if (!slot) return;
+  const esOperam = pcState.cliente?.tipo === 'operam';
+  const doms = window._operamDomicilios;
+  if (esOperam && Array.isArray(doms) && doms.length > 1) {
+    slot.innerHTML = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
+      '<select id="pc-dom-select" onchange="pcCambiarDomicilio()">' +
+      doms.map((d, i) => `<option value="${i}">${escapeHtml(d.descripcion || d.calle || ('Domicilio ' + (i + 1)))}</option>`).join('') +
+      '</select></div>';
+  } else {
+    slot.innerHTML = '';
+  }
+}
+
 function pcCambiarDomicilio() {
   const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
   aplicarDomicilio(window._operamDomicilios?.[idx]);
   pcRenderChips();
 }
 window.pcCambiarDomicilio = pcCambiarDomicilio;
-
-// Revela el bloque de entrega (opcional, #82; migra al paso Envio en #84). El
-// bloque vive en el HTML como HERMANO de #pc-root (nunca dentro: los innerHTML
-// de #pc-root lo desconectarian del documento para siempre); aqui SOLO se
-// togglea su display.
-function pcToggleEntrega() {
-  pcState.entregaAbierta = !pcState.entregaAbierta;
-  pcMostrarEntrega(pcState.entregaAbierta);
-}
-window.pcToggleEntrega = pcToggleEntrega;
-
-function pcMostrarEntrega(mostrar) {
-  const wrap = document.getElementById('pc-entrega-wrap');
-  if (!wrap) return;
-  wrap.style.display = mostrar ? 'block' : 'none';
-  if (mostrar && !wrap.dataset.pcBound) {
-    wrap.addEventListener('input', pcRenderChips);
-    wrap.dataset.pcBound = '1';
-  }
-}
 
 // Re-pinta solo los chips (sin re-render completo, para no perder foco al editar).
 function pcRenderChips() {
@@ -2067,11 +2031,10 @@ function switchTab(name) {
   if (name === 'resumen') updateResumen();
   if (name === 'envio') {
     updateShippingSummary();
-    // Auto-cotizar con CP del cliente si aplica
+    // Auto-cotizar con el CP ya capturado en el bloque de entrega si aplica
+    // (#84: mismo campo, ya no hay que copiarlo a un envia-cp aparte).
     const cpCliente = document.getElementById('cl-cp-entrega')?.value?.trim();
-    const cpEnvia = document.getElementById('envia-cp');
-    if (cpCliente && /^\d{5}$/.test(cpCliente) && cpEnvia) {
-      cpEnvia.value = cpCliente;
+    if (cpCliente && /^\d{5}$/.test(cpCliente)) {
       const opt = document.getElementById('shipping-option');
       if (opt && opt.value === 'none' && state.cart.size > 0) {
         opt.value = 'envia';
@@ -2085,6 +2048,10 @@ function switchTab(name) {
   }
   updateTabIndicators();
 }
+// El chip Entrega de la tarjeta (#84) navega con onclick="switchTab('envio')"
+// inline en el HTML generado; sin este exponer global, un modulo ES no cuelga
+// sus funciones de window y el onclick revienta con ReferenceError.
+window.switchTab = switchTab;
 
 // === FORMAT ===
 function fmt(n) {
@@ -3362,8 +3329,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 150);
   });
 
-  // Tab indicator para cliente
+  // Tab indicator para cliente y envio (el bloque de entrega vive en Envio, #84)
   document.getElementById('tab-cliente').addEventListener('input', updateTabIndicators);
+  document.getElementById('tab-envio').addEventListener('input', () => { pcRenderChips(); updateTabIndicators(); });
 
   // Botones Siguiente
   document.getElementById('btn-sig-cliente').addEventListener('click', () => switchTab('productos'));
@@ -3375,12 +3343,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const val = e.target.value;
     document.getElementById('shipping-envia').style.display = val === 'envia' ? 'block' : 'none';
     document.getElementById('shipping-manual').style.display = val === 'manual' ? 'block' : 'none';
-    // Pre-llenar CP de envia con el del cliente si está vacío
-    if (val === 'envia') {
-      const cpCliente = document.getElementById('cl-cp-entrega')?.value?.trim();
-      const cpEnvia = document.getElementById('envia-cp');
-      if (cpEnvia && cpCliente && !cpEnvia.value) cpEnvia.value = cpCliente;
-    }
     // Limpiar costo si cambia la opción
     if (val !== 'envia' && val !== 'manual') {
       document.getElementById('shipping-cost').value = '';
@@ -3389,7 +3351,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateTabIndicators();
   });
   document.getElementById('btn-cotizar-envia').addEventListener('click', cotizarEnvia);
-  document.getElementById('envia-cp').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
+  document.getElementById('cl-cp-entrega').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
   document.getElementById('shipping-cost').addEventListener('input', () => updateResumen());
   document.getElementById('shipping-desc').addEventListener('input', () => updateResumen());
 

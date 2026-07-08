@@ -4,6 +4,8 @@
 // Existe para que ambos lados consuman la MISMA implementacion en vez de mantener
 // copias espejo que pueden divergir (ver architecture-review-cotizador-20260606.html).
 
+import { cpValido } from './cotizar-logica.js';
+
 export const CSF_DATOS_VACIOS = {
   rfc: '', razonSocial: '', nombreCorto: '', idcif: '', regimenFiscal: '',
   calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '',
@@ -235,12 +237,12 @@ export function mensajeBusquedaCelular(clasificacion) {
   return { encontrado: false, tipo: c.tipo || 'libre', mensaje: '' };
 }
 
-// === Paso Cliente variante B (issue #82) ===
+// === Paso Cliente variante B (issue #82; entrega diferida al paso Envio en #84) ===
 //
 // Toda la logica decisional del rediseno del paso Cliente vive aqui (el render de
 // app.js es tonto): mezcla de busqueda Operam+prospectos, derivacion de recientes,
-// estado de chips, payload del contacto nuevo y guardrails del celular. Ver
-// prototype-cliente.html (variante B) y CONTEXT.md.
+// estado de chips (tri-estado de Entrega, #84), payload del contacto nuevo y
+// guardrails del celular. Ver CONTEXT.md.
 
 const RFC_GENERICOS_BROWSER = new Set(['XAXX010101000', 'XEXX010101000']);
 
@@ -345,9 +347,12 @@ export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
   return out;
 }
 
-// Estado de los chips de completitud de la tarjeta (AC6), desde datos reales:
+// Estado de los chips de completitud de la tarjeta (AC6/#82; tri-estado de
+// Entrega extendido en #84), desde datos reales:
 //  - Contacto: nombre resoluble (name||ref) Y telefono (lo minimo para cotizar).
-//  - Entrega: CP + pais presentes (el domicilio de entrega; Operam ya lo trae).
+//  - Entrega: tri-estado -- 'pendiente' (sin CP valido), 'cp' (CP+pais validos,
+//    sin Calle) o 'completo' (CP+pais validos y Calle). El domicilio se captura
+//    en el paso Envio (#84); Operam ya lo trae con el cliente.
 //  - Fiscal: RFC real (presente y NO generico -- el generico ES "pendiente fiscal").
 export function chipsCompletitud(cliente) {
   const c = cliente || {};
@@ -355,10 +360,12 @@ export function chipsCompletitud(cliente) {
   const telefono = (c.telefono || '').trim();
   const cp = (c.cp || c.cpEntrega || '').trim();
   const pais = (c.pais || '').trim();
+  const calle = (c.calle || '').trim();
   const rfc = (c.rfc || '').toUpperCase().trim();
+  const cpOk = !!(cp && pais && cpValido(cp, pais));
   return {
     contacto: !!(nombre && telefono),
-    entrega: !!(cp && pais),
+    entrega: cpOk ? (calle ? 'completo' : 'cp') : 'pendiente',
     fiscal: !!(rfc && !RFC_GENERICOS_BROWSER.has(rfc)),
   };
 }
