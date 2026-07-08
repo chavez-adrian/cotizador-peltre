@@ -10,6 +10,7 @@ import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
 import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, FUENTE_ALTA_GENERICA } from './lib/alta-generica.js';
+import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
 import { detectarDuplicados } from './lib/deduplicacion.js';
@@ -954,6 +955,20 @@ app.get('/api/admin/cotizaciones', authMiddleware, adminMiddleware, async (req, 
   res.json(log.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier }) =>
     ({ id, fecha, vendedor, cliente, totalPiezas, total, tier })
   ));
+});
+
+// Reporte de higiene de clientes con RFC generico (issue #86, ADR-0006
+// "Higiene"): cruza clientes_log (altas genericas, #81) con las cotizaciones
+// locales via la funcion pura construirReporteHigiene. Sin DB: lista vacia y
+// sinDb:true (mismo patron de ausencia de datos que otras rutas admin), nunca
+// un 503 -- es una vista informativa, no una operacion que dependa de Neon.
+app.get('/api/admin/higiene-clientes-genericos', authMiddleware, adminMiddleware, async (req, res) => {
+  const rows = await dbQuery(
+    'SELECT id, created_at, rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, error_msg FROM clientes_log ORDER BY created_at ASC'
+  );
+  if (rows === null) return res.json({ filas: [], sinDb: true });
+  const cotizaciones = await cotStore.listar();
+  res.json({ filas: construirReporteHigiene(rows.rows, cotizaciones, new Date()), sinDb: false });
 });
 
 function titleCase(str) {

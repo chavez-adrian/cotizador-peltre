@@ -162,6 +162,24 @@ test('GET /api/log sin token retorna 401', async () => {
   assert.strictEqual(res.status, 401);
 });
 
+// === GET /api/admin/higiene-clientes-genericos (issue #86) ===
+
+test('GET /api/admin/higiene-clientes-genericos sin DATABASE_URL responde filas vacias y sinDb:true', async () => {
+  const res = await supertest(app).get('/api/admin/higiene-clientes-genericos')
+    .set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.deepEqual(res.body, { filas: [], sinDb: true });
+});
+
+test('GET /api/admin/higiene-clientes-genericos exige admin: vendedor 403, sin token 401', async () => {
+  const vendedorToken = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
+  const vendedor = await supertest(app).get('/api/admin/higiene-clientes-genericos')
+    .set('Authorization', `Bearer ${vendedorToken}`);
+  assert.strictEqual(vendedor.status, 403);
+  const sinToken = await supertest(app).get('/api/admin/higiene-clientes-genericos');
+  assert.strictEqual(sinToken.status, 401);
+});
+
 // === PUT /api/actualizar-cliente/:id ===
 
 test('PUT /api/actualizar-cliente/:id actualiza cliente y retorna { ok:true }', async () => {
