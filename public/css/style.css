@@ -1673,6 +1673,7 @@ body {
 .pc-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: 999px; min-height: 30px; }
 .pc-chip.ok { background: oklch(0.94 0.04 150); color: oklch(0.32 0.08 150); }
 .pc-chip.pend { background: oklch(0.94 0.01 85); color: var(--text-light); }
+.pc-chip.parcial { background: oklch(0.94 0.06 80); color: oklch(0.4 0.1 70); }
 .pc-chip-btn { background: none; border: none; padding: 0; cursor: pointer; font: inherit; display: inline-flex; }
 .pc-chip-btn .pc-chip.pend { border: 1px dashed oklch(0.82 0.03 262); }
 .pc-dom { margin-top: 14px; }
@@ -1680,5 +1681,6 @@ body {
 /* Volver / cambiar cliente */
 .pc-back { background: none; border: none; color: var(--primary-dark); font-size: 14px; font-weight: 600; min-height: 44px; padding: 10px 4px; cursor: pointer; margin-top: 6px; }
 
-/* Bloque de entrega revelado inline bajo la tarjeta */
-.pc-entrega-inline { margin-top: 16px; padding: 16px; border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--white); }
+/* Bloque de domicilio de entrega en el paso Envio (#84; antes revelado inline
+   bajo la tarjeta del paso Cliente, #82) */
+.pc-entrega-inline { margin-top: 16px; margin-bottom: 16px; padding: 16px; border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--white); }

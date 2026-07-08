@@ -237,12 +237,12 @@ export function mensajeBusquedaCelular(clasificacion) {
   return { encontrado: false, tipo: c.tipo || 'libre', mensaje: '' };
 }
 
-// === Paso Cliente variante B (issue #82) ===
+// === Paso Cliente variante B (issue #82; entrega diferida al paso Envio en #84) ===
 //
 // Toda la logica decisional del rediseno del paso Cliente vive aqui (el render de
 // app.js es tonto): mezcla de busqueda Operam+prospectos, derivacion de recientes,
-// estado de chips, payload del contacto nuevo y guardrails del celular. Ver
-// prototype-cliente.html (variante B) y CONTEXT.md.
+// estado de chips (tri-estado de Entrega, #84), payload del contacto nuevo y
+// guardrails del celular. Ver CONTEXT.md.
 
 const RFC_GENERICOS_BROWSER = new Set(['XAXX010101000', 'XEXX010101000']);
 
