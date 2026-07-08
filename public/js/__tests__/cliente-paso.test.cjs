@@ -178,6 +178,25 @@ test('P1: normaliza un prospecto al objeto cliente del cotizador', () => {
   assert.strictEqual(c.rfc, '');
 });
 
+// === clienteDesdeProspecto: enhebrar el customer_id del cliente generico (#85) ===
+// Un prospecto que ya cotizo quedo ligado a un cliente generico en Operam
+// (prospectosStore.ligarCliente guarda data.cliente_id). Ese id es el destino del
+// PUT del upgrade fiscal; sin el la tarjeta no sabe contra que cliente actualizar.
+
+test('P2: prospecto ligado a cliente generico expone clienteOperamId', () => {
+  const p = { id: 5, nombre: 'Ligado SA', ciudad: 'Leon', celular: '+52 47 7000 0000', data: { cliente_id: 912 } };
+  assert.strictEqual(clienteDesdeProspecto(p).clienteOperamId, 912);
+});
+
+test('P3: prospecto sin data (nunca cotizo) tiene clienteOperamId null', () => {
+  assert.strictEqual(clienteDesdeProspecto(PROSPECTOS[0]).clienteOperamId, null);
+});
+
+test('P4: prospecto con data pero sin cliente_id tiene clienteOperamId null', () => {
+  const p = { id: 6, nombre: 'X', celular: '+52 5500000000', data: { correo: 'x@y.com' } };
+  assert.strictEqual(clienteDesdeProspecto(p).clienteOperamId, null);
+});
+
 // === accionCelularContactoNuevo: guardrails del celular (AC3/AC4, #69) ===
 
 test('A1: celular libre -> crear', () => {

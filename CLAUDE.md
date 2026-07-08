@@ -31,7 +31,7 @@ Antes de trabajar en cambios al flujo de clientes, leer:
 
 El proyecto es un servidor Express monolitico (`server.js`) con frontend vanilla JS (`public/js/app.js`, ~2500 lineas). Sin frameworks frontend, sin bundlers.
 
-`public/js/alta-logica.js` es un modulo ES sin efectos de navegador que concentra la logica pura del flujo de alta de cliente (parseo de CSF, diff fiscal, payload de `/api/crear-cliente`, combinacion de telefono). `app.js` lo importa de forma nativa (`<script type="module">`); los tests lo consumen via `import()` dinamico (ver seccion Tests) — un mismo modulo, dos consumidores, cero copias espejo (resolucion de "Especie A" del Candidato 2 de `architecture-review-cotizador-20260606.html`, issue #36).
+`public/js/alta-logica.js` es un modulo ES sin efectos de navegador que concentra la logica pura del flujo de alta de cliente (parseo de CSF, diff fiscal, payload de `/api/crear-cliente`, payload del upgrade fiscal de `/api/actualizar-cliente-fiscal/:id`, combinacion de telefono). `app.js` lo importa de forma nativa (`<script type="module">`); los tests lo consumen via `import()` dinamico (ver seccion Tests); `server.js` importa de el las funciones de diff/payload fiscal (issue #85) para el endpoint de upgrade — tres consumidores, cero copias espejo (resolucion de "Especie A" del Candidato 2 de `architecture-review-cotizador-20260606.html`, issue #36; mismo patron de cross-import server↔public/js ya usado con `prospectos-logica.js`/`decorados-logica.js`).
 
 ### Flujo de datos principal
 
@@ -82,7 +82,7 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 
 Dos niveles:
 - **Rutas del cotizador**: JWT de 30 dias. `vendedores.json` contiene ID + PIN. El rol `admin` desbloquea `/api/admin/*`.
-- **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/log`, `/api/csf-from-url`): protegidas con `authMiddleware` igual que el resto del cotizador — el alta de cliente vive unicamente en el acordeon de `app.js` (autenticado), tras el retiro de la herramienta standalone `csf-upload.html` (ADR-0003).
+- **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/actualizar-cliente-fiscal/:id`, `/api/log`, `/api/csf-from-url`): protegidas con `authMiddleware` igual que el resto del cotizador — el alta de cliente vive unicamente en el acordeon de `app.js` (autenticado), tras el retiro de la herramienta standalone `csf-upload.html` (ADR-0003). `/api/actualizar-cliente-fiscal/:id` es el upgrade de CSF sobre el cliente generico (issue #85, ADR-0006): gate anti-fusion por RFC exacto + verificacion post-PUT, nunca crea cliente nuevo.
 
 `server.js` carga `.env` manualmente sin dotenv (patron en lineas 24-30).
 
