@@ -1855,7 +1855,18 @@ window.pcGuardarContactoNuevo = pcGuardarContactoNuevo;
 // en vivo). El chip Entrega es tri-estado (#84): pendiente / CP capturado /
 // domicilio completo; ya no abre un bloque local -- tocarlo lleva al paso Envio,
 // que es donde vive el domicilio desde #84.
-function pcChipsHtml(chips) {
+// customer_id de Operam contra el que se puede hacer el upgrade fiscal (#85):
+// cliente Operam -> su id; prospecto ya ligado a un generico -> clienteOperamId;
+// contacto nuevo / prospecto sin cotizar -> null (aun no hay cliente en Operam).
+function pcCustomerIdFiscal() {
+  const c = pcState.cliente;
+  if (!c) return null;
+  if (c.tipo === 'operam') return c.id != null ? c.id : null;
+  if (c.tipo === 'prospecto') return c.clienteOperamId != null ? c.clienteOperamId : null;
+  return null;
+}
+
+function pcChipsHtml(chips, customerIdFiscal) {
   const chip = (ok, okLabel, pendLabel) => ok
     ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
     : `<span class="pc-chip pend">${pendLabel}</span>`;
@@ -1864,9 +1875,17 @@ function pcChipsHtml(chips) {
     : chips.entrega === 'cp'
       ? '<span class="pc-chip parcial">Entrega &middot; CP</span>'
       : '<span class="pc-chip pend">Entrega &middot; pendiente</span>';
+  // El chip Fiscal es accionable (patron del chip Entrega, #84) solo cuando el RFC
+  // sigue generico Y hay un cliente en Operam contra el cual actualizar: tocarlo abre
+  // el flujo de CSF en modo upgrade (PUT). Sin cliente en Operam queda estatico.
+  const fiscalChip = chips.fiscal
+    ? '<span class="pc-chip ok">&#10003; Fiscal</span>'
+    : (customerIdFiscal != null
+        ? `<button type="button" class="pc-chip-btn" onclick="pcAbrirUpgradeFiscal(${customerIdFiscal})"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>`
+        : '<span class="pc-chip pend">Fiscal &middot; al subir a Operam</span>');
   return chip(chips.contacto, 'Contacto', 'Contacto') +
     `<button type="button" class="pc-chip-btn" onclick="switchTab('envio')">${entregaChip}</button>` +
-    chip(chips.fiscal, 'Fiscal', 'Fiscal &middot; al subir a Operam');
+    fiscalChip;
 }
 
 function pcRenderTarjeta() {
@@ -1887,7 +1906,7 @@ function pcRenderTarjeta() {
     '<div class="pc-cli-card">' +
     `<div class="pc-cli-nombre">${escapeHtml(c.name || 'Sin nombre')}</div>` +
     `<div class="pc-cli-sub">${sub}</div>` +
-    `<div class="pc-chips">${pcChipsHtml(chips)}</div>` +
+    `<div class="pc-chips">${pcChipsHtml(chips, pcCustomerIdFiscal())}</div>` +
     (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
     '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>' +
     '</div>' +
@@ -1931,7 +1950,74 @@ window.pcCambiarDomicilio = pcCambiarDomicilio;
 function pcRenderChips() {
   const cont = pcEl()?.querySelector('.pc-chips');
   if (!cont) return;
-  cont.innerHTML = pcChipsHtml(chipsCompletitud(pcClienteActual()));
+  cont.innerHTML = pcChipsHtml(chipsCompletitud(pcClienteActual()), pcCustomerIdFiscal());
+}
+
+// --- Upgrade fiscal desde el chip Fiscal (issue #85) ---
+// Reutiliza la seccion 1 del acordeon (dropzone + parseo + campos editables) pero
+// reorientada al PUT del upgrade en vez del POST de creacion: al confirmar,
+// altaCsfConfirmar detecta altaCsfState.modoUpgrade y llama a pcEjecutarUpgradeFiscal.
+function pcAbrirUpgradeFiscal(customerId) {
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel) return;
+  altaCsfState.modoUpgrade = customerId;
+  altaCsfState.datos = null;
+  altaCsfState.pdfBase64 = null;
+  panel.style.display = 'block';
+  altaTabSwitch('csf');
+  altaState.seccionAbierta = null;
+  altaToggleSeccion(1);
+  altaCsfSetStatus('idle');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
+
+async function pcEjecutarUpgradeFiscal(datos) {
+  const customerId = altaCsfState.modoUpgrade;
+  const btn = document.getElementById('csf-btn-confirmar');
+  const errDiv = document.getElementById('csf-campos-error');
+  const mostrarError = msg => { if (errDiv) { errDiv.style.display = ''; errDiv.textContent = msg; } };
+  if (btn) { btn.disabled = true; btn.textContent = 'Actualizando en Operam...'; }
+  try {
+    const res = await api(`/api/actualizar-cliente-fiscal/${customerId}`, {
+      method: 'PUT',
+      body: { csfDatos: datos, pdf_base64: altaCsfState.pdfBase64 || null },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409 && data.fusion) {
+      const c = data.cliente || {};
+      mostrarError(`${data.error} Cliente existente: ${c.CustName || ''} (ID ${c.cliente_id || ''}).`);
+      return;
+    }
+    if (!res.ok || !data.ok) {
+      mostrarError(data.error || 'No se pudo actualizar en Operam');
+      return;
+    }
+    const ignorado = data.camposNoActualizados || [];
+    const campoPego = campo => !ignorado.some(x => x.campo === campo);
+    const panel = document.getElementById('panel-alta-cliente');
+    if (panel) panel.style.display = 'none';
+    altaCsfState.modoUpgrade = null;
+    // El chip Fiscal pasa a verde solo si el RFC real SI pego (chipsCompletitud lo
+    // deriva de pcState.cliente.rfc). Si Operam ignoro un campo (quirk del PUT),
+    // esa parte de la tarjeta se queda con el valor viejo en vez de mostrar un dato
+    // que Operam en realidad no guardo.
+    if (pcState.cliente && campoPego('tax_id')) pcState.cliente.rfc = datos.rfc;
+    if (pcState.cliente && campoPego('CustName')) pcState.cliente.name = datos.razonSocial || pcState.cliente.name;
+    const rfcInput = document.getElementById('cl-rfc');
+    if (rfcInput && campoPego('tax_id')) rfcInput.value = datos.rfc;
+    const razonInput = document.getElementById('cl-razon-social');
+    if (razonInput && campoPego('CustName') && datos.razonSocial) razonInput.value = datos.razonSocial;
+    pcRenderTarjeta();
+    if (ignorado.length) {
+      alert('Datos fiscales actualizados, pero Operam ignoro estos campos (corrigelos en Operam): ' +
+        ignorado.map(x => x.label || x.campo).join(', '));
+    }
+  } catch (e) {
+    mostrarError('Error de conexion');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar datos fiscales'; }
+  }
 }
 
 function renderHistorialCliente(cotizaciones) {
@@ -3509,6 +3595,11 @@ function abrirAcordeonAlta() {
     return;
   }
   panel.style.display = 'block';
+  // Este camino es el de "cliente formal nuevo" (POST), nunca el upgrade fiscal
+  // (#85): si un intento de upgrade anterior quedo colgado en altaCsfState.modoUpgrade
+  // (p. ej. tras un error sin cerrar el panel), confirmar aqui NO debe aplicarse sobre
+  // ese customer_id viejo.
+  altaCsfState.modoUpgrade = null;
   altaToggleSeccion(1);
   cargarCatalogos().then(altaPoblarSelectores).catch(() => {});
 }
@@ -3544,6 +3635,8 @@ const altaCsfState = {
   fileName: null,
   mensaje: null,
   datos: null,
+  modoUpgrade: null, // customer_id destino cuando el flujo CSF se abre en modo upgrade (#85)
+  pdfBase64: null,
 };
 
 function altaCsfSetStatus(status, opts = {}) {
@@ -3663,6 +3756,8 @@ async function altaCsfLeerPDF(file) {
 async function altaCsfProcesarArchivo(file) {
   altaCsfSetStatus('loading', { spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' });
   try {
+    // Base64 del PDF para respaldarlo en Dropbox al confirmar el upgrade fiscal (#85).
+    altaCsfState.pdfBase64 = await leerArchivoBase64(file).catch(() => null);
     const texto = await altaCsfLeerPDF(file);
     const respuesta = await altaCsfParsearEnServidor(texto);
     const resultado = altaCsfResultadoParseo(respuesta, file.name);
@@ -3689,7 +3784,9 @@ function altaCsfValidarCampos() {
 function altaCsfLeerFormulario() {
   const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   return {
-    rfc: getVal('csf-rfc'),
+    // Mayusculas como en altaManualLeerFormulario: el gate anti-fusion del upgrade
+    // fiscal (#85) depende de comparar el mismo RFC contra Operam sin diferencias de case.
+    rfc: getVal('csf-rfc').toUpperCase(),
     razonSocial: getVal('csf-razon-social'),
     nombreCorto: getVal('csf-nombre-corto'),
     idcif: getVal('csf-idcif'),
@@ -3717,6 +3814,13 @@ async function altaCsfConfirmar() {
   const datos = altaCsfLeerFormulario();
   altaCsfState.datos = datos;
   altaCsfState.confirmado = true;
+
+  // Modo upgrade (#85): el destino es el PUT sobre el cliente generico existente,
+  // no el POST de creacion con dedup por nombre del acordeon viejo.
+  if (altaCsfState.modoUpgrade != null) {
+    await pcEjecutarUpgradeFiscal(datos);
+    return;
+  }
 
   altaState.datos = { ...datos };
   await altaDedupCorrer(datos.rfc, datos.razonSocial);
@@ -3817,6 +3921,15 @@ async function altaManualConfirmar() {
     return;
   }
   if (errDiv) errDiv.style.display = 'none';
+
+  // Modo upgrade (#85): igual que altaCsfConfirmar, la pestana "Captura manual" es
+  // el MISMO panel/Seccion 1 abierto por pcAbrirUpgradeFiscal -- sin este chequeo,
+  // confirmar aqui se saltaria el PUT de upgrade y su gate anti-fusion, disparando
+  // el POST de creacion viejo sobre un cliente que ya existe en Operam.
+  if (altaCsfState.modoUpgrade != null) {
+    await pcEjecutarUpgradeFiscal(datos);
+    return;
+  }
 
   altaState.datos = {
     rfc: datos.rfc,

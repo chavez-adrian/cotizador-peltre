@@ -137,6 +137,21 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
   return diff;
 }
 
+// Body del PUT del upgrade de CSF (issue #85): escribe los datos fiscales reales
+// (RFC, razon social, regimen, domicilio fiscal) sobre el cliente generico existente.
+// Recorre la MISMA tabla que calcularDiffFiscal para que lo enviado y lo verificado
+// sean simetricos. Omite campos que la CSF no recolecto (ausente != vacio): mandar
+// una cadena vacia nukearia en Operam un dato que el vendedor nunca tuvo oportunidad
+// de capturar.
+export function buildActualizarFiscalPayload(csfDatos) {
+  const body = {};
+  for (const { operam, csf } of DIFF_FISCAL_CAMPOS) {
+    if (!(csf in csfDatos)) continue;
+    body[operam] = csfDatos[csf] == null ? '' : csfDatos[csf];
+  }
+  return body;
+}
+
 export function buildDiffFiscalHtml(diff) {
   const campos = Object.keys(diff);
   if (campos.length === 0) return '';
@@ -278,6 +293,9 @@ export function clienteDesdeProspecto(prospecto) {
     tipo: 'prospecto',
     id: null,
     prospectoId: p.id != null ? p.id : null,
+    // customer_id del cliente generico si el prospecto ya cotizo (ligarCliente, #81):
+    // destino del PUT del upgrade fiscal (#85). null = nunca cotizo, no hay contra que actualizar.
+    clienteOperamId: (p.data && p.data.cliente_id != null) ? p.data.cliente_id : null,
     name: p.nombre || '',
     ref: p.nombre || '',
     rfc: '',

@@ -150,6 +150,200 @@ test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 2
   }
 });
 
+// === PUT /api/actualizar-cliente-fiscal/:id (upgrade de CSF, issue #85) ===
+
+const CSF_UPGRADE = {
+  rfc: 'REA010101AB1', razonSocial: 'Real SA de CV', idcif: 'IDCIF77',
+  calle: 'Reforma', numExt: '100', numInt: '', colonia: 'Juarez',
+  cp: '06600', municipio: 'CDMX', estado: 'CDMX', regimenFiscal: '601',
+};
+
+function clienteRereleido(over = {}) {
+  return {
+    customer_id: 500, CustName: 'Real SA de CV', tax_id: 'REA010101AB1', idcif: 'IDCIF77',
+    street: 'Reforma', street_number: '100', suite_number: '', district: 'Juarez',
+    postal_code: '06600', city: 'CDMX', state: 'CDMX', cfdi_regimen_fiscal: '601', ...over,
+  };
+}
+
+test('UF1: upgrade feliz -> PUT al mismo customer_id con datos fiscales, sin crear cliente nuevo', async () => {
+  let putBody = null, postCalled = false, putId = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCalled = true; return { ok: true, json: async () => ({ result: true, customer_id: 999 }) }; }
+      if (opts?.method === 'PUT') { putId = u.split('/customers/')[1]; putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.customer_id, 500);
+    assert.deepEqual(res.body.camposNoActualizados, []);
+    assert.strictEqual(putId, '500', 'PUT sobre el mismo customer_id');
+    assert.strictEqual(putBody.tax_id, 'REA010101AB1');
+    assert.strictEqual(putBody.CustName, 'Real SA de CV');
+    assert.ok(!('rfc' in putBody), 'el body usa nombres de campo de Operam, no llaves csf');
+    assert.strictEqual(postCalled, false, 'NUNCA crea un cliente nuevo');
+  } finally {
+    restore();
+  }
+});
+
+test('UF2: RFC real ya existe con OTRO cliente -> 409 freno de fusion, sin PUT', async () => {
+  let putCalled = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 1 }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 800, branches: [{ branch_code: 1 }], CustName: 'Cliente Formal SA', tax_id: 'REA010101AB1' }] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 409);
+    assert.strictEqual(res.body.fusion, true);
+    assert.strictEqual(res.body.cliente.cliente_id, 800);
+    assert.strictEqual(res.body.cliente.CustName, 'Cliente Formal SA');
+    assert.strictEqual(putCalled, false, 'no toca Operam en escritura cuando frena por fusion');
+  } finally {
+    restore();
+  }
+});
+
+test('UF3: PUT que ignora un campo (quirk) -> la relectura lo reporta en camposNoActualizados', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // La relectura muestra el CustName VIEJO (Operam ignoro ese campo en silencio)
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ CustName: 'PROSPECTO SIN RAZON SOCIAL' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.camposNoActualizados.length, 1);
+    assert.strictEqual(res.body.camposNoActualizados[0].campo, 'CustName');
+    assert.strictEqual(res.body.camposNoActualizados[0].nuevo, 'Real SA de CV');
+  } finally {
+    restore();
+  }
+});
+
+test('UF3b: RFC de la CSF en minusculas SI frena la fusion (gate normaliza a mayusculas)', async () => {
+  let putCalled = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) {
+        assert.ok(u.includes('REA010101AB1'), 'el query a Operam debe ir en mayusculas: ' + u);
+        return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 800, branches: [{ branch_code: 1 }], CustName: 'Cliente Formal SA', tax_id: 'REA010101AB1' }] }) };
+      }
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, rfc: 'rea010101ab1' } });
+    assert.strictEqual(res.status, 409);
+    assert.strictEqual(res.body.fusion, true);
+    assert.strictEqual(putCalled, false);
+  } finally {
+    restore();
+  }
+});
+
+test('UF3c: PUT exitoso pero la relectura de verificacion falla -> ok:true, NO 503 (el dato SI se escribio)', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // La relectura post-PUT viene vacia (Operam no devolvio el cliente)
+      return { ok: true, json: async () => ({ data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.verificacionFallida, true);
+  } finally {
+    restore();
+  }
+});
+
+test('UF4: RFC ya existe con el MISMO customer_id (reintento idempotente) -> procede al PUT, no frena', async () => {
+  let putCalled = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 1 }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 500, branches: [{ branch_code: 1 }], CustName: 'Real SA de CV', tax_id: 'REA010101AB1' }] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(putCalled, true);
+  } finally {
+    restore();
+  }
+});
+
+test('UF5: csfDatos sin RFC -> 400, sin tocar Operam', async () => {
+  const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+    .set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ csfDatos: { razonSocial: 'Sin RFC SA' } });
+  assert.strictEqual(res.status, 400);
+});
+
+test('UF6: Operam no disponible en el gate -> 503 (distinto del 409 y del 400)', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (u.includes('tax_id=')) return { ok: false, status: 500, json: async () => ({ error: 'boom' }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 503);
+  } finally {
+    restore();
+  }
+});
+
+test('UF7: sin token -> 401', async () => {
+  const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500').send({ csfDatos: CSF_UPGRADE });
+  assert.strictEqual(res.status, 401);
+});
+
 // === GET /api/log ===
 
 test('GET /api/log retorna 503 cuando no hay DATABASE_URL', async () => {

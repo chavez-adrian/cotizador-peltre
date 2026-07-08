@@ -8,7 +8,8 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerClientePorId } from './lib/operam-client.js';
+import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, FUENTE_ALTA_GENERICA } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
@@ -1340,6 +1341,81 @@ app.put('/api/actualizar-cliente/:id', authMiddleware, async (req, res) => {
   } catch (err) {
     res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
   }
+});
+
+// --- CSF: upgrade del cliente generico con los datos fiscales reales (issue #85, ADR-0006) ---
+//
+// Cuando llega la Constancia de Situacion Fiscal se hace PUT sobre el cliente generico
+// existente (RFC real, razon social, regimen, domicilio fiscal), NUNCA un POST nuevo.
+// Dos zonas de robustez:
+//  - Gate anti-fusion: si el RFC real ya existe en Operam con OTRO cliente, frena (409)
+//    sin escribir nada -- el prospecto resulto ser un cliente formal existente y la
+//    fusion es manual. Si el match es el MISMO cliente (reintento) o no hay match, procede.
+//  - Verificacion post-PUT: releer el cliente y comparar (quirk de Operam: PUT 200 que
+//    ignora campos en silencio, ver CLAUDE.md cliente 457); los campos que no pegaron se
+//    reportan en camposNoActualizados para que el vendedor los corrija en Operam.
+const FUENTE_CSF_UPGRADE = 'csf-upgrade';
+
+app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) => {
+  const { csfDatos: csfDatosCrudo, pdf_base64 } = req.body || {};
+  const rfc = (csfDatosCrudo && csfDatosCrudo.rfc || '').trim().toUpperCase();
+  if (!rfc) return res.status(400).json({ error: 'Faltan los datos fiscales: el RFC es obligatorio' });
+  const id = req.params.id;
+  // El RFC normalizado (mayusculas) alimenta TANTO el gate anti-fusion como el PUT y
+  // el log -- el flujo de dedup viejo (lib/deduplicacion.js) ya normaliza asi antes de
+  // comparar; sin esto, un RFC capturado en minusculas podria no matchear un cliente
+  // formal ya existente en Operam y colar una fusion silenciosa.
+  const csfDatos = { ...csfDatosCrudo, rfc };
+
+  let existente;
+  try {
+    existente = await buscarClientePorRFC(rfc);
+  } catch (err) {
+    return res.status(503).json({ error: 'Operam no disponible: ' + err.message });
+  }
+  if (existente.encontrado && String(existente.cliente_id) !== String(id)) {
+    logCliente(rfc, csfDatos.razonSocial, 'fusion-bloqueada', existente.cliente_id, FUENTE_CSF_UPGRADE, null, null);
+    return res.status(409).json({
+      error: 'Este RFC ya pertenece a otro cliente en Operam. Es una fusion manual: el prospecto resulto ser un cliente formal existente.',
+      fusion: true,
+      cliente: { cliente_id: existente.cliente_id, CustName: existente.CustName, tax_id: existente.tax_id },
+    });
+  }
+
+  try {
+    await actualizarClienteDirecto(id, buildActualizarFiscalPayload(csfDatos));
+  } catch (err) {
+    logCliente(rfc, csfDatos.razonSocial, 'error', id, FUENTE_CSF_UPGRADE, null, err.message);
+    return res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
+  }
+
+  // La relectura de verificacion es un paso APARTE del PUT: si el PUT ya tuvo exito
+  // en Operam, un fallo aqui (red, o Operam devolviendo el cliente vacio) no debe
+  // reportarse como "no se pudo actualizar" -- el dato SI quedo escrito, solo no se
+  // pudo confirmar. Colapsar ambos pasos en un mismo catch contaminaba el log de
+  // auditoria con 'error' para una escritura que en realidad tuvo exito.
+  let camposNoActualizados = [];
+  let verificacionFallida = false;
+  try {
+    const fresco = await obtenerClientePorId(id);
+    if (!fresco) throw new Error('Operam no devolvio el cliente en la relectura');
+    const diff = calcularDiffFiscal(fresco, csfDatos);
+    camposNoActualizados = Object.entries(diff).map(([campo, d]) => ({ campo, label: d.label, anterior: d.anterior, nuevo: d.nuevo }));
+  } catch (err) {
+    verificacionFallida = true;
+    console.error('[csf-upgrade] verificacion post-PUT fallo:', err.message);
+  }
+
+  if (pdf_base64) {
+    import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
+      subirCsfDropbox(pdf_base64, rfc, csfDatos.razonSocial)
+        .catch(err => console.error('[dropbox]', err.message))
+    );
+  }
+  // dropbox_ok en null (no true): la subida es fire-and-forget, igual que en
+  // /api/crear-cliente -- en este punto no se sabe si de verdad se subio.
+  logCliente(rfc, csfDatos.razonSocial, 'actualizado', id, FUENTE_CSF_UPGRADE, null, verificacionFallida ? 'La verificacion post-PUT fallo (el PUT si se aplico)' : null);
+  res.json({ ok: true, customer_id: Number(id), camposNoActualizados, verificacionFallida });
 });
 
 // --- CSF: crear cliente desde datos de CSF ---

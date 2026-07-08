@@ -5,8 +5,9 @@ const assert = require('node:assert/strict');
 let calcularDiffFiscal;
 let buildDiffFiscalHtml;
 let buildDedupExactoConDiffHtml;
+let buildActualizarFiscalPayload;
 before(async () => {
-  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml } = await import('../alta-logica.js'));
+  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalPayload } = await import('../alta-logica.js'));
 });
 
 // === calcularDiffFiscal ===
@@ -140,6 +141,52 @@ test('G7c: calcularDiffFiscal SI reporta domicilio vacio cuando el campo fue cap
   const diff = calcularDiffFiscal(clienteOperamBase, csfDatosConCalleVacia);
   assert.equal(diff.street.anterior, 'Reforma');
   assert.equal(diff.street.nuevo, '');
+});
+
+// === buildActualizarFiscalPayload ===
+// Body del PUT /api/actualizar-cliente-fiscal/:id (upgrade de CSF, issue #85):
+// recorre DIFF_FISCAL_CAMPOS y arma { [campoOperam]: csfDatos[csf] } para escribir
+// los datos fiscales reales sobre el cliente generico existente. Es la MISMA tabla
+// que calcularDiffFiscal, para que lo que se manda y lo que se verifica sean simetricos.
+
+test('U1: buildActualizarFiscalPayload mapea los datos de la CSF a nombres de campo de Operam', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.equal(body.CustName, 'Peltre Nacional SA de CV');
+  assert.equal(body.tax_id, 'PNA010203ABC');
+  assert.equal(body.idcif, 'IDCIF123');
+  assert.equal(body.street, 'Reforma');
+  assert.equal(body.street_number, '100');
+  assert.equal(body.suite_number, 'A');
+  assert.equal(body.district, 'Juarez');
+  assert.equal(body.postal_code, '06600');
+  assert.equal(body.city, 'CDMX');
+  assert.equal(body.state, 'CDMX');
+  assert.equal(body.cfdi_regimen_fiscal, '601');
+});
+
+test('U2: buildActualizarFiscalPayload NO incluye llaves de DOM ni campos ajenos a la tabla fiscal', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('razonSocial' in body), 'no debe filtrar la llave csf cruda');
+  assert.ok(!('rfc' in body), 'no debe filtrar la llave csf cruda');
+  assert.ok(!('sales_type' in body), 'no debe inventar campos comerciales');
+});
+
+test('U3: buildActualizarFiscalPayload omite campos que la CSF no recolecto (ausente != vacio)', () => {
+  const csfSinDomicilio = {
+    rfc: 'PNA010203ABC', razonSocial: 'Peltre Nacional SA de CV', idcif: 'IDCIF123',
+    cp: '06600', municipio: 'CDMX', estado: 'CDMX', regimenFiscal: '601',
+  };
+  const body = buildActualizarFiscalPayload(csfSinDomicilio);
+  assert.ok(!('street' in body), 'sin calle capturada no debe mandar street vacio (nukearia el dato en Operam)');
+  assert.ok(!('district' in body));
+  assert.equal(body.tax_id, 'PNA010203ABC');
+  assert.equal(body.postal_code, '06600');
+});
+
+test('U4: buildActualizarFiscalPayload es simetrico con calcularDiffFiscal: el diff contra el payload aplicado es vacio', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  const diff = calcularDiffFiscal(body, csfDatosIguales);
+  assert.deepEqual(diff, {}, 'lo que se manda al PUT debe verificar sin diferencias');
 });
 
 // === buildDiffFiscalHtml ===

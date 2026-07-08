@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -89,6 +89,44 @@ test('actualizarCliente: hace PUT a /api/v3/sales/customers/:id con los campos d
     assert.equal(putBody['cl-municipio'], 'ZAPOPAN');
     assert.equal(putBody['cl-cp-fiscal'], '45100');
     assert.ok(!('anterior' in putBody));
+  } finally {
+    restore();
+  }
+});
+
+// === obtenerClientePorId: relectura de verificacion post-PUT (#85) ===
+// GET /api/v3/sales/customers/:id normalizado a los campos que consume
+// calcularDiffFiscal (CustName/tax_id/street/...), para detectar el quirk de
+// Operam (PUT 200 que ignora campos en silencio).
+
+test('obtenerClientePorId: normaliza data.[0] (envelope) y devuelve los campos fiscales crudos', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/455': () => jsonResponse({ data: [{ customer_id: 455, CustName: 'Real SA', tax_id: 'REA010101AB1', street: 'Reforma', postal_code: '06600' }] }),
+  });
+  try {
+    const c = await obtenerClientePorId(455);
+    assert.equal(c.customer_id, 455);
+    assert.equal(c.CustName, 'Real SA');
+    assert.equal(c.tax_id, 'REA010101AB1');
+    assert.equal(c.street, 'Reforma');
+    assert.equal(c.postal_code, '06600');
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerClientePorId: tolera respuesta sin envelope (objeto plano)', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/456': () => jsonResponse({ customer_id: 456, CustName: 'Plano SA', tax_id: 'PLA010101AB1' }),
+  });
+  try {
+    const c = await obtenerClientePorId(456);
+    assert.equal(c.CustName, 'Plano SA');
+    assert.equal(c.tax_id, 'PLA010101AB1');
   } finally {
     restore();
   }
