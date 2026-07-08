@@ -1307,7 +1307,8 @@ function nuevaCotizacion() {
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
   // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
-  // pcRenderInicio ya limpia campos y colapsa entrega (pcPrepararSeleccion).
+  // pcRenderInicio ya limpia los campos del cliente y de entrega via
+  // pcPrepararSeleccion (el bloque de entrega vive en el paso Envio desde #84).
   pcRecientesCache = null;
   pcRenderInicio();
   resetFlujoGuiado();
