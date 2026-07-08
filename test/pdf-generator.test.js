@@ -51,3 +51,48 @@ test('B6: (#71 AC1) el PDF pinta leyendaDomicilio cuando esta presente', async (
   // PDFKit kern-splittea "confirmar"; "domicilio" es una palabra contigua fiable de la leyenda
   assert.ok(text.includes(toHex('domicilio')), 'leyenda de domicilio no encontrada en el PDF');
 });
+
+// === #84 AC4: entrega ausente/parcial/completa, sin secciones vacias ni "undefined" ===
+
+test('B7: (#84) entrega totalmente ausente -> PDF sin "undefined", con la leyenda', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { razonSocial: 'Cliente Test', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' },
+  });
+  const text = result.toString('latin1');
+  assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
+  assert.ok(text.includes(toHex('domicilio')), 'debe traer la leyenda de confirmacion');
+});
+
+test('B8: (#84) entrega parcial (solo CP) -> muestra el CP y la leyenda, sin "undefined"', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { cpEntrega: '06600', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' },
+  });
+  const text = result.toString('latin1');
+  assert.ok(text.includes(toHex('06600')), 'debe mostrar el CP capturado');
+  assert.ok(text.includes(toHex('domicilio')), 'debe traer la leyenda de confirmacion');
+  assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
+});
+
+test('B9: (#84) entrega parcial (solo ciudad/municipio) -> muestra el municipio y la leyenda', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { municipio: 'Puebla', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' },
+  });
+  const text = result.toString('latin1');
+  // PDFKit kern-splits "Puebla" entre 'b' y 'l'; "Pueb" es un prefijo contiguo fiable
+  assert.ok(text.includes(toHex('Pueb')), 'debe mostrar el municipio capturado');
+  assert.ok(text.includes(toHex('domicilio')), 'debe traer la leyenda de confirmacion');
+  assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
+});
+
+test('B10: (#84) entrega completa -> no imprime la leyenda de confirmacion', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { calle: 'Reforma 100', cpEntrega: '06600', municipio: 'CDMX', leyendaDomicilio: '' },
+  });
+  const text = result.toString('latin1');
+  assert.ok(!text.includes(toHex('domicilio')), 'no debe traer la leyenda cuando la entrega esta completa');
+  assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
+});
