@@ -101,7 +101,7 @@ Revisión final que hace **Adrián** antes de convertir una cotización en pedid
 
 ## Vendedor
 
-Actor que atiende prospectos, captura datos del cliente, crea el alta en Operam y genera cotizaciones. Usa el cotizador como herramienta principal — el alta de cliente (carga de CSF o captura manual) vive en el acordeon "+ Nuevo cliente" del propio cotizador, autenticado con el mismo JWT (ADR-0003; la herramienta standalone `csf-upload.html` fue retirada).
+Actor que atiende prospectos, captura datos del cliente y genera cotizaciones. Usa el cotizador como herramienta principal: en el paso Cliente elige "Ya lo conozco" (buscar en Operam o en sus prospectos) o "Contacto nuevo" (celular, nombre, ciudad, canal — issue #82); el cliente genérico en Operam nace solo al generar la primera cotización (issue #81, ADR-0006), sin paso de alta manual. Cuando llega la CSF, el vendedor la sube desde el chip "Fiscal" de la tarjeta del cliente, que actualiza (nunca crea) el cliente genérico existente (issue #85). Todo autenticado con el mismo JWT (ADR-0003; la herramienta standalone `csf-upload.html` fue retirada).
 
 ## Nombre de cliente (CustName)
 

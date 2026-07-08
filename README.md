@@ -4,7 +4,7 @@ Herramienta interna de Peltre Nacional SA de CV. Combina tres funciones:
 
 1. **Cotizador** — vendedores generan cotizaciones de acero esmaltado en campo, calculan envio y comparten PDF o HTML por WhatsApp.
 2. **Pipeline comercial (CRM)** — tablero unico de oportunidades en 7 etapas (de prospecto a producto entregado) con cola "Hoy", seguimiento por cadencia, y **sincronizacion post-venta automatica con Operam** (webhooks + reconciliacion): pagos, pedido liberado y entrega mueven la tarjeta sin captura doble. Ver `CONTEXT.md` (glosario de dominio) y `PROGRESS.md` (PRD #52).
-3. **Alta de clientes** — desde el acordeon "+ Nuevo cliente" del cotizador, vendedores suben CSF del SAT o capturan datos manualmente; el sistema extrae RFC y domicilio, crea o actualiza el cliente en Operam ERP.
+3. **Cliente generico + alta fiscal diferida** — el paso Cliente ofrece dos caminos ("Ya lo conozco" / "Contacto nuevo"); el cliente nace en Operam con RFC generico (`XAXX010101000`/`XEXX010101000`) al generar la primera cotizacion, sin alta manual (PRD #79, ADR-0006). Cuando llega la CSF, el vendedor la sube desde el chip "Fiscal" de la tarjeta: el sistema actualiza (nunca re-crea) ese cliente generico en Operam ERP, con gate anti-fusion y verificacion post-PUT.
 
 **Produccion:** https://cotizador-peltre.onrender.com
 
@@ -14,7 +14,7 @@ Herramienta interna de Peltre Nacional SA de CV. Combina tres funciones:
 - Frontend: HTML + CSS + JS vanilla (sin frameworks)
 - PDF: pdfkit
 - Autenticacion cotizador: JWT (30 dias)
-- Alta de clientes: integrada al cotizador (acordeon), JWT requerido igual que el resto
+- Alta fiscal (CSF): integrada al cotizador (chip "Fiscal" de la tarjeta del cliente), JWT requerido igual que el resto
 - Base de datos: Neon Postgres (cotizaciones + seguimientos + log de auditoría de altas; fallback a JSON local sin DATABASE_URL)
 - Integraciones: Operam ERP v3, envia.com, Dropbox, SAT (proxy QR)
 
@@ -45,7 +45,7 @@ Copiar `.env.example` a `.env` y completar las variables:
 ```bash
 npm start        # produccion
 npm run dev      # desarrollo con --watch
-npm test         # todos los tests (745, 0 fallas)
+npm test         # todos los tests (943, 0 fallas)
 ```
 
 ## Estructura
@@ -80,22 +80,22 @@ test/                  # tests de backend (supertest + node:test)
 
 ### Cotizar (vendedores)
 1. Login con ID de vendedor + PIN
-2. Seleccionar cliente (buscar en Operam, captura manual, o desde CSF)
+2. Paso Cliente: "Ya lo conozco" (buscar en Operam o en prospectos propios, con recientes) o "Contacto nuevo" (celular, nombre, ciudad, canal — crea/usa el prospecto, issue #82)
 3. Agregar productos al carrito (tier de precio calculado automaticamente)
-4. Cotizar envio con envia.com (opcional)
-5. Generar PDF o HTML, compartir por WhatsApp
+4. Cotizar envio con envia.com (opcional; direccion de entrega se captura en el paso Envio)
+5. Generar PDF o HTML, compartir por WhatsApp — la cotizacion se sube sola a Operam (issue #83); si la oportunidad no tenia cliente en Operam, primero se crea el cliente generico (issue #81, ADR-0006)
 
-### Alta de cliente desde CSF (acordeon "+ Nuevo cliente", autenticado)
-1. Login con ID de vendedor + PIN, pestana "Cliente" → "+ Nuevo cliente"
-2. Tab "Cargar CSF": subir PDF de Constancia de Situacion Fiscal (o "Captura manual")
-3. El sistema extrae RFC, razon social y domicilio automaticamente
-4. Si el RFC ya existe en Operam: muestra diff de datos fiscales, permite confirmar o descartar la actualizacion
-5. Si es cliente nuevo: crear en Operam, log en Neon, backup PDF en Dropbox
+### CSF como upgrade del cliente generico (chip "Fiscal" de la tarjeta, autenticado)
+1. En la tarjeta del cliente seleccionado, si ya existe un cliente en Operam con RFC generico, el chip "Fiscal" es clickeable
+2. Se abre el mismo dropzone/parseo de CSF de siempre: subir PDF (o "Captura manual"); el sistema extrae RFC, razon social, regimen y domicilio fiscal
+3. Al confirmar: gate anti-fusion (si el RFC real ya pertenece a OTRO cliente en Operam, se frena con 409 y se avisa — fusion manual, sin tocar nada)
+4. Sin fusion: `PUT` sobre el mismo `customer_id` (nunca crea un cliente nuevo), relectura de verificacion (el `PUT` de Operam puede ignorar campos en silencio), backup del PDF en Dropbox y log en Neon (issue #85)
+5. El chip pasa a verde cuando el RFC real quedo confirmado
 
-### Actualizar cliente existente
+### Actualizar cliente existente (formulario generico, sin gate de fusion)
 1. Se detecta cliente existente (por RFC, en cualquier flujo)
 2. Se editan los campos necesarios en el formulario
-3. Al confirmar: se envian a Operam solo los campos modificados (diff)
+3. Al confirmar: se envian a Operam solo los campos modificados (diff), via `PUT /api/actualizar-cliente/:id`
 4. El evento queda registrado en `clientes_log` en Neon
 
 ## API endpoints
@@ -133,13 +133,14 @@ test/                  # tests de backend (supertest + node:test)
 
 > El resto de rutas del pipeline (prospectos, asignacion, etapas, salidas, seguimiento, decorados) viven en `server.js`; el modelo de dominio esta en `CONTEXT.md` y el detalle del PRD en `PROGRESS.md`.
 
-### Alta de clientes desde CSF (requieren JWT, igual que el resto)
+### Alta de clientes y CSF (requieren JWT, igual que el resto)
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
-| POST | `/api/crear-cliente` | Crear cliente en Operam desde datos CSF; log en Neon; backup PDF en Dropbox |
+| POST | `/api/crear-cliente` | Crear cliente en Operam desde datos CSF (camino de cliente formal nuevo sin historia previa); log en Neon; backup PDF en Dropbox |
+| PUT | `/api/actualizar-cliente-fiscal/:id` | Upgrade de CSF sobre el cliente generico existente (issue #85): gate anti-fusion por RFC exacto + verificacion post-PUT; nunca crea cliente nuevo; log en Neon; backup PDF en Dropbox |
 | GET | `/api/buscar-cliente?rfc=` | Buscar cliente por RFC exacto en Operam |
-| PUT | `/api/actualizar-cliente/:id` | Actualizar campos de cliente en Operam |
+| PUT | `/api/actualizar-cliente/:id` | Actualizar campos de cliente en Operam (PUT generico, sin gate ni verificacion) |
 | GET | `/api/log` | Ultimas 200 entradas de clientes_log en Neon |
 | POST | `/api/csf-from-url` | Proxy: consulta URL del QR del SAT, devuelve texto plano y `datos` parseados (via `parsearCSF`) |
 | POST | `/api/parsear-csf` | Recibe `{ texto }` y devuelve `{ ok, datos }` con la estructura completa extraida por `lib/parsear-csf.js::parsearCSF` (RFC, razon social, domicilio fiscal, regimen) |
@@ -148,7 +149,7 @@ test/                  # tests de backend (supertest + node:test)
 
 ```bash
 npm test
-# 745 tests, 0 fallas
+# 943 tests, 0 fallas
 ```
 
 - `test/` — backend (supertest + node:test, ES modules)
@@ -159,6 +160,7 @@ npm test
 ## Notas de arquitectura
 
 - El backup de Dropbox en `/api/crear-cliente` es fire-and-forget: si falla, la respuesta HTTP no se bloquea.
+- El cliente generico (RFC `XAXX010101000`/`XEXX010101000`) nace server-side al generar la primera cotizacion de una oportunidad sin cliente en Operam, con dedup en capas (celular, luego nombre normalizado) antes de crear — nunca al capturar el contacto (`POST /api/cotizacion/operam/:id`, issue #81, ADR-0006).
 - `lib/db.js` retorna `null` si `DATABASE_URL` no esta configurada (graceful degradation para desarrollo local).
 - El schema de `clientes_log` (y `operam_webhooks_log`) se auto-crea al iniciar el servidor si hay `DATABASE_URL`.
 - **Sync post-venta**: el webhook de Operam es solo una *senal*; la logica corre en un motor de reconciliacion (`lib/sync-operam-io.js`) que lee el estado real por API y aplica el nucleo puro (`lib/sync-operam.js`). El mismo motor sirve al webhook y a la reconciliacion on-demand. El mapeo real de Operam (los tipos de transaccion, que el MCP etiqueta mal) esta en `peltre-operam.md` (raiz `_Claude/`).

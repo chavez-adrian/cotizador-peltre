@@ -7,12 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # desarrollo con hot-reload (--watch)
 npm start            # produccion
-npm test             # todos los tests (280, 0 fallas esperadas)
+npm test             # todos los tests (943, 0 fallas esperadas)
 
 # Correr un test individual:
 node --test test/server.test.js
 node --test test/operam-client.test.js
-node --test --test-concurrency=1 public/js/__tests__/csf.test.cjs
+node --test --test-concurrency=1 public/js/__tests__/alta-csf.test.cjs
 ```
 
 > `--test-concurrency=1` es obligatorio cuando los tests comparten estado global (`globalThis.fetch` mock o `cotizaciones.json`). Sin el los tests se interfieren.
@@ -23,7 +23,7 @@ Antes de trabajar en cambios al flujo de clientes, leer:
 
 - `PROCESO_COMERCIAL_AS_IS.md` — narrativa completa del proceso comercial de Peltre Nacional (mayoreo, sistemas, cotización, producción, envío).
 - `SOP_crear_cliente_operam.md` — procedimiento oficial de 45 pasos para dar de alta un cliente en Operam, con checklist de validación.
-- `MAPEO_CAMPOS_CLIENTE.md` — mapeo cruzado de campos entre SOP, formularios del cotizador, API de Operam y Neon DB. Incluye gaps y valores hardcodeados vs SOP. Es la base del PRD pendiente.
+- `MAPEO_CAMPOS_CLIENTE.md` — mapeo cruzado de campos entre SOP, formularios del cotizador, API de Operam y Neon DB. Incluye gaps y valores hardcodeados vs SOP. Fue la base del PRD #79 (rediseño del paso Cliente + cliente genérico temprano, **completo** — ver `PROGRESS.md`); describe el flujo de alta previo a ese rediseño, no el actual (paso Cliente + CSF como upgrade del cliente genérico, issue #85).
 
 ---
 

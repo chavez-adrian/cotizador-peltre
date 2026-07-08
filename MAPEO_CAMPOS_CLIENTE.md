@@ -4,6 +4,8 @@
 **Fecha:** 2026-06-06  
 **Propósito:** Cruzar los campos requeridos por el SOP de alta de clientes en Operam contra lo que el cotizador captura actualmente, lo que llega a la API de Operam y lo que queda registrado en Neon DB.
 
+**Nota (2026-07-08):** este mapeo describe el flujo de alta previo al PRD #79/ADR-0006 (POST único con todos los datos fiscales de una vez). Desde ese PRD, el cliente nace con RFC genérico al generar la primera cotización (issue #81) y los datos fiscales llegan después, vía `PUT` de upgrade (issue #85) — el mapeo de campos fiscales sigue siendo válido para ese `PUT` (mismos campos de Operam), pero el momento y el endpoint cambiaron. No se reescribió la tabla completa; ver `docs/adr/0006-cliente-generico-temprano.md` y `server.js` (`PUT /api/actualizar-cliente-fiscal/:id`) para el flujo actual.
+
 **Nota:** En la tabla maestra, la columna "API Operam (crearCliente)" cubre el endpoint `POST /api/v3/sales/customers` via `buildClienteBody()`. Los campos del domicilio de entrega (sección 2.6) llegan a `PUT /api/v3/sales/branches/{branch_id}` via `actualizarBranchCliente()` — Operam auto-crea el branch en el POST; el GET posterior recupera el branch_id; el PUT lo configura. Ver ADR-0002.
 
 ---
@@ -13,7 +15,7 @@
 | Fuente | Archivo |
 |--------|---------|
 | SOP oficial de alta de clientes | `SOP_crear_cliente_operam.md` |
-| Formulario de alta desde CSF | `public/csf-upload.html` |
+| Formulario de alta desde CSF | ~~`public/csf-upload.html`~~ retirado (ADR-0003); la carga de CSF vive en `public/js/app.js` (acordeón `#panel-alta-cliente`), reorientada al upgrade del cliente genérico desde el chip Fiscal de la tarjeta (issue #85) |
 | Formulario del cotizador principal | `public/index.html` + `public/js/app.js` |
 | Función de creación en API | `lib/operam-client.js` → `buildClienteBody()` + `crearCliente()` |
 | Auditoría en base de datos | `lib/db.js` → tabla `clientes_log` en Neon |
