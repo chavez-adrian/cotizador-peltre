@@ -2047,6 +2047,10 @@ function switchTab(name) {
   }
   updateTabIndicators();
 }
+// El chip Entrega de la tarjeta (#84) navega con onclick="switchTab('envio')"
+// inline en el HTML generado; sin este exponer global, un modulo ES no cuelga
+// sus funciones de window y el onclick revienta con ReferenceError.
+window.switchTab = switchTab;
 
 // === FORMAT ===
 function fmt(n) {
