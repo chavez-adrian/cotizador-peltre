@@ -5,27 +5,21 @@ const LEYENDA_DOMICILIO = 'Favor de confirmar el domicilio de entrega';
 
 // Espejo de lib/validar-cp.js (validarCP): la misma regla por pais, replicada aqui
 // porque lib/ NO se sirve al navegador (solo public/). Mantener ambas en sincronia.
-function cpValido(cp, pais) {
+// Se exporta: chipsCompletitud (alta-logica.js) la reusa para el estado del chip
+// Entrega ("CP capturado" vs "pendiente"), issue #84.
+export function cpValido(cp, pais) {
   if (pais === 'CA') return /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/.test(cp);
   return /^\d{5}$/.test(cp);
 }
 
-// Domicilio de entrega para cotizar: CP y pais OBLIGATORIOS, Calle OPCIONAL.
-// Si falta CP o pais (o el CP no cumple el formato del pais) -> { ok:false, error }.
-// Si hay CP+pais validos pero Calle vacia -> { ok:true, leyenda }.
-// Si todo presente -> { ok:true }.
-export function validarDomicilioEntrega({ calle, cp, pais } = {}) {
-  const cpTrim = (cp || '').trim();
-  const paisTrim = (pais || '').trim();
-  if (!paisTrim) return { ok: false, error: 'Selecciona el pais de entrega' };
-  if (!cpTrim || !cpValido(cpTrim, paisTrim)) {
-    return {
-      ok: false,
-      error: paisTrim === 'CA'
-        ? 'Ingresa un codigo postal canadiense valido (ej. K1A 0A9)'
-        : 'Ingresa un CP de entrega de 5 digitos valido',
-    };
-  }
+// Domicilio de entrega para el DOCUMENTO (issue #84): nada es requisito para
+// generar. Solo decide si hace falta la leyenda de confirmacion -- ausente que
+// falte Calle (con o sin CP/pais) -> leyenda; Calle presente -> sin leyenda.
+// Antes (#71) bloqueaba la generacion si faltaba CP/pais; el gate se releva por
+// completo aqui porque CP+pais siguen siendo obligatorios solo para COTIZAR
+// PAQUETERIA (envia.com), no para generar el documento -- ese gate vive aparte,
+// en cotizarEnvia (app.js), que sigue exigiendo un CP valido.
+export function validarDomicilioEntrega({ calle } = {}) {
   if (!(calle || '').trim()) return { ok: true, leyenda: LEYENDA_DOMICILIO };
   return { ok: true };
 }

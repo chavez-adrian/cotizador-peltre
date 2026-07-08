@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let validarDomicilioEntrega, formatCarrier, formatServicio;
+let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido;
 before(async () => {
-  ({ validarDomicilioEntrega, formatCarrier, formatServicio } = await import('../cotizar-logica.js'));
+  ({ validarDomicilioEntrega, formatCarrier, formatServicio, cpValido } = await import('../cotizar-logica.js'));
 });
 
 // === AC1: CP + pais sin Calle -> procede con leyenda ===
@@ -28,36 +28,61 @@ test('AC1-3: Calle solo con espacios cuenta como vacia -> leyenda', () => {
   assert.strictEqual(r.leyenda, 'Favor de confirmar el domicilio de entrega');
 });
 
-// === AC2: falta CP o pais -> bloquea ===
-test('AC2-1: falta CP -> ok:false con error', () => {
+// === AC4 (#84): nada de la direccion es requisito para GENERAR -- el gate de
+// CP+pais obligatorios se elimina (antes bloqueaba, #71); solo importa si hay
+// Calle para decidir la leyenda. CP+pais siguen obligatorios pero SOLO para
+// cotizar paqueteria (envia.com), fuera de esta funcion.
+test('AC4-1: falta CP (con Calle) -> ok:true, sin leyenda (Calle presente)', () => {
   const r = validarDomicilioEntrega({ calle: 'Reforma 100', cp: '', pais: 'MX' });
-  assert.strictEqual(r.ok, false);
-  assert.ok(r.error);
+  assert.strictEqual(r.ok, true);
   assert.ok(!r.leyenda);
 });
 
-test('AC2-2: falta pais -> ok:false con error', () => {
+test('AC4-2: falta pais (con Calle) -> ok:true, sin leyenda', () => {
   const r = validarDomicilioEntrega({ calle: 'Reforma 100', cp: '06600', pais: '' });
-  assert.strictEqual(r.ok, false);
-  assert.ok(r.error);
+  assert.strictEqual(r.ok, true);
+  assert.ok(!r.leyenda);
 });
 
-test('AC2-3: CP con formato invalido para el pais -> ok:false con error', () => {
+test('AC4-3: CP con formato invalido (con Calle) -> ok:true, ya no bloquea', () => {
   const r = validarDomicilioEntrega({ calle: 'Reforma 100', cp: '123', pais: 'MX' });
-  assert.strictEqual(r.ok, false);
-  assert.ok(r.error);
+  assert.strictEqual(r.ok, true);
+  assert.ok(!r.leyenda);
 });
 
-test('AC2-4: CP valido canadiense con pais CA -> ok', () => {
+test('AC4-4: CP valido canadiense sin Calle -> ok con leyenda (falta Calle)', () => {
   const r = validarDomicilioEntrega({ calle: '', cp: 'K1A 0A9', pais: 'CA' });
   assert.strictEqual(r.ok, true);
   assert.strictEqual(r.leyenda, 'Favor de confirmar el domicilio de entrega');
 });
 
-test('AC2-5: falta CP y falta pais -> ok:false', () => {
+test('AC4-5: entrega totalmente ausente (sin CP, pais ni Calle) -> ok con leyenda', () => {
   const r = validarDomicilioEntrega({ calle: '', cp: '', pais: '' });
-  assert.strictEqual(r.ok, false);
-  assert.ok(r.error);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.leyenda, 'Favor de confirmar el domicilio de entrega');
+});
+
+test('AC4-6: parcial, solo CP (sin Calle) -> ok con leyenda', () => {
+  const r = validarDomicilioEntrega({ calle: '', cp: '06600', pais: 'MX' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.leyenda, 'Favor de confirmar el domicilio de entrega');
+});
+
+// === cpValido: espejo de lib/validar-cp.js, reusado por chipsCompletitud ===
+test('CP1: MX de 5 digitos es valido', () => {
+  assert.strictEqual(cpValido('06600', 'MX'), true);
+});
+
+test('CP2: MX con menos de 5 digitos es invalido', () => {
+  assert.strictEqual(cpValido('123', 'MX'), false);
+});
+
+test('CP3: CA con formato correcto es valido', () => {
+  assert.strictEqual(cpValido('K1A 0A9', 'CA'), true);
+});
+
+test('CP4: CA sin espacio tambien es valido', () => {
+  assert.strictEqual(cpValido('K1A0A9', 'CA'), true);
 });
 
 // === AC3: nombres canonicos de paqueteria (carrier con su marca + servicio Title Case) ===
