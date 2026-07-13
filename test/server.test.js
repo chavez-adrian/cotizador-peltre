@@ -47,6 +47,14 @@ test('B1: POST /api/cotizacion/pdf persiste cliente.pais', async () => {
   const cots = readCots();
   assert.ok(cots.length > snap.length);
   assert.strictEqual(cots[cots.length - 1].data.cliente.pais, 'US');
+  assert.strictEqual(cots[cots.length - 1].vendedor, 'Tester');
+});
+
+test('#87: POST /api/login emite un JWT con vigencia de 24 horas', async () => {
+  const res = await supertest(app).post('/api/login').send({ vendedorId: 2, pin: '1111' });
+  assert.strictEqual(res.status, 200);
+  const decoded = jwt.decode(res.body.token);
+  assert.strictEqual(decoded.exp - decoded.iat, 24 * 3600);
 });
 
 test('B1b: POST /api/cotizacion/pdf sin telefono retorna 400 (bloqueo duro)', async () => {

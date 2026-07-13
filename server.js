@@ -108,7 +108,7 @@ app.post('/api/login', (req, res) => {
   if (!vendedores) return res.status(500).json({ error: 'Vendedores no configurados' });
   const v = vendedores.find(v => v.id === vendedorId && v.pin === pin);
   if (!v) return res.status(401).json({ error: 'PIN incorrecto' });
-  const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '30d' });
+  const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '24h' });
   res.json({ token, user: { id: v.id, name: v.name, role: v.role } });
 });
 

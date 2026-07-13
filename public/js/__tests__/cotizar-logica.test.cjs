@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido;
+let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
 before(async () => {
-  ({ validarDomicilioEntrega, formatCarrier, formatServicio, cpValido } = await import('../cotizar-logica.js'));
+  ({ validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml } = await import('../cotizar-logica.js'));
 });
 
 // === AC1: CP + pais sin Calle -> procede con leyenda ===
@@ -116,4 +116,18 @@ test('AC3-5: combinacion carrier + servicio (lo que va al documento)', () => {
   assert.strictEqual(`${formatCarrier('fedex')} ${formatServicio('ground')}`.trim(), 'FedEx Ground');
   assert.strictEqual(`${formatCarrier('DHL')} ${formatServicio('express')}`.trim(), 'DHL Express');
   assert.strictEqual(`${formatCarrier('ups')} ${formatServicio('ground')}`.trim(), 'UPS Ground');
+});
+
+// === #87: confirmacion de vendedor antes de generar (evitar estampar al vendedor equivocado) ===
+test('#87-1: buildConfirmarVendedorModalHtml incluye el nombre del vendedor logueado', () => {
+  const html = buildConfirmarVendedorModalHtml('Alejandro Chávez');
+  assert.ok(html.includes('Alejandro Chávez'));
+  assert.ok(html.includes('confirmar-vendedor-confirmar'));
+  assert.ok(html.includes('confirmar-vendedor-cancelar'));
+});
+
+test('#87-2: buildConfirmarVendedorModalHtml escapa HTML del nombre (XSS)', () => {
+  const html = buildConfirmarVendedorModalHtml('<script>alert(1)</script>');
+  assert.ok(!html.includes('<script>alert(1)</script>'));
+  assert.ok(html.includes('&lt;script&gt;'));
 });

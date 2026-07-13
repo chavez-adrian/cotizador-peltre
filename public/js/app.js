@@ -62,6 +62,7 @@ import {
   formatCarrier,
   formatServicio,
   cpValido,
+  buildConfirmarVendedorModalHtml,
 } from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -166,7 +167,10 @@ async function api(url, opts = {}) {
     opts.body = JSON.stringify(opts.body);
   }
   const res = await fetch(url, { ...opts, headers });
-  if (res.status === 401) { logout(); throw new Error('No autorizado'); }
+  // Sesion expirada (#87, sesion de 24h): NO se usa logout() aqui porque
+  // destruiria el carrito/captura en curso. sesionExpirada() solo invalida
+  // el token y pide reloguear; el trabajo en memoria se conserva.
+  if (res.status === 401) { sesionExpirada(); throw new Error('No autorizado'); }
   return res;
 }
 
@@ -206,13 +210,10 @@ async function login() {
   }
 }
 
-function logout() {
-  state.token = null;
-  state.user = null;
-  state.precios = null;
-  state.cart.clear();
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+// Oculta las vistas de la app y muestra el login. Compartido por logout()
+// (cierre explicito) y sesionExpirada() (401 con sesion de 24h, #87) -- la
+// diferencia entre ambos esta en que estado de negocio limpian, no en el DOM.
+function mostrarLoginView() {
   document.getElementById('app-view').style.display = 'none';
   document.getElementById('historial-view').style.display = 'none';
   const hv = document.getElementById('hoy-view');
@@ -224,6 +225,28 @@ function logout() {
   if (bn) bn.style.display = 'none';
   document.getElementById('login-view').style.display = 'flex';
   document.getElementById('login-pin').value = '';
+}
+
+// Cierre de sesion EXPLICITO (boton Salir): limpia todo, incluido el carrito.
+function logout() {
+  state.token = null;
+  state.user = null;
+  state.precios = null;
+  state.cart.clear();
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  mostrarLoginView();
+}
+
+// Sesion expirada (401, #87): a diferencia de logout(), NO toca el carrito ni
+// la captura en curso -- solo invalida el token y pide reloguear. Al volver a
+// entrar, login() llama showApp() y el carrito/cliente en memoria siguen ahi.
+function sesionExpirada() {
+  state.token = null;
+  state.user = null;
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  mostrarLoginView();
 }
 
 // === APP INIT ===
@@ -861,6 +884,11 @@ function updateResumen() {
   const content = document.getElementById('resumen-content');
   const shippingAlert = document.getElementById('resumen-shipping-alert');
 
+  // Vendedor logueado, visible en el resumen (issue #87): hoy vivia solo en
+  // la barra superior (user-name) y era facil de ignorar.
+  const vendedorEl = document.getElementById('resumen-vendedor');
+  if (vendedorEl) vendedorEl.textContent = state.user ? `Cotización a nombre de: ${state.user.name}` : '';
+
   if (state.cart.size === 0) {
     empty.style.display = 'block';
     content.style.display = 'none';
@@ -1033,6 +1061,22 @@ function pedirCanalCotizacion() {
   });
 }
 
+// === CONFIRMACION DE VENDEDOR (issue #87) ===
+// Antes de generar el PDF/HTML se confirma a nombre de que vendedor va la
+// cotizacion, para no estampar al vendedor equivocado cuando el dispositivo
+// quedo logueado con otro usuario (caso real: prestamo de dispositivo).
+function pedirConfirmarVendedor() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+    overlay.innerHTML = buildConfirmarVendedorModalHtml(state.user?.name || '');
+    document.body.appendChild(overlay);
+    const cerrar = ok => { overlay.remove(); resolve(ok); };
+    document.getElementById('confirmar-vendedor-confirmar').addEventListener('click', () => cerrar(true));
+    document.getElementById('confirmar-vendedor-cancelar').addEventListener('click', () => cerrar(false));
+  });
+}
+
 async function canalParaCotizacion(telefono) {
   try {
     const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(telefono)}`);
@@ -1055,6 +1099,7 @@ async function generatePDF() {
     return;
   }
   const domio = validarDomicilioCotizacion();
+  if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-pdf');
   btn.disabled = true;
   btn.textContent = 'Generando...';
@@ -1168,6 +1213,7 @@ async function generateHTML() {
     return;
   }
   const domio = validarDomicilioCotizacion();
+  if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-html');
   btn.disabled = true;
   btn.textContent = 'Generando...';

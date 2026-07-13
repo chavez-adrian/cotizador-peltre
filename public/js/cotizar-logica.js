@@ -48,3 +48,28 @@ export function formatCarrier(carrier) {
 export function formatServicio(servicio) {
   return tituloPalabras(servicio);
 }
+
+// Escape local (no se importa de prospectos-logica.js para evitar un ciclo:
+// prospectos-logica.js -> alta-logica.js -> cotizar-logica.js).
+function escapeHtml(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Modal de confirmacion de identidad antes de generar el PDF/HTML (issue #87):
+// evita estampar la cotizacion al vendedor equivocado cuando el dispositivo
+// quedo logueado con otro usuario. Mismo patron que buildCanalModalHtml
+// (prospectos-logica.js): HTML puro, el overlay/promesa vive en app.js.
+export function buildConfirmarVendedorModalHtml(vendedorNombre) {
+  return `
+    <div style="background:#fff;border-radius:8px;padding:20px;max-width:340px;width:90%">
+      <div style="font-weight:600;margin-bottom:4px">Cotización a nombre de: ${escapeHtml(vendedorNombre)}</div>
+      <div class="cot-card-meta" style="margin-bottom:8px">Confirma que eres tú quien esta generando esta cotización.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" id="confirmar-vendedor-cancelar">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="confirmar-vendedor-confirmar">Confirmar</button>
+      </div>
+    </div>
+  `;
+}
