@@ -73,6 +73,30 @@ export function bloqueaGeneracionPorEnvioInvalidado(envioInvalidado) {
   return !!envioInvalidado;
 }
 
+// Nota de tiempo de entrega en el resumen (issue #90): default 4 semanas para
+// producto normal, 6 semanas cuando el pedido lleva calca/decorado. La deteccion
+// automatica desde el carrito no es posible hoy (no hay forma de meter un SKU de
+// calca/decorado al carrito, ver issue #90) -- por eso es un checkbox manual en
+// el resumen en vez de una regla derivada del carrito.
+export function notaTiempoEntrega(decorado) {
+  const semanas = decorado ? 6 : 4;
+  return `- Tiempo de entrega: ${semanas} semanas contadas a partir del pago del anticipo.`;
+}
+
+const LINEAS_AUTO_TIEMPO_ENTREGA = [notaTiempoEntrega(false), notaTiempoEntrega(true)];
+
+// Actualiza SOLO la linea de tiempo de entrega dentro del textarea de notas, sin
+// tocar el resto. Si el vendedor ya edito esa linea a mano (no coincide con
+// ninguna de las dos versiones auto-generadas) o la borro por completo, se deja
+// tal cual -- togglear el checkbox no debe pisotear una edicion manual.
+export function aplicarNotaTiempoEntrega(notasText, decorado) {
+  const lineas = (notasText || '').split('\n');
+  const idx = lineas.findIndex(l => LINEAS_AUTO_TIEMPO_ENTREGA.includes(l.trim()));
+  if (idx === -1) return notasText;
+  lineas[idx] = notaTiempoEntrega(decorado);
+  return lineas.join('\n');
+}
+
 // Modal de confirmacion de identidad antes de generar el PDF/HTML (issue #87):
 // evita estampar la cotizacion al vendedor equivocado cuando el dispositivo
 // quedo logueado con otro usuario. Mismo patron que buildCanalModalHtml

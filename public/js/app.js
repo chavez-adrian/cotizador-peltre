@@ -66,6 +66,7 @@ import {
   debeInvalidarEnvioPorCantidad,
   bloqueaGeneracionPorEnvioInvalidado,
   MENSAJE_ENVIO_INVALIDADO,
+  aplicarNotaTiempoEntrega,
 } from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -3540,6 +3541,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('cl-cp-entrega').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
   document.getElementById('shipping-cost').addEventListener('input', () => updateResumen());
   document.getElementById('shipping-desc').addEventListener('input', () => updateResumen());
+
+  // Nota de tiempo de entrega (#90): togglear el checkbox actualiza SOLO esa
+  // linea del textarea de notas, sin pisotear ediciones manuales del vendedor.
+  document.getElementById('resumen-decorado').addEventListener('change', e => {
+    const notasEl = document.getElementById('resumen-notas');
+    notasEl.value = aplicarNotaTiempoEntrega(notasEl.value, e.target.checked);
+  });
 
   // PDF, HTML & WhatsApp
   document.getElementById('btn-pdf').addEventListener('click', generatePDF);

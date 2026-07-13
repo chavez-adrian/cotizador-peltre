@@ -4,10 +4,12 @@ const assert = require('node:assert/strict');
 
 let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
+let notaTiempoEntrega, aplicarNotaTiempoEntrega;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
+    notaTiempoEntrega, aplicarNotaTiempoEntrega,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -167,4 +169,55 @@ test('#89-5: bloquea generacion cuando el envio quedo invalidado por cambio de c
 
 test('#89-6: mensaje de aviso visible cuando el envio se invalida', () => {
   assert.strictEqual(MENSAJE_ENVIO_INVALIDADO, 'Las cantidades cambiaron, vuelve a cotizar el envío');
+});
+
+// === #90: nota de tiempo de entrega -- default 4 semanas, 6 si lleva calca/decorado ===
+test('#90-1: notaTiempoEntrega(false) -> 4 semanas (default, producto normal)', () => {
+  assert.strictEqual(
+    notaTiempoEntrega(false),
+    '- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.'
+  );
+});
+
+test('#90-2: notaTiempoEntrega(true) -> 6 semanas (lleva calca/decorado)', () => {
+  assert.strictEqual(
+    notaTiempoEntrega(true),
+    '- Tiempo de entrega: 6 semanas contadas a partir del pago del anticipo.'
+  );
+});
+
+const NOTAS_DEFAULT_4 = `- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.
+- Envio a costo y riesgo del cliente.
+- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.
+- Se requiere 50% de anticipo para comenzar la produccion.
+- Pago del saldo previo a la entrega.`;
+
+test('#90-3: aplicarNotaTiempoEntrega marca decorado -> reemplaza la linea a 6 semanas, preserva el resto', () => {
+  const r = aplicarNotaTiempoEntrega(NOTAS_DEFAULT_4, true);
+  assert.ok(r.includes('- Tiempo de entrega: 6 semanas contadas a partir del pago del anticipo.'));
+  assert.ok(!r.includes('4 semanas'));
+  assert.ok(r.includes('- Precios EXW Ixtapaluca'));
+  assert.ok(r.includes('- Pago del saldo previo a la entrega.'));
+});
+
+test('#90-4: aplicarNotaTiempoEntrega desmarca decorado -> vuelve a 4 semanas', () => {
+  const notasCon6 = aplicarNotaTiempoEntrega(NOTAS_DEFAULT_4, true);
+  const r = aplicarNotaTiempoEntrega(notasCon6, false);
+  assert.ok(r.includes('- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.'));
+  assert.ok(!r.includes('6 semanas'));
+});
+
+test('#90-5: si el vendedor edito la linea a mano (texto que no coincide con ninguna version auto), no se pisotea', () => {
+  const notasEditadas = NOTAS_DEFAULT_4.replace(
+    '- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.',
+    '- Tiempo de entrega: 10 dias habiles, urge.'
+  );
+  const r = aplicarNotaTiempoEntrega(notasEditadas, true);
+  assert.strictEqual(r, notasEditadas);
+});
+
+test('#90-6: si el vendedor borro la linea por completo, no se vuelve a agregar', () => {
+  const sinLinea = NOTAS_DEFAULT_4.split('\n').filter(l => !l.includes('Tiempo de entrega')).join('\n');
+  const r = aplicarNotaTiempoEntrega(sinLinea, true);
+  assert.strictEqual(r, sinLinea);
 });
