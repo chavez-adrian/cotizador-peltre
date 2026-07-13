@@ -1147,7 +1147,10 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       const folio = await subirCotizacionOperam({ ...entry.data, cliente: { ...c, customerId, branchId } });
       if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
       steps.push({ name: 'POST quote', status: 'ok' });
-      return res.json({ ok: true, folio, customer_id: customerId, steps });
+      // clienteGenerico (#93): este camino SIEMPRE deja el cliente con RFC generico
+      // (creado nuevo o reutilizado por celular/dedup de nombre, ambos genericos) --
+      // el frontend lo usa para refrescar el chip Fiscal y ofrecer la CSF junto al folio.
+      return res.json({ ok: true, folio, customer_id: customerId, clienteGenerico: true, steps });
     } catch (err) {
       steps.push({ name: 'POST quote', status: 'error', error: err.message });
       return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps });

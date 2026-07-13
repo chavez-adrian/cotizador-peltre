@@ -183,11 +183,18 @@ test('Q18: botonCompletarHtml pinta "Reintentar subida" solo sobre una tarjeta P
 // candidatos; 422 -> sin_datos (PRE sin reintento util); 503/red/409-conflicto ->
 // pre (reintento idempotente).
 test('Q19: interpretarSubidaOperam clasifica la respuesta del endpoint por status y campos', () => {
-  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001, yaSubida: false });
-  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null, yaSubida: false });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001, yaSubida: false, customerId: null, clienteGenerico: false });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null, yaSubida: false, customerId: null, clienteGenerico: false });
   // yaSubida (#83 F1c): ya habia folio, el endpoint no re-subio (los quotes de
   // Operam no se editan por API; una regeneracion local no viaja a Operam).
-  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: '55123', yaSubida: true }), { estado: 'folio', folio: '55123', yaSubida: true });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: '55123', yaSubida: true }), { estado: 'folio', folio: '55123', yaSubida: true, customerId: null, clienteGenerico: false });
+
+  // #93: la subida con alta generica (#81) devuelve el customer_id creado/reutilizado
+  // y si el cliente quedo con RFC generico, para ofrecer la CSF junto al folio.
+  assert.deepEqual(
+    interpretarSubidaOperam({ ok: true, folio: 90001, customerId: 501, clienteGenerico: true }),
+    { estado: 'folio', folio: 90001, yaSubida: false, customerId: 501, clienteGenerico: true }
+  );
 
   const cand = interpretarSubidaOperam({ ok: false, status: 409, error: 'Elige uno', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] });
   assert.equal(cand.estado, 'candidatos');
@@ -237,6 +244,23 @@ test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candi
   assert.match(cands, /ABA/);
   assert.match(cands, /elegirCandidatoOperam\(5, 10, this\)/);
   assert.match(cands, /dejarPreOperam\(5, this\)/);
+});
+
+// #93: junto al folio, si la subida creo/reutilizo un cliente con RFC generico
+// (alta generica, #81), se ofrece la accion de subir su CSF (reusa el upgrade de
+// #85 via pcAbrirUpgradeFiscal). Sin RFC generico (cliente ya real en Operam) no
+// hay nada que ofrecer -- mismo criterio que el chip Fiscal de la tarjeta.
+test('Q19d: buildOperamStatusHtml ofrece subir la CSF junto al folio cuando el cliente quedo generico', () => {
+  const gen = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, customerId: 501, clienteGenerico: true });
+  assert.match(gen, /#Operam 90001/);
+  assert.match(gen, /Ya tienes su CSF/);
+  assert.match(gen, /pcAbrirUpgradeFiscal\(501\)/);
+
+  const noGen = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, customerId: 501, clienteGenerico: false });
+  assert.doesNotMatch(noGen, /Ya tienes su CSF/);
+
+  const sinCustomer = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, clienteGenerico: true });
+  assert.doesNotMatch(sinCustomer, /Ya tienes su CSF/);
 });
 
 test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece dejar como PRE', () => {

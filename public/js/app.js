@@ -2082,13 +2082,26 @@ async function autoSubirOperam(id, slot, extraBody) {
     const res = await api(`/api/cotizacion/operam/${id}`, opts);
     let data = {};
     try { data = await res.json(); } catch {}
-    resultado = { ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida, error: data.error, candidatos: data.candidatos };
+    resultado = {
+      ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida,
+      error: data.error, candidatos: data.candidatos,
+      customerId: data.customer_id, clienteGenerico: data.clienteGenerico,
+    };
   } catch (e) {
     resultado = { ok: false, status: 0, error: e.message };
   } finally {
     subidasOperamEnVuelo.delete(key);
   }
   const vista = interpretarSubidaOperam(resultado);
+  // #93: la cotizacion recien subida (misma sesion, mismo cliente del paso
+  // Cliente) trae el customer_id del alta generica -- se refresca pcState al
+  // instante para que el chip Fiscal deje de estar muerto sin depender de una
+  // nueva busqueda. Cliente tipo 'operam' ya trae su propio id real: no aplica.
+  if (vista.customerId != null && key === String(state.lastCotizacionId) &&
+      pcState.cliente && pcState.cliente.tipo !== 'operam') {
+    pcState.cliente.clienteOperamId = vista.customerId;
+    if (pcEl()?.querySelector('.pc-cli-card')) pcRenderChips();
+  }
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
   return vista;
 }

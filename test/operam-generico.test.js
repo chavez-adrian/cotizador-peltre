@@ -128,6 +128,10 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
   assert.equal(res.body.ok, true);
   assert.equal(res.body.folio, 1701);
   assert.equal(res.body.customer_id, 910);
+  // #93: el frontend usa este flag para ofrecer la CSF junto al folio y para
+  // refrescar pcState.cliente.clienteOperamId -- el chip Fiscal se vuelve
+  // accionable de inmediato, sin depender de una nueva busqueda.
+  assert.equal(res.body.clienteGenerico, true);
   assert.ok(Array.isArray(res.body.steps), 'la respuesta reporta los pasos (ADR-0002)');
   assert.ok(res.body.steps.every(s => s.name && s.status === 'ok'), 'todos los pasos en ok');
 
