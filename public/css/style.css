@@ -1480,9 +1480,13 @@ body {
   margin-bottom: 8px;
 }
 
-.dedup-exacto, .dedup-candidatos, .dedup-domicilios {
+.dedup-exacto, .dedup-candidatos, .dedup-domicilios, .dedup-candidatos-generico {
   font-size: 13px;
   padding: 8px 0;
+}
+
+.candidato-generico-fila {
+  padding: 6px 0;
 }
 
 .dedup-domicilios label, .dedup-candidatos label {
