@@ -57,6 +57,22 @@ function escapeHtml(v) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Cambiar cantidades en el resumen invalida la tarifa de envia.com (issue #89):
+// recotizar en cada toque dispararia llamadas a las 3 paqueterias, asi que en vez
+// de recalcular solo se invalida y se avisa. Solo aplica a envia.com -- el envio
+// manual capturado a mano no se toca (no hay nada que "recotizar" ahi).
+export const MENSAJE_ENVIO_INVALIDADO = 'Las cantidades cambiaron, vuelve a cotizar el envío';
+
+export function debeInvalidarEnvioPorCantidad(shippingOpt, enviaRateSeleccionado) {
+  return shippingOpt === 'envia' && !!enviaRateSeleccionado;
+}
+
+// Compuerta de generacion: con el envio de envia.com invalidado por un cambio de
+// cantidades, no se genera PDF/HTML hasta volver a cotizar.
+export function bloqueaGeneracionPorEnvioInvalidado(envioInvalidado) {
+  return !!envioInvalidado;
+}
+
 // Modal de confirmacion de identidad antes de generar el PDF/HTML (issue #87):
 // evita estampar la cotizacion al vendedor equivocado cuando el dispositivo
 // quedo logueado con otro usuario. Mismo patron que buildCanalModalHtml

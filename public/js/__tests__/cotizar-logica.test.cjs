@@ -3,8 +3,12 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
+let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 before(async () => {
-  ({ validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml } = await import('../cotizar-logica.js'));
+  ({
+    validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
+    debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
+  } = await import('../cotizar-logica.js'));
 });
 
 // === AC1: CP + pais sin Calle -> procede con leyenda ===
@@ -130,4 +134,37 @@ test('#87-2: buildConfirmarVendedorModalHtml escapa HTML del nombre (XSS)', () =
   const html = buildConfirmarVendedorModalHtml('<script>alert(1)</script>');
   assert.ok(!html.includes('<script>alert(1)</script>'));
   assert.ok(html.includes('&lt;script&gt;'));
+});
+
+// === #89: cambiar cantidades en el resumen invalida la tarifa de envia.com
+// vigente (en vez de recalcular sola -- evita 3 llamadas a paqueteria por toque).
+// El envio manual capturado a mano NO se invalida.
+test('#89-1: hay tarifa de envia seleccionada y el envio activo es envia -> invalida', () => {
+  const r = debeInvalidarEnvioPorCantidad('envia', { desc: 'FedEx Ground', cost: 150 });
+  assert.strictEqual(r, true);
+});
+
+test('#89-2: sin tarifa de envia seleccionada -> no hay nada que invalidar', () => {
+  const r = debeInvalidarEnvioPorCantidad('envia', null);
+  assert.strictEqual(r, false);
+});
+
+test('#89-3: envio manual (no envia.com) -> nunca se invalida aunque haya rate previo', () => {
+  const r = debeInvalidarEnvioPorCantidad('manual', { desc: 'FedEx Ground', cost: 150 });
+  assert.strictEqual(r, false);
+});
+
+test('#89-4: sin envio (none) -> no aplica invalidacion', () => {
+  const r = debeInvalidarEnvioPorCantidad('none', { desc: 'FedEx Ground', cost: 150 });
+  assert.strictEqual(r, false);
+});
+
+test('#89-5: bloquea generacion cuando el envio quedo invalidado por cambio de cantidad', () => {
+  assert.strictEqual(bloqueaGeneracionPorEnvioInvalidado(true), true);
+  assert.strictEqual(bloqueaGeneracionPorEnvioInvalidado(false), false);
+  assert.strictEqual(bloqueaGeneracionPorEnvioInvalidado(undefined), false);
+});
+
+test('#89-6: mensaje de aviso visible cuando el envio se invalida', () => {
+  assert.strictEqual(MENSAJE_ENVIO_INVALIDADO, 'Las cantidades cambiaron, vuelve a cotizar el envío');
 });

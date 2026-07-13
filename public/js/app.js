@@ -63,6 +63,9 @@ import {
   formatServicio,
   cpValido,
   buildConfirmarVendedorModalHtml,
+  debeInvalidarEnvioPorCantidad,
+  bloqueaGeneracionPorEnvioInvalidado,
+  MENSAJE_ENVIO_INVALIDADO,
 } from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -734,6 +737,7 @@ function updateShippingSummary() {
 
 // === ENVIA.COM ===
 let enviaRateSeleccionado = null; // { desc, cost }
+let envioInvalidadoPorCantidad = false; // issue #89: cambio de cantidad invalido la tarifa vigente
 
 async function cotizarEnvia() {
   const btn = document.getElementById('btn-cotizar-envia');
@@ -745,6 +749,7 @@ async function cotizarEnvia() {
   resultsEl.innerHTML = '';
   resumenEl.style.display = 'none';
   enviaRateSeleccionado = null;
+  envioInvalidadoPorCantidad = false;
 
   // CP + pais UNICOS (#84 AC3): el mismo bloque de domicilio de entrega, ya no
   // hay un envia-cp/envia-pais aparte.
@@ -869,6 +874,7 @@ function seleccionarEnviaRate(card, carrier, servicio, precio) {
     desc: `${formatCarrier(carrier)} ${formatServicio(servicio)}`.trim(),
     cost: precio,
   };
+  envioInvalidadoPorCantidad = false;
   // Sincronizar con los campos manuales para que updateResumen los tome
   document.getElementById('shipping-desc').value = enviaRateSeleccionado.desc;
   document.getElementById('shipping-cost').value = precio.toFixed(2);
@@ -902,6 +908,13 @@ function updateResumen() {
   // Alerta de envío
   const shippingOpt = document.getElementById('shipping-option').value;
   shippingAlert.style.display = shippingOpt === 'none' ? 'block' : 'none';
+
+  // Aviso de envio invalidado por cambio de cantidades (issue #89)
+  const envioInvalidadoAlert = document.getElementById('resumen-envio-invalidado');
+  if (envioInvalidadoAlert) {
+    envioInvalidadoAlert.style.display = envioInvalidadoPorCantidad ? 'block' : 'none';
+    envioInvalidadoAlert.textContent = MENSAJE_ENVIO_INVALIDADO;
+  }
 
   const itemsEl = document.getElementById('resumen-items');
 
@@ -968,6 +981,18 @@ function updateResumen() {
 }
 
 // Controles de cantidad en el resumen
+// Cambiar cantidades invalida la tarifa de envia.com vigente (issue #89): no se
+// recalcula sola (evitaria 3 llamadas a paqueteria por toque), se invalida y se
+// avisa. El envio manual capturado a mano no se toca.
+function invalidarEnvioSiAplica() {
+  const shippingOpt = document.getElementById('shipping-option').value;
+  if (debeInvalidarEnvioPorCantidad(shippingOpt, enviaRateSeleccionado)) {
+    enviaRateSeleccionado = null;
+    envioInvalidadoPorCantidad = true;
+    document.getElementById('shipping-cost').value = '';
+  }
+}
+
 function resumenChangeQty(key, delta) {
   const item = state.cart.get(key);
   if (!item) return;
@@ -977,6 +1002,7 @@ function resumenChangeQty(key, delta) {
   } else {
     item.cantidad = newQty;
   }
+  invalidarEnvioSiAplica();
   updateTierBar();
   updateCartSummary();
   renderProducts(document.getElementById('search-input').value);
@@ -992,6 +1018,7 @@ function resumenSetQty(key, qty) {
   } else {
     item.cantidad = qty;
   }
+  invalidarEnvioSiAplica();
   updateTierBar();
   updateCartSummary();
   renderProducts(document.getElementById('search-input').value);
@@ -1099,6 +1126,11 @@ async function generatePDF() {
     return;
   }
   const domio = validarDomicilioCotizacion();
+  if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
+    alert(MENSAJE_ENVIO_INVALIDADO);
+    switchTab('resumen');
+    return;
+  }
   if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-pdf');
   btn.disabled = true;
@@ -1213,6 +1245,11 @@ async function generateHTML() {
     return;
   }
   const domio = validarDomicilioCotizacion();
+  if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
+    alert(MENSAJE_ENVIO_INVALIDADO);
+    switchTab('resumen');
+    return;
+  }
   if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-html');
   btn.disabled = true;
@@ -1350,6 +1387,7 @@ function nuevaCotizacion() {
   document.getElementById('envia-error').style.display = 'none';
   document.getElementById('envia-resumen').style.display = 'none';
   enviaRateSeleccionado = null;
+  envioInvalidadoPorCantidad = false;
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
   // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
@@ -3492,6 +3530,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (val !== 'envia' && val !== 'manual') {
       document.getElementById('shipping-cost').value = '';
     }
+    // Salir de "envia" descarta la invalidacion por cantidad (issue #89): ya no
+    // aplica, el envio activo dejo de depender de una tarifa de envia.com.
+    if (val !== 'envia') envioInvalidadoPorCantidad = false;
     updateResumen();
     updateTabIndicators();
   });
