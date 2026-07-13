@@ -73,12 +73,12 @@ const CELULAR = '+52 5588776655';
 // Cotizacion de Prospecto Minimo: sin customerId y sin RFC real (la oportunidad
 // no tiene cliente en Operam). El vendedor existe en data/vendedores.json con
 // operam_id 2; el tier M100 es la lista de precios que cotizo.
-function nuevaCotizacion(cliente = {}) {
+function nuevaCotizacion(cliente = {}, tier = 'M100') {
   const cots = readJson(COTS_PATH);
   const id = cots.reduce((m, c) => Math.max(m, c.id), 0) + 1;
   cots.push({
     id, fecha: '2026-07-06T00:00:00Z', vendedor: 'Alejandro Chávez', cliente: 'Hotel Azul',
-    totalPiezas: 100, total: 11600, tier: 'M100',
+    totalPiezas: 100, total: 11600, tier,
     data: {
       fecha: '2026-07-06', vigencia: '2026-08-05',
       cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: CELULAR, pais: 'MX', ...cliente },
@@ -159,6 +159,35 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
   const audit = res.body.steps.find(s => s.name === 'log auditoria');
   assert.ok(audit, 'reporta el paso de auditoria');
   assert.equal(audit.info, 'cotizador-generico');
+});
+
+test('G1b: tier Menudeo (sin lista homonima en Operam) -> sales_type cae a "Precio de lista", nunca se omite (issue #92)', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({}, 'Menudeo');
+  let clienteBody = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [
+      { id: '1', sales_type: 'M550', inactive: '0' },
+      { id: '12', sales_type: 'Precio de lista', inactive: '0' },
+      { id: '15', sales_type: 'M100', inactive: '0' },
+    ] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 910 }); }
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': (u, opts) => jsonResponse({ result: true, added_trans_no: 1701 }),
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.ok(clienteBody, 'se debio crear el cliente');
+  assert.equal(clienteBody.sales_type, '12', 'Menudeo sin lista homonima -> "Precio de lista" (id 12), nunca omitido');
 });
 
 test('G2: celular ya convertido en cliente -> reutiliza el customer_id, no crea un segundo generico', async () => {

@@ -10,7 +10,7 @@ import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerClientePorId } from './lib/operam-client.js';
 import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
-import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, FUENTE_ALTA_GENERICA } from './lib/alta-generica.js';
+import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
@@ -1074,7 +1074,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
 
       const salesman = (readJSON('vendedores.json') || []).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
-      const salesTypeId = listasPrecios.find(l => l.nombre === entry.tier)?.id;
+      const salesTypeId = resolverSalesTypeId(entry.tier, listasPrecios);
       let creado;
       try {
         // crearClienteDirecto: SIN la dedup por RFC exacto de crearCliente (con

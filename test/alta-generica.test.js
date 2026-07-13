@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // El comportamiento de punta a punta se prueba por HTTP en operam-generico.test.js;
 // aqui solo las decisiones puras del modulo lib/alta-generica.js.
 
-const { rfcGenericoPara, necesitaAltaGenerica, buildClienteGenerico, FUENTE_ALTA_GENERICA } =
+const { rfcGenericoPara, necesitaAltaGenerica, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA } =
   await import('../lib/alta-generica.js');
 
 test('rfcGenericoPara: MX o ausente -> XAXX; extranjero -> XEXX', () => {
@@ -90,4 +90,40 @@ test('buildClienteGenerico: sin razon social cae al nombre corto y al cliente de
 test('FUENTE_ALTA_GENERICA distingue el alta generica en clientes_log de las fuentes del alta manual', () => {
   assert.equal(FUENTE_ALTA_GENERICA, 'cotizador-generico');
   assert.ok(!['csf-upload', 'cotizador'].includes(FUENTE_ALTA_GENERICA));
+});
+
+// issue #92: el tier Menudeo (y cualquier tier sin lista homonima en Operam) no
+// debe omitir sales_type -- eso delega el default de Operam (M550), el peor caso
+// para un cliente de menudeo. Cae a "Precio de lista", resuelta por NOMBRE.
+const LISTAS = [
+  { id: 1, nombre: 'M550' }, { id: 3, nombre: 'M6000' }, { id: 6, nombre: 'M1500' },
+  { id: 9, nombre: 'Segundas' }, { id: 12, nombre: 'Precio de lista' },
+  { id: 15, nombre: 'M100' }, { id: 16, nombre: 'M350' }, { id: 19, nombre: 'Amazon' },
+  { id: 20, nombre: 'M6001' }, { id: 21, nombre: 'US100' },
+];
+
+test('resolverSalesTypeId: tier con lista homonima -> su id (sin cambios)', () => {
+  assert.equal(resolverSalesTypeId('M100', LISTAS), 15);
+  assert.equal(resolverSalesTypeId('M350', LISTAS), 16);
+  assert.equal(resolverSalesTypeId('M550', LISTAS), 1);
+  assert.equal(resolverSalesTypeId('M1500', LISTAS), 6);
+  assert.equal(resolverSalesTypeId('M6000', LISTAS), 3);
+});
+
+test('resolverSalesTypeId: tier Menudeo (sin lista homonima) -> "Precio de lista"', () => {
+  assert.equal(resolverSalesTypeId('Menudeo', LISTAS), 12);
+});
+
+test('resolverSalesTypeId: tier desconocido sin lista homonima -> mismo fallback', () => {
+  assert.equal(resolverSalesTypeId('TierInventado', LISTAS), 12);
+});
+
+test('resolverSalesTypeId: ni el tier ni "Precio de lista" existen en el catalogo -> undefined', () => {
+  const sinPrecioDeLista = LISTAS.filter(l => l.nombre !== 'Precio de lista');
+  assert.equal(resolverSalesTypeId('Menudeo', sinPrecioDeLista), undefined);
+});
+
+test('resolverSalesTypeId: catalogo vacio -> undefined', () => {
+  assert.equal(resolverSalesTypeId('Menudeo', []), undefined);
+  assert.equal(resolverSalesTypeId('M100', undefined), undefined);
 });
