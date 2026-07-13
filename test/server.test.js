@@ -1207,6 +1207,84 @@ test('E4: GET /api/buscar-cliente-duplicado retorna libre cuando no hay match', 
   }
 });
 
+// E5-E7: issue #78 -- RFC real sin match exacto tambien busca entre clientes
+// con RFC generico (el cliente pudo darse de alta sin CSF).
+test('E5: GET /api/buscar-cliente-duplicado con RFC real sin match exacto busca tambien candidatos con RFC generico por nombre', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u) => {
+      if (u.includes('search=ISI1801183Z4')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      if (u.includes('search=XAXX010101000')) return { ok: true, json: async () => ({
+        total: 1,
+        data: [{ customer_id: 30, CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', tax_id: 'XAXX010101000' }],
+      }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=ISI1801183Z4&nombre=Importaciones+Siscani')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'candidatos');
+    assert.ok(res.body.candidatos.some(c => c.id === 30), 'debe incluir el candidato Siscani Group con RFC generico');
+  } finally {
+    restore();
+  }
+});
+
+test('E6: GET /api/buscar-cliente-duplicado con RFC real, sin match de nombre pero con telefono coincidente marca candidato', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u) => {
+      if (u.includes('search=NUE990101ZZZ')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      if (u.includes('search=XAXX010101000')) return { ok: true, json: async () => ({
+        total: 1,
+        data: [{ customer_id: 40, CustName: 'Grupo ABC', cust_ref: 'ABC', tax_id: 'XAXX010101000', contacts: [{ phone: '55 1234 5678' }] }],
+      }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=NUE990101ZZZ&nombre=Nombre+Distinto&telefono=5512345678')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'candidatos');
+    assert.ok(res.body.candidatos.some(c => c.id === 40), 'debe marcar candidato por telefono');
+  } finally {
+    restore();
+  }
+});
+
+test('E7: GET /api/buscar-cliente-duplicado con RFC real que si tiene match exacto NO busca genericos (no degrada el caso ya cubierto)', async () => {
+  let searchoGenericos = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u) => {
+      if (u.includes('search=PNA010203ABC')) return { ok: true, json: async () => ({
+        total: 1,
+        data: [{ customer_id: 77, CustName: 'Peltre Nacional SA de CV', cust_ref: 'PELTRE', tax_id: 'PNA010203ABC' }],
+      }) };
+      if (u.includes('search=XAXX010101000') || u.includes('search=XEXX010101000')) {
+        searchoGenericos = true;
+        return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      }
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=PNA010203ABC&nombre=Peltre+Nacional')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'exacto');
+    assert.strictEqual(searchoGenericos, false, 'con match exacto no debe gastar llamadas extra buscando genericos');
+  } finally {
+    restore();
+  }
+});
+
 // === Webhook de Operam (sync post-venta, #62) ===
 // Auth por header secreto (NO el JWT del cotizador: Operam no lo tiene). El webhook
 // es solo una señal; la reconciliacion lee la verdad por API. Sin DATABASE_URL el

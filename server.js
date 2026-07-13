@@ -14,7 +14,7 @@ import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSa
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
-import { detectarDuplicados } from './lib/deduplicacion.js';
+import { detectarDuplicados, RFC_GENERICOS } from './lib/deduplicacion.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
@@ -1573,16 +1573,35 @@ app.get('/api/buscar-cliente', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
-  const { rfc, nombre } = req.query;
+  const { rfc, nombre, telefono } = req.query;
   if (!rfc) return res.status(400).json({ error: 'Falta el parametro rfc' });
   try {
-    const raw = await buscarClientes(rfc);
-    const clientes = (Array.isArray(raw) ? raw : []).map(c => ({
-      ...c,
-      RFC: c.tax_id || c.RFC || c.rfc || '',
-      id: c.customer_id,
-    }));
-    const resultado = detectarDuplicados(rfc, nombre || '', clientes);
+    const rfcNorm = rfc.toUpperCase().trim();
+    const esGenerico = RFC_GENERICOS.has(rfcNorm);
+    let raw = await buscarClientes(rfc);
+    // Issue #78: si el RFC de entrada es real y buscarClientes(rfc) no trae un
+    // match exacto, el cliente pudo darse de alta antes sin CSF (RFC generico).
+    // Ese cliente es INVISIBLE a la busqueda anterior porque el texto buscado
+    // (el RFC real nuevo) nunca aparece en un registro con RFC generico -- se
+    // busca aparte por cada RFC generico y se le da a detectarDuplicados el
+    // pool combinado para que aplique nombre/telefono.
+    if (!esGenerico && !raw.some(c => (c.tax_id || '').toUpperCase().trim() === rfcNorm)) {
+      const genericos = await Promise.all([...RFC_GENERICOS].map(g => buscarClientes(g, 100)));
+      raw = raw.concat(...genericos);
+    }
+    const vistos = new Set();
+    const clientes = (Array.isArray(raw) ? raw : [])
+      .filter(c => {
+        if (vistos.has(c.customer_id)) return false;
+        vistos.add(c.customer_id);
+        return true;
+      })
+      .map(c => ({
+        ...c,
+        RFC: c.tax_id || c.RFC || c.rfc || '',
+        id: c.customer_id,
+      }));
+    const resultado = detectarDuplicados(rfc, nombre || '', clientes, telefono || '');
     res.json(resultado);
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible: ' + err.message });

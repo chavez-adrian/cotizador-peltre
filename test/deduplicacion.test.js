@@ -210,3 +210,49 @@ test('D8: detectarDuplicados detecta candidato con articulos/sufijos en nombre (
   assert.strictEqual(result.tipo, 'candidatos');
   assert.ok(result.candidatos.some(c => c.id === 20), 'debe encontrar candidato El Aguila');
 });
+
+// ============================================================
+// Issue #78: RFC real sin match exacto -- fallback a candidatos
+// SOLO entre clientes con RFC generico (el cliente pudo darse de
+// alta sin RFC y ahora llega su CSF real, caso real "Siscani").
+// ============================================================
+
+// D9: RFC real sin match exacto, nombre solapa con cliente de RFC generico -> candidatos
+test('D9: detectarDuplicados con RFC real sin match exacto cae a candidatos por nombre entre clientes con RFC generico', () => {
+  const clientes = [
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', id: 30 },
+    { RFC: 'DIS860901XYZ', rfc: 'DIS860901XYZ', CustName: 'Distribuidora Omega SRL', cust_ref: 'OMEGA', id: 2 },
+  ];
+  const result = detectarDuplicados('ISI1801183Z4', 'Importaciones Siscani', clientes);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.ok(result.candidatos.some(c => c.id === 30), 'debe encontrar el candidato Siscani Group con RFC generico');
+  assert.ok(!result.candidatos.some(c => c.id === 2), 'no debe incluir clientes con RFC real (no genericos) como candidatos');
+});
+
+// D10: RFC real sin match exacto Y sin solapamiento de nombre, pero telefono
+// coincide (ultimos 10 digitos) -- senal fuerte, marca candidato igual (caso
+// real: el nombre "Siscani Group" vs "Importaciones Siscani" pudo no solapar
+// segun el umbral, pero el telefono del contacto SI coincidio).
+test('D10: detectarDuplicados marca candidato por telefono aunque el nombre no solape', () => {
+  const clientes = [
+    {
+      RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Grupo ABC', cust_ref: 'ABC', id: 40,
+      contacts: [{ phone: '55 1234 5678' }],
+    },
+  ];
+  const result = detectarDuplicados('NUE990101ZZZ', 'Nombre Totalmente Distinto', clientes, '5512345678');
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.ok(result.candidatos.some(c => c.id === 40), 'debe marcar candidato por telefono aunque el nombre no solape');
+});
+
+// D11: RFC real sin match, sin solapamiento de nombre, sin telefono coincidente -> libre
+test('D11: detectarDuplicados retorna libre cuando ni nombre ni telefono coinciden con clientes de RFC generico', () => {
+  const clientes = [
+    {
+      RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Grupo ABC', cust_ref: 'ABC', id: 40,
+      contacts: [{ phone: '55 1234 5678' }],
+    },
+  ];
+  const result = detectarDuplicados('NUE990101ZZZ', 'Nombre Totalmente Distinto', clientes, '5599998888');
+  assert.strictEqual(result.tipo, 'libre');
+});

@@ -6,8 +6,9 @@ let calcularDiffFiscal;
 let buildDiffFiscalHtml;
 let buildDedupExactoConDiffHtml;
 let buildActualizarFiscalPayload;
+let buildCandidatosRfcGenericoHtml;
 before(async () => {
-  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalPayload } = await import('../alta-logica.js'));
+  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalPayload, buildCandidatosRfcGenericoHtml } = await import('../alta-logica.js'));
 });
 
 // === calcularDiffFiscal ===
@@ -289,4 +290,47 @@ test('G14b: buildDedupExactoConDiffHtml produce .dedup-exacto y .diff-fiscal-pan
   const idxPanel = html.indexOf('diff-fiscal-panel');
   assert.ok(idxExacto >= 0 && idxPanel >= 0, 'ambos elementos deben existir');
   assert.ok(idxPanel > idxCierreExacto, '.diff-fiscal-panel debe aparecer DESPUES de cerrar .dedup-exacto (hermano, no anidado)');
+});
+
+// === buildCandidatosRfcGenericoHtml (issue #78) ===
+// Candidatos detectados cuando llega un RFC REAL y no hay match exacto, pero si
+// hay clientes con RFC generico cuyo nombre o telefono coinciden. A diferencia
+// de la rama generica de ADR-0001 (buildDedupCandidatosHtml en helpers.cjs, que
+// NUNCA ofrece crear nuevo), aqui SI se ofrece -- el RFC de entrada es real y
+// crear un cliente nuevo es un camino legitimo si el candidato resulta ser otra
+// empresa.
+
+const candidatosGenericos = [
+  { id: 30, CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', RFC: 'XAXX010101000', _similitud: 2, _telefonoMatch: false },
+  { id: 40, CustName: 'Grupo ABC', cust_ref: 'ABC', RFC: 'XAXX010101000', _similitud: 0, _telefonoMatch: true },
+];
+
+test('V1: buildCandidatosRfcGenericoHtml contiene alerta y muestra los candidatos', () => {
+  const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
+  assert.ok(typeof html === 'string');
+  assert.ok(html.includes('Siscani Group'), 'debe mostrar el nombre del candidato');
+  assert.ok(html.includes('Grupo ABC'), 'debe mostrar el segundo candidato');
+});
+
+test('V2: buildCandidatosRfcGenericoHtml incluye boton "Actualizar este" por candidato, ligado a altaCandidatoActualizar(id)', () => {
+  const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
+  assert.ok(html.includes('Actualizar este'), 'debe ofrecer actualizar');
+  assert.ok(html.includes('altaCandidatoActualizar(30)'), 'debe ligar el boton al id del candidato 30');
+  assert.ok(html.includes('altaCandidatoActualizar(40)'), 'debe ligar el boton al id del candidato 40');
+});
+
+test('V3: buildCandidatosRfcGenericoHtml SI ofrece crear nuevo cliente (a diferencia de la rama generica de ADR-0001)', () => {
+  const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
+  assert.ok(/crear nuevo/i.test(html), 'debe ofrecer crear nuevo cliente');
+  assert.ok(html.includes('altaCandidatoCrearNuevo()'), 'debe ligar la accion a altaCandidatoCrearNuevo');
+});
+
+test('V4: buildCandidatosRfcGenericoHtml distingue la senal de telefono de la de nombre', () => {
+  const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
+  assert.ok(/tel[ée]fono/i.test(html), 'debe mencionar la senal de telefono para el candidato que matcheo por telefono');
+});
+
+test('V5: buildCandidatosRfcGenericoHtml con lista vacia retorna cadena vacia', () => {
+  assert.equal(buildCandidatosRfcGenericoHtml([]), '');
+  assert.equal(buildCandidatosRfcGenericoHtml(undefined), '');
 });

@@ -198,6 +198,32 @@ export function buildDedupExactoConDiffHtml(cliente, csfDatos) {
   return base + buildDiffFiscalHtml(diff);
 }
 
+// Candidatos por RFC generico cuando llega una CSF con RFC REAL (issue #78):
+// el cliente pudo darse de alta antes sin CSF. A diferencia de la rama generica
+// de ADR-0001 (buildDedupCandidatosHtml en helpers.cjs -- vendedor NUNCA puede
+// crear nuevo, debe elegir uno o escalar), aqui el RFC de entrada YA es real:
+// "Crear nuevo" es un camino legitimo si el candidato resulta ser otra empresa.
+// "Actualizar este" dispara el upgrade fiscal existente de #85 sobre ese
+// customer_id con los datos de la CSF ya parseada.
+export function buildCandidatosRfcGenericoHtml(candidatos) {
+  if (!Array.isArray(candidatos) || candidatos.length === 0) return '';
+  const filas = candidatos.map(c => {
+    const nombre = c.CustName || c.cust_ref || 'Sin nombre';
+    const senal = c._telefonoMatch ? 'telefono coincide' : 'nombre similar';
+    return (
+      '<div class="candidato-generico-fila">' +
+      '<p><strong>' + nombre + '</strong> (' + (c.cust_ref || '') + ') &middot; ' + senal + '</p>' +
+      '<button type="button" class="btn btn-secondary" onclick="altaCandidatoActualizar(' + c.id + ')">Actualizar este</button> ' +
+      '<button type="button" class="btn btn-secondary" onclick="altaCandidatoCrearNuevo()">Crear nuevo</button>' +
+      '</div>'
+    );
+  }).join('');
+  return '<div class="dedup-candidatos-generico">' +
+    '<p class="dedup-alerta-naranja">Este contacto coincide con un cliente ya existente en Operam (dado de alta sin RFC)</p>' +
+    filas +
+    '</div>';
+}
+
 // === Estado compartido alta -> cotizador (issue #69) ===
 //
 // Tras dar de alta un cliente, "Cotizar ahora" debe abrir el cotizador con el cliente

@@ -6,6 +6,7 @@ import {
   calcularDiffFiscal,
   buildDiffFiscalHtml,
   buildDedupExactoConDiffHtml,
+  buildCandidatosRfcGenericoHtml,
   buildAltaDarDeAltaPayload,
   buildClienteDesdeAlta,
   mensajeBusquedaCelular,
@@ -4124,7 +4125,7 @@ function altaDedupDesbloquear() {
   altaToggleSeccion(2);
 }
 
-async function altaDedupCorrer(rfc, razonSocial) {
+async function altaDedupCorrer(rfc, razonSocial, telefono) {
   const dedupDiv = document.getElementById('alta-dedup-resultado');
   if (!dedupDiv) { altaDedupDesbloquear(); return; }
 
@@ -4132,7 +4133,7 @@ async function altaDedupCorrer(rfc, razonSocial) {
   dedupDiv.style.display = '';
 
   try {
-    const params = new URLSearchParams({ rfc, nombre: razonSocial || '' });
+    const params = new URLSearchParams({ rfc, nombre: razonSocial || '', telefono: telefono || '' });
     const res = await api('/api/buscar-cliente-duplicado?' + params.toString());
     if (!res.ok) throw new Error('Error ' + res.status);
     const resultado = await res.json();
@@ -4153,21 +4154,29 @@ async function altaDedupCorrer(rfc, razonSocial) {
     }
 
     if (resultado.tipo === 'candidatos') {
-      const items = resultado.candidatos.map(c =>
-        '<label style="display:block;padding:4px 0;cursor:pointer">' +
-        '<input type="radio" name="dedup-candidato" value="' + c.id + '" onchange="altaDedupSelCandidato(' + c.id + ')">' +
-        ' <strong>' + (c.CustName || '') + '</strong> (' + (c.cust_ref || '') + ')' +
-        '</label>'
-      ).join('');
-      dedupDiv.innerHTML =
-        '<div class="dedup-candidatos">' +
-        '<p class="dedup-alerta-naranja">Posibles clientes existentes</p>' +
-        items +
-        '<label style="display:block;padding:4px 0;cursor:pointer">' +
-        '<input type="radio" name="dedup-candidato" value="escalar">' +
-        ' Ninguno es el mismo cliente - escalar a Adrian' +
-        '</label>' +
-        '</div>';
+      // Issue #78: cuando el RFC de entrada YA es real, los candidatos vienen
+      // del fallback contra clientes con RFC generico -- UI distinta a la rama
+      // generica de ADR-0001 (aqui SI se puede crear nuevo).
+      const rfcNorm = (rfc || '').toUpperCase().trim();
+      if (RFC_GENERICOS_MX_APP.has(rfcNorm)) {
+        const items = resultado.candidatos.map(c =>
+          '<label style="display:block;padding:4px 0;cursor:pointer">' +
+          '<input type="radio" name="dedup-candidato" value="' + c.id + '" onchange="altaDedupSelCandidato(' + c.id + ')">' +
+          ' <strong>' + (c.CustName || '') + '</strong> (' + (c.cust_ref || '') + ')' +
+          '</label>'
+        ).join('');
+        dedupDiv.innerHTML =
+          '<div class="dedup-candidatos">' +
+          '<p class="dedup-alerta-naranja">Posibles clientes existentes</p>' +
+          items +
+          '<label style="display:block;padding:4px 0;cursor:pointer">' +
+          '<input type="radio" name="dedup-candidato" value="escalar">' +
+          ' Ninguno es el mismo cliente - escalar a Adrian' +
+          '</label>' +
+          '</div>';
+      } else {
+        dedupDiv.innerHTML = buildCandidatosRfcGenericoHtml(resultado.candidatos);
+      }
       return;
     }
   } catch (err) {
@@ -4233,6 +4242,32 @@ window.altaDedupSelCandidato = altaDedupSelCandidato;
 window.altaDedupSelDomicilio = altaDedupSelDomicilio;
 window.altaDedupNuevoDomicilio = altaDedupNuevoDomicilio;
 
+// --- Candidatos por RFC generico (issue #78) ---
+// "Actualizar este" dispara el upgrade fiscal EXISTENTE de #85 (pcEjecutarUpgradeFiscal
+// / PUT /api/actualizar-cliente-fiscal/:id, con su gate anti-fusion y verificacion
+// post-PUT) contra el customer_id del candidato, usando los datos de la CSF ya
+// parseada en altaState.datos -- no se reabre el formulario, ya se tienen los datos.
+async function altaCandidatoActualizar(clienteId) {
+  altaCsfState.modoUpgrade = clienteId;
+  await pcEjecutarUpgradeFiscal(altaState.datos);
+}
+window.altaCandidatoActualizar = altaCandidatoActualizar;
+
+// "Crear nuevo" descarta el candidato y continua el camino de creacion (POST)
+// que ya estaba en curso. Si el candidato aparecio en la Seccion 1 (justo tras
+// parsear la CSF) la Seccion 2 sigue bloqueada y hay que desbloquearla; si
+// aparecio en la Seccion 2 (disparado por altaBuscarCelular, con la Seccion 2
+// ya abierta) no se debe re-alternar la seccion o quedaria colapsada.
+function altaCandidatoCrearNuevo() {
+  const dedupDiv = document.getElementById('alta-dedup-resultado');
+  if (dedupDiv) { dedupDiv.innerHTML = ''; dedupDiv.style.display = 'none'; }
+  const candDiv = document.getElementById('alta-celular-candidatos');
+  if (candDiv) { candDiv.innerHTML = ''; candDiv.style.display = 'none'; }
+  const sec2 = document.getElementById('alta-sec-2');
+  if (sec2 && sec2.classList.contains('alta-seccion-bloqueada')) altaDedupDesbloquear();
+}
+window.altaCandidatoCrearNuevo = altaCandidatoCrearNuevo;
+
 // === Seccion 2: Confirmar config comercial ===
 
 // Busqueda por celular en el primer formulario (issue #69 AC3): al capturar el
@@ -4245,6 +4280,8 @@ async function altaBuscarCelular() {
   if (!aviso) return;
   const codeEl = document.getElementById('alta-celular-code');
   const celular = leerTelefono('alta-celular', codeEl ? 'alta-celular-code' : null) || (document.getElementById('alta-celular')?.value || '').trim();
+  const candDiv = document.getElementById('alta-celular-candidatos');
+  if (candDiv) { candDiv.innerHTML = ''; candDiv.style.display = 'none'; }
   if (!celular) { aviso.style.display = 'none'; aviso.textContent = ''; return; }
   try {
     const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(celular)}`);
@@ -4261,6 +4298,25 @@ async function altaBuscarCelular() {
   } catch {
     aviso.style.display = 'none';
     aviso.textContent = '';
+  }
+
+  // Issue #78: el nombre/RFC solos no siempre detectan un cliente ya existente
+  // con RFC generico (caso real "Siscani": el aviso de arriba, por telefono, fue
+  // lo UNICO que lo detecto). Se re-consulta el mismo endpoint de dedup ahora
+  // que hay telefono, solo si seguimos en el camino de creacion (no en upgrade)
+  // y todavia no se eligio un cliente existente.
+  if (candDiv && altaCsfState.modoUpgrade == null && altaState.datos?.rfc && !altaState.clienteExistente) {
+    try {
+      const params = new URLSearchParams({ rfc: altaState.datos.rfc, nombre: altaState.datos.razonSocial || '', telefono: celular });
+      const res2 = await api('/api/buscar-cliente-duplicado?' + params.toString());
+      const resultado2 = await res2.json();
+      if (resultado2.tipo === 'candidatos') {
+        candDiv.innerHTML = buildCandidatosRfcGenericoHtml(resultado2.candidatos);
+        candDiv.style.display = 'block';
+      }
+    } catch {
+      // Best effort -- un fallo aqui no debe bloquear el alta.
+    }
   }
 }
 window.altaBuscarCelular = altaBuscarCelular;
