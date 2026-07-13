@@ -67,6 +67,7 @@ import {
   bloqueaGeneracionPorEnvioInvalidado,
   MENSAJE_ENVIO_INVALIDADO,
   aplicarNotaTiempoEntrega,
+  formatTiempoEntrega,
 } from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -839,7 +840,7 @@ async function cotizarEnvia() {
       const precio = rate.totalPrice ?? rate.rate ?? 0;
       const carrier = rate.carrier ?? '';
       const servicio = rate.service ?? rate.serviceType ?? '';
-      const dias = rate.days != null ? `${rate.days} día${rate.days !== 1 ? 's' : ''}` : '';
+      const dias = formatTiempoEntrega(rate);
       const esRecomendado = idx === 0;
 
       const card = document.createElement('div');

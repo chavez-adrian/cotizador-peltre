@@ -120,6 +120,51 @@ test('B4: POST /api/cotizacion/envio usa paisDestino en destination.country', as
   }
 });
 
+// #88: el tiempo estimado de entrega debe propagarse desde el shape REAL de
+// api.envia.com/ship/rate/ (documentado en vivo 2026-07-13, FedEx ground,
+// destino CP 78000 San Luis Potosi) hasta lo que consume el render en app.js:
+// los campos reales son deliveryEstimate y deliveryDate (rate.days no existe
+// en la respuesta real). El backend reenvia las tarifas sin filtrar campos --
+// este test fija ese contrato para que un futuro "saneo" de campos no los tire.
+test('B5 (#88): POST /api/cotizacion/envio propaga deliveryEstimate y deliveryDate del shape real de envia.com', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.ENVIA_API_KEY;
+  process.env.ENVIA_API_KEY = 'test-key';
+  // Shape real capturado de api.envia.com/ship/rate/ (campos relevantes)
+  const rateRealFedex = {
+    carrier: 'fedex', carrierDescription: 'FedEx',
+    service: 'ground', serviceDescription: 'FedEx Nacional Económico',
+    deliveryEstimate: '1-2 días',
+    deliveryDate: { date: '2026-07-15', dateDifference: 2, timeUnit: 'days', time: '21:00' },
+    totalPrice: 259, currency: 'MXN',
+  };
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.includes('api.envia.com/ship/rate')) {
+      const carrier = JSON.parse(opts.body).shipment.carrier;
+      return {
+        ok: true,
+        json: async () => ({ meta: 'rate', data: carrier === 'fedex' ? [rateRealFedex] : [] }),
+      };
+    }
+    throw new Error('Unmocked fetch: ' + u);
+  };
+  try {
+    const res = await supertest(app).post('/api/cotizacion/envio').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ cpDestino: '78000', paisDestino: 'MX', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 100 });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.rates.length, 1);
+    const rate = res.body.rates[0];
+    assert.strictEqual(rate.deliveryEstimate, '1-2 días');
+    assert.strictEqual(rate.deliveryDate.dateDifference, 2);
+    assert.strictEqual(rate.totalPrice, 259);
+    assert.strictEqual(rate.days, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.ENVIA_API_KEY = originalApiKey;
+  }
+});
+
 function mockOperamFetch(handlers) {
   const original = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {

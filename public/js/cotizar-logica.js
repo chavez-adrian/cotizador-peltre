@@ -49,6 +49,23 @@ export function formatServicio(servicio) {
   return tituloPalabras(servicio);
 }
 
+// Tiempo estimado de entrega de una tarifa de envia.com (issue #88). El shape
+// real de api.envia.com/ship/rate/ (verificado en vivo, FedEx/UPS, destino
+// CP 78000) NO trae `rate.days` -- ese campo nunca aparecio en la respuesta real.
+// Los campos reales son `deliveryEstimate` (string humano ya formateado, ej.
+// "1-2 días", "Día siguiente") y `deliveryDate.dateDifference` (numero de dias,
+// estructurado). Se prefiere `deliveryEstimate` por ser el texto que envia.com
+// ya redacta para el usuario final; `rate.days` se conserva como fallback por si
+// algun carrier/servicio futuro lo llegara a usar.
+export function formatTiempoEntrega(rate) {
+  if (!rate) return '';
+  if (rate.deliveryEstimate) return rate.deliveryEstimate;
+  const dias = rate.deliveryDate?.dateDifference;
+  if (dias != null) return `${dias} día${dias !== 1 ? 's' : ''}`;
+  if (rate.days != null) return `${rate.days} día${rate.days !== 1 ? 's' : ''}`;
+  return '';
+}
+
 // Escape local (no se importa de prospectos-logica.js para evitar un ciclo:
 // prospectos-logica.js -> alta-logica.js -> cotizar-logica.js).
 function escapeHtml(v) {

@@ -4,12 +4,12 @@ const assert = require('node:assert/strict');
 
 let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
-let notaTiempoEntrega, aplicarNotaTiempoEntrega;
+let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
-    notaTiempoEntrega, aplicarNotaTiempoEntrega,
+    notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -220,4 +220,51 @@ test('#90-6: si el vendedor borro la linea por completo, no se vuelve a agregar'
   const sinLinea = NOTAS_DEFAULT_4.split('\n').filter(l => !l.includes('Tiempo de entrega')).join('\n');
   const r = aplicarNotaTiempoEntrega(sinLinea, true);
   assert.strictEqual(r, sinLinea);
+});
+
+// === #88: tiempo estimado de entrega -- envia.com NO puebla rate.days (shape
+// real verificado en vivo contra api.envia.com/ship/rate/, FedEx/UPS, CP 78000
+// San Luis Potosi). El campo real es deliveryEstimate (string humano ya
+// formateado por envia.com) o deliveryDate.dateDifference (numero de dias).
+test('#88-1: shape real de FedEx (ground, CP 78000) -> usa deliveryEstimate', () => {
+  const rate = {
+    carrier: 'fedex', service: 'ground', totalPrice: 259,
+    deliveryEstimate: '1-2 días',
+    deliveryDate: { date: '2026-07-15', dateDifference: 2, timeUnit: 'days', time: '21:00' },
+  };
+  assert.strictEqual(formatTiempoEntrega(rate), '1-2 días');
+});
+
+test('#88-2: shape real de FedEx (express, dia siguiente) -> usa deliveryEstimate', () => {
+  const rate = {
+    carrier: 'fedex', service: 'express', totalPrice: 382,
+    deliveryEstimate: 'Día siguiente',
+    deliveryDate: { date: '2026-07-14', dateDifference: 1, timeUnit: 'day', time: '21:00' },
+  };
+  assert.strictEqual(formatTiempoEntrega(rate), 'Día siguiente');
+});
+
+test('#88-3: shape real de UPS (saver, CP 78000) -> usa deliveryEstimate', () => {
+  const rate = {
+    carrier: 'ups', service: 'saver', totalPrice: 703.89,
+    deliveryEstimate: '2-4 días',
+    deliveryDate: { date: '2026-07-17', dateDifference: 4, timeUnit: 'days', time: '23:30' },
+  };
+  assert.strictEqual(formatTiempoEntrega(rate), '2-4 días');
+});
+
+test('#88-4: sin deliveryEstimate pero con deliveryDate.dateDifference -> arma "N dias"', () => {
+  assert.strictEqual(formatTiempoEntrega({ deliveryDate: { dateDifference: 3 } }), '3 días');
+  assert.strictEqual(formatTiempoEntrega({ deliveryDate: { dateDifference: 1 } }), '1 día');
+});
+
+test('#88-5: sin deliveryEstimate ni deliveryDate, con rate.days (fallback legacy) -> lo usa', () => {
+  assert.strictEqual(formatTiempoEntrega({ days: 5 }), '5 días');
+  assert.strictEqual(formatTiempoEntrega({ days: 1 }), '1 día');
+});
+
+test('#88-6: sin ningun campo de tiempo -> cadena vacia (no rompe el render)', () => {
+  assert.strictEqual(formatTiempoEntrega({ carrier: 'dhl' }), '');
+  assert.strictEqual(formatTiempoEntrega(null), '');
+  assert.strictEqual(formatTiempoEntrega(undefined), '');
 });
