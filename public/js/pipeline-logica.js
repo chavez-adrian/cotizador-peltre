@@ -12,6 +12,7 @@
 
 import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
+import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico } from './alta-logica.js';
 
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,
 // Perdida) NO son columnas: viven en filtro/historial.
@@ -160,12 +161,111 @@ export function botonCompletarHtml(cot) {
 export const ACCIONES_NUEVO = [
   { label: 'Nueva cotizacion', accion: 'nuevaCotizacion' },
   { label: 'Nuevo prospecto', accion: 'nuevoProspecto' },
+  { label: 'Nuevo cliente', accion: 'nuevoCliente' },
 ];
 
 export function buildMenuNuevoHtml() {
   return ACCIONES_NUEVO
     .map(a => `<button class="btn btn-sm btn-secondary" onclick="${a.accion}()">${escapeHtml(a.label)}</button>`)
     .join('');
+}
+
+// === Vista Clientes (issue #94): mantenimiento de clientes desde el cotizador ===
+// Reusa el buscador mixto y los chips del paso Cliente (alta-logica.js); estas
+// funciones puras solo componen el HTML de la vista (filas, tarjeta, banner). Los
+// onclick disparan las funciones cv* de app.js (wiring de DOM, no testeable en Node).
+
+function inicialesCliente(nombre) {
+  const p = String(nombre || '').split(/\s+/).filter(Boolean);
+  return ((p[0] || ' ')[0] + ((p[1] || ' ')[0] || '')).toUpperCase().trim() || '?';
+}
+
+// El tag de una fila de resultado: rojo "RFC generico" para clientes de Operam que
+// siguen sin CSF (NOVEDAD #94, saltan a la vista para completarlos), azul "Operam"
+// con RFC real, gris "Prospecto".
+export function tagResultadoClienteHtml(r) {
+  const row = r || {};
+  if (row.tipo === 'operam') {
+    return esRfcGenerico(row.rfc)
+      ? '<span class="pc-tag generico">RFC generico</span>'
+      : '<span class="pc-tag operam">Operam</span>';
+  }
+  return '<span class="pc-tag prospecto">Prospecto</span>';
+}
+
+export function filaResultadoClienteHtml(r, i) {
+  const row = r || {};
+  return '<button type="button" class="pc-res-row" onclick="cvElegirResultado(' + i + ')">' +
+    '<span class="pc-res-ini ' + escapeHtml(row.tipo || '') + '">' + escapeHtml(inicialesCliente(row.nombre)) + '</span>' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(row.nombre || '') + '</span>' +
+    '<span class="pc-res-sub">' + escapeHtml(row.sub || '') + '</span></span>' +
+    tagResultadoClienteHtml(row) + '</button>';
+}
+
+// Fila punteada que abre el alta COMPLETA (acordeon 1-4, POST /api/crear-cliente),
+// no un prospecto minimo como en el paso Cliente (#94, pieza 3).
+export function filaCrearClienteHtml(query) {
+  const q = String(query || '').trim();
+  return '<button type="button" class="pc-res-row pc-crear" onclick="cvCaminoAlta(' + JSON.stringify(q).replace(/"/g, '&quot;') + ')">' +
+    '<span class="pc-res-ini">+</span>' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">Dar de alta cliente completo &laquo;' + escapeHtml(q) + '&raquo;</span>' +
+    '<span class="pc-res-sub">Con datos fiscales, comerciales y domicilio &mdash; sin cotizacion</span></span></button>';
+}
+
+// Banner de contexto del upgrade fiscal (#94): hace visible CONTRA QUIEN se
+// actualiza. Se muestra siempre que altaCsfState.modoUpgrade este activo (tambien
+// cuando el upgrade se abre desde el paso Cliente).
+export function bannerUpgradeHtml(ctx) {
+  const c = ctx || {};
+  const nombre = c.nombre || 'este cliente';
+  const id = c.id != null ? String(c.id) : '';
+  const rfc = c.rfc || '';
+  return '<div class="banner-upgrade"><span>&#8635;</span>' +
+    '<div><b>Actualizando: ' + escapeHtml(nombre) + (id ? ' (ID ' + escapeHtml(id) + ')' : '') + '</b>' +
+    '<small>RFC generico ' + escapeHtml(rfc) + ' se sustituira con el RFC real de la CSF. No se crea un cliente nuevo.</small></div></div>';
+}
+
+// Chips de completitud de la tarjeta en la vista Clientes. A diferencia del paso
+// Cliente, Contacto y Entrega son informativos (no hay paso Envio a donde ir); solo
+// el chip Fiscal pendiente es accionable (abre el upgrade) cuando hay cliente en Operam.
+export function chipsClienteViewHtml(chips, custId) {
+  const c = chips || {};
+  const contacto = c.contacto
+    ? '<span class="pc-chip ok">&#10003; Contacto</span>'
+    : '<span class="pc-chip pend">Contacto</span>';
+  const entrega = c.entrega === 'completo'
+    ? '<span class="pc-chip ok">&#10003; Entrega</span>'
+    : c.entrega === 'cp'
+      ? '<span class="pc-chip parcial">Entrega &middot; CP</span>'
+      : '<span class="pc-chip pend">Entrega &middot; pendiente</span>';
+  const fiscal = c.fiscal
+    ? '<span class="pc-chip ok">&#10003; Fiscal</span>'
+    : (custId != null
+        ? '<button type="button" class="pc-chip-btn" onclick="cvAbrirUpgrade()"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>'
+        : '<span class="pc-chip pend">Fiscal &middot; al subir a Operam</span>');
+  return contacto + entrega + fiscal;
+}
+
+export function cardClienteHtml(cliente) {
+  const c = cliente || {};
+  const chips = chipsCompletitud(c);
+  const custId = customerIdFiscal(c);
+  const esOperam = c.tipo === 'operam';
+  const nombre = c.name || c.ref || 'Sin nombre';
+  const subPartes = esOperam
+    ? [c.rfc, 'Cliente en Operam' + (c.id != null ? ' (ID ' + c.id + ')' : '')]
+    : [c.telefono, c.ciudad || c.municipio, 'Prospecto'];
+  const sub = subPartes.filter(Boolean).map(escapeHtml).join(' &middot; ');
+  const botonCsf = mostrarBotonCsf(c)
+    ? '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="cvAbrirUpgrade()">Completar datos fiscales (CSF)</button>'
+    : '';
+  return '<div class="pc-cli-card">' +
+    '<div class="pc-cli-nombre">' + escapeHtml(nombre) + '</div>' +
+    '<div class="pc-cli-sub">' + sub + '</div>' +
+    '<div class="pc-chips">' + chipsClienteViewHtml(chips, custId) + '</div>' +
+    botonCsf +
+    '<button type="button" class="btn btn-secondary btn-block" style="margin-top:8px" onclick="cvCotizar()">Cotizar a este cliente &rsaquo;</button>' +
+    '</div>';
 }
 
 // Las oportunidades que viven en el pipeline (las 7 columnas): excluye las

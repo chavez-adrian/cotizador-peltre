@@ -1656,6 +1656,12 @@ body {
 .pc-tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
 .pc-tag.operam { background: var(--primary-light); color: var(--primary-dark); }
 .pc-tag.prospecto { background: oklch(0.93 0.05 85); color: oklch(0.42 0.08 70); }
+/* Cliente en Operam sin CSF (RFC generico): salta a la vista Clientes (#94) */
+.pc-tag.generico { background: oklch(0.9 0.06 25); color: oklch(0.42 0.13 25); }
+/* Banner de contexto del upgrade fiscal (#94): contra quien se actualiza */
+.banner-upgrade { display: flex; gap: 10px; align-items: flex-start; background: var(--primary-light); border: 1px solid var(--primary); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; margin-bottom: 14px; }
+.banner-upgrade b { display: block; }
+.banner-upgrade small { color: var(--primary-dark); }
 .pc-crear { border-style: dashed; border-color: oklch(0.82 0.03 262); background: oklch(0.985 0.008 262); }
 .pc-crear .pc-res-ini { background: var(--primary); color: var(--white); font-size: 22px; font-weight: 400; }
 

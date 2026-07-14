@@ -65,6 +65,10 @@
          Con la auto-subida (#83) la formalizacion ya no lo abre; la subida crea el
          cliente generico server-side (ADR-0006). -->
     <div id="panel-alta-cliente" style="display:none;margin-bottom:16px">
+      <!-- Banner de contexto del upgrade fiscal (#94): visible siempre que
+           altaCsfState.modoUpgrade este activo (paso Cliente o vista Clientes).
+           Vive DENTRO del panel para viajar con el al re-parentar la vista. -->
+      <div id="alta-upgrade-banner" style="display:none"></div>
       <div style="display:flex;gap:16px;align-items:flex-start">
         <!-- Acordeon columna izquierda -->
         <div style="flex:1" id="alta-acordeon">
@@ -902,6 +906,21 @@
   </div>
 </div>
 
+<!-- CLIENTES VIEW (issue #94): mantenimiento de clientes desde el cotizador
+     (alta completa + upgrade CSF sin cotizacion). Reusa el buscador mixto y los
+     chips del paso Cliente; #panel-alta-cliente se RE-PARENTA a #clientes-panel-slot
+     al abrir el alta/upgrade y se devuelve a su lugar al salir (ver app.js). -->
+<div id="clientes-view" style="display:none">
+  <header class="historial-header">
+    <h1>Clientes</h1>
+    <button class="btn btn-sm btn-secondary" id="btn-volver-clientes">Volver</button>
+  </header>
+  <div style="padding:16px">
+    <div id="clientes-root"></div>
+    <div id="clientes-panel-slot"></div>
+  </div>
+</div>
+
 <!-- PIPELINE VIEW (issue #53): tablero unico de 7 etapas + conmutador lista/tablero -->
 <div id="pipeline-view" style="display:none">
   <header class="historial-header">
@@ -925,6 +944,7 @@
   <div class="nav-mas-menu" id="nav-mas-menu" style="display:none">
     <button class="btn btn-sm btn-secondary" id="mas-historial">Historial</button>
     <button class="btn btn-sm btn-secondary" id="mas-prospectos">Prospectos</button>
+    <button class="btn btn-sm btn-secondary" id="mas-clientes">Clientes</button>
   </div>
   <!-- Menu del boton + global (issue #54): Nueva cotizacion / Nuevo prospecto -->
   <div class="nav-nuevo-menu" id="nav-nuevo-menu" style="display:none"></div>
