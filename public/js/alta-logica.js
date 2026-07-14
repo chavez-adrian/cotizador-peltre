@@ -287,6 +287,32 @@ export function mensajeBusquedaCelular(clasificacion) {
 
 const RFC_GENERICOS_BROWSER = new Set(['XAXX010101000', 'XEXX010101000']);
 
+// Un RFC generico (XAXX/XEXX del SAT) marca a un cliente como "pendiente fiscal":
+// se dio de alta sin CSF y puede actualizarse con datos fiscales reales (#85/#94).
+export function esRfcGenerico(rfc) {
+  return RFC_GENERICOS_BROWSER.has(String(rfc || '').toUpperCase().trim());
+}
+
+// customer_id de Operam contra el que se puede hacer el upgrade fiscal (#85/#94):
+// cliente Operam -> su id; prospecto ya ligado a un generico -> clienteOperamId;
+// contacto nuevo / prospecto sin cotizar -> null (aun no hay cliente en Operam).
+// Fuente unica compartida por el paso Cliente (pcCustomerIdFiscal) y la vista
+// Clientes (cvAbrirUpgrade) -- extender, no copiar.
+export function customerIdFiscal(cliente) {
+  const c = cliente || {};
+  if (c.tipo === 'operam') return c.id != null ? c.id : null;
+  if (c.tipo === 'prospecto') return c.clienteOperamId != null ? c.clienteOperamId : null;
+  return null;
+}
+
+// El boton "Completar datos fiscales (CSF)" (y el chip Fiscal accionable) proceden
+// solo cuando el RFC sigue pendiente (generico/vacio) Y hay un cliente en Operam
+// contra el cual hacer el PUT del upgrade. Misma regla que el chip Fiscal del paso
+// Cliente (chipsCompletitud.fiscal + customerIdFiscal).
+export function mostrarBotonCsf(cliente) {
+  return !chipsCompletitud(cliente).fiscal && customerIdFiscal(cliente) != null;
+}
+
 // Un contacto nuevo (persona detras de un celular) y un prospecto se normalizan al
 // MISMO objeto cliente que consume seleccionarClienteOperam (name/ref/telefono/...),
 // para que el prellenado de los campos cl-* y el gate #81 (necesitaAltaGenerica:
