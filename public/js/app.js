@@ -47,6 +47,7 @@ import {
   badgeFolioOperamHtml,
   badgeFolioOperamProspectoHtml,
   cadenaOperamHtml,
+  badgePagoSinRegistrarHtml,
   botonCompletarHtml,
   interpretarSubidaOperam,
   buildOperamStatusHtml,
@@ -2710,6 +2711,9 @@ function cotizacionAOportunidad(c) {
     // Cadena de folios de Operam (issue #67, AC4): el espejo persistido por el sync
     // (data.espejoOperam) que la tarjeta pinta para trazabilidad.
     espejoOperam: c.espejoOperam ?? null,
+    // Pago sin registrar (issue #77): la entregada-impaga muestra el badge hasta que
+    // el sync detecte el pago (allocated ~ total) y apague el flag.
+    pagoSinRegistrar: c.pagoSinRegistrar === true,
   };
 }
 
@@ -2786,7 +2790,7 @@ function renderPipeline() {
     const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
     const cadena = cadenaOperamHtml(o.espejoOperam);
     return `<div class="cot-card"><div class="cot-card-header"><div>
-      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}</div>
+      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgePagoSinRegistrarHtml(o)}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
       ${cadena}
     </div>${total}</div></div>`;

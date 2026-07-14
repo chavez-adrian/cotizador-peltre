@@ -266,6 +266,18 @@ export function cadenaOperamHtml(espejo) {
   return `<div class="cot-cadena-operam">${escapeHtml(texto)}</div>`;
 }
 
+// Badge "Pago sin registrar" (issue #77): la tarjeta ya ENTREGADA (etapa
+// producto_entregado) cuyo pago aun no aparece registrado en Operam. En el pipeline
+// manda el cumplimiento (entrega), no la cobranza: la tarjeta llega a entregado con
+// la remision y este sello marca la cobranza pendiente hasta que el pago se registre
+// (el sync apaga el flag pagoSinRegistrar al liquidarse). Se ata a la etapa entregada
+// para no contradecir una tarjeta topada por el gate de calca (#61): sin entrega no
+// hay sello de entrega. Vacio en cualquier otro caso.
+export function badgePagoSinRegistrarHtml(o) {
+  if (!o || o.etapa !== 'producto_entregado' || !o.pagoSinRegistrar) return '';
+  return '<span class="cot-badge badge-impago">Pago sin registrar</span>';
+}
+
 // Asignar vendedor desde la tarjeta (issue #57, CONTEXT.md "Etapas del pipeline"
 // + "Visibilidad"): la PRIMERA accion de tarjeta del tablero, que hasta ahora era
 // solo-lectura (#53). Solo aplica a una oportunidad en No Asignado (la unica que
@@ -393,7 +405,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
         </div>
         ${total}
