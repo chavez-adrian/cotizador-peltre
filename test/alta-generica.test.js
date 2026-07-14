@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // El comportamiento de punta a punta se prueba por HTTP en operam-generico.test.js;
 // aqui solo las decisiones puras del modulo lib/alta-generica.js.
 
-const { rfcGenericoPara, necesitaAltaGenerica, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA } =
+const { rfcGenericoPara, necesitaAltaGenerica, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } =
   await import('../lib/alta-generica.js');
 
 test('rfcGenericoPara: MX o ausente -> XAXX; extranjero -> XEXX', () => {
@@ -126,4 +126,72 @@ test('resolverSalesTypeId: ni el tier ni "Precio de lista" existen en el catalog
 test('resolverSalesTypeId: catalogo vacio -> undefined', () => {
   assert.equal(resolverSalesTypeId('Menudeo', []), undefined);
   assert.equal(resolverSalesTypeId('M100', undefined), undefined);
+});
+
+// issue #96: el domicilio de entrega del paso Envio -> body del PUT de branch. El
+// paso Envio captura MENOS campos que el alta completa (no hay br_name/br_ref/
+// numero exterior separado: la calle carga calle+numero); se mapea SOLO lo que
+// /api/crear-cliente ya lleva al branch. addr_reference viene de `referencias`
+// (indicaciones de entrega), NO de `referencia` (que es el cust_ref del quote).
+const CLIENTE_ENTREGA = {
+  razonSocial: 'Hotel Azul Centro', telefono: '+52 5588776655',
+  nombreEntrega: 'Recepcion', calle: 'Av Reforma 100', numInt: 'Piso 3',
+  colonia: 'Juarez', cpEntrega: '06600', municipio: 'Cuauhtemoc', estado: 'CDMX',
+  celEntrega: '+52 5511223344', emailEntrega: 'entrega@hotelazul.mx',
+  referencias: 'Entre calle A y B, porton negro', referencia: 'REF-QUOTE', pais: 'MX',
+};
+
+test('buildBranchGenerico: mapea el domicilio de entrega a los campos del branch', () => {
+  const d = buildBranchGenerico(CLIENTE_ENTREGA, { salesman: 2 });
+  assert.equal(d.addr_street, 'Av Reforma 100');
+  assert.equal(d.addr_interior, 'Piso 3');
+  assert.equal(d.addr_colony, 'Juarez');
+  assert.equal(d.addr_zip, '06600');
+  assert.equal(d.addr_city, 'Cuauhtemoc');
+  assert.equal(d.addr_state, 'CDMX');
+  assert.equal(d.addr_reference, 'Entre calle A y B, porton negro');
+  assert.equal(d.phone, '+52 5511223344');
+  assert.equal(d.email, 'entrega@hotelazul.mx');
+  assert.equal(d.pais, 'MX');
+  assert.equal(d.salesman, 2);
+});
+
+test('buildBranchGenerico: sin celular de entrega cae al telefono del contacto', () => {
+  const d = buildBranchGenerico({ ...CLIENTE_ENTREGA, celEntrega: '' }, {});
+  assert.equal(d.phone, '+52 5588776655');
+  assert.ok(!('salesman' in d), 'sin salesman no lo manda');
+});
+
+test('buildBranchGenerico: sin calle o sin CP no hay domicilio util -> null (el caller omite el PUT)', () => {
+  assert.equal(buildBranchGenerico({ ...CLIENTE_ENTREGA, calle: '' }, {}), null);
+  assert.equal(buildBranchGenerico({ ...CLIENTE_ENTREGA, cpEntrega: '  ' }, {}), null);
+  assert.equal(buildBranchGenerico({}, {}), null);
+  assert.equal(buildBranchGenerico(null, {}), null);
+});
+
+test('buildBranchGenerico: NO emite br_name/br_ref (no los captura el paso Envio; Operam conserva el auto-creado)', () => {
+  const d = buildBranchGenerico(CLIENTE_ENTREGA, {});
+  assert.ok(!('br_name' in d));
+  assert.ok(!('br_ref' in d));
+});
+
+// Verificacion post-PUT (#96, quirk #74): Operam responde result:true aunque
+// ignore campos. Se relee el branch y se reportan SOLO los que intentamos escribir
+// y no coinciden (los vacios no se verifican).
+test('diffBranchDomicilio: branch que persistio todo -> sin discrepancias', () => {
+  const enviado = buildBranchGenerico(CLIENTE_ENTREGA, {});
+  const fresco = { addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
+    addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '06600',
+    addr_reference: 'Entre calle A y B, porton negro', phone: '+52 5511223344', email: 'entrega@hotelazul.mx' };
+  assert.deepEqual(diffBranchDomicilio(fresco, enviado), []);
+});
+
+test('diffBranchDomicilio: campo ignorado por Operam se reporta como no actualizado', () => {
+  const enviado = buildBranchGenerico(CLIENTE_ENTREGA, {});
+  const fresco = { addr_street: 'Av Reforma 100', addr_zip: '' };
+  const diff = diffBranchDomicilio(fresco, enviado);
+  const zip = diff.find(x => x.campo === 'addr_zip');
+  assert.ok(zip, 'reporta el CP no persistido');
+  assert.equal(zip.nuevo, '06600');
+  assert.ok(!diff.some(x => x.campo === 'addr_street'), 'el que si persistio no se reporta');
 });
