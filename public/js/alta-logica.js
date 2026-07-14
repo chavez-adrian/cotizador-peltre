@@ -176,6 +176,22 @@ export function buildActualizarFiscalPayload(csfDatos) {
   return body;
 }
 
+// Validacion de la pestana "Captura manual" (issue #95 regla 4). Decision de
+// Adrian: hay clientes que prefieren no compartir su CSF, asi que la captura
+// manual debe permitir dar de alta con el domicilio fiscal minimo: Razon Social,
+// RFC, Codigo Postal y Regimen Fiscal son los UNICOS obligatorios; calle, numero,
+// colonia y estado quedan opcionales (igual que en la tab CSF, que ya los trae del
+// PDF). El nombre corto (antes obligatorio en esta pestana) tambien pasa a
+// opcional -- no esta en la lista de minimos de la regla 4.
+export function validarAltaManualMinimos(datos) {
+  const d = datos || {};
+  if (!String(d.rfc || '').trim()) return 'El RFC es obligatorio';
+  if (!String(d.razonSocial || '').trim()) return 'La razon social es obligatoria';
+  if (!String(d.cp || '').trim()) return 'El codigo postal es obligatorio';
+  if (!String(d.regimenFiscal || '').trim()) return 'El regimen fiscal es obligatorio';
+  return null;
+}
+
 export function buildDiffFiscalHtml(diff) {
   const campos = Object.keys(diff);
   if (campos.length === 0) return '';

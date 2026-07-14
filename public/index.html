@@ -201,16 +201,16 @@
                     </select>
                   </div>
                   <div class="form-group">
-                    <label>RFC</label>
+                    <label>RFC <span style="color:var(--danger)">*</span></label>
                     <input type="text" id="manual-rfc" style="text-transform:uppercase" placeholder="Ej: SMS200716NZ4" onblur="altaManualValidarRfc()">
                     <div id="manual-rfc-error" style="display:none;color:var(--danger);font-size:12px;margin-top:4px"></div>
                   </div>
                   <div class="form-group">
-                    <label>Razon social</label>
+                    <label>Razon social <span style="color:var(--danger)">*</span></label>
                     <input type="text" id="manual-razon-social" placeholder="Nombre fiscal completo">
                   </div>
                   <div class="form-group">
-                    <label>Nombre corto (en Operam)</label>
+                    <label>Nombre corto (en Operam) <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
                     <input type="text" id="manual-nombre-corto" placeholder="Alias, max 3 palabras">
                   </div>
                   <div class="form-group">
@@ -218,7 +218,7 @@
                     <input type="text" id="manual-idcif" inputmode="numeric" placeholder="Ej: 20090146505">
                   </div>
                   <div class="form-group">
-                    <label>Regimen fiscal (codigo)</label>
+                    <label>Regimen fiscal (codigo) <span style="color:var(--danger)">*</span></label>
                     <input type="text" id="manual-regimen-fiscal" placeholder="Ej: 601">
                   </div>
                   <div class="form-group">
@@ -231,15 +231,31 @@
                     </select>
                   </div>
                   <div class="form-group">
-                    <label>Codigo postal</label>
+                    <label>Calle <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
+                    <input type="text" id="manual-calle" placeholder="Ej: Nayarit">
+                  </div>
+                  <div class="form-group">
+                    <label>Numero exterior <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
+                    <input type="text" id="manual-num-ext" placeholder="Ej: 56">
+                  </div>
+                  <div class="form-group">
+                    <label>Numero interior <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
+                    <input type="text" id="manual-num-int" placeholder="Ej: B">
+                  </div>
+                  <div class="form-group">
+                    <label>Colonia <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
+                    <input type="text" id="manual-colonia" placeholder="Ej: Roma Sur">
+                  </div>
+                  <div class="form-group">
+                    <label>Codigo postal <span style="color:var(--danger)">*</span></label>
                     <input type="text" id="manual-cp" inputmode="numeric" placeholder="Ej: 06760">
                   </div>
                   <div class="form-group">
-                    <label>Municipio</label>
+                    <label>Municipio <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
                     <input type="text" id="manual-municipio" placeholder="Ej: Cuauhtemoc">
                   </div>
                   <div class="form-group">
-                    <label>Estado</label>
+                    <label>Estado <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
                     <input type="text" id="manual-estado" placeholder="Ej: Ciudad de Mexico">
                   </div>
                 </div>

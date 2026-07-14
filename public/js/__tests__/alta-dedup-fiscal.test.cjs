@@ -114,12 +114,12 @@ test('G7: calcularDiffFiscal trata valores null/undefined del cliente Operam com
   assert.ok(!('CustName' in diff), 'sin diferencia real no debe aparecer en el diff');
 });
 
-test('G7b: calcularDiffFiscal omite campos de domicilio que el formulario de captura no recolecta (alta manual no tiene calle/numExt/numInt/colonia)', () => {
-  // altaManualLeerFormulario no incluye calle/numExt/numInt/colonia (esos campos solo
-  // existen en el formulario de CSF). altaState.datos para un alta manual por lo tanto
-  // NO TIENE esas llaves -- ausentes, no vacias. calcularDiffFiscal no debe reportarlas
-  // como "cambio a (vacio)" porque el vendedor nunca tuvo oportunidad de capturarlas;
-  // eso seria un falso positivo que generaria friccion y confusion (rompe AC1: "diff claro").
+test('G7b: calcularDiffFiscal omite campos de domicilio ausentes en la CSF/formulario capturado (ausente != vacio)', () => {
+  // Desde la regla 4 de #95, altaManualLeerFormulario SI incluye calle/numExt/numInt/
+  // colonia (opcionales en la pestana manual). Pero siguen pudiendo faltar en formularios
+  // viejos/parciales -- calcularDiffFiscal no debe reportarlos como "cambio a (vacio)"
+  // cuando la llave esta simplemente ausente del objeto capturado; eso seria un falso
+  // positivo que generaria friccion y confusion (rompe AC1: "diff claro").
   const csfDatosDeAltaManual = {
     rfc: 'PNA010203ABC',
     razonSocial: 'Peltre Nacional SA de CV',

@@ -20,6 +20,7 @@ import {
   accionProspecto409,
   paisDesdeCodigoTelefono,
   customerIdFiscal,
+  validarAltaManualMinimos,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -4228,6 +4229,10 @@ function altaManualLeerFormulario() {
     idcif: getVal('manual-idcif'),
     regimenFiscal: getVal('manual-regimen-fiscal'),
     usoCfdi: getVal('manual-uso-cfdi'),
+    calle: getVal('manual-calle'),
+    numExt: getVal('manual-num-ext'),
+    numInt: getVal('manual-num-int'),
+    colonia: getVal('manual-colonia'),
     cp: getVal('manual-cp'),
     municipio: getVal('manual-municipio'),
     estado: getVal('manual-estado'),
@@ -4243,19 +4248,12 @@ async function altaManualConfirmar() {
     return;
   }
   const datos = altaManualLeerFormulario();
-  if (!datos.rfc) {
-    const msg = 'El RFC es obligatorio';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
-    return;
-  }
-  if (!datos.razonSocial) {
-    const msg = 'La razon social es obligatoria';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
-    return;
-  }
-  if (!datos.nombreCorto) {
-    const msg = 'El nombre corto es obligatorio';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
+  // Minimos de la regla 4 (#95): Razon Social, RFC, Codigo Postal, Regimen Fiscal.
+  // El nombre corto ya no es obligatorio en esta pestana; calle/numero/colonia/
+  // estado siguen sin capturarse aqui pero son opcionales por diseno.
+  const minErr = validarAltaManualMinimos(datos);
+  if (minErr) {
+    if (errDiv) { errDiv.textContent = minErr; errDiv.style.display = ''; }
     return;
   }
   if (errDiv) errDiv.style.display = 'none';
@@ -4276,6 +4274,10 @@ async function altaManualConfirmar() {
     idcif: datos.idcif || '',
     regimenFiscal: datos.regimenFiscal || '',
     usoCfdi: datos.usoCfdi || 'S01',
+    calle: datos.calle || '',
+    numExt: datos.numExt || '',
+    numInt: datos.numInt || '',
+    colonia: datos.colonia || '',
     cp: datos.cp || '',
     municipio: datos.municipio || '',
     estado: datos.estado || '',
