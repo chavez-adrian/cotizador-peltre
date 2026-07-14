@@ -109,6 +109,7 @@ export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
   { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
+  { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
   { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
@@ -125,12 +126,32 @@ export const DIFF_FISCAL_LABELS = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, labe
   return acc;
 }, {});
 
+// Resuelve el valor "nuevo" de un campo del diff/payload contra la CSF/manual.
+// Para la mayoria de los campos, ausente en csfDatos == el formulario de captura
+// no lo recolecta (ej. alta manual no tiene domicilio fiscal completo) -- NO es un
+// cambio real, se omite (undefined). Cuando SI esta presente pero vacio, y el campo
+// tiene `default` (issue #95 regla 2, Uso de CFDI), cae al default en vez de vaciar
+// el dato en Operam. `forzarDefault` es la excepcion de dominio de esa misma regla:
+// Uso de CFDI se manda SIEMPRE en el PUT, incluso si el formulario ni siquiera lo
+// capturo -- solo lo usa buildActualizarFiscalPayload; calcularDiffFiscal conserva
+// la semantica de "ausente != vacio" para no reportar diffs falsos contra clientes
+// de Operam que no traen ese campo crudo.
+function resolverValorNuevo({ csf, default: def }, csfDatos, { forzarDefault = false } = {}) {
+  const presente = csf in csfDatos;
+  if (!presente) return (forzarDefault && def !== undefined) ? def : undefined;
+  const crudo = csfDatos[csf];
+  if (crudo == null || crudo === '') return def !== undefined ? def : '';
+  return crudo;
+}
+
 export function calcularDiffFiscal(clienteOperam, csfDatos) {
   const diff = {};
-  for (const { operam, csf, label } of DIFF_FISCAL_CAMPOS) {
-    if (!(csf in csfDatos)) continue; // el formulario de captura no recolecta este campo (ej. alta manual no tiene domicilio fiscal completo) -- ausente != vacio, no es un cambio real
+  for (const campo of DIFF_FISCAL_CAMPOS) {
+    const nuevoValor = resolverValorNuevo(campo, csfDatos);
+    if (nuevoValor === undefined) continue;
+    const { operam, label } = campo;
     const anterior = String(clienteOperam[operam] == null ? '' : clienteOperam[operam]).trim();
-    const nuevo = String(csfDatos[csf] == null ? '' : csfDatos[csf]).trim();
+    const nuevo = String(nuevoValor).trim();
     if (anterior !== nuevo) {
       diff[operam] = { anterior, nuevo, label };
     }
@@ -146,9 +167,10 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
 // de capturar.
 export function buildActualizarFiscalPayload(csfDatos) {
   const body = {};
-  for (const { operam, csf } of DIFF_FISCAL_CAMPOS) {
-    if (!(csf in csfDatos)) continue;
-    body[operam] = csfDatos[csf] == null ? '' : csfDatos[csf];
+  for (const campo of DIFF_FISCAL_CAMPOS) {
+    const nuevoValor = resolverValorNuevo(campo, csfDatos, { forzarDefault: true });
+    if (nuevoValor === undefined) continue;
+    body[campo.operam] = nuevoValor;
   }
   return body;
 }

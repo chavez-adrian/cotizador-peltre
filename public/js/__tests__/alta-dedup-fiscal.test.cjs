@@ -214,6 +214,34 @@ test('R3: buildActualizarFiscalPayload omite cust_ref si el formulario no recole
   assert.ok(!('cust_ref' in body));
 });
 
+// === Regla 2 (issue #95): Uso de CFDI se manda SIEMPRE, default S01 ===
+// A diferencia de los demas campos (ausente != vacio, no se manda si el formulario
+// no lo recolecto), el Uso de CFDI es una excepcion de dominio: el vendedor puede
+// no haberlo especificado y aun asi debe viajar con el default "Sin efectos
+// fiscales" en vez de quedar fuera del PUT (gap #13 de MAPEO_CAMPOS_CLIENTE.md).
+
+test('R4: buildActualizarFiscalPayload manda timbrado_uso_cfdi con el valor capturado', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, usoCfdi: 'G01' });
+  assert.equal(body.timbrado_uso_cfdi, 'G01');
+});
+
+test('R5: buildActualizarFiscalPayload default S01 cuando usoCfdi viene vacio', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, usoCfdi: '' });
+  assert.equal(body.timbrado_uso_cfdi, 'S01');
+});
+
+test('R6: buildActualizarFiscalPayload default S01 cuando usoCfdi ni siquiera se capturo (a diferencia de los demas campos, SI se manda)', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.equal(body.timbrado_uso_cfdi, 'S01');
+});
+
+test('R7: calcularDiffFiscal compara timbrado_uso_cfdi tomando en cuenta el default S01', () => {
+  const clienteConOtroUso = { ...clienteOperamBase, timbrado_uso_cfdi: 'G03' };
+  const diff = calcularDiffFiscal(clienteConOtroUso, { ...csfDatosIguales, usoCfdi: 'S01' });
+  assert.equal(diff.timbrado_uso_cfdi.anterior, 'G03');
+  assert.equal(diff.timbrado_uso_cfdi.nuevo, 'S01');
+});
+
 // === buildDiffFiscalHtml ===
 
 test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', () => {
