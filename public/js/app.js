@@ -135,6 +135,7 @@ function leerClienteFormulario(leyenda) {
     estado: document.getElementById('cl-estado').value,
     celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
     emailEntrega: document.getElementById('cl-email-entrega').value,
+    emailFactura: document.getElementById('cl-email-factura').value,
     referencias: document.getElementById('cl-referencias').value,
     referencia: document.getElementById('cl-referencia').value,
     pais: document.getElementById('cl-pais')?.value || 'MX',
@@ -2085,10 +2086,18 @@ async function pcEjecutarUpgradeFiscal(datos) {
   const errDiv = document.getElementById('csf-campos-error');
   const mostrarError = msg => { if (errDiv) { errDiv.style.display = ''; errDiv.textContent = msg; } };
   if (btn) { btn.disabled = true; btn.textContent = 'Actualizando en Operam...'; }
+  // Email de facturacion (issue #95 regla 3): se captura en el paso Cliente/Envio
+  // (cl-email-factura), visible en la misma pantalla que este panel de upgrade --
+  // se agrega aqui, no en altaCsfLeerFormulario/altaManualLeerFormulario, porque
+  // ese input vive fuera del acordeon de la CSF.
+  const emailFacturaEl = document.getElementById('cl-email-factura');
+  const csfDatosConFactura = emailFacturaEl && emailFacturaEl.value.trim()
+    ? { ...datos, invoiceEmail: emailFacturaEl.value.trim() }
+    : datos;
   try {
     const res = await api(`/api/actualizar-cliente-fiscal/${customerId}`, {
       method: 'PUT',
-      body: { csfDatos: datos, pdf_base64: altaCsfState.pdfBase64 || null },
+      body: { csfDatos: csfDatosConFactura, pdf_base64: altaCsfState.pdfBase64 || null },
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 409 && data.fusion) {

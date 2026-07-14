@@ -242,6 +242,28 @@ test('R7: calcularDiffFiscal compara timbrado_uso_cfdi tomando en cuenta el defa
   assert.equal(diff.timbrado_uso_cfdi.nuevo, 'S01');
 });
 
+// === Regla 3 (issue #95): email de facturacion viaja en el upgrade fiscal ===
+// Limitacion de plataforma (ADR-0002): los contactos no son configurables via API
+// v3 (POST /contacts 501, PUT con array contacts se ignora). Lo automatizable es
+// persistir el correo en invoice_email del cliente (gap #14 de MAPEO_CAMPOS_CLIENTE.md).
+
+test('R8: buildActualizarFiscalPayload incluye invoice_email cuando se capturo', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, invoiceEmail: 'facturacion@peltre.mx' });
+  assert.equal(body.invoice_email, 'facturacion@peltre.mx');
+});
+
+test('R9: buildActualizarFiscalPayload omite invoice_email si no se capturo (ausente != vacio)', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('invoice_email' in body));
+});
+
+test('R10: calcularDiffFiscal detecta cambio de invoice_email', () => {
+  const cliente = { ...clienteOperamBase, invoice_email: 'viejo@peltre.mx' };
+  const diff = calcularDiffFiscal(cliente, { ...csfDatosIguales, invoiceEmail: 'nuevo@peltre.mx' });
+  assert.equal(diff.invoice_email.anterior, 'viejo@peltre.mx');
+  assert.equal(diff.invoice_email.nuevo, 'nuevo@peltre.mx');
+});
+
 // === buildDiffFiscalHtml ===
 
 test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', () => {
