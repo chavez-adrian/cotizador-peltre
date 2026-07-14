@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -734,4 +734,29 @@ test('Q51: el paso de archivos (paso 6) ofrece un input de archivo para subir a 
 test('Q52: la tarjeta del tablero pinta el control de decorado en una cotizacion en Seguimiento', () => {
   const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'seguimiento', decorado: true, calcaChecklist: [{ clave: 'arte_final', completo: true }] })]);
   assert.match(tablero, /1\s*\/\s*6/);
+});
+
+// --- Badge "Pago sin registrar" (issue #77): entregado pero pago no registrado ---
+
+test('#77: badgePagoSinRegistrarHtml pinta el badge en una entregada con pago sin registrar', () => {
+  const html = badgePagoSinRegistrarHtml({ etapa: 'producto_entregado', pagoSinRegistrar: true });
+  assert.match(html, /Pago sin registrar/);
+  assert.match(html, /badge-impago/);
+});
+
+test('#77: badgePagoSinRegistrarHtml vacio cuando ya se registro el pago (flag false)', () => {
+  assert.equal(badgePagoSinRegistrarHtml({ etapa: 'producto_entregado', pagoSinRegistrar: false }), '');
+  assert.equal(badgePagoSinRegistrarHtml({ etapa: 'producto_entregado' }), '');
+});
+
+test('#77: badgePagoSinRegistrarHtml vacio si la tarjeta no esta entregada (respeta el gate/etapa)', () => {
+  // Un decorado topado por el gate en anticipo_pagado no muestra el badge de entrega
+  // aunque el flag venga marcado: el badge es solo de la entregada.
+  assert.equal(badgePagoSinRegistrarHtml({ etapa: 'anticipo_pagado', pagoSinRegistrar: true }), '');
+  assert.equal(badgePagoSinRegistrarHtml({ etapa: 'seguimiento', pagoSinRegistrar: true }), '');
+});
+
+test('#77: la tarjeta del tablero pinta el badge de una cotizacion entregada-impaga', () => {
+  const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'producto_entregado', pagoSinRegistrar: true })]);
+  assert.match(tablero, /Pago sin registrar/);
 });
