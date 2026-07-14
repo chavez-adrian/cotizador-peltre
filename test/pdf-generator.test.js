@@ -111,3 +111,27 @@ test('B12: (#70) los totales no llevan signo de pesos (formato HTML)', async () 
   assert.ok(!text.includes(toHex('$ 116')), 'TOTAL no debe llevar "$ " (formato HTML sin simbolo)');
   assert.ok(text.includes(toHex('116.00')), 'debe mostrar el monto del TOTAL');
 });
+
+test('B13: (#70) Telefono y Correo aparecen en la misma linea de "Datos de entrega" (formato HTML)', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { celEntrega: '5512345678', emailEntrega: 'cliente@test.com' },
+  });
+  const text = result.toString('latin1');
+  // PDFKit kern-splits antes de "Correo"; "5512345678 ," (numero + coma que
+  // separa Tel de Correo) es un fragmento contiguo fiable que solo aparece si
+  // ambos van en la misma llamada .text() (misma linea, como el HTML)
+  assert.ok(text.includes(toHex('5512345678 ,')), 'Tel y Correo deben ir en la misma linea, como el HTML');
+  assert.ok(text.includes(toHex('Correo:')), 'debe incluir la etiqueta Correo:');
+});
+
+test('B14: (#70) Referencia Cliente prefiere c.referencia sobre c.nombreCorto (igual que el HTML)', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { referencia: 'REF-1', nombreCorto: 'Corto' },
+  });
+  const text = result.toString('latin1');
+  // PDFKit kern-splits "Referencia" tras "Ref"; "Ref" es un prefijo contiguo fiable
+  assert.ok(text.includes(toHex('Ref')) && text.includes(toHex('REF-1')), 'debe preferir c.referencia cuando ambos estan presentes');
+  assert.ok(!text.includes(toHex('Corto')), 'no debe mostrar nombreCorto cuando referencia esta presente');
+});
