@@ -73,6 +73,25 @@ test('buildClienteGenerico: nombre real, RFC por pais, vendedor y lista de preci
   assert.equal(c.pais, 'MX');
 });
 
+// Regla 3 (issue #95): el email de facturacion capturado en cl-email-factura
+// (leerClienteFormulario -> data.cliente.emailFactura) debe persistirse en
+// invoice_email -- antes buildClienteGenerico no lo leia en absoluto (regresion
+// detectada en #39, gap #14 de MAPEO_CAMPOS_CLIENTE.md).
+test('buildClienteGenerico: email de facturacion capturado -> invoice_email (issue #95 regla 3)', () => {
+  const entry = { data: { cliente: {
+    razonSocial: 'Hotel Azul Centro', telefono: '+52 5588776655',
+    emailFactura: 'facturacion@hotelazul.mx',
+  } } };
+  const c = buildClienteGenerico(entry, {});
+  assert.equal(c.invoice_email, 'facturacion@hotelazul.mx');
+});
+
+test('buildClienteGenerico: sin email de facturacion capturado no manda invoice_email', () => {
+  const entry = { data: { cliente: { razonSocial: 'Hotel Azul Centro', telefono: '+52 5588776655' } } };
+  const c = buildClienteGenerico(entry, {});
+  assert.ok(!('invoice_email' in c));
+});
+
 test('buildClienteGenerico: extranjero -> XEXX; sin vendedor/lista mapeables no manda los campos', () => {
   const entry = { data: { cliente: { razonSocial: 'Blue Hotel LLC', pais: 'US' } } };
   const c = buildClienteGenerico(entry, {});

@@ -1420,8 +1420,26 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     });
   }
 
+  // Tax ID extranjero (issue #95 regla 5): no hay campo dedicado en la API v3, se
+  // antepone a las notas EXISTENTES del cliente (sin borrarlas). Requiere conocer
+  // esas notas ANTES del PUT -- una relectura extra, solo cuando se capturo el
+  // Tax ID (el camino comun sin ese campo no paga este GET adicional).
+  let notasActuales;
+  if (csfDatos.taxIdExtranjero) {
+    try {
+      const clienteActual = await obtenerClientePorId(id);
+      notasActuales = (clienteActual && clienteActual.notes) || '';
+    } catch (err) {
+      // Relectura fallida: null le dice a buildActualizarFiscalPayload que OMITA
+      // notes (reconstruirlas desde '' pisaria notas reales del cliente). El Tax ID
+      // queda sin aplicar y la verificacion post-PUT lo reporta.
+      notasActuales = null;
+      console.error('[csf-upgrade] relectura de notas fallo, Tax ID omitido:', err.message);
+    }
+  }
+
   try {
-    await actualizarClienteDirecto(id, buildActualizarFiscalPayload(csfDatos));
+    await actualizarClienteDirecto(id, buildActualizarFiscalPayload(csfDatos, notasActuales));
   } catch (err) {
     logCliente(rfc, csfDatos.razonSocial, 'error', id, FUENTE_CSF_UPGRADE, null, err.message);
     return res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
@@ -1439,6 +1457,16 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     if (!fresco) throw new Error('Operam no devolvio el cliente en la relectura');
     const diff = calcularDiffFiscal(fresco, csfDatos);
     camposNoActualizados = Object.entries(diff).map(([campo, d]) => ({ campo, label: d.label, anterior: d.anterior, nuevo: d.nuevo }));
+    // notes no esta en DIFF_FISCAL_CAMPOS (su valor "nuevo" depende de las notas
+    // previas, no es un campo de comparacion directa) -- se verifica aparte: la
+    // linea del Tax ID debe estar presente en las notas releidas.
+    if (csfDatos.taxIdExtranjero) {
+      const prefijo = `Tax ID: ${csfDatos.taxIdExtranjero}`;
+      const notasFrescas = fresco.notes || '';
+      if (!notasFrescas.includes(prefijo)) {
+        camposNoActualizados.push({ campo: 'notes', label: 'Tax ID extranjero', anterior: notasFrescas, nuevo: prefijo });
+      }
+    }
   } catch (err) {
     verificacionFallida = true;
     console.error('[csf-upgrade] verificacion post-PUT fallo:', err.message);

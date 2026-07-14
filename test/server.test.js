@@ -392,6 +392,126 @@ test('UF6: Operam no disponible en el gate -> 503 (distinto del 409 y del 400)',
   }
 });
 
+// === Regla 5 (issue #95): Tax ID extranjero -> notas, sin borrar notas existentes ===
+
+test('UF8: taxIdExtranjero capturado -> el PUT manda notes con el Tax ID antepuesto a las notas existentes', async () => {
+  let putBody = null;
+  let getsACustomers = 0;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      getsACustomers++;
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ notes: 'Notas previas del cliente' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, taxIdExtranjero: 'US123456789' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(putBody.notes, 'Tax ID: US123456789\nNotas previas del cliente');
+    assert.strictEqual(getsACustomers, 2, 'una relectura previa al PUT (notas actuales) y otra de verificacion post-PUT');
+  } finally {
+    restore();
+  }
+});
+
+test('UF9: sin taxIdExtranjero -> el PUT no manda notes y no hace la relectura previa (solo la de verificacion post-PUT)', async () => {
+  let putBody = null;
+  let getsACustomers = 0;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      getsACustomers++;
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.ok(!('notes' in putBody), 'sin taxIdExtranjero no debe tocar notes');
+    assert.strictEqual(getsACustomers, 1, 'solo la relectura de verificacion post-PUT, sin GET extra');
+  } finally {
+    restore();
+  }
+});
+
+test('UF10: PUT ignora notes (quirk) -> la relectura lo reporta en camposNoActualizados', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // Tanto la relectura previa como la de verificacion devuelven notas SIN el Tax ID.
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ notes: 'Notas previas del cliente' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, taxIdExtranjero: 'US123456789' } });
+    assert.strictEqual(res.status, 200);
+    const notasNoActualizadas = res.body.camposNoActualizados.find(x => x.campo === 'notes');
+    assert.ok(notasNoActualizadas, 'debe reportar que el Tax ID no quedo en notas');
+  } finally {
+    restore();
+  }
+});
+
+// === Regla 6 (issue #95): segmento_id viaja en el upgrade con verificacion post-escritura ===
+
+test('UF11: segmentoId capturado -> el PUT manda segmento_id', async () => {
+  let putBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento_id: '3' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, segmentoId: '3' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(putBody.segmento_id, '3');
+    assert.deepEqual(res.body.camposNoActualizados, []);
+  } finally {
+    restore();
+  }
+});
+
+test('UF12: quirk #74 -- PUT ignora segmento_id en silencio -> la relectura lo reporta en camposNoActualizados', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // La relectura muestra el segmento VIEJO (Operam ignoro el campo en silencio).
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento_id: '1' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, segmentoId: '3' } });
+    assert.strictEqual(res.status, 200);
+    const segNoActualizado = res.body.camposNoActualizados.find(x => x.campo === 'segmento_id');
+    assert.ok(segNoActualizado, 'debe reportar que segmento_id no pego');
+    assert.strictEqual(segNoActualizado.anterior, '1');
+    assert.strictEqual(segNoActualizado.nuevo, '3');
+  } finally {
+    restore();
+  }
+});
+
 test('UF7: sin token -> 401', async () => {
   const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500').send({ csfDatos: CSF_UPGRADE });
   assert.strictEqual(res.status, 401);

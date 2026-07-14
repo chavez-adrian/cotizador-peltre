@@ -20,6 +20,8 @@ import {
   accionProspecto409,
   paisDesdeCodigoTelefono,
   customerIdFiscal,
+  validarAltaManualMinimos,
+  emailFacturaParaUpgrade,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -135,6 +137,7 @@ function leerClienteFormulario(leyenda) {
     estado: document.getElementById('cl-estado').value,
     celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
     emailEntrega: document.getElementById('cl-email-entrega').value,
+    emailFactura: document.getElementById('cl-email-factura').value,
     referencias: document.getElementById('cl-referencias').value,
     referencia: document.getElementById('cl-referencia').value,
     pais: document.getElementById('cl-pais')?.value || 'MX',
@@ -2046,10 +2049,13 @@ function pcRenderChips() {
 // Reutiliza la seccion 1 del acordeon (dropzone + parseo + campos editables) pero
 // reorientada al PUT del upgrade en vez del POST de creacion: al confirmar,
 // altaCsfConfirmar detecta altaCsfState.modoUpgrade y llama a pcEjecutarUpgradeFiscal.
-function pcAbrirUpgradeFiscal(customerId, banner) {
+function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
   altaCsfState.modoUpgrade = customerId;
+  // Origen del upgrade ('paso' | 'clientes'): decide si cl-email-factura es
+  // confiable (ver emailFacturaParaUpgrade en alta-logica.js).
+  altaCsfState.upgradeOrigen = origen || null;
   altaCsfState.datos = null;
   altaCsfState.pdfBase64 = null;
   // Banner de contexto (#94): visible siempre que modoUpgrade este activo. Hace
@@ -2065,9 +2071,23 @@ function pcAbrirUpgradeFiscal(customerId, banner) {
   altaState.seccionAbierta = null;
   altaToggleSeccion(1);
   altaCsfSetStatus('idle');
+  altaPoblarSelectorSegmentoUpgrade();
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
+
+// Segmento en el panel de upgrade (issue #95 regla 6): comparte catalogo con
+// alta-segmento (Seccion 2), pero es un <select> propio -- la Seccion 2 vive en
+// el flujo del acordeon completo (POST, hoy sin punto de entrada en la UI) y no
+// se abre durante un upgrade.
+function altaPoblarSelectorSegmentoUpgrade() {
+  const sel = document.getElementById('alta-upgrade-segmento');
+  if (!sel) return;
+  cargarCatalogos().then(catalogos => {
+    sel.innerHTML = '<option value="">-- Selecciona --</option>' +
+      (catalogos.segmentos || []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+  }).catch(() => {});
+}
 
 // Wrapper del chip Fiscal del paso Cliente: deriva el contexto del banner (nombre
 // + RFC generico) de pcState.cliente, sin embeber texto arbitrario en el onclick.
@@ -2075,7 +2095,7 @@ function pcAbrirUpgradeFiscalDesdePaso() {
   const id = pcCustomerIdFiscal();
   if (id == null) return;
   const c = pcState.cliente || {};
-  pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' });
+  pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' }, 'paso');
 }
 window.pcAbrirUpgradeFiscalDesdePaso = pcAbrirUpgradeFiscalDesdePaso;
 
@@ -2085,10 +2105,20 @@ async function pcEjecutarUpgradeFiscal(datos) {
   const errDiv = document.getElementById('csf-campos-error');
   const mostrarError = msg => { if (errDiv) { errDiv.style.display = ''; errDiv.textContent = msg; } };
   if (btn) { btn.disabled = true; btn.textContent = 'Actualizando en Operam...'; }
+  // Email de facturacion (issue #95 regla 3): se captura en el paso Cliente/Envio
+  // (cl-email-factura), input GLOBAL que vive fuera del acordeon de la CSF. Solo se
+  // incluye cuando el upgrade se abrio desde el paso Cliente ('paso'): desde la
+  // vista Clientes (#94) puede traer el email de OTRO cliente cotizado antes (fuga
+  // de contexto detectada en la revision de #95).
+  const emailFactura = emailFacturaParaUpgrade(
+    altaCsfState.upgradeOrigen,
+    document.getElementById('cl-email-factura')?.value
+  );
+  const csfDatosConFactura = emailFactura ? { ...datos, invoiceEmail: emailFactura } : datos;
   try {
     const res = await api(`/api/actualizar-cliente-fiscal/${customerId}`, {
       method: 'PUT',
-      body: { csfDatos: datos, pdf_base64: altaCsfState.pdfBase64 || null },
+      body: { csfDatos: csfDatosConFactura, pdf_base64: altaCsfState.pdfBase64 || null },
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 409 && data.fusion) {
@@ -2104,7 +2134,7 @@ async function pcEjecutarUpgradeFiscal(datos) {
     const campoPego = campo => !ignorado.some(x => x.campo === campo);
     const panel = document.getElementById('panel-alta-cliente');
     if (panel) panel.style.display = 'none';
-    altaCsfState.modoUpgrade = null;
+    altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
     // El chip Fiscal pasa a verde solo si el RFC real SI pego (chipsCompletitud lo
     // deriva de pcState.cliente.rfc). Si Operam ignoro un campo (quirk del PUT),
     // esa parte de la tarjeta se queda con el valor viejo en vez de mostrar un dato
@@ -2816,7 +2846,7 @@ function cvAbrirUpgrade() {
       '<button type="button" class="pc-back" onclick="cvRenderTarjeta()">&lsaquo; Volver al cliente</button>';
   }
   moverPanelA(document.getElementById('clientes-panel-slot'));
-  pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' });
+  pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' }, 'clientes');
 }
 window.cvAbrirUpgrade = cvAbrirUpgrade;
 
@@ -3173,7 +3203,7 @@ function devolverPanelACasa() {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
   panel.style.display = 'none';
-  altaCsfState.modoUpgrade = null;
+  altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
   const banner = document.getElementById('alta-upgrade-banner');
   if (banner) { banner.innerHTML = ''; banner.style.display = 'none'; }
   if (!_panelHome) return;
@@ -3926,7 +3956,7 @@ function abrirAcordeonAlta() {
   // (#85): si un intento de upgrade anterior quedo colgado en altaCsfState.modoUpgrade
   // (p. ej. tras un error sin cerrar el panel), confirmar aqui NO debe aplicarse sobre
   // ese customer_id viejo.
-  altaCsfState.modoUpgrade = null;
+  altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
   const bannerEl = document.getElementById('alta-upgrade-banner');
   if (bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
   altaToggleSeccion(1);
@@ -4128,6 +4158,7 @@ function altaCsfLeerFormulario() {
     cp: getVal('csf-cp'),
     municipio: getVal('csf-municipio'),
     estado: getVal('csf-estado'),
+    segmentoId: getVal('alta-upgrade-segmento'),
   };
 }
 
@@ -4217,12 +4248,18 @@ function altaManualLeerFormulario() {
     razonSocial: getVal('manual-razon-social'),
     nombreCorto: getVal('manual-nombre-corto'),
     idcif: getVal('manual-idcif'),
+    taxIdExtranjero: getVal('manual-tax-id-extranjero'),
     regimenFiscal: getVal('manual-regimen-fiscal'),
     usoCfdi: getVal('manual-uso-cfdi'),
+    calle: getVal('manual-calle'),
+    numExt: getVal('manual-num-ext'),
+    numInt: getVal('manual-num-int'),
+    colonia: getVal('manual-colonia'),
     cp: getVal('manual-cp'),
     municipio: getVal('manual-municipio'),
     estado: getVal('manual-estado'),
     pais: getVal('manual-pais'),
+    segmentoId: getVal('alta-upgrade-segmento'),
   };
 }
 
@@ -4234,19 +4271,12 @@ async function altaManualConfirmar() {
     return;
   }
   const datos = altaManualLeerFormulario();
-  if (!datos.rfc) {
-    const msg = 'El RFC es obligatorio';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
-    return;
-  }
-  if (!datos.razonSocial) {
-    const msg = 'La razon social es obligatoria';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
-    return;
-  }
-  if (!datos.nombreCorto) {
-    const msg = 'El nombre corto es obligatorio';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
+  // Minimos de la regla 4 (#95): Razon Social, RFC, Codigo Postal, Regimen Fiscal.
+  // El nombre corto ya no es obligatorio en esta pestana; calle/numero/colonia/
+  // estado se capturan abajo pero son opcionales por diseno.
+  const minErr = validarAltaManualMinimos(datos);
+  if (minErr) {
+    if (errDiv) { errDiv.textContent = minErr; errDiv.style.display = ''; }
     return;
   }
   if (errDiv) errDiv.style.display = 'none';
@@ -4267,6 +4297,10 @@ async function altaManualConfirmar() {
     idcif: datos.idcif || '',
     regimenFiscal: datos.regimenFiscal || '',
     usoCfdi: datos.usoCfdi || 'S01',
+    calle: datos.calle || '',
+    numExt: datos.numExt || '',
+    numInt: datos.numInt || '',
+    colonia: datos.colonia || '',
     cp: datos.cp || '',
     municipio: datos.municipio || '',
     estado: datos.estado || '',

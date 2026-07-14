@@ -108,6 +108,10 @@ export function separarTelefonoCodigo(telefono) {
 export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
+  { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
+  { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
+  { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion' },
+  { operam: 'segmento_id',         csf: 'segmentoId',     label: 'Segmento' },
   { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
@@ -124,12 +128,32 @@ export const DIFF_FISCAL_LABELS = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, labe
   return acc;
 }, {});
 
+// Resuelve el valor "nuevo" de un campo del diff/payload contra la CSF/manual.
+// Para la mayoria de los campos, ausente en csfDatos == el formulario de captura
+// no lo recolecta (ej. alta manual no tiene domicilio fiscal completo) -- NO es un
+// cambio real, se omite (undefined). Cuando SI esta presente pero vacio, y el campo
+// tiene `default` (issue #95 regla 2, Uso de CFDI), cae al default en vez de vaciar
+// el dato en Operam. `forzarDefault` es la excepcion de dominio de esa misma regla:
+// Uso de CFDI se manda SIEMPRE en el PUT, incluso si el formulario ni siquiera lo
+// capturo -- solo lo usa buildActualizarFiscalPayload; calcularDiffFiscal conserva
+// la semantica de "ausente != vacio" para no reportar diffs falsos contra clientes
+// de Operam que no traen ese campo crudo.
+function resolverValorNuevo({ csf, default: def }, csfDatos, { forzarDefault = false } = {}) {
+  const presente = csf in csfDatos;
+  if (!presente) return (forzarDefault && def !== undefined) ? def : undefined;
+  const crudo = csfDatos[csf];
+  if (crudo == null || crudo === '') return def !== undefined ? def : '';
+  return crudo;
+}
+
 export function calcularDiffFiscal(clienteOperam, csfDatos) {
   const diff = {};
-  for (const { operam, csf, label } of DIFF_FISCAL_CAMPOS) {
-    if (!(csf in csfDatos)) continue; // el formulario de captura no recolecta este campo (ej. alta manual no tiene domicilio fiscal completo) -- ausente != vacio, no es un cambio real
+  for (const campo of DIFF_FISCAL_CAMPOS) {
+    const nuevoValor = resolverValorNuevo(campo, csfDatos);
+    if (nuevoValor === undefined) continue;
+    const { operam, label } = campo;
     const anterior = String(clienteOperam[operam] == null ? '' : clienteOperam[operam]).trim();
-    const nuevo = String(csfDatos[csf] == null ? '' : csfDatos[csf]).trim();
+    const nuevo = String(nuevoValor).trim();
     if (anterior !== nuevo) {
       diff[operam] = { anterior, nuevo, label };
     }
@@ -143,13 +167,67 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
 // sean simetricos. Omite campos que la CSF no recolecto (ausente != vacio): mandar
 // una cadena vacia nukearia en Operam un dato que el vendedor nunca tuvo oportunidad
 // de capturar.
-export function buildActualizarFiscalPayload(csfDatos) {
+// notasActuales (issue #95 regla 5): las notas crudas del cliente en Operam ANTES
+// del PUT, solo necesarias cuando la CSF/formulario trae un Tax ID extranjero
+// capturado -- el caller (server.js) las lee con una relectura previa unicamente en
+// ese caso, para no pagar un GET extra en el camino comun.
+export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
   const body = {};
-  for (const { operam, csf } of DIFF_FISCAL_CAMPOS) {
-    if (!(csf in csfDatos)) continue;
-    body[operam] = csfDatos[csf] == null ? '' : csfDatos[csf];
+  for (const campo of DIFF_FISCAL_CAMPOS) {
+    const nuevoValor = resolverValorNuevo(campo, csfDatos, { forzarDefault: true });
+    if (nuevoValor === undefined) continue;
+    body[campo.operam] = nuevoValor;
+  }
+  // notasActuales === null significa que la relectura previa FALLO: no sabemos que
+  // notas tiene el cliente y mandar notes reconstruido desde vacio las pisaria. Se
+  // omite notes; la verificacion post-PUT reporta el Tax ID como no aplicado.
+  if (notasActuales !== null) {
+    const notas = buildNotasConTaxId(notasActuales, csfDatos.taxIdExtranjero);
+    if (notas !== undefined) body.notes = notas;
   }
   return body;
+}
+
+// Email de facturacion en el upgrade (fix de la revision de #95): el input
+// cl-email-factura es GLOBAL del flujo de cotizacion. Solo es confiable cuando el
+// upgrade se abrio desde el paso Cliente ('paso'), donde pertenece al mismo cliente
+// seleccionado; desde la vista Clientes (#94) puede traer el email de OTRO cliente
+// cotizado antes (fuga de contexto) y se descarta.
+export function emailFacturaParaUpgrade(origen, valor) {
+  if (origen !== 'paso') return undefined;
+  const v = String(valor || '').trim();
+  return v || undefined;
+}
+
+// Validacion de la pestana "Captura manual" (issue #95 regla 4). Decision de
+// Adrian: hay clientes que prefieren no compartir su CSF, asi que la captura
+// manual debe permitir dar de alta con el domicilio fiscal minimo: Razon Social,
+// RFC, Codigo Postal y Regimen Fiscal son los UNICOS obligatorios; calle, numero,
+// colonia y estado quedan opcionales (igual que en la tab CSF, que ya los trae del
+// PDF). El nombre corto (antes obligatorio en esta pestana) tambien pasa a
+// opcional -- no esta en la lista de minimos de la regla 4.
+export function validarAltaManualMinimos(datos) {
+  const d = datos || {};
+  if (!String(d.rfc || '').trim()) return 'El RFC es obligatorio';
+  if (!String(d.razonSocial || '').trim()) return 'La razon social es obligatoria';
+  if (!String(d.cp || '').trim()) return 'El codigo postal es obligatorio';
+  if (!String(d.regimenFiscal || '').trim()) return 'El regimen fiscal es obligatorio';
+  return null;
+}
+
+// Tax ID extranjero -> notas del cliente (issue #95 regla 5): no hay campo dedicado
+// en la API v3 de Operam para eso, asi que se antepone una linea con prefijo claro
+// a las notas EXISTENTES en Operam (nunca se sobreescriben: notas trae actividades
+// economicas, celular, email de facturacion, etc. -- ver buildClienteBody). Idempotente:
+// si la linea ya esta presente (reintento del upgrade) no la duplica. undefined si no
+// hay Tax ID capturado -- el caller no debe tocar el campo notes en ese caso.
+export function buildNotasConTaxId(notasActuales, taxIdExtranjero) {
+  const tax = String(taxIdExtranjero || '').trim();
+  if (!tax) return undefined;
+  const actual = String(notasActuales || '').trim();
+  const prefijo = `Tax ID: ${tax}`;
+  if (actual.includes(prefijo)) return actual;
+  return actual ? `${prefijo}\n${actual}` : prefijo;
 }
 
 export function buildDiffFiscalHtml(diff) {
