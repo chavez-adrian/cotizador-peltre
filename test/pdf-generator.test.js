@@ -104,3 +104,10 @@ test('B11: (#70) header muestra el correo de la empresa, no la URL del sitio', a
   const text = result.toString('latin1');
   assert.ok(text.includes(toHex('contacto')), 'debe mostrar el correo contacto@pppeltre.mx');
 });
+
+test('B12: (#70) los totales no llevan signo de pesos (formato HTML)', async () => {
+  const result = await generateQuotePDF({ _compress: false, subtotal: 100, iva: 16, total: 116 });
+  const text = result.toString('latin1');
+  assert.ok(!text.includes(toHex('$ 116')), 'TOTAL no debe llevar "$ " (formato HTML sin simbolo)');
+  assert.ok(text.includes(toHex('116.00')), 'debe mostrar el monto del TOTAL');
+});
