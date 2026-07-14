@@ -8,9 +8,9 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerClientePorId } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId } from './lib/operam-client.js';
 import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
-import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA } from './lib/alta-generica.js';
+import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
@@ -1043,6 +1043,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
   const steps = [];
   let customerId = customerIdElegido ?? null;
   let creadoNuevo = false;
+  let salesman;
   try {
     const prospecto = await prospectosStore.buscarPorCelular(c.telefono);
 
@@ -1076,7 +1077,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       }
       steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
 
-      const salesman = (readJSON('vendedores.json') || []).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
+      salesman = (readJSON('vendedores.json') || []).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
       const salesTypeId = resolverSalesTypeId(entry.tier, listasPrecios);
       let creado;
       try {
@@ -1143,6 +1144,37 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       } catch (err) {
         steps.push({ name: 'GET branch_id', status: 'error', error: err.message });
         return res.status(503).json({ error: 'No se pudo obtener el domicilio del cliente en Operam: ' + err.message, customer_id: customerId, steps });
+      }
+    }
+
+    // PUT del branch con el domicilio de entrega del paso Envio (#96). SOLO para el
+    // cliente RECIEN creado por esta alta generica: un cliente preexistente (reusado
+    // por celular o elegido de candidatos) puede tener un domicilio real en Operam que
+    // NO debemos pisar con el del cotizador. Sin domicilio util (falta calle o CP) se
+    // omite: el cliente queda como hoy. actualizarBranchCliente ya mete customer_id en
+    // el body (sin el, Operam resetea debtor_no a 0) y usa location/ship_via (#74). El
+    // fallo NO tumba la subida: el cliente ya existe y el quote debe subirse (#81).
+    if (creadoNuevo) {
+      const branchDatos = buildBranchGenerico(c, { salesman });
+      if (branchDatos) {
+        try {
+          await actualizarBranchCliente(customerId, branchId, branchDatos);
+          steps.push({ name: 'PUT branch (domicilio)', status: 'ok' });
+          // Releer y verificar: Operam responde result:true aunque ignore campos (#74).
+          try {
+            const fresco = await obtenerBranch(branchId);
+            const camposNoActualizados = diffBranchDomicilio(fresco, branchDatos);
+            if (camposNoActualizados.length) {
+              steps.push({ name: 'verificar branch', status: 'warn', camposNoActualizados });
+            } else {
+              steps.push({ name: 'verificar branch', status: 'ok' });
+            }
+          } catch (err) {
+            steps.push({ name: 'verificar branch', status: 'error', error: err.message });
+          }
+        } catch (err) {
+          steps.push({ name: 'PUT branch (domicilio)', status: 'error', error: err.message });
+        }
       }
     }
 

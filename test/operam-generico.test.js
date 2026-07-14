@@ -491,6 +491,195 @@ test('F6: POST /api/crear-cliente con RFC generico NO deduplica por RFC exacto',
   assert.equal(taxIdLookup, false, 'con RFC generico no debe consultar por tax_id exacto');
 });
 
+// === Domicilio de entrega -> branch del cliente generico (issue #96) ===
+// subirConAltaGenerica creaba el cliente pero NUNCA actualizaba el branch: el
+// domicilio de entrega del paso Envio se quedaba solo en el cotizador. Ahora, para
+// el cliente RECIEN creado, hace el PUT del branch con el domicilio (customer_id en
+// el body por el quirk #74) y verifica releyendo. Nunca pisa el branch de un cliente
+// preexistente (reusado por celular o elegido de candidatos).
+
+const DOMICILIO = {
+  nombreEntrega: 'Recepcion', calle: 'Av Reforma 100', numInt: 'Piso 3',
+  colonia: 'Juarez', cpEntrega: '06600', municipio: 'Cuauhtemoc', estado: 'CDMX',
+  celEntrega: '+52 5511223344', emailEntrega: 'entrega@hotelazul.mx',
+  referencias: 'Porton negro entre A y B', referencia: 'REF',
+};
+
+test('D1: cliente generico recien creado con domicilio -> PUT del branch con customer_id y verificacion', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion(DOMICILIO);
+  let branchPut = null;
+  let branchGets = 0;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/911': (u, opts) => {
+      if (opts?.method === 'PUT') { branchPut = JSON.parse(opts.body); return jsonResponse({ result: true }); }
+      branchGets++;
+      return jsonResponse({ data: [{ addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
+        addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '06600', addr_reference: 'Porton negro entre A y B',
+        phone: '+52 5511223344', email: 'entrega@hotelazul.mx' }] });
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1801 }),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.folio, 1801);
+  assert.ok(branchPut, 'debio hacer el PUT del branch');
+  assert.equal(branchPut.customer_id, 910, 'customer_id en el body (quirk #74: sin el, debtor_no se resetea a 0)');
+  assert.equal(branchPut.addr_street, 'Av Reforma 100');
+  assert.equal(branchPut.addr_zip, '06600');
+  assert.equal(branchPut.addr_city, 'Cuauhtemoc');
+  assert.equal(branchPut.addr_reference, 'Porton negro entre A y B');
+  assert.equal(branchPut.location, 40, 'PUT usa location (no default_location)');
+  assert.equal(branchPut.ship_via, 1, 'PUT usa ship_via (no default_ship_via)');
+  assert.ok(branchGets >= 1, 'releela el branch para verificar');
+  const put = res.body.steps.find(s => s.name === 'PUT branch (domicilio)');
+  assert.ok(put && put.status === 'ok', 'reporta el PUT del branch');
+  const ver = res.body.steps.find(s => s.name === 'verificar branch');
+  assert.ok(ver && ver.status === 'ok', 'la verificacion no encontro discrepancias');
+});
+
+test('D2: sin domicilio de entrega -> no hay PUT del branch, la subida se completa igual', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  let branchPut = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/911': (u, opts) => { if (opts?.method === 'PUT') branchPut = true; return jsonResponse({ result: true, data: [{}] }); },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1802 }),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.folio, 1802);
+  assert.equal(branchPut, false, 'sin domicilio no debe tocar el branch');
+  assert.ok(!res.body.steps.some(s => s.name === 'PUT branch (domicilio)'), 'no reporta paso de branch');
+});
+
+test('D3: Operam ignora un campo del branch -> verificacion lo reporta, la subida sigue OK', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion(DOMICILIO);
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/911': (u, opts) => {
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      // Operam persiste todo MENOS el CP (quirk result:true que ignora campos).
+      return jsonResponse({ data: [{ addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
+        addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '', addr_reference: 'Porton negro entre A y B',
+        phone: '+52 5511223344', email: 'entrega@hotelazul.mx' }] });
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1803 }),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.folio, 1803, 'la subida se completa pese a la discrepancia');
+  const ver = res.body.steps.find(s => s.name === 'verificar branch');
+  assert.ok(ver, 'reporta la verificacion');
+  assert.equal(ver.status, 'warn');
+  assert.ok(Array.isArray(ver.camposNoActualizados), 'lista los campos no persistidos');
+  assert.ok(ver.camposNoActualizados.some(x => x.campo === 'addr_zip'), 'el CP ignorado se reporta');
+});
+
+test('D4: fallo del PUT del branch NO tumba la subida (cliente creado, quote subido, step error)', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion(DOMICILIO);
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/911': (u, opts) => {
+      if (opts?.method === 'PUT') return jsonResponse({ error: 'boom' }, 500);
+      return jsonResponse({ data: [{}] });
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1804 }),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200, 'la subida se completa aunque el branch falle');
+  assert.equal(res.body.folio, 1804);
+  const put = res.body.steps.find(s => s.name === 'PUT branch (domicilio)');
+  assert.ok(put && put.status === 'error', 'reporta el fallo del branch sin tumbar la subida');
+});
+
+test('D5: retry con customerId elegido (cliente preexistente) NUNCA pisa su branch, aun con domicilio', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion(DOMICILIO);
+  let branchPut = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/20': (u, opts) => { if (opts?.method === 'PUT') branchPut = true; return jsonResponse({ result: true, data: [{}] }); },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
+      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1805 }),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10 });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.customer_id, 10);
+  assert.equal(branchPut, false, 'cliente preexistente elegido: su domicilio real NO se pisa');
+  assert.ok(!res.body.steps.some(s => s.name === 'PUT branch (domicilio)'));
+});
+
+test('D6: cliente reutilizado por celular (preexistente) NUNCA pisa su branch, aun con domicilio', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion(DOMICILIO);
+  let branchPut = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/556': (u, opts) => { if (opts?.method === 'PUT') branchPut = true; return jsonResponse({ result: true, data: [{}] }); },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
+      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1806 }),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.customer_id, 555);
+  assert.equal(branchPut, false, 'cliente reutilizado por celular: su domicilio real NO se pisa');
+});
+
 // === Concurrencia (F3 de la revision de #83): lock por id de cotizacion ===
 // La auto-subida es fire-and-forget: el vendedor puede llegar al Historial y
 // clickear "Reintentar" con la subida original EN VUELO, o doble-clickear
