@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # desarrollo con hot-reload (--watch)
 npm start            # produccion
-npm test             # todos los tests (943, 0 fallas esperadas)
+npm test             # todos los tests (1076, 0 fallas esperadas)
 
 # Correr un test individual:
 node --test test/server.test.js
@@ -23,7 +23,7 @@ Antes de trabajar en cambios al flujo de clientes, leer:
 
 - `PROCESO_COMERCIAL_AS_IS.md` — narrativa completa del proceso comercial de Peltre Nacional (mayoreo, sistemas, cotización, producción, envío).
 - `SOP_crear_cliente_operam.md` — procedimiento oficial de 45 pasos para dar de alta un cliente en Operam, con checklist de validación.
-- `MAPEO_CAMPOS_CLIENTE.md` — mapeo cruzado de campos entre SOP, formularios del cotizador, API de Operam y Neon DB. Incluye gaps y valores hardcodeados vs SOP. Fue la base del PRD #79 (rediseño del paso Cliente + cliente genérico temprano, **completo** — ver `PROGRESS.md`); describe el flujo de alta previo a ese rediseño, no el actual (paso Cliente + CSF como upgrade del cliente genérico, issue #85).
+- `MAPEO_CAMPOS_CLIENTE.md` — mapeo cruzado de campos entre SOP, UI del cotizador, API de Operam y Neon DB. **v2.1 (2026-07-14): describe el flujo ACTUAL** (alta genérica #81/#83 + upgrade fiscal #85 + vista Clientes #94 + campos conservados #95), re-auditado fila por fila contra el código (#39). Los gaps abiertos que documenta son reales.
 
 ---
 
@@ -50,7 +50,10 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 
 | Modulo | Que hace |
 |--------|----------|
-| `operam-client.js` | Bearer token auth con auto-refresh en 401. Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `listarTransacciones`, `listarPedidos`, `resetSession` |
+| `operam-client.js` | Bearer token auth con auto-refresh en 401. Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `obtenerBranch`, `obtenerBranchId`, `obtenerClientePorId`, `listarTransacciones`, `listarPedidos`, `resetSession` |
+| `alta-generica.js` | Alta del cliente con RFC generico al subir cotizacion (#81/#83): `buildClienteGenerico` (lee `emailFactura` -> `invoice_email` desde #95), `buildBranchGenerico`/`diffBranchDomicilio` (PUT del branch con domicilio de entrega + verificacion, #96), `necesitaAltaGenerica`, `rfcGenericoPara`, `resolverSalesTypeId`, `FUENTE_ALTA_GENERICA` |
+| `higiene-clientes.js` | Nucleo puro del reporte admin "Clientes genericos sin actividad" (#86) |
+| `deduplicacion.js` | RFC genericos + deteccion de duplicados (dedup #78: nombre + telefono como senal fuerte) |
 | `sync-operam.js` | Nucleo PURO del sync post-venta (#62): `etapaPostVenta(hechos, op)` (hechos normalizados → etapa, con gate de #61 y monotonia) + `hechosDesdeOperam` (transacciones crudas → hechos). **Mapeo REAL de tipos de Operam: ver `peltre-operam.md` §12** (el MCP `operam-api` los etiqueta mal). Pago por `allocated` vs `total` (tolerancia 1%), no por `outstanding`. Sin IO. |
 | `sync-operam-io.js` | Motor de reconciliacion: lee Operam read-only (`listarTransacciones`/`listarPedidos`), normaliza, aplica el nucleo y mueve la tarjeta. Binding por `data.orderOperam` (el folio de cotizacion NUNCA es el `order_`). Lo usan el webhook y `/api/sync-operam`. |
 | `sync-operam-webhook.js` | Webhook de Operam: extraccion defensiva del identificador, clave idempotente, log en Neon. |
@@ -82,7 +85,7 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 
 Dos niveles:
 - **Rutas del cotizador**: JWT de 30 dias. `vendedores.json` contiene ID + PIN. El rol `admin` desbloquea `/api/admin/*`.
-- **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/actualizar-cliente-fiscal/:id`, `/api/log`, `/api/csf-from-url`): protegidas con `authMiddleware` igual que el resto del cotizador — el alta de cliente vive unicamente en el acordeon de `app.js` (autenticado), tras el retiro de la herramienta standalone `csf-upload.html` (ADR-0003). `/api/actualizar-cliente-fiscal/:id` es el upgrade de CSF sobre el cliente generico (issue #85, ADR-0006): gate anti-fusion por RFC exacto + verificacion post-PUT, nunca crea cliente nuevo.
+- **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/actualizar-cliente-fiscal/:id`, `/api/log`, `/api/csf-from-url`): protegidas con `authMiddleware` igual que el resto del cotizador (la herramienta standalone `csf-upload.html` se retiro en ADR-0003). El ciclo de vida del cliente tiene tres caminos, todos autenticados: (1) **alta generica** al subir cotizacion (`lib/alta-generica.js`, #81/#83; desde #96 tambien hace PUT del branch con el domicilio de entrega, SOLO para el cliente recien creado); (2) **upgrade fiscal** `/api/actualizar-cliente-fiscal/:id` sobre el generico (issue #85, ADR-0006: gate anti-fusion por RFC exacto + verificacion post-PUT con `camposNoActualizados`, nunca crea cliente nuevo; desde #95 tambien lleva cust_ref, uso CFDI con default S01, invoice_email, segmento y Tax ID extranjero anexado a `notes` sin pisar notas existentes); (3) **alta completa** con el acordeon de `app.js` + `POST /api/crear-cliente`. Los caminos 2 y 3 son accesibles sin cotizacion desde la **vista Clientes** (menu Mas, #94; el panel de alta es UNICO y se re-parenta — `moverPanelA`/`devolverPanelACasa`, reset de `modoUpgrade` en cada cambio de vista). OJO: los campos `cl-*` son globales del flujo de cotizacion; desde la vista Clientes NO son confiables (ver `emailFacturaParaUpgrade`).
 
 `server.js` carga `.env` manualmente sin dotenv (patron en lineas 24-30).
 

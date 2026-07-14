@@ -89,11 +89,19 @@ Las cuatro etapas post-venta (Anticipo pagado, Pedido liberado, Saldo pagado, Pr
 
 El mapeo real de Operam (corre sobre FrontAccounting; ver `peltre-operam.md` §12 — las etiquetas del MCP `operam-api` están mal): la cadena post-venta se une por el campo `order_`/`order_no`. Tipos de transacción: **10 = factura** (con CFDI; de aquí salen los montos de pago `allocated`/`outstanding`/`total_amount`; el pago de cliente tipo 12 se aplica contra ella), **13 = remisión** (sin CFDI), **30 = pedido/Sales Order** (lo que devuelve `listar_pedidos`). Reglas: el pago se deriva de `allocated` vs `total` (el `outstanding` del listado de Operam no es fiable — sale ≠ 0 en facturas ya pagadas): anticipo pagado = `0 < allocated < total`; saldo pagado = `allocated >= total*0.99` (tolera 1% por error humano de pago de más/menos); pedido liberado = existe Sales Order (30); producto entregado = existe remisión (13). La etapa decorada respeta el gate de calca (#61) y el avance es monótono (no retrocede).
 
+**En el pipeline manda el cumplimiento, no la cobranza** (decisión de Adrián, issue #77): una remisión lleva la tarjeta a Producto entregado aunque el pago no esté registrado (la contadora lo captura a mano con días de desfase). La tarjeta entregada-impaga muestra el badge **"Pago sin registrar"** hasta que la señal de pago aparece (`allocated ~ total`), y sigue siendo candidata de reconciliación mientras el badge esté vivo — el pago tardío lo apaga; una entregada ya pagada es terminal para el sync.
+
 El sync corre por dos vías sobre el mismo motor de reconciliación (`lib/sync-operam-io.js`): un **webhook** de Operam (`POST /api/webhooks/operam`, auth por header secreto) tratado como mera señal — no se confía en su payload —, y una **reconciliación on-demand** (`POST /api/sync-operam`) como red de seguridad. Ambas leen el estado real por API (`listarTransacciones` por RFC + `listarPedidos` por cliente), normalizan a hechos y aplican el núcleo puro. El motor liga la oportunidad a su cadena por el número de pedido (`order_`) cuando se conoce (`data.orderOperam`); **el número de cotización nunca es igual al número de pedido en Operam**, así que el folio de la cotización (`folioOperam`) no sirve como `order_` (usarlo arriesgaría un falso match con el pedido de otra cadena). Sin `order_` explícito, agrega por cliente (correcto cuando el cliente tiene una sola oportunidad activa).
 
 ## Alta de cliente
 
 Proceso de registrar a un cliente nuevo en Operam con todos los campos requeridos por el SOP-COM-OPERAM-001: datos fiscales, configuración comercial, contacto y domicilio de entrega. La realiza el **vendedor**. Se considera completa cuando el cliente puede usarse para generar cotizaciones, pedidos y facturas sin correcciones posteriores.
+
+Tres caminos (todos desde el cotizador): el **cliente genérico** nace solo al generar la primera cotización (ADR-0006); el **upgrade fiscal** completa al genérico cuando llega la CSF (o por captura manual con mínimos: razón social, RFC, CP y régimen — para clientes que prefieren no compartir su constancia); el **alta completa** sin cotización vive en la vista Clientes ("+ → Nuevo cliente"). El contacto etiquetado "Invoices" para el envío automático de facturas NO es configurable por API (ADR-0002) y sigue siendo paso manual en la UI de Operam.
+
+## Vista Clientes
+
+Superficie de **mantenimiento de clientes** sin cotización de por medio (menú Más, issue #94): buscar un cliente (Operam + prospectos; los de RFC genérico se marcan en rojo), completar sus datos fiscales con CSF o captura manual, dar de alta un cliente completo, o saltar a cotizarle. Existe porque los casos "ya tengo los datos fiscales de un genérico" y "alta completa sin cotizar" son poco frecuentes pero reales, y antes obligaban a ir a la UI de Operam.
 
 ## Aprobación de pedido
 
@@ -101,7 +109,7 @@ Revisión final que hace **Adrián** antes de convertir una cotización en pedid
 
 ## Vendedor
 
-Actor que atiende prospectos, captura datos del cliente y genera cotizaciones. Usa el cotizador como herramienta principal: en el paso Cliente elige "Ya lo conozco" (buscar en Operam o en sus prospectos) o "Contacto nuevo" (celular, nombre, ciudad, canal — issue #82); el cliente genérico en Operam nace solo al generar la primera cotización (issue #81, ADR-0006), sin paso de alta manual. Cuando llega la CSF, el vendedor la sube desde el chip "Fiscal" de la tarjeta del cliente, que actualiza (nunca crea) el cliente genérico existente (issue #85). Todo autenticado con el mismo JWT (ADR-0003; la herramienta standalone `csf-upload.html` fue retirada).
+Actor que atiende prospectos, captura datos del cliente y genera cotizaciones. Usa el cotizador como herramienta principal: en el paso Cliente elige "Ya lo conozco" (buscar en Operam o en sus prospectos) o "Contacto nuevo" (celular, nombre, ciudad, canal — issue #82); el cliente genérico en Operam nace solo al generar la primera cotización (issue #81, ADR-0006), sin paso de alta manual. Cuando llega la CSF, el vendedor la sube desde el chip "Fiscal" de la tarjeta del cliente (issue #85) o desde la vista Clientes sin abrir una cotización (issue #94); en ambos casos se actualiza (nunca se crea) el cliente genérico existente, con un banner que muestra contra quién. Todo autenticado con el mismo JWT (ADR-0003; la herramienta standalone `csf-upload.html` fue retirada).
 
 ## Nombre de cliente (CustName)
 
