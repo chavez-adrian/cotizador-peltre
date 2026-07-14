@@ -135,3 +135,14 @@ test('B14: (#70) Referencia Cliente prefiere c.referencia sobre c.nombreCorto (i
   assert.ok(text.includes(toHex('Ref')) && text.includes(toHex('REF-1')), 'debe preferir c.referencia cuando ambos estan presentes');
   assert.ok(!text.includes(toHex('Corto')), 'no debe mostrar nombreCorto cuando referencia esta presente');
 });
+
+test('B15: (#70) telefonoEntrega (campo muerto) no dispara la linea de telefono (paridad con HTML)', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { telefonoEntrega: '9998887777' },
+  });
+  const text = result.toString('latin1');
+  // El HTML solo considera celEntrega/emailEntrega (linea 216); telefonoEntrega
+  // no existe en el modelo actual (nada lo produce) y no debe renderizarse
+  assert.ok(!text.includes(toHex('9998887777')), 'telefonoEntrega no debe aparecer: el HTML no lo considera');
+});
