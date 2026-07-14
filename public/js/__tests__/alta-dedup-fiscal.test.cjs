@@ -312,6 +312,28 @@ test('N8: buildActualizarFiscalPayload no filtra taxIdExtranjero como llave crud
   assert.ok(!('taxIdExtranjero' in body));
 });
 
+// === Regla 6 (issue #95): segmento_id viaja en el upgrade, con verificacion post-escritura ===
+// Quirk documentado (#74/CLAUDE.md): PUT customers puede ignorar segmento_id en
+// silencio. Al agregarlo a DIFF_FISCAL_CAMPOS, calcularDiffFiscal lo verifica
+// GRATIS via el mismo mecanismo generico que ya usa el endpoint de upgrade para
+// camposNoActualizados (#85/#96) -- no requiere codigo nuevo en server.js.
+
+test('R11: buildActualizarFiscalPayload incluye segmento_id cuando se capturo', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, segmentoId: '3' });
+  assert.equal(body.segmento_id, '3');
+});
+
+test('R12: buildActualizarFiscalPayload omite segmento_id si no se capturo', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('segmento_id' in body));
+});
+
+test('R13: calcularDiffFiscal detecta el quirk -- Operam ignoro segmento_id (el releido sigue con el valor viejo)', () => {
+  const clienteReleido = { ...clienteOperamBase, segmento_id: '1' }; // valor viejo, PUT lo ignoro
+  const diff = calcularDiffFiscal(clienteReleido, { ...csfDatosIguales, segmentoId: '3' });
+  assert.equal(diff.segmento_id.anterior, '1');
+  assert.equal(diff.segmento_id.nuevo, '3');
+});
 
 test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', () => {
   const diff = {

@@ -2067,9 +2067,23 @@ function pcAbrirUpgradeFiscal(customerId, banner) {
   altaState.seccionAbierta = null;
   altaToggleSeccion(1);
   altaCsfSetStatus('idle');
+  altaPoblarSelectorSegmentoUpgrade();
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
+
+// Segmento en el panel de upgrade (issue #95 regla 6): comparte catalogo con
+// alta-segmento (Seccion 2), pero es un <select> propio -- la Seccion 2 vive en
+// el flujo del acordeon completo (POST, hoy sin punto de entrada en la UI) y no
+// se abre durante un upgrade.
+function altaPoblarSelectorSegmentoUpgrade() {
+  const sel = document.getElementById('alta-upgrade-segmento');
+  if (!sel) return;
+  cargarCatalogos().then(catalogos => {
+    sel.innerHTML = '<option value="">-- Selecciona --</option>' +
+      (catalogos.segmentos || []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+  }).catch(() => {});
+}
 
 // Wrapper del chip Fiscal del paso Cliente: deriva el contexto del banner (nombre
 // + RFC generico) de pcState.cliente, sin embeber texto arbitrario en el onclick.
@@ -4138,6 +4152,7 @@ function altaCsfLeerFormulario() {
     cp: getVal('csf-cp'),
     municipio: getVal('csf-municipio'),
     estado: getVal('csf-estado'),
+    segmentoId: getVal('alta-upgrade-segmento'),
   };
 }
 
@@ -4238,6 +4253,7 @@ function altaManualLeerFormulario() {
     municipio: getVal('manual-municipio'),
     estado: getVal('manual-estado'),
     pais: getVal('manual-pais'),
+    segmentoId: getVal('alta-upgrade-segmento'),
   };
 }
 

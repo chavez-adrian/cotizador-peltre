@@ -269,6 +269,14 @@
                 </button>
               </div><!-- /alta-panel-manual -->
 
+              <!-- Segmento (compartido por ambas pestanas, issue #95 regla 6): captura
+                   disponible en el upgrade fiscal, no solo en la Seccion 2 del acordeon
+                   completo (hoy sin punto de entrada en la UI) -->
+              <div class="form-group" style="margin-top:8px">
+                <label>Segmento <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
+                <select id="alta-upgrade-segmento"><option value="">-- Selecciona --</option></select>
+              </div>
+
               <!-- Deduplicacion resultado (se inyecta por JS) -->
               <div id="alta-dedup-resultado" style="display:none;margin-top:16px"></div>
 

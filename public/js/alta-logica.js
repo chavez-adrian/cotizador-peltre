@@ -111,6 +111,7 @@ export const DIFF_FISCAL_CAMPOS = [
   { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
   { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
   { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion' },
+  { operam: 'segmento_id',         csf: 'segmentoId',     label: 'Segmento' },
   { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
