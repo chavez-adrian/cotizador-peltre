@@ -1430,7 +1430,11 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
       const clienteActual = await obtenerClientePorId(id);
       notasActuales = (clienteActual && clienteActual.notes) || '';
     } catch (err) {
-      notasActuales = '';
+      // Relectura fallida: null le dice a buildActualizarFiscalPayload que OMITA
+      // notes (reconstruirlas desde '' pisaria notas reales del cliente). El Tax ID
+      // queda sin aplicar y la verificacion post-PUT lo reporta.
+      notasActuales = null;
+      console.error('[csf-upgrade] relectura de notas fallo, Tax ID omitido:', err.message);
     }
   }
 

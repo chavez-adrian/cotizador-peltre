@@ -477,3 +477,24 @@ test('V5: buildCandidatosRfcGenericoHtml con lista vacia retorna cadena vacia', 
   assert.equal(buildCandidatosRfcGenericoHtml([]), '');
   assert.equal(buildCandidatosRfcGenericoHtml(undefined), '');
 });
+
+// === Fixes de la revision de #95 ===
+
+test('R-FIX1: buildActualizarFiscalPayload OMITE notes cuando las notas previas no se pudieron leer (null)', () => {
+  const body = buildActualizarFiscalPayload({ rfc: 'ABC010101AAA', taxIdExtranjero: 'US-99-1234' }, null);
+  assert.ok(!('notes' in body), 'con notasActuales null el payload NO debe llevar notes (pisaria notas reales del cliente)');
+});
+
+test('R-FIX1b: buildActualizarFiscalPayload SI manda notes cuando las notas previas se leyeron vacias', () => {
+  const body = buildActualizarFiscalPayload({ rfc: 'ABC010101AAA', taxIdExtranjero: 'US-99-1234' }, '');
+  assert.equal(body.notes, 'Tax ID: US-99-1234');
+});
+
+test('R-FIX2: emailFacturaParaUpgrade solo incluye el email cuando el upgrade se abrio desde el paso Cliente', async () => {
+  const { emailFacturaParaUpgrade } = await import('../alta-logica.js');
+  assert.equal(emailFacturaParaUpgrade('paso', ' fact@cliente.mx '), 'fact@cliente.mx');
+  assert.equal(emailFacturaParaUpgrade('clientes', 'fact@otro.mx'), undefined,
+    'desde la vista Clientes el campo cl-email-factura puede traer el email de OTRO cliente (fuga de contexto)');
+  assert.equal(emailFacturaParaUpgrade(null, 'fact@otro.mx'), undefined);
+  assert.equal(emailFacturaParaUpgrade('paso', '  '), undefined);
+});

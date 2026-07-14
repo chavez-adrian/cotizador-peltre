@@ -178,9 +178,25 @@ export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
     if (nuevoValor === undefined) continue;
     body[campo.operam] = nuevoValor;
   }
-  const notas = buildNotasConTaxId(notasActuales, csfDatos.taxIdExtranjero);
-  if (notas !== undefined) body.notes = notas;
+  // notasActuales === null significa que la relectura previa FALLO: no sabemos que
+  // notas tiene el cliente y mandar notes reconstruido desde vacio las pisaria. Se
+  // omite notes; la verificacion post-PUT reporta el Tax ID como no aplicado.
+  if (notasActuales !== null) {
+    const notas = buildNotasConTaxId(notasActuales, csfDatos.taxIdExtranjero);
+    if (notas !== undefined) body.notes = notas;
+  }
   return body;
+}
+
+// Email de facturacion en el upgrade (fix de la revision de #95): el input
+// cl-email-factura es GLOBAL del flujo de cotizacion. Solo es confiable cuando el
+// upgrade se abrio desde el paso Cliente ('paso'), donde pertenece al mismo cliente
+// seleccionado; desde la vista Clientes (#94) puede traer el email de OTRO cliente
+// cotizado antes (fuga de contexto) y se descarta.
+export function emailFacturaParaUpgrade(origen, valor) {
+  if (origen !== 'paso') return undefined;
+  const v = String(valor || '').trim();
+  return v || undefined;
 }
 
 // Validacion de la pestana "Captura manual" (issue #95 regla 4). Decision de
