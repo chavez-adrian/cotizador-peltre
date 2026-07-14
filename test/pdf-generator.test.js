@@ -96,3 +96,11 @@ test('B10: (#84) entrega completa -> no imprime la leyenda de confirmacion', asy
   assert.ok(!text.includes(toHex('domicilio')), 'no debe traer la leyenda cuando la entrega esta completa');
   assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
 });
+
+// === #70 paridad de diseno PDF vs HTML ===
+
+test('B11: (#70) header muestra el correo de la empresa, no la URL del sitio', async () => {
+  const result = await generateQuotePDF({ _compress: false });
+  const text = result.toString('latin1');
+  assert.ok(text.includes(toHex('contacto')), 'debe mostrar el correo contacto@pppeltre.mx');
+});
