@@ -11,9 +11,11 @@ import { hechosDeOperam, reconciliarOportunidad, reconciliarPorIdentificador, es
 function depsMock({ transacciones = [], pedidos = [], onCambiarEtapa } = {}) {
   const movimientos = [];
   const espejos = [];
+  const datos = [];
   return {
     movimientos,
     espejos,
+    datos,
     listarTransacciones: async () => transacciones,
     listarPedidos: async () => pedidos,
     cambiarEtapa: async (id, etapa, evento) => {
@@ -23,6 +25,10 @@ function depsMock({ transacciones = [], pedidos = [], onCambiarEtapa } = {}) {
     },
     setEspejoOperam: async (id, espejo) => {
       espejos.push({ id, espejo });
+      return true;
+    },
+    actualizarDatos: async (id, campos) => {
+      datos.push({ id, campos });
       return true;
     },
   };
@@ -388,6 +394,41 @@ test('reconciliarOportunidad: sin RFC no mueve ni truena', async () => {
   assert.equal(deps.movimientos.length, 0);
 });
 
+// --- Pago sin registrar (issue #77): persistencia del flag + candidatura ---
+
+test('#77: reconciliarOportunidad persiste pagoSinRegistrar=true cuando entrego pero no ha pagado', async () => {
+  // Factura con saldo (allocated < total) + remision: entregado impago.
+  const deps = depsMock({
+    transacciones: [
+      { type: '10', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '16954', debtor_no: '345' },
+      { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
+    ],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+  });
+  const op = { id: 20, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.etapa, 'producto_entregado');
+  const marca = deps.datos.find(d => d.id === 20 && 'pagoSinRegistrar' in d.campos);
+  assert.ok(marca, 'debe persistir el flag');
+  assert.equal(marca.campos.pagoSinRegistrar, true);
+});
+
+test('#77: reconciliarOportunidad persiste pagoSinRegistrar=false cuando ya se liquido el pago', async () => {
+  // Al registrarse el pago (allocated == total) el flag se apaga aunque siga entregada.
+  const deps = depsMock({
+    transacciones: [
+      { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
+      { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
+    ],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+  });
+  const op = { id: 21, etapa: 'producto_entregado', data: { cliente: { rfc: 'CPE921211N76' }, pagoSinRegistrar: true } };
+  await reconciliarOportunidad(op, deps);
+  const marca = deps.datos.find(d => d.id === 21 && 'pagoSinRegistrar' in d.campos);
+  assert.ok(marca, 'debe persistir el flag');
+  assert.equal(marca.campos.pagoSinRegistrar, false);
+});
+
 // --- esActivaPostVentaCandidata ---
 
 test('esActivaPostVentaCandidata: activas no terminadas si, terminadas y salidas no', () => {
@@ -396,6 +437,17 @@ test('esActivaPostVentaCandidata: activas no terminadas si, terminadas y salidas
   assert.equal(esActivaPostVentaCandidata({ etapa: 'producto_entregado' }), false);
   assert.equal(esActivaPostVentaCandidata({ etapa: 'perdida' }), false);
   assert.equal(esActivaPostVentaCandidata({ etapa: 'no_util' }), false);
+});
+
+test('#77: producto_entregado con pago sin registrar SIGUE siendo candidata (para limpiar el flag)', () => {
+  // Un pago posterior debe poder apagar el badge; por eso la entregada-impaga no es
+  // terminal para el sync hasta que el pago se registre.
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'producto_entregado', data: { pagoSinRegistrar: true } }), true);
+});
+
+test('#77: producto_entregado ya pagada (sin flag) es terminal para el sync', () => {
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'producto_entregado', data: { pagoSinRegistrar: false } }), false);
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'producto_entregado', data: {} }), false);
 });
 
 // --- reconciliarPorIdentificador (webhook -> oportunidades) ---
