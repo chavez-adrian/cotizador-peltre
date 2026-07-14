@@ -19,6 +19,7 @@ import {
   decidirVistaTrasBusqueda,
   accionProspecto409,
   paisDesdeCodigoTelefono,
+  customerIdFiscal,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -54,6 +55,10 @@ import {
   buildColaHoyHtml,
   buildMenuNuevoHtml,
   buildCerradasHtml,
+  filaResultadoClienteHtml,
+  filaCrearClienteHtml,
+  cardClienteHtml,
+  bannerUpgradeHtml,
 } from './pipeline-logica.js';
 import {
   estadoStepper,
@@ -1947,11 +1952,7 @@ window.pcGuardarContactoNuevo = pcGuardarContactoNuevo;
 // cliente Operam -> su id; prospecto ya ligado a un generico -> clienteOperamId;
 // contacto nuevo / prospecto sin cotizar -> null (aun no hay cliente en Operam).
 function pcCustomerIdFiscal() {
-  const c = pcState.cliente;
-  if (!c) return null;
-  if (c.tipo === 'operam') return c.id != null ? c.id : null;
-  if (c.tipo === 'prospecto') return c.clienteOperamId != null ? c.clienteOperamId : null;
-  return null;
+  return customerIdFiscal(pcState.cliente);
 }
 
 function pcChipsHtml(chips, customerIdFiscal) {
@@ -1969,7 +1970,7 @@ function pcChipsHtml(chips, customerIdFiscal) {
   const fiscalChip = chips.fiscal
     ? '<span class="pc-chip ok">&#10003; Fiscal</span>'
     : (customerIdFiscal != null
-        ? `<button type="button" class="pc-chip-btn" onclick="pcAbrirUpgradeFiscal(${customerIdFiscal})"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>`
+        ? '<button type="button" class="pc-chip-btn" onclick="pcAbrirUpgradeFiscalDesdePaso()"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>'
         : '<span class="pc-chip pend">Fiscal &middot; al subir a Operam</span>');
   return chip(chips.contacto, 'Contacto', 'Contacto') +
     `<button type="button" class="pc-chip-btn" onclick="switchTab('envio')">${entregaChip}</button>` +
@@ -2045,12 +2046,20 @@ function pcRenderChips() {
 // Reutiliza la seccion 1 del acordeon (dropzone + parseo + campos editables) pero
 // reorientada al PUT del upgrade en vez del POST de creacion: al confirmar,
 // altaCsfConfirmar detecta altaCsfState.modoUpgrade y llama a pcEjecutarUpgradeFiscal.
-function pcAbrirUpgradeFiscal(customerId) {
+function pcAbrirUpgradeFiscal(customerId, banner) {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
   altaCsfState.modoUpgrade = customerId;
   altaCsfState.datos = null;
   altaCsfState.pdfBase64 = null;
+  // Banner de contexto (#94): visible siempre que modoUpgrade este activo. Hace
+  // visible CONTRA QUIEN se actualiza (hoy ese contexto es invisible). Aplica
+  // tanto al upgrade desde el paso Cliente como desde la vista Clientes.
+  const bannerEl = document.getElementById('alta-upgrade-banner');
+  if (bannerEl) {
+    bannerEl.innerHTML = bannerUpgradeHtml({ id: customerId, nombre: banner?.nombre, rfc: banner?.rfc });
+    bannerEl.style.display = '';
+  }
   panel.style.display = 'block';
   altaTabSwitch('csf');
   altaState.seccionAbierta = null;
@@ -2059,6 +2068,16 @@ function pcAbrirUpgradeFiscal(customerId) {
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
+
+// Wrapper del chip Fiscal del paso Cliente: deriva el contexto del banner (nombre
+// + RFC generico) de pcState.cliente, sin embeber texto arbitrario en el onclick.
+function pcAbrirUpgradeFiscalDesdePaso() {
+  const id = pcCustomerIdFiscal();
+  if (id == null) return;
+  const c = pcState.cliente || {};
+  pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' });
+}
+window.pcAbrirUpgradeFiscalDesdePaso = pcAbrirUpgradeFiscalDesdePaso;
 
 async function pcEjecutarUpgradeFiscal(datos) {
   const customerId = altaCsfState.modoUpgrade;
@@ -2665,6 +2684,162 @@ function showProspectos() {
   cargarMotivosNoUtil();
 }
 
+// === VISTA CLIENTES (issue #94) ===
+// Mantenimiento de clientes desde el cotizador: alta completa (POST) y upgrade de
+// CSF (PUT) sin abrir una cotizacion. Hermana de Historial/Prospectos; sigue su
+// patron de montaje. Reusa el buscador mixto (pcBuscarMezclado) y los chips del
+// paso Cliente (chipsCompletitud); el render vive en pipeline-logica.js. El panel
+// de alta (#panel-alta-cliente) se re-parenta a #clientes-panel-slot (moverPanelA)
+// y vuelve a su casa al salir (devolverPanelACasa, via ocultarTodasLasVistas).
+const cvState = { seleccion: null };
+let cvResultadosCache = [];
+
+function cvRoot() { return document.getElementById('clientes-root'); }
+
+function showClientes() {
+  ocultarTodasLasVistas();
+  document.getElementById('clientes-view').style.display = 'block';
+  marcarNavActivo('nav-mas');
+  cvState.seleccion = null;
+  pcProspectosCache = null; // se refresca al abrir la busqueda
+  cvRenderBusqueda();
+}
+
+function cvRenderBusqueda() {
+  const root = cvRoot();
+  if (!root) return;
+  cvState.seleccion = null;
+  root.innerHTML =
+    '<div class="pc-pregunta">Clientes<small>Busca un cliente para completar sus datos, o da de alta uno nuevo.</small></div>' +
+    '<div class="pc-search"><input type="text" id="cv-q" class="pc-input-lg" ' +
+    'placeholder="Nombre, RFC o telefono..." autocomplete="off"></div>' +
+    '<div id="cv-zona"></div>';
+  const input = document.getElementById('cv-q');
+  let timer;
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(cvBuscar, 250); });
+  input.focus();
+  cvRenderRecientes();
+}
+window.cvRenderBusqueda = cvRenderBusqueda;
+
+async function cvRenderRecientes() {
+  const zona = document.getElementById('cv-zona');
+  if (!zona) return;
+  const recientes = await pcCargarRecientes();
+  if (!recientes.length) { zona.innerHTML = ''; return; }
+  // Los recientes derivan de cotizaciones (nombre + telefono) y no traen RFC/id,
+  // asi que tocarlos prellena la busqueda y resuelve el registro real de Operam
+  // (con su tag generico correcto), en vez de intentar pintar una tarjeta a medias.
+  zona.innerHTML = '<div class="pc-res-titulo">Recientes</div>' +
+    recientes.map(r =>
+      '<button type="button" class="pc-res-row" onclick="cvBuscarPrefill(' + JSON.stringify(r.nombre).replace(/"/g, '&quot;') + ')">' +
+      '<span class="pc-res-ini">' + escapeHtml(pcIniciales(r.nombre)) + '</span>' +
+      '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(r.nombre) + '</span>' +
+      '<span class="pc-res-sub">' + escapeHtml(r.telefono || 'Cotizado antes') + '</span></span></button>'
+    ).join('');
+}
+
+async function cvBuscarPrefill(nombre) {
+  const input = document.getElementById('cv-q');
+  if (input) { input.value = nombre || ''; await cvBuscar(); }
+}
+window.cvBuscarPrefill = cvBuscarPrefill;
+
+async function cvBuscar() {
+  const q = document.getElementById('cv-q')?.value || '';
+  if (q.trim().length < 2) { await cvRenderRecientes(); return; }
+  const zonaAntes = document.getElementById('cv-zona');
+  if (!zonaAntes) return;
+  zonaAntes.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
+  const rows = await pcBuscarMezclado(q);
+  if (!rows) return; // respuesta vieja descartada
+  const zona = document.getElementById('cv-zona');
+  if (!zona) return;
+  cvResultadosCache = rows;
+  zona.innerHTML = (rows.length ? '<div class="pc-res-titulo">Resultados</div>' +
+    rows.map((r, i) => filaResultadoClienteHtml(r, i)).join('') : '') +
+    filaCrearClienteHtml(q);
+}
+
+function cvElegirResultado(i) {
+  const r = cvResultadosCache[i];
+  if (!r) return;
+  const card = r.tipo === 'operam'
+    ? { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' }
+    : clienteDesdeProspecto(r.raw);
+  cvState.seleccion = { tipo: r.tipo, card, raw: r.raw };
+  cvRenderTarjeta();
+}
+window.cvElegirResultado = cvElegirResultado;
+
+function cvRenderTarjeta() {
+  const root = cvRoot();
+  const sel = cvState.seleccion;
+  if (!root || !sel) return;
+  root.innerHTML =
+    '<div class="pc-pregunta">Cliente</div>' +
+    cardClienteHtml(sel.card) +
+    '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Buscar otro cliente</button>';
+}
+window.cvRenderTarjeta = cvRenderTarjeta;
+
+// Fila punteada -> alta COMPLETA (acordeon 1-4, POST). Re-parenta el panel a la
+// vista y lo abre en modo creacion (abrirAcordeonAlta resetea modoUpgrade).
+function cvCaminoAlta(query) {
+  const root = cvRoot();
+  if (!root) return;
+  cvState.seleccion = null;
+  const q = typeof query === 'string' ? query.trim() : '';
+  root.innerHTML =
+    '<div class="pc-pregunta">Nuevo cliente<small>Alta completa en Operam, sin cotizacion.' +
+    (q ? ' (' + escapeHtml(q) + ')' : '') + '</small></div>' +
+    '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Cancelar</button>';
+  moverPanelA(document.getElementById('clientes-panel-slot'));
+  const panel = document.getElementById('panel-alta-cliente');
+  if (panel) panel.style.display = 'none'; // abrirAcordeonAlta togglea sobre display
+  abrirAcordeonAlta();
+}
+window.cvCaminoAlta = cvCaminoAlta;
+
+// Chip/boton Fiscal -> upgrade de CSF (PUT #85) sobre el cliente generico, con el
+// banner de contexto. Re-parenta el panel a la vista Clientes.
+function cvAbrirUpgrade() {
+  const sel = cvState.seleccion;
+  if (!sel) return;
+  const id = customerIdFiscal(sel.card);
+  if (id == null) return;
+  const c = sel.card;
+  const root = cvRoot();
+  if (root) {
+    root.innerHTML =
+      '<div class="pc-pregunta">Completar datos fiscales</div>' +
+      '<button type="button" class="pc-back" onclick="cvRenderTarjeta()">&lsaquo; Volver al cliente</button>';
+  }
+  moverPanelA(document.getElementById('clientes-panel-slot'));
+  pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' });
+}
+window.cvAbrirUpgrade = cvAbrirUpgrade;
+
+// "Cotizar a este cliente": aterriza en el paso Cliente con el cliente ya
+// seleccionado (reusa pcElegirOperam / pcElegirProspecto -> seleccionarClienteOperam).
+function cvCotizar() {
+  const sel = cvState.seleccion;
+  if (!sel) return;
+  ocultarTodasLasVistas();
+  document.getElementById('app-view').style.display = 'block';
+  marcarNavActivo('nav-cotizar');
+  switchTab('cliente');
+  if (sel.tipo === 'operam') pcElegirOperam(sel.raw);
+  else pcElegirProspecto(sel.raw);
+}
+window.cvCotizar = cvCotizar;
+
+window.nuevoCliente = () => {
+  cerrarMenuNuevo();
+  showClientes();
+  cvCaminoAlta('');
+};
+
 // === PIPELINE (tablero unico de 7 etapas, issue #53) ===
 // Una oportunidad: antes de cotizar es el prospecto (su etapa del pipeline ya
 // viene migrada del store); al cotizar, la cotizacion lleva la oportunidad por
@@ -2968,12 +3143,44 @@ function setModoPipeline(modo) {
 }
 
 function ocultarTodasLasVistas() {
-  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view']) {
+  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view', 'clientes-view']) {
     const el = document.getElementById(v);
     if (el) el.style.display = 'none';
   }
+  // Cualquier cambio de vista devuelve #panel-alta-cliente a su lugar en el paso
+  // Cliente y resetea el estado del upgrade (#94): salir de la vista Clientes (o
+  // navegar a cualquier otra) nunca puede dejar un modoUpgrade colgado que dispare
+  // un PUT contra el cliente equivocado.
+  devolverPanelACasa();
   cerrarMenuMas();
   cerrarMenuNuevo();
+}
+
+// Re-parenteo de #panel-alta-cliente (#94): el panel es UNICO (leccion #82, no se
+// clona). Vive en el paso Cliente (#tab-cliente); la vista Clientes lo toma prestado
+// con appendChild y lo devuelve a su posicion original al salir. _panelHome guarda
+// esa posicion la primera vez que se mueve.
+let _panelHome = null;
+
+function moverPanelA(contenedor) {
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel || !contenedor) return;
+  if (!_panelHome) _panelHome = { parent: panel.parentNode, next: panel.nextSibling };
+  contenedor.appendChild(panel);
+}
+
+function devolverPanelACasa() {
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel) return;
+  panel.style.display = 'none';
+  altaCsfState.modoUpgrade = null;
+  const banner = document.getElementById('alta-upgrade-banner');
+  if (banner) { banner.innerHTML = ''; banner.style.display = 'none'; }
+  if (!_panelHome) return;
+  const { parent, next } = _panelHome;
+  if (!parent) return;
+  if (next && next.parentNode === parent) parent.insertBefore(panel, next);
+  else parent.appendChild(panel);
 }
 
 function marcarNavActivo(id) {
@@ -3598,6 +3805,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
+  document.getElementById('mas-clientes')?.addEventListener('click', () => { cerrarMenuMas(); showClientes(); });
+  document.getElementById('btn-volver-clientes')?.addEventListener('click', () => {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
+  });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
   document.getElementById('btn-pipeline-modo-cerradas')?.addEventListener('click', () => setModoPipeline('cerradas'));
@@ -3714,6 +3927,8 @@ function abrirAcordeonAlta() {
   // (p. ej. tras un error sin cerrar el panel), confirmar aqui NO debe aplicarse sobre
   // ese customer_id viejo.
   altaCsfState.modoUpgrade = null;
+  const bannerEl = document.getElementById('alta-upgrade-banner');
+  if (bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
   altaToggleSeccion(1);
   cargarCatalogos().then(altaPoblarSelectores).catch(() => {});
 }

@@ -161,6 +161,7 @@ export function botonCompletarHtml(cot) {
 export const ACCIONES_NUEVO = [
   { label: 'Nueva cotizacion', accion: 'nuevaCotizacion' },
   { label: 'Nuevo prospecto', accion: 'nuevoProspecto' },
+  { label: 'Nuevo cliente', accion: 'nuevoCliente' },
 ];
 
 export function buildMenuNuevoHtml() {
