@@ -190,6 +190,30 @@ test('U4: buildActualizarFiscalPayload es simetrico con calcularDiffFiscal: el d
   assert.deepEqual(diff, {}, 'lo que se manda al PUT debe verificar sin diferencias');
 });
 
+// === Regla 1 (issue #95): nombre corto (cust_ref) viaja en el upgrade fiscal ===
+// Antes cust_ref no estaba en DIFF_FISCAL_CAMPOS: el vendedor lo capturaba en
+// csf-nombre-corto/manual-nombre-corto y se descartaba silenciosamente al confirmar
+// un upgrade (gap #11 de MAPEO_CAMPOS_CLIENTE.md).
+
+test('R1: calcularDiffFiscal detecta cambio en el nombre corto (cust_ref)', () => {
+  const csfDatos = { ...csfDatosIguales, nombreCorto: 'Peltre Nal' };
+  const cliente = { ...clienteOperamBase, cust_ref: 'Otro Alias' };
+  const diff = calcularDiffFiscal(cliente, csfDatos);
+  assert.ok('cust_ref' in diff, 'debe usar cust_ref como llave (nombre de campo Operam)');
+  assert.equal(diff.cust_ref.anterior, 'Otro Alias');
+  assert.equal(diff.cust_ref.nuevo, 'Peltre Nal');
+});
+
+test('R2: buildActualizarFiscalPayload incluye cust_ref cuando la CSF trae nombreCorto', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, nombreCorto: 'Peltre Nal' });
+  assert.equal(body.cust_ref, 'Peltre Nal');
+});
+
+test('R3: buildActualizarFiscalPayload omite cust_ref si el formulario no recolecto nombreCorto (ausente != vacio)', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('cust_ref' in body));
+});
+
 // === buildDiffFiscalHtml ===
 
 test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', () => {

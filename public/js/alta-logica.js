@@ -108,6 +108,7 @@ export function separarTelefonoCodigo(telefono) {
 export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
+  { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
   { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
