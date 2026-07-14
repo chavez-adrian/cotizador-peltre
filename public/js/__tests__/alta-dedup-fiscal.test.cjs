@@ -7,8 +7,9 @@ let buildDiffFiscalHtml;
 let buildDedupExactoConDiffHtml;
 let buildActualizarFiscalPayload;
 let buildCandidatosRfcGenericoHtml;
+let buildNotasConTaxId;
 before(async () => {
-  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalPayload, buildCandidatosRfcGenericoHtml } = await import('../alta-logica.js'));
+  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalPayload, buildCandidatosRfcGenericoHtml, buildNotasConTaxId } = await import('../alta-logica.js'));
 });
 
 // === calcularDiffFiscal ===
@@ -264,7 +265,53 @@ test('R10: calcularDiffFiscal detecta cambio de invoice_email', () => {
   assert.equal(diff.invoice_email.nuevo, 'nuevo@peltre.mx');
 });
 
-// === buildDiffFiscalHtml ===
+// === Regla 5 (issue #95): Tax ID extranjero se guarda en notas ===
+// No hay campo dedicado en la API v3 de Operam para Tax ID extranjero (se requiere
+// para documentacion de exportacion). Decision de Adrian: va al campo de notas del
+// cliente, con un prefijo claro y SIN borrar notas existentes.
+
+test('N1: buildNotasConTaxId sin notas previas antepone la linea Tax ID', () => {
+  const notas = buildNotasConTaxId('', 'US123456789');
+  assert.equal(notas, 'Tax ID: US123456789');
+});
+
+test('N2: buildNotasConTaxId con notas previas las conserva, agregando la linea Tax ID al inicio', () => {
+  const notas = buildNotasConTaxId('Actividades economicas (CSF 2026-01-01):\n- Comercio', 'US123456789');
+  assert.equal(notas, 'Tax ID: US123456789\nActividades economicas (CSF 2026-01-01):\n- Comercio');
+});
+
+test('N3: buildNotasConTaxId sin taxIdExtranjero retorna undefined (no toca notas)', () => {
+  assert.equal(buildNotasConTaxId('Notas previas', ''), undefined);
+  assert.equal(buildNotasConTaxId('Notas previas', null), undefined);
+  assert.equal(buildNotasConTaxId('Notas previas', undefined), undefined);
+});
+
+test('N4: buildNotasConTaxId no duplica la linea si ya esta presente (reintento idempotente)', () => {
+  const yaTiene = 'Tax ID: US123456789\nActividades economicas (CSF 2026-01-01):\n- Comercio';
+  const notas = buildNotasConTaxId(yaTiene, 'US123456789');
+  assert.equal(notas, yaTiene);
+});
+
+test('N5: buildNotasConTaxId sin notas previas ni taxIdExtranjero -> undefined', () => {
+  assert.equal(buildNotasConTaxId('', ''), undefined);
+  assert.equal(buildNotasConTaxId(null, null), undefined);
+});
+
+test('N6: buildActualizarFiscalPayload incluye notes con Tax ID cuando se capturo taxIdExtranjero', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, taxIdExtranjero: 'US123456789' }, 'Notas previas del cliente');
+  assert.equal(body.notes, 'Tax ID: US123456789\nNotas previas del cliente');
+});
+
+test('N7: buildActualizarFiscalPayload sin taxIdExtranjero NO agrega notes', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales, 'Notas previas del cliente');
+  assert.ok(!('notes' in body));
+});
+
+test('N8: buildActualizarFiscalPayload no filtra taxIdExtranjero como llave cruda', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, taxIdExtranjero: 'US123456789' });
+  assert.ok(!('taxIdExtranjero' in body));
+});
+
 
 test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', () => {
   const diff = {

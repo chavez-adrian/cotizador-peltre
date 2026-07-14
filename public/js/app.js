@@ -4227,6 +4227,7 @@ function altaManualLeerFormulario() {
     razonSocial: getVal('manual-razon-social'),
     nombreCorto: getVal('manual-nombre-corto'),
     idcif: getVal('manual-idcif'),
+    taxIdExtranjero: getVal('manual-tax-id-extranjero'),
     regimenFiscal: getVal('manual-regimen-fiscal'),
     usoCfdi: getVal('manual-uso-cfdi'),
     calle: getVal('manual-calle'),

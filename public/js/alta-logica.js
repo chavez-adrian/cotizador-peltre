@@ -166,13 +166,19 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
 // sean simetricos. Omite campos que la CSF no recolecto (ausente != vacio): mandar
 // una cadena vacia nukearia en Operam un dato que el vendedor nunca tuvo oportunidad
 // de capturar.
-export function buildActualizarFiscalPayload(csfDatos) {
+// notasActuales (issue #95 regla 5): las notas crudas del cliente en Operam ANTES
+// del PUT, solo necesarias cuando la CSF/formulario trae un Tax ID extranjero
+// capturado -- el caller (server.js) las lee con una relectura previa unicamente en
+// ese caso, para no pagar un GET extra en el camino comun.
+export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
   const body = {};
   for (const campo of DIFF_FISCAL_CAMPOS) {
     const nuevoValor = resolverValorNuevo(campo, csfDatos, { forzarDefault: true });
     if (nuevoValor === undefined) continue;
     body[campo.operam] = nuevoValor;
   }
+  const notas = buildNotasConTaxId(notasActuales, csfDatos.taxIdExtranjero);
+  if (notas !== undefined) body.notes = notas;
   return body;
 }
 
@@ -190,6 +196,21 @@ export function validarAltaManualMinimos(datos) {
   if (!String(d.cp || '').trim()) return 'El codigo postal es obligatorio';
   if (!String(d.regimenFiscal || '').trim()) return 'El regimen fiscal es obligatorio';
   return null;
+}
+
+// Tax ID extranjero -> notas del cliente (issue #95 regla 5): no hay campo dedicado
+// en la API v3 de Operam para eso, asi que se antepone una linea con prefijo claro
+// a las notas EXISTENTES en Operam (nunca se sobreescriben: notas trae actividades
+// economicas, celular, email de facturacion, etc. -- ver buildClienteBody). Idempotente:
+// si la linea ya esta presente (reintento del upgrade) no la duplica. undefined si no
+// hay Tax ID capturado -- el caller no debe tocar el campo notes en ese caso.
+export function buildNotasConTaxId(notasActuales, taxIdExtranjero) {
+  const tax = String(taxIdExtranjero || '').trim();
+  if (!tax) return undefined;
+  const actual = String(notasActuales || '').trim();
+  const prefijo = `Tax ID: ${tax}`;
+  if (actual.includes(prefijo)) return actual;
+  return actual ? `${prefijo}\n${actual}` : prefijo;
 }
 
 export function buildDiffFiscalHtml(diff) {
