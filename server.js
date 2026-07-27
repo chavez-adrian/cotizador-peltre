@@ -1204,7 +1204,8 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       const folio = await subirCotizacionOperam({ ...entry.data, cliente: { ...c, customerId, branchId } });
       if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
       steps.push({ name: 'POST quote', status: 'ok' });
-      await postFixVigencia(folio, entry.data, steps);
+      const pasoVigencia = await postFixVigencia(folio, entry.data);
+      if (pasoVigencia) steps.push(pasoVigencia);
       // clienteGenerico (#93): este camino SIEMPRE deja el cliente con RFC generico
       // (creado nuevo o reutilizado por celular/dedup de nombre, ambos genericos) --
       // el frontend lo usa para refrescar el chip Fiscal y ofrecer la CSF junto al folio.
@@ -1233,18 +1234,20 @@ const subidasOperamEnCurso = new Set();
 // fallo aqui se reporta como step y nunca tumba la subida. La verificacion post-escritura
 // (releer y comparar) sigue el mismo patron que el PUT del branch (#96) y el quirk del
 // PUT de clientes, que responde 200 aunque ignore campos.
-async function postFixVigencia(folio, data, steps) {
-  if (folio == null || folio === '') return;
+async function postFixVigencia(folio, data) {
+  if (folio == null || folio === '') return null;
   try {
     const r = await corregirVigenciaQuote(folio, vigenciaDeCotizacion(data));
-    if (r.ok) {
-      steps.push({ name: 'post-fix vigencia', status: 'ok' });
-    } else {
-      steps.push({ name: 'post-fix vigencia', status: 'warn', esperado: r.esperado, encontrado: r.encontrado });
-    }
+    if (r.ok) return { name: 'post-fix vigencia', status: 'ok' };
+    // verificado false = la vista no traia el campo, asi que no se sabe como quedo; se
+    // reporta distinto de "quedo con otra fecha" para no afirmar lo que no se comprobo.
+    return {
+      name: 'post-fix vigencia', status: 'warn',
+      verificado: r.verificado, esperado: r.esperado, encontrado: r.encontrado,
+    };
   } catch (err) {
     console.error('[post-fix vigencia] fallo en el quote', folio, err.message);
-    steps.push({ name: 'post-fix vigencia', status: 'error', error: err.message });
+    return { name: 'post-fix vigencia', status: 'error', error: err.message };
   }
 }
 
@@ -1278,9 +1281,8 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
       const folio = await subirCotizacionOperam(entry.data);
       // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
       if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
-      const steps = [];
-      await postFixVigencia(folio, entry.data, steps);
-      res.json({ ok: true, folio, steps });
+      const pasoVigencia = await postFixVigencia(folio, entry.data);
+      res.json({ ok: true, folio, steps: pasoVigencia ? [pasoVigencia] : [] });
     } catch (err) {
       // Cliente no identificado (#68): es un problema de datos de la cotizacion,
       // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.

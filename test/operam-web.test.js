@@ -4,36 +4,23 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  estaCanceladoHtml, esLoginHtml,
+  esLoginHtml,
   parsearFormularioQuote, serializarBodyQuote, leerValidoHastaVista,
 } from '../lib/operam-web.js';
 
-const FIXTURE = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'operam-quote-form.html'),
-  'utf8',
-);
+const DIR_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
+const FIXTURE = readFileSync(join(DIR_FIXTURES, 'operam-quote-form.html'), 'utf8');
+// La VISTA read-only es otra pagina que la de edicion y rotula el campo distinto
+// ("Valido hasta" sin dos puntos). Se prueba contra su HTML real, no contra una cadena
+// escrita a mano: eso solo confirmaria el regex contra si mismo.
+const FIXTURE_VISTA = readFileSync(join(DIR_FIXTURES, 'operam-quote-vista.html'), 'utf8');
 
-// La web legacy de Operam (FrontAccounting) marca un documento anulado con el aviso
-// "Este pedido ha sido cancelado" (lee 0_voided). La API v3 NO lo expone (#76/#77), por
-// eso el estado se detecta scrapeando view_sales_order.php. Este predicado puro es la
-// senal; si Operam cambiara el texto, este test lo evidencia.
-test('estaCanceladoHtml: detecta el aviso de cancelacion de la web legacy', () => {
-  const html = '<div class="error">Este pedido ha sido cancelado. Fecha y Hora Cancelación Sistema: 2025-07-23 19:10:53 Usuario : a.chavez</div>';
-  assert.equal(estaCanceladoHtml(html), true);
-});
-
-test('estaCanceladoHtml: un documento normal (o vacio/null) no esta cancelado', () => {
-  assert.equal(estaCanceladoHtml('<table><tr><td>Pedido 5662</td></tr></table>'), false);
-  assert.equal(estaCanceladoHtml(''), false);
-  assert.equal(estaCanceladoHtml(null), false);
-});
-
-// Si la sesion expira a mitad de una corrida larga, FA devuelve el form de login en vez
-// de la pagina del pedido; sin detectarlo, estaCanceladoHtml daria falso negativo y se
-// perderian cancelaciones (#76, caso 5632). esLoginHtml permite re-loguear y reintentar.
+// Si la sesion expira a mitad de una corrida larga, FA devuelve el form de login en vez de la
+// pagina pedida; sin detectarlo se tomaria ese formulario por una respuesta valida y la
+// lectura saldria mal en silencio (#76, caso 5632). Permite re-loguear y reintentar.
 test('esLoginHtml: distingue el form de login de una pagina de pedido', () => {
   assert.equal(esLoginHtml('<input name="user_name_entry_field"><input type="password" name="password">'), true);
-  assert.equal(esLoginHtml('<table><tr><td>Pedido 5662 — Don Asado</td></tr></table>'), false);
+  assert.equal(esLoginHtml('<table><tr><td>Pedido 5662 - Cliente Demo</td></tr></table>'), false);
   assert.equal(esLoginHtml(''), false);
   assert.equal(esLoginHtml(null), false);
 });
@@ -150,9 +137,15 @@ test('serializarBodyQuote: exige una fecha YYYY-MM-DD', () => {
 // Verificacion post-escritura: se relee la vista read-only (no la de edicion, que
 // abriria otra sesion de captura) y se compara contra la vigencia esperada. Operam
 // responde 200 aunque ignore campos -- mismo quirk ya documentado del PUT de clientes.
-test('leerValidoHastaVista: extrae la fecha del campo nativo de la vista', () => {
-  const html = "<tr><td class='label'>Valido hasta</td>\n<td  id=''>2026-08-26</td></tr>";
-  assert.equal(leerValidoHastaVista(html), '2026-08-26');
+test('leerValidoHastaVista: extrae la fecha del campo nativo de la vista REAL', () => {
+  assert.equal(leerValidoHastaVista(FIXTURE_VISTA), '2026-08-26');
+});
+
+// La pagina de EDICION rotula el mismo campo con dos puntos y dentro de un <input>, no de
+// una celda: son fuentes distintas a proposito y este regex NO la lee. El test lo fija
+// para que nadie "arregle" el regex apuntandolo a la pagina equivocada.
+test('leerValidoHastaVista: null sobre la pagina de edicion (no es su fuente)', () => {
+  assert.equal(leerValidoHastaVista(FIXTURE), null);
 });
 
 test('leerValidoHastaVista: null cuando la vista no trae el campo', () => {

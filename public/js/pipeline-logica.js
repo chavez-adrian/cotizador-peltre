@@ -146,7 +146,7 @@ export function buildOperamStatusHtml(id, vista) {
     // que se ve en Operam, que ademas la marcaria como vencida. Se avisa sin alarmar:
     // la subida fue un exito, esto es un detalle a revisar en Operam.
     const vig = v.vigencia === 'revisar'
-      ? ` <span class="operam-status-nota">La vigencia no se pudo corregir en Operam: el campo &laquo;V&aacute;lido hasta&raquo; puede verse mal ahi. El PDF y las notas de la cotizacion si la llevan bien.</span>`
+      ? ` <span class="operam-status-nota">Revisa el campo &laquo;V&aacute;lido hasta&raquo; en Operam: pudo no quedar corregido. El PDF y las notas de la cotizacion si llevan la vigencia correcta.</span>`
       : '';
     return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${vig}${csf}`;
   }

@@ -61,13 +61,19 @@ function htmlResponse(html) {
 // Estos handlers cubren las dos paginas que toca -- el formulario de edicion y la vista
 // read-only con la que se verifica -- para que la subida se pruebe COMPLETA.
 const FORM_QUOTE = readFileSync(join(__dirname, 'fixtures', 'operam-quote-form.html'), 'utf8');
+// La vista se sirve con su HTML REAL (fixture) y solo se le cambia la fecha: un HTML
+// sintetico no probaria que la verificacion sabe leer la pagina que Operam devuelve.
+// validoHasta null = la vista no trae el campo (no se pudo verificar).
+const VISTA_QUOTE = readFileSync(join(__dirname, 'fixtures', 'operam-quote-vista.html'), 'utf8');
 function mockWebLegacy({ validoHasta = '2026-08-05', onPost = () => {} } = {}) {
   return {
     'sales_order_entry.php': (u, opts) => {
       if (opts?.method === 'POST') { onPost(String(opts.body)); return htmlResponse('<html>ok</html>'); }
       return htmlResponse(FORM_QUOTE);
     },
-    'view_sales_order.php': () => htmlResponse(`<tr><td class='label'>Valido hasta</td><td id=''>${validoHasta}</td></tr>`),
+    'view_sales_order.php': () => htmlResponse(
+      validoHasta == null ? '<table><tr><td>Cotizacion</td></tr></table>' : VISTA_QUOTE.replace('2026-08-26', validoHasta),
+    ),
   };
 }
 
@@ -854,4 +860,24 @@ test('V3: si la relectura no coincide, el paso queda en warn (no en ok)', async 
   assert.equal(paso.status, 'warn');
   assert.equal(paso.esperado, '2026-08-05');
   assert.equal(paso.encontrado, '2026-07-05');
+});
+
+// "No se pudo verificar" no es lo mismo que "quedo mal": si la vista no trae el campo,
+// el paso lo dice (verificado: false) en vez de afirmar una discrepancia que nadie
+// comprobo. El aviso al vendedor es el mismo -- revisar Operam -- pero el reporte no
+// inventa un valor encontrado.
+test('V4: vista sin el campo -> warn con verificado false, no una discrepancia inventada', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  mockOperamFetch(mockSubidaBase(mockWebLegacy({ validoHasta: null })));
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  const paso = res.body.steps.find(s => s.name === 'post-fix vigencia');
+  assert.equal(paso.status, 'warn');
+  assert.equal(paso.verificado, false);
+  assert.equal(paso.encontrado, null);
 });
