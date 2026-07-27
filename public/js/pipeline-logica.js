@@ -69,6 +69,15 @@ export function puedeCompletarPreCotizacion(cot) {
 //                                                   idempotente)
 // Un 409 de conflicto (customerId que contradice lo ligado, sin lista de
 // candidatos) cae a 'pre' con su mensaje: no hay lista que ofrecer.
+// Resultado del post-fix de la vigencia (#106, ADR-0007) leido de los steps de la
+// subida: 'ok' | 'revisar' | null (el paso no viene -- respuesta anterior a #106 o
+// camino que no subio nada; ahi no se opina en vez de inventar un estado).
+function estadoVigencia(steps) {
+  const paso = (Array.isArray(steps) ? steps : []).find(s => s && s.name === 'post-fix vigencia');
+  if (!paso) return null;
+  return paso.status === 'ok' ? 'ok' : 'revisar';
+}
+
 export function interpretarSubidaOperam(resultado) {
   const r = resultado || {};
   // yaSubida (#83 F1c): la cotizacion ya tenia folio y el endpoint NO re-subio
@@ -77,7 +86,7 @@ export function interpretarSubidaOperam(resultado) {
   // customerId/clienteGenerico (#93): la subida con alta generica (#81) devuelve
   // el customer_id creado/reutilizado; con clienteGenerico se ofrece la CSF junto
   // al folio (mismo criterio que el chip Fiscal de la tarjeta).
-  if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico };
+  if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps) };
   const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];
   if (r.status === 409 && candidatos.length) {
     return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay clientes con nombre similar en Operam' };
@@ -132,7 +141,14 @@ export function buildOperamStatusHtml(id, vista) {
     const csf = v.clienteGenerico && v.customerId != null
       ? ` <button type="button" class="btn btn-sm btn-secondary" onclick="pcAbrirUpgradeFiscal(${v.customerId})">&iquest;Ya tienes su CSF? Subela</button>`
       : '';
-    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${csf}`;
+    // #106: el post-fix de la vigencia no pego. La cotizacion esta BIEN (el PDF y las
+    // notas del quote llevan la fecha correcta); lo que queda mal es el campo nativo
+    // que se ve en Operam, que ademas la marcaria como vencida. Se avisa sin alarmar:
+    // la subida fue un exito, esto es un detalle a revisar en Operam.
+    const vig = v.vigencia === 'revisar'
+      ? ` <span class="operam-status-nota">La vigencia no se pudo corregir en Operam: el campo &laquo;V&aacute;lido hasta&raquo; puede verse mal ahi. El PDF y las notas de la cotizacion si la llevan bien.</span>`
+      : '';
+    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${vig}${csf}`;
   }
   if (v.estado === 'candidatos') {
     return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje);

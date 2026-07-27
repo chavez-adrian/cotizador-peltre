@@ -2290,6 +2290,10 @@ async function autoSubirOperam(id, slot, extraBody) {
       ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida,
       error: data.error, candidatos: data.candidatos,
       customerId: data.customer_id, clienteGenerico: data.clienteGenerico,
+      // #106: los steps traen el resultado del post-fix de la vigencia; sin esto un
+      // fallo solo viviria en los logs del servidor y el vendedor mandaria la
+      // cotizacion sin saber que en Operam se ve vencida.
+      steps: data.steps,
     };
   } catch (e) {
     resultado = { ok: false, status: 0, error: e.message };

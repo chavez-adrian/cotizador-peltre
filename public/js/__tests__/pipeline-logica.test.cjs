@@ -183,17 +183,17 @@ test('Q18: botonCompletarHtml pinta "Reintentar subida" solo sobre una tarjeta P
 // candidatos; 422 -> sin_datos (PRE sin reintento util); 503/red/409-conflicto ->
 // pre (reintento idempotente).
 test('Q19: interpretarSubidaOperam clasifica la respuesta del endpoint por status y campos', () => {
-  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001, yaSubida: false, customerId: null, clienteGenerico: false });
-  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null, yaSubida: false, customerId: null, clienteGenerico: false });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001, yaSubida: false, customerId: null, clienteGenerico: false, vigencia: null });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null, yaSubida: false, customerId: null, clienteGenerico: false, vigencia: null });
   // yaSubida (#83 F1c): ya habia folio, el endpoint no re-subio (los quotes de
   // Operam no se editan por API; una regeneracion local no viaja a Operam).
-  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: '55123', yaSubida: true }), { estado: 'folio', folio: '55123', yaSubida: true, customerId: null, clienteGenerico: false });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: '55123', yaSubida: true }), { estado: 'folio', folio: '55123', yaSubida: true, customerId: null, clienteGenerico: false, vigencia: null });
 
   // #93: la subida con alta generica (#81) devuelve el customer_id creado/reutilizado
   // y si el cliente quedo con RFC generico, para ofrecer la CSF junto al folio.
   assert.deepEqual(
     interpretarSubidaOperam({ ok: true, folio: 90001, customerId: 501, clienteGenerico: true }),
-    { estado: 'folio', folio: 90001, yaSubida: false, customerId: 501, clienteGenerico: true }
+    { estado: 'folio', folio: 90001, yaSubida: false, customerId: 501, clienteGenerico: true, vigencia: null }
   );
 
   const cand = interpretarSubidaOperam({ ok: false, status: 409, error: 'Elige uno', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] });
@@ -761,4 +761,33 @@ test('#77: badgePagoSinRegistrarHtml vacio si la tarjeta no esta entregada (resp
 test('#77: la tarjeta del tablero pinta el badge de una cotizacion entregada-impaga', () => {
   const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'producto_entregado', pagoSinRegistrar: true })]);
   assert.match(tablero, /Pago sin registrar/);
+});
+
+// Post-fix de la vigencia (#106, ADR-0007): la subida corrige el campo nativo
+// "Valido hasta" de Operam por la web legacy y reporta el resultado en steps. Si NO
+// pego, el vendedor debe enterarse: la cotizacion quedo bien (el PDF y comments
+// llevan la vigencia correcta) pero Operam la muestra vencida, y sin este aviso el
+// fallo solo vivia en los logs del servidor.
+test('Q19c: interpretarSubidaOperam extrae el resultado del post-fix de vigencia', () => {
+  const paso = (status) => ({ ok: true, folio: 1, steps: [{ name: 'POST quote', status: 'ok' }, { name: 'post-fix vigencia', status }] });
+  assert.equal(interpretarSubidaOperam(paso('ok')).vigencia, 'ok');
+  // warn = Operam respondio pero el campo no quedo con la fecha esperada.
+  assert.equal(interpretarSubidaOperam(paso('warn')).vigencia, 'revisar');
+  assert.equal(interpretarSubidaOperam(paso('error')).vigencia, 'revisar');
+  // Sin el paso (respuesta previa a #106, o camino que no sube): no se opina.
+  assert.equal(interpretarSubidaOperam({ ok: true, folio: 1, steps: [{ name: 'POST quote', status: 'ok' }] }).vigencia, null);
+  assert.equal(interpretarSubidaOperam({ ok: true, folio: 1 }).vigencia, null);
+});
+
+test('Q19d: buildOperamStatusHtml avisa solo cuando la vigencia quedo sin corregir', () => {
+  const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001, vigencia: 'ok' });
+  assert.doesNotMatch(ok, /vigencia/i, 'el caso normal no agrega ruido');
+
+  const revisar = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001, vigencia: 'revisar' });
+  assert.match(revisar, /#Operam 77001/, 'la subida sigue siendo un exito');
+  assert.match(revisar, /vigencia/i);
+  assert.match(revisar, /V(&aacute;|á)lido hasta/i, 'nombra el campo tal como se ve en Operam');
+
+  // Sin dato (respuesta vieja): no se inventa un aviso.
+  assert.doesNotMatch(buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 }), /vigencia/i);
 });
