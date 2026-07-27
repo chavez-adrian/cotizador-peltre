@@ -29,6 +29,7 @@ if (existsSync(envPath)) {
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app, cargarListasPrecios } = await import('../server.js');
 const { resetSession } = await import('../lib/operam-client.js');
+const { _resetSesionWeb } = await import('../lib/operam-web.js');
 const TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
 function readJson(path) { return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []; }
@@ -51,6 +52,25 @@ function jsonResponse(data, status = 200) {
   return { ok: status < 400, status, json: async () => data };
 }
 
+// La web legacy responde HTML, no JSON, y su sesion viaja en cookies.
+function htmlResponse(html) {
+  return { ok: true, status: 200, text: async () => html, headers: { getSetCookie: () => ['FA=sesion-de-prueba; path=/'] } };
+}
+
+// Post-fix de la vigencia (#106): el quote se corrige por la web legacy en cuanto existe.
+// Estos handlers cubren las dos paginas que toca -- el formulario de edicion y la vista
+// read-only con la que se verifica -- para que la subida se pruebe COMPLETA.
+const FORM_QUOTE = readFileSync(join(__dirname, 'fixtures', 'operam-quote-form.html'), 'utf8');
+function mockWebLegacy({ validoHasta = '2026-08-05', onPost = () => {} } = {}) {
+  return {
+    'sales_order_entry.php': (u, opts) => {
+      if (opts?.method === 'POST') { onPost(String(opts.body)); return htmlResponse('<html>ok</html>'); }
+      return htmlResponse(FORM_QUOTE);
+    },
+    'view_sales_order.php': () => htmlResponse(`<tr><td class='label'>Valido hasta</td><td id=''>${validoHasta}</td></tr>`),
+  };
+}
+
 let savedCots, savedProspectos, existiaProspectos;
 before(() => {
   savedCots = readJson(COTS_PATH);
@@ -66,6 +86,7 @@ after(() => {
 beforeEach(() => {
   globalThis.fetch = fetchBloqueado;
   resetSession();
+  _resetSesionWeb();
 });
 
 const CELULAR = '+52 5588776655';
@@ -118,6 +139,7 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
       return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'FERRETERIA EL CLAVO', cust_ref: 'El Clavo', tax_id: 'XAXX010101000' }] });
     },
     '/api/v3/sales/quote': (u, opts) => { llamadas.push('POST quote'); quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1701 }); },
+    ...mockWebLegacy(),
   });
   await cargarListasPrecios();
 
@@ -750,4 +772,86 @@ test('C2: el lock se libera tras un fallo (el reintento posterior NO recibe 425)
   const intento2 = await supertest(app).post(`/api/cotizacion/operam/${id}`)
     .set('Authorization', `Bearer ${TOKEN}`).send({});
   assert.equal(intento2.status, 200, 'el lock no quedo tomado tras el fallo');
+});
+
+// --- Post-fix de la vigencia (#106, ADR-0007) --------------------------------
+// El POST del quote ignora valid_until y deja el campo nativo "Valido hasta" en
+// ord_date-1, asi que Operam marca como vencidas cotizaciones vivas. Se corrige por la
+// web legacy en cuanto el quote existe, y se verifica releyendo.
+
+function mockSubidaBase(extra = {}) {
+  return {
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 960 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/960')) return jsonResponse({ data: [{ branches: [{ branch_code: 961 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1801 }),
+    ...extra,
+  };
+}
+
+test('V1: tras subir el quote se corrige la vigencia y el body lleva ProcessOrder, nunca CancelOrder', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  let bodyPosteado = null;
+  mockOperamFetch(mockSubidaBase(mockWebLegacy({ onPost: (b) => { bodyPosteado = b; } })));
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  const paso = res.body.steps.find(s => s.name === 'post-fix vigencia');
+  assert.ok(paso, 'la subida reporta el paso del post-fix');
+  assert.equal(paso.status, 'ok');
+
+  const enviado = new URLSearchParams(bodyPosteado);
+  // La fecha escrita es la MISMA vigencia que viajo en comments, no una recalculada.
+  assert.equal(enviado.get('delivery_date'), '2026-08-05');
+  assert.equal(enviado.get('ProcessOrder'), 'Confirmar Cambios');
+  assert.equal(enviado.has('CancelOrder'), false, 'CancelOrder anularia la cotizacion');
+  assert.equal(enviado.has('update'), false, 'update es "Recalculate"');
+  // El resto del documento viaja intacto: el post-fix no decide su contenido.
+  assert.equal(enviado.get('customer_id'), '376');
+  assert.equal(enviado.get('sales_type'), '16');
+});
+
+test('V2: si la web legacy falla, la subida NO se cae -- el quote ya existe', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  mockOperamFetch(mockSubidaBase({
+    'sales_order_entry.php': () => { throw new Error('ECONNRESET'); },
+    'view_sales_order.php': () => { throw new Error('ECONNRESET'); },
+  }));
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200, 'la subida se completa: comments sigue llevando la vigencia');
+  assert.equal(res.body.folio, 1801);
+  const paso = res.body.steps.find(s => s.name === 'post-fix vigencia');
+  assert.equal(paso.status, 'error');
+});
+
+// Operam responde 200 aunque ignore campos (mismo quirk del PUT de clientes): sin
+// releer, un post-fix que no pego se reportaria como exito.
+test('V3: si la relectura no coincide, el paso queda en warn (no en ok)', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  mockOperamFetch(mockSubidaBase(mockWebLegacy({ validoHasta: '2026-07-05' })));
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  const paso = res.body.steps.find(s => s.name === 'post-fix vigencia');
+  assert.equal(paso.status, 'warn');
+  assert.equal(paso.esperado, '2026-08-05');
+  assert.equal(paso.encontrado, '2026-07-05');
 });

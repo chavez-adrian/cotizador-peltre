@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # desarrollo con hot-reload (--watch)
 npm start            # produccion
-npm test             # todos los tests (1088, 0 fallas esperadas)
+npm test             # todos los tests (1115, 0 fallas esperadas)
 
 # Correr un test individual:
 node --test test/server.test.js
@@ -57,6 +57,7 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 | `sync-operam.js` | Nucleo PURO del sync post-venta (#62): `etapaPostVenta(hechos, op)` (hechos normalizados → etapa, con gate de #61 y monotonia) + `hechosDesdeOperam` (transacciones crudas → hechos). **Mapeo REAL de tipos de Operam: ver `peltre-operam.md` §12** (el MCP `operam-api` los etiqueta mal). Pago por `allocated` vs `total` (tolerancia 1%), no por `outstanding`. Sin IO. |
 | `sync-operam-io.js` | Motor de reconciliacion: lee Operam read-only (`listarTransacciones`/`listarPedidos`), normaliza, aplica el nucleo y mueve la tarjeta. Binding por `data.orderOperam` (el folio de cotizacion NUNCA es el `order_`). Lo usan el webhook y `/api/sync-operam`. |
 | `sync-operam-webhook.js` | Webhook de Operam: extraccion defensiva del identificador, clave idempotente, log en Neon. |
+| `operam-web.js` | Web legacy de Operam (FrontAccounting) para lo que la API v3 no expone: login por form + cookie (auth distinta del Bearer), lectura del estado de cancelacion, y **escritura** del post-fix de vigencia (#106, ADR-0007): `corregirVigenciaQuote` + los puros `parsearFormularioQuote`/`serializarBodyQuote`/`leerValidoHastaVista`. Reposteo del formulario IDENTICO salvo `delivery_date`; el body lleva `ProcessOrder` y NUNCA `CancelOrder` (que vive en el mismo form y anularia la cotizacion). |
 | `db.js` | Pool pg con DATABASE_URL. Exporta `query(sql, params)`. Retorna null si no hay pool (graceful). Auto-crea tablas `clientes_log` y `operam_webhooks_log` en Neon al iniciar. |
 | `dropbox.js` | OAuth token refresh. Exporta `upload(path, content)` y `subirCsfDropbox(pdfBase64, rfc, nombre)` |
 | `parsear-csf.js` | Funcion pura — extrae RFC, razon social, domicilio, regimen de texto de PDF de CSF del SAT |

@@ -42,10 +42,19 @@ La decisión aplica **solo a la vigencia**. La edición del *contenido* de un qu
 - El campo nativo de Operam pasa a ser correcto en quotes nuevos creados por el cotizador. `comments` conserva la línea "Valido hasta: ..." como respaldo — redundante a propósito, porque el post-fix puede fallar.
 - Se introduce en el camino crítico de la subida una dependencia del **HTML de un SaaS de terceros**. Operam actualiza sin compromiso de compatibilidad; cuando cambie un `name=` del formulario, el post-fix fallará. El modo de falla peligroso es el silencioso (escribir algo distinto de lo esperado), y por eso la verificación post-escritura no es opcional.
 - `CancelOrder` vive en el mismo formulario que `ProcessOrder`. Un error de serialización del body no degrada: **anula la cotización**. La construcción del body debe ser explícita sobre qué botón manda.
-- **Riesgo abierto, no resuelto por este ADR:** no se pudo verificar leyendo si `ProcessOrder` re-aplica la lista de precios (`sales_type`) o toca reservas de inventario (`Location`) al re-confirmar el documento — en el mismo formulario existe un botón `update = "Recalculate"`. La implementación **debe** verificarlo contra un quote desechable antes de habilitarse en el camino de subida, comparando partidas, precios y totales antes/después. Si `ProcessOrder` recalcula, esta decisión se revisa.
+- **Riesgo abierto al aprobar el ADR — resuelto el 2026-07-27 (ver "Verificación"):** no se pudo verificar leyendo si `ProcessOrder` re-aplica la lista de precios (`sales_type`) o toca reservas de inventario (`Location`) al re-confirmar el documento — en el mismo formulario existe un botón `update = "Recalculate"`. La implementación debía verificarlo contra un quote desechable antes de habilitarse en el camino de subida.
 - El estado del documento vive en `$_SESSION` atado a la cookie de la cuenta `Claude Code`. Los post-fixes deben serializarse: dos corridas concurrentes sobre la misma cuenta se pisan. El lock `subidasOperamEnCurso` de `server.js` ya cubre el caso por cotización, no entre cotizaciones distintas.
 - El cotizador pasa a depender de **dos** mecanismos de auth contra Operam: el Bearer de la API v3 y la sesión por cookie de la web legacy. Son independientes; una rotación de contraseña rompe ambos, un cambio de la API rompe solo uno.
 - Se acepta que el sistema escriba en el ERP por un canal no soportado por el proveedor. Es una deuda consciente: la alternativa es que Operam exponga la vigencia en la API v3, y esa petición al proveedor sigue siendo la solución de fondo.
+
+## Verificación (2026-07-27, implementación #106)
+
+El gate previo se ejecutó contra un cliente y una cotización desechables (cliente 487, quote 1195) con un precio unitario deliberadamente fuera de toda lista (99.99) y un descuento propio (7%), para que cualquier recálculo fuera visible:
+
+- **`ProcessOrder` NO recalcula.** Tras el post-fix, partidas, precio unitario, descuento, subtotal, IVA y total quedaron **idénticos** carácter por carácter. El riesgo que quedaba abierto se cierra: la decisión de este ADR se sostiene.
+- El campo nativo quedó corregido (`2026-08-26`, la vigencia real) y el aviso **"Esta cotizacion esta vencida"** desapareció de la página de edición. El quote 1193, sin post-fix, conserva `2026-07-26` y sigue mostrando el aviso — control de la comparación.
+
+Quedan en Operam para limpieza manual el cliente 487 ("PRUEBA POST-FIX VIGENCIA 106 - BORRAR") y su cotización 1195.
 
 ### Alcance no cubierto
 

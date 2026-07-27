@@ -8,7 +8,8 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion } from './lib/operam-client.js';
+import { corregirVigenciaQuote } from './lib/operam-web.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
@@ -1203,6 +1204,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       const folio = await subirCotizacionOperam({ ...entry.data, cliente: { ...c, customerId, branchId } });
       if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
       steps.push({ name: 'POST quote', status: 'ok' });
+      await postFixVigencia(folio, entry.data, steps);
       // clienteGenerico (#93): este camino SIEMPRE deja el cliente con RFC generico
       // (creado nuevo o reutilizado por celular/dedup de nombre, ambos genericos) --
       // el frontend lo usa para refrescar el chip Fiscal y ofrecer la CSF junto al folio.
@@ -1223,6 +1225,28 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
 // clientes genericos. Proceso Node unico (Render free tier): un Set basta. El
 // segundo request recibe 425 claro y reintenta cuando el primero termine.
 const subidasOperamEnCurso = new Set();
+
+// Post-fix de la vigencia (#106, ADR-0007). El POST del quote ignora valid_until y deja
+// el campo nativo "Valido hasta" en ord_date-1, asi que Operam marca como vencidas
+// cotizaciones vivas; se corrige por la web legacy en cuanto el quote existe. NO es
+// bloqueante: el quote ya esta subido y comments sigue llevando la vigencia, asi que un
+// fallo aqui se reporta como step y nunca tumba la subida. La verificacion post-escritura
+// (releer y comparar) sigue el mismo patron que el PUT del branch (#96) y el quirk del
+// PUT de clientes, que responde 200 aunque ignore campos.
+async function postFixVigencia(folio, data, steps) {
+  if (folio == null || folio === '') return;
+  try {
+    const r = await corregirVigenciaQuote(folio, vigenciaDeCotizacion(data));
+    if (r.ok) {
+      steps.push({ name: 'post-fix vigencia', status: 'ok' });
+    } else {
+      steps.push({ name: 'post-fix vigencia', status: 'warn', esperado: r.esperado, encontrado: r.encontrado });
+    }
+  } catch (err) {
+    console.error('[post-fix vigencia] fallo en el quote', folio, err.message);
+    steps.push({ name: 'post-fix vigencia', status: 'error', error: err.message });
+  }
+}
 
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
@@ -1254,7 +1278,9 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
       const folio = await subirCotizacionOperam(entry.data);
       // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
       if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
-      res.json({ ok: true, folio });
+      const steps = [];
+      await postFixVigencia(folio, entry.data, steps);
+      res.json({ ok: true, folio, steps });
     } catch (err) {
       // Cliente no identificado (#68): es un problema de datos de la cotizacion,
       // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
