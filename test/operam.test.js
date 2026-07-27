@@ -52,7 +52,10 @@ const CLIENTES_RESPONSE = {
       contact_name: 'Adriana Urena',
       phone: '55 1072 7542',
       email: 'a.urena@museofridakahlo.org.mx',
-    }]
+    }],
+    contacts: [
+      { action: 'invoice', name: 'Facturacion Banco', phone: '', email: 'facturas@banco.mx' },
+    ],
   }]
 };
 
@@ -131,9 +134,9 @@ test('B2: sin auth token retorna 401', async () => {
   assert.equal(res.status, 401);
 });
 
-// B3: GET /api/operam/clientes/:id/domicilios retorna array con campos de branches
+// B3: GET /api/operam/clientes/:id/domicilios retorna { domicilios, contacts } (#99)
 
-test('B3: domicilios retorna branches mapeados con campos reales', async () => {
+test('B3: domicilios retorna { domicilios, contacts } con branches y contactos del cliente mapeados', async () => {
   resetSession();
   resetIndice();
   const restore = mockFetchByUrl({
@@ -143,12 +146,16 @@ test('B3: domicilios retorna branches mapeados con campos reales', async () => {
   try {
     const res = await req.get('/api/operam/clientes/42/domicilios').set('Authorization', `Bearer ${TOKEN}`);
     assert.equal(res.status, 200);
-    assert.ok(Array.isArray(res.body));
-    assert.ok(res.body.length > 0);
-    const d = res.body[0];
+    assert.ok(Array.isArray(res.body.domicilios));
+    assert.ok(res.body.domicilios.length > 0);
+    const d = res.body.domicilios[0];
     assert.ok('descripcion' in d);
     assert.ok('cp' in d);
     assert.ok('email' in d);
+    assert.ok(Array.isArray(res.body.contacts));
+    assert.equal(res.body.contacts[0].tag, 'invoice');
+    assert.equal(res.body.contacts[0].nombre, 'Facturacion Banco');
+    assert.equal(res.body.contacts[0].email, 'facturas@banco.mx');
   } finally { restore(); }
 });
 

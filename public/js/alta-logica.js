@@ -585,6 +585,35 @@ export function paisDesdeCodigoTelefono(code) {
 // los campos comerciales capturados y el domicilio de entrega. customerId/branchId
 // no nulos indican un reintento (issue #?): se reenvian para que el backend continue
 // donde quedo en vez de crear un cliente duplicado.
+// === Selector de contactos de entrega en el paso Envio (issue #99) ===
+//
+// Antes, el paso Envio prellenaba telefono/correo de entrega tomando el primer valor
+// "suelto" que encontrara (branch o primer contacto del cliente), sin decir a quien
+// pertenecia (caso real: GRUPO URUGUAYO MINAS, 4 contactos a nivel cliente y 0 a nivel
+// domicilio -- la app prellenaba un telefono y un correo de personas distintas sin
+// atribucion). Esta funcion arma la lista COMPLETA de candidatos con nombre visible,
+// para que el vendedor elija a quien entregar en vez de heredar un dato huerfano.
+// El contacto propio del domicilio (branch) va primero porque es el mas especifico
+// a esa direccion; los contactos del cliente (contacts[], con su tag de Operam:
+// general/invoice/delivery) le siguen en el orden que trae la API.
+export function contactosEntregaDisponibles(domicilio, contactosCliente) {
+  const lista = [];
+  const d = domicilio || {};
+  if (d.contacto || d.telefono || d.email) {
+    lista.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '' });
+  }
+  for (const c of contactosCliente || []) {
+    if (c && (c.nombre || c.telefono || c.email)) lista.push(c);
+  }
+  return lista;
+}
+
+const TAGS_CONTACTO = { general: 'General', invoice: 'Facturacion', delivery: 'Entrega', domicilio: 'Domicilio' };
+
+export function etiquetaTagContacto(tag) {
+  return TAGS_CONTACTO[tag] || tag || '';
+}
+
 export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId) {
   return {
     tax_id: csfDatos.rfc || '',

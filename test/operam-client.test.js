@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -127,6 +127,78 @@ test('obtenerClientePorId: tolera respuesta sin envelope (objeto plano)', async 
     const c = await obtenerClientePorId(456);
     assert.equal(c.CustName, 'Plano SA');
     assert.equal(c.tax_id, 'PLA010101AB1');
+  } finally {
+    restore();
+  }
+});
+
+// === obtenerDomicilios: prefactor issue #99 -- expone contacts[] del cliente ===
+// con sus tags (base compartida con el slice de correos "invoices"), ademas de los
+// domicilios (branches) que ya devolvia.
+
+test('obtenerDomicilios: devuelve { domicilios, contacts } -- contacts trae tag/nombre/telefono/email del cliente', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/900': () => jsonResponse({
+      data: [{
+        customer_id: 900,
+        branches: [{ branch_code: '1', br_name: 'Bodega Norte', contact_name: '', phone: '', email: '' }],
+        contacts: [
+          { action: 'general', name: 'Gustavo Barcia', phone: '55 4860 9144', email: 'gustavo_barcia@yahoo.com' },
+          { action: 'invoice', name: 'Facturacion GUM', phone: '', email: 'factura@gum.com' },
+        ],
+      }],
+    }),
+    '/api/v3/sales/branches/1': () => jsonResponse({ data: [{ br_name: 'Bodega Norte', contact_name: '', phone: '', email: '' }] }),
+  });
+  try {
+    const r = await obtenerDomicilios(900);
+    assert.ok(Array.isArray(r.domicilios), 'domicilios debe ser array');
+    assert.equal(r.domicilios[0].descripcion, 'Bodega Norte');
+    assert.ok(Array.isArray(r.contacts), 'contacts debe ser array');
+    assert.equal(r.contacts.length, 2);
+    assert.equal(r.contacts[0].tag, 'general');
+    assert.equal(r.contacts[0].nombre, 'Gustavo Barcia');
+    assert.equal(r.contacts[0].telefono, '55 4860 9144');
+    assert.equal(r.contacts[0].email, 'gustavo_barcia@yahoo.com');
+    assert.equal(r.contacts[1].tag, 'invoice');
+    assert.equal(r.contacts[1].nombre, 'Facturacion GUM');
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerDomicilios: contacts vacios/sin nombre-ni-telefono-ni-email se descartan', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/901': () => jsonResponse({
+      data: [{
+        customer_id: 901,
+        branches: [],
+        contacts: [{ action: 'general', name: '', phone: '', email: '' }],
+      }],
+    }),
+  });
+  try {
+    const r = await obtenerDomicilios(901);
+    assert.deepEqual(r.contacts, []);
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerDomicilios: cliente sin contacts -> contacts es []', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/902': () => jsonResponse({ data: [{ customer_id: 902, branches: [] }] }),
+  });
+  try {
+    const r = await obtenerDomicilios(902);
+    assert.deepEqual(r.contacts, []);
+    assert.deepEqual(r.domicilios, []);
   } finally {
     restore();
   }

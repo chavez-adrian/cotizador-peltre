@@ -22,6 +22,8 @@ import {
   customerIdFiscal,
   validarAltaManualMinimos,
   emailFacturaParaUpgrade,
+  contactosEntregaDisponibles,
+  etiquetaTagContacto,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -1430,27 +1432,36 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-rfc',            cliente.rfc);
   fill('cl-cp-fiscal',      cliente.cpFiscal || cliente.cp);
   if (cliente.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
-  fill('cl-nombre-entrega', cliente.nombreEntrega);
   fill('cl-calle',          cliente.calle);
   fill('cl-num-int',        cliente.numInt);
   fill('cl-colonia',        cliente.colonia);
   fill('cl-cp-entrega',     cliente.cp);
   fill('cl-municipio',      cliente.municipio);
   fill('cl-estado',         cliente.estado);
-  if (cliente.telefono) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', cliente.telefono);
-  fill('cl-email-entrega',  cliente.email);
+  // OJO (issue #99): NO se prellena cl-nombre-entrega/cl-cel-entrega/cl-email-entrega
+  // aqui con cliente.telefono/cliente.email -- esos vienen del buscador (server.js
+  // /api/operam/clientes), que puede mezclar el telefono de un contacto con el email
+  // de OTRO (ambos "sueltos", sin nombre). El contacto de entrega se elige mas abajo
+  // via el selector de contactos (pcRenderContactoSelect), siempre con nombre visible.
   updateTabIndicators();
 
-  // Cargar domicilios con la direccion correcta desde el branch. Se precarga el
-  // primero; con varios, el paso Envio ofrece su propio selector (pcRenderDomSelect,
-  // #84) sobre window._operamDomicilios.
+  // Cargar domicilios + contactos del cliente (issue #99: obtenerDomicilios ahora
+  // devuelve { domicilios, contacts }). Se precarga el primer domicilio; con varios,
+  // el paso Envio ofrece su propio selector (pcRenderDomSelect, #84) sobre
+  // window._operamDomicilios. El selector de contactos (pcRenderContactoSelect)
+  // combina el contacto propio del domicilio actual con window._operamContactosCliente.
+  window._operamDomicilios = [];
+  window._operamContactosCliente = [];
   try {
     const res = await api(`/api/operam/clientes/${cliente.id}/domicilios`);
-    if (!res.ok) return;
-    const domicilios = await res.json();
-    window._operamDomicilios = domicilios;
-    if (domicilios.length >= 1) aplicarDomicilio(domicilios[0]);
+    if (res.ok) {
+      const { domicilios, contacts } = await res.json();
+      window._operamDomicilios = domicilios || [];
+      window._operamContactosCliente = contacts || [];
+    }
   } catch {}
+  pcState.domicilioIdx = 0;
+  if (window._operamDomicilios.length >= 1) aplicarDomicilio(window._operamDomicilios[0]);
 
   // Mostrar historial de cotizaciones para este cliente
   const nombreCliente = (cliente.name || '').toLowerCase();
@@ -1471,6 +1482,9 @@ async function seleccionarClienteOperam(cliente) {
 
 window.seleccionarClienteOperam = seleccionarClienteOperam;
 
+// Solo aplica la DIRECCION del domicilio (calle/CP/municipio/...); el contacto de
+// entrega (nombre+telefono+email) lo aplica el selector de contactos (issue #99,
+// pcRenderContactoSelect/pcAplicarContacto), siempre con nombre visible.
 function aplicarDomicilio(d) {
   if (!d) return;
   const f = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
@@ -1480,9 +1494,6 @@ function aplicarDomicilio(d) {
   f('cl-cp-entrega',  d.cp);
   f('cl-municipio',   d.municipio);
   f('cl-estado',      d.estado);
-  if (d.telefono) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', d.telefono);
-  if (d.email)    f('cl-email-entrega', d.email);
-  if (d.contacto) f('cl-nombre-entrega', d.contacto);
 }
 
 // ============================================================================
@@ -1498,7 +1509,7 @@ function aplicarDomicilio(d) {
 // (mezclar/recientes/chips/guardrails). Ver CONTEXT.md.
 // ============================================================================
 
-const pcState = { cliente: null };
+const pcState = { cliente: null, domicilioIdx: 0 };
 
 function pcEl() { return document.getElementById('pc-root'); }
 
@@ -1546,6 +1557,8 @@ function pcLimpiarCamposCliente() {
   const pais = document.getElementById('cl-pais'); if (pais) pais.value = 'MX';
   const rfc = document.getElementById('cl-rfc'); if (rfc) rfc.readOnly = false;
   window._operamDomicilios = null;
+  window._operamContactosCliente = null;
+  pcState.domicilioIdx = 0;
 }
 
 // Punto UNICO de preparacion antes de seleccionar/crear un cliente: limpia los
@@ -2029,14 +2042,68 @@ function pcRenderDomSelect() {
   } else {
     slot.innerHTML = '';
   }
+  pcRenderContactoSelect();
 }
 
 function pcCambiarDomicilio() {
   const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
+  pcState.domicilioIdx = idx;
   aplicarDomicilio(window._operamDomicilios?.[idx]);
+  pcRenderContactoSelect();
   pcRenderChips();
 }
 window.pcCambiarDomicilio = pcCambiarDomicilio;
+
+// Selector de contacto de entrega (issue #99): combina el contacto propio del
+// domicilio actual con los contactos del cliente (window._operamContactosCliente,
+// con tag de Operam) para que el vendedor elija A QUIEN entregar, con nombre visible
+// -- nunca un telefono/correo suelto sin dueno. Se re-renderiza al cambiar de
+// domicilio (pcCambiarDomicilio) porque el contacto propio del domicilio cambia.
+function pcContactosDisponibles() {
+  const dom = window._operamDomicilios?.[pcState.domicilioIdx || 0];
+  return contactosEntregaDisponibles(dom, window._operamContactosCliente);
+}
+
+function pcAplicarContacto(c) {
+  const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  f('cl-nombre-entrega', c?.nombre);
+  setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', c?.telefono || '');
+  f('cl-email-entrega', c?.email);
+  pcRenderChips();
+}
+
+function pcRenderContactoSelect() {
+  const slot = document.getElementById('pc-contacto-slot');
+  if (!slot) return;
+  const contactos = pcContactosDisponibles();
+  if (contactos.length === 0) {
+    slot.innerHTML = '';
+    return;
+  }
+  const opciones = contactos.map((c, i) => {
+    const tag = etiquetaTagContacto(c.tag);
+    const datos = [c.telefono, c.email].filter(Boolean).join(' · ');
+    const etiqueta = (c.nombre || 'Sin nombre') + (tag ? ` (${tag})` : '') + (datos ? ' — ' + datos : '');
+    return `<option value="${i}">${escapeHtml(etiqueta)}</option>`;
+  }).join('');
+  slot.innerHTML = '<div class="form-group pc-dom"><label>Contacto de entrega</label>' +
+    '<select id="pc-contacto-select" onchange="pcCambiarContacto()">' +
+    opciones +
+    '<option value="nuevo">+ Nuevo contacto</option>' +
+    '</select></div>';
+  pcAplicarContacto(contactos[0]);
+}
+
+function pcCambiarContacto() {
+  const val = document.getElementById('pc-contacto-select')?.value;
+  if (val === 'nuevo') {
+    pcAplicarContacto(null);
+    document.getElementById('cl-nombre-entrega')?.focus();
+    return;
+  }
+  pcAplicarContacto(pcContactosDisponibles()[parseInt(val)]);
+}
+window.pcCambiarContacto = pcCambiarContacto;
 
 // Re-pinta solo los chips (sin re-render completo, para no perder foco al editar).
 function pcRenderChips() {
@@ -4446,8 +4513,8 @@ async function altaDedupUsarCliente(clienteId) {
   try {
     const res = await api('/api/operam/clientes/' + clienteId + '/domicilios');
     if (!res.ok) throw new Error('Error ' + res.status);
-    const domicilios = await res.json();
-    altaDedupMostrarDomicilios(clienteId, domicilios);
+    const { domicilios } = await res.json();
+    altaDedupMostrarDomicilios(clienteId, domicilios || []);
   } catch (err) {
     if (dedupDiv) dedupDiv.innerHTML += '<p style="color:var(--danger);font-size:12px">Error al cargar domicilios: ' + err.message + '</p>';
   }

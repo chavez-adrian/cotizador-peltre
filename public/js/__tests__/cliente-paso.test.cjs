@@ -9,13 +9,15 @@ const assert = require('node:assert/strict');
 
 let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
-  decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono;
+  decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
+  contactosEntregaDisponibles, etiquetaTagContacto;
 
 before(async () => {
   ({
     mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
     buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
+    contactosEntregaDisponibles, etiquetaTagContacto,
   } = await import('../alta-logica.js'));
 });
 
@@ -290,4 +292,54 @@ test('T2: codigo desconocido o vacio -> MX (default del negocio)', () => {
   assert.strictEqual(paisDesdeCodigoTelefono('+'), 'MX');
   assert.strictEqual(paisDesdeCodigoTelefono(''), 'MX');
   assert.strictEqual(paisDesdeCodigoTelefono(undefined), 'MX');
+});
+
+// === contactosEntregaDisponibles / etiquetaTagContacto: selector de contactos de
+// entrega en el paso Envio (issue #99). Combina el contacto propio del domicilio
+// (branch) con los contactos del cliente (contacts[], con tag de Operam), SIEMPRE
+// con nombre visible -- nunca un telefono/correo suelto sin dueno (bug real: cliente
+// GRUPO URUGUAYO MINAS con 4 contactos a nivel cliente y 0 a nivel domicilio, la app
+// prellenaba telefono/correo sin decir de quien eran).
+
+test('X1: domicilio con contacto propio + contactos del cliente -> el del domicilio va primero, tag "domicilio"', () => {
+  const dom = { contacto: 'Adriana Urena', telefono: '55 1072 7542', email: 'a.urena@museo.mx' };
+  const contactosCliente = [
+    { tag: 'general', nombre: 'Gustavo Barcia', telefono: '55 4860 9144', email: 'gustavo@gum.com' },
+  ];
+  const r = contactosEntregaDisponibles(dom, contactosCliente);
+  assert.strictEqual(r.length, 2);
+  assert.strictEqual(r[0].tag, 'domicilio');
+  assert.strictEqual(r[0].nombre, 'Adriana Urena');
+  assert.strictEqual(r[1].nombre, 'Gustavo Barcia');
+});
+
+test('X2: domicilio sin contacto propio (calle sin nombre/telefono/email) -> solo los del cliente', () => {
+  const dom = { calle: 'Reforma 100' };
+  const contactosCliente = [{ tag: 'general', nombre: 'Gustavo Barcia', telefono: '', email: 'gustavo@gum.com' }];
+  const r = contactosEntregaDisponibles(dom, contactosCliente);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].nombre, 'Gustavo Barcia');
+});
+
+test('X3: sin domicilio ni contactos de cliente -> []', () => {
+  assert.deepStrictEqual(contactosEntregaDisponibles(null, []), []);
+  assert.deepStrictEqual(contactosEntregaDisponibles({}, null), []);
+});
+
+test('X4: descarta contactos de cliente sin nombre NI telefono NI email', () => {
+  const r = contactosEntregaDisponibles({}, [{ tag: 'general', nombre: '', telefono: '', email: '' }]);
+  assert.deepStrictEqual(r, []);
+});
+
+test('X5: etiquetaTagContacto traduce los tags conocidos de Operam y el del domicilio', () => {
+  assert.strictEqual(etiquetaTagContacto('general'), 'General');
+  assert.strictEqual(etiquetaTagContacto('invoice'), 'Facturacion');
+  assert.strictEqual(etiquetaTagContacto('delivery'), 'Entrega');
+  assert.strictEqual(etiquetaTagContacto('domicilio'), 'Domicilio');
+});
+
+test('X6: etiquetaTagContacto con tag desconocido lo regresa tal cual; vacio -> vacio', () => {
+  assert.strictEqual(etiquetaTagContacto('otro'), 'otro');
+  assert.strictEqual(etiquetaTagContacto(''), '');
+  assert.strictEqual(etiquetaTagContacto(undefined), '');
 });
