@@ -1223,7 +1223,8 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
 // idempotencia de la subida cubre reintentos SECUENCIALES, no concurrencia --
 // dos requests EN VUELO al mismo id (auto-subida + Reintentar del Historial, o
 // doble click en Elegir candidato) leerian ambos customerId null y crearian DOS
-// clientes genericos. Proceso Node unico (Render free tier): un Set basta. El
+// clientes genericos. Instancia unica en Render (plan Starter): un Set basta -- con
+// varias instancias haria falta un lock compartido (Neon). El
 // segundo request recibe 425 claro y reintenta cuando el primero termine.
 const subidasOperamEnCurso = new Set();
 

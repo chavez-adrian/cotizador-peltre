@@ -117,7 +117,9 @@ Dos niveles:
 
 ## Deploy
 
-Render.com (free tier). Auto-deploy desde `main`. Config en `render.yaml`.
+Render.com (plan Starter: el servicio NO duerme, una sola instancia). Auto-deploy desde `main`. Config en `render.yaml`.
+
+> Varias piezas asumen **un solo proceso Node**: el lock `subidasOperamEnCurso` de `server.js` y la cola de post-fixes de vigencia de `lib/operam-web.js` viven en memoria. Si algun dia se escala a varias instancias (Standard+), esas garantias dejan de valer y hay que moverlas a Neon o a un lock distribuido.
 
 Variables configuradas en el dashboard de Render (no en `render.yaml`):
 - `OPERAM_URL`, `OPERAM_USER`, `OPERAM_PASSWORD`
