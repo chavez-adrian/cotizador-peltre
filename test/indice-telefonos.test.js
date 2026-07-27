@@ -5,6 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   normalizarTelefono, construirIndice, matchCliente, refrescarIndice, resetIndice,
+  buscarClientesPorTexto,
 } from '../lib/indice-telefonos.js';
 import { resetSession } from '../lib/operam-client.js';
 
@@ -77,7 +78,7 @@ test('normalizarTelefono: menos de 10 digitos, vacio o nulo no producen llave', 
 
 const CLIENTES = [
   {
-    customer_id: '101', CustName: 'UTILITARIO MEXICANO SA DE CV',
+    customer_id: '101', CustName: 'UTILITARIO MEXICANO SA DE CV', cust_ref: 'Utilitario',
     contacts: [
       { phone: '', phone2: '', email: 'facturas@x.com' },
       { phone: '+52 1 55 6207 1948', phone2: '55 4039 4937' },
@@ -85,12 +86,12 @@ const CLIENTES = [
     branches: [{ branch_code: '1', phone: '' }],
   },
   {
-    customer_id: '202', CustName: 'HOTELERA DEL SUR',
+    customer_id: '202', CustName: 'HOTELERA DEL SUR', cust_ref: 'Hotelera Sur',
     contacts: [],
     branches: [{ branch_code: '7', phone: '+52(55)53952615 ext.123' }],
   },
   {
-    customer_id: '303', CustName: 'SIN TELEFONOS',
+    customer_id: '303', CustName: 'SIN TELEFONOS', cust_ref: '',
     contacts: [{ phone: '1234' }],
     branches: [],
   },
@@ -193,4 +194,60 @@ test('matchCliente: si el refresh falla pero hay indice previo, usa el indice vi
   assert.equal((await matchCliente('5553952615')).customer_id, '202');
   const stale = await matchCliente('5553952615', { ttlMs: 0 });
   assert.equal(stale.customer_id, '202', 'indice expirado con Operam caido sigue sirviendo el viejo');
+});
+
+// === buscarClientesPorTexto: cablea el indice a la busqueda de UI (issue #97) ===
+
+test('buscarClientesPorTexto: nombre corto (cust_ref) encuentra al cliente', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  restore = mockListado(CLIENTES, contadores);
+  const r = await buscarClientesPorTexto('hotelera sur');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].customer_id, '202');
+});
+
+test('buscarClientesPorTexto: razon social sigue funcionando', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  restore = mockListado(CLIENTES, contadores);
+  const r = await buscarClientesPorTexto('utilitario mexicano');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].customer_id, '101');
+});
+
+test('buscarClientesPorTexto: telefono en formato +52..., 10 digitos y sin lada encuentran al mismo cliente', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  restore = mockListado(CLIENTES, contadores);
+  const porInternacional = await buscarClientesPorTexto('+52 1 55 6207 1948');
+  assert.equal(porInternacional[0]?.customer_id, '101');
+  const por10digitos = await buscarClientesPorTexto('5562071948');
+  assert.equal(por10digitos[0]?.customer_id, '101');
+  const sinLada = await buscarClientesPorTexto('62071948');
+  assert.equal(sinLada[0]?.customer_id, '101', 'formato sin lada (8 digitos) tambien empata');
+});
+
+test('buscarClientesPorTexto: no duplica cuando el mismo cliente empata por nombre y telefono', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  restore = mockListado(CLIENTES, contadores);
+  const r = await buscarClientesPorTexto('utilitario');
+  assert.equal(r.length, 1);
+});
+
+test('buscarClientesPorTexto: sin coincidencias devuelve []', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  restore = mockListado(CLIENTES, contadores);
+  const r = await buscarClientesPorTexto('no existe nadie asi');
+  assert.deepEqual(r, []);
+});
+
+test('buscarClientesPorTexto: query de menos de 2 caracteres no consulta Operam', async () => {
+  restore = mockFetchByUrl({});
+  assert.deepEqual(await buscarClientesPorTexto('a'), []);
+  assert.deepEqual(await buscarClientesPorTexto(''), []);
+});
+
+test('buscarClientesPorTexto: si Operam falla devuelve [] sin lanzar (best effort)', async () => {
+  restore = mockFetchByUrl({
+    '/api/v3/login': () => { throw new Error('ECONNREFUSED'); },
+  });
+  assert.deepEqual(await buscarClientesPorTexto('utilitario'), []);
 });

@@ -9,6 +9,7 @@ import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId } from './lib/operam-client.js';
+import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
@@ -988,15 +989,35 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
   const q = req.query.q || '';
   if (!q.trim()) return res.json([]);
   try {
-    const raw = await buscarClientes(q);
-    const clientes = (Array.isArray(raw) ? raw : []).map(c => {
+    // Issue #97: buscarClientes(q) es la busqueda de Operam (razon social);
+    // buscarClientesPorTexto(q) cablea el indice de telefonos/nombre corto de
+    // #42 (best effort, nunca lanza) para cubrir telefono de contacto y
+    // cust_ref, que Operam no indexa. Se combinan y deduplican por customer_id.
+    const [porOperam, porIndice] = await Promise.all([
+      buscarClientes(q),
+      buscarClientesPorTexto(q),
+    ]);
+    const vistos = new Set();
+    const raw = [...(Array.isArray(porOperam) ? porOperam : []), ...porIndice].filter(c => {
+      if (vistos.has(c.customer_id)) return false;
+      vistos.add(c.customer_id);
+      return true;
+    });
+    const clientes = raw.map(c => {
       const branch = c.branches?.[0] || {};
+      // OJO: telefonos trae los de TODOS los branches/contactos (no solo branches[0]) --
+      // buscarClientesPorTexto puede matchear por un telefono que viva en otro branch.
+      const telefonos = [
+        ...(c.branches || []).map(b => b.phone),
+        ...(c.contacts || []).flatMap(ct => [ct.phone, ct.phone2]),
+      ].filter(Boolean);
       return {
         id: c.customer_id, name: c.CustName || '', ref: c.cust_ref || '', rfc: c.tax_id || '',
         calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),
         numInt: c.suite_number || '', colonia: titleCase(c.district || ''),
         cp: c.postal_code || '', municipio: titleCase(c.city || ''), estado: titleCase(c.state || ''),
-        telefono: branch.phone || c.contacts?.[0]?.phone || '',
+        telefono: telefonos[0] || '',
+        telefonos,
         email: branch.email || c.contacts?.[0]?.email || '',
         nombreEntrega: branch.br_name || branch.contact_name || '',
       };

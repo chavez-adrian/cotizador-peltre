@@ -20,8 +20,8 @@ before(async () => {
 });
 
 const OPERAM = [
-  { id: 10, name: 'La Vasija Azul SA de CV', ref: 'La Vasija', rfc: 'VAZ990101QX3' },
-  { id: 11, name: 'Distribuidora El Comal', ref: 'El Comal', rfc: 'DCO150612AB1' },
+  { id: 10, name: 'La Vasija Azul SA de CV', ref: 'La Vasija', rfc: 'VAZ990101QX3', telefonos: ['+52 55 1002 1463'] },
+  { id: 11, name: 'Distribuidora El Comal', ref: 'El Comal', rfc: 'DCO150612AB1', telefonos: [] },
 ];
 const PROSPECTOS = [
   { id: 1, nombre: 'Maria Torres', ciudad: 'Guadalajara', celular: '+52 33 1234 5678', etapa: 'por_cotizar', vendedor: 'Ana' },
@@ -53,6 +53,16 @@ test('M3: Operam tambien matchea por RFC; prospecto por celular (digitos)', () =
   assert.strictEqual(porCel.length, 1);
   assert.strictEqual(porCel[0].tipo, 'prospecto');
   assert.strictEqual(porCel[0].nombre, 'Maria Torres');
+});
+
+test('M3b: Operam tambien matchea por nombre corto (cust_ref) y telefono de contacto (issue #97)', () => {
+  const porNombreCorto = mezclarResultadosBusqueda(OPERAM, PROSPECTOS, 'la vasija');
+  assert.ok(porNombreCorto.some(r => r.tipo === 'operam' && r.id === 10));
+
+  const porTelefono = mezclarResultadosBusqueda(OPERAM, PROSPECTOS, '10021463');
+  assert.strictEqual(porTelefono.length, 1);
+  assert.strictEqual(porTelefono[0].tipo, 'operam');
+  assert.strictEqual(porTelefono[0].id, 10);
 });
 
 test('M4: query de menos de 2 caracteres devuelve vacio (se muestran recientes)', () => {

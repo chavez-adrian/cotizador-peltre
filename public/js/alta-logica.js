@@ -439,7 +439,11 @@ export function clienteDesdeProspecto(prospecto) {
 }
 
 function normalizarOperam(c) {
-  return { tipo: 'operam', id: c.id, nombre: c.name || '', rfc: c.rfc || '', sub: c.rfc || '', raw: c };
+  return {
+    tipo: 'operam', id: c.id, nombre: c.name || '', rfc: c.rfc || '', ref: c.ref || '',
+    telefonos: c.telefonos || (c.telefono ? [c.telefono] : []),
+    sub: c.rfc || '', raw: c,
+  };
 }
 
 function normalizarProspecto(p) {
@@ -452,16 +456,22 @@ function normalizarProspecto(p) {
 
 // Un solo buscador que encuentra a la vez clientes de Operam y prospectos del
 // vendedor, distinguibles por tipo (AC2). Query < 2 chars -> [] (el caller muestra
-// recientes). Operam matchea por nombre o RFC; el prospecto por nombre, ciudad o los
-// digitos del celular. Ordena coincidencias por prefijo antes que internas (mezcla
-// los tipos, no los agrupa: "distinguibles" no es "separados").
+// recientes). Operam matchea por razon social, RFC, nombre corto (cust_ref, #97) o
+// telefono de cualquier contacto (#97, digitos); el prospecto por nombre, ciudad o
+// los digitos del celular. Ordena coincidencias por prefijo antes que internas
+// (mezcla los tipos, no los agrupa: "distinguibles" no es "separados").
 export function mezclarResultadosBusqueda(clientesOperam, prospectos, query) {
   const q = String(query || '').toLowerCase().trim();
   if (q.length < 2) return [];
   const qDigitos = q.replace(/\D/g, '');
   const filas = [
     ...(clientesOperam || []).map(normalizarOperam).filter(r =>
-      r.nombre.toLowerCase().includes(q) || r.rfc.toLowerCase().includes(q)),
+      r.nombre.toLowerCase().includes(q) ||
+      r.rfc.toLowerCase().includes(q) ||
+      r.ref.toLowerCase().includes(q) ||
+      // >=8 digitos (formato "sin lada" en adelante, ver indice-telefonos.js): con
+      // menos, un fragmento corto empataria demasiados telefonos del catalogo completo.
+      (qDigitos.length >= 8 && r.telefonos.some(t => t.replace(/\D/g, '').includes(qDigitos)))),
     ...(prospectos || []).map(normalizarProspecto).filter(r =>
       r.nombre.toLowerCase().includes(q) ||
       r.ciudad.toLowerCase().includes(q) ||
