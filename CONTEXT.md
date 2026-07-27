@@ -31,6 +31,12 @@ Deja de ser un modo de trabajo elegible (ADR-0006): toda cotización nueva se su
 
 Corte histórico (decisión 2026-06-16): el folio de Operam no se persistía antes del despliegue de #63, así que una cotización anterior a esa fecha y sin folio no se puede distinguir de una pre-cotización. Se asume **registrada** (no PRE) y no muestra badge — el badge PRE aplica solo a cotizaciones nuevas. El discriminante es la fecha (no el id, que no es contiguo) y vive en la migración de lectura del store.
 
+## Vigencia ("Válido hasta")
+
+La fecha hasta la que la cotización se sostiene, capturada en días por el vendedor (30 por omisión) y calculada sobre la fecha de emisión. Vive en tres lugares por razones distintas: el PDF/HTML que recibe el cliente (donde siempre fue correcta), el campo `comments` del quote de Operam (respaldo, porque la API no acepta la fecha) y el campo nativo "Válido hasta" de Operam, que la API v3 ignora y deja en `ord_date-1` — dejando el ERP mostrando "Esta cotizacion esta vencida" sobre cotizaciones vivas.
+
+El campo nativo se corrige por **post-fix contra la web legacy de Operam**, inmediatamente después de subir el quote y de forma no bloqueante (ADR-0007). La línea "Valido hasta: ..." en `comments` se conserva como respaldo deliberadamente redundante: el post-fix puede fallar y la vigencia no puede quedarse sin portador dentro de Operam.
+
 ## Prospecto Mínimo
 
 El conjunto mínimo de datos con el que se puede emitir una cotización sin que el prospecto haya completado su alta fiscal: lo necesario para identificar al prospecto y calcular la cotización (celular, nombre, ciudad para estimar envío) más el carrito. Ya no difiere el alta en Operam (ADR-0006): al generar la primera cotización, el sistema crea automáticamente el Cliente Genérico correspondiente. El alta fiscal completa se difiere al upgrade por CSF, no al alta del cliente en sí.
