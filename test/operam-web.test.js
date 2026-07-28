@@ -94,6 +94,23 @@ test('parsearFormularioQuote: decodifica entidades HTML de valores y textareas',
   assert.equal(campos.Comments, 'Envío & entrega <urgente>');
 });
 
+// #107: comments ahora es multilinea (una nota por linea + "Valido hasta" en la suya).
+// El regex del textarea usa [\s\S]*?, que deberia capturar los '\n' sin problema, pero
+// esto no estaba probado con un fixture multilinea real. El round-trip completo
+// (parsear -> serializar) es lo que garantiza que el post-fix de vigencia (#106) no
+// mutile el texto al repostear el formulario.
+test('parsearFormularioQuote + serializarBodyQuote: comments multilinea sobrevive el round-trip', () => {
+  const comentariosMultilinea = '- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.\n- Envio a costo y riesgo del cliente.\nValido hasta: 2026-08-26';
+  const html = `<form method='post' action='/sales/sales_order_entry.php'>
+    <input type="text" name="delivery_date" value="2026-07-26">
+    <textarea name="Comments">${comentariosMultilinea}</textarea>
+    </form>`;
+  const { campos } = parsearFormularioQuote(html);
+  assert.equal(campos.Comments, comentariosMultilinea);
+  const body = serializarBodyQuote(campos, { deliveryDate: '2026-08-26' });
+  assert.equal(body.get('Comments'), comentariosMultilinea);
+});
+
 test('serializarBodyQuote: sustituye delivery_date y conserva todo lo demas', () => {
   const { campos } = parsearFormularioQuote(FIXTURE);
   const body = serializarBodyQuote(campos, { deliveryDate: '2026-08-26' });

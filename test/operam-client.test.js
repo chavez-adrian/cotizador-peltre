@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -1229,6 +1229,94 @@ test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (di
     assert.equal(partidaFlete(quoteBody), undefined, 'Lalamove NO debe volverse partida de flete');
     assert.ok(/Lalamove/i.test(quoteBody.comments || ''), 'Lalamove debe quedar en comments');
     assert.ok(/250/.test(quoteBody.comments || ''), 'el monto de Lalamove debe quedar en comments');
+  } finally {
+    restore();
+  }
+});
+
+// #107: pruebas directas de la funcion pura, sin pasar por subirCotizacionOperam.
+test('armarComentariosQuote: notas puntuadas, sin envio -> sin "..", una nota por linea', () => {
+  const comments = armarComentariosQuote(['A.', 'B.'], '2026-07-17', []);
+  assert.equal(comments, '- A.\n- B.\nValido hasta: 2026-07-17');
+  assert.equal(/\.\./.test(comments), false);
+});
+
+test('armarComentariosQuote: nota sin punto final no se pega a la siguiente linea', () => {
+  const comments = armarComentariosQuote(['Precio sujeto a cambio'], '2026-07-17', []);
+  assert.equal(comments, '- Precio sujeto a cambio\nValido hasta: 2026-07-17');
+});
+
+test('armarComentariosQuote: sin notas -> solo Valido hasta (mas envio si aplica)', () => {
+  assert.equal(armarComentariosQuote([], '2026-07-17', []), 'Valido hasta: 2026-07-17');
+  assert.equal(armarComentariosQuote(null, '2026-07-17', []), 'Valido hasta: 2026-07-17');
+});
+
+test('armarComentariosQuote: notas de solo espacios se descartan igual que vacias', () => {
+  const comments = armarComentariosQuote(['A.', '   ', 'B.'], '2026-07-17', []);
+  assert.equal(comments, '- A.\n- B.\nValido hasta: 2026-07-17');
+});
+
+test('armarComentariosQuote: envio Lalamove va despues de Valido hasta, sin ".."', () => {
+  const comments = armarComentariosQuote(['A.'], '2026-07-17', [{ descripcion: 'Lalamove auto', precio: 250 }]);
+  assert.equal(comments, '- A.\nValido hasta: 2026-07-17\nEnvio: Lalamove auto $250');
+  assert.equal(/\.\./.test(comments), false);
+});
+
+// #107: las notas ya llegan puntuadas (el vendedor las captura como vinetas terminadas
+// en punto). join('. ') sobre eso producia ".." -- ahora cada nota es su propia linea
+// con vineta, sin agregar puntuacion nueva.
+test('subirCotizacionOperam: comments no lleva ".." con notas ya puntuadas', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 340, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1600 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      vigencia: '2026-07-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+      notas: ['A.', 'B.'],
+    });
+    assert.equal(/\.\./.test(quoteBody.comments || ''), false, 'comments no debe contener ".."');
+    assert.equal(quoteBody.comments, '- A.\n- B.\nValido hasta: 2026-07-17');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: una nota sin punto final no queda pegada a la siguiente', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 341, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1601 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      vigencia: '2026-07-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+      notas: ['Precio sujeto a cambio', 'Pago de contado'],
+    });
+    assert.equal(quoteBody.comments, '- Precio sujeto a cambio\n- Pago de contado\nValido hasta: 2026-07-17');
   } finally {
     restore();
   }
