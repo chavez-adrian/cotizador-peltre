@@ -45,6 +45,7 @@ import {
 import {
   puedeArrastrarCotizacion,
   buildTableroCotizacionesHtml,
+  buildHistorialAccionesHtml,
 } from './cotizaciones-logica.js';
 import {
   buildTableroPipelineHtml,
@@ -2248,7 +2249,7 @@ function renderHistorialCliente(cotizaciones) {
       return `<div class="cot-mini">
         <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}${badgeFolioOperamHtml(c)}</span>
         ${c.hasData ? `<button class="btn btn-sm btn-secondary" onclick="cargarCotizacion(${c.id})">Cargar</button>` : ''}
-        ${c.hasPdf ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-sm btn-secondary">PDF</a>` : ''}
+        ${c.hasData ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-sm btn-secondary">PDF</a>` : ''}
         ${botonCompletarHtml(c)}
         <div class="operam-status-slot"></div>
       </div>`;
@@ -2610,9 +2611,9 @@ function renderHistorial() {
 
   listEl.innerHTML = ultimasCotizaciones.slice().reverse().map(c => {
     const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
-    const btnPdf = c.hasPdf
-      ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>`
-      : `<button class="btn btn-secondary btn-sm" disabled title="PDF no disponible">Ver PDF</button>`;
+    // Ver PDF / Ver HTML / WhatsApp regeneran desde el registro guardado
+    // (issue #103), no desde disco ni desde el estado del formulario.
+    const accionesDocumento = buildHistorialAccionesHtml(c, window.location.origin);
     const btnCargar = c.hasData
       ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id})">Cargar</button>`
       : `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Cargar</button>`;
@@ -2634,7 +2635,7 @@ function renderHistorial() {
           </div>
         </div>
         <div class="cot-card-actions">
-          ${btnPdf}
+          ${accionesDocumento}
           ${btnCargar}
           ${btnCompletar}
         </div>

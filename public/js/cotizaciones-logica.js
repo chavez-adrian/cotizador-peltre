@@ -92,6 +92,38 @@ function buildCotizacionCardHtml(c, col, hoy) {
   </div>`;
 }
 
+// Link wa.me para compartir una cotizacion del historial (issue #103): mismo
+// formato de mensaje que shareWhatsApp (app.js) para la cotizacion recien
+// generada, pero apuntando al HTML regenerado desde el registro guardado en
+// vez del PDF de la sesion en curso. origin lo pasa el caller
+// (window.location.origin no existe en este modulo sin efectos de navegador).
+export function buildWhatsAppLinkHistorial(c, origin = '') {
+  const htmlUrl = `${origin}/api/cotizacion/html/${c.id}`;
+  const msg = encodeURIComponent(
+    `Cotizacion Peltre Nacional\nCliente: ${c.cliente || 'Cliente'}\nTotal: $${fmtMoneda(c.total)}\n\nVer cotizacion:\n${htmlUrl}`
+  );
+  return `https://wa.me/?text=${msg}`;
+}
+
+// Acciones de una fila del historial (issue #103): Ver PDF / Ver HTML regeneran
+// el documento desde el registro guardado via los GET correspondientes (sin
+// depender de disco); WhatsApp abre wa.me con el link al HTML regenerado. Sin
+// data persistida (registro historico, c.hasData false) no hay nada que
+// regenerar: las tres quedan deshabilitadas en vez de apuntar a un 404.
+export function buildHistorialAccionesHtml(c, origin = '') {
+  if (!c.hasData) {
+    return ['Ver PDF', 'Ver HTML', 'WhatsApp']
+      .map(label => `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">${label}</button>`)
+      .join(' ');
+  }
+  const pdfUrl = `/api/cotizacion/pdf/${c.id}`;
+  const htmlUrl = `/api/cotizacion/html/${c.id}`;
+  const waUrl = buildWhatsAppLinkHistorial(c, origin);
+  return `<a href="${escapeHtml(pdfUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>` +
+    ` <a href="${escapeHtml(htmlUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver HTML</a>` +
+    ` <a href="${escapeHtml(waUrl)}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
+}
+
 export function buildTableroCotizacionesHtml(cotizaciones, hoy = new Date()) {
   const cols = agruparTableroCotizaciones(cotizaciones, hoy);
   return COLUMNAS_COTIZACIONES.map(col => {

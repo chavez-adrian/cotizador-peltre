@@ -1,7 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { extractPrices, diffPrices } from './lib/extract-prices.js';
@@ -34,11 +34,6 @@ import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDec
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
 const PUBLIC_DIR = join(__dirname, 'public');
-const PDFS_DIR = join(DATA_DIR, 'pdfs');
-const HTMLS_DIR = join(DATA_DIR, 'htmls');
-
-if (!existsSync(PDFS_DIR)) mkdirSync(PDFS_DIR, { recursive: true });
-if (!existsSync(HTMLS_DIR)) mkdirSync(HTMLS_DIR, { recursive: true });
 
 const envFile = join(__dirname, '.env');
 if (existsSync(envFile)) {
@@ -236,7 +231,6 @@ app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
     data.vendedor = req.user.name;
     const id = await crearOActualizarCotizacion(data, req.user.name);
     const pdfBuffer = await generateQuotePDF(data);
-    writeFileSync(join(PDFS_DIR, `cot_${id}.pdf`), pdfBuffer);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
@@ -258,7 +252,6 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
     const incluirFotos = !!data.incluirFotos;
     data.id = id;
     const html = generateQuoteHTML(data, { incluirFotos });
-    writeFileSync(join(HTMLS_DIR, `cot_${id}.html`), html, 'utf8');
     res.set({ 'Content-Type': 'text/html; charset=utf-8', 'X-Cotizacion-Id': String(id) });
     res.send(html);
   } catch (err) {
@@ -267,25 +260,42 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/cotizacion/html/:id', (req, res) => {
+// Regeneran el documento desde el registro guardado (data jsonb) en vez de
+// servir un archivo de disco (issue #103): el disco de Render es efimero y
+// muere en cada deploy, mientras que data sobrevive en Neon. Sin
+// authMiddleware a proposito (se comparten por WhatsApp).
+app.get('/api/cotizacion/html/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
-  const htmlPath = join(HTMLS_DIR, `cot_${id}.html`);
-  if (!existsSync(htmlPath)) return res.status(404).send('<p>HTML no encontrado</p>');
-  res.set({ 'Content-Type': 'text/html; charset=utf-8' });
-  res.sendFile(htmlPath);
+  const entry = await cotStore.obtener(id);
+  if (!entry || !entry.data) return res.status(404).send('<p>HTML no encontrado</p>');
+  try {
+    const data = { ...entry.data, id: entry.id };
+    const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos });
+    res.set({ 'Content-Type': 'text/html; charset=utf-8' });
+    res.send(html);
+  } catch (err) {
+    console.error('Error regenerando HTML:', err);
+    res.status(500).send('<p>Error generando HTML</p>');
+  }
 });
 
-app.get('/api/cotizacion/pdf/:id', (req, res) => {
+app.get('/api/cotizacion/pdf/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
-  const pdfPath = join(PDFS_DIR, `cot_${id}.pdf`);
-  if (!existsSync(pdfPath)) return res.status(404).json({ error: 'PDF no encontrado' });
-  res.set({
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': `inline; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
-  });
-  res.sendFile(pdfPath);
+  const entry = await cotStore.obtener(id);
+  if (!entry || !entry.data) return res.status(404).json({ error: 'PDF no encontrado' });
+  try {
+    const pdfBuffer = await generateQuotePDF(entry.data);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
+    });
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('Error regenerando PDF:', err);
+    res.status(500).json({ error: 'Error generando PDF' });
+  }
 });
 
 app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
@@ -314,7 +324,6 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     pagoSinRegistrar: data?.pagoSinRegistrar === true,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
-    hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),
   })));
 });
 

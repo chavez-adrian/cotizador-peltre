@@ -1,6 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -16,6 +16,13 @@ if (existsSync(envPath)) {
     const match = line.match(/^([^#=]+)=(.*)$/);
     if (match) process.env[match[1].trim()] = match[2].trim();
   }
+}
+
+// PDFKit codifica el contenido en hex dentro de operadores TJ (con kern-split);
+// _compress:false vuelve el content stream legible pero solo buscable en hex
+// (mismo patron que test/pdf-generator.test.js).
+function toHex(s) {
+  return Buffer.from(s, 'latin1').toString('hex');
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
@@ -126,6 +133,94 @@ test('#102-2: GET /api/cotizaciones/:id de un registro viejo sin data.envio no r
   const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.body.envio, undefined);
+});
+
+// === #103: los GET de pdf/html regeneran desde data (columna jsonb), nunca
+// desde disco (el disco de Render es efimero: muere en cada deploy). Sin
+// authMiddleware a proposito (se comparten por WhatsApp).
+test('#103-1: GET /api/cotizacion/pdf/:id regenera el PDF desde data del registro guardado', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente Regenerado',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: {
+      _compress: false,
+      cliente: { razonSocial: 'Cliente Regenerado SA de CV', nombreCorto: 'Cliente Regenerado' },
+      items: [{ codigo: 'TEST103', descripcion: 'Producto de prueba 103', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  }]);
+  const res = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers['content-type'], /application\/pdf/);
+  const texto = Buffer.from(res.body).toString('latin1');
+  assert.ok(texto.includes(toHex('Regen')));
+  assert.ok(texto.includes(toHex('TEST103')));
+});
+
+test('#103-2: GET /api/cotizacion/pdf/:id de un id inexistente da 404', async () => {
+  const res = await supertest(app).get('/api/cotizacion/pdf/999999');
+  assert.strictEqual(res.status, 404);
+});
+
+test('#103-3: GET /api/cotizacion/pdf/:id regenera igual aunque el archivo de disco ya no exista (disco efimero de Render)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin Disco',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: {
+      _compress: false,
+      cliente: { razonSocial: 'Sin Disco SA', nombreCorto: 'Sin Disco' },
+      items: [{ codigo: 'NODISK', descripcion: 'No depende de disco', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  }]);
+  const pdfPath = join(DATA_DIR, 'pdfs', `cot_${id}.pdf`);
+  if (existsSync(pdfPath)) unlinkSync(pdfPath);
+  const res = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  assert.strictEqual(res.status, 200);
+  assert.ok(Buffer.from(res.body).toString('latin1').includes(toHex('NODISK')));
+});
+
+test('#103-4: GET /api/cotizacion/html/:id regenera el HTML desde data del registro guardado', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente HTML',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: {
+      cliente: { razonSocial: 'Cliente HTML SA de CV', nombreCorto: 'Cliente HTML' },
+      items: [{ codigo: 'HTML103', descripcion: 'Producto HTML 103', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  }]);
+  const res = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers['content-type'], /text\/html/);
+  assert.ok(res.text.includes('Cliente HTML SA de CV'));
+  assert.ok(res.text.includes(`#${id}`));
+});
+
+test('#103-5: GET /api/cotizacion/html/:id de un id inexistente da 404', async () => {
+  const res = await supertest(app).get('/api/cotizacion/html/999999');
+  assert.strictEqual(res.status, 404);
+});
+
+test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si hay algo que regenerar', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Con Data',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'Con Data SA' }, items: [] },
+  }]);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  const entry = res.body.find(c => c.id === id);
+  assert.ok(entry);
+  assert.strictEqual(entry.hasData, true);
+  assert.strictEqual(entry.hasPdf, undefined);
 });
 
 test('B4: POST /api/cotizacion/envio usa paisDestino en destination.country', async () => {

@@ -3,10 +3,12 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
-  puedeArrastrarCotizacion, buildTableroCotizacionesHtml;
+  puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
+  buildHistorialAccionesHtml, buildWhatsAppLinkHistorial;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
-    puedeArrastrarCotizacion, buildTableroCotizacionesHtml } = await import('../cotizaciones-logica.js'));
+    puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
+    buildHistorialAccionesHtml, buildWhatsAppLinkHistorial } = await import('../cotizaciones-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -192,4 +194,40 @@ test('Q14: el header de columna es un pill con clase por columna', () => {
   const html = buildTableroCotizacionesHtml([cot(3)], HOY);
   assert.match(html, /col-pill col-pill-dia2/);
   assert.match(html, /col-pill col-pill-ganada/);
+});
+
+// === #103: acciones del historial (Ver PDF / Ver HTML / WhatsApp) regeneran
+// desde el registro guardado; nada de disco ni de estado del formulario.
+
+test('Q17: buildHistorialAccionesHtml apunta Ver PDF y Ver HTML a los GET que regeneran desde data', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true }));
+  assert.ok(html.includes('href="/api/cotizacion/pdf/42"'));
+  assert.ok(html.includes('href="/api/cotizacion/html/42"'));
+  assert.ok(html.includes('>Ver PDF<'));
+  assert.ok(html.includes('>Ver HTML<'));
+});
+
+test('Q18: buildHistorialAccionesHtml deshabilita las 3 acciones cuando el registro no tiene data', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: false }));
+  assert.ok(!html.includes('/api/cotizacion/pdf/42'));
+  assert.ok(!html.includes('/api/cotizacion/html/42'));
+  assert.ok(!html.includes('wa.me'));
+  assert.match(html, /disabled title="Datos no disponibles">Ver PDF/);
+  assert.match(html, /disabled title="Datos no disponibles">Ver HTML/);
+  assert.match(html, /disabled title="Datos no disponibles">WhatsApp/);
+});
+
+test('Q19: buildWhatsAppLinkHistorial arma un wa.me con el HTML regenerado (con origin) y el cliente/total en el mensaje', () => {
+  const url = buildWhatsAppLinkHistorial(cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5 }), 'https://cotizador.example');
+  assert.match(url, /^https:\/\/wa\.me\/\?text=/);
+  const msg = decodeURIComponent(url.split('text=')[1]);
+  assert.ok(msg.includes('Hotel Azul'));
+  assert.ok(msg.includes('12,345.50'));
+  assert.ok(msg.includes('https://cotizador.example/api/cotizacion/html/42'));
+});
+
+test('Q20: buildHistorialAccionesHtml usa el link wa.me de buildWhatsAppLinkHistorial y escapa datos de usuario', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 7, cliente: '<img src=x onerror=alert(1)>', hasData: true }), 'https://cotizador.example');
+  assert.ok(html.includes('wa.me'));
+  assert.ok(!html.includes('<img src=x'));
 });
