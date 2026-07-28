@@ -9,7 +9,8 @@ import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion } from './lib/operam-client.js';
-import { corregirVigenciaQuote } from './lib/operam-web.js';
+import { corregirVigenciaQuote, actualizarQuoteOperam } from './lib/operam-web.js';
+import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
@@ -322,6 +323,11 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // Pago sin registrar (issue #77): la tarjeta entregada-impaga muestra el badge
     // "Pago sin registrar" mientras el pago no aparezca liquidado; el sync lo apaga.
     pagoSinRegistrar: data?.pagoSinRegistrar === true,
+    // Pedido asociado (#62) y marca de quote desactualizado (#104): el historial los
+    // necesita para decidir si ofrece "Actualizar cotizacion" (gate del ADR-0008) y
+    // para pintar el reintento cuando la edicion del quote no pego.
+    orderOperam: data?.orderOperam ?? null,
+    quoteDesactualizado: data?.quoteDesactualizado ?? null,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
   })));
@@ -1301,6 +1307,60 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
       }
       res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
     }
+  } finally {
+    subidasOperamEnCurso.delete(id);
+  }
+});
+
+// Actualizar la cotizacion ya registrada conservando el folio (#104, ADR-0008).
+// El REGISTRO del cotizador ya lo actualizo la generacion del documento
+// (crearOActualizarCotizacion honra cotizacionId): aqui solo se reescribe el quote
+// en Operam, que no tiene PUT en la API v3 (501) y solo se puede editar por la web
+// legacy. Comparte el lock por id con la subida: una subida y una actualizacion en
+// vuelo sobre la misma cotizacion se pisarian el carrito de FA.
+//
+// Si la edicion falla, el registro del cotizador NO se revierte -- es la fuente del
+// PDF/HTML que el cliente ya tiene -- y la cotizacion queda marcada con
+// data.quoteDesactualizado para que el historial ofrezca reintentar (analogo al
+// estado PRE de la subida). Por eso un fallo responde 200 con ok:false y no 5xx:
+// no es que la peticion fallara, es que Operam quedo desalineado y hay que avisarlo
+// con detalle, incluido si se alcanzo a escribir (`escrito`).
+app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (subidasOperamEnCurso.has(id)) {
+    return res.status(425).json({ error: 'Ya hay una operacion de Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
+  }
+  subidasOperamEnCurso.add(id);
+  try {
+    const entry = await cotStore.obtener(id);
+    if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+    // El gate es el MISMO que decide los botones en el historial, pero la autoridad
+    // esta aqui: la UI no es la que permite escribir en el ERP.
+    const gate = puedeActualizarCotizacion({
+      hasData: !!entry.data,
+      folioOperam: entry.folioOperam,
+      orderOperam: entry.data?.orderOperam ?? null,
+    });
+    if (!gate.puede) return res.status(409).json({ error: gate.motivo });
+
+    const r = await actualizarQuoteOperam(entry.folioOperam, entry.data);
+    if (r.ok) {
+      await cotStore.actualizarDatos(id, { quoteDesactualizado: null });
+      return res.json({ ok: true, folio: entry.folioOperam, actualizada: true, steps: [{ name: 'actualizar quote', status: 'ok' }] });
+    }
+    const marca = {
+      fecha: new Date().toISOString(),
+      escrito: !!r.escrito,
+      error: r.error ?? null,
+      discrepancias: r.discrepancias ?? [],
+    };
+    await cotStore.actualizarDatos(id, { quoteDesactualizado: marca });
+    return res.json({
+      ok: false, folio: entry.folioOperam, actualizada: false,
+      escrito: !!r.escrito, verificado: !!r.verificado,
+      error: r.error ?? null, discrepancias: r.discrepancias ?? [],
+      steps: [{ name: 'actualizar quote', status: 'error', error: r.error ?? null, discrepancias: r.discrepancias ?? [] }],
+    });
   } finally {
     subidasOperamEnCurso.delete(id);
   }

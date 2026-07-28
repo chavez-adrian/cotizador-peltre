@@ -1686,6 +1686,224 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
   }
 });
 
+// === POST /api/cotizacion/operam/:id/actualizar — issue #104 (ADR-0008) ===
+// Doble de la web legacy de FrontAccounting. El PARSEO real esta cubierto contra el
+// HTML de produccion en test/operam-web.test.js (fixtures capturados de los quotes de
+// prueba 1199/1200); lo que se prueba aqui es la ORQUESTACION del endpoint, asi que
+// basta un formulario con la misma FORMA (cart_id, delivery_date, Comments, cust_ref y
+// un boton Delete{n} por partida) sobre un carrito en memoria que reacciona igual que
+// FA: Delete0 y AddItem mutan la "sesion", y solo ProcessOrder escribe el documento.
+function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = false } = {}) {
+  const sesion = { carrito: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })) };
+  const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01' };
+  const bitacora = [];
+  const formHtml = () => `<form method='post' action='/sales/sales_order_entry.php'>
+<input type="hidden" name="cart_id" value='CART1'>
+<input type="hidden" name="customer_id" value='376'>
+<input type="hidden" name="_token" value='TOK'>
+${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?stock_id=${l.stockId}'>x</a><button type='submit' name='Delete${i}' value='1'></button>`).join('\n')}
+<input type="text" name="stock_id" value=''>
+<input type="text" name="qty" value="1">
+<input type="text" name="price" value="0.00">
+<input type="text" name="Disc" value="0.0">
+<input type="text" name="delivery_date" value="${doc.vigencia}">
+<input type="text" name="cust_ref" value="${doc.custRef}">
+<textarea name="Comments">${doc.comments}</textarea>
+<button type='submit' name='ProcessOrder' value='Confirmar Cambios'></button>
+<button type='submit' name='CancelOrder' value='Cancelar Cotización'></button>
+</form>`;
+  const vistaHtml = () => `<table>
+<tr><td class='tableheader2'>Valido hasta</td><td id=''>${doc.vigencia}</td></tr>
+<tr><td class='tableheader2'>Comentarios</td>
+<td colspan=3 id=''>${doc.comments.split('\n').join('<br />\n')}</td>
+</tr></table>
+<table>${doc.lineas.map(l => `<tr class='evenrow'>
+<td><a href='../../inventory/inquiry/stock_status.php?stock_id=${l.stockId}'>${l.stockId}</a></td><td >Desc catalogo</td>
+<td align=right nowrap>${l.qty}</td>
+<td >pza</td>
+<td nowrap align=right >${l.price.toFixed(2)}</td>
+<td nowrap align=right >${l.disc.toFixed(2)}</td>
+<td nowrap align=right >0.00</td>
+<td nowrap align=right>0</td>
+</tr>`).join('')}</table>`;
+  const restore = mockOperamFetch({
+    'trans_type=30': () => ({ headers: {}, text: async () => '<html>login ok</html>' }),
+    'ModifyQuotationNumber': () => ({ headers: {}, text: async () => formHtml() }),
+    'trans_type=32': () => ({ headers: {}, text: async () => vistaHtml() }),
+    'sales_order_entry.php': (u, opts) => {
+      const p = new URLSearchParams(opts.body || '');
+      if (p.has('CancelOrder')) throw new Error('JAMAS debe mandarse CancelOrder');
+      bitacora.push([...p.keys()].find(k => /^(Delete0|AddItem|ProcessOrder)$/.test(k)) || 'desconocido');
+      if (p.has('Delete0')) sesion.carrito.shift();
+      else if (p.has('AddItem')) {
+        if (!romperAddItem) sesion.carrito.push({ stockId: p.get('stock_id'), qty: Number(p.get('qty')), price: Number(p.get('price')), disc: Number(p.get('Disc')) });
+      } else if (p.has('ProcessOrder')) {
+        doc.lineas = sesion.carrito.map(l => ({ ...l }));
+        doc.comments = p.get('Comments');
+        doc.custRef = p.get('cust_ref');
+        doc.vigencia = p.get('delivery_date');
+      }
+      return { headers: {}, text: async () => formHtml() };
+    },
+  });
+  return { restore, doc, bitacora };
+}
+
+function cotizacionActualizable(extra = {}) {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  writeCots([...snap, {
+    id, fecha: '2026-07-28T00:00:00Z', vendedor: 'Tester', cliente: 'EL PENDULO',
+    totalPiezas: 3, total: 300, tier: 'Mayoreo', folioOperam: '1200',
+    data: {
+      fecha: '2026-07-28', vigencia: '2026-08-27',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530' },
+      notas: ['Nota nueva.'],
+      items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
+      ...extra,
+    },
+  }]);
+  return id;
+}
+
+test('A104: actualizar reescribe el quote (borra las viejas, agrega las nuevas) y confirma UNA sola vez', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable();
+  const { restore, doc, bitacora } = mockOperamWebLegacy({ lineasIniciales: ['SKU-VIEJO', 'SKU-VIEJO-2'] });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    assert.strictEqual(res.body.folio, '1200', 'el folio se conserva');
+    assert.deepStrictEqual(bitacora, ['Delete0', 'Delete0', 'AddItem', 'ProcessOrder']);
+    assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-NUEVO']);
+    assert.strictEqual(doc.lineas[0].qty, 3);
+    assert.strictEqual(doc.lineas[0].price, 99.5);
+    // el header nuevo viaja en el MISMO ProcessOrder: en este camino no hace falta
+    // el post-fix separado de la vigencia (#106)
+    assert.strictEqual(doc.vigencia, '2026-08-27');
+    assert.match(doc.comments, /Nota nueva/);
+    assert.match(doc.comments, /Valido hasta: 2026-08-27/);
+    assert.strictEqual(doc.custRef, 'Pendulo');
+  } finally {
+    restore();
+  }
+});
+
+test('A104: si FA no agrega una partida se ABORTA sin ProcessOrder y el quote queda intacto', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable();
+  const { restore, doc, bitacora } = mockOperamWebLegacy({ lineasIniciales: ['SKU-VIEJO'], romperAddItem: true });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, false);
+    assert.strictEqual(res.body.escrito, false, 'no se llego a confirmar: el documento sigue intacto');
+    assert.ok(!bitacora.includes('ProcessOrder'), 'NUNCA debe confirmarse una reescritura a medias');
+    assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-VIEJO']);
+    // la cotizacion queda marcada para reintento (analogo al estado PRE de la subida)
+    const guardada = readCots().find(c => c.id === id);
+    assert.ok(guardada.data.quoteDesactualizado, 'debe quedar marcada como desactualizada');
+    assert.strictEqual(guardada.data.quoteDesactualizado.escrito, false);
+  } finally {
+    restore();
+  }
+});
+
+test('A104: si la cotizacion apunta a OTRO cliente se aborta sin escribir (no se cambia el cliente del quote)', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'Otro SA', nombreCorto: 'Otro', customerId: 999, cpEntrega: '56530' },
+  });
+  const { restore, doc, bitacora } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, false);
+    assert.strictEqual(res.body.escrito, false);
+    assert.match(res.body.error, /cliente/i);
+    assert.deepStrictEqual(bitacora, [], 'no debe mandar ningun POST de escritura');
+    assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-VIEJO']);
+  } finally {
+    restore();
+  }
+});
+
+test('A104: con el MISMO cliente que el quote la actualizacion procede', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530' },
+  });
+  const { restore, doc } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-NUEVO']);
+  } finally {
+    restore();
+  }
+});
+
+test('A104: una cotizacion con pedido asociado NO se puede actualizar (409, sin tocar Operam)', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({ orderOperam: '7077' });
+  const { restore, bitacora } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.error, /pedido/i);
+    assert.deepStrictEqual(bitacora, [], 'no debe tocar la web legacy');
+  } finally {
+    restore();
+  }
+});
+
+test('A104: una cotizacion PRE (sin folio) no se actualiza: primero hay que subirla', async () => {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  writeCots([...snap, {
+    id, fecha: '2026-07-28T00:00:00Z', vendedor: 'Tester', cliente: 'PRE', totalPiezas: 1, total: 1, tier: 'Mayoreo',
+    data: { cliente: { rfc: 'CPE921211N76' }, items: [{ codigo: 'X', descripcion: 'X', cantidad: 1, precio: 1, descuento: 0 }] },
+  }]);
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 409);
+  assert.match(res.body.error, /Operam/i);
+});
+
+test('A104: actualizar una cotizacion inexistente responde 404', async () => {
+  const res = await supertest(app).post('/api/cotizacion/operam/999999/actualizar').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 404);
+});
+
+test('A104: una actualizacion exitosa limpia la marca de quote desactualizado', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({ quoteDesactualizado: { fecha: '2026-07-01T00:00:00Z', escrito: false, error: 'previo', discrepancias: [] } });
+  const { restore } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    const guardada = readCots().find(c => c.id === id);
+    assert.strictEqual(guardada.data.quoteDesactualizado, null);
+  } finally {
+    restore();
+  }
+});
+
+test('A104: /api/cotizaciones expone orderOperam y quoteDesactualizado para el gate del historial', async () => {
+  const id = cotizacionActualizable({ orderOperam: '7077' });
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  const c = res.body.find(x => x.id === id);
+  assert.strictEqual(c.orderOperam, '7077');
+  assert.strictEqual(c.quoteDesactualizado, null);
+  assert.strictEqual(c.folioOperam, '1200');
+});
+
 test('O68: subir a Operam sin match de cliente responde 422 y NO sube ni persiste folio', async () => {
   const snap = readCots();
   const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;

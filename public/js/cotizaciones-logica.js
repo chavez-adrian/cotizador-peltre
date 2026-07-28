@@ -124,6 +124,49 @@ export function buildHistorialAccionesHtml(c, origin = '') {
     ` <a href="${escapeHtml(waUrl)}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
 }
 
+// Gate de "Actualizar cotizacion" (#104, ADR-0008). Hasta ahora "Cargar" hacia dos
+// cosas a la vez: restaurar el carrito y, calladamente, empezar una cotizacion NUEVA
+// (#83 F1 reseteaba lastCotizacionId a proposito). Actualizar reusa el registro Y
+// reescribe el quote de Operam conservando el folio, asi que solo aplica cuando hay
+// un quote que editar y nadie lo ha convertido todavia:
+//   - sin data persistida no hay carrito que reescribir (registro historico);
+//   - sin folio no existe el quote (PRE): lo que toca es completar la subida;
+//   - con pedido asociado (data.orderOperam, sync #62) el quote ya se convirtio --
+//     Operam mismo deshabilita su edicion, y el gate del cotizador es consistente.
+// Lo usa la UI para decidir que boton habilitar y server.js como autoridad real
+// antes de tocar Operam: una sola definicion, sin que la UI sea la que "permite".
+export function puedeActualizarCotizacion(cot) {
+  const c = cot || {};
+  if (!c.hasData) return { puede: false, motivo: 'Esta cotización no guarda su detalle: no hay nada que actualizar' };
+  if (c.folioOperam == null || c.folioOperam === '') {
+    return { puede: false, motivo: 'La cotización todavía no está registrada en Operam: primero completa la subida' };
+  }
+  if (c.orderOperam != null && c.orderOperam !== '') {
+    return { puede: false, motivo: 'La cotización ya tiene un pedido asociado en Operam: crea una nueva a partir de ésta' };
+  }
+  return { puede: true };
+}
+
+// Las dos acciones de carga del historial (#104): "Actualizar cotización" (mismo
+// registro, mismo folio de Operam) y "Crear nueva a partir de ésta" (lo que "Cargar"
+// hacia hasta hoy, ahora con nombre honesto). Actualizar es el default cuando se
+// puede; si no, queda deshabilitado CON el motivo en el title -- deshabilitar sin
+// explicar convierte una regla de negocio en un boton roto. Sin data no hay ninguna
+// de las dos: no hay carrito que restaurar.
+export function buildAccionesCargaHtml(cot) {
+  const c = cot || {};
+  const gate = puedeActualizarCotizacion(c);
+  if (!c.hasData) {
+    return `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Actualizar cotización</button>` +
+      ` <button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Crear nueva a partir de ésta</button>`;
+  }
+  const actualizar = gate.puede
+    ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id}, 'actualizar')">Actualizar cotización</button>`
+    : `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(gate.motivo)}">Actualizar cotización</button>`;
+  const nueva = `<button class="btn ${gate.puede ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="cargarCotizacion(${c.id}, 'nueva')">Crear nueva a partir de ésta</button>`;
+  return `${actualizar} ${nueva}`;
+}
+
 export function buildTableroCotizacionesHtml(cotizaciones, hoy = new Date()) {
   const cols = agruparTableroCotizaciones(cotizaciones, hoy);
   return COLUMNAS_COTIZACIONES.map(col => {

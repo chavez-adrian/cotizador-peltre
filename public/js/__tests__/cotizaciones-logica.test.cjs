@@ -4,11 +4,13 @@ const assert = require('node:assert/strict');
 
 let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
-  buildHistorialAccionesHtml, buildWhatsAppLinkHistorial;
+  buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
+  puedeActualizarCotizacion, buildAccionesCargaHtml;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
-    buildHistorialAccionesHtml, buildWhatsAppLinkHistorial } = await import('../cotizaciones-logica.js'));
+    buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
+    puedeActualizarCotizacion, buildAccionesCargaHtml } = await import('../cotizaciones-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -230,4 +232,59 @@ test('Q20: buildHistorialAccionesHtml usa el link wa.me de buildWhatsAppLinkHist
   const html = buildHistorialAccionesHtml(cot(3, { id: 7, cliente: '<img src=x onerror=alert(1)>', hasData: true }), 'https://cotizador.example');
   assert.ok(html.includes('wa.me'));
   assert.ok(!html.includes('<img src=x'));
+});
+
+// === Actualizar vs crear-nueva desde el historial (#104, ADR-0008) ===
+// "Cargar" hacia dos cosas a la vez: restaurar el carrito y, calladamente, empezar
+// una cotizacion NUEVA (#83 F1 reseteaba lastCotizacionId). Ahora son dos acciones
+// explicitas. El gate de "Actualizar" es el del ADR: folio ya subido y SIN pedido
+// asociado -- consistente con Operam, que deshabilita la edicion de un quote ya
+// convertido en pedido.
+
+test('Q21: puedeActualizarCotizacion exige folio subido y ningun pedido asociado', () => {
+  assert.equal(puedeActualizarCotizacion({ hasData: true, folioOperam: '1200', orderOperam: null }).puede, true);
+});
+
+test('Q22: puedeActualizarCotizacion bloquea con pedido asociado (el quote ya se convirtio)', () => {
+  const r = puedeActualizarCotizacion({ hasData: true, folioOperam: '1200', orderOperam: '7077' });
+  assert.equal(r.puede, false);
+  assert.match(r.motivo, /pedido/i);
+});
+
+test('Q23: puedeActualizarCotizacion bloquea una PRE (sin folio no hay quote que editar)', () => {
+  const r = puedeActualizarCotizacion({ hasData: true, folioOperam: null, orderOperam: null });
+  assert.equal(r.puede, false);
+  assert.match(r.motivo, /Operam/i);
+});
+
+test('Q24: puedeActualizarCotizacion bloquea una historica sin data (no hay nada que reescribir)', () => {
+  assert.equal(puedeActualizarCotizacion({ hasData: false, folioOperam: '900' }).puede, false);
+  assert.equal(puedeActualizarCotizacion(undefined).puede, false);
+});
+
+test('Q25: buildAccionesCargaHtml ofrece Actualizar (default) y Crear nueva cuando se puede actualizar', () => {
+  const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: true, folioOperam: '1200' }));
+  assert.ok(html.includes('Actualizar cotización'));
+  assert.ok(html.includes('Crear nueva a partir de ésta'));
+  assert.ok(html.includes("cargarCotizacion(7, 'actualizar')"));
+  assert.ok(html.includes("cargarCotizacion(7, 'nueva')"));
+  // el default es Actualizar: es el unico primario
+  assert.equal((html.match(/btn-primary/g) || []).length, 1);
+  assert.ok(/Actualizar cotización[\s\S]*?<\/button>/.test(html));
+  assert.ok(!html.includes('disabled'));
+});
+
+test('Q26: buildAccionesCargaHtml deshabilita Actualizar con pedido asociado y explica por que', () => {
+  const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: true, folioOperam: '1200', orderOperam: '7077' }));
+  assert.ok(html.includes('disabled'));
+  assert.match(html, /title="[^"]*pedido[^"]*"/i);
+  // Crear nueva sigue disponible y pasa a ser el default
+  assert.ok(html.includes("cargarCotizacion(7, 'nueva')"));
+  assert.ok(!html.includes("cargarCotizacion(7, 'actualizar')"));
+});
+
+test('Q27: buildAccionesCargaHtml sin data deshabilita las dos acciones', () => {
+  const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: false }));
+  assert.equal((html.match(/disabled/g) || []).length, 2);
+  assert.ok(!html.includes('cargarCotizacion('));
 });

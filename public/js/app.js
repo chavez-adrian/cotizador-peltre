@@ -46,6 +46,7 @@ import {
   puedeArrastrarCotizacion,
   buildTableroCotizacionesHtml,
   buildHistorialAccionesHtml,
+  buildAccionesCargaHtml,
 } from './cotizaciones-logica.js';
 import {
   buildTableroPipelineHtml,
@@ -57,6 +58,9 @@ import {
   botonCompletarHtml,
   interpretarSubidaOperam,
   buildOperamStatusHtml,
+  interpretarActualizacionOperam,
+  buildActualizacionStatusHtml,
+  badgeQuoteDesactualizadoHtml,
   buildColaHoyHtml,
   buildMenuNuevoHtml,
   buildCerradasHtml,
@@ -170,6 +174,11 @@ const state = {
   cart: new Map(), // key -> { product, cantidad }
   shipping: { option: 'none', desc: '', cost: 0 },
   lastCotizacionId: null,
+  // Modo actualizacion (#104, ADR-0008): se entro por "Actualizar cotizacion" desde
+  // el historial, asi que generar reescribe el MISMO registro y el MISMO quote de
+  // Operam (conservando el folio) en vez de crear una cotizacion nueva. Cualquier
+  // cosa que termine la sesion de cotizacion lo apaga.
+  modoActualizacion: false,
 };
 
 let searchSelected = null; // { key, sku, product }
@@ -1250,8 +1259,9 @@ async function generatePDF() {
     URL.revokeObjectURL(url);
     // Auto-subida a Operam (#83, ADR-0006): la generacion REAL del documento la
     // sube sola. No bloquea la entrega del PDF (ya se descargo); el estado (folio
-    // o PRE + Reintentar / candidatos) se pinta en el slot del resumen.
-    autoSubirOperam(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
+    // o PRE + Reintentar / candidatos) se pinta en el slot del resumen. En modo
+    // actualizacion (#104) reescribe el quote existente en vez de crear otro.
+    sincronizarOperamTrasGenerar(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
   } catch (e) {
     alert('Error generando PDF: ' + e.message);
   } finally {
@@ -1354,8 +1364,9 @@ async function generateHTML() {
     window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     // Auto-subida a Operam (#83): el HTML es el formato WhatsApp del documento;
-    // generarlo tambien sube la cotizacion sola (mismo endpoint idempotente).
-    autoSubirOperam(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
+    // generarlo tambien sube la cotizacion sola (mismo endpoint idempotente). En
+    // modo actualizacion (#104) reescribe el quote existente conservando el folio.
+    sincronizarOperamTrasGenerar(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
   } catch (e) {
     alert('Error generando HTML: ' + e.message);
   } finally {
@@ -1385,6 +1396,7 @@ function nuevaCotizacion() {
   if (state.cart.size > 0 && !confirm('Se perdera la cotizacion actual. Continuar?')) return;
   state.cart.clear();
   state.lastCotizacionId = null;
+  state.modoActualizacion = false;
 
   // Limpiar campos
   const campos = [
@@ -1591,6 +1603,7 @@ function pcPrepararSeleccion() {
   // generacion crea SU entry, no actualiza el del cliente anterior. El estado de
   // subida del resumen tambien era del anterior.
   state.lastCotizacionId = null;
+  state.modoActualizacion = false;
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
 }
@@ -2247,8 +2260,8 @@ function renderHistorialCliente(cotizaciones) {
       // registrada (#Operam N) o historica no lo ofrece (#83, AC6). El contenedor
       // por-cotizacion recibe el estado al reintentar.
       return `<div class="cot-mini">
-        <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}${badgeFolioOperamHtml(c)}</span>
-        ${c.hasData ? `<button class="btn btn-sm btn-secondary" onclick="cargarCotizacion(${c.id})">Cargar</button>` : ''}
+        <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}${badgeFolioOperamHtml(c)}${badgeQuoteDesactualizadoHtml(c)}</span>
+        ${c.hasData ? buildAccionesCargaHtml(c) : ''}
         ${c.hasData ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-sm btn-secondary">PDF</a>` : ''}
         ${botonCompletarHtml(c)}
         <div class="operam-status-slot"></div>
@@ -2325,6 +2338,46 @@ async function autoSubirOperam(id, slot, extraBody) {
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
   return vista;
 }
+// Actualizacion del quote conservando el folio (#104, ADR-0008). Se dispara tras
+// generar el documento cuando la sesion venia de "Actualizar cotizacion": el registro
+// del cotizador ya lo reescribio la generacion (crearOActualizarCotizacion honra
+// cotizacionId), aqui se reescribe el quote en Operam. Comparte la guarda de subidas
+// en vuelo con autoSubirOperam: las dos operaciones se pisarian el carrito de FA, y
+// el servidor ademas tiene su lock por id (la proteccion real).
+async function actualizarQuoteEnOperam(id, slot) {
+  if (!id) return;
+  const key = String(id);
+  if (subidasOperamEnVuelo.has(key)) return;
+  subidasOperamEnVuelo.add(key);
+  if (slot) slot.innerHTML = '<span class="operam-status">Actualizando en Operam...</span>';
+  let resultado;
+  try {
+    const res = await api(`/api/cotizacion/operam/${id}/actualizar`, { method: 'POST' });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    resultado = {
+      ok: data.ok === true, status: res.status, folio: data.folio,
+      escrito: data.escrito, verificado: data.verificado,
+      error: data.error, discrepancias: data.discrepancias,
+    };
+  } catch (e) {
+    resultado = { ok: false, status: 0, error: e.message };
+  } finally {
+    subidasOperamEnVuelo.delete(key);
+  }
+  const vista = interpretarActualizacionOperam(resultado);
+  if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);
+  return vista;
+}
+window.reintentarActualizacionOperam = (id, el) => actualizarQuoteEnOperam(id, slotOperamDesde(el));
+
+// Que hace la generacion con Operam: en una cotizacion nueva (o una regeneracion de
+// la misma sesion) la sube; en modo actualizacion reescribe el quote existente
+// conservando el folio. Un solo punto de decision para PDF y HTML.
+function sincronizarOperamTrasGenerar(id, slot) {
+  return state.modoActualizacion ? actualizarQuoteEnOperam(id, slot) : autoSubirOperam(id, slot);
+}
+
 window.reintentarSubidaOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el));
 window.elegirCandidatoOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { customerId });
 window.dejarPreOperam = (id, el) => {
@@ -2614,13 +2667,13 @@ function renderHistorial() {
     // Ver PDF / Ver HTML / WhatsApp regeneran desde el registro guardado
     // (issue #103), no desde disco ni desde el estado del formulario.
     const accionesDocumento = buildHistorialAccionesHtml(c, window.location.origin);
-    const btnCargar = c.hasData
-      ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id})">Cargar</button>`
-      : `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Cargar</button>`;
+    // "Cargar" hacia dos cosas a la vez (#104): restaurar el carrito y, calladamente,
+    // empezar una cotizacion NUEVA. Ahora son dos acciones explicitas.
+    const btnCargar = buildAccionesCargaHtml(c);
     // Estado PRE / #Operam (issue #63) visible en el Historial; "Completar"
     // (issue #66) formaliza la pre-cotizacion desde su tarjeta. Solo aparece
     // mientras la cotizacion sigue siendo PRE.
-    const badge = badgeFolioOperamHtml(c);
+    const badge = badgeFolioOperamHtml(c) + badgeQuoteDesactualizadoHtml(c);
     const btnCompletar = botonCompletarHtml(c);
     return `
       <div class="cot-card">
@@ -3730,7 +3783,11 @@ window.nuevoProspecto = () => {
   abrirCapturaRapida();
 };
 
-async function cargarCotizacion(id) {
+// modo (#104, ADR-0008): 'actualizar' reusa el registro y el folio de Operam;
+// 'nueva' es el comportamiento historico de "Cargar" (#83 F1), ahora con nombre
+// honesto. El default es 'nueva' porque cualquier llamador que no elija explicitamente
+// no debe terminar reescribiendo un documento que el cliente ya tiene.
+async function cargarCotizacion(id, modo = 'nueva') {
   try {
     const res = await api(`/api/cotizaciones/${id}`);
     if (!res.ok) { alert('No se pudo cargar la cotizacion'); return; }
@@ -3808,12 +3865,21 @@ async function cargarCotizacion(id) {
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');
 
-    // Cargar una cotizacion previa inicia una sesion NUEVA (#83, F1): generar
-    // desde aqui crea su propio entry -- nunca sobreescribe el historico cargado
-    // ni el de la sesion anterior. El estado de subida del resumen ya no aplica.
-    state.lastCotizacionId = null;
+    // Que pasa al generar desde aqui (#104, ADR-0008 -- revierte de forma explicita
+    // la decision de #83 F1, que reseteaba esto siempre):
+    //   'nueva'      -> sesion nueva: se crea otro registro y otro quote en Operam.
+    //   'actualizar' -> se reusa el mismo registro (cotizacionId) y se reescribe el
+    //                   quote existente conservando el folio.
+    // El gate de que "actualizar" sea siquiera ofrecible lo decide el historial
+    // (puedeActualizarCotizacion) y lo hace valer el servidor.
+    state.modoActualizacion = modo === 'actualizar';
+    state.lastCotizacionId = state.modoActualizacion ? String(id) : null;
     const operamStatus = document.getElementById('operam-status-cotizar');
-    if (operamStatus) operamStatus.innerHTML = '';
+    if (operamStatus) {
+      operamStatus.innerHTML = state.modoActualizacion
+        ? `<span class="operam-status">Al generar se actualizar&aacute; la cotizaci&oacute;n <strong>#${id}</strong> y su quote en Operam (mismo folio).</span>`
+        : '';
+    }
 
     // Volver a la app
     document.getElementById('historial-view').style.display = 'none';

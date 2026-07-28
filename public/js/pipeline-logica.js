@@ -160,6 +160,63 @@ export function buildOperamStatusHtml(id, vista) {
     ` <button class="btn btn-sm btn-primary" onclick="reintentarSubidaOperam(${id}, this)">Reintentar</button>`;
 }
 
+// --- Actualizacion del quote conservando el folio (#104, ADR-0008) -----------
+// Respuesta de POST /api/cotizacion/operam/:id/actualizar leida como estado de UI,
+// por campos estructurados y NUNCA parseando el string de error (misma disciplina
+// que interpretarSubidaOperam). La distincion que de verdad importa para el vendedor
+// es `escrito`:
+//   ok: true                      -> 'actualizada'    (mismo folio, quote reescrito)
+//   ok: false, escrito: false     -> 'desactualizado' (se aborto ANTES de confirmar:
+//                                    el quote en Operam quedo INTACTO -- la palanca
+//                                    de robustez del ADR -- y reintentar es seguro)
+//   ok: false, escrito: true      -> 'revisar'        (se confirmo pero la
+//                                    verificacion vio diferencias: alguien tiene que
+//                                    mirar el ERP)
+//   409                           -> 'bloqueada'      (gate: PRE o con pedido; un
+//                                    reintento volveria a fallar igual)
+export function interpretarActualizacionOperam(resultado) {
+  const r = resultado || {};
+  if (r.ok) return { estado: 'actualizada', folio: r.folio ?? null };
+  if (r.status === 409) {
+    return { estado: 'bloqueada', mensaje: r.error || 'Esta cotizacion no se puede actualizar en Operam' };
+  }
+  const discrepancias = Array.isArray(r.discrepancias) ? r.discrepancias : [];
+  if (r.escrito === true) {
+    return { estado: 'revisar', mensaje: r.error || 'La cotizacion se confirmo en Operam pero no quedo como se esperaba', discrepancias };
+  }
+  return { estado: 'desactualizado', mensaje: r.error || 'No se pudo actualizar la cotizacion en Operam', discrepancias };
+}
+
+// Estado de la actualizacion para pintar en el slot (resumen o tarjeta). Mismo
+// contrato de botones que buildOperamStatusHtml: pasan `this`, nunca un id de
+// contenedor (la misma cotizacion puede estar pintada en dos paneles a la vez).
+export function buildActualizacionStatusHtml(id, vista) {
+  const v = vista || {};
+  if (v.estado === 'actualizada') {
+    const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
+    return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>`;
+  }
+  if (v.estado === 'bloqueada') {
+    return `<span class="operam-status operam-status-pre">${escapeHtml(v.mensaje || '')}</span>`;
+  }
+  const aviso = (badge, texto) =>
+    `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">${badge}</span> ` +
+    `${texto} ${escapeHtml(v.mensaje || '')}</span>` +
+    ` <button class="btn btn-sm btn-primary" onclick="reintentarActualizacionOperam(${id}, this)">Reintentar</button>`;
+  if (v.estado === 'revisar') {
+    return aviso('Revisar', 'El cambio se confirm&oacute; en Operam pero la verificaci&oacute;n vio diferencias: revisa el quote en Operam.');
+  }
+  return aviso('Operam desactualizado', 'No se pudo actualizar el quote; en Operam qued&oacute; SIN cambios (intacto).');
+}
+
+// Badge de la tarjeta del historial: el registro del cotizador se actualizo pero el
+// quote de Operam no. Se marca porque el pedido se surte contra Operam, asi que una
+// divergencia silenciosa es justo el problema que #104 vino a cerrar.
+export function badgeQuoteDesactualizadoHtml(cot) {
+  if (!cot || !cot.quoteDesactualizado) return '';
+  return ` <span class="cot-badge badge-pre" title="El registro del cotizador se actualizo pero el quote de Operam no: reintenta desde la cotizacion">Operam desactualizado</span>`;
+}
+
 // Boton "Reintentar subida" de la tarjeta de cotizacion (Historial): reintenta la
 // auto-subida idempotente (#81) cuando la cotizacion quedo PRE. Con ADR-0006 PRE
 // pasa de ser un modo elegido ("Completar") a un fallo transitorio a reintentar;

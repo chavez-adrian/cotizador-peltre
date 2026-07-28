@@ -6,6 +6,8 @@ import { dirname, join } from 'node:path';
 import {
   esLoginHtml,
   parsearFormularioQuote, serializarBodyQuote, leerValidoHastaVista,
+  parsearLineasQuote, serializarBodyBorrarLinea, serializarBodyAgregarLinea,
+  leerLineasVista, leerComentariosVista, compararQuoteVista,
 } from '../lib/operam-web.js';
 
 const DIR_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -176,4 +178,233 @@ test('leerValidoHastaVista: null cuando la vista no trae el campo', () => {
 test('parsearFormularioQuote: devuelve el action del formulario', () => {
   const { action } = parsearFormularioQuote(FIXTURE);
   assert.equal(action, '/sales/sales_order_entry.php');
+});
+
+// --- Actualizacion del quote conservando el folio (#104, ADR-0008) ------------
+// Reescritura completa por la web legacy: borrar todas las lineas (Delete0 iterado)
+// + un AddItem por partida + un unico ProcessOrder con el header actualizado. Las
+// reglas de seguridad de ADR-0007 valen igual: el submit se agrega explicito y
+// constante, y CancelOrder (que vive en el mismo formulario) jamas viaja en el body.
+
+const VISTA_CONCEPTOS = readFileSync(join(DIR_FIXTURES, 'operam-quote-vista-conceptos.html'), 'utf8');
+
+test('parsearLineasQuote: lee las partidas del formulario de edicion REAL', () => {
+  const lineas = parsearLineasQuote(FIXTURE);
+  assert.equal(lineas.length, 2);
+  assert.deepEqual(lineas.map(l => l.indice), [0, 1]);
+  assert.deepEqual(lineas.map(l => l.stockId), ['TA14Y31111', '251021001']);
+});
+
+// La fila de captura de linea nueva (stock_id/qty/price/Disc + AddItem) NO es una
+// partida: no tiene boton Delete. Contarla haria que el borrado nunca terminara.
+test('parsearLineasQuote: no cuenta la fila de captura ni el selector de articulo', () => {
+  const sinPartidas = FIXTURE.replace(/name='Delete\d+'/g, "name='OtraCosa'");
+  assert.deepEqual(parsearLineasQuote(sinPartidas), []);
+  assert.deepEqual(parsearLineasQuote(''), []);
+  assert.deepEqual(parsearLineasQuote(null), []);
+});
+
+test('serializarBodyBorrarLinea: manda Delete0 y conserva el resto del formulario', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyBorrarLinea(campos);
+  assert.equal(body.get('Delete0'), '1');
+  assert.equal(body.get('cart_id'), campos.cart_id);
+  assert.equal(body.get('_token'), campos._token);
+  assert.equal(body.get('Comments'), campos.Comments);
+});
+
+// Delete0 siempre: tras cada borrado FA renumera las lineas, asi que iterar el
+// indice 0 N veces evita depender de la numeracion (ADR-0008, paso 3).
+test('serializarBodyBorrarLinea: NUNCA manda ProcessOrder, CancelOrder, AddItem ni update', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyBorrarLinea(campos);
+  for (const peligroso of ['ProcessOrder', 'CancelOrder', 'AddItem', 'update', 'Delete1']) {
+    assert.equal(body.has(peligroso), false, `${peligroso} no debe ir en el body de borrado`);
+  }
+});
+
+test('serializarBodyAgregarLinea: fija stock_id, qty, price y Disc y manda AddItem', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyAgregarLinea(campos, { stock_id: 'TA14Y31111', qty: 12, price: 107.76, Disc: 5 });
+  assert.equal(body.get('stock_id'), 'TA14Y31111');
+  assert.equal(body.get('qty'), '12');
+  assert.equal(body.get('price'), '107.76');
+  assert.equal(body.get('Disc'), '5');
+  assert.equal(body.get('AddItem'), 'Agregar');
+  assert.equal(body.get('cart_id'), campos.cart_id);
+});
+
+test('serializarBodyAgregarLinea: NUNCA manda ProcessOrder, CancelOrder, Delete0 ni update', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyAgregarLinea(campos, { stock_id: 'TA14Y31111', qty: 1, price: 10 });
+  for (const peligroso of ['ProcessOrder', 'CancelOrder', 'Delete0', 'update']) {
+    assert.equal(body.has(peligroso), false, `${peligroso} no debe ir en el body de alta de linea`);
+  }
+});
+
+// Una partida invalida se detecta ANTES de mandarla: FA la rechazaria renderizando
+// la pagina con un error y el conteo de lineas dejaria de cuadrar a mitad de la
+// reescritura. Fallar aqui deja el documento intacto (aun no hubo ProcessOrder).
+test('serializarBodyAgregarLinea: lanza con SKU vacio, cantidad no positiva o precio invalido', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  assert.throws(() => serializarBodyAgregarLinea(campos, { stock_id: '', qty: 1, price: 10 }), /SKU/i);
+  assert.throws(() => serializarBodyAgregarLinea(campos, { stock_id: 'X', qty: 0, price: 10 }), /cantidad/i);
+  assert.throws(() => serializarBodyAgregarLinea(campos, { stock_id: 'X', qty: -3, price: 10 }), /cantidad/i);
+  assert.throws(() => serializarBodyAgregarLinea(campos, { stock_id: 'X', qty: 1, price: -1 }), /precio/i);
+  assert.throws(() => serializarBodyAgregarLinea(campos, { stock_id: 'X', qty: 1, price: 'gratis' }), /precio/i);
+});
+
+// Defensa en profundidad: aunque parsearFormularioQuote ya excluye submits, ningun
+// body debe poder arrastrar CancelOrder si el HTML de Operam cambiara y colara un
+// campo con ese nombre. El submit lo pone SIEMPRE el serializador, nunca el form.
+test('los tres bodies descartan cualquier submit que venga contaminado en los campos', () => {
+  const sucios = { delivery_date: '2026-07-26', Comments: 'x', cust_ref: 'y', CancelOrder: 'Cancelar Cotización', Delete3: '1', update: 'Recalculate', AddItem: 'Agregar' };
+  const bodies = [
+    serializarBodyQuote(sucios, { deliveryDate: '2026-08-26' }),
+    serializarBodyBorrarLinea(sucios),
+    serializarBodyAgregarLinea(sucios, { stock_id: 'X', qty: 1, price: 1 }),
+  ];
+  for (const body of bodies) {
+    assert.equal(body.has('CancelOrder'), false);
+    assert.equal(body.has('Delete3'), false);
+    assert.equal(body.has('update'), false);
+  }
+  assert.equal(bodies[0].has('AddItem'), false);
+  assert.equal(bodies[1].has('AddItem'), false);
+});
+
+// En este camino la vigencia NO necesita el post-fix separado de #106: viaja en el
+// mismo ProcessOrder junto con Comments y cust_ref (ADR-0008, paso 5).
+test('serializarBodyQuote: sustituye Comments y cust_ref junto con delivery_date', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyQuote(campos, {
+    deliveryDate: '2026-09-01', comments: '- Nota nueva.\nValido hasta: 2026-09-01', custRef: 'Ferreteria Demo',
+  });
+  assert.equal(body.get('delivery_date'), '2026-09-01');
+  assert.equal(body.get('Comments'), '- Nota nueva.\nValido hasta: 2026-09-01');
+  assert.equal(body.get('cust_ref'), 'Ferreteria Demo');
+  assert.equal(body.get('ProcessOrder'), 'Confirmar Cambios');
+  assert.equal(body.has('CancelOrder'), false);
+  assert.equal(body.get('customer_id'), campos.customer_id);
+  assert.equal(body.get('OrderDate'), campos.OrderDate);
+});
+
+// Sin comments/custRef el post-fix de vigencia (#106) se comporta EXACTAMENTE como
+// antes: solo cambia delivery_date. Este test fija que la extension no lo toco.
+test('serializarBodyQuote: sin comments ni custRef deja el formulario como estaba (#106)', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyQuote(campos, { deliveryDate: '2026-08-26' });
+  assert.equal(body.get('Comments'), campos.Comments);
+  assert.equal(body.get('cust_ref'), campos.cust_ref);
+});
+
+test('serializarBodyQuote: lanza si se pide cambiar Comments y el formulario no lo trae', () => {
+  assert.throws(
+    () => serializarBodyQuote({ delivery_date: '2026-07-26' }, { deliveryDate: '2026-08-26', comments: 'x' }),
+    /Comments/,
+  );
+});
+
+// --- Verificacion post-escritura (obligatoria, ADR-0008 paso 6) --------------
+
+test('leerLineasVista: extrae SKU, cantidad, precio y descuento de la vista REAL', () => {
+  const lineas = leerLineasVista(VISTA_CONCEPTOS);
+  assert.equal(lineas.length, 3);
+  assert.deepEqual(lineas[0], { stockId: 'TA14Y31111', cantidad: 7, precio: 33.33, descuento: 0 });
+  assert.deepEqual(lineas[1], { stockId: 'VA05Y4001120', cantidad: 2, precio: 111.11, descuento: 10 });
+  assert.deepEqual(lineas[2], { stockId: '251021001', cantidad: 1, precio: 123.45, descuento: 0 });
+});
+
+test('leerLineasVista: [] cuando la pagina no trae la tabla de conceptos', () => {
+  assert.deepEqual(leerLineasVista('<table><tr><td>Cotizacion 1199</td></tr></table>'), []);
+  assert.deepEqual(leerLineasVista(''), []);
+  assert.deepEqual(leerLineasVista(null), []);
+});
+
+// La vista renderiza los saltos de linea de Comments como <br />: sin reconvertirlos
+// la comparacion daria discrepancia siempre y el aviso al vendedor seria ruido.
+test('leerComentariosVista: reconstruye el texto multilinea desde los <br />', () => {
+  assert.equal(
+    leerComentariosVista(VISTA_CONCEPTOS),
+    '- Cotizacion de PRUEBA del ciclo de #104 - no es una oferta real.\n' +
+    '- Segunda nota de prueba.\n' +
+    'Valido hasta: 2026-09-30',
+  );
+});
+
+test('leerComentariosVista: null cuando la vista no trae el campo', () => {
+  assert.equal(leerComentariosVista('<table><tr><td>Cotizacion</td></tr></table>'), null);
+  assert.equal(leerComentariosVista(''), null);
+});
+
+// Los datos esperados son los que se mandaron en la verificacion en vivo del ciclo
+// completo (quote de prueba 1200, 2026-07-28) y el HTML es la vista resultante: este
+// test es el contrato real de la verificacion post-escritura, no una simulacion.
+const ESPERADO_1200 = [
+  { stock_id: 'TA14Y31111', stock_id_text: 'Tazon 14 mostaza filete negro', qty: 7, price: 33.33, Disc: 0 },
+  { stock_id: 'VA05Y4001120', stock_id_text: 'Taza 5 crema s/filetes', qty: 2, price: 111.11, Disc: 10 },
+  { stock_id: '251021001', stock_id_text: 'FedEx Ground', qty: 1, price: 123.45, Disc: 0 },
+];
+const COMMENTS_1200 = '- Cotizacion de PRUEBA del ciclo de #104 - no es una oferta real.\n- Segunda nota de prueba.\nValido hasta: 2026-09-30';
+
+test('compararQuoteVista: sin discrepancias cuando el quote quedo como se esperaba', () => {
+  const r = compararQuoteVista({ items: ESPERADO_1200, comments: COMMENTS_1200, vigencia: '2026-09-30' }, VISTA_CONCEPTOS);
+  assert.equal(r.verificado, true);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.discrepancias, []);
+});
+
+// La descripcion de la partida la pone el CATALOGO de Operam, no el stock_id_text que
+// manda la cotizacion (verificado en vivo: "FedEx Ground" quedo como "Envio Economico
+// FedEx Ground(R)"). Compararla haria fallar toda actualizacion correcta.
+test('compararQuoteVista: la descripcion del catalogo de Operam no cuenta como discrepancia', () => {
+  const r = compararQuoteVista({ items: ESPERADO_1200, comments: COMMENTS_1200, vigencia: '2026-09-30' }, VISTA_CONCEPTOS);
+  assert.equal(r.discrepancias.filter(d => d.campo === 'descripcion').length, 0);
+  assert.equal(r.ok, true);
+});
+
+// Con el SKU cruzado en una linea, su cantidad/precio ya no informan nada (se
+// estarian comparando dos articulos distintos): solo se reporta el SKU de esa linea.
+test('compararQuoteVista: detecta SKU, cantidad, precio y descuento distintos', () => {
+  const esperado = {
+    items: [
+      { stock_id: 'TA14Y31111', qty: 60, price: 999, Disc: 5 },
+      { stock_id: 'OTRO-SKU', qty: 2, price: 111.11, Disc: 10 },
+      ESPERADO_1200[2],
+    ],
+    comments: COMMENTS_1200,
+    vigencia: '2026-09-30',
+  };
+  const r = compararQuoteVista(esperado, VISTA_CONCEPTOS);
+  assert.equal(r.ok, false);
+  const campos = r.discrepancias.map(d => d.campo);
+  assert.ok(campos.includes('cantidad'));
+  assert.ok(campos.includes('precio'));
+  assert.ok(campos.includes('descuento'));
+  assert.ok(campos.includes('sku'));
+  // la linea del SKU cruzado no reporta cantidad/precio: seria comparar peras con manzanas
+  assert.equal(r.discrepancias.filter(d => d.linea === 1).length, 1);
+});
+
+test('compararQuoteVista: detecta que sobran o faltan partidas', () => {
+  const base = { comments: COMMENTS_1200, vigencia: '2026-09-30' };
+  const faltan = compararQuoteVista({ ...base, items: ESPERADO_1200.slice(0, 2) }, VISTA_CONCEPTOS);
+  assert.equal(faltan.ok, false);
+  assert.ok(faltan.discrepancias.some(d => d.campo === 'partidas' && d.esperado === 2 && d.encontrado === 3));
+});
+
+test('compararQuoteVista: detecta comentarios y vigencia distintos', () => {
+  const r = compararQuoteVista({ items: ESPERADO_1200, comments: 'otra cosa', vigencia: '2026-12-31' }, VISTA_CONCEPTOS);
+  assert.equal(r.ok, false);
+  const campos = r.discrepancias.map(d => d.campo);
+  assert.ok(campos.includes('comentarios'));
+  assert.ok(campos.includes('vigencia'));
+});
+
+// Una vista que no se pudo leer NO es "quedo mal": es que no se comprobo nada. Se
+// distingue para no afirmar en el reporte al vendedor algo que no se sabe (#106).
+test('compararQuoteVista: pagina ilegible -> verificado false, nunca ok true', () => {
+  const r = compararQuoteVista({ items: [{ stock_id: 'X', qty: 1, price: 1, Disc: 0 }], comments: 'x', vigencia: '2026-08-27' }, '<html>sesion expirada</html>');
+  assert.equal(r.verificado, false);
+  assert.equal(r.ok, false);
 });

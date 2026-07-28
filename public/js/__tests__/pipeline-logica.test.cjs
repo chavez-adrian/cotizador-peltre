@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -790,4 +790,71 @@ test('Q19d: buildOperamStatusHtml avisa solo cuando la vigencia quedo sin correg
 
   // Sin dato (respuesta vieja): no se inventa un aviso.
   assert.doesNotMatch(buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 }), /vigencia/i);
+});
+
+// === Actualizacion del quote conservando el folio (#104, ADR-0008) ===
+// La distincion que manda en el aviso al vendedor es `escrito`: si NO se alcanzo a
+// confirmar, el quote de Operam quedo INTACTO (fallo reversible por abandono, la
+// palanca de robustez del ADR); si SI se confirmo pero la verificacion encontro
+// diferencias, alguien tiene que mirar el ERP. Confundirlos seria mentirle al
+// vendedor sobre que esta viendo su cliente.
+
+test('A104: interpretarActualizacionOperam distingue exito, no-escrito, escrito-con-diferencias y gate', () => {
+  assert.deepEqual(
+    interpretarActualizacionOperam({ ok: true, status: 200, folio: '1200' }),
+    { estado: 'actualizada', folio: '1200' },
+  );
+  const intacto = interpretarActualizacionOperam({ ok: false, status: 200, escrito: false, error: 'no se agrego la partida' });
+  assert.equal(intacto.estado, 'desactualizado');
+  assert.match(intacto.mensaje, /no se agrego la partida/);
+
+  const revisar = interpretarActualizacionOperam({ ok: false, status: 200, escrito: true, verificado: true, discrepancias: [{ campo: 'precio', sku: 'X', esperado: 1, encontrado: 2 }] });
+  assert.equal(revisar.estado, 'revisar');
+  assert.equal(revisar.discrepancias.length, 1);
+
+  const bloqueada = interpretarActualizacionOperam({ status: 409, error: 'ya tiene un pedido asociado' });
+  assert.equal(bloqueada.estado, 'bloqueada');
+  assert.match(bloqueada.mensaje, /pedido/);
+});
+
+test('A104: una caida de red no se confunde con "quedo mal en Operam"', () => {
+  const v = interpretarActualizacionOperam({ ok: false, status: 0, error: 'Failed to fetch' });
+  assert.equal(v.estado, 'desactualizado');
+});
+
+test('A104: buildActualizacionStatusHtml pinta el folio conservado en el exito', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'actualizada', folio: '1200' });
+  assert.match(html, /#Operam 1200/);
+  assert.doesNotMatch(html, /Reintentar/);
+});
+
+test('A104: no-escrito dice que el quote quedo intacto y ofrece reintentar', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'desactualizado', mensaje: 'la sesion caduco' });
+  assert.match(html, /sin cambios|intacta|intacto/i);
+  assert.match(html, /reintentarActualizacionOperam\(5, this\)/);
+});
+
+test('A104: escrito-con-diferencias manda a revisar Operam y NO dice que quedo intacto', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'revisar', mensaje: 'diferencias', discrepancias: [{ campo: 'precio' }] });
+  assert.match(html, /revisa/i);
+  assert.doesNotMatch(html, /intacto/i);
+  assert.match(html, /reintentarActualizacionOperam\(5, this\)/);
+});
+
+test('A104: el gate se explica sin ofrecer un reintento que volveria a fallar', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'bloqueada', mensaje: 'ya tiene un pedido asociado' });
+  assert.match(html, /pedido/);
+  assert.doesNotMatch(html, /Reintentar/);
+});
+
+test('A104: buildActualizacionStatusHtml escapa el mensaje del servidor', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'desactualizado', mensaje: '<img src=x onerror=alert(1)>' });
+  assert.ok(!html.includes('<img src=x'));
+});
+
+test('A104: badgeQuoteDesactualizadoHtml marca la tarjeta solo cuando hay marca viva', () => {
+  assert.match(badgeQuoteDesactualizadoHtml({ quoteDesactualizado: { fecha: '2026-07-28T00:00:00Z', escrito: false } }), /Operam desactualizado/i);
+  assert.equal(badgeQuoteDesactualizadoHtml({ quoteDesactualizado: null }), '');
+  assert.equal(badgeQuoteDesactualizadoHtml({}), '');
+  assert.equal(badgeQuoteDesactualizadoHtml(undefined), '');
 });
