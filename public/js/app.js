@@ -79,6 +79,10 @@ import {
   MENSAJE_ENVIO_INVALIDADO,
   aplicarNotaTiempoEntrega,
   formatTiempoEntrega,
+  buildEnvioEstructurado,
+  restaurarEnvioDesdeCotizacion,
+  debeAutoCotizarEnvia,
+  buildEnviaRateRestauradaHtml,
 } from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -750,7 +754,7 @@ function updateShippingSummary() {
 }
 
 // === ENVIA.COM ===
-let enviaRateSeleccionado = null; // { desc, cost }
+let enviaRateSeleccionado = null; // { carrier, servicio, desc, cost }
 let envioInvalidadoPorCantidad = false; // issue #89: cambio de cantidad invalido la tarifa vigente
 
 async function cotizarEnvia() {
@@ -885,6 +889,7 @@ function seleccionarEnviaRate(card, carrier, servicio, precio) {
   document.querySelectorAll('.envia-rate-card').forEach(c => c.classList.remove('selected'));
   card.classList.add('selected');
   enviaRateSeleccionado = {
+    carrier, servicio,
     desc: `${formatCarrier(carrier)} ${formatServicio(servicio)}`.trim(),
     cost: precio,
   };
@@ -1168,13 +1173,14 @@ async function generatePDF() {
 
     // Envío
     const shippingOpt = document.getElementById('shipping-option').value;
+    const shippingDesc = document.getElementById('shipping-desc').value;
     let shippingCost = 0;
     if (shippingOpt === 'manual' || shippingOpt === 'envia') {
       shippingCost = parseFloat(document.getElementById('shipping-cost').value) || 0;
       if (shippingCost > 0) {
         items.push({
           codigo: 'ENVIO',
-          descripcion: document.getElementById('shipping-desc').value || 'Envio',
+          descripcion: shippingDesc || 'Envio',
           cantidad: 1,
           unidad: 'ACT',
           precio: shippingCost,
@@ -1205,6 +1211,9 @@ async function generatePDF() {
       iva,
       total,
       notas,
+      // Envio estructurado {carrier, servicio, precio} (#102): prefactor para
+      // restaurarlo tal cual al Cargar desde historial, sin re-cotizar envia.com.
+      envio: buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }),
     };
 
     body.incluirFotos = document.getElementById('incluir-fotos')?.checked || false;
@@ -1279,13 +1288,14 @@ async function generateHTML() {
     }
 
     const shippingOpt = document.getElementById('shipping-option').value;
+    const shippingDesc = document.getElementById('shipping-desc').value;
     let shippingCost = 0;
     if (shippingOpt === 'manual' || shippingOpt === 'envia') {
       shippingCost = parseFloat(document.getElementById('shipping-cost').value) || 0;
       if (shippingCost > 0) {
         items.push({
           codigo: 'ENVIO',
-          descripcion: document.getElementById('shipping-desc').value || 'Envio',
+          descripcion: shippingDesc || 'Envio',
           cantidad: 1,
           unidad: 'ACT',
           precio: shippingCost,
@@ -1317,6 +1327,7 @@ async function generateHTML() {
       iva,
       total,
       notas,
+      envio: buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }),
     };
 
     const canal = await canalParaCotizacion(body.cliente.telefono);
@@ -2348,7 +2359,9 @@ function switchTab(name) {
         document.getElementById('shipping-envia').style.display = 'block';
         document.getElementById('shipping-manual').style.display = 'none';
       }
-      if (opt?.value === 'envia' && state.cart.size > 0) {
+      // #102: si ya hay una tarifa elegida (restaurada del historial o de la
+      // misma sesion) no se vuelve a consultar envia.com al re-entrar al tab.
+      if (debeAutoCotizarEnvia(opt?.value, state.cart.size, enviaRateSeleccionado)) {
         setTimeout(cotizarEnvia, 100);
       }
     }
@@ -3770,6 +3783,26 @@ async function cargarCotizacion(id) {
 
       state.cart.set(item.codigo, { product: cartProduct, cantidad: item.cantidad });
     }
+
+    // Envio (issue #102): restaura carrier/servicio/precio tal cual se guardo,
+    // sin re-cotizar con envia.com. Cotizaciones viejas sin envio estructurado
+    // degradan a "sin seleccion" (restaurarEnvioDesdeCotizacion lo resuelve).
+    const envioRestore = restaurarEnvioDesdeCotizacion(cot.envio);
+    document.getElementById('shipping-option').value = envioRestore.opcion;
+    document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
+    document.getElementById('shipping-manual').style.display = envioRestore.mostrarManual ? 'block' : 'none';
+    document.getElementById('shipping-cost').value = envioRestore.cost;
+    document.getElementById('shipping-desc').value = envioRestore.desc;
+    // Confirmacion visual de la tarifa restaurada (hallazgo del code review):
+    // sin esto el tab Envio se veia vacio para un envio via envia.com aunque el
+    // valor ya estuviera bien restaurado para el Resumen/PDF.
+    document.getElementById('envia-results').innerHTML = envioRestore.enviaRateSeleccionado?.carrier
+      ? buildEnviaRateRestauradaHtml(envioRestore.enviaRateSeleccionado)
+      : '';
+    document.getElementById('envia-error').style.display = 'none';
+    document.getElementById('envia-resumen').style.display = 'none';
+    enviaRateSeleccionado = envioRestore.enviaRateSeleccionado;
+    envioInvalidadoPorCantidad = false;
 
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');

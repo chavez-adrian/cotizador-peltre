@@ -103,6 +103,31 @@ test('B2: GET /api/cotizaciones/:id sin campo pais no falla', async () => {
   assert.ok(res.body.cliente);
 });
 
+// === #102: envio estructurado {carrier, servicio, precio} persiste en data
+// y se lee de vuelta tal cual (Cargar desde historial lo restaura sin re-cotizar).
+test('#102-1: POST /api/cotizacion/pdf persiste data.envio estructurado', async () => {
+  const body = {
+    fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Test SA', nombreCorto: 'Test', telefono: '+52 5551234567' },
+    items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 100, iva: 16, total: 116, notas: [],
+    envio: { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' },
+  };
+  const res = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const id = res.headers['x-cotizacion-id'];
+  const get = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.deepStrictEqual(get.body.envio, { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
+});
+
+test('#102-2: GET /api/cotizaciones/:id de un registro viejo sin data.envio no rompe (degrada con gracia)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, { id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin envio', totalPiezas: 0, total: 0, tier: '', data: { cliente: { razonSocial: 'Sin envio' }, items: [{ codigo: 'ENVIO', descripcion: 'FedEx Ground', cantidad: 1, unidad: 'ACT', precio: 259, descuento: 0 }] } }]);
+  const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.envio, undefined);
+});
+
 test('B4: POST /api/cotizacion/envio usa paisDestino en destination.country', async () => {
   let capturedPayload = null;
   const originalFetch = globalThis.fetch;

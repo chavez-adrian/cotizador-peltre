@@ -5,11 +5,13 @@ const assert = require('node:assert/strict');
 let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega;
+let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega,
+    buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -267,4 +269,100 @@ test('#88-6: sin ningun campo de tiempo -> cadena vacia (no rompe el render)', (
   assert.strictEqual(formatTiempoEntrega({ carrier: 'dhl' }), '');
   assert.strictEqual(formatTiempoEntrega(null), '');
   assert.strictEqual(formatTiempoEntrega(undefined), '');
+});
+
+// === #102: persistir el envio estructurado {carrier, servicio, precio} en vez
+// de solo hornearlo en la descripcion de la partida ENVIO -- necesario para
+// restaurarlo tal cual al Cargar desde historial sin re-cotizar con envia.com.
+test('#102-1: buildEnvioEstructurado con shippingOpt none -> null (nada que persistir)', () => {
+  const r = buildEnvioEstructurado({ shippingOpt: 'none', shippingCost: 0, shippingDesc: 'Envio', enviaRateSeleccionado: null });
+  assert.strictEqual(r, null);
+});
+
+test('#102-2: buildEnvioEstructurado con costo 0 -> null aunque haya opcion elegida', () => {
+  const r = buildEnvioEstructurado({ shippingOpt: 'manual', shippingCost: 0, shippingDesc: 'Envio', enviaRateSeleccionado: null });
+  assert.strictEqual(r, null);
+});
+
+test('#102-3: buildEnvioEstructurado manual -> opcion manual, carrier/servicio null, precio y descripcion capturados', () => {
+  const r = buildEnvioEstructurado({ shippingOpt: 'manual', shippingCost: 150, shippingDesc: 'Paquete propio', enviaRateSeleccionado: null });
+  assert.deepStrictEqual(r, { opcion: 'manual', carrier: null, servicio: null, precio: 150, descripcion: 'Paquete propio' });
+});
+
+test('#102-4: buildEnvioEstructurado envia con rate seleccionada -> carrier/servicio estructurados (no horneados en un string)', () => {
+  const r = buildEnvioEstructurado({
+    shippingOpt: 'envia', shippingCost: 259, shippingDesc: 'FedEx Ground',
+    enviaRateSeleccionado: { carrier: 'fedex', servicio: 'ground', desc: 'FedEx Ground', cost: 259 },
+  });
+  assert.deepStrictEqual(r, { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
+});
+
+test('#102-5: buildEnvioEstructurado envia sin rate seleccionada -> carrier/servicio null (degradado, no rompe)', () => {
+  const r = buildEnvioEstructurado({ shippingOpt: 'envia', shippingCost: 200, shippingDesc: 'Envio', enviaRateSeleccionado: null });
+  assert.deepStrictEqual(r, { opcion: 'envia', carrier: null, servicio: null, precio: 200, descripcion: 'Envio' });
+});
+
+test('#102-6: restaurarEnvioDesdeCotizacion sin envio (undefined) -> degrada a "none" sin seleccion', () => {
+  const r = restaurarEnvioDesdeCotizacion(undefined);
+  assert.deepStrictEqual(r, {
+    opcion: 'none', mostrarEnvia: false, mostrarManual: false, cost: '', desc: 'Envio', enviaRateSeleccionado: null,
+  });
+});
+
+test('#102-7: restaurarEnvioDesdeCotizacion con envio null (cotizacion vieja) -> degrada igual que undefined', () => {
+  const r = restaurarEnvioDesdeCotizacion(null);
+  assert.strictEqual(r.opcion, 'none');
+  assert.strictEqual(r.enviaRateSeleccionado, null);
+});
+
+test('#102-8: restaurarEnvioDesdeCotizacion manual -> restaura costo/descripcion, sin rate de envia', () => {
+  const r = restaurarEnvioDesdeCotizacion({ opcion: 'manual', carrier: null, servicio: null, precio: 200, descripcion: 'Paquete propio' });
+  assert.deepStrictEqual(r, {
+    opcion: 'manual', mostrarEnvia: false, mostrarManual: true, cost: '200.00', desc: 'Paquete propio', enviaRateSeleccionado: null,
+  });
+});
+
+test('#102-9: restaurarEnvioDesdeCotizacion envia -> restaura carrier/servicio como rate seleccionada (evita re-cotizar)', () => {
+  const r = restaurarEnvioDesdeCotizacion({ opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
+  assert.deepStrictEqual(r, {
+    opcion: 'envia', mostrarEnvia: true, mostrarManual: false, cost: '259.00', desc: 'FedEx Ground',
+    enviaRateSeleccionado: { carrier: 'fedex', servicio: 'ground', desc: 'FedEx Ground', cost: 259 },
+  });
+});
+
+test('#102-10: restaurarEnvioDesdeCotizacion con opcion desconocida -> degrada a none (no rompe)', () => {
+  const r = restaurarEnvioDesdeCotizacion({ opcion: 'algo-viejo-invalido', precio: 100 });
+  assert.strictEqual(r.opcion, 'none');
+  assert.strictEqual(r.enviaRateSeleccionado, null);
+});
+
+test('#102-11: debeAutoCotizarEnvia -- envia sin rate previa y carrito con productos -> SI auto-cotiza', () => {
+  assert.strictEqual(debeAutoCotizarEnvia('envia', 3, null), true);
+});
+
+test('#102-12: debeAutoCotizarEnvia -- ya hay un envio elegido (restaurado del historial) -> NO re-dispara envia.com', () => {
+  assert.strictEqual(debeAutoCotizarEnvia('envia', 3, { carrier: 'fedex', servicio: 'ground', desc: 'FedEx Ground', cost: 259 }), false);
+});
+
+test('#102-13: debeAutoCotizarEnvia -- carrito vacio -> no auto-cotiza', () => {
+  assert.strictEqual(debeAutoCotizarEnvia('envia', 0, null), false);
+});
+
+test('#102-14: debeAutoCotizarEnvia -- opcion manual o none -> nunca auto-cotiza envia.com', () => {
+  assert.strictEqual(debeAutoCotizarEnvia('manual', 3, null), false);
+  assert.strictEqual(debeAutoCotizarEnvia('none', 3, null), false);
+});
+
+// === #102 (hallazgo del code review): sin esta tarjeta, el tab Envio se veia
+// vacio para un envio via envia.com restaurado del historial -- los valores
+// quedaban bien en shipping-cost/shipping-desc (ocultos dentro de #shipping-manual,
+// no visible cuando opcion es 'envia') pero el vendedor no tenia confirmacion
+// visual y podia pulsar "Cotizar" de nuevo, perdiendo la restauracion.
+test('#102-15: buildEnviaRateRestauradaHtml muestra carrier/servicio/precio formateados', () => {
+  const html = buildEnviaRateRestauradaHtml({ carrier: 'fedex', servicio: 'ground', precio: 259 });
+  assert.ok(html.includes('FedEx'));
+  assert.ok(html.includes('Ground'));
+  assert.ok(html.includes('259.00'));
+  assert.ok(html.includes('envia-rate-card'));
+  assert.ok(html.includes('selected'));
 });

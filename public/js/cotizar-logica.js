@@ -114,6 +114,69 @@ export function aplicarNotaTiempoEntrega(notasText, decorado) {
   return lineas.join('\n');
 }
 
+// Envio estructurado {carrier, servicio, precio} (issue #102): prefactor de
+// escritura. Antes seleccionarEnviaRate horneaba carrier+servicio en el string
+// de descripcion de la partida ENVIO y nada estructurado se persistia -- al
+// Cargar desde historial no habia forma de restaurar la seleccion, solo el
+// texto de la partida. shippingOpt 'none' o costo <= 0 -> nada que persistir.
+export function buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }) {
+  if (shippingOpt !== 'manual' && shippingOpt !== 'envia') return null;
+  if (!(shippingCost > 0)) return null;
+  const carrier = shippingOpt === 'envia' ? (enviaRateSeleccionado?.carrier ?? null) : null;
+  const servicio = shippingOpt === 'envia' ? (enviaRateSeleccionado?.servicio ?? null) : null;
+  return { opcion: shippingOpt, carrier, servicio, precio: shippingCost, descripcion: shippingDesc || 'Envio' };
+}
+
+// Restaura el envio elegido al Cargar una cotizacion del historial (#102): dado
+// el envio estructurado persistido (o su ausencia -- cotizaciones viejas antes
+// de este prefactor), calcula el estado a aplicar a los campos de la seccion
+// Envio SIN volver a llamar a envia.com. opcion desconocida o ausente degrada
+// a 'none' (comportamiento identico al de hoy: sin seleccion, no rompe).
+export function restaurarEnvioDesdeCotizacion(envio) {
+  if (!envio || (envio.opcion !== 'manual' && envio.opcion !== 'envia')) {
+    return { opcion: 'none', mostrarEnvia: false, mostrarManual: false, cost: '', desc: 'Envio', enviaRateSeleccionado: null };
+  }
+  const desc = envio.descripcion || 'Envio';
+  const cost = typeof envio.precio === 'number' ? envio.precio.toFixed(2) : '';
+  return {
+    opcion: envio.opcion,
+    mostrarEnvia: envio.opcion === 'envia',
+    mostrarManual: envio.opcion === 'manual',
+    cost, desc,
+    enviaRateSeleccionado: envio.opcion === 'envia'
+      ? { carrier: envio.carrier ?? null, servicio: envio.servicio ?? null, desc, cost: envio.precio }
+      : null,
+  };
+}
+
+// Compuerta del auto-cotizado al entrar al tab Envio (issue #102 AC2): si ya
+// hay una tarifa de envia.com elegida (restaurada del historial, o de la misma
+// sesion) no se vuelve a disparar la consulta -- perderia/pisaria la seleccion
+// vigente. Espejo minimo de debeInvalidarEnvioPorCantidad (#89): misma idea,
+// disparador distinto (entrar al tab vs. cambiar cantidades).
+export function debeAutoCotizarEnvia(shippingOpt, cartSize, enviaRateSeleccionado) {
+  return shippingOpt === 'envia' && cartSize > 0 && !enviaRateSeleccionado;
+}
+
+// Tarjeta de solo lectura para el envio via envia.com restaurado del historial
+// (#102, hallazgo del code review): sin ella, #envia-results quedaba vacio y el
+// vendedor perdia la confirmacion visual de que ya habia un envio elegido en el
+// tab Envio (aunque el valor si estuviera bien restaurado para el Resumen/PDF).
+// Mismo marcado que las tarjetas de cotizarEnvia (app.js) para verse igual, sin
+// listener de click -- no hay tarifas alternativas que ofrecer sin re-consultar.
+export function buildEnviaRateRestauradaHtml({ carrier, servicio, precio }) {
+  const money = (typeof precio === 'number' ? precio : 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `
+    <div class="envia-rate-card selected">
+      <div class="envia-rate-info">
+        <div class="envia-rate-carrier">${formatCarrier(carrier)}</div>
+        <div class="envia-rate-servicio">${formatServicio(servicio)}</div>
+      </div>
+      <div class="envia-rate-precio">$${money}</div>
+    </div>
+  `;
+}
+
 // Modal de confirmacion de identidad antes de generar el PDF/HTML (issue #87):
 // evita estampar la cotizacion al vendedor equivocado cuando el dispositivo
 // quedo logueado con otro usuario. Mismo patron que buildCanalModalHtml
