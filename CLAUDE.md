@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # desarrollo con hot-reload (--watch)
 npm start            # produccion
-npm test             # todos los tests (1117, 0 fallas esperadas)
+npm test             # todos los tests (1205, 0 fallas esperadas)
 
 # Correr un test individual:
 node --test test/server.test.js
@@ -57,7 +57,7 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 | `sync-operam.js` | Nucleo PURO del sync post-venta (#62): `etapaPostVenta(hechos, op)` (hechos normalizados → etapa, con gate de #61 y monotonia) + `hechosDesdeOperam` (transacciones crudas → hechos). **Mapeo REAL de tipos de Operam: ver `peltre-operam.md` §12** (el MCP `operam-api` los etiqueta mal). Pago por `allocated` vs `total` (tolerancia 1%), no por `outstanding`. Sin IO. |
 | `sync-operam-io.js` | Motor de reconciliacion: lee Operam read-only (`listarTransacciones`/`listarPedidos`), normaliza, aplica el nucleo y mueve la tarjeta. Binding por `data.orderOperam` (el folio de cotizacion NUNCA es el `order_`). Lo usan el webhook y `/api/sync-operam`. |
 | `sync-operam-webhook.js` | Webhook de Operam: extraccion defensiva del identificador, clave idempotente, log en Neon. |
-| `operam-web.js` | Web legacy de Operam (FrontAccounting) para lo que la API v3 no permite: fijar la vigencia. Login por form + cookie (auth distinta del Bearer) y **escritura** del post-fix de vigencia (#106, ADR-0007): `corregirVigenciaQuote` + los puros `parsearFormularioQuote`/`serializarBodyQuote`/`leerValidoHastaVista`. Reposteo del formulario IDENTICO salvo `delivery_date`; el body lleva `ProcessOrder` y NUNCA `CancelOrder` (que vive en el mismo form y anularia la cotizacion). La deteccion de cancelacion (#76) usa la misma sesion web pero vive en la rama `issue-76-backfill`, sin mergear: no esta en main. |
+| `operam-web.js` | Web legacy de Operam (FrontAccounting) para lo que la API v3 no permite. Login por form + cookie (auth distinta del Bearer). Dos escrituras: (1) post-fix de vigencia (#106, ADR-0007): `corregirVigenciaQuote` + los puros `parsearFormularioQuote`/`serializarBodyQuote`/`leerValidoHastaVista`; (2) **actualizacion del quote conservando folio** (#104, ADR-0008): `actualizarQuoteOperam` — reescritura completa en `$_SESSION` (Delete0 iterado + AddItem por partida con el mapeo compartido `armarContenidoQuote` de operam-client) y UN solo `ProcessOrder` que lleva comments/cust_ref/vigencia (sin post-fix separado en este camino), con verificacion post-escritura (`compararQuoteVista`; NO compara descripciones — las impone el catalogo de Operam). Verificado en vivo 2026-07-28: Delete/AddItem NO tocan la base hasta ProcessOrder, y el `price` enviado prevalece sobre la lista del cliente. El body lleva `ProcessOrder` y NUNCA `CancelOrder` (vive en el mismo form y anularia la cotizacion; `ES_SUBMIT`/`bodyDesdeCampos` son la segunda linea de defensa). La deteccion de cancelacion (#76) usa la misma sesion web pero vive en la rama `issue-76-backfill`, sin mergear: no esta en main. |
 | `db.js` | Pool pg con DATABASE_URL. Exporta `query(sql, params)`. Retorna null si no hay pool (graceful). Auto-crea tablas `clientes_log` y `operam_webhooks_log` en Neon al iniciar. |
 | `dropbox.js` | OAuth token refresh. Exporta `upload(path, content)` y `subirCsfDropbox(pdfBase64, rfc, nombre)` |
 | `parsear-csf.js` | Funcion pura — extrae RFC, razon social, domicilio, regimen de texto de PDF de CSF del SAT |
@@ -79,6 +79,8 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 ### Persistencia
 
 - Neon Postgres (`DATABASE_URL`) — tablas `cotizaciones` (historial + seguimientos + estado, via `lib/cotizaciones-store.js`) y `clientes_log` (auditoria de altas). El store cae a `data/cotizaciones.json` cuando no hay `DATABASE_URL` (dev local y tests); el disco de Render es efimero, asi que en produccion la fuente de verdad es Neon.
+- Los GET `/api/cotizacion/pdf/:id` y `/html/:id` REGENERAN el documento desde `data` jsonb (#103); la cache de disco se elimino y el listado expone `hasData` (ya no `hasPdf`). Van SIN authMiddleware a proposito (compartir por WhatsApp). El envio elegido se persiste estructurado en `data.envio` `{opcion, carrier, servicio, precio, descripcion}` (#102) y `cargarCotizacion` lo restaura sin re-disparar envia.com.
+- "Actualizar cotizacion" vs "Crear nueva a partir de esta" (#104, ADR-0008): actualizar reutiliza `cotizacionId` (ya no se resetea `lastCotizacionId` incondicionalmente al Cargar) y reescribe el quote de Operam conservando folio via `actualizarQuoteOperam`. Gate `puedeActualizarCotizacion`: solo con folio subido y sin pedido asociado (`data.orderOperam` ausente) y mismo cliente. Si la edicion web falla, el registro local SI se actualiza y queda marcado `quoteDesactualizado` con Reintentar.
 - `data/*.json` — vendedores, precios, cajas, config. Leidos/escritos sincronicamente.
 - Migracion historica: `scripts/migrar-cotizaciones-neon.mjs` (idempotente, corrida el 2026-06-10; excluyo entradas de vendedores Test/Tester).
 
