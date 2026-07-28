@@ -895,6 +895,77 @@ test('subirCotizacionOperam: el quote lleva cust_ref (referencia), deliver_to y 
   }
 });
 
+async function subirYCapturarCustRef(cliente, customerId) {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: customerId, tax_id: cliente.rfc, CustName: cliente.razonSocial || '', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: customerId });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente,
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
+    });
+    return quoteBody.cust_ref;
+  } finally {
+    restore();
+  }
+}
+
+test('subirCotizacionOperam: cust_ref cae a nombreCorto si no hay referencia', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo SA de CV', nombreCorto: 'El Pendulo',
+  }, 322);
+  assert.equal(custRef, 'El Pendulo', 'cust_ref debe caer a cliente.nombreCorto');
+});
+
+test('subirCotizacionOperam: cust_ref cae a razonSocial si no hay referencia ni nombreCorto', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo SA de CV',
+  }, 323);
+  assert.equal(custRef, 'El Pendulo SA de CV', 'cust_ref debe caer a cliente.razonSocial');
+});
+
+test('subirCotizacionOperam: cust_ref cae a nombreEntrega si no hay referencia, nombreCorto ni razonSocial', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', nombreEntrega: 'Almacen Roma',
+  }, 324);
+  assert.equal(custRef, 'Almacen Roma', 'cust_ref debe caer a cliente.nombreEntrega');
+});
+
+test('subirCotizacionOperam: campos de solo espacios en blanco cuentan como vacios', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo SA de CV',
+    referencia: '   ', nombreCorto: '\t',
+  }, 325);
+  assert.equal(custRef, 'El Pendulo SA de CV', 'los escalones de solo espacios deben tratarse como vacios');
+});
+
+test('subirCotizacionOperam: cust_ref se trunca a 60 caracteres', async () => {
+  const razonSocialLarga = 'A'.repeat(80);
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: razonSocialLarga,
+  }, 326);
+  assert.equal(custRef.length, 60, 'cust_ref no debe exceder 60 caracteres');
+  assert.equal(custRef, 'A'.repeat(60));
+});
+
+test('subirCotizacionOperam: si los cuatro escalones estan vacios, cust_ref queda vacio y no falla', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76',
+  }, 327);
+  assert.equal(custRef, '', 'sin ningun escalon disponible, cust_ref debe quedar vacio sin lanzar error');
+});
+
 test('subirCotizacionOperam: sin vigencia explicita usa OrderDate + 30 dias', async () => {
   resetSession();
   let quoteBody = null;
