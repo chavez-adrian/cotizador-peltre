@@ -146,3 +146,24 @@ test('B15: (#70) telefonoEntrega (campo muerto) no dispara la linea de telefono 
   // no existe en el modelo actual (nada lo produce) y no debe renderizarse
   assert.ok(!text.includes(toHex('9998887777')), 'telefonoEntrega no debe aparecer: el HTML no lo considera');
 });
+
+// === #101: pagina fantasma y contador de paginas ===
+
+function countPages(text) {
+  const matches = text.match(/\/Type\s*\/Page(?!s)/g) || [];
+  return matches.length;
+}
+
+test('B16: (#101) una cotizacion que cabe en una hoja genera un PDF de una sola pagina fisica', async () => {
+  const result = await generateQuotePDF({ _compress: false });
+  const text = result.toString('latin1');
+  assert.equal(countPages(text), 1, 'no debe generar una segunda pagina en blanco');
+});
+
+test('B17: (#101) el contador "Pagina X de Y" coincide con el numero real de paginas', async () => {
+  const result = await generateQuotePDF({ _compress: false });
+  const text = result.toString('latin1');
+  const paginasReales = countPages(text);
+  // PDFKit kern-splits "Pagina"; "1 de N" es el fragmento contiguo fiable
+  assert.ok(text.includes(toHex(`1 de ${paginasReales}`)), `debe imprimir "Pagina 1 de ${paginasReales}"`);
+});
