@@ -1389,17 +1389,48 @@ test('#115 huellaContenidoQuote: el mismo plazo en otra fecha de generacion NO c
   assert.equal(huellaContenidoQuote(cotizacionBase({ fecha: '2026-07-30', vigencia: '2026-08-29' })), base);
 });
 
-test('#115 huellaContenidoQuote: sin fecha o sin vigencia el plazo no participa de la huella', () => {
+// El plazo se deriva con las mismas reglas que construyen el comments que SI se sube,
+// defaults incluidos (sin vigencia = fecha + 30). Por eso sin vigencia explicita el plazo
+// es constante y mover la fecha de generacion no es un cambio, mientras que fijar otra
+// vigencia si lo es: cambia la linea que Operam va a mostrar.
+test('#115 huellaContenidoQuote: sin vigencia explicita el plazo es el default y la fecha no lo mueve', () => {
   const sinVigencia = (extra) => huellaContenidoQuote(cotizacionBase({ vigencia: '', ...extra }));
-  assert.equal(sinVigencia(), sinVigencia({ fecha: '2026-12-01' }), 'sin vigencia no se inventa plazo');
-  const sinFecha = (extra) => huellaContenidoQuote(cotizacionBase({ fecha: '', ...extra }));
-  assert.equal(sinFecha(), sinFecha({ vigencia: '2026-12-01' }), 'sin fecha no se inventa plazo');
+  assert.equal(sinVigencia(), sinVigencia({ fecha: '2026-12-01' }));
 });
 
-test('#114 huellaContenidoQuote: las notas y el formato del documento NO cuentan como cambio', () => {
+test('#115 huellaContenidoQuote: fijar una vigencia distinta SI cambia la huella', () => {
+  const sinFecha = (extra) => huellaContenidoQuote(cotizacionBase({ fecha: '', ...extra }));
+  assert.notEqual(sinFecha(), sinFecha({ vigencia: '2026-12-01' }));
+});
+
+// #115 (segunda parte): las notas SI viajan al quote -- armarComentariosQuote las mete
+// en `comments`, una linea por nota -- asi que editarlas deja el comments de Operam
+// desactualizado si no se reescribe. El argumento del ruido que justifica excluir la
+// FECHA de vigencia no aplica aqui: las notas solo cambian si el vendedor las edita.
+test('#115 huellaContenidoQuote: las notas SI cuentan como cambio (viajan a comments)', () => {
   const base = huellaContenidoQuote(cotizacionBase());
-  assert.equal(huellaContenidoQuote(cotizacionBase({ notas: ['Otra nota'] })), base);
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ notas: ['Otra nota'] })), base);
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ notas: [] })), base, 'quitar las notas tambien');
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ notas: ['Precio sujeto a cambio', 'Nota extra'] })), base,
+    'agregar una nota tambien');
+});
+
+test('#115 huellaContenidoQuote: el formato del documento NO cuenta como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
   assert.equal(huellaContenidoQuote(cotizacionBase({ incluirFotos: true })), base);
+});
+
+// Lalamove no es partida del quote (#72 pendiente): viaja en comments. Un cambio de su
+// descripcion con el mismo precio no mueve items ni importes, asi que solo lo caza el
+// comments.
+test('#115 huellaContenidoQuote: la descripcion de un envio Lalamove SI cuenta como cambio', () => {
+  const conLalamove = (desc) => huellaContenidoQuote(cotizacionBase({
+    items: [
+      { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+      { codigo: 'ENVIO', descripcion: desc, cantidad: 1, precio: 666, descuento: 0 },
+    ],
+  }));
+  assert.notEqual(conLalamove('Lalamove camioneta'), conLalamove('Lalamove moto'));
 });
 
 test('#114 huellaContenidoQuote: cantidad, precio, descuento y codigo SI cuentan como cambio', () => {
@@ -1444,8 +1475,10 @@ test('#114 huellaContenidoQuote: el envio y la zona del CP de entrega SI cuentan
 test('#114 contenidoQuoteCambio: contra la huella de lo subido, sin cambios es false', () => {
   const data = cotizacionBase();
   assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data)), false);
-  assert.equal(contenidoQuoteCambio(cotizacionBase({ notas: ['Otra'] }), huellaContenidoQuote(data)), false);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ incluirFotos: true }), huellaContenidoQuote(data)), false);
   assert.equal(contenidoQuoteCambio(cotizacionBase({ total: 99 }), huellaContenidoQuote(data)), true);
+  // #115: las notas viajan a comments, editarlas hay que llevarlo al quote
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ notas: ['Otra'] }), huellaContenidoQuote(data)), true);
   // #115: otro plazo de vigencia SI es un cambio que hay que llevar al quote
   assert.equal(contenidoQuoteCambio(cotizacionBase({ vigencia: '2026-12-31' }), huellaContenidoQuote(data)), true);
 });

@@ -2156,11 +2156,21 @@ test('#114-2: regenerar con cambios pide actualizar el quote conservando el foli
   assert.strictEqual(res.body.folioOperam, '1200', 'el documento se numera con el folio que ya existe');
 });
 
-test('#114-3: cambiar solo las notas no pide actualizar el quote', async () => {
+// #115 (segunda parte) corrige el otro punto de #114: las notas tampoco eran
+// "presentacion" -- viajan a comments del quote, asi que editarlas hay que llevarlo a
+// Operam. Lo que de verdad no viaja es el formato del documento.
+test('#114-3: cambiar solo el formato del documento no pide actualizar el quote', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ incluirFotos: true }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+});
+
+test('#115-3: editar las notas SI pide actualizar el quote (van en comments)', async () => {
   const id = cotizacionSubida114();
   const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
     .send({ ...contenido114({ notas: ['Otra nota'] }), cotizacionId: String(id) });
-  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
 });
 
 // #115 corrige la regla de #114 en un punto: la vigencia quedaba fuera junto a las
