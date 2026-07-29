@@ -225,39 +225,23 @@ async function crearOActualizarCotizacion(data, vendedor) {
   return id;
 }
 
-app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
+// Guardar la cotizacion. NO genera documento (ADR-0009): devuelve el id del
+// registro y el folio de Operam si ya existe, y el frontend decide -- guarda,
+// espera el folio y pide el documento a los GET, que son el unico generador.
+// Sustituye a los POST /api/cotizacion/pdf y /html, que guardaban Y generaban:
+// eran dos de los cuatro caminos que decidian por separado que numero llevaba el
+// documento, que es la causa raiz de #110.
+app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   if (!validarTelefonoCotizacion(req, res)) return;
   try {
     const data = req.body;
     data.vendedor = req.user.name;
     const id = await crearOActualizarCotizacion(data, req.user.name);
-    const pdfBuffer = await generateQuotePDF(data);
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
-      'X-Cotizacion-Id': String(id),
-    });
-    res.send(pdfBuffer);
+    const entry = await cotStore.obtener(id);
+    res.json({ id, folioOperam: entry?.folioOperam ?? null });
   } catch (err) {
-    console.error('Error generando PDF:', err);
-    res.status(500).json({ error: 'Error generando PDF' });
-  }
-});
-
-app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
-  if (!validarTelefonoCotizacion(req, res)) return;
-  try {
-    const data = req.body;
-    data.vendedor = req.user.name;
-    const id = await crearOActualizarCotizacion(data, req.user.name);
-    const incluirFotos = !!data.incluirFotos;
-    data.id = id;
-    const html = generateQuoteHTML(data, { incluirFotos });
-    res.set({ 'Content-Type': 'text/html; charset=utf-8', 'X-Cotizacion-Id': String(id) });
-    res.send(html);
-  } catch (err) {
-    console.error('Error generando HTML:', err);
-    res.status(500).json({ error: 'Error generando HTML' });
+    console.error('Error guardando cotizacion:', err);
+    res.status(500).json({ error: 'Error guardando la cotizacion' });
   }
 });
 
