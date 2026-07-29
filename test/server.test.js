@@ -126,6 +126,37 @@ test('#102-1: POST /api/cotizacion/pdf persiste data.envio estructurado', async 
   assert.deepStrictEqual(get.body.envio, { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
 });
 
+// === #109: el aviso de modo actualizacion necesita el folio REAL de Operam
+// (no el id interno) sin que la vista de cotizacion lo adivine ni haga una
+// peticion extra. El listado ya lo exponia; el detalle (que es lo que
+// cargarCotizacion consume) no. Se agrega folioOperam al detalle, tomandolo
+// de la columna de primer nivel del registro (no de data, que no lo contiene).
+test('#109-1: GET /api/cotizaciones/:id incluye folioOperam (columna de primer nivel, no vive en data)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Con folio',
+    totalPiezas: 0, total: 0, tier: '', folioOperam: '1200',
+    data: { cliente: { razonSocial: 'Con folio' }, items: [] },
+  }]);
+  const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.folioOperam, '1200');
+});
+
+test('#109-2: GET /api/cotizaciones/:id sin folioOperam (PRE) lo expone como null, no undefined', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin folio',
+    totalPiezas: 0, total: 0, tier: '',
+    data: { cliente: { razonSocial: 'Sin folio' }, items: [] },
+  }]);
+  const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.folioOperam, null);
+});
+
 test('#102-2: GET /api/cotizaciones/:id de un registro viejo sin data.envio no rompe (degrada con gracia)', async () => {
   const snap = readCots();
   const id = snap.length + 1;
