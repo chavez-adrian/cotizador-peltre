@@ -131,8 +131,8 @@ function validarDomicilioCotizacion() {
   });
 }
 
-// Lee los campos cl-* del cliente/domicilio para el body de /api/cotizacion/pdf
-// y /api/cotizacion/html (idénticos en ambos -- un solo lugar, #84). `leyenda`
+// Lee los campos cl-* del cliente/domicilio para el body de /api/cotizacion
+// (identico en PDF y HTML -- un solo lugar, #84). `leyenda`
 // es el resultado de validarDomicilioCotizacion().
 function leerClienteFormulario(leyenda) {
   return {
