@@ -1187,6 +1187,19 @@ function conLimiteDeTiempo(promesa, ms, alVencer) {
   ]);
 }
 
+// Espera a que termine la operacion de Operam en vuelo para esta cotizacion (#116),
+// acotada por el mismo TIMEOUT_OPERAM_MS de ADR-0009. Devuelve true si quedo libre.
+// Se consulta el Set en vez de guardar promesas a proposito: `subidasOperamEnVuelo`
+// sigue siendo la unica fuente del estado en vuelo (dos estructuras para lo mismo
+// divergirian), y la espera real dura segundos, asi que 200ms de resolucion sobran.
+async function esperarOperamEnVuelo(key, ms = TIMEOUT_OPERAM_MS) {
+  const t0 = Date.now();
+  while (subidasOperamEnVuelo.has(key) && Date.now() - t0 < ms) {
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return !subidasOperamEnVuelo.has(key);
+}
+
 // Guardar -> subir a Operam esperando el folio -> generar el documento (ADR-0009).
 // Es la INVERSION del orden de #83: antes se generaba el documento y la subida
 // ocurria despues, asi que cuando el PDF ya estaba descargado el folio -- que es
@@ -1197,6 +1210,20 @@ function conLimiteDeTiempo(promesa, ms, alVencer) {
 // Devuelve el id del registro (con el que los GET arman el documento) o null si
 // el guardado fallo, unico caso en que no hay nada que entregar.
 async function guardarYNumerarCotizacion(body, progreso) {
+  // #116: si la generacion anterior dejo una operacion de Operam en vuelo para ESTA
+  // cotizacion (la reescritura del quote de #114, que tarda segundos por la web
+  // legacy), hay que esperarla ANTES de guardar. Si no, el servidor compara contra la
+  // huella vieja -- la reescritura todavia no la persistio -- pide actualizar otra vez
+  // y se choca con su propia guarda: el vendedor veia "ya hay una operacion en curso,
+  // reintenta" en el flujo mas comun que existe (PDF para archivo, HTML para WhatsApp).
+  // Esperando, la huella ya esta al dia y el servidor responde por si mismo que no hay
+  // nada que actualizar. Acotado: si no termina, se sigue y el aviso queda como red de
+  // seguridad -- nunca se deja al vendedor sin documento (ADR-0009).
+  const enVuelo = state.lastCotizacionId ? String(state.lastCotizacionId) : null;
+  if (enVuelo && subidasOperamEnVuelo.has(enVuelo)) {
+    progreso('Esperando a Operam...');
+    await esperarOperamEnVuelo(enVuelo);
+  }
   progreso('Guardando...');
   const res = await api('/api/cotizacion', { method: 'POST', body });
   if (!res.ok) {
@@ -1218,7 +1245,16 @@ async function guardarYNumerarCotizacion(body, progreso) {
   // historial. Converge aqui a proposito: un camino paralelo tendria su propio gate,
   // su propio lock y su propia forma de fallar. Si el contenido NO cambio, el
   // servidor no lo pide y la subida idempotente responde el folio sin tocar Operam.
-  if (state.modoActualizacion || requiereActualizacionOperam) {
+  //
+  // #116: la señal del servidor manda TAMBIEN en modo actualizacion. Antes el modo
+  // forzaba la reescritura, y con la espera de arriba eso reescribia el quote DOS veces
+  // con el contenido identico (el PDF y luego el HTML del mismo carrito): la guarda de
+  // "operacion en curso" lo frenaba por accidente, no por diseño. Si la huella dice que
+  // el quote ya coincide, no hay nada que reescribir -- ni entrando por "Actualizar
+  // cotizacion" desde el historial. Sin folio (o sin huella, cotizaciones previas a
+  // #114) el servidor responde que si hace falta, asi que #104 sigue cubierto.
+  if (state.modoActualizacion && !requiereActualizacionOperam) return id;
+  if (requiereActualizacionOperam) {
     actualizarQuoteEnOperam(id, slot);
     return id;
   }
