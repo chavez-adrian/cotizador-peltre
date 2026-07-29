@@ -1147,6 +1147,17 @@ async function canalParaCotizacion(telefono) {
   }
 }
 
+// Etiquetas de los botones de generacion segun el modo (#109). Un solo lugar:
+// el bloque vivia repetido en cada punto que entra o sale del modo actualizacion,
+// y olvidar uno reintroduce exactamente el bug que #109 arreglo. Lee
+// state.modoActualizacion en vez de recibirlo, para que no pueda mentir.
+function aplicarEtiquetasBotonesGenerar() {
+  const btnPdf = document.getElementById('btn-pdf');
+  if (btnPdf) btnPdf.textContent = textoBotonGenerar('pdf', state.modoActualizacion);
+  const btnHtml = document.getElementById('btn-html');
+  if (btnHtml) btnHtml.textContent = textoBotonGenerar('html', state.modoActualizacion);
+}
+
 // === PDF GENERATION ===
 async function generatePDF() {
   const telErr = validarTelefonosCotizacion();
@@ -1271,7 +1282,7 @@ async function generatePDF() {
     // #109: el texto idle depende del modo -- sin esto el boton volvia a decir
     // "Generar PDF" tras la primera actualizacion aunque se siguiera en modo
     // actualizacion.
-    btn.textContent = textoBotonGenerar('pdf', state.modoActualizacion);
+    aplicarEtiquetasBotonesGenerar();
   }
 }
 
@@ -1377,7 +1388,7 @@ async function generateHTML() {
   } finally {
     btn.disabled = false;
     // #109: mismo criterio que btn-pdf -- el texto idle depende del modo.
-    btn.textContent = textoBotonGenerar('html', state.modoActualizacion);
+    aplicarEtiquetasBotonesGenerar();
   }
 }
 
@@ -1434,12 +1445,8 @@ function nuevaCotizacion() {
   envioInvalidadoPorCantidad = false;
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
-  // #109: salir de modo actualizacion (state.modoActualizacion ya quedo en
-  // false arriba) tiene que devolver los botones a su texto normal.
-  const btnPdfNueva = document.getElementById('btn-pdf');
-  if (btnPdfNueva) btnPdfNueva.textContent = textoBotonGenerar('pdf', false);
-  const btnHtmlNueva = document.getElementById('btn-html');
-  if (btnHtmlNueva) btnHtmlNueva.textContent = textoBotonGenerar('html', false);
+  // #109: salir de modo actualizacion devuelve los botones a su texto normal.
+  aplicarEtiquetasBotonesGenerar();
   // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
   // pcRenderInicio ya limpia los campos del cliente y de entrega via
   // pcPrepararSeleccion (el bloque de entrega vive en el paso Envio desde #84).
@@ -1618,12 +1625,8 @@ function pcPrepararSeleccion() {
   state.modoActualizacion = false;
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
-  // #109: cambio de cliente tambien sale de modo actualizacion -- los botones
-  // vuelven a su texto normal.
-  const btnPdfCliente = document.getElementById('btn-pdf');
-  if (btnPdfCliente) btnPdfCliente.textContent = textoBotonGenerar('pdf', false);
-  const btnHtmlCliente = document.getElementById('btn-html');
-  if (btnHtmlCliente) btnHtmlCliente.textContent = textoBotonGenerar('html', false);
+  // #109: cambio de cliente tambien sale de modo actualizacion.
+  aplicarEtiquetasBotonesGenerar();
 }
 
 // --- Entrada: dos caminos ---
@@ -3903,10 +3906,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     }
     // Etiquetas de los botones (#109): en modo actualizacion comunican que
     // reescriben el documento/quote existente, no que crean uno nuevo.
-    const btnPdf = document.getElementById('btn-pdf');
-    if (btnPdf) btnPdf.textContent = textoBotonGenerar('pdf', state.modoActualizacion);
-    const btnHtml = document.getElementById('btn-html');
-    if (btnHtml) btnHtml.textContent = textoBotonGenerar('html', state.modoActualizacion);
+    aplicarEtiquetasBotonesGenerar();
 
     // Volver a la app
     document.getElementById('historial-view').style.display = 'none';
