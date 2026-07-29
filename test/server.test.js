@@ -278,6 +278,26 @@ test('#110-1: el PDF y el HTML del mismo registro muestran el MISMO numero, y es
   assert.ok(!html.text.includes(`Cotizacion #${id}`), 'el HTML no numera con el id interno');
 });
 
+// Una PRE no tiene folio por definicion (#63) y no inventa numero (ADR-0009):
+// el documento sale sin numero y se identifica como pre-cotizacion, para que
+// nadie lo confunda con una cotizacion registrada en el ERP.
+test('#111-1: sin folio de Operam el documento no lleva numero y se identifica como pre-cotizacion', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, registroConFolio(id, null)]);
+
+  const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  const textoPdf = Buffer.from(pdf.body).toString('latin1');
+  // PDFKit kern-splita el titulo tras "PRE-CO" y el meta tras "Cotizacion:";
+  // esos son los prefijos contiguos fiables (mismo criterio que B6/B14).
+  assert.ok(textoPdf.includes(toHex('PRE-CO')), 'el PDF se identifica como pre-cotizacion');
+  assert.ok(!textoPdf.includes(toHex('Cotizacion:')), 'el PDF no imprime la linea del numero');
+  assert.ok(html.text.includes('PRE-COTIZACION'), 'el HTML se identifica como pre-cotizacion');
+  assert.ok(!html.text.includes('qm-val quote-num'), 'el HTML no pinta la fila del numero');
+  assert.ok(!html.text.includes(`#${id}`), 'el HTML no muestra el id interno como numero');
+});
+
 test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si hay algo que regenerar', async () => {
   const snap = readCots();
   const id = snap.length + 1;
