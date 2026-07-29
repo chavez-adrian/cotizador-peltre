@@ -792,6 +792,26 @@ test('Q19d: buildOperamStatusHtml avisa solo cuando la vigencia quedo sin correg
   assert.doesNotMatch(buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 }), /vigencia/i);
 });
 
+// Subida en la RUTA CRITICA de la generacion (#111, ADR-0009): al invertirse el
+// orden (subir y luego generar), los dos casos que antes eran inofensivos porque
+// la subida era secundaria pasan a decidir si el documento sale numerado o como
+// PRE. Ninguno puede degradar en silencio: el ADR prohibe explicitamente "un
+// documento sin numero silencioso".
+test('Q19e: una subida ya en vuelo y un timeout son PRE explicitos con reintento, no un silencio', () => {
+  const enVuelo = interpretarSubidaOperam({ enVuelo: true });
+  assert.equal(enVuelo.estado, 'pre');
+  assert.match(enVuelo.mensaje, /en curso/i, 'dice que la subida sigue corriendo, no que fallo');
+
+  const timeout = interpretarSubidaOperam({ timeout: true });
+  assert.equal(timeout.estado, 'pre');
+  assert.match(timeout.mensaje, /no respondi/i, 'dice que Operam no respondio a tiempo');
+  assert.notEqual(timeout.mensaje, enVuelo.mensaje, 'no se confunde esperar con fallar');
+
+  // Los dos ofrecen el mismo Reintentar idempotente que cualquier otro PRE (#83).
+  assert.match(buildOperamStatusHtml(7, enVuelo), /reintentarSubidaOperam\(7, this\)/);
+  assert.match(buildOperamStatusHtml(7, timeout), /reintentarSubidaOperam\(7, this\)/);
+});
+
 // === Actualizacion del quote conservando el folio (#104, ADR-0008) ===
 // La distincion que manda en el aviso al vendedor es `escrito`: si NO se alcanzo a
 // confirmar, el quote de Operam quedo INTACTO (fallo reversible por abandono, la

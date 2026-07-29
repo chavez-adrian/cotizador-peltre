@@ -1158,6 +1158,63 @@ function aplicarEtiquetasBotonesGenerar() {
   if (btnHtml) btnHtml.textContent = textoBotonGenerar('html', state.modoActualizacion);
 }
 
+// Cuanto se espera a Operam antes de entregar el documento sin numero (ADR-0009,
+// "Operam no puede bloquear la entrega"). La subida esta en la RUTA CRITICA de la
+// generacion: si tarda mas que esto, el vendedor se queda mirando un boton en vez
+// de atender a su cliente, asi que el documento sale como pre-cotizacion y el
+// bueno se re-comparte desde el historial cuando el folio llegue.
+const TIMEOUT_OPERAM_MS = 20000;
+
+// Promise.race con un vencimiento: si la promesa no resuelve en ms, resuelve con
+// lo que devuelva alVencer(). El guard `listo` evita que el temporizador dispare
+// su efecto (repintar el slot) DESPUES de que la subida ya haya respondido bien.
+function conLimiteDeTiempo(promesa, ms, alVencer) {
+  let listo = false;
+  return Promise.race([
+    promesa.then(v => { listo = true; return v; }),
+    new Promise(resolve => setTimeout(() => { if (!listo) resolve(alVencer()); }, ms)),
+  ]);
+}
+
+// Guardar -> subir a Operam esperando el folio -> generar el documento (ADR-0009).
+// Es la INVERSION del orden de #83: antes se generaba el documento y la subida
+// ocurria despues, asi que cuando el PDF ya estaba descargado el folio -- que es
+// el numero de la cotizacion -- todavia no existia. Ahora la generacion espera al
+// folio, con progreso real en el boton, y degrada a pre-cotizacion en vez de
+// bloquear: fallo, timeout o subida en vuelo entregan el documento igual, sin
+// numero, con el estado y el Reintentar de siempre (#63/#83) pintados en el slot.
+// Devuelve el id del registro (con el que los GET arman el documento) o null si
+// el guardado fallo, unico caso en que no hay nada que entregar.
+async function guardarYNumerarCotizacion(body, progreso) {
+  progreso('Guardando...');
+  const res = await api('/api/cotizacion', { method: 'POST', body });
+  if (!res.ok) {
+    let err = {};
+    try { err = await res.json(); } catch {}
+    alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
+    return null;
+  }
+  const { id } = await res.json();
+  state.lastCotizacionId = String(id);
+  const slot = document.getElementById('operam-status-cotizar');
+  // Modo actualizacion (#104, ADR-0008): aqui NO hay inversion que hacer. El folio
+  // ya existe -- el gate puedeActualizarCotizacion lo exige -- asi que el documento
+  // se genera directo con el y la reescritura del quote sigue su curso sin
+  // bloquearlo; si falla, el registro queda marcado con Reintentar.
+  if (state.modoActualizacion) {
+    actualizarQuoteEnOperam(id, slot);
+    return id;
+  }
+  progreso('Subiendo a Operam...');
+  await conLimiteDeTiempo(autoSubirOperam(id, slot), TIMEOUT_OPERAM_MS, () => {
+    const vencida = interpretarSubidaOperam({ timeout: true });
+    if (slot) slot.innerHTML = buildOperamStatusHtml(id, vencida);
+    return vencida;
+  });
+  progreso('Generando documento...');
+  return id;
+}
+
 // === PDF GENERATION ===
 async function generatePDF() {
   const telErr = validarTelefonosCotizacion();
@@ -1249,32 +1306,18 @@ async function generatePDF() {
     // y el server actualiza el entry en vez de crear otro.
     if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
 
-    const res = await api('/api/cotizacion/pdf', {
-      method: 'POST',
-      body,
-    });
+    const cotizacionId = await guardarYNumerarCotizacion(body, texto => { btn.textContent = texto; });
+    if (!cotizacionId) return;
 
-    if (!res.ok) {
-      const err = await res.json();
-      alert('Error: ' + (err.error || 'No se pudo generar'));
-      return;
-    }
-
-    // Capturar el ID de cotizacion del header
-    state.lastCotizacionId = res.headers.get('X-Cotizacion-Id');
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    // El documento lo genera SIEMPRE el GET (unico generador desde ADR-0009): el
+    // servidor decide el numero -- el folio de Operam -- y el nombre del archivo
+    // (?descargar=1 = attachment). Sin `download` a proposito: el nombre lo pone
+    // el Content-Disposition, para no volver a tenerlo definido en dos lugares.
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `Cotizacion_PeltreNacional_${state.lastCotizacionId || 'nuevo'}.pdf`;
+    a.href = `/api/cotizacion/pdf/${cotizacionId}?descargar=1`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
-    // Auto-subida a Operam (#83, ADR-0006): la generacion REAL del documento la
-    // sube sola. No bloquea la entrega del PDF (ya se descargo); el estado (folio
-    // o PRE + Reintentar / candidatos) se pinta en el slot del resumen. En modo
-    // actualizacion (#104) reescribe el quote existente en vez de crear otro.
-    sincronizarOperamTrasGenerar(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
+    a.remove();
   } catch (e) {
     alert('Error generando PDF: ' + e.message);
   } finally {
@@ -1304,6 +1347,13 @@ async function generateHTML() {
   const btn = document.getElementById('btn-html');
   btn.disabled = true;
   btn.textContent = 'Generando...';
+
+  // La pestana del HTML se reserva AHORA, con el gesto del vendedor todavia
+  // fresco: desde ADR-0009 abrir el documento ocurre despues de esperar a Operam
+  // (hasta TIMEOUT_OPERAM_MS) y un window.open tan tarde se lo come el bloqueador
+  // de popups. Si algo falla se cierra.
+  const ventana = window.open('', '_blank');
+  if (ventana) ventana.document.write('<p style="font-family:Arial;padding:24px">Generando la cotizacion...</p>');
 
   try {
     const tier = getCurrentTier();
@@ -1364,26 +1414,16 @@ async function generateHTML() {
     // (o una generacion previa) en vez de duplicar la cotizacion.
     if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
 
-    const res = await api('/api/cotizacion/html', { method: 'POST', body });
+    const cotizacionId = await guardarYNumerarCotizacion(body, texto => { btn.textContent = texto; });
+    if (!cotizacionId) { ventana?.close(); return; }
 
-    if (!res.ok) {
-      const err = await res.json();
-      alert('Error: ' + (err.error || 'No se pudo generar'));
-      return;
-    }
-
-    state.lastCotizacionId = res.headers.get('X-Cotizacion-Id');
-
-    const html = await res.text();
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    // Auto-subida a Operam (#83): el HTML es el formato WhatsApp del documento;
-    // generarlo tambien sube la cotizacion sola (mismo endpoint idempotente). En
-    // modo actualizacion (#104) reescribe el quote existente conservando el folio.
-    sincronizarOperamTrasGenerar(state.lastCotizacionId, document.getElementById('operam-status-cotizar'));
+    // Mismo criterio que el PDF: el HTML lo regenera el GET con el folio ya
+    // persistido (unico generador, ADR-0009).
+    const url = `/api/cotizacion/html/${cotizacionId}`;
+    if (ventana) ventana.location = url;
+    else window.open(url, '_blank');
   } catch (e) {
+    ventana?.close();
     alert('Error generando HTML: ' + e.message);
   } finally {
     btn.disabled = false;
@@ -2327,19 +2367,29 @@ function slotOperamDesde(el) {
 // funcion sirve para el reintento y para resolver la dedup por nombre (extraBody
 // = { customerId }). El resultado se pinta en el slot (nodo DOM) con la vista
 // pura interpretarSubidaOperam + buildOperamStatusHtml (folio | PRE + Reintentar
-// | candidatos inline | PRE sin datos). El documento ya se genero: un fallo de
-// subida NUNCA lo bloquea, solo deja la cotizacion en PRE.
+// | candidatos inline | PRE sin datos). Desde ADR-0009 la generacion ESPERA a
+// esta subida para imprimir el folio, pero un fallo sigue sin bloquear el
+// documento: degrada a PRE (sin numero) en vez de dejar al vendedor sin nada.
 // Subidas en vuelo por id (F3 de la revision): un doble click en Reintentar /
 // Elegir, o un Reintentar con la auto-subida original aun en vuelo, no dispara
 // un segundo POST (el server ademas tiene su lock por id, que es la proteccion
 // real; esto evita el 425 en el caso comun). El id se normaliza a string (llega
-// como string del header X-Cotizacion-Id y como numero de los onclick).
+// como string de state.lastCotizacionId y como numero de los onclick).
 const subidasOperamEnVuelo = new Set();
 
 async function autoSubirOperam(id, slot, extraBody) {
-  if (!id) return;
+  if (!id) return null;
   const key = String(id);
-  if (subidasOperamEnVuelo.has(key)) return;
+  // Ya en vuelo: antes esto era un `return` mudo, inofensivo mientras la subida
+  // era secundaria. Con ADR-0009 la subida esta en la ruta critica de la
+  // generacion, asi que un silencio aqui produce justo lo que el ADR prohibe --
+  // un documento sin numero sin decir por que. Se devuelve (y se pinta) un PRE
+  // explicito, distinto de un fallo, con el Reintentar de siempre.
+  if (subidasOperamEnVuelo.has(key)) {
+    const enVuelo = interpretarSubidaOperam({ enVuelo: true });
+    if (slot) slot.innerHTML = buildOperamStatusHtml(id, enVuelo);
+    return enVuelo;
+  }
   subidasOperamEnVuelo.add(key);
   if (slot) slot.innerHTML = '<span class="operam-status">Subiendo a Operam...</span>';
   let resultado;
@@ -2408,13 +2458,6 @@ async function actualizarQuoteEnOperam(id, slot) {
   return vista;
 }
 window.reintentarActualizacionOperam = (id, el) => actualizarQuoteEnOperam(id, slotOperamDesde(el));
-
-// Que hace la generacion con Operam: en una cotizacion nueva (o una regeneracion de
-// la misma sesion) la sube; en modo actualizacion reescribe el quote existente
-// conservando el folio. Un solo punto de decision para PDF y HTML.
-function sincronizarOperamTrasGenerar(id, slot) {
-  return state.modoActualizacion ? actualizarQuoteEnOperam(id, slot) : autoSubirOperam(id, slot);
-}
 
 window.reintentarSubidaOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el));
 window.elegirCandidatoOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { customerId });

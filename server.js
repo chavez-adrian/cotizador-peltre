@@ -1291,6 +1291,11 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     // duplicaria el quote. Se devuelve el folio existente sin tocar Operam;
     // yaSubida le dice al frontend que los cambios locales de una regeneracion no
     // viajan a la cotizacion ya registrada.
+    // OJO (ADR-0009): desde que el documento se numera con este folio, una
+    // regeneracion con cambios locales imprime un folio cuyo quote en Operam
+    // difiere de lo impreso. Es el comportamiento preexistente de #83 -- el camino
+    // para alinear los dos es "Actualizar cotizacion" (#104) -- y cambiarlo es una
+    // decision de dominio, no un arreglo tecnico: se documenta, no se toca aqui.
     if (entry.folioOperam != null && entry.folioOperam !== '') {
       return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true });
     }
