@@ -207,6 +207,11 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
 // porque el documento ya sale numerado con el (ADR-0009) y si no el cliente recibe un
 // papel que no coincide con lo que produccion ve en el ERP. Sin folio no hay quote que
 // actualizar: ese camino es la subida normal.
+//
+// Aqui NO se aplica el gate de puedeActualizarCotizacion a proposito: si la cotizacion
+// ya tiene pedido, la reescritura es imposible pero la divergencia existe igual, y
+// callarla seria peor. Se pide la actualizacion, /actualizar responde 409 con el motivo
+// y la UI lo convierte en un aviso visible con la salida (crear una nueva).
 async function crearOActualizarCotizacion(data, vendedor) {
   const idPrevio = parseInt(data.cotizacionId, 10);
   delete data.cotizacionId; // campo de control: no persistirlo dentro de data

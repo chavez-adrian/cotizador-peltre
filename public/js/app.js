@@ -2454,7 +2454,19 @@ async function autoSubirOperam(id, slot, extraBody) {
 async function actualizarQuoteEnOperam(id, slot) {
   if (!id) return;
   const key = String(id);
-  if (subidasOperamEnVuelo.has(key)) return;
+  // Ya en vuelo: era un `return` mudo, tolerable mientras esto solo lo disparaba el
+  // boton del historial. Desde #114 la reescritura del quote esta en la ruta critica
+  // de CADA generacion (Generar PDF y enseguida Ver HTML la disparan dos veces), y un
+  // silencio aqui deja el quote con lo viejo mientras el documento ya salio numerado.
+  // Se pinta el mismo aviso que da el 425 del servidor, con su Reintentar.
+  if (subidasOperamEnVuelo.has(key)) {
+    const enCurso = interpretarActualizacionOperam({
+      ok: false, status: 425, escrito: false,
+      error: 'Ya hay una operacion de Operam en curso para esta cotizacion: reintenta cuando termine.',
+    });
+    if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, enCurso);
+    return enCurso;
+  }
   subidasOperamEnVuelo.add(key);
   if (slot) slot.innerHTML = '<span class="operam-status">Actualizando en Operam...</span>';
   let resultado;

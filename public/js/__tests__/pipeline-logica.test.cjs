@@ -841,6 +841,18 @@ test('A104: interpretarActualizacionOperam distingue exito, no-escrito, escrito-
   assert.match(bloqueada.mensaje, /pedido/);
 });
 
+// #114: con la reescritura del quote en la ruta critica de la generacion, "ya hay una
+// operacion en curso" deja de ser un detalle interno -- es la razon de que el quote se
+// quede con lo viejo mientras el documento ya salio con el folio. Tiene que degradar a
+// un estado con motivo y Reintentar (el lock del servidor responde 425), nunca a
+// silencio: era un `return` mudo en app.js cuando solo lo disparaba el historial.
+test('#114: una operacion de Operam ya en curso degrada a un aviso con reintento, no a silencio', () => {
+  const enCurso = interpretarActualizacionOperam({ ok: false, status: 425, escrito: false, error: 'Ya hay una operacion de Operam en curso para esta cotizacion' });
+  assert.equal(enCurso.estado, 'desactualizado');
+  assert.match(enCurso.mensaje, /en curso/);
+  assert.match(buildActualizacionStatusHtml(9, enCurso), /reintentarActualizacionOperam\(9, this\)/);
+});
+
 test('A104: una caida de red no se confunde con "quedo mal en Operam"', () => {
   const v = interpretarActualizacionOperam({ ok: false, status: 0, error: 'Failed to fetch' });
   assert.equal(v.estado, 'desactualizado');
