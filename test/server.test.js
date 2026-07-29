@@ -298,6 +298,26 @@ test('#111-1: sin folio de Operam el documento no lleva numero y se identifica c
   assert.ok(!html.text.includes(`#${id}`), 'el HTML no muestra el id interno como numero');
 });
 
+// El nombre del archivo se arma en UN solo lugar (el Content-Disposition del GET,
+// ADR-0009) y por folio; app.js ya no lo arma por su cuenta. La descarga del
+// vendedor pide ?descargar=1 (attachment); compartir por WhatsApp abre el mismo
+// documento inline.
+test('#111-2: el Content-Disposition nombra el archivo por folio y respeta ?descargar=1', async () => {
+  const snap = readCots();
+  const conFolio = snap.length + 1;
+  const sinFolio = snap.length + 2;
+  writeCots([...snap, registroConFolio(conFolio, '57310'), registroConFolio(sinFolio, null)]);
+
+  const descarga = await supertest(app).get(`/api/cotizacion/pdf/${conFolio}?descargar=1`);
+  assert.strictEqual(descarga.headers['content-disposition'], 'attachment; filename="Cotizacion_PeltreNacional_57310.pdf"');
+
+  const compartir = await supertest(app).get(`/api/cotizacion/pdf/${conFolio}`);
+  assert.strictEqual(compartir.headers['content-disposition'], 'inline; filename="Cotizacion_PeltreNacional_57310.pdf"');
+
+  const pre = await supertest(app).get(`/api/cotizacion/pdf/${sinFolio}?descargar=1`);
+  assert.strictEqual(pre.headers['content-disposition'], 'attachment; filename="PreCotizacion_PeltreNacional.pdf"');
+});
+
 test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si hay algo que regenerar', async () => {
   const snap = readCots();
   const id = snap.length + 1;

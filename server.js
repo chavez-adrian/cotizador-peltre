@@ -308,9 +308,13 @@ app.get('/api/cotizacion/pdf/:id', async (req, res) => {
   try {
     const data = datosDocumento(entry);
     const pdfBuffer = await generateQuotePDF(data);
+    // ?descargar=1 = la descarga del vendedor al generar (attachment, con el
+    // nombre que decide el server); sin el, inline para el link que se comparte
+    // por WhatsApp, que se ve en el navegador.
+    const disposicion = req.query.descargar ? 'attachment' : 'inline';
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${nombreArchivoDocumento(data.folio, 'pdf')}"`,
+      'Content-Disposition': `${disposicion}; filename="${nombreArchivoDocumento(data.folio, 'pdf')}"`,
     });
     res.send(pdfBuffer);
   } catch (err) {
