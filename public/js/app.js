@@ -1232,7 +1232,7 @@ async function guardarYNumerarCotizacion(body, progreso) {
     alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
     return null;
   }
-  const { id, requiereActualizacionOperam } = await res.json();
+  const { id, requiereActualizacionOperam, folioOperam } = await res.json();
   state.lastCotizacionId = String(id);
   const slot = document.getElementById('operam-status-cotizar');
   // Modo actualizacion (#104, ADR-0008): aqui NO hay inversion que hacer. El folio
@@ -1253,7 +1253,15 @@ async function guardarYNumerarCotizacion(body, progreso) {
   // el quote ya coincide, no hay nada que reescribir -- ni entrando por "Actualizar
   // cotizacion" desde el historial. Sin folio (o sin huella, cotizaciones previas a
   // #114) el servidor responde que si hace falta, asi que #104 sigue cubierto.
-  if (state.modoActualizacion && !requiereActualizacionOperam) return id;
+  if (state.modoActualizacion && !requiereActualizacionOperam) {
+    // Acuse de que no habia nada que hacer. Sin esto el slot se quedaba con el aviso
+    // PREVIO ("al actualizar... se actualizara en Operam"), asi que el vendedor generaba
+    // y no veia si su cotizacion habia viajado o no. Se reusa la misma vista que el
+    // camino de subida da para yaSubida -- folio + "el contenido no cambio" -- en vez de
+    // inventar un mensaje nuevo para el mismo hecho.
+    if (slot) slot.innerHTML = buildOperamStatusHtml(id, interpretarSubidaOperam({ ok: true, folio: folioOperam ?? null, yaSubida: true }));
+    return id;
+  }
   if (requiereActualizacionOperam) {
     actualizarQuoteEnOperam(id, slot);
     return id;
