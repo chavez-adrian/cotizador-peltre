@@ -261,17 +261,36 @@ app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
   }
 });
 
+// UN solo punto arma los datos del documento (ADR-0009). El numero de la
+// cotizacion ES el folio de Operam -- columna de primer nivel del registro (#109),
+// no vive en data -- y jamas el id interno, que es solo la clave tecnica. Sin
+// folio el documento sale sin numero: es una pre-cotizacion, y ponerle el id
+// seria reintroducir la doble numeracion por la puerta de atras.
+function datosDocumento(entry) {
+  const folio = entry.folioOperam != null && entry.folioOperam !== '' ? String(entry.folioOperam) : null;
+  return { ...entry.data, folio };
+}
+
+// Nombre del archivo entregado, en el unico lugar que lo decide: el
+// Content-Disposition del GET (ADR-0009). Con folio se nombra por folio; sin
+// folio es una pre-cotizacion y tampoco lleva numero en el nombre.
+function nombreArchivoDocumento(folio, ext) {
+  return folio ? `Cotizacion_PeltreNacional_${folio}.${ext}` : `PreCotizacion_PeltreNacional.${ext}`;
+}
+
 // Regeneran el documento desde el registro guardado (data jsonb) en vez de
 // servir un archivo de disco (issue #103): el disco de Render es efimero y
 // muere en cada deploy, mientras que data sobrevive en Neon. Sin
-// authMiddleware a proposito (se comparten por WhatsApp).
+// authMiddleware a proposito (se comparten por WhatsApp). Desde ADR-0009 son
+// tambien el UNICO camino que genera documento: los POST /pdf y /html se
+// eliminaron para que no haya cuatro sitios decidiendo que numero se imprime.
 app.get('/api/cotizacion/html/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
   const entry = await cotStore.obtener(id);
   if (!entry || !entry.data) return res.status(404).send('<p>HTML no encontrado</p>');
   try {
-    const data = { ...entry.data, id: entry.id };
+    const data = datosDocumento(entry);
     const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos });
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
     res.send(html);
@@ -287,10 +306,11 @@ app.get('/api/cotizacion/pdf/:id', async (req, res) => {
   const entry = await cotStore.obtener(id);
   if (!entry || !entry.data) return res.status(404).json({ error: 'PDF no encontrado' });
   try {
-    const pdfBuffer = await generateQuotePDF(entry.data);
+    const data = datosDocumento(entry);
+    const pdfBuffer = await generateQuotePDF(data);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
+      'Content-Disposition': `inline; filename="${nombreArchivoDocumento(data.folio, 'pdf')}"`,
     });
     res.send(pdfBuffer);
   } catch (err) {

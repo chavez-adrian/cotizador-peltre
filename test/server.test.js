@@ -231,12 +231,51 @@ test('#103-4: GET /api/cotizacion/html/:id regenera el HTML desde data del regis
   assert.strictEqual(res.status, 200);
   assert.match(res.headers['content-type'], /text\/html/);
   assert.ok(res.text.includes('Cliente HTML SA de CV'));
-  assert.ok(res.text.includes(`#${id}`));
+  // El numero ya no es el id interno (ADR-0009): este registro no tiene folio de
+  // Operam, asi que el documento sale sin numero. La asercion vieja (`#id`) fijaba
+  // justo la doble numeracion que #110/#111 cierran.
+  assert.ok(!res.text.includes(`#${id}`));
 });
 
 test('#103-5: GET /api/cotizacion/html/:id de un id inexistente da 404', async () => {
   const res = await supertest(app).get('/api/cotizacion/html/999999');
   assert.strictEqual(res.status, 404);
+});
+
+// === #110 / #111 (ADR-0009): el numero de la cotizacion ES el folio de Operam.
+// Los dos GET son el UNICO lugar que genera documento, y un solo punto decide el
+// numero: el mismo registro tiene que salir con el MISMO numero en PDF y en HTML.
+// Antes cada camino decidia por su cuenta (el PDF no imprimia ninguno; el HTML
+// imprimia el id interno), que es la doble numeracion que el ADR viene a cerrar.
+function registroConFolio(id, folioOperam) {
+  return {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente Folio',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo', folioOperam,
+    data: {
+      _compress: false,
+      cliente: { razonSocial: 'Cliente Folio SA de CV', nombreCorto: 'Cliente Folio' },
+      items: [{ codigo: 'FOLIO110', descripcion: 'Producto folio', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  };
+}
+
+test('#110-1: el PDF y el HTML del mismo registro muestran el MISMO numero, y es el folio de Operam', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, registroConFolio(id, '57310')]);
+
+  const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  assert.strictEqual(pdf.status, 200);
+  assert.strictEqual(html.status, 200);
+
+  const textoPdf = Buffer.from(pdf.body).toString('latin1');
+  assert.ok(textoPdf.includes(toHex('57310')), 'el PDF imprime el folio de Operam');
+  assert.ok(html.text.includes('57310'), 'el HTML imprime el folio de Operam');
+  // Y ninguno de los dos presenta el id interno como numero de cotizacion.
+  assert.ok(!textoPdf.includes(toHex(`No. Cotizacion: ${id}`)), 'el PDF no numera con el id interno');
+  assert.ok(!html.text.includes(`Cotizacion #${id}`), 'el HTML no numera con el id interno');
 });
 
 test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si hay algo que regenerar', async () => {
