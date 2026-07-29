@@ -2156,10 +2156,30 @@ test('#114-2: regenerar con cambios pide actualizar el quote conservando el foli
   assert.strictEqual(res.body.folioOperam, '1200', 'el documento se numera con el folio que ya existe');
 });
 
-test('#114-3: cambiar solo la vigencia o las notas no pide actualizar el quote', async () => {
+test('#114-3: cambiar solo las notas no pide actualizar el quote', async () => {
   const id = cotizacionSubida114();
   const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
-    .send({ ...contenido114({ vigencia: '2026-12-31', notas: ['Otra nota'] }), cotizacionId: String(id) });
+    .send({ ...contenido114({ notas: ['Otra nota'] }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+});
+
+// #115 corrige la regla de #114 en un punto: la vigencia quedaba fuera junto a las
+// notas, pero SI viaja al quote (comments y "Valido hasta"), asi que cambiar el plazo
+// tiene que reescribirlo. Lo que sigue sin contar es la fecha absoluta.
+test('#115-1: cambiar el plazo de vigencia SI pide actualizar el quote', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ vigencia: '2026-12-31' }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+});
+
+test('#115-2: regenerar el mismo plazo en otra fecha NO pide actualizar el quote', async () => {
+  const id = cotizacionSubida114();
+  const base = contenido114();
+  // el frontend manda la fecha del dia y recalcula la vigencia: ambas se corren juntas
+  const dia = (iso, dias) => new Date(new Date(iso).getTime() + dias * 86400000).toISOString().split('T')[0];
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ fecha: dia(base.fecha, 3), vigencia: dia(base.vigencia, 3) }), cotizacionId: String(id) });
   assert.strictEqual(res.body.requiereActualizacionOperam, false);
 });
 

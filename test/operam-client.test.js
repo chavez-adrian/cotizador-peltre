@@ -1374,10 +1374,26 @@ test('#114 huellaContenidoQuote: el mismo contenido produce la misma huella', ()
   assert.equal(huellaContenidoQuote(cotizacionBase()), huellaContenidoQuote(cotizacionBase()));
 });
 
-test('#114 huellaContenidoQuote: la vigencia y la fecha NO cuentan como cambio', () => {
+// #115: la vigencia SI viaja al quote (comments + "Valido hasta"), asi que cambiarla
+// tiene que reescribirlo. Lo que no puede contar es la FECHA absoluta, que el frontend
+// recalcula en cada generacion: cuenta el PLAZO en dias que eligio el vendedor.
+test('#115 huellaContenidoQuote: los DIAS de vigencia SI cuentan como cambio', () => {
   const base = huellaContenidoQuote(cotizacionBase());
-  assert.equal(huellaContenidoQuote(cotizacionBase({ vigencia: '2026-09-30' })), base);
-  assert.equal(huellaContenidoQuote(cotizacionBase({ fecha: '2026-07-30' })), base);
+  // misma fecha de generacion, vigencia mas larga = otro plazo elegido (30 -> 63 dias)
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ vigencia: '2026-09-30' })), base);
+});
+
+test('#115 huellaContenidoQuote: el mismo plazo en otra fecha de generacion NO cuenta como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  // generar el mismo carrito al dia siguiente: fecha y vigencia se mueven juntas
+  assert.equal(huellaContenidoQuote(cotizacionBase({ fecha: '2026-07-30', vigencia: '2026-08-29' })), base);
+});
+
+test('#115 huellaContenidoQuote: sin fecha o sin vigencia el plazo no participa de la huella', () => {
+  const sinVigencia = (extra) => huellaContenidoQuote(cotizacionBase({ vigencia: '', ...extra }));
+  assert.equal(sinVigencia(), sinVigencia({ fecha: '2026-12-01' }), 'sin vigencia no se inventa plazo');
+  const sinFecha = (extra) => huellaContenidoQuote(cotizacionBase({ fecha: '', ...extra }));
+  assert.equal(sinFecha(), sinFecha({ vigencia: '2026-12-01' }), 'sin fecha no se inventa plazo');
 });
 
 test('#114 huellaContenidoQuote: las notas y el formato del documento NO cuentan como cambio', () => {
@@ -1428,8 +1444,10 @@ test('#114 huellaContenidoQuote: el envio y la zona del CP de entrega SI cuentan
 test('#114 contenidoQuoteCambio: contra la huella de lo subido, sin cambios es false', () => {
   const data = cotizacionBase();
   assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data)), false);
-  assert.equal(contenidoQuoteCambio(cotizacionBase({ vigencia: '2026-12-31' }), huellaContenidoQuote(data)), false);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ notas: ['Otra'] }), huellaContenidoQuote(data)), false);
   assert.equal(contenidoQuoteCambio(cotizacionBase({ total: 99 }), huellaContenidoQuote(data)), true);
+  // #115: otro plazo de vigencia SI es un cambio que hay que llevar al quote
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ vigencia: '2026-12-31' }), huellaContenidoQuote(data)), true);
 });
 
 // Cotizaciones anteriores a #114: se subieron sin dejar huella. No se puede afirmar
