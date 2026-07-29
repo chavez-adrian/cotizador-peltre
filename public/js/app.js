@@ -1409,8 +1409,24 @@ function shareWhatsApp() {
   window.open(`https://wa.me/?text=${msg}`, '_blank');
 }
 
+// #112: unica funcion nuevaCotizacion (antes habia dos homonimas -- esta de
+// ambito de modulo que resetea, y otra colgada de window que solo navegaba;
+// el menu global "+" arma sus botones con onclick="nuevaCotizacion()", que
+// resuelve contra window y por eso disparaba la que NO reseteaba). Se
+// unifican en esta sola funcion porque el boton #btn-nueva (adentro de la
+// vista de cotizar) y el menu "+" (visible desde cualquier vista) necesitan
+// las DOS mitades: reset de estado y navegacion a la vista de cotizar. Hacer
+// ambas cosas siempre es seguro para #btn-nueva -- ya esta en esa vista, asi
+// que ocultar/mostrar es un no-op visual.
+// cerrarMenuNuevo() va primero, ANTES del confirm: si el vendedor cancela
+// (cotizacion con carrito), el menu igual debe cerrarse -- si no, se queda
+// colgado abierto aunque el usuario haya dicho que no.
 function nuevaCotizacion() {
+  cerrarMenuNuevo();
   if (state.cart.size > 0 && !confirm('Se perdera la cotizacion actual. Continuar?')) return;
+  ocultarTodasLasVistas();
+  document.getElementById('app-view').style.display = 'block';
+  marcarNavActivo('nav-cotizar');
   state.cart.clear();
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
@@ -1460,6 +1476,9 @@ function nuevaCotizacion() {
   updateResumen();
   renderCartLines();
 }
+// El menu global "+" arma sus botones con onclick="<accion>()" (ver
+// buildMenuNuevoHtml en pipeline-logica.js), que resuelve contra window.
+window.nuevaCotizacion = nuevaCotizacion;
 
 // === OPERAM: cliente seleccionado ===
 // (El buscador visible del paso vive en #pc-root, #82; el panel viejo de
@@ -3787,16 +3806,12 @@ window.abrirCapturaRapida = () => {
   document.getElementById('pr-celular').focus();
 };
 
-// Acciones del boton + global (issue #54). "Nueva cotizacion" lleva a la vista
-// de cotizar existente (la app abre ahi). "Nuevo prospecto" abre la captura
-// minima EXISTENTE: el formulario de prospecto que ya vive en la vista de
-// Prospectos. No se reinventa la captura ni la cotizacion: el + solo enruta.
-window.nuevaCotizacion = () => {
-  cerrarMenuNuevo();
-  ocultarTodasLasVistas();
-  document.getElementById('app-view').style.display = 'block';
-  marcarNavActivo('nav-cotizar');
-};
+// Acciones del boton + global (issue #54). "Nueva cotizacion" reusa la unica
+// funcion nuevaCotizacion (linea ~1412, expuesta a window ahi mismo -- #112:
+// antes habia una segunda homonima aqui que solo navegaba). "Nuevo prospecto"
+// abre la captura minima EXISTENTE: el formulario de prospecto que ya vive en
+// la vista de Prospectos. No se reinventa la captura ni la cotizacion: el +
+// solo enruta.
 window.nuevoProspecto = () => {
   cerrarMenuNuevo();
   showProspectos();
