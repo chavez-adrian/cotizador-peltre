@@ -5,12 +5,14 @@ const assert = require('node:assert/strict');
 let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
   buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
-  puedeActualizarCotizacion, buildAccionesCargaHtml;
+  puedeActualizarCotizacion, buildAccionesCargaHtml,
+  buildAvisoModoActualizacion, textoBotonGenerar;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
     buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
-    puedeActualizarCotizacion, buildAccionesCargaHtml } = await import('../cotizaciones-logica.js'));
+    puedeActualizarCotizacion, buildAccionesCargaHtml,
+    buildAvisoModoActualizacion, textoBotonGenerar } = await import('../cotizaciones-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -287,4 +289,36 @@ test('Q27: buildAccionesCargaHtml sin data deshabilita las dos acciones', () => 
   const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: false }));
   assert.equal((html.match(/disabled/g) || []).length, 2);
   assert.ok(!html.includes('cargarCotizacion('));
+});
+
+// === #109: el aviso de modo actualizacion identifica el documento por el
+// folio REAL de Operam (badge "#Operam N" de pipeline-logica.js, issue #63),
+// nunca por el id interno del registro -- ese era el bug reportado por Adrian
+// en la verificacion de #104 ("#16" leido junto a "mismo folio" como si 16 y
+// 1200 fueran el mismo numero). En modo actualizacion el folio SIEMPRE existe
+// (gate puedeActualizarCotizacion), asi que no hay caso "sin folio" que cubrir.
+
+test('Q28: buildAvisoModoActualizacion nombra el folio real de Operam con la convencion #Operam N', () => {
+  const html = buildAvisoModoActualizacion('1200');
+  assert.ok(html.includes('#Operam 1200'));
+  assert.ok(!html.includes('#16'));
+});
+
+test('Q29: buildAvisoModoActualizacion describe la accion en terminos de los botones (actualizar PDF/HTML)', () => {
+  const html = buildAvisoModoActualizacion('1200');
+  assert.match(html, /actualizar el pdf o el html/i);
+  assert.match(html, /se actualizar.* en operam/i);
+});
+
+// === #109: los botones comunican que actualizan (no "generar" generico) en
+// modo actualizacion, y conservan el texto historico fuera de ese modo.
+
+test('Q30: textoBotonGenerar devuelve las etiquetas normales fuera de modo actualizacion', () => {
+  assert.equal(textoBotonGenerar('pdf', false), 'Generar PDF');
+  assert.equal(textoBotonGenerar('html', false), 'Ver HTML');
+});
+
+test('Q31: textoBotonGenerar devuelve etiquetas de actualizar en modo actualizacion', () => {
+  assert.equal(textoBotonGenerar('pdf', true), 'Actualizar PDF');
+  assert.equal(textoBotonGenerar('html', true), 'Actualizar HTML');
 });
