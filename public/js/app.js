@@ -1409,18 +1409,16 @@ function shareWhatsApp() {
   window.open(`https://wa.me/?text=${msg}`, '_blank');
 }
 
-// #112: unica funcion nuevaCotizacion (antes habia dos homonimas -- esta de
-// ambito de modulo que resetea, y otra colgada de window que solo navegaba;
-// el menu global "+" arma sus botones con onclick="nuevaCotizacion()", que
-// resuelve contra window y por eso disparaba la que NO reseteaba). Se
-// unifican en esta sola funcion porque el boton #btn-nueva (adentro de la
-// vista de cotizar) y el menu "+" (visible desde cualquier vista) necesitan
-// las DOS mitades: reset de estado y navegacion a la vista de cotizar. Hacer
-// ambas cosas siempre es seguro para #btn-nueva -- ya esta en esa vista, asi
-// que ocultar/mostrar es un no-op visual.
-// cerrarMenuNuevo() va primero, ANTES del confirm: si el vendedor cancela
-// (cotizacion con carrito), el menu igual debe cerrarse -- si no, se queda
-// colgado abierto aunque el usuario haya dicho que no.
+// #112: una sola nuevaCotizacion. Habia dos homonimas -- esta, de modulo, que
+// reseteaba, y otra en window que solo navegaba; el menu "+" arma sus botones
+// con onclick="nuevaCotizacion()", que resuelve contra window, y por eso no
+// reseteaba. Ahora hace las dos mitades: las necesitan tanto #btn-nueva como el
+// menu "+", visible desde cualquier vista.
+// Orden: cerrarMenuNuevo() va ANTES del confirm (si el vendedor cancela, el menu
+// igual debe cerrarse); la navegacion va DESPUES, para que cancelar no mueva nada.
+// Para #btn-nueva la navegacion no se ve (ya esta en esa vista), pero NO es
+// inocua: ocultarTodasLasVistas llama devolverPanelACasa (#94), asi que empezar
+// de cero tambien descarta un upgrade fiscal a medias. Es lo deseable.
 function nuevaCotizacion() {
   cerrarMenuNuevo();
   if (state.cart.size > 0 && !confirm('Se perdera la cotizacion actual. Continuar?')) return;
