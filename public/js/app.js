@@ -47,6 +47,8 @@ import {
   buildTableroCotizacionesHtml,
   buildHistorialAccionesHtml,
   buildAccionesCargaHtml,
+  buildAvisoModoActualizacion,
+  textoBotonGenerar,
 } from './cotizaciones-logica.js';
 import {
   buildTableroPipelineHtml,
@@ -1266,7 +1268,10 @@ async function generatePDF() {
     alert('Error generando PDF: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Generar PDF';
+    // #109: el texto idle depende del modo -- sin esto el boton volvia a decir
+    // "Generar PDF" tras la primera actualizacion aunque se siguiera en modo
+    // actualizacion.
+    btn.textContent = textoBotonGenerar('pdf', state.modoActualizacion);
   }
 }
 
@@ -1371,7 +1376,8 @@ async function generateHTML() {
     alert('Error generando HTML: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Ver HTML';
+    // #109: mismo criterio que btn-pdf -- el texto idle depende del modo.
+    btn.textContent = textoBotonGenerar('html', state.modoActualizacion);
   }
 }
 
@@ -1428,6 +1434,12 @@ function nuevaCotizacion() {
   envioInvalidadoPorCantidad = false;
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
+  // #109: salir de modo actualizacion (state.modoActualizacion ya quedo en
+  // false arriba) tiene que devolver los botones a su texto normal.
+  const btnPdfNueva = document.getElementById('btn-pdf');
+  if (btnPdfNueva) btnPdfNueva.textContent = textoBotonGenerar('pdf', false);
+  const btnHtmlNueva = document.getElementById('btn-html');
+  if (btnHtmlNueva) btnHtmlNueva.textContent = textoBotonGenerar('html', false);
   // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
   // pcRenderInicio ya limpia los campos del cliente y de entrega via
   // pcPrepararSeleccion (el bloque de entrega vive en el paso Envio desde #84).
@@ -1606,6 +1618,12 @@ function pcPrepararSeleccion() {
   state.modoActualizacion = false;
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
+  // #109: cambio de cliente tambien sale de modo actualizacion -- los botones
+  // vuelven a su texto normal.
+  const btnPdfCliente = document.getElementById('btn-pdf');
+  if (btnPdfCliente) btnPdfCliente.textContent = textoBotonGenerar('pdf', false);
+  const btnHtmlCliente = document.getElementById('btn-html');
+  if (btnHtmlCliente) btnHtmlCliente.textContent = textoBotonGenerar('html', false);
 }
 
 // --- Entrada: dos caminos ---
@@ -3876,10 +3894,19 @@ async function cargarCotizacion(id, modo = 'nueva') {
     state.lastCotizacionId = state.modoActualizacion ? String(id) : null;
     const operamStatus = document.getElementById('operam-status-cotizar');
     if (operamStatus) {
+      // folioOperam viaja en la respuesta del detalle (#109): el gate de
+      // "Actualizar cotizacion" (puedeActualizarCotizacion) ya exige que exista,
+      // asi que aqui siempre esta presente en modo actualizacion.
       operamStatus.innerHTML = state.modoActualizacion
-        ? `<span class="operam-status">Al generar se actualizar&aacute; la cotizaci&oacute;n <strong>#${id}</strong> y su quote en Operam (mismo folio).</span>`
+        ? buildAvisoModoActualizacion(cot.folioOperam)
         : '';
     }
+    // Etiquetas de los botones (#109): en modo actualizacion comunican que
+    // reescriben el documento/quote existente, no que crean uno nuevo.
+    const btnPdf = document.getElementById('btn-pdf');
+    if (btnPdf) btnPdf.textContent = textoBotonGenerar('pdf', state.modoActualizacion);
+    const btnHtml = document.getElementById('btn-html');
+    if (btnHtml) btnHtml.textContent = textoBotonGenerar('html', state.modoActualizacion);
 
     // Volver a la app
     document.getElementById('historial-view').style.display = 'none';
