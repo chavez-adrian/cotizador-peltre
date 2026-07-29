@@ -181,6 +181,14 @@ const state = {
   // Operam (conservando el folio) en vez de crear una cotizacion nueva. Cualquier
   // cosa que termine la sesion de cotizacion lo apaga.
   modoActualizacion: false,
+  // Vendedor ya confirmado para la cotizacion en curso (#113). El modal de #87
+  // existe para no estampar al vendedor equivocado, y eso solo puede cambiar al
+  // EMPEZAR una cotizacion: dentro de la misma, preguntar otra vez por el segundo
+  // formato es ruido (Adrian: genero el PDF y "Ver HTML" volvio a preguntar por
+  // una cotizacion que ya estaba generada y subida). Se apaga en los mismos tres
+  // puntos que lastCotizacionId: cotizacion nueva, cambio de cliente y cargar del
+  // historial -- los unicos en que puede cambiar quien queda estampado.
+  vendedorConfirmado: false,
 };
 
 let searchSelected = null; // { key, sku, product }
@@ -1124,12 +1132,15 @@ function pedirCanalCotizacion() {
 // cotizacion, para no estampar al vendedor equivocado cuando el dispositivo
 // quedo logueado con otro usuario (caso real: prestamo de dispositivo).
 function pedirConfirmarVendedor() {
+  // Una vez por cotizacion (#113): ya confirmado = no se vuelve a preguntar
+  // mientras siga siendo la misma cotizacion.
+  if (state.vendedorConfirmado) return Promise.resolve(true);
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000';
     overlay.innerHTML = buildConfirmarVendedorModalHtml(state.user?.name || '');
     document.body.appendChild(overlay);
-    const cerrar = ok => { overlay.remove(); resolve(ok); };
+    const cerrar = ok => { overlay.remove(); state.vendedorConfirmado = ok; resolve(ok); };
     document.getElementById('confirmar-vendedor-confirmar').addEventListener('click', () => cerrar(true));
     document.getElementById('confirmar-vendedor-cancelar').addEventListener('click', () => cerrar(false));
   });
@@ -1468,6 +1479,7 @@ function nuevaCotizacion() {
   state.cart.clear();
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
+  state.vendedorConfirmado = false;
 
   // Limpiar campos
   const campos = [
@@ -1680,6 +1692,7 @@ function pcPrepararSeleccion() {
   // subida del resumen tambien era del anterior.
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
+  state.vendedorConfirmado = false;
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
   // #109: cambio de cliente tambien sale de modo actualizacion.
@@ -3951,6 +3964,9 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // (puedeActualizarCotizacion) y lo hace valer el servidor.
     state.modoActualizacion = modo === 'actualizar';
     state.lastCotizacionId = state.modoActualizacion ? String(id) : null;
+    // #113: cargar OTRA cotizacion es exactamente cuando puede cambiar quien queda
+    // estampado, asi que la confirmacion se vuelve a pedir en los dos modos.
+    state.vendedorConfirmado = false;
     const operamStatus = document.getElementById('operam-status-cotizar');
     if (operamStatus) {
       // folioOperam viaja en la respuesta del detalle (#109): el gate de
