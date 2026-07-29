@@ -179,7 +179,7 @@ export function buildAccionesCargaHtml(cot) {
 // exige folioOperam), asi que no hay caso "sin folio" que resolver aqui.
 export function buildAvisoModoActualizacion(folioOperam) {
   const badge = etiquetaFolioOperam({ folioOperam });
-  return `<span class="operam-status">Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam (mismo folio).</span>`;
+  return `<span class="operam-status">Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span>`;
 }
 
 // Etiquetas de los botones de generacion segun el modo (#109): en modo
