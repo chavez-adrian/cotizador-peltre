@@ -1205,14 +1205,20 @@ async function guardarYNumerarCotizacion(body, progreso) {
     alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
     return null;
   }
-  const { id } = await res.json();
+  const { id, requiereActualizacionOperam } = await res.json();
   state.lastCotizacionId = String(id);
   const slot = document.getElementById('operam-status-cotizar');
   // Modo actualizacion (#104, ADR-0008): aqui NO hay inversion que hacer. El folio
   // ya existe -- el gate puedeActualizarCotizacion lo exige -- asi que el documento
   // se genera directo con el y la reescritura del quote sigue su curso sin
   // bloquearlo; si falla, el registro queda marcado con Reintentar.
-  if (state.modoActualizacion) {
+  // requiereActualizacionOperam (#114) entra por la MISMA puerta: regenerar en la
+  // misma sesion una cotizacion que ya tiene folio, con el contenido cambiado, es la
+  // misma operacion que "Actualizar cotizacion" -- solo que sin pasar por el
+  // historial. Converge aqui a proposito: un camino paralelo tendria su propio gate,
+  // su propio lock y su propia forma de fallar. Si el contenido NO cambio, el
+  // servidor no lo pide y la subida idempotente responde el folio sin tocar Operam.
+  if (state.modoActualizacion || requiereActualizacionOperam) {
     actualizarQuoteEnOperam(id, slot);
     return id;
   }
@@ -2468,6 +2474,16 @@ async function actualizarQuoteEnOperam(id, slot) {
   }
   const vista = interpretarActualizacionOperam(resultado);
   if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);
+  // #114: bloqueada = el quote ya tiene pedido y Operam no deja editarlo, asi que el
+  // documento recien generado lleva un folio cuyo quote conserva el contenido viejo.
+  // El slot solo no basta: el vendedor acaba de descargar el PDF y su siguiente gesto
+  // es mandarselo al cliente. Aqui NO vale entregar callado un documento numerado que
+  // diverge (decision de Adrian), y este es el unico aviso que se cruza en el camino.
+  if (vista.estado === 'bloqueada') {
+    alert('OJO: el documento ya lleva el folio de Operam, pero la cotizacion en Operam NO se actualizo.\n\n' +
+      (vista.mensaje || '') +
+      '\n\nUsa "Crear una cotizacion nueva a partir de esta" antes de enviarsela al cliente.');
+  }
   return vista;
 }
 window.reintentarActualizacionOperam = (id, el) => actualizarQuoteEnOperam(id, slotOperamDesde(el));
