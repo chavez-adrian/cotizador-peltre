@@ -340,7 +340,10 @@ app.get('/api/cotizaciones/:id', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
-  res.json(entry.data);
+  // folioOperam (#109): columna de primer nivel del registro, no vive en data.
+  // La vista de cotizacion (cargarCotizacion) lo necesita para el aviso de modo
+  // actualizacion sin adivinarlo ni pedirlo aparte; el listado ya lo exponia.
+  res.json({ ...entry.data, folioOperam: entry.folioOperam ?? null });
 });
 
 app.get('/api/seguimiento', authMiddleware, async (req, res) => {
