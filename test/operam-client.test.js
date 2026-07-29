@@ -1350,3 +1350,93 @@ test('subirCotizacionOperam: devuelve el folio real del quote (added_trans_no)',
     restore();
   }
 });
+
+// === Huella del contenido que viaja al quote (issue #114) ===
+// Regenerar una cotizacion ya subida debe reescribir su quote SOLO si el contenido
+// cambio: sin esto, o el quote se queda con lo viejo mientras el documento sale
+// numerado con lo nuevo (el bug de #114), o cada "genera el PDF y ahora el HTML"
+// dispararia una reescritura completa por la web legacy sin motivo.
+const { huellaContenidoQuote, contenidoQuoteCambio } = await import('../lib/operam-client.js');
+
+function cotizacionBase(extra = {}) {
+  return {
+    fecha: '2026-07-29',
+    vigencia: '2026-08-28',
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', customerId: 376 },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    notas: ['Precio sujeto a cambio'],
+    subtotal: 1000, iva: 160, total: 1160,
+    ...extra,
+  };
+}
+
+test('#114 huellaContenidoQuote: el mismo contenido produce la misma huella', () => {
+  assert.equal(huellaContenidoQuote(cotizacionBase()), huellaContenidoQuote(cotizacionBase()));
+});
+
+test('#114 huellaContenidoQuote: la vigencia y la fecha NO cuentan como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  assert.equal(huellaContenidoQuote(cotizacionBase({ vigencia: '2026-09-30' })), base);
+  assert.equal(huellaContenidoQuote(cotizacionBase({ fecha: '2026-07-30' })), base);
+});
+
+test('#114 huellaContenidoQuote: las notas y el formato del documento NO cuentan como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  assert.equal(huellaContenidoQuote(cotizacionBase({ notas: ['Otra nota'] })), base);
+  assert.equal(huellaContenidoQuote(cotizacionBase({ incluirFotos: true })), base);
+});
+
+test('#114 huellaContenidoQuote: cantidad, precio, descuento y codigo SI cuentan como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  const conItems = (i) => huellaContenidoQuote(cotizacionBase({ items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0, ...i }] }));
+  assert.notEqual(conItems({ cantidad: 11 }), base);
+  assert.notEqual(conItems({ precio: 99 }), base);
+  assert.notEqual(conItems({ descuento: 5 }), base);
+  assert.notEqual(conItems({ codigo: 'CR20-TAZA' }), base);
+});
+
+test('#114 huellaContenidoQuote: los importes SI cuentan como cambio', () => {
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ total: 2000 })), huellaContenidoQuote(cotizacionBase()));
+});
+
+test('#114 huellaContenidoQuote: el cliente del quote SI cuenta como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ cliente: { ...cotizacionBase().cliente, customerId: 999 } })), base);
+  // nombreCorto alimenta el cust_ref del quote (#108)
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ cliente: { ...cotizacionBase().cliente, nombreCorto: 'Otro' } })), base);
+});
+
+// El envio es una PARTIDA del quote (#68): su precio y el SKU de flete que resuelve
+// el CP de entrega (local vs foraneo) son contenido, no presentacion.
+test('#114 huellaContenidoQuote: el envio y la zona del CP de entrega SI cuentan como cambio', () => {
+  const conEnvio = (extra = {}) => cotizacionBase({
+    items: [
+      { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+      { codigo: 'ENVIO', descripcion: 'FedEx Ground', cantidad: 1, precio: 350, descuento: 0 },
+    ],
+    ...extra,
+  });
+  const base = huellaContenidoQuote(conEnvio());
+  assert.notEqual(base, huellaContenidoQuote(cotizacionBase()), 'agregar el envio es un cambio');
+  const otroPrecio = conEnvio();
+  otroPrecio.items[1].precio = 420;
+  assert.notEqual(huellaContenidoQuote(otroPrecio), base);
+  assert.notEqual(huellaContenidoQuote(conEnvio({ cliente: { ...cotizacionBase().cliente, cpEntrega: '44100' } })), base,
+    'el CP de entrega decide el SKU de flete (local/foraneo)');
+});
+
+test('#114 contenidoQuoteCambio: contra la huella de lo subido, sin cambios es false', () => {
+  const data = cotizacionBase();
+  assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data)), false);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ vigencia: '2026-12-31' }), huellaContenidoQuote(data)), false);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ total: 99 }), huellaContenidoQuote(data)), true);
+});
+
+// Cotizaciones anteriores a #114: se subieron sin dejar huella. No se puede afirmar
+// que el quote coincida, y el riesgo de NO reescribir (documento numerado que diverge)
+// es peor que el de reescribirlo con el contenido que el cotizador ya tiene.
+test('#114 contenidoQuoteCambio: sin huella previa asume que cambio', () => {
+  assert.equal(contenidoQuoteCambio(cotizacionBase(), null), true);
+  assert.equal(contenidoQuoteCambio(cotizacionBase(), undefined), true);
+  assert.equal(contenidoQuoteCambio(cotizacionBase(), ''), true);
+});

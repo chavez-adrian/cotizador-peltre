@@ -220,13 +220,17 @@ test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candi
   const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 });
   assert.match(ok, /#Operam 77001/);
   assert.doesNotMatch(ok, /Reintentar/);
-  assert.doesNotMatch(ok, /cambios locales/, 'sin nota cuando la subida fue nueva');
+  assert.doesNotMatch(ok, /coincide/, 'sin nota cuando la subida fue nueva');
 
-  // Ya subida antes (#83 F1c): folio + nota de que la regeneracion local no viaja
-  // a la cotizacion ya registrada en Operam (no editable por API).
+  // Ya subida (#83 F1c) -- desde #114 este caso significa UNA sola cosa: el contenido
+  // no cambio respecto de lo que se subio, asi que no habia nada que reescribir. La
+  // nota vieja ("los cambios locales no actualizan la cotizacion ya subida") describia
+  // el bug, no el comportamiento: ahora un cambio SI viaja por el camino de
+  // actualizacion.
   const ya = buildOperamStatusHtml(5, { estado: 'folio', folio: '55123', yaSubida: true });
   assert.match(ya, /#Operam 55123/);
-  assert.match(ya, /cambios locales no actualizan/);
+  assert.doesNotMatch(ya, /cambios locales no actualizan/);
+  assert.match(ya, /coincide/i);
   assert.doesNotMatch(ya, /Reintentar/);
 
   const pre = buildOperamStatusHtml(5, { estado: 'pre', mensaje: 'Operam caido' });
@@ -837,6 +841,18 @@ test('A104: interpretarActualizacionOperam distingue exito, no-escrito, escrito-
   assert.match(bloqueada.mensaje, /pedido/);
 });
 
+// #114: con la reescritura del quote en la ruta critica de la generacion, "ya hay una
+// operacion en curso" deja de ser un detalle interno -- es la razon de que el quote se
+// quede con lo viejo mientras el documento ya salio con el folio. Tiene que degradar a
+// un estado con motivo y Reintentar (el lock del servidor responde 425), nunca a
+// silencio: era un `return` mudo en app.js cuando solo lo disparaba el historial.
+test('#114: una operacion de Operam ya en curso degrada a un aviso con reintento, no a silencio', () => {
+  const enCurso = interpretarActualizacionOperam({ ok: false, status: 425, escrito: false, error: 'Ya hay una operacion de Operam en curso para esta cotizacion' });
+  assert.equal(enCurso.estado, 'desactualizado');
+  assert.match(enCurso.mensaje, /en curso/);
+  assert.match(buildActualizacionStatusHtml(9, enCurso), /reintentarActualizacionOperam\(9, this\)/);
+});
+
 test('A104: una caida de red no se confunde con "quedo mal en Operam"', () => {
   const v = interpretarActualizacionOperam({ ok: false, status: 0, error: 'Failed to fetch' });
   assert.equal(v.estado, 'desactualizado');
@@ -864,6 +880,19 @@ test('A104: escrito-con-diferencias manda a revisar Operam y NO dice que quedo i
 test('A104: el gate se explica sin ofrecer un reintento que volveria a fallar', () => {
   const html = buildActualizacionStatusHtml(5, { estado: 'bloqueada', mensaje: 'ya tiene un pedido asociado' });
   assert.match(html, /pedido/);
+  assert.doesNotMatch(html, /Reintentar/);
+});
+
+// #114: el gate bloquea justo cuando la divergencia es peor -- el documento ya salio
+// numerado con el folio y el quote no se puede reescribir porque tiene pedido. Explicar
+// el motivo no basta: hay que ofrecer la salida (crear una nueva a partir de esta), que
+// es exactamente lo que ya hace el historial. Se reusa cargarCotizacion(id, 'nueva'),
+// sin simbolo nuevo en window (trampa de #112).
+test('#114: el aviso de bloqueada ofrece crear una cotizacion nueva a partir de esta', () => {
+  const html = buildActualizacionStatusHtml(7, { estado: 'bloqueada', mensaje: 'ya tiene un pedido asociado en Operam' });
+  assert.match(html, /pedido/);
+  assert.match(html, /cargarCotizacion\(7, 'nueva'\)/);
+  assert.match(html, /nueva/i);
   assert.doesNotMatch(html, /Reintentar/);
 });
 

@@ -143,8 +143,13 @@ export function buildOperamStatusHtml(id, vista) {
   const v = vista || {};
   if (v.estado === 'folio') {
     const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
+    // yaSubida (#83 F1c) cambia de significado con #114: el endpoint ya solo corta sin
+    // tocar Operam cuando el contenido NO cambio (regenerar el mismo carrito en otro
+    // formato). Un cambio real ya no se queda en local -- viaja por el camino de
+    // actualizacion (#104) -- asi que la nota vieja ("los cambios locales no actualizan
+    // la cotizacion ya subida") describia el bug de #114, no el comportamiento.
     const nota = v.yaSubida
-      ? ` <span class="operam-status-nota">Los cambios locales no actualizan la cotizacion ya subida a Operam.</span>`
+      ? ` <span class="operam-status-nota">El contenido no cambio: el quote de Operam ya coincide.</span>`
       : '';
     // #93: cliente generico recien creado/reutilizado -- se ofrece la CSF junto al
     // folio, mismo flujo de upgrade del chip Fiscal (#85), sin duplicar logica.
@@ -206,8 +211,15 @@ export function buildActualizacionStatusHtml(id, vista) {
     const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
     return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>`;
   }
+  // Bloqueada = el quote ya se convirtio en pedido y Operam no deja editarlo. Es el
+  // peor momento para callarse (#114): el documento ya salio numerado con ese folio y
+  // el quote se queda con el contenido viejo, asi que ademas del motivo se ofrece la
+  // UNICA salida real, la misma que da el historial -- crear una cotizacion nueva a
+  // partir de esta. Se reusa cargarCotizacion(id, 'nueva') en vez de inventar un
+  // simbolo nuevo para el onclick (trampa de #112).
   if (v.estado === 'bloqueada') {
-    return `<span class="operam-status operam-status-pre">${escapeHtml(v.mensaje || '')}</span>`;
+    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">Operam desactualizado</span> ${escapeHtml(v.mensaje || '')}</span>` +
+      ` <button class="btn btn-sm btn-primary" onclick="cargarCotizacion(${id}, 'nueva')">Crear una cotizaci&oacute;n nueva a partir de &eacute;sta</button>`;
   }
   const aviso = (badge, texto) =>
     `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">${badge}</span> ` +

@@ -1205,14 +1205,20 @@ async function guardarYNumerarCotizacion(body, progreso) {
     alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
     return null;
   }
-  const { id } = await res.json();
+  const { id, requiereActualizacionOperam } = await res.json();
   state.lastCotizacionId = String(id);
   const slot = document.getElementById('operam-status-cotizar');
   // Modo actualizacion (#104, ADR-0008): aqui NO hay inversion que hacer. El folio
   // ya existe -- el gate puedeActualizarCotizacion lo exige -- asi que el documento
   // se genera directo con el y la reescritura del quote sigue su curso sin
   // bloquearlo; si falla, el registro queda marcado con Reintentar.
-  if (state.modoActualizacion) {
+  // requiereActualizacionOperam (#114) entra por la MISMA puerta: regenerar en la
+  // misma sesion una cotizacion que ya tiene folio, con el contenido cambiado, es la
+  // misma operacion que "Actualizar cotizacion" -- solo que sin pasar por el
+  // historial. Converge aqui a proposito: un camino paralelo tendria su propio gate,
+  // su propio lock y su propia forma de fallar. Si el contenido NO cambio, el
+  // servidor no lo pide y la subida idempotente responde el folio sin tocar Operam.
+  if (state.modoActualizacion || requiereActualizacionOperam) {
     actualizarQuoteEnOperam(id, slot);
     return id;
   }
@@ -2448,7 +2454,19 @@ async function autoSubirOperam(id, slot, extraBody) {
 async function actualizarQuoteEnOperam(id, slot) {
   if (!id) return;
   const key = String(id);
-  if (subidasOperamEnVuelo.has(key)) return;
+  // Ya en vuelo: era un `return` mudo, tolerable mientras esto solo lo disparaba el
+  // boton del historial. Desde #114 la reescritura del quote esta en la ruta critica
+  // de CADA generacion (Generar PDF y enseguida Ver HTML la disparan dos veces), y un
+  // silencio aqui deja el quote con lo viejo mientras el documento ya salio numerado.
+  // Se pinta el mismo aviso que da el 425 del servidor, con su Reintentar.
+  if (subidasOperamEnVuelo.has(key)) {
+    const enCurso = interpretarActualizacionOperam({
+      ok: false, status: 425, escrito: false,
+      error: 'Ya hay una operacion de Operam en curso para esta cotizacion: reintenta cuando termine.',
+    });
+    if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, enCurso);
+    return enCurso;
+  }
   subidasOperamEnVuelo.add(key);
   if (slot) slot.innerHTML = '<span class="operam-status">Actualizando en Operam...</span>';
   let resultado;
@@ -2468,6 +2486,16 @@ async function actualizarQuoteEnOperam(id, slot) {
   }
   const vista = interpretarActualizacionOperam(resultado);
   if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);
+  // #114: bloqueada = el quote ya tiene pedido y Operam no deja editarlo, asi que el
+  // documento recien generado lleva un folio cuyo quote conserva el contenido viejo.
+  // El slot solo no basta: el vendedor acaba de descargar el PDF y su siguiente gesto
+  // es mandarselo al cliente. Aqui NO vale entregar callado un documento numerado que
+  // diverge (decision de Adrian), y este es el unico aviso que se cruza en el camino.
+  if (vista.estado === 'bloqueada') {
+    alert('OJO: el documento ya lleva el folio de Operam, pero la cotizacion en Operam NO se actualizo.\n\n' +
+      (vista.mensaje || '') +
+      '\n\nUsa "Crear una cotizacion nueva a partir de esta" antes de enviarsela al cliente.');
+  }
   return vista;
 }
 window.reintentarActualizacionOperam = (id, el) => actualizarQuoteEnOperam(id, slotOperamDesde(el));

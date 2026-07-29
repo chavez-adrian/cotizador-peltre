@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
@@ -199,6 +199,19 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
 // completo -- y NO se repite el hook del embudo (el prospecto ya se movio y
 // tendria un evento duplicado). cotizacionId invalido o inexistente cae al
 // camino de crear.
+//
+// Devuelve ademas requiereActualizacionOperam (#114): este es el UNICO punto donde
+// todavia coexisten el contenido nuevo y la huella de lo que se subio -- un renglon
+// mas abajo el data viejo ya se sobrescribio y el "antes" se perdio. Con folio y
+// contenido distinto, regenerar tiene que reescribir el quote conservando el folio,
+// porque el documento ya sale numerado con el (ADR-0009) y si no el cliente recibe un
+// papel que no coincide con lo que produccion ve en el ERP. Sin folio no hay quote que
+// actualizar: ese camino es la subida normal.
+//
+// Aqui NO se aplica el gate de puedeActualizarCotizacion a proposito: si la cotizacion
+// ya tiene pedido, la reescritura es imposible pero la divergencia existe igual, y
+// callarla seria peor. Se pide la actualizacion, /actualizar responde 409 con el motivo
+// y la UI lo convierte en un aviso visible con la salida (crear una nueva).
 async function crearOActualizarCotizacion(data, vendedor) {
   const idPrevio = parseInt(data.cotizacionId, 10);
   delete data.cotizacionId; // campo de control: no persistirlo dentro de data
@@ -216,13 +229,15 @@ async function crearOActualizarCotizacion(data, vendedor) {
         if (data.cliente.customerId == null && prevCli.customerId != null) data.cliente.customerId = prevCli.customerId;
         if (data.cliente.branchId == null && prevCli.branchId != null) data.cliente.branchId = prevCli.branchId;
       }
+      const yaEnOperam = prev.folioOperam != null && prev.folioOperam !== '';
+      const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote);
       await cotStore.actualizarCotizacion(idPrevio, entry);
-      return idPrevio;
+      return { id: idPrevio, requiereActualizacionOperam };
     }
   }
   const id = await cotStore.crear(entry);
   await actualizarEmbudoPorCotizacion(data, id, vendedor);
-  return id;
+  return { id, requiereActualizacionOperam: false };
 }
 
 // Guardar la cotizacion. NO genera documento (ADR-0009): devuelve el id del
@@ -236,9 +251,9 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-    const id = await crearOActualizarCotizacion(data, req.user.name);
+    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, req.user.name);
     const entry = await cotStore.obtener(id);
-    res.json({ id, folioOperam: entry?.folioOperam ?? null });
+    res.json({ id, folioOperam: entry?.folioOperam ?? null, requiereActualizacionOperam });
   } catch (err) {
     console.error('Error guardando cotizacion:', err);
     res.status(500).json({ error: 'Error guardando la cotizacion' });
@@ -1227,8 +1242,16 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
     }
 
     try {
-      const folio = await subirCotizacionOperam({ ...entry.data, cliente: { ...c, customerId, branchId } });
-      if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
+      // La huella (#114) se toma de ESTE objeto, no de entry.data: el cliente recien
+      // ligado (customerId/branchId) forma parte de lo que se subio, y la siguiente
+      // regeneracion si lo trae (crearOActualizarCotizacion lo copia del registro).
+      // Calcularla sobre entry.data haria que toda regeneracion pareciera un cambio.
+      const dataSubida = { ...entry.data, cliente: { ...c, customerId, branchId } };
+      const folio = await subirCotizacionOperam(dataSubida);
+      if (folio != null && folio !== '') {
+        await cotStore.setFolioOperam(id, folio);
+        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida) });
+      }
       steps.push({ name: 'POST quote', status: 'ok' });
       const pasoVigencia = await postFixVigencia(folio, entry.data);
       if (pasoVigencia) steps.push(pasoVigencia);
@@ -1288,14 +1311,13 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     const entry = await cotStore.obtener(id);
     if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
     // Ya subida (#83, F1c): los quotes de Operam no se editan por API -- re-subir
-    // duplicaria el quote. Se devuelve el folio existente sin tocar Operam;
-    // yaSubida le dice al frontend que los cambios locales de una regeneracion no
-    // viajan a la cotizacion ya registrada.
-    // OJO (ADR-0009): desde que el documento se numera con este folio, una
-    // regeneracion con cambios locales imprime un folio cuyo quote en Operam
-    // difiere de lo impreso. Es el comportamiento preexistente de #83 -- el camino
-    // para alinear los dos es "Actualizar cotizacion" (#104) -- y cambiarlo es una
-    // decision de dominio, no un arreglo tecnico: se documenta, no se toca aqui.
+    // duplicaria el quote. Se devuelve el folio existente sin tocar Operam.
+    // Desde #114 este corte significa UNA sola cosa: el contenido no cambio (regenerar
+    // el mismo carrito en otro formato). Una regeneracion CON cambios ya no llega
+    // aqui: POST /api/cotizacion devuelve requiereActualizacionOperam y la generacion
+    // entra por /actualizar, que reescribe el quote conservando el folio (#104,
+    // ADR-0008). La decision se toma alli porque es el unico punto donde todavia
+    // coexisten el contenido nuevo y la huella de lo que se subio.
     if (entry.folioOperam != null && entry.folioOperam !== '') {
       return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true });
     }
@@ -1312,7 +1334,13 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     try {
       const folio = await subirCotizacionOperam(entry.data);
       // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
-      if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
+      if (folio != null && folio !== '') {
+        await cotStore.setFolioOperam(id, folio);
+        // Huella de lo que quedo en el quote (#114): sin ella la proxima regeneracion
+        // no puede saber si el contenido cambio, que es lo que decide si hay que
+        // reescribir el quote o dejarlo en paz.
+        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(entry.data) });
+      }
       const pasoVigencia = await postFixVigencia(folio, entry.data);
       res.json({ ok: true, folio, steps: pasoVigencia ? [pasoVigencia] : [] });
     } catch (err) {
@@ -1361,7 +1389,9 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
 
     const r = await actualizarQuoteOperam(entry.folioOperam, entry.data);
     if (r.ok) {
-      await cotStore.actualizarDatos(id, { quoteDesactualizado: null });
+      // Nueva huella (#114): el quote acaba de quedar con ESTE contenido, asi que
+      // regenerar el mismo carrito (otro formato) ya no debe reescribir nada.
+      await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data) });
       return res.json({ ok: true, folio: entry.folioOperam, actualizada: true, steps: [{ name: 'actualizar quote', status: 'ok' }] });
     }
     const marca = {

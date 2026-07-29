@@ -2100,3 +2100,134 @@ test('O68: subir a Operam sin match de cliente responde 422 y NO sube ni persist
     restore();
   }
 });
+
+// === #114: regenerar una cotizacion ya subida y su quote en Operam ===
+// El bug: crearOActualizarCotizacion sobrescribe `data` aunque el registro ya tenga
+// folio, y la subida corta con yaSubida sin tocar Operam -- el documento sale numerado
+// con el folio y el contenido NUEVO mientras el quote conserva el VIEJO. La decision
+// (Adrian, 2026-07-29) es que regenerar actualice el quote, sin preguntar, SOLO si el
+// contenido cambio. Para saberlo hace falta una huella persistida de lo que se subio.
+const { huellaContenidoQuote: huella114 } = await import('../lib/operam-client.js');
+
+function contenido114(extra = {}) {
+  return {
+    fecha: '2026-07-29', vigencia: '2026-08-28', tier: 'Mayoreo',
+    cliente: { razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', telefono: '+52 5551234567', cpEntrega: '56530', customerId: 376 },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 1000, iva: 160, total: 1160, notas: [],
+    ...extra,
+  };
+}
+
+function cotizacionSubida114(extra = {}, { conHuella = true } = {}) {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  const data = contenido114();
+  writeCots([...snap, {
+    id, fecha: '2026-07-29T00:00:00Z', vendedor: 'Tester', cliente: 'Pendulo',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo', folioOperam: '1200',
+    data: { ...data, ...(conHuella ? { huellaQuote: huella114(data) } : {}), ...extra },
+  }]);
+  return id;
+}
+
+test('#114-1: regenerar sin cambios no pide actualizar el quote (PDF y luego HTML del mismo carrito)', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114(), cotizacionId: String(id) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.id, id);
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+  // la huella tiene que sobrevivir al guardado: si el merge del store la borrara, la
+  // siguiente regeneracion creeria que todo cambio
+  assert.ok(readCots().find(c => c.id === id).data.huellaQuote, 'la huella debe sobrevivir a la regeneracion');
+});
+
+test('#114-2: regenerar con cambios pide actualizar el quote conservando el folio', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send({
+    ...contenido114({
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 12, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 1200, iva: 192, total: 1392,
+    }),
+    cotizacionId: String(id),
+  });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+  assert.strictEqual(res.body.folioOperam, '1200', 'el documento se numera con el folio que ya existe');
+});
+
+test('#114-3: cambiar solo la vigencia o las notas no pide actualizar el quote', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ vigencia: '2026-12-31', notas: ['Otra nota'] }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+});
+
+test('#114-4: una cotizacion sin folio (PRE) nunca pide actualizar: lo suyo es completar la subida', async () => {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  writeCots([...snap, {
+    id, fecha: '2026-07-29T00:00:00Z', vendedor: 'Tester', cliente: 'Pendulo',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo', data: contenido114(),
+  }]);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ total: 9999 }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+});
+
+test('#114-5: una cotizacion subida antes de esta issue (sin huella) pide actualizar', async () => {
+  const id = cotizacionSubida114({}, { conHuella: false });
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114(), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+});
+
+test('#114-6: subir a Operam persiste la huella de lo que quedo en el quote', async () => {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  const data = {
+    fecha: '2026-07-29', vigencia: '2026-08-28',
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530' },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    subtotal: 1000, iva: 160, total: 1160,
+  };
+  writeCots([...snap, { id, fecha: '2026-07-29T00:00:00Z', vendedor: 'Tester', cliente: 'Pendulo', totalPiezas: 10, total: 1160, tier: 'Mayoreo', data }]);
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }] }) }),
+    '/api/v3/sales/quote': () => ({ ok: true, json: async () => ({ result: true, added_trans_no: 1601 }) }),
+    'trans_type=30': () => ({ headers: {}, text: async () => '<html>login</html>' }),
+    'trans_type=32': () => ({ headers: {}, text: async () => '<html></html>' }),
+    'sales_order_entry.php': () => ({ headers: {}, text: async () => '<html></html>' }),
+  });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true);
+    const guardada = readCots().find(c => c.id === id);
+    assert.strictEqual(guardada.data.huellaQuote, huella114(data), 'la huella debe describir lo que se subio');
+  } finally {
+    restore();
+  }
+});
+
+test('#114-7: actualizar el quote con exito reescribe la huella con lo que quedo en Operam', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', telefono: '+52 5551234567' },
+    huellaQuote: 'huella-vieja',
+  });
+  const { restore } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    const guardada = readCots().find(c => c.id === id);
+    assert.notStrictEqual(guardada.data.huellaQuote, 'huella-vieja');
+    // regenerar ese mismo contenido ya no debe pedir otra reescritura
+    const post = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...guardada.data, cotizacionId: String(id) });
+    assert.strictEqual(post.body.requiereActualizacionOperam, false);
+  } finally {
+    restore();
+  }
+});
