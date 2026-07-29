@@ -255,11 +255,11 @@ function datosDocumento(entry) {
   return { ...entry.data, folio };
 }
 
-// Nombre del archivo entregado, en el unico lugar que lo decide: el
-// Content-Disposition del GET (ADR-0009). Con folio se nombra por folio; sin
-// folio es una pre-cotizacion y tampoco lleva numero en el nombre.
-function nombreArchivoDocumento(folio, ext) {
-  return folio ? `Cotizacion_PeltreNacional_${folio}.${ext}` : `PreCotizacion_PeltreNacional.${ext}`;
+// Nombre del archivo descargado, en el unico lugar que lo decide: el
+// Content-Disposition del GET (ADR-0009; app.js ya no lo arma). Con folio se
+// nombra por folio; sin folio es una pre-cotizacion y tampoco lleva numero.
+function nombreArchivoPdf(folio) {
+  return folio ? `Cotizacion_PeltreNacional_${folio}.pdf` : 'PreCotizacion_PeltreNacional.pdf';
 }
 
 // Regeneran el documento desde el registro guardado (data jsonb) en vez de
@@ -298,7 +298,7 @@ app.get('/api/cotizacion/pdf/:id', async (req, res) => {
     const disposicion = req.query.descargar ? 'attachment' : 'inline';
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `${disposicion}; filename="${nombreArchivoDocumento(data.folio, 'pdf')}"`,
+      'Content-Disposition': `${disposicion}; filename="${nombreArchivoPdf(data.folio)}"`,
     });
     res.send(pdfBuffer);
   } catch (err) {
