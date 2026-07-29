@@ -154,6 +154,25 @@ test('Q10: la tarjeta muestra cliente, total formateado, piezas, vendedor y dias
   assert.ok(hoyMismo.includes('hace 0 días'));
 });
 
+// #111 (ADR-0009): el historial identifica cada cotizacion con el MISMO numero
+// que Operam. La vista lista ya lo hacia con el badge de #63; el tablero -- la
+// otra mitad de la misma vista -- no identificaba la tarjeta con nada, asi que
+// una cotizacion vista ahi no se podia cruzar con el ERP. Se usa siempre
+// etiquetaFolioOperam ("#Operam N" / "PRE"), nunca el id interno.
+test('Q11b: la tarjeta del tablero identifica la cotizacion por su folio de Operam, y las PRE siguen distinguibles', () => {
+  const conFolio = buildTableroCotizacionesHtml([cot(3, { id: 1, folioOperam: '1200' })], HOY);
+  assert.ok(conFolio.includes('#Operam 1200'));
+  assert.ok(!conFolio.includes('#1'), 'no identifica por el id interno');
+
+  const pre = buildTableroCotizacionesHtml([cot(3, { id: 2 })], HOY);
+  assert.ok(pre.includes('>PRE<'));
+
+  // Historica anterior a #63: se asume registrada, sin badge (ni PRE ni #Operam).
+  const historica = buildTableroCotizacionesHtml([cot(3, { id: 3, registroDesconocido: true })], HOY);
+  assert.ok(!historica.includes('>PRE<'));
+  assert.ok(!historica.includes('#Operam'));
+});
+
 test('Q11: la tarjeta trae link wa.me cuando hay telefono y lo omite cuando no', () => {
   const con = buildTableroCotizacionesHtml([cot(3, { telefono: '525512345678' })], HOY);
   assert.ok(con.includes('https://wa.me/525512345678'));

@@ -6,7 +6,7 @@
 // prospectos-logica.js: lo consumen app.js y los tests .cjs via import().
 
 import { escapeHtml } from './prospectos-logica.js';
-import { etiquetaFolioOperam } from './pipeline-logica.js';
+import { etiquetaFolioOperam, badgeFolioOperamHtml } from './pipeline-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -68,6 +68,9 @@ function fechaCorta(fecha) {
 // Tarjeta del tablero: cliente, total, piezas, vendedor, dias desde envio y
 // link wa.me (el telefono llega del servidor ya en formato wa via
 // lib/seguimiento.telefonoWa). Solo las columnas de cadencia son arrastrables.
+// El badge de folio (#111, ADR-0009) identifica la tarjeta con el MISMO numero
+// que Operam -- nunca con el id interno -- reusando la unica fuente del badge
+// (badgeFolioOperamHtml), la misma que la vista lista y la cola Hoy.
 function buildCotizacionCardHtml(c, col, hoy) {
   const dias = Math.floor((hoy - new Date(c.fecha)) / MS_DIA);
   const abierta = !CERRADAS.has(col);
@@ -83,7 +86,7 @@ function buildCotizacionCardHtml(c, col, hoy) {
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(c.cliente || 'Sin nombre')}</div>
+          <div class="cot-card-cliente">${escapeHtml(c.cliente || 'Sin nombre')}${badgeFolioOperamHtml(c)}</div>
           <div class="cot-card-meta">${fechaCorta(c.fecha)} · hace ${dias} días · ${escapeHtml(c.vendedor)} · ${c.totalPiezas} pzs</div>
         </div>
         <div class="cot-card-total">$${fmtMoneda(c.total)}</div>
