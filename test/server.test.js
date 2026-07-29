@@ -42,7 +42,7 @@ let savedCots;
 before(() => { savedCots = readCots(); });
 after(() => { writeCots(savedCots); });
 
-test('B1: POST /api/cotizacion/pdf persiste cliente.pais', async () => {
+test('B1: POST /api/cotizacion persiste cliente.pais', async () => {
   const snap = readCots();
   const body = {
     fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
@@ -50,7 +50,7 @@ test('B1: POST /api/cotizacion/pdf persiste cliente.pais', async () => {
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
-  await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   const cots = readCots();
   assert.ok(cots.length > snap.length);
   assert.strictEqual(cots[cots.length - 1].data.cliente.pais, 'US');
@@ -64,7 +64,7 @@ test('#87: POST /api/login emite un JWT con vigencia de 24 horas', async () => {
   assert.strictEqual(decoded.exp - decoded.iat, 24 * 3600);
 });
 
-test('B1b: POST /api/cotizacion/pdf sin telefono retorna 400 (bloqueo duro)', async () => {
+test('B1b: POST /api/cotizacion sin telefono retorna 400 (bloqueo duro)', async () => {
   const snap = readCots();
   const body = {
     fecha: '2026-01-01', tier: 'Mayoreo',
@@ -72,32 +72,32 @@ test('B1b: POST /api/cotizacion/pdf sin telefono retorna 400 (bloqueo duro)', as
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
-  const res = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   assert.strictEqual(res.status, 400);
   assert.match(res.body.error, /tel.fono/i);
   assert.strictEqual(readCots().length, snap.length);
 });
 
-test('B1c: POST /api/cotizacion/pdf con telefono sin codigo de pais retorna 400', async () => {
+test('B1c: POST /api/cotizacion con telefono sin codigo de pais retorna 400', async () => {
   const body = {
     fecha: '2026-01-01', tier: 'Mayoreo',
     cliente: { razonSocial: 'Test SA', telefono: '5512345678' },
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
-  const res = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   assert.strictEqual(res.status, 400);
   assert.match(res.body.error, /c.digo de pa.s/i);
 });
 
-test('B1d: POST /api/cotizacion/html sin telefono valido retorna 400', async () => {
+test('B1d: POST /api/cotizacion sin telefono valido retorna 400', async () => {
   const body = {
     fecha: '2026-01-01', tier: 'Mayoreo',
     cliente: { razonSocial: 'Test SA', telefono: '123' },
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
-  const res = await supertest(app).post('/api/cotizacion/html').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   assert.strictEqual(res.status, 400);
 });
 
@@ -112,7 +112,7 @@ test('B2: GET /api/cotizaciones/:id sin campo pais no falla', async () => {
 
 // === #102: envio estructurado {carrier, servicio, precio} persiste en data
 // y se lee de vuelta tal cual (Cargar desde historial lo restaura sin re-cotizar).
-test('#102-1: POST /api/cotizacion/pdf persiste data.envio estructurado', async () => {
+test('#102-1: POST /api/cotizacion persiste data.envio estructurado', async () => {
   const body = {
     fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
     cliente: { razonSocial: 'Test SA', nombreCorto: 'Test', telefono: '+52 5551234567' },
@@ -120,8 +120,8 @@ test('#102-1: POST /api/cotizacion/pdf persiste data.envio estructurado', async 
     subtotal: 100, iva: 16, total: 116, notas: [],
     envio: { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' },
   };
-  const res = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
-  const id = res.headers['x-cotizacion-id'];
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const id = res.body.id;
   const get = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
   assert.deepStrictEqual(get.body.envio, { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
 });
@@ -231,12 +231,148 @@ test('#103-4: GET /api/cotizacion/html/:id regenera el HTML desde data del regis
   assert.strictEqual(res.status, 200);
   assert.match(res.headers['content-type'], /text\/html/);
   assert.ok(res.text.includes('Cliente HTML SA de CV'));
-  assert.ok(res.text.includes(`#${id}`));
+  // El numero ya no es el id interno (ADR-0009): este registro no tiene folio de
+  // Operam, asi que el documento sale sin numero. La asercion vieja (`#id`) fijaba
+  // justo la doble numeracion que #110/#111 cierran.
+  assert.ok(!res.text.includes('qm-val quote-num'));
 });
 
 test('#103-5: GET /api/cotizacion/html/:id de un id inexistente da 404', async () => {
   const res = await supertest(app).get('/api/cotizacion/html/999999');
   assert.strictEqual(res.status, 404);
+});
+
+// === #110 / #111 (ADR-0009): el numero de la cotizacion ES el folio de Operam.
+// Los dos GET son el UNICO lugar que genera documento, y un solo punto decide el
+// numero: el mismo registro tiene que salir con el MISMO numero en PDF y en HTML.
+// Antes cada camino decidia por su cuenta (el PDF no imprimia ninguno; el HTML
+// imprimia el id interno), que es la doble numeracion que el ADR viene a cerrar.
+function registroConFolio(id, folioOperam) {
+  return {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente Folio',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo', folioOperam,
+    data: {
+      _compress: false,
+      cliente: { razonSocial: 'Cliente Folio SA de CV', nombreCorto: 'Cliente Folio' },
+      items: [{ codigo: 'FOLIO110', descripcion: 'Producto folio', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  };
+}
+
+test('#110-1: el PDF y el HTML del mismo registro muestran el MISMO numero, y es el folio de Operam', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, registroConFolio(id, '57310')]);
+
+  const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  assert.strictEqual(pdf.status, 200);
+  assert.strictEqual(html.status, 200);
+
+  const textoPdf = Buffer.from(pdf.body).toString('latin1');
+  assert.ok(textoPdf.includes(toHex('57310')), 'el PDF imprime el folio de Operam');
+  assert.ok(html.text.includes('57310'), 'el HTML imprime el folio de Operam');
+  // Y ninguno de los dos presenta el id interno como numero de cotizacion.
+  assert.ok(!textoPdf.includes(toHex(`No. Cotizacion: ${id}`)), 'el PDF no numera con el id interno');
+  assert.ok(!html.text.includes(`Cotizacion #${id}`), 'el HTML no numera con el id interno');
+});
+
+// Una PRE no tiene folio por definicion (#63) y no inventa numero (ADR-0009):
+// el documento sale sin numero y se identifica como pre-cotizacion, para que
+// nadie lo confunda con una cotizacion registrada en el ERP.
+test('#111-1: sin folio de Operam el documento no lleva numero y se identifica como pre-cotizacion', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, registroConFolio(id, null)]);
+
+  const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  const textoPdf = Buffer.from(pdf.body).toString('latin1');
+  // PDFKit kern-splita el titulo tras "PRE-CO" y el meta tras "Cotizacion:";
+  // esos son los prefijos contiguos fiables (mismo criterio que B6/B14).
+  assert.ok(textoPdf.includes(toHex('PRE-CO')), 'el PDF se identifica como pre-cotizacion');
+  assert.ok(!textoPdf.includes(toHex('Cotizacion:')), 'el PDF no imprime la linea del numero');
+  assert.ok(html.text.includes('PRE-COTIZACION'), 'el HTML se identifica como pre-cotizacion');
+  assert.ok(!html.text.includes('qm-val quote-num'), 'el HTML no pinta la fila del numero');
+  assert.ok(!html.text.includes('Cotizacion Peltre Nacional #'), 'el HTML no titula con ningun numero');
+});
+
+// El nombre del archivo se arma en UN solo lugar (el Content-Disposition del GET,
+// ADR-0009) y por folio; app.js ya no lo arma por su cuenta. La descarga del
+// vendedor pide ?descargar=1 (attachment); compartir por WhatsApp abre el mismo
+// documento inline.
+test('#111-2: el Content-Disposition nombra el archivo por folio y respeta ?descargar=1', async () => {
+  const snap = readCots();
+  const conFolio = snap.length + 1;
+  const sinFolio = snap.length + 2;
+  writeCots([...snap, registroConFolio(conFolio, '57310'), registroConFolio(sinFolio, null)]);
+
+  const descarga = await supertest(app).get(`/api/cotizacion/pdf/${conFolio}?descargar=1`);
+  assert.strictEqual(descarga.headers['content-disposition'], 'attachment; filename="Cotizacion_PeltreNacional_57310.pdf"');
+
+  const compartir = await supertest(app).get(`/api/cotizacion/pdf/${conFolio}`);
+  assert.strictEqual(compartir.headers['content-disposition'], 'inline; filename="Cotizacion_PeltreNacional_57310.pdf"');
+
+  const pre = await supertest(app).get(`/api/cotizacion/pdf/${sinFolio}?descargar=1`);
+  assert.strictEqual(pre.headers['content-disposition'], 'attachment; filename="PreCotizacion_PeltreNacional.pdf"');
+});
+
+// Guardar y generar dejan de ser la misma operacion (ADR-0009): el POST solo
+// guarda el registro (y dice si ya hay folio), y los GET son el unico generador.
+// Los dos POST por formato (/pdf y /html) desaparecen: eran dos de los cuatro
+// caminos que decidian por separado que numero llevaba el documento.
+test('#111-3: POST /api/cotizacion guarda el registro y devuelve id y folioOperam, sin generar documento', async () => {
+  const snap = readCots();
+  const body = {
+    fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Guardar SA', nombreCorto: 'Guardar', telefono: '+52 5551234567' },
+    items: [{ codigo: 'GUARDA', descripcion: 'Guardar', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 100, iva: 16, total: 116, notas: [],
+  };
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers['content-type'], /application\/json/);
+  const cots = readCots();
+  assert.strictEqual(cots.length, snap.length + 1);
+  const guardada = cots[cots.length - 1];
+  assert.strictEqual(res.body.id, guardada.id);
+  assert.strictEqual(res.body.folioOperam, null, 'una cotizacion recien guardada todavia no tiene folio');
+  assert.strictEqual(guardada.data.cliente.nombreCorto, 'Guardar');
+  assert.strictEqual(guardada.vendedor, 'Tester');
+});
+
+test('#111-4: POST /api/cotizacion hereda el bloqueo por telefono invalido (400, sin guardar)', async () => {
+  const snap = readCots();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send({
+    fecha: '2026-01-01', tier: 'Mayoreo', cliente: { razonSocial: 'Sin tel SA' },
+    items: [], subtotal: 0, iva: 0, total: 0, notas: [],
+  });
+  assert.strictEqual(res.status, 400);
+  assert.match(res.body.error, /tel.fono/i);
+  assert.strictEqual(readCots().length, snap.length);
+});
+
+test('#111-5: POST /api/cotizacion sobre un registro con folio lo devuelve (modo actualizacion no re-numera)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, registroConFolio(id, '57310')]);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send({
+    cotizacionId: id, fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Cliente Folio SA de CV', telefono: '+52 5551234567' },
+    items: [], subtotal: 0, iva: 0, total: 0, notas: [],
+  });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.id, id, 'reusa el mismo registro');
+  assert.strictEqual(res.body.folioOperam, '57310', 'devuelve el folio ya existente');
+});
+
+test('#111-6: los POST por formato ya no existen: generar documento es solo de los GET', async () => {
+  const body = { fecha: '2026-01-01', tier: 'Mayoreo', cliente: { razonSocial: 'X', telefono: '+52 5551234567' }, items: [], subtotal: 0, iva: 0, total: 0, notas: [] };
+  const pdf = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const html = await supertest(app).post('/api/cotizacion/html').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  assert.strictEqual(pdf.status, 404);
+  assert.strictEqual(html.status, 404);
 });
 
 test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si hay algo que regenerar', async () => {

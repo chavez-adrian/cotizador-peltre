@@ -80,6 +80,16 @@ function estadoVigencia(steps) {
 
 export function interpretarSubidaOperam(resultado) {
   const r = resultado || {};
+  // ADR-0009: con la subida en la ruta critica de la generacion, "ya hay una
+  // subida en vuelo" y "Operam no respondio a tiempo" dejan de ser detalles
+  // internos -- son la razon de que el documento salga como PRE, y el vendedor
+  // tiene que leerla. Antes el caso en vuelo era un return mudo en app.js.
+  if (r.enVuelo) {
+    return { estado: 'pre', mensaje: 'Ya hay una subida a Operam en curso para esta cotizacion: el documento sale como pre-cotizacion. Reintenta cuando termine.' };
+  }
+  if (r.timeout) {
+    return { estado: 'pre', mensaje: 'Operam no respondio a tiempo: el documento se entrega como pre-cotizacion, sin numero. Si la subida termina sola, vuelve a compartirlo desde el historial.' };
+  }
   // yaSubida (#83 F1c): la cotizacion ya tenia folio y el endpoint NO re-subio
   // (los quotes de Operam no se editan por API): folio + nota de que una
   // regeneracion local no viaja a la cotizacion ya registrada.

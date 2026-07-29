@@ -225,53 +225,56 @@ async function crearOActualizarCotizacion(data, vendedor) {
   return id;
 }
 
-app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
+// Guardar la cotizacion. NO genera documento (ADR-0009): devuelve el id del
+// registro y el folio de Operam si ya existe, y el frontend decide -- guarda,
+// espera el folio y pide el documento a los GET, que son el unico generador.
+// Sustituye a los POST /api/cotizacion/pdf y /html, que guardaban Y generaban:
+// eran dos de los cuatro caminos que decidian por separado que numero llevaba el
+// documento, que es la causa raiz de #110.
+app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   if (!validarTelefonoCotizacion(req, res)) return;
   try {
     const data = req.body;
     data.vendedor = req.user.name;
     const id = await crearOActualizarCotizacion(data, req.user.name);
-    const pdfBuffer = await generateQuotePDF(data);
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
-      'X-Cotizacion-Id': String(id),
-    });
-    res.send(pdfBuffer);
+    const entry = await cotStore.obtener(id);
+    res.json({ id, folioOperam: entry?.folioOperam ?? null });
   } catch (err) {
-    console.error('Error generando PDF:', err);
-    res.status(500).json({ error: 'Error generando PDF' });
+    console.error('Error guardando cotizacion:', err);
+    res.status(500).json({ error: 'Error guardando la cotizacion' });
   }
 });
 
-app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
-  if (!validarTelefonoCotizacion(req, res)) return;
-  try {
-    const data = req.body;
-    data.vendedor = req.user.name;
-    const id = await crearOActualizarCotizacion(data, req.user.name);
-    const incluirFotos = !!data.incluirFotos;
-    data.id = id;
-    const html = generateQuoteHTML(data, { incluirFotos });
-    res.set({ 'Content-Type': 'text/html; charset=utf-8', 'X-Cotizacion-Id': String(id) });
-    res.send(html);
-  } catch (err) {
-    console.error('Error generando HTML:', err);
-    res.status(500).json({ error: 'Error generando HTML' });
-  }
-});
+// UN solo punto arma los datos del documento (ADR-0009). El numero de la
+// cotizacion ES el folio de Operam -- columna de primer nivel del registro (#109),
+// no vive en data -- y jamas el id interno, que es solo la clave tecnica. Sin
+// folio el documento sale sin numero: es una pre-cotizacion, y ponerle el id
+// seria reintroducir la doble numeracion por la puerta de atras.
+function datosDocumento(entry) {
+  const folio = entry.folioOperam != null && entry.folioOperam !== '' ? String(entry.folioOperam) : null;
+  return { ...entry.data, folio };
+}
+
+// Nombre del archivo descargado, en el unico lugar que lo decide: el
+// Content-Disposition del GET (ADR-0009; app.js ya no lo arma). Con folio se
+// nombra por folio; sin folio es una pre-cotizacion y tampoco lleva numero.
+function nombreArchivoPdf(folio) {
+  return folio ? `Cotizacion_PeltreNacional_${folio}.pdf` : 'PreCotizacion_PeltreNacional.pdf';
+}
 
 // Regeneran el documento desde el registro guardado (data jsonb) en vez de
 // servir un archivo de disco (issue #103): el disco de Render es efimero y
 // muere en cada deploy, mientras que data sobrevive en Neon. Sin
-// authMiddleware a proposito (se comparten por WhatsApp).
+// authMiddleware a proposito (se comparten por WhatsApp). Desde ADR-0009 son
+// tambien el UNICO camino que genera documento: los POST /pdf y /html se
+// eliminaron para que no haya cuatro sitios decidiendo que numero se imprime.
 app.get('/api/cotizacion/html/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
   const entry = await cotStore.obtener(id);
   if (!entry || !entry.data) return res.status(404).send('<p>HTML no encontrado</p>');
   try {
-    const data = { ...entry.data, id: entry.id };
+    const data = datosDocumento(entry);
     const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos });
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
     res.send(html);
@@ -287,10 +290,15 @@ app.get('/api/cotizacion/pdf/:id', async (req, res) => {
   const entry = await cotStore.obtener(id);
   if (!entry || !entry.data) return res.status(404).json({ error: 'PDF no encontrado' });
   try {
-    const pdfBuffer = await generateQuotePDF(entry.data);
+    const data = datosDocumento(entry);
+    const pdfBuffer = await generateQuotePDF(data);
+    // ?descargar=1 = la descarga del vendedor al generar (attachment, con el
+    // nombre que decide el server); sin el, inline para el link que se comparte
+    // por WhatsApp, que se ve en el navegador.
+    const disposicion = req.query.descargar ? 'attachment' : 'inline';
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
+      'Content-Disposition': `${disposicion}; filename="${nombreArchivoPdf(data.folio)}"`,
     });
     res.send(pdfBuffer);
   } catch (err) {
@@ -1283,6 +1291,11 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     // duplicaria el quote. Se devuelve el folio existente sin tocar Operam;
     // yaSubida le dice al frontend que los cambios locales de una regeneracion no
     // viajan a la cotizacion ya registrada.
+    // OJO (ADR-0009): desde que el documento se numera con este folio, una
+    // regeneracion con cambios locales imprime un folio cuyo quote en Operam
+    // difiere de lo impreso. Es el comportamiento preexistente de #83 -- el camino
+    // para alinear los dos es "Actualizar cotizacion" (#104) -- y cambiarlo es una
+    // decision de dominio, no un arreglo tecnico: se documenta, no se toca aqui.
     if (entry.folioOperam != null && entry.folioOperam !== '') {
       return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true });
     }

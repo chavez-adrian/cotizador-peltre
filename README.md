@@ -106,10 +106,9 @@ test/                  # tests de backend (supertest + node:test)
 |--------|------|-------------|
 | POST | `/api/login` | Autenticar vendedor |
 | GET | `/api/precios` | Catalogo de precios con config activa |
-| POST | `/api/cotizacion/pdf` | Generar PDF y guardar en historial |
-| POST | `/api/cotizacion/html` | Generar HTML y guardar en historial |
-| GET | `/api/cotizacion/pdf/:id` | Descargar PDF por ID |
-| GET | `/api/cotizacion/html/:id` | Ver HTML por ID |
+| POST | `/api/cotizacion` | Guardar la cotizacion (no genera documento) |
+| GET | `/api/cotizacion/pdf/:id` | PDF por ID, numerado con el folio de Operam (`?descargar=1` = adjunto) |
+| GET | `/api/cotizacion/html/:id` | HTML por ID, numerado con el folio de Operam |
 | GET | `/api/cotizaciones` | Historial del vendedor (o todos si admin) |
 | GET | `/api/seguimiento` | Cola de seguimiento de cotizaciones (dia 2/7/21/vencida) |
 | POST | `/api/seguimiento/:id` | Registrar paso de seguimiento hecho |
