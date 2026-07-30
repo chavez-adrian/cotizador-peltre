@@ -2,6 +2,30 @@
 
 > Este archivo es solo para **retomar**: estado, backlog activo, cómo orquestar, y decisiones/lecciones que NO viven en otro lado. El detalle de cada issue cerrado está en **git** (commits del merge) y en el **comentario de cierre del issue** en GitHub; las decisiones de dominio en **CONTEXT.md**/ADRs; el API de Operam en **peltre-operam.md**. No duplicar ese detalle aquí.
 
+## CHECKPOINT rama `issue-76-backfill` (2026-07-30) — lista para el dry-run final
+
+La rama está **al día sobre main** (merge `ee7f5eb`) y con las **dos decisiones nuevas de Adrián (2026-07-29)** aplicadas. Sigue **NO mergeada** y **sin correr `--apply`**: cero escrituras a Operam hasta aquí. Suite **1364/0**.
+
+**Lo aplicado en esta sesión:**
+- `ee7f5eb` merge de main (~100 commits, #81..#117). Regla de conflicto: donde main ya resolvió algo por su cuenta, gana main y encima se re-aplica solo lo del backfill.
+  - **#77**: main lo dejó como flag `data.pagoSinRegistrar` (lo persiste el sync); la rama lo tenía como snapshot `data.cobranza` con predicado propio. Gana main; el backfill ahora deriva `pagoSinRegistrar` con el **mismo predicado del sync**, para que una tarjeta importada y una sincronizada no discrepen.
+  - `lib/operam-web.js`: base main (post-fix de vigencia #106 + `actualizarQuoteOperam` #104). La detección de cancelación (#76) se re-aplicó **encima de `crearSesionFA`**, sin duplicar el login de FA.
+  - `test/backfill-operam.test.js` migrado a `lib/fs-reintento.js` (convención de #117).
+- `175ea34` **decisión 1**: el debtor **184 (GENERICO TIENDAS DIGITALES) NO se importa** — se difiere a **#118** (prospectos). Constante exportada `DEBTOR_GENERICO_TIENDAS_DIGITALES` para que #118 la reuse, y contador propio `skips.generico` en las partes A y B (en B es el grueso de lo descartado).
+- `4cee19b` **decisión 3**: las cotizaciones importadas llevan **partidas** (`mapearPartidasQuote` → `data.items`), sin lecturas extra a Operam (el `detalles[]` ya venía en `obtenerQuote`). Sin esto, `GET /api/cotizacion/pdf/:id` regeneraba el documento **sin renglones**.
+- `16244b4` fix de un import duplicado que el merge dejó en `app.js` (SyntaxError fatal del módulo en el navegador; la suite no lo ve porque `app.js` no es importable en Node).
+
+**RIESGO ABIERTO que el dry-run debe cerrar — nombres de campo del detalle del quote.** La API v3 no los documenta en el repo (`peltre-operam.md` §12.6 sólo confirma que el GET del quote trae `detalles[]`), así que `mapearPartidasQuote` los lee por **alias** (`stock_id_text`/`description`, `quantity`/`qty`, `unit_price`/`price`, `discount_percent`/`Disc`). El dry-run imprime `Partidas: N con items, M sin partidas, P piezas`: **si "sin partidas" fuera casi el total, el alias no acertó y hay que corregirlo ANTES del `--apply`.**
+
+**Decisión documentada — partidas de envío.** Los SKU de flete (`251021001` local / `251021002` foráneo, #68) se importan como **item normal conservando su stock_id real**; NO se traducen al código `ENVIO` del carrito ni se rellena `data.envio`. Razón: el camino de vuelta (`armarContenidoQuote`) re-deriva el SKU de flete a partir del CP de entrega, dato que una entrada del backfill no tiene — traducir haría que un re-envío a Operam cayera al SKU foráneo aunque el original fuera local.
+
+**Qué falta (todo es del orquestador, HITL):**
+1. **Dry-run en vivo**: `node scripts/backfill-operam.mjs` con `BACKFILL_THROTTLE_MS=2500` y Operam descansado (~20-30 min). Los conteos **bajan** respecto al último dry-run (138 = 63 A + 75 B): salen las ~49 del genérico.
+2. Validar en la salida: el nuevo `SKIP generico` en A y B, el `folioMax` descubierto y **el conteo de partidas** (el riesgo de arriba).
+3. Regenerar el **HTML de revisión** para Adrián.
+4. **`--apply` HITL** (exige `DATABASE_URL`, la Neon de producción; escribe en prod).
+
+---
 ## ARRANCAR AQUÍ (2026-07-29, cierre de sesión) — todo cerrado y desplegado
 - **Main en `9736a9d`, suite 1246/0, árbol limpio, nada sin mergear.** Ramas vivas: solo `issue-76-backfill` (parcial, ver #76). **Cerrados hoy: #110, #111, #112(previo), #113, #114, #115, #116.** Todos verificados y desplegados en Render.
 - **Lo que quedó construido hoy (una sola historia):** el número de la cotización es el folio de Operam (ADR-0009), y como el documento ya sale numerado, el contenido del documento y el del quote no pueden divergir. De ahí #114 (regenerar reescribe el quote), #115 (qué cuenta como cambio: partidas, importes, cliente, comments —notas y Lalamove— y el plazo de vigencia; NO la fecha ni el formato) y #116 (esperar la operación en vuelo en vez de avisar "reintenta"). El detalle vive en `CLAUDE.md` §Persistencia, que quedó al día.
