@@ -12,6 +12,7 @@
 
 import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
+import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico } from './alta-logica.js';
 
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,
 // Perdida) NO son columnas: viven en filtro/historial.
@@ -56,24 +57,196 @@ export function puedeCompletarPreCotizacion(cot) {
   return !!cot && etiquetaFolioOperam(cot) === 'PRE';
 }
 
-// Decide el siguiente paso de la formalizacion a partir del resultado del
-// registro directo (POST /api/cotizacion/operam/:id). Si registro -> 'listo'
-// (folio, deja de ser PRE). Si Operam no halla al cliente -> 'alta' (el vendedor
-// lo da de alta primero y reintenta). Cualquier otro fallo -> 'error' (se reporta
-// sin mandar al alta). El marcador del caso "falta alta" es el mensaje exacto que
-// lanza subirCotizacionOperam ("Cliente no encontrado en Operam").
-export function siguientePasoFormalizacion(resultado) {
-  if (resultado && resultado.ok) return 'listo';
-  const error = (resultado && resultado.error) || '';
-  return /Cliente no encontrado en Operam/i.test(error) ? 'alta' : 'error';
+// Interpreta la respuesta de POST /api/cotizacion/operam/:id (auto-subida, #83)
+// en un estado de UI, por status + campos estructurados -- NUNCA parseando el
+// string de error (misma disciplina que accionProspecto409 de alta-logica, #82).
+// El endpoint de #81 (ADR-0006) es la unica fuente:
+//   200 { ok, folio }             -> 'folio'      (subio; deja de ser PRE)
+//   409 { error, candidatos: [] } -> 'candidatos' (dedup por nombre: elegir uno)
+//   422 { error }                 -> 'sin_datos'  (cotizacion legacy sin datos
+//                                                   minimos: queda PRE, reintento inutil)
+//   503 / red / cualquier otro    -> 'pre'        (Operam fallo: PRE + Reintentar
+//                                                   idempotente)
+// Un 409 de conflicto (customerId que contradice lo ligado, sin lista de
+// candidatos) cae a 'pre' con su mensaje: no hay lista que ofrecer.
+// Resultado del post-fix de la vigencia (#106, ADR-0007) leido de los steps de la
+// subida: 'ok' | 'revisar' | null (el paso no viene -- respuesta anterior a #106 o
+// camino que no subio nada; ahi no se opina en vez de inventar un estado).
+function estadoVigencia(steps) {
+  const paso = (Array.isArray(steps) ? steps : []).find(s => s && s.name === 'post-fix vigencia');
+  if (!paso) return null;
+  return paso.status === 'ok' ? 'ok' : 'revisar';
 }
 
-// Boton "Completar" de la tarjeta de cotizacion (Historial / cola Hoy): formaliza
-// la pre-cotizacion (alta + registro, o registro directo si ya es cliente). Solo
-// aparece mientras la cotizacion es PRE; una registrada o historica no lo muestra.
+export function interpretarSubidaOperam(resultado) {
+  const r = resultado || {};
+  // ADR-0009: con la subida en la ruta critica de la generacion, "ya hay una
+  // subida en vuelo" y "Operam no respondio a tiempo" dejan de ser detalles
+  // internos -- son la razon de que el documento salga como PRE, y el vendedor
+  // tiene que leerla. Antes el caso en vuelo era un return mudo en app.js.
+  if (r.enVuelo) {
+    return { estado: 'pre', mensaje: 'Ya hay una subida a Operam en curso para esta cotizacion: el documento sale como pre-cotizacion. Reintenta cuando termine.' };
+  }
+  if (r.timeout) {
+    return { estado: 'pre', mensaje: 'Operam no respondio a tiempo: el documento se entrega como pre-cotizacion, sin numero. Si la subida termina sola, vuelve a compartirlo desde el historial.' };
+  }
+  // yaSubida (#83 F1c): la cotizacion ya tenia folio y el endpoint NO re-subio
+  // (los quotes de Operam no se editan por API): folio + nota de que una
+  // regeneracion local no viaja a la cotizacion ya registrada.
+  // customerId/clienteGenerico (#93): la subida con alta generica (#81) devuelve
+  // el customer_id creado/reutilizado; con clienteGenerico se ofrece la CSF junto
+  // al folio (mismo criterio que el chip Fiscal de la tarjeta).
+  if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps) };
+  const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];
+  if (r.status === 409 && candidatos.length) {
+    return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay clientes con nombre similar en Operam' };
+  }
+  if (r.status === 422) {
+    return { estado: 'sin_datos', mensaje: r.error || 'Faltan datos minimos para dar de alta el cliente' };
+  }
+  return { estado: 'pre', mensaje: r.error || 'No se pudo subir a Operam' };
+}
+
+// Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001):
+// el vendedor elige el cliente correcto o deja la cotizacion como PRE sin bloquear
+// el documento. Cada boton dispara elegirCandidatoOperam(id, customerId, this) en
+// app.js (re-llama el endpoint con { customerId }); "Dejar como PRE" solo cierra
+// la lista. Los botones pasan `this` -- NUNCA un id de contenedor: la misma
+// cotizacion puede estar pintada en dos paneles a la vez (Historial y
+// cotizaciones previas del cliente) y un id duplicado haria que getElementById
+// pintara siempre en el primero, posiblemente oculto (F2 de la revision). app.js
+// resuelve el slot relativo al elemento clickeado.
+export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
+  const items = (candidatos || []).map(c => {
+    const nombre = escapeHtml(c.CustName || c.cust_name || 'Sin nombre');
+    const ref = c.cust_ref ? ` · ${escapeHtml(c.cust_ref)}` : '';
+    return `<li class="operam-candidato">
+      <span>${nombre}${ref}</span>
+      <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
+    </li>`;
+  }).join('');
+  return `<div class="operam-status operam-status-candidatos">
+    <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el cliente correcto en Operam:')}</div>
+    <ul class="operam-candidatos-lista">${items}</ul>
+    <button class="btn btn-sm btn-secondary" onclick="dejarPreOperam(${id}, this)">Dejar como PRE</button>
+  </div>`;
+}
+
+// Estado de la auto-subida (#83) para pintar en el resumen (al generar) o en la
+// tarjeta del historial (al reintentar). Unica fuente del bloque de estado, sobre
+// la vista pura de interpretarSubidaOperam. 'folio' = subio (verde), con nota si
+// yaSubida (F1c: la regeneracion local no viaja a Operam); 'candidatos' = lista
+// de dedup; 'sin_datos' = PRE sin reintento (falta de datos, no de Operam);
+// 'pre' = fallo transitorio de Operam con Reintentar idempotente. Los botones
+// pasan `this` (ver buildCandidatosOperamHtml).
+export function buildOperamStatusHtml(id, vista) {
+  const v = vista || {};
+  if (v.estado === 'folio') {
+    const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
+    // yaSubida (#83 F1c) cambia de significado con #114: el endpoint ya solo corta sin
+    // tocar Operam cuando el contenido NO cambio (regenerar el mismo carrito en otro
+    // formato). Un cambio real ya no se queda en local -- viaja por el camino de
+    // actualizacion (#104) -- asi que la nota vieja ("los cambios locales no actualizan
+    // la cotizacion ya subida") describia el bug de #114, no el comportamiento.
+    const nota = v.yaSubida
+      ? ` <span class="operam-status-nota">El contenido no cambio: el quote de Operam ya coincide.</span>`
+      : '';
+    // #93: cliente generico recien creado/reutilizado -- se ofrece la CSF junto al
+    // folio, mismo flujo de upgrade del chip Fiscal (#85), sin duplicar logica.
+    const csf = v.clienteGenerico && v.customerId != null
+      ? ` <button type="button" class="btn btn-sm btn-secondary" onclick="pcAbrirUpgradeFiscal(${v.customerId})">&iquest;Ya tienes su CSF? Subela</button>`
+      : '';
+    // #106: el post-fix de la vigencia no pego. La cotizacion esta BIEN (el PDF y las
+    // notas del quote llevan la fecha correcta); lo que queda mal es el campo nativo
+    // que se ve en Operam, que ademas la marcaria como vencida. Se avisa sin alarmar:
+    // la subida fue un exito, esto es un detalle a revisar en Operam.
+    const vig = v.vigencia === 'revisar'
+      ? ` <span class="operam-status-nota">Revisa el campo &laquo;V&aacute;lido hasta&raquo; en Operam: pudo no quedar corregido. El PDF y las notas de la cotizacion si llevan la vigencia correcta.</span>`
+      : '';
+    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${vig}${csf}`;
+  }
+  if (v.estado === 'candidatos') {
+    return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje);
+  }
+  if (v.estado === 'sin_datos') {
+    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>`;
+  }
+  return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || 'No se pudo subir a Operam')}</span>` +
+    ` <button class="btn btn-sm btn-primary" onclick="reintentarSubidaOperam(${id}, this)">Reintentar</button>`;
+}
+
+// --- Actualizacion del quote conservando el folio (#104, ADR-0008) -----------
+// Respuesta de POST /api/cotizacion/operam/:id/actualizar leida como estado de UI,
+// por campos estructurados y NUNCA parseando el string de error (misma disciplina
+// que interpretarSubidaOperam). La distincion que de verdad importa para el vendedor
+// es `escrito`:
+//   ok: true                      -> 'actualizada'    (mismo folio, quote reescrito)
+//   ok: false, escrito: false     -> 'desactualizado' (se aborto ANTES de confirmar:
+//                                    el quote en Operam quedo INTACTO -- la palanca
+//                                    de robustez del ADR -- y reintentar es seguro)
+//   ok: false, escrito: true      -> 'revisar'        (se confirmo pero la
+//                                    verificacion vio diferencias: alguien tiene que
+//                                    mirar el ERP)
+//   409                           -> 'bloqueada'      (gate: PRE o con pedido; un
+//                                    reintento volveria a fallar igual)
+export function interpretarActualizacionOperam(resultado) {
+  const r = resultado || {};
+  if (r.ok) return { estado: 'actualizada', folio: r.folio ?? null };
+  if (r.status === 409) {
+    return { estado: 'bloqueada', mensaje: r.error || 'Esta cotizacion no se puede actualizar en Operam' };
+  }
+  const discrepancias = Array.isArray(r.discrepancias) ? r.discrepancias : [];
+  if (r.escrito === true) {
+    return { estado: 'revisar', mensaje: r.error || 'La cotizacion se confirmo en Operam pero no quedo como se esperaba', discrepancias };
+  }
+  return { estado: 'desactualizado', mensaje: r.error || 'No se pudo actualizar la cotizacion en Operam', discrepancias };
+}
+
+// Estado de la actualizacion para pintar en el slot (resumen o tarjeta). Mismo
+// contrato de botones que buildOperamStatusHtml: pasan `this`, nunca un id de
+// contenedor (la misma cotizacion puede estar pintada en dos paneles a la vez).
+export function buildActualizacionStatusHtml(id, vista) {
+  const v = vista || {};
+  if (v.estado === 'actualizada') {
+    const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
+    return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>`;
+  }
+  // Bloqueada = el quote ya se convirtio en pedido y Operam no deja editarlo. Es el
+  // peor momento para callarse (#114): el documento ya salio numerado con ese folio y
+  // el quote se queda con el contenido viejo, asi que ademas del motivo se ofrece la
+  // UNICA salida real, la misma que da el historial -- crear una cotizacion nueva a
+  // partir de esta. Se reusa cargarCotizacion(id, 'nueva') en vez de inventar un
+  // simbolo nuevo para el onclick (trampa de #112).
+  if (v.estado === 'bloqueada') {
+    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">Operam desactualizado</span> ${escapeHtml(v.mensaje || '')}</span>` +
+      ` <button class="btn btn-sm btn-primary" onclick="cargarCotizacion(${id}, 'nueva')">Crear una cotizaci&oacute;n nueva a partir de &eacute;sta</button>`;
+  }
+  const aviso = (badge, texto) =>
+    `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">${badge}</span> ` +
+    `${texto} ${escapeHtml(v.mensaje || '')}</span>` +
+    ` <button class="btn btn-sm btn-primary" onclick="reintentarActualizacionOperam(${id}, this)">Reintentar</button>`;
+  if (v.estado === 'revisar') {
+    return aviso('Revisar', 'El cambio se confirm&oacute; en Operam pero la verificaci&oacute;n vio diferencias: revisa el quote en Operam.');
+  }
+  return aviso('Operam desactualizado', 'No se pudo actualizar el quote; en Operam qued&oacute; SIN cambios (intacto).');
+}
+
+// Badge de la tarjeta del historial: el registro del cotizador se actualizo pero el
+// quote de Operam no. Se marca porque el pedido se surte contra Operam, asi que una
+// divergencia silenciosa es justo el problema que #104 vino a cerrar.
+export function badgeQuoteDesactualizadoHtml(cot) {
+  if (!cot || !cot.quoteDesactualizado) return '';
+  return ` <span class="cot-badge badge-pre" title="El registro del cotizador se actualizo pero el quote de Operam no: reintenta desde la cotizacion">Operam desactualizado</span>`;
+}
+
+// Boton "Reintentar subida" de la tarjeta de cotizacion (Historial): reintenta la
+// auto-subida idempotente (#81) cuando la cotizacion quedo PRE. Con ADR-0006 PRE
+// pasa de ser un modo elegido ("Completar") a un fallo transitorio a reintentar;
+// solo aparece mientras la cotizacion es PRE (sin folio, no historica). Dispara
+// completarPreCotizacion(id, this) en app.js, que resuelve el slot de SU tarjeta.
 export function botonCompletarHtml(cot) {
   if (!puedeCompletarPreCotizacion(cot)) return '';
-  return `<button class="btn btn-primary btn-sm" onclick="completarPreCotizacion(${cot.id})">Completar</button>`;
+  return `<button class="btn btn-primary btn-sm" onclick="completarPreCotizacion(${cot.id}, this)">Reintentar subida</button>`;
 }
 
 // Boton + global (issue #54, PRD #52 historias 4-5): visible en todos los
@@ -83,12 +256,111 @@ export function botonCompletarHtml(cot) {
 export const ACCIONES_NUEVO = [
   { label: 'Nueva cotizacion', accion: 'nuevaCotizacion' },
   { label: 'Nuevo prospecto', accion: 'nuevoProspecto' },
+  { label: 'Nuevo cliente', accion: 'nuevoCliente' },
 ];
 
 export function buildMenuNuevoHtml() {
   return ACCIONES_NUEVO
     .map(a => `<button class="btn btn-sm btn-secondary" onclick="${a.accion}()">${escapeHtml(a.label)}</button>`)
     .join('');
+}
+
+// === Vista Clientes (issue #94): mantenimiento de clientes desde el cotizador ===
+// Reusa el buscador mixto y los chips del paso Cliente (alta-logica.js); estas
+// funciones puras solo componen el HTML de la vista (filas, tarjeta, banner). Los
+// onclick disparan las funciones cv* de app.js (wiring de DOM, no testeable en Node).
+
+function inicialesCliente(nombre) {
+  const p = String(nombre || '').split(/\s+/).filter(Boolean);
+  return ((p[0] || ' ')[0] + ((p[1] || ' ')[0] || '')).toUpperCase().trim() || '?';
+}
+
+// El tag de una fila de resultado: rojo "RFC generico" para clientes de Operam que
+// siguen sin CSF (NOVEDAD #94, saltan a la vista para completarlos), azul "Operam"
+// con RFC real, gris "Prospecto".
+export function tagResultadoClienteHtml(r) {
+  const row = r || {};
+  if (row.tipo === 'operam') {
+    return esRfcGenerico(row.rfc)
+      ? '<span class="pc-tag generico">RFC generico</span>'
+      : '<span class="pc-tag operam">Operam</span>';
+  }
+  return '<span class="pc-tag prospecto">Prospecto</span>';
+}
+
+export function filaResultadoClienteHtml(r, i) {
+  const row = r || {};
+  return '<button type="button" class="pc-res-row" onclick="cvElegirResultado(' + i + ')">' +
+    '<span class="pc-res-ini ' + escapeHtml(row.tipo || '') + '">' + escapeHtml(inicialesCliente(row.nombre)) + '</span>' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(row.nombre || '') + '</span>' +
+    '<span class="pc-res-sub">' + escapeHtml(row.sub || '') + '</span></span>' +
+    tagResultadoClienteHtml(row) + '</button>';
+}
+
+// Fila punteada que abre el alta COMPLETA (acordeon 1-4, POST /api/crear-cliente),
+// no un prospecto minimo como en el paso Cliente (#94, pieza 3).
+export function filaCrearClienteHtml(query) {
+  const q = String(query || '').trim();
+  return '<button type="button" class="pc-res-row pc-crear" onclick="cvCaminoAlta(' + JSON.stringify(q).replace(/"/g, '&quot;') + ')">' +
+    '<span class="pc-res-ini">+</span>' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">Dar de alta cliente completo &laquo;' + escapeHtml(q) + '&raquo;</span>' +
+    '<span class="pc-res-sub">Con datos fiscales, comerciales y domicilio &mdash; sin cotizacion</span></span></button>';
+}
+
+// Banner de contexto del upgrade fiscal (#94): hace visible CONTRA QUIEN se
+// actualiza. Se muestra siempre que altaCsfState.modoUpgrade este activo (tambien
+// cuando el upgrade se abre desde el paso Cliente).
+export function bannerUpgradeHtml(ctx) {
+  const c = ctx || {};
+  const nombre = c.nombre || 'este cliente';
+  const id = c.id != null ? String(c.id) : '';
+  const rfc = c.rfc || '';
+  return '<div class="banner-upgrade"><span>&#8635;</span>' +
+    '<div><b>Actualizando: ' + escapeHtml(nombre) + (id ? ' (ID ' + escapeHtml(id) + ')' : '') + '</b>' +
+    '<small>RFC generico ' + escapeHtml(rfc) + ' se sustituira con el RFC real de la CSF. No se crea un cliente nuevo.</small></div></div>';
+}
+
+// Chips de completitud de la tarjeta en la vista Clientes. A diferencia del paso
+// Cliente, Contacto y Entrega son informativos (no hay paso Envio a donde ir); solo
+// el chip Fiscal pendiente es accionable (abre el upgrade) cuando hay cliente en Operam.
+export function chipsClienteViewHtml(chips, custId) {
+  const c = chips || {};
+  const contacto = c.contacto
+    ? '<span class="pc-chip ok">&#10003; Contacto</span>'
+    : '<span class="pc-chip pend">Contacto</span>';
+  const entrega = c.entrega === 'completo'
+    ? '<span class="pc-chip ok">&#10003; Entrega</span>'
+    : c.entrega === 'cp'
+      ? '<span class="pc-chip parcial">Entrega &middot; CP</span>'
+      : '<span class="pc-chip pend">Entrega &middot; pendiente</span>';
+  const fiscal = c.fiscal
+    ? '<span class="pc-chip ok">&#10003; Fiscal</span>'
+    : (custId != null
+        ? '<button type="button" class="pc-chip-btn" onclick="cvAbrirUpgrade()"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>'
+        : '<span class="pc-chip pend">Fiscal &middot; al subir a Operam</span>');
+  return contacto + entrega + fiscal;
+}
+
+export function cardClienteHtml(cliente) {
+  const c = cliente || {};
+  const chips = chipsCompletitud(c);
+  const custId = customerIdFiscal(c);
+  const esOperam = c.tipo === 'operam';
+  const nombre = c.name || c.ref || 'Sin nombre';
+  const subPartes = esOperam
+    ? [c.rfc, 'Cliente en Operam' + (c.id != null ? ' (ID ' + c.id + ')' : '')]
+    : [c.telefono, c.ciudad || c.municipio, 'Prospecto'];
+  const sub = subPartes.filter(Boolean).map(escapeHtml).join(' &middot; ');
+  const botonCsf = mostrarBotonCsf(c)
+    ? '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="cvAbrirUpgrade()">Completar datos fiscales (CSF)</button>'
+    : '';
+  return '<div class="pc-cli-card">' +
+    '<div class="pc-cli-nombre">' + escapeHtml(nombre) + '</div>' +
+    '<div class="pc-cli-sub">' + sub + '</div>' +
+    '<div class="pc-chips">' + chipsClienteViewHtml(chips, custId) + '</div>' +
+    botonCsf +
+    '<button type="button" class="btn btn-secondary btn-block" style="margin-top:8px" onclick="cvCotizar()">Cotizar a este cliente &rsaquo;</button>' +
+    '</div>';
 }
 
 // Las oportunidades que viven en el pipeline (las 7 columnas): excluye las
@@ -151,34 +423,6 @@ export function badgeFolioOperamProspectoHtml(o) {
   return `<span class="cot-badge badge-operam">${escapeHtml(etiquetaFolioOperam({ folioOperam: folio }))}</span>`;
 }
 
-// Eje SECUNDARIO de cobranza (issue #77): el eje que manda en el pipeline es el
-// CUMPLIMIENTO -- un pedido entregado se ve como producto_entregado aunque el pago no
-// este registrado (por politica no se entrega sin pago completo, asi que el faltante es
-// casi siempre el desfase de registro de la contadora, no cobranza real). Este predicado
-// decide si la tarjeta entregada lleva la marca de cobranza pendiente. Senal de pago: el
-// espejo del sync (#67, fresco) manda; como respaldo, el snapshot data.cobranza del
-// backfill (#77) cuando aun no hubo sync. Pagado en cualquiera de los dos -> sin marca.
-// Sin ninguna senal no se afirma cobranza pendiente (conservador). Solo producto_entregado
-// (el badge es de entrega, no de etapas previas donde el pago aun se espera).
-export function cobranzaSinRegistrar(o) {
-  if (!o || o.etapa !== 'producto_entregado') return false;
-  const pagoEspejo = o.espejoOperam && o.espejoOperam.pago;
-  if (pagoEspejo) return pagoEspejo !== 'pagado';
-  const cob = o.cobranza ?? (o.data && o.data.cobranza);
-  if (cob != null) return cob !== 'pagado';
-  return false;
-}
-
-// Chip HTML de la marca de cobranza pendiente (#77): '' si no aplica (la tarjeta no
-// pinta el elemento), si no el badge "Pago sin registrar". Mismo patron visual que el
-// badge de folio (cot-badge). El wording es neutro a proposito: el sistema no puede
-// afirmar que ya esta pagado, solo que el saldo no figura registrado -> es un pendiente
-// administrativo (verificar/regularizar con la contadora), no un sello de pagado.
-export function badgePagoSinRegistrarHtml(o) {
-  if (!cobranzaSinRegistrar(o)) return '';
-  return `<span class="cot-badge badge-cobranza" title="Producto entregado con el pago aun no registrado en el sistema">Pago sin registrar</span>`;
-}
-
 // El badge de la tarjeta del tablero depende del tipo de oportunidad: una
 // cotizacion lleva el chip PRE / #Operam (issue #63); un prospecto solo lleva
 // #Operam N si fue movido a mano con folio (issue #56), nunca PRE.
@@ -215,6 +459,18 @@ export function cadenaOperamHtml(espejo) {
   const texto = cadenaOperamTexto(espejo);
   if (!texto) return '';
   return `<div class="cot-cadena-operam">${escapeHtml(texto)}</div>`;
+}
+
+// Badge "Pago sin registrar" (issue #77): la tarjeta ya ENTREGADA (etapa
+// producto_entregado) cuyo pago aun no aparece registrado en Operam. En el pipeline
+// manda el cumplimiento (entrega), no la cobranza: la tarjeta llega a entregado con
+// la remision y este sello marca la cobranza pendiente hasta que el pago se registre
+// (el sync apaga el flag pagoSinRegistrar al liquidarse). Se ata a la etapa entregada
+// para no contradecir una tarjeta topada por el gate de calca (#61): sin entrega no
+// hay sello de entrega. Vacio en cualquier otro caso.
+export function badgePagoSinRegistrarHtml(o) {
+  if (!o || o.etapa !== 'producto_entregado' || !o.pagoSinRegistrar) return '';
+  return '<span class="cot-badge badge-impago">Pago sin registrar</span>';
 }
 
 // Asignar vendedor desde la tarjeta (issue #57, CONTEXT.md "Etapas del pipeline"
@@ -345,7 +601,7 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgeCobranza}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
         </div>
         ${total}

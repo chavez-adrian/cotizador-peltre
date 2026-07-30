@@ -271,7 +271,7 @@ La razon es que desarrollar un troquel nuevo puede costar aproximadamente de 300
 
 Normalmente tampoco se desarrollan colores nuevos para pedidos normales.
 
-La razon es que los oxidos se compran en cantidades minimas y son costosos.
+La razon es que los oxidos son costosos y tienen MOQ muy altos.
 
 Solo se considera desarrollar un color nuevo si el pedido es suficientemente grande o estrategico.
 

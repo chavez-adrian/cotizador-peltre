@@ -20,6 +20,8 @@
     background: var(--white); color: var(--text); user-select: none; transition: all 0.15s; }
   .toggle-chip.active { background: var(--primary); color: var(--white); border-color: var(--primary); }
   .toggle-chip input { display: none; }
+  .higiene-candidato { background: oklch(0.97 0.03 80); }
+  .higiene-candidato td:first-child { border-left: 3px solid var(--warning); }
 </style>
 </head>
 <body>
@@ -141,6 +143,35 @@
       <h2>Cotizaciones generadas</h2>
       <div id="cotizaciones-log" style="font-size:12px"></div>
     </div>
+
+    <!-- Higiene de clientes genericos (issue #86) -->
+    <div class="admin-section">
+      <h2>Clientes genericos sin actividad</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Clientes dados de alta con RFC generico (datos fiscales pendientes) por el cotizador. Resaltados los que llevan
+        6 meses o mas sin actividad: candidatos a inactivar manualmente en Operam. La inactivacion es manual, esta
+        vista solo informa.
+      </p>
+      <div id="higiene-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="higiene-sin-db" style="display:none;color:var(--text-light);font-size:13px">Sin base de datos configurada: no hay historial de altas que mostrar.</div>
+      <div id="higiene-vacio" style="display:none;color:var(--text-light);font-size:13px">Sin clientes genericos registrados.</div>
+      <div id="higiene-content" style="display:none;overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg);text-align:left">
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Nombre</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Customer ID</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Celular</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Vendedor</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Alta</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Ultima actividad</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Etapa</th>
+            </tr>
+          </thead>
+          <tbody id="higiene-rows"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -171,6 +202,7 @@ async function adminLogin() {
   loadCotizaciones();
   loadConfig();
   loadCajas();
+  loadHigiene();
   cargarVendedoresFeria();
 }
 
@@ -462,6 +494,46 @@ async function saveCajas() {
   msg.textContent = res.ok ? 'Guardado' : 'Error: ' + data.error;
   msg.style.display = 'inline-block';
   setTimeout(() => msg.style.display = 'none', 3000);
+}
+
+// --- Higiene de clientes genericos (issue #86) ---
+const HIGIENE_ETAPA_LABELS = {
+  no_asignado: 'No Asignado', por_cotizar: 'Por Cotizar', seguimiento: 'Seguimiento',
+  anticipo_pagado: 'Anticipo pagado', pedido_liberado: 'Pedido liberado',
+  saldo_pagado: 'Saldo pagado', producto_entregado: 'Producto entregado',
+  no_util: 'No util', perdida: 'Perdida',
+};
+
+function higieneFecha(iso) {
+  return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+async function loadHigiene() {
+  const loading = document.getElementById('higiene-loading');
+  const sinDb = document.getElementById('higiene-sin-db');
+  const vacio = document.getElementById('higiene-vacio');
+  const content = document.getElementById('higiene-content');
+  try {
+    const res = await adminApi('/api/admin/higiene-clientes-genericos');
+    const data = await res.json();
+    loading.style.display = 'none';
+    if (data.sinDb) { sinDb.style.display = 'block'; return; }
+    if (!data.filas || data.filas.length === 0) { vacio.style.display = 'block'; return; }
+    document.getElementById('higiene-rows').innerHTML = data.filas.map(f => `
+      <tr${f.candidato ? ' class="higiene-candidato"' : ''}>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${(f.nombre || '').replace(/</g, '&lt;')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${f.customerId}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${(f.celular || '-').replace(/</g, '&lt;')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${(f.vendedor || '-').replace(/</g, '&lt;')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${higieneFecha(f.fechaAlta)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${higieneFecha(f.ultimaActividad)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${f.etapa ? (HIGIENE_ETAPA_LABELS[f.etapa] || f.etapa) : '-'}</td>
+      </tr>
+    `).join('');
+    content.style.display = 'block';
+  } catch (e) {
+    loading.textContent = 'No se pudo cargar';
+  }
 }
 
 // --- Events ---

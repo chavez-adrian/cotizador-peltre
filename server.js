@@ -1,17 +1,23 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, actualizarBranchCliente, obtenerBranchId } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio } from './lib/operam-client.js';
+import { corregirVigenciaQuote, actualizarQuoteOperam } from './lib/operam-web.js';
+import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
+import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
+import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
+import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
+import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
-import { detectarDuplicados } from './lib/deduplicacion.js';
+import { detectarDuplicados, RFC_GENERICOS } from './lib/deduplicacion.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
@@ -29,11 +35,6 @@ import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDec
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
 const PUBLIC_DIR = join(__dirname, 'public');
-const PDFS_DIR = join(DATA_DIR, 'pdfs');
-const HTMLS_DIR = join(DATA_DIR, 'htmls');
-
-if (!existsSync(PDFS_DIR)) mkdirSync(PDFS_DIR, { recursive: true });
-if (!existsSync(HTMLS_DIR)) mkdirSync(HTMLS_DIR, { recursive: true });
 
 const envFile = join(__dirname, '.env');
 if (existsSync(envFile)) {
@@ -105,7 +106,7 @@ app.post('/api/login', (req, res) => {
   if (!vendedores) return res.status(500).json({ error: 'Vendedores no configurados' });
   const v = vendedores.find(v => v.id === vendedorId && v.pin === pin);
   if (!v) return res.status(401).json({ error: 'PIN incorrecto' });
-  const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '30d' });
+  const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '24h' });
   res.json({ token, user: { id: v.id, name: v.name, role: v.role } });
 });
 
@@ -189,75 +190,136 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
   }
 }
 
-app.post('/api/cotizacion/pdf', authMiddleware, async (req, res) => {
+// Crea la cotizacion, o -- si el body trae un cotizacionId de un entry existente
+// (issue #83, F1) -- ACTUALIZA ese entry y devuelve el mismo id: regenerar el
+// mismo carrito en otro formato (PDF para archivo + HTML para WhatsApp) o con
+// ajustes es UNA sola cotizacion, no dos. En la actualizacion se copian al data
+// nuevo el customerId/branchId ya ligados por la subida (#81) -- la regeneracion
+// del formulario no los trae y el merge del store reemplaza data.cliente
+// completo -- y NO se repite el hook del embudo (el prospecto ya se movio y
+// tendria un evento duplicado). cotizacionId invalido o inexistente cae al
+// camino de crear.
+//
+// Devuelve ademas requiereActualizacionOperam (#114): este es el UNICO punto donde
+// todavia coexisten el contenido nuevo y la huella de lo que se subio -- un renglon
+// mas abajo el data viejo ya se sobrescribio y el "antes" se perdio. Con folio y
+// contenido distinto, regenerar tiene que reescribir el quote conservando el folio,
+// porque el documento ya sale numerado con el (ADR-0009) y si no el cliente recibe un
+// papel que no coincide con lo que produccion ve en el ERP. Sin folio no hay quote que
+// actualizar: ese camino es la subida normal.
+//
+// Aqui NO se aplica el gate de puedeActualizarCotizacion a proposito: si la cotizacion
+// ya tiene pedido, la reescritura es imposible pero la divergencia existe igual, y
+// callarla seria peor. Se pide la actualizacion, /actualizar responde 409 con el motivo
+// y la UI lo convierte en un aviso visible con la salida (crear una nueva).
+async function crearOActualizarCotizacion(data, vendedor) {
+  const idPrevio = parseInt(data.cotizacionId, 10);
+  delete data.cotizacionId; // campo de control: no persistirlo dentro de data
+  const entry = {
+    fecha: new Date().toISOString(), vendedor,
+    cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
+    totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
+    total: data.total || 0, tier: data.tier || '', data,
+  };
+  if (Number.isInteger(idPrevio) && idPrevio > 0) {
+    const prev = await cotStore.obtener(idPrevio);
+    if (prev) {
+      const prevCli = prev.data?.cliente || {};
+      if (data.cliente) {
+        if (data.cliente.customerId == null && prevCli.customerId != null) data.cliente.customerId = prevCli.customerId;
+        if (data.cliente.branchId == null && prevCli.branchId != null) data.cliente.branchId = prevCli.branchId;
+      }
+      const yaEnOperam = prev.folioOperam != null && prev.folioOperam !== '';
+      const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote);
+      await cotStore.actualizarCotizacion(idPrevio, entry);
+      return { id: idPrevio, requiereActualizacionOperam };
+    }
+  }
+  const id = await cotStore.crear(entry);
+  await actualizarEmbudoPorCotizacion(data, id, vendedor);
+  return { id, requiereActualizacionOperam: false };
+}
+
+// Guardar la cotizacion. NO genera documento (ADR-0009): devuelve el id del
+// registro y el folio de Operam si ya existe, y el frontend decide -- guarda,
+// espera el folio y pide el documento a los GET, que son el unico generador.
+// Sustituye a los POST /api/cotizacion/pdf y /html, que guardaban Y generaban:
+// eran dos de los cuatro caminos que decidian por separado que numero llevaba el
+// documento, que es la causa raiz de #110.
+app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   if (!validarTelefonoCotizacion(req, res)) return;
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-    const id = await cotStore.crear({
-      fecha: new Date().toISOString(), vendedor: req.user.name,
-      cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
-      totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
-      total: data.total || 0, tier: data.tier || '', data,
-    });
-    await actualizarEmbudoPorCotizacion(data, id, req.user.name);
+    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, req.user.name);
+    const entry = await cotStore.obtener(id);
+    res.json({ id, folioOperam: entry?.folioOperam ?? null, requiereActualizacionOperam });
+  } catch (err) {
+    console.error('Error guardando cotizacion:', err);
+    res.status(500).json({ error: 'Error guardando la cotizacion' });
+  }
+});
+
+// UN solo punto arma los datos del documento (ADR-0009). El numero de la
+// cotizacion ES el folio de Operam -- columna de primer nivel del registro (#109),
+// no vive en data -- y jamas el id interno, que es solo la clave tecnica. Sin
+// folio el documento sale sin numero: es una pre-cotizacion, y ponerle el id
+// seria reintroducir la doble numeracion por la puerta de atras.
+function datosDocumento(entry) {
+  const folio = entry.folioOperam != null && entry.folioOperam !== '' ? String(entry.folioOperam) : null;
+  return { ...entry.data, folio };
+}
+
+// Nombre del archivo descargado, en el unico lugar que lo decide: el
+// Content-Disposition del GET (ADR-0009; app.js ya no lo arma). Con folio se
+// nombra por folio; sin folio es una pre-cotizacion y tampoco lleva numero.
+function nombreArchivoPdf(folio) {
+  return folio ? `Cotizacion_PeltreNacional_${folio}.pdf` : 'PreCotizacion_PeltreNacional.pdf';
+}
+
+// Regeneran el documento desde el registro guardado (data jsonb) en vez de
+// servir un archivo de disco (issue #103): el disco de Render es efimero y
+// muere en cada deploy, mientras que data sobrevive en Neon. Sin
+// authMiddleware a proposito (se comparten por WhatsApp). Desde ADR-0009 son
+// tambien el UNICO camino que genera documento: los POST /pdf y /html se
+// eliminaron para que no haya cuatro sitios decidiendo que numero se imprime.
+app.get('/api/cotizacion/html/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
+  const entry = await cotStore.obtener(id);
+  if (!entry || !entry.data) return res.status(404).send('<p>HTML no encontrado</p>');
+  try {
+    const data = datosDocumento(entry);
+    const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos });
+    res.set({ 'Content-Type': 'text/html; charset=utf-8' });
+    res.send(html);
+  } catch (err) {
+    console.error('Error regenerando HTML:', err);
+    res.status(500).send('<p>Error generando HTML</p>');
+  }
+});
+
+app.get('/api/cotizacion/pdf/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
+  const entry = await cotStore.obtener(id);
+  if (!entry || !entry.data) return res.status(404).json({ error: 'PDF no encontrado' });
+  try {
+    const data = datosDocumento(entry);
     const pdfBuffer = await generateQuotePDF(data);
-    writeFileSync(join(PDFS_DIR, `cot_${id}.pdf`), pdfBuffer);
+    // ?descargar=1 = la descarga del vendedor al generar (attachment, con el
+    // nombre que decide el server); sin el, inline para el link que se comparte
+    // por WhatsApp, que se ve en el navegador.
+    const disposicion = req.query.descargar ? 'attachment' : 'inline';
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
-      'X-Cotizacion-Id': String(id),
+      'Content-Disposition': `${disposicion}; filename="${nombreArchivoPdf(data.folio)}"`,
     });
     res.send(pdfBuffer);
   } catch (err) {
-    console.error('Error generando PDF:', err);
+    console.error('Error regenerando PDF:', err);
     res.status(500).json({ error: 'Error generando PDF' });
   }
-});
-
-app.post('/api/cotizacion/html', authMiddleware, async (req, res) => {
-  if (!validarTelefonoCotizacion(req, res)) return;
-  try {
-    const data = req.body;
-    data.vendedor = req.user.name;
-    const id = await cotStore.crear({
-      fecha: new Date().toISOString(), vendedor: req.user.name,
-      cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
-      totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
-      total: data.total || 0, tier: data.tier || '', data,
-    });
-    await actualizarEmbudoPorCotizacion(data, id, req.user.name);
-    const incluirFotos = !!data.incluirFotos;
-    data.id = id;
-    const html = generateQuoteHTML(data, { incluirFotos });
-    writeFileSync(join(HTMLS_DIR, `cot_${id}.html`), html, 'utf8');
-    res.set({ 'Content-Type': 'text/html; charset=utf-8', 'X-Cotizacion-Id': String(id) });
-    res.send(html);
-  } catch (err) {
-    console.error('Error generando HTML:', err);
-    res.status(500).json({ error: 'Error generando HTML' });
-  }
-});
-
-app.get('/api/cotizacion/html/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
-  const htmlPath = join(HTMLS_DIR, `cot_${id}.html`);
-  if (!existsSync(htmlPath)) return res.status(404).send('<p>HTML no encontrado</p>');
-  res.set({ 'Content-Type': 'text/html; charset=utf-8' });
-  res.sendFile(htmlPath);
-});
-
-app.get('/api/cotizacion/pdf/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
-  const pdfPath = join(PDFS_DIR, `cot_${id}.pdf`);
-  if (!existsSync(pdfPath)) return res.status(404).json({ error: 'PDF no encontrado' });
-  res.set({
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': `inline; filename="Cotizacion_PeltreNacional_${id}.pdf"`,
-  });
-  res.sendFile(pdfPath);
 });
 
 app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
@@ -281,12 +343,16 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // remisiones/pagos/notas que el sync persistio en data.espejoOperam; la tarjeta
     // lo pinta como cadena de folios para trazabilidad.
     espejoOperam: data?.espejoOperam ?? null,
-    // Estado de cobranza (issue #77): eje secundario que el backfill persiste; la
-    // tarjeta pinta el badge "Pago sin registrar" en producto_entregado no pagado.
-    cobranza: data?.cobranza ?? null,
+    // Pago sin registrar (issue #77): la tarjeta entregada-impaga muestra el badge
+    // "Pago sin registrar" mientras el pago no aparezca liquidado; el sync lo apaga.
+    pagoSinRegistrar: data?.pagoSinRegistrar === true,
+    // Pedido asociado (#62) y marca de quote desactualizado (#104): el historial los
+    // necesita para decidir si ofrece "Actualizar cotizacion" (gate del ADR-0008) y
+    // para pintar el reintento cuando la edicion del quote no pego.
+    orderOperam: data?.orderOperam ?? null,
+    quoteDesactualizado: data?.quoteDesactualizado ?? null,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     hasData: !!data,
-    hasPdf: existsSync(join(PDFS_DIR, `cot_${id}.pdf`)),
   })));
 });
 
@@ -297,7 +363,10 @@ app.get('/api/cotizaciones/:id', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
-  res.json(entry.data);
+  // folioOperam (#109): columna de primer nivel del registro, no vive en data.
+  // La vista de cotizacion (cargarCotizacion) lo necesita para el aviso de modo
+  // actualizacion sin adivinarlo ni pedirlo aparte; el listado ya lo exponia.
+  res.json({ ...entry.data, folioOperam: entry.folioOperam ?? null });
 });
 
 app.get('/api/seguimiento', authMiddleware, async (req, res) => {
@@ -494,14 +563,25 @@ app.post('/api/cotizacion/:id/liberar', authMiddleware, async (req, res) => {
 
 // 409 de colision de captura: el duplicado propio (o visto por admin) muestra el
 // prospecto; el de otro vendedor solo dice quien lo atiende, sin mas datos
-// (CONTEXT.md, Visibilidad de prospectos).
+// (CONTEXT.md, Visibilidad de prospectos). Lleva un campo estructurado `tipo`
+// (#82): el frontend decide por el (prospecto_propio -> usar el existente;
+// prospecto_ajeno -> bloquear; cliente -> cotizar sobre el cliente), nunca
+// parseando el string de error.
 function respuestaProspectoExistente(res, existente, user) {
   const visible = user.role === 'admin' || existente.vendedor === user.name;
   return res.status(409).json(
     visible
-      ? { error: 'Este celular ya es un prospecto', prospecto: existente }
-      : { error: `Este celular ya lo atiende ${existente.vendedor}` }
+      ? { error: 'Este celular ya es un prospecto', tipo: 'prospecto_propio', prospecto: existente }
+      : { error: `Este celular ya lo atiende ${existente.vendedor}`, tipo: 'prospecto_ajeno' }
   );
+}
+
+function respuestaCelularDeCliente(res, cliente) {
+  return res.status(409).json({
+    error: `Este celular es del cliente ${cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
+    tipo: 'cliente',
+    cust_name: cliente.cust_name,
+  });
 }
 
 app.post('/api/prospectos', authMiddleware, async (req, res) => {
@@ -516,9 +596,7 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
     return respuestaProspectoExistente(res, clasificacion.prospecto, req.user);
   }
   if (clasificacion.tipo === 'cliente') {
-    return res.status(409).json({
-      error: `Este celular es del cliente ${clasificacion.cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
-    });
+    return respuestaCelularDeCliente(res, clasificacion.cliente);
   }
   const data = {};
   for (const k of PROSPECTO_OPCIONALES) {
@@ -558,9 +636,7 @@ app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (
     return respuestaProspectoExistente(res, clasificacion.prospecto, req.user);
   }
   if (clasificacion.tipo === 'cliente') {
-    return res.status(409).json({
-      error: `Este celular es del cliente ${clasificacion.cliente.cust_name} - cotizale como cliente, no se crea prospecto`,
-    });
+    return respuestaCelularDeCliente(res, clasificacion.cliente);
   }
   const data = {};
   for (const k of PROSPECTO_OPCIONALES) {
@@ -928,6 +1004,20 @@ app.get('/api/admin/cotizaciones', authMiddleware, adminMiddleware, async (req, 
   ));
 });
 
+// Reporte de higiene de clientes con RFC generico (issue #86, ADR-0006
+// "Higiene"): cruza clientes_log (altas genericas, #81) con las cotizaciones
+// locales via la funcion pura construirReporteHigiene. Sin DB: lista vacia y
+// sinDb:true (mismo patron de ausencia de datos que otras rutas admin), nunca
+// un 503 -- es una vista informativa, no una operacion que dependa de Neon.
+app.get('/api/admin/higiene-clientes-genericos', authMiddleware, adminMiddleware, async (req, res) => {
+  const rows = await dbQuery(
+    'SELECT id, created_at, rfc, nombre, resultado, cliente_id, fuente, dropbox_ok, error_msg FROM clientes_log ORDER BY created_at ASC'
+  );
+  if (rows === null) return res.json({ filas: [], sinDb: true });
+  const cotizaciones = await cotStore.listar();
+  res.json({ filas: construirReporteHigiene(rows.rows, cotizaciones, new Date()), sinDb: false });
+});
+
 function titleCase(str) {
   if (!str) return '';
   const lower = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'o', 'a', 'en', 'al', 'el', 'por', 'con', 'sin']);
@@ -941,15 +1031,35 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
   const q = req.query.q || '';
   if (!q.trim()) return res.json([]);
   try {
-    const raw = await buscarClientes(q);
-    const clientes = (Array.isArray(raw) ? raw : []).map(c => {
+    // Issue #97: buscarClientes(q) es la busqueda de Operam (razon social);
+    // buscarClientesPorTexto(q) cablea el indice de telefonos/nombre corto de
+    // #42 (best effort, nunca lanza) para cubrir telefono de contacto y
+    // cust_ref, que Operam no indexa. Se combinan y deduplican por customer_id.
+    const [porOperam, porIndice] = await Promise.all([
+      buscarClientes(q),
+      buscarClientesPorTexto(q),
+    ]);
+    const vistos = new Set();
+    const raw = [...(Array.isArray(porOperam) ? porOperam : []), ...porIndice].filter(c => {
+      if (vistos.has(c.customer_id)) return false;
+      vistos.add(c.customer_id);
+      return true;
+    });
+    const clientes = raw.map(c => {
       const branch = c.branches?.[0] || {};
+      // OJO: telefonos trae los de TODOS los branches/contactos (no solo branches[0]) --
+      // buscarClientesPorTexto puede matchear por un telefono que viva en otro branch.
+      const telefonos = [
+        ...(c.branches || []).map(b => b.phone),
+        ...(c.contacts || []).flatMap(ct => [ct.phone, ct.phone2]),
+      ].filter(Boolean);
       return {
         id: c.customer_id, name: c.CustName || '', ref: c.cust_ref || '', rfc: c.tax_id || '',
         calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),
         numInt: c.suite_number || '', colonia: titleCase(c.district || ''),
         cp: c.postal_code || '', municipio: titleCase(c.city || ''), estado: titleCase(c.state || ''),
-        telefono: branch.phone || c.contacts?.[0]?.phone || '',
+        telefono: telefonos[0] || '',
+        telefonos,
         email: branch.email || c.contacts?.[0]?.email || '',
         nombreEntrega: branch.br_name || branch.contact_name || '',
       };
@@ -979,22 +1089,326 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Subida de una cotizacion cuya oportunidad NO tiene cliente en Operam (issue #81,
+// ADR-0006): una sola operacion server-side con reporte de pasos (estilo
+// /api/crear-cliente, ADR-0002). Dedup en capas ANTES de crear:
+//   1. celular contra prospectos: un prospecto convertido ya mapea celular ->
+//      customer_id (data.cliente_id) y se reutiliza;
+//   2. nombre normalizado contra los genericos de Operam (ADR-0001): con
+//      candidatos la operacion SE DETIENE (409 { candidatos }, sin escape); el
+//      vendedor resuelve reintentando con { customerId } elegido -- el documento
+//      local no se bloquea.
+// El customer_id se persiste (cotizacion y prospecto) ANTES de subir: un reintento
+// tras fallo parcial entra por el camino normal con el id persistido y NO crea un
+// segundo cliente.
+async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
+  const c = entry.data?.cliente || {};
+  const steps = [];
+  let customerId = customerIdElegido ?? null;
+  let creadoNuevo = false;
+  let salesman;
+  try {
+    const prospecto = await prospectosStore.buscarPorCelular(c.telefono);
+
+    if (customerId != null) {
+      // El customerId elegido no puede contradecir lo ya ligado -- ni el de la
+      // cotizacion (reintento con otro cliente) ni el del prospecto (celular ya
+      // convertido). Mejor frenar que mezclar cuentas.
+      if (c.customerId != null && String(c.customerId) !== String(customerId)) {
+        return res.status(409).json({ error: `La cotizacion ya esta ligada al cliente ${c.customerId} en Operam y difiere del elegido (${customerId})` });
+      }
+      if (prospecto?.data?.cliente_id != null && String(prospecto.data.cliente_id) !== String(customerId)) {
+        return res.status(409).json({ error: `El celular de la cotizacion ya esta ligado al cliente ${prospecto.data.cliente_id} en Operam y difiere del elegido (${customerId})` });
+      }
+      steps.push({ name: 'dedup', status: 'ok', info: 'candidato elegido' });
+    } else if (prospecto?.data?.cliente_id != null) {
+      customerId = prospecto.data.cliente_id;
+      steps.push({ name: 'dedup', status: 'ok', info: 'cliente reutilizado por celular' });
+    } else {
+      const rfcGenerico = rfcGenericoPara(c.pais);
+      const nombre = c.razonSocial || c.nombreCorto || entry.cliente || '';
+      // limit 100: el pool de genericos crece por diseno (#81); con el default 10
+      // un match real fuera de los primeros 10 volveria la dedup 'libre'.
+      const raw = await buscarClientes(rfcGenerico, 100);
+      const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
+      const dedup = detectarDuplicados(rfcGenerico, nombre, clientes);
+      if (dedup.tipo === 'candidatos') {
+        return res.status(409).json({
+          error: 'Hay clientes con RFC generico y nombre similar en Operam: elige uno para continuar',
+          candidatos: dedup.candidatos.map(k => ({ id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id })),
+        });
+      }
+      steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
+
+      salesman = (readJSON('vendedores.json') || []).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
+      const salesTypeId = resolverSalesTypeId(entry.tier, listasPrecios);
+      let creado;
+      try {
+        // crearClienteDirecto: SIN la dedup por RFC exacto de crearCliente (con
+        // RFC generico devolveria cualquier generico existente; la dedup correcta
+        // por nombre ya corrio arriba).
+        creado = await crearClienteDirecto(buildClienteGenerico(entry, { salesman, salesTypeId }));
+      } catch (err) {
+        steps.push({ name: 'POST customer', status: 'error', error: err.message });
+        logCliente(rfcGenerico, nombre, 'error', null, FUENTE_ALTA_GENERICA, null, err.message);
+        return res.status(503).json({ error: 'No se pudo crear el cliente generico en Operam: ' + err.message, steps });
+      }
+      customerId = creado.cliente_id;
+      creadoNuevo = true;
+      steps.push({ name: 'POST customer', status: 'ok' });
+      logCliente(rfcGenerico, nombre, 'creado', customerId, FUENTE_ALTA_GENERICA, null, null);
+      steps.push({ name: 'log auditoria', status: 'ok', info: FUENTE_ALTA_GENERICA });
+    }
+
+    // Con customerId elegido NUNCA se reutiliza un branchId persistido (pudo
+    // capturarse para OTRO cliente): se resuelve siempre el branch del elegido.
+    let branchId = customerIdElegido != null ? null : (c.branchId ?? c.branch_id ?? null);
+
+    // Persistir ANTES de subir (idempotencia): la cotizacion queda ligada al
+    // cliente aunque la subida falle.
+    await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
+    steps.push({ name: 'persistir customer_id', status: 'ok' });
+    // Ligar el prospecto es fire-and-forget (mismo trato que Dropbox): el cliente
+    // YA existe y la subida debe completarse; un fallo del store solo se reporta.
+    // Si abortara aqui, el reintento entraria por el camino normal (customerId ya
+    // persistido) y el prospecto quedaria sin mapear para siempre.
+    if (prospecto && prospecto.data?.cliente_id == null) {
+      try {
+        await prospectosStore.ligarCliente(prospecto.id, customerId, {
+          tipo: 'cliente', cliente_id: customerId, nombre: c.razonSocial || c.nombreCorto || '',
+          fecha: new Date().toISOString(), vendedor: entry.vendedor,
+        });
+        steps.push({ name: 'ligar prospecto', status: 'ok' });
+      } catch (err) {
+        console.error('[prospectos] No se pudo ligar prospecto al cliente generico:', err.message);
+        steps.push({ name: 'ligar prospecto', status: 'error', error: err.message });
+      }
+    }
+
+    // El POST de Operam ignora dimension_id/dimension2_id (#74): persistirlas via
+    // PUT, no bloqueante (mismo trato que en /api/crear-cliente).
+    if (creadoNuevo) {
+      try {
+        await actualizarClienteDirecto(customerId, { dimension_id: 1, dimension2_id: 5 });
+        steps.push({ name: 'PUT customer (dimensiones)', status: 'ok' });
+      } catch (err) {
+        steps.push({ name: 'PUT customer (dimensiones)', status: 'error', error: err.message });
+      }
+    }
+
+    // El quote debe ir al branch del cliente (Operam lo auto-crea en el POST), no
+    // al fallback branch_id 1 de subirCotizacionOperam. Se persiste para que un
+    // reintento (camino normal por customerId) tambien lo use.
+    if (branchId == null) {
+      try {
+        branchId = await obtenerBranchId(customerId);
+        steps.push({ name: 'GET branch_id', status: 'ok' });
+        await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
+      } catch (err) {
+        steps.push({ name: 'GET branch_id', status: 'error', error: err.message });
+        return res.status(503).json({ error: 'No se pudo obtener el domicilio del cliente en Operam: ' + err.message, customer_id: customerId, steps });
+      }
+    }
+
+    // PUT del branch con el domicilio de entrega del paso Envio (#96). SOLO para el
+    // cliente RECIEN creado por esta alta generica: un cliente preexistente (reusado
+    // por celular o elegido de candidatos) puede tener un domicilio real en Operam que
+    // NO debemos pisar con el del cotizador. Sin domicilio util (falta calle o CP) se
+    // omite: el cliente queda como hoy. actualizarBranchCliente ya mete customer_id en
+    // el body (sin el, Operam resetea debtor_no a 0) y usa location/ship_via (#74). El
+    // fallo NO tumba la subida: el cliente ya existe y el quote debe subirse (#81).
+    if (creadoNuevo) {
+      const branchDatos = buildBranchGenerico(c, { salesman });
+      if (branchDatos) {
+        try {
+          await actualizarBranchCliente(customerId, branchId, branchDatos);
+          steps.push({ name: 'PUT branch (domicilio)', status: 'ok' });
+          // Releer y verificar: Operam responde result:true aunque ignore campos (#74).
+          try {
+            const fresco = await obtenerBranch(branchId);
+            const camposNoActualizados = diffBranchDomicilio(fresco, branchDatos);
+            if (camposNoActualizados.length) {
+              steps.push({ name: 'verificar branch', status: 'warn', camposNoActualizados });
+            } else {
+              steps.push({ name: 'verificar branch', status: 'ok' });
+            }
+          } catch (err) {
+            steps.push({ name: 'verificar branch', status: 'error', error: err.message });
+          }
+        } catch (err) {
+          steps.push({ name: 'PUT branch (domicilio)', status: 'error', error: err.message });
+        }
+      }
+    }
+
+    try {
+      // La huella (#114) se toma de ESTE objeto, no de entry.data: el cliente recien
+      // ligado (customerId/branchId) forma parte de lo que se subio, y la siguiente
+      // regeneracion si lo trae (crearOActualizarCotizacion lo copia del registro).
+      // Calcularla sobre entry.data haria que toda regeneracion pareciera un cambio.
+      const dataSubida = { ...entry.data, cliente: { ...c, customerId, branchId } };
+      const folio = await subirCotizacionOperam(dataSubida);
+      if (folio != null && folio !== '') {
+        await cotStore.setFolioOperam(id, folio);
+        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida) });
+      }
+      steps.push({ name: 'POST quote', status: 'ok' });
+      const pasoVigencia = await postFixVigencia(folio, entry.data);
+      if (pasoVigencia) steps.push(pasoVigencia);
+      // clienteGenerico (#93): este camino SIEMPRE deja el cliente con RFC generico
+      // (creado nuevo o reutilizado por celular/dedup de nombre, ambos genericos) --
+      // el frontend lo usa para refrescar el chip Fiscal y ofrecer la CSF junto al folio.
+      return res.json({ ok: true, folio, customer_id: customerId, clienteGenerico: true, steps });
+    } catch (err) {
+      steps.push({ name: 'POST quote', status: 'error', error: err.message });
+      return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps });
+    }
+  } catch (err) {
+    return res.status(503).json({ error: 'No se pudo completar la subida con alta generica: ' + err.message, steps });
+  }
+}
+
+// Lock en memoria por id de cotizacion (F3 de la revision de #83): la
+// idempotencia de la subida cubre reintentos SECUENCIALES, no concurrencia --
+// dos requests EN VUELO al mismo id (auto-subida + Reintentar del Historial, o
+// doble click en Elegir candidato) leerian ambos customerId null y crearian DOS
+// clientes genericos. Instancia unica en Render (plan Starter): un Set basta -- con
+// varias instancias haria falta un lock compartido (Neon). El
+// segundo request recibe 425 claro y reintenta cuando el primero termine.
+const subidasOperamEnCurso = new Set();
+
+// Post-fix de la vigencia (#106, ADR-0007). El POST del quote ignora valid_until y deja
+// el campo nativo "Valido hasta" en ord_date-1, asi que Operam marca como vencidas
+// cotizaciones vivas; se corrige por la web legacy en cuanto el quote existe. NO es
+// bloqueante: el quote ya esta subido y comments sigue llevando la vigencia, asi que un
+// fallo aqui se reporta como step y nunca tumba la subida. La verificacion post-escritura
+// (releer y comparar) sigue el mismo patron que el PUT del branch (#96) y el quirk del
+// PUT de clientes, que responde 200 aunque ignore campos.
+async function postFixVigencia(folio, data) {
+  if (folio == null || folio === '') return null;
+  try {
+    const r = await corregirVigenciaQuote(folio, vigenciaDeCotizacion(data));
+    if (r.ok) return { name: 'post-fix vigencia', status: 'ok' };
+    // verificado false = la vista no traia el campo, asi que no se sabe como quedo; se
+    // reporta distinto de "quedo con otra fecha" para no afirmar lo que no se comprobo.
+    return {
+      name: 'post-fix vigencia', status: 'warn',
+      verificado: r.verificado, esperado: r.esperado, encontrado: r.encontrado,
+    };
+  } catch (err) {
+    console.error('[post-fix vigencia] fallo en el quote', folio, err.message);
+    return { name: 'post-fix vigencia', status: 'error', error: err.message };
+  }
+}
+
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
-  const entry = await cotStore.obtener(id);
-  if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+  if (subidasOperamEnCurso.has(id)) {
+    return res.status(425).json({ error: 'Ya hay una subida a Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
+  }
+  subidasOperamEnCurso.add(id);
   try {
-    const folio = await subirCotizacionOperam(entry.data);
-    // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
-    if (folio != null && folio !== '') await cotStore.setFolioOperam(id, folio);
-    res.json({ ok: true, folio });
-  } catch (err) {
-    // Cliente no identificado (#68): es un problema de datos de la cotizacion,
-    // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
-    if (/identificar el cliente/i.test(err.message)) {
-      return res.status(422).json({ error: err.message });
+    const entry = await cotStore.obtener(id);
+    if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+    // Ya subida (#83, F1c): los quotes de Operam no se editan por API -- re-subir
+    // duplicaria el quote. Se devuelve el folio existente sin tocar Operam.
+    // Desde #114 este corte significa UNA sola cosa: el contenido no cambio (regenerar
+    // el mismo carrito en otro formato). Una regeneracion CON cambios ya no llega
+    // aqui: POST /api/cotizacion devuelve requiereActualizacionOperam y la generacion
+    // entra por /actualizar, que reescribe el quote conservando el folio (#104,
+    // ADR-0008). La decision se toma alli porque es el unico punto donde todavia
+    // coexisten el contenido nuevo y la huella de lo que se subio.
+    if (entry.folioOperam != null && entry.folioOperam !== '') {
+      return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true });
     }
-    res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+    // Alta temprana de cliente generico (#81, ADR-0006): sin cliente en Operam se
+    // crea uno con RFC generico y la cotizacion nace a su nombre. customerId en el
+    // body = el vendedor resolvio la dedup de nombre eligiendo un candidato
+    // (ADR-0001). Con customerId o RFC real en la cotizacion -- o sin los datos
+    // minimos del contacto (nombre + telefono) -- el camino de siempre.
+    const customerIdElegido = req.body?.customerId ?? null;
+    if (customerIdElegido != null || necesitaAltaGenerica(entry)) {
+      // await: el finally debe liberar el lock hasta que la operacion termine.
+      return await subirConAltaGenerica(res, id, entry, customerIdElegido);
+    }
+    try {
+      const folio = await subirCotizacionOperam(entry.data);
+      // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
+      if (folio != null && folio !== '') {
+        await cotStore.setFolioOperam(id, folio);
+        // Huella de lo que quedo en el quote (#114): sin ella la proxima regeneracion
+        // no puede saber si el contenido cambio, que es lo que decide si hay que
+        // reescribir el quote o dejarlo en paz.
+        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(entry.data) });
+      }
+      const pasoVigencia = await postFixVigencia(folio, entry.data);
+      res.json({ ok: true, folio, steps: pasoVigencia ? [pasoVigencia] : [] });
+    } catch (err) {
+      // Cliente no identificado (#68): es un problema de datos de la cotizacion,
+      // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
+      if (/identificar el cliente/i.test(err.message)) {
+        return res.status(422).json({ error: err.message });
+      }
+      res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
+    }
+  } finally {
+    subidasOperamEnCurso.delete(id);
+  }
+});
+
+// Actualizar la cotizacion ya registrada conservando el folio (#104, ADR-0008).
+// El REGISTRO del cotizador ya lo actualizo la generacion del documento
+// (crearOActualizarCotizacion honra cotizacionId): aqui solo se reescribe el quote
+// en Operam, que no tiene PUT en la API v3 (501) y solo se puede editar por la web
+// legacy. Comparte el lock por id con la subida: una subida y una actualizacion en
+// vuelo sobre la misma cotizacion se pisarian el carrito de FA.
+//
+// Si la edicion falla, el registro del cotizador NO se revierte -- es la fuente del
+// PDF/HTML que el cliente ya tiene -- y la cotizacion queda marcada con
+// data.quoteDesactualizado para que el historial ofrezca reintentar (analogo al
+// estado PRE de la subida). Por eso un fallo responde 200 con ok:false y no 5xx:
+// no es que la peticion fallara, es que Operam quedo desalineado y hay que avisarlo
+// con detalle, incluido si se alcanzo a escribir (`escrito`).
+app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (subidasOperamEnCurso.has(id)) {
+    return res.status(425).json({ error: 'Ya hay una operacion de Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
+  }
+  subidasOperamEnCurso.add(id);
+  try {
+    const entry = await cotStore.obtener(id);
+    if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+    // El gate es el MISMO que decide los botones en el historial, pero la autoridad
+    // esta aqui: la UI no es la que permite escribir en el ERP.
+    const gate = puedeActualizarCotizacion({
+      hasData: !!entry.data,
+      folioOperam: entry.folioOperam,
+      orderOperam: entry.data?.orderOperam ?? null,
+    });
+    if (!gate.puede) return res.status(409).json({ error: gate.motivo });
+
+    const r = await actualizarQuoteOperam(entry.folioOperam, entry.data);
+    if (r.ok) {
+      // Nueva huella (#114): el quote acaba de quedar con ESTE contenido, asi que
+      // regenerar el mismo carrito (otro formato) ya no debe reescribir nada.
+      await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data) });
+      return res.json({ ok: true, folio: entry.folioOperam, actualizada: true, steps: [{ name: 'actualizar quote', status: 'ok' }] });
+    }
+    const marca = {
+      fecha: new Date().toISOString(),
+      escrito: !!r.escrito,
+      error: r.error ?? null,
+      discrepancias: r.discrepancias ?? [],
+    };
+    await cotStore.actualizarDatos(id, { quoteDesactualizado: marca });
+    return res.json({
+      ok: false, folio: entry.folioOperam, actualizada: false,
+      escrito: !!r.escrito, verificado: !!r.verificado,
+      error: r.error ?? null, discrepancias: r.discrepancias ?? [],
+      steps: [{ name: 'actualizar quote', status: 'error', error: r.error ?? null, discrepancias: r.discrepancias ?? [] }],
+    });
+  } finally {
+    subidasOperamEnCurso.delete(id);
   }
 });
 
@@ -1130,6 +1544,109 @@ app.put('/api/actualizar-cliente/:id', authMiddleware, async (req, res) => {
   } catch (err) {
     res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
   }
+});
+
+// --- CSF: upgrade del cliente generico con los datos fiscales reales (issue #85, ADR-0006) ---
+//
+// Cuando llega la Constancia de Situacion Fiscal se hace PUT sobre el cliente generico
+// existente (RFC real, razon social, regimen, domicilio fiscal), NUNCA un POST nuevo.
+// Dos zonas de robustez:
+//  - Gate anti-fusion: si el RFC real ya existe en Operam con OTRO cliente, frena (409)
+//    sin escribir nada -- el prospecto resulto ser un cliente formal existente y la
+//    fusion es manual. Si el match es el MISMO cliente (reintento) o no hay match, procede.
+//  - Verificacion post-PUT: releer el cliente y comparar (quirk de Operam: PUT 200 que
+//    ignora campos en silencio, ver CLAUDE.md cliente 457); los campos que no pegaron se
+//    reportan en camposNoActualizados para que el vendedor los corrija en Operam.
+const FUENTE_CSF_UPGRADE = 'csf-upgrade';
+
+app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) => {
+  const { csfDatos: csfDatosCrudo, pdf_base64 } = req.body || {};
+  const rfc = (csfDatosCrudo && csfDatosCrudo.rfc || '').trim().toUpperCase();
+  if (!rfc) return res.status(400).json({ error: 'Faltan los datos fiscales: el RFC es obligatorio' });
+  const id = req.params.id;
+  // El RFC normalizado (mayusculas) alimenta TANTO el gate anti-fusion como el PUT y
+  // el log -- el flujo de dedup viejo (lib/deduplicacion.js) ya normaliza asi antes de
+  // comparar; sin esto, un RFC capturado en minusculas podria no matchear un cliente
+  // formal ya existente en Operam y colar una fusion silenciosa.
+  const csfDatos = { ...csfDatosCrudo, rfc };
+
+  let existente;
+  try {
+    existente = await buscarClientePorRFC(rfc);
+  } catch (err) {
+    return res.status(503).json({ error: 'Operam no disponible: ' + err.message });
+  }
+  if (existente.encontrado && String(existente.cliente_id) !== String(id)) {
+    logCliente(rfc, csfDatos.razonSocial, 'fusion-bloqueada', existente.cliente_id, FUENTE_CSF_UPGRADE, null, null);
+    return res.status(409).json({
+      error: 'Este RFC ya pertenece a otro cliente en Operam. Es una fusion manual: el prospecto resulto ser un cliente formal existente.',
+      fusion: true,
+      cliente: { cliente_id: existente.cliente_id, CustName: existente.CustName, tax_id: existente.tax_id },
+    });
+  }
+
+  // Tax ID extranjero (issue #95 regla 5): no hay campo dedicado en la API v3, se
+  // antepone a las notas EXISTENTES del cliente (sin borrarlas). Requiere conocer
+  // esas notas ANTES del PUT -- una relectura extra, solo cuando se capturo el
+  // Tax ID (el camino comun sin ese campo no paga este GET adicional).
+  let notasActuales;
+  if (csfDatos.taxIdExtranjero) {
+    try {
+      const clienteActual = await obtenerClientePorId(id);
+      notasActuales = (clienteActual && clienteActual.notes) || '';
+    } catch (err) {
+      // Relectura fallida: null le dice a buildActualizarFiscalPayload que OMITA
+      // notes (reconstruirlas desde '' pisaria notas reales del cliente). El Tax ID
+      // queda sin aplicar y la verificacion post-PUT lo reporta.
+      notasActuales = null;
+      console.error('[csf-upgrade] relectura de notas fallo, Tax ID omitido:', err.message);
+    }
+  }
+
+  try {
+    await actualizarClienteDirecto(id, buildActualizarFiscalPayload(csfDatos, notasActuales));
+  } catch (err) {
+    logCliente(rfc, csfDatos.razonSocial, 'error', id, FUENTE_CSF_UPGRADE, null, err.message);
+    return res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
+  }
+
+  // La relectura de verificacion es un paso APARTE del PUT: si el PUT ya tuvo exito
+  // en Operam, un fallo aqui (red, o Operam devolviendo el cliente vacio) no debe
+  // reportarse como "no se pudo actualizar" -- el dato SI quedo escrito, solo no se
+  // pudo confirmar. Colapsar ambos pasos en un mismo catch contaminaba el log de
+  // auditoria con 'error' para una escritura que en realidad tuvo exito.
+  let camposNoActualizados = [];
+  let verificacionFallida = false;
+  try {
+    const fresco = await obtenerClientePorId(id);
+    if (!fresco) throw new Error('Operam no devolvio el cliente en la relectura');
+    const diff = calcularDiffFiscal(fresco, csfDatos);
+    camposNoActualizados = Object.entries(diff).map(([campo, d]) => ({ campo, label: d.label, anterior: d.anterior, nuevo: d.nuevo }));
+    // notes no esta en DIFF_FISCAL_CAMPOS (su valor "nuevo" depende de las notas
+    // previas, no es un campo de comparacion directa) -- se verifica aparte: la
+    // linea del Tax ID debe estar presente en las notas releidas.
+    if (csfDatos.taxIdExtranjero) {
+      const prefijo = `Tax ID: ${csfDatos.taxIdExtranjero}`;
+      const notasFrescas = fresco.notes || '';
+      if (!notasFrescas.includes(prefijo)) {
+        camposNoActualizados.push({ campo: 'notes', label: 'Tax ID extranjero', anterior: notasFrescas, nuevo: prefijo });
+      }
+    }
+  } catch (err) {
+    verificacionFallida = true;
+    console.error('[csf-upgrade] verificacion post-PUT fallo:', err.message);
+  }
+
+  if (pdf_base64) {
+    import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
+      subirCsfDropbox(pdf_base64, rfc, csfDatos.razonSocial)
+        .catch(err => console.error('[dropbox]', err.message))
+    );
+  }
+  // dropbox_ok en null (no true): la subida es fire-and-forget, igual que en
+  // /api/crear-cliente -- en este punto no se sabe si de verdad se subio.
+  logCliente(rfc, csfDatos.razonSocial, 'actualizado', id, FUENTE_CSF_UPGRADE, null, verificacionFallida ? 'La verificacion post-PUT fallo (el PUT si se aplico)' : null);
+  res.json({ ok: true, customer_id: Number(id), camposNoActualizados, verificacionFallida });
 });
 
 // --- CSF: crear cliente desde datos de CSF ---
@@ -1284,16 +1801,35 @@ app.get('/api/buscar-cliente', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
-  const { rfc, nombre } = req.query;
+  const { rfc, nombre, telefono } = req.query;
   if (!rfc) return res.status(400).json({ error: 'Falta el parametro rfc' });
   try {
-    const raw = await buscarClientes(rfc);
-    const clientes = (Array.isArray(raw) ? raw : []).map(c => ({
-      ...c,
-      RFC: c.tax_id || c.RFC || c.rfc || '',
-      id: c.customer_id,
-    }));
-    const resultado = detectarDuplicados(rfc, nombre || '', clientes);
+    const rfcNorm = rfc.toUpperCase().trim();
+    const esGenerico = RFC_GENERICOS.has(rfcNorm);
+    let raw = await buscarClientes(rfc);
+    // Issue #78: si el RFC de entrada es real y buscarClientes(rfc) no trae un
+    // match exacto, el cliente pudo darse de alta antes sin CSF (RFC generico).
+    // Ese cliente es INVISIBLE a la busqueda anterior porque el texto buscado
+    // (el RFC real nuevo) nunca aparece en un registro con RFC generico -- se
+    // busca aparte por cada RFC generico y se le da a detectarDuplicados el
+    // pool combinado para que aplique nombre/telefono.
+    if (!esGenerico && !raw.some(c => (c.tax_id || '').toUpperCase().trim() === rfcNorm)) {
+      const genericos = await Promise.all([...RFC_GENERICOS].map(g => buscarClientes(g, 100)));
+      raw = raw.concat(...genericos);
+    }
+    const vistos = new Set();
+    const clientes = (Array.isArray(raw) ? raw : [])
+      .filter(c => {
+        if (vistos.has(c.customer_id)) return false;
+        vistos.add(c.customer_id);
+        return true;
+      })
+      .map(c => ({
+        ...c,
+        RFC: c.tax_id || c.RFC || c.rfc || '',
+        id: c.customer_id,
+      }));
+    const resultado = detectarDuplicados(rfc, nombre || '', clientes, telefono || '');
     res.json(resultado);
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible: ' + err.message });

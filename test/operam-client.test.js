@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerQuote, obtenerCliente, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -197,6 +197,116 @@ test('actualizarCliente: hace PUT a /api/v3/sales/customers/:id con los campos d
     assert.equal(putBody['cl-municipio'], 'ZAPOPAN');
     assert.equal(putBody['cl-cp-fiscal'], '45100');
     assert.ok(!('anterior' in putBody));
+  } finally {
+    restore();
+  }
+});
+
+// === obtenerClientePorId: relectura de verificacion post-PUT (#85) ===
+// GET /api/v3/sales/customers/:id normalizado a los campos que consume
+// calcularDiffFiscal (CustName/tax_id/street/...), para detectar el quirk de
+// Operam (PUT 200 que ignora campos en silencio).
+
+test('obtenerClientePorId: normaliza data.[0] (envelope) y devuelve los campos fiscales crudos', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/455': () => jsonResponse({ data: [{ customer_id: 455, CustName: 'Real SA', tax_id: 'REA010101AB1', street: 'Reforma', postal_code: '06600' }] }),
+  });
+  try {
+    const c = await obtenerClientePorId(455);
+    assert.equal(c.customer_id, 455);
+    assert.equal(c.CustName, 'Real SA');
+    assert.equal(c.tax_id, 'REA010101AB1');
+    assert.equal(c.street, 'Reforma');
+    assert.equal(c.postal_code, '06600');
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerClientePorId: tolera respuesta sin envelope (objeto plano)', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/456': () => jsonResponse({ customer_id: 456, CustName: 'Plano SA', tax_id: 'PLA010101AB1' }),
+  });
+  try {
+    const c = await obtenerClientePorId(456);
+    assert.equal(c.CustName, 'Plano SA');
+    assert.equal(c.tax_id, 'PLA010101AB1');
+  } finally {
+    restore();
+  }
+});
+
+// === obtenerDomicilios: prefactor issue #99 -- expone contacts[] del cliente ===
+// con sus tags (base compartida con el slice de correos "invoices"), ademas de los
+// domicilios (branches) que ya devolvia.
+
+test('obtenerDomicilios: devuelve { domicilios, contacts } -- contacts trae tag/nombre/telefono/email del cliente', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/900': () => jsonResponse({
+      data: [{
+        customer_id: 900,
+        branches: [{ branch_code: '1', br_name: 'Bodega Norte', contact_name: '', phone: '', email: '' }],
+        contacts: [
+          { action: 'general', name: 'Gustavo Barcia', phone: '55 4860 9144', email: 'gustavo_barcia@yahoo.com' },
+          { action: 'invoice', name: 'Facturacion GUM', phone: '', email: 'factura@gum.com' },
+        ],
+      }],
+    }),
+    '/api/v3/sales/branches/1': () => jsonResponse({ data: [{ br_name: 'Bodega Norte', contact_name: '', phone: '', email: '' }] }),
+  });
+  try {
+    const r = await obtenerDomicilios(900);
+    assert.ok(Array.isArray(r.domicilios), 'domicilios debe ser array');
+    assert.equal(r.domicilios[0].descripcion, 'Bodega Norte');
+    assert.ok(Array.isArray(r.contacts), 'contacts debe ser array');
+    assert.equal(r.contacts.length, 2);
+    assert.equal(r.contacts[0].tag, 'general');
+    assert.equal(r.contacts[0].nombre, 'Gustavo Barcia');
+    assert.equal(r.contacts[0].telefono, '55 4860 9144');
+    assert.equal(r.contacts[0].email, 'gustavo_barcia@yahoo.com');
+    assert.equal(r.contacts[1].tag, 'invoice');
+    assert.equal(r.contacts[1].nombre, 'Facturacion GUM');
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerDomicilios: contacts vacios/sin nombre-ni-telefono-ni-email se descartan', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/901': () => jsonResponse({
+      data: [{
+        customer_id: 901,
+        branches: [],
+        contacts: [{ action: 'general', name: '', phone: '', email: '' }],
+      }],
+    }),
+  });
+  try {
+    const r = await obtenerDomicilios(901);
+    assert.deepEqual(r.contacts, []);
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerDomicilios: cliente sin contacts -> contacts es []', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/902': () => jsonResponse({ data: [{ customer_id: 902, branches: [] }] }),
+  });
+  try {
+    const r = await obtenerDomicilios(902);
+    assert.deepEqual(r.contacts, []);
+    assert.deepEqual(r.domicilios, []);
   } finally {
     restore();
   }
@@ -893,6 +1003,77 @@ test('subirCotizacionOperam: el quote lleva cust_ref (referencia), deliver_to y 
   }
 });
 
+async function subirYCapturarCustRef(cliente, customerId) {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: customerId, tax_id: cliente.rfc, CustName: cliente.razonSocial || '', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: customerId });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente,
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
+    });
+    return quoteBody.cust_ref;
+  } finally {
+    restore();
+  }
+}
+
+test('subirCotizacionOperam: cust_ref cae a nombreCorto si no hay referencia', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo SA de CV', nombreCorto: 'El Pendulo',
+  }, 322);
+  assert.equal(custRef, 'El Pendulo', 'cust_ref debe caer a cliente.nombreCorto');
+});
+
+test('subirCotizacionOperam: cust_ref cae a razonSocial si no hay referencia ni nombreCorto', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo SA de CV',
+  }, 323);
+  assert.equal(custRef, 'El Pendulo SA de CV', 'cust_ref debe caer a cliente.razonSocial');
+});
+
+test('subirCotizacionOperam: cust_ref cae a nombreEntrega si no hay referencia, nombreCorto ni razonSocial', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', nombreEntrega: 'Almacen Roma',
+  }, 324);
+  assert.equal(custRef, 'Almacen Roma', 'cust_ref debe caer a cliente.nombreEntrega');
+});
+
+test('subirCotizacionOperam: campos de solo espacios en blanco cuentan como vacios', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo SA de CV',
+    referencia: '   ', nombreCorto: '\t',
+  }, 325);
+  assert.equal(custRef, 'El Pendulo SA de CV', 'los escalones de solo espacios deben tratarse como vacios');
+});
+
+test('subirCotizacionOperam: cust_ref se trunca a 60 caracteres', async () => {
+  const razonSocialLarga = 'A'.repeat(80);
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: razonSocialLarga,
+  }, 326);
+  assert.equal(custRef.length, 60, 'cust_ref no debe exceder 60 caracteres');
+  assert.equal(custRef, 'A'.repeat(60));
+});
+
+test('subirCotizacionOperam: si los cuatro escalones estan vacios, cust_ref queda vacio y no falla', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76',
+  }, 327);
+  assert.equal(custRef, '', 'sin ningun escalon disponible, cust_ref debe quedar vacio sin lanzar error');
+});
+
 test('subirCotizacionOperam: sin vigencia explicita usa OrderDate + 30 dias', async () => {
   resetSession();
   let quoteBody = null;
@@ -1161,6 +1342,94 @@ test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (di
   }
 });
 
+// #107: pruebas directas de la funcion pura, sin pasar por subirCotizacionOperam.
+test('armarComentariosQuote: notas puntuadas, sin envio -> sin "..", una nota por linea', () => {
+  const comments = armarComentariosQuote(['A.', 'B.'], '2026-07-17', []);
+  assert.equal(comments, '- A.\n- B.\nValido hasta: 2026-07-17');
+  assert.equal(/\.\./.test(comments), false);
+});
+
+test('armarComentariosQuote: nota sin punto final no se pega a la siguiente linea', () => {
+  const comments = armarComentariosQuote(['Precio sujeto a cambio'], '2026-07-17', []);
+  assert.equal(comments, '- Precio sujeto a cambio\nValido hasta: 2026-07-17');
+});
+
+test('armarComentariosQuote: sin notas -> solo Valido hasta (mas envio si aplica)', () => {
+  assert.equal(armarComentariosQuote([], '2026-07-17', []), 'Valido hasta: 2026-07-17');
+  assert.equal(armarComentariosQuote(null, '2026-07-17', []), 'Valido hasta: 2026-07-17');
+});
+
+test('armarComentariosQuote: notas de solo espacios se descartan igual que vacias', () => {
+  const comments = armarComentariosQuote(['A.', '   ', 'B.'], '2026-07-17', []);
+  assert.equal(comments, '- A.\n- B.\nValido hasta: 2026-07-17');
+});
+
+test('armarComentariosQuote: envio Lalamove va despues de Valido hasta, sin ".."', () => {
+  const comments = armarComentariosQuote(['A.'], '2026-07-17', [{ descripcion: 'Lalamove auto', precio: 250 }]);
+  assert.equal(comments, '- A.\nValido hasta: 2026-07-17\nEnvio: Lalamove auto $250');
+  assert.equal(/\.\./.test(comments), false);
+});
+
+// #107: las notas ya llegan puntuadas (el vendedor las captura como vinetas terminadas
+// en punto). join('. ') sobre eso producia ".." -- ahora cada nota es su propia linea
+// con vineta, sin agregar puntuacion nueva.
+test('subirCotizacionOperam: comments no lleva ".." con notas ya puntuadas', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 340, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1600 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      vigencia: '2026-07-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+      notas: ['A.', 'B.'],
+    });
+    assert.equal(/\.\./.test(quoteBody.comments || ''), false, 'comments no debe contener ".."');
+    assert.equal(quoteBody.comments, '- A.\n- B.\nValido hasta: 2026-07-17');
+  } finally {
+    restore();
+  }
+});
+
+test('subirCotizacionOperam: una nota sin punto final no queda pegada a la siguiente', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 341, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1601 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      vigencia: '2026-07-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+      notas: ['Precio sujeto a cambio', 'Pago de contado'],
+    });
+    assert.equal(quoteBody.comments, '- Precio sujeto a cambio\n- Pago de contado\nValido hasta: 2026-07-17');
+  } finally {
+    restore();
+  }
+});
+
 // El POST /api/v3/sales/quote real responde { result, added_trans_type, added_trans_no,
 // ref } (verificado en vivo, quote 1160, issue #68). El folio del quote es added_trans_no;
 // la funcion debe devolverlo para que server.js persista el folio (setFolioOperam, #63).
@@ -1267,4 +1536,145 @@ test('obtenerCliente: un 404 (cliente inexistente) devuelve null, no lanza', asy
   } finally {
     restore();
   }
+});
+
+// === Huella del contenido que viaja al quote (issue #114) ===
+// Regenerar una cotizacion ya subida debe reescribir su quote SOLO si el contenido
+// cambio: sin esto, o el quote se queda con lo viejo mientras el documento sale
+// numerado con lo nuevo (el bug de #114), o cada "genera el PDF y ahora el HTML"
+// dispararia una reescritura completa por la web legacy sin motivo.
+const { huellaContenidoQuote, contenidoQuoteCambio } = await import('../lib/operam-client.js');
+
+function cotizacionBase(extra = {}) {
+  return {
+    fecha: '2026-07-29',
+    vigencia: '2026-08-28',
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', customerId: 376 },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    notas: ['Precio sujeto a cambio'],
+    subtotal: 1000, iva: 160, total: 1160,
+    ...extra,
+  };
+}
+
+test('#114 huellaContenidoQuote: el mismo contenido produce la misma huella', () => {
+  assert.equal(huellaContenidoQuote(cotizacionBase()), huellaContenidoQuote(cotizacionBase()));
+});
+
+// #115: la vigencia SI viaja al quote (comments + "Valido hasta"), asi que cambiarla
+// tiene que reescribirlo. Lo que no puede contar es la FECHA absoluta, que el frontend
+// recalcula en cada generacion: cuenta el PLAZO en dias que eligio el vendedor.
+test('#115 huellaContenidoQuote: los DIAS de vigencia SI cuentan como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  // misma fecha de generacion, vigencia mas larga = otro plazo elegido (30 -> 63 dias)
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ vigencia: '2026-09-30' })), base);
+});
+
+test('#115 huellaContenidoQuote: el mismo plazo en otra fecha de generacion NO cuenta como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  // generar el mismo carrito al dia siguiente: fecha y vigencia se mueven juntas
+  assert.equal(huellaContenidoQuote(cotizacionBase({ fecha: '2026-07-30', vigencia: '2026-08-29' })), base);
+});
+
+// El plazo se deriva con las mismas reglas que construyen el comments que SI se sube,
+// defaults incluidos (sin vigencia = fecha + 30). Por eso sin vigencia explicita el plazo
+// es constante y mover la fecha de generacion no es un cambio, mientras que fijar otra
+// vigencia si lo es: cambia la linea que Operam va a mostrar.
+test('#115 huellaContenidoQuote: sin vigencia explicita el plazo es el default y la fecha no lo mueve', () => {
+  const sinVigencia = (extra) => huellaContenidoQuote(cotizacionBase({ vigencia: '', ...extra }));
+  assert.equal(sinVigencia(), sinVigencia({ fecha: '2026-12-01' }));
+});
+
+test('#115 huellaContenidoQuote: fijar una vigencia distinta SI cambia la huella', () => {
+  const sinFecha = (extra) => huellaContenidoQuote(cotizacionBase({ fecha: '', ...extra }));
+  assert.notEqual(sinFecha(), sinFecha({ vigencia: '2026-12-01' }));
+});
+
+// #115 (segunda parte): las notas SI viajan al quote -- armarComentariosQuote las mete
+// en `comments`, una linea por nota -- asi que editarlas deja el comments de Operam
+// desactualizado si no se reescribe. El argumento del ruido que justifica excluir la
+// FECHA de vigencia no aplica aqui: las notas solo cambian si el vendedor las edita.
+test('#115 huellaContenidoQuote: las notas SI cuentan como cambio (viajan a comments)', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ notas: ['Otra nota'] })), base);
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ notas: [] })), base, 'quitar las notas tambien');
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ notas: ['Precio sujeto a cambio', 'Nota extra'] })), base,
+    'agregar una nota tambien');
+});
+
+test('#115 huellaContenidoQuote: el formato del documento NO cuenta como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  assert.equal(huellaContenidoQuote(cotizacionBase({ incluirFotos: true })), base);
+});
+
+// Lalamove no es partida del quote (#72 pendiente): viaja en comments. Un cambio de su
+// descripcion con el mismo precio no mueve items ni importes, asi que solo lo caza el
+// comments.
+test('#115 huellaContenidoQuote: la descripcion de un envio Lalamove SI cuenta como cambio', () => {
+  const conLalamove = (desc) => huellaContenidoQuote(cotizacionBase({
+    items: [
+      { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+      { codigo: 'ENVIO', descripcion: desc, cantidad: 1, precio: 666, descuento: 0 },
+    ],
+  }));
+  assert.notEqual(conLalamove('Lalamove camioneta'), conLalamove('Lalamove moto'));
+});
+
+test('#114 huellaContenidoQuote: cantidad, precio, descuento y codigo SI cuentan como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  const conItems = (i) => huellaContenidoQuote(cotizacionBase({ items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0, ...i }] }));
+  assert.notEqual(conItems({ cantidad: 11 }), base);
+  assert.notEqual(conItems({ precio: 99 }), base);
+  assert.notEqual(conItems({ descuento: 5 }), base);
+  assert.notEqual(conItems({ codigo: 'CR20-TAZA' }), base);
+});
+
+test('#114 huellaContenidoQuote: los importes SI cuentan como cambio', () => {
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ total: 2000 })), huellaContenidoQuote(cotizacionBase()));
+});
+
+test('#114 huellaContenidoQuote: el cliente del quote SI cuenta como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ cliente: { ...cotizacionBase().cliente, customerId: 999 } })), base);
+  // nombreCorto alimenta el cust_ref del quote (#108)
+  assert.notEqual(huellaContenidoQuote(cotizacionBase({ cliente: { ...cotizacionBase().cliente, nombreCorto: 'Otro' } })), base);
+});
+
+// El envio es una PARTIDA del quote (#68): su precio y el SKU de flete que resuelve
+// el CP de entrega (local vs foraneo) son contenido, no presentacion.
+test('#114 huellaContenidoQuote: el envio y la zona del CP de entrega SI cuentan como cambio', () => {
+  const conEnvio = (extra = {}) => cotizacionBase({
+    items: [
+      { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+      { codigo: 'ENVIO', descripcion: 'FedEx Ground', cantidad: 1, precio: 350, descuento: 0 },
+    ],
+    ...extra,
+  });
+  const base = huellaContenidoQuote(conEnvio());
+  assert.notEqual(base, huellaContenidoQuote(cotizacionBase()), 'agregar el envio es un cambio');
+  const otroPrecio = conEnvio();
+  otroPrecio.items[1].precio = 420;
+  assert.notEqual(huellaContenidoQuote(otroPrecio), base);
+  assert.notEqual(huellaContenidoQuote(conEnvio({ cliente: { ...cotizacionBase().cliente, cpEntrega: '44100' } })), base,
+    'el CP de entrega decide el SKU de flete (local/foraneo)');
+});
+
+test('#114 contenidoQuoteCambio: contra la huella de lo subido, sin cambios es false', () => {
+  const data = cotizacionBase();
+  assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data)), false);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ incluirFotos: true }), huellaContenidoQuote(data)), false);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ total: 99 }), huellaContenidoQuote(data)), true);
+  // #115: las notas viajan a comments, editarlas hay que llevarlo al quote
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ notas: ['Otra'] }), huellaContenidoQuote(data)), true);
+  // #115: otro plazo de vigencia SI es un cambio que hay que llevar al quote
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ vigencia: '2026-12-31' }), huellaContenidoQuote(data)), true);
+});
+
+// Cotizaciones anteriores a #114: se subieron sin dejar huella. No se puede afirmar
+// que el quote coincida, y el riesgo de NO reescribir (documento numerado que diverge)
+// es peor que el de reescribirlo con el contenido que el cotizador ya tiene.
+test('#114 contenidoQuoteCambio: sin huella previa asume que cambio', () => {
+  assert.equal(contenidoQuoteCambio(cotizacionBase(), null), true);
+  assert.equal(contenidoQuoteCambio(cotizacionBase(), undefined), true);
+  assert.equal(contenidoQuoteCambio(cotizacionBase(), ''), true);
 });

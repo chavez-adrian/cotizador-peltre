@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -14,10 +15,10 @@ const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
 
 function readProspectos() {
   if (!existsSync(PROSPECTOS_PATH)) return [];
-  return JSON.parse(readFileSync(PROSPECTOS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(PROSPECTOS_PATH));
 }
 function writeProspectos(data) {
-  writeFileSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
 }
 
 let savedProspectos;
@@ -28,7 +29,7 @@ before(() => {
 });
 after(() => {
   if (existia) writeProspectos(savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
+  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
 });
 
 // Borrado de prospectos (issue #75, limpieza de datos de prueba): elimina por id,

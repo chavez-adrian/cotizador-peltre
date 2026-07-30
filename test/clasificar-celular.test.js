@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -21,10 +22,10 @@ const { resetSession } = await import('../lib/operam-client.js');
 
 function readProspectos() {
   if (!existsSync(PROSPECTOS_PATH)) return [];
-  return JSON.parse(readFileSync(PROSPECTOS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(PROSPECTOS_PATH));
 }
 function writeProspectos(data) {
-  writeFileSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
 }
 
 // Ningun test pega a Operam real: fetch bloqueado por defecto, cada test que
@@ -74,7 +75,7 @@ before(() => {
 });
 after(() => {
   if (existia) writeProspectos(savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
+  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {

@@ -6,6 +6,7 @@
 // prospectos-logica.js: lo consumen app.js y los tests .cjs via import().
 
 import { escapeHtml } from './prospectos-logica.js';
+import { etiquetaFolioOperam, badgeFolioOperamHtml } from './pipeline-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -67,6 +68,9 @@ function fechaCorta(fecha) {
 // Tarjeta del tablero: cliente, total, piezas, vendedor, dias desde envio y
 // link wa.me (el telefono llega del servidor ya en formato wa via
 // lib/seguimiento.telefonoWa). Solo las columnas de cadencia son arrastrables.
+// El badge de folio (#111, ADR-0009) identifica la tarjeta con el MISMO numero
+// que Operam -- nunca con el id interno -- reusando la unica fuente del badge
+// (badgeFolioOperamHtml), la misma que la vista lista y la cola Hoy.
 function buildCotizacionCardHtml(c, col, hoy) {
   const dias = Math.floor((hoy - new Date(c.fecha)) / MS_DIA);
   const abierta = !CERRADAS.has(col);
@@ -82,7 +86,7 @@ function buildCotizacionCardHtml(c, col, hoy) {
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(c.cliente || 'Sin nombre')}</div>
+          <div class="cot-card-cliente">${escapeHtml(c.cliente || 'Sin nombre')}${badgeFolioOperamHtml(c)}</div>
           <div class="cot-card-meta">${fechaCorta(c.fecha)} · hace ${dias} días · ${escapeHtml(c.vendedor)} · ${c.totalPiezas} pzs</div>
         </div>
         <div class="cot-card-total">$${fmtMoneda(c.total)}</div>
@@ -90,6 +94,104 @@ function buildCotizacionCardHtml(c, col, hoy) {
       ${acciones.length ? `<div class="cot-card-actions">${acciones.join(' ')}</div>` : ''}
     </div>
   </div>`;
+}
+
+// Link wa.me para compartir una cotizacion del historial (issue #103): mismo
+// formato de mensaje que shareWhatsApp (app.js) para la cotizacion recien
+// generada, pero apuntando al HTML regenerado desde el registro guardado en
+// vez del PDF de la sesion en curso. origin lo pasa el caller
+// (window.location.origin no existe en este modulo sin efectos de navegador).
+export function buildWhatsAppLinkHistorial(c, origin = '') {
+  const htmlUrl = `${origin}/api/cotizacion/html/${c.id}`;
+  const msg = encodeURIComponent(
+    `Cotizacion Peltre Nacional\nCliente: ${c.cliente || 'Cliente'}\nTotal: $${fmtMoneda(c.total)}\n\nVer cotizacion:\n${htmlUrl}`
+  );
+  return `https://wa.me/?text=${msg}`;
+}
+
+// Acciones de una fila del historial (issue #103): Ver PDF / Ver HTML regeneran
+// el documento desde el registro guardado via los GET correspondientes (sin
+// depender de disco); WhatsApp abre wa.me con el link al HTML regenerado. Sin
+// data persistida (registro historico, c.hasData false) no hay nada que
+// regenerar: las tres quedan deshabilitadas en vez de apuntar a un 404.
+export function buildHistorialAccionesHtml(c, origin = '') {
+  if (!c.hasData) {
+    return ['Ver PDF', 'Ver HTML', 'WhatsApp']
+      .map(label => `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">${label}</button>`)
+      .join(' ');
+  }
+  const pdfUrl = `/api/cotizacion/pdf/${c.id}`;
+  const htmlUrl = `/api/cotizacion/html/${c.id}`;
+  const waUrl = buildWhatsAppLinkHistorial(c, origin);
+  return `<a href="${escapeHtml(pdfUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>` +
+    ` <a href="${escapeHtml(htmlUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver HTML</a>` +
+    ` <a href="${escapeHtml(waUrl)}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
+}
+
+// Gate de "Actualizar cotizacion" (#104, ADR-0008). Hasta ahora "Cargar" hacia dos
+// cosas a la vez: restaurar el carrito y, calladamente, empezar una cotizacion NUEVA
+// (#83 F1 reseteaba lastCotizacionId a proposito). Actualizar reusa el registro Y
+// reescribe el quote de Operam conservando el folio, asi que solo aplica cuando hay
+// un quote que editar y nadie lo ha convertido todavia:
+//   - sin data persistida no hay carrito que reescribir (registro historico);
+//   - sin folio no existe el quote (PRE): lo que toca es completar la subida;
+//   - con pedido asociado (data.orderOperam, sync #62) el quote ya se convirtio --
+//     Operam mismo deshabilita su edicion, y el gate del cotizador es consistente.
+// Lo usa la UI para decidir que boton habilitar y server.js como autoridad real
+// antes de tocar Operam: una sola definicion, sin que la UI sea la que "permite".
+export function puedeActualizarCotizacion(cot) {
+  const c = cot || {};
+  if (!c.hasData) return { puede: false, motivo: 'Esta cotización no guarda su detalle: no hay nada que actualizar' };
+  if (c.folioOperam == null || c.folioOperam === '') {
+    return { puede: false, motivo: 'La cotización todavía no está registrada en Operam: primero completa la subida' };
+  }
+  if (c.orderOperam != null && c.orderOperam !== '') {
+    return { puede: false, motivo: 'La cotización ya tiene un pedido asociado en Operam: crea una nueva a partir de ésta' };
+  }
+  return { puede: true };
+}
+
+// Las dos acciones de carga del historial (#104): "Actualizar cotización" (mismo
+// registro, mismo folio de Operam) y "Crear nueva a partir de ésta" (lo que "Cargar"
+// hacia hasta hoy, ahora con nombre honesto). Actualizar es el default cuando se
+// puede; si no, queda deshabilitado CON el motivo en el title -- deshabilitar sin
+// explicar convierte una regla de negocio en un boton roto. Sin data no hay ninguna
+// de las dos: no hay carrito que restaurar.
+export function buildAccionesCargaHtml(cot) {
+  const c = cot || {};
+  const gate = puedeActualizarCotizacion(c);
+  if (!c.hasData) {
+    return `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Actualizar cotización</button>` +
+      ` <button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Crear nueva a partir de ésta</button>`;
+  }
+  const actualizar = gate.puede
+    ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id}, 'actualizar')">Actualizar cotización</button>`
+    : `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(gate.motivo)}">Actualizar cotización</button>`;
+  const nueva = `<button class="btn ${gate.puede ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="cargarCotizacion(${c.id}, 'nueva')">Crear nueva a partir de ésta</button>`;
+  return `${actualizar} ${nueva}`;
+}
+
+// Aviso de modo actualizacion (#109, ADR-0008): identifica el documento por el
+// folio REAL de Operam con la convencion existente del badge (etiquetaFolioOperam
+// de pipeline-logica.js, issue #63) -- nunca por el id interno del registro. Ese
+// era el bug reportado por Adrian en la verificacion de #104: "se actualizara la
+// cotizacion #16 y su quote en Operam (mismo folio)" se lee como si 16 y el folio
+// real fueran el mismo numero. Describe la accion en terminos de los botones que
+// el vendedor va a oprimir (Actualizar PDF / Actualizar HTML), no de un "generar"
+// generico. El folio SIEMPRE existe en este modo (gate puedeActualizarCotizacion
+// exige folioOperam), asi que no hay caso "sin folio" que resolver aqui.
+export function buildAvisoModoActualizacion(folioOperam) {
+  const badge = etiquetaFolioOperam({ folioOperam });
+  return `<span class="operam-status">Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span>`;
+}
+
+// Etiquetas de los botones de generacion segun el modo (#109): en modo
+// actualizacion comunican que reescriben un documento existente, no que crean
+// uno nuevo. Fuera de ese modo conservan el texto historico -- "Generar PDF" y
+// "Ver HTML" (asimetria heredada: el PDF se descarga, el HTML se abre).
+export function textoBotonGenerar(tipo, modoActualizacion) {
+  if (tipo === 'html') return modoActualizacion ? 'Actualizar HTML' : 'Ver HTML';
+  return modoActualizacion ? 'Actualizar PDF' : 'Generar PDF';
 }
 
 export function buildTableroCotizacionesHtml(cotizaciones, hoy = new Date()) {

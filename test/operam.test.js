@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import jwt from 'jsonwebtoken';
@@ -22,6 +23,7 @@ if (existsSync(envPath)) {
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app } = await import('../server.js');
 const { resetSession } = await import('../lib/operam-client.js');
+const { resetIndice } = await import('../lib/indice-telefonos.js');
 
 const TOKEN = jwt.sign({ id: 1, name: 'Test', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 const req = supertest(app);
@@ -51,7 +53,10 @@ const CLIENTES_RESPONSE = {
       contact_name: 'Adriana Urena',
       phone: '55 1072 7542',
       email: 'a.urena@museofridakahlo.org.mx',
-    }]
+    }],
+    contacts: [
+      { action: 'invoice', name: 'Facturacion Banco', phone: '', email: 'facturas@banco.mx' },
+    ],
   }]
 };
 
@@ -86,11 +91,11 @@ function jsonResponse(data, status = 200) {
 
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
-  return JSON.parse(readFileSync(COTS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(COTS_PATH));
 }
 
 function writeCots(data) {
-  writeFileSync(COTS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
 let savedCots;
@@ -107,6 +112,7 @@ after(() => {
 
 test('B1: buscarClientes retorna array con campos normalizados', async () => {
   resetSession();
+  resetIndice();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse(CLIENTES_RESPONSE),
@@ -129,10 +135,11 @@ test('B2: sin auth token retorna 401', async () => {
   assert.equal(res.status, 401);
 });
 
-// B3: GET /api/operam/clientes/:id/domicilios retorna array con campos de branches
+// B3: GET /api/operam/clientes/:id/domicilios retorna { domicilios, contacts } (#99)
 
-test('B3: domicilios retorna branches mapeados con campos reales', async () => {
+test('B3: domicilios retorna { domicilios, contacts } con branches y contactos del cliente mapeados', async () => {
   resetSession();
+  resetIndice();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers/42': () => jsonResponse(CLIENTE_DETALLE_RESPONSE),
@@ -140,12 +147,16 @@ test('B3: domicilios retorna branches mapeados con campos reales', async () => {
   try {
     const res = await req.get('/api/operam/clientes/42/domicilios').set('Authorization', `Bearer ${TOKEN}`);
     assert.equal(res.status, 200);
-    assert.ok(Array.isArray(res.body));
-    assert.ok(res.body.length > 0);
-    const d = res.body[0];
+    assert.ok(Array.isArray(res.body.domicilios));
+    assert.ok(res.body.domicilios.length > 0);
+    const d = res.body.domicilios[0];
     assert.ok('descripcion' in d);
     assert.ok('cp' in d);
     assert.ok('email' in d);
+    assert.ok(Array.isArray(res.body.contacts));
+    assert.equal(res.body.contacts[0].tag, 'invoice');
+    assert.equal(res.body.contacts[0].nombre, 'Facturacion Banco');
+    assert.equal(res.body.contacts[0].email, 'facturas@banco.mx');
   } finally { restore(); }
 });
 
@@ -153,6 +164,7 @@ test('B3: domicilios retorna branches mapeados con campos reales', async () => {
 
 test('B4: Operam no responde => 503', async () => {
   resetSession();
+  resetIndice();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => { throw new Error('ECONNREFUSED'); },
   });
@@ -166,6 +178,7 @@ test('B4: Operam no responde => 503', async () => {
 
 test('B5: subirCotizacionOperam llama POST /api/v3/sales/quote', async () => {
   resetSession();
+  resetIndice();
   let quotePayload = null;
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
@@ -204,8 +217,8 @@ test('B5: subirCotizacionOperam llama POST /api/v3/sales/quote', async () => {
     assert.equal(quotePayload.items[0].stock_id, 'VA08G1N1M0');
   } finally {
     restore();
-    const cleanLog = JSON.parse(readFileSync(COTS_PATH, 'utf8')).filter(e => e.id !== 9999);
-    writeFileSync(COTS_PATH, JSON.stringify(cleanLog, null, 2));
+    const cleanLog = JSON.parse(leerArchivoSync(COTS_PATH)).filter(e => e.id !== 9999);
+    escribirArchivoSync(COTS_PATH, JSON.stringify(cleanLog, null, 2));
   }
 });
 
@@ -220,6 +233,7 @@ test('B6: cotizacion inexistente retorna 404', async () => {
 
 test('B7: buscarClientes normaliza campos: id, name, rfc, calle, cp, municipio, estado, telefono, email, nombreEntrega', async () => {
   resetSession();
+  resetIndice();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse(CLIENTES_RESPONSE),
@@ -241,5 +255,101 @@ test('B7: buscarClientes normaliza campos: id, name, rfc, calle, cp, municipio, 
     assert.equal(c.telefono, '55 1072 7542',         'telefono = branches[0].phone');
     assert.equal(c.email, 'a.urena@museofridakahlo.org.mx', 'email = branches[0].email');
     assert.equal(c.nombreEntrega, 'Museo Frida Kahlo', 'nombreEntrega = branches[0].br_name');
+  } finally { restore(); }
+});
+
+// B8-B10: issue #97 -- el buscador de la UI resuelve por telefono de contacto y
+// nombre corto ademas de razon social, cableando el indice de #42 (matchCliente).
+
+// Caso real del issue: contacto Flor Sosa -> cliente GRUPO URUGUAYO MINAS. El
+// texto buscado (telefono) no aparece en CustName, asi que la busqueda de Operam
+// (search=q) no lo encuentra -- solo lo encuentra el indice local.
+const GRUPO_URUGUAYO = {
+  customer_id: '77',
+  CustName: 'GRUPO URUGUAYO MINAS',
+  cust_ref: 'Grupo Uruguayo',
+  tax_id: 'GUM010101AB1',
+  contacts: [{ phone: '', phone2: '' }, { name: 'Flor Sosa', phone: '+52 55 1002 1463', phone2: '' }],
+  branches: [{ branch_code: '1', phone: '' }],
+};
+
+function mockBusquedaVaciaMasIndice(clienteIndice) {
+  return mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    // Operam solo indexa razon social: search=telefono/nombre-corto no trae nada.
+    '/api/v3/sales/customers?': (url) => {
+      const urlStr = String(url);
+      if (urlStr.includes('search=')) return jsonResponse({ total: 0, data: [] });
+      return jsonResponse({ total: 1, data: [clienteIndice] });
+    },
+  });
+}
+
+test('B8: telefono de contacto (+52..., 10 digitos, sin lada) encuentra al cliente via el indice', async () => {
+  resetSession();
+  resetIndice();
+  const restore = mockBusquedaVaciaMasIndice(GRUPO_URUGUAYO);
+  try {
+    for (const q of ['+525510021463', '5510021463', '10021463']) {
+      resetIndice(); // cada formato es una busqueda nueva de UI, sin cache entre teclas distintas en este test
+      const res = await req.get(`/api/operam/clientes?q=${encodeURIComponent(q)}`).set('Authorization', `Bearer ${TOKEN}`);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.length, 1, `formato "${q}" deberia encontrar al cliente`);
+      assert.equal(res.body[0].id, '77');
+      assert.equal(res.body[0].name, 'GRUPO URUGUAYO MINAS');
+    }
+  } finally { restore(); }
+});
+
+test('B9: nombre corto (cust_ref) encuentra al cliente via el indice', async () => {
+  resetSession();
+  resetIndice();
+  const restore = mockBusquedaVaciaMasIndice(GRUPO_URUGUAYO);
+  try {
+    const res = await req.get('/api/operam/clientes?q=Grupo Uruguayo').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.length, 1);
+    assert.equal(res.body[0].id, '77');
+  } finally { restore(); }
+});
+
+test('B10: no duplica cuando la busqueda de Operam y el indice local encuentran al mismo cliente', async () => {
+  resetSession();
+  resetIndice();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [GRUPO_URUGUAYO] }),
+  });
+  try {
+    const res = await req.get('/api/operam/clientes?q=uruguayo').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.length, 1, 'razon social matchea en ambas fuentes pero no duplica');
+  } finally { restore(); }
+});
+
+test('B11: el campo telefonos trae los de TODOS los branches, no solo branches[0]', async () => {
+  // Regresion: buscarClientesPorTexto recorre todos los branches/contactos, pero si
+  // el mapper solo tomaba branches[0].phone, un match por un telefono de otro branch
+  // desaparecia en el frontend (que vuelve a filtrar sobre ese campo).
+  const clienteMultiBranch = {
+    customer_id: '88',
+    CustName: 'FERRETERIA LOS PINOS',
+    cust_ref: 'Los Pinos',
+    tax_id: 'FLP010101AB1',
+    contacts: [],
+    branches: [
+      { branch_code: '1', phone: '' },
+      { branch_code: '2', phone: '+52 55 4433 2211' },
+    ],
+  };
+  resetSession();
+  resetIndice();
+  const restore = mockBusquedaVaciaMasIndice(clienteMultiBranch);
+  try {
+    const res = await req.get('/api/operam/clientes?q=44332211').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.length, 1);
+    assert.ok(res.body[0].telefonos.some(t => t.replace(/\D/g, '').includes('44332211')),
+      'telefonos debe incluir el de branches[1], no solo branches[0]');
   } finally { restore(); }
 });

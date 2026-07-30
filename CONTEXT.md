@@ -27,13 +27,23 @@ Las etapas intermedias de prospección del modelo previo (Contactado, Calificado
 
 ## Pre-cotización
 
-Una cotización emitida con datos mínimos (Prospecto Mínimo) y sin registro en Operam, para cotizar sin fricción con el cliente enfrente. No usa Cliente Genérico. Se modela con el folio de Operam ausente (nullable); esa ausencia define el estado "PRE". La distinción **PRE** vs **"#Operam N"** es visible en la tarjeta, en la cola Hoy y en el tablero. Generar una pre-cotización mueve la oportunidad a Seguimiento conservando el PRE. Se formaliza ("completar después") desde la tarjeta: completar los datos del prospecto, dar de alta el cliente en Operam y registrar la cotización; al obtener folio, pierde el PRE.
+Deja de ser un modo de trabajo elegible (ADR-0006): toda cotización nueva se sube automáticamente a Operam al generarse, creando de paso un Cliente Genérico si la oportunidad todavía no tiene cliente. **PRE** queda solo como estado de excepción — el folio de Operam está ausente únicamente cuando Operam falló al generar la cotización (caída de red, error de API), con reintento idempotente sobre el mismo intento. La distinción **PRE** vs **"#Operam N"** se conserva visible en la tarjeta, en la cola Hoy y en el tablero, pero en operación normal debería ser rara y transitoria, no un estado en el que una cotización permanezca a propósito. Una PRE **no tiene número** (no existe folio que imprimir) y su documento se identifica como **pre-cotización**: ponerle el id interno sería reintroducir la doble numeración que ADR-0009 cierra.
 
 Corte histórico (decisión 2026-06-16): el folio de Operam no se persistía antes del despliegue de #63, así que una cotización anterior a esa fecha y sin folio no se puede distinguir de una pre-cotización. Se asume **registrada** (no PRE) y no muestra badge — el badge PRE aplica solo a cotizaciones nuevas. El discriminante es la fecha (no el id, que no es contiguo) y vive en la migración de lectura del store.
 
+## Número de la cotización
+
+Es el **folio del quote en Operam**, y sólo ése (ADR-0009). El id interno del registro del cotizador es una clave técnica — vive en las URL de los documentos y del historial — y nunca se presenta como "cotización #N": el cliente que recibe el documento y quien abre el ERP tienen que leer el mismo número. Para poder imprimirlo, generar un documento **espera** a que la cotización esté subida a Operam; si no lo consigue, el documento se entrega igual **sin número**, como pre-cotización, y el numerado se re-comparte desde el historial cuando el folio llegue. En la UI el folio se nombra siempre con la convención **"#Operam N"** (#63).
+
+## Vigencia ("Válido hasta")
+
+La fecha hasta la que la cotización se sostiene, capturada en días por el vendedor (30 por omisión) y calculada sobre la fecha de emisión. Vive en tres lugares por razones distintas: el PDF/HTML que recibe el cliente (donde siempre fue correcta), el campo `comments` del quote de Operam (respaldo, porque la API no acepta la fecha) y el campo nativo "Válido hasta" de Operam, que la API v3 ignora y deja en `ord_date-1` — dejando el ERP mostrando "Esta cotizacion esta vencida" sobre cotizaciones vivas.
+
+El campo nativo se corrige por **post-fix contra la web legacy de Operam**, inmediatamente después de subir el quote y de forma no bloqueante (ADR-0007). La línea "Valido hasta: ..." en `comments` se conserva como respaldo deliberadamente redundante: el post-fix puede fallar y la vigencia no puede quedarse sin portador dentro de Operam.
+
 ## Prospecto Mínimo
 
-El conjunto mínimo de datos con el que se puede emitir una pre-cotización sin alta de cliente: lo necesario para identificar al prospecto y calcular la cotización (celular, nombre, ciudad para estimar envío) más el carrito. El alta fiscal completa en Operam se difiere a la formalización.
+El conjunto mínimo de datos con el que se puede emitir una cotización sin que el prospecto haya completado su alta fiscal: lo necesario para identificar al prospecto y calcular la cotización (celular, nombre, ciudad para estimar envío) más el carrito. Ya no difiere el alta en Operam (ADR-0006): al generar la primera cotización, el sistema crea automáticamente el Cliente Genérico correspondiente. El alta fiscal completa se difiere al upgrade por CSF, no al alta del cliente en sí.
 
 ## Producto decorado (calca)
 
@@ -42,6 +52,16 @@ Una cotización cuyo producto lleva calca (decorado) activa un proceso de autori
 ## Prospecto convertido en cliente
 
 Un prospecto cuyo celular se dio de alta como cliente en Operam queda ligado a ese cliente, pero la conversión NO lo saca del seguimiento: la oportunidad permanece en Por Cotizar con la etiqueta "Ya es cliente — falta cotizar" hasta que una cotización la pase a Seguimiento (decisión 2026-06-11: la conversión real del negocio es la venta, no el alta; la cola vigila la fuga de altas que nunca cotizan).
+
+## Cliente genérico
+
+Cliente real en Operam, dado de alta con RFC genérico (`XAXX010101000` nacional, `XEXX010101000` extranjero) como marcador de "datos fiscales pendientes" — no un placeholder ni un segmento especial (ADR-0006). Nace en el servidor al generarse la primera cotización de una oportunidad que aún no tiene cliente en Operam, con nombre real del contacto y vendedor real; la cotización se sube a su nombre en el mismo momento, de forma atómica, y nunca se reasigna después.
+
+La certeza contra duplicados depende de que el cotizador sea el único punto de entrada de clientes genéricos, con deduplicación en capas: celular contra la base propia de prospectos (invariante 1 celular = 1 prospecto, más el registro de altas en Neon con mapeo celular → `customer_id`), nombre normalizado contra Operam (ADR-0001) y, en el upgrade, RFC exacto. Un alta genérica hecha manualmente en la UI de Operam, fuera del cotizador, queda fuera de esta garantía.
+
+Al llegar la Constancia de Situación Fiscal, el cliente genérico se actualiza (`PUT`), nunca se re-crea: es un upgrade con gate anti-fusión (si el RFC real ya existe en Operam con otro cliente, se frena y se avisa para fusión manual) y verificación posterior por el quirk conocido de Operam (`PUT` 200 que ignora campos en silencio).
+
+Higiene: reporte admin de clientes con RFC genérico sin actividad (≥6 meses), como candidatos a inactivación manual en Operam — Operam acepta múltiples clientes con el mismo RFC genérico, así que la acumulación no se detecta como error, solo se vigila.
 
 ## Visibilidad
 
@@ -79,11 +99,19 @@ Las cuatro etapas post-venta (Anticipo pagado, Pedido liberado, Saldo pagado, Pr
 
 El mapeo real de Operam (corre sobre FrontAccounting; ver `peltre-operam.md` §12 — las etiquetas del MCP `operam-api` están mal): la cadena post-venta se une por el campo `order_`/`order_no`. Tipos de transacción: **10 = factura** (con CFDI; de aquí salen los montos de pago `allocated`/`outstanding`/`total_amount`; el pago de cliente tipo 12 se aplica contra ella), **13 = remisión** (sin CFDI), **30 = pedido/Sales Order** (lo que devuelve `listar_pedidos`). Reglas: el pago se deriva de `allocated` vs `total` (el `outstanding` del listado de Operam no es fiable — sale ≠ 0 en facturas ya pagadas): anticipo pagado = `0 < allocated < total`; saldo pagado = `allocated >= total*0.99` (tolera 1% por error humano de pago de más/menos); pedido liberado = existe Sales Order (30); producto entregado = existe remisión (13). La etapa decorada respeta el gate de calca (#61) y el avance es monótono (no retrocede).
 
+**En el pipeline manda el cumplimiento, no la cobranza** (decisión de Adrián, issue #77): una remisión lleva la tarjeta a Producto entregado aunque el pago no esté registrado (la contadora lo captura a mano con días de desfase). La tarjeta entregada-impaga muestra el badge **"Pago sin registrar"** hasta que la señal de pago aparece (`allocated ~ total`), y sigue siendo candidata de reconciliación mientras el badge esté vivo — el pago tardío lo apaga; una entregada ya pagada es terminal para el sync.
+
 El sync corre por dos vías sobre el mismo motor de reconciliación (`lib/sync-operam-io.js`): un **webhook** de Operam (`POST /api/webhooks/operam`, auth por header secreto) tratado como mera señal — no se confía en su payload —, y una **reconciliación on-demand** (`POST /api/sync-operam`) como red de seguridad. Ambas leen el estado real por API (`listarTransacciones` por RFC + `listarPedidos` por cliente), normalizan a hechos y aplican el núcleo puro. El motor liga la oportunidad a su cadena por el número de pedido (`order_`) cuando se conoce (`data.orderOperam`); **el número de cotización nunca es igual al número de pedido en Operam**, así que el folio de la cotización (`folioOperam`) no sirve como `order_` (usarlo arriesgaría un falso match con el pedido de otra cadena). Sin `order_` explícito, agrega por cliente (correcto cuando el cliente tiene una sola oportunidad activa).
 
 ## Alta de cliente
 
 Proceso de registrar a un cliente nuevo en Operam con todos los campos requeridos por el SOP-COM-OPERAM-001: datos fiscales, configuración comercial, contacto y domicilio de entrega. La realiza el **vendedor**. Se considera completa cuando el cliente puede usarse para generar cotizaciones, pedidos y facturas sin correcciones posteriores.
+
+Tres caminos (todos desde el cotizador): el **cliente genérico** nace solo al generar la primera cotización (ADR-0006); el **upgrade fiscal** completa al genérico cuando llega la CSF (o por captura manual con mínimos: razón social, RFC, CP y régimen — para clientes que prefieren no compartir su constancia); el **alta completa** sin cotización vive en la vista Clientes ("+ → Nuevo cliente"). El contacto etiquetado "Invoices" para el envío automático de facturas NO es configurable por API (ADR-0002) y sigue siendo paso manual en la UI de Operam.
+
+## Vista Clientes
+
+Superficie de **mantenimiento de clientes** sin cotización de por medio (menú Más, issue #94): buscar un cliente (Operam + prospectos; los de RFC genérico se marcan en rojo), completar sus datos fiscales con CSF o captura manual, dar de alta un cliente completo, o saltar a cotizarle. Existe porque los casos "ya tengo los datos fiscales de un genérico" y "alta completa sin cotizar" son poco frecuentes pero reales, y antes obligaban a ir a la UI de Operam.
 
 ## Aprobación de pedido
 
@@ -91,7 +119,7 @@ Revisión final que hace **Adrián** antes de convertir una cotización en pedid
 
 ## Vendedor
 
-Actor que atiende prospectos, captura datos del cliente, crea el alta en Operam y genera cotizaciones. Usa el cotizador como herramienta principal — el alta de cliente (carga de CSF o captura manual) vive en el acordeon "+ Nuevo cliente" del propio cotizador, autenticado con el mismo JWT (ADR-0003; la herramienta standalone `csf-upload.html` fue retirada).
+Actor que atiende prospectos, captura datos del cliente y genera cotizaciones. Usa el cotizador como herramienta principal: en el paso Cliente elige "Ya lo conozco" (buscar en Operam o en sus prospectos) o "Contacto nuevo" (celular, nombre, ciudad, canal — issue #82); el cliente genérico en Operam nace solo al generar la primera cotización (issue #81, ADR-0006), sin paso de alta manual. Cuando llega la CSF, el vendedor la sube desde el chip "Fiscal" de la tarjeta del cliente (issue #85) o desde la vista Clientes sin abrir una cotización (issue #94); en ambos casos se actualiza (nunca se crea) el cliente genérico existente, con un banner que muestra contra quién. Todo autenticado con el mismo JWT (ADR-0003; la herramienta standalone `csf-upload.html` fue retirada).
 
 ## Nombre de cliente (CustName)
 

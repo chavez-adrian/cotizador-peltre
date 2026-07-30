@@ -1,8 +1,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 
 import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta } from '../lib/backfill-operam.mjs';
 
@@ -621,10 +622,11 @@ test('planearBackfill: SKIP pedido cancelado (order_no en cancelados, no se impo
   assert.equal(plan.foliosConPedido.has('1141'), true);
 });
 
-test('planearBackfill: entregado-IMPAGO se importa como producto_entregado + cobranza (#77)', async () => {
+test('planearBackfill: entregado-IMPAGO se importa como producto_entregado + pagoSinRegistrar (#77)', async () => {
   // #77: entregado pero pagado parcial -> SE importa (no es cerrado). La etapa refleja
   // el CUMPLIMIENTO (producto_entregado, la remision manda); la cobranza pendiente NO
-  // retrocede la etapa, se persiste en data.cobranza ('anticipo') para el badge.
+  // retrocede la etapa: se marca en data.pagoSinRegistrar (la forma de #77 que quedo en
+  // main) para que la tarjeta pinte el badge "Pago sin registrar".
   const { deps } = planDeps({
     pedidos: [PEDIDO],
     debtors: { '394': DEBTOR },
@@ -635,7 +637,7 @@ test('planearBackfill: entregado-IMPAGO se importa como producto_entregado + cob
   assert.equal(plan.importar.length, 1);
   assert.equal(plan.skips.cerrado, 0);
   assert.equal(plan.importar[0].etapa, 'producto_entregado');
-  assert.equal(plan.importar[0].data.cobranza, 'anticipo');
+  assert.equal(plan.importar[0].data.pagoSinRegistrar, true);
 });
 
 test('planearBackfill: SKIP cerrado para muestra $0 entregada (CRITERIO 2: total<=0 + remision)', async () => {
@@ -666,14 +668,15 @@ test('planearBackfill: muestra $0 SIN entregar se importa (pendiente de envio, s
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 1);
   assert.equal(plan.skips.cerrado, 0);
-  // $0 (muestra): la cobranza no aplica (no se factura) -> null, sin badge.
-  assert.equal(plan.importar[0].data.cobranza, null);
+  // $0 sin entregar: sin remision no hay entrega que cobrar -> sin badge.
+  assert.equal(plan.importar[0].data.pagoSinRegistrar, false);
 });
 
-test('planearBackfill: entregado SIN pago registrado -> producto_entregado + cobranza pendiente (#77, caso desfase)', async () => {
+test('planearBackfill: entregado SIN pago registrado -> producto_entregado + pagoSinRegistrar (#77, caso desfase)', async () => {
   // El caso tipico de #77: factura emitida (total>0) y producto entregado (remision),
   // pero el pago aun NO esta registrado (allocated 0 = desfase de la contadora). La
-  // etapa refleja el cumplimiento (producto_entregado) y la cobranza queda 'pendiente'
+  // etapa refleja el cumplimiento (producto_entregado) y el pago queda marcado como no
+  // registrado
   // -> el frontend pinta el badge "Pago sin registrar".
   const HECHOS_ENTREGADO_SINPAGO = { pago: { allocated: 0, outstanding: 100, total: 100 }, tienePedido: true, tieneRemision: true };
   const { deps } = planDeps({
@@ -685,7 +688,7 @@ test('planearBackfill: entregado SIN pago registrado -> producto_entregado + cob
   const plan = await planearBackfill(deps);
   assert.equal(plan.importar.length, 1);
   assert.equal(plan.importar[0].etapa, 'producto_entregado');
-  assert.equal(plan.importar[0].data.cobranza, 'pendiente');
+  assert.equal(plan.importar[0].data.pagoSinRegistrar, true);
 });
 
 test('planearBackfill: SKIP duplicado (folioOperam ya existe en el store)', async () => {
@@ -995,9 +998,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
-  return JSON.parse(readFileSync(COTS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(COTS_PATH));
 }
-function writeCots(data) { writeFileSync(COTS_PATH, JSON.stringify(data, null, 2)); }
+// OneDrive toma locks EBUSY sobre data/*.json mientras sincroniza (#117): todo acceso
+// del test pasa por lib/fs-reintento.js, nunca por fs directo.
+function writeCots(data) { escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2)); }
 
 let savedCots;
 before(() => { savedCots = readCots(); });

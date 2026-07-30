@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { etapaPostVenta, hechosDesdeOperam } from '../lib/sync-operam.js';
+import { etapaPostVenta, hechosDesdeOperam, pagoSinRegistrar } from '../lib/sync-operam.js';
 
 // Nucleo puro del sync post-venta con Operam (issue #62, AC3; CONTEXT.md
 // "Sincronizacion post-venta con Operam"). Estos tests prueban la funcion pura
@@ -21,6 +21,49 @@ test('etapaPostVenta devuelve producto_entregado si hay remision', () => {
     tieneRemision: true,
   };
   assert.equal(etapaPostVenta(hechos), 'producto_entregado');
+});
+
+test('etapaPostVenta: remision sola (sin pedido ni pago) ya es producto_entregado', () => {
+  // Issue #77: en el pipeline manda el cumplimiento (entrega), no la cobranza. Una
+  // remision alcanza producto_entregado aunque el pago no este registrado.
+  const hechos = {
+    pago: { allocated: 0, outstanding: 0, total: 0 },
+    tienePedido: false,
+    tieneRemision: true,
+  };
+  assert.equal(etapaPostVenta(hechos), 'producto_entregado');
+});
+
+// --- Pago sin registrar (issue #77): entregado pero pago aun no liquidado ---
+
+test('pagoSinRegistrar: hay remision y sin pago -> true (entregado impago)', () => {
+  const hechos = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: true, tieneRemision: true };
+  assert.equal(pagoSinRegistrar(hechos), true);
+});
+
+test('pagoSinRegistrar: hay remision con anticipo parcial -> true (aun no liquidado)', () => {
+  const hechos = { pago: { allocated: 300, outstanding: 700, total: 1000 }, tienePedido: true, tieneRemision: true };
+  assert.equal(pagoSinRegistrar(hechos), true);
+});
+
+test('pagoSinRegistrar: hay remision y factura liquidada -> false (el badge se apaga)', () => {
+  const hechos = { pago: { allocated: 1000, outstanding: 0, total: 1000 }, tienePedido: true, tieneRemision: true };
+  assert.equal(pagoSinRegistrar(hechos), false);
+});
+
+test('pagoSinRegistrar: liquidado dentro de la tolerancia del 1% -> false', () => {
+  const hechos = { pago: { allocated: 995, outstanding: 5, total: 1000 }, tienePedido: true, tieneRemision: true };
+  assert.equal(pagoSinRegistrar(hechos), false);
+});
+
+test('pagoSinRegistrar: sin remision -> false aunque haya pedido y anticipo', () => {
+  const hechos = { pago: { allocated: 300, outstanding: 700, total: 1000 }, tienePedido: true, tieneRemision: false };
+  assert.equal(pagoSinRegistrar(hechos), false);
+});
+
+test('pagoSinRegistrar tolera hechos vacios', () => {
+  assert.equal(pagoSinRegistrar({}), false);
+  assert.equal(pagoSinRegistrar(null), false);
 });
 
 // --- Regla: saldo_pagado (liquidado: outstanding 0 con total > 0) ---

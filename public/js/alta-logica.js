@@ -4,6 +4,8 @@
 // Existe para que ambos lados consuman la MISMA implementacion en vez de mantener
 // copias espejo que pueden divergir (ver architecture-review-cotizador-20260606.html).
 
+import { cpValido } from './cotizar-logica.js';
+
 export const CSF_DATOS_VACIOS = {
   rfc: '', razonSocial: '', nombreCorto: '', idcif: '', regimenFiscal: '',
   calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '',
@@ -106,6 +108,10 @@ export function separarTelefonoCodigo(telefono) {
 export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
+  { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
+  { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
+  { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion' },
+  { operam: 'segmento_id',         csf: 'segmentoId',     label: 'Segmento' },
   { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
@@ -122,17 +128,106 @@ export const DIFF_FISCAL_LABELS = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, labe
   return acc;
 }, {});
 
+// Resuelve el valor "nuevo" de un campo del diff/payload contra la CSF/manual.
+// Para la mayoria de los campos, ausente en csfDatos == el formulario de captura
+// no lo recolecta (ej. alta manual no tiene domicilio fiscal completo) -- NO es un
+// cambio real, se omite (undefined). Cuando SI esta presente pero vacio, y el campo
+// tiene `default` (issue #95 regla 2, Uso de CFDI), cae al default en vez de vaciar
+// el dato en Operam. `forzarDefault` es la excepcion de dominio de esa misma regla:
+// Uso de CFDI se manda SIEMPRE en el PUT, incluso si el formulario ni siquiera lo
+// capturo -- solo lo usa buildActualizarFiscalPayload; calcularDiffFiscal conserva
+// la semantica de "ausente != vacio" para no reportar diffs falsos contra clientes
+// de Operam que no traen ese campo crudo.
+function resolverValorNuevo({ csf, default: def }, csfDatos, { forzarDefault = false } = {}) {
+  const presente = csf in csfDatos;
+  if (!presente) return (forzarDefault && def !== undefined) ? def : undefined;
+  const crudo = csfDatos[csf];
+  if (crudo == null || crudo === '') return def !== undefined ? def : '';
+  return crudo;
+}
+
 export function calcularDiffFiscal(clienteOperam, csfDatos) {
   const diff = {};
-  for (const { operam, csf, label } of DIFF_FISCAL_CAMPOS) {
-    if (!(csf in csfDatos)) continue; // el formulario de captura no recolecta este campo (ej. alta manual no tiene domicilio fiscal completo) -- ausente != vacio, no es un cambio real
+  for (const campo of DIFF_FISCAL_CAMPOS) {
+    const nuevoValor = resolverValorNuevo(campo, csfDatos);
+    if (nuevoValor === undefined) continue;
+    const { operam, label } = campo;
     const anterior = String(clienteOperam[operam] == null ? '' : clienteOperam[operam]).trim();
-    const nuevo = String(csfDatos[csf] == null ? '' : csfDatos[csf]).trim();
+    const nuevo = String(nuevoValor).trim();
     if (anterior !== nuevo) {
       diff[operam] = { anterior, nuevo, label };
     }
   }
   return diff;
+}
+
+// Body del PUT del upgrade de CSF (issue #85): escribe los datos fiscales reales
+// (RFC, razon social, regimen, domicilio fiscal) sobre el cliente generico existente.
+// Recorre la MISMA tabla que calcularDiffFiscal para que lo enviado y lo verificado
+// sean simetricos. Omite campos que la CSF no recolecto (ausente != vacio): mandar
+// una cadena vacia nukearia en Operam un dato que el vendedor nunca tuvo oportunidad
+// de capturar.
+// notasActuales (issue #95 regla 5): las notas crudas del cliente en Operam ANTES
+// del PUT, solo necesarias cuando la CSF/formulario trae un Tax ID extranjero
+// capturado -- el caller (server.js) las lee con una relectura previa unicamente en
+// ese caso, para no pagar un GET extra en el camino comun.
+export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
+  const body = {};
+  for (const campo of DIFF_FISCAL_CAMPOS) {
+    const nuevoValor = resolverValorNuevo(campo, csfDatos, { forzarDefault: true });
+    if (nuevoValor === undefined) continue;
+    body[campo.operam] = nuevoValor;
+  }
+  // notasActuales === null significa que la relectura previa FALLO: no sabemos que
+  // notas tiene el cliente y mandar notes reconstruido desde vacio las pisaria. Se
+  // omite notes; la verificacion post-PUT reporta el Tax ID como no aplicado.
+  if (notasActuales !== null) {
+    const notas = buildNotasConTaxId(notasActuales, csfDatos.taxIdExtranjero);
+    if (notas !== undefined) body.notes = notas;
+  }
+  return body;
+}
+
+// Email de facturacion en el upgrade (fix de la revision de #95): el input
+// cl-email-factura es GLOBAL del flujo de cotizacion. Solo es confiable cuando el
+// upgrade se abrio desde el paso Cliente ('paso'), donde pertenece al mismo cliente
+// seleccionado; desde la vista Clientes (#94) puede traer el email de OTRO cliente
+// cotizado antes (fuga de contexto) y se descarta.
+export function emailFacturaParaUpgrade(origen, valor) {
+  if (origen !== 'paso') return undefined;
+  const v = String(valor || '').trim();
+  return v || undefined;
+}
+
+// Validacion de la pestana "Captura manual" (issue #95 regla 4). Decision de
+// Adrian: hay clientes que prefieren no compartir su CSF, asi que la captura
+// manual debe permitir dar de alta con el domicilio fiscal minimo: Razon Social,
+// RFC, Codigo Postal y Regimen Fiscal son los UNICOS obligatorios; calle, numero,
+// colonia y estado quedan opcionales (igual que en la tab CSF, que ya los trae del
+// PDF). El nombre corto (antes obligatorio en esta pestana) tambien pasa a
+// opcional -- no esta en la lista de minimos de la regla 4.
+export function validarAltaManualMinimos(datos) {
+  const d = datos || {};
+  if (!String(d.rfc || '').trim()) return 'El RFC es obligatorio';
+  if (!String(d.razonSocial || '').trim()) return 'La razon social es obligatoria';
+  if (!String(d.cp || '').trim()) return 'El codigo postal es obligatorio';
+  if (!String(d.regimenFiscal || '').trim()) return 'El regimen fiscal es obligatorio';
+  return null;
+}
+
+// Tax ID extranjero -> notas del cliente (issue #95 regla 5): no hay campo dedicado
+// en la API v3 de Operam para eso, asi que se antepone una linea con prefijo claro
+// a las notas EXISTENTES en Operam (nunca se sobreescriben: notas trae actividades
+// economicas, celular, email de facturacion, etc. -- ver buildClienteBody). Idempotente:
+// si la linea ya esta presente (reintento del upgrade) no la duplica. undefined si no
+// hay Tax ID capturado -- el caller no debe tocar el campo notes en ese caso.
+export function buildNotasConTaxId(notasActuales, taxIdExtranjero) {
+  const tax = String(taxIdExtranjero || '').trim();
+  if (!tax) return undefined;
+  const actual = String(notasActuales || '').trim();
+  const prefijo = `Tax ID: ${tax}`;
+  if (actual.includes(prefijo)) return actual;
+  return actual ? `${prefijo}\n${actual}` : prefijo;
 }
 
 export function buildDiffFiscalHtml(diff) {
@@ -179,6 +274,32 @@ export function buildDedupExactoConDiffHtml(cliente, csfDatos) {
   if (!csfDatos) return base;
   const diff = calcularDiffFiscal(cliente, csfDatos);
   return base + buildDiffFiscalHtml(diff);
+}
+
+// Candidatos por RFC generico cuando llega una CSF con RFC REAL (issue #78):
+// el cliente pudo darse de alta antes sin CSF. A diferencia de la rama generica
+// de ADR-0001 (buildDedupCandidatosHtml en helpers.cjs -- vendedor NUNCA puede
+// crear nuevo, debe elegir uno o escalar), aqui el RFC de entrada YA es real:
+// "Crear nuevo" es un camino legitimo si el candidato resulta ser otra empresa.
+// "Actualizar este" dispara el upgrade fiscal existente de #85 sobre ese
+// customer_id con los datos de la CSF ya parseada.
+export function buildCandidatosRfcGenericoHtml(candidatos) {
+  if (!Array.isArray(candidatos) || candidatos.length === 0) return '';
+  const filas = candidatos.map(c => {
+    const nombre = c.CustName || c.cust_ref || 'Sin nombre';
+    const senal = c._telefonoMatch ? 'telefono coincide' : 'nombre similar';
+    return (
+      '<div class="candidato-generico-fila">' +
+      '<p><strong>' + nombre + '</strong> (' + (c.cust_ref || '') + ') &middot; ' + senal + '</p>' +
+      '<button type="button" class="btn btn-secondary" onclick="altaCandidatoActualizar(' + c.id + ')">Actualizar este</button> ' +
+      '<button type="button" class="btn btn-secondary" onclick="altaCandidatoCrearNuevo()">Crear nuevo</button>' +
+      '</div>'
+    );
+  }).join('');
+  return '<div class="dedup-candidatos-generico">' +
+    '<p class="dedup-alerta-naranja">Este contacto coincide con un cliente ya existente en Operam (dado de alta sin RFC)</p>' +
+    filas +
+    '</div>';
 }
 
 // === Estado compartido alta -> cotizador (issue #69) ===
@@ -235,10 +356,264 @@ export function mensajeBusquedaCelular(clasificacion) {
   return { encontrado: false, tipo: c.tipo || 'libre', mensaje: '' };
 }
 
+// === Paso Cliente variante B (issue #82; entrega diferida al paso Envio en #84) ===
+//
+// Toda la logica decisional del rediseno del paso Cliente vive aqui (el render de
+// app.js es tonto): mezcla de busqueda Operam+prospectos, derivacion de recientes,
+// estado de chips (tri-estado de Entrega, #84), payload del contacto nuevo y
+// guardrails del celular. Ver CONTEXT.md.
+
+const RFC_GENERICOS_BROWSER = new Set(['XAXX010101000', 'XEXX010101000']);
+
+// Un RFC generico (XAXX/XEXX del SAT) marca a un cliente como "pendiente fiscal":
+// se dio de alta sin CSF y puede actualizarse con datos fiscales reales (#85/#94).
+export function esRfcGenerico(rfc) {
+  return RFC_GENERICOS_BROWSER.has(String(rfc || '').toUpperCase().trim());
+}
+
+// customer_id de Operam contra el que se puede hacer el upgrade fiscal (#85/#94):
+// cliente Operam -> su id; prospecto ya ligado a un generico -> clienteOperamId;
+// contacto nuevo / prospecto sin cotizar -> null (aun no hay cliente en Operam).
+// Fuente unica compartida por el paso Cliente (pcCustomerIdFiscal) y la vista
+// Clientes (cvAbrirUpgrade) -- extender, no copiar.
+export function customerIdFiscal(cliente) {
+  const c = cliente || {};
+  if (c.tipo === 'operam') return c.id != null ? c.id : null;
+  if (c.tipo === 'prospecto') return c.clienteOperamId != null ? c.clienteOperamId : null;
+  return null;
+}
+
+// El boton "Completar datos fiscales (CSF)" (y el chip Fiscal accionable) proceden
+// solo cuando el RFC sigue pendiente (generico/vacio) Y hay un cliente en Operam
+// contra el cual hacer el PUT del upgrade. Misma regla que el chip Fiscal del paso
+// Cliente (chipsCompletitud.fiscal + customerIdFiscal).
+export function mostrarBotonCsf(cliente) {
+  return !chipsCompletitud(cliente).fiscal && customerIdFiscal(cliente) != null;
+}
+
+// Un contacto nuevo (persona detras de un celular) y un prospecto se normalizan al
+// MISMO objeto cliente que consume seleccionarClienteOperam (name/ref/telefono/...),
+// para que el prellenado de los campos cl-* y el gate #81 (necesitaAltaGenerica:
+// razonSocial||nombreCorto Y telefono) sirvan igual por los tres caminos. La ciudad
+// va a `municipio` como pista para estimar envio; el domicilio de entrega (CP+pais)
+// se difiere al bloque opcional de la tarjeta (migra al paso Envio en #84).
+export function buildClienteDesdeContactoNuevo(campos) {
+  const c = campos || {};
+  const nombre = (c.nombre || '').trim();
+  const ciudad = (c.ciudad || '').trim();
+  return {
+    tipo: 'nuevo',
+    id: null,
+    name: nombre,
+    ref: nombre,
+    rfc: '',
+    telefono: c.telefono || '',
+    municipio: ciudad,
+    ciudad,
+    pais: c.pais || 'MX',
+    canal: c.canal || '',
+    email: c.email || '',
+  };
+}
+
+export function clienteDesdeProspecto(prospecto) {
+  const p = prospecto || {};
+  const ciudad = p.ciudad || '';
+  return {
+    tipo: 'prospecto',
+    id: null,
+    prospectoId: p.id != null ? p.id : null,
+    // customer_id del cliente generico si el prospecto ya cotizo (ligarCliente, #81):
+    // destino del PUT del upgrade fiscal (#85). null = nunca cotizo, no hay contra que actualizar.
+    clienteOperamId: (p.data && p.data.cliente_id != null) ? p.data.cliente_id : null,
+    name: p.nombre || '',
+    ref: p.nombre || '',
+    rfc: '',
+    telefono: p.celular || '',
+    municipio: ciudad,
+    ciudad,
+    pais: 'MX',
+    etapa: p.etapa || '',
+    email: (p.data && p.data.correo) || '',
+  };
+}
+
+function normalizarOperam(c) {
+  return {
+    tipo: 'operam', id: c.id, nombre: c.name || '', rfc: c.rfc || '', ref: c.ref || '',
+    telefonos: c.telefonos || (c.telefono ? [c.telefono] : []),
+    sub: c.rfc || '', raw: c,
+  };
+}
+
+function normalizarProspecto(p) {
+  return {
+    tipo: 'prospecto', id: p.id, nombre: p.nombre || '',
+    ciudad: p.ciudad || '', celular: p.celular || '', etapa: p.etapa || '',
+    sub: [p.ciudad, p.celular].filter(Boolean).join(' - '), raw: p,
+  };
+}
+
+// Un solo buscador que encuentra a la vez clientes de Operam y prospectos del
+// vendedor, distinguibles por tipo (AC2). Query < 2 chars -> [] (el caller muestra
+// recientes). Operam matchea por razon social, RFC, nombre corto (cust_ref, #97) o
+// telefono de cualquier contacto (#97, digitos); el prospecto por nombre, ciudad o
+// los digitos del celular. Ordena coincidencias por prefijo antes que internas
+// (mezcla los tipos, no los agrupa: "distinguibles" no es "separados").
+export function mezclarResultadosBusqueda(clientesOperam, prospectos, query) {
+  const q = String(query || '').toLowerCase().trim();
+  if (q.length < 2) return [];
+  const qDigitos = q.replace(/\D/g, '');
+  const filas = [
+    ...(clientesOperam || []).map(normalizarOperam).filter(r =>
+      r.nombre.toLowerCase().includes(q) ||
+      r.rfc.toLowerCase().includes(q) ||
+      r.ref.toLowerCase().includes(q) ||
+      // >=8 digitos (formato "sin lada" en adelante, ver indice-telefonos.js): con
+      // menos, un fragmento corto empataria demasiados telefonos del catalogo completo.
+      (qDigitos.length >= 8 && r.telefonos.some(t => t.replace(/\D/g, '').includes(qDigitos)))),
+    ...(prospectos || []).map(normalizarProspecto).filter(r =>
+      r.nombre.toLowerCase().includes(q) ||
+      r.ciudad.toLowerCase().includes(q) ||
+      (qDigitos.length >= 2 && r.celular.replace(/\D/g, '').includes(qDigitos))),
+  ];
+  return filas.sort((a, b) => {
+    const pa = a.nombre.toLowerCase().startsWith(q) ? 0 : 1;
+    const pb = b.nombre.toLowerCase().startsWith(q) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    return a.nombre.localeCompare(b.nombre);
+  });
+}
+
+// Los ultimos clientes/prospectos cotizados por el vendedor, derivados de
+// GET /api/cotizaciones (cada entrada: { id, fecha, cliente, telefono }). Deduplica
+// por nombre (conserva la mas reciente), ordena por fecha desc y recorta al limite.
+export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
+  const ordenadas = (cotizaciones || [])
+    .filter(c => c && (c.cliente || '').trim())
+    .slice()
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const vistos = new Set();
+  const out = [];
+  for (const c of ordenadas) {
+    const clave = c.cliente.trim().toLowerCase();
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    out.push({ nombre: c.cliente, telefono: c.telefono || '', cotizacionId: c.id, fecha: c.fecha });
+    if (out.length >= limite) break;
+  }
+  return out;
+}
+
+// Estado de los chips de completitud de la tarjeta (AC6/#82; tri-estado de
+// Entrega extendido en #84), desde datos reales:
+//  - Contacto: nombre resoluble (name||ref) Y telefono (lo minimo para cotizar).
+//  - Entrega: tri-estado -- 'pendiente' (sin CP valido), 'cp' (CP+pais validos,
+//    sin Calle) o 'completo' (CP+pais validos y Calle). El domicilio se captura
+//    en el paso Envio (#84); Operam ya lo trae con el cliente.
+//  - Fiscal: RFC real (presente y NO generico -- el generico ES "pendiente fiscal").
+export function chipsCompletitud(cliente) {
+  const c = cliente || {};
+  const nombre = (c.name || c.ref || '').trim();
+  const telefono = (c.telefono || '').trim();
+  const cp = (c.cp || c.cpEntrega || '').trim();
+  const pais = (c.pais || '').trim();
+  const calle = (c.calle || '').trim();
+  const rfc = (c.rfc || '').toUpperCase().trim();
+  const cpOk = !!(cp && pais && cpValido(cp, pais));
+  return {
+    contacto: !!(nombre && telefono),
+    entrega: cpOk ? (calle ? 'completo' : 'cp') : 'pendiente',
+    fiscal: !!(rfc && !RFC_GENERICOS_BROWSER.has(rfc)),
+  };
+}
+
+// Decide que hacer cuando, en el camino "Contacto nuevo", se clasifica el celular
+// (GET /api/prospectos/clasificar) al blur (AC3/AC4, #69, CONTEXT.md "Visibilidad"):
+//  - cliente Operam  -> cotizar sobre ese cliente (se busca por nombre en Operam).
+//  - prospecto propio -> usar ese prospecto (no se duplica; 1 celular = 1 prospecto).
+//  - prospecto ajeno  -> bloquear la captura indicando quien lo atiende.
+//  - libre/nulo       -> crear normalmente.
+export function accionCelularContactoNuevo(clasificacion, usuarioActual) {
+  const c = clasificacion || {};
+  const msg = mensajeBusquedaCelular(c);
+  if (c.tipo === 'cliente') {
+    return { accion: 'cotizar_cliente', tipo: 'cliente', cust_name: msg.encontrado ? (c.cust_name || (c.cliente && c.cliente.cust_name) || '') : '', mensaje: msg.mensaje };
+  }
+  if (c.tipo === 'prospecto') {
+    const vendedor = (c.prospecto && c.prospecto.vendedor) || '';
+    const ajeno = vendedor && usuarioActual && vendedor !== usuarioActual;
+    return { accion: ajeno ? 'bloquear' : 'usar_prospecto', tipo: 'prospecto', prospecto: c.prospecto || null, mensaje: msg.mensaje };
+  }
+  return { accion: 'crear', tipo: 'libre', mensaje: '' };
+}
+
+// Que renderiza el camino "Ya lo conozco" tras teclear: recientes (query corta),
+// la lista de resultados, o la oferta de crear el contacto (sin resultados, AC).
+export function decidirVistaTrasBusqueda(query, resultados) {
+  if (String(query || '').trim().length < 2) return 'recientes';
+  return (resultados && resultados.length) ? 'resultados' : 'crear';
+}
+
+// Decision ante el 409 de POST /api/prospectos, por el campo estructurado `tipo`
+// del server (#82) -- NUNCA parseando el string de error (el mensaje de "es un
+// cliente" contiene la palabra "prospecto"; cualquier regex se rompe con el copy).
+// Sin tipo reconocible se bloquea: fail-safe, no se crea un contacto fantasma
+// sobre un estado desconocido.
+export function accionProspecto409(data) {
+  const d = data || {};
+  if (d.tipo === 'cliente') {
+    return { accion: 'cotizar_cliente', cust_name: d.cust_name || '', mensaje: d.error || 'Este celular ya es un cliente en Operam' };
+  }
+  if (d.tipo === 'prospecto_propio') {
+    return { accion: 'usar_prospecto', prospecto: d.prospecto || null, mensaje: d.error || '' };
+  }
+  return { accion: 'bloquear', mensaje: d.error || 'No se pudo guardar el contacto' };
+}
+
+// Pais del contacto a partir del codigo de marcado del select. +1 y +1-CA
+// comparten el codigo real +1 pero son paises distintos: el CP canadiense
+// (K1A 0A9) solo valida con pais CA (cpValido, #71). "Otro" y vacio caen a MX
+// (default del negocio; el select de pais de entrega solo tiene MX/US/CA).
+export function paisDesdeCodigoTelefono(code) {
+  if (code === '+1') return 'US';
+  if (code === '+1-CA') return 'CA';
+  return 'MX';
+}
+
 // Construye el body de POST /api/crear-cliente a partir de los datos fiscales (CSF),
 // los campos comerciales capturados y el domicilio de entrega. customerId/branchId
 // no nulos indican un reintento (issue #?): se reenvian para que el backend continue
 // donde quedo en vez de crear un cliente duplicado.
+// === Selector de contactos de entrega en el paso Envio (issue #99) ===
+//
+// Antes, el paso Envio prellenaba telefono/correo de entrega tomando el primer valor
+// "suelto" que encontrara (branch o primer contacto del cliente), sin decir a quien
+// pertenecia (caso real: GRUPO URUGUAYO MINAS, 4 contactos a nivel cliente y 0 a nivel
+// domicilio -- la app prellenaba un telefono y un correo de personas distintas sin
+// atribucion). Esta funcion arma la lista COMPLETA de candidatos con nombre visible,
+// para que el vendedor elija a quien entregar en vez de heredar un dato huerfano.
+// El contacto propio del domicilio (branch) va primero porque es el mas especifico
+// a esa direccion; los contactos del cliente (contacts[], con su tag de Operam:
+// general/invoice/delivery) le siguen en el orden que trae la API.
+export function contactosEntregaDisponibles(domicilio, contactosCliente) {
+  const lista = [];
+  const d = domicilio || {};
+  if (d.contacto || d.telefono || d.email) {
+    lista.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '' });
+  }
+  for (const c of contactosCliente || []) {
+    if (c && (c.nombre || c.telefono || c.email)) lista.push(c);
+  }
+  return lista;
+}
+
+const TAGS_CONTACTO = { general: 'General', invoice: 'Facturacion', delivery: 'Entrega', domicilio: 'Domicilio' };
+
+export function etiquetaTagContacto(tag) {
+  return TAGS_CONTACTO[tag] || tag || '';
+}
+
 export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId) {
   return {
     tax_id: csfDatos.rfc || '',

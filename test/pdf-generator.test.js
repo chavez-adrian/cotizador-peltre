@@ -51,3 +51,119 @@ test('B6: (#71 AC1) el PDF pinta leyendaDomicilio cuando esta presente', async (
   // PDFKit kern-splittea "confirmar"; "domicilio" es una palabra contigua fiable de la leyenda
   assert.ok(text.includes(toHex('domicilio')), 'leyenda de domicilio no encontrada en el PDF');
 });
+
+// === #84 AC4: entrega ausente/parcial/completa, sin secciones vacias ni "undefined" ===
+
+test('B7: (#84) entrega totalmente ausente -> PDF sin "undefined", con la leyenda', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { razonSocial: 'Cliente Test', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' },
+  });
+  const text = result.toString('latin1');
+  assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
+  assert.ok(text.includes(toHex('domicilio')), 'debe traer la leyenda de confirmacion');
+});
+
+test('B8: (#84) entrega parcial (solo CP) -> muestra el CP y la leyenda, sin "undefined"', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { cpEntrega: '06600', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' },
+  });
+  const text = result.toString('latin1');
+  assert.ok(text.includes(toHex('06600')), 'debe mostrar el CP capturado');
+  assert.ok(text.includes(toHex('domicilio')), 'debe traer la leyenda de confirmacion');
+  assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
+});
+
+test('B9: (#84) entrega parcial (solo ciudad/municipio) -> muestra el municipio y la leyenda', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { municipio: 'Puebla', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega' },
+  });
+  const text = result.toString('latin1');
+  // PDFKit kern-splits "Puebla" entre 'b' y 'l'; "Pueb" es un prefijo contiguo fiable
+  assert.ok(text.includes(toHex('Pueb')), 'debe mostrar el municipio capturado');
+  assert.ok(text.includes(toHex('domicilio')), 'debe traer la leyenda de confirmacion');
+  assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
+});
+
+test('B10: (#84) entrega completa -> no imprime la leyenda de confirmacion', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { calle: 'Reforma 100', cpEntrega: '06600', municipio: 'CDMX', leyendaDomicilio: '' },
+  });
+  const text = result.toString('latin1');
+  assert.ok(!text.includes(toHex('domicilio')), 'no debe traer la leyenda cuando la entrega esta completa');
+  assert.ok(!text.includes(toHex('undefined')), 'no debe imprimir "undefined"');
+});
+
+// === #70 paridad de diseno PDF vs HTML ===
+
+test('B11: (#70) header muestra el correo de la empresa, no la URL del sitio', async () => {
+  const result = await generateQuotePDF({ _compress: false });
+  const text = result.toString('latin1');
+  assert.ok(text.includes(toHex('contacto')), 'debe mostrar el correo contacto@pppeltre.mx');
+});
+
+test('B12: (#70) los totales no llevan signo de pesos (formato HTML)', async () => {
+  const result = await generateQuotePDF({ _compress: false, subtotal: 100, iva: 16, total: 116 });
+  const text = result.toString('latin1');
+  assert.ok(!text.includes(toHex('$ 116')), 'TOTAL no debe llevar "$ " (formato HTML sin simbolo)');
+  assert.ok(text.includes(toHex('116.00')), 'debe mostrar el monto del TOTAL');
+});
+
+test('B13: (#70) Telefono y Correo aparecen en la misma linea de "Datos de entrega" (formato HTML)', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { celEntrega: '5512345678', emailEntrega: 'cliente@test.com' },
+  });
+  const text = result.toString('latin1');
+  // PDFKit kern-splits antes de "Correo"; "5512345678 ," (numero + coma que
+  // separa Tel de Correo) es un fragmento contiguo fiable que solo aparece si
+  // ambos van en la misma llamada .text() (misma linea, como el HTML)
+  assert.ok(text.includes(toHex('5512345678 ,')), 'Tel y Correo deben ir en la misma linea, como el HTML');
+  assert.ok(text.includes(toHex('Correo:')), 'debe incluir la etiqueta Correo:');
+});
+
+test('B14: (#70) Referencia Cliente prefiere c.referencia sobre c.nombreCorto (igual que el HTML)', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { referencia: 'REF-1', nombreCorto: 'Corto' },
+  });
+  const text = result.toString('latin1');
+  // PDFKit kern-splits "Referencia" tras "Ref"; "Ref" es un prefijo contiguo fiable
+  assert.ok(text.includes(toHex('Ref')) && text.includes(toHex('REF-1')), 'debe preferir c.referencia cuando ambos estan presentes');
+  assert.ok(!text.includes(toHex('Corto')), 'no debe mostrar nombreCorto cuando referencia esta presente');
+});
+
+test('B15: (#70) telefonoEntrega (campo muerto) no dispara la linea de telefono (paridad con HTML)', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { telefonoEntrega: '9998887777' },
+  });
+  const text = result.toString('latin1');
+  // El HTML solo considera celEntrega/emailEntrega (linea 216); telefonoEntrega
+  // no existe en el modelo actual (nada lo produce) y no debe renderizarse
+  assert.ok(!text.includes(toHex('9998887777')), 'telefonoEntrega no debe aparecer: el HTML no lo considera');
+});
+
+// === #101: pagina fantasma y contador de paginas ===
+
+function countPages(text) {
+  const matches = text.match(/\/Type\s*\/Page(?!s)/g) || [];
+  return matches.length;
+}
+
+test('B16: (#101) una cotizacion que cabe en una hoja genera un PDF de una sola pagina fisica', async () => {
+  const result = await generateQuotePDF({ _compress: false });
+  const text = result.toString('latin1');
+  assert.equal(countPages(text), 1, 'no debe generar una segunda pagina en blanco');
+});
+
+test('B17: (#101) el contador "Pagina X de Y" coincide con el numero real de paginas', async () => {
+  const result = await generateQuotePDF({ _compress: false });
+  const text = result.toString('latin1');
+  const paginasReales = countPages(text);
+  // PDFKit kern-splits "Pagina"; "1 de N" es el fragmento contiguo fiable
+  assert.ok(text.includes(toHex(`1 de ${paginasReales}`)), `debe imprimir "Pagina 1 de ${paginasReales}"`);
+});

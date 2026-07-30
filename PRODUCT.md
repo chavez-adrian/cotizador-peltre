@@ -16,6 +16,8 @@ Herramienta interna para crear cotizaciones de productos de peltre esmaltado, ca
 
 Más allá de la cotización, la herramienta gestiona el **pipeline comercial completo** —de prospecto a producto entregado— en un tablero único con cola de trabajo diaria, y mantiene las etapas post-venta (anticipo, pedido liberado, saldo, entrega) **sincronizadas automáticamente con el ERP (Operam)** para que el vendedor no capture lo mismo dos veces. La cotización rápida sigue siendo el corazón; el pipeline le da seguimiento sin fricción.
 
+El principio de captura es **diferir todo lo que no sea indispensable para cotizar**: un contacto nuevo se crea con solo celular, nombre y ciudad; el cliente en el ERP nace solo (con datos reales pero RFC genérico) al generar la primera cotización, sin alta manual; la dirección de entrega se pide hasta el paso de envío; los datos fiscales completos solo cuando el cliente manda su Constancia de Situación Fiscal. El vendedor nunca le pide al cliente en campo un dato que todavía no hace falta.
+
 ## Brand Personality
 
 Artesanal · Mexicano · Cálido

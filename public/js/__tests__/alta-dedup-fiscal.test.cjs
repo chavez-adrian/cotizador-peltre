@@ -5,8 +5,11 @@ const assert = require('node:assert/strict');
 let calcularDiffFiscal;
 let buildDiffFiscalHtml;
 let buildDedupExactoConDiffHtml;
+let buildActualizarFiscalPayload;
+let buildCandidatosRfcGenericoHtml;
+let buildNotasConTaxId;
 before(async () => {
-  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml } = await import('../alta-logica.js'));
+  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalPayload, buildCandidatosRfcGenericoHtml, buildNotasConTaxId } = await import('../alta-logica.js'));
 });
 
 // === calcularDiffFiscal ===
@@ -112,12 +115,12 @@ test('G7: calcularDiffFiscal trata valores null/undefined del cliente Operam com
   assert.ok(!('CustName' in diff), 'sin diferencia real no debe aparecer en el diff');
 });
 
-test('G7b: calcularDiffFiscal omite campos de domicilio que el formulario de captura no recolecta (alta manual no tiene calle/numExt/numInt/colonia)', () => {
-  // altaManualLeerFormulario no incluye calle/numExt/numInt/colonia (esos campos solo
-  // existen en el formulario de CSF). altaState.datos para un alta manual por lo tanto
-  // NO TIENE esas llaves -- ausentes, no vacias. calcularDiffFiscal no debe reportarlas
-  // como "cambio a (vacio)" porque el vendedor nunca tuvo oportunidad de capturarlas;
-  // eso seria un falso positivo que generaria friccion y confusion (rompe AC1: "diff claro").
+test('G7b: calcularDiffFiscal omite campos de domicilio ausentes en la CSF/formulario capturado (ausente != vacio)', () => {
+  // Desde la regla 4 de #95, altaManualLeerFormulario SI incluye calle/numExt/numInt/
+  // colonia (opcionales en la pestana manual). Pero siguen pudiendo faltar en formularios
+  // viejos/parciales -- calcularDiffFiscal no debe reportarlos como "cambio a (vacio)"
+  // cuando la llave esta simplemente ausente del objeto capturado; eso seria un falso
+  // positivo que generaria friccion y confusion (rompe AC1: "diff claro").
   const csfDatosDeAltaManual = {
     rfc: 'PNA010203ABC',
     razonSocial: 'Peltre Nacional SA de CV',
@@ -142,7 +145,195 @@ test('G7c: calcularDiffFiscal SI reporta domicilio vacio cuando el campo fue cap
   assert.equal(diff.street.nuevo, '');
 });
 
-// === buildDiffFiscalHtml ===
+// === buildActualizarFiscalPayload ===
+// Body del PUT /api/actualizar-cliente-fiscal/:id (upgrade de CSF, issue #85):
+// recorre DIFF_FISCAL_CAMPOS y arma { [campoOperam]: csfDatos[csf] } para escribir
+// los datos fiscales reales sobre el cliente generico existente. Es la MISMA tabla
+// que calcularDiffFiscal, para que lo que se manda y lo que se verifica sean simetricos.
+
+test('U1: buildActualizarFiscalPayload mapea los datos de la CSF a nombres de campo de Operam', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.equal(body.CustName, 'Peltre Nacional SA de CV');
+  assert.equal(body.tax_id, 'PNA010203ABC');
+  assert.equal(body.idcif, 'IDCIF123');
+  assert.equal(body.street, 'Reforma');
+  assert.equal(body.street_number, '100');
+  assert.equal(body.suite_number, 'A');
+  assert.equal(body.district, 'Juarez');
+  assert.equal(body.postal_code, '06600');
+  assert.equal(body.city, 'CDMX');
+  assert.equal(body.state, 'CDMX');
+  assert.equal(body.cfdi_regimen_fiscal, '601');
+});
+
+test('U2: buildActualizarFiscalPayload NO incluye llaves de DOM ni campos ajenos a la tabla fiscal', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('razonSocial' in body), 'no debe filtrar la llave csf cruda');
+  assert.ok(!('rfc' in body), 'no debe filtrar la llave csf cruda');
+  assert.ok(!('sales_type' in body), 'no debe inventar campos comerciales');
+});
+
+test('U3: buildActualizarFiscalPayload omite campos que la CSF no recolecto (ausente != vacio)', () => {
+  const csfSinDomicilio = {
+    rfc: 'PNA010203ABC', razonSocial: 'Peltre Nacional SA de CV', idcif: 'IDCIF123',
+    cp: '06600', municipio: 'CDMX', estado: 'CDMX', regimenFiscal: '601',
+  };
+  const body = buildActualizarFiscalPayload(csfSinDomicilio);
+  assert.ok(!('street' in body), 'sin calle capturada no debe mandar street vacio (nukearia el dato en Operam)');
+  assert.ok(!('district' in body));
+  assert.equal(body.tax_id, 'PNA010203ABC');
+  assert.equal(body.postal_code, '06600');
+});
+
+test('U4: buildActualizarFiscalPayload es simetrico con calcularDiffFiscal: el diff contra el payload aplicado es vacio', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  const diff = calcularDiffFiscal(body, csfDatosIguales);
+  assert.deepEqual(diff, {}, 'lo que se manda al PUT debe verificar sin diferencias');
+});
+
+// === Regla 1 (issue #95): nombre corto (cust_ref) viaja en el upgrade fiscal ===
+// Antes cust_ref no estaba en DIFF_FISCAL_CAMPOS: el vendedor lo capturaba en
+// csf-nombre-corto/manual-nombre-corto y se descartaba silenciosamente al confirmar
+// un upgrade (gap #11 de MAPEO_CAMPOS_CLIENTE.md).
+
+test('R1: calcularDiffFiscal detecta cambio en el nombre corto (cust_ref)', () => {
+  const csfDatos = { ...csfDatosIguales, nombreCorto: 'Peltre Nal' };
+  const cliente = { ...clienteOperamBase, cust_ref: 'Otro Alias' };
+  const diff = calcularDiffFiscal(cliente, csfDatos);
+  assert.ok('cust_ref' in diff, 'debe usar cust_ref como llave (nombre de campo Operam)');
+  assert.equal(diff.cust_ref.anterior, 'Otro Alias');
+  assert.equal(diff.cust_ref.nuevo, 'Peltre Nal');
+});
+
+test('R2: buildActualizarFiscalPayload incluye cust_ref cuando la CSF trae nombreCorto', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, nombreCorto: 'Peltre Nal' });
+  assert.equal(body.cust_ref, 'Peltre Nal');
+});
+
+test('R3: buildActualizarFiscalPayload omite cust_ref si el formulario no recolecto nombreCorto (ausente != vacio)', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('cust_ref' in body));
+});
+
+// === Regla 2 (issue #95): Uso de CFDI se manda SIEMPRE, default S01 ===
+// A diferencia de los demas campos (ausente != vacio, no se manda si el formulario
+// no lo recolecto), el Uso de CFDI es una excepcion de dominio: el vendedor puede
+// no haberlo especificado y aun asi debe viajar con el default "Sin efectos
+// fiscales" en vez de quedar fuera del PUT (gap #13 de MAPEO_CAMPOS_CLIENTE.md).
+
+test('R4: buildActualizarFiscalPayload manda timbrado_uso_cfdi con el valor capturado', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, usoCfdi: 'G01' });
+  assert.equal(body.timbrado_uso_cfdi, 'G01');
+});
+
+test('R5: buildActualizarFiscalPayload default S01 cuando usoCfdi viene vacio', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, usoCfdi: '' });
+  assert.equal(body.timbrado_uso_cfdi, 'S01');
+});
+
+test('R6: buildActualizarFiscalPayload default S01 cuando usoCfdi ni siquiera se capturo (a diferencia de los demas campos, SI se manda)', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.equal(body.timbrado_uso_cfdi, 'S01');
+});
+
+test('R7: calcularDiffFiscal compara timbrado_uso_cfdi tomando en cuenta el default S01', () => {
+  const clienteConOtroUso = { ...clienteOperamBase, timbrado_uso_cfdi: 'G03' };
+  const diff = calcularDiffFiscal(clienteConOtroUso, { ...csfDatosIguales, usoCfdi: 'S01' });
+  assert.equal(diff.timbrado_uso_cfdi.anterior, 'G03');
+  assert.equal(diff.timbrado_uso_cfdi.nuevo, 'S01');
+});
+
+// === Regla 3 (issue #95): email de facturacion viaja en el upgrade fiscal ===
+// Limitacion de plataforma (ADR-0002): los contactos no son configurables via API
+// v3 (POST /contacts 501, PUT con array contacts se ignora). Lo automatizable es
+// persistir el correo en invoice_email del cliente (gap #14 de MAPEO_CAMPOS_CLIENTE.md).
+
+test('R8: buildActualizarFiscalPayload incluye invoice_email cuando se capturo', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, invoiceEmail: 'facturacion@peltre.mx' });
+  assert.equal(body.invoice_email, 'facturacion@peltre.mx');
+});
+
+test('R9: buildActualizarFiscalPayload omite invoice_email si no se capturo (ausente != vacio)', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('invoice_email' in body));
+});
+
+test('R10: calcularDiffFiscal detecta cambio de invoice_email', () => {
+  const cliente = { ...clienteOperamBase, invoice_email: 'viejo@peltre.mx' };
+  const diff = calcularDiffFiscal(cliente, { ...csfDatosIguales, invoiceEmail: 'nuevo@peltre.mx' });
+  assert.equal(diff.invoice_email.anterior, 'viejo@peltre.mx');
+  assert.equal(diff.invoice_email.nuevo, 'nuevo@peltre.mx');
+});
+
+// === Regla 5 (issue #95): Tax ID extranjero se guarda en notas ===
+// No hay campo dedicado en la API v3 de Operam para Tax ID extranjero (se requiere
+// para documentacion de exportacion). Decision de Adrian: va al campo de notas del
+// cliente, con un prefijo claro y SIN borrar notas existentes.
+
+test('N1: buildNotasConTaxId sin notas previas antepone la linea Tax ID', () => {
+  const notas = buildNotasConTaxId('', 'US123456789');
+  assert.equal(notas, 'Tax ID: US123456789');
+});
+
+test('N2: buildNotasConTaxId con notas previas las conserva, agregando la linea Tax ID al inicio', () => {
+  const notas = buildNotasConTaxId('Actividades economicas (CSF 2026-01-01):\n- Comercio', 'US123456789');
+  assert.equal(notas, 'Tax ID: US123456789\nActividades economicas (CSF 2026-01-01):\n- Comercio');
+});
+
+test('N3: buildNotasConTaxId sin taxIdExtranjero retorna undefined (no toca notas)', () => {
+  assert.equal(buildNotasConTaxId('Notas previas', ''), undefined);
+  assert.equal(buildNotasConTaxId('Notas previas', null), undefined);
+  assert.equal(buildNotasConTaxId('Notas previas', undefined), undefined);
+});
+
+test('N4: buildNotasConTaxId no duplica la linea si ya esta presente (reintento idempotente)', () => {
+  const yaTiene = 'Tax ID: US123456789\nActividades economicas (CSF 2026-01-01):\n- Comercio';
+  const notas = buildNotasConTaxId(yaTiene, 'US123456789');
+  assert.equal(notas, yaTiene);
+});
+
+test('N5: buildNotasConTaxId sin notas previas ni taxIdExtranjero -> undefined', () => {
+  assert.equal(buildNotasConTaxId('', ''), undefined);
+  assert.equal(buildNotasConTaxId(null, null), undefined);
+});
+
+test('N6: buildActualizarFiscalPayload incluye notes con Tax ID cuando se capturo taxIdExtranjero', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, taxIdExtranjero: 'US123456789' }, 'Notas previas del cliente');
+  assert.equal(body.notes, 'Tax ID: US123456789\nNotas previas del cliente');
+});
+
+test('N7: buildActualizarFiscalPayload sin taxIdExtranjero NO agrega notes', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales, 'Notas previas del cliente');
+  assert.ok(!('notes' in body));
+});
+
+test('N8: buildActualizarFiscalPayload no filtra taxIdExtranjero como llave cruda', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, taxIdExtranjero: 'US123456789' });
+  assert.ok(!('taxIdExtranjero' in body));
+});
+
+// === Regla 6 (issue #95): segmento_id viaja en el upgrade, con verificacion post-escritura ===
+// Quirk documentado (#74/CLAUDE.md): PUT customers puede ignorar segmento_id en
+// silencio. Al agregarlo a DIFF_FISCAL_CAMPOS, calcularDiffFiscal lo verifica
+// GRATIS via el mismo mecanismo generico que ya usa el endpoint de upgrade para
+// camposNoActualizados (#85/#96) -- no requiere codigo nuevo en server.js.
+
+test('R11: buildActualizarFiscalPayload incluye segmento_id cuando se capturo', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, segmentoId: '3' });
+  assert.equal(body.segmento_id, '3');
+});
+
+test('R12: buildActualizarFiscalPayload omite segmento_id si no se capturo', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('segmento_id' in body));
+});
+
+test('R13: calcularDiffFiscal detecta el quirk -- Operam ignoro segmento_id (el releido sigue con el valor viejo)', () => {
+  const clienteReleido = { ...clienteOperamBase, segmento_id: '1' }; // valor viejo, PUT lo ignoro
+  const diff = calcularDiffFiscal(clienteReleido, { ...csfDatosIguales, segmentoId: '3' });
+  assert.equal(diff.segmento_id.anterior, '1');
+  assert.equal(diff.segmento_id.nuevo, '3');
+});
 
 test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', () => {
   const diff = {
@@ -242,4 +433,68 @@ test('G14b: buildDedupExactoConDiffHtml produce .dedup-exacto y .diff-fiscal-pan
   const idxPanel = html.indexOf('diff-fiscal-panel');
   assert.ok(idxExacto >= 0 && idxPanel >= 0, 'ambos elementos deben existir');
   assert.ok(idxPanel > idxCierreExacto, '.diff-fiscal-panel debe aparecer DESPUES de cerrar .dedup-exacto (hermano, no anidado)');
+});
+
+// === buildCandidatosRfcGenericoHtml (issue #78) ===
+// Candidatos detectados cuando llega un RFC REAL y no hay match exacto, pero si
+// hay clientes con RFC generico cuyo nombre o telefono coinciden. A diferencia
+// de la rama generica de ADR-0001 (buildDedupCandidatosHtml en helpers.cjs, que
+// NUNCA ofrece crear nuevo), aqui SI se ofrece -- el RFC de entrada es real y
+// crear un cliente nuevo es un camino legitimo si el candidato resulta ser otra
+// empresa.
+
+const candidatosGenericos = [
+  { id: 30, CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', RFC: 'XAXX010101000', _similitud: 2, _telefonoMatch: false },
+  { id: 40, CustName: 'Grupo ABC', cust_ref: 'ABC', RFC: 'XAXX010101000', _similitud: 0, _telefonoMatch: true },
+];
+
+test('V1: buildCandidatosRfcGenericoHtml contiene alerta y muestra los candidatos', () => {
+  const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
+  assert.ok(typeof html === 'string');
+  assert.ok(html.includes('Siscani Group'), 'debe mostrar el nombre del candidato');
+  assert.ok(html.includes('Grupo ABC'), 'debe mostrar el segundo candidato');
+});
+
+test('V2: buildCandidatosRfcGenericoHtml incluye boton "Actualizar este" por candidato, ligado a altaCandidatoActualizar(id)', () => {
+  const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
+  assert.ok(html.includes('Actualizar este'), 'debe ofrecer actualizar');
+  assert.ok(html.includes('altaCandidatoActualizar(30)'), 'debe ligar el boton al id del candidato 30');
+  assert.ok(html.includes('altaCandidatoActualizar(40)'), 'debe ligar el boton al id del candidato 40');
+});
+
+test('V3: buildCandidatosRfcGenericoHtml SI ofrece crear nuevo cliente (a diferencia de la rama generica de ADR-0001)', () => {
+  const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
+  assert.ok(/crear nuevo/i.test(html), 'debe ofrecer crear nuevo cliente');
+  assert.ok(html.includes('altaCandidatoCrearNuevo()'), 'debe ligar la accion a altaCandidatoCrearNuevo');
+});
+
+test('V4: buildCandidatosRfcGenericoHtml distingue la senal de telefono de la de nombre', () => {
+  const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
+  assert.ok(/tel[ée]fono/i.test(html), 'debe mencionar la senal de telefono para el candidato que matcheo por telefono');
+});
+
+test('V5: buildCandidatosRfcGenericoHtml con lista vacia retorna cadena vacia', () => {
+  assert.equal(buildCandidatosRfcGenericoHtml([]), '');
+  assert.equal(buildCandidatosRfcGenericoHtml(undefined), '');
+});
+
+// === Fixes de la revision de #95 ===
+
+test('R-FIX1: buildActualizarFiscalPayload OMITE notes cuando las notas previas no se pudieron leer (null)', () => {
+  const body = buildActualizarFiscalPayload({ rfc: 'ABC010101AAA', taxIdExtranjero: 'US-99-1234' }, null);
+  assert.ok(!('notes' in body), 'con notasActuales null el payload NO debe llevar notes (pisaria notas reales del cliente)');
+});
+
+test('R-FIX1b: buildActualizarFiscalPayload SI manda notes cuando las notas previas se leyeron vacias', () => {
+  const body = buildActualizarFiscalPayload({ rfc: 'ABC010101AAA', taxIdExtranjero: 'US-99-1234' }, '');
+  assert.equal(body.notes, 'Tax ID: US-99-1234');
+});
+
+test('R-FIX2: emailFacturaParaUpgrade solo incluye el email cuando el upgrade se abrio desde el paso Cliente', async () => {
+  const { emailFacturaParaUpgrade } = await import('../alta-logica.js');
+  assert.equal(emailFacturaParaUpgrade('paso', ' fact@cliente.mx '), 'fact@cliente.mx');
+  assert.equal(emailFacturaParaUpgrade('clientes', 'fact@otro.mx'), undefined,
+    'desde la vista Clientes el campo cl-email-factura puede traer el email de OTRO cliente (fuga de contexto)');
+  assert.equal(emailFacturaParaUpgrade(null, 'fact@otro.mx'), undefined);
+  assert.equal(emailFacturaParaUpgrade('paso', '  '), undefined);
 });

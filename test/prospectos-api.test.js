@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -27,10 +28,10 @@ const ANA_TOKEN = jwt.sign({ id: 8, name: 'Ana', role: 'vendedor' }, JWT_SECRET,
 
 function readProspectos() {
   if (!existsSync(PROSPECTOS_PATH)) return [];
-  return JSON.parse(readFileSync(PROSPECTOS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(PROSPECTOS_PATH));
 }
 function writeProspectos(data) {
-  writeFileSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
 }
 
 // Ningun test de este archivo pega a Operam real: fetch queda bloqueado por
@@ -62,7 +63,7 @@ before(() => {
 });
 after(() => {
   if (existia) writeProspectos(savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
+  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {
@@ -132,6 +133,8 @@ test('capturar un celular que ya es prospecto propio responde 409 mostrando el e
   assert.equal(res.status, 409);
   assert.ok(res.body.error);
   assert.equal(res.body.prospecto.nombre, 'Laura');
+  // Campo estructurado (#82): el frontend decide por tipo, no parseando el error.
+  assert.equal(res.body.tipo, 'prospecto_propio');
   assert.equal(readProspectos().length, 1);
 });
 
@@ -143,7 +146,10 @@ test('capturar un celular que ya es prospecto de otro vendedor responde 409 con 
     .set('Authorization', `Bearer ${ANA_TOKEN}`).send(CAPTURA);
   assert.equal(res.status, 409);
   assert.equal(res.body.error, 'Este celular ya lo atiende Memo');
-  assert.deepEqual(Object.keys(res.body), ['error']);
+  // Campo estructurado (#82) sin exponer datos del prospecto ajeno.
+  assert.equal(res.body.tipo, 'prospecto_ajeno');
+  assert.equal('prospecto' in res.body, false);
+  assert.deepEqual(Object.keys(res.body).sort(), ['error', 'tipo']);
   assert.equal(readProspectos().length, 1);
 });
 
@@ -753,6 +759,10 @@ test('capturar un celular que matchea un cliente Operam responde 409 con aviso y
   assert.equal(res.status, 409);
   assert.match(res.body.error, /HOTELERA DEL SUR SA DE CV/);
   assert.match(res.body.error, /como cliente/i);
+  // Campo estructurado (#82): tipo + cust_name para que el frontend lleve al
+  // vendedor a cotizar sobre ese cliente sin parsear el string de error.
+  assert.equal(res.body.tipo, 'cliente');
+  assert.equal(res.body.cust_name, 'HOTELERA DEL SUR SA DE CV');
   assert.equal('prospecto' in res.body, false);
   assert.equal(readProspectos().length, 0);
 });
@@ -825,7 +835,7 @@ test('la conversion tambien liga por celular_nota cuando el payload no trae phon
 });
 
 test('un fallo del store de prospectos no rompe el alta de cliente (fire-and-forget)', async () => {
-  writeFileSync(PROSPECTOS_PATH, '{corrupto');
+  escribirArchivoSync(PROSPECTOS_PATH, '{corrupto');
   mockAltaCliente();
   const res = await supertest(app).post('/api/crear-cliente')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)

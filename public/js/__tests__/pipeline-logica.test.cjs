@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, cobranzaSinRegistrar, badgePagoSinRegistrarHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, siguientePasoFormalizacion, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, cobranzaSinRegistrar, badgePagoSinRegistrarHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -165,32 +165,113 @@ test('Q17: puedeCompletarPreCotizacion solo es true para una cotizacion PRE (sin
   assert.equal(puedeCompletarPreCotizacion(null), false);
 });
 
-test('Q18: botonCompletarHtml pinta el boton Completar solo sobre una tarjeta PRE, con su disparador', () => {
+test('Q18: botonCompletarHtml pinta "Reintentar subida" solo sobre una tarjeta PRE, con su disparador', () => {
   const pre = botonCompletarHtml({ id: 42, folioOperam: null });
-  assert.match(pre, /Completar/);
-  assert.match(pre, /completarPreCotizacion\(42\)/);
-  // Una cotizacion ya registrada (#Operam N) no ofrece Completar.
+  assert.match(pre, /Reintentar subida/);
+  // Pasa `this` para que app.js resuelva el slot de SU tarjeta (F2: la misma
+  // cotizacion puede estar pintada en dos paneles a la vez).
+  assert.match(pre, /completarPreCotizacion\(42, this\)/);
+  // Una cotizacion ya registrada (#Operam N) no ofrece reintento.
   assert.equal(botonCompletarHtml({ id: 7, folioOperam: '900' }), '');
   // Una historica de registro desconocido tampoco.
   assert.equal(botonCompletarHtml({ id: 9, folioOperam: null, registroDesconocido: true }), '');
 });
 
-// Encadenamiento de la formalizacion (issue #66, AC1): "Completar" intenta el
-// registro directo; el siguiente paso lo decide el resultado. Si Operam no halla
-// el cliente, el vendedor pasa al alta (flujo existente, prellenado); si el
-// registro funciono, queda listo (folio); cualquier otro fallo se reporta sin
-// mandar al alta. Funcion pura sobre la respuesta del servidor (status + error).
-test('Q19: siguientePasoFormalizacion encadena registro directo, fallback al alta o error', () => {
-  // Registro OK: la cotizacion obtuvo folio, ya no es PRE.
-  assert.equal(siguientePasoFormalizacion({ ok: true, folio: 77001 }), 'listo');
-  // Operam no halla al cliente -> hay que darlo de alta primero.
-  assert.equal(
-    siguientePasoFormalizacion({ ok: false, status: 503, error: 'No se pudo subir a Operam: Cliente no encontrado en Operam' }),
-    'alta',
+// Auto-subida (#83, ADR-0006): interpretarSubidaOperam clasifica la respuesta del
+// endpoint de #81 por status + campos estructurados, nunca por el string de error
+// (misma disciplina que accionProspecto409). 200 -> folio; 409 con candidatos ->
+// candidatos; 422 -> sin_datos (PRE sin reintento util); 503/red/409-conflicto ->
+// pre (reintento idempotente).
+test('Q19: interpretarSubidaOperam clasifica la respuesta del endpoint por status y campos', () => {
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001, yaSubida: false, customerId: null, clienteGenerico: false, vigencia: null });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null, yaSubida: false, customerId: null, clienteGenerico: false, vigencia: null });
+  // yaSubida (#83 F1c): ya habia folio, el endpoint no re-subio (los quotes de
+  // Operam no se editan por API; una regeneracion local no viaja a Operam).
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: '55123', yaSubida: true }), { estado: 'folio', folio: '55123', yaSubida: true, customerId: null, clienteGenerico: false, vigencia: null });
+
+  // #93: la subida con alta generica (#81) devuelve el customer_id creado/reutilizado
+  // y si el cliente quedo con RFC generico, para ofrecer la CSF junto al folio.
+  assert.deepEqual(
+    interpretarSubidaOperam({ ok: true, folio: 90001, customerId: 501, clienteGenerico: true }),
+    { estado: 'folio', folio: 90001, yaSubida: false, customerId: 501, clienteGenerico: true, vigencia: null }
   );
-  // Cualquier otro fallo (Operam caido, 404, etc.) no manda al alta: se reporta.
-  assert.equal(siguientePasoFormalizacion({ ok: false, status: 503, error: 'No se pudo subir a Operam: Operam 500' }), 'error');
-  assert.equal(siguientePasoFormalizacion({ ok: false, status: 404, error: 'Cotizacion no encontrada' }), 'error');
+
+  const cand = interpretarSubidaOperam({ ok: false, status: 409, error: 'Elige uno', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] });
+  assert.equal(cand.estado, 'candidatos');
+  assert.equal(cand.candidatos.length, 1);
+
+  // 422: cotizacion legacy sin datos minimos -> PRE, sin reintento.
+  assert.equal(interpretarSubidaOperam({ ok: false, status: 422, error: 'No se pudo identificar el cliente' }).estado, 'sin_datos');
+
+  // 503 (Operam caido) y red (status 0) -> pre con reintento.
+  assert.equal(interpretarSubidaOperam({ ok: false, status: 503, error: 'No se pudo subir a Operam: Operam 500' }).estado, 'pre');
+  assert.equal(interpretarSubidaOperam({ ok: false, status: 0, error: 'Failed to fetch' }).estado, 'pre');
+
+  // 409 de conflicto (sin lista de candidatos) -> pre, no candidatos.
+  assert.equal(interpretarSubidaOperam({ ok: false, status: 409, error: 'La cotizacion ya esta ligada a otro cliente' }).estado, 'pre');
+});
+
+// Los botones del bloque de estado pasan `this` (el elemento clickeado), no un
+// id de contenedor: la MISMA cotizacion puede pintarse en dos paneles a la vez
+// (Historial y cotizaciones previas del cliente) y un id duplicado haria que
+// getElementById pintara siempre en el primero -- posiblemente oculto (F2 de la
+// revision de #83). app.js resuelve el slot relativo al disparador.
+test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candidatos', () => {
+  const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 });
+  assert.match(ok, /#Operam 77001/);
+  assert.doesNotMatch(ok, /Reintentar/);
+  assert.doesNotMatch(ok, /coincide/, 'sin nota cuando la subida fue nueva');
+
+  // Ya subida (#83 F1c) -- desde #114 este caso significa UNA sola cosa: el contenido
+  // no cambio respecto de lo que se subio, asi que no habia nada que reescribir. La
+  // nota vieja ("los cambios locales no actualizan la cotizacion ya subida") describia
+  // el bug, no el comportamiento: ahora un cambio SI viaja por el camino de
+  // actualizacion.
+  const ya = buildOperamStatusHtml(5, { estado: 'folio', folio: '55123', yaSubida: true });
+  assert.match(ya, /#Operam 55123/);
+  assert.doesNotMatch(ya, /cambios locales no actualizan/);
+  assert.match(ya, /coincide/i);
+  assert.doesNotMatch(ya, /Reintentar/);
+
+  const pre = buildOperamStatusHtml(5, { estado: 'pre', mensaje: 'Operam caido' });
+  assert.match(pre, /badge-pre/);
+  assert.match(pre, /PRE/);
+  assert.match(pre, /reintentarSubidaOperam\(5, this\)/);
+
+  // sin_datos: PRE claro, SIN boton de reintento (seria inutil).
+  const sd = buildOperamStatusHtml(5, { estado: 'sin_datos', mensaje: 'Faltan datos' });
+  assert.match(sd, /PRE/);
+  assert.doesNotMatch(sd, /Reintentar/);
+
+  const cands = buildOperamStatusHtml(5, { estado: 'candidatos', mensaje: 'Elige', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] });
+  assert.match(cands, /ABARROTES SA/);
+  assert.match(cands, /ABA/);
+  assert.match(cands, /elegirCandidatoOperam\(5, 10, this\)/);
+  assert.match(cands, /dejarPreOperam\(5, this\)/);
+});
+
+// #93: junto al folio, si la subida creo/reutilizo un cliente con RFC generico
+// (alta generica, #81), se ofrece la accion de subir su CSF (reusa el upgrade de
+// #85 via pcAbrirUpgradeFiscal). Sin RFC generico (cliente ya real en Operam) no
+// hay nada que ofrecer -- mismo criterio que el chip Fiscal de la tarjeta.
+test('Q19d: buildOperamStatusHtml ofrece subir la CSF junto al folio cuando el cliente quedo generico', () => {
+  const gen = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, customerId: 501, clienteGenerico: true });
+  assert.match(gen, /#Operam 90001/);
+  assert.match(gen, /Ya tienes su CSF/);
+  assert.match(gen, /pcAbrirUpgradeFiscal\(501\)/);
+
+  const noGen = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, customerId: 501, clienteGenerico: false });
+  assert.doesNotMatch(noGen, /Ya tienes su CSF/);
+
+  const sinCustomer = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, clienteGenerico: true });
+  assert.doesNotMatch(sinCustomer, /Ya tienes su CSF/);
+});
+
+test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece dejar como PRE', () => {
+  const html = buildCandidatosOperamHtml(9, [{ id: 3, CustName: 'A & B <SA>', cust_ref: 'AB' }], 'Elige el cliente');
+  assert.match(html, /A &amp; B &lt;SA&gt;/);
+  assert.match(html, /Dejar como PRE/);
+  assert.match(html, /elegirCandidatoOperam\(9, 3, this\)/);
 });
 
 // Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): buildColaHoyHtml itera
@@ -318,21 +399,23 @@ test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma 
 });
 
 // Boton + global (issue #54, PRD #52 historias 4-5, CONTEXT.md "Captura de
-// prospecto"): visible en todos los destinos del bottom-nav, ofrece dos
-// acciones -- "Nueva cotizacion" (la vista de cotizar existente) y "Nuevo
-// prospecto" (la captura minima existente). Logica pura de presentacion del
-// menu, sin DOM (mismo patron que el resto del modulo).
-test('Q25: ACCIONES_NUEVO ofrece exactamente Nueva cotizacion y Nuevo prospecto', () => {
-  assert.deepEqual(ACCIONES_NUEVO.map(a => a.label), ['Nueva cotizacion', 'Nuevo prospecto']);
-  assert.deepEqual(ACCIONES_NUEVO.map(a => a.accion), ['nuevaCotizacion', 'nuevoProspecto']);
+// prospecto"): visible en todos los destinos del bottom-nav. "Nueva cotizacion"
+// (la vista de cotizar existente), "Nuevo prospecto" (la captura minima existente)
+// y "Nuevo cliente" (#94: abre la vista Clientes con el alta completa). Logica pura
+// de presentacion del menu, sin DOM (mismo patron que el resto del modulo).
+test('Q25: ACCIONES_NUEVO ofrece Nueva cotizacion, Nuevo prospecto y Nuevo cliente', () => {
+  assert.deepEqual(ACCIONES_NUEVO.map(a => a.label), ['Nueva cotizacion', 'Nuevo prospecto', 'Nuevo cliente']);
+  assert.deepEqual(ACCIONES_NUEVO.map(a => a.accion), ['nuevaCotizacion', 'nuevoProspecto', 'nuevoCliente']);
 });
 
 test('Q26: buildMenuNuevoHtml pinta un boton por accion con su disparador', () => {
   const html = buildMenuNuevoHtml();
   assert.match(html, /Nueva cotizacion/);
   assert.match(html, /Nuevo prospecto/);
+  assert.match(html, /Nuevo cliente/);
   assert.match(html, /onclick="nuevaCotizacion\(\)"/);
   assert.match(html, /onclick="nuevoProspecto\(\)"/);
+  assert.match(html, /onclick="nuevoCliente\(\)"/);
   // Un boton por accion, ninguno de mas.
   assert.equal((html.match(/<button/g) || []).length, ACCIONES_NUEVO.length);
 });
@@ -659,39 +742,168 @@ test('Q52: la tarjeta del tablero pinta el control de decorado en una cotizacion
   assert.match(tablero, /1\s*\/\s*6/);
 });
 
-// === Issue #77: badge "Pago sin registrar" (eje secundario de cobranza) ===
-// El eje que manda en el pipeline es el cumplimiento: un pedido entregado se ve como
-// producto_entregado aunque el pago no este registrado (desfase de la contadora). La
-// cobranza pendiente se senala con un badge, sin retroceder la etapa. La senal de pago
-// es el espejo del sync (#67, fresco) con respaldo en data.cobranza (snapshot del
-// backfill #77); pagado en cualquiera de los dos -> sin badge.
-test('Q53: cobranzaSinRegistrar solo en producto_entregado con pago no liquidado', () => {
-  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', cobranza: 'pendiente' })), true);
-  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', cobranza: 'anticipo' })), true);
-  // entregado y pagado -> no hay nada que registrar
-  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', cobranza: 'pagado' })), false);
-  // no entregado -> el badge es de entrega, no aplica aunque el pago falte
-  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'pedido_liberado', cobranza: 'pendiente' })), false);
-  // sin ninguna senal de pago -> no se afirma cobranza pendiente
-  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado' })), false);
-  assert.equal(cobranzaSinRegistrar(undefined), false);
+// --- Badge "Pago sin registrar" (issue #77): entregado pero pago no registrado ---
+
+test('#77: badgePagoSinRegistrarHtml pinta el badge en una entregada con pago sin registrar', () => {
+  const html = badgePagoSinRegistrarHtml({ etapa: 'producto_entregado', pagoSinRegistrar: true });
+  assert.match(html, /Pago sin registrar/);
+  assert.match(html, /badge-impago/);
 });
 
-test('Q54: cobranzaSinRegistrar prioriza el espejo del sync (fresco) sobre data.cobranza (snapshot)', () => {
-  // el sync ya registro el pago (espejo.pago=pagado) aunque el snapshot del backfill diga pendiente -> sin badge
-  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', cobranza: 'pendiente', espejoOperam: { pago: 'pagado' } })), false);
-  // el espejo dice anticipo -> sigue pendiente de registro -> badge
-  assert.equal(cobranzaSinRegistrar(cotizacion({ etapa: 'producto_entregado', espejoOperam: { pago: 'anticipo' } })), true);
+test('#77: badgePagoSinRegistrarHtml vacio cuando ya se registro el pago (flag false)', () => {
+  assert.equal(badgePagoSinRegistrarHtml({ etapa: 'producto_entregado', pagoSinRegistrar: false }), '');
+  assert.equal(badgePagoSinRegistrarHtml({ etapa: 'producto_entregado' }), '');
 });
 
-test('Q55: badgePagoSinRegistrarHtml pinta el chip "Pago sin registrar" solo cuando aplica', () => {
-  assert.match(badgePagoSinRegistrarHtml(cotizacion({ etapa: 'producto_entregado', cobranza: 'pendiente' })), /Pago sin registrar/);
-  assert.match(badgePagoSinRegistrarHtml(cotizacion({ etapa: 'producto_entregado', cobranza: 'pendiente' })), /cot-badge/);
-  assert.equal(badgePagoSinRegistrarHtml(cotizacion({ etapa: 'producto_entregado', cobranza: 'pagado' })), '');
-  assert.equal(badgePagoSinRegistrarHtml(cotizacion({ etapa: 'seguimiento' })), '');
+test('#77: badgePagoSinRegistrarHtml vacio si la tarjeta no esta entregada (respeta el gate/etapa)', () => {
+  // Un decorado topado por el gate en anticipo_pagado no muestra el badge de entrega
+  // aunque el flag venga marcado: el badge es solo de la entregada.
+  assert.equal(badgePagoSinRegistrarHtml({ etapa: 'anticipo_pagado', pagoSinRegistrar: true }), '');
+  assert.equal(badgePagoSinRegistrarHtml({ etapa: 'seguimiento', pagoSinRegistrar: true }), '');
 });
 
-test('Q56: la tarjeta del tablero en Producto entregado con cobranza pendiente muestra el badge', () => {
-  const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'producto_entregado', cobranza: 'pendiente' })]);
+test('#77: la tarjeta del tablero pinta el badge de una cotizacion entregada-impaga', () => {
+  const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'producto_entregado', pagoSinRegistrar: true })]);
   assert.match(tablero, /Pago sin registrar/);
+});
+
+// Post-fix de la vigencia (#106, ADR-0007): la subida corrige el campo nativo
+// "Valido hasta" de Operam por la web legacy y reporta el resultado en steps. Si NO
+// pego, el vendedor debe enterarse: la cotizacion quedo bien (el PDF y comments
+// llevan la vigencia correcta) pero Operam la muestra vencida, y sin este aviso el
+// fallo solo vivia en los logs del servidor.
+test('Q19c: interpretarSubidaOperam extrae el resultado del post-fix de vigencia', () => {
+  const paso = (status) => ({ ok: true, folio: 1, steps: [{ name: 'POST quote', status: 'ok' }, { name: 'post-fix vigencia', status }] });
+  assert.equal(interpretarSubidaOperam(paso('ok')).vigencia, 'ok');
+  // warn = Operam respondio pero el campo no quedo con la fecha esperada.
+  assert.equal(interpretarSubidaOperam(paso('warn')).vigencia, 'revisar');
+  assert.equal(interpretarSubidaOperam(paso('error')).vigencia, 'revisar');
+  // Sin el paso (respuesta previa a #106, o camino que no sube): no se opina.
+  assert.equal(interpretarSubidaOperam({ ok: true, folio: 1, steps: [{ name: 'POST quote', status: 'ok' }] }).vigencia, null);
+  assert.equal(interpretarSubidaOperam({ ok: true, folio: 1 }).vigencia, null);
+});
+
+test('Q19d: buildOperamStatusHtml avisa solo cuando la vigencia quedo sin corregir', () => {
+  const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001, vigencia: 'ok' });
+  assert.doesNotMatch(ok, /vigencia/i, 'el caso normal no agrega ruido');
+
+  const revisar = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001, vigencia: 'revisar' });
+  assert.match(revisar, /#Operam 77001/, 'la subida sigue siendo un exito');
+  assert.match(revisar, /vigencia/i);
+  assert.match(revisar, /V(&aacute;|á)lido hasta/i, 'nombra el campo tal como se ve en Operam');
+
+  // Sin dato (respuesta vieja): no se inventa un aviso.
+  assert.doesNotMatch(buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 }), /vigencia/i);
+});
+
+// Subida en la RUTA CRITICA de la generacion (#111, ADR-0009): al invertirse el
+// orden (subir y luego generar), los dos casos que antes eran inofensivos porque
+// la subida era secundaria pasan a decidir si el documento sale numerado o como
+// PRE. Ninguno puede degradar en silencio: el ADR prohibe explicitamente "un
+// documento sin numero silencioso".
+test('Q19e: una subida ya en vuelo y un timeout son PRE explicitos con reintento, no un silencio', () => {
+  const enVuelo = interpretarSubidaOperam({ enVuelo: true });
+  assert.equal(enVuelo.estado, 'pre');
+  assert.match(enVuelo.mensaje, /en curso/i, 'dice que la subida sigue corriendo, no que fallo');
+
+  const timeout = interpretarSubidaOperam({ timeout: true });
+  assert.equal(timeout.estado, 'pre');
+  assert.match(timeout.mensaje, /no respondi/i, 'dice que Operam no respondio a tiempo');
+  assert.notEqual(timeout.mensaje, enVuelo.mensaje, 'no se confunde esperar con fallar');
+
+  // Los dos ofrecen el mismo Reintentar idempotente que cualquier otro PRE (#83).
+  assert.match(buildOperamStatusHtml(7, enVuelo), /reintentarSubidaOperam\(7, this\)/);
+  assert.match(buildOperamStatusHtml(7, timeout), /reintentarSubidaOperam\(7, this\)/);
+});
+
+// === Actualizacion del quote conservando el folio (#104, ADR-0008) ===
+// La distincion que manda en el aviso al vendedor es `escrito`: si NO se alcanzo a
+// confirmar, el quote de Operam quedo INTACTO (fallo reversible por abandono, la
+// palanca de robustez del ADR); si SI se confirmo pero la verificacion encontro
+// diferencias, alguien tiene que mirar el ERP. Confundirlos seria mentirle al
+// vendedor sobre que esta viendo su cliente.
+
+test('A104: interpretarActualizacionOperam distingue exito, no-escrito, escrito-con-diferencias y gate', () => {
+  assert.deepEqual(
+    interpretarActualizacionOperam({ ok: true, status: 200, folio: '1200' }),
+    { estado: 'actualizada', folio: '1200' },
+  );
+  const intacto = interpretarActualizacionOperam({ ok: false, status: 200, escrito: false, error: 'no se agrego la partida' });
+  assert.equal(intacto.estado, 'desactualizado');
+  assert.match(intacto.mensaje, /no se agrego la partida/);
+
+  const revisar = interpretarActualizacionOperam({ ok: false, status: 200, escrito: true, verificado: true, discrepancias: [{ campo: 'precio', sku: 'X', esperado: 1, encontrado: 2 }] });
+  assert.equal(revisar.estado, 'revisar');
+  assert.equal(revisar.discrepancias.length, 1);
+
+  const bloqueada = interpretarActualizacionOperam({ status: 409, error: 'ya tiene un pedido asociado' });
+  assert.equal(bloqueada.estado, 'bloqueada');
+  assert.match(bloqueada.mensaje, /pedido/);
+});
+
+// #114: con la reescritura del quote en la ruta critica de la generacion, "ya hay una
+// operacion en curso" deja de ser un detalle interno -- es la razon de que el quote se
+// quede con lo viejo mientras el documento ya salio con el folio. Tiene que degradar a
+// un estado con motivo y Reintentar (el lock del servidor responde 425), nunca a
+// silencio: era un `return` mudo en app.js cuando solo lo disparaba el historial.
+test('#114: una operacion de Operam ya en curso degrada a un aviso con reintento, no a silencio', () => {
+  const enCurso = interpretarActualizacionOperam({ ok: false, status: 425, escrito: false, error: 'Ya hay una operacion de Operam en curso para esta cotizacion' });
+  assert.equal(enCurso.estado, 'desactualizado');
+  assert.match(enCurso.mensaje, /en curso/);
+  assert.match(buildActualizacionStatusHtml(9, enCurso), /reintentarActualizacionOperam\(9, this\)/);
+});
+
+test('A104: una caida de red no se confunde con "quedo mal en Operam"', () => {
+  const v = interpretarActualizacionOperam({ ok: false, status: 0, error: 'Failed to fetch' });
+  assert.equal(v.estado, 'desactualizado');
+});
+
+test('A104: buildActualizacionStatusHtml pinta el folio conservado en el exito', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'actualizada', folio: '1200' });
+  assert.match(html, /#Operam 1200/);
+  assert.doesNotMatch(html, /Reintentar/);
+});
+
+test('A104: no-escrito dice que el quote quedo intacto y ofrece reintentar', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'desactualizado', mensaje: 'la sesion caduco' });
+  assert.match(html, /sin cambios|intacta|intacto/i);
+  assert.match(html, /reintentarActualizacionOperam\(5, this\)/);
+});
+
+test('A104: escrito-con-diferencias manda a revisar Operam y NO dice que quedo intacto', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'revisar', mensaje: 'diferencias', discrepancias: [{ campo: 'precio' }] });
+  assert.match(html, /revisa/i);
+  assert.doesNotMatch(html, /intacto/i);
+  assert.match(html, /reintentarActualizacionOperam\(5, this\)/);
+});
+
+test('A104: el gate se explica sin ofrecer un reintento que volveria a fallar', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'bloqueada', mensaje: 'ya tiene un pedido asociado' });
+  assert.match(html, /pedido/);
+  assert.doesNotMatch(html, /Reintentar/);
+});
+
+// #114: el gate bloquea justo cuando la divergencia es peor -- el documento ya salio
+// numerado con el folio y el quote no se puede reescribir porque tiene pedido. Explicar
+// el motivo no basta: hay que ofrecer la salida (crear una nueva a partir de esta), que
+// es exactamente lo que ya hace el historial. Se reusa cargarCotizacion(id, 'nueva'),
+// sin simbolo nuevo en window (trampa de #112).
+test('#114: el aviso de bloqueada ofrece crear una cotizacion nueva a partir de esta', () => {
+  const html = buildActualizacionStatusHtml(7, { estado: 'bloqueada', mensaje: 'ya tiene un pedido asociado en Operam' });
+  assert.match(html, /pedido/);
+  assert.match(html, /cargarCotizacion\(7, 'nueva'\)/);
+  assert.match(html, /nueva/i);
+  assert.doesNotMatch(html, /Reintentar/);
+});
+
+test('A104: buildActualizacionStatusHtml escapa el mensaje del servidor', () => {
+  const html = buildActualizacionStatusHtml(5, { estado: 'desactualizado', mensaje: '<img src=x onerror=alert(1)>' });
+  assert.ok(!html.includes('<img src=x'));
+});
+
+test('A104: badgeQuoteDesactualizadoHtml marca la tarjeta solo cuando hay marca viva', () => {
+  assert.match(badgeQuoteDesactualizadoHtml({ quoteDesactualizado: { fecha: '2026-07-28T00:00:00Z', escrito: false } }), /Operam desactualizado/i);
+  assert.equal(badgeQuoteDesactualizadoHtml({ quoteDesactualizado: null }), '');
+  assert.equal(badgeQuoteDesactualizadoHtml({}), '');
+  assert.equal(badgeQuoteDesactualizadoHtml(undefined), '');
 });

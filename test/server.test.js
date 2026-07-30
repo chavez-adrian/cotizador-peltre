@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, unlinkSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -18,24 +19,31 @@ if (existsSync(envPath)) {
   }
 }
 
+// PDFKit codifica el contenido en hex dentro de operadores TJ (con kern-split);
+// _compress:false vuelve el content stream legible pero solo buscable en hex
+// (mismo patron que test/pdf-generator.test.js).
+function toHex(s) {
+  return Buffer.from(s, 'latin1').toString('hex');
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app, cargarListasPrecios } = await import('../server.js');
 const TEST_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
-  return JSON.parse(readFileSync(COTS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(COTS_PATH));
 }
 
 function writeCots(data) {
-  writeFileSync(COTS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
 let savedCots;
 before(() => { savedCots = readCots(); });
 after(() => { writeCots(savedCots); });
 
-test('B1: POST /api/cotizacion/pdf persiste cliente.pais', async () => {
+test('B1: POST /api/cotizacion persiste cliente.pais', async () => {
   const snap = readCots();
   const body = {
     fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
@@ -43,13 +51,21 @@ test('B1: POST /api/cotizacion/pdf persiste cliente.pais', async () => {
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
-  await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   const cots = readCots();
   assert.ok(cots.length > snap.length);
   assert.strictEqual(cots[cots.length - 1].data.cliente.pais, 'US');
+  assert.strictEqual(cots[cots.length - 1].vendedor, 'Tester');
 });
 
-test('B1b: POST /api/cotizacion/pdf sin telefono retorna 400 (bloqueo duro)', async () => {
+test('#87: POST /api/login emite un JWT con vigencia de 24 horas', async () => {
+  const res = await supertest(app).post('/api/login').send({ vendedorId: 2, pin: '1111' });
+  assert.strictEqual(res.status, 200);
+  const decoded = jwt.decode(res.body.token);
+  assert.strictEqual(decoded.exp - decoded.iat, 24 * 3600);
+});
+
+test('B1b: POST /api/cotizacion sin telefono retorna 400 (bloqueo duro)', async () => {
   const snap = readCots();
   const body = {
     fecha: '2026-01-01', tier: 'Mayoreo',
@@ -57,32 +73,32 @@ test('B1b: POST /api/cotizacion/pdf sin telefono retorna 400 (bloqueo duro)', as
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
-  const res = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   assert.strictEqual(res.status, 400);
   assert.match(res.body.error, /tel.fono/i);
   assert.strictEqual(readCots().length, snap.length);
 });
 
-test('B1c: POST /api/cotizacion/pdf con telefono sin codigo de pais retorna 400', async () => {
+test('B1c: POST /api/cotizacion con telefono sin codigo de pais retorna 400', async () => {
   const body = {
     fecha: '2026-01-01', tier: 'Mayoreo',
     cliente: { razonSocial: 'Test SA', telefono: '5512345678' },
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
-  const res = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   assert.strictEqual(res.status, 400);
   assert.match(res.body.error, /c.digo de pa.s/i);
 });
 
-test('B1d: POST /api/cotizacion/html sin telefono valido retorna 400', async () => {
+test('B1d: POST /api/cotizacion sin telefono valido retorna 400', async () => {
   const body = {
     fecha: '2026-01-01', tier: 'Mayoreo',
     cliente: { razonSocial: 'Test SA', telefono: '123' },
     items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
-  const res = await supertest(app).post('/api/cotizacion/html').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   assert.strictEqual(res.status, 400);
 });
 
@@ -93,6 +109,286 @@ test('B2: GET /api/cotizaciones/:id sin campo pais no falla', async () => {
   const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
   assert.strictEqual(res.status, 200);
   assert.ok(res.body.cliente);
+});
+
+// === #102: envio estructurado {carrier, servicio, precio} persiste en data
+// y se lee de vuelta tal cual (Cargar desde historial lo restaura sin re-cotizar).
+test('#102-1: POST /api/cotizacion persiste data.envio estructurado', async () => {
+  const body = {
+    fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Test SA', nombreCorto: 'Test', telefono: '+52 5551234567' },
+    items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 100, iva: 16, total: 116, notas: [],
+    envio: { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' },
+  };
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const id = res.body.id;
+  const get = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.deepStrictEqual(get.body.envio, { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
+});
+
+// === #109: el aviso de modo actualizacion necesita el folio REAL de Operam
+// (no el id interno) sin que la vista de cotizacion lo adivine ni haga una
+// peticion extra. El listado ya lo exponia; el detalle (que es lo que
+// cargarCotizacion consume) no. Se agrega folioOperam al detalle, tomandolo
+// de la columna de primer nivel del registro (no de data, que no lo contiene).
+test('#109-1: GET /api/cotizaciones/:id incluye folioOperam (columna de primer nivel, no vive en data)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Con folio',
+    totalPiezas: 0, total: 0, tier: '', folioOperam: '1200',
+    data: { cliente: { razonSocial: 'Con folio' }, items: [] },
+  }]);
+  const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.folioOperam, '1200');
+});
+
+test('#109-2: GET /api/cotizaciones/:id sin folioOperam (PRE) lo expone como null, no undefined', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin folio',
+    totalPiezas: 0, total: 0, tier: '',
+    data: { cliente: { razonSocial: 'Sin folio' }, items: [] },
+  }]);
+  const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.folioOperam, null);
+});
+
+test('#102-2: GET /api/cotizaciones/:id de un registro viejo sin data.envio no rompe (degrada con gracia)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, { id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin envio', totalPiezas: 0, total: 0, tier: '', data: { cliente: { razonSocial: 'Sin envio' }, items: [{ codigo: 'ENVIO', descripcion: 'FedEx Ground', cantidad: 1, unidad: 'ACT', precio: 259, descuento: 0 }] } }]);
+  const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.envio, undefined);
+});
+
+// === #103: los GET de pdf/html regeneran desde data (columna jsonb), nunca
+// desde disco (el disco de Render es efimero: muere en cada deploy). Sin
+// authMiddleware a proposito (se comparten por WhatsApp).
+test('#103-1: GET /api/cotizacion/pdf/:id regenera el PDF desde data del registro guardado', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente Regenerado',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: {
+      _compress: false,
+      cliente: { razonSocial: 'Cliente Regenerado SA de CV', nombreCorto: 'Cliente Regenerado' },
+      items: [{ codigo: 'TEST103', descripcion: 'Producto de prueba 103', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  }]);
+  const res = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers['content-type'], /application\/pdf/);
+  const texto = Buffer.from(res.body).toString('latin1');
+  assert.ok(texto.includes(toHex('Regen')));
+  assert.ok(texto.includes(toHex('TEST103')));
+});
+
+test('#103-2: GET /api/cotizacion/pdf/:id de un id inexistente da 404', async () => {
+  const res = await supertest(app).get('/api/cotizacion/pdf/999999');
+  assert.strictEqual(res.status, 404);
+});
+
+test('#103-3: GET /api/cotizacion/pdf/:id regenera igual aunque el archivo de disco ya no exista (disco efimero de Render)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin Disco',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: {
+      _compress: false,
+      cliente: { razonSocial: 'Sin Disco SA', nombreCorto: 'Sin Disco' },
+      items: [{ codigo: 'NODISK', descripcion: 'No depende de disco', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  }]);
+  const pdfPath = join(DATA_DIR, 'pdfs', `cot_${id}.pdf`);
+  if (existsSync(pdfPath)) unlinkSync(pdfPath);
+  const res = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  assert.strictEqual(res.status, 200);
+  assert.ok(Buffer.from(res.body).toString('latin1').includes(toHex('NODISK')));
+});
+
+test('#103-4: GET /api/cotizacion/html/:id regenera el HTML desde data del registro guardado', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente HTML',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: {
+      cliente: { razonSocial: 'Cliente HTML SA de CV', nombreCorto: 'Cliente HTML' },
+      items: [{ codigo: 'HTML103', descripcion: 'Producto HTML 103', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  }]);
+  const res = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers['content-type'], /text\/html/);
+  assert.ok(res.text.includes('Cliente HTML SA de CV'));
+  // El numero ya no es el id interno (ADR-0009): este registro no tiene folio de
+  // Operam, asi que el documento sale sin numero. La asercion vieja (`#id`) fijaba
+  // justo la doble numeracion que #110/#111 cierran.
+  assert.ok(!res.text.includes('qm-val quote-num'));
+});
+
+test('#103-5: GET /api/cotizacion/html/:id de un id inexistente da 404', async () => {
+  const res = await supertest(app).get('/api/cotizacion/html/999999');
+  assert.strictEqual(res.status, 404);
+});
+
+// === #110 / #111 (ADR-0009): el numero de la cotizacion ES el folio de Operam.
+// Los dos GET son el UNICO lugar que genera documento, y un solo punto decide el
+// numero: el mismo registro tiene que salir con el MISMO numero en PDF y en HTML.
+// Antes cada camino decidia por su cuenta (el PDF no imprimia ninguno; el HTML
+// imprimia el id interno), que es la doble numeracion que el ADR viene a cerrar.
+function registroConFolio(id, folioOperam) {
+  return {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente Folio',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo', folioOperam,
+    data: {
+      _compress: false,
+      cliente: { razonSocial: 'Cliente Folio SA de CV', nombreCorto: 'Cliente Folio' },
+      items: [{ codigo: 'FOLIO110', descripcion: 'Producto folio', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 100, iva: 16, total: 116, notas: [],
+    },
+  };
+}
+
+test('#110-1: el PDF y el HTML del mismo registro muestran el MISMO numero, y es el folio de Operam', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, registroConFolio(id, '57310')]);
+
+  const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  assert.strictEqual(pdf.status, 200);
+  assert.strictEqual(html.status, 200);
+
+  const textoPdf = Buffer.from(pdf.body).toString('latin1');
+  assert.ok(textoPdf.includes(toHex('57310')), 'el PDF imprime el folio de Operam');
+  assert.ok(html.text.includes('57310'), 'el HTML imprime el folio de Operam');
+  // Y ninguno de los dos presenta el id interno como numero de cotizacion.
+  assert.ok(!textoPdf.includes(toHex(`No. Cotizacion: ${id}`)), 'el PDF no numera con el id interno');
+  assert.ok(!html.text.includes(`Cotizacion #${id}`), 'el HTML no numera con el id interno');
+});
+
+// Una PRE no tiene folio por definicion (#63) y no inventa numero (ADR-0009):
+// el documento sale sin numero y se identifica como pre-cotizacion, para que
+// nadie lo confunda con una cotizacion registrada en el ERP.
+test('#111-1: sin folio de Operam el documento no lleva numero y se identifica como pre-cotizacion', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, registroConFolio(id, null)]);
+
+  const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  const textoPdf = Buffer.from(pdf.body).toString('latin1');
+  // PDFKit kern-splita el titulo tras "PRE-CO" y el meta tras "Cotizacion:";
+  // esos son los prefijos contiguos fiables (mismo criterio que B6/B14).
+  assert.ok(textoPdf.includes(toHex('PRE-CO')), 'el PDF se identifica como pre-cotizacion');
+  assert.ok(!textoPdf.includes(toHex('Cotizacion:')), 'el PDF no imprime la linea del numero');
+  assert.ok(html.text.includes('PRE-COTIZACION'), 'el HTML se identifica como pre-cotizacion');
+  assert.ok(!html.text.includes('qm-val quote-num'), 'el HTML no pinta la fila del numero');
+  assert.ok(!html.text.includes('Cotizacion Peltre Nacional #'), 'el HTML no titula con ningun numero');
+});
+
+// El nombre del archivo se arma en UN solo lugar (el Content-Disposition del GET,
+// ADR-0009) y por folio; app.js ya no lo arma por su cuenta. La descarga del
+// vendedor pide ?descargar=1 (attachment); compartir por WhatsApp abre el mismo
+// documento inline.
+test('#111-2: el Content-Disposition nombra el archivo por folio y respeta ?descargar=1', async () => {
+  const snap = readCots();
+  const conFolio = snap.length + 1;
+  const sinFolio = snap.length + 2;
+  writeCots([...snap, registroConFolio(conFolio, '57310'), registroConFolio(sinFolio, null)]);
+
+  const descarga = await supertest(app).get(`/api/cotizacion/pdf/${conFolio}?descargar=1`);
+  assert.strictEqual(descarga.headers['content-disposition'], 'attachment; filename="Cotizacion_PeltreNacional_57310.pdf"');
+
+  const compartir = await supertest(app).get(`/api/cotizacion/pdf/${conFolio}`);
+  assert.strictEqual(compartir.headers['content-disposition'], 'inline; filename="Cotizacion_PeltreNacional_57310.pdf"');
+
+  const pre = await supertest(app).get(`/api/cotizacion/pdf/${sinFolio}?descargar=1`);
+  assert.strictEqual(pre.headers['content-disposition'], 'attachment; filename="PreCotizacion_PeltreNacional.pdf"');
+});
+
+// Guardar y generar dejan de ser la misma operacion (ADR-0009): el POST solo
+// guarda el registro (y dice si ya hay folio), y los GET son el unico generador.
+// Los dos POST por formato (/pdf y /html) desaparecen: eran dos de los cuatro
+// caminos que decidian por separado que numero llevaba el documento.
+test('#111-3: POST /api/cotizacion guarda el registro y devuelve id y folioOperam, sin generar documento', async () => {
+  const snap = readCots();
+  const body = {
+    fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Guardar SA', nombreCorto: 'Guardar', telefono: '+52 5551234567' },
+    items: [{ codigo: 'GUARDA', descripcion: 'Guardar', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 100, iva: 16, total: 116, notas: [],
+  };
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers['content-type'], /application\/json/);
+  const cots = readCots();
+  assert.strictEqual(cots.length, snap.length + 1);
+  const guardada = cots[cots.length - 1];
+  assert.strictEqual(res.body.id, guardada.id);
+  assert.strictEqual(res.body.folioOperam, null, 'una cotizacion recien guardada todavia no tiene folio');
+  assert.strictEqual(guardada.data.cliente.nombreCorto, 'Guardar');
+  assert.strictEqual(guardada.vendedor, 'Tester');
+});
+
+test('#111-4: POST /api/cotizacion hereda el bloqueo por telefono invalido (400, sin guardar)', async () => {
+  const snap = readCots();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send({
+    fecha: '2026-01-01', tier: 'Mayoreo', cliente: { razonSocial: 'Sin tel SA' },
+    items: [], subtotal: 0, iva: 0, total: 0, notas: [],
+  });
+  assert.strictEqual(res.status, 400);
+  assert.match(res.body.error, /tel.fono/i);
+  assert.strictEqual(readCots().length, snap.length);
+});
+
+test('#111-5: POST /api/cotizacion sobre un registro con folio lo devuelve (modo actualizacion no re-numera)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, registroConFolio(id, '57310')]);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send({
+    cotizacionId: id, fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Cliente Folio SA de CV', telefono: '+52 5551234567' },
+    items: [], subtotal: 0, iva: 0, total: 0, notas: [],
+  });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.id, id, 'reusa el mismo registro');
+  assert.strictEqual(res.body.folioOperam, '57310', 'devuelve el folio ya existente');
+});
+
+test('#111-6: los POST por formato ya no existen: generar documento es solo de los GET', async () => {
+  const body = { fecha: '2026-01-01', tier: 'Mayoreo', cliente: { razonSocial: 'X', telefono: '+52 5551234567' }, items: [], subtotal: 0, iva: 0, total: 0, notas: [] };
+  const pdf = await supertest(app).post('/api/cotizacion/pdf').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  const html = await supertest(app).post('/api/cotizacion/html').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  assert.strictEqual(pdf.status, 404);
+  assert.strictEqual(html.status, 404);
+});
+
+test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si hay algo que regenerar', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Con Data',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'Con Data SA' }, items: [] },
+  }]);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  const entry = res.body.find(c => c.id === id);
+  assert.ok(entry);
+  assert.strictEqual(entry.hasData, true);
+  assert.strictEqual(entry.hasPdf, undefined);
 });
 
 test('B4: POST /api/cotizacion/envio usa paisDestino en destination.country', async () => {
@@ -106,6 +402,51 @@ test('B4: POST /api/cotizacion/envio usa paisDestino en destination.country', as
       .send({ cpDestino: '90210', paisDestino: 'US', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 100 });
     assert.ok(capturedPayload !== null);
     assert.strictEqual(capturedPayload.destination.country, 'US');
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.ENVIA_API_KEY = originalApiKey;
+  }
+});
+
+// #88: el tiempo estimado de entrega debe propagarse desde el shape REAL de
+// api.envia.com/ship/rate/ (documentado en vivo 2026-07-13, FedEx ground,
+// destino CP 78000 San Luis Potosi) hasta lo que consume el render en app.js:
+// los campos reales son deliveryEstimate y deliveryDate (rate.days no existe
+// en la respuesta real). El backend reenvia las tarifas sin filtrar campos --
+// este test fija ese contrato para que un futuro "saneo" de campos no los tire.
+test('B5 (#88): POST /api/cotizacion/envio propaga deliveryEstimate y deliveryDate del shape real de envia.com', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.ENVIA_API_KEY;
+  process.env.ENVIA_API_KEY = 'test-key';
+  // Shape real capturado de api.envia.com/ship/rate/ (campos relevantes)
+  const rateRealFedex = {
+    carrier: 'fedex', carrierDescription: 'FedEx',
+    service: 'ground', serviceDescription: 'FedEx Nacional Económico',
+    deliveryEstimate: '1-2 días',
+    deliveryDate: { date: '2026-07-15', dateDifference: 2, timeUnit: 'days', time: '21:00' },
+    totalPrice: 259, currency: 'MXN',
+  };
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.includes('api.envia.com/ship/rate')) {
+      const carrier = JSON.parse(opts.body).shipment.carrier;
+      return {
+        ok: true,
+        json: async () => ({ meta: 'rate', data: carrier === 'fedex' ? [rateRealFedex] : [] }),
+      };
+    }
+    throw new Error('Unmocked fetch: ' + u);
+  };
+  try {
+    const res = await supertest(app).post('/api/cotizacion/envio').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ cpDestino: '78000', paisDestino: 'MX', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 100 });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.rates.length, 1);
+    const rate = res.body.rates[0];
+    assert.strictEqual(rate.deliveryEstimate, '1-2 días');
+    assert.strictEqual(rate.deliveryDate.dateDifference, 2);
+    assert.strictEqual(rate.totalPrice, 259);
+    assert.strictEqual(rate.days, undefined);
   } finally {
     globalThis.fetch = originalFetch;
     process.env.ENVIA_API_KEY = originalApiKey;
@@ -150,6 +491,320 @@ test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 2
   }
 });
 
+// === PUT /api/actualizar-cliente-fiscal/:id (upgrade de CSF, issue #85) ===
+
+const CSF_UPGRADE = {
+  rfc: 'REA010101AB1', razonSocial: 'Real SA de CV', idcif: 'IDCIF77',
+  calle: 'Reforma', numExt: '100', numInt: '', colonia: 'Juarez',
+  cp: '06600', municipio: 'CDMX', estado: 'CDMX', regimenFiscal: '601',
+};
+
+function clienteRereleido(over = {}) {
+  return {
+    customer_id: 500, CustName: 'Real SA de CV', tax_id: 'REA010101AB1', idcif: 'IDCIF77',
+    street: 'Reforma', street_number: '100', suite_number: '', district: 'Juarez',
+    postal_code: '06600', city: 'CDMX', state: 'CDMX', cfdi_regimen_fiscal: '601', ...over,
+  };
+}
+
+test('UF1: upgrade feliz -> PUT al mismo customer_id con datos fiscales, sin crear cliente nuevo', async () => {
+  let putBody = null, postCalled = false, putId = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCalled = true; return { ok: true, json: async () => ({ result: true, customer_id: 999 }) }; }
+      if (opts?.method === 'PUT') { putId = u.split('/customers/')[1]; putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.customer_id, 500);
+    assert.deepEqual(res.body.camposNoActualizados, []);
+    assert.strictEqual(putId, '500', 'PUT sobre el mismo customer_id');
+    assert.strictEqual(putBody.tax_id, 'REA010101AB1');
+    assert.strictEqual(putBody.CustName, 'Real SA de CV');
+    assert.ok(!('rfc' in putBody), 'el body usa nombres de campo de Operam, no llaves csf');
+    assert.strictEqual(postCalled, false, 'NUNCA crea un cliente nuevo');
+  } finally {
+    restore();
+  }
+});
+
+test('UF2: RFC real ya existe con OTRO cliente -> 409 freno de fusion, sin PUT', async () => {
+  let putCalled = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 1 }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 800, branches: [{ branch_code: 1 }], CustName: 'Cliente Formal SA', tax_id: 'REA010101AB1' }] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 409);
+    assert.strictEqual(res.body.fusion, true);
+    assert.strictEqual(res.body.cliente.cliente_id, 800);
+    assert.strictEqual(res.body.cliente.CustName, 'Cliente Formal SA');
+    assert.strictEqual(putCalled, false, 'no toca Operam en escritura cuando frena por fusion');
+  } finally {
+    restore();
+  }
+});
+
+test('UF3: PUT que ignora un campo (quirk) -> la relectura lo reporta en camposNoActualizados', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // La relectura muestra el CustName VIEJO (Operam ignoro ese campo en silencio)
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ CustName: 'PROSPECTO SIN RAZON SOCIAL' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.camposNoActualizados.length, 1);
+    assert.strictEqual(res.body.camposNoActualizados[0].campo, 'CustName');
+    assert.strictEqual(res.body.camposNoActualizados[0].nuevo, 'Real SA de CV');
+  } finally {
+    restore();
+  }
+});
+
+test('UF3b: RFC de la CSF en minusculas SI frena la fusion (gate normaliza a mayusculas)', async () => {
+  let putCalled = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) {
+        assert.ok(u.includes('REA010101AB1'), 'el query a Operam debe ir en mayusculas: ' + u);
+        return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 800, branches: [{ branch_code: 1 }], CustName: 'Cliente Formal SA', tax_id: 'REA010101AB1' }] }) };
+      }
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, rfc: 'rea010101ab1' } });
+    assert.strictEqual(res.status, 409);
+    assert.strictEqual(res.body.fusion, true);
+    assert.strictEqual(putCalled, false);
+  } finally {
+    restore();
+  }
+});
+
+test('UF3c: PUT exitoso pero la relectura de verificacion falla -> ok:true, NO 503 (el dato SI se escribio)', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // La relectura post-PUT viene vacia (Operam no devolvio el cliente)
+      return { ok: true, json: async () => ({ data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.verificacionFallida, true);
+  } finally {
+    restore();
+  }
+});
+
+test('UF4: RFC ya existe con el MISMO customer_id (reintento idempotente) -> procede al PUT, no frena', async () => {
+  let putCalled = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 1 }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 500, branches: [{ branch_code: 1 }], CustName: 'Real SA de CV', tax_id: 'REA010101AB1' }] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(putCalled, true);
+  } finally {
+    restore();
+  }
+});
+
+test('UF5: csfDatos sin RFC -> 400, sin tocar Operam', async () => {
+  const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+    .set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ csfDatos: { razonSocial: 'Sin RFC SA' } });
+  assert.strictEqual(res.status, 400);
+});
+
+test('UF6: Operam no disponible en el gate -> 503 (distinto del 409 y del 400)', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (u.includes('tax_id=')) return { ok: false, status: 500, json: async () => ({ error: 'boom' }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 503);
+  } finally {
+    restore();
+  }
+});
+
+// === Regla 5 (issue #95): Tax ID extranjero -> notas, sin borrar notas existentes ===
+
+test('UF8: taxIdExtranjero capturado -> el PUT manda notes con el Tax ID antepuesto a las notas existentes', async () => {
+  let putBody = null;
+  let getsACustomers = 0;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      getsACustomers++;
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ notes: 'Notas previas del cliente' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, taxIdExtranjero: 'US123456789' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(putBody.notes, 'Tax ID: US123456789\nNotas previas del cliente');
+    assert.strictEqual(getsACustomers, 2, 'una relectura previa al PUT (notas actuales) y otra de verificacion post-PUT');
+  } finally {
+    restore();
+  }
+});
+
+test('UF9: sin taxIdExtranjero -> el PUT no manda notes y no hace la relectura previa (solo la de verificacion post-PUT)', async () => {
+  let putBody = null;
+  let getsACustomers = 0;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      getsACustomers++;
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.ok(!('notes' in putBody), 'sin taxIdExtranjero no debe tocar notes');
+    assert.strictEqual(getsACustomers, 1, 'solo la relectura de verificacion post-PUT, sin GET extra');
+  } finally {
+    restore();
+  }
+});
+
+test('UF10: PUT ignora notes (quirk) -> la relectura lo reporta en camposNoActualizados', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // Tanto la relectura previa como la de verificacion devuelven notas SIN el Tax ID.
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ notes: 'Notas previas del cliente' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, taxIdExtranjero: 'US123456789' } });
+    assert.strictEqual(res.status, 200);
+    const notasNoActualizadas = res.body.camposNoActualizados.find(x => x.campo === 'notes');
+    assert.ok(notasNoActualizadas, 'debe reportar que el Tax ID no quedo en notas');
+  } finally {
+    restore();
+  }
+});
+
+// === Regla 6 (issue #95): segmento_id viaja en el upgrade con verificacion post-escritura ===
+
+test('UF11: segmentoId capturado -> el PUT manda segmento_id', async () => {
+  let putBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento_id: '3' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, segmentoId: '3' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(putBody.segmento_id, '3');
+    assert.deepEqual(res.body.camposNoActualizados, []);
+  } finally {
+    restore();
+  }
+});
+
+test('UF12: quirk #74 -- PUT ignora segmento_id en silencio -> la relectura lo reporta en camposNoActualizados', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // La relectura muestra el segmento VIEJO (Operam ignoro el campo en silencio).
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento_id: '1' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, segmentoId: '3' } });
+    assert.strictEqual(res.status, 200);
+    const segNoActualizado = res.body.camposNoActualizados.find(x => x.campo === 'segmento_id');
+    assert.ok(segNoActualizado, 'debe reportar que segmento_id no pego');
+    assert.strictEqual(segNoActualizado.anterior, '1');
+    assert.strictEqual(segNoActualizado.nuevo, '3');
+  } finally {
+    restore();
+  }
+});
+
+test('UF7: sin token -> 401', async () => {
+  const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500').send({ csfDatos: CSF_UPGRADE });
+  assert.strictEqual(res.status, 401);
+});
+
 // === GET /api/log ===
 
 test('GET /api/log retorna 503 cuando no hay DATABASE_URL', async () => {
@@ -160,6 +815,24 @@ test('GET /api/log retorna 503 cuando no hay DATABASE_URL', async () => {
 test('GET /api/log sin token retorna 401', async () => {
   const res = await supertest(app).get('/api/log');
   assert.strictEqual(res.status, 401);
+});
+
+// === GET /api/admin/higiene-clientes-genericos (issue #86) ===
+
+test('GET /api/admin/higiene-clientes-genericos sin DATABASE_URL responde filas vacias y sinDb:true', async () => {
+  const res = await supertest(app).get('/api/admin/higiene-clientes-genericos')
+    .set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.deepEqual(res.body, { filas: [], sinDb: true });
+});
+
+test('GET /api/admin/higiene-clientes-genericos exige admin: vendedor 403, sin token 401', async () => {
+  const vendedorToken = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
+  const vendedor = await supertest(app).get('/api/admin/higiene-clientes-genericos')
+    .set('Authorization', `Bearer ${vendedorToken}`);
+  assert.strictEqual(vendedor.status, 403);
+  const sinToken = await supertest(app).get('/api/admin/higiene-clientes-genericos');
+  assert.strictEqual(sinToken.status, 401);
 });
 
 // === PUT /api/actualizar-cliente/:id ===
@@ -942,6 +1615,84 @@ test('E4: GET /api/buscar-cliente-duplicado retorna libre cuando no hay match', 
   }
 });
 
+// E5-E7: issue #78 -- RFC real sin match exacto tambien busca entre clientes
+// con RFC generico (el cliente pudo darse de alta sin CSF).
+test('E5: GET /api/buscar-cliente-duplicado con RFC real sin match exacto busca tambien candidatos con RFC generico por nombre', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u) => {
+      if (u.includes('search=ISI1801183Z4')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      if (u.includes('search=XAXX010101000')) return { ok: true, json: async () => ({
+        total: 1,
+        data: [{ customer_id: 30, CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', tax_id: 'XAXX010101000' }],
+      }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=ISI1801183Z4&nombre=Importaciones+Siscani')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'candidatos');
+    assert.ok(res.body.candidatos.some(c => c.id === 30), 'debe incluir el candidato Siscani Group con RFC generico');
+  } finally {
+    restore();
+  }
+});
+
+test('E6: GET /api/buscar-cliente-duplicado con RFC real, sin match de nombre pero con telefono coincidente marca candidato', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u) => {
+      if (u.includes('search=NUE990101ZZZ')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      if (u.includes('search=XAXX010101000')) return { ok: true, json: async () => ({
+        total: 1,
+        data: [{ customer_id: 40, CustName: 'Grupo ABC', cust_ref: 'ABC', tax_id: 'XAXX010101000', contacts: [{ phone: '55 1234 5678' }] }],
+      }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=NUE990101ZZZ&nombre=Nombre+Distinto&telefono=5512345678')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'candidatos');
+    assert.ok(res.body.candidatos.some(c => c.id === 40), 'debe marcar candidato por telefono');
+  } finally {
+    restore();
+  }
+});
+
+test('E7: GET /api/buscar-cliente-duplicado con RFC real que si tiene match exacto NO busca genericos (no degrada el caso ya cubierto)', async () => {
+  let searchoGenericos = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u) => {
+      if (u.includes('search=PNA010203ABC')) return { ok: true, json: async () => ({
+        total: 1,
+        data: [{ customer_id: 77, CustName: 'Peltre Nacional SA de CV', cust_ref: 'PELTRE', tax_id: 'PNA010203ABC' }],
+      }) };
+      if (u.includes('search=XAXX010101000') || u.includes('search=XEXX010101000')) {
+        searchoGenericos = true;
+        return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      }
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=PNA010203ABC&nombre=Peltre+Nacional')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'exacto');
+    assert.strictEqual(searchoGenericos, false, 'con match exacto no debe gastar llamadas extra buscando genericos');
+  } finally {
+    restore();
+  }
+});
+
 // === Webhook de Operam (sync post-venta, #62) ===
 // Auth por header secreto (NO el JWT del cotizador: Operam no lo tiene). El webhook
 // es solo una señal; la reconciliacion lee la verdad por API. Sin DATABASE_URL el
@@ -1103,6 +1854,224 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
   }
 });
 
+// === POST /api/cotizacion/operam/:id/actualizar — issue #104 (ADR-0008) ===
+// Doble de la web legacy de FrontAccounting. El PARSEO real esta cubierto contra el
+// HTML de produccion en test/operam-web.test.js (fixtures capturados de los quotes de
+// prueba 1199/1200); lo que se prueba aqui es la ORQUESTACION del endpoint, asi que
+// basta un formulario con la misma FORMA (cart_id, delivery_date, Comments, cust_ref y
+// un boton Delete{n} por partida) sobre un carrito en memoria que reacciona igual que
+// FA: Delete0 y AddItem mutan la "sesion", y solo ProcessOrder escribe el documento.
+function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = false } = {}) {
+  const sesion = { carrito: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })) };
+  const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01' };
+  const bitacora = [];
+  const formHtml = () => `<form method='post' action='/sales/sales_order_entry.php'>
+<input type="hidden" name="cart_id" value='CART1'>
+<input type="hidden" name="customer_id" value='376'>
+<input type="hidden" name="_token" value='TOK'>
+${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?stock_id=${l.stockId}'>x</a><button type='submit' name='Delete${i}' value='1'></button>`).join('\n')}
+<input type="text" name="stock_id" value=''>
+<input type="text" name="qty" value="1">
+<input type="text" name="price" value="0.00">
+<input type="text" name="Disc" value="0.0">
+<input type="text" name="delivery_date" value="${doc.vigencia}">
+<input type="text" name="cust_ref" value="${doc.custRef}">
+<textarea name="Comments">${doc.comments}</textarea>
+<button type='submit' name='ProcessOrder' value='Confirmar Cambios'></button>
+<button type='submit' name='CancelOrder' value='Cancelar Cotización'></button>
+</form>`;
+  const vistaHtml = () => `<table>
+<tr><td class='tableheader2'>Valido hasta</td><td id=''>${doc.vigencia}</td></tr>
+<tr><td class='tableheader2'>Comentarios</td>
+<td colspan=3 id=''>${doc.comments.split('\n').join('<br />\n')}</td>
+</tr></table>
+<table>${doc.lineas.map(l => `<tr class='evenrow'>
+<td><a href='../../inventory/inquiry/stock_status.php?stock_id=${l.stockId}'>${l.stockId}</a></td><td >Desc catalogo</td>
+<td align=right nowrap>${l.qty}</td>
+<td >pza</td>
+<td nowrap align=right >${l.price.toFixed(2)}</td>
+<td nowrap align=right >${l.disc.toFixed(2)}</td>
+<td nowrap align=right >0.00</td>
+<td nowrap align=right>0</td>
+</tr>`).join('')}</table>`;
+  const restore = mockOperamFetch({
+    'trans_type=30': () => ({ headers: {}, text: async () => '<html>login ok</html>' }),
+    'ModifyQuotationNumber': () => ({ headers: {}, text: async () => formHtml() }),
+    'trans_type=32': () => ({ headers: {}, text: async () => vistaHtml() }),
+    'sales_order_entry.php': (u, opts) => {
+      const p = new URLSearchParams(opts.body || '');
+      if (p.has('CancelOrder')) throw new Error('JAMAS debe mandarse CancelOrder');
+      bitacora.push([...p.keys()].find(k => /^(Delete0|AddItem|ProcessOrder)$/.test(k)) || 'desconocido');
+      if (p.has('Delete0')) sesion.carrito.shift();
+      else if (p.has('AddItem')) {
+        if (!romperAddItem) sesion.carrito.push({ stockId: p.get('stock_id'), qty: Number(p.get('qty')), price: Number(p.get('price')), disc: Number(p.get('Disc')) });
+      } else if (p.has('ProcessOrder')) {
+        doc.lineas = sesion.carrito.map(l => ({ ...l }));
+        doc.comments = p.get('Comments');
+        doc.custRef = p.get('cust_ref');
+        doc.vigencia = p.get('delivery_date');
+      }
+      return { headers: {}, text: async () => formHtml() };
+    },
+  });
+  return { restore, doc, bitacora };
+}
+
+function cotizacionActualizable(extra = {}) {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  writeCots([...snap, {
+    id, fecha: '2026-07-28T00:00:00Z', vendedor: 'Tester', cliente: 'EL PENDULO',
+    totalPiezas: 3, total: 300, tier: 'Mayoreo', folioOperam: '1200',
+    data: {
+      fecha: '2026-07-28', vigencia: '2026-08-27',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530' },
+      notas: ['Nota nueva.'],
+      items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
+      ...extra,
+    },
+  }]);
+  return id;
+}
+
+test('A104: actualizar reescribe el quote (borra las viejas, agrega las nuevas) y confirma UNA sola vez', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable();
+  const { restore, doc, bitacora } = mockOperamWebLegacy({ lineasIniciales: ['SKU-VIEJO', 'SKU-VIEJO-2'] });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    assert.strictEqual(res.body.folio, '1200', 'el folio se conserva');
+    assert.deepStrictEqual(bitacora, ['Delete0', 'Delete0', 'AddItem', 'ProcessOrder']);
+    assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-NUEVO']);
+    assert.strictEqual(doc.lineas[0].qty, 3);
+    assert.strictEqual(doc.lineas[0].price, 99.5);
+    // el header nuevo viaja en el MISMO ProcessOrder: en este camino no hace falta
+    // el post-fix separado de la vigencia (#106)
+    assert.strictEqual(doc.vigencia, '2026-08-27');
+    assert.match(doc.comments, /Nota nueva/);
+    assert.match(doc.comments, /Valido hasta: 2026-08-27/);
+    assert.strictEqual(doc.custRef, 'Pendulo');
+  } finally {
+    restore();
+  }
+});
+
+test('A104: si FA no agrega una partida se ABORTA sin ProcessOrder y el quote queda intacto', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable();
+  const { restore, doc, bitacora } = mockOperamWebLegacy({ lineasIniciales: ['SKU-VIEJO'], romperAddItem: true });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, false);
+    assert.strictEqual(res.body.escrito, false, 'no se llego a confirmar: el documento sigue intacto');
+    assert.ok(!bitacora.includes('ProcessOrder'), 'NUNCA debe confirmarse una reescritura a medias');
+    assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-VIEJO']);
+    // la cotizacion queda marcada para reintento (analogo al estado PRE de la subida)
+    const guardada = readCots().find(c => c.id === id);
+    assert.ok(guardada.data.quoteDesactualizado, 'debe quedar marcada como desactualizada');
+    assert.strictEqual(guardada.data.quoteDesactualizado.escrito, false);
+  } finally {
+    restore();
+  }
+});
+
+test('A104: si la cotizacion apunta a OTRO cliente se aborta sin escribir (no se cambia el cliente del quote)', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'Otro SA', nombreCorto: 'Otro', customerId: 999, cpEntrega: '56530' },
+  });
+  const { restore, doc, bitacora } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, false);
+    assert.strictEqual(res.body.escrito, false);
+    assert.match(res.body.error, /cliente/i);
+    assert.deepStrictEqual(bitacora, [], 'no debe mandar ningun POST de escritura');
+    assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-VIEJO']);
+  } finally {
+    restore();
+  }
+});
+
+test('A104: con el MISMO cliente que el quote la actualizacion procede', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530' },
+  });
+  const { restore, doc } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-NUEVO']);
+  } finally {
+    restore();
+  }
+});
+
+test('A104: una cotizacion con pedido asociado NO se puede actualizar (409, sin tocar Operam)', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({ orderOperam: '7077' });
+  const { restore, bitacora } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.error, /pedido/i);
+    assert.deepStrictEqual(bitacora, [], 'no debe tocar la web legacy');
+  } finally {
+    restore();
+  }
+});
+
+test('A104: una cotizacion PRE (sin folio) no se actualiza: primero hay que subirla', async () => {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  writeCots([...snap, {
+    id, fecha: '2026-07-28T00:00:00Z', vendedor: 'Tester', cliente: 'PRE', totalPiezas: 1, total: 1, tier: 'Mayoreo',
+    data: { cliente: { rfc: 'CPE921211N76' }, items: [{ codigo: 'X', descripcion: 'X', cantidad: 1, precio: 1, descuento: 0 }] },
+  }]);
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 409);
+  assert.match(res.body.error, /Operam/i);
+});
+
+test('A104: actualizar una cotizacion inexistente responde 404', async () => {
+  const res = await supertest(app).post('/api/cotizacion/operam/999999/actualizar').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 404);
+});
+
+test('A104: una actualizacion exitosa limpia la marca de quote desactualizado', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({ quoteDesactualizado: { fecha: '2026-07-01T00:00:00Z', escrito: false, error: 'previo', discrepancias: [] } });
+  const { restore } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    const guardada = readCots().find(c => c.id === id);
+    assert.strictEqual(guardada.data.quoteDesactualizado, null);
+  } finally {
+    restore();
+  }
+});
+
+test('A104: /api/cotizaciones expone orderOperam y quoteDesactualizado para el gate del historial', async () => {
+  const id = cotizacionActualizable({ orderOperam: '7077' });
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  const c = res.body.find(x => x.id === id);
+  assert.strictEqual(c.orderOperam, '7077');
+  assert.strictEqual(c.quoteDesactualizado, null);
+  assert.strictEqual(c.folioOperam, '1200');
+});
+
 test('O68: subir a Operam sin match de cliente responde 422 y NO sube ni persiste folio', async () => {
   const snap = readCots();
   const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
@@ -1128,6 +2097,167 @@ test('O68: subir a Operam sin match de cliente responde 422 y NO sube ni persist
     assert.strictEqual(quoteLlamado, false, 'NO debe subir el quote');
     const guardada = readCots().find(c => c.id === id);
     assert.ok(!guardada.folioOperam && !(guardada.data && guardada.data.folioOperam), 'no debe persistir folio');
+  } finally {
+    restore();
+  }
+});
+
+// === #114: regenerar una cotizacion ya subida y su quote en Operam ===
+// El bug: crearOActualizarCotizacion sobrescribe `data` aunque el registro ya tenga
+// folio, y la subida corta con yaSubida sin tocar Operam -- el documento sale numerado
+// con el folio y el contenido NUEVO mientras el quote conserva el VIEJO. La decision
+// (Adrian, 2026-07-29) es que regenerar actualice el quote, sin preguntar, SOLO si el
+// contenido cambio. Para saberlo hace falta una huella persistida de lo que se subio.
+const { huellaContenidoQuote: huella114 } = await import('../lib/operam-client.js');
+
+function contenido114(extra = {}) {
+  return {
+    fecha: '2026-07-29', vigencia: '2026-08-28', tier: 'Mayoreo',
+    cliente: { razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', telefono: '+52 5551234567', cpEntrega: '56530', customerId: 376 },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 1000, iva: 160, total: 1160, notas: [],
+    ...extra,
+  };
+}
+
+function cotizacionSubida114(extra = {}, { conHuella = true } = {}) {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  const data = contenido114();
+  writeCots([...snap, {
+    id, fecha: '2026-07-29T00:00:00Z', vendedor: 'Tester', cliente: 'Pendulo',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo', folioOperam: '1200',
+    data: { ...data, ...(conHuella ? { huellaQuote: huella114(data) } : {}), ...extra },
+  }]);
+  return id;
+}
+
+test('#114-1: regenerar sin cambios no pide actualizar el quote (PDF y luego HTML del mismo carrito)', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114(), cotizacionId: String(id) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.id, id);
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+  // la huella tiene que sobrevivir al guardado: si el merge del store la borrara, la
+  // siguiente regeneracion creeria que todo cambio
+  assert.ok(readCots().find(c => c.id === id).data.huellaQuote, 'la huella debe sobrevivir a la regeneracion');
+});
+
+test('#114-2: regenerar con cambios pide actualizar el quote conservando el folio', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send({
+    ...contenido114({
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 12, unidad: 'pza', precio: 100, descuento: 0 }],
+      subtotal: 1200, iva: 192, total: 1392,
+    }),
+    cotizacionId: String(id),
+  });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+  assert.strictEqual(res.body.folioOperam, '1200', 'el documento se numera con el folio que ya existe');
+});
+
+// #115 (segunda parte) corrige el otro punto de #114: las notas tampoco eran
+// "presentacion" -- viajan a comments del quote, asi que editarlas hay que llevarlo a
+// Operam. Lo que de verdad no viaja es el formato del documento.
+test('#114-3: cambiar solo el formato del documento no pide actualizar el quote', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ incluirFotos: true }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+});
+
+test('#115-3: editar las notas SI pide actualizar el quote (van en comments)', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ notas: ['Otra nota'] }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+});
+
+// #115 corrige la regla de #114 en un punto: la vigencia quedaba fuera junto a las
+// notas, pero SI viaja al quote (comments y "Valido hasta"), asi que cambiar el plazo
+// tiene que reescribirlo. Lo que sigue sin contar es la fecha absoluta.
+test('#115-1: cambiar el plazo de vigencia SI pide actualizar el quote', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ vigencia: '2026-12-31' }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+});
+
+test('#115-2: regenerar el mismo plazo en otra fecha NO pide actualizar el quote', async () => {
+  const id = cotizacionSubida114();
+  const base = contenido114();
+  // el frontend manda la fecha del dia y recalcula la vigencia: ambas se corren juntas
+  const dia = (iso, dias) => new Date(new Date(iso).getTime() + dias * 86400000).toISOString().split('T')[0];
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ fecha: dia(base.fecha, 3), vigencia: dia(base.vigencia, 3) }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+});
+
+test('#114-4: una cotizacion sin folio (PRE) nunca pide actualizar: lo suyo es completar la subida', async () => {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  writeCots([...snap, {
+    id, fecha: '2026-07-29T00:00:00Z', vendedor: 'Tester', cliente: 'Pendulo',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo', data: contenido114(),
+  }]);
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ total: 9999 }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+});
+
+test('#114-5: una cotizacion subida antes de esta issue (sin huella) pide actualizar', async () => {
+  const id = cotizacionSubida114({}, { conHuella: false });
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114(), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+});
+
+test('#114-6: subir a Operam persiste la huella de lo que quedo en el quote', async () => {
+  const snap = readCots();
+  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
+  const data = {
+    fecha: '2026-07-29', vigencia: '2026-08-28',
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530' },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    subtotal: 1000, iva: 160, total: 1160,
+  };
+  writeCots([...snap, { id, fecha: '2026-07-29T00:00:00Z', vendedor: 'Tester', cliente: 'Pendulo', totalPiezas: 10, total: 1160, tier: 'Mayoreo', data }]);
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }] }) }),
+    '/api/v3/sales/quote': () => ({ ok: true, json: async () => ({ result: true, added_trans_no: 1601 }) }),
+    'trans_type=30': () => ({ headers: {}, text: async () => '<html>login</html>' }),
+    'trans_type=32': () => ({ headers: {}, text: async () => '<html></html>' }),
+    'sales_order_entry.php': () => ({ headers: {}, text: async () => '<html></html>' }),
+  });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true);
+    const guardada = readCots().find(c => c.id === id);
+    assert.strictEqual(guardada.data.huellaQuote, huella114(data), 'la huella debe describir lo que se subio');
+  } finally {
+    restore();
+  }
+});
+
+test('#114-7: actualizar el quote con exito reescribe la huella con lo que quedo en Operam', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', telefono: '+52 5551234567' },
+    huellaQuote: 'huella-vieja',
+  });
+  const { restore } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    const guardada = readCots().find(c => c.id === id);
+    assert.notStrictEqual(guardada.data.huellaQuote, 'huella-vieja');
+    // regenerar ese mismo contenido ya no debe pedir otra reescritura
+    const post = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...guardada.data, cotizacionId: String(id) });
+    assert.strictEqual(post.body.requiereActualizacionOperam, false);
   } finally {
     restore();
   }

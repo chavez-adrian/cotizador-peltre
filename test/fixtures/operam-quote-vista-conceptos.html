@@ -1,0 +1,136 @@
+<!-- Fixture: cabecera + tabla "Conceptos" de la vista read-only de una cotizacion en
+     la web legacy de Operam (GET /sales/view/view_sales_order.php?trans_no=N&
+     trans_type=32). Captura REAL del quote de PRUEBA 1200 el 2026-07-28, JUSTO DESPUES
+     de la verificacion en vivo del ciclo completo de actualizacion (#104, ADR-0008);
+     anonimizada (token y telefono sustituidos). Es la pagina que lee la verificacion
+     post-escritura: SKUs, cantidades, precios, descuentos, comentarios y vigencia.
+     Dos cosas que este HTML fija y que la comparacion tuvo que respetar:
+     - los saltos de linea de Comments se renderizan como <br />, no como '\n';
+     - la DESCRIPCION de cada partida la pone el catalogo de Operam, no el
+       stock_id_text que manda la API ("Envio Economico FedEx Ground(R)" donde la
+       cotizacion decia "FedEx Ground") -- por eso no se compara. -->
+<td class='tableheader2'>Solicitado El</td>
+<td  id=''>2026-07-28</td>
+<td class='tableheader2'>Valido hasta</td>
+<td  id=''>2026-09-30</td>
+</tr>
+<tr>
+<td class='tableheader2'>Moneda de la Orden</td>
+<td  id=''>MXN</td>
+<td class='tableheader2'>Entregar de ubicación</td>
+<td  id=''>PT</td>
+</tr>
+<tr>
+<td class='tableheader2'>Términos de Pago</td>
+<td  id=''>Anticipo 50%</td>
+<td class='tableheader2'>Usuario Creador</td>
+<td  id=''>Claude Code</td>
+</tr>
+<tr>
+<td class='tableheader2'>Dirección de Entrega</td>
+<td  id=''>57170</td>
+<td class='tableheader2'>Transportista</td>
+<td  id=''>Default</td>
+</tr>
+<tr>
+<td class='tableheader2'>Referencia</td>
+<td  id=''>C2607262</td>
+<td class='tableheader2'>Sucursal</td>
+<td  id=''>01.Tlapacoya</td>
+</tr>
+<tr><td class='tableheader2'>Teléfono</td>
+<td colspan=3 id=''>+52 55 0000 0000</td>
+</tr>
+<tr><td class='tableheader2'>E-mail</td>
+<td colspan=3 id=''><a href='mailto:'></a></td>
+</tr>
+<tr><td class='tableheader2'>Comentarios</td>
+<td colspan=3 id=''>- Cotizacion de PRUEBA del ciclo de #104 - no es una oferta real.<br />
+- Segunda nota de prueba.<br />
+Valido hasta: 2026-09-30</td>
+</tr>
+<tr><td class='tableheader2'>Dimensiones</td><td colspan=3><center><table class='tablestyle_noborder' style="float:left" cellpadding=2 cellspacing=0>
+</table></center>
+</td>
+</tr>
+<tr><td class='tableheader2'>Fecha de Creación</td>
+<td colspan=3 id=''>28/07/2026 09:14 AM</td>
+</tr>
+</table></center>
+</td><td valign='top'><center><table class='tablestyle' cellpadding=2 cellspacing=0>
+<center><span class='headingtext2'>Pedidos</span></center>
+<tr>
+<td class='tableheader' >Nº</td>
+<td class='tableheader' >Ref</td>
+<td class='tableheader' >Fecha</td>
+<td class='tableheader' >Total</td>
+</tr>
+<tr><td colspan=4 align=right id=''>0.00</td>
+</tr>
+</table></center>
+</td></tr></table></center>
+<br><br><br><input type="hidden" name="_focus" value='' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='TOKEN_DE_PRUEBA' id="">
+</form>
+<center><center><span class='headingtext2'>Conceptos</span></center>
+<form method='post' action='/sales/view/view_sales_order.php' >
+<input type="hidden" name="trans_no" value='1200' id="">
+<input type="hidden" name="trans_type" value='32' id="">
+<center><table class='tablestyle' colspan=9 width=95% cellpadding=2 cellspacing=0>
+<tr>
+<td class='tableheader' >Código de Artículo</td>
+<td class='tableheader' >Descripción del Artículo</td>
+<td class='tableheader' >Cantidad</td>
+<td class='tableheader' >Unidad</td>
+<td class='tableheader' >Precio</td>
+<td class='tableheader' >Descuento</td>
+<td class='tableheader' >Total</td>
+<td class='tableheader' >Cantidad de Pedido</td>
+</tr>
+<tr class='evenrow'  >
+<td><a target='_blank' href='../../inventory/inquiry/stock_status.php?stock_id=TA14Y31111' onclick="javascript:openWindow(this.href,this.target); return false;" >TA14Y31111</a></td><td >Tazón 14 mostaza filete negro </td>
+<td align=right nowrap>7.00</td>
+<td >pza</td>
+<td nowrap align=right >33.33</td>
+<td nowrap align=right >0.00</td>
+<td nowrap align=right >233.31</td>
+<td nowrap align=right>0.00</td>
+</tr>
+<tr class='oddrow'  >
+<td><a target='_blank' href='../../inventory/inquiry/stock_status.php?stock_id=VA05Y4001120' onclick="javascript:openWindow(this.href,this.target); return false;" >VA05Y4001120</a></td><td >Taza 5 crema s/filetes </td>
+<td align=right nowrap>2.00</td>
+<td >pza</td>
+<td nowrap align=right >111.11</td>
+<td nowrap align=right >10.00</td>
+<td nowrap align=right >200.00</td>
+<td nowrap align=right>0.00</td>
+</tr>
+<tr class='evenrow'  >
+<td><a target='_blank' href='../../inventory/inquiry/stock_status.php?stock_id=251021001' onclick="javascript:openWindow(this.href,this.target); return false;" >251021001</a></td><td >Envio Económico FedEx Ground® </td>
+<td align=right nowrap>1</td>
+<td >srv</td>
+<td nowrap align=right >123.45</td>
+<td nowrap align=right >0.00</td>
+<td nowrap align=right >123.45</td>
+<td nowrap align=right>0</td>
+</tr>
+<tr><td align=right colspan=7>Envío/Transporte</td>
+<td nowrap align=right id=''>0.00</td>
+<td colspan=1></td></tr>
+<tr><td align=right colspan=7>Sub Total</td>
+<td nowrap align=right id=''>556.76</td>
+<td colspan=1></td></tr>
+<tr><td colspan=7 align=right>I.V.A. 16% (16%)</td>
+<td align='right' class='mantax' data-tax_type_id='1'  id=''>89.08</td>
+<td colspan=2></td></tr>
+<tr>
+<td colspan=7 align='right'>Monto Total</td>
+<td align='right' id=''>645.84</td>
+<td colspan=2></td>
+</tr>
+</table></center>
+<br><br><input type="hidden" name="_focus" value='' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='TOKEN_DE_PRUEBA' id="">
+</form>

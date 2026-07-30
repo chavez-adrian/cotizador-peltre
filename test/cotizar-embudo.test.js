@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -27,14 +28,14 @@ const ANA_TOKEN = jwt.sign({ id: 8, name: 'Ana', role: 'vendedor' }, JWT_SECRET,
 
 function readProspectos() {
   if (!existsSync(PROSPECTOS_PATH)) return [];
-  return JSON.parse(readFileSync(PROSPECTOS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(PROSPECTOS_PATH));
 }
 function writeProspectos(data) {
-  writeFileSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
 }
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
-  return JSON.parse(readFileSync(COTS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(COTS_PATH));
 }
 
 // Ningun test pega a Operam real: fetch bloqueado por defecto (la clasificacion
@@ -87,8 +88,8 @@ before(() => {
 });
 after(() => {
   if (existiaProspectos) writeProspectos(savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
-  writeFileSync(COTS_PATH, JSON.stringify(savedCots, null, 2));
+  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
+  escribirArchivoSync(COTS_PATH, JSON.stringify(savedCots, null, 2));
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {
@@ -164,16 +165,19 @@ function bodyCotizacion(telefono, extra = {}) {
   };
 }
 
-async function cotizarHtml(token, body) {
-  return supertest(app).post('/api/cotizacion/html')
+// Guardar la cotizacion (ADR-0009): el POST ya no genera documento, solo crea o
+// actualiza el registro -- que es lo que dispara el hook del embudo. Antes esto
+// se hacia con POST /api/cotizacion/html, que ademas devolvia el HTML.
+async function cotizar(token, body) {
+  return supertest(app).post('/api/cotizacion')
     .set('Authorization', `Bearer ${token}`).send(body);
 }
 
 test('H1: cotizar con el celular de un prospecto lo pasa a Seguimiento con el evento de la cotizacion', async () => {
   writeProspectos([prospectoDe('Memo')]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 55 1234 5678'));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 55 1234 5678'));
   assert.equal(res.status, 200);
-  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  const cotizacionId = res.body.id;
   assert.ok(cotizacionId > 0);
   const p = readProspectos()[0];
   assert.equal(p.etapa, 'seguimiento');
@@ -187,7 +191,7 @@ test('H1: cotizar con el celular de un prospecto lo pasa a Seguimiento con el ev
 
 test('H2: la transicion automatica a Seguimiento aplica aunque el prospecto sea de otro vendedor', async () => {
   writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
-  const res = await cotizarHtml(ANA_TOKEN, bodyCotizacion('+52 5512345678'));
+  const res = await cotizar(ANA_TOKEN, bodyCotizacion('+52 5512345678'));
   assert.equal(res.status, 200);
   const p = readProspectos()[0];
   assert.equal(p.etapa, 'seguimiento');
@@ -198,7 +202,7 @@ test('H2: la transicion automatica a Seguimiento aplica aunque el prospecto sea 
 
 test('H3: cotizar revive un prospecto en No util y registra de donde venia', async () => {
   writeProspectos([prospectoDe('Memo', 'no_util')]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
   assert.equal(res.status, 200);
   const p = readProspectos()[0];
   assert.equal(p.etapa, 'seguimiento');
@@ -210,9 +214,9 @@ test('H4: cotizar a un prospecto ya en Seguimiento solo registra el evento nuevo
   writeProspectos([prospectoDe('Memo', 'seguimiento', {
     eventos: [{ tipo: 'cotizacion', cotizacion_id: 5, de: 'por_cotizar', fecha: '2026-06-10T10:00:00Z', vendedor: 'Memo' }],
   })]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
   assert.equal(res.status, 200);
-  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  const cotizacionId = res.body.id;
   const p = readProspectos()[0];
   assert.equal(p.etapa, 'seguimiento');
   const eventos = p.eventos.filter(e => e.tipo === 'cotizacion');
@@ -223,9 +227,9 @@ test('H4: cotizar a un prospecto ya en Seguimiento solo registra el evento nuevo
 
 test('H5: celular libre con canal valido auto-crea el prospecto en Seguimiento con datos de la cotizacion', async () => {
   writeProspectos([]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'Instagram' }));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'Instagram' }));
   assert.equal(res.status, 200);
-  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  const cotizacionId = res.body.id;
   const prospectos = readProspectos();
   assert.equal(prospectos.length, 1);
   const p = prospectos[0];
@@ -242,14 +246,14 @@ test('H5: celular libre con canal valido auto-crea el prospecto en Seguimiento c
 
 test('H6: celular libre sin canal en el body no auto-crea prospecto (API directa)', async () => {
   writeProspectos([]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5599999999'));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5599999999'));
   assert.equal(res.status, 200);
   assert.equal(readProspectos().length, 0);
 });
 
 test('H7: canal fuera del catalogo cerrado no auto-crea prospecto', async () => {
   writeProspectos([]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'TikTok' }));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'TikTok' }));
   assert.equal(res.status, 200);
   assert.equal(readProspectos().length, 0);
 });
@@ -257,16 +261,19 @@ test('H7: canal fuera del catalogo cerrado no auto-crea prospecto', async () => 
 test('H8: celular de un cliente Operam no crea prospecto aunque venga canal', async () => {
   writeProspectos([]);
   mockListadoClientes([CLIENTE_OPERAM]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678', { canal: 'WhatsApp' }));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5512345678', { canal: 'WhatsApp' }));
   assert.equal(res.status, 200);
   assert.equal(readProspectos().length, 0);
 });
 
-test('H9: un fallo del hook jamas rompe la generacion de la cotizacion', async () => {
-  writeFileSync(PROSPECTOS_PATH, '{corrupto');
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678', { canal: 'WhatsApp' }));
+test('H9: un fallo del hook jamas rompe el guardado de la cotizacion', async () => {
+  escribirArchivoSync(PROSPECTOS_PATH, '{corrupto');
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5512345678', { canal: 'WhatsApp' }));
   assert.equal(res.status, 200);
-  assert.match(res.text, /Laura|LAURA/);
+  // El POST ya no devuelve documento (ADR-0009): lo que se comprueba es que la
+  // cotizacion quedo guardada pese al hook roto.
+  const cot = await cotStore.obtener(res.body.id);
+  assert.match(cot.cliente, /Laura|LAURA/i);
   writeProspectos([]);
 });
 
@@ -275,9 +282,9 @@ test('H11: la regla de dominio gobierna el hook: una cotizacion no retrocede una
   // debe respetar transicionPorCotizacion (null) y NO regresar la tarjeta a
   // Seguimiento; solo deja el evento de la cotizacion en el historial.
   writeProspectos([prospectoDe('Memo', 'producto_entregado')]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
   assert.equal(res.status, 200);
-  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  const cotizacionId = res.body.id;
   const p = readProspectos()[0];
   assert.equal(p.etapa, 'producto_entregado');
   const ev = p.eventos.find(e => e.tipo === 'cotizacion');
@@ -287,7 +294,7 @@ test('H11: la regla de dominio gobierna el hook: una cotizacion no retrocede una
 
 test('H10: el hook tambien corre al generar PDF', async () => {
   writeProspectos([prospectoDe('Memo')]);
-  const res = await supertest(app).post('/api/cotizacion/pdf')
+  const res = await supertest(app).post('/api/cotizacion')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
     .send(bodyCotizacion('+52 5512345678'));
   assert.equal(res.status, 200);
@@ -330,9 +337,9 @@ test('O3: generar una pre-cotizacion (celular libre, sin alta) mueve la tarjeta 
   // y nace SIN folio: es una pre-cotizacion (estado PRE) que conserva su PRE hasta
   // formalizarse. Slice end-to-end del issue #63.
   writeProspectos([]);
-  const res = await cotizarHtml(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'WhatsApp' }));
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5599999999', { canal: 'WhatsApp' }));
   assert.equal(res.status, 200);
-  const cotizacionId = Number(res.headers['x-cotizacion-id']);
+  const cotizacionId = res.body.id;
   // La oportunidad esta en Seguimiento...
   const p = readProspectos()[0];
   assert.equal(p.etapa, 'seguimiento');
@@ -433,4 +440,97 @@ test('O2: si la subida a Operam falla, la cotizacion sigue sin folio (sigue PRE)
   // se persiste folio. Antes era 503 enmascarando un fallo de Operam inexistente.
   assert.equal(res.status, 422);
   assert.equal((await cotStore.obtener(id)).folioOperam, null);
+});
+
+// === Regeneracion sin duplicar (issue #83, F1): 1 oportunidad = 1 cotizacion ===
+// Generar PDF y luego HTML del mismo carrito (flujo normal: PDF para archivo +
+// HTML para WhatsApp) NO debe crear dos entries: los POST /pdf y /html aceptan un
+// cotizacionId opcional y, si el entry existe, lo ACTUALIZAN devolviendo el mismo
+// id. Con folio ya persistido, la subida a Operam no se repite (los quotes de
+// Operam no se editan por API): el endpoint devuelve el folio existente.
+
+test('R1: POST /html con el cotizacionId del PDF actualiza el mismo entry (no crea otro)', async () => {
+  writeProspectos([]);
+  const antes = readCots().length;
+  const pdf = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send(bodyCotizacion('+52 5599999999'));
+  assert.equal(pdf.status, 200);
+  const id = pdf.body.id;
+  assert.ok(id > 0);
+  assert.equal(readCots().length, antes + 1);
+
+  // Mismo carrito, ahora con una nota extra y total cambiado: HTML para WhatsApp.
+  const html = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ ...bodyCotizacion('+52 5599999999'), cotizacionId: id, total: 2320, subtotal: 2000, iva: 320 });
+  assert.equal(html.status, 200);
+  assert.equal(html.body.id, id, 'devuelve el MISMO id');
+  assert.equal(readCots().length, antes + 1, 'no se creo un segundo entry');
+  const entry = await cotStore.obtener(id);
+  assert.equal(entry.total, 2320, 'el entry se actualizo con el contenido regenerado');
+});
+
+test('R2: cotizacionId inexistente cae al camino de crear (no truena)', async () => {
+  writeProspectos([]);
+  const antes = readCots().length;
+  const res = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ ...bodyCotizacion('+52 5599999999'), cotizacionId: 999999 });
+  assert.equal(res.status, 200);
+  const id = res.body.id;
+  assert.notEqual(id, 999999);
+  assert.equal(readCots().length, antes + 1);
+});
+
+test('R3: la actualizacion preserva customerId/branchId ya ligados y las claves ajenas del data', async () => {
+  writeProspectos([]);
+  const pdf = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send(bodyCotizacion('+52 5599999999'));
+  const id = pdf.body.id;
+  // La subida (#81) persistio el cliente ligado; el checklist de calca (#61) vive
+  // en data.decorado. Una regeneracion (que no trae esos campos) no debe borrarlos.
+  await cotStore.actualizarDatos(id, {
+    cliente: { ...(await cotStore.obtener(id)).data.cliente, customerId: 501, branchId: 601 },
+    decorado: true,
+  });
+  const html = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ ...bodyCotizacion('+52 5599999999'), cotizacionId: id });
+  assert.equal(html.status, 200);
+  const entry = await cotStore.obtener(id);
+  assert.equal(entry.data.cliente.customerId, 501, 'customerId ligado sobrevive la regeneracion');
+  assert.equal(entry.data.cliente.branchId, 601, 'branchId ligado sobrevive la regeneracion');
+  assert.equal(entry.data.decorado, true, 'las claves ajenas del data sobreviven (merge, no replace)');
+});
+
+test('R4: el hook del embudo NO se repite al regenerar (un solo evento de cotizacion)', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  const pdf = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send(bodyCotizacion('+52 5512345678'));
+  const id = pdf.body.id;
+  await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ ...bodyCotizacion('+52 5512345678'), cotizacionId: id });
+  const p = readProspectos()[0];
+  assert.equal(p.eventos.filter(e => e.tipo === 'cotizacion').length, 1, 'la regeneracion no duplica el evento');
+});
+
+test('O4: subir una cotizacion que YA tiene folio no re-sube (cero fetch) y devuelve el folio existente', async () => {
+  writeProspectos([]);
+  const id = await cotStore.crear({
+    fecha: '2026-07-07T00:00:00Z', vendedor: 'Memo', cliente: 'HOTELERA DEL SUR',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'HOTELERA DEL SUR SA DE CV', rfc: 'HSU010101AAA' }, items: [] },
+  });
+  await cotStore.setFolioOperam(id, 55123);
+  // fetch sigue BLOQUEADO (beforeEach): si el endpoint tocara Operam, tronaria.
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.folio, '55123');
+  assert.equal(res.body.yaSubida, true, 'senala que no hubo subida nueva');
 });

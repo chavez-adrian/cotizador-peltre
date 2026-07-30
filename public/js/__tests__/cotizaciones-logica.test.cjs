@@ -3,10 +3,16 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
-  puedeArrastrarCotizacion, buildTableroCotizacionesHtml;
+  puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
+  buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
+  puedeActualizarCotizacion, buildAccionesCargaHtml,
+  buildAvisoModoActualizacion, textoBotonGenerar;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
-    puedeArrastrarCotizacion, buildTableroCotizacionesHtml } = await import('../cotizaciones-logica.js'));
+    puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
+    buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
+    puedeActualizarCotizacion, buildAccionesCargaHtml,
+    buildAvisoModoActualizacion, textoBotonGenerar } = await import('../cotizaciones-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -148,6 +154,25 @@ test('Q10: la tarjeta muestra cliente, total formateado, piezas, vendedor y dias
   assert.ok(hoyMismo.includes('hace 0 días'));
 });
 
+// #111 (ADR-0009): el historial identifica cada cotizacion con el MISMO numero
+// que Operam. La vista lista ya lo hacia con el badge de #63; el tablero -- la
+// otra mitad de la misma vista -- no identificaba la tarjeta con nada, asi que
+// una cotizacion vista ahi no se podia cruzar con el ERP. Se usa siempre
+// etiquetaFolioOperam ("#Operam N" / "PRE"), nunca el id interno.
+test('Q11b: la tarjeta del tablero identifica la cotizacion por su folio de Operam, y las PRE siguen distinguibles', () => {
+  const conFolio = buildTableroCotizacionesHtml([cot(3, { id: 1, folioOperam: '1200' })], HOY);
+  assert.ok(conFolio.includes('#Operam 1200'));
+  assert.ok(!conFolio.includes('#1'), 'no identifica por el id interno');
+
+  const pre = buildTableroCotizacionesHtml([cot(3, { id: 2 })], HOY);
+  assert.ok(pre.includes('>PRE<'));
+
+  // Historica anterior a #63: se asume registrada, sin badge (ni PRE ni #Operam).
+  const historica = buildTableroCotizacionesHtml([cot(3, { id: 3, registroDesconocido: true })], HOY);
+  assert.ok(!historica.includes('>PRE<'));
+  assert.ok(!historica.includes('#Operam'));
+});
+
 test('Q11: la tarjeta trae link wa.me cuando hay telefono y lo omite cuando no', () => {
   const con = buildTableroCotizacionesHtml([cot(3, { telefono: '525512345678' })], HOY);
   assert.ok(con.includes('https://wa.me/525512345678'));
@@ -192,4 +217,127 @@ test('Q14: el header de columna es un pill con clase por columna', () => {
   const html = buildTableroCotizacionesHtml([cot(3)], HOY);
   assert.match(html, /col-pill col-pill-dia2/);
   assert.match(html, /col-pill col-pill-ganada/);
+});
+
+// === #103: acciones del historial (Ver PDF / Ver HTML / WhatsApp) regeneran
+// desde el registro guardado; nada de disco ni de estado del formulario.
+
+test('Q17: buildHistorialAccionesHtml apunta Ver PDF y Ver HTML a los GET que regeneran desde data', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true }));
+  assert.ok(html.includes('href="/api/cotizacion/pdf/42"'));
+  assert.ok(html.includes('href="/api/cotizacion/html/42"'));
+  assert.ok(html.includes('>Ver PDF<'));
+  assert.ok(html.includes('>Ver HTML<'));
+});
+
+test('Q18: buildHistorialAccionesHtml deshabilita las 3 acciones cuando el registro no tiene data', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: false }));
+  assert.ok(!html.includes('/api/cotizacion/pdf/42'));
+  assert.ok(!html.includes('/api/cotizacion/html/42'));
+  assert.ok(!html.includes('wa.me'));
+  assert.match(html, /disabled title="Datos no disponibles">Ver PDF/);
+  assert.match(html, /disabled title="Datos no disponibles">Ver HTML/);
+  assert.match(html, /disabled title="Datos no disponibles">WhatsApp/);
+});
+
+test('Q19: buildWhatsAppLinkHistorial arma un wa.me con el HTML regenerado (con origin) y el cliente/total en el mensaje', () => {
+  const url = buildWhatsAppLinkHistorial(cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5 }), 'https://cotizador.example');
+  assert.match(url, /^https:\/\/wa\.me\/\?text=/);
+  const msg = decodeURIComponent(url.split('text=')[1]);
+  assert.ok(msg.includes('Hotel Azul'));
+  assert.ok(msg.includes('12,345.50'));
+  assert.ok(msg.includes('https://cotizador.example/api/cotizacion/html/42'));
+});
+
+test('Q20: buildHistorialAccionesHtml usa el link wa.me de buildWhatsAppLinkHistorial y escapa datos de usuario', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 7, cliente: '<img src=x onerror=alert(1)>', hasData: true }), 'https://cotizador.example');
+  assert.ok(html.includes('wa.me'));
+  assert.ok(!html.includes('<img src=x'));
+});
+
+// === Actualizar vs crear-nueva desde el historial (#104, ADR-0008) ===
+// "Cargar" hacia dos cosas a la vez: restaurar el carrito y, calladamente, empezar
+// una cotizacion NUEVA (#83 F1 reseteaba lastCotizacionId). Ahora son dos acciones
+// explicitas. El gate de "Actualizar" es el del ADR: folio ya subido y SIN pedido
+// asociado -- consistente con Operam, que deshabilita la edicion de un quote ya
+// convertido en pedido.
+
+test('Q21: puedeActualizarCotizacion exige folio subido y ningun pedido asociado', () => {
+  assert.equal(puedeActualizarCotizacion({ hasData: true, folioOperam: '1200', orderOperam: null }).puede, true);
+});
+
+test('Q22: puedeActualizarCotizacion bloquea con pedido asociado (el quote ya se convirtio)', () => {
+  const r = puedeActualizarCotizacion({ hasData: true, folioOperam: '1200', orderOperam: '7077' });
+  assert.equal(r.puede, false);
+  assert.match(r.motivo, /pedido/i);
+});
+
+test('Q23: puedeActualizarCotizacion bloquea una PRE (sin folio no hay quote que editar)', () => {
+  const r = puedeActualizarCotizacion({ hasData: true, folioOperam: null, orderOperam: null });
+  assert.equal(r.puede, false);
+  assert.match(r.motivo, /Operam/i);
+});
+
+test('Q24: puedeActualizarCotizacion bloquea una historica sin data (no hay nada que reescribir)', () => {
+  assert.equal(puedeActualizarCotizacion({ hasData: false, folioOperam: '900' }).puede, false);
+  assert.equal(puedeActualizarCotizacion(undefined).puede, false);
+});
+
+test('Q25: buildAccionesCargaHtml ofrece Actualizar (default) y Crear nueva cuando se puede actualizar', () => {
+  const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: true, folioOperam: '1200' }));
+  assert.ok(html.includes('Actualizar cotización'));
+  assert.ok(html.includes('Crear nueva a partir de ésta'));
+  assert.ok(html.includes("cargarCotizacion(7, 'actualizar')"));
+  assert.ok(html.includes("cargarCotizacion(7, 'nueva')"));
+  // el default es Actualizar: es el unico primario
+  assert.equal((html.match(/btn-primary/g) || []).length, 1);
+  assert.ok(/Actualizar cotización[\s\S]*?<\/button>/.test(html));
+  assert.ok(!html.includes('disabled'));
+});
+
+test('Q26: buildAccionesCargaHtml deshabilita Actualizar con pedido asociado y explica por que', () => {
+  const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: true, folioOperam: '1200', orderOperam: '7077' }));
+  assert.ok(html.includes('disabled'));
+  assert.match(html, /title="[^"]*pedido[^"]*"/i);
+  // Crear nueva sigue disponible y pasa a ser el default
+  assert.ok(html.includes("cargarCotizacion(7, 'nueva')"));
+  assert.ok(!html.includes("cargarCotizacion(7, 'actualizar')"));
+});
+
+test('Q27: buildAccionesCargaHtml sin data deshabilita las dos acciones', () => {
+  const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: false }));
+  assert.equal((html.match(/disabled/g) || []).length, 2);
+  assert.ok(!html.includes('cargarCotizacion('));
+});
+
+// === #109: el aviso de modo actualizacion identifica el documento por el
+// folio REAL de Operam (badge "#Operam N" de pipeline-logica.js, issue #63),
+// nunca por el id interno del registro -- ese era el bug reportado por Adrian
+// en la verificacion de #104 ("#16" leido junto a "mismo folio" como si 16 y
+// 1200 fueran el mismo numero). En modo actualizacion el folio SIEMPRE existe
+// (gate puedeActualizarCotizacion), asi que no hay caso "sin folio" que cubrir.
+
+test('Q28: buildAvisoModoActualizacion nombra el folio real de Operam con la convencion #Operam N', () => {
+  const html = buildAvisoModoActualizacion('1200');
+  assert.ok(html.includes('#Operam 1200'));
+  assert.ok(!html.includes('#16'));
+});
+
+test('Q29: buildAvisoModoActualizacion describe la accion en terminos de los botones (actualizar PDF/HTML)', () => {
+  const html = buildAvisoModoActualizacion('1200');
+  assert.match(html, /actualizar el pdf o el html/i);
+  assert.match(html, /se actualizar.* en operam/i);
+});
+
+// === #109: los botones comunican que actualizan (no "generar" generico) en
+// modo actualizacion, y conservan el texto historico fuera de ese modo.
+
+test('Q30: textoBotonGenerar devuelve las etiquetas normales fuera de modo actualizacion', () => {
+  assert.equal(textoBotonGenerar('pdf', false), 'Generar PDF');
+  assert.equal(textoBotonGenerar('html', false), 'Ver HTML');
+});
+
+test('Q31: textoBotonGenerar devuelve etiquetas de actualizar en modo actualizacion', () => {
+  assert.equal(textoBotonGenerar('pdf', true), 'Actualizar PDF');
+  assert.equal(textoBotonGenerar('html', true), 'Actualizar HTML');
 });

@@ -6,9 +6,24 @@ import {
   calcularDiffFiscal,
   buildDiffFiscalHtml,
   buildDedupExactoConDiffHtml,
+  buildCandidatosRfcGenericoHtml,
   buildAltaDarDeAltaPayload,
   buildClienteDesdeAlta,
   mensajeBusquedaCelular,
+  mezclarResultadosBusqueda,
+  recientesDesdeCotizaciones,
+  chipsCompletitud,
+  buildClienteDesdeContactoNuevo,
+  clienteDesdeProspecto,
+  accionCelularContactoNuevo,
+  decidirVistaTrasBusqueda,
+  accionProspecto409,
+  paisDesdeCodigoTelefono,
+  customerIdFiscal,
+  validarAltaManualMinimos,
+  emailFacturaParaUpgrade,
+  contactosEntregaDisponibles,
+  etiquetaTagContacto,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -30,6 +45,10 @@ import {
 import {
   puedeArrastrarCotizacion,
   buildTableroCotizacionesHtml,
+  buildHistorialAccionesHtml,
+  buildAccionesCargaHtml,
+  buildAvisoModoActualizacion,
+  textoBotonGenerar,
 } from './cotizaciones-logica.js';
 import {
   buildTableroPipelineHtml,
@@ -38,11 +57,20 @@ import {
   badgeFolioOperamProspectoHtml,
   badgePagoSinRegistrarHtml,
   cadenaOperamHtml,
+  badgePagoSinRegistrarHtml,
   botonCompletarHtml,
-  siguientePasoFormalizacion,
+  interpretarSubidaOperam,
+  buildOperamStatusHtml,
+  interpretarActualizacionOperam,
+  buildActualizacionStatusHtml,
+  badgeQuoteDesactualizadoHtml,
   buildColaHoyHtml,
   buildMenuNuevoHtml,
   buildCerradasHtml,
+  filaResultadoClienteHtml,
+  filaCrearClienteHtml,
+  cardClienteHtml,
+  bannerUpgradeHtml,
 } from './pipeline-logica.js';
 import {
   estadoStepper,
@@ -52,6 +80,17 @@ import {
   validarDomicilioEntrega,
   formatCarrier,
   formatServicio,
+  cpValido,
+  buildConfirmarVendedorModalHtml,
+  debeInvalidarEnvioPorCantidad,
+  bloqueaGeneracionPorEnvioInvalidado,
+  MENSAJE_ENVIO_INVALIDADO,
+  aplicarNotaTiempoEntrega,
+  formatTiempoEntrega,
+  buildEnvioEstructurado,
+  restaurarEnvioDesdeCotizacion,
+  debeAutoCotizarEnvia,
+  buildEnviaRateRestauradaHtml,
 } from './cotizar-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
@@ -84,13 +123,40 @@ function validarTelefonosCotizacion() {
   return null;
 }
 
-// Lee el domicilio de entrega del DOM y delega en la funcion pura (#71).
+// Lee el domicilio de entrega del DOM y delega en la funcion pura (#71/#84).
+// Ya no bloquea la generacion (#84 AC4): solo decide si hace falta la leyenda
+// de confirmacion cuando falta Calle.
 function validarDomicilioCotizacion() {
   return validarDomicilioEntrega({
     calle: document.getElementById('cl-calle')?.value,
-    cp: document.getElementById('cl-cp-entrega')?.value,
-    pais: document.getElementById('cl-pais')?.value || 'MX',
   });
+}
+
+// Lee los campos cl-* del cliente/domicilio para el body de /api/cotizacion
+// (identico en PDF y HTML -- un solo lugar, #84). `leyenda`
+// es el resultado de validarDomicilioCotizacion().
+function leerClienteFormulario(leyenda) {
+  return {
+    razonSocial: document.getElementById('cl-razon-social').value,
+    nombreCorto: document.getElementById('cl-nombre-corto').value,
+    rfc: document.getElementById('cl-rfc').value,
+    cpFiscal: document.getElementById('cl-cp-fiscal').value,
+    telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
+    nombreEntrega: document.getElementById('cl-nombre-entrega').value,
+    calle: document.getElementById('cl-calle').value,
+    numInt: document.getElementById('cl-num-int').value,
+    colonia: document.getElementById('cl-colonia').value,
+    cpEntrega: document.getElementById('cl-cp-entrega').value,
+    municipio: document.getElementById('cl-municipio').value,
+    estado: document.getElementById('cl-estado').value,
+    celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
+    emailEntrega: document.getElementById('cl-email-entrega').value,
+    emailFactura: document.getElementById('cl-email-factura').value,
+    referencias: document.getElementById('cl-referencias').value,
+    referencia: document.getElementById('cl-referencia').value,
+    pais: document.getElementById('cl-pais')?.value || 'MX',
+    leyendaDomicilio: leyenda || '',
+  };
 }
 
 // === UTILS ===
@@ -111,6 +177,19 @@ const state = {
   cart: new Map(), // key -> { product, cantidad }
   shipping: { option: 'none', desc: '', cost: 0 },
   lastCotizacionId: null,
+  // Modo actualizacion (#104, ADR-0008): se entro por "Actualizar cotizacion" desde
+  // el historial, asi que generar reescribe el MISMO registro y el MISMO quote de
+  // Operam (conservando el folio) en vez de crear una cotizacion nueva. Cualquier
+  // cosa que termine la sesion de cotizacion lo apaga.
+  modoActualizacion: false,
+  // Vendedor ya confirmado para la cotizacion en curso (#113). El modal de #87
+  // existe para no estampar al vendedor equivocado, y eso solo puede cambiar al
+  // EMPEZAR una cotizacion: dentro de la misma, preguntar otra vez por el segundo
+  // formato es ruido (Adrian: genero el PDF y "Ver HTML" volvio a preguntar por
+  // una cotizacion que ya estaba generada y subida). Se apaga en los mismos tres
+  // puntos que lastCotizacionId: cotizacion nueva, cambio de cliente y cargar del
+  // historial -- los unicos en que puede cambiar quien queda estampado.
+  vendedorConfirmado: false,
 };
 
 let searchSelected = null; // { key, sku, product }
@@ -130,7 +209,10 @@ async function api(url, opts = {}) {
     opts.body = JSON.stringify(opts.body);
   }
   const res = await fetch(url, { ...opts, headers });
-  if (res.status === 401) { logout(); throw new Error('No autorizado'); }
+  // Sesion expirada (#87, sesion de 24h): NO se usa logout() aqui porque
+  // destruiria el carrito/captura en curso. sesionExpirada() solo invalida
+  // el token y pide reloguear; el trabajo en memoria se conserva.
+  if (res.status === 401) { sesionExpirada(); throw new Error('No autorizado'); }
   return res;
 }
 
@@ -170,13 +252,10 @@ async function login() {
   }
 }
 
-function logout() {
-  state.token = null;
-  state.user = null;
-  state.precios = null;
-  state.cart.clear();
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+// Oculta las vistas de la app y muestra el login. Compartido por logout()
+// (cierre explicito) y sesionExpirada() (401 con sesion de 24h, #87) -- la
+// diferencia entre ambos esta en que estado de negocio limpian, no en el DOM.
+function mostrarLoginView() {
   document.getElementById('app-view').style.display = 'none';
   document.getElementById('historial-view').style.display = 'none';
   const hv = document.getElementById('hoy-view');
@@ -188,6 +267,28 @@ function logout() {
   if (bn) bn.style.display = 'none';
   document.getElementById('login-view').style.display = 'flex';
   document.getElementById('login-pin').value = '';
+}
+
+// Cierre de sesion EXPLICITO (boton Salir): limpia todo, incluido el carrito.
+function logout() {
+  state.token = null;
+  state.user = null;
+  state.precios = null;
+  state.cart.clear();
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  mostrarLoginView();
+}
+
+// Sesion expirada (401, #87): a diferencia de logout(), NO toca el carrito ni
+// la captura en curso -- solo invalida el token y pide reloguear. Al volver a
+// entrar, login() llama showApp() y el carrito/cliente en memoria siguen ahi.
+function sesionExpirada() {
+  state.token = null;
+  state.user = null;
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  mostrarLoginView();
 }
 
 // === APP INIT ===
@@ -210,6 +311,7 @@ async function showApp() {
   updateTierBar();
   updateCartSummary();
   switchTab('cliente');
+  pcRenderInicio();
   cargarBadgeSeguimiento();
 }
 
@@ -669,16 +771,12 @@ function updateShippingSummary() {
   el.innerHTML = `<strong>${totalPzs} piezas</strong> — Peso estimado: <strong>${totalWeight.toFixed(1)} kg</strong>`;
   el.className = 'alert alert-info';
 
-  // Si hay CP del cliente, pre-llenarlo en el campo de envia
-  const cpCliente = document.getElementById('cl-cp-entrega')?.value?.trim();
-  const cpEnvia = document.getElementById('envia-cp');
-  if (cpEnvia && cpCliente && !cpEnvia.value) cpEnvia.value = cpCliente;
-
   updateTabIndicators();
 }
 
 // === ENVIA.COM ===
-let enviaRateSeleccionado = null; // { desc, cost }
+let enviaRateSeleccionado = null; // { carrier, servicio, desc, cost }
+let envioInvalidadoPorCantidad = false; // issue #89: cambio de cantidad invalido la tarifa vigente
 
 async function cotizarEnvia() {
   const btn = document.getElementById('btn-cotizar-envia');
@@ -690,13 +788,13 @@ async function cotizarEnvia() {
   resultsEl.innerHTML = '';
   resumenEl.style.display = 'none';
   enviaRateSeleccionado = null;
+  envioInvalidadoPorCantidad = false;
 
-  const cp = document.getElementById('envia-cp')?.value?.trim();
-  const pais = document.getElementById('envia-pais')?.value || 'MX';
-  const cpValido = pais === 'CA'
-    ? /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/.test(cp)
-    : /^\d{5}$/.test(cp);
-  if (!cp || !cpValido) {
+  // CP + pais UNICOS (#84 AC3): el mismo bloque de domicilio de entrega, ya no
+  // hay un envia-cp/envia-pais aparte.
+  const cp = document.getElementById('cl-cp-entrega')?.value?.trim();
+  const pais = document.getElementById('cl-pais')?.value || 'MX';
+  if (!cp || !cpValido(cp, pais)) {
     errEl.textContent = pais === 'CA' ? 'Ingresa un codigo postal canadiense valido (ej. K1A 0A9)' : 'Ingresa un CP de 5 digitos valido';
     errEl.style.display = 'block';
     return;
@@ -779,7 +877,7 @@ async function cotizarEnvia() {
       const precio = rate.totalPrice ?? rate.rate ?? 0;
       const carrier = rate.carrier ?? '';
       const servicio = rate.service ?? rate.serviceType ?? '';
-      const dias = rate.days != null ? `${rate.days} día${rate.days !== 1 ? 's' : ''}` : '';
+      const dias = formatTiempoEntrega(rate);
       const esRecomendado = idx === 0;
 
       const card = document.createElement('div');
@@ -812,9 +910,11 @@ function seleccionarEnviaRate(card, carrier, servicio, precio) {
   document.querySelectorAll('.envia-rate-card').forEach(c => c.classList.remove('selected'));
   card.classList.add('selected');
   enviaRateSeleccionado = {
+    carrier, servicio,
     desc: `${formatCarrier(carrier)} ${formatServicio(servicio)}`.trim(),
     cost: precio,
   };
+  envioInvalidadoPorCantidad = false;
   // Sincronizar con los campos manuales para que updateResumen los tome
   document.getElementById('shipping-desc').value = enviaRateSeleccionado.desc;
   document.getElementById('shipping-cost').value = precio.toFixed(2);
@@ -830,6 +930,11 @@ function updateResumen() {
   const content = document.getElementById('resumen-content');
   const shippingAlert = document.getElementById('resumen-shipping-alert');
 
+  // Vendedor logueado, visible en el resumen (issue #87): hoy vivia solo en
+  // la barra superior (user-name) y era facil de ignorar.
+  const vendedorEl = document.getElementById('resumen-vendedor');
+  if (vendedorEl) vendedorEl.textContent = state.user ? `Cotización a nombre de: ${state.user.name}` : '';
+
   if (state.cart.size === 0) {
     empty.style.display = 'block';
     content.style.display = 'none';
@@ -843,6 +948,13 @@ function updateResumen() {
   // Alerta de envío
   const shippingOpt = document.getElementById('shipping-option').value;
   shippingAlert.style.display = shippingOpt === 'none' ? 'block' : 'none';
+
+  // Aviso de envio invalidado por cambio de cantidades (issue #89)
+  const envioInvalidadoAlert = document.getElementById('resumen-envio-invalidado');
+  if (envioInvalidadoAlert) {
+    envioInvalidadoAlert.style.display = envioInvalidadoPorCantidad ? 'block' : 'none';
+    envioInvalidadoAlert.textContent = MENSAJE_ENVIO_INVALIDADO;
+  }
 
   const itemsEl = document.getElementById('resumen-items');
 
@@ -909,6 +1021,18 @@ function updateResumen() {
 }
 
 // Controles de cantidad en el resumen
+// Cambiar cantidades invalida la tarifa de envia.com vigente (issue #89): no se
+// recalcula sola (evitaria 3 llamadas a paqueteria por toque), se invalida y se
+// avisa. El envio manual capturado a mano no se toca.
+function invalidarEnvioSiAplica() {
+  const shippingOpt = document.getElementById('shipping-option').value;
+  if (debeInvalidarEnvioPorCantidad(shippingOpt, enviaRateSeleccionado)) {
+    enviaRateSeleccionado = null;
+    envioInvalidadoPorCantidad = true;
+    document.getElementById('shipping-cost').value = '';
+  }
+}
+
 function resumenChangeQty(key, delta) {
   const item = state.cart.get(key);
   if (!item) return;
@@ -918,6 +1042,7 @@ function resumenChangeQty(key, delta) {
   } else {
     item.cantidad = newQty;
   }
+  invalidarEnvioSiAplica();
   updateTierBar();
   updateCartSummary();
   renderProducts(document.getElementById('search-input').value);
@@ -933,6 +1058,7 @@ function resumenSetQty(key, qty) {
   } else {
     item.cantidad = qty;
   }
+  invalidarEnvioSiAplica();
   updateTierBar();
   updateCartSummary();
   renderProducts(document.getElementById('search-input').value);
@@ -1002,6 +1128,25 @@ function pedirCanalCotizacion() {
   });
 }
 
+// === CONFIRMACION DE VENDEDOR (issue #87) ===
+// Antes de generar el PDF/HTML se confirma a nombre de que vendedor va la
+// cotizacion, para no estampar al vendedor equivocado cuando el dispositivo
+// quedo logueado con otro usuario (caso real: prestamo de dispositivo).
+function pedirConfirmarVendedor() {
+  // Una vez por cotizacion (#113): ya confirmado = no se vuelve a preguntar
+  // mientras siga siendo la misma cotizacion.
+  if (state.vendedorConfirmado) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+    overlay.innerHTML = buildConfirmarVendedorModalHtml(state.user?.name || '');
+    document.body.appendChild(overlay);
+    const cerrar = ok => { overlay.remove(); state.vendedorConfirmado = ok; resolve(ok); };
+    document.getElementById('confirmar-vendedor-confirmar').addEventListener('click', () => cerrar(true));
+    document.getElementById('confirmar-vendedor-cancelar').addEventListener('click', () => cerrar(false));
+  });
+}
+
 async function canalParaCotizacion(telefono) {
   try {
     const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(telefono)}`);
@@ -1014,6 +1159,124 @@ async function canalParaCotizacion(telefono) {
   }
 }
 
+// Etiquetas de los botones de generacion segun el modo (#109). Un solo lugar:
+// el bloque vivia repetido en cada punto que entra o sale del modo actualizacion,
+// y olvidar uno reintroduce exactamente el bug que #109 arreglo. Lee
+// state.modoActualizacion en vez de recibirlo, para que no pueda mentir.
+function aplicarEtiquetasBotonesGenerar() {
+  const btnPdf = document.getElementById('btn-pdf');
+  if (btnPdf) btnPdf.textContent = textoBotonGenerar('pdf', state.modoActualizacion);
+  const btnHtml = document.getElementById('btn-html');
+  if (btnHtml) btnHtml.textContent = textoBotonGenerar('html', state.modoActualizacion);
+}
+
+// Cuanto se espera a Operam antes de entregar el documento sin numero (ADR-0009,
+// "Operam no puede bloquear la entrega"). La subida esta en la RUTA CRITICA de la
+// generacion: si tarda mas que esto, el vendedor se queda mirando un boton en vez
+// de atender a su cliente, asi que el documento sale como pre-cotizacion y el
+// bueno se re-comparte desde el historial cuando el folio llegue.
+const TIMEOUT_OPERAM_MS = 20000;
+
+// Promise.race con un vencimiento: si la promesa no resuelve en ms, resuelve con
+// lo que devuelva alVencer(). El guard `listo` evita que el temporizador dispare
+// su efecto (repintar el slot) DESPUES de que la subida ya haya respondido bien.
+function conLimiteDeTiempo(promesa, ms, alVencer) {
+  let listo = false;
+  return Promise.race([
+    promesa.then(v => { listo = true; return v; }),
+    new Promise(resolve => setTimeout(() => { if (!listo) resolve(alVencer()); }, ms)),
+  ]);
+}
+
+// Espera a que termine la operacion de Operam en vuelo para esta cotizacion (#116),
+// acotada por el mismo TIMEOUT_OPERAM_MS de ADR-0009. Devuelve true si quedo libre.
+// Se consulta el Set en vez de guardar promesas a proposito: `subidasOperamEnVuelo`
+// sigue siendo la unica fuente del estado en vuelo (dos estructuras para lo mismo
+// divergirian), y la espera real dura segundos, asi que 200ms de resolucion sobran.
+async function esperarOperamEnVuelo(key, ms = TIMEOUT_OPERAM_MS) {
+  const t0 = Date.now();
+  while (subidasOperamEnVuelo.has(key) && Date.now() - t0 < ms) {
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return !subidasOperamEnVuelo.has(key);
+}
+
+// Guardar -> subir a Operam esperando el folio -> generar el documento (ADR-0009).
+// Es la INVERSION del orden de #83: antes se generaba el documento y la subida
+// ocurria despues, asi que cuando el PDF ya estaba descargado el folio -- que es
+// el numero de la cotizacion -- todavia no existia. Ahora la generacion espera al
+// folio, con progreso real en el boton, y degrada a pre-cotizacion en vez de
+// bloquear: fallo, timeout o subida en vuelo entregan el documento igual, sin
+// numero, con el estado y el Reintentar de siempre (#63/#83) pintados en el slot.
+// Devuelve el id del registro (con el que los GET arman el documento) o null si
+// el guardado fallo, unico caso en que no hay nada que entregar.
+async function guardarYNumerarCotizacion(body, progreso) {
+  // #116: si la generacion anterior dejo una operacion de Operam en vuelo para ESTA
+  // cotizacion (la reescritura del quote de #114, que tarda segundos por la web
+  // legacy), hay que esperarla ANTES de guardar. Si no, el servidor compara contra la
+  // huella vieja -- la reescritura todavia no la persistio -- pide actualizar otra vez
+  // y se choca con su propia guarda: el vendedor veia "ya hay una operacion en curso,
+  // reintenta" en el flujo mas comun que existe (PDF para archivo, HTML para WhatsApp).
+  // Esperando, la huella ya esta al dia y el servidor responde por si mismo que no hay
+  // nada que actualizar. Acotado: si no termina, se sigue y el aviso queda como red de
+  // seguridad -- nunca se deja al vendedor sin documento (ADR-0009).
+  const enVuelo = state.lastCotizacionId ? String(state.lastCotizacionId) : null;
+  if (enVuelo && subidasOperamEnVuelo.has(enVuelo)) {
+    progreso('Esperando a Operam...');
+    await esperarOperamEnVuelo(enVuelo);
+  }
+  progreso('Guardando...');
+  const res = await api('/api/cotizacion', { method: 'POST', body });
+  if (!res.ok) {
+    let err = {};
+    try { err = await res.json(); } catch {}
+    alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
+    return null;
+  }
+  const { id, requiereActualizacionOperam, folioOperam } = await res.json();
+  state.lastCotizacionId = String(id);
+  const slot = document.getElementById('operam-status-cotizar');
+  // Modo actualizacion (#104, ADR-0008): aqui NO hay inversion que hacer. El folio
+  // ya existe -- el gate puedeActualizarCotizacion lo exige -- asi que el documento
+  // se genera directo con el y la reescritura del quote sigue su curso sin
+  // bloquearlo; si falla, el registro queda marcado con Reintentar.
+  // requiereActualizacionOperam (#114) entra por la MISMA puerta: regenerar en la
+  // misma sesion una cotizacion que ya tiene folio, con el contenido cambiado, es la
+  // misma operacion que "Actualizar cotizacion" -- solo que sin pasar por el
+  // historial. Converge aqui a proposito: un camino paralelo tendria su propio gate,
+  // su propio lock y su propia forma de fallar. Si el contenido NO cambio, el
+  // servidor no lo pide y la subida idempotente responde el folio sin tocar Operam.
+  //
+  // #116: la señal del servidor manda TAMBIEN en modo actualizacion. Antes el modo
+  // forzaba la reescritura, y con la espera de arriba eso reescribia el quote DOS veces
+  // con el contenido identico (el PDF y luego el HTML del mismo carrito): la guarda de
+  // "operacion en curso" lo frenaba por accidente, no por diseño. Si la huella dice que
+  // el quote ya coincide, no hay nada que reescribir -- ni entrando por "Actualizar
+  // cotizacion" desde el historial. Sin folio (o sin huella, cotizaciones previas a
+  // #114) el servidor responde que si hace falta, asi que #104 sigue cubierto.
+  if (state.modoActualizacion && !requiereActualizacionOperam) {
+    // Acuse de que no habia nada que hacer. Sin esto el slot se quedaba con el aviso
+    // PREVIO ("al actualizar... se actualizara en Operam"), asi que el vendedor generaba
+    // y no veia si su cotizacion habia viajado o no. Se reusa la misma vista que el
+    // camino de subida da para yaSubida -- folio + "el contenido no cambio" -- en vez de
+    // inventar un mensaje nuevo para el mismo hecho.
+    if (slot) slot.innerHTML = buildOperamStatusHtml(id, interpretarSubidaOperam({ ok: true, folio: folioOperam ?? null, yaSubida: true }));
+    return id;
+  }
+  if (requiereActualizacionOperam) {
+    actualizarQuoteEnOperam(id, slot);
+    return id;
+  }
+  progreso('Subiendo a Operam...');
+  await conLimiteDeTiempo(autoSubirOperam(id, slot), TIMEOUT_OPERAM_MS, () => {
+    const vencida = interpretarSubidaOperam({ timeout: true });
+    if (slot) slot.innerHTML = buildOperamStatusHtml(id, vencida);
+    return vencida;
+  });
+  progreso('Generando documento...');
+  return id;
+}
+
 // === PDF GENERATION ===
 async function generatePDF() {
   const telErr = validarTelefonosCotizacion();
@@ -1024,12 +1287,12 @@ async function generatePDF() {
     return;
   }
   const domio = validarDomicilioCotizacion();
-  if (!domio.ok) {
-    alert(domio.error);
-    switchTab('cliente');
-    document.getElementById('cl-cp-entrega')?.focus();
+  if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
+    alert(MENSAJE_ENVIO_INVALIDADO);
+    switchTab('resumen');
     return;
   }
+  if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-pdf');
   btn.disabled = true;
   btn.textContent = 'Generando...';
@@ -1052,13 +1315,14 @@ async function generatePDF() {
 
     // Envío
     const shippingOpt = document.getElementById('shipping-option').value;
+    const shippingDesc = document.getElementById('shipping-desc').value;
     let shippingCost = 0;
     if (shippingOpt === 'manual' || shippingOpt === 'envia') {
       shippingCost = parseFloat(document.getElementById('shipping-cost').value) || 0;
       if (shippingCost > 0) {
         items.push({
           codigo: 'ENVIO',
-          descripcion: document.getElementById('shipping-desc').value || 'Envio',
+          descripcion: shippingDesc || 'Envio',
           cantidad: 1,
           unidad: 'ACT',
           precio: shippingCost,
@@ -1082,32 +1346,16 @@ async function generatePDF() {
       fecha: new Date().toISOString().split('T')[0],
       vigencia: vigenciaDate.toISOString().split('T')[0],
       tier: tier.id,
-      cliente: {
-        razonSocial: document.getElementById('cl-razon-social').value,
-        nombreCorto: document.getElementById('cl-nombre-corto').value,
-        rfc: document.getElementById('cl-rfc').value,
-        cpFiscal: document.getElementById('cl-cp-fiscal').value,
-        telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
-        nombreEntrega: document.getElementById('cl-nombre-entrega').value,
-        calle: document.getElementById('cl-calle').value,
-        numInt: document.getElementById('cl-num-int').value,
-        colonia: document.getElementById('cl-colonia').value,
-        cpEntrega: document.getElementById('cl-cp-entrega').value,
-        municipio: document.getElementById('cl-municipio').value,
-        estado: document.getElementById('cl-estado').value,
-        celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
-        emailEntrega: document.getElementById('cl-email-entrega').value,
-        referencias: document.getElementById('cl-referencias').value,
-        referencia: document.getElementById('cl-referencia').value,
-        pais: document.getElementById('cl-pais')?.value || 'MX',
-        leyendaDomicilio: domio.leyenda || '',
-      },
+      cliente: leerClienteFormulario(domio.leyenda),
       condicionesPago: document.getElementById('cl-condiciones').value,
       items,
       subtotal,
       iva,
       total,
       notas,
+      // Envio estructurado {carrier, servicio, precio} (#102): prefactor para
+      // restaurarlo tal cual al Cargar desde historial, sin re-cotizar envia.com.
+      envio: buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }),
     };
 
     body.incluirFotos = document.getElementById('incluir-fotos')?.checked || false;
@@ -1115,32 +1363,31 @@ async function generatePDF() {
     const canal = await canalParaCotizacion(body.cliente.telefono);
     if (canal) body.canal = canal;
 
-    const res = await api('/api/cotizacion/pdf', {
-      method: 'POST',
-      body,
-    });
+    // Regeneracion en la misma sesion de cotizacion (#83, F1): PDF + HTML del
+    // mismo carrito son UNA cotizacion. El id de la primera generacion se reenvia
+    // y el server actualiza el entry en vez de crear otro.
+    if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
 
-    if (!res.ok) {
-      const err = await res.json();
-      alert('Error: ' + (err.error || 'No se pudo generar'));
-      return;
-    }
+    const cotizacionId = await guardarYNumerarCotizacion(body, texto => { btn.textContent = texto; });
+    if (!cotizacionId) return;
 
-    // Capturar el ID de cotizacion del header
-    state.lastCotizacionId = res.headers.get('X-Cotizacion-Id');
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    // El documento lo genera SIEMPRE el GET (unico generador desde ADR-0009): el
+    // servidor decide el numero -- el folio de Operam -- y el nombre del archivo
+    // (?descargar=1 = attachment). Sin `download` a proposito: el nombre lo pone
+    // el Content-Disposition, para no volver a tenerlo definido en dos lugares.
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `Cotizacion_PeltreNacional_${state.lastCotizacionId || 'nuevo'}.pdf`;
+    a.href = `/api/cotizacion/pdf/${cotizacionId}?descargar=1`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
   } catch (e) {
     alert('Error generando PDF: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Generar PDF';
+    // #109: el texto idle depende del modo -- sin esto el boton volvia a decir
+    // "Generar PDF" tras la primera actualizacion aunque se siguiera en modo
+    // actualizacion.
+    aplicarEtiquetasBotonesGenerar();
   }
 }
 
@@ -1153,15 +1400,22 @@ async function generateHTML() {
     return;
   }
   const domio = validarDomicilioCotizacion();
-  if (!domio.ok) {
-    alert(domio.error);
-    switchTab('cliente');
-    document.getElementById('cl-cp-entrega')?.focus();
+  if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
+    alert(MENSAJE_ENVIO_INVALIDADO);
+    switchTab('resumen');
     return;
   }
+  if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-html');
   btn.disabled = true;
   btn.textContent = 'Generando...';
+
+  // La pestana del HTML se reserva AHORA, con el gesto del vendedor todavia
+  // fresco: desde ADR-0009 abrir el documento ocurre despues de esperar a Operam
+  // (hasta TIMEOUT_OPERAM_MS) y un window.open tan tarde se lo come el bloqueador
+  // de popups. Si algo falla se cierra.
+  const ventana = window.open('', '_blank');
+  if (ventana) ventana.document.write('<p style="font-family:Arial;padding:24px">Generando la cotizacion...</p>');
 
   try {
     const tier = getCurrentTier();
@@ -1173,13 +1427,14 @@ async function generateHTML() {
     }
 
     const shippingOpt = document.getElementById('shipping-option').value;
+    const shippingDesc = document.getElementById('shipping-desc').value;
     let shippingCost = 0;
     if (shippingOpt === 'manual' || shippingOpt === 'envia') {
       shippingCost = parseFloat(document.getElementById('shipping-cost').value) || 0;
       if (shippingCost > 0) {
         items.push({
           codigo: 'ENVIO',
-          descripcion: document.getElementById('shipping-desc').value || 'Envio',
+          descripcion: shippingDesc || 'Envio',
           cantidad: 1,
           unidad: 'ACT',
           precio: shippingCost,
@@ -1204,57 +1459,38 @@ async function generateHTML() {
       vigencia: vigenciaDate.toISOString().split('T')[0],
       tier: tier.id,
       incluirFotos: document.getElementById('incluir-fotos')?.checked || false,
-      cliente: {
-        razonSocial: document.getElementById('cl-razon-social').value,
-        nombreCorto: document.getElementById('cl-nombre-corto').value,
-        rfc: document.getElementById('cl-rfc').value,
-        cpFiscal: document.getElementById('cl-cp-fiscal').value,
-        telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
-        nombreEntrega: document.getElementById('cl-nombre-entrega').value,
-        calle: document.getElementById('cl-calle').value,
-        numInt: document.getElementById('cl-num-int').value,
-        colonia: document.getElementById('cl-colonia').value,
-        cpEntrega: document.getElementById('cl-cp-entrega').value,
-        municipio: document.getElementById('cl-municipio').value,
-        estado: document.getElementById('cl-estado').value,
-        celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
-        emailEntrega: document.getElementById('cl-email-entrega').value,
-        referencias: document.getElementById('cl-referencias').value,
-        referencia: document.getElementById('cl-referencia').value,
-        pais: document.getElementById('cl-pais')?.value || 'MX',
-        leyendaDomicilio: domio.leyenda || '',
-      },
+      cliente: leerClienteFormulario(domio.leyenda),
       condicionesPago: document.getElementById('cl-condiciones').value,
       items,
       subtotal,
       iva,
       total,
       notas,
+      envio: buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }),
     };
 
     const canal = await canalParaCotizacion(body.cliente.telefono);
     if (canal) body.canal = canal;
 
-    const res = await api('/api/cotizacion/html', { method: 'POST', body });
+    // Misma sesion de cotizacion (#83, F1): reusar el entry ya creado por el PDF
+    // (o una generacion previa) en vez de duplicar la cotizacion.
+    if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
 
-    if (!res.ok) {
-      const err = await res.json();
-      alert('Error: ' + (err.error || 'No se pudo generar'));
-      return;
-    }
+    const cotizacionId = await guardarYNumerarCotizacion(body, texto => { btn.textContent = texto; });
+    if (!cotizacionId) { ventana?.close(); return; }
 
-    state.lastCotizacionId = res.headers.get('X-Cotizacion-Id');
-
-    const html = await res.text();
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    // Mismo criterio que el PDF: el HTML lo regenera el GET con el folio ya
+    // persistido (unico generador, ADR-0009).
+    const url = `/api/cotizacion/html/${cotizacionId}`;
+    if (ventana) ventana.location = url;
+    else window.open(url, '_blank');
   } catch (e) {
+    ventana?.close();
     alert('Error generando HTML: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Ver HTML';
+    // #109: mismo criterio que btn-pdf -- el texto idle depende del modo.
+    aplicarEtiquetasBotonesGenerar();
   }
 }
 
@@ -1275,10 +1511,26 @@ function shareWhatsApp() {
   window.open(`https://wa.me/?text=${msg}`, '_blank');
 }
 
+// #112: una sola nuevaCotizacion. Habia dos homonimas -- esta, de modulo, que
+// reseteaba, y otra en window que solo navegaba; el menu "+" arma sus botones
+// con onclick="nuevaCotizacion()", que resuelve contra window, y por eso no
+// reseteaba. Ahora hace las dos mitades: las necesitan tanto #btn-nueva como el
+// menu "+", visible desde cualquier vista.
+// Orden: cerrarMenuNuevo() va ANTES del confirm (si el vendedor cancela, el menu
+// igual debe cerrarse); la navegacion va DESPUES, para que cancelar no mueva nada.
+// Para #btn-nueva la navegacion no se ve (ya esta en esa vista), pero NO es
+// inocua: ocultarTodasLasVistas llama devolverPanelACasa (#94), asi que empezar
+// de cero tambien descarta un upgrade fiscal a medias. Es lo deseable.
 function nuevaCotizacion() {
+  cerrarMenuNuevo();
   if (state.cart.size > 0 && !confirm('Se perdera la cotizacion actual. Continuar?')) return;
+  ocultarTodasLasVistas();
+  document.getElementById('app-view').style.display = 'block';
+  marcarNavActivo('nav-cotizar');
   state.cart.clear();
   state.lastCotizacionId = null;
+  state.modoActualizacion = false;
+  state.vendedorConfirmado = false;
 
   // Limpiar campos
   const campos = [
@@ -1306,11 +1558,17 @@ function nuevaCotizacion() {
   document.getElementById('envia-results').innerHTML = '';
   document.getElementById('envia-error').style.display = 'none';
   document.getElementById('envia-resumen').style.display = 'none';
-  document.getElementById('envia-cp').value = '';
-  const envPaisEl = document.getElementById('envia-pais');
-  if (envPaisEl) envPaisEl.value = 'MX';
   enviaRateSeleccionado = null;
-  document.getElementById('panel-buscar').style.display = 'block';
+  envioInvalidadoPorCantidad = false;
+  const operamStatus = document.getElementById('operam-status-cotizar');
+  if (operamStatus) operamStatus.innerHTML = '';
+  // #109: salir de modo actualizacion devuelve los botones a su texto normal.
+  aplicarEtiquetasBotonesGenerar();
+  // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
+  // pcRenderInicio ya limpia los campos del cliente y de entrega via
+  // pcPrepararSeleccion (el bloque de entrega vive en el paso Envio desde #84).
+  pcRecientesCache = null;
+  pcRenderInicio();
   resetFlujoGuiado();
   switchTab('cliente');
   renderProducts();
@@ -1319,62 +1577,17 @@ function nuevaCotizacion() {
   updateResumen();
   renderCartLines();
 }
+// El menu global "+" arma sus botones con onclick="<accion>()" (ver
+// buildMenuNuevoHtml en pipeline-logica.js), que resuelve contra window.
+window.nuevaCotizacion = nuevaCotizacion;
 
-// === OPERAM: buscar cliente ===
+// === OPERAM: cliente seleccionado ===
+// (El buscador visible del paso vive en #pc-root, #82; el panel viejo de
+// busqueda con dropdown propio se retiro junto con su markup.)
 let operamClienteSeleccionado = null;
-
-async function buscarClienteOperam(query) {
-  const statusEl = document.getElementById('operam-search-status');
-  const setStatus = (msg, color = 'var(--text-light)') => {
-    if (!statusEl) return;
-    if (msg) { statusEl.style.display = 'block'; statusEl.style.color = color; statusEl.textContent = msg; }
-    else statusEl.style.display = 'none';
-  };
-
-  if (query.length < 2) {
-    document.getElementById('operam-dropdown').style.display = 'none';
-    setStatus(null);
-    return;
-  }
-
-  setStatus('Buscando...');
-  const btn = document.getElementById('btn-buscar-operam');
-  if (btn) btn.disabled = true;
-
-  try {
-    const res = await api(`/api/operam/clientes?q=${encodeURIComponent(query)}`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setStatus(err.error || 'Error al buscar', '#c00');
-      return;
-    }
-    const clientes = await res.json();
-    renderOperamDropdown(clientes);
-    setStatus(clientes.length ? null : 'Sin resultados');
-  } catch {
-    setStatus('Error de conexion', '#c00');
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-function renderOperamDropdown(clientes) {
-  const dd = document.getElementById('operam-dropdown');
-  if (!clientes.length) { dd.style.display = 'none'; return; }
-  dd.innerHTML = clientes.slice(0, 10).map(c =>
-    `<div class="dropdown-item" onmousedown="seleccionarClienteOperam(${JSON.stringify(c).replace(/"/g, '&quot;')})">
-      <span class="dropdown-item-name">${c.name || ''}</span>
-      <span class="dropdown-item-sku">${c.rfc || ''}</span>
-    </div>`
-  ).join('');
-  dd.style.display = 'block';
-}
 
 async function seleccionarClienteOperam(cliente) {
   operamClienteSeleccionado = cliente;
-  document.getElementById('operam-dropdown').style.display = 'none';
-  document.getElementById('operam-search-status').style.display = 'none';
-  document.getElementById('operam-search').value = cliente.name || '';
 
   const fill = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
   fill('cl-razon-social',   cliente.name);
@@ -1382,38 +1595,36 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-rfc',            cliente.rfc);
   fill('cl-cp-fiscal',      cliente.cpFiscal || cliente.cp);
   if (cliente.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
-  fill('cl-nombre-entrega', cliente.nombreEntrega);
   fill('cl-calle',          cliente.calle);
   fill('cl-num-int',        cliente.numInt);
   fill('cl-colonia',        cliente.colonia);
   fill('cl-cp-entrega',     cliente.cp);
   fill('cl-municipio',      cliente.municipio);
   fill('cl-estado',         cliente.estado);
-  if (cliente.telefono) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', cliente.telefono);
-  fill('cl-email-entrega',  cliente.email);
+  // OJO (issue #99): NO se prellena cl-nombre-entrega/cl-cel-entrega/cl-email-entrega
+  // aqui con cliente.telefono/cliente.email -- esos vienen del buscador (server.js
+  // /api/operam/clientes), que puede mezclar el telefono de un contacto con el email
+  // de OTRO (ambos "sueltos", sin nombre). El contacto de entrega se elige mas abajo
+  // via el selector de contactos (pcRenderContactoSelect), siempre con nombre visible.
   updateTabIndicators();
 
-  // Cargar domicilios con dirección correcta desde el branch
+  // Cargar domicilios + contactos del cliente (issue #99: obtenerDomicilios ahora
+  // devuelve { domicilios, contacts }). Se precarga el primer domicilio; con varios,
+  // el paso Envio ofrece su propio selector (pcRenderDomSelect, #84) sobre
+  // window._operamDomicilios. El selector de contactos (pcRenderContactoSelect)
+  // combina el contacto propio del domicilio actual con window._operamContactosCliente.
+  window._operamDomicilios = [];
+  window._operamContactosCliente = [];
   try {
     const res = await api(`/api/operam/clientes/${cliente.id}/domicilios`);
-    if (!res.ok) return;
-    const domicilios = await res.json();
-    window._operamDomicilios = domicilios;
-
-    if (domicilios.length === 1) {
-      // Branch único: aplicar automáticamente la dirección de entrega
-      aplicarDomicilio(domicilios[0]);
-    } else if (domicilios.length > 1) {
-      // Múltiples branches: mostrar selector
-      const sel = document.getElementById('operam-domicilio-select');
-      sel.innerHTML = domicilios.map((d, i) =>
-        `<option value="${i}">${d.descripcion || d.calle || ''}</option>`
-      ).join('');
-      document.getElementById('operam-domicilios').style.display = 'block';
-      // Precargar el primero
-      aplicarDomicilio(domicilios[0]);
+    if (res.ok) {
+      const { domicilios, contacts } = await res.json();
+      window._operamDomicilios = domicilios || [];
+      window._operamContactosCliente = contacts || [];
     }
   } catch {}
+  pcState.domicilioIdx = 0;
+  if (window._operamDomicilios.length >= 1) aplicarDomicilio(window._operamDomicilios[0]);
 
   // Mostrar historial de cotizaciones para este cliente
   const nombreCliente = (cliente.name || '').toLowerCase();
@@ -1434,6 +1645,9 @@ async function seleccionarClienteOperam(cliente) {
 
 window.seleccionarClienteOperam = seleccionarClienteOperam;
 
+// Solo aplica la DIRECCION del domicilio (calle/CP/municipio/...); el contacto de
+// entrega (nombre+telefono+email) lo aplica el selector de contactos (issue #99,
+// pcRenderContactoSelect/pcAplicarContacto), siempre con nombre visible.
 function aplicarDomicilio(d) {
   if (!d) return;
   const f = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
@@ -1443,17 +1657,739 @@ function aplicarDomicilio(d) {
   f('cl-cp-entrega',  d.cp);
   f('cl-municipio',   d.municipio);
   f('cl-estado',      d.estado);
-  if (d.telefono) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', d.telefono);
-  if (d.email)    f('cl-email-entrega', d.email);
-  if (d.contacto) f('cl-nombre-entrega', d.contacto);
 }
 
-function usarDomicilioOperam() {
-  const idx = parseInt(document.getElementById('operam-domicilio-select')?.value) || 0;
-  aplicarDomicilio(window._operamDomicilios?.[idx]);
-  document.getElementById('operam-domicilios').style.display = 'none';
+// ============================================================================
+// PASO CLIENTE -- variante B (issue #82; entrega diferida al paso Envio en #84)
+// ----------------------------------------------------------------------------
+// La entrada del paso Cliente: dos caminos ("Ya lo conozco" / "Contacto nuevo")
+// + nota de diferimiento; buscador unificado (Operam + prospectos) con recientes;
+// captura minima del contacto nuevo (crea/usa prospecto); y la tarjeta del cliente
+// seleccionado con chips de completitud y CTA a Productos. El domicilio de entrega
+// (#pc-entrega-wrap) ya NO vive aqui: se captura/confirma en el paso Envio (#84);
+// el chip Entrega de la tarjeta es informativo y lleva alla (switchTab('envio')).
+// El render es tonto: toda la decision vive en alta-logica.js
+// (mezclar/recientes/chips/guardrails). Ver CONTEXT.md.
+// ============================================================================
+
+const pcState = { cliente: null, domicilioIdx: 0 };
+
+function pcEl() { return document.getElementById('pc-root'); }
+
+// Estado vivo del cliente para los chips: mezcla el cliente elegido con lo que hay
+// ahora en los campos cl-* (el bloque de entrega puede cambiar CP/pais despues).
+function pcClienteActual() {
+  const base = pcState.cliente || {};
+  return {
+    ...base,
+    name: document.getElementById('cl-razon-social')?.value || base.name || '',
+    ref: document.getElementById('cl-nombre-corto')?.value || base.ref || '',
+    telefono: leerTelefono('cl-telefono', 'cl-telefono-code') || base.telefono || '',
+    cp: document.getElementById('cl-cp-entrega')?.value || '',
+    pais: document.getElementById('cl-pais')?.value || base.pais || 'MX',
+    calle: document.getElementById('cl-calle')?.value || '',
+    rfc: document.getElementById('cl-rfc')?.value || base.rfc || '',
+  };
 }
-window.usarDomicilioOperam = usarDomicilioOperam;
+
+function pcIniciales(nombre) {
+  const p = String(nombre || '').split(/\s+/).filter(Boolean);
+  return ((p[0] || ' ')[0] + ((p[1] || ' ')[0] || '')).toUpperCase().trim() || '?';
+}
+
+function pcNota() {
+  return '<div class="pc-nota"><span>&#9432;</span><span>' +
+    'La <b>direccion de entrega</b> se captura en el paso Envio. ' +
+    'Los <b>datos fiscales</b> (CSF / RFC) solo se piden si subes el cliente a Operam o factura.' +
+    '</span></div>';
+}
+
+// Limpia los campos cl-* del cliente para que cada seleccion empiece en blanco
+// (evita que el CP/domicilio del cliente anterior se filtre al siguiente y pinte
+// mal el chip Entrega). No toca el carrito ni el resto del flujo de cotizacion.
+function pcLimpiarCamposCliente() {
+  const campos = [
+    'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-telefono',
+    'cl-referencia', 'cl-nombre-entrega', 'cl-calle', 'cl-num-int', 'cl-colonia',
+    'cl-cp-entrega', 'cl-municipio', 'cl-estado', 'cl-cel-entrega', 'cl-email-entrega',
+    'cl-email-factura', 'cl-referencias',
+  ];
+  for (const id of campos) { const el = document.getElementById(id); if (el) el.value = ''; }
+  const telCode = document.getElementById('cl-telefono-code'); if (telCode) telCode.value = '+52';
+  const celCode = document.getElementById('cl-cel-entrega-code'); if (celCode) celCode.value = '+52';
+  const pais = document.getElementById('cl-pais'); if (pais) pais.value = 'MX';
+  const rfc = document.getElementById('cl-rfc'); if (rfc) rfc.readOnly = false;
+  window._operamDomicilios = null;
+  window._operamContactosCliente = null;
+  pcState.domicilioIdx = 0;
+}
+
+// Punto UNICO de preparacion antes de seleccionar/crear un cliente: limpia los
+// campos cl-* (incluido el bloque de entrega, que desde #84 vive siempre visible
+// en el paso Envio). TODOS los entry points de seleccion (busqueda, reciente,
+// prospecto, cotizarProspecto, altaCotizarAhora, contacto nuevo) pasan por aqui
+// -- sin esto, la direccion del cliente A se filtra a los cl-* del cliente B y
+// su PDF puede salir con la direccion equivocada.
+function pcPrepararSeleccion() {
+  pcState.cliente = null;
+  pcLimpiarCamposCliente();
+  pcRenderDomSelect();
+  // El historial de cotizaciones previas es del cliente anterior: se oculta y
+  // seleccionarClienteOperam lo re-renderiza si el nuevo cliente tiene previas.
+  const hist = document.getElementById('historial-cliente-panel');
+  if (hist) { hist.style.display = 'none'; hist.innerHTML = ''; }
+  // Cambio de cliente = fin de la sesion de cotizacion (#83, F1): la proxima
+  // generacion crea SU entry, no actualiza el del cliente anterior. El estado de
+  // subida del resumen tambien era del anterior.
+  state.lastCotizacionId = null;
+  state.modoActualizacion = false;
+  state.vendedorConfirmado = false;
+  const operamStatus = document.getElementById('operam-status-cotizar');
+  if (operamStatus) operamStatus.innerHTML = '';
+  // #109: cambio de cliente tambien sale de modo actualizacion.
+  aplicarEtiquetasBotonesGenerar();
+}
+
+// --- Entrada: dos caminos ---
+function pcRenderInicio() {
+  pcPrepararSeleccion();
+  pcProspectosCache = null; // se refrescan al abrir una nueva captura/busqueda
+  const root = pcEl();
+  if (!root) return;
+  root.innerHTML =
+    '<div class="pc-pregunta">&iquest;Para quien es la cotizacion?</div>' +
+    '<button type="button" class="pc-camino" onclick="pcCaminoBuscar()">' +
+    '<span class="pc-camino-ico">&#128269;</span>' +
+    '<span class="pc-camino-txt"><span class="pc-camino-tit">Ya lo conozco</span>' +
+    '<span class="pc-camino-desc">Buscar en Operam o en mis prospectos</span></span>' +
+    '<span class="pc-camino-fl">&rsaquo;</span></button>' +
+    '<button type="button" class="pc-camino" onclick="pcCaminoNuevo()">' +
+    '<span class="pc-camino-ico">+</span>' +
+    '<span class="pc-camino-txt"><span class="pc-camino-tit">Contacto nuevo</span>' +
+    '<span class="pc-camino-desc">Solo nombre, celular y ciudad</span></span>' +
+    '<span class="pc-camino-fl">&rsaquo;</span></button>' +
+    pcNota();
+}
+window.pcRenderInicio = pcRenderInicio;
+
+// --- Camino buscar ---
+let pcRecientesCache = null;
+let pcBuscarTimer = null;
+
+async function pcCaminoBuscar() {
+  const root = pcEl();
+  root.innerHTML =
+    '<div class="pc-pregunta">Buscar cliente<small>Operam y prospectos en una sola busqueda.</small></div>' +
+    '<div class="pc-search"><input type="text" id="pc-q" class="pc-input-lg" ' +
+    'placeholder="Nombre, empresa, RFC o celular..." autocomplete="off"></div>' +
+    '<div id="pc-zona"></div>' +
+    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Volver</button>';
+  const input = document.getElementById('pc-q');
+  input.addEventListener('input', () => {
+    clearTimeout(pcBuscarTimer);
+    pcBuscarTimer = setTimeout(pcBuscar, 250);
+  });
+  input.focus();
+  await pcRenderRecientes();
+}
+window.pcCaminoBuscar = pcCaminoBuscar;
+
+async function pcCargarRecientes() {
+  if (pcRecientesCache) return pcRecientesCache;
+  try {
+    const res = await api('/api/cotizaciones');
+    const cots = await res.json();
+    pcRecientesCache = recientesDesdeCotizaciones(cots);
+  } catch {
+    pcRecientesCache = [];
+  }
+  return pcRecientesCache;
+}
+
+async function pcRenderRecientes() {
+  const zona = document.getElementById('pc-zona');
+  if (!zona) return;
+  const recientes = await pcCargarRecientes();
+  if (!recientes.length) { zona.innerHTML = ''; return; }
+  zona.innerHTML = '<div class="pc-res-titulo">Recientes</div>' +
+    recientes.map((r, i) =>
+      `<button type="button" class="pc-res-row" onclick="pcElegirReciente(${r.cotizacionId})">` +
+      `<span class="pc-res-ini">${escapeHtml(pcIniciales(r.nombre))}</span>` +
+      `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(r.nombre)}</span>` +
+      `<span class="pc-res-sub">${escapeHtml(r.telefono || 'Cotizado antes')}</span></span></button>`
+    ).join('');
+}
+
+// Fetch compartido de los dos origenes (Operam + prospectos) + mezcla con la
+// funcion pura, sin endpoint nuevo. Lo usan el buscador y las sugerencias de
+// nombre. Secuenciado con un token incremental: si mientras la consulta estaba
+// en vuelo se disparo otra (tecla siguiente), la respuesta vieja se descarta
+// devolviendo null -- sin esto, una respuesta lenta pisa a la nueva y
+// pcResultadosCache queda desfasado del render (elegir por indice = cliente
+// equivocado). Los prospectos se cachean por sesion de captura (se invalidan al
+// volver a la entrada y al crear un prospecto); Operam se consulta por query.
+let pcProspectosCache = null;
+let pcBusquedaSeq = 0;
+
+async function pcBuscarMezclado(q) {
+  const seq = ++pcBusquedaSeq;
+  const [clientes, prospectos] = await Promise.all([
+    api(`/api/operam/clientes?q=${encodeURIComponent(q)}`).then(r => r.ok ? r.json() : []).catch(() => []),
+    pcProspectosCache
+      ? Promise.resolve(pcProspectosCache)
+      : api('/api/prospectos').then(r => r.ok ? r.json() : []).catch(() => [])
+          .then(p => { pcProspectosCache = p; return p; }),
+  ]);
+  if (seq !== pcBusquedaSeq) return null;
+  return mezclarResultadosBusqueda(clientes, prospectos, q);
+}
+
+async function pcBuscar() {
+  const q = document.getElementById('pc-q')?.value || '';
+  if (q.trim().length < 2) { await pcRenderRecientes(); return; }
+  const zonaAntes = document.getElementById('pc-zona');
+  if (!zonaAntes) return;
+  zonaAntes.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
+  const rows = await pcBuscarMezclado(q);
+  if (!rows) return; // respuesta vieja descartada (llego una busqueda mas nueva)
+  const zona = document.getElementById('pc-zona');
+  if (!zona) return; // el vendedor ya salio de la pantalla de busqueda
+  pcResultadosCache = rows;
+  const vista = decidirVistaTrasBusqueda(q, rows);
+  if (vista === 'resultados') {
+    zona.innerHTML = '<div class="pc-res-titulo">Resultados</div>' +
+      rows.map((r, i) => pcFilaResultado(r, i)).join('') +
+      pcFilaCrear(q);
+  } else {
+    zona.innerHTML = pcFilaCrear(q);
+  }
+}
+
+let pcResultadosCache = [];
+
+function pcFilaResultado(r, i) {
+  const tag = r.tipo === 'operam'
+    ? '<span class="pc-tag operam">Operam</span>'
+    : '<span class="pc-tag prospecto">Prospecto</span>';
+  return `<button type="button" class="pc-res-row" onclick="pcElegirResultado(${i})">` +
+    `<span class="pc-res-ini ${r.tipo}">${escapeHtml(pcIniciales(r.nombre))}</span>` +
+    `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(r.nombre)}</span>` +
+    `<span class="pc-res-sub">${escapeHtml(r.sub || '')}</span></span>${tag}</button>`;
+}
+
+function pcFilaCrear(query) {
+  const q = query.trim();
+  return `<button type="button" class="pc-res-row pc-crear" onclick="pcCaminoNuevo(${JSON.stringify(q).replace(/"/g, '&quot;')})">` +
+    '<span class="pc-res-ini">+</span>' +
+    `<span class="pc-res-main"><span class="pc-res-nombre">Crear contacto &laquo;${escapeHtml(q)}&raquo;</span>` +
+    '<span class="pc-res-sub">Solo nombre, celular y ciudad &mdash; suficiente para cotizar</span></span></button>';
+}
+
+function pcElegirResultado(i) {
+  const r = pcResultadosCache[i];
+  if (!r) return;
+  if (r.tipo === 'operam') pcElegirOperam(r.raw);
+  else pcElegirProspecto(r.raw);
+}
+window.pcElegirResultado = pcElegirResultado;
+
+async function pcElegirOperam(raw) {
+  pcPrepararSeleccion();
+  const root = pcEl();
+  root.innerHTML = '<div class="pc-pregunta">Cargando cliente...</div>';
+  await seleccionarClienteOperam(raw); // llena cl-* + carga domicilios/historial
+  pcState.cliente = { ...raw, tipo: 'operam' };
+  pcRenderTarjeta();
+}
+
+function pcLlenarCamposContacto(cliente) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('cl-razon-social', cliente.name);
+  set('cl-nombre-corto', cliente.ref);
+  set('cl-rfc', cliente.rfc || '');
+  set('cl-municipio', cliente.municipio || '');
+  if (cliente.email) set('cl-email-entrega', cliente.email);
+  const pais = document.getElementById('cl-pais');
+  if (pais && cliente.pais) pais.value = cliente.pais;
+  if (cliente.telefono) {
+    setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
+    setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', cliente.telefono);
+  }
+}
+
+function pcElegirProspecto(raw) {
+  pcPrepararSeleccion();
+  const cliente = clienteDesdeProspecto(raw);
+  pcLlenarCamposContacto(cliente);
+  pcState.cliente = cliente;
+  pcRenderTarjeta();
+}
+
+async function pcElegirReciente(cotizacionId) {
+  pcPrepararSeleccion();
+  const root = pcEl();
+  root.innerHTML = '<div class="pc-pregunta">Cargando...</div>';
+  try {
+    const res = await api(`/api/cotizaciones/${cotizacionId}`);
+    const data = await res.json();
+    const c = data.cliente || {};
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+    set('cl-razon-social', c.razonSocial);
+    set('cl-nombre-corto', c.nombreCorto);
+    set('cl-rfc', c.rfc);
+    set('cl-cp-fiscal', c.cpFiscal);
+    set('cl-nombre-entrega', c.nombreEntrega);
+    set('cl-calle', c.calle);
+    set('cl-num-int', c.numInt);
+    set('cl-colonia', c.colonia);
+    set('cl-cp-entrega', c.cpEntrega);
+    set('cl-municipio', c.municipio);
+    set('cl-estado', c.estado);
+    set('cl-email-entrega', c.emailEntrega);
+    const pais = document.getElementById('cl-pais');
+    if (pais) pais.value = c.pais || 'MX';
+    if (c.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', c.telefono);
+    if (c.celEntrega) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', c.celEntrega);
+    pcState.cliente = {
+      tipo: c.rfc ? 'operam' : 'nuevo',
+      name: c.razonSocial || c.nombreCorto || '', ref: c.nombreCorto || '',
+      rfc: c.rfc || '', telefono: c.telefono || '', cp: c.cpEntrega || '', pais: c.pais || 'MX',
+    };
+    pcRenderTarjeta();
+  } catch {
+    pcRenderInicio();
+    alert('No se pudo cargar la cotizacion');
+  }
+}
+window.pcElegirReciente = pcElegirReciente;
+
+// --- Camino contacto nuevo ---
+function pcCaminoNuevo(prefill) {
+  const root = pcEl();
+  const nombre = typeof prefill === 'string' ? prefill : '';
+  const canales = CANALES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  root.innerHTML =
+    '<div class="pc-pregunta">Contacto nuevo<small>Lo minimo para cotizar. Queda guardado como prospecto.</small></div>' +
+    `<div class="form-group"><label>Nombre *</label>` +
+    `<input type="text" id="pc-nombre" value="${escapeHtml(nombre)}" placeholder="Nombre (se acepta sin apellido)" autocomplete="off"></div>` +
+    '<div id="pc-sug" class="pc-sugerencias"></div>' +
+    '<div class="form-group"><label>Celular *</label>' +
+    '<div style="display:flex;gap:8px"><select id="pc-cel-code" style="flex:0 0 92px">' +
+    '<option value="+52">+52</option><option value="+1">+1</option><option value="+1-CA">+1 CA</option><option value="+">Otro</option></select>' +
+    '<input type="tel" id="pc-cel" inputmode="tel" placeholder="55 1234 5678" style="flex:1"></div>' +
+    '<div id="pc-cel-aviso" class="pc-cel-aviso" style="display:none"></div></div>' +
+    '<div class="form-group"><label>Ciudad *</label>' +
+    '<input type="text" id="pc-ciudad" placeholder="Para estimar envio"></div>' +
+    `<div class="form-group"><label>Canal de origen *</label><select id="pc-canal"><option value="">-- Selecciona --</option>${canales}</select></div>` +
+    '<div id="pc-nuevo-error" class="pc-error" style="display:none"></div>' +
+    '<button type="button" class="btn btn-primary btn-block" id="pc-guardar" onclick="pcGuardarContactoNuevo()">Guardar y continuar</button>' +
+    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Volver</button>';
+  let sugTimer;
+  document.getElementById('pc-nombre').addEventListener('input', () => {
+    clearTimeout(sugTimer);
+    sugTimer = setTimeout(pcSugerenciasNombre, 250);
+  });
+  document.getElementById('pc-cel').addEventListener('blur', pcClasificarCelular);
+  document.getElementById('pc-nombre').focus();
+}
+window.pcCaminoNuevo = pcCaminoNuevo;
+
+async function pcSugerenciasNombre() {
+  const q = document.getElementById('pc-nombre')?.value || '';
+  if (q.trim().length < 2) {
+    const sugAntes = document.getElementById('pc-sug');
+    if (sugAntes) sugAntes.innerHTML = '';
+    return;
+  }
+  const todos = await pcBuscarMezclado(q);
+  if (!todos) return; // respuesta vieja descartada
+  const sug = document.getElementById('pc-sug');
+  if (!sug) return;
+  const rows = todos.slice(0, 3);
+  pcResultadosCache = rows;
+  if (!rows.length) { sug.innerHTML = ''; return; }
+  sug.innerHTML = '<div class="pc-sug-titulo">&iquest;Es alguno de estos?</div>' +
+    rows.map((r, i) => pcFilaResultado(r, i)).join('');
+}
+
+// Clasifica el celular tecleado y devuelve la decision del guardrail (#69).
+// La consumen DOS momentos: el blur (pinta el aviso, best effort) y el guardado
+// (que la espera con await -- el blur async no garantiza haber terminado cuando
+// el vendedor pega el celular y toca Guardar de inmediato).
+async function pcObtenerDecisionCelular() {
+  const tel = combinarTelefonoConCodigo(
+    document.getElementById('pc-cel-code')?.value,
+    document.getElementById('pc-cel')?.value
+  );
+  if (!tel) return { accion: 'crear', tipo: 'libre', mensaje: '' };
+  let clasificacion = null;
+  try {
+    const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(tel)}`);
+    if (res.ok) clasificacion = await res.json();
+  } catch { /* best effort: si la clasificacion falla, decide el 409 del server */ }
+  return accionCelularContactoNuevo(clasificacion, state.user?.name);
+}
+
+async function pcClasificarCelular() {
+  const aviso = document.getElementById('pc-cel-aviso');
+  if (!aviso) return;
+  const decision = await pcObtenerDecisionCelular();
+  if (decision.accion === 'crear') { aviso.style.display = 'none'; return; }
+  aviso.style.display = 'block';
+  aviso.className = 'pc-cel-aviso ' + (decision.accion === 'bloquear' ? 'pc-aviso-rojo' : 'pc-aviso-ambar');
+  let extra = '';
+  if (decision.accion === 'cotizar_cliente') {
+    extra = ` <button type="button" class="pc-link" onclick="pcCotizarComoCliente(${JSON.stringify(decision.cust_name || '').replace(/"/g, '&quot;')})">Cotizar sobre ese cliente</button>`;
+  }
+  aviso.innerHTML = escapeHtml(decision.mensaje) + extra;
+}
+
+async function pcCotizarComoCliente(custName) {
+  // El celular pertenece a un cliente Operam: se busca por nombre para cotizar
+  // sobre el (la clasificacion solo devuelve el nombre; la API v3 no da el id aqui).
+  const root = pcEl();
+  await pcCaminoBuscar();
+  const input = document.getElementById('pc-q');
+  if (input && custName) { input.value = custName; await pcBuscar(); }
+}
+window.pcCotizarComoCliente = pcCotizarComoCliente;
+
+async function pcGuardarContactoNuevo() {
+  const err = document.getElementById('pc-nuevo-error');
+  const nombre = document.getElementById('pc-nombre')?.value || '';
+  const celNum = document.getElementById('pc-cel')?.value || '';
+  const celCode = document.getElementById('pc-cel-code')?.value || '+52';
+  const ciudad = document.getElementById('pc-ciudad')?.value || '';
+  const canal = document.getElementById('pc-canal')?.value || '';
+  const telefono = combinarTelefonoConCodigo(celCode, celNum);
+
+  const showErr = m => { if (err) { err.textContent = m; err.style.display = 'block'; } };
+  if (err) err.style.display = 'none';
+
+  const payload = buildProspectoPayload({ celularCode: celCode, celular: celNum, nombre, ciudad, canal });
+  const errVal = validarProspectoBody(payload);
+  if (errVal) { showErr(errVal); return; }
+
+  const cliente = buildClienteDesdeContactoNuevo({ nombre, telefono, ciudad, canal, pais: paisDesdeCodigoTelefono(celCode) });
+
+  const btn = document.getElementById('pc-guardar');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const restaurarBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Guardar y continuar'; } };
+
+  // Guardrail de celular ajeno (#69/Visibilidad): se ESPERA la clasificacion aqui
+  // (no se confia en la del blur, que puede seguir en vuelo si el vendedor pego el
+  // celular y toco Guardar de inmediato). El 409 estructurado del server queda de
+  // backstop si esta consulta falla.
+  const decisionCel = await pcObtenerDecisionCelular();
+  if (decisionCel.accion === 'bloquear') { showErr(decisionCel.mensaje); restaurarBtn(); return; }
+
+  try {
+    const res = await api('/api/prospectos', { method: 'POST', body: payload });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409) {
+      // Decision por el campo estructurado `tipo` del server (accionProspecto409,
+      // #82) -- nunca parseando el string de error.
+      const decision = accionProspecto409(data);
+      if (decision.accion === 'usar_prospecto' && decision.prospecto) {
+        // 1 celular = 1 prospecto: se cotiza sobre el EXISTENTE (identidad del
+        // server), no sobre lo tecleado.
+        pcElegirProspecto(decision.prospecto);
+        return;
+      }
+      if (decision.accion === 'cotizar_cliente' && decision.cust_name && err) {
+        // Celular de cliente Operam: no se crea prospecto; se ofrece cotizar
+        // sobre ese cliente (mismo destino que el aviso del blur).
+        err.innerHTML = escapeHtml(decision.mensaje) +
+          ` <button type="button" class="pc-link" onclick="pcCotizarComoCliente(${JSON.stringify(decision.cust_name).replace(/"/g, '&quot;')})">Cotizar sobre ese cliente</button>`;
+        err.style.display = 'block';
+      } else {
+        showErr(decision.mensaje);
+      }
+      restaurarBtn();
+      return;
+    }
+    if (!res.ok) {
+      showErr(data.error || 'No se pudo guardar el contacto');
+      restaurarBtn();
+      return;
+    }
+    pcProspectosCache = null; // hay un prospecto nuevo: invalida la cache de busqueda
+    pcPrepararSeleccion();
+    pcLlenarCamposContacto(cliente);
+    pcState.cliente = cliente;
+    pcRenderTarjeta();
+  } catch (e) {
+    showErr('Error de conexion');
+    restaurarBtn();
+  }
+}
+window.pcGuardarContactoNuevo = pcGuardarContactoNuevo;
+
+// --- Tarjeta del cliente seleccionado ---
+
+// Fila unica de los 3 chips de completitud (la usan la tarjeta y el re-pintado
+// en vivo). El chip Entrega es tri-estado (#84): pendiente / CP capturado /
+// domicilio completo; ya no abre un bloque local -- tocarlo lleva al paso Envio,
+// que es donde vive el domicilio desde #84.
+// customer_id de Operam contra el que se puede hacer el upgrade fiscal (#85):
+// cliente Operam -> su id; prospecto ya ligado a un generico -> clienteOperamId;
+// contacto nuevo / prospecto sin cotizar -> null (aun no hay cliente en Operam).
+function pcCustomerIdFiscal() {
+  return customerIdFiscal(pcState.cliente);
+}
+
+function pcChipsHtml(chips, customerIdFiscal) {
+  const chip = (ok, okLabel, pendLabel) => ok
+    ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
+    : `<span class="pc-chip pend">${pendLabel}</span>`;
+  const entregaChip = chips.entrega === 'completo'
+    ? '<span class="pc-chip ok">&#10003; Entrega</span>'
+    : chips.entrega === 'cp'
+      ? '<span class="pc-chip parcial">Entrega &middot; CP</span>'
+      : '<span class="pc-chip pend">Entrega &middot; pendiente</span>';
+  // El chip Fiscal es accionable (patron del chip Entrega, #84) solo cuando el RFC
+  // sigue generico Y hay un cliente en Operam contra el cual actualizar: tocarlo abre
+  // el flujo de CSF en modo upgrade (PUT). Sin cliente en Operam queda estatico.
+  const fiscalChip = chips.fiscal
+    ? '<span class="pc-chip ok">&#10003; Fiscal</span>'
+    : (customerIdFiscal != null
+        ? '<button type="button" class="pc-chip-btn" onclick="pcAbrirUpgradeFiscalDesdePaso()"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>'
+        : '<span class="pc-chip pend">Fiscal &middot; al subir a Operam</span>');
+  return chip(chips.contacto, 'Contacto', 'Contacto') +
+    `<button type="button" class="pc-chip-btn" onclick="switchTab('envio')">${entregaChip}</button>` +
+    fiscalChip;
+}
+
+function pcRenderTarjeta() {
+  const root = pcEl();
+  const c = pcClienteActual();
+  const esOperam = pcState.cliente?.tipo === 'operam';
+  const chips = chipsCompletitud(c);
+  // Cada parte se escapa ANTES de unir con la entidad &middot; (escapar el join
+  // completo la romperia); telefono/ciudad son datos (p. ej. CSV de feria) y van
+  // a innerHTML: sin escape seria un stored XSS.
+  const subPartes = esOperam
+    ? [c.rfc, 'Cliente en Operam']
+    : [c.telefono, pcState.cliente?.ciudad, 'Prospecto'];
+  const sub = subPartes.filter(Boolean).map(escapeHtml).join(' &middot; ');
+
+  root.innerHTML =
+    '<div class="pc-pregunta">Cliente seleccionado</div>' +
+    '<div class="pc-cli-card">' +
+    `<div class="pc-cli-nombre">${escapeHtml(c.name || 'Sin nombre')}</div>` +
+    `<div class="pc-cli-sub">${sub}</div>` +
+    `<div class="pc-chips">${pcChipsHtml(chips, pcCustomerIdFiscal())}</div>` +
+    (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
+    '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>' +
+    '</div>' +
+    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Cambiar de cliente</button>';
+
+  pcRenderDomSelect();
+  updateTabIndicators();
+}
+
+function pcContinuar() {
+  switchTab('productos');
+}
+window.pcContinuar = pcContinuar;
+
+// Selector de domicilio para cliente Operam con varios branches (#84: vive en
+// el paso Envio, dentro de #pc-dom-slot -- HERMANO de #pc-root igual que antes
+// de #84, ahora en otra pestana; los innerHTML de #pc-root nunca lo tocan).
+function pcRenderDomSelect() {
+  const slot = document.getElementById('pc-dom-slot');
+  if (!slot) return;
+  const esOperam = pcState.cliente?.tipo === 'operam';
+  const doms = window._operamDomicilios;
+  if (esOperam && Array.isArray(doms) && doms.length > 1) {
+    slot.innerHTML = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
+      '<select id="pc-dom-select" onchange="pcCambiarDomicilio()">' +
+      doms.map((d, i) => `<option value="${i}">${escapeHtml(d.descripcion || d.calle || ('Domicilio ' + (i + 1)))}</option>`).join('') +
+      '</select></div>';
+  } else {
+    slot.innerHTML = '';
+  }
+  pcRenderContactoSelect();
+}
+
+function pcCambiarDomicilio() {
+  const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
+  pcState.domicilioIdx = idx;
+  aplicarDomicilio(window._operamDomicilios?.[idx]);
+  pcRenderContactoSelect();
+  pcRenderChips();
+}
+window.pcCambiarDomicilio = pcCambiarDomicilio;
+
+// Selector de contacto de entrega (issue #99): combina el contacto propio del
+// domicilio actual con los contactos del cliente (window._operamContactosCliente,
+// con tag de Operam) para que el vendedor elija A QUIEN entregar, con nombre visible
+// -- nunca un telefono/correo suelto sin dueno. Se re-renderiza al cambiar de
+// domicilio (pcCambiarDomicilio) porque el contacto propio del domicilio cambia.
+function pcContactosDisponibles() {
+  const dom = window._operamDomicilios?.[pcState.domicilioIdx || 0];
+  return contactosEntregaDisponibles(dom, window._operamContactosCliente);
+}
+
+function pcAplicarContacto(c) {
+  const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  f('cl-nombre-entrega', c?.nombre);
+  setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', c?.telefono || '');
+  f('cl-email-entrega', c?.email);
+  pcRenderChips();
+}
+
+function pcRenderContactoSelect() {
+  const slot = document.getElementById('pc-contacto-slot');
+  if (!slot) return;
+  const contactos = pcContactosDisponibles();
+  if (contactos.length === 0) {
+    slot.innerHTML = '';
+    return;
+  }
+  const opciones = contactos.map((c, i) => {
+    const tag = etiquetaTagContacto(c.tag);
+    const datos = [c.telefono, c.email].filter(Boolean).join(' · ');
+    const etiqueta = (c.nombre || 'Sin nombre') + (tag ? ` (${tag})` : '') + (datos ? ' — ' + datos : '');
+    return `<option value="${i}">${escapeHtml(etiqueta)}</option>`;
+  }).join('');
+  slot.innerHTML = '<div class="form-group pc-dom"><label>Contacto de entrega</label>' +
+    '<select id="pc-contacto-select" onchange="pcCambiarContacto()">' +
+    opciones +
+    '<option value="nuevo">+ Nuevo contacto</option>' +
+    '</select></div>';
+  pcAplicarContacto(contactos[0]);
+}
+
+function pcCambiarContacto() {
+  const val = document.getElementById('pc-contacto-select')?.value;
+  if (val === 'nuevo') {
+    pcAplicarContacto(null);
+    document.getElementById('cl-nombre-entrega')?.focus();
+    return;
+  }
+  pcAplicarContacto(pcContactosDisponibles()[parseInt(val)]);
+}
+window.pcCambiarContacto = pcCambiarContacto;
+
+// Re-pinta solo los chips (sin re-render completo, para no perder foco al editar).
+function pcRenderChips() {
+  const cont = pcEl()?.querySelector('.pc-chips');
+  if (!cont) return;
+  cont.innerHTML = pcChipsHtml(chipsCompletitud(pcClienteActual()), pcCustomerIdFiscal());
+}
+
+// --- Upgrade fiscal desde el chip Fiscal (issue #85) ---
+// Reutiliza la seccion 1 del acordeon (dropzone + parseo + campos editables) pero
+// reorientada al PUT del upgrade en vez del POST de creacion: al confirmar,
+// altaCsfConfirmar detecta altaCsfState.modoUpgrade y llama a pcEjecutarUpgradeFiscal.
+function pcAbrirUpgradeFiscal(customerId, banner, origen) {
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel) return;
+  altaCsfState.modoUpgrade = customerId;
+  // Origen del upgrade ('paso' | 'clientes'): decide si cl-email-factura es
+  // confiable (ver emailFacturaParaUpgrade en alta-logica.js).
+  altaCsfState.upgradeOrigen = origen || null;
+  altaCsfState.datos = null;
+  altaCsfState.pdfBase64 = null;
+  // Banner de contexto (#94): visible siempre que modoUpgrade este activo. Hace
+  // visible CONTRA QUIEN se actualiza (hoy ese contexto es invisible). Aplica
+  // tanto al upgrade desde el paso Cliente como desde la vista Clientes.
+  const bannerEl = document.getElementById('alta-upgrade-banner');
+  if (bannerEl) {
+    bannerEl.innerHTML = bannerUpgradeHtml({ id: customerId, nombre: banner?.nombre, rfc: banner?.rfc });
+    bannerEl.style.display = '';
+  }
+  panel.style.display = 'block';
+  altaTabSwitch('csf');
+  altaState.seccionAbierta = null;
+  altaToggleSeccion(1);
+  altaCsfSetStatus('idle');
+  altaPoblarSelectorSegmentoUpgrade();
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
+
+// Segmento en el panel de upgrade (issue #95 regla 6): comparte catalogo con
+// alta-segmento (Seccion 2), pero es un <select> propio -- la Seccion 2 vive en
+// el flujo del acordeon completo (POST, hoy sin punto de entrada en la UI) y no
+// se abre durante un upgrade.
+function altaPoblarSelectorSegmentoUpgrade() {
+  const sel = document.getElementById('alta-upgrade-segmento');
+  if (!sel) return;
+  cargarCatalogos().then(catalogos => {
+    sel.innerHTML = '<option value="">-- Selecciona --</option>' +
+      (catalogos.segmentos || []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+  }).catch(() => {});
+}
+
+// Wrapper del chip Fiscal del paso Cliente: deriva el contexto del banner (nombre
+// + RFC generico) de pcState.cliente, sin embeber texto arbitrario en el onclick.
+function pcAbrirUpgradeFiscalDesdePaso() {
+  const id = pcCustomerIdFiscal();
+  if (id == null) return;
+  const c = pcState.cliente || {};
+  pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' }, 'paso');
+}
+window.pcAbrirUpgradeFiscalDesdePaso = pcAbrirUpgradeFiscalDesdePaso;
+
+async function pcEjecutarUpgradeFiscal(datos) {
+  const customerId = altaCsfState.modoUpgrade;
+  const btn = document.getElementById('csf-btn-confirmar');
+  const errDiv = document.getElementById('csf-campos-error');
+  const mostrarError = msg => { if (errDiv) { errDiv.style.display = ''; errDiv.textContent = msg; } };
+  if (btn) { btn.disabled = true; btn.textContent = 'Actualizando en Operam...'; }
+  // Email de facturacion (issue #95 regla 3): se captura en el paso Cliente/Envio
+  // (cl-email-factura), input GLOBAL que vive fuera del acordeon de la CSF. Solo se
+  // incluye cuando el upgrade se abrio desde el paso Cliente ('paso'): desde la
+  // vista Clientes (#94) puede traer el email de OTRO cliente cotizado antes (fuga
+  // de contexto detectada en la revision de #95).
+  const emailFactura = emailFacturaParaUpgrade(
+    altaCsfState.upgradeOrigen,
+    document.getElementById('cl-email-factura')?.value
+  );
+  const csfDatosConFactura = emailFactura ? { ...datos, invoiceEmail: emailFactura } : datos;
+  try {
+    const res = await api(`/api/actualizar-cliente-fiscal/${customerId}`, {
+      method: 'PUT',
+      body: { csfDatos: csfDatosConFactura, pdf_base64: altaCsfState.pdfBase64 || null },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409 && data.fusion) {
+      const c = data.cliente || {};
+      mostrarError(`${data.error} Cliente existente: ${c.CustName || ''} (ID ${c.cliente_id || ''}).`);
+      return;
+    }
+    if (!res.ok || !data.ok) {
+      mostrarError(data.error || 'No se pudo actualizar en Operam');
+      return;
+    }
+    const ignorado = data.camposNoActualizados || [];
+    const campoPego = campo => !ignorado.some(x => x.campo === campo);
+    const panel = document.getElementById('panel-alta-cliente');
+    if (panel) panel.style.display = 'none';
+    altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+    // El chip Fiscal pasa a verde solo si el RFC real SI pego (chipsCompletitud lo
+    // deriva de pcState.cliente.rfc). Si Operam ignoro un campo (quirk del PUT),
+    // esa parte de la tarjeta se queda con el valor viejo en vez de mostrar un dato
+    // que Operam en realidad no guardo.
+    if (pcState.cliente && campoPego('tax_id')) pcState.cliente.rfc = datos.rfc;
+    if (pcState.cliente && campoPego('CustName')) pcState.cliente.name = datos.razonSocial || pcState.cliente.name;
+    const rfcInput = document.getElementById('cl-rfc');
+    if (rfcInput && campoPego('tax_id')) rfcInput.value = datos.rfc;
+    const razonInput = document.getElementById('cl-razon-social');
+    if (razonInput && campoPego('CustName') && datos.razonSocial) razonInput.value = datos.razonSocial;
+    pcRenderTarjeta();
+    if (ignorado.length) {
+      alert('Datos fiscales actualizados, pero Operam ignoro estos campos (corrigelos en Operam): ' +
+        ignorado.map(x => x.label || x.campo).join(', '));
+    }
+  } catch (e) {
+    mostrarError('Error de conexion');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar datos fiscales'; }
+  }
+}
 
 function renderHistorialCliente(cotizaciones) {
   const panel = document.getElementById('historial-cliente-panel');
@@ -1462,65 +2398,168 @@ function renderHistorialCliente(cotizaciones) {
   panel.innerHTML = `<div class="section-header">Cotizaciones previas (${cotizaciones.length})</div>` +
     cotizaciones.slice(-5).reverse().map(c => {
       const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+      // "Reintentar subida" solo si la cotizacion sigue en PRE (sin folio); una ya
+      // registrada (#Operam N) o historica no lo ofrece (#83, AC6). El contenedor
+      // por-cotizacion recibe el estado al reintentar.
       return `<div class="cot-mini">
-        <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
-        ${c.hasData ? `<button class="btn btn-sm btn-secondary" onclick="cargarCotizacion(${c.id})">Cargar</button>` : ''}
-        ${c.hasPdf ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-sm btn-secondary">PDF</a>` : ''}
-        <button class="btn btn-sm btn-primary" onclick="subirCotizacionOperam(${c.id})">Subir a Operam</button>
+        <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}${badgeFolioOperamHtml(c)}${badgeQuoteDesactualizadoHtml(c)}</span>
+        ${c.hasData ? buildAccionesCargaHtml(c) : ''}
+        ${c.hasData ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-sm btn-secondary">PDF</a>` : ''}
+        ${botonCompletarHtml(c)}
+        <div class="operam-status-slot"></div>
       </div>`;
     }).join('');
 }
 window.renderHistorialCliente = renderHistorialCliente;
 
-async function subirCotizacionOperam(id) {
-  const btn = event?.target;
-  if (btn) { btn.disabled = true; btn.textContent = 'Subiendo...'; }
-  try {
-    const res = await api(`/api/cotizacion/operam/${id}`, { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error');
-    alert(`Cotizacion subida a Operam${data.folio ? ' - Folio: ' + data.folio : ''}`);
-  } catch (e) {
-    alert('Error al subir: ' + e.message);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Subir a Operam'; }
-  }
+// Resuelve el slot de estado RELATIVO al elemento clickeado (F2 de la revision
+// de #83): la misma cotizacion puede estar pintada en dos paneles a la vez
+// (Historial y cotizaciones previas del cliente, ambos vivos en el DOM con
+// display:none), asi que un id global operam-status-cot-N seria duplicado y
+// getElementById pintaria siempre en el primero -- posiblemente el oculto. Un
+// boton dentro del slot (Reintentar/Elegir/Dejar como PRE) resuelve a su propio
+// slot; el boton "Reintentar subida" de las acciones de la tarjeta resuelve al
+// slot hermano dentro de la misma tarjeta (.cot-card / .cot-mini).
+function slotOperamDesde(el) {
+  if (!el || !el.closest) return null;
+  return el.closest('.operam-status-slot') ||
+    el.closest('.cot-card, .cot-mini')?.querySelector('.operam-status-slot') || null;
 }
-window.subirCotizacionOperam = subirCotizacionOperam;
 
-// Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1). Encadena las
-// dos piezas existentes y desacopladas: (1) registro directo de la cotizacion
-// (busca el cliente por RFC en Operam y persiste el folio -> deja de ser PRE);
-// (2) si Operam no halla al cliente, guia al vendedor al alta (flujo existente),
-// prellenando el formulario con los datos de la cotizacion via cargarCotizacion;
-// tras el alta, vuelve a tocar "Completar" para registrar. El paso lo decide la
-// regla pura siguientePasoFormalizacion sobre la respuesta del servidor.
-async function completarPreCotizacion(id) {
-  const btn = event?.target;
-  if (btn) { btn.disabled = true; btn.textContent = 'Completando...'; }
+// Auto-subida a Operam (#83, ADR-0006): al generar una cotizacion (PDF/HTML) se
+// sube sola via el endpoint idempotente de #81 -- sin boton manual. La misma
+// funcion sirve para el reintento y para resolver la dedup por nombre (extraBody
+// = { customerId }). El resultado se pinta en el slot (nodo DOM) con la vista
+// pura interpretarSubidaOperam + buildOperamStatusHtml (folio | PRE + Reintentar
+// | candidatos inline | PRE sin datos). Desde ADR-0009 la generacion ESPERA a
+// esta subida para imprimir el folio, pero un fallo sigue sin bloquear el
+// documento: degrada a PRE (sin numero) en vez de dejar al vendedor sin nada.
+// Subidas en vuelo por id (F3 de la revision): un doble click en Reintentar /
+// Elegir, o un Reintentar con la auto-subida original aun en vuelo, no dispara
+// un segundo POST (el server ademas tiene su lock por id, que es la proteccion
+// real; esto evita el 425 en el caso comun). El id se normaliza a string (llega
+// como string de state.lastCotizacionId y como numero de los onclick).
+const subidasOperamEnVuelo = new Set();
+
+async function autoSubirOperam(id, slot, extraBody) {
+  if (!id) return null;
+  const key = String(id);
+  // Ya en vuelo: antes esto era un `return` mudo, inofensivo mientras la subida
+  // era secundaria. Con ADR-0009 la subida esta en la ruta critica de la
+  // generacion, asi que un silencio aqui produce justo lo que el ADR prohibe --
+  // un documento sin numero sin decir por que. Se devuelve (y se pinta) un PRE
+  // explicito, distinto de un fallo, con el Reintentar de siempre.
+  if (subidasOperamEnVuelo.has(key)) {
+    const enVuelo = interpretarSubidaOperam({ enVuelo: true });
+    if (slot) slot.innerHTML = buildOperamStatusHtml(id, enVuelo);
+    return enVuelo;
+  }
+  subidasOperamEnVuelo.add(key);
+  if (slot) slot.innerHTML = '<span class="operam-status">Subiendo a Operam...</span>';
   let resultado;
   try {
-    const res = await api(`/api/cotizacion/operam/${id}`, { method: 'POST' });
+    const opts = { method: 'POST' };
+    if (extraBody) opts.body = extraBody;
+    const res = await api(`/api/cotizacion/operam/${id}`, opts);
     let data = {};
     try { data = await res.json(); } catch {}
-    resultado = { ok: res.ok, status: res.status, folio: data.folio, error: data.error };
+    resultado = {
+      ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida,
+      error: data.error, candidatos: data.candidatos,
+      customerId: data.customer_id, clienteGenerico: data.clienteGenerico,
+      // #106: los steps traen el resultado del post-fix de la vigencia; sin esto un
+      // fallo solo viviria en los logs del servidor y el vendedor mandaria la
+      // cotizacion sin saber que en Operam se ve vencida.
+      steps: data.steps,
+    };
   } catch (e) {
     resultado = { ok: false, status: 0, error: e.message };
+  } finally {
+    subidasOperamEnVuelo.delete(key);
   }
-  const paso = siguientePasoFormalizacion(resultado);
-  if (paso === 'listo') {
-    alert(`Cotizacion registrada en Operam${resultado.folio ? ' - Folio: ' + resultado.folio : ''}`);
-    showHistorial();
-    return;
+  const vista = interpretarSubidaOperam(resultado);
+  // #93: la cotizacion recien subida (misma sesion, mismo cliente del paso
+  // Cliente) trae el customer_id del alta generica -- se refresca pcState al
+  // instante para que el chip Fiscal deje de estar muerto sin depender de una
+  // nueva busqueda. Cliente tipo 'operam' ya trae su propio id real: no aplica.
+  if (vista.customerId != null && key === String(state.lastCotizacionId) &&
+      pcState.cliente && pcState.cliente.tipo !== 'operam') {
+    pcState.cliente.clienteOperamId = vista.customerId;
+    if (pcEl()?.querySelector('.pc-cli-card')) pcRenderChips();
   }
-  if (btn) { btn.disabled = false; btn.textContent = 'Completar'; }
-  if (paso === 'alta') {
-    alert('El cliente aun no esta en Operam. Damoslo de alta primero (el formulario se prellena con los datos de la cotizacion) y al terminar vuelve a tocar "Completar".');
-    await cargarCotizacion(id); // prellena el formulario y cambia a la vista Cotizar
-    abrirAcordeonAlta();
-    return;
+  if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
+  return vista;
+}
+// Actualizacion del quote conservando el folio (#104, ADR-0008). Se dispara tras
+// generar el documento cuando la sesion venia de "Actualizar cotizacion": el registro
+// del cotizador ya lo reescribio la generacion (crearOActualizarCotizacion honra
+// cotizacionId), aqui se reescribe el quote en Operam. Comparte la guarda de subidas
+// en vuelo con autoSubirOperam: las dos operaciones se pisarian el carrito de FA, y
+// el servidor ademas tiene su lock por id (la proteccion real).
+async function actualizarQuoteEnOperam(id, slot) {
+  if (!id) return;
+  const key = String(id);
+  // Ya en vuelo: era un `return` mudo, tolerable mientras esto solo lo disparaba el
+  // boton del historial. Desde #114 la reescritura del quote esta en la ruta critica
+  // de CADA generacion (Generar PDF y enseguida Ver HTML la disparan dos veces), y un
+  // silencio aqui deja el quote con lo viejo mientras el documento ya salio numerado.
+  // Se pinta el mismo aviso que da el 425 del servidor, con su Reintentar.
+  if (subidasOperamEnVuelo.has(key)) {
+    const enCurso = interpretarActualizacionOperam({
+      ok: false, status: 425, escrito: false,
+      error: 'Ya hay una operacion de Operam en curso para esta cotizacion: reintenta cuando termine.',
+    });
+    if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, enCurso);
+    return enCurso;
   }
-  alert('No se pudo completar: ' + (resultado.error || 'error desconocido'));
+  subidasOperamEnVuelo.add(key);
+  if (slot) slot.innerHTML = '<span class="operam-status">Actualizando en Operam...</span>';
+  let resultado;
+  try {
+    const res = await api(`/api/cotizacion/operam/${id}/actualizar`, { method: 'POST' });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    resultado = {
+      ok: data.ok === true, status: res.status, folio: data.folio,
+      escrito: data.escrito, verificado: data.verificado,
+      error: data.error, discrepancias: data.discrepancias,
+    };
+  } catch (e) {
+    resultado = { ok: false, status: 0, error: e.message };
+  } finally {
+    subidasOperamEnVuelo.delete(key);
+  }
+  const vista = interpretarActualizacionOperam(resultado);
+  if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);
+  // #114: bloqueada = el quote ya tiene pedido y Operam no deja editarlo, asi que el
+  // documento recien generado lleva un folio cuyo quote conserva el contenido viejo.
+  // El slot solo no basta: el vendedor acaba de descargar el PDF y su siguiente gesto
+  // es mandarselo al cliente. Aqui NO vale entregar callado un documento numerado que
+  // diverge (decision de Adrian), y este es el unico aviso que se cruza en el camino.
+  if (vista.estado === 'bloqueada') {
+    alert('OJO: el documento ya lleva el folio de Operam, pero la cotizacion en Operam NO se actualizo.\n\n' +
+      (vista.mensaje || '') +
+      '\n\nUsa "Crear una cotizacion nueva a partir de esta" antes de enviarsela al cliente.');
+  }
+  return vista;
+}
+window.reintentarActualizacionOperam = (id, el) => actualizarQuoteEnOperam(id, slotOperamDesde(el));
+
+window.reintentarSubidaOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el));
+window.elegirCandidatoOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { customerId });
+window.dejarPreOperam = (id, el) => {
+  const slot = slotOperamDesde(el);
+  if (slot) slot.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' });
+};
+
+// Reintentar la subida de una cotizacion PRE desde su tarjeta (boton "Reintentar
+// subida", #83). Reusa la auto-subida idempotente pintando el resultado en el
+// slot de SU tarjeta (resuelto desde el boton clickeado, F2) -- sin navegar (F4):
+// el retry puede salir del panel de cotizaciones previas en plena captura y
+// arrancar al vendedor al Historial seria robarle la pantalla. El folio queda
+// visible in situ; el badge de la tarjeta se actualiza en el proximo render.
+function completarPreCotizacion(id, el) {
+  return autoSubirOperam(id, slotOperamDesde(el));
 }
 window.completarPreCotizacion = completarPreCotizacion;
 
@@ -1531,24 +2570,29 @@ function switchTab(name) {
   if (name === 'resumen') updateResumen();
   if (name === 'envio') {
     updateShippingSummary();
-    // Auto-cotizar con CP del cliente si aplica
+    // Auto-cotizar con el CP ya capturado en el bloque de entrega si aplica
+    // (#84: mismo campo, ya no hay que copiarlo a un envia-cp aparte).
     const cpCliente = document.getElementById('cl-cp-entrega')?.value?.trim();
-    const cpEnvia = document.getElementById('envia-cp');
-    if (cpCliente && /^\d{5}$/.test(cpCliente) && cpEnvia) {
-      cpEnvia.value = cpCliente;
+    if (cpCliente && /^\d{5}$/.test(cpCliente)) {
       const opt = document.getElementById('shipping-option');
       if (opt && opt.value === 'none' && state.cart.size > 0) {
         opt.value = 'envia';
         document.getElementById('shipping-envia').style.display = 'block';
         document.getElementById('shipping-manual').style.display = 'none';
       }
-      if (opt?.value === 'envia' && state.cart.size > 0) {
+      // #102: si ya hay una tarifa elegida (restaurada del historial o de la
+      // misma sesion) no se vuelve a consultar envia.com al re-entrar al tab.
+      if (debeAutoCotizarEnvia(opt?.value, state.cart.size, enviaRateSeleccionado)) {
         setTimeout(cotizarEnvia, 100);
       }
     }
   }
   updateTabIndicators();
 }
+// El chip Entrega de la tarjeta (#84) navega con onclick="switchTab('envio')"
+// inline en el HTML generado; sin este exponer global, un modulo ES no cuelga
+// sus funciones de window y el onclick revienta con ReferenceError.
+window.switchTab = switchTab;
 
 // === FORMAT ===
 function fmt(n) {
@@ -1787,16 +2831,16 @@ function renderHistorial() {
 
   listEl.innerHTML = ultimasCotizaciones.slice().reverse().map(c => {
     const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
-    const btnPdf = c.hasPdf
-      ? `<a href="/api/cotizacion/pdf/${c.id}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>`
-      : `<button class="btn btn-secondary btn-sm" disabled title="PDF no disponible">Ver PDF</button>`;
-    const btnCargar = c.hasData
-      ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id})">Cargar</button>`
-      : `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Cargar</button>`;
+    // Ver PDF / Ver HTML / WhatsApp regeneran desde el registro guardado
+    // (issue #103), no desde disco ni desde el estado del formulario.
+    const accionesDocumento = buildHistorialAccionesHtml(c, window.location.origin);
+    // "Cargar" hacia dos cosas a la vez (#104): restaurar el carrito y, calladamente,
+    // empezar una cotizacion NUEVA. Ahora son dos acciones explicitas.
+    const btnCargar = buildAccionesCargaHtml(c);
     // Estado PRE / #Operam (issue #63) visible en el Historial; "Completar"
     // (issue #66) formaliza la pre-cotizacion desde su tarjeta. Solo aparece
     // mientras la cotizacion sigue siendo PRE.
-    const badge = badgeFolioOperamHtml(c);
+    const badge = badgeFolioOperamHtml(c) + badgeQuoteDesactualizadoHtml(c);
     const btnCompletar = botonCompletarHtml(c);
     return `
       <div class="cot-card">
@@ -1811,10 +2855,11 @@ function renderHistorial() {
           </div>
         </div>
         <div class="cot-card-actions">
-          ${btnPdf}
+          ${accionesDocumento}
           ${btnCargar}
           ${btnCompletar}
         </div>
+        <div class="operam-status-slot"></div>
       </div>
     `;
   }).join('');
@@ -1974,6 +3019,162 @@ function showProspectos() {
   cargarMotivosNoUtil();
 }
 
+// === VISTA CLIENTES (issue #94) ===
+// Mantenimiento de clientes desde el cotizador: alta completa (POST) y upgrade de
+// CSF (PUT) sin abrir una cotizacion. Hermana de Historial/Prospectos; sigue su
+// patron de montaje. Reusa el buscador mixto (pcBuscarMezclado) y los chips del
+// paso Cliente (chipsCompletitud); el render vive en pipeline-logica.js. El panel
+// de alta (#panel-alta-cliente) se re-parenta a #clientes-panel-slot (moverPanelA)
+// y vuelve a su casa al salir (devolverPanelACasa, via ocultarTodasLasVistas).
+const cvState = { seleccion: null };
+let cvResultadosCache = [];
+
+function cvRoot() { return document.getElementById('clientes-root'); }
+
+function showClientes() {
+  ocultarTodasLasVistas();
+  document.getElementById('clientes-view').style.display = 'block';
+  marcarNavActivo('nav-mas');
+  cvState.seleccion = null;
+  pcProspectosCache = null; // se refresca al abrir la busqueda
+  cvRenderBusqueda();
+}
+
+function cvRenderBusqueda() {
+  const root = cvRoot();
+  if (!root) return;
+  cvState.seleccion = null;
+  root.innerHTML =
+    '<div class="pc-pregunta">Clientes<small>Busca un cliente para completar sus datos, o da de alta uno nuevo.</small></div>' +
+    '<div class="pc-search"><input type="text" id="cv-q" class="pc-input-lg" ' +
+    'placeholder="Nombre, RFC o telefono..." autocomplete="off"></div>' +
+    '<div id="cv-zona"></div>';
+  const input = document.getElementById('cv-q');
+  let timer;
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(cvBuscar, 250); });
+  input.focus();
+  cvRenderRecientes();
+}
+window.cvRenderBusqueda = cvRenderBusqueda;
+
+async function cvRenderRecientes() {
+  const zona = document.getElementById('cv-zona');
+  if (!zona) return;
+  const recientes = await pcCargarRecientes();
+  if (!recientes.length) { zona.innerHTML = ''; return; }
+  // Los recientes derivan de cotizaciones (nombre + telefono) y no traen RFC/id,
+  // asi que tocarlos prellena la busqueda y resuelve el registro real de Operam
+  // (con su tag generico correcto), en vez de intentar pintar una tarjeta a medias.
+  zona.innerHTML = '<div class="pc-res-titulo">Recientes</div>' +
+    recientes.map(r =>
+      '<button type="button" class="pc-res-row" onclick="cvBuscarPrefill(' + JSON.stringify(r.nombre).replace(/"/g, '&quot;') + ')">' +
+      '<span class="pc-res-ini">' + escapeHtml(pcIniciales(r.nombre)) + '</span>' +
+      '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(r.nombre) + '</span>' +
+      '<span class="pc-res-sub">' + escapeHtml(r.telefono || 'Cotizado antes') + '</span></span></button>'
+    ).join('');
+}
+
+async function cvBuscarPrefill(nombre) {
+  const input = document.getElementById('cv-q');
+  if (input) { input.value = nombre || ''; await cvBuscar(); }
+}
+window.cvBuscarPrefill = cvBuscarPrefill;
+
+async function cvBuscar() {
+  const q = document.getElementById('cv-q')?.value || '';
+  if (q.trim().length < 2) { await cvRenderRecientes(); return; }
+  const zonaAntes = document.getElementById('cv-zona');
+  if (!zonaAntes) return;
+  zonaAntes.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
+  const rows = await pcBuscarMezclado(q);
+  if (!rows) return; // respuesta vieja descartada
+  const zona = document.getElementById('cv-zona');
+  if (!zona) return;
+  cvResultadosCache = rows;
+  zona.innerHTML = (rows.length ? '<div class="pc-res-titulo">Resultados</div>' +
+    rows.map((r, i) => filaResultadoClienteHtml(r, i)).join('') : '') +
+    filaCrearClienteHtml(q);
+}
+
+function cvElegirResultado(i) {
+  const r = cvResultadosCache[i];
+  if (!r) return;
+  const card = r.tipo === 'operam'
+    ? { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' }
+    : clienteDesdeProspecto(r.raw);
+  cvState.seleccion = { tipo: r.tipo, card, raw: r.raw };
+  cvRenderTarjeta();
+}
+window.cvElegirResultado = cvElegirResultado;
+
+function cvRenderTarjeta() {
+  const root = cvRoot();
+  const sel = cvState.seleccion;
+  if (!root || !sel) return;
+  root.innerHTML =
+    '<div class="pc-pregunta">Cliente</div>' +
+    cardClienteHtml(sel.card) +
+    '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Buscar otro cliente</button>';
+}
+window.cvRenderTarjeta = cvRenderTarjeta;
+
+// Fila punteada -> alta COMPLETA (acordeon 1-4, POST). Re-parenta el panel a la
+// vista y lo abre en modo creacion (abrirAcordeonAlta resetea modoUpgrade).
+function cvCaminoAlta(query) {
+  const root = cvRoot();
+  if (!root) return;
+  cvState.seleccion = null;
+  const q = typeof query === 'string' ? query.trim() : '';
+  root.innerHTML =
+    '<div class="pc-pregunta">Nuevo cliente<small>Alta completa en Operam, sin cotizacion.' +
+    (q ? ' (' + escapeHtml(q) + ')' : '') + '</small></div>' +
+    '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Cancelar</button>';
+  moverPanelA(document.getElementById('clientes-panel-slot'));
+  const panel = document.getElementById('panel-alta-cliente');
+  if (panel) panel.style.display = 'none'; // abrirAcordeonAlta togglea sobre display
+  abrirAcordeonAlta();
+}
+window.cvCaminoAlta = cvCaminoAlta;
+
+// Chip/boton Fiscal -> upgrade de CSF (PUT #85) sobre el cliente generico, con el
+// banner de contexto. Re-parenta el panel a la vista Clientes.
+function cvAbrirUpgrade() {
+  const sel = cvState.seleccion;
+  if (!sel) return;
+  const id = customerIdFiscal(sel.card);
+  if (id == null) return;
+  const c = sel.card;
+  const root = cvRoot();
+  if (root) {
+    root.innerHTML =
+      '<div class="pc-pregunta">Completar datos fiscales</div>' +
+      '<button type="button" class="pc-back" onclick="cvRenderTarjeta()">&lsaquo; Volver al cliente</button>';
+  }
+  moverPanelA(document.getElementById('clientes-panel-slot'));
+  pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' }, 'clientes');
+}
+window.cvAbrirUpgrade = cvAbrirUpgrade;
+
+// "Cotizar a este cliente": aterriza en el paso Cliente con el cliente ya
+// seleccionado (reusa pcElegirOperam / pcElegirProspecto -> seleccionarClienteOperam).
+function cvCotizar() {
+  const sel = cvState.seleccion;
+  if (!sel) return;
+  ocultarTodasLasVistas();
+  document.getElementById('app-view').style.display = 'block';
+  marcarNavActivo('nav-cotizar');
+  switchTab('cliente');
+  if (sel.tipo === 'operam') pcElegirOperam(sel.raw);
+  else pcElegirProspecto(sel.raw);
+}
+window.cvCotizar = cvCotizar;
+
+window.nuevoCliente = () => {
+  cerrarMenuNuevo();
+  showClientes();
+  cvCaminoAlta('');
+};
+
 // === PIPELINE (tablero unico de 7 etapas, issue #53) ===
 // Una oportunidad: antes de cotizar es el prospecto (su etapa del pipeline ya
 // viene migrada del store); al cotizar, la cotizacion lleva la oportunidad por
@@ -2020,9 +3221,9 @@ function cotizacionAOportunidad(c) {
     // Cadena de folios de Operam (issue #67, AC4): el espejo persistido por el sync
     // (data.espejoOperam) que la tarjeta pinta para trazabilidad.
     espejoOperam: c.espejoOperam ?? null,
-    // Estado de cobranza (issue #77): insumo del badge "Pago sin registrar" en la
-    // tarjeta entregada cuyo pago aun no figura registrado.
-    cobranza: c.cobranza ?? null,
+    // Pago sin registrar (issue #77): la entregada-impaga muestra el badge hasta que
+    // el sync detecte el pago (allocated ~ total) y apague el flag.
+    pagoSinRegistrar: c.pagoSinRegistrar === true,
   };
 }
 
@@ -2100,7 +3301,7 @@ function renderPipeline() {
     const badgeCobranza = badgePagoSinRegistrarHtml(o);
     const cadena = cadenaOperamHtml(o.espejoOperam);
     return `<div class="cot-card"><div class="cot-card-header"><div>
-      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgeCobranza}</div>
+      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgePagoSinRegistrarHtml(o)}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
       ${cadena}
     </div>${total}</div></div>`;
@@ -2278,12 +3479,44 @@ function setModoPipeline(modo) {
 }
 
 function ocultarTodasLasVistas() {
-  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view']) {
+  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view', 'clientes-view']) {
     const el = document.getElementById(v);
     if (el) el.style.display = 'none';
   }
+  // Cualquier cambio de vista devuelve #panel-alta-cliente a su lugar en el paso
+  // Cliente y resetea el estado del upgrade (#94): salir de la vista Clientes (o
+  // navegar a cualquier otra) nunca puede dejar un modoUpgrade colgado que dispare
+  // un PUT contra el cliente equivocado.
+  devolverPanelACasa();
   cerrarMenuMas();
   cerrarMenuNuevo();
+}
+
+// Re-parenteo de #panel-alta-cliente (#94): el panel es UNICO (leccion #82, no se
+// clona). Vive en el paso Cliente (#tab-cliente); la vista Clientes lo toma prestado
+// con appendChild y lo devuelve a su posicion original al salir. _panelHome guarda
+// esa posicion la primera vez que se mueve.
+let _panelHome = null;
+
+function moverPanelA(contenedor) {
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel || !contenedor) return;
+  if (!_panelHome) _panelHome = { parent: panel.parentNode, next: panel.nextSibling };
+  contenedor.appendChild(panel);
+}
+
+function devolverPanelACasa() {
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel) return;
+  panel.style.display = 'none';
+  altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+  const banner = document.getElementById('alta-upgrade-banner');
+  if (banner) { banner.innerHTML = ''; banner.style.display = 'none'; }
+  if (!_panelHome) return;
+  const { parent, next } = _panelHome;
+  if (!parent) return;
+  if (next && next.parentNode === parent) parent.insertBefore(panel, next);
+  else parent.appendChild(panel);
 }
 
 function marcarNavActivo(id) {
@@ -2670,13 +3903,12 @@ window.resultadoReunionNoUtilProspecto = resultadoReunionNoUtilProspecto;
 window.cotizarProspecto = id => {
   const p = ultimosProspectos.find(x => x.id === id);
   if (!p) return;
-  document.getElementById('prospectos-view').style.display = 'none';
+  ocultarTodasLasVistas();
   document.getElementById('app-view').style.display = 'block';
-  const nombre = document.getElementById('cl-nombre-corto');
-  if (nombre && !nombre.value) nombre.value = p.nombre;
-  const municipio = document.getElementById('cl-municipio');
-  if (municipio && !municipio.value) municipio.value = p.ciudad || '';
-  setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', p.celular);
+  marcarNavActivo('nav-cotizar');
+  switchTab('cliente');
+  // Entra directo a la tarjeta del prospecto (variante B, #82).
+  pcElegirProspecto(p);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 window.cerrarCotizacionTablero = async (id, estado) => {
@@ -2702,16 +3934,12 @@ window.abrirCapturaRapida = () => {
   document.getElementById('pr-celular').focus();
 };
 
-// Acciones del boton + global (issue #54). "Nueva cotizacion" lleva a la vista
-// de cotizar existente (la app abre ahi). "Nuevo prospecto" abre la captura
-// minima EXISTENTE: el formulario de prospecto que ya vive en la vista de
-// Prospectos. No se reinventa la captura ni la cotizacion: el + solo enruta.
-window.nuevaCotizacion = () => {
-  cerrarMenuNuevo();
-  ocultarTodasLasVistas();
-  document.getElementById('app-view').style.display = 'block';
-  marcarNavActivo('nav-cotizar');
-};
+// Acciones del boton + global (issue #54). "Nueva cotizacion" reusa la unica
+// funcion nuevaCotizacion (linea ~1412, expuesta a window ahi mismo -- #112:
+// antes habia una segunda homonima aqui que solo navegaba). "Nuevo prospecto"
+// abre la captura minima EXISTENTE: el formulario de prospecto que ya vive en
+// la vista de Prospectos. No se reinventa la captura ni la cotizacion: el +
+// solo enruta.
 window.nuevoProspecto = () => {
   cerrarMenuNuevo();
   showProspectos();
@@ -2719,7 +3947,11 @@ window.nuevoProspecto = () => {
   abrirCapturaRapida();
 };
 
-async function cargarCotizacion(id) {
+// modo (#104, ADR-0008): 'actualizar' reusa el registro y el folio de Operam;
+// 'nueva' es el comportamiento historico de "Cargar" (#83 F1), ahora con nombre
+// honesto. El default es 'nueva' porque cualquier llamador que no elija explicitamente
+// no debe terminar reescribiendo un documento que el cliente ya tiene.
+async function cargarCotizacion(id, modo = 'nueva') {
   try {
     const res = await api(`/api/cotizaciones/${id}`);
     if (!res.ok) { alert('No se pudo cargar la cotizacion'); return; }
@@ -2774,8 +4006,53 @@ async function cargarCotizacion(id) {
       state.cart.set(item.codigo, { product: cartProduct, cantidad: item.cantidad });
     }
 
+    // Envio (issue #102): restaura carrier/servicio/precio tal cual se guardo,
+    // sin re-cotizar con envia.com. Cotizaciones viejas sin envio estructurado
+    // degradan a "sin seleccion" (restaurarEnvioDesdeCotizacion lo resuelve).
+    const envioRestore = restaurarEnvioDesdeCotizacion(cot.envio);
+    document.getElementById('shipping-option').value = envioRestore.opcion;
+    document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
+    document.getElementById('shipping-manual').style.display = envioRestore.mostrarManual ? 'block' : 'none';
+    document.getElementById('shipping-cost').value = envioRestore.cost;
+    document.getElementById('shipping-desc').value = envioRestore.desc;
+    // Confirmacion visual de la tarifa restaurada (hallazgo del code review):
+    // sin esto el tab Envio se veia vacio para un envio via envia.com aunque el
+    // valor ya estuviera bien restaurado para el Resumen/PDF.
+    document.getElementById('envia-results').innerHTML = envioRestore.enviaRateSeleccionado?.carrier
+      ? buildEnviaRateRestauradaHtml(envioRestore.enviaRateSeleccionado)
+      : '';
+    document.getElementById('envia-error').style.display = 'none';
+    document.getElementById('envia-resumen').style.display = 'none';
+    enviaRateSeleccionado = envioRestore.enviaRateSeleccionado;
+    envioInvalidadoPorCantidad = false;
+
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');
+
+    // Que pasa al generar desde aqui (#104, ADR-0008 -- revierte de forma explicita
+    // la decision de #83 F1, que reseteaba esto siempre):
+    //   'nueva'      -> sesion nueva: se crea otro registro y otro quote en Operam.
+    //   'actualizar' -> se reusa el mismo registro (cotizacionId) y se reescribe el
+    //                   quote existente conservando el folio.
+    // El gate de que "actualizar" sea siquiera ofrecible lo decide el historial
+    // (puedeActualizarCotizacion) y lo hace valer el servidor.
+    state.modoActualizacion = modo === 'actualizar';
+    state.lastCotizacionId = state.modoActualizacion ? String(id) : null;
+    // #113: cargar OTRA cotizacion es exactamente cuando puede cambiar quien queda
+    // estampado, asi que la confirmacion se vuelve a pedir en los dos modos.
+    state.vendedorConfirmado = false;
+    const operamStatus = document.getElementById('operam-status-cotizar');
+    if (operamStatus) {
+      // folioOperam viaja en la respuesta del detalle (#109): el gate de
+      // "Actualizar cotizacion" (puedeActualizarCotizacion) ya exige que exista,
+      // asi que aqui siempre esta presente en modo actualizacion.
+      operamStatus.innerHTML = state.modoActualizacion
+        ? buildAvisoModoActualizacion(cot.folioOperam)
+        : '';
+    }
+    // Etiquetas de los botones (#109): en modo actualizacion comunican que
+    // reescriben el documento/quote existente, no que crean uno nuevo.
+    aplicarEtiquetasBotonesGenerar();
 
     // Volver a la app
     document.getElementById('historial-view').style.display = 'none';
@@ -2823,8 +4100,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 150);
   });
 
-  // Tab indicator para cliente
+  // Tab indicator para cliente y envio (el bloque de entrega vive en Envio, #84)
   document.getElementById('tab-cliente').addEventListener('input', updateTabIndicators);
+  document.getElementById('tab-envio').addEventListener('input', () => { pcRenderChips(); updateTabIndicators(); });
 
   // Botones Siguiente
   document.getElementById('btn-sig-cliente').addEventListener('click', () => switchTab('productos'));
@@ -2836,58 +4114,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     const val = e.target.value;
     document.getElementById('shipping-envia').style.display = val === 'envia' ? 'block' : 'none';
     document.getElementById('shipping-manual').style.display = val === 'manual' ? 'block' : 'none';
-    // Pre-llenar CP de envia con el del cliente si está vacío
-    if (val === 'envia') {
-      const cpCliente = document.getElementById('cl-cp-entrega')?.value?.trim();
-      const cpEnvia = document.getElementById('envia-cp');
-      if (cpEnvia && cpCliente && !cpEnvia.value) cpEnvia.value = cpCliente;
-    }
     // Limpiar costo si cambia la opción
     if (val !== 'envia' && val !== 'manual') {
       document.getElementById('shipping-cost').value = '';
     }
+    // Salir de "envia" descarta la invalidacion por cantidad (issue #89): ya no
+    // aplica, el envio activo dejo de depender de una tarifa de envia.com.
+    if (val !== 'envia') envioInvalidadoPorCantidad = false;
     updateResumen();
     updateTabIndicators();
   });
   document.getElementById('btn-cotizar-envia').addEventListener('click', cotizarEnvia);
-  document.getElementById('envia-cp').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
+  document.getElementById('cl-cp-entrega').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
   document.getElementById('shipping-cost').addEventListener('input', () => updateResumen());
   document.getElementById('shipping-desc').addEventListener('input', () => updateResumen());
 
-  // Operam: buscar cliente
-  const operamSearchEl = document.getElementById('operam-search');
-  if (operamSearchEl) {
-    let operamTimer;
-    operamSearchEl.addEventListener('input', e => {
-      clearTimeout(operamTimer);
-      operamTimer = setTimeout(() => buscarClienteOperam(e.target.value), 300);
-    });
-    operamSearchEl.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { clearTimeout(operamTimer); buscarClienteOperam(e.target.value); }
-    });
-    operamSearchEl.addEventListener('blur', () => {
-      setTimeout(() => {
-        document.getElementById('operam-dropdown').style.display = 'none';
-      }, 150);
-    });
-  }
-  document.getElementById('btn-buscar-operam')?.addEventListener('click', () => {
-    buscarClienteOperam(document.getElementById('operam-search').value);
+  // Nota de tiempo de entrega (#90): togglear el checkbox actualiza SOLO esa
+  // linea del textarea de notas, sin pisotear ediciones manuales del vendedor.
+  document.getElementById('resumen-decorado').addEventListener('change', e => {
+    const notasEl = document.getElementById('resumen-notas');
+    notasEl.value = aplicarNotaTiempoEntrega(notasEl.value, e.target.checked);
   });
-  const btnUsarDom = document.getElementById('btn-usar-domicilio');
-  if (btnUsarDom) btnUsarDom.addEventListener('click', usarDomicilioOperam);
 
   // PDF, HTML & WhatsApp
   document.getElementById('btn-pdf').addEventListener('click', generatePDF);
   document.getElementById('btn-html').addEventListener('click', generateHTML);
   document.getElementById('btn-whatsapp').addEventListener('click', shareWhatsApp);
   document.getElementById('btn-nueva').addEventListener('click', nuevaCotizacion);
-
-  // Subir a Operam
-  document.getElementById('btn-subir-operam')?.addEventListener('click', () => {
-    if (!state.lastCotizacionId) { alert('Genera el PDF primero'); return; }
-    subirCotizacionOperam(state.lastCotizacionId);
-  });
 
   // Navegacion inferior (bottom-nav, issue #53): Cotizar / Hoy / Pipeline / Mas.
   // Pipeline esta vivo (tablero unico de 7 etapas); los demas enlazan por ahora
@@ -2926,6 +4179,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
+  document.getElementById('mas-clientes')?.addEventListener('click', () => { cerrarMenuMas(); showClientes(); });
+  document.getElementById('btn-volver-clientes')?.addEventListener('click', () => {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
+  });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
   document.getElementById('btn-pipeline-modo-cerradas')?.addEventListener('click', () => setModoPipeline('cerradas'));
@@ -3037,6 +4296,13 @@ function abrirAcordeonAlta() {
     return;
   }
   panel.style.display = 'block';
+  // Este camino es el de "cliente formal nuevo" (POST), nunca el upgrade fiscal
+  // (#85): si un intento de upgrade anterior quedo colgado en altaCsfState.modoUpgrade
+  // (p. ej. tras un error sin cerrar el panel), confirmar aqui NO debe aplicarse sobre
+  // ese customer_id viejo.
+  altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+  const bannerEl = document.getElementById('alta-upgrade-banner');
+  if (bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
   altaToggleSeccion(1);
   cargarCatalogos().then(altaPoblarSelectores).catch(() => {});
 }
@@ -3072,6 +4338,8 @@ const altaCsfState = {
   fileName: null,
   mensaje: null,
   datos: null,
+  modoUpgrade: null, // customer_id destino cuando el flujo CSF se abre en modo upgrade (#85)
+  pdfBase64: null,
 };
 
 function altaCsfSetStatus(status, opts = {}) {
@@ -3191,6 +4459,8 @@ async function altaCsfLeerPDF(file) {
 async function altaCsfProcesarArchivo(file) {
   altaCsfSetStatus('loading', { spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' });
   try {
+    // Base64 del PDF para respaldarlo en Dropbox al confirmar el upgrade fiscal (#85).
+    altaCsfState.pdfBase64 = await leerArchivoBase64(file).catch(() => null);
     const texto = await altaCsfLeerPDF(file);
     const respuesta = await altaCsfParsearEnServidor(texto);
     const resultado = altaCsfResultadoParseo(respuesta, file.name);
@@ -3217,7 +4487,9 @@ function altaCsfValidarCampos() {
 function altaCsfLeerFormulario() {
   const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   return {
-    rfc: getVal('csf-rfc'),
+    // Mayusculas como en altaManualLeerFormulario: el gate anti-fusion del upgrade
+    // fiscal (#85) depende de comparar el mismo RFC contra Operam sin diferencias de case.
+    rfc: getVal('csf-rfc').toUpperCase(),
     razonSocial: getVal('csf-razon-social'),
     nombreCorto: getVal('csf-nombre-corto'),
     idcif: getVal('csf-idcif'),
@@ -3230,6 +4502,7 @@ function altaCsfLeerFormulario() {
     cp: getVal('csf-cp'),
     municipio: getVal('csf-municipio'),
     estado: getVal('csf-estado'),
+    segmentoId: getVal('alta-upgrade-segmento'),
   };
 }
 
@@ -3245,6 +4518,13 @@ async function altaCsfConfirmar() {
   const datos = altaCsfLeerFormulario();
   altaCsfState.datos = datos;
   altaCsfState.confirmado = true;
+
+  // Modo upgrade (#85): el destino es el PUT sobre el cliente generico existente,
+  // no el POST de creacion con dedup por nombre del acordeon viejo.
+  if (altaCsfState.modoUpgrade != null) {
+    await pcEjecutarUpgradeFiscal(datos);
+    return;
+  }
 
   altaState.datos = { ...datos };
   await altaDedupCorrer(datos.rfc, datos.razonSocial);
@@ -3312,12 +4592,18 @@ function altaManualLeerFormulario() {
     razonSocial: getVal('manual-razon-social'),
     nombreCorto: getVal('manual-nombre-corto'),
     idcif: getVal('manual-idcif'),
+    taxIdExtranjero: getVal('manual-tax-id-extranjero'),
     regimenFiscal: getVal('manual-regimen-fiscal'),
     usoCfdi: getVal('manual-uso-cfdi'),
+    calle: getVal('manual-calle'),
+    numExt: getVal('manual-num-ext'),
+    numInt: getVal('manual-num-int'),
+    colonia: getVal('manual-colonia'),
     cp: getVal('manual-cp'),
     municipio: getVal('manual-municipio'),
     estado: getVal('manual-estado'),
     pais: getVal('manual-pais'),
+    segmentoId: getVal('alta-upgrade-segmento'),
   };
 }
 
@@ -3329,22 +4615,24 @@ async function altaManualConfirmar() {
     return;
   }
   const datos = altaManualLeerFormulario();
-  if (!datos.rfc) {
-    const msg = 'El RFC es obligatorio';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
-    return;
-  }
-  if (!datos.razonSocial) {
-    const msg = 'La razon social es obligatoria';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
-    return;
-  }
-  if (!datos.nombreCorto) {
-    const msg = 'El nombre corto es obligatorio';
-    if (errDiv) { errDiv.textContent = msg; errDiv.style.display = ''; }
+  // Minimos de la regla 4 (#95): Razon Social, RFC, Codigo Postal, Regimen Fiscal.
+  // El nombre corto ya no es obligatorio en esta pestana; calle/numero/colonia/
+  // estado se capturan abajo pero son opcionales por diseno.
+  const minErr = validarAltaManualMinimos(datos);
+  if (minErr) {
+    if (errDiv) { errDiv.textContent = minErr; errDiv.style.display = ''; }
     return;
   }
   if (errDiv) errDiv.style.display = 'none';
+
+  // Modo upgrade (#85): igual que altaCsfConfirmar, la pestana "Captura manual" es
+  // el MISMO panel/Seccion 1 abierto por pcAbrirUpgradeFiscal -- sin este chequeo,
+  // confirmar aqui se saltaria el PUT de upgrade y su gate anti-fusion, disparando
+  // el POST de creacion viejo sobre un cliente que ya existe en Operam.
+  if (altaCsfState.modoUpgrade != null) {
+    await pcEjecutarUpgradeFiscal(datos);
+    return;
+  }
 
   altaState.datos = {
     rfc: datos.rfc,
@@ -3353,6 +4641,10 @@ async function altaManualConfirmar() {
     idcif: datos.idcif || '',
     regimenFiscal: datos.regimenFiscal || '',
     usoCfdi: datos.usoCfdi || 'S01',
+    calle: datos.calle || '',
+    numExt: datos.numExt || '',
+    numInt: datos.numInt || '',
+    colonia: datos.colonia || '',
     cp: datos.cp || '',
     municipio: datos.municipio || '',
     estado: datos.estado || '',
@@ -3430,7 +4722,7 @@ function altaDedupDesbloquear() {
   altaToggleSeccion(2);
 }
 
-async function altaDedupCorrer(rfc, razonSocial) {
+async function altaDedupCorrer(rfc, razonSocial, telefono) {
   const dedupDiv = document.getElementById('alta-dedup-resultado');
   if (!dedupDiv) { altaDedupDesbloquear(); return; }
 
@@ -3438,7 +4730,7 @@ async function altaDedupCorrer(rfc, razonSocial) {
   dedupDiv.style.display = '';
 
   try {
-    const params = new URLSearchParams({ rfc, nombre: razonSocial || '' });
+    const params = new URLSearchParams({ rfc, nombre: razonSocial || '', telefono: telefono || '' });
     const res = await api('/api/buscar-cliente-duplicado?' + params.toString());
     if (!res.ok) throw new Error('Error ' + res.status);
     const resultado = await res.json();
@@ -3459,21 +4751,29 @@ async function altaDedupCorrer(rfc, razonSocial) {
     }
 
     if (resultado.tipo === 'candidatos') {
-      const items = resultado.candidatos.map(c =>
-        '<label style="display:block;padding:4px 0;cursor:pointer">' +
-        '<input type="radio" name="dedup-candidato" value="' + c.id + '" onchange="altaDedupSelCandidato(' + c.id + ')">' +
-        ' <strong>' + (c.CustName || '') + '</strong> (' + (c.cust_ref || '') + ')' +
-        '</label>'
-      ).join('');
-      dedupDiv.innerHTML =
-        '<div class="dedup-candidatos">' +
-        '<p class="dedup-alerta-naranja">Posibles clientes existentes</p>' +
-        items +
-        '<label style="display:block;padding:4px 0;cursor:pointer">' +
-        '<input type="radio" name="dedup-candidato" value="escalar">' +
-        ' Ninguno es el mismo cliente - escalar a Adrian' +
-        '</label>' +
-        '</div>';
+      // Issue #78: cuando el RFC de entrada YA es real, los candidatos vienen
+      // del fallback contra clientes con RFC generico -- UI distinta a la rama
+      // generica de ADR-0001 (aqui SI se puede crear nuevo).
+      const rfcNorm = (rfc || '').toUpperCase().trim();
+      if (RFC_GENERICOS_MX_APP.has(rfcNorm)) {
+        const items = resultado.candidatos.map(c =>
+          '<label style="display:block;padding:4px 0;cursor:pointer">' +
+          '<input type="radio" name="dedup-candidato" value="' + c.id + '" onchange="altaDedupSelCandidato(' + c.id + ')">' +
+          ' <strong>' + (c.CustName || '') + '</strong> (' + (c.cust_ref || '') + ')' +
+          '</label>'
+        ).join('');
+        dedupDiv.innerHTML =
+          '<div class="dedup-candidatos">' +
+          '<p class="dedup-alerta-naranja">Posibles clientes existentes</p>' +
+          items +
+          '<label style="display:block;padding:4px 0;cursor:pointer">' +
+          '<input type="radio" name="dedup-candidato" value="escalar">' +
+          ' Ninguno es el mismo cliente - escalar a Adrian' +
+          '</label>' +
+          '</div>';
+      } else {
+        dedupDiv.innerHTML = buildCandidatosRfcGenericoHtml(resultado.candidatos);
+      }
       return;
     }
   } catch (err) {
@@ -3490,8 +4790,8 @@ async function altaDedupUsarCliente(clienteId) {
   try {
     const res = await api('/api/operam/clientes/' + clienteId + '/domicilios');
     if (!res.ok) throw new Error('Error ' + res.status);
-    const domicilios = await res.json();
-    altaDedupMostrarDomicilios(clienteId, domicilios);
+    const { domicilios } = await res.json();
+    altaDedupMostrarDomicilios(clienteId, domicilios || []);
   } catch (err) {
     if (dedupDiv) dedupDiv.innerHTML += '<p style="color:var(--danger);font-size:12px">Error al cargar domicilios: ' + err.message + '</p>';
   }
@@ -3539,6 +4839,32 @@ window.altaDedupSelCandidato = altaDedupSelCandidato;
 window.altaDedupSelDomicilio = altaDedupSelDomicilio;
 window.altaDedupNuevoDomicilio = altaDedupNuevoDomicilio;
 
+// --- Candidatos por RFC generico (issue #78) ---
+// "Actualizar este" dispara el upgrade fiscal EXISTENTE de #85 (pcEjecutarUpgradeFiscal
+// / PUT /api/actualizar-cliente-fiscal/:id, con su gate anti-fusion y verificacion
+// post-PUT) contra el customer_id del candidato, usando los datos de la CSF ya
+// parseada en altaState.datos -- no se reabre el formulario, ya se tienen los datos.
+async function altaCandidatoActualizar(clienteId) {
+  altaCsfState.modoUpgrade = clienteId;
+  await pcEjecutarUpgradeFiscal(altaState.datos);
+}
+window.altaCandidatoActualizar = altaCandidatoActualizar;
+
+// "Crear nuevo" descarta el candidato y continua el camino de creacion (POST)
+// que ya estaba en curso. Si el candidato aparecio en la Seccion 1 (justo tras
+// parsear la CSF) la Seccion 2 sigue bloqueada y hay que desbloquearla; si
+// aparecio en la Seccion 2 (disparado por altaBuscarCelular, con la Seccion 2
+// ya abierta) no se debe re-alternar la seccion o quedaria colapsada.
+function altaCandidatoCrearNuevo() {
+  const dedupDiv = document.getElementById('alta-dedup-resultado');
+  if (dedupDiv) { dedupDiv.innerHTML = ''; dedupDiv.style.display = 'none'; }
+  const candDiv = document.getElementById('alta-celular-candidatos');
+  if (candDiv) { candDiv.innerHTML = ''; candDiv.style.display = 'none'; }
+  const sec2 = document.getElementById('alta-sec-2');
+  if (sec2 && sec2.classList.contains('alta-seccion-bloqueada')) altaDedupDesbloquear();
+}
+window.altaCandidatoCrearNuevo = altaCandidatoCrearNuevo;
+
 // === Seccion 2: Confirmar config comercial ===
 
 // Busqueda por celular en el primer formulario (issue #69 AC3): al capturar el
@@ -3551,6 +4877,8 @@ async function altaBuscarCelular() {
   if (!aviso) return;
   const codeEl = document.getElementById('alta-celular-code');
   const celular = leerTelefono('alta-celular', codeEl ? 'alta-celular-code' : null) || (document.getElementById('alta-celular')?.value || '').trim();
+  const candDiv = document.getElementById('alta-celular-candidatos');
+  if (candDiv) { candDiv.innerHTML = ''; candDiv.style.display = 'none'; }
   if (!celular) { aviso.style.display = 'none'; aviso.textContent = ''; return; }
   try {
     const res = await api(`/api/prospectos/clasificar?celular=${encodeURIComponent(celular)}`);
@@ -3567,6 +4895,25 @@ async function altaBuscarCelular() {
   } catch {
     aviso.style.display = 'none';
     aviso.textContent = '';
+  }
+
+  // Issue #78: el nombre/RFC solos no siempre detectan un cliente ya existente
+  // con RFC generico (caso real "Siscani": el aviso de arriba, por telefono, fue
+  // lo UNICO que lo detecto). Se re-consulta el mismo endpoint de dedup ahora
+  // que hay telefono, solo si seguimos en el camino de creacion (no en upgrade)
+  // y todavia no se eligio un cliente existente.
+  if (candDiv && altaCsfState.modoUpgrade == null && altaState.datos?.rfc && !altaState.clienteExistente) {
+    try {
+      const params = new URLSearchParams({ rfc: altaState.datos.rfc, nombre: altaState.datos.razonSocial || '', telefono: celular });
+      const res2 = await api('/api/buscar-cliente-duplicado?' + params.toString());
+      const resultado2 = await res2.json();
+      if (resultado2.tipo === 'candidatos') {
+        candDiv.innerHTML = buildCandidatosRfcGenericoHtml(resultado2.candidatos);
+        candDiv.style.display = 'block';
+      }
+    } catch {
+      // Best effort -- un fallo aqui no debe bloquear el alta.
+    }
   }
 }
 window.altaBuscarCelular = altaBuscarCelular;
@@ -3740,19 +5087,19 @@ function altaReintentar() {
   altaDarDeAlta();
 }
 
-function altaCotizarAhora() {
+async function altaCotizarAhora() {
   const customerId = altaState.customer_id;
   if (!customerId) return;
   const panel = document.getElementById('panel-alta-cliente');
   if (panel) panel.style.display = 'none';
-  const buscarPanel = document.getElementById('panel-buscar');
-  if (buscarPanel) buscarPanel.style.display = 'block';
   // Estado compartido (#69): el cotizador abre con el cliente recien dado de alta
   // YA cargado -- razon social, telefono (con codigo de pais) y domicilio prellenados
   // desde lo capturado en el alta, sin re-pedir datos ni round-trip a Operam por RFC.
+  // pcElegirOperam es el punto central de seleccion (#82): limpia los campos del
+  // cliente anterior y muestra la tarjeta.
   const cliente = buildClienteDesdeAlta(altaState);
-  seleccionarClienteOperam(cliente);
   switchTab('cliente');
+  await pcElegirOperam(cliente);
 }
 
 function altaTerminar() {

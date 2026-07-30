@@ -2,9 +2,17 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let validarDomicilioEntrega, formatCarrier, formatServicio;
+let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
+let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
+let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega;
+let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
 before(async () => {
-  ({ validarDomicilioEntrega, formatCarrier, formatServicio } = await import('../cotizar-logica.js'));
+  ({
+    validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
+    debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
+    notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega,
+    buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
+  } = await import('../cotizar-logica.js'));
 });
 
 // === AC1: CP + pais sin Calle -> procede con leyenda ===
@@ -28,36 +36,61 @@ test('AC1-3: Calle solo con espacios cuenta como vacia -> leyenda', () => {
   assert.strictEqual(r.leyenda, 'Favor de confirmar el domicilio de entrega');
 });
 
-// === AC2: falta CP o pais -> bloquea ===
-test('AC2-1: falta CP -> ok:false con error', () => {
+// === AC4 (#84): nada de la direccion es requisito para GENERAR -- el gate de
+// CP+pais obligatorios se elimina (antes bloqueaba, #71); solo importa si hay
+// Calle para decidir la leyenda. CP+pais siguen obligatorios pero SOLO para
+// cotizar paqueteria (envia.com), fuera de esta funcion.
+test('AC4-1: falta CP (con Calle) -> ok:true, sin leyenda (Calle presente)', () => {
   const r = validarDomicilioEntrega({ calle: 'Reforma 100', cp: '', pais: 'MX' });
-  assert.strictEqual(r.ok, false);
-  assert.ok(r.error);
+  assert.strictEqual(r.ok, true);
   assert.ok(!r.leyenda);
 });
 
-test('AC2-2: falta pais -> ok:false con error', () => {
+test('AC4-2: falta pais (con Calle) -> ok:true, sin leyenda', () => {
   const r = validarDomicilioEntrega({ calle: 'Reforma 100', cp: '06600', pais: '' });
-  assert.strictEqual(r.ok, false);
-  assert.ok(r.error);
+  assert.strictEqual(r.ok, true);
+  assert.ok(!r.leyenda);
 });
 
-test('AC2-3: CP con formato invalido para el pais -> ok:false con error', () => {
+test('AC4-3: CP con formato invalido (con Calle) -> ok:true, ya no bloquea', () => {
   const r = validarDomicilioEntrega({ calle: 'Reforma 100', cp: '123', pais: 'MX' });
-  assert.strictEqual(r.ok, false);
-  assert.ok(r.error);
+  assert.strictEqual(r.ok, true);
+  assert.ok(!r.leyenda);
 });
 
-test('AC2-4: CP valido canadiense con pais CA -> ok', () => {
+test('AC4-4: CP valido canadiense sin Calle -> ok con leyenda (falta Calle)', () => {
   const r = validarDomicilioEntrega({ calle: '', cp: 'K1A 0A9', pais: 'CA' });
   assert.strictEqual(r.ok, true);
   assert.strictEqual(r.leyenda, 'Favor de confirmar el domicilio de entrega');
 });
 
-test('AC2-5: falta CP y falta pais -> ok:false', () => {
+test('AC4-5: entrega totalmente ausente (sin CP, pais ni Calle) -> ok con leyenda', () => {
   const r = validarDomicilioEntrega({ calle: '', cp: '', pais: '' });
-  assert.strictEqual(r.ok, false);
-  assert.ok(r.error);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.leyenda, 'Favor de confirmar el domicilio de entrega');
+});
+
+test('AC4-6: parcial, solo CP (sin Calle) -> ok con leyenda', () => {
+  const r = validarDomicilioEntrega({ calle: '', cp: '06600', pais: 'MX' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.leyenda, 'Favor de confirmar el domicilio de entrega');
+});
+
+// === cpValido: espejo de lib/validar-cp.js, reusado por chipsCompletitud ===
+test('CP1: MX de 5 digitos es valido', () => {
+  assert.strictEqual(cpValido('06600', 'MX'), true);
+});
+
+test('CP2: MX con menos de 5 digitos es invalido', () => {
+  assert.strictEqual(cpValido('123', 'MX'), false);
+});
+
+test('CP3: CA con formato correcto es valido', () => {
+  assert.strictEqual(cpValido('K1A 0A9', 'CA'), true);
+});
+
+test('CP4: CA sin espacio tambien es valido', () => {
+  assert.strictEqual(cpValido('K1A0A9', 'CA'), true);
 });
 
 // === AC3: nombres canonicos de paqueteria (carrier con su marca + servicio Title Case) ===
@@ -91,4 +124,245 @@ test('AC3-5: combinacion carrier + servicio (lo que va al documento)', () => {
   assert.strictEqual(`${formatCarrier('fedex')} ${formatServicio('ground')}`.trim(), 'FedEx Ground');
   assert.strictEqual(`${formatCarrier('DHL')} ${formatServicio('express')}`.trim(), 'DHL Express');
   assert.strictEqual(`${formatCarrier('ups')} ${formatServicio('ground')}`.trim(), 'UPS Ground');
+});
+
+// === #87: confirmacion de vendedor antes de generar (evitar estampar al vendedor equivocado) ===
+test('#87-1: buildConfirmarVendedorModalHtml incluye el nombre del vendedor logueado', () => {
+  const html = buildConfirmarVendedorModalHtml('Alejandro Chávez');
+  assert.ok(html.includes('Alejandro Chávez'));
+  assert.ok(html.includes('confirmar-vendedor-confirmar'));
+  assert.ok(html.includes('confirmar-vendedor-cancelar'));
+});
+
+test('#87-2: buildConfirmarVendedorModalHtml escapa HTML del nombre (XSS)', () => {
+  const html = buildConfirmarVendedorModalHtml('<script>alert(1)</script>');
+  assert.ok(!html.includes('<script>alert(1)</script>'));
+  assert.ok(html.includes('&lt;script&gt;'));
+});
+
+// === #89: cambiar cantidades en el resumen invalida la tarifa de envia.com
+// vigente (en vez de recalcular sola -- evita 3 llamadas a paqueteria por toque).
+// El envio manual capturado a mano NO se invalida.
+test('#89-1: hay tarifa de envia seleccionada y el envio activo es envia -> invalida', () => {
+  const r = debeInvalidarEnvioPorCantidad('envia', { desc: 'FedEx Ground', cost: 150 });
+  assert.strictEqual(r, true);
+});
+
+test('#89-2: sin tarifa de envia seleccionada -> no hay nada que invalidar', () => {
+  const r = debeInvalidarEnvioPorCantidad('envia', null);
+  assert.strictEqual(r, false);
+});
+
+test('#89-3: envio manual (no envia.com) -> nunca se invalida aunque haya rate previo', () => {
+  const r = debeInvalidarEnvioPorCantidad('manual', { desc: 'FedEx Ground', cost: 150 });
+  assert.strictEqual(r, false);
+});
+
+test('#89-4: sin envio (none) -> no aplica invalidacion', () => {
+  const r = debeInvalidarEnvioPorCantidad('none', { desc: 'FedEx Ground', cost: 150 });
+  assert.strictEqual(r, false);
+});
+
+test('#89-5: bloquea generacion cuando el envio quedo invalidado por cambio de cantidad', () => {
+  assert.strictEqual(bloqueaGeneracionPorEnvioInvalidado(true), true);
+  assert.strictEqual(bloqueaGeneracionPorEnvioInvalidado(false), false);
+  assert.strictEqual(bloqueaGeneracionPorEnvioInvalidado(undefined), false);
+});
+
+test('#89-6: mensaje de aviso visible cuando el envio se invalida', () => {
+  assert.strictEqual(MENSAJE_ENVIO_INVALIDADO, 'Las cantidades cambiaron, vuelve a cotizar el envío');
+});
+
+// === #90: nota de tiempo de entrega -- default 4 semanas, 6 si lleva calca/decorado ===
+test('#90-1: notaTiempoEntrega(false) -> 4 semanas (default, producto normal)', () => {
+  assert.strictEqual(
+    notaTiempoEntrega(false),
+    '- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.'
+  );
+});
+
+test('#90-2: notaTiempoEntrega(true) -> 6 semanas (lleva calca/decorado)', () => {
+  assert.strictEqual(
+    notaTiempoEntrega(true),
+    '- Tiempo de entrega: 6 semanas contadas a partir del pago del anticipo.'
+  );
+});
+
+const NOTAS_DEFAULT_4 = `- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.
+- Envio a costo y riesgo del cliente.
+- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.
+- Se requiere 50% de anticipo para comenzar la produccion.
+- Pago del saldo previo a la entrega.`;
+
+test('#90-3: aplicarNotaTiempoEntrega marca decorado -> reemplaza la linea a 6 semanas, preserva el resto', () => {
+  const r = aplicarNotaTiempoEntrega(NOTAS_DEFAULT_4, true);
+  assert.ok(r.includes('- Tiempo de entrega: 6 semanas contadas a partir del pago del anticipo.'));
+  assert.ok(!r.includes('4 semanas'));
+  assert.ok(r.includes('- Precios EXW Ixtapaluca'));
+  assert.ok(r.includes('- Pago del saldo previo a la entrega.'));
+});
+
+test('#90-4: aplicarNotaTiempoEntrega desmarca decorado -> vuelve a 4 semanas', () => {
+  const notasCon6 = aplicarNotaTiempoEntrega(NOTAS_DEFAULT_4, true);
+  const r = aplicarNotaTiempoEntrega(notasCon6, false);
+  assert.ok(r.includes('- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.'));
+  assert.ok(!r.includes('6 semanas'));
+});
+
+test('#90-5: si el vendedor edito la linea a mano (texto que no coincide con ninguna version auto), no se pisotea', () => {
+  const notasEditadas = NOTAS_DEFAULT_4.replace(
+    '- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.',
+    '- Tiempo de entrega: 10 dias habiles, urge.'
+  );
+  const r = aplicarNotaTiempoEntrega(notasEditadas, true);
+  assert.strictEqual(r, notasEditadas);
+});
+
+test('#90-6: si el vendedor borro la linea por completo, no se vuelve a agregar', () => {
+  const sinLinea = NOTAS_DEFAULT_4.split('\n').filter(l => !l.includes('Tiempo de entrega')).join('\n');
+  const r = aplicarNotaTiempoEntrega(sinLinea, true);
+  assert.strictEqual(r, sinLinea);
+});
+
+// === #88: tiempo estimado de entrega -- envia.com NO puebla rate.days (shape
+// real verificado en vivo contra api.envia.com/ship/rate/, FedEx/UPS, CP 78000
+// San Luis Potosi). El campo real es deliveryEstimate (string humano ya
+// formateado por envia.com) o deliveryDate.dateDifference (numero de dias).
+test('#88-1: shape real de FedEx (ground, CP 78000) -> usa deliveryEstimate', () => {
+  const rate = {
+    carrier: 'fedex', service: 'ground', totalPrice: 259,
+    deliveryEstimate: '1-2 días',
+    deliveryDate: { date: '2026-07-15', dateDifference: 2, timeUnit: 'days', time: '21:00' },
+  };
+  assert.strictEqual(formatTiempoEntrega(rate), '1-2 días');
+});
+
+test('#88-2: shape real de FedEx (express, dia siguiente) -> usa deliveryEstimate', () => {
+  const rate = {
+    carrier: 'fedex', service: 'express', totalPrice: 382,
+    deliveryEstimate: 'Día siguiente',
+    deliveryDate: { date: '2026-07-14', dateDifference: 1, timeUnit: 'day', time: '21:00' },
+  };
+  assert.strictEqual(formatTiempoEntrega(rate), 'Día siguiente');
+});
+
+test('#88-3: shape real de UPS (saver, CP 78000) -> usa deliveryEstimate', () => {
+  const rate = {
+    carrier: 'ups', service: 'saver', totalPrice: 703.89,
+    deliveryEstimate: '2-4 días',
+    deliveryDate: { date: '2026-07-17', dateDifference: 4, timeUnit: 'days', time: '23:30' },
+  };
+  assert.strictEqual(formatTiempoEntrega(rate), '2-4 días');
+});
+
+test('#88-4: sin deliveryEstimate pero con deliveryDate.dateDifference -> arma "N dias"', () => {
+  assert.strictEqual(formatTiempoEntrega({ deliveryDate: { dateDifference: 3 } }), '3 días');
+  assert.strictEqual(formatTiempoEntrega({ deliveryDate: { dateDifference: 1 } }), '1 día');
+});
+
+test('#88-5: sin deliveryEstimate ni deliveryDate, con rate.days (fallback legacy) -> lo usa', () => {
+  assert.strictEqual(formatTiempoEntrega({ days: 5 }), '5 días');
+  assert.strictEqual(formatTiempoEntrega({ days: 1 }), '1 día');
+});
+
+test('#88-6: sin ningun campo de tiempo -> cadena vacia (no rompe el render)', () => {
+  assert.strictEqual(formatTiempoEntrega({ carrier: 'dhl' }), '');
+  assert.strictEqual(formatTiempoEntrega(null), '');
+  assert.strictEqual(formatTiempoEntrega(undefined), '');
+});
+
+// === #102: persistir el envio estructurado {carrier, servicio, precio} en vez
+// de solo hornearlo en la descripcion de la partida ENVIO -- necesario para
+// restaurarlo tal cual al Cargar desde historial sin re-cotizar con envia.com.
+test('#102-1: buildEnvioEstructurado con shippingOpt none -> null (nada que persistir)', () => {
+  const r = buildEnvioEstructurado({ shippingOpt: 'none', shippingCost: 0, shippingDesc: 'Envio', enviaRateSeleccionado: null });
+  assert.strictEqual(r, null);
+});
+
+test('#102-2: buildEnvioEstructurado con costo 0 -> null aunque haya opcion elegida', () => {
+  const r = buildEnvioEstructurado({ shippingOpt: 'manual', shippingCost: 0, shippingDesc: 'Envio', enviaRateSeleccionado: null });
+  assert.strictEqual(r, null);
+});
+
+test('#102-3: buildEnvioEstructurado manual -> opcion manual, carrier/servicio null, precio y descripcion capturados', () => {
+  const r = buildEnvioEstructurado({ shippingOpt: 'manual', shippingCost: 150, shippingDesc: 'Paquete propio', enviaRateSeleccionado: null });
+  assert.deepStrictEqual(r, { opcion: 'manual', carrier: null, servicio: null, precio: 150, descripcion: 'Paquete propio' });
+});
+
+test('#102-4: buildEnvioEstructurado envia con rate seleccionada -> carrier/servicio estructurados (no horneados en un string)', () => {
+  const r = buildEnvioEstructurado({
+    shippingOpt: 'envia', shippingCost: 259, shippingDesc: 'FedEx Ground',
+    enviaRateSeleccionado: { carrier: 'fedex', servicio: 'ground', desc: 'FedEx Ground', cost: 259 },
+  });
+  assert.deepStrictEqual(r, { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
+});
+
+test('#102-5: buildEnvioEstructurado envia sin rate seleccionada -> carrier/servicio null (degradado, no rompe)', () => {
+  const r = buildEnvioEstructurado({ shippingOpt: 'envia', shippingCost: 200, shippingDesc: 'Envio', enviaRateSeleccionado: null });
+  assert.deepStrictEqual(r, { opcion: 'envia', carrier: null, servicio: null, precio: 200, descripcion: 'Envio' });
+});
+
+test('#102-6: restaurarEnvioDesdeCotizacion sin envio (undefined) -> degrada a "none" sin seleccion', () => {
+  const r = restaurarEnvioDesdeCotizacion(undefined);
+  assert.deepStrictEqual(r, {
+    opcion: 'none', mostrarEnvia: false, mostrarManual: false, cost: '', desc: 'Envio', enviaRateSeleccionado: null,
+  });
+});
+
+test('#102-7: restaurarEnvioDesdeCotizacion con envio null (cotizacion vieja) -> degrada igual que undefined', () => {
+  const r = restaurarEnvioDesdeCotizacion(null);
+  assert.strictEqual(r.opcion, 'none');
+  assert.strictEqual(r.enviaRateSeleccionado, null);
+});
+
+test('#102-8: restaurarEnvioDesdeCotizacion manual -> restaura costo/descripcion, sin rate de envia', () => {
+  const r = restaurarEnvioDesdeCotizacion({ opcion: 'manual', carrier: null, servicio: null, precio: 200, descripcion: 'Paquete propio' });
+  assert.deepStrictEqual(r, {
+    opcion: 'manual', mostrarEnvia: false, mostrarManual: true, cost: '200.00', desc: 'Paquete propio', enviaRateSeleccionado: null,
+  });
+});
+
+test('#102-9: restaurarEnvioDesdeCotizacion envia -> restaura carrier/servicio como rate seleccionada (evita re-cotizar)', () => {
+  const r = restaurarEnvioDesdeCotizacion({ opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
+  assert.deepStrictEqual(r, {
+    opcion: 'envia', mostrarEnvia: true, mostrarManual: false, cost: '259.00', desc: 'FedEx Ground',
+    enviaRateSeleccionado: { carrier: 'fedex', servicio: 'ground', desc: 'FedEx Ground', cost: 259 },
+  });
+});
+
+test('#102-10: restaurarEnvioDesdeCotizacion con opcion desconocida -> degrada a none (no rompe)', () => {
+  const r = restaurarEnvioDesdeCotizacion({ opcion: 'algo-viejo-invalido', precio: 100 });
+  assert.strictEqual(r.opcion, 'none');
+  assert.strictEqual(r.enviaRateSeleccionado, null);
+});
+
+test('#102-11: debeAutoCotizarEnvia -- envia sin rate previa y carrito con productos -> SI auto-cotiza', () => {
+  assert.strictEqual(debeAutoCotizarEnvia('envia', 3, null), true);
+});
+
+test('#102-12: debeAutoCotizarEnvia -- ya hay un envio elegido (restaurado del historial) -> NO re-dispara envia.com', () => {
+  assert.strictEqual(debeAutoCotizarEnvia('envia', 3, { carrier: 'fedex', servicio: 'ground', desc: 'FedEx Ground', cost: 259 }), false);
+});
+
+test('#102-13: debeAutoCotizarEnvia -- carrito vacio -> no auto-cotiza', () => {
+  assert.strictEqual(debeAutoCotizarEnvia('envia', 0, null), false);
+});
+
+test('#102-14: debeAutoCotizarEnvia -- opcion manual o none -> nunca auto-cotiza envia.com', () => {
+  assert.strictEqual(debeAutoCotizarEnvia('manual', 3, null), false);
+  assert.strictEqual(debeAutoCotizarEnvia('none', 3, null), false);
+});
+
+// === #102 (hallazgo del code review): sin esta tarjeta, el tab Envio se veia
+// vacio para un envio via envia.com restaurado del historial -- los valores
+// quedaban bien en shipping-cost/shipping-desc (ocultos dentro de #shipping-manual,
+// no visible cuando opcion es 'envia') pero el vendedor no tenia confirmacion
+// visual y podia pulsar "Cotizar" de nuevo, perdiendo la restauracion.
+test('#102-15: buildEnviaRateRestauradaHtml muestra carrier/servicio/precio formateados', () => {
+  const html = buildEnviaRateRestauradaHtml({ carrier: 'fedex', servicio: 'ground', precio: 259 });
+  assert.ok(html.includes('FedEx'));
+  assert.ok(html.includes('Ground'));
+  assert.ok(html.includes('259.00'));
+  assert.ok(html.includes('envia-rate-card'));
+  assert.ok(html.includes('selected'));
 });
