@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -28,10 +29,10 @@ const MEMO_TOKEN = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRE
 
 function readProspectos() {
   if (!existsSync(PROSPECTOS_PATH)) return [];
-  return JSON.parse(readFileSync(PROSPECTOS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(PROSPECTOS_PATH));
 }
 function writeProspectos(data) {
-  writeFileSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
 }
 
 // Mismo patron de aislamiento que prospectos-api.test.js: fetch bloqueado por
@@ -65,14 +66,14 @@ let savedProspectos, existiaProspectos, savedVendedores;
 before(() => {
   existiaProspectos = existsSync(PROSPECTOS_PATH);
   savedProspectos = readProspectos();
-  savedVendedores = readFileSync(VENDEDORES_PATH, 'utf8');
-  writeFileSync(VENDEDORES_PATH, JSON.stringify(VENDEDORES_TEST, null, 2));
+  savedVendedores = leerArchivoSync(VENDEDORES_PATH);
+  escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(VENDEDORES_TEST, null, 2));
   globalThis.fetch = fetchBloqueado;
 });
 after(() => {
   if (existiaProspectos) writeProspectos(savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
-  writeFileSync(VENDEDORES_PATH, savedVendedores);
+  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
+  escribirArchivoSync(VENDEDORES_PATH, savedVendedores);
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {

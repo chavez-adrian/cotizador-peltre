@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
+import { readFileSync, existsSync, chmodSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -32,8 +33,8 @@ const { resetSession } = await import('../lib/operam-client.js');
 const { _resetSesionWeb } = await import('../lib/operam-web.js');
 const TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
-function readJson(path) { return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []; }
-function writeJson(path, data) { writeFileSync(path, JSON.stringify(data, null, 2)); }
+function readJson(path) { return existsSync(path) ? JSON.parse(leerArchivoSync(path)) : []; }
+function writeJson(path, data) { escribirArchivoSync(path, JSON.stringify(data, null, 2)); }
 
 const originalFetch = globalThis.fetch;
 const fetchBloqueado = async (url) => { throw new Error('fetch sin mock en tests: ' + url); };
@@ -86,7 +87,7 @@ before(() => {
 after(() => {
   writeJson(COTS_PATH, savedCots);
   if (existiaProspectos) writeJson(PROSPECTOS_PATH, savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
+  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {

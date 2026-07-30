@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -23,8 +24,8 @@ const { app } = await import('../server.js');
 const ADMIN_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 const MEMO_TOKEN = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
 
-function readJson(p) { return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : []; }
-function writeJson(p, data) { writeFileSync(p, JSON.stringify(data, null, 2)); }
+function readJson(p) { return existsSync(p) ? JSON.parse(leerArchivoSync(p)) : []; }
+function writeJson(p, data) { escribirArchivoSync(p, JSON.stringify(data, null, 2)); }
 
 const hace = (dias) => new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString();
 const haceHoras = (h) => new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
@@ -71,7 +72,7 @@ before(() => {
 });
 after(() => {
   if (existiaProspectos) writeJson(PROSPECTOS_PATH, savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
+  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
   writeJson(COTS_PATH, savedCots);
 });
 beforeEach(() => {

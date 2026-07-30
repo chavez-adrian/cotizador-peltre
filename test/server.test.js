@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync, unlinkSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -31,11 +32,11 @@ const TEST_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRE
 
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
-  return JSON.parse(readFileSync(COTS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(COTS_PATH));
 }
 
 function writeCots(data) {
-  writeFileSync(COTS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
 let savedCots;

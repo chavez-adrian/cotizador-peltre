@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import jwt from 'jsonwebtoken';
@@ -90,11 +91,11 @@ function jsonResponse(data, status = 200) {
 
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
-  return JSON.parse(readFileSync(COTS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(COTS_PATH));
 }
 
 function writeCots(data) {
-  writeFileSync(COTS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
 let savedCots;
@@ -216,8 +217,8 @@ test('B5: subirCotizacionOperam llama POST /api/v3/sales/quote', async () => {
     assert.equal(quotePayload.items[0].stock_id, 'VA08G1N1M0');
   } finally {
     restore();
-    const cleanLog = JSON.parse(readFileSync(COTS_PATH, 'utf8')).filter(e => e.id !== 9999);
-    writeFileSync(COTS_PATH, JSON.stringify(cleanLog, null, 2));
+    const cleanLog = JSON.parse(leerArchivoSync(COTS_PATH)).filter(e => e.id !== 9999);
+    escribirArchivoSync(COTS_PATH, JSON.stringify(cleanLog, null, 2));
   }
 });
 

@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -27,14 +28,14 @@ const ANA_TOKEN = jwt.sign({ id: 8, name: 'Ana', role: 'vendedor' }, JWT_SECRET,
 
 function readProspectos() {
   if (!existsSync(PROSPECTOS_PATH)) return [];
-  return JSON.parse(readFileSync(PROSPECTOS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(PROSPECTOS_PATH));
 }
 function writeProspectos(data) {
-  writeFileSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
+  escribirArchivoSync(PROSPECTOS_PATH, JSON.stringify(data, null, 2));
 }
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
-  return JSON.parse(readFileSync(COTS_PATH, 'utf8'));
+  return JSON.parse(leerArchivoSync(COTS_PATH));
 }
 
 // Ningun test pega a Operam real: fetch bloqueado por defecto (la clasificacion
@@ -87,8 +88,8 @@ before(() => {
 });
 after(() => {
   if (existiaProspectos) writeProspectos(savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) unlinkSync(PROSPECTOS_PATH);
-  writeFileSync(COTS_PATH, JSON.stringify(savedCots, null, 2));
+  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
+  escribirArchivoSync(COTS_PATH, JSON.stringify(savedCots, null, 2));
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {
@@ -266,7 +267,7 @@ test('H8: celular de un cliente Operam no crea prospecto aunque venga canal', as
 });
 
 test('H9: un fallo del hook jamas rompe el guardado de la cotizacion', async () => {
-  writeFileSync(PROSPECTOS_PATH, '{corrupto');
+  escribirArchivoSync(PROSPECTOS_PATH, '{corrupto');
   const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5512345678', { canal: 'WhatsApp' }));
   assert.equal(res.status, 200);
   // El POST ya no devuelve documento (ADR-0009): lo que se comprueba es que la
