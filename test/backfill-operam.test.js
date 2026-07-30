@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 
-import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTORS_GENERICOS, DEBTORS_SOCIOS, FOLIOS_EXCLUIDOS_MANUAL, mapearPartidasQuote } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTORS_GENERICOS, DEBTORS_SOCIOS, FOLIOS_EXCLUIDOS_MANUAL, mapearPartidasQuote, esVarianteCerrada, pedidoQueCierra, VENTANA_VARIANTE_DIAS, BANDA_VARIANTE, GRACIA_VARIANTE_DIAS, MONTO_MINIMO_B } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -1328,4 +1328,263 @@ test('#76 construirEntradaCotizacion: sin detalle en el quote, data.items es [] 
     pedido: PEDIDO, quote: QUOTE, debtor: DEBTOR, etapa: 'saldo_pagado', vendedores: VENDEDORES,
   });
   assert.deepEqual(e.data.items, []);
+});
+
+// --- Variante cerrada (#76, decision Adrian 2026-07-30) --------------------------
+// Los clientes piden 2-3 cotizaciones y autorizan UNA, a veces generando el pedido
+// DIRECTO (sin trans_no_from, o con otras piezas). Las cotizaciones hermanas quedan
+// "vivas" en la parte B aunque la compra ya cerro. La heuristica: un pedido del MISMO
+// cliente, cercano en fecha y de monto COMPARABLE, cierra a la cotizacion. El caso
+// MOTOBLOCK marca el limite inferior: un pedido de muestras de $598 NO puede matar una
+// cotizacion real de $182,093.
+
+test('esVarianteCerrada: variante exacta (monto ~igual, +-5%) se excluye', () => {
+  const quote = { trans_no: '1300', ord_date: '2026-05-10', total: '100000' };
+  const pedidos = [{ order_no: '7300', ord_date: '2026-05-12', total: '105000' }];
+  assert.equal(esVarianteCerrada(quote, pedidos), true);
+});
+
+test('esVarianteCerrada: pedido al 40% del monto (250 -> 100 piezas) se excluye', () => {
+  // Autorizaron menos piezas de las cotizadas: la compra cerro igual.
+  const quote = { trans_no: '1301', ord_date: '2026-05-10', total: '100000' };
+  const pedidos = [{ order_no: '7301', ord_date: '2026-05-20', total: '40000' }];
+  assert.equal(esVarianteCerrada(quote, pedidos), true);
+});
+
+test('esVarianteCerrada: MOTOBLOCK -- pedido de muestras al 0.3% NO excluye la cotizacion grande', () => {
+  const quote = { trans_no: '1302', ord_date: '2026-05-10', total: '182093' };
+  const pedidos = [{ order_no: '7302', ord_date: '2026-05-15', total: '598' }];
+  assert.equal(esVarianteCerrada(quote, pedidos), false);
+});
+
+test('esVarianteCerrada: pedido fuera de la ventana de 31 dias NO excluye', () => {
+  const quote = { trans_no: '1303', ord_date: '2026-05-10', total: '100000' };
+  const pedidos = [{ order_no: '7303', ord_date: '2026-07-01', total: '100000' }];
+  assert.equal(esVarianteCerrada(quote, pedidos), false);
+  // ...y tampoco un pedido MUY anterior (la ventana es de valor absoluto).
+  assert.equal(esVarianteCerrada(quote, [{ order_no: '7304', ord_date: '2026-01-01', total: '100000' }]), false);
+});
+
+test('esVarianteCerrada: la ventana es ASIMETRICA -- un pedido ANTERIOR lejano NO cierra (causalidad)', () => {
+  // Primero se cotiza y luego se autoriza: un pedido de 20 dias ANTES no puede haber
+  // nacido de esta cotizacion. Protege el REORDEN (el cliente que vuelve a cotizar
+  // despues de una compra previa sigue siendo una oportunidad viva).
+  const quote = { trans_no: '1304', ord_date: '2026-05-10', total: '100000' };
+  assert.equal(esVarianteCerrada(quote, [{ order_no: '7305', ord_date: '2026-04-20', total: '90000' }]), false);
+});
+
+test('esVarianteCerrada: gracia de 3 dias hacia atras (desfase de captura) SI cierra', () => {
+  const quote = { trans_no: '1304b', ord_date: '2026-05-10', total: '100000' };
+  // 2 dias antes: cabe en la gracia -> cierra.
+  assert.equal(esVarianteCerrada(quote, [{ order_no: '7305', ord_date: '2026-05-08', total: '90000' }]), true);
+  // 4 dias antes: fuera de la gracia -> no cierra.
+  assert.equal(esVarianteCerrada(quote, [{ order_no: '7306', ord_date: '2026-05-06', total: '90000' }]), false);
+});
+
+test('constantes exportadas: la gracia hacia atras es de 3 dias', () => {
+  assert.equal(GRACIA_VARIANTE_DIAS, 3);
+});
+
+test('esVarianteCerrada: cotizacion con total <= 0 -- la heuristica NO aplica', () => {
+  const pedidos = [{ order_no: '7306', ord_date: '2026-05-10', total: '5000' }];
+  assert.equal(esVarianteCerrada({ trans_no: '1305', ord_date: '2026-05-10', total: '0' }, pedidos), false);
+  assert.equal(esVarianteCerrada({ trans_no: '1306', ord_date: '2026-05-10', total: null }, pedidos), false);
+});
+
+test('esVarianteCerrada: un pedido de $0 NO matchea nunca (no cierra nada)', () => {
+  const quote = { trans_no: '1307', ord_date: '2026-05-10', total: '100' };
+  assert.equal(esVarianteCerrada(quote, [{ order_no: '7307', ord_date: '2026-05-10', total: '0' }]), false);
+});
+
+test('esVarianteCerrada: cliente sin pedidos -> false', () => {
+  const quote = { trans_no: '1308', ord_date: '2026-05-10', total: '100000' };
+  assert.equal(esVarianteCerrada(quote, []), false);
+  assert.equal(esVarianteCerrada(quote, null), false);
+  assert.equal(esVarianteCerrada(quote, undefined), false);
+});
+
+test('esVarianteCerrada: pedidos con fecha o total ausentes/no numericos se IGNORAN (no truenan)', () => {
+  const quote = { trans_no: '1309', ord_date: '2026-05-10', total: '100000' };
+  const basura = [
+    null,
+    { order_no: '7308', total: '100000' },                              // sin fecha
+    { order_no: '7309', ord_date: '2026-05-11' },                       // sin total
+    { order_no: '7310', ord_date: 'no-es-fecha', total: '100000' },     // fecha basura
+    { order_no: '7311', ord_date: '2026-05-11', total: 'abc' },         // total basura
+  ];
+  assert.equal(esVarianteCerrada(quote, basura), false);
+});
+
+test('esVarianteCerrada: el pedido cierra aunque ya este ligado a OTRA cotizacion (trans_no_from)', () => {
+  // Escenario variantes: el cliente autorizo la hermana; ese pedido cierra a las demas.
+  const quote = { trans_no: '1310', ord_date: '2026-05-10', total: '100000' };
+  const pedidos = [{ order_no: '7312', ord_date: '2026-05-11', total: '98000', trans_no_from: '1309' }];
+  assert.equal(esVarianteCerrada(quote, pedidos), true);
+});
+
+test('esVarianteCerrada: los umbrales son configurables (ventanaDias / banda)', () => {
+  const quote = { trans_no: '1311', ord_date: '2026-05-10', total: '100000' };
+  const pedido = [{ order_no: '7313', ord_date: '2026-06-20', total: '100000' }]; // 41 dias
+  assert.equal(esVarianteCerrada(quote, pedido), false);
+  assert.equal(esVarianteCerrada(quote, pedido, { ventanaDias: 60 }), true);
+  // Banda mas estricta: el 40% deja de cerrar.
+  const mitad = [{ order_no: '7314', ord_date: '2026-05-11', total: '40000' }];
+  assert.equal(esVarianteCerrada(quote, mitad), true);
+  assert.equal(esVarianteCerrada(quote, mitad, { banda: 0.25 }), false);
+});
+
+test('constantes exportadas: la ventana es 31 dias y la banda 0.75', () => {
+  assert.equal(VENTANA_VARIANTE_DIAS, 31);
+  assert.equal(BANDA_VARIANTE, 0.75);
+});
+
+test('pedidoQueCierra: devuelve el pedido con la EVIDENCIA (order_no, total, fecha) o null', () => {
+  const quote = { trans_no: '1312', ord_date: '2026-05-10', total: '100000' };
+  const p = pedidoQueCierra(quote, [
+    { order_no: '7315', ord_date: '2026-01-01', total: '100000' },  // fuera de ventana
+    { order_no: '7316', ord_date: '2026-05-12', total: '95000' },   // este cierra
+  ]);
+  assert.equal(p.order_no, '7316');
+  assert.equal(p.total, '95000');
+  assert.equal(p.ord_date, '2026-05-12');
+  assert.equal(pedidoQueCierra(quote, []), null);
+});
+
+// --- Integracion en planearBackfillSinPedido ---
+
+test('planearBackfillSinPedido: SKIP varianteCerrada -- no importa el folio y lo cuenta', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B },   // total 5800, ord_date 2026-05-01
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  // El cliente 394 ordeno $5,500 cuatro dias despues: la compra cerro.
+  deps.listarPedidosDeCliente = async () => [{ order_no: '7400', ord_date: '2026-05-05', total: '5500' }];
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.varianteCerrada, 1);
+});
+
+test('planearBackfillSinPedido: la exclusion por variante deja EVIDENCIA trazable (folio, cliente, pedido)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  deps.listarPedidosDeCliente = async () => [{ order_no: '7400', ord_date: '2026-05-05', total: '5500' }];
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.variantesCerradas.length, 1);
+  const ev = plan.variantesCerradas[0];
+  assert.equal(ev.folio, '1150');
+  assert.equal(ev.cliente, 'JUANA HERNANDEZ GARCIA');
+  assert.equal(ev.total, 5800);
+  assert.equal(ev.pedido.order_no, '7400');
+  assert.equal(ev.pedido.total, 5500);
+  assert.equal(ev.pedido.fecha, '2026-05-05');
+});
+
+test('planearBackfillSinPedido: MOTOBLOCK -- el pedido de muestras NO mata la cotizacion grande', async () => {
+  const grande = { ...QUOTE_B, trans_no: '1150', total: '182093' };
+  const { deps } = planBDeps({
+    quotes: { '1150': grande },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  deps.listarPedidosDeCliente = async () => [{ order_no: '7401', ord_date: '2026-05-03', total: '598' }];
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.importar[0].folioOperam, '1150');
+  assert.equal(plan.skips.varianteCerrada, 0);
+});
+
+test('planearBackfillSinPedido: sin la dep listarPedidosDeCliente la heuristica NO aplica (compat)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);   // sin la dep
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.skips.varianteCerrada, 0);
+  assert.deepEqual(plan.variantesCerradas, []);
+});
+
+test('planearBackfillSinPedido: pide los pedidos por debtor del quote evaluado', async () => {
+  // Dos quotes del mismo cliente. La dep real del script esta memoizada por debtor,
+  // asi que el nucleo puede pedirla por folio sin costo de red extra.
+  const otro = { ...QUOTE_B, trans_no: '1151', total: '182093' };
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B, '1151': otro },
+    debtors: { '394': DEBTOR },
+    folioMax: 1151,
+  });
+  const pedidos = [];
+  deps.listarPedidosDeCliente = async (debtorNo) => {
+    pedidos.push(String(debtorNo));
+    return [{ order_no: '7402', ord_date: '2026-05-05', total: '5500' }];
+  };
+  const plan = await planearBackfillSinPedido(deps);
+  assert.deepEqual(pedidos, ['394', '394'], 'una lectura por folio evaluado (la memoizacion vive en el script)');
+  assert.equal(plan.skips.varianteCerrada, 1);   // 1150 cierra; 1151 (grande) no
+  assert.equal(plan.importar.length, 1);
+});
+
+// --- Piso de monto en la parte B (#76, decision Adrian 2026-07-30) ---------------
+// Una cotizacion de menos de $500 no es una oportunidad de mayoreo: en mayoreo $500 son
+// ~5 piezas. Son errores de captura, pruebas o muestras. SOLO aplica a la parte B; la
+// parte A conserva la regla previa (las muestras $0 con pedido activo SI se siguen).
+
+test('planearBackfillSinPedido: SKIP montoMinimo -- excluye una cotizacion de $499.99', async () => {
+  const chica = { ...QUOTE_B, trans_no: '1150', total: '499.99' };
+  const { deps } = planBDeps({
+    quotes: { '1150': chica },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.montoMinimo, 1);
+});
+
+test('planearBackfillSinPedido: el piso es INCLUSIVO -- $500 exacto SI se importa', async () => {
+  const justa = { ...QUOTE_B, trans_no: '1150', total: '500' };
+  const { deps } = planBDeps({
+    quotes: { '1150': justa },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.skips.montoMinimo, 0);
+});
+
+test('planearBackfillSinPedido: una cotizacion de $0 cae en montoMinimo', async () => {
+  const cero = { ...QUOTE_B, trans_no: '1150', total: '0' };
+  const { deps } = planBDeps({
+    quotes: { '1150': cero },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.montoMinimo, 1);
+});
+
+test('planearBackfillSinPedido: el piso se evalua ANTES que la variante (una $200 sale como montoMinimo)', async () => {
+  const chica = { ...QUOTE_B, trans_no: '1150', total: '200' };
+  const { deps } = planBDeps({
+    quotes: { '1150': chica },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  // Este pedido cerraria la cotizacion por variante si el piso no corriera primero.
+  deps.listarPedidosDeCliente = async () => [{ order_no: '7500', ord_date: '2026-05-03', total: '210' }];
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.skips.montoMinimo, 1);
+  assert.equal(plan.skips.varianteCerrada, 0);
+  assert.deepEqual(plan.variantesCerradas, []);
+});
+
+test('constantes exportadas: el piso de monto de la parte B es $500', () => {
+  assert.equal(MONTO_MINIMO_B, 500);
 });

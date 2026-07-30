@@ -46,7 +46,7 @@ if (APPLY && !process.env.DATABASE_URL) {
 }
 
 const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente, obtenerPedido, _setMinInterval } = await import('../lib/operam-client.js');
-const { planearBackfill, planearBackfillSinPedido, descubrirFolioMax, memoizarPorClave } = await import('../lib/backfill-operam.mjs');
+const { planearBackfill, planearBackfillSinPedido, descubrirFolioMax, memoizarPorClave, VENTANA_VARIANTE_DIAS, GRACIA_VARIANTE_DIAS, BANDA_VARIANTE, MONTO_MINIMO_B } = await import('../lib/backfill-operam.mjs');
 const { hechosDeOperam } = await import('../lib/sync-operam-io.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
 
@@ -108,13 +108,30 @@ const obtenerQuoteMemo = memoizarPorClave(obtenerQuote, (id) => `q:${id}`);
 // con remision, para distinguir entrega TOTAL de PARCIAL. Memoizado por order_no.
 const obtenerPedidoMemo = memoizarPorClave(obtenerPedido, (orderNo) => `det:${orderNo}`);
 
+// Pedidos del cliente para la heuristica de VARIANTE CERRADA de la parte B (#76): una
+// cotizacion sin pedido propio queda cerrada si el cliente ordeno algo cercano en fecha y
+// de monto comparable (el pedido de la variante autorizada, que no quedo ligado por
+// trans_no_from). Reusa el MISMO memo `ped:` que hechosDeOperam y el mismo rango de 2
+// anios, asi que la primera lectura por debtor es la unica que toca la red. Pagina la
+// cuenta completa: un cliente con >100 pedidos no cabe en una pagina.
+async function listarPedidosDeCliente(debtorNo) {
+  const todos = [];
+  for (let skip = 0; ; skip += 100) {
+    const pagina = await listarPedidosMemo({ debtorNo: Number(debtorNo), desde, hasta, skip, limit: 100 });
+    const lista = Array.isArray(pagina) ? pagina : [];
+    todos.push(...lista);
+    if (lista.length < 100) break;
+  }
+  return todos;
+}
+
 // Los HECHOS post-venta crudos de la oportunidad (CRITERIO 2): lee Operam
 // (read-only) con binding PRECISO (op.data.orderOperam = order_no del pedido) y
 // devuelve { pago, tienePedido, tieneRemision }. planearBackfill deriva el gate de
 // cerrado (esCerrado) y la etapa (etapaBackfill) a partir de estos hechos; el script
 // ya NO calcula la etapa. Si hechosDeOperam devuelve null (sin RFC), se trata como
 // hechos vacios (sin remision ni pago) -> no cerrado, etapa seguimiento.
-const HECHOS_VACIO = { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
+const HECHOS_VACIO ={ pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
 async function obtenerHechos(op) {
   const hechos = await hechosDeOperam(op, {
     listarTransacciones: listarTransaccionesMemo,
@@ -170,7 +187,7 @@ const fechaCorte = (() => { const d = new Date(); d.setMonth(d.getMonth() - 6); 
 const folioSeed = [...plan.foliosConPedido].map(Number).filter(Number.isFinite).reduce((a, b) => Math.max(a, b), 0);
 
 console.log(`\nPARTE B: id-walk de cotizaciones sin pedido (ventana desde ${fechaCorte})...`);
-let planB = { importar: [], skips: {}, folioMax: null };
+let planB = { importar: [], skips: {}, variantesCerradas: [], folioMax: null };
 if (folioSeed > 0) {
   const folioMax = await descubrirFolioMax({ obtenerQuote: obtenerQuoteMemo, inicio: folioSeed, maxRacha: 10, limite: 300 });
   console.log(`  folioMax descubierto (probe desde ${folioSeed}): ${folioMax ?? '(ninguno)'}`);
@@ -181,6 +198,7 @@ if (folioSeed > 0) {
     listarCotizaciones: () => cotStore.listar(),
     vendedores,
     cancelados: cancelados.quotes || [],
+    listarPedidosDeCliente,
     folioMax,
     fechaCorte,
   });
@@ -196,7 +214,22 @@ console.log(`  SKIP generico (clientes genericos, diferidos a #118): ${planB.ski
 console.log(`  SKIP socio (cliente = vendedor, pruebas del cotizador): ${planB.skips.socio ?? 0}`);
 console.log(`  SKIP excluido manual (quotes de prueba/uso interno, revision Adrian 2026-07-30): ${planB.skips.excluidoManual ?? 0}`);
 console.log(`  SKIP cancelado (anulado en Operam): ${planB.skips.cancelado ?? 0}`);
-console.log(`  SKIP duplicado (folio ya en el store): ${planB.skips.duplicado ?? 0}\n`);
+console.log(`  SKIP duplicado (folio ya en el store): ${planB.skips.duplicado ?? 0}`);
+console.log(`  SKIP monto minimo (total < $${MONTO_MINIMO_B}, error/prueba/muestra): ${planB.skips.montoMinimo ?? 0}`);
+console.log(`  SKIP variante-cerrada (el cliente ya compro: pedido de -${GRACIA_VARIANTE_DIAS} a +${VENTANA_VARIANTE_DIAS} dias y dentro del ${Math.round(BANDA_VARIANTE * 100)}% del monto): ${planB.skips.varianteCerrada ?? 0}\n`);
+
+// Evidencia de CADA exclusion por variante cerrada (revision de Adrian, folio por folio):
+// que cotizacion se excluyo y QUE pedido la cerro. Sin esto la exclusion es una caja
+// negra y no se puede validar si la heuristica se comio una oportunidad real.
+if ((planB.variantesCerradas || []).length > 0) {
+  console.log('  Exclusiones por variante cerrada (cotizacion -> pedido que la cerro):');
+  for (const v of planB.variantesCerradas) {
+    const dif = v.total > 0 ? Math.round((Math.abs(v.pedido.total - v.total) / v.total) * 100) : 0;
+    console.log(`    [X] folio ${v.folio} | ${v.cliente} | cotizacion $${v.total}` +
+      ` -> pedido ${v.pedido.order_no} $${v.pedido.total} (${v.pedido.fecha}, dif ${dif}%)`);
+  }
+  console.log('');
+}
 
 for (const e of planB.importar) {
   console.log(`  [B] folio ${e.folioOperam} | seguimiento | ${e.cliente} | $${e.total} | vendedor: ${e.vendedor ?? '(sin mapear)'}`);
