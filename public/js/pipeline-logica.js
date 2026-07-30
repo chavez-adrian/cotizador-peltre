@@ -591,7 +591,6 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
-  const badgeCobranza = badgePagoSinRegistrarHtml(o);
   const cadena = cadenaOperamHtml(o.espejoOperam);
   const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
   const mover = buildMoverSeguimientoControlHtml(o);

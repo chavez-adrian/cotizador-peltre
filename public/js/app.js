@@ -55,7 +55,6 @@ import {
   oportunidadesActivas,
   badgeFolioOperamHtml,
   badgeFolioOperamProspectoHtml,
-  badgePagoSinRegistrarHtml,
   cadenaOperamHtml,
   badgePagoSinRegistrarHtml,
   botonCompletarHtml,
@@ -3298,7 +3297,6 @@ function renderPipeline() {
     const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
     const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
     const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
-    const badgeCobranza = badgePagoSinRegistrarHtml(o);
     const cadena = cadenaOperamHtml(o.espejoOperam);
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgePagoSinRegistrarHtml(o)}</div>
