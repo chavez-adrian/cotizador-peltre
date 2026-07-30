@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 
-import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTOR_GENERICO_TIENDAS_DIGITALES } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -1073,4 +1073,56 @@ test('apply end-to-end: crea la cotizacion con folio+etapa y re-correr NO duplic
   assert.equal(plan2.skips.duplicado, 1);
   assert.equal(await aplicarPlan(store, plan2), 0);
   assert.equal((await store.listar()).filter(x => String(x.folioOperam) === '1141').length, 1);
+});
+
+// === Decision 2026-07-29 (#76): el GENERICO TIENDAS DIGITALES NO se importa ===
+// El debtor 184 es el cliente generico de las tiendas digitales: sus cotizaciones no
+// son oportunidades de mayoreo con contraparte nombrada, son ventas digitales sueltas
+// agrupadas bajo un RFC generico. Adrian decidio DIFERIRLAS al issue #118, que las
+// rescatara como PROSPECTOS (con contactoEntrega + customer_ref del quote), no como
+// cotizaciones del pipeline. Contador propio (skips.generico) para no confundirlas en
+// el dry-run con las de prueba ni con las de otra sucursal.
+
+test('#118: planearBackfill SKIP generico -- el debtor 184 no se importa (parte A)', async () => {
+  const pedidoGenerico = { ...PEDIDO, debtor_no: String(DEBTOR_GENERICO_TIENDAS_DIGITALES) };
+  const { deps } = planDeps({
+    pedidos: [pedidoGenerico],
+    debtors: { '184': { debtor_no: '184', CustName: 'GENERICO TIENDAS DIGITALES', tax_id: 'XAXX010101000', curr_code: 'MXN' } },
+    quotes: { '1141': QUOTE },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.generico, 1);
+  // No se confunde con los otros skips: el pedido es candidato valido en todo lo demas.
+  assert.equal(plan.skips.noCandidato, 0);
+  assert.equal(plan.skips.otraSucursal, 0);
+  assert.equal(plan.skips.cerrado, 0);
+  // El folio SI queda en foliosConPedido: nacio de una cotizacion ya ordenada, asi que
+  // la parte B tampoco debe re-evaluarlo como seguimiento vivo.
+  assert.equal(plan.foliosConPedido.has('1141'), true);
+});
+
+test('#118: planearBackfillSinPedido SKIP generico -- el debtor 184 no se importa (parte B)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': { ...QUOTE_B, debtor_no: String(DEBTOR_GENERICO_TIENDAS_DIGITALES) } },
+    debtors: { '184': { debtor_no: '184', CustName: 'GENERICO TIENDAS DIGITALES', tax_id: 'XAXX010101000', curr_code: 'MXN' } },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.generico, 1);
+  assert.equal(plan.skips.prueba, 0);
+  assert.equal(plan.skips.otraSucursal, 0);
+});
+
+test('#118: un debtor nombrado sigue importandose (la exclusion es SOLO del 184)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': QUOTE_B },
+    debtors: { '394': DEBTOR },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 1);
+  assert.equal(plan.skips.generico, 0);
 });
