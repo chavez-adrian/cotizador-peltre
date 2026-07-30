@@ -209,6 +209,15 @@ const importar = [...porFolio.values()];
 
 console.log(`TOTAL a importar: ${importar.length} (A activos ${plan.importar.length} + B seguimiento ${planB.importar.length}).`);
 
+// Control de las PARTIDAS (#76, decision 2026-07-29): los nombres de campo del detalle
+// del quote se leen por alias (mapearPartidasQuote), asi que este conteo es la senal de
+// que el alias correcto acerto contra la API real. Si "sin partidas" fuera casi el total,
+// el mapeo no esta leyendo el detalle y hay que corregir los nombres ANTES del --apply
+// (una cotizacion sin items regenera un documento sin renglones).
+const sinPartidas = importar.filter(e => (e.data.items || []).length === 0).length;
+const piezas = importar.reduce((s, e) => s + (e.data.items || []).reduce((n, i) => n + (i.cantidad || 0), 0), 0);
+console.log(`  Partidas: ${importar.length - sinPartidas} con items, ${sinPartidas} sin partidas, ${piezas} piezas en total.`);
+
 if (!APPLY) {
   console.log(`\nDRY-RUN: se crearian ${importar.length} cotizaciones. No se escribio nada (sin --apply).`);
   process.exit(0);

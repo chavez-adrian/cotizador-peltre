@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 
-import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTOR_GENERICO_TIENDAS_DIGITALES } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTOR_GENERICO_TIENDAS_DIGITALES, mapearPartidasQuote } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -1125,4 +1125,94 @@ test('#118: un debtor nombrado sigue importandose (la exclusion es SOLO del 184)
   const plan = await planearBackfillSinPedido(deps);
   assert.equal(plan.importar.length, 1);
   assert.equal(plan.skips.generico, 0);
+});
+
+// === Decision 2026-07-29 (#76): las cotizaciones importadas llevan PARTIDAS ===
+// Antes el backfill traia solo la cabecera del quote: la tarjeta se veia bien pero
+// GET /api/cotizacion/pdf/:id regeneraba un documento SIN renglones (los generadores
+// leen data.items). Como el quote ya se lee entero con obtenerQuote (detalles[] viene
+// en la misma respuesta, sin llamadas extra a Operam), se mapean a la MISMA forma que
+// produce el cotizador normal: { codigo, descripcion, cantidad, unidad, precio, descuento }.
+// Los nombres de campo del detalle se leen con ALIAS (la API v3 no los tiene
+// documentados en el repo); el dry-run en vivo confirma cual llega.
+
+test('#76 mapearPartidasQuote: mapea el detalle del quote a la forma de data.items', () => {
+  const items = mapearPartidasQuote([
+    { stock_id: 'SA08A3001112', stock_id_text: 'Cacerola 8 cm blanca', quantity: '12', unit_price: '85.5', discount_percent: '10' },
+  ]);
+  assert.deepEqual(items, [
+    { codigo: 'SA08A3001112', descripcion: 'Cacerola 8 cm blanca', cantidad: 12, unidad: 'pza', precio: 85.5, descuento: 10 },
+  ]);
+});
+
+// El lineTotal que imprimen pdf-generator y html-generator es
+// cantidad * precio * (1 - descuento/100): si cantidad o precio llegaran como STRING,
+// la multiplicacion funcionaria por coercion pero la suma de piezas
+// (items.reduce((s,i) => s + i.cantidad)) concatenaria texto. Por eso se numerizan.
+test('#76 mapearPartidasQuote: cantidad, precio y descuento salen como numeros', () => {
+  const [i] = mapearPartidasQuote([{ stock_id: 'X', quantity: '3', unit_price: '10', discount_percent: '0' }]);
+  assert.strictEqual(i.cantidad, 3);
+  assert.strictEqual(i.precio, 10);
+  assert.strictEqual(i.descuento, 0);
+});
+
+test('#76 mapearPartidasQuote: tolera los alias de nombre de campo de la API', () => {
+  const [i] = mapearPartidasQuote([{ stock_id: 'X', description: 'Desc alterna', qty: 2, price: 50, Disc: 5 }]);
+  assert.equal(i.descripcion, 'Desc alterna');
+  assert.equal(i.cantidad, 2);
+  assert.equal(i.precio, 50);
+  assert.equal(i.descuento, 5);
+});
+
+// Defensivo: un quote sin detalle (o con basura) NO debe tumbar el backfill de las
+// otras cotizaciones. Se importa con items vacio -- el documento sale sin renglones,
+// que es exactamente lo que pasaba antes de esta decision.
+test('#76 mapearPartidasQuote: detalle ausente, vacio o invalido -> []', () => {
+  assert.deepEqual(mapearPartidasQuote(undefined), []);
+  assert.deepEqual(mapearPartidasQuote(null), []);
+  assert.deepEqual(mapearPartidasQuote([]), []);
+  assert.deepEqual(mapearPartidasQuote('no es lista'), []);
+  assert.deepEqual(mapearPartidasQuote([null]), []);
+});
+
+test('#76 mapearPartidasQuote: campos ausentes caen a valores neutros, sin NaN', () => {
+  const [i] = mapearPartidasQuote([{ stock_id: 'SOLO-SKU' }]);
+  assert.deepEqual(i, { codigo: 'SOLO-SKU', descripcion: '', cantidad: 0, unidad: 'pza', precio: 0, descuento: 0 });
+});
+
+// Las partidas de ENVIO (SKU de flete 251021001 local / 251021002 foraneo, #68) son
+// partidas NORMALES del quote. Se mapean tal cual, CONSERVANDO su stock_id real: no se
+// traducen al codigo 'ENVIO' del carrito ni se rellena data.envio. Razon: el camino de
+// vuelta (armarContenidoQuote) re-deriva el SKU de flete por el CP de entrega, y una
+// entrada del backfill NO tiene cpEntrega -- traducir a 'ENVIO' haria que un re-envio a
+// Operam cayera al SKU foraneo por default aunque el original fuera local. Conservar el
+// SKU real es fiel al documento y no inventa estructura.
+test('#76 mapearPartidasQuote: la partida de flete se conserva como item normal con su SKU real', () => {
+  const items = mapearPartidasQuote([
+    { stock_id: '251021001', stock_id_text: 'Envio Economico FedEx Ground', quantity: 1, unit_price: 350 },
+  ]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].codigo, '251021001');
+  assert.equal(items[0].descripcion, 'Envio Economico FedEx Ground');
+  assert.equal(items[0].precio, 350);
+});
+
+test('#76 construirEntradaCotizacion: persiste las partidas del quote en data.items', () => {
+  const quoteConDetalle = {
+    ...QUOTE,
+    detalles: [{ stock_id: 'SA08A3001112', stock_id_text: 'Cacerola', quantity: '2', unit_price: '100', discount_percent: '0' }],
+  };
+  const e = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: quoteConDetalle, debtor: DEBTOR, etapa: 'saldo_pagado', vendedores: VENDEDORES,
+  });
+  assert.equal(e.data.items.length, 1);
+  assert.equal(e.data.items[0].codigo, 'SA08A3001112');
+  assert.equal(e.data.items[0].cantidad, 2);
+});
+
+test('#76 construirEntradaCotizacion: sin detalle en el quote, data.items es [] (no undefined)', () => {
+  const e = construirEntradaCotizacion({
+    pedido: PEDIDO, quote: QUOTE, debtor: DEBTOR, etapa: 'saldo_pagado', vendedores: VENDEDORES,
+  });
+  assert.deepEqual(e.data.items, []);
 });
