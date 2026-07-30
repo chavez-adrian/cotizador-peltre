@@ -146,7 +146,9 @@ console.log(`Candidatos (cotizacion de origen, sucursal 01): ${plan.candidatos}`
 console.log(`  Importables A (no cerrados): ${plan.importar.length}`);
 console.log(`  SKIP no-candidato (venta directa / prueba): ${plan.skips.noCandidato}`);
 console.log(`  SKIP otra-sucursal (Shopify/Amazon/Bazaar): ${plan.skips.otraSucursal}`);
-console.log(`  SKIP generico (GENERICO TIENDAS DIGITALES, diferido a #118): ${plan.skips.generico}`);
+console.log(`  SKIP generico (clientes genericos, diferidos a #118): ${plan.skips.generico}`);
+console.log(`  SKIP socio (cliente = vendedor, pruebas del cotizador): ${plan.skips.socio}`);
+console.log(`  SKIP excluido manual (quotes de prueba/uso interno, revision Adrian 2026-07-30): ${plan.skips.excluidoManual}`);
 console.log(`  SKIP cerrado (entregado Y pagado al 100%): ${plan.skips.cerrado}`);
 console.log(`  SKIP cancelado (anulado en Operam): ${plan.skips.cancelado}`);
 console.log(`  SKIP duplicado (folio ya en el store): ${plan.skips.duplicado}\n`);
@@ -190,7 +192,9 @@ console.log(`  Importables B (seguimiento): ${planB.importar.length}`);
 console.log(`  SKIP con-pedido (ya entro por A): ${planB.skips.conPedido ?? 0}`);
 console.log(`  SKIP otra-sucursal (Shopify/Amazon/Bazaar): ${planB.skips.otraSucursal ?? 0}`);
 console.log(`  SKIP prueba (folio/debtor de prueba): ${planB.skips.prueba ?? 0}`);
-console.log(`  SKIP generico (GENERICO TIENDAS DIGITALES, diferido a #118): ${planB.skips.generico ?? 0}`);
+console.log(`  SKIP generico (clientes genericos, diferidos a #118): ${planB.skips.generico ?? 0}`);
+console.log(`  SKIP socio (cliente = vendedor, pruebas del cotizador): ${planB.skips.socio ?? 0}`);
+console.log(`  SKIP excluido manual (quotes de prueba/uso interno, revision Adrian 2026-07-30): ${planB.skips.excluidoManual ?? 0}`);
 console.log(`  SKIP cancelado (anulado en Operam): ${planB.skips.cancelado ?? 0}`);
 console.log(`  SKIP duplicado (folio ya en el store): ${planB.skips.duplicado ?? 0}\n`);
 

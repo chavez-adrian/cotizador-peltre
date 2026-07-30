@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 
-import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTOR_GENERICO_TIENDAS_DIGITALES, mapearPartidasQuote } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTORS_GENERICOS, DEBTORS_SOCIOS, FOLIOS_EXCLUIDOS_MANUAL, mapearPartidasQuote } from '../lib/backfill-operam.mjs';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -1084,7 +1084,7 @@ test('apply end-to-end: crea la cotizacion con folio+etapa y re-correr NO duplic
 // el dry-run con las de prueba ni con las de otra sucursal.
 
 test('#118: planearBackfill SKIP generico -- el debtor 184 no se importa (parte A)', async () => {
-  const pedidoGenerico = { ...PEDIDO, debtor_no: String(DEBTOR_GENERICO_TIENDAS_DIGITALES) };
+  const pedidoGenerico = { ...PEDIDO, debtor_no: '184' };
   const { deps } = planDeps({
     pedidos: [pedidoGenerico],
     debtors: { '184': { debtor_no: '184', CustName: 'GENERICO TIENDAS DIGITALES', tax_id: 'XAXX010101000', curr_code: 'MXN' } },
@@ -1103,9 +1103,23 @@ test('#118: planearBackfill SKIP generico -- el debtor 184 no se importa (parte 
   assert.equal(plan.foliosConPedido.has('1141'), true);
 });
 
+test('#118: planearBackfill SKIP generico -- otro debtor generico (256) tambien se excluye (parte A)', async () => {
+  // DEBTORS_GENERICOS es un SET de 5 ids (revision Adrian 2026-07-30), no solo el 184.
+  const pedidoGenerico = { ...PEDIDO, debtor_no: '256' };
+  const { deps } = planDeps({
+    pedidos: [pedidoGenerico],
+    debtors: { '256': { debtor_no: '256', CustName: 'GENERICO DIGITAL USD', tax_id: 'XAXX010101000', curr_code: 'USD' } },
+    quotes: { '1141': QUOTE },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.generico, 1);
+});
+
 test('#118: planearBackfillSinPedido SKIP generico -- el debtor 184 no se importa (parte B)', async () => {
   const { deps } = planBDeps({
-    quotes: { '1150': { ...QUOTE_B, debtor_no: String(DEBTOR_GENERICO_TIENDAS_DIGITALES) } },
+    quotes: { '1150': { ...QUOTE_B, debtor_no: '184' } },
     debtors: { '184': { debtor_no: '184', CustName: 'GENERICO TIENDAS DIGITALES', tax_id: 'XAXX010101000', curr_code: 'MXN' } },
     folioMax: 1150,
   });
@@ -1116,7 +1130,18 @@ test('#118: planearBackfillSinPedido SKIP generico -- el debtor 184 no se import
   assert.equal(plan.skips.otraSucursal, 0);
 });
 
-test('#118: un debtor nombrado sigue importandose (la exclusion es SOLO del 184)', async () => {
+test('#118: planearBackfillSinPedido SKIP generico -- otro debtor generico (256) tambien se excluye (parte B)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': { ...QUOTE_B, debtor_no: '256' } },
+    debtors: { '256': { debtor_no: '256', CustName: 'GENERICO DIGITAL USD', tax_id: 'XAXX010101000', curr_code: 'USD' } },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.generico, 1);
+});
+
+test('#118: un debtor nombrado sigue importandose (la exclusion es SOLO de DEBTORS_GENERICOS)', async () => {
   const { deps } = planBDeps({
     quotes: { '1150': QUOTE_B },
     debtors: { '394': DEBTOR },
@@ -1125,6 +1150,94 @@ test('#118: un debtor nombrado sigue importandose (la exclusion es SOLO del 184)
   const plan = await planearBackfillSinPedido(deps);
   assert.equal(plan.importar.length, 1);
   assert.equal(plan.skips.generico, 0);
+});
+
+// === Decision 2026-07-30 (#76): socios como CLIENTE se excluyen (son vendedores) ===
+// Adrian, Alejandro y Oswaldo (via debtor 9/15/132, revision en vivo) figuran tambien
+// como cliente en Operam; sus cotizaciones "personales" son pruebas del cotizador, no
+// oportunidades reales. Se excluyen igual que los genericos, con contador propio.
+
+test('socio: planearBackfill SKIP socio -- debtor 15 (Adrian Chavez Rosete) no se importa (parte A)', async () => {
+  const pedidoSocio = { ...PEDIDO, debtor_no: '15' };
+  const { deps } = planDeps({
+    pedidos: [pedidoSocio],
+    debtors: { '15': { debtor_no: '15', CustName: 'ADRIAN CHAVEZ ROSETE', tax_id: 'XAXX010101000', curr_code: 'MXN' } },
+    quotes: { '1141': QUOTE },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.socio, 1);
+  assert.equal(plan.skips.generico, 0);
+  // El folio SI queda en foliosConPedido, mismo patron que generico/cancelado.
+  assert.equal(plan.foliosConPedido.has('1141'), true);
+});
+
+test('socio: planearBackfill SKIP socio -- debtor 9 y 132 tambien excluidos (parte A)', async () => {
+  const pedidoRaul = { order_no: '7300', trans_no_from: '1200', debtor_no: '9' };
+  const pedidoOswaldo = { order_no: '7301', trans_no_from: '1201', debtor_no: '132' };
+  const { deps } = planDeps({
+    pedidos: [pedidoRaul, pedidoOswaldo],
+    debtors: {
+      '9': { debtor_no: '9', CustName: 'RAUL ALEJANDRO CHAVEZ ROSETE', tax_id: 'XAXX010101000', curr_code: 'MXN' },
+      '132': { debtor_no: '132', CustName: 'OSWALDO CHAVEZ ROSETE', tax_id: 'XAXX010101000', curr_code: 'MXN' },
+    },
+    quotes: { '1200': { ...QUOTE, trans_no: '1200' }, '1201': { ...QUOTE, trans_no: '1201' } },
+    hechos: { '7300': HECHOS_SEGUIMIENTO, '7301': HECHOS_SEGUIMIENTO },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.socio, 2);
+});
+
+test('socio: planearBackfillSinPedido SKIP socio -- debtor 15 no se importa (parte B)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1150': { ...QUOTE_B, debtor_no: '15' } },
+    debtors: { '15': { debtor_no: '15', CustName: 'ADRIAN CHAVEZ ROSETE', tax_id: 'XAXX010101000', curr_code: 'MXN' } },
+    folioMax: 1150,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.socio, 1);
+  assert.equal(plan.skips.generico, 0);
+  assert.equal(plan.skips.prueba, 0);
+});
+
+// === Decision 2026-07-30 (#76): folios excluidos manualmente por Adrian ===
+// FOLIOS_EXCLUIDOS_MANUAL cubre quotes de prueba/uso interno sin patron programatico
+// (1195 "PRUEBA POST-FIX VIGENCIA 106 - BORRAR"; 1189/1196 cotizaciones $0 sin
+// contexto). Aplica en ambas partes.
+
+test('excluidoManual: planearBackfill SKIP excluido manual -- folio 1195 no se importa (parte A)', async () => {
+  const pedidoExcluido = { ...PEDIDO, trans_no_from: '1195' };
+  const { deps } = planDeps({
+    pedidos: [pedidoExcluido],
+    debtors: { '394': DEBTOR },
+    quotes: { '1195': { ...QUOTE, trans_no: '1195' } },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.excluidoManual, 1);
+  // El folio SI queda en foliosConPedido (mismo patron que generico/socio/cancelado).
+  assert.equal(plan.foliosConPedido.has('1195'), true);
+});
+
+test('excluidoManual: planearBackfillSinPedido SKIP excluido manual -- folio 1196 no se importa (parte B)', async () => {
+  const { deps } = planBDeps({
+    quotes: { '1196': { ...QUOTE_B, trans_no: '1196' } },
+    debtors: { '394': DEBTOR },
+    folioMax: 1196,
+  });
+  const plan = await planearBackfillSinPedido(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.excluidoManual, 1);
+});
+
+test('constantes exportadas: DEBTORS_GENERICOS, DEBTORS_SOCIOS y FOLIOS_EXCLUIDOS_MANUAL tienen los valores decididos', () => {
+  assert.deepEqual([...DEBTORS_GENERICOS].sort(), ['143', '183', '184', '256', '449']);
+  assert.deepEqual([...DEBTORS_SOCIOS].sort(), ['132', '15', '9']);
+  assert.deepEqual([...FOLIOS_EXCLUIDOS_MANUAL].sort(), ['1189', '1195', '1196']);
 });
 
 // === Decision 2026-07-29 (#76): las cotizaciones importadas llevan PARTIDAS ===
