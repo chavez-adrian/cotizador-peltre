@@ -2,9 +2,13 @@
 
 > Este archivo es solo para **retomar**: estado, backlog activo, cómo orquestar, y decisiones/lecciones que NO viven en otro lado. El detalle de cada issue cerrado está en **git** (commits del merge) y en el **comentario de cierre del issue** en GitHub; las decisiones de dominio en **CONTEXT.md**/ADRs; el API de Operam en **peltre-operam.md**. No duplicar ese detalle aquí.
 
-## CHECKPOINT rama `issue-76-backfill` (2026-07-30) — lista para el dry-run final
+## #76 CERRADO (2026-07-31) — backfill APLICADO en produccion y rama mergeada
 
-La rama está **al día sobre main** (merge `ee7f5eb`) y con las **dos decisiones nuevas de Adrián (2026-07-29)** aplicadas. Sigue **NO mergeada** y **sin correr `--apply`**: cero escrituras a Operam hasta aquí. Suite **1364/0**.
+`--apply` corrido el 2026-07-31 contra Neon prod: **40 oportunidades importadas** (19 parte A + 21 parte B, todas con partidas; 16 folios ya existian en el store por uso real del cotizador y se saltaron como duplicados — el dry-run sin DATABASE_URL no los veia). Neon quedo con 60 oportunidades. Rama mergeada a main y borrada; detalle en el comentario de cierre del issue. Exclusiones vigentes en `lib/backfill-operam.mjs`: genericos (5 debtors, a #118), socios (9/15/132), folios manuales, cancelados, cerrados, monto minimo B $500, y **heuristica de variante cerrada** (pedido de -3 a +31 dias dentro del 75% del monto mayor) — ⚠️ recalibrar la banda antes de reusarla en #119 (clientes recurrentes = falsos positivos).
+
+<details><summary>Checkpoint historico de la sesion (2026-07-30)</summary>
+
+La rama está **al día sobre main** (merge `ee7f5eb`) y con las **dos decisiones nuevas de Adrián (2026-07-29)** aplicadas. Suite **1364/0**.
 
 **Lo aplicado en esta sesión:**
 - `ee7f5eb` merge de main (~100 commits, #81..#117). Regla de conflicto: donde main ya resolvió algo por su cuenta, gana main y encima se re-aplica solo lo del backfill.
@@ -24,6 +28,8 @@ La rama está **al día sobre main** (merge `ee7f5eb`) y con las **dos decisione
 2. Validar en la salida: el nuevo `SKIP generico` en A y B, el `folioMax` descubierto y **el conteo de partidas** (el riesgo de arriba).
 3. Regenerar el **HTML de revisión** para Adrián.
 4. **`--apply` HITL** (exige `DATABASE_URL`, la Neon de producción; escribe en prod).
+
+</details>
 
 ---
 ## ARRANCAR AQUÍ (2026-07-29, cierre de sesión) — todo cerrado y desplegado
