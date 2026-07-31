@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  esLoginHtml,
+  esLoginHtml, estaCanceladoHtml,
   parsearFormularioQuote, serializarBodyQuote, leerValidoHastaVista,
   parsearLineasQuote, serializarBodyBorrarLinea, serializarBodyAgregarLinea,
   leerLineasVista, leerComentariosVista, compararQuoteVista,
@@ -407,4 +407,20 @@ test('compararQuoteVista: pagina ilegible -> verificado false, nunca ok true', (
   const r = compararQuoteVista({ items: [{ stock_id: 'X', qty: 1, price: 1, Disc: 0 }], comments: 'x', vigencia: '2026-08-27' }, '<html>sesion expirada</html>');
   assert.equal(r.verificado, false);
   assert.equal(r.ok, false);
+});
+
+// --- Deteccion de cancelacion (#76) ---
+// La web legacy marca un documento anulado con el aviso "Este pedido ha sido cancelado"
+// (lee 0_voided). La API v3 NO lo expone, por eso el estado se scrapea. Este predicado
+// puro es la senal; si Operam cambiara el texto, este test lo evidencia.
+test('estaCanceladoHtml: detecta el aviso de cancelacion de la web legacy', () => {
+  const html = '<div class="error">Este pedido ha sido cancelado. Fecha y Hora Cancelacion Sistema: 2025-07-23 19:10:53 Usuario : a.chavez</div>';
+  assert.equal(estaCanceladoHtml(html), true);
+  assert.equal(estaCanceladoHtml('<div>Esta cotizacion ha sido cancelada</div>'), true);
+});
+
+test('estaCanceladoHtml: un documento normal (o vacio/null) no esta cancelado', () => {
+  assert.equal(estaCanceladoHtml('<table><tr><td>Pedido 5662</td></tr></table>'), false);
+  assert.equal(estaCanceladoHtml(''), false);
+  assert.equal(estaCanceladoHtml(null), false);
 });

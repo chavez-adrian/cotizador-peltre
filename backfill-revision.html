@@ -1,0 +1,572 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Backfill #76/#77 — Plan</title><style>
+:root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--txt:#e6e8ec;--mut:#8b93a3;--accent:#4f8cff;--amber:#f0a32e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;padding:24px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);margin:0 0 18px;font-size:13px}
+.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.k{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:120px}
+.k b{display:block;font-size:22px}.k span{color:var(--mut);font-size:12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+button{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+input{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-size:13px;min-width:220px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:#11141a;cursor:pointer;user-select:none;white-space:nowrap}th:hover{color:var(--accent)}
+td.c{text-align:center;white-space:nowrap}td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.gen{background:rgba(240,163,46,.06)}tbody tr:hover{background:rgba(79,140,255,.08)}.muted{color:var(--mut)}
+.badge{font-size:11px;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.e-seguimiento{background:#243042;color:#9cc2ff}.e-pedido_liberado{background:#3a2f17;color:#f0c061}
+.e-saldo_pagado{background:#16341f;color:#7fe3a0}.e-anticipo_pagado{background:#13332f;color:#7fded0}
+.e-producto_entregado{background:#1d2b1f;color:#86efac}.b-cobranza{background:#3a1720;color:#ff8aa0;margin-left:4px}
+.g{font-size:11px;padding:2px 8px;border-radius:20px}.g-GENERICO{background:#3a2f17;color:#f0a32e}.g-Nombrado{background:#1d2b1f;color:#7fe3a0}
+.foot{color:var(--mut);font-size:12px;margin-top:14px}.count{color:var(--mut);margin-left:auto}
+</style></head><body>
+<h1>Backfill #76/#77 — Plan FINAL <span style="color:var(--mut);font-weight:400">(DRY-RUN)</span></h1>
+<p class="sub">Generado 22/6/2026, 4:40:51 p.m. · 86 oportunidades · Excluidos 12 pedidos + 4 cotizaciones ANULADOS (detector robusto). Entrega PARCIAL no cierra. Prospecto/Proyecto del PEDIDO. #77: entregado-impago = producto_entregado + "Pago sin registrar".</p>
+<div class="cards">
+  <div class="k"><b>86</b><span>Total a importar</span></div>
+  <div class="k"><b>16</b><span>Parte A · activos</span></div>
+  <div class="k"><b>25</b><span>Parte B · nombradas</span></div>
+  <div class="k"><b>45</b><span>Parte B · GENERICO</span></div>
+  <div class="k"><b>7</b><span>Producto entregado</span></div>
+  <div class="k"><b>7</b><span>Pago sin registrar</span></div>
+  <div class="k"><b>$2,745,502.47</b><span>Suma</span></div>
+</div>
+<div class="bar">
+  <button class="on" data-f="all">Todo (86)</button>
+  <button data-f="A">Parte A (16)</button>
+  <button data-f="BN">Parte B nombradas (25)</button>
+  <button data-f="BG">Parte B GENERICO (45)</button>
+  <input id="q" placeholder="Buscar cliente, prospecto, proyecto, folio…"><span class="count" id="cnt"></span>
+</div>
+<table id="t"><thead><tr>
+  <th data-k="parte">Parte</th><th data-k="folio">Folio</th><th data-k="order">Order</th><th data-k="etapa">Etapa</th>
+  <th data-k="cliente">Cliente (Operam)</th><th data-k="prospecto">Prospecto (contacto)</th><th data-k="proyecto">Proyecto</th>
+  <th data-k="total">Total $</th><th data-k="vendedor">Vendedor</th><th data-k="grupo">Grupo</th>
+</tr></thead><tbody>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">855</td><td class="c">6040</td>
+  <td><span class="badge e-producto_entregado">producto_entregado</span> <span class="badge b-cobranza" title="cobranza: pendiente">Pago sin registrar</span></td>
+  <td>UNIVERSIDAD NACIONAL AUTONOMA DE MEXICO</td><td>Tienda MUAC</td><td>Tienda MUAC</td>
+  <td class="num">4,019.63</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">970</td><td class="c">6247</td>
+  <td><span class="badge e-producto_entregado">producto_entregado</span> <span class="badge b-cobranza" title="cobranza: pendiente">Pago sin registrar</span></td>
+  <td>UNIVERSIDAD NACIONAL AUTONOMA DE MEXICO</td><td>Jose Vazquez Rodriguez</td><td>Tienda MUAC</td>
+  <td class="num">5,514.64</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">965</td><td class="c">6282</td>
+  <td><span class="badge e-pedido_liberado">pedido_liberado</span></td>
+  <td>UNIVERSIDAD NACIONAL AUTONOMA DE MEXICO</td><td>Tienda MUAC</td><td>Tienda MUAC</td>
+  <td class="num">4,079.60</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1096</td><td class="c">6988</td>
+  <td><span class="badge e-saldo_pagado">saldo_pagado</span></td>
+  <td>ERIKA ALEJANDRA NUÑEZ NAVARRO</td><td>Juan Manuel Lemus</td><td>9021OINK</td>
+  <td class="num">9,492.50</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1117</td><td class="c">7078</td>
+  <td><span class="badge e-producto_entregado">producto_entregado</span> <span class="badge b-cobranza" title="cobranza: anticipo">Pago sin registrar</span></td>
+  <td>ALBERTO CANTU</td><td>Evan Josue morales Ruiz</td><td>Alberto Cantu</td>
+  <td class="num">13,959.60</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1107</td><td class="c">7086</td>
+  <td><span class="badge e-producto_entregado">producto_entregado</span> <span class="badge b-cobranza" title="cobranza: anticipo">Pago sin registrar</span></td>
+  <td>Sunnys Kensington Inc.</td><td>Susie von Schleinitz</td><td>Sunnys Chinese</td>
+  <td class="num">1,104.24</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1125</td><td class="c">7135</td>
+  <td><span class="badge e-producto_entregado">producto_entregado</span> <span class="badge b-cobranza" title="cobranza: pendiente">Pago sin registrar</span></td>
+  <td>PARKS CONCENTRADORA</td><td>Xochitl Lucio Delgadillo</td><td>PPH</td>
+  <td class="num">1,564.30</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1136</td><td class="c">7195</td>
+  <td><span class="badge e-producto_entregado">producto_entregado</span> <span class="badge b-cobranza" title="cobranza: pendiente">Pago sin registrar</span></td>
+  <td>HOLDING GASTRONOMICO ALFA</td><td>Javier Diaz</td><td>EL CHANTE</td>
+  <td class="num">21,702.60</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1137</td><td class="c">7196</td>
+  <td><span class="badge e-pedido_liberado">pedido_liberado</span></td>
+  <td>DECORACION MARIA PIA</td><td>Tania Guadarrama Tavira</td><td>Casa María Pia</td>
+  <td class="num">31,844.96</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1100</td><td class="c">7197</td>
+  <td><span class="badge e-pedido_liberado">pedido_liberado</span></td>
+  <td>KMITOL SOLUCIONES</td><td>Gabriela Becherano</td><td>Human Collection</td>
+  <td class="num">59,191.84</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1150</td><td class="c">7230</td>
+  <td><span class="badge e-producto_entregado">producto_entregado</span> <span class="badge b-cobranza" title="cobranza: pendiente">Pago sin registrar</span></td>
+  <td>CAFEBRERIA EL PENDULO</td><td>Claudia Gonzalez</td><td>Cafebrería El Péndulo</td>
+  <td class="num">6,153.00</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1145</td><td class="c">7267</td>
+  <td><span class="badge e-pedido_liberado">pedido_liberado</span></td>
+  <td>UNIVERSIDAD NACIONAL AUTONOMA DE MEXICO</td><td>Tienda MUAC</td><td>Tienda Muac</td>
+  <td class="num">10,461.00</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1128</td><td class="c">7268</td>
+  <td><span class="badge e-pedido_liberado">pedido_liberado</span></td>
+  <td>BANCO DE MEXICO FIDEICOMISO PARA LOS MUSEOS DIEGO RIVERA Y FRIDA KAHLO</td><td>Adriana Ureña</td><td>Museo Frida Kahlo</td>
+  <td class="num">62,151.78</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1141</td><td class="c">7269</td>
+  <td><span class="badge e-pedido_liberado">pedido_liberado</span></td>
+  <td>JUANA YMELDA HERNANDEZ HERNANDEZ</td><td>La Fonda de Toda la Vida</td><td>La Fonda de Toda la Vida</td>
+  <td class="num">17,552.08</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1158</td><td class="c">7273</td>
+  <td><span class="badge e-saldo_pagado">saldo_pagado</span></td>
+  <td>GRUPO URUGUAYO MINAS</td><td>Mauro Martínez o Erick Vargas</td><td>Don Asado</td>
+  <td class="num">9,550.40</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="A" class="">
+  <td class="c">A</td><td class="c">1156</td><td class="c">7274</td>
+  <td><span class="badge e-pedido_liberado">pedido_liberado</span></td>
+  <td>VERACRUZ JUICE BAR LLC</td><td>Maritza Vazquez</td><td>Veracruz Fonda &amp;amp; Bar</td>
+  <td class="num">893.26</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1155</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>BANCO DE MEXICO FIDEICOMISO PARA LOS MUSEOS DIEGO RIVERA Y FRIDA KAHLO</td><td>Museo de Frida Kahlo</td><td>Museo Frida Kahlo</td>
+  <td class="num">48,919.78</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1154</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>HOTELES RODAVENTO</td><td>Rodavento Hotel</td><td>Lulu Ureña</td>
+  <td class="num">17,925.24</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1153</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Martha Gómez</td><td>IberoStar</td>
+  <td class="num">11,653.20</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1151</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Daniela</td><td>G&amp;amp;B abogados</td>
+  <td class="num">8,924.32</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1149</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Carlos Sánchez Herrera</td><td><span class="muted">—</span></td>
+  <td class="num">110,148.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1148</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Ivonne López</td><td>Mezcal Destreza</td>
+  <td class="num">5,870.28</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1147</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>OPERADORA PALMAS DISCO</td><td>Tacos Camarena</td><td>Salón Camarena | MYTGLVDK</td>
+  <td class="num">10,759.88</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1146</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GRUPO COMERCIAL Y DISTRIBUIDORA LAMZ</td><td>Héctor Saldivar</td><td>GRUPO LAMZ</td>
+  <td class="num">2,550.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1143</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO DIGITAL USD</td><td>Tim Siaens</td><td>KLINE</td>
+  <td class="num">1,091.36</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1142</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>FRACTAL WEALTH MANAGEMENT</td><td>Por definir</td><td>Mezcal Destreza</td>
+  <td class="num">3,856.00</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1139</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO DIGITAL USD</td><td>Pietro</td><td>Studioteca Emporio</td>
+  <td class="num">3,644.83</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1138</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO DIGITAL USD</td><td>Diego Rico</td><td>Casa María Pia</td>
+  <td class="num">1,199.87</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1135</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Lucas Carballo</td><td>La Escondida</td>
+  <td class="num">27,972.32</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1133</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>VITROMUGS</td><td>Vitromugs</td><td>Vitromugs</td>
+  <td class="num">86,399.99</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1132</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Carlos Aguilera</td><td>Plaza Sol</td>
+  <td class="num">35,849.40</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1131</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>MARIA DEL PILAR CORREA VERGARA</td><td>Pastelería Pannacotta</td><td>Pastelería Pannacotta</td>
+  <td class="num">6,763.88</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1130</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Diego Rico</td><td>Casa María Pia</td>
+  <td class="num">10,649.84</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1129</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>FORTMCK19-16 PERLA</td><td>Cristina Gómez</td><td>FORTEM</td>
+  <td class="num">75,560.80</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1124</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>LCDP RESTAURANTES</td><td>Vicky Namnum</td><td>Panorama Corporate</td>
+  <td class="num">996.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1121</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Elsie</td><td>Green Rhino</td>
+  <td class="num">36,508.66</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1120</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Elsie</td><td>Green Rhino</td>
+  <td class="num">21,064.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1115</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Paola Sanchez</td><td>Nombre de Banquetera</td>
+  <td class="num">68,428.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1114</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>UNIVERSIDAD NACIONAL AUTONOMA DE MEXICO</td><td>Tienda MUAC</td><td>Reporte ago 25 - ene 26</td>
+  <td class="num">11,233.90</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1110</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GUADALUPE GONZALEZ CONTRERAS</td><td>Mercado de Antigüedades de La Lagunilla</td><td><span class="muted">—</span></td>
+  <td class="num">17,061.00</td><td><span class="muted">— sin vendedor</span></td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1103</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Roberto Ramirez</td><td>La última y nos vamos</td>
+  <td class="num">21,948.64</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1101</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>BANCO DE MEXICO FIDEICOMISO PARA LOS MUSEOS DIEGO RIVERA Y FRIDA KAHLO</td><td>Adriana Ureña</td><td>Museo Frida Kahlo</td>
+  <td class="num">31,183.70</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1097</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO DIGITAL USD</td><td>Rosa Torres</td><td>Tia Cocina</td>
+  <td class="num">3,701.87</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1095</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Maria Campos</td><td>Nopal salpi</td>
+  <td class="num">62,528.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1094</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Mostrador digital</td><td>Grupo Pizarro</td>
+  <td class="num">58,254.40</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1090</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Mostrador digital</td><td>La Loma Golf</td>
+  <td class="num">88,657.94</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1085</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Carlos Carvajal</td><td>Colombia</td>
+  <td class="num">159,760.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1084</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>FORTMCK19-16 PERLA</td><td>Cristina Gómez</td><td>FORTEM</td>
+  <td class="num">75,560.80</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1083</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Jorge González</td><td>Parrilleros Recios</td>
+  <td class="num">26,716.48</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1082</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Abner Millán</td><td>Sociedad Méxicana de Parr</td>
+  <td class="num">15,957.80</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1079</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Mariana Cortina</td><td>Hotel Cuajimalpa</td>
+  <td class="num">14,552.72</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1078</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Pedro Santiago</td><td>Therbal</td>
+  <td class="num">10,800.40</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1075</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Martha Gómez</td><td>IberoStar</td>
+  <td class="num">14,343.20</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1074</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GUADALUPE GONZALEZ CONTRERAS</td><td>Mercado de Antigüedades de La Lagunilla</td><td><span class="muted">—</span></td>
+  <td class="num">48,472.05</td><td><span class="muted">— sin vendedor</span></td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1072</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>FORMA TABLEWARE</td><td>Aluminios Xalatlaco</td><td>Forma Tableware</td>
+  <td class="num">567,114.57</td><td>Alejandro Castañón</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1071</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Fernando Díaz Peón</td><td>Chispy Pollo Gourmet</td>
+  <td class="num">15,592.60</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1070</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Helena Pontevedra Soto</td><td>Aflora Tulum</td>
+  <td class="num">32,732.80</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1069</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>ALBERTO RAMIREZ HERRERA</td><td>Alberto Ramirez</td><td>Single and double</td>
+  <td class="num">4,950.00</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1067</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>UNIVERSIDAD NACIONAL AUTONOMA DE MEXICO</td><td>Jose Vazquez Rodriguez</td><td>Tienda MUAC</td>
+  <td class="num">5,514.64</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1065</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Mostrador digital</td><td>Surtipromos Marketing</td>
+  <td class="num">5,866.80</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1063</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>MARIA DEL PILAR CORREA VERGARA</td><td>Mary Carmen Correa</td><td>Pastelería Pannacotta</td>
+  <td class="num">8,022.00</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1062</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO DIGITAL USD</td><td>Mostrador digital USD</td><td>Forma Tableware</td>
+  <td class="num">22,461.75</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1061</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Mostrador digital</td><td>Birria Lalo By GM</td>
+  <td class="num">10,310.20</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1060</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Kenji Larrazabal</td><td>Prane SAC</td>
+  <td class="num">23,242.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1059</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Kenji Larrazabal</td><td>Prane SAC</td>
+  <td class="num">17,362.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1058</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>MEZCAL SAN COSME</td><td>Mezcal San Cosme</td><td>Mezcal San Cosme Flo Cocktail Bar</td>
+  <td class="num">34,176.44</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1055</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Verónica Lozano</td><td><span class="muted">—</span></td>
+  <td class="num">9,845.56</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1054</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Enrique López</td><td><span class="muted">—</span></td>
+  <td class="num">36,040.08</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1053</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Mauricio Ramos</td><td>DOS AGUAS</td>
+  <td class="num">33,569.12</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1052</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>MEZCAL SAN COSME</td><td>Mezcal San Cosme</td><td>Mezcal San Cosme</td>
+  <td class="num">14,146.18</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1050</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>ACP GLOBAL INC</td><td>Alejandro Castañón Santos  | ACP Global Inc</td><td>Forma Tableware</td>
+  <td class="num">29,991.12</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1049</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS FISICAS</td><td>Arnoldo Portillo</td><td>Arnoldo Portillo</td>
+  <td class="num">2,245.21</td><td>Oswaldo Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1046</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>MARISCOCHO POLANCO</td><td>Nathalia Mandolina</td><td>Mariscocho</td>
+  <td class="num">89,900.39</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1043</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>MARISCOCHO POLANCO</td><td>Corporativo Mariscocho</td><td>Mariscocho</td>
+  <td class="num">1,295.40</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1042</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Candelaria Sharry</td><td>Mao Hotels</td>
+  <td class="num">25,767.40</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1041</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Christian Castro</td><td>Orchid House Hotel</td>
+  <td class="num">10,658.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1040</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GUADALUPE GONZALEZ CONTRERAS</td><td>Mercado de Antigüedades de La Lagunilla</td><td><span class="muted">—</span></td>
+  <td class="num">6,001.05</td><td><span class="muted">— sin vendedor</span></td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BN" class="">
+  <td class="c">B</td><td class="c">1039</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GUADALUPE GONZALEZ CONTRERAS</td><td>Mercado de Antigüedades de La Lagunilla</td><td><span class="muted">—</span></td>
+  <td class="num">13,969.73</td><td><span class="muted">— sin vendedor</span></td>
+  <td class="c"><span class="g g-Nombrado">Nombrado</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1038</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Mostrador digital</td><td><span class="muted">—</span></td>
+  <td class="num">16,406.00</td><td><span class="muted">— sin vendedor</span></td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1037</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Ingrid Carranza</td><td>Ingrid Carranza</td>
+  <td class="num">19,485.99</td><td>Adrián Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1036</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Eunice Solano</td><td>AlmaMía</td>
+  <td class="num">62,604.00</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1034</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Maira Monroy</td><td>DITECO MÉXICO</td>
+  <td class="num">684.10</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1033</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Pilar Trujeque Centeno</td><td>Delfín Dorado</td>
+  <td class="num">58,267.60</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1032</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Maira Monroy</td><td>DITECO MÉXICO</td>
+  <td class="num">15,496.60</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1031</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Israel Delgado Ramírez</td><td>Salvaje</td>
+  <td class="num">29,165.96</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+<tr data-cat="BG" class="gen">
+  <td class="c">B</td><td class="c">1030</td><td class="c"></td>
+  <td><span class="badge e-seguimiento">seguimiento</span></td>
+  <td>GENERICO TIENDAS DIGITALES</td><td>Alondra</td><td>Cafe Cien</td>
+  <td class="num">5,913.20</td><td>Alejandro Chávez</td>
+  <td class="c"><span class="g g-GENERICO">GENERICO</span></td></tr>
+</tbody></table>
+<p class="foot">Prospecto/Proyecto = deliver_to/customer_ref del PEDIDO (vigentes). "Pago sin registrar" = entregado con pago no liquidado. Entrega parcial: el pedido sigue abierto (qty_sent &lt; quantity). Cancelados excluidos via data/cancelados.json.</p>
+<script>
+const tb=document.querySelector('#t tbody'),rows=[...tb.rows],cnt=document.getElementById('cnt');let filt='all',q='';
+function apply(){let n=0;for(const r of rows){const okF=filt==='all'||r.dataset.cat===filt;const okQ=!q||r.textContent.toLowerCase().includes(q);const s=okF&&okQ;r.style.display=s?'':'none';if(s)n++;}cnt.textContent=n+' filas';}
+document.querySelectorAll('.bar button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.bar button').forEach(x=>x.classList.remove('on'));b.classList.add('on');filt=b.dataset.f;apply();});
+document.getElementById('q').oninput=e=>{q=e.target.value.toLowerCase();apply();};
+let asc={};document.querySelectorAll('th').forEach((th,ci)=>th.onclick=()=>{asc[ci]=!asc[ci];const num=th.dataset.k==='total';const vis=rows.filter(r=>r.style.display!=='none');vis.sort((a,b)=>{let x=a.cells[ci].innerText,y=b.cells[ci].innerText;if(num){x=parseFloat(x.replace(/[^0-9.-]/g,''))||0;y=parseFloat(y.replace(/[^0-9.-]/g,''))||0;return asc[ci]?x-y:y-x;}return asc[ci]?x.localeCompare(y):y.localeCompare(x);});vis.forEach(r=>tb.appendChild(r));});
+apply();
+</script></body></html>

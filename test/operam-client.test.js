@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -46,6 +46,114 @@ test('buscarClientes: un 404 de Operam (sin resultados) devuelve lista vacia, no
   });
   try {
     const r = await buscarClientes('RFCQUENOEXISTE');
+    assert.deepEqual(r, []);
+  } finally {
+    restore();
+  }
+});
+
+// Rate limit de Operam (#76): una rafaga de lecturas (el backfill) dispara 429.
+// apiCall reintenta con backoff exponencial en vez de tronar.
+test('apiCall: reintenta ante 429 (rate limit) con backoff y luego responde', async () => {
+  resetSession();
+  _setBackoff429Base(1); // backoff casi instantaneo para no demorar el test
+  let llamadas = 0;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_orders': () => {
+      llamadas++;
+      return llamadas === 1 ? jsonResponse({}, 429) : jsonResponse({ data: [{ order_no: '7000' }] });
+    },
+  });
+  try {
+    const peds = await listarPedidos({ desde: '2026-01-01', hasta: '2026-06-18' });
+    assert.equal(llamadas, 2, 'debe reintentar tras el 429');
+    assert.equal(peds.length, 1);
+  } finally {
+    restore();
+    _setBackoff429Base(2000);
+  }
+});
+
+// Throttle PROACTIVO anti-429 (#76): el backfill hace ~800-1000 lecturas; el backoff
+// REACTIVO no basta (el limite de Operam dura mas que la ventana de reintentos -> el
+// dry-run en vivo del 2026-06-19 trono). Un intervalo minimo entre llamadas evita
+// disparar el limite. apiCall serializa las llamadas (incluso concurrentes) con
+// >= minIntervalMs entre cada una reservando slots crecientes.
+test('apiCall: con intervalo minimo, espacia las llamadas concurrentes (throttle proactivo anti-429)', async () => {
+  resetSession();
+  _setMinInterval(40);
+  const tiempos = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_orders': () => { tiempos.push(Date.now()); return jsonResponse({ data: [] }); },
+  });
+  try {
+    await Promise.all([
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+    ]);
+    assert.equal(tiempos.length, 3);
+    // Asercion ACUMULATIVA (no por-gap): el jitter de setTimeout bajo carga puede
+    // comprimir un gap individual (un timer que se atrasa adelanta su distancia al
+    // siguiente), pero el tiempo total entre la 1a y la 3a lectura solo CRECE con el
+    // jitter -> 3 llamadas a >=40ms toman >= 2 intervalos (~80ms). Robusto, no flaky.
+    const total = tiempos[2] - tiempos[0];
+    assert.ok(total >= 70, `total=${total}ms entre la 1a y 3a lectura debe ser >= ~80 (2 intervalos de 40ms)`);
+  } finally {
+    restore();
+    _setMinInterval(0);
+  }
+});
+
+// Sin intervalo (default 0) NO hay pacing: la app normal (no-backfill) no cambia.
+test('apiCall: intervalo 0 (default) no espacia (la app normal no se ve afectada)', async () => {
+  resetSession();
+  _setMinInterval(0);
+  const tiempos = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_orders': () => { tiempos.push(Date.now()); return jsonResponse({ data: [] }); },
+  });
+  try {
+    await Promise.all([
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+      listarPedidos({ desde: 'a', hasta: 'b' }),
+    ]);
+    assert.equal(tiempos.length, 2);
+    assert.ok((tiempos[1] - tiempos[0]) < 30, 'sin intervalo, sin espera apreciable entre llamadas');
+  } finally {
+    restore();
+  }
+});
+
+// Robustez del backfill (#76) y el sync #62: un cliente sin transacciones/pedidos en
+// el rango hace que Operam responda 404. Eso NO es error: es una lista vacia. Sin esto
+// el backfill truena a media corrida al toparse un cliente sin movimientos (visto en
+// vivo 2026-06-19: 404 en listarTransacciones aborto el dry-run).
+test('listarTransacciones: un 404 de Operam (cliente sin transacciones) devuelve [], no lanza', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/transactions': () => jsonResponse({ errors: ['No transactions found'] }, 404),
+  });
+  try {
+    const r = await listarTransacciones({ rfc: 'XAXX010101000', desde: '2025-01-01', hasta: '2026-01-01' });
+    assert.deepEqual(r, []);
+  } finally {
+    restore();
+  }
+});
+
+test('listarPedidos: un 404 de Operam (cliente sin pedidos) devuelve [], no lanza', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_orders': () => jsonResponse({ errors: ['No orders found'] }, 404),
+  });
+  try {
+    const r = await listarPedidos({ debtorNo: 999999, desde: '2025-01-01', hasta: '2026-01-01' });
     assert.deepEqual(r, []);
   } finally {
     restore();
@@ -1346,6 +1454,85 @@ test('subirCotizacionOperam: devuelve el folio real del quote (added_trans_no)',
       items: [{ codigo: 'PV08P3001120', descripcion: 'Portavasos', cantidad: 10, precio: 45.26, descuento: 0 }],
     });
     assert.equal(folio, 1160, 'debe devolver added_trans_no (folio real), no undefined');
+  } finally {
+    restore();
+  }
+});
+
+// Lecturas read-only para el backfill (issue #76). GET de la cabecera de un quote
+// por id y GET del cliente (debtor) por id. Toleran que la respuesta venga
+// envuelta en `data` (array o no), como el resto de la API v3.
+
+test('obtenerQuote: GET /api/v3/sales/quote/:id devuelve la cabecera del quote', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/quote/1141': () => jsonResponse({
+      data: [{
+        trans_no: 1141, ord_date: '2026-05-20', delivery_date: '2026-06-19',
+        cust_ref: 'Tienda Juana', total: '16954', salesman: 8,
+        detalles: [{ stock_id: 'SA08A3001112', qty: 10 }],
+      }],
+    }),
+  });
+  try {
+    const q = await obtenerQuote(1141);
+    assert.equal(q.trans_no, 1141);
+    assert.equal(q.cust_ref, 'Tienda Juana');
+    assert.equal(q.delivery_date, '2026-06-19');
+    assert.equal(q.total, '16954');
+    assert.equal(q.salesman, 8);
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerQuote: tolera respuesta sin envoltura data (objeto directo)', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/quote/1200': () => jsonResponse({
+      trans_no: 1200, ord_date: '2026-06-01', total: '500',
+    }),
+  });
+  try {
+    const q = await obtenerQuote(1200);
+    assert.equal(q.trans_no, 1200);
+    assert.equal(q.total, '500');
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerCliente: GET /api/v3/sales/customers/:id devuelve el cliente (debtor) con RFC y moneda', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/394': () => jsonResponse({
+      data: [{
+        customer_id: 394, CustName: 'JUANA HERNANDEZ GARCIA', tax_id: 'HEGJ800101AB1',
+        curr_code: 'MXN', branches: [{ branch_code: 400 }],
+      }],
+    }),
+  });
+  try {
+    const c = await obtenerCliente(394);
+    assert.equal(c.CustName, 'JUANA HERNANDEZ GARCIA');
+    assert.equal(c.tax_id, 'HEGJ800101AB1');
+    assert.equal(c.curr_code, 'MXN');
+  } finally {
+    restore();
+  }
+});
+
+test('obtenerCliente: un 404 (cliente inexistente) devuelve null, no lanza', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/999999': () => jsonResponse({ errors: ['No customers found'] }, 404),
+  });
+  try {
+    assert.equal(await obtenerCliente(999999), null);
   } finally {
     restore();
   }
