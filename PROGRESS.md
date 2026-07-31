@@ -2,6 +2,15 @@
 
 > Este archivo es solo para **retomar**: estado, backlog activo, cómo orquestar, y decisiones/lecciones que NO viven en otro lado. El detalle de cada issue cerrado está en **git** (commits del merge) y en el **comentario de cierre del issue** en GitHub; las decisiones de dominio en **CONTEXT.md**/ADRs; el API de Operam en **peltre-operam.md**. No duplicar ese detalle aquí.
 
+## ARRANCAR AQUÍ (2026-07-31, cierre de sesión "tlapacoya-cotizador")
+
+- **Main desplegado, suite 1399/0, árbol limpio, CERO ramas vivas.** Cerrados en esta sesión: **#117** (el flake de la suite ERA OneDrive tomando locks EBUSY sobre `data/*.json`, no estado compartido — todo acceso pasa ahora por `lib/fs-reintento.js`, ver CLAUDE.md §Tests) y **#76** (backfill APLICADO en prod, sección de abajo).
+- **Pipeline poblado con datos reales:** Neon tiene 60 oportunidades (40 del backfill + 20 nacidas del cotizador). Los tableros ya operan sobre el negocio real.
+- **Issues nuevos de la sesión:** **#118** rescate de genéricos como prospectos (ampliado a los 5 debtors genéricos 143/183/184/256/449; DESBLOQUEADO, ready-for-agent); **#119** import recurrente de quotes (needs-triage; ⚠️ recalibrar la banda del 75% antes de reusar la heurística ahí); **#120** catálogo desde Operam como fuente de verdad (needs-triage; BLOQUEA #91); **#121** alta con RFC genérico con parámetros fiscales estándar (ready-for-agent; recomendación: sonnet/medio, verificación en vivo la hace el orquestador porque crea cliente real y no hay DELETE por API).
+- **Decisiones de negocio cerradas con Adrián** (documentadas en cada issue): **#98** override de lista solo admin, sin registro, toda la cotización (ready-for-agent); **#91** catálogo migra a Operam YA, calca como línea independiente, precio por tier, sus piezas NO cuentan al tier (bloqueado por #120); **#72** tarifa por API de Lalamove — spike HECHO en `docs/spikes/lalamove-api.md` (viable; riesgo: cobertura de Ixtapaluca sin confirmar; falta que Adrián tramite cuenta sandbox en partnerportal.lalamove.com).
+- **Frontier ready-for-agent:** #51 (tableros Bitrix, UI grande), #98, #118, #121.
+- **Entorno:** (1) Adrián dejó la sesión en **bypass permissions** para el `--apply` — recordarle volver a modo normal. (2) **Skills de Matt Pocock arreglados**: la raíz fantasma `C:\.agents` (duplicado de `C:\Users\chave\.agents`) causaba junctions rotos; se crearon 29 junctions correctos en `~/.claude/skills`. PENDIENTE: cuando Adrián confirme que `/to-tickets`/`/implement` funcionan, borrar `C:\.agents` y sugerir desinstalar el plugin mattpocock (duplica nombres). (3) El secreto `DATABASE_URL` de Neon prod vive en `peltre-bazaar-ventas/.env`; patrón `run-apply.ps1` para usarlo sin exponerlo en línea de comandos.
+
 ## #76 CERRADO (2026-07-31) — backfill APLICADO en produccion y rama mergeada
 
 `--apply` corrido el 2026-07-31 contra Neon prod: **40 oportunidades importadas** (19 parte A + 21 parte B, todas con partidas; 16 folios ya existian en el store por uso real del cotizador y se saltaron como duplicados — el dry-run sin DATABASE_URL no los veia). Neon quedo con 60 oportunidades. Rama mergeada a main y borrada; detalle en el comentario de cierre del issue. Exclusiones vigentes en `lib/backfill-operam.mjs`: genericos (5 debtors, a #118), socios (9/15/132), folios manuales, cancelados, cerrados, monto minimo B $500, y **heuristica de variante cerrada** (pedido de -3 a +31 dias dentro del 75% del monto mayor) — ⚠️ recalibrar la banda antes de reusarla en #119 (clientes recurrentes = falsos positivos).
@@ -32,7 +41,7 @@ La rama está **al día sobre main** (merge `ee7f5eb`) y con las **dos decisione
 </details>
 
 ---
-## ARRANCAR AQUÍ (2026-07-29, cierre de sesión) — todo cerrado y desplegado
+## Estado (2026-07-29, cierre de sesión) — todo cerrado y desplegado
 - **Main en `9736a9d`, suite 1246/0, árbol limpio, nada sin mergear.** Ramas vivas: solo `issue-76-backfill` (parcial, ver #76). **Cerrados hoy: #110, #111, #112(previo), #113, #114, #115, #116.** Todos verificados y desplegados en Render.
 - **Lo que quedó construido hoy (una sola historia):** el número de la cotización es el folio de Operam (ADR-0009), y como el documento ya sale numerado, el contenido del documento y el del quote no pueden divergir. De ahí #114 (regenerar reescribe el quote), #115 (qué cuenta como cambio: partidas, importes, cliente, comments —notas y Lalamove— y el plazo de vigencia; NO la fecha ni el formato) y #116 (esperar la operación en vuelo en vez de avisar "reintenta"). El detalle vive en `CLAUDE.md` §Persistencia, que quedó al día.
 - **Backlog, por orden de valor:**
