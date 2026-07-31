@@ -1234,10 +1234,26 @@ test('excluidoManual: planearBackfillSinPedido SKIP excluido manual -- folio 119
   assert.equal(plan.skips.excluidoManual, 1);
 });
 
+test('excluidoManual: planearBackfill SKIP excluido manual -- folio 1129 no se importa (re-emision de FORTMCK19-16 PERLA)', async () => {
+  // Adrian confirmo que el cliente ya cerro con la 1084 (excluida por heuristica); la
+  // 1129 es una re-emision del mismo monto -- el pedido quedo fuera de la ventana
+  // respecto a ESTA re-emision, asi que se excluye manualmente.
+  const pedidoExcluido = { ...PEDIDO, trans_no_from: '1129' };
+  const { deps } = planDeps({
+    pedidos: [pedidoExcluido],
+    debtors: { '394': DEBTOR },
+    quotes: { '1129': { ...QUOTE, trans_no: '1129' } },
+    hechos: { '7269': HECHOS_SALDO_PAGADO },
+  });
+  const plan = await planearBackfill(deps);
+  assert.equal(plan.importar.length, 0);
+  assert.equal(plan.skips.excluidoManual, 1);
+});
+
 test('constantes exportadas: DEBTORS_GENERICOS, DEBTORS_SOCIOS y FOLIOS_EXCLUIDOS_MANUAL tienen los valores decididos', () => {
   assert.deepEqual([...DEBTORS_GENERICOS].sort(), ['143', '183', '184', '256', '449']);
   assert.deepEqual([...DEBTORS_SOCIOS].sort(), ['132', '15', '9']);
-  assert.deepEqual([...FOLIOS_EXCLUIDOS_MANUAL].sort(), ['1189', '1195', '1196']);
+  assert.deepEqual([...FOLIOS_EXCLUIDOS_MANUAL].sort(), ['1129', '1189', '1195', '1196']);
 });
 
 // === Decision 2026-07-29 (#76): las cotizaciones importadas llevan PARTIDAS ===
@@ -1352,9 +1368,22 @@ test('esVarianteCerrada: pedido al 40% del monto (250 -> 100 piezas) se excluye'
 });
 
 test('esVarianteCerrada: MOTOBLOCK -- pedido de muestras al 0.3% NO excluye la cotizacion grande', () => {
+  // El denominador es el monto MAYOR entre cotizacion y pedido (revision 2026-07-31);
+  // aqui la cotizacion YA es el monto mayor, asi que el resultado no cambia con el
+  // ajuste: dif 99.7% relativa al monto mayor (182093) sigue fuera de la banda.
   const quote = { trans_no: '1302', ord_date: '2026-05-10', total: '182093' };
   const pedidos = [{ order_no: '7302', ord_date: '2026-05-15', total: '598' }];
   assert.equal(esVarianteCerrada(quote, pedidos), false);
+});
+
+test('esVarianteCerrada: pedido MAYOR que la cotizacion cierra si esta dentro del 75% del monto MAYOR (folio 1194)', () => {
+  // Revision en vivo de Adrian 2026-07-31: cotizacion $6,769.76 vs pedido $13,300.56
+  // (dif 96% relativa al monto de la cotizacion -- NO cerraba con el denominador viejo;
+  // dif 49% relativa al monto MAYOR -- SI cierra). Para el negocio esa cotizacion es
+  // variante muerta: el denominador de la banda pasa a ser el monto MAYOR entre ambos.
+  const quote = { trans_no: '1194', ord_date: '2026-05-10', total: '6769.76' };
+  const pedidos = [{ order_no: '7500', ord_date: '2026-05-15', total: '13300.56' }];
+  assert.equal(esVarianteCerrada(quote, pedidos), true);
 });
 
 test('esVarianteCerrada: pedido fuera de la ventana de 31 dias NO excluye', () => {

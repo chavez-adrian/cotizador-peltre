@@ -216,7 +216,7 @@ console.log(`  SKIP excluido manual (quotes de prueba/uso interno, revision Adri
 console.log(`  SKIP cancelado (anulado en Operam): ${planB.skips.cancelado ?? 0}`);
 console.log(`  SKIP duplicado (folio ya en el store): ${planB.skips.duplicado ?? 0}`);
 console.log(`  SKIP monto minimo (total < $${MONTO_MINIMO_B}, error/prueba/muestra): ${planB.skips.montoMinimo ?? 0}`);
-console.log(`  SKIP variante-cerrada (el cliente ya compro: pedido de -${GRACIA_VARIANTE_DIAS} a +${VENTANA_VARIANTE_DIAS} dias y dentro del ${Math.round(BANDA_VARIANTE * 100)}% del monto): ${planB.skips.varianteCerrada ?? 0}\n`);
+console.log(`  SKIP variante-cerrada (el cliente ya compro: pedido de -${GRACIA_VARIANTE_DIAS} a +${VENTANA_VARIANTE_DIAS} dias y dentro del ${Math.round(BANDA_VARIANTE * 100)}% del monto mayor): ${planB.skips.varianteCerrada ?? 0}\n`);
 
 // Evidencia de CADA exclusion por variante cerrada (revision de Adrian, folio por folio):
 // que cotizacion se excluyo y QUE pedido la cerro. Sin esto la exclusion es una caja
