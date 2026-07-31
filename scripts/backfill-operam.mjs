@@ -224,7 +224,8 @@ console.log(`  SKIP variante-cerrada (el cliente ya compro: pedido de -${GRACIA_
 if ((planB.variantesCerradas || []).length > 0) {
   console.log('  Exclusiones por variante cerrada (cotizacion -> pedido que la cerro):');
   for (const v of planB.variantesCerradas) {
-    const dif = v.total > 0 ? Math.round((Math.abs(v.pedido.total - v.total) / v.total) * 100) : 0;
+    const mayor = Math.max(v.total, v.pedido.total);
+    const dif = mayor > 0 ? Math.round((Math.abs(v.pedido.total - v.total) / mayor) * 100) : 0;
     console.log(`    [X] folio ${v.folio} | ${v.cliente} | cotizacion $${v.total}` +
       ` -> pedido ${v.pedido.order_no} $${v.pedido.total} (${v.pedido.fecha}, dif ${dif}%)`);
   }
