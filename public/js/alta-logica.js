@@ -413,6 +413,7 @@ export function buildClienteDesdeContactoNuevo(campos) {
     pais: c.pais || 'MX',
     canal: c.canal || '',
     email: c.email || '',
+    segmentoId: c.segmentoId || '',
   };
 }
 
@@ -435,6 +436,9 @@ export function clienteDesdeProspecto(prospecto) {
     pais: 'MX',
     etapa: p.etapa || '',
     email: (p.data && p.data.correo) || '',
+    // issue #121: sobrevive a un "Ya lo conozco" -> prospecto en otra sesion (el
+    // segmento se guarda en data.segmento_id, OPCIONALES de prospectos-logica.js).
+    segmentoId: (p.data && p.data.segmento_id) || '',
   };
 }
 

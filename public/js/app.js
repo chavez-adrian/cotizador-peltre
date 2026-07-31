@@ -140,6 +140,7 @@ function leerClienteFormulario(leyenda) {
     nombreCorto: document.getElementById('cl-nombre-corto').value,
     rfc: document.getElementById('cl-rfc').value,
     cpFiscal: document.getElementById('cl-cp-fiscal').value,
+    segmentoId: document.getElementById('cl-segmento')?.value || '',
     telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
     nombreEntrega: document.getElementById('cl-nombre-entrega').value,
     calle: document.getElementById('cl-calle').value,
@@ -1533,7 +1534,7 @@ function nuevaCotizacion() {
 
   // Limpiar campos
   const campos = [
-    'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-telefono',
+    'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-segmento', 'cl-telefono',
     'cl-nombre-entrega', 'cl-calle', 'cl-num-int', 'cl-colonia', 'cl-cp-entrega',
     'cl-municipio', 'cl-estado', 'cl-cel-entrega', 'cl-email-entrega',
     'cl-referencias', 'cl-referencia',
@@ -1708,7 +1709,7 @@ function pcNota() {
 // mal el chip Entrega). No toca el carrito ni el resto del flujo de cotizacion.
 function pcLimpiarCamposCliente() {
   const campos = [
-    'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-telefono',
+    'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-segmento', 'cl-telefono',
     'cl-referencia', 'cl-nombre-entrega', 'cl-calle', 'cl-num-int', 'cl-colonia',
     'cl-cp-entrega', 'cl-municipio', 'cl-estado', 'cl-cel-entrega', 'cl-email-entrega',
     'cl-email-factura', 'cl-referencias',
@@ -1906,6 +1907,7 @@ function pcLlenarCamposContacto(cliente) {
   set('cl-razon-social', cliente.name);
   set('cl-nombre-corto', cliente.ref);
   set('cl-rfc', cliente.rfc || '');
+  set('cl-segmento', cliente.segmentoId || '');
   set('cl-municipio', cliente.municipio || '');
   if (cliente.email) set('cl-email-entrega', cliente.email);
   const pais = document.getElementById('cl-pais');
@@ -1937,6 +1939,7 @@ async function pcElegirReciente(cotizacionId) {
     set('cl-nombre-corto', c.nombreCorto);
     set('cl-rfc', c.rfc);
     set('cl-cp-fiscal', c.cpFiscal);
+    set('cl-segmento', c.segmentoId);
     set('cl-nombre-entrega', c.nombreEntrega);
     set('cl-calle', c.calle);
     set('cl-num-int', c.numInt);
@@ -1980,6 +1983,8 @@ function pcCaminoNuevo(prefill) {
     '<div class="form-group"><label>Ciudad *</label>' +
     '<input type="text" id="pc-ciudad" placeholder="Para estimar envio"></div>' +
     `<div class="form-group"><label>Canal de origen *</label><select id="pc-canal"><option value="">-- Selecciona --</option>${canales}</select></div>` +
+    '<div class="form-group"><label>Segmento <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>' +
+    '<select id="pc-segmento"><option value="">-- Selecciona --</option></select></div>' +
     '<div id="pc-nuevo-error" class="pc-error" style="display:none"></div>' +
     '<button type="button" class="btn btn-primary btn-block" id="pc-guardar" onclick="pcGuardarContactoNuevo()">Guardar y continuar</button>' +
     '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Volver</button>';
@@ -1990,6 +1995,16 @@ function pcCaminoNuevo(prefill) {
   });
   document.getElementById('pc-cel').addEventListener('blur', pcClasificarCelular);
   document.getElementById('pc-nombre').focus();
+  // El segmento comparte catalogo con alta-segmento/pr-segmento (issue #121): se
+  // puebla async, igual que poblarSelectoresProspecto -- no bloquea el render del
+  // formulario mientras /api/catalogos responde.
+  cargarCatalogos().then(catalogos => {
+    const sel = document.getElementById('pc-segmento');
+    if (sel) {
+      sel.innerHTML = '<option value="">-- Selecciona --</option>' +
+        (catalogos.segmentos || []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+    }
+  }).catch(() => {});
 }
 window.pcCaminoNuevo = pcCaminoNuevo;
 
@@ -2060,16 +2075,17 @@ async function pcGuardarContactoNuevo() {
   const celCode = document.getElementById('pc-cel-code')?.value || '+52';
   const ciudad = document.getElementById('pc-ciudad')?.value || '';
   const canal = document.getElementById('pc-canal')?.value || '';
+  const segmentoId = document.getElementById('pc-segmento')?.value || '';
   const telefono = combinarTelefonoConCodigo(celCode, celNum);
 
   const showErr = m => { if (err) { err.textContent = m; err.style.display = 'block'; } };
   if (err) err.style.display = 'none';
 
-  const payload = buildProspectoPayload({ celularCode: celCode, celular: celNum, nombre, ciudad, canal });
+  const payload = buildProspectoPayload({ celularCode: celCode, celular: celNum, nombre, ciudad, canal, segmento_id: segmentoId });
   const errVal = validarProspectoBody(payload);
   if (errVal) { showErr(errVal); return; }
 
-  const cliente = buildClienteDesdeContactoNuevo({ nombre, telefono, ciudad, canal, pais: paisDesdeCodigoTelefono(celCode) });
+  const cliente = buildClienteDesdeContactoNuevo({ nombre, telefono, ciudad, canal, segmentoId, pais: paisDesdeCodigoTelefono(celCode) });
 
   const btn = document.getElementById('pc-guardar');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }

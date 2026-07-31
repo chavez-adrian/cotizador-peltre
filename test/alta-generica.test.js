@@ -101,6 +101,22 @@ test('buildClienteGenerico: extranjero -> XEXX; sin vendedor/lista mapeables no 
   assert.ok(!('sales_type' in c), 'sin lista mapeada no debe mandar sales_type');
 });
 
+// issue #121: el segmento que el vendedor eligio en el paso Cliente (Contacto nuevo,
+// data.cliente.segmentoId) debe viajar al alta generica -- Operam no lo infiere solo.
+test('buildClienteGenerico: segmento capturado -> segmento_id (issue #121)', () => {
+  const entry = { data: { cliente: {
+    razonSocial: 'Hotel Azul Centro', telefono: '+52 5588776655', segmentoId: '10',
+  } } };
+  const c = buildClienteGenerico(entry, {});
+  assert.equal(c.segmento_id, '10');
+});
+
+test('buildClienteGenerico: sin segmento capturado no manda segmento_id (issue #121)', () => {
+  const entry = { data: { cliente: { razonSocial: 'Hotel Azul Centro', telefono: '+52 5588776655' } } };
+  const c = buildClienteGenerico(entry, {});
+  assert.ok(!('segmento_id' in c));
+});
+
 test('buildClienteGenerico: sin razon social cae al nombre corto y al cliente del registro', () => {
   assert.equal(buildClienteGenerico({ data: { cliente: { nombreCorto: 'Azul' } } }, {}).CustName, 'Azul');
   assert.equal(buildClienteGenerico({ cliente: 'Hotel Azul', data: { cliente: {} } }, {}).CustName, 'Hotel Azul');
