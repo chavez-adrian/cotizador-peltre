@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # desarrollo con hot-reload (--watch)
 npm start            # produccion
-npm test             # todos los tests (1399, 0 fallas esperadas)
+npm test             # todos los tests (1409, 0 fallas esperadas)
 
 # Correr un test individual:
 node --test test/server.test.js
@@ -52,8 +52,8 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 
 | Modulo | Que hace |
 |--------|----------|
-| `operam-client.js` | Bearer token auth con auto-refresh en 401. Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `obtenerBranch`, `obtenerBranchId`, `obtenerClientePorId`, `listarTransacciones`, `listarPedidos`, `resetSession`. Read-only del backfill (#76): `obtenerQuote`, `obtenerPedido` (detalle con `qty_sent`/`quantity` -> entrega total vs parcial), `obtenerCliente`; retry ante caidas de red (ECONNRESET) y throttle proactivo anti-429 `_setMinInterval` (default 0 = la app normal no pacea) |
-| `alta-generica.js` | Alta del cliente con RFC generico al subir cotizacion (#81/#83): `buildClienteGenerico` (lee `emailFactura` -> `invoice_email` desde #95), `buildBranchGenerico`/`diffBranchDomicilio` (PUT del branch con domicilio de entrega + verificacion, #96), `necesitaAltaGenerica`, `rfcGenericoPara`, `resolverSalesTypeId`, `FUENTE_ALTA_GENERICA` |
+| `operam-client.js` | Bearer token auth con auto-refresh en 401. **`buildClienteBody` es el UNICO mapeo de cliente→Operam** (lo comparten `crearClienteDirecto` del alta generica y `crearCliente` de `/api/crear-cliente`), y por eso ahi viven los **parametros fiscales estandar del RFC generico (#121)**: si `tax_id` esta en `RFC_GENERICOS`, fuerza nombre en MAYUSCULAS, `postal_code` 56577 (el CP **fiscal**; el de ENTREGA lo pone `buildBranchGenerico` y conserva el real), regimen 616 y uso CFDI S01. Son overrides INCONDICIONALES, no defaults: ignoran lo que mande el caller. El unico campo fiscal del generico que sigue al vendedor es el **segmento**, que se captura en `pc-segmento` del paso Cliente. Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `obtenerBranch`, `obtenerBranchId`, `obtenerClientePorId`, `listarTransacciones`, `listarPedidos`, `resetSession`. Read-only del backfill (#76): `obtenerQuote`, `obtenerPedido` (detalle con `qty_sent`/`quantity` -> entrega total vs parcial), `obtenerCliente`; retry ante caidas de red (ECONNRESET) y throttle proactivo anti-429 `_setMinInterval` (default 0 = la app normal no pacea) |
+| `alta-generica.js` | Alta del cliente con RFC generico al subir cotizacion (#81/#83): `buildClienteGenerico` (lee `emailFactura` -> `invoice_email` desde #95 y `segmentoId` -> `segmento_id` desde #121; los demas parametros fiscales del generico los impone `buildClienteBody`, no este modulo), `buildBranchGenerico`/`diffBranchDomicilio` (PUT del branch con domicilio de entrega + verificacion, #96), `necesitaAltaGenerica`, `rfcGenericoPara`, `resolverSalesTypeId`, `FUENTE_ALTA_GENERICA` |
 | `higiene-clientes.js` | Nucleo puro del reporte admin "Clientes genericos sin actividad" (#86) |
 | `deduplicacion.js` | RFC genericos + deteccion de duplicados (dedup #78: nombre + telefono como senal fuerte) |
 | `sync-operam.js` | Nucleo PURO del sync post-venta (#62): `etapaPostVenta(hechos, op)` (hechos normalizados → etapa, con gate de #61 y monotonia) + `hechosDesdeOperam` (transacciones crudas → hechos). **Mapeo REAL de tipos de Operam: ver `peltre-operam.md` §12** (el MCP `operam-api` los etiqueta mal). Pago por `allocated` vs `total` (tolerancia 1%), no por `outstanding`. Sin IO. |
