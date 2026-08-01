@@ -177,6 +177,18 @@ test('N2: respeta pais extranjero', () => {
   assert.strictEqual(c.pais, 'US');
 });
 
+// issue #121: el segmento elegido en el formulario "Contacto nuevo" viaja al cliente
+// para que el alta generica lo mande a Operam (buildClienteGenerico lee segmentoId).
+test('N3: segmento elegido -> segmentoId (issue #121)', () => {
+  const c = buildClienteDesdeContactoNuevo({ nombre: 'Juan', telefono: '+52 5588776655', ciudad: 'CDMX', segmentoId: '10' });
+  assert.strictEqual(c.segmentoId, '10');
+});
+
+test('N4: sin segmento elegido -> segmentoId vacio', () => {
+  const c = buildClienteDesdeContactoNuevo({ nombre: 'Juan', telefono: '+52 5588776655', ciudad: 'CDMX' });
+  assert.strictEqual(c.segmentoId, '');
+});
+
 // === clienteDesdeProspecto ===
 
 test('P1: normaliza un prospecto al objeto cliente del cotizador', () => {
@@ -202,6 +214,19 @@ test('P2: prospecto ligado a cliente generico expone clienteOperamId', () => {
 
 test('P3: prospecto sin data (nunca cotizo) tiene clienteOperamId null', () => {
   assert.strictEqual(clienteDesdeProspecto(PROSPECTOS[0]).clienteOperamId, null);
+});
+
+// issue #121: el segmento elegido al capturar el prospecto (persistido en
+// data.segmento_id, OPCIONALES de prospectos-logica.js) debe sobrevivir a un
+// "Ya lo conozco" -> prospecto en otra sesion, no solo al guardado inmediato del
+// mismo "Contacto nuevo".
+test('P5: prospecto con segmento_id en data expone segmentoId (issue #121)', () => {
+  const p = { id: 6, nombre: 'Con Segmento SA', ciudad: 'CDMX', celular: '+52 55 0000 0000', data: { segmento_id: '10' } };
+  assert.strictEqual(clienteDesdeProspecto(p).segmentoId, '10');
+});
+
+test('P6: prospecto sin segmento_id en data -> segmentoId vacio', () => {
+  assert.strictEqual(clienteDesdeProspecto(PROSPECTOS[0]).segmentoId, '');
 });
 
 test('P4: prospecto con data pero sin cliente_id tiene clienteOperamId null', () => {

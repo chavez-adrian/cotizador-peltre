@@ -480,6 +480,47 @@ test('buildClienteBody: timbrado_uso_cfdi fallback S01 cuando no viene', () => {
   assert.strictEqual(body.timbrado_uso_cfdi, 'S01', 'fallback S01 cuando timbrado_uso_cfdi no esta en input');
 });
 
+// === buildClienteBody() — parametros fiscales estandar para RFC generico (issue #121) ===
+// Un RFC generico (XAXX/XEXX) no tiene datos fiscales reales: se normaliza SIEMPRE a
+// los parametros de la casa, sin importar lo que el caller haya mandado (accordion de
+// alta completa, alta generica automatica, o cualquier otro camino que cree un cliente
+// con este tax_id).
+
+test('buildClienteBody: RFC generico MX -> nombre en MAYUSCULAS, CP fiscal 56577, regimen 616, uso CFDI S01', () => {
+  const body = buildClienteBody({ tax_id: 'XAXX010101000', CustName: 'hotel azul centro' });
+  assert.strictEqual(body.cust_name, 'HOTEL AZUL CENTRO');
+  assert.strictEqual(body.postal_code, '56577');
+  assert.strictEqual(body.cfdi_regimen_fiscal, '616');
+  assert.strictEqual(body.timbrado_uso_cfdi, 'S01');
+});
+
+test('buildClienteBody: RFC generico extranjero (XEXX) -> mismos parametros estandar', () => {
+  const body = buildClienteBody({ tax_id: 'XEXX010101000', CustName: 'blue hotel llc' });
+  assert.strictEqual(body.cust_name, 'BLUE HOTEL LLC');
+  assert.strictEqual(body.postal_code, '56577');
+  assert.strictEqual(body.cfdi_regimen_fiscal, '616');
+  assert.strictEqual(body.timbrado_uso_cfdi, 'S01');
+});
+
+test('buildClienteBody: RFC generico -> ignora overrides explicitos de CP/regimen/uso CFDI/mayusculas del caller', () => {
+  const body = buildClienteBody({
+    tax_id: 'xaxx010101000', CustName: 'hotel azul centro',
+    postal_code: '01000', cfdi_regimen_fiscal: '612', timbrado_uso_cfdi: 'G03',
+  });
+  assert.strictEqual(body.cust_name, 'HOTEL AZUL CENTRO');
+  assert.strictEqual(body.postal_code, '56577');
+  assert.strictEqual(body.cfdi_regimen_fiscal, '616');
+  assert.strictEqual(body.timbrado_uso_cfdi, 'S01');
+});
+
+test('buildClienteBody: RFC real -> sin overrides de RFC generico (comportamiento actual)', () => {
+  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro', postal_code: '01000' });
+  assert.strictEqual(body.cust_name, 'hotel azul centro');
+  assert.strictEqual(body.postal_code, '01000');
+  assert.strictEqual(body.cfdi_regimen_fiscal, '612');
+  assert.strictEqual(body.timbrado_uso_cfdi, 'S01');
+});
+
 // === buildClienteBody() — campos huerfanos #17/#18 y contacto principal #16 (issue #26) ===
 
 test('buildClienteBody: invoice_email se concatena en notes (issue #17)', () => {

@@ -534,6 +534,10 @@
           <label>CP domicilio fiscal</label>
           <input type="text" id="cl-cp-fiscal" placeholder="00000" maxlength="5" inputmode="numeric">
         </div>
+        <!-- Segmento elegido en "Contacto nuevo" del paso Cliente (issue #121): campo
+             oculto -- lo llena pcGuardarContactoNuevo, lo lee leerClienteFormulario
+             para que el alta generica lo mande a Operam. -->
+        <input type="hidden" id="cl-segmento">
         <div class="form-group">
           <label>Telefono (con codigo de pais)</label>
           <div style="display:flex;gap:6px;align-items:center">

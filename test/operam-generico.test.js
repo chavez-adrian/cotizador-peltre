@@ -169,9 +169,13 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
   assert.ok(llamadas.indexOf('POST customer') < llamadas.indexOf('POST quote'));
 
   // Cliente generico: RFC generico nacional, nombre y vendedor REALES, lista de
-  // precios de la cotizacion (tier M100 -> id 15 en Operam) y uso CFDI default.
+  // precios de la cotizacion (tier M100 -> id 15 en Operam) y los parametros
+  // fiscales estandar de la casa (issue #121): nombre en MAYUSCULAS, CP fiscal
+  // 56577, regimen 616 y uso CFDI S01.
   assert.equal(clienteBody.tax_id, 'XAXX010101000');
-  assert.equal(clienteBody.cust_name, 'Hotel Azul Centro');
+  assert.equal(clienteBody.cust_name, 'HOTEL AZUL CENTRO');
+  assert.equal(clienteBody.postal_code, '56577');
+  assert.equal(clienteBody.cfdi_regimen_fiscal, '616');
   assert.equal(clienteBody.salesman, 2, 'Alejandro Chavez -> operam_id 2 de data/vendedores.json');
   assert.equal(clienteBody.sales_type, '15');
   assert.equal(clienteBody.timbrado_uso_cfdi, 'S01');
