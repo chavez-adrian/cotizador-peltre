@@ -278,7 +278,7 @@ test('un generico que ya CERRO (identidad + monto en banda, via el pedido real d
 // === idempotencia: correr dos veces no duplica ni re-propone aceptados/descartados ===
 
 test('correr el descubrimiento dos veces no duplica los mismos folios', async () => {
-  const handlers = handlersBase({ quotes: { 1: quoteReal({}) } }, );
+  const handlers = handlersBase({ quotes: { 1: quoteReal({}) } });
   handlers['/api/v3/sales/customers'] = async (u) => {
     const m = u.match(/\/customers\/(\d+)/);
     if (m) return jsonResponse({ data: [DEBTOR_512] });
