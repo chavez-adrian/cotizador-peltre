@@ -48,7 +48,11 @@ const VENDEDORES = [
   { id: 5, name: 'Jaime Abaroa', operam_id: null },
 ];
 
-const LRE = '‪';
+// Marca invisible U+202A (LEFT-TO-RIGHT EMBEDDING) que WhatsApp/iOS pegan al
+// numero. Se escribe como escape, no como caracter literal: en el editor no se ve
+// y cualquier reencoding del archivo se lo comeria (misma convencion que
+// test/cruce-identidad.test.js).
+const LRE = '\u202A';
 
 // Quote 1089 de la medicion (debtor 184 GENERICO TIENDAS DIGITALES). El telefono
 // llega con la marca invisible que WhatsApp/iOS pegan al numero.
@@ -328,6 +332,30 @@ test('planearRecoleccion: cada exclusion del lote queda listada con su motivo', 
   assert.equal(plan.skips.cancelado, 1);
 });
 
+// Hallazgo del code-review de #124: el aviso de duplicado solo miraba los
+// prospectos YA existentes, asi que dos quotes DEL MISMO LOTE con el mismo celular
+// (el patron real "2-3 cotizaciones del mismo proyecto" -- folios 1120/1121 de la
+// medicion, mismo celular y mismo correo) entraban los dos sin marca y al aceptarlos
+// nacerian dos prospectos de la misma persona.
+test('planearRecoleccion: dos quotes del MISMO lote con el mismo celular se marcan como posible duplicado', async () => {
+  const { plan } = await planear({
+    1005: quoteGenerico({ ord_date: '2026-05-10', total: '1000', contact_phone: '+52 8120329707' }),
+    // Mismo numero, otro formato (y con la marca invisible): sigue siendo la misma persona.
+    1004: quoteGenerico({ ord_date: '2026-05-09', total: '2000', contact_phone: LRE + '8120329707' }),
+    1003: quoteGenerico({ ord_date: '2026-05-08', total: '3000', contact_phone: '5512345678' }),
+  });
+  const marcados = plan.candidatos.map(c => [c.candidato.folio, c.candidato.marcas.posibleDuplicado]);
+  assert.deepEqual(marcados, [['1005', false], ['1004', true], ['1003', false]]);
+});
+
+test('planearRecoleccion: los quotes SIN celular no se marcan duplicados entre si', async () => {
+  const { plan } = await planear({
+    1005: quoteGenerico({ ord_date: '2026-05-10', total: '1000', contact_phone: '' }),
+    1004: quoteGenerico({ ord_date: '2026-05-09', total: '2000', contact_phone: '' }),
+  });
+  assert.deepEqual(plan.candidatos.map(c => c.candidato.marcas.posibleDuplicado), [false, false]);
+});
+
 test('planearRecoleccion: sin folioMax no camina nada (el techo lo fija el orquestador)', async () => {
   const { plan, leidos } = await planear({ 1005: quoteGenerico({}) }, { folioMax: null });
   assert.deepEqual(plan.candidatos, []);
@@ -377,10 +405,15 @@ test('depositarCandidatos: un candidato aceptado o descartado JAMAS se re-propon
 });
 
 // --- limites duros del script (AC de #124) ---
-// El script no se puede correr en la suite (necesita Operam), pero sus dos limites
-// de seguridad SI se pueden sostener: que contra Operam solo haga lecturas y que su
-// unica escritura sea proponer a la bandeja. Un import o una llamada de escritura
-// que se cuele revienta aqui, no en produccion.
+// El script no se puede correr en la suite (hace IO a Operam en scope de modulo),
+// pero sus dos limites de seguridad SI se pueden sostener: que contra Operam solo
+// haga lecturas y que su unica escritura sea proponer a la bandeja. Un import o una
+// llamada de escritura que se cuele revienta aqui, no en produccion.
+// OJO (asumido a sabiendas): estos dos tests leen el TEXTO del script, no su
+// comportamiento -- son una reja, no una prueba. Cambiar la forma del import
+// (multilinea, alias, import indirecto) los rompe sin que cambie el comportamiento,
+// y un alias local de una escritura los burlaria. Si el script deja de importar con
+// destructuring de una linea, hay que actualizar el regex, no borrar la reja.
 
 const FUENTE_SCRIPT = leerArchivoSync(join(__dirname, '..', 'scripts', 'rescatar-genericos.mjs'));
 
