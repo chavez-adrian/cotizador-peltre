@@ -7,6 +7,7 @@ import {
   coincidenNombres,
   cruzarIdentidad,
   CATEGORIAS,
+  CAMPOS_HEREDADOS_DEL_QUOTE,
   CERRO,
   COMPRO_OTRA_COSA,
   SIN_SENAL,
@@ -276,6 +277,13 @@ test('T7: los campos que el pedido hereda del quote no son senal de identidad', 
     contacts: [{ name: 'Jorge Iturbe', phone: '5544332211' }],
     branches: [{ phone: '55 4433 2210' }],
   };
+
+  // El fixture debe reproducir la herencia completa: si dejara de heredar algun
+  // campo, el escenario ya no probaria la trampa.
+  for (const campo of CAMPOS_HEREDADOS_DEL_QUOTE) {
+    const valorQuote = campo === 'customer_ref' ? quote.cust_ref : quote[campo];
+    assert.equal(pedidoHeredado[campo], valorQuote, `el pedido debe heredar ${campo}`);
+  }
 
   const ciego = cruzarIdentidad({
     quote, clientes: [...RUIDO_CATALOGO, clienteSinIdentidad], pedidos: [pedidoHeredado],
