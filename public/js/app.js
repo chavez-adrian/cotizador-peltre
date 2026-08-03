@@ -3208,13 +3208,14 @@ window.nuevoCliente = () => {
 // Los handlers de las tarjetas se invocan desde onclick inline, que resuelve
 // contra window (trampa #112): cada uno se expone a window JUNTO a su
 // declaracion y no existe ningun otro simbolo con ese nombre.
-const bandejaState = { filtro: 'pendiente', candidatos: [], vendedores: [] };
+const bandejaState = { filtro: 'pendiente', candidatos: [], vendedores: [], busqueda: {} };
 
 async function showBandeja() {
   ocultarTodasLasVistas();
   document.getElementById('bandeja-view').style.display = 'block';
   marcarNavActivo('nav-mas');
   bandejaState.filtro = 'pendiente';
+  bandejaState.busqueda = {};
   await cargarBandeja();
 }
 
@@ -3240,7 +3241,7 @@ async function cargarBandeja() {
 function renderBandeja() {
   const root = document.getElementById('bandeja-root');
   if (!root) return;
-  root.innerHTML = buildBandejaHtml(bandejaState.candidatos, bandejaState.filtro, bandejaState.vendedores);
+  root.innerHTML = buildBandejaHtml(bandejaState.candidatos, bandejaState.filtro, bandejaState.vendedores, bandejaState.busqueda);
 }
 
 function bandejaCandidato(folio) {
@@ -3318,6 +3319,34 @@ function bandejaVerEnTablero() {
   marcarNavActivo('nav-pipeline');
 }
 window.bandejaVerEnTablero = bandejaVerEnTablero;
+
+// "Buscar nuevas en Operam" (#126): dispara el descubrimiento recurrente. El
+// walk pacea contra Operam (throttle anti-429), asi que puede tardar unos
+// segundos -- el boton se deshabilita mientras esta en vuelo y al terminar pinta
+// el resultado (nuevos + saltados) y recarga la bandeja para ver lo depositado.
+async function bandejaBuscarNuevas() {
+  bandejaState.busqueda = { ocupado: true };
+  renderBandeja();
+  try {
+    const res = await api('/api/admin/bandeja/buscar-nuevas', { method: 'POST', body: {} });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'No se pudo buscar nuevas en Operam');
+      bandejaState.busqueda = {};
+      return;
+    }
+    const resultado = await res.json();
+    bandejaState.busqueda = { resultado };
+    const [listado, catalogos] = await Promise.all([api('/api/admin/bandeja'), cargarCatalogos()]);
+    if (listado.ok) bandejaState.candidatos = await listado.json();
+    bandejaState.vendedores = catalogos.vendedores || [];
+  } catch (e) {
+    alert('Error de conexión al buscar nuevas en Operam');
+    bandejaState.busqueda = {};
+  }
+  renderBandeja();
+}
+window.bandejaBuscarNuevas = bandejaBuscarNuevas;
 
 // === PIPELINE (tablero unico de 7 etapas, issue #53) ===
 // Una oportunidad: antes de cotizar es el prospecto (su etapa del pipeline ya

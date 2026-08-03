@@ -8,12 +8,14 @@ const assert = require('node:assert/strict');
 // lo importa nativo y aqui se consume via import() dinamico. Sin DOM en Node.
 
 let candidatosVisibles, conteosBandeja, marcasDeCandidato,
-  buildFiltrosBandejaHtml, buildTarjetaBandejaHtml, buildBandejaHtml;
+  buildFiltrosBandejaHtml, buildTarjetaBandejaHtml, buildBandejaHtml,
+  buildBotonBuscarNuevasHtml, buildResultadoBuscarNuevasHtml;
 
 before(async () => {
   ({
     candidatosVisibles, conteosBandeja, marcasDeCandidato,
     buildFiltrosBandejaHtml, buildTarjetaBandejaHtml, buildBandejaHtml,
+    buildBotonBuscarNuevasHtml, buildResultadoBuscarNuevasHtml,
   } = await import('../bandeja-logica.js'));
 });
 
@@ -213,4 +215,54 @@ test('V2: sin candidatos visibles la vista lo dice, sin tarjetas vacias', () => 
   assert.ok(!html.includes('bandeja-datos'), 'no se pinta ninguna tarjeta');
   // los filtros siguen visibles para poder cambiar de estado
   assert.match(html, /Aceptados \(1\)/);
+});
+
+// === Boton "Buscar nuevas en Operam" (issue #126) ===
+
+test('B1: el boton habilitado dispara bandejaBuscarNuevas', () => {
+  const html = buildBotonBuscarNuevasHtml(false);
+  assert.match(html, /onclick="bandejaBuscarNuevas\(\)"/);
+  assert.ok(!html.includes('disabled'), 'ya no llega deshabilitado con el aviso de #126');
+});
+
+test('B2: el boton ocupado se deshabilita y cambia el texto', () => {
+  const html = buildBotonBuscarNuevasHtml(true);
+  assert.match(html, /disabled/);
+  assert.match(html, /Buscando/);
+  assert.ok(!html.includes('onclick='), 'ocupado no dispara una segunda corrida');
+});
+
+test('B3: sin resultado previo no se pinta nada', () => {
+  assert.equal(buildResultadoBuscarNuevasHtml(null), '');
+  assert.equal(buildResultadoBuscarNuevasHtml(undefined), '');
+});
+
+test('B4: el resultado con candidatos nuevos y saltos muestra ambos', () => {
+  const html = buildResultadoBuscarNuevasHtml({
+    nuevos: 3, saltados: { yaExiste: 0, yaEnBandeja: 2, cancelado: 0, cerro: 1 },
+  });
+  assert.match(html, /3 candidatos nuevos/);
+  assert.match(html, /yaEnBandeja: 2/);
+  assert.match(html, /cerro: 1/);
+  assert.ok(!html.includes('yaExiste'), 'los motivos en cero no se listan');
+});
+
+test('B5: sin candidatos nuevos lo dice claro, incluso sin saltos', () => {
+  const html = buildResultadoBuscarNuevasHtml({ nuevos: 0, saltados: {} });
+  assert.match(html, /sin candidatos nuevos/);
+});
+
+test('B6: la vista completa recibe el estado de la busqueda y lo pinta junto al boton', () => {
+  const htmlOcupado = buildBandejaHtml([], 'pendiente', VENDEDORES, { ocupado: true });
+  assert.match(htmlOcupado, /Buscando/);
+
+  const htmlConResultado = buildBandejaHtml([], 'pendiente', VENDEDORES, {
+    resultado: { nuevos: 1, saltados: {} },
+  });
+  assert.match(htmlConResultado, /1 candidato nuevo\b/);
+
+  // sin busqueda (compatibilidad con el caller que aun no la pasa): el boton
+  // sale habilitado y sin resultado, no truena.
+  const htmlSinBusqueda = buildBandejaHtml([], 'pendiente', VENDEDORES);
+  assert.match(htmlSinBusqueda, /onclick="bandejaBuscarNuevas\(\)"/);
 });

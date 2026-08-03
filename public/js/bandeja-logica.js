@@ -203,15 +203,42 @@ export function buildTarjetaBandejaHtml(c, vendedores) {
     </div>`;
 }
 
-export function buildBandejaHtml(candidatos, filtro, vendedores) {
+// Boton "Buscar nuevas en Operam" (#126): dispara el descubrimiento recurrente.
+// `ocupado` lo controla el caller mientras la corrida esta en vuelo (deshabilita
+// el boton y cambia el texto -- el walk pacea contra Operam, puede tardar).
+export function buildBotonBuscarNuevasHtml(ocupado) {
+  return ocupado
+    ? '<button class="btn btn-sm btn-secondary" disabled>Buscando...</button>'
+    : '<button class="btn btn-sm btn-secondary" onclick="bandejaBuscarNuevas()">Buscar nuevas en Operam</button>';
+}
+
+// Resumen de la corrida (#126) para pintar junto al boton: cuantos candidatos
+// nuevos se propusieron y, si hubo saltos, el desglose por motivo (solo los que
+// tuvieron algun conteo -- una corrida sin genericos no necesita mostrar "cerro: 0").
+export function buildResultadoBuscarNuevasHtml(resultado) {
+  if (!resultado) return '';
+  const { nuevos, saltados } = resultado;
+  const desglose = Object.entries(saltados || {})
+    .filter(([, n]) => n > 0)
+    .map(([motivo, n]) => `${motivo}: ${n}`)
+    .join(', ');
+  const texto = nuevos > 0
+    ? `${nuevos} candidato${nuevos === 1 ? '' : 's'} nuevo${nuevos === 1 ? '' : 's'}`
+    : 'sin candidatos nuevos';
+  return `<span class="bandeja-resultado-busqueda">${escapeHtml(texto)}${desglose ? ` (saltados: ${escapeHtml(desglose)})` : ''}</span>`;
+}
+
+export function buildBandejaHtml(candidatos, filtro, vendedores, busqueda) {
   const visibles = candidatosVisibles(candidatos, filtro);
   const lista = visibles.length
     ? visibles.map(c => buildTarjetaBandejaHtml(c, vendedores)).join('')
     : '<div class="empty-state"><p>No hay candidatos en este filtro.</p></div>';
+  const b = busqueda || {};
   return `
     <div class="bandeja-toolbar">
       <span class="bandeja-filtros">${buildFiltrosBandejaHtml(candidatos, filtro)}</span>
-      <button class="btn btn-sm btn-secondary" disabled title="Llega con #126">Buscar nuevas en Operam</button>
+      ${buildBotonBuscarNuevasHtml(b.ocupado)}
+      ${buildResultadoBuscarNuevasHtml(b.resultado)}
     </div>
     <div>${lista}</div>`;
 }
