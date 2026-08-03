@@ -144,7 +144,7 @@ function selectVendedorHtml(c, vendedores) {
 // cerraria en masa las tarjetas de todos ellos. Su quote se rescata como prospecto
 // (#124). La marca la deriva el servidor del debtorId y viaja en el candidato; el
 // gate REAL vive alla, aqui solo se pinta.
-export function motivoNoCotizacion(c) {
+function motivoNoCotizacion(c) {
   if (!c || !c.debtorGenerico) return '';
   return `${c.debtorNombre || 'Este cliente'} es un cliente genérico: su quote se acepta como prospecto, no como cotización`;
 }

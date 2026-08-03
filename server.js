@@ -1030,9 +1030,10 @@ app.get('/api/admin/bandeja', authMiddleware, adminMiddleware, async (_req, res)
   res.json(await bandejaStore.listar());
 });
 
-// Aceptar un candidato = dejarlo entrar al tablero. En #122 solo el camino
-// prospecto: el candidato tipo cotizacion llega con #125 y el servidor lo
-// rechaza aunque la UI ya muestre su boton deshabilitado (la UI no es el gate).
+// Aceptar un candidato = dejarlo entrar al tablero. Dos caminos, y lo elige el
+// TIPO del candidato (no el cliente ni la UI): prospecto (#122, abajo) o
+// cotizacion (#125, aceptarComoCotizacion). Lo comun a ambos vive aqui: existe,
+// sigue pendiente y el vendedor es del catalogo.
 // El prospecto se crea por el camino normal del store, con el vendedor propuesto
 // EDITABLE (el body manda; sin body, el propuesto por el candidato) y validado
 // contra el catalogo, igual que PATCH /api/prospectos/:id/asignar. Nace en la
@@ -1106,9 +1107,14 @@ async function aceptarComoCotizacion(candidato, vendedor, res) {
       error: `${candidato.debtorNombre || 'Este cliente'} es un cliente genérico: su quote se acepta como prospecto, no como cotización (sus pedidos son de muchos contactos distintos)`,
     });
   }
+  // El payload sembrado tiene que alcanzar para una oportunidad de verdad: sin
+  // PARTIDAS el documento regenerado sale sin renglones (#76) y sin la fecha del
+  // quote la entrada ni siquiera entra al store (columna NOT NULL en Neon). Mejor
+  // frenar con motivo que dejar una tarjeta a medias en el tablero.
   const quote = candidato.quote;
-  if (!quote) {
-    return res.status(422).json({ error: 'Este candidato no trae el detalle del quote: no se puede crear la cotización sin sus partidas' });
+  const partidas = (quote && Array.isArray(quote.detalles) ? quote.detalles : []).filter(Boolean);
+  if (!quote || !quote.ord_date || partidas.length === 0) {
+    return res.status(422).json({ error: 'Este candidato no trae el detalle completo del quote (partidas y fecha): no se puede crear la cotización con él' });
   }
   // Idempotencia contra el store de cotizaciones: si el folio ya es una oportunidad
   // (nacio en el cotizador o la importo #76) NO se duplica -- se liga el candidato a
@@ -1133,7 +1139,11 @@ async function aceptarComoCotizacion(candidato, vendedor, res) {
   // El vendedor lo decide el humano en el selector de la bandeja (ya validado contra
   // el catalogo), no el mapeo del quote: por eso no se le pasa el catalogo arriba.
   entrada.vendedor = vendedor;
+  // Origen HONESTO: `backfill` marca lo que importo el script historico de #76 y
+  // esta tarjeta NO salio de ahi -- la acepto un humano en la bandeja, asi que su
+  // origen es `fuente` (mismo marcador que el camino prospecto).
   entrada.data.fuente = bandejaStore.FUENTE_BANDEJA_OPERAM;
+  entrada.data.backfill = false;
 
   const cotizacionId = await cotStore.crear(entrada);
   await cotStore.setFolioOperam(cotizacionId, entrada.folioOperam);

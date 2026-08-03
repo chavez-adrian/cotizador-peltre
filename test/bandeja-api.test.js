@@ -234,6 +234,10 @@ test('aceptar como cotizacion crea la oportunidad con partidas y folio ligado', 
   });
   assert.equal(cot.data.items[1].descuento, 5);
   assert.equal(cot.data.validoHasta, '2026-08-20');
+  // Origen HONESTO: la tarjeta salio de la bandeja, no del backfill historico
+  // (mismo marcador `fuente` que el camino prospecto).
+  assert.equal(cot.data.fuente, 'bandeja-operam');
+  assert.equal(cot.data.backfill, false);
 
   // el candidato queda aceptado y ligado a la entrada creada, sin prospecto
   const c = await obtener('951');
@@ -263,6 +267,21 @@ test('un candidato tipo cotizacion sin el detalle del quote no crea una oportuni
   assert.equal(res.status, 422);
   assert.equal((await cotStore.listar()).length, 0);
   assert.equal((await obtener('953')).estado, 'pendiente');
+});
+
+// El payload sembrado tiene que alcanzar para una oportunidad de verdad: sin
+// partidas el documento regenerado sale sin renglones (#76) y sin fecha del quote
+// la entrada ni siquiera entra al store (columna NOT NULL en Neon).
+test('un quote sembrado sin partidas o sin fecha no crea una oportunidad a medias', async () => {
+  await proponer({ ...CANDIDATO_COTIZACION, folio: 954, quote: { ...QUOTE, detalles: [] } });
+  await proponer({ ...CANDIDATO_COTIZACION, folio: 955, quote: { ...QUOTE, ord_date: null } });
+  for (const folio of ['954', '955']) {
+    const res = await supertest(app).post(`/api/admin/bandeja/${folio}/aceptar`)
+      .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Chávez' });
+    assert.equal(res.status, 422, `folio ${folio}`);
+    assert.equal((await obtener(folio)).estado, 'pendiente');
+  }
+  assert.equal((await cotStore.listar()).length, 0);
 });
 
 test('aceptar dos veces como cotizacion no crea una segunda oportunidad', async () => {
