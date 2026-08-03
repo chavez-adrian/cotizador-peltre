@@ -3262,7 +3262,10 @@ function bandejaSetVendedor(folio, vendedor) {
 }
 window.bandejaSetVendedor = bandejaSetVendedor;
 
-async function bandejaAceptar(folio) {
+// Los dos caminos de aceptacion comparten endpoint: el servidor decide cual aplica
+// por el TIPO del candidato (y es quien frena a los genericos, #125). Aqui solo
+// cambia el nombre de lo que se crea, para que el aviso de error lo diga.
+async function bandejaEnviarAceptar(folio, queSeCrea) {
   const c = bandejaCandidato(folio);
   if (!c) return;
   if (!c.vendedor) { alert('Elige el vendedor antes de aceptar'); return; }
@@ -3272,7 +3275,7 @@ async function bandejaAceptar(folio) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      alert(err.error || 'No se pudo aceptar el candidato');
+      alert(err.error || `No se pudo aceptar el candidato como ${queSeCrea}`);
     }
   } catch (e) {
     alert('Error de conexión al aceptar el candidato');
@@ -3280,7 +3283,18 @@ async function bandejaAceptar(folio) {
   }
   await cargarBandeja();
 }
+
+async function bandejaAceptar(folio) {
+  await bandejaEnviarAceptar(folio, 'prospecto');
+}
 window.bandejaAceptar = bandejaAceptar;
+
+// Aceptar como COTIZACION (#125): la oportunidad nace en el pipeline con las
+// partidas del quote y su folio de Operam ligado.
+async function bandejaAceptarCotizacion(folio) {
+  await bandejaEnviarAceptar(folio, 'cotización');
+}
+window.bandejaAceptarCotizacion = bandejaAceptarCotizacion;
 
 async function bandejaDescartar(folio) {
   try {
