@@ -72,6 +72,9 @@ import {
   bannerUpgradeHtml,
 } from './pipeline-logica.js';
 import {
+  buildBandejaHtml,
+} from './bandeja-logica.js';
+import {
   estadoStepper,
   textoProgreso,
 } from './stepper-logica.js';
@@ -304,6 +307,12 @@ async function showApp() {
   const adminLink = document.getElementById('admin-link');
   if (state.user.role === 'admin') adminLink.style.display = 'inline-flex';
   else adminLink.style.display = 'none';
+
+  // La bandeja de rescatados es admin-only (issue #122, misma visibilidad que el
+  // reporte de higiene #86). El gate real vive en el servidor; esto solo evita
+  // ofrecer una vista que respondera 403.
+  const bandejaBtn = document.getElementById('mas-rescatados');
+  if (bandejaBtn) bandejaBtn.style.display = state.user.role === 'admin' ? 'inline-flex' : 'none';
 
   await loadPrecios();
   renderProducts();
@@ -3190,6 +3199,112 @@ window.nuevoCliente = () => {
   cvCaminoAlta('');
 };
 
+// === BANDEJA DE REVISION "Rescatados de Operam" (issue #122) ===
+// Vista hermana de Clientes, FUERA de las 7 columnas del pipeline: lista los
+// candidatos rescatados de Operam y deja aceptarlos (nace la tarjeta en el
+// tablero) o descartarlos (se marcan, no se borran). Solo admin. El HTML lo arma
+// la logica pura de bandeja-logica.js; aqui vive el estado y el IO.
+//
+// Los handlers de las tarjetas se invocan desde onclick inline, que resuelve
+// contra window (trampa #112): cada uno se expone a window JUNTO a su
+// declaracion y no existe ningun otro simbolo con ese nombre.
+const bandejaState = { filtro: 'pendiente', candidatos: [], vendedores: [] };
+
+async function showBandeja() {
+  ocultarTodasLasVistas();
+  document.getElementById('bandeja-view').style.display = 'block';
+  marcarNavActivo('nav-mas');
+  bandejaState.filtro = 'pendiente';
+  await cargarBandeja();
+}
+
+async function cargarBandeja() {
+  const root = document.getElementById('bandeja-root');
+  if (!root) return;
+  root.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+  try {
+    const [res, catalogos] = await Promise.all([api('/api/admin/bandeja'), cargarCatalogos()]);
+    if (!res.ok) {
+      root.innerHTML = '<div class="alert alert-warning">No se pudo cargar la bandeja.</div>';
+      return;
+    }
+    bandejaState.candidatos = await res.json();
+    bandejaState.vendedores = catalogos.vendedores || [];
+  } catch (e) {
+    root.innerHTML = '<div class="alert alert-warning">Error de conexión al cargar la bandeja.</div>';
+    return;
+  }
+  renderBandeja();
+}
+
+function renderBandeja() {
+  const root = document.getElementById('bandeja-root');
+  if (!root) return;
+  root.innerHTML = buildBandejaHtml(bandejaState.candidatos, bandejaState.filtro, bandejaState.vendedores);
+}
+
+function bandejaCandidato(folio) {
+  return bandejaState.candidatos.find(c => String(c.folio) === String(folio));
+}
+
+function bandejaFiltro(filtro) {
+  bandejaState.filtro = filtro;
+  renderBandeja();
+}
+window.bandejaFiltro = bandejaFiltro;
+
+// El vendedor elegido en el select solo vive en el candidato hasta que se acepta
+// (es el vendedor que viaja en el POST). No se re-renderiza: el select ya muestra
+// la eleccion y repintar cerraria el foco del usuario.
+function bandejaSetVendedor(folio, vendedor) {
+  const c = bandejaCandidato(folio);
+  if (c) c.vendedor = vendedor;
+}
+window.bandejaSetVendedor = bandejaSetVendedor;
+
+async function bandejaAceptar(folio) {
+  const c = bandejaCandidato(folio);
+  if (!c) return;
+  if (!c.vendedor) { alert('Elige el vendedor antes de aceptar'); return; }
+  try {
+    const res = await api(`/api/admin/bandeja/${encodeURIComponent(folio)}/aceptar`, {
+      method: 'POST', body: { vendedor: c.vendedor },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'No se pudo aceptar el candidato');
+    }
+  } catch (e) {
+    alert('Error de conexión al aceptar el candidato');
+    return;
+  }
+  await cargarBandeja();
+}
+window.bandejaAceptar = bandejaAceptar;
+
+async function bandejaDescartar(folio) {
+  try {
+    const res = await api(`/api/admin/bandeja/${encodeURIComponent(folio)}/descartar`, {
+      method: 'POST', body: {},
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'No se pudo descartar el candidato');
+    }
+  } catch (e) {
+    alert('Error de conexión al descartar el candidato');
+    return;
+  }
+  await cargarBandeja();
+}
+window.bandejaDescartar = bandejaDescartar;
+
+function bandejaVerEnTablero() {
+  showPipeline();
+  marcarNavActivo('nav-pipeline');
+}
+window.bandejaVerEnTablero = bandejaVerEnTablero;
+
 // === PIPELINE (tablero unico de 7 etapas, issue #53) ===
 // Una oportunidad: antes de cotizar es el prospecto (su etapa del pipeline ya
 // viene migrada del store); al cotizar, la cotizacion lleva la oportunidad por
@@ -3493,7 +3608,7 @@ function setModoPipeline(modo) {
 }
 
 function ocultarTodasLasVistas() {
-  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view', 'clientes-view']) {
+  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view', 'clientes-view', 'bandeja-view']) {
     const el = document.getElementById(v);
     if (el) el.style.display = 'none';
   }
@@ -4194,6 +4309,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
   document.getElementById('mas-clientes')?.addEventListener('click', () => { cerrarMenuMas(); showClientes(); });
+  document.getElementById('mas-rescatados')?.addEventListener('click', () => { cerrarMenuMas(); showBandeja(); });
+  document.getElementById('btn-volver-bandeja')?.addEventListener('click', () => {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
+  });
   document.getElementById('btn-volver-clientes')?.addEventListener('click', () => {
     ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
