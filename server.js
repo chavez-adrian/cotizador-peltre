@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
@@ -19,6 +19,9 @@ import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaC
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
 import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
+import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
+import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento-operam.mjs';
+import { GRACIA_DIAS } from './lib/cruce-identidad.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
@@ -1171,6 +1174,80 @@ app.post('/api/admin/bandeja/:folio/descartar', authMiddleware, adminMiddleware,
     return res.status(409).json({ error: `Este candidato ya fue ${candidato.estado}`, estado: candidato.estado });
   }
   res.json({ ok: true });
+});
+
+// Descubrimiento RECURRENTE de quotes nuevos en Operam (issue #126). Companero
+// "hacia adelante" del lote historico de #124: en vez de una ventana fija hacia
+// atras, camina folios de quote hacia ARRIBA desde el folio maximo YA CONOCIDO
+// por el cotizador (folioMaximoConocido, #126) y deposita lo nuevo en la bandeja
+// via planearDescubrimiento + depositarCandidatos (#124, reusado tal cual).
+// Mecanismo MANUAL a proposito (boton); un cron puede agregarse despues sin tocar
+// nada de aqui. Read-only contra Operam SIEMPRE: cero escrituras al tablero, a
+// prospectos o a cotizaciones -- todo pasa por la bandeja, un humano decide.
+// Comparacion explicita contra undefined (no `||`): 0 es un valor valido (los
+// tests lo usan para no pacear) y `0 || 1100` lo pisaria con el default.
+const THROTTLE_DESCUBRIMIENTO_MS = process.env.DESCUBRIMIENTO_THROTTLE_MS !== undefined
+  ? Number(process.env.DESCUBRIMIENTO_THROTTLE_MS)
+  : 1100;
+// Lock en memoria (mismo patron que subidasOperamEnCurso): una sola instancia
+// Node en Render, asi que un booleano basta. Sin el, dos clicks del boton
+// caminarian el mismo rango de folios y competirian por el throttle global de
+// operam-client (_setMinInterval es estado COMPARTIDO del modulo, de ahi que se
+// restaure a 0 en el finally -- el resto de la app no debe quedar paceada).
+let descubrimientoEnCurso = false;
+
+app.post('/api/admin/bandeja/buscar-nuevas', authMiddleware, adminMiddleware, async (_req, res) => {
+  if (descubrimientoEnCurso) {
+    return res.status(425).json({ error: 'Ya hay una busqueda de nuevas en Operam en curso; espera a que termine' });
+  }
+  descubrimientoEnCurso = true;
+  _setMinInterval(THROTTLE_DESCUBRIMIENTO_MS);
+  try {
+    const [cotizaciones, bandeja, prospectos] = await Promise.all([
+      cotStore.listar(), bandejaStore.listar(), prospectosStore.listar(),
+    ]);
+    const vendedores = readJSON('vendedores.json') || [];
+    const bandejaFolios = bandeja.map(b => b.folio);
+    const folioDesde = folioMaximoConocido(cotizaciones, bandeja) + 1;
+    // Cotizaciones ANULADAS en Operam (#76): la API no expone la cancelacion; el
+    // set lo genera scripts/detectar-cancelados.mjs (scraping de la web legacy).
+    const cancelados = readJSON('cancelados.json') || { orders: [], quotes: [] };
+
+    try {
+      // Catalogo de clientes COMPLETO (contacts[]/branches[] inline): la unica
+      // fuente de identidad del cruce (#123) para el camino generico. Misma
+      // lectura que rescatar-genericos.mjs (#124).
+      const clientes = await listarTodosClientes();
+      // Pedidos recientes, para que el cruce por identidad pueda encontrar el
+      // pedido que CIERRA un quote generico nuevo (mismo rango que #124: desde
+      // la ventana de la medicion menos la gracia de captura, hasta hoy).
+      const hoy = new Date().toISOString().slice(0, 10);
+      const fechaCorte = fechaCorteMeses(MESES_VENTANA, hoy);
+      const desdePedidos = new Date(Date.parse(`${fechaCorte}T00:00:00Z`) - GRACIA_DIAS * 86400000)
+        .toISOString().slice(0, 10);
+      const pedidos = [];
+      for (let skip = 0; ; skip += 100) {
+        const pagina = await listarPedidos({ desde: desdePedidos, hasta: hoy, skip, limit: 100 });
+        const lista = Array.isArray(pagina) ? pagina : [];
+        pedidos.push(...lista);
+        if (lista.length < 100) break;
+      }
+
+      const plan = await planearDescubrimiento({
+        obtenerQuote, obtenerCliente, folioDesde,
+        clientes, pedidos, prospectos, vendedores,
+        cancelados: cancelados.quotes || [], bandejaFolios, cotizaciones,
+      });
+      const { agregados } = await depositarCandidatos(plan, bandejaStore.proponer);
+
+      res.json({ nuevos: agregados, saltados: plan.skips, folioDesde: plan.folioDesde, folioHasta: plan.folioHasta });
+    } catch (err) {
+      res.status(503).json({ error: 'No se pudo buscar nuevas en Operam: ' + err.message });
+    }
+  } finally {
+    _setMinInterval(0);
+    descubrimientoEnCurso = false;
+  }
 });
 
 function titleCase(str) {
