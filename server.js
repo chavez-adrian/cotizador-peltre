@@ -1076,6 +1076,11 @@ app.post('/api/admin/bandeja/:folio/aceptar', authMiddleware, adminMiddleware, a
     prospectoId = dup.id;
     existente = true;
   }
+  // El gate real contra el doble-aceptar es esta transicion atomica (UPDATE
+  // WHERE estado='pendiente'), no el obtener() de arriba. Si dos requests
+  // compiten, el perdedor pudo haber creado ya su prospecto: queda huerfano y el
+  // request responde 409 -- edge aceptado (una sola instancia Node en Render y
+  // el dedup por celular del store hace al huerfano casi imposible).
   const marcado = await bandejaStore.aceptar(folio, { vendedor, prospectoId });
   if (!marcado) return res.status(409).json({ error: 'Este candidato ya fue resuelto' });
   res.status(existente ? 200 : 201).json({ ok: true, prospectoId, existente });
