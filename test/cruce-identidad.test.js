@@ -361,8 +361,8 @@ test('T9: CATEGORIAS es lista explicita y ninguna es prefijo de otra', () => {
       assert.ok(!a.startsWith(b), `"${a}" empieza con "${b}"`);
     }
   }
-  assert.ok(CATEGORIAS.includes(cruzarIdentidad(escenarioMonto(1000, 1000)).categoria));
-  assert.ok(CATEGORIAS.includes(cruzarIdentidad({ quote: {}, clientes: [], pedidos: [] }).categoria));
+  // Defensivo: sin quote ni catalogos no hay nada que cruzar, y no truena.
+  assert.equal(cruzarIdentidad().categoria, SIN_SENAL);
 });
 
 // T10: aviso de posible duplicado para la bandeja (#122). La identidad de
