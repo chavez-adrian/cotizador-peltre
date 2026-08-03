@@ -956,6 +956,20 @@
   </div>
 </div>
 
+<!-- BANDEJA VIEW (issue #122): bandeja de revision "Rescatados de Operam".
+     Vive FUERA de las 7 columnas del pipeline: los candidatos rescatados de
+     Operam esperan aqui hasta que un humano los acepta (entran al tablero) o los
+     descarta. Solo admin (el boton del menu Mas y las rutas /api/admin/bandeja). -->
+<div id="bandeja-view" style="display:none">
+  <header class="historial-header">
+    <h1>Rescatados de Operam</h1>
+    <button class="btn btn-sm btn-secondary" id="btn-volver-bandeja">Volver</button>
+  </header>
+  <div style="padding:16px">
+    <div id="bandeja-root"></div>
+  </div>
+</div>
+
 <!-- PIPELINE VIEW (issue #53): tablero unico de 7 etapas + conmutador lista/tablero -->
 <div id="pipeline-view" style="display:none">
   <header class="historial-header">
@@ -980,6 +994,7 @@
     <button class="btn btn-sm btn-secondary" id="mas-historial">Historial</button>
     <button class="btn btn-sm btn-secondary" id="mas-prospectos">Prospectos</button>
     <button class="btn btn-sm btn-secondary" id="mas-clientes">Clientes</button>
+    <button class="btn btn-sm btn-secondary" id="mas-rescatados" style="display:none">Rescatados</button>
   </div>
   <!-- Menu del boton + global (issue #54): Nueva cotizacion / Nuevo prospecto -->
   <div class="nav-nuevo-menu" id="nav-nuevo-menu" style="display:none"></div>

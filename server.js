@@ -25,6 +25,7 @@ import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
+import * as bandejaStore from './lib/bandeja-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
@@ -1016,6 +1017,80 @@ app.get('/api/admin/higiene-clientes-genericos', authMiddleware, adminMiddleware
   if (rows === null) return res.json({ filas: [], sinDb: true });
   const cotizaciones = await cotStore.listar();
   res.json({ filas: construirReporteHigiene(rows.rows, cotizaciones, new Date()), sinDb: false });
+});
+
+// === BANDEJA DE REVISION "Rescatados de Operam" (issue #122) ===
+// Vive FUERA de las 7 columnas del pipeline: lo que nace en Operam entra por
+// aqui y llega al tablero solo si un humano lo acepta. Admin-only (misma
+// visibilidad que el reporte de higiene, #86): el gate va en el servidor, no
+// solo en la UI. Ninguna ruta de esta seccion habla con Operam -- los candidatos
+// los siembra el lote historico (#124) o el descubrimiento recurrente (#126).
+app.get('/api/admin/bandeja', authMiddleware, adminMiddleware, async (_req, res) => {
+  res.json(await bandejaStore.listar());
+});
+
+// Aceptar un candidato = dejarlo entrar al tablero. En #122 solo el camino
+// prospecto: el candidato tipo cotizacion llega con #125 y el servidor lo
+// rechaza aunque la UI ya muestre su boton deshabilitado (la UI no es el gate).
+// El prospecto se crea por el camino normal del store, con el vendedor propuesto
+// EDITABLE (el body manda; sin body, el propuesto por el candidato) y validado
+// contra el catalogo, igual que PATCH /api/prospectos/:id/asignar. Nace en la
+// etapa por defecto del store (Por Cotizar): un quote rescatado que nunca cerro
+// es trabajo por hacer, no un seguimiento vivo. Guarda folioOperam y la fuente
+// para saber de que quote de Operam salio la tarjeta.
+app.post('/api/admin/bandeja/:folio/aceptar', authMiddleware, adminMiddleware, async (req, res) => {
+  const folio = String(req.params.folio);
+  const candidato = await bandejaStore.obtener(folio);
+  if (!candidato) return res.status(404).json({ error: 'No encontrado' });
+  if (candidato.tipo !== 'prospecto') {
+    return res.status(422).json({ error: 'Aceptar un candidato como cotización está disponible con #125' });
+  }
+  if (candidato.estado !== 'pendiente') {
+    return res.status(409).json({ error: `Este candidato ya fue ${candidato.estado}`, estado: candidato.estado });
+  }
+  const vendedor = (req.body && req.body.vendedor) || candidato.vendedor;
+  const catalogo = (readJSON('vendedores.json') || []).filter(v => v.operam_id != null);
+  if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
+    return res.status(400).json({ error: 'El vendedor debe ser uno del catálogo' });
+  }
+  const data = { folioOperam: candidato.folio, fuente: bandejaStore.FUENTE_BANDEJA_OPERAM };
+  if (candidato.email) data.correo = candidato.email;
+  if (candidato.proyecto) data.proyecto = candidato.proyecto;
+  if (candidato.domicilio) data.domicilio = candidato.domicilio;
+  let prospectoId;
+  let existente = false;
+  try {
+    prospectoId = await prospectosStore.crear({
+      fecha: new Date().toISOString(), vendedor,
+      celular: candidato.celular, nombre: candidato.contacto,
+      ciudad: '', canal: null, data,
+    });
+  } catch (e) {
+    if (e.code !== '23505') throw e;
+    // Identidad 1 celular = 1 prospecto (CONTEXT.md): el candidato marcado como
+    // posible duplicado se liga al prospecto que ya existe, en vez de crear una
+    // tarjeta gemela. Sin celular no hay identidad que ligar: ahi el choque no
+    // se puede resolver solo y el candidato se queda pendiente.
+    const dup = await prospectosStore.buscarPorCelular(candidato.celular);
+    if (!dup) return res.status(409).json({ error: 'No se pudo crear el prospecto: captúralo a mano' });
+    prospectoId = dup.id;
+    existente = true;
+  }
+  const marcado = await bandejaStore.aceptar(folio, { vendedor, prospectoId });
+  if (!marcado) return res.status(409).json({ error: 'Este candidato ya fue resuelto' });
+  res.status(existente ? 200 : 201).json({ ok: true, prospectoId, existente });
+});
+
+// Descartar MARCA, nunca borra: el folio descartado se queda en la bandeja para
+// que ningun run futuro lo vuelva a proponer. Sin reactivacion (fuera de #122).
+app.post('/api/admin/bandeja/:folio/descartar', authMiddleware, adminMiddleware, async (req, res) => {
+  const folio = String(req.params.folio);
+  const candidato = await bandejaStore.obtener(folio);
+  if (!candidato) return res.status(404).json({ error: 'No encontrado' });
+  if (!await bandejaStore.descartar(folio)) {
+    return res.status(409).json({ error: `Este candidato ya fue ${candidato.estado}`, estado: candidato.estado });
+  }
+  res.json({ ok: true });
 });
 
 function titleCase(str) {

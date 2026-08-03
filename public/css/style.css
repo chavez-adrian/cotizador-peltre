@@ -1696,3 +1696,31 @@ body {
 /* Bloque de domicilio de entrega en el paso Envio (#84; antes revelado inline
    bajo la tarjeta del paso Cliente, #82) */
 .pc-entrega-inline { margin-top: 16px; margin-bottom: 16px; padding: 16px; border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--white); }
+
+/* === BANDEJA DE REVISION "Rescatados de Operam" (issue #122) ===
+   Vista fuera de las 7 columnas del pipeline. Reusa cot-card / cot-badge /
+   alert / empty-state; lo propio es la barra de filtros, la rejilla de datos del
+   quote y los badges de tipo y de marcas. */
+.bandeja-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.bandeja-filtros { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.bandeja-card-descartada { opacity: 0.55; }
+.bandeja-card-aceptada { border-color: oklch(0.9 0.07 150); }
+.bandeja-marcas { margin-top: 2px; }
+.badge-compro-otra { background: oklch(0.89 0.06 310); color: oklch(0.34 0.1 310); }
+.badge-dup { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); }
+.badge-sin-cel { background: oklch(0.88 0.012 80); color: oklch(0.4 0.015 75); }
+.badge-tipo-prospecto { background: oklch(0.86 0.08 195); color: oklch(0.3 0.06 200); }
+.badge-tipo-cotizacion { background: var(--primary-light); color: var(--primary-dark); }
+.bandeja-datos { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px; margin-top: 6px; font-size: 12px; }
+.bandeja-dato { overflow-wrap: anywhere; }
+.bandeja-dato b { font-weight: 600; color: var(--text-light); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 6px; }
+.bandeja-dato-vacio { color: var(--text-light); }
+.bandeja-vendedor-wrap { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.bandeja-vendedor-wrap label { font-size: 11px; font-weight: 700; color: var(--text-light); text-transform: uppercase; }
+#bandeja-view .cot-card-actions { align-items: center; }
+
+/* En telefono los datos del quote van en una sola columna (la app no scrollea
+   horizontal en ningun ancho). */
+@media (max-width: 480px) {
+  .bandeja-datos { grid-template-columns: 1fr; }
+}
