@@ -29,9 +29,17 @@ const PENDIENTE = {
   email: 'mariana.gs@hotmail.com', proyecto: 'Hotel Boutique Valle',
   domicilio: 'Av. de los Insurgentes 1420, CDMX',
   monto: 48250, debtorId: 184, debtorNombre: 'GENERICO TIENDAS DIGITALES',
+  debtorGenerico: true,
   vendedor: 'Alejandro Chávez',
   marcas: { comproOtraCosa: false, posibleDuplicado: false },
-  prospectoId: null,
+  prospectoId: null, cotizacionId: null,
+};
+
+// Candidato tipo cotizacion de un cliente REAL (issue #125): es el unico que puede
+// entrar al pipeline como oportunidad. El del cajon generico (PENDIENTE) no.
+const COTIZACION = {
+  ...PENDIENTE, tipo: 'cotizacion',
+  debtorId: 512, debtorNombre: 'HOTELES DEL VALLE SA DE CV', debtorGenerico: false,
 };
 
 // === Filtros y orden ===
@@ -117,13 +125,22 @@ test('T2: el vendedor propuesto viene seleccionado y el select ofrece el catalog
   assert.match(html, /<option value="Oswaldo Chávez">Oswaldo Chávez<\/option>/);
 });
 
-test('T3: un candidato tipo cotizacion no ofrece aceptar todavia (llega con #125)', () => {
-  const html = buildTarjetaBandejaHtml({ ...PENDIENTE, tipo: 'cotizacion' }, VENDEDORES);
+test('T3: un candidato tipo cotizacion de cliente real ofrece aceptarlo como cotizacion', () => {
+  const html = buildTarjetaBandejaHtml(COTIZACION, VENDEDORES);
   assert.match(html, /badge-tipo-cotizacion/);
-  assert.ok(!html.includes('bandejaAceptar('), 'el boton de aceptar no debe disparar nada');
-  assert.match(html, /#125/);
-  assert.match(html, /disabled/);
+  assert.match(html, /bandejaAceptarCotizacion\('934'\)/);
+  assert.ok(!html.includes('bandejaAceptar('), 'el camino prospecto no aplica a una cotizacion');
   // descartar si sigue disponible
+  assert.match(html, /bandejaDescartar\('934'\)/);
+});
+
+// El debtor generico agrupa a muchos contactos: su quote se rescata como prospecto
+// (#124), nunca como cotizacion (el sync cerraria en masa las tarjetas del cajon).
+test('T3b: un candidato tipo cotizacion de debtor generico no se puede aceptar, y dice por que', () => {
+  const html = buildTarjetaBandejaHtml({ ...PENDIENTE, tipo: 'cotizacion' }, VENDEDORES);
+  assert.ok(!html.includes('bandejaAceptarCotizacion('), 'el boton no debe disparar nada');
+  assert.match(html, /disabled/);
+  assert.match(html, /genérico/i);
   assert.match(html, /bandejaDescartar\('934'\)/);
 });
 
@@ -131,9 +148,20 @@ test('T4: un candidato aceptado muestra el resultado y ya no ofrece acciones', (
   const html = buildTarjetaBandejaHtml({ ...PENDIENTE, estado: 'aceptado', vendedor: 'Oswaldo Chávez', prospectoId: 41 }, VENDEDORES);
   assert.match(html, /bandeja-card-aceptada/);
   assert.match(html, /Oswaldo Chávez/);
+  assert.match(html, /Aceptado &mdash; prospecto creado/);
   assert.ok(!html.includes('bandejaAceptar('), 'sin boton de aceptar');
   assert.ok(!html.includes('bandejaDescartar('), 'sin boton de descartar');
   assert.ok(!html.includes('bandejaSetVendedor('), 'sin selector de vendedor');
+});
+
+test('T4b: una cotizacion aceptada nombra la oportunidad creada con su folio de Operam', () => {
+  const html = buildTarjetaBandejaHtml({ ...COTIZACION, estado: 'aceptado', vendedor: 'Oswaldo Chávez', cotizacionId: 308 }, VENDEDORES);
+  assert.match(html, /bandeja-card-aceptada/);
+  // el folio SIEMPRE con la convencion #Operam N (#63), nunca el id interno
+  assert.match(html, /Aceptado &mdash; cotización #Operam 934 creada/);
+  assert.ok(!html.includes('308'), 'el id interno del registro no se presenta como numero');
+  assert.match(html, /Oswaldo Chávez/);
+  assert.ok(!html.includes('bandejaAceptarCotizacion('), 'sin boton de aceptar');
 });
 
 test('T5: un candidato descartado se ve apagado, sin acciones y sin promesa de volver', () => {

@@ -138,18 +138,35 @@ function selectVendedorHtml(c, vendedores) {
     </span>`;
 }
 
+// Motivo por el que un candidato tipo cotizacion NO puede entrar al pipeline como
+// oportunidad, o '' si si puede (#125). El unico caso es el debtor GENERICO: el
+// cajon agrupa a muchos contactos y el fallback por cliente del binding del sync
+// cerraria en masa las tarjetas de todos ellos. Su quote se rescata como prospecto
+// (#124). La marca la deriva el servidor del debtorId y viaja en el candidato; el
+// gate REAL vive alla, aqui solo se pinta.
+export function motivoNoCotizacion(c) {
+  if (!c || !c.debtorGenerico) return '';
+  return `${c.debtorNombre || 'Este cliente'} es un cliente genérico: su quote se acepta como prospecto, no como cotización`;
+}
+
 function accionesHtml(c, vendedores) {
   if (c.estado === 'aceptado') {
-    return `<div class="alert alert-success" style="margin:8px 0 0">Aceptado &mdash; prospecto creado con vendedor <b>${escapeHtml(c.vendedor || '')}</b>. <button type="button" class="pc-link" onclick="bandejaVerEnTablero()">Ver en el tablero</button></div>`;
+    // El folio se nombra SIEMPRE con la convencion #Operam N (#63); el id interno
+    // del registro creado es clave tecnica y no se presenta como numero.
+    const creado = c.tipo === 'cotizacion'
+      ? `cotización ${escapeHtml(etiquetaFolioOperam({ folioOperam: c.folio }))} creada`
+      : 'prospecto creado';
+    return `<div class="alert alert-success" style="margin:8px 0 0">Aceptado &mdash; ${creado} con vendedor <b>${escapeHtml(c.vendedor || '')}</b>. <button type="button" class="pc-link" onclick="bandejaVerEnTablero()">Ver en el tablero</button></div>`;
   }
   if (c.estado === 'descartado') {
     return '<div class="cot-card-meta" style="margin-top:8px">Descartado &mdash; no volverá a proponerse.</div>';
   }
-  // Aceptar como cotizacion llega con #125; hasta entonces el boton se muestra
-  // deshabilitado (y el servidor lo rechaza igual: la UI no es el gate).
-  const botonAceptar = c.tipo === 'cotizacion'
-    ? '<button class="btn btn-sm btn-primary" disabled title="Llega con #125">Aceptar como cotización</button>'
-    : `<button class="btn btn-sm btn-primary" onclick="bandejaAceptar('${folioJs(c.folio)}')">Aceptar como prospecto</button>`;
+  const motivo = c.tipo === 'cotizacion' ? motivoNoCotizacion(c) : '';
+  const botonAceptar = c.tipo !== 'cotizacion'
+    ? `<button class="btn btn-sm btn-primary" onclick="bandejaAceptar('${folioJs(c.folio)}')">Aceptar como prospecto</button>`
+    : (motivo
+      ? `<button class="btn btn-sm btn-primary" disabled title="${escapeHtml(motivo)}">Aceptar como cotización</button>`
+      : `<button class="btn btn-sm btn-primary" onclick="bandejaAceptarCotizacion('${folioJs(c.folio)}')">Aceptar como cotización</button>`);
   return `<div class="cot-card-actions">
       ${selectVendedorHtml(c, vendedores)}
       ${botonAceptar}

@@ -14,6 +14,7 @@ import supertest from 'supertest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BANDEJA_PATH = join(__dirname, '..', 'data', 'bandeja.json');
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
+const COTIZACIONES_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -27,6 +28,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app } = await import('../server.js');
 const { proponer, obtener } = await import('../lib/bandeja-store.js');
 const { listar: listarProspectos, crear: crearProspecto } = await import('../lib/prospectos-store.js');
+const cotStore = await import('../lib/cotizaciones-store.js');
+const { reconciliarOportunidad } = await import('../lib/sync-operam-io.js');
 const ADMIN_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 const MEMO_TOKEN = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
 
@@ -43,12 +46,14 @@ function escribirArchivoJson(path, data) {
 const originalFetch = globalThis.fetch;
 const fetchBloqueado = async (url) => { throw new Error('fetch sin mock en tests: ' + url); };
 
-let savedBandeja, savedProspectos, existiaBandeja, existiaProspectos;
+let savedBandeja, savedProspectos, savedCotizaciones, existiaBandeja, existiaProspectos, existiaCotizaciones;
 before(() => {
   existiaBandeja = existsSync(BANDEJA_PATH);
   existiaProspectos = existsSync(PROSPECTOS_PATH);
+  existiaCotizaciones = existsSync(COTIZACIONES_PATH);
   savedBandeja = leerArchivoJson(BANDEJA_PATH);
   savedProspectos = leerArchivoJson(PROSPECTOS_PATH);
+  savedCotizaciones = leerArchivoJson(COTIZACIONES_PATH);
   globalThis.fetch = fetchBloqueado;
 });
 after(() => {
@@ -56,11 +61,14 @@ after(() => {
   else if (existsSync(BANDEJA_PATH)) borrarArchivoSync(BANDEJA_PATH);
   if (existiaProspectos) escribirArchivoJson(PROSPECTOS_PATH, savedProspectos);
   else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
+  if (existiaCotizaciones) escribirArchivoJson(COTIZACIONES_PATH, savedCotizaciones);
+  else if (existsSync(COTIZACIONES_PATH)) borrarArchivoSync(COTIZACIONES_PATH);
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {
   escribirArchivoJson(BANDEJA_PATH, []);
   escribirArchivoJson(PROSPECTOS_PATH, []);
+  escribirArchivoJson(COTIZACIONES_PATH, []);
   globalThis.fetch = fetchBloqueado;
 });
 
@@ -171,14 +179,169 @@ test('aceptar dos veces el mismo folio no crea un segundo prospecto', async () =
   assert.equal(c.vendedor, 'Oswaldo Chávez');
 });
 
-test('aceptar un candidato tipo cotizacion se rechaza en el servidor (llega con #125)', async () => {
-  await proponer({ ...CANDIDATO, folio: 940, tipo: 'cotizacion' });
-  const res = await supertest(app).post('/api/admin/bandeja/940/aceptar')
+// === Aceptar como cotizacion (issue #125) ===
+// El segundo camino de aceptacion: el candidato tipo cotizacion (quote de un cliente
+// REAL) entra al pipeline como oportunidad, construida desde el payload del quote que
+// el propio candidato carga -- la aceptacion NO habla con Operam.
+
+const QUOTE = {
+  ord_date: '2026-07-21',
+  delivery_date: '2026-08-20',
+  total: 48250,
+  cust_ref: 'Remodelacion Hotel Valle',
+  deliver_to: 'Mariana Gutierrez Solis',
+  debtor_no: 512,
+  detalles: [
+    { stock_id: '250101001', stock_id_text: 'Taza 8 cm blanca', quantity: 120, units: 'pza', unit_price: 85, discount_percent: 0 },
+    { stock_id: '250102003', stock_id_text: 'Plato 20 cm azul', quantity: 60, units: 'pza', unit_price: 130, discount_percent: 5 },
+  ],
+  debtor: { debtor_no: 512, CustName: 'HOTELES DEL VALLE SA DE CV', tax_id: 'HVA160305MX8', curr_code: 'MXN' },
+};
+
+const CANDIDATO_COTIZACION = {
+  ...CANDIDATO,
+  folio: 951,
+  tipo: 'cotizacion',
+  debtorId: 512,
+  debtorNombre: 'HOTELES DEL VALLE SA DE CV',
+  quote: QUOTE,
+};
+
+test('aceptar como cotizacion crea la oportunidad con partidas y folio ligado', async () => {
+  await proponer(CANDIDATO_COTIZACION);
+  const res = await supertest(app).post('/api/admin/bandeja/951/aceptar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Chávez' });
+  assert.equal(res.status, 201);
+  assert.ok(res.body.cotizacionId);
+  assert.equal(res.body.existente, false);
+
+  const cot = await cotStore.obtener(res.body.cotizacionId);
+  // El folio de Operam es columna de primer nivel (no vive en data): es lo que ata
+  // la tarjeta a su quote y lo que el sync usa para resolver el pedido.
+  assert.equal(cot.folioOperam, '951');
+  assert.equal(cot.cliente, 'HOTELES DEL VALLE SA DE CV');
+  assert.equal(cot.vendedor, 'Oswaldo Chávez');
+  assert.equal(cot.total, 48250);
+  assert.equal(cot.etapa, 'seguimiento');
+  assert.equal(cot.data.cliente.rfc, 'HVA160305MX8');
+  assert.equal(cot.data.cliente.customer_ref, 'Remodelacion Hotel Valle');
+  assert.equal(cot.data.cliente.contactoEntrega, 'Mariana Gutierrez Solis');
+  // PARTIDAS: sin ellas el documento regenerado sale sin renglones (#76).
+  assert.equal(cot.data.items.length, 2);
+  assert.deepEqual(cot.data.items[0], {
+    codigo: '250101001', descripcion: 'Taza 8 cm blanca', cantidad: 120,
+    unidad: 'pza', precio: 85, descuento: 0,
+  });
+  assert.equal(cot.data.items[1].descuento, 5);
+  assert.equal(cot.data.validoHasta, '2026-08-20');
+
+  // el candidato queda aceptado y ligado a la entrada creada, sin prospecto
+  const c = await obtener('951');
+  assert.equal(c.estado, 'aceptado');
+  assert.equal(c.cotizacionId, res.body.cotizacionId);
+  assert.equal(c.prospectoId, null);
+  assert.equal((await listarProspectos()).length, 0);
+});
+
+test('un candidato de debtor generico NO se acepta como cotizacion, aunque su tipo lo diga', async () => {
+  // 184 = GENERICO TIENDAS DIGITALES. Si entrara al pipeline, el fallback por
+  // cliente del sync mezclaria los pedidos de todos los contactos del cajon.
+  await proponer({ ...CANDIDATO_COTIZACION, folio: 952, debtorId: 184, debtorNombre: 'GENERICO TIENDAS DIGITALES' });
+  const res = await supertest(app).post('/api/admin/bandeja/952/aceptar')
     .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Chávez' });
   assert.equal(res.status, 422);
-  assert.match(res.body.error, /#125/);
-  assert.equal((await listarProspectos()).length, 0);
-  assert.equal((await obtener('940')).estado, 'pendiente');
+  assert.match(res.body.error, /genérico/i);
+  assert.match(res.body.error, /prospecto/i);
+  assert.equal((await cotStore.listar()).length, 0);
+  assert.equal((await obtener('952')).estado, 'pendiente');
+});
+
+test('un candidato tipo cotizacion sin el detalle del quote no crea una oportunidad vacia', async () => {
+  await proponer({ ...CANDIDATO_COTIZACION, folio: 953, quote: undefined });
+  const res = await supertest(app).post('/api/admin/bandeja/953/aceptar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Chávez' });
+  assert.equal(res.status, 422);
+  assert.equal((await cotStore.listar()).length, 0);
+  assert.equal((await obtener('953')).estado, 'pendiente');
+});
+
+test('aceptar dos veces como cotizacion no crea una segunda oportunidad', async () => {
+  await proponer(CANDIDATO_COTIZACION);
+  const primero = await supertest(app).post('/api/admin/bandeja/951/aceptar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Chávez' });
+  assert.equal(primero.status, 201);
+  const segundo = await supertest(app).post('/api/admin/bandeja/951/aceptar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Alejandro Chávez' });
+  assert.equal(segundo.status, 409);
+  assert.equal((await cotStore.listar()).length, 1);
+  const c = await obtener('951');
+  assert.equal(c.cotizacionId, primero.body.cotizacionId);
+  assert.equal(c.vendedor, 'Oswaldo Chávez');
+});
+
+// El folio pudo entrar al store por otro lado: nacio en el cotizador (#63) o lo
+// importo el backfill (#76). Aceptarlo NO duplica la oportunidad.
+test('si el folio ya es una cotizacion del pipeline, no se duplica: se liga a la existente', async () => {
+  const idPrevio = await cotStore.crear({
+    fecha: '2026-07-21T00:00:00.000Z', vendedor: 'Alejandro Chávez',
+    cliente: 'HOTELES DEL VALLE SA DE CV', total: 48250, data: { backfill: true },
+  });
+  await cotStore.setFolioOperam(idPrevio, '951');
+  await proponer(CANDIDATO_COTIZACION);
+
+  const res = await supertest(app).post('/api/admin/bandeja/951/aceptar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Chávez' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.existente, true);
+  assert.equal(res.body.cotizacionId, idPrevio);
+  assert.equal((await cotStore.listar()).length, 1, 'no se creo una segunda tarjeta para el mismo folio');
+  const c = await obtener('951');
+  assert.equal(c.estado, 'aceptado');
+  assert.equal(c.cotizacionId, idPrevio);
+});
+
+// AC clave de #125: la entrada creada es INDISTINGUIBLE para el sync de una
+// importada por #76. Se prueba con el motor real (lib/sync-operam-io.js) y las
+// lecturas de Operam mockeadas: el sync debe ligarla a su pedido por el folio
+// (trans_no_from === folioOperam, prioridad 2 de #67) y moverla de etapa.
+test('la cotizacion aceptada la liga el sync por su folio y avanza de etapa', async () => {
+  await proponer(CANDIDATO_COTIZACION);
+  const res = await supertest(app).post('/api/admin/bandeja/951/aceptar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Chávez' });
+  const op = await cotStore.obtener(res.body.cotizacionId);
+
+  // El cliente tiene DOS cadenas: la del quote 951 (pedido 7300, entregada y
+  // liquidada) y otra ajena (7999, sin pagar). Solo la primera nacio de este folio.
+  let consulta = null;
+  const deps = {
+    listarTransacciones: async (q) => {
+      consulta = q;
+      return q.skip > 0 ? [] : [
+        { type: '10', order_: '7300', total_amount: '48250', allocated: '48250', outstanding: '0', debtor_no: '512', trans_no: '2201', reference: 'A2201' },
+        { type: '13', order_: '7300', total_amount: '48250', allocated: '0', outstanding: '0', debtor_no: '512', reference: 'R881' },
+        { type: '10', order_: '7999', total_amount: '10000', allocated: '0', outstanding: '10000', debtor_no: '512', trans_no: '2255', reference: 'A2255' },
+      ];
+    },
+    listarPedidos: async (q) => q.skip > 0 ? [] : [
+      { order_no: '7300', trans_type: '30', debtor_no: '512', trans_no_from: '951', total: '48250' },
+      { order_no: '7999', trans_type: '30', debtor_no: '512', trans_no_from: '888', total: '10000' },
+    ],
+  };
+  const resultado = await reconciliarOportunidad(op, deps);
+
+  // liga por el RFC del debtor que viajaba en el payload del quote
+  assert.equal(consulta.rfc, 'HVA160305MX8');
+  assert.equal(resultado.movida, true);
+  assert.equal(resultado.etapa, 'producto_entregado');
+
+  const movida = await cotStore.obtener(op.id);
+  assert.equal(movida.etapa, 'producto_entregado');
+  // El espejo prueba el binding PRECISO: se resolvio el pedido 7300 por el folio
+  // 951, no el agregado por cliente (que habria mezclado la cadena 7999).
+  assert.equal(movida.data.espejoOperam.cotizacion, '951');
+  assert.equal(movida.data.espejoOperam.pedido, '7300');
+  assert.equal(movida.data.espejoOperam.pago, 'pagado');
+  assert.equal(movida.data.pagoSinRegistrar, false);
 });
 
 test('aceptar un folio que no esta en la bandeja responde 404', async () => {

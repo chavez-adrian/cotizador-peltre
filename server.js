@@ -17,7 +17,8 @@ import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSa
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
-import { detectarDuplicados, RFC_GENERICOS } from './lib/deduplicacion.js';
+import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico } from './lib/deduplicacion.js';
+import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
@@ -1042,9 +1043,6 @@ app.post('/api/admin/bandeja/:folio/aceptar', authMiddleware, adminMiddleware, a
   const folio = String(req.params.folio);
   const candidato = await bandejaStore.obtener(folio);
   if (!candidato) return res.status(404).json({ error: 'No encontrado' });
-  if (candidato.tipo !== 'prospecto') {
-    return res.status(422).json({ error: 'Aceptar un candidato como cotización está disponible con #125' });
-  }
   if (candidato.estado !== 'pendiente') {
     return res.status(409).json({ error: `Este candidato ya fue ${candidato.estado}`, estado: candidato.estado });
   }
@@ -1052,6 +1050,9 @@ app.post('/api/admin/bandeja/:folio/aceptar', authMiddleware, adminMiddleware, a
   const catalogo = (readJSON('vendedores.json') || []).filter(v => v.operam_id != null);
   if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
     return res.status(400).json({ error: 'El vendedor debe ser uno del catálogo' });
+  }
+  if (candidato.tipo === 'cotizacion') {
+    return aceptarComoCotizacion(candidato, vendedor, res);
   }
   const data = { folioOperam: candidato.folio, fuente: bandejaStore.FUENTE_BANDEJA_OPERAM };
   if (candidato.email) data.correo = candidato.email;
@@ -1085,6 +1086,70 @@ app.post('/api/admin/bandeja/:folio/aceptar', authMiddleware, adminMiddleware, a
   if (!marcado) return res.status(409).json({ error: 'Este candidato ya fue resuelto' });
   res.status(existente ? 200 : 201).json({ ok: true, prospectoId, existente });
 });
+
+// Aceptar un candidato tipo COTIZACION (issue #125): el quote de un cliente REAL
+// entra al pipeline como oportunidad. La entrada se construye con la MISMA
+// maquinaria del backfill historico (construirEntradaCotizacion de #76) desde el
+// payload que el candidato carga en `quote` -- este camino NO habla con Operam --,
+// de modo que la tarjeta creada es indistinguible para el sync de una importada por
+// #76: partidas en data.items, RFC del debtor en data.cliente.rfc y el folio de
+// Operam como columna de primer nivel (por ahi liga el sync su pedido).
+async function aceptarComoCotizacion(candidato, vendedor, res) {
+  // RESTRICCION DURA: un debtor GENERICO jamas puede volverse cotizacion del
+  // pipeline. El fallback "agregado por cliente" del binding del sync (#67,
+  // prioridad 3) mezclaria las transacciones de todos los contactos que comparten
+  // el debtor y cerraria esas tarjetas en masa. Se valida en el SERVIDOR y por
+  // debtorId: aunque un run defectuoso marcara tipo 'cotizacion' a un generico,
+  // aqui se frena. Esos quotes se rescatan como PROSPECTO (#124).
+  if (esDebtorGenerico(candidato.debtorId)) {
+    return res.status(422).json({
+      error: `${candidato.debtorNombre || 'Este cliente'} es un cliente genérico: su quote se acepta como prospecto, no como cotización (sus pedidos son de muchos contactos distintos)`,
+    });
+  }
+  const quote = candidato.quote;
+  if (!quote) {
+    return res.status(422).json({ error: 'Este candidato no trae el detalle del quote: no se puede crear la cotización sin sus partidas' });
+  }
+  // Idempotencia contra el store de cotizaciones: si el folio ya es una oportunidad
+  // (nacio en el cotizador o la importo #76) NO se duplica -- se liga el candidato a
+  // la entrada EXISTENTE y se acusa. Misma comparacion como texto que folioYaExiste.
+  const existentes = await cotStore.listar();
+  const ya = existentes.find(c => c.folioOperam != null && String(c.folioOperam) === candidato.folio);
+  if (ya) {
+    const marcadoExistente = await bandejaStore.aceptar(candidato.folio, { vendedor, cotizacionId: ya.id });
+    if (!marcadoExistente) return res.status(409).json({ error: 'Este candidato ya fue resuelto' });
+    return res.json({ ok: true, cotizacionId: ya.id, existente: true });
+  }
+  // Pedido SINTETICO: solo aporta el folio del quote (order_no null = este quote
+  // nunca se volvio pedido), igual que la parte B del backfill.
+  const entrada = construirEntradaCotizacion({
+    pedido: { trans_no_from: candidato.folio, order_no: null },
+    quote,
+    debtor: quote.debtor || { CustName: candidato.debtorNombre, debtor_no: candidato.debtorId },
+    // Un quote rescatado que nunca cerro es un seguimiento vivo (misma etapa que le
+    // da la parte B de #76): ya existe la cotizacion, lo que falta es perseguirla.
+    etapa: 'seguimiento',
+  });
+  // El vendedor lo decide el humano en el selector de la bandeja (ya validado contra
+  // el catalogo), no el mapeo del quote: por eso no se le pasa el catalogo arriba.
+  entrada.vendedor = vendedor;
+  entrada.data.fuente = bandejaStore.FUENTE_BANDEJA_OPERAM;
+
+  const cotizacionId = await cotStore.crear(entrada);
+  await cotStore.setFolioOperam(cotizacionId, entrada.folioOperam);
+  await cotStore.cambiarEtapa(cotizacionId, entrada.etapa, {
+    tipo: bandejaStore.FUENTE_BANDEJA_OPERAM,
+    etapa: entrada.etapa,
+    folioOperam: entrada.folioOperam,
+    fecha: new Date().toISOString(),
+  });
+  // Mismo gate atomico que el camino prospecto: si dos requests compiten, el
+  // perdedor responde 409 y su cotizacion queda huerfana (edge aceptado, una sola
+  // instancia Node en Render).
+  const marcado = await bandejaStore.aceptar(candidato.folio, { vendedor, cotizacionId });
+  if (!marcado) return res.status(409).json({ error: 'Este candidato ya fue resuelto' });
+  res.status(201).json({ ok: true, cotizacionId, existente: false });
+}
 
 // Descartar MARCA, nunca borra: el folio descartado se queda en la bandeja para
 // que ningun run futuro lo vuelva a proponer. Sin reactivacion (fuera de #122).
