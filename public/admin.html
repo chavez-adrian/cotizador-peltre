@@ -598,55 +598,59 @@ function paridadContarEstados(filas) {
 function renderParidadCatalogo(data) {
   const r = data.resumen;
   const rc = paridadContarEstados(data.calcas);
+  const sinPrecioLista = data.sinPrecioLista || [];
   document.getElementById('paridad-resumen').innerHTML = `
-    Productos -- MATCH: <strong>${r.MATCH}</strong> |
-    MISMATCH: <strong>${r.MISMATCH}</strong> |
-    SIN_SKU: <strong>${r.SIN_SKU}</strong> |
-    NUEVO: <strong>${r.NUEVO}</strong><br>
-    Calcas -- MATCH: <strong>${rc.MATCH}</strong> |
-    MISMATCH: <strong>${rc.MISMATCH}</strong> |
-    SIN_SKU: <strong>${rc.SIN_SKU}</strong> |
-    NUEVO: <strong>${rc.NUEVO}</strong><br>
-    Huerfanas: <strong>${r.huerfanas}</strong> |
-    Divergentes: <strong>${r.divergentes}</strong> |
-    Ilegibles: <strong>${r.ilegibles}</strong> |
-    Sin caja: <strong>${data.sinCaja.length}</strong>
+    Productos -- Cuadran: <strong>${r.MATCH}</strong> |
+    Precio distinto: <strong>${r.MISMATCH}</strong> |
+    Regla sin articulos: <strong>${r.SIN_SKU}</strong> |
+    Solo en Operam: <strong>${r.NUEVO}</strong><br>
+    Calcas -- Cuadran: <strong>${rc.MATCH}</strong> |
+    Precio distinto: <strong>${rc.MISMATCH}</strong> |
+    Sin articulo en Operam: <strong>${rc.SIN_SKU}</strong> |
+    Solo en Operam: <strong>${rc.NUEVO}</strong><br>
+    Precios huerfanos: <strong>${r.huerfanas}</strong> |
+    Variantes cobrando distinto: <strong>${r.divergentes}</strong> |
+    Codigos no interpretables: <strong>${r.ilegibles}</strong> |
+    Sin caja para envio: <strong>${data.sinCaja.length}</strong>
   `;
 
   const mismatch = data.productos.filter(p => p.estado === 'MISMATCH');
-  const sinSku = data.productos.filter(p => p.estado === 'SIN_SKU').map(p => p.key);
+  const clavesSinPrecio = new Set(sinPrecioLista.map(s => s.key));
+  const sinSku = data.productos.filter(p => p.estado === 'SIN_SKU' && !clavesSinPrecio.has(p.key)).map(p => p.key);
   const nuevo = data.productos.filter(p => p.estado === 'NUEVO').map(p => p.key);
   const calcaMismatch = data.calcas.filter(c => c.estado === 'MISMATCH');
   const calcaSinSku = data.calcas.filter(c => c.estado === 'SIN_SKU').map(c => c.code);
   const calcaNuevo = data.calcas.filter(c => c.estado === 'NUEVO').map(c => c.code);
 
   const partes = [];
-  partes.push('<h3 style="font-size:13px;margin-bottom:6px">MISMATCH (precio distinto)</h3>');
+  partes.push('<h3 style="font-size:13px;margin-bottom:6px">Precio distinto: el ERP cobra otra cosa que la lista vigente</h3>');
+  partes.push('<p style="font-size:11px;color:var(--text-light);margin-bottom:6px">Cada clave agrupa a sus articulos reales: la diferencia mostrada es la del precio que cobra la mayoria de los articulos de esa clave en Operam. El detalle articulo por articulo esta abajo en "variantes cobrando distinto".</p>');
   partes.push(paridadTablaDiferencias(mismatch, 'key'));
-  partes.push(paridadListaSimple('SIN_SKU (en el catalogo, ya no en Operam)', sinSku));
-  partes.push(paridadListaSimple('NUEVO (en Operam, sin ficha en el catalogo)', nuevo));
+  partes.push(paridadListaSimple('Articulos en Operam SIN precio de lista (pendiente: subirles precio en el ERP)', sinPrecioLista.map(s => `${s.key}: ${s.articulos.join(', ')}`)));
+  partes.push(paridadListaSimple('Reglas de precio sin articulos que las usen (definidas por si se necesitan; hoy no cotizables y no se pierden)', sinSku));
+  partes.push(paridadListaSimple('Solo en Operam: entrarian nuevos al catalogo del cotizador', nuevo));
 
   if (data.calcas.length) {
-    partes.push('<h3 style="font-size:13px;margin:10px 0 6px">Calcas -- MISMATCH (precio distinto)</h3>');
+    partes.push('<h3 style="font-size:13px;margin:10px 0 6px">Calcas -- precio distinto que la lista vigente</h3>');
     partes.push(paridadTablaDiferencias(calcaMismatch, 'code'));
-    partes.push(paridadListaSimple('Calcas SIN_SKU (en el catalogo, ya no en Operam)', calcaSinSku));
-    partes.push(paridadListaSimple('Calcas NUEVO (en Operam, sin ficha en el catalogo)', calcaNuevo));
+    partes.push(paridadListaSimple('Calcas de la lista sin articulo en Operam', calcaSinSku));
+    partes.push(paridadListaSimple('Calcas solo en Operam: entrarian nuevas al catalogo', calcaNuevo));
   }
 
-  partes.push(paridadListaSimple('Sin ficha en el complementario', data.sinFicha.map(s => `${s.key} (${s.articulos})`)));
-  partes.push(paridadListaSimple('Sin caja en boxMap', data.sinCaja.map(s => `${s.key} (${s.model})`)));
-  partes.push(paridadListaSimple('Huerfanas (precio sin articulo)', data.huerfanas.map(h => `${h.stock_id} ($${h.price.toFixed(2)})`)));
+  partes.push(paridadListaSimple('Claves sin ficha (falta nombre/nombre en ingles en el complementario; no entran al catalogo)', data.sinFicha.map(s => `${s.key} (${s.articulos})`)));
+  partes.push(paridadListaSimple('Modelos sin caja para calcular envio (completar boxMap)', data.sinCaja.map(s => `${s.key} (${s.model})`)));
+  partes.push(paridadListaSimple('Precios huerfanos: el articulo ya no existe en el maestro de Operam', data.huerfanas.map(h => `${h.stock_id} ($${h.price.toFixed(2)})`)));
 
   if (data.divergentes.length) {
-    partes.push(`<h3 style="font-size:13px;margin:10px 0 6px">Divergentes (misma clave, distinto precio en Operam)</h3>`);
+    partes.push(`<h3 style="font-size:13px;margin:10px 0 6px">Variantes de una misma clave cobrando distinto en Operam</h3>`);
     partes.push(data.divergentes.map(d => `
       <p style="font-size:12px;margin-bottom:4px"><strong>${paridadEsc(d.key)}:</strong> ${
-        d.precios.map(v => `base=${v.base} (${v.skus.length} sku${v.skus.length === 1 ? '' : 's'})`).join(' vs ')
+        d.precios.map(v => `$${v.base} (${v.skus.length} articulo${v.skus.length === 1 ? '' : 's'})`).join(' vs ')
       }</p>
     `).join(''));
   }
 
-  partes.push(paridadListaSimple('Ilegibles (precio vivo, codigo no legible)', data.ilegibles.map(i => `${i.stock_id} ${i.nombre}`)));
+  partes.push(paridadListaSimple('Con precio en Operam pero codigo no interpretable', data.ilegibles.map(i => `${i.stock_id} ${i.nombre}`)));
 
   document.getElementById('paridad-detalle').innerHTML = partes.join('');
 }

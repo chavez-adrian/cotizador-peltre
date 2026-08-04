@@ -426,6 +426,24 @@ test('construirCatalogo: la familia de calcas cubre de 1 a 8 tintas, no las CAL0
   assert.deepEqual(catalogo.calcas.map(c => c.code), ['CAL1025', 'CAL8200']);
 });
 
+// Una clave cuyos articulos EXISTEN en Operam pero sin fila de "Precio de lista" es
+// un pendiente distinto de SIN_SKU: no hay que crear articulos, hay que subirles
+// precio en el ERP. Caso real: TP24R1B11211 (TP24B).
+test('paridad: clave con articulos pero sin precio de lista se reporta en sinPrecioLista', () => {
+  const { catalogo, paridad } = construirCatalogo({
+    salesTypes: SALES_TYPES,
+    precios: [],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+    referencia: { products: [{ key: 'PV08A', name: 'PV08 Portavasos', prices: { Menudeo: 100 } }] },
+  });
+  assert.equal(catalogo.products.length, 0);
+  assert.deepEqual(paridad.sinPrecioLista, [{ key: 'PV08A', articulos: ['PV08B1001111'] }]);
+  // Sigue siendo SIN_SKU contra la referencia (no entra al catalogo generado); la vista
+  // usa sinPrecioLista para separar el accionable.
+  assert.equal(paridad.productos.find(p => p.key === 'PV08A').estado, ESTADOS_PARIDAD.SIN_SKU);
+});
+
 // Las calcas tambien se comparan contra el catalogo vigente: es lo que desbloquea #91.
 // El Menudeo queda FUERA de la comparacion: las calcas se venden desde 100 piezas y el
 // Menudeo que la referencia del Excel les pone es un piso del extractor, no un precio.
@@ -528,6 +546,10 @@ test('reconstruccion: products y calcas cuadran con el catalogo vigente salvo lo
   const nuevos = paridad.productos.filter(p => p.estado === ESTADOS_PARIDAD.NUEVO);
   assert.equal(nuevos.length, 6);
   for (const n of nuevos) assert.match(n.key, /P4$/);
+
+  // TP24B: su articulo existe en Operam pero sin fila de "Precio de lista" -- el
+  // accionable es subirle precio en el ERP, no crear el articulo.
+  assert.ok(paridad.sinPrecioLista.some(s => s.key === 'TP24B' && s.articulos.includes('TP24R1B11211')));
 
   // Las 16 calcas del catalogo vigente existen en Operam (desbloquea #91) y ademas
   // hay 16 mas (5 a 8 tintas). Con el Menudeo (piso del extractor) fuera de la

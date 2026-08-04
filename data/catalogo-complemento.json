@@ -9,6 +9,14 @@
     "3:2": "B",
     "3:1": "A"
   },
+  "acabados": {
+    "A": "un color (mono)",
+    "B": "bicolor",
+    "C": "salpicado",
+    "X": "pieza decorada (con ilustracion o diseno)",
+    "Y": "pieza bicolor decorada",
+    "_nota": "X y Y son reglas de pricing definidas por adelantado en precios_pna: hoy ningun articulo de carga_articulos las usa, existen por si se crea un SKU que caiga en esa regla (definicion de Adrian, 2026-08-04)"
+  },
   "productos": {
     "PV08A": {
       "name": "PV08 Portavasos 8 cm un color",
