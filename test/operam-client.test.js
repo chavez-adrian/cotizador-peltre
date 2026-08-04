@@ -1858,3 +1858,23 @@ test('listarPreciosCompletos: sus paginas pasan por el throttle proactivo', asyn
     _setMinInterval(0);
   }
 });
+
+// Si la respuesta no trae `total`, la unica senal de fin es la pagina incompleta:
+// dar por terminado el volcado en la primera pagina llena lo truncaria en silencio.
+test('listarItemsCompletos: sin total en la respuesta sigue paginando hasta la pagina incompleta', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/inventory/items': (url) => {
+      const skip = Number(new URL(url).searchParams.get('skip'));
+      const n = Math.min(500, 900 - skip);
+      return jsonResponse({ data: Array.from({ length: n }, (_, i) => ({ stock_id: `IT${skip + i}` })) });
+    },
+  });
+  try {
+    const items = await listarItemsCompletos();
+    assert.equal(items.length, 900);
+  } finally {
+    restore();
+  }
+});

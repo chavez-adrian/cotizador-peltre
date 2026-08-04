@@ -6,7 +6,7 @@ import { leerArchivoSync } from '../lib/fs-reintento.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const { decodificarSku, construirCatalogo, ESTADOS_PARIDAD } = await import('../lib/catalogo-operam.js');
+import { decodificarSku, construirCatalogo, ESTADOS_PARIDAD } from '../lib/catalogo-operam.js';
 
 // Las 6 listas que el cotizador cotiza, con el factor REAL de Operam (verificado en
 // vivo el 2026-08-03). "Precio de lista" (id 12, factor 1) es la base de todas.
@@ -409,7 +409,7 @@ test('paridad: reporta las claves nuevas y las que esperan ficha en el complemen
     referencia: { products: [{ key: 'PV08A', name: 'PV08 Portavasos', prices: { Menudeo: 100, M100: 70, M350: 60, M550: 50, M1500: 45, M6000: 40 } }] },
   });
   assert.deepEqual(paridad.productos.filter(p => p.estado === ESTADOS_PARIDAD.NUEVO).map(p => p.key), ['PV08AP4']);
-  assert.deepEqual(paridad.sinFicha, [{ key: 'TA14A', skus: 1 }]);
+  assert.deepEqual(paridad.sinFicha, [{ key: 'TA14A', articulos: 1 }]);
   assert.equal(catalogo.products.find(p => p.key === 'TA14A'), undefined, 'sin ficha no entra al catalogo');
 });
 
@@ -541,4 +541,53 @@ test('reconstruccion: products y calcas cuadran con el catalogo vigente salvo lo
   // Filas de precio sin articulo en el maestro: existen y hay que verlas.
   assert.ok(paridad.huerfanas.length > 100);
   assert.equal(paridad.huerfanas.every(h => Number(h.price) > 0), true);
+});
+
+// Dos SKUs con la MISMA base pueden acabar en precios distintos si uno tiene fila
+// explicita en otra lista. Agrupar solo por la base dejaba el precio de la clave a
+// merced del orden en que Operam devolviera los articulos.
+test('construirCatalogo: la divergencia se mide sobre las 6 listas, no solo sobre la base', () => {
+  const items = [
+    { stock_id: 'PV08B1001111', description: 'blanco' },
+    { stock_id: 'PV08N1001111', description: 'negro' },
+  ];
+  const precios = [
+    fila('PV08B1001111', '12', 100),
+    fila('PV08N1001111', '12', 100), fila('PV08N1001111', '15', 88),
+  ];
+  const enOrden = construirCatalogo({ salesTypes: SALES_TYPES, precios, items, complemento: COMPLEMENTO });
+  const alReves = construirCatalogo({ salesTypes: SALES_TYPES, precios, items: [...items].reverse(), complemento: COMPLEMENTO });
+  assert.deepEqual(enOrden.catalogo.products[0].prices, alReves.catalogo.products[0].prices, 'el orden de los articulos no puede cambiar el precio');
+  assert.equal(enOrden.catalogo.products[0].prices.M100, 88, 'ante el empate manda el precio mayor');
+  const div = enOrden.paridad.divergentes.find(d => d.key === 'PV08A');
+  assert.ok(div, 'dos precios distintos en la misma clave se reportan aunque la base coincida');
+  assert.equal(div.precios.length, 2);
+  assert.deepEqual(div.precios.map(p => p.prices.M100).sort((a, b) => a - b), [70, 88]);
+});
+
+// Un articulo con precio vivo que se cae del catalogo porque su codigo no se puede
+// leer (ni el complementario lo tiene) es un pendiente real: o el codigo se retira en
+// el ERP o su lectura se agrega. Callarlo lo esconde.
+test('paridad: los articulos con precio que no se pueden leer se reportan', () => {
+  const { catalogo, paridad } = construirCatalogo({
+    salesTypes: SALES_TYPES,
+    precios: [fila('PV08B1001111', '12', 100), fila('PV08P1N1M0', '12', 90), fila('SINPRECIO1N1M0', '12', 0)],
+    items: [
+      { stock_id: 'PV08B1001111', description: 'Portavasos blanco' },
+      { stock_id: 'PV08P1N1M0', description: 'Portavasos legacy con precio' },
+      { stock_id: 'SINPRECIO1N1M0', description: 'Legacy sin precio' },
+    ],
+    complemento: COMPLEMENTO,
+  });
+  assert.equal(catalogo.skus.length, 1);
+  assert.deepEqual(paridad.ilegibles, [{ stock_id: 'PV08P1N1M0', nombre: 'Portavasos legacy con precio' }]);
+  assert.equal(paridad.resumen.ilegibles, 1);
+});
+
+// La version la estampa quien genera (el catalogo generado no es la lista del Excel);
+// si nadie la pasa se conserva la del complementario.
+test('construirCatalogo: la version se puede estampar al generar', () => {
+  const base = { salesTypes: SALES_TYPES, precios: [fila('PV08B1001111', '12', 100)], items: [{ stock_id: 'PV08B1001111', description: 'x' }], complemento: COMPLEMENTO };
+  assert.equal(construirCatalogo(base).catalogo.version, '2026.ABRIL');
+  assert.equal(construirCatalogo({ ...base, version: 'operam.2026-08-04' }).catalogo.version, 'operam.2026-08-04');
 });
