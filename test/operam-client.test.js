@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
+const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -1718,4 +1718,143 @@ test('#114 contenidoQuoteCambio: sin huella previa asume que cambio', () => {
   assert.equal(contenidoQuoteCambio(cotizacionBase(), null), true);
   assert.equal(contenidoQuoteCambio(cotizacionBase(), undefined), true);
   assert.equal(contenidoQuoteCambio(cotizacionBase(), ''), true);
+});
+
+// === Lectores del catalogo (#128, padre #120) — read-only y paginados ===
+
+// "Bazaar" (id 18) esta INACTIVA en Operam y aun asi tiene 461 filas vivas en
+// prices_list: sin show_inactive=1 la lista no aparece y sus precios quedan sin lista
+// a la que pertenecen. Por eso el lector del catalogo la pide explicitamente.
+test('listarSalesTypes: con showInactive pide show_inactive=1 (Bazaar esta inactiva y tiene precios vivos)', async () => {
+  resetSession();
+  const urls = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_types': (url) => {
+      urls.push(url);
+      return jsonResponse({ total: 2, data: [
+        { id: '12', sales_type: 'Precio de lista', factor: '1', inactive: '0' },
+        { id: '18', sales_type: 'Bazaar', factor: '0.5', inactive: '1' },
+      ] });
+    },
+  });
+  try {
+    const listas = await listarSalesTypes({ showInactive: true });
+    assert.deepEqual(listas.map(l => l.sales_type), ['Precio de lista', 'Bazaar']);
+    assert.equal(urls.length, 1);
+    assert.match(urls[0], /show_inactive=1/);
+  } finally {
+    restore();
+  }
+});
+
+test('listarSalesTypes: sin showInactive no manda show_inactive', async () => {
+  resetSession();
+  const urls = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_types': (url) => { urls.push(url); return jsonResponse({ total: 0, data: [] }); },
+  });
+  try {
+    await listarSalesTypes();
+    assert.equal(/show_inactive/.test(urls[0]), false);
+  } finally {
+    restore();
+  }
+});
+
+// prices_list son ~2,010 filas y items ~1,603: se vuelcan completos en paginas de 500
+// (verificado en vivo el 2026-08-03) hasta agotar el total que reporta la API.
+test('listarPreciosCompletos: pagina de 500 en 500 hasta agotar el total', async () => {
+  resetSession();
+  const urls = [];
+  const total = 1100;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/prices_list': (url) => {
+      urls.push(url);
+      const skip = Number(new URL(url).searchParams.get('skip'));
+      const n = Math.min(500, total - skip);
+      const data = Array.from({ length: n }, (_, i) => ({ stock_id: `SKU${skip + i}`, sales_type_id: '12', price: '10' }));
+      return jsonResponse({ total, data });
+    },
+  });
+  try {
+    const filas = await listarPreciosCompletos();
+    assert.equal(filas.length, total);
+    assert.equal(urls.length, 3);
+    assert.match(urls[0], /limit=500&skip=0/);
+    assert.match(urls[1], /limit=500&skip=500/);
+    assert.match(urls[2], /limit=500&skip=1000/);
+    assert.equal(filas[1099].stock_id, 'SKU1099');
+  } finally {
+    restore();
+  }
+});
+
+test('listarItemsCompletos: pagina el maestro de articulos igual que los precios', async () => {
+  resetSession();
+  const urls = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/inventory/items': (url) => {
+      urls.push(url);
+      const skip = Number(new URL(url).searchParams.get('skip'));
+      const n = Math.min(500, 600 - skip);
+      return jsonResponse({ total: 600, data: Array.from({ length: n }, (_, i) => ({ stock_id: `IT${skip + i}`, description: 'x' })) });
+    },
+  });
+  try {
+    const items = await listarItemsCompletos();
+    assert.equal(items.length, 600);
+    assert.equal(urls.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+// Los tres lectores son GET y nada mas: un volcado de catalogo no puede escribir en
+// el ERP ni por accidente.
+test('los lectores del catalogo son read-only (solo GET)', async () => {
+  resetSession();
+  const metodos = new Set();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_types': (url, opts) => { metodos.add(opts?.method); return jsonResponse({ total: 0, data: [] }); },
+    '/api/v3/sales/prices_list': (url, opts) => { metodos.add(opts?.method); return jsonResponse({ total: 0, data: [] }); },
+    '/api/v3/inventory/items': (url, opts) => { metodos.add(opts?.method); return jsonResponse({ total: 0, data: [] }); },
+  });
+  try {
+    await listarSalesTypes({ showInactive: true });
+    await listarPreciosCompletos();
+    await listarItemsCompletos();
+    assert.deepEqual([...metodos], ['GET']);
+  } finally {
+    restore();
+  }
+});
+
+// El volcado completo son ~10 lecturas seguidas: tienen que pasar por el mismo
+// throttle proactivo anti-429 que usa el backfill (#76).
+test('listarPreciosCompletos: sus paginas pasan por el throttle proactivo', async () => {
+  resetSession();
+  _setMinInterval(40);
+  const tiempos = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/prices_list': (url) => {
+      tiempos.push(Date.now());
+      const skip = Number(new URL(url).searchParams.get('skip'));
+      return jsonResponse({ total: 1200, data: Array.from({ length: Math.min(500, 1200 - skip) }, () => ({ stock_id: 'X', sales_type_id: '12', price: '1' })) });
+    },
+  });
+  try {
+    await listarPreciosCompletos();
+    assert.equal(tiempos.length, 3);
+    const total = tiempos[2] - tiempos[0];
+    assert.ok(total >= 70, `total=${total}ms entre la 1a y la 3a pagina debe ser >= ~80 (2 intervalos de 40ms)`);
+  } finally {
+    restore();
+    _setMinInterval(0);
+  }
 });
