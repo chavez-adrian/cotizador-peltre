@@ -1,0 +1,86 @@
+[
+ {
+  "id": "1",
+  "sales_type": "M550",
+  "factor": "0.5",
+  "inactive": "0"
+ },
+ {
+  "id": "3",
+  "sales_type": "M6000",
+  "factor": "0.4",
+  "inactive": "0"
+ },
+ {
+  "id": "6",
+  "sales_type": "M1500",
+  "factor": "0.45",
+  "inactive": "0"
+ },
+ {
+  "id": "9",
+  "sales_type": "Segundas",
+  "factor": "0.165",
+  "inactive": "0"
+ },
+ {
+  "id": "12",
+  "sales_type": "Precio de lista",
+  "factor": "1",
+  "inactive": "0"
+ },
+ {
+  "id": "15",
+  "sales_type": "M100",
+  "factor": "0.7",
+  "inactive": "0"
+ },
+ {
+  "id": "16",
+  "sales_type": "M350",
+  "factor": "0.6",
+  "inactive": "0"
+ },
+ {
+  "id": "19",
+  "sales_type": "Amazon",
+  "factor": "1.1",
+  "inactive": "0"
+ },
+ {
+  "id": "20",
+  "sales_type": "M6001",
+  "factor": "0.39",
+  "inactive": "0"
+ },
+ {
+  "id": "21",
+  "sales_type": "US100",
+  "factor": "0.84",
+  "inactive": "0"
+ },
+ {
+  "id": "22",
+  "sales_type": "US350",
+  "factor": "0.72",
+  "inactive": "0"
+ },
+ {
+  "id": "23",
+  "sales_type": "US550",
+  "factor": "0.6",
+  "inactive": "0"
+ },
+ {
+  "id": "24",
+  "sales_type": "US1500",
+  "factor": "0.54",
+  "inactive": "0"
+ },
+ {
+  "id": "25",
+  "sales_type": "US6000",
+  "factor": "0.48",
+  "inactive": "0"
+ }
+]

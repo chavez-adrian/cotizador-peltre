@@ -1,0 +1,3660 @@
+{
+  "version": "2026.ABRIL",
+  "origen": "data/precios.json",
+  "letrasPrecio": {
+    "1:2": "B",
+    "1:1": "A",
+    "2:1": "C",
+    "7:1": "C",
+    "3:2": "B",
+    "3:1": "A"
+  },
+  "productos": {
+    "PV08A": {
+      "name": "PV08 Portavasos 8 cm un color",
+      "nameEn": "PV08 Coaster 8 cm one color",
+      "weight_kg": null
+    },
+    "VT05A": {
+      "name": "VT05 Tequilero 5 cm un color",
+      "nameEn": "VT05 Mini tumbler 5 cm one color",
+      "weight_kg": 0.048
+    },
+    "VA05A": {
+      "name": "VA05 Taza expreso 5 cm un color",
+      "nameEn": "VA05 Mini mug 5 cm one color",
+      "weight_kg": 0.048
+    },
+    "VT08A": {
+      "name": "VT08 Vaso de mesa 8 cm un color",
+      "nameEn": "VA08 Tumbler 8 cm one color",
+      "weight_kg": 0.102
+    },
+    "VA08A": {
+      "name": "VA08 Taza de mesa 8 cm un color",
+      "nameEn": "VA08 Mug 8 cm one color",
+      "weight_kg": 0.102
+    },
+    "SA08A": {
+      "name": "SA08 Salsera recta 8 cm un color",
+      "nameEn": "SA08 Ramekin 8 cm one color",
+      "weight_kg": 0.076
+    },
+    "SC08A": {
+      "name": "SC08 Salsera cónica 8 cm un color",
+      "nameEn": "SC08 Ramekin 8 cm one color",
+      "weight_kg": 0.076
+    },
+    "VA09A": {
+      "name": "VA09 Pocillo 9 cm un color",
+      "nameEn": "VA09 Large mug 9 cm one color",
+      "weight_kg": 0.139
+    },
+    "VT09A": {
+      "name": "VT09 Pocillo 9 cm s/oreja un color",
+      "nameEn": "VT09 Large tumbler 9 cm one color",
+      "weight_kg": 0.139
+    },
+    "TA14A": {
+      "name": "TA14 Tazón 14 cm un color",
+      "nameEn": "TA14 Bowl 14 cm one color",
+      "weight_kg": 0.147
+    },
+    "PL14A": {
+      "name": "PL14 Plato trinche 14 cm un color",
+      "nameEn": "PL14 Plate 14 cm one color",
+      "weight_kg": 0.09
+    },
+    "PL20A": {
+      "name": "PL20 Plato trinche 20 cm un color",
+      "nameEn": "PL20 Plate 20 cm one color",
+      "weight_kg": 0.169
+    },
+    "PH20A": {
+      "name": "PH20 Plato hondo 20 cm un color",
+      "nameEn": "PH20 Pasta Plate 20 cm one color",
+      "weight_kg": 0.237
+    },
+    "PL24A": {
+      "name": "PL24 Plato trinche 24 cm un color",
+      "nameEn": "PL24 Plate 24 cm one color",
+      "weight_kg": 0.246
+    },
+    "PL27A": {
+      "name": "PL27 Plato trinche 27 cm un color",
+      "nameEn": "PL27 Plate 27 cm one color",
+      "weight_kg": 0.325
+    },
+    "CL28A": {
+      "name": "CL28 Comal 28 cm un color",
+      "nameEn": null,
+      "weight_kg": 0.325
+    },
+    "VAG8A": {
+      "name": "VAG8 Taza de mesa golpeada un color",
+      "nameEn": null,
+      "weight_kg": 0.102
+    },
+    "VAG9A": {
+      "name": "VAG9 Pocillo golpeado 9 cm un color",
+      "nameEn": null,
+      "weight_kg": 0.139
+    },
+    "PN83A": {
+      "name": "PN83 Pizarrón 83 cm x 83 cm un color",
+      "nameEn": null,
+      "weight_kg": 6.6
+    },
+    "TP12A": {
+      "name": "TP12 Tapa 12 un color",
+      "nameEn": null,
+      "weight_kg": 0.09
+    },
+    "VT05B": {
+      "name": "VT05 Tequilero 5 cm bicolor",
+      "nameEn": "VT05 Mini tumbler 5 cm two colors (outside/inside)",
+      "weight_kg": 0.048
+    },
+    "VA05B": {
+      "name": "VA05 Taza expreso 5 cm bicolor",
+      "nameEn": "VA05 Mini mug 5 cm two colors (outside/inside)",
+      "weight_kg": 0.048
+    },
+    "VT08B": {
+      "name": "VT08 Vaso de mesa 8 cm bicolor",
+      "nameEn": "VT08 Tumbler 8 cm two colors (outside/inside)",
+      "weight_kg": 0.102
+    },
+    "VA08B": {
+      "name": "VA08 Taza de mesa 8 cm bicolor",
+      "nameEn": "VA08 Mug 8 cm two colors (outside/inside)",
+      "weight_kg": 0.102
+    },
+    "SA08B": {
+      "name": "SA08 Salsera recta 8 cm bicolor",
+      "nameEn": "SA08 Ramekin 8 cm two colors (outside/inside)",
+      "weight_kg": 0.076
+    },
+    "SC08B": {
+      "name": "SC08 Salsera cónica 8 cm bicolor",
+      "nameEn": "SC08 Ramekin 8 cm two colors (outside/inside)",
+      "weight_kg": 0.076
+    },
+    "TR08B": {
+      "name": "TR08 Tarro 8 cm bicolor",
+      "nameEn": null,
+      "weight_kg": 0.18000000000000002
+    },
+    "VA09B": {
+      "name": "VA09 Pocillo 9 cm bicolor",
+      "nameEn": "VA09 Large mug 9 cm two colors (outside/inside)",
+      "weight_kg": 0.139
+    },
+    "TA14B": {
+      "name": "TA14 Tazón 14 cm bicolor",
+      "nameEn": "TA14 Bowl 14 cm two colors (outside/inside)",
+      "weight_kg": 0.147
+    },
+    "PH20B": {
+      "name": "PH20 Plato hondo 20 cm bicolor",
+      "nameEn": "PH20 Pasta Plate 20 cm two colors (outside/inside)",
+      "weight_kg": 0.237
+    },
+    "VAG8B": {
+      "name": "VAG8 Taza de mesa golpeada bicolor",
+      "nameEn": null,
+      "weight_kg": 0.102
+    },
+    "VAG9B": {
+      "name": "VAG9 Pocillo golpeado bicolor",
+      "nameEn": null,
+      "weight_kg": 0.139
+    },
+    "CZ12B": {
+      "name": "CZ12 Cazuela 12 bicolor",
+      "nameEn": null,
+      "weight_kg": 0.133
+    },
+    "PV08C": {
+      "name": "PV08 Portavasos 8 cm manchas / salpicado",
+      "nameEn": "PV08 Coaster 8 cm splattered",
+      "weight_kg": 0.048
+    },
+    "VT05C": {
+      "name": "VT05 Tequilero 5 cm manchas / salpicado",
+      "nameEn": "VT05 Mini tumbler 5 cm splattered",
+      "weight_kg": 0.048
+    },
+    "VA05C": {
+      "name": "VA05 Taza expreso 5 cm manchas / salpicado",
+      "nameEn": "VA05 Mini mug 5 cm splattered",
+      "weight_kg": 0.048
+    },
+    "VT08C": {
+      "name": "VT08 Vaso de mesa 8 cm manchas / salpicado",
+      "nameEn": "VA08 Tumbler 8 cm splattered",
+      "weight_kg": 0.102
+    },
+    "VA08C": {
+      "name": "VA08 Taza de mesa 8 cm manchas / salpicado",
+      "nameEn": "VA08 Mug 8 cm splattered",
+      "weight_kg": 0.102
+    },
+    "SA08C": {
+      "name": "SA08 Salsera recta 8 cm manchas / salpicado",
+      "nameEn": "SA08 Ramekin 8 cm splattered",
+      "weight_kg": 0.076
+    },
+    "SC08C": {
+      "name": "SC08 Salsera cónica 8 cm manchas / salpicado",
+      "nameEn": "SA08 Ramekin 8 cm splattered",
+      "weight_kg": 0.076
+    },
+    "TR08C": {
+      "name": "TR08 Tarro 8 cm manchas / salpicado",
+      "nameEn": null,
+      "weight_kg": 0.18000000000000002
+    },
+    "VA09C": {
+      "name": "VA09 Pocillo 9 cm manchas / salpicado",
+      "nameEn": "VA09 Large mug 9 cm splattered",
+      "weight_kg": 0.139
+    },
+    "MA09C": {
+      "name": "MA09 Maceta 9 cm manchas / salpicado",
+      "nameEn": null,
+      "weight_kg": 0.139
+    },
+    "TA14C": {
+      "name": "TA14 Tazón 14 cm manchas / salpicado",
+      "nameEn": "TA14 Bowl 14 cm splattered",
+      "weight_kg": 0.147
+    },
+    "PL14C": {
+      "name": "PL14 Plato trinche 14 cm manchas / salpicado",
+      "nameEn": "PL14 Plate 14 cm splattered",
+      "weight_kg": 0.09
+    },
+    "PL20C": {
+      "name": "PL20 Plato trinche 20 cm manchas / salpicado",
+      "nameEn": "PL20 Plate 20 cm splattered",
+      "weight_kg": 0.169
+    },
+    "PH20C": {
+      "name": "PH20 Plato hondo 20 cm manchas / salpicado",
+      "nameEn": "PH20 Plate 20 cm splattered",
+      "weight_kg": 0.237
+    },
+    "PL24C": {
+      "name": "PL24 Plato trinche 24 cm manchas / salpicado",
+      "nameEn": "PL24 Plate 24 cm splattered",
+      "weight_kg": 0.246
+    },
+    "PL27C": {
+      "name": "PL27 Plato trinche 27 cm manchas / salpicado",
+      "nameEn": "PL27 Plate 27 cm splattered",
+      "weight_kg": 0.325
+    },
+    "CL28C": {
+      "name": "CL28 Comal 28 cm manchas / salpicado",
+      "nameEn": null,
+      "weight_kg": 0.325
+    },
+    "TP12C": {
+      "name": "TP12 Tapa 12 manchas / salpicado",
+      "nameEn": null,
+      "weight_kg": 0.09
+    },
+    "CZ12C": {
+      "name": "CZ12 Cazuela 12 manchas / salpicado",
+      "nameEn": null,
+      "weight_kg": 0.133
+    },
+    "TP24B": {
+      "name": "TP24 Tapa 24 bicolor",
+      "nameEn": null,
+      "weight_kg": null
+    },
+    "OL24B": {
+      "name": "OL24 Olla 24 cm bicolor",
+      "nameEn": null,
+      "weight_kg": null
+    },
+    "VAG8C": {
+      "name": "VAG8 Taza de mesa golpeada manchas / salpicado",
+      "nameEn": null,
+      "weight_kg": 0.102
+    },
+    "VAG9C": {
+      "name": "VAG9 Pocillo golpeado manchas / salpicado",
+      "nameEn": null,
+      "weight_kg": 0.139
+    },
+    "VT05X": {
+      "name": "VT05 Tequilero decorado",
+      "nameEn": null,
+      "weight_kg": 0.048
+    },
+    "VA05X": {
+      "name": "VA05 Taza expreso decorada",
+      "nameEn": null,
+      "weight_kg": 0.048
+    },
+    "VT08X": {
+      "name": "VT08 Vaso de mesa decorado",
+      "nameEn": null,
+      "weight_kg": 0.102
+    },
+    "VA08X": {
+      "name": "VA08 Taza de mesa decorada",
+      "nameEn": null,
+      "weight_kg": 0.102
+    },
+    "SA08X": {
+      "name": "SA08 Salsera decorada",
+      "nameEn": null,
+      "weight_kg": 0.076
+    },
+    "VA09X": {
+      "name": "VA09 Pocillo decorado",
+      "nameEn": null,
+      "weight_kg": 0.139
+    },
+    "TA14X": {
+      "name": "TA14 Tazón chico decorado",
+      "nameEn": null,
+      "weight_kg": 0.147
+    },
+    "PH20X": {
+      "name": "PH20 Plato hondo 20 cm decorado",
+      "nameEn": null,
+      "weight_kg": 0.237
+    },
+    "PL14X": {
+      "name": "PL14 Plato trinche 14 cm decorado",
+      "nameEn": null,
+      "weight_kg": 0.09
+    },
+    "PL20X": {
+      "name": "PL20 Plato trinche 20 cm decorado",
+      "nameEn": null,
+      "weight_kg": 0.169
+    },
+    "PL24X": {
+      "name": "PL24 Plato trinche 24 cm decorado",
+      "nameEn": null,
+      "weight_kg": 0.246
+    },
+    "PL27X": {
+      "name": "PL27 Plato trinche 27 cm decorado",
+      "nameEn": null,
+      "weight_kg": 0.325
+    },
+    "VA08Y": {
+      "name": "VA08 Taza de mesa decorada bicolor",
+      "nameEn": null,
+      "weight_kg": 0.102
+    },
+    "VJ02A": {
+      "name": "Vajilla para 2 mono",
+      "nameEn": null,
+      "weight_kg": 1.424
+    },
+    "VJ02B": {
+      "name": "Vajilla para 2 bicolor",
+      "nameEn": null,
+      "weight_kg": 1.424
+    },
+    "VJ02C": {
+      "name": "Vajilla para 2 salpicada",
+      "nameEn": null,
+      "weight_kg": 1.424
+    },
+    "VJ04A": {
+      "name": "Vajilla para 4 mono",
+      "nameEn": null,
+      "weight_kg": 2.848
+    },
+    "VJ04B": {
+      "name": "Vajilla para 4 bicolor",
+      "nameEn": null,
+      "weight_kg": 2.848
+    },
+    "VJ04C": {
+      "name": "Vajilla para 4 salpicada",
+      "nameEn": null,
+      "weight_kg": 2.848
+    },
+    "VJ10A": {
+      "name": "Vajilla 10 pz mono",
+      "nameEn": null,
+      "weight_kg": 1.774
+    },
+    "VJ10B": {
+      "name": "Vajilla 10 pz bicolor",
+      "nameEn": null,
+      "weight_kg": 1.774
+    },
+    "VJ10C": {
+      "name": "Vajilla 10 pz salpi",
+      "nameEn": null,
+      "weight_kg": 1.774
+    },
+    "VJ20A": {
+      "name": "Vajilla 20 pz mono",
+      "nameEn": null,
+      "weight_kg": 3.548
+    },
+    "VJ20B": {
+      "name": "Vajilla 20 pz bicolor",
+      "nameEn": null,
+      "weight_kg": 3.548
+    },
+    "VJ20C": {
+      "name": "Vajilla 20 pz salpi",
+      "nameEn": null,
+      "weight_kg": 3.548
+    },
+    "BA30A": {
+      "name": "Bandeja 30 cm madera cedro o caoba",
+      "nameEn": null,
+      "weight_kg": null
+    },
+    "BA30B": {
+      "name": "Bandeja 30 cm madera tzalam",
+      "nameEn": null,
+      "weight_kg": null
+    }
+  },
+  "calcas": {
+    "CAL1025": {
+      "nameEn": "Small enamel decal (25 cm2) 1 color"
+    },
+    "CAL1050": {
+      "nameEn": "Medium enamel decal (50 cm2) 1 color"
+    },
+    "CAL1100": {
+      "nameEn": "Large enamel decal (100 cm2) 1 color"
+    },
+    "CAL1200": {
+      "nameEn": "Calca vitrificable ext grande (200 cm2) 1 color"
+    },
+    "CAL2025": {
+      "nameEn": "Small enamel decal (25 cm2) 2 colors"
+    },
+    "CAL2050": {
+      "nameEn": "Medium enamel decal (50 cm2) 2 colors"
+    },
+    "CAL2100": {
+      "nameEn": "Large enamel decal (100 cm2) 2 colors"
+    },
+    "CAL2200": {
+      "nameEn": "Calca vitrificable ext grande (200 cm2) 2 colors"
+    },
+    "CAL3025": {
+      "nameEn": "Small enamel decal (25 cm2) 3 colors"
+    },
+    "CAL3050": {
+      "nameEn": "Medium enamel decal (50 cm2) 3 colors"
+    },
+    "CAL3100": {
+      "nameEn": "Large enamel decal (100 cm2) 3 colors"
+    },
+    "CAL3200": {
+      "nameEn": "Calca vitrificable ext grande (200 cm2) 3 colors"
+    },
+    "CAL4025": {
+      "nameEn": "Small enamel decal (25 cm2) 4 colors"
+    },
+    "CAL4050": {
+      "nameEn": "Medium enamel decal (50 cm2) 4 colors"
+    },
+    "CAL4100": {
+      "nameEn": "Large enamel decal (100 cm2) 4 colors"
+    },
+    "CAL4200": {
+      "nameEn": "Calca vitrificable ext grande (200 cm2) 4 colors"
+    }
+  },
+  "aplicacionExtra": {
+    "name": "Aplicación extra",
+    "prices": {
+      "M100": 7,
+      "M350": 6,
+      "M550": 5,
+      "M1500": 5,
+      "M6000": 5
+    }
+  },
+  "boxMap": [
+    {
+      "modelo": "PV08",
+      "peso_g": 47,
+      "caja": "EMPVA056P",
+      "pz_por_caja": 1,
+      "largo_cm": 8,
+      "ancho_cm": 8,
+      "alto_cm": 1
+    },
+    {
+      "modelo": "VT05",
+      "peso_g": 51,
+      "caja": "EMPVA056P",
+      "pz_por_caja": 1,
+      "largo_cm": 5,
+      "ancho_cm": 5,
+      "alto_cm": 5
+    },
+    {
+      "modelo": "VA05",
+      "peso_g": 56,
+      "caja": "EMPVA056P",
+      "pz_por_caja": 1,
+      "largo_cm": 5,
+      "ancho_cm": 5,
+      "alto_cm": 5
+    },
+    {
+      "modelo": "SA08",
+      "peso_g": 80,
+      "caja": "EMPTA146P",
+      "pz_por_caja": 1,
+      "largo_cm": 8,
+      "ancho_cm": 8,
+      "alto_cm": 4
+    },
+    {
+      "modelo": "VT08",
+      "peso_g": 148,
+      "caja": "EMPVA086P",
+      "pz_por_caja": 1,
+      "largo_cm": 8,
+      "ancho_cm": 8,
+      "alto_cm": 8
+    },
+    {
+      "modelo": "VA08",
+      "peso_g": 148,
+      "caja": "EMPVA086P",
+      "pz_por_caja": 1,
+      "largo_cm": 8,
+      "ancho_cm": 8,
+      "alto_cm": 8
+    },
+    {
+      "modelo": "VAG8",
+      "peso_g": 148,
+      "caja": "EMPVA086P",
+      "pz_por_caja": 1,
+      "largo_cm": 8,
+      "ancho_cm": 8,
+      "alto_cm": 8
+    },
+    {
+      "modelo": "VA09",
+      "peso_g": 161,
+      "caja": "EMPVA096P",
+      "pz_por_caja": 1,
+      "largo_cm": 9,
+      "ancho_cm": 9,
+      "alto_cm": 9
+    },
+    {
+      "modelo": "VAG9",
+      "peso_g": 161,
+      "caja": "EMPVA096P",
+      "pz_por_caja": 1,
+      "largo_cm": 9,
+      "ancho_cm": 9,
+      "alto_cm": 9
+    },
+    {
+      "modelo": "MA09",
+      "peso_g": 161,
+      "caja": "EMPVA096P",
+      "pz_por_caja": 1,
+      "largo_cm": 9,
+      "ancho_cm": 9,
+      "alto_cm": 9
+    },
+    {
+      "modelo": "MT09",
+      "peso_g": 161,
+      "caja": "EMPVA096P",
+      "pz_por_caja": 1,
+      "largo_cm": 9,
+      "ancho_cm": 9,
+      "alto_cm": 9
+    },
+    {
+      "modelo": "TA14",
+      "peso_g": 164,
+      "caja": "EMPTA146P",
+      "pz_por_caja": 1,
+      "largo_cm": 14,
+      "ancho_cm": 14,
+      "alto_cm": 14
+    },
+    {
+      "modelo": "PH20",
+      "peso_g": 240,
+      "caja": "E-10",
+      "pz_por_caja": 1,
+      "largo_cm": 20,
+      "ancho_cm": 20,
+      "alto_cm": 4
+    },
+    {
+      "modelo": "PL14",
+      "peso_g": 90,
+      "caja": "EMPTA146P",
+      "pz_por_caja": 1,
+      "largo_cm": 14,
+      "ancho_cm": 14,
+      "alto_cm": 1
+    },
+    {
+      "modelo": "PL20",
+      "peso_g": 160,
+      "caja": "EMPPL206P",
+      "pz_por_caja": 1,
+      "largo_cm": 20,
+      "ancho_cm": 20,
+      "alto_cm": 1
+    },
+    {
+      "modelo": "PL24",
+      "peso_g": 245,
+      "caja": "EMPPL246P",
+      "pz_por_caja": 1,
+      "largo_cm": 24,
+      "ancho_cm": 24,
+      "alto_cm": 1
+    },
+    {
+      "modelo": "PL27",
+      "peso_g": 325,
+      "caja": "E-10",
+      "pz_por_caja": 1,
+      "largo_cm": 27,
+      "ancho_cm": 27,
+      "alto_cm": 1
+    },
+    {
+      "modelo": "VJ02",
+      "peso_g": 1546,
+      "caja": "E-10",
+      "pz_por_caja": 1
+    },
+    {
+      "modelo": "VJ04",
+      "peso_g": 3828,
+      "caja": "E-10",
+      "pz_por_caja": 1
+    },
+    {
+      "modelo": "VA08N1B12111",
+      "peso_g": null,
+      "caja": "",
+      "pz_por_caja": 118.965517
+    },
+    {
+      "modelo": "SA08N1B12111",
+      "peso_g": null,
+      "caja": "",
+      "pz_por_caja": 103.448276
+    },
+    {
+      "modelo": "TA14N1B12111",
+      "peso_g": null,
+      "caja": "",
+      "pz_por_caja": 67.24138
+    },
+    {
+      "modelo": "PH20N1B12111",
+      "peso_g": null,
+      "caja": "",
+      "pz_por_caja": 64.655173
+    }
+  ],
+  "colores": {
+    "A1": "Agave",
+    "A2": "Aguamarina",
+    "A3": "Azul",
+    "A4": "Azul",
+    "A5": "Azul directo",
+    "A6": "Capri",
+    "B1": "Blanco",
+    "B2": "Blanco mate",
+    "G1": "Granito",
+    "L1": "Lila",
+    "M1": "Menta",
+    "M2": "Aqua",
+    "M3": "Menta",
+    "N1": "Negro",
+    "N2": "Negro mate",
+    "N3": "Negro",
+    "O1": "Naranja",
+    "P1": "Rosa cantera",
+    "P2": "Rosa 2019",
+    "P3": "Rosa",
+    "R1": "Rojo",
+    "R2": "Rojo",
+    "V1": "Verde",
+    "V2": "Prusia",
+    "V3": "Verde hornitos",
+    "V4": "Nopal",
+    "V5": "Verde pastel",
+    "V6": "Verde mate",
+    "XX": "Varios colores",
+    "Y1": "Amarillo",
+    "Y2": "Crema",
+    "Y3": "Mostaza",
+    "Y4": "Crema",
+    "C1": "Café",
+    "P4": "Durazno",
+    "BA": "Blanco salpi azul",
+    "VR": "Verde mancha rosa",
+    "Y5": "Ambar",
+    "A7": "Azul profundo",
+    "CA": "Madera de caoba",
+    "TZ": "Madera de tzalam",
+    "CE": "Madera de cedro"
+  },
+  "texturas": {
+    "1": "solido",
+    "2": "manchas",
+    "3": "moteado",
+    "4": "lunares",
+    "5": "marmoleado",
+    "6": "difuminado",
+    "7": "salpicado",
+    "8": "decorado a mano",
+    "9": "decorado"
+  },
+  "filetes": {
+    "1": "",
+    "2": "s/filetes",
+    "3": "s/filete oreja",
+    "4": "s/filete riso",
+    "5": "s/filete asas"
+  },
+  "colorFiletes": {
+    "1": "Negro",
+    "2": "Azul",
+    "3": "Verde",
+    "4": "Café",
+    "5": "Rojo",
+    "6": "Nopal"
+  },
+  "tiposNombre": {
+    "VT05": "Tequilero",
+    "VA05": "Taza para expreso",
+    "VT08": "Vaso de mesa",
+    "VA08": "Taza de mesa",
+    "SA08": "Salsera",
+    "VA09": "Pocillo",
+    "VT09": "Vaso 9",
+    "MA09": "Maceta 9 con oreja",
+    "TA14": "Tazón",
+    "PL14": "Plato trinche 14 cm",
+    "PL20": "Plato trinche 20 cm",
+    "PH20": "Plato hondo 20 cm",
+    "PL24": "Plato trinche 24 cm",
+    "PL27": "Plato trinche 27 cm",
+    "VJ02": "Vajilla para dos personas",
+    "VJ04": "Vajilla para 4 personas",
+    "ST04": "Set de 4",
+    "VAG8": "Taza de mesa golpeada",
+    "VAG9": "Pocillo golpeado",
+    "MT09": "Maceta 9 cm sin oreja",
+    "TR08": "Tarro",
+    "PN83": "Pizarrón",
+    "CZ12": "Budinera 12 cm",
+    "TP12": "Tapa 12 cm",
+    "TP24": "Tapa 24 cm",
+    "VA07": "Taza mediana",
+    "MA14": "Maceta 14",
+    "JR23": "Tetera 2.3 lt",
+    "PV08": "Portavasos 8 cm",
+    "SC08": "Salsera",
+    "VJ10": "Vajilla 10 piezas",
+    "VJ20": "Vajilla 20 piezas",
+    "VJ28": "Vajilla 28 piezas",
+    "CL28": "Comal 28 cm",
+    "BA30": "Base 30 cm",
+    "OL24": "Olla 24 cm"
+  },
+  "skus": {
+    "TA14P1N1M0": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "P1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14P2N1M0": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "P2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05G1N1M0": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "G1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08G1N1M0": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "G1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05G1N1M0": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "G1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05P1N1M0": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "P1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14G11211": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "G1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05G11211": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "G1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08G11211": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "G1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05G11211": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "G1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VJ02G11211": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "G1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08A21211": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "A2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20A31121": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL20A31621": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL20B1N1LB": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20B1N1M01RA": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20B1N1SB": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20M1N1M0": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "M1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20N11111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20N11611": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20P21111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20P2N1LV": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20P2N1M0": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20V21111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "V2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20Y21111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20Y2N1M0": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20Y2N1PD": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20Y31111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "Y3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24A31121": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL24B1N1LB": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24B1N1M01RA": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24B1N1SB": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24M1N1M0": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "M1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24N11111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24N1N1M0": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24P1N1M0": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "P1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24P21111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24P2N1LV": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24P2N1M0": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24V1N1M0": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24V1N1M1": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "V1",
+      "color2": "P3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24V21111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "V2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24Y21111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24Y2N1M0": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24Y2N1PD": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24Y31111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "Y3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PN083083B2": {
+      "tipo": "PN",
+      "tamano": "83",
+      "color1": "B2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "TA14A31121": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "TA14B1N1LB": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14B1N1M01RA": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14B1N1SB": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14M1N1M0": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "M1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14N11111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14N1C": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14N1N1M0": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14P21111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14P2N1LV": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14V1N1M0": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "V1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14V1N1M1": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "V1",
+      "color2": "P3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14V21111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "V2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14Y21111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14Y2N1M0": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14Y2N1PD": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14Y31111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "Y3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05A31121": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VA05A31621": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VA05B1N1M01RA": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05M1N1M0": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "M1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05N11111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05N11711": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05N1C": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05N1N1M0": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05P1N1M0": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "P1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05P21111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05V1N1M0": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05V1N1M1": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": "P3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05V21111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "V2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05Y21111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05Y31111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "Y3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08A31121": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VA08A31621": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VA08B1N1M01RA": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08M1N1M0": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "M1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08N11111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08N11711": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08N1C": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08N1N1M0": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08P1N1M0": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "P1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08P21111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08V1N1M0": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "V1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08V1N1M1": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "V1",
+      "color2": "P3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09V1N1M1": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "V1",
+      "color2": "P3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08V21111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "V2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08Y21111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08Y31111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "Y3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09A31121": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VA09B1N1M01RA": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09N11111": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09N1N1M0": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09P21111": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09V21111": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "V2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09Y21111": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09Y31111": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "Y3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VJ02A31212": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "A3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VT05A31121": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VT05B1N1M01RA": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05M1N1M0": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "M1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05N11111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05N1C": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05N1N1M0": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05P21111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "P2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05V1N1M0": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05V1N1M1": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": "P3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05V21111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "V2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05Y21111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "Y2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05Y31111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "Y3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08V11111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05B11121": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05B11121": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL20A31111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL24A31111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14A31111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VT05A31111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL20B11111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20B11112": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL20M21111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "M2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24B11111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24B11112": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL24M21111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "M2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14B11111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14B11112": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "TA14M21111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "M2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05B11111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05M21111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "M2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08B11111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08M21111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "M2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09B11111": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09M21111": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "M2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05B11111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05B11112": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VT05M21111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "M2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20A21111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "A2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24A21111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "A2",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14A21211": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05A21211": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "A2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20B17021": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": "A4",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL20B17022": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": "N1",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL20M31111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "M3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24B17021": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": "A4",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL24B17022": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": "N1",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL24M31111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "M3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14A31211": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "TA14B17021": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": "A4",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "TA14B17022": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": "N1",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "TA14M31111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "M3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14R11221": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "R1",
+      "color2": "P3",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05B17021": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": "A4",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05B17022": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": "N1",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05M31111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "M3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05R11221": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "R1",
+      "color2": "P3",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08B17021": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": "A4",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08B17022": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": "N1",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08M31111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "M3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08R11221": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "R1",
+      "color2": "P3",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA09B17021": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "B1",
+      "color2": "A4",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA09B17022": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "B1",
+      "color2": "N1",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA09M31111": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "M3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09R11221": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "R1",
+      "color2": "P3",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05A31211": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "A3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VT05B17021": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": "A4",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05B17022": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": "N1",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05M31111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "M3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05R11221": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "R1",
+      "color2": "P3",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT08B17022": {
+      "tipo": "VT",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": "N1",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT08M31111": {
+      "tipo": "VT",
+      "tamano": "08",
+      "color1": "M3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT08R11221": {
+      "tipo": "VT",
+      "tamano": "08",
+      "color1": "R1",
+      "color2": "P3",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05R11121": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "R1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08R11121": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "R1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05R11121": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "R1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT08R11121": {
+      "tipo": "VT",
+      "tamano": "08",
+      "color1": "R1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VJ02B17022": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "B1",
+      "color2": "A4",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA09N21221": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "N2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "TA14G11111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "G1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14V11111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08G11111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "G1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05V11111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05V11111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VJ02A31112": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VJ02B11121": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VJ02B17023": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VJ02N11111": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VJ02P31121": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL20A11111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "A1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20A31112": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL20B11121": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL20B17023": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL20P31121": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL24A11111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "A1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14A11111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24A31112": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "PL24B11121": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL24B17023": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL24P31121": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "TA14A11211": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14A31112": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "TA14B11121": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "TA14B17023": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "TA14P31121": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05A11211": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "A1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05A31112": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VA05B17023": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05B17023": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05P31121": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08A11211": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "A1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08A31112": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "A3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VA08B11121": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08B17023": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08P31121": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05A11211": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "A1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14M31211": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "M3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05P31111": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08P31111": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20G11111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "G1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20P31111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL20V11111": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24G11111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "G1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14P31111": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24P31111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "PL24V11111": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14A31212": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "TA14N11211": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14P31211": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "P3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "TA14V11211": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "V1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05M31211": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "M3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05N11211": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05P31211": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "P3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA05V11211": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08M31211": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "M3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08N11211": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08P31211": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "P3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08V11211": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "V1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09N11211": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05A31212": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "A3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "VT05M31211": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "M3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05N11211": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05P31211": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "P3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT05V11211": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "SA08V11113": {
+      "tipo": "SA",
+      "tamano": "08",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 3
+    },
+    "SA08V11220": {
+      "tipo": "SA",
+      "tamano": "08",
+      "color1": "V1",
+      "color2": "Y4",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05V11113": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 3
+    },
+    "VA05V11220": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": "Y4",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08V11113": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 3
+    },
+    "VA08V11220": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "V1",
+      "color2": "Y4",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "TA14V11113": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 3
+    },
+    "TA14V11220": {
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "V1",
+      "color2": "Y4",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL20V11113": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 3
+    },
+    "PL24V11113": {
+      "tipo": "PL",
+      "tamano": "24",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 3
+    },
+    "VT05V11113": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 3
+    },
+    "VT05V11220": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "V1",
+      "color2": "Y4",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "PL20V1N1M1": {
+      "tipo": "PL",
+      "tamano": "20",
+      "color1": "V1",
+      "color2": "P3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT08R21220": {
+      "tipo": "VT",
+      "tamano": "08",
+      "color1": "R2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05R21220": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "R2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA08R21211": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "R2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VJ02N11211": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA08R21220": {
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "R2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA05R21220": {
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "R2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VJ02V12111": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "V1",
+      "color2": "P3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VJ02V11220": {
+      "tipo": "VJ",
+      "tamano": "02",
+      "color1": "V1",
+      "color2": "Y4",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "SA08N11111": {
+      "tipo": "SA",
+      "tamano": "08",
+      "color1": "N1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "SA08B11112": {
+      "tipo": "SA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    },
+    "SA08R21220": {
+      "tipo": "SA",
+      "tamano": "08",
+      "color1": "R2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VAG8N11211": {
+      "tipo": "VA",
+      "tamano": "G8",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VAG8R21220": {
+      "tipo": "VA",
+      "tamano": "G8",
+      "color1": "R2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "SA08B17020": {
+      "tipo": "SA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VAG8B17020": {
+      "tipo": "VA",
+      "tamano": "G8",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VAG9B17020": {
+      "tipo": "VA",
+      "tamano": "G9",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VAG9N11211": {
+      "tipo": "VA",
+      "tamano": "G9",
+      "color1": "N1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VAG9R21220": {
+      "tipo": "VA",
+      "tamano": "G9",
+      "color1": "R2",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05P31120": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "SA08B1A37020": {
+      "tipo": "SA",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": "A3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VAG8B1A37020": {
+      "tipo": "VA",
+      "tamano": "G8",
+      "color1": "B1",
+      "color2": "A3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VAG9B1A37020": {
+      "tipo": "VA",
+      "tamano": "G9",
+      "color1": "B1",
+      "color2": "A3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VA09A11211": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "A1",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VA09M31211": {
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "M3",
+      "color2": "B1",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VT08B17023": {
+      "tipo": "VT",
+      "tamano": "08",
+      "color1": "B1",
+      "color2": "P3",
+      "textura": 7,
+      "capas": 1,
+      "filetes": 2,
+      "colorRiso": null
+    },
+    "VT05P31111": {
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "P3",
+      "color2": null,
+      "textura": 1,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 1
+    },
+    "VJ04B1A32111": {
+      "tipo": "VJ",
+      "tamano": "04",
+      "color1": "B1",
+      "color2": "A3",
+      "textura": 2,
+      "capas": 1,
+      "filetes": 1,
+      "colorRiso": 2
+    }
+  }
+}
