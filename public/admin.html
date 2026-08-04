@@ -558,7 +558,7 @@ function paridadEsc(s) {
   return String(s ?? '').replace(/</g, '&lt;');
 }
 
-function paridadTablaDiferencias(filas) {
+function paridadTablaDiferencias(filas, campoLlave) {
   if (!filas.length) return '<p style="font-size:12px;color:var(--text-light)">Sin discrepancias.</p>';
   return `
     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">
@@ -572,7 +572,7 @@ function paridadTablaDiferencias(filas) {
       <tbody>
         ${filas.map(f => `
           <tr>
-            <td style="padding:6px 8px;border-bottom:1px solid var(--border);font-weight:700;color:var(--primary-dark)">${paridadEsc(f.key)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid var(--border);font-weight:700;color:var(--primary-dark)">${paridadEsc(f[campoLlave])}</td>
             <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${paridadEsc(f.name)}</td>
             <td style="padding:6px 8px;border-bottom:1px solid var(--border)">
               ${f.diferencias.map(d => `${d.tier}: ${d.referencia ?? '-'} vs ${d.operam ?? '-'}`).join('<br>')}
@@ -589,13 +589,24 @@ function paridadListaSimple(titulo, items) {
   return `<p style="font-size:12px;margin-bottom:6px"><strong>${titulo} (${items.length}):</strong> ${items.map(paridadEsc).join(', ')}</p>`;
 }
 
+function paridadContarEstados(filas) {
+  const r = { MATCH: 0, MISMATCH: 0, SIN_SKU: 0, NUEVO: 0 };
+  for (const f of filas || []) r[f.estado] = (r[f.estado] || 0) + 1;
+  return r;
+}
+
 function renderParidadCatalogo(data) {
   const r = data.resumen;
+  const rc = paridadContarEstados(data.calcas);
   document.getElementById('paridad-resumen').innerHTML = `
     Productos -- MATCH: <strong>${r.MATCH}</strong> |
     MISMATCH: <strong>${r.MISMATCH}</strong> |
     SIN_SKU: <strong>${r.SIN_SKU}</strong> |
     NUEVO: <strong>${r.NUEVO}</strong><br>
+    Calcas -- MATCH: <strong>${rc.MATCH}</strong> |
+    MISMATCH: <strong>${rc.MISMATCH}</strong> |
+    SIN_SKU: <strong>${rc.SIN_SKU}</strong> |
+    NUEVO: <strong>${rc.NUEVO}</strong><br>
     Huerfanas: <strong>${r.huerfanas}</strong> |
     Divergentes: <strong>${r.divergentes}</strong> |
     Ilegibles: <strong>${r.ilegibles}</strong> |
@@ -605,12 +616,23 @@ function renderParidadCatalogo(data) {
   const mismatch = data.productos.filter(p => p.estado === 'MISMATCH');
   const sinSku = data.productos.filter(p => p.estado === 'SIN_SKU').map(p => p.key);
   const nuevo = data.productos.filter(p => p.estado === 'NUEVO').map(p => p.key);
+  const calcaMismatch = data.calcas.filter(c => c.estado === 'MISMATCH');
+  const calcaSinSku = data.calcas.filter(c => c.estado === 'SIN_SKU').map(c => c.code);
+  const calcaNuevo = data.calcas.filter(c => c.estado === 'NUEVO').map(c => c.code);
 
   const partes = [];
   partes.push('<h3 style="font-size:13px;margin-bottom:6px">MISMATCH (precio distinto)</h3>');
-  partes.push(paridadTablaDiferencias(mismatch));
+  partes.push(paridadTablaDiferencias(mismatch, 'key'));
   partes.push(paridadListaSimple('SIN_SKU (en el catalogo, ya no en Operam)', sinSku));
   partes.push(paridadListaSimple('NUEVO (en Operam, sin ficha en el catalogo)', nuevo));
+
+  if (data.calcas.length) {
+    partes.push('<h3 style="font-size:13px;margin:10px 0 6px">Calcas -- MISMATCH (precio distinto)</h3>');
+    partes.push(paridadTablaDiferencias(calcaMismatch, 'code'));
+    partes.push(paridadListaSimple('Calcas SIN_SKU (en el catalogo, ya no en Operam)', calcaSinSku));
+    partes.push(paridadListaSimple('Calcas NUEVO (en Operam, sin ficha en el catalogo)', calcaNuevo));
+  }
+
   partes.push(paridadListaSimple('Sin ficha en el complementario', data.sinFicha.map(s => `${s.key} (${s.articulos})`)));
   partes.push(paridadListaSimple('Sin caja en boxMap', data.sinCaja.map(s => `${s.key} (${s.model})`)));
   partes.push(paridadListaSimple('Huerfanas (precio sin articulo)', data.huerfanas.map(h => `${h.stock_id} ($${h.price.toFixed(2)})`)));

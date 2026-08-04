@@ -14,7 +14,9 @@ import { existsSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
-import { construirCatalogo, ESTADOS_PARIDAD } from '../lib/catalogo-operam.js';
+import { construirCatalogo, ESTADOS_PARIDAD, productosSinCaja } from '../lib/catalogo-operam.js';
+
+export { productosSinCaja };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -31,18 +33,6 @@ export function diffSkus(skusGenerados, skusReferencia) {
     nuevos: [...generados].filter(s => !referencia.has(s)).sort(),
     quitados: [...referencia].filter(s => !generados.has(s)).sort(),
   };
-}
-
-// productosSinCaja avisa de un pendiente que calcular-envio.js necesita para no fallar
-// en runtime (#102/#68): un producto con ficha en el complementario pero cuyo modelo
-// no tiene entrada en boxMap. Sin este aviso el hueco se descubre hasta que un
-// vendedor cotiza el modelo nuevo y el calculo de envio truena silenciosamente.
-export function productosSinCaja(catalogo) {
-  const modelos = new Set((catalogo.boxMap || []).map(b => b.modelo));
-  return (catalogo.products || [])
-    .filter(p => !modelos.has(p.model))
-    .map(p => ({ key: p.key, model: p.model }))
-    .sort((a, b) => a.key.localeCompare(b.key));
 }
 
 function contarEstados(filas) {
