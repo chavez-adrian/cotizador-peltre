@@ -172,6 +172,23 @@
         </table>
       </div>
     </div>
+
+    <!-- Paridad de catalogo Excel vs Operam (issue #130) -->
+    <div class="admin-section">
+      <h2>Paridad de catalogo vs Operam</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Compara el catalogo vigente del cotizador contra Operam en vivo: cuantos SKUs cuadran, cuales cobran distinto,
+        que codigos ya no existen en Operam y cuales son nuevos. Lectura completa de Operam (~10 llamadas): tarda unos
+        segundos. Solo lectura -- no modifica nada.
+      </p>
+      <button class="btn btn-secondary btn-sm" id="btn-paridad-catalogo">Comparar contra Operam</button>
+      <div id="paridad-loading" style="display:none;color:var(--text-light);font-size:13px;margin-top:8px">Leyendo Operam (puede tardar unos segundos)...</div>
+      <div id="paridad-error" style="display:none;color:var(--danger);font-size:13px;margin-top:8px"></div>
+      <div id="paridad-content" style="display:none;margin-top:12px">
+        <div id="paridad-resumen" class="diff-summary" style="margin-bottom:12px"></div>
+        <div id="paridad-detalle" style="overflow-x:auto"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -536,6 +553,110 @@ async function loadHigiene() {
   }
 }
 
+// --- Paridad de catalogo Excel vs Operam (issue #130) ---
+function paridadEsc(s) {
+  return String(s ?? '').replace(/</g, '&lt;');
+}
+
+function paridadTablaDiferencias(filas) {
+  if (!filas.length) return '<p style="font-size:12px;color:var(--text-light)">Sin discrepancias.</p>';
+  return `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">
+      <thead>
+        <tr style="background:var(--bg);text-align:left">
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Clave</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Nombre</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Diferencias (tier: referencia vs Operam)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filas.map(f => `
+          <tr>
+            <td style="padding:6px 8px;border-bottom:1px solid var(--border);font-weight:700;color:var(--primary-dark)">${paridadEsc(f.key)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${paridadEsc(f.name)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid var(--border)">
+              ${f.diferencias.map(d => `${d.tier}: ${d.referencia ?? '-'} vs ${d.operam ?? '-'}`).join('<br>')}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function paridadListaSimple(titulo, items) {
+  if (!items.length) return '';
+  return `<p style="font-size:12px;margin-bottom:6px"><strong>${titulo} (${items.length}):</strong> ${items.map(paridadEsc).join(', ')}</p>`;
+}
+
+function renderParidadCatalogo(data) {
+  const r = data.resumen;
+  document.getElementById('paridad-resumen').innerHTML = `
+    Productos -- MATCH: <strong>${r.MATCH}</strong> |
+    MISMATCH: <strong>${r.MISMATCH}</strong> |
+    SIN_SKU: <strong>${r.SIN_SKU}</strong> |
+    NUEVO: <strong>${r.NUEVO}</strong><br>
+    Huerfanas: <strong>${r.huerfanas}</strong> |
+    Divergentes: <strong>${r.divergentes}</strong> |
+    Ilegibles: <strong>${r.ilegibles}</strong> |
+    Sin caja: <strong>${data.sinCaja.length}</strong>
+  `;
+
+  const mismatch = data.productos.filter(p => p.estado === 'MISMATCH');
+  const sinSku = data.productos.filter(p => p.estado === 'SIN_SKU').map(p => p.key);
+  const nuevo = data.productos.filter(p => p.estado === 'NUEVO').map(p => p.key);
+
+  const partes = [];
+  partes.push('<h3 style="font-size:13px;margin-bottom:6px">MISMATCH (precio distinto)</h3>');
+  partes.push(paridadTablaDiferencias(mismatch));
+  partes.push(paridadListaSimple('SIN_SKU (en el catalogo, ya no en Operam)', sinSku));
+  partes.push(paridadListaSimple('NUEVO (en Operam, sin ficha en el catalogo)', nuevo));
+  partes.push(paridadListaSimple('Sin ficha en el complementario', data.sinFicha.map(s => `${s.key} (${s.articulos})`)));
+  partes.push(paridadListaSimple('Sin caja en boxMap', data.sinCaja.map(s => `${s.key} (${s.model})`)));
+  partes.push(paridadListaSimple('Huerfanas (precio sin articulo)', data.huerfanas.map(h => `${h.stock_id} ($${h.price.toFixed(2)})`)));
+
+  if (data.divergentes.length) {
+    partes.push(`<h3 style="font-size:13px;margin:10px 0 6px">Divergentes (misma clave, distinto precio en Operam)</h3>`);
+    partes.push(data.divergentes.map(d => `
+      <p style="font-size:12px;margin-bottom:4px"><strong>${paridadEsc(d.key)}:</strong> ${
+        d.precios.map(v => `base=${v.base} (${v.skus.length} sku${v.skus.length === 1 ? '' : 's'})`).join(' vs ')
+      }</p>
+    `).join(''));
+  }
+
+  partes.push(paridadListaSimple('Ilegibles (precio vivo, codigo no legible)', data.ilegibles.map(i => `${i.stock_id} ${i.nombre}`)));
+
+  document.getElementById('paridad-detalle').innerHTML = partes.join('');
+}
+
+async function cargarParidadCatalogo() {
+  const btn = document.getElementById('btn-paridad-catalogo');
+  const loading = document.getElementById('paridad-loading');
+  const errEl = document.getElementById('paridad-error');
+  const content = document.getElementById('paridad-content');
+  btn.disabled = true;
+  loading.style.display = 'block';
+  errEl.style.display = 'none';
+  content.style.display = 'none';
+  try {
+    const res = await adminApi('/api/admin/paridad-catalogo');
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'No se pudo leer el catalogo de Operam';
+      errEl.style.display = 'block';
+      return;
+    }
+    renderParidadCatalogo(data);
+    content.style.display = 'block';
+  } catch (e) {
+    errEl.textContent = 'Error de conexion';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    loading.style.display = 'none';
+  }
+}
+
 // --- Events ---
 document.getElementById('admin-login-btn').addEventListener('click', adminLogin);
 document.getElementById('admin-pin').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
@@ -547,6 +668,7 @@ document.getElementById('btn-add-vendedor').addEventListener('click', addVendedo
 document.getElementById('btn-save-vendedores').addEventListener('click', saveVendedores);
 document.getElementById('btn-save-config').addEventListener('click', saveConfig);
 document.getElementById('btn-save-cajas').addEventListener('click', saveCajas);
+document.getElementById('btn-paridad-catalogo').addEventListener('click', cargarParidadCatalogo);
 </script>
 </body>
 </html>

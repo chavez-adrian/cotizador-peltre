@@ -2262,3 +2262,54 @@ test('#114-7: actualizar el quote con exito reescribe la huella con lo que quedo
     restore();
   }
 });
+
+// === GET /api/admin/paridad-catalogo (issue #130) ===
+
+test('GET /api/admin/paridad-catalogo exige admin: vendedor 403, sin token 401', async () => {
+  const vendedorToken = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
+  const vendedor = await supertest(app).get('/api/admin/paridad-catalogo')
+    .set('Authorization', `Bearer ${vendedorToken}`);
+  assert.strictEqual(vendedor.status, 403);
+  const sinToken = await supertest(app).get('/api/admin/paridad-catalogo');
+  assert.strictEqual(sinToken.status, 401);
+});
+
+test('GET /api/admin/paridad-catalogo lee Operam y devuelve el reporte de paridad', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/sales_types': () => ({ ok: true, json: async () => ({
+      total: 1, data: [{ id: '1', sales_type: 'Precio de lista', factor: '1', inactive: '0' }],
+    }) }),
+    '/api/v3/sales/prices_list': () => ({ ok: true, json: async () => ({ total: 0, data: [] }) }),
+    '/api/v3/inventory/items': () => ({ ok: true, json: async () => ({ total: 0, data: [] }) }),
+  });
+  try {
+    const res = await supertest(app).get('/api/admin/paridad-catalogo')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    const referencia = JSON.parse(leerArchivoSync(join(DATA_DIR, 'precios.json')));
+    // Sin articulos en Operam, todos los productos de referencia salen SIN_SKU.
+    assert.strictEqual(res.body.resumen.MATCH, 0);
+    assert.strictEqual(res.body.resumen.SIN_SKU, referencia.products.length);
+    assert.strictEqual(res.body.resumen.NUEVO, 0);
+    assert.ok(Array.isArray(res.body.productos));
+    assert.ok(Array.isArray(res.body.sinCaja));
+  } finally {
+    restore();
+  }
+});
+
+test('GET /api/admin/paridad-catalogo: Operam no disponible responde 503', async () => {
+  const { resetSession } = await import('../lib/operam-client.js');
+  resetSession();
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => { throw new Error('timeout'); },
+  });
+  try {
+    const res = await supertest(app).get('/api/admin/paridad-catalogo')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 503);
+  } finally {
+    restore();
+  }
+});

@@ -8,13 +8,15 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, _setMinInterval } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
+import { construirCatalogo } from './lib/catalogo-operam.js';
+import { productosSinCaja } from './scripts/sync-catalogo.mjs';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
 import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico } from './lib/deduplicacion.js';
@@ -1021,6 +1023,29 @@ app.get('/api/admin/higiene-clientes-genericos', authMiddleware, adminMiddleware
   if (rows === null) return res.json({ filas: [], sinDb: true });
   const cotizaciones = await cotStore.listar();
   res.json({ filas: construirReporteHigiene(rows.rows, cotizaciones, new Date()), sinDb: false });
+});
+
+// Reporte de paridad del catalogo Excel vs Operam (issue #130, padre #120, bloqueado
+// por #128/#129). Lee Operam completo con los lectores de #128 (~10 llamadas: sales
+// types, precios e items paginados), corre el nucleo puro construirCatalogo contra
+// data/catalogo-complemento.json y data/precios.json como referencia, y devuelve el
+// reporte JSON. READ-ONLY siempre -- el apply se queda en scripts/sync-catalogo.mjs
+// (#129); esta ruta nunca escribe data/precios.json.
+app.get('/api/admin/paridad-catalogo', authMiddleware, adminMiddleware, async (_req, res) => {
+  try {
+    const salesTypes = await listarSalesTypes({ showInactive: true });
+    const precios = await listarPreciosCompletos();
+    const items = await listarItemsCompletos();
+    const complemento = readJSON('catalogo-complemento.json') || {};
+    const referencia = readJSON('precios.json');
+    const { catalogo, paridad } = construirCatalogo({
+      salesTypes, precios, items, complemento, referencia,
+      extracted: new Date().toISOString(),
+    });
+    res.json({ ...paridad, sinCaja: productosSinCaja(catalogo) });
+  } catch (err) {
+    res.status(503).json({ error: 'No se pudo leer el catalogo de Operam: ' + err.message });
+  }
 });
 
 // === BANDEJA DE REVISION "Rescatados de Operam" (issue #122) ===
