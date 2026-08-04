@@ -427,11 +427,13 @@ test('construirCatalogo: la familia de calcas cubre de 1 a 8 tintas, no las CAL0
 });
 
 // Las calcas tambien se comparan contra el catalogo vigente: es lo que desbloquea #91.
-test('paridad: las calcas se clasifican igual que los productos', () => {
+// El Menudeo queda FUERA de la comparacion: las calcas se venden desde 100 piezas y el
+// Menudeo que la referencia del Excel les pone es un piso del extractor, no un precio.
+test('paridad: las calcas se clasifican igual que los productos, salvo Menudeo', () => {
   const referencia = {
     products: [],
     calcas: [
-      { code: 'CAL1025', name: 'Calca chica', prices: { Menudeo: null, M100: 26.9, M350: null, M550: null, M1500: null, M6000: null } },
+      { code: 'CAL1025', name: 'Calca chica', prices: { Menudeo: 26.9, M100: 26.9, M350: null, M550: null, M1500: null, M6000: null } },
       { code: 'CAL9999', name: 'Calca que ya no existe', prices: { M100: 10 } },
     ],
   };
@@ -528,15 +530,17 @@ test('reconstruccion: products y calcas cuadran con el catalogo vigente salvo lo
   for (const n of nuevos) assert.match(n.key, /P4$/);
 
   // Las 16 calcas del catalogo vigente existen en Operam (desbloquea #91) y ademas
-  // hay 16 mas (5 a 8 tintas). Su unica diferencia son las listas que Operam no precia.
+  // hay 16 mas (5 a 8 tintas). Con el Menudeo (piso del extractor) fuera de la
+  // comparacion, 15 cuadran al centavo; el unico MISMATCH es drift REAL del ERP:
+  // CAL1025 esta marcada "(No usar)" en Operam y le falta la fila M350.
   const codigosVigentes = new Set(dumps.referencia.calcas.map(c => c.code));
   assert.equal(catalogo.calcas.filter(c => codigosVigentes.has(c.code)).length, 16);
   assert.equal(paridad.calcas.filter(c => c.estado === ESTADOS_PARIDAD.SIN_SKU).length, 0);
-  const diferenciasCalcas = paridad.calcas.flatMap(c => c.diferencias);
-  assert.ok(diferenciasCalcas.length > 0);
-  for (const d of diferenciasCalcas) {
-    assert.equal(d.operam, null, 'una calca solo puede diferir en la lista que Operam no precia');
-  }
+  assert.equal(paridad.calcas.filter(c => c.estado === ESTADOS_PARIDAD.MATCH).length, 15);
+  assert.equal(paridad.calcas.filter(c => c.estado === ESTADOS_PARIDAD.NUEVO).length, 16);
+  const mismatchCalcas = paridad.calcas.filter(c => c.estado === ESTADOS_PARIDAD.MISMATCH);
+  assert.deepEqual(mismatchCalcas.map(c => c.code), ['CAL1025']);
+  assert.deepEqual(mismatchCalcas[0].diferencias.map(d => d.tier), ['M350']);
 
   // Filas de precio sin articulo en el maestro: existen y hay que verlas.
   assert.ok(paridad.huerfanas.length > 100);
