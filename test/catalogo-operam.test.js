@@ -559,7 +559,10 @@ const dumps = (() => {
     precios: leer('fixtures', 'operam-prices-list.json'),
     items: leer('fixtures', 'operam-items.json'),
     complemento: leer('..', 'data', 'catalogo-complemento.json'),
-    referencia: leer('..', 'data', 'precios.json'),
+    // La referencia es el ULTIMO catalogo extraido del Excel, congelado como fixture en
+    // el corte #131: data/precios.json ahora lo genera el sync desde Operam, asi que ya
+    // no sirve como "lo que decia el Excel" (compararia al generador consigo mismo).
+    referencia: leer('fixtures', 'precios-2026-abril-excel.json'),
   };
 })();
 
