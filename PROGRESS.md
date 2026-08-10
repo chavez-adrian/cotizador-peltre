@@ -16,7 +16,7 @@ son intencionales (marca de agua "PREFACTURA", "Nº Prefactura", leyenda de mues
 ## Dónde quedó el avance
 - `prototipos/prefactura/` — prototipo completo + notas de geometría calcada + ejemplo + comparación.
   Ver `prototipos/prefactura/README.md` (tiene TODA la geometría para portar sin re-derivar).
-- Issue de integración en GitHub (ver enlace en el commit / al reanudar: `gh issue list`).
+- Issue de integración: **#132** — https://github.com/chavez-adrian/cotizador-peltre/issues/132
 
 ## Decisión de arquitectura clave
 El prototipo es **Python + reportlab**; el cotizador es **Node/Express + PDFKit**. La integración
@@ -25,7 +25,7 @@ geometría (A4, márgenes 14.2pt, fuentes Helvetica 7.5/7.3/6.0, columnas X, esq
 está calcada y documentada en el README del prototipo.
 
 ## Próximo paso al reanudar
-1. `gh issue view <n>` (el issue creado) para el spec completo.
+1. `gh issue view 132` para el spec completo.
 2. Crear `lib/prefactura-generator.js` (PDFKit) portando el layout del README.
 3. `GET /api/prefactura/pdf/:orderNo` (authMiddleware) usando `obtenerPedido` de operam-client.
 4. Entrada en la UI (vista de pedidos) + `?descargar=1`.
