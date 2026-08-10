@@ -91,8 +91,20 @@ export function formatearReporte({ catalogo, paridad, skusDiff, sinCaja }) {
 
   if (paridad.huerfanas.length) {
     lineas.push('');
-    lineas.push(`HUERFANAS (${paridad.huerfanas.length}): fila de precio sin articulo en el maestro:`);
+    lineas.push(`HUERFANAS (${paridad.huerfanas.length}): fila de precio de articulo BORRADO (no existe ni inactivo):`);
     for (const h of paridad.huerfanas) lineas.push(`  ${h.stock_id} (lista ${h.sales_type_id}, $${h.price.toFixed(2)})`);
+  }
+
+  if ((paridad.inactivasConPrecio || []).length) {
+    lineas.push('');
+    lineas.push(`EN DESUSO con precio (${paridad.inactivasConPrecio.length} articulos inactivos que conservan filas de precio; informativo):`);
+    lineas.push(`  ${paridad.inactivasConPrecio.map(i => i.stock_id).join(', ')}`);
+  }
+
+  if ((paridad.skusEnDesuso || []).length || (paridad.skusInexistentes || []).length) {
+    lineas.push('');
+    lineas.push(`SKUS DEL CATALOGO VIGENTE QUE OPERAM YA NO PRECIA -- en desuso (inactivos): ${(paridad.skusEnDesuso || []).length} | nunca cargados: ${(paridad.skusInexistentes || []).length}`);
+    if ((paridad.skusInexistentes || []).length) lineas.push(`  nunca cargados: ${paridad.skusInexistentes.join(', ')}`);
   }
 
   if (paridad.divergentes.length) {
@@ -145,7 +157,9 @@ async function main() {
 
   const salesTypes = await listarSalesTypes({ showInactive: true });
   const precios = await listarPreciosCompletos();
-  const items = await listarItemsCompletos();
+  // Con inactivos: sin ellos el reporte confunde "en desuso" con "borrado" y con
+  // "nunca cargado" (verificado 2026-08-10: 57 de 76 faltantes eran inactivos).
+  const items = await listarItemsCompletos({ showInactive: true });
   console.log(`  ${salesTypes.length} listas de precios | ${precios.length} filas de precio | ${items.length} articulos`);
 
   const complemento = JSON.parse(leerArchivoSync(join(DATA, 'catalogo-complemento.json')));

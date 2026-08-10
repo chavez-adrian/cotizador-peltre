@@ -1034,7 +1034,7 @@ app.get('/api/admin/paridad-catalogo', authMiddleware, adminMiddleware, async (_
   try {
     const salesTypes = await listarSalesTypes({ showInactive: true });
     const precios = await listarPreciosCompletos();
-    const items = await listarItemsCompletos();
+    const items = await listarItemsCompletos({ showInactive: true });
     const complemento = readJSON('catalogo-complemento.json') || {};
     const referencia = readJSON('precios.json');
     const { catalogo, paridad } = construirCatalogo({

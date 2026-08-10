@@ -608,7 +608,8 @@ function renderParidadCatalogo(data) {
     Precio distinto: <strong>${rc.MISMATCH}</strong> |
     Sin articulo en Operam: <strong>${rc.SIN_SKU}</strong> |
     Solo en Operam: <strong>${rc.NUEVO}</strong><br>
-    Precios huerfanos: <strong>${r.huerfanas}</strong> |
+    Precios de articulos borrados: <strong>${r.huerfanas}</strong> |
+    En desuso con precio: <strong>${(data.inactivasConPrecio || []).length}</strong> |
     Variantes cobrando distinto: <strong>${r.divergentes}</strong> |
     Codigos no interpretables: <strong>${r.ilegibles}</strong> |
     Sin caja para envio: <strong>${data.sinCaja.length}</strong>
@@ -639,7 +640,10 @@ function renderParidadCatalogo(data) {
 
   partes.push(paridadListaSimple('Claves sin ficha (falta nombre/nombre en ingles en el complementario; no entran al catalogo)', data.sinFicha.map(s => `${s.key} (${s.articulos})`)));
   partes.push(paridadListaSimple('Modelos sin caja para calcular envio (completar boxMap)', data.sinCaja.map(s => `${s.key} (${s.model})`)));
-  partes.push(paridadListaSimple('Precios huerfanos: el articulo ya no existe en el maestro de Operam', data.huerfanas.map(h => `${h.stock_id} ($${h.price.toFixed(2)})`)));
+  partes.push(paridadListaSimple('Precios de articulos BORRADOS del maestro (limpiar en el ERP)', data.huerfanas.map(h => `${h.stock_id} ($${h.price.toFixed(2)})`)));
+  partes.push(paridadListaSimple('SKUs del catalogo vigente NUNCA cargados en Operam (cargar via items_excel o retirar del Excel)', data.skusInexistentes || []));
+  partes.push(paridadListaSimple('SKUs del catalogo vigente EN DESUSO en Operam (inactivos; saldran del catalogo al cortar)', data.skusEnDesuso || []));
+  partes.push(paridadListaSimple('Articulos inactivos que conservan precio (informativo, no requiere accion)', (data.inactivasConPrecio || []).map(i => i.stock_id)));
 
   if (data.divergentes.length) {
     partes.push(`<h3 style="font-size:13px;margin:10px 0 6px">Variantes de una misma clave cobrando distinto en Operam</h3>`);

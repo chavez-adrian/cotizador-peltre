@@ -423,7 +423,82 @@ test('construirCatalogo: la familia de calcas cubre de 1 a 8 tintas, no las CAL0
     items: codigos.map(c => ({ stock_id: c, description: 'Calca ' + c })),
     complemento: COMPLEMENTO,
   });
-  assert.deepEqual(catalogo.calcas.map(c => c.code), ['CAL1025', 'CAL8200']);
+  // CAL0009 (marca/artistas) queda fuera; CAL1025S es la MISMA calca que CAL1025 en
+  // migracion de unidad, y con precios en ambas manda la S.
+  assert.deepEqual(catalogo.calcas.map(c => c.code), ['CAL1025S', 'CAL8200']);
+});
+
+// Un articulo INACTIVO esta en desuso: no entra al catalogo, su fila de precio no es
+// huerfana (el articulo existe) y su ausencia del catalogo generado no es un faltante
+// que haya que cargar -- el desactualizado es el Excel. Verificado 2026-08-10: 57 de
+// los 76 "faltantes" y 66 de las 69 "huerfanas" eran inactivos.
+test('construirCatalogo: los inactivos no entran al catalogo pero clasifican desuso y precio inactivo', () => {
+  const { catalogo, paridad } = construirCatalogo({
+    salesTypes: SALES_TYPES,
+    precios: [
+      fila('PV08B1001111', '12', 100),
+      fila('PV08N1001111', '12', 90),   // articulo inactivo con precio
+      fila('PV08FANTASMA', '12', 80),   // articulo borrado (ni activo ni inactivo)
+    ],
+    items: [
+      { stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco', inactive: '0' },
+      { stock_id: 'PV08N1001111', description: 'Portavasos 8 negro (descontinuado)', inactive: '1' },
+    ],
+    complemento: COMPLEMENTO,
+    referencia: {
+      products: [],
+      skus: [
+        { sku: 'PV08B1001111', priceKey: 'PV08A' },
+        { sku: 'PV08N1001111', priceKey: 'PV08A' },
+        { sku: 'PV08INVENTADO', priceKey: 'PV08A' },
+      ],
+    },
+  });
+  assert.deepEqual(catalogo.skus.map(s => s.sku), ['PV08B1001111']);
+  assert.deepEqual(paridad.inactivasConPrecio, [{ stock_id: 'PV08N1001111', filas: 1 }]);
+  assert.deepEqual(paridad.huerfanas.map(h => h.stock_id), ['PV08FANTASMA']);
+  assert.deepEqual(paridad.skusEnDesuso, ['PV08N1001111']);
+  assert.deepEqual(paridad.skusInexistentes, ['PV08INVENTADO']);
+});
+
+// CAL1025 (unidad Actividad) quedo "No usar" porque Actividad no es admitida en la
+// factura con complemento de exportacion; su reemplazo es CAL1025S (Servicio). Cuando
+// el par convive, manda la que tiene precios; con precios en ambas, la S. La paridad
+// compara por codigo BASE para no inventar un SIN_SKU + NUEVO por cada migracion.
+test('construirCatalogo: la variante S de una calca manda cuando tiene precios', () => {
+  const referencia = {
+    products: [],
+    calcas: [{ code: 'CAL1025', name: 'Calca chica', prices: { M100: 26.9 } }],
+  };
+  // Solo la vieja tiene precios: sigue mandando la vieja (unit ACT).
+  const soloVieja = construirCatalogo({
+    salesTypes: SALES_TYPES,
+    precios: [fila('CAL1025', '15', 26.9)],
+    items: [
+      { stock_id: 'CAL1025', description: 'Calca chica (No usar)', inactive: '0' },
+      { stock_id: 'CAL1025S', description: 'Calca chica', inactive: '0' },
+    ],
+    complemento: COMPLEMENTO,
+    referencia,
+  });
+  assert.deepEqual(soloVieja.catalogo.calcas.map(c => [c.code, c.unit]), [['CAL1025', 'ACT']]);
+  assert.equal(soloVieja.paridad.calcas.find(c => c.code === 'CAL1025').estado, ESTADOS_PARIDAD.MATCH);
+  // Ambas con precios: manda la S (unit SER) y la paridad sigue viendo UNA calca MATCH.
+  const ambas = construirCatalogo({
+    salesTypes: SALES_TYPES,
+    precios: [fila('CAL1025', '15', 26.9), fila('CAL1025S', '15', 26.9)],
+    items: [
+      { stock_id: 'CAL1025', description: 'Calca chica (No usar)', inactive: '0' },
+      { stock_id: 'CAL1025S', description: 'Calca chica', inactive: '0' },
+    ],
+    complemento: COMPLEMENTO,
+    referencia,
+  });
+  assert.deepEqual(ambas.catalogo.calcas.map(c => [c.code, c.unit]), [['CAL1025S', 'SER']]);
+  const filas1025 = ambas.paridad.calcas.filter(c => c.code === 'CAL1025');
+  assert.equal(filas1025.length, 1);
+  assert.equal(filas1025[0].estado, ESTADOS_PARIDAD.MATCH);
+  assert.equal(ambas.paridad.calcas.length, 1, 'sin NUEVO ni SIN_SKU fantasma por la migracion');
 });
 
 // Una clave cuyos articulos EXISTEN en Operam pero sin fila de "Precio de lista" es
@@ -517,12 +592,13 @@ test('reconstruccion: los SKUs del catalogo vigente se recuperan con las mismas 
     assert.equal(s.priceKey.replace(/P\d$/, ''), vigentes.get(s.sku).priceKey);
   }
 
-  // Los SKUs del Excel que no se recuperan son codigos legacy que ya NO existen en el
-  // maestro de articulos de Operam: no se pueden cotizar.
+  // Los SKUs del Excel que no se recuperan son codigos que ya NO estan ACTIVOS en el
+  // maestro de Operam (borrados o inactivos = en desuso): no se pueden cotizar. Los
+  // inactivos del volcado NO cuentan como vivos.
   const generados = new Set(catalogo.skus.map(s => s.sku));
-  const enOperam = new Set(dumps.items.map(i => i.stock_id));
-  const perdidos = dumps.referencia.skus.filter(s => !generados.has(s.sku) && enOperam.has(s.sku));
-  assert.deepEqual(perdidos, [], 'ningun articulo vivo en Operam puede caerse del catalogo');
+  const enOperamActivo = new Set(dumps.items.filter(i => i.inactive !== '1').map(i => i.stock_id));
+  const perdidos = dumps.referencia.skus.filter(s => !generados.has(s.sku) && enOperamActivo.has(s.sku));
+  assert.deepEqual(perdidos, [], 'ningun articulo ACTIVO en Operam puede caerse del catalogo');
 });
 
 test('reconstruccion: products y calcas cuadran con el catalogo vigente salvo lo que el ERP tiene distinto', () => {
@@ -564,9 +640,16 @@ test('reconstruccion: products y calcas cuadran con el catalogo vigente salvo lo
   assert.deepEqual(mismatchCalcas.map(c => c.code), ['CAL1025']);
   assert.deepEqual(mismatchCalcas[0].diferencias.map(d => d.tier), ['M350']);
 
-  // Filas de precio sin articulo en el maestro: existen y hay que verlas.
-  assert.ok(paridad.huerfanas.length > 100);
+  // Con los inactivos visibles, el reporte separa las tres cosas que antes se
+  // confundian (verificado contra Operam el 2026-08-10): solo 3 huerfanas REALES
+  // (articulo borrado), 66 articulos en desuso que conservan precio, y de los SKUs
+  // del catalogo vigente que Operam no precia: 57 en desuso vs 19 nunca cargados.
+  assert.deepEqual([...new Set(paridad.huerfanas.map(h => h.stock_id))].sort(),
+    ['VA08SET001', 'VJ07B100911216', 'VJ28B100911217']);
   assert.equal(paridad.huerfanas.every(h => Number(h.price) > 0), true);
+  assert.equal(paridad.inactivasConPrecio.length, 66);
+  assert.equal(paridad.skusEnDesuso.length, 57);
+  assert.equal(paridad.skusInexistentes.length, 19);
 });
 
 // Dos SKUs con la MISMA base pueden acabar en precios distintos si uno tiene fila
