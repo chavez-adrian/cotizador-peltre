@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Dry-run #118 — 31 candidatos a la bandeja</title>
+<style>
+:root { --primary: oklch(0.47 0.15 262); --primary-dark: oklch(0.37 0.13 262); --primary-light: oklch(0.94 0.03 262);
+  --bg: oklch(0.97 0.006 85); --border: oklch(0.9 0.01 85); --text: oklch(0.28 0.015 75); --text-light: oklch(0.54 0.02 75); }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: system-ui, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 13px; padding: 24px; }
+h1 { font-size: 18px; color: var(--primary-dark); margin-bottom: 4px; }
+.meta { color: var(--text-light); font-size: 12px; margin-bottom: 18px; }
+.tiles { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+.tile { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; min-width: 120px; }
+.tile .v { font-size: 22px; font-weight: 700; color: var(--primary-dark); }
+.tile .k { font-size: 11px; color: var(--text-light); text-transform: uppercase; letter-spacing: .03em; }
+h2 { font-size: 14px; color: var(--primary-dark); margin: 22px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+th { background: var(--primary); color: #fff; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 7px 9px; text-align: left; }
+td { padding: 7px 9px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:nth-child(even) td { background: var(--bg); }
+.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.monto { text-align: right; font-weight: 700; color: var(--primary-dark); }
+.fecha { white-space: nowrap; color: var(--text-light); }
+.tel { white-space: nowrap; }
+.dom { max-width: 260px; color: var(--text-light); font-size: 12px; }
+.sub { font-size: 11px; color: var(--text-light); }
+.badge { display: inline-block; font-size: 10px; font-weight: 700; border-radius: 9px; padding: 2px 8px; margin: 1px 2px 1px 0; }
+.b-compro { background: oklch(0.89 0.06 310); color: oklch(0.34 0.1 310); }
+.b-dup { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); }
+.b-sincel { background: oklch(0.88 0.012 80); color: oklch(0.4 0.015 75); }
+.b-cerro { background: oklch(0.86 0.1 150); color: oklch(0.3 0.07 152); }
+.b-neutro { background: oklch(0.88 0.012 80); color: oklch(0.4 0.015 75); }
+pre { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 12px; margin-top: 8px; overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>Dry-run del rescate de gen&eacute;ricos (#118 / #124)</h1>
+<div class="meta">Corrida 2026-08-03 &middot; ventana 6 meses (desde 2026-02-03) &middot; read-only &middot; nada escrito. Al aplicar, estos candidatos entran a la bandeja &quot;Rescatados de Operam&quot; — cero tarjetas al tablero.</div>
+<div class="tiles">
+  <div class="tile"><div class="v">31</div><div class="k">Candidatos</div></div>
+  <div class="tile"><div class="v">24</div><div class="k">Compr&oacute; otra cosa</div></div>
+  <div class="tile"><div class="v">5</div><div class="k">Posible duplicado</div></div>
+  <div class="tile"><div class="v">2</div><div class="k">Sin celular</div></div>
+  <div class="tile"><div class="v">8</div><div class="k">Excluidos</div></div>
+  <div class="tile"><div class="v">159</div><div class="k">Quotes le&iacute;dos</div></div>
+</div>
+
+<h2>Candidatos que entrar&iacute;an a la bandeja (31)</h2>
+<table>
+<thead><tr><th>Folio</th><th>Fecha</th><th>Contacto / proyecto</th><th>Celular / email</th><th>Domicilio</th><th>Monto</th><th>Vendedor propuesto</th><th>Marcas / caj&oacute;n</th></tr></thead>
+<tbody>
+  <tr>
+    <td class="num">#1207</td>
+    <td class="fecha">2026-08-03</td>
+    <td><b>Pietro</b><div class="sub">Studioteca Emporio</div></td>
+    <td class="tel">+39 055 7968653<div class="sub">emporio@studiotecafirenze.com</div></td>
+    <td class="dom">Via de’ Fossi, 42r 50123 - Firenze</td>
+    <td class="num monto">$4,686.83</td>
+    <td>Alejandro Chávez</td>
+    <td><div class="sub">GENERICO DIGITAL USD</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1153</td>
+    <td class="fecha">2026-06-12</td>
+    <td><b>Martha Gómez</b><div class="sub">IberoStar</div></td>
+    <td class="tel">+52 9982441662<div class="sub">marthaagomezt@gmail.com</div></td>
+    <td class="dom">Mza 6 casa 7-1C Fracc Paraíso playa del Carmen Playa del Carmen, Q.Roo Cp 77725</td>
+    <td class="num monto">$11,653.20</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: MARIA DE LOURDES RUIZ VELAZCO</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1151</td>
+    <td class="fecha">2026-06-08</td>
+    <td><b>Daniela</b><div class="sub">G&amp;amp;B abogados</div></td>
+    <td class="tel">+52 3314859086<div class="sub">danielapenilla@gmail.com</div></td>
+    <td class="dom">45070</td>
+    <td class="num monto">$8,924.32</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: G J Y ASOCIADOS ABOGADOS SC</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1148</td>
+    <td class="fecha">2026-06-04</td>
+    <td><b>Ivonne López</b><div class="sub">Mezcal Destreza</div></td>
+    <td class="tel">+52 55 4927 4839<div class="sub">i.lopez@mezcaldestreza.mx</div></td>
+    <td class="dom">CDMX Alcaldía Álvaro Obregón</td>
+    <td class="num monto">$5,870.28</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: UGLY FOOD HOUSE</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1139</td>
+    <td class="fecha">2026-05-19</td>
+    <td><b>Pietro</b><div class="sub">Studioteca Emporio</div></td>
+    <td class="tel">+39 055 7968653<div class="sub">emporio@studiotecafirenze.com</div></td>
+    <td class="dom">Via de’ Fossi, 42r 50123 - Firenze</td>
+    <td class="num monto">$3,644.83</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-dup" title="El celular coincide con un prospecto u otro candidato">Posible duplicado</span><div class="sub">GENERICO DIGITAL USD</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1138</td>
+    <td class="fecha">2026-05-19</td>
+    <td><b>Diego Rico</b><div class="sub">Casa María Pia</div></td>
+    <td class="tel">+52 5610021475<div class="sub">diego@piarodriguez.com</div></td>
+    <td class="dom">Cerrada Vicente Guerrero 25 Col. San Mateo Tlaltenango C.P. 05600</td>
+    <td class="num monto">$1,199.87</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: DECORACION MARIA PIA</span><div class="sub">GENERICO DIGITAL USD</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1135</td>
+    <td class="fecha">2026-05-18</td>
+    <td><b>Lucas Carballo</b><div class="sub">La Escondida</div></td>
+    <td class="tel">+5493512134962<div class="sub">soylucascarballo@gmail.com</div></td>
+    <td class="dom">Nicolás San Juan 1665,  Col del Valle Sur, Benito Juárez, Ciudad de México CP: 03104</td>
+    <td class="num monto">$27,972.32</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: HOTEL AGUA ESCONDIDA SA DE CV</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1132</td>
+    <td class="fecha">2026-05-15</td>
+    <td><b>Carlos Aguilera</b><div class="sub">Plaza Sol</div></td>
+    <td class="tel">+52 2221616248<div class="sub">carlosaguileravazquez@issworld.com</div></td>
+    <td class="dom">Plaza Sol - Puebla cp: 72193</td>
+    <td class="num monto">$35,849.40</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: JUNGLE BROTHERS</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1130</td>
+    <td class="fecha">2026-05-12</td>
+    <td><b>Diego Rico</b><div class="sub">Casa María Pia</div></td>
+    <td class="tel">+52 5610021475<div class="sub">diego@piarodriguez.com</div></td>
+    <td class="dom">Av rosales s/n local 3 col Avandaro CP 51300 Valle de Bravo</td>
+    <td class="num monto">$10,649.84</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: DECORACION MARIA PIA</span> <span class="badge b-dup" title="El celular coincide con un prospecto u otro candidato">Posible duplicado</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1121</td>
+    <td class="fecha">2026-04-27</td>
+    <td><b>Elsie</b><div class="sub">Green Rhino</div></td>
+    <td class="tel">+52 8120329707<div class="sub">elsie@greenrhino.mx</div></td>
+    <td class="dom">Tonalá 121, Roma Nte., Cuauhtémoc, 06760 Ciudad de México, CDMX</td>
+    <td class="num monto">$36,508.66</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: ITSASOA</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1120</td>
+    <td class="fecha">2026-04-27</td>
+    <td><b>Elsie</b><div class="sub">Green Rhino</div></td>
+    <td class="tel">+52 8120329707<div class="sub">elsie@greenrhino.mx</div></td>
+    <td class="dom">Tonalá 121, Roma Nte., Cuauhtémoc, 06760 Ciudad de México, CDMX</td>
+    <td class="num monto">$21,064.00</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: ITSASOA</span> <span class="badge b-dup" title="El celular coincide con un prospecto u otro candidato">Posible duplicado</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1115</td>
+    <td class="fecha">2026-04-23</td>
+    <td><b>Paola Sanchez</b><div class="sub">Nombre de Banquetera</div></td>
+    <td class="tel">+52 55 1809 6480<div class="sub">casasanchez1521@gmail.com</div></td>
+    <td class="dom">Agricola Oriental CP: 08500</td>
+    <td class="num monto">$68,428.00</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: Patricia Sanchez</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1103</td>
+    <td class="fecha">2026-04-14</td>
+    <td><b>Roberto Ramirez</b><div class="sub">La última y nos vamos</div></td>
+    <td class="tel">+52 477 559 7349<div class="sub"></div></td>
+    <td class="dom">Av Panorama 1304,  Valle del Campestre, León, Gto. cp: 37150</td>
+    <td class="num monto">$21,948.64</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: JOSE ROBERTO PALOMINO PLAZA</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1097</td>
+    <td class="fecha">2026-04-10</td>
+    <td><b>Rosa Torres</b><div class="sub">Tia Cocina</div></td>
+    <td class="tel">+1 787-354-1975<div class="sub">rosa@tiacocina.com</div></td>
+    <td class="dom">3009 Avenida Alejandrino Guaynabo, Puerto Rico  CP: 00969</td>
+    <td class="num monto">$3,701.87</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: Giuseppe Santino Caiceros Torres</span><div class="sub">GENERICO DIGITAL USD</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1095</td>
+    <td class="fecha">2026-04-09</td>
+    <td><b>Maria Campos</b> <span class="badge b-sincel">Sin celular</span><div class="sub">Nopal salpi</div></td>
+    <td class="tel">—<div class="sub"></div></td>
+    <td class="dom">Progreso, Yuc. CP: 97320</td>
+    <td class="num monto">$62,528.00</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: SARA MARIA CAMPOS ARIAS</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1094</td>
+    <td class="fecha">2026-04-09</td>
+    <td><b>Mostrador digital</b><div class="sub">Grupo Pizarro</div></td>
+    <td class="tel">+52 44 6118 8026<div class="sub">direccionoperativa@grupopizarro.com.mx</div></td>
+    <td class="dom">Prol. Bernardo Quintana 4100,  Alamos 3ra Secc, Santiago de Querétaro, Qro. CP: 76160</td>
+    <td class="num monto">$58,254.40</td>
+    <td>Alejandro Chávez</td>
+    <td><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1085</td>
+    <td class="fecha">2026-03-27</td>
+    <td><b>Carlos Carvajal</b><div class="sub">Colombia</div></td>
+    <td class="tel">+573208512319<div class="sub">carlos.carvajal@somosmelo.co</div></td>
+    <td class="dom">Cra. 63 #9-28,  Bogotá, Colombia</td>
+    <td class="num monto">$159,760.00</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: JUNGLE BROTHERS</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1082</td>
+    <td class="fecha">2026-03-24</td>
+    <td><b>Abner Millán</b><div class="sub">Sociedad Méxicana de Parr</div></td>
+    <td class="tel">+52 81 1080 9189<div class="sub">cisneros@soyparrillero.mx</div></td>
+    <td class="dom">Raúl Zárate Machuca 1-lt 10, Cuevitas, Álvaro Obregón, 01220 Ciudad de México, CDMX.</td>
+    <td class="num monto">$15,957.80</td>
+    <td>Alejandro Chávez</td>
+    <td><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1079</td>
+    <td class="fecha">2026-03-17</td>
+    <td><b>Mariana Cortina</b><div class="sub">Hotel Cuajimalpa</div></td>
+    <td class="tel">+52 55 6414 5236<div class="sub">maricore@me.com</div></td>
+    <td class="dom">Av. Arteaga y Salazar 823-casa 13,  Cuajimalpa de Morelos, CP: 05500, CDMX</td>
+    <td class="num monto">$14,552.72</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: MOTORES E INGENIERÍA MEX MOT SA DE CV </span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1078</td>
+    <td class="fecha">2026-03-17</td>
+    <td><b>Pedro Santiago</b><div class="sub">Therbal</div></td>
+    <td class="tel">+52 55 1884 5931<div class="sub">compras@therbal.com.mx</div></td>
+    <td class="dom">09850</td>
+    <td class="num monto">$10,800.40</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: MERCADO LA VILLA</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1075</td>
+    <td class="fecha">2026-03-04</td>
+    <td><b>Martha Gómez</b><div class="sub">IberoStar</div></td>
+    <td class="tel">+52 9982441662<div class="sub">marthaagomezt@gmail.com</div></td>
+    <td class="dom">Mza 6 casa 7-1C Fracc Paraíso playa del Carmen Playa del Carmen, Q.Roo Cp 77725</td>
+    <td class="num monto">$14,343.20</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: MARIA DE LOURDES RUIZ VELAZCO</span> <span class="badge b-dup" title="El celular coincide con un prospecto u otro candidato">Posible duplicado</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1071</td>
+    <td class="fecha">2026-02-23</td>
+    <td><b>Fernando Díaz Peón</b><div class="sub">Chispy Pollo Gourmet</div></td>
+    <td class="tel">+52 44 2186 3496<div class="sub"></div></td>
+    <td class="dom">Av. Vizcaínas 737-A, Carretas,  76050 Santiago de Querétaro, Qro.</td>
+    <td class="num monto">$15,592.60</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: Ariadna Judith Morales Arroyo</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1070</td>
+    <td class="fecha">2026-02-23</td>
+    <td><b>Helena Pontevedra Soto</b><div class="sub">Aflora Tulum</div></td>
+    <td class="tel">+52 984 241 7544<div class="sub">helena@afloratulum.com</div></td>
+    <td class="dom">CP 77760</td>
+    <td class="num monto">$32,732.80</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: PANZA DINING &amp; BAR</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1065</td>
+    <td class="fecha">2026-02-17</td>
+    <td><b>Mostrador digital</b><div class="sub">Surtipromos Marketing</div></td>
+    <td class="tel">+52 998 896 9798<div class="sub">auxadmon@surtipromos.com</div></td>
+    <td class="dom">57130</td>
+    <td class="num monto">$5,866.80</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: LOYALTY MARKETING SERVICES SAPI DE CV</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1062</td>
+    <td class="fecha">2026-02-13</td>
+    <td><b>Mostrador digital USD</b> <span class="badge b-sincel">Sin celular</span><div class="sub">Forma Tableware</div></td>
+    <td class="tel">—<div class="sub"></div></td>
+    <td class="dom">56577</td>
+    <td class="num monto">$22,461.75</td>
+    <td>Adrián Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: WICLO SA DE CV</span><div class="sub">GENERICO DIGITAL USD</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1061</td>
+    <td class="fecha">2026-02-11</td>
+    <td><b>Mostrador digital</b><div class="sub">Birria Lalo By GM</div></td>
+    <td class="tel">+52 656 287 1768<div class="sub">murogus@gmail.com</div></td>
+    <td class="dom">Ciudad Juárez (cp: 32618)</td>
+    <td class="num monto">$10,310.20</td>
+    <td>Alejandro Chávez</td>
+    <td><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1060</td>
+    <td class="fecha">2026-02-11</td>
+    <td><b>Kenji Larrazabal</b><div class="sub">Prane SAC</div></td>
+    <td class="tel">+51 914 730 370<div class="sub">kenji.larrazabal@gmail.com</div></td>
+    <td class="dom">CP: 72180  Puebla</td>
+    <td class="num monto">$23,242.00</td>
+    <td>Alejandro Chávez</td>
+    <td><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1059</td>
+    <td class="fecha">2026-02-11</td>
+    <td><b>Kenji Larrazabal</b><div class="sub">Prane SAC</div></td>
+    <td class="tel">+51 914 730 370<div class="sub">kenji.larrazabal@gmail.com</div></td>
+    <td class="dom">CP: 72180  Puebla</td>
+    <td class="num monto">$17,362.00</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-dup" title="El celular coincide con un prospecto u otro candidato">Posible duplicado</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1055</td>
+    <td class="fecha">2026-02-04</td>
+    <td><b>Verónica Lozano</b><div class="sub">(sin proyecto)</div></td>
+    <td class="tel">+52 55 4277 7659<div class="sub"></div></td>
+    <td class="dom">Sierra Leona 397, col lomas de Chapultepec, CP: 11000</td>
+    <td class="num monto">$9,845.56</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: VERONICA CARAZO CARDONA</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1054</td>
+    <td class="fecha">2026-02-04</td>
+    <td><b>Enrique López</b><div class="sub">(sin proyecto)</div></td>
+    <td class="tel">+52 55 1473 7342<div class="sub">enrique.coach@hotmail.com</div></td>
+    <td class="dom">CP: 52787 - Huixquilucan de Degollado, México</td>
+    <td class="num monto">$36,040.08</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: AVANT GARDE IMPORTS SA DE CV</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+  <tr>
+    <td class="num">#1053</td>
+    <td class="fecha">2026-02-04</td>
+    <td><b>Mauricio Ramos</b><div class="sub">DOS AGUAS</div></td>
+    <td class="tel">+52 61 4184 0727<div class="sub">mauricio@dosaguas.com</div></td>
+    <td class="dom">C VIA LOMBARDIA 5700 8 SAUCITO CHIHUAHUA, CHIH. C.P. 31110</td>
+    <td class="num monto">$33,569.12</td>
+    <td>Alejandro Chávez</td>
+    <td><span class="badge b-compro" title="El contacto ya es cliente con pedidos de otro monto">Compr&oacute; otra cosa: NICE LIKE THAT SA DE CV</span><div class="sub">GENERICO TIENDAS DIGITALES</div></td>
+  </tr>
+</tbody>
+</table>
+
+<h2>Excluidos del lote (8) — con motivo y evidencia</h2>
+<table>
+<thead><tr><th>Folio</th><th>Fecha</th><th>Contacto</th><th>Motivo</th><th>Monto</th><th>Evidencia del cierre</th></tr></thead>
+<tbody>
+  <tr>
+    <td class="num">#1149</td>
+    <td class="fecha">2026-06-04</td>
+    <td>Carlos Sánchez Herrera</td>
+    <td><span class="badge b-neutro">total-cero</span></td>
+    <td class="num monto">—</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td class="num">#1105</td>
+    <td class="fecha">2026-04-17</td>
+    <td>Benjamín Jiménez</td>
+    <td><span class="badge b-neutro">cancelado</span></td>
+    <td class="num monto">—</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td class="num">#1098</td>
+    <td class="fecha">2026-04-11</td>
+    <td>Ximena Rodríguez</td>
+    <td><span class="badge b-neutro">cancelado</span></td>
+    <td class="num monto">—</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td class="num">#1093</td>
+    <td class="fecha">2026-04-09</td>
+    <td>Mostrador digital</td>
+    <td><span class="badge b-neutro">cancelado</span></td>
+    <td class="num monto">—</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td class="num">#1090</td>
+    <td class="fecha">2026-04-07</td>
+    <td>Mostrador digital</td>
+    <td><span class="badge b-cerro">cerro</span></td>
+    <td class="num monto">$88,657.94</td>
+    <td>LA LOMA CLUB DE GOLF | pedido 6987 $89,589.53 (2026-04-09, dif 1%)</td>
+  </tr>
+  <tr>
+    <td class="num">#1089</td>
+    <td class="fecha">2026-04-06</td>
+    <td>Juan Manuel Lemus</td>
+    <td><span class="badge b-cerro">cerro</span></td>
+    <td class="num monto">$9,492.50</td>
+    <td>ERIKA ALEJANDRA NUÑEZ NAVARRO | pedido 6988 $9,492.50 (2026-04-09, dif 0%)</td>
+  </tr>
+  <tr>
+    <td class="num">#1083</td>
+    <td class="fecha">2026-03-25</td>
+    <td>Jorge González</td>
+    <td><span class="badge b-cerro">cerro</span></td>
+    <td class="num monto">$26,716.48</td>
+    <td>GUADALUPE GONZALEZ CONTRERAS | pedido 7016 $29,997.82 (2026-04-11, dif 10.9%)</td>
+  </tr>
+  <tr>
+    <td class="num">#1077</td>
+    <td class="fecha">2026-03-10</td>
+    <td>Ximena Vidaurreta</td>
+    <td><span class="badge b-neutro">cancelado</span></td>
+    <td class="num monto">—</td>
+    <td></td>
+  </tr>
+</tbody>
+</table>
+
+<h2>Resumen crudo del script</h2>
+<pre>RESUMEN
+  Quotes leidos (id-walk): 159
+  Candidatos a la bandeja: 31
+    con marca compro-otra-cosa: 24
+    con marca posible-duplicado: 5
+    sin celular: 2
+    sin vendedor mapeado: 0
+  SKIP no-generico (quote de un cliente nombrado): 119
+  SKIP cancelado (anulado en Operam): 4
+  SKIP ya-en-bandeja (propuesto en una corrida previa): 0
+  SKIP total-cero (quote de $0): 1
+  SKIP cerro (identidad + monto dentro de la banda): 3
+
+DRY-RUN: se propondrian 31 candidatos a la bandeja. No se escribio nada (sin --apply).
+</pre>
+</body>
+</html>
