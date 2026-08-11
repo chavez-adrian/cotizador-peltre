@@ -49,6 +49,18 @@ El conjunto mínimo de datos con el que se puede emitir una cotización sin que 
 
 Una cotización cuyo producto lleva calca (decorado) activa un proceso de autorizaciones con el proveedor de calca, representado como un checklist de 6 pasos en la tarjeta: (1) cotización con proveedor de calca, (2) posición de calca enviada al cliente para autorización, (3) arte final enviado al proveedor, (4) dummy del proveedor autorizado, (5) liberación de producción autorizada, (6) archivos de posición de calca subidos a Dropbox. Una oportunidad decorada no puede llegar a Pedido liberado con el checklist incompleto (gate).
 
+Hay dos formas de que una cotización sea decorada, y solo una deja rastro en el carrito: la **calca**, que es una partida propia, y el decorado a mano (y las texturas decoradas), que se aplica sobre la pieza sin generar partida. Por eso la calca en el carrito determina que la cotización sea decorada y fija esa marca, mientras que la ausencia de calca deja la marca a criterio del vendedor: la calca es piso, no techo (ADR-0010). Quitar la calca no revierte la marca ni descarta el checklist — las autorizaciones ya gestionadas con el proveedor son hechos del mundo, no un derivado del carrito.
+
+## Calca
+
+Partida independiente de la cotización, con su propia cantidad —medida en **piezas decoradas**, no en diseños— y sin ligarse a un producto base. Su precio sale de la misma lista que el resto de la cotización, pero **sus piezas no cuentan para el volumen que determina esa lista**: la lista la fijan las piezas de producto y la calca la hereda para su precio.
+
+La calca no tiene precio de menudeo: **se vende desde 100 piezas de producto**. Por debajo de ese umbral no se cotiza, y el umbral es una condición sostenida, no una validación de captura — una cotización que cae bajo las 100 piezas con calcas dentro queda en estado inválido y no puede generar documento hasta resolverse. La consecuencia aceptada es que una cotización de solo calcas no existe en el cotizador; ese caso se levanta a mano en Operam.
+
+## Aplicación extra
+
+Cargo por aplicar una calca **adicional sobre la misma pieza**. Tiene precio por lista pero no existe como artículo en el ERP, así que hoy no puede cotizarse.
+
 ## Prospecto convertido en cliente
 
 Un prospecto cuyo celular se dio de alta como cliente en Operam queda ligado a ese cliente, pero la conversión NO lo saca del seguimiento: la oportunidad permanece en Por Cotizar con la etiqueta "Ya es cliente — falta cotizar" hasta que una cotización la pase a Seguimiento (decisión 2026-06-11: la conversión real del negocio es la venta, no el alta; la cola vigila la fuga de altas que nunca cotizan).
