@@ -37,6 +37,7 @@ import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida } from './lib/pipeline.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
+import { piezasDeProducto } from './public/js/calcas-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -224,7 +225,9 @@ async function crearOActualizarCotizacion(data, vendedor) {
   const entry = {
     fecha: new Date().toISOString(), vendedor,
     cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
-    totalPiezas: data.items?.reduce((s, i) => s + (i.cantidad || 0), 0) || 0,
+    // Piezas de PRODUCTO (#91): las de calca no cuentan como volumen -- van
+    // aplicadas sobre piezas que ya estan contadas -- y el envio no es pieza.
+    totalPiezas: piezasDeProducto(data.items),
     total: data.total || 0, tier: data.tier || '', data,
   };
   if (Number.isInteger(idPrevio) && idPrevio > 0) {

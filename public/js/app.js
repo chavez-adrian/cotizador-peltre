@@ -94,6 +94,24 @@ import {
   debeAutoCotizarEnvia,
   buildEnviaRateRestauradaHtml,
 } from './cotizar-logica.js';
+import {
+  TAMANOS_CALCA,
+  TINTAS_CALCA,
+  esCodigoCalca,
+  buscarCalcaEnCatalogo,
+  precioCalca,
+  productoCalca,
+  piezasDeProducto,
+  hayCalcaEnCarrito,
+  puedeAgregarCalca,
+  motivoCalcaInvalida,
+  MOTIVOS_CALCA_INVALIDA,
+  bloqueaGeneracionPorCalcaSinVolumen,
+  avisoCalcaInvalida,
+  avisoNoPuedeAgregarCalca,
+  relacionCalcaProducto,
+  estadoMarcaDecorado,
+} from './calcas-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
 function leerTelefono(inputId, codeId) {
@@ -334,14 +352,19 @@ async function loadPrecios() {
 }
 
 // === TIER LOGIC ===
-function getTotalPiezas() {
-  let total = 0;
-  for (const item of state.cart.values()) total += item.cantidad;
-  return total;
+// El volumen que fija el tier son las piezas de PRODUCTO: las de calca no
+// cuentan (issue #91, decision 2026-07-30). La calca hereda el tier para su
+// precio pero no lo empuja -- va aplicada sobre piezas que ya estan contadas.
+function itemsDelCarrito() {
+  return [...state.cart].map(([codigo, { cantidad }]) => ({ codigo, cantidad }));
+}
+
+function getPiezasProducto() {
+  return piezasDeProducto(itemsDelCarrito());
 }
 
 function getCurrentTier() {
-  const total = getTotalPiezas();
+  const total = getPiezasProducto();
   const tiers = state.precios?.tiers || [];
   let current = tiers[0];
   for (const t of tiers) {
@@ -351,7 +374,7 @@ function getCurrentTier() {
 }
 
 function getNextTier() {
-  const total = getTotalPiezas();
+  const total = getPiezasProducto();
   const tiers = state.precios?.tiers || [];
   for (const t of tiers) {
     if (t.min_qty > total) return t;
@@ -359,20 +382,32 @@ function getNextTier() {
   return null;
 }
 
-function getPrice(product) {
+// Precio unitario en el tier vigente, o null si el item NO tiene precio ahi.
+// La calca no tiene menudeo (#91): resolverla con el `?? 0` de siempre la
+// regalaria en el documento y en el quote. La ausencia se dice con null y el
+// carrito la pinta como invalida, en vez de imprimir un cero silencioso.
+function precioUnitario(product) {
   const tier = getCurrentTier();
+  if (product.esCalca) return precioCalca(product, tier.id);
   return product.prices[tier.id] ?? product.prices['Menudeo'] ?? 0;
 }
 
+function getPrice(product) {
+  return precioUnitario(product) ?? 0;
+}
+
 function updateTierBar() {
-  const total = getTotalPiezas();
+  const total = getPiezasProducto();
   const tier = getCurrentTier();
   const next = getNextTier();
 
   document.getElementById('tier-label').textContent = total === 0 ? 'Sin productos' : `Lista de precios: ${tier.label}`;
-  document.getElementById('tier-stats').textContent = total > 0 ? `${total} pzs totales` : '';
+  document.getElementById('tier-stats').textContent = total > 0 ? `${total} pzs de producto` : '';
   document.getElementById('tier-next').textContent = '';
 
+  // El selector de calca y el aviso de carrito invalido dependen del volumen:
+  // este es el unico punto por el que pasan TODOS los cambios del carrito.
+  renderCalcas();
   updateTabIndicators();
 }
 
@@ -566,6 +601,117 @@ window.changeSearchQty = changeSearchQty;
 window.addSearchItemToCart = addSearchItemToCart;
 window.clearSearchSelected = clearSearchSelected;
 
+// === CALCAS (issue #91, ADR-0010) ===
+// La calca es una partida propia del carrito, sin ligarse a un producto base:
+// el selector resuelve tamano x tintas contra el catalogo y la cantidad son
+// PIEZAS DECORADAS. Todo lo que se pinta aqui depende del volumen de producto,
+// asi que se repinta desde updateTierBar (por donde pasa todo cambio de carrito).
+function catalogoCalcas() {
+  return state.precios?.calcas || [];
+}
+
+function poblarSelectoresCalca() {
+  const tam = document.getElementById('cal-tamano');
+  const tintas = document.getElementById('cal-tintas');
+  if (!tam || !tintas || tam.options.length > 0) return;
+  tam.innerHTML = TAMANOS_CALCA.map(t => `<option value="${t.valor}">${t.etiqueta}</option>`).join('');
+  tintas.innerHTML = TINTAS_CALCA.map(n => `<option value="${n}">${n} tinta${n !== 1 ? 's' : ''}</option>`).join('');
+  tam.value = '050';
+}
+
+function calcaElegida() {
+  return buscarCalcaEnCatalogo(catalogoCalcas(), {
+    tamano: document.getElementById('cal-tamano')?.value,
+    tintas: document.getElementById('cal-tintas')?.value,
+  });
+}
+
+function renderCalcas() {
+  const seccion = document.getElementById('calcas-section');
+  if (!seccion) return;
+  poblarSelectoresCalca();
+
+  const piezas = getPiezasProducto();
+  const ficha = calcaElegida();
+  const precio = ficha ? precioCalca(ficha, getCurrentTier().id) : null;
+
+  const resuelto = document.getElementById('cal-resuelto');
+  document.getElementById('cal-sku').textContent = ficha ? ficha.code : '—';
+  // "en esta lista", no "en Menudeo": el hueco de precio tambien puede caer en
+  // un tier pagado (a CAL1025S le faltaba la M350), y nombrar el tier
+  // equivocado manda al vendedor a resolver lo que no es.
+  document.getElementById('cal-precio').textContent = precio === null
+    ? 'sin precio en esta lista'
+    : `$${fmt(precio)} / pza`;
+  resuelto.className = precio === null ? 'calca-resuelto sin-precio' : 'calca-resuelto';
+
+  // Cantidad prellenada con el total de piezas de producto (decision 8: el caso
+  // comun es que todas la lleven), editable. No se pisa mientras se teclea.
+  const cantidadEl = document.getElementById('cal-cantidad');
+  if (cantidadEl && document.activeElement !== cantidadEl) {
+    cantidadEl.value = piezas > 0 ? piezas : '';
+  }
+
+  // Umbral duro de 100 piezas de producto (decision 1): abajo de eso no se
+  // agrega, y el aviso dice el umbral y lo que lleva. Tampoco se agrega una
+  // calca sin precio en la lista vigente: seria meter al carrito una partida
+  // que bloquea la generacion en el acto.
+  const avisoEl = document.getElementById('cal-aviso');
+  const impedimento = !puedeAgregarCalca(piezas)
+    ? avisoNoPuedeAgregarCalca(piezas)
+    : (ficha && precio === null ? avisoCalcaInvalida(MOTIVOS_CALCA_INVALIDA.SIN_PRECIO) : '');
+  avisoEl.innerHTML = impedimento ? `<div class="alert alert-error">${impedimento}</div>` : '';
+  document.getElementById('btn-agregar-calca').disabled = !!impedimento || !ficha;
+
+  // El umbral es un invariante, no una validacion de captura (decision 2): si el
+  // carrito cae bajo 100 piezas con calcas dentro, se marca y se bloquea la
+  // generacion. No se revierte el cambio del vendedor ni se le quitan las calcas.
+  const motivo = motivoCalcaInvalidaActual();
+  for (const id of ['calca-invalido-productos', 'resumen-calca-invalido']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.style.display = motivo ? 'block' : 'none';
+    el.textContent = motivo ? avisoCalcaInvalida(motivo, piezas) : '';
+  }
+}
+
+// Motivo por el que el carrito con calca no puede generar, o null si puede.
+// `calcaSinPrecio` mira el precio REAL resuelto de cada calca: el umbral evita
+// caer en Menudeo, pero una calca sin fila en un tier pagado tambien la dejaria
+// sin precio, y ahi el `?? 0` de getPrice la imprimiria en $0.
+function motivoCalcaInvalidaActual() {
+  const items = itemsDelCarrito();
+  const calcaSinPrecio = [...state.cart.values()]
+    .some(({ product }) => product.esCalca && precioUnitario(product) === null);
+  return motivoCalcaInvalida({
+    piezasProducto: piezasDeProducto(items),
+    hayCalca: hayCalcaEnCarrito(items),
+    calcaSinPrecio,
+  });
+}
+
+function agregarCalca() {
+  const piezas = getPiezasProducto();
+  const ficha = calcaElegida();
+  if (!ficha || !puedeAgregarCalca(piezas)) return;
+  if (precioCalca(ficha, getCurrentTier().id) === null) return;
+
+  const cantidad = parseInt(document.getElementById('cal-cantidad')?.value) || 0;
+  if (cantidad <= 0) return;
+
+  const prev = state.cart.get(ficha.code);
+  state.cart.set(ficha.code, {
+    product: prev?.product || productoCalca(ficha),
+    cantidad: (prev?.cantidad || 0) + cantidad,
+  });
+
+  updateTierBar();
+  updateCartSummary();
+  updateResumen();
+  updateShippingSummary();
+  renderCartLines();
+}
+
 // === CART LINES (tabla en tab productos) ===
 function renderCartLines() {
   const section = document.getElementById('cart-lines-section');
@@ -582,15 +728,22 @@ function renderCartLines() {
   let subtotal = 0;
   let html = '';
 
+  const piezasProducto = getPiezasProducto();
   for (const [key, { product, cantidad }] of state.cart) {
-    const price = getPrice(product);
+    const precio = precioUnitario(product);
+    const price = precio ?? 0;
     const total = price * cantidad;
     subtotal += total;
     const name = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
+    // La linea de calca dice sobre cuantas piezas se aplica, sin juzgarlo
+    // (decision 8): el pedido mixto y la doble calca por pieza son legitimos.
+    const relacion = product.esCalca
+      ? `<span class="calca-relacion">${relacionCalcaProducto(cantidad, piezasProducto)}</span>`
+      : '';
     html += `
-      <div class="cart-line" data-key="${key}">
+      <div class="cart-line${precio === null ? ' cart-line-sin-precio' : ''}" data-key="${key}">
         <span class="cart-line-sku">${key}</span>
-        <span class="cart-line-name" title="${name}">${name}</span>
+        <span class="cart-line-name" title="${name}">${name} ${relacion}</span>
         <div class="cart-line-qty-wrap col-num">
           <span class="qty-display">${cantidad}</span>
           <button class="qty-icon-btn" onclick="cartLineStartEdit('${key}')" title="Editar">&#9998;</button>
@@ -598,8 +751,8 @@ function renderCartLines() {
             onkeydown="if(event.key==='Enter')cartLineConfirmEdit('${key}')">
           <button class="qty-icon-btn qty-ok-btn" style="display:none" onclick="cartLineConfirmEdit('${key}')" title="Confirmar">&#10003;</button>
         </div>
-        <span class="cart-line-price col-num">$${fmt(price)}</span>
-        <span class="cart-line-total col-num">$${fmt(total)}</span>
+        <span class="cart-line-price col-num">${precio === null ? 'sin precio' : '$' + fmt(price)}</span>
+        <span class="cart-line-total col-num">${precio === null ? '&mdash;' : '$' + fmt(total)}</span>
         <div class="cart-line-del col-del"><button onclick="removeItem('${key}')" title="Quitar">&times;</button></div>
       </div>
     `;
@@ -685,6 +838,11 @@ function setQty(key, qty, productOverride = null) {
   renderProducts(document.getElementById('search-input').value);
   updateResumen();
   updateShippingSummary();
+  // La tabla de articulos cotizados no se repintaba por este camino y quedaba
+  // con precios del tier anterior. Con calca en el carrito la mentira es peor:
+  // seguia mostrando el precio de mayoreo de una calca que ya cayo a Menudeo,
+  // donde no tiene precio (#91).
+  renderCartLines();
 }
 
 // Cambiar cantidad para SKUs completos (búsqueda con filtro)
@@ -721,6 +879,7 @@ function setQtySku(skuKey, qty, skuData = null, productData = null) {
   renderProducts(document.getElementById('search-input').value);
   updateResumen();
   updateShippingSummary();
+  renderCartLines();
 }
 
 window.changeQty = changeQty;
@@ -740,7 +899,7 @@ window.removeItem = (key) => {
 // === CART SUMMARY BAR ===
 function updateCartSummary() {
   const bar = document.getElementById('cart-summary');
-  const totalPzs = getTotalPiezas();
+  const totalPzs = getPiezasProducto();
   const items = state.cart.size;
 
   if (items === 0) {
@@ -750,8 +909,13 @@ function updateCartSummary() {
 
   bar.style.display = 'flex';
   const subtotal = calcSubtotal();
+  // Las calcas se cuentan aparte: sus piezas no son piezas de producto (#91) y
+  // sumarlas al conteo diria "1200 pzs" de un pedido de 600 tazas decoradas.
+  const calcas = [...state.cart.keys()].filter(esCodigoCalca).length;
+  const productos = items - calcas;
+  const detalleCalcas = calcas > 0 ? ` + ${calcas} calca${calcas !== 1 ? 's' : ''}` : '';
   document.getElementById('cart-total').textContent = `$${fmt(subtotal)}`;
-  document.getElementById('cart-count').textContent = `${items} producto${items !== 1 ? 's' : ''}, ${totalPzs} pzs`;
+  document.getElementById('cart-count').textContent = `${productos} producto${productos !== 1 ? 's' : ''}, ${totalPzs} pzs${detalleCalcas}`;
 }
 
 function calcSubtotal() {
@@ -764,7 +928,7 @@ function calcSubtotal() {
 
 // === SHIPPING ===
 function updateShippingSummary() {
-  const totalPzs = getTotalPiezas();
+  const totalPzs = getPiezasProducto();
   let totalWeight = 0;
   for (const { product, cantidad } of state.cart.values()) {
     if (product.weight_kg) totalWeight += product.weight_kg * cantidad;
@@ -933,6 +1097,45 @@ function seleccionarEnviaRate(card, carrier, servicio, precio) {
 
 window.cotizarEnvia = cotizarEnvia;
 
+// === MARCA DE PRODUCTO DECORADO (issue #91, ADR-0010) ===
+// La calca del carrito enciende la marca y la FIJA: dejarla editable con calca
+// dentro permitiria esquivar el gate de #61 (las 6 autorizaciones del proveedor)
+// justo en el caso donde mas importa. Sin calca la marca sigue siendo del
+// vendedor -- el decorado a mano y las texturas decoradas son decorado real y no
+// producen partida. La calca es piso, no techo.
+let decoradoManual = false;
+
+function sincronizarMarcaDecorado() {
+  const chk = document.getElementById('resumen-decorado');
+  if (!chk) return;
+
+  const hayCalca = hayCalcaEnCarrito(itemsDelCarrito());
+  // Con calca la marca se asienta tambien en el estado propio: asi, al quitarla,
+  // CONSERVA su valor y solo vuelve a ser editable (decision 5). Apagarla es un
+  // acto explicito del vendedor, no un derivado del carrito.
+  if (hayCalca) decoradoManual = true;
+
+  const estado = estadoMarcaDecorado({ hayCalca, marcaActual: decoradoManual });
+  if (chk.checked !== estado.valor) {
+    chk.checked = estado.valor;
+    const notasEl = document.getElementById('resumen-notas');
+    if (notasEl) notasEl.value = aplicarNotaTiempoEntrega(notasEl.value, estado.valor);
+  }
+  chk.disabled = !estado.editable;
+
+  const motivo = document.getElementById('resumen-decorado-motivo');
+  if (motivo) motivo.textContent = estado.motivo;
+}
+
+// La marca viaja con el guardado para que la oportunidad nazca ya sujeta al gate
+// de #61. Se manda SOLO en true: el data del registro se mergea a nivel raiz, asi
+// que un false pisaria una marca puesta desde la tarjeta del tablero -- que es
+// donde se apaga, con el aviso de que deja de exigir las 6 autorizaciones.
+function marcaDecoradoParaGuardar() {
+  const hayCalca = hayCalcaEnCarrito(itemsDelCarrito());
+  return estadoMarcaDecorado({ hayCalca, marcaActual: decoradoManual }).valor ? true : undefined;
+}
+
 // === RESUMEN ===
 function updateResumen() {
   const empty = document.getElementById('resumen-empty');
@@ -943,6 +1146,8 @@ function updateResumen() {
   // la barra superior (user-name) y era facil de ignorar.
   const vendedorEl = document.getElementById('resumen-vendedor');
   if (vendedorEl) vendedorEl.textContent = state.user ? `Cotización a nombre de: ${state.user.name}` : '';
+
+  sincronizarMarcaDecorado();
 
   if (state.cart.size === 0) {
     empty.style.display = 'block';
@@ -967,18 +1172,26 @@ function updateResumen() {
 
   const itemsEl = document.getElementById('resumen-items');
 
+  const piezasProducto = getPiezasProducto();
   let html = '';
   for (const [key, { product, cantidad }] of state.cart) {
-    const price = getPrice(product);
+    const precio = precioUnitario(product);
+    const price = precio ?? 0;
     const total = price * cantidad;
     const displayName = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
     const isSkuItem = state.precios.skus?.some(s => s.sku === key);
+    const detalle = precio === null
+      ? `${key} — sin precio`
+      : `${key} — $${fmt(price)} / pza`;
+    const relacion = product.esCalca
+      ? ` <span class="calca-relacion">${relacionCalcaProducto(cantidad, piezasProducto)}</span>`
+      : '';
 
     html += `
       <div class="cart-item">
         <div class="cart-item-info">
           <div class="cart-item-name">${displayName}</div>
-          <div class="cart-item-detail">${key} — $${fmt(price)} / pza</div>
+          <div class="cart-item-detail">${detalle}${relacion}</div>
           <div class="cart-item-qty">
             <button class="qty-btn" onclick="resumenChangeQty('${key}', -1)">-</button>
             <input class="qty-input" type="number" min="1" value="${cantidad}"
@@ -1057,6 +1270,7 @@ function resumenChangeQty(key, delta) {
   renderProducts(document.getElementById('search-input').value);
   updateResumen();
   updateShippingSummary();
+  renderCartLines();
 }
 
 function resumenSetQty(key, qty) {
@@ -1073,6 +1287,7 @@ function resumenSetQty(key, qty) {
   renderProducts(document.getElementById('search-input').value);
   updateResumen();
   updateShippingSummary();
+  renderCartLines();
 }
 
 window.resumenChangeQty = resumenChangeQty;
@@ -1301,6 +1516,12 @@ async function generatePDF() {
     switchTab('resumen');
     return;
   }
+  const motivoCalca = motivoCalcaInvalidaActual();
+  if (bloqueaGeneracionPorCalcaSinVolumen(motivoCalca !== null)) {
+    alert(avisoCalcaInvalida(motivoCalca, getPiezasProducto()));
+    switchTab('productos');
+    return;
+  }
   if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-pdf');
   btn.disabled = true;
@@ -1365,6 +1586,8 @@ async function generatePDF() {
       // Envio estructurado {carrier, servicio, precio} (#102): prefactor para
       // restaurarlo tal cual al Cargar desde historial, sin re-cotizar envia.com.
       envio: buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }),
+      // Marca de producto decorado (ADR-0010): la calca del carrito la fija.
+      decorado: marcaDecoradoParaGuardar(),
     };
 
     body.incluirFotos = document.getElementById('incluir-fotos')?.checked || false;
@@ -1412,6 +1635,12 @@ async function generateHTML() {
   if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
     alert(MENSAJE_ENVIO_INVALIDADO);
     switchTab('resumen');
+    return;
+  }
+  const motivoCalca = motivoCalcaInvalidaActual();
+  if (bloqueaGeneracionPorCalcaSinVolumen(motivoCalca !== null)) {
+    alert(avisoCalcaInvalida(motivoCalca, getPiezasProducto()));
+    switchTab('productos');
     return;
   }
   if (!(await pedirConfirmarVendedor())) return;
@@ -1476,6 +1705,8 @@ async function generateHTML() {
       total,
       notas,
       envio: buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }),
+      // Marca de producto decorado (ADR-0010): la calca del carrito la fija.
+      decorado: marcaDecoradoParaGuardar(),
     };
 
     const canal = await canalParaCotizacion(body.cliente.telefono);
@@ -1569,6 +1800,11 @@ function nuevaCotizacion() {
   document.getElementById('envia-resumen').style.display = 'none';
   enviaRateSeleccionado = null;
   envioInvalidadoPorCantidad = false;
+  // La marca de decorado es de la cotizacion, no del vendedor (#91): una nueva
+  // arranca sin ella y el checkbox vuelve a estar disponible.
+  decoradoManual = false;
+  const notasNuevas = document.getElementById('resumen-notas');
+  if (notasNuevas) notasNuevas.value = aplicarNotaTiempoEntrega(notasNuevas.value, false);
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
   // #109: salir de modo actualizacion devuelve los botones a su texto normal.
@@ -4161,6 +4397,14 @@ async function cargarCotizacion(id, modo = 'nueva') {
     state.cart.clear();
     for (const item of (cot.items || [])) {
       if (item.codigo === 'ENVIO') continue;
+      // La calca (#91) no vive en products ni en skus sino en el catalogo de
+      // calcas: sin este caso la partida se perderia al Cargar en silencio, y
+      // regenerar reescribiria el quote de Operam SIN la calca (#114).
+      if (esCodigoCalca(item.codigo)) {
+        const ficha = catalogoCalcas().find(c => c.code === item.codigo);
+        if (ficha) state.cart.set(item.codigo, { product: productoCalca(ficha), cantidad: item.cantidad });
+        continue;
+      }
       // Intentar encontrar en SKUs o products
       const sku = state.precios.skus?.find(s => s.sku === item.codigo);
       const product = state.precios.products.find(p => p.key === item.codigo) ||
@@ -4200,6 +4444,11 @@ async function cargarCotizacion(id, modo = 'nueva') {
 
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');
+
+    // La marca de decorado viaja con la cotizacion (#91): se restaura tal cual
+    // se guardo para no apagarla al Cargar. Con calca en el carrito la
+    // sincronizacion la vuelve a fijar de todos modos (ADR-0010).
+    decoradoManual = cot.decorado === true;
 
     // Que pasa al generar desde aqui (#104, ADR-0008 -- revierte de forma explicita
     // la decision de #83 F1, que reseteaba esto siempre):
@@ -4303,10 +4552,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Nota de tiempo de entrega (#90): togglear el checkbox actualiza SOLO esa
   // linea del textarea de notas, sin pisotear ediciones manuales del vendedor.
+  // Desde #91 el checkbox tambien lleva la marca de decorado del vendedor
+  // (decoradoManual); con calca en el carrito va disabled y no llega aqui.
   document.getElementById('resumen-decorado').addEventListener('change', e => {
+    decoradoManual = e.target.checked;
     const notasEl = document.getElementById('resumen-notas');
     notasEl.value = aplicarNotaTiempoEntrega(notasEl.value, e.target.checked);
+    sincronizarMarcaDecorado();
   });
+
+  // Calcas (issue #91): el selector recalcula codigo y precio; agregar mete la
+  // partida al carrito. Sin onclick inline a proposito -- la trampa de #112.
+  document.getElementById('cal-tamano')?.addEventListener('change', renderCalcas);
+  document.getElementById('cal-tintas')?.addEventListener('change', renderCalcas);
+  document.getElementById('btn-agregar-calca')?.addEventListener('click', agregarCalca);
 
   // PDF, HTML & WhatsApp
   document.getElementById('btn-pdf').addEventListener('click', generatePDF);
