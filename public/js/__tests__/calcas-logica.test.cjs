@@ -2,19 +2,19 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA;
+let PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA, MOTIVOS_CALCA_INVALIDA;
 let esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca;
 let piezasDeProducto, hayCalcaEnCarrito, puedeAgregarCalca;
-let carritoInvalidoPorCalca, bloqueaGeneracionPorCalcaSinVolumen;
-let avisoCalcaSinVolumen, avisoNoPuedeAgregarCalca, relacionCalcaProducto, estadoMarcaDecorado;
+let motivoCalcaInvalida, carritoInvalidoPorCalca, bloqueaGeneracionPorCalcaSinVolumen;
+let avisoCalcaInvalida, avisoNoPuedeAgregarCalca, relacionCalcaProducto, estadoMarcaDecorado;
 
 before(async () => {
   ({
-    PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA,
+    PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA, MOTIVOS_CALCA_INVALIDA,
     esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca,
     piezasDeProducto, hayCalcaEnCarrito, puedeAgregarCalca,
-    carritoInvalidoPorCalca, bloqueaGeneracionPorCalcaSinVolumen,
-    avisoCalcaSinVolumen, avisoNoPuedeAgregarCalca, relacionCalcaProducto, estadoMarcaDecorado,
+    motivoCalcaInvalida, carritoInvalidoPorCalca, bloqueaGeneracionPorCalcaSinVolumen,
+    avisoCalcaInvalida, avisoNoPuedeAgregarCalca, relacionCalcaProducto, estadoMarcaDecorado,
   } = await import('../calcas-logica.js'));
 });
 
@@ -178,12 +178,47 @@ test('#91-21: bloqueaGeneracionPorCalcaSinVolumen es la compuerta (espejo de #89
 });
 
 test('#91-22: los avisos dicen el umbral Y lo que lleva el vendedor', () => {
-  const aviso = avisoCalcaSinVolumen(60);
+  const aviso = avisoCalcaInvalida(MOTIVOS_CALCA_INVALIDA.SIN_VOLUMEN, 60);
   assert.ok(aviso.includes('100'), 'nombra el umbral');
   assert.ok(aviso.includes('60'), 'nombra lo que lleva ahora');
   const previo = avisoNoPuedeAgregarCalca(60);
   assert.ok(previo.includes('100'));
   assert.ok(previo.includes('60'));
+});
+
+// === El invariante tiene DOS motivos, no uno. El umbral de 100 piezas evita el
+// tier Menudeo, pero no es lo unico que puede dejar una calca sin precio: una
+// calca sin fila en un tier PAGADO (a CAL1025S le faltaba la M350 en Operam, ver
+// la investigacion del issue) caeria en el `?? 0` de getPrice y viajaria a $0 al
+// documento y al quote. Volumen suficiente NO implica precio. ===
+test('#91-27: calca sin precio en un tier pagado invalida el carrito aunque sobre volumen', () => {
+  const invalido = carritoInvalidoPorCalca({ piezasProducto: 150, hayCalca: true, calcaSinPrecio: true });
+  assert.strictEqual(invalido, true, '150 piezas alcanzan el umbral, pero la calca no tiene precio ahi');
+});
+
+test('#91-28: el motivo distingue falta de volumen de falta de precio', () => {
+  assert.strictEqual(
+    motivoCalcaInvalida({ piezasProducto: 60, hayCalca: true, calcaSinPrecio: true }),
+    MOTIVOS_CALCA_INVALIDA.SIN_VOLUMEN,
+    'con las dos causas manda el volumen: es la que el vendedor puede resolver subiendo producto'
+  );
+  assert.strictEqual(
+    motivoCalcaInvalida({ piezasProducto: 150, hayCalca: true, calcaSinPrecio: true }),
+    MOTIVOS_CALCA_INVALIDA.SIN_PRECIO
+  );
+  assert.strictEqual(motivoCalcaInvalida({ piezasProducto: 150, hayCalca: true, calcaSinPrecio: false }), null);
+  assert.strictEqual(motivoCalcaInvalida({ piezasProducto: 10, hayCalca: false, calcaSinPrecio: true }), null,
+    'sin calca en el carrito no hay nada que invalidar');
+});
+
+test('#91-29: el aviso de calca sin precio no habla del umbral (no es el problema)', () => {
+  const aviso = avisoCalcaInvalida(MOTIVOS_CALCA_INVALIDA.SIN_PRECIO, 150);
+  assert.ok(/precio/i.test(aviso), aviso);
+  assert.ok(!aviso.includes('100 piezas'), 'confundiria: con 150 piezas el umbral ya se cumplio');
+});
+
+test('#91-30: los motivos se comparan por igualdad contra constantes explicitas', () => {
+  assert.deepStrictEqual(Object.values(MOTIVOS_CALCA_INVALIDA).sort(), ['sin-precio', 'sin-volumen']);
 });
 
 // === Decision 8: la linea muestra la relacion, sin juzgarla (el pedido mixto y

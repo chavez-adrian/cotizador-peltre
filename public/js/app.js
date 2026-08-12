@@ -104,9 +104,10 @@ import {
   piezasDeProducto,
   hayCalcaEnCarrito,
   puedeAgregarCalca,
-  carritoInvalidoPorCalca,
+  motivoCalcaInvalida,
+  MOTIVOS_CALCA_INVALIDA,
   bloqueaGeneracionPorCalcaSinVolumen,
-  avisoCalcaSinVolumen,
+  avisoCalcaInvalida,
   avisoNoPuedeAgregarCalca,
   relacionCalcaProducto,
   estadoMarcaDecorado,
@@ -636,8 +637,11 @@ function renderCalcas() {
 
   const resuelto = document.getElementById('cal-resuelto');
   document.getElementById('cal-sku').textContent = ficha ? ficha.code : '—';
+  // "en esta lista", no "en Menudeo": el hueco de precio tambien puede caer en
+  // un tier pagado (a CAL1025S le faltaba la M350), y nombrar el tier
+  // equivocado manda al vendedor a resolver lo que no es.
   document.getElementById('cal-precio').textContent = precio === null
-    ? 'sin precio en Menudeo'
+    ? 'sin precio en esta lista'
     : `$${fmt(precio)} / pza`;
   resuelto.className = precio === null ? 'calca-resuelto sin-precio' : 'calca-resuelto';
 
@@ -649,35 +653,48 @@ function renderCalcas() {
   }
 
   // Umbral duro de 100 piezas de producto (decision 1): abajo de eso no se
-  // agrega, y el aviso dice el umbral y lo que lleva.
-  const puede = puedeAgregarCalca(piezas) && !!ficha;
+  // agrega, y el aviso dice el umbral y lo que lleva. Tampoco se agrega una
+  // calca sin precio en la lista vigente: seria meter al carrito una partida
+  // que bloquea la generacion en el acto.
   const avisoEl = document.getElementById('cal-aviso');
-  avisoEl.innerHTML = puedeAgregarCalca(piezas)
-    ? ''
-    : `<div class="alert alert-error">${avisoNoPuedeAgregarCalca(piezas)}</div>`;
-  document.getElementById('btn-agregar-calca').disabled = !puede;
+  const impedimento = !puedeAgregarCalca(piezas)
+    ? avisoNoPuedeAgregarCalca(piezas)
+    : (ficha && precio === null ? avisoCalcaInvalida(MOTIVOS_CALCA_INVALIDA.SIN_PRECIO) : '');
+  avisoEl.innerHTML = impedimento ? `<div class="alert alert-error">${impedimento}</div>` : '';
+  document.getElementById('btn-agregar-calca').disabled = !!impedimento || !ficha;
 
   // El umbral es un invariante, no una validacion de captura (decision 2): si el
   // carrito cae bajo 100 piezas con calcas dentro, se marca y se bloquea la
   // generacion. No se revierte el cambio del vendedor ni se le quitan las calcas.
-  const invalido = carritoInvalidoPorCalcaActual();
+  const motivo = motivoCalcaInvalidaActual();
   for (const id of ['calca-invalido-productos', 'resumen-calca-invalido']) {
     const el = document.getElementById(id);
     if (!el) continue;
-    el.style.display = invalido ? 'block' : 'none';
-    el.textContent = invalido ? avisoCalcaSinVolumen(piezas) : '';
+    el.style.display = motivo ? 'block' : 'none';
+    el.textContent = motivo ? avisoCalcaInvalida(motivo, piezas) : '';
   }
 }
 
-function carritoInvalidoPorCalcaActual() {
+// Motivo por el que el carrito con calca no puede generar, o null si puede.
+// `calcaSinPrecio` mira el precio REAL resuelto de cada calca: el umbral evita
+// caer en Menudeo, pero una calca sin fila en un tier pagado tambien la dejaria
+// sin precio, y ahi el `?? 0` de getPrice la imprimiria en $0.
+function motivoCalcaInvalidaActual() {
   const items = itemsDelCarrito();
-  return carritoInvalidoPorCalca({ piezasProducto: piezasDeProducto(items), hayCalca: hayCalcaEnCarrito(items) });
+  const calcaSinPrecio = [...state.cart.values()]
+    .some(({ product }) => product.esCalca && precioUnitario(product) === null);
+  return motivoCalcaInvalida({
+    piezasProducto: piezasDeProducto(items),
+    hayCalca: hayCalcaEnCarrito(items),
+    calcaSinPrecio,
+  });
 }
 
 function agregarCalca() {
   const piezas = getPiezasProducto();
   const ficha = calcaElegida();
   if (!ficha || !puedeAgregarCalca(piezas)) return;
+  if (precioCalca(ficha, getCurrentTier().id) === null) return;
 
   const cantidad = parseInt(document.getElementById('cal-cantidad')?.value) || 0;
   if (cantidad <= 0) return;
@@ -1499,8 +1516,9 @@ async function generatePDF() {
     switchTab('resumen');
     return;
   }
-  if (bloqueaGeneracionPorCalcaSinVolumen(carritoInvalidoPorCalcaActual())) {
-    alert(avisoCalcaSinVolumen(getPiezasProducto()));
+  const motivoCalca = motivoCalcaInvalidaActual();
+  if (bloqueaGeneracionPorCalcaSinVolumen(motivoCalca !== null)) {
+    alert(avisoCalcaInvalida(motivoCalca, getPiezasProducto()));
     switchTab('productos');
     return;
   }
@@ -1619,8 +1637,9 @@ async function generateHTML() {
     switchTab('resumen');
     return;
   }
-  if (bloqueaGeneracionPorCalcaSinVolumen(carritoInvalidoPorCalcaActual())) {
-    alert(avisoCalcaSinVolumen(getPiezasProducto()));
+  const motivoCalca = motivoCalcaInvalidaActual();
+  if (bloqueaGeneracionPorCalcaSinVolumen(motivoCalca !== null)) {
+    alert(avisoCalcaInvalida(motivoCalca, getPiezasProducto()));
     switchTab('productos');
     return;
   }

@@ -80,12 +80,34 @@ export function puedeAgregarCalca(piezasProducto) {
   return (piezasProducto || 0) >= PIEZAS_MINIMAS_CALCA;
 }
 
+// Motivos por los que un carrito con calca no puede generar documento. Se
+// comparan por IGUALDAD contra estas constantes, nunca por prefijo (leccion del
+// reporte de #118: 'sin-senal'.startsWith('si') conto vivos como cerrados).
+export const MOTIVOS_CALCA_INVALIDA = {
+  SIN_VOLUMEN: 'sin-volumen',
+  SIN_PRECIO: 'sin-precio',
+};
+
 // El umbral es una condicion SOSTENIDA, no una validacion de captura (decision
 // 2 del grilling): validar solo al agregar deja el agujero de agregar 150 tazas,
 // agregar calcas y despues bajar a 60. Nada se revierte solo -- se marca el
 // estado y se bloquea la generacion hasta que el vendedor lo resuelva.
-export function carritoInvalidoPorCalca({ piezasProducto, hayCalca } = {}) {
-  return !!hayCalca && !puedeAgregarCalca(piezasProducto);
+//
+// El volumen no es la unica causa. El umbral existe para no caer en Menudeo,
+// pero una calca puede quedarse sin precio en un tier PAGADO (a CAL1025S le
+// faltaba la fila M350 en Operam, ver la investigacion del issue): ahi el
+// `?? 0` de getPrice la mandaria a $0 al documento y al quote sin que nadie lo
+// frene. Volumen suficiente NO implica precio, asi que las dos causas invalidan.
+// Con ambas presentes manda la del volumen: es la que el vendedor resuelve solo.
+export function motivoCalcaInvalida({ piezasProducto, hayCalca, calcaSinPrecio } = {}) {
+  if (!hayCalca) return null;
+  if (!puedeAgregarCalca(piezasProducto)) return MOTIVOS_CALCA_INVALIDA.SIN_VOLUMEN;
+  if (calcaSinPrecio) return MOTIVOS_CALCA_INVALIDA.SIN_PRECIO;
+  return null;
+}
+
+export function carritoInvalidoPorCalca(estado) {
+  return motivoCalcaInvalida(estado) !== null;
 }
 
 // Compuerta de generacion, espejo de bloqueaGeneracionPorEnvioInvalidado (#89).
@@ -97,7 +119,11 @@ export function avisoNoPuedeAgregarCalca(piezasProducto) {
   return `Las calcas se venden desde ${PIEZAS_MINIMAS_CALCA} piezas de producto. Llevas ${piezasProducto || 0}.`;
 }
 
-export function avisoCalcaSinVolumen(piezasProducto) {
+export function avisoCalcaInvalida(motivo, piezasProducto) {
+  if (motivo === MOTIVOS_CALCA_INVALIDA.SIN_PRECIO) {
+    return 'Hay una calca sin precio en la lista vigente de esta cotización. '
+      + 'Quítala o corrige su precio en Operam: no se puede generar un documento con una partida sin precio.';
+  }
   return `Llevas ${piezasProducto || 0} piezas de producto y el carrito tiene calcas. `
     + `Las calcas se venden desde ${PIEZAS_MINIMAS_CALCA} piezas: sube el producto o quita las calcas para poder generar.`;
 }
