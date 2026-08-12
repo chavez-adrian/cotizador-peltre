@@ -1724,3 +1724,45 @@ body {
 @media (max-width: 480px) {
   .bandeja-datos { grid-template-columns: 1fr; }
 }
+
+/* Calcas en el paso Productos (issue #91). El codigo resuelto por tamano x
+   tintas se muestra con su precio del tier vigente; sin precio (tier Menudeo)
+   la ficha se pinta en rojo, porque la calca no se vende por debajo de 100
+   piezas de producto y un precio en blanco seria un $0 disfrazado. */
+.calca-resuelto {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--primary-light);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+.calca-resuelto-sku {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.calca-resuelto-precio { font-weight: 700; font-variant-numeric: tabular-nums; }
+.calca-resuelto.sin-precio { background: oklch(0.95 0.04 25); }
+.calca-resuelto.sin-precio .calca-resuelto-sku,
+.calca-resuelto.sin-precio .calca-resuelto-precio { color: var(--danger); }
+
+/* Relacion calca/producto en la linea del carrito ("200 de 600 piezas"): se
+   muestra siempre y no se juzga -- el pedido mixto y la doble calca sobre la
+   misma pieza son ambos legitimos. */
+.calca-relacion {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Linea del carrito sin precio en el tier vigente (calca bajo el umbral de 100
+   piezas, #91): se marca en rojo porque el carrito esta en estado invalido y no
+   puede generar documento hasta resolverse. */
+.cart-line-sin-precio .cart-line-price,
+.cart-line-sin-precio .cart-line-total { color: var(--danger); font-weight: 600; }

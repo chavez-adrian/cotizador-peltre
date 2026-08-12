@@ -35,6 +35,10 @@ El proyecto es un servidor Express monolitico (`server.js`) con frontend vanilla
 
 `public/js/alta-logica.js` es un modulo ES sin efectos de navegador que concentra la logica pura del flujo de alta de cliente (parseo de CSF, diff fiscal, payload de `/api/crear-cliente`, payload del upgrade fiscal de `/api/actualizar-cliente-fiscal/:id`, combinacion de telefono). `app.js` lo importa de forma nativa (`<script type="module">`); los tests lo consumen via `import()` dinamico (ver seccion Tests); `server.js` importa de el las funciones de diff/payload fiscal (issue #85) para el endpoint de upgrade — tres consumidores, cero copias espejo (resolucion de "Especie A" del Candidato 2 de `architecture-review-cotizador-20260606.html`, issue #36; mismo patron de cross-import server↔public/js ya usado con `prospectos-logica.js`/`decorados-logica.js`).
 
+`public/js/calcas-logica.js` es el nucleo puro de la **calca en el carrito** (#91, CONTEXT.md "Calca", ADR-0010), con tres consumidores por el mismo patron: `app.js`, `lib/calcular-envio.js` y `server.js`. Lo que concentra: la familia de codigos `CAL[1-9]\d{3}S?` (`esCodigoCalca` — las `CAL00xx` de marca/artistas NO), la resolucion tamano×tintas -> ficha del catalogo (`buscarCalcaEnCatalogo`, se BUSCA, nunca se concatena el codigo: uno inventado da 406 al subir el quote), `precioCalca` (devuelve **null**, no 0, cuando el tier no tiene precio) y el invariante de las **100 piezas de producto** (`puedeAgregarCalca` / `carritoInvalidoPorCalca` / `bloqueaGeneracionPorCalcaSinVolumen`, espejo del patron de #89). Dos reglas que no son obvias y viven aqui: (a) **las piezas de calca no cuentan para el volumen que fija el tier** (`piezasDeProducto`, que tambien excluye `ENVIO`) — de ahi que `getPiezasProducto` de `app.js` y el `totalPiezas` de `server.js` salgan de la misma funcion; (b) **la calca enciende la marca `decorado` y la FIJA** (`estadoMarcaDecorado`), pero quitarla no la apaga — conserva el valor y vuelve a ser editable, porque los pasos del checklist de #61 son gestiones reales con el proveedor. Por eso `app.js` manda `decorado` en el body **solo en true**: el `data` del registro se mergea a nivel raiz y un `false` pisaria la marca puesta desde la tarjeta del tablero.
+
+> Trampa de precio que costo el grilling de #91: las 32 calcas tienen `Menudeo: null` y `getPrice()` hacia `prices[tier] ?? prices['Menudeo'] ?? 0` — una calca en tier Menudeo se cotizaba en **$0**, en el PDF y en el quote. Por eso `precioUnitario` (app.js) devuelve null para la calca sin precio y el carrito la pinta "sin precio" en vez de imprimir un cero silencioso, ademas del umbral duro que impide llegar ahi.
+
 ### Flujo de datos principal
 
 ```
@@ -70,7 +74,7 @@ Browser (app.js) → /api/*                        → server.js → lib/* → O
 | `parsear-csf.js` | Funcion pura — extrae RFC, razon social, domicilio, regimen de texto de PDF de CSF del SAT |
 | `pdf-generator.js` | PDFKit, llama a URLs de imagenes de Shopify en tiempo real si `incluirFotos: true` |
 | `html-generator.js` | HTML auto-contenido para WhatsApp, mismo formato visual que el PDF |
-| `calcular-envio.js` | Convierte carrito en paquetes fisicos para envia.com; lee `data/cajas.json` y `data/precios.json` (campo `boxMap`) |
+| `calcular-envio.js` | Convierte carrito en paquetes fisicos para envia.com; lee `data/cajas.json` y `data/precios.json` (campo `boxMap`). Excluye `ENVIO` y la **calca** (#91): la calca va aplicada sobre la pieza, no ocupa caja ni pesa aparte, y sin excluirla `codigo.slice(0,4)` daba `CAL1` -> warning falso de empaque en cada cotizacion con calca |
 | `extract-prices.js` | LEGADO desde el corte #131 (2026-08-10): parsea el Excel maestro (hoja `precios_pna`) pero YA NO es la fuente de `data/precios.json` — queda como herramienta de contraste. El catalogo vigente lo genera `scripts/sync-catalogo.mjs` desde Operam |
 | `validar-cp.js` | Funcion pura para validar CP por pais |
 

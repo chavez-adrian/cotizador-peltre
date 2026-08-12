@@ -600,7 +600,35 @@
         <div id="flujo-resultado-container" style="flex:1;min-width:200px"></div>
       </div>
 
+      <!-- CALCAS (issue #91) -- partida propia del carrito, sin ligarse a un
+           producto base. El tamano y las tintas resuelven el codigo contra el
+           catalogo; la cantidad son PIEZAS DECORADAS, no disenos. -->
+      <div class="section-header" style="margin-bottom:8px">Calcas</div>
+      <div id="calcas-section" style="margin-bottom:14px;max-width:520px">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cal-tamano">Tamano</label>
+            <select id="cal-tamano"></select>
+          </div>
+          <div class="form-group">
+            <label for="cal-tintas">Tintas</label>
+            <select id="cal-tintas"></select>
+          </div>
+        </div>
+        <div id="cal-resuelto" class="calca-resuelto">
+          <span class="calca-resuelto-sku" id="cal-sku">&mdash;</span>
+          <span class="calca-resuelto-precio" id="cal-precio">&mdash;</span>
+        </div>
+        <div class="form-group">
+          <label for="cal-cantidad">Cantidad (piezas decoradas)</label>
+          <input type="number" id="cal-cantidad" min="1" inputmode="numeric">
+        </div>
+        <div id="cal-aviso"></div>
+        <button class="btn btn-primary btn-block" id="btn-agregar-calca">Agregar calca</button>
+      </div>
+
       <!-- ARTICULOS COTIZADOS -->
+      <div id="calca-invalido-productos" class="alert alert-error" style="display:none"></div>
       <div id="cart-lines-section" style="display:none; margin-top:14px">
         <div class="section-header" style="margin-top:0">Articulos cotizados</div>
         <div class="cart-lines-table">
@@ -751,6 +779,7 @@
       Recuerda cotizar el envio antes de generar el PDF. Revisa el tab Envio.
     </div>
     <div id="resumen-envio-invalidado" class="alert alert-warning" style="display:none"></div>
+    <div id="resumen-calca-invalido" class="alert alert-error" style="display:none"></div>
     <div id="resumen-vendedor" style="font-weight:600;margin-bottom:8px"></div>
     <div id="resumen-empty" class="empty-state">
       <p>Agrega productos para ver el resumen de la cotizacion.</p>
@@ -773,10 +802,11 @@
 
       <div class="notes-box" style="margin-top:16px">
         <h3>Notas</h3>
-        <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px">
+        <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="resumen-decorado" style="width:16px;height:16px;accent-color:var(--primary)">
           ¿Lleva calca/decorado? (cambia el tiempo de entrega a 6 semanas)
         </label>
+        <div id="resumen-decorado-motivo" style="font-size:12px;color:var(--text-light);margin:2px 0 8px 24px"></div>
         <textarea id="resumen-notas" rows="5" style="width:100%">- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.
 - Envio a costo y riesgo del cliente.
 - Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.
