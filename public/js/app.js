@@ -89,6 +89,7 @@ import {
   MENSAJE_ENVIO_INVALIDADO,
   aplicarNotaTiempoEntrega,
   formatTiempoEntrega,
+  formatDescripcionEnvioEnvia,
   buildEnvioEstructurado,
   restaurarEnvioDesdeCotizacion,
   debeAutoCotizarEnvia,
@@ -1063,11 +1064,11 @@ async function cotizarEnvia() {
         </div>
         <div class="envia-rate-precio">$${fmt(precio)}</div>
       `;
-      card.addEventListener('click', () => seleccionarEnviaRate(card, carrier, servicio, precio));
+      card.addEventListener('click', () => seleccionarEnviaRate(card, rate, carrier, servicio, precio));
       resultsEl.appendChild(card);
 
       // Auto-seleccionar el primero (recomendado)
-      if (esRecomendado) seleccionarEnviaRate(card, carrier, servicio, precio);
+      if (esRecomendado) seleccionarEnviaRate(card, rate, carrier, servicio, precio);
     });
 
   } catch (e) {
@@ -1080,12 +1081,12 @@ async function cotizarEnvia() {
   }
 }
 
-function seleccionarEnviaRate(card, carrier, servicio, precio) {
+function seleccionarEnviaRate(card, rate, carrier, servicio, precio) {
   document.querySelectorAll('.envia-rate-card').forEach(c => c.classList.remove('selected'));
   card.classList.add('selected');
   enviaRateSeleccionado = {
     carrier, servicio,
-    desc: `${formatCarrier(carrier)} ${formatServicio(servicio)}`.trim(),
+    desc: formatDescripcionEnvioEnvia(rate),
     cost: precio,
   };
   envioInvalidadoPorCantidad = false;
@@ -1253,6 +1254,7 @@ function invalidarEnvioSiAplica() {
     enviaRateSeleccionado = null;
     envioInvalidadoPorCantidad = true;
     document.getElementById('shipping-cost').value = '';
+    document.getElementById('shipping-desc').value = 'Envio';
   }
 }
 

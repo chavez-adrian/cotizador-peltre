@@ -66,6 +66,22 @@ export function formatTiempoEntrega(rate) {
   return '';
 }
 
+// Descripcion literal de la partida ENVIO para una tarifa de envia.com (issue
+// #136): servicio + tiempo LITERALES que reporta la paqueteria (nada de
+// editorializar el nombre del servicio). "habiles" se agrega solo cuando el
+// estimado termina en "dias" -- nunca sobre "Dia siguiente", que no es plural
+// de dias. serviceDescription es el campo real del shape de envia.com (#88);
+// sin el, cae al mismo carrier+servicio formateados que ya se mostraban.
+export function formatDescripcionEnvioEnvia(rate) {
+  if (!rate) return '';
+  const servicio = rate.serviceDescription
+    || `${formatCarrier(rate.carrier)} ${formatServicio(rate.service ?? rate.serviceType)}`.trim();
+  const tiempo = formatTiempoEntrega(rate);
+  if (!tiempo) return servicio;
+  const habiles = /días$/.test(tiempo.trim()) ? ' hábiles' : '';
+  return `${servicio} — entrega estimada ${tiempo}${habiles}`;
+}
+
 // Escape local (no se importa de prospectos-logica.js para evitar un ciclo:
 // prospectos-logica.js -> alta-logica.js -> cotizar-logica.js).
 function escapeHtml(v) {

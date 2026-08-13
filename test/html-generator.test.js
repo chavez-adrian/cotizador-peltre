@@ -58,6 +58,21 @@ test('8. Header shows company email, not website URL', () => {
   assert.ok(!html.includes('e-Mail: www.'), 'should NOT show website URL as e-Mail');
 });
 
+// #136: la descripcion literal de la partida ENVIO (servicio + "entrega
+// estimada" + tiempo, literales de envia.com) llega intacta al HTML -- string
+// crudo, sin conversion a bytes, por eso se compara tal cual (acentos y
+// em-dash incluidos).
+test('9. (#136) la partida ENVIO imprime la descripcion literal con tiempo de entrega', () => {
+  const html = generateQuoteHTML({
+    items: [{
+      codigo: 'ENVIO',
+      descripcion: 'FedEx Nacional Económico — entrega estimada 1-2 días hábiles',
+      cantidad: 1, unidad: 'ACT', precio: 259,
+    }],
+  });
+  assert.ok(html.includes('FedEx Nacional Económico — entrega estimada 1-2 días hábiles'));
+});
+
 test('9. Logo img tag is embedded as data URL (works in blob context)', () => {
   const html = generateQuoteHTML({});
   assert.ok(html.includes('data:image/png;base64,'), 'logo should be embedded as base64 data URL');

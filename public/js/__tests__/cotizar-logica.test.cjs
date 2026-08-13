@@ -4,14 +4,14 @@ const assert = require('node:assert/strict');
 
 let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
-let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega;
+let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
-    notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega,
+    notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales,
   } = await import('../cotizar-logica.js'));
@@ -271,6 +271,34 @@ test('#88-6: sin ningun campo de tiempo -> cadena vacia (no rompe el render)', (
   assert.strictEqual(formatTiempoEntrega({ carrier: 'dhl' }), '');
   assert.strictEqual(formatTiempoEntrega(null), '');
   assert.strictEqual(formatTiempoEntrega(undefined), '');
+});
+
+// === #136: descripcion literal de la partida ENVIO -- servicio + tiempo tal
+// cual los reporta envia.com, "habiles" solo si el estimado termina en "dias"
+// (nunca sobre "Dia siguiente", que no es plural de dias).
+test('#136-1: serviceDescription + deliveryEstimate en dias -> agrega "habiles"', () => {
+  const rate = { serviceDescription: 'FedEx Nacional Económico', deliveryEstimate: '1-2 días' };
+  assert.strictEqual(formatDescripcionEnvioEnvia(rate), 'FedEx Nacional Económico — entrega estimada 1-2 días hábiles');
+});
+
+test('#136-2: deliveryEstimate "Día siguiente" -> NO agrega "habiles"', () => {
+  const rate = { serviceDescription: 'FedEx Express', deliveryEstimate: 'Día siguiente' };
+  assert.strictEqual(formatDescripcionEnvioEnvia(rate), 'FedEx Express — entrega estimada Día siguiente');
+});
+
+test('#136-3: sin serviceDescription -> cae a carrier + servicio formateados', () => {
+  const rate = { carrier: 'dhl', service: 'ground', deliveryEstimate: '2-4 días' };
+  assert.strictEqual(formatDescripcionEnvioEnvia(rate), 'DHL Ground — entrega estimada 2-4 días hábiles');
+});
+
+test('#136-4: sin tiempo de entrega disponible -> solo el servicio, sin guion', () => {
+  const rate = { serviceDescription: 'UPS Saver' };
+  assert.strictEqual(formatDescripcionEnvioEnvia(rate), 'UPS Saver');
+});
+
+test('#136-5: rate nulo/indefinido -> cadena vacia', () => {
+  assert.strictEqual(formatDescripcionEnvioEnvia(null), '');
+  assert.strictEqual(formatDescripcionEnvioEnvia(undefined), '');
 });
 
 // === #102: persistir el envio estructurado {carrier, servicio, precio} en vez

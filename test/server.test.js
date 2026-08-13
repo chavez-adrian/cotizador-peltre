@@ -447,6 +447,9 @@ test('B5 (#88): POST /api/cotizacion/envio propaga deliveryEstimate y deliveryDa
     assert.strictEqual(rate.deliveryDate.dateDifference, 2);
     assert.strictEqual(rate.totalPrice, 259);
     assert.strictEqual(rate.days, undefined);
+    // #136: serviceDescription tambien debe pasar sin filtrar -- es el campo
+    // que arma la descripcion literal de la partida ENVIO en el cliente.
+    assert.strictEqual(rate.serviceDescription, 'FedEx Nacional Económico');
   } finally {
     globalThis.fetch = originalFetch;
     process.env.ENVIA_API_KEY = originalApiKey;

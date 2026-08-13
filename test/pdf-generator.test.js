@@ -167,3 +167,20 @@ test('B17: (#101) el contador "Pagina X de Y" coincide con el numero real de pag
   // PDFKit kern-splits "Pagina"; "1 de N" es el fragmento contiguo fiable
   assert.ok(text.includes(toHex(`1 de ${paginasReales}`)), `debe imprimir "Pagina 1 de ${paginasReales}"`);
 });
+
+// === #136: la descripcion literal de la partida ENVIO (servicio + tiempo de
+// entrega de envia.com) llega intacta al PDF -- se busca "entrega estimada"
+// (ASCII, sin acentos) porque es contiguo y no se ve afectado por el
+// kern-split de PDFKit ni por la codificacion WinAnsi de acentos/em-dash.
+test('B18: (#136) la partida ENVIO con tiempo de entrega imprime "entrega estimada" en el PDF', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    items: [{
+      codigo: 'ENVIO',
+      descripcion: 'FedEx Nacional Economico - entrega estimada 1-2 dias habiles',
+      cantidad: 1, unidad: 'ACT', precio: 259, descuento: 0,
+    }],
+  });
+  const text = result.toString('latin1');
+  assert.ok(text.includes(toHex('estimada')), 'debe imprimir el tiempo de entrega estimado de la partida ENVIO');
+});
