@@ -1,0 +1,134 @@
+# Arquitectura detallada — cotizador
+
+> Complemento de `CLAUDE.md`. Aqui vive el detalle por modulo/tema que no cabe en las instrucciones de sesion: leer la seccion correspondiente ANTES de tocar esa area del codigo. Las decisiones de dominio estan en `CONTEXT.md` y `docs/adr/`; el API de Operam en `peltre-operam.md` (raiz `_Claude/`) §12.
+
+## Modulos lib/ — detalle
+
+### operam-client.js
+
+Bearer token auth con auto-refresh en 401. **`buildClienteBody` es el UNICO mapeo de cliente→Operam** (lo comparten `crearClienteDirecto` del alta generica y `crearCliente` de `/api/crear-cliente`), y por eso ahi viven los **parametros fiscales estandar del RFC generico (#121)**: si `tax_id` esta en `RFC_GENERICOS`, fuerza nombre en MAYUSCULAS, `postal_code` 56577 (el CP **fiscal**; el de ENTREGA lo pone `buildBranchGenerico` y conserva el real), regimen 616 y uso CFDI S01. Son overrides INCONDICIONALES, no defaults: ignoran lo que mande el caller. El unico campo fiscal del generico que sigue al vendedor es el **segmento**, que se captura en `pc-segmento` del paso Cliente.
+
+Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `obtenerBranch`, `obtenerBranchId`, `obtenerClientePorId`, `listarTransacciones`, `listarPedidos`, `resetSession`. Read-only del backfill (#76): `obtenerQuote`, `obtenerPedido` (detalle con `qty_sent`/`quantity` -> entrega total vs parcial), `obtenerCliente`; retry ante caidas de red (ECONNRESET) y throttle proactivo anti-429 `_setMinInterval` (default 0 = la app normal no pacea).
+
+### alta-generica.js
+
+Alta del cliente con RFC generico al subir cotizacion (#81/#83): `buildClienteGenerico` (lee `emailFactura` -> `invoice_email` desde #95 y `segmentoId` -> `segmento_id` desde #121; los demas parametros fiscales del generico los impone `buildClienteBody`, no este modulo), `buildBranchGenerico`/`diffBranchDomicilio` (PUT del branch con domicilio de entrega + verificacion, #96), `necesitaAltaGenerica`, `rfcGenericoPara`, `resolverSalesTypeId`, `FUENTE_ALTA_GENERICA`.
+
+### deduplicacion.js / telefono-llave.js / higiene-clientes.js
+
+- `deduplicacion.js`: RFC genericos + deteccion de duplicados (dedup #78: nombre + telefono como senal fuerte). `normalizarNombre` es el tokenizado de nombre que reusa el cruce por identidad (#123). Aqui vive `DEBTORS_GENERICOS` compartido (queda #127: unificar con la copia en strings de `backfill-operam.mjs`).
+- `telefono-llave.js`: `ultimos10` es la UNICA llave de identidad de prospecto (1 celular = 1 prospecto). Modulo puro para que la usen tanto el store como los nucleos sin IO; `prospectos-store.js` la re-exporta.
+- `higiene-clientes.js`: nucleo puro del reporte admin "Clientes genericos sin actividad" (#86).
+
+### cruce-identidad.js (#123)
+
+Nucleo PURO del cruce por identidad que comparten #118 y #119. `cruzarIdentidad(quote, catalogos)` clasifica en `CERRO` / `COMPRO_OTRA_COSA` / `SIN_SENAL` (constantes explicitas: comparar por igualdad, **nunca por prefijo** — `'sin-senal'.startsWith('si')` conto vivos como cerrados en la medicion). **La identidad se cruza SOLO contra el catalogo de clientes** (razon social, nombre corto, contactos y sucursales): Operam HEREDA `deliver_to`/`contact_phone`/`contact_email`/`delivery_address`/`customer_ref` del quote al pedido convertido (`CAMPOS_HEREDADOS_DEL_QUOTE`), asi que leerlos del pedido auto-confirma el match — con el cruce estricto el recall honesto es 67%. Cierra con banda `BANDA_MONTO` de ±15% sobre el monto MAYOR (mismo denominador que `pedidoQueCierra` del backfill) y causalidad `GRACIA_DIAS`.
+
+Tambien: normalizacion amplia de telefono (`telefonosNormalizados`/`coincidenTelefonos`, tolera +52/52/521/01/044/045, varios numeros por campo y rescate por sufijo de 8 digitos) y `limpiarTelefonoParaGuardar`, que quita las marcas Unicode invisibles (U+202A y afines) **al guardar**, no solo al comparar. `posibleDuplicadoProspecto` da el aviso de duplicado para la bandeja (#122). La liga `trans_no_from` NO participa: es camino aparte.
+
+### sync-operam.js / sync-operam-io.js / sync-operam-webhook.js (#62)
+
+- `sync-operam.js`: nucleo PURO del sync post-venta: `etapaPostVenta(hechos, op)` (hechos normalizados → etapa, con gate de #61 y monotonia) + `hechosDesdeOperam` (transacciones crudas → hechos). **Mapeo REAL de tipos de Operam: ver `peltre-operam.md` §12** (el MCP `operam-api` los etiqueta mal). Pago por `allocated` vs `total` (tolerancia 1%), no por `outstanding`. Sin IO.
+- `sync-operam-io.js`: motor de reconciliacion: lee Operam read-only (`listarTransacciones`/`listarPedidos`), normaliza, aplica el nucleo y mueve la tarjeta. Binding por `data.orderOperam` (el folio de cotizacion NUNCA es el `order_`). Lo usan el webhook y `/api/sync-operam`.
+- `sync-operam-webhook.js`: webhook de Operam: extraccion defensiva del identificador, clave idempotente, log en Neon.
+
+### backfill-operam.mjs (#76)
+
+Nucleo PURO del backfill historico: `planearBackfill`/`planearBackfillSinPedido` (partes A y B), `esCerrado`/`etapaBackfill` (gate de cerrado + etapa; en #77 manda el cumplimiento), `entregaCompleta` (una remision PARCIAL no cierra), `construirEntradaCotizacion` (Prospecto/Proyecto salen del PEDIDO), `mapearPartidasQuote`, `mapearSalesman`, `memoizarPorClave`, `descubrirFolioMax`. Excluye cancelados (`data/cancelados.json`) y el debtor generico `DEBTOR_GENERICO_TIENDAS_DIGITALES` (diferido a #118). Sin IO.
+
+### recolector-genericos.mjs (#124)
+
+Nucleo PURO del lote historico de quotes de los debtors GENERICOS, que puebla la bandeja de revision (#122). `planearRecoleccion` camina folios de quote hacia abajo con el lector INYECTADO (los tipo 32 no son enumerables) hasta salir de la ventana (`MESES_VENTANA` 6, `fechaCorteMeses`); `evaluarQuote` decide contra los catalogos ya leidos y devuelve `{ motivo, candidato, cruce }` — excluye fuera-del-cajon / cancelado / ya-en-bandeja / $0 / `CERRO` (via `cruzarIdentidad` de #123, comparado por igualdad contra la constante), y deja ENTRAR "compro otra cosa" y "posible duplicado" MARCADOS, que es lo que el humano juzga. El duplicado se marca en DOS frentes: contra los prospectos que ya existen (`posibleDuplicadoProspecto`, #123) y contra los candidatos previos del MISMO lote (`celularesDelLote`, que mantiene el walk): un cliente pide 2-3 cotizaciones del mismo proyecto y ninguna es prospecto todavia. `candidatoDesdeQuote` arma el objeto de `bandejaStore.proponer` (celular limpio con `limpiarTelefonoParaGuardar`); `resolverVendedorPropuesto` invierte la prioridad de #76 (manda el CREADOR del quote: en un cajon compartido el `salesman` no dice quien vendio). `depositarCandidatos` recorre y cuenta — la idempotencia la da la clave natural del store, no este modulo. Sin IO; lo orquesta `scripts/rescatar-genericos.mjs` (dry-run por default, `--apply` exige `DATABASE_URL`, read-only contra Operam, throttle 1100ms).
+
+### catalogo-operam.js (#128, padre #120) y el corte #131
+
+Nucleo PURO del catalogo generado desde Operam. `construirCatalogo({ salesTypes, precios, items, complemento, referencia, extracted })` → `{ catalogo, paridad }`, sin IO. El `catalogo` tiene la forma EXACTA de `data/precios.json` (el frontend no cambia).
+
+Reglas de precio verificadas en vivo: la base es "Precio de lista" (id 12, factor 1) y las demas listas son factores; **fila explicita con precio > 0 gana**, si no base × factor; las **filas en 0 se IGNORAN** (herramental/focos: ausencia de precio). Como el catalogo precia por CLAVE y Operam por ARTICULO, cuando los SKUs de una clave no cobran igual manda el precio de la MAYORIA (empate → el mayor) y la divergencia se reporta.
+
+`decodificarSku` lee las partes del codigo (`tipo tamano color1 color2 textura capas filetes colorRiso` + digito 13 = piezas del paquete); los codigos legacy y los que traen dedazo se leen de `data/catalogo-complemento.json`, que ADEMAS manda sobre el codigo. Los **paquetes de N tienen clave propia** (`TA14CP4`), no la de la pieza — el bug (b) del triage, heredado del Excel. Calcas = familia `CAL[1-9]\d{3}S?` (las `CAL00xx` de marca/artistas no); el sufijo S es la migracion de unidad Actividad→Servicio (Actividad no entra en la factura con complemento de exportacion): del par manda la variante CON precios y, con precios en ambas, la S; la paridad compara calcas por codigo BASE.
+
+La `paridad` clasifica por igualdad contra `ESTADOS_PARIDAD` (MATCH/MISMATCH/SIN_SKU/NUEVO) y lista `huerfanas` (fila de precio sin articulo en el maestro), `divergentes`, `ilegibles` (articulo con precio vivo cuyo codigo no se puede leer ni esta en el complementario) y `sinFicha` (clave con articulos con precio pero sin ficha en el complementario: NO entra al catalogo hasta que un humano le escriba nombre y nombre en ingles). Lo que queda fuera del flujo guiado a proposito (texturas 0/8/9, filetes 3-5) NO se reporta.
+
+Los items se piden CON inactivos (`listarItemsCompletos({showInactive:true})`, verificado 2026-08-10: 1680 vs 1603): un articulo inactivo esta EN DESUSO — no entra al catalogo pero clasifica: su fila de precio va a `inactivasConPrecio` (no a `huerfanas`, que quedan solo para articulos BORRADOS) y los SKUs de la referencia que Operam no precia se separan en `skusEnDesuso` (inactivos; el desactualizado es el Excel) vs `skusInexistentes` (nunca cargados — el unico caso 2 real de #131). Lectores en `operam-client.js`: `listarSalesTypes({showInactive})` (obligatorio: "Bazaar" id 18 esta inactiva y tiene 461 filas vivas), `listarPreciosCompletos`, `listarItemsCompletos({showInactive})`.
+
+Lo orquesta `scripts/sync-catalogo.mjs` (#129, dry-run por default: reporte de paridad + diff de SKUs contra `data/precios.json` vigente y aviso de productos sin caja en `boxMap`; `--apply` escribe `data/precios.json`, read-only contra Operam, throttle 1100ms — mismo patron que `rescatar-genericos.mjs`).
+
+**CORTE #131 hecho (2026-08-10): Operam ES la fuente de verdad del catalogo.** `data/precios.json` se actualiza corriendo el sync (`node scripts/sync-catalogo.mjs` para ver, `--apply` + commit para aplicar); el Excel conserva DOS roles: mantener `data/catalogo-complemento.json` (boxMap/nameEn/pesos, que Operam no modela) y cargar articulos nuevos a Operam via `items_excel.php`. El ultimo catalogo extraido del Excel quedo congelado en `test/fixtures/precios-2026-abril-excel.json` (la referencia del test de aceptacion — data/precios.json ya no sirve de referencia porque lo genera el propio sync). `lib/extract-prices.js` es LEGADO desde el corte: parsea el Excel maestro (hoja `precios_pna`) pero YA NO es la fuente de `data/precios.json` — queda como herramienta de contraste.
+
+### operam-web.js (web legacy)
+
+Web legacy de Operam (FrontAccounting) para lo que la API v3 no permite. Login por form + cookie (auth distinta del Bearer). Dos escrituras:
+
+1. Post-fix de vigencia (#106, ADR-0007): `corregirVigenciaQuote` + los puros `parsearFormularioQuote`/`serializarBodyQuote`/`leerValidoHastaVista`.
+2. **Actualizacion del quote conservando folio** (#104, ADR-0008): `actualizarQuoteOperam` — reescritura completa en `$_SESSION` (Delete0 iterado + AddItem por partida con el mapeo compartido `armarContenidoQuote` de operam-client) y UN solo `ProcessOrder` que lleva comments/cust_ref/vigencia (sin post-fix separado en este camino), con verificacion post-escritura (`compararQuoteVista`; NO compara descripciones — las impone el catalogo de Operam). Verificado en vivo 2026-07-28: Delete/AddItem NO tocan la base hasta ProcessOrder, y el `price` enviado prevalece sobre la lista del cliente. El body lleva `ProcessOrder` y NUNCA `CancelOrder` (vive en el mismo form y anularia la cotizacion; `ES_SUBMIT`/`bodyDesdeCampos` son la segunda linea de defensa).
+
+Tambien expone la **deteccion de cancelacion** (#76): `estaCanceladoHtml` (puro), `abrirSesionWeb` (consultar la vista sobre `crearSesionFA`) y `transaccionCancelada`, que usa `scripts/detectar-cancelados.mjs` para generar `data/cancelados.json` (el backfill NO scrapea en runtime).
+
+### calcas-logica.js (#91, ADR-0010)
+
+Nucleo puro de la **calca en el carrito**, con tres consumidores por el mismo patron cross-import: `app.js`, `lib/calcular-envio.js` y `server.js`. Lo que concentra: la familia de codigos `CAL[1-9]\d{3}S?` (`esCodigoCalca` — las `CAL00xx` de marca/artistas NO), la resolucion tamano×tintas -> ficha del catalogo (`buscarCalcaEnCatalogo`, se BUSCA, nunca se concatena el codigo: uno inventado da 406 al subir el quote), `precioCalca` (devuelve **null**, no 0, cuando el tier no tiene precio) y el invariante de las **100 piezas de producto** (`puedeAgregarCalca` / `carritoInvalidoPorCalca` / `bloqueaGeneracionPorCalcaSinVolumen`, espejo del patron de #89).
+
+Dos reglas que no son obvias y viven aqui:
+
+- **Las piezas de calca no cuentan para el volumen que fija el tier** (`piezasDeProducto`, que tambien excluye `ENVIO`) — de ahi que `getPiezasProducto` de `app.js` y el `totalPiezas` de `server.js` salgan de la misma funcion.
+- **La calca enciende la marca `decorado` y la FIJA** (`estadoMarcaDecorado`), pero quitarla no la apaga — conserva el valor y vuelve a ser editable, porque los pasos del checklist de #61 son gestiones reales con el proveedor. Por eso `app.js` manda `decorado` en el body **solo en true**: el `data` del registro se mergea a nivel raiz y un `false` pisaria la marca puesta desde la tarjeta del tablero.
+
+Trampa de precio que costo el grilling de #91: las 32 calcas tienen `Menudeo: null` y `getPrice()` hacia `prices[tier] ?? prices['Menudeo'] ?? 0` — una calca en tier Menudeo se cotizaba en **$0**, en el PDF y en el quote. Por eso `precioUnitario` (app.js) devuelve null para la calca sin precio y el carrito la pinta "sin precio" en vez de imprimir un cero silencioso, ademas del umbral duro que impide llegar ahi. El invariante tiene DOS motivos (`MOTIVOS_CALCA_INVALIDA`): `sin-volumen` y `sin-precio` — volumen suficiente no implica precio.
+
+En `calcular-envio.js` la calca se excluye del empaque (#91): va aplicada sobre la pieza, no ocupa caja ni pesa aparte, y sin excluirla `codigo.slice(0,4)` daba `CAL1` -> warning falso de empaque en cada cotizacion con calca.
+
+### alta-logica.js
+
+Modulo ES sin efectos de navegador que concentra la logica pura del flujo de alta de cliente (parseo de CSF, diff fiscal, payload de `/api/crear-cliente`, payload del upgrade fiscal de `/api/actualizar-cliente-fiscal/:id`, combinacion de telefono). `app.js` lo importa de forma nativa (`<script type="module">`); los tests lo consumen via `import()` dinamico; `server.js` importa de el las funciones de diff/payload fiscal (issue #85) para el endpoint de upgrade — tres consumidores, cero copias espejo (resolucion de "Especie A" del Candidato 2 de `architecture-review-cotizador-20260606.html`, issue #36; mismo patron de cross-import server↔public/js ya usado con `prospectos-logica.js`/`decorados-logica.js`).
+
+## Persistencia y ciclo de la cotizacion (#102-#116)
+
+- Neon Postgres (`DATABASE_URL`) — tablas `cotizaciones` (historial + seguimientos + estado, via `lib/cotizaciones-store.js`) y `clientes_log` (auditoria de altas). El store cae a `data/cotizaciones.json` cuando no hay `DATABASE_URL` (dev local y tests); el disco de Render es efimero, asi que en produccion la fuente de verdad es Neon.
+- Los GET `/api/cotizacion/pdf/:id` y `/html/:id` REGENERAN el documento desde `data` jsonb (#103) y desde ADR-0009 (#110/#111) son el **UNICO** camino que genera documento: los `POST /api/cotizacion/pdf` y `/html` se eliminaron (guardaban Y generaban, y cada uno decidia por su cuenta que numero imprimir — la causa raiz de #110). Guardar es ahora `POST /api/cotizacion`, que solo crea/actualiza el registro y devuelve `{ id, folioOperam }`. La cache de disco se elimino y el listado expone `hasData` (ya no `hasPdf`). Van SIN authMiddleware a proposito (compartir por WhatsApp); `?descargar=1` cambia el `Content-Disposition` a `attachment` (la descarga del vendedor) y el nombre del archivo se arma SOLO ahi. El envio elegido se persiste estructurado en `data.envio` `{opcion, carrier, servicio, precio, descripcion}` (#102) y `cargarCotizacion` lo restaura sin re-disparar envia.com.
+- "Actualizar cotizacion" vs "Crear nueva a partir de esta" (#104, ADR-0008): actualizar reutiliza `cotizacionId` (ya no se resetea `lastCotizacionId` incondicionalmente al Cargar) y reescribe el quote de Operam conservando folio via `actualizarQuoteOperam`. Gate `puedeActualizarCotizacion`: solo con folio subido y sin pedido asociado (`data.orderOperam` ausente) y mismo cliente. Si la edicion web falla, el registro local SI se actualiza y queda marcado `quoteDesactualizado` con Reintentar.
+- **Regenerar una cotizacion ya subida actualiza su quote, sin preguntar (#114).** Regenerar (mismo `cotizacionId`, sin pasar por el historial) sobre un registro que ya tiene `folioOperam` compara el contenido nuevo contra `data.huellaQuote` — la huella de lo que el cotizador dejo en el quote, persistida al subir (los dos caminos) y al actualizar con exito. Si no cambio, NO se toca Operam (caso tipico: el PDF y luego el HTML del mismo carrito). Si cambio, `POST /api/cotizacion` devuelve `requiereActualizacionOperam` y la generacion entra por el MISMO camino de #104 (`/actualizar` → `actualizarQuoteOperam`), que conserva el folio; con pedido asociado el gate responde 409 y la UI avisa fuerte (badge + boton "Crear una cotizacion nueva a partir de esta" + `alert`), porque el documento ya salio numerado. `huellaContenidoQuote` (`lib/operam-client.js`) se deriva de `armarContenidoQuote` — el unico mapeo de que viaja al quote — asi que no puede divergir de lo que se sube.
+- **Que cuenta como cambio (corregido en #115):** partidas, importes, cliente, **el `comments` completo (notas + envios Lalamove, que no son partida y viven SOLO ahi)** y **el PLAZO de vigencia en dias**. Que NO: la **fecha** absoluta de vigencia (se recalcula en cada generacion: incluirla haria que generar el PDF hoy y el HTML manana pareciera un cambio; por eso la linea `Valido hasta` del comments se normaliza al plazo, derivado con las MISMAS funciones que lo construyen — `vigenciaDeCotizacion`/`fechaDeCotizacion`, defaults incluidos), el formato del documento (PDF/HTML, fotos) y la descripcion de la partida (la impone el catalogo de Operam). Ojo con el error que #115 corrigio: las notas parecian "presentacion" y no lo son — `armarComentariosQuote` las mete en `comments`. La comparacion es SIEMPRE local — el quote NUNCA se lee antes de reescribir: el cotizador manda y una edicion hecha directamente en Operam se pierde (decision explicita, ver comentario de #114). Contexto que la sustenta: **el cotizador no se entera de NADA que pase con quotes en Operam** — el sync ignora el tipo 32 (`lib/sync-operam.js`), los webhooks son Payment/Order/CustDelivery y no hay importacion de quotes creados alla (parte B de #76).
+- **La generacion espera la operacion de Operam en vuelo (#116).** Antes, pedir el HTML enseguida del PDF comparaba contra la huella vieja (la reescritura no la habia persistido todavia), pedia actualizar otra vez y chocaba con la guarda: el vendedor veia "ya hay una operacion en curso, reintenta" en el flujo mas comun. `guardarYNumerarCotizacion` espera esa operacion (`esperarOperamEnVuelo`, progreso "Esperando a Operam...") acotada por `TIMEOUT_OPERAM_MS`; si vence, sigue y el aviso queda como red de seguridad — el documento nunca se retiene. **La senal `requiereActualizacionOperam` manda TAMBIEN en modo actualizacion**: forzar la reescritura por el modo reescribia el quote dos veces con contenido identico (la guarda lo frenaba por accidente). Cuando no hay nada que actualizar, el slot lo ACUSA reusando la vista de `yaSubida` (folio + "el contenido no cambio"), en vez de dejar el aviso previo sin respuesta.
+- **Numeracion de la cotizacion (ADR-0009, implementado en #110+#111):** el numero de la cotizacion **es el folio de Operam**, no el id interno del registro (que queda como clave tecnica: sigue siendo la URL de los GET y de `shareWhatsApp`). Un solo punto lo decide — `datosDocumento(entry)` en `server.js` — y los generadores leen `data.folio` (ya NO `data.id`). Para poder imprimirlo se **invirtio el orden**: `guardarYNumerarCotizacion` (`app.js`) guarda, **espera** la subida a Operam y recien entonces abre el documento desde el GET, con progreso real en el boton ("Guardando..." / "Subiendo a Operam..." / "Generando documento..."). Fallback obligatorio: si la subida falla, choca con el lock (425), la subida ya esta en vuelo o pasa el timeout duro `TIMEOUT_OPERAM_MS` (20s), el documento se entrega igual **sin numero y como pre-cotizacion** (encabezado `PRE-COTIZACION`, archivo `PreCotizacion_PeltreNacional`), con el estado PRE + Reintentar en el slot; el bueno se re-comparte desde el historial. `interpretarSubidaOperam` distingue `enVuelo` y `timeout` como PRE explicitos: el ADR prohibe el documento sin numero silencioso. En **modo actualizacion** (#104) no hay inversion: el folio ya existe y la reescritura del quote no bloquea el documento.
+- `GET /api/cotizaciones/:id` devuelve `data` **mas `folioOperam`** (#109). El folio es columna de primer nivel del registro (`folio_operam`), no vive dentro de `data`; el listado ya lo exponia y el detalle no, asi que la vista de cotizacion no tenia forma de conocerlo. Al nombrarlo en la UI se usa SIEMPRE `etiquetaFolioOperam` (`public/js/pipeline-logica.js`, convencion `#Operam N` de #63) — nunca el id interno.
+- `data/*.json` — vendedores, precios, cajas, config. Leidos/escritos sincronicamente (via `lib/fs-reintento.js`, #117). `data/cancelados.json` (`{orders, quotes}`) lista los pedidos/cotizaciones ANULADOS en Operam (la API no los marca; lo genera `scripts/detectar-cancelados.mjs`); el backfill lo lee y los excluye.
+- Migracion historica: `scripts/migrar-cotizaciones-neon.mjs` (idempotente, corrida el 2026-06-10; excluyo entradas de vendedores Test/Tester).
+
+## Catalogos (/api/catalogos)
+
+`GET /api/catalogos` — sirve datos para los selectores del formulario de alta:
+
+- `segmentos`: hardcodeados con los ids internos REALES de Operam (11 segmentos; id=1 es "Sin segmento", id=14 "Distribuidores", etc. — la clave 000-1000 de la UI de Operam NO es el id de la API; verificado contra produccion 2026-06-10; Operam no expone catalogo de segmentos, GET segments responde 501).
+- `vendedores`: de `data/vendedores.json` filtrando `operam_id != null`.
+- `listas_precios`: de `GET /api/v3/sales/sales_types` (todas las activas). Operam entrega la etiqueta en `sales_type` (texto: M100, "Precio de lista", "Segundas", "Amazon"...) y el id numerico en `id` — que es lo que el cliente guarda en su campo `sales_type`. El catalogo expone `{ id: t.id (numerico), nombre: t.sales_type (etiqueta) }`; el selector muestra la etiqueta y manda el id numerico (verificado en vivo 2026-06-17; la API ya NO usa `sales_type_id` ni `description`).
+
+`data/vendedores.json` tiene dos espacios de ID: `id` (interno del cotizador, secuencial) y `operam_id` (ID en Operam, no secuencial). El campo `salesman` que va al body de Operam usa `operam_id`.
+
+## Auth y ciclo de vida del cliente (detalle)
+
+Dos niveles:
+
+- **Rutas del cotizador**: JWT de 30 dias. `vendedores.json` contiene ID + PIN. El rol `admin` desbloquea `/api/admin/*`.
+- **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/actualizar-cliente-fiscal/:id`, `/api/log`, `/api/csf-from-url`): protegidas con `authMiddleware` igual que el resto del cotizador (la herramienta standalone `csf-upload.html` se retiro en ADR-0003).
+
+El ciclo de vida del cliente tiene tres caminos, todos autenticados:
+
+1. **Alta generica** al subir cotizacion (`lib/alta-generica.js`, #81/#83; desde #96 tambien hace PUT del branch con el domicilio de entrega, SOLO para el cliente recien creado).
+2. **Upgrade fiscal** `/api/actualizar-cliente-fiscal/:id` sobre el generico (issue #85, ADR-0006: gate anti-fusion por RFC exacto + verificacion post-PUT con `camposNoActualizados`, nunca crea cliente nuevo; desde #95 tambien lleva cust_ref, uso CFDI con default S01, invoice_email, segmento y Tax ID extranjero anexado a `notes` sin pisar notas existentes).
+3. **Alta completa** con el acordeon de `app.js` + `POST /api/crear-cliente`.
+
+Los caminos 2 y 3 son accesibles sin cotizacion desde la **vista Clientes** (menu Mas, #94; el panel de alta es UNICO y se re-parenta — `moverPanelA`/`devolverPanelACasa`, reset de `modoUpgrade` en cada cambio de vista). OJO: los campos `cl-*` son globales del flujo de cotizacion; desde la vista Clientes NO son confiables (ver `emailFacturaParaUpgrade`).
+
+`server.js` carga `.env` manualmente sin dotenv (patron en lineas 24-30).
+
+## Quirks de Operam (verificar SIEMPRE releyendo)
+
+- `PUT /api/v3/sales/customers/{id}` puede responder 200 e ignorar `segmento_id` silenciosamente en algunos registros (cliente 457 lo ignoro 3 veces; cliente 456 lo acepto a la primera). Si una actualizacion de segmento "no pega", verificar releyendo y corregir en la UI de Operam.
+- `POST /customers` IGNORA `dimension_id`/`dimension2_id` (los guarda en 0) — hay que hacer un `PUT /customers/:id` posterior para persistirlas (#74).
+- `PUT /branches/:code` resetea `debtor_no` a 0 (deja el domicilio HUERFANO) salvo que el body incluya `customer_id`; usa `default_location`/`default_ship_via` en lectura pero `location`/`ship_via` en el PUT (#74).
+- NO hay DELETE de clientes (`501 Unknown Method`) — borrar solo en la UI.
+- La API responde `result:true` aunque ignore/rompa campos: nunca confiar en la respuesta, releer.
+- Los quotes tipo 32 NO son enumerables (`filterType=32` → 0); solo id-walk por folio.
+- El pedido convertido HEREDA `deliver_to`/`contact_phone`/`contact_email`/`delivery_address`/`customer_ref` del quote (auto-confirma cualquier cruce que use esos campos).
+- Mapeo real de tipos de transaccion, cadena `order_` y contrato de escritura del quote: `peltre-operam.md` §12 (el MCP `operam-api` etiqueta MAL los `filterType`).
