@@ -6,12 +6,14 @@ let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfi
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
+let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
+    nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -365,4 +367,88 @@ test('#102-15: buildEnviaRateRestauradaHtml muestra carrier/servicio/precio form
   assert.ok(html.includes('259.00'));
   assert.ok(html.includes('envia-rate-card'));
   assert.ok(html.includes('selected'));
+});
+
+// === #135 (prefactor de #134): builder unico del payload de items (articulos,
+// calcas y envio) y de los totales -- antes generatePDF y generateHTML en app.js
+// duplicaban linea a linea el mapeo carrito->items, el push condicional de ENVIO
+// y el calculo de subtotal/iva/total. Cero cambio de comportamiento: mismos
+// documentos, mismos payloads.
+test('#135-1: nombreVisibleProducto quita el prefijo de SKU (2-3 letras + 2 digitos + espacio)', () => {
+  assert.strictEqual(nombreVisibleProducto('CAL10 Producto decorado'), 'Producto decorado');
+  assert.strictEqual(nombreVisibleProducto('AB12 Olla peltre'), 'Olla peltre');
+});
+
+test('#135-2: nombreVisibleProducto sin prefijo reconocible se deja igual', () => {
+  assert.strictEqual(nombreVisibleProducto('Olla peltre'), 'Olla peltre');
+});
+
+test('#135-3: nombreVisibleProducto vacio/nulo -> cadena vacia', () => {
+  assert.strictEqual(nombreVisibleProducto(''), '');
+  assert.strictEqual(nombreVisibleProducto(null), '');
+  assert.strictEqual(nombreVisibleProducto(undefined), '');
+});
+
+test('#135-4: buildItemEnvio con costo > 0 (manual) -> partida ENVIO, unidad ACT', () => {
+  const r = buildItemEnvio({ shippingOpt: 'manual', shippingCost: 150, shippingDesc: 'Paquete propio' });
+  assert.deepStrictEqual(r, {
+    codigo: 'ENVIO', descripcion: 'Paquete propio', cantidad: 1, unidad: 'ACT', precio: 150, descuento: 0,
+  });
+});
+
+test('#135-5: buildItemEnvio sin descripcion capturada -> descripcion default "Envio"', () => {
+  const r = buildItemEnvio({ shippingOpt: 'envia', shippingCost: 259, shippingDesc: '' });
+  assert.strictEqual(r.descripcion, 'Envio');
+});
+
+test('#135-6: buildItemEnvio con costo 0 o negativo -> null (nada que agregar)', () => {
+  assert.strictEqual(buildItemEnvio({ shippingOpt: 'manual', shippingCost: 0, shippingDesc: 'Envio' }), null);
+  assert.strictEqual(buildItemEnvio({ shippingOpt: 'manual', shippingCost: -10, shippingDesc: 'Envio' }), null);
+});
+
+test('#135-7: buildItemEnvio con shippingOpt none -> null aunque haya costo capturado', () => {
+  assert.strictEqual(buildItemEnvio({ shippingOpt: 'none', shippingCost: 150, shippingDesc: 'Envio' }), null);
+});
+
+test('#135-8: calcularTotalesItems suma cantidad*precio con descuento por linea, IVA 16%', () => {
+  const r = calcularTotalesItems([
+    { cantidad: 2, precio: 100, descuento: 0 },
+    { cantidad: 1, precio: 50, descuento: 10 },
+  ]);
+  assert.strictEqual(r.subtotal, 245);
+  assert.ok(Math.abs(r.iva - 39.2) < 1e-9);
+  assert.ok(Math.abs(r.total - 284.2) < 1e-9);
+});
+
+test('#135-9: calcularTotalesItems con arreglo vacio -> todo en cero', () => {
+  assert.deepStrictEqual(calcularTotalesItems([]), { subtotal: 0, iva: 0, total: 0 });
+});
+
+test('#135-10: buildItemsYTotales arma articulos + calca + envio y sus totales, en el orden del carrito', () => {
+  const cartEntries = [
+    { codigo: 'AB12', nombre: 'AB12 Olla peltre', cantidad: 3, precio: 100 },
+    { codigo: 'CAL10', nombre: 'CAL10 Calca logo', cantidad: 3, precio: 20 },
+  ];
+  const r = buildItemsYTotales(cartEntries, { shippingOpt: 'manual', shippingCost: 150, shippingDesc: 'Paquete propio' });
+  assert.deepStrictEqual(r.items, [
+    { codigo: 'AB12', descripcion: 'Olla peltre', cantidad: 3, unidad: 'pza', precio: 100, descuento: 0 },
+    { codigo: 'CAL10', descripcion: 'Calca logo', cantidad: 3, unidad: 'pza', precio: 20, descuento: 0 },
+    { codigo: 'ENVIO', descripcion: 'Paquete propio', cantidad: 1, unidad: 'ACT', precio: 150, descuento: 0 },
+  ]);
+  assert.strictEqual(r.subtotal, 510);
+  assert.ok(Math.abs(r.iva - 81.6) < 1e-9);
+  assert.ok(Math.abs(r.total - 591.6) < 1e-9);
+});
+
+test('#135-11: buildItemsYTotales sin envio (opcion none) -> items solo del carrito', () => {
+  const cartEntries = [{ codigo: 'AB12', nombre: 'AB12 Olla peltre', cantidad: 1, precio: 100 }];
+  const r = buildItemsYTotales(cartEntries, { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
+  assert.strictEqual(r.items.length, 1);
+  assert.strictEqual(r.subtotal, 100);
+});
+
+test('#135-12: buildItemsYTotales con carrito vacio y sin envio -> items vacio, totales en cero', () => {
+  const r = buildItemsYTotales([], { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
+  assert.deepStrictEqual(r.items, []);
+  assert.deepStrictEqual({ subtotal: r.subtotal, iva: r.iva, total: r.total }, { subtotal: 0, iva: 0, total: 0 });
 });

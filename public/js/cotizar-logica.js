@@ -177,6 +177,50 @@ export function buildEnviaRateRestauradaHtml({ carrier, servicio, precio }) {
   `;
 }
 
+// Builder unico del payload de items (articulos, calcas y envio) y de los
+// totales (#135, prefactor de #134): antes generatePDF y generateHTML en app.js
+// duplicaban linea a linea el mapeo carrito->items, el push condicional de ENVIO
+// y el calculo de subtotal/iva/total. Un solo lugar para que los tickets de
+// descuentos y descripciones lo toquen.
+
+// Nombre visible del producto sin el prefijo de SKU del catalogo (2-3 letras
+// mayusculas + 2 digitos + espacio, ej. "AB12 Olla peltre" -> "Olla peltre").
+export function nombreVisibleProducto(name) {
+  return (name || '').replace(/^[A-Z]{2,3}\d{2}\s+/, '');
+}
+
+// Partida ENVIO para el documento, o null si no hay nada que cobrar (issue #71:
+// el carrito no manda envio con costo 0 ni con la opcion 'none').
+export function buildItemEnvio({ shippingOpt, shippingCost, shippingDesc }) {
+  if (shippingOpt !== 'manual' && shippingOpt !== 'envia') return null;
+  if (!(shippingCost > 0)) return null;
+  return {
+    codigo: 'ENVIO', descripcion: shippingDesc || 'Envio',
+    cantidad: 1, unidad: 'ACT', precio: shippingCost, descuento: 0,
+  };
+}
+
+// Subtotal/IVA/total de un arreglo de items ya armado, aplicando el % de
+// descuento por linea (hoy siempre 0 -- lo llena #136).
+export function calcularTotalesItems(items) {
+  const subtotal = items.reduce((s, i) => s + (i.cantidad * i.precio * (1 - (i.descuento || 0) / 100)), 0);
+  const iva = subtotal * 0.16;
+  const total = subtotal + iva;
+  return { subtotal, iva, total };
+}
+
+// Arma los items del carrito (articulos y calcas) + la partida ENVIO (si aplica)
+// y sus totales. cartEntries ya trae el precio resuelto (depende del tier
+// vigente, estado que vive en app.js) -- esta funcion solo ensambla el payload.
+export function buildItemsYTotales(cartEntries, envioInfo) {
+  const items = cartEntries.map(({ codigo, nombre, cantidad, precio }) => ({
+    codigo, descripcion: nombreVisibleProducto(nombre), cantidad, unidad: 'pza', precio, descuento: 0,
+  }));
+  const itemEnvio = buildItemEnvio(envioInfo);
+  if (itemEnvio) items.push(itemEnvio);
+  return { items, ...calcularTotalesItems(items) };
+}
+
 // Modal de confirmacion de identidad antes de generar el PDF/HTML (issue #87):
 // evita estampar la cotizacion al vendedor equivocado cuando el dispositivo
 // quedo logueado con otro usuario. Mismo patron que buildCanalModalHtml

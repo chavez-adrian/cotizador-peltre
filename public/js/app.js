@@ -93,6 +93,7 @@ import {
   restaurarEnvioDesdeCotizacion,
   debeAutoCotizarEnvia,
   buildEnviaRateRestauradaHtml,
+  buildItemsYTotales,
 } from './cotizar-logica.js';
 import {
   TAMANOS_CALCA,
@@ -1501,6 +1502,26 @@ async function guardarYNumerarCotizacion(body, progreso) {
   return id;
 }
 
+// cartEntries + envio capturado en el DOM (#135): la unica parte del payload de
+// items que generatePDF/generateHTML no pueden compartir via cotizar-logica.js
+// (nucleo puro sin IO) porque lee state.cart y el formulario.
+function cartEntriesDesdeEstado() {
+  const cartEntries = [];
+  for (const [key, { product, cantidad }] of state.cart) {
+    cartEntries.push({ codigo: key, nombre: product.name, cantidad, precio: getPrice(product) });
+  }
+  return cartEntries;
+}
+
+function envioCapturadoEnFormulario() {
+  const shippingOpt = document.getElementById('shipping-option').value;
+  const shippingDesc = document.getElementById('shipping-desc').value;
+  const shippingCost = (shippingOpt === 'manual' || shippingOpt === 'envia')
+    ? (parseFloat(document.getElementById('shipping-cost').value) || 0)
+    : 0;
+  return { shippingOpt, shippingDesc, shippingCost };
+}
+
 // === PDF GENERATION ===
 async function generatePDF() {
   const telErr = validarTelefonosCotizacion();
@@ -1529,41 +1550,9 @@ async function generatePDF() {
 
   try {
     const tier = getCurrentTier();
-    const items = [];
-    for (const [key, { product, cantidad }] of state.cart) {
-      const price = getPrice(product);
-      const displayName = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
-      items.push({
-        codigo: key,
-        descripcion: displayName,
-        cantidad,
-        unidad: 'pza',
-        precio: price,
-        descuento: 0,
-      });
-    }
-
-    // Envío
-    const shippingOpt = document.getElementById('shipping-option').value;
-    const shippingDesc = document.getElementById('shipping-desc').value;
-    let shippingCost = 0;
-    if (shippingOpt === 'manual' || shippingOpt === 'envia') {
-      shippingCost = parseFloat(document.getElementById('shipping-cost').value) || 0;
-      if (shippingCost > 0) {
-        items.push({
-          codigo: 'ENVIO',
-          descripcion: shippingDesc || 'Envio',
-          cantidad: 1,
-          unidad: 'ACT',
-          precio: shippingCost,
-          descuento: 0,
-        });
-      }
-    }
-
-    const subtotal = items.reduce((s, i) => s + (i.cantidad * i.precio * (1 - (i.descuento || 0) / 100)), 0);
-    const iva = subtotal * 0.16;
-    const total = subtotal + iva;
+    const cartEntries = cartEntriesDesdeEstado();
+    const { shippingOpt, shippingDesc, shippingCost } = envioCapturadoEnFormulario();
+    const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, { shippingOpt, shippingCost, shippingDesc });
 
     const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
     const vigenciaDate = new Date();
@@ -1657,33 +1646,9 @@ async function generateHTML() {
 
   try {
     const tier = getCurrentTier();
-    const items = [];
-    for (const [key, { product, cantidad }] of state.cart) {
-      const price = getPrice(product);
-      const displayName = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
-      items.push({ codigo: key, descripcion: displayName, cantidad, unidad: 'pza', precio: price, descuento: 0 });
-    }
-
-    const shippingOpt = document.getElementById('shipping-option').value;
-    const shippingDesc = document.getElementById('shipping-desc').value;
-    let shippingCost = 0;
-    if (shippingOpt === 'manual' || shippingOpt === 'envia') {
-      shippingCost = parseFloat(document.getElementById('shipping-cost').value) || 0;
-      if (shippingCost > 0) {
-        items.push({
-          codigo: 'ENVIO',
-          descripcion: shippingDesc || 'Envio',
-          cantidad: 1,
-          unidad: 'ACT',
-          precio: shippingCost,
-          descuento: 0,
-        });
-      }
-    }
-
-    const subtotal = items.reduce((s, i) => s + (i.cantidad * i.precio * (1 - (i.descuento || 0) / 100)), 0);
-    const iva = subtotal * 0.16;
-    const total = subtotal + iva;
+    const cartEntries = cartEntriesDesdeEstado();
+    const { shippingOpt, shippingDesc, shippingCost } = envioCapturadoEnFormulario();
+    const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, { shippingOpt, shippingCost, shippingDesc });
 
     const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
     const vigenciaDate = new Date();
