@@ -154,7 +154,7 @@ test('E5: celular desconocido clasifica libre, tambien cuando Operam falla (best
 
 function bodyCotizacion(telefono, extra = {}) {
   return {
-    fecha: '2026-06-11', vigencia: '2026-07-11', tier: 'Mayoreo',
+    fecha: '2026-06-11', vigencia: '2026-07-11', tier: 'Menudeo',
     cliente: {
       razonSocial: 'LAURA SA DE CV', nombreCorto: 'Laura', telefono,
       municipio: 'Puebla', estado: 'Puebla',

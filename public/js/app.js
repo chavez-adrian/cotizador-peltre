@@ -110,6 +110,10 @@ import {
   validarDescripcionLinea,
 } from './descripcion-logica.js';
 import {
+  resolverTier,
+  avisoListaFijada,
+} from './tier-logica.js';
+import {
   TAMANOS_CALCA,
   TINTAS_CALCA,
   esCodigoCalca,
@@ -216,6 +220,12 @@ const state = {
   // servidor con los precios en cada arranque de sesion; el servidor lo vuelve a
   // hacer valer al guardar, esto solo decide que puede capturar la pantalla.
   topeDescuento: 0,
+  // Lista fijada de la cotizacion en curso (#151, spec #98): '' es Auto (el
+  // tabulador manda). Solo admin puede escribirlo (selector oculto para el
+  // resto); vive en la cotizacion, nunca en el cliente ni en el vendedor --
+  // arranca en Auto en cotizacion nueva, cambio de cliente y Cargar del
+  // historial (mismos tres puntos que vendedorConfirmado).
+  tierFijado: '',
   lastCotizacionId: null,
   // Modo actualizacion (#104, ADR-0008): se entro por "Actualizar cotizacion" desde
   // el historial, asi que generar reescribe el MISMO registro y el MISMO quote de
@@ -369,6 +379,19 @@ async function loadPrecios() {
     day: 'numeric', month: 'short', year: 'numeric'
   });
   document.getElementById('prices-date').textContent = `Precios: ${date}`;
+  renderTierSelect();
+}
+
+// Opciones del selector de lista fijada (#151): Auto + los tiers del tabulador
+// vigente, en vez de hardcodearlos en el HTML -- un cambio en precios.json no
+// deja la lista desincronizada.
+function renderTierSelect() {
+  const select = document.getElementById('tier-select');
+  if (!select) return;
+  const tiers = state.precios?.tiers || [];
+  select.innerHTML = '<option value="">Auto (tabulador)</option>' +
+    tiers.map(t => `<option value="${t.id}">${t.id}</option>`).join('');
+  select.value = state.tierFijado;
 }
 
 // === TIER LOGIC ===
@@ -386,11 +409,7 @@ function getPiezasProducto() {
 function getCurrentTier() {
   const total = getPiezasProducto();
   const tiers = state.precios?.tiers || [];
-  let current = tiers[0];
-  for (const t of tiers) {
-    if (total >= t.min_qty) current = t;
-  }
-  return current;
+  return resolverTier(tiers, total, state.tierFijado).tier;
 }
 
 function getNextTier() {
@@ -418,12 +437,31 @@ function getPrice(product) {
 
 function updateTierBar() {
   const total = getPiezasProducto();
+  const tiers = state.precios?.tiers || [];
   const tier = getCurrentTier();
   const next = getNextTier();
 
   document.getElementById('tier-label').textContent = total === 0 ? 'Sin productos' : `Lista de precios: ${tier.label}`;
   document.getElementById('tier-stats').textContent = total > 0 ? `${total} pzs de producto` : '';
   document.getElementById('tier-next').textContent = '';
+
+  // Selector de lista fijada (#151): oculto, no deshabilitado, para quien no
+  // tiene el permiso (hoy, rol admin -- #153 lo extiende a un permiso por
+  // vendedor). Sincroniza el valor por si otro punto del flujo cambio
+  // state.tierFijado (Cargar del historial, cambio de cliente).
+  const tierSelect = document.getElementById('tier-select');
+  if (tierSelect) {
+    tierSelect.style.display = state.user?.role === 'admin' ? 'inline-block' : 'none';
+    if (tierSelect.value !== state.tierFijado) tierSelect.value = state.tierFijado;
+  }
+
+  // Aviso bidireccional e informativo (#98): nunca bloquea la generacion.
+  const avisoEl = document.getElementById('tier-aviso');
+  if (avisoEl) {
+    const aviso = avisoListaFijada(tiers, total, state.tierFijado);
+    avisoEl.textContent = aviso || '';
+    avisoEl.style.display = aviso ? 'block' : 'none';
+  }
 
   // El selector de calca y el aviso de carrito invalido dependen del volumen:
   // este es el unico punto por el que pasan TODOS los cambios del carrito.
@@ -1959,6 +1997,7 @@ function nuevaCotizacion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.vendedorConfirmado = false;
+  state.tierFijado = '';
 
   // Limpiar campos
   const campos = [
@@ -2179,6 +2218,7 @@ function pcPrepararSeleccion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.vendedorConfirmado = false;
+  state.tierFijado = '';
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
   // #109: cambio de cliente tambien sale de modo actualizacion.
@@ -4620,6 +4660,9 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Poblar carrito
     state.cart.clear();
     descripcionesAbiertas.clear();
+    // Editar/Copiar arranca en Auto (#151): conservar la lista fijada de quien
+    // no tiene permiso es el caso que resuelve #154, todavia no implementado.
+    state.tierFijado = '';
     for (const item of (cot.items || [])) {
       if (item.codigo === 'ENVIO') continue;
       // La calca (#91) no vive en products ni en skus sino en el catalogo de
@@ -4773,6 +4816,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (val !== 'envia') envioInvalidadoPorCantidad = false;
     updateResumen();
     updateTabIndicators();
+  });
+  // Selector de lista fijada (#151): fijar/quitar recalcula TODO el carrito --
+  // el mismo getCurrentTier() que ya alimenta precioUnitario/updateTierBar.
+  document.getElementById('tier-select').addEventListener('change', e => {
+    state.tierFijado = e.target.value || '';
+    updateTierBar();
+    updateCartSummary();
+    updateResumen();
+    renderCartLines();
   });
   document.getElementById('btn-cotizar-envia').addEventListener('click', cotizarEnvia);
   document.getElementById('cl-cp-entrega').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });

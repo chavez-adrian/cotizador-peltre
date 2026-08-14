@@ -40,6 +40,7 @@ import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPe
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
+import { validarTierCotizacion } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -298,6 +299,12 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   // permiso: 400, no 403.
   const descripciones = validarDescripcionesCotizacion(req.body?.items);
   if (!descripciones.ok) return res.status(400).json({ error: descripciones.mensaje });
+  // La lista fijada tampoco depende de la pantalla (#151, spec #98): un tier
+  // ajeno al tabulador solo pasa con rol admin, mismo patron que el tope de
+  // descuento -- el permiso lo hace valer el servidor, no el selector oculto.
+  const precios = readJSON('precios.json');
+  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, req.user.role === 'admin');
+  if (!tierValidado.ok) return res.status(403).json({ error: tierValidado.mensaje });
   try {
     const data = req.body;
     data.vendedor = req.user.name;

@@ -585,6 +585,23 @@ body {
   color: var(--text-light);
 }
 
+.tier-select {
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+
+.tier-aviso {
+  font-size: 12px;
+  color: oklch(0.36 0.08 70);
+  background: oklch(0.95 0.05 80);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+
 /* === CART SUMMARY (barra inferior fija) === */
 .cart-summary {
   position: sticky;

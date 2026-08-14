@@ -51,7 +51,7 @@ function setTope(tope) {
 
 function cotizacionCon(items) {
   return {
-    fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
+    fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Menudeo',
     cliente: { razonSocial: 'Descuento SA', nombreCorto: 'Desc', telefono: '+52 55 1234 5678' },
     items,
     subtotal: 100, iva: 16, total: 116, notas: [],
