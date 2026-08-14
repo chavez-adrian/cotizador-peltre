@@ -335,12 +335,12 @@ test('Q29: buildAvisoModoActualizacion describe la accion en terminos de los bot
 
 test('Q30: textoBotonGenerar devuelve las etiquetas normales fuera de modo actualizacion', () => {
   assert.equal(textoBotonGenerar('pdf', false), 'Generar PDF');
-  assert.equal(textoBotonGenerar('html', false), 'Ver HTML');
+  assert.equal(textoBotonGenerar('html', false), 'Generar HTML');
 });
 
 test('Q31: textoBotonGenerar devuelve etiquetas de actualizar en modo actualizacion', () => {
-  assert.equal(textoBotonGenerar('pdf', true), 'Actualizar PDF');
-  assert.equal(textoBotonGenerar('html', true), 'Actualizar HTML');
+  assert.equal(textoBotonGenerar('pdf', true), 'Actualizar y ver PDF');
+  assert.equal(textoBotonGenerar('html', true), 'Actualizar y ver HTML');
 });
 
 // === #146: buscador del Historial. Nucleo puro que recibe el arreglo ya

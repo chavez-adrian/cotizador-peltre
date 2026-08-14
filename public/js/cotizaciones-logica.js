@@ -177,21 +177,24 @@ export function buildAccionesCargaHtml(cot) {
 // era el bug reportado por Adrian en la verificacion de #104: "se actualizara la
 // cotizacion #16 y su quote en Operam (mismo folio)" se lee como si 16 y el folio
 // real fueran el mismo numero. Describe la accion en terminos de los botones que
-// el vendedor va a oprimir (Actualizar PDF / Actualizar HTML), no de un "generar"
-// generico. El folio SIEMPRE existe en este modo (gate puedeActualizarCotizacion
-// exige folioOperam), asi que no hay caso "sin folio" que resolver aqui.
+// el vendedor va a oprimir (Actualizar y ver PDF / Actualizar y ver HTML), no
+// de un "generar" generico. El folio SIEMPRE existe en este modo (gate
+// puedeActualizarCotizacion exige folioOperam), asi que no hay caso "sin
+// folio" que resolver aqui.
 export function buildAvisoModoActualizacion(folioOperam) {
   const badge = etiquetaFolioOperam({ folioOperam });
   return `<span class="operam-status">Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span>`;
 }
 
 // Etiquetas de los botones de generacion segun el modo (#109): en modo
-// actualizacion comunican que reescriben un documento existente, no que crean
-// uno nuevo. Fuera de ese modo conservan el texto historico -- "Generar PDF" y
-// "Ver HTML" (asimetria heredada: el PDF se descarga, el HTML se abre).
+// actualizacion el tap reescribe la cotizacion (registro del cotizador y
+// quote en Operam conservando folio) antes de mostrar el documento, de ahi
+// "Actualizar y ver". Fuera de ese modo son simetricas ("Generar PDF/HTML")
+// sin que el texto oculte que el tap tambien guarda y sube. El flujo no
+// cambia, solo la etiqueta.
 export function textoBotonGenerar(tipo, modoActualizacion) {
-  if (tipo === 'html') return modoActualizacion ? 'Actualizar HTML' : 'Ver HTML';
-  return modoActualizacion ? 'Actualizar PDF' : 'Generar PDF';
+  if (tipo === 'html') return modoActualizacion ? 'Actualizar y ver HTML' : 'Generar HTML';
+  return modoActualizacion ? 'Actualizar y ver PDF' : 'Generar PDF';
 }
 
 // Buscador del Historial (#146, ampliado #147, rango de fechas #148). Nucleo
