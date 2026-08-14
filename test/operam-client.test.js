@@ -1363,6 +1363,42 @@ test('subirCotizacionOperam: la descripcion editada viaja en stock_id_text y la 
   }
 });
 
+// La descripcion de la partida de flete NO sale de ningun catalogo: la arma el
+// cotizador con el servicio y el tiempo literales de la paqueteria (#136). Al crear
+// por API persiste sola, pero al actualizar por la web legacy FA le pondria el nombre
+// del SKU de flete generico ("Envio Economico FedEx Ground(R)") y el ERP diria algo
+// distinto del documento que ya vio el cliente. Por eso el flete entra a la ronda de
+// edicion como una descripcion escrita, aunque el vendedor no la haya tecleado.
+test('armarContenidoQuote: la partida de flete impone su descripcion al actualizar', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const { items } = armarContenidoQuote({
+    fecha: '2026-06-17',
+    cliente: { cpEntrega: '44100' },
+    items: [
+      { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100, descuento: 0 },
+      { codigo: 'ENVIO', descripcion: 'FedEx Nacional Economico - entrega estimada 1-2 dias habiles', cantidad: 1, precio: 259, descuento: 0 },
+    ],
+  });
+  const flete = items.find(i => i.stock_id === '251021002');
+  assert.equal(flete.stock_id_text, 'FedEx Nacional Economico - entrega estimada 1-2 dias habiles');
+  assert.equal(flete.editarDescripcion, true);
+  // el articulo normal sigue mandando solo si el vendedor la escribio
+  assert.equal(items.find(i => i.stock_id === 'CR20-PLATO').editarDescripcion, false);
+});
+
+// Un envio Lalamove NO es partida (#72): vive en comments, asi que no hay descripcion
+// de linea que imponer.
+test('armarContenidoQuote: un envio Lalamove sigue sin ser partida', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const { items, comments } = armarContenidoQuote({
+    fecha: '2026-06-17',
+    cliente: { cpEntrega: '44100' },
+    items: [{ codigo: 'ENVIO', descripcion: 'Lalamove sedan', cantidad: 1, precio: 300, descuento: 0 }],
+  });
+  assert.equal(items.length, 0);
+  assert.match(comments, /Lalamove sedan/);
+});
+
 test('subirCotizacionOperam: CP de entrega ausente -> flete foraneo por defecto (251021002)', async () => {
   resetSession();
   let quoteBody = null;
