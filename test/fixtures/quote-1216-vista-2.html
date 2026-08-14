@@ -1,0 +1,557 @@
+	
+<style>
+    .container_box{
+        max-width: 100%;
+        height: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .container_btn_actions{
+        max-width: 100%;
+        height: auto;
+        display: flex;
+        flex-direction: row;
+        justify-content: right;
+    }
+    .container_inputs{
+        max-width: 100%;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 5px;
+    }
+    .container_first_input{
+        flex: 3;
+    }
+    .container_second_input{
+        flex: 7;
+    }
+    .container_button {
+        margin-left: auto; 
+    }
+    .container_button button {
+        height: 100%; 
+        padding: 0; 
+        margin: 0; 
+    }
+</style>
+<!DOCTYPE HTML>
+<html dir='ltr' >
+<head profile="http://www.w3.org/2005/10/profile"><title>Ver Presupuestos</title><!-- Google Tag Manager -->
+		<script> window.dataLayer = window.dataLayer || []; window.dataLayer.push({ 'user_id': 'operam.pro_346_25' }); </script>
+		<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+		new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+		j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+		'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+		})(window,document,'script','dataLayer','GTM-MMHV8SS');</script>
+		<!-- End Google Tag Manager --><meta http-equiv='Content-type' content='text/html; charset=utf-8'><link href='../../themes/main.css' rel='stylesheet' type='text/css'> 
+
+ 
+<link href='../../themes/default/images/favicon.png' rel='icon' type='image/png'> 
+<link href='https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css' rel='stylesheet' type='text/css'> 
+<link href='../../vendor/select2/select2/dist/css/select2.min.css' rel='stylesheet' type='text/css'> 
+<script
+			  src="https://code.jquery.com/jquery-3.2.1.min.js"
+			  integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+			  crossorigin="anonymous"></script><script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js" integrity="sha256-VazP97ZCwtekAsvgPBSUwPFKdrwD3unUfSGVYrahUqU=" crossorigin="anonymous"></script><script src="../../vendor/select2/select2/dist/js/select2.min.js" type="text/javascript"></script><script src="../../js/jquery.blockUI.js" type="text/javascript"></script><script language="javascript" type="text/javascript" src="../../company/346/js_cache/JsHttpRequest.js"></script><script language="javascript" type="text/javascript" src="../../js/behaviour.js"></script><script language="javascript" type="text/javascript" src="../../company/346/js_cache/utils.js"></script><script language="javascript" type="text/javascript" src="../../company/346/js_cache/inserts.js"></script><style>
+		.dt_actions>div{
+			display: flex;
+		}
+
+		.dt_actions>div>*{
+			margin-right:4px !important;
+		}
+
+		tr.overduebg, tr.stockmankobg  {
+			background: #F46C6C !important;
+		}
+
+		.dataTables_wrapper {
+			overflow-x: auto;
+			/*width: fit-content;*/
+			margin: auto;
+		}
+
+
+		/*solo para modulo construganas */
+
+		
+    .construganas-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 20%;
+        margin: auto;
+        gap: 5px;
+        margin-top: 50px;
+    }
+
+    #useBackup {
+        width: 200px !important;
+
+    }
+
+    .construganas_outlined {
+        background: transparent !important;
+        border: 1px solid #326FDF !important;
+        border-radius: 8px !important;
+        height: 46px;
+        font-size: 14px !important;
+        color: #326FDF !important;
+        display: unset;
+    }
+
+    .construganas_outlined.disabled.focus,
+    .construganas_outlined.disabled:focus,
+    .construganas_outlined.disabled:hover,
+    .construganas_outlined.focus,
+    .construganas_outlined:focus,
+    .construganas_outlined:hover {
+        opacity: .8;
+        border: 1px solid #213b66;
+        background: #213b66;
+    }
+
+    // button#value-csync-btn {
+    //     background-color: white !important;
+    //     border: 2px solid black !important;
+    //     color: black !important;
+    //     padding: 10px 5px !important;
+    //     height: 40px !important;
+    // }
+
+    button#delete_canje {
+        height: 40px !important;
+    }
+
+  	.sms-confirm {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 20px;
+    }
+
+	input[name='n1'],
+	input[name='n2'],
+	input[name='n3'],
+	input[name='n4'] {
+		padding: 10px;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		font-size: 28px;
+		width: 100%;
+		box-sizing: border-box;
+		height:55px !important;
+	}
+
+.btn-close-container button {
+	width: 20px !important;
+	height: 20px !important;
+	border-radius: 50% !important;
+	background-color: black !important;
+	color: #fff !important;
+	border: none !important;
+	font-size: 16px !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	cursor: pointer !important;
+	padding: 0 !important;
+	text-align: center !important;
+}
+
+	.sms-expired{
+ 		margin-bottom: 12px;
+        padding: 10px 16px;
+        color: #d8c12e;
+        background-color: #FEF3C7;
+        border: 1px solid #FBBF24;
+        border-radius: 8px;
+        font-weight: 600;
+        text-align: center;
+        display: none;
+        font-size: 14px;}
+		input[name='amount_to_use'] {
+		width:200px !important;
+	}
+
+	.sms-error{
+	  	margin-bottom: 12px;
+    	padding: 10px;
+        color: #B91C1C;
+        background-color: #FEE2E2;
+        border: 1px solid #FCA5A5;
+        border-radius: 6px;
+        font-weight: 500;
+        text-align: center;
+        display: block;
+	}
+
+	input[name='cardOrPhone']::placeholder {
+		font-size: clamp(12px, 2vw, 12px) !important;
+
+	}
+
+
+
+
+	.change{
+	width:50px !important;
+	}
+	</style>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Bootstrap Core CSS -->
+<link href="../../themes/default/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" type="text/css">
+<!-- Menu CSS -->
+<link href="../../themes/default/plugins/sidebar-nav/dist/sidebar-nav.min.css" rel="stylesheet" type="text/css">
+<!-- animation CSS -->
+<link href="../../themes/default/css/animate.css" rel="stylesheet" type="text/css">
+<!-- Toast CSS -->
+<link href="../../themes/default/plugins/toast-master/css/jquery.toast.css" rel="stylesheet" type="text/css">
+<!-- Custom CSS -->
+<link href="../../themes/default/css/style.css" rel="stylesheet" type="text/css">
+<!-- color CSS -->
+<link href="../../themes/default/css/colors/blue.css" rel="stylesheet" type="text/css">
+<link href="../../themes/default/default.css" rel="stylesheet" type="text/css">
+<!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+<!--[if lt IE 9]><script src='https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js'></script>
+<script src='https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js'></script><![endif]--></head> 
+
+<body class="fix-header"><!-- Google Tag Manager (noscript) -->
+			<noscript><iframe src='https://www.googletagmanager.com/ns.html?id=GTM-MMHV8SS'
+			height='0' width='0' style='display:none;visibility:hidden'></iframe></noscript>
+			<!-- End Google Tag Manager (noscript) --><div class='preloader'>
+    <svg class='circular' viewBox='25 25 50 50'>
+        <circle class='path' cx='50' cy='50' r='20' fill='none' stroke-width='2' stroke-miterlimit='10' />
+    </svg>
+</div><div  class='mloader' id='ajaxmark' style='visibility:hidden;'>
+  <svg style='position:absolute; top:0; bottom:0; left:0; right:0; margin:auto;' version='1.1' width='100' height='100' id='L7' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' x='0px' y='0px' viewBox='0 0 100 100' enable-background='new 0 0 100 100' xml:space='preserve'>
+       <path fill='#2980b9' d='M31.6,3.5C5.9,13.6-6.6,42.7,3.5,68.4c10.1,25.7,39.2,38.3,64.9,28.1l-3.1-7.9c-21.3,8.4-45.4-2-53.8-23.3c-8.4-21.3,2-45.4,23.3-53.8L31.6,3.5z'>
+           <animateTransform attributeName='transform' attributeType='XML' type='rotate' dur='2s' from='0 50 50' to='360 50 50' repeatCount='indefinite' />
+       </path>
+       <path fill='#f1c40f' d='M42.3,39.6c5.7-4.3,13.9-3.1,18.1,2.7c4.3,5.7,3.1,13.9-2.7,18.1l4.1,5.5c8.8-6.5,10.6-19,4.1-27.7c-6.5-8.8-19-10.6-27.7-4.1L42.3,39.6z'>
+           <animateTransform attributeName='transform' attributeType='XML' type='rotate' dur='1s' from='0 50 50' to='-360 50 50' repeatCount='indefinite' />
+       </path>
+       <path fill='#2ecc71' d='M82,35.7C74.1,18,53.4,10.1,35.7,18S10.1,46.6,18,64.3l7.6-3.4c-6-13.5,0-29.3,13.5-35.3s29.3,0,35.3,13.5L82,35.7z'>
+           <animateTransform attributeName='transform' attributeType='XML' type='rotate' dur='2s' from='0 50 50' to='360 50 50' repeatCount='indefinite' />
+       </path>
+   </svg>
+ </div><div id='wrapper'>    <div id='page-wrapper'>
+<div class='container-fluid' >
+<div class='row bg-title'>
+                <div class='col-lg-3 col-md-6 col-sm-6 col-xs-12'>
+                    <h4 class='page-title'>Ver Presupuestos</h4> </div>
+            </div>            <hr class='gradient_line'><div id='msgbox'></div><script language="javascript" type="text/javascript" src="../../company/346/js_cache/date_picker.25.js"></script><div id='_page_body'><center><span class='headingtext'>Cotización Nº1216</span></center>
+<center>
+	<table width="95%">
+		<tr>
+			<td width="25%">
+				<img src="../../company/346/images/logo-registro-square.png"  width="150px" height="auto">
+			</td>
+			<td width="75%"><center><table class='tablestyle2' width=100% cellpadding=5 cellspacing=0>
+<tr valign=top>
+							<td style="text-align:center; font-weight:bold; font-size:16px; color:#428BCA;">PELTRE NACIONAL	</td></tr></table></center>
+</td>
+		<tr>
+	</table>
+</center><form method='post' action='/sales/view/view_sales_order.php?trans_no=1216&trans_type=32' >
+<center><table class='tablestyle2' width=95% cellpadding=5 cellspacing=0>
+<tr valign=top><td><center><table class='tablestyle' width=95% cellpadding=2 cellspacing=0>
+<tr><td class='tableheader2'>Nombre de Cliente</td>
+<td colspan=3 id=''>PUBLICO EN GENERAL</td>
+</tr>
+<tr>
+<td class='tableheader2'>Referencia del Cliente</td>
+<td  id=''>SONDA-DESC</td>
+<td class='tableheader2'>Entregar al Domicilio</td>
+<td  id=''>PRUEBA SONDA DESCRIPCION - BORRAR</td>
+</tr>
+<tr>
+<td class='tableheader2'>Solicitado El</td>
+<td  id=''>2026-08-13</td>
+<td class='tableheader2'>Valido hasta</td>
+<td  id=''>2026-09-12</td>
+</tr>
+<tr>
+<td class='tableheader2'>Moneda de la Orden</td>
+<td  id=''>MXN</td>
+<td class='tableheader2'>Entregar de ubicación</td>
+<td  id=''>PT</td>
+</tr>
+<tr>
+<td class='tableheader2'>Términos de Pago</td>
+<td  id=''>Anticipo 50%</td>
+<td class='tableheader2'>Usuario Creador</td>
+<td  id=''>Claude Code</td>
+</tr>
+<tr>
+<td class='tableheader2'>Dirección de Entrega</td>
+<td  id=''>N/A - quote de prueba</td>
+<td class='tableheader2'>Transportista</td>
+<td  id=''>Default</td>
+</tr>
+<tr>
+<td class='tableheader2'>Referencia</td>
+<td  id=''>C2608278</td>
+<td class='tableheader2'>Sucursal</td>
+<td  id=''>01.Tlapacoya</td>
+</tr>
+<tr><td class='tableheader2'>Teléfono</td>
+<td colspan=3 id=''></td>
+</tr>
+<tr><td class='tableheader2'>E-mail</td>
+<td colspan=3 id=''><a href='mailto:'></a></td>
+</tr>
+<tr><td class='tableheader2'>Comentarios</td>
+<td colspan=3 id=''>QUOTE DE PRUEBA (sonda descripcion de linea) - BORRAR</td>
+</tr>
+<tr><td class='tableheader2'>Dimensiones</td><td colspan=3><center><table class='tablestyle_noborder' style="float:left" cellpadding=2 cellspacing=0>
+</table></center>
+</td>
+</tr>
+<tr><td class='tableheader2'>Fecha de Creación</td>
+<td colspan=3 id=''>13/08/2026 14:49 PM</td>
+</tr>
+</table></center>
+</td><td valign='top'><center><table class='tablestyle' cellpadding=2 cellspacing=0>
+<center><span class='headingtext2'>Pedidos</span></center>
+<tr>
+<td class='tableheader' >Nº</td>
+<td class='tableheader' >Ref</td>
+<td class='tableheader' >Fecha</td>
+<td class='tableheader' >Total</td>
+</tr>
+<tr><td colspan=4 align=right id=''>0.00</td>
+</tr>
+</table></center>
+</td></tr></table></center>
+<br><br><br><input type="hidden" name="_focus" value='' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='9c4501dfd58f12957b7bc1cf0ca251d4e3a86b98b8bf7acc8166f08027aaa924' id="">
+</form>
+<center><center><span class='headingtext2'>Conceptos</span></center>
+<form method='post' action='/sales/view/view_sales_order.php' >
+<input type="hidden" name="trans_no" value='1216' id="">
+<input type="hidden" name="trans_type" value='32' id="">
+<center><table class='tablestyle' colspan=9 width=95% cellpadding=2 cellspacing=0>
+<tr>
+<td class='tableheader' >Código de Artículo</td>
+<td class='tableheader' >Descripción del Artículo</td>
+<td class='tableheader' >Cantidad</td>
+<td class='tableheader' >Unidad</td>
+<td class='tableheader' >Precio</td>
+<td class='tableheader' >Descuento</td>
+<td class='tableheader' >Total</td>
+<td class='tableheader' >Cantidad de Pedido</td>
+</tr>
+<tr class='evenrow'  >
+<td><a target='_blank' href='../../inventory/inquiry/stock_status.php?stock_id=TA14Y31111' onclick="javascript:openWindow(this.href,this.target); return false;" >TA14Y31111</a></td><td >SONDA DESC WEB 888 </td>
+<td align=right nowrap>1.00</td>
+<td >pza</td>
+<td nowrap align=right >107.76</td>
+<td nowrap align=right >0.00</td>
+<td nowrap align=right >107.76</td>
+<td nowrap align=right>0.00</td>
+</tr>
+<tr><td align=right colspan=7>Envío/Transporte</td>
+<td nowrap align=right id=''>0.00</td>
+<td colspan=1></td></tr>
+<tr><td align=right colspan=7>Sub Total</td>
+<td nowrap align=right id=''>107.76</td>
+<td colspan=1></td></tr>
+<tr><td colspan=7 align=right>I.V.A. 16% (16%)</td>
+<td align='right' class='mantax' data-tax_type_id='1'  id=''>17.24</td>
+<td colspan=2></td></tr>
+<tr>
+<td colspan=7 align='right'>Monto Total</td>
+<td align='right' id=''>125.00</td>
+<td colspan=2></td>
+</tr>
+</table></center>
+<br><br><input type="hidden" name="_focus" value='' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='ffbe37e9d6de8724d415c7699f7407d8411c4342cc53cc613e9312b0e073ac3e' id="">
+</form>
+</center><br><center><a id='_el6a7e2e8a66a228.73418162' href='../../reporting/prn_redirect.php?PARAM_0=1216-32&PARAM_1=1216-32&PARAM_2=&PARAM_3=0&PARAM_4=0&PARAM_5=0&REP_ID=&TYPE=32' target='_blank'>Imprimir PDF</a>
+</center><br><br><div id='tbl_metadata'><form method='post' action='/sales/view/view_sales_order.php' >
+<input type="hidden" name="trans_no" value='1216' id="">
+<input type="hidden" name="trans_type" value='32' id="">
+<center><span class='headingtext'>Metadatos</span></center>
+<center><table class='tablestyle' width=95% cellpadding=2 cellspacing=0>
+<form method='post' action='/sales/view/view_sales_order.php' >
+<td colspan='2'><section class="container_box"><div class="container_inputs"><div class="container_first_input"><input style='width: 100%;'  type="text" name="meta_title_new" size="30" maxlength="100" value='' placeholder='Nueva clave'></div><div class="container_second_input"><input style='width: 100%;'  type="text" name="meta_value_new" size="30" maxlength="350" value='' placeholder='Nuevo valor'></div></div><div class="container_btn_actions"><button class="ajaxsubmit" type="submit" name="save_metadata"  id="save_metadata" value="Guardar metadatos"
+		style=''><span>Guardar metadatos</span></button>
+</div></section></td>
+<input type="hidden" name="_focus" value='_el6a7e2e8a66a228.73418162' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='5e65691d9a48804420935cd2176ecde6dd019deb808b1a5b2d9792796dfc365e' id="">
+</form>
+</table></center>
+<input type="hidden" name="_focus" value='_el6a7e2e8a66a228.73418162' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='8181f6c3c74a3a57ffd9ec69922bd640b5f66ea998092525b7c85d444a62a302' id="">
+</form>
+</div><div id='modal_section'></div><center><form enctype='multipart/form-data' method='post' action='/sales/view/view_sales_order.php'  >
+<br><br><center><span class='headingtext'>ANEXAR ADJUNTOS</span></center>
+<br><center><table class='tablestyle2' cellpadding=2 cellspacing=0>
+<input type="hidden" name="trans_no" value='1216' id="">
+<input type="hidden" name="trans_type" value='32' id="">
+<tr><td class='label'>Descripción:</td><td><input   type="text" name="description" size="40" maxlength="40" value="" ></td>
+</tr>
+<tr ><td class='label'>Archivo Adjunto:</td><td  id=''><input type='file' name='attach_filename' id='attach_filename' /></td>
+</tr>
+</table></center>
+<br><center><button class="ajaxsubmit" type="submit"aspect='process'  name="ADD_ITEM"  id="ADD_ITEM" value="Agregar nuevo"
+		style=''><span>Agregar nuevo</span></button>
+</center><center><table class='tablestyle_noborder' cellpadding=2 cellspacing=0>
+</table></center>
+<input type="hidden" name="_focus" value='' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='0bc62d20771bcad6649278132748960f2867a247d4176901f4c6b86279194f64' id="">
+</form>
+<center><table width=20% cellpadding=2 cellspacing=0>
+<tr>
+<td align=center><a href='javascript:window.print();'>Imprimir</a></td>
+<td align=center><a href='javascript:goBack();'>Cerrar</a></td>
+</tr>
+</table></center>
+</center><br></div></div></div></div><!-- jQuery --><!-- Bootstrap Core JavaScript --><script src='../../themes/default/bootstrap/dist/js/bootstrap.min.js'></script><!-- Menu Plugin JavaScript --><script src='../../themes/default/plugins/sidebar-nav/dist/sidebar-nav.min.js'></script><!--slimscroll JavaScript --><script src='../../themes/default/js/jquery.slimscroll.js'></script><!--Wave Effects --><script src='../../themes/default/js/waves.js'></script><!--Toast --><script src='../../themes/default/plugins/toast-master/js/jquery.toast.js'></script><!-- Custom Theme JavaScript --><script src='../../themes/default/js/custom.js'></script><!--Style Switcher --><script src='../../themes/default/plugins/styleswitcher/jQuery.style.switcher.js'></script><script src='../../js/dashboard/dashboard_plugin.js'></script><link href='../../js/dashboard/dashboard_plugin.css' rel='stylesheet' type='text/css'></link><script src='../../js/chart.min.js'></script><script>
+	_focus = '';
+	_validate = [  ];
+	var editors = [  ];
+</script>
+<script type="text/javascript"><!--
+function openWindow(url, title)
+{
+ var left = (screen.width - 900) / 2;
+ var top = (screen.height - 600) / 2;
+ return window.open(url, title, 'width=900,height=600,left='+left+',top='+top+',screenX='+left+',screenY='+top+',status=no,scrollbars=yes');
+}
+
+var user = {
+theme: '../../themes/default/',
+loadtxt: 'Solicitando información...',
+date: '2026-08-13',
+datesys: 0,
+datefmt: 2,
+datesep: '-',
+ts: ',',
+ds: '.',
+pdec : 2}
+
+--></script>
+
+<script type='text/javascript'>
+	
+function select2format(state) {
+	var text = '<span class="cliente">'+state.text+'<br /><small>';
+	if(typeof(state.rfc) !== 'undefined'){
+		text = text+state.rfc;
+	}
+	if(typeof(state.barcode) !== 'undefined'){
+		text = text+' ('+state.barcode+')';
+	} else if (typeof(state.id) !== 'undefined'&&state.id>0){
+		text = text+' ('+state.id+')';
+	}
+	text = text+'</small></span>';
+	return $(text);
+};
+
+function selectdos() {
+	$('input[chosen=chosen_def]').select2({dropdownAutoWidth:true});
+	$('select').each(function (index) {
+		var hasAjax = $(this).attr('chosen_ajax');
+		var useSelect2 = $(this).attr('chosen');
+		var allowNewOptions = $(this).attr('new_tags');
+		var options = 
+		{
+			dropdownAutoWidth:true,
+			placeholder: {
+				id: '--Seleccione--',
+				text: 'Seleccione'
+			},
+			width: 'resolve',
+			dropdownAutoWidth:true,
+		}
+		if (typeof allowNewOptions!=='undefined') {
+			options.tags = true;
+		}
+		if (typeof hasAjax!=='undefined') {
+			options.templateResult = select2format;
+			options.ajax = 
+			{
+				url: hasAjax,
+				data: function (params) {
+					return {
+						term: params.term,
+						page: params.page,
+						currentvalue: this.find(':selected').val()
+					}
+				},
+				dataType: 'json',
+				delay: 250,
+				placeholder: 'Buscar...',
+				minimumInputLength: 3
+			}
+		}
+		if (typeof useSelect2!=='undefined') {
+			$(this).select2(options);
+		}
+	});
+	
+	// Select2 Event handler for selecting an item. 
+	// script para solo seleccionar una dimension por grupo
+	$('select[select_dims=select_dims]').on('select2:selecting', function(evt, f, g) {
+		var curr_values = $(this).val();
+		var selId = evt.params.args.data.id;
+		//var groupid = $('option[value=' + selId + ']', this).attr('groupid');
+		var groupid = evt.params.args.data.groupid;
+		if (groupid == undefined) groupid = evt.params.args.data.element.getAttribute('groupid');
+		var new_values = [];
+		var option = document.createElement('option');
+		option.setAttribute('groupid', groupid);
+		option.value = selId;
+		option.textContent = evt.params.args.data.text;
+		if (this.querySelector('option[value=\'' + selId + '\']') == null)
+			this.appendChild(option);
+
+		// recorrer todos los options y agregarlos a un nuevo array
+		$('option', this).each(function(){
+			// agregar al array valores de otro grupo y que ya estuvieran seleccionados previamente
+			//if (selId == $(this).val()) $(this).attr('groupid', groupid);
+			if(groupid != $(this).attr('groupid') && $.inArray($(this).attr('value'), curr_values) != -1){
+				new_values.push($(this).attr('value'));
+			}
+		});
+		/*
+		let list_options = this.querySelectorAll('option');
+		for (let i  = 0; i < list_options.length; i++ ) {
+			console.log(list_options)
+			let value = list_options[i].value;
+			console.log(new_values.indexOf(value))
+			if (new_values.indexOf(value) == -1) {
+				list_options[i].remove();
+			}
+		}
+		*/
+		
+		// pasar el nuevo array al select
+		$(this).val(new_values);
+		console.log(new_values);
+		//return false;
+		//evt.preventDefault();
+	});
+	
+    // Select2 Event handler for unselecting an item
+	// $('select[chosen=chosen_def]').on('select2:unselecting', function(evt) {
+	// 	alert('unselecting');
+	// });
+
+}
+</script>
+<script>window.ERP_SEARCH_USE_SCRIPT_BASE=false;</script>
+<link href='../../js/search_autocomplete/search_autocomplete.css' rel='stylesheet' type='text/css'> 
+<script src="../../js/search_autocomplete/search_autocomplete_v2.js" type="text/javascript"></script><script src="../../js/ticket/priting_automatic.js" type="text/javascript"></script></body></html>

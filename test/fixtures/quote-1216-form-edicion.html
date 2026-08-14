@@ -1,0 +1,786 @@
+	<!DOCTYPE HTML>
+<html dir='ltr' >
+<head profile="http://www.w3.org/2005/10/profile"><title>Modificando Cotización Nº 1216</title><!-- Google Tag Manager -->
+		<script> window.dataLayer = window.dataLayer || []; window.dataLayer.push({ 'user_id': 'operam.pro_346_25' }); </script>
+		<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+		new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+		j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+		'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+		})(window,document,'script','dataLayer','GTM-MMHV8SS');</script>
+		<!-- End Google Tag Manager --><meta http-equiv='Content-type' content='text/html; charset=utf-8'><link href='../themes/main.css' rel='stylesheet' type='text/css'> 
+
+ 
+<link href='../themes/default/images/favicon.png' rel='icon' type='image/png'> 
+<link href='https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css' rel='stylesheet' type='text/css'> 
+<link href='../vendor/select2/select2/dist/css/select2.min.css' rel='stylesheet' type='text/css'> 
+<script
+			  src="https://code.jquery.com/jquery-3.2.1.min.js"
+			  integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+			  crossorigin="anonymous"></script><script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js" integrity="sha256-VazP97ZCwtekAsvgPBSUwPFKdrwD3unUfSGVYrahUqU=" crossorigin="anonymous"></script><script src="../vendor/select2/select2/dist/js/select2.min.js" type="text/javascript"></script><script src="../js/jquery.blockUI.js" type="text/javascript"></script><script language="javascript" type="text/javascript" src="../company/346/js_cache/JsHttpRequest.js"></script><script language="javascript" type="text/javascript" src="../js/behaviour.js"></script><script language="javascript" type="text/javascript" src="../company/346/js_cache/utils.js"></script><script language="javascript" type="text/javascript" src="../company/346/js_cache/inserts.js"></script><style>
+		.dt_actions>div{
+			display: flex;
+		}
+
+		.dt_actions>div>*{
+			margin-right:4px !important;
+		}
+
+		tr.overduebg, tr.stockmankobg  {
+			background: #F46C6C !important;
+		}
+
+		.dataTables_wrapper {
+			overflow-x: auto;
+			/*width: fit-content;*/
+			margin: auto;
+		}
+
+
+		/*solo para modulo construganas */
+
+		
+    .construganas-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 20%;
+        margin: auto;
+        gap: 5px;
+        margin-top: 50px;
+    }
+
+    #useBackup {
+        width: 200px !important;
+
+    }
+
+    .construganas_outlined {
+        background: transparent !important;
+        border: 1px solid #326FDF !important;
+        border-radius: 8px !important;
+        height: 46px;
+        font-size: 14px !important;
+        color: #326FDF !important;
+        display: unset;
+    }
+
+    .construganas_outlined.disabled.focus,
+    .construganas_outlined.disabled:focus,
+    .construganas_outlined.disabled:hover,
+    .construganas_outlined.focus,
+    .construganas_outlined:focus,
+    .construganas_outlined:hover {
+        opacity: .8;
+        border: 1px solid #213b66;
+        background: #213b66;
+    }
+
+    // button#value-csync-btn {
+    //     background-color: white !important;
+    //     border: 2px solid black !important;
+    //     color: black !important;
+    //     padding: 10px 5px !important;
+    //     height: 40px !important;
+    // }
+
+    button#delete_canje {
+        height: 40px !important;
+    }
+
+  	.sms-confirm {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 20px;
+    }
+
+	input[name='n1'],
+	input[name='n2'],
+	input[name='n3'],
+	input[name='n4'] {
+		padding: 10px;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		font-size: 28px;
+		width: 100%;
+		box-sizing: border-box;
+		height:55px !important;
+	}
+
+.btn-close-container button {
+	width: 20px !important;
+	height: 20px !important;
+	border-radius: 50% !important;
+	background-color: black !important;
+	color: #fff !important;
+	border: none !important;
+	font-size: 16px !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	cursor: pointer !important;
+	padding: 0 !important;
+	text-align: center !important;
+}
+
+	.sms-expired{
+ 		margin-bottom: 12px;
+        padding: 10px 16px;
+        color: #d8c12e;
+        background-color: #FEF3C7;
+        border: 1px solid #FBBF24;
+        border-radius: 8px;
+        font-weight: 600;
+        text-align: center;
+        display: none;
+        font-size: 14px;}
+		input[name='amount_to_use'] {
+		width:200px !important;
+	}
+
+	.sms-error{
+	  	margin-bottom: 12px;
+    	padding: 10px;
+        color: #B91C1C;
+        background-color: #FEE2E2;
+        border: 1px solid #FCA5A5;
+        border-radius: 6px;
+        font-weight: 500;
+        text-align: center;
+        display: block;
+	}
+
+	input[name='cardOrPhone']::placeholder {
+		font-size: clamp(12px, 2vw, 12px) !important;
+
+	}
+
+
+
+
+	.change{
+	width:50px !important;
+	}
+	</style>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Bootstrap Core CSS -->
+<link href="../themes/default/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" type="text/css">
+<!-- Menu CSS -->
+<link href="../themes/default/plugins/sidebar-nav/dist/sidebar-nav.min.css" rel="stylesheet" type="text/css">
+<!-- animation CSS -->
+<link href="../themes/default/css/animate.css" rel="stylesheet" type="text/css">
+<!-- Toast CSS -->
+<link href="../themes/default/plugins/toast-master/css/jquery.toast.css" rel="stylesheet" type="text/css">
+<!-- Custom CSS -->
+<link href="../themes/default/css/style.css" rel="stylesheet" type="text/css">
+<!-- color CSS -->
+<link href="../themes/default/css/colors/blue.css" rel="stylesheet" type="text/css">
+<link href="../themes/default/default.css" rel="stylesheet" type="text/css">
+<!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+<!--[if lt IE 9]><script src='https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js'></script>
+<script src='https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js'></script><![endif]--></head> 
+
+<body class="fix-header"><!-- Google Tag Manager (noscript) -->
+			<noscript><iframe src='https://www.googletagmanager.com/ns.html?id=GTM-MMHV8SS'
+			height='0' width='0' style='display:none;visibility:hidden'></iframe></noscript>
+			<!-- End Google Tag Manager (noscript) --><div class='preloader'>
+    <svg class='circular' viewBox='25 25 50 50'>
+        <circle class='path' cx='50' cy='50' r='20' fill='none' stroke-width='2' stroke-miterlimit='10' />
+    </svg>
+</div><div  class='mloader' id='ajaxmark' style='visibility:hidden;'>
+  <svg style='position:absolute; top:0; bottom:0; left:0; right:0; margin:auto;' version='1.1' width='100' height='100' id='L7' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' x='0px' y='0px' viewBox='0 0 100 100' enable-background='new 0 0 100 100' xml:space='preserve'>
+       <path fill='#2980b9' d='M31.6,3.5C5.9,13.6-6.6,42.7,3.5,68.4c10.1,25.7,39.2,38.3,64.9,28.1l-3.1-7.9c-21.3,8.4-45.4-2-53.8-23.3c-8.4-21.3,2-45.4,23.3-53.8L31.6,3.5z'>
+           <animateTransform attributeName='transform' attributeType='XML' type='rotate' dur='2s' from='0 50 50' to='360 50 50' repeatCount='indefinite' />
+       </path>
+       <path fill='#f1c40f' d='M42.3,39.6c5.7-4.3,13.9-3.1,18.1,2.7c4.3,5.7,3.1,13.9-2.7,18.1l4.1,5.5c8.8-6.5,10.6-19,4.1-27.7c-6.5-8.8-19-10.6-27.7-4.1L42.3,39.6z'>
+           <animateTransform attributeName='transform' attributeType='XML' type='rotate' dur='1s' from='0 50 50' to='-360 50 50' repeatCount='indefinite' />
+       </path>
+       <path fill='#2ecc71' d='M82,35.7C74.1,18,53.4,10.1,35.7,18S10.1,46.6,18,64.3l7.6-3.4c-6-13.5,0-29.3,13.5-35.3s29.3,0,35.3,13.5L82,35.7z'>
+           <animateTransform attributeName='transform' attributeType='XML' type='rotate' dur='2s' from='0 50 50' to='360 50 50' repeatCount='indefinite' />
+       </path>
+   </svg>
+ </div><div id='wrapper'><nav class='navbar navbar-default navbar-static-top m-b-0'>
+        <div class='navbar-header'>
+            <div class='top-left-part'>
+                <!-- Logo -->
+                <a class='logo' href='..'>
+                    <!-- Logo icon image, you can use font-icon also --><b>
+                    <!--This is dark logo icon--><img src='../themes/default/images/logo_small.png' alt='home' class='dark-logo' /><!--This is light logo icon--><img src='../themes/default/images/logo_small.png' alt='SaaSMexico' class='light-logo' />
+                </b>
+                    <!-- Logo text image you can use text also --><span class='hidden-xs'>
+                        <!--This is dark logo text--><img src='../company/346/images/logo-registro-square.png' alt='home' class='dark-logo' width='auto' height='50px' /><!--This is light logo text--><img src='../company/346/images/logo-registro-square.png' alt='home' class='light-logo'  width='auto' height='50px' />
+                     </span> </a>
+            </div>
+            <!-- /Logo -->
+            <!-- Search input and Toggle icon -->
+            <ul class='nav navbar-top-links navbar-right pull-right'>
+                <li>
+                </li>
+                <li class='dropdown'>
+                    <a class='dropdown-toggle profile-pic' data-toggle='dropdown' href='#'> <img src='../themes/default/images/user_blank.png' alt='user-img' width='36' class='img-circle'><b class='hidden-xs'>Claude Code</b><span class='caret'></span> </a>
+                    <ul class='dropdown-menu dropdown-user animated flipInY'>
+                        <li><a href='../admin/display_prefs.php?'><i class='ti-settings'></i> Preferencias</a></li>
+                        <li><a href='../admin/change_current_user_password.php?selected_id=usuario'><i class='ti-lock'></i> Cambiar Contraseña</a></li>
+                        <li role='separator' class='divider'></li>
+                        <li><a href='../access/logout.php?'><i class='fa fa-power-off'></i> Salir</a></li>
+                    </ul>
+                    <!-- /.dropdown-user -->
+                </li>
+                <!-- /.dropdown -->
+            </ul>
+            <ul class='nav navbar-top-links navbar-right'>
+                  <li><input id="search_autocomplete"  class=" form-control" type="text" name="search" size="20" maxlength="20" value="" style="margin-top: 9px; padding: 7px 20px 7px 20px; line-height: 25px; min-height: 25px; border-radius: 20px;" placeholder="Buscar" >                  </li>
+                <li><a href='javascript:void(0)' class='open-close waves-effect waves-light visible-xs'><i class='ti-close ti-menu'></i></a></li>
+                <li class='mega-dropdown'> <a class='dropdown-toggle waves-effect waves-light' data-toggle='dropdown' href='#'><span class='hidden-xs'>Accesos Rápidos</span> <i class='icon-options-vertical'></i></a>
+                    <ul class='dropdown-menu mega-dropdown-menu animated bounceInDown'>
+                        <li class='col-sm-3'>
+                            <ul>
+                                <li class='dropdown-header'>Ventas</li>
+                                <li><a href='/sales/sales_order_entry.php?NewInvoice=0'>Factura Directa</a></li>
+                                <li><a href='/sales/sales_order_entry.php?NewOrder=Yes'>Nuevo Pedido</a></li>
+                                <li><a href='/sales/customer_payments.php?'>Pagos de Cliente</a></li>
+                                <li><a href='/sales/inquiry/customer_inquiry.php?'>Transacciones de Cliente</a></li>
+                            </ul>
+                        </li>
+                        <li class='col-sm-3'>
+                            <ul>
+                                <li class='dropdown-header'>Compras</li>
+                                <li><a href='/purchasing/po_entry_items.php?NewInvoice=Yes'>Factura Directa</a></li>
+                                <li><a href='/purchasing/po_entry_items.php?NewOrder=Yes'>Crear Orden de Compra</a></li>
+                                <li><a href='/purchasing/supplier_payment.php?'>Pagos a Proveedores</a></li>
+                                <li><a href='/purchasing/inquiry/supplier_inquiry.php?'>Transacciones de Proveedores</a></li>
+                            </ul>
+                        </li>
+                        <li class='col-sm-3'>
+                            <ul>
+                                <li class='dropdown-header'>Inventario</li>
+                                <li><a href='/inventory/transfers.php?NewTransfer=1'>Transferencia de Inventario</a></li>
+                                <li><a href='/inventory/adjustments.php?NewAdjustment=1'>Ajustes de Inventario</a></li>
+                                <li><a href='/inventory/inquiry/stock_movements.php?'>Movimientos de Artículos</a></li>
+                                <li><a href='/inventory/inquiry/stock_status.php?'>Existencias de Artículos</a></li>
+                            </ul>
+                        </li>
+                        <li class='col-sm-3'>
+                            <ul>
+                                <li class='dropdown-header'>Bancos y Contabilidad</li>
+                                <li> <a href='/gl/bank_transfer.php?'>Transferencias entre Cuentas</a> </li>
+                                <li> <a href='/gl/gl_journal.php?NewJournal=Yes'>Asiento de Diario</a> </li>
+                                <li> <a href='/gl/inquiry/gl_account_inquiry.php?'>Consultar Cuenta Contable</a> </li>
+                                <li> <a href='/gl/inquiry/bank_inquiry.php?'>Consultar Cuenta Bancaria</a> </li>
+                            </ul>
+                        </li>
+                    </ul>
+                </li>
+                <!-- /.Megamenu -->
+            </ul>
+        </div>
+        <!-- /.navbar-header -->
+        <!-- /.navbar-top-links -->
+        <!-- /.navbar-static-side -->
+    </nav><!-- Left navbar-header -->
+<div class='navbar-default sidebar' role='navigation'>
+    <div class='sidebar-nav slimscrollsidebar'>
+        <div class='sidebar-head'>
+            <h3><span class='fa-fw open-close'><i class='ti-menu hidden-xs'></i><i class='ti-close visible-xs'></i></span> <span class='hide-menu'>Menú Principal</span></h3>
+        </div>
+        <ul class='nav' id='side-menu'>
+                <li>                    <a class='right' href='https://aclandings.operam.mx/referidos-operam-verhr' target='_blank'>                       <img  style='margin-top:0px; width:28px !important; height:28px !important;' src='../themes/default/images/recomienda_y_gana.png'><span class='hide-menu'>&nbsp;Recomienda OPERAM</span></a>                </li><li><a class='waves-effect ' href='../index.php?application=dashboard'><i class='fa fa-desktop fa-fw'></i><span class='hide-menu'>Dashboard</span></a></li>
+<li><a class='waves-effect active' href='../index.php?application=orders'><i class='fa fa-shopping-cart fa-fw'></i><span class='hide-menu'>Ventas</span></a></li>
+<li><a class='waves-effect ' href='../index.php?application=AP'><i class='fa fa-inbox fa-fw'></i><span class='hide-menu'>Compras y Gastos</span></a></li>
+<li><a class='waves-effect ' href='../index.php?application=stock'><i class='fa fa-shopping-basket fa-fw'></i><span class='hide-menu'>Artículos e Inventario</span></a></li>
+<li><a class='waves-effect ' href='../index.php?application=manuf'><i class='fa fa-industry fa-fw'></i><span class='hide-menu'>Manufactura</span></a></li>
+<li><a class='waves-effect ' href='../index.php?application=assets'><i class='fa fa-car fa-fw'></i><span class='hide-menu'>Activos Fijos</span></a></li>
+<li><a class='waves-effect ' href='../index.php?application=proj'><i class='fa fa-sitemap fa-fw'></i><span class='hide-menu'>Dimensiones</span></a></li>
+<li><a class='waves-effect ' href='../index.php?application=GL'><i class='fa fa-money fa-fw'></i><span class='hide-menu'>Bancos y Contabilidad</span></a></li>
+<li><a class='waves-effect ' href='../index.php?application=recibos_nomina'><i class='fa fa-circle fa-fw'></i><span class='hide-menu'>Recibos Nómina</span></a></li>
+<li><a class='waves-effect ' href='../index.php?application=system'><i class='fa fa-gear fa-fw'></i><span class='hide-menu'>Configuración</span></a></li>
+        </ul>
+    </div>
+</div>
+<!-- Left navbar-header end -->    <div id='page-wrapper'>
+<div class='container-fluid' >
+<div class='row bg-title'>
+                <div class='col-lg-3 col-md-6 col-sm-6 col-xs-12'>
+                    <h4 class='page-title'>Modificando Cotización Nº 1216</h4> </div>
+                <div class='col-lg-9 col-sm-6 col-md-6 col-xs-12'>
+                    <ol class='breadcrumb'>
+                        <li>Inicio</li>
+                        <li>Modificando Cotización Nº 1216</li>
+                    </ol>
+                </div>
+                <!-- /.col-lg-12 -->
+            </div>            <hr class='gradient_line'><div id='msgbox'><div class='warn_msg'>Esta cotizacion esta vencida</div></div><script language="javascript" type="text/javascript" src="../company/346/js_cache/date_picker.25.js"></script><div id='_page_body'><form method='post' action='/sales/sales_order_entry.php' >
+<input type="hidden" name="cart_id" value='6a7e2e153050e' id="">
+<input type="hidden" name="timbrado_tipo" value='' id="">
+<center><table class='tablestyle2' width=90% cellpadding=2 cellspacing=0>
+<tr valign=top><td>
+<table class='tablestyle_inner' >
+<tr><td class='label'>Cliente:</td><td nowrap><span id='_customer_id_sel'><select autocomplete='off'  name='customer_id' class='combo2' title='Presione tecla Tab para filtrar por parte del nombre; F2 - introducir nuevo cliente'   chosen="chosen_ajax" chosen_ajax="../sales/inquiry/customers.ajax.php?inactive=false&specoption="><option groupid='14' selected  value='14'>PUBLICO EN GENERAL</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_customer_id_update' value=' ' title='Seleccione'> 
+</td>
+</tr>
+<tr><td class='label'>Domicilio:</td><td><span id='_branch_id_sel'><select autocomplete='off'  name='branch_id' class='combo' title='Seleccione un Domicilio del Cliente'  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='57'   value='57'>Bazaar (57)</option>
+<option groupid='31' selected  value='31'>Amazon (31)</option>
+<option groupid='14'   value='14'>Mercado Libre (14)</option>
+<option groupid='28'   value='28'>Shopify (28)</option>
+<option groupid='29'   value='29'>Ventas de mostrador (29)</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_branch_id_update' value=' ' title='Seleccione'> 
+</td>
+</tr><tr><td class='label'>Referencia:</td><td><input   type="text" name="ref" size="16" maxlength="18" value="C2608278" title='Número de referencia único para este tipo de documento' ></td>
+</tr>
+</table>
+</td><td style='border-left:1px solid #cccccc;' >
+<table class='tablestyle_inner' >
+<tr><td class='label'>Crédito Actual:</td><td  id=''><a target='_blank' href='../sales/inquiry/customer_inquiry.php?customer_id=14' onclick="javascript:openWindow(this.href,this.target); return false;" >Consultar credito actual</a></td>
+</tr>
+<tr><td class='label'>Descuento del Cliente:</td><td  id=''>0%</td>
+</tr>
+<input type="hidden" name="uuid_sat_manual" value='' id="">
+</table>
+</td><td style='border-left:1px solid #cccccc;' >
+<table class='tablestyle_inner' >
+<tr><td class='label'>Sucursal:</td><td><span id='_sucursal_id_sel'><select autocomplete='off'  name='sucursal_id' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='1' selected  value='1'>01.Tlapacoya</option>
+<option groupid='2'   value='2'>02. Bazaar Sabado</option>
+<option groupid='3'   value='3'>30. Shopify</option>
+<option groupid='4'   value='4'>31. Amazon México</option>
+<option groupid='5'   value='5'>32. Amazon EUA</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_sucursal_id_update' value=' ' title='Seleccione'> 
+</td>
+</tr>
+<td class='label'>Términos de Pago:</td>
+<td><span id='_payment_sel'><select autocomplete='off'  name='payment' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='5'   value='5'>30 Dias</option>
+<option groupid='6'   value='6'>60 Dias</option>
+<option groupid='11'   value='11'>7 Dias</option>
+<option groupid='9' selected  value='9'>Anticipo 50%</option>
+<option groupid='7'   value='7'>Contra entrega</option>
+<option groupid='4'   value='4'>De Contado</option>
+<option groupid='8'   value='8'>Por anticipado</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_payment_update' value=' ' title='Seleccione'> 
+</td>
+<tr><td class='label'>Lista de Precios:</td><td><span id='_sales_type_sel'><select autocomplete='off'  name='sales_type' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='19'   value='19'>Amazon</option>
+<option groupid='15'   value='15'>M100</option>
+<option groupid='6'   value='6'>M1500</option>
+<option groupid='16'   value='16'>M350</option>
+<option groupid='1'   value='1'>M550</option>
+<option groupid='3'   value='3'>M6000</option>
+<option groupid='20'   value='20'>M6001</option>
+<option groupid='12' selected  value='12'>Precio de lista</option>
+<option groupid='9'   value='9'>Segundas</option>
+<option groupid='21'   value='21'>US100</option>
+<option groupid='24'   value='24'>US1500</option>
+<option groupid='22'   value='22'>US350</option>
+<option groupid='23'   value='23'>US550</option>
+<option groupid='25'   value='25'>US6000</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_sales_type_update' value=' ' title='Seleccione'> 
+</td>
+</tr>
+</table>
+</td><td style='border-left:1px solid #cccccc;' >
+<table class='tablestyle_inner' >
+<tr ><td class='label'>Fecha de Cotización:</td><td><input type="text" name="OrderDate" class="date active"  size="10" maxlength="12" value="2026-08-13" title='Fecha de recepción del Pedido' > <a tabindex='-1' href="javascript:date_picker(document.getElementsByName('OrderDate')[0]);">	<img src='../themes/default/images/cal.gif' width='16' height='16' border='0' alt='Haga click acá para tomar la fecha'></a>
+</td>
+</tr>
+</table>
+</td></tr>
+</table></center>
+<br><div class="bloque-carrito-promos"><div id='items_table'><center><table class='tablestyle' colspan=7 width=90% cellpadding=2 cellspacing=0>
+<center><span class='headingtext'>Artículos de la Cotización</span></center>
+<tr>
+<td class='tableheader' >Código de Artículo</td>
+<td class='tableheader' >Descripción del Artículo</td>
+<td class='tableheader' >Cantidad</td>
+<td class='tableheader' >Entregado</td>
+<td class='tableheader' >Unidad</td>
+<td class='tableheader' >Precio Unitario</td>
+<td class='tableheader' >% Descuento</td>
+<td class='tableheader' >Total</td>
+<td class='tableheader' ></td>
+<td class='tableheader' ></td>
+</tr>
+<tr class='evenrow'  >
+<td><a target='_blank' href='../inventory/inquiry/stock_status.php?stock_id=TA14Y31111' onclick="javascript:openWindow(this.href,this.target); return false;" >TA14Y31111</a></td><td >SONDA DESC API 999</td>
+<td nowrap align=right >1.00</td>
+<td nowrap align=right >0.00</td>
+<td >pza</td>
+<td style='text-align:right;'><a target='_blank'    href='../sales/manage/sales_prices_list.php?item_code=TA14Y31111&line_no=0&currency=MXN' onclick="javascript:openWindow(this.href,this.target); return false;">107.76</a></td>
+<td nowrap align=right>0.0</td>
+<td nowrap align=right >107.76</td>
+<td align='center'><button type='submit' class='editbutton' name='Edit0' value='1' title='Editar linea del documento' /><img src='../themes/default/images/edit.gif' width='12' height='12' border='0' />
+</button>
+</td><td align='center'><button type='submit' class='editbutton' name='Delete0' value='1' title='Eliminar linea del documento' /><img src='../themes/default/images/delete.gif' width='12' height='12' border='0' />
+</button>
+</td></tr>
+<tr class='oddrow'  >
+<td><input  type='text' name='_stock_id_edit' id='_stock_id_edit' size='15' maxlength='1000' value='' class='combo' rel='stock_id' autocomplete='off' title='Introduzca parte del código a buscar o * para todo' >
+<input  type='submit' class='combo_submit' style='border:0;background:url(../themes/default/images/locate.png) no-repeat;display:none;' aspect='fallback' name='_stock_id_button' value=' ' title='Fijar filtro'> 
+</td><td><span id='_stock_id_sel'><select autocomplete='off'  name='stock_id' class='combo' title='' rel='_stock_id_edit'  chosen="chosen_ajax" chosen_ajax="../inventory/inquiry/items.ajax.php?inactive=false&specoption="><option groupid=''   value='210217005'>Tubo led vidrio 120cm blanco 18w 6000k luz blanca</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_stock_id_update' value=' ' title='Seleccione'> 
+</td><td align='right'><input class='amount ' type="text" name="qty" size="6" maxlength="12" dec="-1" value="1" ></td>
+<td nowrap align=right >0</td>
+<td  id='units'>pza</td>
+<td align='right'><input class='amount ' type="text" name="price" size="15" maxlength="15" dec="2" value="0.00" ></td>
+<td align='right'><input class='amount ' type="text" name="Disc" size="7" maxlength="20" dec="1" value="0.0" ></td>
+<td nowrap align=right  id='line_total'>0.00</td>
+<td colspan=2 align='center'><button class="ajaxsubmit" type="submit" name="AddItem"  id="AddItem" value="Agregar" title='Agregar nuevo artículo al documento'
+		style=''><span>Agregar</span></button>
+</td>
+</tr>
+<tr><td colspan=7 align=right>Sub-Total</td>
+<td align=right id='sub_total_amount'>107.76</td>
+<td colspan=2></td></tr>
+<tr><td colspan=7 align=right>I.V.A. 16% (16%)</td>
+<td align='right' class='mantax' data-tax_type_id='1'  id=''>17.24</td>
+<td colspan=2></td></tr>
+<tr>
+<td colspan=7 align=right>Monto Total</td>
+<td align=right id='total_amount'>125.00</td>
+<td colspan=2 align='center'><button class="ajaxsubmit" type="submit" name="update"  id="update" value="Recalculate" title='Refrescar'
+		style=''><span>Recalculate</span></button>
+</td>
+</tr>
+<tr>
+<td colspan=9 align="right"><button class="ajaxsubmit" type="submit" name="addshippingcost"  id="addshippingcost" value="Calcular y Agregar Envío" title='Refrescar'
+		style=''><span>Calcular y Agregar Envío</span></button>
+</td>
+</tr>
+</table></center>
+</div></div><div id='delivery'><center><span class='headingtext'>Detalles de la Cotización</span></center>
+<center><table class='tablestyle2' width=90% cellpadding=2 cellspacing=0>
+<tr valign=top><td>
+<table class='tablestyle_inner' >
+<tr><td class='label'>Entregar desde Ubicación:</td><td><span id='_Location_sel'><select autocomplete='off'  name='Location' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><optgroup label='01.Tlapacoya'>
+<option groupid='01.Tlapacoya'   value='10'>Almacén MP</option>
+<option groupid='01.Tlapacoya'   value='23'>Chatarra</option>
+<option groupid='01.Tlapacoya'   value='DEF'>Default</option>
+<option groupid='01.Tlapacoya'   value='51'>Escandón</option>
+<option groupid='01.Tlapacoya'   value='30'>Esmalte</option>
+<option groupid='01.Tlapacoya'   value='32'>Esmalte 3A</option>
+<option groupid='01.Tlapacoya'   value='31'>Esmalte Reproceso</option>
+<option groupid='01.Tlapacoya'   value='20'>Fabricación</option>
+<option groupid='01.Tlapacoya'   value='22'>Fabricación Defecto</option>
+<option groupid='01.Tlapacoya'   value='21'>Fabricación Paso 1</option>
+<option groupid='01.Tlapacoya'   value='60'>Maquila</option>
+<option groupid='01.Tlapacoya'   value='70'>MUAC Consignación</option>
+<option groupid='01.Tlapacoya' selected  value='40'>PT</option>
+<option groupid='01.Tlapacoya'   value='41'>PT2</option>
+<option groupid='01.Tlapacoya'   value='42'>PT3</option>
+<optgroup label='02. Bazaar Sabado'>
+<option groupid='02.BazaarSabado'   value='B1'>Bazaar</option>
+<option groupid='02.BazaarSabado'   value='B3'>Bazaar Saldos</option>
+<option groupid='02.BazaarSabado'   value='B2'>Monaco</option>
+<option groupid='02.BazaarSabado'   value='B4'>Monaco Saldos</option>
+<optgroup label='31. Amazon México'>
+<option groupid='31.AmazonMéxico'   value='AZMX'>Mexico FBA</option>
+<optgroup label='32. Amazon EUA'>
+<option groupid='32.AmazonEUA'   value='AZUSA'>USA FBA</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_Location_update' value=' ' title='Seleccione'> 
+</td>
+</tr>
+<tr ><td class='label'>Valido hasta:</td><td><input type="text" name="delivery_date" class="date"  size="10" maxlength="12" value="2026-08-12" title='Entre una fecha Hasta valida' > <a tabindex='-1' href="javascript:date_picker(document.getElementsByName('delivery_date')[0]);">	<img src='../themes/default/images/cal.gif' width='16' height='16' border='0' alt='Haga click acá para tomar la fecha'></a>
+</td>
+</tr>
+<tr ><td class='label'>Entregar a:</td><td ><input  type="text" name="deliver_to" size="40" maxlength="40" value="PRUEBA SONDA DESCRIPCION - BORRAR" title='Identificador adicional para la entrega p.e. nombre de la persona que recibe'></td>
+</tr>
+<tr><td class='label' style=''>Dirección:</td><td><textarea name='delivery_address' cols='35' rows='5'   title='Dirección de entrega. El valor predeterminado es la dirección del domicilio del cliente'
+	 style=''>N/A - quote de prueba</textarea>
+</td>
+</tr>
+</table>
+</td><td style='border-left:1px solid #cccccc;' >
+<table class='tablestyle_inner' >
+<tr ><td class='label'>Correo:</td><td ><input  type="text" name="email" size="25" maxlength="100" value="" title='Correo de la persona que solicita.'></td>
+</tr>
+<tr ><td class='label'>Número de Teléfono:</td><td ><input  type="text" name="phone" size="25" maxlength="25" value="" title='Número de teléfono de la persona que solicita. El valor predeterminado es el número de teléfono del domicilio'></td>
+</tr>
+<tr ><td class='label'>Referencia del Cliente:</td><td ><input  type="text" name="cust_ref" size="25" maxlength="60" value="SONDA-DESC" title='Numero de referencia del cliente para este pedido (si hay alguno)'></td>
+</tr>
+<tr><td class='label' style=''>Comentarios:</td><td><textarea name='Comments' cols='24' rows='5'  
+	 style=''>QUOTE DE PRUEBA (sonda descripcion de linea) - BORRAR</textarea>
+</td>
+</tr>
+<tr><td class='label'>Compañía de Transporte:</td><td><span id='_ship_via_sel'><select autocomplete='off'  name='ship_via' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='1' selected  value='1'>1011812201714&nbsp;&nbsp;&nbsp;&nbsp;Default</option>
+<option groupid='2'   value='2'>1022409121109&nbsp;&nbsp;&nbsp;&nbsp;FedEx</option>
+<option groupid='3'   value='3'>1032409121109&nbsp;&nbsp;&nbsp;&nbsp;LalaMove</option>
+</select>
+</span>
+</td>
+</tr>
+</table>
+</td></tr>
+</table></center>
+<br></div><div id='buttons'><center><button class="ajaxsubmit" type="submit"aspect='default'  name="ProcessOrder"  id="ProcessOrder" value="Confirmar Cambios" title='Validar los cambios y actualizar el documento'
+		style=''><img src='../themes/default/images/ok.gif' height='12'><span>Confirmar Cambios</span></button>
+&nbsp;&nbsp;<button class="ajaxsubmit" type="submit"aspect='cancel'  name="CancelOrder"  id="CancelOrder" value="Cancelar Cotización" title='Cancela la introducción de documento o elimina el pedido cuando se edita un documento antiguo'
+		style=''><img src='../themes/default/images/escape.png' height='12'><span>Cancelar Cotización</span></button>
+</center></div><input type="hidden" name="_focus" value='search' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='a9d2d8c3679c190c6ee817d804e59fbc32982d9d2241800542aab0914ee27091' id="">
+</form>
+<div id='modal_section'></div><center><center><table width=20% cellpadding=2 cellspacing=0>
+<tr>
+<td align=center><a href='javascript:goBack();'></a></td>
+</tr>
+</table></center>
+</center><br></div></div></div><footer class='footer text-center'><hr class='gradient_line'> 2026-08-13 | 14:50 | Operam ERP 3.26.32 - Tema: default | <a class='' href='https://aclandings.operam.mx/referidos-operam-verhr' target='_blank'>Recomienda OPERAM</a> </footer></div><!-- jQuery --><!-- Bootstrap Core JavaScript --><script src='../themes/default/bootstrap/dist/js/bootstrap.min.js'></script><!-- Menu Plugin JavaScript --><script src='../themes/default/plugins/sidebar-nav/dist/sidebar-nav.min.js'></script><!--slimscroll JavaScript --><script src='../themes/default/js/jquery.slimscroll.js'></script><!--Wave Effects --><script src='../themes/default/js/waves.js'></script><!--Toast --><script src='../themes/default/plugins/toast-master/js/jquery.toast.js'></script><!-- Custom Theme JavaScript --><script src='../themes/default/js/custom.js'></script><!--Style Switcher --><script src='../themes/default/plugins/styleswitcher/jQuery.style.switcher.js'></script><script src='../js/dashboard/dashboard_plugin.js'></script><link href='../js/dashboard/dashboard_plugin.css' rel='stylesheet' type='text/css'></link><script src='../js/chart.min.js'></script><script>
+	_focus = 'search';
+	_validate = [  ];
+	var editors = { "113": [ "..\/sales\/manage\/customers.php?debtor_no=", "customer_id", "900", "500" ], "114": [ "..\/sales\/manage\/customer_branches.php?SelectedBranch=", "branch_id", "900", "700" ], "115": [ "..\/inventory\/manage\/items.php?stock_id=", "stock_id", "800", "600" ] };
+</script>
+<script type="text/javascript"><!--
+_validate._processing=null;_validate._processing='Datos introducidos no han sido aun guardados.\nDesea abandonar los cambios?';function openWindow(url, title)
+{
+ var left = (screen.width - 900) / 2;
+ var top = (screen.height - 500) / 2;
+ return window.open(url, title, 'width=900,height=500,left='+left+',top='+top+',screenX='+left+',screenY='+top+',status=no,scrollbars=yes');
+}
+_validate.CancelOrder=function(){ return confirm('Está a punto de anular este Documento. \n¿Desea continuar?');};
+var user = {
+theme: '../themes/default/',
+loadtxt: 'Solicitando información...',
+date: '2026-08-13',
+datesys: 0,
+datefmt: 2,
+datesep: '-',
+ts: ',',
+ds: '.',
+pdec : 2}
+
+--></script>
+
+		<!--NUEVO CHAT-->
+		<script>
+            (function(d,t) {
+            var BASE_URL="https://chat.operam.mx";
+            var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
+            g.src=BASE_URL+"/packs/js/sdk.js";
+            g.defer = true;
+            g.async = true;
+            s.parentNode.insertBefore(g,s);
+            g.onload=function(){
+                window.chatwootSDK.run({
+                    websiteToken: "WGaCYTpHJUbAwmtcqgEK4H6Q",
+                    baseUrl: BASE_URL
+                });
+
+                //window.$chatwoot.reset();
+                window.addEventListener("chatwoot:ready", function () {
+                    window.$chatwoot.setUser("operam.pro_346_25", {
+                        name: "Claude Code",
+                        email: "a.chavez@peltrenacional.mx",
+                        phone_number: "",
+                        company_name: "PELTRE NACIONAL",
+                        identifier_hash: "c5fcd9b1b6470b8a0c285fdb3de43f840a9db0bef6a152af9df50d366607de99"
+                    });
+                });
+                
+                window.addEventListener("chatwoot:error", function (err) {
+                    console.error(err);
+                });
+            }
+            })(document,"script");
+        </script>
+	
+<script type='text/javascript'>
+	
+function select2format(state) {
+	var text = '<span class="cliente">'+state.text+'<br /><small>';
+	if(typeof(state.rfc) !== 'undefined'){
+		text = text+state.rfc;
+	}
+	if(typeof(state.barcode) !== 'undefined'){
+		text = text+' ('+state.barcode+')';
+	} else if (typeof(state.id) !== 'undefined'&&state.id>0){
+		text = text+' ('+state.id+')';
+	}
+	text = text+'</small></span>';
+	return $(text);
+};
+
+function selectdos() {
+	$('input[chosen=chosen_def]').select2({dropdownAutoWidth:true});
+	$('select').each(function (index) {
+		var hasAjax = $(this).attr('chosen_ajax');
+		var useSelect2 = $(this).attr('chosen');
+		var allowNewOptions = $(this).attr('new_tags');
+		var options = 
+		{
+			dropdownAutoWidth:true,
+			placeholder: {
+				id: '--Seleccione--',
+				text: 'Seleccione'
+			},
+			width: 'resolve',
+			dropdownAutoWidth:true,
+		}
+		if (typeof allowNewOptions!=='undefined') {
+			options.tags = true;
+		}
+		if (typeof hasAjax!=='undefined') {
+			options.templateResult = select2format;
+			options.ajax = 
+			{
+				url: hasAjax,
+				data: function (params) {
+					return {
+						term: params.term,
+						page: params.page,
+						currentvalue: this.find(':selected').val()
+					}
+				},
+				dataType: 'json',
+				delay: 250,
+				placeholder: 'Buscar...',
+				minimumInputLength: 3
+			}
+		}
+		if (typeof useSelect2!=='undefined') {
+			$(this).select2(options);
+		}
+	});
+	
+	// Select2 Event handler for selecting an item. 
+	// script para solo seleccionar una dimension por grupo
+	$('select[select_dims=select_dims]').on('select2:selecting', function(evt, f, g) {
+		var curr_values = $(this).val();
+		var selId = evt.params.args.data.id;
+		//var groupid = $('option[value=' + selId + ']', this).attr('groupid');
+		var groupid = evt.params.args.data.groupid;
+		if (groupid == undefined) groupid = evt.params.args.data.element.getAttribute('groupid');
+		var new_values = [];
+		var option = document.createElement('option');
+		option.setAttribute('groupid', groupid);
+		option.value = selId;
+		option.textContent = evt.params.args.data.text;
+		if (this.querySelector('option[value=\'' + selId + '\']') == null)
+			this.appendChild(option);
+
+		// recorrer todos los options y agregarlos a un nuevo array
+		$('option', this).each(function(){
+			// agregar al array valores de otro grupo y que ya estuvieran seleccionados previamente
+			//if (selId == $(this).val()) $(this).attr('groupid', groupid);
+			if(groupid != $(this).attr('groupid') && $.inArray($(this).attr('value'), curr_values) != -1){
+				new_values.push($(this).attr('value'));
+			}
+		});
+		/*
+		let list_options = this.querySelectorAll('option');
+		for (let i  = 0; i < list_options.length; i++ ) {
+			console.log(list_options)
+			let value = list_options[i].value;
+			console.log(new_values.indexOf(value))
+			if (new_values.indexOf(value) == -1) {
+				list_options[i].remove();
+			}
+		}
+		*/
+		
+		// pasar el nuevo array al select
+		$(this).val(new_values);
+		console.log(new_values);
+		//return false;
+		//evt.preventDefault();
+	});
+	
+    // Select2 Event handler for unselecting an item
+	// $('select[chosen=chosen_def]').on('select2:unselecting', function(evt) {
+	// 	alert('unselecting');
+	// });
+
+}
+</script>
+<script>window.ERP_SEARCH_USE_SCRIPT_BASE=false;</script>
+<link href='../js/search_autocomplete/search_autocomplete.css' rel='stylesheet' type='text/css'> 
+<script src="../js/search_autocomplete/search_autocomplete_v2.js" type="text/javascript"></script><script src="../js/ticket/priting_automatic.js" type="text/javascript"></script></body></html>
+
+<script type="text/javascript">
+$(document).ready(function() {
+	$('#ProcessOrder').click(function() {
+		$('html,body').scrollTop(0);
+	});
+});
+
+(function () {
+	var mantaxSyncTimer = null;
+	var mantaxDebounceMs = 200;
+
+	function collectMantaxPayload() {
+		var mantax = {};
+		$("input.mantax").each(function () {
+			var tax_type_id = $(this).data("tax_type_id");
+			if ($(this).val()) {
+				var amount = parseFloat(String($(this).val()).replace(/,/g, ""));
+				if (!isNaN(amount)) {
+					mantax[tax_type_id] = { amount: amount };
+				}
+			}
+		});
+		$("td.mantax").each(function () {
+			var tax_type_id = $(this).data("tax_type_id");
+			var txt = $(this).text();
+			if (txt) {
+				var amount = parseFloat(String(txt).replace(/,/g, ""));
+				if (!isNaN(amount)) {
+					mantax[tax_type_id] = { amount: amount };
+				}
+			}
+		});
+		return mantax;
+	}
+
+	function amountPayInput() {
+		var $p = $("#delivery").find('input[name="amount_pay"]');
+		return $p.length ? $p : $('input[name="amount_pay"]');
+	}
+
+	function syncTotalsFromMantax() {
+		var mantax = collectMantaxPayload();
+		$.ajax({
+			url: "../sales/includes/ajax_get_full_total.php",
+			data: {
+				sub_total_amount: $("td#sub_total_amount").text(),
+				mantax: mantax,
+				total_amount: $("td#total_amount").text(),
+				current_code: "MXN"
+			},
+			dataType: "json",
+			type: "POST",
+			success: function (response) {
+				if (response.status == 1) {
+					$("td#total_amount").text(response.total_amount);
+					if (typeof response.amount_pay !== "undefined" && response.amount_pay !== null) {
+						amountPayInput().val(response.amount_pay);
+					}
+				}
+			}
+		});
+	}
+
+	function scheduleMantaxSync() {
+		clearTimeout(mantaxSyncTimer);
+		mantaxSyncTimer = setTimeout(syncTotalsFromMantax, mantaxDebounceMs);
+	}
+
+	$(document).on("input", "input.mantax", scheduleMantaxSync);
+	$(document).on("change", "input.mantax", function () {
+		clearTimeout(mantaxSyncTimer);
+		syncTotalsFromMantax();
+	});
+})();
+
+</script>
