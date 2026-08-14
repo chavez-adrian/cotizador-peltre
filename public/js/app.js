@@ -2989,7 +2989,7 @@ async function actualizarQuoteEnOperam(id, slot) {
   if (vista.estado === 'bloqueada') {
     alert('OJO: el documento ya lleva el folio de Operam, pero la cotizacion en Operam NO se actualizo.\n\n' +
       (vista.mensaje || '') +
-      '\n\nUsa "Crear una cotizacion nueva a partir de esta" antes de enviarsela al cliente.');
+      '\n\nUsa "Copiar cotizacion" antes de enviarsela al cliente.');
   }
   return vista;
 }

@@ -219,7 +219,7 @@ export function buildActualizacionStatusHtml(id, vista) {
   // simbolo nuevo para el onclick (trampa de #112).
   if (v.estado === 'bloqueada') {
     return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">Operam desactualizado</span> ${escapeHtml(v.mensaje || '')}</span>` +
-      ` <button class="btn btn-sm btn-primary" onclick="cargarCotizacion(${id}, 'nueva')">Crear una cotizaci&oacute;n nueva a partir de &eacute;sta</button>`;
+      ` <button class="btn btn-sm btn-primary" onclick="cargarCotizacion(${id}, 'nueva')">Copiar cotizaci&oacute;n</button>`;
   }
   const aviso = (badge, texto) =>
     `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">${badge}</span> ` +

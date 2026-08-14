@@ -35,6 +35,10 @@ Corte histórico (decisión 2026-06-16): el folio de Operam no se persistía ant
 
 Es el **folio del quote en Operam**, y sólo ése (ADR-0009). El id interno del registro del cotizador es una clave técnica — vive en las URL de los documentos y del historial — y nunca se presenta como "cotización #N": el cliente que recibe el documento y quien abre el ERP tienen que leer el mismo número. Para poder imprimirlo, generar un documento **espera** a que la cotización esté subida a Operam; si no lo consigue, el documento se entrega igual **sin número**, como pre-cotización, y el numerado se re-comparte desde el historial cuando el folio llegue. En la UI el folio se nombra siempre con la convención **"#Operam N"** (#63).
 
+## Editar / Copiar cotización
+
+Las dos acciones de carga del historial (#104, ADR-0008; renombradas en #149). **Editar** reescribe el MISMO registro y el MISMO quote de Operam conservando el folio — solo aplica cuando hay un quote editable y nadie lo ha convertido todavía (gate `puedeActualizarCotizacion`). **Copiar cotización** parte de los datos de una cotización existente para empezar una NUEVA — folio y registro propios — y es la única salida cuando Editar está bloqueado (ej. la cotización ya tiene un pedido asociado en Operam). Un mismo botón, un mismo nombre en todos los avisos: Historial, aviso de cotización bloqueada del pipeline (#114) y el alert de divergencia tras generar.
+
 ## Vigencia ("Válido hasta")
 
 La fecha hasta la que la cotización se sostiene, capturada en días por el vendedor (30 por omisión) y calculada sobre la fecha de emisión. Vive en tres lugares por razones distintas: el PDF/HTML que recibe el cliente (donde siempre fue correcta), el campo `comments` del quote de Operam (respaldo, porque la API no acepta la fecha) y el campo nativo "Válido hasta" de Operam, que la API v3 ignora y deja en `ord_date-1` — dejando el ERP mostrando "Esta cotizacion esta vencida" sobre cotizaciones vivas.

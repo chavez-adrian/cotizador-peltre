@@ -284,23 +284,23 @@ test('Q24: puedeActualizarCotizacion bloquea una historica sin data (no hay nada
   assert.equal(puedeActualizarCotizacion(undefined).puede, false);
 });
 
-test('Q25: buildAccionesCargaHtml ofrece Actualizar (default) y Crear nueva cuando se puede actualizar', () => {
+test('Q25: buildAccionesCargaHtml ofrece Editar (default) y Copiar cotización cuando se puede actualizar', () => {
   const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: true, folioOperam: '1200' }));
-  assert.ok(html.includes('Actualizar cotización'));
-  assert.ok(html.includes('Crear nueva a partir de ésta'));
+  assert.ok(html.includes('Editar'));
+  assert.ok(html.includes('Copiar cotización'));
   assert.ok(html.includes("cargarCotizacion(7, 'actualizar')"));
   assert.ok(html.includes("cargarCotizacion(7, 'nueva')"));
-  // el default es Actualizar: es el unico primario
+  // el default es Editar: es el unico primario
   assert.equal((html.match(/btn-primary/g) || []).length, 1);
-  assert.ok(/Actualizar cotización[\s\S]*?<\/button>/.test(html));
+  assert.ok(/Editar[\s\S]*?<\/button>/.test(html));
   assert.ok(!html.includes('disabled'));
 });
 
-test('Q26: buildAccionesCargaHtml deshabilita Actualizar con pedido asociado y explica por que', () => {
+test('Q26: buildAccionesCargaHtml deshabilita Editar con pedido asociado y explica por que', () => {
   const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: true, folioOperam: '1200', orderOperam: '7077' }));
   assert.ok(html.includes('disabled'));
   assert.match(html, /title="[^"]*pedido[^"]*"/i);
-  // Crear nueva sigue disponible y pasa a ser el default
+  // Copiar cotización sigue disponible y pasa a ser el default
   assert.ok(html.includes("cargarCotizacion(7, 'nueva')"));
   assert.ok(!html.includes("cargarCotizacion(7, 'actualizar')"));
 });

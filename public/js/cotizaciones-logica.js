@@ -146,7 +146,7 @@ export function puedeActualizarCotizacion(cot) {
     return { puede: false, motivo: 'La cotización todavía no está registrada en Operam: primero completa la subida' };
   }
   if (c.orderOperam != null && c.orderOperam !== '') {
-    return { puede: false, motivo: 'La cotización ya tiene un pedido asociado en Operam: crea una nueva a partir de ésta' };
+    return { puede: false, motivo: 'La cotización ya tiene un pedido asociado en Operam: copia la cotización' };
   }
   return { puede: true };
 }
@@ -161,13 +161,13 @@ export function buildAccionesCargaHtml(cot) {
   const c = cot || {};
   const gate = puedeActualizarCotizacion(c);
   if (!c.hasData) {
-    return `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Actualizar cotización</button>` +
-      ` <button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Crear nueva a partir de ésta</button>`;
+    return `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Editar</button>` +
+      ` <button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Copiar cotización</button>`;
   }
   const actualizar = gate.puede
-    ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id}, 'actualizar')">Actualizar cotización</button>`
-    : `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(gate.motivo)}">Actualizar cotización</button>`;
-  const nueva = `<button class="btn ${gate.puede ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="cargarCotizacion(${c.id}, 'nueva')">Crear nueva a partir de ésta</button>`;
+    ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id}, 'actualizar')">Editar</button>`
+    : `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(gate.motivo)}">Editar</button>`;
+  const nueva = `<button class="btn ${gate.puede ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="cargarCotizacion(${c.id}, 'nueva')">Copiar cotización</button>`;
   return `${actualizar} ${nueva}`;
 }
 

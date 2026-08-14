@@ -885,14 +885,14 @@ test('A104: el gate se explica sin ofrecer un reintento que volveria a fallar', 
 
 // #114: el gate bloquea justo cuando la divergencia es peor -- el documento ya salio
 // numerado con el folio y el quote no se puede reescribir porque tiene pedido. Explicar
-// el motivo no basta: hay que ofrecer la salida (crear una nueva a partir de esta), que
-// es exactamente lo que ya hace el historial. Se reusa cargarCotizacion(id, 'nueva'),
+// el motivo no basta: hay que ofrecer la salida (Copiar cotizacion, #149), que es
+// exactamente lo que ya hace el historial. Se reusa cargarCotizacion(id, 'nueva'),
 // sin simbolo nuevo en window (trampa de #112).
-test('#114: el aviso de bloqueada ofrece crear una cotizacion nueva a partir de esta', () => {
+test('#114: el aviso de bloqueada ofrece Copiar cotizacion', () => {
   const html = buildActualizacionStatusHtml(7, { estado: 'bloqueada', mensaje: 'ya tiene un pedido asociado en Operam' });
   assert.match(html, /pedido/);
   assert.match(html, /cargarCotizacion\(7, 'nueva'\)/);
-  assert.match(html, /nueva/i);
+  assert.match(html, /Copiar cotizaci&oacute;n/);
   assert.doesNotMatch(html, /Reintentar/);
 });
 
