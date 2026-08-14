@@ -104,6 +104,10 @@ import {
   descuentoGlobalVigente,
 } from './descuento-logica.js';
 import {
+  MAX_DESCRIPCION,
+  validarDescripcionLinea,
+} from './descripcion-logica.js';
+import {
   TAMANOS_CALCA,
   TINTAS_CALCA,
   esCodigoCalca,
@@ -592,7 +596,7 @@ function addSearchItemToCart() {
   }
 
   const prev = state.cart.get(key);
-  state.cart.set(key, { product: cartProduct, cantidad: (prev?.cantidad || 0) + qty });
+  state.cart.set(key, conservarCaptura(key, { product: cartProduct, cantidad: (prev?.cantidad || 0) + qty }));
 
   updateTierBar();
   updateCartSummary();
@@ -714,10 +718,10 @@ function agregarCalca() {
   if (cantidad <= 0) return;
 
   const prev = state.cart.get(ficha.code);
-  state.cart.set(ficha.code, {
+  state.cart.set(ficha.code, conservarCaptura(ficha.code, {
     product: prev?.product || productoCalca(ficha),
     cantidad: (prev?.cantidad || 0) + cantidad,
-  });
+  }));
 
   updateTierBar();
   updateCartSummary();
@@ -744,13 +748,16 @@ function renderCartLines() {
   let html = '';
 
   const piezasProducto = getPiezasProducto();
-  for (const [key, { product, cantidad, descuento }] of state.cart) {
+  for (const [key, { product, cantidad, descuento, descripcion }] of state.cart) {
     const precio = precioUnitario(product);
     const price = precio ?? 0;
     const desc = descuento || 0;
     const total = importeLinea({ cantidad, precio: price, descuento: desc });
     subtotal += total;
-    const name = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
+    // Lo que se muestra es lo que va a leer el cliente (#139): con descripcion
+    // editada, la del vendedor; si no, la del catalogo.
+    const nombreCatalogo = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
+    const name = descripcion || nombreCatalogo;
     // La linea de calca dice sobre cuantas piezas se aplica, sin juzgarlo
     // (decision 8): el pedido mixto y la doble calca por pieza son legitimos.
     const relacion = product.esCalca
@@ -759,7 +766,9 @@ function renderCartLines() {
     html += `
       <div class="cart-line${precio === null ? ' cart-line-sin-precio' : ''}" data-key="${key}">
         <span class="cart-line-sku">${key}</span>
-        <span class="cart-line-name" title="${name}">${name} ${relacion}</span>
+        <span class="cart-line-name" title="${escapeHtml(name)}">${escapeHtml(name)} ${relacion}
+          <button class="qty-icon-btn${descripcion ? ' cart-line-desc-editada' : ''}" onclick="cartLineToggleDescripcion('${key}')" title="Editar la descripcion que ve el cliente">&#9998;</button>
+        </span>
         <div class="cart-line-qty-wrap col-num">
           <span class="qty-display">${cantidad}</span>
           <button class="qty-icon-btn" onclick="cartLineStartEdit('${key}')" title="Editar">&#9998;</button>
@@ -771,6 +780,7 @@ function renderCartLines() {
         <span class="cart-line-desc col-num">${celdaDescuentoLinea(key, desc)}</span>
         <span class="cart-line-total col-num">${precio === null ? '&mdash;' : '$' + fmt(total)}</span>
         <div class="cart-line-del col-del"><button onclick="removeItem('${key}')" title="Quitar">&times;</button></div>
+        ${editorDescripcionLinea(key, descripcion, nombreCatalogo)}
       </div>
     `;
   }
@@ -832,6 +842,66 @@ function aplicarDescuentoATodo(valor) {
   renderCartLines();
 }
 window.aplicarDescuentoATodo = aplicarDescuentoATodo;
+
+// Lo que el vendedor NEGOCIO sobre una partida -- su % de descuento (#137) y su
+// descripcion (#139) -- sobrevive a cambiar la cantidad o a volver a agregar el mismo
+// SKU. Los cinco caminos que reescriben la entrada del carrito la construian desde
+// cero y borraban la captura en silencio: subir la cantidad con el +/- despues de
+// negociar dejaba el documento sin el descuento acordado.
+function conservarCaptura(key, entrada) {
+  const prev = state.cart.get(key);
+  if (!prev) return entrada;
+  const capturado = {};
+  if (prev.descuento) capturado.descuento = prev.descuento;
+  if (prev.descripcion) capturado.descripcion = prev.descripcion;
+  return { ...entrada, ...capturado };
+}
+
+// Lineas con el editor de descripcion abierto (#139). El estado vive fuera del
+// render porque renderCartLines vuelve a pintar la tabla entera en cada cambio y
+// cerrarle el editor al vendedor mientras escribe seria hostil.
+const descripcionesAbiertas = new Set();
+
+// Editor de la descripcion que ve el cliente (#139), en una fila propia bajo la
+// partida: el texto puede ser largo (hasta el limite de Operam) y no cabe en la
+// celda del nombre. Precargado con la del catalogo, que es lo que se manda si el
+// vendedor no escribe nada.
+function editorDescripcionLinea(key, descripcion, nombreCatalogo) {
+  if (!descripcionesAbiertas.has(key)) return '';
+  return `
+    <div class="cart-line-descripcion">
+      <textarea maxlength="${MAX_DESCRIPCION}" rows="2" placeholder="${escapeHtml(nombreCatalogo)}"
+        onchange="cartLineSetDescripcion('${key}', this.value)">${escapeHtml(descripcion || nombreCatalogo)}</textarea>
+      <div class="cart-line-descripcion-hint">Este texto es el que sale en la cotizacion del cliente y en Operam. Vacialo para volver a la descripcion del catalogo.</div>
+    </div>
+  `;
+}
+
+function cartLineToggleDescripcion(key) {
+  if (descripcionesAbiertas.has(key)) descripcionesAbiertas.delete(key);
+  else descripcionesAbiertas.add(key);
+  renderCartLines();
+  document.querySelector(`.cart-line[data-key="${key}"] .cart-line-descripcion textarea`)?.focus();
+}
+window.cartLineToggleDescripcion = cartLineToggleDescripcion;
+
+// La descripcion se guarda SOLO cuando difiere de la del catalogo: esa marca es la
+// que decide si al actualizar el quote de Operam hay que reescribir la linea, y
+// marcar de mas costaria dos POSTs por partida contra la web legacy sin motivo.
+function cartLineSetDescripcion(key, valor) {
+  const item = state.cart.get(key);
+  if (!item) return;
+  const r = validarDescripcionLinea(valor, item.product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, ''));
+  if (!r.ok) {
+    alert(r.mensaje);
+    renderCartLines();
+    return;
+  }
+  if (r.editada) item.descripcion = r.descripcion;
+  else delete item.descripcion;
+  renderCartLines();
+}
+window.cartLineSetDescripcion = cartLineSetDescripcion;
 
 // Celda de % de descuento de una linea (#137). Sin tope asignado no hay captura:
 // se muestra en solo lectura, porque una cotizacion cargada del historial puede
@@ -933,7 +1003,7 @@ function setQty(key, qty, productOverride = null) {
   if (qty <= 0) {
     state.cart.delete(key);
   } else {
-    state.cart.set(key, { product, cantidad: qty });
+    state.cart.set(key, conservarCaptura(key, { product, cantidad: qty }));
   }
 
   updateTierBar();
@@ -974,7 +1044,7 @@ function setQtySku(skuKey, qty, skuData = null, productData = null) {
       weight_kg: product.weight_kg,
       prices: product.prices,
     };
-    state.cart.set(skuKey, { product: skuProduct, cantidad: qty });
+    state.cart.set(skuKey, conservarCaptura(skuKey, { product: skuProduct, cantidad: qty }));
   }
 
   updateTierBar();
@@ -1304,11 +1374,13 @@ function updateResumen() {
 
   const piezasProducto = getPiezasProducto();
   let html = '';
-  for (const [key, { product, cantidad, descuento }] of state.cart) {
+  for (const [key, { product, cantidad, descuento, descripcion }] of state.cart) {
     const precio = precioUnitario(product);
     const price = precio ?? 0;
     const total = importeLinea({ cantidad, precio: price, descuento });
-    const displayName = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
+    // El resumen es la ultima pantalla antes de generar: muestra la descripcion
+    // editada (#139), que es la que va a leer el cliente en el documento.
+    const displayName = descripcion || product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
     const isSkuItem = state.precios.skus?.some(s => s.sku === key);
     // El % negociado se dice junto al precio de lista: el resumen es la ultima
     // pantalla antes de generar y tiene que cuadrar con el documento (#137).
@@ -1652,8 +1724,8 @@ async function guardarYNumerarCotizacion(body, progreso) {
 // (nucleo puro sin IO) porque lee state.cart y el formulario.
 function cartEntriesDesdeEstado() {
   const cartEntries = [];
-  for (const [key, { product, cantidad, descuento }] of state.cart) {
-    cartEntries.push({ codigo: key, nombre: product.name, cantidad, precio: getPrice(product), descuento: descuento || 0 });
+  for (const [key, { product, cantidad, descuento, descripcion }] of state.cart) {
+    cartEntries.push({ codigo: key, nombre: product.name, cantidad, precio: getPrice(product), descuento: descuento || 0, descripcion });
   }
   return cartEntries;
 }
@@ -3131,7 +3203,7 @@ function agregarAlCarritoGuiado() {
   };
 
   const prev = state.cart.get(skuFinal.sku);
-  state.cart.set(skuFinal.sku, { product: skuProduct, cantidad: (prev?.cantidad || 0) + cantidad });
+  state.cart.set(skuFinal.sku, conservarCaptura(skuFinal.sku, { product: skuProduct, cantidad: (prev?.cantidad || 0) + cantidad }));
 
   updateTierBar();
   updateCartSummary();
@@ -4471,6 +4543,13 @@ window.nuevoProspecto = () => {
 // 'nueva' es el comportamiento historico de "Cargar" (#83 F1), ahora con nombre
 // honesto. El default es 'nueva' porque cualquier llamador que no elija explicitamente
 // no debe terminar reescribiendo un documento que el cliente ya tiene.
+// Descripcion editada de una partida guardada (#139), lista para el carrito. Solo la
+// MARCADA se restaura: la de una partida sin marca es la del catalogo de ese momento
+// y volver a meterla como texto propio la congelaria para siempre.
+function descripcionRestaurada(item) {
+  return item?.descripcionEditada && item?.descripcion ? { descripcion: item.descripcion } : {};
+}
+
 async function cargarCotizacion(id, modo = 'nueva') {
   try {
     const res = await api(`/api/cotizaciones/${id}`);
@@ -4514,7 +4593,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
       // regenerar reescribiria el quote de Operam SIN la calca (#114).
       if (esCodigoCalca(item.codigo)) {
         const ficha = catalogoCalcas().find(c => c.code === item.codigo);
-        if (ficha) state.cart.set(item.codigo, { product: productoCalca(ficha), cantidad: item.cantidad, descuento: item.descuento || 0 });
+        if (ficha) state.cart.set(item.codigo, { product: productoCalca(ficha), cantidad: item.cantidad, descuento: item.descuento || 0, ...descripcionRestaurada(item) });
         continue;
       }
       // Intentar encontrar en SKUs o products
@@ -4533,8 +4612,8 @@ async function cargarCotizacion(id, modo = 'nueva') {
 
       // El descuento por linea se restaura junto con la cantidad (#137): sin el,
       // regenerar reescribiria el quote SIN la negociacion (mismo agujero que ya
-      // mordio con la calca).
-      state.cart.set(item.codigo, { product: cartProduct, cantidad: item.cantidad, descuento: item.descuento || 0 });
+      // mordio con la calca). La descripcion editada (#139), por lo mismo.
+      state.cart.set(item.codigo, { product: cartProduct, cantidad: item.cantidad, descuento: item.descuento || 0, ...descripcionRestaurada(item) });
     }
 
     // Envio (issue #102): restaura carrier/servicio/precio tal cual se guardo,

@@ -1328,6 +1328,41 @@ test('subirCotizacionOperam: el descuento de la partida de envio viaja en su Dis
   }
 });
 
+// #139: la descripcion que escribio el vendedor viaja en stock_id_text y persiste
+// como descripcion de la linea (verificado en vivo con el quote 1216: la creacion por
+// API SI la respeta, a diferencia del alta de linea por la web legacy). El payload de
+// la API no lleva la marca interna de "editada": esa solo le sirve al robot de la web
+// legacy para saber que lineas re-escribir al actualizar.
+test('subirCotizacionOperam: la descripcion editada viaja en stock_id_text y la marca interna no', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 334, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1504 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '44100' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato hondo 20 cm, esmaltado a mano', descripcionEditada: true, cantidad: 10, precio: 100, descuento: 0 },
+      ],
+    });
+    const producto = quoteBody.items.find(i => i.stock_id === 'CR20-PLATO');
+    assert.equal(producto.stock_id_text, 'Plato hondo 20 cm, esmaltado a mano');
+    assert.equal('editarDescripcion' in producto, false, 'la marca interna no viaja a la API');
+  } finally {
+    restore();
+  }
+});
+
 test('subirCotizacionOperam: CP de entrega ausente -> flete foraneo por defecto (251021002)', async () => {
   resetSession();
   let quoteBody = null;
@@ -1713,6 +1748,31 @@ test('#114 huellaContenidoQuote: cantidad, precio, descuento y codigo SI cuentan
   assert.notEqual(conItems({ precio: 99 }), base);
   assert.notEqual(conItems({ descuento: 5 }), base);
   assert.notEqual(conItems({ codigo: 'CR20-TAZA' }), base);
+});
+
+// #139: hasta #134 la descripcion se excluia a proposito ("la impone el catalogo de
+// Operam"), lo que resulto falso para la creacion por API: stock_id_text SI persiste.
+// Desde que el vendedor puede escribirla, editarla es un cambio de contenido y tiene
+// que disparar la actualizacion del quote.
+test('#139 huellaContenidoQuote: la descripcion de la partida SI cuenta como cambio', () => {
+  const base = huellaContenidoQuote(cotizacionBase());
+  const conDescripcion = huellaContenidoQuote(cotizacionBase({
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato hondo 20 cm, esmaltado a mano', descripcionEditada: true, cantidad: 10, precio: 100, descuento: 0 }],
+  }));
+  assert.notEqual(conDescripcion, base);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato hondo 20 cm, esmaltado a mano', descripcionEditada: true, cantidad: 10, precio: 100, descuento: 0 }],
+  }), base), true);
+});
+
+// La marca de "editada" decide si el robot de la web legacy corre la ronda de edicion
+// por linea al actualizar: dos cotizaciones con el MISMO texto pero una marcada y otra
+// no producen quotes distintos en el ERP, asi que son contenidos distintos.
+test('#139 huellaContenidoQuote: imponer la descripcion cuenta aunque el texto no cambie', () => {
+  const conMarca = (descripcionEditada) => huellaContenidoQuote(cotizacionBase({
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', descripcionEditada, cantidad: 10, precio: 100, descuento: 0 }],
+  }));
+  assert.notEqual(conMarca(true), conMarca(false));
 });
 
 test('#114 huellaContenidoQuote: los importes SI cuentan como cambio', () => {

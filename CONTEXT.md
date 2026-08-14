@@ -189,7 +189,7 @@ Con descuento, el valor que se declara a la paquetería para el seguro es el val
 
 ## Descripción de partida
 
-El texto que describe cada línea de la cotización. Por omisión viene del catálogo; el vendedor puede editarlo por partida (artículos y calcas). Decisión: la descripción editada debe quedar **también en Operam**, no solo en el documento del cliente — el canal es la edición por línea de la pantalla del quote (verificada por Adrián en la UI; su contrato de escritura está pendiente de descubrir en vivo). Consecuencia: una descripción editada cuenta como cambio de contenido del quote y dispara su actualización.
+El texto que describe cada línea de la cotización, con un máximo de 1000 caracteres (el límite del campo en Operam). Por omisión viene del catálogo; el vendedor puede editarlo por partida (artículos y calcas), y vaciarlo lo regresa a la del catálogo. La descripción editada queda **también en Operam**, no solo en el documento del cliente: al crear el quote viaja en el payload de la API, y al actualizarlo conservando folio se reescribe línea por línea (edición por partida de la pantalla del quote, contrato verificado en vivo con el quote 1216 el 2026-08-13). Una descripción editada cuenta como cambio de contenido del quote y dispara su actualización.
 
 ## Tiempo de entrega (envío cotizado)
 

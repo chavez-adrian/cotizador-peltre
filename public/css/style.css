@@ -975,6 +975,34 @@ body {
   color: var(--text);
 }
 
+/* Editor de la descripcion que ve el cliente (#139): fila propia bajo la partida
+   -- el texto llega a 1000 caracteres y no cabe en la celda del nombre. */
+.cart-line-descripcion {
+  grid-column: 1 / -1;
+  border-top: 1px dashed var(--border);
+  background: var(--bg);
+}
+
+.cart-line-descripcion textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  resize: vertical;
+}
+
+.cart-line-descripcion-hint {
+  font-size: 10px;
+  color: var(--text-light);
+  margin-top: 3px;
+}
+
+/* La partida con descripcion propia marca su lapiz para que se distinga de un
+   nombre de catalogo de un vistazo. */
+.cart-line-desc-editada { color: var(--primary); }
+
 .cart-line-total {
   text-align: right;
   font-weight: 700;

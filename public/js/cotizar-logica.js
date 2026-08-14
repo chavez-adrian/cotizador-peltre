@@ -245,8 +245,14 @@ export function calcularTotalesItems(items) {
 // y sus totales. cartEntries ya trae el precio resuelto (depende del tier
 // vigente, estado que vive en app.js) -- esta funcion solo ensambla el payload.
 export function buildItemsYTotales(cartEntries, envioInfo) {
-  const items = cartEntries.map(({ codigo, nombre, cantidad, precio, descuento }) => ({
-    codigo, descripcion: nombreVisibleProducto(nombre), cantidad, unidad: 'pza', precio, descuento: descuento || 0,
+  const items = cartEntries.map(({ codigo, nombre, cantidad, precio, descuento, descripcion }) => ({
+    codigo,
+    // La descripcion que escribio el vendedor manda sobre la del catalogo (#139), y
+    // viaja marcada: es lo que hace que al ACTUALIZAR el quote de Operam se re-escriba
+    // esa linea en vez de dejar la que impone el catalogo de articulos del ERP.
+    descripcion: descripcion || nombreVisibleProducto(nombre),
+    cantidad, unidad: 'pza', precio, descuento: descuento || 0,
+    ...(descripcion ? { descripcionEditada: true } : {}),
   }));
   const itemEnvio = buildItemEnvio(envioInfo);
   if (itemEnvio) items.push(itemEnvio);

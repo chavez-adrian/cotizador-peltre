@@ -224,3 +224,15 @@ test('B20: (#137) el total de linea es el neto cantidad*precio*(1-descuento/100)
   assert.ok(!text.includes(toHex('518.00')), 'no debe imprimir el bruto 518.00 de ENVIO');
   assert.ok(text.includes(toHex('259.00')), 'el precio unitario de ENVIO debe seguir imprimiendose sin descontar');
 });
+
+// === #139: la descripcion que escribio el vendedor es la que lee el cliente ===
+test('B21: (#139) el PDF imprime la descripcion editada de la partida', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    items: [
+      { codigo: 'A001', descripcion: 'Olla 20 cm esmaltada a mano', descripcionEditada: true, cantidad: 2, unidad: 'pza', precio: 100 },
+    ],
+  });
+  const text = result.toString('latin1');
+  assert.ok(text.includes(toHex('esmaltada a mano')), 'debe imprimir la descripcion que capturo el vendedor');
+});

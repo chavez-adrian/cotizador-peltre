@@ -7,6 +7,7 @@ import {
   esLoginHtml, estaCanceladoHtml,
   parsearFormularioQuote, serializarBodyQuote, leerValidoHastaVista,
   parsearLineasQuote, serializarBodyBorrarLinea, serializarBodyAgregarLinea,
+  serializarBodyEditarLinea, serializarBodyDescripcionLinea,
   leerLineasVista, leerComentariosVista, compararQuoteVista,
 } from '../lib/operam-web.js';
 
@@ -305,14 +306,119 @@ test('serializarBodyQuote: lanza si se pide cambiar Comments y el formulario no 
   );
 });
 
+// --- Ronda de descripcion por partida (#139) ---------------------------------
+// Borrar + re-agregar por la web legacy REVIERTE la descripcion a la del catalogo
+// de articulos (verificado en vivo con el quote 1216, 2026-08-13). Para que la
+// descripcion que escribio el vendedor sobreviva a la actualizacion hay que entrar
+// a cada linea con Edit{n} y confirmarla con item_description + UpdateItem. Los
+// fixtures son los HTML reales de esa sonda.
+const FIXTURE_1216 = readFileSync(join(DIR_FIXTURES, 'quote-1216-form-edicion.html'), 'utf8');
+const FIXTURE_1216_EDIT0 = readFileSync(join(DIR_FIXTURES, 'quote-1216-form-edit0.html'), 'utf8');
+const VISTA_1216_DESC = readFileSync(join(DIR_FIXTURES, 'quote-1216-vista-2.html'), 'utf8');
+
+// En modo edicion la fila trae el textarea de la descripcion, el indice de la linea
+// y su SKU en hidden: son los tres campos que hacen falta para escribir la
+// descripcion correcta en la partida correcta.
+test('parsearFormularioQuote: lee item_description, LineNo y stock_id de la fila en edicion', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE_1216_EDIT0);
+  assert.equal(campos.item_description, 'SONDA DESC API 999');
+  assert.equal(campos.LineNo, '0');
+  assert.equal(campos.stock_id, 'TA14Y31111');
+});
+
+// UpdateItem confirma la linea y CancelItemChanges la descarta: son submits, y
+// como CancelOrder viven en el mismo formulario. Ninguno puede colarse como dato.
+test('parsearFormularioQuote: NO recoge UpdateItem ni CancelItemChanges', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE_1216_EDIT0);
+  assert.equal('UpdateItem' in campos, false);
+  assert.equal('CancelItemChanges' in campos, false);
+});
+
+test('serializarBodyEditarLinea: manda Edit{n} y conserva el resto del formulario', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE_1216);
+  const body = serializarBodyEditarLinea(campos, 0);
+  assert.equal(body.get('Edit0'), '1');
+  assert.equal(body.get('cart_id'), campos.cart_id);
+  assert.equal(body.get('_token'), campos._token);
+  assert.equal(body.has('Edit1'), false);
+  for (const peligroso of ['ProcessOrder', 'CancelOrder', 'Delete0', 'AddItem', 'update', 'UpdateItem']) {
+    assert.equal(body.has(peligroso), false, `${peligroso} no debe ir en el body de entrada a edicion`);
+  }
+});
+
+test('serializarBodyEditarLinea: lanza con un indice que no es una linea', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE_1216);
+  assert.throws(() => serializarBodyEditarLinea(campos, -1), /linea/i);
+  assert.throws(() => serializarBodyEditarLinea(campos, 'primera'), /linea/i);
+});
+
+test('serializarBodyDescripcionLinea: sustituye item_description y manda UpdateItem', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE_1216_EDIT0);
+  const body = serializarBodyDescripcionLinea(campos, { descripcion: 'SONDA DESC WEB 888' });
+  assert.equal(body.get('item_description'), 'SONDA DESC WEB 888');
+  assert.equal(body.get('UpdateItem'), '1');
+  // la linea que se edita y sus importes viajan intactos: se cambia el texto, no la partida
+  assert.equal(body.get('LineNo'), '0');
+  assert.equal(body.get('stock_id'), 'TA14Y31111');
+  assert.equal(body.get('qty'), campos.qty);
+  assert.equal(body.get('price'), campos.price);
+  assert.equal(body.get('Disc'), campos.Disc);
+  for (const peligroso of ['ProcessOrder', 'CancelOrder', 'CancelItemChanges', 'AddItem', 'update']) {
+    assert.equal(body.has(peligroso), false, `${peligroso} no debe ir en el body de la descripcion`);
+  }
+});
+
+// Sin item_description la pagina NO es la de una fila en edicion: postearla escribiria
+// el formulario equivocado. Fallar aqui es gratis (aun no hubo ProcessOrder).
+test('serializarBodyDescripcionLinea: lanza si el formulario no esta en modo edicion de linea', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE_1216);
+  assert.throws(() => serializarBodyDescripcionLinea(campos, { descripcion: 'x' }), /item_description|edicion/i);
+});
+
+// 1000 es el maxlength real del textarea: un texto mas largo lo truncaria Operam en
+// silencio y el ERP diria algo distinto del documento del cliente.
+test('serializarBodyDescripcionLinea: lanza con una descripcion que no cabe en Operam', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE_1216_EDIT0);
+  assert.throws(() => serializarBodyDescripcionLinea(campos, { descripcion: 'a'.repeat(1001) }), /1000/);
+  assert.doesNotThrow(() => serializarBodyDescripcionLinea(campos, { descripcion: 'a'.repeat(1000) }));
+});
+
+test('los bodies de la ronda de descripcion descartan submits contaminados en los campos', () => {
+  const sucios = {
+    delivery_date: '2026-07-26', item_description: 'x', LineNo: '0',
+    CancelOrder: 'Cancelar Cotización', UpdateItem: '1', CancelItemChanges: '1', Delete3: '1', AddItem: 'Agregar',
+  };
+  const bodies = [serializarBodyEditarLinea(sucios, 1), serializarBodyDescripcionLinea(sucios, { descripcion: 'y' })];
+  for (const body of bodies) {
+    assert.equal(body.has('CancelOrder'), false);
+    assert.equal(body.has('CancelItemChanges'), false);
+    assert.equal(body.has('Delete3'), false);
+    assert.equal(body.has('AddItem'), false);
+  }
+  assert.equal(bodies[0].has('UpdateItem'), false);
+});
+
 // --- Verificacion post-escritura (obligatoria, ADR-0008 paso 6) --------------
 
 test('leerLineasVista: extrae SKU, cantidad, precio y descuento de la vista REAL', () => {
   const lineas = leerLineasVista(VISTA_CONCEPTOS);
   assert.equal(lineas.length, 3);
-  assert.deepEqual(lineas[0], { stockId: 'TA14Y31111', cantidad: 7, precio: 33.33, descuento: 0 });
-  assert.deepEqual(lineas[1], { stockId: 'VA05Y4001120', cantidad: 2, precio: 111.11, descuento: 10 });
-  assert.deepEqual(lineas[2], { stockId: '251021001', cantidad: 1, precio: 123.45, descuento: 0 });
+  assert.equal(lineas[0].stockId, 'TA14Y31111');
+  assert.equal(lineas[0].cantidad, 7);
+  assert.equal(lineas[0].precio, 33.33);
+  assert.equal(lineas[0].descuento, 0);
+  assert.equal(lineas[1].stockId, 'VA05Y4001120');
+  assert.equal(lineas[1].descuento, 10);
+  assert.equal(lineas[2].stockId, '251021001');
+  assert.equal(lineas[2].precio, 123.45);
+});
+
+// La descripcion se lee de la vista desde #139: es lo que se compara para saber si
+// la ronda de edicion por linea de verdad quedo escrita en el ERP.
+test('leerLineasVista: trae la descripcion que quedo en la partida', () => {
+  const [linea] = leerLineasVista(VISTA_1216_DESC);
+  assert.equal(linea.stockId, 'TA14Y31111');
+  assert.equal(linea.descripcion, 'SONDA DESC WEB 888');
 });
 
 test('leerLineasVista: [] cuando la pagina no trae la tabla de conceptos', () => {
@@ -354,13 +460,43 @@ test('compararQuoteVista: sin discrepancias cuando el quote quedo como se espera
   assert.deepEqual(r.discrepancias, []);
 });
 
-// La descripcion de la partida la pone el CATALOGO de Operam, no el stock_id_text que
-// manda la cotizacion (verificado en vivo: "FedEx Ground" quedo como "Envio Economico
-// FedEx Ground(R)"). Compararla haria fallar toda actualizacion correcta.
+// Sin descripcion editada la partida se queda con la del CATALOGO de Operam (al
+// re-agregarla por la web legacy FA la impone: "FedEx Ground" quedo como "Envio
+// Economico FedEx Ground(R)"). Compararla ahi haria fallar toda actualizacion
+// correcta, asi que solo se compara la que el cotizador se propuso escribir.
 test('compararQuoteVista: la descripcion del catalogo de Operam no cuenta como discrepancia', () => {
   const r = compararQuoteVista({ items: ESPERADO_1200, comments: COMMENTS_1200, vigencia: '2026-09-30' }, VISTA_CONCEPTOS);
   assert.equal(r.discrepancias.filter(d => d.campo === 'descripcion').length, 0);
   assert.equal(r.ok, true);
+});
+
+// La descripcion que SI escribio el vendedor se verifica: es el unico modo de saber
+// si la ronda de edicion por linea quedo escrita (el ProcessOrder de la web legacy no
+// trae marcador de exito -- verificado con el quote 1216).
+test('compararQuoteVista: la descripcion editada que no quedo escrita SI es discrepancia', () => {
+  const esperado = [{ stock_id: 'TA14Y31111', stock_id_text: 'Tazon esmaltado a mano, mostaza', editarDescripcion: true, qty: 1, price: 107.76, Disc: 0 }];
+  const r = compararQuoteVista({ items: esperado }, VISTA_1216_DESC);
+  assert.equal(r.verificado, true);
+  assert.equal(r.ok, false);
+  const d = r.discrepancias.find(x => x.campo === 'descripcion');
+  assert.ok(d, 'debe reportar la descripcion');
+  assert.equal(d.esperado, 'Tazon esmaltado a mano, mostaza');
+  assert.equal(d.encontrado, 'SONDA DESC WEB 888');
+});
+
+test('compararQuoteVista: la descripcion editada que si quedo escrita no es discrepancia', () => {
+  const esperado = [{ stock_id: 'TA14Y31111', stock_id_text: 'SONDA DESC WEB 888', editarDescripcion: true, qty: 1, price: 107.76, Disc: 0 }];
+  const r = compararQuoteVista({ items: esperado }, VISTA_1216_DESC);
+  assert.deepEqual(r.discrepancias, []);
+  assert.equal(r.ok, true);
+});
+
+// El textarea de Operam guarda el salto de linea pero la vista lo renderiza dentro de
+// una celda: comparar en crudo marcaria una discrepancia inexistente.
+test('compararQuoteVista: los saltos de linea de la descripcion no inventan discrepancias', () => {
+  const esperado = [{ stock_id: 'TA14Y31111', stock_id_text: 'SONDA DESC\n  WEB 888', editarDescripcion: true, qty: 1, price: 107.76, Disc: 0 }];
+  const r = compararQuoteVista({ items: esperado }, VISTA_1216_DESC);
+  assert.equal(r.discrepancias.filter(d => d.campo === 'descripcion').length, 0);
 });
 
 // Con el SKU cruzado en una linea, su cantidad/precio ya no informan nada (se

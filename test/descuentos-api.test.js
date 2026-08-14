@@ -193,3 +193,29 @@ test('AC3: el descuento del envio estructurado tambien pasa por el tope', async 
   assert.strictEqual(res.status, 403);
   assert.match(res.body.error, /ENVIO/);
 });
+
+// === #139: la descripcion de partida tampoco depende de la pantalla ===
+// 1000 es el limite del textarea de Operam: un texto mas largo lo truncaria el ERP
+// en silencio y el quote diria algo distinto del documento que ya vio el cliente.
+test('#139: una descripcion mas larga que el limite de Operam -> rechazo y nada guardado', async () => {
+  setTope(null);
+  const antes = readCots().length;
+  const res = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenVendedor}`)
+    .send(cotizacionCon([{ ...ITEM_BASE, descripcion: 'a'.repeat(1001), descripcionEditada: true }]));
+  assert.strictEqual(res.status, 400);
+  assert.match(res.body.error, /AB12/);
+  assert.match(res.body.error, /1000/);
+  assert.strictEqual(readCots().length, antes);
+});
+
+test('#139: la descripcion editada se guarda con su marca para poder regenerar', async () => {
+  setTope(null);
+  const res = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenVendedor}`)
+    .send(cotizacionCon([{ ...ITEM_BASE, descripcion: 'Olla 20 cm esmaltada a mano', descripcionEditada: true }]));
+  assert.strictEqual(res.status, 200);
+  const guardada = readCots().find(c => c.id === res.body.id);
+  assert.strictEqual(guardada.data.items[0].descripcion, 'Olla 20 cm esmaltada a mano');
+  assert.strictEqual(guardada.data.items[0].descripcionEditada, true);
+});

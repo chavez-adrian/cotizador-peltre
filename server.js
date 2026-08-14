@@ -39,6 +39,7 @@ import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPe
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
+import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -274,6 +275,12 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   // frena la captura en el carrito, aplicada aqui al vendedor autenticado.
   const descuentos = validarDescuentosCotizacion(partidasConDescuento(req.body), topeDescuentoDeUsuario(req.user));
   if (!descuentos.ok) return res.status(403).json({ error: descuentos.mensaje });
+  // La descripcion de partida tampoco depende de la pantalla (#139): el limite es el
+  // del textarea de Operam, y pasarse deja al ERP diciendo algo distinto del
+  // documento que el cliente ya vio. Es un dato mal formado, no una falta de
+  // permiso: 400, no 403.
+  const descripciones = validarDescripcionesCotizacion(req.body?.items);
+  if (!descripciones.ok) return res.status(400).json({ error: descripciones.mensaje });
   try {
     const data = req.body;
     data.vendedor = req.user.name;

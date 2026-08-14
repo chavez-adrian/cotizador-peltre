@@ -182,3 +182,15 @@ test('21. (#137) el total de linea es el neto cantidad*precio*(1-descuento/100),
   assert.ok(!html.includes('<strong>518.00</strong>'), 'no debe imprimir el bruto 518.00 de ENVIO');
   assert.ok(html.includes('259.00'), 'el precio unitario de ENVIO debe seguir imprimiendose sin descontar');
 });
+
+// === #139: la descripcion que escribio el vendedor es la que lee el cliente ===
+// El documento imprime lo capturado, no el nombre del catalogo: es el punto entero
+// del ticket (el texto del catalogo a veces no le dice nada al cliente).
+test('22. (#139) el HTML imprime la descripcion editada de la partida', () => {
+  const html = generateQuoteHTML({
+    items: [
+      { codigo: 'A001', descripcion: 'Olla 20 cm esmaltada a mano, borde reforzado', descripcionEditada: true, cantidad: 2, unidad: 'pza', precio: 100 },
+    ],
+  });
+  assert.ok(html.includes('Olla 20 cm esmaltada a mano, borde reforzado'));
+});

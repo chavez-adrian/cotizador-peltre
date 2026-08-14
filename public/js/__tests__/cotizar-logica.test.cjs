@@ -512,6 +512,25 @@ test('#137-4: envio sin descuento capturado -> 0', () => {
   assert.strictEqual(buildItemEnvio({ shippingOpt: 'manual', shippingCost: 150, shippingDesc: 'Envio' }).descuento, 0);
 });
 
+// === #139: la descripcion que escribe el vendedor es la que ve el cliente ===
+test('#139-1: buildItemsYTotales manda la descripcion editada en vez de la del catalogo', () => {
+  const cartEntries = [
+    { codigo: 'AB12', nombre: 'AB12 Olla peltre', cantidad: 1, precio: 100, descripcion: 'Olla 20 cm esmaltada a mano' },
+  ];
+  const r = buildItemsYTotales(cartEntries, { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
+  assert.strictEqual(r.items[0].descripcion, 'Olla 20 cm esmaltada a mano');
+  // La marca viaja con la partida: es lo que hace que al actualizar el quote de
+  // Operam se re-escriba la descripcion en vez de dejar la del catalogo.
+  assert.strictEqual(r.items[0].descripcionEditada, true);
+});
+
+test('#139-2: sin descripcion capturada manda la del catalogo y no marca nada', () => {
+  const r = buildItemsYTotales([{ codigo: 'AB12', nombre: 'AB12 Olla peltre', cantidad: 1, precio: 100 }],
+    { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
+  assert.strictEqual(r.items[0].descripcion, 'Olla peltre');
+  assert.strictEqual(r.items[0].descripcionEditada, undefined);
+});
+
 test('#137-5: importeLinea es la unica formula de importe neto de una partida', () => {
   assert.strictEqual(importeLinea({ cantidad: 3, precio: 100, descuento: 10 }), 270);
   assert.strictEqual(importeLinea({ cantidad: 2, precio: 50 }), 100);
