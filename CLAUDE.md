@@ -54,6 +54,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 | `recolector-genericos.mjs` | Lote historico de quotes de debtors genericos → bandeja (#124); orquestado por `scripts/rescatar-genericos.mjs` |
 | `catalogo-operam.js` | Catalogo generado desde Operam (#128/#131); orquestado por `scripts/sync-catalogo.mjs` |
 | `operam-web.js` | Web legacy (FrontAccounting): vigencia (#106) + actualizar quote conservando folio (#104) + ronda de descripcion por partida (#139) + deteccion de cancelados |
+| `vendedores-store.js` | Registro de vendedores (identidad, PIN en claro, rol, operam_id, tope) en Neon (#140/#141); auto-siembra desde `data/vendedores.json` si la tabla esta vacia; el PUT de admin reemplaza el registro completo |
 | `db.js` | Pool pg; `query()` retorna null sin pool (graceful); auto-crea `clientes_log` y `operam_webhooks_log` en Neon |
 | `dropbox.js` | OAuth refresh; `upload` y `subirCsfDropbox` (backup de CSF, fire-and-forget) |
 | `parsear-csf.js` | Puro: extrae RFC/razon social/domicilio/regimen del PDF de CSF |

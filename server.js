@@ -31,6 +31,7 @@ import { calcularColaHoy } from './lib/cola-hoy.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
+import * as vendedoresStore from './lib/vendedores-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
@@ -109,19 +110,19 @@ function adminMiddleware(req, res, next) {
   next();
 }
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { vendedorId, pin } = req.body;
-  const vendedores = readJSON('vendedores.json');
-  if (!vendedores) return res.status(500).json({ error: 'Vendedores no configurados' });
+  const vendedores = await vendedoresStore.listar();
+  if (!vendedores.length) return res.status(500).json({ error: 'Vendedores no configurados' });
   const v = vendedores.find(v => v.id === vendedorId && v.pin === pin);
   if (!v) return res.status(401).json({ error: 'PIN incorrecto' });
   const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '24h' });
   res.json({ token, user: { id: v.id, name: v.name, role: v.role } });
 });
 
-app.get('/api/vendedores', (req, res) => {
-  const vendedores = readJSON('vendedores.json');
-  if (!vendedores) return res.status(500).json({ error: 'Vendedores no configurados' });
+app.get('/api/vendedores', async (req, res) => {
+  const vendedores = await vendedoresStore.listar();
+  if (!vendedores.length) return res.status(500).json({ error: 'Vendedores no configurados' });
   res.json(vendedores.map(v => ({ id: v.id, name: v.name })));
 });
 
@@ -130,12 +131,12 @@ app.get('/api/vendedores', (req, res) => {
 // admin otorga o quita el permiso, asi que meterlo ahi lo dejaria congelado
 // hasta el siguiente login. El rol viene del token (el mismo que ya decide
 // adminMiddleware); un id que no este en el registro cae a 0.
-function topeDescuentoDeUsuario(user) {
-  const registro = (readJSON('vendedores.json') || []).find(v => v.id === user?.id);
+async function topeDescuentoDeUsuario(user) {
+  const registro = (await vendedoresStore.listar()).find(v => v.id === user?.id);
   return topeDescuentoVendedor({ role: user?.role, topeDescuento: registro?.topeDescuento });
 }
 
-app.get('/api/precios', authMiddleware, (req, res) => {
+app.get('/api/precios', authMiddleware, async (req, res) => {
   const precios = readJSON('precios.json');
   if (!precios) return res.status(500).json({ error: 'Precios no disponibles' });
   const config = readJSON('config.json') || {
@@ -144,7 +145,7 @@ app.get('/api/precios', authMiddleware, (req, res) => {
   };
   // El tope viaja con los precios porque es parte del poder de precio del
   // vendedor y la pantalla lo refresca en cada arranque de sesion (showApp).
-  res.json({ ...precios, config, topeDescuento: topeDescuentoDeUsuario(req.user) });
+  res.json({ ...precios, config, topeDescuento: await topeDescuentoDeUsuario(req.user) });
 });
 
 function validarTelefonoCotizacion(req, res) {
@@ -273,7 +274,7 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   if (!validarTelefonoCotizacion(req, res)) return;
   // El tope de descuento no depende de la pantalla (#137): misma regla pura que
   // frena la captura en el carrito, aplicada aqui al vendedor autenticado.
-  const descuentos = validarDescuentosCotizacion(partidasConDescuento(req.body), topeDescuentoDeUsuario(req.user));
+  const descuentos = validarDescuentosCotizacion(partidasConDescuento(req.body), await topeDescuentoDeUsuario(req.user));
   if (!descuentos.ok) return res.status(403).json({ error: descuentos.mensaje });
   // La descripcion de partida tampoco depende de la pantalla (#139): el limite es el
   // del textarea de Operam, y pasarse deja al ERP diciendo algo distinto del
@@ -768,10 +769,10 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
 // Asignado). La transicion de etapa la decide la regla de dominio
 // (transicionPorAsignacion) -- desde no_asignado -> por_cotizar; la capa de IO
 // (asignarVendedor) la aplica. El vendedor elegido debe estar en el catalogo
-// (data/vendedores.json, la misma fuente que pobla el selector en /api/catalogos).
+// (registro de vendedores, la misma fuente que pobla el selector en /api/catalogos).
 app.patch('/api/prospectos/:id/asignar', authMiddleware, adminMiddleware, async (req, res) => {
   const { vendedor } = req.body || {};
-  const catalogo = (readJSON('vendedores.json') || []).filter(v => v.operam_id != null);
+  const catalogo = (await vendedoresStore.listar()).filter(v => v.operam_id != null);
   if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
     return res.status(400).json({ error: 'El vendedor a asignar debe ser uno del catálogo' });
   }
@@ -878,7 +879,7 @@ app.get('/api/admin/prospectos/no-util', authMiddleware, adminMiddleware, async 
 // mismo trade-off que la captura manual).
 app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, upload.single('archivo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se recibio archivo' });
-  const vendedores = readJSON('vendedores.json') || [];
+  const vendedores = await vendedoresStore.listar();
   const vendedorDefault = req.body?.vendedor || req.user.name;
   let parseo;
   try {
@@ -962,16 +963,16 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
   res.json({ saved: true });
 });
 
-app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => {
-  res.json(readJSON('vendedores.json'));
+app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, res) => {
+  res.json(await vendedoresStore.listar());
 });
 
-app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => {
+app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, res) => {
   const vendedores = req.body;
   if (!Array.isArray(vendedores)) return res.status(400).json({ error: 'Formato invalido' });
   // El tope se normaliza al guardarlo (#137): un valor basura o fuera de rango
   // capturado en la administracion nunca puede volverse permiso ilimitado.
-  writeJSON('vendedores.json', vendedores.map(v => (
+  await vendedoresStore.reemplazar(vendedores.map(v => (
     v && v.topeDescuento !== undefined ? { ...v, topeDescuento: normalizarTope(v.topeDescuento) } : v
   )));
   res.json({ saved: true });
@@ -1106,7 +1107,7 @@ app.post('/api/admin/bandeja/:folio/aceptar', authMiddleware, adminMiddleware, a
     return res.status(409).json({ error: `Este candidato ya fue ${candidato.estado}`, estado: candidato.estado });
   }
   const vendedor = (req.body && req.body.vendedor) || candidato.vendedor;
-  const catalogo = (readJSON('vendedores.json') || []).filter(v => v.operam_id != null);
+  const catalogo = (await vendedoresStore.listar()).filter(v => v.operam_id != null);
   if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
     return res.status(400).json({ error: 'El vendedor debe ser uno del catálogo' });
   }
@@ -1261,7 +1262,7 @@ app.post('/api/admin/bandeja/buscar-nuevas', authMiddleware, adminMiddleware, as
     const [cotizaciones, bandeja, prospectos] = await Promise.all([
       cotStore.listar(), bandejaStore.listar(), prospectosStore.listar(),
     ]);
-    const vendedores = readJSON('vendedores.json') || [];
+    const vendedores = await vendedoresStore.listar();
     const bandejaFolios = bandeja.map(b => b.folio);
     const folioDesde = folioMaximoConocido(cotizaciones, bandeja) + 1;
     // Cotizaciones ANULADAS en Operam (#76): la API no expone la cancelacion; el
@@ -1427,7 +1428,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       }
       steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
 
-      salesman = (readJSON('vendedores.json') || []).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
+      salesman = (await vendedoresStore.listar()).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
       const salesTypeId = resolverSalesTypeId(entry.tier, listasPrecios);
       let creado;
       try {
@@ -2123,8 +2124,8 @@ app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/catalogos', authMiddleware, (_req, res) => {
-  const vendedores = (readJSON('vendedores.json') || [])
+app.get('/api/catalogos', authMiddleware, async (_req, res) => {
+  const vendedores = (await vendedoresStore.listar())
     .filter(v => v.operam_id != null)
     .map(v => ({ id: v.id, name: v.name, operam_id: v.operam_id }));
   res.json({ segmentos: SEGMENTOS, vendedores, listas_precios: listasPrecios });
