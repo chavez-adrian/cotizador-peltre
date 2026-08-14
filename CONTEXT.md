@@ -59,7 +59,7 @@ Hay dos formas de que una cotización sea decorada, y solo una deja rastro en el
 
 Partida independiente de la cotización, con su propia cantidad —medida en **piezas decoradas**, no en diseños— y sin ligarse a un producto base. Su precio sale de la misma lista que el resto de la cotización, pero **sus piezas no cuentan para el volumen que determina esa lista**: la lista la fijan las piezas de producto y la calca la hereda para su precio.
 
-La calca no tiene precio de menudeo: **se vende desde 100 piezas de producto**. Por debajo de ese umbral no se cotiza, y el umbral es una condición sostenida, no una validación de captura — una cotización que cae bajo las 100 piezas con calcas dentro queda en estado inválido y no puede generar documento hasta resolverse. La consecuencia aceptada es que una cotización de solo calcas no existe en el cotizador; ese caso se levanta a mano en Operam.
+La calca no tiene precio de menudeo: cuando la lista vigente de la cotización es Menudeo, la calca se cobra con la lista **M100**, la primera donde existe. Cada partida de calca se factura con un **piso de 100 piezas** (decisión 2026-08-14, issue #98; supersede el estado inválido de #91): el proveedor imprime mínimo 100 calcas por diseño, así que una captura menor se sube automáticamente a 100 con aviso — la cantidad facturada es la misma en carrito, documento y quote. El piso es **por partida** (por diseño), no por el total de calcas, y aplica siempre, aunque el volumen de producto supere el mínimo de sobra. La consecuencia aceptada se mantiene: una cotización de solo calcas no existe en el cotizador; ese caso se levanta a mano en Operam.
 
 ## Aplicación extra
 
@@ -182,6 +182,10 @@ RFC que se usa cuando el cliente no tiene RFC mexicano. Dos variantes: `XAXX0101
 ## Lista de precios
 
 Descuento estructural asignado a un cliente según el volumen estimado de compra. Opciones: M100, M350, M550, M1500, M6000, M6001. La selecciona el **vendedor** en el alta con base en la estimación inicial del cliente. El vendedor es responsable de ajustarla si el volumen cotizado cambia. Adrián la revisa en la aprobación del pedido y notifica al vendedor si hay error.
+
+## Lista fijada (override)
+
+En la cotización, la lista la determina el tabulador automático por piezas de producto (**Auto**). Un vendedor con el **permiso de fijar lista** (permiso individual otorgado por el admin, apagado por omisión; el rol admin siempre lo tiene) puede fijarla manualmente a cualquiera de los tiers, y la lista fijada manda de forma **absoluta** sobre el volumen, en ambas direcciones, con aviso informativo — nunca bloqueante — cuando no coincide con la que daría el tabulador (issue #98). El override vive en la **cotización**, no en el cliente: la siguiente cotización del mismo cliente arranca en Auto. **Editar** conserva la lista fijada sin importar quién edite (sin permiso se puede dejar o regresar a Auto, no cambiar a otra); **Copiar** solo la hereda si quien copia tiene el permiso. No deja marca especial: la lista elegida queda guardada con la cotización como siempre.
 
 ## Descuento (comercial)
 
