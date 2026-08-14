@@ -88,7 +88,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 
 ## Auth
 
-- Rutas del cotizador: JWT de 30 dias; `vendedores.json` tiene ID + PIN; rol `admin` desbloquea `/api/admin/*`.
+- Rutas del cotizador: JWT de 30 dias; el registro de vendedores (ID + PIN) vive en `lib/vendedores-store.js` (Neon con fallback al JSON, #141); rol `admin` desbloquea `/api/admin/*`.
 - Rutas CSF: mismas garantias (`authMiddleware`). El ciclo de vida del cliente tiene 3 caminos autenticados: alta generica al subir cotizacion, upgrade fiscal (#85, gate anti-fusion por RFC exacto) y alta completa. Detalle en `docs/arquitectura.md` §Auth.
 - `server.js` carga `.env` manualmente sin dotenv (lineas ~24-30) y PISA `process.env`.
 
@@ -98,6 +98,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 
 **Frontend** (`public/js/__tests__/`): CommonJS (`.cjs`), sin DOM. `app.js` NO es importable en Node (efectos de navegador en scope de modulo); las funciones puras compartidas viven en modulos intermedios (`alta-logica.js`, importado con `await import()` en un `before()`; el resto en `helpers.cjs` via `require`). No escribir tests tautologicos que afirmen literales que el codigo real nunca construye (leccion de #36).
 
+- **El `.env` local NUNCA debe llevar `DATABASE_URL`**: varias suites escriben via stores y con pool le pegarian a Neon real. La suite de vendedores ademas la borra antes de importar `server.js` (defensa extra); el resto confia en la convencion.
 - Mock de Operam: `mockFetchByUrl(urlHandlers)` / `mockOperamFetch(handlers)` interceptan por substring de URL y restauran al terminar.
 - Testear PDFs: pasar `_compress: false` y buscar strings con `buffer.toString('latin1').includes(str)`.
 

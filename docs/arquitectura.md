@@ -101,16 +101,20 @@ Modulo ES sin efectos de navegador que concentra la logica pura del flujo de alt
 `GET /api/catalogos` — sirve datos para los selectores del formulario de alta:
 
 - `segmentos`: hardcodeados con los ids internos REALES de Operam (11 segmentos; id=1 es "Sin segmento", id=14 "Distribuidores", etc. — la clave 000-1000 de la UI de Operam NO es el id de la API; verificado contra produccion 2026-06-10; Operam no expone catalogo de segmentos, GET segments responde 501).
-- `vendedores`: de `data/vendedores.json` filtrando `operam_id != null`.
+- `vendedores`: del store de vendedores (`lib/vendedores-store.js`, #141) filtrando `operam_id != null`.
 - `listas_precios`: de `GET /api/v3/sales/sales_types` (todas las activas). Operam entrega la etiqueta en `sales_type` (texto: M100, "Precio de lista", "Segundas", "Amazon"...) y el id numerico en `id` — que es lo que el cliente guarda en su campo `sales_type`. El catalogo expone `{ id: t.id (numerico), nombre: t.sales_type (etiqueta) }`; el selector muestra la etiqueta y manda el id numerico (verificado en vivo 2026-06-17; la API ya NO usa `sales_type_id` ni `description`).
 
-`data/vendedores.json` tiene dos espacios de ID: `id` (interno del cotizador, secuencial) y `operam_id` (ID en Operam, no secuencial). El campo `salesman` que va al body de Operam usa `operam_id`.
+El registro de vendedores tiene dos espacios de ID: `id` (interno del cotizador, secuencial) y `operam_id` (ID en Operam, no secuencial). El campo `salesman` que va al body de Operam usa `operam_id`.
+
+### Registro de vendedores (`lib/vendedores-store.js`, #140/#141)
+
+Neon cuando hay `DATABASE_URL`, fallback a `data/vendedores.json` cuando no (dev y tests) — mismo patron que los demas stores. El JSON versionado es SEMILLA: una tabla vacia se puebla una sola vez desde el; con datos, se ignora. `listar()` y `reemplazar(array)` (el PUT de admin manda el registro completo; DELETE+INSERT van en transaccion — `transaccion()` de `lib/db.js` — para que un INSERT fallido no deje la tabla vacia y el siguiente arranque no re-siembre pisando lo editado en /admin). PIN en claro (decision #140). El tope `NULL` se omite del objeto (sin tope = campo ausente, como en el JSON). OJO: los scripts standalone (`scripts/backfill-operam.mjs`, `scripts/detectar-cancelados.mjs`, `scripts/rescatar-genericos.mjs`) siguen leyendo el JSON semilla directo — usan solo `name`/`operam_id` (nunca PIN); si el admin edita vendedores en /admin, esos scripts no lo ven.
 
 ## Auth y ciclo de vida del cliente (detalle)
 
 Dos niveles:
 
-- **Rutas del cotizador**: JWT de 30 dias. `vendedores.json` contiene ID + PIN. El rol `admin` desbloquea `/api/admin/*`.
+- **Rutas del cotizador**: JWT de 30 dias. El registro de vendedores (ID + PIN) vive en el store (`lib/vendedores-store.js`, Neon con fallback al JSON). El rol `admin` desbloquea `/api/admin/*`.
 - **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/actualizar-cliente-fiscal/:id`, `/api/log`, `/api/csf-from-url`): protegidas con `authMiddleware` igual que el resto del cotizador (la herramienta standalone `csf-upload.html` se retiro en ADR-0003).
 
 El ciclo de vida del cliente tiene tres caminos, todos autenticados:

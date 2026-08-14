@@ -20,6 +20,10 @@ if (existsSync(envPath)) {
     if (match) process.env[match[1].trim()] = match[2].trim();
   }
 }
+// Esta suite ESCRIBE via el store (el PUT hace DELETE en Neon si hay pool). El
+// borrado es efectivo porque el pool de lib/db.js nace durante el import
+// dinamico de abajo, que corre despues de esta linea.
+delete process.env.DATABASE_URL;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app } = await import('../server.js');

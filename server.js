@@ -110,20 +110,32 @@ function adminMiddleware(req, res, next) {
   next();
 }
 
+// Los handlers que consultan el store de vendedores llevan try/catch propio:
+// en Express 4 un rechazo en handler async no llega al error handler y tumba
+// el proceso (unhandled rejection). Sin DATABASE_URL el store no rechaza; con
+// Neon, un fallo transitorio debe ser un 500, no una caida.
 app.post('/api/login', async (req, res) => {
-  const { vendedorId, pin } = req.body;
-  const vendedores = await vendedoresStore.listar();
-  if (!vendedores.length) return res.status(500).json({ error: 'Vendedores no configurados' });
-  const v = vendedores.find(v => v.id === vendedorId && v.pin === pin);
-  if (!v) return res.status(401).json({ error: 'PIN incorrecto' });
-  const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '24h' });
-  res.json({ token, user: { id: v.id, name: v.name, role: v.role } });
+  try {
+    const { vendedorId, pin } = req.body;
+    const vendedores = await vendedoresStore.listar();
+    if (!vendedores.length) return res.status(500).json({ error: 'Vendedores no configurados' });
+    const v = vendedores.find(v => v.id === vendedorId && v.pin === pin);
+    if (!v) return res.status(401).json({ error: 'PIN incorrecto' });
+    const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ token, user: { id: v.id, name: v.name, role: v.role } });
+  } catch (err) {
+    res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
+  }
 });
 
 app.get('/api/vendedores', async (req, res) => {
-  const vendedores = await vendedoresStore.listar();
-  if (!vendedores.length) return res.status(500).json({ error: 'Vendedores no configurados' });
-  res.json(vendedores.map(v => ({ id: v.id, name: v.name })));
+  try {
+    const vendedores = await vendedoresStore.listar();
+    if (!vendedores.length) return res.status(500).json({ error: 'Vendedores no configurados' });
+    res.json(vendedores.map(v => ({ id: v.id, name: v.name })));
+  } catch (err) {
+    res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
+  }
 });
 
 // Tope de descuento VIGENTE del usuario autenticado (#137). Se lee del registro
@@ -137,15 +149,19 @@ async function topeDescuentoDeUsuario(user) {
 }
 
 app.get('/api/precios', authMiddleware, async (req, res) => {
-  const precios = readJSON('precios.json');
-  if (!precios) return res.status(500).json({ error: 'Precios no disponibles' });
-  const config = readJSON('config.json') || {
-    tiposActivos: precios.tiposProducto || [],
-    texturasActivas: Object.keys(precios.texturas || {}).map(Number).filter(t => ![0, 8, 9].includes(t)),
-  };
-  // El tope viaja con los precios porque es parte del poder de precio del
-  // vendedor y la pantalla lo refresca en cada arranque de sesion (showApp).
-  res.json({ ...precios, config, topeDescuento: await topeDescuentoDeUsuario(req.user) });
+  try {
+    const precios = readJSON('precios.json');
+    if (!precios) return res.status(500).json({ error: 'Precios no disponibles' });
+    const config = readJSON('config.json') || {
+      tiposActivos: precios.tiposProducto || [],
+      texturasActivas: Object.keys(precios.texturas || {}).map(Number).filter(t => ![0, 8, 9].includes(t)),
+    };
+    // El tope viaja con los precios porque es parte del poder de precio del
+    // vendedor y la pantalla lo refresca en cada arranque de sesion (showApp).
+    res.json({ ...precios, config, topeDescuento: await topeDescuentoDeUsuario(req.user) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 function validarTelefonoCotizacion(req, res) {
@@ -964,18 +980,26 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
 });
 
 app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, res) => {
-  res.json(await vendedoresStore.listar());
+  try {
+    res.json(await vendedoresStore.listar());
+  } catch (err) {
+    res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
+  }
 });
 
 app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, res) => {
-  const vendedores = req.body;
-  if (!Array.isArray(vendedores)) return res.status(400).json({ error: 'Formato invalido' });
-  // El tope se normaliza al guardarlo (#137): un valor basura o fuera de rango
-  // capturado en la administracion nunca puede volverse permiso ilimitado.
-  await vendedoresStore.reemplazar(vendedores.map(v => (
-    v && v.topeDescuento !== undefined ? { ...v, topeDescuento: normalizarTope(v.topeDescuento) } : v
-  )));
-  res.json({ saved: true });
+  try {
+    const vendedores = req.body;
+    if (!Array.isArray(vendedores)) return res.status(400).json({ error: 'Formato invalido' });
+    // El tope se normaliza al guardarlo (#137): un valor basura o fuera de rango
+    // capturado en la administracion nunca puede volverse permiso ilimitado.
+    await vendedoresStore.reemplazar(vendedores.map(v => (
+      v && v.topeDescuento !== undefined ? { ...v, topeDescuento: normalizarTope(v.topeDescuento) } : v
+    )));
+    res.json({ saved: true });
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudo guardar el registro: ' + err.message });
+  }
 });
 
 const ENVIA_ORIGIN = {
@@ -2125,10 +2149,14 @@ app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/catalogos', authMiddleware, async (_req, res) => {
-  const vendedores = (await vendedoresStore.listar())
-    .filter(v => v.operam_id != null)
-    .map(v => ({ id: v.id, name: v.name, operam_id: v.operam_id }));
-  res.json({ segmentos: SEGMENTOS, vendedores, listas_precios: listasPrecios });
+  try {
+    const vendedores = (await vendedoresStore.listar())
+      .filter(v => v.operam_id != null)
+      .map(v => ({ id: v.id, name: v.name, operam_id: v.operam_id }));
+    res.json({ segmentos: SEGMENTOS, vendedores, listas_precios: listasPrecios });
+  } catch (err) {
+    res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
+  }
 });
 
 app.get('/admin', (req, res) => {
