@@ -194,6 +194,39 @@ export function textoBotonGenerar(tipo, modoActualizacion) {
   return modoActualizacion ? 'Actualizar PDF' : 'Generar PDF';
 }
 
+// Buscador del Historial (#146). Nucleo puro: recibe el arreglo YA cargado en
+// memoria (el listado completo viaja en el GET existente, sin ida al servidor)
+// y devuelve el subconjunto que matchea. Se aplica antes de pintar, asi que
+// Lista y Tablero comparten el filtro gratis y cambiar de modo lo conserva.
+// El criterio es un objeto para que los tickets que amplian el matching y
+// agregan el rango de fechas (#144) solo le sumen llaves.
+//
+// Matchea por razon social del cliente y por el folio REAL de Operam
+// (ADR-0009) -- nunca por el id interno, que es clave tecnica de URLs.
+export function filtrarCotizaciones(cotizaciones, criterio) {
+  const lista = cotizaciones || [];
+  const texto = normalizarBusqueda(criterio?.texto);
+  if (!texto) return lista.slice();
+  return lista.filter(c => camposBuscables(c).some(campo => campo.includes(texto)));
+}
+
+// Case-insensitive y sin acentos (NFD): "hernandez" encuentra "Hernandez" y al
+// reves. Solo pliega la cadena: a diferencia de normalizarNombre
+// (lib/deduplicacion.js) no tokeniza ni descarta articulos, porque aqui se
+// busca por subcadena, no se comparan razones sociales.
+function normalizarBusqueda(valor) {
+  if (valor == null) return '';
+  return String(valor)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function camposBuscables(c) {
+  return [normalizarBusqueda(c?.cliente), normalizarBusqueda(c?.folioOperam)];
+}
+
 export function buildTableroCotizacionesHtml(cotizaciones, hoy = new Date()) {
   const cols = agruparTableroCotizaciones(cotizaciones, hoy);
   return COLUMNAS_COTIZACIONES.map(col => {

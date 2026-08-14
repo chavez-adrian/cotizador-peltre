@@ -962,12 +962,22 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-app">Volver</button>
   </header>
   <div style="padding:16px">
+    <!-- Buscador (issue #146): filtra en vivo el arreglo ya cargado, antes de
+         pintar, asi que aplica igual en Lista y en Tablero. No persiste. -->
+    <div class="search-input-wrap" style="margin-bottom:10px">
+      <input type="text" id="historial-buscar" autocomplete="off" placeholder="Buscar por cliente o folio de Operam...">
+    </div>
     <!-- Conmutador lista/tablero (issue #50): mismo patron que prospectos (#49) -->
     <span id="historial-modo" style="display:inline-flex;gap:4px;margin-bottom:12px">
       <button class="btn btn-sm btn-secondary" id="btn-cot-modo-lista">Lista</button>
       <button class="btn btn-sm btn-secondary" id="btn-cot-modo-tablero">Tablero</button>
     </span>
     <div id="historial-loading" style="color:var(--light);font-size:13px">Cargando...</div>
+    <!-- Sin resultados de busqueda (issue #146): distinto de "sin cotizaciones
+         registradas"; unico para los dos modos. -->
+    <div id="historial-sin-resultados" class="empty-state" style="display:none">
+      <p>Ninguna cotizaci&oacute;n coincide con la b&uacute;squeda.</p>
+    </div>
     <!-- Tablero kanban (issue #50): cadencia de seguimiento + cierre, conmutable con la lista -->
     <div id="cotizaciones-tablero" class="tablero" style="display:none"></div>
     <div id="historial-list"></div>

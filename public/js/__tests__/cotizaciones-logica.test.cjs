@@ -6,13 +6,14 @@ let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
   buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
   puedeActualizarCotizacion, buildAccionesCargaHtml,
-  buildAvisoModoActualizacion, textoBotonGenerar;
+  buildAvisoModoActualizacion, textoBotonGenerar, filtrarCotizaciones;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
     buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
     puedeActualizarCotizacion, buildAccionesCargaHtml,
-    buildAvisoModoActualizacion, textoBotonGenerar } = await import('../cotizaciones-logica.js'));
+    buildAvisoModoActualizacion, textoBotonGenerar,
+    filtrarCotizaciones } = await import('../cotizaciones-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -340,4 +341,69 @@ test('Q30: textoBotonGenerar devuelve las etiquetas normales fuera de modo actua
 test('Q31: textoBotonGenerar devuelve etiquetas de actualizar en modo actualizacion', () => {
   assert.equal(textoBotonGenerar('pdf', true), 'Actualizar PDF');
   assert.equal(textoBotonGenerar('html', true), 'Actualizar HTML');
+});
+
+// === #146: buscador del Historial. Nucleo puro que recibe el arreglo ya
+// cargado en memoria y devuelve el subconjunto; la cascara de UI solo hace
+// wiring, y por eso Lista y Tablero comparten el filtro gratis.
+
+test('Q32: filtrarCotizaciones sin criterio devuelve todas', () => {
+  const lista = [cot(1, { id: 1 }), cot(2, { id: 2 })];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '' }).map(c => c.id), [1, 2]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '   ' }).map(c => c.id), [1, 2]);
+  assert.deepEqual(filtrarCotizaciones(lista, {}).map(c => c.id), [1, 2]);
+  assert.deepEqual(filtrarCotizaciones(lista).map(c => c.id), [1, 2]);
+});
+
+test('Q33: filtrarCotizaciones matchea por razon social como subcadena', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Hotel Azul' }),
+    cot(2, { id: 2, cliente: 'Restaurante El Roble' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'hotel' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'roble' }).map(c => c.id), [2]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'el' }).map(c => c.id), [1, 2]);
+});
+
+test('Q34: filtrarCotizaciones ignora mayusculas y acentos en los dos sentidos', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Comercial Hernández' }),
+    cot(2, { id: 2, cliente: 'Panaderia Lopez' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'hernandez' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'HERNANDEZ' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'López' }).map(c => c.id), [2]);
+});
+
+test('Q35: filtrarCotizaciones matchea por el folio REAL de Operam (ADR-0009), nunca por el id interno', () => {
+  const lista = [
+    cot(1, { id: 16, cliente: 'Hotel Azul', folioOperam: '1216' }),
+    cot(2, { id: 1216, cliente: 'Panaderia Lopez', folioOperam: '1300' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '1216' }).map(c => c.id), [16]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '16' }).map(c => c.id), [16]);
+  // folio numerico (no string) matchea igual
+  const numerico = [cot(1, { id: 1, cliente: 'Hotel Azul', folioOperam: 1216 })];
+  assert.equal(filtrarCotizaciones(numerico, { texto: '1216' }).length, 1);
+});
+
+test('Q36: filtrarCotizaciones devuelve vacio cuando nada matchea', () => {
+  const lista = [cot(1, { id: 1, cliente: 'Hotel Azul', folioOperam: '1216' })];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'zzz' }), []);
+});
+
+test('Q37: filtrarCotizaciones tolera lista vacia y registros sin cliente ni folio', () => {
+  assert.deepEqual(filtrarCotizaciones([], { texto: 'hotel' }), []);
+  assert.deepEqual(filtrarCotizaciones(null, { texto: 'hotel' }), []);
+  assert.deepEqual(filtrarCotizaciones(undefined, {}), []);
+  const sinCampos = [cot(1, { id: 1, cliente: null, folioOperam: null })];
+  assert.deepEqual(filtrarCotizaciones(sinCampos, { texto: 'hotel' }), []);
+  assert.equal(filtrarCotizaciones(sinCampos, { texto: '' }).length, 1);
+});
+
+test('Q38: filtrarCotizaciones no muta el arreglo original', () => {
+  const lista = [cot(1, { id: 1, cliente: 'Hotel Azul' }), cot(2, { id: 2, cliente: 'Panaderia Lopez' })];
+  const filtradas = filtrarCotizaciones(lista, { texto: 'hotel' });
+  assert.equal(lista.length, 2);
+  assert.notEqual(filtradas, lista);
 });

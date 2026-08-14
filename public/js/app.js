@@ -49,6 +49,7 @@ import {
   buildAccionesCargaHtml,
   buildAvisoModoActualizacion,
   textoBotonGenerar,
+  filtrarCotizaciones,
 } from './cotizaciones-logica.js';
 import {
   buildTableroPipelineHtml,
@@ -3234,15 +3235,27 @@ window.resetFlujoGuiado = resetFlujoGuiado;
 // prospectos (#49); la preferencia del usuario se recuerda en localStorage.
 let cotizacionesModo = localStorage.getItem('cotizacionesModo') === 'tablero' ? 'tablero' : 'lista';
 let ultimasCotizaciones = [];
+// Criterio del buscador (#146): vive en memoria, no persiste (ni localStorage
+// ni servidor). Re-entrar al Historial lo limpia.
+let cotizacionesFiltro = '';
 
 async function showHistorial() {
   ocultarTodasLasVistas();
   document.getElementById('historial-view').style.display = 'block';
+  cotizacionesFiltro = '';
+  document.getElementById('historial-buscar').value = '';
+  await recargarHistorial();
+}
 
+// Recarga el listado conservando el filtro: la usan las acciones que cierran
+// una cotizacion (boton y arrastre a Ganada/Perdida) para refrescar sin que el
+// vendedor pierda lo que estaba buscando.
+async function recargarHistorial() {
   const loadingEl = document.getElementById('historial-loading');
   loadingEl.style.display = 'block';
   document.getElementById('historial-list').innerHTML = '';
   document.getElementById('cotizaciones-tablero').innerHTML = '';
+  document.getElementById('historial-sin-resultados').style.display = 'none';
 
   try {
     const res = await api('/api/cotizaciones');
@@ -3257,6 +3270,7 @@ async function showHistorial() {
 function renderHistorial() {
   const listEl = document.getElementById('historial-list');
   const tableroEl = document.getElementById('cotizaciones-tablero');
+  const sinResultadosEl = document.getElementById('historial-sin-resultados');
   const esTablero = cotizacionesModo === 'tablero';
   const btnLista = document.getElementById('btn-cot-modo-lista');
   const btnTablero = document.getElementById('btn-cot-modo-tablero');
@@ -3264,21 +3278,33 @@ function renderHistorial() {
   btnLista.classList.toggle('btn-secondary', esTablero);
   btnTablero.classList.toggle('btn-primary', esTablero);
   btnTablero.classList.toggle('btn-secondary', !esTablero);
-  tableroEl.style.display = esTablero ? 'flex' : 'none';
-  listEl.style.display = esTablero ? 'none' : 'block';
+  // El filtro se aplica al arreglo ANTES de pintar (#146): Lista y Tablero lo
+  // comparten gratis y cambiar de modo lo conserva.
+  const visibles = filtrarCotizaciones(ultimasCotizaciones, { texto: cotizacionesFiltro });
+  // "No hay resultados" no es "no hay cotizaciones": si el listado trae algo y
+  // el filtro no matcha nada, manda el aviso del buscador en los dos modos.
+  const sinResultados = visibles.length === 0 && ultimasCotizaciones.length > 0;
+  sinResultadosEl.style.display = sinResultados ? 'block' : 'none';
+  tableroEl.style.display = esTablero && !sinResultados ? 'flex' : 'none';
+  listEl.style.display = !esTablero && !sinResultados ? 'block' : 'none';
+  if (sinResultados) {
+    listEl.innerHTML = '';
+    tableroEl.innerHTML = '';
+    return;
+  }
   if (esTablero) {
     listEl.innerHTML = '';
-    tableroEl.innerHTML = buildTableroCotizacionesHtml(ultimasCotizaciones);
+    tableroEl.innerHTML = buildTableroCotizacionesHtml(visibles);
     return;
   }
   tableroEl.innerHTML = '';
 
-  if (!ultimasCotizaciones.length) {
+  if (!visibles.length) {
     listEl.innerHTML = '<div class="empty-state"><p>Sin cotizaciones registradas.</p></div>';
     return;
   }
 
-  listEl.innerHTML = ultimasCotizaciones.slice().reverse().map(c => {
+  listEl.innerHTML = visibles.slice().reverse().map(c => {
     const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
     // Ver PDF / Ver HTML / WhatsApp regeneran desde el registro guardado
     // (issue #103), no desde disco ni desde el estado del formulario.
@@ -3337,7 +3363,7 @@ async function soltarEnColumnaCotizacion(origen, destino) {
   try {
     const res = await api(`/api/cotizacion/${origen.id}/estado`, { method: 'PATCH', body: { estado: destino } });
     if (!res.ok) { avisoTablero('No se pudo actualizar el estado'); return; }
-    showHistorial();
+    recargarHistorial();
   } catch (e) {
     avisoTablero('Error de conexion');
   }
@@ -4515,7 +4541,7 @@ window.cerrarCotizacionTablero = async (id, estado) => {
   try {
     const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
     if (!res.ok) { alert('No se pudo actualizar el estado'); return; }
-    showHistorial();
+    recargarHistorial();
   } catch (e) {
     alert('Error de conexion');
   }
@@ -4835,6 +4861,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('btn-cot-modo-lista').addEventListener('click', () => setModoCotizaciones('lista'));
   document.getElementById('btn-cot-modo-tablero').addEventListener('click', () => setModoCotizaciones('tablero'));
+  // Buscador del Historial (#146): filtra en vivo al teclear, sin ida al
+  // servidor (el listado completo ya esta en memoria).
+  document.getElementById('historial-buscar').addEventListener('input', e => {
+    cotizacionesFiltro = e.target.value;
+    renderHistorial();
+  });
   initDragEnTablero('cotizaciones-tablero', {
     atributo: 'col',
     puedeSoltar: puedeArrastrarCotizacion,
