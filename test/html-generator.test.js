@@ -145,3 +145,40 @@ test('19. (#84) entrega completa -> no imprime la leyenda de confirmacion', () =
   assert.ok(!html.includes('Favor de confirmar el domicilio de entrega'), 'no debe traer la leyenda cuando la entrega esta completa');
   assert.ok(!html.includes('undefined'), 'no debe imprimir "undefined"');
 });
+
+// === #137: descuento comercial por linea (columna "% Dscto." + total neto) ===
+// Se evitan descuentos que terminen en 0 (10%, 50%, etc.): "10%" contiene "0%"
+// como subcadena, lo que arruinaria la aseveracion de ausencia de descuento en
+// la linea sin descontar (y ">0%<" tambien evita el falso positivo de
+// "width: 100%;" en el CSS embebido). 15% y 75% no tienen ese problema.
+// Cantidades > 1 en todas las lineas para que bruto, precio unitario y neto
+// sean tres numeros distintos entre si.
+
+test('20. (#137) el HTML imprime el % Dscto. por linea y lo omite (celda vacia) cuando es 0', () => {
+  const html = generateQuoteHTML({
+    items: [
+      { codigo: 'A001', descripcion: 'Item con descuento', cantidad: 3, unidad: 'pza', precio: 100, descuento: 15 },
+      { codigo: 'B002', descripcion: 'Item sin descuento', cantidad: 2, unidad: 'pza', precio: 200, descuento: 0 },
+      { codigo: 'ENVIO', descripcion: 'FedEx Nacional', cantidad: 2, unidad: 'ACT', precio: 259, descuento: 75 },
+    ],
+  });
+  assert.ok(html.includes('>15%<'), 'debe imprimir el 15% de descuento del articulo A001');
+  assert.ok(html.includes('>75%<'), 'debe imprimir el 75% de descuento de la partida ENVIO');
+  assert.ok(!html.includes('>0%<'), 'no debe imprimir "0%" en la linea sin descuento (B002); la celda va vacia');
+});
+
+test('21. (#137) el total de linea es el neto cantidad*precio*(1-descuento/100), no el bruto', () => {
+  const html = generateQuoteHTML({
+    items: [
+      { codigo: 'A001', descripcion: 'Item con descuento', cantidad: 3, unidad: 'pza', precio: 100, descuento: 15 },
+      { codigo: 'ENVIO', descripcion: 'FedEx Nacional', cantidad: 2, unidad: 'ACT', precio: 259, descuento: 75 },
+    ],
+  });
+  // A001: 3*100*0.85 = 255.00 (bruto seria 300.00)
+  assert.ok(html.includes('<strong>255.00</strong>'), 'el total de A001 debe ser el neto 255.00');
+  assert.ok(!html.includes('<strong>300.00</strong>'), 'no debe imprimir el bruto 300.00 de A001');
+  // ENVIO: 2*259*0.25 = 129.50 (bruto seria 518.00; el precio unitario 259.00 si debe seguir apareciendo)
+  assert.ok(html.includes('<strong>129.50</strong>'), 'el total de ENVIO debe ser el neto 129.50');
+  assert.ok(!html.includes('<strong>518.00</strong>'), 'no debe imprimir el bruto 518.00 de ENVIO');
+  assert.ok(html.includes('259.00'), 'el precio unitario de ENVIO debe seguir imprimiendose sin descontar');
+});

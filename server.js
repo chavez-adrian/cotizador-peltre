@@ -38,6 +38,7 @@ import { transicionPorCotizacion, transicionPorAsignacion, esSalida } from './li
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
+import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -123,6 +124,16 @@ app.get('/api/vendedores', (req, res) => {
   res.json(vendedores.map(v => ({ id: v.id, name: v.name })));
 });
 
+// Tope de descuento VIGENTE del usuario autenticado (#137). Se lee del registro
+// de vendedores en cada consulta, no del JWT: el token no se re-emite cuando el
+// admin otorga o quita el permiso, asi que meterlo ahi lo dejaria congelado
+// hasta el siguiente login. El rol viene del token (el mismo que ya decide
+// adminMiddleware); un id que no este en el registro cae a 0.
+function topeDescuentoDeUsuario(user) {
+  const registro = (readJSON('vendedores.json') || []).find(v => v.id === user?.id);
+  return topeDescuentoVendedor({ role: user?.role, topeDescuento: registro?.topeDescuento });
+}
+
 app.get('/api/precios', authMiddleware, (req, res) => {
   const precios = readJSON('precios.json');
   if (!precios) return res.status(500).json({ error: 'Precios no disponibles' });
@@ -130,7 +141,9 @@ app.get('/api/precios', authMiddleware, (req, res) => {
     tiposActivos: precios.tiposProducto || [],
     texturasActivas: Object.keys(precios.texturas || {}).map(Number).filter(t => ![0, 8, 9].includes(t)),
   };
-  res.json({ ...precios, config });
+  // El tope viaja con los precios porque es parte del poder de precio del
+  // vendedor y la pantalla lo refresca en cada arranque de sesion (showApp).
+  res.json({ ...precios, config, topeDescuento: topeDescuentoDeUsuario(req.user) });
 });
 
 function validarTelefonoCotizacion(req, res) {
@@ -257,6 +270,10 @@ async function crearOActualizarCotizacion(data, vendedor) {
 // documento, que es la causa raiz de #110.
 app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   if (!validarTelefonoCotizacion(req, res)) return;
+  // El tope de descuento no depende de la pantalla (#137): misma regla pura que
+  // frena la captura en el carrito, aplicada aqui al vendedor autenticado.
+  const descuentos = validarDescuentosCotizacion(partidasConDescuento(req.body), topeDescuentoDeUsuario(req.user));
+  if (!descuentos.ok) return res.status(403).json({ error: descuentos.mensaje });
   try {
     const data = req.body;
     data.vendedor = req.user.name;
@@ -945,7 +962,11 @@ app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => 
 app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, (req, res) => {
   const vendedores = req.body;
   if (!Array.isArray(vendedores)) return res.status(400).json({ error: 'Formato invalido' });
-  writeJSON('vendedores.json', vendedores);
+  // El tope se normaliza al guardarlo (#137): un valor basura o fuera de rango
+  // capturado en la administracion nunca puede volverse permiso ilimitado.
+  writeJSON('vendedores.json', vendedores.map(v => (
+    v && v.topeDescuento !== undefined ? { ...v, topeDescuento: normalizarTope(v.topeDescuento) } : v
+  )));
   res.json({ saved: true });
 });
 

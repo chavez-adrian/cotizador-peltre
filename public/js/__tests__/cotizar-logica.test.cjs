@@ -6,14 +6,14 @@ let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfi
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
-let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales;
+let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
-    nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales,
+    nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -316,7 +316,7 @@ test('#102-2: buildEnvioEstructurado con costo 0 -> null aunque haya opcion eleg
 
 test('#102-3: buildEnvioEstructurado manual -> opcion manual, carrier/servicio null, precio y descripcion capturados', () => {
   const r = buildEnvioEstructurado({ shippingOpt: 'manual', shippingCost: 150, shippingDesc: 'Paquete propio', enviaRateSeleccionado: null });
-  assert.deepStrictEqual(r, { opcion: 'manual', carrier: null, servicio: null, precio: 150, descripcion: 'Paquete propio' });
+  assert.deepStrictEqual(r, { opcion: 'manual', carrier: null, servicio: null, precio: 150, descripcion: 'Paquete propio', descuento: 0 });
 });
 
 test('#102-4: buildEnvioEstructurado envia con rate seleccionada -> carrier/servicio estructurados (no horneados en un string)', () => {
@@ -324,18 +324,18 @@ test('#102-4: buildEnvioEstructurado envia con rate seleccionada -> carrier/serv
     shippingOpt: 'envia', shippingCost: 259, shippingDesc: 'FedEx Ground',
     enviaRateSeleccionado: { carrier: 'fedex', servicio: 'ground', desc: 'FedEx Ground', cost: 259 },
   });
-  assert.deepStrictEqual(r, { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
+  assert.deepStrictEqual(r, { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground', descuento: 0 });
 });
 
 test('#102-5: buildEnvioEstructurado envia sin rate seleccionada -> carrier/servicio null (degradado, no rompe)', () => {
   const r = buildEnvioEstructurado({ shippingOpt: 'envia', shippingCost: 200, shippingDesc: 'Envio', enviaRateSeleccionado: null });
-  assert.deepStrictEqual(r, { opcion: 'envia', carrier: null, servicio: null, precio: 200, descripcion: 'Envio' });
+  assert.deepStrictEqual(r, { opcion: 'envia', carrier: null, servicio: null, precio: 200, descripcion: 'Envio', descuento: 0 });
 });
 
 test('#102-6: restaurarEnvioDesdeCotizacion sin envio (undefined) -> degrada a "none" sin seleccion', () => {
   const r = restaurarEnvioDesdeCotizacion(undefined);
   assert.deepStrictEqual(r, {
-    opcion: 'none', mostrarEnvia: false, mostrarManual: false, cost: '', desc: 'Envio', enviaRateSeleccionado: null,
+    opcion: 'none', mostrarEnvia: false, mostrarManual: false, cost: '', desc: 'Envio', descuento: 0, enviaRateSeleccionado: null,
   });
 });
 
@@ -348,14 +348,14 @@ test('#102-7: restaurarEnvioDesdeCotizacion con envio null (cotizacion vieja) ->
 test('#102-8: restaurarEnvioDesdeCotizacion manual -> restaura costo/descripcion, sin rate de envia', () => {
   const r = restaurarEnvioDesdeCotizacion({ opcion: 'manual', carrier: null, servicio: null, precio: 200, descripcion: 'Paquete propio' });
   assert.deepStrictEqual(r, {
-    opcion: 'manual', mostrarEnvia: false, mostrarManual: true, cost: '200.00', desc: 'Paquete propio', enviaRateSeleccionado: null,
+    opcion: 'manual', mostrarEnvia: false, mostrarManual: true, cost: '200.00', desc: 'Paquete propio', descuento: 0, enviaRateSeleccionado: null,
   });
 });
 
 test('#102-9: restaurarEnvioDesdeCotizacion envia -> restaura carrier/servicio como rate seleccionada (evita re-cotizar)', () => {
   const r = restaurarEnvioDesdeCotizacion({ opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 259, descripcion: 'FedEx Ground' });
   assert.deepStrictEqual(r, {
-    opcion: 'envia', mostrarEnvia: true, mostrarManual: false, cost: '259.00', desc: 'FedEx Ground',
+    opcion: 'envia', mostrarEnvia: true, mostrarManual: false, cost: '259.00', desc: 'FedEx Ground', descuento: 0,
     enviaRateSeleccionado: { carrier: 'fedex', servicio: 'ground', desc: 'FedEx Ground', cost: 259 },
   });
 });
@@ -479,4 +479,61 @@ test('#135-12: buildItemsYTotales con carrito vacio y sin envio -> items vacio, 
   const r = buildItemsYTotales([], { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
   assert.deepStrictEqual(r.items, []);
   assert.deepStrictEqual({ subtotal: r.subtotal, iva: r.iva, total: r.total }, { subtotal: 0, iva: 0, total: 0 });
+});
+
+// === #137: el descuento por linea viaja del carrito al documento y a Operam ===
+test('#137-1: buildItemsYTotales conserva el descuento de cada entrada del carrito', () => {
+  const cartEntries = [
+    { codigo: 'AB12', nombre: 'AB12 Olla peltre', cantidad: 3, precio: 100, descuento: 10 },
+    { codigo: 'CAL10', nombre: 'CAL10 Calca logo', cantidad: 3, precio: 20, descuento: 25 },
+  ];
+  const r = buildItemsYTotales(cartEntries, { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
+  assert.strictEqual(r.items[0].descuento, 10);
+  assert.strictEqual(r.items[1].descuento, 25);
+  // 3*100*0.9 + 3*20*0.75 = 270 + 45
+  assert.strictEqual(r.subtotal, 315);
+});
+
+test('#137-2: entrada sin descuento -> 0 (el carrito viejo no cambia de comportamiento)', () => {
+  const r = buildItemsYTotales([{ codigo: 'AB12', nombre: 'Olla', cantidad: 1, precio: 100 }],
+    { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
+  assert.strictEqual(r.items[0].descuento, 0);
+});
+
+test('#137-3: la partida ENVIO lleva su propio descuento', () => {
+  const envio = { shippingOpt: 'envia', shippingCost: 500, shippingDesc: 'FedEx', shippingDescuento: 40 };
+  assert.strictEqual(buildItemEnvio(envio).descuento, 40);
+  const r = buildItemsYTotales([{ codigo: 'AB12', nombre: 'Olla', cantidad: 1, precio: 100 }], envio);
+  // 100 + 500*0.6
+  assert.strictEqual(r.subtotal, 400);
+});
+
+test('#137-4: envio sin descuento capturado -> 0', () => {
+  assert.strictEqual(buildItemEnvio({ shippingOpt: 'manual', shippingCost: 150, shippingDesc: 'Envio' }).descuento, 0);
+});
+
+test('#137-5: importeLinea es la unica formula de importe neto de una partida', () => {
+  assert.strictEqual(importeLinea({ cantidad: 3, precio: 100, descuento: 10 }), 270);
+  assert.strictEqual(importeLinea({ cantidad: 2, precio: 50 }), 100);
+  assert.strictEqual(importeLinea({ cantidad: 1, precio: 100, descuento: 100 }), 0);
+});
+
+// El envio estructurado es lo que permite restaurar la seleccion al Cargar del
+// historial (#102): sin el descuento ahi, regenerar perderia la bonificacion.
+test('#137-6: buildEnvioEstructurado persiste el descuento del envio', () => {
+  const r = buildEnvioEstructurado({
+    shippingOpt: 'envia', shippingCost: 500, shippingDesc: 'FedEx', shippingDescuento: 40,
+    enviaRateSeleccionado: { carrier: 'fedex', servicio: 'ground' },
+  });
+  assert.strictEqual(r.descuento, 40);
+});
+
+test('#137-7: restaurarEnvioDesdeCotizacion devuelve el descuento guardado', () => {
+  const r = restaurarEnvioDesdeCotizacion({ opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 500, descuento: 40 });
+  assert.strictEqual(r.descuento, 40);
+});
+
+test('#137-8: cotizacion vieja sin descuento de envio -> 0', () => {
+  assert.strictEqual(restaurarEnvioDesdeCotizacion({ opcion: 'manual', precio: 150 }).descuento, 0);
+  assert.strictEqual(restaurarEnvioDesdeCotizacion(null).descuento, 0);
 });

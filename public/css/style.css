@@ -855,7 +855,7 @@ body {
 .cart-lines-head,
 .cart-line {
   display: grid;
-  grid-template-columns: 100px 1fr 90px 70px 72px 28px;
+  grid-template-columns: 100px 1fr 90px 70px 62px 72px 28px;
   align-items: center;
   gap: 0;
 }
@@ -947,6 +947,20 @@ body {
 .cart-line-price {
   text-align: right;
   color: var(--text-light);
+}
+
+/* % de descuento por linea (#137): sin permiso la celda es solo texto */
+.cart-line-desc { text-align: right; }
+
+.cart-line-desc .desc-input {
+  width: 46px;
+  height: 22px;
+  font-size: 11px;
+  text-align: right;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  font-family: inherit;
 }
 
 .cart-line-total {

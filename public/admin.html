@@ -14,6 +14,7 @@
   .vendedor-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .vendedor-row input { flex: 1; padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
   .vendedor-row .pin-input { width: 70px; flex: none; }
+  .vendedor-row .tope-input { width: 70px; flex: none; text-align: right; }
   .vendedor-row select { width: 100px; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
   .toggle-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
     border: 1px solid var(--border); border-radius: 20px; font-size: 13px; cursor: pointer;
@@ -103,6 +104,9 @@
     <!-- Vendedores -->
     <div class="admin-section">
       <h2>Vendedores</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+        Nombre, PIN, rol y <strong>tope de descuento</strong> (% maximo que puede aplicar por partida; 0 = no puede descontar).
+      </p>
       <div id="vendedores-list"></div>
       <button class="btn btn-secondary btn-sm" id="btn-add-vendedor" style="margin-top:8px">+ Agregar vendedor</button>
       <button class="btn btn-primary btn-sm" id="btn-save-vendedores" style="margin-top:8px">Guardar cambios</button>
@@ -347,10 +351,14 @@ function renderVendedores() {
     <div class="vendedor-row">
       <input type="text" value="${v.name}" onchange="vendedoresData[${i}].name=this.value" placeholder="Nombre">
       <input type="text" class="pin-input" value="${v.pin}" onchange="vendedoresData[${i}].pin=this.value" placeholder="PIN" maxlength="4">
-      <select onchange="vendedoresData[${i}].role=this.value">
+      <select onchange="vendedoresData[${i}].role=this.value; renderVendedores()">
         <option value="vendedor" ${v.role==='vendedor'?'selected':''}>Vendedor</option>
         <option value="admin" ${v.role==='admin'?'selected':''}>Admin</option>
       </select>
+      ${v.role === 'admin'
+        ? '<span class="tope-input" style="font-size:12px;color:var(--text-light)">sin tope</span>'
+        : `<input type="number" class="tope-input" min="0" max="100" step="1" value="${v.topeDescuento ?? 0}"
+            onchange="vendedoresData[${i}].topeDescuento=this.value" title="Tope de descuento (%)" placeholder="% dscto.">`}
       ${v.role !== 'admin' ? `<button class="btn btn-danger btn-sm" onclick="removeVendedor(${i})">X</button>` : '<div style="width:32px"></div>'}
     </div>
   `).join('');
@@ -364,7 +372,7 @@ function removeVendedor(i) {
 
 function addVendedor() {
   const maxId = Math.max(...vendedoresData.map(v => v.id), 0);
-  vendedoresData.push({ id: maxId + 1, name: '', pin: '', role: 'vendedor' });
+  vendedoresData.push({ id: maxId + 1, name: '', pin: '', role: 'vendedor', topeDescuento: 0 });
   renderVendedores();
 }
 

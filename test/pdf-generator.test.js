@@ -184,3 +184,43 @@ test('B18: (#136) la partida ENVIO con tiempo de entrega imprime "entrega estima
   const text = result.toString('latin1');
   assert.ok(text.includes(toHex('estimada')), 'debe imprimir el tiempo de entrega estimado de la partida ENVIO');
 });
+
+// === #137: descuento comercial por linea (columna "% Dscto." + total neto) ===
+// Se evitan descuentos que terminen en 0 (10%, 50%, etc.): "10%" contiene "0%"
+// como subcadena contigua, lo que arruinaria la aseveracion de ausencia del
+// descuento en la linea sin descontar. 15% y 75% no tienen ese problema.
+// Cantidades > 1 en todas las lineas para que bruto, precio unitario y neto
+// sean tres numeros distintos entre si (nada de falsos verdes por coincidencia).
+
+test('B19: (#137) el PDF imprime el porcentaje de descuento por linea y lo omite cuando es 0', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    items: [
+      { codigo: 'A001', descripcion: 'Item con descuento', cantidad: 3, unidad: 'pza', precio: 100, descuento: 15 },
+      { codigo: 'B002', descripcion: 'Item sin descuento', cantidad: 2, unidad: 'pza', precio: 200, descuento: 0 },
+      { codigo: 'ENVIO', descripcion: 'FedEx Nacional', cantidad: 2, unidad: 'ACT', precio: 259, descuento: 75 },
+    ],
+  });
+  const text = result.toString('latin1');
+  assert.ok(text.includes(toHex('15%')), 'debe imprimir el 15% de descuento del articulo A001');
+  assert.ok(text.includes(toHex('75%')), 'debe imprimir el 75% de descuento de la partida ENVIO');
+  assert.ok(!text.includes(toHex('0%')), 'no debe imprimir "0%" en la linea sin descuento (B002)');
+});
+
+test('B20: (#137) el total de linea es el neto cantidad*precio*(1-descuento/100), no el bruto', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    items: [
+      { codigo: 'A001', descripcion: 'Item con descuento', cantidad: 3, unidad: 'pza', precio: 100, descuento: 15 },
+      { codigo: 'ENVIO', descripcion: 'FedEx Nacional', cantidad: 2, unidad: 'ACT', precio: 259, descuento: 75 },
+    ],
+  });
+  const text = result.toString('latin1');
+  // A001: 3*100*0.85 = 255.00 (bruto seria 300.00)
+  assert.ok(text.includes(toHex('255.00')), 'el total de A001 debe ser el neto 255.00');
+  assert.ok(!text.includes(toHex('300.00')), 'no debe imprimir el bruto 300.00 de A001');
+  // ENVIO: 2*259*0.25 = 129.50 (bruto seria 518.00; el precio unitario 259.00 si debe seguir apareciendo)
+  assert.ok(text.includes(toHex('129.50')), 'el total de ENVIO debe ser el neto 129.50');
+  assert.ok(!text.includes(toHex('518.00')), 'no debe imprimir el bruto 518.00 de ENVIO');
+  assert.ok(text.includes(toHex('259.00')), 'el precio unitario de ENVIO debe seguir imprimiendose sin descontar');
+});

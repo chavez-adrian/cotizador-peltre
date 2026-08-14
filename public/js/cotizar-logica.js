@@ -135,12 +135,18 @@ export function aplicarNotaTiempoEntrega(notasText, decorado) {
 // de descripcion de la partida ENVIO y nada estructurado se persistia -- al
 // Cargar desde historial no habia forma de restaurar la seleccion, solo el
 // texto de la partida. shippingOpt 'none' o costo <= 0 -> nada que persistir.
-export function buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }) {
+export function buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, shippingDescuento, enviaRateSeleccionado }) {
   if (shippingOpt !== 'manual' && shippingOpt !== 'envia') return null;
   if (!(shippingCost > 0)) return null;
   const carrier = shippingOpt === 'envia' ? (enviaRateSeleccionado?.carrier ?? null) : null;
   const servicio = shippingOpt === 'envia' ? (enviaRateSeleccionado?.servicio ?? null) : null;
-  return { opcion: shippingOpt, carrier, servicio, precio: shippingCost, descripcion: shippingDesc || 'Envio' };
+  return {
+    opcion: shippingOpt, carrier, servicio, precio: shippingCost,
+    descripcion: shippingDesc || 'Envio',
+    // El descuento del flete (#137) se persiste aqui por el mismo motivo que el
+    // carrier: sin el, Cargar del historial perderia la bonificacion negociada.
+    descuento: shippingDescuento || 0,
+  };
 }
 
 // Restaura el envio elegido al Cargar una cotizacion del historial (#102): dado
@@ -150,7 +156,7 @@ export function buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc
 // a 'none' (comportamiento identico al de hoy: sin seleccion, no rompe).
 export function restaurarEnvioDesdeCotizacion(envio) {
   if (!envio || (envio.opcion !== 'manual' && envio.opcion !== 'envia')) {
-    return { opcion: 'none', mostrarEnvia: false, mostrarManual: false, cost: '', desc: 'Envio', enviaRateSeleccionado: null };
+    return { opcion: 'none', mostrarEnvia: false, mostrarManual: false, cost: '', desc: 'Envio', descuento: 0, enviaRateSeleccionado: null };
   }
   const desc = envio.descripcion || 'Envio';
   const cost = typeof envio.precio === 'number' ? envio.precio.toFixed(2) : '';
@@ -159,6 +165,7 @@ export function restaurarEnvioDesdeCotizacion(envio) {
     mostrarEnvia: envio.opcion === 'envia',
     mostrarManual: envio.opcion === 'manual',
     cost, desc,
+    descuento: envio.descuento || 0,
     enviaRateSeleccionado: envio.opcion === 'envia'
       ? { carrier: envio.carrier ?? null, servicio: envio.servicio ?? null, desc, cost: envio.precio }
       : null,
@@ -207,19 +214,28 @@ export function nombreVisibleProducto(name) {
 
 // Partida ENVIO para el documento, o null si no hay nada que cobrar (issue #71:
 // el carrito no manda envio con costo 0 ni con la opcion 'none').
-export function buildItemEnvio({ shippingOpt, shippingCost, shippingDesc }) {
+export function buildItemEnvio({ shippingOpt, shippingCost, shippingDesc, shippingDescuento }) {
   if (shippingOpt !== 'manual' && shippingOpt !== 'envia') return null;
   if (!(shippingCost > 0)) return null;
   return {
     codigo: 'ENVIO', descripcion: shippingDesc || 'Envio',
-    cantidad: 1, unidad: 'ACT', precio: shippingCost, descuento: 0,
+    cantidad: 1, unidad: 'ACT', precio: shippingCost, descuento: shippingDescuento || 0,
   };
 }
 
+// Importe NETO de una partida: la unica formula del descuento comercial (#137).
+// La usan las cuatro superficies del cotizador (tabla del carrito, barra
+// resumen, resumen final, totales del payload) y los DOS generadores de
+// documento (lib/pdf-generator.js y lib/html-generator.js, que la tenian
+// copiada linea a linea), para que ninguna pueda divergir de las demas.
+export function importeLinea({ cantidad, precio, descuento }) {
+  return (cantidad || 0) * (precio || 0) * (1 - (descuento || 0) / 100);
+}
+
 // Subtotal/IVA/total de un arreglo de items ya armado, aplicando el % de
-// descuento por linea (hoy siempre 0 -- lo llena #136).
+// descuento por linea.
 export function calcularTotalesItems(items) {
-  const subtotal = items.reduce((s, i) => s + (i.cantidad * i.precio * (1 - (i.descuento || 0) / 100)), 0);
+  const subtotal = items.reduce((s, i) => s + importeLinea(i), 0);
   const iva = subtotal * 0.16;
   const total = subtotal + iva;
   return { subtotal, iva, total };
@@ -229,8 +245,8 @@ export function calcularTotalesItems(items) {
 // y sus totales. cartEntries ya trae el precio resuelto (depende del tier
 // vigente, estado que vive en app.js) -- esta funcion solo ensambla el payload.
 export function buildItemsYTotales(cartEntries, envioInfo) {
-  const items = cartEntries.map(({ codigo, nombre, cantidad, precio }) => ({
-    codigo, descripcion: nombreVisibleProducto(nombre), cantidad, unidad: 'pza', precio, descuento: 0,
+  const items = cartEntries.map(({ codigo, nombre, cantidad, precio, descuento }) => ({
+    codigo, descripcion: nombreVisibleProducto(nombre), cantidad, unidad: 'pza', precio, descuento: descuento || 0,
   }));
   const itemEnvio = buildItemEnvio(envioInfo);
   if (itemEnvio) items.push(itemEnvio);

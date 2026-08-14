@@ -95,7 +95,12 @@ import {
   debeAutoCotizarEnvia,
   buildEnviaRateRestauradaHtml,
   buildItemsYTotales,
+  importeLinea,
 } from './cotizar-logica.js';
+import {
+  puedeDescontar,
+  validarDescuentoLinea,
+} from './descuento-logica.js';
 import {
   TAMANOS_CALCA,
   TINTAS_CALCA,
@@ -197,8 +202,12 @@ const state = {
   token: localStorage.getItem('token'),
   user: JSON.parse(localStorage.getItem('user') || 'null'),
   precios: null,
-  cart: new Map(), // key -> { product, cantidad }
+  cart: new Map(), // key -> { product, cantidad, descuento }
   shipping: { option: 'none', desc: '', cost: 0 },
+  // Tope de descuento del vendedor logueado (#137): 0 = sin permiso. Lo manda el
+  // servidor con los precios en cada arranque de sesion; el servidor lo vuelve a
+  // hacer valer al guardar, esto solo decide que puede capturar la pantalla.
+  topeDescuento: 0,
   lastCotizacionId: null,
   // Modo actualizacion (#104, ADR-0008): se entro por "Actualizar cotizacion" desde
   // el historial, asi que generar reescribe el MISMO registro y el MISMO quote de
@@ -347,6 +356,7 @@ async function showApp() {
 async function loadPrecios() {
   const res = await api('/api/precios');
   state.precios = await res.json();
+  state.topeDescuento = state.precios.topeDescuento || 0;
   const date = new Date(state.precios.extracted).toLocaleDateString('es-MX', {
     day: 'numeric', month: 'short', year: 'numeric'
   });
@@ -731,10 +741,11 @@ function renderCartLines() {
   let html = '';
 
   const piezasProducto = getPiezasProducto();
-  for (const [key, { product, cantidad }] of state.cart) {
+  for (const [key, { product, cantidad, descuento }] of state.cart) {
     const precio = precioUnitario(product);
     const price = precio ?? 0;
-    const total = price * cantidad;
+    const desc = descuento || 0;
+    const total = importeLinea({ cantidad, precio: price, descuento: desc });
     subtotal += total;
     const name = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
     // La linea de calca dice sobre cuantas piezas se aplica, sin juzgarlo
@@ -754,6 +765,7 @@ function renderCartLines() {
           <button class="qty-icon-btn qty-ok-btn" style="display:none" onclick="cartLineConfirmEdit('${key}')" title="Confirmar">&#10003;</button>
         </div>
         <span class="cart-line-price col-num">${precio === null ? 'sin precio' : '$' + fmt(price)}</span>
+        <span class="cart-line-desc col-num">${celdaDescuentoLinea(key, desc)}</span>
         <span class="cart-line-total col-num">${precio === null ? '&mdash;' : '$' + fmt(total)}</span>
         <div class="cart-line-del col-del"><button onclick="removeItem('${key}')" title="Quitar">&times;</button></div>
       </div>
@@ -764,6 +776,39 @@ function renderCartLines() {
   const iva = subtotal * 0.16;
   subtotalEl.innerHTML = `Subtotal: <strong>$${fmt(subtotal)}</strong> &nbsp;+&nbsp; IVA $${fmt(iva)} &nbsp;= &nbsp;<strong>$${fmt(subtotal + iva)}</strong>`;
 }
+
+// Celda de % de descuento de una linea (#137). Sin tope asignado no hay captura:
+// se muestra en solo lectura, porque una cotizacion cargada del historial puede
+// traer descuentos que el vendedor ya no tiene permiso de mover.
+function celdaDescuentoLinea(key, descuento) {
+  if (!puedeDescontar(state.topeDescuento)) return descuento ? `${descuento}%` : '&mdash;';
+  return `<input class="desc-input" type="number" min="0" max="${state.topeDescuento}" step="1"
+    value="${descuento || ''}" placeholder="0" inputmode="numeric"
+    onchange="cartLineSetDescuento('${key}', this.value)">`;
+}
+
+// La captura frena en el tope y lo dice (#137): al rechazar se vuelve a pintar la
+// tabla, de modo que el input regresa al valor vigente en vez de quedar mintiendo.
+function cartLineSetDescuento(key, valor) {
+  const item = state.cart.get(key);
+  if (!item) return;
+  const r = validarDescuentoLinea(valor, state.topeDescuento);
+  if (!r.ok) {
+    alert(r.mensaje);
+    renderCartLines();
+    return;
+  }
+  item.descuento = r.valor;
+  // El descuento mueve el valor que se declara a la paqueteria para el seguro
+  // (#137 AC7), asi que invalida la tarifa vigente de envia.com por el mismo
+  // motivo que un cambio de cantidad (#89): se cotizo con otro valor. El
+  // descuento del FLETE no invalida nada -- borraria la partida que se edita.
+  invalidarEnvioSiAplica();
+  updateCartSummary();
+  updateResumen();
+  renderCartLines();
+}
+window.cartLineSetDescuento = cartLineSetDescuento;
 
 function cartLineChangeQty(key, delta) {
   const item = state.cart.get(key);
@@ -920,10 +965,13 @@ function updateCartSummary() {
   document.getElementById('cart-count').textContent = `${productos} producto${productos !== 1 ? 's' : ''}, ${totalPzs} pzs${detalleCalcas}`;
 }
 
+// Subtotal de los articulos con su descuento por linea (#137): lo consumen la
+// barra resumen, el resumen final y el valor declarado a la paqueteria, asi que
+// todas las superficies dicen el mismo numero que el documento.
 function calcSubtotal() {
   let subtotal = 0;
-  for (const { product, cantidad } of state.cart.values()) {
-    subtotal += getPrice(product) * cantidad;
+  for (const { product, cantidad, descuento } of state.cart.values()) {
+    subtotal += importeLinea({ cantidad, precio: getPrice(product), descuento });
   }
   return subtotal;
 }
@@ -952,6 +1000,21 @@ function updateShippingSummary() {
 // === ENVIA.COM ===
 let enviaRateSeleccionado = null; // { carrier, servicio, desc, cost }
 let envioInvalidadoPorCantidad = false; // issue #89: cambio de cantidad invalido la tarifa vigente
+let envioDescuento = 0; // issue #137: % de descuento de la partida de flete
+
+// Captura del descuento del flete desde el resumen (#137). Mismo freno que las
+// lineas del carrito: si rebasa el tope se avisa y se repinta con lo vigente.
+function setEnvioDescuento(valor) {
+  const r = validarDescuentoLinea(valor, state.topeDescuento);
+  if (!r.ok) {
+    alert(r.mensaje);
+    updateResumen();
+    return;
+  }
+  envioDescuento = r.valor;
+  updateResumen();
+}
+window.setEnvioDescuento = setEnvioDescuento;
 
 async function cotizarEnvia() {
   const btn = document.getElementById('btn-cotizar-envia');
@@ -990,9 +1053,15 @@ async function cotizarEnvia() {
     items.push({ codigo: key, cantidad });
   }
 
-  // Total con IVA para calcular seguro (25%)
+  // Total con IVA para calcular seguro (25%). Con descuento se declara el valor
+  // CON descuento (#137): es lo que el cliente paga y lo que dira la factura si
+  // hay que reclamarle a la paqueteria. calcSubtotal ya viene descontado.
   const subtotal = calcSubtotal();
-  const shippingCost = parseFloat(document.getElementById('shipping-cost')?.value || 0) || 0;
+  const shippingCost = importeLinea({
+    cantidad: 1,
+    precio: parseFloat(document.getElementById('shipping-cost')?.value || 0) || 0,
+    descuento: envioDescuento,
+  });
   const totalConIVA = (subtotal + shippingCost) * 1.16;
 
   try {
@@ -1176,15 +1245,17 @@ function updateResumen() {
 
   const piezasProducto = getPiezasProducto();
   let html = '';
-  for (const [key, { product, cantidad }] of state.cart) {
+  for (const [key, { product, cantidad, descuento }] of state.cart) {
     const precio = precioUnitario(product);
     const price = precio ?? 0;
-    const total = price * cantidad;
+    const total = importeLinea({ cantidad, precio: price, descuento });
     const displayName = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
     const isSkuItem = state.precios.skus?.some(s => s.sku === key);
+    // El % negociado se dice junto al precio de lista: el resumen es la ultima
+    // pantalla antes de generar y tiene que cuadrar con el documento (#137).
     const detalle = precio === null
       ? `${key} — sin precio`
-      : `${key} — $${fmt(price)} / pza`;
+      : `${key} — $${fmt(price)} / pza${descuento ? ` — ${descuento}% dscto.` : ''}`;
     const relacion = product.esCalca
       ? ` <span class="calca-relacion">${relacionCalcaProducto(cantidad, piezasProducto)}</span>`
       : '';
@@ -1221,12 +1292,25 @@ function updateResumen() {
     const shippingDesc = document.getElementById('shipping-desc').value || 'Envio';
     if (shippingCost > 0) {
       shippingSection.style.display = 'block';
+      // El flete tambien se puede bonificar (#137): la captura vive aqui porque
+      // es la unica superficie donde la partida de envio se ve en los dos modos
+      // (el costo de envia.com se guarda en un campo oculto del tab Envio).
+      const shippingNeto = importeLinea({ cantidad: 1, precio: shippingCost, descuento: envioDescuento });
       document.getElementById('resumen-shipping-detail').innerHTML = `
         <div class="cart-item-info">
           <div class="cart-item-name">${shippingDesc}</div>
+          <div class="cart-item-detail">$${fmt(shippingCost)}${envioDescuento ? ` — ${envioDescuento}% dscto.` : ''}</div>
+          ${puedeDescontar(state.topeDescuento) ? `
+          <div class="cart-item-qty">
+            <label style="font-size:12px;color:var(--text-light)">% dscto.</label>
+            <input class="qty-input" type="number" min="0" max="${state.topeDescuento}" step="1"
+              value="${envioDescuento || ''}" placeholder="0" inputmode="numeric"
+              onchange="setEnvioDescuento(this.value)">
+          </div>` : ''}
         </div>
-        <div class="cart-item-total">$${fmt(shippingCost)}</div>
+        <div class="cart-item-total">$${fmt(shippingNeto)}</div>
       `;
+      shippingCost = shippingNeto;
     } else {
       shippingSection.style.display = 'none';
     }
@@ -1509,8 +1593,8 @@ async function guardarYNumerarCotizacion(body, progreso) {
 // (nucleo puro sin IO) porque lee state.cart y el formulario.
 function cartEntriesDesdeEstado() {
   const cartEntries = [];
-  for (const [key, { product, cantidad }] of state.cart) {
-    cartEntries.push({ codigo: key, nombre: product.name, cantidad, precio: getPrice(product) });
+  for (const [key, { product, cantidad, descuento }] of state.cart) {
+    cartEntries.push({ codigo: key, nombre: product.name, cantidad, precio: getPrice(product), descuento: descuento || 0 });
   }
   return cartEntries;
 }
@@ -1521,7 +1605,7 @@ function envioCapturadoEnFormulario() {
   const shippingCost = (shippingOpt === 'manual' || shippingOpt === 'envia')
     ? (parseFloat(document.getElementById('shipping-cost').value) || 0)
     : 0;
-  return { shippingOpt, shippingDesc, shippingCost };
+  return { shippingOpt, shippingDesc, shippingCost, shippingDescuento: envioDescuento };
 }
 
 // === PDF GENERATION ===
@@ -1553,8 +1637,8 @@ async function generatePDF() {
   try {
     const tier = getCurrentTier();
     const cartEntries = cartEntriesDesdeEstado();
-    const { shippingOpt, shippingDesc, shippingCost } = envioCapturadoEnFormulario();
-    const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, { shippingOpt, shippingCost, shippingDesc });
+    const envioForm = envioCapturadoEnFormulario();
+    const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
 
     const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
     const vigenciaDate = new Date();
@@ -1576,7 +1660,7 @@ async function generatePDF() {
       notas,
       // Envio estructurado {carrier, servicio, precio} (#102): prefactor para
       // restaurarlo tal cual al Cargar desde historial, sin re-cotizar envia.com.
-      envio: buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }),
+      envio: buildEnvioEstructurado({ ...envioForm, enviaRateSeleccionado }),
       // Marca de producto decorado (ADR-0010): la calca del carrito la fija.
       decorado: marcaDecoradoParaGuardar(),
     };
@@ -1649,8 +1733,8 @@ async function generateHTML() {
   try {
     const tier = getCurrentTier();
     const cartEntries = cartEntriesDesdeEstado();
-    const { shippingOpt, shippingDesc, shippingCost } = envioCapturadoEnFormulario();
-    const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, { shippingOpt, shippingCost, shippingDesc });
+    const envioForm = envioCapturadoEnFormulario();
+    const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
 
     const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
     const vigenciaDate = new Date();
@@ -1671,7 +1755,7 @@ async function generateHTML() {
       iva,
       total,
       notas,
-      envio: buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, enviaRateSeleccionado }),
+      envio: buildEnvioEstructurado({ ...envioForm, enviaRateSeleccionado }),
       // Marca de producto decorado (ADR-0010): la calca del carrito la fija.
       decorado: marcaDecoradoParaGuardar(),
     };
@@ -1767,6 +1851,8 @@ function nuevaCotizacion() {
   document.getElementById('envia-resumen').style.display = 'none';
   enviaRateSeleccionado = null;
   envioInvalidadoPorCantidad = false;
+  // El descuento del flete es de la cotizacion, no del vendedor (#137).
+  envioDescuento = 0;
   // La marca de decorado es de la cotizacion, no del vendedor (#91): una nueva
   // arranca sin ella y el checkbox vuelve a estar disponible.
   decoradoManual = false;
@@ -4369,7 +4455,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
       // regenerar reescribiria el quote de Operam SIN la calca (#114).
       if (esCodigoCalca(item.codigo)) {
         const ficha = catalogoCalcas().find(c => c.code === item.codigo);
-        if (ficha) state.cart.set(item.codigo, { product: productoCalca(ficha), cantidad: item.cantidad });
+        if (ficha) state.cart.set(item.codigo, { product: productoCalca(ficha), cantidad: item.cantidad, descuento: item.descuento || 0 });
         continue;
       }
       // Intentar encontrar en SKUs o products
@@ -4386,7 +4472,10 @@ async function cargarCotizacion(id, modo = 'nueva') {
         prices: product.prices,
       } : product;
 
-      state.cart.set(item.codigo, { product: cartProduct, cantidad: item.cantidad });
+      // El descuento por linea se restaura junto con la cantidad (#137): sin el,
+      // regenerar reescribiria el quote SIN la negociacion (mismo agujero que ya
+      // mordio con la calca).
+      state.cart.set(item.codigo, { product: cartProduct, cantidad: item.cantidad, descuento: item.descuento || 0 });
     }
 
     // Envio (issue #102): restaura carrier/servicio/precio tal cual se guardo,
@@ -4408,6 +4497,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     document.getElementById('envia-resumen').style.display = 'none';
     enviaRateSeleccionado = envioRestore.enviaRateSeleccionado;
     envioInvalidadoPorCantidad = false;
+    envioDescuento = envioRestore.descuento || 0;
 
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');

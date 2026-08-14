@@ -1294,6 +1294,40 @@ test('subirCotizacionOperam: envio paqueteria con CP foraneo -> partida flete st
   }
 });
 
+// #137: el flete deja de fijar Disc 0 -- el vendedor puede bonificar el envio y
+// el quote de Operam tiene que decir lo mismo que el documento del cliente.
+test('subirCotizacionOperam: el descuento de la partida de envio viaja en su Disc', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 333, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, quote_id: 1503 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-06-17',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', cpEntrega: '44100' },
+      items: [
+        { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 12 },
+        { codigo: 'ENVIO', descripcion: 'Envio FedEx', cantidad: 1, precio: 480, descuento: 35 },
+      ],
+    });
+    const flete = partidaFlete(quoteBody);
+    assert.equal(flete.Disc, 35, 'el flete lleva su propio descuento, ya no un 0 fijo');
+    const producto = quoteBody.items.find(i => i.stock_id === 'CR20-PLATO');
+    assert.equal(producto.Disc, 12);
+  } finally {
+    restore();
+  }
+});
+
 test('subirCotizacionOperam: CP de entrega ausente -> flete foraneo por defecto (251021002)', async () => {
   resetSession();
   let quoteBody = null;
@@ -1659,6 +1693,17 @@ test('#115 huellaContenidoQuote: la descripcion de un envio Lalamove SI cuenta c
     ],
   }));
   assert.notEqual(conLalamove('Lalamove camioneta'), conLalamove('Lalamove moto'));
+});
+
+// #137: bonificar el flete es un cambio de contenido del quote como cualquier otro.
+test('#137 huellaContenidoQuote: el descuento del envio SI cuenta como cambio', () => {
+  const conFlete = (descuento) => huellaContenidoQuote(cotizacionBase({
+    items: [
+      { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+      { codigo: 'ENVIO', descripcion: 'Envio FedEx', cantidad: 1, precio: 480, descuento },
+    ],
+  }));
+  assert.notEqual(conFlete(50), conFlete(0));
 });
 
 test('#114 huellaContenidoQuote: cantidad, precio, descuento y codigo SI cuentan como cambio', () => {
