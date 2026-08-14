@@ -221,11 +221,16 @@ const state = {
   // servidor con los precios en cada arranque de sesion; el servidor lo vuelve a
   // hacer valer al guardar, esto solo decide que puede capturar la pantalla.
   topeDescuento: 0,
+  // Permiso de fijar lista del vendedor logueado (#153, spec #98): false = sin
+  // permiso. Mismo patron que topeDescuento -- lo manda el servidor con los
+  // precios, y el servidor lo vuelve a hacer valer al guardar. El rol admin
+  // siempre puede (checkeado aparte via state.user?.role).
+  puedeFijarLista: false,
   // Lista fijada de la cotizacion en curso (#151, spec #98): '' es Auto (el
-  // tabulador manda). Solo admin puede escribirlo (selector oculto para el
-  // resto); vive en la cotizacion, nunca en el cliente ni en el vendedor --
-  // arranca en Auto en cotizacion nueva, cambio de cliente y Cargar del
-  // historial (mismos tres puntos que vendedorConfirmado).
+  // tabulador manda). Solo admin o vendedor con permiso puede escribirlo
+  // (selector oculto para el resto); vive en la cotizacion, nunca en el
+  // cliente ni en el vendedor -- arranca en Auto en cotizacion nueva, cambio
+  // de cliente y Cargar del historial (mismos tres puntos que vendedorConfirmado).
   tierFijado: '',
   lastCotizacionId: null,
   // Modo actualizacion (#104, ADR-0008): se entro por "Actualizar cotizacion" desde
@@ -376,6 +381,7 @@ async function loadPrecios() {
   const res = await api('/api/precios');
   state.precios = await res.json();
   state.topeDescuento = state.precios.topeDescuento || 0;
+  state.puedeFijarLista = !!state.precios.puedeFijarLista;
   const date = new Date(state.precios.extracted).toLocaleDateString('es-MX', {
     day: 'numeric', month: 'short', year: 'numeric'
   });
@@ -446,13 +452,13 @@ function updateTierBar() {
   document.getElementById('tier-stats').textContent = total > 0 ? `${total} pzs de producto` : '';
   document.getElementById('tier-next').textContent = '';
 
-  // Selector de lista fijada (#151): oculto, no deshabilitado, para quien no
-  // tiene el permiso (hoy, rol admin -- #153 lo extiende a un permiso por
-  // vendedor). Sincroniza el valor por si otro punto del flujo cambio
-  // state.tierFijado (Cargar del historial, cambio de cliente).
+  // Selector de lista fijada (#151/#153): oculto, no deshabilitado, para quien
+  // no tiene el permiso (rol admin, o vendedor con el checkbox de #153).
+  // Sincroniza el valor por si otro punto del flujo cambio state.tierFijado
+  // (Cargar del historial, cambio de cliente).
   const tierSelect = document.getElementById('tier-select');
   if (tierSelect) {
-    tierSelect.style.display = state.user?.role === 'admin' ? 'inline-block' : 'none';
+    tierSelect.style.display = (state.user?.role === 'admin' || state.puedeFijarLista) ? 'inline-block' : 'none';
     if (tierSelect.value !== state.tierFijado) tierSelect.value = state.tierFijado;
   }
 

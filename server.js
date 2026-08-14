@@ -40,7 +40,7 @@ import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPe
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
-import { validarTierCotizacion } from './public/js/tier-logica.js';
+import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -149,6 +149,15 @@ async function topeDescuentoDeUsuario(user) {
   return topeDescuentoVendedor({ role: user?.role, topeDescuento: registro?.topeDescuento });
 }
 
+// Permiso de fijar lista VIGENTE del usuario autenticado (#153, spec #98).
+// Mismo motivo que topeDescuentoDeUsuario: se lee del registro en cada
+// consulta, no del JWT, porque el token no se re-emite cuando el admin
+// otorga o quita el checkbox.
+async function puedeFijarListaDeUsuario(user) {
+  const registro = (await vendedoresStore.listar()).find(v => v.id === user?.id);
+  return puedeFijarLista({ role: user?.role, puedeFijarLista: registro?.puedeFijarLista });
+}
+
 app.get('/api/precios', authMiddleware, async (req, res) => {
   try {
     const precios = readJSON('precios.json');
@@ -157,9 +166,14 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
       tiposActivos: precios.tiposProducto || [],
       texturasActivas: Object.keys(precios.texturas || {}).map(Number).filter(t => ![0, 8, 9].includes(t)),
     };
-    // El tope viaja con los precios porque es parte del poder de precio del
-    // vendedor y la pantalla lo refresca en cada arranque de sesion (showApp).
-    res.json({ ...precios, config, topeDescuento: await topeDescuentoDeUsuario(req.user) });
+    // El tope y el permiso de fijar lista viajan con los precios porque son
+    // parte del poder de precio del vendedor y la pantalla los refresca en
+    // cada arranque de sesion (showApp).
+    res.json({
+      ...precios, config,
+      topeDescuento: await topeDescuentoDeUsuario(req.user),
+      puedeFijarLista: await puedeFijarListaDeUsuario(req.user),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -299,11 +313,12 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   // permiso: 400, no 403.
   const descripciones = validarDescripcionesCotizacion(req.body?.items);
   if (!descripciones.ok) return res.status(400).json({ error: descripciones.mensaje });
-  // La lista fijada tampoco depende de la pantalla (#151, spec #98): un tier
-  // ajeno al tabulador solo pasa con rol admin, mismo patron que el tope de
-  // descuento -- el permiso lo hace valer el servidor, no el selector oculto.
+  // La lista fijada tampoco depende de la pantalla (#151/#153, spec #98): un
+  // tier ajeno al tabulador solo pasa con rol admin o checkbox de vendedor,
+  // mismo patron que el tope de descuento -- el permiso lo hace valer el
+  // servidor, no el selector oculto.
   const precios = readJSON('precios.json');
-  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, req.user.role === 'admin');
+  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await puedeFijarListaDeUsuario(req.user));
   if (!tierValidado.ok) return res.status(403).json({ error: tierValidado.mensaje });
   try {
     const data = req.body;
@@ -1002,11 +1017,16 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, re
   try {
     const vendedores = req.body;
     if (!Array.isArray(vendedores)) return res.status(400).json({ error: 'Formato invalido' });
-    // El tope se normaliza al guardarlo (#137): un valor basura o fuera de rango
-    // capturado en la administracion nunca puede volverse permiso ilimitado.
-    await vendedoresStore.reemplazar(vendedores.map(v => (
-      v && v.topeDescuento !== undefined ? { ...v, topeDescuento: normalizarTope(v.topeDescuento) } : v
-    )));
+    // El tope y el flag de fijar lista se normalizan al guardarlos (#137/#153):
+    // un valor basura o fuera de rango capturado en la administracion nunca
+    // puede volverse permiso ilimitado.
+    await vendedoresStore.reemplazar(vendedores.map(v => {
+      if (!v) return v;
+      const out = { ...v };
+      if (v.topeDescuento !== undefined) out.topeDescuento = normalizarTope(v.topeDescuento);
+      if (v.puedeFijarLista !== undefined) out.puedeFijarLista = normalizarPuedeFijarLista(v.puedeFijarLista);
+      return out;
+    }));
     res.json({ saved: true });
   } catch (err) {
     res.status(500).json({ error: 'No se pudo guardar el registro: ' + err.message });

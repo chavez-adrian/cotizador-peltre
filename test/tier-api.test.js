@@ -12,6 +12,7 @@ import supertest from 'supertest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+const VENDEDORES_PATH = join(DATA_DIR, 'vendedores.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -93,4 +94,61 @@ test('vendedor: tier vacio (ausente) no cuenta como override', async () => {
     .set('Authorization', `Bearer ${tokenVendedor}`)
     .send(cotizacionCon(''));
   assert.strictEqual(res.status, 200);
+});
+
+// #153: el checkbox de admin en el registro de vendedores extiende el permiso
+// mas alla de rol admin. Se modifica el registro real y se restaura al final
+// (mismo cuidado que test/vendedores-store-api.test.js).
+test('vendedor con checkbox de fijar lista (#153): tier ajeno al tabulador se guarda', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === 2).puedeFijarLista = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const res = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('M1500'));
+    assert.strictEqual(res.status, 200);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+// #153: el flag viaja con la sesion igual que el tope (prior art:
+// "la pantalla recibe su tope vigente en /api/precios", test/descuentos-api.test.js).
+test('la pantalla recibe su permiso de fijar lista vigente en /api/precios', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === 2).puedeFijarLista = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const conFlag = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenVendedor}`);
+    assert.strictEqual(conFlag.body.puedeFijarLista, true);
+
+    registro.find(v => v.id === 2).puedeFijarLista = false;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const sinFlag = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenVendedor}`);
+    assert.strictEqual(sinFlag.body.puedeFijarLista, false);
+
+    const admin = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
+    assert.strictEqual(admin.body.puedeFijarLista, true);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+// #153: un valor basura capturado en /admin nunca se guarda como permiso.
+test('PUT /api/admin/vendedores: un valor basura en puedeFijarLista se normaliza a false', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    const conBasura = registro.map(v => (v.id === 2 ? { ...v, puedeFijarLista: 'si' } : v));
+    const res = await supertest(app).put('/api/admin/vendedores')
+      .set('Authorization', `Bearer ${tokenAdmin}`).send(conBasura);
+    assert.strictEqual(res.status, 200);
+    const guardado = JSON.parse(leerArchivoSync(VENDEDORES_PATH)).find(v => v.id === 2);
+    assert.strictEqual(guardado.puedeFijarLista, false);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
 });

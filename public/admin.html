@@ -15,6 +15,8 @@
   .vendedor-row input { flex: 1; padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
   .vendedor-row .pin-input { width: 70px; flex: none; }
   .vendedor-row .tope-input { width: 70px; flex: none; text-align: right; }
+  .vendedor-row label { flex: none; display: flex; align-items: center; gap: 4px; }
+  .vendedor-row label input[type="checkbox"] { flex: none; width: auto; padding: 0; border: none; }
   .vendedor-row select { width: 100px; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
   .toggle-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
     border: 1px solid var(--border); border-radius: 20px; font-size: 13px; cursor: pointer;
@@ -359,6 +361,12 @@ function renderVendedores() {
         ? '<span class="tope-input" style="font-size:12px;color:var(--text-light)">sin tope</span>'
         : `<input type="number" class="tope-input" min="0" max="100" step="1" value="${v.topeDescuento ?? 0}"
             onchange="vendedoresData[${i}].topeDescuento=this.value" title="Tope de descuento (%)" placeholder="% dscto.">`}
+      ${v.role === 'admin'
+        ? '<span style="font-size:12px;color:var(--text-light)">siempre puede</span>'
+        : `<label style="font-size:12px;white-space:nowrap">
+            <input type="checkbox" ${v.puedeFijarLista ? 'checked' : ''}
+              onchange="vendedoresData[${i}].puedeFijarLista=this.checked">
+            fijar lista</label>`}
       ${v.role !== 'admin' ? `<button class="btn btn-danger btn-sm" onclick="removeVendedor(${i})">X</button>` : '<div style="width:32px"></div>'}
     </div>
   `).join('');

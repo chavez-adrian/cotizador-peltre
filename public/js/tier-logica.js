@@ -6,7 +6,8 @@
 //
 // Glosario (CONTEXT.md, "Lista fijada (override)"): la lista fijada manda de
 // forma ABSOLUTA sobre el volumen, en ambas direcciones. #151 acota el permiso
-// a rol admin (la extension a vendedores con checkbox es #153).
+// a rol admin; #153 lo extiende a vendedores con checkbox (prior art:
+// topeDescuentoVendedor/normalizarTope en descuento-logica.js, #137).
 
 export const MENSAJE_SIN_PERMISO_TIER = 'No tienes permiso para fijar la lista de precios; pidelo al administrador.';
 
@@ -44,12 +45,26 @@ export function avisoListaFijada(tiers, piezasProducto, tierFijadoId) {
   return `Lista fijada: ${tier.id} - el volumen (${pzs} pzs) corresponde a ${auto.id}`;
 }
 
-// Enforcement del servidor (#151): un tier ajeno al tabulador solo pasa si
-// quien guarda es admin. Releido en cada guardado -- mismo motivo que
-// topeDescuentoDeUsuario en server.js: el JWT no se re-emite si el rol cambia.
-export function validarTierCotizacion(tiers, piezasProducto, tierGuardado, esAdmin) {
-  if (esAdmin) return { ok: true };
+// Enforcement del servidor (#151/#153): un tier ajeno al tabulador solo pasa
+// si quien guarda tiene permiso (rol admin, o checkbox por vendedor).
+// Releido en cada guardado -- mismo motivo que topeDescuentoDeUsuario en
+// server.js: el JWT no se re-emite si el permiso cambia.
+export function validarTierCotizacion(tiers, piezasProducto, tierGuardado, tienePermiso) {
+  if (tienePermiso) return { ok: true };
   const auto = tierPorVolumen(tiers, piezasProducto);
   if (!tierGuardado || tierGuardado === auto.id) return { ok: true };
   return { ok: false, mensaje: MENSAJE_SIN_PERMISO_TIER };
+}
+
+// Flag tal como se guarda en el registro de vendedores (#153): basura o
+// ausente degradan a false (sin permiso), nunca a permiso implicito. Mismo
+// patron que normalizarTope en descuento-logica.js.
+export function normalizarPuedeFijarLista(valor) {
+  return valor === true;
+}
+
+export function puedeFijarLista(vendedor) {
+  if (!vendedor) return false;
+  if (vendedor.role === 'admin') return true;
+  return normalizarPuedeFijarLista(vendedor.puedeFijarLista);
 }

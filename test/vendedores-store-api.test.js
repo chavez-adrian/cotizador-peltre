@@ -81,6 +81,19 @@ test('GET /api/admin/vendedores devuelve el registro completo', async () => {
   assert.strictEqual(v.operam_id, 2);
 });
 
+// #153: checkbox por vendedor, mismo contrato de reemplazo total que el tope.
+test('PUT /api/admin/vendedores persiste el checkbox de fijar lista; vendedores sin flag quedan sin permiso', async () => {
+  escribirRegistro(REGISTRO);
+  const nuevo = REGISTRO.map(v => (v.id === 2 ? { ...v, puedeFijarLista: true } : v));
+  const put = await supertest(app).put('/api/admin/vendedores')
+    .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+  assert.strictEqual(put.status, 200);
+
+  const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.strictEqual(res.body.find(v => v.id === 2).puedeFijarLista, true);
+  assert.ok(!res.body.find(v => v.id === 3).puedeFijarLista);
+});
+
 test('PUT /api/admin/vendedores: el array completo reemplaza el registro (alta y baja)', async () => {
   escribirRegistro(REGISTRO);
   const nuevo = [

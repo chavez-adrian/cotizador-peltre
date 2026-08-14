@@ -3,9 +3,11 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, MENSAJE_SIN_PERMISO_TIER;
+let normalizarPuedeFijarLista, puedeFijarLista;
 before(async () => {
   ({
     tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, MENSAJE_SIN_PERMISO_TIER,
+    normalizarPuedeFijarLista, puedeFijarLista,
   } = await import('../tier-logica.js'));
 });
 
@@ -104,4 +106,27 @@ test('sin permiso: tier ajeno al tabulador se rechaza con el mensaje de permiso'
 test('sin permiso: tier ausente o vacio no cuenta como override (pasa)', () => {
   assert.strictEqual(validarTierCotizacion(TIERS, 10, '', false).ok, true);
   assert.strictEqual(validarTierCotizacion(TIERS, 10, undefined, false).ok, true);
+});
+
+// === normalizarPuedeFijarLista / puedeFijarLista (#153, prior art #137) ===
+
+test('normalizarPuedeFijarLista: solo true exacto es permiso; basura, string y ausente degradan a false', () => {
+  assert.strictEqual(normalizarPuedeFijarLista(true), true);
+  assert.strictEqual(normalizarPuedeFijarLista(false), false);
+  assert.strictEqual(normalizarPuedeFijarLista('true'), false);
+  assert.strictEqual(normalizarPuedeFijarLista(1), false);
+  assert.strictEqual(normalizarPuedeFijarLista(null), false);
+  assert.strictEqual(normalizarPuedeFijarLista(undefined), false);
+});
+
+test('puedeFijarLista: admin siempre puede, sin checkbox', () => {
+  assert.strictEqual(puedeFijarLista({ role: 'admin' }), true);
+  assert.strictEqual(puedeFijarLista({ role: 'admin', puedeFijarLista: false }), true);
+});
+
+test('puedeFijarLista: vendedor depende del flag normalizado', () => {
+  assert.strictEqual(puedeFijarLista({ role: 'vendedor', puedeFijarLista: true }), true);
+  assert.strictEqual(puedeFijarLista({ role: 'vendedor', puedeFijarLista: false }), false);
+  assert.strictEqual(puedeFijarLista({ role: 'vendedor' }), false);
+  assert.strictEqual(puedeFijarLista(null), false);
 });
