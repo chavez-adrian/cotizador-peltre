@@ -59,7 +59,7 @@ test('B1: POST /api/cotizacion persiste cliente.pais', async () => {
 });
 
 test('#87: POST /api/login emite un JWT con vigencia de 24 horas', async () => {
-  const res = await supertest(app).post('/api/login').send({ vendedorId: 2, pin: '1111' });
+  const res = await supertest(app).post('/api/login').send({ vendedorId: 2, pin: '9992' });
   assert.strictEqual(res.status, 200);
   const decoded = jwt.decode(res.body.token);
   assert.strictEqual(decoded.exp - decoded.iat, 24 * 3600);
