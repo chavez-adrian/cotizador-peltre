@@ -402,6 +402,10 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     orderOperam: data?.orderOperam ?? null,
     quoteDesactualizado: data?.quoteDesactualizado ?? null,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
+    // Nombre corto y contacto de entrega (#147): amplian el matching del
+    // buscador del Historial (filtrarCotizaciones) mas alla de razon social.
+    nombreCorto: data?.cliente?.nombreCorto ?? null,
+    contactoEntrega: data?.cliente?.contactoEntrega ?? null,
     hasData: !!data,
   })));
 });

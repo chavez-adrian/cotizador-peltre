@@ -391,6 +391,38 @@ test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si h
   assert.strictEqual(entry.hasPdf, undefined);
 });
 
+// #147: el listado expone nombre corto y contacto de entrega desde el detalle
+// persistido, para que filtrarCotizaciones (public/js/cotizaciones-logica.js)
+// amplie el matching del buscador del Historial mas alla de razon social/folio.
+test('#147-1: GET /api/cotizaciones expone nombreCorto y contactoEntrega desde data.cliente', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Hotel Azul Centro SA de CV',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'Hotel Azul Centro SA de CV', nombreCorto: 'Hotel Azul', contactoEntrega: 'Mariana Gutierrez' }, items: [] },
+  }]);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  const entry = res.body.find(c => c.id === id);
+  assert.ok(entry);
+  assert.strictEqual(entry.nombreCorto, 'Hotel Azul');
+  assert.strictEqual(entry.contactoEntrega, 'Mariana Gutierrez');
+});
+
+test('#147-2: GET /api/cotizaciones sin data expone nombreCorto y contactoEntrega como null (no rompe)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Historica',
+    totalPiezas: 1, total: 50, tier: 'Menudeo',
+  }]);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  const entry = res.body.find(c => c.id === id);
+  assert.ok(entry);
+  assert.strictEqual(entry.nombreCorto, null);
+  assert.strictEqual(entry.contactoEntrega, null);
+});
+
 test('B4: POST /api/cotizacion/envio usa paisDestino en destination.country', async () => {
   let capturedPayload = null;
   const originalFetch = globalThis.fetch;

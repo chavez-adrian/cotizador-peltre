@@ -194,20 +194,28 @@ export function textoBotonGenerar(tipo, modoActualizacion) {
   return modoActualizacion ? 'Actualizar PDF' : 'Generar PDF';
 }
 
-// Buscador del Historial (#146). Nucleo puro: recibe el arreglo YA cargado en
-// memoria (el listado completo viaja en el GET existente, sin ida al servidor)
-// y devuelve el subconjunto que matchea. Se aplica antes de pintar, asi que
-// Lista y Tablero comparten el filtro gratis y cambiar de modo lo conserva.
-// El criterio es un objeto para que los tickets que amplian el matching y
-// agregan el rango de fechas (#144) solo le sumen llaves.
+// Buscador del Historial (#146, ampliado #147). Nucleo puro: recibe el arreglo
+// YA cargado en memoria (el listado completo viaja en el GET existente, sin
+// ida al servidor) y devuelve el subconjunto que matchea. Se aplica antes de
+// pintar, asi que Lista y Tablero comparten el filtro gratis y cambiar de modo
+// lo conserva. El criterio es un objeto para que los tickets que agregan el
+// rango de fechas (#144) solo le sumen llaves.
 //
-// Matchea por razon social del cliente y por el folio REAL de Operam
-// (ADR-0009) -- nunca por el id interno, que es clave tecnica de URLs.
+// Matchea por razon social, nombre corto, contacto de entrega y vendedor
+// (texto, case/acentos), por el folio REAL de Operam (ADR-0009 -- nunca el id
+// interno, que es clave tecnica de URLs), y por el celular reducido a digitos
+// como subcadena de los digitos del telefono -- consistente con la llave
+// ultimos10 (lib/telefono-llave.js): sin importar como se capturo el
+// telefono, "5512" lo encuentra.
 export function filtrarCotizaciones(cotizaciones, criterio) {
   const lista = cotizaciones || [];
   const texto = normalizarBusqueda(criterio?.texto);
   if (!texto) return lista.slice();
-  return lista.filter(c => camposBuscables(c).some(campo => campo.includes(texto)));
+  const digitos = soloDigitos(criterio?.texto);
+  return lista.filter(c =>
+    camposBuscables(c).some(campo => campo.includes(texto)) ||
+    (digitos && soloDigitos(c?.telefono).includes(digitos))
+  );
 }
 
 // Case-insensitive y sin acentos (NFD): "hernandez" encuentra "Hernandez" y al
@@ -223,8 +231,21 @@ function normalizarBusqueda(valor) {
     .trim();
 }
 
+// Solo digitos, sin recortar a 10 (a diferencia de ultimos10): aqui se busca
+// una subcadena parcial del celular, no se calcula la llave de identidad.
+function soloDigitos(valor) {
+  if (valor == null) return '';
+  return String(valor).replace(/\D/g, '');
+}
+
 function camposBuscables(c) {
-  return [normalizarBusqueda(c?.cliente), normalizarBusqueda(c?.folioOperam)];
+  return [
+    normalizarBusqueda(c?.cliente),
+    normalizarBusqueda(c?.folioOperam),
+    normalizarBusqueda(c?.nombreCorto),
+    normalizarBusqueda(c?.contactoEntrega),
+    normalizarBusqueda(c?.vendedor),
+  ];
 }
 
 export function buildTableroCotizacionesHtml(cotizaciones, hoy = new Date()) {

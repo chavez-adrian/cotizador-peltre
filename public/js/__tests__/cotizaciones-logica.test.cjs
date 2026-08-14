@@ -407,3 +407,57 @@ test('Q38: filtrarCotizaciones no muta el arreglo original', () => {
   assert.equal(lista.length, 2);
   assert.notEqual(filtradas, lista);
 });
+
+// === #147: matching ampliado -- nombre corto, contacto de entrega, celular
+// por digitos (cualquier formato) y vendedor.
+
+test('Q39: filtrarCotizaciones matchea por nombre corto (cust_ref), case/acentos como el ticket base', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Hotel Azul Centro SA de CV', nombreCorto: 'Hotel Azul' }),
+    cot(2, { id: 2, cliente: 'Panaderia Lopez SA de CV', nombreCorto: 'Panadería López' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'hotel azul' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'PANADERIA LOPEZ' }).map(c => c.id), [2]);
+});
+
+test('Q40: filtrarCotizaciones matchea por el nombre del contacto de entrega', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Hotel Azul', contactoEntrega: 'Mariana Gutiérrez Solís' }),
+    cot(2, { id: 2, cliente: 'Panaderia Lopez', contactoEntrega: 'Olga Pinales' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'mariana' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'gutierrez' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'olga' }).map(c => c.id), [2]);
+});
+
+test('Q41: filtrarCotizaciones matchea el celular como fragmento de digitos sin importar el formato capturado', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Hotel Azul', telefono: '525512345678' }),
+    cot(2, { id: 2, cliente: 'Panaderia Lopez', telefono: '5219981234567' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '5512' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '998123' }).map(c => c.id), [2]);
+  // formato con separadores/parentesis en la busqueda tambien se reduce a digitos
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '(55) 1234-5678' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '9999' }), []);
+});
+
+test('Q42: filtrarCotizaciones matchea por vendedor (util para admin, que ve todas)', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Hotel Azul', vendedor: 'Laura' }),
+    cot(2, { id: 2, cliente: 'Panaderia Lopez', vendedor: 'Marco' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'laura' }).map(c => c.id), [1]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'MARCO' }).map(c => c.id), [2]);
+});
+
+test('Q43: registros sin data persistida (hasData false) no matchean por los campos ausentes ni rompen el filtro', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Historica', hasData: false, nombreCorto: null, contactoEntrega: null, telefono: null }),
+    cot(2, { id: 2, cliente: 'Hotel Azul', nombreCorto: 'Hotel Azul', hasData: true }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'hotel' }).map(c => c.id), [2]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '5512' }), []);
+  // el registro sin data si matchea por lo que si tiene (razon social)
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'historica' }).map(c => c.id), [1]);
+});
