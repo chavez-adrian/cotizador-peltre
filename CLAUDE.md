@@ -19,7 +19,7 @@ node --test --test-concurrency=1 public/js/__tests__/alta-csf.test.cjs
 ## Documentos de contexto — leer ANTES de tocar el area
 
 - `docs/arquitectura.md` — **detalle por modulo/tema** (lib/, persistencia, catalogos, auth, quirks de Operam). Este CLAUDE.md es el resumen; el detalle vive alla.
-- `CONTEXT.md` — glosario de dominio (el glosario manda) + `docs/adr/` — decisiones de arquitectura (0001-0010).
+- `CONTEXT.md` — glosario de dominio (el glosario manda) + `docs/adr/` — decisiones de arquitectura (0001-0011).
 - `PROCESO_COMERCIAL_AS_IS.md`, `SOP_crear_cliente_operam.md`, `MAPEO_CAMPOS_CLIENTE.md` — proceso comercial y flujo de clientes; leer antes de cambios a ese flujo.
 - `peltre-operam.md` (raiz `_Claude/`) §12 — API de Operam: tipos de transaccion REALES (el MCP `operam-api` los etiqueta mal), cadena `order_`, contrato de escritura del quote. Consultar ANTES de explorar Operam.
 

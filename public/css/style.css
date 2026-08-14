@@ -952,7 +952,9 @@ body {
 /* % de descuento por linea (#137): sin permiso la celda es solo texto */
 .cart-line-desc { text-align: right; }
 
-.cart-line-desc .desc-input {
+/* Mismo control para la linea (#137) y para el atajo "% a todo" (#138) */
+.cart-line-desc .desc-input,
+.cart-desc-global .desc-input {
   width: 46px;
   height: 22px;
   font-size: 11px;
@@ -961,6 +963,16 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-input);
   font-family: inherit;
+}
+
+/* Atajo de descuento global (#138): escribe el mismo % en todas las partidas */
+.cart-desc-global {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text);
 }
 
 .cart-line-total {

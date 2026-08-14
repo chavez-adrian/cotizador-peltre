@@ -181,7 +181,7 @@ Descuento estructural asignado a un cliente según el volumen estimado de compra
 
 ## Descuento (comercial)
 
-Porcentaje por partida (0–100) que el vendedor captura sobre el precio de lista del tier vigente. Es distinto de la **Lista de precios**, que es el descuento estructural por volumen: el comercial se aplica encima y no mueve el tier (el tier lo fijan las piezas, nunca el dinero). Toda partida puede llevarlo, incluido el envío. El **descuento global** no es una entidad propia: es un atajo de captura que escribe el mismo % en todas las partidas (re-aplicarlo las sobreescribe; después se puede ajustar línea por línea). La fuente de verdad es siempre el % por línea — documento, cotizador y Operam ven exactamente lo mismo, sin renglones de descuento que el ERP no pueda representar.
+Porcentaje por partida (0–100) que el vendedor captura sobre el precio de lista del tier vigente. Es distinto de la **Lista de precios**, que es el descuento estructural por volumen: el comercial se aplica encima y no mueve el tier (el tier lo fijan las piezas, nunca el dinero). Toda partida puede llevarlo, incluido el envío. El **descuento global** no es una entidad propia (ADR-0011): es un atajo de captura que escribe el mismo % en todas las partidas (re-aplicarlo las sobreescribe; después se puede ajustar línea por línea). La fuente de verdad es siempre el % por línea — documento, cotizador y Operam ven exactamente lo mismo, sin renglones de descuento que el ERP no pueda representar.
 
 Descontar es un **permiso, no un derecho**: cada vendedor tiene un tope de descuento asignado por el admin, con 0% mientras no se le asigne (el rol admin no tiene tope). El control de fondo sigue siendo la Aprobación de pedido.
 

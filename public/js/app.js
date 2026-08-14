@@ -95,11 +95,13 @@ import {
   debeAutoCotizarEnvia,
   buildEnviaRateRestauradaHtml,
   buildItemsYTotales,
+  buildItemEnvio,
   importeLinea,
 } from './cotizar-logica.js';
 import {
   puedeDescontar,
   validarDescuentoLinea,
+  descuentoGlobalVigente,
 } from './descuento-logica.js';
 import {
   TAMANOS_CALCA,
@@ -737,6 +739,7 @@ function renderCartLines() {
   }
 
   section.style.display = 'block';
+  renderDescuentoGlobal();
   let subtotal = 0;
   let html = '';
 
@@ -776,6 +779,59 @@ function renderCartLines() {
   const iva = subtotal * 0.16;
   subtotalEl.innerHTML = `Subtotal: <strong>$${fmt(subtotal)}</strong> &nbsp;+&nbsp; IVA $${fmt(iva)} &nbsp;= &nbsp;<strong>$${fmt(subtotal + iva)}</strong>`;
 }
+
+// Todo lo que el atajo global toca (#138): las lineas del carrito MAS la partida
+// de envio, y solo si existe -- misma regla que decide si el documento la lleva
+// (buildItemEnvio), para que el campo global no cuente una partida fantasma.
+function partidasDelCarrito() {
+  const partidas = [...state.cart.values()].map(({ descuento }) => ({ descuento }));
+  const itemEnvio = buildItemEnvio(envioCapturadoEnFormulario());
+  if (itemEnvio) partidas.push(itemEnvio);
+  return partidas;
+}
+
+// Campo "aplicar % a todo" (#138, ADR-0011). No guarda nada: muestra el % comun
+// a todas las partidas y se queda en blanco en cuanto una se afina aparte, por
+// que el descuento global no existe como entidad -- solo hay % por linea.
+function renderDescuentoGlobal() {
+  const el = document.getElementById('cart-desc-global');
+  if (!el) return;
+  if (!puedeDescontar(state.topeDescuento)) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'flex';
+  const vigente = descuentoGlobalVigente(partidasDelCarrito());
+  el.innerHTML = `
+    <label for="desc-global">Aplicar % de descuento a todo</label>
+    <input id="desc-global" class="desc-input" type="number" min="0" max="${state.topeDescuento}" step="1"
+      value="${vigente || ''}" placeholder="0" inputmode="numeric"
+      onchange="aplicarDescuentoATodo(this.value)">
+  `;
+}
+
+// El atajo: un % una sola vez y todas las partidas quedan con el, envio incluido,
+// sobreescribiendo lo capturado antes. Despues se afina linea por linea. Pasa por
+// el MISMO freno que la captura de una linea (validarDescuentoLinea) -- no hay
+// regla nueva que el servidor tenga que aprender.
+function aplicarDescuentoATodo(valor) {
+  const r = validarDescuentoLinea(valor, state.topeDescuento);
+  if (!r.ok) {
+    alert(r.mensaje);
+    renderCartLines();
+    return;
+  }
+  for (const item of state.cart.values()) item.descuento = r.valor;
+  envioDescuento = r.valor;
+  // Mismo motivo que en la captura por linea: cambio el valor declarado a la
+  // paqueteria para el seguro, asi que la tarifa vigente de envia.com ya no vale.
+  invalidarEnvioSiAplica();
+  updateCartSummary();
+  updateResumen();
+  renderCartLines();
+}
+window.aplicarDescuentoATodo = aplicarDescuentoATodo;
 
 // Celda de % de descuento de una linea (#137). Sin tope asignado no hay captura:
 // se muestra en solo lectura, porque una cotizacion cargada del historial puede
@@ -1013,6 +1069,9 @@ function setEnvioDescuento(valor) {
   }
   envioDescuento = r.valor;
   updateResumen();
+  // Repinta el carrito porque el envio es una partida mas para el campo "% a
+  // todo" (#138): bonificar solo el flete tiene que dejarlo en blanco.
+  renderCartLines();
 }
 window.setEnvioDescuento = setEnvioDescuento;
 

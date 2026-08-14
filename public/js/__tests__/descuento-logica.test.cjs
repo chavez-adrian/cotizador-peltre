@@ -3,11 +3,13 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let normalizarTope, topeDescuentoVendedor, puedeDescontar, validarDescuentoLinea,
-  validarDescuentosCotizacion, mensajeTopeExcedido, MENSAJE_SIN_TOPE, TOPE_ADMIN, partidasConDescuento;
+  validarDescuentosCotizacion, mensajeTopeExcedido, MENSAJE_SIN_TOPE, TOPE_ADMIN, partidasConDescuento,
+  descuentoGlobalVigente;
 before(async () => {
   ({
     normalizarTope, topeDescuentoVendedor, puedeDescontar, validarDescuentoLinea,
     validarDescuentosCotizacion, mensajeTopeExcedido, MENSAJE_SIN_TOPE, TOPE_ADMIN, partidasConDescuento,
+    descuentoGlobalVigente,
   } = await import('../descuento-logica.js'));
 });
 
@@ -125,4 +127,35 @@ test('partidasConDescuento ignora un envio sin descuento o ausente', () => {
   assert.strictEqual(partidasConDescuento({ items: [{ codigo: 'AB12' }], envio: { precio: 500 } }).length, 1);
   assert.strictEqual(partidasConDescuento({ items: [{ codigo: 'AB12' }] }).length, 1);
   assert.strictEqual(partidasConDescuento(undefined).length, 0);
+});
+
+// === Atajo global (#138, ADR-0011): no hay entidad "descuento global" ===
+
+test('#138-1: todas las partidas al mismo % -> el campo global dice ese %', () => {
+  const partidas = [{ descuento: 10 }, { descuento: 10 }, { descuento: 10 }];
+  assert.strictEqual(descuentoGlobalVigente(partidas), 10);
+});
+
+test('#138-2: una partida afinada aparte -> el campo global se queda sin valor', () => {
+  const partidas = [{ descuento: 10 }, { descuento: 7 }, { descuento: 10 }];
+  assert.strictEqual(descuentoGlobalVigente(partidas), null);
+});
+
+test('#138-3: cotizacion sin descuentos -> 0, no null (el campo arranca en blanco por el 0)', () => {
+  assert.strictEqual(descuentoGlobalVigente([{ descuento: 0 }, {}]), 0);
+});
+
+test('#138-4: carrito vacio -> sin valor', () => {
+  assert.strictEqual(descuentoGlobalVigente([]), null);
+  assert.strictEqual(descuentoGlobalVigente(undefined), null);
+});
+
+test('#138-5: el envio cuenta como una partida mas para el campo global', () => {
+  assert.strictEqual(descuentoGlobalVigente([{ descuento: 10 }, { codigo: 'ENVIO', descuento: 0 }]), null);
+  assert.strictEqual(descuentoGlobalVigente([{ descuento: 10 }, { codigo: 'ENVIO', descuento: 10 }]), 10);
+});
+
+test('#138-6: un % corrupto no se lee como 0 -> sin valor comun', () => {
+  assert.strictEqual(descuentoGlobalVigente([{ descuento: 150 }, { descuento: 0 }]), null);
+  assert.strictEqual(descuentoGlobalVigente([{ descuento: 'abc' }]), null);
 });

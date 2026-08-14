@@ -66,6 +66,21 @@ export function partidasConDescuento(cotizacion) {
   return partidas;
 }
 
+// % que muestra el campo "aplicar a todo" (#138, ADR-0011). El descuento global
+// no es una entidad propia: se prorratea escribiendo el MISMO % en cada partida,
+// asi que el campo no guarda nada -- lee lo que ya tienen las partidas. Si todas
+// coinciden dice ese %, y en cuanto el vendedor afina una linea aparte se queda
+// en blanco en vez de seguir afirmando un global que ya no existe.
+export function descuentoGlobalVigente(partidas) {
+  const lista = partidas || [];
+  if (!lista.length) return null;
+  // Un % fuera de rango (null) no cuenta como 0: deja el campo en blanco en vez
+  // de inventar un global comun sobre una partida que ni siquiera es valida.
+  const primero = porcentaje(lista[0]?.descuento);
+  if (primero === null) return null;
+  return lista.every(p => porcentaje(p?.descuento) === primero) ? primero : null;
+}
+
 // La cotizacion completa (incluida la partida ENVIO): la primera partida fuera
 // del tope la tumba, nombrandola para que el vendedor sepa cual corregir.
 export function validarDescuentosCotizacion(items, tope) {
