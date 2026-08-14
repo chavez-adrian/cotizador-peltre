@@ -191,9 +191,11 @@ Con descuento, el valor que se declara a la paquetería para el seguro es el val
 
 El texto que describe cada línea de la cotización, con un máximo de 1000 caracteres (el límite del campo en Operam). Por omisión viene del catálogo; el vendedor puede editarlo por partida (artículos y calcas), y vaciarlo lo regresa a la del catálogo. La descripción editada queda **también en Operam**, no solo en el documento del cliente: al crear el quote viaja en el payload de la API, y al actualizarlo conservando folio se reescribe línea por línea (edición por partida de la pantalla del quote, contrato verificado en vivo con el quote 1216 el 2026-08-13). Una descripción editada cuenta como cambio de contenido del quote y dispara su actualización.
 
+La partida de **envío** es un caso aparte: su descripción no sale de ningún catálogo — la arma el cotizador con el servicio y el tiempo literales de la paquetería —, así que siempre se impone en Operam aunque el vendedor no la haya tecleado. El vendedor no la edita desde el carrito; sale de la tarifa elegida.
+
 ## Tiempo de entrega (envío cotizado)
 
-El estimado que la paquetería reporta al cotizar el envío. Se promete al cliente en la descripción de la partida de envío usando el nombre del servicio y el estimado **literales** de la paquetería, con la precisión "hábiles" cuando el estimado viene en días (p. ej. "FedEx Nacional Económico — entrega estimada 1-2 días hábiles").
+El estimado que la paquetería reporta al cotizar el envío. Se promete al cliente en la descripción de la partida de envío usando el nombre del servicio y el estimado **literales** de la paquetería, con la precisión "hábiles" cuando el estimado viene en días (p. ej. "FedEx Nacional Económico — entrega estimada 1-2 días hábiles"). Esa misma promesa es la que queda escrita en la partida de envío del quote de Operam, tanto al crearlo como al actualizarlo.
 
 ## Guardrail
 
