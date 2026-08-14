@@ -179,6 +179,22 @@ RFC que se usa cuando el cliente no tiene RFC mexicano. Dos variantes: `XAXX0101
 
 Descuento estructural asignado a un cliente según el volumen estimado de compra. Opciones: M100, M350, M550, M1500, M6000, M6001. La selecciona el **vendedor** en el alta con base en la estimación inicial del cliente. El vendedor es responsable de ajustarla si el volumen cotizado cambia. Adrián la revisa en la aprobación del pedido y notifica al vendedor si hay error.
 
+## Descuento (comercial)
+
+Porcentaje por partida (0–100) que el vendedor captura sobre el precio de lista del tier vigente. Es distinto de la **Lista de precios**, que es el descuento estructural por volumen: el comercial se aplica encima y no mueve el tier (el tier lo fijan las piezas, nunca el dinero). Toda partida puede llevarlo, incluido el envío. El **descuento global** no es una entidad propia: es un atajo de captura que escribe el mismo % en todas las partidas (re-aplicarlo las sobreescribe; después se puede ajustar línea por línea). La fuente de verdad es siempre el % por línea — documento, cotizador y Operam ven exactamente lo mismo, sin renglones de descuento que el ERP no pueda representar.
+
+Descontar es un **permiso, no un derecho**: cada vendedor tiene un tope de descuento asignado por el admin, con 0% mientras no se le asigne (el rol admin no tiene tope). El control de fondo sigue siendo la Aprobación de pedido.
+
+Con descuento, el valor que se declara a la paquetería para el seguro es el valor **con** descuento: lo que el cliente realmente paga, coincidente con la factura ante una reclamación.
+
+## Descripción de partida
+
+El texto que describe cada línea de la cotización. Por omisión viene del catálogo; el vendedor puede editarlo por partida (artículos y calcas). Decisión: la descripción editada debe quedar **también en Operam**, no solo en el documento del cliente — el canal es la edición por línea de la pantalla del quote (verificada por Adrián en la UI; su contrato de escritura está pendiente de descubrir en vivo). Consecuencia: una descripción editada cuenta como cambio de contenido del quote y dispara su actualización.
+
+## Tiempo de entrega (envío cotizado)
+
+El estimado que la paquetería reporta al cotizar el envío. Se promete al cliente en la descripción de la partida de envío usando el nombre del servicio y el estimado **literales** de la paquetería, con la precisión "hábiles" cuando el estimado viene en días (p. ej. "FedEx Nacional Económico — entrega estimada 1-2 días hábiles").
+
 ## Guardrail
 
 Restricción en el formulario de alta que impide errores críticos sin requerir intervención de Adrián. Ejemplo: detectar RFC duplicado antes de crear el cliente. Los guardrails hacen viable que el vendedor complete el alta por sí solo.
