@@ -194,28 +194,59 @@ export function textoBotonGenerar(tipo, modoActualizacion) {
   return modoActualizacion ? 'Actualizar PDF' : 'Generar PDF';
 }
 
-// Buscador del Historial (#146, ampliado #147). Nucleo puro: recibe el arreglo
-// YA cargado en memoria (el listado completo viaja en el GET existente, sin
-// ida al servidor) y devuelve el subconjunto que matchea. Se aplica antes de
-// pintar, asi que Lista y Tablero comparten el filtro gratis y cambiar de modo
-// lo conserva. El criterio es un objeto para que los tickets que agregan el
-// rango de fechas (#144) solo le sumen llaves.
+// Buscador del Historial (#146, ampliado #147, rango de fechas #148). Nucleo
+// puro: recibe el arreglo YA cargado en memoria (el listado completo viaja en
+// el GET existente, sin ida al servidor) y devuelve el subconjunto que
+// matchea. Se aplica antes de pintar, asi que Lista y Tablero comparten el
+// filtro gratis y cambiar de modo lo conserva.
 //
 // Matchea por razon social, nombre corto, contacto de entrega y vendedor
 // (texto, case/acentos), por el folio REAL de Operam (ADR-0009 -- nunca el id
 // interno, que es clave tecnica de URLs), y por el celular reducido a digitos
 // como subcadena de los digitos del telefono -- consistente con la llave
 // ultimos10 (lib/telefono-llave.js): sin importar como se capturo el
-// telefono, "5512" lo encuentra.
+// telefono, "5512" lo encuentra. Texto y rango de fechas se combinan con AND.
 export function filtrarCotizaciones(cotizaciones, criterio) {
   const lista = cotizaciones || [];
   const texto = normalizarBusqueda(criterio?.texto);
-  if (!texto) return lista.slice();
+  const desde = criterio?.desde || '';
+  const hasta = criterio?.hasta || '';
+  if (!texto && !desde && !hasta) return lista.slice();
   const digitos = soloDigitos(criterio?.texto);
-  return lista.filter(c =>
-    camposBuscables(c).some(campo => campo.includes(texto)) ||
-    (digitos && soloDigitos(c?.telefono).includes(digitos))
-  );
+  return lista.filter(c => {
+    if (texto && !(
+      camposBuscables(c).some(campo => campo.includes(texto)) ||
+      (digitos && soloDigitos(c?.telefono).includes(digitos))
+    )) return false;
+    return enRangoFecha(c?.fecha, desde, hasta);
+  });
+}
+
+// "Desde" y "Hasta" son independientes: solo uno acota por ese lado (#148).
+// c.fecha es ISO (server la guarda con toISOString via Date); el input nativo
+// entrega yyyy-mm-dd, un dia calendario sin zona horaria. A diferencia de los
+// scripts de backend que comparan contra el dia UTC (backfill-operam.mjs,
+// sync-operam-io.js), aqui el dia se calcula en hora LOCAL: este nucleo solo
+// corre en el navegador (nunca en server.js), y la tarjeta ya muestra la
+// fecha en hora local (fechaCorta/toLocaleDateString mas abajo). Usar UTC
+// aqui desincroniza el filtro de lo que el vendedor ve en pantalla -- una
+// cotizacion de las 11pm del 12 puede caer en el dia 13 en UTC y quedar
+// oculta al filtrar "Desde 13" aunque su tarjeta siga diciendo "12 ago".
+function diaLocal(fecha) {
+  const d = new Date(fecha);
+  const anio = d.getFullYear();
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${anio}-${mes}-${dia}`;
+}
+
+function enRangoFecha(fecha, desde, hasta) {
+  if (!desde && !hasta) return true;
+  if (!fecha) return false;
+  const dia = diaLocal(fecha);
+  if (desde && dia < desde) return false;
+  if (hasta && dia > hasta) return false;
+  return true;
 }
 
 // Case-insensitive y sin acentos (NFD): "hernandez" encuentra "Hernandez" y al

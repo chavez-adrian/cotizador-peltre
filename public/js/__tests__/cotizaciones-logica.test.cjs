@@ -451,6 +451,88 @@ test('Q42: filtrarCotizaciones matchea por vendedor (util para admin, que ve tod
   assert.deepEqual(filtrarCotizaciones(lista, { texto: 'MARCO' }).map(c => c.id), [2]);
 });
 
+// === #148: rango de fechas Desde/Hasta -- se combina con AND con el texto.
+// cot(diasAtras) resta dias enteros de HOY (2026-06-11T12:00:00Z, mediodia
+// UTC), asi que el dia UTC de c.fecha coincide con el dia calendario esperado
+// sin ambiguedad de borde.
+
+test('Q44: filtrarCotizaciones con solo "desde" filtra de esa fecha en adelante (rango abierto)', () => {
+  const lista = [
+    cot(0, { id: 1 }),  // 2026-06-11
+    cot(10, { id: 2 }), // 2026-06-01
+    cot(20, { id: 3 }), // 2026-05-22
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { desde: '2026-06-01' }).map(c => c.id), [1, 2]);
+});
+
+test('Q45: filtrarCotizaciones con solo "hasta" filtra hasta esa fecha (rango abierto)', () => {
+  const lista = [
+    cot(0, { id: 1 }),  // 2026-06-11
+    cot(10, { id: 2 }), // 2026-06-01
+    cot(20, { id: 3 }), // 2026-05-22
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { hasta: '2026-06-01' }).map(c => c.id), [2, 3]);
+});
+
+test('Q46: filtrarCotizaciones con "desde" y "hasta" acota el rango cerrado, incluyendo los bordes', () => {
+  const lista = [
+    cot(0, { id: 1 }),  // 2026-06-11
+    cot(5, { id: 2 }),  // 2026-06-06
+    cot(10, { id: 3 }), // 2026-06-01
+    cot(20, { id: 4 }), // 2026-05-22
+  ];
+  assert.deepEqual(
+    filtrarCotizaciones(lista, { desde: '2026-06-01', hasta: '2026-06-08' }).map(c => c.id),
+    [2, 3]
+  );
+  // los bordes exactos matchean (inclusive)
+  assert.deepEqual(
+    filtrarCotizaciones(lista, { desde: '2026-06-01', hasta: '2026-06-11' }).map(c => c.id),
+    [1, 2, 3]
+  );
+});
+
+test('Q47: filtrarCotizaciones combina texto y rango de fechas con AND', () => {
+  const lista = [
+    cot(0, { id: 1, cliente: 'Hotel Azul' }),  // 2026-06-11, fuera del rango
+    cot(10, { id: 2, cliente: 'Hotel Azul' }), // 2026-06-01, dentro y matchea texto
+    cot(10, { id: 3, cliente: 'Panaderia Lopez' }), // 2026-06-01, dentro pero no matchea texto
+  ];
+  assert.deepEqual(
+    filtrarCotizaciones(lista, { texto: 'hotel', desde: '2026-06-01', hasta: '2026-06-08' }).map(c => c.id),
+    [2]
+  );
+});
+
+test('Q48: filtrarCotizaciones sin fechas no acota (equivalente al buscador base)', () => {
+  const lista = [cot(0, { id: 1 }), cot(90, { id: 2 })];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: '', desde: '', hasta: '' }).map(c => c.id), [1, 2]);
+  assert.deepEqual(filtrarCotizaciones(lista, {}).map(c => c.id), [1, 2]);
+});
+
+// Bug real encontrado verificando en navegador (Mexico_City, UTC-6): una
+// cotizacion guardada como '2026-08-13' (fecha sin hora, ISO la interpreta
+// como medianoche UTC) se pinta en la tarjeta como "12 ago" porque
+// fechaCorta/toLocaleDateString usan hora local. Comparar contra el dia UTC
+// (como los scripts de backend) la dejaba visible al filtrar "Desde 13 ago",
+// contradiciendo lo que la tarjeta decia. filtrarCotizaciones solo corre en
+// el navegador (nunca en server.js), asi que compara contra el dia LOCAL,
+// igual que lo que ve el vendedor en pantalla.
+test('Q49: filtrarCotizaciones compara el rango contra el dia LOCAL de c.fecha, no el dia UTC (borde de zona horaria)', () => {
+  const lista = [
+    // medianoche UTC del 13: en Mexico_City (UTC-6) cae en la tarde del 12
+    cot(0, { id: 1, fecha: '2026-08-13' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { desde: '2026-08-13' }), []);
+  assert.deepEqual(filtrarCotizaciones(lista, { hasta: '2026-08-12' }).map(c => c.id), [1]);
+});
+
+test('Q50: filtrarCotizaciones con fecha ausente no matchea ningun rango pero si pasa sin fechas', () => {
+  const lista = [cot(0, { id: 1, fecha: null })];
+  assert.deepEqual(filtrarCotizaciones(lista, { desde: '2026-01-01' }), []);
+  assert.deepEqual(filtrarCotizaciones(lista, {}).map(c => c.id), [1]);
+});
+
 test('Q43: registros sin data persistida (hasData false) no matchean por los campos ausentes ni rompen el filtro', () => {
   const lista = [
     cot(1, { id: 1, cliente: 'Historica', hasData: false, nombreCorto: null, contactoEntrega: null, telefono: null }),

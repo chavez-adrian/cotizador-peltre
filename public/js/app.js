@@ -3235,15 +3235,17 @@ window.resetFlujoGuiado = resetFlujoGuiado;
 // prospectos (#49); la preferencia del usuario se recuerda en localStorage.
 let cotizacionesModo = localStorage.getItem('cotizacionesModo') === 'tablero' ? 'tablero' : 'lista';
 let ultimasCotizaciones = [];
-// Criterio del buscador (#146): vive en memoria, no persiste (ni localStorage
-// ni servidor). Re-entrar al Historial lo limpia.
-let cotizacionesFiltro = '';
+// Criterio del buscador (#146, rango de fechas #148): vive en memoria, no
+// persiste (ni localStorage ni servidor). Re-entrar al Historial lo limpia.
+let cotizacionesFiltro = { texto: '', desde: '', hasta: '' };
 
 async function showHistorial() {
   ocultarTodasLasVistas();
   document.getElementById('historial-view').style.display = 'block';
-  cotizacionesFiltro = '';
+  cotizacionesFiltro = { texto: '', desde: '', hasta: '' };
   document.getElementById('historial-buscar').value = '';
+  document.getElementById('historial-desde').value = '';
+  document.getElementById('historial-hasta').value = '';
   await recargarHistorial();
 }
 
@@ -3280,7 +3282,7 @@ function renderHistorial() {
   btnTablero.classList.toggle('btn-secondary', !esTablero);
   // El filtro se aplica al arreglo ANTES de pintar (#146): Lista y Tablero lo
   // comparten gratis y cambiar de modo lo conserva.
-  const visibles = filtrarCotizaciones(ultimasCotizaciones, { texto: cotizacionesFiltro });
+  const visibles = filtrarCotizaciones(ultimasCotizaciones, cotizacionesFiltro);
   // "No hay resultados" no es "no hay cotizaciones": si el listado trae algo y
   // el filtro no matcha nada, manda el aviso del buscador en los dos modos.
   const sinResultados = visibles.length === 0 && ultimasCotizaciones.length > 0;
@@ -4864,7 +4866,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Buscador del Historial (#146): filtra en vivo al teclear, sin ida al
   // servidor (el listado completo ya esta en memoria).
   document.getElementById('historial-buscar').addEventListener('input', e => {
-    cotizacionesFiltro = e.target.value;
+    cotizacionesFiltro.texto = e.target.value;
+    renderHistorial();
+  });
+  // Rango de fechas Desde/Hasta (#148): se combina con AND con el texto via
+  // el mismo criterio de filtrarCotizaciones.
+  document.getElementById('historial-desde').addEventListener('input', e => {
+    cotizacionesFiltro.desde = e.target.value;
+    renderHistorial();
+  });
+  document.getElementById('historial-hasta').addEventListener('input', e => {
+    cotizacionesFiltro.hasta = e.target.value;
     renderHistorial();
   });
   initDragEnTablero('cotizaciones-tablero', {

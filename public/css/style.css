@@ -314,7 +314,8 @@ body {
   position: relative;
 }
 
-.search-input-wrap input {
+.search-input-wrap input,
+.historial-fechas input[type="date"] {
   width: 100%;
   padding: 9px 14px;
   border: 1px solid var(--border);
@@ -326,10 +327,28 @@ body {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.search-input-wrap input:focus {
+.search-input-wrap input:focus,
+.historial-fechas input[type="date"]:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(65, 143, 255, 0.15);
+}
+
+.historial-fechas {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.historial-fechas label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+.historial-fechas input[type="date"] {
+  display: block;
+  margin-top: 2px;
 }
 
 .search-dropdown {

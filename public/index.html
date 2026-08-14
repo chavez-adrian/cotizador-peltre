@@ -967,6 +967,16 @@
     <div class="search-input-wrap" style="margin-bottom:10px">
       <input type="text" id="historial-buscar" autocomplete="off" placeholder="Buscar por cliente o folio de Operam...">
     </div>
+    <!-- Rango de fechas Desde/Hasta (issue #148): ambos opcionales, se
+         combinan con AND con el texto. Sin presets, picker nativo. -->
+    <div class="historial-fechas">
+      <label>Desde
+        <input type="date" id="historial-desde">
+      </label>
+      <label>Hasta
+        <input type="date" id="historial-hasta">
+      </label>
+    </div>
     <!-- Conmutador lista/tablero (issue #50): mismo patron que prospectos (#49) -->
     <span id="historial-modo" style="display:inline-flex;gap:4px;margin-bottom:12px">
       <button class="btn btn-sm btn-secondary" id="btn-cot-modo-lista">Lista</button>
