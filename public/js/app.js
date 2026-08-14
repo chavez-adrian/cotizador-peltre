@@ -122,12 +122,12 @@ import {
   productoCalca,
   piezasDeProducto,
   hayCalcaEnCarrito,
-  puedeAgregarCalca,
+  cantidadFacturableCalca,
+  avisoClampCalca,
+  tierIdParaCalca,
   motivoCalcaInvalida,
-  MOTIVOS_CALCA_INVALIDA,
-  bloqueaGeneracionPorCalcaSinVolumen,
+  bloqueaGeneracionPorCalcaSinPrecio,
   avisoCalcaInvalida,
-  avisoNoPuedeAgregarCalca,
   relacionCalcaProducto,
   estadoMarcaDecorado,
 } from './calcas-logica.js';
@@ -427,7 +427,7 @@ function getNextTier() {
 // carrito la pinta como invalida, en vez de imprimir un cero silencioso.
 function precioUnitario(product) {
   const tier = getCurrentTier();
-  if (product.esCalca) return precioCalca(product, tier.id);
+  if (product.esCalca) return precioCalca(product, tierIdParaCalca(tier.id));
   return product.prices[tier.id] ?? product.prices['Menudeo'] ?? 0;
 }
 
@@ -691,7 +691,7 @@ function renderCalcas() {
 
   const piezas = getPiezasProducto();
   const ficha = calcaElegida();
-  const precio = ficha ? precioCalca(ficha, getCurrentTier().id) : null;
+  const precio = ficha ? precioCalca(ficha, tierIdParaCalca(getCurrentTier().id)) : null;
 
   const resuelto = document.getElementById('cal-resuelto');
   document.getElementById('cal-sku').textContent = ficha ? ficha.code : '—';
@@ -710,57 +710,57 @@ function renderCalcas() {
     cantidadEl.value = piezas > 0 ? piezas : '';
   }
 
-  // Umbral duro de 100 piezas de producto (decision 1): abajo de eso no se
-  // agrega, y el aviso dice el umbral y lo que lleva. Tampoco se agrega una
-  // calca sin precio en la lista vigente: seria meter al carrito una partida
-  // que bloquea la generacion en el acto.
+  // El piso de 100 piezas ya no bloquea agregar (#152: se resuelve con clamp al
+  // capturar). Lo unico que sigue impidiendo agregar es una calca sin precio en
+  // la lista vigente: meterla al carrito bloquearia la generacion en el acto.
   const avisoEl = document.getElementById('cal-aviso');
-  const impedimento = !puedeAgregarCalca(piezas)
-    ? avisoNoPuedeAgregarCalca(piezas)
-    : (ficha && precio === null ? avisoCalcaInvalida(MOTIVOS_CALCA_INVALIDA.SIN_PRECIO) : '');
+  const impedimento = ficha && precio === null ? avisoCalcaInvalida() : '';
   avisoEl.innerHTML = impedimento ? `<div class="alert alert-error">${impedimento}</div>` : '';
   document.getElementById('btn-agregar-calca').disabled = !!impedimento || !ficha;
 
-  // El umbral es un invariante, no una validacion de captura (decision 2): si el
-  // carrito cae bajo 100 piezas con calcas dentro, se marca y se bloquea la
-  // generacion. No se revierte el cambio del vendedor ni se le quitan las calcas.
   const motivo = motivoCalcaInvalidaActual();
   for (const id of ['calca-invalido-productos', 'resumen-calca-invalido']) {
     const el = document.getElementById(id);
     if (!el) continue;
     el.style.display = motivo ? 'block' : 'none';
-    el.textContent = motivo ? avisoCalcaInvalida(motivo, piezas) : '';
+    el.textContent = motivo ? avisoCalcaInvalida() : '';
   }
 }
 
 // Motivo por el que el carrito con calca no puede generar, o null si puede.
-// `calcaSinPrecio` mira el precio REAL resuelto de cada calca: el umbral evita
-// caer en Menudeo, pero una calca sin fila en un tier pagado tambien la dejaria
-// sin precio, y ahi el `?? 0` de getPrice la imprimiria en $0.
+// El unico motivo que queda es la falta de precio (#152 quito el piso por
+// volumen de producto): una calca sin fila en un tier pagado se quedaria sin
+// precio, y ahi el `?? 0` de getPrice la imprimiria en $0.
 function motivoCalcaInvalidaActual() {
   const items = itemsDelCarrito();
   const calcaSinPrecio = [...state.cart.values()]
     .some(({ product }) => product.esCalca && precioUnitario(product) === null);
-  return motivoCalcaInvalida({
-    piezasProducto: piezasDeProducto(items),
-    hayCalca: hayCalcaEnCarrito(items),
-    calcaSinPrecio,
-  });
+  return motivoCalcaInvalida({ hayCalca: hayCalcaEnCarrito(items), calcaSinPrecio });
+}
+
+// Sube al piso de 100 piezas la cantidad de una linea de calca y avisa cuando
+// hubo que subirla (#152). No hace nada sobre lineas de producto.
+function aplicarPisoCalca(product, cantidad) {
+  if (!product.esCalca) return cantidad;
+  const facturable = cantidadFacturableCalca(cantidad);
+  if (facturable !== cantidad) alert(avisoClampCalca());
+  return facturable;
 }
 
 function agregarCalca() {
-  const piezas = getPiezasProducto();
   const ficha = calcaElegida();
-  if (!ficha || !puedeAgregarCalca(piezas)) return;
-  if (precioCalca(ficha, getCurrentTier().id) === null) return;
+  if (!ficha) return;
+  if (precioCalca(ficha, tierIdParaCalca(getCurrentTier().id)) === null) return;
 
   const cantidad = parseInt(document.getElementById('cal-cantidad')?.value) || 0;
   if (cantidad <= 0) return;
 
   const prev = state.cart.get(ficha.code);
+  const product = prev?.product || productoCalca(ficha);
+  const total = (prev?.cantidad || 0) + cantidad;
   state.cart.set(ficha.code, conservarCaptura(ficha.code, {
-    product: prev?.product || productoCalca(ficha),
-    cantidad: (prev?.cantidad || 0) + cantidad,
+    product,
+    cantidad: aplicarPisoCalca(product, total),
   }));
 
   updateTierBar();
@@ -980,7 +980,7 @@ function cartLineChangeQty(key, delta) {
   const item = state.cart.get(key);
   if (!item) return;
   const newQty = Math.max(1, item.cantidad + delta);
-  item.cantidad = newQty;
+  item.cantidad = aplicarPisoCalca(item.product, newQty);
   updateTierBar();
   updateCartSummary();
   updateResumen();
@@ -994,7 +994,7 @@ function cartLineSetQty(key, qty) {
   if (qty <= 0) {
     state.cart.delete(key);
   } else {
-    item.cantidad = qty;
+    item.cantidad = aplicarPisoCalca(item.product, qty);
   }
   updateTierBar();
   updateCartSummary();
@@ -1523,7 +1523,7 @@ function resumenChangeQty(key, delta) {
   if (newQty === 0) {
     state.cart.delete(key);
   } else {
-    item.cantidad = newQty;
+    item.cantidad = aplicarPisoCalca(item.product, newQty);
   }
   invalidarEnvioSiAplica();
   updateTierBar();
@@ -1540,7 +1540,7 @@ function resumenSetQty(key, qty) {
   if (qty <= 0) {
     state.cart.delete(key);
   } else {
-    item.cantidad = qty;
+    item.cantidad = aplicarPisoCalca(item.product, qty);
   }
   invalidarEnvioSiAplica();
   updateTierBar();
@@ -1798,8 +1798,8 @@ async function generatePDF() {
     return;
   }
   const motivoCalca = motivoCalcaInvalidaActual();
-  if (bloqueaGeneracionPorCalcaSinVolumen(motivoCalca !== null)) {
-    alert(avisoCalcaInvalida(motivoCalca, getPiezasProducto()));
+  if (bloqueaGeneracionPorCalcaSinPrecio(motivoCalca !== null)) {
+    alert(avisoCalcaInvalida());
     switchTab('productos');
     return;
   }
@@ -1887,8 +1887,8 @@ async function generateHTML() {
     return;
   }
   const motivoCalca = motivoCalcaInvalidaActual();
-  if (bloqueaGeneracionPorCalcaSinVolumen(motivoCalca !== null)) {
-    alert(avisoCalcaInvalida(motivoCalca, getPiezasProducto()));
+  if (bloqueaGeneracionPorCalcaSinPrecio(motivoCalca !== null)) {
+    alert(avisoCalcaInvalida());
     switchTab('productos');
     return;
   }

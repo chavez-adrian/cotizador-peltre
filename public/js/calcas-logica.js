@@ -76,56 +76,53 @@ export function hayCalcaEnCarrito(items) {
   return (items || []).some(i => esCodigoCalca(i.codigo));
 }
 
-export function puedeAgregarCalca(piezasProducto) {
-  return (piezasProducto || 0) >= PIEZAS_MINIMAS_CALCA;
+// Piso de 100 piezas POR PARTIDA (issue #98/#152; supersede el umbral de #91
+// atado al volumen de producto -- ver CONTEXT.md "Calca"). Es una correccion
+// de captura, no un invariante sostenido del carrito: una linea con 100 o mas
+// se cotiza tal cual; abajo de 100 se sube sola a 100, porque es el minimo
+// real que el proveedor imprime por diseno. Dos disenos de 60 piezas facturan
+// 100 + 100, no 120: el piso es por diseno, nunca por el total de calcas.
+// 0 sigue siendo 0 (sin partida) -- el piso no crea una linea de la nada.
+export function cantidadFacturableCalca(cantidadCapturada) {
+  const c = cantidadCapturada || 0;
+  return c > 0 ? Math.max(c, PIEZAS_MINIMAS_CALCA) : 0;
 }
 
-// Motivos por los que un carrito con calca no puede generar documento. Se
-// comparan por IGUALDAD contra estas constantes, nunca por prefijo (leccion del
-// reporte de #118: 'sin-senal'.startsWith('si') conto vivos como cerrados).
+export function avisoClampCalca() {
+  return `El proveedor imprime minimo ${PIEZAS_MINIMAS_CALCA} calcas por diseno; se cotizan ${PIEZAS_MINIMAS_CALCA}.`;
+}
+
+// La calca no tiene Menudeo (#91): cuando la lista vigente de la cotizacion
+// cae en Menudeo, la calca se cobra con M100, la primera lista donde existe
+// (#98/#152). Con cualquier lista pagada, la calca hereda esa misma lista.
+export function tierIdParaCalca(tierId) {
+  return tierId === 'Menudeo' ? 'M100' : tierId;
+}
+
+// Unico motivo que queda para invalidar el carrito con calca: el piso de 100
+// (#152) ya no depende del volumen de producto, asi que ese motivo
+// desaparecio. Lo que sobrevive es que una calca puede quedarse sin precio en
+// un tier PAGADO (a CAL1025S le faltaba la fila M350 en Operam, ver la
+// investigacion de #91): ahi el `?? 0` de getPrice la mandaria a $0 al
+// documento y al quote sin que nadie lo frene. Se compara por IGUALDAD contra
+// esta constante, nunca por prefijo (leccion del reporte de #118).
 export const MOTIVOS_CALCA_INVALIDA = {
-  SIN_VOLUMEN: 'sin-volumen',
   SIN_PRECIO: 'sin-precio',
 };
 
-// El umbral es una condicion SOSTENIDA, no una validacion de captura (decision
-// 2 del grilling): validar solo al agregar deja el agujero de agregar 150 tazas,
-// agregar calcas y despues bajar a 60. Nada se revierte solo -- se marca el
-// estado y se bloquea la generacion hasta que el vendedor lo resuelva.
-//
-// El volumen no es la unica causa. El umbral existe para no caer en Menudeo,
-// pero una calca puede quedarse sin precio en un tier PAGADO (a CAL1025S le
-// faltaba la fila M350 en Operam, ver la investigacion del issue): ahi el
-// `?? 0` de getPrice la mandaria a $0 al documento y al quote sin que nadie lo
-// frene. Volumen suficiente NO implica precio, asi que las dos causas invalidan.
-// Con ambas presentes manda la del volumen: es la que el vendedor resuelve solo.
-export function motivoCalcaInvalida({ piezasProducto, hayCalca, calcaSinPrecio } = {}) {
+export function motivoCalcaInvalida({ hayCalca, calcaSinPrecio } = {}) {
   if (!hayCalca) return null;
-  if (!puedeAgregarCalca(piezasProducto)) return MOTIVOS_CALCA_INVALIDA.SIN_VOLUMEN;
-  if (calcaSinPrecio) return MOTIVOS_CALCA_INVALIDA.SIN_PRECIO;
-  return null;
-}
-
-export function carritoInvalidoPorCalca(estado) {
-  return motivoCalcaInvalida(estado) !== null;
+  return calcaSinPrecio ? MOTIVOS_CALCA_INVALIDA.SIN_PRECIO : null;
 }
 
 // Compuerta de generacion, espejo de bloqueaGeneracionPorEnvioInvalidado (#89).
-export function bloqueaGeneracionPorCalcaSinVolumen(carritoInvalido) {
+export function bloqueaGeneracionPorCalcaSinPrecio(carritoInvalido) {
   return !!carritoInvalido;
 }
 
-export function avisoNoPuedeAgregarCalca(piezasProducto) {
-  return `Las calcas se venden desde ${PIEZAS_MINIMAS_CALCA} piezas de producto. Llevas ${piezasProducto || 0}.`;
-}
-
-export function avisoCalcaInvalida(motivo, piezasProducto) {
-  if (motivo === MOTIVOS_CALCA_INVALIDA.SIN_PRECIO) {
-    return 'Hay una calca sin precio en la lista vigente de esta cotización. '
-      + 'Quítala o corrige su precio en Operam: no se puede generar un documento con una partida sin precio.';
-  }
-  return `Llevas ${piezasProducto || 0} piezas de producto y el carrito tiene calcas. `
-    + `Las calcas se venden desde ${PIEZAS_MINIMAS_CALCA} piezas: sube el producto o quita las calcas para poder generar.`;
+export function avisoCalcaInvalida() {
+  return 'Hay una calca sin precio en la lista vigente de esta cotización. '
+    + 'Quítala o corrige su precio en Operam: no se puede generar un documento con una partida sin precio.';
 }
 
 // La linea describe la relacion sin juzgarla (decision 8): el pedido mixto (solo
