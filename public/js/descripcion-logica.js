@@ -23,17 +23,12 @@ const texto = (v) => String(v ?? '');
 export function validarDescripcionLinea(valor, catalogo) {
   const capturado = texto(valor);
   if (capturado.length > MAX_DESCRIPCION) return { ok: false, mensaje: MENSAJE_LARGA };
+  // Se guarda el texto ya recortado: los espacios de sobra de la captura viajarian
+  // tal cual al documento del cliente y al quote de Operam.
   const limpio = capturado.trim();
   const base = texto(catalogo);
   if (!limpio || limpio === base.trim()) return { ok: true, descripcion: base, editada: false };
-  return { ok: true, descripcion: capturado, editada: true };
-}
-
-// Que descripcion sale al documento y al quote: la del vendedor si la escribio, la
-// del catalogo si no.
-export function descripcionDePartida(partida, catalogo) {
-  const p = partida || {};
-  return p.descripcionEditada ? texto(p.descripcion) : texto(catalogo);
+  return { ok: true, descripcion: limpio, editada: true };
 }
 
 // La cotizacion completa, del lado del servidor: la primera partida que no cabe la

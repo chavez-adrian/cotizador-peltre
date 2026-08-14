@@ -97,6 +97,7 @@ import {
   buildItemsYTotales,
   buildItemEnvio,
   importeLinea,
+  nombreVisibleProducto,
 } from './cotizar-logica.js';
 import {
   puedeDescontar,
@@ -756,7 +757,7 @@ function renderCartLines() {
     subtotal += total;
     // Lo que se muestra es lo que va a leer el cliente (#139): con descripcion
     // editada, la del vendedor; si no, la del catalogo.
-    const nombreCatalogo = product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
+    const nombreCatalogo = nombreVisibleProducto(product.name);
     const name = descripcion || nombreCatalogo;
     // La linea de calca dice sobre cuantas piezas se aplica, sin juzgarlo
     // (decision 8): el pedido mixto y la doble calca por pieza son legitimos.
@@ -891,7 +892,7 @@ window.cartLineToggleDescripcion = cartLineToggleDescripcion;
 function cartLineSetDescripcion(key, valor) {
   const item = state.cart.get(key);
   if (!item) return;
-  const r = validarDescripcionLinea(valor, item.product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, ''));
+  const r = validarDescripcionLinea(valor, nombreVisibleProducto(item.product.name));
   if (!r.ok) {
     alert(r.mensaje);
     renderCartLines();
@@ -1061,6 +1062,9 @@ window.changeQtySku = changeQtySku;
 window.setQtySku = setQtySku;
 window.removeItem = (key) => {
   state.cart.delete(key);
+  // Quitar la partida cierra su editor de descripcion (#139): si no, volver a
+  // agregar ese SKU lo mostraria abierto sin que nadie lo pidiera.
+  descripcionesAbiertas.delete(key);
   updateTierBar();
   updateCartSummary();
   renderProducts(document.getElementById('search-input').value);
@@ -1380,7 +1384,7 @@ function updateResumen() {
     const total = importeLinea({ cantidad, precio: price, descuento });
     // El resumen es la ultima pantalla antes de generar: muestra la descripcion
     // editada (#139), que es la que va a leer el cliente en el documento.
-    const displayName = descripcion || product.name.replace(/^[A-Z]{2,3}\d{2}\s+/, '');
+    const displayName = descripcion || nombreVisibleProducto(product.name);
     const isSkuItem = state.precios.skus?.some(s => s.sku === key);
     // El % negociado se dice junto al precio de lista: el resumen es la ultima
     // pantalla antes de generar y tiene que cuadrar con el documento (#137).
@@ -1950,6 +1954,7 @@ function nuevaCotizacion() {
   document.getElementById('app-view').style.display = 'block';
   marcarNavActivo('nav-cotizar');
   state.cart.clear();
+  descripcionesAbiertas.clear();
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.vendedorConfirmado = false;
@@ -4586,6 +4591,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
 
     // Poblar carrito
     state.cart.clear();
+    descripcionesAbiertas.clear();
     for (const item of (cot.items || [])) {
       if (item.codigo === 'ENVIO') continue;
       // La calca (#91) no vive en products ni en skus sino en el catalogo de

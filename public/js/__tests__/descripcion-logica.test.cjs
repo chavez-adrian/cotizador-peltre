@@ -2,12 +2,10 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let MAX_DESCRIPCION, MENSAJE_LARGA, validarDescripcionLinea, descripcionDePartida,
-  validarDescripcionesCotizacion;
+let MAX_DESCRIPCION, MENSAJE_LARGA, validarDescripcionLinea, validarDescripcionesCotizacion;
 before(async () => {
   ({
-    MAX_DESCRIPCION, MENSAJE_LARGA, validarDescripcionLinea, descripcionDePartida,
-    validarDescripcionesCotizacion,
+    MAX_DESCRIPCION, MENSAJE_LARGA, validarDescripcionLinea, validarDescripcionesCotizacion,
   } = await import('../descripcion-logica.js'));
 });
 
@@ -67,15 +65,12 @@ test('un texto multilinea es una descripcion valida', () => {
   assert.equal(r.editada, true);
 });
 
-// === Que descripcion sale al documento y al ERP ===
-
-test('la partida editada manda su texto; la demas, la del catalogo', () => {
-  assert.equal(
-    descripcionDePartida({ descripcion: 'Texto del vendedor', descripcionEditada: true }, 'Del catalogo'),
-    'Texto del vendedor',
-  );
-  assert.equal(descripcionDePartida({}, 'Del catalogo'), 'Del catalogo');
-  assert.equal(descripcionDePartida(null, 'Del catalogo'), 'Del catalogo');
+// Los espacios de sobra de la captura no pueden viajar al documento del cliente ni
+// al quote de Operam.
+test('el texto editado se guarda recortado', () => {
+  const r = validarDescripcionLinea('  Tazon 14 cm esmaltado a mano  ', 'Tazon 14 mostaza filete negro');
+  assert.equal(r.editada, true);
+  assert.equal(r.descripcion, 'Tazon 14 cm esmaltado a mano');
 });
 
 // === El servidor no confia en la pantalla (misma regla, dos consumidores) ===
