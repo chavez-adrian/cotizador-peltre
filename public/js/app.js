@@ -114,6 +114,7 @@ import {
   avisoListaFijada,
 } from './tier-logica.js';
 import {
+  PIEZAS_MINIMAS_CALCA,
   TAMANOS_CALCA,
   TINTAS_CALCA,
   esCodigoCalca,
@@ -979,6 +980,10 @@ window.cartLineSetDescuento = cartLineSetDescuento;
 function cartLineChangeQty(key, delta) {
   const item = state.cart.get(key);
   if (!item) return;
+  // El "-" en una calca ya en el piso no hace nada (#152): sin este corte,
+  // cada click bajo el piso repite el alert del clamp -- una cascada de
+  // modales identicos por algo que ya se dijo la primera vez.
+  if (item.product.esCalca && delta < 0 && item.cantidad <= PIEZAS_MINIMAS_CALCA) return;
   const newQty = Math.max(1, item.cantidad + delta);
   item.cantidad = aplicarPisoCalca(item.product, newQty);
   updateTierBar();
@@ -1028,7 +1033,9 @@ window.cartLineSetQty = cartLineSetQty;
 window.cartLineStartEdit = cartLineStartEdit;
 window.cartLineConfirmEdit = cartLineConfirmEdit;
 
-// Cambiar cantidad para price keys (búsqueda sin filtro)
+// Cambiar cantidad para price keys (búsqueda sin filtro). Sin piso de calca
+// (#152) a proposito: las calcas no viven en state.precios.products, solo
+// entran al carrito por agregarCalca -- este camino nunca las alcanza.
 function changeQty(key, delta) {
   const product = state.precios.products.find(p => p.key === key) || state.cart.get(key)?.product;
   if (!product) return;
@@ -1519,6 +1526,8 @@ function invalidarEnvioSiAplica() {
 function resumenChangeQty(key, delta) {
   const item = state.cart.get(key);
   if (!item) return;
+  // Mismo corte que cartLineChangeQty (#152): el "-" en el piso no repite el alert.
+  if (item.product.esCalca && delta < 0 && item.cantidad <= PIEZAS_MINIMAS_CALCA) return;
   const newQty = Math.max(0, item.cantidad + delta);
   if (newQty === 0) {
     state.cart.delete(key);
