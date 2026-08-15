@@ -49,11 +49,51 @@ export function avisoListaFijada(tiers, piezasProducto, tierFijadoId) {
 // si quien guarda tiene permiso (rol admin, o checkbox por vendedor).
 // Releido en cada guardado -- mismo motivo que topeDescuentoDeUsuario en
 // server.js: el JWT no se re-emite si el permiso cambia.
-export function validarTierCotizacion(tiers, piezasProducto, tierGuardado, tienePermiso) {
+//
+// tierPrevioEditado (#154): al editar un registro existente, el tier YA
+// guardado ahi tambien pasa aunque quien edita no tenga permiso -- corregir
+// cantidades o notas no debe tumbar una autorizacion que ya ocurrio. Solo
+// aplica al MISMO registro (server.js lo resuelve por cotizacionId); Copiar
+// crea un registro nuevo y no lo manda, asi que cae al chequeo normal.
+export function validarTierCotizacion(tiers, piezasProducto, tierGuardado, tienePermiso, tierPrevioEditado) {
   if (tienePermiso) return { ok: true };
   const auto = tierPorVolumen(tiers, piezasProducto);
   if (!tierGuardado || tierGuardado === auto.id) return { ok: true };
+  if (tierPrevioEditado && tierGuardado === tierPrevioEditado) return { ok: true };
   return { ok: false, mensaje: MENSAJE_SIN_PERMISO_TIER };
+}
+
+// Que hereda Editar/Copiar del historial (#154, spec #98) segun el tier
+// guardado en el registro y el permiso de quien carga. Nucleo puro compartido
+// por cargarCotizacion (app.js) y sus tests: la decision solo depende de si el
+// tier guardado ERA una lista fijada (distinto del tabulador para SU volumen)
+// y de quien esta cargando -- no de la pantalla.
+//
+// Editar (mismo registro, mismo folio) conserva la lista fijada SIEMPRE: el
+// servidor la deja pasar comparando contra el tier ya guardado del registro
+// que se edita (validarTierCotizacion, tierPrevioEditado). Copiar (registro
+// nuevo) solo la hereda si quien copia tiene el permiso -- heredarla sin el
+// seria auto-otorgarsela.
+export function tierAlCargarCotizacion(tiers, piezasProducto, tierGuardado, modo, tienePermiso) {
+  const auto = tierPorVolumen(tiers, piezasProducto);
+  const eraFijada = !!tierGuardado && tierGuardado !== auto.id;
+  if (!eraFijada) return { tierFijado: '', avisoListaPerdida: false };
+  if (modo === 'actualizar') return { tierFijado: tierGuardado, avisoListaPerdida: false };
+  if (tienePermiso) return { tierFijado: tierGuardado, avisoListaPerdida: false };
+  return { tierFijado: '', avisoListaPerdida: true };
+}
+
+export const MENSAJE_COPIA_LISTA_FIJADA =
+  'La cotizacion original tenia una lista de precios fijada; esta copia arranca en Auto (sin permiso para fijarla).';
+
+// Opciones del selector cuando quien lo ve NO tiene permiso pero esta editando
+// una cotizacion cuya lista fijada se conservo (#154): solo Auto (siempre
+// agregado aparte por el caller) y el tier ya fijado, nunca el tabulador
+// completo -- "dejarla o regresarla a Auto" no es "cambiarla a otra".
+export function opcionesTierSelect(tiers, tienePermiso, tierFijado) {
+  if (tienePermiso) return tiers || [];
+  if (!tierFijado) return [];
+  return (tiers || []).filter(t => t.id === tierFijado);
 }
 
 // Flag tal como se guarda en el registro de vendedores (#153): basura o

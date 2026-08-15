@@ -137,6 +137,99 @@ test('la pantalla recibe su permiso de fijar lista vigente en /api/precios', asy
   }
 });
 
+// #154: editar (mismo registro) conserva un tier ya fijado aunque quien edita
+// no tenga permiso -- corregir cantidades/notas no debe tumbar una
+// autorizacion que ya ocurrio. La excepcion compara contra el tier YA
+// GUARDADO en ese registro, nunca contra el tabulador del volumen actual, y
+// SOLO cuando quien edita es dueno del registro (o admin): sin ese chequeo,
+// un cotizacionId AJENO con lista fijada seria una via para colarse el
+// permiso -- el riesgo que el propio ticket #154 senala.
+test('vendedor sin permiso, editando SU PROPIO registro: el tier identico al ya guardado se acepta', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    // El registro nace CON el checkbox (autorizacion real de #153) y despues
+    // se le quita: queda una cotizacion con lista fijada de un vendedor que
+    // ya no tiene permiso -- exactamente el caso que #154 describe.
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === 2).puedeFijarLista = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const creado = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('M1500'));
+    assert.strictEqual(creado.status, 200);
+    const id = creado.body.id;
+
+    registro.find(v => v.id === 2).puedeFijarLista = false;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const editado = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send({ ...cotizacionCon('M1500'), cotizacionId: id });
+    assert.strictEqual(editado.status, 200);
+    assert.strictEqual(editado.body.id, id);
+    assert.strictEqual(readCots().find(c => c.id === id).tier, 'M1500');
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+test('vendedor sin permiso, editando SU PROPIO registro: un tier DISTINTO al ya guardado se sigue rechazando', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === 2).puedeFijarLista = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const creado = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('M1500'));
+    assert.strictEqual(creado.status, 200);
+    const id = creado.body.id;
+
+    registro.find(v => v.id === 2).puedeFijarLista = false;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const tierAntes = readCots().find(c => c.id === id).tier;
+    const res = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send({ ...cotizacionCon('M6000'), cotizacionId: id });
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(readCots().find(c => c.id === id).tier, tierAntes);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+// El hallazgo central del riesgo de seguridad del ticket: el tier identico NO
+// basta si el registro es ajeno -- sin este chequeo, cualquier vendedor sin
+// permiso podria tomar el cotizacionId de una cotizacion AJENA con lista
+// fijada (de un admin, por ejemplo) y colarse la excepcion.
+test('vendedor sin permiso, editando un registro AJENO con el MISMO tier ya guardado: se rechaza (el dueno importa, no solo el tier)', async () => {
+  const creado = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenAdmin}`)
+    .send(cotizacionCon('M1500'));
+  assert.strictEqual(creado.status, 200);
+  const id = creado.body.id;
+  const tierAntes = readCots().find(c => c.id === id).tier;
+
+  const res = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenVendedor}`)
+    .send({ ...cotizacionCon('M1500'), cotizacionId: id });
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(readCots().find(c => c.id === id).tier, tierAntes);
+});
+
+test('vendedor sin permiso, Copiar (sin cotizacionId): el mismo tier de una cotizacion ajena se rechaza igual que antes', async () => {
+  const creado = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenAdmin}`)
+    .send(cotizacionCon('M1500'));
+  assert.strictEqual(creado.status, 200);
+
+  const antes = readCots().length;
+  const res = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenVendedor}`)
+    .send(cotizacionCon('M1500'));
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(readCots().length, antes);
+});
+
 // #153: un valor basura capturado en /admin nunca se guarda como permiso.
 test('PUT /api/admin/vendedores: un valor basura en puedeFijarLista se normaliza a false', async () => {
   const original = leerArchivoSync(VENDEDORES_PATH);

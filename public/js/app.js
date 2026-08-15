@@ -112,6 +112,9 @@ import {
 import {
   resolverTier,
   avisoListaFijada,
+  tierAlCargarCotizacion,
+  opcionesTierSelect,
+  MENSAJE_COPIA_LISTA_FIJADA,
 } from './tier-logica.js';
 import {
   PIEZAS_MINIMAS_CALCA,
@@ -396,8 +399,12 @@ function renderTierSelect() {
   const select = document.getElementById('tier-select');
   if (!select) return;
   const tiers = state.precios?.tiers || [];
+  // Sin permiso pero con una lista fijada heredada de Editar (#154), las
+  // opciones se acotan a Auto + el tier ya fijado -- "dejarla o regresarla a
+  // Auto" no es "cambiarla a otra".
+  const opciones = opcionesTierSelect(tiers, state.user?.role === 'admin' || state.puedeFijarLista, state.tierFijado);
   select.innerHTML = '<option value="">Auto (tabulador)</option>' +
-    tiers.map(t => `<option value="${t.id}">${t.id}</option>`).join('');
+    opciones.map(t => `<option value="${t.id}">${t.id}</option>`).join('');
   select.value = state.tierFijado;
 }
 
@@ -453,13 +460,15 @@ function updateTierBar() {
   document.getElementById('tier-next').textContent = '';
 
   // Selector de lista fijada (#151/#153): oculto, no deshabilitado, para quien
-  // no tiene el permiso (rol admin, o vendedor con el checkbox de #153).
-  // Sincroniza el valor por si otro punto del flujo cambio state.tierFijado
-  // (Cargar del historial, cambio de cliente).
+  // no tiene el permiso (rol admin, o vendedor con el checkbox de #153) -- EXCEPTO
+  // con una lista fijada heredada de Editar sin permiso (#154), donde se muestra
+  // acotado a Auto + el tier fijado para poder regresarla a Auto. renderTierSelect
+  // recalcula las opciones en cada paso (Cargar del historial, cambio de cliente,
+  // cambio de carrito) porque dependen de state.tierFijado, no solo del permiso.
   const tierSelect = document.getElementById('tier-select');
   if (tierSelect) {
-    tierSelect.style.display = (state.user?.role === 'admin' || state.puedeFijarLista) ? 'inline-block' : 'none';
-    if (tierSelect.value !== state.tierFijado) tierSelect.value = state.tierFijado;
+    renderTierSelect();
+    tierSelect.style.display = (state.user?.role === 'admin' || state.puedeFijarLista || state.tierFijado) ? 'inline-block' : 'none';
   }
 
   // Aviso bidireccional e informativo (#98): nunca bloquea la generacion.
@@ -4675,9 +4684,17 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Poblar carrito
     state.cart.clear();
     descripcionesAbiertas.clear();
-    // Editar/Copiar arranca en Auto (#151): conservar la lista fijada de quien
-    // no tiene permiso es el caso que resuelve #154, todavia no implementado.
-    state.tierFijado = '';
+    // #154: Editar (mismo registro) conserva la lista fijada SIN IMPORTAR el
+    // permiso de quien edita -- el servidor la deja pasar comparando contra el
+    // tier ya guardado en ESE registro. Copiar (registro nuevo) solo la hereda
+    // si quien copia tiene el permiso; sin el arranca en Auto con un aviso
+    // (tierListaCargada.avisoListaPerdida, aplicado mas abajo junto al aviso
+    // de modo actualizacion).
+    const tierListaCargada = tierAlCargarCotizacion(
+      state.precios?.tiers || [], piezasDeProducto(cot.items || []), cot.tier, modo,
+      state.user?.role === 'admin' || state.puedeFijarLista
+    );
+    state.tierFijado = tierListaCargada.tierFijado;
     for (const item of (cot.items || [])) {
       if (item.codigo === 'ENVIO') continue;
       // La calca (#91) no vive en products ni en skus sino en el catalogo de
@@ -4754,9 +4771,12 @@ async function cargarCotizacion(id, modo = 'nueva') {
       // folioOperam viaja en la respuesta del detalle (#109): el gate de
       // "Actualizar cotizacion" (puedeActualizarCotizacion) ya exige que exista,
       // asi que aqui siempre esta presente en modo actualizacion.
+      // #154: sin modo actualizacion, el aviso de lista fijada perdida (Copiar
+      // sin permiso) ocupa el mismo lugar que el aviso de modo actualizacion --
+      // nunca coexisten, porque Copiar nunca esta en modo actualizacion.
       operamStatus.innerHTML = state.modoActualizacion
         ? buildAvisoModoActualizacion(cot.folioOperam)
-        : '';
+        : (tierListaCargada.avisoListaPerdida ? `<span class="operam-status">${MENSAJE_COPIA_LISTA_FIJADA}</span>` : '');
     }
     // Etiquetas de los botones (#109): en modo actualizacion comunican que
     // reescriben el documento/quote existente, no que crean uno nuevo.

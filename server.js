@@ -265,7 +265,10 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
 // ya tiene pedido, la reescritura es imposible pero la divergencia existe igual, y
 // callarla seria peor. Se pide la actualizacion, /actualizar responde 409 con el motivo
 // y la UI lo convierte en un aviso visible con la salida (crear una nueva).
-async function crearOActualizarCotizacion(data, vendedor) {
+// prevConocido (#154): el caller puede pasar el registro previo si ya lo leyo
+// (validacion del tier fijado) para no repetir la misma consulta al store en
+// el mismo request. undefined => se lee aqui, como siempre.
+async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
   const idPrevio = parseInt(data.cotizacionId, 10);
   delete data.cotizacionId; // campo de control: no persistirlo dentro de data
   const entry = {
@@ -277,7 +280,7 @@ async function crearOActualizarCotizacion(data, vendedor) {
     total: data.total || 0, tier: data.tier || '', data,
   };
   if (Number.isInteger(idPrevio) && idPrevio > 0) {
-    const prev = await cotStore.obtener(idPrevio);
+    const prev = prevConocido !== undefined ? prevConocido : await cotStore.obtener(idPrevio);
     if (prev) {
       const prevCli = prev.data?.cliente || {};
       if (data.cliente) {
@@ -318,12 +321,26 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   // mismo patron que el tope de descuento -- el permiso lo hace valer el
   // servidor, no el selector oculto.
   const precios = readJSON('precios.json');
-  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await puedeFijarListaDeUsuario(req.user));
+  // #154: si se esta editando un registro existente (cotizacionId) Y ese
+  // registro es del vendedor que edita (o el editor es admin), el tier YA
+  // guardado ahi tambien es valido aunque quien edita no tenga el permiso --
+  // el tabulador del volumen ACTUAL no es la comparacion correcta, porque
+  // corregir cantidades no debe tumbar una autorizacion que ya ocurrio. El
+  // chequeo de dueno (mismo predicado que GET /api/cotizaciones/:id) es
+  // obligatorio: sin el, un cotizacionId AJENO con lista fijada seria una via
+  // para colarse el permiso -- justo el riesgo que el propio ticket #154
+  // senala ("muy laxa = bypass del permiso via edicion").
+  const idPrevioTier = parseInt(req.body?.cotizacionId, 10);
+  const prevEntryTier = Number.isInteger(idPrevioTier) && idPrevioTier > 0
+    ? await cotStore.obtener(idPrevioTier)
+    : null;
+  const esDuenoDelPrevio = !!prevEntryTier && (req.user.role === 'admin' || prevEntryTier.vendedor === req.user.name);
+  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await puedeFijarListaDeUsuario(req.user), esDuenoDelPrevio ? (prevEntryTier.tier ?? null) : null);
   if (!tierValidado.ok) return res.status(403).json({ error: tierValidado.mensaje });
   try {
     const data = req.body;
     data.vendedor = req.user.name;
-    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, req.user.name);
+    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, req.user.name, prevEntryTier);
     const entry = await cotStore.obtener(id);
     res.json({ id, folioOperam: entry?.folioOperam ?? null, requiereActualizacionOperam });
   } catch (err) {

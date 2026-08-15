@@ -4,10 +4,12 @@ const assert = require('node:assert/strict');
 
 let tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, MENSAJE_SIN_PERMISO_TIER;
 let normalizarPuedeFijarLista, puedeFijarLista;
+let tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA;
 before(async () => {
   ({
     tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, MENSAJE_SIN_PERMISO_TIER,
     normalizarPuedeFijarLista, puedeFijarLista,
+    tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA,
   } = await import('../tier-logica.js'));
 });
 
@@ -129,4 +131,68 @@ test('puedeFijarLista: vendedor depende del flag normalizado', () => {
   assert.strictEqual(puedeFijarLista({ role: 'vendedor', puedeFijarLista: false }), false);
   assert.strictEqual(puedeFijarLista({ role: 'vendedor' }), false);
   assert.strictEqual(puedeFijarLista(null), false);
+});
+
+// === validarTierCotizacion con tierPrevioEditado (#154) ===
+
+test('sin permiso, editando: el tier identico al ya guardado en ESE registro pasa aunque difiera del tabulador', () => {
+  const r = validarTierCotizacion(TIERS, 1600, 'M550', false, 'M550');
+  assert.strictEqual(r.ok, true);
+});
+
+test('sin permiso, editando: un tier DISTINTO al ya guardado se sigue rechazando', () => {
+  const r = validarTierCotizacion(TIERS, 1600, 'M6000', false, 'M550');
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.mensaje, MENSAJE_SIN_PERMISO_TIER);
+});
+
+test('sin permiso, sin tierPrevioEditado (Copiar, registro nuevo): el mismo tier que antes se rechaza igual', () => {
+  const r = validarTierCotizacion(TIERS, 1600, 'M550', false, null);
+  assert.strictEqual(r.ok, false);
+});
+
+// === tierAlCargarCotizacion: que hereda Editar/Copiar del historial (#154) ===
+
+test('cotizacion sin lista fijada (tier = tabulador de su volumen): Editar y Copiar arrancan en Auto', () => {
+  const editar = tierAlCargarCotizacion(TIERS, 1600, 'M1500', 'actualizar', false);
+  assert.deepStrictEqual(editar, { tierFijado: '', avisoListaPerdida: false });
+  const copiar = tierAlCargarCotizacion(TIERS, 1600, 'M1500', 'nueva', false);
+  assert.deepStrictEqual(copiar, { tierFijado: '', avisoListaPerdida: false });
+});
+
+test('Editar con lista fijada: se conserva SIEMPRE, con o sin permiso', () => {
+  const conPermiso = tierAlCargarCotizacion(TIERS, 1600, 'M550', 'actualizar', true);
+  assert.deepStrictEqual(conPermiso, { tierFijado: 'M550', avisoListaPerdida: false });
+  const sinPermiso = tierAlCargarCotizacion(TIERS, 1600, 'M550', 'actualizar', false);
+  assert.deepStrictEqual(sinPermiso, { tierFijado: 'M550', avisoListaPerdida: false });
+});
+
+test('Copiar con lista fijada y permiso: la hereda', () => {
+  const r = tierAlCargarCotizacion(TIERS, 1600, 'M550', 'nueva', true);
+  assert.deepStrictEqual(r, { tierFijado: 'M550', avisoListaPerdida: false });
+});
+
+test('Copiar con lista fijada y SIN permiso: arranca en Auto con aviso', () => {
+  const r = tierAlCargarCotizacion(TIERS, 1600, 'M550', 'nueva', false);
+  assert.deepStrictEqual(r, { tierFijado: '', avisoListaPerdida: true });
+});
+
+// === opcionesTierSelect: opciones acotadas sin permiso (#154) ===
+
+test('con permiso: todas las opciones del tabulador', () => {
+  assert.deepStrictEqual(opcionesTierSelect(TIERS, true, 'M550'), TIERS);
+});
+
+test('sin permiso y sin tierFijado: sin opciones (el selector se oculta)', () => {
+  assert.deepStrictEqual(opcionesTierSelect(TIERS, false, ''), []);
+});
+
+test('sin permiso y con tierFijado: solo esa opcion, nunca el resto del tabulador', () => {
+  const opciones = opcionesTierSelect(TIERS, false, 'M550');
+  assert.strictEqual(opciones.length, 1);
+  assert.strictEqual(opciones[0].id, 'M550');
+});
+
+test('MENSAJE_COPIA_LISTA_FIJADA existe y menciona Auto', () => {
+  assert.match(MENSAJE_COPIA_LISTA_FIJADA, /Auto/);
 });
