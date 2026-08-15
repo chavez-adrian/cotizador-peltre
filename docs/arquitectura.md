@@ -16,7 +16,7 @@ Alta del cliente con RFC generico al subir cotizacion (#81/#83): `buildClienteGe
 
 ### deduplicacion.js / telefono-llave.js / higiene-clientes.js
 
-- `deduplicacion.js`: RFC genericos + deteccion de duplicados (dedup #78: nombre + telefono como senal fuerte). `normalizarNombre` es el tokenizado de nombre que reusa el cruce por identidad (#123). Aqui vive `DEBTORS_GENERICOS` compartido (queda #127: unificar con la copia en strings de `backfill-operam.mjs`).
+- `deduplicacion.js`: RFC genericos + deteccion de duplicados (dedup #78: nombre + telefono como senal fuerte). `normalizarNombre` es el tokenizado de nombre que reusa el cruce por identidad (#123). Aqui vive `DEBTORS_GENERICOS`, FUENTE UNICA de los debtors-cajon desde #127 (antes habia una copia en strings dentro de `backfill-operam.mjs`); los consumidores que reciben el id como texto usan el predicado `esDebtorGenerico`, que normaliza numero/texto.
 - `telefono-llave.js`: `ultimos10` es la UNICA llave de identidad de prospecto (1 celular = 1 prospecto). Modulo puro para que la usen tanto el store como los nucleos sin IO; `prospectos-store.js` la re-exporta.
 - `higiene-clientes.js`: nucleo puro del reporte admin "Clientes genericos sin actividad" (#86).
 

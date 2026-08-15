@@ -5,7 +5,11 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 
-import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTORS_GENERICOS, DEBTORS_SOCIOS, FOLIOS_EXCLUIDOS_MANUAL, mapearPartidasQuote, esVarianteCerrada, pedidoQueCierra, VENTANA_VARIANTE_DIAS, BANDA_VARIANTE, GRACIA_VARIANTE_DIAS, MONTO_MINIMO_B } from '../lib/backfill-operam.mjs';
+import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTORS_SOCIOS, FOLIOS_EXCLUIDOS_MANUAL, mapearPartidasQuote, esVarianteCerrada, pedidoQueCierra, VENTANA_VARIANTE_DIAS, BANDA_VARIANTE, GRACIA_VARIANTE_DIAS, MONTO_MINIMO_B } from '../lib/backfill-operam.mjs';
+import * as backfillOperam from '../lib/backfill-operam.mjs';
+// #127: la lista de debtors genericos vive en UN solo lugar (lib/deduplicacion.js);
+// el backfill la consume por esDebtorGenerico en vez de tener su propia copia.
+import { DEBTORS_GENERICOS } from '../lib/deduplicacion.js';
 
 // Mapa de vendedores como el de data/vendedores.json (operam_id -> vendedor).
 const VENDEDORES = [
@@ -1250,10 +1254,17 @@ test('excluidoManual: planearBackfill SKIP excluido manual -- folio 1129 no se i
   assert.equal(plan.skips.excluidoManual, 1);
 });
 
-test('constantes exportadas: DEBTORS_GENERICOS, DEBTORS_SOCIOS y FOLIOS_EXCLUIDOS_MANUAL tienen los valores decididos', () => {
-  assert.deepEqual([...DEBTORS_GENERICOS].sort(), ['143', '183', '184', '256', '449']);
+test('constantes decididas: DEBTORS_GENERICOS (fuente unica en deduplicacion.js) mas DEBTORS_SOCIOS y FOLIOS_EXCLUIDOS_MANUAL (propias del backfill)', () => {
+  // #127: los genericos se afirman contra la FUENTE UNICA (lib/deduplicacion.js, numeros).
+  assert.deepEqual([...DEBTORS_GENERICOS].sort(), [143, 183, 184, 256, 449]);
   assert.deepEqual([...DEBTORS_SOCIOS].sort(), ['132', '15', '9']);
   assert.deepEqual([...FOLIOS_EXCLUIDOS_MANUAL].sort(), ['1129', '1189', '1195', '1196']);
+});
+
+test('#127: el backfill NO define su propia copia de DEBTORS_GENERICOS', () => {
+  // Dos listas de los mismos ids es la bomba que cerro #127: agregar un debtor-cajon en
+  // Operam y actualizar solo una silenciaria el filtro del otro lado.
+  assert.equal(backfillOperam.DEBTORS_GENERICOS, undefined);
 });
 
 // === Decision 2026-07-29 (#76): las cotizaciones importadas llevan PARTIDAS ===
