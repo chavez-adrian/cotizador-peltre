@@ -26,7 +26,7 @@ import { existsSync, readFileSync, readdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
-import { ordenarCandidatos } from '../lib/cruce-bitrix.js';
+import { ordenarCandidatos, nombrePropio, empresaPropia } from '../lib/cruce-bitrix.js';
 
 // Mismas dos funciones que usa el import de Feria/Expo (#47) para el celular:
 // normalizar primero (Bitrix guarda numeros mexicanos como "+2225592022", con
@@ -170,8 +170,10 @@ for (const p of plan) {
     }
   }
 
+  // Normalizacion pedida por Adrian al aprobar la lista (2026-08-16): Bitrix
+  // trae nombres en mayusculas sostenidas o todo minusculas segun el capturista.
   const data = { origen_bitrix: p.origenes.join(' '), importado_de: 'bitrix24', aprobado_por: APROBADO_POR };
-  if (p.empresa) data.empresa = p.empresa;
+  if (p.empresa) data.empresa = empresaPropia(p.empresa);
   if (p.correo) data.correo = p.correo;
 
   try {
@@ -179,7 +181,7 @@ for (const p of plan) {
       fecha,
       vendedor: VENDEDOR,
       celular,
-      nombre: p.nombre || '(sin nombre)',
+      nombre: nombrePropio(p.nombre) || '(sin nombre)',
       // Bitrix no guarda ciudad: ADDRESS_CITY viene vacio en los 693 registros
       // del export (verificado 2026-08-16). El prospecto nace sin ciudad y el
       // vendedor la captura al primer contacto; sin ella no se puede estimar

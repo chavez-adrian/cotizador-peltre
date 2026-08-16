@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { identidadesBitrix, normalizarCorreo, clasificarBitrix, canalDeSource, esTelefonoMexicano, ordenarCandidatos } from '../lib/cruce-bitrix.js';
+import { identidadesBitrix, normalizarCorreo, clasificarBitrix, canalDeSource, esTelefonoMexicano, ordenarCandidatos, nombrePropio, empresaPropia } from '../lib/cruce-bitrix.js';
 
 // Fabricas minimas: solo los campos que el nucleo lee. Los formatos de telefono
 // son los REALES del export de Bitrix (#158), verificados sobre
@@ -522,4 +522,31 @@ test('nombres realmente distintos en un mismo numero si se marcan', () => {
   });
 
   assert.equal(r.candidatos[0].telefonoCompartido, true);
+});
+
+test('nombrePropio: mayusculas sostenidas y minusculas quedan en nombre propio', () => {
+  assert.equal(nombrePropio('ARIANA VICTORICA'), 'Ariana Victorica');
+  assert.equal(nombrePropio('johana castillo'), 'Johana Castillo');
+  assert.equal(nombrePropio('MARIA EUGENIA MARTINEZ RAMOS'), 'Maria Eugenia Martinez Ramos');
+});
+
+test('nombrePropio: particulas en minuscula salvo al inicio; acentos y espacios dobles', () => {
+  assert.equal(nombrePropio('sandra DE LA torre'), 'Sandra de la Torre');
+  assert.equal(nombrePropio('DE LA CRUZ  PEREZ'), 'De la Cruz Perez');
+  assert.equal(nombrePropio('JOSE ANGEL MUNIZ'), 'Jose Angel Muniz');
+  assert.equal(nombrePropio('  MARIA  JOSE '), 'Maria Jose');
+});
+
+test('nombrePropio: vacio y null no truenan', () => {
+  assert.equal(nombrePropio(''), '');
+  assert.equal(nombrePropio(null), '');
+});
+
+test('empresaPropia: corrige sostenidas, respeta siglas cortas y palabras ya mixtas', () => {
+  assert.equal(empresaPropia('TEKE CURADURIA'), 'Teke Curaduria');
+  assert.equal(empresaPropia('CERTALUM DE MEXICO'), 'Certalum de Mexico');
+  assert.equal(empresaPropia('BGE Esquivel'), 'BGE Esquivel');
+  assert.equal(empresaPropia('Big Green Egg'), 'Big Green Egg');
+  assert.equal(empresaPropia('los aguachiles de sinaloa'), 'Los Aguachiles de Sinaloa');
+  assert.equal(empresaPropia('Crepas-oh!'), 'Crepas-oh!');
 });
