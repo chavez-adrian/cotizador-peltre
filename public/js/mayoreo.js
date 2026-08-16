@@ -322,3 +322,22 @@ form.addEventListener('submit', async e => {
 });
 
 sincronizarOtro();
+
+// Auto-alto para el embed en Shopify (issue #164): cuando la pagina vive dentro
+// de un iframe cross-origin, el padre no puede medirla -- se le avisa la altura
+// por postMessage cada vez que cambia (errores inline, campo "otro", pantalla de
+// exito). El mensaje solo lleva la altura (nada sensible), por eso el target '*';
+// el listener del lado de Shopify filtra por el origen del iframe.
+if (window.parent !== window) {
+  let ultimaAltura = 0;
+  const avisarAltura = () => {
+    const alto = document.documentElement.scrollHeight;
+    if (alto !== ultimaAltura) {
+      ultimaAltura = alto;
+      window.parent.postMessage({ mayoreoAlto: alto }, '*');
+    }
+  };
+  new ResizeObserver(avisarAltura).observe(document.body);
+  window.addEventListener('load', avisarAltura);
+  avisarAltura();
+}
