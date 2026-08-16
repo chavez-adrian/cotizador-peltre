@@ -18,7 +18,7 @@ La respuesta pública es **siempre la misma** ("gracias, te contactamos"), sin i
 
 ### 2. Turnstile es la única dependencia de terceros en runtime del formulario
 
-La regla de la casa es vendorear todos los assets (sin CDNs). Turnstile no puede cumplirla: Cloudflare exige cargar `challenges.cloudflare.com/turnstile/v0/api.js` desde sus servidores y prohíbe proxiarlo o cachearlo (así rotan sus defensas anti-bot sin avisar). Se acepta como **excepción única y deliberada**: no es descuido, y no es precedente para introducir otros CDNs. Si Cloudflare está caído, el formulario no se puede enviar — se acepta ese modo de falla a cambio de la protección.
+La regla de la casa es vendorear todos los assets (sin CDNs). Turnstile no puede cumplirla: Cloudflare exige cargar `challenges.cloudflare.com/turnstile/v0/api.js` desde sus servidores y prohíbe proxiarlo o cachearlo (así rotan sus defensas anti-bot sin avisar). Se acepta como **excepción única y deliberada**: no es descuido, y no es precedente para introducir otros CDNs. Si Cloudflare está caído, el formulario no se puede enviar — se acepta ese modo de falla a cambio de la protección. Precisión ratificada al implementar #162 (2026-08-16): ese fail-closed aplica al visitante que no obtuvo token porque el widget no cargó; si el visitante SÍ obtuvo token y lo que falla es la llamada de red servidor→siteverify, la captura pasa (fail-open, precedente Dropbox/envia.com: un tercero caído no mata una captura propia) — solo un token que Cloudflare evalúa y rechaza explícitamente descarta el envío. Detalle en `lib/turnstile.js`.
 
 ### 3. El catálogo postal es autohospedado (GeoNames), no un servicio externo
 
