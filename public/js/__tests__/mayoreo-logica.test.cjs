@@ -2,10 +2,10 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO,
+let TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
   segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo, buildCapturaMayoreo;
 before(async () => {
-  ({ TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO,
+  ({ TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
     segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo,
     buildCapturaMayoreo } = await import('../mayoreo-logica.js'));
 });
@@ -152,6 +152,34 @@ test('M18: validarMayoreo solo valida el formato del correo si viene', () => {
   assert.deepEqual(validarMayoreo(formValido({ correo: 'laura(arroba)gmail.com' })),
     [{ campo: 'correo', mensaje: 'Ese correo no se ve válido.' }]);
   assert.deepEqual(validarMayoreo(formValido({ correo: '' })), []);
+});
+
+// El endpoint que consume esto es el UNICO de escritura sin auth: el codigo de
+// pais tiene que ser catalogo cerrado como el resto, o cualquiera guarda un
+// celular con el prefijo que se le ocurra.
+test('M25: el codigo de pais es catalogo cerrado (MX/US/CA)', () => {
+  for (const code of CODIGOS_PAIS) {
+    assert.deepEqual(validarMayoreo(formValido({ celCode: code, cel: '5512345678' })), [], code);
+  }
+  assert.deepEqual(validarMayoreo(formValido({ celCode: '+999' })),
+    [{ campo: 'cel', mensaje: 'Escribe tu celular a 10 dígitos.' }]);
+  assert.deepEqual(validarMayoreo(formValido({ celCode: '+' })),
+    [{ campo: 'cel', mensaje: 'Escribe tu celular a 10 dígitos.' }]);
+});
+
+// Superficie publica sin auth: sin tope, una sola captura puede guardar el
+// megabyte que aguanta express.json.
+test('M26: los textos libres tienen tope de longitud', () => {
+  const largo = 'x'.repeat(500);
+  for (const campo of ['otro', 'empresa', 'ciudad', 'nombre', 'apellido', 'cargo', 'web']) {
+    const extra = campo === 'otro' ? { tipo: 'Otro', otro: largo } : { [campo]: largo };
+    const errores = validarMayoreo(formValido(extra));
+    assert.deepEqual(errores, [{ campo, mensaje: 'Ese texto es demasiado largo.' }], campo);
+  }
+});
+
+test('M27: un texto de largo razonable no se rechaza', () => {
+  assert.deepEqual(validarMayoreo(formValido({ cargo: 'Directora de compras y abastecimiento' })), []);
 });
 
 // --- buildCapturaMayoreo: el formulario -> la captura de prospecto de #57.

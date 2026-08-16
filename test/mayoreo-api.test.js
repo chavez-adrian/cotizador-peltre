@@ -194,6 +194,32 @@ test('W8: pasado el tope por IP la captura se descarta', async () => {
   assert.equal(readProspectos().length, creados, 'la captura pasada del tope no crea tarjeta');
 });
 
+test('W13: el honeypot tambien consume el tope por IP (un bot atrapado no tiene envios ilimitados)', async () => {
+  for (let i = 0; i < MAX_CAPTURAS_POR_IP; i++) {
+    await enviar(formulario({ fax: 'spam', cel: `551234000${i}` }));
+  }
+  const res = await enviar(formulario({ cel: '5599887766' }));
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 0, 'el envio legitimo pasado el tope no crea tarjeta');
+});
+
+// --- Endurecimiento de la superficie publica ---
+
+test('W14: un codigo de pais fuera del catalogo cerrado no pasa', async () => {
+  const res = await enviar(formulario({ celCode: '+999' }));
+  assert.equal(res.status, 400);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('W15: los textos libres tienen tope de longitud', async () => {
+  for (const campo of ['cargo', 'empresa', 'ciudad', 'web']) {
+    resetRateLimitPublico();
+    const res = await enviar(formulario({ [campo]: 'x'.repeat(500) }));
+    assert.equal(res.status, 400, campo);
+  }
+  assert.equal(readProspectos().length, 0);
+});
+
 // --- El invariante de ADR-0012: la respuesta es OPACA ---
 
 test('W9: la respuesta 200 es identica en las 5 ramas (nuevo / duplicado / cliente / honeypot / tope)', async () => {

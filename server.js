@@ -821,10 +821,13 @@ app.post('/api/prospectos/publico', async (req, res) => {
   const opaca = () => res.status(200).json({ ok: true });
   const form = req.body || {};
 
+  // El tope por IP se cobra ANTES del honeypot, y por eso cuenta tambien los
+  // envios que caen en la trampa: si el honeypot cortara primero, un bot
+  // atrapado tendria envios ilimitados y la defensa barata se anularia sola.
+  if (!permitirCaptura(req.ip)) return opaca();
   // Honeypot: campo oculto que una persona nunca ve ni llena. Se descarta en
   // silencio -- un 400 le ensenaria al bot cual es el campo trampa.
   if (String(form[HONEYPOT] || '').trim()) return opaca();
-  if (!permitirCaptura(req.ip)) return opaca();
 
   if (validarMayoreo(form).length) return res.status(400).json({ error: 'Captura incompleta' });
 

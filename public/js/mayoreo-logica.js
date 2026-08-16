@@ -5,6 +5,7 @@
 // implementacion, cero copias espejo.
 
 import { validarTelefono, combinarTelefonoConCodigo } from './alta-logica.js';
+import { PIEZAS_ESTIMADAS } from './prospectos-logica.js';
 
 // Tipo de proyecto -> segmento de Operam (tabla de campos del ticket). Varias
 // opciones caen a proposito en el mismo segmento (Restaurantes/Hoteles/Cafeterias
@@ -27,10 +28,13 @@ export function segmentoDeTipo(tipo) {
   return s === undefined ? null : s;
 }
 
-// Cantidad estimada: los mismos cortes de las listas de mayoreo MENOS +6,000.
-// La omision es deliberada (CONTEXT.md "Captura publica"): ese nivel exige
-// negociacion humana y no debe entrar por autoservicio.
-export const CANTIDADES = ['+100', '+350', '+550', '+1,500'];
+// Cantidad estimada: los cortes del sistema (PIEZAS_ESTIMADAS) MENOS +6,000. Se
+// DERIVAN, no se copian: si manana cambian los cortes, cambian en un solo lugar
+// y lo que guarda el formulario sigue siendo un valor que el resto del sistema
+// entiende. La omision de +6,000 es deliberada (CONTEXT.md "Captura publica"):
+// ese nivel exige negociacion humana y no debe entrar por autoservicio.
+export const SIN_AUTOSERVICIO = '+6,000';
+export const CANTIDADES = PIEZAS_ESTIMADAS.filter(p => p !== SIN_AUTOSERVICIO);
 
 // "Para cuando lo necesitas": catalogo cerrado de rangos, nunca texto libre ni
 // fecha exacta (CONTEXT.md "Captura publica").
@@ -40,6 +44,20 @@ export const CUANDO_OPCIONES = [
   'En los próximos 6 meses',
   'Aún no tengo fecha',
 ];
+
+// Codigos de pais del selector -- catalogo cerrado. Son los codigos de
+// alta-logica tal cual, para que el widget no tenga que traducir nada. Se valida
+// como cualquier otro catalogo: este endpoint es publico y sin el, cualquiera
+// guardaria un celular con el prefijo que se le ocurra.
+export const CODIGOS_PAIS = ['+52', '+1', '+1-CA'];
+
+// Tope de los textos libres. Superficie publica sin auth: sin esto una sola
+// captura puede guardar el megabyte que aguanta express.json. Los limites son
+// holgados para un humano y estrechos para un abuso.
+export const LIMITES_TEXTO = {
+  otro: 200, empresa: 200, cp: 10, ciudad: 120,
+  nombre: 80, apellido: 80, cargo: 120, correo: 254, web: 200,
+};
 
 // Dominios de correo frecuentes en Mexico para el typo-check con sugerencia.
 export const DOMINIOS_CORREO = [
@@ -54,7 +72,7 @@ export function unirNombre(nombre, apellido) {
     .filter(Boolean).join(' ');
 }
 
-function distancia(a, b) {
+function distanciaEdicion(a, b) {
   if (Math.abs(a.length - b.length) > 2) return Infinity;
   const m = [];
   for (let i = 0; i <= a.length; i++) m[i] = [i];
@@ -82,7 +100,7 @@ export function sugerirDominioCorreo(correo) {
   const dominio = v.slice(at + 1).toLowerCase();
   if (!dominio || DOMINIOS_CORREO.includes(dominio)) return null;
   for (const d of DOMINIOS_CORREO) {
-    if (distancia(dominio, d) <= 2) return d;
+    if (distanciaEdicion(dominio, d) <= 2) return d;
   }
   return null;
 }
@@ -118,9 +136,22 @@ export function validarMayoreo(form) {
   if (!vacio(f.cuando) && !CUANDO_OPCIONES.includes(f.cuando)) mal('cuando', 'Selecciona una opción.');
   if (vacio(f.nombre)) mal('nombre', 'Escribe tu nombre.');
   if (vacio(f.apellido)) mal('apellido', 'Escribe tu apellido.');
-  if (validarTelefono(f.celCode || '+52', f.cel || '')) mal('cel', 'Escribe tu celular a 10 dígitos.');
+  const celCode = f.celCode || '+52';
+  if (!CODIGOS_PAIS.includes(celCode) || validarTelefono(celCode, f.cel || '')) {
+    mal('cel', 'Escribe tu celular a 10 dígitos.');
+  }
   if (!vacio(f.correo) && !/.+@.+\..+/.test(String(f.correo).trim())) {
     mal('correo', 'Ese correo no se ve válido.');
+  }
+
+  // Guardia de abuso, no de UX: se anexa al final porque a un humano no le
+  // dispara nunca (los topes son holgados) y no debe reordenar los errores
+  // reales del formulario. Solo marca campos que no fallaron ya por otra razon.
+  for (const [campo, max] of Object.entries(LIMITES_TEXTO)) {
+    const largo = String(f[campo] == null ? '' : f[campo]).trim().length;
+    if (largo > max && !errores.some(e => e.campo === campo)) {
+      mal(campo, 'Ese texto es demasiado largo.');
+    }
   }
   return errores;
 }
@@ -140,6 +171,14 @@ function limpio(v) {
 // `fechaISO` entra como parametro (no se lee el reloj) para que el modulo siga
 // puro: la fecha del consentimiento de promociones es un dato de auditoria y el
 // que llama es quien sabe en que instante ocurrio la captura.
+//
+// Por que `data` lleva llaves fuera del catalogo OPCIONALES de prospectos-logica
+// (cp, cuando, web, promos): ese catalogo es el de la captura MANUAL y su
+// formulario de edicion, no una lista blanca de todo lo que `data` puede tener.
+// El resto del sistema ya escribe ahi llaves propias sin pasar por el (data.cliente_id
+// en ligarCliente, data.folioOperam en moverASeguimientoConFolio). La captura
+// publica pide mas campos por diseno del ticket #157 y los guarda estructurados
+// en vez de aplastarlos en notas.
 export function buildCapturaMayoreo(form, fechaISO) {
   const f = form || {};
   const data = {};
