@@ -482,14 +482,39 @@ export function esAsignable(o) {
   return !!o && o.etapa === 'no_asignado';
 }
 
+// Permiso de asignacion (#156, spec #155, CONTEXT.md "Visibilidad"): ver la
+// columna No Asignado y asignarle dueno a esas tarjetas. El admin lo tiene
+// siempre; un vendedor lo puede tener por checkbox en /admin (el gerente
+// comercial -- el sistema NO modela un rol gerente, decision explicita). Mismo
+// patron y misma normalizacion defensiva que puedeFijarLista (#153): basura o
+// ausencia degradan a SIN permiso, nunca a permiso implicito.
+export function normalizarPuedeAsignar(valor) {
+  return valor === true;
+}
+
+export function puedeAsignar(vendedor) {
+  if (!vendedor) return false;
+  if (vendedor.role === 'admin') return true;
+  return normalizarPuedeAsignar(vendedor.puedeAsignar);
+}
+
 // Control de asignacion sobre la tarjeta No Asignado: un selector con los
 // vendedores del catalogo (GET /api/catalogos) + un boton que dispara
-// asignarVendedorTablero(id) en app.js (PATCH /api/prospectos/:id/asignar). Solo
-// lo ve el admin (quien asigna, CONTEXT.md "Visibilidad"); el no-admin no ve No
-// Asignado y la tarjeta sigue siendo solo-lectura. Sin vendedores en el catalogo
-// no se pinta. Funcion pura: el cableado DOM vive en app.js.
-export function buildAsignarControlHtml(o, vendedores, esAdmin) {
-  if (!esAdmin || !esAsignable(o) || !(vendedores && vendedores.length)) return '';
+// asignarVendedorTablero(id, this) en app.js (PATCH /api/prospectos/:id/asignar).
+// Solo lo ve quien tiene el permiso de asignacion (CONTEXT.md "Visibilidad"); quien
+// no lo tiene ni siquiera recibe tarjetas No Asignado del servidor. Puede asignar a
+// CUALQUIER vendedor del catalogo, no solo a si mismo. Sin vendedores en el
+// catalogo no se pinta. Funcion pura: el cableado DOM vive en app.js.
+//
+// El boton pasa `this` y NUNCA un id de contenedor (mismo criterio que la lista de
+// candidatos de Operam, #83 F2): desde #156 la MISMA tarjeta puede estar pintada a
+// la vez en la cola Hoy y en el tablero -- las dos vistas solo se ocultan con
+// display:none, su HTML sigue en el documento. Con getElementById el boton del
+// tablero leeria el select de Hoy (precede en el documento) y asignaria al vendedor
+// que quedo elegido en la otra vista, o avisaria "elige un vendedor" con uno ya
+// elegido. `superficie` ademas evita el id duplicado entre ambas pinturas.
+export function buildAsignarControlHtml(o, vendedores, tienePermiso, superficie = 'tablero') {
+  if (!tienePermiso || !esAsignable(o) || !(vendedores && vendedores.length)) return '';
   // refId es el id numerico real del prospecto; o.id puede venir prefijado ("p7").
   // El control debe disparar la accion con el id numerico (un identificador sin
   // comillas como "p7" seria una variable undefined en el navegador).
@@ -498,8 +523,8 @@ export function buildAsignarControlHtml(o, vendedores, esAdmin) {
     .map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`)
     .join('');
   return `<div class="cot-card-actions tablero-asignar">
-    <select id="asignar-vendedor-${id}" class="btn-sm"><option value="">Asignar a...</option>${opciones}</select>
-    <button class="btn btn-primary btn-sm" onclick="asignarVendedorTablero(${id})">Asignar</button>
+    <select id="asignar-vendedor-${escapeHtml(superficie)}-${id}" class="btn-sm"><option value="">Asignar a...</option>${opciones}</select>
+    <button class="btn btn-primary btn-sm" onclick="asignarVendedorTablero(${id}, this)">Asignar</button>
   </div>`;
 }
 
@@ -587,12 +612,12 @@ export function buildDecoradoControlHtml(o) {
   </div>`;
 }
 
-function buildOportunidadCardHtml(o, vendedores, esAdmin) {
+function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
   const cadena = cadenaOperamHtml(o.espejoOperam);
-  const asignar = buildAsignarControlHtml(o, vendedores, esAdmin);
+  const asignar = buildAsignarControlHtml(o, vendedores, tienePermiso);
   const mover = buildMoverSeguimientoControlHtml(o);
   const salida = buildSalidaControlHtml(o);
   const decorado = buildDecoradoControlHtml(o);
@@ -614,10 +639,10 @@ function buildOportunidadCardHtml(o, vendedores, esAdmin) {
   </div>`;
 }
 
-export function buildTableroPipelineHtml(oportunidades, { vendedores, esAdmin } = {}) {
+export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsignar: tienePermiso } = {}) {
   const cols = agruparPipeline(oportunidades);
   return COLUMNAS_PIPELINE.map(etapa => {
-    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, esAdmin)).join('');
+    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, tienePermiso)).join('');
     const suma = cols[etapa].reduce((s, o) => s + (o.total || 0), 0);
     return `
       <div class="tablero-col" data-etapa="${etapa}">
@@ -708,13 +733,38 @@ export function buildColaCotizacionItemHtml(item) {
   `;
 }
 
-export function buildColaHoyHtml(cola) {
+// Item de tarjeta No Asignado en la cola Hoy (#156, spec #155, CONTEXT.md "Cola
+// Hoy"): un lead sin dueno es un pendiente del dia. Solo llega a quien tiene el
+// permiso de asignacion (lo filtra GET /api/hoy), y su unico pendiente es
+// asignarle vendedor: reusa el MISMO control de la tarjeta del tablero
+// (buildAsignarControlHtml -> asignarVendedorTablero) en vez de duplicarlo. No
+// ofrece registrar contacto ni la sugerencia de No util: esa cadencia mide la
+// espera del vendedor, y aqui todavia no hay vendedor.
+export function buildColaNoAsignadoItemHtml(item, vendedores, tienePermiso) {
+  const espera = item.horas != null ? ` · ${item.horas} h sin asignar` : '';
+  const meta = [item.canal, item.ciudad, item.celular].filter(Boolean).map(escapeHtml).join(' · ');
+  const asignar = buildAsignarControlHtml({ ...item, refId: item.id }, vendedores, tienePermiso, 'hoy');
+  return `
+    <div class="cot-card">
+      <div class="cot-card-header">
+        <div>
+          <div class="cot-card-cliente">${escapeHtml(item.nombre || 'Sin nombre')}</div>
+          <div class="cot-card-meta">Sin vendedor${escapeHtml(espera)}${meta ? ' · ' + meta : ''}</div>
+        </div>
+      </div>
+      ${asignar}
+    </div>
+  `;
+}
+
+export function buildColaHoyHtml(cola, { vendedores, puedeAsignar: tienePermiso } = {}) {
   if (!cola || !cola.length) return '<div class="cot-card-meta">Nada pendiente por ahora.</div>';
-  return cola.map(item => item.tipo === 'cotizacion'
-    ? buildColaCotizacionItemHtml(item)
+  return cola.map(item => {
+    if (item.tipo === 'no_asignado') return buildColaNoAsignadoItemHtml(item, vendedores, tienePermiso);
+    if (item.tipo === 'cotizacion') return buildColaCotizacionItemHtml(item);
     // buildColaProspectosHtml itera una lista; un solo prospecto = lista de uno.
-    : buildColaProspectosHtml([item])
-  ).join('');
+    return buildColaProspectosHtml([item]);
+  }).join('');
 }
 
 // Filtro/historial de cerradas (issue #59, AC3, CONTEXT.md "Etapas del pipeline":

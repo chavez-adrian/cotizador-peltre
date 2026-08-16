@@ -362,11 +362,15 @@ function renderVendedores() {
         : `<input type="number" class="tope-input" min="0" max="100" step="1" value="${v.topeDescuento ?? 0}"
             onchange="vendedoresData[${i}].topeDescuento=this.value" title="Tope de descuento (%)" placeholder="% dscto.">`}
       ${v.role === 'admin'
-        ? '<span style="font-size:12px;color:var(--text-light)">siempre puede</span>'
+        ? '<span style="font-size:12px;color:var(--text-light)">fija lista y asigna</span>'
         : `<label style="font-size:12px;white-space:nowrap">
             <input type="checkbox" ${v.puedeFijarLista ? 'checked' : ''}
               onchange="vendedoresData[${i}].puedeFijarLista=this.checked">
-            fijar lista</label>`}
+            fijar lista</label>
+          <label style="font-size:12px;white-space:nowrap" title="Ve la columna No Asignado y asigna esas tarjetas a cualquier vendedor">
+            <input type="checkbox" ${v.puedeAsignar ? 'checked' : ''}
+              onchange="vendedoresData[${i}].puedeAsignar=this.checked">
+            asignar</label>`}
       ${v.role !== 'admin' ? `<button class="btn btn-danger btn-sm" onclick="removeVendedor(${i})">X</button>` : '<div style="width:32px"></div>'}
     </div>
   `).join('');

@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -347,6 +347,53 @@ test('Q24: buildColaHoyHtml con cola vacia muestra el estado vacio', () => {
   assert.match(buildColaHoyHtml(null), /Nada pendiente/);
 });
 
+// === Issue #156: el item No Asignado en la cola Hoy ===
+// Solo llega a quien tiene el permiso (lo filtra GET /api/hoy); su unica accion
+// pendiente es asignarle dueno, con el MISMO control de la tarjeta del tablero.
+const VENDEDORES_HOY = [{ id: 2, name: 'Alejandro Chavez' }, { id: 3, name: 'Oswaldo Chavez' }];
+
+function itemNoAsignado(extra) {
+  return {
+    tipo: 'no_asignado', sinDueno: true, id: 42, nombre: 'Mayoreo Web',
+    celular: '+52 5512345678', ciudad: 'Toluca', canal: 'Formulario web',
+    etapa: 'no_asignado', vendedor: null, horas: 5, color: 'ambar', urgencia: 0.6, ...extra,
+  };
+}
+
+test('Q24b: el item No Asignado de la cola Hoy trae el control de asignar', () => {
+  const html = buildColaHoyHtml([itemNoAsignado({ id: 42 })], { vendedores: VENDEDORES_HOY, puedeAsignar: true });
+  assert.match(html, /Mayoreo Web/);
+  assert.match(html, /Sin vendedor/i);
+  assert.match(html, /asignar-vendedor-hoy-42/);
+  assert.match(html, /asignarVendedorTablero\(42, this\)/);
+});
+
+test('Q24c: sin catalogo de vendedores el item No Asignado se pinta, pero sin control', () => {
+  const html = buildColaHoyHtml([itemNoAsignado({ id: 42 })]);
+  assert.match(html, /Mayoreo Web/);
+  assert.equal(html.includes('asignarVendedorTablero'), false);
+});
+
+test('Q24d: el item No Asignado no ofrece registrar contacto (no hay vendedor que lo trabaje)', () => {
+  const html = buildColaHoyHtml([itemNoAsignado({ id: 42 })], { vendedores: VENDEDORES_HOY, puedeAsignar: true });
+  assert.equal(html.includes('registrarToqueProspecto'), false);
+});
+
+test('Q24e: buildColaHoyHtml preserva el orden del backend con los tres tipos', () => {
+  const html = buildColaHoyHtml(
+    [itemNoAsignado({ id: 42 }), itemCotizacion({ id: 10 }), itemProspecto({ id: 1 })],
+    { vendedores: VENDEDORES_HOY, puedeAsignar: true }
+  );
+  assert.ok(html.indexOf('Mayoreo Web') < html.indexOf('Hotel Azul'));
+  assert.ok(html.indexOf('Hotel Azul') < html.indexOf('Laura'));
+});
+
+test('Q24f: buildColaNoAsignadoItemHtml escapa el nombre capturado por el publico', () => {
+  const html = buildColaNoAsignadoItemHtml(itemNoAsignado({ nombre: '<img src=x onerror=alert(1)>' }), VENDEDORES_HOY, true);
+  assert.equal(html.includes('<img src=x'), false);
+  assert.match(html, /&lt;img/);
+});
+
 // === Issue #65: reunion de diagnostico sobre una cotizacion en la cola Hoy ===
 
 test('Q25: la card de cotizacion ofrece agendar reunion (input datetime + boton con el id numerico)', () => {
@@ -434,36 +481,75 @@ test('Q27: esAsignable solo en no_asignado', () => {
   assert.equal(esAsignable(undefined), false);
 });
 
-test('Q28: buildAsignarControlHtml pinta el selector de vendedores y el boton solo para admin en No Asignado', () => {
+// === Issue #156 (spec #155): el permiso de asignacion deja de ser "ser admin" ===
+// El admin lo tiene siempre; un vendedor lo puede tener por checkbox en /admin
+// (mismo patron que puedeFijarLista de #153). No existe rol gerente.
+test('Q27b: puedeAsignar: el admin siempre puede, sin checkbox', () => {
+  assert.equal(puedeAsignar({ role: 'admin' }), true);
+  assert.equal(puedeAsignar({ role: 'admin', puedeAsignar: false }), true);
+});
+
+test('Q27c: puedeAsignar: el vendedor depende del flag normalizado', () => {
+  assert.equal(puedeAsignar({ role: 'vendedor', puedeAsignar: true }), true);
+  assert.equal(puedeAsignar({ role: 'vendedor', puedeAsignar: false }), false);
+  assert.equal(puedeAsignar({ role: 'vendedor' }), false);
+  assert.equal(puedeAsignar(null), false);
+});
+
+test('Q27d: normalizarPuedeAsignar: basura o ausencia degradan a sin permiso', () => {
+  assert.equal(normalizarPuedeAsignar(true), true);
+  assert.equal(normalizarPuedeAsignar('si'), false);
+  assert.equal(normalizarPuedeAsignar(1), false);
+  assert.equal(normalizarPuedeAsignar(undefined), false);
+  assert.equal(normalizarPuedeAsignar(null), false);
+});
+
+test('Q28: buildAsignarControlHtml pinta el selector de vendedores y el boton solo para quien tiene el permiso en No Asignado', () => {
   const html = buildAsignarControlHtml(prospecto({ id: 5, etapa: 'no_asignado' }), VENDEDORES, true);
   assert.match(html, /<select/);
   assert.match(html, /Alejandro Chavez/);
   assert.match(html, /Oswaldo Chavez/);
-  assert.match(html, /asignarVendedorTablero\(5\)/);
-  // el selector se identifica por el id de la tarjeta (lo lee app.js)
-  assert.match(html, /asignar-vendedor-5/);
+  // el boton pasa `this`: app.js resuelve el select relativo al elemento clickeado
+  assert.match(html, /asignarVendedorTablero\(5, this\)/);
+  assert.match(html, /asignar-vendedor-tablero-5/);
 });
 
-test('Q29: buildAsignarControlHtml no pinta control fuera de No Asignado ni para no-admin', () => {
+// #156: la MISMA tarjeta puede estar pintada a la vez en la cola Hoy y en el
+// tablero (las vistas solo se ocultan con display:none). Dos ids iguales en el
+// documento harian que getElementById leyera el select de la vista equivocada:
+// por eso el id lleva la superficie y el boton pasa `this`. Sin DOM aqui, lo que
+// se puede fijar es que las dos pinturas NO comparten id.
+test('Q28b: el control de la cola Hoy y el del tablero no comparten el id del selector', () => {
+  const o = prospecto({ id: 5, etapa: 'no_asignado' });
+  const tablero = buildAsignarControlHtml(o, VENDEDORES, true, 'tablero');
+  const hoy = buildAsignarControlHtml(o, VENDEDORES, true, 'hoy');
+  const idDe = html => html.match(/id="(asignar-vendedor-[^"]+)"/)[1];
+  assert.notEqual(idDe(tablero), idDe(hoy));
+  // ambos siguen disparando la MISMA accion sobre el MISMO prospecto
+  assert.match(tablero, /asignarVendedorTablero\(5, this\)/);
+  assert.match(hoy, /asignarVendedorTablero\(5, this\)/);
+});
+
+test('Q29: buildAsignarControlHtml no pinta control fuera de No Asignado ni sin permiso', () => {
   assert.equal(buildAsignarControlHtml(prospecto({ etapa: 'por_cotizar' }), VENDEDORES, true), '');
   assert.equal(buildAsignarControlHtml(prospecto({ etapa: 'no_asignado' }), VENDEDORES, false), '');
 });
 
-test('Q30: el tablero pinta el control de asignar en la tarjeta No Asignado para admin', () => {
+test('Q30: el tablero pinta el control de asignar en la tarjeta No Asignado para quien tiene el permiso', () => {
   const html = buildTableroPipelineHtml(
     [prospecto({ id: 7, etapa: 'no_asignado' }), prospecto({ id: 8, etapa: 'por_cotizar' })],
-    { vendedores: VENDEDORES, esAdmin: true }
+    { vendedores: VENDEDORES, puedeAsignar: true }
   );
-  assert.match(html, /asignarVendedorTablero\(7\)/);
+  assert.match(html, /asignarVendedorTablero\(7, this\)/);
   // no aparece sobre la tarjeta que ya tiene dueno
-  assert.equal(html.includes('asignarVendedorTablero(8)'), false);
+  assert.equal(html.includes('asignarVendedorTablero(8'), false);
 });
 
-test('Q31: el tablero sin opciones (no-admin o sin vendedores) no pinta el control de asignar (read-only)', () => {
+test('Q31: el tablero sin opciones (sin permiso o sin vendedores) no pinta el control de asignar (read-only)', () => {
   const html = buildTableroPipelineHtml([prospecto({ id: 7, etapa: 'no_asignado' })]);
   assert.equal(html.includes('asignarVendedorTablero'), false);
-  const noAdmin = buildTableroPipelineHtml([prospecto({ id: 7, etapa: 'no_asignado' })], { vendedores: VENDEDORES, esAdmin: false });
-  assert.equal(noAdmin.includes('asignarVendedorTablero'), false);
+  const sinPermiso = buildTableroPipelineHtml([prospecto({ id: 7, etapa: 'no_asignado' })], { vendedores: VENDEDORES, puedeAsignar: false });
+  assert.equal(sinPermiso.includes('asignarVendedorTablero'), false);
 });
 
 // Folio de Operam de un PROSPECTO movido a mano (issue #56, AC3): el folio vive
@@ -598,10 +684,10 @@ test('Q37: el tablero pinta el boton de mover a Seguimiento en la tarjeta de pro
 test('Q38: buildAsignarControlHtml usa el id numerico (refId), no el id prefijado de la oportunidad', () => {
   const o = { tipo: 'prospecto', id: 'p7', refId: 7, etapa: 'no_asignado' };
   const html = buildAsignarControlHtml(o, VENDEDORES, true);
-  assert.match(html, /asignarVendedorTablero\(7\)/);
-  assert.match(html, /id="asignar-vendedor-7"/);
-  assert.equal(html.includes('asignarVendedorTablero(p7)'), false);
-  assert.equal(html.includes('asignar-vendedor-p7'), false);
+  assert.match(html, /asignarVendedorTablero\(7, this\)/);
+  assert.match(html, /id="asignar-vendedor-tablero-7"/);
+  assert.equal(html.includes('asignarVendedorTablero(p7'), false);
+  assert.equal(html.includes('asignar-vendedor-tablero-p7'), false);
 });
 
 test('Q39: buildMoverSeguimientoControlHtml usa el id numerico (refId) con la oportunidad prefijada', () => {

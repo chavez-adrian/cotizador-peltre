@@ -119,3 +119,63 @@ test('GET /api/hoy sin token responde 401', async () => {
   const res = await supertest(app).get('/api/hoy');
   assert.equal(res.status, 401);
 });
+
+// === Issue #156 (spec #155): la cola Hoy adopta las tarjetas No Asignado ===
+// Un lead sin dueno es un pendiente del dia, pero SOLO para quien lo puede
+// resolver: el admin o el vendedor con el permiso de asignacion. Para el resto
+// la regla de Visibilidad queda intacta -- ni en el tablero ni en la cola.
+const VENDEDORES_PATH = join(__dirname, '..', 'data', 'vendedores.json');
+const GERENTE_TOKEN = jwt.sign({ id: 2, name: 'Alejandro Chávez', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
+
+function conSinAsignar() {
+  return [
+    ...prospectosFixture(),
+    {
+      id: 3, fecha: haceHoras(5), vendedor: null, celular: '+52 5511112222',
+      nombre: 'Mayoreo Web', ciudad: 'Toluca', canal: 'Formulario web',
+      etapa: 'no_asignado', eventos: [], data: {},
+    },
+  ];
+}
+
+async function conPermisoDeAsignacion(idVendedor, fn) {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === idVendedor).puedeAsignar = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    await fn();
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+}
+
+test('#156: la cola Hoy del admin incluye la tarjeta No Asignado y la pone al frente', async () => {
+  writeJson(PROSPECTOS_PATH, conSinAsignar());
+  const res = await supertest(app).get('/api/hoy').set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+  assert.equal(res.status, 200);
+  assert.equal(res.body[0].tipo, 'no_asignado');
+  assert.equal(res.body[0].nombre, 'Mayoreo Web');
+  assert.equal(res.body.filter(i => i.tipo === 'no_asignado').length, 1);
+});
+
+test('#156: el vendedor con permiso ve la tarjeta No Asignado en su cola, ademas de lo suyo', async () => {
+  writeJson(PROSPECTOS_PATH, conSinAsignar());
+  await conPermisoDeAsignacion(2, async () => {
+    const res = await supertest(app).get('/api/hoy').set('Authorization', `Bearer ${GERENTE_TOKEN}`);
+    assert.equal(res.status, 200);
+    const tipos = res.body.map(i => i.tipo);
+    assert.equal(tipos[0], 'no_asignado');
+    // Sigue sin ver la cartera de Memo ni la de Ana: solo lo sin dueno.
+    assert.equal(res.body.some(i => i.vendedor === 'Memo' || i.vendedor === 'Ana'), false);
+  });
+});
+
+test('#156: el vendedor SIN permiso no ve tarjetas No Asignado en la cola Hoy', async () => {
+  writeJson(PROSPECTOS_PATH, conSinAsignar());
+  const memo = await supertest(app).get('/api/hoy').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(memo.status, 200);
+  assert.equal(memo.body.some(i => i.tipo === 'no_asignado'), false);
+  const gerente = await supertest(app).get('/api/hoy').set('Authorization', `Bearer ${GERENTE_TOKEN}`);
+  assert.equal(gerente.body.some(i => i.tipo === 'no_asignado'), false);
+});

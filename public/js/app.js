@@ -3874,8 +3874,27 @@ const PIPELINE_MODOS = new Set(['tablero', 'lista', 'cerradas']);
 let pipelineModo = PIPELINE_MODOS.has(localStorage.getItem('pipelineModo')) ? localStorage.getItem('pipelineModo') : 'tablero';
 let ultimasOportunidades = [];
 // Catalogo de vendedores para el control de asignar de la tarjeta No Asignado
-// (issue #57): solo lo carga el admin (la unica que ve esas tarjetas y asigna).
+// (issue #57) y el permiso vigente de asignacion (#156): quien puede asignar ya
+// no es solo el admin, sino tambien el vendedor con el checkbox de /admin. El
+// servidor manda los dos juntos en /api/catalogos y vuelve a hacer valer el
+// permiso en la escritura; esto solo decide que control se pinta.
+//
+// cargarCatalogos cachea por sesion: si el admin quita el checkbox a media
+// sesion, el control sigue pintado hasta recargar. No es un agujero -- la ruta
+// de asignar relee el registro y responde 403 -- pero el desfase es real.
 let vendedoresPipeline = [];
+let puedeAsignarPipeline = false;
+
+async function cargarPermisoAsignacion() {
+  try {
+    const catalogos = await cargarCatalogos();
+    vendedoresPipeline = catalogos.vendedores || [];
+    puedeAsignarPipeline = !!catalogos.puedeAsignar;
+  } catch {
+    vendedoresPipeline = [];
+    puedeAsignarPipeline = false;
+  }
+}
 
 function motivoNoUtilDe(p) {
   // El motivo de la salida a No util vive en el evento no_util (issue #59, AC3:
@@ -3932,12 +3951,10 @@ async function showPipeline() {
       ...prospectos.map(prospectoAOportunidad),
       ...cotizaciones.map(cotizacionAOportunidad),
     ];
-    // Asignar vendedor a una tarjeta No Asignado (issue #57) es accion de admin:
-    // solo el admin necesita el catalogo de vendedores para el selector. El
-    // no-admin no ve tarjetas No Asignado (su cartera no incluye sin-dueno).
-    if (state.user.role === 'admin') {
-      try { vendedoresPipeline = (await cargarCatalogos()).vendedores || []; } catch { vendedoresPipeline = []; }
-    }
+    // Asignar vendedor a una tarjeta No Asignado (issue #57, #156) exige el
+    // permiso de asignacion: quien lo tiene necesita el catalogo de vendedores
+    // para el selector. Quien no lo tiene ni siquiera recibe esas tarjetas.
+    await cargarPermisoAsignacion();
     loadingEl.style.display = 'none';
     renderPipeline();
   } catch (e) {
@@ -3964,7 +3981,7 @@ function renderPipeline() {
   if (esTablero) {
     listEl.innerHTML = '';
     tableroEl.innerHTML = buildTableroPipelineHtml(ultimasOportunidades, {
-      vendedores: vendedoresPipeline, esAdmin: state.user.role === 'admin',
+      vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline,
     });
     return;
   }
@@ -4009,8 +4026,12 @@ const PIPELINE_LABEL = {
 // vendedor del selector que pinto buildAsignarControlHtml y llama PATCH
 // /api/prospectos/:id/asignar; el servidor aplica la regla de dominio
 // (no_asignado -> por_cotizar) y la tarjeta se mueve al recargar el pipeline.
-async function asignarVendedorTablero(id) {
-  const sel = document.getElementById(`asignar-vendedor-${id}`);
+// El select se resuelve RELATIVO al boton clickeado, nunca por getElementById
+// (#156): la misma tarjeta puede estar pintada a la vez en la cola Hoy y en el
+// tablero -- ambas vistas solo se ocultan con display:none y su HTML sigue en el
+// documento, asi que un id compartido leeria el select de la vista equivocada.
+async function asignarVendedorTablero(id, btn) {
+  const sel = btn?.closest('.tablero-asignar')?.querySelector('select');
   const vendedor = sel?.value;
   if (!vendedor) { avisoTablero('Elige un vendedor para asignar'); return; }
   try {
@@ -4022,7 +4043,11 @@ async function asignarVendedorTablero(id) {
       return;
     }
     avisoTablero(`Asignado a ${vendedor}`);
-    showPipeline();
+    // El mismo control vive en el tablero y en la cola Hoy (#156): se refresca
+    // la vista visible, no siempre el pipeline (mismo criterio que
+    // refrescarProspectos).
+    if (document.getElementById('hoy-view')?.style.display === 'block') showHoy();
+    else showPipeline();
   } catch (e) {
     avisoTablero('Error de conexion');
   }
@@ -4290,9 +4315,14 @@ async function showHoy() {
   try {
     const res = await api('/api/hoy');
     const cola = res.ok ? await res.json() : [];
+    // La cola puede traer tarjetas No Asignado (#156): su unica accion es
+    // asignarles dueno, con el mismo control (y el mismo catalogo) del tablero.
+    await cargarPermisoAsignacion();
     loadingEl.style.display = 'none';
     actualizarBadgeSeguimiento(cola.length);
-    colaEl.innerHTML = buildColaHoyHtml(cola);
+    colaEl.innerHTML = buildColaHoyHtml(cola, {
+      vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline,
+    });
   } catch (e) {
     loadingEl.textContent = 'Error cargando la cola de hoy';
   }

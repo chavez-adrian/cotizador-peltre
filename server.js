@@ -36,6 +36,7 @@ import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida } from './lib/pipeline.js';
+import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
@@ -156,6 +157,31 @@ async function topeDescuentoDeUsuario(user) {
 async function puedeFijarListaDeUsuario(user) {
   const registro = (await vendedoresStore.listar()).find(v => v.id === user?.id);
   return puedeFijarLista({ role: user?.role, puedeFijarLista: registro?.puedeFijarLista });
+}
+
+// Permiso de asignacion VIGENTE del usuario autenticado (#156, spec #155,
+// CONTEXT.md "Visibilidad"): ver la columna No Asignado y asignarle dueno a esas
+// tarjetas. Mismo motivo que los dos anteriores para leerlo del registro y no
+// del JWT: el token no se re-emite cuando el admin otorga o quita el checkbox,
+// y este permiso abre visibilidad sobre tarjetas ajenas -- quitarlo tiene que
+// surtir efecto en la siguiente peticion, no en el siguiente login.
+async function puedeAsignarDeUsuario(user) {
+  const registro = (await vendedoresStore.listar()).find(v => v.id === user?.id);
+  return puedeAsignar({ role: user?.role, puedeAsignar: registro?.puedeAsignar });
+}
+
+// Middleware del permiso de asignacion: reemplaza a adminMiddleware en las rutas
+// que asignan dueno. NO existe rol gerente (decision explicita de la spec #155):
+// el permiso es un checkbox por vendedor, ningun otro check de admin cambia.
+async function asignacionMiddleware(req, res, next) {
+  try {
+    if (!(await puedeAsignarDeUsuario(req.user))) {
+      return res.status(403).json({ error: 'Sin permiso de asignación' });
+    }
+    next();
+  } catch (err) {
+    res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
+  }
 }
 
 app.get('/api/precios', authMiddleware, async (req, res) => {
@@ -475,13 +501,22 @@ app.get('/api/seguimiento', authMiddleware, async (req, res) => {
 // en Seguimiento (dias naturales), ordenada por urgencia relativa al umbral de
 // cada tipo. Reusa los dos motores via lib/cola-hoy.js; la visibilidad por
 // vendedor es la misma de /api/prospectos/cola y /api/seguimiento.
+//
+// Las tarjetas No Asignado entran a la cola (#156) por la MISMA puerta que el
+// tablero (prospectosVisiblesPara): solo llegan al admin y a quien tiene el
+// permiso de asignacion. El nucleo (lib/cola-hoy.js) las incorpora si llegan y
+// las pone al frente; quien no tiene el permiso simplemente no las recibe.
 app.get('/api/hoy', authMiddleware, async (req, res) => {
-  const prospectos = await prospectosStore.listar();
-  const cotizaciones = await cotStore.listar();
-  const esAdmin = req.user.role === 'admin';
-  const prospectosVisibles = esAdmin ? prospectos : prospectos.filter(p => p.vendedor === req.user.name);
-  const cotizacionesVisibles = esAdmin ? cotizaciones : cotizaciones.filter(c => c.vendedor === req.user.name);
-  res.json(calcularColaHoy(prospectosVisibles, cotizacionesVisibles, new Date()));
+  try {
+    const cotizaciones = await cotStore.listar();
+    const prospectosVisibles = await prospectosVisiblesPara(req.user);
+    const cotizacionesVisibles = req.user.role === 'admin'
+      ? cotizaciones
+      : cotizaciones.filter(c => c.vendedor === req.user.name);
+    res.json(calcularColaHoy(prospectosVisibles, cotizacionesVisibles, new Date()));
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudo armar la cola de hoy: ' + err.message });
+  }
 });
 
 const PASOS_VALIDOS = new Set(['dia2', 'dia7', 'dia21', 'vencida']);
@@ -751,12 +786,23 @@ app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (
   res.status(201).json({ ok: true, id });
 });
 
-app.get('/api/prospectos', authMiddleware, async (req, res) => {
+// Visibilidad (CONTEXT.md): cada vendedor ve unicamente sus propias
+// oportunidades; el admin ve todas. Las tarjetas No Asignado no son de nadie: las
+// ve ademas quien tiene el permiso de asignacion (#156), y SOLO esas -- el
+// permiso abre la columna sin dueno, nunca la cartera de otro vendedor.
+async function prospectosVisiblesPara(user) {
   const todos = await prospectosStore.listar();
-  const visibles = req.user.role === 'admin'
-    ? todos
-    : todos.filter(p => p.vendedor === req.user.name);
-  res.json(visibles);
+  if (user.role === 'admin') return todos;
+  const asigna = await puedeAsignarDeUsuario(user);
+  return todos.filter(p => p.vendedor === user.name || (asigna && p.etapa === 'no_asignado'));
+}
+
+app.get('/api/prospectos', authMiddleware, async (req, res) => {
+  try {
+    res.json(await prospectosVisiblesPara(req.user));
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudo listar prospectos: ' + err.message });
+  }
 });
 
 // Cola de seguimiento (issue #44). Registrada antes de cualquier ruta
@@ -824,28 +870,34 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
 });
 
 // Asignar un vendedor a una tarjeta en No Asignado (issue #57, CONTEXT.md
-// "Etapas del pipeline" + "Visibilidad"): admin-only (solo quien asigna ve No
-// Asignado). La transicion de etapa la decide la regla de dominio
-// (transicionPorAsignacion) -- desde no_asignado -> por_cotizar; la capa de IO
-// (asignarVendedor) la aplica. El vendedor elegido debe estar en el catalogo
+// "Etapas del pipeline" + "Visibilidad"): exige el permiso de asignacion, que el
+// admin tiene siempre y un vendedor puede tener por checkbox en /admin (#156 --
+// ya no es admin-only). Quien asigna puede asignar a CUALQUIER vendedor del
+// catalogo, no solo a si mismo. La transicion de etapa la decide la regla de
+// dominio (transicionPorAsignacion) -- desde no_asignado -> por_cotizar; la capa
+// de IO (asignarVendedor) la aplica. El vendedor elegido debe estar en el catalogo
 // (registro de vendedores, la misma fuente que pobla el selector en /api/catalogos).
-app.patch('/api/prospectos/:id/asignar', authMiddleware, adminMiddleware, async (req, res) => {
-  const { vendedor } = req.body || {};
-  const catalogo = (await vendedoresStore.listar()).filter(v => v.operam_id != null);
-  if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
-    return res.status(400).json({ error: 'El vendedor a asignar debe ser uno del catálogo' });
+app.patch('/api/prospectos/:id/asignar', authMiddleware, asignacionMiddleware, async (req, res) => {
+  try {
+    const { vendedor } = req.body || {};
+    const catalogo = (await vendedoresStore.listar()).filter(v => v.operam_id != null);
+    if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
+      return res.status(400).json({ error: 'El vendedor a asignar debe ser uno del catálogo' });
+    }
+    const p = await prospectosStore.obtener(parseInt(req.params.id));
+    if (!p) return res.status(404).json({ error: 'No encontrado' });
+    const destino = transicionPorAsignacion(p.etapa);
+    if (!destino) {
+      return res.status(400).json({ error: 'Solo se asigna vendedor a una tarjeta en No Asignado' });
+    }
+    await prospectosStore.asignarVendedor(p.id, vendedor, destino, {
+      tipo: 'asignacion', de: p.etapa, a: vendedor,
+      fecha: new Date().toISOString(), vendedor: req.user.name,
+    });
+    res.json({ ok: true, etapa: destino });
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudo asignar: ' + err.message });
   }
-  const p = await prospectosStore.obtener(parseInt(req.params.id));
-  if (!p) return res.status(404).json({ error: 'No encontrado' });
-  const destino = transicionPorAsignacion(p.etapa);
-  if (!destino) {
-    return res.status(400).json({ error: 'Solo se asigna vendedor a una tarjeta en No Asignado' });
-  }
-  await prospectosStore.asignarVendedor(p.id, vendedor, destino, {
-    tipo: 'asignacion', de: p.etapa, a: vendedor,
-    fecha: new Date().toISOString(), vendedor: req.user.name,
-  });
-  res.json({ ok: true, etapa: destino });
 });
 
 app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
@@ -1042,6 +1094,7 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, re
       const out = { ...v };
       if (v.topeDescuento !== undefined) out.topeDescuento = normalizarTope(v.topeDescuento);
       if (v.puedeFijarLista !== undefined) out.puedeFijarLista = normalizarPuedeFijarLista(v.puedeFijarLista);
+      if (v.puedeAsignar !== undefined) out.puedeAsignar = normalizarPuedeAsignar(v.puedeAsignar);
       return out;
     }));
     res.json({ saved: true });
@@ -2196,12 +2249,23 @@ app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/catalogos', authMiddleware, async (_req, res) => {
+// El permiso de asignacion viaja con los catalogos (#156) porque es la misma
+// pregunta que la pantalla hace al pintar el tablero y la cola Hoy: "a quien
+// puedo asignar" y "puedo asignar". El servidor lo vuelve a hacer valer en cada
+// escritura (asignacionMiddleware): esto solo decide que control se pinta.
+app.get('/api/catalogos', authMiddleware, async (req, res) => {
   try {
-    const vendedores = (await vendedoresStore.listar())
+    // Una sola lectura del registro para las dos respuestas: el catalogo y el
+    // permiso del solicitante salen de la misma lista.
+    const registro = await vendedoresStore.listar();
+    const vendedores = registro
       .filter(v => v.operam_id != null)
       .map(v => ({ id: v.id, name: v.name, operam_id: v.operam_id }));
-    res.json({ segmentos: SEGMENTOS, vendedores, listas_precios: listasPrecios });
+    const yo = registro.find(v => v.id === req.user?.id);
+    res.json({
+      segmentos: SEGMENTOS, vendedores, listas_precios: listasPrecios,
+      puedeAsignar: puedeAsignar({ role: req.user?.role, puedeAsignar: yo?.puedeAsignar }),
+    });
   } catch (err) {
     res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
   }

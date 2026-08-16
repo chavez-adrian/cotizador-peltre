@@ -106,6 +106,50 @@ test('H7: el prospecto expone su accion (registrar contacto: id y celular)', () 
   assert.equal(prosp.sugerirNoUtil, false);
 });
 
+// === Issue #156 (spec #155): la cola Hoy adopta las tarjetas No Asignado ===
+// Un lead sin dueno es un pendiente del dia, no un detalle del tablero
+// (CONTEXT.md "Cola Hoy"). QUIEN las ve (admin o vendedor con permiso de
+// asignacion) lo decide la ruta; el nucleo solo las incorpora si llegan.
+function sinDueno(extra = {}) {
+  return prospecto({ vendedor: null, etapa: 'no_asignado', canal: 'Formulario web', ...extra });
+}
+
+test('H9: una tarjeta No Asignado entra a la cola etiquetada como no_asignado', () => {
+  const cola = calcularColaHoy([sinDueno()], [], AHORA);
+  assert.equal(cola.length, 1);
+  assert.equal(cola[0].tipo, 'no_asignado');
+  assert.equal(cola[0].etapa, 'no_asignado');
+  assert.equal(cola[0].vendedor, null);
+});
+
+test('H10: la tarjeta sin dueno encabeza la cola por encima de cualquier otra urgencia', () => {
+  const cotVencida = cotizacion({ fecha: '2026-04-01T18:00:00Z' });
+  const prospReunion = prospecto({
+    eventos: [{ tipo: 'reunion', fecha: '2026-06-05T18:00:00Z', fecha_reunion: '2026-06-09T18:00:00Z', vendedor: 'Memo' }],
+  });
+  // Recien capturada (0 horas de espera): aun asi va primero.
+  const cola = calcularColaHoy([prospReunion, sinDueno({ fecha: '2026-06-10T18:00:00Z' })], [cotVencida], AHORA);
+  assert.equal(cola[0].tipo, 'no_asignado');
+  assert.equal(cola[0].sinDueno, true);
+});
+
+test('H11: las tarjetas sin dueno se ordenan entre si por espera en horas habiles', () => {
+  // 09:00 CDMX es antes de abrir: la espera cuenta desde las 10:00 -> 2 horas.
+  const vieja = sinDueno({ id: 90, nombre: 'Vieja', fecha: '2026-06-10T15:00:00Z' });   // 2 horas habiles
+  const nueva = sinDueno({ id: 91, nombre: 'Nueva', fecha: '2026-06-10T17:00:00Z' });   // 1 hora habil
+  const cola = calcularColaHoy([nueva, vieja], [], AHORA);
+  assert.deepEqual(cola.map(i => i.nombre), ['Vieja', 'Nueva']);
+  assert.equal(cola[0].horas, 2);
+  assert.equal(cola[1].horas, 1);
+});
+
+test('H12: la tarjeta sin dueno no arrastra la cadencia del vendedor (sin toques ni sugerencia de No util)', () => {
+  const cola = calcularColaHoy([sinDueno({ celular: '+52 5598765432' })], [], AHORA);
+  assert.equal(cola[0].toques, undefined);
+  assert.equal(cola[0].sugerirNoUtil, undefined);
+  assert.equal(cola[0].celular, '+52 5598765432');
+});
+
 test('H8: una reunion de COTIZACION vencida encabeza la cola por encima de cualquier urgencia (issue #65)', () => {
   // cotizacion con reunion el 9 (vencida ahora 10); el reloj de cadencia es bajo
   const cotReunion = cotizacion({

@@ -272,7 +272,7 @@ test('PATCH /api/prospectos/:id/asignar mueve la tarjeta a Por Cotizar con el ve
   assert.equal(ev.vendedor, 'Tester');
 });
 
-test('PATCH /api/prospectos/:id/asignar exige admin: vendedor 403, sin token 401', async () => {
+test('PATCH /api/prospectos/:id/asignar exige el permiso de asignacion: vendedor sin permiso 403, sin token 401', async () => {
   writeProspectos([noAsignado()]);
   const sinToken = await supertest(app).patch('/api/prospectos/1/asignar').send({ vendedor: VENDEDOR_CATALOGO });
   assert.equal(sinToken.status, 401);
@@ -324,6 +324,83 @@ test('No Asignado solo lo ve quien asigna (admin); el vendedor no ve tarjetas si
   const sinDueno = admin.body.find(p => p.id === 1);
   assert.equal(sinDueno.etapa, 'no_asignado');
   assert.equal(sinDueno.vendedor, null);
+});
+
+// === Issue #156 (spec #155): permiso de asignacion por vendedor ===
+// Alejandro Chavez asume la gerencia comercial sin depender del admin: el
+// checkbox de /admin le abre la columna No Asignado y la accion de asignar, sin
+// tocar ningun otro check de admin (no existe rol gerente, decision explicita).
+// El id 2 del registro versionado es un vendedor con operam_id (esta en el
+// catalogo); el registro se restaura siempre, como en test/tier-api.test.js.
+const VENDEDORES_PATH = join(__dirname, '..', 'data', 'vendedores.json');
+const GERENTE_TOKEN = jwt.sign({ id: 2, name: VENDEDOR_CATALOGO, role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
+const OTRO_VENDEDOR_CATALOGO = 'Oswaldo Chávez';
+
+async function conPermisoDeAsignacion(idVendedor, fn) {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === idVendedor).puedeAsignar = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    await fn();
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+}
+
+function deOtroVendedor() {
+  return {
+    id: 3, fecha: '2026-06-02T00:00:00Z', vendedor: 'Memo', celular: '+52 5533333333',
+    celular10: '5533333333', nombre: 'De Memo', ciudad: 'CDMX', canal: 'WhatsApp',
+    etapa: 'por_cotizar', eventos: [], data: {},
+  };
+}
+
+test('#156: el vendedor con permiso ve las tarjetas No Asignado, pero NO la cartera de otro vendedor', async () => {
+  writeProspectos([noAsignado({ id: 1 }), deOtroVendedor()]);
+  await conPermisoDeAsignacion(2, async () => {
+    const res = await supertest(app).get('/api/prospectos').set('Authorization', `Bearer ${GERENTE_TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.map(p => p.id), [1]);
+  });
+});
+
+test('#156: el vendedor con permiso asigna a CUALQUIER vendedor y la tarjeta pasa a Por Cotizar', async () => {
+  writeProspectos([noAsignado({ id: 1 })]);
+  await conPermisoDeAsignacion(2, async () => {
+    const res = await supertest(app).patch('/api/prospectos/1/asignar')
+      .set('Authorization', `Bearer ${GERENTE_TOKEN}`).send({ vendedor: OTRO_VENDEDOR_CATALOGO });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.etapa, 'por_cotizar');
+    const p = readProspectos()[0];
+    assert.equal(p.vendedor, OTRO_VENDEDOR_CATALOGO);
+    assert.equal(p.etapa, 'por_cotizar');
+    const ev = p.eventos.find(e => e.tipo === 'asignacion');
+    assert.equal(ev.a, OTRO_VENDEDOR_CATALOGO);
+    assert.equal(ev.vendedor, VENDEDOR_CATALOGO);
+  });
+});
+
+test('#156: quitar el checkbox surte efecto de inmediato (el permiso se lee del registro, no del JWT)', async () => {
+  writeProspectos([noAsignado({ id: 1 }), deOtroVendedor()]);
+  // Mismo token, registro sin el flag: ni ve la tarjeta ni puede asignarla.
+  const lista = await supertest(app).get('/api/prospectos').set('Authorization', `Bearer ${GERENTE_TOKEN}`);
+  assert.deepEqual(lista.body.map(p => p.id), []);
+  const res = await supertest(app).patch('/api/prospectos/1/asignar')
+    .set('Authorization', `Bearer ${GERENTE_TOKEN}`).send({ vendedor: OTRO_VENDEDOR_CATALOGO });
+  assert.equal(res.status, 403);
+  assert.equal(readProspectos()[0].etapa, 'no_asignado');
+});
+
+test('#156: el permiso viaja en GET /api/catalogos para que la pantalla sepa si pintar el control', async () => {
+  const sinPermiso = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${GERENTE_TOKEN}`);
+  assert.equal(sinPermiso.body.puedeAsignar, false);
+  await conPermisoDeAsignacion(2, async () => {
+    const conPermiso = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${GERENTE_TOKEN}`);
+    assert.equal(conPermiso.body.puedeAsignar, true);
+  });
+  const admin = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+  assert.equal(admin.body.puedeAsignar, true);
 });
 
 // === Issue #43: etapas, toques, No util e historial ===

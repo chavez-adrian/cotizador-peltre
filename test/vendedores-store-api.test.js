@@ -94,6 +94,33 @@ test('PUT /api/admin/vendedores persiste el checkbox de fijar lista; vendedores 
   assert.ok(!res.body.find(v => v.id === 3).puedeFijarLista);
 });
 
+// #156: segundo checkbox por vendedor (permiso de asignacion), independiente del
+// de fijar lista y con el mismo contrato de reemplazo total.
+test('PUT /api/admin/vendedores persiste el checkbox de asignacion, independiente del de fijar lista', async () => {
+  escribirRegistro(REGISTRO);
+  const nuevo = REGISTRO.map(v => (v.id === 2 ? { ...v, puedeAsignar: true } : v));
+  const put = await supertest(app).put('/api/admin/vendedores')
+    .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+  assert.strictEqual(put.status, 200);
+
+  const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+  const v2 = res.body.find(v => v.id === 2);
+  assert.strictEqual(v2.puedeAsignar, true);
+  assert.ok(!v2.puedeFijarLista, 'el permiso de asignacion no arrastra el de fijar lista');
+  assert.ok(!res.body.find(v => v.id === 3).puedeAsignar);
+});
+
+test('PUT /api/admin/vendedores: un valor basura en puedeAsignar se normaliza a sin permiso', async () => {
+  escribirRegistro(REGISTRO);
+  const nuevo = REGISTRO.map(v => (v.id === 2 ? { ...v, puedeAsignar: 'si' } : v));
+  const put = await supertest(app).put('/api/admin/vendedores')
+    .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+  assert.strictEqual(put.status, 200);
+
+  const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.ok(!res.body.find(v => v.id === 2).puedeAsignar);
+});
+
 test('PUT /api/admin/vendedores: el array completo reemplaza el registro (alta y baja)', async () => {
   escribirRegistro(REGISTRO);
   const nuevo = [
