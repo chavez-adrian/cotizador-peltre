@@ -68,10 +68,19 @@ const DROPBOX_PATH_DEFAULT = '/PELTRE NACIONAL/3.0 ADMINISTRACION/CRM/BACKUP BIT
 // (string); ownerTypeId = OWNER_TYPE_ID de crm.activity.list (numerico, constante
 // de Bitrix: Lead=1, Deal=2, Contact=3, Company=4 -- confirmado en
 // apidocs.bitrix24.com/api-reference/crm/main-entities-fields.html).
+//
+// multifield: campos MULTIPLES de Bitrix (PHONE, EMAIL, WEB, IM). El comodin
+// '*' NO los incluye -- hay que pedirlos por nombre (apidocs.bitrix24.com,
+// crm.*.list). El export original de #158 solo pedia ['*','UF_*'] y por eso
+// salio con HAS_PHONE='Y' en 311 de 327 contactos pero SIN un solo telefono:
+// justo la llave primaria de identidad del cotizador (ultimos10). Los deals no
+// tienen multifields propios (heredan los del contacto/compania ligados).
+const MULTIFIELD = ['PHONE', 'EMAIL', 'WEB', 'IM'];
+
 const ENTIDADES = [
-  { key: 'leads', metodo: 'crm.lead.list', tipoTimeline: 'lead', ownerTypeId: 1 },
-  { key: 'contactos', metodo: 'crm.contact.list', tipoTimeline: 'contact', ownerTypeId: 3 },
-  { key: 'companias', metodo: 'crm.company.list', tipoTimeline: 'company', ownerTypeId: 4 },
+  { key: 'leads', metodo: 'crm.lead.list', tipoTimeline: 'lead', ownerTypeId: 1, multifield: true },
+  { key: 'contactos', metodo: 'crm.contact.list', tipoTimeline: 'contact', ownerTypeId: 3, multifield: true },
+  { key: 'companias', metodo: 'crm.company.list', tipoTimeline: 'company', ownerTypeId: 4, multifield: true },
   { key: 'deals', metodo: 'crm.deal.list', tipoTimeline: 'deal', ownerTypeId: 2 },
 ];
 
@@ -172,7 +181,8 @@ async function exportarEntidad(base, dir, ent, force) {
   console.log(`  [${ent.key}] descargando (${ent.metodo})...`);
   let items, total;
   try {
-    ({ items, total } = await listarTodo(base, ent.metodo, { select: ['*', 'UF_*'], order: { ID: 'asc' } }));
+    const select = ent.multifield ? ['*', 'UF_*', ...MULTIFIELD] : ['*', 'UF_*'];
+    ({ items, total } = await listarTodo(base, ent.metodo, { select, order: { ID: 'asc' } }));
   } catch (err) {
     throw new Error(`[${ent.key}] fallo descargando (${ent.metodo}): ${err.message}`);
   }
