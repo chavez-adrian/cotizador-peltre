@@ -392,6 +392,75 @@ test('#156: quitar el checkbox surte efecto de inmediato (el permiso se lee del 
   assert.equal(readProspectos()[0].etapa, 'no_asignado');
 });
 
+// Descartar una tarjeta sin dueno (decision del dueno 2026-08-16): el permiso de
+// asignacion tambien alcanza para sacarla del tablero. El alcance lo acota el
+// dominio: desde no_asignado validarTransicion SOLO admite no_util y perdida.
+test('#156: el vendedor con permiso descarta a No util una tarjeta sin dueno', async () => {
+  writeProspectos([noAsignado({ id: 1 })]);
+  await conPermisoDeAsignacion(2, async () => {
+    const res = await supertest(app).patch('/api/prospectos/1/etapa')
+      .set('Authorization', `Bearer ${GERENTE_TOKEN}`)
+      .send({ etapa: 'no_util', motivo: 'spam' });
+    assert.equal(res.status, 200);
+    const p = readProspectos()[0];
+    assert.equal(p.etapa, 'no_util');
+    const ev = p.eventos.find(e => e.tipo === 'no_util');
+    assert.equal(ev.vendedor, VENDEDOR_CATALOGO);
+  });
+});
+
+test('#156: el vendedor con permiso descarta a Perdida una tarjeta sin dueno', async () => {
+  writeProspectos([noAsignado({ id: 1 })]);
+  await conPermisoDeAsignacion(2, async () => {
+    const res = await supertest(app).patch('/api/prospectos/1/etapa')
+      .set('Authorization', `Bearer ${GERENTE_TOKEN}`).send({ etapa: 'perdida' });
+    assert.equal(res.status, 200);
+    assert.equal(readProspectos()[0].etapa, 'perdida');
+  });
+});
+
+test('#156: descartar NO se extiende a la cartera de otro vendedor', async () => {
+  writeProspectos([deOtroVendedor()]);
+  await conPermisoDeAsignacion(2, async () => {
+    const res = await supertest(app).patch('/api/prospectos/3/etapa')
+      .set('Authorization', `Bearer ${GERENTE_TOKEN}`)
+      .send({ etapa: 'no_util', motivo: 'spam' });
+    assert.equal(res.status, 403);
+    assert.equal(readProspectos()[0].etapa, 'por_cotizar');
+  });
+});
+
+test('#156: sin el permiso, descartar una tarjeta sin dueno sigue siendo 403', async () => {
+  writeProspectos([noAsignado({ id: 1 })]);
+  const res = await supertest(app).patch('/api/prospectos/1/etapa')
+    .set('Authorization', `Bearer ${GERENTE_TOKEN}`)
+    .send({ etapa: 'no_util', motivo: 'spam' });
+  assert.equal(res.status, 403);
+  assert.equal(readProspectos()[0].etapa, 'no_asignado');
+});
+
+// El limite del permiso: alcanza para descartar, NO para trabajar la tarjeta.
+// Editarla, tocarla o agendarle reunion siguen exigiendo dueno o admin.
+test('#156: el permiso NO alcanza para editar, tocar ni agendar sobre una tarjeta sin dueno', async () => {
+  writeProspectos([noAsignado({ id: 1 })]);
+  await conPermisoDeAsignacion(2, async () => {
+    const editar = await supertest(app).patch('/api/prospectos/1')
+      .set('Authorization', `Bearer ${GERENTE_TOKEN}`).send({ ciudad: 'Otra' });
+    assert.equal(editar.status, 403);
+    const toque = await supertest(app).post('/api/prospectos/1/toques')
+      .set('Authorization', `Bearer ${GERENTE_TOKEN}`).send({});
+    assert.equal(toque.status, 403);
+    const reunion = await supertest(app).post('/api/prospectos/1/reunion')
+      .set('Authorization', `Bearer ${GERENTE_TOKEN}`)
+      .send({ fecha: new Date(Date.now() + 86400000).toISOString() });
+    assert.equal(reunion.status, 403);
+    const p = readProspectos()[0];
+    assert.equal(p.etapa, 'no_asignado');
+    assert.equal(p.ciudad, 'Toluca');
+    assert.equal(p.eventos.length, 0);
+  });
+});
+
 test('#156: el permiso viaja en GET /api/catalogos para que la pantalla sepa si pintar el control', async () => {
   const sinPermiso = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${GERENTE_TOKEN}`);
   assert.equal(sinPermiso.body.puedeAsignar, false);

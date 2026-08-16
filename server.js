@@ -838,17 +838,25 @@ app.get('/api/prospectos/clasificar', authMiddleware, async (req, res) => {
 // Misma visibilidad que el PATCH de estado de cotizaciones: el vendedor solo
 // opera sus prospectos, admin todos.
 
-async function prospectoOperable(req, res) {
+// `incluyeSinDueno` extiende el acceso a las tarjetas No Asignado para quien
+// tiene el permiso de asignacion (#156, decision del dueno 2026-08-16, CONTEXT.md
+// "Visibilidad"): sin el, una tarjeta sin dueno no es de nadie y solo el admin
+// podria sacarla del tablero. El ALCANCE lo acota el dominio, no un check aparte:
+// desde no_asignado validarTransicion solo admite no_util y perdida, asi que
+// abrir la ruta de etapa es abrir exactamente "descartar". Por eso el resto de
+// las rutas (editar, toques, reunion) NO pasan la opcion: trabajar la tarjeta
+// sigue exigiendo dueno o admin. Nunca alcanza la cartera de otro vendedor: la
+// excepcion pide etapa no_asignado, que por definicion no tiene dueno.
+async function prospectoOperable(req, res, { incluyeSinDueno = false } = {}) {
   const p = await prospectosStore.obtener(parseInt(req.params.id));
   if (!p) {
     res.status(404).json({ error: 'No encontrado' });
     return null;
   }
-  if (req.user.role !== 'admin' && p.vendedor !== req.user.name) {
-    res.status(403).json({ error: 'Sin acceso' });
-    return null;
-  }
-  return p;
+  if (req.user.role === 'admin' || p.vendedor === req.user.name) return p;
+  if (incluyeSinDueno && p.etapa === 'no_asignado' && await puedeAsignarDeUsuario(req.user)) return p;
+  res.status(403).json({ error: 'Sin acceso' });
+  return null;
 }
 
 // Editar/complementar el prospecto desde su tarjeta (issue #66, CONTEXT.md
@@ -902,7 +910,9 @@ app.patch('/api/prospectos/:id/asignar', authMiddleware, asignacionMiddleware, a
 
 app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
   const { etapa, motivo, folio } = req.body || {};
-  const p = await prospectoOperable(req, res);
+  // Unica ruta que acepta tarjetas sin dueno para quien tiene el permiso de
+  // asignacion: desde no_asignado el dominio solo deja descartar (#156).
+  const p = await prospectoOperable(req, res, { incluyeSinDueno: true });
   if (!p) return;
   const error = validarTransicion(p.etapa, etapa, motivo, folio);
   if (error) return res.status(400).json({ error });
