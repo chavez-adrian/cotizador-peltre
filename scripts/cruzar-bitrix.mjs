@@ -22,7 +22,11 @@ import { existsSync, readFileSync, readdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
-import { clasificarBitrix, VENTANA_VIVO_DIAS, MAPA_SOURCE_CANAL, normalizarCorreo, esTelefonoMexicano } from '../lib/cruce-bitrix.js';
+import {
+  clasificarBitrix, ordenarCandidatos, VENTANA_VIVO_DIAS, MAPA_SOURCE_CANAL,
+  normalizarCorreo, esTelefonoMexicano,
+  SIN_CELULAR, SIN_SENAL_DE_VIDA, DESCARTADO_EN_BITRIX,
+} from '../lib/cruce-bitrix.js';
 import { ultimos10 } from '../lib/telefono-llave.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -213,6 +217,8 @@ function generarReporte({ resultado, sensibilidad, cotizador, operam, hoy, expor
   L.push('Una identidad es candidata **solo si cumple TODO** lo siguiente:');
   L.push('');
   L.push('1. **No existe** en el cotizador ni en Operam (llave primaria: ultimos 10 digitos del celular; secundaria: correo en minusculas).');
+  L.push('');
+  L.push('   > **El RFC no se pudo usar como tercera llave: Bitrix no lo guarda.** Se revisaron los campos personalizados de las cuatro entidades (`crm.lead/contact/company/deal.userfield.list`, 2026-08-16) y ninguno contiene RFC; los `UF_*` que existen son redes sociales, identificadores de WhatsApp y listas de opciones. No es que se haya omitido: no hay de donde sacarlo.');
   L.push('2. **Tiene celular usable** (10 digitos). Sin celular no hay importacion posible: es obligatorio en la captura y es la llave de deduplicacion.');
   L.push('3. **No fue descartada a mano en Bitrix** (lead en `JUNK` / "Prospecto no util"). Ese es un juicio humano explicito y se respeta; la unica excepcion es que tenga un deal abierto, que lo contradice de frente.');
   L.push('4. **Tiene al menos una senal de vida** dentro de la ventana de ' + resultado.ventanaDias + ' dias:');
@@ -279,16 +285,12 @@ function generarReporte({ resultado, sensibilidad, cotizador, operam, hoy, expor
   L.push('');
   L.push('Esta es **la lista que apruebas o recortas**. Ordenada por actividad mas reciente.');
   L.push('');
-  const ordenados = [...candidatos].sort((a, b) => {
-    const da = a.ultimaActividadDias == null ? 99999 : a.ultimaActividadDias;
-    const db = b.ultimaActividadDias == null ? 99999 : b.ultimaActividadDias;
-    return da - db;
-  });
+  const ordenados = ordenarCandidatos(candidatos);
   L.push(tabla(
     ['#', 'Nombre', 'Celular', 'Correo', 'Empresa', 'Origen (Bitrix)', 'Canal', 'Ult. act.', 'Por que esta vivo', 'Registros'],
     ordenados.map((c, i) => [
       i + 1,
-      c.nombre || '(sin nombre)',
+      c.telefonoCompartido ? `${c.nombre || '(sin nombre)'} [comparte numero: ${c.nombresEnBitrix.join(' / ')}]` : (c.nombre || '(sin nombre)'),
       esTelefonoMexicano(c.telefono) ? c.telefono : `${c.telefono} (no MX)`,
       c.correo || '',
       c.empresa,
@@ -303,6 +305,11 @@ function generarReporte({ resultado, sensibilidad, cotizador, operam, hoy, expor
   const extranjeros = ordenados.filter(c => !esTelefonoMexicano(c.telefono));
   if (extranjeros.length) {
     L.push(`**${extranjeros.length} con telefono de otro pais** (marcados "no MX"): no se descartan solos porque son inquietudes reales, pero son otra venta. Dime si los quieres fuera.`);
+    L.push('');
+  }
+  const compartidos = ordenados.filter(c => c.telefonoCompartido);
+  if (compartidos.length) {
+    L.push(`**${compartidos.length} comparten su numero con otro nombre** (marcados en la columna Nombre). En Bitrix eran dos registros; aqui son uno solo, y asi tiene que ser: el cotizador guarda **un prospecto por celular** (indice unico), asi que dos personas en una misma linea no pueden ser dos prospectos. Se importa el nombre principal; revisa si alguno deberia ser el otro.`);
     L.push('');
   }
   L.push('**Todos entrarian sin ciudad.** Bitrix no guarda ciudad: `ADDRESS_CITY` viene vacio en los 693 registros del export. El prospecto nace sin ella y el vendedor la captura al primer contacto; sin ciudad no se puede estimar envio. Derivarla de la lada del telefono seria adivinar.');
@@ -329,14 +336,14 @@ function generarReporte({ resultado, sensibilidad, cotizador, operam, hoy, expor
   L.push('');
   L.push(tabla(['Motivo', 'Identidades', 'Que significa'],
     agrupar(resto, x => x.motivo).map(([m, n]) => [m, n, {
-      'sin-senal-de-vida': 'Nadie lo toco dentro de la ventana y no tiene deal abierto',
-      'sin-celular': 'No hay celular de 10 digitos: no se puede importar ni deduplicar',
-      'descartado-en-bitrix': 'Marcado a mano como "Prospecto no util" en Bitrix',
+      [SIN_SENAL_DE_VIDA]: 'Nadie lo toco dentro de la ventana y no tiene deal abierto',
+      [SIN_CELULAR]: 'No hay celular de 10 digitos: no se puede importar ni deduplicar',
+      [DESCARTADO_EN_BITRIX]: 'Marcado a mano como "Prospecto no util" en Bitrix',
     }[m] || ''])));
   L.push('');
   L.push('<details><summary>Ver los descartados por falta de celular (por si reconoces alguno)</summary>');
   L.push('');
-  const sinCel = resto.filter(x => x.motivo === 'sin-celular');
+  const sinCel = resto.filter(x => x.motivo === SIN_CELULAR);
   L.push(tabla(['Nombre', 'Correo', 'Empresa', 'Origen', 'Ult. act.'],
     sinCel.map(x => [x.nombre || '(sin nombre)', x.correo || '', x.empresa, x.sourceId || '', x.ultimaActividadDias == null ? '?' : `${x.ultimaActividadDias}d`])));
   L.push('');

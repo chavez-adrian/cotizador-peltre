@@ -25,8 +25,14 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { leerArchivoSync } from '../lib/fs-reintento.js';
-import { ultimos10 } from '../lib/telefono-llave.js';
+import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { ordenarCandidatos } from '../lib/cruce-bitrix.js';
+
+// Mismas dos funciones que usa el import de Feria/Expo (#47) para el celular:
+// normalizar primero (Bitrix guarda numeros mexicanos como "+2225592022", con
+// el "+" pegado y sin lada de pais) y validar despues con el gate del sistema.
+import { normalizarCelularFeria } from '../lib/importar-prospectos.js';
+import { validarTelefono } from '../public/js/alta-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -78,14 +84,10 @@ if (!RUTA_CRUCE || !existsSync(RUTA_CRUCE)) {
 const cruce = JSON.parse(leerArchivoSync(RUTA_CRUCE));
 const todos = cruce.candidatos || [];
 
-// El numero que ve Adrian en el reporte es la POSICION en la tabla 4, que esta
-// ordenada por actividad mas reciente. Se reproduce el mismo orden aqui para
-// que "--excluir 3" quite exactamente la fila 3 que el vio.
-const ordenados = [...todos].sort((a, b) => {
-  const da = a.ultimaActividadDias == null ? 99999 : a.ultimaActividadDias;
-  const db = b.ultimaActividadDias == null ? 99999 : b.ultimaActividadDias;
-  return da - db;
-});
+// El numero que ve Adrian en el reporte es la POSICION en la tabla 4. El orden
+// lo define ordenarCandidatos en el nucleo -- la MISMA funcion que uso el
+// reporte -- para que "--excluir 3" quite exactamente la fila 3 que el vio.
+const ordenados = ordenarCandidatos(todos);
 
 const plan = [];
 const fuera = [];
@@ -149,7 +151,12 @@ const importados = [];
 const descartados = [];
 
 for (const p of plan) {
-  const celular = p.telefono || `+52${p.telefonoLlave}`;
+  const celular = normalizarCelularFeria(p.telefono);
+  const invalido = validarTelefono('', celular);
+  if (invalido) {
+    descartados.push({ numero: p.numero, nombre: p.nombre, motivo: `telefono invalido (${invalido})` });
+    continue;
+  }
   const existente = await prospectosStore.buscarPorCelular(celular);
   if (existente) {
     descartados.push({ numero: p.numero, nombre: p.nombre, motivo: 'ya es prospecto' });
@@ -194,4 +201,36 @@ for (const i of importados) console.log(`    #${i.numero} -> prospecto ${i.id}: 
 console.log(`  descartados en la importacion: ${descartados.length}`);
 for (const d of descartados) console.log(`    #${d.numero} ${d.nombre}: ${d.motivo}`);
 console.log(`\nTodos quedaron en Por Cotizar, canal segun el mapeo aprobado, asignados a ${VENDEDOR}.`);
+
+// El reporte final se GUARDA, no solo se imprime: es la evidencia de cuantos
+// entraron, cuantos se descartaron y por que (criterio de aceptacion de #159).
+const resumen = [
+  '# Importacion de candidatos de Bitrix -- resultado',
+  '',
+  `**Fecha:** ${fecha}  `,
+  `**Aprobada por:** ${APROBADO_POR}  `,
+  `**Asignados a:** ${VENDEDOR}  `,
+  `**Cruce de origen:** ${FECHA}`,
+  '',
+  `- candidatos en la lista aprobada: ${todos.length}`,
+  `- importados: ${importados.length}`,
+  `- fuera antes de importar: ${fuera.length}`,
+  `- descartados durante la importacion: ${descartados.length}`,
+  '',
+  '## Importados',
+  '',
+  ...importados.map(i => `- #${i.numero} prospecto ${i.id}: ${i.nombre} ${i.celular}`),
+  '',
+  '## Fuera antes de importar',
+  '',
+  ...fuera.map(f => `- #${f.numero} ${f.nombre || '(sin nombre)'}: ${f.motivo}`),
+  '',
+  '## Descartados durante la importacion',
+  '',
+  ...descartados.map(d => `- #${d.numero} ${d.nombre || '(sin nombre)'}: ${d.motivo}`),
+  '',
+].join('\n');
+const destinoReporte = join(DIR, 'REPORTE-IMPORTACION.md');
+escribirArchivoSync(destinoReporte, resumen);
+console.log(`Reporte final -> ${destinoReporte}`);
 process.exit(0);

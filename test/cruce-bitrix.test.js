@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { identidadesBitrix, normalizarCorreo, clasificarBitrix, canalDeSource, esTelefonoMexicano } from '../lib/cruce-bitrix.js';
+import { identidadesBitrix, normalizarCorreo, clasificarBitrix, canalDeSource, esTelefonoMexicano, ordenarCandidatos } from '../lib/cruce-bitrix.js';
 
 // Fabricas minimas: solo los campos que el nucleo lee. Los formatos de telefono
 // son los REALES del export de Bitrix (#158), verificados sobre
@@ -447,4 +447,79 @@ test('se distingue un telefono mexicano de uno extranjero (el "+" suelto de un n
   assert.equal(esTelefonoMexicano('+15052046498'), false);
   assert.equal(esTelefonoMexicano('+573162321278'), false);
   assert.equal(esTelefonoMexicano('+56983177005'), false);
+});
+
+test('un telefono compartido por nombres DISTINTOS se marca: la fusion es correcta pero hay que verla', () => {
+  // Caso real del export: 5566125268 aparece en Virllinia Mendoza y en Vanessa
+  // Flores, de la misma empresa. La fusion se mantiene (el cotizador tiene
+  // indice UNICO sobre celular10: dos personas con un celular no pueden ser dos
+  // prospectos), pero el reporte lo tiene que decir.
+  const r = clasificar({
+    contactos: [
+      contacto({ ID: '400', NAME: 'Virllinia', LAST_NAME: 'Mendoza', PHONE: tel('+525566125268') }),
+      contacto({ ID: '401', NAME: 'Vanessa', LAST_NAME: 'Flores', PHONE: tel('+525566125268') }),
+    ],
+  });
+
+  assert.equal(r.candidatos.length, 1);
+  assert.deepEqual(r.candidatos[0].nombresEnBitrix, ['Virllinia Mendoza', 'Vanessa Flores']);
+  assert.equal(r.candidatos[0].telefonoCompartido, true);
+});
+
+test('el mismo nombre escrito distinto (acentos, apellido de mas) NO se marca como compartido', () => {
+  const r = clasificar({
+    contactos: [
+      contacto({ ID: '402', NAME: 'Omar', LAST_NAME: 'Ramirez', PHONE: tel('+526644986207') }),
+      contacto({ ID: '403', NAME: 'Omar', LAST_NAME: 'Ram\u00edrez', PHONE: tel('+526644986207') }),
+    ],
+  });
+
+  assert.equal(r.candidatos.length, 1);
+  assert.equal(r.candidatos[0].telefonoCompartido, false);
+});
+
+test('ordenarCandidatos es la UNICA fuente del orden que ve Adrian (el reporte y el importador comparten numeracion)', () => {
+  const candidatos = [
+    { nombre: 'Vieja', ultimaActividadDias: 120 },
+    { nombre: 'Sin fecha', ultimaActividadDias: null },
+    { nombre: 'Nueva', ultimaActividadDias: 10 },
+  ];
+
+  assert.deepEqual(ordenarCandidatos(candidatos).map(c => c.nombre), ['Nueva', 'Vieja', 'Sin fecha']);
+});
+
+test('esTelefonoMexicano recorta la extension como ultimos10 (",116" no vuelve extranjero a un numero nacional)', () => {
+  assert.equal(esTelefonoMexicano('5566125268,116'), true);
+  assert.equal(esTelefonoMexicano('+525566125268 ext.123'), true);
+});
+
+test('el titulo automatico del lead ("Completar formulario del CRM...") no cuenta como nombre de persona', () => {
+  const r = clasificar({
+    leads: [lead({ ID: '410', NAME: '', LAST_NAME: '', TITLE: 'Completar formulario del CRM "Peltre de Mayoreo"', CONTACT_ID: '411' })],
+    contactos: [contacto({ ID: '411', NAME: 'Helena', LAST_NAME: 'Soto', PHONE: tel('+529841362752') })],
+  });
+
+  assert.equal(r.candidatos.length, 1);
+  assert.equal(r.candidatos[0].telefonoCompartido, false);
+  assert.deepEqual(r.candidatos[0].nombresEnBitrix, ['Helena Soto']);
+});
+
+test('un nombre contenido en otro es la misma persona, no un numero compartido', () => {
+  const r = clasificar({
+    leads: [lead({ ID: '412', NAME: 'Cynthia', PHONE: tel('+15052046498') })],
+    contactos: [contacto({ ID: '413', NAME: 'cynthia', LAST_NAME: 'cordova', PHONE: tel('+15052046498') })],
+  });
+
+  assert.equal(r.candidatos[0].telefonoCompartido, false);
+});
+
+test('nombres realmente distintos en un mismo numero si se marcan', () => {
+  const r = clasificar({
+    contactos: [
+      contacto({ ID: '414', NAME: 'Adrian', LAST_NAME: 'Chavez', PHONE: tel('+525534667682') }),
+      contacto({ ID: '415', NAME: 'Yair', LAST_NAME: 'Munoz', PHONE: tel('+525534667682') }),
+    ],
+  });
+
+  assert.equal(r.candidatos[0].telefonoCompartido, true);
 });
