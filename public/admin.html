@@ -353,6 +353,7 @@ function renderVendedores() {
     <div class="vendedor-row">
       <input type="text" value="${v.name}" onchange="vendedoresData[${i}].name=this.value" placeholder="Nombre">
       <input type="text" class="pin-input" value="${v.pin}" onchange="vendedoresData[${i}].pin=this.value" placeholder="PIN" maxlength="4">
+      <input type="email" value="${v.email || ''}" onchange="vendedoresData[${i}].email=this.value" placeholder="correo@pppeltre.mx" title="Correo (issue #163): a donde llega la alerta de mayoreo si tiene permiso de asignacion o es admin">
       <select onchange="vendedoresData[${i}].role=this.value; renderVendedores()">
         <option value="vendedor" ${v.role==='vendedor'?'selected':''}>Vendedor</option>
         <option value="admin" ${v.role==='admin'?'selected':''}>Admin</option>

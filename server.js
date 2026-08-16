@@ -50,6 +50,7 @@ import { verificarTurnstile, turnstileConfigurado } from './lib/turnstile.js';
 import { validarCP } from './lib/validar-cp.js';
 import { buscarCP } from './lib/codigos-postales.js';
 import { leerArchivoSync } from './lib/fs-reintento.js';
+import { enviarAlertaMayoreo } from './lib/alerta-mayoreo-io.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -863,6 +864,33 @@ app.get('/api/cp/:pais/:cp', (req, res) => {
 //     mano) sin duplicarla, sin cambiarle dueno y sin moverla de etapa.
 const HONEYPOT = 'fax';
 
+// Alerta por correo de la captura publica (issue #163; CONTEXT.md "Captura
+// publica": "Cada captura publica avisa por correo a quienes tienen el permiso
+// de asignacion"). FIRE-AND-FORGET, mismo contrato que subirCsfDropbox
+// (lib/dropbox.js): la promesa nunca se espera y su fallo nunca llega a la
+// respuesta del endpoint ni impide la tarjeta. `_enviarAlertaMayoreo` es
+// inyectable SOLO para tests: nodemailer no pasa por fetch (no hay mock de URL
+// que lo intercepte), asi que forzar un fallo de SMTP sin credenciales reales
+// necesita sustituir el wrapper.
+let _enviarAlertaMayoreo = enviarAlertaMayoreo;
+export function _inyectarAlertaMayoreo(fn) { _enviarAlertaMayoreo = fn ?? enviarAlertaMayoreo; }
+
+// Dispara la alerta para una captura ya validada -- tanto si el prospecto es
+// NUEVO como si ya existia. Decision (issue #163): CONTEXT.md dice "cada
+// captura publica avisa", no "cada prospecto nuevo"; el proposito es paridad
+// con la notificacion que daba Bitrix para atencion comercial, y quien tiene el
+// permiso de asignacion debe enterarse de que alguien volvio a levantar la
+// mano, no solo la primera vez. No se dispara cuando el celular ya es CLIENTE
+// de Operam: ahi no se toca ninguna tarjeta y el equipo comercial ya conoce el
+// contacto.
+function dispararAlertaMayoreo(captura, tipoProyecto) {
+  const prospecto = {
+    nombre: captura.nombre, celular: captura.celular, ciudad: captura.ciudad,
+    tipoProyecto, cantidadEstimada: captura.data?.piezas_estimadas,
+  };
+  _enviarAlertaMayoreo(prospecto).catch(err => console.error('[alerta-mayoreo]', err.message));
+}
+
 app.post('/api/prospectos/publico', async (req, res) => {
   const opaca = () => res.status(200).json({ ok: true });
   const form = req.body || {};
@@ -903,6 +931,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
   if (clasificacion.tipo === 'cliente') return opaca();
   if (clasificacion.tipo === 'prospecto') {
     await registrarCapturaPublica(clasificacion.prospecto.id, captura);
+    dispararAlertaMayoreo(captura, form.tipo);
     return opaca();
   }
 
@@ -912,6 +941,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
       celular: captura.celular, nombre: captura.nombre, ciudad: captura.ciudad,
       canal: captura.canal, etapa: 'no_asignado', data: captura.data,
     });
+    dispararAlertaMayoreo(captura, form.tipo);
   } catch (e) {
     // Carrera contra otra captura del mismo celular: el indice unico gana y esto
     // se vuelve el caso "ya era prospecto". Hacia afuera, la misma respuesta.
@@ -920,7 +950,10 @@ app.post('/api/prospectos/publico', async (req, res) => {
       return opaca();
     }
     const dup = await prospectosStore.buscarPorCelular(captura.celular);
-    if (dup) await registrarCapturaPublica(dup.id, captura);
+    if (dup) {
+      await registrarCapturaPublica(dup.id, captura);
+      dispararAlertaMayoreo(captura, form.tipo);
+    }
   }
   return opaca();
 });

@@ -121,6 +121,20 @@ test('PUT /api/admin/vendedores: un valor basura en puedeAsignar se normaliza a 
   assert.ok(!res.body.find(v => v.id === 2).puedeAsignar);
 });
 
+// #163: la alerta de mayoreo deriva destinatarios del correo del vendedor -- el
+// registro no lo tenia antes de este issue.
+test('PUT /api/admin/vendedores persiste el correo del vendedor', async () => {
+  escribirRegistro(REGISTRO);
+  const nuevo = REGISTRO.map(v => (v.id === 2 ? { ...v, email: 'vendedor@pppeltre.mx' } : v));
+  const put = await supertest(app).put('/api/admin/vendedores')
+    .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+  assert.strictEqual(put.status, 200);
+
+  const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.strictEqual(res.body.find(v => v.id === 2).email, 'vendedor@pppeltre.mx');
+  assert.ok(!res.body.find(v => v.id === 3).email);
+});
+
 test('PUT /api/admin/vendedores: el array completo reemplaza el registro (alta y baja)', async () => {
   escribirRegistro(REGISTRO);
   const nuevo = [
