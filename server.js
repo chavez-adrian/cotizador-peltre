@@ -43,6 +43,8 @@ import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
+import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
+import { permitirCaptura } from './lib/rate-limit-publico.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -79,6 +81,12 @@ const SEGMENTOS = [
 let listasPrecios = [];
 
 const app = express();
+// Un solo salto de proxy (el de Render). Con esto req.ip es la IP real del
+// visitante y no la del proxy -- si no, TODAS las capturas publicas caerian en
+// el mismo balde del rate limit. Un valor de `true` (confiar en toda la cadena)
+// seria peor que nada aqui: dejaria que el cliente falsee su IP con un
+// X-Forwarded-For propio.
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(PUBLIC_DIR));
 
@@ -785,6 +793,81 @@ app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (
   }
   res.status(201).json({ ok: true, id });
 });
+
+// Captura publica de mayoreo (issue #157, ADR-0012). Es el UNICO endpoint de
+// escritura sin auth del sistema: quien lo llama es un desconocido en internet.
+//
+// Tres cosas lo separan del alta sin asignar de arriba, y ninguna es la logica de
+// dominio (esa se reusa entera: clasificarCelular + validarProspectoBody + el
+// mismo store, etapa no_asignado y vendedor null):
+//
+//  1. La RESPUESTA ES OPACA. Siempre 200 con el mismo cuerpo, sin importar si el
+//     celular era nuevo, ya era prospecto o ya era cliente de Operam, y sin
+//     importar si el honeypot o el rate limit lo descartaron. Reusar las
+//     respuestas informativas del endpoint autenticado ("este celular ya lo
+//     atiende X") convertiria el formulario en un oraculo para enumerar la
+//     cartera marcando telefonos. La regla de Visibilidad del glosario aplica
+//     dentro del equipo; hacia internet no se revela nada. El unico status
+//     distinto es el 400 de un cuerpo mal formado, que no habla del CRM y que un
+//     navegador con el formulario real nunca provoca.
+//  2. Defensas propias: honeypot y rate limit por IP en memoria. Turnstile
+//     verificado server-side se suma en #162 (aqui el recuadro es placeholder).
+//  3. El dedup es SILENCIOSO: si el celular ya es prospecto se registra el evento
+//     en la tarjeta existente (el vendedor se entera de que volvio a levantar la
+//     mano) sin duplicarla, sin cambiarle dueno y sin moverla de etapa.
+const HONEYPOT = 'fax';
+
+app.post('/api/prospectos/publico', async (req, res) => {
+  const opaca = () => res.status(200).json({ ok: true });
+  const form = req.body || {};
+
+  // Honeypot: campo oculto que una persona nunca ve ni llena. Se descarta en
+  // silencio -- un 400 le ensenaria al bot cual es el campo trampa.
+  if (String(form[HONEYPOT] || '').trim()) return opaca();
+  if (!permitirCaptura(req.ip)) return opaca();
+
+  if (validarMayoreo(form).length) return res.status(400).json({ error: 'Captura incompleta' });
+
+  const captura = buildCapturaMayoreo(form, new Date().toISOString());
+  // Segundo cinturon: la captura armada tiene que pasar la MISMA validacion que
+  // el alta autenticada (#57), no solo la del formulario.
+  if (validarProspectoBody(captura)) return res.status(400).json({ error: 'Captura incompleta' });
+
+  const clasificacion = await clasificarCelular(captura.celular);
+  if (clasificacion.tipo === 'cliente') return opaca();
+  if (clasificacion.tipo === 'prospecto') {
+    await registrarCapturaPublica(clasificacion.prospecto.id, captura);
+    return opaca();
+  }
+
+  try {
+    await prospectosStore.crear({
+      fecha: new Date().toISOString(), vendedor: null,
+      celular: captura.celular, nombre: captura.nombre, ciudad: captura.ciudad,
+      canal: captura.canal, etapa: 'no_asignado', data: captura.data,
+    });
+  } catch (e) {
+    // Carrera contra otra captura del mismo celular: el indice unico gana y esto
+    // se vuelve el caso "ya era prospecto". Hacia afuera, la misma respuesta.
+    if (e.code !== '23505') {
+      console.error('[mayoreo] captura publica fallo:', e.message);
+      return opaca();
+    }
+    const dup = await prospectosStore.buscarPorCelular(captura.celular);
+    if (dup) await registrarCapturaPublica(dup.id, captura);
+  }
+  return opaca();
+});
+
+// Evento en la tarjeta que ya existia: el prospecto volvio a levantar la mano por
+// el formulario. Lleva lo que pidio esta vez (notas y piezas) para que el
+// vendedor vea el cambio de intencion sin abrir nada mas.
+function registrarCapturaPublica(id, captura) {
+  return prospectosStore.registrarEvento(id, {
+    tipo: 'captura_publica', fecha: new Date().toISOString(), canal: captura.canal,
+    notas: captura.data.notas, piezas_estimadas: captura.data.piezas_estimadas,
+  }).catch(err => console.error('[mayoreo] no se pudo registrar el evento:', err.message));
+}
 
 // Visibilidad (CONTEXT.md): cada vendedor ve unicamente sus propias
 // oportunidades; el admin ve todas. Las tarjetas No Asignado no son de nadie: las
@@ -2283,6 +2366,13 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
 
 app.get('/admin', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'admin.html'));
+});
+
+// Pagina publica de captacion de mayoreo (issue #157). Sin auth a proposito: es
+// la cara que ve el prospecto desconocido, enlazada desde la pagina de mayoreo
+// de la tienda. El catch-all de abajo devolveria index.html (el cotizador).
+app.get('/mayoreo', (req, res) => {
+  res.sendFile(join(PUBLIC_DIR, 'mayoreo.html'));
 });
 
 app.get('*', (req, res) => {

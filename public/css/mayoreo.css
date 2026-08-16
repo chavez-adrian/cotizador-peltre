@@ -1,0 +1,187 @@
+/* Captura publica de mayoreo (issue #157). Colores, tipografia, radios y estados
+   son los del prototipo aprobado (docs/prototipos/157-formulario-mayoreo.html en
+   la rama prototipo-157-formulario-mayoreo). La tipografia va VENDOREADA en
+   /fonts (no data-URI, no CDN de terceros): ADR-0012 deja a Turnstile como unica
+   dependencia externa en runtime del formulario. */
+
+@font-face {
+  font-family: 'Montserrat';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url(/fonts/montserrat-400.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Montserrat';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url(/fonts/montserrat-500.woff2) format('woff2');
+}
+
+:root {
+  --cobalto: #063995;
+  --cobalto-hondo: #001c4e;
+  --cobalto-velo: rgba(6, 57, 149, .06);
+  --esmalte: #fefefe;
+  --loza: #f7f5f4;
+  --grafito: #1f1919;
+  --acero: #424242;
+  --humo: #7a7a7a;
+  --linea: rgba(66, 66, 66, .2);
+  --pelo: rgba(66, 66, 66, .09);
+  --error: #b42318;
+  --error-velo: #fdf1f0;
+  --radio: 3px;
+  --sans: 'Montserrat', -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+/* El atributo `hidden` tiene que ganarle a `.campo{display:flex}`: sin esto el
+   campo "Cual?" se ve desde que carga la pagina (ningun test lo detecta -- se ve
+   solo en el navegador). */
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--loza);
+  color: var(--acero);
+  font: 400 15px/1.6 var(--sans);
+  min-height: 100vh;
+  padding-bottom: 40px;
+}
+:focus-visible { outline: 2px solid var(--cobalto); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+.cascaron { max-width: 560px; margin: 0 auto; padding: 34px 16px 20px; }
+.tarjeta {
+  background: var(--esmalte);
+  border: 1px solid var(--pelo);
+  border-top: 4px solid var(--cobalto);
+  border-radius: var(--radio);
+  padding: 30px 26px 26px;
+  box-shadow: 0 1px 2px rgba(31, 25, 25, .04);
+}
+.ceja {
+  font-size: 11px; font-weight: 500; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--cobalto); margin-bottom: 10px;
+}
+.titulo {
+  font-size: 21px; line-height: 1.4; font-weight: 500;
+  color: var(--grafito); text-wrap: balance; margin-bottom: 26px;
+}
+form { display: flex; flex-direction: column; gap: 18px; }
+
+/* Respiro entre grupos semanticos: la separacion es por espaciado, sin rotulo
+   (el orden comunica solo -- CONTEXT.md "Captura publica"). */
+.respiro { margin-top: 14px; }
+
+.campo { display: flex; flex-direction: column; gap: 5px; }
+.campo > label, .rotulo {
+  font-size: 12px; font-weight: 500; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--grafito);
+}
+.req { color: var(--error); font-weight: 500; }
+.campo label .op, .rotulo .op {
+  font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--humo);
+}
+.campo input, .campo select {
+  font: 400 16px/1.4 var(--sans);
+  color: var(--grafito); background: var(--esmalte);
+  border: 1px solid var(--linea); border-radius: var(--radio);
+  padding: 11px 12px; width: 100%;
+}
+.campo input::placeholder { color: #b5b0ae; }
+.campo input:focus, .campo select:focus {
+  border-color: var(--cobalto); outline: none; box-shadow: 0 0 0 3px var(--cobalto-velo);
+}
+.campo.mal input, .campo.mal select { border-color: var(--error); background: var(--error-velo); }
+.aviso-mal { display: none; font-size: 12.5px; color: var(--error); }
+.campo.mal .aviso-mal { display: block; }
+.pista { font-size: 12.5px; color: var(--humo); }
+.fila2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.fila-cel { display: grid; grid-template-columns: 104px 1fr; gap: 8px; }
+@media (max-width: 380px) { .fila2 { grid-template-columns: 1fr; } }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; position: relative; }
+.chips input {
+  position: absolute; left: 0; top: 0; width: 1px; height: 1px;
+  opacity: 0; pointer-events: none;
+}
+.chips label {
+  display: inline-flex; align-items: center;
+  font-size: 13px; font-weight: 500; line-height: 1;
+  color: var(--acero); background: var(--esmalte);
+  border: 1px solid var(--linea); border-radius: 999px;
+  padding: 8px 14px; cursor: pointer; user-select: none; white-space: nowrap;
+}
+.chips input:checked + label { background: var(--cobalto); border-color: var(--cobalto); color: #fff; }
+.chips input:focus-visible + label { outline: 2px solid var(--cobalto); outline-offset: 2px; }
+.campo.mal .chips label { border-color: var(--error); }
+
+.sug-correo { display: none; font-size: 13px; color: var(--acero); }
+.sug-correo.ver { display: block; }
+.sug-correo button {
+  font: 500 13px var(--sans); color: var(--cobalto);
+  background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0;
+}
+
+/* Honeypot: fuera de la vista y fuera del recorrido de foco, pero SIN
+   display:none -- un bot que ejecute CSS descartaria un campo oculto asi. */
+.trampa {
+  position: absolute; left: -9999px; top: 0;
+  width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+
+.btn {
+  display: block; width: 100%;
+  font: 500 13.5px var(--sans); letter-spacing: .12em; text-transform: uppercase;
+  color: #fff; background: var(--cobalto);
+  border: none; border-radius: var(--radio); padding: 16px 20px;
+  cursor: pointer; box-shadow: inset 0 -3px 0 var(--cobalto-hondo);
+}
+.btn:hover { background: var(--cobalto-hondo); }
+.btn[disabled] { opacity: .6; cursor: progress; }
+
+/* Fallo de red al enviar: el unico camino en el que el prospecto se queda sin
+   respuesta. Se le dice, en vez de dejar el boton muerto. */
+.aviso-envio {
+  display: none; font-size: 13px; color: var(--error);
+  background: var(--error-velo); border-radius: var(--radio); padding: 10px 12px;
+}
+.aviso-envio.ver { display: block; }
+
+.consent {
+  display: flex; gap: 10px; align-items: flex-start;
+  font-size: 13px; line-height: 1.5; color: var(--acero);
+  cursor: pointer; user-select: none;
+}
+.consent input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--cobalto); flex: none; }
+.aviso-priv { font-size: 11.5px; color: var(--humo); text-align: center; }
+.aviso-priv a { color: var(--cobalto); }
+.turnstile {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px dashed var(--linea); border-radius: var(--radio);
+  padding: 12px 14px; font-size: 12.5px; color: var(--humo); background: var(--esmalte);
+}
+.nota-spam {
+  font-size: 12.5px; color: var(--humo);
+  border-top: 1px solid var(--pelo); padding-top: 14px;
+}
+.pie-datos { font-size: 11px; color: #a29d9b; text-align: center; margin-top: 18px; }
+.pie-datos a { color: inherit; }
+
+.exito { display: none; text-align: center; padding: 46px 26px; }
+.exito.ver { display: block; }
+.exito .aro {
+  width: 56px; height: 56px; margin: 0 auto 18px;
+  border-radius: 50%; border: 3px solid var(--cobalto);
+  display: flex; align-items: center; justify-content: center; color: var(--cobalto);
+}
+.exito h3 {
+  font-size: 21px; font-weight: 500; color: var(--grafito);
+  margin-bottom: 8px; text-wrap: balance;
+}
+.exito p { max-width: 34ch; margin: 0 auto 6px; }
+.exito .nota-spam { margin-top: 18px; text-align: left; }

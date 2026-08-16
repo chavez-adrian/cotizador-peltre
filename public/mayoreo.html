@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peltre de mayoreo - pp.peltre</title>
+<meta name="description" content="D&eacute;janos tus datos y nuestro equipo de mayoreo se pondr&aacute; en contacto contigo.">
+<link rel="stylesheet" href="/css/mayoreo.css">
+</head>
+<body>
+
+<section class="cascaron">
+  <div class="tarjeta">
+    <div class="ceja">Peltre de mayoreo</div>
+    <h2 class="titulo">D&eacute;janos tus datos y nuestro equipo se pondr&aacute; en contacto contigo.</h2>
+
+    <form id="form-mayoreo" novalidate>
+
+      <div class="campo" data-campo="tipo">
+        <label for="f-tipo">&iquest;Qu&eacute; tipo de proyecto tienes en mente? <span class="req">*</span></label>
+        <select id="f-tipo">
+          <option value="" selected disabled>Selecciona una opci&oacute;n</option>
+        </select>
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="campo" data-campo="otro" hidden>
+        <label for="f-otro">&iquest;Cu&aacute;l? <span class="req">*</span></label>
+        <input id="f-otro" placeholder="Cu&eacute;ntanos en pocas palabras">
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="campo" data-campo="empresa">
+        <label for="f-empresa">Nombre de la empresa o proyecto <span class="op">(opcional)</span></label>
+        <input id="f-empresa" autocomplete="organization">
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="campo" data-campo="cant">
+        <span class="rotulo" id="rot-cant">&iquest;Qu&eacute; cantidad est&aacute;s considerando? <span class="req">*</span></span>
+        <div class="chips" id="chips-cant" role="radiogroup" aria-labelledby="rot-cant"></div>
+        <span class="pista">Por ejemplo: si necesitas 150 piezas, elige +100.</span>
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="campo" data-campo="cp">
+        <label for="f-cp">C&oacute;digo postal <span class="req">*</span></label>
+        <input id="f-cp" inputmode="numeric" autocomplete="postal-code" maxlength="7">
+        <span class="pista">Para calcular tu env&iacute;o desde la f&aacute;brica.</span>
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="campo" data-campo="ciudad">
+        <label for="f-ciudad">Ciudad <span class="req">*</span></label>
+        <input id="f-ciudad" autocomplete="address-level2">
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="campo" data-campo="cuando">
+        <span class="rotulo" id="rot-cuando">&iquest;Para cu&aacute;ndo lo necesitas? <span class="op">(opcional)</span></span>
+        <div class="chips" id="chips-cuando" role="radiogroup" aria-labelledby="rot-cuando"></div>
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="fila2 respiro">
+        <div class="campo" data-campo="nombre">
+          <label for="f-nombre">Nombre <span class="req">*</span></label>
+          <input id="f-nombre" autocomplete="given-name">
+          <span class="aviso-mal" data-mal></span>
+        </div>
+        <div class="campo" data-campo="apellido">
+          <label for="f-apellido">Apellido <span class="req">*</span></label>
+          <input id="f-apellido" autocomplete="family-name">
+          <span class="aviso-mal" data-mal></span>
+        </div>
+      </div>
+
+      <div class="campo" data-campo="cargo">
+        <label for="f-cargo">Tu cargo en el proyecto <span class="op">(opcional)</span></label>
+        <input id="f-cargo" autocomplete="organization-title" placeholder="Compras, due&ntilde;o, chef...">
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="campo" data-campo="cel">
+        <label for="f-cel">Celular <span class="req">*</span></label>
+        <div class="fila-cel">
+          <select id="f-pais" aria-label="C&oacute;digo de pa&iacute;s">
+            <option value="+52" selected>MX +52</option>
+            <option value="+1">US +1</option>
+            <option value="+1-CA">CA +1</option>
+          </select>
+          <input id="f-cel" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="10 d&iacute;gitos">
+        </div>
+        <span class="pista">Te escribimos por WhatsApp.</span>
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <div class="campo" data-campo="correo">
+        <label for="f-correo">Correo electr&oacute;nico <span class="op">(opcional)</span></label>
+        <input id="f-correo" type="email" autocomplete="email">
+        <span class="aviso-mal" data-mal></span>
+      </div>
+      <div class="sug-correo" id="sug-correo">
+        <span id="sug-correo-texto"></span>
+        <button type="button" id="btn-corregir-correo">Corregir</button>
+      </div>
+
+      <div class="campo respiro" data-campo="web">
+        <label for="f-web">Sitio web o redes sociales <span class="op">(opcional)</span></label>
+        <input id="f-web" inputmode="url" placeholder="@tumarca o tusitio.mx">
+        <span class="aviso-mal" data-mal></span>
+      </div>
+
+      <label class="consent">
+        <input type="checkbox" id="f-promos">
+        Quiero recibir novedades y promociones de pp.peltre <span class="op">(opcional)</span>
+      </label>
+
+      <!-- Honeypot (#157): invisible para una persona, irresistible para un bot.
+           Su nombre es plausible a proposito; si llega lleno la captura se
+           descarta en silencio. -->
+      <div class="trampa" aria-hidden="true">
+        <label for="f-fax">Fax</label>
+        <input type="text" id="f-fax" name="fax" tabindex="-1" autocomplete="off">
+      </div>
+
+      <div class="turnstile">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7a7a7a" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Verificaci&oacute;n anti-robots (Cloudflare Turnstile) &mdash; se activa en producci&oacute;n
+      </div>
+
+      <p class="aviso-envio" id="error-envio" role="alert"></p>
+
+      <button type="submit" class="btn" id="btn-enviar">Enviar mis datos</button>
+
+      <p class="aviso-priv">Al enviar aceptas nuestro <a href="https://pppeltre.mx/policies/privacy-policy" target="_blank" rel="noopener">Aviso de Privacidad</a>.</p>
+
+      <p class="nota-spam">No olvides revisar tu bandeja de correo no deseado y agregar <strong>contacto@pppeltre.mx</strong> a tu lista de contactos seguros.</p>
+    </form>
+
+    <div class="exito" id="exito">
+      <div class="aro">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+      </div>
+      <h3>&iexcl;Gracias! Recibimos tus datos.</h3>
+      <p>Nuestro equipo se pondr&aacute; en contacto contigo por WhatsApp en horas h&aacute;biles.</p>
+      <p class="nota-spam">No olvides revisar tu bandeja de correo no deseado y agregar <strong>contacto@pppeltre.mx</strong> a tu lista de contactos seguros.</p>
+    </div>
+  </div>
+
+  <p class="pie-datos">pp.peltre &middot; Peltre Nacional &middot; datos de c&oacute;digo postal: <a href="https://www.geonames.org" target="_blank" rel="noopener">GeoNames</a> (CC BY 4.0)</p>
+</section>
+
+<script type="module" src="/js/mayoreo.js"></script>
+</body>
+</html>
