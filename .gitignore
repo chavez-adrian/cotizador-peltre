@@ -8,3 +8,4 @@ data/shopify-images-raw.json
 data/prospectos.json
 backups/
 .temporales/
+data/export-bitrix/
