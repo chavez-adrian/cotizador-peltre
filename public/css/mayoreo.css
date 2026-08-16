@@ -185,11 +185,10 @@ form { display: flex; flex-direction: column; gap: 18px; }
 .consent input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--cobalto); flex: none; }
 .aviso-priv { font-size: 11.5px; color: var(--humo); text-align: center; }
 .aviso-priv a { color: var(--cobalto); }
-.turnstile {
-  display: flex; align-items: center; gap: 10px;
-  border: 1px dashed var(--linea); border-radius: var(--radio);
-  padding: 12px 14px; font-size: 12.5px; color: var(--humo); background: var(--esmalte);
-}
+/* Vacio (sin sitekey) o con el widget real de Cloudflare adentro (issue #162):
+   el widget trae su propio iframe con su propio tamano, no hay nada que
+   estilizar aqui salvo evitar que un slot vacio deje un hueco en el gap del form. */
+.turnstile-slot:empty { display: none; }
 .nota-spam {
   font-size: 12.5px; color: var(--humo);
   border-top: 1px solid var(--pelo); padding-top: 14px;

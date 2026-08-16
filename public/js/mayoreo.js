@@ -97,6 +97,19 @@ function numeroDelWidget() {
   return val('f-cel');
 }
 
+// Turnstile (issue #162): el widget de Cloudflare (challenges.cloudflare.com/
+// turnstile/v0/api.js, cargado por server.js SOLO si hay TURNSTILE_SITE_KEY --
+// ver GET /mayoreo) se renderiza de forma implicita a partir del div
+// data-sitekey del HTML e inserta el a su vez un input oculto
+// name="cf-turnstile-response" DENTRO del <form>. No hace falta llamar a la API
+// de turnstile.getResponse(): basta leer ese input al enviar. Si el widget no
+// se pinto (dev, sin sitekey) el input no existe y viaja vacio -- el servidor
+// ya sabe omitir la verificacion sin llave (lib/turnstile.js).
+function turnstileToken() {
+  const campo = form.querySelector('[name="cf-turnstile-response"]');
+  return campo ? campo.value : '';
+}
+
 function leerFormulario() {
   return {
     tipo: val('f-tipo'),
@@ -115,6 +128,7 @@ function leerFormulario() {
     web: val('f-web'),
     promos: document.getElementById('f-promos').checked,
     fax: val('f-fax'),
+    turnstileToken: turnstileToken(),
   };
 }
 

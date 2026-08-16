@@ -73,6 +73,15 @@ function enviar(body) {
   return supertest(app).post('/api/prospectos/publico').send(body);
 }
 
+// `process.env.X = undefined` NO borra la variable: la coacciona a la cadena
+// "undefined" (truthy). TURNSTILE_SECRET_KEY normalmente no existe en el
+// entorno de tests, asi que restaurarla con un simple `=` dejaria la llave
+// "configurada" para todos los tests siguientes del archivo.
+function restaurarEnv(key, valorOriginal) {
+  if (valorOriginal === undefined) delete process.env[key];
+  else process.env[key] = valorOriginal;
+}
+
 let savedProspectos;
 let existia;
 before(() => {
@@ -222,7 +231,7 @@ test('W15: los textos libres tienen tope de longitud', async () => {
 
 // --- El invariante de ADR-0012: la respuesta es OPACA ---
 
-test('W9: la respuesta 200 es identica en las 6 ramas (nuevo / duplicado / cliente / honeypot / tope / imposible)', async () => {
+test('W9: la respuesta 200 es identica en las 7 ramas (nuevo / duplicado / cliente / honeypot / tope / imposible / turnstile)', async () => {
   const huella = res => JSON.stringify({
     status: res.status,
     tipo: res.headers['content-type'],
@@ -253,7 +262,18 @@ test('W9: la respuesta 200 es identica en las 6 ramas (nuevo / duplicado / clien
   resetRateLimitPublico();
   const imposible = await enviar(formulario({ cel: '0000000000' }));
 
-  const ramas = { nuevo, duplicado, cliente, honeypot, tope, imposible };
+  // Rama 7 (issue #162): token de Turnstile ausente con llaves configuradas.
+  resetRateLimitPublico();
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = 'test-secret';
+  let turnstile;
+  try {
+    turnstile = await enviar(formulario());
+  } finally {
+    restaurarEnv('TURNSTILE_SECRET_KEY', originalSecret);
+  }
+
+  const ramas = { nuevo, duplicado, cliente, honeypot, tope, imposible, turnstile };
   const referencia = huella(nuevo);
   for (const [nombre, res] of Object.entries(ramas)) {
     assert.equal(huella(res), referencia, `la rama "${nombre}" delata informacion`);
@@ -307,6 +327,80 @@ test('W11: "Otro" sin especificar no pasa en el servidor', async () => {
   const p = readProspectos()[0];
   assert.equal(p.data.segmento_id, 1);
   assert.equal(p.data.notas, 'Tipo de proyecto: Otro\nEspecificó: Bazar de artesanías');
+});
+
+// --- Turnstile server-side (issue #162) ---
+
+test('T1: con llaves configuradas, un envio sin token de Turnstile se descarta con la respuesta opaca', async () => {
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = 'test-secret';
+  try {
+    const res = await enviar(formulario());
+    assert.equal(res.status, 200);
+    assert.equal(readProspectos().length, 0);
+  } finally {
+    restaurarEnv('TURNSTILE_SECRET_KEY', originalSecret);
+  }
+});
+
+test('T2: con llaves configuradas, un token que Cloudflare rechaza descarta la captura (siteverify mockeado)', async () => {
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = 'test-secret';
+  mockOperamFetch({
+    'challenges.cloudflare.com/turnstile/v0/siteverify': () => jsonResponse({ success: false }),
+  });
+  try {
+    const res = await enviar(formulario({ turnstileToken: 'token-malo' }));
+    assert.equal(res.status, 200);
+    assert.equal(readProspectos().length, 0);
+  } finally {
+    restaurarEnv('TURNSTILE_SECRET_KEY', originalSecret);
+  }
+});
+
+test('T3: con llaves configuradas, un token que Cloudflare acepta permite la captura (siteverify mockeado)', async () => {
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = 'test-secret';
+  mockOperamFetch({
+    'challenges.cloudflare.com/turnstile/v0/siteverify': () => jsonResponse({ success: true }),
+  });
+  try {
+    const res = await enviar(formulario({ turnstileToken: 'token-bueno' }));
+    assert.equal(res.status, 200);
+    assert.equal(readProspectos().length, 1);
+  } finally {
+    restaurarEnv('TURNSTILE_SECRET_KEY', originalSecret);
+  }
+});
+
+test('T4: sin TURNSTILE_SECRET_KEY configurada, la verificacion se omite y la captura funciona sin token', async () => {
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  delete process.env.TURNSTILE_SECRET_KEY;
+  // globalThis.fetch queda en fetchBloqueado (beforeEach): si el codigo llamara
+  // a siteverify de todos modos, este test fallaria con "fetch sin mock".
+  try {
+    const res = await enviar(formulario());
+    assert.equal(res.status, 200);
+    assert.equal(readProspectos().length, 1);
+  } finally {
+    restaurarEnv('TURNSTILE_SECRET_KEY', originalSecret);
+  }
+});
+
+test('T5: si siteverify falla por red (Cloudflare caido), la captura pasa igual (fail-open)', async () => {
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  process.env.TURNSTILE_SECRET_KEY = 'test-secret';
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('challenges.cloudflare.com')) throw new Error('ECONNREFUSED');
+    throw new Error('Unmocked fetch: ' + url);
+  };
+  try {
+    const res = await enviar(formulario({ turnstileToken: 'token-cualquiera' }));
+    assert.equal(res.status, 200);
+    assert.equal(readProspectos().length, 1, 'un Cloudflare caido no debe tumbar un envio legitimo');
+  } finally {
+    restaurarEnv('TURNSTILE_SECRET_KEY', originalSecret);
+  }
 });
 
 // La pagina publica se sirve sin token: es la unica superficie sin auth.

@@ -124,10 +124,9 @@
         <input type="text" id="f-fax" name="fax" tabindex="-1" autocomplete="off">
       </div>
 
-      <div class="turnstile">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7a7a7a" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Verificaci&oacute;n anti-robots (Cloudflare Turnstile) &mdash; se activa en producci&oacute;n
-      </div>
+      <!-- Turnstile (issue #162): el marcador lo llena GET /mayoreo en server.js
+           (ver el comentario alla para el detalle de la excepcion de CDN). -->
+      <div class="turnstile-slot"><!--TURNSTILE_WIDGET--></div>
 
       <p class="aviso-envio" id="error-envio" role="alert"></p>
 
@@ -152,6 +151,7 @@
 </section>
 
 <script src="/vendor/intl-tel-input/js/intlTelInput.min.js"></script>
+<!--TURNSTILE_SCRIPT-->
 <script type="module" src="/js/mayoreo.js"></script>
 </body>
 </html>

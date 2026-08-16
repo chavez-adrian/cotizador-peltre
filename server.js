@@ -46,6 +46,7 @@ import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.j
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { numeroTelefonoEsPosible } from './lib/telefono-posible.js';
 import { permitirCaptura } from './lib/rate-limit-publico.js';
+import { verificarTurnstile, turnstileConfigurado } from './lib/turnstile.js';
 import { validarCP } from './lib/validar-cp.js';
 import { buscarCP } from './lib/codigos-postales.js';
 import { leerArchivoSync } from './lib/fs-reintento.js';
@@ -847,8 +848,16 @@ app.get('/api/cp/:pais/:cp', (req, res) => {
 //     dentro del equipo; hacia internet no se revela nada. El unico status
 //     distinto es el 400 de un cuerpo mal formado, que no habla del CRM y que un
 //     navegador con el formulario real nunca provoca.
-//  2. Defensas propias: honeypot y rate limit por IP en memoria. Turnstile
-//     verificado server-side se suma en #162 (aqui el recuadro es placeholder).
+//  2. Defensas propias, en ORDEN deliberado (issue #162): rate limit -> honeypot
+//     -> validacion local del formulario -> Turnstile -> Operam. La leccion de
+//     #157 fue que el honeypot cortando ANTES del rate limit dejaba a un bot
+//     atrapado con envios ilimitados; la misma logica manda aqui: Turnstile es
+//     una llamada de RED a Cloudflare (lib/turnstile.js), la mas cara de la
+//     cadena, asi que corre DESPUES de todo lo que se resuelve en memoria/CPU
+//     (rate limit, honeypot, validarMayoreo, validarProspectoBody,
+//     numeroTelefonoEsPosible) y ANTES de la llamada a Operam
+//     (clasificarCelular). Un envio que ya iba a morir por una defensa barata
+//     nunca le pega a Cloudflare.
 //  3. El dedup es SILENCIOSO: si el celular ya es prospecto se registra el evento
 //     en la tarjeta existente (el vendedor se entera de que volvio a levantar la
 //     mano) sin duplicarla, sin cambiarle dueno y sin moverla de etapa.
@@ -880,6 +889,15 @@ app.post('/api/prospectos/publico', async (req, res) => {
   // a un desconocido en internet "tu numero es imposible" es la misma clase de
   // fuga que las otras ramas de este endpoint evitan.
   if (!numeroTelefonoEsPosible(captura.celular)) return opaca();
+
+  // Turnstile (issue #162): token ausente o invalido muere con la MISMA
+  // respuesta opaca que las demas ramas -- decirle a un desconocido en internet
+  // "tu verificacion fallo" es la misma clase de fuga que ADR-0012 ya evita en
+  // las otras 6 ramas. Sin TURNSTILE_SECRET_KEY (dev/tests) verificarTurnstile
+  // deja pasar sin llamar a Cloudflare; con Cloudflare caido tambien deja pasar
+  // (fail-open, ver lib/turnstile.js) -- solo un token que Cloudflare evalua y
+  // RECHAZA explicitamente descarta la captura.
+  if (!(await verificarTurnstile(form.turnstileToken, req.ip))) return opaca();
 
   const clasificacion = await clasificarCelular(captura.celular);
   if (clasificacion.tipo === 'cliente') return opaca();
@@ -2419,8 +2437,31 @@ app.get('/admin', (req, res) => {
 // Pagina publica de captacion de mayoreo (issue #157). Sin auth a proposito: es
 // la cara que ve el prospecto desconocido, enlazada desde la pagina de mayoreo
 // de la tienda. El catch-all de abajo devolveria index.html (el cotizador).
+//
+// El sitekey de Turnstile (issue #162, ADR-0012 pto. 2) se inyecta aqui via
+// TURNSTILE_SITE_KEY: el HTML del repo nunca lleva la llave escrita. Sin la
+// var (dev local, que no tiene llaves de Turnstile) los dos marcadores quedan
+// vacios: no se pinta el widget y NO se carga el script de Cloudflare -- el
+// formulario funciona igual, sin verificacion (server.js valida esto mismo del
+// lado de POST /api/prospectos/publico via lib/turnstile.js).
 app.get('/mayoreo', (req, res) => {
-  res.sendFile(join(PUBLIC_DIR, 'mayoreo.html'));
+  const html = readFileSync(join(PUBLIC_DIR, 'mayoreo.html'), 'utf8');
+  const siteKey = process.env.TURNSTILE_SITE_KEY;
+  // Escapa comillas al interpolar en el atributo: la env var es de confianza
+  // hoy, pero un HTML armado por interpolacion cruda no deberia asumirlo.
+  const widget = siteKey
+    ? `<div class="cf-turnstile" data-sitekey="${siteKey.replace(/"/g, '&quot;')}"></div>`
+    : '';
+  // Excepcion deliberada a la regla de vendoreo (ADR-0012 pto. 2, CLAUDE.md):
+  // Cloudflare PROHIBE autohospedar o proxiar este script -- rota sus defensas
+  // anti-bot sin aviso. Es la UNICA dependencia de terceros en runtime del
+  // formulario. No lo vendorees.
+  const script = siteKey
+    ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>'
+    : '';
+  res.type('html').send(
+    html.replace('<!--TURNSTILE_WIDGET-->', widget).replace('<!--TURNSTILE_SCRIPT-->', script)
+  );
 });
 
 app.get('*', (req, res) => {
@@ -2467,5 +2508,10 @@ if (isMain) {
   // para cuando el vendedor busca, el indice ya esta caliente. Un fallo no bloquea el
   // arranque (matchCliente ya degrada a "libre" si el indice no esta).
   refrescarIndice().catch(err => console.warn('[indice-telefonos] warm de arranque fallo:', err.message));
+  // Aviso UNA VEZ al arrancar (issue #162), no por request: la verificacion en
+  // POST /api/prospectos/publico se omite mientras falte la llave.
+  if (!turnstileConfigurado()) {
+    console.warn('[turnstile] TURNSTILE_SECRET_KEY no configurada: la verificacion se omite (dev)');
+  }
 }
 export { app, cargarListasPrecios };
