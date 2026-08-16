@@ -4,7 +4,7 @@
 // dinamico. Mismo patron que alta-logica.js / prospectos-logica.js: una sola
 // implementacion, cero copias espejo.
 
-import { validarTelefono, combinarTelefonoConCodigo } from './alta-logica.js';
+import { validarTelefono, combinarTelefonoConCodigo, paisDesdeCodigoTelefono } from './alta-logica.js';
 import { PIEZAS_ESTIMADAS } from './prospectos-logica.js';
 
 // Tipo de proyecto -> segmento de Operam (tabla de campos del ticket). Varias
@@ -111,6 +111,15 @@ export function sugerirDominioCorreo(correo) {
 export function celularDeMayoreo(form) {
   const f = form || {};
   return combinarTelefonoConCodigo(f.celCode || '+52', f.cel || '');
+}
+
+// Pais para resolver el CP (issue #160): se hereda del select de codigo de pais
+// del celular, MISMA regla que paisDesdeCodigoTelefono (alta-logica.js) usa para
+// el domicilio de entrega -- sin copia, y +1-CA sigue siendo Canada aunque
+// comparta el +1 de marcado con Estados Unidos.
+export function paisDelFormulario(form) {
+  const f = form || {};
+  return paisDesdeCodigoTelefono(f.celCode || '+52');
 }
 
 function vacio(v) {

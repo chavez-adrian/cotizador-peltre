@@ -45,6 +45,9 @@ import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } fro
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { permitirCaptura } from './lib/rate-limit-publico.js';
+import { validarCP } from './lib/validar-cp.js';
+import { buscarCP } from './lib/codigos-postales.js';
+import { leerArchivoSync } from './lib/fs-reintento.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -792,6 +795,39 @@ app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (
     return res.status(409).json({ error: 'Este celular ya es un prospecto' });
   }
   res.status(201).json({ ok: true, id });
+});
+
+// Indice CP -> ciudad/estado (issue #160, ADR-0012 pto. 3): generado por
+// scripts/sync-codigos-postales.mjs desde GeoNames (CC BY 4.0) y commiteado al
+// repo (data/cp-mx.json / cp-us.json / cp-ca.json) -- el disco de Render es
+// efimero y el arranque no debe depender de que geonames.org este arriba. Se
+// carga UNA VEZ en el unico proceso; si un archivo faltara, ese pais simplemente
+// no resuelve (404) en vez de tumbar el arranque del resto del cotizador.
+function cargarIndiceCP() {
+  const archivos = { MX: 'cp-mx.json', US: 'cp-us.json', CA: 'cp-ca.json' };
+  const indice = {};
+  for (const [pais, archivo] of Object.entries(archivos)) {
+    const ruta = join(DATA_DIR, archivo);
+    indice[pais] = existsSync(ruta) ? JSON.parse(leerArchivoSync(ruta)) : {};
+  }
+  return indice;
+}
+const indiceCP = cargarIndiceCP();
+
+// GET publico de CP (issue #160, ADR-0012 pto. 3): autocompletado del
+// formulario de mayoreo, no dato sensible -- el indice mismo es publico
+// (GeoNames CC BY 4.0). Valida el FORMATO con el mismo validador que el resto
+// de la app (lib/validar-cp.js) antes de buscar: un CP mal formado nunca llega
+// al indice. El pais viaja en la URL en mayusculas (MX/US/CA, el mismo
+// catalogo cerrado que paisDesdeCodigoTelefono en alta-logica.js); cualquier
+// otro valor se rechaza igual que un formato invalido.
+app.get('/api/cp/:pais/:cp', (req, res) => {
+  const pais = String(req.params.pais || '').toUpperCase();
+  if (!indiceCP[pais]) return res.status(400).json({ error: 'Pais no soportado' });
+  if (!validarCP(req.params.cp, pais)) return res.status(400).json({ error: 'CP invalido' });
+  const resultado = buscarCP(indiceCP, pais, req.params.cp);
+  if (!resultado) return res.status(404).json({ error: 'CP no encontrado' });
+  res.json(resultado);
 });
 
 // Captura publica de mayoreo (issue #157, ADR-0012). Es el UNICO endpoint de

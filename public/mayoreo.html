@@ -47,12 +47,18 @@
         <label for="f-cp">C&oacute;digo postal <span class="req">*</span></label>
         <input id="f-cp" inputmode="numeric" autocomplete="postal-code" maxlength="7">
         <span class="pista">Para calcular tu env&iacute;o desde la f&aacute;brica.</span>
+        <span class="chip-cp" id="chip-cp" hidden></span>
         <span class="aviso-mal" data-mal></span>
       </div>
 
-      <div class="campo" data-campo="ciudad">
+      <!-- Fallback de #157 (issue #160): oculto por default. Aparece SOLO si el
+           CP no resuelve (formato invalido, CP no cubierto por el indice, o la
+           llamada al servidor falla) -- el envio sigue funcionando igual con la
+           ciudad tecleada a mano. -->
+      <div class="campo" data-campo="ciudad" hidden>
         <label for="f-ciudad">Ciudad <span class="req">*</span></label>
         <input id="f-ciudad" autocomplete="address-level2">
+        <span class="pista">No pudimos confirmar tu ciudad autom&aacute;ticamente: escr&iacute;bela aqu&iacute;.</span>
         <span class="aviso-mal" data-mal></span>
       </div>
 

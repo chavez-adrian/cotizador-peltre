@@ -120,6 +120,16 @@ form { display: flex; flex-direction: column; gap: 18px; }
 .chips input:focus-visible + label { outline: 2px solid var(--cobalto); outline-offset: 2px; }
 .campo.mal .chips label { border-color: var(--error); }
 
+/* Chip de confirmacion del CP (issue #160): "el CP se ve, no se pide dos veces"
+   -- confirma ciudad+estado sin duplicar el campo de texto de la ciudad. */
+.chip-cp {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--cobalto); background: var(--cobalto-velo);
+  border-radius: 999px; padding: 6px 12px;
+}
+
 .sug-correo { display: none; font-size: 13px; color: var(--acero); }
 .sug-correo.ver { display: block; }
 .sug-correo button {

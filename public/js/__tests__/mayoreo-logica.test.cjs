@@ -3,11 +3,12 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
-  segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo, buildCapturaMayoreo;
+  segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo, buildCapturaMayoreo,
+  paisDelFormulario;
 before(async () => {
   ({ TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
     segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo,
-    buildCapturaMayoreo } = await import('../mayoreo-logica.js'));
+    buildCapturaMayoreo, paisDelFormulario } = await import('../mayoreo-logica.js'));
 });
 
 // M1: el mapeo tipo -> segmento de Operam es el del ticket #157 (tabla de campos).
@@ -231,6 +232,16 @@ test('M22: los opcionales vacios no viajan en data', () => {
 test('M23: promos desmarcado se guarda como negativa sin fecha', () => {
   const c = buildCapturaMayoreo(formValido({ promos: false }), AHORA);
   assert.deepEqual(c.data.promos, { acepta: false });
+});
+
+// El pais para resolver el CP (#160) se hereda del select de codigo de pais del
+// celular -- MISMA regla que paisDesdeCodigoTelefono de alta-logica.js, sin
+// copia: +1-CA es Canada aunque comparta el +1 de marcado con US.
+test('M28: paisDelFormulario hereda el pais del codigo de celular (MX/US/CA)', () => {
+  assert.equal(paisDelFormulario({ celCode: '+52' }), 'MX');
+  assert.equal(paisDelFormulario({ celCode: '+1' }), 'US');
+  assert.equal(paisDelFormulario({ celCode: '+1-CA' }), 'CA');
+  assert.equal(paisDelFormulario({}), 'MX');
 });
 
 test('M24: buildCapturaMayoreo recorta los espacios de todo lo que guarda', () => {

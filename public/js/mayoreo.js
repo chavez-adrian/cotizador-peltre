@@ -10,7 +10,7 @@
 
 import {
   TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES,
-  sugerirDominioCorreo, validarMayoreo,
+  sugerirDominioCorreo, validarMayoreo, paisDelFormulario,
 } from './mayoreo-logica.js';
 
 const form = document.getElementById('form-mayoreo');
@@ -139,6 +139,61 @@ document.getElementById('btn-corregir-correo').addEventListener('click', () => {
   sugCorreo.classList.remove('ver');
   marcar('correo', null);
 });
+
+// --- Autoconfirmacion de ciudad por CP (issue #160, ADR-0012 pto. 3) ---
+//
+// El campo "Ciudad" de #157 deja de estar siempre visible: por default queda
+// OCULTO y solo reaparece como respaldo si el CP no resuelve (formato invalido,
+// CP fuera del indice, o falla la llamada). Cuando resuelve, el chip confirma
+// "Ciudad, Estado" y el input oculto de #f-ciudad se llena por detras -- asi
+// validarMayoreo/buildCapturaMayoreo (mayoreo-logica.js) no cambian: siguen
+// leyendo un simple string en f.ciudad, venga de la resolucion automatica o de
+// lo que el prospecto tecleo a mano.
+const campoCp = document.getElementById('f-cp');
+const campoCiudadInput = document.getElementById('f-ciudad');
+const grupoCiudad = grupo('ciudad');
+const chipCp = document.getElementById('chip-cp');
+
+// Longitud minima antes de intentar resolver: 5 digitos en MX/US. En CA son 6
+// (el codigo COMPLETO, sin contar el espacio): lib/validar-cp.js -- el mismo
+// validador que el GET publico reusa -- exige el patron completo de 6
+// caracteres antes de aceptar el formato, aunque el indice solo guarde el FSA
+// de 3 (normalizarCp lo recorta despues de pasar la validacion). Disparar a los
+// 3 caracteres serviria un 400 en cada tecla intermedia sin resolver nunca.
+function longitudMinimaCP(pais) {
+  return pais === 'CA' ? 6 : 5;
+}
+
+function mostrarFallbackCiudad() {
+  chipCp.hidden = true;
+  grupoCiudad.hidden = false;
+}
+
+async function resolverCiudadPorCP() {
+  const cpTecleado = val('f-cp');
+  const pais = paisDelFormulario(leerFormulario());
+  if (cpTecleado.replace(/\s+/g, '').length < longitudMinimaCP(pais)) {
+    mostrarFallbackCiudad();
+    return;
+  }
+  try {
+    const res = await fetch(`/api/cp/${pais}/${encodeURIComponent(cpTecleado)}`);
+    if (!res.ok) { mostrarFallbackCiudad(); return; }
+    const { ciudad, estado } = await res.json();
+    campoCiudadInput.value = ciudad;
+    chipCp.textContent = `✓ ${ciudad}, ${estado}`;
+    chipCp.hidden = false;
+    grupoCiudad.hidden = true;
+    marcar('ciudad', null);
+  } catch (err) {
+    console.error('[mayoreo] no se pudo resolver el CP:', err.message);
+    mostrarFallbackCiudad();
+  }
+}
+
+campoCp.addEventListener('input', resolverCiudadPorCP);
+campoCp.addEventListener('blur', resolverCiudadPorCP);
+document.getElementById('f-pais').addEventListener('change', resolverCiudadPorCP);
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
