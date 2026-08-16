@@ -44,6 +44,7 @@ import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuent
 import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
+import { numeroTelefonoEsPosible } from './lib/telefono-posible.js';
 import { permitirCaptura } from './lib/rate-limit-publico.js';
 import { validarCP } from './lib/validar-cp.js';
 import { buscarCP } from './lib/codigos-postales.js';
@@ -871,6 +872,14 @@ app.post('/api/prospectos/publico', async (req, res) => {
   // Segundo cinturon: la captura armada tiene que pasar la MISMA validacion que
   // el alta autenticada (#57), no solo la del formulario.
   if (validarProspectoBody(captura)) return res.status(400).json({ error: 'Captura incompleta' });
+
+  // Revalidacion server-side del celular (issue #161): validarMayoreo solo mira
+  // el LARGO de digitos (10 para MX/US/CA), asi que un numero como
+  // +52 0000000000 pasa el formulario. libphonenumber-js valida el patron real
+  // por pais. La respuesta sigue siendo la OPACA de siempre (ADR-0012): decirle
+  // a un desconocido en internet "tu numero es imposible" es la misma clase de
+  // fuga que las otras ramas de este endpoint evitan.
+  if (!numeroTelefonoEsPosible(captura.celular)) return opaca();
 
   const clasificacion = await clasificarCelular(captura.celular);
   if (clasificacion.tipo === 'cliente') return opaca();

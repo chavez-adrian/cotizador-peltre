@@ -149,6 +149,15 @@ test('M17: validarMayoreo exige 10 digitos en el celular (validacion de la casa)
   assert.deepEqual(validarMayoreo(formValido({ celCode: '+1', cel: '2125550123' })), []);
 });
 
+// El widget internacional (#161) no manda digitos nacionales sueltos: manda el
+// E.164 completo via iti.getNumber() (numeroDelWidget en mayoreo.js). Aunque
+// celCode siga siendo '+52'/'+1', el "cel" que en verdad llega al servidor
+// trae el '+' desde el principio -- confirma que ese camino tambien pasa.
+test('M30: validarMayoreo acepta el E.164 completo que entrega el widget (MX/US)', () => {
+  assert.deepEqual(validarMayoreo(formValido({ celCode: '+52', cel: '+525512345678' })), []);
+  assert.deepEqual(validarMayoreo(formValido({ celCode: '+1', cel: '+12025550123' })), []);
+});
+
 test('M18: validarMayoreo solo valida el formato del correo si viene', () => {
   assert.deepEqual(validarMayoreo(formValido({ correo: 'laura(arroba)gmail.com' })),
     [{ campo: 'correo', mensaje: 'Ese correo no se ve válido.' }]);
@@ -158,13 +167,28 @@ test('M18: validarMayoreo solo valida el formato del correo si viene', () => {
 // El endpoint que consume esto es el UNICO de escritura sin auth: el codigo de
 // pais tiene que ser catalogo cerrado como el resto, o cualquiera guarda un
 // celular con el prefijo que se le ocurra.
-test('M25: el codigo de pais es catalogo cerrado (MX/US/CA)', () => {
-  for (const code of CODIGOS_PAIS) {
+test('M25: el codigo de pais es catalogo cerrado (MX/US/CA/otro)', () => {
+  for (const code of ['+52', '+1', '+1-CA']) {
     assert.deepEqual(validarMayoreo(formValido({ celCode: code, cel: '5512345678' })), [], code);
   }
   assert.deepEqual(validarMayoreo(formValido({ celCode: '+999' })),
     [{ campo: 'cel', mensaje: 'Escribe tu celular a 10 dígitos.' }]);
   assert.deepEqual(validarMayoreo(formValido({ celCode: '+' })),
+    [{ campo: 'cel', mensaje: 'Escribe tu celular a 10 dígitos.' }]);
+});
+
+// El widget internacional (#161) permite paises fuera de MX/US/CA: cuando el
+// prospecto elige uno, celularDeMayoreo ya no arma el numero con el codigo del
+// select -- el widget entrega el E.164 completo (iti.getNumber()) directo en
+// f.cel, y celCode cae al generico '+' (mismo catalogo que alta-logica.js usa
+// para "Otro"). CODIGOS_PAIS se amplia con esa entrada: la proteccion real deja
+// de ser "solo estos 3 prefijos" y pasa a la revalidacion con libphonenumber-js
+// del servidor (lib/telefono-posible.js), que es mas fuerte que un catalogo
+// cerrado de prefijos.
+test('M29: CODIGOS_PAIS incluye el generico "+" para paises fuera de MX/US/CA', () => {
+  assert.deepEqual(CODIGOS_PAIS, ['+52', '+1', '+1-CA', '+']);
+  assert.deepEqual(validarMayoreo(formValido({ celCode: '+', cel: '+34911223344' })), []);
+  assert.deepEqual(validarMayoreo(formValido({ celCode: '+', cel: '5512345678' })),
     [{ campo: 'cel', mensaje: 'Escribe tu celular a 10 dígitos.' }]);
 });
 

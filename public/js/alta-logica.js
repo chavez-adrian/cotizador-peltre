@@ -585,6 +585,15 @@ export function paisDesdeCodigoTelefono(code) {
   return 'MX';
 }
 
+// Inversa de paisDesdeCodigoTelefono: iso2 (el que entrega un widget de pais,
+// ej. intl-tel-input, issue #161) -> codigo de marcado de la casa. Antes de
+// #161 el sistema no manejaba iso2 (los selects de pais usaban el codigo
+// directo), por eso esta tabla es nueva -- pero vive junto a
+// paisDesdeCodigoTelefono para no repetir la correspondencia MX/US/CA en dos
+// modulos. Cualquier iso2 fuera de esta tabla cae al generico '+' en el
+// consumidor (ver mayoreo.js).
+export const CEL_CODE_POR_ISO2 = { mx: '+52', us: '+1', ca: '+1-CA' };
+
 // Construye el body de POST /api/crear-cliente a partir de los datos fiscales (CSF),
 // los campos comerciales capturados y el domicilio de entrega. customerId/branchId
 // no nulos indican un reintento (issue #?): se reenvian para que el backend continue

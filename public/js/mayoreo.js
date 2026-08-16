@@ -12,6 +12,7 @@ import {
   TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES,
   sugerirDominioCorreo, validarMayoreo, paisDelFormulario,
 } from './mayoreo-logica.js';
+import { CEL_CODE_POR_ISO2 } from './alta-logica.js';
 
 const form = document.getElementById('form-mayoreo');
 const exito = document.getElementById('exito');
@@ -56,6 +57,46 @@ function chipElegido(nombre) {
   return marcado ? marcado.value : '';
 }
 
+// --- Widget internacional de celular (issue #161) ---
+//
+// intl-tel-input VENDOREADO (public/vendor/intl-tel-input, sin CDN -- la unica
+// excepcion de la casa es Turnstile). Mexico fijo (initialCountry 'mx'), SIN
+// lookup por IP (docs/research/formulario-mayoreo-captura.md 2.5: el servicio
+// gratuito que sugiere la doc oficial se agoto en la primera llamada de la
+// investigacion). loadUtils carga libphonenumber en diferido via import()
+// nativo del navegador -- no hay paso de build, la ruta es local (2.3).
+const inputCel = document.getElementById('f-cel');
+const iti = window.intlTelInput(inputCel, {
+  initialCountry: 'mx',
+  strictMode: true,
+  loadUtils: () => import('/vendor/intl-tel-input/js/utils.js'),
+});
+
+// celCode sigue siendo el contrato de mayoreo-logica.js (celularDeMayoreo,
+// paisDelFormulario -- issue #160): MX/US/CA mapean a los prefijos de
+// alta-logica.js tal cual (CEL_CODE_POR_ISO2, la inversa de
+// paisDesdeCodigoTelefono -- una sola tabla, no una copia local); cualquier
+// otro pais que el widget permita elegir cae al generico '+' (CODIGOS_PAIS lo
+// amplio para esto, #161). No se traduce a mano el numero: intl-tel-input
+// entrega el E.164 completo con getNumber(), y combinarTelefonoConCodigo
+// (alta-logica.js) ya sabe respetarlo tal cual cuando el numero llega con '+'.
+function celCodeDelWidget() {
+  const pais = iti.getSelectedCountry();
+  return CEL_CODE_POR_ISO2[pais && pais.iso2] || '+';
+}
+
+// getNumber() exige utils.js cargado (lanza si no). Es una ventana muy chica
+// (el archivo pesa ~260KB y carga apenas se pinta la pagina), pero si alguien
+// alcanza a escribir y perder el foco antes de que resuelva, caemos al valor
+// crudo del input -- combinarTelefonoConCodigo lo arma igual con celCode.
+function numeroDelWidget() {
+  try {
+    const e164 = iti.getNumber();
+    if (e164) return e164;
+  } catch (err) { /* utils.js aun no carga */ }
+  return val('f-cel');
+}
+
 function leerFormulario() {
   return {
     tipo: val('f-tipo'),
@@ -68,14 +109,44 @@ function leerFormulario() {
     nombre: val('f-nombre'),
     apellido: val('f-apellido'),
     cargo: val('f-cargo'),
-    celCode: val('f-pais'),
-    cel: val('f-cel'),
+    celCode: celCodeDelWidget(),
+    cel: numeroDelWidget(),
     correo: val('f-correo'),
     web: val('f-web'),
     promos: document.getElementById('f-promos').checked,
     fax: val('f-fax'),
   };
 }
+
+// Mensajes de intl-tel-input.utils.getValidationError() traducidos (issue
+// #161). "Rechazar un lead valido cuesta mas que aceptar uno dudoso"
+// (investigacion 2.4): SOLO se llama cuando isValidNumber() ya dijo que no.
+const MENSAJE_VALIDACION_CEL = {
+  INVALID_COUNTRY_CODE: 'Ese código de país no es válido.',
+  TOO_SHORT: 'Ese número está incompleto.',
+  TOO_LONG: 'Ese número tiene demasiados dígitos.',
+  IS_POSSIBLE_LOCAL_ONLY: 'Falta el código de país.',
+  INVALID_LENGTH: 'Ese número no tiene el largo correcto.',
+};
+
+// Validacion del celular con el propio widget: mas precisa que el chequeo de
+// largo de validarMayoreo (mayoreo-logica.js), que a proposito es laxo para no
+// rechazar un lead legitimo. Vacio no es su responsabilidad -- eso ya lo
+// marca validarMayoreo como obligatorio.
+async function validarCelularWidget() {
+  if (!val('f-cel')) return null;
+  try {
+    await iti.promise;
+  } catch (err) {
+    return null;
+  }
+  if (iti.isValidNumber()) return null;
+  return MENSAJE_VALIDACION_CEL[iti.getValidationError()] || 'Ese número no se ve válido.';
+}
+
+inputCel.addEventListener('blur', async () => {
+  marcar('cel', await validarCelularWidget());
+});
 
 function marcar(campo, mensaje) {
   const g = grupo(campo);
@@ -193,13 +264,21 @@ async function resolverCiudadPorCP() {
 
 campoCp.addEventListener('input', resolverCiudadPorCP);
 campoCp.addEventListener('blur', resolverCiudadPorCP);
-document.getElementById('f-pais').addEventListener('change', resolverCiudadPorCP);
+// countrychange (no 'change' -- ya no hay <select>): intl-tel-input lo dispara
+// en el input original cada vez que el prospecto elige otra bandera.
+inputCel.addEventListener('countrychange', resolverCiudadPorCP);
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
   limpiarErrores();
   const datos = leerFormulario();
   const errores = validarMayoreo(datos);
+  // El widget valida mas fino que el chequeo de largo de arriba (issue #161);
+  // si ese ya marco 'cel' no lo pisamos con un segundo mensaje.
+  if (!errores.some(er => er.campo === 'cel')) {
+    const celMsg = await validarCelularWidget();
+    if (celMsg) errores.push({ campo: 'cel', mensaje: celMsg });
+  }
   if (errores.length) {
     for (const { campo, mensaje } of errores) marcar(campo, mensaje);
     const primero = grupo(errores[0].campo);

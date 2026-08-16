@@ -13,11 +13,13 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "intl-tel-input": "^29.2.3",
     "supertest": "^7.0.0"
   },
   "dependencies": {
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",
+    "libphonenumber-js": "^1.13.11",
     "multer": "^2.1.1",
     "pdfkit": "^0.15.0",
     "pg": "^8.21.0",

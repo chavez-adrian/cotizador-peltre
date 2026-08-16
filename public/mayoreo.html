@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Peltre de mayoreo - pp.peltre</title>
 <meta name="description" content="D&eacute;janos tus datos y nuestro equipo de mayoreo se pondr&aacute; en contacto contigo.">
+<link rel="stylesheet" href="/vendor/intl-tel-input/css/intlTelInput.min.css">
 <link rel="stylesheet" href="/css/mayoreo.css">
 </head>
 <body>
@@ -89,14 +90,7 @@
 
       <div class="campo" data-campo="cel">
         <label for="f-cel">Celular <span class="req">*</span></label>
-        <div class="fila-cel">
-          <select id="f-pais" aria-label="C&oacute;digo de pa&iacute;s">
-            <option value="+52" selected>MX +52</option>
-            <option value="+1">US +1</option>
-            <option value="+1-CA">CA +1</option>
-          </select>
-          <input id="f-cel" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="10 d&iacute;gitos">
-        </div>
+        <input id="f-cel" type="tel" inputmode="tel" autocomplete="tel">
         <span class="pista">Te escribimos por WhatsApp.</span>
         <span class="aviso-mal" data-mal></span>
       </div>
@@ -157,6 +151,7 @@
   <p class="pie-datos">pp.peltre &middot; Peltre Nacional &middot; datos de c&oacute;digo postal: <a href="https://www.geonames.org" target="_blank" rel="noopener">GeoNames</a> (CC BY 4.0)</p>
 </section>
 
+<script src="/vendor/intl-tel-input/js/intlTelInput.min.js"></script>
 <script type="module" src="/js/mayoreo.js"></script>
 </body>
 </html>

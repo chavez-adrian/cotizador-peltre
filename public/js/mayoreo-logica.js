@@ -45,11 +45,19 @@ export const CUANDO_OPCIONES = [
   'Aún no tengo fecha',
 ];
 
-// Codigos de pais del selector -- catalogo cerrado. Son los codigos de
-// alta-logica tal cual, para que el widget no tenga que traducir nada. Se valida
-// como cualquier otro catalogo: este endpoint es publico y sin el, cualquiera
+// Codigos de pais -- catalogo cerrado. Son los codigos de alta-logica tal
+// cual, para que el widget no tenga que traducir nada. Se valida como
+// cualquier otro catalogo: este endpoint es publico y sin el, cualquiera
 // guardaria un celular con el prefijo que se le ocurra.
-export const CODIGOS_PAIS = ['+52', '+1', '+1-CA'];
+//
+// '+' (issue #161): el celular ahora se captura con intl-tel-input, un widget
+// internacional que no restringe el pais a MX/US/CA. Cuando el prospecto elige
+// otro pais, mayoreo.js manda celCode='+' (el generico de alta-logica para
+// "Otro") junto con el E.164 completo que entrega el widget. Ampliar el
+// catalogo es seguro porque la proteccion real dejo de ser "solo estos
+// prefijos": el servidor revalida con libphonenumber-js (lib/telefono-posible.js)
+// antes de aceptar la captura, que es mas fuerte que un catalogo de prefijos.
+export const CODIGOS_PAIS = ['+52', '+1', '+1-CA', '+'];
 
 // Tope de los textos libres. Superficie publica sin auth: sin esto una sola
 // captura puede guardar el megabyte que aguanta express.json. Los limites son

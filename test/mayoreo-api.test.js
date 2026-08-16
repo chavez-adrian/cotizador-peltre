@@ -222,7 +222,7 @@ test('W15: los textos libres tienen tope de longitud', async () => {
 
 // --- El invariante de ADR-0012: la respuesta es OPACA ---
 
-test('W9: la respuesta 200 es identica en las 5 ramas (nuevo / duplicado / cliente / honeypot / tope)', async () => {
+test('W9: la respuesta 200 es identica en las 6 ramas (nuevo / duplicado / cliente / honeypot / tope / imposible)', async () => {
   const huella = res => JSON.stringify({
     status: res.status,
     tipo: res.headers['content-type'],
@@ -248,13 +248,33 @@ test('W9: la respuesta 200 es identica en las 5 ramas (nuevo / duplicado / clien
   for (let i = 0; i < MAX_CAPTURAS_POR_IP; i++) await enviar(formulario({ cel: `551234000${i}` }));
   const tope = await enviar(formulario({ cel: '5599887766' }));
 
-  const ramas = { nuevo, duplicado, cliente, honeypot, tope };
+  // Numero con el largo correcto (pasa validarMayoreo, que solo mira digitos)
+  // pero imposible para MX: ningun area code empieza en 0000 (issue #161).
+  resetRateLimitPublico();
+  const imposible = await enviar(formulario({ cel: '0000000000' }));
+
+  const ramas = { nuevo, duplicado, cliente, honeypot, tope, imposible };
   const referencia = huella(nuevo);
   for (const [nombre, res] of Object.entries(ramas)) {
     assert.equal(huella(res), referencia, `la rama "${nombre}" delata informacion`);
   }
   // Y ademas es un 200 afirmativo, no un error disfrazado.
   assert.equal(nuevo.status, 200);
+});
+
+// --- Revalidacion server-side del celular con libphonenumber-js (issue #161) ---
+
+test('W16: un numero imposible para su pais no crea prospecto', async () => {
+  const res = await enviar(formulario({ cel: '0000000000' }));
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 0);
+});
+
+test('W17: un numero MX valido de 10 digitos sigue creando el prospecto', async () => {
+  const res = await enviar(formulario({ cel: '5512345678' }));
+  assert.equal(res.status, 200);
+  const p = readProspectos()[0];
+  assert.equal(p.celular, '+52 5512345678');
 });
 
 // --- Validacion del lado del servidor (el endpoint no confia en el cliente) ---
