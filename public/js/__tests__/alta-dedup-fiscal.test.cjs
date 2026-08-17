@@ -16,7 +16,7 @@ before(async () => {
 // Compara los datos fiscales de la CSF recien subida (formato altaState.datos)
 // contra el cliente ya guardado en Operam (formato crudo de /api/buscar-cliente-duplicado).
 // El diff resultante usa NOMBRES DE CAMPO DE OPERAM como llave (CustName, tax_id, street, ...)
-// porque actualizarCliente(id, diff) hace body[fieldId] = nuevo y lo manda directo al PUT
+// porque bodyDesdeDiffFiscal(diff) las traduce a llaves de escritura y las manda al PUT
 // de Operam -- si la llave fuera un id de DOM (cl-razon-social) el PATCH mandaria campos
 // que Operam no reconoce. Esto difiere a proposito del calcularDiff viejo (deuda tecnica).
 
@@ -153,7 +153,7 @@ test('G7c: calcularDiffFiscal SI reporta domicilio vacio cuando el campo fue cap
 
 test('U1: buildActualizarFiscalPayload mapea los datos de la CSF a nombres de campo de Operam', () => {
   const body = buildActualizarFiscalPayload(csfDatosIguales);
-  assert.equal(body.CustName, 'Peltre Nacional SA de CV');
+  assert.equal(body.cust_name, 'Peltre Nacional SA de CV');
   assert.equal(body.tax_id, 'PNA010203ABC');
   assert.equal(body.idcif, 'IDCIF123');
   assert.equal(body.street, 'Reforma');
@@ -185,11 +185,9 @@ test('U3: buildActualizarFiscalPayload omite campos que la CSF no recolecto (aus
   assert.equal(body.postal_code, '06600');
 });
 
-test('U4: buildActualizarFiscalPayload es simetrico con calcularDiffFiscal: el diff contra el payload aplicado es vacio', () => {
-  const body = buildActualizarFiscalPayload(csfDatosIguales);
-  const diff = calcularDiffFiscal(body, csfDatosIguales);
-  assert.deepEqual(diff, {}, 'lo que se manda al PUT debe verificar sin diferencias');
-});
+// La simetria entre lo enviado y lo verificado vive ahora en W4: desde #169 el payload
+// usa llaves de ESCRITURA (cust_name) y la verificacion lee las del GET (CustName), asi
+// que comparar el payload consigo mismo ya no representa lo que ocurre en Operam.
 
 // === Regla 1 (issue #95): nombre corto (cust_ref) viaja en el upgrade fiscal ===
 // Antes cust_ref no estaba en DIFF_FISCAL_CAMPOS: el vendedor lo capturaba en
@@ -497,4 +495,76 @@ test('R-FIX2: emailFacturaParaUpgrade solo incluye el email cuando el upgrade se
     'desde la vista Clientes el campo cl-email-factura puede traer el email de OTRO cliente (fuga de contexto)');
   assert.equal(emailFacturaParaUpgrade(null, 'fact@otro.mx'), undefined);
   assert.equal(emailFacturaParaUpgrade('paso', '  '), undefined);
+});
+
+// === Issue #169: la LLAVE DE ESCRITURA del PUT no es la de lectura ===
+//
+// Sondeo en vivo sobre el cliente 491 (2026-08-17, Operam 3.26.32): el PUT
+// /api/v3/sales/customers/:id IGNORA en silencio la llave `CustName` (la que
+// devuelve el GET) y solo persiste el nombre con `cust_name` (la misma del POST de
+// creacion). Ademas el PUT hace ECO de los campos que acepto: lo enviado que no
+// vuelve en la respuesta es exactamente lo que Operam ignoro.
+
+test('W1: buildActualizarFiscalPayload escribe la razon social con cust_name, no con CustName (#169)', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.equal(body.cust_name, 'Peltre Nacional SA de CV', 'la llave de ESCRITURA del PUT es cust_name');
+  assert.ok(!('CustName' in body), 'CustName es la llave de LECTURA; en el PUT Operam la ignora en silencio');
+});
+
+test('W2: calcularDiffFiscal sigue leyendo la razon social de CustName (llave del GET)', () => {
+  const diff = calcularDiffFiscal({ ...clienteOperamBase, CustName: 'PROSPECTO SIN RAZON SOCIAL' }, csfDatosIguales);
+  assert.equal(diff.CustName.anterior, 'PROSPECTO SIN RAZON SOCIAL');
+  assert.equal(diff.CustName.nuevo, 'Peltre Nacional SA de CV');
+});
+
+test('W3: calcularDiffFiscal lee el regimen de `regimen` (llave real del GET de Operam), sin falso positivo', () => {
+  const clienteComoLoDevuelveOperam = { ...clienteOperamBase, cfdi_regimen_fiscal: undefined, regimen: '601' };
+  const diff = calcularDiffFiscal(clienteComoLoDevuelveOperam, csfDatosIguales);
+  assert.ok(!('cfdi_regimen_fiscal' in diff), 'el GET expone el regimen como `regimen`; compararlo contra cfdi_regimen_fiscal reportaba un rechazo que nunca ocurrio');
+});
+
+test('W3b: calcularDiffFiscal SI detecta un regimen distinto leido de `regimen`', () => {
+  const cliente = { ...clienteOperamBase, cfdi_regimen_fiscal: undefined, regimen: '616' };
+  const diff = calcularDiffFiscal(cliente, csfDatosIguales);
+  assert.equal(diff.cfdi_regimen_fiscal.anterior, '616');
+  assert.equal(diff.cfdi_regimen_fiscal.nuevo, '601');
+});
+
+test('W4: el payload del PUT verifica limpio contra el cliente tal como lo devuelve el GET', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  const comoLoDevuelveElGet = { ...body, CustName: body.cust_name, regimen: body.cfdi_regimen_fiscal };
+  const diff = calcularDiffFiscal(comoLoDevuelveElGet, csfDatosIguales);
+  assert.deepEqual(diff, {}, 'lo que se manda al PUT debe verificar sin diferencias tras la relectura');
+});
+
+test('W5: camposNoAplicados reporta el campo que Operam NO devolvio en el eco, con el motivo', async () => {
+  const { camposNoAplicados } = await import('../alta-logica.js');
+  const diff = { CustName: { anterior: 'VIEJO', nuevo: 'Nuevo SA', label: 'Razon Social' } };
+  const salida = camposNoAplicados(diff, { version: '3.26.32', tax_id: 'PNA010203ABC' });
+  assert.equal(salida.length, 1);
+  assert.equal(salida[0].campo, 'CustName');
+  assert.equal(salida[0].nuevo, 'Nuevo SA');
+  assert.match(salida[0].motivo, /Operam/, 'el vendedor debe leer el motivo real, no solo el campo');
+});
+
+test('W6: camposNoAplicados NO reporta un campo que Operam SI confirmo en el eco del PUT', async () => {
+  const { camposNoAplicados } = await import('../alta-logica.js');
+  // idcif no viene en el GET de detalle de Operam, asi que la relectura lo marca como
+  // distinto aunque el PUT lo haya escrito: el eco es la unica confirmacion posible.
+  const diff = { idcif: { anterior: '', nuevo: 'IDCIF123', label: 'IdCIF (SAT)' } };
+  assert.deepEqual(camposNoAplicados(diff, { version: '3.26.32', idcif: 'IDCIF123' }), []);
+});
+
+test('W7: camposNoAplicados usa la llave de ESCRITURA para leer el eco (CustName -> cust_name)', async () => {
+  const { camposNoAplicados } = await import('../alta-logica.js');
+  const diff = { CustName: { anterior: 'VIEJO', nuevo: 'Nuevo SA', label: 'Razon Social' } };
+  assert.deepEqual(camposNoAplicados(diff, { version: '3.26.32', cust_name: 'Nuevo SA' }), [],
+    'el eco viene con la llave del body (cust_name), no con la del GET');
+});
+
+test('W8: camposNoAplicados sin eco utilizable reporta todo el diff (nada que absolver)', async () => {
+  const { camposNoAplicados } = await import('../alta-logica.js');
+  const diff = { CustName: { anterior: 'VIEJO', nuevo: 'Nuevo SA', label: 'Razon Social' } };
+  assert.equal(camposNoAplicados(diff, null).length, 1);
+  assert.equal(camposNoAplicados(diff, undefined).length, 1);
 });

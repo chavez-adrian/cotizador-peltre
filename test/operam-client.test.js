@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarCliente, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
+const { actualizarClienteDirecto, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -174,7 +174,7 @@ test('buscarClientePorRFC: un 404 de Operam (RFC inexistente) devuelve { encontr
   }
 });
 
-test('actualizarCliente: hace PUT a /api/v3/sales/customers/:id con los campos del diff', async () => {
+test('actualizarClienteDirecto: hace PUT a /api/v3/sales/customers/:id y devuelve el eco de Operam', async () => {
   resetSession();
   let putUrl = null;
   let putBody = null;
@@ -183,20 +183,17 @@ test('actualizarCliente: hace PUT a /api/v3/sales/customers/:id con los campos d
     '/api/v3/sales/customers/42': (url, opts) => {
       putUrl = url;
       putBody = JSON.parse(opts.body);
-      return jsonResponse({ result: true, customer_id: 42 });
+      // Operam responde con el eco de lo que acepto: aqui deja fuera segmento_id
+      return jsonResponse({ version: '3.26.32', city: 'ZAPOPAN', postal_code: '45100' });
     },
   });
   try {
-    const diff = {
-      'cl-municipio': { anterior: 'GUADALAJARA', nuevo: 'ZAPOPAN' },
-      'cl-cp-fiscal': { anterior: '44100', nuevo: '45100' },
-    };
-    await actualizarCliente(42, diff);
-    assert.ok(putUrl !== null);
+    const eco = await actualizarClienteDirecto(42, { city: 'ZAPOPAN', postal_code: '45100', segmento_id: '3' });
     assert.ok(putUrl.includes('/api/v3/sales/customers/42'));
-    assert.equal(putBody['cl-municipio'], 'ZAPOPAN');
-    assert.equal(putBody['cl-cp-fiscal'], '45100');
-    assert.ok(!('anterior' in putBody));
+    assert.equal(putBody.city, 'ZAPOPAN');
+    assert.equal(putBody.postal_code, '45100');
+    assert.equal(eco.city, 'ZAPOPAN', 'el eco es la senal de que Operam acepto el campo (#169)');
+    assert.ok(!('segmento_id' in eco), 'lo que no vuelve en el eco es lo que Operam ignoro');
   } finally {
     restore();
   }
@@ -312,21 +309,20 @@ test('obtenerDomicilios: cliente sin contacts -> contacts es []', async () => {
   }
 });
 
-test('actualizarCliente: lanza error si Operam responde result: false', async () => {
+test('actualizarClienteDirecto: lanza error si Operam responde result: false', async () => {
   resetSession();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers/99': () => jsonResponse({ result: false, messages: ['Cliente no encontrado'] }),
   });
   try {
-    const diff = { 'cl-municipio': { anterior: 'A', nuevo: 'B' } };
-    await assert.rejects(() => actualizarCliente(99, diff), (err) => { assert.ok(err.message.length > 0); return true; });
+    await assert.rejects(() => actualizarClienteDirecto(99, { city: 'B' }), (err) => { assert.ok(err.message.length > 0); return true; });
   } finally {
     restore();
   }
 });
 
-test('actualizarCliente: usa OPERAM_URL del env cuando se llama', async () => {
+test('actualizarClienteDirecto: usa OPERAM_URL del env cuando se llama', async () => {
   resetSession();
   const originalUrl = process.env.OPERAM_URL;
   process.env.OPERAM_URL = 'https://test-operam.example.com';
@@ -339,7 +335,7 @@ test('actualizarCliente: usa OPERAM_URL del env cuando se llama', async () => {
     },
   });
   try {
-    await actualizarCliente(10, { 'cl-municipio': { anterior: 'A', nuevo: 'B' } });
+    await actualizarClienteDirecto(10, { city: 'B' });
     assert.ok(calledUrls.some(u => u.includes('test-operam.example.com')));
   } finally {
     restore();

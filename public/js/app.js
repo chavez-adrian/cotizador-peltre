@@ -2905,8 +2905,10 @@ async function pcEjecutarUpgradeFiscal(datos) {
     if (razonInput && campoPego('CustName') && datos.razonSocial) razonInput.value = datos.razonSocial;
     pcRenderTarjeta();
     if (ignorado.length) {
+      // El motivo viene del eco del PUT (#169): Operam no devuelve el campo que ignoro.
+      const motivo = ignorado[0].motivo ? '\n\n' + ignorado[0].motivo : '';
       alert('Datos fiscales actualizados, pero Operam ignoro estos campos (corrigelos en Operam): ' +
-        ignorado.map(x => x.label || x.campo).join(', '));
+        ignorado.map(x => x.label || x.campo).join(', ') + motivo);
     }
   } catch (e) {
     mostrarError('Error de conexion');

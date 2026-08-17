@@ -8,7 +8,9 @@
 
 Bearer token auth con auto-refresh en 401. **`buildClienteBody` es el UNICO mapeo de cliente→Operam** (lo comparten `crearClienteDirecto` del alta generica y `crearCliente` de `/api/crear-cliente`), y por eso ahi viven los **parametros fiscales estandar del RFC generico (#121)**: si `tax_id` esta en `RFC_GENERICOS`, fuerza nombre en MAYUSCULAS, `postal_code` 56577 (el CP **fiscal**; el de ENTREGA lo pone `buildBranchGenerico` y conserva el real), regimen 616 y uso CFDI S01. Son overrides INCONDICIONALES, no defaults: ignoran lo que mande el caller. El unico campo fiscal del generico que sigue al vendedor es el **segmento**, que se captura en `pc-segmento` del paso Cliente.
 
-Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarCliente`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `obtenerBranch`, `obtenerBranchId`, `obtenerClientePorId`, `listarTransacciones`, `listarPedidos`, `resetSession`. Read-only del backfill (#76): `obtenerQuote`, `obtenerPedido` (detalle con `qty_sent`/`quantity` -> entrega total vs parcial), `obtenerCliente`; retry ante caidas de red (ECONNRESET) y throttle proactivo anti-429 `_setMinInterval` (default 0 = la app normal no pacea).
+**`actualizarClienteDirecto` es el UNICO punto de escritura del cliente** y devuelve la respuesta cruda del PUT porque trae el **eco de los campos que Operam acepto** (#169): lo enviado que no vuelve en el eco es lo que ignoro en silencio. Las llaves del PUT NO son las del GET: la razon social se escribe `cust_name` y se lee `CustName`; el regimen se escribe `cfdi_regimen_fiscal` y se lee `regimen`. El mapeo por campo vive en `DIFF_FISCAL_CAMPOS` (`write`/`read`) y la traduccion de un diff a body en `bodyDesdeDiffFiscal`. Sondeo completo en `peltre-operam.md` seccion 12.5b.
+
+Exporta `buscarClientes`, `obtenerDomicilios`, `subirCotizacionOperam`, `actualizarClienteDirecto`, `buscarClientePorRFC`, `crearCliente`, `actualizarBranchCliente`, `obtenerBranch`, `obtenerBranchId`, `obtenerClientePorId`, `listarTransacciones`, `listarPedidos`, `resetSession`. Read-only del backfill (#76): `obtenerQuote`, `obtenerPedido` (detalle con `qty_sent`/`quantity` -> entrega total vs parcial), `obtenerCliente`; retry ante caidas de red (ECONNRESET) y throttle proactivo anti-429 `_setMinInterval` (default 0 = la app normal no pacea).
 
 ### alta-generica.js
 
@@ -135,6 +137,8 @@ Los caminos 2 y 3 son accesibles sin cotizacion desde la **vista Clientes** (men
 - `PUT /branches/:code` resetea `debtor_no` a 0 (deja el domicilio HUERFANO) salvo que el body incluya `customer_id`; usa `default_location`/`default_ship_via` en lectura pero `location`/`ship_via` en el PUT (#74).
 - NO hay DELETE de clientes (`501 Unknown Method`) — borrar solo en la UI.
 - La API responde `result:true` aunque ignore/rompa campos: nunca confiar en la respuesta, releer.
+- `PUT /customers/:id` usa nombres DISTINTOS a los del GET (#169): escribe `cust_name` / lee `CustName`; escribe `cfdi_regimen_fiscal` / lee `regimen`; `idcif`, `invoice_email` y `segmento_id` (anidado en `segmento.id`) no se leen con su nombre de escritura. Mandar la llave de lectura = campo ignorado en silencio.
+- Ese mismo PUT responde con el **eco** de los campos que acepto: lo enviado que no vuelve es exactamente lo que ignoro (unica senal del motivo, y unica confirmacion de los campos que el GET no expone).
 - Los quotes tipo 32 NO son enumerables (`filterType=32` → 0); solo id-walk por folio.
 - El pedido convertido HEREDA `deliver_to`/`contact_phone`/`contact_email`/`delivery_address`/`customer_ref` del quote (auto-confirma cualquier cruce que use esos campos).
 - Mapeo real de tipos de transaccion, cadena `order_` y contrato de escritura del quote: `peltre-operam.md` §12 (el MCP `operam-api` etiqueta MAL los `filterType`).

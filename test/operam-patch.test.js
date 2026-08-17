@@ -73,6 +73,38 @@ test('PATCH /api/operam/clientes/:id: actualiza cliente en Operam con campos del
   }
 });
 
+// El diff que manda el panel "Confirmar y actualizar en Operam" viene de
+// calcularDiffFiscal, con llaves de LECTURA (CustName). El PUT de Operam las ignora en
+// silencio (#169): el endpoint debe traducirlas a llaves de escritura antes de mandar.
+test('PATCH /api/operam/clientes/:id: traduce CustName del diff a cust_name en el PUT (#169)', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/42': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ version: '3.26.32', cust_name: 'Peltre Nacional SA de CV' });
+    },
+  });
+  try {
+    const diff = {
+      CustName: { anterior: 'PROSPECTO', nuevo: 'Peltre Nacional SA de CV', label: 'Razon Social' },
+      tax_id: { anterior: '', nuevo: 'PNA010203ABC', label: 'RFC' },
+    };
+    const res = await req
+      .patch('/api/operam/clientes/42')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({ diff });
+
+    assert.equal(res.status, 200);
+    assert.equal(putBody.cust_name, 'Peltre Nacional SA de CV');
+    assert.ok(!('CustName' in putBody), 'CustName en el PUT no persiste el nombre');
+    assert.equal(putBody.tax_id, 'PNA010203ABC', 'los campos sin llave alterna viajan igual');
+  } finally {
+    restore();
+  }
+});
+
 test('PATCH /api/operam/clientes/:id: sin auth token retorna 401', async () => {
   const res = await req
     .patch('/api/operam/clientes/42')

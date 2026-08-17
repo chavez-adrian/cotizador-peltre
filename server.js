@@ -8,11 +8,11 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarCliente, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
+import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
-import { buildActualizarFiscalPayload, calcularDiffFiscal } from './public/js/alta-logica.js';
+import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
@@ -1696,7 +1696,7 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
   const { diff } = req.body || {};
   if (!diff || typeof diff !== 'object') return res.status(400).json({ error: 'diff requerido' });
   try {
-    await actualizarCliente(req.params.id, diff);
+    await actualizarClienteDirecto(req.params.id, bodyDesdeDiffFiscal(diff));
     res.json({ ok: true });
   } catch (err) {
     res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
@@ -2217,8 +2217,12 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     }
   }
 
+  // El PUT responde con el eco de los campos que Operam acepto (#169): es la unica
+  // senal del motivo real cuando un campo no pega, y la unica confirmacion posible
+  // para los que el GET de detalle no expone (idcif, invoice_email).
+  let ecoPut = null;
   try {
-    await actualizarClienteDirecto(id, buildActualizarFiscalPayload(csfDatos, notasActuales));
+    ecoPut = await actualizarClienteDirecto(id, buildActualizarFiscalPayload(csfDatos, notasActuales));
   } catch (err) {
     logCliente(rfc, csfDatos.razonSocial, 'error', id, FUENTE_CSF_UPGRADE, null, err.message);
     return res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
@@ -2235,7 +2239,7 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     const fresco = await obtenerClientePorId(id);
     if (!fresco) throw new Error('Operam no devolvio el cliente en la relectura');
     const diff = calcularDiffFiscal(fresco, csfDatos);
-    camposNoActualizados = Object.entries(diff).map(([campo, d]) => ({ campo, label: d.label, anterior: d.anterior, nuevo: d.nuevo }));
+    camposNoActualizados = camposNoAplicados(diff, ecoPut);
     // notes no esta en DIFF_FISCAL_CAMPOS (su valor "nuevo" depende de las notas
     // previas, no es un campo de comparacion directa) -- se verifica aparte: la
     // linea del Tax ID debe estar presente en las notas releidas.

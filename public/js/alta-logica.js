@@ -101,12 +101,23 @@ export function separarTelefonoCodigo(telefono) {
 // Mapea los datos de la CSF (altaState.datos: razonSocial/rfc/calle/numExt/...) contra
 // los campos crudos del cliente en Operam (CustName/tax_id/street/...) y calcula un diff
 // cuyas LLAVES son nombres de campo de OPERAM -- a proposito distinto del calcularDiff
-// viejo (que usaba ids de DOM como cl-razon-social). actualizarCliente(id, diff) hace
-// body[fieldId] = nuevo y lo manda directo al PUT /customers/:id de Operam: si la llave
-// fuera un id de DOM, el PATCH mandaria campos que Operam no reconoce. Usar nombres de
-// campo Operam es lo correcto para que el PATCH actualice algo real (ver ralph-progress.txt).
+// viejo (que usaba ids de DOM como cl-razon-social). bodyDesdeDiffFiscal(diff) traduce
+// esas llaves a las de escritura y el resultado va al PUT /customers/:id de Operam: si la
+// llave fuera un id de DOM, el PATCH mandaria campos que Operam no reconoce. Usar nombres
+// de campo Operam es lo correcto para que el PATCH actualice algo real (ver ralph-progress.txt).
+// `operam` es la llave canonica del campo en el diff Y el nombre que devuelve el GET.
+// `write` y `read` la corrigen donde Operam usa nombres distintos para escribir y para
+// leer (issue #169, sondeo en vivo sobre el cliente 491 con Operam 3.26.32):
+//   - el PUT IGNORA en silencio `CustName` y solo persiste el nombre con `cust_name`
+//     (la misma llave del POST de creacion, ver buildClienteBody);
+//   - el GET de detalle NO devuelve `cfdi_regimen_fiscal`: expone el regimen como
+//     `regimen`, asi que verificar contra la llave de escritura reportaba un rechazo
+//     que nunca ocurrio.
+// `read` cae de vuelta a `operam` cuando el objeto no trae la llave alterna: el mismo
+// calcularDiffFiscal corre contra el detalle del GET y contra el listado de clientes,
+// que no siempre coinciden en la forma.
 export const DIFF_FISCAL_CAMPOS = [
-  { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social' },
+  { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social', write: 'cust_name' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
   { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
   { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
@@ -120,7 +131,7 @@ export const DIFF_FISCAL_CAMPOS = [
   { operam: 'postal_code',         csf: 'cp',            label: 'Codigo Postal' },
   { operam: 'city',                csf: 'municipio',     label: 'Municipio' },
   { operam: 'state',               csf: 'estado',        label: 'Estado' },
-  { operam: 'cfdi_regimen_fiscal', csf: 'regimenFiscal', label: 'Regimen Fiscal' },
+  { operam: 'cfdi_regimen_fiscal', csf: 'regimenFiscal', label: 'Regimen Fiscal', read: 'regimen' },
 ];
 
 export const DIFF_FISCAL_LABELS = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, label }) => {
@@ -146,13 +157,19 @@ function resolverValorNuevo({ csf, default: def }, csfDatos, { forzarDefault = f
   return crudo;
 }
 
+function leerValorOperam(clienteOperam, { operam, read }) {
+  const alterno = read ? clienteOperam[read] : undefined;
+  return alterno == null ? clienteOperam[operam] : alterno;
+}
+
 export function calcularDiffFiscal(clienteOperam, csfDatos) {
   const diff = {};
   for (const campo of DIFF_FISCAL_CAMPOS) {
     const nuevoValor = resolverValorNuevo(campo, csfDatos);
     if (nuevoValor === undefined) continue;
     const { operam, label } = campo;
-    const anterior = String(clienteOperam[operam] == null ? '' : clienteOperam[operam]).trim();
+    const leido = leerValorOperam(clienteOperam, campo);
+    const anterior = String(leido == null ? '' : leido).trim();
     const nuevo = String(nuevoValor).trim();
     if (anterior !== nuevo) {
       diff[operam] = { anterior, nuevo, label };
@@ -176,7 +193,7 @@ export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
   for (const campo of DIFF_FISCAL_CAMPOS) {
     const nuevoValor = resolverValorNuevo(campo, csfDatos, { forzarDefault: true });
     if (nuevoValor === undefined) continue;
-    body[campo.operam] = nuevoValor;
+    body[campo.write || campo.operam] = nuevoValor;
   }
   // notasActuales === null significa que la relectura previa FALLO: no sabemos que
   // notas tiene el cliente y mandar notes reconstruido desde vacio las pisaria. Se
@@ -186,6 +203,40 @@ export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
     if (notas !== undefined) body.notes = notas;
   }
   return body;
+}
+
+// Motivo real del rechazo (issue #169): el PUT de Operam responde con el ECO de los
+// campos que acepto -- lo enviado que no vuelve en la respuesta es exactamente lo que
+// ignoro (verificado en vivo: `CustName` y `segmento_id` no vuelven y no se aplican;
+// `cust_name`, `notes` y el domicilio fiscal si vuelven y si se aplican).
+//
+// El eco tambien ABSUELVE: el GET de detalle no expone idcif ni invoice_email, asi que
+// la relectura los marca como distintos aunque el PUT los haya escrito. Un campo que
+// Operam confirmo en su propia respuesta no se le reporta al vendedor como no aplicado
+// -- seria ruido permanente sobre una escritura que si ocurrio.
+const MOTIVO_IGNORADO = 'Operam ignoro este campo en el PUT (no lo devolvio en la respuesta)';
+
+const LLAVE_ESCRITURA = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, write }) => {
+  acc[operam] = write || operam;
+  return acc;
+}, {});
+
+// Body del PUT a partir de un diff de calcularDiffFiscal (panel "Confirmar y actualizar
+// en Operam" del dedup por RFC). Las llaves del diff son de LECTURA, asi que hay que
+// traducirlas antes de escribir: mandar `CustName` deja el nombre sin cambiar (#169).
+export function bodyDesdeDiffFiscal(diff) {
+  const body = {};
+  for (const [campo, { nuevo }] of Object.entries(diff)) {
+    body[LLAVE_ESCRITURA[campo] || campo] = nuevo;
+  }
+  return body;
+}
+
+export function camposNoAplicados(diff, ecoPut) {
+  const eco = ecoPut && typeof ecoPut === 'object' ? ecoPut : {};
+  return Object.entries(diff)
+    .filter(([campo]) => !((LLAVE_ESCRITURA[campo] || campo) in eco))
+    .map(([campo, d]) => ({ campo, label: d.label, anterior: d.anterior, nuevo: d.nuevo, motivo: MOTIVO_IGNORADO }));
 }
 
 // Email de facturacion en el upgrade (fix de la revision de #95): el input
