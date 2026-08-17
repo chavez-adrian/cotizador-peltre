@@ -154,7 +154,7 @@ export function buildOperamStatusHtml(id, vista) {
     // #93: cliente generico recien creado/reutilizado -- se ofrece la CSF junto al
     // folio, mismo flujo de upgrade del chip Fiscal (#85), sin duplicar logica.
     const csf = v.clienteGenerico && v.customerId != null
-      ? ` <button type="button" class="btn btn-sm btn-secondary" onclick="pcAbrirUpgradeFiscal(${v.customerId})">&iquest;Ya tienes su CSF? Subela</button>`
+      ? ` <button type="button" class="btn btn-sm btn-secondary" onclick="pcAbrirUpgradeFiscal(${v.customerId}, null, 'resumen')">&iquest;Ya tienes su CSF? Subela</button>`
       : '';
     // #106: el post-fix de la vigencia no pego. La cotizacion esta BIEN (el PDF y las
     // notas del quote llevan la fecha correcta); lo que queda mal es el campo nativo

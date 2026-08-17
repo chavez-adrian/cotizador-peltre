@@ -258,7 +258,10 @@ test('Q19d: buildOperamStatusHtml ofrece subir la CSF junto al folio cuando el c
   const gen = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, customerId: 501, clienteGenerico: true });
   assert.match(gen, /#Operam 90001/);
   assert.match(gen, /Ya tienes su CSF/);
-  assert.match(gen, /pcAbrirUpgradeFiscal\(501\)/);
+  // origen 'resumen' explicito: pcAbrirUpgradeFiscal lo usa para saber que debe
+  // cambiar al tab cliente antes de mostrar el panel (el panel vive oculto
+  // dentro de #tab-cliente cuando se invoca desde el tab resumen).
+  assert.match(gen, /pcAbrirUpgradeFiscal\(501, null, 'resumen'\)/);
 
   const noGen = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, customerId: 501, clienteGenerico: false });
   assert.doesNotMatch(noGen, /Ya tienes su CSF/);
