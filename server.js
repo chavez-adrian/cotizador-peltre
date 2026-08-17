@@ -2203,21 +2203,23 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     });
   }
 
-  // Tax ID extranjero (issue #95 regla 5): no hay campo dedicado en la API v3, se
-  // antepone a las notas EXISTENTES del cliente (sin borrarlas). Requiere conocer
-  // esas notas ANTES del PUT -- una relectura extra, solo cuando se capturo el
-  // Tax ID (el camino comun sin ese campo no paga este GET adicional).
+  // Tax ID extranjero (issue #95 regla 5) y actividades economicas de la CSF (issue
+  // #171): ninguno tiene campo dedicado en la API v3, se componen sobre las notas
+  // EXISTENTES del cliente (sin borrarlas). Requiere conocer esas notas ANTES del
+  // PUT -- una relectura extra, solo cuando se capturo alguno de los dos (el camino
+  // comun sin ninguno no paga este GET adicional).
+  const hayActividades = Array.isArray(csfDatos.actividades) && csfDatos.actividades.length > 0;
   let notasActuales;
-  if (csfDatos.taxIdExtranjero) {
+  if (csfDatos.taxIdExtranjero || hayActividades) {
     try {
       const clienteActual = await obtenerClientePorId(id);
       notasActuales = (clienteActual && clienteActual.notes) || '';
     } catch (err) {
       // Relectura fallida: null le dice a buildActualizarFiscalPayload que OMITA
       // notes (reconstruirlas desde '' pisaria notas reales del cliente). El Tax ID
-      // queda sin aplicar y la verificacion post-PUT lo reporta.
+      // y las actividades quedan sin aplicar y la verificacion post-PUT lo reporta.
       notasActuales = null;
-      console.error('[csf-upgrade] relectura de notas fallo, Tax ID omitido:', err.message);
+      console.error('[csf-upgrade] relectura de notas fallo, Tax ID/actividades omitidos:', err.message);
     }
   }
 
@@ -2252,6 +2254,15 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
       const notasFrescas = fresco.notes || '';
       if (!notasFrescas.includes(prefijo)) {
         camposNoActualizados.push({ campo: 'notes', label: 'Tax ID extranjero', anterior: notasFrescas, nuevo: prefijo });
+      }
+    }
+    if (hayActividades) {
+      const encabezadoActividades = csfDatos.csf_fecha
+        ? `Actividades economicas (CSF ${csfDatos.csf_fecha}):`
+        : 'Actividades economicas:';
+      const notasFrescas = fresco.notes || '';
+      if (!notasFrescas.includes(encabezadoActividades)) {
+        camposNoActualizados.push({ campo: 'notes', label: 'Actividades economicas', anterior: notasFrescas, nuevo: encabezadoActividades });
       }
     }
   } catch (err) {

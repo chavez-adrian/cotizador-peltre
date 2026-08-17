@@ -91,6 +91,25 @@ test('B1c: POST /api/cotizacion con telefono sin codigo de pais retorna 400', as
   assert.match(res.body.error, /c.digo de pa.s/i);
 });
 
+// La reja del servidor y la del navegador son espejo a proposito: si el vendedor
+// logra capturar el numero en el formulario, guardar no puede tronar despues.
+test('#175: POST /api/cotizacion acepta un telefono internacional de 10 digitos', async () => {
+  const snap = readCots();
+  const body = {
+    fecha: '2026-01-01', tier: 'Mayoreo',
+    cliente: { razonSocial: 'Francys Falcon', telefono: '+297 563 3917' },
+    items: [{ codigo: 'TEST', descripcion: 'Test', cantidad: 1, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 100, iva: 16, total: 116, notas: [],
+  };
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+  assert.notStrictEqual(res.status, 400);
+  assert.ok(readCots().length > snap.length);
+  // Se restaura el archivo: otros tests de esta suite derivan el id de la
+  // LONGITUD de cotizaciones.json (ej. #111-1), asi que dejar un registro de
+  // mas les cambia el id bajo los pies y los vuelve flaky.
+  writeCots(snap);
+});
+
 test('B1d: POST /api/cotizacion sin telefono valido retorna 400', async () => {
   const body = {
     fecha: '2026-01-01', tier: 'Mayoreo',
@@ -839,6 +858,100 @@ test('UF10: PUT ignora notes (quirk) -> la relectura lo reporta en camposNoActua
     assert.strictEqual(res.status, 200);
     const notasNoActualizadas = res.body.camposNoActualizados.find(x => x.campo === 'notes');
     assert.ok(notasNoActualizadas, 'debe reportar que el Tax ID no quedo en notas');
+  } finally {
+    restore();
+  }
+});
+
+// === Issue #171: actividades economicas de la CSF -> notas del cliente ===
+
+test('UF13: actividades capturadas -> el PUT manda notes con la seccion de actividades, sin borrar notas existentes', async () => {
+  let putBody = null;
+  let getsACustomers = 0;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      getsACustomers++;
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ notes: 'Notas previas del cliente' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, actividades: ['Comercio al por menor'], csf_fecha: '8 DE MAYO DE 2026' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(putBody.notes, 'Notas previas del cliente\nActividades economicas (CSF 8 DE MAYO DE 2026):\n- Comercio al por menor');
+    assert.strictEqual(getsACustomers, 2, 'una relectura previa al PUT (notas actuales) y otra de verificacion post-PUT');
+  } finally {
+    restore();
+  }
+});
+
+test('UF13b: actividades sin csf_fecha (CSF sin "Fecha de emision") -> notes NUNCA lleva "(CSF ):" vacio', async () => {
+  let putBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, actividades: ['Otros intermediarios del comercio al por menor'], csf_fecha: '' } });
+    assert.strictEqual(res.status, 200);
+    assert.ok(!putBody.notes.includes('(CSF )'), 'nunca debe imprimir el parentesis vacio');
+    assert.equal(putBody.notes, 'Actividades economicas:\n- Otros intermediarios del comercio al por menor');
+  } finally {
+    restore();
+  }
+});
+
+test('UF14: sin actividades -> el PUT no manda notes y no hace la relectura previa (solo la de verificacion post-PUT)', async () => {
+  let putBody = null;
+  let getsACustomers = 0;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      getsACustomers++;
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.ok(!('notes' in putBody), 'sin actividades no debe tocar notes');
+    assert.strictEqual(getsACustomers, 1, 'solo la relectura de verificacion post-PUT, sin GET extra');
+  } finally {
+    restore();
+  }
+});
+
+test('UF15: PUT ignora notes (quirk) -> la relectura reporta que las actividades no quedaron aplicadas', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // Tanto la relectura previa como la de verificacion devuelven notas SIN la seccion.
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ notes: 'Notas previas del cliente' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, actividades: ['Comercio al por menor'], csf_fecha: '8 DE MAYO DE 2026' } });
+    assert.strictEqual(res.status, 200);
+    const notasNoActualizadas = res.body.camposNoActualizados.find(x => x.campo === 'notes');
+    assert.ok(notasNoActualizadas, 'debe reportar que las actividades no quedaron en notas');
   } finally {
     restore();
   }

@@ -8,8 +8,9 @@ let buildDedupExactoConDiffHtml;
 let buildActualizarFiscalPayload;
 let buildCandidatosRfcGenericoHtml;
 let buildNotasConTaxId;
+let buildNotasConActividades;
 before(async () => {
-  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalPayload, buildCandidatosRfcGenericoHtml, buildNotasConTaxId } = await import('../alta-logica.js'));
+  ({ calcularDiffFiscal, buildDiffFiscalHtml, buildDedupExactoConDiffHtml, buildActualizarFiscalPayload, buildCandidatosRfcGenericoHtml, buildNotasConTaxId, buildNotasConActividades } = await import('../alta-logica.js'));
 });
 
 // === calcularDiffFiscal ===
@@ -308,6 +309,79 @@ test('N7: buildActualizarFiscalPayload sin taxIdExtranjero NO agrega notes', () 
 test('N8: buildActualizarFiscalPayload no filtra taxIdExtranjero como llave cruda', () => {
   const body = buildActualizarFiscalPayload({ ...csfDatosIguales, taxIdExtranjero: 'US123456789' });
   assert.ok(!('taxIdExtranjero' in body));
+});
+
+// === Issue #171: actividades economicas de la CSF -> notas del cliente ===
+// El upgrade fiscal (#85) nunca tocaba notes para las actividades: el template
+// "Actividades economicas (CSF ):" solo lo armaba buildClienteBody (alta), y
+// ningun flujo llenaba cliente.actividades. buildNotasConActividades sigue el
+// MISMO patron que buildNotasConTaxId (regla 5 de #95): compone sobre notas
+// existentes, nunca las pisa, y es idempotente en reintentos.
+
+test('AC1: buildNotasConActividades sin notas previas arma la seccion completa', () => {
+  const notas = buildNotasConActividades('', ['Comercio al por menor'], '8 DE MAYO DE 2026');
+  assert.equal(notas, 'Actividades economicas (CSF 8 DE MAYO DE 2026):\n- Comercio al por menor');
+});
+
+test('AC2: buildNotasConActividades con notas previas las conserva y agrega la seccion al final', () => {
+  const notas = buildNotasConActividades('Tax ID: US123456789', ['Comercio al por menor'], '8 DE MAYO DE 2026');
+  assert.equal(notas, 'Tax ID: US123456789\nActividades economicas (CSF 8 DE MAYO DE 2026):\n- Comercio al por menor');
+});
+
+test('AC3: buildNotasConActividades sin actividades retorna undefined (no toca notas)', () => {
+  assert.equal(buildNotasConActividades('Notas previas', [], '2026-05-08'), undefined);
+  assert.equal(buildNotasConActividades('Notas previas', null, '2026-05-08'), undefined);
+  assert.equal(buildNotasConActividades('Notas previas', undefined, '2026-05-08'), undefined);
+});
+
+test('AC4: buildNotasConActividades REEMPLAZA la seccion previa (de una CSF anterior) en vez de duplicarla', () => {
+  const previas = 'Celular: 5512345678\nActividades economicas (CSF 2025-01-01):\n- Actividad vieja';
+  const notas = buildNotasConActividades(previas, ['Actividad nueva', 'Otra actividad (30%)'], '2026-05-08');
+  assert.equal(notas, 'Celular: 5512345678\nActividades economicas (CSF 2026-05-08):\n- Actividad nueva\n- Otra actividad (30%)');
+});
+
+test('AC5: buildNotasConActividades es idempotente -- reintento con la misma CSF no acumula secciones', () => {
+  const primera = buildNotasConActividades('Celular: 5512345678', ['Comercio al por menor'], '2026-05-08');
+  const segunda = buildNotasConActividades(primera, ['Comercio al por menor'], '2026-05-08');
+  assert.equal(segunda, primera);
+});
+
+test('AC5b: buildNotasConActividades con actividades pero sin csf_fecha (CSF sin "Fecha de emision") omite el parentesis, nunca "(CSF ):" vacio', () => {
+  const notas = buildNotasConActividades('', ['Otros intermediarios del comercio al por menor'], '');
+  assert.ok(!notas.includes('(CSF )'), 'nunca debe imprimir el parentesis vacio');
+  assert.equal(notas, 'Actividades economicas:\n- Otros intermediarios del comercio al por menor');
+});
+
+test('AC5c: buildNotasConActividades reemplaza una seccion previa SIN fecha por una nueva CON fecha (el regex reconoce ambas formas de encabezado)', () => {
+  const previas = 'Actividades economicas:\n- Actividad vieja';
+  const notas = buildNotasConActividades(previas, ['Actividad nueva'], '2026-05-08');
+  assert.equal(notas, 'Actividades economicas (CSF 2026-05-08):\n- Actividad nueva');
+});
+
+test('AC6: buildActualizarFiscalPayload incluye notes con la seccion de actividades cuando la CSF las trae', () => {
+  const body = buildActualizarFiscalPayload(
+    { ...csfDatosIguales, actividades: ['Comercio al por menor'], csf_fecha: '2026-05-08' },
+    'Notas previas del cliente'
+  );
+  assert.equal(body.notes, 'Notas previas del cliente\nActividades economicas (CSF 2026-05-08):\n- Comercio al por menor');
+});
+
+test('AC7: buildActualizarFiscalPayload sin actividades NO agrega notes', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales, 'Notas previas del cliente');
+  assert.ok(!('notes' in body));
+});
+
+test('AC8: buildActualizarFiscalPayload combina Tax ID extranjero Y actividades en la misma escritura de notes', () => {
+  const body = buildActualizarFiscalPayload(
+    { ...csfDatosIguales, taxIdExtranjero: 'US123456789', actividades: ['Comercio al por menor'], csf_fecha: '2026-05-08' },
+    'Notas previas del cliente'
+  );
+  assert.equal(body.notes, 'Tax ID: US123456789\nNotas previas del cliente\nActividades economicas (CSF 2026-05-08):\n- Comercio al por menor');
+});
+
+test('AC9: buildActualizarFiscalPayload con notasActuales null (relectura fallida) omite notes aunque haya actividades', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, actividades: ['Comercio al por menor'] }, null);
+  assert.ok(!('notes' in body));
 });
 
 // === Regla 6 (issue #95): segmento_id viaja en el upgrade, con verificacion post-escritura ===

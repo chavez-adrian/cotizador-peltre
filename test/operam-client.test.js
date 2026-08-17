@@ -537,6 +537,41 @@ test('buildClienteBody: sin invoice_email ni celular_nota no agrega lineas vacia
   assert.ok(!/celular/i.test(body.notes), 'no debe mencionar celular si no vino');
 });
 
+// === buildClienteBody() — actividades economicas de la CSF (issue #171) ===
+
+test('buildClienteBody: sin actividades, la seccion "Actividades economicas" no aparece en notes', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.ok(!/Actividades economicas/i.test(body.notes), 'sin actividades no debe imprimir la seccion (antes salia vacia)');
+});
+
+test('buildClienteBody: con actividades, la seccion incluye la fecha de la CSF y cada actividad como bullet', () => {
+  const body = buildClienteBody({
+    tax_id: 'RFC000001ABC', CustName: 'Test SA',
+    actividades: ['Comercio al por menor', 'Servicios de consultoria (40%)'],
+    csf_fecha: '8 DE MAYO DE 2026',
+  });
+  assert.ok(body.notes.includes('Actividades economicas (CSF 8 DE MAYO DE 2026):'));
+  assert.ok(body.notes.includes('- Comercio al por menor'));
+  assert.ok(body.notes.includes('- Servicios de consultoria (40%)'));
+});
+
+test('buildClienteBody: con actividades pero sin csf_fecha (CSF sin "Fecha de emision"), el encabezado NO deja "(CSF ):" vacio', () => {
+  const body = buildClienteBody({
+    tax_id: 'RFC000001ABC', CustName: 'Test SA',
+    actividades: ['Otros intermediarios del comercio al por menor'], csf_fecha: '',
+  });
+  assert.ok(!body.notes.includes('(CSF )'), 'nunca debe imprimir el parentesis vacio');
+  assert.equal(body.notes, 'Actividades economicas:\n- Otros intermediarios del comercio al por menor');
+});
+
+test('buildClienteBody: notes combina Tax ID, celular y actividades sin lineas huerfanas', () => {
+  const body = buildClienteBody({
+    tax_id: 'RFC000001ABC', CustName: 'Test SA', celular_nota: '5512345678',
+    actividades: ['Comercio al por menor'], csf_fecha: '2026-05-08',
+  });
+  assert.equal(body.notes, 'Celular: 5512345678\nActividades economicas (CSF 2026-05-08):\n- Comercio al por menor');
+});
+
 test('buildClienteBody: phone/email a nivel cliente vienen del input (issue #16)', () => {
   const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', phone: '5512345678', email: 'contacto@empresa.com' });
   assert.strictEqual(body.phone, '5512345678', 'phone a nivel cliente debe venir del input');

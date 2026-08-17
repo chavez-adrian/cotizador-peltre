@@ -5298,6 +5298,11 @@ function altaCsfValidarCampos() {
 
 function altaCsfLeerFormulario() {
   const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  // Actividades economicas y fecha de la CSF (issue #171) no tienen campo editable
+  // en el formulario -- se preservan del ultimo parseo (altaCsfProcesarArchivo). Sin
+  // este merge, el alta/upgrade fiscal siempre las recibia vacias porque esta funcion
+  // solo leia el DOM.
+  const previo = altaCsfState.datos || {};
   return {
     // Mayusculas como en altaManualLeerFormulario: el gate anti-fusion del upgrade
     // fiscal (#85) depende de comparar el mismo RFC contra Operam sin diferencias de case.
@@ -5315,6 +5320,8 @@ function altaCsfLeerFormulario() {
     municipio: getVal('csf-municipio'),
     estado: getVal('csf-estado'),
     segmentoId: getVal('alta-upgrade-segmento'),
+    actividades: previo.actividades || [],
+    csf_fecha: previo.csf_fecha || '',
   };
 }
 

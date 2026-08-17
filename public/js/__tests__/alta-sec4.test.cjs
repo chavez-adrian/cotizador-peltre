@@ -47,6 +47,19 @@ test('F1c: buildAltaDarDeAltaPayload reusa phone/email del domicilio de entrega 
   assert.strictEqual(payload.email, 'entrega@test.com', 'email a nivel cliente debe reusar el del domicilio de entrega');
 });
 
+test('F1d: buildAltaDarDeAltaPayload propaga actividades y csf_fecha de la CSF (issue #171)', () => {
+  const csfDatos = { rfc: 'TST010101ABC', razonSocial: 'Test SA de CV', actividades: ['Comercio al por menor'], csf_fecha: '8 DE MAYO DE 2026' };
+  const payload = buildAltaDarDeAltaPayload(csfDatos, {}, {}, null, null);
+  assert.deepEqual(payload.actividades, ['Comercio al por menor']);
+  assert.strictEqual(payload.csf_fecha, '8 DE MAYO DE 2026');
+});
+
+test('F1e: buildAltaDarDeAltaPayload sin actividades en la CSF envia lista vacia (no undefined)', () => {
+  const payload = buildAltaDarDeAltaPayload({}, {}, {}, null, null);
+  assert.deepEqual(payload.actividades, []);
+  assert.strictEqual(payload.csf_fecha, '');
+});
+
 test('F2: buildAltaDarDeAltaPayload pasa customer_id y branch_id para reintento', () => {
   const payload = buildAltaDarDeAltaPayload({}, {}, {}, 502, 602);
   assert.strictEqual(payload.customer_id, 502);

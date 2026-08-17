@@ -15,6 +15,7 @@ Código Postal : 06000
 Nombre del Municipio o Demarcación Territorial : CUAUHTEMOC
 Nombre de la Entidad Federativa : CIUDAD DE MEXICO
 Régimen Fiscal : 601 General de Ley Personas Morales
+Actividades Económicas: Orden Actividad Económica Porcentaje Fecha Inicio Fecha Fin 1 Fideicomisos no clasificados en otra parte 100 30/11/1982
 Fecha de emisión de este documento : A 8 DE MAYO DE 2026
 `;
 
@@ -52,6 +53,8 @@ Código Postal : 03100
 Nombre del Municipio o Demarcación Territorial : BENITO JUAREZ
 Nombre de la Entidad Federativa : CIUDAD DE MEXICO
 Régimen Fiscal : 612 Personas Físicas con Actividades Empresariales
+Actividades Económicas: Orden Actividad Económica Porcentaje Fecha Inicio Fecha Fin 1 Servicios de consultoria en computacion 60 01/01/2020 2 Otros servicios profesionales cientificos y tecnicos 40 01/01/2020
+Fecha de emisión de este documento : A 15 DE JUNIO DE 2026
 `;
 
 describe('parsearCSF', () => {
@@ -138,5 +141,38 @@ describe('parsearCSF', () => {
 
   it('B14: nombreCorto de la CSF en una sola linea en Title Case', () => {
     assert.equal(parsearCSF(CSF_UNA_LINEA).nombreCorto, 'Importaciones Siscani');
+  });
+
+  // issue #171: las actividades economicas de la CSF nunca llegaban a las notas
+  // del cliente porque parsearCSF no las extraia.
+  it('B15: actividades de persona moral con una sola actividad (sin porcentaje, es el 100%)', () => {
+    assert.deepEqual(parsearCSF(CSF_PERSONA_MORAL).actividades, ['Fideicomisos no clasificados en otra parte']);
+  });
+
+  it('B16: csf_fecha de persona moral extraida de "Fecha de emision de este documento"', () => {
+    assert.equal(parsearCSF(CSF_PERSONA_MORAL).csf_fecha, '8 DE MAYO DE 2026');
+  });
+
+  it('B17: actividades de persona fisica con varias actividades incluyen el porcentaje de cada una', () => {
+    assert.deepEqual(parsearCSF(CSF_PERSONA_FISICA).actividades, [
+      'Servicios de consultoria en computacion (60%)',
+      'Otros servicios profesionales cientificos y tecnicos (40%)',
+    ]);
+  });
+
+  it('B18: csf_fecha de persona fisica', () => {
+    assert.equal(parsearCSF(CSF_PERSONA_FISICA).csf_fecha, '15 DE JUNIO DE 2026');
+  });
+
+  it('B19: actividades de la CSF en una sola linea (pdf.js une items con espacios)', () => {
+    assert.deepEqual(parsearCSF(CSF_UNA_LINEA).actividades, ['Otros intermediarios del comercio al por menor']);
+  });
+
+  it('B20: sin "Fecha de emision", csf_fecha vacio (CSF_UNA_LINEA solo trae fecha inicio de operaciones)', () => {
+    assert.equal(parsearCSF(CSF_UNA_LINEA).csf_fecha, '');
+  });
+
+  it('B21: sin seccion de Actividades Economicas, actividades es lista vacia', () => {
+    assert.deepEqual(parsearCSF(CSF_RFC_SIN_SUFIJO_EXTRA).actividades, []);
   });
 });

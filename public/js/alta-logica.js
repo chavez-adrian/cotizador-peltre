@@ -9,6 +9,7 @@ import { cpValido } from './cotizar-logica.js';
 export const CSF_DATOS_VACIOS = {
   rfc: '', razonSocial: '', nombreCorto: '', idcif: '', regimenFiscal: '',
   calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '',
+  actividades: [], csf_fecha: '',
 };
 
 // El endpoint centralizado puede responder ok:false (sin RFC detectado). A diferencia del
@@ -197,10 +198,15 @@ export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
   }
   // notasActuales === null significa que la relectura previa FALLO: no sabemos que
   // notas tiene el cliente y mandar notes reconstruido desde vacio las pisaria. Se
-  // omite notes; la verificacion post-PUT reporta el Tax ID como no aplicado.
+  // omite notes; la verificacion post-PUT reporta el Tax ID/actividades como no aplicados.
   if (notasActuales !== null) {
-    const notas = buildNotasConTaxId(notasActuales, csfDatos.taxIdExtranjero);
-    if (notas !== undefined) body.notes = notas;
+    let notas = notasActuales;
+    let tocoNotas = false;
+    const conTax = buildNotasConTaxId(notas, csfDatos.taxIdExtranjero);
+    if (conTax !== undefined) { notas = conTax; tocoNotas = true; }
+    const conActividades = buildNotasConActividades(notas, csfDatos.actividades, csfDatos.csf_fecha);
+    if (conActividades !== undefined) { notas = conActividades; tocoNotas = true; }
+    if (tocoNotas) body.notes = notas;
   }
   return body;
 }
@@ -279,6 +285,31 @@ export function buildNotasConTaxId(notasActuales, taxIdExtranjero) {
   const prefijo = `Tax ID: ${tax}`;
   if (actual.includes(prefijo)) return actual;
   return actual ? `${prefijo}\n${actual}` : prefijo;
+}
+
+// Actividades economicas de la CSF -> notas del cliente (issue #171): mismo patron
+// que Tax ID extranjero -- se compone sobre las notas EXISTENTES (nunca se
+// sobreescriben notas ajenas: Tax ID, celular, email de facturacion). Si ya existia
+// una seccion de una CSF anterior (misma firma "Actividades economicas (CSF ...):"
+// seguida de bullets "- "), se REEMPLAZA esa seccion en vez de duplicarla -- un
+// upgrade repetido (misma CSF u otra mas reciente) no debe acumular secciones.
+// undefined si la CSF no trajo actividades -- el caller no debe tocar notes.
+// El "(CSF ...)" es opcional en el match: csf_fecha puede venir vacio (CSF sin
+// "Fecha de emision") y el encabezado que se escribe en ese caso omite el
+// parentesis entero (ver buildNotasConActividades) -- el regex debe reconocer
+// ambas formas para reemplazar la seccion sin importar cual se escribio antes.
+const RE_SECCION_ACTIVIDADES = /Actividades economicas(?: \(CSF[^)]*\))?:\n(?:- [^\n]*(?:\n|$))*/;
+
+export function buildNotasConActividades(notasActuales, actividades, csfFecha) {
+  const lista = (Array.isArray(actividades) ? actividades : []).filter(Boolean);
+  if (lista.length === 0) return undefined;
+  const encabezado = csfFecha ? `Actividades economicas (CSF ${csfFecha}):` : 'Actividades economicas:';
+  const seccion = `${encabezado}\n` + lista.map(a => `- ${a}`).join('\n');
+  const actual = String(notasActuales || '').trim();
+  if (RE_SECCION_ACTIVIDADES.test(actual)) {
+    return actual.replace(RE_SECCION_ACTIVIDADES, seccion);
+  }
+  return actual ? `${actual}\n${seccion}` : seccion;
 }
 
 export function buildDiffFiscalHtml(diff) {
@@ -698,6 +729,10 @@ export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, custom
     salesman: comercial.salesman || '',
     invoice_email: comercial.invoice_email || '',
     celular_nota: comercial.celular_nota || '',
+    // Actividades economicas + fecha de la CSF (issue #171): buildClienteBody las
+    // usa para armar la seccion de notas "Actividades economicas (CSF <fecha>):".
+    actividades: csfDatos.actividades || [],
+    csf_fecha: csfDatos.csf_fecha || '',
     // Contacto principal a nivel cliente (issue #16): el formulario no tiene una
     // seccion separada de "contacto principal" -- se reusa phone/email del domicilio
     // de entrega (ya combinado con codigo de pais, ver combinarTelefonoConCodigo) porque
