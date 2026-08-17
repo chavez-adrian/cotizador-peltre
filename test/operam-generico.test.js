@@ -548,7 +548,7 @@ test('D1: cliente generico recien creado con domicilio -> PUT del branch con cus
     '/api/v3/sales/branches/911': (u, opts) => {
       if (opts?.method === 'PUT') { branchPut = JSON.parse(opts.body); return jsonResponse({ result: true }); }
       branchGets++;
-      return jsonResponse({ data: [{ addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
+      return jsonResponse({ data: [{ br_name: 'Recepcion', addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
         addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '06600', addr_reference: 'Porton negro entre A y B',
         phone: '+52 5511223344', email: 'entrega@hotelazul.mx' }] });
     },
@@ -568,6 +568,7 @@ test('D1: cliente generico recien creado con domicilio -> PUT del branch con cus
   assert.equal(res.body.folio, 1801);
   assert.ok(branchPut, 'debio hacer el PUT del branch');
   assert.equal(branchPut.customer_id, 910, 'customer_id en el body (quirk #74: sin el, debtor_no se resetea a 0)');
+  assert.equal(branchPut.br_name, 'Recepcion', 'nombre del branch en Title Case (issue #170)');
   assert.equal(branchPut.addr_street, 'Av Reforma 100');
   assert.equal(branchPut.addr_zip, '06600');
   assert.equal(branchPut.addr_city, 'Cuauhtemoc');

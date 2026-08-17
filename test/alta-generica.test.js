@@ -164,10 +164,11 @@ test('resolverSalesTypeId: catalogo vacio -> undefined', () => {
 });
 
 // issue #96: el domicilio de entrega del paso Envio -> body del PUT de branch. El
-// paso Envio captura MENOS campos que el alta completa (no hay br_name/br_ref/
-// numero exterior separado: la calle carga calle+numero); se mapea SOLO lo que
+// paso Envio captura MENOS campos que el alta completa (no hay br_ref/numero
+// exterior separado: la calle carga calle+numero); se mapea SOLO lo que
 // /api/crear-cliente ya lleva al branch. addr_reference viene de `referencias`
 // (indicaciones de entrega), NO de `referencia` (que es el cust_ref del quote).
+// br_name SI se manda (issue #170): ver el comentario de buildBranchGenerico.
 const CLIENTE_ENTREGA = {
   razonSocial: 'Hotel Azul Centro', telefono: '+52 5588776655',
   nombreEntrega: 'Recepcion', calle: 'Av Reforma 100', numInt: 'Piso 3',
@@ -204,10 +205,29 @@ test('buildBranchGenerico: sin calle o sin CP no hay domicilio util -> null (el 
   assert.equal(buildBranchGenerico(null, {}), null);
 });
 
-test('buildBranchGenerico: NO emite br_name/br_ref (no los captura el paso Envio; Operam conserva el auto-creado)', () => {
+test('buildBranchGenerico: NO emite br_ref (no lo captura el paso Envio; Operam conserva el auto-creado)', () => {
   const d = buildBranchGenerico(CLIENTE_ENTREGA, {});
-  assert.ok(!('br_name' in d));
   assert.ok(!('br_ref' in d));
+});
+
+// issue #170: Operam auto-crea el branch con el CustName en MAYUSCULAS del cliente
+// generico (#121) y nadie lo corregia despues; este PUT es el primer momento en que
+// el cotizador ya escribe sobre el branch, asi que corrige br_name en Title Case,
+// priorizando el contacto de entrega (nombreEntrega) sobre el nombre del cliente.
+test('buildBranchGenerico: br_name sale en Title Case desde nombreEntrega', () => {
+  const d = buildBranchGenerico({ ...CLIENTE_ENTREGA, nombreEntrega: 'KARINA BARRON' }, {});
+  assert.equal(d.br_name, 'Karina Barron');
+});
+
+test('buildBranchGenerico: sin nombreEntrega, br_name cae al nombre corto o razon social del cliente', () => {
+  const sinEntrega = { ...CLIENTE_ENTREGA, nombreEntrega: '' };
+  assert.equal(buildBranchGenerico({ ...sinEntrega, nombreCorto: 'ROBERTO DE ALBA' }, {}).br_name, 'Roberto de Alba');
+  assert.equal(buildBranchGenerico(sinEntrega, {}).br_name, 'Hotel Azul Centro');
+});
+
+test('buildBranchGenerico: sin ningun nombre resoluble no manda br_name', () => {
+  const d = buildBranchGenerico({ ...CLIENTE_ENTREGA, nombreEntrega: '', razonSocial: '' }, {});
+  assert.ok(!('br_name' in d));
 });
 
 // Verificacion post-PUT (#96, quirk #74): Operam responde result:true aunque
@@ -215,7 +235,7 @@ test('buildBranchGenerico: NO emite br_name/br_ref (no los captura el paso Envio
 // y no coinciden (los vacios no se verifican).
 test('diffBranchDomicilio: branch que persistio todo -> sin discrepancias', () => {
   const enviado = buildBranchGenerico(CLIENTE_ENTREGA, {});
-  const fresco = { addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
+  const fresco = { br_name: 'Recepcion', addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
     addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '06600',
     addr_reference: 'Entre calle A y B, porton negro', phone: '+52 5511223344', email: 'entrega@hotelazul.mx' };
   assert.deepEqual(diffBranchDomicilio(fresco, enviado), []);
@@ -229,4 +249,17 @@ test('diffBranchDomicilio: campo ignorado por Operam se reporta como no actualiz
   assert.ok(zip, 'reporta el CP no persistido');
   assert.equal(zip.nuevo, '06600');
   assert.ok(!diff.some(x => x.campo === 'addr_street'), 'el que si persistio no se reporta');
+});
+
+// issue #170: br_name entra al mismo quirk (#74) que motivo diffBranchDomicilio --
+// si Operam lo ignora en silencio, el branch se queda en MAYUSCULAS otra vez y
+// nadie se entera sin esta verificacion.
+test('diffBranchDomicilio: br_name ignorado por Operam se reporta como no actualizado', () => {
+  const enviado = buildBranchGenerico(CLIENTE_ENTREGA, {});
+  const fresco = { br_name: 'HOTEL AZUL CENTRO', addr_street: 'Av Reforma 100' };
+  const diff = diffBranchDomicilio(fresco, enviado);
+  const nombre = diff.find(x => x.campo === 'br_name');
+  assert.ok(nombre, 'reporta el nombre no persistido');
+  assert.equal(nombre.nuevo, 'Recepcion');
+  assert.equal(nombre.anterior, 'HOTEL AZUL CENTRO');
 });

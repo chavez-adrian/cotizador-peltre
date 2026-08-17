@@ -125,4 +125,18 @@ describe('parsearCSF', () => {
   it('B11: sin regimen, regimenFiscalLabel vacio', () => {
     assert.equal(parsearCSF('RFC: XAXX010101000').regimenFiscalLabel, '');
   });
+
+  // issue #170: la CSF del SAT imprime la razon social en MAYUSCULAS sostenidas;
+  // nombreCorto (primeras 3 palabras) sale en Title Case (misma regla de #159).
+  it('B12: nombreCorto de persona moral en Title Case', () => {
+    assert.equal(parsearCSF(CSF_PERSONA_MORAL).nombreCorto, 'Banco de Mexico');
+  });
+
+  it('B13: nombreCorto de persona fisica en Title Case', () => {
+    assert.equal(parsearCSF(CSF_PERSONA_FISICA).nombreCorto, 'Adriana Urena Garcia');
+  });
+
+  it('B14: nombreCorto de la CSF en una sola linea en Title Case', () => {
+    assert.equal(parsearCSF(CSF_UNA_LINEA).nombreCorto, 'Importaciones Siscani');
+  });
 });
