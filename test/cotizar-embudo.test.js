@@ -534,3 +534,18 @@ test('O4: subir una cotizacion que YA tiene folio no re-sube (cero fetch) y devu
   assert.equal(res.body.folio, '55123');
   assert.equal(res.body.yaSubida, true, 'senala que no hubo subida nueva');
 });
+
+test('O4b (#167 causa 3): yaSubida tambien devuelve el customer_id ya ligado', async () => {
+  writeProspectos([]);
+  const id = await cotStore.crear({
+    fecha: '2026-07-07T00:00:00Z', vendedor: 'Memo', cliente: 'HOTELERA DEL SUR',
+    totalPiezas: 10, total: 1160, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'HOTELERA DEL SUR SA DE CV', rfc: '', customerId: 501 }, items: [] },
+  });
+  await cotStore.setFolioOperam(id, 55123);
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
+  assert.equal(res.status, 200);
+  assert.equal(res.body.yaSubida, true);
+  assert.equal(res.body.customer_id, 501, 'regenerar recupera el customer_id ya ligado, sin depender de una nueva busqueda');
+});

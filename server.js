@@ -1933,7 +1933,11 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     // ADR-0008). La decision se toma alli porque es el unico punto donde todavia
     // coexisten el contenido nuevo y la huella de lo que se subio.
     if (entry.folioOperam != null && entry.folioOperam !== '') {
-      return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true });
+      // #167 causa 3: eco del customer_id ya ligado -- sin esto, regenerar una
+      // cotizacion ya subida no recupera el dato y el chip Fiscal queda sin
+      // refrescar hasta la proxima busqueda (autoSubirOperam lo lee de esta
+      // misma respuesta, ver app.js #93).
+      return res.json({ ok: true, folio: entry.folioOperam, yaSubida: true, customer_id: entry.data?.cliente?.customerId ?? null });
     }
     // Alta temprana de cliente generico (#81, ADR-0006): sin cliente en Operam se
     // crea uno con RFC generico y la cotizacion nace a su nombre. customerId en el
