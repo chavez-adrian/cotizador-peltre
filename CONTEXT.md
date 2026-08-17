@@ -209,6 +209,14 @@ La partida de **envío** es un caso aparte: su descripción no sale de ningún c
 
 El estimado que la paquetería reporta al cotizar el envío. Se promete al cliente en la descripción de la partida de envío usando el nombre del servicio y el estimado **literales** de la paquetería, con la precisión "hábiles" cuando el estimado viene en días (p. ej. "FedEx Nacional Económico — entrega estimada 1-2 días hábiles"). Esa misma promesa es la que queda escrita en la partida de envío del quote de Operam, tanto al crearlo como al actualizarlo.
 
+## Borrador de cotización
+
+El 100% del avance de la sesión de Cotizar en curso — carrito con descuentos y descripciones editadas, cliente o contacto nuevo a medio capturar, envío elegido, lista fijada, vigencia, vendedor confirmado y, en modo Editar, el binding al registro original — conservado automáticamente en el dispositivo, por vendedor, sin acción del usuario (decisión 2026-08-17, issue #177; origen: en Android, cambiar de app descarta la pestaña y borraba todo). Sobrevive al cierre del navegador, al cambio de app y al cierre de sesión; nunca es visible para otro vendedor en el mismo dispositivo. Al volver se restaura: en silencio si la última actividad fue hace menos de 30 minutos, con prompt Continuar / Descartar (Descartar pide confirmación) si fue hace más. Muere al generar la cotización con éxito, al empezar una cotización nueva, al descartarlo o a los 30 días sin tocarlo. Los precios no reviven con el borrador: cada línea se re-resuelve contra el catálogo vigente — la intención (productos, cantidades, descuentos) es del vendedor; los precios son del catálogo — y un SKU que ya no existe marca la línea como inválida. El gate de Editar se re-aplica al generar, no al restaurar.
+
+## Borrador de formulario
+
+Lo tecleado en cualquier otro formulario del sistema (captura de prospecto, alta completa de cliente, upgrade fiscal, edición de prospecto, toques) se conserva igual — por dispositivo y por vendedor — y reaparece al volver a abrir ese mismo formulario, marcado visiblemente como borrador restaurado y con forma de limpiarlo. Se limpia al enviar con éxito o al cancelar explícitamente; sin prompt de 30 minutos (el prefill de un formulario no arriesga nada equivalente a generar una cotización vieja). Un archivo adjunto (la CSF) no es restaurable; los datos ya extraídos de él, sí.
+
 ## Guardrail
 
 Restricción en el formulario de alta que impide errores críticos sin requerir intervención de Adrián. Ejemplo: detectar RFC duplicado antes de crear el cliente. Los guardrails hacen viable que el vendedor complete el alta por sí solo.
