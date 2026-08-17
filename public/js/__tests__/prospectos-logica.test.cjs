@@ -60,6 +60,14 @@ test('P3: validarProspectoBody acepta captura completa con celular con codigo de
   }), null);
 });
 
+// Mismo nucleo compartido que el alta: un prospecto con nacional de 7 digitos
+// (Aruba, fijos de Panama) quedaba fuera por el piso de 11 (issue #175).
+test('P3b: validarProspectoBody acepta un celular internacional de 10 digitos totales', () => {
+  assert.equal(validarProspectoBody({
+    celular: '+297 563 3917', nombre: 'Francys', ciudad: 'Panama', canal: 'WhatsApp',
+  }), null);
+});
+
 test('P4: validarProspectoBody rechaza celular sin codigo de pais o vacio', () => {
   assert.match(validarProspectoBody({ celular: '5512345678', nombre: 'L', ciudad: 'P', canal: 'WhatsApp' }), /codigo de pais/i);
   assert.match(validarProspectoBody({ celular: '', nombre: 'L', ciudad: 'P', canal: 'WhatsApp' }), /obligatorio/i);

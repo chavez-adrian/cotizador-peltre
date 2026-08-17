@@ -116,14 +116,17 @@ test('cada paso genera un mensaje distinto', () => {
   assert.equal(new Set(mensajes).size, 4);
 });
 
-test('telefonoValido exige codigo de pais (11-15 digitos)', () => {
+test('telefonoValido exige codigo de pais (8-15 con "+", 11-15 sin el)', () => {
   assert.equal(telefonoValido('+52 5512345678'), true);
   assert.equal(telefonoValido('525512345678'), true);
   assert.equal(telefonoValido('+1 5551234567'), true);
   assert.equal(telefonoValido('5512345678'), false);
   assert.equal(telefonoValido(''), false);
   assert.equal(telefonoValido(undefined), false);
-  assert.equal(telefonoValido('+52 55 1234'), false);
+  // '+52 55 1234' (8 digitos) dejo de rechazarse al bajar el piso en #175: por
+  // LARGO es indistinguible de un numero legitimo de Aruba, y esta funcion no
+  // conoce planes de numeracion. Ese caso lo atrapa la capa estricta (#176).
+  assert.equal(telefonoValido('+52 1234'), false);
   assert.equal(telefonoValido('1234567890123456'), false);
 });
 
@@ -135,6 +138,30 @@ test('telefonoWa normaliza numeros mexicanos de 10 digitos', () => {
   assert.equal(telefonoWa(''), null);
   assert.equal(telefonoWa(undefined), null);
   assert.equal(telefonoWa('123'), null);
+});
+
+// El piso baja a 8 SOLO para el numero que ya viene en formato internacional. Un
+// numero pelon de 10 digitos sigue siendo invalido: no se sabe de que pais es, y
+// esa es justo la ambiguedad que el bloqueo duro de telefono vino a cerrar.
+test('#175: telefonoValido acepta un internacional de 10 digitos totales', () => {
+  assert.equal(telefonoValido('+297 563 3917'), true);  // Aruba
+  assert.equal(telefonoValido('+507 263 4567'), true);  // fijo de Panama
+  assert.equal(telefonoValido('5512345678'), false);    // pelon: sigue invalido
+  assert.equal(telefonoValido('2975633917'), false);    // el de Aruba sin "+" tampoco
+  assert.equal(telefonoValido('+123 4567'), false);     // 7 digitos: el borde justo debajo
+  assert.equal(telefonoValido('+1234 5678'), true);     // 8 digitos: el piso exacto
+});
+
+// Antes de #175 este numero caia en la rama de 10 digitos y salia como
+// wa.me/522975633917 -- un numero MEXICANO valido: mensaje a un desconocido.
+test('#175: telefonoWa no re-nacionaliza un numero que ya trae codigo de pais', () => {
+  assert.equal(telefonoWa('+297 563 3917'), '2975633917');
+  assert.equal(telefonoWa('+507 263 4567'), '5072634567');
+  assert.equal(telefonoWa('+52 55 1234 5678'), '525512345678');
+  // El piso de 8 dentro de la rama del "+" no sobra: sin el, estos dos dejarian
+  // de ser null y devolverian sus digitos sueltos como si fueran un numero.
+  assert.equal(telefonoWa('+123'), null);
+  assert.equal(telefonoWa('+52 1234'), null);
 });
 
 test('solo la ultima cotizacion por cliente entra a la cola', () => {

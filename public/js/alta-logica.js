@@ -61,14 +61,20 @@ export function combinarTelefonoConCodigo(code, phone) {
 
 // Validacion dura de telefono con codigo de pais. Para +52/+1/+1-CA el numero
 // nacional debe tener exactamente 10 digitos. Para "Otro" (+) el vendedor debe
-// capturar el numero internacional completo empezando con + (11-15 digitos).
+// capturar el numero internacional completo empezando con + (8-15 digitos).
 // Si el numero ya trae +, se valida por longitud total y el select se ignora.
+// El piso son 8 y no 11 (issue #175): 11 asumia un nacional de 10 digitos, la
+// regla de MX/US/CA y no la del mundo -- un nacional de 7 (Aruba, los fijos de
+// Panama) suma 10 con su codigo de pais y quedaba rechazado. Esto valida LARGO y
+// nada mas: un numero con el largo correcto pero imposible para su pais hoy pasa
+// sin objecion, y atraparlo es el trabajo de #176. El "+" inicial sigue siendo
+// obligatorio: sin el no se sabe de que pais es el numero.
 export function validarTelefono(code, phone) {
   const tel = (phone || '').trim();
   if (!tel) return 'El telefono es obligatorio (con codigo de pais)';
   const digitos = tel.replace(/\D/g, '');
   if (tel.startsWith('+') || (code || '') === '+' || !code) {
-    if (!tel.startsWith('+') || digitos.length < 11 || digitos.length > 15) {
+    if (!tel.startsWith('+') || digitos.length < 8 || digitos.length > 15) {
       return 'Captura el numero completo con codigo de pais (ej. +52 55 1234 5678)';
     }
     return null;

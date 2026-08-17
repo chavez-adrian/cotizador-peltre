@@ -158,6 +158,14 @@ test('M30: validarMayoreo acepta el E.164 completo que entrega el widget (MX/US)
   assert.deepEqual(validarMayoreo(formValido({ celCode: '+1', cel: '+12025550123' })), []);
 });
 
+// El piso de digitos vive en el nucleo compartido, asi que un lead legitimo con
+// nacional de 7 (Aruba) moria aqui tambien, con el mensaje enganoso de los "10
+// digitos", antes de que el widget de bandera alcanzara a opinar (issue #175).
+test('M31: validarMayoreo acepta un E.164 de 10 digitos totales', () => {
+  assert.deepEqual(validarMayoreo(formValido({ celCode: '+', cel: '+297 563 3917' })), []);
+  assert.deepEqual(validarMayoreo(formValido({ celCode: '+', cel: '+507 263 4567' })), []);
+});
+
 test('M18: validarMayoreo solo valida el formato del correo si viene', () => {
   assert.deepEqual(validarMayoreo(formValido({ correo: 'laura(arroba)gmail.com' })),
     [{ campo: 'correo', mensaje: 'Ese correo no se ve válido.' }]);

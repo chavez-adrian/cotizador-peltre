@@ -65,6 +65,22 @@ test('T11: validarTelefono acepta el "1" de movil mexicano heredado (+52 1 + 10 
   assert.match(validarTelefono('+52', '55512345678'), /10 digitos/i);
 });
 
+// El piso de 11 digitos totales nacio pensando en MX/US/CA (nacional de 10). Un
+// pais con nacional de 7 suma 10 y quedaba fuera: Aruba, los fijos de Panama.
+test('T13: validarTelefono acepta un internacional de 10 digitos totales (issue #175)', () => {
+  assert.strictEqual(validarTelefono('+', '+297 563 3917'), null); // Aruba
+  assert.strictEqual(validarTelefono('+', '+507 263 4567'), null); // fijo de Panama
+});
+
+test('T14: bajar el piso NO afloja las otras guardas del codigo Otro (issue #175)', () => {
+  // sin "+" sigue sin pasar, aunque el largo alcance
+  assert.match(validarTelefono('+', '2975633917'), /codigo de pais/i);
+  // por debajo del nuevo piso de 8 digitos
+  assert.match(validarTelefono('+', '+52 1234'), /codigo de pais/i);
+  // por arriba de los 15 de E.164
+  assert.match(validarTelefono('+', '+1234567890123456'), /codigo de pais/i);
+});
+
 test('T12: combinarTelefonoConCodigo normaliza quitando el "1" lider', () => {
   assert.strictEqual(combinarTelefonoConCodigo('+52', '13222320749'), '+52 3222320749');
   assert.strictEqual(combinarTelefonoConCodigo('+52', '1 322 232 0749'), '+52 322 232 0749');

@@ -102,7 +102,7 @@ test('#175: POST /api/cotizacion acepta un telefono internacional de 10 digitos'
     subtotal: 100, iva: 16, total: 116, notas: [],
   };
   const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
-  assert.notStrictEqual(res.status, 400);
+  assert.strictEqual(res.status, 200);
   assert.ok(readCots().length > snap.length);
   // Se restaura el archivo: otros tests de esta suite derivan el id de la
   // LONGITUD de cotizaciones.json (ej. #111-1), asi que dejar un registro de
