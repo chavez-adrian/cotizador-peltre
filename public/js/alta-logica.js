@@ -122,14 +122,26 @@ export function separarTelefonoCodigo(telefono) {
 //     que nunca ocurrio.
 // `read` cae de vuelta a `operam` cuando el objeto no trae la llave alterna: el mismo
 // calcularDiffFiscal corre contra el detalle del GET y contra el listado de clientes,
-// que no siempre coinciden en la forma.
+// que no siempre coinciden en la forma. `read` acepta un path con punto (ej.
+// 'segmento.id') para llaves anidadas -- el GET no expone `segmento_id` plano, lo
+// devuelve como objeto `segmento: { id, clave, description }` (issue #172).
+//
+// Segmento no tiene workaround de escritura (issue #172, sondeo en vivo 2026-08-17,
+// clientes 491/492, Operam 3.26.32): a diferencia de dimension_id/dimension2_id (que
+// el POST ignora pero un PUT dedicado posterior si persiste), segmento_id NO persiste
+// por NINGUN camino probado -- ni POST, ni PUT bundleado, ni PUT dedicado en solitario,
+// ni nombres de campo alternos (segment_id, id_segmento, sales_segment_id, segmento
+// plano o anidado). La API v3 simplemente no expone escritura para este campo; se
+// deja en DIFF_FISCAL_CAMPOS solo para que la verificacion post-PUT lo reporte
+// correctamente como no aplicado (ver camposNoAplicados) y el vendedor sepa que debe
+// ajustarlo a mano en la UI de Operam. Detalle del sondeo en peltre-operam.md seccion 12.5c.
 export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social', write: 'cust_name' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
   { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
   { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
   { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion' },
-  { operam: 'segmento_id',         csf: 'segmentoId',     label: 'Segmento' },
+  { operam: 'segmento_id',         csf: 'segmentoId',     label: 'Segmento', read: 'segmento.id' },
   { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
@@ -165,7 +177,9 @@ function resolverValorNuevo({ csf, default: def }, csfDatos, { forzarDefault = f
 }
 
 function leerValorOperam(clienteOperam, { operam, read }) {
-  const alterno = read ? clienteOperam[read] : undefined;
+  const alterno = read
+    ? read.split('.').reduce((v, k) => (v == null ? undefined : v[k]), clienteOperam)
+    : undefined;
   return alterno == null ? clienteOperam[operam] : alterno;
 }
 

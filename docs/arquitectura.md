@@ -132,7 +132,7 @@ Los caminos 2 y 3 son accesibles sin cotizacion desde la **vista Clientes** (men
 
 ## Quirks de Operam (verificar SIEMPRE releyendo)
 
-- `PUT /api/v3/sales/customers/{id}` puede responder 200 e ignorar `segmento_id` silenciosamente en algunos registros (cliente 457 lo ignoro 3 veces; cliente 456 lo acepto a la primera). Si una actualizacion de segmento "no pega", verificar releyendo y corregir en la UI de Operam.
+- `segmento_id` NO tiene forma de escribirse por la API v3, por ningun camino (issue #172, sondeo exhaustivo en vivo: POST, PUT dedicado, PUT bundleado con sales_type/salesman/timbrado_uso_cfdi, y 8 nombres de campo alternos -- ninguno persiste ni vuelve en el eco). El precedente "cliente 456 lo acepto a la primera" (sesion #74) no fue una escritura por API que pego: el sondeo de #172 concluye que probablemente se corrigio a mano en la UI despues, tal como esta misma nota ya recomendaba. Corregir SIEMPRE desde la UI de Operam; detalle del sondeo en peltre-operam.md seccion 12.5c.
 - `POST /customers` IGNORA `dimension_id`/`dimension2_id` (los guarda en 0) — hay que hacer un `PUT /customers/:id` posterior para persistirlas (#74).
 - `PUT /branches/:code` resetea `debtor_no` a 0 (deja el domicilio HUERFANO) salvo que el body incluya `customer_id`; usa `default_location`/`default_ship_via` en lectura pero `location`/`ship_via` en el PUT (#74).
 - NO hay DELETE de clientes (`501 Unknown Method`) — borrar solo en la UI.

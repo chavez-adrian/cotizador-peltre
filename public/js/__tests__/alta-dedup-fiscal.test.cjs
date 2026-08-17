@@ -389,6 +389,10 @@ test('AC9: buildActualizarFiscalPayload con notasActuales null (relectura fallid
 // silencio. Al agregarlo a DIFF_FISCAL_CAMPOS, calcularDiffFiscal lo verifica
 // GRATIS via el mismo mecanismo generico que ya usa el endpoint de upgrade para
 // camposNoActualizados (#85/#96) -- no requiere codigo nuevo en server.js.
+//
+// #172: el GET de detalle NO devuelve `segmento_id` plano -- devuelve un objeto
+// anidado `segmento: { id, clave, description }` (verificado en vivo, cliente 491).
+// Los mocks de aqui usan esa forma real, no el campo plano que la API nunca entrega.
 
 test('R11: buildActualizarFiscalPayload incluye segmento_id cuando se capturo', () => {
   const body = buildActualizarFiscalPayload({ ...csfDatosIguales, segmentoId: '3' });
@@ -400,11 +404,17 @@ test('R12: buildActualizarFiscalPayload omite segmento_id si no se capturo', () 
   assert.ok(!('segmento_id' in body));
 });
 
-test('R13: calcularDiffFiscal detecta el quirk -- Operam ignoro segmento_id (el releido sigue con el valor viejo)', () => {
-  const clienteReleido = { ...clienteOperamBase, segmento_id: '1' }; // valor viejo, PUT lo ignoro
+test('R13: calcularDiffFiscal detecta el quirk -- Operam ignoro segmento_id (el releido sigue con el valor viejo, forma anidada real)', () => {
+  const clienteReleido = { ...clienteOperamBase, segmento: { id: '1', clave: '000', description: 'Sin segmento' } };
   const diff = calcularDiffFiscal(clienteReleido, { ...csfDatosIguales, segmentoId: '3' });
   assert.equal(diff.segmento_id.anterior, '1');
   assert.equal(diff.segmento_id.nuevo, '3');
+});
+
+test('R14: calcularDiffFiscal NO reporta cambio de segmento cuando el capturado coincide con segmento.id anidado', () => {
+  const clienteReleido = { ...clienteOperamBase, segmento: { id: '3', clave: '003', description: 'Restaurantes, hoteles' } };
+  const diff = calcularDiffFiscal(clienteReleido, { ...csfDatosIguales, segmentoId: '3' });
+  assert.ok(!('segmento_id' in diff));
 });
 
 test('G8: buildDiffFiscalHtml retorna string con cada cambio antes -> despues', () => {
@@ -641,4 +651,20 @@ test('W8: camposNoAplicados sin eco utilizable reporta todo el diff (nada que ab
   const diff = { CustName: { anterior: 'VIEJO', nuevo: 'Nuevo SA', label: 'Razon Social' } };
   assert.equal(camposNoAplicados(diff, null).length, 1);
   assert.equal(camposNoAplicados(diff, undefined).length, 1);
+});
+
+// #172: sondeo en vivo (clientes 491/492, Operam 3.26.32) confirmo que segmento_id NO
+// persiste por ningun camino de la API v3 -- ni POST, ni PUT bundleado, ni PUT dedicado
+// (a diferencia de dimension_id, que un PUT dedicado si corrige). El eco del PUT nunca
+// trae segmento_id, asi que camposNoAplicados debe reportarlo SIEMPRE, incluso cuando
+// el eco confirma el resto de los campos del mismo PUT.
+test('W9: camposNoAplicados reporta segmento_id como no aplicado aunque el eco confirme otros campos del mismo PUT', async () => {
+  const { camposNoAplicados } = await import('../alta-logica.js');
+  const diff = {
+    cust_ref: { anterior: 'Viejo', nuevo: 'Nuevo Corto', label: 'Nombre corto' },
+    segmento_id: { anterior: '1', nuevo: '3', label: 'Segmento' },
+  };
+  const salida = camposNoAplicados(diff, { version: '3.26.32', cust_ref: 'Nuevo Corto' });
+  assert.equal(salida.length, 1);
+  assert.equal(salida[0].campo, 'segmento_id');
 });
