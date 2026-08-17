@@ -105,6 +105,26 @@ test('un fallo del wrapper de alerta no altera la respuesta opaca ni impide la t
   assert.equal(recibido.nombre, 'Laura Mendoza');
   assert.equal(recibido.tipoProyecto, 'Restaurantes');
   assert.equal(recibido.cantidadEstimada, '+350');
+  // #165: la alerta lleva la informacion COMPLETA del formulario, no solo los
+  // 5 campos originales de #163.
+  assert.equal(recibido.cp, '56530');
+  assert.equal(recibido.empresa, 'Hotel Azul');
+  assert.equal(recibido.cargo, 'Compras');
+  assert.equal(recibido.correo, 'laura@gmail.com');
+  assert.equal(recibido.cuando, 'En los próximos 3 meses');
+  assert.equal(recibido.web, '@hotelazul');
+  assert.deepEqual(recibido.promos, { acepta: false });
+});
+
+test('#165: "tipo" Otro lleva el texto libre por separado (tipoProyectoOtro) para que la alerta lo muestre', async () => {
+  let recibido = null;
+  _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
+
+  const res = await enviar(formulario({ tipo: 'Otro', otro: 'Panaderia artesanal', cel: '5511122233' }));
+
+  assert.equal(res.status, 200);
+  assert.equal(recibido.tipoProyecto, 'Otro');
+  assert.equal(recibido.tipoProyectoOtro, 'Panaderia artesanal');
 });
 
 test('sin SMTP_USER/SMTP_PASS configuradas, la captura funciona identica con el wrapper real (sin inyeccion)', async () => {

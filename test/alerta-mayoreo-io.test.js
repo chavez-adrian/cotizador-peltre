@@ -66,6 +66,28 @@ test('enviarAlertaMayoreo: con credenciales, manda el mensaje del nucleo por sen
   limpiarEnvSmtp();
 });
 
+test('enviarAlertaMayoreo: manda html (#165, celular como link de WhatsApp) y la vCard como adjunto .vcf', async () => {
+  limpiarEnvSmtp();
+  process.env.SMTP_USER = 'contacto@pppeltre.mx';
+  process.env.SMTP_PASS = 'secreto';
+
+  let argsSendMail = null;
+  const nodemailerFalso = {
+    createTransport: () => ({ sendMail: async (m) => { argsSendMail = m; return { messageId: 'x' }; } }),
+  };
+
+  await enviarAlertaMayoreo(PROSPECTO, { listar: async () => VENDEDORES, nodemailer: nodemailerFalso });
+
+  assert.match(argsSendMail.html, /Juan Perez/);
+  assert.match(argsSendMail.html, /https:\/\/wa\.me\/525512345678/);
+  assert.equal(argsSendMail.attachments.length, 1);
+  assert.equal(argsSendMail.attachments[0].filename, 'prospecto.vcf');
+  assert.equal(argsSendMail.attachments[0].contentType, 'text/vcard');
+  assert.match(argsSendMail.attachments[0].content, /BEGIN:VCARD[\s\S]*FN:Juan Perez[\s\S]*END:VCARD/);
+
+  limpiarEnvSmtp();
+});
+
 test('enviarAlertaMayoreo: un fallo de sendMail se propaga (el caller es quien debe atraparlo, fire-and-forget)', async () => {
   limpiarEnvSmtp();
   process.env.SMTP_USER = 'contacto@pppeltre.mx';

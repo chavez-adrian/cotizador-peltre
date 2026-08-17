@@ -883,10 +883,19 @@ export function _inyectarAlertaMayoreo(fn) { _enviarAlertaMayoreo = fn ?? enviar
 // mano, no solo la primera vez. No se dispara cuando el celular ya es CLIENTE
 // de Operam: ahi no se toca ninguna tarjeta y el equipo comercial ya conoce el
 // contacto.
-function dispararAlertaMayoreo(captura, tipoProyecto) {
+// `form` es el body crudo del formulario (issue #165): cargo y el texto de
+// "Otro" no viven en captura.data (buildCapturaMayoreo los aplasta en notas
+// para la tarjeta), asi que la alerta los toma de ahi; el resto sale de
+// captura.data ya limpio (trim) por buildCapturaMayoreo.
+function dispararAlertaMayoreo(captura, form) {
+  const d = captura.data || {};
   const prospecto = {
     nombre: captura.nombre, celular: captura.celular, ciudad: captura.ciudad,
-    tipoProyecto, cantidadEstimada: captura.data?.piezas_estimadas,
+    cp: d.cp, tipoProyecto: form.tipo,
+    tipoProyectoOtro: form.tipo === 'Otro' ? form.otro : '',
+    cantidadEstimada: d.piezas_estimadas, empresa: d.empresa,
+    cargo: form.cargo, correo: d.correo, cuando: d.cuando, web: d.web,
+    promos: d.promos,
   };
   _enviarAlertaMayoreo(prospecto).catch(err => console.error('[alerta-mayoreo]', err.message));
 }
@@ -931,7 +940,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
   if (clasificacion.tipo === 'cliente') return opaca();
   if (clasificacion.tipo === 'prospecto') {
     await registrarCapturaPublica(clasificacion.prospecto.id, captura);
-    dispararAlertaMayoreo(captura, form.tipo);
+    dispararAlertaMayoreo(captura, form);
     return opaca();
   }
 
@@ -941,7 +950,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
       celular: captura.celular, nombre: captura.nombre, ciudad: captura.ciudad,
       canal: captura.canal, etapa: 'no_asignado', data: captura.data,
     });
-    dispararAlertaMayoreo(captura, form.tipo);
+    dispararAlertaMayoreo(captura, form);
   } catch (e) {
     // Carrera contra otra captura del mismo celular: el indice unico gana y esto
     // se vuelve el caso "ya era prospecto". Hacia afuera, la misma respuesta.
@@ -952,7 +961,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
     const dup = await prospectosStore.buscarPorCelular(captura.celular);
     if (dup) {
       await registrarCapturaPublica(dup.id, captura);
-      dispararAlertaMayoreo(captura, form.tipo);
+      dispararAlertaMayoreo(captura, form);
     }
   }
   return opaca();
