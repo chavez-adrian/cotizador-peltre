@@ -45,10 +45,14 @@ test('C2: prospecto ya ligado a un generico -> clienteOperamId', () => {
   assert.equal(customerIdFiscal({ tipo: 'prospecto', clienteOperamId: 51 }), 51);
 });
 
-test('C3: prospecto sin cotizar / contacto nuevo -> null', () => {
+test('C3: prospecto sin cotizar / contacto nuevo sin id -> null', () => {
   assert.equal(customerIdFiscal({ tipo: 'prospecto', clienteOperamId: null }), null);
   assert.equal(customerIdFiscal({ tipo: 'nuevo' }), null);
   assert.equal(customerIdFiscal(null), null);
+});
+
+test('C4 (#167): contacto nuevo YA con alta generica en Operam -> clienteOperamId', () => {
+  assert.equal(customerIdFiscal({ tipo: 'nuevo', clienteOperamId: 88 }), 88);
 });
 
 // === mostrarBotonCsf: RFC generico + cliente en Operam contra el que actualizar ===

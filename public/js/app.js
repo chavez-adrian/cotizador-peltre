@@ -2455,6 +2455,7 @@ async function pcElegirReciente(cotizacionId) {
       tipo: c.rfc ? 'operam' : 'nuevo',
       name: c.razonSocial || c.nombreCorto || '', ref: c.nombreCorto || '',
       rfc: c.rfc || '', telefono: c.telefono || '', cp: c.cpEntrega || '', pais: c.pais || 'MX',
+      clienteOperamId: c.customerId ?? null,
     };
     pcRenderTarjeta();
   } catch {

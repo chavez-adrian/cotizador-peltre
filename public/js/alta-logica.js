@@ -423,15 +423,15 @@ export function esRfcGenerico(rfc) {
 }
 
 // customer_id de Operam contra el que se puede hacer el upgrade fiscal (#85/#94):
-// cliente Operam -> su id; prospecto ya ligado a un generico -> clienteOperamId;
-// contacto nuevo / prospecto sin cotizar -> null (aun no hay cliente en Operam).
+// cliente Operam -> su id; cualquier otro tipo (prospecto o contacto nuevo) con
+// alta generica ya hecha -> clienteOperamId; sin cliente en Operam todavia -> null
+// (#167: el contacto nuevo tambien puede llegar con clienteOperamId ya seteado).
 // Fuente unica compartida por el paso Cliente (pcCustomerIdFiscal) y la vista
 // Clientes (cvAbrirUpgrade) -- extender, no copiar.
 export function customerIdFiscal(cliente) {
   const c = cliente || {};
   if (c.tipo === 'operam') return c.id != null ? c.id : null;
-  if (c.tipo === 'prospecto') return c.clienteOperamId != null ? c.clienteOperamId : null;
-  return null;
+  return c.clienteOperamId != null ? c.clienteOperamId : null;
 }
 
 // El boton "Completar datos fiscales (CSF)" (y el chip Fiscal accionable) proceden
