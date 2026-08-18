@@ -674,3 +674,19 @@ test('parsearFormularioCliente: se ancla al form de la ficha, no a un form previ
   assert.equal('search' in campos, false);
   assert.equal(campos.customer_id, '492');
 });
+
+// El cierre del formulario se cuenta, no se toma el ultimo </form> del documento: un
+// modal o un pie de pagina posteriores dejarian el recorte abierto hasta el final y
+// arrastrarian sus campos al body que se le repostea al cliente.
+test('parsearFormularioCliente: un form posterior (modal, pie de pagina) no entra al recorte', () => {
+  const html = `<form method='post' action='/sales/manage/customers.php'>
+    <input type='hidden' name='customer_id' value='492'>
+    <form method='post' action='/sales/manage/customers.php'><input type='hidden' name='meta_value_new' value=''></form>
+    <select name='segmento_id'><option selected value='1'>Sin segmento</option></select>
+    <input type='hidden' name='_token' value='TOK'>
+    </form>
+    <form method='post' action='/admin/backup.php'><input type='hidden' name='respaldo' value='1'></form>`;
+  const { campos } = parsearFormularioCliente(html);
+  assert.equal(campos._token, 'TOK', 'lo que vive tras el form anidado si entra');
+  assert.equal('respaldo' in campos, false, 'lo que vive tras el cierre del form NO entra');
+});
