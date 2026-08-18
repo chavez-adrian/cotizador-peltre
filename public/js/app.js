@@ -148,6 +148,17 @@ import {
   bloqueaGeneracionPorPartidaSinCatalogo,
   avisoPartidaSinCatalogo,
 } from './borrador-logica.js';
+import {
+  RESTAURACION_FORM,
+  EVENTOS_BORRADOR_FORM,
+  llaveBorradorFormulario,
+  serializarBorradorFormulario,
+  deserializarBorradorFormulario,
+  decidirRestauracionFormulario,
+  valoresAplicables,
+  campoRestaurable,
+  borradorFormularioMuerePorEvento,
+} from './borrador-form-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
 function leerTelefono(inputId, codeId) {
@@ -3867,32 +3878,263 @@ window.cambiarEstadoCotizacion = cambiarEstadoCotizacion;
 window.agendarReunionCotizacion = agendarReunionCotizacion;
 window.resultadoReunionCotizacion = resultadoReunionCotizacion;
 
-// === PROSPECTOS (issue #41) ===
-let prospectoSelectoresListos = false;
+// === BORRADOR DE FORMULARIO (issue #183, spec #178, CONTEXT.md) ===
+// Pegamento generico sobre borrador-form-logica.js: aqui SOLO se lee y se
+// escribe localStorage y el DOM. Que se guarda, que se descarta, cuanto vive y
+// que evento lo mata vive en el nucleo puro.
+//
+// Ninguna superficie enumera sus campos a mano: se sacan del contenedor. Colgar
+// una superficie nueva es agregar una entrada aqui y abrirla/cerrarla por
+// abrirFormularioBorrador / cerrarFormularioBorrador. Una entrada declara:
+//   contenedor    id del elemento que envuelve el formulario (de ahi salen los campos)
+//   camposDataset (opcional) ids de widgets cuyo valor vive en dataset.valor y no
+//                 en .value, asi que querySelectorAll no los ve
+//   esperarListo  (opcional) promesa que hay que esperar antes de prellenar; sin
+//                 ella, restaurar un <select> cuyas opciones aun no llegaron lo
+//                 dejaria vacio y el siguiente autoguardado borraria el dato
+//   alRestaurar   (opcional) repinta UI derivada de esos campos tras prellenar o vaciar
+//   alVaciar      (opcional) limpia lo que no es campo (errores, avisos) al vaciar
+const SUPERFICIES_BORRADOR = {
+  prospecto: {
+    contenedor: 'prospecto-form',
+    camposDataset: ['pr-temperatura'],
+    esperarListo: () => poblarSelectoresProspecto(),
+    alRestaurar: () => pintarTemperatura(document.getElementById('pr-temperatura')?.dataset.valor),
+    alVaciar: () => {
+      mostrarErrorProspecto(null);
+      document.getElementById('pr-existente').innerHTML = '';
+    },
+  },
+};
 
-async function poblarSelectoresProspecto() {
-  if (prospectoSelectoresListos) return;
-  prospectoSelectoresListos = true;
+// Una superficie autoguarda solo mientras esta ABIERTA y ya intento restaurar.
+// Sin el segundo freno, el primer evento posterior a abrirla guardaria el
+// formulario vacio ENCIMA del borrador que todavia se esta leyendo (misma
+// leccion que borradorListo en el borrador de cotizacion, #179).
+const superficiesMontadas = new Set();
+const superficiesAbiertas = new Set();
+const superficiesRestauradas = new Set();
+
+function contenedorSuperficie(formId) {
+  const def = SUPERFICIES_BORRADOR[formId];
+  return def ? document.getElementById(def.contenedor) : null;
+}
+
+// Campos capturables: todo input/select/textarea del contenedor mas los widgets
+// de dataset declarados. Se cae lo que no tiene id (no hay a donde devolverlo) y
+// lo que el navegador no deja re-poblar (archivo, password).
+function camposSuperficie(formId) {
+  const def = SUPERFICIES_BORRADOR[formId];
+  const cont = contenedorSuperficie(formId);
+  if (!def || !cont) return [];
+  const campos = [...cont.querySelectorAll('input, select, textarea')]
+    .filter(el => el.id && campoRestaurable(el.type))
+    .map(el => ({ id: el.id, el, esDataset: false }));
+  for (const id of def.camposDataset || []) {
+    const el = document.getElementById(id);
+    if (el) campos.push({ id, el, esDataset: true });
+  }
+  return campos;
+}
+
+function leerCampoSuperficie(campo) {
+  return campo.esDataset ? (campo.el.dataset.valor || '') : (campo.el.value || '');
+}
+
+function escribirCampoSuperficie(campo, valor) {
+  if (campo.esDataset) campo.el.dataset.valor = valor;
+  else campo.el.value = valor;
+}
+
+// Valor con el que nace el campo. Un campo que sigue en su default no es
+// captura: sin esto, el <select> de lada (que arranca en +52) haria que abrir el
+// formulario y no teclear nada dejara un borrador, y la proxima visita mostraria
+// "Borrador restaurado" sin que hubiera nada restaurado.
+function valorDefaultCampo(campo) {
+  if (campo.esDataset) return '';
+  if (campo.el.tagName === 'SELECT') {
+    const marcada = campo.el.querySelector('option[selected]');
+    if (marcada) return marcada.value;
+    return campo.el.options.length ? campo.el.options[0].value : '';
+  }
+  return campo.el.defaultValue || '';
+}
+
+function autoguardarBorradorFormulario(formId) {
+  if (!superficiesAbiertas.has(formId) || !superficiesRestauradas.has(formId)) return;
+  const llave = llaveBorradorFormulario(formId, state.user?.id);
+  if (!llave) return;
+  const valores = {};
+  for (const campo of camposSuperficie(formId)) {
+    const valor = leerCampoSuperficie(campo);
+    if (valor !== valorDefaultCampo(campo)) valores[campo.id] = valor;
+  }
+  const borrador = serializarBorradorFormulario({ formId, valores, ahora: Date.now() });
+  try {
+    // Formulario en blanco = nada que restaurar: se borra la llave en vez de
+    // dejar un borrador hueco.
+    if (!borrador) { localStorage.removeItem(llave); return; }
+    localStorage.setItem(llave, JSON.stringify(borrador));
+  } catch {
+    // Cuota llena o storage bloqueado (modo privado): el borrador es una
+    // comodidad, nunca un error que interrumpa la captura.
+  }
+}
+
+function matarBorradorFormulario(formId, evento) {
+  if (!borradorFormularioMuerePorEvento(evento)) return;
+  const llave = llaveBorradorFormulario(formId, state.user?.id);
+  if (!llave) return;
+  try { localStorage.removeItem(llave); } catch {}
+}
+
+// La marca la construye el pegamento, no el HTML: una superficie nueva no tiene
+// que agregar markup para tenerla.
+function pintarMarcaBorrador(formId, visible) {
+  const cont = contenedorSuperficie(formId);
+  if (!cont) return;
+  let marca = document.getElementById(`borrador-marca-${formId}`);
+  if (!visible) { if (marca) marca.style.display = 'none'; return; }
+  if (!marca) {
+    marca = document.createElement('div');
+    marca.id = `borrador-marca-${formId}`;
+    marca.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;'
+      + 'margin-bottom:12px;padding:8px 10px;border-radius:6px;background:#fdf3d7;'
+      + 'border:1px solid #e6c76a;font-size:13px;color:#7a5c00';
+    marca.innerHTML = '<span>Borrador restaurado &mdash; lo capturado antes sigue aqu&iacute;</span>'
+      + `<button type="button" class="btn btn-sm btn-secondary" onclick="window.limpiarBorradorFormulario('${formId}')">Limpiar</button>`;
+    cont.insertBefore(marca, cont.firstChild);
+  }
+  marca.style.display = 'flex';
+}
+
+// Prellena la superficie con su borrador. Marca la superficie como restaurada
+// ANTES de leer el storage: a partir de ahi el autoguardado ya puede escribir, y
+// hasta ahi no, para que ningun evento previo pise el borrador que se esta
+// leyendo.
+async function restaurarBorradorFormulario(formId) {
+  const def = SUPERFICIES_BORRADOR[formId];
+  if (!def) return;
+  // Si la superficie no pudo alistarse, ni se prellena ni se autoguarda: sobre
+  // un <select> sin opciones el valor restaurado se cae solo y el siguiente
+  // autoguardado lo borraria del borrador. Mejor dejar el borrador intacto para
+  // el proximo intento.
+  try { await def.esperarListo?.(); } catch { return; }
+  if (!superficiesAbiertas.has(formId)) return;
+  superficiesRestauradas.add(formId);
+  const llave = llaveBorradorFormulario(formId, state.user?.id);
+  if (!llave) return;
+  let guardado = null;
+  try { guardado = localStorage.getItem(llave); } catch { return; }
+  const borrador = deserializarBorradorFormulario(guardado, formId);
+  const decision = decidirRestauracionFormulario(borrador, Date.now());
+  if (decision === RESTAURACION_FORM.EXPIRADO) {
+    matarBorradorFormulario(formId, EVENTOS_BORRADOR_FORM.EXPIRADO);
+    return;
+  }
+  if (decision !== RESTAURACION_FORM.PREFILL) return;
+  const campos = camposSuperficie(formId);
+  const valores = valoresAplicables(borrador, campos.map(c => c.id));
+  // Solo se prellena el campo que sigue en su default: esperar `esperarListo`
+  // deja una ventana en la que el vendedor ya puede estar tecleando (abrir la
+  // captura rapida enfoca el celular de inmediato), y prellenar encima le
+  // borraria lo que acaba de escribir. Contra el default y no contra "vacio"
+  // porque hay campos que nacen con valor, como el <select> de lada.
+  const aplicados = campos.filter(c => valores[c.id] !== undefined
+    && leerCampoSuperficie(c) === valorDefaultCampo(c));
+  if (aplicados.length === 0) return;
+  for (const campo of aplicados) escribirCampoSuperficie(campo, valores[campo.id]);
+  def.alRestaurar?.();
+  pintarMarcaBorrador(formId, true);
+}
+
+function montarBorradorFormulario(formId) {
+  if (superficiesMontadas.has(formId)) return;
+  const cont = contenedorSuperficie(formId);
+  if (!cont) return;
+  // 'click' ademas de input/change porque hay widgets (las estrellas de
+  // temperatura) que cambian su valor sin disparar ninguno de los dos.
+  for (const evento of ['input', 'change', 'click']) {
+    cont.addEventListener(evento, () => autoguardarBorradorFormulario(formId));
+  }
+  superficiesMontadas.add(formId);
+}
+
+function abrirFormularioBorrador(formId) {
+  const cont = contenedorSuperficie(formId);
+  if (!cont) return;
+  montarBorradorFormulario(formId);
+  cont.style.display = 'block';
+  superficiesAbiertas.add(formId);
+  superficiesRestauradas.delete(formId);
+  restaurarBorradorFormulario(formId);
+}
+
+// evento null = solo cerrar (esconder el formulario NO es cancelar: el borrador
+// sobrevive). Para tirarlo se pasa CANCELADO o ENVIO_EXITOSO.
+function cerrarFormularioBorrador(formId, evento) {
+  superficiesAbiertas.delete(formId);
+  superficiesRestauradas.delete(formId);
+  matarBorradorFormulario(formId, evento);
+  pintarMarcaBorrador(formId, false);
+  const cont = contenedorSuperficie(formId);
+  if (cont) cont.style.display = 'none';
+}
+
+// Deja la superficie como recien abierta: campos en su default y sin los avisos
+// que dejo el intento anterior. Es el UNICO camino de vaciado, lo llame el
+// vendedor desde la marca o el envio exitoso desde el codigo de la superficie.
+function vaciarCamposSuperficie(formId) {
+  const def = SUPERFICIES_BORRADOR[formId];
+  for (const campo of camposSuperficie(formId)) escribirCampoSuperficie(campo, valorDefaultCampo(campo));
+  def?.alRestaurar?.();
+  def?.alVaciar?.();
+}
+
+// Invocada desde el onclick inline de la marca, asi que se expone a window JUNTO
+// a su declaracion (trampa #112).
+window.limpiarBorradorFormulario = formId => {
+  matarBorradorFormulario(formId, EVENTOS_BORRADOR_FORM.LIMPIADO);
+  vaciarCamposSuperficie(formId);
+  pintarMarcaBorrador(formId, false);
+};
+
+// === PROSPECTOS (issue #41) ===
+// Las opciones se piden una sola vez y la promesa se guarda: el borrador de
+// formulario la espera antes de prellenar (un <select> sin opciones no acepta
+// valor).
+let prospectoSelectoresPromesa = null;
+
+// La promesa se guarda y se REPROPAGA si fallo: quien la espera (el borrador de
+// formulario) tiene que enterarse de que las opciones no llegaron. Un fallo la
+// borra para que el siguiente intento vuelva a pedirlas.
+function poblarSelectoresProspecto() {
+  if (!prospectoSelectoresPromesa) {
+    prospectoSelectoresPromesa = poblarSelectoresProspectoAhora().catch(e => {
+      prospectoSelectoresPromesa = null;
+      throw e;
+    });
+  }
+  return prospectoSelectoresPromesa;
+}
+
+async function poblarSelectoresProspectoAhora() {
   document.getElementById('pr-canal').innerHTML =
     '<option value="">-- Selecciona --</option>' +
     CANALES.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('pr-piezas').innerHTML =
     '<option value="">--</option>' +
     PIEZAS_ESTIMADAS.map(p => `<option value="${p}">${p}</option>`).join('');
-  try {
-    const catalogos = await cargarCatalogos();
-    document.getElementById('pr-segmento').innerHTML =
-      '<option value="">--</option>' +
-      catalogos.segmentos.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
-  } catch {
-    prospectoSelectoresListos = false;
-  }
+  const catalogos = await cargarCatalogos();
+  document.getElementById('pr-segmento').innerHTML =
+    '<option value="">--</option>' +
+    catalogos.segmentos.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
 }
 
 function showProspectos() {
   ocultarTodasLasVistas();
   document.getElementById('prospectos-view').style.display = 'block';
-  poblarSelectoresProspecto();
+  poblarSelectoresProspecto().catch(() => {});
   cargarListaProspectos();
   cargarMotivosNoUtil();
 }
@@ -4787,17 +5029,6 @@ function mostrarErrorProspecto(msg) {
   errEl.style.display = msg ? 'block' : 'none';
 }
 
-function limpiarFormularioProspecto() {
-  ['pr-celular', 'pr-nombre', 'pr-ciudad', 'pr-empresa', 'pr-correo', 'pr-notas',
-    'pr-canal', 'pr-segmento', 'pr-piezas'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  pintarTemperatura('');
-  mostrarErrorProspecto(null);
-  document.getElementById('pr-existente').innerHTML = '';
-}
-
 async function guardarProspecto() {
   mostrarErrorProspecto(null);
   document.getElementById('pr-existente').innerHTML = '';
@@ -4817,8 +5048,10 @@ async function guardarProspecto() {
       mostrarErrorProspecto(data.error || 'No se pudo guardar el prospecto');
       return;
     }
-    limpiarFormularioProspecto();
-    document.getElementById('prospecto-form').style.display = 'none';
+    vaciarCamposSuperficie('prospecto');
+    // El prospecto ya esta guardado en el servidor: el borrador cumplio su
+    // trabajo y muere (#183).
+    cerrarFormularioBorrador('prospecto', EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO);
     cargarListaProspectos();
   } catch (e) {
     mostrarErrorProspecto('Error de conexion');
@@ -4984,8 +5217,8 @@ window.toggleAccionesProspecto = id => {
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 };
 window.abrirCapturaRapida = () => {
+  abrirFormularioBorrador('prospecto');
   const form = document.getElementById('prospecto-form');
-  form.style.display = 'block';
   form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('pr-celular').focus();
 };
@@ -5327,9 +5560,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('btn-nuevo-prospecto').addEventListener('click', () => {
     const form = document.getElementById('prospecto-form');
-    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    // Plegar el formulario con el mismo boton NO es cancelar: el borrador
+    // sobrevive y vuelve a aparecer al abrirlo (#183).
+    if (form.style.display === 'none') abrirFormularioBorrador('prospecto');
+    else cerrarFormularioBorrador('prospecto', null);
   });
   document.getElementById('btn-guardar-prospecto').addEventListener('click', guardarProspecto);
+  document.getElementById('btn-cancelar-prospecto').addEventListener('click', () => {
+    vaciarCamposSuperficie('prospecto');
+    cerrarFormularioBorrador('prospecto', EVENTOS_BORRADOR_FORM.CANCELADO);
+  });
   document.getElementById('pr-temperatura').addEventListener('click', e => {
     const v = e.target.dataset ? e.target.dataset.v : null;
     if (!v) return;
