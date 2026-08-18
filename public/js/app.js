@@ -598,20 +598,7 @@ function restaurarBorrador() {
 
   // Envio (#180, mismo criterio que Cargar del historial #102): se restaura
   // tal cual, sin re-cotizar contra las paqueterias.
-  const envioRestore = restaurarEnvioDesdeCotizacion(borrador.envio);
-  document.getElementById('shipping-option').value = envioRestore.opcion;
-  document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
-  document.getElementById('shipping-manual').style.display = envioRestore.mostrarManual ? 'block' : 'none';
-  document.getElementById('shipping-cost').value = envioRestore.cost;
-  document.getElementById('shipping-desc').value = envioRestore.desc;
-  document.getElementById('envia-results').innerHTML = envioRestore.enviaRateSeleccionado?.carrier
-    ? buildEnviaRateRestauradaHtml(envioRestore.enviaRateSeleccionado)
-    : '';
-  document.getElementById('envia-error').style.display = 'none';
-  document.getElementById('envia-resumen').style.display = 'none';
-  enviaRateSeleccionado = envioRestore.enviaRateSeleccionado;
-  envioInvalidadoPorCantidad = false;
-  envioDescuento = envioRestore.descuento || 0;
+  aplicarEnvioRestaurado(borrador.envio);
 
   // Lista fijada (#151/#180): se restaura tal cual. La proxima cotizacion sigue
   // arrancando en Auto porque generar con exito y empezar de cero matan el
@@ -2074,6 +2061,31 @@ function envioCapturadoEnFormulario() {
     ? (parseFloat(document.getElementById('shipping-cost').value) || 0)
     : 0;
   return { shippingOpt, shippingDesc, shippingCost, shippingDescuento: envioDescuento };
+}
+
+// Aplica al DOM y a las variables de modulo el envio estructurado persistido
+// (issue #102), sin re-cotizar contra las paqueterias. Un solo lugar para los
+// dos caminos que restauran envio tal cual: Cargar del historial (cargarCotizacion)
+// y el borrador de sesion (#180, restaurarBorrador) -- antes eran dos copias
+// espejo del mismo bloque de nueve escrituras.
+function aplicarEnvioRestaurado(envio) {
+  const envioRestore = restaurarEnvioDesdeCotizacion(envio);
+  document.getElementById('shipping-option').value = envioRestore.opcion;
+  document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
+  document.getElementById('shipping-manual').style.display = envioRestore.mostrarManual ? 'block' : 'none';
+  document.getElementById('shipping-cost').value = envioRestore.cost;
+  document.getElementById('shipping-desc').value = envioRestore.desc;
+  // Confirmacion visual de la tarifa restaurada (hallazgo del code review de #102):
+  // sin esto el tab Envio se veia vacio para un envio via envia.com aunque el
+  // valor ya estuviera bien restaurado para el Resumen/PDF.
+  document.getElementById('envia-results').innerHTML = envioRestore.enviaRateSeleccionado?.carrier
+    ? buildEnviaRateRestauradaHtml(envioRestore.enviaRateSeleccionado)
+    : '';
+  document.getElementById('envia-error').style.display = 'none';
+  document.getElementById('envia-resumen').style.display = 'none';
+  enviaRateSeleccionado = envioRestore.enviaRateSeleccionado;
+  envioInvalidadoPorCantidad = false;
+  envioDescuento = envioRestore.descuento || 0;
 }
 
 // === PDF GENERATION ===
@@ -5069,23 +5081,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Envio (issue #102): restaura carrier/servicio/precio tal cual se guardo,
     // sin re-cotizar con envia.com. Cotizaciones viejas sin envio estructurado
     // degradan a "sin seleccion" (restaurarEnvioDesdeCotizacion lo resuelve).
-    const envioRestore = restaurarEnvioDesdeCotizacion(cot.envio);
-    document.getElementById('shipping-option').value = envioRestore.opcion;
-    document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
-    document.getElementById('shipping-manual').style.display = envioRestore.mostrarManual ? 'block' : 'none';
-    document.getElementById('shipping-cost').value = envioRestore.cost;
-    document.getElementById('shipping-desc').value = envioRestore.desc;
-    // Confirmacion visual de la tarifa restaurada (hallazgo del code review):
-    // sin esto el tab Envio se veia vacio para un envio via envia.com aunque el
-    // valor ya estuviera bien restaurado para el Resumen/PDF.
-    document.getElementById('envia-results').innerHTML = envioRestore.enviaRateSeleccionado?.carrier
-      ? buildEnviaRateRestauradaHtml(envioRestore.enviaRateSeleccionado)
-      : '';
-    document.getElementById('envia-error').style.display = 'none';
-    document.getElementById('envia-resumen').style.display = 'none';
-    enviaRateSeleccionado = envioRestore.enviaRateSeleccionado;
-    envioInvalidadoPorCantidad = false;
-    envioDescuento = envioRestore.descuento || 0;
+    aplicarEnvioRestaurado(cot.envio);
 
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');
