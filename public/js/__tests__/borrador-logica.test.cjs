@@ -104,6 +104,94 @@ test('#179-3: la marca de decorado viaja SOLO en true (#91): sin marca no aparec
   assert.equal('decorado' in sinMarca, false);
 });
 
+// === Sesion completa (#180, spec #178): cliente, envio, lista fijada,
+// vigencia y vendedor confirmado viajan tal cual, sin validar ni re-resolver ===
+test('#180-1: el cliente elegido viaja tal cual en el borrador', () => {
+  const cliente = { pcCliente: { tipo: 'operam', id: 42 }, campos: { razonSocial: 'Peltre SA' } };
+  const borrador = serializarBorrador({ carrito: [], cliente, ahora: 1 });
+
+  assert.deepEqual(borrador.cliente, cliente);
+  assert.equal('contactoNuevo' in borrador, false);
+});
+
+test('#180-2: un contacto nuevo a medio capturar viaja tal cual cuando no hay cliente elegido', () => {
+  const contactoNuevo = { nombre: 'Juan', celCode: '+52', cel: '5512345678', ciudad: 'CDMX', canal: '', segmentoId: '' };
+  const borrador = serializarBorrador({ carrito: [], contactoNuevo, ahora: 1 });
+
+  assert.deepEqual(borrador.contactoNuevo, contactoNuevo);
+  assert.equal('cliente' in borrador, false);
+});
+
+test('#180-3: cliente y contacto nuevo son mutuamente excluyentes -- el cliente elegido gana', () => {
+  const cliente = { pcCliente: { tipo: 'operam' } };
+  const contactoNuevo = { nombre: 'Juan' };
+  const borrador = serializarBorrador({ carrito: [], cliente, contactoNuevo, ahora: 1 });
+
+  assert.deepEqual(borrador.cliente, cliente);
+  assert.equal('contactoNuevo' in borrador, false);
+});
+
+test('#180-4: sin cliente ni contacto nuevo, ninguna de las dos llaves aparece', () => {
+  const borrador = serializarBorrador({ carrito: [], ahora: 1 });
+
+  assert.equal('cliente' in borrador, false);
+  assert.equal('contactoNuevo' in borrador, false);
+});
+
+test('#180-5: el envio estructurado (#102) viaja tal cual, sin re-cotizar', () => {
+  const envio = { opcion: 'envia', carrier: 'fedex', servicio: 'nacional', precio: 150, descripcion: 'FedEx Nacional', descuento: 0 };
+  const borrador = serializarBorrador({ carrito: [], envio, ahora: 1 });
+
+  assert.deepEqual(borrador.envio, envio);
+});
+
+test('#180-6: sin envio elegido, la llave no aparece', () => {
+  const borrador = serializarBorrador({ carrito: [], ahora: 1 });
+  assert.equal('envio' in borrador, false);
+});
+
+test('#180-7: la lista fijada se guarda solo si no es Auto (#151)', () => {
+  assert.equal(serializarBorrador({ carrito: [], tierFijado: 'M100', ahora: 1 }).tierFijado, 'M100');
+  assert.equal('tierFijado' in serializarBorrador({ carrito: [], tierFijado: '', ahora: 1 }), false);
+  assert.equal('tierFijado' in serializarBorrador({ carrito: [], ahora: 1 }), false);
+});
+
+test('#180-8: la vigencia capturada se guarda solo si es un numero de dias util', () => {
+  assert.equal(serializarBorrador({ carrito: [], vigenciaDias: 15, ahora: 1 }).vigenciaDias, 15);
+  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], vigenciaDias: 0, ahora: 1 }), false);
+  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], vigenciaDias: -5, ahora: 1 }), false);
+  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], vigenciaDias: NaN, ahora: 1 }), false);
+  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], ahora: 1 }), false);
+});
+
+test('#180-9: vendedorConfirmado viaja SOLO en true (mismo patron que decorado, #91)', () => {
+  assert.equal(serializarBorrador({ carrito: [], vendedorConfirmado: true, ahora: 1 }).vendedorConfirmado, true);
+  assert.equal('vendedorConfirmado' in serializarBorrador({ carrito: [], vendedorConfirmado: false, ahora: 1 }), false);
+  assert.equal('vendedorConfirmado' in serializarBorrador({ carrito: [], ahora: 1 }), false);
+});
+
+test('#180-10: la sesion completa hace ida y vuelta por localStorage sin perder ninguna llave nueva', () => {
+  const cliente = { pcCliente: { tipo: 'prospecto', prospectoId: 7 }, campos: { razonSocial: 'Juan Perez', telefono: '+525512345678' } };
+  const envio = { opcion: 'manual', carrier: null, servicio: null, precio: 200, descripcion: 'Envio local', descuento: 10 };
+  const guardado = JSON.stringify(serializarBorrador({
+    carrito: [ENTRADA_CO16],
+    cliente,
+    envio,
+    tierFijado: 'M350',
+    vigenciaDias: 45,
+    vendedorConfirmado: true,
+    ahora: 1755400000000,
+  }));
+
+  const leido = deserializarBorrador(guardado);
+
+  assert.deepEqual(leido.cliente, cliente);
+  assert.deepEqual(leido.envio, envio);
+  assert.equal(leido.tierFijado, 'M350');
+  assert.equal(leido.vigenciaDias, 45);
+  assert.equal(leido.vendedorConfirmado, true);
+});
+
 // === Deserializacion: lo que no se entiende no se restaura ===
 test('#179-4: lo guardado se vuelve a leer tal cual (ida y vuelta por el texto de localStorage)', () => {
   const guardado = JSON.stringify(serializarBorrador({

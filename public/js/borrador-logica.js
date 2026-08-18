@@ -37,13 +37,34 @@ function normalizarLinea(linea) {
   return salida;
 }
 
-export function serializarBorrador({ carrito, decorado, ahora } = {}) {
+export function serializarBorrador({
+  carrito, decorado, ahora,
+  cliente, contactoNuevo, envio, tierFijado, vigenciaDias, vendedorConfirmado,
+} = {}) {
   const lineas = (carrito || []).map(normalizarLinea).filter(Boolean);
   const borrador = { v: VERSION_BORRADOR, actualizado: Number(ahora) || 0, carrito: lineas };
   // La marca de decorado viaja SOLO en true, igual que hacia Operam (#91): un
   // false guardado seria una marca apagada explicita, y apagarla es un acto del
   // vendedor, no un derivado de que el borrador no la traiga.
   if (decorado === true) borrador.decorado = true;
+  // Cliente elegido o contacto nuevo a medio capturar (#180, spec #178): son
+  // mutuamente excluyentes en el paso Cliente -- el que llega se guarda TAL
+  // CUAL, sin validar ni re-resolver. A diferencia del carrito, aqui no hay
+  // catalogo contra el que checar: el cliente restaurado es el mismo cliente,
+  // con o sin cambios en Operam entre medio.
+  if (cliente && typeof cliente === 'object') borrador.cliente = cliente;
+  else if (contactoNuevo && typeof contactoNuevo === 'object') borrador.contactoNuevo = contactoNuevo;
+  // Envio estructurado (#102): el mismo shape que persiste la cotizacion al
+  // generar. Se restaura tal cual, sin volver a cotizar contra las paqueterias.
+  if (envio && typeof envio === 'object') borrador.envio = envio;
+  // Lista fijada (#151): '' (Auto) no se guarda porque es identico a la
+  // ausencia de la llave -- ambos restauran a Auto.
+  if (tierFijado) borrador.tierFijado = tierFijado;
+  const vig = Number(vigenciaDias);
+  if (Number.isFinite(vig) && vig > 0) borrador.vigenciaDias = vig;
+  // vendedorConfirmado viaja SOLO en true, mismo patron que decorado: false es
+  // el default implicito de la ausencia de la llave.
+  if (vendedorConfirmado === true) borrador.vendedorConfirmado = true;
   return borrador;
 }
 

@@ -388,10 +388,16 @@ async function showApp() {
   if (bandejaBtn) bandejaBtn.style.display = state.user.role === 'admin' ? 'inline-flex' : 'none';
 
   await loadPrecios();
+  // pcRenderInicio() deja el paso Cliente en blanco (pcPrepararSeleccion resetea
+  // pcState.cliente, tierFijado y vendedorConfirmado) ANTES de restaurar (#180):
+  // si corriera despues, se comeria el cliente/lista/vendedor que el borrador
+  // acaba de traer de vuelta.
+  pcRenderInicio();
   // El borrador se restaura DESPUES del catalogo (cada linea se re-resuelve
   // contra el vigente) y ANTES de pintar, para que los renders de abajo ya
-  // muestren el carrito recuperado (#179).
-  restaurarBorradorCarrito();
+  // muestren la sesion recuperada -- carrito, cliente, envio, lista fijada,
+  // vigencia y vendedor confirmado (#179/#180).
+  restaurarBorrador();
   renderProducts();
   renderFlujoGuiado();
   updateTierBar();
@@ -399,7 +405,6 @@ async function showApp() {
   renderCartLines();
   updateResumen();
   switchTab('cliente');
-  pcRenderInicio();
   cargarBadgeSeguimiento();
   // A partir de aqui el autosave puede escribir: ya se intento restaurar, asi
   // que ningun render de arranque puede pisar el borrador guardado.
@@ -434,10 +439,10 @@ function renderTierSelect() {
   select.value = state.tierFijado;
 }
 
-// === BORRADOR DE COTIZACION (issue #179, spec #178, CONTEXT.md) ===
+// === BORRADOR DE COTIZACION (issue #179/#180, spec #178, CONTEXT.md) ===
 // Pegamento delgado sobre borrador-logica.js: aqui SOLO se lee y se escribe
-// localStorage. Que se guarda, que se descarta y como se re-resuelve el carrito
-// vive en el nucleo puro.
+// localStorage/DOM. Que se guarda, que se descarta y como se re-resuelve el
+// carrito vive en el nucleo puro.
 //
 // El autosave calla hasta que showApp intento restaurar: sin este freno, el
 // updateTierBar del arranque guardaria el carrito vacio ENCIMA del borrador que
@@ -449,19 +454,60 @@ function llaveBorradorActual() {
   return llaveBorrador(state.user?.id);
 }
 
+// Cliente ya elegido (Operam, prospecto o contacto nuevo confirmado) para el
+// borrador (#180): se guarda pcState.cliente TAL CUAL -- su forma cambia por
+// camino (id de Operam, prospectoId, clienteOperamId...) y reconstruirlo a
+// mano perderia campos que otras partes de la UI si usan (customerIdFiscal,
+// los chips) -- junto con la foto completa de los campos cl-* (mismo shape
+// que cot.cliente, via leerClienteFormulario) para el domicilio y el contacto
+// de entrega.
+function leerClienteParaBorrador() {
+  if (!pcState.cliente) return null;
+  return { pcCliente: pcState.cliente, campos: leerClienteFormulario('') };
+}
+
+// Contacto nuevo a medio capturar: el formulario de "Contacto nuevo" esta
+// abierto (existe #pc-nombre) pero todavia no se confirmo ningun cliente.
+function leerContactoNuevoParaBorrador() {
+  if (pcState.cliente) return null;
+  if (!document.getElementById('pc-nombre')) return null;
+  const nombre = document.getElementById('pc-nombre')?.value || '';
+  const celCode = document.getElementById('pc-cel-code')?.value || '+52';
+  const cel = document.getElementById('pc-cel')?.value || '';
+  const ciudad = document.getElementById('pc-ciudad')?.value || '';
+  const canal = document.getElementById('pc-canal')?.value || '';
+  const segmentoId = document.getElementById('pc-segmento')?.value || '';
+  if (!nombre && !cel && !ciudad && !canal) return null;
+  return { nombre, celCode, cel, ciudad, canal, segmentoId };
+}
+
 function autoguardarBorrador() {
   if (!borradorListo) return;
   const llave = llaveBorradorActual();
   if (!llave) return;
   try {
-    // Carrito vacio = nada que restaurar: se borra la llave en vez de dejar un
-    // borrador hueco que despues haya que distinguir de uno real.
-    if (state.cart.size === 0) { localStorage.removeItem(llave); return; }
     const carrito = [...state.cart].map(([codigo, entrada]) => ({ codigo, ...entrada }));
+    const cliente = leerClienteParaBorrador();
+    const contactoNuevo = leerContactoNuevoParaBorrador();
+    // Nada capturado en la sesion = nada que restaurar: se borra la llave en
+    // vez de dejar un borrador hueco que despues haya que distinguir de uno
+    // real (#179; extendido a cliente/contacto nuevo por #180).
+    if (carrito.length === 0 && !cliente && !contactoNuevo) {
+      localStorage.removeItem(llave);
+      return;
+    }
     const borrador = serializarBorrador({
       carrito,
       decorado: marcaDecoradoParaGuardar() === true,
       ahora: Date.now(),
+      cliente,
+      contactoNuevo,
+      // Mismo criterio que Cargar del historial (#102): envio estructurado,
+      // nunca la tarifa re-cotizada.
+      envio: buildEnvioEstructurado({ ...envioCapturadoEnFormulario(), enviaRateSeleccionado }),
+      tierFijado: state.tierFijado,
+      vigenciaDias: parseInt(document.getElementById('resumen-vigencia')?.value) || null,
+      vendedorConfirmado: state.vendedorConfirmado === true,
     });
     localStorage.setItem(llave, JSON.stringify(borrador));
   } catch {
@@ -477,11 +523,52 @@ function matarBorrador(evento) {
   try { localStorage.removeItem(llave); } catch {}
 }
 
-// Restaura el carrito del borrador al arrancar la sesion. Solo la rama
+// Cliente elegido restaurado (#180): llena los campos cl-* con la foto
+// guardada y repone pcState.cliente TAL CUAL se guardo (sin reconstruirlo a
+// mano) antes de pintar la tarjeta. Requiere que pcRenderInicio() ya haya
+// dejado el paso Cliente en blanco (showApp llama en ese orden).
+function restaurarClienteDelBorrador(borrador) {
+  if (!borrador.cliente) return;
+  const { pcCliente, campos } = borrador.cliente;
+  if (!campos) return;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('cl-razon-social', campos.razonSocial);
+  set('cl-nombre-corto', campos.nombreCorto);
+  set('cl-rfc', campos.rfc);
+  set('cl-cp-fiscal', campos.cpFiscal);
+  set('cl-segmento', campos.segmentoId);
+  set('cl-nombre-entrega', campos.nombreEntrega);
+  set('cl-calle', campos.calle);
+  set('cl-num-int', campos.numInt);
+  set('cl-colonia', campos.colonia);
+  set('cl-cp-entrega', campos.cpEntrega);
+  set('cl-municipio', campos.municipio);
+  set('cl-estado', campos.estado);
+  set('cl-email-entrega', campos.emailEntrega);
+  set('cl-email-factura', campos.emailFactura);
+  set('cl-referencias', campos.referencias);
+  set('cl-referencia', campos.referencia);
+  setTelefonoCampos('cl-telefono', 'cl-telefono-code', campos.telefono || '');
+  setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', campos.celEntrega || '');
+  const paisEl = document.getElementById('cl-pais');
+  if (paisEl) paisEl.value = campos.pais || 'MX';
+  pcState.cliente = pcCliente || null;
+  pcRenderTarjeta();
+}
+
+// Contacto nuevo a medio capturar restaurado (#180): reabre el formulario de
+// "Contacto nuevo" con lo tecleado, via el mismo pcCaminoNuevo() que arma la
+// pantalla en vivo (el segundo argumento solo lo usa este camino).
+function restaurarContactoNuevoDelBorrador(borrador) {
+  if (!borrador.contactoNuevo || pcState.cliente) return;
+  pcCaminoNuevo(borrador.contactoNuevo.nombre || '', borrador.contactoNuevo);
+}
+
+// Restaura la sesion de Cotizar completa al arrancar (#179/#180). Solo la rama
 // silenciosa (<30 min): el prompt Continuar / Descartar es #181, asi que por
 // ahora un borrador mas viejo se queda intacto en el dispositivo y no se
 // restaura -- nunca se restaura a medias ni se tira sin preguntar.
-function restaurarBorradorCarrito() {
+function restaurarBorrador() {
   const llave = llaveBorradorActual();
   if (!llave || !state.precios) return;
   let guardado = null;
@@ -492,16 +579,54 @@ function restaurarBorradorCarrito() {
   if (decision !== RESTAURACION.SILENCIOSA) return;
 
   const { lineas } = reResolverCarrito(borrador, state.precios);
-  if (lineas.length === 0) return;
-  state.cart.clear();
-  for (const linea of lineas) {
-    const entrada = { product: linea.product, cantidad: linea.cantidad, descuento: linea.descuento };
-    if (linea.descripcion) entrada.descripcion = linea.descripcion;
-    state.cart.set(linea.codigo, entrada);
+  if (lineas.length > 0) {
+    state.cart.clear();
+    for (const linea of lineas) {
+      const entrada = { product: linea.product, cantidad: linea.cantidad, descuento: linea.descuento };
+      if (linea.descripcion) entrada.descripcion = linea.descripcion;
+      state.cart.set(linea.codigo, entrada);
+    }
   }
   // La marca de decorado viaja solo en true (#91): un borrador sin ella no
   // apaga la que pudiera venir de otro lado.
   if (borrador.decorado === true) decoradoManual = true;
+
+  // Cliente elegido o contacto nuevo a medio capturar (#180): mutuamente
+  // excluyentes, igual que en la captura en vivo.
+  restaurarClienteDelBorrador(borrador);
+  restaurarContactoNuevoDelBorrador(borrador);
+
+  // Envio (#180, mismo criterio que Cargar del historial #102): se restaura
+  // tal cual, sin re-cotizar contra las paqueterias.
+  const envioRestore = restaurarEnvioDesdeCotizacion(borrador.envio);
+  document.getElementById('shipping-option').value = envioRestore.opcion;
+  document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
+  document.getElementById('shipping-manual').style.display = envioRestore.mostrarManual ? 'block' : 'none';
+  document.getElementById('shipping-cost').value = envioRestore.cost;
+  document.getElementById('shipping-desc').value = envioRestore.desc;
+  document.getElementById('envia-results').innerHTML = envioRestore.enviaRateSeleccionado?.carrier
+    ? buildEnviaRateRestauradaHtml(envioRestore.enviaRateSeleccionado)
+    : '';
+  document.getElementById('envia-error').style.display = 'none';
+  document.getElementById('envia-resumen').style.display = 'none';
+  enviaRateSeleccionado = envioRestore.enviaRateSeleccionado;
+  envioInvalidadoPorCantidad = false;
+  envioDescuento = envioRestore.descuento || 0;
+
+  // Lista fijada (#151/#180): se restaura tal cual. La proxima cotizacion sigue
+  // arrancando en Auto porque generar con exito y empezar de cero matan el
+  // borrador (borradorMuerePorEvento) y ademas resetean state.tierFijado.
+  if (borrador.tierFijado) state.tierFijado = borrador.tierFijado;
+
+  // Vigencia capturada (#180).
+  if (borrador.vigenciaDias) {
+    const vigEl = document.getElementById('resumen-vigencia');
+    if (vigEl) vigEl.value = borrador.vigenciaDias;
+  }
+
+  // Vendedor confirmado (#87/#113, #180): la recarga no vuelve a preguntar
+  // quien cotiza.
+  if (borrador.vendedorConfirmado === true) state.vendedorConfirmado = true;
 }
 
 // Partidas restauradas cuyo codigo ya no existe en el catalogo. Se calculan del
@@ -1548,6 +1673,13 @@ function updateResumen() {
 
   sincronizarMarcaDecorado();
 
+  // Tercer enganche del autosave (#180): por aqui pasan los cambios de envio,
+  // lista fijada y vigencia -- ninguno mueve el carrito, asi que no llegan a
+  // updateTierBar/renderCartLines. Antes del corte por carrito vacio a
+  // proposito: un envio o una vigencia capturados sin productos todavia
+  // tambien se guardan.
+  autoguardarBorrador();
+
   if (state.cart.size === 0) {
     empty.style.display = 'block';
     content.style.display = 'none';
@@ -1784,7 +1916,7 @@ function pedirConfirmarVendedor() {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000';
     overlay.innerHTML = buildConfirmarVendedorModalHtml(state.user?.name || '');
     document.body.appendChild(overlay);
-    const cerrar = ok => { overlay.remove(); state.vendedorConfirmado = ok; resolve(ok); };
+    const cerrar = ok => { overlay.remove(); state.vendedorConfirmado = ok; autoguardarBorrador(); resolve(ok); };
     document.getElementById('confirmar-vendedor-confirmar').addEventListener('click', () => cerrar(true));
     document.getElementById('confirmar-vendedor-cancelar').addEventListener('click', () => cerrar(false));
   });
@@ -2623,7 +2755,10 @@ async function pcElegirReciente(cotizacionId) {
 window.pcElegirReciente = pcElegirReciente;
 
 // --- Camino contacto nuevo ---
-function pcCaminoNuevo(prefill) {
+// `restore` solo lo usa restaurarContactoNuevoDelBorrador() (#180): un contacto
+// a medio capturar { celCode, cel, ciudad, canal, segmentoId }, ausente en los
+// demas call sites (onclick de pcRenderInicio/pcFilaCrear).
+function pcCaminoNuevo(prefill, restore) {
   const root = pcEl();
   const nombre = typeof prefill === 'string' ? prefill : '';
   const canales = CANALES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
@@ -2652,6 +2787,21 @@ function pcCaminoNuevo(prefill) {
   });
   document.getElementById('pc-cel').addEventListener('blur', pcClasificarCelular);
   document.getElementById('pc-nombre').focus();
+  // Autosave del contacto nuevo a medio capturar (#180): estos campos no pasan
+  // por updateTierBar/renderCartLines/updateResumen (el carrito sigue vacio),
+  // asi que necesitan su propio enganche.
+  for (const id of ['pc-cel-code', 'pc-cel', 'pc-ciudad', 'pc-canal', 'pc-segmento']) {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener('input', autoguardarBorrador); el.addEventListener('change', autoguardarBorrador); }
+  }
+  document.getElementById('pc-nombre').addEventListener('input', autoguardarBorrador);
+  if (restore) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+    set('pc-cel-code', restore.celCode);
+    set('pc-cel', restore.cel);
+    set('pc-ciudad', restore.ciudad);
+    set('pc-canal', restore.canal);
+  }
   // El segmento comparte catalogo con alta-segmento/pr-segmento (issue #121): se
   // puebla async, igual que poblarSelectoresProspecto -- no bloquea el render del
   // formulario mientras /api/catalogos responde.
@@ -2660,6 +2810,7 @@ function pcCaminoNuevo(prefill) {
     if (sel) {
       sel.innerHTML = '<option value="">-- Selecciona --</option>' +
         (catalogos.segmentos || []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+      if (restore?.segmentoId) sel.value = restore.segmentoId;
     }
   }).catch(() => {});
 }
@@ -2858,6 +3009,10 @@ function pcRenderTarjeta() {
 
   pcRenderDomSelect();
   updateTabIndicators();
+  // Cuarto enganche del autosave (#180): unico punto por el que pasa TODO
+  // cliente confirmado (Operam, prospecto, contacto nuevo guardado o upgrade
+  // fiscal). Durante la restauracion (borradorListo aun false) no hace nada.
+  autoguardarBorrador();
 }
 
 function pcContinuar() {
@@ -5051,6 +5206,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('cl-cp-entrega').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
   document.getElementById('shipping-cost').addEventListener('input', () => updateResumen());
   document.getElementById('shipping-desc').addEventListener('input', () => updateResumen());
+  // Vigencia capturada (#180): sin listener propio, escribirla no dispara
+  // ningun otro enganche del autosave (no mueve carrito, envio ni cliente).
+  document.getElementById('resumen-vigencia')?.addEventListener('input', autoguardarBorrador);
 
   // Nota de tiempo de entrega (#90): togglear el checkbox actualiza SOLO esa
   // linea del textarea de notas, sin pisotear ediciones manuales del vendedor.
