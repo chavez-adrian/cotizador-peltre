@@ -3265,8 +3265,17 @@ function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   altaState.seccionAbierta = null;
   altaToggleSeccion(1);
   altaCsfSetStatus('idle');
-  altaPoblarSelectorSegmentoUpgrade();
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Borrador de formulario (#185): la llave es POR CUSTOMER_ID (DEF_UPGRADE_FISCAL) --
+  // el panel es el mismo nodo para cualquier cliente, asi que primero se vacia
+  // (tira lo que haya quedado en el DOM de un upgrade previo, de OTRO cliente,
+  // en esta misma sesion de pestana) y luego se prellena SOLO con el borrador
+  // de ESTE cliente si existe. Puebla alta-upgrade-segmento como esperarListo de
+  // esta superficie (antes se llamaba aqui directo, en paralelo con la
+  // restauracion -- misma carrera que en abrirAcordeonAlta, corregida igual).
+  const formIdUpgrade = `upgrade-fiscal-${customerId}`;
+  vaciarCamposSuperficie(formIdUpgrade);
+  abrirFormularioBorrador(formIdUpgrade);
 }
 window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
 
@@ -3276,8 +3285,11 @@ window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
 // se abre durante un upgrade.
 function altaPoblarSelectorSegmentoUpgrade() {
   const sel = document.getElementById('alta-upgrade-segmento');
-  if (!sel) return;
-  cargarCatalogos().then(catalogos => {
+  if (!sel) return Promise.resolve();
+  // Devuelve la promesa (#185): el borrador de formulario la espera via
+  // esperarListo antes de restaurar -- sin esto, el <select> se repuebla
+  // DESPUES de que el mecanismo intento poner el valor guardado y lo pierde.
+  return cargarCatalogos().then(catalogos => {
     sel.innerHTML = '<option value="">-- Selecciona --</option>' +
       (catalogos.segmentos || []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
   }).catch(() => {});
@@ -3328,6 +3340,13 @@ async function pcEjecutarUpgradeFiscal(datos) {
     const campoPego = campo => !ignorado.some(x => x.campo === campo);
     const panel = document.getElementById('panel-alta-cliente');
     if (panel) panel.style.display = 'none';
+    // El upgrade fiscal ya quedo escrito en Operam: el borrador cumplio su
+    // trabajo y muere (#185). Se vacia el DOM tambien (no solo el panel se
+    // oculta) para que un cliente distinto abierto despues en la MISMA pestana
+    // no herede visualmente lo que se acaba de escribir aqui.
+    const formIdUpgrade = `upgrade-fiscal-${customerId}`;
+    vaciarCamposSuperficie(formIdUpgrade);
+    cerrarFormularioBorrador(formIdUpgrade, EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO);
     altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
     // El chip Fiscal pasa a verde solo si el RFC real SI pego (chipsCompletitud lo
     // deriva de pcState.cliente.rfc). Si Operam ignoro un campo (quirk del PUT),
@@ -4005,18 +4024,66 @@ const SUPERFICIES_BORRADOR = {
       document.getElementById('pr-existente').innerHTML = '';
     },
   },
+  // Alta completa de cliente (issue #185): el acordeon entero (#panel-alta-cliente,
+  // secciones 1-4). Los campos que el parseo de CSF rellena (altaCsfPonerDatos) son
+  // inputs normales dentro del mismo contenedor -- el mecanismo los captura solo,
+  // sin logica especial por campo. altaRepintarCsfRestaurada (definida junto al
+  // resto del acordeon) es la unica pieza no obvia: sin ella los datos de la CSF
+  // quedarian restaurados en el DOM pero invisibles, dentro del <details> colapsado.
+  'alta-completa': {
+    contenedor: 'panel-alta-cliente',
+    esperarListo: () => altaEsperarCatalogosCompletos(),
+    alRestaurar: () => altaRepintarCsfRestaurada(),
+    alVaciar: () => altaLimpiarAvisosAlta(),
+  },
+  // Upgrade fiscal (issue #185, #85) NO vive aqui: es por-instancia (por
+  // customer_id, ver DEF_UPGRADE_FISCAL + defSuperficie abajo) -- un intento de
+  // upgrade abandonado para el cliente A no debe reaparecer al abrir el upgrade
+  // del cliente B.
 };
+
+// Upgrade fiscal (issue #185, #85): reutiliza la Seccion 1 del MISMO acordeon,
+// pero acotado a #alta-body-1 (el cuerpo, no todo el panel ni el header de la
+// seccion) para que un intento de alta completa a medias en otra pestana del
+// mismo panel no contamine el borrador del upgrade -- son llaves de
+// localStorage independientes. alta-body-1 (no alta-sec-1) para que la marca
+// "Borrador restaurado" se inserte dentro del cuerpo, no antes del header.
+// Es POR CUSTOMER_ID (formId upgrade-fiscal-<id>, ver defSuperficie): el panel
+// es el mismo nodo DOM para cualquier cliente, pero la llave de localStorage no
+// puede serlo -- sin esto, un upgrade abandonado a medias del cliente A
+// reaparece prellenando (con SU rfc/razon social) el upgrade del cliente B.
+const DEF_UPGRADE_FISCAL = {
+  contenedor: 'alta-body-1',
+  esperarListo: () => altaPoblarSelectorSegmentoUpgrade(),
+  alRestaurar: () => altaRepintarCsfRestaurada(),
+  alVaciar: () => altaLimpiarAvisosAlta(),
+};
+
+// Edicion de prospecto (issue #185, #66): una superficie POR prospecto, con el
+// mismo contrato generico -- solo que el contenedor no es fijo (SUPERFICIES_BORRADOR
+// arriba) sino derivado del id que trae el formId (prospecto-edicion-<id>, la card
+// vive en pr-edicion-<id>). defSuperficie es el UNICO punto que resuelve las tres
+// formas de superficie (estatica, por-instancia con contenedor propio, por-instancia
+// que comparte contenedor pero no llave): nada mas del pegamento necesita saber
+// cual es cual.
+function defSuperficie(formId) {
+  if (SUPERFICIES_BORRADOR[formId]) return SUPERFICIES_BORRADOR[formId];
+  const id = String(formId || '');
+  const mProspecto = /^prospecto-edicion-(\d+)$/.exec(id);
+  if (mProspecto) return { contenedor: `pr-edicion-${mProspecto[1]}` };
+  if (/^upgrade-fiscal-.+$/.exec(id)) return DEF_UPGRADE_FISCAL;
+  return null;
+}
 
 // Una superficie autoguarda solo mientras esta ABIERTA y ya intento restaurar.
 // Sin el segundo freno, el primer evento posterior a abrirla guardaria el
 // formulario vacio ENCIMA del borrador que todavia se esta leyendo (misma
 // leccion que borradorListo en el borrador de cotizacion, #179).
-const superficiesMontadas = new Set();
 const superficiesAbiertas = new Set();
 const superficiesRestauradas = new Set();
 
 function contenedorSuperficie(formId) {
-  const def = SUPERFICIES_BORRADOR[formId];
+  const def = defSuperficie(formId);
   return def ? document.getElementById(def.contenedor) : null;
 }
 
@@ -4024,7 +4091,7 @@ function contenedorSuperficie(formId) {
 // de dataset declarados. Se cae lo que no tiene id (no hay a donde devolverlo) y
 // lo que el navegador no deja re-poblar (archivo, password).
 function camposSuperficie(formId) {
-  const def = SUPERFICIES_BORRADOR[formId];
+  const def = defSuperficie(formId);
   const cont = contenedorSuperficie(formId);
   if (!def || !cont) return [];
   const campos = [...cont.querySelectorAll('input, select, textarea')]
@@ -4113,7 +4180,7 @@ function pintarMarcaBorrador(formId, visible) {
 // hasta ahi no, para que ningun evento previo pise el borrador que se esta
 // leyendo.
 async function restaurarBorradorFormulario(formId) {
-  const def = SUPERFICIES_BORRADOR[formId];
+  const def = defSuperficie(formId);
   if (!def) return;
   // Si la superficie no pudo alistarse, ni se prellena ni se autoguarda: sobre
   // un <select> sin opciones el valor restaurado se cae solo y el siguiente
@@ -4148,16 +4215,21 @@ async function restaurarBorradorFormulario(formId) {
   pintarMarcaBorrador(formId, true);
 }
 
+// El "montado" se marca en el NODO, no en un Set por formId (#185): las
+// superficies por-instancia (edicion de prospecto) recrean su contenedor en
+// cada refresco de la lista -- un Set por formId pensaria que ya esta montado
+// y dejaria el nodo nuevo sin listeners. Marcar el propio nodo hace que un
+// contenedor estatico (que nunca se recrea) se monte una sola vez, y uno
+// dinamico se remonte solo cuando de verdad es un nodo distinto.
 function montarBorradorFormulario(formId) {
-  if (superficiesMontadas.has(formId)) return;
   const cont = contenedorSuperficie(formId);
-  if (!cont) return;
+  if (!cont || cont.dataset.borradorMontado) return;
+  cont.dataset.borradorMontado = '1';
   // 'click' ademas de input/change porque hay widgets (las estrellas de
   // temperatura) que cambian su valor sin disparar ninguno de los dos.
   for (const evento of ['input', 'change', 'click']) {
     cont.addEventListener(evento, () => autoguardarBorradorFormulario(formId));
   }
-  superficiesMontadas.add(formId);
 }
 
 function abrirFormularioBorrador(formId) {
@@ -4171,12 +4243,16 @@ function abrirFormularioBorrador(formId) {
 }
 
 // evento null = solo cerrar (esconder el formulario NO es cancelar: el borrador
-// sobrevive). Para tirarlo se pasa CANCELADO o ENVIO_EXITOSO.
-function cerrarFormularioBorrador(formId, evento) {
+// sobrevive). Para tirarlo se pasa CANCELADO o ENVIO_EXITOSO. ocultar:false es
+// para el unico caso donde cerrar el borrador NO debe ocultar el contenedor: el
+// alta completa deja el acordeon visible tras el exito (botones "Cotizar ahora"
+// / "Terminar" viven DENTRO del mismo contenedor).
+function cerrarFormularioBorrador(formId, evento, { ocultar = true } = {}) {
   superficiesAbiertas.delete(formId);
   superficiesRestauradas.delete(formId);
   matarBorradorFormulario(formId, evento);
   pintarMarcaBorrador(formId, false);
+  if (!ocultar) return;
   const cont = contenedorSuperficie(formId);
   if (cont) cont.style.display = 'none';
 }
@@ -4185,7 +4261,7 @@ function cerrarFormularioBorrador(formId, evento) {
 // que dejo el intento anterior. Es el UNICO camino de vaciado, lo llame el
 // vendedor desde la marca o el envio exitoso desde el codigo de la superficie.
 function vaciarCamposSuperficie(formId) {
-  const def = SUPERFICIES_BORRADOR[formId];
+  const def = defSuperficie(formId);
   for (const campo of camposSuperficie(formId)) escribirCampoSuperficie(campo, valorDefaultCampo(campo));
   def?.alRestaurar?.();
   def?.alVaciar?.();
@@ -4917,6 +4993,16 @@ function devolverPanelACasa() {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
   panel.style.display = 'none';
+  // Borrador de formulario (#185): cambiar de vista pliega el panel pero no es
+  // un cancelar explicito -- el borrador de la superficie que estuviera abierta
+  // sobrevive (mismo patron que plegar la captura de prospecto). Inofensivo si
+  // ninguna de las dos estaba abierta. La llave de upgrade-fiscal es por
+  // customer_id (DEF_UPGRADE_FISCAL) -- se lee altaCsfState.modoUpgrade ANTES
+  // de resetearlo dos lineas abajo.
+  cerrarFormularioBorrador('alta-completa', null);
+  if (altaCsfState.modoUpgrade != null) {
+    cerrarFormularioBorrador(`upgrade-fiscal-${altaCsfState.modoUpgrade}`, null);
+  }
   altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
   const banner = document.getElementById('alta-upgrade-banner');
   if (banner) { banner.innerHTML = ''; banner.style.display = 'none'; }
@@ -5196,6 +5282,12 @@ function marcarNoUtilProspecto(id) {
   patchEtapaProspecto(id, { etapa: 'no_util', motivo }, 'No se pudo registrar la salida');
 }
 
+// "Registro de toques" (issue #185, #43 "trabajar el prospecto"): registrar un
+// toque es este POST sin cuerpo, boton "Registrar contacto" -- no hay ningun
+// campo tecleado que perder, asi que no se cuelga del borrador de formulario.
+// Lo que SI se teclea sobre el mismo prospecto (nombre, ciudad, notas...) es
+// abrirEdicionProspecto/guardarEdicionProspecto arriba, ya colgado del
+// mecanismo generico (formId prospecto-edicion-<id>).
 async function registrarToqueProspecto(id) {
   try {
     const res = await api(`/api/prospectos/${id}/toques`, { method: 'POST' });
@@ -5266,9 +5358,15 @@ function resultadoReunionNoUtilProspecto(id) {
 // Editar/complementar el prospecto desde su tarjeta (issue #66): el formulario
 // inline viene en la card (oculto); abrirEdicionProspecto lo muestra/oculta y
 // guardarEdicionProspecto lee los campos y persiste via PATCH /api/prospectos/:id.
+// Borrador de formulario (#185): una superficie POR prospecto (prospecto-edicion-<id>,
+// defSuperficie la resuelve). Plegar con el mismo boton (o "Cancelar", que es el
+// mismo toggle) NO mata el borrador -- mismo patron que el boton "+ Nuevo prospecto".
 function abrirEdicionProspecto(id) {
   const el = document.getElementById(`pr-edicion-${id}`);
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  if (!el) return;
+  const formId = `prospecto-edicion-${id}`;
+  if (el.style.display === 'none') abrirFormularioBorrador(formId);
+  else cerrarFormularioBorrador(formId, null);
 }
 
 const EDICION_OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas'];
@@ -5289,6 +5387,9 @@ async function guardarEdicionProspecto(id) {
       alert(data.error || 'No se pudieron guardar los cambios');
       return;
     }
+    // El prospecto ya quedo guardado en el servidor: el borrador cumplio su
+    // trabajo y muere (#185, mismo patron que guardarProspecto).
+    cerrarFormularioBorrador(`prospecto-edicion-${id}`, EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO);
     cargarListaProspectos();
   } catch (e) {
     alert('Error de conexion');
@@ -5760,6 +5861,9 @@ function abrirAcordeonAlta() {
   const visible = panel.style.display !== 'none';
   if (visible) {
     panel.style.display = 'none';
+    // Plegar no es cancelar (#185): el borrador sobrevive, mismo patron que la
+    // captura de prospecto.
+    cerrarFormularioBorrador('alta-completa', null);
     return;
   }
   panel.style.display = 'block';
@@ -5771,7 +5875,52 @@ function abrirAcordeonAlta() {
   const bannerEl = document.getElementById('alta-upgrade-banner');
   if (bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
   altaToggleSeccion(1);
-  cargarCatalogos().then(altaPoblarSelectores).catch(() => {});
+  // Borrador de formulario (#185): prefill de todo el acordeon si el vendedor
+  // dejo un alta a medias. Puebla los mismos catalogos que antes pero DESPUES
+  // de -- no en paralelo con -- la restauracion (altaEsperarCatalogosCompletos,
+  // el esperarListo de esta superficie): dos llamadas sueltas a
+  // cargarCatalogos().then(altaPoblarSelectores) competirian por escribir el
+  // <select> y la que terminara despues le pisaria el valor restaurado a la otra.
+  abrirFormularioBorrador('alta-completa');
+}
+
+// esperarListo del borrador de 'alta-completa' (#185): espera los TRES selects
+// que dependen de catalogos (lista de precios, segmento, vendedor en Seccion 2,
+// mas el segmento compartido de Seccion 1) antes de que el mecanismo intente
+// poner un valor restaurado -- un <select> repoblado DESPUES pierde el valor.
+function altaEsperarCatalogosCompletos() {
+  return Promise.all([
+    cargarCatalogos().then(altaPoblarSelectores).catch(() => {}),
+    altaPoblarSelectorSegmentoUpgrade(),
+  ]);
+}
+
+// alRestaurar/alVaciar de 'alta-completa' y 'upgrade-fiscal' (#185): los campos
+// que el parseo de CSF rellena (altaCsfPonerDatos) son inputs normales dentro
+// del mismo contenedor, asi que el mecanismo los captura y restaura solo. Lo
+// que SI necesita pegamento es que la restauracion se VEA: el <details>
+// #csf-detalles empieza colapsado (altaCsfSetStatus('idle')) y si el borrador
+// puso datos ahi dentro sin abrirlo, el vendedor no los veria. Se abre el
+// <details> sin tocar el estado idle/dropzone -- el dropzone se queda visible
+// para poder re-subir la CSF sin perder lo demas capturado.
+function altaRepintarCsfRestaurada() {
+  const hayCsf = !!(document.getElementById('csf-rfc')?.value || document.getElementById('csf-razon-social')?.value);
+  const detalles = document.getElementById('csf-detalles');
+  if (detalles) { detalles.style.display = hayCsf ? '' : 'none'; detalles.open = hayCsf; }
+  const hayManual = !!(document.getElementById('manual-rfc')?.value || document.getElementById('manual-razon-social')?.value);
+  altaTabSwitch(hayManual ? 'manual' : 'csf');
+  altaManualSetPais(document.getElementById('manual-pais')?.value || 'MX');
+}
+
+function altaLimpiarAvisosAlta() {
+  const dedup = document.getElementById('alta-dedup-resultado');
+  if (dedup) { dedup.innerHTML = ''; dedup.style.display = 'none'; }
+  const csfErr = document.getElementById('csf-campos-error');
+  if (csfErr) csfErr.style.display = 'none';
+  const manualErr = document.getElementById('manual-campos-error');
+  if (manualErr) manualErr.style.display = 'none';
+  const domErr = document.getElementById('alta-domicilio-error');
+  if (domErr) domErr.style.display = 'none';
 }
 
 function altaToggleSeccion(n) {
@@ -5938,6 +6087,12 @@ async function altaCsfProcesarArchivo(file) {
       altaCsfState.rfc = resultado.datos.rfc;
       altaCsfState.fileName = file.name;
     }
+    // Borrador de formulario (#185): altaCsfPonerDatos asigna .value por JS, que
+    // NO dispara 'input'/'change' -- sin este guardado explicito, los datos que
+    // el parseo acaba de rellenar no entrarian al borrador hasta el siguiente
+    // click/tecleo del vendedor en el contenedor.
+    autoguardarBorradorFormulario(altaCsfState.modoUpgrade != null
+      ? `upgrade-fiscal-${altaCsfState.modoUpgrade}` : 'alta-completa');
   } catch (err) {
     altaCsfSetStatus('error', { mensaje: 'Error al leer el PDF: ' + err.message });
   }
@@ -6545,6 +6700,14 @@ function altaDarDeAlta() {
 
       if (data.ok) {
         if (exitoDiv) { exitoDiv.style.display = 'flex'; }
+        // El cliente ya quedo creado en Operam: el borrador cumplio su trabajo y
+        // muere (#185). ocultar:false porque los botones "Cotizar ahora" /
+        // "Terminar" siguen viviendo DENTRO del mismo contenedor -- ellos
+        // ocultan el panel cuando el vendedor de verdad termina. Las secciones
+        // 1-3 (con los campos) ya estan colapsadas en este punto del flujo, asi
+        // que vaciarlas no cambia nada visible.
+        vaciarCamposSuperficie('alta-completa');
+        cerrarFormularioBorrador('alta-completa', EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO, { ocultar: false });
       } else {
         if (reintBtn) reintBtn.style.display = '';
         if (btn) btn.disabled = false;
