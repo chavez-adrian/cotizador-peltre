@@ -14,16 +14,22 @@
 //   - la sesion caducada (`sesionCaducada`): el form de login devuelto con status 200.
 //
 // La ficha responde con el debtor_no que se le pidio, para que cada suite use los
-// customer_id que le convengan sin parametrizar nada.
-export function handlersWebFichaCliente({ err = null, sesionCaducada = false, noAplica = false } = {}) {
-  const estado = { segmento: '1', customerId: '500' };
+// customer_id que le convengan sin parametrizar nada. `segmentoInicial` monta un cliente
+// que YA viene clasificado en Operam: es la unica forma de probar la regla de #186 (a un
+// cliente preexistente solo se le escribe el segmento si estaba en "Sin segmento").
+export function handlersWebFichaCliente({ err = null, sesionCaducada = false, noAplica = false, segmentoInicial = '1' } = {}) {
+  const estado = { segmento: segmentoInicial, customerId: '500' };
   const posts = [];
   const gets = [];
+  // El segmento inicial TIENE que estar entre las opciones del select: sin `selected`,
+  // extraerCampos cae a la primera opcion y la ficha mentiria diciendo que el cliente esta
+  // en "Sin segmento" -- justo el valor del que depende la regla de #186.
+  const opciones = [...new Set(['1', '3', '10', '14', String(segmentoInicial)])];
   const ficha = () => `<form method='post' action='/sales/manage/customers.php'>
 <input type="hidden" name="customer_id" value='${estado.customerId}'>
 <input type="text" name="CustName" value="Real SA de CV">
 <input type="text" name="postal_code" value="06600">
-<select name='segmento_id'>${['1', '3', '14'].map(v => `<option value='${v}'${v === estado.segmento ? ' selected' : ''}>seg ${v}</option>`).join('')}</select>
+<select name='segmento_id'>${opciones.map(v => `<option value='${v}'${v === estado.segmento ? ' selected' : ''}>seg ${v}</option>`).join('')}</select>
 <form method='post' action='/sales/manage/customers.php'><input type="hidden" name="meta_value_new" value=''></form>
 <input type="hidden" name="_token" value='TOK'>
 <button type='submit' name='process' value='Actualizar Cliente'></button>

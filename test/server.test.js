@@ -2017,6 +2017,67 @@ test('D10: la web rechaza el guardado -> el alta termina igual y el step lleva e
   }
 });
 
+// Regla de #186 (decision de Adrian): a un cliente que YA existe solo se le escribe el
+// segmento si estaba en "Sin segmento". Un cliente clasificado antes -- en Operam o por
+// otro vendedor -- no pierde su clasificacion porque en esta alta se eligiera otra cosa.
+// El upgrade fiscal NO sigue esta regla: ahi el vendedor edita la ficha a proposito.
+test('D11: cliente existente YA clasificado -> se conserva su segmento, no se repostea la ficha', async () => {
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente({ segmentoInicial: '10' });
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('/544')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 644 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/644': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, customer_id: 544, segmento_id: '14' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.deepEqual(web.gets, ['544'], 'lee la ficha: es la unica forma de saber como esta hoy');
+    assert.deepEqual(web.posts, [], 'pero NO escribe: el cliente ya estaba clasificado');
+    assert.strictEqual(web.estado.segmento, '10', 'conserva el segmento que tenia en Operam');
+    const paso = res.body.steps.find(s => s.name === 'post-fix segmento (web)');
+    assert.strictEqual(paso.status, 'ok');
+    assert.strictEqual(paso.info, 'conservado', 'el vendedor debe ver que su seleccion no se aplico y por que');
+  } finally {
+    restore();
+  }
+});
+
+test('D12: cliente existente en "Sin segmento" -> se le escribe el capturado', async () => {
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente({ segmentoInicial: '1' });
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('/545')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 645 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/645': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, customer_id: 545, segmento_id: '14' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(web.posts.length, 1, 'sin clasificar previa: aqui si se escribe');
+    assert.strictEqual(web.posts[0].get('segmento_id'), '14');
+    assert.strictEqual(web.estado.segmento, '14');
+    assert.strictEqual(res.body.steps.find(s => s.name === 'post-fix segmento (web)').status, 'ok');
+  } finally {
+    restore();
+  }
+});
+
 // === GET /api/buscar-cliente-duplicado (issue #31) ===
 
 test('E1: GET /api/buscar-cliente-duplicado retorna exacto cuando RFC real ya existe en Operam', async () => {

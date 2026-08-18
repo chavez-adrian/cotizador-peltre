@@ -949,12 +949,14 @@ test('S2: sin segmento capturado la subida NO toca la ficha de cliente', async (
   assert.deepEqual(web.posts, []);
 });
 
-// Mismo criterio que el PUT del branch (#96): un cliente preexistente puede tener su
-// propio segmento en Operam y lo capturado en ESTA cotizacion no puede pisarlo.
-test('S3: cliente reutilizado por celular -> el segmento capturado no pisa el del cliente preexistente', async () => {
+// Regla de #186: a un cliente que YA existe solo se le escribe el segmento si estaba en
+// "Sin segmento". Un cliente clasificado antes no pierde su clasificacion porque en esta
+// cotizacion se eligiera otra cosa (mismo espiritu que el PUT del branch de #96, que
+// tampoco pisa el domicilio real de un cliente preexistente).
+test('S3: cliente reutilizado por celular YA clasificado -> conserva su segmento', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
   const id = nuevaCotizacion({ segmentoId: '14' });
-  const { web, handlers } = mockFichaYWeb();
+  const { web, handlers } = mockFichaYWeb({ segmentoInicial: '10' });
   mockOperamFetch({
     ...handlers,
     '/api/v3/sales/customers': (u, opts) => {
@@ -970,7 +972,32 @@ test('S3: cliente reutilizado por celular -> el segmento capturado no pisa el de
 
   assert.equal(res.status, 200);
   assert.equal(res.body.customer_id, 555);
-  assert.deepEqual(web.gets, [], 'no se toca la ficha de un cliente que ya existia');
+  assert.deepEqual(web.gets, ['555'], 'lee la ficha: es la unica forma de saber como esta hoy');
+  assert.deepEqual(web.posts, [], 'pero NO escribe: el cliente ya estaba clasificado');
+  assert.equal(web.estado.segmento, '10');
+});
+
+test('S5: cliente reutilizado por celular SIN clasificar -> recibe el segmento capturado', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion({ segmentoId: '14' });
+  const { web, handlers } = mockFichaYWeb({ segmentoInicial: '1' });
+  mockOperamFetch({
+    ...handlers,
+    '/api/v3/sales/customers': (u, opts) => {
+      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  await _esperarPostFixes();
+
+  assert.equal(res.status, 200);
+  assert.equal(web.posts.length, 1, 'estaba en "Sin segmento": aqui si se escribe');
+  assert.equal(web.posts[0].get('segmento_id'), '14');
+  assert.equal(web.estado.segmento, '14');
 });
 
 test('S4: la web rechaza el guardado -> la subida ya respondio con folio y nada se cae', async () => {

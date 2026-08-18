@@ -1881,7 +1881,11 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       // aplicar, suba el quote o no, y un reintento no vuelve a pasar por aqui (entra por
       // el camino normal con el customerId persistido). Si no se corrige ahora, nadie lo
       // corrige. Corre despues de armar la respuesta, que es justo lo que se busca.
-      if (creadoNuevo) postFixSegmentoGenerico(customerId, c.segmentoId);
+      //
+      // Sin distinguir cliente creado de reutilizado: la regla soloSinSegmento (#186) ya
+      // decide por si sola -- el recien creado siempre esta en "Sin segmento" y lo recibe;
+      // al reutilizado se le respeta el suyo si ya venia clasificado.
+      postFixSegmentoGenerico(customerId, c.segmentoId);
     }
   } catch (err) {
     return res.status(503).json({ error: 'No se pudo completar la subida con alta generica: ' + err.message, steps });
@@ -1935,7 +1939,7 @@ async function postFixVigencia(folio, data) {
 // respuesta ya se fue y este flujo no puede reportarlo en `steps`.
 function postFixSegmentoGenerico(customerId, segmentoId) {
   if (!segmentoId) return;
-  actualizarSegmentoClienteWeb(customerId, segmentoId)
+  actualizarSegmentoClienteWeb(customerId, segmentoId, { soloSinSegmento: true })
     .then(r => {
       if (!r.ok) console.error('[alta-generica] post-fix web del segmento fallo en el cliente', customerId, r.error);
     })
@@ -2449,9 +2453,12 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     // dia FA ignorara el campo en silencio, esto lo reportaria como ok -- ahi si haria
     // falta releer.
     if (cliente.segmento_id) {
-      const r = await actualizarSegmentoClienteWeb(customer_id, cliente.segmento_id);
+      const r = await actualizarSegmentoClienteWeb(customer_id, cliente.segmento_id, { soloSinSegmento: true });
       if (r.ok) {
-        steps.push({ name: 'post-fix segmento (web)', status: 'ok' });
+        // `conservado` no es un fallo: el cliente ya estaba clasificado y su segmento
+        // manda sobre lo que se eligio en esta alta. Se reporta igual para que el vendedor
+        // no crea que su seleccion se aplico.
+        steps.push({ name: 'post-fix segmento (web)', status: 'ok', ...(r.conservado ? { info: 'conservado', actual: r.actual } : {}) });
       } else {
         // El motivo REAL de la web es lo unico que le dice al vendedor que hacer.
         console.error('[crear-cliente] post-fix web del segmento fallo:', r.error);
