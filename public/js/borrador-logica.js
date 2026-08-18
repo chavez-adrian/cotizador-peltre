@@ -3,6 +3,7 @@
 // COMO se lee y QUE se restaura; el localStorage, el DOM y el enganche del
 // autosave son pegamento en app.js.
 import { esCodigoCalca, productoCalca } from './calcas-logica.js';
+import { escapeHtml } from './prospectos-logica.js';
 
 // El formato viaja versionado dentro del payload, no en la llave: una version
 // desconocida se descarta en silencio (nunca se migra a ciegas) y la llave del
@@ -205,4 +206,59 @@ export function bloqueaGeneracionPorPartidaSinCatalogo(codigos) {
 export function avisoPartidaSinCatalogo(codigos) {
   return `Estas partidas ya no existen en el catalogo: ${(codigos || []).join(', ')}. `
     + 'Quitalas o vuelve a capturarlas: no se puede generar un documento con una partida sin precio.';
+}
+
+// === Prompt Continuar / Descartar (#181, CONTEXT.md "Borrador de cotizacion") ===
+// >30 minutos desde el ultimo autosave: en vez de restaurar en silencio, el
+// vendedor decide. Estas funciones arman lo que el prompt necesita mostrar;
+// el overlay y los botones son pegamento en app.js.
+
+// Antiguedad legible del ultimo autosave: minutos bajo la hora, horas bajo el
+// dia, dias despues -- singular vs plural porque "hace 1 minutos" se lee mal.
+// Una edad negativa o basura no puede pasar aqui en la practica (decidirRestauracion
+// ya filtro SILENCIOSA/EXPIRADO), pero se acota a 0 por si acaso: el prompt
+// nunca muestra una antiguedad absurda.
+export function antiguedadLegible(ms) {
+  const minutos = Math.floor(Math.max(0, Number(ms) || 0) / 60000);
+  if (minutos < 1) return 'hace un momento';
+  if (minutos < 60) return `hace ${minutos} minuto${minutos === 1 ? '' : 's'}`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `hace ${horas} hora${horas === 1 ? '' : 's'}`;
+  const dias = Math.floor(horas / 24);
+  return `hace ${dias} dia${dias === 1 ? '' : 's'}`;
+}
+
+// De quien es el borrador: el cliente elegido gana sobre el contacto a medio
+// capturar, igual que en la captura en vivo (son mutuamente excluyentes). Sin
+// ninguno de los dos -- o el cliente elegido sin nombre util --, un texto
+// neutro: el prompt nunca se queda con un hueco en blanco.
+export function textoClienteBorrador(borrador) {
+  if (borrador?.cliente) {
+    const pc = borrador.cliente.pcCliente || {};
+    const campos = borrador.cliente.campos || {};
+    const nombre = pc.name || campos.razonSocial || campos.nombreCorto || '';
+    if (nombre) return nombre;
+  }
+  const nombreContacto = borrador?.contactoNuevo?.nombre || '';
+  if (nombreContacto) return `${nombreContacto} (contacto nuevo)`;
+  return 'sin cliente';
+}
+
+// HTML del prompt. Los botones llevan id, no onclick: el pegamento en app.js
+// los engancha con addEventListener (mismo patron que
+// buildConfirmarVendedorModalHtml/buildCanalModalHtml), asi que no hay simbolo
+// invocado desde onclick inline y la trampa #112 no aplica aqui.
+export function buildPromptRestauracionBorradorHtml(borrador, ahora) {
+  const cliente = escapeHtml(textoClienteBorrador(borrador));
+  const antiguedad = antiguedadLegible(Number(ahora) - Number(borrador?.actualizado));
+  return `
+    <div style="background:#fff;border-radius:8px;padding:20px;max-width:340px;width:90%">
+      <div style="font-weight:600;margin-bottom:4px">Tienes un borrador sin terminar</div>
+      <div class="cot-card-meta" style="margin-bottom:8px">De: ${cliente} &middot; guardado ${antiguedad}.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" class="btn btn-secondary btn-sm" id="borrador-descartar">Descartar</button>
+        <button type="button" class="btn btn-primary btn-sm" id="borrador-continuar">Continuar</button>
+      </div>
+    </div>
+  `;
 }

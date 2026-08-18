@@ -147,6 +147,7 @@ import {
   borradorMuerePorEvento,
   bloqueaGeneracionPorPartidaSinCatalogo,
   avisoPartidaSinCatalogo,
+  buildPromptRestauracionBorradorHtml,
 } from './borrador-logica.js';
 import {
   RESTAURACION_FORM,
@@ -575,20 +576,11 @@ function restaurarContactoNuevoDelBorrador(borrador) {
   pcCaminoNuevo(borrador.contactoNuevo.nombre || '', borrador.contactoNuevo);
 }
 
-// Restaura la sesion de Cotizar completa al arrancar (#179/#180). Solo la rama
-// silenciosa (<30 min): el prompt Continuar / Descartar es #181, asi que por
-// ahora un borrador mas viejo se queda intacto en el dispositivo y no se
-// restaura -- nunca se restaura a medias ni se tira sin preguntar.
-function restaurarBorrador() {
-  const llave = llaveBorradorActual();
-  if (!llave || !state.precios) return;
-  let guardado = null;
-  try { guardado = localStorage.getItem(llave); } catch { return; }
-  const borrador = deserializarBorrador(guardado);
-  const decision = decidirRestauracion(borrador, Date.now());
-  if (decision === RESTAURACION.EXPIRADO) { matarBorrador(EVENTOS_BORRADOR.EXPIRADO); return; }
-  if (decision !== RESTAURACION.SILENCIOSA) return;
-
+// Aplica al estado en vivo un borrador ya decidido para restaurar -- misma
+// ruta para la rama silenciosa y para el Continuar del prompt (#181): en
+// ambos casos el carrito se re-resuelve contra el catalogo vigente, nunca
+// contra los precios guardados.
+function aplicarBorrador(borrador) {
   const { lineas } = reResolverCarrito(borrador, state.precios);
   if (lineas.length > 0) {
     state.cart.clear();
@@ -625,6 +617,59 @@ function restaurarBorrador() {
   // Vendedor confirmado (#87/#113, #180): la recarga no vuelve a preguntar
   // quien cotiza.
   if (borrador.vendedorConfirmado === true) state.vendedorConfirmado = true;
+}
+
+// Repinta la UI tras aplicar un borrador FUERA del flujo normal de showApp: el
+// Continuar del prompt (#181) llega despues de que showApp ya pinto con la
+// sesion vacia (el prompt bloquea la decision, no el arranque), asi que hay
+// que correr el mismo pipeline de render que showApp corre tras restaurar.
+function renderTrasAplicarBorrador() {
+  renderProducts();
+  renderFlujoGuiado();
+  updateTierBar();
+  updateCartSummary();
+  renderCartLines();
+  updateResumen();
+  switchTab('cliente');
+}
+
+// Prompt Continuar / Descartar (#181): overlay bloqueante, mismo patron que
+// pedirConfirmarVendedor/pedirCanalCotizacion -- los botones se enganchan con
+// addEventListener sobre su id, nunca con onclick inline, asi que no hay
+// simbolo que exponer a window (trampa #112 no aplica a este overlay).
+function mostrarPromptRestauracionBorrador(borrador) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+  overlay.innerHTML = buildPromptRestauracionBorradorHtml(borrador, Date.now());
+  document.body.appendChild(overlay);
+  document.getElementById('borrador-continuar').addEventListener('click', () => {
+    overlay.remove();
+    aplicarBorrador(borrador);
+    renderTrasAplicarBorrador();
+  });
+  document.getElementById('borrador-descartar').addEventListener('click', () => {
+    // Es el unico boton del sistema que destruye una captura completa y
+    // aparece por sorpresa: pide confirmacion explicita antes de borrar.
+    if (!confirm('Se va a descartar el borrador guardado y no se puede deshacer. Continuar?')) return;
+    overlay.remove();
+    matarBorrador(EVENTOS_BORRADOR.DESCARTADO);
+  });
+}
+
+// Restaura la sesion de Cotizar completa al arrancar (#179/#180/#181): en
+// silencio si el ultimo autosave fue hace menos de 30 minutos, con prompt
+// Continuar / Descartar si fue hace mas, y se descarta solo sin ofrecer nada
+// a los 30 dias -- nunca se restaura a medias ni se tira sin preguntar.
+function restaurarBorrador() {
+  const llave = llaveBorradorActual();
+  if (!llave || !state.precios) return;
+  let guardado = null;
+  try { guardado = localStorage.getItem(llave); } catch { return; }
+  const borrador = deserializarBorrador(guardado);
+  const decision = decidirRestauracion(borrador, Date.now());
+  if (decision === RESTAURACION.EXPIRADO) { matarBorrador(EVENTOS_BORRADOR.EXPIRADO); return; }
+  if (decision === RESTAURACION.SILENCIOSA) { aplicarBorrador(borrador); return; }
+  if (decision === RESTAURACION.PROMPT) mostrarPromptRestauracionBorrador(borrador);
 }
 
 // Partidas restauradas cuyo codigo ya no existe en el catalogo. Se calculan del

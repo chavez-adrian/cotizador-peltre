@@ -8,6 +8,7 @@ let reResolverCarrito, MOTIVOS_LINEA_INVALIDA;
 let llaveBorrador, EVENTOS_BORRADOR, borradorMuerePorEvento;
 let bloqueaGeneracionPorPartidaSinCatalogo, avisoPartidaSinCatalogo;
 let resolverProductoDelCatalogo;
+let antiguedadLegible, textoClienteBorrador, buildPromptRestauracionBorradorHtml;
 
 before(async () => {
   ({
@@ -17,6 +18,7 @@ before(async () => {
     llaveBorrador, EVENTOS_BORRADOR, borradorMuerePorEvento,
     bloqueaGeneracionPorPartidaSinCatalogo, avisoPartidaSinCatalogo,
     resolverProductoDelCatalogo,
+    antiguedadLegible, textoClienteBorrador, buildPromptRestauracionBorradorHtml,
   } = await import('../borrador-logica.js'));
 });
 
@@ -388,4 +390,77 @@ test('#179-23: una partida sin catalogo frena la generacion y el aviso dice cual
   assert.equal(bloqueaGeneracionPorPartidaSinCatalogo([]), false);
   assert.match(avisoPartidaSinCatalogo(['XX99MUERTO', 'CAL8200S']), /XX99MUERTO/);
   assert.match(avisoPartidaSinCatalogo(['XX99MUERTO', 'CAL8200S']), /CAL8200S/);
+});
+
+// === Prompt Continuar / Descartar (#181): antiguedad legible ===
+test('#181-1: bajo un minuto se lee "hace un momento", no "0 minutos"', () => {
+  assert.equal(antiguedadLegible(0), 'hace un momento');
+  assert.equal(antiguedadLegible(30 * 1000), 'hace un momento');
+});
+
+test('#181-2: minutos, singular y plural', () => {
+  assert.equal(antiguedadLegible(1 * MINUTO), 'hace 1 minuto');
+  assert.equal(antiguedadLegible(31 * MINUTO), 'hace 31 minutos');
+  assert.equal(antiguedadLegible(59 * MINUTO), 'hace 59 minutos');
+});
+
+test('#181-3: horas, singular y plural', () => {
+  assert.equal(antiguedadLegible(1 * HORA), 'hace 1 hora');
+  assert.equal(antiguedadLegible(5 * HORA), 'hace 5 horas');
+  assert.equal(antiguedadLegible(23 * HORA + 59 * MINUTO), 'hace 23 horas');
+});
+
+test('#181-4: dias, singular y plural', () => {
+  assert.equal(antiguedadLegible(1 * DIA), 'hace 1 dia');
+  assert.equal(antiguedadLegible(29 * DIA), 'hace 29 dias');
+});
+
+test('#181-5: una edad negativa (reloj atrasado) no revienta ni sale en negativo', () => {
+  assert.equal(antiguedadLegible(-5 * MINUTO), 'hace un momento');
+});
+
+// === Prompt Continuar / Descartar (#181): de que cliente es ===
+test('#181-6: con cliente elegido, el nombre del cliente gana', () => {
+  const borrador = { cliente: { pcCliente: { tipo: 'operam', name: 'Peltre SA' }, campos: {} } };
+  assert.equal(textoClienteBorrador(borrador), 'Peltre SA');
+});
+
+test('#181-7: sin name en pcCliente, cae a razonSocial y luego a nombreCorto de los campos', () => {
+  const conRazon = { cliente: { pcCliente: {}, campos: { razonSocial: 'Juan Perez SA', nombreCorto: 'Juan' } } };
+  assert.equal(textoClienteBorrador(conRazon), 'Juan Perez SA');
+
+  const soloCorto = { cliente: { pcCliente: {}, campos: { nombreCorto: 'Juan' } } };
+  assert.equal(textoClienteBorrador(soloCorto), 'Juan');
+});
+
+test('#181-8: con contacto nuevo a medio capturar, el nombre se marca como contacto nuevo', () => {
+  const borrador = { contactoNuevo: { nombre: 'Ana Lopez' } };
+  assert.equal(textoClienteBorrador(borrador), 'Ana Lopez (contacto nuevo)');
+});
+
+test('#181-9: sin cliente ni contacto nuevo (o sin nombre util), un texto neutro', () => {
+  assert.equal(textoClienteBorrador({}), 'sin cliente');
+  assert.equal(textoClienteBorrador(null), 'sin cliente');
+  assert.equal(textoClienteBorrador({ cliente: { pcCliente: {}, campos: {} } }), 'sin cliente');
+  assert.equal(textoClienteBorrador({ contactoNuevo: { nombre: '' } }), 'sin cliente');
+});
+
+// === Prompt Continuar / Descartar (#181): HTML ===
+test('#181-10: el HTML del prompt trae el nombre, la antiguedad y los ids de los botones -- sin onclick', () => {
+  const borrador = { actualizado: AHORA - 45 * MINUTO, cliente: { pcCliente: { name: 'Peltre SA' }, campos: {} } };
+  const html = buildPromptRestauracionBorradorHtml(borrador, AHORA);
+
+  assert.match(html, /Peltre SA/);
+  assert.match(html, /hace 45 minutos/);
+  assert.match(html, /id="borrador-continuar"/);
+  assert.match(html, /id="borrador-descartar"/);
+  assert.doesNotMatch(html, /onclick/);
+});
+
+test('#181-11: el nombre del cliente se escapa contra XSS', () => {
+  const borrador = { actualizado: AHORA - 1 * HORA, contactoNuevo: { nombre: '<script>alert(1)</script>' } };
+  const html = buildPromptRestauracionBorradorHtml(borrador, AHORA);
+
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /&lt;script&gt;/);
 });
