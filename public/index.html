@@ -447,18 +447,34 @@
                 <div class="alta-paso" id="alta-paso-1" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
                   <div class="alta-paso-icono" id="alta-paso-ico-1" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
                   <div style="flex:1">
-                    <div style="font-size:13px;font-weight:600">Obtener domicilio</div>
-                    <div style="font-size:11px;color:var(--text-light)">GET /customers/{id} &mdash; branch_id</div>
+                    <div style="font-size:13px;font-weight:600">Configuracion comercial</div>
+                    <div style="font-size:11px;color:var(--text-light)">PUT /customers/{id} &mdash; lista, uso de CFDI, dimensiones</div>
                   </div>
                   <div class="alta-paso-msg" id="alta-paso-msg-1" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
-                <div class="alta-paso" id="alta-paso-2" style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                <div class="alta-paso" id="alta-paso-2" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
                   <div class="alta-paso-icono" id="alta-paso-ico-2" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Segmento del cliente</div>
+                    <div style="font-size:11px;color:var(--text-light)">Ficha web de Operam (la API no lo escribe)</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-2" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
+                <div class="alta-paso" id="alta-paso-3" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+                  <div class="alta-paso-icono" id="alta-paso-ico-3" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Obtener domicilio</div>
+                    <div style="font-size:11px;color:var(--text-light)">GET /customers/{id} &mdash; branch_id</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-3" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
+                <div class="alta-paso" id="alta-paso-4" style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                  <div class="alta-paso-icono" id="alta-paso-ico-4" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
                   <div style="flex:1">
                     <div style="font-size:13px;font-weight:600">Configurar domicilio</div>
                     <div style="font-size:11px;color:var(--text-light)">PUT /branches/{branch_id}</div>
                   </div>
-                  <div class="alta-paso-msg" id="alta-paso-msg-2" style="font-size:11px;color:var(--danger);display:none"></div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-4" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
               </div>
               <!-- Boton principal -->

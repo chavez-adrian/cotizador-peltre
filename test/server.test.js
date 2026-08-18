@@ -6,6 +6,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import supertest from 'supertest';
+import { handlersWebFichaCliente } from './helpers/ficha-cliente-web.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
@@ -28,6 +29,7 @@ function toHex(s) {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app, cargarListasPrecios } = await import('../server.js');
+const { _resetSesionWeb } = await import('../lib/operam-web.js');
 const TEST_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
 function readCots() {
@@ -961,36 +963,10 @@ test('UF15: PUT ignora notes (quirk) -> la relectura reporta que las actividades
 //
 // La API v3 NO puede escribir segmento_id por ningun camino (#172, sondeo en vivo); el
 // segmento lo persiste un post-fix por la web legacy DESPUES del PUT y ANTES de la
-// relectura de verificacion. Estos handlers montan la ficha de cliente de FA: la del
-// mock reproduce la trampa del <form> anidado y trae el boton destructivo `delete`.
-function handlersWebFichaCliente({ err = null, sesionCaducada = false, noAplica = false } = {}) {
-  const estado = { segmento: '1' };
-  const posts = [];
-  const ficha = () => `<form method='post' action='/sales/manage/customers.php'>
-<input type="hidden" name="customer_id" value='500'>
-<input type="text" name="CustName" value="Real SA de CV">
-<input type="text" name="postal_code" value="06600">
-<select name='segmento_id'>${['1', '3'].map(v => `<option value='${v}'${v === estado.segmento ? ' selected' : ''}>seg ${v}</option>`).join('')}</select>
-<form method='post' action='/sales/manage/customers.php'><input type="hidden" name="meta_value_new" value=''></form>
-<input type="hidden" name="_token" value='TOK'>
-<button type='submit' name='process' value='Actualizar Cliente'></button>
-<button type='submit' name='delete' value='Eliminar Cliente'></button>
-</form>`;
-  const handlers = {
-    'trans_type=30': () => ({ headers: {}, text: async () => '<html>login ok</html>' }),
-    '/sales/manage/customers.php': (u, opts) => {
-      if (opts?.method !== 'POST') return { headers: {}, text: async () => ficha() };
-      const p = new URLSearchParams(opts.body || '');
-      posts.push(p);
-      if (p.has('delete')) throw new Error('JAMAS debe mandarse el boton delete de la ficha de cliente');
-      if (sesionCaducada) return { headers: {}, text: async () => '<input name="user_name_entry_field"><input type="password" name="password">' };
-      if (err) return { headers: {}, text: async () => `<div id='msgbox'><div class="err_msg">${err}</div></div>${ficha()}` };
-      if (!noAplica) estado.segmento = p.get('segmento_id');
-      return { headers: {}, text: async () => ficha() };
-    },
-  };
-  return { handlers, posts, estado };
-}
+// relectura de verificacion. La ficha de cliente de FA la monta
+// handlersWebFichaCliente (test/helpers/ficha-cliente-web.js): reproduce la trampa del
+// <form> anidado y trae el boton destructivo `delete`. Vive en un helper porque desde
+// #186 tambien la usan el alta completa (mas abajo) y el alta generica (otra suite).
 
 test('UF11: segmentoId capturado -> el PUT manda segmento_id y el post-fix web lo persiste (#172)', async () => {
   const { _resetSesionWeb } = await import('../lib/operam-web.js');
@@ -1601,8 +1577,19 @@ const BASE_CLIENTE = {
   },
 };
 
+// BASE_CLIENTE trae segmento capturado, asi que desde #186 el alta completa toca la ficha
+// web en TODOS estos tests. Sin montarla, cada uno pagaria los 15s del reintento con
+// backoff de pedir() antes de reportar el fallo del post-fix.
+//
+// Es UNA instancia compartida por los tests del flujo POST+GET+PUT, que no assertan sobre
+// ella: `posts`/`gets`/`estado` acumulan entre tests y dependerian del orden. Un test que
+// necesite mirar lo que viajo a la web monta la suya (asi lo hacen D7-D10).
+const FICHA_ALTA = handlersWebFichaCliente();
+
 test('D1: POST /api/crear-cliente flujo completo retorna customer_id, branch_id y steps', async () => {
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 500 }) };
@@ -1620,7 +1607,7 @@ test('D1: POST /api/crear-cliente flujo completo retorna customer_id, branch_id 
     assert.strictEqual(res.body.customer_id, 500, 'debe retornar customer_id');
     assert.strictEqual(res.body.branch_id, 600, 'debe retornar branch_id');
     assert.ok(Array.isArray(res.body.steps), 'debe retornar array steps');
-    assert.strictEqual(res.body.steps.length, 4, 'debe tener 4 steps (POST, PUT dimensiones, GET branch_id, PUT branch)');
+    assert.strictEqual(res.body.steps.length, 5, 'debe tener 5 steps (POST, PUT dimensiones, post-fix segmento, GET branch_id, PUT branch)');
     assert.ok(res.body.steps.find(s => s.name === 'PUT customer (dimensiones)'), 'el alta nueva debe incluir el step de dimensiones');
     assert.ok(res.body.steps.every(s => s.name && s.status), 'cada step debe tener name y status');
     assert.ok(res.body.steps.every(s => s.status === 'ok'), 'todos los steps deben ser ok');
@@ -1631,7 +1618,9 @@ test('D1: POST /api/crear-cliente flujo completo retorna customer_id, branch_id 
 
 test('D1b: POST /api/crear-cliente envia invoice_email/celular_nota en notes y phone/email a nivel cliente (issues #16/#17/#18)', async () => {
   let postBody = null;
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, customer_id: 510 }) }; }
@@ -1663,7 +1652,9 @@ test('D1b: POST /api/crear-cliente envia invoice_email/celular_nota en notes y p
 
 test('D1c: POST /api/crear-cliente configura el domicilio con vendedor, area, almacen y tax_group (issue #74)', async () => {
   let branchBody = null;
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 520 }) };
@@ -1693,7 +1684,9 @@ test('D1c: POST /api/crear-cliente configura el domicilio con vendedor, area, al
 
 test('D1d: POST /api/crear-cliente con domicilio extranjero usa tax_group exento (issue #74)', async () => {
   let branchBody = null;
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 530 }) };
@@ -1723,7 +1716,9 @@ test('D1e: POST /api/crear-cliente en alta NUEVA persiste dimension_id=1 y dimen
   // El POST /customers de Operam IGNORA dimension_id/dimension2_id (los guarda en 0).
   // Solo un PUT /customers/:id los persiste. En un alta NUEVA debe correr ese PUT.
   let dimPutBody = null;
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 540 }) };
@@ -1748,7 +1743,9 @@ test('D1e: POST /api/crear-cliente en alta NUEVA persiste dimension_id=1 y dimen
 });
 
 test('D2: POST /api/crear-cliente fallo en PUT branch retorna steps con error y customer_id/branch_id', async () => {
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 501 }) };
@@ -1776,7 +1773,9 @@ test('D2: POST /api/crear-cliente fallo en PUT branch retorna steps con error y 
 
 test('D3: POST /api/crear-cliente con customer_id existente salta POST y no duplica cliente', async () => {
   let postCustomerCalled = false;
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomerCalled = true; return { ok: true, json: async () => ({ result: true, customer_id: 999 }) }; }
@@ -1801,7 +1800,9 @@ test('D3: POST /api/crear-cliente con customer_id existente salta POST y no dupl
 test('D4: POST /api/crear-cliente con customer_id existente actualiza sales_type/segmento_id/salesman/timbrado_uso_cfdi via PUT customers/:id (issue #11)', async () => {
   let putCustomerBody = null;
   let putCustomerCalled = false;
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { putCustomerCalled = true; putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
@@ -1836,7 +1837,9 @@ test('D5: POST /api/crear-cliente cliente nuevo NO hace PUT customers/:id de con
   // (sales_type/segmento_id/salesman/timbrado), que ya viajo en el POST. Se captura
   // el body de cualquier PUT para verificar que solo lleva dimensiones.
   let putCustomerBody = null;
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
@@ -1861,7 +1864,9 @@ test('D5: POST /api/crear-cliente cliente nuevo NO hace PUT customers/:id de con
 });
 
 test('D6: POST /api/crear-cliente fallo en PUT customer (config comercial) retorna step con error sin bloquear PUT branch posterior', async () => {
+  _resetSesionWeb();
   const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: false, messages: ['No se pudo actualizar'] }) };
@@ -1882,6 +1887,131 @@ test('D6: POST /api/crear-cliente fallo en PUT customer (config comercial) retor
     const putBranchStep = res.body.steps.find(s => s.name === 'PUT branch');
     assert.ok(putBranchStep, 'PUT branch debe seguir ejecutandose pese al fallo de config comercial');
     assert.strictEqual(putBranchStep.status, 'ok');
+  } finally {
+    restore();
+  }
+});
+
+// === Post-fix del segmento en el alta completa (issue #186) ===
+//
+// segmento_id no pega por la API v3 en NINGUNA de las dos ramas: ni el POST /customers
+// del alta nueva ni el PUT bundleado del Step 1b lo persisten (#172, sondeo en vivo). El
+// segmento que el vendedor eligio se perdia en silencio; lo escribe el mismo post-fix web
+// que ya usaba el upgrade fiscal.
+
+test('D7: alta NUEVA con segmento capturado -> el post-fix web lo escribe en la ficha del cliente creado', async () => {
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente();
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 540 }) };
+      if (u.includes('/540')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 640 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/640': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send(BASE_CLIENTE);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.deepEqual(web.gets, ['540'], 'pide la ficha del cliente que acaba de crear');
+    assert.strictEqual(web.posts.length, 1, 'un solo POST a la ficha');
+    assert.strictEqual(web.posts[0].get('segmento_id'), BASE_CLIENTE.segmento_id);
+    assert.strictEqual(web.posts[0].get('process'), 'Actualizar Cliente', 'el submit real de la ficha');
+    assert.strictEqual(web.estado.segmento, BASE_CLIENTE.segmento_id, 'el segmento quedo escrito');
+    const paso = res.body.steps.find(s => s.name === 'post-fix segmento (web)');
+    assert.ok(paso, 'el vendedor tiene que ver el paso en el panel de alta');
+    assert.strictEqual(paso.status, 'ok');
+  } finally {
+    restore();
+  }
+});
+
+test('D8: cliente EXISTENTE (Step 1b) -> el post-fix web tambien corre (el PUT bundleado no persiste el segmento)', async () => {
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente();
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('/541')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 641 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/641': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, customer_id: 541 });
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(web.gets, ['541'], 'la ficha es la del cliente elegido por dedup, no la de uno nuevo');
+    assert.strictEqual(web.estado.segmento, BASE_CLIENTE.segmento_id);
+    assert.strictEqual(res.body.steps.find(s => s.name === 'post-fix segmento (web)').status, 'ok');
+  } finally {
+    restore();
+  }
+});
+
+test('D9: sin segmento capturado el alta NO toca la web legacy', async () => {
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente();
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 542 }) };
+      if (u.includes('/542')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 642 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/642': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, segmento_id: '' });
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(web.gets, [], 'sin segmento capturado no hay nada que corregir');
+    assert.deepEqual(web.posts, []);
+    assert.ok(!res.body.steps.find(s => s.name === 'post-fix segmento (web)'), 'ni step: el paso no corrio');
+  } finally {
+    restore();
+  }
+});
+
+// Trampa 1 de #172: con el CP vacio FA rechaza el guardado ENTERO y la unica senal es el
+// err_msg. Un cliente existente elegido por dedup puede estar asi en Operam. El alta NO
+// puede caerse por eso -- el domicilio (PUT branch) es lo critico para terminar -- y el
+// motivo REAL de la web es lo unico que le dice al vendedor que hacer.
+test('D10: la web rechaza el guardado -> el alta termina igual y el step lleva el motivo real', async () => {
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente({ err: 'El codigo postal no puede ser vacio' });
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('/543')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 643 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/643': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, customer_id: 543 });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true, 'un fallo del post-fix no puede impedir terminar el alta');
+    assert.strictEqual(res.body.steps.find(s => s.name === 'PUT branch').status, 'ok', 'el domicilio sigue siendo lo critico y se configuro');
+    const paso = res.body.steps.find(s => s.name === 'post-fix segmento (web)');
+    assert.strictEqual(paso.status, 'error');
+    assert.match(paso.error, /codigo postal/i, 'el motivo REAL de la web, no uno generico');
   } finally {
     restore();
   }

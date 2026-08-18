@@ -6629,7 +6629,22 @@ window.altaConfirmarDomicilio = altaConfirmarDomicilio;
 
 // === Seccion 4: Dar de alta (progreso POST+GET+PUT) ===
 
-const ALTA_PASO_NOMBRES = ['POST customer', 'GET branch_id', 'PUT branch'];
+// Fila del panel por NOMBRE del step, nunca por posicion: el servidor manda mas pasos de
+// los que el panel pinta (config comercial / dimensiones, que no tienen fila) y el orden
+// cambia entre las dos ramas del alta. Mapeado por indice, el resultado del PUT de
+// customers se pintaba sobre la fila del GET del branch y "Configurar domicilio" nunca
+// llegaba a pintarse.
+const ALTA_PASO_FILA = {
+  'POST customer': 0,
+  // Las dos ramas del alta mandan un PUT de customers distinto y EXCLUYENTE (config
+  // comercial en el cliente existente, dimensiones en el nuevo): comparten fila.
+  'PUT customer (config comercial)': 1,
+  'PUT customer (dimensiones)': 1,
+  'post-fix segmento (web)': 2,
+  'GET branch_id': 3,
+  'PUT branch': 4,
+};
+const ALTA_PASO_FILAS = [...new Set(Object.values(ALTA_PASO_FILA))];
 const ALTA_ICO_PENDING = '○';
 const ALTA_ICO_SPIN = '◔';
 const ALTA_ICO_OK = '✓';
@@ -6651,7 +6666,7 @@ function altaPasoSetStatus(idx, status, msg) {
 }
 
 function altaPasosReset() {
-  [0, 1, 2].forEach(i => altaPasoSetStatus(i, 'pending', ''));
+  ALTA_PASO_FILAS.forEach(i => altaPasoSetStatus(i, 'pending', ''));
 }
 
 function altaDarDeAlta() {
@@ -6680,7 +6695,7 @@ function altaDarDeAlta() {
   };
   const payload = buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, resolvedCustomerId, altaState.branch_id);
 
-  [0, 1, 2].forEach(i => altaPasoSetStatus(i, 'loading'));
+  ALTA_PASO_FILAS.forEach(i => altaPasoSetStatus(i, 'loading'));
 
   const token = window._authToken || localStorage.getItem('token') || '';
   fetch('/api/crear-cliente', {
@@ -6693,10 +6708,17 @@ function altaDarDeAlta() {
       altaState.customer_id = data.customer_id;
       altaState.branch_id = data.branch_id;
 
-      const stepNames = ['POST customer', 'GET branch_id', 'PUT branch'];
-      (data.steps || []).forEach((step, i) => {
-        altaPasoSetStatus(i, step.status === 'ok' ? 'ok' : 'error', step.error || '');
+      const sinCorrer = new Set(ALTA_PASO_FILAS);
+      (data.steps || []).forEach(step => {
+        const fila = ALTA_PASO_FILA[step.name];
+        if (fila === undefined) return;
+        sinCorrer.delete(fila);
+        altaPasoSetStatus(fila, step.status === 'ok' ? 'ok' : 'error', step.error || '');
       });
+      // Un paso que no corrio vuelve a pending: el del segmento cuando no se capturo
+      // ninguno, o los que quedaron fuera porque un paso previo aborto el alta. Dejarlos
+      // girando diria que siguen en curso.
+      sinCorrer.forEach(i => altaPasoSetStatus(i, 'pending', ''));
 
       if (data.ok) {
         if (exitoDiv) { exitoDiv.style.display = 'flex'; }

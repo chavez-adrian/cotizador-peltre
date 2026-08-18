@@ -1876,6 +1876,12 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
     } catch (err) {
       steps.push({ name: 'POST quote', status: 'error', error: err.message });
       return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps });
+    } finally {
+      // En el finally y no en cada salida: el cliente YA existe con el segmento sin
+      // aplicar, suba el quote o no, y un reintento no vuelve a pasar por aqui (entra por
+      // el camino normal con el customerId persistido). Si no se corrige ahora, nadie lo
+      // corrige. Corre despues de armar la respuesta, que es justo lo que se busca.
+      if (creadoNuevo) postFixSegmentoGenerico(customerId, c.segmentoId);
     }
   } catch (err) {
     return res.status(503).json({ error: 'No se pudo completar la subida con alta generica: ' + err.message, steps });
@@ -1913,6 +1919,27 @@ async function postFixVigencia(folio, data) {
     console.error('[post-fix vigencia] fallo en el quote', folio, err.message);
     return { name: 'post-fix vigencia', status: 'error', error: err.message };
   }
+}
+
+// Post-fix del SEGMENTO del cliente generico (#186). El POST /customers manda segmento_id
+// desde #121 y Operam lo IGNORA -- la API v3 no lo escribe por NINGUN camino (#172,
+// sondeo en vivo) -- asi que todo prospecto creado al subir una cotizacion quedaba en
+// "Sin segmento" aunque el vendedor lo hubiera capturado. Lo escribe la web legacy, la
+// misma funcion que ya usa el upgrade fiscal.
+//
+// FIRE-AND-FORGET y encolado SIEMPRE despues del post-fix de vigencia, nunca antes: este
+// camino corre dentro de la subida de la cotizacion, que el frontend abandona a los
+// TIMEOUT_OPERAM_MS entregando una PRE-COTIZACION (ADR-0009). La cola de post-fixes es
+// FIFO y compartida, asi que encolarlo primero meteria su latencia en el camino critico
+// aunque no se esperara el resultado. El precio es que un fallo solo vive en el log: la
+// respuesta ya se fue y este flujo no puede reportarlo en `steps`.
+function postFixSegmentoGenerico(customerId, segmentoId) {
+  if (!segmentoId) return;
+  actualizarSegmentoClienteWeb(customerId, segmentoId)
+    .then(r => {
+      if (!r.ok) console.error('[alta-generica] post-fix web del segmento fallo en el cliente', customerId, r.error);
+    })
+    .catch(err => console.error('[alta-generica] post-fix web del segmento fallo en el cliente', customerId, err.message));
 }
 
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
@@ -2355,6 +2382,9 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
       try {
         const resultado = await crearCliente(cliente);
         if (resultado.duplicado) {
+          // Salida temprana ANTES del post-fix del segmento (#186) a proposito: aqui no
+          // se escribe NADA sobre el cliente encontrado -- el vendedor todavia no decidio
+          // usarlo. Escribirle el segmento seria tocar un cliente ajeno sin su visto bueno.
           steps.push({ name: 'POST customer', status: 'ok', info: 'duplicado' });
           logCliente(cliente.tax_id, cliente.CustName, 'duplicado', resultado.cliente_id, fuente, null, null);
           return res.json({ ok: true, customer_id: resultado.cliente_id, branch_id, duplicado: true, steps });
@@ -2402,6 +2432,30 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
         steps.push({ name: 'PUT customer (dimensiones)', status: 'ok' });
       } catch (err) {
         steps.push({ name: 'PUT customer (dimensiones)', status: 'error', error: err.message });
+      }
+    }
+
+    // Step 1d: post-fix del SEGMENTO por la web legacy (#186, mismo motivo que #172). Ni
+    // el POST /customers del alta nueva ni el PUT del Step 1b escriben segmento_id: la
+    // API v3 no lo persiste por NINGUN camino, asi que el segmento que el vendedor eligio
+    // se perdia en silencio en las DOS ramas. Corre aqui, con el customer_id ya resuelto
+    // y ANTES del branch, y NO bloquea: un fallo (tipicamente FA rechazando el formulario
+    // entero por un CP vacio del cliente, trampa 1 de #172) no puede impedir el PUT del
+    // branch, que es lo critico para terminar el alta -- mismo criterio del Step 1b.
+    //
+    // El `ok` es un exito TENTATIVO, no una relectura: no se agrega el GET extra porque
+    // actualizarSegmentoClienteWeb ya lee la ficha antes de escribir (sabe si el segmento
+    // ya era el correcto) y `leerErrorWeb` cubre el unico rechazo conocido de FA. Si algun
+    // dia FA ignorara el campo en silencio, esto lo reportaria como ok -- ahi si haria
+    // falta releer.
+    if (cliente.segmento_id) {
+      const r = await actualizarSegmentoClienteWeb(customer_id, cliente.segmento_id);
+      if (r.ok) {
+        steps.push({ name: 'post-fix segmento (web)', status: 'ok' });
+      } else {
+        // El motivo REAL de la web es lo unico que le dice al vendedor que hacer.
+        console.error('[crear-cliente] post-fix web del segmento fallo:', r.error);
+        steps.push({ name: 'post-fix segmento (web)', status: 'error', error: r.error });
       }
     }
 

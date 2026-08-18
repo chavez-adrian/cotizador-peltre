@@ -6,6 +6,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import supertest from 'supertest';
+import { handlersWebFichaCliente } from './helpers/ficha-cliente-web.js';
 
 // Alta temprana de cliente generico al subir una cotizacion (issue #81, ADR-0006):
 // una cotizacion de una oportunidad SIN cliente en Operam deduplica en capas
@@ -30,7 +31,7 @@ if (existsSync(envPath)) {
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app, cargarListasPrecios } = await import('../server.js');
 const { resetSession } = await import('../lib/operam-client.js');
-const { _resetSesionWeb } = await import('../lib/operam-web.js');
+const { _resetSesionWeb, _esperarPostFixes } = await import('../lib/operam-web.js');
 const TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
 function readJson(path) { return existsSync(path) ? JSON.parse(leerArchivoSync(path)) : []; }
@@ -886,4 +887,107 @@ test('V4: vista sin el campo -> warn con verificado false, no una discrepancia i
   assert.equal(paso.status, 'warn');
   assert.equal(paso.verificado, false);
   assert.equal(paso.encontrado, null);
+});
+
+// --- Post-fix del SEGMENTO del cliente generico (#186) -----------------------
+// El POST /customers manda segmento_id desde #121 y Operam lo IGNORA (la API v3 no lo
+// escribe por ningun camino, #172): todo prospecto creado al subir una cotizacion quedaba
+// en "Sin segmento" aunque el vendedor lo hubiera capturado. Lo repara el mismo post-fix
+// web del upgrade fiscal, pero aqui va FIRE-AND-FORGET y encolado DESPUES del post-fix de
+// vigencia: este camino corre dentro de la subida, que el frontend abandona a los 20s
+// entregando una PRE-COTIZACION.
+
+function mockFichaYWeb(opciones = {}) {
+  const web = handlersWebFichaCliente(opciones);
+  const orden = [];
+  const handlers = mockSubidaBase({
+    ...mockWebLegacy({ onPost: () => orden.push('vigencia') }),
+    '/sales/manage/customers.php': (u, opts) => {
+      if (opts?.method === 'POST') orden.push('segmento');
+      return web.handlers['/sales/manage/customers.php'](u, opts);
+    },
+  });
+  return { web, orden, handlers };
+}
+
+test('S1: cliente generico recien creado con segmento capturado -> el post-fix web lo escribe, despues de la vigencia', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({ segmentoId: '14' });
+  const { web, orden, handlers } = mockFichaYWeb();
+  mockOperamFetch(handlers);
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  await _esperarPostFixes();
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.folio, 1801, 'el folio sale sin esperar al post-fix del segmento');
+  assert.deepEqual(web.gets, ['960'], 'pide la ficha del cliente que acaba de crear');
+  assert.equal(web.posts.length, 1, 'un solo POST a la ficha');
+  assert.equal(web.posts[0].get('segmento_id'), '14');
+  assert.equal(web.posts[0].get('process'), 'Actualizar Cliente', 'el submit real de la ficha');
+  assert.equal(web.estado.segmento, '14', 'el segmento quedo escrito en Operam');
+  // La cola de post-fixes es FIFO y compartida: encolar el segmento ANTES meteria su
+  // latencia en el camino critico aunque no se esperara el resultado.
+  assert.deepEqual(orden, ['vigencia', 'segmento']);
+});
+
+test('S2: sin segmento capturado la subida NO toca la ficha de cliente', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  const { web, handlers } = mockFichaYWeb();
+  mockOperamFetch(handlers);
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  await _esperarPostFixes();
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(web.gets, [], 'sin segmento capturado no hay nada que corregir');
+  assert.deepEqual(web.posts, []);
+});
+
+// Mismo criterio que el PUT del branch (#96): un cliente preexistente puede tener su
+// propio segmento en Operam y lo capturado en ESTA cotizacion no puede pisarlo.
+test('S3: cliente reutilizado por celular -> el segmento capturado no pisa el del cliente preexistente', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion({ segmentoId: '14' });
+  const { web, handlers } = mockFichaYWeb();
+  mockOperamFetch({
+    ...handlers,
+    '/api/v3/sales/customers': (u, opts) => {
+      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  await _esperarPostFixes();
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.customer_id, 555);
+  assert.deepEqual(web.gets, [], 'no se toca la ficha de un cliente que ya existia');
+});
+
+test('S4: la web rechaza el guardado -> la subida ya respondio con folio y nada se cae', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({ segmentoId: '14' });
+  const { web, handlers } = mockFichaYWeb({ err: 'El codigo postal no puede ser vacio' });
+  mockOperamFetch(handlers);
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  await _esperarPostFixes();
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.folio, 1801);
+  assert.equal(web.estado.segmento, '1', 'FA rechazo el formulario entero: el segmento sigue como estaba');
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(String(cot.folioOperam), '1801', 'la cotizacion quedo subida pese al fallo del post-fix');
 });
