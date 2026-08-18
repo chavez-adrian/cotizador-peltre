@@ -53,7 +53,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 | `backfill-operam.mjs` | Nucleo puro del backfill historico (#76); excluye cancelados |
 | `recolector-genericos.mjs` | Lote historico de quotes de debtors genericos → bandeja (#124); orquestado por `scripts/rescatar-genericos.mjs` |
 | `catalogo-operam.js` | Catalogo generado desde Operam (#128/#131); orquestado por `scripts/sync-catalogo.mjs` |
-| `operam-web.js` | Web legacy (FrontAccounting): vigencia (#106) + actualizar quote conservando folio (#104) + ronda de descripcion por partida (#139) + deteccion de cancelados |
+| `operam-web.js` | Web legacy (FrontAccounting): vigencia (#106) + actualizar quote conservando folio (#104) + ronda de descripcion por partida (#139) + post-fix del segmento del cliente (#172) + deteccion de cancelados |
 | `vendedores-store.js` | Registro de vendedores (identidad, PIN en claro, rol, operam_id, tope) en Neon (#140/#141); auto-siembra desde `data/vendedores.json` si la tabla esta vacia; el PUT de admin reemplaza el registro completo |
 | `db.js` | Pool pg; `query()` retorna null sin pool (graceful); auto-crea `clientes_log` y `operam_webhooks_log` en Neon |
 | `dropbox.js` | OAuth refresh; `upload` y `subirCsfDropbox` (backup de CSF, fire-and-forget) |
@@ -72,7 +72,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 - **`lib/fs-reintento.js` es obligatorio para `data/*.json`** (#117), en stores Y helpers de tests: OneDrive toma locks EBUSY intermitentes que tumbaban ~1 de cada 3 corridas. Reintenta SOLO EBUSY; EPERM/ENOENT se propagan (un test depende de eso). Nunca `fs` directo.
 - **Calca sin precio = null, nunca $0** (#91): las 32 calcas tienen `Menudeo: null` y el fallback a 0 imprimia calcas gratis en PDF y quote. Las piezas de calca NO cuentan para el tier; la calca fija la marca `decorado` y `app.js` la manda solo en `true` (un `false` pisaria la marca del tablero).
 - **Las llaves del PUT de cliente NO son las del GET (#169)**: se escribe `cust_name` y se lee `CustName`; se escribe `cfdi_regimen_fiscal` y se lee `regimen`. Mandar la llave de lectura = campo ignorado en silencio (asi el upgrade fiscal dejo un cliente sin razon social). El mapeo por campo vive en `DIFF_FISCAL_CAMPOS` (`write`/`read`); el PUT responde con el **eco** de lo que acepto, y eso es lo que usa `camposNoAplicados` para decirle al vendedor el motivo real.
-- **Quirks de escritura de Operam**: 200/`result:true` no garantiza nada — releer SIEMPRE. `segmento_id` y `dimension_id` pueden ignorarse en silencio; `PUT /branches` huerfana el domicilio sin `customer_id` en el body; no hay DELETE de clientes. Detalle en `docs/arquitectura.md` §Quirks.
+- **Quirks de escritura de Operam**: 200/`result:true` no garantiza nada — releer SIEMPRE. `segmento_id` NO se puede escribir por la API v3 por ningun camino y va por post-fix web (#172); `dimension_id` puede ignorarse en silencio; `PUT /branches` huerfana el domicilio sin `customer_id` en el body; no hay DELETE de clientes. Detalle en `docs/arquitectura.md` §Quirks.
 - **El body del quote web lleva `ProcessOrder` y NUNCA `CancelOrder`** (viven en el mismo form; CancelOrder anula la cotizacion).
 - **La comparacion de huella del quote (#114) es SIEMPRE local**: el cotizador manda y una edicion hecha directamente en Operam se pierde (decision explicita).
 - **Codigos de calca se BUSCAN en el catalogo, nunca se concatenan**: uno inventado da 406 al subir el quote.

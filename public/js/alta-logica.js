@@ -126,15 +126,17 @@ export function separarTelefonoCodigo(telefono) {
 // 'segmento.id') para llaves anidadas -- el GET no expone `segmento_id` plano, lo
 // devuelve como objeto `segmento: { id, clave, description }` (issue #172).
 //
-// Segmento no tiene workaround de escritura (issue #172, sondeo en vivo 2026-08-17,
-// clientes 491/492, Operam 3.26.32): a diferencia de dimension_id/dimension2_id (que
-// el POST ignora pero un PUT dedicado posterior si persiste), segmento_id NO persiste
-// por NINGUN camino probado -- ni POST, ni PUT bundleado, ni PUT dedicado en solitario,
-// ni nombres de campo alternos (segment_id, id_segmento, sales_segment_id, segmento
-// plano o anidado). La API v3 simplemente no expone escritura para este campo; se
-// deja en DIFF_FISCAL_CAMPOS solo para que la verificacion post-PUT lo reporte
-// correctamente como no aplicado (ver camposNoAplicados) y el vendedor sepa que debe
-// ajustarlo a mano en la UI de Operam. Detalle del sondeo en peltre-operam.md seccion 12.5c.
+// Segmento no tiene workaround de escritura EN LA API v3 (issue #172, sondeo en vivo
+// 2026-08-17, clientes 491/492, Operam 3.26.32): a diferencia de dimension_id/
+// dimension2_id (que el POST ignora pero un PUT dedicado posterior si persiste),
+// segmento_id NO persiste por NINGUN camino de la API -- ni POST, ni PUT bundleado, ni
+// PUT dedicado en solitario, ni nombres de campo alternos (segment_id, id_segmento,
+// sales_segment_id, segmento plano o anidado). Quien lo escribe es el post-fix por la
+// web legacy (actualizarSegmentoClienteWeb en lib/operam-web.js), que el upgrade fiscal
+// corre tras el PUT y antes de la relectura. El campo se queda en DIFF_FISCAL_CAMPOS
+// porque sigue siendo la forma de verificarlo: si tampoco el post-fix lo aplico, la
+// relectura lo reporta como no aplicado (ver camposNoAplicados) con el motivo real y el
+// vendedor lo ajusta a mano en la UI de Operam. Detalle en peltre-operam.md seccion 12.5c.
 export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social', write: 'cust_name' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },

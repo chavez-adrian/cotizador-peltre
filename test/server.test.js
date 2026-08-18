@@ -958,15 +958,55 @@ test('UF15: PUT ignora notes (quirk) -> la relectura reporta que las actividades
 });
 
 // === Regla 6 (issue #95): segmento_id viaja en el upgrade con verificacion post-escritura ===
+//
+// La API v3 NO puede escribir segmento_id por ningun camino (#172, sondeo en vivo); el
+// segmento lo persiste un post-fix por la web legacy DESPUES del PUT y ANTES de la
+// relectura de verificacion. Estos handlers montan la ficha de cliente de FA: la del
+// mock reproduce la trampa del <form> anidado y trae el boton destructivo `delete`.
+function handlersWebFichaCliente({ err = null, sesionCaducada = false, noAplica = false } = {}) {
+  const estado = { segmento: '1' };
+  const posts = [];
+  const ficha = () => `<form method='post' action='/sales/manage/customers.php'>
+<input type="hidden" name="customer_id" value='500'>
+<input type="text" name="CustName" value="Real SA de CV">
+<input type="text" name="postal_code" value="06600">
+<select name='segmento_id'>${['1', '3'].map(v => `<option value='${v}'${v === estado.segmento ? ' selected' : ''}>seg ${v}</option>`).join('')}</select>
+<form method='post' action='/sales/manage/customers.php'><input type="hidden" name="meta_value_new" value=''></form>
+<input type="hidden" name="_token" value='TOK'>
+<button type='submit' name='process' value='Actualizar Cliente'></button>
+<button type='submit' name='delete' value='Eliminar Cliente'></button>
+</form>`;
+  const handlers = {
+    'trans_type=30': () => ({ headers: {}, text: async () => '<html>login ok</html>' }),
+    '/sales/manage/customers.php': (u, opts) => {
+      if (opts?.method !== 'POST') return { headers: {}, text: async () => ficha() };
+      const p = new URLSearchParams(opts.body || '');
+      posts.push(p);
+      if (p.has('delete')) throw new Error('JAMAS debe mandarse el boton delete de la ficha de cliente');
+      if (sesionCaducada) return { headers: {}, text: async () => '<input name="user_name_entry_field"><input type="password" name="password">' };
+      if (err) return { headers: {}, text: async () => `<div id='msgbox'><div class="err_msg">${err}</div></div>${ficha()}` };
+      if (!noAplica) estado.segmento = p.get('segmento_id');
+      return { headers: {}, text: async () => ficha() };
+    },
+  };
+  return { handlers, posts, estado };
+}
 
-test('UF11: segmentoId capturado -> el PUT manda segmento_id', async () => {
+test('UF11: segmentoId capturado -> el PUT manda segmento_id y el post-fix web lo persiste (#172)', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente();
   let putBody = null;
   const restore = mockOperamFetch({
+    ...web.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
+      // El PUT sigue mandando segmento_id (Operam lo ignora; si algun dia lo arregla,
+      // empieza a funcionar solo) pero quien lo escribe de verdad es la web legacy.
       if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(putBody, ['segmento_id']) }; }
       if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
-      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento_id: '3' })] }) };
+      // Forma REAL del GET: el segmento viene anidado, nunca como segmento_id plano.
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento: { id: web.estado.segmento } })] }) };
     },
   });
   try {
@@ -975,20 +1015,55 @@ test('UF11: segmentoId capturado -> el PUT manda segmento_id', async () => {
       .send({ csfDatos: { ...CSF_UPGRADE, segmentoId: '3' } });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(putBody.segmento_id, '3');
+    assert.strictEqual(web.posts.length, 1, 'un solo POST a la ficha de cliente');
+    assert.strictEqual(web.posts[0].get('segmento_id'), '3');
+    assert.strictEqual(web.posts[0].get('process'), 'Actualizar Cliente', 'el submit real de la ficha');
+    assert.strictEqual(web.posts[0].get('_token'), 'TOK', 'el token vive DESPUES del form anidado');
+    assert.strictEqual(web.posts[0].get('CustName'), 'Real SA de CV', 'el resto del formulario viaja intacto');
+    assert.strictEqual(web.estado.segmento, '3', 'el segmento quedo escrito en Operam');
+    // el post-fix corre ANTES de la relectura: el campo ya no se reporta como pendiente
     assert.deepEqual(res.body.camposNoActualizados, []);
   } finally {
     restore();
   }
 });
 
-test('UF12: quirk #74 -- PUT ignora segmento_id en silencio -> la relectura lo reporta en camposNoActualizados', async () => {
+test('UF11b: sin segmento capturado el upgrade NO toca la web legacy', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente();
   const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { const body = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(body) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(web.posts, [], 'sin segmento capturado no hay nada que corregir');
+  } finally {
+    restore();
+  }
+});
+
+test('UF12: quirk #74 -- ni el PUT ni la web aplican el segmento -> la relectura lo reporta en camposNoActualizados', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente({ noAplica: true });
+  const restore = mockOperamFetch({
+    ...web.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { const body = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(body, ['segmento_id']) }; }
       if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
-      // La relectura muestra el segmento VIEJO (Operam ignoro el campo en silencio).
-      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento_id: '1' })] }) };
+      // La relectura muestra el segmento VIEJO (nadie lo escribio).
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento: { id: '1' } })] }) };
     },
   });
   try {
@@ -1000,6 +1075,66 @@ test('UF12: quirk #74 -- PUT ignora segmento_id en silencio -> la relectura lo r
     assert.ok(segNoActualizado, 'debe reportar que segmento_id no pego');
     assert.strictEqual(segNoActualizado.anterior, '1');
     assert.strictEqual(segNoActualizado.nuevo, '3');
+  } finally {
+    restore();
+  }
+});
+
+// Trampa 2 de #172: FA responde 200 con la pagina re-renderizada y NO aplica ningun
+// campo; el unico rastro es el err_msg. El upgrade en si NO debe fallar por eso: el PUT
+// de la API ya se aplico.
+test('UF12b: la web rechaza el guardado (err_msg) -> el upgrade sigue ok y el segmento se reporta con el motivo real', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente({ err: 'El codigo postal no puede ser vacio' });
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { const body = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(body, ['segmento_id']) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento: { id: '1' } })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, segmentoId: '3' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true, 'el PUT ya se aplico: un fallo del post-fix no tumba el upgrade');
+    const seg = res.body.camposNoActualizados.find(x => x.campo === 'segmento_id');
+    assert.ok(seg, 'el segmento sigue sin aplicarse y hay que reportarlo');
+    assert.match(seg.motivo, /codigo postal/i, 'el vendedor debe ver el motivo REAL de la web, no el generico');
+  } finally {
+    restore();
+  }
+});
+
+// Una escritura NUNCA se reintenta a ciegas: el formulario murio con la sesion (regla de
+// pedir() en lib/operam-web.js).
+test('UF12c: sesion caducada en la escritura -> error controlado, sin reintento, upgrade ok', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const web = handlersWebFichaCliente({ sesionCaducada: true });
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { const body = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(body, ['segmento_id']) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ segmento: { id: '1' } })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, segmentoId: '3' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(web.posts.length, 1, 'una escritura fallida NO se repite');
+    const seg = res.body.camposNoActualizados.find(x => x.campo === 'segmento_id');
+    assert.ok(seg);
+    assert.match(seg.motivo, /sesion/i);
   } finally {
     restore();
   }

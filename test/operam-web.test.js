@@ -9,6 +9,7 @@ import {
   parsearLineasQuote, serializarBodyBorrarLinea, serializarBodyAgregarLinea,
   serializarBodyEditarLinea, serializarBodyDescripcionLinea,
   leerLineasVista, leerComentariosVista, compararQuoteVista,
+  parsearFormularioCliente, serializarBodyCliente, leerErrorWeb,
 } from '../lib/operam-web.js';
 
 const DIR_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -559,4 +560,117 @@ test('estaCanceladoHtml: un documento normal (o vacio/null) no esta cancelado', 
   assert.equal(estaCanceladoHtml('<table><tr><td>Pedido 5662</td></tr></table>'), false);
   assert.equal(estaCanceladoHtml(''), false);
   assert.equal(estaCanceladoHtml(null), false);
+});
+
+// --- Ficha de cliente de la web legacy: post-fix del segmento (#172) ----------
+// segmento_id no se puede escribir por la API v3 por NINGUN camino (sondeo en vivo,
+// peltre-operam.md 12.5c); el formulario de la web legacy SI lo persiste. El fixture es
+// la ficha real del cliente 492 reducida a ASCII, con las dos trampas del camino web.
+
+const FIXTURE_CLIENTE = readFileSync(join(DIR_FIXTURES, 'operam-cliente-form.html'), 'utf8');
+const FIXTURE_CLIENTE_ERROR = readFileSync(join(DIR_FIXTURES, 'operam-cliente-error.html'), 'utf8');
+
+test('parsearFormularioCliente: extrae inputs, selects y textareas de la ficha', () => {
+  const { campos, action } = parsearFormularioCliente(FIXTURE_CLIENTE);
+  assert.equal(action, '/sales/manage/customers.php');
+  assert.equal(campos.CustName, 'SONDEO SEGMENTO SA');
+  assert.equal(campos.tax_id, 'SEG010101AB1');
+  assert.equal(campos.postal_code, '55524');
+  // select -> la opcion marcada como selected, no la primera
+  assert.equal(campos.customer_id, '492');
+  assert.equal(campos.segmento_id, '1');
+  assert.equal(campos.sales_type, '18');
+  assert.equal(campos.inactive, '1');
+  assert.equal(campos.notes, 'Celular: 5555555555');
+});
+
+// TRAMPA 1 (#172): la ficha trae un <form> de metadatos ANIDADO dentro del principal.
+// Un parser que corte en el PRIMER </form> pierde todo lo que vive despues -- incluido
+// _token, el CSRF de FA -- y el POST saldria incompleto.
+test('parsearFormularioCliente: el form ANIDADO de metadatos no corta el formulario', () => {
+  const { campos } = parsearFormularioCliente(FIXTURE_CLIENTE);
+  assert.equal(campos.popup, '', 'popup vive DESPUES del form anidado');
+  assert.equal(campos._token, 'TOKEN_DEL_FORM_PRINCIPAL', 'el token del form principal es el ultimo del documento');
+  assert.equal(campos._modified, '0');
+  // El buscador del chrome vive FUERA del form principal: un navegador no lo enviaria.
+  assert.equal('search' in campos, false);
+});
+
+// Lo mas peligroso de esta pagina: delete ELIMINA el cliente. Todos los submits son
+// <button>, asi que un parser de solo inputs/selects/textareas no los recoge.
+test('parsearFormularioCliente: NO recoge botones (delete, process, save_metadata, tabs_*)', () => {
+  const { campos } = parsearFormularioCliente(FIXTURE_CLIENTE);
+  for (const peligroso of ['delete', 'process', 'save_metadata', 'submit_idcif', 'tabs_settings', 'tabs_contacts', '_customer_id_update']) {
+    assert.equal(peligroso in campos, false, `${peligroso} no debe ir en el body`);
+  }
+});
+
+// Un checkbox sin checked y un select multiple sin seleccion no los manda un navegador.
+test('parsearFormularioCliente: omite el checkbox sin checked y el select multiple vacio', () => {
+  const { campos } = parsearFormularioCliente(FIXTURE_CLIENTE);
+  assert.equal('show_inactive' in campos, false);
+  assert.equal('dimensiones_id[]' in campos, false);
+});
+
+test('parsearFormularioCliente: pagina sin formulario -> lanza (no se postea a medias)', () => {
+  assert.throws(() => parsearFormularioCliente('<html>sesion expirada</html>'), /formulario/i);
+});
+
+test('serializarBodyCliente: sustituye SOLO el segmento y agrega el submit process', () => {
+  const { campos } = parsearFormularioCliente(FIXTURE_CLIENTE);
+  const body = serializarBodyCliente(campos, { segmentoId: '14' });
+  assert.equal(body.get('segmento_id'), '14');
+  assert.equal(body.get('process'), 'Actualizar Cliente', 'el submit real es un <button name=process>');
+  // todo lo demas viaja identico
+  assert.equal(body.get('CustName'), 'SONDEO SEGMENTO SA');
+  assert.equal(body.get('postal_code'), '55524');
+  assert.equal(body.get('customer_id'), '492');
+  assert.equal(body.get('_token'), 'TOKEN_DEL_FORM_PRINCIPAL');
+  assert.equal(body.get('notes'), 'Celular: 5555555555');
+});
+
+// Mismo riesgo que CancelOrder en el quote: si Operam cambiara el HTML y colara delete
+// como input normal, el body borraria el cliente. Segunda linea de defensa.
+test('serializarBodyCliente: NUNCA manda un boton destructivo, aunque venga en los campos', () => {
+  const { campos } = parsearFormularioCliente(FIXTURE_CLIENTE);
+  const body = serializarBodyCliente({ ...campos, delete: 'Eliminar Cliente', save_metadata: 'x' }, { segmentoId: '14' });
+  assert.equal(body.has('delete'), false);
+  assert.equal(body.has('save_metadata'), false);
+});
+
+test('serializarBodyCliente: sin segmento_id en el formulario -> lanza (pagina inesperada)', () => {
+  assert.throws(() => serializarBodyCliente({ CustName: 'X' }, { segmentoId: '14' }), /segmento_id/i);
+});
+
+test('serializarBodyCliente: sin segmento destino -> lanza', () => {
+  const { campos } = parsearFormularioCliente(FIXTURE_CLIENTE);
+  assert.throws(() => serializarBodyCliente(campos, { segmentoId: '' }), /segmento/i);
+});
+
+// TRAMPA 2 (#172): FA responde 200 con la pagina re-renderizada y NO aplica ningun
+// campo; la unica senal del rechazo es el msgbox con clase err_msg.
+test('leerErrorWeb: extrae el texto del err_msg de la pagina rechazada', () => {
+  assert.equal(leerErrorWeb(FIXTURE_CLIENTE_ERROR), 'El codigo postal no puede ser vacio');
+});
+
+test('leerErrorWeb: una pagina normal no tiene error (el msgbox vacio no cuenta)', () => {
+  assert.equal(leerErrorWeb(FIXTURE_CLIENTE), null);
+  assert.equal(leerErrorWeb(''), null);
+  assert.equal(leerErrorWeb(null), null);
+});
+
+// En la pagina real el buscador del chrome es un input suelto, pero el recorte no se
+// ancla al PRIMER <form> del documento sino al de la ficha (el que postea a
+// customers.php): si Operam envolviera el chrome en su propio form, empezar ahi
+// arrastraria sus campos al body que se le repostea al cliente.
+test('parsearFormularioCliente: se ancla al form de la ficha, no a un form previo del chrome', () => {
+  const html = `<form action='/index.php' method='post'><input type='text' name='search' value='algo'></form>
+    <form method='post' action='/sales/manage/customers.php'>
+    <input type='hidden' name='customer_id' value='492'>
+    <select name='segmento_id'><option selected value='1'>Sin segmento</option></select>
+    </form>`;
+  const { campos, action } = parsearFormularioCliente(html);
+  assert.equal(action, '/sales/manage/customers.php');
+  assert.equal('search' in campos, false);
+  assert.equal(campos.customer_id, '492');
 });

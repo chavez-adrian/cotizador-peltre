@@ -1,0 +1,164 @@
+<!--
+  Ficha de cliente de la web legacy de Operam (FrontAccounting):
+  /sales/manage/customers.php?debtor_no=492
+  Capturado en vivo el 2026-08-18 (Operam 3.26.32) y REDUCIDO a ASCII: se
+  conservan la estructura y los nombres de campo reales, se recortan el chrome, los
+  scripts y las opciones largas de los combos, y se transliteran los acentos.
+  Lo que hace a este fixture util (trampas de #172):
+    - un <form> de metadatos ANIDADO dentro del form principal (invalido): los campos
+      que viven DESPUES de ese form anidado (popup, _focus, _modified, _token) se
+      pierden si el parser corta en el PRIMER </form>, y _token es el CSRF de FA.
+    - el submit real es un <button name='process'>, no un <input>.
+    - conviven botones destructivos (delete = Eliminar Cliente) y de otras acciones
+      (save_metadata, submit_idcif, tabs_*).
+    - el buscador del chrome (input name='search') vive FUERA del form.
+-->
+<html><head><title>Clientes</title></head><body>
+<div id='hdr'>
+<input type='text' name='search' value='' placeholder='Buscar'>
+</div>
+<hr class='gradient_line'><div id='msgbox'></div>
+<div id='_page_body'><form enctype='multipart/form-data' method='post' action='/sales/manage/customers.php'  >
+<center><table class='tablestyle_noborder' cellpadding=2 cellspacing=0>
+<tr>
+<td>Seleccione un cliente: </td>
+<td nowrap><span id='_customer_id_sel'><select autocomplete='off'  name='customer_id' class='combo2' title='Presione tecla Tab para filtrar'   chosen="chosen_ajax"><option value=''>Nuevo Cliente</option>
+ <option groupid='492' selected class='inactive' value='492'>Sondeo Segmento</option>
+</select>
+</span> <input  type='submit' class='combo_select' style='display:none;' aspect='fallback' name='_customer_id_update' value=' ' title='Seleccione'>
+</td>
+<td >Mostrar inactivos:</td>
+<td ><input type='checkbox' name='show_inactive' value='1' onclick='JsHttpRequest.request("_show_inactive_update", this.form);' >
+</td></tr>
+</table></center>
+<div id='tabs'><ul class='ajaxtabs' rel='_tabs_div'>
+<li><button type='submit' name='tabs_settings' class='current'  ><span>Configuracion General</span></button>
+</li>
+<li><button type='submit' name='tabs_contacts' class='ajaxbutton'  ><span>Contactos</span></button>
+</li>
+<li><button type='submit' name='tabs_transactions' class='ajaxbutton'  ><span>Transacciones</span></button>
+</li>
+</ul>
+<div class='spaceBox'></div>
+<input type='hidden' name='_tabs_sel' value='settings'>
+<div class='contentBox' id='_tabs_div'>
+<center><table class='tablestyle2' cellpadding=2 cellspacing=0>
+<tr valign=top><td>
+<table class='tablestyle_inner' >
+<tr><td colspan=3 class='tableheader' width='' >Nombre y Direccion</td></tr>
+<tr ><td class='label'>Nombre de Cliente:</td><td ><input type="text" name="CustName" size="40" maxlength="250" value="SONDEO SEGMENTO SA"></td>
+</tr>
+<tr ><td class='label'>Nombre Corto:</td><td ><input type="text" name="cust_ref" size="30" maxlength="30" value="SONDEO"></td>
+</tr>
+<tr ><td class='label'>RFC:</td><td ><input type="text" name="tax_id" size="20" maxlength="20" value="SEG010101AB1"></td>
+</tr>
+<tr ><td class='label'>IdCIF:</td><td ><input type="text" name="idcif" size="20" maxlength="20" value="">
+</td>
+<td class="label"><button class="ajaxsubmit" type="submit" name="submit_idcif"  id="submit_idcif" value="Obtener Datos SAT"
+		style=''><span>Obtener Datos SAT</span></button>
+</td>
+<input type="hidden" name="Direccion:" value='address' id="">
+<tr ><td class='label'>Calle:</td><td ><input type="text" name="street" size="30" maxlength="100" value=""></td>
+</tr>
+<tr ><td class='label'>Numero Exterior:</td><td ><input type="text" name="street_number" size="15" maxlength="15" value=""></td>
+</tr>
+<tr ><td class='label'>Numero Interior:</td><td ><input type="text" name="suite_number" size="15" maxlength="15" value=""></td>
+</tr>
+<tr ><td class='label'>Colonia:</td><td ><input type="text" name="district" size="30" maxlength="100" value=""></td>
+</tr>
+<tr ><td class='label'>Codigo postal:</td><td ><input type="text" name="postal_code" size="10" maxlength="7" value="55524"></td>
+</tr>
+<tr ><td class='label'>Municipio/Ciudad</td><td ><input type="text" name="city" size="30" maxlength="100" value=""></td>
+</tr>
+<tr ><td class='label'>Estado:</td><td ><input type="text" name="state" size="30" maxlength="100" value=""></td>
+</tr>
+<tr ><td class='label'>Pais:</td><td ><input type="text" name="country" size="30" maxlength="100" value="Mexico"></td>
+</tr>
+</table>
+</td><td>
+<table class='tablestyle_inner' >
+<tr><td colspan=3 class='tableheader' width='' >Ventas</td></tr>
+<tr><td class='label'>Moneda:</td><td><span id='_curr_code_sel'><select autocomplete='off'  name='curr_code' class='combo' title=''><option selected value='MXN'>MXN</option>
+ <option value='USD'>USD</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Lista de Precios:</td><td><span id='_sales_type_sel'><select autocomplete='off'  name='sales_type' class='combo' title=''><option value='16'>Menudeo</option>
+ <option selected value='18'>M350</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Segmento Cliente:</td><td><span id='_segmento_id_sel'><select autocomplete='off'  name='segmento_id' class='combo' title='' data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='1' selected value='1'>000 - Sin segmento</option>
+ <option groupid='14' value='14'>100 - Distribuidores</option>
+ <option groupid='8' value='8'>200 - Menudistas</option>
+ <option groupid='10' value='10'>300 - Restaurantes, hoteles</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Estatus del Cliente:</td><td><span id='_inactive_sel'><select autocomplete='off'  name='inactive' class='combo' title=''>Activo<option value='0'>Activo</option>
+ <option selected="selected" value='1'>Inactivo</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td colspan=3 class='tableheader' width='' >CFDI</td></tr>
+<tr><td class=label>Regimen Fiscal:</td><td nowrap><span id='_cfdi_regimen_fiscal_sel'><select autocomplete='off'  name='cfdi_regimen_fiscal' class='combo' title=''><option value=''>Seleccionar</option>
+ <option selected value='601'>601 - General de Ley Personas Morales</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class=label>Uso de CFDI:</td><td nowrap><span id='_timbrado_uso_cfdi_sel'><select autocomplete='off'  name='timbrado_uso_cfdi' class='combo' title=''><option selected value='S01'>S01 - Sin efectos fiscales</option>
+ <option value='G03'>G03 - Gastos en general</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Dimensiones:</td><td><input type="hidden" name="dimension_id" value='0' id="">
+<input type="hidden" name="dimension1_id" value='0' id="">
+<input type="hidden" name="dimension2_id" value='0' id="">
+<span id='_dimensiones_id_sel'><select autocomplete='off' multiple select_dims="select_dims" name='dimensiones_id[]' class='combo' title='' chosen="chosen_ajax"><optgroup label='Dimension 1'>
+<optgroup label='Dimension 2'>
+</select>
+</span>
+</td>
+</tr>
+<tr ><td class='label'>Cliente Desde:</td><td><input type="text" name="since" class="date" size="10" maxlength="12" value="" >
+</td>
+</tr>
+<tr ><td class='label'>Notas:</td><td><textarea name="notes" cols="35" rows="4">Celular: 5555555555</textarea></td>
+</tr>
+</table>
+</td></tr></table></center>
+<br>
+<center><table class='tablestyle2'>
+<tr><td class='tableheader'>Metadatos</td></tr>
+<tr><td>
+<form method='post' action='/sales/manage/customers.php' >
+<table class='tablestyle_inner'>
+<tr><td><input type="text" name="meta_title_new" size="20" maxlength="60" value=""></td>
+<td><input type="text" name="meta_value_new" size="30" maxlength="250" value=""></td>
+<td><button class="ajaxsubmit" type="submit" name="save_metadata"  id="save_metadata" value="Guardar metadatos"
+		style=''><span>Guardar metadatos</span></button>
+</td></tr>
+</table>
+<input type="hidden" name="_focus" value='meta_title_new' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='TOKEN_DEL_FORM_ANIDADO' id="">
+</form>
+</td></tr></table></center>
+<br>
+<center><button class="ajaxsubmit" type="submit"aspect='default'  name="process"  id="process" value="Actualizar Cliente" title='Actualizar datos del cliente'
+		style=''><span>Actualizar Cliente</span></button>
+<button class="ajaxsubmit" type="submit" name="delete"  id="delete" value="Eliminar Cliente" title='Borrar la informacion de cliente si nunca ha sido usada'
+		style=''><span>Eliminar Cliente</span></button>
+</center></div><br></div></div><input type="hidden" name="popup" value='' id="">
+<input type="hidden" name="_focus" value='search' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='TOKEN_DEL_FORM_PRINCIPAL' id="">
+</form>
+<div id='modal_section'></div>
+</body></html>

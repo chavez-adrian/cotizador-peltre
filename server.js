@@ -9,7 +9,7 @@ import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
-import { corregirVigenciaQuote, actualizarQuoteOperam } from './lib/operam-web.js';
+import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados } from './public/js/alta-logica.js';
@@ -2234,6 +2234,23 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     return res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
   }
 
+  // Post-fix del SEGMENTO por la web legacy (#172): la API v3 no puede escribir
+  // segmento_id por ningun camino (sondeo en vivo, peltre-operam.md 12.5c), asi que se
+  // repostea la ficha de cliente de FrontAccounting. El orden importa por partida doble:
+  // corre DESPUES del PUT (que ya escribio el postal_code de la CSF, sin el cual FA
+  // rechaza el guardado entero) y ANTES de la relectura (asi la verificacion ve el
+  // segmento ya aplicado y deja de reportarlo). Un fallo aqui NO tumba el upgrade: el
+  // PUT ya se aplico; el segmento queda sin escribir y la verificacion lo reporta con
+  // el motivo real de la web en vez del generico.
+  let motivoSegmentoWeb = null;
+  if (csfDatos.segmentoId) {
+    const r = await actualizarSegmentoClienteWeb(id, csfDatos.segmentoId);
+    if (!r.ok) {
+      motivoSegmentoWeb = `No se pudo escribir el segmento por la web de Operam: ${r.error}`;
+      console.error('[csf-upgrade] post-fix web del segmento fallo:', r.error);
+    }
+  }
+
   // La relectura de verificacion es un paso APARTE del PUT: si el PUT ya tuvo exito
   // en Operam, un fallo aqui (red, o Operam devolviendo el cliente vacio) no debe
   // reportarse como "no se pudo actualizar" -- el dato SI quedo escrito, solo no se
@@ -2246,6 +2263,11 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     if (!fresco) throw new Error('Operam no devolvio el cliente en la relectura');
     const diff = calcularDiffFiscal(fresco, csfDatos);
     camposNoActualizados = camposNoAplicados(diff, ecoPut);
+    // El motivo generico ("Operam ignoro este campo en el PUT") es cierto pero inutil
+    // cuando lo que fallo fue el post-fix web: ahi el motivo real (CP vacio, sesion
+    // caducada) es lo unico que le dice al vendedor que hacer.
+    const segmentoPendiente = motivoSegmentoWeb && camposNoActualizados.find(c => c.campo === 'segmento_id');
+    if (segmentoPendiente) segmentoPendiente.motivo = motivoSegmentoWeb;
     // notes no esta en DIFF_FISCAL_CAMPOS (su valor "nuevo" depende de las notas
     // previas, no es un campo de comparacion directa) -- se verifica aparte: la
     // linea del Tax ID debe estar presente en las notas releidas.

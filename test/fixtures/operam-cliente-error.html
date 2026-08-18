@@ -1,0 +1,17 @@
+<!--
+  Respuesta del POST de la ficha de cliente cuando FrontAccounting RECHAZA el guardado
+  (trampa 2 de #172): status 200, la pagina se re-renderiza completa y NINGUN campo se
+  aplica; la unica senal es el msgbox con clase err_msg. Sin detectarlo, el post-fix
+  reportaria un exito falso. Reducido a ASCII (el texto real trae acentos).
+-->
+<html><head><title>Clientes</title></head><body>
+<hr class='gradient_line'><div id='msgbox'><div class="err_msg" onclick="JsHttpRequest.hideMsgBox()">El codigo postal no puede ser vacio</div></div>
+<div id='_page_body'><form enctype='multipart/form-data' method='post' action='/sales/manage/customers.php'  >
+<input type="text" name="postal_code" size="10" maxlength="7" value="">
+<span id='_segmento_id_sel'><select autocomplete='off'  name='segmento_id' class='combo'><option groupid='1' selected value='1'>000 - Sin segmento</option>
+ <option groupid='14' value='14'>100 - Distribuidores</option>
+</select>
+</span>
+<input type="hidden" name="_token" value='TOKEN_DEL_FORM_PRINCIPAL' id="">
+</form>
+</body></html>
