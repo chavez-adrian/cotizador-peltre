@@ -352,8 +352,17 @@ function mostrarLoginView() {
   document.getElementById('login-pin').value = '';
 }
 
-// Cierre de sesion EXPLICITO (boton Salir): limpia todo, incluido el carrito.
+// Cierre de sesion EXPLICITO (boton Salir, #182): limpia la SESION (token,
+// usuario, carrito en memoria) pero el borrador en localStorage queda INTACTO
+// -- cambio deliberado respecto a la conducta previa de tirar tambien la
+// captura (CONTEXT.md "Borrador de cotizacion"). borradorListo se apaga
+// PRIMERO, mismo freno que showApp() usa al entrar (#179): sin el, un autosave
+// en vuelo (p.ej. una respuesta de red que ya estaba en camino) podria disparar
+// DESPUES de vaciar state.cart y escribir un borrador vacio ENCIMA del que este
+// logout debe conservar.
 function logout() {
+  borradorListo = false;
+  cerrarSuperficiesBorradorAbiertas();
   state.token = null;
   state.user = null;
   state.precios = null;
@@ -404,6 +413,17 @@ async function showApp() {
   // si corriera despues, se comeria el cliente/lista/vendedor que el borrador
   // acaba de traer de vuelta.
   pcRenderInicio();
+  // Decorado y envio son de la COTIZACION, no del vendedor (#91/#102, mismo
+  // motivo que pcPrepararSeleccion): se dejan en su default ANTES de restaurar.
+  // Sin esto, un vendedor sin borrador propio (primera vez en este dispositivo,
+  // o el suyo ya expiro) hereda en memoria la marca o la tarifa que dejo la
+  // sesion anterior -- restaurarBorrador() solo pisa estos valores cuando SU
+  // borrador trae algo que restaurar. Fuga preexistente (nuevaCotizacion() ya
+  // los reseteaba, logout() nunca lo hizo) que #182 vuelve visible: aislar el
+  // borrador por vendedor no sirve de nada si la sesion en memoria sigue
+  // filtrando datos de la anterior.
+  decoradoManual = false;
+  aplicarEnvioRestaurado(undefined);
   // El borrador se restaura DESPUES del catalogo (cada linea se re-resuelve
   // contra el vigente) y ANTES de pintar, para que los renders de abajo ya
   // muestren la sesion recuperada -- carrito, cliente, envio, lista fijada,
@@ -4089,6 +4109,21 @@ function vaciarCamposSuperficie(formId) {
   for (const campo of camposSuperficie(formId)) escribirCampoSuperficie(campo, valorDefaultCampo(campo));
   def?.alRestaurar?.();
   def?.alVaciar?.();
+}
+
+// Cierra y vacia (sin matar el borrador) cualquier superficie que haya quedado
+// abierta al salir de la sesion (#182). superficiesAbiertas es memoria del
+// proceso, no del vendedor: si el que sale dejo el formulario a medio teclear,
+// esos campos se quedan escritos en el DOM (cerrarFormularioBorrador con evento
+// null solo esconde, no vacia) y el siguiente vendedor que abra la MISMA
+// superficie los veria -- restaurarBorradorFormulario solo pisa un campo que
+// sigue en su default, asi que ni siquiera SU propio borrador entraria ahi. El
+// borrador de quien sale no se toca: sigue en su llave para cuando regrese.
+function cerrarSuperficiesBorradorAbiertas() {
+  for (const formId of [...superficiesAbiertas]) {
+    vaciarCamposSuperficie(formId);
+    cerrarFormularioBorrador(formId, null);
+  }
 }
 
 // Invocada desde el onclick inline de la marca, asi que se expone a window JUNTO
