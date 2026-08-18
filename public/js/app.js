@@ -135,6 +135,19 @@ import {
   relacionCalcaProducto,
   estadoMarcaDecorado,
 } from './calcas-logica.js';
+import {
+  RESTAURACION,
+  EVENTOS_BORRADOR,
+  llaveBorrador,
+  serializarBorrador,
+  deserializarBorrador,
+  decidirRestauracion,
+  reResolverCarrito,
+  resolverProductoDelCatalogo,
+  borradorMuerePorEvento,
+  bloqueaGeneracionPorPartidaSinCatalogo,
+  avisoPartidaSinCatalogo,
+} from './borrador-logica.js';
 
 // === TELEFONOS (bloqueo duro con codigo de pais) ===
 function leerTelefono(inputId, codeId) {
@@ -352,6 +365,10 @@ function sesionExpirada() {
 
 // === APP INIT ===
 async function showApp() {
+  // Se apaga en cada entrada, no solo en la primera (#179): con un segundo
+  // login en la misma pestana la bandera quedaria encendida de la sesion
+  // anterior y los renders del arranque borrarian el borrador del que entra.
+  borradorListo = false;
   document.getElementById('login-view').style.display = 'none';
   document.getElementById('historial-view').style.display = 'none';
   document.getElementById('app-view').style.display = 'block';
@@ -371,13 +388,22 @@ async function showApp() {
   if (bandejaBtn) bandejaBtn.style.display = state.user.role === 'admin' ? 'inline-flex' : 'none';
 
   await loadPrecios();
+  // El borrador se restaura DESPUES del catalogo (cada linea se re-resuelve
+  // contra el vigente) y ANTES de pintar, para que los renders de abajo ya
+  // muestren el carrito recuperado (#179).
+  restaurarBorradorCarrito();
   renderProducts();
   renderFlujoGuiado();
   updateTierBar();
   updateCartSummary();
+  renderCartLines();
+  updateResumen();
   switchTab('cliente');
   pcRenderInicio();
   cargarBadgeSeguimiento();
+  // A partir de aqui el autosave puede escribir: ya se intento restaurar, asi
+  // que ningun render de arranque puede pisar el borrador guardado.
+  borradorListo = true;
 }
 
 async function loadPrecios() {
@@ -406,6 +432,99 @@ function renderTierSelect() {
   select.innerHTML = '<option value="">Auto (tabulador)</option>' +
     opciones.map(t => `<option value="${t.id}">${t.id}</option>`).join('');
   select.value = state.tierFijado;
+}
+
+// === BORRADOR DE COTIZACION (issue #179, spec #178, CONTEXT.md) ===
+// Pegamento delgado sobre borrador-logica.js: aqui SOLO se lee y se escribe
+// localStorage. Que se guarda, que se descarta y como se re-resuelve el carrito
+// vive en el nucleo puro.
+//
+// El autosave calla hasta que showApp intento restaurar: sin este freno, el
+// updateTierBar del arranque guardaria el carrito vacio ENCIMA del borrador que
+// todavia no se ha leido -- el sistema se comeria justo lo que existe para
+// proteger.
+let borradorListo = false;
+
+function llaveBorradorActual() {
+  return llaveBorrador(state.user?.id);
+}
+
+function autoguardarBorrador() {
+  if (!borradorListo) return;
+  const llave = llaveBorradorActual();
+  if (!llave) return;
+  try {
+    // Carrito vacio = nada que restaurar: se borra la llave en vez de dejar un
+    // borrador hueco que despues haya que distinguir de uno real.
+    if (state.cart.size === 0) { localStorage.removeItem(llave); return; }
+    const carrito = [...state.cart].map(([codigo, entrada]) => ({ codigo, ...entrada }));
+    const borrador = serializarBorrador({
+      carrito,
+      decorado: marcaDecoradoParaGuardar() === true,
+      ahora: Date.now(),
+    });
+    localStorage.setItem(llave, JSON.stringify(borrador));
+  } catch {
+    // Cuota llena o storage bloqueado (modo privado): el borrador es una
+    // comodidad, nunca un error que interrumpa la captura.
+  }
+}
+
+function matarBorrador(evento) {
+  if (!borradorMuerePorEvento(evento)) return;
+  const llave = llaveBorradorActual();
+  if (!llave) return;
+  try { localStorage.removeItem(llave); } catch {}
+}
+
+// Restaura el carrito del borrador al arrancar la sesion. Solo la rama
+// silenciosa (<30 min): el prompt Continuar / Descartar es #181, asi que por
+// ahora un borrador mas viejo se queda intacto en el dispositivo y no se
+// restaura -- nunca se restaura a medias ni se tira sin preguntar.
+function restaurarBorradorCarrito() {
+  const llave = llaveBorradorActual();
+  if (!llave || !state.precios) return;
+  let guardado = null;
+  try { guardado = localStorage.getItem(llave); } catch { return; }
+  const borrador = deserializarBorrador(guardado);
+  const decision = decidirRestauracion(borrador, Date.now());
+  if (decision === RESTAURACION.EXPIRADO) { matarBorrador(EVENTOS_BORRADOR.EXPIRADO); return; }
+  if (decision !== RESTAURACION.SILENCIOSA) return;
+
+  const { lineas } = reResolverCarrito(borrador, state.precios);
+  if (lineas.length === 0) return;
+  state.cart.clear();
+  for (const linea of lineas) {
+    const entrada = { product: linea.product, cantidad: linea.cantidad, descuento: linea.descuento };
+    if (linea.descripcion) entrada.descripcion = linea.descripcion;
+    state.cart.set(linea.codigo, entrada);
+  }
+  // La marca de decorado viaja solo en true (#91): un borrador sin ella no
+  // apaga la que pudiera venir de otro lado.
+  if (borrador.decorado === true) decoradoManual = true;
+}
+
+// Partidas restauradas cuyo codigo ya no existe en el catalogo. Se calculan del
+// carrito vigente, no de lo que se restauro: quitar la linea apaga el aviso y
+// vuelve a habilitar la generacion sin nada mas que hacer.
+function partidasSinCatalogo() {
+  return [...state.cart]
+    .filter(([, { product }]) => product.sinCatalogo)
+    .map(([codigo]) => codigo);
+}
+
+// Mismo tratamiento visual que el aviso de calca invalida y en los MISMOS dos
+// lugares (Productos y Resumen): la partida se ve donde se corrige y donde se
+// genera, en vez de sorprender con un alert al dar Generar.
+function pintarAvisoPartidasSinCatalogo() {
+  const codigos = partidasSinCatalogo();
+  const aviso = codigos.length ? avisoPartidaSinCatalogo(codigos) : '';
+  for (const id of ['borrador-invalido-productos', 'resumen-borrador-invalido']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.style.display = aviso ? 'block' : 'none';
+    el.textContent = aviso;
+  }
 }
 
 // === TIER LOGIC ===
@@ -441,6 +560,10 @@ function getNextTier() {
 // carrito la pinta como invalida, en vez de imprimir un cero silencioso.
 function precioUnitario(product) {
   const tier = getCurrentTier();
+  // Partida restaurada de un borrador cuyo codigo ya no esta en el catalogo
+  // (#179): no tiene precio y lo dice, en vez de caer al `?? 0` y cotizarse en
+  // cero. Se pinta con el mismo tratamiento de partida invalida que la calca.
+  if (product.sinCatalogo) return null;
   if (product.esCalca) return precioCalca(product, tierIdParaCalca(tier.id));
   return product.prices[tier.id] ?? product.prices['Menudeo'] ?? 0;
 }
@@ -483,6 +606,11 @@ function updateTierBar() {
   // este es el unico punto por el que pasan TODOS los cambios del carrito.
   renderCalcas();
   updateTabIndicators();
+  // Autosave del borrador (#179). El otro enganche esta en renderCartLines,
+  // porque capturar un descuento o una descripcion no cambia el volumen y no
+  // pasa por aqui. Guardar de mas no cuesta nada; guardar de menos cuesta la
+  // captura del vendedor.
+  autoguardarBorrador();
 }
 
 // === STEPPER INDICATOR (issue #60) ===
@@ -792,6 +920,12 @@ function renderCartLines() {
   const container = document.getElementById('cart-lines');
   const subtotalEl = document.getElementById('cart-lines-subtotal');
   if (!section || !container) return;
+
+  // Segundo enganche del autosave (#179): por aqui pasan los cambios que no
+  // mueven el volumen -- descuento por linea, descripcion editada -- y que por
+  // eso no llegan a updateTierBar.
+  autoguardarBorrador();
+  pintarAvisoPartidasSinCatalogo();
 
   if (state.cart.size === 0) {
     section.style.display = 'none';
@@ -1744,6 +1878,10 @@ async function guardarYNumerarCotizacion(body, progreso) {
   }
   const { id, requiereActualizacionOperam, folioOperam } = await res.json();
   state.lastCotizacionId = String(id);
+  // La cotizacion ya esta guardada en el servidor: el borrador cumplio su
+  // funcion y muere aqui (#179), pasa lo que pase despues con Operam. Es el
+  // unico punto por el que salen las dos generaciones (PDF y HTML).
+  matarBorrador(EVENTOS_BORRADOR.GENERACION_EXITOSA);
   const slot = document.getElementById('operam-status-cotizar');
   // Modo actualizacion (#104, ADR-0008): aqui NO hay inversion que hacer. El folio
   // ya existe -- el gate puedeActualizarCotizacion lo exige -- asi que el documento
@@ -1824,6 +1962,14 @@ async function generatePDF() {
   const motivoCalca = motivoCalcaInvalidaActual();
   if (bloqueaGeneracionPorCalcaSinPrecio(motivoCalca !== null)) {
     alert(avisoCalcaInvalida());
+    switchTab('productos');
+    return;
+  }
+  // Partida restaurada de un borrador cuyo codigo ya no existe (#179): mismo
+  // freno que la calca sin precio -- sin el, getPrice la cotizaria en cero.
+  const codigosMuertos = partidasSinCatalogo();
+  if (bloqueaGeneracionPorPartidaSinCatalogo(codigosMuertos)) {
+    alert(avisoPartidaSinCatalogo(codigosMuertos));
     switchTab('productos');
     return;
   }
@@ -1913,6 +2059,14 @@ async function generateHTML() {
   const motivoCalca = motivoCalcaInvalidaActual();
   if (bloqueaGeneracionPorCalcaSinPrecio(motivoCalca !== null)) {
     alert(avisoCalcaInvalida());
+    switchTab('productos');
+    return;
+  }
+  // Partida restaurada de un borrador cuyo codigo ya no existe (#179): mismo
+  // freno que la calca sin precio -- sin el, getPrice la cotizaria en cero.
+  const codigosMuertos = partidasSinCatalogo();
+  if (bloqueaGeneracionPorPartidaSinCatalogo(codigosMuertos)) {
+    alert(avisoPartidaSinCatalogo(codigosMuertos));
     switchTab('productos');
     return;
   }
@@ -2018,6 +2172,9 @@ function nuevaCotizacion() {
   marcarNavActivo('nav-cotizar');
   state.cart.clear();
   descripcionesAbiertas.clear();
+  // Empezar de cero mata el borrador (#179): recargar despues no resucita la
+  // cotizacion que el vendedor acaba de descartar.
+  matarBorrador(EVENTOS_BORRADOR.NUEVA_COTIZACION);
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.vendedorConfirmado = false;
@@ -4740,28 +4897,14 @@ async function cargarCotizacion(id, modo = 'nueva') {
     state.tierFijado = tierListaCargada.tierFijado;
     for (const item of (cot.items || [])) {
       if (item.codigo === 'ENVIO') continue;
-      // La calca (#91) no vive en products ni en skus sino en el catalogo de
-      // calcas: sin este caso la partida se perderia al Cargar en silencio, y
-      // regenerar reescribiria el quote de Operam SIN la calca (#114).
-      if (esCodigoCalca(item.codigo)) {
-        const ficha = catalogoCalcas().find(c => c.code === item.codigo);
-        if (ficha) state.cart.set(item.codigo, { product: productoCalca(ficha), cantidad: item.cantidad, descuento: item.descuento || 0, ...descripcionRestaurada(item) });
-        continue;
-      }
-      // Intentar encontrar en SKUs o products
-      const sku = state.precios.skus?.find(s => s.sku === item.codigo);
-      const product = state.precios.products.find(p => p.key === item.codigo) ||
-        (sku ? state.precios.products.find(p => p.key === sku.priceKey) : null);
-      if (!product) continue;
-
-      const cartProduct = sku ? {
-        key: item.codigo,
-        name: sku.nombre,
-        model: sku.tipo + sku.tamano,
-        weight_kg: product.weight_kg,
-        prices: product.prices,
-      } : product;
-
+      // Codigo guardado -> producto del catalogo vigente por el UNICO camino que
+      // existe (#179, resolverProductoDelCatalogo): SKU completo, price key o
+      // calca. La calca (#91) no vive en products ni en skus sino en su propio
+      // catalogo, y resolverla aparte aqui era una copia espejo que ya empezaba a
+      // divergir de la del borrador. Un codigo que ya no existe se salta, como
+      // siempre en este camino.
+      const cartProduct = resolverProductoDelCatalogo(item.codigo, state.precios);
+      if (!cartProduct) continue;
       // El descuento por linea se restaura junto con la cantidad (#137): sin el,
       // regenerar reescribiria el quote SIN la negociacion (mismo agujero que ya
       // mordio con la calca). La descripcion editada (#139), por lo mismo.
