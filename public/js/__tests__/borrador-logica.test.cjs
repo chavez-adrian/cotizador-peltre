@@ -194,6 +194,60 @@ test('#180-10: la sesion completa hace ida y vuelta por localStorage sin perder 
   assert.equal(leido.vendedorConfirmado, true);
 });
 
+// === Modo Editar (#104/#184, spec #178): el binding al registro y al folio
+// originales viaja en el borrador, para que generar desde la sesion restaurada
+// reescriba el MISMO quote conservando folio en vez de crear uno nuevo ===
+test('#184-1: en modo Editar, el registro y el folio viajan con el borrador', () => {
+  const borrador = serializarBorrador({
+    carrito: [], modoActualizacion: true, cotizacionId: 42, folioOperam: 1216, ahora: 1,
+  });
+
+  assert.equal(borrador.modoActualizacion, true);
+  assert.equal(borrador.cotizacionId, '42');
+  assert.equal(borrador.folioOperam, 1216);
+});
+
+test('#184-2: fuera de modo Editar, ninguna de las tres llaves del binding aparece', () => {
+  const borrador = serializarBorrador({ carrito: [], ahora: 1 });
+
+  assert.equal('modoActualizacion' in borrador, false);
+  assert.equal('cotizacionId' in borrador, false);
+  assert.equal('folioOperam' in borrador, false);
+});
+
+test('#184-3: modoActualizacion sin cotizacionId no es un binding -- no se guarda', () => {
+  const borrador = serializarBorrador({ carrito: [], modoActualizacion: true, folioOperam: 1216, ahora: 1 });
+
+  assert.equal('modoActualizacion' in borrador, false);
+  assert.equal('cotizacionId' in borrador, false);
+  assert.equal('folioOperam' in borrador, false);
+});
+
+// El gate puedeActualizarCotizacion exige folioOperam para siquiera ofrecer
+// modo Editar (cotizaciones-logica.js: "el folio SIEMPRE existe en este
+// modo"): un binding sin folio conocido rompe esa invariante -- el aviso al
+// restaurar caeria a "PRE" para una cotizacion que ya esta registrada. El
+// binding viaja completo -- registro y folio juntos -- o no viaja.
+test('#184-4: sin folio conocido, el binding NO viaja (romperia la invariante de que el folio siempre existe en modo Editar)', () => {
+  const borrador = serializarBorrador({ carrito: [], modoActualizacion: true, cotizacionId: 7, ahora: 1 });
+
+  assert.equal('modoActualizacion' in borrador, false);
+  assert.equal('cotizacionId' in borrador, false);
+  assert.equal('folioOperam' in borrador, false);
+});
+
+test('#184-5: el binding de modo Editar hace ida y vuelta por localStorage', () => {
+  const guardado = JSON.stringify(serializarBorrador({
+    carrito: [ENTRADA_CO16], modoActualizacion: true, cotizacionId: 15, folioOperam: 900, ahora: 1755400000000,
+  }));
+
+  const leido = deserializarBorrador(guardado);
+
+  assert.equal(leido.modoActualizacion, true);
+  assert.equal(leido.cotizacionId, '15');
+  assert.equal(leido.folioOperam, 900);
+});
+
 // === Deserializacion: lo que no se entiende no se restaura ===
 test('#179-4: lo guardado se vuelve a leer tal cual (ida y vuelta por el texto de localStorage)', () => {
   const guardado = JSON.stringify(serializarBorrador({

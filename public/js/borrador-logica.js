@@ -41,6 +41,7 @@ function normalizarLinea(linea) {
 export function serializarBorrador({
   carrito, decorado, ahora,
   cliente, contactoNuevo, envio, tierFijado, vigenciaDias, vendedorConfirmado,
+  modoActualizacion, cotizacionId, folioOperam,
 } = {}) {
   const lineas = (carrito || []).map(normalizarLinea).filter(Boolean);
   const borrador = { v: VERSION_BORRADOR, actualizado: Number(ahora) || 0, carrito: lineas };
@@ -66,6 +67,23 @@ export function serializarBorrador({
   // vendedorConfirmado viaja SOLO en true, mismo patron que decorado: false es
   // el default implicito de la ausencia de la llave.
   if (vendedorConfirmado === true) borrador.vendedorConfirmado = true;
+  // Modo Editar (#104/#184, spec #178): el binding COMPLETO al registro y al
+  // folio originales -- sin el, generar desde la sesion restaurada crearia una
+  // cotizacion nueva por accidente en vez de reescribir la que el vendedor
+  // esta editando. Viaja SOLO cuando el binding esta completo: registro Y
+  // folio, los tres juntos o nada -- igual que en vivo, donde el gate
+  // puedeActualizarCotizacion exige folioOperam para siquiera ofrecer modo
+  // Editar (cotizaciones-logica.js, buildAvisoModoActualizacion: "el folio
+  // SIEMPRE existe en este modo"). Guardar modoActualizacion sin folio
+  // resucitaria esa invariante rota: el aviso al restaurar caeria a "PRE" para
+  // una cotizacion que por definicion ya esta registrada. El gate de Editar NO
+  // se re-valida aqui: eso queda para el 409 existente al generar, decision
+  // explicita del spec.
+  if (modoActualizacion === true && cotizacionId && folioOperam != null && folioOperam !== '') {
+    borrador.modoActualizacion = true;
+    borrador.cotizacionId = String(cotizacionId);
+    borrador.folioOperam = folioOperam;
+  }
   return borrador;
 }
 

@@ -266,6 +266,12 @@ const state = {
   // Operam (conservando el folio) en vez de crear una cotizacion nueva. Cualquier
   // cosa que termine la sesion de cotizacion lo apaga.
   modoActualizacion: false,
+  // Folio de Operam del registro en modo actualizacion (#184): solo texto para
+  // reconstruir el aviso (buildAvisoModoActualizacion) cuando la sesion se
+  // restaura de un borrador -- no participa en la decision de reescribir, que
+  // el servidor toma con lastCotizacionId. Se apaga en los mismos tres puntos
+  // que lastCotizacionId.
+  folioOperam: null,
   // Vendedor ya confirmado para la cotizacion en curso (#113). El modal de #87
   // existe para no estampar al vendedor equivocado, y eso solo puede cambiar al
   // EMPEZAR una cotizacion: dentro de la misma, preguntar otra vez por el segundo
@@ -540,6 +546,11 @@ function autoguardarBorrador() {
       tierFijado: state.tierFijado,
       vigenciaDias: parseInt(document.getElementById('resumen-vigencia')?.value) || null,
       vendedorConfirmado: state.vendedorConfirmado === true,
+      // Modo Editar (#104/#184): el binding al registro y al folio originales,
+      // para que generar desde la sesion restaurada reescriba el MISMO quote.
+      modoActualizacion: state.modoActualizacion === true,
+      cotizacionId: state.lastCotizacionId,
+      folioOperam: state.folioOperam,
     });
     localStorage.setItem(llave, JSON.stringify(borrador));
   } catch {
@@ -637,6 +648,28 @@ function aplicarBorrador(borrador) {
   // Vendedor confirmado (#87/#113, #180): la recarga no vuelve a preguntar
   // quien cotiza.
   if (borrador.vendedorConfirmado === true) state.vendedorConfirmado = true;
+
+  // Modo Editar (#104/#184): el binding al registro y al folio originales, para
+  // que generar desde la sesion restaurada reescriba el MISMO quote conservando
+  // folio en vez de crear uno nuevo. Se aplica DESPUES de que pcPrepararSeleccion
+  // (llamado antes en showApp, o ya corrido cuando entro por Editar en vivo) lo
+  // apago -- mismo orden reset-luego-restaura que tierFijado y vendedorConfirmado.
+  // El gate de Editar NO se re-valida aqui (decision del spec #178): si el quote
+  // gano un pedido asociado mientras tanto, el 409 existente al generar lo dice.
+  // El folio se exige junto con el registro (nunca uno sin el otro): el gate
+  // puedeActualizarCotizacion ya garantiza que el folio existe siempre que el
+  // modo Editar es real, asi que un borrador que trajera el modo sin folio
+  // seria localStorage corrupto -- se ignora en vez de pintar el aviso con
+  // "PRE" para una cotizacion que por definicion ya esta registrada.
+  if (borrador.modoActualizacion === true && borrador.cotizacionId
+    && borrador.folioOperam != null && borrador.folioOperam !== '') {
+    state.modoActualizacion = true;
+    state.lastCotizacionId = String(borrador.cotizacionId);
+    state.folioOperam = borrador.folioOperam;
+    const operamStatus = document.getElementById('operam-status-cotizar');
+    if (operamStatus) operamStatus.innerHTML = buildAvisoModoActualizacion(state.folioOperam);
+    aplicarEtiquetasBotonesGenerar();
+  }
 }
 
 // Repinta la UI tras aplicar un borrador FUERA del flujo normal de showApp: el
@@ -2397,6 +2430,7 @@ function nuevaCotizacion() {
   matarBorrador(EVENTOS_BORRADOR.NUEVA_COTIZACION);
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
+  state.folioOperam = null;
   state.vendedorConfirmado = false;
   state.tierFijado = '';
 
@@ -2618,6 +2652,7 @@ function pcPrepararSeleccion() {
   // subida del resumen tambien era del anterior.
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
+  state.folioOperam = null;
   state.vendedorConfirmado = false;
   state.tierFijado = '';
   const operamStatus = document.getElementById('operam-status-cotizar');
@@ -5413,6 +5448,9 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // (puedeActualizarCotizacion) y lo hace valer el servidor.
     state.modoActualizacion = modo === 'actualizar';
     state.lastCotizacionId = state.modoActualizacion ? String(id) : null;
+    // Folio de Operam del binding (#184): viaja con el modo actualizacion, solo
+    // para reconstruir el aviso si la sesion se restaura de un borrador.
+    state.folioOperam = state.modoActualizacion ? (cot.folioOperam ?? null) : null;
     // #113: cargar OTRA cotizacion es exactamente cuando puede cambiar quien queda
     // estampado, asi que la confirmacion se vuelve a pedir en los dos modos.
     state.vendedorConfirmado = false;
