@@ -1797,7 +1797,7 @@ test('D3: POST /api/crear-cliente con customer_id existente salta POST y no dupl
   }
 });
 
-test('D4: POST /api/crear-cliente con customer_id existente actualiza sales_type/segmento_id/salesman/timbrado_uso_cfdi via PUT customers/:id (issue #11)', async () => {
+test('D4: POST /api/crear-cliente con customer_id existente actualiza sales_type/segmento_id/timbrado_uso_cfdi via PUT customers/:id (issue #11)', async () => {
   let putCustomerBody = null;
   let putCustomerCalled = false;
   _resetSesionWeb();
@@ -1821,8 +1821,11 @@ test('D4: POST /api/crear-cliente con customer_id existente actualiza sales_type
     assert.ok(putCustomerCalled, 'debe hacer PUT /customers/:id para cliente existente');
     assert.strictEqual(putCustomerBody.sales_type, BASE_CLIENTE.sales_type, 'debe enviar sales_type seleccionado');
     assert.strictEqual(putCustomerBody.segmento_id, BASE_CLIENTE.segmento_id, 'debe enviar segmento_id seleccionado');
-    assert.strictEqual(putCustomerBody.salesman, BASE_CLIENTE.salesman, 'debe enviar salesman seleccionado');
     assert.strictEqual(putCustomerBody.timbrado_uso_cfdi, BASE_CLIENTE.timbrado_uso_cfdi, 'debe enviar timbrado_uso_cfdi seleccionado');
+    // issue #187: salesman es campo de la sucursal, no del cliente -- el PUT de
+    // customers/:id no debe mandarlo (el vendedor SI se escribe, pero via PUT /branches,
+    // cubierto por el assert de branchBody.salesman en D1c).
+    assert.ok(!('salesman' in putCustomerBody), 'salesman NO debe viajar en el PUT de customers (es campo de la sucursal)');
     const putCustomerStep = res.body.steps.find(s => s.name === 'PUT customer (config comercial)');
     assert.ok(putCustomerStep, 'debe existir step PUT customer (config comercial)');
     assert.strictEqual(putCustomerStep.status, 'ok');

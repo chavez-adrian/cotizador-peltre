@@ -2372,7 +2372,7 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   // customer_id ya viaja en el payload: puede ser reintento de un alta nueva (los
   // datos comerciales ya se mandaron en el POST /customers de ese mismo flujo) o un
   // cliente EXISTENTE elegido via deduplicacion (altaState.clienteExistente, issue #31)
-  // -- en ese caso el POST /customers nunca corrio y sales_type/segmento_id/salesman/
+  // -- en ese caso el POST /customers nunca corrio y sales_type/segmento_id/
   // timbrado_uso_cfdi seleccionados en la seccion 2 se perdian en silencio (issue #11,
   // gap confirmado en auditoria de #26). Reenviar esos campos via PUT /customers/:id es
   // idempotente para el caso de reintento (mismos valores que ya fueron al POST) y
@@ -2416,10 +2416,14 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     // el alta (issue #11).
     if (customerIdYaConocido) {
       try {
+        // salesman NO viaja aqui (issue #187): es campo de la SUCURSAL en FrontAccounting,
+        // no del cliente -- el PUT /customers/:id lo ignora porque a ese nivel no existe.
+        // Se escribe donde vive, en el PUT /branches del Step 3. segmento_id se deja aunque
+        // la API v3 tampoco lo persista (mismo criterio que #172): si algun dia Operam lo
+        // arregla, empieza a funcionar solo.
         await actualizarClienteDirecto(customer_id, {
           sales_type: cliente.sales_type,
           segmento_id: cliente.segmento_id,
-          salesman: cliente.salesman,
           timbrado_uso_cfdi: cliente.timbrado_uso_cfdi,
         });
         steps.push({ name: 'PUT customer (config comercial)', status: 'ok' });
