@@ -4357,21 +4357,37 @@ function cvRenderBusqueda() {
 }
 window.cvRenderBusqueda = cvRenderBusqueda;
 
+// Token de secuencia de #cv-zona (#190): recientes y busqueda escriben la MISMA
+// zona y las dos son asincronas. Sin el, un /api/cotizaciones lento aterrizaba
+// despues de los resultados ya pintados y los borraba -- mismo sintoma que el bug
+// que este issue cierra, pero intermitente. Es el patron de pcBusquedaSeq, con su
+// propio token porque aqui lo que compite es quien pinta la zona, no quien
+// consulta.
+let cvZonaSeq = 0;
+
 async function cvRenderRecientes() {
+  const seq = ++cvZonaSeq;
+  if (!document.getElementById('cv-zona')) return;
+  const recientes = await pcCargarRecientes();
+  if (seq !== cvZonaSeq) return; // un render mas nuevo ya se adueno de la zona
   const zona = document.getElementById('cv-zona');
   if (!zona) return;
-  const recientes = await pcCargarRecientes();
-  if (!recientes.length) { zona.innerHTML = ''; return; }
   // Los recientes derivan de cotizaciones (nombre + telefono) y no traen RFC/id,
   // asi que tocarlos prellena la busqueda y resuelve el registro real de Operam
   // (con su tag generico correcto), en vez de intentar pintar una tarjeta a medias.
-  zona.innerHTML = '<div class="pc-res-titulo">Recientes</div>' +
-    recientes.map(r =>
-      '<button type="button" class="pc-res-row" onclick="cvBuscarPrefill(' + JSON.stringify(r.nombre).replace(/"/g, '&quot;') + ')">' +
-      '<span class="pc-res-ini">' + escapeHtml(pcIniciales(r.nombre)) + '</span>' +
-      '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(r.nombre) + '</span>' +
-      '<span class="pc-res-sub">' + escapeHtml(r.telefono || 'Cotizado antes') + '</span></span></button>'
-    ).join('');
+  const filas = recientes.length
+    ? '<div class="pc-res-titulo">Recientes</div>' +
+      recientes.map(r =>
+        '<button type="button" class="pc-res-row" onclick="cvBuscarPrefill(' + JSON.stringify(r.nombre).replace(/"/g, '&quot;') + ')">' +
+        '<span class="pc-res-ini">' + escapeHtml(pcIniciales(r.nombre)) + '</span>' +
+        '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(r.nombre) + '</span>' +
+        '<span class="pc-res-sub">' + escapeHtml(r.telefono || 'Cotizado antes') + '</span></span></button>'
+      ).join('')
+    : '';
+  // La fila punteada tambien en el estado inicial y en la rama sin recientes
+  // (#190): el subtitulo de la pantalla promete "o da de alta uno nuevo" y hasta
+  // ahora esa puerta solo se abria despues de teclear 2 caracteres.
+  zona.innerHTML = filas + filaCrearClienteHtml('');
 }
 
 async function cvBuscarPrefill(nombre) {
@@ -4383,11 +4399,13 @@ window.cvBuscarPrefill = cvBuscarPrefill;
 async function cvBuscar() {
   const q = document.getElementById('cv-q')?.value || '';
   if (q.trim().length < 2) { await cvRenderRecientes(); return; }
+  const seq = ++cvZonaSeq;
   const zonaAntes = document.getElementById('cv-zona');
   if (!zonaAntes) return;
   zonaAntes.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
   const rows = await pcBuscarMezclado(q);
   if (!rows) return; // respuesta vieja descartada
+  if (seq !== cvZonaSeq) return; // un render de recientes mas nuevo se adueno de la zona
   const zona = document.getElementById('cv-zona');
   if (!zona) return;
   cvResultadosCache = rows;
