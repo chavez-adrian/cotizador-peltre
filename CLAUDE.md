@@ -64,7 +64,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 | `validar-cp.js` | Puro: valida CP por pais |
 | `fs-reintento.js` | TODO acceso a `data/*.json` pasa por aqui (ver Trampas) |
 
-`public/js/alta-logica.js` (logica pura del alta de cliente, incluida la tabla `REGLAS_TELEFONO` que comparten `validarTelefono` y `telefonoValido`), `public/js/calcas-logica.js` (calca en el carrito, #91/ADR-0010), `public/js/regimen-fiscal-logica.js` (catalogo c_RegimenFiscal del SAT + filtro por tipo de RFC, #191; lo consumen el selector del alta y `lib/parsear-csf.js`) y `public/js/telefono-widget.js` (widget intl-tel-input vendoreado + capa estricta que avisa sin bloquear, #176; lo comparten mayoreo y los 5 campos de telefono del alta interna) son los nucleos puros del frontend — detalle y reglas no obvias en `docs/arquitectura.md`.
+`public/js/alta-logica.js` (logica pura del alta de cliente, incluida la tabla `REGLAS_TELEFONO` que comparten `validarTelefono` y `telefonoValido`), `public/js/calcas-logica.js` (calca en el carrito, #91/ADR-0010), `public/js/regimen-fiscal-logica.js` (catalogo c_RegimenFiscal del SAT + filtro por tipo de RFC, #191; lo consumen el selector del alta y `lib/parsear-csf.js`) y `public/js/telefono-widget.js` (widget intl-tel-input vendoreado + capa estricta que avisa sin bloquear, #176; lo comparten mayoreo y los 6 campos de telefono del alta interna) son los nucleos puros del frontend — detalle y reglas no obvias en `docs/arquitectura.md`.
 
 ## Trampas que cuestan horas (no derivables del codigo)
 

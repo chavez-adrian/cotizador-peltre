@@ -125,9 +125,9 @@ export function opcionesWidget() {
     strictMode: true,
     loadUtils: () => import('/vendor/intl-tel-input/js/utils.js'),
     uiTranslations: {
-      searchPlaceholder: 'Buscar pais',
+      searchPlaceholder: 'Buscar país',
       searchEmptyState: 'Sin resultados',
-      clearSearchAriaLabel: 'Borrar la busqueda',
+      clearSearchAriaLabel: 'Borrar la búsqueda',
     },
   };
 }
