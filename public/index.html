@@ -143,15 +143,6 @@
                     <small id="csf-regimen-fiscal-label" style="display:block;margin-top:4px;color:#6b7280;font-size:12px"></small>
                   </div>
                   <div class="form-group">
-                    <label>Uso de CFDI</label>
-                    <select id="csf-uso-cfdi">
-                      <option value="G01">G01 - Adquisicion de mercancias</option>
-                      <option value="G03">G03 - Gastos en general</option>
-                      <option value="S01" selected>S01 - Sin efectos fiscales</option>
-                      <option value="CP01">CP01 - Pagos</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
                     <label>Calle</label>
                     <input type="text" id="csf-calle">
                   </div>
@@ -226,15 +217,6 @@
                     <input type="text" id="manual-regimen-fiscal" placeholder="Ej: 601">
                   </div>
                   <div class="form-group">
-                    <label>Uso de CFDI</label>
-                    <select id="manual-uso-cfdi">
-                      <option value="G01">G01 - Adquisicion de mercancias</option>
-                      <option value="G03">G03 - Gastos en general</option>
-                      <option value="S01" selected>S01 - Sin efectos fiscales</option>
-                      <option value="CP01">CP01 - Pagos</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
                     <label>Calle <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
                     <input type="text" id="manual-calle" placeholder="Ej: Nayarit">
                   </div>
@@ -269,12 +251,25 @@
                 </button>
               </div><!-- /alta-panel-manual -->
 
-              <!-- Segmento (compartido por ambas pestanas, issue #95 regla 6): captura
-                   disponible en el upgrade fiscal, no solo en la Seccion 2 del acordeon
-                   completo (hoy sin punto de entrada en la UI) -->
+              <!-- Uso de CFDI (issue #193): UNICO campo del panel para este concepto, y
+                   vive aqui por ser dato fiscal. Antes habia tres (uno por pestana mas
+                   otro en la Seccion 2) y el alta leia solo el de la Seccion 2, asi que
+                   lo capturado arriba se perdia en silencio y con OTRO default. El
+                   default lo fija app.js segun el modo (altaFijarDefaultUsoCfdi):
+                   G03 en el alta completa, S01 en el upgrade fiscal.
+                   El segmento NO se duplica aqui: su unico campo es #alta-segmento
+                   (Seccion 2, configuracion comercial) y el upgrade lo lee de ahi. -->
               <div class="form-group" style="margin-top:8px">
-                <label>Segmento <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
-                <select id="alta-upgrade-segmento"><option value="">-- Selecciona --</option></select>
+                <label>Uso de CFDI</label>
+                <select id="alta-uso-cfdi">
+                  <option value="G03" selected>G03 - Gastos en general</option>
+                  <option value="S01">S01 - Sin efectos fiscales</option>
+                  <option value="G01">G01 - Adquisicion de mercancias</option>
+                  <option value="G02">G02 - Devoluciones, descuentos o bonificaciones</option>
+                  <option value="I01">I01 - Construcciones</option>
+                  <option value="P01">P01 - Por definir</option>
+                  <option value="CP01">CP01 - Pagos</option>
+                </select>
               </div>
 
               <!-- Deduplicacion resultado (se inyecta por JS) -->
@@ -314,17 +309,6 @@
                 <input type="tel" id="alta-celular" placeholder="55 1234 5678">
                 <div id="alta-celular-aviso" style="display:none;margin-top:6px;font-size:12px"></div>
                 <div id="alta-celular-candidatos" style="display:none;margin-top:6px"></div>
-              </div>
-              <div class="form-group">
-                <label>Uso de CFDI</label>
-                <select id="alta-uso-cfdi">
-                  <option value="G03">G03 - Gastos en general</option>
-                  <option value="S01">S01 - Sin efectos fiscales</option>
-                  <option value="G01">G01 - Adquisicion de mercancias</option>
-                  <option value="G02">G02 - Devoluciones, descuentos o bonificaciones</option>
-                  <option value="I01">I01 - Construcciones</option>
-                  <option value="P01">P01 - Por definir</option>
-                </select>
               </div>
               <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="altaConfirmarComercial()">
                 Confirmar config comercial

@@ -137,6 +137,57 @@ export function separarTelefonoCodigo(telefono) {
 // porque sigue siendo la forma de verificarlo: si tampoco el post-fix lo aplico, la
 // relectura lo reporta como no aplicado (ver camposNoAplicados) con el motivo real y el
 // vendedor lo ajusta a mano en la UI de Operam. Detalle en peltre-operam.md seccion 12.5c.
+// Uso de CFDI: UN solo campo (#alta-uso-cfdi) para los dos modos del panel, pero
+// el default depende del modo (issue #193). Antes habia tres selectores -- uno por
+// pestana de la Seccion 1 (default S01, leido solo por el upgrade) y otro en la
+// Seccion 2 (default G03, leido solo por el alta) -- asi que el alta guardaba un uso
+// de CFDI DISTINTO del que el vendedor habia visto en pantalla. Al consolidarlos, el
+// default se elige al abrir el panel para que lo mostrado y lo enviado coincidan:
+//   - alta completa: G03 (gastos en general), el default historico de la Seccion 2;
+//   - upgrade fiscal: S01, el mismo que DIFF_FISCAL_CAMPOS fuerza en el PUT (regla 2
+//     de #95) -- mostrar G03 ahi haria ver un valor que el PUT no manda.
+// El argumento es altaCsfState.modoUpgrade: un customer_id o null. El modo lo decide
+// la PRESENCIA del id, no su verdad.
+export const USO_CFDI_DEFAULT_ALTA = 'G03';
+export const USO_CFDI_DEFAULT_UPGRADE = 'S01';
+
+export function usoCfdiPorDefecto(modoUpgrade) {
+  return modoUpgrade != null ? USO_CFDI_DEFAULT_UPGRADE : USO_CFDI_DEFAULT_ALTA;
+}
+
+// Reapertura del panel de alta (issue #192). El panel es un solo nodo del DOM y su
+// estado vive en memoria: hasta #192 nada lo limpiaba, asi que reabrir "Nuevo cliente"
+// tras un alta exitosa dejaba el boton muerto Y -- si se hubiera podido pulsar --
+// habria aplicado la config comercial, el segmento y el domicilio del cliente NUEVO
+// encima del customer_id del ANTERIOR (POST /api/crear-cliente trata customer_id como
+// "cliente ya conocido" y se salta la creacion).
+//
+// La distincion que hace este nucleo es la unica delicada: un alta COMPLETADA deja
+// rastro que hay que tirar, pero un alta A MEDIAS es exactamente lo que el borrador
+// persistente (#185) restaura a proposito -- vaciar a ciegas lo romperia. Un alta que
+// FALLO tras crear el cliente tambien se conserva: ahi customer_id no es rastro viejo,
+// es el destino legitimo de "Reintentar" (sin el, el reintento crearia un duplicado).
+// Devuelve tambien `reiniciado` porque el DOM (pasos, botones, avisos) solo se limpia
+// cuando el estado se limpio.
+export function estadoAltaAlAbrirPanel(estado) {
+  const base = estado || {};
+  if (!base.altaCompletada) return { estado: base, reiniciado: false };
+  return {
+    estado: {
+      ...base,
+      customer_id: null,
+      branch_id: null,
+      clienteExistente: null,
+      datos: null,
+      domicilio: null,
+      modo: null,
+      seccionAbierta: null,
+      altaCompletada: false,
+    },
+    reiniciado: true,
+  };
+}
+
 export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social', write: 'cust_name' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },

@@ -167,7 +167,7 @@ test('M18: buildManualConfirmarPayload extrae todos los campos del formulario ma
     'manual-nombre-corto': 'SAGO MEDICAL',
     'manual-idcif': '20090146505',
     'manual-regimen-fiscal': '601',
-    'manual-uso-cfdi': 'G01',
+    'alta-uso-cfdi': 'G01',
     'manual-cp': '06760',
     'manual-municipio': 'CUAUHTEMOC',
     'manual-estado': 'CIUDAD DE MEXICO',
