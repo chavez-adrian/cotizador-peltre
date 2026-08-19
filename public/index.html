@@ -6,6 +6,7 @@
 <title>Cotizador - Peltre Nacional</title>
 <link rel="stylesheet" href="/vendor/intl-tel-input/css/intlTelInput.min.css">
 <link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/telefono-widget.css">
 </head>
 <body>
 
@@ -311,10 +312,11 @@
               </div>
               <div class="form-group">
                 <label>Celular <span style="font-size:11px;color:var(--text-light)">(se registra en notas; completar manualmente en Operam)</span></label>
-                <input type="tel" id="alta-celular" placeholder="55 1234 5678">
+                <input type="tel" id="alta-celular" inputmode="tel" placeholder="55 1234 5678">
                 <div id="alta-celular-aviso" style="display:none;margin-top:6px;font-size:12px"></div>
                 <div id="alta-celular-candidatos" style="display:none;margin-top:6px"></div>
               </div>
+              <div id="alta-comercial-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
               <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="altaConfirmarComercial()">
                 Confirmar config comercial
               </button>

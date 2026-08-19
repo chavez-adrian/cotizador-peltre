@@ -13,7 +13,7 @@ import {
   sugerirDominioCorreo, validarMayoreo, paisDelFormulario,
 } from './mayoreo-logica.js';
 import {
-  celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget,
+  celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget, opcionesWidget,
 } from './telefono-widget.js';
 
 const form = document.getElementById('form-mayoreo');
@@ -67,12 +67,11 @@ function chipElegido(nombre) {
 // gratuito que sugiere la doc oficial se agoto en la primera llamada de la
 // investigacion). loadUtils carga libphonenumber en diferido via import()
 // nativo del navegador -- no hay paso de build, la ruta es local (2.3).
+// La config es la compartida (opcionesWidget, telefono-widget.js): la misma con
+// la que nacen los campos del alta interna, incluido el buscador de pais en
+// espanol -- una sola config, cero copias espejo.
 const inputCel = document.getElementById('f-cel');
-const iti = window.intlTelInput(inputCel, {
-  initialCountry: 'mx',
-  strictMode: true,
-  loadUtils: () => import('/vendor/intl-tel-input/js/utils.js'),
-});
+const iti = window.intlTelInput(inputCel, opcionesWidget());
 
 // celCode sigue siendo el contrato de mayoreo-logica.js (celularDeMayoreo,
 // paisDelFormulario -- issue #160): MX/US/CA mapean a los prefijos de la casa y

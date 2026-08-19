@@ -6637,7 +6637,9 @@ window.altaCandidatoCrearNuevo = altaCandidatoCrearNuevo;
 async function altaBuscarCelular() {
   const aviso = document.getElementById('alta-celular-aviso');
   if (!aviso) return;
-  const celular = (document.getElementById('alta-celular')?.value || '').trim();
+  // El numero sale del widget (#176): asi la clasificacion viaja en E.164, sin
+  // el "1" legacy, y coincide con la llave ultimos10 del embudo.
+  const celular = telefonoDeCampo('alta-celular');
   const candDiv = document.getElementById('alta-celular-candidatos');
   if (candDiv) { candDiv.innerHTML = ''; candDiv.style.display = 'none'; }
   if (!celular) { aviso.style.display = 'none'; aviso.textContent = ''; return; }
@@ -6679,7 +6681,23 @@ async function altaBuscarCelular() {
 }
 window.altaBuscarCelular = altaBuscarCelular;
 
-function altaConfirmarComercial() {
+async function altaConfirmarComercial() {
+  // El celular de esta seccion es opcional (va a las notas del cliente), pero si
+  // se captura pasa por las mismas dos capas que el resto de los telefonos del
+  // alta (#176): la reja dura de validarTelefono y la capa estricta, que avisa y
+  // deja guardar al confirmar.
+  const errDiv = document.getElementById('alta-comercial-error');
+  const celular = numeroDeCampo('alta-celular');
+  if (celular) {
+    const celErr = validarTelefono(celCodeDeCampo('alta-celular'), celular);
+    if (celErr) {
+      if (errDiv) { errDiv.textContent = celErr; errDiv.style.display = ''; }
+      return;
+    }
+    if (!await confirmarTelefono('alta-celular')) return;
+  }
+  if (errDiv) errDiv.style.display = 'none';
+
   const dot = document.getElementById('chkdot-2');
   if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
 
@@ -6825,7 +6843,7 @@ function altaDarDeAlta() {
     segmento_id: getComercial('alta-segmento'),
     salesman: getComercial('alta-vendedor'),
     invoice_email: getComercial('alta-email-factura'),
-    celular_nota: getComercial('alta-celular'),
+    celular_nota: telefonoDeCampo('alta-celular'),
   };
   const payload = buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, resolvedCustomerId, altaState.branch_id);
 
@@ -6939,11 +6957,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Widget internacional en los campos de telefono que ya viven en el HTML
-// (issue #176). El quinto, pc-cel, nace de un innerHTML y se monta en
+// (issue #176). El sexto, pc-cel, nace de un innerHTML y se monta en
 // pcCaminoNuevo. Montar sobre un formulario oculto es seguro: el widget observa
 // el tamano del input y reacomoda su bandera cuando la vista se muestra.
+// alta-celular entro despues (reporte de Adrian, 2026-08-19): quedaba como
+// unico campo de telefono del alta sin bandera ni aviso.
 document.addEventListener('DOMContentLoaded', () => {
-  for (const id of ['cl-telefono', 'cl-cel-entrega', 'pr-celular', 'alta-addr-phone']) montarTelefono(id);
+  for (const id of ['cl-telefono', 'cl-cel-entrega', 'pr-celular', 'alta-addr-phone', 'alta-celular']) montarTelefono(id);
 });
 
 // Wiring del selector de regimen fiscal (#191): se puebla al arrancar (catalogo

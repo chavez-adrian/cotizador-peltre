@@ -1,0 +1,20 @@
+/* Hoja compartida del widget de telefono (intl-tel-input vendoreado, issue
+   #176). La cargan las DOS paginas que montan el widget -- el cotizador
+   (index.html) y el formulario publico de mayoreo (mayoreo.html) -- porque el
+   defecto que arregla es del widget, no de una pagina.
+
+   El buscador de pais del dropdown es un <input> mas dentro del formulario, asi
+   que lo alcanzan las reglas de campo de cada pagina (`.form-group input` en el
+   cotizador, `.campo .iti input` en mayoreo). Las dos ganan por especificidad al
+   `.iti__search-input` del vendor y le pisan el padding izquierdo con el que
+   deja hueco a la lupa: el placeholder terminaba encima del icono (reporte de
+   Adrian en produccion, 2026-08-19).
+
+   Aqui se restaura con la MISMA cuenta del vendor (sus custom properties viven
+   en :root, tambien cuando el dropdown se despega a <body> en el modo pantalla
+   completa de movil) y con tres clases de especificidad, que le gana a las
+   reglas de las dos paginas sin depender del orden de los <link>. */
+.iti__country-selector .iti__search-input-wrapper .iti__search-input {
+  padding-left: calc(var(--iti-spacer-horizontal) + var(--iti-globe-icon-size) + var(--iti-spacer-horizontal));
+  padding-right: calc(var(--iti-spacer-horizontal) + var(--iti-clear-icon-size) + var(--iti-spacer-horizontal));
+}

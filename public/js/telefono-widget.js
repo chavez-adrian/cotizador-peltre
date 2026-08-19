@@ -19,7 +19,6 @@ import {
   CEL_CODE_POR_ISO2,
   combinarTelefonoConCodigo,
   separarTelefonoCodigo,
-  quitarUnoLiderNacional,
   quitarUnoLiderInternacional,
 } from './alta-logica.js';
 
@@ -30,11 +29,16 @@ import {
 // autores del propio widget desaconsejan isValidNumberPrecise sobre una copia
 // vendoreada, porque su metadata cambia cada mes y termina rechazando numeros
 // validos (docs/investigacion-validacion-telefono.md).
+// IS_POSSIBLE_LOCAL_ONLY no significa "falta el codigo de pais" (asi decia hasta
+// el reporte de Adrian del 2026-08-19): el codigo de pais lo pone SIEMPRE el
+// widget, nunca falta. Significa que el numero solo seria marcable dentro de su
+// propia zona -- en Mexico, 8 digitos es un largo local valido en la metadata,
+// asi que "532 590 00" cae aqui en vez de TOO_SHORT. Lo que le falta es la lada.
 export const MENSAJE_VALIDACION_CEL = {
   INVALID_COUNTRY_CODE: 'Ese código de país no es válido.',
   TOO_SHORT: 'Ese número está incompleto.',
   TOO_LONG: 'Ese número tiene demasiados dígitos.',
-  IS_POSSIBLE_LOCAL_ONLY: 'Falta el código de país.',
+  IS_POSSIBLE_LOCAL_ONLY: 'Ese número está incompleto: le falta la lada.',
   INVALID_LENGTH: 'Ese número no tiene el largo correcto.',
 };
 
@@ -44,10 +48,13 @@ const MENSAJE_GENERICO = 'Ese número no se ve válido.';
 // pais pero no cae en ningun rango asignado segun la metadata precisa. Es una
 // pista, no un criterio: la copia vendoreada del utils.js es del 2026-08-16 y
 // no tiene script de actualizacion, asi que con los meses empezaria a marcar
-// numeros legitimos -- por eso el aviso dice de cuando es la copia y por eso
-// jamas bloquea. Solo lo pide el alta interna; el formulario publico de mayoreo
-// se queda con el criterio de largo de #161, sin cambios visibles.
-const MENSAJE_PRECISO = 'Ese numero tiene el largo correcto pero no coincide con ningun rango asignado en ese pais (metadata local del 2026-08-16, puede estar desactualizada).';
+// numeros legitimos -- por eso jamas bloquea. Solo lo pide el alta interna; el
+// formulario publico de mayoreo se queda con el criterio de largo de #161.
+// El texto es para un vendedor con el cliente enfrente: dice que revise y que
+// puede guardar igual. El detalle tecnico (de cuando es la copia local de la
+// metadata) se queda en este comentario -- en la cara del vendedor no se
+// entendia (reporte de Adrian, 2026-08-19).
+const MENSAJE_PRECISO = 'Ese número tiene el largo correcto pero no parece un número real de ese país. Revísalo; si es correcto, puedes guardarlo.';
 
 // celCode es el contrato de la casa ('+52' | '+1' | '+1-CA' | '+'): lo consumen
 // paisDesdeCodigoTelefono, validarTelefono y combinarTelefonoConCodigo. El
@@ -88,6 +95,43 @@ export async function avisoTelefonoWidget(iti, crudo, { preciso = false } = {}) 
   return preciso && iti.isValidNumberPrecise() === false ? MENSAJE_PRECISO : null;
 }
 
+// Normalizacion del formato legacy mexicano EN LA CAPTURA (issue #176). El
+// widget corre con strictMode, que corta el nacional de Mexico en 10 digitos:
+// tecleando el legacy "1 55 3466 7689" el digito 11 se rechazaba y el vendedor
+// se quedaba con "1553466768", que ni es su numero ni pasa la reja dura. Por eso
+// el "1" se quita EN CUANTO aparece y no al final: asi el largo nunca llega al
+// tope y el formato legacy se puede teclear (y pegar) completo.
+// Sin ambiguedad: ningun nacional mexicano real empieza con 1 (metadata oficial
+// [2-9] + 9 digitos, reforma IFT 2019). Quien llama garantiza que el pais
+// elegido es Mexico -- para el resto del mundo esto no aplica y en +1 el "1" ES
+// el codigo de pais. El internacional pegado va por el espejo de alta-logica,
+// que solo lo toca cuando sobra despues del +52.
+export function normalizarCapturaMx(valor) {
+  const tel = valor || '';
+  if (tel.trim().startsWith('+')) return quitarUnoLiderInternacional(tel);
+  return tel.replace(/^(\s*)1[\s.-]*/, '$1');
+}
+
+// Config con la que nacen TODAS las instancias del widget (mayoreo publico y
+// los campos del alta interna): una sola, para que traducir el buscador o tocar
+// strictMode no requiera acordarse del otro consumidor.
+// La llave de traduccion del intl-tel-input vendoreado es uiTranslations (no
+// i18n): con el nombre equivocado la opcion se ignora en silencio y el buscador
+// se queda en ingles. Se traduce lo que el vendedor LEE; los nombres de pais los
+// arma el widget con Intl.DisplayNames y no son parte de esta tabla.
+export function opcionesWidget() {
+  return {
+    initialCountry: 'mx',
+    strictMode: true,
+    loadUtils: () => import('/vendor/intl-tel-input/js/utils.js'),
+    uiTranslations: {
+      searchPlaceholder: 'Buscar pais',
+      searchEmptyState: 'Sin resultados',
+      clearSearchAriaLabel: 'Borrar la busqueda',
+    },
+  };
+}
+
 // === Montaje sobre el DOM del alta interna ===
 
 const ISO2_POR_CEL_CODE = Object.fromEntries(
@@ -106,15 +150,34 @@ function pintarAviso(estado, mensaje) {
   estado.aviso.style.display = mensaje ? 'block' : 'none';
 }
 
-// Normalizacion en la CAPTURA (issue #176): el formato legacy +52 1 55 xxxx
-// xxxx falla todas las capas de libphonenumber por TOO_LONG. El fix no es
-// relajar la validacion sino quitar ese "1" antes de validar -- ningun nacional
-// mexicano real empieza con 1. Solo aplica cuando el pais elegido es Mexico.
 function normalizarCaptura(estado) {
   if (celCodeDelWidget(estado.iti) !== '+52') return;
   const crudo = estado.input.value || '';
-  const limpio = crudo.trim().startsWith('+') ? quitarUnoLiderInternacional(crudo) : quitarUnoLiderNacional(crudo);
+  const limpio = normalizarCapturaMx(crudo);
   if (limpio !== crudo) estado.input.value = limpio;
+}
+
+// Pegado del numero completo (issue #176): con strictMode el widget rearma el
+// valor pegado desde su propio snapshot y, si sobra largo, RECORTA POR LA COLA
+// -- pegar "1 55 3466 7689" dejaba "1 55 3466 768", otro numero. Aqui se
+// intercepta antes: se normaliza el texto pegado, se inserta a mano y se
+// dispara 'input' para que el widget reformatee y resuelva la bandera. Solo
+// interviene cuando la normalizacion cambia algo; en cualquier otro caso pega
+// el widget como siempre.
+function pegarNormalizado(estado, ev) {
+  if (celCodeDelWidget(estado.iti) !== '+52') return;
+  const texto = (ev.clipboardData && ev.clipboardData.getData('text')) || '';
+  const limpio = normalizarCapturaMx(texto);
+  if (!texto || limpio === texto) return;
+  ev.preventDefault();
+  const input = estado.input;
+  const valor = input.value || '';
+  const inicio = input.selectionStart == null ? valor.length : input.selectionStart;
+  const fin = input.selectionEnd == null ? valor.length : input.selectionEnd;
+  input.value = valor.slice(0, inicio) + limpio + valor.slice(fin);
+  const cursor = inicio + limpio.length;
+  try { input.setSelectionRange(cursor, cursor); } catch (err) { /* input sin seleccion */ }
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 export function desmontarTelefono(inputId) {
@@ -132,11 +195,7 @@ export function montarTelefono(inputId) {
   const input = document.getElementById(inputId);
   if (!input || typeof window.intlTelInput !== 'function') return null;
   desmontarTelefono(inputId);
-  const iti = window.intlTelInput(input, {
-    initialCountry: 'mx',
-    strictMode: true,
-    loadUtils: () => import('/vendor/intl-tel-input/js/utils.js'),
-  });
+  const iti = window.intlTelInput(input, opcionesWidget());
   const aviso = document.createElement('div');
   aviso.className = 'tel-aviso';
   aviso.id = `${inputId}-tel-aviso`;
@@ -147,8 +206,17 @@ export function montarTelefono(inputId) {
   // Nunca se valida antes del primer blur; una vez mostrado el aviso se
   // re-evalua en cada tecla para que desaparezca en cuanto se corrige (patron
   // del ejemplo oficial de intl-tel-input).
+  input.addEventListener('paste', ev => pegarNormalizado(estado, ev));
   input.addEventListener('blur', () => { estado.tocado = true; revisarTelefono(inputId); });
-  input.addEventListener('input', () => { if (estado.tocado) revisarTelefono(inputId); });
+  // isTrusted acota la normalizacion en vivo a lo que TECLEA una persona: los
+  // 'input' sinteticos son los que dispara fijarTelefono para repoblar el campo
+  // desde un telefono guardado, y ahi el valor no es captura (un numero
+  // extranjero sin '+' que empiece con 1 perderia ese 1 sin razon). Lo que se
+  // repuebla igual se normaliza al primer blur, via revisarTelefono.
+  input.addEventListener('input', (ev) => {
+    if (ev.isTrusted) normalizarCaptura(estado);
+    if (estado.tocado) revisarTelefono(inputId);
+  });
   return iti;
 }
 
@@ -212,5 +280,5 @@ export async function confirmarTelefono(inputId, preguntar) {
   const mensaje = await revisarTelefono(inputId);
   if (!mensaje) return true;
   const pregunta = preguntar || (typeof window !== 'undefined' ? m => window.confirm(m) : () => true);
-  return !!pregunta(`${mensaje}\n\nGuardar de todos modos con este numero?`);
+  return !!pregunta(`${mensaje}\n\n¿Guardar de todos modos con este número?`);
 }
