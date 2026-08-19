@@ -109,6 +109,55 @@ test('buscarClientesPorRfc: pagina hasta agotar el total que reporta Operam', as
   }
 });
 
+// El corte NO puede ser "la pagina vino mas corta que el limit que pedi": si
+// Operam capara la pagina por debajo de 100 (hoy el default es 25 SIN limit), el
+// pool se truncaria en la primera pagina y la dedup volveria a concluir "libre"
+// -- el modo de falla exacto de #194, otra vez y sin senal. Manda el `total`.
+test('buscarClientesPorRfc: si Operam capa la pagina por debajo del limit pedido, sigue paginando hasta el total', async () => {
+  resetSession();
+  const skips = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': (url) => {
+      const skip = Number(new URL(String(url)).searchParams.get('skip'));
+      skips.push(skip);
+      // Tope del servidor en 25 aunque se haya pedido limit=100.
+      const restantes = Math.max(0, 78 - skip);
+      const data = Array.from({ length: Math.min(25, restantes) }, (_, i) => ({
+        customer_id: skip + i, tax_id: 'XAXX010101000', CustName: `GENERICO ${skip + i}`,
+      }));
+      return jsonResponse({ total: 78, data });
+    },
+  });
+  try {
+    const r = await buscarClientesPorRfc('XAXX010101000');
+    assert.equal(r.length, 78, 'trae los 78, no los primeros 25');
+    assert.deepEqual(skips, [0, 25, 50, 75], 'avanza por las filas recibidas, no por el limit pedido');
+  } finally {
+    restore();
+  }
+});
+
+// Guarda contra el ciclo infinito: si Operam ignorara skip y nunca declarara
+// total, la paginacion martillaria la API para siempre.
+test('buscarClientesPorRfc: con un servidor que ignora skip y no declara total, corta en el techo de paginas', async () => {
+  resetSession();
+  let llamadas = 0;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => {
+      llamadas++;
+      return jsonResponse({ data: Array.from({ length: 100 }, (_, i) => ({ customer_id: i, tax_id: 'XAXX010101000' })) });
+    },
+  });
+  try {
+    await buscarClientesPorRfc('XAXX010101000');
+    assert.equal(llamadas, 100, 'se detiene en el techo duro de paginas');
+  } finally {
+    restore();
+  }
+});
+
 // Mismo trato que buscarClientes/buscarClientePorRFC: 404 es "sin resultados".
 test('buscarClientesPorRfc: un 404 de Operam devuelve lista vacia, no lanza', async () => {
   resetSession();

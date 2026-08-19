@@ -1649,6 +1649,11 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
     // buscarClientesPorTexto(q) cablea el indice de telefonos/nombre corto de
     // #42 (best effort, nunca lanza) para cubrir telefono de contacto y
     // cust_ref, que Operam no indexa. Se combinan y deduplican por customer_id.
+    // OJO (#194): ninguna de las dos indexa el RFC, asi que un vendedor que
+    // teclee un RFC en esta caja no encuentra nada. NO es el bug de #194 (aqui
+    // el texto es libre, no una llave de dedup) y se dejo como estaba; si se
+    // quiere cubrir, el camino es un fallback a buscarClientesPorRfc cuando q
+    // tenga forma de RFC.
     const [porOperam, porIndice] = await Promise.all([
       buscarClientes(q),
       buscarClientesPorTexto(q),
@@ -2534,7 +2539,9 @@ app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
     // buscarClientesPorRfc y NO buscarClientes (#194): el ?search= de Operam
     // busca por nombre y no indexa el RFC, asi que este pool siempre llegaba
     // vacio y el endpoint respondia 'libre' aunque el cliente existiera.
-    let raw = await buscarClientesPorRfc(rfc);
+    // Se consulta con rfcNorm (no con el crudo): el RFC llega tal cual lo capturo
+    // el vendedor y es el mismo valor con el que se compara el tax_id de vuelta.
+    let raw = await buscarClientesPorRfc(rfcNorm);
     // Issue #78: si el RFC de entrada es real y no trae un match exacto, el
     // cliente pudo darse de alta antes sin CSF (RFC generico). Ese cliente es
     // INVISIBLE a la busqueda anterior porque tiene OTRO tax_id -- se busca
