@@ -14,6 +14,7 @@ import {
 } from './mayoreo-logica.js';
 import {
   celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget, opcionesWidget,
+  cablearCapturaMx,
 } from './telefono-widget.js';
 
 const form = document.getElementById('form-mayoreo');
@@ -72,6 +73,11 @@ function chipElegido(nombre) {
 // espanol -- una sola config, cero copias espejo.
 const inputCel = document.getElementById('f-cel');
 const iti = window.intlTelInput(inputCel, opcionesWidget());
+// Cableado de captura MX (issue #199): mismo helper que el alta interna monta
+// via montarTelefono (telefono-widget.js) -- pegar o teclear el legacy
+// "1 55 3466 7689" bajo +52 quedaba en un numero distinto y se guardaba en
+// silencio porque mayoreo arma su propia instancia sin pasar por ese cableado.
+cablearCapturaMx(iti, inputCel);
 
 // celCode sigue siendo el contrato de mayoreo-logica.js (celularDeMayoreo,
 // paisDelFormulario -- issue #160): MX/US/CA mapean a los prefijos de la casa y

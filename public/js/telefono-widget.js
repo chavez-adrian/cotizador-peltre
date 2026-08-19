@@ -180,6 +180,21 @@ function pegarNormalizado(estado, ev) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// Cableado de captura MX (paste interceptado + "1" quitado en vivo mientras
+// se teclea), separado de montarTelefono para que mayoreo.js -- que arma su
+// propia instancia de intl-tel-input sin pasar por el registro por inputId
+// -- tambien lo use (issue #199). UNA sola copia: el alta interna lo consume
+// via montarTelefono/estado (abajo) y mayoreo lo llama directo con su iti e
+// input. pegarNormalizado y normalizarCaptura solo leen `iti` e `input` de su
+// argumento, asi que un objeto minimo { iti, input } les basta.
+export function cablearCapturaMx(iti, input) {
+  const estado = { iti, input };
+  input.addEventListener('paste', ev => pegarNormalizado(estado, ev));
+  input.addEventListener('input', ev => {
+    if (ev.isTrusted) normalizarCaptura(estado);
+  });
+}
+
 export function desmontarTelefono(inputId) {
   const estado = montados.get(inputId);
   if (!estado) return;
@@ -206,15 +221,15 @@ export function montarTelefono(inputId) {
   // Nunca se valida antes del primer blur; una vez mostrado el aviso se
   // re-evalua en cada tecla para que desaparezca en cuanto se corrige (patron
   // del ejemplo oficial de intl-tel-input).
-  input.addEventListener('paste', ev => pegarNormalizado(estado, ev));
+  // isTrusted (dentro de cablearCapturaMx) acota la normalizacion en vivo a
+  // lo que TECLEA una persona: los 'input' sinteticos son los que dispara
+  // fijarTelefono para repoblar el campo desde un telefono guardado, y ahi el
+  // valor no es captura (un numero extranjero sin '+' que empiece con 1
+  // perderia ese 1 sin razon). Lo que se repuebla igual se normaliza al
+  // primer blur, via revisarTelefono.
+  cablearCapturaMx(iti, input);
   input.addEventListener('blur', () => { estado.tocado = true; revisarTelefono(inputId); });
-  // isTrusted acota la normalizacion en vivo a lo que TECLEA una persona: los
-  // 'input' sinteticos son los que dispara fijarTelefono para repoblar el campo
-  // desde un telefono guardado, y ahi el valor no es captura (un numero
-  // extranjero sin '+' que empiece con 1 perderia ese 1 sin razon). Lo que se
-  // repuebla igual se normaliza al primer blur, via revisarTelefono.
-  input.addEventListener('input', (ev) => {
-    if (ev.isTrusted) normalizarCaptura(estado);
+  input.addEventListener('input', () => {
     if (estado.tocado) revisarTelefono(inputId);
   });
   return iti;
