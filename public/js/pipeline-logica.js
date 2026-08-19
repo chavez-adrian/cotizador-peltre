@@ -298,12 +298,15 @@ export function filaResultadoClienteHtml(r, i) {
 }
 
 // Fila punteada que abre el alta COMPLETA (acordeon 1-4, POST /api/crear-cliente),
-// no un prospecto minimo como en el paso Cliente (#94, pieza 3).
+// no un prospecto minimo como en el paso Cliente (#94, pieza 3). Desde #190 tambien
+// se pinta en el estado inicial de la vista Clientes, con el buscador vacio: sin
+// query no hay nombre que entrecomillar y las comillas se omiten enteras.
 export function filaCrearClienteHtml(query) {
   const q = String(query || '').trim();
+  const conQuery = q ? ' &laquo;' + escapeHtml(q) + '&raquo;' : '';
   return '<button type="button" class="pc-res-row pc-crear" onclick="cvCaminoAlta(' + JSON.stringify(q).replace(/"/g, '&quot;') + ')">' +
     '<span class="pc-res-ini">+</span>' +
-    '<span class="pc-res-main"><span class="pc-res-nombre">Dar de alta cliente completo &laquo;' + escapeHtml(q) + '&raquo;</span>' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">Dar de alta cliente completo' + conQuery + '</span>' +
     '<span class="pc-res-sub">Con datos fiscales, comerciales y domicilio &mdash; sin cotizacion</span></span></button>';
 }
 

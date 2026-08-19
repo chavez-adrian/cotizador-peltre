@@ -158,7 +158,7 @@ test('C17: buildCsfConfirmarPayload extrae todos los campos del formulario', () 
     'csf-nombre-corto': 'BANCO',
     'csf-idcif': '12345678901',
     'csf-regimen-fiscal': '601',
-    'csf-uso-cfdi': 'G01',
+    'alta-uso-cfdi': 'G01',
     'csf-calle': 'NAYARIT',
     'csf-num-ext': '56',
     'csf-num-int': 'B',

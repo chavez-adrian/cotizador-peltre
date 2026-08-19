@@ -57,14 +57,14 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 | `vendedores-store.js` | Registro de vendedores (identidad, PIN en claro, rol, operam_id, tope) en Neon (#140/#141); auto-siembra desde `data/vendedores.json` si la tabla esta vacia; el PUT de admin reemplaza el registro completo |
 | `db.js` | Pool pg; `query()` retorna null sin pool (graceful); auto-crea `clientes_log` y `operam_webhooks_log` en Neon |
 | `dropbox.js` | OAuth refresh; `upload` y `subirCsfDropbox` (backup de CSF, fire-and-forget) |
-| `parsear-csf.js` | Puro: extrae RFC/razon social/domicilio/regimen del PDF de CSF |
+| `parsear-csf.js` | Puro: extrae RFC/razon social/domicilio/regimen del PDF de CSF; el catalogo del SAT lo cross-importa de `public/js/regimen-fiscal-logica.js` (#191) |
 | `pdf-generator.js` / `html-generator.js` | PDFKit / HTML auto-contenido para WhatsApp, mismo formato visual |
 | `calcular-envio.js` | Carrito → paquetes fisicos para envia.com; excluye `ENVIO` y la calca |
 | `extract-prices.js` | LEGADO desde el corte #131: contraste contra el Excel, ya no genera `data/precios.json` |
 | `validar-cp.js` | Puro: valida CP por pais |
 | `fs-reintento.js` | TODO acceso a `data/*.json` pasa por aqui (ver Trampas) |
 
-`public/js/alta-logica.js` (logica pura del alta de cliente) y `public/js/calcas-logica.js` (calca en el carrito, #91/ADR-0010) son los nucleos puros del frontend — detalle y reglas no obvias en `docs/arquitectura.md`.
+`public/js/alta-logica.js` (logica pura del alta de cliente), `public/js/calcas-logica.js` (calca en el carrito, #91/ADR-0010) y `public/js/regimen-fiscal-logica.js` (catalogo c_RegimenFiscal del SAT + filtro por tipo de RFC, #191; lo consumen el selector del alta y `lib/parsear-csf.js`) son los nucleos puros del frontend — detalle y reglas no obvias en `docs/arquitectura.md`.
 
 ## Trampas que cuestan horas (no derivables del codigo)
 

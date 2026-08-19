@@ -24,6 +24,8 @@ import {
   emailFacturaParaUpgrade,
   contactosEntregaDisponibles,
   etiquetaTagContacto,
+  usoCfdiPorDefecto,
+  estadoAltaAlAbrirPanel,
 } from './alta-logica.js';
 import {
   CANALES,
@@ -75,6 +77,10 @@ import {
 import {
   buildBandejaHtml,
 } from './bandeja-logica.js';
+import {
+  opcionesRegimenHtml,
+  esRegimenValido,
+} from './regimen-fiscal-logica.js';
 import {
   estadoStepper,
   textoProgreso,
@@ -3270,30 +3276,17 @@ function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   // el panel es el mismo nodo para cualquier cliente, asi que primero se vacia
   // (tira lo que haya quedado en el DOM de un upgrade previo, de OTRO cliente,
   // en esta misma sesion de pestana) y luego se prellena SOLO con el borrador
-  // de ESTE cliente si existe. Puebla alta-upgrade-segmento como esperarListo de
-  // esta superficie (antes se llamaba aqui directo, en paralelo con la
+  // de ESTE cliente si existe. Puebla los selects de catalogo como esperarListo
+  // de esta superficie (antes se llamaba aqui directo, en paralelo con la
   // restauracion -- misma carrera que en abrirAcordeonAlta, corregida igual).
+  // El default del uso de CFDI se fija ANTES de vaciar/restaurar: vaciarCampos y
+  // el prellenado del borrador comparan contra ese default (#193).
+  altaFijarDefaultUsoCfdi(customerId);
   const formIdUpgrade = `upgrade-fiscal-${customerId}`;
   vaciarCamposSuperficie(formIdUpgrade);
   abrirFormularioBorrador(formIdUpgrade);
 }
 window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
-
-// Segmento en el panel de upgrade (issue #95 regla 6): comparte catalogo con
-// alta-segmento (Seccion 2), pero es un <select> propio -- la Seccion 2 vive en
-// el flujo del acordeon completo (POST, hoy sin punto de entrada en la UI) y no
-// se abre durante un upgrade.
-function altaPoblarSelectorSegmentoUpgrade() {
-  const sel = document.getElementById('alta-upgrade-segmento');
-  if (!sel) return Promise.resolve();
-  // Devuelve la promesa (#185): el borrador de formulario la espera via
-  // esperarListo antes de restaurar -- sin esto, el <select> se repuebla
-  // DESPUES de que el mecanismo intento poner el valor guardado y lo pierde.
-  return cargarCatalogos().then(catalogos => {
-    sel.innerHTML = '<option value="">-- Selecciona --</option>' +
-      (catalogos.segmentos || []).map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
-  }).catch(() => {});
-}
 
 // Wrapper del chip Fiscal del paso Cliente: deriva el contexto del banner (nombre
 // + RFC generico) de pcState.cliente, sin embeber texto arbitrario en el onclick.
@@ -4054,7 +4047,7 @@ const SUPERFICIES_BORRADOR = {
 // reaparece prellenando (con SU rfc/razon social) el upgrade del cliente B.
 const DEF_UPGRADE_FISCAL = {
   contenedor: 'alta-body-1',
-  esperarListo: () => altaPoblarSelectorSegmentoUpgrade(),
+  esperarListo: () => altaEsperarCatalogosCompletos(),
   alRestaurar: () => altaRepintarCsfRestaurada(),
   alVaciar: () => altaLimpiarAvisosAlta(),
 };
@@ -4368,21 +4361,37 @@ function cvRenderBusqueda() {
 }
 window.cvRenderBusqueda = cvRenderBusqueda;
 
+// Token de secuencia de #cv-zona (#190): recientes y busqueda escriben la MISMA
+// zona y las dos son asincronas. Sin el, un /api/cotizaciones lento aterrizaba
+// despues de los resultados ya pintados y los borraba -- mismo sintoma que el bug
+// que este issue cierra, pero intermitente. Es el patron de pcBusquedaSeq, con su
+// propio token porque aqui lo que compite es quien pinta la zona, no quien
+// consulta.
+let cvZonaSeq = 0;
+
 async function cvRenderRecientes() {
+  const seq = ++cvZonaSeq;
+  if (!document.getElementById('cv-zona')) return;
+  const recientes = await pcCargarRecientes();
+  if (seq !== cvZonaSeq) return; // un render mas nuevo ya se adueno de la zona
   const zona = document.getElementById('cv-zona');
   if (!zona) return;
-  const recientes = await pcCargarRecientes();
-  if (!recientes.length) { zona.innerHTML = ''; return; }
   // Los recientes derivan de cotizaciones (nombre + telefono) y no traen RFC/id,
   // asi que tocarlos prellena la busqueda y resuelve el registro real de Operam
   // (con su tag generico correcto), en vez de intentar pintar una tarjeta a medias.
-  zona.innerHTML = '<div class="pc-res-titulo">Recientes</div>' +
-    recientes.map(r =>
-      '<button type="button" class="pc-res-row" onclick="cvBuscarPrefill(' + JSON.stringify(r.nombre).replace(/"/g, '&quot;') + ')">' +
-      '<span class="pc-res-ini">' + escapeHtml(pcIniciales(r.nombre)) + '</span>' +
-      '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(r.nombre) + '</span>' +
-      '<span class="pc-res-sub">' + escapeHtml(r.telefono || 'Cotizado antes') + '</span></span></button>'
-    ).join('');
+  const filas = recientes.length
+    ? '<div class="pc-res-titulo">Recientes</div>' +
+      recientes.map(r =>
+        '<button type="button" class="pc-res-row" onclick="cvBuscarPrefill(' + JSON.stringify(r.nombre).replace(/"/g, '&quot;') + ')">' +
+        '<span class="pc-res-ini">' + escapeHtml(pcIniciales(r.nombre)) + '</span>' +
+        '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(r.nombre) + '</span>' +
+        '<span class="pc-res-sub">' + escapeHtml(r.telefono || 'Cotizado antes') + '</span></span></button>'
+      ).join('')
+    : '';
+  // La fila punteada tambien en el estado inicial y en la rama sin recientes
+  // (#190): el subtitulo de la pantalla promete "o da de alta uno nuevo" y hasta
+  // ahora esa puerta solo se abria despues de teclear 2 caracteres.
+  zona.innerHTML = filas + filaCrearClienteHtml('');
 }
 
 async function cvBuscarPrefill(nombre) {
@@ -4394,11 +4403,13 @@ window.cvBuscarPrefill = cvBuscarPrefill;
 async function cvBuscar() {
   const q = document.getElementById('cv-q')?.value || '';
   if (q.trim().length < 2) { await cvRenderRecientes(); return; }
+  const seq = ++cvZonaSeq;
   const zonaAntes = document.getElementById('cv-zona');
   if (!zonaAntes) return;
   zonaAntes.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
   const rows = await pcBuscarMezclado(q);
   if (!rows) return; // respuesta vieja descartada
+  if (seq !== cvZonaSeq) return; // un render de recientes mas nuevo se adueno de la zona
   const zona = document.getElementById('cv-zona');
   if (!zona) return;
   cvResultadosCache = rows;
@@ -5830,6 +5841,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 const altaState = {
   seccionAbierta: null,
   catalogos: null,
+  // Rastro del alta en curso. customer_id/branch_id/clienteExistente deciden SOBRE
+  // QUE cliente aplica el alta, asi que sobrevivir a un alta terminada es corrupcion
+  // silenciosa del cliente anterior (#192): estadoAltaAlAbrirPanel los tira al
+  // reabrir el panel, guiandose por altaCompletada.
+  altaCompletada: false,
+  customer_id: null,
+  branch_id: null,
+  clienteExistente: null,
+  datos: null,
+  domicilio: null,
+  modo: null,
 };
 
 async function cargarCatalogos() {
@@ -5855,6 +5877,45 @@ function altaPoblarSelectores(catalogos) {
     catalogos.vendedores.map(v => `<option value="${v.operam_id}">${v.name}</option>`).join('');
 }
 
+// Regimen fiscal como selector del catalogo del SAT (#191). Se repuebla filtrado
+// por el tipo de RFC ya capturado EN SU MISMA PESTANA (12 caracteres = moral, 13 =
+// fisica; sin RFC valido, el catalogo entero) y conserva lo ya elegido, que puede
+// venir del parseo de la CSF o del borrador de #185. El valor se pone por JS y no
+// como atributo `selected` en el HTML -- ver opcionesRegimenHtml.
+function altaPoblarRegimen(idSelect, idRfc, seleccion) {
+  const sel = document.getElementById(idSelect);
+  if (!sel) return;
+  const rfc = document.getElementById(idRfc)?.value || '';
+  const elegido = seleccion !== undefined ? String(seleccion || '') : sel.value;
+  sel.innerHTML = opcionesRegimenHtml(rfc, elegido);
+  sel.value = esRegimenValido(elegido) ? elegido : '';
+}
+
+function altaPoblarRegimenes() {
+  altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
+  altaPoblarRegimen('manual-regimen-fiscal', 'manual-rfc');
+}
+
+// Uso de CFDI (#193): un solo <select> para los dos modos del panel, con el default
+// que corresponde al modo con el que se abre (usoCfdiPorDefecto). Mueve tambien el
+// ATRIBUTO selected, no solo el valor: el borrador de formulario (#185) compara
+// contra `option[selected]` para decidir que es captura y que es default -- sin
+// mover el atributo, abrir el upgrade dejaria un borrador espurio ("Borrador
+// restaurado" sin nada restaurado) por el solo hecho de que S01 != G03.
+// Solo pisa el valor si el campo seguia en su default: plegar el panel no es
+// cancelar (#185) y reabrirlo no debe borrarle al vendedor un uso de CFDI que si
+// eligio. "Default" se decide con el mismo criterio que valorDefaultCampo, para
+// que las dos piezas no discrepen sobre que cuenta como captura.
+function altaFijarDefaultUsoCfdi(modoUpgrade) {
+  const sel = document.getElementById('alta-uso-cfdi');
+  if (!sel) return;
+  const def = usoCfdiPorDefecto(modoUpgrade);
+  const defaultVigente = sel.querySelector('option[selected]')?.value ?? (sel.options[0]?.value || '');
+  const sinCaptura = sel.value === defaultVigente;
+  for (const opt of sel.options) opt.defaultSelected = opt.value === def;
+  if (sinCaptura) sel.value = def;
+}
+
 function abrirAcordeonAlta() {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
@@ -5874,6 +5935,16 @@ function abrirAcordeonAlta() {
   altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
   const bannerEl = document.getElementById('alta-upgrade-banner');
   if (bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
+  // Rastro del alta ANTERIOR (#192): si la de antes se completo, su cliente
+  // destino, sus palomas y su boton deshabilitado siguen aqui -- el panel es un
+  // solo nodo y su estado vive en memoria. Un alta a medias NO se toca: es lo
+  // que el borrador restaura abajo (#185).
+  const { estado, reiniciado } = estadoAltaAlAbrirPanel(altaState);
+  Object.assign(altaState, estado);
+  if (reiniciado) altaReiniciarPanel();
+  // El default del uso de CFDI depende del modo (#193) y se fija ANTES de
+  // restaurar: el borrador solo prellena el campo que sigue en su default.
+  altaFijarDefaultUsoCfdi(null);
   altaToggleSeccion(1);
   // Borrador de formulario (#185): prefill de todo el acordeon si el vendedor
   // dejo un alta a medias. Puebla los mismos catalogos que antes pero DESPUES
@@ -5884,15 +5955,58 @@ function abrirAcordeonAlta() {
   abrirFormularioBorrador('alta-completa');
 }
 
-// esperarListo del borrador de 'alta-completa' (#185): espera los TRES selects
-// que dependen de catalogos (lista de precios, segmento, vendedor en Seccion 2,
-// mas el segmento compartido de Seccion 1) antes de que el mecanismo intente
-// poner un valor restaurado -- un <select> repoblado DESPUES pierde el valor.
+// Contraparte en el DOM de estadoAltaAlAbrirPanel (#192): deja el acordeon como
+// recien montado tras un alta que YA se completo. Solo corre cuando el nucleo puro
+// decidio reiniciar -- un alta a medias conserva su avance y sus secciones abiertas.
+// Los campos no se vacian aqui: al terminar con exito ya lo hizo
+// vaciarCamposSuperficie('alta-completa') (#185).
+const ALTA_SECCIONES_BLOQUEADAS_AL_INICIO = [3, 4];
+const ALTA_ICO_CANDADO = '\u{1F512}';
+
+function altaReiniciarPanel() {
+  altaCsfState.datos = null;
+  altaCsfState.confirmado = false;
+  altaCsfState.pdfBase64 = null;
+  altaCsfState.rfc = null;
+  altaCsfState.fileName = null;
+  altaCsfSetStatus('idle');
+  altaPasosReset();
+  const btn = document.getElementById('alta-btn-dar-alta');
+  if (btn) btn.disabled = false;
+  const exitoDiv = document.getElementById('alta-btns-exito');
+  if (exitoDiv) exitoDiv.style.display = 'none';
+  const reintBtn = document.getElementById('alta-btn-reintentar');
+  if (reintBtn) reintBtn.style.display = 'none';
+  // Palomas del lateral "Progreso del alta": las tres vuelven a vacio.
+  [1, 2, 3].forEach(i => {
+    const dot = document.getElementById(`chkdot-${i}`);
+    if (dot) { dot.classList.remove('done'); dot.textContent = ''; }
+  });
+  // Secciones 3 y 4 vuelven a su candado de origen: sin esto el vendedor puede
+  // saltar a "Dar de alta" sin pasar por la Seccion 1, que es justo donde se
+  // decide sobre que cliente aplica el alta.
+  ALTA_SECCIONES_BLOQUEADAS_AL_INICIO.forEach(n => {
+    const sec = document.getElementById(`alta-sec-${n}`);
+    if (sec) sec.classList.add('alta-seccion-bloqueada');
+    const hdr = document.getElementById(`alta-hd-${n}`);
+    if (hdr) hdr.style.cursor = 'not-allowed';
+    const ico = document.getElementById(`alta-ico-${n}`);
+    if (ico) ico.textContent = ALTA_ICO_CANDADO;
+  });
+  altaLimpiarAvisosAlta();
+}
+
+// esperarListo del borrador de 'alta-completa' Y del upgrade fiscal (#185):
+// espera los TRES selects que dependen de catalogos (lista de precios, segmento,
+// vendedor) antes de que el mecanismo intente poner un valor restaurado -- un
+// <select> repoblado DESPUES pierde el valor. Desde #193 el segmento tiene un
+// solo campo (#alta-segmento, Seccion 2) que tambien lee el upgrade, asi que las
+// dos superficies esperan lo mismo. Repoblar resetea alta-segmento a "", que es
+// justamente lo que evita que el segmento de un cliente se filtre al upgrade del
+// siguiente (el select vive fuera de #alta-body-1 y vaciarCamposSuperficie no lo
+// alcanza).
 function altaEsperarCatalogosCompletos() {
-  return Promise.all([
-    cargarCatalogos().then(altaPoblarSelectores).catch(() => {}),
-    altaPoblarSelectorSegmentoUpgrade(),
-  ]);
+  return cargarCatalogos().then(altaPoblarSelectores).catch(() => {});
 }
 
 // alRestaurar/alVaciar de 'alta-completa' y 'upgrade-fiscal' (#185): los campos
@@ -5904,6 +6018,10 @@ function altaEsperarCatalogosCompletos() {
 // <details> sin tocar el estado idle/dropzone -- el dropzone se queda visible
 // para poder re-subir la CSF sin perder lo demas capturado.
 function altaRepintarCsfRestaurada() {
+  // Los <select> de regimen (#191) se filtran por el RFC de su pestana: tras
+  // restaurar (o vaciar) hay un RFC distinto y el filtro tiene que seguirlo. Sin
+  // pasar seleccion, conserva el valor que quedo en el select.
+  altaPoblarRegimenes();
   const hayCsf = !!(document.getElementById('csf-rfc')?.value || document.getElementById('csf-razon-social')?.value);
   const detalles = document.getElementById('csf-detalles');
   if (detalles) { detalles.style.display = hayCsf ? '' : 'none'; detalles.open = hayCsf; }
@@ -5992,9 +6110,10 @@ function altaCsfPonerDatos(datos) {
   set('csf-rfc', datos.rfc);
   set('csf-nombre-corto', datos.nombreCorto);
   set('csf-idcif', datos.idcif);
-  set('csf-regimen-fiscal', datos.regimenFiscal);
-  const regLabel = document.getElementById('csf-regimen-fiscal-label');
-  if (regLabel) regLabel.textContent = datos.regimenFiscalLabel || '';
+  // El regimen es un <select> del catalogo del SAT (#191): se repuebla ya con el
+  // RFC recien puesto arriba y con lo que extrajo el parser como seleccion. La
+  // descripcion legible ya no necesita un <small> aparte -- va en la opcion.
+  altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc', datos.regimenFiscal);
   set('csf-calle', datos.calle);
   set('csf-num-ext', datos.numExt);
   set('csf-num-int', datos.numInt);
@@ -6121,7 +6240,10 @@ function altaCsfLeerFormulario() {
     nombreCorto: getVal('csf-nombre-corto'),
     idcif: getVal('csf-idcif'),
     regimenFiscal: getVal('csf-regimen-fiscal'),
-    usoCfdi: getVal('csf-uso-cfdi'),
+    // Uso de CFDI y segmento: campo UNICO por concepto desde #193 -- el mismo que
+    // lee el alta (alta-uso-cfdi en la Seccion 1, alta-segmento en la Seccion 2).
+    // Antes cada pestana tenia su propia copia y lo capturado aqui se perdia.
+    usoCfdi: getVal('alta-uso-cfdi'),
     calle: getVal('csf-calle'),
     numExt: getVal('csf-num-ext'),
     numInt: getVal('csf-num-int'),
@@ -6129,7 +6251,7 @@ function altaCsfLeerFormulario() {
     cp: getVal('csf-cp'),
     municipio: getVal('csf-municipio'),
     estado: getVal('csf-estado'),
-    segmentoId: getVal('alta-upgrade-segmento'),
+    segmentoId: getVal('alta-segmento'),
     actividades: previo.actividades || [],
     csf_fecha: previo.csf_fecha || '',
   };
@@ -6223,7 +6345,8 @@ function altaManualLeerFormulario() {
     idcif: getVal('manual-idcif'),
     taxIdExtranjero: getVal('manual-tax-id-extranjero'),
     regimenFiscal: getVal('manual-regimen-fiscal'),
-    usoCfdi: getVal('manual-uso-cfdi'),
+    // Campo unico por concepto desde #193, igual que en la pestana CSF.
+    usoCfdi: getVal('alta-uso-cfdi'),
     calle: getVal('manual-calle'),
     numExt: getVal('manual-num-ext'),
     numInt: getVal('manual-num-int'),
@@ -6232,7 +6355,7 @@ function altaManualLeerFormulario() {
     municipio: getVal('manual-municipio'),
     estado: getVal('manual-estado'),
     pais: getVal('manual-pais'),
-    segmentoId: getVal('alta-upgrade-segmento'),
+    segmentoId: getVal('alta-segmento'),
   };
 }
 
@@ -6269,7 +6392,11 @@ async function altaManualConfirmar() {
     nombreCorto: datos.nombreCorto,
     idcif: datos.idcif || '',
     regimenFiscal: datos.regimenFiscal || '',
-    usoCfdi: datos.usoCfdi || 'S01',
+    usoCfdi: datos.usoCfdi || '',
+    // segmentoId sobrevive a esta reconstruccion campo por campo desde #193: sin
+    // el, "Actualizar este" sobre un candidato generico (altaCandidatoActualizar)
+    // mandaba al upgrade unos datos sin el segmento que el vendedor si capturo.
+    segmentoId: datos.segmentoId || '',
     calle: datos.calle || '',
     numExt: datos.numExt || '',
     numInt: datos.numInt || '',
@@ -6721,6 +6848,11 @@ function altaDarDeAlta() {
       sinCorrer.forEach(i => altaPasoSetStatus(i, 'pending', ''));
 
       if (data.ok) {
+        // Marca de "este panel ya cumplio" (#192): la lee estadoAltaAlAbrirPanel
+        // para tirar el rastro de ESTE alta la proxima vez que se abra el panel.
+        // Solo en la rama de exito: un alta fallida conserva su estado para que
+        // Reintentar aplique sobre el mismo cliente y no cree un duplicado.
+        altaState.altaCompletada = true;
         if (exitoDiv) { exitoDiv.style.display = 'flex'; }
         // El cliente ya quedo creado en Operam: el borrador cumplio su trabajo y
         // muere (#185). ocultar:false porque los botones "Cotizar ahora" /
@@ -6797,4 +6929,17 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', () => {
   const cel = document.getElementById('alta-celular');
   if (cel) cel.addEventListener('blur', altaBuscarCelular);
+});
+
+// Wiring del selector de regimen fiscal (#191): se puebla al arrancar (catalogo
+// completo, sin RFC todavia) y se vuelve a filtrar cada vez que cambia el RFC de
+// su pestana -- ahi se decide si el vendedor ve los regimenes de persona fisica o
+// los de moral.
+document.addEventListener('DOMContentLoaded', () => {
+  altaPoblarRegimenes();
+  const pares = [['csf-rfc', 'csf-regimen-fiscal'], ['manual-rfc', 'manual-regimen-fiscal']];
+  for (const [idRfc, idSelect] of pares) {
+    const rfc = document.getElementById(idRfc);
+    if (rfc) rfc.addEventListener('input', () => altaPoblarRegimen(idSelect, idRfc));
+  }
 });

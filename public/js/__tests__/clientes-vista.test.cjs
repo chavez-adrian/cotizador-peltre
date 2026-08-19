@@ -110,6 +110,20 @@ test('F2: la fila de crear abre el alta completa con el query (no un prospecto m
   assert.match(html, /alta cliente completo/i);
 });
 
+// La fila tambien se pinta en el ESTADO INICIAL de la vista, con el buscador vacio
+// (#190): ahi no hay query que entrecomillar y "cliente completo <<>>" seria ruido.
+test('F2b: sin query la fila se ofrece igual, pero sin comillas vacias', () => {
+  const html = filaCrearClienteHtml('');
+  assert.match(html, /pc-crear/);
+  assert.match(html, /cvCaminoAlta/);
+  assert.match(html, /alta cliente completo/i);
+  assert.doesNotMatch(html, /&laquo;\s*&raquo;/);
+});
+
+test('F2c: un query de solo espacios cuenta como vacio', () => {
+  assert.doesNotMatch(filaCrearClienteHtml('   '), /&laquo;/);
+});
+
 test('F3: filaResultado escapa el nombre (sin XSS)', () => {
   const html = filaResultadoClienteHtml({ tipo: 'prospecto', nombre: '<img src=x>', sub: '' }, 0);
   assert.doesNotMatch(html, /<img src=x>/);

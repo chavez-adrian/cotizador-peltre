@@ -56,7 +56,8 @@ function buildCsfConfirmarPayload(getVal) {
     nombreCorto: getVal('csf-nombre-corto'),
     idcif: getVal('csf-idcif'),
     regimenFiscal: getVal('csf-regimen-fiscal'),
-    usoCfdi: getVal('csf-uso-cfdi'),
+    // Campo unico del panel desde #193 (antes csf-uso-cfdi, propio de esta pestana)
+    usoCfdi: getVal('alta-uso-cfdi'),
     calle: getVal('csf-calle'),
     numExt: getVal('csf-num-ext'),
     numInt: getVal('csf-num-int'),
@@ -185,7 +186,8 @@ function buildManualConfirmarPayload(getVal) {
     nombreCorto: getVal('manual-nombre-corto'),
     idcif: getVal('manual-idcif'),
     regimenFiscal: getVal('manual-regimen-fiscal'),
-    usoCfdi: getVal('manual-uso-cfdi'),
+    // Campo unico del panel desde #193 (antes manual-uso-cfdi)
+    usoCfdi: getVal('alta-uso-cfdi'),
     cp: getVal('manual-cp'),
     municipio: getVal('manual-municipio'),
     estado: getVal('manual-estado'),
