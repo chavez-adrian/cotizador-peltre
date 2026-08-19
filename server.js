@@ -2372,9 +2372,24 @@ async function ligarProspectoACliente(cliente, customerId, vendedor) {
   }
 }
 
+// Backstop del telefono en el alta (issue #176): la capa estricta del navegador
+// AVISA y deja guardar con confirmacion, asi que un numero imposible para su
+// pais puede llegar hasta aqui. El servidor NO lo rechaza -- fallar el alta por
+// esta causa dejaria al vendedor con el cliente enfrente y sin salida, justo lo
+// que la decision de producto descarto. Solo queda registrado para revision, con
+// el mismo criterio (y la misma funcion) que la captura publica de mayoreo.
+function marcarTelefonoSospechoso(cliente) {
+  for (const tel of [cliente.phone, cliente.entrega?.phone].filter(Boolean)) {
+    if (!numeroTelefonoEsPosible(tel)) {
+      console.warn(`[telefono-sospechoso] alta ${cliente.tax_id}: ${tel}`);
+    }
+  }
+}
+
 app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   const cliente = req.body;
   if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
+  marcarTelefonoSospechoso(cliente);
   const fuente = cliente.fuente || (cliente.pdf_base64 ? 'csf-upload' : 'cotizador');
   const steps = [];
   let customer_id = cliente.customer_id || null;

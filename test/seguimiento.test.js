@@ -149,7 +149,30 @@ test('#175: telefonoValido acepta un internacional de 10 digitos totales', () =>
   assert.equal(telefonoValido('5512345678'), false);    // pelon: sigue invalido
   assert.equal(telefonoValido('2975633917'), false);    // el de Aruba sin "+" tampoco
   assert.equal(telefonoValido('+123 4567'), false);     // 7 digitos: el borde justo debajo
-  assert.equal(telefonoValido('+1234 5678'), true);     // 8 digitos: el piso exacto
+  // 8 digitos: el piso exacto. El fixture cambio en #176 (antes '+1234 5678'):
+  // desde que la reja aplica la regla nacional del pais cuando lo conoce, un
+  // numero que empieza con el codigo 1 se juzga como NANP y 7 digitos
+  // nacionales no son un numero NANP. El piso que este caso cuida es el mismo;
+  // solo se mueve a un pais fuera de la tabla (Feroe, +298).
+  assert.equal(telefonoValido('+298 12345'), true);
+});
+
+// La reja de telefonoValido ya no tiene verdad propia de largo: cuando el
+// codigo de pais esta en REGLAS_TELEFONO (alta-logica.js) manda la MISMA regla
+// nacional que validarTelefono aplica en el formulario (issue #176).
+test('#176: telefonoValido aplica la regla nacional del pais que conoce', () => {
+  assert.equal(telefonoValido('+52 55 1234'), false);        // 8 digitos, pero nacional de 6
+  assert.equal(telefonoValido('+52 0512345678'), false);     // nacional que empieza con 0
+  assert.equal(telefonoValido('+52 5512345678'), true);
+  assert.equal(telefonoValido('+52 1 55 1234 5678'), true);  // legacy: el "1" se normaliza
+  assert.equal(telefonoValido('+297 563 3917'), true);       // pais fuera de la tabla: solo largo
+});
+
+test('#176: telefonoWa normaliza el "1" legacy mexicano', () => {
+  assert.equal(telefonoWa('+52 1 55 1234 5678'), '525512345678');
+  assert.equal(telefonoWa('5215512345678'), '525512345678');
+  assert.equal(telefonoWa('5512345678'), '525512345678');    // legacy pelon de 10: sigue con 52
+  assert.equal(telefonoWa('+1 555 123 4567'), '15551234567'); // el 1 de NANP no se toca
 });
 
 // Antes de #175 este numero caia en la rama de 10 digitos y salia como

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Cotizador - Peltre Nacional</title>
+<link rel="stylesheet" href="/vendor/intl-tel-input/css/intlTelInput.min.css">
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -386,15 +387,7 @@
                 </div>
                 <div class="form-group" style="flex:1">
                   <label>Telefono (con codigo de pais)</label>
-                  <div style="display:flex;gap:6px;align-items:center">
-                    <select id="alta-addr-phone-code" style="flex:0 0 80px">
-                      <option value="+52">+52</option>
-                      <option value="+1">+1</option>
-                      <option value="+1-CA">+1 CA</option>
-                      <option value="+">Otro</option>
-                    </select>
-                    <input type="tel" id="alta-addr-phone" placeholder="55 1234 5678" style="flex:1">
-                  </div>
+                  <input type="tel" id="alta-addr-phone" inputmode="tel" placeholder="55 1234 5678">
                 </div>
               </div>
               <div class="form-group">
@@ -544,15 +537,7 @@
         <input type="hidden" id="cl-segmento">
         <div class="form-group">
           <label>Telefono (con codigo de pais)</label>
-          <div style="display:flex;gap:6px;align-items:center">
-            <select id="cl-telefono-code" style="flex:0 0 80px">
-              <option value="+52">+52</option>
-              <option value="+1">+1</option>
-              <option value="+1-CA">+1 CA</option>
-              <option value="+">Otro</option>
-            </select>
-            <input type="tel" id="cl-telefono" placeholder="55 1234 5678" style="flex:1">
-          </div>
+          <input type="tel" id="cl-telefono" inputmode="tel" placeholder="55 1234 5678">
         </div>
         <div class="form-group">
           <label>Condiciones de pago</label>
@@ -722,15 +707,7 @@
       <div class="form-row">
         <div class="form-group">
           <label>Celular de entrega (con codigo de pais)</label>
-          <div style="display:flex;gap:6px;align-items:center">
-            <select id="cl-cel-entrega-code" style="flex:0 0 80px">
-              <option value="+52">+52</option>
-              <option value="+1">+1</option>
-              <option value="+1-CA">+1 CA</option>
-              <option value="+">Otro</option>
-            </select>
-            <input type="tel" id="cl-cel-entrega" placeholder="55 1234 5678" style="flex:1">
-          </div>
+          <input type="tel" id="cl-cel-entrega" inputmode="tel" placeholder="55 1234 5678">
         </div>
         <div class="form-group">
           <label>Correo</label>
@@ -891,15 +868,7 @@
     <div id="prospecto-form" style="display:none;margin-top:12px">
       <div class="form-group">
         <label>Celular (con codigo de pais) *</label>
-        <div style="display:flex;gap:6px;align-items:center">
-          <select id="pr-celular-code" style="flex:0 0 110px">
-            <option value="+52">&#127474;&#127485; +52</option>
-            <option value="+1">&#127482;&#127480; +1</option>
-            <option value="+1-CA">&#127464;&#127462; +1</option>
-            <option value="+">&#127760; Otro</option>
-          </select>
-          <input type="tel" id="pr-celular" placeholder="55 1234 5678" style="flex:1">
-        </div>
+        <input type="tel" id="pr-celular" inputmode="tel" placeholder="55 1234 5678">
       </div>
       <div class="form-group">
         <label>Nombre *</label>
@@ -1075,6 +1044,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+<script src="/vendor/intl-tel-input/js/intlTelInput.min.js"></script>
 <script src="/js/app.js" type="module"></script>
 </body>
 </html>

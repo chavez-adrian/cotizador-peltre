@@ -257,10 +257,13 @@ test('W9: la respuesta 200 es identica en las 7 ramas (nuevo / duplicado / clien
   for (let i = 0; i < MAX_CAPTURAS_POR_IP; i++) await enviar(formulario({ cel: `551234000${i}` }));
   const tope = await enviar(formulario({ cel: '5599887766' }));
 
-  // Numero con el largo correcto (pasa validarMayoreo, que solo mira digitos)
-  // pero imposible para MX: ningun area code empieza en 0000 (issue #161).
+  // Numero bien formado para la reja del formulario (10 digitos que empiezan
+  // entre 2 y 9) pero imposible para MX segun libphonenumber (issue #161). El
+  // fixture cambio en #176: '0000000000' ya no llega hasta aqui, lo corta antes
+  // la regla estructural de validarTelefono y cae en la rama de captura
+  // incompleta, la misma de cualquier celular mal formado.
   resetRateLimitPublico();
-  const imposible = await enviar(formulario({ cel: '0000000000' }));
+  const imposible = await enviar(formulario({ cel: '4000000000' }));
 
   // Rama 7 (issue #162): token de Turnstile ausente con llaves configuradas.
   resetRateLimitPublico();
@@ -285,8 +288,18 @@ test('W9: la respuesta 200 es identica en las 7 ramas (nuevo / duplicado / clien
 // --- Revalidacion server-side del celular con libphonenumber-js (issue #161) ---
 
 test('W16: un numero imposible para su pais no crea prospecto', async () => {
-  const res = await enviar(formulario({ cel: '0000000000' }));
+  const res = await enviar(formulario({ cel: '4000000000' }));
   assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 0);
+});
+
+// La regla estructural de +52 (primer digito nacional 2-9, issue #176) corre en
+// validarTelefono, o sea ANTES: un numero que empieza con 0 o 1 ya no llega a
+// libphonenumber -- muere en la misma rama de "captura incompleta" que cualquier
+// celular mal formado, la que el formulario del navegador tambien marca en rojo.
+test('W16b: un numero mexicano que empieza con 0 muere en la validacion de captura (#176)', async () => {
+  const res = await enviar(formulario({ cel: '0000000000' }));
+  assert.equal(res.status, 400);
   assert.equal(readProspectos().length, 0);
 });
 

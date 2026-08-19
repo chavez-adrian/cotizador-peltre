@@ -2,7 +2,6 @@ import {
   altaCsfResultadoParseo,
   combinarTelefonoConCodigo,
   validarTelefono,
-  separarTelefonoCodigo,
   calcularDiffFiscal,
   buildDiffFiscalHtml,
   buildDedupExactoConDiffHtml,
@@ -27,6 +26,14 @@ import {
   usoCfdiPorDefecto,
   estadoAltaAlAbrirPanel,
 } from './alta-logica.js';
+import {
+  montarTelefono,
+  celCodeDeCampo,
+  numeroDeCampo,
+  telefonoDeCampo,
+  fijarTelefono,
+  confirmarTelefono,
+} from './telefono-widget.js';
 import {
   CANALES,
   PIEZAS_ESTIMADAS,
@@ -167,34 +174,30 @@ import {
   borradorFormularioMuerePorEvento,
 } from './borrador-form-logica.js';
 
-// === TELEFONOS (bloqueo duro con codigo de pais) ===
-function leerTelefono(inputId, codeId) {
-  return combinarTelefonoConCodigo(
-    document.getElementById(codeId)?.value,
-    document.getElementById(inputId)?.value
-  );
-}
-
-function setTelefonoCampos(inputId, codeId, telefono) {
-  const { code, numero } = separarTelefonoCodigo(telefono);
-  const codeEl = document.getElementById(codeId);
-  const inputEl = document.getElementById(inputId);
-  if (codeEl) codeEl.value = code;
-  if (inputEl) inputEl.value = numero;
-}
-
+// === TELEFONOS (widget internacional + bloqueo duro con codigo de pais) ===
+//
+// El select de codigo de pais murio en #176: los cinco campos de telefono son
+// ahora un input con el widget intl-tel-input (telefono-widget.js), que ademas
+// resuelve la bandera real en Windows. El codigo de la casa ('+52' | '+1' |
+// '+1-CA' | '+') lo entrega celCodeDeCampo y el numero, ya en E.164 y sin el
+// "1" legacy mexicano, numeroDeCampo -- el contrato que consumen
+// validarTelefono y combinarTelefonoConCodigo no cambio.
 function validarTelefonosCotizacion() {
-  const errTel = validarTelefono(
-    document.getElementById('cl-telefono-code')?.value,
-    document.getElementById('cl-telefono')?.value
-  );
+  const errTel = validarTelefono(celCodeDeCampo('cl-telefono'), numeroDeCampo('cl-telefono'));
   if (errTel) return `Telefono: ${errTel}`;
-  const cel = document.getElementById('cl-cel-entrega')?.value?.trim();
+  const cel = numeroDeCampo('cl-cel-entrega');
   if (cel) {
-    const errCel = validarTelefono(document.getElementById('cl-cel-entrega-code')?.value, cel);
+    const errCel = validarTelefono(celCodeDeCampo('cl-cel-entrega'), cel);
     if (errCel) return `Celular de entrega: ${errCel}`;
   }
   return null;
+}
+
+// Capa estricta de la cotizacion (#176): AVISA sobre un numero que se ve mal y
+// deja guardar con confirmacion. Nunca es la razon por la que no se genera.
+async function telefonosCotizacionConfirmados() {
+  if (!await confirmarTelefono('cl-telefono')) return false;
+  return confirmarTelefono('cl-cel-entrega');
 }
 
 // Lee el domicilio de entrega del DOM y delega en la funcion pura (#71/#84).
@@ -216,7 +219,7 @@ function leerClienteFormulario(leyenda) {
     rfc: document.getElementById('cl-rfc').value,
     cpFiscal: document.getElementById('cl-cp-fiscal').value,
     segmentoId: document.getElementById('cl-segmento')?.value || '',
-    telefono: leerTelefono('cl-telefono', 'cl-telefono-code'),
+    telefono: telefonoDeCampo('cl-telefono'),
     nombreEntrega: document.getElementById('cl-nombre-entrega').value,
     calle: document.getElementById('cl-calle').value,
     numInt: document.getElementById('cl-num-int').value,
@@ -224,7 +227,7 @@ function leerClienteFormulario(leyenda) {
     cpEntrega: document.getElementById('cl-cp-entrega').value,
     municipio: document.getElementById('cl-municipio').value,
     estado: document.getElementById('cl-estado').value,
-    celEntrega: leerTelefono('cl-cel-entrega', 'cl-cel-entrega-code'),
+    celEntrega: telefonoDeCampo('cl-cel-entrega'),
     emailEntrega: document.getElementById('cl-email-entrega').value,
     emailFactura: document.getElementById('cl-email-factura').value,
     referencias: document.getElementById('cl-referencias').value,
@@ -516,7 +519,7 @@ function leerContactoNuevoParaBorrador() {
   if (pcState.cliente) return null;
   if (!document.getElementById('pc-nombre')) return null;
   const nombre = document.getElementById('pc-nombre')?.value || '';
-  const celCode = document.getElementById('pc-cel-code')?.value || '+52';
+  const celCode = celCodeDeCampo('pc-cel');
   const cel = document.getElementById('pc-cel')?.value || '';
   const ciudad = document.getElementById('pc-ciudad')?.value || '';
   const canal = document.getElementById('pc-canal')?.value || '';
@@ -597,8 +600,8 @@ function restaurarClienteDelBorrador(borrador) {
   set('cl-email-factura', campos.emailFactura);
   set('cl-referencias', campos.referencias);
   set('cl-referencia', campos.referencia);
-  setTelefonoCampos('cl-telefono', 'cl-telefono-code', campos.telefono || '');
-  setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', campos.celEntrega || '');
+  fijarTelefono('cl-telefono', campos.telefono || '');
+  fijarTelefono('cl-cel-entrega', campos.celEntrega || '');
   const paisEl = document.getElementById('cl-pais');
   if (paisEl) paisEl.value = campos.pais || 'MX';
   pcState.cliente = pcCliente || null;
@@ -2212,6 +2215,7 @@ async function generatePDF() {
     document.getElementById('cl-telefono')?.focus();
     return;
   }
+  if (!await telefonosCotizacionConfirmados()) { switchTab('cliente'); return; }
   const domio = validarDomicilioCotizacion();
   if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
     alert(MENSAJE_ENVIO_INVALIDADO);
@@ -2309,6 +2313,7 @@ async function generateHTML() {
     document.getElementById('cl-telefono')?.focus();
     return;
   }
+  if (!await telefonosCotizacionConfirmados()) { switchTab('cliente'); return; }
   const domio = validarDomicilioCotizacion();
   if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
     alert(MENSAJE_ENVIO_INVALIDADO);
@@ -2452,10 +2457,9 @@ function nuevaCotizacion() {
     if (el) el.value = '';
   }
   document.getElementById('cl-condiciones').value = 'Anticipo 50%';
-  const telCodeEl = document.getElementById('cl-telefono-code');
-  if (telCodeEl) telCodeEl.value = '+52';
-  const celCodeEl = document.getElementById('cl-cel-entrega-code');
-  if (celCodeEl) celCodeEl.value = '+52';
+  // Vaciar el input no devuelve la bandera a Mexico: eso lo hace el widget.
+  fijarTelefono('cl-telefono', '');
+  fijarTelefono('cl-cel-entrega', '');
   const paisEl = document.getElementById('cl-pais');
   if (paisEl) paisEl.value = 'MX';
   document.getElementById('shipping-option').value = 'none';
@@ -2509,7 +2513,7 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-nombre-corto',   cliente.ref);
   fill('cl-rfc',            cliente.rfc);
   fill('cl-cp-fiscal',      cliente.cpFiscal || cliente.cp);
-  if (cliente.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
+  if (cliente.telefono) fijarTelefono('cl-telefono', cliente.telefono);
   fill('cl-calle',          cliente.calle);
   fill('cl-num-int',        cliente.numInt);
   fill('cl-colonia',        cliente.colonia);
@@ -2599,7 +2603,7 @@ function pcClienteActual() {
     ...base,
     name: document.getElementById('cl-razon-social')?.value || base.name || '',
     ref: document.getElementById('cl-nombre-corto')?.value || base.ref || '',
-    telefono: leerTelefono('cl-telefono', 'cl-telefono-code') || base.telefono || '',
+    telefono: telefonoDeCampo('cl-telefono') || base.telefono || '',
     cp: document.getElementById('cl-cp-entrega')?.value || '',
     pais: document.getElementById('cl-pais')?.value || base.pais || 'MX',
     calle: document.getElementById('cl-calle')?.value || '',
@@ -2630,8 +2634,8 @@ function pcLimpiarCamposCliente() {
     'cl-email-factura', 'cl-referencias',
   ];
   for (const id of campos) { const el = document.getElementById(id); if (el) el.value = ''; }
-  const telCode = document.getElementById('cl-telefono-code'); if (telCode) telCode.value = '+52';
-  const celCode = document.getElementById('cl-cel-entrega-code'); if (celCode) celCode.value = '+52';
+  fijarTelefono('cl-telefono', '');
+  fijarTelefono('cl-cel-entrega', '');
   const pais = document.getElementById('cl-pais'); if (pais) pais.value = 'MX';
   const rfc = document.getElementById('cl-rfc'); if (rfc) rfc.readOnly = false;
   window._operamDomicilios = null;
@@ -2830,8 +2834,8 @@ function pcLlenarCamposContacto(cliente) {
   const pais = document.getElementById('cl-pais');
   if (pais && cliente.pais) pais.value = cliente.pais;
   if (cliente.telefono) {
-    setTelefonoCampos('cl-telefono', 'cl-telefono-code', cliente.telefono);
-    setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', cliente.telefono);
+    fijarTelefono('cl-telefono', cliente.telefono);
+    fijarTelefono('cl-cel-entrega', cliente.telefono);
   }
 }
 
@@ -2867,8 +2871,8 @@ async function pcElegirReciente(cotizacionId) {
     set('cl-email-entrega', c.emailEntrega);
     const pais = document.getElementById('cl-pais');
     if (pais) pais.value = c.pais || 'MX';
-    if (c.telefono) setTelefonoCampos('cl-telefono', 'cl-telefono-code', c.telefono);
-    if (c.celEntrega) setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', c.celEntrega);
+    if (c.telefono) fijarTelefono('cl-telefono', c.telefono);
+    if (c.celEntrega) fijarTelefono('cl-cel-entrega', c.celEntrega);
     pcState.cliente = {
       tipo: c.rfc ? 'operam' : 'nuevo',
       name: c.razonSocial || c.nombreCorto || '', ref: c.nombreCorto || '',
@@ -2897,9 +2901,7 @@ function pcCaminoNuevo(prefill, restore) {
     `<input type="text" id="pc-nombre" value="${escapeHtml(nombre)}" placeholder="Nombre (se acepta sin apellido)" autocomplete="off"></div>` +
     '<div id="pc-sug" class="pc-sugerencias"></div>' +
     '<div class="form-group"><label>Celular *</label>' +
-    '<div style="display:flex;gap:8px"><select id="pc-cel-code" style="flex:0 0 92px">' +
-    '<option value="+52">+52</option><option value="+1">+1</option><option value="+1-CA">+1 CA</option><option value="+">Otro</option></select>' +
-    '<input type="tel" id="pc-cel" inputmode="tel" placeholder="55 1234 5678" style="flex:1"></div>' +
+    '<input type="tel" id="pc-cel" inputmode="tel" placeholder="55 1234 5678">' +
     '<div id="pc-cel-aviso" class="pc-cel-aviso" style="display:none"></div></div>' +
     '<div class="form-group"><label>Ciudad *</label>' +
     '<input type="text" id="pc-ciudad" placeholder="Para estimar envio"></div>' +
@@ -2914,20 +2916,23 @@ function pcCaminoNuevo(prefill, restore) {
     clearTimeout(sugTimer);
     sugTimer = setTimeout(pcSugerenciasNombre, 250);
   });
+  // El widget se monta DESPUES de pintar: este formulario nace de un innerHTML,
+  // asi que el input no existia cuando arranco la pagina (#176). El montaje
+  // tambien engancha el aviso de la capa estricta sobre el mismo input.
+  montarTelefono('pc-cel');
   document.getElementById('pc-cel').addEventListener('blur', pcClasificarCelular);
   document.getElementById('pc-nombre').focus();
   // Autosave del contacto nuevo a medio capturar (#180): estos campos no pasan
   // por updateTierBar/renderCartLines/updateResumen (el carrito sigue vacio),
   // asi que necesitan su propio enganche.
-  for (const id of ['pc-cel-code', 'pc-cel', 'pc-ciudad', 'pc-canal', 'pc-segmento']) {
+  for (const id of ['pc-cel', 'pc-ciudad', 'pc-canal', 'pc-segmento']) {
     const el = document.getElementById(id);
     if (el) { el.addEventListener('input', autoguardarBorrador); el.addEventListener('change', autoguardarBorrador); }
   }
   document.getElementById('pc-nombre').addEventListener('input', autoguardarBorrador);
   if (restore) {
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-    set('pc-cel-code', restore.celCode);
-    set('pc-cel', restore.cel);
+    fijarTelefono('pc-cel', combinarTelefonoConCodigo(restore.celCode, restore.cel));
     set('pc-ciudad', restore.ciudad);
     set('pc-canal', restore.canal);
   }
@@ -2968,10 +2973,7 @@ async function pcSugerenciasNombre() {
 // (que la espera con await -- el blur async no garantiza haber terminado cuando
 // el vendedor pega el celular y toca Guardar de inmediato).
 async function pcObtenerDecisionCelular() {
-  const tel = combinarTelefonoConCodigo(
-    document.getElementById('pc-cel-code')?.value,
-    document.getElementById('pc-cel')?.value
-  );
+  const tel = telefonoDeCampo('pc-cel');
   if (!tel) return { accion: 'crear', tipo: 'libre', mensaje: '' };
   let clasificacion = null;
   try {
@@ -3008,8 +3010,8 @@ window.pcCotizarComoCliente = pcCotizarComoCliente;
 async function pcGuardarContactoNuevo() {
   const err = document.getElementById('pc-nuevo-error');
   const nombre = document.getElementById('pc-nombre')?.value || '';
-  const celNum = document.getElementById('pc-cel')?.value || '';
-  const celCode = document.getElementById('pc-cel-code')?.value || '+52';
+  const celNum = numeroDeCampo('pc-cel');
+  const celCode = celCodeDeCampo('pc-cel');
   const ciudad = document.getElementById('pc-ciudad')?.value || '';
   const canal = document.getElementById('pc-canal')?.value || '';
   const segmentoId = document.getElementById('pc-segmento')?.value || '';
@@ -3021,6 +3023,8 @@ async function pcGuardarContactoNuevo() {
   const payload = buildProspectoPayload({ celularCode: celCode, celular: celNum, nombre, ciudad, canal, segmento_id: segmentoId });
   const errVal = validarProspectoBody(payload);
   if (errVal) { showErr(errVal); return; }
+  // Capa estricta (#176): avisa del numero raro y deja guardar al confirmar.
+  if (!await confirmarTelefono('pc-cel')) return;
 
   const cliente = buildClienteDesdeContactoNuevo({ nombre, telefono, ciudad, canal, segmentoId, pais: paisDesdeCodigoTelefono(celCode) });
 
@@ -3190,7 +3194,7 @@ function pcContactosDisponibles() {
 function pcAplicarContacto(c) {
   const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
   f('cl-nombre-entrega', c?.nombre);
-  setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', c?.telefono || '');
+  fijarTelefono('cl-cel-entrega', c?.telefono || '');
   f('cl-email-entrega', c?.email);
   pcRenderChips();
 }
@@ -5212,8 +5216,8 @@ function avisoTablero(msg) {
 function leerFormularioProspecto() {
   const val = id => document.getElementById(id)?.value;
   return buildProspectoPayload({
-    celularCode: val('pr-celular-code'),
-    celular: val('pr-celular'),
+    celularCode: celCodeDeCampo('pr-celular'),
+    celular: numeroDeCampo('pr-celular'),
     nombre: val('pr-nombre'),
     ciudad: val('pr-ciudad'),
     canal: val('pr-canal'),
@@ -5247,6 +5251,8 @@ async function guardarProspecto() {
   const payload = leerFormularioProspecto();
   const error = validarProspectoBody(payload);
   if (error) { mostrarErrorProspecto(error); return; }
+  // Capa estricta (#176): avisa del numero raro y deja guardar al confirmar.
+  if (!await confirmarTelefono('pr-celular')) return;
   try {
     const res = await api('/api/prospectos', { method: 'POST', body: payload });
     if (res.status === 409) {
@@ -5502,8 +5508,8 @@ async function cargarCotizacion(id, modo = 'nueva') {
       const el = document.getElementById(id);
       if (el) el.value = val;
     }
-    setTelefonoCampos('cl-telefono', 'cl-telefono-code', c.telefono || '');
-    setTelefonoCampos('cl-cel-entrega', 'cl-cel-entrega-code', c.celEntrega || '');
+    fijarTelefono('cl-telefono', c.telefono || '');
+    fijarTelefono('cl-cel-entrega', c.celEntrega || '');
     if (cot.condicionesPago) document.getElementById('cl-condiciones').value = cot.condicionesPago;
     const paisEl = document.getElementById('cl-pais');
     if (paisEl) paisEl.value = c.pais || 'MX';
@@ -6631,8 +6637,7 @@ window.altaCandidatoCrearNuevo = altaCandidatoCrearNuevo;
 async function altaBuscarCelular() {
   const aviso = document.getElementById('alta-celular-aviso');
   if (!aviso) return;
-  const codeEl = document.getElementById('alta-celular-code');
-  const celular = leerTelefono('alta-celular', codeEl ? 'alta-celular-code' : null) || (document.getElementById('alta-celular')?.value || '').trim();
+  const celular = (document.getElementById('alta-celular')?.value || '').trim();
   const candDiv = document.getElementById('alta-celular-candidatos');
   if (candDiv) { candDiv.innerHTML = ''; candDiv.style.display = 'none'; }
   if (!celular) { aviso.style.display = 'none'; aviso.textContent = ''; return; }
@@ -6707,7 +6712,7 @@ function altaLeerDomicilio() {
     addr_city: getVal('alta-addr-city'),
     addr_state: getVal('alta-addr-state'),
     pais: getVal('alta-pais'),
-    phone: combinarTelefonoConCodigo(getVal('alta-addr-phone-code'), getVal('alta-addr-phone')),
+    phone: telefonoDeCampo('alta-addr-phone'),
     addr_reference: getVal('alta-addr-reference'),
     email: getVal('alta-addr-email'),
   };
@@ -6721,18 +6726,20 @@ function altaValidarDomicilio() {
   if (!getVal('alta-addr-zip')) return 'El codigo postal es obligatorio';
   if (!getVal('alta-addr-city')) return 'La ciudad es obligatoria';
   if (!getVal('alta-addr-state')) return 'El estado es obligatorio';
-  const telErr = validarTelefono(getVal('alta-addr-phone-code'), getVal('alta-addr-phone'));
+  const telErr = validarTelefono(celCodeDeCampo('alta-addr-phone'), numeroDeCampo('alta-addr-phone'));
   if (telErr) return telErr;
   return null;
 }
 
-function altaConfirmarDomicilio() {
+async function altaConfirmarDomicilio() {
   const errDiv = document.getElementById('alta-domicilio-error');
   const err = altaValidarDomicilio();
   if (err) {
     if (errDiv) { errDiv.textContent = err; errDiv.style.display = ''; }
     return;
   }
+  // Capa estricta (#176): avisa del numero raro y deja continuar al confirmar.
+  if (!await confirmarTelefono('alta-addr-phone')) return;
   if (errDiv) errDiv.style.display = 'none';
 
   altaState.domicilio = altaLeerDomicilio();
@@ -6929,6 +6936,14 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', () => {
   const cel = document.getElementById('alta-celular');
   if (cel) cel.addEventListener('blur', altaBuscarCelular);
+});
+
+// Widget internacional en los campos de telefono que ya viven en el HTML
+// (issue #176). El quinto, pc-cel, nace de un innerHTML y se monta en
+// pcCaminoNuevo. Montar sobre un formulario oculto es seguro: el widget observa
+// el tamano del input y reacomoda su bandera cuando la vista se muestra.
+document.addEventListener('DOMContentLoaded', () => {
+  for (const id of ['cl-telefono', 'cl-cel-entrega', 'pr-celular', 'alta-addr-phone']) montarTelefono(id);
 });
 
 // Wiring del selector de regimen fiscal (#191): se puebla al arrancar (catalogo

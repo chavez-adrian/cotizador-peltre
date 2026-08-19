@@ -43,7 +43,7 @@ export function altaCsfResultadoParseo(respuestaInterpretada, fileName) {
 // nacional trae 11 digitos empezando con 1, el "1" sobra: los 10 significativos
 // son los restantes. Devuelve el telefono sin ese "1" lider (conservando el
 // resto del formato); si no aplica, lo deja igual.
-function quitarUnoLider(tel) {
+export function quitarUnoLiderNacional(tel) {
   const digitos = tel.replace(/\D/g, '');
   if (digitos.length === 11 && digitos.startsWith('1')) {
     return tel.replace(/^\s*1[\s-]*/, '');
@@ -51,13 +51,74 @@ function quitarUnoLider(tel) {
   return tel;
 }
 
+// === Reglas nacionales por codigo de marcado (issue #176) ===
+//
+// UNA sola tabla para las dos rejas duras del sistema: validarTelefono (lo que
+// el formulario deja capturar) y telefonoValido (lib/seguimiento.js, que solo
+// ve el string ya compuesto). Antes cada una tenia su propia verdad de largo y
+// un "+52" de 8 digitos pasaba por la segunda.
+// `digitos` = largo nacional exacto. `primerDigito` = regla ESTRUCTURAL, no de
+// metadata fina: el nacional mexicano empieza entre 2 y 9 desde la reforma del
+// IFT de 2019 (Comunicado 34/2019), asi que atrapa capturas basura sin caducar
+// como caducaria una copia vendoreada de libphonenumber
+// (docs/investigacion-validacion-telefono.md).
+export const REGLAS_TELEFONO = {
+  52: { digitos: 10, primerDigito: /^[2-9]/, mensajePrimerDigito: 'El numero mexicano debe empezar entre 2 y 9 despues del +52' },
+  1: { digitos: 10 },
+};
+
+const CODIGOS_MARCADO = Object.keys(REGLAS_TELEFONO).sort((a, b) => b.length - a.length);
+
+// Los numeros mexicanos arrastran el "1" de movil heredado (+52 1 55 xxxx xxxx)
+// y los +1 el "1" del codigo de pais. Con 11 digitos nacionales que empiezan en
+// 1, ese 1 sobra: ningun nacional mexicano real empieza con 1. Normalizar (no
+// relajar la reja) es lo que rescata los 11 legacy del export de Bitrix.
+export function nacionalSinUnoLider(digitos) {
+  return (digitos.length === 11 && digitos.startsWith('1')) ? digitos.slice(1) : digitos;
+}
+
+// Digitos nacionales de un numero internacional cuyo codigo de pais SI esta en
+// la tabla; null cuando no lo esta (el resto del mundo se valida solo por largo
+// total, que es lo unico que este modulo sabe de ellos).
+export function partirPorCodigoPais(digitos) {
+  for (const dial of CODIGOS_MARCADO) {
+    if (digitos.startsWith(dial)) return { dial, nacional: nacionalSinUnoLider(digitos.slice(dial.length)) };
+  }
+  return null;
+}
+
+export function errorReglaNacional(dial, nacional) {
+  const regla = REGLAS_TELEFONO[dial];
+  if (!regla) return null;
+  if (nacional.length !== regla.digitos) {
+    return `El numero debe tener ${regla.digitos} digitos despues del codigo +${dial} (tiene ${nacional.length})`;
+  }
+  if (regla.primerDigito && !regla.primerDigito.test(nacional)) return regla.mensajePrimerDigito;
+  return null;
+}
+
+// Espejo de quitarUnoLider para el numero que YA viene en formato
+// internacional (issue #176): el widget entrega E.164 y ese camino devolvia el
+// telefono tal cual, asi que el "1" legacy sobrevivia hasta el valor guardado.
+// Solo aplica a +52 (donde el 1 es basura heredada); en +1 el 1 ES el codigo de
+// pais. Conserva el formato del resto del numero.
+export function quitarUnoLiderInternacional(telefono) {
+  const tel = (telefono || '').trim();
+  if (!tel.startsWith('+')) return tel;
+  const digitos = tel.replace(/\D/g, '');
+  if (!digitos.startsWith('52')) return tel;
+  const nacional = digitos.slice(2);
+  if (!(nacional.length === 11 && nacional.startsWith('1'))) return tel;
+  return tel.replace(/^(\+\s*52[\s-]*)1[\s-]*/, '$1');
+}
+
 export function combinarTelefonoConCodigo(code, phone) {
   const tel = (phone || '').trim();
   if (!tel) return '';
-  if (tel.startsWith('+')) return tel;
+  if (tel.startsWith('+')) return quitarUnoLiderInternacional(tel);
   const prefijo = (code || '').replace(/-CA$/, '');
   if (!prefijo || prefijo === '+') return tel;
-  return `${prefijo} ${quitarUnoLider(tel)}`;
+  return `${prefijo} ${quitarUnoLiderNacional(tel)}`;
 }
 
 // Validacion dura de telefono con codigo de pais. Para +52/+1/+1-CA el numero
@@ -66,10 +127,13 @@ export function combinarTelefonoConCodigo(code, phone) {
 // Si el numero ya trae +, se valida por longitud total y el select se ignora.
 // El piso son 8 y no 11 (issue #175): 11 asumia un nacional de 10 digitos, la
 // regla de MX/US/CA y no la del mundo -- un nacional de 7 (Aruba, los fijos de
-// Panama) suma 10 con su codigo de pais y quedaba rechazado. Esto valida LARGO y
-// nada mas: un numero con el largo correcto pero imposible para su pais hoy pasa
-// sin objecion, y atraparlo es el trabajo de #176. El "+" inicial sigue siendo
-// obligatorio: sin el no se sabe de que pais es el numero.
+// Panama) suma 10 con su codigo de pais y quedaba rechazado. El "+" inicial
+// sigue siendo obligatorio: sin el no se sabe de que pais es el numero.
+// Sobre el largo se aplica la regla nacional del pais cuando su codigo esta en
+// REGLAS_TELEFONO (issue #176): para +52 el nacional debe ser de 10 digitos que
+// empiezan entre 2 y 9. Los paises fuera de la tabla se siguen validando solo
+// por largo total -- el aviso fino de esos lo da el widget en el navegador, que
+// nunca bloquea.
 export function validarTelefono(code, phone) {
   const tel = (phone || '').trim();
   if (!tel) return 'El telefono es obligatorio (con codigo de pais)';
@@ -78,13 +142,10 @@ export function validarTelefono(code, phone) {
     if (!tel.startsWith('+') || digitos.length < 8 || digitos.length > 15) {
       return 'Captura el numero completo con codigo de pais (ej. +52 55 1234 5678)';
     }
-    return null;
+    const partes = partirPorCodigoPais(digitos);
+    return partes ? errorReglaNacional(partes.dial, partes.nacional) : null;
   }
-  const nacional = (digitos.length === 11 && digitos.startsWith('1')) ? digitos.slice(1) : digitos;
-  if (nacional.length !== 10) {
-    return `El numero debe tener 10 digitos despues del codigo ${code.replace(/-CA$/, '')} (tiene ${digitos.length})`;
-  }
-  return null;
+  return errorReglaNacional(code.replace(/-CA$/, '').replace('+', ''), nacionalSinUnoLider(digitos));
 }
 
 // Inversa de combinarTelefonoConCodigo: separa un telefono guardado en

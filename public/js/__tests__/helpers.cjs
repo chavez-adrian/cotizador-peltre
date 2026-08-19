@@ -115,7 +115,11 @@ function combinarTelefonoLocal(code, phone) {
   return `${prefijo} ${tel}`;
 }
 
-function buildAltaDomicilioPayload(getVal) {
+// `celCode` es lo que reporta el widget de telefono (celCodeDeCampo, issue
+// #176): el select 'alta-addr-phone-code' que este doble leia antes ya no
+// existe en el DOM. El default '+52' es el mismo de celCodeDeCampo cuando el
+// widget no llego a montarse.
+function buildAltaDomicilioPayload(getVal, celCode = '+52') {
   return {
     br_name: getVal('alta-br-name'),
     br_ref: getVal('alta-br-ref'),
@@ -127,7 +131,7 @@ function buildAltaDomicilioPayload(getVal) {
     addr_city: getVal('alta-addr-city'),
     addr_state: getVal('alta-addr-state'),
     pais: getVal('alta-pais'),
-    phone: combinarTelefonoLocal(getVal('alta-addr-phone-code'), getVal('alta-addr-phone')),
+    phone: combinarTelefonoLocal(celCode, getVal('alta-addr-phone')),
     addr_reference: getVal('alta-addr-reference'),
     email: getVal('alta-addr-email'),
   };

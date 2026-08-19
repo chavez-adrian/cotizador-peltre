@@ -20,7 +20,6 @@ test('E1: buildAltaDomicilioPayload extrae todos los campos de entrega y combina
     'alta-addr-city': 'Cuauhtemoc',
     'alta-addr-state': 'CDMX',
     'alta-pais': 'MX',
-    'alta-addr-phone-code': '+52',
     'alta-addr-phone': '5512345678',
     'alta-addr-reference': 'Entre Insurgentes y Liverpool',
     'alta-addr-email': 'entrega@empresa.com',

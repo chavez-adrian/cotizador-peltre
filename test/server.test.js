@@ -1257,6 +1257,43 @@ test('POST /api/crear-cliente con RFC duplicado retorna duplicado:true con datos
   }
 });
 
+// Backstop del telefono (issue #176): la capa estricta del navegador AVISA pero
+// deja guardar, asi que un numero imposible puede llegar al alta. El servidor lo
+// deja registrado para revision y responde EXACTAMENTE igual que siempre --
+// rechazar por esta causa dejaria al vendedor con el cliente enfrente y sin salida.
+test('POST /api/crear-cliente registra el telefono sospechoso sin rechazar el alta (#176)', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 78 }) };
+      if (u.includes('/78')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 178 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/178': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  const warnOriginal = console.warn;
+  const avisos = [];
+  console.warn = (...args) => avisos.push(args.join(' '));
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({
+        tax_id: 'SOS010101ABC', CustName: 'Sospechoso SA', phone: '+52 0000000000',
+        entrega: { br_name: 'Almacen', br_ref: 'ALM', addr_street: 'Calle', addr_zip: '06600', addr_city: 'CDMX', addr_state: 'CDMX', phone: '+52 5512345678', email: '', pais: 'MX' },
+      });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.customer_id, 78);
+    const sospechosos = avisos.filter(a => a.includes('telefono-sospechoso'));
+    assert.strictEqual(sospechosos.length, 1);
+    assert.ok(sospechosos[0].includes('+52 0000000000'));
+    assert.ok(sospechosos[0].includes('SOS010101ABC'));
+  } finally {
+    console.warn = warnOriginal;
+    restore();
+  }
+});
+
 // === GET /api/buscar-cliente ===
 
 test('GET /api/buscar-cliente sin rfc retorna 400', async () => {

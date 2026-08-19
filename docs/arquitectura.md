@@ -95,6 +95,18 @@ En `calcular-envio.js` la calca se excluye del empaque (#91): va aplicada sobre 
 
 Modulo ES sin efectos de navegador que concentra la logica pura del flujo de alta de cliente (parseo de CSF, diff fiscal, payload de `/api/crear-cliente`, payload del upgrade fiscal de `/api/actualizar-cliente-fiscal/:id`, combinacion de telefono). `app.js` lo importa de forma nativa (`<script type="module">`); los tests lo consumen via `import()` dinamico; `server.js` importa de el las funciones de diff/payload fiscal (issue #85) para el endpoint de upgrade — tres consumidores, cero copias espejo (resolucion de "Especie A" del Candidato 2 de `architecture-review-cotizador-20260606.html`, issue #36; mismo patron de cross-import server↔public/js ya usado con `prospectos-logica.js`/`decorados-logica.js`).
 
+### telefono-widget.js (#176)
+
+Modulo compartido del widget internacional de telefono (`public/vendor/intl-tel-input` 29.2.3, vendoreado desde #161 — cero bytes nuevos, ninguna request a CDN). Lo consumen el formulario publico de mayoreo (`mayoreo.js`, una instancia) y el alta interna (`app.js`, cinco: `cl-telefono`, `cl-cel-entrega`, `pr-celular`, `alta-addr-phone` y `pc-cel`). Antes de #176 los helpers vivian dentro de `mayoreo.js`, cerrados sobre su unica instancia.
+
+- **Parte pura (la que cubre la suite):** `celCodeDelWidget(iti)` traduce el iso2 del widget al `celCode` de la casa via `CEL_CODE_POR_ISO2` (`alta-logica.js`), `numeroDelWidget(iti, crudo)` entrega el E.164 ya normalizado (cae al valor crudo mientras `utils.js` no carga) y `avisoTelefonoWidget(iti, crudo, { preciso })` da el mensaje de la capa estricta. `MENSAJE_VALIDACION_CEL` vive aqui una sola vez.
+- **Parte de DOM:** `montarTelefono(inputId)` guarda la instancia en un registro por id (el resto de `app.js` habla de ids, no de instancias) y crea el aviso; `celCodeDeCampo` / `numeroDeCampo` / `telefonoDeCampo` / `fijarTelefono` reemplazan al viejo par select+input; `confirmarTelefono` es la puerta de guardado.
+- **La capa estricta AVISA, nunca bloquea** (decision de producto, #176): al blur muestra el motivo y al guardar pregunta; confirmando, guarda. Sin widget montado devuelve `true` — nunca puede ser la razon por la que no se guarda. La reja DURA sigue siendo `validarTelefono`.
+- **El criterio principal es el largo** (`isValidNumber` del utils, estable). `isValidNumberPrecise` es un veredicto SECUNDARIO que solo pide el alta interna (`{ preciso: true }`): la copia vendoreada del `utils.js` es del 2026-08-16 y no tiene script de actualizacion, asi que el mensaje dice de cuando es la metadata. Mayoreo se queda con el criterio de largo de #161, sin cambio visible.
+- **Los formularios pintados por `innerHTML` montan DESPUES de pintar** (`pcCaminoNuevo` -> `montarTelefono('pc-cel')`): el input no existe al arrancar la pagina.
+
+Las reglas nacionales viven en `alta-logica.js` (`REGLAS_TELEFONO`), no aqui: las comparten `validarTelefono` y `telefonoValido` (`lib/seguimiento.js`).
+
 ## Persistencia y ciclo de la cotizacion (#102-#116)
 
 - Neon Postgres (`DATABASE_URL`) — tablas `cotizaciones` (historial + seguimientos + estado, via `lib/cotizaciones-store.js`) y `clientes_log` (auditoria de altas). El store cae a `data/cotizaciones.json` cuando no hay `DATABASE_URL` (dev local y tests); el disco de Render es efimero, asi que en produccion la fuente de verdad es Neon.

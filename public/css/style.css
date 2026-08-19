@@ -1759,6 +1759,17 @@ body {
 .pc-sugerencias { margin: -4px 0 10px; }
 .pc-sug-titulo { font-size: 12px; color: var(--text-light); margin-bottom: 6px; }
 
+/* intl-tel-input en los cinco campos de telefono del alta interna (issue #176).
+   El widget envuelve el input en su propio .iti, que por default es
+   inline-block y dejaria el campo a media caja. El padding izquierdo del input
+   (el hueco de la bandera) lo pone el propio widget en linea segun el ancho de
+   su boton, asi que aqui NO se toca: escribirlo desde el CSS lo pisaria. */
+.iti { width: 100%; }
+.tel-aviso {
+  margin-top: 6px; font-size: 12.5px; padding: 8px 10px; border-radius: 8px; line-height: 1.4;
+  background: oklch(0.95 0.06 85); color: oklch(0.42 0.09 70);
+}
+
 /* Avisos de clasificacion de celular */
 .pc-cel-aviso { margin-top: 6px; font-size: 12.5px; padding: 8px 10px; border-radius: 8px; line-height: 1.4; }
 .pc-aviso-ambar { background: oklch(0.95 0.06 85); color: oklch(0.42 0.09 70); }

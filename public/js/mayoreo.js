@@ -12,7 +12,9 @@ import {
   TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES,
   sugerirDominioCorreo, validarMayoreo, paisDelFormulario,
 } from './mayoreo-logica.js';
-import { CEL_CODE_POR_ISO2 } from './alta-logica.js';
+import {
+  celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget,
+} from './telefono-widget.js';
 
 const form = document.getElementById('form-mayoreo');
 const exito = document.getElementById('exito');
@@ -73,29 +75,14 @@ const iti = window.intlTelInput(inputCel, {
 });
 
 // celCode sigue siendo el contrato de mayoreo-logica.js (celularDeMayoreo,
-// paisDelFormulario -- issue #160): MX/US/CA mapean a los prefijos de
-// alta-logica.js tal cual (CEL_CODE_POR_ISO2, la inversa de
-// paisDesdeCodigoTelefono -- una sola tabla, no una copia local); cualquier
-// otro pais que el widget permita elegir cae al generico '+' (CODIGOS_PAIS lo
-// amplio para esto, #161). No se traduce a mano el numero: intl-tel-input
-// entrega el E.164 completo con getNumber(), y combinarTelefonoConCodigo
-// (alta-logica.js) ya sabe respetarlo tal cual cuando el numero llega con '+'.
-function celCodeDelWidget() {
-  const pais = iti.getSelectedCountry();
-  return CEL_CODE_POR_ISO2[pais && pais.iso2] || '+';
-}
-
-// getNumber() exige utils.js cargado (lanza si no). Es una ventana muy chica
-// (el archivo pesa ~260KB y carga apenas se pinta la pagina), pero si alguien
-// alcanza a escribir y perder el foco antes de que resuelva, caemos al valor
-// crudo del input -- combinarTelefonoConCodigo lo arma igual con celCode.
-function numeroDelWidget() {
-  try {
-    const e164 = iti.getNumber();
-    if (e164) return e164;
-  } catch (err) { /* utils.js aun no carga */ }
-  return val('f-cel');
-}
+// paisDelFormulario -- issue #160): MX/US/CA mapean a los prefijos de la casa y
+// cualquier otro pais que el widget permita elegir cae al generico '+'
+// (CODIGOS_PAIS lo amplio para esto, #161). No se traduce a mano el numero:
+// intl-tel-input entrega el E.164 completo con getNumber(), y
+// combinarTelefonoConCodigo (alta-logica.js) ya sabe respetarlo tal cual cuando
+// el numero llega con '+'. Los dos helpers viven en telefono-widget.js desde
+// #176: el alta interna monta cinco instancias del mismo widget y necesitaba la
+// misma traduccion -- un modulo, varios consumidores.
 
 // Turnstile (issue #162): el widget de Cloudflare (challenges.cloudflare.com/
 // turnstile/v0/api.js, cargado por server.js SOLO si hay TURNSTILE_SITE_KEY --
@@ -122,8 +109,8 @@ function leerFormulario() {
     nombre: val('f-nombre'),
     apellido: val('f-apellido'),
     cargo: val('f-cargo'),
-    celCode: celCodeDelWidget(),
-    cel: numeroDelWidget(),
+    celCode: celCodeDelWidget(iti),
+    cel: numeroDelWidget(iti, val('f-cel')),
     correo: val('f-correo'),
     web: val('f-web'),
     promos: document.getElementById('f-promos').checked,
@@ -132,30 +119,13 @@ function leerFormulario() {
   };
 }
 
-// Mensajes de intl-tel-input.utils.getValidationError() traducidos (issue
-// #161). "Rechazar un lead valido cuesta mas que aceptar uno dudoso"
-// (investigacion 2.4): SOLO se llama cuando isValidNumber() ya dijo que no.
-const MENSAJE_VALIDACION_CEL = {
-  INVALID_COUNTRY_CODE: 'Ese código de país no es válido.',
-  TOO_SHORT: 'Ese número está incompleto.',
-  TOO_LONG: 'Ese número tiene demasiados dígitos.',
-  IS_POSSIBLE_LOCAL_ONLY: 'Falta el código de país.',
-  INVALID_LENGTH: 'Ese número no tiene el largo correcto.',
-};
-
 // Validacion del celular con el propio widget: mas precisa que el chequeo de
 // largo de validarMayoreo (mayoreo-logica.js), que a proposito es laxo para no
 // rechazar un lead legitimo. Vacio no es su responsabilidad -- eso ya lo
-// marca validarMayoreo como obligatorio.
-async function validarCelularWidget() {
-  if (!val('f-cel')) return null;
-  try {
-    await iti.promise;
-  } catch (err) {
-    return null;
-  }
-  if (iti.isValidNumber()) return null;
-  return MENSAJE_VALIDACION_CEL[iti.getValidationError()] || 'Ese número no se ve válido.';
+// marca validarMayoreo como obligatorio. La tabla de mensajes vive en
+// telefono-widget.js desde #176 (una sola vez, la comparten los dos formularios).
+function validarCelularWidget() {
+  return avisoTelefonoWidget(iti, val('f-cel'));
 }
 
 inputCel.addEventListener('blur', async () => {

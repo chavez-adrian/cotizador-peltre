@@ -81,10 +81,35 @@ test('T14: bajar el piso NO afloja las otras guardas del codigo Otro (issue #175
   assert.match(validarTelefono('+', '+1234567890123456'), /codigo de pais/i);
 });
 
+// Endurecimiento estructural de +52 (issue #176): tras la reforma del IFT de
+// 2019 (Comunicado 34/2019) el nacional mexicano es [2-9] seguido de 9 digitos.
+// El puro largo dejaba pasar capturas basura de 10 digitos.
+test('T15: validarTelefono exige primer digito nacional 2-9 en +52 (issue #176)', () => {
+  assert.match(validarTelefono('+52', '0123456789'), /2 y 9/i);
+  assert.match(validarTelefono('+52', '1234567890'), /2 y 9/i);
+  assert.strictEqual(validarTelefono('+52', '5512345678'), null);
+  // la misma regla en el camino internacional (el numero ya trae +52)
+  assert.match(validarTelefono('+', '+52 0123456789'), /2 y 9/i);
+  assert.strictEqual(validarTelefono('+', '+52 5512345678'), null);
+  // otros paises no cargan con la regla mexicana
+  assert.strictEqual(validarTelefono('+', '+297 563 3917'), null);
+});
+
 test('T12: combinarTelefonoConCodigo normaliza quitando el "1" lider', () => {
   assert.strictEqual(combinarTelefonoConCodigo('+52', '13222320749'), '+52 3222320749');
   assert.strictEqual(combinarTelefonoConCodigo('+52', '1 322 232 0749'), '+52 322 232 0749');
   assert.strictEqual(combinarTelefonoConCodigo('+1', '13222320749'), '+1 3222320749');
   // numero normal de 10 digitos no se toca
   assert.strictEqual(combinarTelefonoConCodigo('+52', '3222320749'), '+52 3222320749');
+});
+
+// El E.164 que emite el widget ya trae el "+", el camino que combinarTelefonoConCodigo
+// respetaba tal cual: el "1" legacy sobrevivia ahi y viajaba al valor guardado.
+test('T16: combinarTelefonoConCodigo quita el "1" legacy tambien con el numero en E.164 (issue #176)', () => {
+  assert.strictEqual(combinarTelefonoConCodigo('+52', '+52 1 55 1234 5678'), '+52 55 1234 5678');
+  assert.strictEqual(combinarTelefonoConCodigo('+', '+5215512345678'), '+525512345678');
+  // +1 es codigo de pais, no "1" heredado: no se toca
+  assert.strictEqual(combinarTelefonoConCodigo('+', '+1 555 123 4567'), '+1 555 123 4567');
+  // internacional ajeno a la tabla: intacto
+  assert.strictEqual(combinarTelefonoConCodigo('+', '+297 563 3917'), '+297 563 3917');
 });
