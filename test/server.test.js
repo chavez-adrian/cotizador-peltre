@@ -2371,6 +2371,13 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }] }) }),
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, quote_id: 1600 }) }; },
+    // Sin esto, si ya existe sesionCompartida viva de un test anterior (#172/#186), el
+    // post-fix de vigencia (server.js postFixVigencia) manda un GET real a la web legacy
+    // que cae en el retry con backoff de pedir() (1+2+4+8 = 15s) antes de rendirse (#188).
+    // Mismo patron minimo que #114-6.
+    'trans_type=30': () => ({ headers: {}, text: async () => '<html>login ok</html>' }),
+    'trans_type=32': () => ({ headers: {}, text: async () => '<html></html>' }),
+    'sales_order_entry.php': () => ({ headers: {}, text: async () => '<html></html>' }),
   });
   try {
     const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
