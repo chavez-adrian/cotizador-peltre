@@ -57,7 +57,7 @@ test('avisoTelefonoWidget traduce el motivo de intl-tel-input', async () => {
   assert.strictEqual(msg, MENSAJE_VALIDACION_CEL.TOO_SHORT);
   assert.ok(msg);
   const generico = await avisoTelefonoWidget(itiFalso({ valido: false, error: 'LO_QUE_SEA' }), '551234');
-  assert.match(generico, /v[aá]lido/i);
+  assert.match(generico, /no se ve/i);
 });
 
 // El veredicto preciso es SECUNDARIO y opcional: solo lo pide el alta interna
