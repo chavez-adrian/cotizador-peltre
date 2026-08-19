@@ -256,3 +256,27 @@ test('D11: detectarDuplicados retorna libre cuando ni nombre ni telefono coincid
   const result = detectarDuplicados('NUE990101ZZZ', 'Nombre Totalmente Distinto', clientes, '5599998888');
   assert.strictEqual(result.tipo, 'libre');
 });
+
+// D12: hasta #194 el pool de genericos llegaba VACIO (el ?search= de Operam no
+// indexa el RFC), asi que la dedup por nombre de ADR-0001 nunca corrio sobre
+// datos reales. Con el arreglo recibe el pool completo -- 78 clientes activos
+// con RFC generico medidos en produccion el 2026-08-19. El nucleo debe elegir
+// SOLO al que empata y no marcar de candidato al resto del cajon.
+test('D12: con el pool completo de genericos (~80) solo devuelve al que empata por nombre', () => {
+  const relleno = [
+    'FERRETERIA EL CLAVO', 'PANADERIA SAN JUDAS', 'MUEBLERIA DEL VALLE', 'TALLER MECANICO NORTE',
+    'PAPELERIA ESCOLAR', 'FARMACIA GUADALUPANA', 'CARNICERIA LA BONITA', 'VIDRIERIA MODERNA',
+  ];
+  const clientes = Array.from({ length: 80 }, (_, i) => ({
+    RFC: 'XAXX010101000', rfc: 'XAXX010101000',
+    CustName: `${relleno[i % relleno.length]} ${i}`, cust_ref: `REF${i}`, id: 1000 + i,
+  }));
+  clientes.push({
+    RFC: 'XAXX010101000', rfc: 'XAXX010101000',
+    CustName: 'PRUEBA 186 GENERICO', cust_ref: 'PRUEBA186', id: 495,
+  });
+  const result = detectarDuplicados('XAXX010101000', 'Prueba 186 Generico', clientes);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.strictEqual(result.candidatos.length, 1, 'el resto del cajon no es candidato');
+  assert.strictEqual(result.candidatos[0].id, 495);
+});

@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarClienteDirecto, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setBackoff429Base, _setMinInterval, derivarSalesAccount } = await import('../lib/operam-client.js');
+const { actualizarClienteDirecto, buscarClientes, buscarClientesPorRfc, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setBackoff429Base, _setMinInterval, derivarSalesAccount } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -47,6 +47,95 @@ test('buscarClientes: un 404 de Operam (sin resultados) devuelve lista vacia, no
   try {
     const r = await buscarClientes('RFCQUENOEXISTE');
     assert.deepEqual(r, []);
+  } finally {
+    restore();
+  }
+});
+
+// === buscarClientesPorRfc: el pool de un RFC (issue #194) ===
+// El ?search= de Operam busca por NOMBRE y NO indexa el RFC: buscar el RFC
+// generico devolvia 0 aunque haya 78 clientes con el. Toda la dedup que pasaba
+// un RFC a buscarClientes recibia un pool vacio. El pool por RFC solo lo da
+// ?tax_id=.
+test('buscarClientesPorRfc: consulta por ?tax_id= (nunca ?search=) y devuelve el pool completo', async () => {
+  resetSession();
+  const urls = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': (url) => {
+      urls.push(String(url));
+      return jsonResponse({ total: 2, data: [
+        { customer_id: 495, CustName: 'PRUEBA 186 GENERICO', tax_id: 'XAXX010101000' },
+        { customer_id: 12, CustName: 'FERRETERIA EL CLAVO', tax_id: 'XAXX010101000' },
+      ] });
+    },
+  });
+  try {
+    const r = await buscarClientesPorRfc('XAXX010101000');
+    assert.equal(r.length, 2);
+    assert.deepEqual(r.map(c => c.customer_id), [495, 12]);
+    assert.equal(urls.length, 1, 'un solo pool cabe en una pagina');
+    assert.ok(urls[0].includes('tax_id=XAXX010101000'), 'busca por tax_id');
+    assert.ok(!urls[0].includes('search='), 'NUNCA por search (no indexa el RFC)');
+    assert.ok(!urls[0].includes('show_inactive'), 'solo clientes activos');
+  } finally {
+    restore();
+  }
+});
+
+// El pool de genericos crece por diseno (#81) y la API pagina a 25 por default:
+// pedir una sola pagina truncaria la dedup en silencio. Se camina el `total`.
+test('buscarClientesPorRfc: pagina hasta agotar el total que reporta Operam', async () => {
+  resetSession();
+  const skips = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': (url) => {
+      const skip = Number(new URL(String(url)).searchParams.get('skip'));
+      skips.push(skip);
+      const data = Array.from({ length: skip === 0 ? 100 : 20 }, (_, i) => ({
+        customer_id: skip + i, tax_id: 'XAXX010101000', CustName: `GENERICO ${skip + i}`,
+      }));
+      return jsonResponse({ total: 120, data });
+    },
+  });
+  try {
+    const r = await buscarClientesPorRfc('XAXX010101000');
+    assert.equal(r.length, 120, 'trae los 120, no la primera pagina');
+    assert.deepEqual(skips, [0, 100]);
+    assert.equal(new Set(r.map(c => c.customer_id)).size, 120, 'sin duplicados entre paginas');
+  } finally {
+    restore();
+  }
+});
+
+// Mismo trato que buscarClientes/buscarClientePorRFC: 404 es "sin resultados".
+test('buscarClientesPorRfc: un 404 de Operam devuelve lista vacia, no lanza', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({ errors: ['No customers found'] }, 404),
+  });
+  try {
+    assert.deepEqual(await buscarClientesPorRfc('RFCQUENOEXISTE'), []);
+  } finally {
+    restore();
+  }
+});
+
+// Sin RFC no hay pool: no se le pregunta a Operam por un tax_id vacio (devolveria
+// el listado entero y la dedup marcaria candidatos contra cualquiera).
+test('buscarClientesPorRfc: sin RFC devuelve [] sin consultar Operam', async () => {
+  resetSession();
+  let consultada = false;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => { consultada = true; return jsonResponse({ total: 0, data: [] }); },
+  });
+  try {
+    assert.deepEqual(await buscarClientesPorRfc(''), []);
+    assert.deepEqual(await buscarClientesPorRfc(null), []);
+    assert.equal(consultada, false);
   } finally {
     restore();
   }

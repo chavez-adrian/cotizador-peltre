@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
+import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
@@ -1741,9 +1741,13 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
     } else {
       const rfcGenerico = rfcGenericoPara(c.pais);
       const nombre = c.razonSocial || c.nombreCorto || entry.cliente || '';
-      // limit 100: el pool de genericos crece por diseno (#81); con el default 10
-      // un match real fuera de los primeros 10 volveria la dedup 'libre'.
-      const raw = await buscarClientes(rfcGenerico, 100);
+      // buscarClientesPorRfc y NO buscarClientes (#194): el ?search= de Operam
+      // busca por nombre y no indexa el RFC, asi que este pool siempre llegaba
+      // vacio y la dedup por nombre de ADR-0001 nunca corria sobre un candidato
+      // real. Trae el pool COMPLETO paginado: el pool de genericos crece por
+      // diseno (#81) y un match fuera de la primera pagina volveria la dedup
+      // 'libre' (y crearia otro generico duplicado).
+      const raw = await buscarClientesPorRfc(rfcGenerico);
       const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
       const dedup = detectarDuplicados(rfcGenerico, nombre, clientes);
       if (dedup.tipo === 'candidatos') {
@@ -2527,15 +2531,17 @@ app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
   try {
     const rfcNorm = rfc.toUpperCase().trim();
     const esGenerico = RFC_GENERICOS.has(rfcNorm);
-    let raw = await buscarClientes(rfc);
-    // Issue #78: si el RFC de entrada es real y buscarClientes(rfc) no trae un
-    // match exacto, el cliente pudo darse de alta antes sin CSF (RFC generico).
-    // Ese cliente es INVISIBLE a la busqueda anterior porque el texto buscado
-    // (el RFC real nuevo) nunca aparece en un registro con RFC generico -- se
-    // busca aparte por cada RFC generico y se le da a detectarDuplicados el
-    // pool combinado para que aplique nombre/telefono.
+    // buscarClientesPorRfc y NO buscarClientes (#194): el ?search= de Operam
+    // busca por nombre y no indexa el RFC, asi que este pool siempre llegaba
+    // vacio y el endpoint respondia 'libre' aunque el cliente existiera.
+    let raw = await buscarClientesPorRfc(rfc);
+    // Issue #78: si el RFC de entrada es real y no trae un match exacto, el
+    // cliente pudo darse de alta antes sin CSF (RFC generico). Ese cliente es
+    // INVISIBLE a la busqueda anterior porque tiene OTRO tax_id -- se busca
+    // aparte por cada RFC generico y se le da a detectarDuplicados el pool
+    // combinado para que aplique nombre/telefono.
     if (!esGenerico && !raw.some(c => (c.tax_id || '').toUpperCase().trim() === rfcNorm)) {
-      const genericos = await Promise.all([...RFC_GENERICOS].map(g => buscarClientes(g, 100)));
+      const genericos = await Promise.all([...RFC_GENERICOS].map(g => buscarClientesPorRfc(g)));
       raw = raw.concat(...genericos);
     }
     const vistos = new Set();

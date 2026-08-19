@@ -275,6 +275,10 @@ test('G3: nombre similar a un generico de Operam -> 409 con candidatos, sin crea
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      // El pool SOLO sale por tax_id (#194): el ?search= de Operam busca por
+      // nombre y no indexa el RFC, asi que devolvia vacio y la dedup por nombre
+      // de ADR-0001 nunca veia un candidato.
+      if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
       return jsonResponse({ total: 2, data: [
         { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
         { customer_id: 11, CustName: 'FERRETERIA EL CLAVO', cust_ref: 'El Clavo', tax_id: 'XAXX010101000' },
@@ -382,14 +386,14 @@ test('G6: cliente extranjero usa XEXX010101000 y deduplica contra los genericos 
   writeJson(PROSPECTOS_PATH, []);
   const id = nuevaCotizacion({ pais: 'US', telefono: '+1 5551234567' });
   let clienteBody = null;
-  let searchUrl = null;
+  let dedupUrl = null;
   mockOperamFetch({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 930 }); }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
       if (u.includes('/930')) return jsonResponse({ data: [{ branches: [{ branch_code: 931 }] }] });
-      searchUrl = u;
+      dedupUrl = u;
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/931': () => jsonResponse({ result: true, data: [{}] }),
@@ -401,10 +405,13 @@ test('G6: cliente extranjero usa XEXX010101000 y deduplica contra los genericos 
 
   assert.equal(res.status, 200);
   assert.equal(res.body.ok, true);
-  assert.ok(searchUrl.includes('XEXX010101000'), 'la dedup de nombre corre contra el generico extranjero');
+  // #194: el pool se pide por tax_id. Con ?search= Operam no indexa el RFC y la
+  // dedup corria contra una lista vacia.
+  assert.ok(dedupUrl.includes('tax_id=XEXX010101000'), 'la dedup de nombre corre contra el generico extranjero, por tax_id');
+  assert.ok(!dedupUrl.includes('search='), 'nunca por el buscador de nombre');
   // F4: el pool de genericos crece por diseno (#81); la dedup no puede truncarse
-  // al limit=10 default de buscarClientes.
-  assert.ok(searchUrl.includes('limit=100'), 'la dedup generica consulta con limit=100');
+  // a una pagina corta.
+  assert.ok(dedupUrl.includes('limit=100'), 'la dedup generica pagina de 100 en 100');
   assert.equal(clienteBody.tax_id, 'XEXX010101000');
 });
 

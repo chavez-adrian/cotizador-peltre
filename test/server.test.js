@@ -2088,10 +2088,12 @@ test('D12: cliente existente en "Sin segmento" -> se le escribe el capturado', a
 test('E1: GET /api/buscar-cliente-duplicado retorna exacto cuando RFC real ya existe en Operam', async () => {
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({
-      total: 1,
-      data: [{ customer_id: 77, CustName: 'Peltre Nacional SA de CV', cust_ref: 'PELTRE', tax_id: 'PNA010203ABC' }],
-    }) }),
+    // Solo responde a tax_id: el ?search= no indexa el RFC (#194).
+    '/api/v3/sales/customers': (u) => ({ ok: true, json: async () => (
+      u.includes('tax_id=PNA010203ABC')
+        ? { total: 1, data: [{ customer_id: 77, CustName: 'Peltre Nacional SA de CV', cust_ref: 'PELTRE', tax_id: 'PNA010203ABC' }] }
+        : { total: 0, data: [] }
+    ) }),
   });
   try {
     const res = await supertest(app)
@@ -2109,13 +2111,15 @@ test('E1: GET /api/buscar-cliente-duplicado retorna exacto cuando RFC real ya ex
 test('E2: GET /api/buscar-cliente-duplicado retorna candidatos para RFC generico con nombre similar', async () => {
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({
-      total: 2,
-      data: [
-        { customer_id: 10, CustName: 'Comercio General SA de CV', cust_ref: 'COGEN', tax_id: 'XAXX010101000' },
-        { customer_id: 11, CustName: 'Comercializadora Norte SA de CV', cust_ref: 'COGNOR', tax_id: 'XAXX010101000' },
-      ],
-    }) }),
+    // Solo responde a tax_id: el ?search= no indexa el RFC (#194).
+    '/api/v3/sales/customers': (u) => ({ ok: true, json: async () => (
+      u.includes('tax_id=XAXX010101000')
+        ? { total: 2, data: [
+            { customer_id: 10, CustName: 'Comercio General SA de CV', cust_ref: 'COGEN', tax_id: 'XAXX010101000' },
+            { customer_id: 11, CustName: 'Comercializadora Norte SA de CV', cust_ref: 'COGNOR', tax_id: 'XAXX010101000' },
+          ] }
+        : { total: 0, data: [] }
+    ) }),
   });
   try {
     const res = await supertest(app)
@@ -2157,8 +2161,8 @@ test('E5: GET /api/buscar-cliente-duplicado con RFC real sin match exacto busca 
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u) => {
-      if (u.includes('search=ISI1801183Z4')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
-      if (u.includes('search=XAXX010101000')) return { ok: true, json: async () => ({
+      if (u.includes('tax_id=ISI1801183Z4')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      if (u.includes('tax_id=XAXX010101000')) return { ok: true, json: async () => ({
         total: 1,
         data: [{ customer_id: 30, CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', tax_id: 'XAXX010101000' }],
       }) };
@@ -2181,8 +2185,8 @@ test('E6: GET /api/buscar-cliente-duplicado con RFC real, sin match de nombre pe
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u) => {
-      if (u.includes('search=NUE990101ZZZ')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
-      if (u.includes('search=XAXX010101000')) return { ok: true, json: async () => ({
+      if (u.includes('tax_id=NUE990101ZZZ')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      if (u.includes('tax_id=XAXX010101000')) return { ok: true, json: async () => ({
         total: 1,
         data: [{ customer_id: 40, CustName: 'Grupo ABC', cust_ref: 'ABC', tax_id: 'XAXX010101000', contacts: [{ phone: '55 1234 5678' }] }],
       }) };
@@ -2206,11 +2210,11 @@ test('E7: GET /api/buscar-cliente-duplicado con RFC real que si tiene match exac
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u) => {
-      if (u.includes('search=PNA010203ABC')) return { ok: true, json: async () => ({
+      if (u.includes('tax_id=PNA010203ABC')) return { ok: true, json: async () => ({
         total: 1,
         data: [{ customer_id: 77, CustName: 'Peltre Nacional SA de CV', cust_ref: 'PELTRE', tax_id: 'PNA010203ABC' }],
       }) };
-      if (u.includes('search=XAXX010101000') || u.includes('search=XEXX010101000')) {
+      if (u.includes('tax_id=XAXX010101000') || u.includes('tax_id=XEXX010101000')) {
         searchoGenericos = true;
         return { ok: true, json: async () => ({ total: 0, data: [] }) };
       }
@@ -2224,6 +2228,59 @@ test('E7: GET /api/buscar-cliente-duplicado con RFC real que si tiene match exac
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.tipo, 'exacto');
     assert.strictEqual(searchoGenericos, false, 'con match exacto no debe gastar llamadas extra buscando genericos');
+  } finally {
+    restore();
+  }
+});
+
+// E8-E9: issue #194 -- el ?search= de Operam busca por NOMBRE y NO indexa el RFC.
+// Estos dos mocks responden SOLO a tax_id: si el endpoint volviera a buscar por
+// search, el pool llegaria vacio y la respuesta seria 'libre' (el bug original).
+test('E8: GET /api/buscar-cliente-duplicado encuentra al cliente aunque el buscador por nombre no devuelva nada (#194)', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u) => {
+      if (u.includes('tax_id=PSE860101AB1')) return { ok: true, json: async () => ({
+        total: 1,
+        data: [{ customer_id: 496, CustName: 'PRUEBA 186 ALTA COMPLETA', cust_ref: 'PRUEBA186', tax_id: 'PSE860101AB1' }],
+      }) };
+      // El buscador por nombre no indexa el RFC: responde vacio, como en vivo.
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=PSE860101AB1&nombre=Prueba+186')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'exacto');
+    assert.strictEqual(res.body.cliente.id, 496);
+  } finally {
+    restore();
+  }
+});
+
+test('E9: el pool de genericos del rescate #78 tambien se pide por tax_id (#194)', async () => {
+  const urls = [];
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u) => {
+      urls.push(u);
+      if (u.includes('tax_id=XAXX010101000')) return { ok: true, json: async () => ({
+        total: 1,
+        data: [{ customer_id: 495, CustName: 'PRUEBA 186 GENERICO', cust_ref: 'PRUEBA186', tax_id: 'XAXX010101000' }],
+      }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app)
+      .get('/api/buscar-cliente-duplicado?rfc=NUE990101ZZZ&nombre=PRUEBA+186+GENERICO')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.tipo, 'candidatos');
+    assert.ok(res.body.candidatos.some(c => c.id === 495), 'el generico entra al pool');
+    assert.ok(urls.every(u => !u.includes('search=')), 'ninguna consulta usa el buscador por nombre');
   } finally {
     restore();
   }

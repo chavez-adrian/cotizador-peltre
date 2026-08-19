@@ -43,7 +43,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 
 | Modulo | Que hace |
 |--------|----------|
-| `operam-client.js` | Bearer auth con auto-refresh; `buildClienteBody` = UNICO mapeo cliente→Operam (ahi viven los overrides fiscales del RFC generico #121); lectores read-only con retry y throttle anti-429 |
+| `operam-client.js` | Bearer auth con auto-refresh; `buildClienteBody` = UNICO mapeo cliente→Operam (ahi viven los overrides fiscales del RFC generico #121); `buscarClientes` (por NOMBRE) vs `buscarClientesPorRfc` (pool por RFC, #194) no son intercambiables; lectores read-only con retry y throttle anti-429 |
 | `alta-generica.js` | Alta con RFC generico al subir cotizacion (#81/#83) + PUT del branch con domicilio de entrega (#96) |
 | `deduplicacion.js` | RFC genericos + dedup (#78); `DEBTORS_GENERICOS`; `normalizarNombre` |
 | `cruce-identidad.js` | Nucleo puro del cruce por identidad (#123): CERRO/COMPRO_OTRA_COSA/SIN_SENAL, banda ±15%, normalizacion de telefono |
@@ -72,6 +72,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 - **`lib/fs-reintento.js` es obligatorio para `data/*.json`** (#117), en stores Y helpers de tests: OneDrive toma locks EBUSY intermitentes que tumbaban ~1 de cada 3 corridas. Reintenta SOLO EBUSY; EPERM/ENOENT se propagan (un test depende de eso). Nunca `fs` directo.
 - **Calca sin precio = null, nunca $0** (#91): las 32 calcas tienen `Menudeo: null` y el fallback a 0 imprimia calcas gratis en PDF y quote. Las piezas de calca NO cuentan para el tier; la calca fija la marca `decorado` y `app.js` la manda solo en `true` (un `false` pisaria la marca del tablero).
 - **Las llaves del PUT de cliente NO son las del GET (#169)**: se escribe `cust_name` y se lee `CustName`; se escribe `cfdi_regimen_fiscal` y se lee `regimen`. Mandar la llave de lectura = campo ignorado en silencio (asi el upgrade fiscal dejo un cliente sin razon social). El mapeo por campo vive en `DIFF_FISCAL_CAMPOS` (`write`/`read`); el PUT responde con el **eco** de lo que acepto, y eso es lo que usa `camposNoAplicados` para decirle al vendedor el motivo real.
+- **El `?search=` de Operam NO indexa el RFC (#194)**: `buscarClientes('XAXX010101000')` devuelve 0 aunque haya 78 clientes con ese RFC — busca por NOMBRE. Toda la dedup que partia de un RFC recibia un pool vacio y concluia "libre" en silencio, con la suite en verde (los mocks contestaban lo que el codigo esperaba). El pool por RFC solo lo da `?tax_id=`: usar `buscarClientesPorRfc(rfc)`, nunca `buscarClientes`. `node scripts/verificar-dedup-rfc.mjs` verifica el supuesto EN VIVO (read-only); ningun test mockeado puede.
 - **Quirks de escritura de Operam**: 200/`result:true` no garantiza nada — releer SIEMPRE. `segmento_id` NO se puede escribir por la API v3 por ningun camino y va por post-fix web (#172); `dimension_id` puede ignorarse en silencio; `PUT /branches` huerfana el domicilio sin `customer_id` en el body; no hay DELETE de clientes. Detalle en `docs/arquitectura.md` §Quirks.
 - **El body del quote web lleva `ProcessOrder` y NUNCA `CancelOrder`** (viven en el mismo form; CancelOrder anula la cotizacion).
 - **La comparacion de huella del quote (#114) es SIEMPRE local**: el cotizador manda y una edicion hecha directamente en Operam se pierde (decision explicita).
