@@ -70,7 +70,8 @@ test('IS_POSSIBLE_LOCAL_ONLY avisa que el numero esta incompleto, no que falte e
   assert.strictEqual(msg, MENSAJE_VALIDACION_CEL.IS_POSSIBLE_LOCAL_ONLY);
   assert.match(msg, /incompleto/i);
   assert.match(msg, /lada/i);
-  assert.doesNotMatch(msg, /c(o|ó)digo de pa(i|í)s/i);
+  // el punto cubre la vocal acentuada sin meter acentos en el archivo de test
+  assert.doesNotMatch(msg, /c.digo de pa.s/i);
 });
 
 // El veredicto preciso es SECUNDARIO y opcional: solo lo pide el alta interna
@@ -84,7 +85,7 @@ test('avisoTelefonoWidget avisa del veredicto preciso solo cuando se lo piden', 
   // jerga ("metadata", "rango asignado") ni fechas tecnicas -- Adrian reporto en
   // produccion que el texto anterior "no se entiende". La fecha de la copia
   // vendoreada vive en el comentario de MENSAJE_PRECISO, no en su cara.
-  assert.match(msg, /no parece un n(u|ú)mero real/i);
+  assert.match(msg, /no parece un n.mero real/i);
   assert.match(msg, /puedes guardarlo/i);
   assert.doesNotMatch(msg, /metadata|rango asignado|\d{4}-\d{2}-\d{2}/i);
   // numero bueno: ni con preciso:true
