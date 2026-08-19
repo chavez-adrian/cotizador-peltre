@@ -5,6 +5,7 @@
 // copias espejo que pueden divergir (ver architecture-review-cotizador-20260606.html).
 
 import { cpValido } from './cotizar-logica.js';
+import { esRegimenValido } from './regimen-fiscal-logica.js';
 
 export const CSF_DATOS_VACIOS = {
   rfc: '', razonSocial: '', nombreCorto: '', idcif: '', regimenFiscal: '',
@@ -336,12 +337,17 @@ export function emailFacturaParaUpgrade(origen, valor) {
 // colonia y estado quedan opcionales (igual que en la tab CSF, que ya los trae del
 // PDF). El nombre corto (antes obligatorio en esta pestana) tambien pasa a
 // opcional -- no esta en la lista de minimos de la regla 4.
+// El regimen fiscal ya no se valida como "no vacio" sino como PERTENENCIA al
+// catalogo del SAT (issue #191): mientras fue texto libre, un "6O1" con letra O o
+// el codigo pegado junto con su descripcion viajaban literales al POST/PUT de
+// Operam, que ni los rechaza ni avisa.
 export function validarAltaManualMinimos(datos) {
   const d = datos || {};
   if (!String(d.rfc || '').trim()) return 'El RFC es obligatorio';
   if (!String(d.razonSocial || '').trim()) return 'La razon social es obligatoria';
   if (!String(d.cp || '').trim()) return 'El codigo postal es obligatorio';
   if (!String(d.regimenFiscal || '').trim()) return 'El regimen fiscal es obligatorio';
+  if (!esRegimenValido(d.regimenFiscal)) return 'El regimen fiscal no es una clave del catalogo del SAT';
   return null;
 }
 

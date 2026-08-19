@@ -78,6 +78,10 @@ import {
   buildBandejaHtml,
 } from './bandeja-logica.js';
 import {
+  opcionesRegimenHtml,
+  esRegimenValido,
+} from './regimen-fiscal-logica.js';
+import {
   estadoStepper,
   textoProgreso,
 } from './stepper-logica.js';
@@ -5873,6 +5877,25 @@ function altaPoblarSelectores(catalogos) {
     catalogos.vendedores.map(v => `<option value="${v.operam_id}">${v.name}</option>`).join('');
 }
 
+// Regimen fiscal como selector del catalogo del SAT (#191). Se repuebla filtrado
+// por el tipo de RFC ya capturado EN SU MISMA PESTANA (12 caracteres = moral, 13 =
+// fisica; sin RFC valido, el catalogo entero) y conserva lo ya elegido, que puede
+// venir del parseo de la CSF o del borrador de #185. El valor se pone por JS y no
+// como atributo `selected` en el HTML -- ver opcionesRegimenHtml.
+function altaPoblarRegimen(idSelect, idRfc, seleccion) {
+  const sel = document.getElementById(idSelect);
+  if (!sel) return;
+  const rfc = document.getElementById(idRfc)?.value || '';
+  const elegido = seleccion !== undefined ? String(seleccion || '') : sel.value;
+  sel.innerHTML = opcionesRegimenHtml(rfc, elegido);
+  sel.value = esRegimenValido(elegido) ? elegido : '';
+}
+
+function altaPoblarRegimenes() {
+  altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
+  altaPoblarRegimen('manual-regimen-fiscal', 'manual-rfc');
+}
+
 // Uso de CFDI (#193): un solo <select> para los dos modos del panel, con el default
 // que corresponde al modo con el que se abre (usoCfdiPorDefecto). Mueve tambien el
 // ATRIBUTO selected, no solo el valor: el borrador de formulario (#185) compara
@@ -5989,6 +6012,10 @@ function altaEsperarCatalogosCompletos() {
 // <details> sin tocar el estado idle/dropzone -- el dropzone se queda visible
 // para poder re-subir la CSF sin perder lo demas capturado.
 function altaRepintarCsfRestaurada() {
+  // Los <select> de regimen (#191) se filtran por el RFC de su pestana: tras
+  // restaurar (o vaciar) hay un RFC distinto y el filtro tiene que seguirlo. Sin
+  // pasar seleccion, conserva el valor que quedo en el select.
+  altaPoblarRegimenes();
   const hayCsf = !!(document.getElementById('csf-rfc')?.value || document.getElementById('csf-razon-social')?.value);
   const detalles = document.getElementById('csf-detalles');
   if (detalles) { detalles.style.display = hayCsf ? '' : 'none'; detalles.open = hayCsf; }
@@ -6077,9 +6104,10 @@ function altaCsfPonerDatos(datos) {
   set('csf-rfc', datos.rfc);
   set('csf-nombre-corto', datos.nombreCorto);
   set('csf-idcif', datos.idcif);
-  set('csf-regimen-fiscal', datos.regimenFiscal);
-  const regLabel = document.getElementById('csf-regimen-fiscal-label');
-  if (regLabel) regLabel.textContent = datos.regimenFiscalLabel || '';
+  // El regimen es un <select> del catalogo del SAT (#191): se repuebla ya con el
+  // RFC recien puesto arriba y con lo que extrajo el parser como seleccion. La
+  // descripcion legible ya no necesita un <small> aparte -- va en la opcion.
+  altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc', datos.regimenFiscal);
   set('csf-calle', datos.calle);
   set('csf-num-ext', datos.numExt);
   set('csf-num-int', datos.numInt);
@@ -6895,4 +6923,17 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', () => {
   const cel = document.getElementById('alta-celular');
   if (cel) cel.addEventListener('blur', altaBuscarCelular);
+});
+
+// Wiring del selector de regimen fiscal (#191): se puebla al arrancar (catalogo
+// completo, sin RFC todavia) y se vuelve a filtrar cada vez que cambia el RFC de
+// su pestana -- ahi se decide si el vendedor ve los regimenes de persona fisica o
+// los de moral.
+document.addEventListener('DOMContentLoaded', () => {
+  altaPoblarRegimenes();
+  const pares = [['csf-rfc', 'csf-regimen-fiscal'], ['manual-rfc', 'manual-regimen-fiscal']];
+  for (const [idRfc, idSelect] of pares) {
+    const rfc = document.getElementById(idRfc);
+    if (rfc) rfc.addEventListener('input', () => altaPoblarRegimen(idSelect, idRfc));
+  }
 });

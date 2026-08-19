@@ -137,10 +137,13 @@
                     <label>SAT IdCIF</label>
                     <input type="text" id="csf-idcif">
                   </div>
+                  <!-- Selector del catalogo c_RegimenFiscal del SAT (#191). Lo puebla
+                       app.js (altaPoblarRegimenes) filtrado por el tipo de RFC ya
+                       capturado; sigue siendo opcional y editable en esta pestana
+                       porque el parser de la CSF lo autollena. -->
                   <div class="form-group">
-                    <label>Regimen fiscal (codigo)</label>
-                    <input type="text" id="csf-regimen-fiscal">
-                    <small id="csf-regimen-fiscal-label" style="display:block;margin-top:4px;color:#6b7280;font-size:12px"></small>
+                    <label>Regimen fiscal</label>
+                    <select id="csf-regimen-fiscal"><option value="">-- Selecciona --</option></select>
                   </div>
                   <div class="form-group">
                     <label>Calle</label>
@@ -212,9 +215,10 @@
                     <label>Tax ID extranjero <span style="font-size:11px;color:var(--text-light)">(opcional, clientes de exportacion -- se guarda en notas)</span></label>
                     <input type="text" id="manual-tax-id-extranjero" placeholder="Ej: US123456789">
                   </div>
+                  <!-- Mismo selector del SAT que la pestana CSF (#191), aqui obligatorio -->
                   <div class="form-group">
-                    <label>Regimen fiscal (codigo) <span style="color:var(--danger)">*</span></label>
-                    <input type="text" id="manual-regimen-fiscal" placeholder="Ej: 601">
+                    <label>Regimen fiscal <span style="color:var(--danger)">*</span></label>
+                    <select id="manual-regimen-fiscal"><option value="">-- Selecciona --</option></select>
                   </div>
                   <div class="form-group">
                     <label>Calle <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>
