@@ -1677,6 +1677,7 @@ test('D1c: POST /api/crear-cliente configura el domicilio con vendedor, area, al
     assert.strictEqual(branchBody.area, 1, 'el domicilio MX debe llevar area 1 (10 Mexico)');
     assert.strictEqual(branchBody.location, 40, 'el domicilio debe llevar almacen 40 (PT)');
     assert.strictEqual(branchBody.tax_group_id, 1, 'domicilio MX debe llevar tax_group_id 1 (gravado)');
+    assert.strictEqual(branchBody.sales_account, '401-01-001', 'domicilio MX debe llevar la cuenta de ventas gravada (issue #189)');
   } finally {
     restore();
   }
@@ -1707,6 +1708,7 @@ test('D1d: POST /api/crear-cliente con domicilio extranjero usa tax_group exento
     assert.ok(branchBody, 'el alta debe configurar el domicilio (PUT /branches)');
     assert.strictEqual(branchBody.tax_group_id, 2, 'domicilio extranjero debe llevar tax_group_id 2 (exento)');
     assert.strictEqual(branchBody.area, 5, 'domicilio US debe llevar area 5 (20 USA)');
+    assert.strictEqual(branchBody.sales_account, '401-07-000', 'domicilio extranjero debe llevar la cuenta de ventas de exportacion (issue #189)');
   } finally {
     restore();
   }

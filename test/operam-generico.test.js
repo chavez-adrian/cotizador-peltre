@@ -146,6 +146,14 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
       llamadas.push('GET search');
       return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'FERRETERIA EL CLAVO', cust_ref: 'El Clavo', tax_id: 'XAXX010101000' }] });
     },
+    // issue #189: sin domicilio de entrega el PUT del branch YA NO se omite (escribe
+    // tax_group_id/sales_account); br_name coincide con lo derivado del nombre corto
+    // del cliente para que la verificacion post-PUT no reporte una discrepancia.
+    '/api/v3/sales/branches/911': (u, opts) => {
+      if (opts?.method === 'PUT') { llamadas.push('PUT branch'); return jsonResponse({ result: true }); }
+      llamadas.push('GET branch');
+      return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
+    },
     '/api/v3/sales/quote': (u, opts) => { llamadas.push('POST quote'); quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1701 }); },
     ...mockWebLegacy(),
   });
@@ -216,6 +224,7 @@ test('G1b: tier Menudeo (sin lista homonima en Operam) -> sales_type cae a "Prec
       if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
+    '/api/v3/sales/branches/911': () => jsonResponse({ result: true, data: [{}] }),
     '/api/v3/sales/quote': (u, opts) => jsonResponse({ result: true, added_trans_no: 1701 }),
   });
   await cargarListasPrecios();
@@ -334,6 +343,7 @@ test('G5: reintento tras fallo parcial (cliente creado, subida fallida) no dupli
       if (u.includes('/920')) return jsonResponse({ data: [{ branches: [{ branch_code: 921 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
+    '/api/v3/sales/branches/921': () => jsonResponse({ result: true, data: [{}] }),
     '/api/v3/sales/quote': () => jsonResponse({ error: 'boom' }, 500),
   });
   const intento1 = await supertest(app).post(`/api/cotizacion/operam/${id}`)
@@ -382,6 +392,7 @@ test('G6: cliente extranjero usa XEXX010101000 y deduplica contra los genericos 
       searchUrl = u;
       return jsonResponse({ total: 0, data: [] });
     },
+    '/api/v3/sales/branches/931': () => jsonResponse({ result: true, data: [{}] }),
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1706 }),
   });
 
@@ -429,6 +440,7 @@ test('F2: fallo al ligar el prospecto no aborta la operacion (cliente creado y c
       if (u.includes('/950')) return jsonResponse({ data: [{ branches: [{ branch_code: 951 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
+    '/api/v3/sales/branches/951': () => jsonResponse({ result: true, data: [{}] }),
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1707 }),
   });
   // prospectos.json de solo lectura: buscarPorCelular (lee) funciona pero
@@ -583,13 +595,21 @@ test('D1: cliente generico recien creado con domicilio -> PUT del branch con cus
   assert.ok(ver && ver.status === 'ok', 'la verificacion no encontro discrepancias');
 });
 
-test('D2: sin domicilio de entrega -> no hay PUT del branch, la subida se completa igual', async () => {
+// issue #189: sin domicilio de entrega, el PUT del branch YA NO SE OMITE -- corre
+// igual para escribir tax_group_id/sales_account (no dependen del domicilio, solo
+// del pais del cliente). Antes la falta de calle/CP cancelaba el PUT completo y se
+// llevaba el grupo de impuestos, que Operam entonces auto-creaba con su default fijo
+// (gravado), incorrecto para un cliente extranjero.
+test('D2: sin domicilio de entrega -> el PUT del branch corre igual (SOLO tax_group_id/sales_account, issue #189)', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase()]);
   const id = nuevaCotizacion();
-  let branchPut = false;
+  let branchPut = null;
   mockOperamFetch({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches/911': (u, opts) => { if (opts?.method === 'PUT') branchPut = true; return jsonResponse({ result: true, data: [{}] }); },
+    '/api/v3/sales/branches/911': (u, opts) => {
+      if (opts?.method === 'PUT') { branchPut = JSON.parse(opts.body); return jsonResponse({ result: true }); }
+      return jsonResponse({ result: true, data: [{}] });
+    },
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
@@ -604,8 +624,45 @@ test('D2: sin domicilio de entrega -> no hay PUT del branch, la subida se comple
 
   assert.equal(res.status, 200);
   assert.equal(res.body.folio, 1802);
-  assert.equal(branchPut, false, 'sin domicilio no debe tocar el branch');
-  assert.ok(!res.body.steps.some(s => s.name === 'PUT branch (domicilio)'), 'no reporta paso de branch');
+  assert.ok(branchPut, 'sin domicilio SI debe hacer el PUT del branch (tax_group_id/sales_account)');
+  assert.equal(branchPut.tax_group_id, 1, 'cliente MX -> gravado');
+  assert.equal(branchPut.sales_account, '401-01-001');
+  assert.equal(branchPut.addr_street, '', 'sin domicilio no manda calle (actualizarBranchCliente default vacio)');
+  const put = res.body.steps.find(s => s.name === 'PUT branch (domicilio)');
+  assert.ok(put && put.status === 'ok', 'reporta el PUT del branch');
+});
+
+// issue #189, zona gris: sin domicilio de entrega no hay pais de entrega que mirar --
+// la inferencia decidida es el pais del CLIENTE (`c.pais`, area). Un extranjero puede
+// recibir en Mexico y esto lo pasaria por alto, pero es preferible al default fijo de
+// Operam (siempre gravado), que es lo que se media en vivo con 5 clientes extranjeros.
+test('D2b: sin domicilio de entrega, cliente extranjero -> tax_group_id/sales_account de exportacion (issue #189)', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({ pais: 'US' });
+  let branchPut = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches/911': (u, opts) => {
+      if (opts?.method === 'PUT') { branchPut = JSON.parse(opts.body); return jsonResponse({ result: true }); }
+      return jsonResponse({ result: true, data: [{}] });
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1807 }),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.folio, 1807);
+  assert.ok(branchPut, 'sin domicilio SI debe hacer el PUT del branch');
+  assert.equal(branchPut.tax_group_id, 2, 'cliente extranjero -> exportacion');
+  assert.equal(branchPut.sales_account, '401-07-000');
 });
 
 test('D3: Operam ignora un campo del branch -> verificacion lo reporta, la subida sigue OK', async () => {
@@ -739,6 +796,7 @@ test('C1: dos requests concurrentes al mismo id crean UN solo cliente generico (
       if (u.includes('/930')) return jsonResponse({ data: [{ branches: [{ branch_code: 931 }] }] });
       return jsonResponse({ total: 0, data: [] }); // dedup por nombre: libre
     },
+    '/api/v3/sales/branches/931': () => jsonResponse({ result: true, data: [{}] }),
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1750 }),
   });
 
@@ -780,6 +838,7 @@ test('C2: el lock se libera tras un fallo (el reintento posterior NO recibe 425)
       if (u.includes('/940')) return jsonResponse({ data: [{ branches: [{ branch_code: 941 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
+    '/api/v3/sales/branches/941': () => jsonResponse({ result: true, data: [{}] }),
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1751 }),
   });
   const intento2 = await supertest(app).post(`/api/cotizacion/operam/${id}`)
@@ -802,6 +861,9 @@ function mockSubidaBase(extra = {}) {
       if (u.includes('/960')) return jsonResponse({ data: [{ branches: [{ branch_code: 961 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
+    // issue #189: el PUT del branch ya no se omite sin domicilio (escribe tax_group_id/
+    // sales_account); estos tests no verifican el branch, solo necesitan que no truene.
+    '/api/v3/sales/branches/961': () => jsonResponse({ result: true, data: [{}] }),
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1801 }),
     ...extra,
   };

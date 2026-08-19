@@ -1824,34 +1824,35 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       }
     }
 
-    // PUT del branch con el domicilio de entrega del paso Envio (#96). SOLO para el
-    // cliente RECIEN creado por esta alta generica: un cliente preexistente (reusado
-    // por celular o elegido de candidatos) puede tener un domicilio real en Operam que
-    // NO debemos pisar con el del cotizador. Sin domicilio util (falta calle o CP) se
-    // omite: el cliente queda como hoy. actualizarBranchCliente ya mete customer_id en
-    // el body (sin el, Operam resetea debtor_no a 0) y usa location/ship_via (#74). El
-    // fallo NO tumba la subida: el cliente ya existe y el quote debe subirse (#81).
+    // PUT del branch: domicilio de entrega del paso Envio (#96) + tax_group_id/
+    // sales_account (#189, SIEMPRE, tambien sin domicilio -- no dependen de el, solo
+    // del pais). SOLO para el cliente RECIEN creado por esta alta generica: un cliente
+    // preexistente (reusado por celular o elegido de candidatos) puede tener un
+    // domicilio real en Operam que NO debemos pisar con el del cotizador -- ahi si se
+    // omite el PUT completo, tax_group_id incluido (#189 solo corrige el camino de
+    // creacion; corregir un branch ya configurado es manual, issue #195, por el REPLACE
+    // destructivo de este PUT). actualizarBranchCliente ya mete customer_id en el body
+    // (sin el, Operam resetea debtor_no a 0) y usa location/ship_via (#74). El fallo NO
+    // tumba la subida: el cliente ya existe y el quote debe subirse (#81).
     if (creadoNuevo) {
       const branchDatos = buildBranchGenerico(c, { salesman });
-      if (branchDatos) {
+      try {
+        await actualizarBranchCliente(customerId, branchId, branchDatos);
+        steps.push({ name: 'PUT branch (domicilio)', status: 'ok' });
+        // Releer y verificar: Operam responde result:true aunque ignore campos (#74).
         try {
-          await actualizarBranchCliente(customerId, branchId, branchDatos);
-          steps.push({ name: 'PUT branch (domicilio)', status: 'ok' });
-          // Releer y verificar: Operam responde result:true aunque ignore campos (#74).
-          try {
-            const fresco = await obtenerBranch(branchId);
-            const camposNoActualizados = diffBranchDomicilio(fresco, branchDatos);
-            if (camposNoActualizados.length) {
-              steps.push({ name: 'verificar branch', status: 'warn', camposNoActualizados });
-            } else {
-              steps.push({ name: 'verificar branch', status: 'ok' });
-            }
-          } catch (err) {
-            steps.push({ name: 'verificar branch', status: 'error', error: err.message });
+          const fresco = await obtenerBranch(branchId);
+          const camposNoActualizados = diffBranchDomicilio(fresco, branchDatos);
+          if (camposNoActualizados.length) {
+            steps.push({ name: 'verificar branch', status: 'warn', camposNoActualizados });
+          } else {
+            steps.push({ name: 'verificar branch', status: 'ok' });
           }
         } catch (err) {
-          steps.push({ name: 'PUT branch (domicilio)', status: 'error', error: err.message });
+          steps.push({ name: 'verificar branch', status: 'error', error: err.message });
         }
+      } catch (err) {
+        steps.push({ name: 'PUT branch (domicilio)', status: 'error', error: err.message });
       }
     }
 

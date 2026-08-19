@@ -198,11 +198,29 @@ test('buildBranchGenerico: sin celular de entrega cae al telefono del contacto',
   assert.ok(!('salesman' in d), 'sin salesman no lo manda');
 });
 
-test('buildBranchGenerico: sin calle o sin CP no hay domicilio util -> null (el caller omite el PUT)', () => {
-  assert.equal(buildBranchGenerico({ ...CLIENTE_ENTREGA, calle: '' }, {}), null);
-  assert.equal(buildBranchGenerico({ ...CLIENTE_ENTREGA, cpEntrega: '  ' }, {}), null);
-  assert.equal(buildBranchGenerico({}, {}), null);
-  assert.equal(buildBranchGenerico(null, {}), null);
+// issue #189: sin calle o sin CP no hay domicilio util, pero el PUT ya NO se omite --
+// tax_group_id/sales_account (calculados por actualizarBranchCliente a partir de
+// `pais`) no dependen del domicilio, asi que buildBranchGenerico nunca devuelve null,
+// solo omite los campos addr_*. `pais` siempre es el del CLIENTE (inferencia decidida
+// para el caso sin domicilio, ver comentario de la funcion).
+test('buildBranchGenerico: sin calle o sin CP no manda campos addr_* pero SI manda pais (issue #189)', () => {
+  const sinCalle = buildBranchGenerico({ ...CLIENTE_ENTREGA, calle: '' }, {});
+  assert.ok(!('addr_street' in sinCalle) && !('addr_zip' in sinCalle));
+  assert.equal(sinCalle.pais, 'MX');
+
+  const sinCp = buildBranchGenerico({ ...CLIENTE_ENTREGA, cpEntrega: '  ' }, {});
+  assert.ok(!('addr_street' in sinCp) && !('addr_zip' in sinCp));
+  assert.equal(sinCp.pais, 'MX');
+
+  assert.deepEqual(buildBranchGenerico({}, {}), { pais: 'MX' });
+  assert.deepEqual(buildBranchGenerico(null, {}), { pais: 'MX' });
+});
+
+test('buildBranchGenerico: sin domicilio, cliente extranjero -> pais del cliente viaja igual (issue #189)', () => {
+  const d = buildBranchGenerico({ razonSocial: 'Blue Hotel LLC', pais: 'US' }, {});
+  assert.ok(!('addr_street' in d));
+  assert.equal(d.pais, 'US');
+  assert.equal(d.br_name, 'Blue Hotel Llc');
 });
 
 test('buildBranchGenerico: NO emite br_ref (no lo captura el paso Envio; Operam conserva el auto-creado)', () => {

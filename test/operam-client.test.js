@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarClienteDirecto, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
+const { actualizarClienteDirecto, buscarClientes, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setBackoff429Base, _setMinInterval, derivarSalesAccount } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -696,13 +696,15 @@ test('actualizarBranchCliente: tax_group_id 2 para pais extranjero', async () =>
   }
 });
 
-test('actualizarBranchCliente: NO incluye sales_account en el body del PUT', async () => {
+// issue #189: sales_account viaja SIEMPRE, derivada de tax_group_id (Operam solo a
+// veces la deriva sola -- 56 de 109 clientes con RFC generico quedaron sin cuenta).
+test('actualizarBranchCliente: incluye sales_account derivada del tax_group_id (issue #189)', async () => {
   resetSession();
-  let putBody = null;
-  const restore = mockFetchByUrl({
+  let putBodyMX = null;
+  const restoreMX = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/branches/200': (url, opts) => {
-      putBody = JSON.parse(opts.body);
+      putBodyMX = JSON.parse(opts.body);
       return jsonResponse({ result: true });
     },
   });
@@ -713,10 +715,37 @@ test('actualizarBranchCliente: NO incluye sales_account en el body del PUT', asy
       addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '',
       phone: '', email: '',
     });
-    assert.ok(!('sales_account' in putBody), 'sales_account NO debe estar en el body del PUT');
+    assert.strictEqual(putBodyMX.sales_account, '401-01-001', 'MX (gravado) -> cuenta de ventas gravada');
   } finally {
-    restore();
+    restoreMX();
   }
+
+  resetSession();
+  let putBodyUS = null;
+  const restoreUS = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/201': (url, opts) => {
+      putBodyUS = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 201, {
+      br_name: 'USA Branch', br_ref: 'USA', pais: 'US', salesman: 47,
+      addr_street: 'Main St', addr_exterior: '10', addr_interior: '', addr_colony: '',
+      addr_city: 'Los Angeles', addr_state: 'CA', addr_zip: '90001', addr_reference: '',
+      phone: '', email: '',
+    });
+    assert.strictEqual(putBodyUS.sales_account, '401-07-000', 'extranjero (exportacion) -> cuenta de ventas exenta');
+  } finally {
+    restoreUS();
+  }
+});
+
+// derivarSalesAccount() -- funcion pura, issue #189.
+test('derivarSalesAccount: tax_group_id 1 (gravado) -> 401-01-001; 2 (exportacion) -> 401-07-000', () => {
+  assert.strictEqual(derivarSalesAccount(1), '401-01-001');
+  assert.strictEqual(derivarSalesAccount(2), '401-07-000');
 });
 
 test('actualizarBranchCliente: cuando branchId es null hace GET customer para obtener branch_code', async () => {
