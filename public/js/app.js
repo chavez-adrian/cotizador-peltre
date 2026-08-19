@@ -5902,12 +5902,18 @@ function altaPoblarRegimenes() {
 // contra `option[selected]` para decidir que es captura y que es default -- sin
 // mover el atributo, abrir el upgrade dejaria un borrador espurio ("Borrador
 // restaurado" sin nada restaurado) por el solo hecho de que S01 != G03.
+// Solo pisa el valor si el campo seguia en su default: plegar el panel no es
+// cancelar (#185) y reabrirlo no debe borrarle al vendedor un uso de CFDI que si
+// eligio. "Default" se decide con el mismo criterio que valorDefaultCampo, para
+// que las dos piezas no discrepen sobre que cuenta como captura.
 function altaFijarDefaultUsoCfdi(modoUpgrade) {
   const sel = document.getElementById('alta-uso-cfdi');
   if (!sel) return;
   const def = usoCfdiPorDefecto(modoUpgrade);
+  const defaultVigente = sel.querySelector('option[selected]')?.value ?? (sel.options[0]?.value || '');
+  const sinCaptura = sel.value === defaultVigente;
   for (const opt of sel.options) opt.defaultSelected = opt.value === def;
-  sel.value = def;
+  if (sinCaptura) sel.value = def;
 }
 
 function abrirAcordeonAlta() {

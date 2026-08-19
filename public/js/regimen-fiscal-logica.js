@@ -47,11 +47,13 @@ export function esRegimenValido(codigo) {
 // La longitud del RFC es la unica senal disponible en el formulario: 12 = moral,
 // 13 = fisica. Un RFC vacio o a medio teclear no decide nada (null) -- ahi el
 // selector ofrece el catalogo completo en vez de adivinar.
-const RE_RFC_MX = /^[A-Z&N]{3,4}\d{6}[A-Z0-9]{3}$/;
+// La clase incluye la enye (u00D1) escapada: el codigo fuente se mantiene en
+// ASCII estricto (CLAUDE.md).
+const RE_RFC_MX = /^[A-Z&\u00D1]{3,4}\d{6}[A-Z0-9]{3}$/;
 
 export function tipoPersonaRfc(rfc) {
   const limpio = String(rfc || '').trim().toUpperCase();
-  if (!RE_RFC_MX.test(limpio.replace(/Ñ/g, 'N'))) return null;
+  if (!RE_RFC_MX.test(limpio)) return null;
   return limpio.length === 12 ? 'moral' : 'fisica';
 }
 
