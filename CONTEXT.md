@@ -63,6 +63,10 @@ Partida independiente de la cotización, con su propia cantidad —medida en **p
 
 La calca no tiene precio de menudeo: cuando la lista vigente de la cotización es Menudeo, la calca se cobra con la lista **M100**, la primera donde existe. Cada partida de calca se factura con un **piso de 100 piezas** (decisión 2026-08-14, issue #98; supersede el estado inválido de #91): el proveedor imprime mínimo 100 calcas por diseño, así que una captura menor se sube automáticamente a 100 con aviso — la cantidad facturada es la misma en carrito, documento y quote. El piso es **por partida** (por diseño), no por el total de calcas, y aplica siempre, aunque el volumen de producto supere el mínimo de sobra. La consecuencia aceptada se mantiene: una cotización de solo calcas no existe en el cotizador; ese caso se levanta a mano en Operam.
 
+## Diseño de calca
+
+La unidad de una partida de calca es el **diseño**, no el tipo (tamaño × tintas): dos diseños del mismo tipo son dos partidas distintas, con el mismo precio unitario y cada una con su piso de 100 piezas (decisión 2026-08-20, issue #218). Cada diseño recibe un **número secuencial** dentro de la cotización que no se reutiliza al borrar otro, y su nombre vive en la descripción de la partida ("… - Diseño 2: logo frontal"). Una cotización admite a lo más **dos diseños por línea de producto** — un freno contra errores de captura, no una regla del producto: un producto puede llevar una o dos calcas en cualquier posición — que se aplica al agregar y no se revisa retroactivamente; sin líneas de producto no se puede agregar diseño. El checklist de decorado sigue siendo uno por cotización, no uno por diseño.
+
 ## Aplicación extra
 
 Cargo por aplicar una calca **adicional sobre la misma pieza**. Tiene precio por lista pero no existe como artículo en el ERP, así que hoy no puede cotizarse.
