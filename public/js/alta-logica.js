@@ -1015,3 +1015,76 @@ export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, custom
     fuente: 'cotizador',
   };
 }
+
+// Fila del panel de la Seccion 4 por NOMBRE del step, nunca por posicion (#112): el
+// servidor manda mas pasos de los que el panel pinta (config comercial / dimensiones,
+// que no tienen fila) y el orden cambia entre las dos ramas del alta. Mapeado por
+// indice, el resultado del PUT de customers se pintaba sobre la fila del GET del
+// branch y "Configurar domicilio" nunca llegaba a pintarse.
+export const ALTA_PASO_FILA = {
+  'POST customer': 0,
+  // Las dos ramas del alta mandan un PUT de customers distinto y EXCLUYENTE (config
+  // comercial en el cliente existente, dimensiones en el nuevo): comparten fila.
+  'PUT customer (config comercial)': 1,
+  'PUT customer (dimensiones)': 1,
+  'post-fix segmento (web)': 2,
+  'GET branch_id': 3,
+  'PUT branch': 4,
+};
+
+export const ALTA_PASO_FILAS = [...new Set(Object.values(ALTA_PASO_FILA))];
+
+// Traduce la respuesta de POST /api/crear-cliente a lo que el panel debe mostrar.
+//
+// Vive aqui y no en app.js (#213) por una razon concreta: app.js no es importable en
+// Node, asi que esta decision no tenia seam de prueba y el caso que importaba -- una
+// respuesta SIN `steps` -- nunca se probo. El 400 de "Falta el RFC (tax_id)" dejaba
+// las cinco filas en pending, no leia `data.error` y el vendedor veia CERO cambio:
+// "el boton no hace nada" era literal.
+//
+// Regla que sostiene el nucleo: una respuesta que no se entiende SIEMPRE deja mensaje.
+// El silencio nunca es una salida valida.
+export function interpretarRespuestaAlta(data) {
+  const d = data || {};
+  const steps = Array.isArray(d.steps) ? d.steps : [];
+  const exito = d.ok === true;
+
+  const porFila = new Map(ALTA_PASO_FILAS.map(f => [f, { fila: f, status: 'pending', msg: '' }]));
+  let primerError = null;
+  for (const step of steps) {
+    const fila = ALTA_PASO_FILA[step?.name];
+    if (fila === undefined) continue;
+    const esError = step.status !== 'ok';
+    const msg = esError ? (step.error || '') : '';
+    porFila.set(fila, { fila, status: esError ? 'error' : 'ok', msg });
+    if (esError && !primerError) primerError = msg || 'El paso "' + step.name + '" fallo sin motivo.';
+  }
+
+  // Sin steps no hay nada que pintar: el motivo tiene que salir por el banner o el
+  // fallo queda invisible. `d.error` es lo que mandan los 400 del endpoint.
+  const mensajeError = exito
+    ? null
+    : (primerError
+      || d.error
+      || 'El alta no se completo y el servidor no explico por que. Reintenta; si sigue igual, avisa.');
+
+  return {
+    exito,
+    mensajeError,
+    filas: [...porFila.values()],
+    mostrarReintentar: !exito,
+  };
+}
+
+// Guardia previa al POST (#213): la Seccion 1 es la que decide SOBRE QUE cliente
+// aplica el alta, y sus datos viven en memoria (altaState.datos), no en los campos de
+// pantalla. Se puede llegar al boton "Dar de alta" sin haberla confirmado -- la
+// Seccion 2 no tiene candado y confirmar 2 y 3 abre la 4 -- y el borrador (#185)
+// repinta los campos sin restaurar ese estado, asi que la pantalla se ve completa
+// mientras la memoria esta vacia. Sin esta guardia el alta viaja sin RFC y muere en
+// un 400 que hasta #213 no se veia.
+export function errorAltaSinConfirmar(csfDatos) {
+  const rfc = String(csfDatos?.rfc || '').trim();
+  if (!rfc) return 'Falta confirmar la Seccion 1 (datos fiscales): abrela y presiona "Verificar y confirmar" antes de dar de alta.';
+  return null;
+}

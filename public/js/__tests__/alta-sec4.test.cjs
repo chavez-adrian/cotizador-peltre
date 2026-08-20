@@ -3,9 +3,9 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveClienteId } = require('./helpers.cjs');
 
-let buildAltaDarDeAltaPayload;
+let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA;
 before(async () => {
-  ({ buildAltaDarDeAltaPayload } = await import('../alta-logica.js'));
+  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA } = await import('../alta-logica.js'));
 });
 
 test('F1: buildAltaDarDeAltaPayload incluye campos comerciales y domicilio', () => {
@@ -86,4 +86,85 @@ test('G3: resolveClienteId retorna null cuando no hay ninguno', () => {
 test('G4: resolveClienteId prefiere clienteExistente.id sobre customer_id en reintento', () => {
   const state = { clienteExistente: { id: 88 }, customer_id: 502 };
   assert.strictEqual(resolveClienteId(state), 88);
+});
+
+// === interpretarRespuestaAlta / errorAltaSinConfirmar (issue #213) ===
+//
+// El panel de la Seccion 4 se comia en silencio cualquier respuesta SIN `steps`
+// (el 400 de "Falta el RFC"): las filas volvian a pending, `data.error` no se leia
+// y el vendedor veia exactamente cero cambio. Estos tests existen porque esa
+// decision ahora vive en un nucleo puro; dentro de app.js no habia forma de probarla.
+
+test('H1: respuesta 400 sin steps expone el motivo del servidor (regresion #213)', () => {
+  const r = interpretarRespuestaAlta({ error: 'Falta el RFC (tax_id)' });
+  assert.strictEqual(r.exito, false);
+  assert.strictEqual(r.mensajeError, 'Falta el RFC (tax_id)', 'el motivo del server NO se descarta');
+  assert.strictEqual(r.mostrarReintentar, true);
+  assert.ok(r.filas.every(f => f.status === 'pending'), 'sin steps ninguna fila queda girando');
+});
+
+test('H2: respuesta sin steps NI error igual dice algo (nunca silencio)', () => {
+  for (const vacia of [null, undefined, {}, { ok: false }]) {
+    const r = interpretarRespuestaAlta(vacia);
+    assert.strictEqual(r.exito, false);
+    assert.ok(r.mensajeError && r.mensajeError.trim(), `respuesta ${JSON.stringify(vacia)} debe dejar mensaje`);
+  }
+});
+
+test('H3: ok:false con steps pinta la fila que fallo y sube su motivo al banner', () => {
+  const r = interpretarRespuestaAlta({
+    ok: false,
+    steps: [
+      { name: 'POST customer', status: 'ok' },
+      { name: 'GET branch_id', status: 'error', error: 'Operam 404' },
+    ],
+  });
+  assert.strictEqual(r.exito, false);
+  assert.strictEqual(r.mostrarReintentar, true);
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['GET branch_id']);
+  assert.strictEqual(branch.status, 'error');
+  assert.strictEqual(branch.msg, 'Operam 404');
+  assert.strictEqual(r.mensajeError, 'Operam 404', 'el motivo tambien va al banner visible');
+});
+
+test('H4: ok:true no muestra error ni reintentar', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [{ name: 'POST customer', status: 'ok' }, { name: 'PUT branch', status: 'ok' }],
+  });
+  assert.strictEqual(r.exito, true);
+  assert.strictEqual(r.mensajeError, null);
+  assert.strictEqual(r.mostrarReintentar, false);
+});
+
+test('H5: los steps se mapean por NOMBRE, nunca por posicion (#112)', () => {
+  const r = interpretarRespuestaAlta({
+    ok: false,
+    steps: [
+      { name: 'PUT customer (config comercial)', status: 'ok' },
+      { name: 'paso que el panel no pinta', status: 'ok' },
+      { name: 'PUT branch', status: 'error', error: 'boom' },
+    ],
+  });
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  assert.strictEqual(branch.status, 'error', 'PUT branch cae en SU fila, no en la tercera');
+  assert.strictEqual(branch.msg, 'boom');
+});
+
+test('H6: un step que no corrio vuelve a pending, no se queda girando', () => {
+  const r = interpretarRespuestaAlta({ ok: false, steps: [{ name: 'POST customer', status: 'error', error: 'x' }] });
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  assert.strictEqual(branch.status, 'pending');
+});
+
+test('H7: errorAltaSinConfirmar corta el alta cuando la Seccion 1 no dejo RFC (#213)', () => {
+  for (const sinRfc of [null, undefined, {}, { rfc: '' }, { rfc: '   ' }]) {
+    const msg = errorAltaSinConfirmar(sinRfc);
+    assert.ok(msg, `debe cortar con ${JSON.stringify(sinRfc)}`);
+    assert.match(msg, /Seccion 1/, 'el mensaje dice QUE hacer, no solo que fallo');
+  }
+});
+
+test('H8: errorAltaSinConfirmar deja pasar cuando la Seccion 1 si quedo confirmada', () => {
+  assert.strictEqual(errorAltaSinConfirmar({ rfc: 'XEXX010101000' }), null);
 });

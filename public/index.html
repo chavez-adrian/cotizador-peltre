@@ -472,6 +472,10 @@
                   <div class="alta-paso-msg" id="alta-paso-msg-4" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
               </div>
+              <!-- Motivo del fallo (#213). Vive FUERA de las filas de pasos a proposito:
+                   un 400 no trae `steps`, asi que no hay fila donde pintarlo y hasta
+                   #213 el error se descartaba y el vendedor no veia absolutamente nada. -->
+              <div id="alta-sec4-error" style="display:none;margin-bottom:8px;padding:10px 12px;border:1px solid var(--danger);border-radius:var(--radius);background:#fff5f5;color:var(--danger);font-size:13px;line-height:1.4"></div>
               <!-- Boton principal -->
               <button class="btn btn-primary" id="alta-btn-dar-alta" style="width:100%;margin-bottom:8px" onclick="altaDarDeAlta()">
                 Dar de alta
