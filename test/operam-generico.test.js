@@ -407,6 +407,11 @@ test('G4: reintento con customerId elegido tras candidatos -> reutiliza, liga el
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
       if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      // #208: la revalidacion recalcula el pool por tax_id -- el elegido debe
+      // seguir apareciendo en el.
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1703 }); },
@@ -426,6 +431,50 @@ test('G4: reintento con customerId elegido tras candidatos -> reutiliza, liga el
   const cot = readJson(COTS_PATH).find(c => c.id === id);
   assert.equal(cot.data.cliente.customerId, 10);
   assert.equal(String(cot.folioOperam), '1703');
+});
+
+// #208 (spec #205, hueco BAJA de la auditoria STOP-RFC): el customerId elegido
+// llega en el BODY del request -- puede venir manipulado o apuntar a una lista
+// de candidatos que ya cambio desde el 409 original. El servidor recalcula el
+// pool (mismo pipeline: buscarClientesPorRfc + detectarDuplicados) y exige que
+// el elegido siga perteneciendo a el; si no, mismo contrato del 409 de
+// candidatos, con la lista FRESCA para que el vendedor vuelva a elegir.
+test('G4b: customerId elegido que ya no esta en la lista recalculada -> 409 con candidatos frescos, cero escrituras', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  let postCustomer = false;
+  let quoteLlamado = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      // La lista cambio: el 10 que el vendedor eligio (de un 409 anterior) ya no
+      // aparece -- el pool fresco solo trae al 11.
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 11, CustName: 'HOTEL AZUL NORTE SA', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, added_trans_no: 1 }); },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10 });
+
+  assert.equal(res.status, 409);
+  assert.ok(res.body.error);
+  assert.ok(Array.isArray(res.body.candidatos), 'debe devolver la lista fresca');
+  assert.equal(res.body.candidatos.length, 1);
+  assert.equal(res.body.candidatos[0].id, 11, 'la lista fresca, no la que trajo el vendedor');
+  assert.equal(postCustomer, false, 'no debe crear');
+  assert.equal(quoteLlamado, false, 'no debe subir');
+
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.ok(!cot.folioOperam, 'la cotizacion sigue PRE');
+  assert.equal(cot.data.cliente.customerId, undefined, 'no persiste el elegido rechazado');
+  assert.equal(cot.data.motivoPre, 'dedup', 'mismo candado que la parada original');
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.equal(p.data.cliente_id, undefined, 'el prospecto no se liga a un elegido rechazado');
 });
 
 test('G5: reintento tras fallo parcial (cliente creado, subida fallida) no duplica cliente y retoma en la subida', async () => {
@@ -598,6 +647,11 @@ test('F3c: con customerId elegido no se reutiliza un branchId persistido (pudo s
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u) => {
       if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      // #208: la revalidacion recalcula el pool por tax_id -- el elegido debe
+      // seguir apareciendo en el.
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1708 }); },
@@ -837,6 +891,11 @@ test('D5: retry con customerId elegido (cliente preexistente) NUNCA pisa su bran
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
       if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      // #208: la revalidacion recalcula el pool por tax_id -- el elegido debe
+      // seguir apareciendo en el.
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1805 }),

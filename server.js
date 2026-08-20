@@ -1734,6 +1734,20 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
 // El customer_id se persiste (cotizacion y prospecto) ANTES de subir: un reintento
 // tras fallo parcial entra por el camino normal con el id persistido y NO crea un
 // segundo cliente.
+// Pool de dedup por RFC generico + resultado de detectarDuplicados (#208):
+// mismo pipeline que usan la parada original por nombre y la revalidacion del
+// customerId elegido, factorizado para no divergir entre las dos. SIEMPRE
+// buscarClientesPorRfc (#194, nunca buscarClientes: el ?search= de Operam no
+// indexa el RFC) con el pool COMPLETO paginado (el pool de genericos crece por
+// diseno, #81; un match fuera de la primera pagina volveria la dedup 'libre').
+async function poolDedupGenerico(c, entry) {
+  const rfcGenerico = rfcGenericoPara(c.pais);
+  const nombre = c.razonSocial || c.nombreCorto || entry.cliente || '';
+  const raw = await buscarClientesPorRfc(rfcGenerico);
+  const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
+  return { rfcGenerico, nombre, dedup: detectarDuplicados(rfcGenerico, nombre, clientes) };
+}
+
 async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo) {
   const c = entry.data?.cliente || {};
   const steps = [];
@@ -1753,22 +1767,30 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       if (prospecto?.data?.cliente_id != null && String(prospecto.data.cliente_id) !== String(customerId)) {
         return res.status(409).json({ error: `El celular de la cotizacion ya esta ligado al cliente ${prospecto.data.cliente_id} en Operam y difiere del elegido (${customerId})` });
       }
+      // #208: el customerId viene del BODY como eleccion del vendedor -- puede
+      // venir manipulado o apuntar a una lista de candidatos que ya cambio desde
+      // el 409 original. Se recalcula el MISMO pool que genero esa parada y se
+      // exige que el elegido siga perteneciendo a el; si no, mismo contrato del
+      // 409 de candidatos: se responde con la lista FRESCA para que el vendedor
+      // vuelva a elegir, cero escrituras. La reutilizacion por celular (arriba)
+      // NO pasa por aqui -- ese customerId no lo elige el vendedor en este request.
+      {
+        const { dedup: dedupRevalida } = await poolDedupGenerico(c, entry);
+        const candidatosFrescos = dedupRevalida.tipo === 'candidatos' ? dedupRevalida.candidatos : [];
+        if (!candidatosFrescos.some(k => String(k.customer_id) === String(customerId))) {
+          await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
+          return res.status(409).json({
+            error: 'El cliente elegido ya no esta en la lista de candidatos: elige uno para continuar',
+            candidatos: candidatosFrescos.map(k => ({ id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id })),
+          });
+        }
+      }
       steps.push({ name: 'dedup', status: 'ok', info: 'candidato elegido' });
     } else if (prospecto?.data?.cliente_id != null) {
       customerId = prospecto.data.cliente_id;
       steps.push({ name: 'dedup', status: 'ok', info: 'cliente reutilizado por celular' });
     } else {
-      const rfcGenerico = rfcGenericoPara(c.pais);
-      const nombre = c.razonSocial || c.nombreCorto || entry.cliente || '';
-      // buscarClientesPorRfc y NO buscarClientes (#194): el ?search= de Operam
-      // busca por nombre y no indexa el RFC, asi que este pool siempre llegaba
-      // vacio y la dedup por nombre de ADR-0001 nunca corria sobre un candidato
-      // real. Trae el pool COMPLETO paginado: el pool de genericos crece por
-      // diseno (#81) y un match fuera de la primera pagina volveria la dedup
-      // 'libre' (y crearia otro generico duplicado).
-      const raw = await buscarClientesPorRfc(rfcGenerico);
-      const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
-      const dedup = detectarDuplicados(rfcGenerico, nombre, clientes);
+      const { rfcGenerico, nombre, dedup } = await poolDedupGenerico(c, entry);
       if (dedup.tipo === 'candidatos' && !crearNuevo) {
         // Sin resolver no hay documento (#204): se marca el motivo ANTES de
         // responder para que el candado de los GET aplique de inmediato.
