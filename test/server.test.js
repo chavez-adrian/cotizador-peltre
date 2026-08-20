@@ -2208,7 +2208,10 @@ test('E5: GET /api/buscar-cliente-duplicado con RFC real sin match exacto busca 
   });
   try {
     const res = await supertest(app)
-      .get('/api/buscar-cliente-duplicado?rfc=ISI1801183Z4&nombre=Importaciones+Siscani')
+      // Dos tokens en comun con "Siscani Group SA de CV" (#204): el umbral de la
+      // senal de nombre subio a 2 y el nombre corto del caso real se detecta hoy
+      // por telefono, que es la ruta de E6.
+      .get('/api/buscar-cliente-duplicado?rfc=ISI1801183Z4&nombre=Importaciones+Siscani+Group')
       .set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.tipo, 'candidatos');

@@ -155,8 +155,10 @@ test('D3: detectarDuplicados retorna candidatos para RFC generico XAXX con nombr
 });
 
 // D4: RFC generico XEXX con nombre similar -> candidatos
+// El nombre de entrada solapa DOS tokens con "Global Imports LLC" (#204: uno
+// solo -- el "Global" de cualquier razon social en ingles -- ya no basta).
 test('D4: detectarDuplicados retorna candidatos para RFC generico XEXX con nombre similar', () => {
-  const result = detectarDuplicados('XEXX010101000', 'Global Exports LLC', CLIENTES_MOCK);
+  const result = detectarDuplicados('XEXX010101000', 'Global Imports Trading LLC', CLIENTES_MOCK);
   assert.strictEqual(result.tipo, 'candidatos');
   assert.ok(result.candidatos.some(c => c.id === 5), 'debe incluir cliente Global Imports LLC');
 });
@@ -202,10 +204,10 @@ test('D7: detectarDuplicados detecta candidato con nombre identico pero sin acen
 // AC5 — nombre con articulos y sufijos corporativos
 test('D8: detectarDuplicados detecta candidato con articulos/sufijos en nombre (AC5)', () => {
   const clientes = [
-    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'El Aguila SA de CV', cust_ref: 'AGUILA', id: 20 },
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'La Distribuidora de El Aguila SA de CV', cust_ref: 'AGUILA', id: 20 },
   ];
-  // Input con articulos: "Distribuidora El Aguila SA" -> tokens: [distribuidora, aguila]
-  // CustName tokens: [aguila] -> solapamiento=1
+  // Input con articulos: "Distribuidora El Aguila SA de CV" -> tokens: [distribuidora, aguila]
+  // CustName tokens (tras quitar la/de/el/sa/cv): [distribuidora, aguila] -> solapamiento=2
   const result = detectarDuplicados('XAXX010101000', 'Distribuidora El Aguila SA de CV', clientes);
   assert.strictEqual(result.tipo, 'candidatos');
   assert.ok(result.candidatos.some(c => c.id === 20), 'debe encontrar candidato El Aguila');
@@ -223,7 +225,10 @@ test('D9: detectarDuplicados con RFC real sin match exacto cae a candidatos por 
     { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', id: 30 },
     { RFC: 'DIS860901XYZ', rfc: 'DIS860901XYZ', CustName: 'Distribuidora Omega SRL', cust_ref: 'OMEGA', id: 2 },
   ];
-  const result = detectarDuplicados('ISI1801183Z4', 'Importaciones Siscani', clientes);
+  // Dos tokens en comun con "Siscani Group SA de CV" (#204: el nombre real del
+  // caso, "Importaciones Siscani", solapaba uno solo y hoy se resuelve por
+  // telefono -- ver D16/D17).
+  const result = detectarDuplicados('ISI1801183Z4', 'Importaciones Siscani Group', clientes);
   assert.strictEqual(result.tipo, 'candidatos');
   assert.ok(result.candidatos.some(c => c.id === 30), 'debe encontrar el candidato Siscani Group con RFC generico');
   assert.ok(!result.candidatos.some(c => c.id === 2), 'no debe incluir clientes con RFC real (no genericos) como candidatos');
@@ -279,4 +284,69 @@ test('D12: con el pool completo de genericos (~80) solo devuelve al que empata p
   assert.strictEqual(result.tipo, 'candidatos');
   assert.strictEqual(result.candidatos.length, 1, 'el resto del cajon no es candidato');
   assert.strictEqual(result.candidatos[0].id, 495);
+});
+
+// ============================================================
+// Issue #204: umbral de solapamiento. Con el pool completo que estreno #194, un
+// solo token compartido (un nombre de pila, un apellido comun) marcaba candidato
+// y detenia la subida de una cotizacion sin relacion con el generico. El umbral
+// es min(2, tokens del input): dos palabras en comun, salvo que el nombre
+// capturado tenga una sola palabra util (si no, la dedup queda ciega para
+// nombres de un token).
+// ============================================================
+
+// D13: caso real que rompio en produccion (2026-08-19) -- el contacto capturado
+// comparte SOLO el nombre de pila con un generico del cajon.
+test('D13: un solo token compartido (nombre de pila) NO marca candidato', () => {
+  const clientes = [
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'JOSE ADRIAN ROMAN ROMERO', cust_ref: 'Pergola Cholula', id: 60 },
+  ];
+  const result = detectarDuplicados('XAXX010101000', 'Adrian Vazquez Ruiz', clientes);
+  assert.strictEqual(result.tipo, 'libre');
+});
+
+// D14: dos tokens compartidos siguen marcando candidato (la senal que si sirve).
+test('D14: dos tokens compartidos SI marcan candidato', () => {
+  const clientes = [
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'JOSE ADRIAN ROMAN ROMERO', cust_ref: 'Pergola Cholula', id: 60 },
+  ];
+  const result = detectarDuplicados('XAXX010101000', 'Adrian Roman Vazquez', clientes);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.strictEqual(result.candidatos[0].id, 60);
+});
+
+// D15: nombre capturado de UN solo token util -- exigir 2 dejaria la dedup ciega
+// para "Pergola" o "Siscani", asi que ahi basta el unico token que hay.
+test('D15: con un solo token util en el nombre capturado basta 1 coincidencia', () => {
+  const clientes = [
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Pergola Cholula', cust_ref: 'PERGOLA', id: 61 },
+  ];
+  const result = detectarDuplicados('XAXX010101000', 'Pergola', clientes);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.strictEqual(result.candidatos[0].id, 61);
+});
+
+// D16: el umbral NO toca el match por telefono, que es senal fuerte propia --
+// asi se detecto el duplicado real "Siscani" (#78), con un solo token en comun.
+test('D16: el telefono sigue marcando candidato con un solo token compartido', () => {
+  const clientes = [
+    {
+      RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', id: 30,
+      contacts: [{ phone: '55 1234 5678' }],
+    },
+  ];
+  const result = detectarDuplicados('ISI1801183Z4', 'Importaciones Siscani', clientes, '5512345678');
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.strictEqual(result.candidatos[0].id, 30);
+  assert.strictEqual(result.candidatos[0]._telefonoMatch, true);
+});
+
+// D17: el umbral aplica IGUAL en la rama del fallback de RFC real (#78, "no se
+// inventa un umbral nuevo"): sin telefono, un token en comun ya no basta.
+test('D17: en el fallback de RFC real un token compartido sin telefono da libre', () => {
+  const clientes = [
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', id: 30 },
+  ];
+  const result = detectarDuplicados('ISI1801183Z4', 'Importaciones Siscani', clientes);
+  assert.strictEqual(result.tipo, 'libre');
 });
