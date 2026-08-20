@@ -557,6 +557,55 @@ test('crearCliente: retorna { duplicado:true } con datos cuando RFC ya existe', 
   }
 });
 
+// === crearCliente: normalizarRfc (issue #209) ===
+
+test('crearCliente: un RFC tecleado en minusculas y con espacios encuentra al cliente existente (normalizarRfc)', async () => {
+  resetSession();
+  let urlBusqueda = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (url, opts) => {
+      if (opts && opts.method === 'POST') throw new Error('no debe llegar POST: el RFC ya existe');
+      urlBusqueda = url.toString();
+      return jsonResponse({
+        total: 1,
+        data: [{ customer_id: 42, CustName: 'Existente SA', tax_id: 'EXT010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', branches: [] }],
+      });
+    },
+  });
+  try {
+    const res = await crearCliente({ tax_id: ' ext010101abc ', CustName: 'Existente SA' });
+    assert.equal(res.duplicado, true);
+    assert.equal(res.cliente_id, 42);
+    assert.ok(urlBusqueda.includes('EXT010101ABC'), 'la busqueda debe usar el RFC normalizado: ' + urlBusqueda);
+  } finally {
+    restore();
+  }
+});
+
+test('crearCliente: un RFC nuevo en minusculas se manda normalizado en el body del POST', async () => {
+  resetSession();
+  let postBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (url, opts) => {
+      if (opts && opts.method === 'POST') {
+        postBody = JSON.parse(opts.body);
+        return jsonResponse({ result: true, customer_id: 999 });
+      }
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  try {
+    const res = await crearCliente({ tax_id: 'nvo 010101 abc', CustName: 'Nuevo SA de CV' });
+    assert.equal(res.duplicado, false);
+    assert.ok(postBody, 'debe haberse capturado el body del POST /customers');
+    assert.strictEqual(postBody.tax_id, 'NVO010101ABC');
+  } finally {
+    restore();
+  }
+});
+
 // === buildClienteBody() — campos nuevos (issue #29) ===
 
 test('buildClienteBody: area derivada MX -> 1', () => {

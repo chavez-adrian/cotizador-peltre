@@ -1257,6 +1257,54 @@ test('POST /api/crear-cliente con RFC duplicado retorna duplicado:true con datos
   }
 });
 
+// Concurrencia (issue #209): dos altas EN VUELO con el mismo RFC nuevo (doble
+// click, dos pestanas) no deben crear dos clientes en Operam. El lock por RFC
+// normalizado (crearClienteConLock, server.js) serializa las dos llamadas a
+// crearCliente -- la que gana la carrera crea el cliente; la que pierde solo
+// corre su dedup DESPUES, cuando el mock ya "sabe" del recien creado, y recibe
+// duplicado:true. Cual de las dos gana no es determinista (llegan por sockets
+// HTTP reales via supertest) asi que el assert no fija cual es cual -- solo que
+// hubo UN solo POST y que las dos respuestas, juntas, son [false, true].
+test('POST /api/crear-cliente: dos altas concurrentes con el mismo RFC nuevo crean UN solo cliente (#209)', async () => {
+  let postCount = 0;
+  let creado = false;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') {
+        postCount++;
+        creado = true;
+        return { ok: true, json: async () => ({ result: true, customer_id: 501 }) };
+      }
+      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 601 }] }] }) };
+      if (creado) {
+        return {
+          ok: true,
+          json: async () => ({
+            total: 1,
+            data: [{ customer_id: 501, CustName: 'Concurrente SA', tax_id: 'CON010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', branches: [] }],
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/601': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const payload = { tax_id: 'CON010101ABC', CustName: 'Concurrente SA' };
+    const [r1, r2] = await Promise.all([
+      supertest(app).post('/api/crear-cliente').set('Authorization', `Bearer ${TEST_TOKEN}`).send(payload),
+      supertest(app).post('/api/crear-cliente').set('Authorization', `Bearer ${TEST_TOKEN}`).send(payload),
+    ]);
+    assert.strictEqual(postCount, 1, 'exactamente UN POST de cliente debe llegar a Operam');
+    assert.deepStrictEqual([r1.body.duplicado, r2.body.duplicado].sort(), [false, true]);
+    assert.strictEqual(r1.body.customer_id, 501);
+    assert.strictEqual(r2.body.customer_id, 501);
+  } finally {
+    restore();
+  }
+});
+
 // Backstop del telefono (issue #176): la capa estricta del navegador AVISA pero
 // deja guardar, asi que un numero imposible puede llegar al alta. El servidor lo
 // deja registrado para revision y responde EXACTAMENTE igual que siempre --

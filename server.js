@@ -2034,6 +2034,37 @@ export async function barrerCotizacionesDedupVencidas(ahora = new Date()) {
 // segundo request recibe 425 claro y reintenta cuando el primero termine.
 const subidasOperamEnCurso = new Set();
 
+// Lock en memoria por RFC normalizado para el alta completa (#209, POST
+// /api/crear-cliente): mismo problema check-then-act que subidasOperamEnCurso de
+// arriba, pero con un RFC en vez de un id de cotizacion -- dos requests EN VUELO
+// con el MISMO RFC nuevo (doble click, dos pestanas) verian ambas el pool vacio en
+// la dedup de crearCliente y crearian DOS clientes en Operam para el mismo RFC. A
+// diferencia de subidasOperamEnCurso, aqui la segunda request no debe fallar con
+// 425: debe ESPERAR a que la primera termine y solo entonces correr su propia
+// dedup, que para ese momento SI encuentra al cliente recien creado (mismo
+// resultado que si hubiera llegado tarde) -- ningun segundo POST de cliente llega
+// a Operam. RFC_GENERICOS queda exento (comparten RFC por diseno, ADR-0001), igual
+// que la dedup por RFC exacto de crearCliente. Map<rfc, Promise> hace de cola FIFO
+// por RFC -- misma asuncion de instancia unica en Render (plan Starter) que
+// subidasOperamEnCurso: con varias instancias haria falta un lock compartido
+// (Neon).
+const altaClienteEnCurso = new Map();
+
+async function crearClienteConLock(cliente) {
+  const rfc = normalizarRfc(cliente.tax_id);
+  if (RFC_GENERICOS.has(rfc)) return crearCliente(cliente);
+  const previa = altaClienteEnCurso.get(rfc);
+  const actual = (previa ? previa.catch(() => {}) : Promise.resolve()).then(() => crearCliente(cliente));
+  altaClienteEnCurso.set(rfc, actual);
+  try {
+    return await actual;
+  } finally {
+    // Solo se borra la entrada si nadie se encolo detras -- si ya hay una promesa
+    // mas nueva en el mapa, esa es la que manda liberar el lock cuando termine.
+    if (altaClienteEnCurso.get(rfc) === actual) altaClienteEnCurso.delete(rfc);
+  }
+}
+
 // Post-fix de la vigencia (#106, ADR-0007). El POST del quote ignora valid_until y deja
 // el campo nativo "Valido hasta" en ord_date-1, asi que Operam marca como vencidas
 // cotizaciones vivas; se corrige por la web legacy en cuanto el quote existe. NO es
@@ -2543,7 +2574,7 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     // Step 1: POST customer (skip if customer_id already known — reintento)
     if (!customer_id) {
       try {
-        const resultado = await crearCliente(cliente);
+        const resultado = await crearClienteConLock(cliente);
         if (resultado.duplicado) {
           // Salida temprana ANTES del post-fix del segmento (#186) a proposito: aqui no
           // se escribe NADA sobre el cliente encontrado -- el vendedor todavia no decidio
