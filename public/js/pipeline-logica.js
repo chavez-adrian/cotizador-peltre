@@ -419,9 +419,13 @@ export function bannerUpgradeHtml(ctx) {
   const nombre = c.nombre || 'este cliente';
   const id = c.id != null ? String(c.id) : '';
   const rfc = c.rfc || '';
+  const texto = esRfcGenerico(rfc)
+    ? 'RFC generico ' + escapeHtml(rfc) + ' se sustituira con el RFC real de la CSF. No se crea un cliente nuevo.'
+    : 'Editando datos de: ' + escapeHtml(nombre) + '. RFC actual: ' + escapeHtml(rfc || 'pendiente') +
+      '. La CSF es opcional; el RFC solo cambia si subes una CSF con otro RFC.';
   return '<div class="banner-upgrade"><span>&#8635;</span>' +
     '<div><b>Actualizando: ' + escapeHtml(nombre) + (id ? ' (ID ' + escapeHtml(id) + ')' : '') + '</b>' +
-    '<small>RFC generico ' + escapeHtml(rfc) + ' se sustituira con el RFC real de la CSF. No se crea un cliente nuevo.</small></div></div>';
+    '<small>' + texto + '</small></div></div>';
 }
 
 // Rotulo del panel de upgrade fiscal segun de donde se llega (#198): el

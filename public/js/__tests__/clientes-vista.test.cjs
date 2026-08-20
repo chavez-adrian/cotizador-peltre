@@ -212,6 +212,23 @@ test('N2: el banner escapa el nombre del cliente', () => {
   assert.doesNotMatch(html, /<b>x<\/b>/);
 });
 
+test('N3: RFC real (no generico) -> copy de edicion, sin "generico" ni "se sustituira"', () => {
+  const html = bannerUpgradeHtml({ nombre: 'Decoracion Maria Pia', id: 900, rfc: 'DMP2306125E3' });
+  assert.match(html, /Editando datos de:/);
+  assert.match(html, /RFC actual:/);
+  assert.match(html, /DMP2306125E3/);
+  assert.doesNotMatch(html, /generico/);
+  assert.doesNotMatch(html, /se sustituira/);
+});
+
+test('N4: RFC vacio -> copy de pendiente, sin el hueco "generico  se"', () => {
+  const html = bannerUpgradeHtml({ nombre: 'Cliente Nuevo', id: 5, rfc: '' });
+  assert.match(html, /Editando datos de:/);
+  assert.match(html, /RFC actual: pendiente/);
+  assert.doesNotMatch(html, /generico\s{2}se/);
+  assert.doesNotMatch(html, /generico/);
+});
+
 // === chipsClienteViewHtml ===
 
 test('H1: chip Fiscal pendiente con cliente en Operam es accionable (abre el upgrade)', () => {
