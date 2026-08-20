@@ -25,6 +25,7 @@ import {
   etiquetaTagContacto,
   usoCfdiPorDefecto,
   estadoAltaAlAbrirPanel,
+  nombreConCorto,
 } from './alta-logica.js';
 import {
   montarTelefono,
@@ -2762,7 +2763,7 @@ async function pcRenderRecientes() {
     recientes.map((r, i) =>
       `<button type="button" class="pc-res-row" onclick="pcElegirReciente(${r.cotizacionId})">` +
       `<span class="pc-res-ini">${escapeHtml(pcIniciales(r.nombre))}</span>` +
-      `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(r.nombre)}</span>` +
+      `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(nombreConCorto(r.nombre, r.nombreCorto))}</span>` +
       `<span class="pc-res-sub">${escapeHtml(r.telefono || 'Cotizado antes')}</span></span></button>`
     ).join('');
 }
@@ -2818,9 +2819,12 @@ function pcFilaResultado(r, i) {
   const tag = r.tipo === 'operam'
     ? '<span class="pc-tag operam">Operam</span>'
     : '<span class="pc-tag prospecto">Prospecto</span>';
+  // #196: nombre corto (cust_ref via r.ref) entre parentesis, formato unico
+  // (nombreConCorto). Solo en filas 'operam'; prospectos no tienen cust_ref real.
+  const nombreTexto = r.tipo === 'operam' ? nombreConCorto(r.nombre, r.ref) : r.nombre;
   return `<button type="button" class="pc-res-row" onclick="pcElegirResultado(${i})">` +
     `<span class="pc-res-ini ${r.tipo}">${escapeHtml(pcIniciales(r.nombre))}</span>` +
-    `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(r.nombre)}</span>` +
+    `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(nombreTexto)}</span>` +
     `<span class="pc-res-sub">${escapeHtml(r.sub || '')}</span></span>${tag}</button>`;
 }
 
@@ -3155,10 +3159,12 @@ function pcRenderTarjeta() {
     : [c.telefono, pcState.cliente?.ciudad, 'Prospecto'];
   const sub = subPartes.filter(Boolean).map(escapeHtml).join(' &middot; ');
 
+  // #196: nombre corto (c.ref) entre parentesis, formato unico (nombreConCorto).
+  const nombreTarjeta = nombreConCorto(c.name || c.ref || 'Sin nombre', c.ref);
   root.innerHTML =
     '<div class="pc-pregunta">Cliente seleccionado</div>' +
     '<div class="pc-cli-card">' +
-    `<div class="pc-cli-nombre">${escapeHtml(c.name || 'Sin nombre')}</div>` +
+    `<div class="pc-cli-nombre">${escapeHtml(nombreTarjeta)}</div>` +
     `<div class="pc-cli-sub">${sub}</div>` +
     `<div class="pc-chips">${pcChipsHtml(chips, pcCustomerIdFiscal())}</div>` +
     (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
@@ -3890,7 +3896,7 @@ function renderHistorial() {
       <div class="cot-card">
         <div class="cot-card-header">
           <div>
-            <div class="cot-card-cliente">${escapeHtml(c.cliente || 'Sin nombre')}${badge}</div>
+            <div class="cot-card-cliente">${escapeHtml(nombreConCorto(c.cliente || 'Sin nombre', c.nombreCorto))}${badge}</div>
             <div class="cot-card-meta">${fecha} · ${c.vendedor} · ${c.totalPiezas} pzs</div>
           </div>
           <div>
@@ -4427,7 +4433,7 @@ async function cvRenderRecientes() {
       recientes.map(r =>
         '<button type="button" class="pc-res-row" onclick="cvBuscarPrefill(' + JSON.stringify(r.nombre).replace(/"/g, '&quot;') + ')">' +
         '<span class="pc-res-ini">' + escapeHtml(pcIniciales(r.nombre)) + '</span>' +
-        '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(r.nombre) + '</span>' +
+        '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(nombreConCorto(r.nombre, r.nombreCorto)) + '</span>' +
         '<span class="pc-res-sub">' + escapeHtml(r.telefono || 'Cotizado antes') + '</span></span></button>'
       ).join('')
     : '';

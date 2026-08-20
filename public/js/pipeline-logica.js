@@ -12,7 +12,7 @@
 
 import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
-import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico } from './alta-logica.js';
+import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
 // del motivo de PRE que define lib/pipeline.js (este modulo NO importa de lib/,
@@ -166,14 +166,15 @@ function letreroMatch(etiqueta, estado) {
 // Elegir/Crear nuevo, el humano sigue decidiendo.
 export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
   const items = (candidatos || []).map(c => {
-    const nombre = escapeHtml(c.CustName || c.cust_name || 'Sin nombre');
-    const ref = c.cust_ref ? ` · ${escapeHtml(c.cust_ref)}` : '';
+    // #196: mismo formato unico de parentesis que el resto de la app (antes
+    // separador ad hoc " . cust_ref").
+    const nombre = escapeHtml(nombreConCorto(c.CustName || c.cust_name || 'Sin nombre', c.cust_ref));
     const diffTexto = textoDiferenciaNombre(c.diferenciaNombre);
     const diffHtml = diffTexto ? `<div class="operam-candidato-diff">${escapeHtml(diffTexto)}</div>` : '';
     const letreros = `<div class="operam-candidato-letreros">${letreroMatch('Celular', c.celularMatch)}${letreroMatch('Correo', c.correoMatch)}</div>`;
     return `<li class="operam-candidato">
       <div class="operam-candidato-info">
-        <span class="operam-candidato-nombre">${nombre}${ref}</span>
+        <span class="operam-candidato-nombre">${nombre}</span>
         ${diffHtml}
         ${letreros}
       </div>
@@ -348,9 +349,12 @@ export function tagResultadoClienteHtml(r) {
 
 export function filaResultadoClienteHtml(r, i) {
   const row = r || {};
+  // #196: nombre corto (cust_ref) entre parentesis, formato unico. Solo en
+  // filas 'operam' (row.ref = cust_ref real); prospectos no lo tienen.
+  const nombreTexto = row.tipo === 'operam' ? nombreConCorto(row.nombre, row.ref) : (row.nombre || '');
   return '<button type="button" class="pc-res-row" onclick="cvElegirResultado(' + i + ')">' +
     '<span class="pc-res-ini ' + escapeHtml(row.tipo || '') + '">' + escapeHtml(inicialesCliente(row.nombre)) + '</span>' +
-    '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(row.nombre || '') + '</span>' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(nombreTexto) + '</span>' +
     '<span class="pc-res-sub">' + escapeHtml(row.sub || '') + '</span></span>' +
     tagResultadoClienteHtml(row) + '</button>';
 }
@@ -407,7 +411,9 @@ export function cardClienteHtml(cliente) {
   const chips = chipsCompletitud(c);
   const custId = customerIdFiscal(c);
   const esOperam = c.tipo === 'operam';
-  const nombre = c.name || c.ref || 'Sin nombre';
+  // #196: nombre corto entre parentesis. La regla de igualdad de nombreConCorto
+  // protege el caso prospecto/contacto nuevo, donde ref ES el propio nombre.
+  const nombre = nombreConCorto(c.name || c.ref || 'Sin nombre', c.ref);
   const subPartes = esOperam
     ? [c.rfc, 'Cliente en Operam' + (c.id != null ? ' (ID ' + c.id + ')' : '')]
     : [c.telefono, c.ciudad || c.municipio, 'Prospecto'];

@@ -497,6 +497,20 @@ test('G14: buildDedupExactoConDiffHtml sin csfDatos (undefined) no truena y omit
   assert.ok(!html.includes('diff-fiscal-panel'));
 });
 
+// #196: el banner "Este RFC ya existe en Operam" muestra el nombre corto
+// (cust_ref del cliente encontrado) entre parentesis, con el formato unico
+// (nombreConCorto) -- mismo criterio que las demas superficies.
+test('G13b (#196): buildDedupExactoConDiffHtml muestra el nombre corto del cliente cuando existe', () => {
+  const clienteConCorto = { ...clienteExacto, cust_ref: 'Peltre Nal' };
+  const html = buildDedupExactoConDiffHtml(clienteConCorto, undefined);
+  assert.ok(html.includes('Peltre Nacional SA de CV (Peltre Nal)'), 'debe mostrar razon social + nombre corto');
+});
+
+test('G13c (#196): buildDedupExactoConDiffHtml sin nombre corto no agrega parentesis vacio', () => {
+  const html = buildDedupExactoConDiffHtml(clienteExacto, undefined);
+  assert.ok(!html.includes('Peltre Nacional SA de CV ('), 'sin cust_ref no debe haber parentesis de nombre corto');
+});
+
 test('G14b: buildDedupExactoConDiffHtml produce .dedup-exacto y .diff-fiscal-panel como hermanos (no anidados) -- contrato estructural para que altaDedupMostrarDomicilios pueda agregar el selector de domicilio sin ocultar el panel de diff (AC3, no bloqueante)', () => {
   // altaDedupMostrarDomicilios (app.js ~2944) hace
   // dedupDiv.querySelector('.dedup-exacto, .dedup-candidatos').appendChild(domDiv) --
@@ -558,6 +572,17 @@ test('V4: buildCandidatosRfcGenericoHtml distingue la senal de telefono de la de
 test('V5: buildCandidatosRfcGenericoHtml con lista vacia retorna cadena vacia', () => {
   assert.equal(buildCandidatosRfcGenericoHtml([]), '');
   assert.equal(buildCandidatosRfcGenericoHtml(undefined), '');
+});
+
+// #196: el parentesis ad hoc "(" + (c.cust_ref || '') + ")" imprimia un "()"
+// vacio cuando el candidato no tenia nombre corto. Migrado al helper unico
+// nombreConCorto, que omite el parentesis entero en ese caso.
+test('V6 (#196): candidato sin cust_ref NO produce el parentesis vacio "()"', () => {
+  const html = buildCandidatosRfcGenericoHtml([
+    { id: 50, CustName: 'Sin Nombre Corto SA', RFC: 'XAXX010101000', _similitud: 1, _telefonoMatch: false },
+  ]);
+  assert.ok(!html.includes('Sin Nombre Corto SA</strong> ()'), 'nunca debe imprimir el parentesis vacio junto al nombre');
+  assert.ok(html.includes('Sin Nombre Corto SA'), 'debe seguir mostrando el nombre');
 });
 
 // === Fixes de la revision de #95 ===

@@ -7,6 +7,38 @@
 import { cpValido } from './cotizar-logica.js';
 import { esRegimenValido } from './regimen-fiscal-logica.js';
 
+// === Formato unificado "RAZON SOCIAL (Nombre corto)" (issue #196) ===
+//
+// UN helper puro de TEXTO (no HTML) para toda superficie que identifica a un
+// cliente de Operam por nombre -- ninguna pantalla concatena su propio
+// parentesis. Omite el parentesis cuando el nombre corto esta vacio o es
+// igual al nombre bajo normalizacion ligera LOCAL (minusculas, sin acentos,
+// espacios colapsados): NO se importa normalizarNombre de
+// lib/deduplicacion.js (los modulos de public/js son browser-safe y no
+// importan de lib/, regla documentada en pipeline-logica.js). Esa misma regla
+// de igualdad protege a prospectos y contactos nuevos, cuyo `ref` se rellena
+// con el propio nombre (clienteDesdeProspecto, buildClienteDesdeContactoNuevo):
+// el helper puede aplicarse sin riesgo a cualquier fila, aunque las filas de
+// tipo prospecto en los listados de busqueda no lo usan (no tienen cust_ref
+// real). El escape HTML sigue siendo responsabilidad del render que consume
+// el texto (escapeHtml en el punto de pintado) -- este helper NUNCA produce HTML.
+function normalizarNombreLigero(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function nombreConCorto(nombre, nombreCorto) {
+  const n = String(nombre || '').trim();
+  const corto = String(nombreCorto || '').trim();
+  if (!corto) return n;
+  if (normalizarNombreLigero(corto) === normalizarNombreLigero(n)) return n;
+  return `${n} (${corto})`.trim();
+}
+
 export const CSF_DATOS_VACIOS = {
   rfc: '', razonSocial: '', nombreCorto: '', idcif: '', regimenFiscal: '',
   calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '',
@@ -490,7 +522,7 @@ export function buildDedupExactoConDiffHtml(cliente, csfDatos) {
   const base =
     '<div class="dedup-exacto">' +
     '<p class="dedup-alerta-roja">Este RFC ya existe en Operam</p>' +
-    '<p><strong>' + nombre + '</strong> (ID: ' + id + ', RFC: ' + rfcC + ')</p>' +
+    '<p><strong>' + nombreConCorto(nombre, cliente.cust_ref) + '</strong> (ID: ' + id + ', RFC: ' + rfcC + ')</p>' +
     '<button class="btn btn-secondary" type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este cliente</button>' +
     '</div>';
   if (!csfDatos) return base;
@@ -512,7 +544,7 @@ export function buildCandidatosRfcGenericoHtml(candidatos) {
     const senal = c._telefonoMatch ? 'telefono coincide' : 'nombre similar';
     return (
       '<div class="candidato-generico-fila">' +
-      '<p><strong>' + nombre + '</strong> (' + (c.cust_ref || '') + ') &middot; ' + senal + '</p>' +
+      '<p><strong>' + nombreConCorto(nombre, c.cust_ref) + '</strong> &middot; ' + senal + '</p>' +
       '<button type="button" class="btn btn-secondary" onclick="altaCandidatoActualizar(' + c.id + ')">Actualizar este</button> ' +
       '<button type="button" class="btn btn-secondary" onclick="altaCandidatoCrearNuevo()">Crear nuevo</button>' +
       '</div>'
@@ -725,7 +757,7 @@ export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
     const clave = c.cliente.trim().toLowerCase();
     if (vistos.has(clave)) continue;
     vistos.add(clave);
-    out.push({ nombre: c.cliente, telefono: c.telefono || '', cotizacionId: c.id, fecha: c.fecha });
+    out.push({ nombre: c.cliente, nombreCorto: c.nombreCorto || '', telefono: c.telefono || '', cotizacionId: c.id, fecha: c.fecha });
     if (out.length >= limite) break;
   }
   return out;

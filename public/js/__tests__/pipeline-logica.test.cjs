@@ -292,6 +292,20 @@ test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece elegir o crear nue
   assert.doesNotMatch(html, /Dejar como PRE/);
 });
 
+// #196: el separador ad hoc " . cust_ref" migra al formato unificado de
+// parentesis (nombreConCorto), igual que el resto de la app.
+test('N196a: buildCandidatosOperamHtml muestra el nombre corto del candidato entre parentesis', () => {
+  const html = buildCandidatosOperamHtml(5, [{ id: 70, CustName: 'Decoracion Maria Pia', cust_ref: 'Casa Maria Pia' }], 'Elige');
+  assert.match(html, /Decoracion Maria Pia \(Casa Maria Pia\)/);
+  assert.doesNotMatch(html, / . Casa Maria Pia/, 'no debe quedar el separador viejo con punto medio');
+});
+
+test('N196b: buildCandidatosOperamHtml sin cust_ref no agrega parentesis vacio', () => {
+  const html = buildCandidatosOperamHtml(5, [{ id: 71, CustName: 'Sin Corto SA' }], 'Elige');
+  assert.doesNotMatch(html, /Sin Corto SA \(/);
+  assert.match(html, /Sin Corto SA<\/span>/);
+});
+
 // #210: el picker de candidatos muestra hechos (no clasifica). buildCandidatosOperamHtml
 // es la MISMA funcion que pinta panel de resultado e Historial (ambos resuelven al
 // slot via slotOperamDesde en app.js) -- probarla una vez cubre las dos superficies.

@@ -181,6 +181,19 @@ test('Q11: la tarjeta trae link wa.me cuando hay telefono y lo omite cuando no',
   assert.ok(!sin.includes('wa.me'));
 });
 
+// #196: la tarjeta muestra el nombre corto (c.nombreCorto, expuesto desde #147)
+// entre parentesis con el formato unico (nombreConCorto), en vez de nunca
+// pintarlo (hasta ahora solo se usaba para matching del buscador).
+test('Q10b (#196): la tarjeta muestra el nombre corto entre parentesis cuando existe', () => {
+  const html = buildTableroCotizacionesHtml([cot(3, { id: 1, cliente: 'Hotel Azul Centro SA de CV', nombreCorto: 'Hotel Azul' })], HOY);
+  assert.ok(html.includes('Hotel Azul Centro SA de CV (Hotel Azul)'), 'debe llevar el nombre corto entre parentesis');
+});
+
+test('Q10c (#196): sin nombreCorto no agrega parentesis vacio', () => {
+  const html = buildTableroCotizacionesHtml([cot(3, { id: 1 })], HOY);
+  assert.ok(!html.includes('Hotel Azul ('), 'sin nombreCorto no debe haber parentesis');
+});
+
 test('Q12: buildTableroCotizacionesHtml escapa datos de usuario', () => {
   const html = buildTableroCotizacionesHtml([
     cot(3, { cliente: '<img src=x onerror=alert(1)>', vendedor: '<b>v</b>' }),

@@ -7,6 +7,7 @@
 
 import { escapeHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
+import { nombreConCorto } from './alta-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -86,7 +87,7 @@ function buildCotizacionCardHtml(c, col, hoy) {
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(c.cliente || 'Sin nombre')}${badgeFolioOperamHtml(c)}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreConCorto(c.cliente || 'Sin nombre', c.nombreCorto))}${badgeFolioOperamHtml(c)}</div>
           <div class="cot-card-meta">${fechaCorta(c.fecha)} · hace ${dias} días · ${escapeHtml(c.vendedor)} · ${c.totalPiezas} pzs</div>
         </div>
         <div class="cot-card-total">$${fmtMoneda(c.total)}</div>

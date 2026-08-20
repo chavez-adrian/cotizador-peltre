@@ -130,6 +130,24 @@ test('F3: filaResultado escapa el nombre (sin XSS)', () => {
   assert.match(html, /&lt;img/);
 });
 
+// #196: nombre corto (cust_ref) entre parentesis, mismo formato en toda la app
+// (helper nombreConCorto). Solo aplica a filas tipo 'operam' (traen ref real);
+// las de prospecto no tienen cust_ref.
+test('F4 (#196): fila operam con nombre corto distinto lo muestra entre parentesis', () => {
+  const html = filaResultadoClienteHtml({ tipo: 'operam', nombre: 'Decoracion Maria Pia', ref: 'Casa Maria Pia', sub: '', rfc: 'VAZ990101QX3' }, 0);
+  assert.match(html, /Decoracion Maria Pia \(Casa Maria Pia\)/);
+});
+
+test('F5 (#196): fila operam con nombre corto igual al nombre no repite parentesis', () => {
+  const html = filaResultadoClienteHtml({ tipo: 'operam', nombre: 'Peltre Nacional', ref: 'PELTRE NACIONAL', sub: '', rfc: 'VAZ990101QX3' }, 0);
+  assert.match(html, /pc-res-nombre">Peltre Nacional<\/span>/);
+});
+
+test('F6 (#196): fila prospecto NO aplica el helper aunque traiga un ref (no tiene cust_ref real)', () => {
+  const html = filaResultadoClienteHtml({ tipo: 'prospecto', nombre: 'Maria Torres', ref: 'Un ref cualquiera', sub: '' }, 0);
+  assert.match(html, /pc-res-nombre">Maria Torres<\/span>/);
+});
+
 // === bannerUpgradeHtml ===
 
 test('N1: el banner nombra al cliente, su id y el RFC generico que se sustituye', () => {
@@ -184,4 +202,16 @@ test('D2: Operam con RFC real -> sin boton CSF, chips en verde', () => {
 test('D3: escapa el nombre del cliente', () => {
   const html = cardClienteHtml({ tipo: 'operam', id: 1, name: '<script>x</script>', rfc: 'XAXX010101000' });
   assert.doesNotMatch(html, /<script>x<\/script>/);
+});
+
+// #196: la tarjeta del cliente seleccionado (paso Cliente y vista Clientes,
+// mismo builder) muestra el nombre corto (ref) entre parentesis.
+test('D4 (#196): cardClienteHtml muestra el nombre corto cuando difiere del nombre', () => {
+  const html = cardClienteHtml({ tipo: 'operam', id: 479, name: 'Decoracion Maria Pia', ref: 'Casa Maria Pia', rfc: 'VAZ990101QX3' });
+  assert.match(html, /Decoracion Maria Pia \(Casa Maria Pia\)/);
+});
+
+test('D5 (#196): cardClienteHtml sin nombre corto informativo no agrega parentesis', () => {
+  const html = cardClienteHtml({ tipo: 'operam', id: 479, name: 'Peltre Nacional', ref: 'PELTRE NACIONAL', rfc: 'VAZ990101QX3' });
+  assert.doesNotMatch(html, /pc-cli-nombre">[^<]*\(/);
 });

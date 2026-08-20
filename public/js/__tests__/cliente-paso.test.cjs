@@ -10,15 +10,54 @@ const assert = require('node:assert/strict');
 let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
   decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
-  contactosEntregaDisponibles, etiquetaTagContacto;
+  contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto;
 
 before(async () => {
   ({
     mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
     buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
-    contactosEntregaDisponibles, etiquetaTagContacto,
+    contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
   } = await import('../alta-logica.js'));
+});
+
+// === nombreConCorto: formato unificado "RAZON SOCIAL (Nombre corto)" (#196) ===
+// UN helper puro de TEXTO (no HTML) para toda superficie que identifica a un
+// cliente de Operam por nombre. Omite el parentesis cuando el nombre corto esta
+// vacio o es igual al nombre bajo normalizacion ligera LOCAL (minusculas, sin
+// acentos, espacios colapsados) -- sin importar normalizarNombre de
+// lib/deduplicacion.js (los modulos de public/js son browser-safe y no importan
+// de lib/, regla documentada en pipeline-logica.js).
+
+test('K1: nombre + corto informativo -> "NOMBRE (Corto)"', () => {
+  assert.equal(nombreConCorto('DECORACION MARIA PIA', 'Casa Maria Pia'), 'DECORACION MARIA PIA (Casa Maria Pia)');
+});
+
+test('K2: corto vacio o ausente -> solo el nombre, sin parentesis', () => {
+  assert.equal(nombreConCorto('Peltre Nacional', ''), 'Peltre Nacional');
+  assert.equal(nombreConCorto('Peltre Nacional', null), 'Peltre Nacional');
+  assert.equal(nombreConCorto('Peltre Nacional', undefined), 'Peltre Nacional');
+  assert.equal(nombreConCorto('Peltre Nacional', '   '), 'Peltre Nacional');
+});
+
+test('K3: corto igual al nombre (case/acentos/espacios distintos) -> sin parentesis redundante', () => {
+  assert.equal(nombreConCorto('Peltre Nacional', 'PELTRE NACIONAL'), 'Peltre Nacional');
+  assert.equal(nombreConCorto('PELTRE NACIONAL', 'Peltre Nacional'), 'PELTRE NACIONAL');
+  assert.equal(nombreConCorto('El Pendulo', 'el   pendulo'), 'El Pendulo');
+  assert.equal(nombreConCorto('Jose Perez', 'Jos\u00e9 P\u00e9rez'), 'Jose Perez');
+});
+
+test('K4: corto distinto del nombre -> parentesis', () => {
+  assert.equal(nombreConCorto('El Pendulo SA de CV', 'El Pendulo'), 'El Pendulo SA de CV (El Pendulo)');
+});
+
+test('K5: nombre vacio con corto presente no antepone espacio (defensivo)', () => {
+  assert.equal(nombreConCorto('', 'Corto'), '(Corto)');
+});
+
+test('K6: nombre y corto ambos vacios -> cadena vacia', () => {
+  assert.equal(nombreConCorto(null, null), '');
+  assert.equal(nombreConCorto('', ''), '');
 });
 
 const OPERAM = [
@@ -112,6 +151,23 @@ test('R2: respeta el limite y descarta entradas sin nombre', () => {
 
 test('R3: tolera lista nula', () => {
   assert.deepStrictEqual(recientesDesdeCotizaciones(null), []);
+});
+
+// #196: nombreCorto ya viaja en /api/cotizaciones desde #147 (hoy solo usado
+// para matching del buscador del Historial); el derivador de recientes debe
+// dejarlo pasar para que las pantallas de Recientes puedan pintarlo.
+test('R4: deja pasar nombreCorto de la cotizacion mas reciente de cada cliente', () => {
+  const cots = [
+    { id: 1, fecha: '2026-07-01', cliente: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul' },
+  ];
+  const r = recientesDesdeCotizaciones(cots);
+  assert.strictEqual(r[0].nombreCorto, 'Hotel Azul');
+});
+
+test('R5: sin nombreCorto en la cotizacion -> cadena vacia (no undefined)', () => {
+  const cots = [{ id: 1, fecha: '2026-07-01', cliente: 'A' }];
+  const r = recientesDesdeCotizaciones(cots);
+  assert.strictEqual(r[0].nombreCorto, '');
 });
 
 // === chipsCompletitud: estado de chips desde datos reales (AC6, tri-estado #84) ===
