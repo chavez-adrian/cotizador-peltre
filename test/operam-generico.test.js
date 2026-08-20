@@ -265,7 +265,7 @@ test('G2: celular ya convertido en cliente -> reutiliza el customer_id, no crea 
   assert.equal(String(cot.folioOperam), '1702');
 });
 
-test('G3: nombre similar a un generico de Operam -> 409 con candidatos, sin crear y sin subir (sin escape)', async () => {
+test('G3: nombre similar a un generico de Operam -> 409 con candidatos, sin crear y sin subir (sin el flag de escape)', async () => {
   writeJson(PROSPECTOS_PATH, []);
   // RFC generico capturado en el formulario: tampoco resuelve por RFC (ADR-0001).
   const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
@@ -300,6 +300,101 @@ test('G3: nombre similar a un generico de Operam -> 409 con candidatos, sin crea
   const cot = readJson(COTS_PATH).find(c => c.id === id);
   assert.ok(!cot.folioOperam, 'la cotizacion sigue PRE');
   assert.equal(cot.data.cliente.customerId, undefined, 'no persiste customer_id');
+});
+
+// === Escape "ninguno es el mismo cliente" (#204) ===
+// ADR-0001 decidio que la parada por nombre NO tuviera escape. Con el pool
+// completo que estreno #194 la parada se dispara sobre falsos positivos y deja
+// al vendedor sin salida: el documento degrada a PRE. El flag crearNuevo salta
+// ESA parada y NADA MAS.
+
+test('G3b: crearNuevo salta la parada por nombre similar, crea el generico y sube', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  let postCustomer = false;
+  let quoteBody = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/999')) return jsonResponse({ data: [{ branches: [{ branch_code: 998 }] }] });
+      if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
+      return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+    },
+    '/api/v3/sales/branches/998': (u, opts) => {
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
+    },
+    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1704 }); },
+    ...mockWebLegacy(),
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ crearNuevo: true });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.customer_id, 999);
+  assert.equal(postCustomer, true, 'con el escape SI se crea el cliente nuevo');
+  assert.equal(quoteBody.customer_id, 999);
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(String(cot.folioOperam), '1704');
+
+  // El forzado queda registrado: paso visible para el vendedor y renglon en
+  // clientes_log para que higiene-clientes (#86) pueda revisarlo despues.
+  const dedup = res.body.steps.find(s => s.name === 'dedup');
+  assert.equal(dedup.status, 'warn', 'la creacion forzada no se reporta como un alta limpia');
+  assert.match(dedup.info, /forz/i);
+  const audit = res.body.steps.find(s => s.name === 'log auditoria');
+  assert.equal(audit.info, 'cotizador-generico');
+});
+
+test('G3c: crearNuevo NO salta la reutilizacion por celular de un prospecto convertido', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion();
+  let postCustomer = false;
+  let quoteBody = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1705 }); },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ crearNuevo: true });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.customer_id, 555, 'el celular ya mapea a un cliente: se reutiliza');
+  assert.equal(postCustomer, false, 'el escape no autoriza un segundo cliente para el mismo celular');
+  assert.equal(quoteBody.customer_id, 555);
+});
+
+test('G3d: crearNuevo no debilita la guarda del customerId contradictorio', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion();
+  let postCustomer = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10, crearNuevo: true });
+
+  assert.equal(res.status, 409, 'el celular ya esta ligado a 555 y el elegido es otro');
+  assert.equal(postCustomer, false);
 });
 
 test('G4: reintento con customerId elegido tras candidatos -> reutiliza, liga el prospecto y sube', async () => {

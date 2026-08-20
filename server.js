@@ -1714,13 +1714,18 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
 //   1. celular contra prospectos: un prospecto convertido ya mapea celular ->
 //      customer_id (data.cliente_id) y se reutiliza;
 //   2. nombre normalizado contra los genericos de Operam (ADR-0001): con
-//      candidatos la operacion SE DETIENE (409 { candidatos }, sin escape); el
-//      vendedor resuelve reintentando con { customerId } elegido -- el documento
-//      local no se bloquea.
+//      candidatos la operacion SE DETIENE (409 { candidatos }); el vendedor
+//      resuelve reintentando con { customerId } elegido -- el documento local no
+//      se bloquea.
+// Desde #204 esa parada SI tiene escape: { crearNuevo: true } = "ninguno es el
+// mismo cliente". Salta la parada por nombre y NADA MAS -- la reutilizacion por
+// celular (capa 1) y las guardas del customerId contradictorio corren igual, y el
+// forzado queda en clientes_log para higiene-clientes (#86). Ver la nota fechada
+// de ADR-0001.
 // El customer_id se persiste (cotizacion y prospecto) ANTES de subir: un reintento
 // tras fallo parcial entra por el camino normal con el id persistido y NO crea un
 // segundo cliente.
-async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
+async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo) {
   const c = entry.data?.cliente || {};
   const steps = [];
   let customerId = customerIdElegido ?? null;
@@ -1755,13 +1760,22 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       const raw = await buscarClientesPorRfc(rfcGenerico);
       const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
       const dedup = detectarDuplicados(rfcGenerico, nombre, clientes);
-      if (dedup.tipo === 'candidatos') {
+      if (dedup.tipo === 'candidatos' && !crearNuevo) {
         return res.status(409).json({
           error: 'Hay clientes con RFC generico y nombre similar en Operam: elige uno para continuar',
           candidatos: dedup.candidatos.map(k => ({ id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id })),
         });
       }
-      steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
+      // El vendedor dijo "ninguno es el mismo cliente" (#204). Se crea, pero el
+      // paso queda en warn (no es un alta limpia) y el motivo viaja al log de
+      // auditoria mas abajo: es la unica forma de que higiene-clientes (#86)
+      // distinga despues un generico nuevo legitimo de uno forzado sobre un
+      // candidato que si era el mismo cliente.
+      const forzado = dedup.tipo === 'candidatos'
+        ? dedup.candidatos.map(k => k.customer_id).join(', ')
+        : null;
+      if (forzado) steps.push({ name: 'dedup', status: 'warn', info: `creacion forzada por el vendedor pese a candidatos (${forzado})` });
+      else steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
 
       salesman = (await vendedoresStore.listar()).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
       const salesTypeId = resolverSalesTypeId(entry.tier, listasPrecios);
@@ -1779,7 +1793,8 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido) {
       customerId = creado.cliente_id;
       creadoNuevo = true;
       steps.push({ name: 'POST customer', status: 'ok' });
-      logCliente(rfcGenerico, nombre, 'creado', customerId, FUENTE_ALTA_GENERICA, null, null);
+      logCliente(rfcGenerico, nombre, forzado ? 'creado-forzado' : 'creado', customerId, FUENTE_ALTA_GENERICA, null,
+        forzado ? `El vendedor eligio "ninguno es el mismo cliente" pese a los candidatos ${forzado} (#204)` : null);
       steps.push({ name: 'log auditoria', status: 'ok', info: FUENTE_ALTA_GENERICA });
     }
 
@@ -1985,10 +2000,14 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     // body = el vendedor resolvio la dedup de nombre eligiendo un candidato
     // (ADR-0001). Con customerId o RFC real en la cotizacion -- o sin los datos
     // minimos del contacto (nombre + telefono) -- el camino de siempre.
+    // crearNuevo (#204) = el vendedor vio los candidatos y dijo "ninguno es el
+    // mismo cliente". Solo tiene efecto en la parada por nombre; con customerId
+    // en el mismo body manda el elegido (reutilizar es el desenlace seguro).
     const customerIdElegido = req.body?.customerId ?? null;
+    const crearNuevo = req.body?.crearNuevo === true;
     if (customerIdElegido != null || necesitaAltaGenerica(entry)) {
       // await: el finally debe liberar el lock hasta que la operacion termine.
-      return await subirConAltaGenerica(res, id, entry, customerIdElegido);
+      return await subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo);
     }
     try {
       const folio = await subirCotizacionOperam(entry.data);

@@ -3525,6 +3525,11 @@ window.reintentarActualizacionOperam = (id, el) => actualizarQuoteEnOperam(id, s
 
 window.reintentarSubidaOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el));
 window.elegirCandidatoOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { customerId });
+// #204: "ninguno es el mismo cliente". Reintenta la subida con el flag que salta
+// SOLO la parada por nombre similar; el server sigue reutilizando el cliente del
+// celular ya convertido y sigue frenando un customerId contradictorio, y deja el
+// forzado en clientes_log para higiene-clientes (#86).
+window.crearNuevoClienteOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el), { crearNuevo: true });
 window.dejarPreOperam = (id, el) => {
   const slot = slotOperamDesde(el);
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' });

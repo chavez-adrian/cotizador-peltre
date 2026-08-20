@@ -25,7 +25,7 @@ El PRD del issue #79 encarga resolver esto para todas las cotizaciones nuevas. E
 
 **Certeza contra duplicados**, en capas:
 1. Celular contra la base propia (prospectos): invariante 1 celular = 1 prospecto, más registro de altas en Neon con mapeo celular → `customer_id`.
-2. Nombre normalizado contra Operam (ADR-0001), sin escape para el vendedor.
+2. Nombre normalizado contra Operam (ADR-0001), sin escape para el vendedor. *(Desde #204 sí hay escape: "Ninguno es el mismo cliente - crear nuevo", con registro del forzado. Ver la nota del 2026-08-19 en ADR-0001.)*
 3. RFC exacto en el momento del upgrade de CSF.
 
 El momento de creación del cliente genérico es la **primera cotización generada**, nunca la captura del contacto: los prospectos que no cotizan no entran a Operam.

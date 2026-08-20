@@ -250,6 +250,16 @@ test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candi
   assert.match(cands, /dejarPreOperam\(5, this\)/);
 });
 
+// #204: la lista de candidatos necesita salida. Sin ella un falso positivo de la
+// dedup por nombre deja al vendedor eligiendo un cliente que NO es el suyo o
+// entregando el documento como PRE. Mismo patron que el "Ninguno es el mismo
+// cliente" del alta completa, con el flag que solo salta esa parada.
+test('Q19c: la lista de candidatos ofrece crear cliente nuevo cuando ninguno es el mismo', () => {
+  const cands = buildCandidatosOperamHtml(5, [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }], 'Elige');
+  assert.match(cands, /Ninguno es el mismo cliente/);
+  assert.match(cands, /crearNuevoClienteOperam\(5, this\)/);
+});
+
 // #93: junto al folio, si la subida creo/reutilizo un cliente con RFC generico
 // (alta generica, #81), se ofrece la accion de subir su CSF (reusa el upgrade de
 // #85 via pcAbrirUpgradeFiscal). Sin RFC generico (cliente ya real en Operam) no

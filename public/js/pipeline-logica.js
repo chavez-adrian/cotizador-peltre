@@ -108,10 +108,13 @@ export function interpretarSubidaOperam(resultado) {
 }
 
 // Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001):
-// el vendedor elige el cliente correcto o deja la cotizacion como PRE sin bloquear
-// el documento. Cada boton dispara elegirCandidatoOperam(id, customerId, this) en
-// app.js (re-llama el endpoint con { customerId }); "Dejar como PRE" solo cierra
-// la lista. Los botones pasan `this` -- NUNCA un id de contenedor: la misma
+// el vendedor elige el cliente correcto, declara que ninguno lo es (#204) o deja
+// la cotizacion como PRE sin bloquear el documento. Cada boton dispara
+// elegirCandidatoOperam(id, customerId, this) en app.js (re-llama el endpoint con
+// { customerId }); "Ninguno es el mismo cliente" re-llama con { crearNuevo: true }
+// -- la salida que ADR-0001 no tenia y que el alta completa si ofrece ("escalar a
+// Adrian"); "Dejar como PRE" solo cierra la lista. Los botones pasan `this` --
+// NUNCA un id de contenedor: la misma
 // cotizacion puede estar pintada en dos paneles a la vez (Historial y
 // cotizaciones previas del cliente) y un id duplicado haria que getElementById
 // pintara siempre en el primero, posiblemente oculto (F2 de la revision). app.js
@@ -128,6 +131,7 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
   return `<div class="operam-status operam-status-candidatos">
     <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el cliente correcto en Operam:')}</div>
     <ul class="operam-candidatos-lista">${items}</ul>
+    <button class="btn btn-sm btn-secondary" onclick="crearNuevoClienteOperam(${id}, this)">Ninguno es el mismo cliente - crear nuevo</button>
     <button class="btn btn-sm btn-secondary" onclick="dejarPreOperam(${id}, this)">Dejar como PRE</button>
   </div>`;
 }
