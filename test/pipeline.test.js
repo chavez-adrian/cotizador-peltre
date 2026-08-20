@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion, transicionPorAsignacion, esPreCotizacion, etiquetaFolioOperam } from '../lib/pipeline.js';
+import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion, transicionPorAsignacion, esPreCotizacion, etiquetaFolioOperam, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE, cotizacionesDedupVencidas, HORAS_VIDA_DEDUP } from '../lib/pipeline.js';
 
 // El vocabulario canonico de las 7 etapas del pipeline unificado (CONTEXT.md
 // "Etapas del pipeline", ADR-0005). El orden es el del embudo: del primer
@@ -150,4 +150,90 @@ test('esPreCotizacion: una historica con registro desconocido no es PRE', () => 
 
 test('etiquetaFolioOperam: una historica con registro desconocido no muestra etiqueta', () => {
   assert.equal(etiquetaFolioOperam({ folioOperam: null, registroDesconocido: true }), '');
+});
+
+// ============================================================
+// Candado del documento por duplicado sin resolver (#204, ajuste posterior a la
+// nota de ADR-0001). Ante candidatos ya no hay salida comoda: el vendedor
+// resuelve (elegir / crear nuevo) o el registro muere a las 24 horas. Mientras
+// tanto el documento NO se genera -- y eso se decide aqui porque los GET que
+// regeneran van SIN auth.
+// ============================================================
+
+test('P1: documentoBloqueado solo con motivoPre dedup', () => {
+  assert.equal(documentoBloqueado({ data: { motivoPre: 'dedup' } }), true);
+  // 'operam' es el PRE de siempre (Operam fallo): el documento SI sale.
+  assert.equal(documentoBloqueado({ data: { motivoPre: 'operam' } }), false);
+  assert.equal(documentoBloqueado({ data: {} }), false);
+  assert.equal(documentoBloqueado({}), false);
+  assert.equal(documentoBloqueado(null), false);
+});
+
+// La fila del Historial llega APLANADA (GET /api/cotizaciones expone los campos
+// de data uno por uno, no el data entero), mientras el server trabaja con la
+// entrada completa. Es el mismo campo a dos alturas, como folioOperam.
+test('P1b: documentoBloqueado tambien lee la fila aplanada del Historial', () => {
+  assert.equal(documentoBloqueado({ id: 1, motivoPre: 'dedup' }), true);
+  assert.equal(documentoBloqueado({ id: 1, motivoPre: 'operam' }), false);
+  assert.equal(documentoBloqueado({ id: 1, motivoPre: null }), false);
+});
+
+test('P2: la leyenda del candado nombra el duplicado pendiente', () => {
+  assert.match(LEYENDA_DEDUP_PENDIENTE, /duplicado/i);
+});
+
+// public/js/pipeline-logica.js NO puede importar de lib/ (solo public/ se sirve
+// al navegador: un import a ../../lib/ da 404 y solo se ve EJECUTANDO). Por eso
+// reexpresa el candado, igual que ya hace con el vocabulario de etapas. Esta es
+// la prueba que impide que las dos definiciones deriven.
+test('P2b: la reexpresion frontend del candado coincide con la de lib/', async () => {
+  const frontend = await import('../public/js/pipeline-logica.js');
+  assert.equal(frontend.LEYENDA_DEDUP_PENDIENTE, LEYENDA_DEDUP_PENDIENTE);
+  for (const cot of [
+    { data: { motivoPre: 'dedup' } },
+    { data: { motivoPre: 'operam' } },
+    { motivoPre: 'dedup' },
+    { motivoPre: 'operam' },
+    { data: {} },
+    {},
+  ]) {
+    assert.equal(frontend.documentoBloqueado(cot), documentoBloqueado(cot), JSON.stringify(cot));
+  }
+});
+
+// El barrido borra SOLO las 'dedup' vencidas. Las 'operam' son el flujo PRE
+// normal (Operam se cayo) y jamas se tocan: ahi el vendedor tiene un documento
+// legitimo y un reintento pendiente.
+test('P3: cotizacionesDedupVencidas borra las dedup con mas de 24h y respeta las demas', () => {
+  const ahora = new Date('2026-08-20T12:00:00Z');
+  const hace = h => new Date(ahora.getTime() - h * 3600 * 1000).toISOString();
+  const cots = [
+    { id: 1, data: { motivoPre: 'dedup', motivoPreDesde: hace(25) } },
+    { id: 2, data: { motivoPre: 'dedup', motivoPreDesde: hace(23) } },
+    { id: 3, data: { motivoPre: 'operam', motivoPreDesde: hace(500) } },
+    { id: 4, data: {} },
+    { id: 5, folioOperam: '1234', data: {} },
+  ];
+  assert.deepEqual(cotizacionesDedupVencidas(cots, ahora), [1]);
+});
+
+test('P4: el umbral del barrido es de 24 horas', () => {
+  assert.equal(HORAS_VIDA_DEDUP, 24);
+});
+
+// Salvaguarda asimetrica: si el borrado del flag fallara tras conseguir folio,
+// bloquear el documento es un fastidio recuperable, pero BORRAR una cotizacion
+// ya registrada en Operam es irreversible. El barrido exige ademas que siga PRE.
+test('P5: cotizacionesDedupVencidas nunca borra una cotizacion que ya tiene folio', () => {
+  const ahora = new Date('2026-08-20T12:00:00Z');
+  const viejo = new Date(ahora.getTime() - 99 * 3600 * 1000).toISOString();
+  const cots = [{ id: 9, folioOperam: '1230', data: { motivoPre: 'dedup', motivoPreDesde: viejo } }];
+  assert.deepEqual(cotizacionesDedupVencidas(cots, ahora), []);
+});
+
+// Sin marca de tiempo no se puede saber la antiguedad: no se borra (mejor dejar
+// basura que borrar algo que quiza es de hace un minuto).
+test('P6: cotizacionesDedupVencidas ignora una dedup sin marca de tiempo', () => {
+  const cots = [{ id: 7, data: { motivoPre: 'dedup' } }];
+  assert.deepEqual(cotizacionesDedupVencidas(cots, new Date('2026-08-20T12:00:00Z')), []);
 });

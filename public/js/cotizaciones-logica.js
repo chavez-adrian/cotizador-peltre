@@ -6,7 +6,7 @@
 // prospectos-logica.js: lo consumen app.js y los tests .cjs via import().
 
 import { escapeHtml } from './prospectos-logica.js';
-import { etiquetaFolioOperam, badgeFolioOperamHtml } from './pipeline-logica.js';
+import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -115,11 +115,15 @@ export function buildWhatsAppLinkHistorial(c, origin = '') {
 // data persistida (registro historico, c.hasData false) no hay nada que
 // regenerar: las tres quedan deshabilitadas en vez de apuntar a un 404.
 export function buildHistorialAccionesHtml(c, origin = '') {
-  if (!c.hasData) {
-    return ['Ver PDF', 'Ver HTML', 'WhatsApp']
-      .map(label => `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">${label}</button>`)
-      .join(' ');
-  }
+  const deshabilitadas = motivo => ['Ver PDF', 'Ver HTML', 'WhatsApp']
+    .map(label => `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(motivo)}">${label}</button>`)
+    .join(' ');
+  if (!c.hasData) return deshabilitadas('Datos no disponibles');
+  // Candado por duplicado sin resolver (#204): las TRES abren el mismo documento
+  // (WhatsApp comparte el link al HTML), asi que las tres se apagan -- dejar
+  // WhatsApp vivo mandaria al cliente un link que solo muestra el aviso. Se
+  // rehabilitan solas en cuanto el vendedor resuelve y la subida limpia el motivo.
+  if (documentoBloqueado(c)) return deshabilitadas(LEYENDA_DEDUP_PENDIENTE);
   const pdfUrl = `/api/cotizacion/pdf/${c.id}`;
   const htmlUrl = `/api/cotizacion/html/${c.id}`;
   const waUrl = buildWhatsAppLinkHistorial(c, origin);

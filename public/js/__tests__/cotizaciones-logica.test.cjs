@@ -241,6 +241,29 @@ test('Q18: buildHistorialAccionesHtml deshabilita las 3 acciones cuando el regis
   assert.match(html, /disabled title="Datos no disponibles">WhatsApp/);
 });
 
+// #204 (ajuste): candado del documento mientras hay un duplicado sin resolver.
+// Las tres acciones abren el MISMO documento (WhatsApp comparte el link al HTML),
+// asi que las tres se apagan: dejar WhatsApp vivo mandaria al cliente un link que
+// solo muestra el aviso. El candado real vive en los GET del server (van sin
+// auth); esto es la parte que el vendedor ve.
+test('Q18b: buildHistorialAccionesHtml deshabilita las 3 acciones con un duplicado pendiente', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true, motivoPre: 'dedup' }));
+  assert.ok(!html.includes('/api/cotizacion/pdf/42'));
+  assert.ok(!html.includes('/api/cotizacion/html/42'));
+  assert.ok(!html.includes('wa.me'));
+  assert.match(html, /disabled title="[^"]*duplicado[^"]*">Ver PDF/);
+  assert.match(html, /disabled title="[^"]*duplicado[^"]*">Ver HTML/);
+  assert.match(html, /disabled title="[^"]*duplicado[^"]*">WhatsApp/);
+});
+
+// El PRE por fallo de Operam (motivoPre 'operam') NO bloquea: el documento es
+// legitimo y sale sin numero, que es justo lo que ADR-0009 decidio.
+test('Q18c: buildHistorialAccionesHtml no bloquea el PRE por fallo de Operam', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true, motivoPre: 'operam' }));
+  assert.ok(html.includes('href="/api/cotizacion/pdf/42"'));
+  assert.ok(html.includes('href="/api/cotizacion/html/42"'));
+});
+
 test('Q19: buildWhatsAppLinkHistorial arma un wa.me con el HTML regenerado (con origin) y el cliente/total en el mensaje', () => {
   const url = buildWhatsAppLinkHistorial(cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5 }), 'https://cotizador.example');
   assert.match(url, /^https:\/\/wa\.me\/\?text=/);

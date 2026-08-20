@@ -35,7 +35,7 @@ import * as vendedoresStore from './lib/vendedores-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
-import { transicionPorCotizacion, transicionPorAsignacion, esSalida } from './lib/pipeline.js';
+import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM } from './lib/pipeline.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
@@ -417,6 +417,10 @@ app.get('/api/cotizacion/html/:id', async (req, res) => {
   if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
   const entry = await cotStore.obtener(id);
   if (!entry || !entry.data) return res.status(404).send('<p>HTML no encontrado</p>');
+  // Candado por duplicado sin resolver (#204): AQUI es donde importa. Estas rutas
+  // van sin auth y son el UNICO camino que genera documento, asi que apagar los
+  // botones en la UI no basta -- el link ya compartido tambien tiene que morir.
+  if (documentoBloqueado(entry)) return res.status(409).send(`<p>${LEYENDA_DEDUP_PENDIENTE}.</p>`);
   try {
     const data = datosDocumento(entry);
     const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos });
@@ -433,6 +437,7 @@ app.get('/api/cotizacion/pdf/:id', async (req, res) => {
   if (isNaN(id)) return res.status(400).json({ error: 'ID invalido' });
   const entry = await cotStore.obtener(id);
   if (!entry || !entry.data) return res.status(404).json({ error: 'PDF no encontrado' });
+  if (documentoBloqueado(entry)) return res.status(409).json({ error: `${LEYENDA_DEDUP_PENDIENTE}.` });
   try {
     const data = datosDocumento(entry);
     const pdfBuffer = await generateQuotePDF(data);
@@ -480,6 +485,10 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // para pintar el reintento cuando la edicion del quote no pego.
     orderOperam: data?.orderOperam ?? null,
     quoteDesactualizado: data?.quoteDesactualizado ?? null,
+    // Por que quedo en PRE (#204): con 'dedup' el Historial deshabilita Ver PDF /
+    // Ver HTML / WhatsApp con el motivo a la vista. El candado de verdad lo aplican
+    // los GET que regeneran.
+    motivoPre: data?.motivoPre ?? null,
     telefono: telefonoWa(data?.cliente?.celEntrega || data?.cliente?.telefono),
     // Nombre corto y contacto de entrega (#147): amplian el matching del
     // buscador del Historial (filtrarCotizaciones) mas alla de razon social.
@@ -1761,6 +1770,9 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
       const dedup = detectarDuplicados(rfcGenerico, nombre, clientes);
       if (dedup.tipo === 'candidatos' && !crearNuevo) {
+        // Sin resolver no hay documento (#204): se marca el motivo ANTES de
+        // responder para que el candado de los GET aplique de inmediato.
+        await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
         return res.status(409).json({
           error: 'Hay clientes con RFC generico y nombre similar en Operam: elige uno para continuar',
           candidatos: dedup.candidatos.map(k => ({ id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id })),
@@ -1788,6 +1800,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       } catch (err) {
         steps.push({ name: 'POST customer', status: 'error', error: err.message });
         logCliente(rfcGenerico, nombre, 'error', null, FUENTE_ALTA_GENERICA, null, err.message);
+        await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
         return res.status(503).json({ error: 'No se pudo crear el cliente generico en Operam: ' + err.message, steps });
       }
       customerId = creado.cliente_id;
@@ -1844,6 +1857,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
       } catch (err) {
         steps.push({ name: 'GET branch_id', status: 'error', error: err.message });
+        await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
         return res.status(503).json({ error: 'No se pudo obtener el domicilio del cliente en Operam: ' + err.message, customer_id: customerId, steps });
       }
     }
@@ -1890,6 +1904,9 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       if (folio != null && folio !== '') {
         await cotStore.setFolioOperam(id, folio);
         await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida) });
+        // Hay folio: se resolvio por el camino que sea (candidato elegido, cliente
+        // nuevo forzado o reintento) y el candado se levanta (#204).
+        await marcarMotivoPre(id, null);
       }
       steps.push({ name: 'POST quote', status: 'ok' });
       const pasoVigencia = await postFixVigencia(folio, entry.data);
@@ -1900,6 +1917,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       return res.json({ ok: true, folio, customer_id: customerId, clienteGenerico: true, steps });
     } catch (err) {
       steps.push({ name: 'POST quote', status: 'error', error: err.message });
+      await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
       return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps });
     } finally {
       // En el finally y no en cada salida: el cliente YA existe con el segmento sin
@@ -1913,8 +1931,47 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       postFixSegmentoGenerico(customerId, c.segmentoId);
     }
   } catch (err) {
+    await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
     return res.status(503).json({ error: 'No se pudo completar la subida con alta generica: ' + err.message, steps });
   }
+}
+
+// UNICO punto de escritura del motivo de PRE (#204). Guarda POR QUE la cotizacion
+// se quedo sin folio, porque los dos motivos tienen consecuencias opuestas:
+// 'operam' entrega el documento igual (ADR-0009) y 'dedup' lo deja bajo candado
+// hasta que el vendedor resuelva. La marca de tiempo es la que consume el barrido
+// de 24 horas. motivo null limpia ambos campos: se llama en cuanto hay folio, por
+// cualquiera de los caminos (elegir candidato, crear nuevo, reintento exitoso).
+// No es bloqueante para el vendedor: si el store fallara, el peor caso es un
+// candado de mas (recuperable) o una PRE sin motivo (se comporta como antes).
+async function marcarMotivoPre(id, motivo) {
+  try {
+    await cotStore.actualizarDatos(id, {
+      motivoPre: motivo,
+      motivoPreDesde: motivo ? new Date().toISOString() : null,
+    });
+  } catch (err) {
+    console.error('[motivoPre] no se pudo persistir el motivo', motivo, 'en la cotizacion', id, err.message);
+  }
+}
+
+// Barrido de las cotizaciones detenidas por duplicado sin resolver (#204). Ante
+// candidatos el vendedor resuelve o el registro muere: a las HORAS_VIDA_DEDUP
+// horas se borra la cotizacion (el PROSPECTO se queda -- la oportunidad sigue
+// viva, lo que se tira es el intento de documento). Que borrar lo decide el
+// nucleo puro cotizacionesDedupVencidas, con sus tres guardas.
+// Se exporta para los tests; en produccion lo dispara el timer de abajo.
+export async function barrerCotizacionesDedupVencidas(ahora = new Date()) {
+  let ids = [];
+  try {
+    ids = cotizacionesDedupVencidas(await cotStore.listar(), ahora);
+    for (const id of ids) await cotStore.borrar(id);
+  } catch (err) {
+    console.error('[dedup] el barrido de cotizaciones vencidas fallo:', err.message);
+    return ids;
+  }
+  if (ids.length) console.log('[dedup] barrido: borradas', ids.length, 'cotizacion(es) detenidas por duplicado sin resolver:', ids.join(', '));
+  return ids;
 }
 
 // Lock en memoria por id de cotizacion (F3 de la revision de #83): la
@@ -2018,6 +2075,7 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
         // no puede saber si el contenido cambio, que es lo que decide si hay que
         // reescribir el quote o dejarlo en paz.
         await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(entry.data) });
+        await marcarMotivoPre(id, null);
       }
       const pasoVigencia = await postFixVigencia(folio, entry.data);
       res.json({ ok: true, folio, steps: pasoVigencia ? [pasoVigencia] : [] });
@@ -2027,6 +2085,8 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
       if (/identificar el cliente/i.test(err.message)) {
         return res.status(422).json({ error: err.message });
       }
+      // PRE por Operam (#204): el documento SIGUE saliendo, sin numero (ADR-0009).
+      await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
       res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
     }
   } finally {
@@ -2709,5 +2769,16 @@ if (isMain) {
   if (!turnstileConfigurado()) {
     console.warn('[turnstile] TURNSTILE_SECRET_KEY no configurada: la verificacion se omite (dev)');
   }
+  // Barrido de cotizaciones detenidas por duplicado sin resolver (#204): al
+  // arrancar y cada hora. Como el lock subidasOperamEnCurso y la cola de
+  // post-fixes de vigencia, ASUME UNA SOLA INSTANCIA (Render plan Starter): con
+  // varias, todas barrerian a la vez sobre la misma tabla. Es idempotente (borrar
+  // dos veces el mismo id no hace dano), asi que el peor caso concurrente es
+  // trabajo repetido, no corrupcion. Fire-and-forget: un fallo no tumba el
+  // arranque y el siguiente ciclo reintenta.
+  const barrer = () => barrerCotizacionesDedupVencidas()
+    .catch(err => console.error('[dedup] barrido periodico fallo:', err.message));
+  barrer();
+  setInterval(barrer, 3600 * 1000).unref();
 }
 export { app, cargarListasPrecios };

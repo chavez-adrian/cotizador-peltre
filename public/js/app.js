@@ -70,6 +70,7 @@ import {
   botonCompletarHtml,
   interpretarSubidaOperam,
   buildOperamStatusHtml,
+  LEYENDA_DEDUP_PENDIENTE,
   interpretarActualizacionOperam,
   buildActualizacionStatusHtml,
   badgeQuoteDesactualizadoHtml,
@@ -2050,6 +2051,28 @@ function aplicarEtiquetasBotonesGenerar() {
   if (btnHtml) btnHtml.textContent = textoBotonGenerar('html', state.modoActualizacion);
 }
 
+// Candado del documento en el panel de resultado (#204). Mientras haya un
+// duplicado sin resolver, Generar PDF / Generar HTML quedan deshabilitados con el
+// motivo a la vista; en cuanto la subida se resuelve (folio) vuelven a su estado
+// normal. Espejo en la UI del candado real, que lo aplican los GET del servidor.
+// bloqueado = la vista de interpretarSubidaOperam trae candidatos.
+//
+// El estado se RECUERDA porque los generadores lo pisan: generatePDF y
+// generateHTML hacen `btn.disabled = false` en su finally, que corre DESPUES de
+// que la subida (dentro del try) haya aplicado el candado. Sin esta memoria, el
+// boton que disparo la generacion quedaba habilitado con el tooltip puesto --
+// solo visible EJECUTANDO en navegador, ningun test .cjs lo ve.
+let documentoBajoCandado = false;
+function aplicarCandadoDocumento(bloqueado) {
+  documentoBajoCandado = !!bloqueado;
+  for (const btn of [document.getElementById('btn-pdf'), document.getElementById('btn-html')]) {
+    if (!btn) continue;
+    btn.disabled = documentoBajoCandado;
+    if (documentoBajoCandado) btn.title = LEYENDA_DEDUP_PENDIENTE;
+    else btn.removeAttribute('title');
+  }
+}
+
 // Cuanto se espera a Operam antes de entregar el documento sin numero (ADR-0009,
 // "Operam no puede bloquear la entrega"). La subida esta en la RUTA CRITICA de la
 // generacion: si tarda mas que esto, el vendedor se queda mirando un boton en vez
@@ -2297,7 +2320,9 @@ async function generatePDF() {
   } catch (e) {
     alert('Error generando PDF: ' + e.message);
   } finally {
-    btn.disabled = false;
+    // Rehabilita salvo que la subida haya dejado el documento bajo candado (#204):
+    // este finally corre despues de ella.
+    aplicarCandadoDocumento(documentoBajoCandado);
     // #109: el texto idle depende del modo -- sin esto el boton volvia a decir
     // "Generar PDF" tras la primera actualizacion aunque se siguiera en modo
     // actualizacion.
@@ -2395,7 +2420,8 @@ async function generateHTML() {
     ventana?.close();
     alert('Error generando HTML: ' + e.message);
   } finally {
-    btn.disabled = false;
+    // Ver generatePDF: el candado (#204) manda sobre el rehabilitado.
+    aplicarCandadoDocumento(documentoBajoCandado);
     // #109: mismo criterio que btn-pdf -- el texto idle depende del modo.
     aplicarEtiquetasBotonesGenerar();
   }
@@ -3466,6 +3492,9 @@ async function autoSubirOperam(id, slot, extraBody) {
     if (pcEl()?.querySelector('.pc-cli-card')) pcRenderChips();
   }
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
+  // #204: candidatos sin resolver = documento bajo candado. Cualquier otro
+  // desenlace (folio, PRE por Operam, sin datos) lo libera.
+  aplicarCandadoDocumento(vista.estado === 'candidatos');
   return vista;
 }
 // Actualizacion del quote conservando el folio (#104, ADR-0008). Se dispara tras

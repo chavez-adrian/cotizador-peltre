@@ -247,7 +247,10 @@ test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candi
   assert.match(cands, /ABARROTES SA/);
   assert.match(cands, /ABA/);
   assert.match(cands, /elegirCandidatoOperam\(5, 10, this\)/);
-  assert.match(cands, /dejarPreOperam\(5, this\)/);
+  // #204 (ajuste): ante candidatos ya NO hay salida comoda. "Dejar como PRE"
+  // desaparecio de esta lista -- el vendedor resuelve o el registro muere a las
+  // 24h. dejarPreOperam sigue existiendo para el PRE por fallo de Operam.
+  assert.doesNotMatch(cands, /dejarPreOperam/);
 });
 
 // #204: la lista de candidatos necesita salida. Sin ella un falso positivo de la
@@ -280,11 +283,13 @@ test('Q19d: buildOperamStatusHtml ofrece subir la CSF junto al folio cuando el c
   assert.doesNotMatch(sinCustomer, /Ya tienes su CSF/);
 });
 
-test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece dejar como PRE', () => {
+test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece elegir o crear nuevo', () => {
   const html = buildCandidatosOperamHtml(9, [{ id: 3, CustName: 'A & B <SA>', cust_ref: 'AB' }], 'Elige el cliente');
   assert.match(html, /A &amp; B &lt;SA&gt;/);
-  assert.match(html, /Dejar como PRE/);
   assert.match(html, /elegirCandidatoOperam\(9, 3, this\)/);
+  // #204 (ajuste): "Dejar como PRE" se quito -- dejaba un documento entregable
+  // con el duplicado sin resolver. Se resuelve o el registro muere a las 24h.
+  assert.doesNotMatch(html, /Dejar como PRE/);
 });
 
 // Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): buildColaHoyHtml itera

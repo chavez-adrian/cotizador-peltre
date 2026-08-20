@@ -38,3 +38,19 @@ Hasta el arreglo de #194, el pool de clientes con RFC genérico llegaba **vacío
 El escape salta **solo** la parada por nombre similar. Siguen intactas la reutilización del cliente por celular de un prospecto ya convertido y las guardas del `customerId` contradictorio. Cada creación forzada queda en `clientes_log` con resultado `creado-forzado` y el detalle de los candidatos que se descartaron, para que el reporte de higiene (#86) pueda revisarla después.
 
 El alta completa ya ofrecía su propia salida equivalente ("Ninguno es el mismo cliente - escalar a Adrián"); esta nota alinea el camino de la subida de cotización con ese patrón.
+
+### Ajuste del mismo día: ante candidatos ya no hay "Dejar como PRE"
+
+Tras lo anterior se revisó la política completa de deduplicación (investigación de industria + consenso multi-agente). El umbral de 2 tokens y el escape "crear nuevo" **se confirman tal cual**. Lo que cambia es la tercera salida, que hasta ahora existía por inercia.
+
+La lista de candidatos ofrecía también **"Dejar como PRE"**, y esa era la peor opción disponible: dejaba al vendedor con un documento entregable *y* el posible duplicado sin resolver, que es exactamente el desenlace que la deduplicación existe para evitar. Se elimina. Ante candidatos hay **dos** salidas y ninguna es cómoda: elegir el cliente correcto, o declarar que ninguno lo es. El vendedor resuelve o el registro muere.
+
+Se descartó explícitamente un bloqueo duro adicional por nombre "casi exacto" o por contención de tokens: el único STOP absoluto sigue siendo el RFC real exacto, que no es parte de este cambio.
+
+Consecuencias:
+
+- **Motivo del PRE persistido** (`data.motivoPre`, con `data.motivoPreDesde`): `'dedup'` cuando la subida terminó en candidatos sin resolver, `'operam'` cuando falló por error o timeout del ERP. Se limpia en cuanto hay folio, por cualquiera de los caminos. Los dos motivos tienen consecuencias opuestas y por eso hay que distinguirlos: con `'operam'` el documento sale igual, sin número (ADR-0009).
+- **Candado del documento**: mientras el motivo sea `'dedup'`, los `GET /api/cotizacion/pdf/:id` y `/html/:id` no regeneran nada y responden un aviso. El candado vive ahí y no en la interfaz porque esas rutas van **sin auth** (se comparten por WhatsApp): apagar botones no cerraría el link. En la interfaz, Ver PDF / Ver HTML / WhatsApp aparecen deshabilitados con el motivo mientras dure.
+- **Barrido a las 24 horas**: al arrancar el servidor y cada hora se borran las cotizaciones con motivo `'dedup'` de más de 24 horas. Sólo ésas: las `'operam'` nunca se tocan, y una que ya obtenga folio tampoco (aunque el flag quedara sucio). Se borra la cotización; **el prospecto se queda**, porque la oportunidad sigue viva — lo que se tira es el intento de documento.
+
+El barrido corre en memoria y asume **una sola instancia** de Node, como el lock de subidas y la cola de post-fixes de vigencia (ver `CLAUDE.md`, Deploy). Es idempotente, así que con varias instancias el peor caso sería trabajo repetido.

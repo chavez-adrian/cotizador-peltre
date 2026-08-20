@@ -29,7 +29,7 @@ if (existsSync(envPath)) {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const { app, cargarListasPrecios } = await import('../server.js');
+const { app, cargarListasPrecios, barrerCotizacionesDedupVencidas } = await import('../server.js');
 const { resetSession } = await import('../lib/operam-client.js');
 const { _resetSesionWeb, _esperarPostFixes } = await import('../lib/operam-web.js');
 const TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
@@ -1181,4 +1181,120 @@ test('S4: la web rechaza el guardado -> la subida ya respondio con folio y nada 
   assert.equal(web.estado.segmento, '1', 'FA rechazo el formulario entero: el segmento sigue como estaba');
   const cot = readJson(COTS_PATH).find(c => c.id === id);
   assert.equal(String(cot.folioOperam), '1801', 'la cotizacion quedo subida pese al fallo del post-fix');
+});
+
+// === Candado del documento por duplicado sin resolver (#204, ajuste) ===
+// Ante candidatos la subida se detiene y ADEMAS el documento queda bajo llave:
+// entregarlo con el duplicado sin resolver es justo lo que la dedup viene a
+// evitar. El candado se aplica en los GET que regeneran, que van SIN auth.
+
+test('M1: 409 por candidatos deja motivoPre dedup con marca de tiempo y bloquea el documento', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u) => {
+      if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
+      return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+    },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  assert.equal(res.status, 409);
+
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(cot.data.motivoPre, 'dedup');
+  assert.ok(Number.isFinite(Date.parse(cot.data.motivoPreDesde)), 'la marca de tiempo alimenta el barrido de 24h');
+
+  // El candado vive en el GET, no en la UI: la ruta va sin auth y es el unico
+  // camino que genera documento.
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  assert.equal(html.status, 409);
+  assert.match(html.text, /duplicado/i);
+  assert.doesNotMatch(html.text, /Portavasos|Plato/, 'no se filtra el documento');
+
+  const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
+  assert.equal(pdf.status, 409);
+  assert.match(pdf.body.error, /duplicado/i);
+});
+
+test('M2: resolver eligiendo candidato limpia motivoPre y libera el documento', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u) => {
+      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
+      return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1810 }),
+  });
+
+  await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TOKEN}`).send({});
+  assert.equal(readJson(COTS_PATH).find(c => c.id === id).data.motivoPre, 'dedup');
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10 });
+  assert.equal(res.status, 200);
+
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(cot.data.motivoPre, null, 'resuelto: el candado se levanta');
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  assert.equal(html.status, 200);
+});
+
+// El PRE por fallo de Operam NO es un duplicado: el documento sale igual, sin
+// numero (ADR-0009). Es la distincion que justifica guardar el motivo.
+test('M3: un fallo de Operam deja motivoPre operam y el documento SI se genera', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 930 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/930')) return jsonResponse({ data: [{ branches: [{ branch_code: 931 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/branches/931': () => jsonResponse({ result: true, data: [{}] }),
+    '/api/v3/sales/quote': () => jsonResponse({ error: 'boom' }, 500),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  assert.equal(res.status, 503);
+
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(cot.data.motivoPre, 'operam');
+  const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
+  assert.equal(html.status, 200, 'el PRE por fallo de Operam entrega documento');
+});
+
+// El barrido borra la cotizacion detenida por duplicado y NADA mas. Se prueba la
+// orquestacion (listar -> nucleo puro -> borrar); la decision de que borrar tiene
+// sus propios tests en test/pipeline.test.js.
+test('M4: el barrido borra solo las dedup vencidas y respeta el resto', async () => {
+  const viejo = new Date(Date.now() - 30 * 3600 * 1000).toISOString();
+  const idDedupVieja = nuevaCotizacion();
+  const idDedupNueva = nuevaCotizacion();
+  const idOperamVieja = nuevaCotizacion();
+  const cots = readJson(COTS_PATH);
+  Object.assign(cots.find(c => c.id === idDedupVieja).data, { motivoPre: 'dedup', motivoPreDesde: viejo });
+  Object.assign(cots.find(c => c.id === idDedupNueva).data, { motivoPre: 'dedup', motivoPreDesde: new Date().toISOString() });
+  Object.assign(cots.find(c => c.id === idOperamVieja).data, { motivoPre: 'operam', motivoPreDesde: viejo });
+  writeJson(COTS_PATH, cots);
+
+  const borradas = await barrerCotizacionesDedupVencidas();
+
+  assert.deepEqual(borradas, [idDedupVieja]);
+  const quedan = readJson(COTS_PATH).map(c => c.id);
+  assert.ok(!quedan.includes(idDedupVieja), 'la dedup vencida se borro');
+  assert.ok(quedan.includes(idDedupNueva), 'la dedup reciente sigue viva');
+  assert.ok(quedan.includes(idOperamVieja), 'el PRE por fallo de Operam JAMAS se toca');
 });

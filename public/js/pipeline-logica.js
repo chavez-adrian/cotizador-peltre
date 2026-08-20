@@ -14,6 +14,18 @@ import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL } from './prospect
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico } from './alta-logica.js';
 
+// Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
+// del motivo de PRE que define lib/pipeline.js (este modulo NO importa de lib/,
+// ver cabecera); test/pipeline.test.js compara ambas definiciones para que no
+// deriven. La garantia REAL es del servidor -- los GET que regeneran el
+// documento van sin auth --; esto solo apaga los botones para que el vendedor
+// vea por que.
+export const LEYENDA_DEDUP_PENDIENTE = 'Esta cotizacion tiene un posible duplicado pendiente de resolver';
+
+export function documentoBloqueado(cot) {
+  return (cot?.data?.motivoPre ?? cot?.motivoPre ?? null) === 'dedup';
+}
+
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,
 // Perdida) NO son columnas: viven en filtro/historial.
 export const COLUMNAS_PIPELINE = [
@@ -107,14 +119,15 @@ export function interpretarSubidaOperam(resultado) {
   return { estado: 'pre', mensaje: r.error || 'No se pudo subir a Operam' };
 }
 
-// Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001):
-// el vendedor elige el cliente correcto, declara que ninguno lo es (#204) o deja
-// la cotizacion como PRE sin bloquear el documento. Cada boton dispara
-// elegirCandidatoOperam(id, customerId, this) en app.js (re-llama el endpoint con
-// { customerId }); "Ninguno es el mismo cliente" re-llama con { crearNuevo: true }
-// -- la salida que ADR-0001 no tenia y que el alta completa si ofrece ("escalar a
-// Adrian"); "Dejar como PRE" solo cierra la lista. Los botones pasan `this` --
-// NUNCA un id de contenedor: la misma
+// Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001).
+// DOS salidas, ninguna comoda (#204, ajuste): elegir el cliente correcto
+// (elegirCandidatoOperam -> { customerId }) o declarar que ninguno lo es
+// (crearNuevoClienteOperam -> { crearNuevo: true }). "Dejar como PRE" se QUITO de
+// aqui: dejaba al vendedor con un documento entregable y un duplicado sin
+// resolver, que es justo lo que la dedup viene a evitar. Mientras no resuelva, el
+// documento queda bajo candado (motivoPre 'dedup') y el registro se borra a las
+// 24 horas. dejarPreOperam sigue vivo para el PRE por fallo de Operam, que no
+// cambia. Los botones pasan `this` -- NUNCA un id de contenedor: la misma
 // cotizacion puede estar pintada en dos paneles a la vez (Historial y
 // cotizaciones previas del cliente) y un id duplicado haria que getElementById
 // pintara siempre en el primero, posiblemente oculto (F2 de la revision). app.js
@@ -132,7 +145,6 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
     <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el cliente correcto en Operam:')}</div>
     <ul class="operam-candidatos-lista">${items}</ul>
     <button class="btn btn-sm btn-secondary" onclick="crearNuevoClienteOperam(${id}, this)">Ninguno es el mismo cliente - crear nuevo</button>
-    <button class="btn btn-sm btn-secondary" onclick="dejarPreOperam(${id}, this)">Dejar como PRE</button>
   </div>`;
 }
 
