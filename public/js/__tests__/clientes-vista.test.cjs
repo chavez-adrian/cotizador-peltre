@@ -11,14 +11,28 @@ const assert = require('node:assert/strict');
 
 let esRfcGenerico, customerIdFiscal, mostrarBotonCsf;
 let tagResultadoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
-  bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml;
+  bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade;
 
 before(async () => {
   ({ esRfcGenerico, customerIdFiscal, mostrarBotonCsf } = await import('../alta-logica.js'));
   ({
     tagResultadoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
-    bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml,
+    bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade,
   } = await import('../pipeline-logica.js'));
+});
+
+// === rotuloPanelUpgrade: titulo del panel de upgrade segun de donde se llega
+// (#198) -- el chip/boton Fiscal sigue diciendo "Completar datos fiscales"; la
+// puerta nueva "Editar datos de cliente" (fila de Resultados en vista Clientes)
+// dice eso. Cambio de texto visible unicamente, el flujo del panel es el mismo. ===
+
+test('R1: sin editar (llegada por el chip/boton Fiscal) -> "Completar datos fiscales"', () => {
+  assert.equal(rotuloPanelUpgrade(false), 'Completar datos fiscales');
+  assert.equal(rotuloPanelUpgrade(undefined), 'Completar datos fiscales');
+});
+
+test('R2: editar (llegada por "Editar datos de cliente") -> ese mismo rotulo', () => {
+  assert.equal(rotuloPanelUpgrade(true), 'Editar datos de cliente');
 });
 
 // === esRfcGenerico ===
@@ -146,6 +160,40 @@ test('F5 (#196): fila operam con nombre corto igual al nombre no repite parentes
 test('F6 (#196): fila prospecto NO aplica el helper aunque traiga un ref (no tiene cust_ref real)', () => {
   const html = filaResultadoClienteHtml({ tipo: 'prospecto', nombre: 'Maria Torres', ref: 'Un ref cualquiera', sub: '' }, 0);
   assert.match(html, /pc-res-nombre">Maria Torres<\/span>/);
+});
+
+// === Accion "Editar" de la fila (#198): puerta de entrada explicita segun tipo,
+// sin mover ni duplicar la fila de alta (#190). ===
+
+test('E1: fila de cliente Operam emite "Editar datos de cliente" contra su indice', () => {
+  const html = filaResultadoClienteHtml({ tipo: 'operam', nombre: 'Yazmin Vazquez', sub: 'XAXX010101000', rfc: 'XAXX010101000' }, 3);
+  assert.match(html, /cvEditarClienteFila\(3\)/);
+  assert.match(html, /Editar datos de cliente/);
+});
+
+test('E2: fila de prospecto en etapa activa emite "Editar prospecto" con el formulario inline de #66', () => {
+  const raw = { id: 77, nombre: 'Maria Torres', ciudad: 'CDMX', celular: '+525511112222', etapa: 'por_cotizar', data: {} };
+  const html = filaResultadoClienteHtml({ tipo: 'prospecto', id: 77, nombre: 'Maria Torres', etapa: 'por_cotizar', sub: '', raw }, 0);
+  assert.match(html, /cvAbrirEdicionProspectoFila\(77\)/);
+  assert.match(html, /Editar prospecto/);
+  assert.match(html, /id="pr-edicion-77"/);
+  assert.match(html, /id="ed-nombre-77"/); // reusa buildEdicionProspectoFormHtml de #66, sin copia
+});
+
+test('E3 (#66): prospecto en etapa de salida (no_util/perdida) no ofrece la accion -- el server rechaza con 400', () => {
+  const rawNoUtil = { id: 78, nombre: 'Cerrado', ciudad: 'CDMX', celular: '+525511112222', etapa: 'no_util', data: {} };
+  const htmlNoUtil = filaResultadoClienteHtml({ tipo: 'prospecto', id: 78, nombre: 'Cerrado', etapa: 'no_util', sub: '', raw: rawNoUtil }, 0);
+  assert.doesNotMatch(htmlNoUtil, /Editar prospecto/);
+  assert.doesNotMatch(htmlNoUtil, /pr-edicion-78/);
+
+  const rawPerdida = { id: 79, nombre: 'Cerrado', ciudad: 'CDMX', celular: '+525511112222', etapa: 'perdida', data: {} };
+  const htmlPerdida = filaResultadoClienteHtml({ tipo: 'prospecto', id: 79, nombre: 'Cerrado', etapa: 'perdida', sub: '', raw: rawPerdida }, 0);
+  assert.doesNotMatch(htmlPerdida, /Editar prospecto/);
+});
+
+test('E4: fila de prospecto sin raw resuelto (compatibilidad) no revienta ni ofrece editar', () => {
+  const html = filaResultadoClienteHtml({ tipo: 'prospecto', nombre: 'Sin raw', sub: '' }, 0);
+  assert.doesNotMatch(html, /Editar prospecto/);
 });
 
 // === bannerUpgradeHtml ===

@@ -84,6 +84,7 @@ import {
   filaCrearClienteHtml,
   cardClienteHtml,
   bannerUpgradeHtml,
+  rotuloPanelUpgrade,
 } from './pipeline-logica.js';
 import {
   buildBandejaHtml,
@@ -4500,6 +4501,10 @@ async function cvRenderRecientes() {
   // Los recientes derivan de cotizaciones (nombre + telefono) y no traen RFC/id,
   // asi que tocarlos prellena la busqueda y resuelve el registro real de Operam
   // (con su tag generico correcto), en vez de intentar pintar una tarjeta a medias.
+  // Por lo mismo NO llevan la accion Editar de #198 (recientesDesdeCotizaciones,
+  // alta-logica.js, no expone tipo/etapa/raw sin un lookup extra por fila): el
+  // vendedor la alcanza igual, un clic despues, ya en la fila de Resultados que
+  // esto mismo prellena.
   const filas = recientes.length
     ? '<div class="pc-res-titulo">Recientes</div>' +
       recientes.map(r =>
@@ -4580,8 +4585,12 @@ function cvCaminoAlta(query) {
 window.cvCaminoAlta = cvCaminoAlta;
 
 // Chip/boton Fiscal -> upgrade de CSF (PUT #85) sobre el cliente generico, con el
-// banner de contexto. Re-parenta el panel a la vista Clientes.
-function cvAbrirUpgrade() {
+// banner de contexto. Re-parenta el panel a la vista Clientes. `editar` (#198)
+// solo cambia el rotulo visible (rotuloPanelUpgrade): true cuando se llega por
+// la accion "Editar datos de cliente" de la fila (cvEditarClienteFila), ausente
+// o false para el camino existente del chip/boton Fiscal. El panel, el PUT y
+// la CSF opcional son el mismo flujo en los dos casos.
+function cvAbrirUpgrade(editar) {
   const sel = cvState.seleccion;
   if (!sel) return;
   const id = customerIdFiscal(sel.card);
@@ -4590,13 +4599,44 @@ function cvAbrirUpgrade() {
   const root = cvRoot();
   if (root) {
     root.innerHTML =
-      '<div class="pc-pregunta">Completar datos fiscales</div>' +
+      '<div class="pc-pregunta">' + escapeHtml(rotuloPanelUpgrade(editar)) + '</div>' +
       '<button type="button" class="pc-back" onclick="cvRenderTarjeta()">&lsaquo; Volver al cliente</button>';
   }
   moverPanelA(document.getElementById('clientes-panel-slot'));
   pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' }, 'clientes');
 }
 window.cvAbrirUpgrade = cvAbrirUpgrade;
+
+// Accion "Editar datos de cliente" de la fila de Resultados (#198): resuelve el
+// cliente Operam directamente del cache de busqueda (sin pasar por
+// cvElegirResultado, que ademas pintaria la tarjeta de por medio) y abre el
+// MISMO panel de upgrade con el rotulo de edicion.
+function cvEditarClienteFila(i) {
+  const r = cvResultadosCache[i];
+  if (!r || r.tipo !== 'operam') return;
+  cvState.seleccion = { tipo: r.tipo, card: { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' }, raw: r.raw };
+  cvAbrirUpgrade(true);
+}
+window.cvEditarClienteFila = cvEditarClienteFila;
+
+// Accion "Editar prospecto" de la fila de Resultados (#198): abre el MISMO
+// formulario inline de #66 (abrirEdicionProspecto), pero antes desmonta
+// cualquier pr-edicion-<id> huerfano que haya quedado FUERA de esta vista --
+// la vista Prospectos (buildProspectoCardHtml) monta el mismo id, oculto, si el
+// vendedor la visito antes en la sesion; ocultarTodasLasVistas() solo la
+// esconde, no la destruye. Con el id duplicado, document.getElementById (que
+// usan abrirEdicionProspecto/guardarEdicionProspecto) siempre resolveria el
+// nodo ajeno (aparece primero en el documento), dejando el boton de esta fila
+// sin efecto visible. Acotado a "fuera de #clientes-root" para no tocar nunca
+// el nodo que se acaba de pintar aqui mismo.
+function cvAbrirEdicionProspectoFila(id) {
+  const root = cvRoot();
+  document.querySelectorAll(`#pr-edicion-${id}`).forEach(n => {
+    if (!root || !root.contains(n)) n.remove();
+  });
+  abrirEdicionProspecto(id);
+}
+window.cvAbrirEdicionProspectoFila = cvAbrirEdicionProspectoFila;
 
 // "Cotizar a este cliente": aterriza en el paso Cliente con el cliente ya
 // seleccionado (reusa pcElegirOperam / pcElegirProspecto -> seleccionarClienteOperam).

@@ -10,7 +10,7 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL } from './prospectos-logica.js';
+import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
 
@@ -347,6 +347,44 @@ export function tagResultadoClienteHtml(r) {
   return '<span class="pc-tag prospecto">Prospecto</span>';
 }
 
+// Accion "Editar" de la fila (#198): puerta de entrada explicita por tipo, sin
+// mover ni duplicar la fila de alta (#190). Cliente Operam abre el MISMO panel
+// de upgrade (#85/#197) rotulado como edicion (cvEditarClienteFila, en app.js,
+// resuelve el customer_id desde el cache de resultados). Prospecto en etapa
+// activa despliega inline el formulario de #66: reusa buildEdicionProspectoFormHtml
+// y el MISMO guardarEdicionProspecto global que ya usa la card del tablero
+// (mismo contenedor pr-edicion-<id>, mismo formId prospecto-edicion-<id> del
+// borrador de #185) -- casi cero codigo nuevo de guardado. Abrir pasa por
+// cvAbrirEdicionProspectoFila (app.js), no directo por abrirEdicionProspecto:
+// el mismo prospecto puede tener OTRO nodo pr-edicion-<id> montado y oculto en
+// la vista Prospectos (buildProspectoCardHtml, #66) si el vendedor la visito
+// antes en esta sesion -- ocultarTodasLasVistas() solo esconde esa vista, no
+// destruye su DOM, y con el id duplicado document.getElementById siempre
+// resolveria ESE nodo ajeno (aparece primero en el documento), no el de esta
+// fila. El wrapper desmonta ese huerfano antes de abrir. El formulario nace
+// SIEMPRE cerrado; un nuevo render de #cv-zona (otra busqueda) lo sustituye por
+// uno igual de cerrado, asi que un formulario abierto se pierde con el
+// siguiente render (decision de #198: aceptable y simple, no hay estado de
+// "esta fila esta editandose" que preservar). Un prospecto en etapa de salida
+// (no_util/perdida) no ofrece la accion: el servidor ya rechaza esa edicion
+// con 400 (#66).
+function botonEditarFilaHtml(onclick, texto) {
+  return '<div style="margin:-2px 0 8px 4px">' +
+    '<button type="button" class="btn btn-secondary btn-sm" onclick="' + onclick + '">' + texto + '</button>' +
+    '</div>';
+}
+
+function accionEditarFilaHtml(row, i) {
+  if (row.tipo === 'operam') {
+    return botonEditarFilaHtml('cvEditarClienteFila(' + i + ')', 'Editar datos de cliente');
+  }
+  if (row.tipo === 'prospecto' && row.raw && !esSalida(row.etapa)) {
+    return botonEditarFilaHtml('cvAbrirEdicionProspectoFila(' + row.id + ')', 'Editar prospecto') +
+      '<div id="pr-edicion-' + row.id + '" style="display:none">' + buildEdicionProspectoFormHtml(row.raw) + '</div>';
+  }
+  return '';
+}
+
 export function filaResultadoClienteHtml(r, i) {
   const row = r || {};
   // #196: nombre corto (cust_ref) entre parentesis, formato unico. Solo en
@@ -356,7 +394,8 @@ export function filaResultadoClienteHtml(r, i) {
     '<span class="pc-res-ini ' + escapeHtml(row.tipo || '') + '">' + escapeHtml(inicialesCliente(row.nombre)) + '</span>' +
     '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(nombreTexto) + '</span>' +
     '<span class="pc-res-sub">' + escapeHtml(row.sub || '') + '</span></span>' +
-    tagResultadoClienteHtml(row) + '</button>';
+    tagResultadoClienteHtml(row) + '</button>' +
+    accionEditarFilaHtml(row, i);
 }
 
 // Fila punteada que abre el alta COMPLETA (acordeon 1-4, POST /api/crear-cliente),
@@ -383,6 +422,15 @@ export function bannerUpgradeHtml(ctx) {
   return '<div class="banner-upgrade"><span>&#8635;</span>' +
     '<div><b>Actualizando: ' + escapeHtml(nombre) + (id ? ' (ID ' + escapeHtml(id) + ')' : '') + '</b>' +
     '<small>RFC generico ' + escapeHtml(rfc) + ' se sustituira con el RFC real de la CSF. No se crea un cliente nuevo.</small></div></div>';
+}
+
+// Rotulo del panel de upgrade fiscal segun de donde se llega (#198): el
+// chip/boton Fiscal existente sigue diciendo "Completar datos fiscales"; la
+// puerta nueva "Editar datos de cliente" (accion de la fila en Resultados)
+// dice eso. Cambio de texto visible unicamente -- el panel y su flujo (PUT
+// #85, CSF opcional) son el mismo en los dos casos.
+export function rotuloPanelUpgrade(editar) {
+  return editar ? 'Editar datos de cliente' : 'Completar datos fiscales';
 }
 
 // Chips de completitud de la tarjeta en la vista Clientes. A diferencia del paso
