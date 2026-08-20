@@ -3559,6 +3559,11 @@ window.elegirCandidatoOperam = (id, customerId, el) => autoSubirOperam(id, slotO
 // celular ya convertido y sigue frenando un customerId contradictorio, y deja el
 // forzado en clientes_log para higiene-clientes (#86).
 window.crearNuevoClienteOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el), { crearNuevo: true });
+// #211: "es sucursal de este cliente". Reintenta la subida con el id del
+// candidato como matriz: el server crea UNA sucursal nueva bajo el (solo POST,
+// nunca PUT sobre branches existentes) con el domicilio de entrega capturado y
+// sube el quote a nombre de ese cliente. Mismas guardas que elegir candidato.
+window.marcarSucursalOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { sucursalDe: customerId });
 window.dejarPreOperam = (id, el) => {
   const slot = slotOperamDesde(el);
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' });

@@ -996,6 +996,211 @@ test('D6: cliente reutilizado por celular (preexistente) NUNCA pisa su branch, a
   assert.equal(branchPut, false, 'cliente reutilizado por celular: su domicilio real NO se pisa');
 });
 
+// === "Es sucursal de este cliente" (#211, spec #206) ==========================
+// El vendedor declara que el negocio capturado es otra plaza de un cliente
+// existente: { sucursalDe } crea una sucursal NUEVA bajo ese cliente (SOLO POST,
+// jamas PUT sobre branches existentes -- es REPLACE destructivo, ver
+// docs/arquitectura.md) y sube el quote a nombre del cliente con esa sucursal.
+// Contrato del POST verificado en vivo sobre el cliente 497 (paso 0 del ticket):
+// POST /api/v3/sales/branches responde { result: true, cust_branch_id } y las
+// sucursales previas quedan intactas campo por campo.
+
+test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente existente y liga el prospecto', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion(DOMICILIO);
+  let branchPost = null;
+  let branchPuts = 0;
+  let branchPosts = 0;
+  let postCustomer = false;
+  let quoteBody = null;
+  let branchesDelCliente = [{ branch_code: 20, br_name: 'Matriz' }];
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches': (u, opts) => {
+      if (opts?.method === 'POST') {
+        branchPosts++;
+        branchPost = JSON.parse(opts.body);
+        // Operam devuelve el codigo de la sucursal creada; la relectura es la
+        // unica prueba de que existe (un 200 no garantiza nada, quirk #74).
+        branchesDelCliente = [...branchesDelCliente, { branch_code: 33, br_name: branchPost.br_name }];
+        return jsonResponse({ result: true, cust_branch_id: 33 });
+      }
+      if (opts?.method === 'PUT') { branchPuts++; return jsonResponse({ result: true }); }
+      return jsonResponse({ data: [{}] });
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      if (u.includes('/10')) return jsonResponse({ data: [{ branches: branchesDelCliente }] });
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1901 }); },
+    ...mockWebLegacy(),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.customer_id, 10);
+  assert.equal(res.body.folio, 1901);
+  assert.equal(postCustomer, false, 'declarar sucursal NUNCA crea un cliente');
+  assert.equal(branchPosts, 1, 'exactamente UN POST de sucursal');
+  assert.equal(branchPuts, 0, 'CERO PUT sobre branches (REPLACE destructivo)');
+
+  // La sucursal nace bajo el cliente elegido, con el domicilio de entrega y el
+  // contacto capturados en la cotizacion.
+  assert.equal(branchPost.customer_id, 10);
+  assert.equal(branchPost.br_name, 'Recepcion');
+  assert.equal(branchPost.br_ref, 'Recepcion', 'la sucursal nueva no tiene referencia que conservar');
+  assert.equal(branchPost.addr_street, 'Av Reforma 100');
+  assert.equal(branchPost.addr_zip, '06600');
+  assert.equal(branchPost.addr_city, 'Cuauhtemoc');
+  assert.equal(branchPost.phone, '+52 5511223344');
+  assert.equal(branchPost.email, 'entrega@hotelazul.mx');
+  assert.equal(branchPost.location, 40, 'POST usa location (no default_location)');
+  assert.equal(branchPost.ship_via, 1);
+
+  // El quote sale a nombre del cliente existente, con la sucursal recien creada.
+  assert.equal(quoteBody.customer_id, 10);
+  assert.equal(quoteBody.branch_id, 33);
+
+  // Prospecto ligado al cliente correcto y auditoria con fuente propia.
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.equal(p.data.cliente_id, 10);
+  const audit = res.body.steps.find(s => s.name === 'log auditoria');
+  assert.ok(audit && audit.info === 'sucursal-creada', 'la creacion de sucursal tiene fuente propia en el log');
+  assert.ok(res.body.steps.every(s => s.status === 'ok'), 'todos los pasos en ok');
+
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(cot.data.cliente.customerId, 10);
+  assert.equal(cot.data.cliente.branchId, 33, 'la sucursal creada se persiste');
+  assert.equal(String(cot.folioOperam), '1901');
+  assert.equal(cot.data.motivoPre, null, 'con folio el candado se levanta');
+});
+
+test('SUC2: la sucursal no aparece en la relectura -> paso en error, la cotizacion NO finge exito', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion(DOMICILIO);
+  let quoteLlamado = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    // Operam responde result:true pero la sucursal no queda: el cliente sigue
+    // con su unica sucursal previa (quirk #74, el 200 no garantiza nada).
+    '/api/v3/sales/branches': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, cust_branch_id: 33 });
+      return jsonResponse({ data: [{}] });
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20, br_name: 'Matriz' }] }] });
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, added_trans_no: 1902 }); },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
+
+  assert.equal(res.status, 503);
+  assert.match(res.body.error, /sucursal/i);
+  const paso = res.body.steps.find(s => s.name === 'verificar sucursal');
+  assert.ok(paso && paso.status === 'error', 'el paso de verificacion queda en error');
+  assert.equal(quoteLlamado, false, 'sin sucursal verificada no se sube el quote');
+
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.ok(!cot.folioOperam, 'la cotizacion queda PRE');
+  assert.equal(cot.data.motivoPre, 'operam', 'PRE por Operam: el documento SI se entrega, sin numero');
+  assert.equal(cot.data.cliente.branchId, undefined, 'no persiste una sucursal que no existe');
+});
+
+test('SUC3: reintentar "es sucursal" sobre la misma cotizacion NO crea una segunda sucursal', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  // La cotizacion ya quedo ligada al cliente 10 con la sucursal 33 que creo el
+  // intento anterior (persistencia previa a la subida): el reintento la reusa.
+  const id = nuevaCotizacion({ ...DOMICILIO, customerId: 10, branchId: 33 });
+  let branchPosts = 0;
+  let quoteBody = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches': (u, opts) => {
+      if (opts?.method === 'POST') { branchPosts++; return jsonResponse({ result: true, cust_branch_id: 34 }); }
+      return jsonResponse({ data: [{}] });
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }, { branch_code: 33 }] }] });
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1903 }); },
+    ...mockWebLegacy(),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
+
+  assert.equal(res.status, 200);
+  assert.equal(branchPosts, 0, 'la sucursal del intento anterior se reusa, no se duplica');
+  assert.equal(quoteBody.customer_id, 10);
+  assert.equal(quoteBody.branch_id, 33, 'el quote sale con la sucursal ya creada');
+});
+
+test('SUC4: el flag de sucursal no debilita la guarda del celular ya ligado a OTRO cliente', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion(DOMICILIO);
+  let escrituras = 0;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches': (u, opts) => { if (opts?.method !== 'GET') escrituras++; return jsonResponse({ result: true, cust_branch_id: 33 }); },
+    '/api/v3/sales/customers': () => jsonResponse({ total: 0, data: [] }),
+    '/api/v3/sales/quote': () => { escrituras++; return jsonResponse({ result: true, added_trans_no: 1 }); },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
+
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /555/, 'dice a que cliente esta ligado el celular');
+  assert.equal(escrituras, 0, 'cero escrituras en Operam');
+});
+
+test('SUC5: sucursalDe que ya no esta en el pool recalculado -> 409 con candidatos frescos, cero escrituras', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion(DOMICILIO);
+  let branchPosts = 0;
+  let quoteLlamado = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches': (u, opts) => { if (opts?.method === 'POST') branchPosts++; return jsonResponse({ result: true, cust_branch_id: 33 }); },
+    '/api/v3/sales/customers': (u) => {
+      // El 10 ya no esta en el pool: el vendedor trae un id de un 409 viejo.
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 11, CustName: 'HOTEL AZUL NORTE SA', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, added_trans_no: 1 }); },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
+
+  assert.equal(res.status, 409);
+  assert.equal(res.body.candidatos.length, 1);
+  assert.equal(res.body.candidatos[0].id, 11, 'la lista fresca, no la que trajo el vendedor');
+  assert.equal(branchPosts, 0, 'no crea sucursal bajo un cliente que ya no es candidato');
+  assert.equal(quoteLlamado, false);
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(cot.data.motivoPre, 'dedup', 'mismo candado que la parada original');
+});
+
 // === Concurrencia (F3 de la revision de #83): lock por id de cotizacion ===
 // La auto-subida es fire-and-forget: el vendedor puede llegar al Historial y
 // clickear "Reintentar" con la subida original EN VUELO, o doble-clickear

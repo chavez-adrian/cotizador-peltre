@@ -8,12 +8,12 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
+import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, crearCliente, crearClienteDirecto, actualizarBranchCliente, crearBranchCliente, obtenerBranchId, obtenerBranchesCliente, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados } from './public/js/alta-logica.js';
-import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
+import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
@@ -1803,10 +1803,24 @@ function candidatoParaContrato(k, ctx) {
   };
 }
 
-async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo) {
+// Vendedor de la cotizacion -> su operam_id (el `salesman` que Operam guarda en
+// la SUCURSAL, no en el cliente; ver docs/arquitectura.md). Lo necesitan el alta
+// generica y la creacion de sucursal (#211), que escriben el mismo campo.
+async function salesmanDeVendedor(nombreVendedor) {
+  return (await vendedoresStore.listar()).find(v => v.name === nombreVendedor)?.operam_id ?? undefined;
+}
+
+async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe) {
   const c = entry.data?.cliente || {};
   const steps = [];
-  let customerId = customerIdElegido ?? null;
+  // "Es sucursal de este cliente" (#211): el cliente existente manda igual que al
+  // elegirlo -- mismas guardas, misma revalidacion contra el pool -- y ademas se
+  // le crea una sucursal nueva. Con AMBOS en el body manda el elegido:
+  // reutilizar tal cual es el desenlace mas conservador (no escribe nada nuevo),
+  // misma regla que customerId frente a crearNuevo.
+  const crearSucursal = customerIdElegido == null && sucursalDe != null;
+  const idElegido = customerIdElegido ?? (crearSucursal ? sucursalDe : null);
+  let customerId = idElegido;
   let creadoNuevo = false;
   let salesman;
   try {
@@ -1841,7 +1855,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
           });
         }
       }
-      steps.push({ name: 'dedup', status: 'ok', info: 'candidato elegido' });
+      steps.push({ name: 'dedup', status: 'ok', info: crearSucursal ? 'candidato elegido como matriz de la sucursal' : 'candidato elegido' });
     } else if (prospecto?.data?.cliente_id != null) {
       customerId = prospecto.data.cliente_id;
       steps.push({ name: 'dedup', status: 'ok', info: 'cliente reutilizado por celular' });
@@ -1868,7 +1882,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       if (forzado) steps.push({ name: 'dedup', status: 'warn', info: `creacion forzada por el vendedor pese a candidatos (${forzado})` });
       else steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
 
-      salesman = (await vendedoresStore.listar()).find(v => v.name === entry.vendedor)?.operam_id ?? undefined;
+      salesman = await salesmanDeVendedor(entry.vendedor);
       const salesTypeId = resolverSalesTypeId(entry.tier, listasPrecios);
       let creado;
       try {
@@ -1892,7 +1906,52 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
 
     // Con customerId elegido NUNCA se reutiliza un branchId persistido (pudo
     // capturarse para OTRO cliente): se resuelve siempre el branch del elegido.
-    let branchId = customerIdElegido != null ? null : (c.branchId ?? c.branch_id ?? null);
+    // La EXCEPCION es la sucursal (#211): si la cotizacion ya esta ligada a ESTE
+    // mismo cliente y trae branchId, ese branchId ES la sucursal que este mismo
+    // camino creo en un intento anterior -- reusarla es lo que impide que un
+    // reintento cree una segunda sucursal.
+    let branchId = idElegido != null ? null : (c.branchId ?? c.branch_id ?? null);
+    if (crearSucursal && String(c.customerId ?? '') === String(customerId)) {
+      branchId = c.branchId ?? c.branch_id ?? null;
+    }
+
+    // Sucursal nueva bajo el cliente existente (#211): SOLO POST -- un PUT sobre
+    // un branch ya configurado es REPLACE destructivo con campos irrecuperables
+    // (docs/arquitectura.md). Se crea con el domicilio de entrega y el contacto
+    // capturados, los mismos que el alta generica lleva al branch del cliente
+    // recien creado (buildBranchGenerico, #96/#170).
+    if (crearSucursal && branchId == null) {
+      const nombreCliente = c.razonSocial || c.nombreCorto || entry.cliente || '';
+      if (salesman === undefined) salesman = await salesmanDeVendedor(entry.vendedor);
+      let creada = null;
+      try {
+        creada = await crearBranchCliente(customerId, buildBranchGenerico(c, { salesman }));
+        steps.push({ name: 'POST branch (sucursal)', status: 'ok' });
+        // RELEER: Operam responde result:true aunque no haya escrito nada (#74).
+        // La sucursal tiene que aparecer entre las del cliente o el paso queda en
+        // error -- la cotizacion NO finge exito ni se sube a un branch inventado.
+        const branches = await obtenerBranchesCliente(customerId);
+        const fresca = branches.find(b => String(b.branch_code) === String(creada.branch_id));
+        if (!fresca) {
+          throw new Error(`la sucursal ${creada.branch_id ?? '(sin codigo)'} no aparece bajo el cliente ${customerId} al releer`);
+        }
+        branchId = fresca.branch_code;
+        steps.push({ name: 'verificar sucursal', status: 'ok' });
+        logCliente(rfcGenericoPara(c.pais), nombreCliente, 'creado', customerId, FUENTE_SUCURSAL_CREADA, null,
+          `Sucursal ${branchId} creada bajo el cliente ${customerId} por decision del vendedor (#211)`);
+        steps.push({ name: 'log auditoria', status: 'ok', info: FUENTE_SUCURSAL_CREADA });
+      } catch (err) {
+        // El nombre del paso distingue "no se pudo crear" de "se creo pero la
+        // relectura no la vio": el segundo caso puede haber dejado una sucursal
+        // en Operam y el reintento tiene que volver a mirar antes de crear.
+        steps.push({ name: creada ? 'verificar sucursal' : 'POST branch (sucursal)', status: 'error', error: err.message });
+        logCliente(rfcGenericoPara(c.pais), nombreCliente, 'error', customerId, FUENTE_SUCURSAL_CREADA, null, err.message);
+        await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
+        return res.status(503).json({ error: 'No se pudo crear la sucursal en Operam: ' + err.message, customer_id: customerId, steps });
+      }
+    } else if (crearSucursal) {
+      steps.push({ name: 'POST branch (sucursal)', status: 'ok', info: 'omitido: la sucursal ya se creo en un intento anterior' });
+    }
 
     // Persistir ANTES de subir (idempotencia): la cotizacion queda ligada al
     // cliente aunque la subida falle.
@@ -2170,11 +2229,16 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     // crearNuevo (#204) = el vendedor vio los candidatos y dijo "ninguno es el
     // mismo cliente". Solo tiene efecto en la parada por nombre; con customerId
     // en el mismo body manda el elegido (reutilizar es el desenlace seguro).
+    // sucursalDe (#211) = el vendedor vio los candidatos y dijo "es sucursal de
+    // este cliente": mismo cliente existente que al elegirlo, mas una sucursal
+    // nueva con el domicilio de entrega. Entra por el mismo camino y con las
+    // mismas guardas; con customerId en el mismo body manda el elegido.
     const customerIdElegido = req.body?.customerId ?? null;
     const crearNuevo = req.body?.crearNuevo === true;
-    if (customerIdElegido != null || necesitaAltaGenerica(entry)) {
+    const sucursalDe = req.body?.sucursalDe ?? null;
+    if (customerIdElegido != null || sucursalDe != null || necesitaAltaGenerica(entry)) {
       // await: el finally debe liberar el lock hasta que la operacion termine.
-      return await subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo);
+      return await subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe);
     }
     try {
       const folio = await subirCotizacionOperam(entry.data);

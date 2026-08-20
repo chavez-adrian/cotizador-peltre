@@ -1184,6 +1184,9 @@ body {
 .operam-candidato { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--surface-2, #e5e5e8); }
 .operam-candidato:last-child { border-bottom: none; padding-bottom: 0; }
 .operam-candidato-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 200px; }
+/* Acciones por candidato (#211): Elegir y "Es sucursal de este cliente" -- envuelven
+   en movil en vez de desbordar la fila. */
+.operam-candidato-acciones { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
 /* Hechos del picker de candidatos (#210): diferencia de nombre cruda y letreros
    de celular/correo -- evidencia, nunca candado (no deshabilitan Elegir/Crear
    nuevo). Sobrios y legibles en movil: texto chico, chips que envuelven. */

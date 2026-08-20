@@ -147,9 +147,11 @@ function letreroMatch(etiqueta, estado) {
 }
 
 // Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001).
-// DOS salidas, ninguna comoda (#204, ajuste): elegir el cliente correcto
-// (elegirCandidatoOperam -> { customerId }) o declarar que ninguno lo es
-// (crearNuevoClienteOperam -> { crearNuevo: true }). "Dejar como PRE" se QUITO de
+// TRES salidas, ninguna comoda (#204 ajuste, #211): elegir el cliente correcto
+// (elegirCandidatoOperam -> { customerId }), declarar que el negocio capturado es
+// otra plaza de ese cliente (marcarSucursalOperam -> { sucursalDe }) o que ninguno
+// lo es (crearNuevoClienteOperam -> { crearNuevo: true }). El orden va de la
+// opcion mas conservadora a la que mas cuentas crea. "Dejar como PRE" se QUITO de
 // aqui: dejaba al vendedor con un documento entregable y un duplicado sin
 // resolver, que es justo lo que la dedup viene a evitar. Mientras no resuelva, el
 // documento queda bajo candado (motivoPre 'dedup') y el registro se borra a las
@@ -175,7 +177,10 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
         ${diffHtml}
         ${letreros}
       </div>
-      <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
+      <div class="operam-candidato-acciones">
+        <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
+        <button class="btn btn-sm btn-secondary" onclick="marcarSucursalOperam(${id}, ${c.id}, this)">Es sucursal de este cliente</button>
+      </div>
     </li>`;
   }).join('');
   return `<div class="operam-status operam-status-candidatos">

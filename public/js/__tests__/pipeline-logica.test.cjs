@@ -353,6 +353,37 @@ test('#210: buildCandidatosOperamHtml escapa la diferencia de nombre', () => {
   assert.match(html, /&lt;script&gt;/);
 });
 
+// #211: cada candidato gana una tercera accion, "Es sucursal de este cliente",
+// para la empresa multi-plaza (misma razon social, un gerente de compras por
+// sucursal). El orden es Elegir / Es sucursal / Crear nuevo -- de la mas
+// conservadora (no escribe nada) a la que mas cuentas crea. El handler recibe el
+// elemento clickeado (`this`), nunca un id de contenedor: la misma cotizacion
+// puede estar pintada en dos paneles a la vez.
+test('#211: cada candidato ofrece "Es sucursal de este cliente" entre Elegir y Crear nuevo', () => {
+  const html = buildCandidatosOperamHtml(5, [
+    { id: 70, CustName: 'OJO DE AGUA PUEBLA', cust_ref: 'OJOAGUA-PUE', diferenciaNombre: { soloInput: ['sur'], soloCandidato: ['puebla'] }, celularMatch: 'no_coincide', correoMatch: 'sin_dato' },
+  ], 'Elige');
+  assert.match(html, /marcarSucursalOperam\(5, 70, this\)/);
+  assert.match(html, /Es sucursal de este cliente/);
+  const posElegir = html.indexOf('elegirCandidatoOperam(5, 70, this)');
+  const posSucursal = html.indexOf('marcarSucursalOperam(5, 70, this)');
+  const posNuevo = html.indexOf('crearNuevoClienteOperam(5, this)');
+  assert.ok(posElegir < posSucursal, 'Elegir va antes que Es sucursal');
+  assert.ok(posSucursal < posNuevo, 'Es sucursal va antes que Crear nuevo');
+  assert.doesNotMatch(html, /disabled/, 'los hechos son evidencia, nunca candado');
+});
+
+// #211: la accion de sucursal viaja POR CANDIDATO -- cada uno con su propio id,
+// porque la sucursal nace bajo el cliente que el vendedor senalo.
+test('#211: la accion de sucursal lleva el id de SU candidato', () => {
+  const html = buildCandidatosOperamHtml(7, [
+    { id: 11, CustName: 'A', cust_ref: 'A', diferenciaNombre: { soloInput: [], soloCandidato: [] }, celularMatch: 'sin_dato', correoMatch: 'sin_dato' },
+    { id: 12, CustName: 'B', cust_ref: 'B', diferenciaNombre: { soloInput: [], soloCandidato: [] }, celularMatch: 'sin_dato', correoMatch: 'sin_dato' },
+  ], 'Elige');
+  assert.match(html, /marcarSucursalOperam\(7, 11, this\)/);
+  assert.match(html, /marcarSucursalOperam\(7, 12, this\)/);
+});
+
 // Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): buildColaHoyHtml itera
 // la cola que ya viene fusionada y ordenada del backend (lib/cola-hoy.js) y
 // delega la pintura por tipo, PRESERVANDO el orden (no reagrupa por tipo). El
