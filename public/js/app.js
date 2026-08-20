@@ -26,6 +26,8 @@ import {
   usoCfdiPorDefecto,
   estadoAltaAlAbrirPanel,
   nombreConCorto,
+  datosUpgradeConComercial,
+  modoComercialUpgrade,
 } from './alta-logica.js';
 import {
   montarTelefono,
@@ -3275,10 +3277,11 @@ function pcRenderChips() {
 // Reutiliza la seccion 1 del acordeon (dropzone + parseo + campos editables) pero
 // reorientada al PUT del upgrade en vez del POST de creacion: al confirmar,
 // altaCsfConfirmar detecta altaCsfState.modoUpgrade y llama a pcEjecutarUpgradeFiscal.
-function pcAbrirUpgradeFiscal(customerId, banner, origen) {
+async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
   altaCsfState.modoUpgrade = customerId;
+  altaCsfState.comercialPrecargado = null;
   // Origen del upgrade ('paso' | 'clientes'): decide si cl-email-factura es
   // confiable (ver emailFacturaParaUpgrade en alta-logica.js).
   altaCsfState.upgradeOrigen = origen || null;
@@ -3318,11 +3321,52 @@ function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   // El default del uso de CFDI se fija ANTES de vaciar/restaurar: vaciarCampos y
   // el prellenado del borrador comparan contra ese default (#193).
   altaFijarDefaultUsoCfdi(customerId);
+  // Configuracion comercial (#197): la Seccion 2 pasa a modo upgrade ANTES de la
+  // lectura (el vendedor debe ver de inmediato que hay campos que no se editan aqui)
+  // y el autoguardado del alta completa se cierra: sus campos viven en el MISMO
+  // panel, asi que sin esto la precarga se guardaria como si el vendedor la hubiera
+  // tecleado y la proxima alta abriria con "Borrador restaurado" sin nada restaurado
+  // (#185). Cerrar con evento null NO mata ese borrador: solo deja de autoguardar,
+  // y ocultar:false porque el panel es el que se esta abriendo aqui.
+  altaAplicarModoComercial(customerId, '');
+  altaVaciarComercial();
+  cerrarFormularioBorrador('alta-completa', null, { ocultar: false });
   const formIdUpgrade = `upgrade-fiscal-${customerId}`;
   vaciarCamposSuperficie(formIdUpgrade);
-  abrirFormularioBorrador(formIdUpgrade);
+  await abrirFormularioBorrador(formIdUpgrade);
+  await pcPrecargarComercialUpgrade(customerId);
 }
 window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
+
+// Precarga de la Seccion 2 con lo que Operam tiene HOY (decision 1 de #197). Corre
+// DESPUES de que la superficie se alisto (los <select> de catalogo ya repoblados) y
+// guarda la linea base en altaCsfState: contra ella se decide, al confirmar, que
+// campo comercial cambio y viaja.
+// Si la lectura falla, la linea base queda en null y NADA comercial viaja (el nucleo
+// puro lo garantiza); se avisa en pantalla en vez de dejar al vendedor creyendo que
+// unos selectores vacios son la configuracion real del cliente.
+async function pcPrecargarComercialUpgrade(customerId) {
+  const errDiv = document.getElementById('alta-comercial-error');
+  try {
+    const res = await api(`/api/operam/clientes/${customerId}/comercial`);
+    if (!res.ok) throw new Error('lectura fallida');
+    const pre = await res.json();
+    altaCsfState.comercialPrecargado = pre;
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    set('alta-lista-precios', pre.salesType);
+    set('alta-segmento', pre.segmentoId);
+    // Vacio a proposito: el GET de Operam no expone invoice_email (solo lo confirma
+    // el eco del PUT), asi que no hay valor actual que mostrar.
+    set('alta-email-factura', '');
+    altaAplicarModoComercial(customerId, pre.vendedorNombre);
+    if (errDiv) errDiv.style.display = 'none';
+  } catch {
+    if (errDiv) {
+      errDiv.textContent = 'No se pudo leer la configuracion comercial actual del cliente: esta seccion no se actualizara.';
+      errDiv.style.display = '';
+    }
+  }
+}
 
 // Wrapper del chip Fiscal del paso Cliente: deriva el contexto del banner (nombre
 // + RFC generico) de pcState.cliente, sin embeber texto arbitrario en el onclick.
@@ -3345,11 +3389,24 @@ async function pcEjecutarUpgradeFiscal(datos) {
   // incluye cuando el upgrade se abrio desde el paso Cliente ('paso'): desde la
   // vista Clientes (#94) puede traer el email de OTRO cliente cotizado antes (fuga
   // de contexto detectada en la revision de #95).
+  //
+  // Desde #197 la Seccion 2 tiene PRIORIDAD sobre ese input: el email que el vendedor
+  // ve y escribe en el panel del upgrade es el que manda, y cl-email-factura solo
+  // aplica cuando no escribio ninguno. Los tres campos comerciales se podan contra la
+  // precarga (datosUpgradeConComercial): solo viaja lo que cambio, y con eso el
+  // post-fix web del segmento deja de correr cuando el segmento no se toco.
+  const csfDatosComercial = datosUpgradeConComercial(
+    datos,
+    altaCsfState.comercialPrecargado,
+    altaLeerComercialUpgrade()
+  );
   const emailFactura = emailFacturaParaUpgrade(
     altaCsfState.upgradeOrigen,
     document.getElementById('cl-email-factura')?.value
   );
-  const csfDatosConFactura = emailFactura ? { ...datos, invoiceEmail: emailFactura } : datos;
+  const csfDatosConFactura = (emailFactura && !csfDatosComercial.invoiceEmail)
+    ? { ...csfDatosComercial, invoiceEmail: emailFactura }
+    : csfDatosComercial;
   try {
     const res = await api(`/api/actualizar-cliente-fiscal/${customerId}`, {
       method: 'PUT',
@@ -3377,6 +3434,14 @@ async function pcEjecutarUpgradeFiscal(datos) {
     vaciarCamposSuperficie(formIdUpgrade);
     cerrarFormularioBorrador(formIdUpgrade, EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO);
     altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+    // La Seccion 2 se limpia y vuelve al modo alta (#197), por la misma razon que lo
+    // demas de aqui: que el proximo cliente abierto en esta pestana no herede la
+    // configuracion del que se acaba de actualizar.
+    // undefined y no null: el proximo upgrade que entre por "Actualizar este" (sin
+    // panel ni precarga) debe poder mandar el segmento que el vendedor capturo (#193).
+    altaCsfState.comercialPrecargado = undefined;
+    altaVaciarComercial();
+    altaAplicarModoComercial(null, '');
     // El chip Fiscal pasa a verde solo si el RFC real SI pego (chipsCompletitud lo
     // deriva de pcState.cliente.rfc). Si Operam ignoro un campo (quirk del PUT),
     // esa parte de la tarjeta se queda con el valor viejo en vez de mostrar un dato
@@ -4274,14 +4339,18 @@ function montarBorradorFormulario(formId) {
   }
 }
 
+// Devuelve la promesa de la restauracion (#197): quien necesite escribir en la
+// superficie DESPUES de que se alisto -- la precarga comercial del upgrade fiscal --
+// tiene que esperarla. `esperarListo` repuebla los <select> de catalogo, y repoblar
+// un <select> lo resetea: precargar antes de eso seria precargar para nada.
 function abrirFormularioBorrador(formId) {
   const cont = contenedorSuperficie(formId);
-  if (!cont) return;
+  if (!cont) return Promise.resolve();
   montarBorradorFormulario(formId);
   cont.style.display = 'block';
   superficiesAbiertas.add(formId);
   superficiesRestauradas.delete(formId);
-  restaurarBorradorFormulario(formId);
+  return restaurarBorradorFormulario(formId);
 }
 
 // evento null = solo cerrar (esconder el formulario NO es cancelar: el borrador
@@ -5928,6 +5997,52 @@ function altaPoblarSelectores(catalogos) {
     catalogos.vendedores.map(v => `<option value="${v.operam_id}">${v.name}</option>`).join('');
 }
 
+// Seccion 2 segun el modo del panel (issue #197): la decision vive en el nucleo puro
+// (modoComercialUpgrade); aqui solo se aplica al DOM. El selector de vendedor se
+// esconde deshabilitado en vez de reescribirse: el modo alta necesita sus opciones
+// intactas y repoblarlas es asincrono.
+function altaAplicarModoComercial(modoUpgrade, vendedorNombre) {
+  const modo = modoComercialUpgrade(modoUpgrade, vendedorNombre);
+  const vend = document.getElementById('alta-vendedor');
+  if (vend) { vend.disabled = modo.bloqueado; vend.style.display = modo.bloqueado ? 'none' : ''; }
+  const vendNota = document.getElementById('alta-vendedor-nota');
+  if (vendNota) {
+    vendNota.style.display = modo.bloqueado ? '' : 'none';
+    vendNota.textContent = modo.vendedorNota;
+  }
+  const cel = document.getElementById('alta-celular');
+  if (cel) cel.disabled = modo.bloqueado;
+  const celNota = document.getElementById('alta-celular-nota');
+  if (celNota) {
+    celNota.style.display = modo.bloqueado ? '' : 'none';
+    celNota.textContent = modo.celularNota;
+  }
+  const email = document.getElementById('alta-email-factura');
+  if (email) email.placeholder = modo.emailPlaceholder;
+}
+
+// La Seccion 2 vive FUERA de la superficie del borrador del upgrade (#alta-body-1),
+// asi que vaciarCamposSuperficie no la alcanza y hay que vaciarla a mano: el panel es
+// un solo nodo para cualquier cliente y sin esto el siguiente upgrade abierto en la
+// misma pestana mostraria la configuracion del anterior (#197).
+function altaVaciarComercial() {
+  for (const id of ['alta-lista-precios', 'alta-segmento', 'alta-email-factura']) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+}
+
+// Lo que el vendedor tiene HOY en la Seccion 2, en el formato de la precarga
+// (alta-logica.js): lo compara datosUpgradeConComercial para decidir que viaja.
+function altaLeerComercialUpgrade() {
+  const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  return {
+    salesType: getVal('alta-lista-precios'),
+    segmentoId: getVal('alta-segmento'),
+    invoiceEmail: getVal('alta-email-factura'),
+  };
+}
+
 // Regimen fiscal como selector del catalogo del SAT (#191). Se repuebla filtrado
 // por el tipo de RFC ya capturado EN SU MISMA PESTANA (12 caracteres = moral, 13 =
 // fisica; sin RFC valido, el catalogo entero) y conserva lo ya elegido, que puede
@@ -5996,6 +6111,13 @@ function abrirAcordeonAlta() {
   // El default del uso de CFDI depende del modo (#193) y se fija ANTES de
   // restaurar: el borrador solo prellena el campo que sigue en su default.
   altaFijarDefaultUsoCfdi(null);
+  // Vendedor y celular vuelven a ser capturables (#197): un upgrade anterior en esta
+  // misma pestana los dejo deshabilitados. La linea base comercial queda en undefined
+  // ("no hay panel de upgrade que podar"), no en null: desde este panel la Seccion 2
+  // es captura del vendedor, y si la dedup ofrece "Actualizar este" ese segmento tiene
+  // que viajar (#193).
+  altaCsfState.comercialPrecargado = undefined;
+  altaAplicarModoComercial(null, '');
   altaToggleSeccion(1);
   // Borrador de formulario (#185): prefill de todo el acordeon si el vendedor
   // dejo un alta a medias. Puebla los mismos catalogos que antes pero DESPUES
@@ -6125,6 +6247,10 @@ const altaCsfState = {
   datos: null,
   modoUpgrade: null, // customer_id destino cuando el flujo CSF se abre en modo upgrade (#85)
   pdfBase64: null,
+  // Linea base de la Seccion 2 al abrir el upgrade (#197). undefined = no hay panel
+  // comercial (los datos viajan tal cual, camino de "Actualizar este"); null = la
+  // precarga fallo (no viaja nada comercial); objeto = solo viaja lo que cambio.
+  comercialPrecargado: undefined,
 };
 
 function altaCsfSetStatus(status, opts = {}) {
@@ -6653,6 +6779,11 @@ window.altaDedupNuevoDomicilio = altaDedupNuevoDomicilio;
 // parseada en altaState.datos -- no se reabre el formulario, ya se tienen los datos.
 async function altaCandidatoActualizar(clienteId) {
   altaCsfState.modoUpgrade = clienteId;
+  // Este camino NO abre el panel de upgrade ni precarga la Seccion 2: los datos son
+  // los que el vendedor capturo en el ALTA, y ahi el segmento SI es captura suya y
+  // tiene que viajar (#193). undefined = "no hay panel comercial que podar" (#197),
+  // distinto de null, que significa "la precarga fallo".
+  altaCsfState.comercialPrecargado = undefined;
   await pcEjecutarUpgradeFiscal(altaState.datos);
 }
 window.altaCandidatoActualizar = altaCandidatoActualizar;

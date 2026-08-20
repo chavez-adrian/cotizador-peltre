@@ -1121,6 +1121,170 @@ test('UF7: sin token -> 401', async () => {
   assert.strictEqual(res.status, 401);
 });
 
+// === GET /api/operam/clientes/:id/comercial (precarga de la Seccion 2, issue #197) ===
+//
+// Decision 1 de #197: el upgrade abre la Seccion 2 con los valores ACTUALES del cliente.
+// Sin esa lectura, confirmar el upgrade mandaria los defaults del panel encima de datos
+// reales. Las llaves son las del GET de detalle verificado en vivo (cliente 491): la
+// lista de precios llega como `sales_type` (id plano), el segmento anidado en
+// `segmento.id`, el vendedor colgando de branches[0] -- e `invoice_email` NO llega.
+
+test('UC1: la precarga comercial devuelve lista, segmento y vendedor con las llaves reales del GET', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({
+      ok: true,
+      json: async () => ({ data: [clienteRereleido({
+        sales_type: '15',
+        segmento: { id: '3', clave: '003', description: 'Restaurantes, hoteles' },
+        branches: [{ branch_code: '535', salesman_name: 'Adrian Chavez' }],
+      })] }),
+    }),
+  });
+  try {
+    const res = await supertest(app).get('/api/operam/clientes/500/comercial')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.salesType, '15');
+    assert.strictEqual(res.body.segmentoId, '3');
+    assert.strictEqual(res.body.vendedorNombre, 'Adrian Chavez');
+    assert.strictEqual(res.body.invoiceEmail, '', 'el GET de Operam no expone invoice_email: se precarga vacio');
+  } finally {
+    restore();
+  }
+});
+
+test('UC2: Operam caido -> 503 (el panel no debe precargar valores inventados)', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': () => ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) }),
+  });
+  try {
+    const res = await supertest(app).get('/api/operam/clientes/500/comercial')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 503);
+  } finally {
+    restore();
+  }
+});
+
+test('UC3: la precarga comercial sin token -> 401', async () => {
+  const res = await supertest(app).get('/api/operam/clientes/500/comercial');
+  assert.strictEqual(res.status, 401);
+});
+
+// La lista de precios cambiada llega al endpoint como un campo mas de csfDatos
+// (salesType): el frontend ya podo lo que no cambio contra la precarga
+// (datosUpgradeConComercial). Aqui se verifica el contrato del lado servidor --
+// que se escriba con la llave real y que el eco decida si pego.
+
+test('UC4: lista de precios cambiada -> el PUT manda sales_type y la relectura la confirma', async () => {
+  let putBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(putBody) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ sales_type: '16' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, salesType: '16' } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(putBody.sales_type, '16', 'la lista de precios se lee y se escribe con la misma llave (verificado en vivo)');
+    assert.deepEqual(res.body.camposNoActualizados, []);
+  } finally {
+    restore();
+  }
+});
+
+test('UC5: Operam ignora sales_type en el PUT -> se reporta en camposNoActualizados con su etiqueta', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { const body = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(body, ['sales_type']) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      // La relectura muestra la lista VIEJA: nadie la escribio.
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ sales_type: '15' })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, salesType: '16' } });
+    assert.strictEqual(res.status, 200);
+    const lista = res.body.camposNoActualizados.find(x => x.campo === 'sales_type');
+    assert.ok(lista, 'debe reportar que la lista de precios no pego');
+    assert.strictEqual(lista.label, 'Lista de precios');
+    assert.strictEqual(lista.anterior, '15');
+    assert.strictEqual(lista.nuevo, '16');
+  } finally {
+    restore();
+  }
+});
+
+test('UC6: sin campos comerciales en csfDatos, el PUT no lleva ninguno (AC3: no cambiar nada = no viaja nada)', async () => {
+  const { _resetSesionWeb: reset } = await import('../lib/operam-web.js');
+  reset();
+  const web = handlersWebFichaCliente();
+  let putBody = null;
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(putBody) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: CSF_UPGRADE });
+    assert.strictEqual(res.status, 200);
+    assert.ok(!('sales_type' in putBody));
+    assert.ok(!('segmento_id' in putBody));
+    assert.ok(!('invoice_email' in putBody));
+    assert.deepEqual(web.posts, [], 'sin cambio de segmento no corre el post-fix web');
+  } finally {
+    restore();
+  }
+});
+
+// AC5 de #197: PUT /branches es un REPLACE destructivo sobre sucursales ya configuradas
+// (#189, danos reales en #195). El vendedor que se ve en la Seccion 2 vive ahi, y por eso
+// se muestra deshabilitado: ninguna rama de este flujo puede escribir sucursales.
+test('UC7: el upgrade fiscal NUNCA escribe branches, ni con toda la configuracion comercial cambiada', async () => {
+  const { _resetSesionWeb: reset } = await import('../lib/operam-web.js');
+  reset();
+  const web = handlersWebFichaCliente();
+  const escriturasBranches = [];
+  const restore = mockOperamFetch({
+    ...web.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/branches': (u, opts) => {
+      if (opts?.method && opts.method !== 'GET') escriturasBranches.push(`${opts.method} ${u}`);
+      return { ok: true, json: async () => ({ result: true, data: [] }) };
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { const body = JSON.parse(opts.body); return { ok: true, json: async () => ecoPut(body, ['segmento_id']) }; }
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
+      return { ok: true, json: async () => ({ data: [clienteRereleido({ sales_type: '16', segmento: { id: web.estado.segmento } })] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente-fiscal/500')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ csfDatos: { ...CSF_UPGRADE, salesType: '16', segmentoId: '3', invoiceEmail: 'facturacion@peltre.mx' } });
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(escriturasBranches, [], 'ninguna escritura a /branches en todo el flujo del upgrade');
+  } finally {
+    restore();
+  }
+});
+
 // === GET /api/log ===
 
 test('GET /api/log retorna 503 cuando no hay DATABASE_URL', async () => {

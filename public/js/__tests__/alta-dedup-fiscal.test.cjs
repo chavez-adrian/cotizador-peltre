@@ -693,3 +693,214 @@ test('W9: camposNoAplicados reporta segmento_id como no aplicado aunque el eco c
   assert.equal(salida.length, 1);
   assert.equal(salida[0].campo, 'segmento_id');
 });
+
+// === Configuracion comercial en el upgrade fiscal (issue #197) ===
+// El vendedor VE la Seccion 2 durante el upgrade; hasta #197 lo que corrigiera ahi no
+// viajaba (perdida silenciosa, misma clase que #193 arreglo para el alta). La lista de
+// precios vive en `sales_type` del CLIENTE: verificado EN VIVO el 2026-08-19 con un GET
+// read-only del cliente 491 -- llega como id plano en string ("15" = M100), la MISMA
+// llave para leer y escribir (a diferencia de CustName/cust_name, #169), y el
+// <option value> del selector ya es ese id (server.js expone {id, nombre} del catalogo).
+// El mismo GET confirmo lo demas: `segmento` anidado, `invoice_email` AUSENTE de la
+// lectura y `salesman_name` colgando de branches[0].
+
+test('C1: buildActualizarFiscalPayload incluye sales_type cuando se capturo la lista de precios', () => {
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, salesType: '16' });
+  assert.equal(body.sales_type, '16');
+});
+
+test('C2: buildActualizarFiscalPayload omite sales_type si no se capturo (ausente != vacio)', () => {
+  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  assert.ok(!('sales_type' in body));
+});
+
+test('C3: calcularDiffFiscal compara la lista de precios contra sales_type, la llave real del GET', () => {
+  const cliente = { ...clienteOperamBase, sales_type: '15' };
+  const diff = calcularDiffFiscal(cliente, { ...csfDatosIguales, salesType: '16' });
+  assert.equal(diff.sales_type.anterior, '15');
+  assert.equal(diff.sales_type.nuevo, '16');
+  assert.equal(diff.sales_type.label, 'Lista de precios');
+});
+
+test('C4: calcularDiffFiscal no reporta la lista de precios cuando el capturado es el que ya tiene el cliente', () => {
+  const cliente = { ...clienteOperamBase, sales_type: '15' };
+  const diff = calcularDiffFiscal(cliente, { ...csfDatosIguales, salesType: '15' });
+  assert.ok(!('sales_type' in diff));
+});
+
+// Precarga de la Seccion 2 al abrir el upgrade (decision 1 de #197). Sin precarga la
+// feature seria un arma: mandar los campos con su default pisaria datos reales del
+// cliente. La forma del objeto es la del GET de detalle verificado en vivo.
+
+test('C5: precargaComercialUpgrade lee la lista y el segmento con las llaves reales del GET', async () => {
+  const { precargaComercialUpgrade } = await import('../alta-logica.js');
+  const pre = precargaComercialUpgrade({
+    customer_id: 491, sales_type: '15', segmento: { id: '3', clave: '003', description: 'Restaurantes' },
+  });
+  assert.equal(pre.salesType, '15');
+  assert.equal(pre.segmentoId, '3');
+});
+
+test('C6: precargaComercialUpgrade deja el email de facturacion VACIO (el GET no lo expone; decision 1)', async () => {
+  const { precargaComercialUpgrade } = await import('../alta-logica.js');
+  // Ni siquiera cuando el objeto trae la llave: el GET de detalle no la devuelve
+  // (verificado en vivo), asi que un valor ahi vendria de otra superficie y precargarlo
+  // haria creer al vendedor que ese es el correo que Operam tiene guardado.
+  const pre = precargaComercialUpgrade({ customer_id: 491, invoice_email: 'de-otro-lado@peltre.mx' });
+  assert.equal(pre.invoiceEmail, '');
+});
+
+test('C7: precargaComercialUpgrade toma el vendedor de branches[0].salesman_name (solo para mostrar)', async () => {
+  const { precargaComercialUpgrade } = await import('../alta-logica.js');
+  const pre = precargaComercialUpgrade({
+    customer_id: 491,
+    branches: [{ branch_code: '535', salesman_name: 'Adrian Chavez' }],
+  });
+  assert.equal(pre.vendedorNombre, 'Adrian Chavez');
+});
+
+test('C8: precargaComercialUpgrade devuelve cadenas vacias (nunca undefined) cuando el cliente no trae esos campos', async () => {
+  const { precargaComercialUpgrade } = await import('../alta-logica.js');
+  const pre = precargaComercialUpgrade({ customer_id: 491 });
+  assert.deepEqual(pre, { salesType: '', segmentoId: '', invoiceEmail: '', vendedorNombre: '' });
+});
+
+// Decision 2 de #197: del panel comercial solo viaja lo que CAMBIO respecto a lo
+// precargado. Lo que no viaja no se escribe y no se verifica -- exactamente la
+// semantica "ausente != vacio" que ya usa buildActualizarFiscalPayload.
+
+const PRECARGA_491 = { salesType: '15', segmentoId: '3', invoiceEmail: '', vendedorNombre: 'Adrian Chavez' };
+
+test('C9: sin tocar nada la Seccion 2, ningun campo comercial viaja en el upgrade', async () => {
+  const { datosUpgradeConComercial } = await import('../alta-logica.js');
+  const datos = datosUpgradeConComercial(csfDatosIguales, PRECARGA_491, { salesType: '15', segmentoId: '3', invoiceEmail: '' });
+  assert.ok(!('salesType' in datos));
+  assert.ok(!('segmentoId' in datos));
+  assert.ok(!('invoiceEmail' in datos));
+});
+
+test('C10: cambiar la lista de precios la hace viajar, sin arrastrar los demas campos comerciales', async () => {
+  const { datosUpgradeConComercial } = await import('../alta-logica.js');
+  const datos = datosUpgradeConComercial(csfDatosIguales, PRECARGA_491, { salesType: '16', segmentoId: '3', invoiceEmail: '' });
+  assert.equal(datos.salesType, '16');
+  assert.ok(!('segmentoId' in datos));
+  assert.ok(!('invoiceEmail' in datos));
+  assert.equal(buildActualizarFiscalPayload(datos).sales_type, '16');
+});
+
+test('C11: escribir un email de facturacion lo hace viajar (la precarga siempre esta vacia)', async () => {
+  const { datosUpgradeConComercial } = await import('../alta-logica.js');
+  const datos = datosUpgradeConComercial(csfDatosIguales, PRECARGA_491, { salesType: '15', segmentoId: '3', invoiceEmail: 'facturacion@peltre.mx' });
+  assert.equal(datos.invoiceEmail, 'facturacion@peltre.mx');
+});
+
+test('C12: cambiar el segmento lo hace viajar (y con el corre el post-fix web del segmento)', async () => {
+  const { datosUpgradeConComercial } = await import('../alta-logica.js');
+  const datos = datosUpgradeConComercial(csfDatosIguales, PRECARGA_491, { salesType: '15', segmentoId: '7', invoiceEmail: '' });
+  assert.equal(datos.segmentoId, '7');
+});
+
+test('C13: vaciar un campo ya precargado NO viaja: una cadena vacia borraria en Operam un dato real', async () => {
+  // El selector se repuebla desde el catalogo (altaEsperarCatalogosCompletos) y eso lo
+  // resetea a "": si el vacio viajara, una carrera del catalogo le dejaria al cliente
+  // la lista de precios en blanco sin que nadie lo pidiera.
+  const { datosUpgradeConComercial } = await import('../alta-logica.js');
+  const datos = datosUpgradeConComercial(csfDatosIguales, PRECARGA_491, { salesType: '', segmentoId: '', invoiceEmail: '' });
+  assert.ok(!('salesType' in datos));
+  assert.ok(!('segmentoId' in datos));
+});
+
+test('C14: sin precarga (el GET del cliente fallo) NO viaja nada comercial, aunque el panel traiga valores', async () => {
+  const { datosUpgradeConComercial } = await import('../alta-logica.js');
+  const datos = datosUpgradeConComercial(csfDatosIguales, null, { salesType: '16', segmentoId: '7', invoiceEmail: 'x@peltre.mx' });
+  assert.ok(!('salesType' in datos));
+  assert.ok(!('segmentoId' in datos));
+  assert.ok(!('invoiceEmail' in datos));
+});
+
+test('C15: el segmento que el formulario ya traia NO se cuela cuando no cambio respecto a la precarga', async () => {
+  // altaCsfLeerFormulario lee #alta-segmento SIEMPRE (lo necesita el alta), asi que sin
+  // esta poda el upgrade seguiria mandando segmento_id en cada confirmacion.
+  const { datosUpgradeConComercial } = await import('../alta-logica.js');
+  const conSegmento = { ...csfDatosIguales, segmentoId: '3' };
+  const datos = datosUpgradeConComercial(conSegmento, PRECARGA_491, { salesType: '15', segmentoId: '3', invoiceEmail: '' });
+  assert.ok(!('segmentoId' in datos));
+  assert.equal(datos.rfc, csfDatosIguales.rfc, 'los datos fiscales siguen intactos');
+  assert.equal(datos.razonSocial, csfDatosIguales.razonSocial);
+});
+
+// Decision 7 de #197: la precarga es un DEFAULT, no captura -- no debe dejar un
+// borrador espurio (#185) que la proxima visita restaure como si el vendedor lo
+// hubiera tecleado. Lo que lo garantiza es estructural: la superficie del borrador del
+// upgrade es #alta-body-1 (Seccion 1) y los campos que la precarga escribe viven en
+// #alta-body-2, fuera de su alcance. Este test es la unica forma de que mover un campo
+// de seccion no rompa esa garantia en silencio (el resto solo se ve en navegador: el
+// upgrade ademas cierra el autoguardado de la superficie 'alta-completa', que SI
+// envuelve al panel entero).
+test('C16: los campos que precarga el upgrade viven fuera de #alta-body-1, la superficie de su borrador', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+  const inicio = html.indexOf('id="alta-body-1"');
+  const fin = html.indexOf('id="alta-body-2"');
+  assert.ok(inicio > 0 && fin > inicio, 'el panel debe seguir teniendo las dos secciones en ese orden');
+  const seccion1 = html.slice(inicio, fin);
+  assert.ok(seccion1.includes('id="csf-rfc"'), 'el recorte debe ser de verdad la Seccion 1 (si no, el test pasaria en vacio)');
+  for (const id of ['alta-lista-precios', 'alta-segmento', 'alta-email-factura', 'alta-vendedor', 'alta-celular']) {
+    assert.ok(!seccion1.includes(`id="${id}"`), `${id} no puede vivir dentro de #alta-body-1`);
+    assert.ok(html.includes(`id="${id}"`), `${id} debe seguir existiendo en el panel`);
+  }
+});
+
+test('C17: la precarga normaliza a texto lo que Operam entregue como numero (un 15 no debe verse como cambio contra "15")', async () => {
+  const { precargaComercialUpgrade, datosUpgradeConComercial } = await import('../alta-logica.js');
+  const pre = precargaComercialUpgrade({ sales_type: 15, segmento: { id: 3 } });
+  assert.equal(pre.salesType, '15');
+  const datos = datosUpgradeConComercial(csfDatosIguales, pre, { salesType: '15', segmentoId: '3', invoiceEmail: '' });
+  assert.ok(!('salesType' in datos));
+  assert.ok(!('segmentoId' in datos));
+});
+
+// Decision 4 de #197: en modo upgrade, vendedor y celular se ven pero NO se editan.
+// El vendedor es campo de la SUCURSAL y PUT /branches es un REPLACE destructivo sobre
+// sucursales ya configuradas (#189, danos reales en #195); el celular es la llave de
+// identidad del prospecto. En modo ALTA los dos siguen capturandose como siempre.
+
+test('C18: en modo upgrade el vendedor y el celular quedan deshabilitados, con nota corta cada uno', async () => {
+  const { modoComercialUpgrade } = await import('../alta-logica.js');
+  const modo = modoComercialUpgrade(500, 'Adrian Chavez');
+  assert.equal(modo.bloqueado, true);
+  assert.match(modo.vendedorNota, /Operam/, 'la nota debe decir donde SI se cambia');
+  assert.match(modo.vendedorNota, /Adrian Chavez/, 'y mostrar el vendedor actual (solo lectura)');
+  assert.match(modo.celularNota, /prospecto/i);
+});
+
+test('C19: en modo alta nada se bloquea y el email vuelve a su placeholder normal', async () => {
+  const { modoComercialUpgrade } = await import('../alta-logica.js');
+  const modo = modoComercialUpgrade(null, '');
+  assert.equal(modo.bloqueado, false);
+  assert.equal(modo.vendedorNota, '');
+  assert.equal(modo.celularNota, '');
+  assert.equal(modo.emailPlaceholder, 'facturacion@empresa.com');
+});
+
+test('C20: en modo upgrade el email de facturacion avisa que no es legible desde Operam (decision 1)', async () => {
+  const { modoComercialUpgrade } = await import('../alta-logica.js');
+  const modo = modoComercialUpgrade(500, '');
+  assert.match(modo.emailPlaceholder, /no visible desde Operam/i);
+  assert.equal(modo.vendedorNota.startsWith('--'), false, 'sin vendedor conocido, la nota no arranca con el separador huerfano');
+});
+
+// Tercer estado de la linea base (#197 sin romper #193): hay un camino al upgrade que
+// NO pasa por el panel con precarga -- "Actualizar este" sobre un candidato generico
+// (altaCandidatoActualizar, #78) entra con los datos que el vendedor capturo en el ALTA.
+// Ahi el segmento SI es captura suya y tiene que viajar; podarlo por falta de linea base
+// desharia el fix de #193. Por eso `undefined` (esta superficie no aporta configuracion
+// comercial) es distinto de `null` (la precarga corrio y fallo: no hay con que comparar).
+test('C21: sin panel comercial (precarga ausente, no fallida) los datos viajan tal cual, con el segmento capturado en el alta', async () => {
+  const { datosUpgradeConComercial } = await import('../alta-logica.js');
+  const datosDelAlta = { ...csfDatosIguales, segmentoId: '3' };
+  const datos = datosUpgradeConComercial(datosDelAlta, undefined, { salesType: '', segmentoId: '', invoiceEmail: '' });
+  assert.deepEqual(datos, datosDelAlta);
+  assert.equal(buildActualizarFiscalPayload(datos).segmento_id, '3');
+});

@@ -289,6 +289,7 @@ export const DIFF_FISCAL_CAMPOS = [
   { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
   { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion' },
   { operam: 'segmento_id',         csf: 'segmentoId',     label: 'Segmento', read: 'segmento.id' },
+  { operam: 'sales_type',          csf: 'salesType',      label: 'Lista de precios' },
   { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
@@ -410,6 +411,101 @@ export function camposNoAplicados(diff, ecoPut) {
   return Object.entries(diff)
     .filter(([campo]) => !((LLAVE_ESCRITURA[campo] || campo) in eco))
     .map(([campo, d]) => ({ campo, label: d.label, anterior: d.anterior, nuevo: d.nuevo, motivo: MOTIVO_IGNORADO }));
+}
+
+// Configuracion comercial en el upgrade fiscal (issue #197). El vendedor VE la
+// Seccion 2 durante el upgrade, asi que lo que corrija ahi tiene que viajar; hasta
+// #197 se ignoraba en silencio. Tres campos entran (lista de precios, segmento,
+// email de facturacion); vendedor y celular quedan fuera por decision del ticket
+// (el vendedor vive en la SUCURSAL y PUT /branches es un REPLACE destructivo, #189;
+// el celular es la llave de identidad del prospecto).
+//
+// Los tres se resuelven contra DIFF_FISCAL_CAMPOS, que ya es el UNICO mapeo
+// lectura/escritura del cliente: `sales_type` se lee y se escribe con la misma
+// llave (verificado en vivo, cliente 491: llega como id plano en string, "15" =
+// M100), el segmento se lee anidado (`segmento.id`) y se escribe por el post-fix
+// web, e `invoice_email` no es legible por el GET y solo lo confirma el eco del PUT.
+const COMERCIAL_UPGRADE = ['sales_type', 'segmento_id', 'invoice_email'];
+
+// Valores ACTUALES del cliente con los que se abre la Seccion 2 (decision 1 de
+// #197). Sin esta precarga la feature seria un arma: mandar los campos con su
+// default pisaria en Operam datos reales que el vendedor nunca vio.
+// El email de facturacion se precarga SIEMPRE vacio -- el GET de detalle no lo
+// expone, y precargarlo desde cualquier otra superficie le haria creer al vendedor
+// que ese es el correo guardado en Operam (misma leccion de fuga de contexto de
+// #95). El vendedor va con placeholder explicativo: es de la SUCURSAL, no del
+// cliente, y este flujo tiene prohibido escribir branches.
+export function precargaComercialUpgrade(clienteOperam) {
+  const cliente = clienteOperam || {};
+  const leer = operam => {
+    const campo = DIFF_FISCAL_CAMPOS.find(c => c.operam === operam);
+    const v = leerValorOperam(cliente, campo);
+    return v == null ? '' : String(v);
+  };
+  return {
+    salesType: leer('sales_type'),
+    segmentoId: leer('segmento_id'),
+    invoiceEmail: '',
+    vendedorNombre: String(cliente.branches?.[0]?.salesman_name || ''),
+  };
+}
+
+// Que se puede editar en la Seccion 2 segun el modo del panel (decision 4 de #197).
+// En upgrade, dos campos se ven pero NO se escriben:
+//   - Vendedor: vive en la SUCURSAL, y PUT /branches es un REPLACE destructivo sobre
+//     sucursales ya configuradas (#189, danos reales en #195). Se muestra el actual,
+//     leido de branches[0].salesman_name, y se cambia en Operam.
+//   - Celular: es la llave de identidad del prospecto (ultimos10); editarlo tiene
+//     implicaciones de ligado que no entran en este ticket.
+// El email de facturacion si se edita, pero su placeholder cambia: el GET de Operam no
+// lo expone, asi que el campo arranca vacio y eso NO significa que el cliente no tenga
+// uno. En modo alta todo vuelve a como estaba (el argumento es el customer_id destino
+// o null: el modo lo decide la PRESENCIA del id, igual que usoCfdiPorDefecto).
+export const EMAIL_FACTURA_PLACEHOLDER_ALTA = 'facturacion@empresa.com';
+export const EMAIL_FACTURA_PLACEHOLDER_UPGRADE = '(no visible desde Operam; escribe uno solo si quieres actualizarlo)';
+
+export function modoComercialUpgrade(modoUpgrade, vendedorNombre) {
+  if (modoUpgrade == null) {
+    return { bloqueado: false, vendedorNota: '', celularNota: '', emailPlaceholder: EMAIL_FACTURA_PLACEHOLDER_ALTA };
+  }
+  const nombre = String(vendedorNombre || '').trim();
+  return {
+    bloqueado: true,
+    vendedorNota: (nombre ? `${nombre} -- ` : '') + 'el vendedor se cambia en Operam',
+    celularNota: 'El celular se edita en el prospecto',
+    emailPlaceholder: EMAIL_FACTURA_PLACEHOLDER_UPGRADE,
+  };
+}
+
+// Solo viaja lo que CAMBIO respecto a lo precargado (decision 2 de #197): los
+// campos comerciales se podan de los datos fiscales y vuelven solo si el vendedor
+// los movio. Lo que no viaja no se escribe ni se verifica -- misma semantica
+// "ausente != vacio" de buildActualizarFiscalPayload -- y ademas ahorra el post-fix
+// web del segmento cuando no hubo cambio.
+//
+// `precargado` tiene TRES estados, y la diferencia importa:
+//   - objeto: linea base conocida. Solo viaja lo que difiera de ella.
+//   - null: la precarga corrio y FALLO. No viaja nada comercial: sin linea base,
+//     "cambio" no significa nada y cualquier valor del panel podria pisar un dato real.
+//   - undefined: esta superficie no aporta configuracion comercial. Los datos pasan
+//     TAL CUAL. Es el camino de "Actualizar este" sobre un candidato generico
+//     (altaCandidatoActualizar, #78): entra al upgrade con lo que el vendedor capturo
+//     en el ALTA, donde el segmento SI es captura suya y tiene que viajar (#193).
+// Vaciar un campo ya precargado tampoco viaja: los <select> se repueblan desde el
+// catalogo (altaEsperarCatalogosCompletos) y eso los resetea a "", asi que un vacio
+// que viajara dejaria al cliente sin lista de precios por una carrera del catalogo.
+export function datosUpgradeConComercial(datos, precargado, capturado) {
+  const salida = { ...(datos || {}) };
+  if (precargado === undefined) return salida;
+  for (const operam of COMERCIAL_UPGRADE) {
+    const { csf } = DIFF_FISCAL_CAMPOS.find(c => c.operam === operam);
+    delete salida[csf];
+    if (!precargado) continue;
+    const nuevo = String((capturado || {})[csf] ?? '').trim();
+    const anterior = String(precargado[csf] ?? '').trim();
+    if (nuevo && nuevo !== anterior) salida[csf] = nuevo;
+  }
+  return salida;
 }
 
 // Email de facturacion en el upgrade (fix de la revision de #95): el input

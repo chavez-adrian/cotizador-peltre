@@ -12,7 +12,7 @@ import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacio
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
-import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados } from './public/js/alta-logica.js';
+import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados, precargaComercialUpgrade } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, sucursalEquivalente, diffBranchDomicilio } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
@@ -1693,6 +1693,22 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
       };
     });
     res.json(clientes);
+  } catch (err) {
+    res.status(503).json({ error: 'Operam no disponible: ' + err.message });
+  }
+});
+
+// Precarga de la configuracion comercial visible del cliente (issue #197): la
+// Seccion 2 del upgrade fiscal se abre con lo que Operam tiene HOY, para que
+// confirmar sin tocar nada no mande los defaults del panel encima de datos reales.
+// Solo lectura, y el mapeo lo hace el nucleo puro (misma tabla que el diff/PUT).
+// Un fallo responde 503 a proposito: el panel prefiere no precargar a precargar
+// valores inventados, y sin precarga no deja viajar nada comercial.
+app.get('/api/operam/clientes/:id/comercial', authMiddleware, async (req, res) => {
+  try {
+    const cliente = await obtenerClientePorId(req.params.id);
+    if (!cliente) return res.status(503).json({ error: 'Operam no devolvio el cliente' });
+    res.json(precargaComercialUpgrade(cliente));
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }
