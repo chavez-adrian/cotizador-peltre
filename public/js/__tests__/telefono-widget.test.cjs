@@ -6,9 +6,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let MENSAJE_VALIDACION_CEL, celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget, normalizarCapturaMx, opcionesWidget;
+let MENSAJE_VALIDACION_CEL, MENSAJE_UNO_LIDER, celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget, normalizarCapturaMx, unoLiderDescartado, opcionesWidget;
 before(async () => {
-  ({ MENSAJE_VALIDACION_CEL, celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget, normalizarCapturaMx, opcionesWidget } =
+  ({ MENSAJE_VALIDACION_CEL, MENSAJE_UNO_LIDER, celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget, normalizarCapturaMx, unoLiderDescartado, opcionesWidget } =
     await import('../telefono-widget.js'));
 });
 
@@ -144,4 +144,35 @@ test('normalizarCapturaMx normaliza tambien el internacional pegado', () => {
   assert.strictEqual(normalizarCapturaMx('+525534667689'), '+525534667689');
   // en +1 el "1" ES el codigo de pais: no se toca
   assert.strictEqual(normalizarCapturaMx('+15551234567'), '+15551234567');
+});
+
+// Issue #202: cablearCapturaMx solo debe avisar cuando el "1" que se descarta
+// es el de un nacional mexicano tecleado a mano -- nunca el del espejo
+// internacional (paste del formato legacy completo, que normaliza en
+// silencio). unoLiderDescartado es el predicado puro que separa ambos casos;
+// quien decide CUANDO llamarlo (solo en eventos de teclado) es DOM y pide
+// verificacion en navegador.
+test('unoLiderDescartado marca el "1" lider tecleado de un nacional mexicano', () => {
+  assert.strictEqual(unoLiderDescartado('1'), true);
+  assert.strictEqual(unoLiderDescartado('1 55 3466 7689'), true);
+  assert.strictEqual(unoLiderDescartado('15534667689'), true);
+  assert.strictEqual(unoLiderDescartado('1553466768'), true);
+});
+
+test('unoLiderDescartado calla con un nacional ya limpio o vacio', () => {
+  assert.strictEqual(unoLiderDescartado('55 3466 7689'), false);
+  assert.strictEqual(unoLiderDescartado('5534667689'), false);
+  assert.strictEqual(unoLiderDescartado(''), false);
+  assert.strictEqual(unoLiderDescartado(null), false);
+});
+
+test('unoLiderDescartado nunca dispara para el espejo internacional (paste)', () => {
+  assert.strictEqual(unoLiderDescartado('+52 1 55 3466 7689'), false);
+  assert.strictEqual(unoLiderDescartado('+5215534667689'), false);
+  assert.strictEqual(unoLiderDescartado('+15551234567'), false);
+});
+
+test('MENSAJE_UNO_LIDER sigue el estilo de MENSAJE_VALIDACION_CEL: acentuado, sin bloquear', () => {
+  assert.match(MENSAJE_UNO_LIDER, /ningún teléfono empieza con 1/);
+  assert.match(MENSAJE_UNO_LIDER, /10 dígitos/);
 });

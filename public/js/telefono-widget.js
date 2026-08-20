@@ -56,6 +56,13 @@ const MENSAJE_GENERICO = 'Ese número no se ve válido.';
 // entendia (reporte de Adrian, 2026-08-19).
 const MENSAJE_PRECISO = 'Ese número tiene el largo correcto pero no parece un número real de ese país. Revísalo; si es correcto, puedes guardarlo.';
 
+// Aviso transitorio del "1" lider TECLEADO (issue #202). normalizarCapturaMx
+// ya lo descarta en silencio desde #176/#199 -- correcto, pero mudo: quien
+// teclea un legacy "1 55..." no ve nada y puede creer que el formulario o su
+// teclado no sirven. Nunca bloquea; solo avisa. Estilo de mensaje igual al de
+// MENSAJE_VALIDACION_CEL.
+export const MENSAJE_UNO_LIDER = 'En México ningún teléfono empieza con 1. Teclea los 10 dígitos.';
+
 // celCode es el contrato de la casa ('+52' | '+1' | '+1-CA' | '+'): lo consumen
 // paisDesdeCodigoTelefono, validarTelefono y combinarTelefonoConCodigo. El
 // widget habla iso2, asi que se traduce con CEL_CODE_POR_ISO2 (alta-logica.js,
@@ -112,6 +119,17 @@ export function normalizarCapturaMx(valor) {
   return tel.replace(/^(\s*)1[\s.-]*/, '$1');
 }
 
+// Distingue el caso que pide el aviso (issue #202) del espejo internacional:
+// solo el "1" lider de un nacional mexicano tecleado a mano (nunca el "1" de
+// un "+52 1 ..." pegado/normalizado) debe mostrarlo. Puro para poder probarlo
+// sin DOM; quien pinta el aviso (cablearCapturaMx, abajo) es quien decide
+// CUANDO llamarlo (solo eventos de teclado, nunca en el paste interceptado).
+export function unoLiderDescartado(crudo) {
+  const tel = crudo || '';
+  if (tel.trim().startsWith('+')) return false;
+  return normalizarCapturaMx(tel) !== tel;
+}
+
 // Config con la que nacen TODAS las instancias del widget (mayoreo publico y
 // los campos del alta interna): una sola, para que traducir el buscador o tocar
 // strictMode no requiera acordarse del otro consumidor.
@@ -151,10 +169,64 @@ function pintarAviso(estado, mensaje) {
 }
 
 function normalizarCaptura(estado) {
-  if (celCodeDelWidget(estado.iti) !== '+52') return;
+  if (celCodeDelWidget(estado.iti) !== '+52') return false;
   const crudo = estado.input.value || '';
   const limpio = normalizarCapturaMx(crudo);
-  if (limpio !== crudo) estado.input.value = limpio;
+  if (limpio === crudo) return false;
+  estado.input.value = limpio;
+  return unoLiderDescartado(crudo);
+}
+
+// Nodo del aviso del "1" lider tecleado (issue #202), uno por input, creado al
+// vuelo y reutilizado -- WeakMap para no tener que engancharse al ciclo de
+// vida de `montados` (mayoreo.js llama cablearCapturaMx directo, sin pasar
+// por ahi). Cuando el input se repinta por innerHTML (paso Cliente) el nodo
+// viejo se va con el, sin fuga: nadie vuelve a pedirlo. Misma clase
+// '.tel-aviso' que el aviso de la capa estricta (montarTelefono) para que se
+// vea igual en los 6 campos del alta y en mayoreo -- nunca es el MISMO nodo,
+// asi que uno no pisa ni oculta al otro.
+const TIMEOUT_AVISO_UNO_LIDER_MS = 4000;
+const avisosUnoLider = new WeakMap();
+
+function nodoAvisoUnoLider(input) {
+  let entrada = avisosUnoLider.get(input);
+  if (!entrada) {
+    const nodo = document.createElement('div');
+    nodo.className = 'tel-aviso';
+    nodo.style.display = 'none';
+    (input.parentElement || input).insertAdjacentElement('afterend', nodo);
+    entrada = { nodo, timer: null };
+    avisosUnoLider.set(input, entrada);
+  }
+  return entrada;
+}
+
+function mostrarAvisoUnoLider(input) {
+  const entrada = nodoAvisoUnoLider(input);
+  entrada.nodo.textContent = MENSAJE_UNO_LIDER;
+  entrada.nodo.style.display = 'block';
+  clearTimeout(entrada.timer);
+  entrada.timer = setTimeout(() => ocultarAvisoUnoLider(input), TIMEOUT_AVISO_UNO_LIDER_MS);
+}
+
+function ocultarAvisoUnoLider(input) {
+  const entrada = avisosUnoLider.get(input);
+  if (!entrada) return;
+  clearTimeout(entrada.timer);
+  entrada.nodo.style.display = 'none';
+}
+
+// Simetrico con el `if (estado.aviso...) estado.aviso.remove()` de
+// desmontarTelefono, abajo: sin esto un timer de mostrarAvisoUnoLider
+// pendiente sobrevive a un desmontaje sobre el MISMO nodo input (el unico
+// camino real hoy es pc-cel via innerHTML, que se lleva el nodo entero -- pero
+// desmontarTelefono no debe depender de ese supuesto para quedar limpio).
+function limpiarAvisoUnoLider(input) {
+  const entrada = avisosUnoLider.get(input);
+  if (!entrada) return;
+  clearTimeout(entrada.timer);
+  if (entrada.nodo.parentElement) entrada.nodo.remove();
+  avisosUnoLider.delete(input);
 }
 
 // Pegado del numero completo (issue #176): con strictMode el widget rearma el
@@ -191,7 +263,9 @@ export function cablearCapturaMx(iti, input) {
   const estado = { iti, input };
   input.addEventListener('paste', ev => pegarNormalizado(estado, ev));
   input.addEventListener('input', ev => {
-    if (ev.isTrusted) normalizarCaptura(estado);
+    if (!ev.isTrusted) return;
+    if (normalizarCaptura(estado)) mostrarAvisoUnoLider(input);
+    else ocultarAvisoUnoLider(input);
   });
 }
 
@@ -200,6 +274,7 @@ export function desmontarTelefono(inputId) {
   if (!estado) return;
   try { estado.iti.destroy(); } catch (err) { /* el input pudo irse con un innerHTML */ }
   if (estado.aviso && estado.aviso.parentElement) estado.aviso.remove();
+  limpiarAvisoUnoLider(estado.input);
   montados.delete(inputId);
 }
 
@@ -274,6 +349,12 @@ export function fijarTelefono(inputId, telefono) {
   }
   estado.tocado = false;
   pintarAviso(estado, null);
+  // El aviso del "1" lider (issue #202) no es responsabilidad de pintarAviso
+  // (esa es la capa estricta): sin esto, repoblar el campo -- p.ej. al elegir
+  // OTRO cliente mientras el aviso de un "1" tecleado sigue en pantalla --
+  // lo dejaba pegado hablando de un numero que ya no esta, hasta que expirara
+  // su propio timeout.
+  ocultarAvisoUnoLider(input);
 }
 
 // Revisa el campo y pinta (o apaga) su aviso. Devuelve el mensaje o null.
