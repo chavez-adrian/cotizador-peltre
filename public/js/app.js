@@ -3346,7 +3346,10 @@ window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
 // puro lo garantiza); se avisa en pantalla en vez de dejar al vendedor creyendo que
 // unos selectores vacios son la configuracion real del cliente.
 async function pcPrecargarComercialUpgrade(customerId) {
-  const errDiv = document.getElementById('alta-comercial-error');
+  // Contenedor propio, no #alta-comercial-error: ese lo limpia "Confirmar config
+  // comercial" (altaConfirmarComercial), y un clic ahi borraria este aviso dejando al
+  // vendedor sin saber que la Seccion 2 no se va a actualizar.
+  const errDiv = document.getElementById('alta-comercial-precarga-aviso');
   try {
     const res = await api(`/api/operam/clientes/${customerId}/comercial`);
     if (!res.ok) throw new Error('lectura fallida');

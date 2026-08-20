@@ -324,6 +324,11 @@
                 <div id="alta-celular-candidatos" style="display:none;margin-top:6px"></div>
               </div>
               <div id="alta-comercial-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
+              <!-- Aviso de precarga fallida del upgrade fiscal (#197). Contenedor PROPIO
+                   a proposito: "Confirmar config comercial" limpia #alta-comercial-error,
+                   y ahi este aviso desapareceria con un clic aunque la seccion siga sin
+                   poder actualizarse. -->
+              <div id="alta-comercial-precarga-aviso" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
               <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="altaConfirmarComercial()">
                 Confirmar config comercial
               </button>
