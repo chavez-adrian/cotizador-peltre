@@ -42,11 +42,17 @@ test('esCandidatoBackfill: excluye el pedido de prueba 7270 (sonda de #67)', () 
   assert.equal(esCandidatoBackfill({ order_no: 7270, trans_no_from: '1163', debtor_no: 394 }), false);
 });
 
-test('esCandidatoBackfill: excluye debtors de prueba PUBLICO EN GENERAL (14) y 1', () => {
-  assert.equal(esCandidatoBackfill({ order_no: '8100', trans_no_from: '1200', debtor_no: '14' }), false);
-  assert.equal(esCandidatoBackfill({ order_no: '8101', trans_no_from: '1201', debtor_no: 14 }), false);
+test('esCandidatoBackfill: excluye el debtor de prueba 1 (mostrador)', () => {
   assert.equal(esCandidatoBackfill({ order_no: '8102', trans_no_from: '1202', debtor_no: '1' }), false);
   assert.equal(esCandidatoBackfill({ order_no: '8103', trans_no_from: '1203', debtor_no: 1 }), false);
+});
+
+// El 14 (PUBLICO EN GENERAL) salio de DEBTORS_PRUEBA en #201: es cajon (factura
+// global de bazar). El predicado ya no lo veta como prueba; el plan lo sigue
+// excluyendo del backfill, pero por la rama esDebtorGenerico (skips.generico).
+test('esCandidatoBackfill: el debtor 14 ya NO se veta como prueba (#201: es cajon)', () => {
+  assert.equal(esCandidatoBackfill({ order_no: '8100', trans_no_from: '1200', debtor_no: '14' }), true);
+  assert.equal(esCandidatoBackfill({ order_no: '8101', trans_no_from: '1201', debtor_no: 14 }), true);
 });
 
 test('esCandidatoBackfill: pedido nulo o sin order_no no es candidato', () => {
@@ -952,18 +958,22 @@ test('planearBackfillSinPedido: DETIENE el walk cuando ord_date < fechaCorte (fu
   assert.deepEqual(llamadas.quotes, ['1150', '1149']);
 });
 
-test('planearBackfillSinPedido: SALTA folios de prueba (1157, 1159-1163) y debtors 14/1', async () => {
+// El 14 dejo de ser debtor de prueba en #201: aqui se sigue saltando, pero por la
+// rama de cajon generico (skips.generico), no como prueba.
+test('planearBackfillSinPedido: SALTA folios de prueba (1157) y el debtor 14 como cajon', async () => {
   const prueba1 = { ...QUOTE_B, trans_no: '1157' };
-  const prueba2 = { ...QUOTE_B, trans_no: '1160', debtor_no: '14' };
+  // 1156 NO esta en FOLIOS_PRUEBA: aqui lo que lo excluye es el debtor 14 (cajon).
+  const cajon14 = { ...QUOTE_B, trans_no: '1156', debtor_no: '14' };
   const { deps } = planBDeps({
-    quotes: { '1157': prueba1, '1160': prueba2, '1150': QUOTE_B },
+    quotes: { '1157': prueba1, '1156': cajon14, '1150': QUOTE_B },
     debtors: { '394': DEBTOR, '14': { debtor_no: '14', CustName: 'PUBLICO EN GENERAL', tax_id: 'XAXX010101000', curr_code: 'MXN' } },
     folioMax: 1160,
   });
   const plan = await planearBackfillSinPedido(deps);
-  // Solo 1150 importa; 1157 (folio prueba) y 1160 (debtor 14) se saltan.
+  // Solo 1150 importa; 1157 (folio prueba) y 1156 (debtor 14, cajon) se saltan.
   assert.equal(plan.importar.length, 1);
   assert.equal(plan.importar[0].folioOperam, '1150');
+  assert.equal(plan.skips.generico, 1);
 });
 
 test('planearBackfillSinPedido: SALTA folio ya existente en el store (idempotente)', async () => {
@@ -1256,7 +1266,8 @@ test('excluidoManual: planearBackfill SKIP excluido manual -- folio 1129 no se i
 
 test('constantes decididas: DEBTORS_GENERICOS (fuente unica en deduplicacion.js) mas DEBTORS_SOCIOS y FOLIOS_EXCLUIDOS_MANUAL (propias del backfill)', () => {
   // #127: los genericos se afirman contra la FUENTE UNICA (lib/deduplicacion.js, numeros).
-  assert.deepEqual([...DEBTORS_GENERICOS].sort(), [143, 183, 184, 256, 449]);
+  // #201: se agrego 14 (PUBLICO EN GENERAL, factura global de bazar).
+  assert.deepEqual([...DEBTORS_GENERICOS].sort(), [14, 143, 183, 184, 256, 449]);
   assert.deepEqual([...DEBTORS_SOCIOS].sort(), ['132', '15', '9']);
   assert.deepEqual([...FOLIOS_EXCLUIDOS_MANUAL].sort(), ['1129', '1189', '1195', '1196']);
 });

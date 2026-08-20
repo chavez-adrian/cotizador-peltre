@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarNombre, detectarDuplicados, hechosCandidato } from '../lib/deduplicacion.js';
+import { normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico } from '../lib/deduplicacion.js';
 
 // N1: quita acentos
 test('N1: normalizarNombre quita acentos', () => {
@@ -456,4 +456,17 @@ test('D22: detectarDuplicados sin telefono no marca candidato aunque la ficha co
   ];
   const result = detectarDuplicados('XAXX010101000', 'Otro Nombre Distinto', clientes);
   assert.strictEqual(result.tipo, 'libre');
+});
+
+// ============================================================
+// Issue #201: el debtor 14 "PUBLICO EN GENERAL" es la factura global de bazar
+// para el SAT (cajon que agrupa compradores sin relacion entre si, igual que
+// los 5 cajones ya registrados) y faltaba en DEBTORS_GENERICOS.
+// ============================================================
+
+// D23: esDebtorGenerico(14) responde true como numero y como string (igual que
+// el resto del set, comparar con Number() adentro del predicado).
+test('D23: esDebtorGenerico reconoce el debtor 14 (PUBLICO EN GENERAL, factura global de bazar) como numero y como string', () => {
+  assert.strictEqual(esDebtorGenerico(14), true);
+  assert.strictEqual(esDebtorGenerico('14'), true);
 });

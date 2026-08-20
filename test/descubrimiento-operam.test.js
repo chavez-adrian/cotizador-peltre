@@ -192,10 +192,18 @@ test('planearDescubrimiento: un quote cancelado en Operam se salta', async () =>
 
 // --- exclusiones REUSADAS de #76 (no se reescriben, se importan) ---
 
-test('planearDescubrimiento: debtor de prueba (14, "venta directa"/mostrador) se salta', async () => {
-  const { plan } = await base({ 1001: quoteReal({ debtor_no: '14' }) });
+test('planearDescubrimiento: debtor de prueba (1, "venta directa"/mostrador) se salta', async () => {
+  const { plan } = await base({ 1001: quoteReal({ debtor_no: '1' }) });
   assert.equal(plan.candidatos.length, 0);
   assert.equal(plan.skips.prueba, 1);
+});
+
+// El 14 estuvo en DEBTORS_PRUEBA desde #76; #201 lo reclasifico como cajon
+// (factura global de bazar) y ahora entra por la rama de esDebtorGenerico.
+test('planearDescubrimiento: el debtor 14 (PUBLICO EN GENERAL) es cajon desde #201 y se propone como prospecto', async () => {
+  const { plan } = await base({ 1001: quoteGenerico({ debtor_no: '14' }) });
+  assert.equal(plan.candidatos.length, 1);
+  assert.equal(plan.candidatos[0].candidato.tipo, 'prospecto');
 });
 
 test('planearDescubrimiento: debtor socio (9/15/132) se salta', async () => {

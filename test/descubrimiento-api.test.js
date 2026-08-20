@@ -224,11 +224,19 @@ test('un quote cancelado en Operam (data/cancelados.json) no se propone', async 
   assert.equal(res.body.saltados.cancelado, 1);
 });
 
-test('debtor de prueba (mostrador/publico general, "venta directa") no se propone', async () => {
-  const res = await correrDescubrimiento(handlersBase({ quotes: { 1: quoteReal({ debtor_no: '14' }) } }));
+test('debtor de prueba (mostrador, "venta directa") no se propone', async () => {
+  const res = await correrDescubrimiento(handlersBase({ quotes: { 1: quoteReal({ debtor_no: '1' }) } }));
   assert.equal(res.status, 200);
   assert.equal(res.body.nuevos, 0);
   assert.equal(res.body.saltados.prueba, 1);
+});
+
+// El 14 estuvo en DEBTORS_PRUEBA desde #76; #201 lo reclasifico como cajon
+// (factura global de bazar): su quote entra a la bandeja, no al descarte.
+test('el debtor 14 (PUBLICO EN GENERAL) es cajon desde #201: su quote se propone a la bandeja', async () => {
+  const res = await correrDescubrimiento(handlersBase({ quotes: { 1: quoteGenerico({ debtor_no: '14' }) } }));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.nuevos, 1);
 });
 
 test('debtor socio no se propone', async () => {
