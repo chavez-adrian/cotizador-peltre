@@ -76,6 +76,7 @@ test('PATCH /api/operam/clientes/:id: actualiza cliente en Operam con campos del
 // El diff que manda el panel "Confirmar y actualizar en Operam" viene de
 // calcularDiffFiscal, con llaves de LECTURA (CustName). El PUT de Operam las ignora en
 // silencio (#169): el endpoint debe traducirlas a llaves de escritura antes de mandar.
+// Sin tax_id en el diff: el gate anti-fusion de #207 no aplica aqui, se prueba aparte.
 test('PATCH /api/operam/clientes/:id: traduce CustName del diff a cust_name en el PUT (#169)', async () => {
   resetSession();
   let putBody = null;
@@ -89,7 +90,7 @@ test('PATCH /api/operam/clientes/:id: traduce CustName del diff a cust_name en e
   try {
     const diff = {
       CustName: { anterior: 'PROSPECTO', nuevo: 'Peltre Nacional SA de CV', label: 'Razon Social' },
-      tax_id: { anterior: '', nuevo: 'PNA010203ABC', label: 'RFC' },
+      'cl-cp-fiscal': { anterior: '44100', nuevo: '45100' },
     };
     const res = await req
       .patch('/api/operam/clientes/42')
@@ -99,7 +100,124 @@ test('PATCH /api/operam/clientes/:id: traduce CustName del diff a cust_name en e
     assert.equal(res.status, 200);
     assert.equal(putBody.cust_name, 'Peltre Nacional SA de CV');
     assert.ok(!('CustName' in putBody), 'CustName en el PUT no persiste el nombre');
-    assert.equal(putBody.tax_id, 'PNA010203ABC', 'los campos sin llave alterna viajan igual');
+    assert.equal(putBody['cl-cp-fiscal'], '45100', 'los campos sin llave alterna viajan igual');
+  } finally {
+    restore();
+  }
+});
+
+// === Gate anti-fusion por RFC (issue #207) ===
+//
+// Hasta #207 este PATCH escribia tax_id sin objecion (el test de arriba lo probaba con
+// un RFC arbitrario, ver auditoria de #205): ahora, cuando el diff toca tax_id, el
+// verificador compartido de "RFC libre" (lib/operam-client.js, extraido del gate del
+// upgrade fiscal #85) corre ANTES de tocar Operam.
+
+test('PATCH /api/operam/clientes/:id: tax_id de OTRO cliente -> 409 con la identidad del dueno, CERO escrituras a Operam', async () => {
+  resetSession();
+  let putCalled = false;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    'tax_id=': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 99, CustName: 'Otro Cliente SA de CV', tax_id: 'PNA010203ABC', branches: [] }],
+    }),
+    '/api/v3/sales/customers/42': () => {
+      putCalled = true;
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    const diff = { tax_id: { anterior: '', nuevo: 'PNA010203ABC', label: 'RFC' } };
+    const res = await req
+      .patch('/api/operam/clientes/42')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({ diff });
+
+    assert.equal(res.status, 409, 'debe frenar con 409');
+    assert.equal(res.body.fusion, true);
+    assert.equal(res.body.cliente.cliente_id, 99, 'identifica al dueno del RFC');
+    assert.equal(res.body.cliente.CustName, 'Otro Cliente SA de CV');
+    assert.match(res.body.error, /99/, 'el mensaje incluye la identidad del dueno');
+    assert.equal(putCalled, false, 'CERO escrituras al ERP cuando el gate frena');
+  } finally {
+    restore();
+  }
+});
+
+test('PATCH /api/operam/clientes/:id: tax_id del MISMO cliente (minusculas y espacios) -> pasa', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    'tax_id=': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 42, CustName: 'Cliente Propio SA de CV', tax_id: 'PNA010203ABC', branches: [] }],
+    }),
+    '/api/v3/sales/customers/42': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, tax_id: 'PNA010203ABC' });
+    },
+  });
+  try {
+    const diff = { tax_id: { anterior: 'PNA010203ABC', nuevo: ' pna010203abc ', label: 'RFC' } };
+    const res = await req
+      .patch('/api/operam/clientes/42')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({ diff });
+
+    assert.equal(res.status, 200, 'no debe frenar el RFC del propio cliente');
+    assert.ok(putBody, 'debe llamar a Operam');
+    assert.equal(putBody.tax_id, ' pna010203abc ', 'el valor capturado viaja tal cual al PUT');
+  } finally {
+    restore();
+  }
+});
+
+test('PATCH /api/operam/clientes/:id: tax_id generico -> exento del gate, ni siquiera consulta el pool', async () => {
+  resetSession();
+  let putCalled = false;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/42': () => {
+      putCalled = true;
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    const diff = { tax_id: { anterior: '', nuevo: 'XAXX010101000', label: 'RFC' } };
+    const res = await req
+      .patch('/api/operam/clientes/42')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({ diff });
+
+    assert.equal(res.status, 200);
+    assert.equal(putCalled, true, 'el generico no pasa por el pool de tax_id (sin mock, tronaria si lo consultara)');
+  } finally {
+    restore();
+  }
+});
+
+test('PATCH /api/operam/clientes/:id: Operam no disponible en el gate -> 503, CERO escrituras', async () => {
+  resetSession();
+  let putCalled = false;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    'tax_id=': () => jsonResponse({ error: 'boom' }, 500),
+    '/api/v3/sales/customers/42': () => {
+      putCalled = true;
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    const diff = { tax_id: { anterior: '', nuevo: 'PNA010203ABC', label: 'RFC' } };
+    const res = await req
+      .patch('/api/operam/clientes/42')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({ diff });
+
+    assert.equal(res.status, 503);
+    assert.equal(putCalled, false);
   } finally {
     restore();
   }
