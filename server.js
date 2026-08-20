@@ -13,7 +13,7 @@ import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoCliente
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados } from './public/js/alta-logica.js';
-import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, diffBranchDomicilio } from './lib/alta-generica.js';
+import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, sucursalEquivalente, diffBranchDomicilio } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
@@ -1923,22 +1923,41 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
     if (crearSucursal && branchId == null) {
       const nombreCliente = c.razonSocial || c.nombreCorto || entry.cliente || '';
       if (salesman === undefined) salesman = await salesmanDeVendedor(entry.vendedor);
+      const datosSucursal = buildBranchGenerico(c, { salesman });
       let creada = null;
       try {
-        creada = await crearBranchCliente(customerId, buildBranchGenerico(c, { salesman }));
-        steps.push({ name: 'POST branch (sucursal)', status: 'ok' });
-        // RELEER: Operam responde result:true aunque no haya escrito nada (#74).
-        // La sucursal tiene que aparecer entre las del cliente o el paso queda en
-        // error -- la cotizacion NO finge exito ni se sube a un branch inventado.
-        const branches = await obtenerBranchesCliente(customerId);
-        const fresca = branches.find(b => String(b.branch_code) === String(creada.branch_id));
-        if (!fresca) {
-          throw new Error(`la sucursal ${creada.branch_id ?? '(sin codigo)'} no aparece bajo el cliente ${customerId} al releer`);
+        // BUSCAR ANTES DE CREAR (sucursalEquivalente, alta-generica.js): un
+        // intento anterior pudo haber escrito la sucursal en Operam y morir
+        // despues (relectura que no la vio, persistencia que no corrio). Sin
+        // esto el reintento dejaria una segunda sucursal identica. Si la lectura
+        // falla se cae al catch: 503 SIN escribir, que es la salida segura --
+        // sin saber que hay, crear es lo unico que no se puede deshacer.
+        const previas = await Promise.all(
+          (await obtenerBranchesCliente(customerId))
+            .map(async b => ({ branch_code: b.branch_code, ...(await obtenerBranch(b.branch_code) || {}) }))
+        );
+        const yaCreada = sucursalEquivalente(previas, datosSucursal);
+        if (yaCreada) {
+          branchId = yaCreada.branch_code;
+          steps.push({ name: 'POST branch (sucursal)', status: 'ok', info: 'omitido: la sucursal ya existia en Operam de un intento anterior' });
+        } else {
+          creada = await crearBranchCliente(customerId, datosSucursal);
+          steps.push({ name: 'POST branch (sucursal)', status: 'ok' });
+          // RELEER: Operam responde result:true aunque no haya escrito nada (#74).
+          // La sucursal tiene que aparecer entre las del cliente o el paso queda en
+          // error -- la cotizacion NO finge exito ni se sube a un branch inventado.
+          const branches = await obtenerBranchesCliente(customerId);
+          const fresca = branches.find(b => String(b.branch_code) === String(creada.branch_id));
+          if (!fresca) {
+            throw new Error(`la sucursal ${creada.branch_id ?? '(sin codigo)'} no aparece bajo el cliente ${customerId} al releer`);
+          }
+          branchId = fresca.branch_code;
+          steps.push({ name: 'verificar sucursal', status: 'ok' });
         }
-        branchId = fresca.branch_code;
-        steps.push({ name: 'verificar sucursal', status: 'ok' });
         logCliente(rfcGenericoPara(c.pais), nombreCliente, 'creado', customerId, FUENTE_SUCURSAL_CREADA, null,
-          `Sucursal ${branchId} creada bajo el cliente ${customerId} por decision del vendedor (#211)`);
+          yaCreada
+            ? `Sucursal ${branchId} del cliente ${customerId} reusada: ya existia de un intento anterior (#211)`
+            : `Sucursal ${branchId} creada bajo el cliente ${customerId} por decision del vendedor (#211)`);
         steps.push({ name: 'log auditoria', status: 'ok', info: FUENTE_SUCURSAL_CREADA });
       } catch (err) {
         // El nombre del paso distingue "no se pudo crear" de "se creo pero la

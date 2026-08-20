@@ -1152,6 +1152,62 @@ test('SUC3: reintentar "es sucursal" sobre la misma cotizacion NO crea una segun
   assert.equal(quoteBody.branch_id, 33, 'el quote sale con la sucursal ya creada');
 });
 
+// El caso que de verdad puede duplicar: el POST SI escribio en Operam pero la
+// relectura no la vio (justo el escenario que motiva releer, #74). El reintento
+// entra sin nada persistido -- si no mirara antes de crear, dejaria DOS
+// sucursales identicas bajo el cliente y ninguna forma de distinguirlas.
+test('SUC3b: el POST escribio pero la relectura fallo -> el reintento reusa esa sucursal, no crea otra', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion(DOMICILIO);
+  let branchPosts = 0;
+  let quoteBody = null;
+  // Operam si guarda la sucursal, pero el cliente tarda en listarla: el primer
+  // intento no la ve y el segundo si.
+  let branchesVisibles = [{ branch_code: 20, br_name: 'Matriz' }];
+  let creadaEnOperam = null;
+  const handlers = {
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/branches': (u, opts) => {
+      if (opts?.method === 'POST') {
+        branchPosts++;
+        creadaEnOperam = { branch_code: 33, ...JSON.parse(opts.body) };
+        return jsonResponse({ result: true, cust_branch_id: 33 });
+      }
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      // GET de un branch por codigo: el 20 es la matriz, el 33 la recien creada.
+      if (u.includes('/branches/33')) return jsonResponse({ data: [creadaEnOperam ? { ...creadaEnOperam, branch_code: 33 } : {}] });
+      return jsonResponse({ data: [{ branch_code: 20, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' }] });
+    },
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
+      if (u.includes('/10')) return jsonResponse({ data: [{ branches: branchesVisibles }] });
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1904 }); },
+    ...mockWebLegacy(),
+  };
+  mockOperamFetch(handlers);
+
+  const primero = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
+  assert.equal(primero.status, 503, 'la relectura no la vio: no finge exito');
+  assert.equal(branchPosts, 1);
+
+  // Ahora Operam si la lista: el reintento debe encontrarla antes de crear.
+  branchesVisibles = [...branchesVisibles, { branch_code: 33, br_name: 'Recepcion' }];
+
+  const segundo = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
+
+  assert.equal(segundo.status, 200);
+  assert.equal(branchPosts, 1, 'el reintento NO crea una segunda sucursal');
+  assert.equal(quoteBody.customer_id, 10);
+  assert.equal(quoteBody.branch_id, 33, 'el quote sale con la sucursal que si quedo en Operam');
+});
+
 test('SUC4: el flag de sucursal no debilita la guarda del celular ya ligado a OTRO cliente', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
   const id = nuevaCotizacion(DOMICILIO);

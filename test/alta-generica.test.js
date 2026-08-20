@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // El comportamiento de punta a punta se prueba por HTTP en operam-generico.test.js;
 // aqui solo las decisiones puras del modulo lib/alta-generica.js.
 
-const { rfcGenericoPara, necesitaAltaGenerica, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, diffBranchDomicilio } =
+const { rfcGenericoPara, necesitaAltaGenerica, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, buildBranchGenerico, sucursalEquivalente, diffBranchDomicilio } =
   await import('../lib/alta-generica.js');
 
 test('rfcGenericoPara: MX o ausente -> XAXX; extranjero -> XEXX', () => {
@@ -280,4 +280,26 @@ test('diffBranchDomicilio: br_name ignorado por Operam se reporta como no actual
   assert.ok(nombre, 'reporta el nombre no persistido');
   assert.equal(nombre.nuevo, 'Recepcion');
   assert.equal(nombre.anterior, 'HOTEL AZUL CENTRO');
+});
+
+// issue #211: la llave del "buscar antes de crear" de la sucursal. Un empate de
+// NOMBRE no basta -- una plaza nueva puede llamarse igual que la matriz, y
+// reusarla mandaria el quote al domicilio equivocado sin decir nada.
+test('sucursalEquivalente: mismo nombre y mismo domicilio -> es la misma sucursal', () => {
+  const datos = buildBranchGenerico(CLIENTE_ENTREGA, {});
+  const previas = [
+    { branch_code: 20, br_name: 'Matriz', addr_street: 'Otra calle 1', addr_zip: '11000' },
+    { branch_code: 33, br_name: 'Recepcion', addr_street: 'Av Reforma 100', addr_zip: '06600' },
+  ];
+  assert.equal(sucursalEquivalente(previas, datos)?.branch_code, 33);
+});
+
+test('sucursalEquivalente: mismo nombre en OTRO domicilio no cuenta como la misma', () => {
+  const datos = buildBranchGenerico(CLIENTE_ENTREGA, {});
+  const previas = [{ branch_code: 20, br_name: 'Recepcion', addr_street: 'Av Chapultepec 9', addr_zip: '11000' }];
+  assert.equal(sucursalEquivalente(previas, datos), null);
+});
+
+test('sucursalEquivalente: sin nombre resoluble no matchea nada (no se reusa a ciegas)', () => {
+  assert.equal(sucursalEquivalente([{ branch_code: 20, br_name: '' }], { br_name: '' }), null);
 });
