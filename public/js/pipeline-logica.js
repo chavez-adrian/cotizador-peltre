@@ -119,6 +119,33 @@ export function interpretarSubidaOperam(resultado) {
   return { estado: 'pre', mensaje: r.error || 'No se pudo subir a Operam' };
 }
 
+// Texto de la diferencia de nombre (#210): palabras CRUDAS en AMBAS direcciones,
+// sin clasificar -- ni gazetteer ni lista curada que adivine si una palabra es
+// una ciudad o un tipo de entidad; el vendedor decide. Vacio si los nombres
+// normalizan igual (nada que mostrar, no se inventa una diferencia).
+function textoDiferenciaNombre(diff) {
+  const soloInput = Array.isArray(diff?.soloInput) ? diff.soloInput : [];
+  const soloCandidato = Array.isArray(diff?.soloCandidato) ? diff.soloCandidato : [];
+  if (!soloInput.length && !soloCandidato.length) return '';
+  const partes = [];
+  if (soloCandidato.length) partes.push(`${soloCandidato.join(', ')} (en Operam)`);
+  if (soloInput.length) partes.push(`${soloInput.join(', ')} (en tu captura)`);
+  return `Difiere en: ${partes.join(' · ')}`;
+}
+
+const LETRERO_MATCH_TEXTO = { coincide: 'coincide', no_coincide: 'no coincide', sin_dato: 'sin dato' };
+const LETRERO_MATCH_CLASE = { coincide: 'operam-letrero-ok', no_coincide: 'operam-letrero-alerta', sin_dato: 'operam-letrero-neutro' };
+
+// Letrero de celular/correo (#210): TRES estados -- coincide / no coincide /
+// sin dato. "sin dato" NUNCA se pinta como "no coincide" (41% de las fichas
+// historicas de Operam no tienen telefono capturado). Es evidencia, nunca
+// candado: no deshabilita Elegir ni Crear nuevo.
+function letreroMatch(etiqueta, estado) {
+  const clase = LETRERO_MATCH_CLASE[estado] || LETRERO_MATCH_CLASE.sin_dato;
+  const texto = LETRERO_MATCH_TEXTO[estado] || LETRERO_MATCH_TEXTO.sin_dato;
+  return `<span class="operam-letrero ${clase}">${escapeHtml(etiqueta)}: ${texto}</span>`;
+}
+
 // Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001).
 // DOS salidas, ninguna comoda (#204, ajuste): elegir el cliente correcto
 // (elegirCandidatoOperam -> { customerId }) o declarar que ninguno lo es
@@ -132,12 +159,22 @@ export function interpretarSubidaOperam(resultado) {
 // cotizaciones previas del cliente) y un id duplicado haria que getElementById
 // pintara siempre en el primero, posiblemente oculto (F2 de la revision). app.js
 // resuelve el slot relativo al elemento clickeado.
+// #210: cada candidato trae hechos (diferenciaNombre, celularMatch, correoMatch)
+// que se pintan como evidencia -- ninguna combinacion bloquea ni deshabilita
+// Elegir/Crear nuevo, el humano sigue decidiendo.
 export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
   const items = (candidatos || []).map(c => {
     const nombre = escapeHtml(c.CustName || c.cust_name || 'Sin nombre');
     const ref = c.cust_ref ? ` · ${escapeHtml(c.cust_ref)}` : '';
+    const diffTexto = textoDiferenciaNombre(c.diferenciaNombre);
+    const diffHtml = diffTexto ? `<div class="operam-candidato-diff">${escapeHtml(diffTexto)}</div>` : '';
+    const letreros = `<div class="operam-candidato-letreros">${letreroMatch('Celular', c.celularMatch)}${letreroMatch('Correo', c.correoMatch)}</div>`;
     return `<li class="operam-candidato">
-      <span>${nombre}${ref}</span>
+      <div class="operam-candidato-info">
+        <span class="operam-candidato-nombre">${nombre}${ref}</span>
+        ${diffHtml}
+        ${letreros}
+      </div>
       <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
     </li>`;
   }).join('');

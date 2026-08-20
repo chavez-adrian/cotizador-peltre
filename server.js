@@ -18,7 +18,7 @@ import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
-import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico } from './lib/deduplicacion.js';
+import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, normalizarNombre, hechosCandidato } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
 import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento-operam.mjs';
@@ -1740,12 +1740,38 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
 // buscarClientesPorRfc (#194, nunca buscarClientes: el ?search= de Operam no
 // indexa el RFC) con el pool COMPLETO paginado (el pool de genericos crece por
 // diseno, #81; un match fuera de la primera pagina volveria la dedup 'libre').
+// SIN telefono/correo aqui a proposito (#210): esos solo alimentan los hechos
+// del picker (ver contextoHechos/candidatoParaContrato abajo), nunca la
+// seleccion -- detectarDuplicados/candidatosPorNombreOTelefono deciden con
+// nombre y, cuando lo traen, telefono EXACTAMENTE igual que antes de #210.
 async function poolDedupGenerico(c, entry) {
   const rfcGenerico = rfcGenericoPara(c.pais);
   const nombre = c.razonSocial || c.nombreCorto || entry.cliente || '';
   const raw = await buscarClientesPorRfc(rfcGenerico);
   const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
   return { rfcGenerico, nombre, dedup: detectarDuplicados(rfcGenerico, nombre, clientes) };
+}
+
+// Contexto para los hechos del picker (#210): el telefono/correo REALES del
+// contacto capturado en este paso, para que celularMatch/correoMatch dejen de
+// ser "sin dato" por falta de plomeria cuando el dato si existe. correo es
+// opcional (emailFactura o, si falta, emailEntrega); sin ninguno de los dos
+// hechosCandidato ya cae a 'sin_dato' honestamente (estadoMatch), no truena.
+function contextoHechos(c, nombre) {
+  return { tokensInput: normalizarNombre(nombre), telefonoInput: c.telefono, correoInput: c.emailFactura || c.emailEntrega || '' };
+}
+
+// Forma del candidato que viaja en el 409 (#210): datos base + hechos crudos
+// (diferencia de nombre en ambas direcciones, letreros de celular/correo),
+// calculados APARTE de la seleccion (hechosCandidato nunca decide quien entra a
+// la lista). El picker (buildCandidatosOperamHtml) los pinta sin clasificar --
+// el humano decide. Ninguna combinacion bloquea Elegir/Crear nuevo.
+function candidatoParaContrato(k, ctx) {
+  const hechos = hechosCandidato(k, ctx.tokensInput, ctx.telefonoInput, ctx.correoInput);
+  return {
+    id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id,
+    diferenciaNombre: hechos.diferenciaNombre, celularMatch: hechos.celularMatch, correoMatch: hechos.correoMatch,
+  };
 }
 
 async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo) {
@@ -1775,13 +1801,14 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       // vuelva a elegir, cero escrituras. La reutilizacion por celular (arriba)
       // NO pasa por aqui -- ese customerId no lo elige el vendedor en este request.
       {
-        const { dedup: dedupRevalida } = await poolDedupGenerico(c, entry);
+        const { nombre: nombreRevalida, dedup: dedupRevalida } = await poolDedupGenerico(c, entry);
         const candidatosFrescos = dedupRevalida.tipo === 'candidatos' ? dedupRevalida.candidatos : [];
         if (!candidatosFrescos.some(k => String(k.customer_id) === String(customerId))) {
           await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
+          const ctx = contextoHechos(c, nombreRevalida);
           return res.status(409).json({
             error: 'El cliente elegido ya no esta en la lista de candidatos: elige uno para continuar',
-            candidatos: candidatosFrescos.map(k => ({ id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id })),
+            candidatos: candidatosFrescos.map(k => candidatoParaContrato(k, ctx)),
           });
         }
       }
@@ -1795,9 +1822,10 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         // Sin resolver no hay documento (#204): se marca el motivo ANTES de
         // responder para que el candado de los GET aplique de inmediato.
         await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
+        const ctx = contextoHechos(c, nombre);
         return res.status(409).json({
           error: 'Hay clientes con RFC generico y nombre similar en Operam: elige uno para continuar',
-          candidatos: dedup.candidatos.map(k => ({ id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id })),
+          candidatos: dedup.candidatos.map(k => candidatoParaContrato(k, ctx)),
         });
       }
       // El vendedor dijo "ninguno es el mismo cliente" (#204). Se crea, pero el
