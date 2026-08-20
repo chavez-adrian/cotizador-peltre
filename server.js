@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
+import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, crearCliente, crearClienteDirecto, actualizarBranchCliente, obtenerBranchId, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
@@ -18,7 +18,7 @@ import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
-import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico } from './lib/deduplicacion.js';
+import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, normalizarRfc } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
 import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento-operam.mjs';
@@ -1706,13 +1706,42 @@ app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) 
   }
 });
 
+// Fuente propia del log de clientes para el gate de este PATCH (issue #207): lo
+// distingue del upgrade fiscal (FUENTE_CSF_UPGRADE) en la auditoria de clientes_log.
+const FUENTE_PATCH_CLIENTE = 'patch-cliente';
+
 app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
   const { diff } = req.body || {};
   if (!diff || typeof diff !== 'object') return res.status(400).json({ error: 'diff requerido' });
+  const id = req.params.id;
+  // Gate anti-fusion (#207, mismo verificador del upgrade fiscal #85): un vendedor
+  // autenticado NO puede asignarle a un cliente el RFC real de OTRO cliente por este
+  // camino. Solo corre cuando el diff toca tax_id -- el resto de los campos no
+  // arriesga una colision de identidad. RFC generico exento (comparte RFC por diseno).
+  const rfcNuevo = diff.tax_id && typeof diff.tax_id === 'object' ? diff.tax_id.nuevo : undefined;
+  const hayCambioRfc = rfcNuevo != null && rfcNuevo !== '';
+  if (hayCambioRfc) {
+    let verificacion;
+    try {
+      verificacion = await verificarRfcLibre(rfcNuevo, id);
+    } catch (err) {
+      return res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
+    }
+    if (verificacion.estado === 'otro') {
+      logCliente(normalizarRfc(rfcNuevo), null, 'rfc-bloqueado', id, FUENTE_PATCH_CLIENTE, null, `El RFC ya pertenece al cliente ${verificacion.dueno.cliente_id} (${verificacion.dueno.CustName})`);
+      return res.status(409).json({
+        error: `Este RFC ya pertenece a otro cliente en Operam: ${verificacion.dueno.cliente_id} (${verificacion.dueno.CustName}).`,
+        fusion: true,
+        cliente: verificacion.dueno,
+      });
+    }
+  }
   try {
-    await actualizarClienteDirecto(req.params.id, bodyDesdeDiffFiscal(diff));
+    await actualizarClienteDirecto(id, bodyDesdeDiffFiscal(diff));
+    if (hayCambioRfc) logCliente(normalizarRfc(rfcNuevo), null, 'rfc-actualizado', id, FUENTE_PATCH_CLIENTE, null, null);
     res.json({ ok: true });
   } catch (err) {
+    if (hayCambioRfc) logCliente(normalizarRfc(rfcNuevo), null, 'error', id, FUENTE_PATCH_CLIENTE, null, err.message);
     res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
   }
 });
@@ -2308,18 +2337,22 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
   // formal ya existente en Operam y colar una fusion silenciosa.
   const csfDatos = { ...csfDatosCrudo, rfc };
 
-  let existente;
+  // Gate anti-fusion (#85) via el verificador compartido de "RFC libre" (#207): mismo
+  // criterio que el PATCH de clientes, para que no exista un camino debil que lo
+  // contradiga. Comportamiento sin cambios respecto al gate anterior (buscarClientePorRFC
+  // + comparacion manual): la suite UF1-UF6 es la red de seguridad.
+  let verificacion;
   try {
-    existente = await buscarClientePorRFC(rfc);
+    verificacion = await verificarRfcLibre(rfc, id);
   } catch (err) {
     return res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }
-  if (existente.encontrado && String(existente.cliente_id) !== String(id)) {
-    logCliente(rfc, csfDatos.razonSocial, 'fusion-bloqueada', existente.cliente_id, FUENTE_CSF_UPGRADE, null, null);
+  if (verificacion.estado === 'otro') {
+    logCliente(rfc, csfDatos.razonSocial, 'fusion-bloqueada', verificacion.dueno.cliente_id, FUENTE_CSF_UPGRADE, null, null);
     return res.status(409).json({
       error: 'Este RFC ya pertenece a otro cliente en Operam. Es una fusion manual: el prospecto resulto ser un cliente formal existente.',
       fusion: true,
-      cliente: { cliente_id: existente.cliente_id, CustName: existente.CustName, tax_id: existente.tax_id },
+      cliente: verificacion.dueno,
     });
   }
 
