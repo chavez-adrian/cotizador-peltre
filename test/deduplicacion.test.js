@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarNombre, detectarDuplicados } from '../lib/deduplicacion.js';
+import { normalizarNombre, detectarDuplicados, hechosCandidato } from '../lib/deduplicacion.js';
 
 // N1: quita acentos
 test('N1: normalizarNombre quita acentos', () => {
@@ -348,5 +348,112 @@ test('D17: en el fallback de RFC real un token compartido sin telefono da libre'
     { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', id: 30 },
   ];
   const result = detectarDuplicados('ISI1801183Z4', 'Importaciones Siscani', clientes);
+  assert.strictEqual(result.tipo, 'libre');
+});
+
+// ============================================================
+// Issue #210: el picker de candidatos muestra hechos (no clasifica). Palabras
+// de diferencia del nombre en AMBAS direcciones y CRUDAS (sin gazetteer), y
+// letreros de celular/correo con TRES estados -- "sin dato" nunca es
+// "no coincide" (41% de las fichas historicas de Operam no tienen telefono).
+// hechosCandidato es una funcion APARTE de detectarDuplicados/candidatosPor-
+// NombreOTelefono a proposito (review de #210): calcula evidencia sobre un
+// candidato que YA entro a la lista, sin tocar la seleccion -- _similitud y
+// _telefonoMatch (arriba, D1-D17) siguen decidiendo eso exactamente igual que
+// antes de #210.
+// ============================================================
+
+// D18: familia real "Ojo de Agua" -- tres candidatos que difieren del input por
+// palabras distintas, con overlap suficiente (ojo+agua) para seguir siendo
+// candidatos pese a que el input tambien trae una palabra que ninguno tiene
+// ("sur"), asi se ejercen las dos direcciones a la vez.
+test('D18: hechosCandidato marca palabras crudas en ambas direcciones -- familia Ojo de Agua', () => {
+  const clientes = [
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Grupo', cust_ref: 'OJOAGUA-GPO', id: 70 },
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Puebla', cust_ref: 'OJOAGUA-PUE', id: 71 },
+    { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Grupo Puebla', cust_ref: 'OJOAGUA-GP', id: 72 },
+  ];
+  const result = detectarDuplicados('XAXX010101000', 'Ojo de Agua Sur', clientes);
+  assert.strictEqual(result.tipo, 'candidatos');
+  assert.strictEqual(result.candidatos.length, 3);
+  const tokensInput = normalizarNombre('Ojo de Agua Sur');
+  const porId = Object.fromEntries(result.candidatos.map(c => [c.id, hechosCandidato(c, tokensInput)]));
+  assert.deepEqual(porId[70].diferenciaNombre, { soloInput: ['sur'], soloCandidato: ['grupo'] });
+  assert.deepEqual(porId[71].diferenciaNombre, { soloInput: ['sur'], soloCandidato: ['puebla'] });
+  assert.deepEqual(porId[72].diferenciaNombre, { soloInput: ['sur'], soloCandidato: ['grupo', 'puebla'] });
+});
+
+// D19: mismo nombre exacto (sin diferencia) -- las dos listas salen vacias, no
+// se inventa una diferencia donde no la hay.
+test('D19: hechosCandidato sale vacio en ambas direcciones cuando los nombres normalizan igual', () => {
+  const cliente = { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-SUR', id: 73 };
+  const hechos = hechosCandidato(cliente, normalizarNombre('Ojo de Agua Sur'));
+  assert.deepEqual(hechos.diferenciaNombre, { soloInput: [], soloCandidato: [] });
+});
+
+// D19b (review de #210): si el candidato entro a la lista por solapar con
+// cust_ref y NO con CustName, la diferencia debe compararse contra la base que
+// de verdad gano -- comparar siempre contra CustName mostraria una diferencia
+// enorme que no fue la que lo marco candidato.
+test('D19b: hechosCandidato compara contra cust_ref cuando fue ese el que gano el solapamiento', () => {
+  const cliente = { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'XYZ Corp Internacional', cust_ref: 'Ojo de Agua Norte', id: 74 };
+  const hechos = hechosCandidato(cliente, normalizarNombre('Ojo de Agua Sur'));
+  assert.deepEqual(hechos.diferenciaNombre, { soloInput: ['sur'], soloCandidato: ['norte'] });
+});
+
+// D20: TRES estados de letrero -- ficha con dato que coincide, ficha con dato
+// que NO coincide, y ficha sin dato (honesto: sin_dato, nunca no_coincide).
+test('D20: hechosCandidato distingue coincide / no_coincide / sin_dato en celular y correo', () => {
+  const conMatch = {
+    RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-A', id: 80,
+    contacts: [{ phone: '55 1234 5678', email: 'ventas@ojodeagua.mx' }],
+  };
+  const sinMatch = {
+    RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-B', id: 81,
+    contacts: [{ phone: '55 9999 0000', email: 'otro@dominio.mx' }],
+  };
+  const sinFicha = { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-C', id: 82 };
+  const tokensInput = normalizarNombre('Ojo de Agua Sur');
+
+  const h80 = hechosCandidato(conMatch, tokensInput, '5512345678', 'ventas@ojodeagua.mx');
+  assert.strictEqual(h80.celularMatch, 'coincide');
+  assert.strictEqual(h80.correoMatch, 'coincide');
+
+  const h81 = hechosCandidato(sinMatch, tokensInput, '5512345678', 'ventas@ojodeagua.mx');
+  assert.strictEqual(h81.celularMatch, 'no_coincide');
+  assert.strictEqual(h81.correoMatch, 'no_coincide');
+
+  const h82 = hechosCandidato(sinFicha, tokensInput, '5512345678', 'ventas@ojodeagua.mx');
+  assert.strictEqual(h82.celularMatch, 'sin_dato', 'sin telefono en la ficha -- sin_dato, no no_coincide');
+  assert.strictEqual(h82.correoMatch, 'sin_dato', 'sin correo en la ficha -- sin_dato, no no_coincide');
+});
+
+// D21: sin telefono/correo capturados en el INPUT, el letrero tambien es
+// sin_dato aunque la ficha del candidato si tenga el dato -- no hay con que
+// comparar, y afirmar "no coincide" seria una senal falsa.
+test('D21: hechosCandidato da sin_dato sin telefono/correo en el input aunque la ficha si tenga dato', () => {
+  const cliente = {
+    RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-SUR', id: 90,
+    contacts: [{ phone: '55 1234 5678', email: 'ventas@ojodeagua.mx' }],
+  };
+  const hechos = hechosCandidato(cliente, normalizarNombre('Ojo de Agua Sur'));
+  assert.strictEqual(hechos.celularMatch, 'sin_dato');
+  assert.strictEqual(hechos.correoMatch, 'sin_dato');
+});
+
+// D22 (review de #210, ambos ejes): el telefono capturado en el contacto de la
+// alta generica NUNCA se pasaba a detectarDuplicados desde poolDedupGenerico --
+// #210 es un ticket de UI, no debe activar por accidente la senal fuerte de
+// telefono en un flujo que nunca la tuvo. Verifica que detectarDuplicados SIN
+// telefono siga sin marcar candidato por un match que solo existe por telefono
+// (D10/D16 ya cubren el camino CON telefono explicito; este cubre el default).
+test('D22: detectarDuplicados sin telefono no marca candidato aunque la ficha comparta telefono con el input (seleccion intacta tras #210)', () => {
+  const clientes = [
+    {
+      RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Nombre Sin Relacion', cust_ref: 'NSR', id: 95,
+      contacts: [{ phone: '55 1234 5678' }],
+    },
+  ];
+  const result = detectarDuplicados('XAXX010101000', 'Otro Nombre Distinto', clientes);
   assert.strictEqual(result.tipo, 'libre');
 });

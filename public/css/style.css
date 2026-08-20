@@ -1181,7 +1181,18 @@ body {
 .operam-status-candidatos { display: block; }
 .operam-candidatos-msg { font-weight: 600; margin-bottom: 6px; }
 .operam-candidatos-lista { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.operam-candidato { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.operam-candidato { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--surface-2, #e5e5e8); }
+.operam-candidato:last-child { border-bottom: none; padding-bottom: 0; }
+.operam-candidato-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 200px; }
+/* Hechos del picker de candidatos (#210): diferencia de nombre cruda y letreros
+   de celular/correo -- evidencia, nunca candado (no deshabilitan Elegir/Crear
+   nuevo). Sobrios y legibles en movil: texto chico, chips que envuelven. */
+.operam-candidato-diff { font-size: 12px; color: oklch(0.5 0 0); }
+.operam-candidato-letreros { display: flex; flex-wrap: wrap; gap: 6px; }
+.operam-letrero { font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.operam-letrero-ok { background: oklch(0.93 0.06 150); color: oklch(0.38 0.09 150); }
+.operam-letrero-alerta { background: oklch(0.9 0.08 25); color: oklch(0.42 0.13 25); }
+.operam-letrero-neutro { background: var(--surface-2, #f4f4f5); color: oklch(0.5 0 0); }
 
 /* Tableros kanban: prospectos (issue #49) y cotizaciones (issue #50) */
 #prospectos-contenido { max-width: 520px; }

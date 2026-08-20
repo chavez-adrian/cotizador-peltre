@@ -292,6 +292,67 @@ test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece elegir o crear nue
   assert.doesNotMatch(html, /Dejar como PRE/);
 });
 
+// #210: el picker de candidatos muestra hechos (no clasifica). buildCandidatosOperamHtml
+// es la MISMA funcion que pinta panel de resultado e Historial (ambos resuelven al
+// slot via slotOperamDesde en app.js) -- probarla una vez cubre las dos superficies.
+// Palabras de diferencia en ambas direcciones, crudas, sin gazetteer -- familia
+// real "Ojo de Agua" con sus tres variantes ({grupo}, {puebla}, {grupo,puebla}).
+test('#210: buildCandidatosOperamHtml pinta la diferencia de nombre cruda en ambas direcciones', () => {
+  const html = buildCandidatosOperamHtml(5, [
+    { id: 70, CustName: 'OJO DE AGUA GRUPO', cust_ref: 'OJOAGUA-GPO', diferenciaNombre: { soloInput: ['sur'], soloCandidato: ['grupo'] }, celularMatch: 'sin_dato', correoMatch: 'sin_dato' },
+    { id: 71, CustName: 'OJO DE AGUA PUEBLA', cust_ref: 'OJOAGUA-PUE', diferenciaNombre: { soloInput: ['sur'], soloCandidato: ['puebla'] }, celularMatch: 'sin_dato', correoMatch: 'sin_dato' },
+    { id: 72, CustName: 'OJO DE AGUA GRUPO PUEBLA', cust_ref: 'OJOAGUA-GP', diferenciaNombre: { soloInput: ['sur'], soloCandidato: ['grupo', 'puebla'] }, celularMatch: 'sin_dato', correoMatch: 'sin_dato' },
+  ], 'Elige');
+  assert.match(html, /grupo \(en Operam\)/);
+  assert.match(html, /puebla \(en Operam\)/);
+  assert.match(html, /grupo, puebla \(en Operam\)/);
+  // AMBAS direcciones: lo que trae la captura del vendedor y el candidato no tiene.
+  assert.match(html, /sur \(en tu captura\)/);
+});
+
+// #210: nombres identicos tras normalizar -- nada de diferencia que mostrar, no
+// se inventa un texto donde no hay diferencia.
+test('#210: buildCandidatosOperamHtml no pinta diferencia de nombre cuando las dos listas vienen vacias', () => {
+  const html = buildCandidatosOperamHtml(5, [
+    { id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA', diferenciaNombre: { soloInput: [], soloCandidato: [] }, celularMatch: 'sin_dato', correoMatch: 'sin_dato' },
+  ], 'Elige');
+  assert.doesNotMatch(html, /operam-candidato-diff/);
+});
+
+// #210: TRES estados de letrero, nunca dos -- "sin dato" NUNCA se confunde
+// visualmente con "no coincide" (41% de las fichas historicas no tienen telefono).
+test('#210: buildCandidatosOperamHtml pinta los TRES estados de celular y correo', () => {
+  const html = buildCandidatosOperamHtml(5, [
+    { id: 80, CustName: 'OJO DE AGUA SUR', cust_ref: 'A', diferenciaNombre: { soloInput: [], soloCandidato: [] }, celularMatch: 'coincide', correoMatch: 'no_coincide' },
+    { id: 81, CustName: 'OJO DE AGUA SUR', cust_ref: 'B', diferenciaNombre: { soloInput: [], soloCandidato: [] }, celularMatch: 'sin_dato', correoMatch: 'sin_dato' },
+  ], 'Elige');
+  assert.match(html, /Celular: coincide/);
+  assert.match(html, /Correo: no coincide/);
+  assert.match(html, /Celular: sin dato/);
+  assert.match(html, /Correo: sin dato/);
+});
+
+// #210: los letreros son evidencia, JAMAS candado -- ninguna combinacion de
+// hechos (nombre distinto, celular sin coincidir) apaga Elegir o Crear nuevo.
+test('#210: ninguna combinacion de hechos deshabilita Elegir o Crear nuevo', () => {
+  const html = buildCandidatosOperamHtml(5, [
+    { id: 81, CustName: 'OJO DE AGUA PUEBLA', cust_ref: 'B', diferenciaNombre: { soloInput: ['sur'], soloCandidato: ['puebla'] }, celularMatch: 'no_coincide', correoMatch: 'no_coincide' },
+  ], 'Elige');
+  assert.doesNotMatch(html, /disabled/);
+  assert.match(html, /elegirCandidatoOperam\(5, 81, this\)/);
+  assert.match(html, /crearNuevoClienteOperam\(5, this\)/);
+});
+
+// #210: buildCandidatosOperamHtml sigue escapando datos de usuario tambien en
+// las palabras de diferencia y en los letreros (mismo criterio que el nombre).
+test('#210: buildCandidatosOperamHtml escapa la diferencia de nombre', () => {
+  const html = buildCandidatosOperamHtml(5, [
+    { id: 9, CustName: 'A & B', cust_ref: 'AB', diferenciaNombre: { soloInput: [], soloCandidato: ['<script>'] }, celularMatch: 'sin_dato', correoMatch: 'sin_dato' },
+  ], 'Elige');
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /&lt;script&gt;/);
+});
+
 // Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): buildColaHoyHtml itera
 // la cola que ya viene fusionada y ordenada del backend (lib/cola-hoy.js) y
 // delega la pintura por tipo, PRESERVANDO el orden (no reagrupa por tipo). El

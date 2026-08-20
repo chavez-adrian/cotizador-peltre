@@ -302,6 +302,69 @@ test('G3: nombre similar a un generico de Operam -> 409 con candidatos, sin crea
   assert.equal(cot.data.cliente.customerId, undefined, 'no persiste customer_id');
 });
 
+// G3b (#210): el 409 de candidatos viaja con los hechos del picker -- palabras
+// de diferencia del nombre en ambas direcciones y letreros celular/correo con
+// tres estados. Prueba de INTEGRACION contra el endpoint real (no solo el
+// nucleo puro de deduplicacion.test.js ni el render de pipeline-logica.test.cjs):
+// verifica que server.js de verdad conecta hechosCandidato al contrato.
+test('G3b: el 409 de candidatos viaja con diferenciaNombre y celular/correoMatch (#210)', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  // razonSocial default 'Hotel Azul Centro' (tokens: hotel, azul, centro),
+  // celular default CELULAR (ultimos10 5588776655); se agrega emailFactura
+  // para ejercer tambien el letrero de correo.
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000', emailFactura: 'ventas@hotelazul.mx' });
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
+      if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
+      return jsonResponse({ total: 1, data: [
+        {
+          customer_id: 10, CustName: 'HOTEL AZUL NORTE', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+          contacts: [{ phone: '5588776655', email: 'ventas@hotelazul.mx' }],
+        },
+      ] });
+    },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 409);
+  const cand = res.body.candidatos[0];
+  assert.equal(cand.id, 10);
+  // "centro" (input) vs "norte" (Operam): diferencia cruda en las dos direcciones.
+  assert.deepEqual(cand.diferenciaNombre, { soloInput: ['centro'], soloCandidato: ['norte'] });
+  assert.equal(cand.celularMatch, 'coincide');
+  assert.equal(cand.correoMatch, 'coincide');
+});
+
+// G3c (#210): sin telefono/correo en la ficha del candidato, el 409 dice
+// "sin_dato" honestamente -- nunca "no_coincide" (41% de las fichas historicas
+// no tienen telefono).
+test('G3c: el 409 de candidatos marca sin_dato (no no_coincide) cuando la ficha no trae telefono ni correo (#210)', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
+      if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
+      return jsonResponse({ total: 1, data: [
+        { customer_id: 10, CustName: 'HOTEL AZUL NORTE', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+      ] });
+    },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 409);
+  const cand = res.body.candidatos[0];
+  assert.equal(cand.celularMatch, 'sin_dato');
+  assert.equal(cand.correoMatch, 'sin_dato');
+});
+
 // === Escape "ninguno es el mismo cliente" (#204) ===
 // ADR-0001 decidio que la parada por nombre NO tuviera escape. Con el pool
 // completo que estreno #194 la parada se dispara sobre falsos positivos y deja
