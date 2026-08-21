@@ -31,6 +31,18 @@ export function validarDescripcionLinea(valor, catalogo) {
   return { ok: true, descripcion: limpio, editada: true };
 }
 
+// Cancelar (#240): restaura EXACTAMENTE lo que habia al abrir el editor, sin
+// pasar por la comparacion contra el catalogo -- el blur del textarea (red de
+// seguridad) puede haber guardado algo mientras tanto y Cancelar tiene que
+// ignorarlo. `original` es item.descripcion tal cual estaba al abrir: si la
+// partida no tenia descripcion propia (undefined), cancelar la deja otra vez
+// sin descripcion propia, no marcada como editada con el texto del catalogo
+// copiado -- esa marca decide si el quote de Operam reescribe la linea.
+export function restaurarDescripcion(original) {
+  if (original == null) return { descripcion: undefined, editada: false };
+  return { descripcion: original, editada: true };
+}
+
 // La cotizacion completa, del lado del servidor: la primera partida que no cabe la
 // tumba, nombrandola para que el vendedor sepa cual recortar.
 export function validarDescripcionesCotizacion(items) {

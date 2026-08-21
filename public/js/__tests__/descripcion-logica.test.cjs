@@ -2,10 +2,10 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let MAX_DESCRIPCION, MENSAJE_LARGA, validarDescripcionLinea, validarDescripcionesCotizacion;
+let MAX_DESCRIPCION, MENSAJE_LARGA, validarDescripcionLinea, validarDescripcionesCotizacion, restaurarDescripcion;
 before(async () => {
   ({
-    MAX_DESCRIPCION, MENSAJE_LARGA, validarDescripcionLinea, validarDescripcionesCotizacion,
+    MAX_DESCRIPCION, MENSAJE_LARGA, validarDescripcionLinea, validarDescripcionesCotizacion, restaurarDescripcion,
   } = await import('../descripcion-logica.js'));
 });
 
@@ -90,6 +90,27 @@ test('una cotizacion con descripciones dentro del limite pasa', () => {
   assert.equal(validarDescripcionesCotizacion([{ codigo: 'X', descripcion: 'corta' }]).ok, true);
   assert.equal(validarDescripcionesCotizacion([]).ok, true);
   assert.equal(validarDescripcionesCotizacion(undefined).ok, true);
+});
+
+// === Cancelar (#240): restaura EXACTAMENTE lo que habia al abrir el editor ===
+// El blur del textarea puede haber guardado algo mientras tanto (red de
+// seguridad, #240); Cancelar tiene que ignorar eso y devolver el estado
+// capturado al abrir, no lo que quedo guardado despues.
+
+test('cancelar sobre una partida que SI tenia descripcion propia la restaura tal cual', () => {
+  const r = restaurarDescripcion('Tazon 14 cm, esmaltado a mano, color mostaza');
+  assert.equal(r.editada, true);
+  assert.equal(r.descripcion, 'Tazon 14 cm, esmaltado a mano, color mostaza');
+});
+
+// La marca "editada" es la que decide si el robot de la web legacy reescribe la
+// linea al actualizar el quote: cancelar sobre una partida SIN descripcion propia
+// no puede dejarla marcada como editada con el texto del catalogo copiado, como
+// si el vendedor lo hubiera escrito.
+test('cancelar sobre una partida que NO tenia descripcion propia la deja sin descripcion propia', () => {
+  const r = restaurarDescripcion(undefined);
+  assert.equal(r.editada, false);
+  assert.equal(r.descripcion, undefined);
 });
 
 // === Diseno de calca: la base es el nombre CON su numero (#221, spec #218) ===

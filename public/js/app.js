@@ -129,6 +129,7 @@ import {
 import {
   MAX_DESCRIPCION,
   validarDescripcionLinea,
+  restaurarDescripcion,
 } from './descripcion-logica.js';
 import {
   resolverTier,
@@ -1255,7 +1256,7 @@ function renderCartLines() {
       <div class="cart-line${precio === null ? ' cart-line-sin-precio' : ''}" data-key="${key}">
         <span class="cart-line-sku">${codigoDeLlave(key)}</span>
         <span class="cart-line-name" title="${escapeHtml(name)}">${escapeHtml(name)} ${relacion}
-          <button class="qty-icon-btn${descripcion ? ' cart-line-desc-editada' : ''}" onclick="cartLineToggleDescripcion('${key}')" title="Editar la descripcion que ve el cliente">&#9998;</button>
+          <button class="qty-icon-btn${descripcion ? ' cart-line-desc-editada' : ''}" onmousedown="event.preventDefault(); cartLineToggleDescripcion('${key}')" title="Editar la descripcion que ve el cliente">&#9998;</button>
         </span>
         <div class="cart-line-qty-wrap col-num">
           <span class="cart-line-etiqueta">Cant.</span>
@@ -1351,10 +1352,17 @@ function conservarCaptura(key, entrada) {
 // cerrarle el editor al vendedor mientras escribe seria hostil.
 const descripcionesAbiertas = new Set();
 
+// La descripcion vigente AL ABRIR cada editor (#240): Cancelar restaura esto, no
+// lo que el blur haya guardado mientras tanto. undefined = la partida no tenia
+// descripcion propia.
+const descripcionesOriginales = new Map();
+
 // Editor de la descripcion que ve el cliente (#139), en una fila propia bajo la
 // partida: el texto puede ser largo (hasta el limite de Operam) y no cabe en la
 // celda del nombre. Precargado con la del catalogo, que es lo que se manda si el
-// vendedor no escribe nada.
+// vendedor no escribe nada. Cancelar/Aceptar (#240) confirman o descartan el
+// cambio de forma explicita; el guardado en blur (onchange) sigue como red de
+// seguridad, pero ya no es el unico camino.
 function editorDescripcionLinea(key, descripcion, nombreCatalogo) {
   if (!descripcionesAbiertas.has(key)) return '';
   return `
@@ -1362,13 +1370,40 @@ function editorDescripcionLinea(key, descripcion, nombreCatalogo) {
       <textarea maxlength="${MAX_DESCRIPCION}" rows="2" placeholder="${escapeHtml(nombreCatalogo)}"
         onchange="cartLineSetDescripcion('${key}', this.value)">${escapeHtml(descripcion || nombreCatalogo)}</textarea>
       <div class="cart-line-descripcion-hint">Este texto es el que sale en la cotizacion del cliente y en Operam. Vacialo para volver a la descripcion del catalogo.</div>
+      <div class="cart-line-descripcion-acciones">
+        <button type="button" class="btn btn-secondary btn-sm" onmousedown="event.preventDefault(); cartLineCancelarDescripcion('${key}')">Cancelar</button>
+        <button type="button" class="btn btn-primary btn-sm" onmousedown="event.preventDefault(); cartLineAceptarDescripcion('${key}')">Aceptar</button>
+      </div>
     </div>
   `;
 }
 
+// Quitar del DOM un textarea que TODAVIA tiene el foco (renderCartLines lo
+// reemplaza al cerrar el editor) dispara un blur diferido del navegador --no
+// sincrono, puede llegar varias interacciones despues-- que re-ejecuta el
+// onchange con el valor viejo y pisa lo que Cancelar/Aceptar acaban de resolver.
+// Se desarma el manejador ANTES de desmontar para que ese blur tardio no tenga
+// nada que ejecutar.
+function desarmarGuardadoEnBlur(key) {
+  const textarea = document.querySelector(`.cart-line[data-key="${key}"] .cart-line-descripcion textarea`);
+  if (textarea) textarea.onchange = null;
+  return textarea;
+}
+
+// El lapiz solo abre/cierra (#240): guardar o descartar es de los botones
+// explicitos. onmousedown + preventDefault (mismo patron que selectSearchItem,
+// linea ~990) evita que el blur del textarea dispare antes que el toggle y
+// repinte la tabla destruyendo el boton que se acaba de tocar -- por eso cierra
+// a la primera, sin depender del orden real de blur/click del navegador.
 function cartLineToggleDescripcion(key) {
-  if (descripcionesAbiertas.has(key)) descripcionesAbiertas.delete(key);
-  else descripcionesAbiertas.add(key);
+  if (descripcionesAbiertas.has(key)) {
+    desarmarGuardadoEnBlur(key);
+    descripcionesAbiertas.delete(key);
+    descripcionesOriginales.delete(key);
+  } else {
+    descripcionesAbiertas.add(key);
+    descripcionesOriginales.set(key, state.cart.get(key)?.descripcion);
+  }
   renderCartLines();
   document.querySelector(`.cart-line[data-key="${key}"] .cart-line-descripcion textarea`)?.focus();
 }
@@ -1377,13 +1412,13 @@ window.cartLineToggleDescripcion = cartLineToggleDescripcion;
 // La descripcion se guarda SOLO cuando difiere de la del catalogo: esa marca es la
 // que decide si al actualizar el quote de Operam hay que reescribir la linea, y
 // marcar de mas costaria dos POSTs por partida contra la web legacy sin motivo.
+// Sigue siendo la red de seguridad del blur (#240): guarda pero no cierra el editor.
 function cartLineSetDescripcion(key, valor) {
   const item = state.cart.get(key);
   if (!item) return;
   const r = validarDescripcionLinea(valor, nombreVisibleProducto(item.product.name));
   if (!r.ok) {
     alert(r.mensaje);
-    renderCartLines();
     return;
   }
   if (r.editada) item.descripcion = r.descripcion;
@@ -1391,6 +1426,45 @@ function cartLineSetDescripcion(key, valor) {
   renderCartLines();
 }
 window.cartLineSetDescripcion = cartLineSetDescripcion;
+
+// Aceptar (#240): guarda lo escrito y cierra. onmousedown + preventDefault evita
+// el blur del textarea, asi que esta es la UNICA escritura para esta interaccion
+// -- no hay carrera con la red de seguridad porque el blur nunca llega a disparar.
+function cartLineAceptarDescripcion(key) {
+  const item = state.cart.get(key);
+  const textarea = document.querySelector(`.cart-line[data-key="${key}"] .cart-line-descripcion textarea`);
+  if (item && textarea) {
+    const r = validarDescripcionLinea(textarea.value, nombreVisibleProducto(item.product.name));
+    if (!r.ok) {
+      alert(r.mensaje);
+      return;
+    }
+    if (r.editada) item.descripcion = r.descripcion;
+    else delete item.descripcion;
+  }
+  desarmarGuardadoEnBlur(key);
+  descripcionesAbiertas.delete(key);
+  descripcionesOriginales.delete(key);
+  renderCartLines();
+}
+window.cartLineAceptarDescripcion = cartLineAceptarDescripcion;
+
+// Cancelar (#240, la trampa del ticket): restaura lo que habia AL ABRIR el editor,
+// ignorando lo que el blur haya guardado de camino -- por eso lee de
+// descripcionesOriginales y no del textarea ni de item.descripcion vigente.
+function cartLineCancelarDescripcion(key) {
+  const item = state.cart.get(key);
+  if (item) {
+    const r = restaurarDescripcion(descripcionesOriginales.get(key));
+    if (r.editada) item.descripcion = r.descripcion;
+    else delete item.descripcion;
+  }
+  desarmarGuardadoEnBlur(key);
+  descripcionesAbiertas.delete(key);
+  descripcionesOriginales.delete(key);
+  renderCartLines();
+}
+window.cartLineCancelarDescripcion = cartLineCancelarDescripcion;
 
 // Celda de % de descuento de una linea (#137). Sin tope asignado no hay captura:
 // se muestra en solo lectura, porque una cotizacion cargada del historial puede
@@ -1559,6 +1633,7 @@ window.removeItem = (key) => {
   // Quitar la partida cierra su editor de descripcion (#139): si no, volver a
   // agregar ese SKU lo mostraria abierto sin que nadie lo pidiera.
   descripcionesAbiertas.delete(key);
+  descripcionesOriginales.delete(key);
   updateTierBar();
   updateCartSummary();
   renderProducts(document.getElementById('search-input').value);
@@ -2530,6 +2605,7 @@ function nuevaCotizacion() {
   marcarNavActivo('nav-cotizar');
   vaciarCarrito();
   descripcionesAbiertas.clear();
+  descripcionesOriginales.clear();
   // Empezar de cero mata el borrador (#179): recargar despues no resucita la
   // cotizacion que el vendedor acaba de descartar.
   matarBorrador(EVENTOS_BORRADOR.NUEVA_COTIZACION);
@@ -5738,6 +5814,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Poblar carrito
     vaciarCarrito();
     descripcionesAbiertas.clear();
+    descripcionesOriginales.clear();
     // #154: Editar (mismo registro) conserva la lista fijada SIN IMPORTAR el
     // permiso de quien edita -- el servidor la deja pasar comparando contra el
     // tier ya guardado en ESE registro. Copiar (registro nuevo) solo la hereda

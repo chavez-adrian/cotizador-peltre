@@ -1035,6 +1035,15 @@ body {
   margin-top: 3px;
 }
 
+/* Cancelar/Aceptar (#240): antes solo habia guardado invisible en blur. */
+.cart-line-descripcion-acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+  padding-bottom: 5px;
+}
+
 /* La partida con descripcion propia marca su lapiz para que se distinga de un
    nombre de catalogo de un vistazo. */
 .cart-line-desc-editada { color: var(--primary); }
