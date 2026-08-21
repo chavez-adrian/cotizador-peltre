@@ -229,6 +229,16 @@ function validarDomicilioCotizacion() {
 // es el resultado de validarDomicilioCotizacion().
 function leerClienteFormulario(leyenda) {
   return {
+    // Identidad en Operam del cliente ELEGIDO (#243). Los campos cl-* guardan su
+    // nombre, su RFC y su domicilio, pero el id se quedaba en pcState y nunca
+    // viajaba: el servidor solo mira data.cliente.customerId para saber si el
+    // cliente YA existe (necesitaAltaGenerica), asi que un cliente elegido por
+    // "Ya lo conozco" con RFC GENERICO se volvia a dar de alta y Operam lo frenaba
+    // con un 406 por cust_ref duplicado, sin salida para el vendedor. Con RFC real
+    // el fallback por RFC de subirCotizacionOperam tapaba el hueco -- por eso solo
+    // se veia en genericos. customerIdFiscal es el mismo resolvedor que ya decide
+    // el chip Fiscal, para no tener dos ideas de "cual es el cliente en Operam".
+    customerId: customerIdFiscal(pcState.cliente),
     razonSocial: document.getElementById('cl-razon-social').value,
     nombreCorto: document.getElementById('cl-nombre-corto').value,
     rfc: document.getElementById('cl-rfc').value,

@@ -2438,3 +2438,48 @@ test('un login rechazado dice el status en vez de reventar parseando HTML', asyn
     await assert.rejects(() => buscarClientes('x'), /Operam login 429.*Too Many Requests/);
   } finally { restore(); }
 });
+
+// Un cliente ELEGIDO por el vendedor ("Ya lo conozco") llega con su customerId
+// pero SIN branchId: el alta generica es la unica que persistia los dos juntos.
+// El `branchId || 1` mandaba el quote a la sucursal 1, que puede no ser del
+// cliente. La sucursal se le pregunta a Operam, igual que hace la rama del RFC al
+// quedarse con encontrado.branch_code (#243).
+test('subirCotizacionOperam: con customerId y sin branchId, la sucursal sale de Operam y no del 1 ciego', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/499': () => jsonResponse({ data: [{ customer_id: '499', branches: [{ branch_code: '640' }] }] }),
+    '/api/v3/sales/quote': (url, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1301 }); },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-08-21',
+      cliente: { rfc: 'XEXX010101000', customerId: 499, nombreCorto: 'Studio Iken' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
+    });
+    assert.equal(quoteBody.customer_id, 499);
+    assert.equal(quoteBody.branch_id, 640, 'la sucursal debe salir de Operam, no del fallback 1');
+  } finally { restore(); }
+});
+
+// El branchId que YA trae la cotizacion manda: no se vuelve a preguntar.
+test('subirCotizacionOperam: con branchId ya ligado no se le pregunta la sucursal a Operam', async () => {
+  resetSession();
+  let leyoCliente = false;
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => { leyoCliente = true; return jsonResponse({ data: [] }); },
+    '/api/v3/sales/quote': (url, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1302 }); },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-08-21',
+      cliente: { rfc: 'XEXX010101000', customerId: 499, branchId: 77 },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
+    });
+    assert.equal(quoteBody.branch_id, 77);
+    assert.equal(leyoCliente, false, 'con branchId ligado no hay lectura extra a Operam');
+  } finally { restore(); }
+});
