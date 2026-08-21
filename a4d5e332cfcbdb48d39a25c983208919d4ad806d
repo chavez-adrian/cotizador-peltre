@@ -1,0 +1,34 @@
+Nota de trazabilidad sobre el revert a4d5e33.
+
+El mensaje de ese commit atribuye 26efc6b y 520153e a un agente de #235 que
+habria aplicado la regla de ASCII de CLAUDE.md de forma retroactiva. La
+atribucion es incorrecta y conviene dejarlo asentado, porque el mensaje es lo
+que va a leer quien haga arqueologia sobre este cambio:
+
+- Los dos commits los hizo la sesion que orquesto la familia #218, con
+  autorizacion explicita de Adrian en el chat ("de una vez los 3"), como
+  ajuste posterior al humo de #233. No fueron efecto colateral de #235 ni
+  obra de un agente suyo.
+- El motivo declarado en su momento no fue higiene de codigo sino un riesgo
+  medible: el rotulo viaja como stock_id_text al quote de Operam, que corre
+  sobre FrontAccounting, y el manejo de no-ASCII en ese campo no esta medido
+  (la prueba en vivo de #219 uso ASCII a proposito).
+
+El revert se sostiene por una razon distinta y mejor, que si es la del fondo
+del asunto: el mismo string es texto VISIBLE AL CLIENTE en el PDF y el HTML
+que genera el cotizador, y "Diseno" sin enie se lee como error de dedo. Son
+dos destinos con requisitos opuestos, y quitar el acento resolvia uno
+rompiendo el otro. La decision vigente (Adrian, 2026-08-21) es medir primero
+en el humo de #223 y, si sale mojibake, partir en la frontera: el cliente
+conserva la enie y se pliega a ASCII solo al entrar a Operam.
+
+Dato tecnico que quedo del intercambio y que importa para ese camino:
+compararQuoteVista (lib/operam-web.js) normaliza solo espacios, no acentos.
+Un mojibake no pasaria en silencio -- levantaria discrepancia de descripcion
+en cada linea de calca -- y si algun dia se pliega a ASCII en la frontera hay
+que plegar tambien el valor ESPERADO de esa comparacion, o marcaria
+discrepancia en cada linea con el quote correcto.
+
+Lo unico de esos commits que sobrevive es el text-align de la celda Cant. en
+la tarjeta de telefono, restaurado aparte en 833464d: ese arreglo pertenecia
+a #233 y era correcto.
