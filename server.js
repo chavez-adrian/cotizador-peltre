@@ -23,6 +23,7 @@ import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
 import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento-operam.mjs';
 import { GRACIA_DIAS } from './lib/cruce-identidad.js';
+import { paisDeClienteOperam } from './lib/pais-operam.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
@@ -1706,6 +1707,10 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
         telefonos,
         email: branch.email || c.contacts?.[0]?.email || '',
         nombreEntrega: branch.br_name || branch.contact_name || '',
+        // #245: pais ISO (MX/US/CA) derivado del texto libre country, o null si
+        // no se puede determinar (ver paisDeClienteOperam). El frontend fija
+        // cl-pais solo cuando esto viene no nulo.
+        pais: paisDeClienteOperam(c),
       };
     });
     res.json(clientes);
