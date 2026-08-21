@@ -54,3 +54,22 @@ Consecuencias:
 - **Barrido a las 24 horas**: al arrancar el servidor y cada hora se borran las cotizaciones con motivo `'dedup'` de más de 24 horas. Sólo ésas: las `'operam'` nunca se tocan, y una que ya obtenga folio tampoco (aunque el flag quedara sucio). Se borra la cotización; **el prospecto se queda**, porque la oportunidad sigue viva — lo que se tira es el intento de documento.
 
 El barrido corre en memoria y asume **una sola instancia** de Node, como el lock de subidas y la cola de post-fixes de vigencia (ver `CLAUDE.md`, Deploy). Es idempotente, así que con varias instancias el peor caso sería trabajo repetido.
+
+## Nota 2026-08-21 (issue #244): el pool de la Fase 1 son los DOS genéricos, no "el mismo"
+
+La Fase 1 dice arriba "buscar en Operam clientes con **el mismo RFC genérico**". Eso queda derogado: el pool pasa a ser la **unión de `XAXX010101000` y `XEXX010101000`**, deduplicada por `customer_id`.
+
+El motivo es el propio Context de este ADR: *el RFC no sirve como llave de deduplicación en estos casos*. Si el RFC genérico no identifica, tampoco puede **particionar** — y eso es exactamente lo que hacía "el mismo RFC genérico". Cuál de los dos comodines le tocó a un cliente no es un atributo suyo: es el país que capturó quien lo dio de alta, un dato distinto en cada captura y del que ni siquiera se sabe si era correcto. Partir el universo por ahí es darle valor de llave a un no-dato, y deja ciega la mitad del universo en cada consulta.
+
+**Cómo se destapó.** Cotización con cliente `CUMBIARCA SA` (nombre corto "Studio Iken", entrega en Panamá), elegido por "Ya lo conozco". El cliente ya existía en Operam bajo `XEXX010101000`. La cotización preguntó por `XAXX010101000` — porque el país queda siempre en `MX` al elegir un cliente de Operam (`pcLimpiarCamposCliente` lo resetea, `seleccionarClienteOperam` no lo toca y `GET /api/operam/clientes` ni siquiera devuelve el país). Veredicto `libre`, no se mostró el picker, se intentó crear, y lo único que frenó el duplicado fue la unicidad global del `cust_ref` en Operam con un **406 sin salida**: reintentar daba lo mismo y elegir el candidato correcto era imposible porque el candidato no estaba en la lista.
+
+Medido en vivo el 2026-08-21: pool `XEXX` = 34 clientes (incluye al de este caso), pool `XAXX` = 82 (no lo incluye).
+
+**Consecuencias:**
+
+- **`rfcGenericoDe(cliente)`** (`lib/alta-generica.js`) resuelve el genérico que le corresponde a un cliente: **el RFC capturado si ya es genérico**, y sólo a falta de él se deriva del país. El RFC capturado es un hecho; el país, una inferencia. Decide el `tax_id` con el que se crearía el cliente y el genérico que se reporta al log — no el pool, que ya no se particiona.
+- El filtro de la rama genérica de `detectarDuplicados` compara **pertenencia** a `RFC_GENERICOS`, no igualdad con el RFC de entrada. Sin esto la unión sería un no-op: los candidatos del otro genérico se descartaban en silencio.
+- Sigue siendo **sólo entre genéricos**. Un cliente con RFC real jamás entra como candidato de un genérico: ése está identificado y su dedup es la del RFC exacto, que no cambia.
+- El umbral de 2 tokens (#204) es lo que acota el ruido del pool más grande, y no se toca. Un nombre sin tokens útiles sigue sin producir candidatos.
+- Cuesta una lectura paginada extra a Operam por verificación, y la revalidación del candidato elegido (#208) la repite. Es el precio de no volver a tener medio universo invisible.
+- **Queda abierto** que el país del cliente elegido siga llegando mal: esta nota lo neutraliza para la deduplicación, no lo arregla. Sigue afectando el envío y la clasificación fiscal del domicilio — en particular, "es sucursal de este cliente" (#211) sobre un cliente extranjero crea la sucursal como gravada en vez de exportación.

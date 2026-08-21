@@ -470,3 +470,42 @@ test('D23: esDebtorGenerico reconoce el debtor 14 (PUBLICO EN GENERAL, factura g
   assert.strictEqual(esDebtorGenerico(14), true);
   assert.strictEqual(esDebtorGenerico('14'), true);
 });
+
+// === Los dos RFC genericos son UN SOLO conjunto (#244) ===
+// ADR-0001: el RFC generico NO es llave de identidad. Partir el universo de
+// clientes sin RFC real segun cual de los dos comodines le toco es darle valor de
+// llave a un no-dato: el mismo cliente puede estar archivado bajo XAXX o bajo
+// XEXX segun el pais que hubiera capturado quien lo dio de alta, y ninguna de las
+// dos etiquetas lo identifica. Caso real que lo destapo: CUMBIARCA SA (Panama)
+// vivia en XEXX, la cotizacion pregunto por XAXX y el veredicto fue "libre" ->
+// se intento crear un duplicado y Operam lo freno con un 406 por cust_ref.
+const POOL_CRUZADO = [
+  { customer_id: '499', CustName: 'CUMBIARCA SA', cust_ref: 'Studio Iken', RFC: 'XEXX010101000' },
+  { customer_id: '77', CustName: 'OTRA COSA SA', cust_ref: 'Otra', RFC: 'XAXX010101000' },
+];
+
+test('#244: un candidato archivado bajo el OTRO generico si entra a la lista', () => {
+  const d = detectarDuplicados('XAXX010101000', 'CUMBIARCA SA', POOL_CRUZADO);
+  assert.equal(d.tipo, 'candidatos');
+  assert.deepEqual(d.candidatos.map(c => c.customer_id), ['499']);
+});
+
+test('#244: cruza en las dos direcciones', () => {
+  const d = detectarDuplicados('XEXX010101000', 'OTRA COSA SA', POOL_CRUZADO);
+  assert.equal(d.tipo, 'candidatos');
+  assert.deepEqual(d.candidatos.map(c => c.customer_id), ['77']);
+});
+
+// La union es SOLO entre genericos: un cliente con RFC real en el pool no puede
+// colarse a la lista de candidatos de un generico (seria proponer como duplicado
+// a un cliente ya identificado, que es justo lo que ADR-0001 separa).
+test('#244: un cliente con RFC REAL en el pool NO entra como candidato de un generico', () => {
+  const pool = [{ customer_id: '900', CustName: 'CUMBIARCA SA', cust_ref: '', RFC: 'CPE921211N76' }];
+  assert.equal(detectarDuplicados('XAXX010101000', 'CUMBIARCA SA', pool).tipo, 'libre');
+});
+
+// Sin nombre resoluble no hay senal de nombre y el umbral queda en 0: la union no
+// puede convertir eso en un candidato (seria proponer cualquier generico).
+test('#244: la union no inventa candidatos cuando el nombre no da senal', () => {
+  assert.equal(detectarDuplicados('XAXX010101000', '', POOL_CRUZADO).tipo, 'libre');
+});

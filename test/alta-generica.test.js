@@ -303,3 +303,36 @@ test('sucursalEquivalente: mismo nombre en OTRO domicilio no cuenta como la mism
 test('sucursalEquivalente: sin nombre resoluble no matchea nada (no se reusa a ciegas)', () => {
   assert.equal(sucursalEquivalente([{ branch_code: 20, br_name: '' }], { br_name: '' }), null);
 });
+
+// === rfcGenericoDe: el RFC capturado es un HECHO, el pais una inferencia (#244) ===
+// rfcGenericoPara(pais) era el unico camino, y el pais NO es confiable: al elegir
+// un cliente de Operam el formulario lo deja siempre en MX (el buscador de Operam
+// ni siquiera devuelve el pais). Un cliente con RFC XEXX ya capturado se daba de
+// alta con tax_id XAXX, contradiciendo su propio documento. Cuando el RFC generico
+// ya esta capturado, ese RFC manda; el pais queda de respaldo para cuando no hay.
+test('#244 rfcGenericoDe: el RFC generico capturado le gana al pais', async () => {
+  const { rfcGenericoDe } = await import('../lib/alta-generica.js');
+  assert.equal(rfcGenericoDe({ rfc: 'XEXX010101000', pais: 'MX' }), 'XEXX010101000');
+  assert.equal(rfcGenericoDe({ rfc: 'xexx010101000 ', pais: '' }), 'XEXX010101000');
+  assert.equal(rfcGenericoDe({ rfc: 'XAXX010101000', pais: 'US' }), 'XAXX010101000');
+});
+
+test('#244 rfcGenericoDe: sin RFC capturado se cae al pais', async () => {
+  const { rfcGenericoDe } = await import('../lib/alta-generica.js');
+  assert.equal(rfcGenericoDe({ pais: 'PA' }), 'XEXX010101000');
+  assert.equal(rfcGenericoDe({ rfc: '', pais: 'MX' }), 'XAXX010101000');
+  assert.equal(rfcGenericoDe({}), 'XAXX010101000');
+  assert.equal(rfcGenericoDe(null), 'XAXX010101000');
+});
+
+// Un RFC real no llega nunca a este camino (necesitaAltaGenerica lo frena antes),
+// pero si llegara no puede convertirse en el tax_id del generico: se ignora.
+test('#244 rfcGenericoDe: un RFC real no manda, se cae al pais', async () => {
+  const { rfcGenericoDe } = await import('../lib/alta-generica.js');
+  assert.equal(rfcGenericoDe({ rfc: 'CPE921211N76', pais: 'US' }), 'XEXX010101000');
+});
+
+test('#244 buildClienteGenerico: el tax_id sale del RFC capturado, no del pais', () => {
+  const entry = { data: { cliente: { razonSocial: 'CUMBIARCA SA', rfc: 'XEXX010101000', pais: 'MX', telefono: '5512345678' } } };
+  assert.equal(buildClienteGenerico(entry).tax_id, 'XEXX010101000');
+});

@@ -13,7 +13,7 @@ import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoCliente
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados, precargaComercialUpgrade } from './public/js/alta-logica.js';
-import { necesitaAltaGenerica, rfcGenericoPara, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, sucursalEquivalente, diffBranchDomicilio } from './lib/alta-generica.js';
+import { necesitaAltaGenerica, rfcGenericoDe, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, sucursalEquivalente, diffBranchDomicilio } from './lib/alta-generica.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
@@ -1803,12 +1803,45 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
 // del picker (ver contextoHechos/candidatoParaContrato abajo), nunca la
 // seleccion -- detectarDuplicados/candidatosPorNombreOTelefono deciden con
 // nombre y, cuando lo traen, telefono EXACTAMENTE igual que antes de #210.
+// El pool es la UNION de los dos RFC genericos (#244), no el del RFC que le toco a
+// esta cotizacion. Los clientes sin RFC real son un solo conjunto logico: el mismo
+// cliente queda archivado bajo XAXX o XEXX segun el pais que capturo quien lo dio
+// de alta, y ese pais no es confiable (al elegir un cliente de Operam queda siempre
+// en MX). Consultar un solo generico dejaba ciega la mitad del universo: CUMBIARCA
+// SA vivia en XEXX, la cotizacion pregunto por XAXX, el veredicto fue "libre" y el
+// duplicado solo lo freno el cust_ref unico de Operam con un 406 sin salida.
+// Mismo patron que ya usa /api/buscar-cliente-duplicado para el fallback de #78.
+// `rfcGenerico` (el que se reporta y se loguea) SI sale del resolvedor: es el que
+// llevaria el alta si hay que crear.
+// Varias listas de clientes de Operam -> el pool que espera detectarDuplicados:
+// aplana, quita repetidos por customer_id y expone RFC/id con los nombres que el
+// nucleo puro compara. Lo comparten los DOS sitios que combinan pools (aqui y
+// /api/buscar-cliente-duplicado, #78); tenerlo dos veces era arrastrar la misma
+// forma con dos redacciones.
+//
+// Una fila SIN customer_id NO se descarta: no hay con que identificarla, y
+// tratarlas como repetidas colapsaria filas distintas en una sola. Pasa al pool y
+// que la dedup decida por nombre o telefono -- de mas se pregunta, de menos se
+// crea un duplicado en silencio.
+function poolClientesParaDedup(listas) {
+  const vistos = new Set();
+  return listas
+    .flatMap(l => (Array.isArray(l) ? l : []))
+    .filter(c => {
+      const id = c?.customer_id;
+      if (id == null || id === '') return true;
+      if (vistos.has(id)) return false;
+      vistos.add(id);
+      return true;
+    })
+    .map(c => ({ ...c, RFC: c.tax_id || c.RFC || c.rfc || '', id: c.customer_id }));
+}
+
 async function poolDedupGenerico(c, entry) {
-  const rfcGenerico = rfcGenericoPara(c.pais);
+  const rfcGenerico = rfcGenericoDe(c);
   const nombre = c.razonSocial || c.nombreCorto || entry.cliente || '';
-  const raw = await buscarClientesPorRfc(rfcGenerico);
-  const clientes = (Array.isArray(raw) ? raw : []).map(x => ({ ...x, RFC: x.tax_id || x.RFC || x.rfc || '', id: x.customer_id }));
-  return { rfcGenerico, nombre, dedup: detectarDuplicados(rfcGenerico, nombre, clientes) };
+  const pools = await Promise.all([...RFC_GENERICOS].map(g => buscarClientesPorRfc(g)));
+  return { rfcGenerico, nombre, dedup: detectarDuplicados(rfcGenerico, nombre, poolClientesParaDedup(pools)) };
 }
 
 // Contexto para los hechos del picker (#210): el telefono/correo REALES del
@@ -1984,7 +2017,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
           branchId = fresca.branch_code;
           steps.push({ name: 'verificar sucursal', status: 'ok' });
         }
-        logCliente(rfcGenericoPara(c.pais), nombreCliente, 'creado', customerId, FUENTE_SUCURSAL_CREADA, null,
+        logCliente(rfcGenericoDe(c), nombreCliente, 'creado', customerId, FUENTE_SUCURSAL_CREADA, null,
           yaCreada
             ? `Sucursal ${branchId} del cliente ${customerId} reusada: ya existia de un intento anterior (#211)`
             : `Sucursal ${branchId} creada bajo el cliente ${customerId} por decision del vendedor (#211)`);
@@ -1994,7 +2027,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         // relectura no la vio": el segundo caso puede haber dejado una sucursal
         // en Operam y el reintento tiene que volver a mirar antes de crear.
         steps.push({ name: creada ? 'verificar sucursal' : 'POST branch (sucursal)', status: 'error', error: err.message });
-        logCliente(rfcGenericoPara(c.pais), nombreCliente, 'error', customerId, FUENTE_SUCURSAL_CREADA, null, err.message);
+        logCliente(rfcGenericoDe(c), nombreCliente, 'error', customerId, FUENTE_SUCURSAL_CREADA, null, err.message);
         await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
         return res.status(503).json({ error: 'No se pudo crear la sucursal en Operam: ' + err.message, customer_id: customerId, steps });
       }
@@ -2862,28 +2895,17 @@ app.get('/api/buscar-cliente-duplicado', authMiddleware, async (req, res) => {
     // vacio y el endpoint respondia 'libre' aunque el cliente existiera.
     // Se consulta con rfcNorm (no con el crudo): el RFC llega tal cual lo capturo
     // el vendedor y es el mismo valor con el que se compara el tax_id de vuelta.
-    let raw = await buscarClientesPorRfc(rfcNorm);
+    const raw = await buscarClientesPorRfc(rfcNorm);
     // Issue #78: si el RFC de entrada es real y no trae un match exacto, el
     // cliente pudo darse de alta antes sin CSF (RFC generico). Ese cliente es
     // INVISIBLE a la busqueda anterior porque tiene OTRO tax_id -- se busca
     // aparte por cada RFC generico y se le da a detectarDuplicados el pool
     // combinado para que aplique nombre/telefono.
+    const listas = [raw];
     if (!esGenerico && !raw.some(c => (c.tax_id || '').toUpperCase().trim() === rfcNorm)) {
-      const genericos = await Promise.all([...RFC_GENERICOS].map(g => buscarClientesPorRfc(g)));
-      raw = raw.concat(...genericos);
+      listas.push(...(await Promise.all([...RFC_GENERICOS].map(g => buscarClientesPorRfc(g)))));
     }
-    const vistos = new Set();
-    const clientes = (Array.isArray(raw) ? raw : [])
-      .filter(c => {
-        if (vistos.has(c.customer_id)) return false;
-        vistos.add(c.customer_id);
-        return true;
-      })
-      .map(c => ({
-        ...c,
-        RFC: c.tax_id || c.RFC || c.rfc || '',
-        id: c.customer_id,
-      }));
+    const clientes = poolClientesParaDedup(listas);
     const resultado = detectarDuplicados(rfc, nombre || '', clientes, telefono || '');
     res.json(resultado);
   } catch (err) {
