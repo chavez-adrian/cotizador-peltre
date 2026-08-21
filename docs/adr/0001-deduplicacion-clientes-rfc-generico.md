@@ -73,3 +73,15 @@ Medido en vivo el 2026-08-21: pool `XEXX` = 34 clientes (incluye al de este caso
 - El umbral de 2 tokens (#204) es lo que acota el ruido del pool más grande, y no se toca. Un nombre sin tokens útiles sigue sin producir candidatos.
 - Cuesta una lectura paginada extra a Operam por verificación, y la revalidación del candidato elegido (#208) la repite. Es el precio de no volver a tener medio universo invisible.
 - **Queda abierto** que el país del cliente elegido siga llegando mal: esta nota lo neutraliza para la deduplicación, no lo arregla. Sigue afectando el envío y la clasificación fiscal del domicilio — en particular, "es sucursal de este cliente" (#211) sobre un cliente extranjero crea la sucursal como gravada en vez de exportación.
+
+## Nota 2026-08-21 (issue #242): el `cust_ref` entra a la Fase 1, y ése sí cruza el RFC
+
+Toda esta decisión compara **nombres**. Operam además exige que el `cust_ref` (nombre corto) sea **único en todo el padrón**, sin importar el RFC: crear un cliente con uno ya usado responde `406 Already exists customer with same cust_ref` (medido en vivo 2026-08-21). El cotizador escribe ahí el nombre corto capturado (`buildClienteGenerico`), así que un nombre corto repetido mataba el alta — y la Fase 1, acotada a los genéricos, no podía ni ver al dueño cuando éste tenía RFC real. Veredicto `libre`, POST, 406; y con el escape de #204 ("ninguno es el mismo cliente"), el mismo 406. Reintentar daba exactamente lo mismo: sin salida.
+
+Se agrega a la Fase 1 una segunda búsqueda, en paralelo a la de nombre: el **`cust_ref` exacto** del nombre corto capturado contra el padrón COMPLETO de Operam (la caché de `indice-telefonos.js`), **sin filtrar por RFC**. Un acierto entra a la misma lista de candidatos, marcado, y el picker muestra su razón social y su RFC.
+
+Es una **excepción deliberada** a "un cliente con RFC real jamás entra como candidato de un genérico" (nota de #244). La razón: aquí no se infiere un parecido, se constata un hecho duro — Operam **no dejará** crear ese cliente. Y es el único camino que puede *descubrir* que el cliente ya existía bajo un RFC real, en vez de sólo evitar el choque. La comparación es con trim y sin distinguir mayúsculas; no se pudo medir si la unicidad de Operam es case-sensitive, y el supuesto conservador es el que pregunta de más.
+
+Si aun así el POST choca (caché fría, Operam caído, o el vendedor forzó "crear nuevo"), el 406 deja de ser un callejón: la ruta responde `409 { codigo: 'CUST_REF_DUPLICADO', nombreCorto }` con un texto que le pide al vendedor cambiar el nombre corto, nombrando al dueño cuando el padrón alcanza a verlo. **No** se desambigua el `cust_ref` con un sufijo automático: eso escondería justo el hallazgo — que el cliente ya existía.
+
+Consecuencia conocida: si el nombre corto es genuinamente de otro cliente (homónimo real), el vendedor tiene que cambiarlo. Desde el historial una cotización PRE no ofrece "Editar" (el gate `puedeActualizarCotizacion` exige folio), así que el camino es corregir el campo en la sesión viva y volver a generar, o "Copiar cotización".

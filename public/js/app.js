@@ -3697,6 +3697,9 @@ async function autoSubirOperam(id, slot, extraBody) {
     resultado = {
       ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida,
       error: data.error, candidatos: data.candidatos,
+      // #242: el 409 por nombre corto repetido se clasifica por codigo, no por el
+      // texto del error (misma disciplina que el resto de interpretarSubidaOperam).
+      codigo: data.codigo, nombreCorto: data.nombreCorto,
       customerId: data.customer_id, clienteGenerico: data.clienteGenerico,
       // #106: los steps traen el resultado del post-fix de la vigencia; sin esto un
       // fallo solo viviria en los logs del servidor y el vendedor mandaria la

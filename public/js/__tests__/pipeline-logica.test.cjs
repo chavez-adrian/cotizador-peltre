@@ -283,6 +283,43 @@ test('Q19d: buildOperamStatusHtml ofrece subir la CSF junto al folio cuando el c
   assert.doesNotMatch(sinCustomer, /Ya tienes su CSF/);
 });
 
+// #242: el cust_ref es unico GLOBAL en Operam, asi que el dueno del nombre corto
+// entra al picker aunque tenga RFC real -- un cliente que ninguna otra senal
+// habria propuesto. El hecho tiene que ser visible CON su RFC: el vendedor
+// necesita saber que ese cliente puede vivir bajo otro RFC antes de elegirlo.
+test('Q242a: el candidato que choca de nombre corto lo dice, con su RFC', () => {
+  const html = buildCandidatosOperamHtml(5, [
+    { id: 499, CustName: 'CUMBIARCA SA', cust_ref: 'Studio Iken', tax_id: 'CPE921211N76', custRefIgual: true },
+  ], 'Elige');
+  assert.match(html, /nombre corto/i);
+  assert.match(html, /CPE921211N76/);
+  assert.match(html, /elegirCandidatoOperam\(5, 499, this\)/);
+});
+
+test('Q242b: un candidato que NO choca de nombre corto no muestra ese hecho', () => {
+  const html = buildCandidatosOperamHtml(5, [
+    { id: 10, CustName: 'HOTEL AZUL SA', cust_ref: 'Hotel Azul Sur', tax_id: 'XAXX010101000' },
+  ], 'Elige');
+  assert.doesNotMatch(html, /nombre corto/i);
+});
+
+// #242 salida: el 409 con codigo CUST_REF_DUPLICADO NO es un fallo transitorio de
+// Operam. Reintentar sin cambiar el nombre corto da exactamente el mismo error,
+// asi que el bloque pinta el texto accionable del servidor y NO ofrece Reintentar
+// (mismo criterio que 'sin_datos').
+test('Q242c: el choque de nombre corto se lee como estado propio, con el texto del servidor', () => {
+  const vista = interpretarSubidaOperam({
+    ok: false, status: 409, codigo: 'CUST_REF_DUPLICADO', nombreCorto: 'Studio Iken',
+    error: 'El nombre corto "Studio Iken" ya lo usa otro cliente en Operam, que lo exige unico. Cambia el nombre corto del cliente y vuelve a generar la cotizacion.',
+  });
+  assert.equal(vista.estado, 'cust_ref');
+  assert.equal(vista.nombreCorto, 'Studio Iken');
+  const html = buildOperamStatusHtml(5, vista);
+  assert.match(html, /Studio Iken/);
+  assert.match(html, /Cambia el nombre corto/);
+  assert.doesNotMatch(html, /Reintentar/, 'reintentar sin cambiar el nombre corto da el mismo error');
+});
+
 test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece elegir o crear nuevo', () => {
   const html = buildCandidatosOperamHtml(9, [{ id: 3, CustName: 'A & B <SA>', cust_ref: 'AB' }], 'Elige el cliente');
   assert.match(html, /A &amp; B &lt;SA&gt;/);

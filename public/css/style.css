@@ -1204,6 +1204,9 @@ body {
    de celular/correo -- evidencia, nunca candado (no deshabilitan Elegir/Crear
    nuevo). Sobrios y legibles en movil: texto chico, chips que envuelven. */
 .operam-candidato-diff { font-size: 12px; color: oklch(0.5 0 0); }
+/* Nombre corto repetido (#242): el hecho mas duro del picker -- Operam no dejaria
+   crear un cliente con ese cust_ref. Se destaca sobre la diferencia de nombre. */
+.operam-candidato-custref { font-size: 12px; font-weight: 600; color: oklch(0.42 0.13 25); }
 .operam-candidato-letreros { display: flex; flex-wrap: wrap; gap: 6px; }
 .operam-letrero { font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 .operam-letrero-ok { background: oklch(0.93 0.06 150); color: oklch(0.38 0.09 150); }
