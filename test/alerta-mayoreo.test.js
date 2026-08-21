@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { destinatariosAlertaMayoreo, mensajeAlertaMayoreo, vcardDeProspecto } from '../lib/alerta-mayoreo.js';
+import { destinatariosAlertaMayoreo, mensajeAlertaMayoreo, vcardDeProspecto, nombreArchivoVCard } from '../lib/alerta-mayoreo.js';
 
 // Nucleo puro de la alerta por correo de captura publica de mayoreo (issue #163,
 // ADR-0012; CONTEXT.md "Captura publica": "Cada captura publica avisa por correo a
@@ -349,4 +349,56 @@ test('#238: la nota escapa los reservados de vCard igual que el resto de la fich
   const nota = notaDe({ ...PROSPECTO_238, ciudad: 'Ixtapaluca, Mex.', cp: '', tipoProyectoOtro: 'Pan; y cafe' });
   assert.ok(nota.includes('Ciudad: Ixtapaluca\\, Mex.'), nota);
   assert.ok(nota.includes('Tipo: Otro (Pan\\; y cafe)'), nota);
+});
+
+// --- #239: nombre del adjunto .vcf nombrado con el prospecto ---
+
+test('#239: nombreArchivoVCard deriva Nombre-Apellido.vcf del nombre completo', () => {
+  assert.equal(nombreArchivoVCard({ nombre: 'Juan Perez' }), 'Juan-Perez.vcf');
+});
+
+test('#239: nombreArchivoVCard pliega acentos a ASCII (NFD + quitar diacriticas, no una tabla de reemplazos)', () => {
+  assert.equal(nombreArchivoVCard({ nombre: 'José Peña' }), 'Jose-Pena.vcf');
+});
+
+test('#239: nombreArchivoVCard descarta cualquier caracter que no sea alfanumerico o guion', () => {
+  assert.equal(nombreArchivoVCard({ nombre: 'María José, Pérez!!' }), 'Maria-Jose-Perez.vcf');
+});
+
+test('#239: nombreArchivoVCard acota el largo del nombre base para no producir un archivo absurdo', () => {
+  const nombreLargo = 'Juan '.repeat(30).trim(); // muy por encima del tope de 60
+  const archivo = nombreArchivoVCard({ nombre: nombreLargo });
+  assert.ok(archivo.endsWith('.vcf'), archivo);
+  assert.ok(archivo.length - '.vcf'.length <= 60, `nombre base demasiado largo: ${archivo}`);
+});
+
+test('#239: nombreArchivoVCard nunca deja un guion colgando justo antes de la extension (el corte del tope puede caer ahi)', () => {
+  // 'Juan-' son 5 caracteres; repetido cae EXACTO en el tope de 60 terminando
+  // en guion -- el caso real que expone el recorte, no uno inventado.
+  const nombreLargo = 'Juan '.repeat(30).trim();
+  const archivo = nombreArchivoVCard({ nombre: nombreLargo });
+  assert.equal(archivo, `${'Juan-'.repeat(11)}Juan.vcf`);
+  assert.ok(!archivo.endsWith('-.vcf'), archivo);
+});
+
+test('#239: nombreArchivoVCard cae al generico "prospecto.vcf" si tras normalizar no queda nada usable', () => {
+  assert.equal(nombreArchivoVCard({ nombre: '日本語太郎' }), 'prospecto.vcf');
+});
+
+test('#239: nombreArchivoVCard cae al generico con nombre vacio o ausente', () => {
+  assert.equal(nombreArchivoVCard({ nombre: '' }), 'prospecto.vcf');
+  assert.equal(nombreArchivoVCard({}), 'prospecto.vcf');
+});
+
+test('#239: mensajeAlertaMayoreo trae vcardNombreArchivo junto con el resto del mensaje', () => {
+  const prospecto = { nombre: 'Juan Perez', celular: '+525512345678', ciudad: 'Ixtapaluca', tipoProyecto: 'Restaurantes', cantidadEstimada: '+350' };
+  const mensaje = mensajeAlertaMayoreo(prospecto, VENDEDORES_165);
+  assert.equal(mensaje.vcardNombreArchivo, 'Juan-Perez.vcf');
+});
+
+test('#239: el nombre del archivo pliega acentos pero la ficha DENTRO conserva el nombre con acentos (dos normalizaciones distintas)', () => {
+  const prospecto = { nombre: 'José Peña', celular: '+525512345678' };
+  const mensaje = mensajeAlertaMayoreo(prospecto, VENDEDORES_165);
+  assert.equal(mensaje.vcardNombreArchivo, 'Jose-Pena.vcf');
+  assert.match(mensaje.vcard, /FN:José Peña/);
 });

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { enviarAlertaMayoreo } from '../lib/alerta-mayoreo-io.js';
+import { nombreArchivoVCard } from '../lib/alerta-mayoreo.js';
 
 // Wrapper IO de la alerta de mayoreo (issue #163): nodemailer inyectado, mismo
 // patron de deps que lib/sync-operam-io.js. Sin credenciales SMTP, cero intentos
@@ -81,9 +82,29 @@ test('enviarAlertaMayoreo: manda html (#165, celular como link de WhatsApp) y la
   assert.match(argsSendMail.html, /Juan Perez/);
   assert.match(argsSendMail.html, /https:\/\/wa\.me\/525512345678/);
   assert.equal(argsSendMail.attachments.length, 1);
-  assert.equal(argsSendMail.attachments[0].filename, 'prospecto.vcf');
-  assert.equal(argsSendMail.attachments[0].contentType, 'text/vcard');
+  assert.equal(argsSendMail.attachments[0].filename, 'Juan-Perez.vcf');
+  assert.equal(argsSendMail.attachments[0].contentType, 'text/vcard; charset=utf-8');
   assert.match(argsSendMail.attachments[0].content, /BEGIN:VCARD[\s\S]*FN:Juan Perez[\s\S]*END:VCARD/);
+
+  limpiarEnvSmtp();
+});
+
+test('enviarAlertaMayoreo: el filename del adjunto es EXACTAMENTE el que arma el nucleo (el wrapper no reimplementa la regla)', async () => {
+  limpiarEnvSmtp();
+  process.env.SMTP_USER = 'contacto@pppeltre.mx';
+  process.env.SMTP_PASS = 'secreto';
+
+  let argsSendMail = null;
+  const nodemailerFalso = {
+    createTransport: () => ({ sendMail: async (m) => { argsSendMail = m; return { messageId: 'x' }; } }),
+  };
+  const prospectoConAcentos = { ...PROSPECTO, nombre: 'José Peña' };
+
+  await enviarAlertaMayoreo(prospectoConAcentos, { listar: async () => VENDEDORES, nodemailer: nodemailerFalso });
+
+  assert.equal(argsSendMail.attachments[0].filename, nombreArchivoVCard(prospectoConAcentos));
+  assert.equal(argsSendMail.attachments[0].filename, 'Jose-Pena.vcf');
+  assert.equal(argsSendMail.attachments[0].contentType, 'text/vcard; charset=utf-8');
 
   limpiarEnvSmtp();
 });
