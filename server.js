@@ -23,6 +23,7 @@ import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
 import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento-operam.mjs';
 import { GRACIA_DIAS } from './lib/cruce-identidad.js';
+import { paisDeClienteOperam } from './lib/pais-operam.js';
 import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
@@ -1706,6 +1707,10 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
         telefonos,
         email: branch.email || c.contacts?.[0]?.email || '',
         nombreEntrega: branch.br_name || branch.contact_name || '',
+        // #245: pais ISO (MX/US/CA) derivado del texto libre country, o null si
+        // no se puede determinar (ver paisDeClienteOperam). El frontend fija
+        // cl-pais solo cuando esto viene no nulo.
+        pais: paisDeClienteOperam(c),
       };
     });
     res.json(clientes);
@@ -3059,16 +3064,21 @@ if (isMain) {
   barrer();
   setInterval(barrer, 3600 * 1000).unref();
 
-  // Sincronizacion de prospectos a la libreta de Contactos de Google (spec #224,
-  // ticket #227): quien atiende el WhatsApp comercial ve el nombre de quien le
-  // escribe en vez de un numero pelado. Va aqui y NO en las rutas de alta a
+  // Sincronizacion de prospectos y clientes a la libreta de Contactos de Google
+  // (spec #224, tickets #227 y #228): quien atiende el WhatsApp comercial ve el
+  // nombre de quien le escribe en vez de un numero pelado. Va aqui y NO en las rutas de alta a
   // proposito: cero ganchos en las ocho rutas que capturan prospectos o
   // clientes, para que un fallo de Google jamas altere una respuesta del
   // cotizador ni haga esperar al vendedor. La frescura se consigue con la
   // frecuencia del barrido, no interceptando escrituras.
-  // Los prospectos viven en Neon y son baratos de leer: cada 15 minutos. Los
-  // clientes de Operam (#228) heredaran el ritmo horario que ya cachea el
-  // indice de telefonos, no este.
+  // UN solo timer para las dos fuentes, cada 15 minutos, y no uno propio para
+  // los clientes: los prospectos viven en Neon y son baratos de leer, y los
+  // clientes salen del cache del indice de telefonos, que solo relee Operam
+  // cuando su TTL de una hora vence (#228). Es decir, el ritmo horario se
+  // respeta sin un segundo reloj -- tres de cada cuatro pasadas no tocan Operam
+  // y la cuarta reusa el listado que el indice iba a pedir de todas formas. Dos
+  // timers ademas se pisarian en el mismo lock del barrido y darian dos
+  // resumenes distintos al panel de admin.
   // Como el barrido de dedup, ASUME UNA SOLA INSTANCIA (el lock del barrido
   // vive en memoria, en lib/contactos-io.js).
   if (!googleConfigurado()) {

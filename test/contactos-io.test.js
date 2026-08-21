@@ -20,6 +20,8 @@ process.env.GOOGLE_REFRESH_TOKEN = 'refresh-de-prueba';
 
 const { barrerContactosGoogle } = await import('../lib/contactos-io.js');
 const { resetToken } = await import('../lib/google-contactos.js');
+const { resetIndice } = await import('../lib/indice-telefonos.js');
+const { resetSession } = await import('../lib/operam-client.js');
 
 const originalFetch = globalThis.fetch;
 
@@ -54,10 +56,32 @@ const OTRO = {
   nombre: 'Pedro Ruiz', data: { empresa: 'Ferreteria Norte' },
 };
 
+// Operam de mentira: el listado paginado de clientes del que sale la segunda
+// fuente (#228). Va en TODOS los mocks porque el barrido consulta el indice de
+// telefonos en cada pasada; `paginas` cuenta las lecturas reales para poder
+// afirmar que el cache del indice se respeta.
+function operamFalso(clientes = [], estado = {}) {
+  estado.paginas = 0;
+  return {
+    '/api/v3/login': () => jsonResponse({ token: 'tok-operam', result: true }),
+    '/api/v3/sales/customers': () => {
+      estado.paginas += 1;
+      return jsonResponse({ total: clientes.length, data: clientes });
+    },
+  };
+}
+
+const CLIENTE_OPERAM = {
+  customer_id: '101', CustName: 'COCINAS DEL VALLE SA DE CV', cust_ref: 'Cocinas del Valle',
+  contacts: [{ action: 'general', name: 'Laura Mendez', phone: '55 4444 1111', email: 'laura@cocinas.mx' }],
+  branches: [{ branch_code: '1', br_name: 'Almacen Norte', phone: '55 7777 2222' }],
+};
+
 // Libreta de Google de mentira: acumula lo creado y responde como la People API.
-function libretaFalsa({ fallaEn = null, demora = false } = {}) {
-  const estado = { creados: [], tokens: 0, enVuelo: 0, maxEnVuelo: 0, intentos: 0 };
+function libretaFalsa({ fallaEn = null, demora = false, clientes = [], operam = {} } = {}) {
+  const estado = { creados: [], tokens: 0, enVuelo: 0, maxEnVuelo: 0, intentos: 0, operam };
   const handlers = {
+    ...operamFalso(clientes, operam),
     'oauth2.googleapis.com/token': () => {
       estado.tokens += 1;
       return jsonResponse({ access_token: `tok${estado.tokens}`, expires_in: 3600 });
@@ -109,6 +133,10 @@ beforeEach(() => {
   escribirArchivoSync(MAPEO_PATH, '[]');
   globalThis.fetch = async (url) => { throw new Error('fetch sin mock en tests: ' + url); };
   resetToken();
+  // El indice de clientes cachea una hora: sin limpiarlo, una prueba heredaria
+  // los clientes de la anterior.
+  resetIndice();
+  resetSession();
 });
 
 function leerMapeo() {
@@ -195,6 +223,7 @@ test('las escrituras a Google van SECUENCIALES, nunca en paralelo', async () => 
 test('un access token vencido se refresca solo y la escritura se reintenta una vez', async () => {
   const estado = { tokens: 0, intentos: 0, tokensUsados: [] };
   mockFetchByUrl({
+    ...operamFalso(),
     'oauth2.googleapis.com/token': () => {
       estado.tokens += 1;
       return jsonResponse({ access_token: `tok${estado.tokens}`, expires_in: 3600 });
@@ -218,6 +247,7 @@ test('un access token vencido se refresca solo y la escritura se reintenta una v
 test('un token que sigue vencido no reintenta en bucle: se rinde tras un intento', async () => {
   const estado = { intentos: 0 };
   mockFetchByUrl({
+    ...operamFalso(),
     'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
     'people:createContact': () => {
       estado.intentos += 1;
@@ -253,6 +283,67 @@ test('un fallo a mitad del plan no descarta lo ya aplicado ni impide la siguient
   assert.equal(segunda.estado.creados[0].body.names[0].givenName, 'Pedro Ruiz - Ferreteria Norte');
 });
 
+// --- Los clientes de Operam como segunda fuente (#228) ---
+
+test('los telefonos de un cliente de Operam llegan a la libreta en la misma pasada', async () => {
+  const { handlers, estado } = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl(handlers);
+
+  const resumen = await barrerContactosGoogle();
+
+  // El prospecto de siempre + el contacto del cliente + el telefono del domicilio.
+  assert.equal(resumen.creados, 3);
+  const nombres = estado.creados.map(c => c.body.names[0].givenName).sort();
+  assert.deepEqual(nombres, [
+    'Almacen Norte - Cocinas del Valle',
+    'Laura Mendez - Cocinas del Valle',
+    'Laura Mendez - Cocinas del Valle',
+  ].sort());
+  const delCliente = estado.creados.find(c => c.body.phoneNumbers[0].value === '+525544441111');
+  assert.equal(delCliente.body.userDefined[0].value, 'cotizador:cliente:101');
+});
+
+test('el barrido lee del cache del indice: la segunda pasada no vuelve a listar clientes', async () => {
+  // El listado de clientes es paginado y con freno anti-429, y ya esta cacheado
+  // una hora. Este barrido HEREDA ese ritmo en vez de imponer uno propio: si
+  // pidiera clientes en cada pasada, cuadruplicaria la presion sobre Operam.
+  const { handlers, estado } = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl(handlers);
+
+  await barrerContactosGoogle();
+  assert.equal(estado.operam.paginas, 1);
+  await barrerContactosGoogle();
+  assert.equal(estado.operam.paginas, 1, 'la segunda pasada sale del cache del indice');
+});
+
+test('un fallo de Operam no impide que los prospectos lleguen a la libreta', async () => {
+  const { handlers, estado } = libretaFalsa();
+  mockFetchByUrl({
+    ...handlers,
+    '/api/v3/sales/customers': () => jsonResponse({ error: 'boom' }, 500),
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.creados, 1, 'el prospecto se escribe igual');
+  assert.equal(estado.creados[0].body.names[0].givenName, 'Laura Mendez - Cocinas del Valle');
+});
+
+test('un celular que es prospecto y cliente a la vez produce UNA ficha, la del cliente', async () => {
+  const mismoCelular = {
+    ...CLIENTE_OPERAM,
+    contacts: [{ action: 'general', name: 'Laura Mendez', phone: '5512345678' }],
+    branches: [],
+  };
+  const { handlers, estado } = libretaFalsa({ clientes: [mismoCelular] });
+  mockFetchByUrl(handlers);
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.creados, 1);
+  assert.equal(estado.creados[0].body.userDefined[0].value, 'cotizador:cliente:101');
+});
+
 test('un etag obsoleto se reconoce por su MOTIVO y no por su codigo: se relee y se reintenta', async () => {
   // 400 + failedPrecondition significa "alguien edito esto desde el telefono",
   // no "payload malformado". Google no manda 409 aqui.
@@ -262,6 +353,7 @@ test('un etag obsoleto se reconoce por su MOTIVO y no por su codigo: se relee y 
   }], null, 2));
   const estado = { intentos: 0, etagsEnviados: [], relecturas: 0 };
   mockFetchByUrl({
+    ...operamFalso(),
     'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
     ':updateContact': (u, opts) => {
       estado.intentos += 1;
@@ -297,6 +389,7 @@ test('un 400 que NO es de etag no se relee: no todo 400 es un conflicto de versi
   }], null, 2));
   const estado = { intentos: 0, relecturas: 0 };
   mockFetchByUrl({
+    ...operamFalso(),
     'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
     ':updateContact': () => {
       estado.intentos += 1;
