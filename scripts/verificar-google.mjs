@@ -90,26 +90,31 @@ const main = async () => {
     ? '  OK. Incluye el permiso de escritura de contactos.'
     : '  FALTA el permiso de escritura. Con esto el sync no podria crear nada.');
 
-  console.log('\nLeyendo el perfil de la cuenta...');
-  const yo = await get(
-    'https://people.googleapis.com/v1/people/me?personFields=emailAddresses',
-    tok.access_token
-  );
-  const correo = yo.emailAddresses?.[0]?.value || '(sin correo visible)';
-  console.log('  Cuenta autorizada:', correo);
-  if (!correo.startsWith('pppeltre')) {
-    console.log('  AVISO: no parece la cuenta pppeltre@gmail.com. Revisa cual autorizaste.');
-  }
-
-  console.log('\nContando los contactos que ya hay en la libreta...');
+  // No se consulta el perfil del titular (people/me con emailAddresses): eso
+  // exige el scope `profile`, que a proposito NO pedimos. Que Google conteste
+  // 403 ahi es la confirmacion de que el permiso quedo acotado a contactos.
+  // Para identificar la libreta basta mirar los propios contactos, que si estan
+  // dentro del scope: si los nombres son reconocibles, es la cuenta correcta.
+  console.log('\nLeyendo la libreta de contactos...');
   const lista = await get(
     'https://people.googleapis.com/v1/people/me/connections' +
-    '?personFields=names&pageSize=1',
+    '?personFields=names&pageSize=5&sortOrder=FIRST_NAME_ASCENDING',
     tok.access_token
   );
   const total = lista.totalPeople ?? lista.totalItems ?? '(no informado)';
   console.log('  Contactos actuales:', total);
-  console.log('  Estos son los que hay que respaldar antes de la primera carga (#232).');
+  console.log('  Es el numero a respaldar antes de la primera carga (#232).');
+
+  const muestra = (lista.connections || [])
+    .map((p) => p.names?.[0]?.displayName)
+    .filter(Boolean);
+  if (muestra.length) {
+    console.log('\n  Primeros contactos, para que reconozcas la libreta:');
+    for (const n of muestra) console.log('    -', n);
+    console.log('  Si no reconoces estos nombres, autorizaste la cuenta equivocada.');
+  } else if (total === 0) {
+    console.log('\n  La libreta esta vacia. Si esperabas contactos, revisa que cuenta autorizaste.');
+  }
 
   console.log('\nNo se escribio nada. Verificacion terminada.');
   if (!puedeEscribir) process.exitCode = 1;
