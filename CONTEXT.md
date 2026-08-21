@@ -153,7 +153,12 @@ Nombre fiscal del cliente tal como aparece en la constancia de situación fiscal
 
 ## Nombre corto (cust_ref)
 
-Nombre comercial del cliente, distinto del nombre fiscal. Se usa para referirse al cliente en el día a día. En México puede ser el nombre de la tienda o marca. En Estados Unidos equivale al "doing business as" (DBA). Se escribe en mayúsculas/minúsculas normales, no en mayúsculas fiscales.
+Nombre comercial del cliente, distinto del nombre fiscal. Se usa para referirse al cliente en el día a día. En México puede ser el nombre de la tienda o marca. En Estados Unidos equivale al "doing business as" (DBA). Se escribe en mayúsculas/minúsculas normales, no en mayúsculas fiscales. No confundir con la Referencia del cliente.
+
+## Referencia del cliente
+
+Referencia que el cliente da a *esta* operación: nombre del proyecto o evento, o su número de orden de compra. Es un dato de la operación, no del cliente: nace en la cotización y se hereda al pedido y a la factura, y el mismo cliente puede traer una distinta en cada operación. En Operam es la "Ref. del Cliente" (`cust_ref` del quote/pedido/factura). Si el cliente no da ninguna, se usa el Nombre corto, y a falta de él el nombre de entrega o la razón social. No confundir con el Nombre corto del cliente, que en Operam también se llama `cust_ref` pero es un atributo fijo del cliente.
+_Evitar_: Referencia de la cotización, referencia (a secas, que en el formulario de entrega son las indicaciones "entre calles").
 
 ## Deduplicación de cliente
 
