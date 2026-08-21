@@ -128,6 +128,35 @@ test('B1: buscarClientes retorna array con campos normalizados', async () => {
   } finally { restore(); }
 });
 
+// #245: GET /api/operam/clientes agrega pais (MX/US/CA/null) derivado del
+// texto libre country de cada cliente -- antes de esto, seleccionarClienteOperam
+// nunca tocaba cl-pais y el reset previo lo dejaba clavado en MX incluso para
+// un cliente extranjero.
+test('#245: buscarClientes agrega pais derivado de country (US/MX/null)', async () => {
+  resetSession();
+  resetIndice();
+  const clientes = {
+    total: 3,
+    data: [
+      { ...CLIENTES_RESPONSE.data[0], customer_id: '42', country: 'Estados Unidos' },
+      { ...CLIENTES_RESPONSE.data[0], customer_id: '43', country: 'Mexico' },
+      { ...CLIENTES_RESPONSE.data[0], customer_id: '44', country: 'Bolivia' },
+    ],
+  };
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse(clientes),
+  });
+  try {
+    const res = await req.get('/api/operam/clientes?q=banco').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    const porId = Object.fromEntries(res.body.map(c => [c.id, c.pais]));
+    assert.equal(porId['42'], 'US');
+    assert.equal(porId['43'], 'MX');
+    assert.equal(porId['44'], null);
+  } finally { restore(); }
+});
+
 // B2: Sin token retorna 401
 
 test('B2: sin auth token retorna 401', async () => {

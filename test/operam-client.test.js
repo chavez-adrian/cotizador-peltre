@@ -633,6 +633,36 @@ test('buildClienteBody: area default (sin pais) -> 1', () => {
   assert.strictEqual(body.area, 1, 'area default debe ser 1 (MX)');
 });
 
+// === buildClienteBody() -- country derivado del pais capturado (issue #245-D3) ===
+// Antes de #245 nada llenaba cliente.country: todo cliente creado por el
+// cotizador (extranjero incluido) quedaba en Operam con country = "Mexico"
+// fijo, sin importar el pais real capturado en cl-pais.
+
+test('buildClienteBody: pais US sin country explicito -> country "Estados Unidos"', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'US' });
+  assert.strictEqual(body.country, 'Estados Unidos');
+});
+
+test('buildClienteBody: pais CA sin country explicito -> country "Canada"', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'CA' });
+  assert.strictEqual(body.country, 'Canada');
+});
+
+test('buildClienteBody: pais MX sin country explicito -> country "Mexico"', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'MX' });
+  assert.strictEqual(body.country, 'Mexico');
+});
+
+test('buildClienteBody: country explicito se respeta aunque venga pais distinto', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'US', country: 'Panama' });
+  assert.strictEqual(body.country, 'Panama');
+});
+
+test('buildClienteBody: sin pais ni country -> default "Mexico" (comportamiento previo a #245)', () => {
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.strictEqual(body.country, 'Mexico');
+});
+
 test('buildClienteBody: incluye sales_type desde input', () => {
   const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', sales_type: 'M350' });
   assert.strictEqual(body.sales_type, 'M350', 'sales_type debe venir del input');

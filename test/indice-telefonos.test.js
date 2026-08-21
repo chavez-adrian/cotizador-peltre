@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   normalizarTelefono, construirIndice, matchCliente, refrescarIndice, resetIndice,
-  buscarClientesPorTexto, clientesCacheados,
+  buscarClientesPorTexto, clientesCacheados, enumerarTelefonosClientes,
 } from '../lib/indice-telefonos.js';
 import { resetSession } from '../lib/operam-client.js';
 
@@ -111,6 +111,54 @@ test('construirIndice: ante el mismo telefono en dos clientes gana el primero', 
     { customer_id: '2', CustName: 'SEGUNDO', contacts: [{ phone: '+52 55 1111 1111' }], branches: [] },
   ]);
   assert.equal(idx.get('5511111111').customer_id, '1');
+});
+
+// === enumerarTelefonosClientes (#228): la misma pasada, sin tirar la persona ===
+//
+// El indice se queda con id y nombre del cliente y DESCARTA quien contesta ese
+// telefono, que es justo lo que necesita el Contacto de Google. La enumeracion
+// enriquecida expone esa procedencia sin cambiar lo que el indice devuelve.
+
+const CLIENTE_RICO = {
+  customer_id: '101', CustName: 'COCINAS DEL VALLE SA DE CV', cust_ref: 'Cocinas del Valle',
+  contacts: [
+    { action: 'general', name: 'Laura Mendez', phone: '55 4444 1111', phone2: '55 4444 2222', email: 'laura@cocinas.mx' },
+    { action: 'invoice', name: '', phone: '', email: 'pagos@cocinas.mx' },
+  ],
+  branches: [
+    { branch_code: '1', br_name: 'Almacen Norte', contact_name: 'Beto Ramos', phone: '55 7777 2222', email: 'almacen@cocinas.mx' },
+  ],
+};
+
+test('enumerarTelefonosClientes: cada telefono conserva su persona, su rol y su correo', () => {
+  const entradas = enumerarTelefonosClientes([CLIENTE_RICO]);
+  const primera = entradas.find(e => e.telefono === '55 4444 1111');
+  assert.deepEqual(primera, {
+    customerId: '101', nombreCorto: 'Cocinas del Valle', razonSocial: 'COCINAS DEL VALLE SA DE CV',
+    telefono: '55 4444 1111', persona: 'Laura Mendez', rol: 'general',
+    correo: 'laura@cocinas.mx', domicilio: '', fuente: 'contacto',
+  });
+  assert.equal(entradas.find(e => e.telefono === '55 4444 2222').persona, 'Laura Mendez',
+    'phone2 es de la misma persona');
+});
+
+test('enumerarTelefonosClientes: el telefono de un domicilio trae su nombre y su contacto', () => {
+  const domicilio = enumerarTelefonosClientes([CLIENTE_RICO]).find(e => e.fuente === 'domicilio');
+  assert.equal(domicilio.telefono, '55 7777 2222');
+  assert.equal(domicilio.persona, 'Beto Ramos');
+  assert.equal(domicilio.domicilio, 'Almacen Norte');
+  assert.equal(domicilio.correo, 'almacen@cocinas.mx');
+});
+
+test('enumerarTelefonosClientes: un contacto sin telefono no produce entrada', () => {
+  const entradas = enumerarTelefonosClientes([CLIENTE_RICO]);
+  assert.equal(entradas.length, 3, 'dos telefonos del contacto general y uno del domicilio');
+});
+
+test('enumerarTelefonosClientes: los telefonos de todos los clientes salen en una sola lista', () => {
+  const entradas = enumerarTelefonosClientes(CLIENTES);
+  assert.deepEqual(entradas.map(e => e.telefono).sort(),
+    ['+52 1 55 6207 1948', '+52(55)53952615 ext.123', '1234', '55 4039 4937'].sort());
 });
 
 // === matchCliente: cache, refresh y best effort ===
