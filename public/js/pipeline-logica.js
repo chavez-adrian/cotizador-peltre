@@ -113,6 +113,14 @@ export function interpretarSubidaOperam(resultado) {
   if (r.status === 409 && candidatos.length) {
     return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay clientes con nombre similar en Operam' };
   }
+  // #242: el nombre corto (cust_ref) es UNICO GLOBAL en Operam y el que se
+  // capturo ya lo usa otro cliente. No es un fallo transitorio del ERP: hasta que
+  // el vendedor cambie el nombre corto, reintentar da exactamente el mismo error
+  // -- por eso es un estado propio y no el 'pre' con Reintentar. Se clasifica por
+  // el codigo estructurado, nunca parseando el texto.
+  if (r.status === 409 && r.codigo === 'CUST_REF_DUPLICADO') {
+    return { estado: 'cust_ref', mensaje: r.error || 'El nombre corto ya lo usa otro cliente en Operam', nombreCorto: r.nombreCorto ?? null };
+  }
   if (r.status === 422) {
     return { estado: 'sin_datos', mensaje: r.error || 'Faltan datos minimos para dar de alta el cliente' };
   }
@@ -146,6 +154,20 @@ function letreroMatch(etiqueta, estado) {
   return `<span class="operam-letrero ${clase}">${escapeHtml(etiqueta)}: ${texto}</span>`;
 }
 
+// Hecho del nombre corto repetido (#242): este candidato usa EXACTAMENTE el
+// mismo cust_ref que la cotizacion, y Operam lo exige unico en todo el padron
+// (no dejaria crear el cliente). Es el unico hecho del picker que puede venir de
+// un cliente con RFC REAL, al que la dedup de genericos (ADR-0001) nunca llega:
+// por eso se muestra su razon social Y su RFC -- el vendedor tiene que poder ver
+// que su cliente quiza ya existe bajo otro RFC antes de decidir.
+function textoCustRefIgual(c) {
+  const partes = [];
+  if (c.CustName) partes.push(c.CustName);
+  if (c.tax_id) partes.push(`RFC ${c.tax_id}`);
+  const quien = partes.length ? `: ${partes.join(' - ')}` : '';
+  return `Mismo nombre corto en Operam${quien}`;
+}
+
 // Lista inline (no modal, #83) de candidatos de la dedup por nombre (ADR-0001).
 // TRES salidas, ninguna comoda (#204 ajuste, #211): elegir el cliente correcto
 // (elegirCandidatoOperam -> { customerId }), declarar que el negocio capturado es
@@ -172,9 +194,11 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
     const diffTexto = textoDiferenciaNombre(c.diferenciaNombre);
     const diffHtml = diffTexto ? `<div class="operam-candidato-diff">${escapeHtml(diffTexto)}</div>` : '';
     const letreros = `<div class="operam-candidato-letreros">${letreroMatch('Celular', c.celularMatch)}${letreroMatch('Correo', c.correoMatch)}</div>`;
+    const custRefHtml = c.custRefIgual ? `<div class="operam-candidato-custref">${escapeHtml(textoCustRefIgual(c))}</div>` : '';
     return `<li class="operam-candidato">
       <div class="operam-candidato-info">
         <span class="operam-candidato-nombre">${nombre}</span>
+        ${custRefHtml}
         ${diffHtml}
         ${letreros}
       </div>
@@ -228,6 +252,14 @@ export function buildOperamStatusHtml(id, vista) {
     return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje);
   }
   if (v.estado === 'sin_datos') {
+    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>`;
+  }
+  // #242: choque de nombre corto. SIN Reintentar a proposito (mismo criterio que
+  // 'sin_datos'): el boton volveria a chocar contra la unicidad global del
+  // cust_ref. Lo que resuelve es cambiar el nombre corto en el paso Cliente y
+  // volver a generar; el texto del servidor es el que lo dice, con el dueno del
+  // nombre corto cuando el padron alcanza a nombrarlo.
+  if (v.estado === 'cust_ref') {
     return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>`;
   }
   return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || 'No se pudo subir a Operam')}</span>` +

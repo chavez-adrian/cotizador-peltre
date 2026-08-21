@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico } from '../lib/deduplicacion.js';
+import { normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico, coincideCustRef, agregarCandidatosPorCustRef } from '../lib/deduplicacion.js';
 
 // N1: quita acentos
 test('N1: normalizarNombre quita acentos', () => {
@@ -508,4 +508,61 @@ test('#244: un cliente con RFC REAL en el pool NO entra como candidato de un gen
 // puede convertir eso en un candidato (seria proponer cualquier generico).
 test('#244: la union no inventa candidatos cuando el nombre no da senal', () => {
   assert.equal(detectarDuplicados('XAXX010101000', '', POOL_CRUZADO).tipo, 'libre');
+});
+
+// === #242: el cust_ref es UNICO GLOBAL en Operam ==============================
+// Crear un cliente con un cust_ref ya usado responde 406 "Already exists customer
+// with same cust_ref" (medido en vivo 2026-08-21), y esa unicidad NO respeta el
+// RFC: el dueno del nombre corto puede ser un cliente con RFC real, que la dedup
+// de genericos jamas propone. agregarCandidatosPorCustRef mete ese hallazgo a la
+// MISMA lista de candidatos, para que el vendedor pueda verlo y elegirlo.
+
+test('#242: un cliente con RFC REAL cuyo cust_ref es el nombre corto entra a la lista', () => {
+  const padron = [
+    { customer_id: 499, CustName: 'CUMBIARCA SA', cust_ref: 'Studio Iken', tax_id: 'CPE921211N76' },
+    { customer_id: 77, CustName: 'OTRA COSA SA', cust_ref: 'Otra', tax_id: 'XAXX010101000' },
+  ];
+  const d = agregarCandidatosPorCustRef({ tipo: 'libre' }, padron, 'Studio Iken');
+  assert.equal(d.tipo, 'candidatos');
+  assert.deepEqual(d.candidatos.map(c => c.customer_id), [499]);
+  assert.equal(d.candidatos[0]._custRefIgual, true);
+});
+
+test('#242: la comparacion del cust_ref ignora mayusculas y espacios de sobra', () => {
+  assert.equal(coincideCustRef('Studio Iken', '  studio iken '), true);
+  assert.equal(coincideCustRef('  STUDIO IKEN', 'Studio Iken'), true);
+  assert.equal(coincideCustRef('Studio Iken 2', 'Studio Iken'), false);
+  // Sin nombre corto no hay nada que buscar: jamas coincide con un cust_ref vacio.
+  assert.equal(coincideCustRef('', ''), false);
+  assert.equal(coincideCustRef('Algo', ''), false);
+});
+
+test('#242: sin nombre corto la busqueda por cust_ref no aporta candidatos', () => {
+  const padron = [{ customer_id: 499, CustName: 'CUMBIARCA SA', cust_ref: '', tax_id: 'CPE921211N76' }];
+  assert.equal(agregarCandidatosPorCustRef({ tipo: 'libre' }, padron, '').tipo, 'libre');
+  assert.equal(agregarCandidatosPorCustRef({ tipo: 'libre' }, padron, '   ').tipo, 'libre');
+});
+
+test('#242: el hallazgo por cust_ref no duplica a un candidato que ya estaba', () => {
+  const yaCandidato = { customer_id: 499, CustName: 'CUMBIARCA SA', cust_ref: 'Studio Iken', tax_id: 'XEXX010101000' };
+  const d = agregarCandidatosPorCustRef({ tipo: 'candidatos', candidatos: [yaCandidato] }, [yaCandidato], 'Studio Iken');
+  assert.equal(d.tipo, 'candidatos');
+  assert.equal(d.candidatos.length, 1);
+  // El que ya estaba TAMBIEN se marca: el vendedor tiene que ver que el choque de
+  // nombre corto existe, aunque el candidato hubiera entrado por nombre o telefono.
+  assert.equal(d.candidatos[0]._custRefIgual, true);
+});
+
+test('#242: los candidatos por nombre que NO chocan de cust_ref se conservan sin marca', () => {
+  const porNombre = { customer_id: 10, CustName: 'HOTEL AZUL SA', cust_ref: 'Hotel Azul Sur', tax_id: 'XAXX010101000' };
+  const dueno = { customer_id: 20, CustName: 'AZUL MARINO SA', cust_ref: 'Hotel Azul', tax_id: 'AZM900101AAA' };
+  const d = agregarCandidatosPorCustRef({ tipo: 'candidatos', candidatos: [porNombre] }, [porNombre, dueno], 'Hotel Azul');
+  assert.deepEqual(d.candidatos.map(c => c.customer_id), [10, 20]);
+  assert.equal(d.candidatos[0]._custRefIgual, undefined);
+  assert.equal(d.candidatos[1]._custRefIgual, true);
+});
+
+test('#242: un padron vacio o ilegible deja el veredicto tal cual', () => {
+  assert.deepEqual(agregarCandidatosPorCustRef({ tipo: 'libre' }, [], 'Studio Iken'), { tipo: 'libre' });
+  assert.deepEqual(agregarCandidatosPorCustRef({ tipo: 'libre' }, null, 'Studio Iken'), { tipo: 'libre' });
 });

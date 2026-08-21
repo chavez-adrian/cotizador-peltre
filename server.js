@@ -18,7 +18,7 @@ import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
-import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, normalizarRfc, normalizarNombre, hechosCandidato } from './lib/deduplicacion.js';
+import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, normalizarRfc, normalizarNombre, hechosCandidato, agregarCandidatosPorCustRef, coincideCustRef } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
 import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento-operam.mjs';
@@ -35,7 +35,7 @@ import * as bandejaStore from './lib/bandeja-store.js';
 import * as vendedoresStore from './lib/vendedores-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
-import { refrescarIndice, matchCliente } from './lib/indice-telefonos.js';
+import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM } from './lib/pipeline.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
@@ -1857,11 +1857,32 @@ function poolClientesParaDedup(listas) {
     .map(c => ({ ...c, RFC: c.tax_id || c.RFC || c.rfc || '', id: c.customer_id }));
 }
 
+// El nombre corto se escribe como `cust_ref` del cliente generico y Operam lo
+// exige UNICO EN TODO EL PADRON, sin importar el RFC (#242, 406 "Already exists
+// customer with same cust_ref"). Por eso, ademas de los pools de genericos, se
+// busca el dueno del nombre corto en el padron COMPLETO (la cache de #42, que ya
+// esta en memoria: el ?search= de Operam no indexa cust_ref ni RFC, #194) y se
+// suma a la MISMA lista de candidatos. Es el unico camino que puede DESCUBRIR que
+// el cliente ya existe bajo un RFC real -- la dedup de ADR-0001 nunca propone a un
+// cliente identificado, asi que el choque terminaba en veredicto 'libre', POST y
+// 406 sin salida. Sale del mismo pipeline a proposito: la revalidacion de #208
+// recalcula esto mismo y tiene que aceptar al candidato elegido.
+// El padron es best effort (clientesCacheados nunca lanza): con la cache fria o
+// Operam caido no aporta candidatos y el respaldo es el 406 traducido de abajo.
+// El padron se devuelve para nombrar al dueno del cust_ref si el POST choca.
 async function poolDedupGenerico(c, entry) {
   const rfcGenerico = rfcGenericoDe(c);
   const nombre = c.razonSocial || c.nombreCorto || entry.cliente || '';
-  const pools = await Promise.all([...RFC_GENERICOS].map(g => buscarClientesPorRfc(g)));
-  return { rfcGenerico, nombre, dedup: detectarDuplicados(rfcGenerico, nombre, poolClientesParaDedup(pools)) };
+  const [pools, padron] = await Promise.all([
+    Promise.all([...RFC_GENERICOS].map(g => buscarClientesPorRfc(g))),
+    // El default de clientesCacheados espera hasta 120 s una cache fria (es para el
+    // barrido de contactos, #228, donde nadie espera). Aqui hay un vendedor esperando
+    // la subida: con 5 s el padron llega si esta caliente y, si no, B (el 406
+    // traducido) sigue siendo la salida.
+    clientesCacheados({ timeoutMs: 5000 }),
+  ]);
+  const dedup = detectarDuplicados(rfcGenerico, nombre, poolClientesParaDedup(pools));
+  return { rfcGenerico, nombre, padron, dedup: agregarCandidatosPorCustRef(dedup, padron, c.nombreCorto) };
 }
 
 // Contexto para los hechos del picker (#210): el telefono/correo REALES del
@@ -1878,12 +1899,39 @@ function contextoHechos(c, nombre) {
 // calculados APARTE de la seleccion (hechosCandidato nunca decide quien entra a
 // la lista). El picker (buildCandidatosOperamHtml) los pinta sin clasificar --
 // el humano decide. Ninguna combinacion bloquea Elegir/Crear nuevo.
+// custRefIgual (#242): este candidato usa EL MISMO nombre corto (cust_ref) que la
+// cotizacion. Es el hecho mas duro del picker -- Operam no dejaria crear un cliente
+// con ese nombre corto -- y puede venir de un cliente con RFC REAL, que ninguna otra
+// senal habria propuesto. Por eso el picker pinta tambien su RFC.
 function candidatoParaContrato(k, ctx) {
   const hechos = hechosCandidato(k, ctx.tokensInput, ctx.telefonoInput, ctx.correoInput);
   return {
     id: k.customer_id, CustName: k.CustName, cust_ref: k.cust_ref, tax_id: k.tax_id,
     diferenciaNombre: hechos.diferenciaNombre, celularMatch: hechos.celularMatch, correoMatch: hechos.correoMatch,
+    custRefIgual: k._custRefIgual === true,
   };
+}
+
+// Traduccion del 406 de cust_ref duplicado (#242) a algo que el vendedor pueda
+// EJECUTAR. Sin esto el unico camino era reintentar, que da exactamente el mismo
+// 406: el nombre corto es unico global en Operam y nadie mas puede cambiarlo.
+// Si el padron cacheado alcanza a nombrar al dueno, se nombra (razon social y RFC):
+// saber contra que se choco es la diferencia entre cambiar el nombre corto a ciegas
+// y darse cuenta de que ese cliente ya existia. Sin nombre corto capturado el
+// cust_ref lo deriva Operam del nombre del cliente (buildClienteBody), asi que el
+// texto no inventa un valor que el vendedor no escribio.
+function esErrorCustRefDuplicado(err) {
+  return /same cust_ref/i.test(String(err?.message || ''));
+}
+
+function mensajeCustRefDuplicado(nombreCorto, padron) {
+  const dueno = (padron || []).find(k => coincideCustRef(k?.cust_ref, nombreCorto));
+  const quien = dueno
+    ? ` Lo usa ${dueno.CustName || `el cliente ${dueno.customer_id}`}${dueno.tax_id ? ` (RFC ${dueno.tax_id})` : ''}.`
+    : '';
+  const cual = nombreCorto ? ` "${nombreCorto}"` : '';
+  return `El nombre corto${cual} ya lo usa otro cliente en Operam, que lo exige unico.${quien}` +
+    ' Cambia el nombre corto del cliente y vuelve a generar la cotizacion.';
 }
 
 // Vendedor de la cotizacion -> su operam_id (el `salesman` que Operam guarda en
@@ -1943,7 +1991,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       customerId = prospecto.data.cliente_id;
       steps.push({ name: 'dedup', status: 'ok', info: 'cliente reutilizado por celular' });
     } else {
-      const { rfcGenerico, nombre, dedup } = await poolDedupGenerico(c, entry);
+      const { rfcGenerico, nombre, padron, dedup } = await poolDedupGenerico(c, entry);
       if (dedup.tipo === 'candidatos' && !crearNuevo) {
         // Sin resolver no hay documento (#204): se marca el motivo ANTES de
         // responder para que el candado de los GET aplique de inmediato.
@@ -1977,6 +2025,16 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         steps.push({ name: 'POST customer', status: 'error', error: err.message });
         logCliente(rfcGenerico, nombre, 'error', null, FUENTE_ALTA_GENERICA, null, err.message);
         await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
+        // Choque de nombre corto (#242): no es un fallo de Operam sino un dato que
+        // el vendedor tiene que corregir, y el 503 generico lo mandaba a reintentar
+        // en un bucle que siempre da lo mismo. NUNCA se desambigua el cust_ref por
+        // nuestra cuenta (un sufijo automatico esconderia que el cliente ya existia).
+        if (esErrorCustRefDuplicado(err)) {
+          return res.status(409).json({
+            error: mensajeCustRefDuplicado(c.nombreCorto || '', padron),
+            codigo: 'CUST_REF_DUPLICADO', nombreCorto: c.nombreCorto || '', steps,
+          });
+        }
         return res.status(503).json({ error: 'No se pudo crear el cliente generico en Operam: ' + err.message, steps });
       }
       customerId = creado.cliente_id;

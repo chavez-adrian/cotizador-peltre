@@ -31,6 +31,7 @@ if (existsSync(envPath)) {
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app, cargarListasPrecios, barrerCotizacionesDedupVencidas } = await import('../server.js');
 const { resetSession } = await import('../lib/operam-client.js');
+const { resetIndice } = await import('../lib/indice-telefonos.js');
 const { _resetSesionWeb, _esperarPostFixes } = await import('../lib/operam-web.js');
 const TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
@@ -95,6 +96,10 @@ beforeEach(() => {
   globalThis.fetch = fetchBloqueado;
   resetSession();
   _resetSesionWeb();
+  // La dedup por cust_ref (#242) lee el padron cacheado de indice-telefonos, que
+  // vive en memoria del modulo con TTL de 1 h: sin este reset el padron del primer
+  // test contestaria por todos los demas.
+  resetIndice();
 });
 
 const CELULAR = '+52 5588776655';
@@ -593,14 +598,16 @@ test('G6: cliente extranjero usa XEXX010101000 y deduplica contra los genericos 
   writeJson(PROSPECTOS_PATH, []);
   const id = nuevaCotizacion({ pais: 'US', telefono: '+1 5551234567' });
   let clienteBody = null;
-  let dedupUrl = null;
+  // Todas las lecturas del padron que hace la dedup: los pools por tax_id (#194)
+  // y, desde #242, el listado completo que alimenta la busqueda por cust_ref.
+  const dedupUrls = [];
   mockOperamFetch({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 930 }); }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
       if (u.includes('/930')) return jsonResponse({ data: [{ branches: [{ branch_code: 931 }] }] });
-      dedupUrl = u;
+      dedupUrls.push(u);
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/931': () => jsonResponse({ result: true, data: [{}] }),
@@ -614,11 +621,12 @@ test('G6: cliente extranjero usa XEXX010101000 y deduplica contra los genericos 
   assert.equal(res.body.ok, true);
   // #194: el pool se pide por tax_id. Con ?search= Operam no indexa el RFC y la
   // dedup corria contra una lista vacia.
-  assert.ok(dedupUrl.includes('tax_id=XEXX010101000'), 'la dedup de nombre corre contra el generico extranjero, por tax_id');
-  assert.ok(!dedupUrl.includes('search='), 'nunca por el buscador de nombre');
+  const porTaxId = dedupUrls.filter(u => u.includes('tax_id='));
+  assert.ok(porTaxId.some(u => u.includes('tax_id=XEXX010101000')), 'la dedup de nombre corre contra el generico extranjero, por tax_id');
+  assert.ok(dedupUrls.every(u => !u.includes('search=')), 'nunca por el buscador de nombre');
   // F4: el pool de genericos crece por diseno (#81); la dedup no puede truncarse
   // a una pagina corta.
-  assert.ok(dedupUrl.includes('limit=100'), 'la dedup generica pagina de 100 en 100');
+  assert.ok(porTaxId.every(u => u.includes('limit=100')), 'la dedup generica pagina de 100 en 100');
   assert.equal(clienteBody.tax_id, 'XEXX010101000');
 });
 
@@ -1680,4 +1688,228 @@ test('M4: el barrido borra solo las dedup vencidas y respeta el resto', async ()
   assert.ok(!quedan.includes(idDedupVieja), 'la dedup vencida se borro');
   assert.ok(quedan.includes(idDedupNueva), 'la dedup reciente sigue viva');
   assert.ok(quedan.includes(idOperamVieja), 'el PRE por fallo de Operam JAMAS se toca');
+});
+
+// === #242: el cust_ref es UNICO GLOBAL en Operam ==============================
+// El nombre corto de la cotizacion se escribe como cust_ref del cliente generico
+// y Operam lo exige unico en TODO el padron, sin importar el RFC. Dos frentes:
+// DESCUBRIR (el dueno del nombre corto entra al picker aunque tenga RFC real, y
+// asi el vendedor puede ligar la cotizacion al cliente que ya existia) y dar
+// SALIDA (el 406 se traduce en un error accionable en vez de un callejon).
+
+// Respuesta 406 de Operam tal cual llega: el validador acumula quejas en el mismo
+// cuerpo, por eso el mensaje del cust_ref viaja acompanado (medido 2026-08-21).
+function respuesta406CustRef() {
+  return {
+    ok: false, status: 406,
+    text: async () => JSON.stringify({ messages: ['Already exists customer with same cust_ref', 'Campos requeridos no se encontraron'] }),
+  };
+}
+
+// Padron completo de Operam (listado paginado que cachea indice-telefonos). Las
+// rutas de dedup por RFC (?tax_id=) son OTRA consulta: aqui se distingue por la
+// URL, igual que lo hace el cliente de Operam.
+function esListadoPadron(u) {
+  return u.includes('limit=100') && u.includes('skip=');
+}
+
+test('CR1: el dueno del nombre corto entra al picker aunque tenga RFC REAL y la dedup diga libre', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  // nombreCorto 'Hotel Azul'; el dueno lo tiene con otro case y espacios de sobra.
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  let postCustomer = false;
+  let quoteLlamado = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      if (esListadoPadron(u)) {
+        return jsonResponse({ total: 2, data: [
+          { customer_id: 499, CustName: 'CUMBIARCA SA DE CV', cust_ref: '  hotel AZUL ', tax_id: 'CPE921211N76' },
+          { customer_id: 77, CustName: 'OTRA COSA SA', cust_ref: 'Otra', tax_id: 'XAXX010101000' },
+        ] });
+      }
+      // Los pools de los dos genericos no traen nada parecido: sin #242 el
+      // veredicto seria 'libre' y el POST se estrellaria contra el 406.
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, added_trans_no: 1 }); },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 409);
+  assert.equal(res.body.candidatos.length, 1, 'solo el dueno del nombre corto');
+  const cand = res.body.candidatos[0];
+  assert.equal(cand.id, 499);
+  assert.equal(cand.custRefIgual, true, 'el picker tiene que poder decir POR QUE entro');
+  assert.equal(cand.CustName, 'CUMBIARCA SA DE CV');
+  assert.equal(cand.tax_id, 'CPE921211N76', 'el vendedor necesita ver que vive bajo otro RFC');
+  assert.equal(postCustomer, false, 'no debe crear');
+  assert.equal(quoteLlamado, false, 'no debe subir');
+});
+
+test('CR2: elegir al dueno del nombre corto pasa la revalidacion (#208) y sube el quote a ese cliente', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  let postCustomer = false;
+  let quoteBody = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (esListadoPadron(u)) {
+        return jsonResponse({ total: 1, data: [
+          { customer_id: 499, CustName: 'CUMBIARCA SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'CPE921211N76' },
+        ] });
+      }
+      if (u.includes('/499')) return jsonResponse({ data: [{ branches: [{ branch_code: 546 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1801 }); },
+    ...mockWebLegacy(),
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 499 });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.customer_id, 499);
+  assert.equal(postCustomer, false, 'elegir un candidato NO crea cliente');
+  assert.equal(quoteBody.customer_id, 499);
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(String(cot.folioOperam), '1801');
+  assert.equal(cot.data.cliente.customerId, 499);
+});
+
+test('CR3: con el padron caido, el 406 de cust_ref se traduce en un error accionable (409) y el reintento no crea nada', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  let intentosPost = 0;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { intentosPost++; return respuesta406CustRef(); }
+      // Padron vacio: la busqueda por cust_ref no aporta candidatos y el unico
+      // aviso posible es el que da Operam al rechazar el POST.
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 409);
+  assert.equal(res.body.codigo, 'CUST_REF_DUPLICADO');
+  assert.equal(res.body.nombreCorto, 'Hotel Azul');
+  assert.match(res.body.error, /nombre corto/i);
+  const paso = res.body.steps.find(s => s.name === 'POST customer');
+  assert.equal(paso.status, 'error');
+  assert.match(paso.error, /same cust_ref/);
+
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.ok(!cot.folioOperam, 'la cotizacion sigue PRE');
+  assert.equal(cot.data.cliente.customerId, undefined, 'no quedo ligada a ningun cliente');
+
+  // Reintentar SIN cambiar el nombre corto da exactamente lo mismo: el vendedor
+  // tiene que cambiarlo, y el mensaje es lo unico que se lo puede decir.
+  const otra = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  assert.equal(otra.status, 409);
+  assert.equal(otra.body.codigo, 'CUST_REF_DUPLICADO');
+  assert.equal(intentosPost, 2, 'el reintento vuelve a intentar y vuelve a chocar, sin crear nada');
+});
+
+test('CR3b: si el padron puede nombrar al dueno del cust_ref, el error accionable lo dice', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return respuesta406CustRef();
+      // El padron ve al dueno, pero el vendedor ya dijo "ninguno es el mismo
+      // cliente" (#204): se crea de todos modos y Operam lo frena. El error tiene
+      // que nombrar al dueno para que el vendedor sepa contra que choco.
+      if (esListadoPadron(u)) {
+        return jsonResponse({ total: 1, data: [
+          { customer_id: 499, CustName: 'CUMBIARCA SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'CPE921211N76' },
+        ] });
+      }
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ crearNuevo: true });
+
+  assert.equal(res.status, 409);
+  assert.equal(res.body.codigo, 'CUST_REF_DUPLICADO');
+  assert.match(res.body.error, /CUMBIARCA SA DE CV/);
+  assert.match(res.body.error, /CPE921211N76/);
+});
+
+test('CR4: un 406 que NO es el del cust_ref conserva el 503 de siempre', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') {
+        return { ok: false, status: 406, text: async () => JSON.stringify({ messages: ['Campos requeridos no se encontraron'] }) };
+      }
+      return jsonResponse({ total: 0, data: [] });
+    },
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 503);
+  assert.equal(res.body.codigo, undefined, 'solo el choque de cust_ref se traduce');
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(cot.data.motivoPre, 'operam');
+});
+
+test('CR5: sin nombre corto no hay busqueda por cust_ref y el alta corre como siempre', async () => {
+  writeJson(PROSPECTOS_PATH, []);
+  const id = nuevaCotizacion({ nombreCorto: '' });
+  let postCustomer = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 940 }); }
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/940')) return jsonResponse({ data: [{ branches: [{ branch_code: 941 }] }] });
+      // Un cliente del padron CON cust_ref vacio no puede volverse candidato de
+      // una cotizacion sin nombre corto (dos vacios no son una coincidencia).
+      if (esListadoPadron(u)) {
+        return jsonResponse({ total: 1, data: [{ customer_id: 499, CustName: 'CUMBIARCA SA', cust_ref: '', tax_id: 'CPE921211N76' }] });
+      }
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/branches/941': (u, opts) => {
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      return jsonResponse({ data: [{ br_name: 'Hotel Azul Centro' }] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1802 }),
+    ...mockWebLegacy(),
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(postCustomer, true);
+  assert.equal(res.body.customer_id, 940);
 });

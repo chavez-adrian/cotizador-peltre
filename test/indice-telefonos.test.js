@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   normalizarTelefono, construirIndice, matchCliente, refrescarIndice, resetIndice,
-  buscarClientesPorTexto, enumerarTelefonosClientes,
+  buscarClientesPorTexto, clientesCacheados, enumerarTelefonosClientes,
 } from '../lib/indice-telefonos.js';
 import { resetSession } from '../lib/operam-client.js';
 
@@ -298,4 +298,25 @@ test('buscarClientesPorTexto: si Operam falla devuelve [] sin lanzar (best effor
     '/api/v3/login': () => { throw new Error('ECONNREFUSED'); },
   });
   assert.deepEqual(await buscarClientesPorTexto('utilitario'), []);
+});
+
+// === clientesCacheados: el padron COMPLETO para la dedup por cust_ref (#242) ===
+// El ?search= de Operam no indexa el cust_ref ni el RFC (#194), asi que la unica
+// forma barata de ver TODO Operam es esta misma cache paginada.
+
+test('clientesCacheados: devuelve el padron completo con cust_ref, reusando la cache', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  restore = mockListado(CLIENTES, contadores);
+  const primera = await clientesCacheados();
+  assert.deepEqual(primera.map(c => c.cust_ref), CLIENTES.map(c => c.cust_ref));
+  const segunda = await clientesCacheados();
+  assert.equal(segunda.length, CLIENTES.length);
+  assert.equal(contadores.paginas, 1, 'la segunda consulta sale de la cache, no de Operam');
+});
+
+test('clientesCacheados: si Operam falla devuelve [] sin lanzar (best effort)', async () => {
+  restore = mockFetchByUrl({
+    '/api/v3/login': () => { throw new Error('ECONNREFUSED'); },
+  });
+  assert.deepEqual(await clientesCacheados(), []);
 });
