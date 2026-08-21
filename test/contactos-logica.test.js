@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { aFormatoWhatsApp, nombreVisible, planificarContactos } from '../lib/contactos-logica.js';
+import { aFormatoWhatsApp, nombreVisible, planificarContactos, MASCARAS } from '../lib/contactos-logica.js';
 
 // El formato MEDIDO en el dispositivo (#226, 2026-08-21): E.164 limpio, +52 y
 // los diez digitos, SIN el "1". Contradice la documentacion de WhatsApp y el
@@ -151,7 +151,10 @@ test('un celular que desaparece del origen no produce borrado: el plan no tiene 
 
 test('una ficha de clase que aun no sabemos escribir no se toca (ADR-0013)', () => {
   // El fallo caro es pisar un contacto ajeno con la mascara ancha del propio.
-  const mapeo = [{ celular10: '5512345678', resourceName: 'people/c1', etag: 'e1', clase: 'adoptado', huella: 'vieja' }];
+  // La clase de ejemplo es la que #231 traera; 'adoptado' dejo de servir aqui
+  // cuando #229 le registro mascara, y esa es exactamente la garantia: mientras
+  // una clase no tenga mascara registrada, no se escribe.
+  const mapeo = [{ celular10: '5512345678', resourceName: 'people/c1', etag: 'e1', clase: 'inactivo', huella: 'vieja' }];
   const plan = planificarContactos({ prospectos: [PROSPECTO], mapeo });
   assert.equal(plan.crear.length, 0);
   assert.equal(plan.actualizar.length, 0);
@@ -303,4 +306,164 @@ test('un Contacto general sin nombre deja la empresa sola: inventarle un rol ser
     fichaCreada(planificarContactos({ clientes: [general], mapeo: [] })).nombreVisible,
     'Cocinas del Valle'
   );
+});
+
+// --- Adopcion de contactos que ya estaban en la libreta (#229) ---
+//
+// `libreta` es lo que Google devuelve hoy, leido por la envoltura: una lista de
+// { resourceName, etag, telefonos[] } con los telefonos CRUDOS, en el formato en
+// que una persona los guardo a mano. Aqui solo se comparan por sus ultimos10.
+
+const EN_LA_LIBRETA = {
+  resourceName: 'people/c9', etag: 'etag-9',
+  telefonos: ['+52 55 1234 5678'],
+};
+
+test('un celular que ya tenia contacto en la libreta NO produce una segunda ficha', () => {
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], mapeo: [], libreta: [EN_LA_LIBRETA],
+  });
+  assert.equal(plan.crear.length, 0, 'crear una segunda ficha del mismo numero es el bug');
+  assert.equal(plan.actualizar.length, 1);
+  assert.equal(plan.actualizar[0].clase, 'adoptado');
+  assert.equal(plan.actualizar[0].resourceName, 'people/c9');
+  assert.equal(plan.actualizar[0].etag, 'etag-9');
+});
+
+test('el contacto adoptado pasa a mostrar el nombre canonico del sistema', () => {
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], mapeo: [], libreta: [{ ...EN_LA_LIBRETA, telefonos: ['5512345678'] }],
+  });
+  assert.equal(plan.actualizar[0].ficha.nombreVisible, 'Laura Mendez - Cocinas del Valle');
+});
+
+// =========================================================================
+// CANDADO ADR-0013. Esta prueba no es un caso mas de la tabla: es lo unico que
+// impide reintroducir un borrado silencioso de datos ajenos.
+//
+// La actualizacion de la People API REEMPLAZA los campos que nombra la mascara
+// en vez de fusionarlos. Si alguien "simplifica" unificando esta mascara con la
+// del propio -- o le agrega `telefono` para que la ficha quede completa -- el
+// barrido pasara a borrar, en cada contacto adoptado, todo telefono, correo y
+// direccion que una persona guardo a mano y que no sea el que nosotros
+// escribimos. Cada quince minutos. Indefinidamente. Sin error, sin log y sin
+// forma practica de deshacerlo (la ventana de deshacer de Google revierte la
+// libreta ENTERA a un instante, no un contacto suelto).
+//
+// Si esta prueba falla, la respuesta correcta NO es actualizarla.
+// =========================================================================
+test('CANDADO ADR-0013: la mascara de un adoptado nunca incluye telefono, correo ni direcciones', () => {
+  const prohibidos = ['telefono', 'correo', 'direccion', 'direcciones'];
+  for (const campo of prohibidos) {
+    assert.equal(MASCARAS.adoptado.includes(campo), false,
+      `la mascara del adoptado no puede nombrar "${campo}": nombrarlo lo BORRA`);
+  }
+  assert.deepEqual(MASCARAS.adoptado, ['nombreVisible', 'organizacion', 'origen']);
+
+  // Y lo mismo sobre la entrada del plan, que es lo que de verdad viaja a
+  // Google: la mascara del modulo podria estar bien y la del plan no.
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], mapeo: [], libreta: [EN_LA_LIBRETA],
+  });
+  const adoptado = plan.actualizar[0];
+  assert.equal(adoptado.clase, 'adoptado');
+  for (const campo of prohibidos) {
+    assert.equal(adoptado.mascara.includes(campo), false,
+      `el plan no puede mandar "${campo}" en la mascara de un adoptado`);
+  }
+});
+
+test('una ficha propia SI se escribe completa, como hasta ahora', () => {
+  // El candado es del adoptado y solo del adoptado: al propio lo creo la
+  // sincronizacion y no hay nada humano que preservar ahi.
+  const plan = planificarContactos({ prospectos: [PROSPECTO], mapeo: [], libreta: [] });
+  assert.deepEqual([...plan.crear[0].mascara].sort(),
+    ['correo', 'nombreVisible', 'organizacion', 'origen', 'telefono']);
+});
+
+test('la clase persistida manda: un adoptado sigue adoptado aunque se relea la libreta', () => {
+  const mapeo = [{
+    celular10: '5512345678', resourceName: 'people/c9', etag: 'etag-9',
+    clase: 'adoptado', huella: 'de-otra-pasada',
+  }];
+  const plan = planificarContactos({ prospectos: [PROSPECTO], mapeo, libreta: [EN_LA_LIBRETA] });
+  assert.equal(plan.actualizar.length, 1);
+  assert.equal(plan.actualizar[0].clase, 'adoptado');
+  assert.deepEqual(plan.actualizar[0].mascara, MASCARAS.adoptado);
+});
+
+test('la clase persistida manda: un propio NO se degrada a adoptado por estar en la libreta', () => {
+  // Un propio esta en la libreta por definicion: lo creamos nosotros. Si la
+  // clase se recalculara mirando Google, la segunda pasada convertiria todo
+  // propio en adoptado y dejaria de corregirle el telefono para siempre.
+  const mapeo = [{
+    celular10: '5512345678', resourceName: 'people/c1', etag: 'e1',
+    clase: 'propio', huella: 'vieja',
+  }];
+  const plan = planificarContactos({ prospectos: [PROSPECTO], mapeo, libreta: [EN_LA_LIBRETA] });
+  assert.equal(plan.actualizar[0].clase, 'propio');
+  assert.equal(plan.actualizar[0].resourceName, 'people/c1', 'manda el mapeo, no la libreta');
+  assert.ok(plan.actualizar[0].mascara.includes('telefono'));
+});
+
+test('la huella del adoptado se calcula sobre su mascara corta: la segunda pasada no escribe', () => {
+  const primera = planificarContactos({ prospectos: [PROSPECTO], mapeo: [], libreta: [EN_LA_LIBRETA] });
+  const mapeo = [{
+    celular10: '5512345678', resourceName: 'people/c9', etag: 'etag-9',
+    clase: 'adoptado', huella: primera.actualizar[0].huella,
+  }];
+  const segunda = planificarContactos({ prospectos: [PROSPECTO], mapeo, libreta: [EN_LA_LIBRETA] });
+  assert.equal(segunda.crear.length, 0);
+  assert.equal(segunda.actualizar.length, 0, 'nada cambio: cero escrituras');
+});
+
+test('a un adoptado le cambia el correo en el sistema y NO se escribe nada', () => {
+  // El correo no esta en su mascara: si entrara en la huella, cada cambio de un
+  // campo que no se escribe produciria un PATCH inutil cada quince minutos.
+  const primera = planificarContactos({ prospectos: [PROSPECTO], mapeo: [], libreta: [EN_LA_LIBRETA] });
+  const mapeo = [{
+    celular10: '5512345678', resourceName: 'people/c9', etag: 'etag-9',
+    clase: 'adoptado', huella: primera.actualizar[0].huella,
+  }];
+  const otroCorreo = { ...PROSPECTO, data: { ...PROSPECTO.data, correo: 'otro@cocinas.mx' } };
+  const segunda = planificarContactos({ prospectos: [otroCorreo], mapeo, libreta: [EN_LA_LIBRETA] });
+  assert.equal(segunda.actualizar.length, 0);
+});
+
+test('el celular se reconoce en la libreta sin importar como lo escribio la persona', () => {
+  // La coincidencia es por ultimos10, no por la cadena: en la libreta real hay
+  // numeros con el "1" de WhatsApp, con espacios y con parentesis.
+  for (const crudo of ['+52 1 55 1234 5678', '(55) 1234-5678', '55-1234-5678']) {
+    const plan = planificarContactos({
+      prospectos: [PROSPECTO], mapeo: [], libreta: [{ ...EN_LA_LIBRETA, telefonos: [crudo] }],
+    });
+    assert.equal(plan.crear.length, 0, `no debe crear otra ficha para ${crudo}`);
+    assert.equal(plan.actualizar[0].clase, 'adoptado');
+  }
+});
+
+test('un contacto de la libreta con otro numero no adopta nada', () => {
+  const ajeno = { resourceName: 'people/c8', etag: 'e8', telefonos: ['55 0000 1111'] };
+  const plan = planificarContactos({ prospectos: [PROSPECTO], mapeo: [], libreta: [ajeno] });
+  assert.equal(plan.crear.length, 1);
+  assert.equal(plan.actualizar.length, 0);
+});
+
+test('un contacto de la libreta sin telefonos no rompe la pasada', () => {
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], mapeo: [],
+    libreta: [{ resourceName: 'people/c7', etag: 'e7' }, { resourceName: 'people/c6', etag: 'e6', telefonos: ['123'] }],
+  });
+  assert.equal(plan.crear.length, 1);
+});
+
+test('dos contactos de la libreta con el mismo numero adoptan uno solo', () => {
+  // Fusionar o borrar duplicados preexistentes esta fuera de alcance (#224): se
+  // adopta el primero y el otro se deja exactamente como esta.
+  const gemelo = { resourceName: 'people/c10', etag: 'etag-10', telefonos: ['5512345678'] };
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], mapeo: [], libreta: [EN_LA_LIBRETA, gemelo],
+  });
+  assert.equal(plan.actualizar.length, 1);
+  assert.equal(plan.actualizar[0].resourceName, 'people/c9');
 });
