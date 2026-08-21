@@ -1948,7 +1948,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       else steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
 
       salesman = await salesmanDeVendedor(entry.vendedor);
-      const salesTypeId = resolverSalesTypeId(entry.tier, listasPrecios);
+      const salesTypeId = resolverSalesTypeId(entry.tier, await obtenerListasPrecios());
       let creado;
       try {
         // crearClienteDirecto: SIN la dedup por RFC exacto de crearCliente (con
@@ -2929,7 +2929,7 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
       .map(v => ({ id: v.id, name: v.name, operam_id: v.operam_id }));
     const yo = registro.find(v => v.id === req.user?.id);
     res.json({
-      segmentos: SEGMENTOS, vendedores, listas_precios: listasPrecios,
+      segmentos: SEGMENTOS, vendedores, listas_precios: await obtenerListasPrecios(),
       puedeAsignar: puedeAsignar({ role: req.user?.role, puedeAsignar: yo?.puedeAsignar }),
     });
   } catch (err) {
@@ -2978,30 +2978,57 @@ app.get('*', (req, res) => {
 
 async function cargarListasPrecios() {
   try {
-    const r = await fetch(`${process.env.OPERAM_URL}/api/v3/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company: '346', user: process.env.OPERAM_USER, pass: process.env.OPERAM_PASSWORD }),
-    });
-    const login = await r.json();
-    if (!login.token) throw new Error('Login fallido al cargar listas');
-    const r2 = await fetch(`${process.env.OPERAM_URL}/api/v3/sales/sales_types`, {
-      headers: { 'Authorization': `Bearer ${login.token}`, 'Content-Type': 'application/json' },
-    });
-    const data = await r2.json();
-    const tipos = Array.isArray(data.data) ? data.data : [];
+    // listarSalesTypes ya pasa por apiCall (lib/operam-client.js): bearer con
+    // auto-refresh, reintento/backoff anti-429 y el status + cuerpo del error en
+    // el mensaje cuando Operam no contesta 200. El login propio de antes no
+    // miraba el status: un 429 (pagina HTML de rate limit) reventaba el r.json()
+    // con "Unexpected token '<'", un mensaje que no dice ni el status ni la causa.
+    const tipos = await listarSalesTypes();
     // Operam v3 (verificado en vivo 2026-06-17): la etiqueta viene en `sales_type`
     // (texto libre: M100, "Precio de lista", "Segundas", "Amazon"...) y el id
     // numerico en `id` -- que es lo que el cliente guarda en su campo sales_type.
     // El selector debe mostrar la etiqueta y mandar el id numerico. Se exponen
-    // todas las listas activas.
+    // todas las listas activas: el filtro se queda aunque listarSalesTypes() sin
+    // showInactive ya las excluya del lado del servidor -- es la unica barrera si
+    // alguien cambia ese default a showInactive:true (Bazaar/Shopify/Globarco
+    // siguen inactivas con clientes vivos ya asignados, docs/arquitectura.md).
     listasPrecios = tipos
       .filter(t => t.inactive !== '1' && t.inactive !== 1)
       .map(t => ({ id: t.id, nombre: t.sales_type }));
   } catch (err) {
+    // Un fallo NO pisa una lista ya cargada (#246): resolverSalesTypeId corre
+    // dentro del request de subida del vendedor, y con [] omite sales_type en
+    // silencio (Operam aplica su default M550, el peor caso). Si nunca cargo
+    // sigue en [] (su valor inicial); si ya habia una lista buena, se queda.
     console.error('[catalogos] No se pudieron cargar listas_precios:', err.message);
-    listasPrecios = [];
   }
+}
+
+// Recarga perezosa (#246): un fallo de arranque (p.ej. Operam en 429 por minutos)
+// dejaba listasPrecios = [] de por vida -- la unica carga corria una vez dentro
+// del guard isMain. Cualquier consumidor llama obtenerListasPrecios() en vez de
+// leer listasPrecios directo; si esta vacia, reintenta con dos guardas: (a) una
+// sola carga en vuelo a la vez (los consumidores concurrentes reusan la misma
+// promesa), (b) enfriamiento entre intentos fallidos para no martillar a Operam
+// cuando esta caido (un 429 en rafaga empeoraria el bloqueo, ver backoff429Base).
+let cargaListasEnCurso = null;
+let ultimoFalloListas = 0;
+let enfriamientoListasMs = 60000;
+export function _setEnfriamientoListasMs(ms) { enfriamientoListasMs = ms; }
+export function _resetListasPrecios() {
+  listasPrecios = [];
+  cargaListasEnCurso = null;
+  ultimoFalloListas = 0;
+}
+export async function obtenerListasPrecios() {
+  if (listasPrecios.length > 0) return listasPrecios;
+  if (Date.now() - ultimoFalloListas < enfriamientoListasMs) return listasPrecios;
+  if (!cargaListasEnCurso) {
+    cargaListasEnCurso = cargarListasPrecios().finally(() => { cargaListasEnCurso = null; });
+  }
+  await cargaListasEnCurso;
+  if (listasPrecios.length === 0) ultimoFalloListas = Date.now();
+  return listasPrecios;
 }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);

@@ -28,7 +28,7 @@ function toHex(s) {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const { app, cargarListasPrecios } = await import('../server.js');
+const { app, cargarListasPrecios, obtenerListasPrecios, _resetListasPrecios, _setEnfriamientoListasMs } = await import('../server.js');
 const { _resetSesionWeb } = await import('../lib/operam-web.js');
 const TEST_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
@@ -1808,6 +1808,126 @@ test('C7: GET /api/catalogos vendedores cada entrada tiene { id, name, operam_id
     }
   } finally {
     restore();
+  }
+});
+
+// === Recarga perezosa de listasPrecios (issue #246) ===
+//
+// #246: cargarListasPrecios corria UNA sola vez dentro del guard isMain con su
+// propio login+fetch crudo, sin mirar el status. Operam rate-limitea /api/v3/*
+// con 429 y una pagina HTML (medido en vivo, dura mas de 10 minutos); un arranque
+// de Render en esa ventana dejaba listasPrecios = [] de por vida y el r.json()
+// crudo reventaba parseando HTML con un mensaje que no mencionaba el 429. Ahora
+// cargarListasPrecios usa listarSalesTypes() de lib/operam-client.js (mismo auth
+// con refresh, mismo backoff/reintento anti-429, error con status+cuerpo) y
+// obtenerListasPrecios() reintenta perezosamente cuando la lista esta vacia.
+
+test('#246-1: cargarListasPrecios ante 429 con cuerpo HTML no lanza, deja listasPrecios vacia y el log lleva el status (no "Unexpected token")', async () => {
+  const { resetSession, _setBackoff429Base, _setMinInterval } = await import('../lib/operam-client.js');
+  _resetListasPrecios();
+  resetSession();
+  _setBackoff429Base(0);
+  _setMinInterval(0);
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok' }) }),
+    '/api/v3/sales/sales_types': () => ({ ok: false, status: 429, text: async () => '<html>Too Many Requests</html>' }),
+  });
+  const logs = [];
+  const originalError = console.error;
+  console.error = (...args) => logs.push(args.join(' '));
+  try {
+    await cargarListasPrecios();
+    const listas = await obtenerListasPrecios();
+    assert.deepStrictEqual(listas, []);
+    assert.ok(logs.some(l => l.includes('429')), 'el log debe llevar el status 429: ' + logs.join(' | '));
+    assert.ok(!logs.some(l => l.includes('Unexpected token')), 'no debe ser un SyntaxError opaco de r.json() sobre HTML');
+  } finally {
+    console.error = originalError;
+    restore();
+    _setBackoff429Base(2000);
+  }
+});
+
+test('#246-2: GET /api/catalogos con la lista vacia dispara la recarga perezosa y responde con las listas llenas', async () => {
+  _resetListasPrecios();
+  const restore = mockCatalogos();
+  try {
+    const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    const porId = Object.fromEntries(res.body.listas_precios.map(l => [l.id, l.nombre]));
+    assert.strictEqual(porId['15'], 'M100');
+    assert.ok(res.body.listas_precios.length > 0, 'la recarga perezosa debio traer las listas');
+  } finally {
+    restore();
+  }
+});
+
+test('#246-3: dos consumidores concurrentes con la lista vacia hacen UNA sola llamada a sales_types', async () => {
+  _resetListasPrecios();
+  let llamadas = 0;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok' }) }),
+    '/api/v3/sales/sales_types': () => { llamadas++; return { ok: true, json: async () => ({ data: SALES_TYPES_MOCK }) }; },
+  });
+  try {
+    const [a, b] = await Promise.all([obtenerListasPrecios(), obtenerListasPrecios()]);
+    assert.strictEqual(llamadas, 1, 'debe reusar la carga en vuelo: una sola llamada a Operam');
+    assert.ok(a.length > 0 && b.length > 0, 'ambos consumidores deben recibir las listas');
+  } finally {
+    restore();
+  }
+});
+
+test('#246-4: fallo reciente + nueva peticion dentro del enfriamiento NO vuelve a llamar a Operam', async () => {
+  const { resetSession, _setBackoff429Base } = await import('../lib/operam-client.js');
+  _resetListasPrecios();
+  _setEnfriamientoListasMs(60000);
+  resetSession();
+  _setBackoff429Base(0);
+  let llamadas = 0;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok' }) }),
+    '/api/v3/sales/sales_types': () => { llamadas++; return { ok: false, status: 429, text: async () => '<html>rate limit</html>' }; },
+  });
+  try {
+    const primero = await obtenerListasPrecios();
+    assert.deepStrictEqual(primero, []);
+    const llamadasTrasPrimero = llamadas;
+    assert.ok(llamadasTrasPrimero > 0, 'el primer intento SI debe llamar a Operam');
+    const segundo = await obtenerListasPrecios();
+    assert.deepStrictEqual(segundo, []);
+    assert.strictEqual(llamadas, llamadasTrasPrimero, 'dentro del enfriamiento no debe reintentar contra Operam');
+  } finally {
+    restore();
+    _setBackoff429Base(2000);
+    _setEnfriamientoListasMs(60000);
+    _resetListasPrecios();
+  }
+});
+
+test('#246-5: lista ya cargada + fallo en un cargarListasPrecios forzado NO la pisa con []', async () => {
+  const { resetSession, _setBackoff429Base } = await import('../lib/operam-client.js');
+  _resetListasPrecios();
+  const restoreOk = mockCatalogos();
+  await cargarListasPrecios();
+  const cargadaAntes = await obtenerListasPrecios();
+  assert.ok(cargadaAntes.length > 0, 'debio quedar cargada antes del fallo forzado');
+  restoreOk();
+
+  resetSession();
+  _setBackoff429Base(0);
+  const restoreFail = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok' }) }),
+    '/api/v3/sales/sales_types': () => ({ ok: false, status: 429, text: async () => '<html>rate limit</html>' }),
+  });
+  try {
+    await cargarListasPrecios(); // forzado: no pasa por obtenerListasPrecios ni por su guarda de "solo si esta vacia"
+    const tras = await obtenerListasPrecios();
+    assert.strictEqual(tras.length, cargadaAntes.length, 'un fallo NO debe pisar la lista ya cargada con []');
+  } finally {
+    restoreFail();
+    _setBackoff429Base(2000);
+    _resetListasPrecios();
   }
 });
 

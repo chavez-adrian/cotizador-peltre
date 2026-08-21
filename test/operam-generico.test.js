@@ -29,7 +29,7 @@ if (existsSync(envPath)) {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const { app, cargarListasPrecios, barrerCotizacionesDedupVencidas } = await import('../server.js');
+const { app, cargarListasPrecios, barrerCotizacionesDedupVencidas, _resetListasPrecios } = await import('../server.js');
 const { resetSession } = await import('../lib/operam-client.js');
 const { _resetSesionWeb, _esperarPostFixes } = await import('../lib/operam-web.js');
 const TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
@@ -235,6 +235,36 @@ test('G1b: tier Menudeo (sin lista homonima en Operam) -> sales_type cae a "Prec
   assert.equal(res.status, 200);
   assert.ok(clienteBody, 'se debio crear el cliente');
   assert.equal(clienteBody.sales_type, '12', 'Menudeo sin lista homonima -> "Precio de lista" (id 12), nunca omitido');
+});
+
+test('#246-5: alta generica con listasPrecios vacia al inicio -> la recarga perezosa resuelve el sales_type del tier antes del POST customer', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  _resetListasPrecios(); // simula el arranque que dejo la lista vacia (#246)
+  let clienteBody = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 910 }); }
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/branches/911': () => jsonResponse({ result: true, data: [{}] }),
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1701 }),
+    ...mockWebLegacy(),
+  });
+  // Sin llamar cargarListasPrecios(): la lista arranca vacia y la recarga
+  // perezosa (obtenerListasPrecios) debe dispararse dentro del propio flujo.
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.ok(clienteBody, 'se debio crear el cliente');
+  assert.equal(clienteBody.sales_type, '15', 'tier M100 -> id 15 en Operam, resuelto tras la recarga perezosa');
 });
 
 test('G2: celular ya convertido en cliente -> reutiliza el customer_id, no crea un segundo generico', async () => {

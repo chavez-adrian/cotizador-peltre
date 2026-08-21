@@ -2168,6 +2168,43 @@ test('listarSalesTypes: sin showInactive no manda show_inactive', async () => {
   }
 });
 
+// issue #246: verificado en vivo que Operam pagina sales_types de 10 en 10 SIN
+// IMPORTAR el limit=500 mandado (14 activas -> solo llegaban 10, faltaban
+// US350/US550/US1500/US6000). volcarPaginado debe seguir pidiendo por el `total`
+// declarado, avanzando skip por las filas REALMENTE recibidas (no por el limit
+// pedido), hasta completarlo.
+test('listarSalesTypes: Operam trunca la pagina a 10 pese al limit=500 -- sigue pidiendo hasta agotar el total (#246)', async () => {
+  resetSession();
+  const urls = [];
+  const TIPOS = [
+    ...Array.from({ length: 10 }, (_, i) => ({ id: String(i + 1), sales_type: `T${i + 1}`, inactive: '0' })),
+    { id: '22', sales_type: 'US350', inactive: '0' },
+    { id: '23', sales_type: 'US550', inactive: '0' },
+    { id: '24', sales_type: 'US1500', inactive: '0' },
+    { id: '25', sales_type: 'US6000', inactive: '0' },
+  ];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/sales_types': (url) => {
+      urls.push(url);
+      const skip = Number(new URL(url).searchParams.get('skip'));
+      // Operam ignora el limit=500 pedido y devuelve un maximo de 10 por pagina.
+      const pagina = TIPOS.slice(skip, skip + 10);
+      return jsonResponse({ total: TIPOS.length, data: pagina });
+    },
+  });
+  try {
+    const listas = await listarSalesTypes();
+    assert.equal(listas.length, 14);
+    assert.ok(listas.some(l => l.id === '24' && l.sales_type === 'US1500'), 'debe llegar US1500 (id 24), truncado antes por el bug de paginacion');
+    assert.equal(urls.length, 2, 'una pagina de 10 no basta para 14: debe pedir una segunda');
+    assert.match(urls[0], /skip=0/);
+    assert.match(urls[1], /skip=10/, 'la segunda pagina debe pedirse por las filas REALMENTE recibidas (10), no por el limit pedido (500)');
+  } finally {
+    restore();
+  }
+});
+
 // prices_list son ~2,010 filas y items ~1,603: se vuelcan completos en paginas de 500
 // (verificado en vivo el 2026-08-03) hasta agotar el total que reporta la API.
 test('listarPreciosCompletos: pagina de 500 en 500 hasta agotar el total', async () => {
