@@ -160,3 +160,45 @@ test('vcardDeProspecto: sin correo ni empresa, omite EMAIL y ORG pero sigue sien
   assert.ok(!vcf.includes('ORG:'));
   assert.match(vcf, /END:VCARD/);
 });
+
+// --- #236: N: (nombre estructurado), lo que arregla el contacto en iPhone ---
+
+test('#236: vcardDeProspecto emite N: con el apellido primero y el nombre de pila despues', () => {
+  const vcf = vcardDeProspecto({ ...PROSPECTO_COMPLETO, nombrePila: 'Juan', apellido: 'Perez' });
+  assert.ok(vcf.split('\r\n').includes('N:Perez;Juan;;;'), `vcf sin N: correcta:\n${vcf}`);
+  // El bug de #234 era que ORG: se volvia el nombre del contacto: FN y ORG
+  // siguen igual, lo que cambia es que ya hay N: que las desambigua.
+  assert.match(vcf, /FN:Juan Perez/);
+  assert.match(vcf, /ORG:Hotel Azul/);
+});
+
+test('#236: sin los campos separados, N: cae al nombre completo en el componente de nombre de pila', () => {
+  const vcf = vcardDeProspecto({ nombre: 'Juan Perez', celular: '+525512345678' });
+  assert.ok(vcf.split('\r\n').includes('N:;Juan Perez;;;'), `vcf sin N: de respaldo:\n${vcf}`);
+});
+
+test('#236: la vCard se mantiene en VERSION:3.0 (la que digiere Contactos de Apple)', () => {
+  const vcf = vcardDeProspecto({ nombre: 'Juan Perez', nombrePila: 'Juan', apellido: 'Perez', celular: '+525512345678' });
+  assert.ok(vcf.split('\r\n').includes('VERSION:3.0'));
+});
+
+test('#236: los componentes de N: escapan los reservados de vCard sin romper la estructura', () => {
+  const vcf = vcardDeProspecto({
+    nombre: 'Ana; de la O Perez, Jr.\\', nombrePila: 'Ana; de la O', apellido: 'Perez, Jr.\\',
+    celular: '+525512345678',
+  });
+  const linea = vcf.split('\r\n').find(l => l.startsWith('N:'));
+  assert.equal(linea, 'N:Perez\\, Jr.\\\\;Ana\\; de la O;;;');
+});
+
+test('#236: el caso minimo (nombre, apellido y celular) sale como vcf valido con N:', () => {
+  const vcf = vcardDeProspecto({ nombre: 'Laura Mendoza', nombrePila: 'Laura', apellido: 'Mendoza', celular: '+525512345678' });
+  assert.deepEqual(vcf.split('\r\n'), [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    'N:Mendoza;Laura;;;',
+    'FN:Laura Mendoza',
+    'TEL;TYPE=CELL:+525512345678',
+    'END:VCARD',
+  ]);
+});

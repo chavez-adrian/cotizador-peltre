@@ -43,7 +43,7 @@ import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
-import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
+import { validarMayoreo, buildCapturaMayoreo, capitalizarCampo } from './public/js/mayoreo-logica.js';
 import { numeroTelefonoEsPosible } from './lib/telefono-posible.js';
 import { permitirCaptura } from './lib/rate-limit-publico.js';
 import { verificarTurnstile, turnstileConfigurado } from './lib/turnstile.js';
@@ -896,10 +896,18 @@ export function _inyectarAlertaMayoreo(fn) { _enviarAlertaMayoreo = fn ?? enviar
 // "Otro" no viven en captura.data (buildCapturaMayoreo los aplasta en notas
 // para la tarjeta), asi que la alerta los toma de ahi; el resto sale de
 // captura.data ya limpio (trim) por buildCapturaMayoreo.
+// El nombre de pila y el apellido (issue #236) viajan por esa MISMA via, y por
+// la misma razon: la tarjeta guarda un solo nombre, asi que el corte entre los
+// dos campos no sobrevive al aplanado -- y la vCard los necesita separados para
+// emitir N: sin adivinar donde parte un nombre completo. Van con
+// capitalizarCampo porque el form es crudo: sin eso la ficha diria
+// "Laura Mendoza" en FN: y "MENDOZA" en N:, el mismo apellido de dos formas.
 function dispararAlertaMayoreo(captura, form) {
   const d = captura.data || {};
   const prospecto = {
-    nombre: captura.nombre, celular: captura.celular, ciudad: captura.ciudad,
+    nombre: captura.nombre,
+    nombrePila: capitalizarCampo(form.nombre), apellido: capitalizarCampo(form.apellido),
+    celular: captura.celular, ciudad: captura.ciudad,
     cp: d.cp, tipoProyecto: form.tipo,
     tipoProyectoOtro: form.tipo === 'Otro' ? form.otro : '',
     cantidadEstimada: d.piezas_estimadas, empresa: d.empresa,

@@ -127,6 +127,78 @@ test('#165: "tipo" Otro lleva el texto libre por separado (tipoProyectoOtro) par
   assert.equal(recibido.tipoProyectoOtro, 'Panaderia artesanal');
 });
 
+// --- #236: el apellido llega a la alerta como campo propio, en las 3 ramas ---
+//
+// La vCard necesita el nombre de pila y el apellido POR SEPARADO para emitir N:
+// (sin ella Contactos de Apple lee la ficha como ficha de empresa, ver
+// lib/alerta-mayoreo.js), y el corte entre los dos no sobrevive al aplanado de
+// buildCapturaMayoreo (la tarjeta guarda un solo nombre): viajan del cuerpo
+// crudo del formulario, misma via que el cargo y el texto libre de "Otro" (#165).
+
+function prospectoExistente(extra = {}) {
+  return {
+    id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura Mendoza', ciudad: 'Ixtapaluca',
+    canal: 'WhatsApp', etapa: 'por_cotizar', data: {}, eventos: [],
+    ...extra,
+  };
+}
+
+test('#236: rama prospecto NUEVO -- nombre de pila y apellido llegan como campos propios, con las mayusculas ya corregidas', async () => {
+  let recibido = null;
+  _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
+
+  // Campos CRUDOS en mayusculas: capitalizarCampo (#235) solo se aplica dentro
+  // de buildCapturaMayoreo, asi que sin corregirlos aqui la ficha diria
+  // "Laura Mendoza" en FN: y "LAURA"/"MENDOZA" en N:, el mismo nombre de dos formas.
+  const res = await enviar(formulario({ nombre: 'LAURA', apellido: 'MENDOZA' }));
+
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 1, 'la rama del prospecto nuevo es la que corrio');
+  assert.equal(recibido.nombrePila, 'Laura');
+  assert.equal(recibido.apellido, 'Mendoza');
+  assert.equal(recibido.nombre, 'Laura Mendoza', 'el nombre unido de la tarjeta no cambia');
+});
+
+test('#236: rama prospecto QUE YA EXISTIA -- los campos separados tambien llegan a la alerta', async () => {
+  writeProspectos([prospectoExistente()]);
+  let recibido = null;
+  _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
+
+  const res = await enviar(formulario({ nombre: 'LAURA', apellido: 'MENDOZA' }));
+
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 1, 'no se duplico la tarjeta: corrio la rama del existente');
+  assert.equal(recibido.nombrePila, 'Laura');
+  assert.equal(recibido.apellido, 'Mendoza');
+});
+
+test('#236: rama CARRERA contra el indice unico -- los campos separados tambien llegan a la alerta', async () => {
+  // La tarjeta duplicada aparece DESPUES de que el endpoint clasifico el celular
+  // (el archivo arranca vacio) y ANTES de crear: se cuela en el hueco asincrono
+  // del indice de telefonos, que consulta Operam por fetch. Asi el store lanza
+  // 23505 y corre la tercera rama, la unica que de otro modo no es alcanzable
+  // desde afuera en un solo proceso.
+  globalThis.fetch = async (url) => {
+    writeProspectos([prospectoExistente()]);
+    throw new Error('fetch sin mock en tests: ' + url);
+  };
+  let recibido = null;
+  _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
+
+  const res = await enviar(formulario({ nombre: 'LAURA', apellido: 'MENDOZA' }));
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { ok: true });
+  const todos = readProspectos();
+  assert.equal(todos.length, 1, 'la creacion perdio la carrera: no hay tarjeta nueva');
+  assert.equal(todos[0].vendedor, 'Memo', 'sobrevive la tarjeta que gano el indice unico');
+  assert.equal(todos[0].eventos.at(-1).tipo, 'captura_publica', 'la captura se registro en la que gano');
+  assert.ok(recibido, 'la tercera rama tambien dispara la alerta');
+  assert.equal(recibido.nombrePila, 'Laura');
+  assert.equal(recibido.apellido, 'Mendoza');
+});
+
 test('sin SMTP_USER/SMTP_PASS configuradas, la captura funciona identica con el wrapper real (sin inyeccion)', async () => {
   // Sin _inyectarAlertaMayoreo: corre el wrapper real (lib/alerta-mayoreo-io.js)
   // contra el entorno real, que no trae SMTP_USER/SMTP_PASS (borradas arriba).
