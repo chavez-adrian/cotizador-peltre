@@ -252,16 +252,6 @@ function leerClienteFormulario(leyenda) {
   };
 }
 
-// === UTILS ===
-function toTitleCase(str) {
-  if (!str) return str;
-  const lower = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'o', 'a', 'en', 'al', 'el', 'por', 'con', 'sin']);
-  return str.trim().toLowerCase().split(/\s+/).map((w, i) => {
-    if (i > 0 && lower.has(w)) return w;
-    return w.charAt(0).toUpperCase() + w.slice(1);
-  }).join(' ');
-}
-
 // === STATE ===
 const state = {
   token: localStorage.getItem('token'),

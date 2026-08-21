@@ -162,7 +162,11 @@ test('B14c: (#241) razonSocial es el ultimo escalon de la Referencia del Cliente
     _compress: false,
     cliente: { razonSocial: 'EL PENDULO SA DE CV' },
   });
-  assert.equal(vecesEnPdf(result, 'NDULO'), 3, 'razonSocial debe llenar tambien la Referencia del Cliente');
+  // La razon social se imprime en mayusculas fiscales en su propio bloque (dato
+  // fiscal) y NORMALIZADA cuando hace de Referencia del Cliente (#241): dos formas
+  // distintas del mismo dato, una vez la fiscal y dos veces la normalizada.
+  assert.equal(vecesEnPdf(result, 'NDULO'), 1, 'el bloque fiscal conserva las mayusculas del SAT');
+  assert.equal(vecesEnPdf(result, 'ndulo'), 2, 'la Referencia sale normalizada, en sus dos lugares');
 });
 
 test('B15: (#70) telefonoEntrega (campo muerto) no dispara la linea de telefono (paridad con HTML)', async () => {

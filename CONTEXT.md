@@ -157,7 +157,7 @@ Nombre comercial del cliente, distinto del nombre fiscal. Se usa para referirse 
 
 ## Referencia del cliente
 
-Referencia que el cliente da a *esta* operación: nombre del proyecto o evento, o su número de orden de compra. Es un dato de la operación, no del cliente: nace en la cotización y se hereda al pedido y a la factura, y el mismo cliente puede traer una distinta en cada operación. En Operam es la "Ref. del Cliente" (`cust_ref` del quote/pedido/factura). Si el cliente no da ninguna, se usa el Nombre corto, y a falta de él el nombre de entrega o la razón social. No confundir con el Nombre corto del cliente, que en Operam también se llama `cust_ref` pero es un atributo fijo del cliente.
+Referencia que el cliente da a *esta* operación: nombre del proyecto o evento, o su número de orden de compra. Es un dato de la operación, no del cliente: nace en la cotización y se hereda al pedido y a la factura, y el mismo cliente puede traer una distinta en cada operación. En Operam es la "Ref. del Cliente" (`cust_ref` del quote/pedido/factura). Si el cliente no da ninguna, se usa el Nombre corto, y a falta de él el nombre de entrega o la razón social; la razón social, que llega del SAT en mayúsculas fiscales, se normaliza a forma legible al hacer de referencia (como dato fiscal sigue en mayúsculas). Se corta a 60 caracteres, el largo que admite Operam, para que el documento del cliente y el ERP digan literalmente lo mismo. No confundir con el Nombre corto del cliente, que en Operam también se llama `cust_ref` pero es un atributo fijo del cliente.
 _Evitar_: Referencia de la cotización, referencia (a secas, que en el formulario de entrega son las indicaciones "entre calles").
 
 ## Deduplicación de cliente

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateQuoteHTML } from '../lib/html-generator.js';
+import { referenciaDelCliente } from '../lib/referencia-cliente.js';
 
 test('1. generateQuoteHTML({}) returns a string containing "COTIZACION"', () => {
   const html = generateQuoteHTML({});
@@ -43,12 +44,23 @@ test('3b. (#241) sin referencia ni nombreCorto la Referencia del Cliente cae a n
 
 test('3c. (#241) razonSocial es el ultimo escalon de la Referencia del Cliente', () => {
   const html = generateQuoteHTML({ cliente: { razonSocial: 'EL PENDULO SA DE CV' } });
-  assert.equal(celdaReferenciaComercial(html), 'EL PENDULO SA DE CV');
+  assert.equal(celdaReferenciaComercial(html), 'El Pendulo SA de CV');
 });
 
 test('3d. (#241) sin ningun dato del cliente la celda de Referencia queda vacia', () => {
   assert.equal(celdaReferenciaComercial(generateQuoteHTML({ cliente: {} })), '');
 });
+
+// Paridad exacta con el quote (#241): el documento corta donde corta Operam. Con
+// el truncado solo del lado del quote, una razon social mexicana tipica (>60) salia
+// completa en el documento y cortada en el ERP.
+test('3e. (#241) el documento trunca a 60 igual que el cust_ref del quote', () => {
+  const cliente = { razonSocial: 'COMERCIALIZADORA DE PRODUCTOS ALIMENTICIOS DEL BAJIO SA DE CV' };
+  const celda = celdaReferenciaComercial(generateQuoteHTML({ cliente }));
+  assert.equal(celda.length, 60);
+  assert.equal(celda, referenciaDelCliente(cliente), 'documento y quote salen del mismo nucleo');
+});
+
 
 test('4. "Terminos de Pago" appears as text outside the products table', () => {
   const html = generateQuoteHTML({ condicionesPago: '30 dias' });

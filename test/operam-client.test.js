@@ -1356,12 +1356,20 @@ test('subirCotizacionOperam: campos de solo espacios en blanco cuentan como vaci
 });
 
 test('subirCotizacionOperam: cust_ref se trunca a 60 caracteres', async () => {
-  const razonSocialLarga = 'A'.repeat(80);
   const custRef = await subirYCapturarCustRef({
-    rfc: 'CPE921211N76', razonSocial: razonSocialLarga,
+    rfc: 'CPE921211N76', referencia: 'A'.repeat(80),
   }, 326);
   assert.equal(custRef.length, 60, 'cust_ref no debe exceder 60 caracteres');
   assert.equal(custRef, 'A'.repeat(60));
+});
+
+// #241: la razon social llega del SAT en mayusculas fiscales; como Referencia del
+// cliente se normaliza (el mismo texto que imprime el documento).
+test('subirCotizacionOperam: la razon social viaja normalizada al cust_ref (#241)', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: 'EL PENDULO SA DE CV',
+  }, 328);
+  assert.equal(custRef, 'El Pendulo SA de CV');
 });
 
 test('subirCotizacionOperam: si los cuatro escalones estan vacios, cust_ref queda vacio y no falla', async () => {
