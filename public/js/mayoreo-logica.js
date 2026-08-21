@@ -202,7 +202,11 @@ function capitalizarToken(token) {
 // divergir. NO se llama normalizarNombre -- ese simbolo ya existe en
 // lib/deduplicacion.js con otro proposito (tokenizar para comparar
 // candidatos); aqui se produce texto de PRESENTACION, no una llave de
-// comparacion.
+// comparacion. Tampoco reutiliza nombrePropio/empresaPropia de
+// lib/cruce-bitrix.js (#159): esas resuelven un problema parecido pero con
+// otra regla (particulas de nombre extranjero, sigla de hasta 3 letras SIN
+// exigir contraste con el resto del campo) -- copiarla aqui rompe la tabla de
+// #235 (p.ej. "GRUPO GNP" tendria que quedar "Grupo Gnp", no "Grupo GNP").
 //
 // Regla de siglas cortas (<=4 letras, fuera de SIGLAS_FIJAS): se preservan
 // SOLO si el campo NO viene entero en mayusculas. El contraste (unas palabras
@@ -214,11 +218,11 @@ export function capitalizarCampo(valor) {
   if (!v) return '';
   const todoMayus = v === v.toUpperCase() && v !== v.toLowerCase();
   return v.split(' ').map((token, i) => {
-    const superior = token.toUpperCase();
-    if (SIGLAS_FIJAS.has(superior)) return superior;
-    const inferior = token.toLowerCase();
-    if (i > 0 && PARTICULAS.has(inferior)) return inferior;
-    if (!todoMayus && token === superior && token.length <= 4 && token !== inferior) return token;
+    const tokenMayus = token.toUpperCase();
+    if (SIGLAS_FIJAS.has(tokenMayus)) return tokenMayus;
+    const tokenMinus = token.toLowerCase();
+    if (i > 0 && PARTICULAS.has(tokenMinus)) return tokenMinus;
+    if (!todoMayus && token === tokenMayus && token.length <= 4 && token !== tokenMinus) return token;
     return capitalizarToken(token);
   }).join(' ');
 }
