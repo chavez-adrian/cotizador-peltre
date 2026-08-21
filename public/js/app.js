@@ -1421,11 +1421,29 @@ function cartLineSetDescripcion(key, valor) {
     alert(r.mensaje);
     return;
   }
-  if (r.editada) item.descripcion = r.descripcion;
-  else delete item.descripcion;
+  aplicarResultadoDescripcion(item, r);
   renderCartLines();
 }
 window.cartLineSetDescripcion = cartLineSetDescripcion;
+
+// Cierre compartido de Aceptar y Cancelar (#240): desarma la red de seguridad
+// ANTES de desmontar (ver desarmarGuardadoEnBlur), saca la key de los dos
+// mapas de estado del editor y repinta. Separado para que ambos flujos no
+// puedan divergir en el orden de estos pasos.
+function cerrarEditorDescripcion(key) {
+  desarmarGuardadoEnBlur(key);
+  descripcionesAbiertas.delete(key);
+  descripcionesOriginales.delete(key);
+  renderCartLines();
+}
+
+// Aplica el resultado de validarDescripcionLinea/restaurarDescripcion al item
+// del carrito: mismo criterio en los tres caminos que escriben la descripcion
+// (blur, Aceptar, Cancelar).
+function aplicarResultadoDescripcion(item, r) {
+  if (r.editada) item.descripcion = r.descripcion;
+  else delete item.descripcion;
+}
 
 // Aceptar (#240): guarda lo escrito y cierra. onmousedown + preventDefault evita
 // el blur del textarea, asi que esta es la UNICA escritura para esta interaccion
@@ -1439,13 +1457,9 @@ function cartLineAceptarDescripcion(key) {
       alert(r.mensaje);
       return;
     }
-    if (r.editada) item.descripcion = r.descripcion;
-    else delete item.descripcion;
+    aplicarResultadoDescripcion(item, r);
   }
-  desarmarGuardadoEnBlur(key);
-  descripcionesAbiertas.delete(key);
-  descripcionesOriginales.delete(key);
-  renderCartLines();
+  cerrarEditorDescripcion(key);
 }
 window.cartLineAceptarDescripcion = cartLineAceptarDescripcion;
 
@@ -1454,15 +1468,8 @@ window.cartLineAceptarDescripcion = cartLineAceptarDescripcion;
 // descripcionesOriginales y no del textarea ni de item.descripcion vigente.
 function cartLineCancelarDescripcion(key) {
   const item = state.cart.get(key);
-  if (item) {
-    const r = restaurarDescripcion(descripcionesOriginales.get(key));
-    if (r.editada) item.descripcion = r.descripcion;
-    else delete item.descripcion;
-  }
-  desarmarGuardadoEnBlur(key);
-  descripcionesAbiertas.delete(key);
-  descripcionesOriginales.delete(key);
-  renderCartLines();
+  if (item) aplicarResultadoDescripcion(item, restaurarDescripcion(descripcionesOriginales.get(key)));
+  cerrarEditorDescripcion(key);
 }
 window.cartLineCancelarDescripcion = cartLineCancelarDescripcion;
 
