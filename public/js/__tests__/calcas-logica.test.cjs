@@ -8,6 +8,8 @@ let piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalc
 let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio;
 let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito;
 let avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado;
+let MAX_DISENOS_POR_LINEA_PRODUCTO, MOTIVOS_TOPE_DISENOS;
+let lineasDeProducto, topeDisenos, puedeAgregarDiseno, avisoTopeDisenos;
 
 before(async () => {
   ({
@@ -17,6 +19,8 @@ before(async () => {
     motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio,
     siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito,
     avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado,
+    MAX_DISENOS_POR_LINEA_PRODUCTO, MOTIVOS_TOPE_DISENOS,
+    lineasDeProducto, topeDisenos, puedeAgregarDiseno, avisoTopeDisenos,
   } = await import('../calcas-logica.js'));
 });
 
@@ -380,4 +384,72 @@ test('#221-3: lo que no es calca conserva su codigo como llave', () => {
 
 test('#221-4: la llave rehidratada es la misma que arma productoCalca al agregar', () => {
   assert.strictEqual(llaveCarrito(CAL1025S.code, 2), productoCalca(CAL1025S, 2).key);
+});
+
+// === #222: tope de captura de 2 disenos por linea de producto (spec #218). Es
+// un freno contra errores de captura, no una regla del producto -- nunca borra
+// ni invalida disenos ya agregados, solo frena al momento de agregar. ===
+test('#222-1: la constante del tope es 2, un solo punto de cambio', () => {
+  assert.strictEqual(MAX_DISENOS_POR_LINEA_PRODUCTO, 2);
+});
+
+test('#222-2: lineasDeProducto cuenta lineas, no piezas, y excluye ENVIO y calcas', () => {
+  const items = [
+    { codigo: 'VA08B1A321124', cantidad: 600 },
+    { codigo: 'CO16', cantidad: 1 },
+    { codigo: 'ENVIO', cantidad: 1 },
+    { codigo: 'CAL1025S', cantidad: 100, diseno: 1 },
+  ];
+  assert.strictEqual(lineasDeProducto(items), 2);
+});
+
+test('#222-3: un paquete cuenta como una sola linea, sin importar la cantidad', () => {
+  assert.strictEqual(lineasDeProducto([{ codigo: 'PQ-100', cantidad: 5000 }]), 1);
+});
+
+test('#222-4: lineasDeProducto de un carrito vacio o de solo calca/envio es 0', () => {
+  assert.strictEqual(lineasDeProducto([]), 0);
+  assert.strictEqual(lineasDeProducto(null), 0);
+  assert.strictEqual(lineasDeProducto([{ codigo: 'ENVIO', cantidad: 1 }, { codigo: 'CAL1025S', cantidad: 100 }]), 0);
+});
+
+test('#222-5: topeDisenos es la constante por lineas de producto (0 -> 0, 1 -> 2, 3 -> 6)', () => {
+  assert.strictEqual(topeDisenos(0), 0);
+  assert.strictEqual(topeDisenos(1), 2);
+  assert.strictEqual(topeDisenos(3), 6);
+});
+
+test('#222-6: sin lineas de producto no se puede agregar calca (no existe la cotizacion de solo calcas)', () => {
+  const r = puedeAgregarDiseno({ lineasProducto: 0, disenosActuales: 0 });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, MOTIVOS_TOPE_DISENOS.SIN_PRODUCTO);
+});
+
+test('#222-7: un paso antes del tope se puede agregar, en el tope exacto no', () => {
+  const unPasoAntes = puedeAgregarDiseno({ lineasProducto: 1, disenosActuales: 1 });
+  assert.strictEqual(unPasoAntes.ok, true);
+  assert.strictEqual(unPasoAntes.motivo, null);
+
+  const enElTope = puedeAgregarDiseno({ lineasProducto: 1, disenosActuales: 2 });
+  assert.strictEqual(enElTope.ok, false);
+  assert.strictEqual(enElTope.motivo, MOTIVOS_TOPE_DISENOS.TOPE_ALCANZADO);
+});
+
+test('#222-8: con 3 lineas de producto el tope es 6: 5 deja agregar, 6 no', () => {
+  assert.strictEqual(puedeAgregarDiseno({ lineasProducto: 3, disenosActuales: 5 }).ok, true);
+  assert.strictEqual(puedeAgregarDiseno({ lineasProducto: 3, disenosActuales: 6 }).ok, false);
+});
+
+test('#222-9: los motivos del tope se comparan por igualdad contra constantes explicitas', () => {
+  assert.deepStrictEqual(Object.values(MOTIVOS_TOPE_DISENOS).sort(), ['sin-producto', 'tope-alcanzado']);
+});
+
+test('#222-10: avisoTopeDisenos con 0 lineas pide agregar producto primero', () => {
+  const aviso = avisoTopeDisenos(0);
+  assert.ok(/producto/i.test(aviso), aviso);
+});
+
+test('#222-11: avisoTopeDisenos con lineas de producto trae los conteos de lineas y disenos', () => {
+  assert.strictEqual(avisoTopeDisenos(1), 'Maximo 2 disenos de calca por linea de producto: 1 linea -> 2 disenos');
+  assert.strictEqual(avisoTopeDisenos(3), 'Maximo 2 disenos de calca por linea de producto: 3 lineas -> 6 disenos');
 });

@@ -197,6 +197,54 @@ export function relacionCalcaProducto(cantidadCalca, piezasProducto) {
   return `${cantidadCalca} de ${piezasProducto} piezas`;
 }
 
+// Tope de captura (#222, spec #218): a lo mas 2 disenos de calca por linea de
+// producto. Es un freno contra errores de captura (clics repetidos, confusion),
+// no una regla del producto -- nunca borra ni invalida disenos ya agregados,
+// solo frena el momento de agregar uno nuevo. Constante en un solo punto de
+// cambio: subirla a 3 no toca nada mas.
+export const MAX_DISENOS_POR_LINEA_PRODUCTO = 2;
+
+// Linea de producto = entrada del carrito que no es ENVIO ni calca (mismo
+// criterio de exclusion que piezasDeProducto, pero contando LINEAS, no piezas):
+// un paquete de N piezas cuenta 1. Con 0 lineas el tope es 0, lo que hace
+// cumplir que no existe la cotizacion de solo calcas.
+export function lineasDeProducto(items) {
+  let total = 0;
+  for (const i of items || []) {
+    if (i.codigo === 'ENVIO' || esCodigoCalca(i.codigo)) continue;
+    total += 1;
+  }
+  return total;
+}
+
+export function topeDisenos(lineasProducto) {
+  return (Number(lineasProducto) || 0) * MAX_DISENOS_POR_LINEA_PRODUCTO;
+}
+
+// Se compara por IGUALDAD contra estas constantes, nunca por prefijo (leccion
+// del reporte de #118, la misma que ya aplica MOTIVOS_CALCA_INVALIDA).
+export const MOTIVOS_TOPE_DISENOS = {
+  SIN_PRODUCTO: 'sin-producto',
+  TOPE_ALCANZADO: 'tope-alcanzado',
+};
+
+export function puedeAgregarDiseno({ lineasProducto, disenosActuales } = {}) {
+  const tope = topeDisenos(lineasProducto);
+  if (tope === 0) return { ok: false, motivo: MOTIVOS_TOPE_DISENOS.SIN_PRODUCTO };
+  if ((Number(disenosActuales) || 0) >= tope) return { ok: false, motivo: MOTIVOS_TOPE_DISENOS.TOPE_ALCANZADO };
+  return { ok: true, motivo: null };
+}
+
+// Texto del motivo con los conteos, para que el vendedor sepa que hacer
+// (agregar producto o quitar un diseno) sin adivinar.
+export function avisoTopeDisenos(lineasProducto) {
+  const lp = Number(lineasProducto) || 0;
+  if (lp === 0) return 'Agrega un producto al carrito antes de agregar una calca.';
+  const tope = topeDisenos(lp);
+  const etiquetaLinea = lp === 1 ? 'linea' : 'lineas';
+  return `Maximo ${MAX_DISENOS_POR_LINEA_PRODUCTO} disenos de calca por linea de producto: ${lp} ${etiquetaLinea} -> ${tope} disenos`;
+}
+
 // La calca es piso, no techo (ADR-0010): con calca en el carrito la marca de
 // decorado es true y no editable -- dejarla editable permitiria esquivar el gate
 // de #61 justo donde mas importa. Sin calca la marca conserva su valor y vuelve

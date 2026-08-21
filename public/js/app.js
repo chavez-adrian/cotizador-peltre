@@ -158,6 +158,9 @@ import {
   avisoCalcaInvalida,
   relacionCalcaProducto,
   estadoMarcaDecorado,
+  lineasDeProducto,
+  puedeAgregarDiseno,
+  avisoTopeDisenos,
 } from './calcas-logica.js';
 import {
   RESTAURACION,
@@ -1137,9 +1140,12 @@ function renderCalcas() {
   // capturar). Lo unico que sigue impidiendo agregar es una calca sin precio en
   // la lista vigente: meterla al carrito bloquearia la generacion en el acto.
   const avisoEl = document.getElementById('cal-aviso');
-  const impedimento = ficha && precio === null ? avisoCalcaInvalida() : '';
+  const tope = estadoTopeDisenos();
+  const impedimentoPrecio = ficha && precio === null ? avisoCalcaInvalida() : '';
+  const impedimentoTope = tope.ok ? '' : avisoTopeDisenos(tope.lineasProducto);
+  const impedimento = impedimentoTope || impedimentoPrecio;
   avisoEl.innerHTML = impedimento ? `<div class="alert alert-error">${impedimento}</div>` : '';
-  document.getElementById('btn-agregar-calca').disabled = !!impedimento || !ficha;
+  document.getElementById('btn-agregar-calca').disabled = !!impedimento || !ficha || !tope.ok;
 
   const motivo = motivoCalcaInvalidaActual();
   for (const id of ['calca-invalido-productos', 'resumen-calca-invalido']) {
@@ -1161,6 +1167,16 @@ function motivoCalcaInvalidaActual() {
   return motivoCalcaInvalida({ hayCalca: hayCalcaEnCarrito(items), calcaSinPrecio });
 }
 
+// Tope de captura de 2 disenos por linea de producto (#222): se evalua cada
+// vez que cambia el carrito, en el mismo enganche que ya refresca el selector
+// de calca. Nunca borra ni invalida disenos ya agregados, solo frena aqui.
+function estadoTopeDisenos() {
+  const items = itemsDelCarrito();
+  const lineasProducto = lineasDeProducto(items);
+  const disenosActuales = items.filter(i => esCodigoCalca(i.codigo)).length;
+  return { lineasProducto, ...puedeAgregarDiseno({ lineasProducto, disenosActuales }) };
+}
+
 // Sube al piso de 100 piezas la cantidad de una linea de calca y avisa cuando
 // hubo que subirla (#152). No hace nada sobre lineas de producto.
 function aplicarPisoCalca(product, cantidad) {
@@ -1174,6 +1190,9 @@ function agregarCalca() {
   const ficha = calcaElegida();
   if (!ficha) return;
   if (precioCalca(ficha, tierIdParaCalca(getCurrentTier().id)) === null) return;
+  // Defensa contra un click que llegue con el DOM desactualizado (#222): el
+  // boton ya se deshabilita en renderCalcas, esto es el segundo cierre.
+  if (!estadoTopeDisenos().ok) return;
 
   const cantidad = parseInt(document.getElementById('cal-cantidad')?.value) || 0;
   if (cantidad <= 0) return;
