@@ -2355,3 +2355,86 @@ test('#221 contenidoQuoteCambio: renombrar el segundo diseno dispara la actualiz
   const subido = huellaContenidoQuote(conTexto('Calca chica - Diseño 2'));
   assert.equal(contenidoQuoteCambio(conTexto('Calca chica - Diseño 2: logo frontal'), subido), true);
 });
+
+// El motivo REAL de un rechazo de Operam viaja en el CUERPO, no en el status: los
+// dos 406 medidos en vivo ("A sales type not found create one" y "Already exists
+// customer with same cust_ref") son indistinguibles si solo se conserva el 406.
+// apiCall lo descartaba, asi que el vendedor leia "Operam 406" a secas y
+// diagnosticar exigia envolver globalThis.fetch a mano contra produccion.
+function respuestaCruda(texto, status) {
+  return { ok: false, status, text: async () => texto, json: async () => JSON.parse(texto) };
+}
+
+test('un 406 de Operam llega con el motivo del cuerpo, no solo con el status', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => respuestaCruda(
+      JSON.stringify({ result: false, messages: ['Already exists customer with same cust_ref'] }), 406),
+  });
+  try {
+    await assert.rejects(
+      () => crearCliente({ tax_id: 'XEXX010101000', CustName: 'CUMBIARCA SA' }),
+      (err) => {
+        assert.match(err.message, /Operam 406/, 'conserva el prefijo con el status');
+        assert.match(err.message, /Already exists customer with same cust_ref/, 'anexa el motivo de Operam');
+        return true;
+      },
+    );
+  } finally { restore(); }
+});
+
+test('el otro 406 real (sales type invalido) tambien llega con su motivo', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => respuestaCruda(
+      JSON.stringify({ result: false, errors: ['A sales type not found create one'] }), 406),
+  });
+  try {
+    await assert.rejects(
+      () => crearCliente({ tax_id: 'XAXX010101000', CustName: 'PRUEBA' }),
+      /Operam 406.*A sales type not found create one/,
+    );
+  } finally { restore(); }
+});
+
+// El prefijo `Operam <status>` es contrato: media docena de llamadores deciden
+// "sin resultados" con /Operam 404/. Anexar el cuerpo no puede romperlos.
+test('el 404 sin resultados sigue siendo lista vacia aunque el cuerpo se anexe', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => respuestaCruda(JSON.stringify({ errors: ['No customers found'] }), 404),
+  });
+  try {
+    assert.deepEqual(await buscarClientes('nadie'), []);
+  } finally { restore(); }
+});
+
+// Un cuerpo que no es JSON (la pagina HTML del rate limit de Operam) no puede
+// tumbar el manejo del error: medido en vivo el 2026-08-21, /api/v3/* devuelve un
+// 429 con HTML y r.json() reventaba con "Unexpected token '<'".
+test('un cuerpo no-JSON se anexa crudo en vez de reventar', async () => {
+  resetSession();
+  _setBackoff429Base(1);
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => ({ ok: false, status: 503, text: async () => '<html>Service Unavailable</html>' }),
+  });
+  try {
+    await assert.rejects(() => buscarClientes('quien sea'), /Operam 503.*Service Unavailable/);
+  } finally { restore(); _setBackoff429Base(2000); }
+});
+
+// El login tampoco puede quedar mudo: rate-limitado responde HTML y el r.json()
+// directo lanzaba un SyntaxError de parsing que no dice nada del problema real.
+test('un login rechazado dice el status en vez de reventar parseando HTML', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => ({ ok: false, status: 429, text: async () => '<!doctype html><title>429</title>429 Too Many Requests' }),
+  });
+  try {
+    await assert.rejects(() => buscarClientes('x'), /Operam login 429.*Too Many Requests/);
+  } finally { restore(); }
+});
