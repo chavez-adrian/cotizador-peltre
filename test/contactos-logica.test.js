@@ -61,6 +61,106 @@ test('sin persona el nombre cae a la empresa, nunca a una cadena vacia', () => {
   assert.equal(nombreVisible({ ciudad: 'Puebla' }), 'Puebla');
 });
 
+// --- Tres defectos hallados en la primera carga real (#247, hijo de #224) ---
+
+// Defecto 1: el contacto General de Operam suele llevar como nombre el de la
+// empresa (ct.name == cust_ref), y componer "Persona - Empresa" con la misma
+// cadena dos veces produce "Ajijic Spot - Ajijic Spot".
+test('persona y empresa iguales colapsan a una sola aparicion', () => {
+  assert.equal(nombreVisible({ persona: 'Ajijic Spot', empresa: 'Ajijic Spot' }), 'Ajijic Spot');
+});
+
+test('persona y empresa iguales salvo mayusculas/acentos/espacios tambien colapsan', () => {
+  assert.equal(nombreVisible({ persona: 'AJIJIC SPOT', empresa: 'Ajijic Spot' }), 'Ajijic Spot');
+  assert.equal(nombreVisible({ persona: 'El Pendulo', empresa: '  EL  PENDULO ' }), 'El Pendulo');
+  assert.equal(nombreVisible({ persona: 'Jose Perez', empresa: 'JOSE PEREZ' }), 'Jose Perez');
+});
+
+test('persona y ciudad iguales tambien colapsan (vale para cualquier fuente)', () => {
+  assert.equal(nombreVisible({ persona: 'Puebla', ciudad: 'PUEBLA' }), 'Puebla');
+});
+
+// Defecto 2: aFormatoWhatsApp no aplicaba el recorte de extension de ultimos10
+// y escribia el numero de extension pegado al celular (#247, ejemplos reales
+// del CSV: +525553952615116, +527773124849111).
+test('la extension se recorta igual que en ultimos10, antes de formatear', () => {
+  assert.equal(aFormatoWhatsApp('55 5395 2615 ext 116'), '+525553952615');
+  assert.equal(aFormatoWhatsApp('5553952615,116'), '+525553952615');
+});
+
+test('un celular extranjero no cambia por el recorte de extension', () => {
+  assert.equal(aFormatoWhatsApp('+1 212 555 0134'), '+12125550134');
+  assert.equal(aFormatoWhatsApp('+507 6000-1234'), '+50760001234');
+});
+
+// Defecto 3: la persona en MAYUSCULAS grita ("BRENDA GARCIA", "ALEJANDRA
+// VAZQUEZ - MAG IMPRESIONES"). Se normaliza a Titulo con el mismo criterio que
+// referencia-cliente.js; un nombre ya en mixto no se toca; la organizacion no
+// se toca por este ticket.
+test('la persona toda en mayusculas se normaliza a Titulo', () => {
+  assert.equal(nombreVisible({ persona: 'BRENDA GARCIA', empresa: 'Cocinas del Valle' }),
+    'Brenda Garcia - Cocinas del Valle');
+});
+
+test('un nombre ya en mixto no se toca', () => {
+  assert.equal(nombreVisible({ persona: 'Brenda Garcia', empresa: 'Cocinas del Valle' }),
+    'Brenda Garcia - Cocinas del Valle');
+  assert.equal(nombreVisible({ persona: 'BGE Esquivel', empresa: 'Cocinas del Valle' }),
+    'BGE Esquivel - Cocinas del Valle');
+});
+
+test('la organizacion no se toca aunque venga en mayusculas', () => {
+  assert.equal(nombreVisible({ persona: 'ALEJANDRA VAZQUEZ', empresa: 'MAG IMPRESIONES' }),
+    'Alejandra Vazquez - MAG IMPRESIONES');
+});
+
+// Siglas cortas (#247): "seguir la regla que ya tenga referencia-cliente; si no
+// tiene, no normalizar tokens de 3 letras o menos". Este bloque fija el caso
+// donde la sigla corta esta en la PERSONA misma (no en la organizacion, que ya
+// cubre la prueba de arriba), y el caso de una inicial con punto.
+test('una sigla corta dentro de la persona se conserva en mayusculas', () => {
+  assert.equal(nombreVisible({ persona: 'MAG IMPRESIONES', empresa: 'Cocinas del Valle' }),
+    'MAG Impresiones - Cocinas del Valle');
+});
+
+test('una inicial con punto se conserva, el apellido se titula', () => {
+  assert.equal(nombreVisible({ persona: 'J. LOPEZ', empresa: 'Cocinas del Valle' }),
+    'J. Lopez - Cocinas del Valle');
+});
+
+// LIMITACION CONOCIDA, no bug (hallada en code-review de #247): sin una lista
+// cerrada de nombres de pila, no hay forma barata de distinguir "ANA" (nombre
+// real de 3 letras) de "MAG" (sigla comercial de 3 letras) -- el issue #247
+// pide EXPLICITAMENTE "no normalizar tokens de 3 letras o menos" como respaldo
+// para cuando referencia-cliente no tiene una regla mas fina, y esa regla no
+// distingue los dos casos. El precio es que un nombre de pila corto en
+// MAYUSCULAS se queda gritando. Es la regla que pidio el issue, no una que se
+// invento aqui; esta prueba la deja fijada y visible en vez de escondida.
+test('un nombre real de 3 letras o menos tambien queda en mayusculas (limitacion conocida, no bug)', () => {
+  assert.equal(nombreVisible({ persona: 'ANA LOPEZ', empresa: 'Cocinas del Valle' }),
+    'ANA Lopez - Cocinas del Valle');
+});
+
+// La huella de una ficha afectada por cualquiera de los tres defectos cambia:
+// un mapeo con la huella del formato viejo produce 'actualizar' en la siguiente
+// pasada, y asi el barrido corrige solas las 140 fichas ya escritas en
+// produccion sin intervencion manual.
+test('una ficha afectada por los tres defectos cambia de huella y el plan la actualiza', () => {
+  const conDefectos = {
+    id: 40, celular: '55 5395 2615 ext 116', nombre: 'BRENDA GARCIA', ciudad: 'BRENDA GARCIA',
+    etapa: 'por_cotizar', data: {},
+  };
+  const mapeo = [{
+    celular10: '5553952615', resourceName: 'people/c40', etag: 'e40',
+    clase: 'propio', huella: 'huella-del-formato-viejo',
+  }];
+  const plan = planificarContactos({ prospectos: [conDefectos], mapeo });
+  assert.equal(plan.crear.length, 0, 'no se crea una segunda ficha para el mismo celular');
+  assert.equal(plan.actualizar.length, 1);
+  assert.equal(plan.actualizar[0].ficha.nombreVisible, 'Brenda Garcia');
+  assert.equal(plan.actualizar[0].ficha.telefono, '+525553952615');
+});
+
 // --- El plan de escrituras (nucleo puro, objetos literales, sin red) ---
 
 const PROSPECTO = {
