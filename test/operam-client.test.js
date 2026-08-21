@@ -2267,7 +2267,7 @@ test('listarItemsCompletos: sin total en la respuesta sigue paginando hasta la p
   }
 });
 
-// === #220: dos diseños de calca son dos partidas del quote (spec #218) ===
+// === #220: dos disenos de calca son dos partidas del quote (spec #218) ===
 // Operam acepta dos lineas con el mismo stock_id (verificado en vivo con el quote
 // 1238, #219). Lo que este mapeo tiene que garantizar es que no las fusione: el
 // quote debe decir lo mismo que el documento que ya vio el cliente.
@@ -2278,25 +2278,25 @@ test('#220 armarContenidoQuote: dos disenos del mismo codigo son dos partidas', 
     cliente: { cpEntrega: '56530' },
     items: [
       { codigo: 'VA08B1A321124', descripcion: 'Vaso peltre', cantidad: 200, precio: 50, descuento: 0 },
-      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
-      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 2', cantidad: 120, precio: 26.9, descuento: 10, diseno: 2, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 2', cantidad: 120, precio: 26.9, descuento: 10, diseno: 2, descripcionEditada: true },
     ],
   });
   const calcas = items.filter(i => i.stock_id === 'CAL1025S');
   assert.equal(calcas.length, 2);
-  assert.deepEqual(calcas.map(i => i.stock_id_text), ['Calca chica - Diseño 1', 'Calca chica - Diseño 2']);
+  assert.deepEqual(calcas.map(i => i.stock_id_text), ['Calca chica - Diseno 1', 'Calca chica - Diseno 2']);
   assert.deepEqual(calcas.map(i => i.qty), [100, 120]);
   assert.deepEqual(calcas.map(i => i.Disc), [0, 10]);
   // Sin la marca, la ronda de reescritura por partida no las tocaria y FA les
-  // pondria el nombre del articulo, borrando el "Diseño N".
+  // pondria el nombre del articulo, borrando el "Diseno N".
   assert.deepEqual(calcas.map(i => i.editarDescripcion), [true, true]);
 });
 
 test('#220 huellaContenidoQuote: mover la cantidad del segundo diseno cambia la huella', () => {
   const conDisenos = (qtySegundo) => huellaContenidoQuote(cotizacionBase({
     items: [
-      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
-      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 2', cantidad: qtySegundo, precio: 26.9, descuento: 0, diseno: 2, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 2', cantidad: qtySegundo, precio: 26.9, descuento: 0, diseno: 2, descripcionEditada: true },
     ],
   }));
   assert.notEqual(conDisenos(150), conDisenos(100), 'la huella no puede dedupe por stock_id');
@@ -2306,11 +2306,11 @@ test('#220 huellaContenidoQuote: mover la cantidad del segundo diseno cambia la 
 test('#220 huellaContenidoQuote: renombrar un diseno cuenta como cambio de contenido', () => {
   const conTexto = (texto) => huellaContenidoQuote(cotizacionBase({
     items: [
-      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
       { codigo: 'CAL1025S', descripcion: texto, cantidad: 100, precio: 26.9, descuento: 0, diseno: 2, descripcionEditada: true },
     ],
   }));
-  assert.notEqual(conTexto('Calca chica - Diseño 2: logo frontal'), conTexto('Calca chica - Diseño 2'));
+  assert.notEqual(conTexto('Calca chica - Diseno 2: logo frontal'), conTexto('Calca chica - Diseno 2'));
 });
 
 // El AC de #221 pide los TRES ejes: cantidad (cubierta arriba), descuento y texto.
@@ -2319,8 +2319,8 @@ test('#220 huellaContenidoQuote: renombrar un diseno cuenta como cambio de conte
 test('#221 contenidoQuoteCambio: mover el descuento de un solo diseno dispara la actualizacion', () => {
   const conDescuento = (discSegundo) => cotizacionBase({
     items: [
-      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
-      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 2', cantidad: 100, precio: 26.9, descuento: discSegundo, diseno: 2, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 2', cantidad: 100, precio: 26.9, descuento: discSegundo, diseno: 2, descripcionEditada: true },
     ],
   });
   const subido = huellaContenidoQuote(conDescuento(0));
@@ -2331,10 +2331,10 @@ test('#221 contenidoQuoteCambio: mover el descuento de un solo diseno dispara la
 test('#221 contenidoQuoteCambio: renombrar el segundo diseno dispara la actualizacion', () => {
   const conTexto = (texto) => cotizacionBase({
     items: [
-      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
       { codigo: 'CAL1025S', descripcion: texto, cantidad: 100, precio: 26.9, descuento: 0, diseno: 2, descripcionEditada: true },
     ],
   });
-  const subido = huellaContenidoQuote(conTexto('Calca chica - Diseño 2'));
-  assert.equal(contenidoQuoteCambio(conTexto('Calca chica - Diseño 2: logo frontal'), subido), true);
+  const subido = huellaContenidoQuote(conTexto('Calca chica - Diseno 2'));
+  assert.equal(contenidoQuoteCambio(conTexto('Calca chica - Diseno 2: logo frontal'), subido), true);
 });

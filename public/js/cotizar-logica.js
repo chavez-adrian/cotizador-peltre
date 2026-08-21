@@ -252,11 +252,11 @@ export function buildItemsYTotales(cartEntries, envioInfo) {
     // esa linea en vez de dejar la que impone el catalogo de articulos del ERP.
     descripcion: descripcion || nombreVisibleProducto(nombre),
     cantidad, unidad: 'pza', precio, descuento: descuento || 0,
-    // El numero de diseño se persiste junto al codigo del catalogo (#220): el GET
+    // El numero de diseno se persiste junto al codigo del catalogo (#220): el GET
     // del documento regenera desde `data`, y sin el no podria distinguir dos
-    // partidas del mismo codigo. La partida de diseño viaja SIEMPRE marcada como
+    // partidas del mismo codigo. La partida de diseno viaja SIEMPRE marcada como
     // editada: al actualizar por la web legacy, FA impone el nombre del articulo y
-    // borraria el "Diseño N" de las lineas que no entran a la ronda de reescritura.
+    // borraria el "Diseno N" de las lineas que no entran a la ronda de reescritura.
     ...(diseno ? { diseno } : {}),
     ...(descripcion || diseno ? { descripcionEditada: true } : {}),
   }));

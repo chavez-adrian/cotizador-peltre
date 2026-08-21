@@ -58,11 +58,11 @@ export function precioCalca(ficha, tierId) {
 // carrito y de ahi lo heredan la descripcion por omision, la linea del carrito,
 // el documento y el quote (#220).
 function etiquetaDiseno(numero) {
-  return `Diseño ${numero}`;
+  return `Diseno ${numero}`;
 }
 
 // La identidad de una partida de calca es el DISENO, no el codigo (#218/#220):
-// dos diseños del mismo tamaño y tintas son dos partidas con el mismo precio.
+// dos disenos del mismo tamano y tintas son dos partidas con el mismo precio.
 // La llave del carrito los separa; el codigo del catalogo sigue siendo el que
 // se serializa, para que nada de lo que pregunta esCodigoCalca(codigo) cambie.
 // Solo alfanumericos y un guion: la llave viaja por atributos HTML y por
@@ -74,7 +74,7 @@ export function llaveDiseno(codigo, numero) {
 // Sobre el MISMO cuerpo que RE_CALCA: la familia de codigos se define una vez.
 const RE_LLAVE_DISENO = new RegExp(`^(${CODIGO_CALCA})-\\d+$`);
 
-// Inversa de llaveDiseno. Lo que no es llave de diseño se devuelve tal cual:
+// Inversa de llaveDiseno. Lo que no es llave de diseno se devuelve tal cual:
 // asi el mismo camino sirve para las lineas de producto y para una calca de una
 // cotizacion anterior a #220, guardada con el codigo como llave.
 export function codigoDeLlave(llave) {
@@ -92,10 +92,10 @@ export function llaveCarrito(codigo, diseno) {
   return esCodigoCalca(codigo) ? llaveDiseno(codigo, Number(diseno) || 1) : codigo;
 }
 
-// Maximo historico + 1, nunca el conteo de lineas vivas: borrar el Diseño 1 de
-// dos no libera el numero, porque una descripcion ya editada que dice "Diseño 2"
-// quedaria mintiendo. Un item sin `diseno` (cotizacion anterior) es el Diseño 1.
-// El carrito vivo no basta para el historico -- borrar el diseño MAS ALTO lo
+// Maximo historico + 1, nunca el conteo de lineas vivas: borrar el Diseno 1 de
+// dos no libera el numero, porque una descripcion ya editada que dice "Diseno 2"
+// quedaria mintiendo. Un item sin `diseno` (cotizacion anterior) es el Diseno 1.
+// El carrito vivo no basta para el historico -- borrar el diseno MAS ALTO lo
 // dejaria fuera --, asi que quien numera lleva aparte lo ya asignado y lo pasa
 // en `maximoAsignado`.
 export function siguienteNumeroDiseno(items, maximoAsignado = 0) {
@@ -111,7 +111,7 @@ export function siguienteNumeroDiseno(items, maximoAsignado = 0) {
 // Entrada de carrito para una calca. `esCalca` es la marca que el resto del
 // flujo mira para no contar sus piezas como volumen. Sin weight_kg a proposito:
 // la calca va aplicada sobre la pieza, no ocupa caja ni pesa aparte. El numero
-// de diseño va en la llave (identidad de la linea) y en el nombre (lo que ve el
+// de diseno va en la llave (identidad de la linea) y en el nombre (lo que ve el
 // cliente); el codigo del catalogo se queda en `model`.
 export function productoCalca(ficha, numeroDiseno = 1) {
   const n = Number(numeroDiseno) || 1;

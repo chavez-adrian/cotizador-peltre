@@ -786,7 +786,7 @@ function pintarAvisoPartidasSinCatalogo() {
 // cuentan (issue #91, decision 2026-07-30). La calca hereda el tier para su
 // precio pero no lo empuja -- va aplicada sobre piezas que ya estan contadas.
 // La llave del carrito de una calca ya NO es su codigo (#220): la identidad de
-// la linea es el diseño. Todo lo que pregunta por el codigo -- el volumen, la
+// la linea es el diseno. Todo lo que pregunta por el codigo -- el volumen, la
 // exclusion del empaque, la marca de decorado -- lo recibe traducido aqui.
 function itemsDelCarrito() {
   return [...state.cart].map(([llave, { product, cantidad }]) => ({
@@ -1197,9 +1197,9 @@ function agregarCalca() {
   const cantidad = parseInt(document.getElementById('cal-cantidad')?.value) || 0;
   if (cantidad <= 0) return;
 
-  // Agregar calca crea SIEMPRE un diseño nuevo (#220): fusionar por codigo
+  // Agregar calca crea SIEMPRE un diseno nuevo (#220): fusionar por codigo
   // sumaba 60 + 60 en una linea de 120 cuando el proveedor imprime y cobra
-  // 100 + 100. Para subirle cantidad a un diseño existente se edita su linea.
+  // 100 + 100. Para subirle cantidad a un diseno existente se edita su linea.
   const numero = siguienteNumeroDiseno(itemsDelCarrito(), maxDisenoAsignado);
   maxDisenoAsignado = numero;
   const product = productoCalca(ficha, numero);
@@ -2225,7 +2225,7 @@ async function guardarYNumerarCotizacion(body, progreso) {
   // #116: la señal del servidor manda TAMBIEN en modo actualizacion. Antes el modo
   // forzaba la reescritura, y con la espera de arriba eso reescribia el quote DOS veces
   // con el contenido identico (el PDF y luego el HTML del mismo carrito): la guarda de
-  // "operacion en curso" lo frenaba por accidente, no por diseño. Si la huella dice que
+  // "operacion en curso" lo frenaba por accidente, no por diseno. Si la huella dice que
   // el quote ya coincide, no hay nada que reescribir -- ni entrando por "Actualizar
   // cotizacion" desde el historial. Sin folio (o sin huella, cotizaciones previas a
   // #114) el servidor responde que si hace falta, asi que #104 sigue cubierto.

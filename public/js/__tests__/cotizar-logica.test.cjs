@@ -557,41 +557,41 @@ test('#137-8: cotizacion vieja sin descuento de envio -> 0', () => {
   assert.strictEqual(restaurarEnvioDesdeCotizacion(null).descuento, 0);
 });
 
-// === #220: dos diseños del mismo tipo de calca son dos partidas (spec #218) ===
-// El carrito manda una entrada por diseño con su propio `diseno` y su nombre ya
+// === #220: dos disenos del mismo tipo de calca son dos partidas (spec #218) ===
+// El carrito manda una entrada por diseno con su propio `diseno` y su nombre ya
 // numerado; buildItemsYTotales no las fusiona y el `codigo` que persiste sigue
 // siendo el del catalogo, para que piezasDeProducto y el empaque no cambien.
 test('#220-12: dos entradas del mismo codigo producen dos items con su diseno y su texto', () => {
   const cartEntries = [
     { codigo: 'VA08B1A321124', nombre: 'Vaso peltre', cantidad: 200, precio: 50 },
-    { codigo: 'CAL1025S', nombre: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, diseno: 1 },
-    { codigo: 'CAL1025S', nombre: 'Calca chica - Diseño 2', cantidad: 100, precio: 26.9, diseno: 2 },
+    { codigo: 'CAL1025S', nombre: 'Calca chica - Diseno 1', cantidad: 100, precio: 26.9, diseno: 1 },
+    { codigo: 'CAL1025S', nombre: 'Calca chica - Diseno 2', cantidad: 100, precio: 26.9, diseno: 2 },
   ];
   const r = buildItemsYTotales(cartEntries, { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
   const calcas = r.items.filter(i => i.codigo === 'CAL1025S');
   assert.strictEqual(calcas.length, 2, 'las partidas del mismo codigo no se fusionan');
   assert.deepStrictEqual(calcas.map(i => i.diseno), [1, 2]);
-  assert.deepStrictEqual(calcas.map(i => i.descripcion), ['Calca chica - Diseño 1', 'Calca chica - Diseño 2']);
+  assert.deepStrictEqual(calcas.map(i => i.descripcion), ['Calca chica - Diseno 1', 'Calca chica - Diseno 2']);
   // 200*50 + 100*26.9 + 100*26.9
   assert.strictEqual(r.subtotal, 15380);
 });
 
-// La partida de diseño viaja SIEMPRE marcada como editada: al actualizar el
+// La partida de diseno viaja SIEMPRE marcada como editada: al actualizar el
 // quote por la web legacy, FrontAccounting impone el nombre del articulo del
-// catalogo y borraria el "Diseño N" de las lineas que no entran a la ronda de
+// catalogo y borraria el "Diseno N" de las lineas que no entran a la ronda de
 // reescritura por partida (#139).
 test('#220-13: la partida de diseno sale marcada como descripcion editada', () => {
   const r = buildItemsYTotales([
-    { codigo: 'CAL1025S', nombre: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, diseno: 1 },
+    { codigo: 'CAL1025S', nombre: 'Calca chica - Diseno 1', cantidad: 100, precio: 26.9, diseno: 1 },
   ], { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
   assert.strictEqual(r.items[0].descripcionEditada, true);
 });
 
 test('#220-14: la descripcion que escribio el vendedor manda sobre la del diseno', () => {
   const r = buildItemsYTotales([
-    { codigo: 'CAL1025S', nombre: 'Calca chica - Diseño 2', cantidad: 100, precio: 26.9, diseno: 2, descripcion: 'Calca chica - Diseño 2: logo frontal' },
+    { codigo: 'CAL1025S', nombre: 'Calca chica - Diseno 2', cantidad: 100, precio: 26.9, diseno: 2, descripcion: 'Calca chica - Diseno 2: logo frontal' },
   ], { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
-  assert.strictEqual(r.items[0].descripcion, 'Calca chica - Diseño 2: logo frontal');
+  assert.strictEqual(r.items[0].descripcion, 'Calca chica - Diseno 2: logo frontal');
   assert.strictEqual(r.items[0].diseno, 2);
   assert.strictEqual(r.items[0].descripcionEditada, true);
 });
