@@ -209,6 +209,15 @@ test('un cliente sin nombre corto NI razon social sigue mostrando a la persona',
   assert.equal(ficha.nombreVisible, 'Laura Mendez');
 });
 
+test('un cliente sin persona, sin nombre corto y sin razon social se nombra por su id', () => {
+  // "Nunca una cadena vacia" no puede depender de que Operam siempre traiga
+  // razon social: un contacto General sin nombre en un cliente sin ningun nombre
+  // dejaria la ficha sin nombre visible, que es justo lo prohibido.
+  const anonimo = { ...TELEFONO_CLIENTE, persona: '', rol: 'general', nombreCorto: '', razonSocial: '' };
+  const ficha = fichaCreada(planificarContactos({ clientes: [anonimo], mapeo: [] }));
+  assert.equal(ficha.nombreVisible, 'Cliente 101');
+});
+
 // El telefono de un domicilio de entrega muchas veces no trae persona: trae el
 // nombre del lugar ("Almacen Norte", "Recepcion"), que dice mas que cualquier
 // etiqueta generica sobre quien contesta ese numero.
