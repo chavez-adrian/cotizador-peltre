@@ -181,6 +181,17 @@ Persona registrada en Operam asociada a un cliente, con una clasificación de us
 
 Cuando se crea un cliente via API (`POST /api/v3/sales/customers`), Operam auto-genera un contacto de tipo General con el `cust_ref` como nombre y el `phone`/`email` del cliente. Este contacto auto-generado cubre el requisito del SOP de tener un contacto General. Los contactos adicionales (Invoices, Deliveries) se registran manualmente en la UI de Operam. La API v3 no soporta ninguna operación programática sobre contactos: POST devuelve 501, y PUT al cliente ignora completamente el array `contacts` (verificado contra producción — no actualiza ni con IDs existentes). Los campos internos de contacto son: `action` ("general" / "invoice" / "delivery"), `ref` (categoría visible), `name`, `name2`, `phone`, `phone2`, `fax`, `email`, `notes`.
 
+## Contacto de Google
+
+Entrada en la libreta de Contactos de Google de la cuenta `pppeltre@gmail.com`. Su única razón de existir es que el WhatsApp Business del Android asociado a esa cuenta muestre un nombre en lugar de un número desconocido. No confundir con el **Contacto de cliente**: aquél es la persona registrada en Operam, con su rol de facturación o entrega; éste solo existe para que la pantalla del teléfono sea legible, y nada del negocio depende de él.
+
+El nombre visible se lee `Persona - Empresa`, con el nombre comercial del cliente y no su razón social, y con la ciudad como respaldo cuando un prospecto no declaró empresa. La forma la impone el medio: WhatsApp muestra únicamente el nombre —nunca el campo de organización— y lo corta alrededor de los 25 caracteres, así que lo que va primero es lo que sobrevive.
+
+Un celular tiene a lo sumo un Contacto de Google. Cuando el mismo celular es prospecto vivo y cliente en Operam a la vez —caso que el propio pipeline produce, porque el prospecto convertido no sale del seguimiento—, gana el cliente: sus datos son más ricos y más actuales. Esta precedencia es la inversa de la que usa la clasificación de un celular contra el embudo, y lo es a propósito: allá la pregunta es "¿ya lo conozco?" y conviene consultar primero la fuente barata; aquí es "¿qué etiqueta describe mejor a esta persona?".
+
+Se distinguen dos clases según su origen, y la distinción gobierna qué se le puede escribir. El **propio** lo creó la sincronización y se reescribe completo en cada pasada. El **adoptado** ya existía en la libreta, hecho a mano por una persona, y su celular resultó estar en el sistema: se le corrige el nombre y la organización, y se dejan intactos sus teléfonos, correos y direcciones. Lo que otro escribió ahí a propósito no se pisa.
+
+
 ## Configuración comercial del cliente
 
 Conjunto de campos que definen las condiciones de venta de un cliente: lista de precios, segmento, vendedor asignado, términos de pago, área/zona de venta. El vendedor puede revisar y editar estos campos tanto al crear un cliente nuevo como al seleccionar un cliente existente durante el flujo de alta.
