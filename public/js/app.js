@@ -1258,15 +1258,16 @@ function renderCartLines() {
           <button class="qty-icon-btn${descripcion ? ' cart-line-desc-editada' : ''}" onclick="cartLineToggleDescripcion('${key}')" title="Editar la descripcion que ve el cliente">&#9998;</button>
         </span>
         <div class="cart-line-qty-wrap col-num">
+          <span class="cart-line-etiqueta">Cant.</span>
           <span class="qty-display">${cantidad}</span>
           <button class="qty-icon-btn" onclick="cartLineStartEdit('${key}')" title="Editar">&#9998;</button>
           <input class="qty-input" type="number" min="1" value="${cantidad}" style="display:none" inputmode="numeric"
             onkeydown="if(event.key==='Enter')cartLineConfirmEdit('${key}')">
           <button class="qty-icon-btn qty-ok-btn" style="display:none" onclick="cartLineConfirmEdit('${key}')" title="Confirmar">&#10003;</button>
         </div>
-        <span class="cart-line-price col-num">${precio === null ? 'sin precio' : '$' + fmt(price)}</span>
-        <span class="cart-line-desc col-num">${celdaDescuentoLinea(key, desc)}</span>
-        <span class="cart-line-total col-num">${precio === null ? '&mdash;' : '$' + fmt(total)}</span>
+        <span class="cart-line-price col-num"><span class="cart-line-etiqueta">Precio</span>${precio === null ? 'sin precio' : '$' + fmt(price)}</span>
+        <span class="cart-line-desc col-num"><span class="cart-line-etiqueta">Dscto.</span>${celdaDescuentoLinea(key, desc)}</span>
+        <span class="cart-line-total col-num"><span class="cart-line-etiqueta">Total</span>${precio === null ? '&mdash;' : '$' + fmt(total)}</span>
         <div class="cart-line-del col-del"><button onclick="removeItem('${key}')" title="Quitar">&times;</button></div>
         ${editorDescripcionLinea(key, descripcion, nombreCatalogo)}
       </div>

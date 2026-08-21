@@ -1073,6 +1073,10 @@ body {
   font-size: 14px;
 }
 
+/* Etiqueta de tarjeta movil (#233): oculta en escritorio, la pinta el media
+   query de abajo. Markup aditivo, no cambia llaves ni onclick. */
+.cart-line-etiqueta { display: none; }
+
 /* === ENVIA.COM RATES === */
 .envia-rate-card {
   background: var(--white);
@@ -1338,6 +1342,83 @@ body {
     min-width: 0;
   }
   .search-selected-item { flex-direction: column; align-items: flex-start; }
+
+  /* Tarjeta apilada para "Articulos cotizados" (#233): en telefono la rejilla
+     de 7 columnas no cabe (422px fijos + 1fr) y el overflow:hidden cortaba la
+     derecha sin scroll. Debajo de 480px cada linea se convierte en tarjeta:
+     el encabezado se oculta (las etiquetas viven en la celda via markup
+     aditivo .cart-line-etiqueta) y las 4 celdas numericas pasan a una fila de
+     4 columnas iguales, cada una con su etiqueta apilada arriba. */
+  .cart-lines-table { overflow: visible; border: none; background: none; }
+
+  .cart-lines-head { display: none; }
+
+  .cart-line {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-areas:
+      "sku sku sku del"
+      "name name name name"
+      "qty price desc total";
+    gap: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+    padding: 8px;
+  }
+
+  .cart-line:last-child { border: 1px solid var(--border); margin-bottom: 8px; }
+  .cart-line:nth-child(even) { background: var(--white); }
+
+  .cart-lines-head span,
+  .cart-line > span,
+  .cart-line > div {
+    padding: 0;
+    border-right: none;
+  }
+
+  .cart-line-sku { grid-area: sku; }
+
+  .cart-line-name {
+    grid-area: name;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .cart-line-qty-wrap {
+    grid-area: qty;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .cart-line-price,
+  .cart-line-desc,
+  .cart-line-total {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .cart-line-price { grid-area: price; }
+  .cart-line-desc { grid-area: desc; }
+  .cart-line-total { grid-area: total; }
+
+  .cart-line-del {
+    grid-area: del;
+    justify-content: flex-end;
+  }
+
+  .cart-line-etiqueta {
+    display: block;
+    flex-basis: 100%;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-light);
+  }
 }
 
 /* === ACORDEON ALTA CLIENTE (issue #27) === */
