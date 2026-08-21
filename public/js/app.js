@@ -2697,6 +2697,16 @@ async function seleccionarClienteOperam(cliente) {
   fill('cl-cp-entrega',     cliente.cp);
   fill('cl-municipio',      cliente.municipio);
   fill('cl-estado',         cliente.estado);
+  // #245: cliente.pais llega derivado de country (server.js, paisDeClienteOperam)
+  // y puede ser null cuando Operam no trae senal usable -- en ese caso NO se
+  // toca el select (queda el MX que dejo pcLimpiarCamposCliente antes de esta
+  // seleccion) en vez de forzar un pais que no se pudo determinar.
+  if (cliente.pais) {
+    const paisEl = document.getElementById('cl-pais');
+    if (paisEl && Array.from(paisEl.options).some(o => o.value === cliente.pais)) {
+      paisEl.value = cliente.pais;
+    }
+  }
   // OJO (issue #99): NO se prellena cl-nombre-entrega/cl-cel-entrega/cl-email-entrega
   // aqui con cliente.telefono/cliente.email -- esos vienen del buscador (server.js
   // /api/operam/clientes), que puede mezclar el telefono de un contacto con el email
