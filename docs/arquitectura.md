@@ -78,9 +78,13 @@ Web legacy de Operam (FrontAccounting) para lo que la API v3 no permite. Login p
 
 Tambien expone la **deteccion de cancelacion** (#76): `estaCanceladoHtml` (puro), `abrirSesionWeb` (consultar la vista sobre `crearSesionFA`) y `transaccionCancelada`, que usa `scripts/detectar-cancelados.mjs` para generar `data/cancelados.json` (el backfill NO scrapea en runtime).
 
-### calcas-logica.js (#91/#98/#152, ADR-0010)
+### calcas-logica.js (#91/#98/#152/#220, ADR-0010)
 
 Nucleo puro de la **calca en el carrito**, con tres consumidores por el mismo patron cross-import: `app.js`, `lib/calcular-envio.js` y `server.js`. Lo que concentra: la familia de codigos `CAL[1-9]\d{3}S?` (`esCodigoCalca` — las `CAL00xx` de marca/artistas NO), la resolucion tamano×tintas -> ficha del catalogo (`buscarCalcaEnCatalogo`, se BUSCA, nunca se concatena el codigo: uno inventado da 406 al subir el quote), `precioCalca` (devuelve **null**, no 0, cuando el tier no tiene precio) y el piso de **100 piezas por partida** (`cantidadFacturableCalca` / `avisoClampCalca`).
+
+**La identidad de una partida de calca es el DISENO, no el codigo** (#220, spec #218). Agregar calca crea SIEMPRE un diseno nuevo: `siguienteNumeroDiseno(items)` da el maximo historico + 1 -- nunca el conteo de lineas vivas, para que borrar el Diseno 1 de dos no le regale su numero al siguiente y deje mintiendo una descripcion ya editada; un item sin `diseno` (cotizacion anterior al cambio) cuenta como Diseno 1, sin migracion. `productoCalca(ficha, numeroDiseno = 1)` arma la entrada del carrito con `key` = `llaveDiseno(codigo, n)` (forma `CODIGO-N`: solo alfanumericos y un guion, porque la llave viaja por `data-key` y por `onclick` inline -- trampa #112), `model` = codigo del catalogo, `diseno` = numero y `name` = nombre del catalogo + " - Diseño N", de donde lo heredan la descripcion por omision, la linea del carrito, el PDF y el quote por los caminos que ya existian.
+
+La llave NO se serializa: donde `app.js` mandaba `codigo: key` ahora manda `codigoDeLlave(key)`, la inversa que devuelve tal cual lo que no es llave de diseno. Por eso nada de lo que pregunta `esCodigoCalca(codigo)` cambio -- volumen, empaque, `armarContenidoQuote` -- y cada item persiste `codigo` (del catalogo) **y** `diseno`: el GET del documento regenera desde `data`, y sin `diseno` no podria distinguir dos partidas del mismo codigo. La partida de diseno viaja siempre con `descripcionEditada: true` (`buildItemsYTotales`): al actualizar el quote por la web legacy, FrontAccounting impone el nombre del articulo y borraria el "Diseño N" de las lineas que no entran a la ronda de reescritura por partida (#139). Operam acepta dos partidas con el mismo `stock_id` (verificado en vivo, #219) y ni `armarContenidoQuote` ni `huellaContenidoQuote` deduplican por el.
 
 Tres reglas que no son obvias y viven aqui:
 
