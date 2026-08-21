@@ -53,11 +53,61 @@ export function precioCalca(ficha, tierId) {
   return typeof p === 'number' && p > 0 ? p : null;
 }
 
+// El texto del rotulo, en un solo lugar: viaja en el `name` de la entrada del
+// carrito y de ahi lo heredan la descripcion por omision, la linea del carrito,
+// el documento y el quote (#220).
+function etiquetaDiseno(numero) {
+  return `Diseño ${numero}`;
+}
+
+// La identidad de una partida de calca es el DISENO, no el codigo (#218/#220):
+// dos diseños del mismo tamaño y tintas son dos partidas con el mismo precio.
+// La llave del carrito los separa; el codigo del catalogo sigue siendo el que
+// se serializa, para que nada de lo que pregunta esCodigoCalca(codigo) cambie.
+// Solo alfanumericos y un guion: la llave viaja por atributos HTML y por
+// onclick inline (trampa #112).
+export function llaveDiseno(codigo, numero) {
+  return `${codigo}-${numero}`;
+}
+
+const RE_LLAVE_DISENO = /^(CAL[1-9]\d{3}S?)-\d+$/;
+
+// Inversa de llaveDiseno. Lo que no es llave de diseño se devuelve tal cual:
+// asi el mismo camino sirve para las lineas de producto y para una calca de una
+// cotizacion anterior a #220, guardada con el codigo como llave.
+export function codigoDeLlave(llave) {
+  const m = RE_LLAVE_DISENO.exec(String(llave || ''));
+  return m ? m[1] : llave;
+}
+
+// Maximo historico + 1, nunca el conteo de lineas vivas: borrar el Diseño 1 de
+// dos no libera el numero, porque una descripcion ya editada que dice "Diseño 2"
+// quedaria mintiendo. Un item sin `diseno` (cotizacion anterior) es el Diseño 1.
+export function siguienteNumeroDiseno(items) {
+  let max = 0;
+  for (const i of items || []) {
+    if (!esCodigoCalca(i.codigo)) continue;
+    const n = Number(i.diseno) || 1;
+    if (n > max) max = n;
+  }
+  return max + 1;
+}
+
 // Entrada de carrito para una calca. `esCalca` es la marca que el resto del
 // flujo mira para no contar sus piezas como volumen. Sin weight_kg a proposito:
-// la calca va aplicada sobre la pieza, no ocupa caja ni pesa aparte.
-export function productoCalca(ficha) {
-  return { key: ficha.code, name: ficha.name, model: ficha.code, prices: ficha.prices, esCalca: true };
+// la calca va aplicada sobre la pieza, no ocupa caja ni pesa aparte. El numero
+// de diseño va en la llave (identidad de la linea) y en el nombre (lo que ve el
+// cliente); el codigo del catalogo se queda en `model`.
+export function productoCalca(ficha, numeroDiseno = 1) {
+  const n = Number(numeroDiseno) || 1;
+  return {
+    key: llaveDiseno(ficha.code, n),
+    name: `${ficha.name} - ${etiquetaDiseno(n)}`,
+    model: ficha.code,
+    prices: ficha.prices,
+    esCalca: true,
+    diseno: n,
+  };
 }
 
 // Volumen que fija el tier: SOLO piezas de producto (decision 2026-07-30). La

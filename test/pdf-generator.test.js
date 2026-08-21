@@ -236,3 +236,22 @@ test('B21: (#139) el PDF imprime la descripcion editada de la partida', async ()
   const text = result.toString('latin1');
   assert.ok(text.includes(toHex('esmaltada a mano')), 'debe imprimir la descripcion que capturo el vendedor');
 });
+
+// #220: el PDF se regenera desde `data` (ADR-0009), asi que los dos diseños de
+// calca tienen que llegar como dos partidas distinguibles (spec #218).
+test('#220: dos disenos del mismo codigo pintan dos filas con su propio texto', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    items: [
+      { codigo: 'VA08B1A321124', descripcion: 'Vaso peltre', cantidad: 200, precio: 50 },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, diseno: 1 },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 2', cantidad: 120, precio: 26.9, diseno: 2 },
+    ],
+  });
+  const text = result.toString('latin1');
+  assert.ok(text.includes(toHex('Calca chica - Diseño 1')), 'falta la fila del primer diseno');
+  assert.ok(text.includes(toHex('Calca chica - Diseño 2')), 'falta la fila del segundo diseno');
+  // Las dos partidas comparten codigo: si el PDF las fusionara solo habria uno.
+  const veces = text.split(toHex('CAL1025S')).length - 1;
+  assert.strictEqual(veces, 2);
+});

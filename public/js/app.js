@@ -142,6 +142,8 @@ import {
   TAMANOS_CALCA,
   TINTAS_CALCA,
   esCodigoCalca,
+  codigoDeLlave,
+  siguienteNumeroDiseno,
   buscarCalcaEnCatalogo,
   precioCalca,
   productoCalca,
@@ -769,8 +771,15 @@ function pintarAvisoPartidasSinCatalogo() {
 // El volumen que fija el tier son las piezas de PRODUCTO: las de calca no
 // cuentan (issue #91, decision 2026-07-30). La calca hereda el tier para su
 // precio pero no lo empuja -- va aplicada sobre piezas que ya estan contadas.
+// La llave del carrito de una calca ya NO es su codigo (#220): la identidad de
+// la linea es el diseño. Todo lo que pregunta por el codigo -- el volumen, la
+// exclusion del empaque, la marca de decorado -- lo recibe traducido aqui.
 function itemsDelCarrito() {
-  return [...state.cart].map(([codigo, { cantidad }]) => ({ codigo, cantidad }));
+  return [...state.cart].map(([llave, { product, cantidad }]) => ({
+    codigo: codigoDeLlave(llave),
+    cantidad,
+    ...(product.diseno ? { diseno: product.diseno } : {}),
+  }));
 }
 
 function getPiezasProducto() {
@@ -1137,13 +1146,11 @@ function agregarCalca() {
   const cantidad = parseInt(document.getElementById('cal-cantidad')?.value) || 0;
   if (cantidad <= 0) return;
 
-  const prev = state.cart.get(ficha.code);
-  const product = prev?.product || productoCalca(ficha);
-  const total = (prev?.cantidad || 0) + cantidad;
-  state.cart.set(ficha.code, conservarCaptura(ficha.code, {
-    product,
-    cantidad: aplicarPisoCalca(product, total),
-  }));
+  // Agregar calca crea SIEMPRE un diseño nuevo (#220): fusionar por codigo
+  // sumaba 60 + 60 en una linea de 120 cuando el proveedor imprime y cobra
+  // 100 + 100. Para subirle cantidad a un diseño existente se edita su linea.
+  const product = productoCalca(ficha, siguienteNumeroDiseno(itemsDelCarrito()));
+  state.cart.set(product.key, { product, cantidad: aplicarPisoCalca(product, cantidad) });
 
   updateTierBar();
   updateCartSummary();
@@ -1193,7 +1200,7 @@ function renderCartLines() {
       : '';
     html += `
       <div class="cart-line${precio === null ? ' cart-line-sin-precio' : ''}" data-key="${key}">
-        <span class="cart-line-sku">${key}</span>
+        <span class="cart-line-sku">${codigoDeLlave(key)}</span>
         <span class="cart-line-name" title="${escapeHtml(name)}">${escapeHtml(name)} ${relacion}
           <button class="qty-icon-btn${descripcion ? ' cart-line-desc-editada' : ''}" onclick="cartLineToggleDescripcion('${key}')" title="Editar la descripcion que ve el cliente">&#9998;</button>
         </span>
@@ -1521,7 +1528,7 @@ function updateCartSummary() {
   const subtotal = calcSubtotal();
   // Las calcas se cuentan aparte: sus piezas no son piezas de producto (#91) y
   // sumarlas al conteo diria "1200 pzs" de un pedido de 600 tazas decoradas.
-  const calcas = [...state.cart.keys()].filter(esCodigoCalca).length;
+  const calcas = [...state.cart.keys()].filter(k => esCodigoCalca(codigoDeLlave(k))).length;
   const productos = items - calcas;
   const detalleCalcas = calcas > 0 ? ` + ${calcas} calca${calcas !== 1 ? 's' : ''}` : '';
   document.getElementById('cart-total').textContent = `$${fmt(subtotal)}`;
@@ -1616,7 +1623,7 @@ async function cotizarEnvia() {
 
   const items = [];
   for (const [key, { cantidad }] of state.cart) {
-    items.push({ codigo: key, cantidad });
+    items.push({ codigo: codigoDeLlave(key), cantidad });
   }
 
   // Total con IVA para calcular seguro (25%). Con descuento se declara el valor
@@ -1829,8 +1836,8 @@ function updateResumen() {
     // El % negociado se dice junto al precio de lista: el resumen es la ultima
     // pantalla antes de generar y tiene que cuadrar con el documento (#137).
     const detalle = precio === null
-      ? `${key} — sin precio`
-      : `${key} — $${fmt(price)} / pza${descuento ? ` — ${descuento}% dscto.` : ''}`;
+      ? `${codigoDeLlave(key)} — sin precio`
+      : `${codigoDeLlave(key)} — $${fmt(price)} / pza${descuento ? ` — ${descuento}% dscto.` : ''}`;
     const relacion = product.esCalca
       ? ` <span class="calca-relacion">${relacionCalcaProducto(cantidad, piezasProducto)}</span>`
       : '';
@@ -2197,7 +2204,7 @@ async function guardarYNumerarCotizacion(body, progreso) {
 function cartEntriesDesdeEstado() {
   const cartEntries = [];
   for (const [key, { product, cantidad, descuento, descripcion }] of state.cart) {
-    cartEntries.push({ codigo: key, nombre: product.name, cantidad, precio: getPrice(product), descuento: descuento || 0, descripcion });
+    cartEntries.push({ codigo: codigoDeLlave(key), nombre: product.name, cantidad, precio: getPrice(product), descuento: descuento || 0, descripcion, diseno: product.diseno });
   }
   return cartEntries;
 }

@@ -194,3 +194,20 @@ test('22. (#139) el HTML imprime la descripcion editada de la partida', () => {
   });
   assert.ok(html.includes('Olla 20 cm esmaltada a mano, borde reforzado'));
 });
+
+// #220: el documento regenerado desde `data` tiene que distinguir dos diseños de
+// calca del mismo codigo (spec #218). Una fila por partida, cada una con su texto.
+test('#220: dos disenos del mismo codigo pintan dos filas con su propio texto', () => {
+  const html = generateQuoteHTML({
+    items: [
+      { codigo: 'VA08B1A321124', descripcion: 'Vaso peltre', cantidad: 200, precio: 50 },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, diseno: 1 },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 2', cantidad: 120, precio: 26.9, diseno: 2 },
+    ],
+  });
+  assert.ok(html.includes('Diseño 1'), 'falta el texto del primer diseno');
+  assert.ok(html.includes('Diseño 2'), 'falta el texto del segundo diseno');
+  const filasCalca = html.split('CAL1025S').length - 1;
+  assert.strictEqual(filasCalca, 2, 'las dos partidas del mismo codigo no pueden fusionarse en una fila');
+  assert.ok(html.includes('Sub-Total [420]'), '200 + 100 + 120 piezas');
+});

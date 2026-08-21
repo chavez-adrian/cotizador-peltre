@@ -6,6 +6,7 @@ let PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA, MOTIVOS_CALCA_INVALIDA;
 let esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdParaCalca;
 let piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca;
 let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio;
+let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave;
 let avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado;
 
 before(async () => {
@@ -14,6 +15,7 @@ before(async () => {
     esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdParaCalca,
     piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca,
     motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio,
+    siguienteNumeroDiseno, llaveDiseno, codigoDeLlave,
     avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado,
   } = await import('../calcas-logica.js'));
 });
@@ -118,10 +120,13 @@ test('#91-10: precioCalca tolera ficha o tier ausente -> null', () => {
   assert.strictEqual(precioCalca(CAL1050, undefined), null);
 });
 
+// Sin numero de diseño explicito la partida es el Diseño 1 (#220): es lo que
+// vale para una calca guardada antes del cambio, que se lee sin migrarla.
 test('#91-11: productoCalca arma la entrada del carrito marcada como calca', () => {
   const p = productoCalca(CAL1050);
-  assert.strictEqual(p.key, 'CAL1050');
-  assert.strictEqual(p.name, 'Calca vitrificable mediana (50 cm2) 1 tinta');
+  assert.strictEqual(p.key, llaveDiseno('CAL1050', 1));
+  assert.strictEqual(p.diseno, 1);
+  assert.strictEqual(p.name, 'Calca vitrificable mediana (50 cm2) 1 tinta - Diseño 1');
   assert.strictEqual(p.esCalca, true);
   assert.deepStrictEqual(p.prices, CAL1050.prices);
   assert.strictEqual(p.weight_kg, undefined, 'la calca va aplicada sobre la pieza: no pesa aparte');
@@ -251,4 +256,88 @@ test('#91-26: sin calca y sin marca previa -> apagada y editable (decorado a man
   const e = estadoMarcaDecorado({ hayCalca: false, marcaActual: false });
   assert.strictEqual(e.valor, false);
   assert.strictEqual(e.editable, true);
+});
+
+// === #220: la unidad de una partida de calca es el DISENO, no el tipo (spec
+// #218). Dos disenos del mismo codigo son dos partidas con el mismo precio
+// unitario, cada una con su piso de 100. ===
+test('#220-1: sin calcas en el carrito el primer diseno es el 1', () => {
+  assert.strictEqual(siguienteNumeroDiseno([]), 1);
+  assert.strictEqual(siguienteNumeroDiseno([{ codigo: 'VA08B1A321124', cantidad: 600 }]), 1);
+  assert.strictEqual(siguienteNumeroDiseno(undefined), 1);
+});
+
+test('#220-2: el numero de diseno es el maximo historico + 1, no el conteo de lineas vivas', () => {
+  const conTres = [
+    { codigo: 'CAL1025S', cantidad: 100, diseno: 1 },
+    { codigo: 'CAL1050', cantidad: 100, diseno: 2 },
+    { codigo: 'CAL1025S', cantidad: 100, diseno: 3 },
+  ];
+  assert.strictEqual(siguienteNumeroDiseno(conTres), 4);
+  // Borrar el Diseno 1 no libera el numero: el siguiente sigue siendo el 4.
+  const sinElPrimero = conTres.filter(i => i.diseno !== 1);
+  assert.strictEqual(siguienteNumeroDiseno(sinElPrimero), 4);
+});
+
+test('#220-3: una calca sin diseno (cotizacion anterior al cambio) cuenta como Diseno 1', () => {
+  assert.strictEqual(siguienteNumeroDiseno([{ codigo: 'CAL1050', cantidad: 100 }]), 2);
+});
+
+test('#220-4: la llave del carrito y el codigo del catalogo son ida y vuelta', () => {
+  const llave = llaveDiseno('CAL1025S', 2);
+  assert.notStrictEqual(llave, 'CAL1025S', 'la identidad de la linea no es el codigo');
+  assert.strictEqual(esCodigoCalca(llave), false, 'la llave no se lee como codigo de catalogo');
+  assert.strictEqual(codigoDeLlave(llave), 'CAL1025S');
+  assert.strictEqual(esCodigoCalca(codigoDeLlave(llave)), true);
+});
+
+test('#220-5: codigoDeLlave devuelve tal cual lo que no es llave de diseno', () => {
+  assert.strictEqual(codigoDeLlave('VA08B1A321124'), 'VA08B1A321124');
+  assert.strictEqual(codigoDeLlave('ENVIO'), 'ENVIO');
+  assert.strictEqual(codigoDeLlave('CAL1025S'), 'CAL1025S');
+});
+
+// Las lineas del carrito se manipulan por llave desde onclick inline y desde un
+// selector [data-key="..."] (trampa #112): una llave con comillas o espacios
+// rompe el HTML generado sin que ningun test de logica lo note.
+test('#220-6: la llave de diseno sobrevive el viaje por un atributo HTML', () => {
+  for (const n of [1, 2, 10]) {
+    assert.match(llaveDiseno('CAL1025S', n), /^[A-Za-z0-9-]+$/);
+  }
+});
+
+test('#220-7: productoCalca numera el diseno en el nombre y conserva el codigo del catalogo', () => {
+  const p = productoCalca(CAL1025S, 2);
+  assert.strictEqual(p.key, llaveDiseno('CAL1025S', 2));
+  assert.strictEqual(p.model, 'CAL1025S', 'el codigo que se serializa es el del catalogo');
+  assert.strictEqual(p.diseno, 2);
+  assert.strictEqual(p.name, 'Calca vitrificable chica (25 cm2) 1 tinta - Diseño 2');
+  assert.strictEqual(p.esCalca, true);
+  assert.deepStrictEqual(p.prices, CAL1025S.prices);
+  assert.strictEqual(p.weight_kg, undefined);
+});
+
+test('#220-8: dos disenos del mismo codigo son dos entradas distintas con el mismo precio', () => {
+  const uno = productoCalca(CAL1025S, 1);
+  const dos = productoCalca(CAL1025S, 2);
+  assert.notStrictEqual(uno.key, dos.key, 'no se pisan en el carrito');
+  assert.notStrictEqual(uno.name, dos.name, 'se distinguen en el documento');
+  assert.strictEqual(uno.model, dos.model);
+  assert.deepStrictEqual(uno.prices, dos.prices);
+});
+
+test('#220-9: el piso de 100 es por diseno: 60 + 60 factura 100 + 100, nunca 120', () => {
+  const dos = cantidadFacturableCalca(60) + cantidadFacturableCalca(60);
+  assert.strictEqual(dos, 200);
+  assert.notStrictEqual(dos, cantidadFacturableCalca(120), 'fusionar los disenos subcotizaria');
+});
+
+test('#220-10: las piezas de varios disenos siguen fuera del volumen que fija la lista', () => {
+  const items = [
+    { codigo: 'VA08B1A321124', cantidad: 600 },
+    { codigo: 'CAL1025S', cantidad: 100, diseno: 1 },
+    { codigo: 'CAL1025S', cantidad: 100, diseno: 2 },
+  ];
+  assert.strictEqual(piezasDeProducto(items), 600);
+  assert.strictEqual(hayCalcaEnCarrito(items), true);
 });

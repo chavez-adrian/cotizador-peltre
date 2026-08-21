@@ -2266,3 +2266,49 @@ test('listarItemsCompletos: sin total en la respuesta sigue paginando hasta la p
     restore();
   }
 });
+
+// === #220: dos diseños de calca son dos partidas del quote (spec #218) ===
+// Operam acepta dos lineas con el mismo stock_id (verificado en vivo con el quote
+// 1238, #219). Lo que este mapeo tiene que garantizar es que no las fusione: el
+// quote debe decir lo mismo que el documento que ya vio el cliente.
+test('#220 armarContenidoQuote: dos disenos del mismo codigo son dos partidas', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const { items } = armarContenidoQuote({
+    fecha: '2026-08-20',
+    cliente: { cpEntrega: '56530' },
+    items: [
+      { codigo: 'VA08B1A321124', descripcion: 'Vaso peltre', cantidad: 200, precio: 50, descuento: 0 },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 2', cantidad: 120, precio: 26.9, descuento: 10, diseno: 2, descripcionEditada: true },
+    ],
+  });
+  const calcas = items.filter(i => i.stock_id === 'CAL1025S');
+  assert.equal(calcas.length, 2);
+  assert.deepEqual(calcas.map(i => i.stock_id_text), ['Calca chica - Diseño 1', 'Calca chica - Diseño 2']);
+  assert.deepEqual(calcas.map(i => i.qty), [100, 120]);
+  assert.deepEqual(calcas.map(i => i.Disc), [0, 10]);
+  // Sin la marca, la ronda de reescritura por partida no las tocaria y FA les
+  // pondria el nombre del articulo, borrando el "Diseño N".
+  assert.deepEqual(calcas.map(i => i.editarDescripcion), [true, true]);
+});
+
+test('#220 huellaContenidoQuote: mover la cantidad del segundo diseno cambia la huella', () => {
+  const conDisenos = (qtySegundo) => huellaContenidoQuote(cotizacionBase({
+    items: [
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 2', cantidad: qtySegundo, precio: 26.9, descuento: 0, diseno: 2, descripcionEditada: true },
+    ],
+  }));
+  assert.notEqual(conDisenos(150), conDisenos(100), 'la huella no puede dedupe por stock_id');
+  assert.equal(conDisenos(150), conDisenos(150));
+});
+
+test('#220 huellaContenidoQuote: renombrar un diseno cuenta como cambio de contenido', () => {
+  const conTexto = (texto) => huellaContenidoQuote(cotizacionBase({
+    items: [
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: texto, cantidad: 100, precio: 26.9, descuento: 0, diseno: 2, descripcionEditada: true },
+    ],
+  }));
+  assert.notEqual(conTexto('Calca chica - Diseño 2: logo frontal'), conTexto('Calca chica - Diseño 2'));
+});
