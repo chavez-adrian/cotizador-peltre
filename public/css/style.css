@@ -1367,6 +1367,10 @@ body {
     padding: 8px;
   }
 
+  /* La regla de escritorio le quita el borde inferior al ultimo renglon
+     (linea 926); en tarjeta cada linea necesita su borde completo, la
+     ultima incluida -- sin este override la ultima tarjeta se queda sin
+     borde de abajo. */
   .cart-line:last-child { border: 1px solid var(--border); margin-bottom: 8px; }
   .cart-line:nth-child(even) { background: var(--white); }
 
