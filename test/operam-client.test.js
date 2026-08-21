@@ -1331,6 +1331,15 @@ test('subirCotizacionOperam: cust_ref cae a razonSocial si no hay referencia ni 
   assert.equal(custRef, 'El Pendulo SA de CV', 'cust_ref debe caer a cliente.razonSocial');
 });
 
+// El orden de los dos ultimos escalones lo invirtio #241 (en #108 razonSocial iba
+// antes que nombreEntrega): con ambos presentes gana el nombre de entrega.
+test('subirCotizacionOperam: nombreEntrega gana sobre razonSocial (#241)', async () => {
+  const custRef = await subirYCapturarCustRef({
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo SA de CV', nombreEntrega: 'Almacen Roma',
+  }, 327);
+  assert.equal(custRef, 'Almacen Roma', 'cust_ref debe preferir nombreEntrega a razonSocial');
+});
+
 test('subirCotizacionOperam: cust_ref cae a nombreEntrega si no hay referencia, nombreCorto ni razonSocial', async () => {
   const custRef = await subirYCapturarCustRef({
     rfc: 'CPE921211N76', nombreEntrega: 'Almacen Roma',

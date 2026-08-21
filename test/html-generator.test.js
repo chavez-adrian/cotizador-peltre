@@ -23,6 +23,33 @@ test('3. Tabla comercial includes all 5 headers', () => {
   assert.ok(html.includes('Valido hasta'), 'should contain "Valido hasta"');
 });
 
+// #241: misma cadena que el quote de Operam (lib/referencia-cliente.js). Las
+// aserciones se anclan a la CELDA de la tabla comercial: el nombre de entrega y la
+// razon social tambien salen en otros bloques del documento, asi que un
+// includes() suelto pasaria aunque la celda quedara vacia (leccion de #36).
+function celdaReferenciaComercial(html) {
+  const tbody = html.slice(html.indexOf('<tbody>'), html.indexOf('</tbody>'));
+  const celda = tbody.match(/<td>([^<]*)<\/td>/);
+  return celda ? celda[1] : null;
+}
+
+test('3b. (#241) sin referencia ni nombreCorto la Referencia del Cliente cae a nombreEntrega', () => {
+  const html = generateQuoteHTML({
+    cliente: { nombreEntrega: 'Almacen Roma', razonSocial: 'EL PENDULO SA DE CV' },
+  });
+  assert.equal(celdaReferenciaComercial(html), 'Almacen Roma');
+  assert.ok(html.includes('Referencia Cliente:</span>Almacen Roma'), 'tambien en el bloque del cliente');
+});
+
+test('3c. (#241) razonSocial es el ultimo escalon de la Referencia del Cliente', () => {
+  const html = generateQuoteHTML({ cliente: { razonSocial: 'EL PENDULO SA DE CV' } });
+  assert.equal(celdaReferenciaComercial(html), 'EL PENDULO SA DE CV');
+});
+
+test('3d. (#241) sin ningun dato del cliente la celda de Referencia queda vacia', () => {
+  assert.equal(celdaReferenciaComercial(generateQuoteHTML({ cliente: {} })), '');
+});
+
 test('4. "Terminos de Pago" appears as text outside the products table', () => {
   const html = generateQuoteHTML({ condicionesPago: '30 dias' });
   assert.ok(html.includes('rminos de Pago'), 'should contain "Terminos de Pago"');

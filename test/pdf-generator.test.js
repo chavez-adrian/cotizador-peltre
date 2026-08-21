@@ -136,6 +136,35 @@ test('B14: (#70) Referencia Cliente prefiere c.referencia sobre c.nombreCorto (i
   assert.ok(!text.includes(toHex('Corto')), 'no debe mostrar nombreCorto cuando referencia esta presente');
 });
 
+// #241: el documento del cliente y el quote de Operam comparten la cadena de
+// lib/referencia-cliente.js. Antes el PDF paraba en nombreCorto y dejaba la
+// Referencia del Cliente en blanco cuando el cliente solo tenia entrega o razon
+// social, mientras Operam si mostraba algo.
+//
+// El nombre de entrega y la razon social YA salen en otros bloques del PDF, asi
+// que un includes() suelto pasaria con la celda vacia (leccion de #36): lo que
+// distingue es cuantas VECES aparece el token. Sin la Referencia sale 1 vez (su
+// bloque); con ella, 3 (bloque propio + "Referencia Cliente:" + tabla comercial).
+function vecesEnPdf(buffer, texto) {
+  return buffer.toString('latin1').split(toHex(texto)).length - 1;
+}
+
+test('B14b: (#241) sin referencia ni nombreCorto el PDF cae a nombreEntrega', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { nombreEntrega: 'Almacen Roma', razonSocial: 'EL PENDULO SA DE CV' },
+  });
+  assert.equal(vecesEnPdf(result, 'Almacen Roma'), 3, 'debe salir en su bloque, en Referencia Cliente y en la tabla comercial');
+});
+
+test('B14c: (#241) razonSocial es el ultimo escalon de la Referencia del Cliente', async () => {
+  const result = await generateQuotePDF({
+    _compress: false,
+    cliente: { razonSocial: 'EL PENDULO SA DE CV' },
+  });
+  assert.equal(vecesEnPdf(result, 'NDULO'), 3, 'razonSocial debe llenar tambien la Referencia del Cliente');
+});
+
 test('B15: (#70) telefonoEntrega (campo muerto) no dispara la linea de telefono (paridad con HTML)', async () => {
   const result = await generateQuotePDF({
     _compress: false,

@@ -48,6 +48,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 | `deduplicacion.js` | RFC genericos + dedup (#78); `DEBTORS_GENERICOS`; `normalizarNombre` |
 | `cruce-identidad.js` | Nucleo puro del cruce por identidad (#123): CERRO/COMPRO_OTRA_COSA/SIN_SENAL, banda ±15%, normalizacion de telefono |
 | `telefono-llave.js` | `ultimos10` = la UNICA llave de identidad de prospecto |
+| `referencia-cliente.js` | Nucleo puro de la Referencia del cliente (#241): cadena `referencia -> nombreCorto -> nombreEntrega -> razonSocial` que comparten el `cust_ref` del quote y el documento (PDF/HTML); NO trunca (el limite de 60 es del quote) |
 | `higiene-clientes.js` | Reporte admin "Clientes genericos sin actividad" (#86) |
 | `sync-operam.js` / `sync-operam-io.js` / `sync-operam-webhook.js` | Sync post-venta (#62): nucleo puro + motor de reconciliacion + webhook; binding SOLO por `data.orderOperam` |
 | `backfill-operam.mjs` | Nucleo puro del backfill historico (#76); excluye cancelados |

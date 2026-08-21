@@ -2804,9 +2804,14 @@ function pcNota() {
 // (evita que el CP/domicilio del cliente anterior se filtre al siguiente y pinte
 // mal el chip Entrega). No toca el carrito ni el resto del flujo de cotizacion.
 function pcLimpiarCamposCliente() {
+  // cl-referencia NO se limpia aqui (#241): la Referencia del cliente es dato de la
+  // OPERACION, no del cliente (CONTEXT.md), y se captura en el paso Cotizacion. Como
+  // este limpiador corre en TODOS los entry points de seleccion, incluirla le borraba
+  // al vendedor lo que ya habia escrito con solo cambiar de cliente. Muere con la
+  // cotizacion (nuevaCotizacion), igual que las notas y el carrito.
   const campos = [
     'cl-razon-social', 'cl-nombre-corto', 'cl-rfc', 'cl-cp-fiscal', 'cl-segmento', 'cl-telefono',
-    'cl-referencia', 'cl-nombre-entrega', 'cl-calle', 'cl-num-int', 'cl-colonia',
+    'cl-nombre-entrega', 'cl-calle', 'cl-num-int', 'cl-colonia',
     'cl-cp-entrega', 'cl-municipio', 'cl-estado', 'cl-cel-entrega', 'cl-email-entrega',
     'cl-email-factura', 'cl-referencias',
   ];
@@ -5984,6 +5989,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Vigencia capturada (#180): sin listener propio, escribirla no dispara
   // ningun otro enganche del autosave (no mueve carrito, envio ni cliente).
   document.getElementById('resumen-vigencia')?.addEventListener('input', autoguardarBorrador);
+  // Referencia del cliente (#241): mismo caso que la vigencia -- se captura en el
+  // paso Cotizacion y no mueve carrito, envio ni cliente, asi que sin listener
+  // propio se perderia al recargar.
+  document.getElementById('cl-referencia')?.addEventListener('input', autoguardarBorrador);
 
   // Nota de tiempo de entrega (#90): togglear el checkbox actualiza SOLO esa
   // linea del textarea de notas, sin pisotear ediciones manuales del vendedor.

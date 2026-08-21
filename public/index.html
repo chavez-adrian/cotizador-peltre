@@ -566,10 +566,6 @@
             <option value="otro">Otro (especificar en notas)</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Referencia del cliente</label>
-          <input type="text" id="cl-referencia" placeholder="Nombre del proyecto, evento, etc." maxlength="50">
-        </div>
       </div>
 
       <!-- Conserva el listener existente (switchTab productos); ya no es el CTA
@@ -812,6 +808,15 @@
 
       <div class="notes-box" style="margin-top:16px">
         <h3>Notas</h3>
+        <!-- Referencia del cliente (#241): dato de la OPERACION -- proyecto, evento u
+             orden de compra que da el cliente -- que viaja al cust_ref del quote y se
+             hereda al pedido y a la factura. Vive aqui, con los demas datos de la
+             cotizacion, no en el paso Cliente. Conserva el id cl-* porque el borrador,
+             Editar cotizacion y leerClienteFormulario ya lo leen por ese id. -->
+        <div class="form-group">
+          <label>Referencia del cliente</label>
+          <input type="text" id="cl-referencia" placeholder="Proyecto, evento u orden de compra" maxlength="60">
+        </div>
         <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="resumen-decorado" style="width:16px;height:16px;accent-color:var(--primary)">
           ¿Lleva calca/decorado? (cambia el tiempo de entrega a 6 semanas)
