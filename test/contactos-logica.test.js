@@ -114,13 +114,14 @@ test('la organizacion no se toca aunque venga en mayusculas', () => {
     'Alejandra Vazquez - MAG IMPRESIONES');
 });
 
-// Siglas cortas (#247): "seguir la regla que ya tenga referencia-cliente; si no
-// tiene, no normalizar tokens de 3 letras o menos". Este bloque fija el caso
-// donde la sigla corta esta en la PERSONA misma (no en la organizacion, que ya
-// cubre la prueba de arriba), y el caso de una inicial con punto.
-test('una sigla corta dentro de la persona se conserva en mayusculas', () => {
+// Tokens cortos (#247): en la PERSONA no hay excepcion para siglas de 3 letras.
+// Medido en la primera carga real: los tokens cortos en mayusculas eran nombres
+// de pila y abreviaturas ("DAN", "MA."), no siglas comerciales. Una sigla que
+// venga en el campo de persona se titula como palabra; es el precio de no dejar
+// "ANA LOPEZ" gritando.
+test('un token corto dentro de la persona se titula como palabra', () => {
   assert.equal(nombreVisible({ persona: 'MAG IMPRESIONES', empresa: 'Cocinas del Valle' }),
-    'MAG Impresiones - Cocinas del Valle');
+    'Mag Impresiones - Cocinas del Valle');
 });
 
 test('una inicial con punto se conserva, el apellido se titula', () => {
@@ -128,17 +129,11 @@ test('una inicial con punto se conserva, el apellido se titula', () => {
     'J. Lopez - Cocinas del Valle');
 });
 
-// LIMITACION CONOCIDA, no bug (hallada en code-review de #247): sin una lista
-// cerrada de nombres de pila, no hay forma barata de distinguir "ANA" (nombre
-// real de 3 letras) de "MAG" (sigla comercial de 3 letras) -- el issue #247
-// pide EXPLICITAMENTE "no normalizar tokens de 3 letras o menos" como respaldo
-// para cuando referencia-cliente no tiene una regla mas fina, y esa regla no
-// distingue los dos casos. El precio es que un nombre de pila corto en
-// MAYUSCULAS se queda gritando. Es la regla que pidio el issue, no una que se
-// invento aqui; esta prueba la deja fijada y visible en vez de escondida.
-test('un nombre real de 3 letras o menos tambien queda en mayusculas (limitacion conocida, no bug)', () => {
+test('un nombre de pila corto en mayusculas se titula como cualquier otro', () => {
   assert.equal(nombreVisible({ persona: 'ANA LOPEZ', empresa: 'Cocinas del Valle' }),
-    'ANA Lopez - Cocinas del Valle');
+    'Ana Lopez - Cocinas del Valle');
+  assert.equal(nombreVisible({ persona: 'MA. ELENA RUIZ', empresa: 'Cocinas del Valle' }),
+    'Ma. Elena Ruiz - Cocinas del Valle');
 });
 
 // La huella de una ficha afectada por cualquiera de los tres defectos cambia:
