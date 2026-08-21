@@ -279,6 +279,17 @@ test('#220-2: el numero de diseno es el maximo historico + 1, no el conteo de li
   assert.strictEqual(siguienteNumeroDiseno(sinElPrimero), 4);
 });
 
+// El caso que el carrito vivo no puede contestar solo: borrar el diseño MAS
+// ALTO lo saca de los items, y sin memoria de lo ya asignado el siguiente
+// reciclaria su numero.
+test('#220-2b: borrar el diseno mas alto tampoco libera su numero', () => {
+  const soloElPrimero = [{ codigo: 'CAL1025S', cantidad: 100, diseno: 1 }];
+  assert.strictEqual(siguienteNumeroDiseno(soloElPrimero, 2), 3);
+  assert.strictEqual(siguienteNumeroDiseno([], 2), 3, 'borrarlos todos tampoco');
+  // Lo ya asignado nunca hace retroceder al carrito vivo.
+  assert.strictEqual(siguienteNumeroDiseno([{ codigo: 'CAL1025S', cantidad: 100, diseno: 5 }], 2), 6);
+});
+
 test('#220-3: una calca sin diseno (cotizacion anterior al cambio) cuenta como Diseno 1', () => {
   assert.strictEqual(siguienteNumeroDiseno([{ codigo: 'CAL1050', cantidad: 100 }]), 2);
 });

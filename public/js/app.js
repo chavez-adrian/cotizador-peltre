@@ -392,7 +392,7 @@ function logout() {
   state.token = null;
   state.user = null;
   state.precios = null;
-  state.cart.clear();
+  vaciarCarrito();
   localStorage.removeItem('token');
   localStorage.removeItem('user');
   mostrarLoginView();
@@ -543,7 +543,12 @@ function autoguardarBorrador() {
   const llave = llaveBorradorActual();
   if (!llave) return;
   try {
-    const carrito = [...state.cart].map(([codigo, entrada]) => ({ codigo, ...entrada }));
+    // El borrador guarda el codigo del catalogo, nunca la llave del carrito
+    // (#220): guardar "CAL1025S-1" haria que resolverProductoDelCatalogo no lo
+    // reconociera como calca y la partida volviera marcada como sin catalogo.
+    // Restaurar VARIOS disenos es del ticket siguiente (#221): hoy vuelven
+    // fusionados en el Diseno 1, como cualquier calca guardada antes de #220.
+    const carrito = [...state.cart].map(([llave, entrada]) => ({ codigo: codigoDeLlave(llave), ...entrada }));
     const cliente = leerClienteParaBorrador();
     const contactoNuevo = leerContactoNuevoParaBorrador();
     // Nada capturado en la sesion = nada que restaurar: se borra la llave en
@@ -633,7 +638,7 @@ function restaurarContactoNuevoDelBorrador(borrador) {
 function aplicarBorrador(borrador) {
   const { lineas } = reResolverCarrito(borrador, state.precios);
   if (lineas.length > 0) {
-    state.cart.clear();
+    vaciarCarrito();
     for (const linea of lineas) {
       const entrada = { product: linea.product, cantidad: linea.cantidad, descuento: linea.descuento };
       if (linea.descripcion) entrada.descripcion = linea.descripcion;
@@ -784,6 +789,19 @@ function itemsDelCarrito() {
 
 function getPiezasProducto() {
   return piezasDeProducto(itemsDelCarrito());
+}
+
+// El maximo de diseno de calca ya asignado en ESTA cotizacion (#220). El carrito
+// vivo no basta: borrar el diseno mas alto lo sacaria de los items y el
+// siguiente reciclaria su numero, que es justo lo que la numeracion prohibe.
+let maxDisenoAsignado = 0;
+
+// Vaciar el carrito es empezar otra cotizacion, asi que la numeracion de disenos
+// arranca de cero con el. UNICO camino para vaciarlo: la memoria del maximo y el
+// Map tienen que morir juntos o la numeracion queda arrastrando la anterior.
+function vaciarCarrito() {
+  state.cart.clear();
+  maxDisenoAsignado = 0;
 }
 
 function getCurrentTier() {
@@ -1149,7 +1167,9 @@ function agregarCalca() {
   // Agregar calca crea SIEMPRE un diseño nuevo (#220): fusionar por codigo
   // sumaba 60 + 60 en una linea de 120 cuando el proveedor imprime y cobra
   // 100 + 100. Para subirle cantidad a un diseño existente se edita su linea.
-  const product = productoCalca(ficha, siguienteNumeroDiseno(itemsDelCarrito()));
+  const numero = siguienteNumeroDiseno(itemsDelCarrito(), maxDisenoAsignado);
+  maxDisenoAsignado = numero;
+  const product = productoCalca(ficha, numero);
   state.cart.set(product.key, { product, cantidad: aplicarPisoCalca(product, cantidad) });
 
   updateTierBar();
@@ -2474,7 +2494,7 @@ function nuevaCotizacion() {
   ocultarTodasLasVistas();
   document.getElementById('app-view').style.display = 'block';
   marcarNavActivo('nav-cotizar');
-  state.cart.clear();
+  vaciarCarrito();
   descripcionesAbiertas.clear();
   // Empezar de cero mata el borrador (#179): recargar despues no resucita la
   // cotizacion que el vendedor acaba de descartar.
@@ -5682,7 +5702,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     if (paisEl) paisEl.value = c.pais || 'MX';
 
     // Poblar carrito
-    state.cart.clear();
+    vaciarCarrito();
     descripcionesAbiertas.clear();
     // #154: Editar (mismo registro) conserva la lista fijada SIN IMPORTAR el
     // permiso de quien edita -- el servidor la deja pasar comparando contra el
@@ -5703,6 +5723,9 @@ async function cargarCotizacion(id, modo = 'nueva') {
       // catalogo, y resolverla aparte aqui era una copia espejo que ya empezaba a
       // divergir de la del borrador. Un codigo que ya no existe se salta, como
       // siempre en este camino.
+      // El `diseno` guardado todavia NO se usa aqui (#220 lo persiste, #221
+      // rehidrata): una calca vuelve como Diseno 1 y dos partidas del mismo
+      // codigo se pisarian, igual que en la restauracion del borrador.
       const cartProduct = resolverProductoDelCatalogo(item.codigo, state.precios);
       if (!cartProduct) continue;
       // El descuento por linea se restaura junto con la cantidad (#137): sin el,

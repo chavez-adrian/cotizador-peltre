@@ -7,7 +7,8 @@
 // El sufijo S es la migracion de unidad Actividad -> Servicio (#120): del par
 // manda una sola variante y el catalogo ya la resolvio, asi que aqui solo se
 // tolera. Las CAL00xx (marca/artistas) NO son de este selector.
-const RE_CALCA = /^CAL[1-9]\d{3}S?$/;
+const CODIGO_CALCA = 'CAL[1-9]\\d{3}S?';
+const RE_CALCA = new RegExp(`^${CODIGO_CALCA}$`);
 
 export const PIEZAS_MINIMAS_CALCA = 100;
 
@@ -70,7 +71,8 @@ export function llaveDiseno(codigo, numero) {
   return `${codigo}-${numero}`;
 }
 
-const RE_LLAVE_DISENO = /^(CAL[1-9]\d{3}S?)-\d+$/;
+// Sobre el MISMO cuerpo que RE_CALCA: la familia de codigos se define una vez.
+const RE_LLAVE_DISENO = new RegExp(`^(${CODIGO_CALCA})-\\d+$`);
 
 // Inversa de llaveDiseno. Lo que no es llave de diseño se devuelve tal cual:
 // asi el mismo camino sirve para las lineas de producto y para una calca de una
@@ -83,8 +85,11 @@ export function codigoDeLlave(llave) {
 // Maximo historico + 1, nunca el conteo de lineas vivas: borrar el Diseño 1 de
 // dos no libera el numero, porque una descripcion ya editada que dice "Diseño 2"
 // quedaria mintiendo. Un item sin `diseno` (cotizacion anterior) es el Diseño 1.
-export function siguienteNumeroDiseno(items) {
-  let max = 0;
+// El carrito vivo no basta para el historico -- borrar el diseño MAS ALTO lo
+// dejaria fuera --, asi que quien numera lleva aparte lo ya asignado y lo pasa
+// en `maximoAsignado`.
+export function siguienteNumeroDiseno(items, maximoAsignado = 0) {
+  let max = Number(maximoAsignado) || 0;
   for (const i of items || []) {
     if (!esCodigoCalca(i.codigo)) continue;
     const n = Number(i.diseno) || 1;
