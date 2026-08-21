@@ -22,14 +22,16 @@
 | **Búsqueda por teléfono** | `people:searchContacts` **sí** indexa `phoneNumbers`, pero con **prefijo** y sobre un **caché perezoso** que exige una petición de calentamiento y esperar unos segundos. **No sirve como llave de deduplicación.** Usar `connections.list` con `syncToken` y mantener el índice local en Neon. |
 | **Deduplicación / mapeo** | Tabla propia en Neon: `telefono_e164 -> resourceName + etag`. Es la única llave confiable; el `resourceName` es de Google y el `etag` es obligatorio para actualizar. |
 | **Sincronización incremental** | `connections.list?requestSyncToken=true` y guardar `nextSyncToken`. **Caduca a los 7 días**; el código debe manejar `EXPIRED_SYNC_TOKEN` cayendo a sync completo. |
-| **Formato del teléfono** | **`+52 1 55 XXXX XXXX`** (con el "1"). Ver §6 — esto **contradice** el supuesto que traía el proyecto. |
+| **Formato del teléfono** | **`+52 55 XXXX XXXX`** (E.164 limpio, SIN el "1"). **MEDIDO el 2026-08-21 en el dispositivo real (issue #226): funciona.** La documentación de WhatsApp, que exige el "1", quedó desmentida por el comportamiento observado. Ver §6. |
 | **Prueba reversible previa** | Importar un CSV con la plantilla oficial de Google (≤3,000 filas), verificar en el Android, y si algo sale mal usar **Configuración > Deshacer cambios** (ventana de 30 días). |
 
 ### 1.1 Tres hallazgos que cambian el diseño
 
 **(a) Los 7 días son reales, pero el diagnóstico habitual es equivocado.** No es "los refresh tokens de Google caducan a los 7 días": es que **el estado de publicación "Testing" caduca las autorizaciones a los 7 días**. Google lo dice sin ambigüedad y añade que la excepción (no caducar) solo aplica a apps que piden únicamente nombre, correo y perfil — que no es nuestro caso. La salida no es renovar el token cada semana ni pedir verificación: es **publicar la app**. Publicar es un botón, no un trámite. Detalle en §2 y §3.
 
-**(b) WhatsApp sigue exigiendo el "1" después del +52 para México, hoy.** El Centro de Ayuda oficial de WhatsApp, verificado el 2026-08-20 en la página que trata precisamente de **guardar contactos en la libreta del teléfono**, dice literalmente: *"Phone numbers in Mexico (country code \"52\") need to have \"1\" after \"+52\", even if they're Nextel numbers."* El proyecto asumía que ese "1" había desaparecido con la reforma de numeración de 2019. **No desapareció en la documentación de WhatsApp.** Consecuencias y el matiz de Android en §6.
+**(b) La documentación de WhatsApp exige el "1" después del +52 — pero la medición demuestra que NO hace falta.** ⚠️ **CORREGIDO el 2026-08-21 (issue #226):** un contacto guardado como `+52` + diez dígitos, sin el "1", hace que WhatsApp Business muestre el nombre en un chat existente. Verificado en el Android real, con captura. Lo que sigue de este párrafo describe lo que dice la documentación, que resultó no corresponder al comportamiento. Se conserva porque explica por qué el diseño tomó precauciones, y para que nadie "corrija" el formato basándose en esa página.
+
+_Texto original de este hallazgo:_ **(b) WhatsApp sigue exigiendo el "1" después del +52 para México, hoy.** El Centro de Ayuda oficial de WhatsApp, verificado el 2026-08-20 en la página que trata precisamente de **guardar contactos en la libreta del teléfono**, dice literalmente: *"Phone numbers in Mexico (country code \"52\") need to have \"1\" after \"+52\", even if they're Nextel numbers."* El proyecto asumía que ese "1" había desaparecido con la reforma de numeración de 2019. **No desapareció en la documentación de WhatsApp.** Consecuencias y el matiz de Android en §6.
 
 **(c) `searchContacts` no sirve para lo que uno querría usarlo.** Es tentador buscar el contacto por teléfono antes de crearlo. La doc oficial advierte que la búsqueda corre sobre un caché perezoso que hay que calentar con una petición de query vacía y **esperar unos segundos** (el ejemplo oficial en Java literalmente hace `Thread.sleep(5)`), que hace **prefijo**, y que el `pageSize` se topa en 30. Además, las escrituras tardan **varios minutos** en propagarse a las lecturas de sincronización. El diseño tiene que mantener su propio índice; la API no es la fuente de verdad del mapeo.
 
@@ -419,7 +421,9 @@ La versión en español de la primera página existe y traduce las mismas reglas
 - Si WhatsApp **no** normaliza y exige el "1" como dice su doc, escribir sin "1" hace fracasar todo el proyecto en silencio: los contactos existirían y los chats seguirían mostrando números.
 - Para la agenda de Android (llamadas, SMS, identificador de llamadas), el "1" de más **es inocuo** porque la comparación es por los últimos 7 dígitos con comparador laxo (§5.3).
 
-El costo del "1" es cosmético: el número se ve raro al abrirlo. El costo de omitirlo, si la doc de WhatsApp tiene razón, es el fracaso total. **Guardar el E.164 real (`+52` sin el "1") en Neon** y aplicar el "1" solo en la capa que construye el payload de Google — así, si la medición de §7.2 demuestra que no hace falta, el cambio es de una línea y una re-sincronización.
+**RESUELTO el 2026-08-21 por medición directa (issue #226): el "1" NO hace falta.** Se escribe el E.164 limpio, que además es idéntico a lo que ya guarda Neon, eliminando toda conversión entre almacenamiento y escritura.
+
+El razonamiento previo se conserva porque explica la precaución que sí quedó en el diseño: el formato vive en una función pura de una línea. Decía así: el costo del "1" es cosmético, el de omitirlo —si la doc tuviera razón— sería el fracaso silencioso de todo el proyecto; de ahí guardar el E.164 real en Neon y aplicar el "1" solo al construir el payload. La medición hizo innecesaria esa capa de traducción, pero la función pura se queda: si WhatsApp cambia, cuesta una línea.
 
 ---
 
@@ -617,7 +621,7 @@ Y WhatsApp toma sus contactos de ahí — su propia guía para agregar un númer
 
 ### 8.1 Decisiones de diseño y su porqué
 
-1. **El teléfono en E.164 real vive en Neon; el "1" de México se aplica solo al construir el payload de Google.** Aísla una decisión no resuelta (§5.4) en una función pura de una línea. Si la medición demuestra que el "1" sobra, se cambia ahí y se re-sincroniza.
+1. **El teléfono en E.164 real vive en Neon y se escribe tal cual en Google, sin el "1"** (medido en #226, 2026-08-21). La función pura de una línea se conserva de todos modos como punto único de cambio si WhatsApp cambiara de comportamiento. Nota de diseño que sí resultó crítica: la llave del mapeo debe ser el celular **normalizado**, nunca la cadena escrita en Google, o un cambio de formato huerfanaría las fichas existentes.
 2. **`lib/contactos-logica.js` es núcleo puro sin IO**, siguiendo el patrón de la casa (`alta-logica.js`, `calcas-logica.js`, `cruce-identidad.js`). El diff entre lo deseado y lo que hay en Google es lógica pura y testeable; la llamada HTTP vive fuera.
 3. **Nunca borrar.** El scope obliga a pedir permiso de borrado permanente, pero el código no tiene por qué ejercerlo. Un contacto que ya no está en Operam se marca en Neon y se deja de actualizar. Borrar contactos de la libreta de un teléfono de trabajo es un daño irreversible con la ventana de 30 días como único paracaídas; el beneficio no existe.
 4. **Nunca tocar lo que no es nuestro.** Antes de actualizar, comprobar que el contacto sigue en el grupo "Clientes cotizador" y que trae el `userDefined` de origen. Si no, saltarlo y registrarlo. Y si el `etag` no cuadra, releer y **respetar el valor humano** (§4.3).
