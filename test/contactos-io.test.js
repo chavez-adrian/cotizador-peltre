@@ -77,11 +77,30 @@ const CLIENTE_OPERAM = {
   branches: [{ branch_code: '1', br_name: 'Almacen Norte', phone: '55 7777 2222' }],
 };
 
+// Lo que la libreta de Google YA tiene (#229). Se lee en cada pasada, paginada,
+// y es lo que permite adoptar en vez de duplicar. `estado.paginasLibreta` cuenta
+// las lecturas para poder afirmar sobre la paginacion.
+function conexionesFalsas(existentes = [], estado = {}) {
+  estado.paginasLibreta = 0;
+  return {
+    '/people/me/connections': () => {
+      estado.paginasLibreta += 1;
+      return jsonResponse({ connections: existentes, totalPeople: existentes.length });
+    },
+  };
+}
+
 // Libreta de Google de mentira: acumula lo creado y responde como la People API.
-function libretaFalsa({ fallaEn = null, demora = false, clientes = [], operam = {} } = {}) {
-  const estado = { creados: [], tokens: 0, enVuelo: 0, maxEnVuelo: 0, intentos: 0, operam };
+function libretaFalsa({ fallaEn = null, demora = false, clientes = [], operam = {}, existentes = [] } = {}) {
+  const estado = { creados: [], actualizados: [], tokens: 0, enVuelo: 0, maxEnVuelo: 0, intentos: 0, operam };
   const handlers = {
     ...operamFalso(clientes, operam),
+    ...conexionesFalsas(existentes, estado),
+    ':updateContact': (u, opts) => {
+      const body = JSON.parse(opts.body);
+      estado.actualizados.push({ url: u, body });
+      return jsonResponse({ resourceName: 'people/c9', etag: `etag-${estado.actualizados.length + 100}` });
+    },
     'oauth2.googleapis.com/token': () => {
       estado.tokens += 1;
       return jsonResponse({ access_token: `tok${estado.tokens}`, expires_in: 3600 });
@@ -224,6 +243,7 @@ test('un access token vencido se refresca solo y la escritura se reintenta una v
   const estado = { tokens: 0, intentos: 0, tokensUsados: [] };
   mockFetchByUrl({
     ...operamFalso(),
+    ...conexionesFalsas(),
     'oauth2.googleapis.com/token': () => {
       estado.tokens += 1;
       return jsonResponse({ access_token: `tok${estado.tokens}`, expires_in: 3600 });
@@ -248,6 +268,7 @@ test('un token que sigue vencido no reintenta en bucle: se rinde tras un intento
   const estado = { intentos: 0 };
   mockFetchByUrl({
     ...operamFalso(),
+    ...conexionesFalsas(),
     'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
     'people:createContact': () => {
       estado.intentos += 1;
@@ -354,6 +375,7 @@ test('un etag obsoleto se reconoce por su MOTIVO y no por su codigo: se relee y 
   const estado = { intentos: 0, etagsEnviados: [], relecturas: 0 };
   mockFetchByUrl({
     ...operamFalso(),
+    ...conexionesFalsas(),
     'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
     ':updateContact': (u, opts) => {
       estado.intentos += 1;
@@ -390,6 +412,7 @@ test('un 400 que NO es de etag no se relee: no todo 400 es un conflicto de versi
   const estado = { intentos: 0, relecturas: 0 };
   mockFetchByUrl({
     ...operamFalso(),
+    ...conexionesFalsas(),
     'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
     ':updateContact': () => {
       estado.intentos += 1;
@@ -407,4 +430,147 @@ test('un 400 que NO es de etag no se relee: no todo 400 es un conflicto de versi
   assert.equal(estado.intentos, 1);
   assert.equal(resumen.actualizados, 0);
   assert.equal(resumen.errores.length, 1);
+});
+
+// --- Adopcion de contactos que ya estaban en la libreta (#229) ---
+
+// Un contacto que una persona guardo a mano en el telefono: nombre inventado,
+// dos telefonos y un correo que la sincronizacion no conoce. El celular del
+// prospecto es uno de sus numeros, guardado con el "1" de WhatsApp.
+const HECHO_A_MANO = {
+  resourceName: 'people/c9',
+  etag: 'etag-9',
+  names: [{ displayName: 'Laura la del hotel' }],
+  phoneNumbers: [{ value: '+52 1 55 1234 5678' }, { value: '222 111 3344' }],
+  emailAddresses: [{ value: 'personal@laura.mx' }],
+};
+
+test('un celular que ya tenia contacto en la libreta se ADOPTA en vez de duplicarse', async () => {
+  const { handlers, estado } = libretaFalsa({ existentes: [HECHO_A_MANO] });
+  mockFetchByUrl(handlers);
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.creados, 0, 'crear otra ficha del mismo numero es el bug de #229');
+  assert.equal(estado.creados.length, 0);
+  assert.equal(resumen.actualizados, 1);
+  assert.equal(estado.actualizados[0].body.names[0].givenName, 'Laura Mendez - Cocinas del Valle');
+});
+
+test('la clase adoptada queda persistida en el mapeo', async () => {
+  mockFetchByUrl(libretaFalsa({ existentes: [HECHO_A_MANO] }).handlers);
+  await barrerContactosGoogle();
+  const fila = leerMapeo()[0];
+  assert.equal(fila.celular10, '5512345678');
+  assert.equal(fila.resourceName, 'people/c9', 'se apunta al contacto que ya existia');
+  assert.equal(fila.clase, 'adoptado');
+});
+
+// =========================================================================
+// CANDADO ADR-0013, medido donde de verdad importa: en el cuerpo del PATCH que
+// sale hacia Google. Google REEMPLAZA los campos que nombra updatePersonFields;
+// mandar phoneNumbers con un solo numero borra el otro telefono de esa persona,
+// y mandar emailAddresses vacio borra su correo. En cada pasada.
+// =========================================================================
+test('CANDADO ADR-0013: el PATCH de un adoptado no menciona telefonos, correos ni direcciones', async () => {
+  const { handlers, estado } = libretaFalsa({ existentes: [HECHO_A_MANO] });
+  mockFetchByUrl(handlers);
+
+  await barrerContactosGoogle();
+
+  const { url, body } = estado.actualizados[0];
+  const mascara = decodeURIComponent(url.match(/updatePersonFields=([^&]*)/)[1]).split(',');
+  assert.deepEqual(mascara, ['names', 'organizations', 'userDefined']);
+  // El cuerpo tiene que coincidir con la mascara: un campo presente en el cuerpo
+  // y ausente de la mascara no se escribe, pero uno presente en la mascara y
+  // ausente del cuerpo se escribe VACIO, que es la forma de borrar.
+  assert.deepEqual(Object.keys(body).filter(k => k !== 'etag').sort(), ['names', 'organizations', 'userDefined']);
+  for (const prohibido of ['phoneNumbers', 'emailAddresses', 'addresses']) {
+    assert.equal(prohibido in body, false, `${prohibido} en el cuerpo BORRA lo que la persona guardo`);
+    assert.equal(mascara.includes(prohibido), false, `${prohibido} en la mascara BORRA lo que la persona guardo`);
+  }
+});
+
+test('varias pasadas seguidas sobre un adoptado no vuelven a tocarlo', async () => {
+  const { handlers, estado } = libretaFalsa({ existentes: [HECHO_A_MANO] });
+  mockFetchByUrl(handlers);
+
+  await barrerContactosGoogle();
+  await barrerContactosGoogle();
+  const tercera = await barrerContactosGoogle();
+
+  assert.equal(estado.actualizados.length, 1, 'solo la primera pasada escribe');
+  assert.equal(tercera.actualizados, 0);
+  assert.equal(tercera.creados, 0);
+});
+
+test('la libreta se lee PAGINADA: un contacto de la segunda pagina tambien se adopta', async () => {
+  // ~15 contactos hoy, pero la pagina de Google topa en 1000 y el default es
+  // 100: quedarse con la primera pagina duplicaria en silencio a partir del 101.
+  const estado = { paginas: [], creados: 0, actualizados: [] };
+  mockFetchByUrl({
+    ...operamFalso(),
+    'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
+    '/people/me/connections': (u) => {
+      estado.paginas.push(u);
+      const token = (u.match(/pageToken=([^&]*)/) || [])[1];
+      if (!token) return jsonResponse({ connections: [], nextPageToken: 'pagina-2' });
+      return jsonResponse({ connections: [HECHO_A_MANO] });
+    },
+    'people:createContact': () => {
+      estado.creados += 1;
+      return jsonResponse({ resourceName: 'people/c1', etag: 'etag-1' });
+    },
+    ':updateContact': (u, opts) => {
+      estado.actualizados.push(JSON.parse(opts.body));
+      return jsonResponse({ resourceName: 'people/c9', etag: 'etag-99' });
+    },
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(estado.paginas.length, 2, 'la segunda pagina se pide con el pageToken');
+  assert.ok(estado.paginas[1].includes('pageToken=pagina-2'));
+  assert.equal(estado.creados, 0, 'el contacto de la segunda pagina evita la creacion');
+  assert.equal(resumen.actualizados, 1);
+});
+
+test('si la libreta no se puede leer, la pasada NO crea fichas a ciegas', async () => {
+  // Crear sin saber que hay en la libreta duplicaria los contactos ajenos, que
+  // es exactamente lo que #229 existe para impedir. Mejor no hacer nada y que la
+  // siguiente pasada lo resuelva.
+  const estado = { creados: 0 };
+  mockFetchByUrl({
+    ...operamFalso(),
+    'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
+    '/people/me/connections': () => jsonResponse({ error: { code: 500, message: 'boom' } }, 500),
+    'people:createContact': () => {
+      estado.creados += 1;
+      return jsonResponse({ resourceName: 'people/c1', etag: 'etag-1' });
+    },
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(estado.creados, 0, 'ni una sola escritura a ciegas');
+  assert.equal(resumen.creados, 0);
+  assert.equal(resumen.omitido, 'libreta ilegible');
+  assert.equal(resumen.errores.length, 1, 'el motivo tiene que quedar reportado');
+  assert.deepEqual(leerMapeo(), []);
+});
+
+test('tras un fallo de la libreta, la siguiente pasada corre normal', async () => {
+  mockFetchByUrl({
+    ...operamFalso(),
+    'oauth2.googleapis.com/token': () => jsonResponse({ access_token: 'tok', expires_in: 3600 }),
+    '/people/me/connections': () => jsonResponse({ error: { code: 500, message: 'boom' } }, 500),
+  });
+  await barrerContactosGoogle();
+
+  const { handlers, estado } = libretaFalsa();
+  mockFetchByUrl(handlers);
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.creados, 1, 'el lock se libero y el barrido se recupera solo');
+  assert.equal(estado.creados.length, 1);
 });
