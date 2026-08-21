@@ -3167,8 +3167,8 @@ if (isMain) {
     const barrerContactos = () => barrerContactosGoogle()
       .then(r => {
         registrarBarridoContactos('contactos', r);
-        if (r.creados || r.actualizados || r.errores.length) {
-          console.log(`[contactos-google] creados=${r.creados} actualizados=${r.actualizados} errores=${r.errores.length}`);
+        if (r.creados || r.actualizados || r.inactivados || r.errores.length) {
+          console.log(`[contactos-google] creados=${r.creados} actualizados=${r.actualizados} inactivados=${r.inactivados} errores=${r.errores.length}`);
         }
       })
       .catch(err => console.error('[contactos-google] barrido periodico fallo:', err.message));

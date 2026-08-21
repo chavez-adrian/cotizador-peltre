@@ -144,7 +144,8 @@ test('la ficha propia se reescribe entera: su mascara nombra todos los campos', 
 test('un celular que desaparece del origen no produce borrado: el plan no tiene por donde borrar', () => {
   const mapeo = [{ celular10: '5512345678', resourceName: 'people/c1', etag: 'e1', clase: 'propio', huella: 'x' }];
   const plan = planificarContactos({ prospectos: [], mapeo });
-  assert.deepEqual(Object.keys(plan).sort(), ['actualizar', 'crear', 'inactivar']);
+  assert.deepEqual(Object.keys(plan).sort(), ['actualizar', 'crear', 'errores', 'inactivar'],
+    'ninguna lista de borrado: lo que pierde respaldo se inactiva (#231), jamas se elimina');
   assert.equal(plan.crear.length, 0);
   assert.equal(plan.actualizar.length, 0);
 });
@@ -466,4 +467,178 @@ test('dos contactos de la libreta con el mismo numero adoptan uno solo', () => {
   });
   assert.equal(plan.actualizar.length, 1);
   assert.equal(plan.actualizar[0].resourceName, 'people/c9');
+});
+
+// --- Lo que pierde respaldo deja de actualizarse, pero no desaparece (#231) ---
+//
+// Nada se borra NUNCA (ADR-0013): una ficha propia cuyo origen desaparecio pasa
+// a un grupo Inactivo y deja de actualizarse, conservando su nombre para que
+// quien escriba desde ese numero siga siendo reconocido.
+//
+// Casi todas estas pruebas pasan un cliente vivo aunque no lo usen: la fuente de
+// clientes vacia frena la inactivacion a proposito (ver "sin evidencia"), asi
+// que sin el, cualquier caso de esta seccion mediria el freno y no la regla.
+const CLIENTE_VIVO = TELEFONO_CLIENTE;
+
+function fichaEnMapeo(extra = {}) {
+  return {
+    celular10: '5512345678', resourceName: 'people/c1', etag: 'e1',
+    clase: 'propio', huella: 'de-una-pasada-vieja', ...extra,
+  };
+}
+
+test('una ficha propia que se queda sin respaldo entra en inactivar', () => {
+  const plan = planificarContactos({
+    prospectos: [], clientes: [CLIENTE_VIVO], mapeo: [fichaEnMapeo()],
+  });
+  assert.deepEqual(plan.inactivar.map(e => e.celular10), ['5512345678']);
+  assert.equal(plan.inactivar[0].resourceName, 'people/c1');
+});
+
+// =========================================================================
+// CANDADO ADR-0013. Un contacto ADOPTADO no era nuestro: lo escribio una
+// persona a mano y lo unico que se le corrige es como se lee. Que su origen
+// desaparezca del sistema no nos autoriza a marcar el contacto de alguien mas
+// -- ni siquiera con una etiqueta. Si esta prueba falla, la respuesta correcta
+// NO es actualizarla.
+// =========================================================================
+test('CANDADO ADR-0013: una ficha adoptada NUNCA se inactiva, aunque su origen desaparezca', () => {
+  const plan = planificarContactos({
+    prospectos: [], clientes: [CLIENTE_VIVO],
+    mapeo: [fichaEnMapeo({ clase: 'adoptado', resourceName: 'people/c9' })],
+  });
+  assert.deepEqual(plan.inactivar, []);
+  assert.deepEqual(plan.actualizar, [], 'tampoco se le escribe: su origen ya no esta');
+});
+
+test('una ficha ya inactiva no se vuelve a inactivar en cada pasada', () => {
+  // Sin esto el barrido escribiria en Google la misma membresia cada quince
+  // minutos, indefinidamente, y el panel reportaria inactivados para siempre.
+  const plan = planificarContactos({
+    prospectos: [], clientes: [CLIENTE_VIVO],
+    mapeo: [fichaEnMapeo({ inactivoDesde: '2026-08-01T00:00:00.000Z' })],
+  });
+  assert.deepEqual(plan.inactivar, []);
+  assert.deepEqual(plan.actualizar, []);
+});
+
+test('si el origen reaparece, la ficha inactiva se reactiva en esa misma pasada', () => {
+  // La reactivacion viaja como una entrada de `actualizar` marcada `reactivar`:
+  // la envoltura la saca del grupo Inactivo y le vuelve a escribir la ficha
+  // completa. Una lista propia obligaria al panel y a la envoltura a aprender
+  // un cuarto camino para lo mismo.
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO],
+    mapeo: [fichaEnMapeo({ inactivoDesde: '2026-08-01T00:00:00.000Z' })],
+  });
+  assert.deepEqual(plan.inactivar, []);
+  const entrada = plan.actualizar.find(e => e.celular10 === '5512345678');
+  assert.equal(entrada.reactivar, true);
+  assert.equal(entrada.clase, 'propio');
+  assert.equal(entrada.resourceName, 'people/c1');
+  assert.deepEqual(entrada.mascara, MASCARAS.propio, 'vuelve a ser una ficha propia entera');
+});
+
+test('la ficha se reactiva aunque nada haya cambiado desde que se inactivo', () => {
+  // Aqui la huella coincide: sin la marca de reactivacion el plan concluiria
+  // "nada cambio, cero escrituras" y la ficha se quedaria en el grupo Inactivo
+  // para siempre, sin recibir actualizaciones nunca mas.
+  const primera = planificarContactos({ prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], mapeo: [] });
+  const huella = primera.crear.find(e => e.celular10 === '5512345678').huella;
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO],
+    mapeo: [fichaEnMapeo({ huella, inactivoDesde: '2026-08-01T00:00:00.000Z' })],
+  });
+  const entrada = plan.actualizar.find(e => e.celular10 === '5512345678');
+  assert.equal(entrada.reactivar, true);
+});
+
+// --- Tope de seguridad: una desaparicion masiva es un fallo de fuente ---
+//
+// El caso real que hay que frenar: Operam responde 500 (o a medias) y devuelve
+// menos clientes de la cuenta. Sin tope, esa pasada leeria la mitad del padron
+// como "se quedaron sin respaldo" y etiquetaria cientos de fichas de golpe.
+
+function prospectoNumero(i) {
+  return {
+    id: 900 + i, celular: `55${10000000 + i}`, nombre: `Prospecto ${i}`,
+    ciudad: 'Puebla', data: {},
+  };
+}
+
+function mapeoDeProspectos(cuantos) {
+  return Array.from({ length: cuantos }, (_, i) => ({
+    celular10: `55${10000000 + i}`, resourceName: `people/p${i}`, etag: `e${i}`,
+    clase: 'propio', huella: 'de-una-pasada-vieja',
+  }));
+}
+
+test('una desaparicion inverosimil frena la inactivacion y se reporta como error', () => {
+  const plan = planificarContactos({
+    prospectos: [], clientes: [CLIENTE_VIVO], mapeo: mapeoDeProspectos(20),
+  });
+  assert.deepEqual(plan.inactivar, [], 'ni una sola ficha se etiqueta en esa pasada');
+  assert.equal(plan.errores.length, 1);
+  assert.match(plan.errores[0].motivo, /tope de inactivacion/);
+  assert.equal(plan.errores[0].categoria, 'datos');
+});
+
+test('el tope frena SOLO la inactivacion: crear y actualizar siguen aplicandose', () => {
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], mapeo: mapeoDeProspectos(20),
+  });
+  assert.deepEqual(plan.inactivar, []);
+  assert.equal(plan.crear.length, 2, 'el prospecto y el telefono del cliente se crean igual');
+});
+
+test('una desaparicion normal SI se aplica: el tope no es un freno permanente', () => {
+  // Tres de veinte es la rotacion de cualquier semana, no un fallo de fuente.
+  const mapeo = mapeoDeProspectos(20);
+  const siguen = mapeo.slice(3).map((_, i) => prospectoNumero(i + 3));
+  const plan = planificarContactos({ prospectos: siguen, clientes: [CLIENTE_VIVO], mapeo });
+  assert.deepEqual(plan.inactivar.map(e => e.celular10), mapeo.slice(0, 3).map(m => m.celular10));
+  assert.deepEqual(plan.errores, []);
+});
+
+// --- Sin evidencia no hay desaparicion ---
+//
+// clientesCacheados() se traga el error de Operam y devuelve [] (lo mide la
+// suite de la envoltura: "un fallo de Operam no impide que los prospectos
+// lleguen a la libreta"). Es decir, desde aqui "Operam caido" y "no hay
+// clientes" son EL MISMO dato. Ante esa ambiguedad la unica lectura segura es
+// que no hubo pasada valida de esa fuente: se omite la inactivacion entera y se
+// reporta. Lo contrario -- inactivar de todas formas -- convierte cada caida de
+// Operam en una etiquetada masiva, que es justo lo que el tope quiere evitar.
+test('sin la fuente de clientes no se inactiva nada: no es lo mismo vacio que caido', () => {
+  const plan = planificarContactos({ prospectos: [], clientes: [], mapeo: [fichaEnMapeo()] });
+  assert.deepEqual(plan.inactivar, []);
+  assert.equal(plan.errores.length, 1);
+  assert.match(plan.errores[0].motivo, /fuente de clientes/);
+  assert.equal(plan.errores[0].categoria, 'datos');
+});
+
+test('sin nada que inactivar, la falta de fuente no se reporta como error', () => {
+  // El freno se reporta cuando FRENA algo. Reportarlo en cada pasada sin
+  // candidatos dejaria el barrido permanentemente "con errores" ante el panel
+  // de #230 -- y a las 24h empezaria a mandar el correo diario de una averia
+  // que no existe.
+  const plan = planificarContactos({ prospectos: [PROSPECTO], clientes: [], mapeo: [] });
+  assert.deepEqual(plan.errores, []);
+});
+
+test('sin fuente de clientes, crear y actualizar siguen aplicandose', () => {
+  // La caida de Operam no puede parar la sincronizacion de prospectos: eso ya
+  // esta fijado desde #228 y aqui solo se comprueba que el freno no lo rompa.
+  const plan = planificarContactos({ prospectos: [PROSPECTO], clientes: [], mapeo: [] });
+  assert.equal(plan.crear.length, 1);
+});
+
+test('un mapeo pequeno no dispara el tope aunque desaparezca entero', () => {
+  // Con cuatro fichas, "el 20%" es menos de una: sin un piso absoluto, el
+  // arranque del sistema no podria inactivar nunca nada.
+  const plan = planificarContactos({
+    prospectos: [], clientes: [CLIENTE_VIVO], mapeo: mapeoDeProspectos(4),
+  });
+  assert.equal(plan.inactivar.length, 4);
+  assert.deepEqual(plan.errores, []);
 });

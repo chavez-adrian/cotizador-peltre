@@ -38,7 +38,7 @@ const ENTRADA = {
 test('lo guardado se recupera con su resourceName, etag y huella', async () => {
   await store.guardar(ENTRADA);
   const mapeo = await store.listar();
-  assert.deepEqual(mapeo, [ENTRADA]);
+  assert.deepEqual(mapeo, [{ ...ENTRADA, inactivoDesde: null }]);
 });
 
 test('guardar dos veces el mismo celular corrige la ficha, no la duplica', async () => {
@@ -53,4 +53,26 @@ test('guardar dos veces el mismo celular corrige la ficha, no la duplica', async
 
 test('sin nada guardado el mapeo esta vacio, no falla', async () => {
   assert.deepEqual(await store.listar(), []);
+});
+
+// --- La marca de inactiva (#231) ---
+
+test('marcar inactiva una ficha conserva todo lo demas: nada se borra', async () => {
+  await store.guardar(ENTRADA);
+  await store.marcarInactivo('5512345678', new Date('2026-08-21T12:00:00Z'));
+  const [fila] = await store.listar();
+  assert.equal(fila.inactivoDesde, '2026-08-21T12:00:00.000Z');
+  assert.equal(fila.resourceName, 'people/c1');
+  assert.equal(fila.huella, 'h1');
+});
+
+test('volver a escribir la ficha la reactiva: la marca se limpia sola', async () => {
+  // La reactivacion no necesita un metodo propio: si la ficha se volvio a
+  // escribir es porque su origen volvio, y una ficha con respaldo no puede
+  // quedarse marcada como inactiva.
+  await store.guardar(ENTRADA);
+  await store.marcarInactivo('5512345678', new Date('2026-08-21T12:00:00Z'));
+  await store.guardar({ ...ENTRADA, huella: 'h2' });
+  const [fila] = await store.listar();
+  assert.equal(fila.inactivoDesde, null);
 });

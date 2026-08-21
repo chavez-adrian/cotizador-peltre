@@ -72,6 +72,18 @@ test('siguienteEstado: los errores se clasifican al persistirse, para que el pan
   assert.deepEqual(estado.errores.map(e => e.categoria), ['autorizacion', 'datos']);
 });
 
+test('siguienteEstado: un error que YA viene clasificado conserva su categoria', () => {
+  // El tope de inactivacion (#231) no lo produce Google: es el propio plan el
+  // que sabe que es un problema de datos, y clasificarlo por el texto de su
+  // motivo seria adivinar (no trae codigo HTTP ni nada que la tabla reconozca).
+  const resumen = {
+    omitido: null, creados: 0, actualizados: 0, inactivados: 0,
+    errores: [{ motivo: 'tope de inactivacion: 20 de 20 fichas...', categoria: 'datos' }],
+  };
+  const estado = siguienteEstado(null, resumen, new Date('2026-08-21T12:00:00Z'));
+  assert.equal(estado.errores[0].categoria, 'datos');
+});
+
 test('siguienteEstado: un barrido omitido por falta de credenciales no es una corrida real, no hay nada que persistir (aunque ya hubiera estado previo)', () => {
   const previo = { ...estadoVacio(), ultimaCorrida: '2026-08-20T00:00:00.000Z' };
   const resumen = { omitido: 'sin credenciales', creados: 0, actualizados: 0, inactivados: 0, errores: [] };

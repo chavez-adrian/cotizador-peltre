@@ -28,6 +28,12 @@ const originalFetch = globalThis.fetch;
 function mockFetchByUrl(handlers) {
   globalThis.fetch = async (url, opts) => {
     const u = String(url);
+    // CANDADO ADR-0013, en el unico lugar donde se puede medir de verdad: la
+    // red. Nada se borra NUNCA, y el permiso concedido SI incluye el borrado.
+    // Si algun dia sale un DELETE hacia Google, cae la suite entera.
+    if ((opts?.method || 'GET').toUpperCase() === 'DELETE') {
+      throw new Error('DELETE prohibido (ADR-0013): ' + u);
+    }
     for (const [pat, fn] of Object.entries(handlers)) {
       if (u.includes(pat)) return fn(u, opts);
     }
@@ -90,12 +96,51 @@ function conexionesFalsas(existentes = [], estado = {}) {
   };
 }
 
+// Los grupos de contactos (#231): la marca de inactivo es una membresia en un
+// grupo propio. `gruposExistentes` permite montar la libreta que YA tiene el
+// grupo creado; el fake registra las creaciones y las membresias modificadas.
+//
+// El orden importa: la URL de members:modify contiene '/contactGroups', y el
+// mock casa por substring EN ORDEN DE INSERCION.
+function gruposFalsos(estado, gruposExistentes = []) {
+  estado.gruposCreados = [];
+  estado.membresias = [];
+  estado.listasDeGrupos = 0;
+  const grupos = [
+    { resourceName: 'contactGroups/myContacts', name: 'myContacts' },
+    ...gruposExistentes,
+  ];
+  return {
+    'members:modify': (u, opts) => {
+      const body = JSON.parse(opts.body);
+      estado.membresias.push({
+        grupo: u.match(/contactGroups\/[^/]+/)[0],
+        agrega: body.resourceNamesToAdd || [],
+        quita: body.resourceNamesToRemove || [],
+      });
+      return jsonResponse({ resourceNames: [...(body.resourceNamesToAdd || [])] });
+    },
+    '/contactGroups': (u, opts) => {
+      if ((opts?.method || 'GET') === 'GET') {
+        estado.listasDeGrupos += 1;
+        return jsonResponse({ contactGroups: grupos });
+      }
+      const { name } = JSON.parse(opts.body).contactGroup;
+      const nuevo = { resourceName: `contactGroups/g${grupos.length}`, name };
+      estado.gruposCreados.push(name);
+      grupos.push(nuevo);
+      return jsonResponse(nuevo);
+    },
+  };
+}
+
 // Libreta de Google de mentira: acumula lo creado y responde como la People API.
-function libretaFalsa({ fallaEn = null, demora = false, clientes = [], operam = {}, existentes = [] } = {}) {
+function libretaFalsa({ fallaEn = null, demora = false, clientes = [], operam = {}, existentes = [], gruposExistentes = [] } = {}) {
   const estado = { creados: [], actualizados: [], tokens: 0, enVuelo: 0, maxEnVuelo: 0, intentos: 0, operam };
   const handlers = {
     ...operamFalso(clientes, operam),
     ...conexionesFalsas(existentes, estado),
+    ...gruposFalsos(estado, gruposExistentes),
     ':updateContact': (u, opts) => {
       const body = JSON.parse(opts.body);
       estado.actualizados.push({ url: u, body });
@@ -557,6 +602,114 @@ test('si la libreta no se puede leer, la pasada NO crea fichas a ciegas', async 
   assert.equal(resumen.omitido, 'libreta ilegible');
   assert.equal(resumen.errores.length, 1, 'el motivo tiene que quedar reportado');
   assert.deepEqual(leerMapeo(), []);
+});
+
+// --- Lo que pierde respaldo deja de actualizarse, pero no desaparece (#231) ---
+//
+// La fuente de clientes va SIEMPRE poblada en esta seccion: vacia frena la
+// inactivacion a proposito (no hay evidencia de desaparicion), y sin ella estas
+// pruebas mediria el freno en vez de la regla.
+const HUERFANA = {
+  celular10: '5599990000', resourceName: 'people/c5', etag: 'e5',
+  clase: 'propio', huella: 'de-una-pasada-vieja',
+};
+
+test('una ficha propia sin respaldo pasa al grupo Inactivo, y no se borra', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([HUERFANA], null, 2));
+  const { handlers, estado } = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl(handlers);
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.inactivados, 1);
+  assert.deepEqual(estado.membresias, [{
+    grupo: 'contactGroups/g1', agrega: ['people/c5'], quita: [],
+  }]);
+  const fila = leerMapeo().find(m => m.celular10 === '5599990000');
+  assert.ok(fila, 'la ficha sigue en el mapeo: nada se borra');
+  assert.equal(fila.resourceName, 'people/c5', 'conserva su contacto, y con el su nombre');
+  assert.ok(fila.inactivoDesde, 'queda marcada con la fecha en que perdio respaldo');
+});
+
+test('el grupo Inactivo se crea UNA vez y se reusa si ya existe', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([HUERFANA], null, 2));
+  const yaExiste = { resourceName: 'contactGroups/viejo', name: 'Cotizador inactivos' };
+  const { handlers, estado } = libretaFalsa({ clientes: [CLIENTE_OPERAM], gruposExistentes: [yaExiste] });
+  mockFetchByUrl(handlers);
+
+  await barrerContactosGoogle();
+
+  assert.deepEqual(estado.gruposCreados, [], 'crear uno con nombre repetido da 409');
+  assert.equal(estado.membresias[0].grupo, 'contactGroups/viejo');
+});
+
+test('una ficha ya inactiva no se vuelve a etiquetar en la pasada siguiente', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([HUERFANA], null, 2));
+  const primera = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl(primera.handlers);
+  await barrerContactosGoogle();
+
+  const segunda = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl(segunda.handlers);
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.inactivados, 0);
+  assert.equal(resumen.actualizados, 0, 'una ficha inactiva deja de recibir actualizaciones');
+  assert.deepEqual(segunda.estado.membresias, []);
+});
+
+test('si el origen reaparece, la ficha sale del grupo Inactivo y vuelve a actualizarse', async () => {
+  // La huerfana es el celular del PROSPECTO que prospectos.json ya tiene: en
+  // esta pasada su origen esta vivo otra vez.
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([{
+    ...HUERFANA, celular10: '5512345678', inactivoDesde: '2026-08-01T00:00:00.000Z',
+  }], null, 2));
+  const { handlers, estado } = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl(handlers);
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.actualizados, 1);
+  assert.deepEqual(estado.membresias, [{
+    grupo: 'contactGroups/g1', agrega: [], quita: ['people/c5'],
+  }]);
+  assert.equal(estado.actualizados[0].body.names[0].givenName, 'Laura Mendez - Cocinas del Valle');
+  assert.equal(leerMapeo().find(m => m.celular10 === '5512345678').inactivoDesde, null);
+});
+
+test('el tope de inactivacion llega al resumen como error, no como fichas etiquetadas', async () => {
+  const muchas = Array.from({ length: 20 }, (_, i) => ({
+    ...HUERFANA, celular10: `55${10000000 + i}`, resourceName: `people/p${i}`,
+  }));
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify(muchas, null, 2));
+  const { handlers, estado } = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl(handlers);
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.inactivados, 0);
+  assert.deepEqual(estado.membresias, [], 'ni una sola escritura de membresia');
+  assert.equal(resumen.errores.length, 1);
+  assert.match(resumen.errores[0].motivo, /tope de inactivacion/);
+  assert.equal(resumen.errores[0].categoria, 'datos');
+});
+
+test('un fallo al etiquetar una ficha no marca la ficha ni tumba la pasada', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([HUERFANA], null, 2));
+  const { handlers, estado } = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl({
+    ...handlers,
+    'members:modify': () => jsonResponse({ error: { code: 500, message: 'boom' } }, 500),
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.inactivados, 0);
+  assert.equal(resumen.errores.length, 1);
+  assert.equal(resumen.errores[0].celular10, '5599990000');
+  assert.equal(leerMapeo().find(m => m.celular10 === '5599990000').inactivoDesde, null,
+    'sin la etiqueta en Google, la ficha no puede quedar marcada: la proxima pasada reintenta');
+  assert.equal(estado.creados.length, 3, 'lo demas de la pasada se aplico igual');
 });
 
 test('tras un fallo de la libreta, la siguiente pasada corre normal', async () => {
