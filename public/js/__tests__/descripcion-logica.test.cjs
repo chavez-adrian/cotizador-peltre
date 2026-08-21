@@ -92,12 +92,12 @@ test('una cotizacion con descripciones dentro del limite pasa', () => {
   assert.equal(validarDescripcionesCotizacion(undefined).ok, true);
 });
 
-// === Diseño de calca: la base es el nombre CON su numero (#221, spec #218) ===
+// === Diseno de calca: la base es el nombre CON su numero (#221, spec #218) ===
 // El editor de partida siempre recibe como base nombreVisibleProducto(product.name),
-// y en una calca ese nombre ya trae el sufijo "Diseño N" (#220). Vaciar la
+// y en una calca ese nombre ya trae el sufijo "Diseno N" (#220). Vaciar la
 // descripcion tiene que regresar ahi y no al nombre pelon del catalogo: una
 // partida sin numero es indistinguible de la otra en el documento y en Operam.
-test('vaciar la descripcion de un diseño regresa al nombre del catalogo CON su numero', async () => {
+test('vaciar la descripcion de un diseno regresa al nombre del catalogo CON su numero', async () => {
   const { productoCalca } = await import('../calcas-logica.js');
   const { nombreVisibleProducto } = await import('../cotizar-logica.js');
   const ficha = {
@@ -111,5 +111,7 @@ test('vaciar la descripcion de un diseño regresa al nombre del catalogo CON su 
 
   assert.equal(r.ok, true);
   assert.equal(r.editada, false);
-  assert.equal(r.descripcion, 'Calca vitrificable chica (25 cm2) 1 tinta - Diseño 2');
+  // El rotulo visible lleva enie; va escapada para no romper el ASCII estricto
+  // del archivo (CLAUDE.md), que era ASCII puro antes de esta prueba.
+  assert.equal(r.descripcion, 'Calca vitrificable chica (25 cm2) 1 tinta - Dise\u00f1o 2');
 });

@@ -519,21 +519,21 @@ test('#181-11: el nombre del cliente se escapa contra XSS', () => {
   assert.match(html, /&lt;script&gt;/);
 });
 
-// === #221: varios diseños de calca sobreviven el borrador (spec #218) ===
+// === #221: varios disenos de calca sobreviven el borrador (spec #218) ===
 // El borrador guarda el codigo del CATALOGO (la llave del carrito no se
-// serializa, #220), asi que sin el numero de diseño dos partidas del mismo
+// serializa, #220), asi que sin el numero de diseno dos partidas del mismo
 // codigo volvian fusionadas en una sola.
 
-// Dos diseños del mismo tipo, como los deja agregarCalca: mismo codigo, mismo
+// Dos disenos del mismo tipo, como los deja agregarCalca: mismo codigo, mismo
 // precio, distinto numero.
 const ENTRADA_CALCA_2 = {
   codigo: 'CAL2050S',
   cantidad: 120,
   diseno: 2,
-  descripcion: 'Calca vitrificable mediana (50 cm2) 2 tintas - Diseño 2: logo frontal',
+  descripcion: 'Calca vitrificable mediana (50 cm2) 2 tintas - Dise\u00f1o 2: logo frontal',
   product: {
     key: 'CAL2050S-2',
-    name: 'Calca vitrificable mediana (50 cm2) 2 tintas - Diseño 2',
+    name: 'Calca vitrificable mediana (50 cm2) 2 tintas - Dise\u00f1o 2',
     model: 'CAL2050S',
     prices: { Menudeo: null, M100: 35.5, M350: 26.1 },
     esCalca: true,
@@ -541,7 +541,7 @@ const ENTRADA_CALCA_2 = {
   },
 };
 
-test('#221-5: el numero de diseño sobrevive serializar -> deserializar', () => {
+test('#221-5: el numero de diseno sobrevive serializar -> deserializar', () => {
   const borrador = serializarBorrador({
     carrito: [{ ...ENTRADA_CALCA, diseno: 1 }, ENTRADA_CALCA_2],
     ahora: AHORA,
@@ -551,7 +551,7 @@ test('#221-5: el numero de diseño sobrevive serializar -> deserializar', () => 
   assert.deepEqual(leido.carrito.map(l => l.codigo), ['CAL2050S', 'CAL2050S']);
 });
 
-test('#221-6: dos diseños del mismo codigo restauran dos lineas separadas, no una fusionada', () => {
+test('#221-6: dos disenos del mismo codigo restauran dos lineas separadas, no una fusionada', () => {
   const borrador = serializarBorrador({
     carrito: [{ ...ENTRADA_CALCA, diseno: 1 }, ENTRADA_CALCA_2],
     ahora: AHORA,
@@ -564,25 +564,25 @@ test('#221-6: dos diseños del mismo codigo restauran dos lineas separadas, no u
   assert.deepEqual(lineas.map(l => l.diseno), [1, 2]);
   // El nombre lo rearma el catalogo de hoy con el numero guardado: es lo que
   // hereda la descripcion por omision, el documento y el quote.
-  assert.match(lineas[0].product.name, /Diseño 1$/);
-  assert.match(lineas[1].product.name, /Diseño 2$/);
+  assert.match(lineas[0].product.name, /Dise\u00f1o 1$/);
+  assert.match(lineas[1].product.name, /Dise\u00f1o 2$/);
   assert.notEqual(lineas[0].product.key, lineas[1].product.key, 'con la misma llave se pisarian en el carrito');
-  // La descripcion que el vendedor le escribio al segundo diseño no se pierde.
+  // La descripcion que el vendedor le escribio al segundo diseno no se pierde.
   assert.equal(lineas[1].descripcion, ENTRADA_CALCA_2.descripcion);
 });
 
-test('#221-7: una calca guardada sin diseño (antes de #220) restaura como Diseño 1', () => {
+test('#221-7: una calca guardada sin diseno (antes de #220) restaura como Diseno 1', () => {
   const borrador = serializarBorrador({ carrito: [ENTRADA_CALCA], ahora: AHORA });
 
   const { lineas } = reResolverCarrito(borrador, CATALOGO);
 
   assert.equal(lineas.length, 1);
   assert.equal(lineas[0].diseno, 1);
-  assert.match(lineas[0].product.name, /Diseño 1$/);
+  assert.match(lineas[0].product.name, /Dise\u00f1o 1$/);
   assert.equal(lineas[0].product.esCalca, true);
 });
 
-test('#221-8: un borrador guardado antes de #221 (sin diseño) sigue siendo valido', () => {
+test('#221-8: un borrador guardado antes de #221 (sin diseno) sigue siendo valido', () => {
   const viejo = { v: VERSION_BORRADOR, actualizado: AHORA, carrito: [{ codigo: 'CAL2050S', cantidad: 100 }] };
   const leido = deserializarBorrador(JSON.stringify(viejo));
   assert.notEqual(leido, null, 'agregar un campo opcional no invalida los borradores en el telefono');

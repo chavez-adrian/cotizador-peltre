@@ -24,7 +24,7 @@ export const RESTAURACION = {
 };
 
 // Una linea del borrador guarda la INTENCION del vendedor -- codigo, cantidad,
-// descuento, descripcion editada y, en la calca, el numero de diseño -- y nada
+// descuento, descripcion editada y, en la calca, el numero de diseno -- y nada
 // mas. El precio y el resto de la ficha se re-resuelven contra el catalogo
 // vigente al restaurar.
 function normalizarLinea(linea) {
@@ -32,11 +32,11 @@ function normalizarLinea(linea) {
   const cantidad = Number(linea && linea.cantidad);
   if (!codigo || !Number.isFinite(cantidad) || cantidad <= 0) return null;
   const salida = { codigo, cantidad };
-  // Numero de diseño de la calca (#221): sin el, dos partidas del mismo codigo
+  // Numero de diseno de la calca (#221): sin el, dos partidas del mismo codigo
   // volvian fusionadas en una -- la llave del carrito NO se serializa (#220) y
   // el codigo del catalogo es el mismo en las dos. Es opcional a proposito: un
   // borrador escrito antes de este cambio sigue siendo valido y restaura como
-  // Diseño 1, asi que la version del formato no sube.
+  // Diseno 1, asi que la version del formato no sube.
   const diseno = Number(linea.diseno);
   if (Number.isInteger(diseno) && diseno > 0) salida.diseno = diseno;
   const descuento = Number(linea.descuento);
@@ -142,8 +142,8 @@ export function productoSinCatalogo(codigo) {
 // null cuando el codigo ya no existe. Es el UNICO camino de "codigo guardado ->
 // producto vigente": lo comparten la restauracion del borrador (#179) y Cargar
 // del historial (#83/#104), que antes resolvia la calca por su cuenta.
-// El numero de diseño (#221) solo lo usa la calca: es lo que arma su llave del
-// carrito y el sufijo "Diseño N" de su nombre. Ausente = Diseño 1, que es como
+// El numero de diseno (#221) solo lo usa la calca: es lo que arma su llave del
+// carrito y el sufijo "Diseno N" de su nombre. Ausente = Diseno 1, que es como
 // vuelve una calca guardada antes de #220 (sin migracion).
 export function resolverProductoDelCatalogo(codigo, catalogo, numeroDiseno = 1) {
   if (!codigo || !catalogo) return null;
@@ -177,9 +177,9 @@ export function reResolverCarrito(borrador, catalogo) {
   const codigosSinCatalogo = [];
   if (!borrador || !catalogo) return { lineas, codigosSinCatalogo };
   for (const linea of borrador.carrito || []) {
-    // El numero de diseño va y vuelve (#221): entra a resolver el producto (que
+    // El numero de diseno va y vuelve (#221): entra a resolver el producto (que
     // lo necesita para la llave y el nombre) y sale en la linea, porque quien
-    // rehidrata el carrito arma la llave con codigo + diseño.
+    // rehidrata el carrito arma la llave con codigo + diseno.
     const diseno = Number(linea.diseno) || 1;
     const product = resolverProductoDelCatalogo(linea.codigo, catalogo, diseno);
     if (!product) codigosSinCatalogo.push(linea.codigo);
