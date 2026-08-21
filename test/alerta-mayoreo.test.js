@@ -202,3 +202,56 @@ test('#236: el caso minimo (nombre, apellido y celular) sale como vcf valido con
     'END:VCARD',
   ]);
 });
+
+// --- #237: TITLE: (cargo) y URL: (sitio web/redes) en la vCard ---
+
+test('#237: vcardDeProspecto emite TITLE: con el cargo y URL: con el sitio web cuando ambos vienen', () => {
+  const vcf = vcardDeProspecto(PROSPECTO_COMPLETO);
+  assert.match(vcf, /TITLE:Compras/);
+  assert.match(vcf, /URL:@hotelazul/);
+});
+
+test('#237: sin cargo, TITLE: se omite por completo', () => {
+  const vcf = vcardDeProspecto({ ...PROSPECTO_COMPLETO, cargo: undefined });
+  assert.ok(!vcf.includes('TITLE:'));
+});
+
+test('#237: sin sitio web, URL: se omite por completo', () => {
+  const vcf = vcardDeProspecto({ ...PROSPECTO_COMPLETO, web: undefined });
+  assert.ok(!vcf.includes('URL:'));
+});
+
+test('#237: TITLE: y URL: conviven con N:, FN:, TEL, EMAIL y ORG en la misma ficha sin desplazarlos', () => {
+  const vcf = vcardDeProspecto({ ...PROSPECTO_COMPLETO, nombrePila: 'Juan', apellido: 'Perez' });
+  const lineas = vcf.split('\r\n');
+  assert.ok(lineas.includes('N:Perez;Juan;;;'));
+  assert.ok(lineas.includes('FN:Juan Perez'));
+  assert.ok(lineas.includes('TEL;TYPE=CELL:+525512345678'));
+  assert.ok(lineas.includes('EMAIL:juan@hotelazul.mx'));
+  assert.ok(lineas.includes('ORG:Hotel Azul'));
+  assert.ok(lineas.includes('TITLE:Compras'));
+  assert.ok(lineas.includes('URL:@hotelazul'));
+});
+
+test('#237: TITLE: y URL: escapan los reservados de vCard igual que los demas campos', () => {
+  const vcf = vcardDeProspecto({
+    nombre: 'Juan Perez', celular: '+525512345678',
+    cargo: 'Gerente; Compras, Norte', web: 'https://x.com/hotel;azul,mx',
+  });
+  const lineaTitle = vcf.split('\r\n').find(l => l.startsWith('TITLE:'));
+  const lineaUrl = vcf.split('\r\n').find(l => l.startsWith('URL:'));
+  assert.equal(lineaTitle, 'TITLE:Gerente\\; Compras\\, Norte');
+  assert.equal(lineaUrl, 'URL:https://x.com/hotel\\;azul\\,mx');
+});
+
+test('#237: el caso minimo (sin cargo ni sitio web) sigue produciendo una ficha valida sin TITLE: ni URL:', () => {
+  const vcf = vcardDeProspecto({ nombre: 'Laura Mendoza', nombrePila: 'Laura', apellido: 'Mendoza', celular: '+525512345678' });
+  assert.deepEqual(vcf.split('\r\n'), [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    'N:Mendoza;Laura;;;',
+    'FN:Laura Mendoza',
+    'TEL;TYPE=CELL:+525512345678',
+    'END:VCARD',
+  ]);
+});
