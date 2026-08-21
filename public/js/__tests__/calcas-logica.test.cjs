@@ -124,13 +124,13 @@ test('#91-10: precioCalca tolera ficha o tier ausente -> null', () => {
   assert.strictEqual(precioCalca(CAL1050, undefined), null);
 });
 
-// Sin numero de diseno explicito la partida es el Diseno 1 (#220): es lo que
+// Sin numero de diseño explicito la partida es el Diseño 1 (#220): es lo que
 // vale para una calca guardada antes del cambio, que se lee sin migrarla.
 test('#91-11: productoCalca arma la entrada del carrito marcada como calca', () => {
   const p = productoCalca(CAL1050);
   assert.strictEqual(p.key, llaveDiseno('CAL1050', 1));
   assert.strictEqual(p.diseno, 1);
-  assert.strictEqual(p.name, 'Calca vitrificable mediana (50 cm2) 1 tinta - Diseno 1');
+  assert.strictEqual(p.name, 'Calca vitrificable mediana (50 cm2) 1 tinta - Diseño 1');
   assert.strictEqual(p.esCalca, true);
   assert.deepStrictEqual(p.prices, CAL1050.prices);
   assert.strictEqual(p.weight_kg, undefined, 'la calca va aplicada sobre la pieza: no pesa aparte');
@@ -283,7 +283,7 @@ test('#220-2: el numero de diseno es el maximo historico + 1, no el conteo de li
   assert.strictEqual(siguienteNumeroDiseno(sinElPrimero), 4);
 });
 
-// El caso que el carrito vivo no puede contestar solo: borrar el diseno MAS
+// El caso que el carrito vivo no puede contestar solo: borrar el diseño MAS
 // ALTO lo saca de los items, y sin memoria de lo ya asignado el siguiente
 // reciclaria su numero.
 test('#220-2b: borrar el diseno mas alto tampoco libera su numero', () => {
@@ -326,7 +326,7 @@ test('#220-7: productoCalca numera el diseno en el nombre y conserva el codigo d
   assert.strictEqual(p.key, llaveDiseno('CAL1025S', 2));
   assert.strictEqual(p.model, 'CAL1025S', 'el codigo que se serializa es el del catalogo');
   assert.strictEqual(p.diseno, 2);
-  assert.strictEqual(p.name, 'Calca vitrificable chica (25 cm2) 1 tinta - Diseno 2');
+  assert.strictEqual(p.name, 'Calca vitrificable chica (25 cm2) 1 tinta - Diseño 2');
   assert.strictEqual(p.esCalca, true);
   assert.deepStrictEqual(p.prices, CAL1025S.prices);
   assert.strictEqual(p.weight_kg, undefined);
@@ -359,7 +359,7 @@ test('#220-10: las piezas de varios disenos siguen fuera del volumen que fija la
 
 // === #221: la llave del carrito se reconstruye al reabrir y al restaurar ===
 // app.js no es importable en Node, asi que la regla que rehidrata el carrito
-// (que codigo + diseno dan la llave, y que un item sin diseno es el Diseno 1)
+// (que codigo + diseno dan la llave, y que un item sin diseno es el Diseño 1)
 // vive aqui, donde si se puede afirmar.
 
 test('#221-1: dos items del mismo codigo con distinto diseno dan llaves distintas', () => {
@@ -370,7 +370,7 @@ test('#221-1: dos items del mismo codigo con distinto diseno dan llaves distinta
   assert.strictEqual(codigoDeLlave(dos), 'CAL1025S');
 });
 
-test('#221-2: un item de calca sin diseno se rehidrata como Diseno 1, sin migracion', () => {
+test('#221-2: un item de calca sin diseno se rehidrata como Diseño 1, sin migracion', () => {
   assert.strictEqual(llaveCarrito('CAL1025S', undefined), llaveCarrito('CAL1025S', 1));
   assert.strictEqual(llaveCarrito('CAL1025S', null), llaveCarrito('CAL1025S', 1));
   assert.strictEqual(llaveCarrito('CAL1025S', 0), llaveCarrito('CAL1025S', 1));

@@ -530,10 +530,10 @@ const ENTRADA_CALCA_2 = {
   codigo: 'CAL2050S',
   cantidad: 120,
   diseno: 2,
-  descripcion: 'Calca vitrificable mediana (50 cm2) 2 tintas - Diseno 2: logo frontal',
+  descripcion: 'Calca vitrificable mediana (50 cm2) 2 tintas - Dise\u00f1o 2: logo frontal',
   product: {
     key: 'CAL2050S-2',
-    name: 'Calca vitrificable mediana (50 cm2) 2 tintas - Diseno 2',
+    name: 'Calca vitrificable mediana (50 cm2) 2 tintas - Dise\u00f1o 2',
     model: 'CAL2050S',
     prices: { Menudeo: null, M100: 35.5, M350: 26.1 },
     esCalca: true,
@@ -564,8 +564,8 @@ test('#221-6: dos disenos del mismo codigo restauran dos lineas separadas, no un
   assert.deepEqual(lineas.map(l => l.diseno), [1, 2]);
   // El nombre lo rearma el catalogo de hoy con el numero guardado: es lo que
   // hereda la descripcion por omision, el documento y el quote.
-  assert.match(lineas[0].product.name, /Diseno 1$/);
-  assert.match(lineas[1].product.name, /Diseno 2$/);
+  assert.match(lineas[0].product.name, /Dise\u00f1o 1$/);
+  assert.match(lineas[1].product.name, /Dise\u00f1o 2$/);
   assert.notEqual(lineas[0].product.key, lineas[1].product.key, 'con la misma llave se pisarian en el carrito');
   // La descripcion que el vendedor le escribio al segundo diseno no se pierde.
   assert.equal(lineas[1].descripcion, ENTRADA_CALCA_2.descripcion);
@@ -578,7 +578,7 @@ test('#221-7: una calca guardada sin diseno (antes de #220) restaura como Diseno
 
   assert.equal(lineas.length, 1);
   assert.equal(lineas[0].diseno, 1);
-  assert.match(lineas[0].product.name, /Diseno 1$/);
+  assert.match(lineas[0].product.name, /Dise\u00f1o 1$/);
   assert.equal(lineas[0].product.esCalca, true);
 });
 

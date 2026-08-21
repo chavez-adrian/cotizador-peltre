@@ -113,5 +113,5 @@ test('vaciar la descripcion de un diseno regresa al nombre del catalogo CON su n
   assert.equal(r.editada, false);
   // El rotulo visible lleva enie; va escapada para no romper el ASCII estricto
   // del archivo (CLAUDE.md), que era ASCII puro antes de esta prueba.
-  assert.equal(r.descripcion, 'Calca vitrificable chica (25 cm2) 1 tinta - Diseno 2');
+  assert.equal(r.descripcion, 'Calca vitrificable chica (25 cm2) 1 tinta - Dise\u00f1o 2');
 });

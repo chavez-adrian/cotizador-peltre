@@ -1394,10 +1394,6 @@ body {
     grid-area: qty;
     flex-wrap: wrap;
     justify-content: flex-start;
-    /* La celda lleva .col-num (text-align:right) y su etiqueta ocupa el ancho
-       completo: sin este left, "Cant." se pegaba a la derecha mientras su valor
-       quedaba a la izquierda. Las otras tres celdas ya lo reciben abajo. */
-    text-align: left;
   }
 
   .cart-line-price,
