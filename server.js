@@ -51,6 +51,8 @@ import { validarCP } from './lib/validar-cp.js';
 import { buscarCP } from './lib/codigos-postales.js';
 import { leerArchivoSync } from './lib/fs-reintento.js';
 import { enviarAlertaMayoreo } from './lib/alerta-mayoreo-io.js';
+import { barrerContactosGoogle } from './lib/contactos-io.js';
+import { credencialesConfiguradas as googleConfigurado } from './lib/google-contactos.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -3029,5 +3031,33 @@ if (isMain) {
     .catch(err => console.error('[dedup] barrido periodico fallo:', err.message));
   barrer();
   setInterval(barrer, 3600 * 1000).unref();
+
+  // Sincronizacion de prospectos a la libreta de Contactos de Google (spec #224,
+  // ticket #227): quien atiende el WhatsApp comercial ve el nombre de quien le
+  // escribe en vez de un numero pelado. Va aqui y NO en las rutas de alta a
+  // proposito: cero ganchos en las ocho rutas que capturan prospectos o
+  // clientes, para que un fallo de Google jamas altere una respuesta del
+  // cotizador ni haga esperar al vendedor. La frescura se consigue con la
+  // frecuencia del barrido, no interceptando escrituras.
+  // Los prospectos viven en Neon y son baratos de leer: cada 15 minutos. Los
+  // clientes de Operam (#228) heredaran el ritmo horario que ya cachea el
+  // indice de telefonos, no este.
+  // Como el barrido de dedup, ASUME UNA SOLA INSTANCIA (el lock del barrido
+  // vive en memoria, en lib/contactos-io.js).
+  if (!googleConfigurado()) {
+    // Aviso UNA VEZ al arrancar, como el de turnstile: sin las tres GOOGLE_* el
+    // barrido no arranca y nada mas del cotizador se entera.
+    console.warn('[contactos-google] Faltan GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN: la sincronizacion de contactos no corre');
+  } else {
+    const barrerContactos = () => barrerContactosGoogle()
+      .then(r => {
+        if (r.creados || r.actualizados || r.errores.length) {
+          console.log(`[contactos-google] creados=${r.creados} actualizados=${r.actualizados} errores=${r.errores.length}`);
+        }
+      })
+      .catch(err => console.error('[contactos-google] barrido periodico fallo:', err.message));
+    barrerContactos();
+    setInterval(barrerContactos, 15 * 60 * 1000).unref();
+  }
 }
 export { app, cargarListasPrecios };

@@ -6,6 +6,7 @@ data/htmls/
 data/shopify-images-raw.json
 .claude/worktrees/
 data/prospectos.json
+data/contactos-google.json
 backups/
 .temporales/
 data/export-bitrix/
