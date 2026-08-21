@@ -54,6 +54,8 @@ import { leerArchivoSync } from './lib/fs-reintento.js';
 import { enviarAlertaMayoreo } from './lib/alerta-mayoreo-io.js';
 import { barrerContactosGoogle } from './lib/contactos-io.js';
 import { credencialesConfiguradas as googleConfigurado } from './lib/google-contactos.js';
+import { registrarBarrido as registrarBarridoContactos } from './lib/contactos-observabilidad-io.js';
+import { listarTodos as listarBarridosContactos } from './lib/contactos-observabilidad-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -1406,6 +1408,17 @@ app.get('/api/admin/higiene-clientes-genericos', authMiddleware, adminMiddleware
   if (rows === null) return res.json({ filas: [], sinDb: true });
   const cotizaciones = await cotStore.listar();
   res.json({ filas: construirReporteHigiene(rows.rows, cotizaciones, new Date()), sinDb: false });
+});
+
+// Observabilidad de los barridos de sincronizacion de contactos a Google
+// (issue #230, padre #224): ultima corrida por barrido, totales de la ultima
+// pasada y sus errores clasificados en autorizacion/datos/red/otro -- el caso
+// concreto que hay que poder ver es una autorizacion revocada, que de otro
+// modo no da ningun sintoma en el cotizador. Sin DB: lista vacia y
+// sinDb:true, mismo patron que el reporte de higiene de arriba.
+app.get('/api/admin/sync-contactos-google', authMiddleware, adminMiddleware, async (_req, res) => {
+  const barridos = await listarBarridosContactos();
+  res.json({ barridos, sinDb: !process.env.DATABASE_URL });
 });
 
 // Reporte de paridad del catalogo Excel vs Operam (issue #130, padre #120, bloqueado
@@ -3059,8 +3072,16 @@ if (isMain) {
     // barrido no arranca y nada mas del cotizador se entera.
     console.warn('[contactos-google] Faltan GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN: la sincronizacion de contactos no corre');
   } else {
+    // Observabilidad (#230): una sola llamada por pasada, en el mismo tick del
+    // barrido. registrarBarridoContactos persiste el resultado y, si hace
+    // falta, manda el correo de aviso -- nunca lanza, asi que no cambia el
+    // try/catch de arriba. Va aqui y no en un setInterval propio: el barrido
+    // ya corre cada 15 min bajo isMain con .unref() (linea de abajo), y eso
+    // ya alcanza para detectar una autorizacion revocada sin agregar un
+    // segundo timer.
     const barrerContactos = () => barrerContactosGoogle()
       .then(r => {
+        registrarBarridoContactos('contactos', r);
         if (r.creados || r.actualizados || r.errores.length) {
           console.log(`[contactos-google] creados=${r.creados} actualizados=${r.actualizados} errores=${r.errores.length}`);
         }
