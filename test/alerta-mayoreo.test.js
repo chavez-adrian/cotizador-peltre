@@ -255,3 +255,98 @@ test('#237: el caso minimo (sin cargo ni sitio web) sigue produciendo una ficha 
     'END:VCARD',
   ]);
 });
+
+// --- #238: NOTE: con el contexto comercial de la captura, etiquetado y fechado ---
+
+// El `cuando` del prospecto de #165 se sustituye por uno en ASCII para poder
+// afirmar la nota completa caracter por caracter sin acentos en el fuente.
+const FECHA_CAPTURA_238 = '2026-08-20T19:30:00.000Z';
+const PROSPECTO_238 = { ...PROSPECTO_COMPLETO, cuando: 'En 3 meses', fechaCaptura: FECHA_CAPTURA_238 };
+
+function notaDe(prospecto) {
+  return vcardDeProspecto(prospecto).split('\r\n').find(l => l.startsWith('NOTE:'));
+}
+
+test('#238: la ficha emite NOTE: con el encabezado fechado y las cuatro lineas de contexto', () => {
+  assert.equal(
+    notaDe(PROSPECTO_238),
+    'NOTE:Mayoreo pp.peltre - 2026-08-20\\nTipo: Otro (Panaderia)\\nPiezas: +350\\nPara: En 3 meses\\nCiudad: Ixtapaluca (CP 56530)',
+  );
+});
+
+test('#238: la fecha de la nota sale del instante inyectado, nunca del reloj', () => {
+  const nota = notaDe({ ...PROSPECTO_238, fechaCaptura: '2019-01-02T03:04:05.000Z' });
+  assert.ok(nota.includes('Mayoreo pp.peltre - 2019-01-02'), nota);
+  assert.ok(!nota.includes(new Date().toISOString().slice(0, 10)), 'el nucleo no debe consultar el reloj');
+});
+
+test('#238: sin fecha inyectada el encabezado sale solo, nunca con un valor inventado', () => {
+  const nota = notaDe({ ...PROSPECTO_238, fechaCaptura: undefined });
+  assert.ok(nota.startsWith('NOTE:Mayoreo pp.peltre\\nTipo: '), nota);
+});
+
+test('#238: la nota usa el mismo formato que el correo: "Otro" con su texto libre y el CP opcional', () => {
+  assert.ok(notaDe(PROSPECTO_238).includes('Tipo: Otro (Panaderia)'));
+  const sinOtro = notaDe({ ...PROSPECTO_238, tipoProyecto: 'Restaurantes', tipoProyectoOtro: '' });
+  assert.ok(sinOtro.includes('Tipo: Restaurantes\\n'), 'sin texto libre la linea de tipo cierra ahi');
+  const sinCp = notaDe({ ...PROSPECTO_238, cp: '' });
+  assert.ok(sinCp.includes('Ciudad: Ixtapaluca'), sinCp);
+  assert.ok(!sinCp.includes('CP'), 'el CP es opcional y sin el no queda un parentesis vacio');
+});
+
+// Cada dato faltante se omite ENTERO: la nota nunca debe decir "Sin dato" (lo
+// que si hace el cuerpo del correo, donde esos campos son obligatorios).
+for (const [campo, etiqueta, rastro] of [
+  ['tipoProyecto', 'Tipo: ', 'Panaderia'],
+  ['cantidadEstimada', 'Piezas: ', '+350'],
+  ['cuando', 'Para: ', 'En 3 meses'],
+  ['ciudad', 'Ciudad: ', 'CP 56530'],
+]) {
+  test(`#238: sin ${campo} su linea se omite entera (nunca "Sin dato") y el resto de la nota sigue`, () => {
+    const nota = notaDe({ ...PROSPECTO_238, [campo]: '' });
+    assert.ok(nota, 'las demas lineas sostienen la nota');
+    assert.ok(!nota.includes(etiqueta), `no debia imprimir "${etiqueta}"`);
+    assert.ok(!nota.includes(rastro), `tampoco el resto de la linea ("${rastro}")`);
+    assert.ok(!nota.includes('Sin dato'), 'la nota omite, no rellena');
+    assert.ok(nota.includes('Mayoreo pp.peltre - 2026-08-20'), 'el encabezado se mantiene');
+  });
+}
+
+test('#238: sin ningun dato de contexto, NOTE: se omite por completo', () => {
+  const vcf = vcardDeProspecto({
+    nombre: 'Laura Mendoza', nombrePila: 'Laura', apellido: 'Mendoza',
+    celular: '+525512345678', fechaCaptura: FECHA_CAPTURA_238,
+  });
+  assert.ok(!vcf.includes('NOTE:'), vcf);
+});
+
+test('#238: el consentimiento de promociones NO viaja en la nota (dato legal, vive en la tarjeta)', () => {
+  const nota = notaDe(PROSPECTO_238);
+  assert.ok(!nota.includes('Promo'));
+  assert.ok(!nota.includes(PROSPECTO_COMPLETO.promos.fecha), 'ni la fecha del consentimiento');
+});
+
+test('#238: los saltos de linea de la nota van escapados: NOTE: es UNA sola linea fisica del vcf', () => {
+  const lineas = vcardDeProspecto(PROSPECTO_238).split('\r\n');
+  assert.equal(lineas.filter(l => l.startsWith('NOTE:')).length, 1);
+  assert.ok(!lineas.some(l => l.startsWith('Tipo: ')), 'ninguna linea de la nota se volvio linea del vcf');
+  assert.ok(lineas.find(l => l.startsWith('NOTE:')).includes('\\n'));
+});
+
+test('#238: NOTE: convive con el resto de la ficha sin desplazar ninguna propiedad', () => {
+  const lineas = vcardDeProspecto({ ...PROSPECTO_238, nombrePila: 'Juan', apellido: 'Perez' }).split('\r\n');
+  assert.equal(lineas[0], 'BEGIN:VCARD');
+  assert.equal(lineas.at(-1), 'END:VCARD');
+  for (const linea of [
+    'VERSION:3.0', 'N:Perez;Juan;;;', 'FN:Juan Perez', 'TEL;TYPE=CELL:+525512345678',
+    'EMAIL:juan@hotelazul.mx', 'ORG:Hotel Azul', 'TITLE:Compras', 'URL:@hotelazul',
+  ]) {
+    assert.ok(lineas.includes(linea), `la ficha perdio "${linea}"`);
+  }
+});
+
+test('#238: la nota escapa los reservados de vCard igual que el resto de la ficha', () => {
+  const nota = notaDe({ ...PROSPECTO_238, ciudad: 'Ixtapaluca, Mex.', cp: '', tipoProyectoOtro: 'Pan; y cafe' });
+  assert.ok(nota.includes('Ciudad: Ixtapaluca\\, Mex.'), nota);
+  assert.ok(nota.includes('Tipo: Otro (Pan\\; y cafe)'), nota);
+});

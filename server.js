@@ -902,9 +902,14 @@ export function _inyectarAlertaMayoreo(fn) { _enviarAlertaMayoreo = fn ?? enviar
 // emitir N: sin adivinar donde parte un nombre completo. Van con
 // capitalizarCampo porque el form es crudo: sin eso la ficha diria
 // "Laura Mendoza" en FN: y "MENDOZA" en N:, el mismo apellido de dos formas.
-function dispararAlertaMayoreo(captura, form) {
+// `fechaCaptura` (issue #238) es el MISMO instante con el que se armo la
+// captura, no uno nuevo: la nota de la vCard lo imprime como fecha de la foto y
+// tiene que coincidir con lo que quedo en la tarjeta (el consentimiento de
+// promociones ya se fecha con ese instante). El nucleo puro nunca lo calcula.
+function dispararAlertaMayoreo(captura, form, fechaCaptura) {
   const d = captura.data || {};
   const prospecto = {
+    fechaCaptura,
     nombre: captura.nombre,
     nombrePila: capitalizarCampo(form.nombre), apellido: capitalizarCampo(form.apellido),
     celular: captura.celular, ciudad: captura.ciudad,
@@ -931,7 +936,8 @@ app.post('/api/prospectos/publico', async (req, res) => {
 
   if (validarMayoreo(form).length) return res.status(400).json({ error: 'Captura incompleta' });
 
-  const captura = buildCapturaMayoreo(form, new Date().toISOString());
+  const fechaCaptura = new Date().toISOString();
+  const captura = buildCapturaMayoreo(form, fechaCaptura);
   // Segundo cinturon: la captura armada tiene que pasar la MISMA validacion que
   // el alta autenticada (#57), no solo la del formulario.
   if (validarProspectoBody(captura)) return res.status(400).json({ error: 'Captura incompleta' });
@@ -957,7 +963,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
   if (clasificacion.tipo === 'cliente') return opaca();
   if (clasificacion.tipo === 'prospecto') {
     await registrarCapturaPublica(clasificacion.prospecto.id, captura);
-    dispararAlertaMayoreo(captura, form);
+    dispararAlertaMayoreo(captura, form, fechaCaptura);
     return opaca();
   }
 
@@ -967,7 +973,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
       celular: captura.celular, nombre: captura.nombre, ciudad: captura.ciudad,
       canal: captura.canal, etapa: 'no_asignado', data: captura.data,
     });
-    dispararAlertaMayoreo(captura, form);
+    dispararAlertaMayoreo(captura, form, fechaCaptura);
   } catch (e) {
     // Carrera contra otra captura del mismo celular: el indice unico gana y esto
     // se vuelve el caso "ya era prospecto". Hacia afuera, la misma respuesta.
@@ -978,7 +984,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
     const dup = await prospectosStore.buscarPorCelular(captura.celular);
     if (dup) {
       await registrarCapturaPublica(dup.id, captura);
-      dispararAlertaMayoreo(captura, form);
+      dispararAlertaMayoreo(captura, form, fechaCaptura);
     }
   }
   return opaca();

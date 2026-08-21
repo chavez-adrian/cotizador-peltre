@@ -199,6 +199,60 @@ test('#236: rama CARRERA contra el indice unico -- los campos separados tambien 
   assert.equal(recibido.apellido, 'Mendoza');
 });
 
+// --- #238: la fecha de captura llega a la alerta, en las 3 ramas ---
+//
+// La nota de la vCard imprime esa fecha como "foto del momento", y el nucleo
+// puro nunca consulta el reloj: el instante lo inyecta este endpoint. Tiene que
+// ser el MISMO con el que se armo la captura, no uno nuevo -- por eso se afirma
+// contra la fecha del consentimiento de promociones, que buildCapturaMayoreo
+// sella con ese instante y es el unico rastro observable de el desde afuera.
+
+function afirmarFechaCaptura(recibido) {
+  assert.match(recibido.fechaCaptura, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, 'la fecha llega como instante ISO');
+  assert.equal(recibido.fechaCaptura, recibido.promos.fecha, 'es el mismo instante con el que se armo la captura');
+}
+
+test('#238: rama prospecto NUEVO -- la fecha de captura llega a la alerta', async () => {
+  let recibido = null;
+  _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
+
+  const res = await enviar(formulario({ promos: true }));
+
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 1, 'la rama del prospecto nuevo es la que corrio');
+  afirmarFechaCaptura(recibido);
+});
+
+test('#238: rama prospecto QUE YA EXISTIA -- la fecha de captura tambien llega', async () => {
+  writeProspectos([prospectoExistente()]);
+  let recibido = null;
+  _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
+
+  const res = await enviar(formulario({ promos: true }));
+
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos().length, 1, 'no se duplico la tarjeta: corrio la rama del existente');
+  afirmarFechaCaptura(recibido);
+});
+
+test('#238: rama CARRERA contra el indice unico -- la fecha de captura tambien llega', async () => {
+  globalThis.fetch = async (url) => {
+    writeProspectos([prospectoExistente()]);
+    throw new Error('fetch sin mock en tests: ' + url);
+  };
+  let recibido = null;
+  _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
+
+  const res = await enviar(formulario({ promos: true }));
+
+  assert.equal(res.status, 200);
+  const todos = readProspectos();
+  assert.equal(todos.length, 1, 'la creacion perdio la carrera: no hay tarjeta nueva');
+  assert.equal(todos[0].vendedor, 'Memo', 'sobrevive la tarjeta que gano el indice unico');
+  assert.ok(recibido, 'la tercera rama tambien dispara la alerta');
+  afirmarFechaCaptura(recibido);
+});
+
 test('sin SMTP_USER/SMTP_PASS configuradas, la captura funciona identica con el wrapper real (sin inyeccion)', async () => {
   // Sin _inyectarAlertaMayoreo: corre el wrapper real (lib/alerta-mayoreo-io.js)
   // contra el entorno real, que no trae SMTP_USER/SMTP_PASS (borradas arriba).
