@@ -4,11 +4,11 @@ const assert = require('node:assert/strict');
 
 let TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
   segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo, buildCapturaMayoreo,
-  paisDelFormulario;
+  paisDelFormulario, capitalizarCampo;
 before(async () => {
   ({ TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
     segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo,
-    buildCapturaMayoreo, paisDelFormulario } = await import('../mayoreo-logica.js'));
+    buildCapturaMayoreo, paisDelFormulario, capitalizarCampo } = await import('../mayoreo-logica.js'));
 });
 
 // M1: el mapeo tipo -> segmento de Operam es el del ticket #157 (tabla de campos).
@@ -287,4 +287,62 @@ test('M24: buildCapturaMayoreo recorta los espacios de todo lo que guarda', () =
   assert.equal(c.data.correo, 'laura@gmail.com');
   assert.equal(c.data.empresa, 'Hotel Azul');
   assert.equal(c.data.web, '@hotelazul');
+});
+
+// --- capitalizarCampo: correccion de mayusculas (issue #235). Formulario
+// publico sin auth: la gente escribe su nombre en MAYUSCULAS, minusculas o
+// mezclado, y este es el UNICO lugar donde se corrige antes de que el dato
+// viaje a la tarjeta, al correo de alerta y a la vCard.
+
+test('M32: capitalizarCampo cubre la tabla del ticket #235', () => {
+  assert.equal(capitalizarCampo('JUAN PEREZ'), 'Juan Perez');
+  assert.equal(capitalizarCampo('juan perez'), 'Juan Perez');
+  assert.equal(capitalizarCampo('jUaN pErEz'), 'Juan Perez');
+  assert.equal(capitalizarCampo('MARIA DE LOS ANGELES RUIZ'), 'Maria de los Angeles Ruiz');
+  assert.equal(capitalizarCampo('Grupo GNP'), 'Grupo GNP');
+  assert.equal(capitalizarCampo('GRUPO GNP'), 'Grupo Gnp');
+  assert.equal(capitalizarCampo('HOTEL AZUL SA DE CV'), 'Hotel Azul SA de CV');
+  assert.equal(capitalizarCampo('LA PARRILLA'), 'La Parrilla');
+});
+
+test('M33: capitalizarCampo preserva la lista fija de siglas aunque el campo entero venga en mayusculas', () => {
+  assert.equal(capitalizarCampo('HOTEL AZUL SA DE CV'), 'Hotel Azul SA de CV');
+  assert.equal(capitalizarCampo('envios rl'), 'Envios RL');
+  assert.equal(capitalizarCampo('MUDANZAS SC'), 'Mudanzas SC');
+  assert.equal(capitalizarCampo('oficina cdmx'), 'Oficina CDMX');
+  assert.equal(capitalizarCampo('paqueteria fedex dhl ups'), 'Paqueteria FEDEX DHL UPS');
+});
+
+test('M34: capitalizarCampo preserva una sigla corta de hasta 4 letras SOLO cuando el campo no viene entero en mayusculas', () => {
+  assert.equal(capitalizarCampo('Grupo GNP'), 'Grupo GNP');
+  assert.equal(capitalizarCampo('GRUPO GNP'), 'Grupo Gnp');
+  assert.equal(capitalizarCampo('Refacciones ABCD'), 'Refacciones ABCD');
+  assert.equal(capitalizarCampo('REFACCIONES ABCD'), 'Refacciones Abcd');
+});
+
+test('M35: capitalizarCampo conserva los acentos intactos', () => {
+  assert.equal(capitalizarCampo('MARÍA JOSÉ NÚÑEZ'), 'María José Núñez');
+  assert.equal(capitalizarCampo('ángel gonzález'), 'Ángel González');
+});
+
+test('M36: capitalizarCampo colapsa espacios de sobra (inicio, fin, entre palabras)', () => {
+  assert.equal(capitalizarCampo('  JUAN    PEREZ  '), 'Juan Perez');
+});
+
+test('M37: capitalizarCampo con campo vacio o ausente no revienta', () => {
+  assert.equal(capitalizarCampo(''), '');
+  assert.equal(capitalizarCampo('   '), '');
+  assert.equal(capitalizarCampo(undefined), '');
+  assert.equal(capitalizarCampo(null), '');
+});
+
+// M38: la captura que se guarda sale YA corregida -- es lo que lee la tarjeta
+// del pipeline (server.js), el correo de alerta y la vCard, asi que basta con
+// corregir aqui una sola vez.
+test('M38: buildCapturaMayoreo guarda nombre y empresa ya corregidos de mayusculas', () => {
+  const c = buildCapturaMayoreo(formValido({
+    nombre: 'JUAN', apellido: 'PEREZ', empresa: 'HOTEL AZUL SA DE CV',
+  }), AHORA);
+  assert.equal(c.nombre, 'Juan Perez');
+  assert.equal(c.data.empresa, 'Hotel Azul SA de CV');
 });

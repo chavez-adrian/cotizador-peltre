@@ -181,6 +181,48 @@ function limpio(v) {
   return String(v == null ? '' : v).trim();
 }
 
+// Particulas del espanol que van en minuscula salvo como primera palabra del
+// campo (issue #235). NO es la misma lista que PREPOSICIONES/ARTICULOS de
+// lib/deduplicacion.js: esa lista sirve para TOKENIZAR y comparar candidatos
+// (proposito distinto), esta sirve para CAPITALIZAR texto de presentacion.
+const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'y']);
+
+// Siglas que se preservan SIEMPRE, incluso si el campo entero viene en
+// mayusculas: formas societarias mexicanas + CDMX + las paqueterias con las
+// que ya opera el cotizador. Rescata el caso mas comun de razon social
+// mexicana ("... SA DE CV") de la correccion agresiva de abajo.
+const SIGLAS_FIJAS = new Set(['SA', 'CV', 'RL', 'SC', 'CDMX', 'FEDEX', 'DHL', 'UPS']);
+
+function capitalizarToken(token) {
+  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+}
+
+// Capitaliza nombre/apellido/empresa de la captura publica (issue #235): un
+// solo nucleo para que la tarjeta, el correo de alerta y la vCard no puedan
+// divergir. NO se llama normalizarNombre -- ese simbolo ya existe en
+// lib/deduplicacion.js con otro proposito (tokenizar para comparar
+// candidatos); aqui se produce texto de PRESENTACION, no una llave de
+// comparacion.
+//
+// Regla de siglas cortas (<=4 letras, fuera de SIGLAS_FIJAS): se preservan
+// SOLO si el campo NO viene entero en mayusculas. El contraste (unas palabras
+// en mayusculas, otras no) es la unica senal de que fue a proposito -- el
+// largo por si solo no sirve ("JUAN" tambien tiene 4 letras). Sin contraste
+// (campo entero en mayusculas) no hay senal y se corrige todo.
+export function capitalizarCampo(valor) {
+  const v = limpio(valor).replace(/\s+/g, ' ');
+  if (!v) return '';
+  const todoMayus = v === v.toUpperCase() && v !== v.toLowerCase();
+  return v.split(' ').map((token, i) => {
+    const superior = token.toUpperCase();
+    if (SIGLAS_FIJAS.has(superior)) return superior;
+    const inferior = token.toLowerCase();
+    if (i > 0 && PARTICULAS.has(inferior)) return inferior;
+    if (!todoMayus && token === superior && token.length <= 4 && token !== inferior) return token;
+    return capitalizarToken(token);
+  }).join(' ');
+}
+
 // Formulario publico -> captura de prospecto de #57 ({ celular, nombre, ciudad,
 // canal, data }). La consumen el endpoint publico (server.js) y sus tests. El
 // vendedor y la etapa NO se deciden aqui: son del endpoint (no_asignado, sin dueno).
@@ -205,7 +247,10 @@ export function buildCapturaMayoreo(form, fechaISO) {
   if (segmento !== null) data.segmento_id = segmento;
   if (CANTIDADES.includes(f.cant)) data.piezas_estimadas = f.cant;
   opcional('correo', f.correo);
-  opcional('empresa', f.empresa);
+  // Mayusculas corregidas UNA vez aqui (issue #235): la tarjeta, el correo de
+  // alerta y la vCard leen nombre/empresa de esta captura, nunca del form
+  // crudo, asi que heredan la correccion sin tocar esos otros puntos.
+  opcional('empresa', capitalizarCampo(f.empresa));
   opcional('cp', f.cp);
   opcional('cuando', f.cuando);
   opcional('web', f.web);
@@ -226,7 +271,7 @@ export function buildCapturaMayoreo(form, fechaISO) {
 
   return {
     celular: celularDeMayoreo(f),
-    nombre: unirNombre(f.nombre, f.apellido),
+    nombre: unirNombre(capitalizarCampo(f.nombre), capitalizarCampo(f.apellido)),
     ciudad: limpio(f.ciudad),
     canal: CANAL_MAYOREO,
     data,

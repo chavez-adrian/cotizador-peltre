@@ -125,6 +125,17 @@ test('W1: la captura publica crea la tarjeta en No Asignado, sin dueno y con can
   assert.equal(p.celular, '+52 5512345678');
 });
 
+// La correccion de mayusculas (issue #235) tiene que sobrevivir al endpoint
+// completo: es lo que despues lee la tarjeta del pipeline sin volver a tocar
+// el texto del prospecto.
+test('W18: la captura publica corrige mayusculas de nombre, apellido y empresa antes de guardar', async () => {
+  const res = await enviar(formulario({ nombre: 'JUAN', apellido: 'PEREZ', empresa: 'HOTEL AZUL SA DE CV' }));
+  assert.equal(res.status, 200);
+  const p = readProspectos()[0];
+  assert.equal(p.nombre, 'Juan Perez');
+  assert.equal(p.data.empresa, 'Hotel Azul SA de CV');
+});
+
 test('W2: la captura publica guarda segmento, piezas, cp, cuando y web en data', async () => {
   await enviar(formulario());
   const d = readProspectos()[0].data;
