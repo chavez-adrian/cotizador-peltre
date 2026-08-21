@@ -82,6 +82,16 @@ export function codigoDeLlave(llave) {
   return m ? m[1] : llave;
 }
 
+// Llave del carrito para un item PERSISTIDO (#221): la usan los dos caminos que
+// rehidratan el carrito -- reabrir una cotizacion guardada y restaurar el
+// borrador --, donde lo que hay es el codigo del catalogo y el numero de diseño,
+// no el producto. Indexar por el codigo a secas fusionaba dos diseños en uno.
+// Un item de calca sin `diseno` (guardado antes de #220) es el Diseño 1, y lo
+// que no es calca conserva su codigo como llave, igual que siempre.
+export function llaveCarrito(codigo, diseno) {
+  return esCodigoCalca(codigo) ? llaveDiseno(codigo, Number(diseno) || 1) : codigo;
+}
+
 // Maximo historico + 1, nunca el conteo de lineas vivas: borrar el Diseño 1 de
 // dos no libera el numero, porque una descripcion ya editada que dice "Diseño 2"
 // quedaria mintiendo. Un item sin `diseno` (cotizacion anterior) es el Diseño 1.

@@ -2312,3 +2312,29 @@ test('#220 huellaContenidoQuote: renombrar un diseno cuenta como cambio de conte
   }));
   assert.notEqual(conTexto('Calca chica - Diseño 2: logo frontal'), conTexto('Calca chica - Diseño 2'));
 });
+
+// El AC de #221 pide los TRES ejes: cantidad (cubierta arriba), descuento y texto.
+// Lo que se afirma no es la huella en si sino la consecuencia: contenidoQuoteCambio
+// contra la huella de lo ya subido dice que hay que reescribir el quote.
+test('#221 contenidoQuoteCambio: mover el descuento de un solo diseno dispara la actualizacion', () => {
+  const conDescuento = (discSegundo) => cotizacionBase({
+    items: [
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 2', cantidad: 100, precio: 26.9, descuento: discSegundo, diseno: 2, descripcionEditada: true },
+    ],
+  });
+  const subido = huellaContenidoQuote(conDescuento(0));
+  assert.equal(contenidoQuoteCambio(conDescuento(0), subido), false, 'sin tocar nada no se reescribe el quote');
+  assert.equal(contenidoQuoteCambio(conDescuento(15), subido), true);
+});
+
+test('#221 contenidoQuoteCambio: renombrar el segundo diseno dispara la actualizacion', () => {
+  const conTexto = (texto) => cotizacionBase({
+    items: [
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: 26.9, descuento: 0, diseno: 1, descripcionEditada: true },
+      { codigo: 'CAL1025S', descripcion: texto, cantidad: 100, precio: 26.9, descuento: 0, diseno: 2, descripcionEditada: true },
+    ],
+  });
+  const subido = huellaContenidoQuote(conTexto('Calca chica - Diseño 2'));
+  assert.equal(contenidoQuoteCambio(conTexto('Calca chica - Diseño 2: logo frontal'), subido), true);
+});

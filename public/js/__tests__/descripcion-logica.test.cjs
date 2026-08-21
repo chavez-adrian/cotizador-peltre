@@ -91,3 +91,25 @@ test('una cotizacion con descripciones dentro del limite pasa', () => {
   assert.equal(validarDescripcionesCotizacion([]).ok, true);
   assert.equal(validarDescripcionesCotizacion(undefined).ok, true);
 });
+
+// === Diseño de calca: la base es el nombre CON su numero (#221, spec #218) ===
+// El editor de partida siempre recibe como base nombreVisibleProducto(product.name),
+// y en una calca ese nombre ya trae el sufijo "Diseño N" (#220). Vaciar la
+// descripcion tiene que regresar ahi y no al nombre pelon del catalogo: una
+// partida sin numero es indistinguible de la otra en el documento y en Operam.
+test('vaciar la descripcion de un diseño regresa al nombre del catalogo CON su numero', async () => {
+  const { productoCalca } = await import('../calcas-logica.js');
+  const { nombreVisibleProducto } = await import('../cotizar-logica.js');
+  const ficha = {
+    code: 'CAL1025S',
+    name: 'Calca vitrificable chica (25 cm2) 1 tinta',
+    prices: { Menudeo: null, M100: 26.9 },
+  };
+  const base = nombreVisibleProducto(productoCalca(ficha, 2).name);
+
+  const r = validarDescripcionLinea('   ', base);
+
+  assert.equal(r.ok, true);
+  assert.equal(r.editada, false);
+  assert.equal(r.descripcion, 'Calca vitrificable chica (25 cm2) 1 tinta - Diseño 2');
+});

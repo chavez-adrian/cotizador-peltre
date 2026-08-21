@@ -158,6 +158,7 @@ function crearServidorFA({
   commentsInicial = 'comentario viejo del quote',
   custRefInicial = 'REF-VIEJA',
   romperEdicion = false,
+  edicionEnLineaFija = null,
   vistaFinalHtml = null,
 } = {}) {
   const state = {
@@ -214,7 +215,10 @@ function crearServidorFA({
         const indice = Number(editKey.slice(4));
         // romperEdicion simula que FA NO entro en modo edicion (bug/pagina inesperada):
         // el formulario vuelve identico, normal, sin LineNo.
-        if (!romperEdicion) state.editando = indice;
+        // edicionEnLineaFija simula que FA abrio OTRA partida (la misma siempre):
+        // con dos partidas del mismo stock_id, el indice es lo unico que las
+        // distingue y una confusion escribiria el texto de un diseno sobre el otro.
+        if (!romperEdicion) state.editando = edicionEnLineaFija ?? indice;
         return new Response(formularioActual(), { status: 200 });
       }
       if (params.has('UpdateItem')) {
@@ -435,6 +439,66 @@ test('actualizarQuoteOperam: la descripcion editada que NO quedo escrita se repo
     assert.ok(d, 'debe reportar la discrepancia de descripcion');
     assert.equal(d.esperado, 'Tazon esmaltado a mano, mostaza');
     assert.equal(d.encontrado, 'SONDA DESC WEB 888');
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+// === #221 (spec #218): dos disenos de calca son dos partidas del MISMO stock_id ===
+// Operam acepta el quote con las dos lineas (verificado en vivo, #219 / quote 1238);
+// lo que se prueba aqui es que NUESTRO orquestador no las confunda al reescribir:
+// cada una tiene que recibir su propio "Diseno N" en la ronda de descripcion.
+const CALCA_D1 = {
+  codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 1', cantidad: 100, precio: 26.9, descuento: 0,
+  diseno: 1, descripcionEditada: true,
+};
+const CALCA_D2 = {
+  codigo: 'CAL1025S', descripcion: 'Calca chica - Diseno 2: logo frontal', cantidad: 120, precio: 26.9, descuento: 10,
+  diseno: 2, descripcionEditada: true,
+};
+
+test('actualizarQuoteOperam: dos disenos del mismo codigo conservan cada uno su descripcion', async () => {
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock, state } = crearServidorFA({ lineasIniciales: [] });
+  globalThis.fetch = fetchMock;
+  try {
+    const producto = { codigo: 'AAA111', descripcion: 'Tazon 14 mostaza', cantidad: 200, precio: 50, descuento: 0 };
+    const r = await actualizarQuoteOperam(QUOTE_NO, dataDe([producto, CALCA_D1, CALCA_D2]));
+
+    // Solo las dos calcas entran a la ronda, cada una en SU indice.
+    const editKeys = state.posts.flatMap((p) => [...p.params.keys()].filter((k) => /^Edit\d+$/.test(k)));
+    assert.deepEqual(editKeys, ['Edit1', 'Edit2']);
+
+    // Y cada UpdateItem lleva el texto de SU diseno: cruzarlos dejaria las dos
+    // partidas con el mismo nombre en Operam, que es justo lo que #218 evita.
+    const textos = state.posts.filter((p) => p.params.has('UpdateItem')).map((p) => p.params.get('item_description'));
+    assert.deepEqual(textos, ['Calca chica - Diseno 1', 'Calca chica - Diseno 2: logo frontal']);
+
+    // El servidor de mentiras refleja su estado en la vista: el quote quedo con las
+    // dos partidas del mismo SKU, con su cantidad, su descuento y su texto.
+    assert.equal(r.escrito, true);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.discrepancias, []);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+// El stock_id deja de discriminar cuando se repite: si FA abriera la partida
+// equivocada, el unico freno que queda es el LineNo. Sin el, la descripcion del
+// Diseno 2 se escribiria sobre el Diseno 1 y el ProcessOrder lo confirmaria.
+test('actualizarQuoteOperam: con dos partidas del mismo stock_id, abrir la equivocada aborta antes del ProcessOrder', async () => {
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock, state } = crearServidorFA({ lineasIniciales: [], edicionEnLineaFija: 0 });
+  globalThis.fetch = fetchMock;
+  try {
+    const r = await actualizarQuoteOperam(QUOTE_NO, dataDe([CALCA_D1, CALCA_D2]));
+    assert.equal(r.escrito, false);
+    assert.equal(r.ok, false);
+    assert.match(r.error, /partida 1 \(CAL1025S\)/);
+    assert.equal(state.posts.some((p) => p.params.has('ProcessOrder')), false, 'el quote debe quedar intacto');
   } finally {
     globalThis.fetch = fetchOriginal;
   }

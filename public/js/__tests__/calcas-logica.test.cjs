@@ -6,7 +6,7 @@ let PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA, MOTIVOS_CALCA_INVALIDA;
 let esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdParaCalca;
 let piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca;
 let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio;
-let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave;
+let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito;
 let avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado;
 
 before(async () => {
@@ -15,7 +15,7 @@ before(async () => {
     esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdParaCalca,
     piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca,
     motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio,
-    siguienteNumeroDiseno, llaveDiseno, codigoDeLlave,
+    siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito,
     avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado,
   } = await import('../calcas-logica.js'));
 });
@@ -351,4 +351,33 @@ test('#220-10: las piezas de varios disenos siguen fuera del volumen que fija la
   ];
   assert.strictEqual(piezasDeProducto(items), 600);
   assert.strictEqual(hayCalcaEnCarrito(items), true);
+});
+
+// === #221: la llave del carrito se reconstruye al reabrir y al restaurar ===
+// app.js no es importable en Node, asi que la regla que rehidrata el carrito
+// (que codigo + diseno dan la llave, y que un item sin diseno es el Diseño 1)
+// vive aqui, donde si se puede afirmar.
+
+test('#221-1: dos items del mismo codigo con distinto diseno dan llaves distintas', () => {
+  const uno = llaveCarrito('CAL1025S', 1);
+  const dos = llaveCarrito('CAL1025S', 2);
+  assert.notStrictEqual(uno, dos, 'dos disenos guardados no se pueden pisar al reabrir');
+  assert.strictEqual(codigoDeLlave(uno), 'CAL1025S');
+  assert.strictEqual(codigoDeLlave(dos), 'CAL1025S');
+});
+
+test('#221-2: un item de calca sin diseno se rehidrata como Diseño 1, sin migracion', () => {
+  assert.strictEqual(llaveCarrito('CAL1025S', undefined), llaveCarrito('CAL1025S', 1));
+  assert.strictEqual(llaveCarrito('CAL1025S', null), llaveCarrito('CAL1025S', 1));
+  assert.strictEqual(llaveCarrito('CAL1025S', 0), llaveCarrito('CAL1025S', 1));
+});
+
+test('#221-3: lo que no es calca conserva su codigo como llave', () => {
+  assert.strictEqual(llaveCarrito('VA08B1A321124', undefined), 'VA08B1A321124');
+  assert.strictEqual(llaveCarrito('ENVIO', 1), 'ENVIO');
+  assert.strictEqual(llaveCarrito('CO16', 2), 'CO16', 'un diseno colado en una linea de producto no inventa llave');
+});
+
+test('#221-4: la llave rehidratada es la misma que arma productoCalca al agregar', () => {
+  assert.strictEqual(llaveCarrito(CAL1025S.code, 2), productoCalca(CAL1025S, 2).key);
 });

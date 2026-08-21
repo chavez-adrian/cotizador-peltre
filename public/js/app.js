@@ -143,6 +143,7 @@ import {
   TINTAS_CALCA,
   esCodigoCalca,
   codigoDeLlave,
+  llaveCarrito,
   siguienteNumeroDiseno,
   buscarCalcaEnCatalogo,
   precioCalca,
@@ -546,9 +547,11 @@ function autoguardarBorrador() {
     // El borrador guarda el codigo del catalogo, nunca la llave del carrito
     // (#220): guardar "CAL1025S-1" haria que resolverProductoDelCatalogo no lo
     // reconociera como calca y la partida volviera marcada como sin catalogo.
-    // Restaurar VARIOS disenos es del ticket siguiente (#221): hoy vuelven
-    // fusionados en el Diseno 1, como cualquier calca guardada antes de #220.
-    const carrito = [...state.cart].map(([llave, entrada]) => ({ codigo: codigoDeLlave(llave), ...entrada }));
+    // El numero de diseno viaja aparte (#221) para que dos partidas del mismo
+    // codigo no se restauren fusionadas en una sola.
+    const carrito = [...state.cart].map(([llave, entrada]) => ({
+      codigo: codigoDeLlave(llave), ...entrada, diseno: entrada.product?.diseno,
+    }));
     const cliente = leerClienteParaBorrador();
     const contactoNuevo = leerContactoNuevoParaBorrador();
     // Nada capturado en la sesion = nada que restaurar: se borra la llave en
@@ -642,8 +645,11 @@ function aplicarBorrador(borrador) {
     for (const linea of lineas) {
       const entrada = { product: linea.product, cantidad: linea.cantidad, descuento: linea.descuento };
       if (linea.descripcion) entrada.descripcion = linea.descripcion;
-      state.cart.set(linea.codigo, entrada);
+      // La llave sale del codigo + el diseno (#221): indexar por el codigo a
+      // secas fusionaba dos disenos de la misma calca en una sola linea.
+      state.cart.set(llaveCarrito(linea.codigo, linea.diseno), entrada);
     }
+    reanudarNumeracionDisenos();
   }
   // La marca de decorado viaja solo en true (#91): un borrador sin ella no
   // apaga la que pudiera venir de otro lado.
@@ -802,6 +808,14 @@ let maxDisenoAsignado = 0;
 function vaciarCarrito() {
   state.cart.clear();
   maxDisenoAsignado = 0;
+}
+
+// Reabrir una cotizacion o restaurar un borrador reanuda la numeracion donde
+// quedo (#221): sin esto, el siguiente diseno de una cotizacion con Diseno 1 y 2
+// volveria a ser el 1 y pisaria una linea existente. El maximo sale del carrito
+// ya rehidratado, que es todo lo que se sabe de lo asignado antes.
+function reanudarNumeracionDisenos() {
+  maxDisenoAsignado = siguienteNumeroDiseno(itemsDelCarrito()) - 1;
 }
 
 function getCurrentTier() {
@@ -5723,16 +5737,18 @@ async function cargarCotizacion(id, modo = 'nueva') {
       // catalogo, y resolverla aparte aqui era una copia espejo que ya empezaba a
       // divergir de la del borrador. Un codigo que ya no existe se salta, como
       // siempre en este camino.
-      // El `diseno` guardado todavia NO se usa aqui (#220 lo persiste, #221
-      // rehidrata): una calca vuelve como Diseno 1 y dos partidas del mismo
-      // codigo se pisarian, igual que en la restauracion del borrador.
-      const cartProduct = resolverProductoDelCatalogo(item.codigo, state.precios);
+      // El `diseno` guardado (#220) rehidrata la calca (#221): resuelve el
+      // producto con su numero y separa dos partidas del mismo codigo, que
+      // indexadas por el codigo se pisaban. Un item sin `diseno` (cotizacion
+      // anterior al cambio) vuelve como Diseno 1, sin migracion.
+      const cartProduct = resolverProductoDelCatalogo(item.codigo, state.precios, item.diseno);
       if (!cartProduct) continue;
       // El descuento por linea se restaura junto con la cantidad (#137): sin el,
       // regenerar reescribiria el quote SIN la negociacion (mismo agujero que ya
       // mordio con la calca). La descripcion editada (#139), por lo mismo.
-      state.cart.set(item.codigo, { product: cartProduct, cantidad: item.cantidad, descuento: item.descuento || 0, ...descripcionRestaurada(item) });
+      state.cart.set(llaveCarrito(item.codigo, item.diseno), { product: cartProduct, cantidad: item.cantidad, descuento: item.descuento || 0, ...descripcionRestaurada(item) });
     }
+    reanudarNumeracionDisenos();
 
     // Envio (issue #102): restaura carrier/servicio/precio tal cual se guardo,
     // sin re-cotizar con envia.com. Cotizaciones viejas sin envio estructurado
