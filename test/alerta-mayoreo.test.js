@@ -267,22 +267,44 @@ function notaDe(prospecto) {
   return vcardDeProspecto(prospecto).split('\r\n').find(l => l.startsWith('NOTE:'));
 }
 
-test('#238: la ficha emite NOTE: con el encabezado fechado y las cuatro lineas de contexto', () => {
+test('#238: la ficha emite NOTE: con la fecha y las cuatro lineas de contexto', () => {
   assert.equal(
     notaDe(PROSPECTO_238),
-    'NOTE:Mayoreo pp.peltre - 2026-08-20\\nTipo: Otro (Panaderia)\\nPiezas: +350\\nPara: En 3 meses\\nCiudad: Ixtapaluca (CP 56530)',
+    'NOTE:2026-08-20\\nTipo: Otro (Panaderia)\\nPiezas: +350\\nPara: En 3 meses\\nCiudad: Ixtapaluca (CP 56530)',
   );
 });
 
 test('#238: la fecha de la nota sale del instante inyectado, nunca del reloj', () => {
-  const nota = notaDe({ ...PROSPECTO_238, fechaCaptura: '2019-01-02T03:04:05.000Z' });
-  assert.ok(nota.includes('Mayoreo pp.peltre - 2019-01-02'), nota);
+  const nota = notaDe({ ...PROSPECTO_238, fechaCaptura: '2019-06-12T18:04:05.000Z' });
+  assert.ok(nota.startsWith('NOTE:2019-06-12\\n'), nota);
   assert.ok(!nota.includes(new Date().toISOString().slice(0, 10)), 'el nucleo no debe consultar el reloj');
 });
 
-test('#238: sin fecha inyectada el encabezado sale solo, nunca con un valor inventado', () => {
+// La fecha se lee en hora de CDMX, no en UTC: una captura de las 20:30 de la
+// fabrica cae al dia SIGUIENTE en UTC, y el vendedor veria en su telefono una
+// fecha que no coincide con la que el tablero muestra para la misma captura.
+test('#238: la fecha se traduce al huso de la fabrica, no al UTC del instante', () => {
+  const nota = notaDe({ ...PROSPECTO_238, fechaCaptura: '2026-08-21T02:30:00.000Z' });
+  assert.ok(nota.startsWith('NOTE:2026-08-20\\n'), nota);
+  assert.ok(!nota.includes('2026-08-21'), 'el corte UTC habria fechado la captura al dia siguiente');
+});
+
+// Enero: CDMX ya no tiene horario de verano (2022), asi que el desfase es el
+// mismo todo el ano -- pero se afirma con una fecha de invierno para que este
+// test falle si alguien cambia la zona por un offset fijo de otra epoca.
+test('#238: el huso de la fabrica tambien aplica fuera del horario de verano', () => {
+  const nota = notaDe({ ...PROSPECTO_238, fechaCaptura: '2026-01-15T02:30:00.000Z' });
+  assert.ok(nota.startsWith('NOTE:2026-01-14\\n'), nota);
+});
+
+test('#238: sin fecha inyectada la nota arranca en sus lineas de contexto, sin renglon vacio', () => {
   const nota = notaDe({ ...PROSPECTO_238, fechaCaptura: undefined });
-  assert.ok(nota.startsWith('NOTE:Mayoreo pp.peltre\\nTipo: '), nota);
+  assert.ok(nota.startsWith('NOTE:Tipo: '), nota);
+});
+
+test('#238: una fecha ilegible no ensucia la nota ni la tumba', () => {
+  const nota = notaDe({ ...PROSPECTO_238, fechaCaptura: 'ayer en la tarde' });
+  assert.ok(nota.startsWith('NOTE:Tipo: '), nota);
 });
 
 test('#238: la nota usa el mismo formato que el correo: "Otro" con su texto libre y el CP opcional', () => {
@@ -308,7 +330,7 @@ for (const [campo, etiqueta, rastro] of [
     assert.ok(!nota.includes(etiqueta), `no debia imprimir "${etiqueta}"`);
     assert.ok(!nota.includes(rastro), `tampoco el resto de la linea ("${rastro}")`);
     assert.ok(!nota.includes('Sin dato'), 'la nota omite, no rellena');
-    assert.ok(nota.includes('Mayoreo pp.peltre - 2026-08-20'), 'el encabezado se mantiene');
+    assert.ok(nota.startsWith('NOTE:2026-08-20\\n'), 'la fecha se mantiene');
   });
 }
 
