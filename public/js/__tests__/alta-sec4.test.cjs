@@ -3,9 +3,9 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveClienteId } = require('./helpers.cjs');
 
-let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload;
+let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido;
 before(async () => {
-  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload } = await import('../alta-logica.js'));
+  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido } = await import('../alta-logica.js'));
 });
 
 test('F1: buildAltaDarDeAltaPayload incluye campos comerciales y domicilio', () => {
@@ -250,4 +250,13 @@ test('I9: un status desconocido sigue siendo error (solo ok y omitido son buenos
   const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
   assert.strictEqual(branch.status, 'error');
   assert.strictEqual(r.mensajeError, 'algo raro');
+});
+
+// #251: el borrador (#185) repone el select sin disparar `change`; lo que decide si el
+// valor restaurado cuenta como eleccion es que difiera del default vigente.
+test('I10: un uso de CFDI restaurado distinto del default cuenta como eleccion; el default o vacio no', () => {
+  assert.strictEqual(usoCfdiCuentaComoElegido({ valor: 'S01', defaultVigente: 'G03' }), true, 'S01 restaurado sobre default G03 = el vendedor lo cambio');
+  assert.strictEqual(usoCfdiCuentaComoElegido({ valor: 'G03', defaultVigente: 'G03' }), false, 'sigue en su default = no eligio');
+  assert.strictEqual(usoCfdiCuentaComoElegido({ valor: '', defaultVigente: 'G03' }), false, 'vacio nunca es eleccion');
+  assert.strictEqual(usoCfdiCuentaComoElegido(), false, 'sin datos no es eleccion');
 });

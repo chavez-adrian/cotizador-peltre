@@ -27,6 +27,7 @@ import {
   contactosEntregaDisponibles,
   etiquetaTagContacto,
   usoCfdiPorDefecto,
+  usoCfdiCuentaComoElegido,
   estadoAltaAlAbrirPanel,
   nombreConCorto,
   datosUpgradeConComercial,
@@ -6413,6 +6414,15 @@ function altaEsperarCatalogosCompletos() {
 // <details> sin tocar el estado idle/dropzone -- el dropzone se queda visible
 // para poder re-subir la CSF sin perder lo demas capturado.
 function altaRepintarCsfRestaurada() {
+  // La bandera "el vendedor eligio el uso de CFDI" (#250) no sobrevive al borrador:
+  // escribirCampoSuperficie no dispara `change`. Se recalcula aqui, que corre tras
+  // restaurar Y tras vaciar, contra el default vigente (option[selected], el mismo
+  // criterio de altaFijarDefaultUsoCfdi y valorDefaultCampo) (#251).
+  const selUso = document.getElementById('alta-uso-cfdi');
+  if (selUso) {
+    const defaultVigente = selUso.querySelector('option[selected]')?.value ?? (selUso.options[0]?.value || '');
+    altaState.usoCfdiElegido = usoCfdiCuentaComoElegido({ valor: selUso.value, defaultVigente });
+  }
   // Los <select> de regimen (#191) se filtran por el RFC de su pestana: tras
   // restaurar (o vaciar) hay un RFC distinto y el filtro tiene que seguirlo. Sin
   // pasar seleccion, conserva el valor que quedo en el select.

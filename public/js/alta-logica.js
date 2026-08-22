@@ -990,6 +990,15 @@ export function usoCfdiParaPayload({ clienteExistente, usoCfdiElegido, valor } =
   return valor || '';
 }
 
+// Tras restaurar un borrador (#185) el select ya no dispara `change`, pero el mecanismo
+// solo repone un campo que seguia en su default y solo guarda lo que era captura: si
+// despues de restaurar el valor difiere del default vigente es PORQUE el vendedor lo
+// cambio en la sesion anterior (#251). Misma regla al vaciar: vuelve al default y deja
+// de contar como eleccion.
+export function usoCfdiCuentaComoElegido({ valor, defaultVigente } = {}) {
+  return !!valor && valor !== defaultVigente;
+}
+
 // `opciones.clienteExistente` marca el alta que va sobre un cliente elegido por dedup
 // ("Usar este cliente", por RFC o por celular): el servidor no puede deducirlo del
 // customer_id, que en el reintento de un alta nueva significa lo contrario (#250).
