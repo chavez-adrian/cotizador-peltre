@@ -3,9 +3,9 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveClienteId } = require('./helpers.cjs');
 
-let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA;
+let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload;
 before(async () => {
-  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA } = await import('../alta-logica.js'));
+  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload } = await import('../alta-logica.js'));
 });
 
 test('F1: buildAltaDarDeAltaPayload incluye campos comerciales y domicilio', () => {
@@ -167,4 +167,87 @@ test('H7: errorAltaSinConfirmar corta el alta cuando la Seccion 1 no dejo RFC (#
 
 test('H8: errorAltaSinConfirmar deja pasar cuando la Seccion 1 si quedo confirmada', () => {
   assert.strictEqual(errorAltaSinConfirmar({ rfc: 'XEXX010101000' }), null);
+});
+
+// === Cliente existente elegido por dedup (issue #250) ===
+//
+// El alta corria los PUT del camino de creacion sobre el cliente que el vendedor
+// eligio con "Usar este cliente" y le piso su configuracion. El servidor ya no lo
+// hace, pero solo puede distinguir ese caso del reintento si el payload lo dice.
+
+test('I1: con cliente existente el payload lleva la marca cliente_existente', () => {
+  const payload = buildAltaDarDeAltaPayload({}, {}, {}, 15, null, { clienteExistente: true });
+  assert.strictEqual(payload.cliente_existente, true);
+  assert.strictEqual(payload.customer_id, 15);
+});
+
+test('I2: el reintento de un alta NUEVA no manda la marca (su sucursal si se configura)', () => {
+  const payload = buildAltaDarDeAltaPayload({}, {}, {}, 502, 602);
+  assert.notStrictEqual(payload.cliente_existente, true, 'sin marca, el customer_id significa reintento');
+});
+
+test('I3: sobre un cliente existente el default G03 del formulario NO viaja como si lo hubiera elegido el vendedor', () => {
+  const payload = buildAltaDarDeAltaPayload({}, { uso_cfdi: 'G03' }, {}, 15, null, { clienteExistente: true });
+  assert.strictEqual(payload.timbrado_uso_cfdi, '', 'un default no es una eleccion: no se le escribe encima al cliente');
+});
+
+test('I4: sobre un cliente existente el uso de CFDI que el vendedor SI eligio viaja', () => {
+  const payload = buildAltaDarDeAltaPayload({}, { uso_cfdi: 'S01' }, {}, 15, null, { clienteExistente: true, usoCfdiElegido: true });
+  assert.strictEqual(payload.timbrado_uso_cfdi, 'S01');
+});
+
+test('I5: en un alta NUEVA el uso de CFDI viaja siempre (el cliente nace con el)', () => {
+  const payload = buildAltaDarDeAltaPayload({}, { uso_cfdi: 'G03' }, {}, null, null);
+  assert.strictEqual(payload.timbrado_uso_cfdi, 'G03');
+});
+
+test('I6: usoCfdiParaPayload decide por cliente existente + eleccion explicita', () => {
+  assert.strictEqual(usoCfdiParaPayload({ clienteExistente: true, usoCfdiElegido: false, valor: 'G03' }), '');
+  assert.strictEqual(usoCfdiParaPayload({ clienteExistente: true, usoCfdiElegido: true, valor: 'S01' }), 'S01');
+  assert.strictEqual(usoCfdiParaPayload({ clienteExistente: false, usoCfdiElegido: false, valor: 'G03' }), 'G03');
+});
+
+// === El panel deja de dar paloma muda (issue #250, criterio 5) ===
+
+test('I7: el segmento conservado se ve en su fila, no como exito mudo', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'POST customer', status: 'ok', info: 'reintento' },
+      { name: 'post-fix segmento (web)', status: 'ok', info: 'conservado', actual: '9', actualNombre: 'Familia y Amigos' },
+    ],
+  });
+  const seg = r.filas.find(f => f.fila === ALTA_PASO_FILA['post-fix segmento (web)']);
+  assert.strictEqual(seg.status, 'ok');
+  assert.ok(seg.msg && seg.msg.trim(), 'una escritura omitida a proposito tiene que decirse');
+  assert.ok(seg.msg.includes('Familia y Amigos'), 'con el segmento que se conservo');
+  assert.strictEqual(r.exito, true);
+});
+
+test('I8: un paso omitido se pinta omitido, con su motivo, y no es un fallo del alta', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'POST customer', status: 'ok', info: 'reintento' },
+      { name: 'PUT customer (config comercial)', status: 'omitido', info: 'Sin cambios de configuracion comercial' },
+      { name: 'GET branch_id', status: 'ok' },
+      { name: 'PUT branch', status: 'omitido', info: 'Cliente existente: se conserva su domicilio en Operam' },
+    ],
+  });
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  assert.strictEqual(branch.status, 'omitido');
+  assert.strictEqual(branch.msg, 'Cliente existente: se conserva su domicilio en Operam');
+  const comercial = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT customer (config comercial)']);
+  assert.strictEqual(comercial.status, 'omitido');
+  assert.strictEqual(comercial.msg, 'Sin cambios de configuracion comercial');
+  assert.strictEqual(r.exito, true);
+  assert.strictEqual(r.mensajeError, null, 'omitido no es error');
+  assert.strictEqual(r.mostrarReintentar, false);
+});
+
+test('I9: un status desconocido sigue siendo error (solo ok y omitido son buenos)', () => {
+  const r = interpretarRespuestaAlta({ ok: false, steps: [{ name: 'PUT branch', status: 'warn', error: 'algo raro' }] });
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  assert.strictEqual(branch.status, 'error');
+  assert.strictEqual(r.mensajeError, 'algo raro');
 });

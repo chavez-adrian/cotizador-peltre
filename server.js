@@ -2803,6 +2803,16 @@ function marcarTelefonoSospechoso(cliente) {
   }
 }
 
+function nombreSegmento(id) {
+  return SEGMENTOS.find(s => String(s.id) === String(id))?.nombre || '';
+}
+
+// Solo las llaves que traen un valor capturado (issue #250). Mandar '' a Operam no es
+// "no cambiar": es escribir vacio, y varios campos lo coercionan a 0.
+function camposConValor(campos) {
+  return Object.fromEntries(Object.entries(campos).filter(([, v]) => v !== '' && v !== null && v !== undefined));
+}
+
 app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   const cliente = req.body;
   if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
@@ -2816,11 +2826,18 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   // cliente EXISTENTE elegido via deduplicacion (altaState.clienteExistente, issue #31)
   // -- en ese caso el POST /customers nunca corrio y sales_type/segmento_id/
   // timbrado_uso_cfdi seleccionados en la seccion 2 se perdian en silencio (issue #11,
-  // gap confirmado en auditoria de #26). Reenviar esos campos via PUT /customers/:id es
-  // idempotente para el caso de reintento (mismos valores que ya fueron al POST) y
-  // cierra el gap para el caso de cliente existente -- por eso se ejecuta siempre que
-  // el customer_id ya viene resuelto, sin necesidad de distinguir los dos casos.
+  // gap confirmado en auditoria de #26). Reenviar esos campos via PUT /customers/:id
+  // cierra ese gap y es idempotente para el reintento.
+  //
+  // Los dos casos NO son equivalentes y aqui se distinguen (issue #250): fundirlos
+  // costo la configuracion del cliente 15 en produccion. Sobre un cliente EXISTENTE el
+  // alta no esta terminando de configurar lo que acaba de crear, esta escribiendo
+  // encima de lo que otro configuro -- el PUT del branch (REPLACE destructivo) se omite
+  // por completo, mismo contrato que el gate `creadoNuevo` del alta generica. La marca
+  // la pone el frontend (`cliente_existente`) porque es el unico que sabe de donde
+  // salio el customer_id; sin ella, `customer_id` significa reintento.
   const customerIdYaConocido = !!customer_id;
+  const esClienteExistente = cliente.cliente_existente === true;
 
   try {
     // Step 1: POST customer (skip if customer_id already known — reintento)
@@ -2857,20 +2874,30 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     // flujo si falla -- el domicilio (PUT branch) sigue siendo lo critico para terminar
     // el alta (issue #11).
     if (customerIdYaConocido) {
-      try {
-        // salesman NO viaja aqui (issue #187): es campo de la SUCURSAL en FrontAccounting,
-        // no del cliente -- el PUT /customers/:id lo ignora porque a ese nivel no existe.
-        // Se escribe donde vive, en el PUT /branches del Step 3. segmento_id se deja aunque
-        // la API v3 tampoco lo persista (mismo criterio que #172): si algun dia Operam lo
-        // arregla, empieza a funcionar solo.
-        await actualizarClienteDirecto(customer_id, {
-          sales_type: cliente.sales_type,
-          segmento_id: cliente.segmento_id,
-          timbrado_uso_cfdi: cliente.timbrado_uso_cfdi,
-        });
-        steps.push({ name: 'PUT customer (config comercial)', status: 'ok' });
-      } catch (err) {
-        steps.push({ name: 'PUT customer (config comercial)', status: 'error', error: err.message });
+      // salesman NO viaja aqui (issue #187): es campo de la SUCURSAL en FrontAccounting,
+      // no del cliente -- el PUT /customers/:id lo ignora porque a ese nivel no existe.
+      // Se escribe donde vive, en el PUT /branches del Step 3. segmento_id se deja aunque
+      // la API v3 tampoco lo persista (mismo criterio que #172): si algun dia Operam lo
+      // arregla, empieza a funcionar solo.
+      //
+      // Un campo vacio NO es un dato (issue #250): los tres selects nacen en '' y sin
+      // filtrarlos el PUT escribia ese vacio -- Operam lo coerciona (sales_type '' -> 0)
+      // y el cliente pierde su configuracion. Vacio = "el vendedor no eligio", y de eso
+      // no se sigue nada que escribir.
+      const comercial = camposConValor({
+        sales_type: cliente.sales_type,
+        segmento_id: cliente.segmento_id,
+        timbrado_uso_cfdi: cliente.timbrado_uso_cfdi,
+      });
+      if (!Object.keys(comercial).length) {
+        steps.push({ name: 'PUT customer (config comercial)', status: 'omitido', info: 'Sin cambios de configuracion comercial' });
+      } else {
+        try {
+          await actualizarClienteDirecto(customer_id, comercial);
+          steps.push({ name: 'PUT customer (config comercial)', status: 'ok' });
+        } catch (err) {
+          steps.push({ name: 'PUT customer (config comercial)', status: 'error', error: err.message });
+        }
       }
     } else {
       // Step 1c: PUT customer — persistir dimensiones en un alta NUEVA. El POST
@@ -2904,7 +2931,9 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
         // `conservado` no es un fallo: el cliente ya estaba clasificado y su segmento
         // manda sobre lo que se eligio en esta alta. Se reporta igual para que el vendedor
         // no crea que su seleccion se aplico.
-        steps.push({ name: 'post-fix segmento (web)', status: 'ok', ...(r.conservado ? { info: 'conservado', actual: r.actual } : {}) });
+        // `actual` es el id interno de Operam: al vendedor le sirve el nombre, que es lo
+        // que el panel pinta junto a la paloma (#250).
+        steps.push({ name: 'post-fix segmento (web)', status: 'ok', ...(r.conservado ? { info: 'conservado', actual: r.actual, actualNombre: nombreSegmento(r.actual) } : {}) });
       } else {
         // El motivo REAL de la web es lo unico que le dice al vendedor que hacer.
         console.error('[crear-cliente] post-fix web del segmento fallo:', r.error);
@@ -2925,19 +2954,27 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
       steps.push({ name: 'GET branch_id', status: 'ok', info: 'reintento' });
     }
 
-    // Step 3: PUT branch — configure domicilio
-    try {
-      const entrega = cliente.entrega || {};
-      await actualizarBranchCliente(customer_id, branch_id, {
-        ...entrega,
-        pais: entrega.pais || cliente.pais || 'MX',
-        salesman: cliente.salesman,
-      });
-      steps.push({ name: 'PUT branch', status: 'ok' });
-    } catch (err) {
-      steps.push({ name: 'PUT branch', status: 'error', error: err.message });
-      logCliente(cliente.tax_id, cliente.CustName, 'error', customer_id, fuente, null, err.message);
-      return res.json({ ok: false, customer_id, branch_id, steps });
+    // Step 3: PUT branch - configure domicilio. SOLO sobre la sucursal que esta misma
+    // alta creo (#250): el PUT es REPLACE y sobre un cliente existente pisa su domicilio
+    // real -- nombre, vendedor, cuentas contables y br_post_address, varias de ellas
+    // irrecuperables por API. Agregarle una plaza a un cliente existente es POST de
+    // sucursal (#211), nunca este PUT.
+    if (esClienteExistente) {
+      steps.push({ name: 'PUT branch', status: 'omitido', info: 'Cliente existente: se conserva su domicilio en Operam' });
+    } else {
+      try {
+        const entrega = cliente.entrega || {};
+        await actualizarBranchCliente(customer_id, branch_id, {
+          ...entrega,
+          pais: entrega.pais || cliente.pais || 'MX',
+          salesman: cliente.salesman,
+        });
+        steps.push({ name: 'PUT branch', status: 'ok' });
+      } catch (err) {
+        steps.push({ name: 'PUT branch', status: 'error', error: err.message });
+        logCliente(cliente.tax_id, cliente.CustName, 'error', customer_id, fuente, null, err.message);
+        return res.json({ ok: false, customer_id, branch_id, steps });
+      }
     }
 
     logCliente(cliente.tax_id, cliente.CustName, 'creado', customer_id, fuente, null, null);

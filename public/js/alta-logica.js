@@ -277,6 +277,7 @@ export function estadoAltaAlAbrirPanel(estado) {
       modo: null,
       seccionAbierta: null,
       altaCompletada: false,
+      usoCfdiElegido: false,
     },
     reiniciado: true,
   };
@@ -977,7 +978,22 @@ export function etiquetaTagContacto(tag) {
   return TAGS_CONTACTO[tag] || tag || '';
 }
 
-export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId) {
+// Uso de CFDI que va al payload (issue #250). Sobre un cliente EXISTENTE el select
+// arranca preseleccionado en G03 (altaFijarDefaultUsoCfdi no dispara `change`), y ese
+// default llegaba al PUT como si el vendedor lo hubiera elegido: el cliente 15 perdio
+// su S01 sin que nadie tocara el campo. Un default es la pregunta, no la respuesta --
+// solo viaja lo que el vendedor cambio a proposito. En un alta NUEVA el cliente nace
+// con este valor, asi que ahi el default SI es el dato.
+export function usoCfdiParaPayload({ clienteExistente, usoCfdiElegido, valor } = {}) {
+  if (clienteExistente && !usoCfdiElegido) return '';
+  return valor || '';
+}
+
+// `opciones.clienteExistente` marca el alta que va sobre un cliente elegido por dedup
+// ("Usar este cliente", por RFC o por celular): el servidor no puede deducirlo del
+// customer_id, que en el reintento de un alta nueva significa lo contrario (#250).
+export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId, opciones = {}) {
+  const clienteExistente = opciones.clienteExistente === true;
   return {
     tax_id: csfDatos.rfc || '',
     CustName: csfDatos.razonSocial || '',
@@ -991,7 +1007,7 @@ export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, custom
     city: csfDatos.municipio || '',
     state: csfDatos.estado || '',
     cfdi_regimen_fiscal: csfDatos.regimenFiscal || '',
-    timbrado_uso_cfdi: comercial.uso_cfdi || '',
+    timbrado_uso_cfdi: usoCfdiParaPayload({ clienteExistente, usoCfdiElegido: opciones.usoCfdiElegido === true, valor: comercial.uso_cfdi }),
     sales_type: comercial.sales_type || '',
     segmento_id: comercial.segmento_id || '',
     salesman: comercial.salesman || '',
@@ -1012,6 +1028,7 @@ export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, custom
     entrega: { ...domicilio },
     customer_id: customerId || null,
     branch_id: branchId || null,
+    cliente_existente: clienteExistente,
     fuente: 'cotizador',
   };
 }
@@ -1044,6 +1061,21 @@ export const ALTA_PASO_FILAS = [...new Set(Object.values(ALTA_PASO_FILA))];
 //
 // Regla que sostiene el nucleo: una respuesta que no se entiende SIEMPRE deja mensaje.
 // El silencio nunca es una salida valida.
+// Lo que hay que decir de un paso que NO fallo (issue #250). Antes toda paloma era
+// muda y tres de las cinco mentian: la del segmento tapaba una escritura que el
+// servidor decidio no hacer (`info: 'conservado'`, #186) y la del domicilio tapaba un
+// PUT destructivo. Un paso omitido lleva su motivo en `info`; un exito normal no dice
+// nada, que es lo correcto.
+function mensajeExitoPaso(step) {
+  if (step.status === 'omitido') return step.info || '';
+  if (step.info === 'conservado') {
+    const nombre = step.actualNombre || '';
+    return 'Se conservo el segmento que el cliente ya tenia en Operam' +
+      (nombre ? ' (' + nombre + ')' : '') + '; el que elegiste no se aplico.';
+  }
+  return '';
+}
+
 export function interpretarRespuestaAlta(data) {
   const d = data || {};
   const steps = Array.isArray(d.steps) ? d.steps : [];
@@ -1054,9 +1086,10 @@ export function interpretarRespuestaAlta(data) {
   for (const step of steps) {
     const fila = ALTA_PASO_FILA[step?.name];
     if (fila === undefined) continue;
-    const esError = step.status !== 'ok';
-    const msg = esError ? (step.error || '') : '';
-    porFila.set(fila, { fila, status: esError ? 'error' : 'ok', msg });
+    const omitido = step.status === 'omitido';
+    const esError = step.status !== 'ok' && !omitido;
+    const msg = esError ? (step.error || '') : mensajeExitoPaso(step);
+    porFila.set(fila, { fila, status: esError ? 'error' : omitido ? 'omitido' : 'ok', msg });
     if (esError && !primerError) primerError = msg || 'El paso "' + step.name + '" fallo sin motivo.';
   }
 

@@ -2438,6 +2438,7 @@ test('D11: cliente existente YA clasificado -> se conserva su segmento, no se re
     const paso = res.body.steps.find(s => s.name === 'post-fix segmento (web)');
     assert.strictEqual(paso.status, 'ok');
     assert.strictEqual(paso.info, 'conservado', 'el vendedor debe ver que su seleccion no se aplico y por que');
+    assert.strictEqual(paso.actualNombre, 'Restaurantes, hoteles', 'el segmento conservado se nombra: el id no le dice nada al vendedor (#250)');
   } finally {
     restore();
   }
@@ -2465,6 +2466,137 @@ test('D12: cliente existente en "Sin segmento" -> se le escribe el capturado', a
     assert.strictEqual(web.posts[0].get('segmento_id'), '14');
     assert.strictEqual(web.estado.segmento, '14');
     assert.strictEqual(res.body.steps.find(s => s.name === 'post-fix segmento (web)').status, 'ok');
+  } finally {
+    restore();
+  }
+});
+
+// === Cliente EXISTENTE elegido por dedup: nada de PUT sobre su sucursal (issue #250) ===
+//
+// El alta completa corria los MISMOS PUT del camino de creacion sobre el cliente que el
+// vendedor eligio con "Usar este cliente": el PUT /branches es REPLACE y le borro el
+// vendedor, el nombre y el domicilio reales al cliente 15 en produccion. La marca
+// `cliente_existente` es lo unico que distingue ese caso del reintento legitimo de un
+// alta nueva, que si tiene que terminar de configurar SU sucursal recien creada.
+
+test('D13: cliente EXISTENTE (cliente_existente:true) NO hace ningun PUT a /branches (issue #250)', async () => {
+  const llamadasBranches = [];
+  _resetSesionWeb();
+  const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('/15')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 15 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches': (u, opts) => {
+      llamadasBranches.push({ metodo: opts?.method || 'GET', url: u });
+      return { ok: true, json: async () => ({ result: true }) };
+    },
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, customer_id: 15, cliente_existente: true });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true, 'omitir un paso no es un fallo del alta');
+    assert.deepEqual(llamadasBranches.filter(l => l.metodo === 'PUT'), [], 'el PUT de branches es REPLACE: sobre un cliente existente no corre NUNCA');
+    const paso = res.body.steps.find(s => s.name === 'PUT branch');
+    assert.ok(paso, 'la fila del domicilio debe seguir existiendo');
+    assert.strictEqual(paso.status, 'omitido', 'no es exito: es una escritura deliberadamente omitida');
+    assert.ok(paso.info && paso.info.trim(), 'el vendedor tiene que leer por que no se toco el domicilio');
+    assert.strictEqual(res.body.branch_id, 15, 'el GET del branch_id si corre: es read-only y el frontend lo usa');
+  } finally {
+    restore();
+  }
+});
+
+test('D14: reintento de un alta NUEVA (customer_id sin la marca) conserva su PUT de branch (issue #250)', async () => {
+  const llamadasBranches = [];
+  _resetSesionWeb();
+  const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
+      if (u.includes('/546')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 646 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches': (u, opts) => {
+      llamadasBranches.push({ metodo: opts?.method || 'GET', url: u });
+      return { ok: true, json: async () => ({ result: true }) };
+    },
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, customer_id: 546 });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    const puts = llamadasBranches.filter(l => l.metodo === 'PUT');
+    assert.strictEqual(puts.length, 1, 'el alta que creo esta sucursal tiene que terminar de configurarla');
+    assert.ok(puts[0].url.endsWith('/branches/646'), 'sobre la sucursal del cliente del reintento');
+    assert.strictEqual(res.body.steps.find(s => s.name === 'PUT branch').status, 'ok');
+  } finally {
+    restore();
+  }
+});
+
+test('D15: selects comerciales vacios -> ni un PUT de config comercial (issue #250)', async () => {
+  // Los tres campos nacen en '' ("-- Selecciona --") y viajaban crudos: Operam
+  // coerciono el sales_type '' a 0 y el cliente 15 perdio su lista de precios.
+  let putCustomerLlamado = false;
+  _resetSesionWeb();
+  const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putCustomerLlamado = true; return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('/547')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 647 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, customer_id: 547, cliente_existente: true, sales_type: '', segmento_id: '', timbrado_uso_cfdi: '' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.ok(!putCustomerLlamado, 'sin nada que escribir no se toca al cliente');
+    const paso = res.body.steps.find(s => s.name === 'PUT customer (config comercial)');
+    assert.ok(paso, 'la fila debe existir para que el vendedor sepa que no se escribio');
+    assert.strictEqual(paso.status, 'omitido');
+    assert.ok(paso.info && paso.info.trim(), 'con motivo legible');
+  } finally {
+    restore();
+  }
+});
+
+test('D16: solo el campo que el vendedor si eligio viaja en el PUT de config comercial (issue #250)', async () => {
+  let putCustomerBody = null;
+  _resetSesionWeb();
+  const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'PUT') { putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
+      if (u.includes('/548')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 648 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, customer_id: 548, cliente_existente: true, sales_type: '12', segmento_id: '', timbrado_uso_cfdi: '' });
+    assert.strictEqual(res.status, 200);
+    assert.ok(putCustomerBody, 'con un campo elegido si se escribe');
+    assert.strictEqual(putCustomerBody.sales_type, '12');
+    assert.ok(!('segmento_id' in putCustomerBody), 'el segmento vacio NO viaja');
+    assert.ok(!('timbrado_uso_cfdi' in putCustomerBody), 'el uso de CFDI vacio NO viaja');
+    assert.strictEqual(res.body.steps.find(s => s.name === 'PUT customer (config comercial)').status, 'ok');
   } finally {
     restore();
   }

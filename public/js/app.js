@@ -6190,6 +6190,10 @@ const altaState = {
   datos: null,
   domicilio: null,
   modo: null,
+  // "El vendedor toco el select de Uso de CFDI en ESTA alta" (#250). El campo nace
+  // preseleccionado en G03 y altaFijarDefaultUsoCfdi lo escribe por JS, que no dispara
+  // `change`: sin esta marca, el default se le escribia encima al cliente existente.
+  usoCfdiElegido: false,
 };
 
 async function cargarCatalogos() {
@@ -7183,18 +7187,27 @@ const ALTA_ICO_PENDING = '○';
 const ALTA_ICO_SPIN = '◔';
 const ALTA_ICO_OK = '✓';
 const ALTA_ICO_ERR = '✗';
+// Un paso que NO corrio a proposito no es una paloma (#250): la del domicilio tapaba
+// un PUT destructivo y la del segmento una escritura que el servidor decidio no hacer.
+const ALTA_ICO_OMITIDO = '-';
 
 function altaPasoSetStatus(idx, status, msg) {
   const ico = document.getElementById(`alta-paso-ico-${idx}`);
   const msgEl = document.getElementById(`alta-paso-msg-${idx}`);
   const row = document.getElementById(`alta-paso-${idx}`);
   if (ico) {
-    ico.textContent = status === 'ok' ? ALTA_ICO_OK : status === 'error' ? ALTA_ICO_ERR : status === 'loading' ? ALTA_ICO_SPIN : ALTA_ICO_PENDING;
-    ico.style.color = status === 'ok' ? 'var(--success, #22c55e)' : status === 'error' ? 'var(--danger)' : '';
+    ico.textContent = status === 'ok' ? ALTA_ICO_OK : status === 'error' ? ALTA_ICO_ERR : status === 'omitido' ? ALTA_ICO_OMITIDO : status === 'loading' ? ALTA_ICO_SPIN : ALTA_ICO_PENDING;
+    ico.style.color = status === 'ok' ? 'var(--success, #22c55e)' : status === 'error' ? 'var(--danger)' : status === 'omitido' ? 'var(--text-light)' : '';
   }
+  // El mensaje ya no es exclusivo del error: un exito degradado (segmento conservado) y
+  // un paso omitido tienen que decir que paso, o la fila vuelve a mentir.
   if (msgEl) {
-    if (msg && status === 'error') { msgEl.textContent = msg; msgEl.style.display = ''; }
-    else { msgEl.style.display = 'none'; }
+    if (msg && (status === 'error' || status === 'ok' || status === 'omitido')) {
+      msgEl.textContent = msg;
+      // Explicito en las dos ramas: vaciar style.color borraria el color del HTML.
+      msgEl.style.color = status === 'error' ? 'var(--danger)' : 'var(--text-light)';
+      msgEl.style.display = '';
+    } else { msgEl.style.display = 'none'; }
   }
   if (row) row.style.background = status === 'error' ? '#fff5f5' : '';
 }
@@ -7232,7 +7245,10 @@ function altaDarDeAlta() {
 
   const getComercial = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   const domicilio = altaState.domicilio || {};
-  const resolvedCustomerId = (altaState.clienteExistente && altaState.clienteExistente.id != null)
+  // Cliente elegido por dedup (RFC o celular) vs. reintento de un alta nueva: son
+  // caminos distintos y el servidor no puede distinguirlos por el customer_id (#250).
+  const esClienteExistente = !!(altaState.clienteExistente && altaState.clienteExistente.id != null);
+  const resolvedCustomerId = esClienteExistente
     ? altaState.clienteExistente.id
     : (altaState.customer_id || null);
   const comercial = {
@@ -7243,7 +7259,10 @@ function altaDarDeAlta() {
     invoice_email: getComercial('alta-email-factura'),
     celular_nota: telefonoDeCampo('alta-celular'),
   };
-  const payload = buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, resolvedCustomerId, altaState.branch_id);
+  const payload = buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, resolvedCustomerId, altaState.branch_id, {
+    clienteExistente: esClienteExistente,
+    usoCfdiElegido: altaState.usoCfdiElegido === true,
+  });
 
   ALTA_PASO_FILAS.forEach(i => altaPasoSetStatus(i, 'loading'));
 
@@ -7352,6 +7371,14 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', () => {
   const cel = document.getElementById('alta-celular');
   if (cel) cel.addEventListener('blur', altaBuscarCelular);
+});
+
+// El uso de CFDI solo cuenta como eleccion del vendedor si el vendedor lo cambio
+// (#250). Va por addEventListener y no por onchange inline a proposito: el inline
+// resuelve contra window (#112) y aqui no hace falta exponer nada.
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('alta-uso-cfdi');
+  if (sel) sel.addEventListener('change', () => { altaState.usoCfdiElegido = true; });
 });
 
 // Widget internacional en los campos de telefono que ya viven en el HTML
