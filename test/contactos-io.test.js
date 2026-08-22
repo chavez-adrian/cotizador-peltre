@@ -511,6 +511,139 @@ test('la clase adoptada queda persistida en el mapeo', async () => {
   assert.equal(fila.clase, 'adoptado');
 });
 
+// --- Una ficha borrada a mano en Google se olvida del mapeo (#249) ---
+//
+// Alguien borro la ficha desde el telefono: el resourceName del mapeo ya no
+// existe en Google, y el PATCH (o la relectura por etag) responde 404. La
+// respuesta correcta no es abortar la pasada ni reintentar para siempre: es
+// olvidar esa fila y dejar que la siguiente pasada la trate como nueva.
+
+const MAPEADA_PROPIA = {
+  celular10: '5512345678', resourceName: 'people/c1', etag: 'viejo',
+  clase: 'propio', huella: 'huella-de-otra-pasada',
+};
+
+test('un PATCH que responde 404 olvida la fila del mapeo y la pasada sigue sin abortar', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([MAPEADA_PROPIA], null, 2));
+  mockFetchByUrl({
+    ...libretaFalsa().handlers,
+    ':updateContact': () => jsonResponse({ error: { code: 404, message: 'Requested entity was not found.', status: 'NOT_FOUND' } }, 404),
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.actualizados, 0);
+  assert.equal(resumen.errores.length, 1);
+  assert.equal(resumen.errores[0].celular10, '5512345678');
+  assert.match(resumen.errores[0].motivo, /borrada en Google/);
+  assert.equal(resumen.errores[0].categoria, 'datos');
+  assert.deepEqual(leerMapeo(), [], 'la fila se olvida del mapeo, no se queda apuntando a un contacto muerto');
+});
+
+test('una ficha adoptada tambien se olvida si Google responde 404', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([{ ...MAPEADA_PROPIA, resourceName: 'people/c9', clase: 'adoptado' }], null, 2));
+  mockFetchByUrl({
+    ...libretaFalsa().handlers,
+    ':updateContact': () => jsonResponse({ error: { code: 404, message: 'not found' } }, 404),
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.actualizados, 0);
+  assert.equal(resumen.errores.length, 1);
+  assert.equal(resumen.errores[0].categoria, 'datos');
+  assert.deepEqual(leerMapeo(), []);
+});
+
+test('un 404 en la relectura por etag obsoleto tambien olvida la fila', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([MAPEADA_PROPIA], null, 2));
+  mockFetchByUrl({
+    ...libretaFalsa().handlers,
+    ':updateContact': () => jsonResponse({
+      error: {
+        code: 400, status: 'FAILED_PRECONDITION', message: 'etag mismatch',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'failedPrecondition' }],
+      },
+    }, 400),
+    'people/c1?personFields': () => jsonResponse({ error: { code: 404, message: 'not found' } }, 404),
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.actualizados, 0);
+  assert.equal(resumen.errores.length, 1);
+  assert.match(resumen.errores[0].motivo, /borrada en Google/);
+  assert.deepEqual(leerMapeo(), []);
+});
+
+test('un 400 failedPrecondition NO se trata como ficha borrada: se relee y se reintenta, no se olvida', async () => {
+  // Candado contra confundir los dos: el 400 de etag viejo ya tiene su propio
+  // camino (releer y reintentar) y no debe pisarse con el de #249.
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([MAPEADA_PROPIA], null, 2));
+  mockFetchByUrl({
+    ...libretaFalsa().handlers,
+    ':updateContact': (u, opts) => {
+      const etagEnviado = JSON.parse(opts.body).etag;
+      if (etagEnviado === 'viejo') {
+        return jsonResponse({
+          error: {
+            code: 400, status: 'FAILED_PRECONDITION', message: 'etag mismatch',
+            details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'failedPrecondition' }],
+          },
+        }, 400);
+      }
+      return jsonResponse({ resourceName: 'people/c1', etag: 'fresco' });
+    },
+    'people/c1?personFields': () => jsonResponse({ resourceName: 'people/c1', etag: 'recien-leido' }),
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.actualizados, 1);
+  assert.equal(resumen.errores.length, 0);
+  assert.equal(leerMapeo()[0].etag, 'fresco', 'la fila sigue en el mapeo, actualizada');
+});
+
+test('prueba de dos pasadas: la primera con 404 olvida la fila, la segunda crea de nuevo y sale limpia', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([MAPEADA_PROPIA], null, 2));
+  mockFetchByUrl({
+    ...libretaFalsa().handlers,
+    ':updateContact': () => jsonResponse({ error: { code: 404, message: 'not found' } }, 404),
+  });
+
+  const uno = await barrerContactosGoogle();
+  assert.equal(uno.errores.length, 1);
+  assert.deepEqual(leerMapeo(), []);
+
+  const segunda = libretaFalsa();
+  mockFetchByUrl(segunda.handlers);
+  const dos = await barrerContactosGoogle();
+
+  assert.equal(dos.creados, 1, 'sin la fila el celular se trata como nuevo y se vuelve a crear');
+  assert.equal(dos.errores.length, 0, 'la pasada siguiente sale limpia');
+  assert.equal(segunda.estado.creados.length, 1);
+});
+
+test('si la libreta tiene una ficha manual con ese numero, la pasada siguiente la ADOPTA en vez de crear otra', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([MAPEADA_PROPIA], null, 2));
+  mockFetchByUrl({
+    ...libretaFalsa().handlers,
+    ':updateContact': () => jsonResponse({ error: { code: 404, message: 'not found' } }, 404),
+  });
+  await barrerContactosGoogle();
+  assert.deepEqual(leerMapeo(), []);
+
+  const segunda = libretaFalsa({ existentes: [HECHO_A_MANO] });
+  mockFetchByUrl(segunda.handlers);
+  const dos = await barrerContactosGoogle();
+
+  assert.equal(dos.creados, 0, 'no se crea otra ficha del mismo numero');
+  assert.equal(dos.actualizados, 1);
+  const fila = leerMapeo().find(m => m.celular10 === '5512345678');
+  assert.equal(fila.resourceName, 'people/c9', 'se apunta al contacto que ya existia');
+  assert.equal(fila.clase, 'adoptado');
+});
+
 // =========================================================================
 // CANDADO ADR-0013, medido donde de verdad importa: en el cuerpo del PATCH que
 // sale hacia Google. Google REEMPLAZA los campos que nombra updatePersonFields;
@@ -675,6 +808,25 @@ test('si el origen reaparece, la ficha sale del grupo Inactivo y vuelve a actual
   }]);
   assert.equal(estado.actualizados[0].body.names[0].givenName, 'Laura Mendez - Cocinas del Valle');
   assert.equal(leerMapeo().find(m => m.celular10 === '5512345678').inactivoDesde, null);
+});
+
+test('una ficha INACTIVA que reaparece y da 404 en el PATCH tambien se olvida (tercer caso: propio, adoptado, inactivo)', async () => {
+  escribirArchivoSync(MAPEO_PATH, JSON.stringify([{
+    ...HUERFANA, celular10: '5512345678', inactivoDesde: '2026-08-01T00:00:00.000Z',
+  }], null, 2));
+  const { handlers } = libretaFalsa({ clientes: [CLIENTE_OPERAM] });
+  mockFetchByUrl({
+    ...handlers,
+    ':updateContact': () => jsonResponse({ error: { code: 404, message: 'not found' } }, 404),
+  });
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.actualizados, 0);
+  assert.equal(resumen.errores.length, 1);
+  assert.match(resumen.errores[0].motivo, /borrada en Google/);
+  assert.equal(resumen.errores[0].categoria, 'datos');
+  assert.ok(!leerMapeo().find(m => m.celular10 === '5512345678'), 'la ficha inactiva que reaparecio y ya no existe en Google tambien se olvida');
 });
 
 test('el tope de inactivacion llega al resumen como error, no como fichas etiquetadas', async () => {

@@ -76,3 +76,20 @@ test('volver a escribir la ficha la reactiva: la marca se limpia sola', async ()
   const [fila] = await store.listar();
   assert.equal(fila.inactivoDesde, null);
 });
+
+// --- Olvidar una fila por 404 (#249) ---
+
+test('eliminar borra la fila del mapeo: la siguiente pasada la trata como nueva', async () => {
+  await store.guardar(ENTRADA);
+  await store.guardar({ ...ENTRADA, celular10: '5598765432', resourceName: 'people/c2' });
+  const resultado = await store.eliminar('5512345678');
+  assert.equal(resultado, true);
+  const mapeo = await store.listar();
+  assert.deepEqual(mapeo.map(m => m.celular10), ['5598765432']);
+});
+
+test('eliminar un celular que no esta en el mapeo no falla', async () => {
+  const resultado = await store.eliminar('0000000000');
+  assert.equal(resultado, false);
+  assert.deepEqual(await store.listar(), []);
+});
