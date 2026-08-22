@@ -1,193 +1,89 @@
-# PROGRESS — sesión 2026-08-21 · sincronización de contactos a Google (#224)
+# PROGRESS — sesión 2026-08-21/22 · sincronización de contactos a Google (#224): código completo y primera carga real
 
-Estado al cierre. **No hay una sola línea de implementación escrita**: la sesión produjo
-diseño, documentación y tres scripts de apoyo, todo en `main`. Los dos tickets que
-dependían de trabajo humano están hechos y verificados en vivo, así que el desarrollo
-puede arrancar de inmediato.
+Estado al cierre. **Todo el código de la spec está en `main` y desplegado en Render**
+(último commit de esta sesión: `aff0d50`, suite **2664/0**). La primera carga real ya
+ocurrió sola. Lo que queda es verificación humana.
 
-> Esta sección corresponde a la sesión del sync de contactos. Más abajo se conserva
-> íntegro el PROGRESS de la sesión del **406 de Operam**, que tiene sus propios
-> pendientes y no forma parte de este trabajo.
+> Más abajo se conserva íntegro el PROGRESS de la sesión del **406 de Operam**, que
+> tiene sus propios pendientes.
 
 ---
 
-## 1. Qué se estaba haciendo y por qué
+## 1. Qué se hizo
 
-Adrián preguntó si se podían sincronizar los contactos de Operam y del cotizador con
-los Contactos de Google de `pppeltre@gmail.com`, para que el WhatsApp Business del
-Android asociado muestre nombres de clientes en lugar de números desconocidos.
+Orquestación multi-agente con Adrián AFK: un agente por ticket, cada uno con el skill
+`/mattpocock-skills:implement` incrustado verbatim, TDD en el seam acordado y
+`/code-review` (dos subagentes Sonnet). Opus para el núcleo (#227, #228, #229, #231);
+Sonnet para panel/correo (#230) y los fixes (#247, #249). Worktrees aislados para
+paralelizar; el orquestador integró en `main` coordinándose por mensajes con la sesión
+`cotizador-bug-242-245-246`, que mergeaba #242/#245/#246 en paralelo (solape solo en
+`server.js`, regiones distintas, cero conflictos reales).
 
-La cadena es: **Operam + cotizador → Contactos de Google → Android → WhatsApp Business**.
-WhatsApp no tiene API de contactos; muestra lo que hay en la agenda del teléfono, que se
-alimenta de la cuenta de Google. No hay otro camino.
+| Ticket | Commits | Qué |
+|---|---|---|
+| #227 | 59910c9, 9ce73e7 | `contactos-logica` (núcleo puro → plan), `google-contactos` (People API, fetch, refresh), `contactos-store` (tabla `contactos_google`, llave `celular10`), `contactos-io`; barrido 15 min bajo `isMain` |
+| #228 | 821c571, 16ea881 | `enumerarTelefonosClientes` (3 tipos + domicilios); cliente gana al prospecto; un solo timer para las dos fuentes |
+| #230 | 45cfab9 → 757a6ba | `contactos-observabilidad{,-io,-store}`, vista en `/admin`, `GET /api/admin/contactos-google`, correo diario con SMTP de mayoreo; barrido único registrado como `contactos` |
+| #229 | f107ecd, 989eedb → 9bbb8aa | `leerLibreta()` paginada; clase `adoptado` con máscara corta y dos pruebas candado |
+| #231 | 4adb4ab, a9400b9 | grupo `Cotizador inactivos`, `inactivo_desde` (auto-migrado), tope 20 % Y >5, freno si falta una fuente, reactivación; cero DELETE |
+| #247 | ddc2e2d, 87cf93e | X - X colapsado; extensión recortada (`sinExtension`); persona en MAYÚSCULAS titulada sin excepción de tokens cortos |
+| #249 | aff0d50 | 404 en PATCH → se olvida la fila del mapeo; la pasada siguiente recrea o adopta |
 
-Se siguió el flujo de Matt Pocock de punta a punta: `/research` → `/grill-with-docs` →
-`/to-spec` → `/to-tickets`, y luego ejecución de los dos primeros tickets.
+Cerrados además: #226 (Jorge es cliente real; Alejandro lo renombra).
 
----
+## 2. La carga real (CSV del 2026-08-21)
 
-## 2. Estado exacto: qué quedó en `main`
+431 contactos = 15 manuales + 379 fichas de 318 clientes + 36 prospectos + Jorge.
+**Render auto-despliega `main` con las `GOOGLE_*` vivas, así que la carga corrió sola
+en cuanto #227/#228 entraron** — sin respaldo CSV previo y antes de que #229 (adopción)
+estuviera desplegado, lo que produjo 4 duplicados (manual + sistema). Al limpiarlos a
+mano se borraron fichas del sistema (no las manuales) → 404 en cada pasada → #249.
 
-Commits de esta sesión, en orden:
+La corrida de las 18:01 del 21 fue la primera con #247 y aplicó las ~140 correcciones.
 
-| Commit | Qué |
-|---|---|
-| `a4942e1` | CONTEXT.md (término *Contacto de Google*), ADR-0013, nota de research |
-| `507f6a4` | `scripts/autorizar-google.mjs` — obtiene el refresh token, un solo uso |
-| `b7a2a8a` | research: publicar la app NO exige enlaces de privacidad (verificado en vivo) |
-| `37f41c0` | `scripts/verificar-google.mjs` — verificador read-only de credenciales |
-| `dd37a9d` | fix: el verificador pedía el scope `profile`, que a propósito no tenemos |
-| `26752b9` | `scripts/probar-formato-telefono.mjs` — mide el formato por API |
-| `3330929` | research: WhatsApp NO exige el "1" tras el +52 (medido en el dispositivo) |
+## 3. Estado esperado tras el deploy de #249 (verificar en `/admin`)
 
-Documentos:
+1. Primera pasada: 4 avisos `[datos] ficha borrada en Google, se olvida del mapeo`.
+2. Segunda pasada: sin errores, "Última exitosa" avanza, no sale correo. En la libreta
+   "Ed" queda adoptada como "Ed Marti - Operadora Gastronomica Agua Blanca"; Emilio,
+   Mayra y Jorge se recrean.
+3. Los 8 clientes de prueba (487, 495-498, 503) ya limpiados en Operam pasan a la
+   etiqueta "Cotizador inactivos" cuando se refresque el caché horario de clientes.
 
-- `CONTEXT.md` — término **Contacto de Google**, con sus clases *propio* y *adoptado*,
-  colocado junto a *Contacto de cliente* para que la distinción se vea.
-- `docs/adr/0013-propiedad-de-contactos-de-google.md` — política de propiedad.
-- `docs/research/sincronizacion-contactos-google.md` — 893 líneas, fuentes primarias,
-  ya corregido con dos hallazgos medidos en vivo.
-- `CLAUDE.md` — rango de ADRs actualizado a 0001-0013.
+## 4. Lo que falta (todo HITL)
 
-Issues en GitHub (`chavez-adrian/cotizador-peltre`):
+- **#232** — humo: panel en verde; muestra en contacts.google.com (nombres
+  `Persona - Empresa`, sin X - X ni mayúsculas); Alejandro confirma nombres en WhatsApp
+  Business con un cliente, un prospecto y uno que era manual; los 8 de prueba bajo
+  "Cotizador inactivos". Anotar conteo y casos raros; cerrar #232 y #224.
+- **#225** — a partir del **2026-08-29** mirar `/admin`: última corrida reciente y sin
+  error de autorización = el permiso sobrevivió a los 7 días → cerrar. No hace falta el
+  script ni dar credenciales.
+- Aviso de privacidad en Shopify (línea sobre proveedores tecnológicos), fuera del repo.
 
-- **#224** — spec padre (`ready-for-agent`), 33 user stories.
-- **#225** — credenciales OAuth. **HECHO** salvo un criterio (ver §4).
-- **#226** — formato del teléfono. **MEDIDO**, resultado documentado. Falta borrar el
-  contacto de prueba.
-- **#227** — tracer bullet. **SIN BLOQUEADORES, listo para tomar.**
-- **#228, #229, #230** — dependen de #227.
-- **#231** — depende de #228.
-- **#232** — humo final, depende de #226 y de #228-#231.
+## 5. Decisiones de una línea que Adrián puede cambiar
 
----
+- Nombre del grupo `Cotizador inactivos` (`NOMBRE_GRUPO_INACTIVOS`, `google-contactos.js`):
+  renombrarlo después deja huérfano el anterior.
+- Umbral del tope de inactivación 20 % Y >5 (`contactos-logica.js`): apuesta, no medición.
+- Etiquetas `Entregas` / `Facturacion` para teléfonos sin persona (`ROL_SIN_PERSONA`,
+  `ETIQUETA_DOMICILIO`).
+- `userDefined` del adoptado se reemplaza (un campo personalizado ajeno se perdería).
+- Sin backoff de 429 en el cliente de People API.
 
-## 3. Decisiones tomadas (las 13 del grill)
+## 6. Lecciones de método
 
-1. **Un solo teléfono**, una sola cuenta de Google. Los vendedores en sus celulares no
-   ven nada; está fuera de alcance.
-2. **Frescura de minutos** — es lo que justifica construir en vez de importar un CSV.
-3. **Barrido periódico en dos ritmos, sin ganchos.** Prospectos cada ~15 min desde Neon;
-   clientes de Operam heredando el caché horario de `indice-telefonos.js`. **Cero cambios
-   en las 8 rutas de alta existentes.**
-4. **Entra todo**, incluidos prospectos en *No útil* y *Perdida*: el descartado que
-   reaparece es justo a quien más útil resulta identificar.
-5. **Aviso de privacidad**: se sigue adelante y Adrián agrega una línea sobre proveedores
-   tecnológicos en Shopify. Tarea manual, fuera del repo. Pesa más porque el correo
-   también se sincroniza.
-6. **Nombre `Persona - Empresa`**, con el nombre comercial (`cust_ref`) y no la razón
-   social; ciudad como respaldo si el prospecto no declaró empresa.
-7. **En colisión gana el cliente sobre el prospecto.** Invierte a propósito la precedencia
-   de `clasificarCelular`; el porqué está en ADR-0013.
-8. **Las fichas ajenas se adoptan** (Adrián eligió esto contra la recomendación inicial).
-9. **Propia: se escribe completa. Adoptada: solo nombre y organización.** Nunca sus
-   teléfonos, correos ni direcciones.
-10. **Todos los teléfonos** de Operam: contactos y domicilios (~812 fichas).
-11. **Sin respaldo → inactivo, nunca borrar.**
-12. **Se incluye el correo** en la ficha.
-13. **Panel en /admin + correo diario** mientras la sincronización no complete, reusando
-    el SMTP de `lib/alerta-mayoreo-io.js`.
-
-**Seam de prueba acordado (uno solo):** un núcleo puro que recibe
-`(prospectos, clientesOperam, libreta, mapeo)` y devuelve un plan
-`{crear, actualizar con máscara, inactivar}`. El IO solo ejecuta el plan y no decide nada.
-Mismo reparto que `sync-operam.js` frente a `sync-operam-io.js`.
-
----
-
-## 4. Lo que falta, paso a paso
-
-### 4.1 Pendientes de Adrián (menores)
-
-1. **Borrar el contacto de prueba** "Jorge Prueba Exitosa" en `contacts.google.com`
-   (`people/c4838503116925933073`). Es el único criterio sin marcar de #226.
-2. **A partir del 2026-08-29**, volver a correr `node scripts/verificar-google.mjs` con las
-   tres variables `GOOGLE_*`. Si sigue funcionando, la autorización sobrevivió a los siete
-   días y **#225 se cierra del todo**. Es la prueba de que publicar la app surtió efecto.
-3. **Agregar la línea al aviso de privacidad** en Shopify (decisión 5).
-
-### 4.2 El desarrollo
-
-**#227 es el siguiente y no tiene bloqueadores.** Es el ticket más grande de los ocho y el
-que abre las tres ramas siguientes (#228, #229, #230). Adrián preguntó si arrancarlo y la
-sesión se cortó antes de decidirlo.
-
-Después: #228 y #229 y #230 en paralelo → #231 → #232.
-
----
-
-## 5. Restricciones y hechos descubiertos (lo que costó averiguar)
-
-**De Google, medido en vivo:**
-
-- La caducidad de **siete días es del estado "Testing" de la app**, no del token. Se quita
-  publicando la app, gratis. `auth/contacts` es scope **sensible pero NO restringido**, así
-  que no aplica la evaluación de seguridad CASA.
-- **Publicar NO exige** enlaces de home, privacidad ni términos. Resolvió un
-  `[NO VERIFICADO]` del research.
-- La consola ya no se llama "OAuth consent screen" sino **Google Auth Platform**
-  (Branding / Audience / Clients / Data Access / Verification Center). El scope va en
-  **Data Access**, y no aparece en el buscador si la People API no está habilitada.
-- Al publicar, la consola lleva al **Centro de verificación**, que avisa en rojo que "se
-  requiere la verificación". Tiene tono de bloqueo y **no lo es**: el criterio real es que
-  **Audience** diga "En producción".
-- `updateMask` **reemplaza, no fusiona**: incluir teléfonos en la máscara de un contacto
-  adoptado borraría sus demás números, en cada pasada.
-- El etag obsoleto responde **400 `failedPrecondition`, no 409**.
-- `searchContacts` **no sirve para deduplicar**: caché perezoso, búsqueda por prefijo, tope
-  de 30. El mapeo `teléfono → resourceName + etag` **vive en Neon** y es la autoridad.
-- `googleapis` pesa **233 MB** instalado. Se usa `fetch` directo, calcado de `lib/dropbox.js`.
-- El scope quedó bien acotado: `people/me` responde **403** porque falta `profile`. La app
-  puede tocar contactos y **no** leer el perfil del titular.
-
-**Del teléfono, medido el 2026-08-21 (#226):**
-
-- **WhatsApp NO exige el "1" tras el +52**, aunque su documentación lo siga pidiendo. Se
-  escribe **E.164 limpio**, idéntico a lo que ya guarda Neon: cero conversión.
-- **Google no normaliza**: `canonicalForm` sale idéntico al valor escrito.
-- **La libreta tiene solo 15 contactos**, e incluye precargados de operadora
-  ("9-1-1 Emergencias", "Denun Ciudadana"). Dos consecuencias: la cadena
-  Google ↔ Android **ya sincroniza** (esos precargados llegaron a Google desde el
-  teléfono), y **la adopción de #229 será un caso raro** — casi todo será creación.
-
-**De México:**
-
-- **No se puede distinguir un celular de un fijo por el número**: libphonenumber devuelve
-  `FIXED_LINE_OR_MOBILE` para todos, incluido el número comercial propio. Filtrar
-  conmutadores es imposible y no se intenta.
-
-**De la operación:**
-
-- **El Android lo tiene Alejandro Chávez, no Adrián.** Alejandro es el actor principal de
-  las user stories: la convención `Persona - Empresa` la lee a diario. Las pruebas que
-  requieren el teléfono se reparten (Adrián escribe por API, Alejandro observa).
-
----
-
-## 6. Lecciones de método de esta sesión
-
-- **La prueba tiene que ir por el mismo camino que el código.** Crear el contacto de
-  prueba a mano en la interfaz de Google habría medido cómo normaliza esa interfaz, no lo
-  que hace la API. Por eso existe `scripts/probar-formato-telefono.mjs`.
-- **Validar la entrada antes de escribir.** El número de prueba llegó con 12 dígitos tras
-  el `+52` (un "55" antepuesto por costumbre a un número de Guadalajara ya completo). Usado
-  tal cual, WhatsApp no habría casado nada y la conclusión habría sido "el formato no
-  sirve": un falso negativo que habría cambiado el diseño por la razón equivocada.
-- **La verticalidad cambia las dependencias.** Al rehacer los tickets como slices
-  verticales, la medición del "1" pasó de opcional a bloqueante de #227 — porque #227 dejó
-  de ser una capa técnica y pasó a prometer "el nombre aparece en WhatsApp".
-- `/to-spec`, `/to-tickets` y `/ask-matt` son **solo-slash**: no se pueden invocar desde el
-  modelo, los tiene que correr Adrián.
-
----
-
-## 7. Riesgo a vigilar en la implementación
-
-La **máscara reducida de los contactos adoptados** (#229) parecerá complejidad innecesaria
-a quien no haya leído ADR-0013, y más ahora que sabemos que la adopción será rara.
-Unificarla con la de los contactos propios reintroduce un borrado silencioso de datos
-ajenos que se repetiría **en cada pasada, cada quince minutos, indefinidamente**. El ticket
-lo advierte explícitamente y pide una prueba dedicada, escrita como candado.
+- **Empujar a `main` es desplegar a producción con credenciales vivas.** El plan decía
+  "carga a propósito y con respaldo"; el deploy automático lo volvió letra muerta. La
+  próxima vez que una feature escriba en un sistema externo, gatear el barrido con una
+  variable o desplegar la escritura al final.
+- **Las instrucciones a humanos sobre "cuál copia borrar" fallan**, aunque la ficha del
+  sistema se reconozca por su campo `origen`. El sistema tiene que tolerar borrados
+  manuales (#249), no depender de que no ocurran.
+- Los worktrees no traen `.env`: sin él fallan 26 tests de operam-web por `Invalid URL`.
+  Copiar el `.env` (sin `GOOGLE_*` ni `DATABASE_URL`) antes de correr la suite.
+- Un encadenado `a && b; c && d` en Bash sigue tras el fallo de `b`: un commit entró con
+  pruebas rotas y hubo que enmendarlo. Encadenar todo con `&&` o cortar con `set -e`.
 
 ---
 ---
