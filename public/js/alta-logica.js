@@ -947,8 +947,9 @@ export const CEL_CODE_POR_ISO2 = { mx: '+52', us: '+1', ca: '+1-CA' };
 
 // Construye el body de POST /api/crear-cliente a partir de los datos fiscales (CSF),
 // los campos comerciales capturados y el domicilio de entrega. customerId/branchId
-// no nulos indican un reintento (issue #?): se reenvian para que el backend continue
-// donde quedo en vez de crear un cliente duplicado.
+// no nulos evitan crear un cliente duplicado, pero por si solos NO dicen de que caso
+// se trata: pueden ser un reintento de esta misma alta o un cliente que ya existia y
+// el vendedor eligio en la dedup. Eso lo dice `opciones.clienteExistente` (#250).
 // === Selector de contactos de entrega en el paso Envio (issue #99) ===
 //
 // Antes, el paso Envio prellenaba telefono/correo de entrega tomando el primer valor
