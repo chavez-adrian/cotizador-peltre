@@ -3242,7 +3242,10 @@ if (isMain) {
         // lo conserva sin conocer su forma y el panel de /admin lo pinta (#257).
         registrarBarridoContactos('shopify-pedidos', r);
         if (r.leidos || r.descartes.length || r.errores.length) {
-          console.log(`[pedidos-shopify] leidos=${r.leidos} filas=${r.filas} descartes=${r.descartes.length} errores=${r.errores.length}`);
+          // El primer motivo va en el log: sin el, un token sin scope solo se
+          // diagnostica entrando al panel (asi salio el ACCESS_DENIED de #255).
+          const motivo = r.errores[0]?.motivo ? ` motivo=${String(r.errores[0].motivo).slice(0, 200)}` : '';
+          console.log(`[pedidos-shopify] leidos=${r.leidos} filas=${r.filas} descartes=${r.descartes.length} errores=${r.errores.length}${motivo}`);
         }
       })
       .catch(err => console.error('[pedidos-shopify] sondeo periodico fallo:', err.message));
