@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
 const MAPEO_PATH = join(__dirname, '..', 'data', 'contactos-google.json');
+const PEDIDOS_PATH = join(__dirname, '..', 'data', 'pedidos-shopify.json');
 
 // La suite NO toca red ni credenciales: las tres GOOGLE_* se montan aqui con
 // valores de mentira y todo el trafico lo intercepta el mock por URL, el mismo
@@ -169,16 +170,36 @@ function libretaFalsa({ fallaEn = null, demora = false, clientes = [], operam = 
   return { handlers, estado };
 }
 
+// La tercera fuente (#255). Va poblada en TODAS las pasadas por la misma razon
+// que la de clientes: una tabla de pedidos vacia frena la inactivacion entera
+// (freno "sin evidencia"), y sin esta fila la seccion de #231 mediria el freno
+// en vez de la regla. Comparte celular con el PROSPECTO a proposito -- el
+// prospecto gana por precedencia (ADR-0014) y asi ninguna prueba de la suite
+// gana una ficha de mas.
+const PEDIDO_EN_LINEA = {
+  pedido: 'S1898', creadoEn: '2026-08-21T23:31:03.000Z',
+  telefono: '+52 5512345678', celular10: '5512345678',
+  nombre: 'Gerardo Cardenas Guillermo', correo: 'gerardo@ejemplo.mx', fuente: 'envio',
+};
+
+function escribirPedidos(filas) {
+  escribirArchivoSync(PEDIDOS_PATH, JSON.stringify({ cursor: null, filas }, null, 2));
+}
+
 let respaldoProspectos = null;
 let existiaProspectos = false;
 let respaldoMapeo = null;
 let existiaMapeo = false;
+let respaldoPedidos = null;
+let existiaPedidos = false;
 
 before(() => {
   existiaProspectos = existsSync(PROSPECTOS_PATH);
   if (existiaProspectos) respaldoProspectos = leerArchivoSync(PROSPECTOS_PATH);
   existiaMapeo = existsSync(MAPEO_PATH);
   if (existiaMapeo) respaldoMapeo = leerArchivoSync(MAPEO_PATH);
+  existiaPedidos = existsSync(PEDIDOS_PATH);
+  if (existiaPedidos) respaldoPedidos = leerArchivoSync(PEDIDOS_PATH);
 });
 
 after(() => {
@@ -187,6 +208,8 @@ after(() => {
   else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
   if (existiaMapeo) escribirArchivoSync(MAPEO_PATH, respaldoMapeo);
   else if (existsSync(MAPEO_PATH)) borrarArchivoSync(MAPEO_PATH);
+  if (existiaPedidos) escribirArchivoSync(PEDIDOS_PATH, respaldoPedidos);
+  else if (existsSync(PEDIDOS_PATH)) borrarArchivoSync(PEDIDOS_PATH);
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.GOOGLE_CLIENT_SECRET;
   delete process.env.GOOGLE_REFRESH_TOKEN;
@@ -195,6 +218,7 @@ after(() => {
 beforeEach(() => {
   escribirArchivoSync(PROSPECTOS_PATH, JSON.stringify([PROSPECTO], null, 2));
   escribirArchivoSync(MAPEO_PATH, '[]');
+  escribirPedidos([PEDIDO_EN_LINEA]);
   globalThis.fetch = async (url) => { throw new Error('fetch sin mock en tests: ' + url); };
   resetToken();
   // El indice de clientes cachea una hora: sin limpiarlo, una prueba heredaria
@@ -220,6 +244,23 @@ test('un prospecto capturado produce una ficha en la libreta, sin que nadie disp
   assert.equal(body.names[0].givenName, 'Laura Mendez - Cocinas del Valle');
   assert.equal(body.phoneNumbers[0].value, '+525512345678');
   assert.equal(body.emailAddresses[0].value, 'laura@cocinas.mx');
+});
+
+// La tercera fuente sale de la TABLA que llena el sondeo (#255), no de Shopify:
+// esta prueba mide justamente que el barrido la lee, sin que ninguna peticion
+// salga hacia la tienda (el mock tumbaria la pasada si saliera).
+test('un comprador de la tienda en linea llega a la libreta desde la tabla de pedidos', async () => {
+  escribirPedidos([PEDIDO_EN_LINEA, {
+    ...PEDIDO_EN_LINEA, pedido: 'S1899', telefono: '+529991632568', celular10: '9991632568',
+  }]);
+  const { handlers, estado } = libretaFalsa();
+  mockFetchByUrl(handlers);
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.creados, 2, 'el prospecto y el comprador');
+  const comprador = estado.creados.find(c => c.body.phoneNumbers?.[0]?.value === '+529991632568');
+  assert.equal(comprador.body.names[0].givenName, 'Gerardo Cardenas Guillermo - S1899');
 });
 
 test('la ficha queda en myContacts, sin lo cual Android no la sincroniza', async () => {

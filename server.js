@@ -53,6 +53,8 @@ import { buscarCP } from './lib/codigos-postales.js';
 import { leerArchivoSync } from './lib/fs-reintento.js';
 import { enviarAlertaMayoreo } from './lib/alerta-mayoreo-io.js';
 import { barrerContactosGoogle } from './lib/contactos-io.js';
+import { sondearPedidosShopify } from './lib/pedidos-shopify-io.js';
+import { credencialesConfiguradas as shopifyConfigurado } from './lib/shopify-pedidos.js';
 import { credencialesConfiguradas as googleConfigurado } from './lib/google-contactos.js';
 import { registrarBarrido as registrarBarridoContactos } from './lib/contactos-observabilidad-io.js';
 import { listarTodos as listarBarridosContactos } from './lib/contactos-observabilidad-store.js';
@@ -3211,6 +3213,37 @@ if (isMain) {
       .catch(err => console.error('[contactos-google] barrido periodico fallo:', err.message));
     barrerContactos();
     setInterval(barrerContactos, 15 * 60 * 1000).unref();
+  }
+
+  // Sondeo de pedidos de la tienda en linea (spec #254, ticket #255; ADR-0014):
+  // llena la tabla pedidos_shopify, que es la TERCERA fuente del barrido de
+  // arriba. Los dos son independientes a proposito -- corren en timers
+  // distintos, con locks distintos, y el barrido de contactos lee la tabla y no
+  // este sondeo: una tienda caida no puede frenar la sincronizacion de
+  // prospectos ni de clientes.
+  //
+  // Cada hora y no cada quince minutos: quien compra en la tienda escribe al
+  // WhatsApp horas o dias despues, no en el minuto siguiente, y cada corrida
+  // gasta cuota de la API de Shopify. Sin webhook (ADR-0014).
+  //
+  // Como los otros barridos, ASUME UNA SOLA INSTANCIA (el lock vive en memoria,
+  // en lib/pedidos-shopify-io.js).
+  if (!shopifyConfigurado()) {
+    console.warn('[pedidos-shopify] Falta SHOPIFY_API_TOKEN: el sondeo de pedidos de la tienda no corre');
+  } else {
+    const sondearPedidos = () => sondearPedidosShopify()
+      .then(r => {
+        registrarBarridoContactos('shopify-pedidos', r);
+        if (r.leidos || r.descartes.length || r.errores.length) {
+          console.log(`[pedidos-shopify] leidos=${r.leidos} filas=${r.filas} descartes=${r.descartes.length} errores=${r.errores.length}`);
+        }
+      })
+      .catch(err => console.error('[pedidos-shopify] sondeo periodico fallo:', err.message));
+    // La primera corrida espera unos segundos: al arrancar ya compiten el warm
+    // del indice de telefonos y el primer barrido de contactos, y este sondeo
+    // no tiene ninguna prisa.
+    setTimeout(sondearPedidos, 10 * 1000).unref();
+    setInterval(sondearPedidos, 3600 * 1000).unref();
   }
 }
 export { app, cargarListasPrecios };

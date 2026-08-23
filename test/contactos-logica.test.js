@@ -404,6 +404,96 @@ test('un Contacto general sin nombre deja la empresa sola: inventarle un rol ser
   );
 });
 
+// --- Los pedidos de la tienda en linea como TERCERA fuente (#255, ADR-0014) ---
+//
+// Cada entrada de `pedidos` es UNA fila de la tabla pedidos_shopify: un
+// telefono YA resuelto (la regla del pais vive en lib/pedidos-shopify-logica.js
+// y corre al ingerir, no aqui) con el pedido del que salio y el nombre de la
+// direccion que lo traia. Los numeros son los del pedido real S1898.
+const PEDIDO_EN_LINEA = {
+  pedido: 'S1898', creadoEn: '2026-08-21T23:31:03.000Z',
+  telefono: '+529991632568', celular10: '9991632568',
+  nombre: 'Gerardo Cardenas Guillermo', correo: 'gerardo@ejemplo.mx', fuente: 'envio',
+};
+
+test('un comprador de la tienda produce su ficha "Persona - S1234"', () => {
+  const ficha = fichaCreada(planificarContactos({ pedidos: [PEDIDO_EN_LINEA], mapeo: [] }));
+  assert.equal(ficha.nombreVisible, 'Gerardo Cardenas Guillermo - S1898');
+  assert.equal(ficha.telefono, '+529991632568');
+  assert.equal(ficha.correo, 'gerardo@ejemplo.mx');
+  assert.equal(ficha.organizacion, '', 'un comprador de menudeo no tiene empresa que mostrar');
+  assert.equal(ficha.origen, 'cotizador:enlinea:S1898');
+});
+
+test('un comprador sin nombre en el pedido se reconoce igual por su pedido', () => {
+  const ficha = fichaCreada(planificarContactos({
+    pedidos: [{ ...PEDIDO_EN_LINEA, nombre: '' }], mapeo: [],
+  }));
+  assert.equal(ficha.nombreVisible, 'S1898');
+});
+
+// La precedencia de ADR-0014: cliente de Operam > prospecto > cliente en linea.
+// Una fuente nueva NUNCA pisa una ficha que ya existia por otra razon -- lo que
+// se perderia no es la ciudad, es la EMPRESA del prospecto, que es la
+// conversacion de mayoreo misma.
+test('un comprador que ya es prospecto conserva su ficha de prospecto', () => {
+  const mismoCelular = { ...PEDIDO_EN_LINEA, telefono: '+52 5512345678', celular10: '5512345678' };
+  const plan = planificarContactos({ pedidos: [mismoCelular], prospectos: [PROSPECTO], mapeo: [] });
+  assert.equal(plan.crear.length, 1, 'una sola ficha para el celular compartido');
+  assert.equal(plan.crear[0].ficha.origen, 'cotizador:prospecto:12', 'gana el prospecto');
+});
+
+test('un comprador que ya es cliente de Operam conserva su ficha de cliente', () => {
+  const mismoCelular = { ...PEDIDO_EN_LINEA, telefono: '+52 55 4444 1111', celular10: '5544441111' };
+  const plan = planificarContactos({
+    pedidos: [mismoCelular], prospectos: [PROSPECTO], clientes: [TELEFONO_CLIENTE], mapeo: [],
+  });
+  const ficha = plan.crear.find(e => e.celular10 === '5544441111').ficha;
+  assert.equal(ficha.origen, 'cotizador:cliente:101');
+});
+
+// "Mi ultimo pedido" es el caso normal de quien escribe: la ficha lleva el S mas
+// reciente, no el primero que la consulta devolvio. Se resuelve aqui y no en la
+// consulta a proposito (#254).
+test('dos pedidos del mismo telefono producen UNA ficha, con el S mas reciente', () => {
+  const anterior = {
+    ...PEDIDO_EN_LINEA, pedido: 'S1897', creadoEn: '2026-08-21T23:25:55.000Z',
+    nombre: 'Gerardo Cardenas',
+  };
+  // El mas viejo va DESPUES en la lista: si el orden de la tabla decidiera,
+  // esta prueba lo veria.
+  const plan = planificarContactos({ pedidos: [PEDIDO_EN_LINEA, anterior], mapeo: [] });
+  assert.equal(plan.crear.length, 1);
+  assert.equal(plan.crear[0].ficha.nombreVisible, 'Gerardo Cardenas Guillermo - S1898');
+  const alReves = planificarContactos({ pedidos: [anterior, PEDIDO_EN_LINEA], mapeo: [] });
+  assert.equal(alReves.crear[0].ficha.nombreVisible, 'Gerardo Cardenas Guillermo - S1898');
+});
+
+test('la segunda pasada sobre los mismos pedidos no escribe nada', () => {
+  const primera = planificarContactos({ pedidos: [PEDIDO_EN_LINEA], mapeo: [] });
+  const mapeo = primera.crear.map(e => ({
+    celular10: e.celular10, resourceName: 'people/c1', etag: 'e1',
+    clase: 'propio', huella: e.huella,
+  }));
+  const segunda = planificarContactos({ pedidos: [PEDIDO_EN_LINEA], mapeo });
+  assert.deepEqual(segunda.crear, []);
+  assert.deepEqual(segunda.actualizar, []);
+});
+
+// Un pedido nuevo del mismo comprador SI corrige la ficha: es el unico cambio
+// que esta fuente produce sobre una ficha ya escrita.
+test('un pedido mas nuevo actualiza el S de la ficha existente', () => {
+  const primera = planificarContactos({ pedidos: [PEDIDO_EN_LINEA], mapeo: [] });
+  const mapeo = primera.crear.map(e => ({
+    celular10: e.celular10, resourceName: 'people/c1', etag: 'e1',
+    clase: 'propio', huella: e.huella,
+  }));
+  const nuevo = { ...PEDIDO_EN_LINEA, pedido: 'S1901', creadoEn: '2026-08-25T10:00:00.000Z' };
+  const segunda = planificarContactos({ pedidos: [PEDIDO_EN_LINEA, nuevo], mapeo });
+  assert.equal(segunda.actualizar.length, 1);
+  assert.equal(segunda.actualizar[0].ficha.nombreVisible, 'Gerardo Cardenas Guillermo - S1901');
+});
+
 // --- Adopcion de contactos que ya estaban en la libreta (#229) ---
 //
 // `libreta` es lo que Google devuelve hoy, leido por la envoltura: una lista de
@@ -573,7 +663,11 @@ test('dos contactos de la libreta con el mismo numero adoptan uno solo', () => {
 // Casi todas estas pruebas pasan un cliente vivo aunque no lo usen: la fuente de
 // clientes vacia frena la inactivacion a proposito (ver "sin evidencia"), asi
 // que sin el, cualquier caso de esta seccion mediria el freno y no la regla.
+// Desde #255 la fuente de pedidos frena igual, y por eso viaja un pedido vivo
+// con el MISMO celular que el cliente: asi ninguna prueba de esta seccion gana
+// una ficha de mas y todas siguen midiendo lo que decian medir.
 const CLIENTE_VIVO = TELEFONO_CLIENTE;
+const PEDIDO_VIVO = { ...PEDIDO_EN_LINEA, telefono: TELEFONO_CLIENTE.telefono, celular10: '5544441111' };
 
 function fichaEnMapeo(extra = {}) {
   return {
@@ -584,7 +678,7 @@ function fichaEnMapeo(extra = {}) {
 
 test('una ficha propia que se queda sin respaldo entra en inactivar', () => {
   const plan = planificarContactos({
-    prospectos: [], clientes: [CLIENTE_VIVO], mapeo: [fichaEnMapeo()],
+    prospectos: [], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO], mapeo: [fichaEnMapeo()],
   });
   assert.deepEqual(plan.inactivar.map(e => e.celular10), ['5512345678']);
   assert.equal(plan.inactivar[0].resourceName, 'people/c1');
@@ -599,7 +693,7 @@ test('una ficha propia que se queda sin respaldo entra en inactivar', () => {
 // =========================================================================
 test('CANDADO ADR-0013: una ficha adoptada NUNCA se inactiva, aunque su origen desaparezca', () => {
   const plan = planificarContactos({
-    prospectos: [], clientes: [CLIENTE_VIVO],
+    prospectos: [], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO],
     mapeo: [fichaEnMapeo({ clase: 'adoptado', resourceName: 'people/c9' })],
   });
   assert.deepEqual(plan.inactivar, []);
@@ -610,7 +704,7 @@ test('una ficha ya inactiva no se vuelve a inactivar en cada pasada', () => {
   // Sin esto el barrido escribiria en Google la misma membresia cada quince
   // minutos, indefinidamente, y el panel reportaria inactivados para siempre.
   const plan = planificarContactos({
-    prospectos: [], clientes: [CLIENTE_VIVO],
+    prospectos: [], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO],
     mapeo: [fichaEnMapeo({ inactivoDesde: '2026-08-01T00:00:00.000Z' })],
   });
   assert.deepEqual(plan.inactivar, []);
@@ -623,7 +717,7 @@ test('si el origen reaparece, la ficha inactiva se reactiva en esa misma pasada'
   // completa. Una lista propia obligaria al panel y a la envoltura a aprender
   // un cuarto camino para lo mismo.
   const plan = planificarContactos({
-    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO],
+    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO],
     mapeo: [fichaEnMapeo({ inactivoDesde: '2026-08-01T00:00:00.000Z' })],
   });
   assert.deepEqual(plan.inactivar, []);
@@ -638,10 +732,10 @@ test('la ficha se reactiva aunque nada haya cambiado desde que se inactivo', () 
   // Aqui la huella coincide: sin la marca de reactivacion el plan concluiria
   // "nada cambio, cero escrituras" y la ficha se quedaria en el grupo Inactivo
   // para siempre, sin recibir actualizaciones nunca mas.
-  const primera = planificarContactos({ prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], mapeo: [] });
+  const primera = planificarContactos({ prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO], mapeo: [] });
   const huella = primera.crear.find(e => e.celular10 === '5512345678').huella;
   const plan = planificarContactos({
-    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO],
+    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO],
     mapeo: [fichaEnMapeo({ huella, inactivoDesde: '2026-08-01T00:00:00.000Z' })],
   });
   const entrada = plan.actualizar.find(e => e.celular10 === '5512345678');
@@ -670,7 +764,7 @@ function mapeoDeProspectos(cuantos) {
 
 test('una desaparicion inverosimil frena la inactivacion y se reporta como error', () => {
   const plan = planificarContactos({
-    prospectos: [], clientes: [CLIENTE_VIVO], mapeo: mapeoDeProspectos(20),
+    prospectos: [], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO], mapeo: mapeoDeProspectos(20),
   });
   assert.deepEqual(plan.inactivar, [], 'ni una sola ficha se etiqueta en esa pasada');
   assert.equal(plan.errores.length, 1);
@@ -680,7 +774,7 @@ test('una desaparicion inverosimil frena la inactivacion y se reporta como error
 
 test('el tope frena SOLO la inactivacion: crear y actualizar siguen aplicandose', () => {
   const plan = planificarContactos({
-    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], mapeo: mapeoDeProspectos(20),
+    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO], mapeo: mapeoDeProspectos(20),
   });
   assert.deepEqual(plan.inactivar, []);
   assert.equal(plan.crear.length, 2, 'el prospecto y el telefono del cliente se crean igual');
@@ -690,7 +784,7 @@ test('una desaparicion normal SI se aplica: el tope no es un freno permanente', 
   // Tres de veinte es la rotacion de cualquier semana, no un fallo de fuente.
   const mapeo = mapeoDeProspectos(20);
   const siguen = mapeo.slice(3).map((_, i) => prospectoNumero(i + 3));
-  const plan = planificarContactos({ prospectos: siguen, clientes: [CLIENTE_VIVO], mapeo });
+  const plan = planificarContactos({ prospectos: siguen, clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO], mapeo });
   assert.deepEqual(plan.inactivar.map(e => e.celular10), mapeo.slice(0, 3).map(m => m.celular10));
   assert.deepEqual(plan.errores, []);
 });
@@ -705,10 +799,26 @@ test('una desaparicion normal SI se aplica: el tope no es un freno permanente', 
 // reporta. Lo contrario -- inactivar de todas formas -- convierte cada caida de
 // Operam en una etiquetada masiva, que es justo lo que el tope quiere evitar.
 test('sin la fuente de clientes no se inactiva nada: no es lo mismo vacio que caido', () => {
-  const plan = planificarContactos({ prospectos: [], clientes: [], mapeo: [fichaEnMapeo()] });
+  const plan = planificarContactos({
+    prospectos: [], clientes: [], pedidos: [PEDIDO_VIVO], mapeo: [fichaEnMapeo()],
+  });
   assert.deepEqual(plan.inactivar, []);
   assert.equal(plan.errores.length, 1);
   assert.match(plan.errores[0].motivo, /fuente de clientes/);
+  assert.equal(plan.errores[0].categoria, 'datos');
+});
+
+// El mismo freno para la tercera fuente (#255). El caso concreto: el token de
+// Shopify deja de servir, el sondeo no escribe nada nuevo y la tabla se lee
+// vacia. Sin esto, esa pasada leeria a TODOS los compradores de la tienda como
+// "se quedaron sin respaldo" y los etiquetaria de golpe.
+test('sin la fuente de pedidos tampoco se inactiva nada, sea del origen que sea', () => {
+  const plan = planificarContactos({
+    prospectos: [], clientes: [CLIENTE_VIVO], pedidos: [], mapeo: [fichaEnMapeo()],
+  });
+  assert.deepEqual(plan.inactivar, [], 'el freno es TOTAL, no por origen: ni la ficha del prospecto');
+  assert.equal(plan.errores.length, 1);
+  assert.match(plan.errores[0].motivo, /fuente de pedidos/);
   assert.equal(plan.errores[0].categoria, 'datos');
 });
 
@@ -732,7 +842,7 @@ test('un mapeo pequeno no dispara el tope aunque desaparezca entero', () => {
   // Con cuatro fichas, "el 20%" es menos de una: sin un piso absoluto, el
   // arranque del sistema no podria inactivar nunca nada.
   const plan = planificarContactos({
-    prospectos: [], clientes: [CLIENTE_VIVO], mapeo: mapeoDeProspectos(4),
+    prospectos: [], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO], mapeo: mapeoDeProspectos(4),
   });
   assert.equal(plan.inactivar.length, 4);
   assert.deepEqual(plan.errores, []);
