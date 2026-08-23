@@ -223,17 +223,19 @@ test('los telefonos que no resuelven ni con el pais de la direccion llegan al re
 // --- totales para el panel (issue #257) ---
 
 test('el resumen trae totales con leidos, filas y descartes agrupados por motivo', async () => {
-  const sinCodigo = nodo('S1893', {
-    phone: '4491112584', createdAt: '2026-08-07T20:21:29Z', updatedAt: '2026-08-19T21:16:04Z',
+  // (520) 490-5641 es NANP valido pero invalido como mexicano: con direccion MX
+  // el escalon 2 (#256) lo veta, asi que sigue siendo un descarte real.
+  const invalidoEnMx = nodo('S1893', {
+    phone: '(520) 490-5641', createdAt: '2026-08-07T20:21:29Z', updatedAt: '2026-08-19T21:16:04Z',
   });
-  mockFetchByUrl(shopifyFalso([{ nodos: [sinCodigo, S1898] }]));
+  mockFetchByUrl(shopifyFalso([{ nodos: [invalidoEnMx, S1898] }]));
 
   const resumen = await sondearPedidosShopify();
 
   assert.deepEqual(resumen.totales, {
     leidos: 2,
     filas: 1,
-    descartesPorMotivo: [{ motivo: 'sin codigo de pais', cantidad: 1 }],
+    descartesPorMotivo: [{ motivo: 'invalido en el pais de la direccion', cantidad: 1 }],
   });
 });
 
