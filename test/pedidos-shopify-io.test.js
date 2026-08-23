@@ -187,18 +187,21 @@ test('sin token de Shopify el sondeo se omite, sin lanzar y sin tocar la red', a
 
 // Los descartes son lo que el panel (#257) va a mostrar: por que un pedido no
 // produjo ficha. Salen del nucleo puro y el sondeo solo los acumula.
-test('los telefonos que no resuelven llegan al resumen como descartes', async () => {
-  const sinCodigo = nodo('S1893', {
-    phone: '4491112584', createdAt: '2026-08-07T20:21:29Z', updatedAt: '2026-08-19T21:16:04Z',
+// '(520) 490-5641' sin codigo, con direccion MX, solo es valido como NANP
+// (#256): el escalon 2 lo intenta con el pais de la direccion y lo descarta,
+// no lo rescata como '4491112584' (que si es un numero mexicano valido).
+test('los telefonos que no resuelven ni con el pais de la direccion llegan al resumen como descartes', async () => {
+  const inclusoConDireccion = nodo('S1893', {
+    phone: '(520) 490-5641', createdAt: '2026-08-07T20:21:29Z', updatedAt: '2026-08-19T21:16:04Z',
   });
-  mockFetchByUrl(shopifyFalso([{ nodos: [sinCodigo, S1898] }]));
+  mockFetchByUrl(shopifyFalso([{ nodos: [inclusoConDireccion, S1898] }]));
 
   const resumen = await sondearPedidosShopify();
 
   assert.equal(resumen.leidos, 2);
   assert.equal(resumen.filas, 1, 'solo el que trae codigo de pais');
   assert.deepEqual(resumen.descartes.map(d => [d.pedido, d.motivo]), [
-    ['S1893', 'sin codigo de pais'],
+    ['S1893', 'invalido en el pais de la direccion'],
   ]);
   assert.deepEqual((await store.listar()).map(f => f.pedido), ['S1898']);
 });
