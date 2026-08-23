@@ -1318,10 +1318,20 @@ test('GET /api/admin/higiene-clientes-genericos exige admin: vendedor 403, sin t
 // === GET /api/admin/sync-contactos-google (issue #230) ===
 
 test('GET /api/admin/sync-contactos-google sin DATABASE_URL responde barridos vacios y sinDb:true', async () => {
-  const res = await supertest(app).get('/api/admin/sync-contactos-google')
-    .set('Authorization', `Bearer ${TEST_TOKEN}`);
-  assert.strictEqual(res.status, 200);
-  assert.deepEqual(res.body, { barridos: [], sinDb: true });
+  // El JSON de barridos es estado local compartido: un servidor de desarrollo
+  // corriendo en el mismo arbol lo escribe en cada pasada (#255), asi que el
+  // test fija el estado que afirma en vez de suponer el disco limpio.
+  const barridosPath = join(__dirname, '..', 'data', 'contactos-google-barridos.json');
+  const previo = existsSync(barridosPath) ? leerArchivoSync(barridosPath) : null;
+  escribirArchivoSync(barridosPath, '{}');
+  try {
+    const res = await supertest(app).get('/api/admin/sync-contactos-google')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(res.body, { barridos: [], sinDb: true });
+  } finally {
+    if (previo === null) escribirArchivoSync(barridosPath, '{}'); else escribirArchivoSync(barridosPath, previo);
+  }
 });
 
 test('GET /api/admin/sync-contactos-google exige admin: vendedor 403, sin token 401', async () => {
