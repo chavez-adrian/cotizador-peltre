@@ -119,7 +119,7 @@ test('planearCargaDesdeOperam resuelve, cruza y clasifica en un solo plan', () =
 test('pedidoCsvANodo trae las dos direcciones sin necesitar cruce', () => {
   const nodo = pedidoCsvANodo({
     Name: 'S1950', 'Created at': '2026-07-01', Email: 'x@ejemplo.mx', Phone: '',
-    'Shipping Name': 'Juan Perez', 'Shipping Phone': "'+525512345678", 'Shipping Country': 'Mexico',
+    'Shipping Name': 'Juan Perez', 'Shipping Phone': "'+525512345678", 'Shipping Country': 'MX',
     'Billing Name': 'Juan Perez', 'Billing Phone': "'+525512345678", 'Billing Country': 'MX',
   });
   assert.deepEqual(nodo, {
@@ -147,13 +147,26 @@ test('planearCargaDesdePedidosCsv deduplica los renglones repetidos del mismo pe
   assert.equal(plan.descartes[0].pedido, 'S1951');
 });
 
-test('pedidoCsvANodo reconoce el nombre completo del pais ademas del codigo', () => {
+test('planearCargaDesdePedidosCsv usa la primera fila CON datos, no la primera fila a secas', () => {
+  const filasPedidos = [
+    // renglon de producto SIN cabecera (Created at vacio): no es la fila de datos.
+    { Name: 'S1952', 'Created at': '', Email: '', Phone: '', 'Shipping Name': '', 'Shipping Phone': '', 'Shipping Country': '', 'Billing Name': '', 'Billing Phone': '', 'Billing Country': '' },
+    { Name: 'S1952', 'Created at': '2026-07-03', Email: 'z@ejemplo.mx', Phone: '', 'Shipping Name': 'Rosa Nunez', 'Shipping Phone': '+525534667682', 'Shipping Country': 'MX', 'Billing Name': '', 'Billing Phone': '', 'Billing Country': '' },
+  ];
+  const plan = planearCargaDesdePedidosCsv({ filasPedidos });
+  assert.equal(plan.leidos, 1);
+  assert.equal(plan.filas.length, 1);
+  assert.equal(plan.filas[0].nombre, 'Rosa Nunez');
+  assert.equal(plan.filas[0].telefono, '+525534667682');
+});
+
+test('pedidoCsvANodo deja el pais nulo si la columna no trae un codigo de 2 letras', () => {
   const nodo = pedidoCsvANodo({
     Name: 'S1960', 'Created at': '2026-07-05', Email: '', Phone: '',
     'Shipping Name': 'Bruce Miller', 'Shipping Phone': '(831) 332-0180', 'Shipping Country': 'United States',
     'Billing Name': '', 'Billing Phone': '', 'Billing Country': '',
   });
-  assert.equal(nodo.shippingAddress.countryCodeV2, 'US');
+  assert.equal(nodo.shippingAddress.countryCodeV2, null);
 });
 
 test('pedidoCsvANodo deja pasar CUALQUIER codigo ISO de 2 letras, no solo MX/US/CA', () => {
