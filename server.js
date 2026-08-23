@@ -3233,6 +3233,11 @@ if (isMain) {
   } else {
     const sondearPedidos = () => sondearPedidosShopify()
       .then(r => {
+        // El resumen de este sondeo tiene forma PROPIA ({leidos, filas,
+        // descartes}) y no la del barrido de contactos: registrarBarrido guarda
+        // su fecha de corrida y sus errores -- que es lo que detecta un token
+        // muerto -- y deja en cero los totales de creados/actualizados, que son
+        // de la otra forma. Mostrar leidos/filas/descartes en el panel es #257.
         registrarBarridoContactos('shopify-pedidos', r);
         if (r.leidos || r.descartes.length || r.errores.length) {
           console.log(`[pedidos-shopify] leidos=${r.leidos} filas=${r.filas} descartes=${r.descartes.length} errores=${r.errores.length}`);

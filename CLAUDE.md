@@ -115,7 +115,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 - **Neon Postgres**: `DATABASE_URL`.
 - **Dropbox**: `DROPBOX_REFRESH_TOKEN` + `DROPBOX_APP_KEY` + `DROPBOX_APP_SECRET`. Fire-and-forget.
 - **envia.com**: `ENVIA_API_KEY`. FedEx, DHL y UPS en paralelo con `Promise.allSettled`.
-- **Shopify**: `SHOPIFY_API_TOKEN` (solo `scripts/fetch-shopify-images.js`).
+- **Shopify**: `SHOPIFY_API_TOKEN` (`lib/shopify-pedidos.js` y `scripts/fetch-shopify-images.js`). Token de app custom del admin que **ya no se puede recrear** (ADR-0014): no se rota sin respaldo. Solo alcanza los ultimos 60 dias de pedidos.
 - **SAT**: proxy en `/api/csf-from-url` para QR de CSF sin texto extraible.
 
 ## Deploy
