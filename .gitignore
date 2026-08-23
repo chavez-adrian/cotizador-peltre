@@ -8,6 +8,7 @@ data/shopify-images-raw.json
 data/prospectos.json
 data/contactos-google.json
 data/contactos-google-barridos.json
+data/pedidos-shopify.json
 backups/
 .temporales/
 data/export-bitrix/
