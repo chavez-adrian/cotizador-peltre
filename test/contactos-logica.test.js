@@ -847,3 +847,78 @@ test('un mapeo pequeno no dispara el tope aunque desaparezca entero', () => {
   assert.equal(plan.inactivar.length, 4);
   assert.deepEqual(plan.errores, []);
 });
+
+// --- Lista de exclusion por celular (#259, spec #254) ---
+//
+// Un celular excluido no produce NINGUNA entrada del plan, venga de la fuente
+// que venga: ni crear, ni actualizar, ni adoptar, ni reactivar. Si aun tuviera
+// fila en el mapeo (la borro el procedimiento manual, pero por lo que sea sigue
+// ahi), tampoco se inactiva -- no hay nada que escribirle.
+
+test('un celular excluido que sigue de prospecto no produce ninguna entrada', () => {
+  const plan = planificarContactos({ prospectos: [PROSPECTO], mapeo: [], excluidos: [{ celular10: '5512345678' }] });
+  assert.deepEqual(plan.crear, []);
+  assert.deepEqual(plan.actualizar, []);
+});
+
+test('un celular excluido que sigue de cliente de Operam no produce ninguna entrada', () => {
+  const plan = planificarContactos({ clientes: [TELEFONO_CLIENTE], mapeo: [], excluidos: [{ celular10: '5544441111' }] });
+  assert.deepEqual(plan.crear, []);
+  assert.deepEqual(plan.actualizar, []);
+});
+
+test('un celular excluido que sigue en pedidos de la tienda no produce ninguna entrada', () => {
+  const plan = planificarContactos({ pedidos: [PEDIDO_EN_LINEA], mapeo: [], excluidos: [{ celular10: '9991632568' }] });
+  assert.deepEqual(plan.crear, []);
+  assert.deepEqual(plan.actualizar, []);
+});
+
+test('un celular excluido no se adopta aunque ya este en la libreta', () => {
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], mapeo: [], libreta: [EN_LA_LIBRETA], excluidos: [{ celular10: '5512345678' }],
+  });
+  assert.deepEqual(plan.crear, []);
+  assert.deepEqual(plan.actualizar, []);
+});
+
+test('un celular excluido con fila viva en el mapeo no se inactiva: no hay que escribirle nada', () => {
+  const plan = planificarContactos({
+    prospectos: [], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO],
+    mapeo: [fichaEnMapeo()], excluidos: [{ celular10: '5512345678' }],
+  });
+  assert.deepEqual(plan.inactivar, [], 'el excluido no cuenta como candidato a inactivacion');
+  assert.deepEqual(plan.errores, []);
+});
+
+test('un celular excluido ya inactivo no se reactiva aunque su origen reaparezca', () => {
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO],
+    mapeo: [fichaEnMapeo({ inactivoDesde: '2026-08-01T00:00:00.000Z' })], excluidos: [{ celular10: '5512345678' }],
+  });
+  assert.deepEqual(plan.actualizar, []);
+  assert.deepEqual(plan.inactivar, []);
+});
+
+test('un celular excluido no cuenta para el tope de inactivacion de las demas fichas', () => {
+  // Veinte fichas, la excluida entre ellas: sin respaldo alguna de las 19
+  // restantes debe seguir viendose como una desaparicion normal, no frenada por
+  // el ruido de la excluida.
+  const mapeo = mapeoDeProspectos(20);
+  const siguen = mapeo.slice(4).map((_, i) => prospectoNumero(i + 4));
+  const plan = planificarContactos({
+    prospectos: siguen, clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO], mapeo,
+    excluidos: [{ celular10: mapeo[0].celular10 }],
+  });
+  // Solo 3 de las 19 no excluidas perdieron respaldo (mapeo[1..3]): bajo el
+  // tope, se aplican. La excluida (mapeo[0]) nunca aparece en inactivar.
+  assert.deepEqual(plan.inactivar.map(e => e.celular10), mapeo.slice(1, 4).map(m => m.celular10));
+  assert.deepEqual(plan.errores, []);
+});
+
+test('la lista de exclusion son filas del store: los demas campos (motivo, excluidoEn) no importan', () => {
+  const plan = planificarContactos({
+    prospectos: [PROSPECTO], mapeo: [],
+    excluidos: [{ celular10: '5512345678', motivo: 'x', excluidoEn: '2026-08-22T00:00:00.000Z' }],
+  });
+  assert.deepEqual(plan.crear, []);
+});

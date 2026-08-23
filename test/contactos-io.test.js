@@ -9,6 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
 const MAPEO_PATH = join(__dirname, '..', 'data', 'contactos-google.json');
 const PEDIDOS_PATH = join(__dirname, '..', 'data', 'pedidos-shopify.json');
+const EXCLUIDOS_PATH = join(__dirname, '..', 'data', 'contactos-excluidos.json');
 
 // La suite NO toca red ni credenciales: las tres GOOGLE_* se montan aqui con
 // valores de mentira y todo el trafico lo intercepta el mock por URL, el mismo
@@ -192,6 +193,8 @@ let respaldoMapeo = null;
 let existiaMapeo = false;
 let respaldoPedidos = null;
 let existiaPedidos = false;
+let respaldoExcluidos = null;
+let existiaExcluidos = false;
 
 before(() => {
   existiaProspectos = existsSync(PROSPECTOS_PATH);
@@ -200,6 +203,8 @@ before(() => {
   if (existiaMapeo) respaldoMapeo = leerArchivoSync(MAPEO_PATH);
   existiaPedidos = existsSync(PEDIDOS_PATH);
   if (existiaPedidos) respaldoPedidos = leerArchivoSync(PEDIDOS_PATH);
+  existiaExcluidos = existsSync(EXCLUIDOS_PATH);
+  if (existiaExcluidos) respaldoExcluidos = leerArchivoSync(EXCLUIDOS_PATH);
 });
 
 after(() => {
@@ -210,6 +215,8 @@ after(() => {
   else if (existsSync(MAPEO_PATH)) borrarArchivoSync(MAPEO_PATH);
   if (existiaPedidos) escribirArchivoSync(PEDIDOS_PATH, respaldoPedidos);
   else if (existsSync(PEDIDOS_PATH)) borrarArchivoSync(PEDIDOS_PATH);
+  if (existiaExcluidos) escribirArchivoSync(EXCLUIDOS_PATH, respaldoExcluidos);
+  else if (existsSync(EXCLUIDOS_PATH)) borrarArchivoSync(EXCLUIDOS_PATH);
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.GOOGLE_CLIENT_SECRET;
   delete process.env.GOOGLE_REFRESH_TOKEN;
@@ -219,6 +226,7 @@ beforeEach(() => {
   escribirArchivoSync(PROSPECTOS_PATH, JSON.stringify([PROSPECTO], null, 2));
   escribirArchivoSync(MAPEO_PATH, '[]');
   escribirPedidos([PEDIDO_EN_LINEA]);
+  escribirArchivoSync(EXCLUIDOS_PATH, '[]');
   globalThis.fetch = async (url) => { throw new Error('fetch sin mock en tests: ' + url); };
   resetToken();
   // El indice de clientes cachea una hora: sin limpiarlo, una prueba heredaria
@@ -903,6 +911,21 @@ test('un fallo al etiquetar una ficha no marca la ficha ni tumba la pasada', asy
   assert.equal(leerMapeo().find(m => m.celular10 === '5599990000').inactivoDesde, null,
     'sin la etiqueta en Google, la ficha no puede quedar marcada: la proxima pasada reintenta');
   assert.equal(estado.creados.length, 3, 'lo demas de la pasada se aplico igual');
+});
+
+// --- Lista de exclusion por celular (#259, spec #254) ---
+
+test('un celular excluido no produce ficha aunque siga como prospecto', async () => {
+  escribirArchivoSync(EXCLUIDOS_PATH, JSON.stringify([{
+    celular10: '5512345678', motivo: 'solicitud del titular', excluidoEn: '2026-08-22T00:00:00.000Z',
+  }], null, 2));
+  const { handlers, estado } = libretaFalsa();
+  mockFetchByUrl(handlers);
+
+  const resumen = await barrerContactosGoogle();
+
+  assert.equal(resumen.creados, 0);
+  assert.equal(estado.creados.length, 0);
 });
 
 test('tras un fallo de la libreta, la siguiente pasada corre normal', async () => {

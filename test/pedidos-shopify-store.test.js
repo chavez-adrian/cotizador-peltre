@@ -91,3 +91,23 @@ test('guardar una lista vacia no rompe ni escribe nada', async () => {
   await store.guardar([]);
   assert.deepEqual(await store.listar(), []);
 });
+
+// eliminarPorCelular (#259): el comando de exclusion la usa para borrar todos
+// los pedidos de un celular sin tocar los de otro. Un telefono puede aparecer en
+// varios pedidos (PK (pedido, celular10)), asi que borra TODAS sus filas.
+test('eliminarPorCelular borra todas las filas de ese celular, deja las demas', async () => {
+  await store.guardar([FILA, { ...FILA, pedido: 'S1897', creadoEn: '2026-08-21T23:25:55.000Z' },
+    { ...FILA, celular10: '5512345678', telefono: '+525512345678' }]);
+  const borradas = await store.eliminarPorCelular('9991632568');
+  assert.equal(borradas, 2);
+  const filas = await store.listar();
+  assert.equal(filas.length, 1);
+  assert.equal(filas[0].celular10, '5512345678');
+});
+
+test('eliminarPorCelular sobre un celular que no esta no falla', async () => {
+  await store.guardar([FILA]);
+  const borradas = await store.eliminarPorCelular('0000000000');
+  assert.equal(borradas, 0);
+  assert.equal((await store.listar()).length, 1);
+});
