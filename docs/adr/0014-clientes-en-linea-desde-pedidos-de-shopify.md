@@ -18,4 +18,4 @@ El acceso a nombre y teléfono de compradores depende de un token que no se pued
 
 Unos 148 compradores quedan etiquetados con un país decidido por su dirección. Es la mejor señal disponible y el riesgo medido es bajo, pero no es cero: un nombre equivocado en un chat es el síntoma, y el motivo de cada inferencia queda registrado para poder rastrearlo.
 
-El aviso de privacidad de la tienda tiene que cubrir la atención por WhatsApp y el uso de Google como encargado; es una tarea fuera del repositorio.
+El aviso de privacidad de la tienda tuvo que cubrir la atención por WhatsApp y el uso de Google como encargado. Se publicó el 2026-08-23, junto con un aviso simplificado para el checkout —que hasta entonces mostraba un texto truncado de otra empresa— y con Términos y Condiciones reescritos. La copia de lo publicado vive en `docs/legal/`; la publicación es manual, porque el token de Shopify no puede escribir páginas ni políticas.
