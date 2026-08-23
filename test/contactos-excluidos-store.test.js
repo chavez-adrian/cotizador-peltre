@@ -27,7 +27,7 @@ after(() => {
 });
 
 beforeEach(() => {
-  if (existsSync(JSON_PATH)) borrarArchivoSync(JSON_PATH);
+  escribirArchivoSync(JSON_PATH, '[]');
 });
 
 test('sin nada excluido la lista esta vacia', async () => {

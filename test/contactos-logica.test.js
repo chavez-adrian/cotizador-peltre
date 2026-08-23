@@ -856,26 +856,26 @@ test('un mapeo pequeno no dispara el tope aunque desaparezca entero', () => {
 // ahi), tampoco se inactiva -- no hay nada que escribirle.
 
 test('un celular excluido que sigue de prospecto no produce ninguna entrada', () => {
-  const plan = planificarContactos({ prospectos: [PROSPECTO], mapeo: [], excluidos: ['5512345678'] });
+  const plan = planificarContactos({ prospectos: [PROSPECTO], mapeo: [], excluidos: [{ celular10: '5512345678' }] });
   assert.deepEqual(plan.crear, []);
   assert.deepEqual(plan.actualizar, []);
 });
 
 test('un celular excluido que sigue de cliente de Operam no produce ninguna entrada', () => {
-  const plan = planificarContactos({ clientes: [TELEFONO_CLIENTE], mapeo: [], excluidos: ['5544441111'] });
+  const plan = planificarContactos({ clientes: [TELEFONO_CLIENTE], mapeo: [], excluidos: [{ celular10: '5544441111' }] });
   assert.deepEqual(plan.crear, []);
   assert.deepEqual(plan.actualizar, []);
 });
 
 test('un celular excluido que sigue en pedidos de la tienda no produce ninguna entrada', () => {
-  const plan = planificarContactos({ pedidos: [PEDIDO_EN_LINEA], mapeo: [], excluidos: ['9991632568'] });
+  const plan = planificarContactos({ pedidos: [PEDIDO_EN_LINEA], mapeo: [], excluidos: [{ celular10: '9991632568' }] });
   assert.deepEqual(plan.crear, []);
   assert.deepEqual(plan.actualizar, []);
 });
 
 test('un celular excluido no se adopta aunque ya este en la libreta', () => {
   const plan = planificarContactos({
-    prospectos: [PROSPECTO], mapeo: [], libreta: [EN_LA_LIBRETA], excluidos: ['5512345678'],
+    prospectos: [PROSPECTO], mapeo: [], libreta: [EN_LA_LIBRETA], excluidos: [{ celular10: '5512345678' }],
   });
   assert.deepEqual(plan.crear, []);
   assert.deepEqual(plan.actualizar, []);
@@ -884,7 +884,7 @@ test('un celular excluido no se adopta aunque ya este en la libreta', () => {
 test('un celular excluido con fila viva en el mapeo no se inactiva: no hay que escribirle nada', () => {
   const plan = planificarContactos({
     prospectos: [], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO],
-    mapeo: [fichaEnMapeo()], excluidos: ['5512345678'],
+    mapeo: [fichaEnMapeo()], excluidos: [{ celular10: '5512345678' }],
   });
   assert.deepEqual(plan.inactivar, [], 'el excluido no cuenta como candidato a inactivacion');
   assert.deepEqual(plan.errores, []);
@@ -893,7 +893,7 @@ test('un celular excluido con fila viva en el mapeo no se inactiva: no hay que e
 test('un celular excluido ya inactivo no se reactiva aunque su origen reaparezca', () => {
   const plan = planificarContactos({
     prospectos: [PROSPECTO], clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO],
-    mapeo: [fichaEnMapeo({ inactivoDesde: '2026-08-01T00:00:00.000Z' })], excluidos: ['5512345678'],
+    mapeo: [fichaEnMapeo({ inactivoDesde: '2026-08-01T00:00:00.000Z' })], excluidos: [{ celular10: '5512345678' }],
   });
   assert.deepEqual(plan.actualizar, []);
   assert.deepEqual(plan.inactivar, []);
@@ -907,7 +907,7 @@ test('un celular excluido no cuenta para el tope de inactivacion de las demas fi
   const siguen = mapeo.slice(4).map((_, i) => prospectoNumero(i + 4));
   const plan = planificarContactos({
     prospectos: siguen, clientes: [CLIENTE_VIVO], pedidos: [PEDIDO_VIVO], mapeo,
-    excluidos: [mapeo[0].celular10],
+    excluidos: [{ celular10: mapeo[0].celular10 }],
   });
   // Solo 3 de las 19 no excluidas perdieron respaldo (mapeo[1..3]): bajo el
   // tope, se aplican. La excluida (mapeo[0]) nunca aparece en inactivar.
@@ -915,9 +915,10 @@ test('un celular excluido no cuenta para el tope de inactivacion de las demas fi
   assert.deepEqual(plan.errores, []);
 });
 
-test('la lista de exclusion acepta objetos {celular10} ademas de cadenas', () => {
+test('la lista de exclusion son filas del store: los demas campos (motivo, excluidoEn) no importan', () => {
   const plan = planificarContactos({
-    prospectos: [PROSPECTO], mapeo: [], excluidos: [{ celular10: '5512345678', motivo: 'x' }],
+    prospectos: [PROSPECTO], mapeo: [],
+    excluidos: [{ celular10: '5512345678', motivo: 'x', excluidoEn: '2026-08-22T00:00:00.000Z' }],
   });
   assert.deepEqual(plan.crear, []);
 });
