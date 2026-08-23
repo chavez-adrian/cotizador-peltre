@@ -115,6 +115,35 @@ test('registrarBarrido: el mismo dia no repite el correo aunque siga sin corrida
   limpiarEnvSmtp();
 });
 
+// issue #257: el sondeo de pedidos de Shopify es un barrido MAS bajo el mismo
+// nombre 'shopify-pedidos' -- el correo de aviso aplica IGUAL, sin codigo
+// nuevo (mismo patron que 'prospectos' arriba).
+test('registrarBarrido: el umbral sin corrida exitosa avisa igual para el barrido shopify-pedidos', async () => {
+  limpiarEnvSmtp();
+  process.env.SMTP_USER = 'contacto@pppeltre.mx';
+  process.env.SMTP_PASS = 'secreto';
+
+  const previo = {
+    ultimaCorrida: '2026-08-19T00:00:00.000Z', ultimaCorridaExitosa: '2026-08-19T00:00:00.000Z',
+    creados: 0, actualizados: 0, inactivados: 0, errores: [], ultimoAviso: null, totales: null,
+  };
+  const store = storeFalso({ 'shopify-pedidos': previo });
+  let argsSendMail = null;
+  const nodemailerFalso = {
+    createTransport: () => ({ sendMail: async (m) => { argsSendMail = m; return { messageId: 'x' }; } }),
+  };
+
+  await registrarBarrido('shopify-pedidos', { omitido: null, leidos: 5, filas: 0, descartes: [], errores: [{ motivo: 'Shopify 401: token revocado' }] }, {
+    ...store, listarVendedores: async () => [VENDEDOR], nodemailer: nodemailerFalso, ahora: new Date('2026-08-21T12:00:00Z'),
+  });
+
+  assert.ok(argsSendMail, 'debio mandar el correo de aviso');
+  assert.match(argsSendMail.subject, /pedidos de la tienda en linea/);
+  assert.equal(store.datos['shopify-pedidos'].errores[0].categoria, 'autorizacion');
+
+  limpiarEnvSmtp();
+});
+
 test('registrarBarrido: una corrida limpia despues de una racha de fallos deja de avisar', async () => {
   limpiarEnvSmtp();
   process.env.SMTP_USER = 'contacto@pppeltre.mx';

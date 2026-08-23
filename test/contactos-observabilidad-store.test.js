@@ -33,7 +33,7 @@ beforeEach(() => {
 const ESTADO = {
   ultimaCorrida: '2026-08-21T00:00:00.000Z', ultimaCorridaExitosa: '2026-08-21T00:00:00.000Z',
   creados: 2, actualizados: 1, inactivados: 0,
-  errores: [], ultimoAviso: null,
+  errores: [], ultimoAviso: null, totales: null,
 };
 
 test('lo guardado se recupera igual', async () => {
@@ -71,4 +71,22 @@ test('errores con motivo y categoria persisten intactos', async () => {
   await store.guardar('prospectos', conErrores);
   const leido = await store.leer('prospectos');
   assert.deepEqual(leido.errores, conErrores.errores);
+});
+
+// totales (issue #257) es un objeto LIBRE por barrido -- el store no le conoce
+// forma, solo lo guarda y lo devuelve tal cual.
+test('totales (forma propia del sondeo de Shopify) persiste intacto', async () => {
+  const conTotales = {
+    ...ESTADO,
+    totales: { leidos: 12, filas: 8, descartesPorMotivo: [{ motivo: 'sin codigo de pais', cantidad: 3 }] },
+  };
+  await store.guardar('shopify-pedidos', conTotales);
+  const leido = await store.leer('shopify-pedidos');
+  assert.deepEqual(leido.totales, conTotales.totales);
+});
+
+test('sin totales, se guarda y se lee como null', async () => {
+  await store.guardar('prospectos', ESTADO);
+  const leido = await store.leer('prospectos');
+  assert.equal(leido.totales, null);
 });

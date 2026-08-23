@@ -200,6 +200,7 @@
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Creados</th>
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Actualizados</th>
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Inactivados</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Detalle</th>
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Errores de la ultima pasada</th>
             </tr>
           </thead>
@@ -605,7 +606,12 @@ async function loadHigiene() {
 }
 
 // --- Sincronizacion de contactos a Google (issue #230, padre #224) ---
-const SYNC_CONTACTOS_NOMBRES = { prospectos: 'Prospectos', clientes: 'Clientes de Operam' };
+// 'shopify-pedidos' (#257): el sondeo de pedidos de la tienda en linea es un
+// barrido mas bajo el mismo panel, con su propio nombre (ADR-0014).
+const SYNC_CONTACTOS_NOMBRES = {
+  prospectos: 'Prospectos', clientes: 'Clientes de Operam',
+  'shopify-pedidos': 'Pedidos de la tienda en linea',
+};
 
 function syncContactosFecha(iso) {
   if (!iso) return 'nunca';
@@ -618,6 +624,27 @@ function syncContactosErroresHtml(errores) {
     const color = e.categoria === 'autorizacion' ? 'var(--danger)' : 'var(--text)';
     return `<div style="color:${color}">[${(e.categoria || 'otro').replace(/</g, '&lt;')}] ${(e.motivo || '').replace(/</g, '&lt;')}</div>`;
   }).join('');
+}
+
+// `totales` (#257) es un objeto LIBRE por barrido (lib/contactos-observabilidad.js
+// no le conoce forma): esta funcion lo pinta generico, clave por clave, para
+// que un barrido nuevo entre sin tocar este panel. Las claves que hoy usa el
+// sondeo de Shopify (leidos/filas/descartesPorMotivo) tienen etiqueta legible;
+// una clave nueva se pinta con su propio nombre.
+const SYNC_CONTACTOS_TOTALES_ETIQUETAS = { leidos: 'Leidos', filas: 'Filas', descartesPorMotivo: 'Descartes' };
+
+function syncContactosTotalesHtml(totales) {
+  if (!totales) return '<span style="color:var(--text-light)">-</span>';
+  return Object.entries(totales).map(([clave, valor]) => {
+    const etiqueta = SYNC_CONTACTOS_TOTALES_ETIQUETAS[clave] || clave;
+    if (Array.isArray(valor)) {
+      const texto = valor.length
+        ? valor.map(v => `${(v.motivo || '').replace(/</g, '&lt;')} (${v.cantidad})`).join(', ')
+        : 'ninguno';
+      return `${etiqueta}: ${texto}`;
+    }
+    return `${etiqueta}: ${valor}`;
+  }).join('<br>');
 }
 
 async function loadSyncContactos() {
@@ -639,6 +666,7 @@ async function loadSyncContactos() {
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${b.creados}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${b.actualizados}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${b.inactivados}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosTotalesHtml(b.totales)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosErroresHtml(b.errores)}</td>
       </tr>
     `).join('');

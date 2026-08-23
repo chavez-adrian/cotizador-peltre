@@ -35,6 +35,16 @@ test('clasificarError: un motivo irreconocible cae a otro, nunca truena', () => 
   assert.equal(clasificarError(undefined), 'otro');
 });
 
+// clasificarError es la MISMA funcion para cualquier barrido (issue #257: "Evita
+// duplicar logica entre barridos"). El sondeo de pedidos de Shopify
+// (lib/shopify-pedidos.js) reporta sus fallos como "Shopify 401: ..." o el
+// mensaje nativo de fetch, y ya caen en las mismas categorias sin cambiar nada
+// aqui.
+test('clasificarError: aplica igual al barrido de pedidos de Shopify (token revocado -> autorizacion, fallo de red -> red)', () => {
+  assert.equal(clasificarError('Shopify 401: {"errors":"..."}'), 'autorizacion');
+  assert.equal(clasificarError('fetch failed'), 'red');
+});
+
 // --- siguienteEstado ---
 
 test('siguienteEstado: una pasada sin errores actualiza ultimaCorrida y ultimaCorridaExitosa', () => {
@@ -102,6 +112,27 @@ test('siguienteEstado: los totales reflejan SOLO la ultima pasada, no un acumula
   const resumen = { omitido: null, creados: 1, actualizados: 0, inactivados: 0, errores: [] };
   const estado = siguienteEstado(previo, resumen, new Date());
   assert.equal(estado.creados, 1, 'no se suma al total previo');
+});
+
+// `totales` (issue #257) es un objeto LIBRE por barrido: el barrido de
+// contactos no lo usa (creados/actualizados/inactivados le alcanzan), pero el
+// sondeo de pedidos de Shopify no tiene esos campos y necesita los suyos
+// propios (leidos, filas, descartes por motivo). siguienteEstado los conserva
+// tal cual sin saber que forma tienen -- el panel es quien decide como
+// pintarlos.
+test('siguienteEstado: sin totales en el resumen, el estado los deja en null (barrido de contactos, forma de antes)', () => {
+  const resumen = { omitido: null, creados: 1, actualizados: 0, inactivados: 0, errores: [] };
+  const estado = siguienteEstado(null, resumen, new Date());
+  assert.equal(estado.totales, null);
+});
+
+test('siguienteEstado: con totales en el resumen, se conservan TAL CUAL en el estado (forma propia del sondeo de Shopify)', () => {
+  const resumen = {
+    omitido: null, creados: 0, actualizados: 0, inactivados: 0, errores: [],
+    totales: { leidos: 12, filas: 8, descartesPorMotivo: [{ motivo: 'sin codigo de pais', cantidad: 3 }] },
+  };
+  const estado = siguienteEstado(null, resumen, new Date());
+  assert.deepEqual(estado.totales, resumen.totales);
 });
 
 // --- debeAvisar ---
@@ -174,4 +205,10 @@ test('mensajeAviso: con destinatarios, arma asunto y cuerpo con la ultima corrid
   assert.match(mensaje.text, /2026-08-19T00:00:00\.000Z/);
   assert.match(mensaje.text, /autorizacion/);
   assert.match(mensaje.text, /Google People 401: expirado/);
+});
+
+test('mensajeAviso: el sondeo de pedidos de Shopify tiene su propia etiqueta legible, no el nombre interno del barrido', () => {
+  const mensaje = mensajeAviso('shopify-pedidos', ESTADO, [VENDEDOR_CON_PERMISO]);
+  assert.match(mensaje.subject, /pedidos de la tienda en linea/);
+  assert.doesNotMatch(mensaje.subject, /shopify-pedidos/);
 });

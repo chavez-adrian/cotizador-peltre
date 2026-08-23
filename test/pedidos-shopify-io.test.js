@@ -47,6 +47,20 @@ function nodo(name, { phone = '+529991632568', createdAt, updatedAt } = {}) {
 const S1897 = nodo('S1897', { createdAt: '2026-08-21T23:25:55Z', updatedAt: '2026-08-21T23:25:57Z' });
 const S1898 = nodo('S1898', { createdAt: '2026-08-21T23:31:03Z', updatedAt: '2026-08-21T23:31:06Z' });
 
+// Un pedido SIN ningun candidato de telefono (issue #257): ni checkout, ni
+// envio, ni perfil, ni facturacion traen nada. Es la senal de ADR-0014 ("si un
+// dia los pedidos empiezan a llegar sin telefono...").
+function nodoSinTelefono(name, { createdAt, updatedAt } = {}) {
+  return {
+    name, createdAt, updatedAt,
+    email: 'comprador@ejemplo.mx',
+    phone: null,
+    customer: { defaultPhoneNumber: null },
+    shippingAddress: { name: 'Alguien', phone: null, countryCodeV2: 'MX' },
+    billingAddress: { name: 'Alguien', phone: null, countryCodeV2: 'MX' },
+  };
+}
+
 // Shopify de mentira. `paginas` es la lista de respuestas que va a dar, en
 // orden; `peticiones` guarda las variables de cada consulta para poder afirmar
 // sobre el filtro y el cursor.
@@ -201,4 +215,87 @@ test('los telefonos que no resuelven llegan al resumen como descartes', async ()
     ['S1893', 'sin codigo de pais'],
   ]);
   assert.deepEqual((await store.listar()).map(f => f.pedido), ['S1898']);
+});
+
+// --- totales para el panel (issue #257) ---
+
+test('el resumen trae totales con leidos, filas y descartes agrupados por motivo', async () => {
+  const sinCodigo = nodo('S1893', {
+    phone: '4491112584', createdAt: '2026-08-07T20:21:29Z', updatedAt: '2026-08-19T21:16:04Z',
+  });
+  mockFetchByUrl(shopifyFalso([{ nodos: [sinCodigo, S1898] }]));
+
+  const resumen = await sondearPedidosShopify();
+
+  assert.deepEqual(resumen.totales, {
+    leidos: 2,
+    filas: 1,
+    descartesPorMotivo: [{ motivo: 'sin codigo de pais', cantidad: 1 }],
+  });
+});
+
+test('sin descartes, descartesPorMotivo sale vacio (no ausente)', async () => {
+  mockFetchByUrl(shopifyFalso([{ nodos: [S1897, S1898] }]));
+  const resumen = await sondearPedidosShopify();
+  assert.deepEqual(resumen.totales.descartesPorMotivo, []);
+});
+
+// --- error de datos "pedidos sin telefono" (issue #257, ADR-0014) ---
+
+const T = '2026-08-22T10:00:0';
+
+test('tres pedidos NUEVOS seguidos sin ningun telefono se registran como error de datos', async () => {
+  const nodos = [0, 1, 2].map(i => nodoSinTelefono(`S190${i}`, { createdAt: `${T}${i}Z`, updatedAt: `${T}${i}Z` }));
+  mockFetchByUrl(shopifyFalso([{ nodos }]));
+
+  const resumen = await sondearPedidosShopify();
+
+  assert.equal(resumen.leidos, 3);
+  assert.deepEqual(resumen.errores, [{ motivo: 'pedido sin telefono', categoria: 'datos' }]);
+});
+
+test('dos pedidos sin telefono seguidos NO alcanzan el umbral (3)', async () => {
+  const nodos = [0, 1].map(i => nodoSinTelefono(`S190${i}`, { createdAt: `${T}${i}Z`, updatedAt: `${T}${i}Z` }));
+  mockFetchByUrl(shopifyFalso([{ nodos }]));
+
+  const resumen = await sondearPedidosShopify();
+
+  assert.deepEqual(resumen.errores, []);
+});
+
+test('la racha se corta si un pedido de en medio si trae telefono', async () => {
+  const nodos = [
+    nodoSinTelefono('S1900', { createdAt: `${T}0Z`, updatedAt: `${T}0Z` }),
+    nodoSinTelefono('S1901', { createdAt: `${T}1Z`, updatedAt: `${T}1Z` }),
+    S1897,
+    nodoSinTelefono('S1902', { createdAt: `${T}2Z`, updatedAt: `${T}2Z` }),
+    nodoSinTelefono('S1903', { createdAt: `${T}3Z`, updatedAt: `${T}3Z` }),
+  ];
+  mockFetchByUrl(shopifyFalso([{ nodos }]));
+
+  const resumen = await sondearPedidosShopify();
+
+  assert.deepEqual(resumen.errores, [], 'ni la primera pareja ni la segunda llegan a 3 seguidos');
+});
+
+test('mas de tres seguidos solo reportan el error UNA vez, no uno por pedido de mas', async () => {
+  const nodos = [0, 1, 2, 3, 4].map(i => nodoSinTelefono(`S190${i}`, { createdAt: `${T}${i}Z`, updatedAt: `${T}${i}Z` }));
+  mockFetchByUrl(shopifyFalso([{ nodos }]));
+
+  const resumen = await sondearPedidosShopify();
+
+  assert.equal(resumen.errores.length, 1);
+});
+
+test('la racha sigue contando entre paginas: dos en la primera pagina y una en la segunda ya avisan', async () => {
+  const pagina1 = [0, 1].map(i => nodoSinTelefono(`S190${i}`, { createdAt: `${T}${i}Z`, updatedAt: `${T}${i}Z` }));
+  const pagina2 = [nodoSinTelefono('S1902', { createdAt: `${T}2Z`, updatedAt: `${T}2Z` })];
+  mockFetchByUrl(shopifyFalso([
+    { nodos: pagina1, hasNextPage: true, endCursor: 'cur-1' },
+    { nodos: pagina2, hasNextPage: false, endCursor: 'cur-2' },
+  ]));
+
+  const resumen = await sondearPedidosShopify();
+
+  assert.equal(resumen.errores.length, 1);
 });
