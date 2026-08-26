@@ -11,7 +11,7 @@
 // caracteres antes de aceptar el formato, aunque el indice solo guarde el FSA
 // de 3 (normalizarCp lo recorta despues de pasar la validacion). Disparar a los
 // 3 caracteres serviria un 400 en cada tecla intermedia sin resolver nunca.
-export function longitudMinimaCP(pais) {
+function longitudMinimaCP(pais) {
   return pais === 'CA' ? 6 : 5;
 }
 

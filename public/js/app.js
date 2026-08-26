@@ -7505,8 +7505,9 @@ const expoState = {
   // estado en el DOM porque la tarjeta tambien los pinta (alternarChipGrupo).
   tipo_cliente: '', interes: '',
   // "No sabe su CP" (issue #268): la salida del stand que destapa Ciudad y deja
-  // de exigir el codigo postal.
-  sinCp: false,
+  // de exigir el codigo postal. `ciudadDelIndice` recuerda lo ultimo que dijo el
+  // indice para poder distinguirlo de una ciudad tecleada a mano.
+  sinCp: false, ciudadDelIndice: '',
 };
 
 function expoVal(id) {
@@ -7538,15 +7539,28 @@ async function resolverCiudadPorCpExpo() {
   const pais = paisDesdeCodigoTelefono(celCodeDeCampo('ex-celular'));
   const resuelto = await ciudadPorCP(pais, expoVal('ex-cp'));
   const chip = document.getElementById('ex-chip-cp');
+  const campoCiudad = document.getElementById('ex-ciudad');
+  const enlaceSinCp = document.getElementById('ex-sin-cp');
   if (!resuelto) {
+    // La ciudad que puso el indice se BORRA al dejar de resolver: corrigiendo el
+    // CP a uno que no resuelve, el campo de respaldo aparecia prellenado con la
+    // ciudad del CP anterior y se guardaba sin que nadie la tecleara. Lo que el
+    // vendedor escribio a mano no se toca.
+    if (campoCiudad.value === expoState.ciudadDelIndice) campoCiudad.value = '';
+    expoState.ciudadDelIndice = '';
     chip.style.display = 'none';
     mostrarCiudadExpo(true);
+    if (!expoState.sinCp) enlaceSinCp.style.display = 'block';
     return;
   }
-  document.getElementById('ex-ciudad').value = resuelto.ciudad;
+  campoCiudad.value = resuelto.ciudad;
+  expoState.ciudadDelIndice = resuelto.ciudad;
   chip.textContent = `✓ ${resuelto.ciudad}, ${resuelto.estado}`;
   chip.style.display = 'inline-flex';
   mostrarCiudadExpo(false);
+  // Con la ciudad ya confirmada no hay CP que ignorar: la salida del stand se
+  // retira para que un toque distraido no tape una resolucion valida.
+  enlaceSinCp.style.display = 'none';
 }
 
 // El error vive al pie del formulario, junto al boton fijo: en una pantalla
@@ -7566,6 +7580,7 @@ function abrirCapturaExpo() {
   expoState.tipo_cliente = '';
   expoState.interes = '';
   expoState.sinCp = false;
+  expoState.ciudadDelIndice = '';
   for (const id of ['ex-nombre', 'ex-cp', 'ex-ciudad', 'ex-empresa', 'ex-tipo-otro', 'ex-notas']) {
     const el = document.getElementById(id);
     if (el) el.value = '';
