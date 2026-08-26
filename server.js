@@ -1000,7 +1000,11 @@ app.post('/api/prospectos/publico', async (req, res) => {
   if (validarMayoreo(form).length) return res.status(400).json({ error: 'Captura incompleta' });
 
   const fechaCaptura = new Date().toISOString();
-  const captura = buildCapturaMayoreo(form, fechaCaptura);
+  // QR del stand (issue #264, CONTEXT.md "Evento"): buildCapturaMayoreo compara
+  // form.evento contra el evento activo y solo entonces nace con canal
+  // Feria/Expo y data.evento; sin coincidencia, o sin evento activo, la captura
+  // es la de siempre.
+  const captura = buildCapturaMayoreo(form, fechaCaptura, eventoActivoConfigurado());
   // Segundo cinturon: la captura armada tiene que pasar la MISMA validacion que
   // el alta autenticada (#57), no solo la del formulario.
   if (validarProspectoBody(captura)) return res.status(400).json({ error: 'Captura incompleta' });

@@ -10,7 +10,7 @@
 
 import {
   TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES,
-  sugerirDominioCorreo, validarMayoreo, paisDelFormulario,
+  sugerirDominioCorreo, validarMayoreo, paisDelFormulario, eventoDeQuery,
 } from './mayoreo-logica.js';
 import {
   celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget, opcionesWidget,
@@ -102,8 +102,14 @@ function turnstileToken() {
   return campo ? campo.value : '';
 }
 
+// QR del stand (issue #264): la liga impresa es /mayoreo?evento=<nombre>. El
+// parametro viaja tal cual al servidor, que decide si coincide con el evento
+// activo -- este formulario no sabe ni le importa cual es el evento activo.
+const eventoDeLaLiga = eventoDeQuery(location.search);
+
 function leerFormulario() {
   return {
+    evento: eventoDeLaLiga,
     tipo: val('f-tipo'),
     otro: val('f-otro'),
     empresa: val('f-empresa'),
