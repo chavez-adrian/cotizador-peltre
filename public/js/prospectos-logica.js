@@ -260,6 +260,26 @@ export function siguienteContactoVencido(p, ahora) {
   return cerrado ? null : { canal: s.canal, fecha: s.fecha_contacto };
 }
 
+// Compromiso vivo de la tarjeta: el que todavia no llega o el que ya vencio y
+// nadie ha cerrado. Un compromiso cerrado por un toque ya no se muestra.
+function siguienteContactoVivo(p, ahora) {
+  return siguienteContactoFuturo(p, ahora) || siguienteContactoVencido(p, ahora);
+}
+
+function fechaDiaCorto(fecha) {
+  return new Date(fecha).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// Chip del siguiente contacto: en la tarjeta es el compromiso a secas
+// ("WhatsApp - lun 31 ago"); en la cola Hoy es la instruccion del dia, con el
+// nombre del prospecto y, si viene, el evento del que salio ("WhatsApp a
+// Mariana - Abastur 2026 - lun 31 ago").
+function chipSiguienteContactoHtml(sc, { nombre, evento } = {}) {
+  const quien = nombre ? ` a ${escapeHtml(nombre)}` : '';
+  const deEvento = evento ? ` — ${escapeHtml(evento)}` : '';
+  return `<span class="siguiente-contacto-badge">${escapeHtml(sc.canal)}${quien}${deEvento} · ${escapeHtml(fechaDiaCorto(sc.fecha))}</span>`;
+}
+
 // Link wa.me en un tap: solo digitos, el celular del prospecto ya trae codigo de pais.
 export function buildWaLink(celular) {
   const digitos = String(celular || '').replace(/\D/g, '');
@@ -287,6 +307,7 @@ const ETIQUETAS_EVENTO = {
   },
   cotizacion: e => `Cotización #${escapeHtml(e.cotizacion_id)} · ${escapeHtml(e.vendedor)}`,
   reunion: e => `Reunión agendada para ${escapeHtml(fechaHora(e.fecha_reunion))} · ${escapeHtml(e.vendedor)}`,
+  siguiente_contacto: e => `Siguiente contacto: ${escapeHtml(e.canal)} el ${escapeHtml(fechaCorta(e.fecha_contacto))} · ${escapeHtml(e.vendedor)}`,
 };
 
 function etiquetaEvento(e) {
@@ -337,12 +358,21 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.
   const reunion = activo ? reunionFutura(p, ahora) : null;
+  // Siguiente contacto (issue #262): el compromiso vivo se lee de un vistazo en
+  // la tarjeta, este o no suprimida la cadencia.
+  const siguiente = activo ? siguienteContactoVivo(p, ahora) : null;
   const pesadas = [];
   if (activo) {
     pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">Registrar contacto</button>`);
     pesadas.push(
       `<input type="datetime-local" id="pr-reunion-${p.id}" class="btn-sm">` +
       `<button class="btn btn-secondary btn-sm" onclick="agendarReunionProspecto(${p.id})">Agendar reunión</button>`
+    );
+    pesadas.push(
+      `<select id="pr-sc-canal-${p.id}" class="btn-sm"><option value="">Canal...</option>` +
+      CANALES_SIGUIENTE_CONTACTO.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') +
+      `</select><input type="date" id="pr-sc-fecha-${p.id}" class="btn-sm">` +
+      `<button class="btn btn-secondary btn-sm" onclick="registrarSiguienteContactoProspecto(${p.id})">Siguiente contacto</button>`
     );
     pesadas.push(
       `<select id="pr-motivo-${p.id}" class="btn-sm"><option value="">Motivo...</option>` +
@@ -374,6 +404,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
           ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
           ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
           ${reunion ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión el ${escapeHtml(fechaHora(reunion))}</span></div>` : ''}
+          ${siguiente ? `<div style="margin-top:4px">${chipSiguienteContactoHtml(siguiente)}</div>` : ''}
         </div>
         ${compacta ? '' : `<div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>`}
       </div>
@@ -418,6 +449,7 @@ export function buildColaProspectosHtml(cola) {
             <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[item.etapa] || item.etapa)} · ${escapeHtml(item.canal)} · ${escapeHtml(item.ciudad)} · ${escapeHtml(item.celular)}</div>
             <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}${item.yaEsCliente ? ` ${CLIENTE_BADGE}` : ''}</div>
             ${item.reunionVencida ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión del ${escapeHtml(fechaHora(item.fechaReunion))} — registrar resultado</span></div>` : ''}
+            ${item.siguienteContacto ? `<div style="margin-top:4px">${chipSiguienteContactoHtml(item.siguienteContacto, { nombre: item.nombre, evento: item.evento })}</div>` : ''}
           </div>
         </div>
         <div class="cot-card-actions">${acciones.join(' ')}</div>

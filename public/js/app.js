@@ -5671,6 +5671,33 @@ async function agendarReunionProspecto(id) {
   }
 }
 
+// Siguiente contacto (issue #262, CONTEXT.md "Siguiente contacto"): el
+// compromiso de canal + fecha que el vendedor acuerda con el prospecto. La
+// fecha se captura como dia (no hay hora acordada) y viaja a las 9:00 locales:
+// asi el compromiso vence al abrir ese dia, antes de la primera hora habil, y
+// la cadencia arranca en cero. Se expone a window JUNTO a su declaracion
+// (trampa del onclick inline, #112).
+async function registrarSiguienteContactoProspecto(id) {
+  const canal = document.getElementById(`pr-sc-canal-${id}`)?.value || '';
+  const dia = document.getElementById(`pr-sc-fecha-${id}`)?.value || '';
+  if (!canal) { alert('Selecciona el canal del siguiente contacto'); return; }
+  if (!dia) { alert('Selecciona la fecha del siguiente contacto'); return; }
+  try {
+    const res = await api(`/api/prospectos/${id}/siguiente-contacto`, {
+      method: 'POST', body: { canal, fecha: new Date(`${dia}T09:00`).toISOString() },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo registrar el siguiente contacto');
+      return;
+    }
+    refrescarProspectos();
+  } catch (e) {
+    alert('Error de conexion');
+  }
+}
+window.registrarSiguienteContactoProspecto = registrarSiguienteContactoProspecto;
+
 async function resultadoReunionProspecto(id, resultado, motivo) {
   try {
     const res = await api(`/api/prospectos/${id}/reunion-resultado`, {

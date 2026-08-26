@@ -715,3 +715,66 @@ test('SC4: manda el ultimo siguiente contacto REGISTRADO, aunque su fecha sea ma
     null
   );
 });
+
+test('SC5: la card activa ofrece registrar el siguiente contacto con canal y fecha', () => {
+  const html = buildProspectoCardHtml(PROSPECTO);
+  assert.match(html, /id="pr-sc-canal-3"/);
+  assert.match(html, /id="pr-sc-fecha-3"/);
+  assert.match(html, /type="date"/);
+  assert.match(html, /registrarSiguienteContactoProspecto\(3\)/);
+  for (const c of CANALES_SIGUIENTE_CONTACTO) assert.ok(html.includes(`>${c}<`), `falta canal ${c}`);
+  const noUtil = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'no_util' });
+  assert.equal(noUtil.includes('registrarSiguienteContactoProspecto'), false);
+});
+
+test('SC6: la card muestra el chip del compromiso vivo (futuro o vencido) y nada sin compromiso', () => {
+  const futuro = buildProspectoCardHtml({ ...PROSPECTO, eventos: [SC_FUTURO] }, undefined, AHORA);
+  assert.match(futuro, /siguiente-contacto-badge/);
+  assert.match(futuro, /WhatsApp/);
+  assert.match(futuro, /15/);
+  assert.match(futuro, /jun/);
+  // vencido y sin cerrar sigue visible: es el pendiente del dia
+  const vencido = buildProspectoCardHtml({ ...PROSPECTO, eventos: [SC_VENCIDO] }, undefined, AHORA);
+  assert.match(vencido, /siguiente-contacto-badge/);
+  // cerrado por un toque posterior: el chip desaparece
+  const cerrado = buildProspectoCardHtml(
+    { ...PROSPECTO, eventos: [SC_VENCIDO, toqueEl('2026-06-10T13:00:00.000Z')] }, undefined, AHORA
+  );
+  assert.equal(cerrado.includes('siguiente-contacto-badge'), false);
+  assert.equal(buildProspectoCardHtml(PROSPECTO).includes('siguiente-contacto-badge'), false);
+});
+
+test('SC7: el item de cola con el compromiso vencido trae la instruccion del dia', () => {
+  const html = buildColaProspectosHtml([{
+    ...ITEM_COLA, siguienteContacto: { canal: 'WhatsApp', fecha: '2026-08-31T15:00:00.000Z' },
+  }]);
+  assert.match(html, /siguiente-contacto-badge/);
+  assert.match(html, /WhatsApp a Laura/);
+  assert.match(html, /31/);
+  // el toque sigue disponible: es lo que cierra el compromiso (no hay resultado)
+  assert.match(html, /registrarToqueProspecto\(3\)/);
+  const sin = buildColaProspectosHtml([ITEM_COLA]);
+  assert.equal(sin.includes('siguiente-contacto-badge'), false);
+});
+
+test('SC8: la instruccion suma el evento del prospecto cuando la cola lo trae, escapado', () => {
+  const html = buildColaProspectosHtml([{
+    ...ITEM_COLA, siguienteContacto: { canal: 'Llamada', fecha: '2026-08-31T15:00:00.000Z' },
+    evento: 'Abastur 2026',
+  }]);
+  assert.match(html, /Llamada a Laura — Abastur 2026/);
+  const xss = buildColaProspectosHtml([{
+    ...ITEM_COLA, siguienteContacto: { canal: 'Llamada', fecha: '2026-08-31T15:00:00.000Z' },
+    evento: '<b>x</b>',
+  }]);
+  assert.equal(xss.includes('<b>x</b>'), false);
+});
+
+test('SC9: el historial nombra el evento del siguiente contacto con su canal y fecha', () => {
+  const html = buildHistorialHtml({ ...PROSPECTO, eventos: [SC_FUTURO] });
+  assert.match(html, /Siguiente contacto/);
+  assert.match(html, /WhatsApp/);
+  assert.match(html, /Memo/);
+  const xss = buildHistorialHtml({ ...PROSPECTO, eventos: [{ ...SC_FUTURO, vendedor: '<b>Memo</b>' }] });
+  assert.equal(xss.includes('<b>Memo</b>'), false);
+});
