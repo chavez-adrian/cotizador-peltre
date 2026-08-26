@@ -1033,13 +1033,13 @@ test('C6: la calificacion se lee en la tarjeta como chips en el orden en que se 
   assert.match(html, /4-10 años/);
   assert.match(html, /3-5 sucursales/);
   assert.match(html, /Ya usa peltre: Cinsa/);
-  // la etiqueta humana solo vive aqui: la clave estable no se le enseña al vendedor
+  // la etiqueta humana solo vive aqui: la clave estable no se le muestra al vendedor
   assert.equal(html.includes('no_se_rompe'), false);
   assert.ok(html.indexOf('No se rompe') < html.indexOf('Precio'), 'valora conserva el orden capturado');
   assert.match(html, /Que sea apilable/);
   assert.match(html, /Cafetería de especialidad/);
   assert.match(html, /Oficinistas/);
-  // una sucursal no se pluraliza y "Por abrir" no lleva "años"
+  // una sucursal no se pluraliza y "Por abrir" no lleva sufijo de anios
   assert.match(buildCalificacionChipsHtml({ sucursales: '1' }), /1 sucursal</);
   assert.match(buildCalificacionChipsHtml({ anios: 'Por abrir' }), />Por abrir</);
   assert.match(buildCalificacionChipsHtml({ usa_peltre: false }), /No usa peltre/);

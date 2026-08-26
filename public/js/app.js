@@ -5717,6 +5717,12 @@ async function agendarReunionProspecto(id) {
 // habil del dominio es siempre America/Mexico_City, lib/horas-habiles.js; CDMX
 // es UTC-6 fijo desde que Mexico elimino el horario de verano en 2022). Se
 // expone a window JUNTO a su declaracion (trampa del onclick inline, #112).
+// El paso a instante lo hace un solo lugar: lo comparten este boton de la
+// tarjeta y el siguiente contacto del paso 2 de la expo (#263).
+function instanteSiguienteContacto(dia) {
+  return new Date(`${dia}T09:00:00-06:00`).toISOString();
+}
+
 async function registrarSiguienteContactoProspecto(id) {
   const canal = document.getElementById(`pr-sc-canal-${id}`)?.value || '';
   const dia = document.getElementById(`pr-sc-fecha-${id}`)?.value || '';
@@ -5724,7 +5730,7 @@ async function registrarSiguienteContactoProspecto(id) {
   if (!dia) { alert('Selecciona la fecha del siguiente contacto'); return; }
   try {
     const res = await api(`/api/prospectos/${id}/siguiente-contacto`, {
-      method: 'POST', body: { canal, fecha: new Date(`${dia}T09:00:00-06:00`).toISOString() },
+      method: 'POST', body: { canal, fecha: instanteSiguienteContacto(dia) },
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -7797,7 +7803,7 @@ function siguienteContactoDelPaso2(raiz) {
   const dia = document.getElementById('ex2-sc-fecha').value;
   if (!canal && !dia) return null;
   if (!canal || !dia) return { error: 'El siguiente contacto lleva canal y fecha' };
-  return { canal, fecha: new Date(`${dia}T09:00:00-06:00`).toISOString() };
+  return { canal, fecha: instanteSiguienteContacto(dia) };
 }
 
 async function guardarCalificacionExpo() {

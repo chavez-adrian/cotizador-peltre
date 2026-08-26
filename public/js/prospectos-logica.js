@@ -903,7 +903,7 @@ export function buildGrupoChipsHtml(grupo, opciones, seleccion, multi = false) {
   return `<div class="chips-grupo" data-grupo="${escapeHtml(grupo)}"${multi ? ' data-multi="1"' : ''}>${chips}</div>`;
 }
 
-// "Ya usa o vende peltre" se guarda como booleano; los chips hablan en español.
+// "Ya usa o vende peltre" se guarda como booleano; el chip dice Si o No.
 export const USA_PELTRE_OPCIONES = [
   { clave: 'si', etiqueta: 'Sí' },
   { clave: 'no', etiqueta: 'No' },
