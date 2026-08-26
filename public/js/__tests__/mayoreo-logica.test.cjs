@@ -4,11 +4,12 @@ const assert = require('node:assert/strict');
 
 let TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
   segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo, buildCapturaMayoreo,
-  paisDelFormulario, capitalizarCampo;
+  paisDelFormulario, capitalizarCampo, CANAL_MAYOREO, CANAL_FERIA_EXPO, eventoDeQuery;
 before(async () => {
   ({ TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
     segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo,
-    buildCapturaMayoreo, paisDelFormulario, capitalizarCampo } = await import('../mayoreo-logica.js'));
+    buildCapturaMayoreo, paisDelFormulario, capitalizarCampo,
+    CANAL_MAYOREO, CANAL_FERIA_EXPO, eventoDeQuery } = await import('../mayoreo-logica.js'));
 });
 
 // M1: el mapeo tipo -> segmento de Operam es el del ticket #157 (tabla de campos).
@@ -345,4 +346,43 @@ test('M38: buildCapturaMayoreo guarda nombre y empresa ya corregidos de mayuscul
   }), AHORA);
   assert.equal(c.nombre, 'Juan Perez');
   assert.equal(c.data.empresa, 'Hotel Azul SA de CV');
+});
+
+// --- QR del stand (issue #264, CONTEXT.md "Evento") ---
+
+const EVENTO_ACTIVO = { nombre: 'Abastur 2026', fin: '2026-08-28' };
+
+test('M39: eventoDeQuery lee el parametro evento de la URL de la liga del QR', () => {
+  assert.equal(eventoDeQuery('?evento=Abastur%202026'), 'Abastur 2026');
+  assert.equal(eventoDeQuery('?evento=Abastur%202026&otra=cosa'), 'Abastur 2026');
+});
+
+test('M40: eventoDeQuery sin el parametro, o sin query string, devuelve vacio', () => {
+  assert.equal(eventoDeQuery('?otra=cosa'), '');
+  assert.equal(eventoDeQuery(''), '');
+  assert.equal(eventoDeQuery(undefined), '');
+});
+
+test('M41: buildCapturaMayoreo con evento coincidente con el activo nace Feria/Expo con el evento guardado', () => {
+  const c = buildCapturaMayoreo(formValido({ evento: 'Abastur 2026' }), AHORA, EVENTO_ACTIVO);
+  assert.equal(c.canal, CANAL_FERIA_EXPO);
+  assert.equal(c.data.evento, 'Abastur 2026');
+});
+
+test('M42: buildCapturaMayoreo con evento que NO coincide con el activo ignora el parametro', () => {
+  const c = buildCapturaMayoreo(formValido({ evento: 'Otra Expo' }), AHORA, EVENTO_ACTIVO);
+  assert.equal(c.canal, CANAL_MAYOREO);
+  assert.equal('evento' in c.data, false);
+});
+
+test('M43: buildCapturaMayoreo sin evento activo ignora el parametro aunque venga en el form', () => {
+  const c = buildCapturaMayoreo(formValido({ evento: 'Abastur 2026' }), AHORA, null);
+  assert.equal(c.canal, CANAL_MAYOREO);
+  assert.equal('evento' in c.data, false);
+});
+
+test('M44: buildCapturaMayoreo sin parametro evento en el form se comporta como siempre, con evento activo', () => {
+  const c = buildCapturaMayoreo(formValido(), AHORA, EVENTO_ACTIVO);
+  assert.equal(c.canal, CANAL_MAYOREO);
+  assert.equal('evento' in c.data, false);
 });

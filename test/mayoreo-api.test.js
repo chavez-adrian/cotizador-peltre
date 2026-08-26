@@ -8,6 +8,7 @@ import supertest from 'supertest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
+const CONFIG_PATH = join(__dirname, '..', 'data', 'config.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -72,6 +73,22 @@ function formulario(extra = {}) {
 function enviar(body) {
   return supertest(app).post('/api/prospectos/publico').send(body);
 }
+
+// QR del stand (issue #264, CONTEXT.md "Evento"): el evento activo vive en
+// data/config.json, la misma lectura/escritura del panel admin (patron de
+// #261 en test/prospectos-api.test.js). Cada test que lo necesita lo pone y
+// restaura el archivo original al terminar.
+const EVENTO = { nombre: 'Abastur 2026', fin: '2026-08-28' };
+async function conConfig(parcial, fn) {
+  const original = leerArchivoSync(CONFIG_PATH);
+  try {
+    escribirArchivoSync(CONFIG_PATH, JSON.stringify({ ...JSON.parse(original), ...parcial }, null, 2));
+    return await fn();
+  } finally {
+    escribirArchivoSync(CONFIG_PATH, original);
+  }
+}
+const conEventoActivo = fn => conConfig({ eventoActivo: EVENTO }, fn);
 
 // `process.env.X = undefined` NO borra la variable: la coacciona a la cadena
 // "undefined" (truthy). TURNSTILE_SECRET_KEY normalmente no existe en el
@@ -424,6 +441,97 @@ test('T5: si siteverify falla por red (Cloudflare caido), la captura pasa igual 
     assert.equal(readProspectos().length, 1, 'un Cloudflare caido no debe tumbar un envio legitimo');
   } finally {
     restaurarEnv('TURNSTILE_SECRET_KEY', originalSecret);
+  }
+});
+
+// --- QR del stand: evento en la liga (issue #264, CONTEXT.md "Evento") ---
+
+test('Q1: con evento coincidente con el activo, la captura nace en No Asignado con canal Feria/Expo y el evento guardado', async () => {
+  await conEventoActivo(async () => {
+    const res = await enviar(formulario({ evento: EVENTO.nombre }));
+    assert.equal(res.status, 200);
+    const p = readProspectos()[0];
+    assert.equal(p.etapa, 'no_asignado');
+    assert.equal(p.vendedor, null);
+    assert.equal(p.canal, 'Feria/Expo');
+    assert.equal(p.data.evento, EVENTO.nombre);
+  });
+});
+
+test('Q2: con un evento que no coincide con el activo, la captura cae a Formulario web sin evento', async () => {
+  await conEventoActivo(async () => {
+    const res = await enviar(formulario({ evento: 'Expo Inventada' }));
+    assert.equal(res.status, 200);
+    const p = readProspectos()[0];
+    assert.equal(p.canal, 'Formulario web');
+    assert.equal(p.data.evento, undefined);
+  });
+});
+
+test('Q3: sin evento activo, la captura cae a Formulario web aunque el form traiga un evento', async () => {
+  await conConfig({ eventoActivo: null }, async () => {
+    const res = await enviar(formulario({ evento: EVENTO.nombre }));
+    assert.equal(res.status, 200);
+    const p = readProspectos()[0];
+    assert.equal(p.canal, 'Formulario web');
+    assert.equal(p.data.evento, undefined);
+  });
+});
+
+test('Q4: sin parametro evento en el envio, con evento activo, la captura es la de siempre', async () => {
+  await conEventoActivo(async () => {
+    const res = await enviar(formulario());
+    assert.equal(res.status, 200);
+    const p = readProspectos()[0];
+    assert.equal(p.canal, 'Formulario web');
+    assert.equal(p.data.evento, undefined);
+  });
+});
+
+test('Q5: un celular que ya es prospecto, capturado con evento coincidente, sigue sin duplicar la tarjeta (respuesta opaca)', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([prospectoExistente()]);
+    const res = await enviar(formulario({ evento: EVENTO.nombre }));
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { ok: true });
+    const todos = readProspectos();
+    assert.equal(todos.length, 1);
+    assert.equal(todos[0].vendedor, 'Memo', 'la tarjeta existente no cambia de dueno');
+  });
+});
+
+test('Q6: un celular de cliente Operam, capturado con evento coincidente, no crea prospecto (respuesta opaca)', async () => {
+  await conEventoActivo(async () => {
+    mockListadoClientes([CLIENTE_OPERAM]);
+    const res = await enviar(formulario({ evento: EVENTO.nombre }));
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { ok: true });
+    assert.equal(readProspectos().length, 0);
+  });
+});
+
+test('Q7: la respuesta publica es identica con o sin evento, coincidente o no, con evento activo o sin el', async () => {
+  const huella = res => JSON.stringify({ status: res.status, tipo: res.headers['content-type'], cuerpo: res.text });
+
+  const sinEvento = await enviar(formulario());
+
+  resetRateLimitPublico();
+  writeProspectos([]);
+  const conEvento = await conEventoActivo(() => enviar(formulario({ evento: EVENTO.nombre, cel: '5511223344' })));
+
+  resetRateLimitPublico();
+  writeProspectos([]);
+  const eventoNoCoincide = await conEventoActivo(() => enviar(formulario({ evento: 'Otra Expo', cel: '5511223355' })));
+
+  resetRateLimitPublico();
+  writeProspectos([]);
+  const sinEventoActivo = await conConfig({ eventoActivo: null },
+    () => enviar(formulario({ evento: EVENTO.nombre, cel: '5511223366' })));
+
+  const ramas = { sinEvento, conEvento, eventoNoCoincide, sinEventoActivo };
+  const referencia = huella(sinEvento);
+  for (const [nombre, res] of Object.entries(ramas)) {
+    assert.equal(huella(res), referencia, `la rama "${nombre}" delata informacion`);
   }
 });
 
