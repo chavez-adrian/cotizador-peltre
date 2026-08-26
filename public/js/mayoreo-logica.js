@@ -164,6 +164,20 @@ export function validarMayoreo(form) {
 // (prospectos-logica.js). El endpoint publico lo fija; nunca lo elige el que envia.
 export const CANAL_MAYOREO = 'Formulario web';
 
+// QR del stand (issue #264, CONTEXT.md "Evento"): el visitante llega a
+// /mayoreo?evento=<nombre> y ese parametro viaja tal cual en el body. Si
+// coincide con el evento activo la captura nace con este canal (del mismo
+// catalogo cerrado de CANALES); si no coincide, o no hay evento activo, se
+// ignora y la captura es la de siempre. Quien captura nunca elige el canal.
+export const CANAL_FERIA_EXPO = 'Feria/Expo';
+
+// Lee el parametro `evento` de la URL del formulario publico. Recibe el query
+// string crudo (`location.search`) en vez de leer `location` directo para que
+// el nucleo siga sin efectos de navegador y sea testeable sin DOM.
+export function eventoDeQuery(queryString) {
+  return new URLSearchParams(queryString || '').get('evento') || '';
+}
+
 function limpio(v) {
   return String(v == null ? '' : v).trim();
 }
@@ -229,7 +243,11 @@ export function capitalizarCampo(valor) {
 // en ligarCliente, data.folioOperam en moverASeguimientoConFolio). La captura
 // publica pide mas campos por diseno del ticket #157 y los guarda estructurados
 // en vez de aplastarlos en notas.
-export function buildCapturaMayoreo(form, fechaISO) {
+// `eventoActivo` es el mismo objeto que devuelve eventoActivoConfigurado() en
+// server.js ({ nombre, fin } o null) -- el llamador resuelve la configuracion,
+// este nucleo solo compara nombres. Sin evento activo, o con un evento en el
+// form que no coincide, el comportamiento es identico al de antes de #264.
+export function buildCapturaMayoreo(form, fechaISO, eventoActivo) {
   const f = form || {};
   const data = {};
   const opcional = (k, v) => { if (limpio(v)) data[k] = limpio(v); };
@@ -260,11 +278,18 @@ export function buildCapturaMayoreo(form, fechaISO) {
   // registrado sin fecha (no hay consentimiento que fechar).
   data.promos = f.promos ? { acepta: true, fecha: fechaISO } : { acepta: false };
 
+  // QR del stand (issue #264): el evento no lo elige quien envia -- solo cuenta
+  // si coincide LITERAL con el nombre del evento activo. Sin coincidencia (o
+  // sin evento activo) la captura es la de siempre, sin rastro de evento.
+  const eventoForm = limpio(f.evento);
+  const conEvento = !!(eventoForm && eventoActivo && eventoForm === eventoActivo.nombre);
+  if (conEvento) data.evento = eventoForm;
+
   return {
     celular: celularDeMayoreo(f),
     nombre: unirNombre(capitalizarCampo(f.nombre), capitalizarCampo(f.apellido)),
     ciudad: limpio(f.ciudad),
-    canal: CANAL_MAYOREO,
+    canal: conEvento ? CANAL_FERIA_EXPO : CANAL_MAYOREO,
     data,
   };
 }

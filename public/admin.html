@@ -68,11 +68,11 @@
       <div id="diff-result" style="display:none;margin-top:12px"></div>
     </div>
 
-    <!-- Importacion Abastur (issue #47; movida aqui desde Prospectos a peticion de Adrian) -->
+    <!-- Importacion del export del evento (issue #265, antes #47) -->
     <div class="admin-section">
-      <h2>Importar gafetes de Abastur</h2>
+      <h2>Importar el export del evento</h2>
       <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
-        Sube el XLSX que exporta la app de lectoras de Abastur (hoja "Contactos"). Solo aplica a ese layout; otros eventos necesitaran su propio importador. Los gafetes entran como prospectos en etapa Nuevo, canal Feria/Expo, deduplicados por celular.
+        Sube el XLSX de contactos escaneados que entrega la app del evento (hoja "Contacts"). Solo aplica a ese layout; otros eventos necesitaran su propio importador. Un celular libre nace como prospecto en Por Cotizar, canal Feria/Expo, con el evento activo; uno que ya es prospecto se enriquece sin pisar lo capturado en el stand; uno que ya es cliente se descarta. Los gafetes sin celular no nacen como prospecto: salen en el reporte para perseguirlos a mano.
       </p>
       <div class="form-group">
         <input type="file" id="imp-feria-archivo" accept=".xlsx">
@@ -271,7 +271,7 @@ async function adminLogin() {
   cargarVendedoresFeria();
 }
 
-// --- Importacion Abastur (issue #47) ---
+// --- Importacion del export del evento (issue #265, antes #47) ---
 async function cargarVendedoresFeria() {
   const sel = document.getElementById('imp-feria-vendedor');
   if (!sel || sel.options.length) return;
@@ -292,7 +292,7 @@ async function importarFeria() {
   reporteEl.innerHTML = '';
   const archivo = input.files[0];
   if (!archivo) {
-    errEl.textContent = 'Selecciona el archivo XLSX de Abastur';
+    errEl.textContent = 'Selecciona el archivo XLSX del evento';
     errEl.style.display = 'block';
     return;
   }
@@ -308,7 +308,7 @@ async function importarFeria() {
       errEl.style.display = 'block';
       return;
     }
-    const { buildReporteImportacionHtml } = await import('/js/prospectos-logica.js');
+    const { buildReporteImportacionHtml } = await import('/js/importar-feria-logica.js');
     reporteEl.innerHTML = buildReporteImportacionHtml(data);
     input.value = '';
   } catch (e) {

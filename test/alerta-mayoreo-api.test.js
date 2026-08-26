@@ -15,6 +15,7 @@ import supertest from 'supertest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
+const CONFIG_PATH = join(__dirname, '..', 'data', 'config.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -60,6 +61,19 @@ function formulario(extra = {}) {
 }
 function enviar(body) {
   return supertest(app).post('/api/prospectos/publico').send(body);
+}
+
+// QR del stand (issue #264): la alerta se dispara igual que hoy tambien cuando
+// la captura nace con evento. Patron de conConfig de test/prospectos-api.test.js.
+const EVENTO = { nombre: 'Abastur 2026', fin: '2026-08-28' };
+async function conConfig(parcial, fn) {
+  const original = leerArchivoSync(CONFIG_PATH);
+  try {
+    escribirArchivoSync(CONFIG_PATH, JSON.stringify({ ...JSON.parse(original), ...parcial }, null, 2));
+    return await fn();
+  } finally {
+    escribirArchivoSync(CONFIG_PATH, original);
+  }
 }
 
 let savedProspectos;
@@ -251,6 +265,19 @@ test('#238: rama CARRERA contra el indice unico -- la fecha de captura tambien l
   assert.equal(todos[0].vendedor, 'Memo', 'sobrevive la tarjeta que gano el indice unico');
   assert.ok(recibido, 'la tercera rama tambien dispara la alerta');
   afirmarFechaCaptura(recibido);
+});
+
+test('#264: la captura por el QR del stand (evento coincidente, canal Feria/Expo) tambien dispara la alerta', async () => {
+  let recibido = null;
+  _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
+
+  const res = await conConfig({ eventoActivo: EVENTO }, () =>
+    enviar(formulario({ evento: EVENTO.nombre })));
+
+  assert.equal(res.status, 200);
+  assert.equal(readProspectos()[0].canal, 'Feria/Expo');
+  assert.ok(recibido, 'la alerta se dispara igual que en la captura de siempre');
+  assert.equal(recibido.nombre, 'Laura Mendoza');
 });
 
 test('sin SMTP_USER/SMTP_PASS configuradas, la captura funciona identica con el wrapper real (sin inyeccion)', async () => {
