@@ -1144,7 +1144,7 @@ body {
 
 /* Chips de estado: tinte claro + texto oscuro del mismo matiz (estilo
    "NO LEIDO" de Bitrix; legible a pleno sol, WCAG AA en texto chico) */
-.espera-badge, .cliente-badge, .reunion-badge {
+.espera-badge, .cliente-badge, .reunion-badge, .evento-badge {
   display: inline-block;
   font-size: 10px;
   font-weight: 700;
@@ -1158,6 +1158,9 @@ body {
 .espera-rojo { background: oklch(0.87 0.08 28); color: oklch(0.36 0.12 28); }
 .cliente-badge { background: var(--etapa-contactado); color: var(--etapa-contactado-texto); }
 .reunion-badge { background: oklch(0.89 0.06 310); color: oklch(0.34 0.1 310); }
+/* Evento de feria (issue #261): el prospecto que dejo la expo se reconoce de
+   un vistazo en la tarjeta y en el pipeline. */
+.evento-badge { background: oklch(0.9 0.07 200); color: oklch(0.34 0.09 220); }
 
 /* PRE / #Operam (issue #63): una pre-cotizacion (sin folio de Operam) lleva el
    chip ambar "PRE"; una cotizacion registrada lleva el chip azul "#Operam N". */

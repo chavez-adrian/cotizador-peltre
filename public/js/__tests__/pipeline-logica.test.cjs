@@ -1154,3 +1154,38 @@ test('A104: badgeQuoteDesactualizadoHtml marca la tarjeta solo cuando hay marca 
   assert.equal(badgeQuoteDesactualizadoHtml({}), '');
   assert.equal(badgeQuoteDesactualizadoHtml(undefined), '');
 });
+
+// --- Filtro por evento (issue #261): despues de la feria hay que poder
+// responder cuantos prospectos dejo Abastur y cuantos cotizaron. ---
+let filtrarPorEvento, eventosDeOportunidades, buildFiltroEventoHtml;
+before(async () => {
+  ({ filtrarPorEvento, eventosDeOportunidades, buildFiltroEventoHtml } = await import('../pipeline-logica.js'));
+});
+
+test('#261: el pipeline filtra las oportunidades por evento', () => {
+  const oportunidades = [
+    prospecto({ id: 1, evento: 'Abastur 2026' }),
+    prospecto({ id: 2, evento: null }),
+    cotizacion({ id: 3, evento: 'Abastur 2026' }),
+    prospecto({ id: 4, evento: 'Expo Cafe 2025' }),
+  ];
+  assert.deepEqual(filtrarPorEvento(oportunidades, 'Abastur 2026').map(o => o.id), [1, 3]);
+  assert.deepEqual(filtrarPorEvento(oportunidades, '').map(o => o.id), [1, 2, 3, 4]);
+  assert.deepEqual(filtrarPorEvento(oportunidades, null).map(o => o.id), [1, 2, 3, 4]);
+});
+
+test('#261: el selector ofrece los eventos presentes, sin repetir, y "Todos"', () => {
+  const oportunidades = [
+    prospecto({ id: 1, evento: 'Abastur 2026' }),
+    prospecto({ id: 2, evento: 'Abastur 2026' }),
+    prospecto({ id: 3 }),
+    prospecto({ id: 4, evento: 'Expo Cafe 2025' }),
+  ];
+  assert.deepEqual(eventosDeOportunidades(oportunidades), ['Abastur 2026', 'Expo Cafe 2025']);
+  assert.equal(eventosDeOportunidades([prospecto({ id: 1 })]).length, 0);
+  const html = buildFiltroEventoHtml(oportunidades, 'Abastur 2026');
+  assert.match(html, /Todos los eventos/);
+  assert.match(html, /<option value="Abastur 2026" selected>/);
+  // Sin eventos capturados el filtro no se pinta: fuera de feria la app se ve igual.
+  assert.equal(buildFiltroEventoHtml([prospecto({ id: 1 })], ''), '');
+});

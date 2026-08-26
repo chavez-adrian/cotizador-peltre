@@ -940,3 +940,32 @@ export function buildCerradasHtml(oportunidades) {
     </div></div></div>`;
   }).join('');
 }
+
+// --- Filtro por evento (issue #261, CONTEXT.md "Evento") ---
+// Despues de la feria el director pregunta cuantos prospectos dejo Abastur y
+// cuantos cotizaron: el evento viaja en la oportunidad (del prospecto o de la
+// cotizacion que salio de el) y el pipeline lo filtra en los tres modos.
+
+export function filtrarPorEvento(oportunidades, evento) {
+  if (!evento) return oportunidades || [];
+  return (oportunidades || []).filter(o => o.evento === evento);
+}
+
+// Los eventos que de verdad hay en el tablero, ordenados y sin repetir: el
+// selector no inventa opciones vacias.
+export function eventosDeOportunidades(oportunidades) {
+  const vistos = new Set();
+  for (const o of oportunidades || []) if (o.evento) vistos.add(o.evento);
+  return [...vistos].sort();
+}
+
+// Sin eventos capturados el filtro no existe: fuera de feria el pipeline se ve
+// como siempre.
+export function buildFiltroEventoHtml(oportunidades, seleccionado) {
+  const eventos = eventosDeOportunidades(oportunidades);
+  if (!eventos.length) return '';
+  const opciones = ['', ...eventos].map(e =>
+    `<option value="${escapeHtml(e)}"${e === (seleccionado || '') ? ' selected' : ''}>${e ? escapeHtml(e) : 'Todos los eventos'}</option>`
+  ).join('');
+  return `<select id="pipeline-filtro-evento" class="btn-sm" style="margin-left:8px">${opciones}</select>`;
+}
