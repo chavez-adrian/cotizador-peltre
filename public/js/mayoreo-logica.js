@@ -5,28 +5,15 @@
 // implementacion, cero copias espejo.
 
 import { validarTelefono, combinarTelefonoConCodigo, paisDesdeCodigoTelefono } from './alta-logica.js';
-import { PIEZAS_ESTIMADAS } from './prospectos-logica.js';
+import { PIEZAS_ESTIMADAS, TIPOS_CLIENTE, segmentoDeTipo } from './prospectos-logica.js';
 
-// Tipo de proyecto -> segmento de Operam (tabla de campos del ticket). Varias
-// opciones caen a proposito en el mismo segmento (Restaurantes/Hoteles/Cafeterias
-// son 10): por eso la opcion textual se conserva ademas en las notas.
-const SEGMENTO_POR_TIPO = {
-  'Distribuidores': 14,
-  'Menudistas': 8,
-  'Restaurantes': 10,
-  'Hoteles': 10,
-  'Cafeterías': 10,
-  'Catering | Eventos': 15,
-  'Agencias | Marcas': 12,
-  'Otro': 1,
-};
-
-export const TIPOS_PROYECTO = Object.keys(SEGMENTO_POR_TIPO);
-
-export function segmentoDeTipo(tipo) {
-  const s = SEGMENTO_POR_TIPO[tipo];
-  return s === undefined ? null : s;
-}
+// Tipo de cliente -> segmento de Operam. El catalogo y su mapeo son UNICOS y
+// viven en el nucleo de prospectos (prospectos-logica.js) desde #261: los tres
+// caminos de captura (manual, publica y de expo) comparten esa sola fuente
+// (CONTEXT.md "Tipo de cliente"). Aqui solo se reexponen con el nombre que ya
+// usan el formulario publico y sus tests.
+export const TIPOS_PROYECTO = TIPOS_CLIENTE;
+export { segmentoDeTipo };
 
 // Cantidad estimada: los cortes del sistema (PIEZAS_ESTIMADAS) MENOS +6,000. Se
 // DERIVAN, no se copian: si manana cambian los cortes, cambian en un solo lugar

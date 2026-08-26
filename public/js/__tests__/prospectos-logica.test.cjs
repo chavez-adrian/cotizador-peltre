@@ -656,3 +656,156 @@ test('K15: la card de un prospecto activo trae el boton Cotizar', () => {
   const noUtil = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'no_util' });
   assert.equal(noUtil.includes('cotizarProspecto'), false);
 });
+
+// --- Captura de expo (#261, spec #260) ---
+// Bloque propio (declaraciones + before) para no tocar el encabezado del archivo.
+let TIPOS_CLIENTE, segmentoDeTipo, NIVELES_INTERES;
+let segmentoDeTipoMayoreo, TIPOS_PROYECTO;
+before(async () => {
+  ({ TIPOS_CLIENTE, segmentoDeTipo, NIVELES_INTERES } = await import('../prospectos-logica.js'));
+  ({ segmentoDeTipo: segmentoDeTipoMayoreo, TIPOS_PROYECTO } = await import('../mayoreo-logica.js'));
+});
+
+test('E1: el catalogo Tipo de cliente vive en el nucleo de prospectos con sus 8 opciones', () => {
+  assert.deepEqual(TIPOS_CLIENTE, [
+    'Distribuidores', 'Menudistas', 'Restaurantes', 'Hoteles',
+    'Cafeterías', 'Catering | Eventos', 'Agencias | Marcas', 'Otro',
+  ]);
+  assert.equal(segmentoDeTipo('Distribuidores'), 14);
+  assert.equal(segmentoDeTipo('Cafeterías'), 10);
+  assert.equal(segmentoDeTipo('Otro'), 1);
+  assert.equal(segmentoDeTipo('Ferreterías'), null);
+});
+
+test('E2: la captura publica y la captura de expo comparten UN solo mapeo tipo -> segmento', () => {
+  assert.equal(segmentoDeTipoMayoreo, segmentoDeTipo);
+  assert.deepEqual(TIPOS_PROYECTO, TIPOS_CLIENTE);
+});
+
+test('E3: el nivel de interes de la expo se traduce a temperatura 1/3/5', () => {
+  assert.deepEqual(NIVELES_INTERES, { Bajo: 1, Medio: 3, Alto: 5 });
+});
+
+const LIGA = 'https://cdn.shopify.com/catalogo.pdf';
+
+test('E4: mensajeWhatsAppExpo devuelve el texto aprobado con primer nombre y liga en renglon propio', async () => {
+  const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  const texto = mensajeWhatsAppExpo(
+    { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
+    'Alejandro Chávez', LIGA
+  );
+  assert.equal(texto, [
+    'Hola Laura, soy Alejandro de pp.peltre. Un gusto haberte conocido en Abastur 2026. Te comparto nuestro catálogo:',
+    LIGA,
+    '',
+    'Si te sirve, con gusto te preparo una cotización para Hotel Azul. ¿Qué piezas te llamaron la atención?',
+  ].join('\n'));
+});
+
+test('E5: sin empresa el mensaje ofrece una cotizacion a tu medida', async () => {
+  const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  const texto = mensajeWhatsAppExpo(
+    { nombre: 'Laura', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' }, 'Pilar Rosete', LIGA
+  );
+  assert.match(texto, /con gusto te preparo una cotización a tu medida\. ¿Qué piezas te llamaron la atención\?$/);
+  assert.equal(texto.includes('para '), false);
+});
+
+test('E6: los tipos mayoristas cambian la oferta a una propuesta de mayoreo', async () => {
+  const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  for (const tipo of ['Distribuidores', 'Menudistas', 'Agencias | Marcas']) {
+    const texto = mensajeWhatsAppExpo(
+      { nombre: 'Laura', empresa: 'Casa Azul', tipo_cliente: tipo, evento: 'Abastur 2026' }, 'Pilar', LIGA
+    );
+    assert.match(texto, /con gusto te preparo una propuesta de mayoreo para Casa Azul\./);
+  }
+  const restaurante = mensajeWhatsAppExpo(
+    { nombre: 'Laura', empresa: 'Casa Azul', tipo_cliente: 'Restaurantes', evento: 'Abastur 2026' }, 'Pilar', LIGA
+  );
+  assert.match(restaurante, /una cotización para Casa Azul\./);
+});
+
+test('E7: un tipo mayorista sin empresa cae en la variante a tu medida', async () => {
+  const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  const texto = mensajeWhatsAppExpo(
+    { nombre: 'Laura', tipo_cliente: 'Distribuidores', evento: 'Abastur 2026' }, 'Pilar', LIGA
+  );
+  assert.match(texto, /una cotización a tu medida\./);
+});
+
+const CAPTURA_EXPO = {
+  celular: '+52 5512345678', nombre: 'Laura', ciudad: 'CDMX', canal: 'Feria/Expo',
+  evento: 'Abastur 2026', tipo_cliente: 'Hoteles', interes: 'Alto',
+};
+
+test('E8: la variante de expo exige lo de la captura normal MAS el tipo de cliente', async () => {
+  const { validarProspectoExpoBody } = await import('../prospectos-logica.js');
+  assert.equal(validarProspectoExpoBody(CAPTURA_EXPO), null);
+  assert.match(validarProspectoExpoBody({ ...CAPTURA_EXPO, tipo_cliente: '' }), /tipo de cliente/i);
+  assert.match(validarProspectoExpoBody({ ...CAPTURA_EXPO, tipo_cliente: 'Ferreterías' }), /tipo de cliente/i);
+  assert.match(validarProspectoExpoBody({ ...CAPTURA_EXPO, ciudad: '' }), /ciudad/i);
+  assert.match(validarProspectoExpoBody({ ...CAPTURA_EXPO, celular: '5512345678' }), /[Cc]elular/);
+});
+
+test('E9: "Otro" en tipo de cliente exige decir cual', async () => {
+  const { validarProspectoExpoBody } = await import('../prospectos-logica.js');
+  assert.match(validarProspectoExpoBody({ ...CAPTURA_EXPO, tipo_cliente: 'Otro' }), /cuál/i);
+  assert.equal(validarProspectoExpoBody({
+    ...CAPTURA_EXPO, tipo_cliente: 'Otro', tipo_cliente_otro: 'Tienda de museo',
+  }), null);
+});
+
+test('E10: el nivel de interes fuera del catalogo se rechaza; ausente se acepta', async () => {
+  const { validarProspectoExpoBody } = await import('../prospectos-logica.js');
+  assert.match(validarProspectoExpoBody({ ...CAPTURA_EXPO, interes: 'Tibio' }), /interés/i);
+  assert.equal(validarProspectoExpoBody({ ...CAPTURA_EXPO, interes: '' }), null);
+});
+
+test('E11: buildDatosExpo arma evento, tipo textual, segmento y temperatura', async () => {
+  const { buildDatosExpo } = await import('../prospectos-logica.js');
+  assert.deepEqual(buildDatosExpo(CAPTURA_EXPO), {
+    evento: 'Abastur 2026', tipo_cliente: 'Hoteles', segmento_id: 10, temperatura: 5,
+  });
+  assert.deepEqual(buildDatosExpo({ ...CAPTURA_EXPO, tipo_cliente: 'Otro', tipo_cliente_otro: ' Tienda de museo ', interes: 'Bajo' }), {
+    evento: 'Abastur 2026', tipo_cliente: 'Otro', tipo_cliente_otro: 'Tienda de museo',
+    segmento_id: 1, temperatura: 1,
+  });
+  assert.deepEqual(buildDatosExpo({ celular: '+52 5512345678', nombre: 'Laura' }), {});
+});
+
+const PROSPECTO_EXPO = {
+  id: 7, fecha: '2026-08-26T18:00:00Z', vendedor: 'Alejandro Chávez', celular: '+52 5544332211',
+  nombre: 'Laura Mendoza', ciudad: 'CDMX', canal: 'Feria/Expo', etapa: 'por_cotizar', eventos: [],
+  data: { evento: 'Abastur 2026', tipo_cliente: 'Hoteles', empresa: 'Hotel Azul', temperatura: 5 },
+};
+
+test('E12: el WhatsApp de la tarjeta lleva el mensaje del evento solo cuando el prospecto tiene evento', async () => {
+  const { buildProspectoCardHtml, mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  const conEvento = buildProspectoCardHtml(PROSPECTO_EXPO, null, new Date(), { catalogoUrl: LIGA });
+  const esperado = encodeURIComponent(mensajeWhatsAppExpo(
+    { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
+    'Alejandro Chávez', LIGA
+  ));
+  assert.ok(conEvento.includes(`https://wa.me/525544332211?text=${esperado}`));
+
+  const sinEvento = buildProspectoCardHtml({ ...PROSPECTO_EXPO, data: {} }, null, new Date(), { catalogoUrl: LIGA });
+  assert.ok(sinEvento.includes('href="https://wa.me/525544332211"'));
+  assert.equal(sinEvento.includes('?text='), false);
+});
+
+test('E13: la tarjeta de un prospecto de feria muestra el evento', async () => {
+  const { buildProspectoCardHtml } = await import('../prospectos-logica.js');
+  assert.match(buildProspectoCardHtml(PROSPECTO_EXPO), /Abastur 2026/);
+  assert.equal(buildProspectoCardHtml({ ...PROSPECTO_EXPO, data: {} }).includes('Abastur'), false);
+});
+
+test('E14: el historial nombra la captura de expo con su evento y quien la hizo', async () => {
+  const { buildHistorialHtml } = await import('../prospectos-logica.js');
+  const html = buildHistorialHtml({
+    ...PROSPECTO_EXPO,
+    eventos: [{ tipo: 'captura_expo', fecha: '2026-08-26T18:00:00Z', evento: 'Abastur 2026', vendedor: 'Memo' }],
+  });
+  assert.match(html, /Abastur 2026/);
+  assert.match(html, /Memo/);
+  assert.equal(html.includes('captura_expo ·'), false);
+});

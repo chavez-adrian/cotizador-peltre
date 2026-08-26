@@ -247,6 +247,7 @@ const ETIQUETAS_EVENTO = {
   },
   cotizacion: e => `Cotización #${escapeHtml(e.cotizacion_id)} · ${escapeHtml(e.vendedor)}`,
   reunion: e => `Reunión agendada para ${escapeHtml(fechaHora(e.fecha_reunion))} · ${escapeHtml(e.vendedor)}`,
+  captura_expo: e => `Capturado en ${escapeHtml(e.evento)} · ${escapeHtml(e.vendedor)}`,
 };
 
 function etiquetaEvento(e) {
@@ -281,7 +282,7 @@ const CLIENTE_BADGE = '<span class="cliente-badge">Ya es cliente — falta cotiz
 // Las acciones llaman funciones globales de app.js (mismo patron que las
 // cards de seguimiento: onclick + window.fn). colaItem es el item del
 // prospecto en GET /api/prospectos/cola, si esta en la cola (issue #44).
-export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compacta = false } = {}) {
+export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compacta = false, catalogoUrl = '' } = {}) {
   const d = p.data || {};
   const empresa = d.empresa ? ` · ${escapeHtml(d.empresa)}` : '';
   // En el pipeline unificado el prospecto se trabaja en Por Cotizar (cadencia,
@@ -293,7 +294,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // historial). Distinto de `activo`, que habilita el trabajo de prospeccion
   // (toques, reunion) solo en Por Cotizar.
   const editable = !['no_util', 'perdida'].includes(p.etapa);
-  const wa = buildWaLink(p.celular);
+  const wa = buildWaLinkProspecto(p, catalogoUrl);
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.
   const reunion = activo ? reunionFutura(p, ahora) : null;
@@ -333,6 +334,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
           <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
           ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
           ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
+          ${d.evento ? `<div style="margin-top:4px"><span class="evento-badge">${escapeHtml(d.evento)}</span></div>` : ''}
           ${reunion ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión el ${escapeHtml(fechaHora(reunion))}</span></div>` : ''}
         </div>
         ${compacta ? '' : `<div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>`}
@@ -513,4 +515,127 @@ export function buildProspectoPayload(campos) {
     if (v !== undefined && v !== null && v !== '') payload[k] = v;
   }
   return payload;
+}
+
+// --- Captura de expo (issue #261, spec #260; CONTEXT.md "Captura de expo",
+// "Evento", "Tipo de cliente") ---
+//
+// Bloque contiguo al final del modulo a proposito: la captura de expo es una
+// variante de la captura de prospecto (misma entidad, mismo pipeline), no un
+// modulo nuevo.
+
+// Tipo de cliente -> segmento de Operam. UNICO catalogo y UNICO mapeo del
+// sistema (CONTEXT.md "Tipo de cliente": "la captura de prospecto, la captura
+// publica y la captura de expo comparten este catalogo"). Vivia en
+// mayoreo-logica.js con el nombre retirado "tipo de proyecto"; se movio aqui en
+// #261 y mayoreo-logica lo reexporta para no duplicarlo. Varias opciones caen a
+// proposito en el mismo segmento (Restaurantes/Hoteles/Cafeterias son 10): por
+// eso la opcion elegida se conserva TEXTUAL ademas del segmento.
+const SEGMENTO_POR_TIPO = {
+  'Distribuidores': 14,
+  'Menudistas': 8,
+  'Restaurantes': 10,
+  'Hoteles': 10,
+  'Cafeterías': 10,
+  'Catering | Eventos': 15,
+  'Agencias | Marcas': 12,
+  'Otro': 1,
+};
+
+export const TIPOS_CLIENTE = Object.keys(SEGMENTO_POR_TIPO);
+
+export function segmentoDeTipo(tipo) {
+  const s = SEGMENTO_POR_TIPO[tipo];
+  return s === undefined ? null : s;
+}
+
+// Nivel de interes del paso 1 -> temperatura del prospecto (CONTEXT.md
+// "Captura de expo"): con el prospecto enfrente el vendedor no decide entre un
+// 2 y un 3, elige Bajo/Medio/Alto.
+export const NIVELES_INTERES = { Bajo: 1, Medio: 3, Alto: 5 };
+
+// Tipos de cliente que compran para revender: el mensaje les ofrece una
+// propuesta de mayoreo en vez de una cotizacion (spec #260).
+const TIPOS_MAYORISTAS = ['Distribuidores', 'Menudistas', 'Agencias | Marcas'];
+
+function primerNombre(nombre) {
+  return String(nombre == null ? '' : nombre).trim().split(/\s+/)[0] || '';
+}
+
+// Mensaje de WhatsApp de la expo (texto aprobado en el spec #260). Funcion PURA:
+// la usan la pantalla posterior al paso 1 y el boton WhatsApp de la tarjeta, y
+// SOLO en prospectos con evento (los demas conservan el enlace vacio de siempre).
+// La liga del catalogo va sola en su renglon para que WhatsApp la muestre como
+// vista previa; el renglon en blanco separa el cierre.
+export function mensajeWhatsAppExpo(prospecto, vendedorNombre, catalogoUrl) {
+  const p = prospecto || {};
+  const empresa = String(p.empresa == null ? '' : p.empresa).trim();
+  const oferta = !empresa
+    ? 'una cotización a tu medida'
+    : TIPOS_MAYORISTAS.includes(p.tipo_cliente)
+      ? `una propuesta de mayoreo para ${empresa}`
+      : `una cotización para ${empresa}`;
+  return [
+    `Hola ${primerNombre(p.nombre)}, soy ${primerNombre(vendedorNombre)} de pp.peltre. ` +
+      `Un gusto haberte conocido en ${String(p.evento == null ? '' : p.evento).trim()}. Te comparto nuestro catálogo:`,
+    String(catalogoUrl == null ? '' : catalogoUrl).trim(),
+    '',
+    `Si te sirve, con gusto te preparo ${oferta}. ¿Qué piezas te llamaron la atención?`,
+  ].join('\n');
+}
+
+// Validacion de la captura de expo: la MISMA de la captura normal (celular,
+// nombre, ciudad, canal) mas el tipo de cliente obligatorio (CONTEXT.md
+// "Captura de expo": "obligatorios celular, nombre, ciudad y tipo de cliente").
+// La comparten el navegador y el servidor.
+export function validarProspectoExpoBody(body) {
+  const b = body || {};
+  const base = validarProspectoBody(b);
+  if (base) return base;
+  if (!TIPOS_CLIENTE.includes(b.tipo_cliente)) {
+    return 'El tipo de cliente es obligatorio (catálogo cerrado)';
+  }
+  if (b.tipo_cliente === 'Otro' && !String(b.tipo_cliente_otro || '').trim()) {
+    return 'Dinos cuál: "Otro" exige especificar el tipo de cliente';
+  }
+  if (b.interes && !(b.interes in NIVELES_INTERES)) {
+    return 'El nivel de interés es Bajo, Medio o Alto';
+  }
+  return null;
+}
+
+// Datos propios de la expo dentro del jsonb `data` del prospecto: el evento, la
+// opcion textual del tipo de cliente (se conserva porque varias caen en el mismo
+// segmento), su segmento de Operam y la temperatura derivada del nivel de
+// interes. Devuelve {} cuando el body no trae nada de expo, para que la captura
+// normal no cambie de comportamiento.
+export function buildDatosExpo(body) {
+  const b = body || {};
+  const datos = {};
+  const evento = String(b.evento == null ? '' : b.evento).trim();
+  if (evento) datos.evento = evento;
+  if (TIPOS_CLIENTE.includes(b.tipo_cliente)) {
+    datos.tipo_cliente = b.tipo_cliente;
+    const otro = String(b.tipo_cliente_otro == null ? '' : b.tipo_cliente_otro).trim();
+    if (b.tipo_cliente === 'Otro' && otro) datos.tipo_cliente_otro = otro;
+    datos.segmento_id = segmentoDeTipo(b.tipo_cliente);
+  }
+  if (b.interes in NIVELES_INTERES) datos.temperatura = NIVELES_INTERES[b.interes];
+  return datos;
+}
+
+// Enlace de WhatsApp de la tarjeta. Con evento lleva el mensaje aprobado ya
+// escrito (el lunes, no solo en el stand); sin evento es el enlace vacio de
+// siempre -- un prospecto que no viene de una feria no tiene de que "gusto
+// haberte conocido".
+export function buildWaLinkProspecto(p, catalogoUrl) {
+  const base = buildWaLink(p && p.celular);
+  if (!base) return null;
+  const d = (p && p.data) || {};
+  if (!d.evento) return base;
+  const texto = mensajeWhatsAppExpo(
+    { nombre: p.nombre, empresa: d.empresa, tipo_cliente: d.tipo_cliente, evento: d.evento },
+    p.vendedor, catalogoUrl
+  );
+  return `${base}?text=${encodeURIComponent(texto)}`;
 }
