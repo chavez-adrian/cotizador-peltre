@@ -870,6 +870,8 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-hoy">Volver</button>
   </header>
   <div style="padding:16px">
+    <!-- Captura de expo (issue #261): solo aparece con evento activo -->
+    <button class="btn btn-primary btn-sm" id="btn-expo-hoy" style="display:none;margin-bottom:12px">Captura de expo</button>
     <div style="font-size:13px;font-weight:600;color:var(--text-light);margin-bottom:8px">Prospectos por contactar</div>
     <div id="hoy-loading" style="color:var(--light);font-size:13px">Cargando...</div>
     <div id="hoy-cola"></div>
@@ -1031,16 +1033,67 @@
 </div>
 
 <!-- PIPELINE VIEW (issue #53): tablero unico de 7 etapas + conmutador lista/tablero -->
+<!-- CAPTURA DE EXPO (issue #261, spec #260): paso 1 con el prospecto enfrente.
+     El paso 2 (calificacion) llega en su propio ticket; aqui el boton Calificar
+     es un placeholder deshabilitado. -->
+<div id="expo-view" style="display:none">
+  <header class="historial-header">
+    <h1 id="expo-titulo">Captura de expo</h1>
+    <button class="btn btn-sm btn-secondary" id="btn-volver-expo">Volver</button>
+  </header>
+  <div style="padding:16px">
+    <div id="expo-paso1">
+      <div class="form-group">
+        <label>Celular (con c&oacute;digo de pa&iacute;s) *</label>
+        <input type="tel" id="ex-celular" inputmode="tel" placeholder="55 1234 5678">
+      </div>
+      <div class="form-group">
+        <label>Nombre *</label>
+        <input type="text" id="ex-nombre" placeholder="Nombre (se acepta sin apellido)">
+      </div>
+      <div class="form-group">
+        <label>Ciudad *</label>
+        <div id="ex-ciudad-chips" style="margin-bottom:6px"></div>
+        <input type="text" id="ex-ciudad" placeholder="Otra ciudad">
+      </div>
+      <div class="form-group">
+        <label>Tipo de cliente *</label>
+        <div id="ex-tipo-chips" style="margin-bottom:6px"></div>
+        <input type="text" id="ex-tipo-otro" placeholder="&iquest;Cu&aacute;l?" style="display:none">
+      </div>
+      <div class="form-group">
+        <label>Nivel de inter&eacute;s</label>
+        <div id="ex-interes-chips"></div>
+      </div>
+      <div class="form-group">
+        <label>Empresa (opcional)</label>
+        <input type="text" id="ex-empresa">
+      </div>
+      <div class="form-group">
+        <label>Asesor</label>
+        <select id="ex-asesor"></select>
+      </div>
+      <div id="ex-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
+      <div id="ex-existente" style="margin-bottom:8px"></div>
+      <button class="btn btn-primary" id="btn-guardar-expo">Guardar prospecto</button>
+    </div>
+    <div id="expo-guardado" style="display:none"></div>
+  </div>
+</div>
+
 <div id="pipeline-view" style="display:none">
   <header class="historial-header">
     <h1>Pipeline</h1>
   </header>
   <div style="padding:16px">
+    <button class="btn btn-primary btn-sm" id="btn-expo-pipeline" style="display:none;margin-bottom:12px">Captura de expo</button>
     <span id="pipeline-modo" style="display:inline-flex;gap:4px;margin-bottom:12px">
       <button class="btn btn-sm btn-secondary" id="btn-pipeline-modo-lista">Lista</button>
       <button class="btn btn-sm btn-primary" id="btn-pipeline-modo-tablero">Tablero</button>
       <button class="btn btn-sm btn-secondary" id="btn-pipeline-modo-cerradas">Cerradas</button>
     </span>
+    <!-- Filtro por evento (issue #261): vacio fuera de feria -->
+    <span id="pipeline-evento"></span>
     <div id="pipeline-loading" style="color:var(--light);font-size:13px">Cargando...</div>
     <!-- Tablero unico de 7 columnas (las salidas viven en filtro/historial) -->
     <div id="pipeline-tablero" class="tablero" style="display:none"></div>

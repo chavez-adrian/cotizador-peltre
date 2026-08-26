@@ -57,6 +57,13 @@ import {
   MOTIVOS_NO_UTIL,
   buildMotivoNoUtilModalHtml,
   validarEdicionProspecto,
+  TIPOS_CLIENTE,
+  NIVELES_INTERES,
+  CIUDADES_FRECUENTES,
+  buildChipsHtml,
+  segmentoDeTipo,
+  validarProspectoExpoBody,
+  buildWaLinkProspecto,
 } from './prospectos-logica.js';
 import {
   puedeArrastrarCotizacion,
@@ -84,6 +91,8 @@ import {
   buildColaHoyHtml,
   buildMenuNuevoHtml,
   buildCerradasHtml,
+  filtrarPorEvento,
+  buildFiltroEventoHtml,
   filaResultadoClienteHtml,
   filaCrearClienteHtml,
   cardClienteHtml,
@@ -378,6 +387,8 @@ function mostrarLoginView() {
   document.getElementById('prospectos-view').style.display = 'none';
   const pv = document.getElementById('pipeline-view');
   if (pv) pv.style.display = 'none';
+  const ev = document.getElementById('expo-view');
+  if (ev) ev.style.display = 'none';
   const bn = document.getElementById('bottom-nav');
   if (bn) bn.style.display = 'none';
   document.getElementById('login-view').style.display = 'flex';
@@ -4981,6 +4992,8 @@ window.bandejaBuscarNuevas = bandejaBuscarNuevas;
 const PIPELINE_MODOS = new Set(['tablero', 'lista', 'cerradas']);
 let pipelineModo = PIPELINE_MODOS.has(localStorage.getItem('pipelineModo')) ? localStorage.getItem('pipelineModo') : 'tablero';
 let ultimasOportunidades = [];
+// Evento elegido en el filtro del pipeline (issue #261); vacio = todos.
+let pipelineEvento = '';
 // Catalogo de vendedores para el control de asignar de la tarjeta No Asignado
 // (issue #57) y el permiso vigente de asignacion (#156): quien puede asignar ya
 // no es solo el admin, sino tambien el vendedor con el checkbox de /admin. El
@@ -4998,6 +5011,11 @@ async function cargarPermisoAsignacion() {
     const catalogos = await cargarCatalogos();
     vendedoresPipeline = catalogos.vendedores || [];
     puedeAsignarPipeline = !!catalogos.puedeAsignar;
+    // Evento activo, liga del catalogo y asesores (issue #261): viajan en la
+    // misma respuesta y deciden si la app ofrece la captura de expo.
+    expoState.evento = catalogos.eventoActivo || null;
+    expoState.catalogoUrl = catalogos.catalogoUrl || '';
+    expoState.asesores = catalogos.asesores || [];
   } catch {
     vendedoresPipeline = [];
     puedeAsignarPipeline = false;
@@ -5026,6 +5044,9 @@ function prospectoAOportunidad(p) {
     // Motivo de la salida a No util (issue #59, AC3): lo muestra el filtro de
     // cerradas. Solo aplica a prospectos (Modelo A).
     motivoNoUtil: motivoNoUtilDe(p),
+    // Evento de feria (issue #261): el filtro del pipeline responde cuantos
+    // prospectos dejo Abastur.
+    evento: p.data?.evento ?? null,
   };
 }
 
@@ -5063,6 +5084,7 @@ async function showPipeline() {
     // permiso de asignacion: quien lo tiene necesita el catalogo de vendedores
     // para el selector. Quien no lo tiene ni siquiera recibe esas tarjetas.
     await cargarPermisoAsignacion();
+    actualizarBotonesExpo();
     loadingEl.style.display = 'none';
     renderPipeline();
   } catch (e) {
@@ -5073,6 +5095,16 @@ async function showPipeline() {
 function renderPipeline() {
   const tableroEl = document.getElementById('pipeline-tablero');
   const listEl = document.getElementById('pipeline-list');
+  // Filtro por evento (issue #261): se pinta desde las oportunidades cargadas y
+  // se aplica a los tres modos. El listener se vuelve a colgar porque el select
+  // se reescribe en cada render.
+  const eventoEl = document.getElementById('pipeline-evento');
+  if (eventoEl) {
+    eventoEl.innerHTML = buildFiltroEventoHtml(ultimasOportunidades, pipelineEvento);
+    const select = document.getElementById('pipeline-filtro-evento');
+    if (select) select.addEventListener('change', () => { pipelineEvento = select.value; renderPipeline(); });
+  }
+  const oportunidades = filtrarPorEvento(ultimasOportunidades, pipelineEvento);
   const esTablero = pipelineModo === 'tablero';
   const esCerradas = pipelineModo === 'cerradas';
   const btnLista = document.getElementById('btn-pipeline-modo-lista');
@@ -5088,7 +5120,7 @@ function renderPipeline() {
   listEl.style.display = esTablero ? 'none' : 'block';
   if (esTablero) {
     listEl.innerHTML = '';
-    tableroEl.innerHTML = buildTableroPipelineHtml(ultimasOportunidades, {
+    tableroEl.innerHTML = buildTableroPipelineHtml(oportunidades, {
       vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline,
     });
     return;
@@ -5097,13 +5129,13 @@ function renderPipeline() {
   // Modo Cerradas (issue #59, AC3): las salidas No util/Perdida que el tablero y
   // la lista ocultan viven aqui, con su tipo de cierre y, para No util, el motivo.
   if (esCerradas) {
-    listEl.innerHTML = buildCerradasHtml(ultimasOportunidades);
+    listEl.innerHTML = buildCerradasHtml(oportunidades);
     return;
   }
   // Vista lista: las mismas oportunidades que pinta el tablero (sus 7 columnas),
   // mas reciente primero. Las salidas No util/Perdida NO se muestran aqui: viven
   // en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
-  const activas = oportunidadesActivas(ultimasOportunidades)
+  const activas = oportunidadesActivas(oportunidades)
     .slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
   if (!activas.length) {
     listEl.innerHTML = '<div class="empty-state"><p>Sin oportunidades en el pipeline.</p></div>';
@@ -5301,7 +5333,7 @@ function setModoPipeline(modo) {
 }
 
 function ocultarTodasLasVistas() {
-  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view', 'clientes-view', 'bandeja-view']) {
+  for (const v of ['app-view', 'historial-view', 'hoy-view', 'prospectos-view', 'pipeline-view', 'clientes-view', 'bandeja-view', 'expo-view']) {
     const el = document.getElementById(v);
     if (el) el.style.display = 'none';
   }
@@ -5414,7 +5446,7 @@ function renderProspectos() {
     return;
   }
   listEl.innerHTML = ultimosProspectos.slice().reverse()
-    .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true })).join('');
+    .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true, catalogoUrl: expoState.catalogoUrl })).join('');
 }
 
 // === HOY (issue #64, ADR-0005 "Cola Hoy"): el destino Hoy muestra la cola UNICA
@@ -5436,6 +5468,7 @@ async function showHoy() {
     // La cola puede traer tarjetas No Asignado (#156): su unica accion es
     // asignarles dueno, con el mismo control (y el mismo catalogo) del tablero.
     await cargarPermisoAsignacion();
+    actualizarBotonesExpo();
     loadingEl.style.display = 'none';
     actualizarBadgeSeguimiento(cola.length);
     colaEl.innerHTML = buildColaHoyHtml(cola, {
@@ -5748,13 +5781,7 @@ window.resultadoReunionNoUtilProspecto = resultadoReunionNoUtilProspecto;
 window.cotizarProspecto = id => {
   const p = ultimosProspectos.find(x => x.id === id);
   if (!p) return;
-  ocultarTodasLasVistas();
-  document.getElementById('app-view').style.display = 'block';
-  marcarNavActivo('nav-cotizar');
-  switchTab('cliente');
-  // Entra directo a la tarjeta del prospecto (variante B, #82).
-  pcElegirProspecto(p);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  abrirCotizadorConProspecto(p);
 };
 window.cerrarCotizacionTablero = async (id, estado) => {
   const cot = ultimasCotizaciones.find(c => c.id === id);
@@ -7398,7 +7425,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // alta-celular entro despues (reporte de Adrian, 2026-08-19): quedaba como
 // unico campo de telefono del alta sin bandera ni aviso.
 document.addEventListener('DOMContentLoaded', () => {
-  for (const id of ['cl-telefono', 'cl-cel-entrega', 'pr-celular', 'alta-addr-phone', 'alta-celular']) montarTelefono(id);
+  for (const id of ['cl-telefono', 'cl-cel-entrega', 'pr-celular', 'alta-addr-phone', 'alta-celular', 'ex-celular']) montarTelefono(id);
 });
 
 // Wiring del selector de regimen fiscal (#191): se puebla al arrancar (catalogo
@@ -7412,4 +7439,197 @@ document.addEventListener('DOMContentLoaded', () => {
     const rfc = document.getElementById(idRfc);
     if (rfc) rfc.addEventListener('input', () => altaPoblarRegimen(idSelect, idRfc));
   }
+});
+
+// === CAPTURA DE EXPO (issue #261, spec #260; CONTEXT.md "Captura de expo") ===
+// Paso 1: lo que se captura con el prospecto enfrente, en segundos. El paso 2
+// (calificacion) llega en su propio ticket -- aqui "Calificar" es un placeholder
+// deshabilitado. Todo el bloque va junto al final del archivo a proposito: es
+// una pantalla nueva, no un cambio a las que ya existen.
+
+const expoState = {
+  evento: null, catalogoUrl: '', asesores: [],
+  // Seleccion de los chips (catalogo cerrado): vive aqui, no en el DOM.
+  ciudad: '', tipo_cliente: '', interes: '',
+};
+
+// El boton de captura solo aparece con evento activo (CONTEXT.md "Evento"):
+// fuera de feria la app se ve como siempre. Lo llaman las vistas Hoy y Pipeline
+// despues de leer los catalogos.
+function actualizarBotonesExpo() {
+  for (const id of ['btn-expo-hoy', 'btn-expo-pipeline']) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = expoState.evento ? 'inline-block' : 'none';
+  }
+}
+
+function expoVal(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+
+function pintarChipsExpo() {
+  document.getElementById('ex-ciudad-chips').innerHTML =
+    buildChipsHtml('ciudad', CIUDADES_FRECUENTES, expoState.ciudad);
+  document.getElementById('ex-tipo-chips').innerHTML =
+    buildChipsHtml('tipo_cliente', TIPOS_CLIENTE, expoState.tipo_cliente);
+  document.getElementById('ex-interes-chips').innerHTML =
+    buildChipsHtml('interes', Object.keys(NIVELES_INTERES), expoState.interes);
+  // "Otro" exige decir cual (CONTEXT.md "Tipo de cliente").
+  document.getElementById('ex-tipo-otro').style.display =
+    expoState.tipo_cliente === 'Otro' ? 'block' : 'none';
+}
+
+// La ciudad sale del chip o del campo libre de abajo, nunca de los dos: elegir
+// chip vacia el campo y teclear el campo suelta el chip.
+function ciudadExpo() {
+  return expoState.ciudad || expoVal('ex-ciudad');
+}
+
+function mostrarErrorExpo(msg) {
+  const el = document.getElementById('ex-error');
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function abrirCapturaExpo() {
+  if (!expoState.evento) return;
+  ocultarTodasLasVistas();
+  document.getElementById('expo-view').style.display = 'block';
+  document.getElementById('expo-titulo').textContent = `Captura de ${expoState.evento.nombre}`;
+  expoState.ciudad = '';
+  expoState.tipo_cliente = '';
+  expoState.interes = '';
+  for (const id of ['ex-nombre', 'ex-ciudad', 'ex-empresa', 'ex-tipo-otro']) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+  fijarTelefono('ex-celular', '');
+  mostrarErrorExpo(null);
+  document.getElementById('ex-existente').innerHTML = '';
+  document.getElementById('expo-guardado').style.display = 'none';
+  document.getElementById('expo-paso1').style.display = 'block';
+  pintarChipsExpo();
+  // Asesor: por omision quien captura; en la expo se puede capturar a nombre de
+  // otro (los formatos en papel se transcriben esa noche).
+  const yo = state.user?.name || '';
+  const asesores = expoState.asesores.length ? expoState.asesores : [yo];
+  document.getElementById('ex-asesor').innerHTML = asesores.map(a =>
+    `<option value="${escapeHtml(a)}"${a === yo ? ' selected' : ''}>${escapeHtml(a)}</option>`
+  ).join('');
+  document.getElementById('ex-celular').focus();
+}
+
+function leerFormularioExpo() {
+  const payload = buildProspectoPayload({
+    celularCode: celCodeDeCampo('ex-celular'),
+    celular: numeroDeCampo('ex-celular'),
+    nombre: expoVal('ex-nombre'),
+    ciudad: ciudadExpo(),
+    canal: 'Feria/Expo',
+    empresa: expoVal('ex-empresa'),
+  });
+  payload.evento = expoState.evento ? expoState.evento.nombre : '';
+  payload.tipo_cliente = expoState.tipo_cliente;
+  payload.asesor = expoVal('ex-asesor');
+  if (expoState.interes) payload.interes = expoState.interes;
+  const otro = expoVal('ex-tipo-otro').trim();
+  if (otro) payload.tipo_cliente_otro = otro;
+  return payload;
+}
+
+async function guardarCapturaExpo() {
+  mostrarErrorExpo(null);
+  document.getElementById('ex-existente').innerHTML = '';
+  const payload = leerFormularioExpo();
+  const error = validarProspectoExpoBody(payload);
+  if (error) { mostrarErrorExpo(error); return; }
+  // Capa estricta (#176): avisa del numero raro y deja guardar al confirmar.
+  if (!await confirmarTelefono('ex-celular')) return;
+  try {
+    const res = await api('/api/prospectos', { method: 'POST', body: payload });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409) {
+      // Mismos guardrails que la captura normal: ya es prospecto (propio o de
+      // otro vendedor) o ya es cliente de Operam.
+      mostrarErrorExpo(data.error || 'Este celular ya es un prospecto');
+      document.getElementById('ex-existente').innerHTML = buildProspectoExistenteHtml(data);
+      return;
+    }
+    if (!res.ok) { mostrarErrorExpo(data.error || 'No se pudo guardar el prospecto'); return; }
+    mostrarAccionesExpo({
+      id: data.id, nombre: payload.nombre, celular: payload.celular,
+      ciudad: payload.ciudad, vendedor: payload.asesor, etapa: 'por_cotizar',
+      data: {
+        evento: payload.evento, tipo_cliente: payload.tipo_cliente,
+        empresa: payload.empresa, segmento_id: segmentoDeTipo(payload.tipo_cliente),
+      },
+    });
+  } catch (e) {
+    mostrarErrorExpo('Error de conexion');
+  }
+}
+
+// Las tres acciones grandes con el prospecto todavia enfrente. WhatsApp abre el
+// chat con el mensaje aprobado ya escrito; Cotizar entra al cotizador con el
+// prospecto cargado (sin pedir canal: ya es prospecto); Calificar es el paso 2.
+function mostrarAccionesExpo(prospecto) {
+  document.getElementById('expo-paso1').style.display = 'none';
+  const cont = document.getElementById('expo-guardado');
+  const wa = buildWaLinkProspecto(prospecto, expoState.catalogoUrl);
+  cont.innerHTML = `
+    <div class="cot-card">
+      <div class="cot-card-cliente">${escapeHtml(prospecto.nombre)}</div>
+      <div class="cot-card-meta">Guardado en Por Cotizar · ${escapeHtml(prospecto.vendedor)} · ${escapeHtml(prospecto.data.evento)}</div>
+    </div>
+    <div class="expo-acciones" style="margin-top:16px">
+      ${wa ? `<a href="${wa}" target="_blank" class="btn btn-primary">WhatsApp con el catálogo</a>` : ''}
+      <button class="btn btn-primary" id="ex-cotizar">Cotizar</button>
+      <button class="btn btn-secondary" id="ex-calificar" disabled>Calificar (paso 2)</button>
+      <button class="btn btn-secondary" id="ex-otro">Capturar otro</button>
+    </div>
+  `;
+  cont.style.display = 'block';
+  document.getElementById('ex-cotizar').addEventListener('click', () => abrirCotizadorConProspecto(prospecto));
+  document.getElementById('ex-otro').addEventListener('click', abrirCapturaExpo);
+}
+
+// Entrar al cotizador con el prospecto ya cargado (variante B, #82). Lo
+// comparten la tarjeta del prospecto (window.cotizarProspecto) y la pantalla
+// posterior al paso 1.
+function abrirCotizadorConProspecto(p) {
+  ocultarTodasLasVistas();
+  document.getElementById('app-view').style.display = 'block';
+  marcarNavActivo('nav-cotizar');
+  switchTab('cliente');
+  pcElegirProspecto(p);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Los chips van por listener delegado y no por onclick inline: asi no hace falta
+// exponer ningun simbolo nuevo en window (trampa #112).
+document.addEventListener('DOMContentLoaded', () => {
+  const vista = document.getElementById('expo-view');
+  if (!vista) return;
+  vista.addEventListener('click', e => {
+    const chip = e.target.closest('[data-chip]');
+    if (!chip) return;
+    const grupo = chip.dataset.chip;
+    expoState[grupo] = expoState[grupo] === chip.dataset.valor ? '' : chip.dataset.valor;
+    if (grupo === 'ciudad' && expoState.ciudad) document.getElementById('ex-ciudad').value = '';
+    pintarChipsExpo();
+  });
+  document.getElementById('ex-ciudad').addEventListener('input', () => {
+    if (!expoState.ciudad) return;
+    expoState.ciudad = '';
+    pintarChipsExpo();
+  });
+  document.getElementById('btn-guardar-expo').addEventListener('click', guardarCapturaExpo);
+  document.getElementById('btn-expo-hoy')?.addEventListener('click', abrirCapturaExpo);
+  document.getElementById('btn-expo-pipeline')?.addEventListener('click', abrirCapturaExpo);
+  document.getElementById('btn-volver-expo').addEventListener('click', () => {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
+  });
 });

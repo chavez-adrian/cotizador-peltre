@@ -809,3 +809,21 @@ test('E14: el historial nombra la captura de expo con su evento y quien la hizo'
   assert.match(html, /Memo/);
   assert.equal(html.includes('captura_expo ·'), false);
 });
+
+test('E15: las ciudades frecuentes son un chip de un toque y el campo libre queda debajo', async () => {
+  const { CIUDADES_FRECUENTES } = await import('../prospectos-logica.js');
+  assert.deepEqual(CIUDADES_FRECUENTES, [
+    'CDMX', 'Estado de México', 'Guadalajara', 'Monterrey', 'Puebla', 'Querétaro',
+  ]);
+});
+
+test('E16: buildChipsHtml marca el chip elegido y no usa onclick inline (#112)', async () => {
+  const { buildChipsHtml } = await import('../prospectos-logica.js');
+  const html = buildChipsHtml('tipo', ['Hoteles', 'Otro'], 'Hoteles');
+  assert.match(html, /data-chip="tipo"/);
+  assert.match(html, /data-valor="Hoteles"[^>]*class="chip chip-activo"|class="chip chip-activo"[^>]*data-valor="Hoteles"/);
+  assert.match(html, /data-valor="Otro"/);
+  assert.equal(html.includes('chip-activo"  data-valor="Otro"'), false);
+  assert.equal(html.includes('onclick'), false);
+  assert.equal(buildChipsHtml('tipo', ['Hoteles'], '').includes('chip-activo'), false);
+});

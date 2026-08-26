@@ -1158,6 +1158,23 @@ body {
 .espera-rojo { background: oklch(0.87 0.08 28); color: oklch(0.36 0.12 28); }
 .cliente-badge { background: var(--etapa-contactado); color: var(--etapa-contactado-texto); }
 .reunion-badge { background: oklch(0.89 0.06 310); color: oklch(0.34 0.1 310); }
+/* Chips de catalogo cerrado de la captura de expo (issue #261): un toque con el
+   prospecto enfrente, area comoda para el pulgar en el telefono. */
+.chip {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: inherit;
+  border-radius: 18px;
+  padding: 9px 14px;
+  margin: 0 6px 6px 0;
+  cursor: pointer;
+}
+.chip-activo { background: var(--primary); color: var(--white); border-color: var(--primary); }
+.expo-acciones .btn { display: block; width: 100%; margin-bottom: 10px; padding: 14px; font-size: 16px; text-align: center; }
+
 /* Evento de feria (issue #261): el prospecto que dejo la expo se reconoce de
    un vistazo en la tarjeta y en el pipeline. */
 .evento-badge { background: oklch(0.9 0.07 200); color: oklch(0.34 0.09 220); }

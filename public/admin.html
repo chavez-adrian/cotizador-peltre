@@ -98,6 +98,17 @@
         <div id="tipos-toggles" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
         <div style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Texturas</div>
         <div id="texturas-toggles" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
+        <!-- Evento activo y liga del catalogo (issue #261): con evento activo la app
+             ofrece la captura de expo; vaciar el nombre la apaga. -->
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Evento activo (feria o expo)</div>
+        <p style="font-size:12px;color:var(--text-light);margin-bottom:6px">
+          Con un evento activo los vendedores ven el boton &quot;Captura de expo&quot;. Deja el nombre vacio para apagarlo.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <input type="text" id="evento-nombre" placeholder="Nombre del evento (ej. Abastur 2026)" style="flex:1;min-width:220px">
+          <input type="date" id="evento-fin">
+        </div>
+        <input type="url" id="catalogo-url" placeholder="Liga del catalogo PDF (la que se manda por WhatsApp)" style="width:100%;margin-bottom:14px">
         <button class="btn btn-primary btn-sm" id="btn-save-config">Guardar</button>
         <div id="config-msg" style="display:none;margin-top:8px"></div>
       </div>
@@ -495,6 +506,11 @@ async function loadConfig() {
     </label>`;
   }).join('');
 
+  const evento = data.config.eventoActivo || {};
+  document.getElementById('evento-nombre').value = evento.nombre || '';
+  document.getElementById('evento-fin').value = evento.fin || '';
+  document.getElementById('catalogo-url').value = data.config.catalogoUrl || '';
+
   document.getElementById('config-loading').style.display = 'none';
   document.getElementById('config-content').style.display = 'block';
 }
@@ -502,7 +518,14 @@ async function loadConfig() {
 async function saveConfig() {
   const tiposActivos = [...document.querySelectorAll('#tipos-toggles input:checked')].map(el => el.value);
   const texturasActivas = [...document.querySelectorAll('#texturas-toggles input:checked')].map(el => parseInt(el.value));
-  const res = await adminApi('/api/admin/config', { method: 'POST', body: { tiposActivos, texturasActivas } });
+  // Sin nombre no hay evento: el campo vacio es como se apaga la captura de expo.
+  const nombre = document.getElementById('evento-nombre').value.trim();
+  const fin = document.getElementById('evento-fin').value.trim();
+  const eventoActivo = nombre ? { nombre, fin } : null;
+  const catalogoUrl = document.getElementById('catalogo-url').value.trim();
+  const res = await adminApi('/api/admin/config', {
+    method: 'POST', body: { tiposActivos, texturasActivas, eventoActivo, catalogoUrl },
+  });
   const data = await res.json();
   const msg = document.getElementById('config-msg');
   msg.className = res.ok ? 'alert alert-success' : 'alert alert-error';

@@ -639,3 +639,20 @@ export function buildWaLinkProspecto(p, catalogoUrl) {
   );
   return `${base}?text=${encodeURIComponent(texto)}`;
 }
+
+// Ciudades frecuentes de la expo: chips de un toque para no teclear la ciudad
+// con el prospecto enfrente. El campo libre de ciudad sigue existiendo debajo
+// (la lista no pretende ser completa).
+export const CIUDADES_FRECUENTES = [
+  'CDMX', 'Estado de México', 'Guadalajara', 'Monterrey', 'Puebla', 'Querétaro',
+];
+
+// Chips de catalogo cerrado como botones con estado. Sin `onclick` inline: el
+// grupo (`data-chip`) y el valor (`data-valor`) los lee un listener delegado en
+// app.js, asi que ningun simbolo nuevo tiene que vivir en window (trampa #112).
+export function buildChipsHtml(grupo, opciones, seleccion) {
+  return (opciones || []).map(op =>
+    `<button type="button" class="chip${op === seleccion ? ' chip-activo' : ''}" ` +
+    `data-chip="${escapeHtml(grupo)}" data-valor="${escapeHtml(op)}">${escapeHtml(op)}</button>`
+  ).join('');
+}
