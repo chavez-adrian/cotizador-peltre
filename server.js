@@ -778,8 +778,13 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   const asesor = String(body.asesor == null ? '' : body.asesor).trim();
   const capturaAjena = !!asesor && asesor !== req.user.name;
   if (capturaAjena) {
-    if (!evento) {
-      return res.status(400).json({ error: 'Solo durante un evento se captura a nombre de otro asesor' });
+    // La excepcion a la auto-asignacion es de la CAPTURA DE EXPO (CONTEXT.md
+    // "Captura de expo"), no de cualquier captura hecha mientras hay feria: sin
+    // evento en el cuerpo el prospecto nace del que captura, como siempre. Asi
+    // ademas ningun prospecto de otro dueno se queda sin el rastro de quien lo
+    // capturo.
+    if (!eventoBody) {
+      return res.status(400).json({ error: 'Solo en la captura de expo se captura a nombre de otro asesor' });
     }
     const registro = await vendedoresStore.listar();
     if (!registro.some(v => v.name === asesor)) {

@@ -942,9 +942,11 @@ export function buildCerradasHtml(oportunidades) {
 }
 
 // --- Filtro por evento (issue #261, CONTEXT.md "Evento") ---
-// Despues de la feria el director pregunta cuantos prospectos dejo Abastur y
-// cuantos cotizaron: el evento viaja en la oportunidad (del prospecto o de la
-// cotizacion que salio de el) y el pipeline lo filtra en los tres modos.
+// Despues de la feria el director pregunta cuantos prospectos dejo Abastur y en
+// que etapa quedaron: el evento viaja en la oportunidad del PROSPECTO, que sigue
+// en el tablero despues de cotizar (su etapa avanza a Seguimiento), y el
+// pipeline lo filtra en los tres modos. La tarjeta de la cotizacion no lleva
+// evento: la cotizacion no conoce al prospecto del que salio.
 
 export function filtrarPorEvento(oportunidades, evento) {
   if (!evento) return oportunidades || [];

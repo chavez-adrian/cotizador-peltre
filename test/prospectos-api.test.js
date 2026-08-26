@@ -1149,3 +1149,14 @@ test('#261: los guardrails de celular repetido son los mismos en la captura de e
     assert.equal(readProspectos().length, 0);
   });
 });
+
+test('#261: el asesor ajeno es de la captura de expo, no de una captura normal durante la feria', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+      .send({ ...CAPTURA, celular: '+52 5544332211', asesor: VENDEDOR_CATALOGO });
+    assert.equal(res.status, 400);
+    assert.equal(readProspectos().length, 0);
+  });
+});
