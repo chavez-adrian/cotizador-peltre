@@ -893,12 +893,15 @@ app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (
   for (const k of PROSPECTO_OPCIONALES) {
     if (body[k] !== undefined && body[k] !== null && body[k] !== '') data[k] = body[k];
   }
+  // La misma normalizacion que la captura autenticada (issue #269): la regla es
+  // del PROSPECTO, no de la pantalla que lo captura (CONTEXT.md "Prospecto").
+  const textos = normalizarTextosProspecto({ nombre: body.nombre, ciudad: body.ciudad, data });
   let id;
   try {
     id = await prospectosStore.crear({
       fecha: new Date().toISOString(), vendedor: null,
-      celular: body.celular.trim(), nombre: body.nombre.trim(),
-      ciudad: body.ciudad.trim(), canal: body.canal, etapa: 'no_asignado', data,
+      celular: body.celular.trim(), nombre: textos.nombre,
+      ciudad: textos.ciudad, canal: body.canal, etapa: 'no_asignado', data: textos.data,
     });
   } catch (e) {
     if (e.code !== '23505') throw e;

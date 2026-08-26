@@ -1476,3 +1476,21 @@ test('#269: una mezcla de mayusculas ya escrita a proposito no se toca, ni al cr
   assert.equal(editado.ciudad, 'CDMX');
   assert.equal(editado.data.empresa, 'Grupo GNP');
 });
+
+test('#269: la captura sin asignar (admin) aplica la misma normalizacion de textos', async () => {
+  writeProspectos([]);
+  const res = await supertest(app).post('/api/prospectos/sin-asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+    .send({
+      celular: '+52 5512345678', nombre: 'MARIANA LÓPEZ', ciudad: 'SAN LUIS POTOSÍ',
+      canal: 'Formulario web', empresa: 'HOTEL LA JOYA', correo: '  Mariana.Lopez @GMAIL.COM ',
+    });
+  assert.equal(res.status, 201);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'no_asignado');
+  assert.equal(p.vendedor, null);
+  assert.equal(p.nombre, 'Mariana López');
+  assert.equal(p.ciudad, 'San Luis Potosí');
+  assert.equal(p.data.empresa, 'Hotel la Joya');
+  assert.equal(p.data.correo, 'mariana.lopez@gmail.com');
+});
