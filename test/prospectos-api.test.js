@@ -1101,7 +1101,9 @@ test('#261: el admin guarda evento activo y liga del catalogo, y el frontend los
     assert.deepEqual(leer.body.config.tiposActivos, ['PL']);
 
     const catalogos = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
-    assert.deepEqual(catalogos.body.eventoActivo, EVENTO);
+    // El evento viaja con lo guardado mas la fecha derivada del siguiente
+    // contacto (#263), que no se persiste: se calcula del fin del evento.
+    assert.deepEqual(catalogos.body.eventoActivo, { ...EVENTO, siguienteContactoSugerido: '2026-08-31' });
     assert.equal(catalogos.body.catalogoUrl, CATALOGO_URL);
   } finally {
     escribirArchivoSync(CONFIG_PATH, original);
@@ -1227,5 +1229,138 @@ test('#261: el asesor ajeno es de la captura de expo, no de una captura normal d
       .send({ ...CAPTURA, celular: '+52 5544332211', asesor: VENDEDOR_CATALOGO });
     assert.equal(res.status, 400);
     assert.equal(readProspectos().length, 0);
+  });
+});
+
+// === Paso 2 de la captura de expo (issue #263, spec #260) ===
+// La calificacion y el siguiente contacto viajan en el MISMO body de la captura
+// (y de la edicion): con el prospecto ya enfrente no hay dos guardados.
+
+const CALIFICACION = {
+  concepto: 'Cafetería de especialidad', tipo_clientes: 'Oficinistas',
+  anios: '4-10', sucursales: '3-5', usa_peltre: true, proveedor_peltre: 'Cinsa',
+  valora: ['no_se_rompe', 'precio'], otro_valora: 'Que sea apilable',
+};
+
+test('#263: la captura de expo guarda la calificacion, las piezas y el siguiente contacto del mismo body', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+      .send({
+        ...CAPTURA_EXPO, calificacion: CALIFICACION, piezas_estimadas: '+550',
+        notas: 'Pidió muestras', siguiente_contacto: { canal: 'WhatsApp', fecha: FUTURO },
+      });
+    assert.equal(res.status, 201);
+    const p = readProspectos()[0];
+    assert.deepEqual(p.data.calificacion, CALIFICACION);
+    // el volumen de la primera orden es el campo de siempre, no parte de la calificacion
+    assert.equal(p.data.piezas_estimadas, '+550');
+    assert.equal(p.data.calificacion.piezas_estimadas, undefined);
+    assert.equal(p.data.notas, 'Pidió muestras');
+    const sc = p.eventos.find(e => e.tipo === 'siguiente_contacto');
+    assert.ok(sc, 'el compromiso queda registrado como evento del prospecto');
+    assert.equal(sc.canal, 'WhatsApp');
+    assert.equal(sc.fecha_contacto, FUTURO);
+    assert.equal(sc.vendedor, 'Memo');
+  });
+});
+
+test('#263: el paso 2 es opcional: la captura sin calificacion no inventa una', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ...CAPTURA_EXPO, calificacion: {} });
+    assert.equal(res.status, 201);
+    assert.equal(readProspectos()[0].data.calificacion, undefined);
+  });
+});
+
+test('#263: una calificacion fuera de catalogo se rechaza con 400 y no crea el prospecto', async () => {
+  await conEventoActivo(async () => {
+    const cuerpos = [
+      { ...CALIFICACION, anios: '2-4' },
+      { ...CALIFICACION, sucursales: '7' },
+      { ...CALIFICACION, valora: ['durabilidad', 'barato'] },
+      { ...CALIFICACION, usa_peltre: 'quizá' },
+    ];
+    for (const calificacion of cuerpos) {
+      writeProspectos([]);
+      const res = await supertest(app).post('/api/prospectos')
+        .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ...CAPTURA_EXPO, calificacion });
+      assert.equal(res.status, 400, `calificacion ${JSON.stringify(calificacion)} debio rechazarse`);
+      assert.equal(readProspectos().length, 0);
+    }
+  });
+});
+
+test('#263: el siguiente contacto del body de captura obedece la misma regla que su ruta', async () => {
+  await conEventoActivo(async () => {
+    for (const siguiente_contacto of [
+      { canal: 'WhatsApp', fecha: PASADO },
+      { canal: 'Paloma mensajera', fecha: FUTURO },
+      { canal: 'WhatsApp' },
+    ]) {
+      writeProspectos([]);
+      const res = await supertest(app).post('/api/prospectos')
+        .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ...CAPTURA_EXPO, siguiente_contacto });
+      assert.equal(res.status, 400, `siguiente contacto ${JSON.stringify(siguiente_contacto)} debio rechazarse`);
+      assert.equal(readProspectos().length, 0);
+    }
+  });
+});
+
+test('#263: la edicion de la tarjeta completa y corrige el paso 2', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  const completar = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ calificacion: CALIFICACION, piezas_estimadas: '+1,500' });
+  assert.equal(completar.status, 200);
+  assert.deepEqual(readProspectos()[0].data.calificacion, CALIFICACION);
+  assert.equal(readProspectos()[0].data.piezas_estimadas, '+1,500');
+
+  const corregir = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ calificacion: { ...CALIFICACION, usa_peltre: false, valora: ['precio'] } });
+  assert.equal(corregir.status, 200);
+  const cal = readProspectos()[0].data.calificacion;
+  assert.equal(cal.usa_peltre, false);
+  assert.deepEqual(cal.valora, ['precio']);
+
+  const invalida = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ calificacion: { anios: 'un rato' } });
+  assert.equal(invalida.status, 400);
+  assert.deepEqual(readProspectos()[0].data.calificacion.valora, ['precio']);
+});
+
+test('#263: la edicion tambien registra el siguiente contacto que venga en el body', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  const res = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ siguiente_contacto: { canal: 'Llamada', fecha: FUTURO } });
+  assert.equal(res.status, 200);
+  const sc = readProspectos()[0].eventos.find(e => e.tipo === 'siguiente_contacto');
+  assert.equal(sc.canal, 'Llamada');
+  assert.equal(sc.fecha_contacto, FUTURO);
+
+  const invalido = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ siguiente_contacto: { canal: 'Llamada', fecha: PASADO } });
+  assert.equal(invalido.status, 400);
+  assert.equal(readProspectos()[0].eventos.filter(e => e.tipo === 'siguiente_contacto').length, 1);
+});
+
+test('#263: /api/catalogos trae la fecha prellenada del siguiente contacto del evento activo', async () => {
+  // Abastur 2026 cierra el viernes 28 de agosto: el compromiso se prellena el lunes
+  await conEventoActivo(async () => {
+    const catalogos = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.equal(catalogos.body.eventoActivo.nombre, 'Abastur 2026');
+    assert.equal(catalogos.body.eventoActivo.fin, '2026-08-28');
+    assert.equal(catalogos.body.eventoActivo.siguienteContactoSugerido, '2026-08-31');
+  });
+  // un evento que cierra la vispera de un festivo salta al siguiente habil
+  await conConfig({ eventoActivo: { nombre: 'Expo Septiembre', fin: '2026-09-15' } }, async () => {
+    const catalogos = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.equal(catalogos.body.eventoActivo.siguienteContactoSugerido, '2026-09-17');
   });
 });

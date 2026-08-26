@@ -36,9 +36,10 @@ import * as vendedoresStore from './lib/vendedores-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
+import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM } from './lib/pipeline.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
-import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, CANALES_SIGUIENTE_CONTACTO, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, validarProspectoExpoBody, buildDatosExpo } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
@@ -754,6 +755,23 @@ function eventoActivoConfigurado() {
   return evento && evento.nombre ? evento : null;
 }
 
+// Paso 2 de la captura de expo (issue #263): la calificacion y el siguiente
+// contacto viajan en el MISMO body que la captura y que la edicion -- con el
+// prospecto enfrente no hay dos guardados. Las dos rutas comparten validacion y
+// registro para que la regla no se bifurque; el compromiso es el mismo evento
+// que registra su propia ruta (#262).
+function errorPaso2(body) {
+  const cal = validarCalificacion(body.calificacion);
+  if (cal) return cal;
+  if (body.siguiente_contacto == null) return null;
+  return validarSiguienteContacto(body.siguiente_contacto);
+}
+
+async function registrarSiguienteContactoDelBody(id, body, vendedor) {
+  if (body.siguiente_contacto == null) return;
+  await prospectosStore.registrarEvento(id, buildEventoSiguienteContacto(body.siguiente_contacto, vendedor));
+}
+
 // Captura de expo (issue #261, spec #260) = esta MISMA ruta con mas campos, no
 // una ruta nueva: es la misma entidad, el mismo pipeline y los mismos guardrails
 // de celular. Lo que agrega el evento: tipo de cliente obligatorio y la
@@ -772,6 +790,8 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   }
   const error = eventoBody ? validarProspectoExpoBody(body) : validarProspectoBody(body);
   if (error) return res.status(400).json({ error });
+  const errorPaso2Captura = errorPaso2(body);
+  if (errorPaso2Captura) return res.status(400).json({ error: errorPaso2Captura });
   // El asesor se valida contra el registro COMPLETO de vendedores, no contra el
   // catalogo filtrado por operam_id de /api/catalogos: quien solo transcribe
   // formatos de papel puede no tener id de Operam todavia.
@@ -808,6 +828,11 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   // Lo de la expo manda sobre los opcionales crudos: el segmento sale del tipo
   // de cliente y la temperatura del nivel de interes, en un solo lugar.
   Object.assign(data, buildDatosExpo(body));
+  // La calificacion del paso 2 (#263) es opcional: si se cerro vacia no se
+  // guarda la llave. Las piezas estimadas NO viven aqui -- son el opcional de
+  // siempre, que ya viajo arriba.
+  const calificacion = buildCalificacion(body.calificacion);
+  if (Object.keys(calificacion).length) data.calificacion = calificacion;
   let id;
   try {
     id = await prospectosStore.crear({
@@ -829,6 +854,7 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
       evento: eventoBody, vendedor: req.user.name,
     });
   }
+  await registrarSiguienteContactoDelBody(id, body, req.user.name);
   res.status(201).json({ ok: true, id });
 });
 
@@ -1150,7 +1176,12 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   }
   const error = validarEdicionProspecto(req.body);
   if (error) return res.status(400).json({ error });
+  // La edicion es el camino para completar despues el paso 2 (#263): lo que el
+  // stand no alcanzo a preguntar y lo que el importador no trae.
+  const errorCalificacion = errorPaso2(req.body || {});
+  if (errorCalificacion) return res.status(400).json({ error: errorCalificacion });
   await prospectosStore.actualizarDatos(p.id, buildEdicionProspectoDatos(req.body));
+  await registrarSiguienteContactoDelBody(p.id, req.body || {}, req.user.name);
   res.json({ ok: true });
 });
 
@@ -1247,17 +1278,9 @@ app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
 app.post('/api/prospectos/:id/siguiente-contacto', authMiddleware, async (req, res) => {
   const p = await prospectoOperable(req, res);
   if (!p) return;
-  const { canal, fecha } = req.body || {};
-  if (!CANALES_SIGUIENTE_CONTACTO.includes(canal)) {
-    return res.status(400).json({ error: 'El canal del siguiente contacto es obligatorio (catálogo cerrado)' });
-  }
-  const f = fecha ? new Date(fecha) : null;
-  if (!f || isNaN(f)) return res.status(400).json({ error: 'La fecha del siguiente contacto es obligatoria' });
-  if (f <= new Date()) return res.status(400).json({ error: 'La fecha del siguiente contacto debe ser futura' });
-  await prospectosStore.registrarEvento(p.id, {
-    tipo: 'siguiente_contacto', canal, fecha_contacto: f.toISOString(),
-    fecha: new Date().toISOString(), vendedor: req.user.name,
-  });
+  const error = validarSiguienteContacto(req.body);
+  if (error) return res.status(400).json({ error });
+  await prospectosStore.registrarEvento(p.id, buildEventoSiguienteContacto(req.body, req.user.name));
   res.json({ ok: true });
 });
 
@@ -3148,10 +3171,14 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
     // registro COMPLETO (no el filtrado por operam_id de `vendedores`): en la
     // expo se captura a nombre de quien todavia no tiene id de Operam.
     const config = readJSON('config.json') || {};
+    // La fecha prellenada del siguiente contacto (#263) se DERIVA del fin del
+    // evento aqui, no se guarda: si el admin corrige la fecha de cierre, la
+    // sugerencia se mueve sola. Es el primer dia habil despues de la feria.
+    const evento = eventoActivoConfigurado();
     res.json({
       segmentos: SEGMENTOS, vendedores, listas_precios: await obtenerListasPrecios(),
       puedeAsignar: puedeAsignar({ role: req.user?.role, puedeAsignar: yo?.puedeAsignar }),
-      eventoActivo: eventoActivoConfigurado(),
+      eventoActivo: evento && { ...evento, siguienteContactoSugerido: primerDiaHabilDespues(evento.fin) },
       catalogoUrl: config.catalogoUrl || '',
       asesores: registro.map(v => v.name),
     });

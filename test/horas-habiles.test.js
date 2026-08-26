@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { horasHabilesEntre, FESTIVOS } from '../lib/horas-habiles.js';
+import { horasHabilesEntre, FESTIVOS, primerDiaHabilDespues } from '../lib/horas-habiles.js';
 
 // Todas las fechas de los tests son instantes UTC (sufijo Z). El horario habil
 // se evalua en America/Mexico_City (UTC-6 fijo desde 2022): CDMX 10:00 = 16:00Z,
@@ -87,4 +87,33 @@ test('H14: FESTIVOS trae los siete festivos de 2026 y 2027 con los lunes moviles
   for (const f of [...f2026, ...f2027]) {
     assert.ok(FESTIVOS.includes(f), `falta el festivo ${f}`);
   }
+});
+
+// === Issue #263 (spec #260): fecha prellenada del siguiente contacto ===
+// El primer dia habil DESPUES del fin del evento. Aqui "dia habil" es dia de
+// oficina (L-V, festivos fuera): el sabado corto de la ventana de espera no
+// cuenta para agendar un compromiso -- el spec lo fija con "viernes -> lunes".
+
+test('H15: el viernes de cierre de la feria manda el compromiso al lunes', () => {
+  // Abastur 2026 cierra el viernes 28 de agosto
+  assert.equal(primerDiaHabilDespues('2026-08-28'), '2026-08-31');
+  // un evento que cierra en sabado tambien cae en el lunes
+  assert.equal(primerDiaHabilDespues('2026-08-29'), '2026-08-31');
+});
+
+test('H16: la vispera de un festivo salta al siguiente dia habil', () => {
+  // martes 15 sep: el 16 es Independencia -> jueves 17
+  assert.equal(primerDiaHabilDespues('2026-09-15'), '2026-09-17');
+  // jueves 24 dic: el 25 es Navidad y cae viernes -> lunes 28
+  assert.equal(primerDiaHabilDespues('2026-12-24'), '2026-12-28');
+  // viernes 13 nov: el lunes 16 es la Revolucion -> martes 17
+  assert.equal(primerDiaHabilDespues('2026-11-13'), '2026-11-17');
+});
+
+test('H17: un dia entre semana manda al siguiente y una fecha invalida no inventa dia', () => {
+  assert.equal(primerDiaHabilDespues('2026-06-10'), '2026-06-11');
+  assert.equal(primerDiaHabilDespues('2026-08-28T00:00:00.000Z'), '2026-08-31');
+  assert.equal(primerDiaHabilDespues(''), null);
+  assert.equal(primerDiaHabilDespues('manana'), null);
+  assert.equal(primerDiaHabilDespues(null), null);
 });

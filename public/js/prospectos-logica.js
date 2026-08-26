@@ -73,6 +73,10 @@ export function buildEdicionProspectoDatos(body) {
     const v = typeof b[k] === 'string' ? b[k].trim() : b[k];
     data[k] = v;
   }
+  // Calificacion del paso 2 (issue #263): se completa o se corrige desde la
+  // tarjeta. Viaja entera (el formulario trae los valores actuales prellenados),
+  // asi que reemplaza a la anterior en vez de fusionarse campo por campo.
+  if (b.calificacion !== undefined) data.calificacion = buildCalificacion(b.calificacion);
   if (Object.keys(data).length) datos.data = data;
   return datos;
 }
@@ -726,4 +730,117 @@ export function buildChipsHtml(grupo, opciones, seleccion) {
     `<button type="button" class="chip${op === seleccion ? ' chip-activo' : ''}" ` +
     `data-chip="${escapeHtml(grupo)}" data-valor="${escapeHtml(op)}">${escapeHtml(op)}</button>`
   ).join('');
+}
+
+// --- Paso 2 de la captura de expo: la calificacion (issue #263, spec #260;
+// CONTEXT.md "Captura de expo") ---
+//
+// Lo que se pregunta cuando el prospecto se va, todo OPCIONAL: se puede cerrar
+// vacio y completar despues desde la tarjeta. Vive en el jsonb `data` del
+// prospecto bajo `calificacion`; las piezas estimadas NO entran aqui (van al
+// campo de siempre, `piezas_estimadas`) y las notas tampoco (`notas`).
+
+// Anios operando y sucursales: catalogos cerrados de chips. El valor guardado es
+// la propia etiqueta (son rangos, no conceptos con sinonimos).
+export const ANIOS_OPERANDO = ['Por abrir', '1-3', '4-10', '11-20', '20+'];
+export const SUCURSALES = ['1', '2', '3-5', '6-10', '10+'];
+
+// Que es importante al escoger la loza: multi-seleccion que se guarda EN EL
+// ORDEN en que se marca (lo primero que dijo el prospecto vale mas). La clave es
+// estable y es lo que se persiste; la etiqueta humana solo se usa para pintar.
+// "Durabilidad" es aguantar el uso diario; "No se rompe" es irrompible donde el
+// vidrio y la ceramica son riesgo (alberca, jardin).
+export const VALORA = [
+  { clave: 'durabilidad', etiqueta: 'Durabilidad' },
+  { clave: 'precio', etiqueta: 'Precio' },
+  { clave: 'estetica', etiqueta: 'Estética' },
+  { clave: 'no_se_rompe', etiqueta: 'No se rompe' },
+  { clave: 'resurtido', etiqueta: 'Resurtido' },
+  { clave: 'variedad', etiqueta: 'Variedad' },
+  { clave: 'logo', etiqueta: 'Logo' },
+  { clave: 'lavavajillas', etiqueta: 'Lavavajillas' },
+  { clave: 'fuego_horno', etiqueta: 'Resiste fuego/horno' },
+  { clave: 'mexicano', etiqueta: 'Mexicano' },
+];
+
+export function etiquetaValora(clave) {
+  const op = VALORA.find(v => v.clave === clave);
+  return op ? op.etiqueta : String(clave == null ? '' : clave);
+}
+
+// Campos de texto libre de la calificacion (los que llevan boton de microfono
+// en la UI; `notas` no vive aqui, es el campo de siempre del prospecto).
+const CALIFICACION_TEXTOS = ['concepto', 'tipo_clientes', 'proveedor_peltre', 'otro_valora'];
+
+// Valida la calificacion del paso 2. Todo es opcional -- lo que se revisa es que
+// lo elegido pertenezca a su catalogo. La comparten el navegador y el servidor
+// (creacion y edicion del prospecto).
+export function validarCalificacion(cal) {
+  if (cal == null) return null;
+  if (typeof cal !== 'object' || Array.isArray(cal)) return 'La calificación viaja como objeto';
+  if (cal.anios && !ANIOS_OPERANDO.includes(cal.anios)) {
+    return 'Los años operando son de catálogo cerrado';
+  }
+  if (cal.sucursales && !SUCURSALES.includes(cal.sucursales)) {
+    return 'Las sucursales son de catálogo cerrado';
+  }
+  if (cal.usa_peltre !== undefined && cal.usa_peltre !== null && typeof cal.usa_peltre !== 'boolean') {
+    return '¿Ya usa o vende peltre? se responde sí o no';
+  }
+  if (cal.valora !== undefined && cal.valora !== null) {
+    const claves = VALORA.map(v => v.clave);
+    if (!Array.isArray(cal.valora) || cal.valora.some(v => !claves.includes(v))) {
+      return 'Lo que es importante al escoger la loza es de catálogo cerrado';
+    }
+  }
+  return null;
+}
+
+// Normaliza la calificacion para guardarla: recorta los textos, suelta lo que
+// viene vacio y CONSERVA EL ORDEN de valora (es el dato: que dijo primero el
+// prospecto). Devuelve {} cuando el paso 2 se cerro sin capturar nada.
+export function buildCalificacion(cal) {
+  const c = cal && typeof cal === 'object' && !Array.isArray(cal) ? cal : {};
+  const limpia = {};
+  for (const k of CALIFICACION_TEXTOS) {
+    const v = String(c[k] == null ? '' : c[k]).trim();
+    if (v) limpia[k] = v;
+  }
+  if (c.anios) limpia.anios = c.anios;
+  if (c.sucursales) limpia.sucursales = c.sucursales;
+  if (typeof c.usa_peltre === 'boolean') limpia.usa_peltre = c.usa_peltre;
+  if (Array.isArray(c.valora) && c.valora.length) limpia.valora = [...c.valora];
+  return limpia;
+}
+
+// "Calificacion pendiente" (CONTEXT.md "Captura de expo": el paso 2 se puede
+// dejar para despues): la calificacion no existe o no tiene ningun valor.
+export function calificacionVacia(cal) {
+  return Object.keys(buildCalificacion(cal)).length === 0;
+}
+
+// El siguiente contacto (#262) tambien se captura DENTRO del paso 2, en el mismo
+// body de la creacion o de la edicion del prospecto. La regla es una sola y vive
+// aqui: la comparten POST /api/prospectos/:id/siguiente-contacto, la captura y
+// la edicion. Opcional: sin compromiso en el body no hay nada que validar.
+export function validarSiguienteContacto(sc, ahora = new Date()) {
+  const s = sc || {};
+  if (!CANALES_SIGUIENTE_CONTACTO.includes(s.canal)) {
+    return 'El canal del siguiente contacto es obligatorio (catálogo cerrado)';
+  }
+  const f = s.fecha ? new Date(s.fecha) : null;
+  if (!f || isNaN(f)) return 'La fecha del siguiente contacto es obligatoria';
+  if (f <= ahora) return 'La fecha del siguiente contacto debe ser futura';
+  return null;
+}
+
+// Evento que se appendea al prospecto. `fecha` es cuando se registro y
+// `fecha_contacto` el compromiso: la regla "el ultimo registrado manda"
+// (ultimoEventoDe) se apoya en esa distincion.
+export function buildEventoSiguienteContacto(sc, vendedor, ahora = new Date()) {
+  return {
+    tipo: 'siguiente_contacto', canal: sc.canal,
+    fecha_contacto: new Date(sc.fecha).toISOString(),
+    fecha: ahora.toISOString(), vendedor,
+  };
 }

@@ -949,3 +949,76 @@ test('SC9: el historial nombra el evento del siguiente contacto con su canal y f
   const xss = buildHistorialHtml({ ...PROSPECTO, eventos: [{ ...SC_FUTURO, vendedor: '<b>Memo</b>' }] });
   assert.equal(xss.includes('<b>Memo</b>'), false);
 });
+
+// === Issue #263 (spec #260, CONTEXT.md "Captura de expo"): paso 2, la
+// calificacion. Catalogos de chips con CLAVES ESTABLES (la etiqueta humana solo
+// vive en la UI), validacion, orden de `valora` y lectura en la tarjeta.
+
+let ANIOS_OPERANDO, SUCURSALES, VALORA, etiquetaValora;
+before(async () => {
+  ({ ANIOS_OPERANDO, SUCURSALES, VALORA, etiquetaValora } = await import('../prospectos-logica.js'));
+});
+
+test('C1: los catalogos del paso 2 son cerrados y valora lleva claves estables', () => {
+  assert.deepEqual(ANIOS_OPERANDO, ['Por abrir', '1-3', '4-10', '11-20', '20+']);
+  assert.deepEqual(SUCURSALES, ['1', '2', '3-5', '6-10', '10+']);
+  assert.deepEqual(VALORA.map(v => v.clave), [
+    'durabilidad', 'precio', 'estetica', 'no_se_rompe', 'resurtido',
+    'variedad', 'logo', 'lavavajillas', 'fuego_horno', 'mexicano',
+  ]);
+  assert.equal(etiquetaValora('no_se_rompe'), 'No se rompe');
+  assert.equal(etiquetaValora('fuego_horno'), 'Resiste fuego/horno');
+  assert.equal(etiquetaValora('estetica'), 'Estética');
+  // una clave que no existe se muestra tal cual, nunca "undefined"
+  assert.equal(etiquetaValora('barato'), 'barato');
+});
+
+let validarCalificacion, buildCalificacion, calificacionVacia;
+before(async () => {
+  ({ validarCalificacion, buildCalificacion, calificacionVacia } = await import('../prospectos-logica.js'));
+});
+
+const CALIFICACION = {
+  concepto: 'Cafetería de especialidad', tipo_clientes: 'Oficinistas',
+  anios: '4-10', sucursales: '3-5', usa_peltre: true, proveedor_peltre: 'Cinsa',
+  valora: ['no_se_rompe', 'precio'], otro_valora: 'Que sea apilable',
+};
+
+test('C2: la calificacion completa pasa y todo el paso 2 es opcional', () => {
+  assert.equal(validarCalificacion(CALIFICACION), null);
+  // el paso 2 se puede cerrar vacio: ausente, vacio o con los chips sin elegir
+  assert.equal(validarCalificacion(undefined), null);
+  assert.equal(validarCalificacion({}), null);
+  assert.equal(validarCalificacion({ anios: '', sucursales: '', valora: [] }), null);
+});
+
+test('C3: un valor fuera del catalogo se rechaza con su mensaje', () => {
+  assert.match(validarCalificacion({ anios: '2-4' }), /años/i);
+  assert.match(validarCalificacion({ sucursales: '7' }), /sucursales/i);
+  assert.match(validarCalificacion({ valora: ['durabilidad', 'barato'] }), /importante/i);
+  assert.match(validarCalificacion({ valora: 'durabilidad' }), /importante/i);
+  assert.match(validarCalificacion({ usa_peltre: 'quiza' }), /peltre/i);
+  assert.match(validarCalificacion('mucho'), /calificación/i);
+});
+
+test('C4: buildCalificacion conserva el orden de valora y suelta lo que viene vacio', () => {
+  assert.deepEqual(buildCalificacion(CALIFICACION), CALIFICACION);
+  // el orden es el que marco el vendedor, no el del catalogo
+  assert.deepEqual(
+    buildCalificacion({ valora: ['mexicano', 'durabilidad', 'logo'] }).valora,
+    ['mexicano', 'durabilidad', 'logo']
+  );
+  // los textos se recortan y los vacios no se guardan
+  assert.deepEqual(buildCalificacion({ concepto: '  Fonda  ', tipo_clientes: '   ', valora: [] }), { concepto: 'Fonda' });
+  assert.deepEqual(buildCalificacion({}), {});
+  assert.deepEqual(buildCalificacion({ usa_peltre: false }), { usa_peltre: false });
+});
+
+test('C5: "Calificacion pendiente" es la calificacion ausente o sin ningun valor', () => {
+  assert.equal(calificacionVacia(undefined), true);
+  assert.equal(calificacionVacia({}), true);
+  assert.equal(calificacionVacia({ concepto: '', valora: [] }), true);
+  assert.equal(calificacionVacia({ valora: ['precio'] }), false);
+  assert.equal(calificacionVacia({ usa_peltre: false }), false);
+  assert.equal(calificacionVacia(CALIFICACION), false);
+});
