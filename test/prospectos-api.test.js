@@ -1395,3 +1395,84 @@ test('#263: /api/catalogos trae la fecha prellenada del siguiente contacto del e
     assert.equal(catalogos.body.eventoActivo.siguienteContactoSugerido, '2026-09-17');
   });
 });
+
+// === Issue #269: normalizacion de textos en toda captura de prospecto ===
+// CONTEXT.md "Prospecto" (decision 2026-08-25): lo que se teclea al capturar --
+// nombre, empresa, ciudad -- se guarda con las mayusculas corregidas y el correo
+// en minusculas, venga de donde venga la captura. La regla vive en un solo lugar
+// (normalizarTextosProspecto, prospectos-logica.js) y la aplican la creacion y la
+// edicion desde la tarjeta.
+
+test('#269: la captura manual guarda nombre, empresa y ciudad con mayusculas corregidas y el correo en minusculas', async () => {
+  writeProspectos([]);
+  const res = await supertest(app).post('/api/prospectos')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({
+      celular: '+52 5512345678', nombre: 'MARIANA LÓPEZ', ciudad: 'SAN LUIS POTOSÍ',
+      canal: 'WhatsApp', empresa: 'HOTEL LA JOYA', correo: '  Mariana.Lopez @GMAIL.COM ',
+    });
+  assert.equal(res.status, 201);
+  const p = readProspectos()[0];
+  assert.equal(p.nombre, 'Mariana López');
+  assert.equal(p.ciudad, 'San Luis Potosí');
+  assert.equal(p.data.empresa, 'Hotel la Joya');
+  assert.equal(p.data.correo, 'mariana.lopez@gmail.com');
+});
+
+test('#269: la captura de expo aplica la misma regla y el correo viaja al campo del prospecto', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+      .send({
+        ...CAPTURA_EXPO, nombre: 'MARIANA LÓPEZ', ciudad: 'SAN LUIS POTOSÍ',
+        empresa: 'HOTEL LA JOYA', correo: 'Mariana.Lopez@GMAIL.COM',
+      });
+    assert.equal(res.status, 201);
+    const p = readProspectos()[0];
+    assert.equal(p.nombre, 'Mariana López');
+    assert.equal(p.ciudad, 'San Luis Potosí');
+    assert.equal(p.data.empresa, 'Hotel la Joya');
+    assert.equal(p.data.correo, 'mariana.lopez@gmail.com');
+  });
+});
+
+test('#269: editar por la tarjeta aplica la misma regla a los mismos campos', async () => {
+  writeProspectos([prospectoDe('Memo')]);
+  const res = await supertest(app).patch('/api/prospectos/1')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({
+      nombre: 'MARIANA LÓPEZ', ciudad: 'SAN LUIS POTOSÍ',
+      empresa: 'HOTEL LA JOYA', correo: '  Mariana.Lopez @GMAIL.COM ',
+    });
+  assert.equal(res.status, 200);
+  const p = readProspectos()[0];
+  assert.equal(p.nombre, 'Mariana López');
+  assert.equal(p.ciudad, 'San Luis Potosí');
+  assert.equal(p.data.empresa, 'Hotel la Joya');
+  assert.equal(p.data.correo, 'mariana.lopez@gmail.com');
+});
+
+test('#269: una mezcla de mayusculas ya escrita a proposito no se toca, ni al crear ni al editar', async () => {
+  writeProspectos([]);
+  const alta = await supertest(app).post('/api/prospectos')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({
+      celular: '+52 5512345678', nombre: "McDonald's", ciudad: 'CDMX',
+      canal: 'WhatsApp', empresa: 'Grupo GNP',
+    });
+  assert.equal(alta.status, 201);
+  const creado = readProspectos()[0];
+  assert.equal(creado.nombre, "McDonald's");
+  assert.equal(creado.ciudad, 'CDMX');
+  assert.equal(creado.data.empresa, 'Grupo GNP');
+
+  const edicion = await supertest(app).patch(`/api/prospectos/${creado.id}`)
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+    .send({ nombre: "McDonald's", ciudad: 'CDMX', empresa: 'Grupo GNP' });
+  assert.equal(edicion.status, 200);
+  const editado = readProspectos()[0];
+  assert.equal(editado.nombre, "McDonald's");
+  assert.equal(editado.ciudad, 'CDMX');
+  assert.equal(editado.data.empresa, 'Grupo GNP');
+});

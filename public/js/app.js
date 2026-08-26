@@ -71,6 +71,9 @@ import {
   buildGrupoChipsHtml,
   buildMicHtml,
 } from './prospectos-logica.js';
+// Aviso de dominio mal escrito del correo (issue #269): el MISMO nucleo que usa
+// el formulario publico, sin copia. mayoreo-logica.js es puro y browser-safe.
+import { sugerirDominioCorreo } from './mayoreo-logica.js';
 import {
   puedeArrastrarCotizacion,
   buildTableroCotizacionesHtml,
@@ -7563,6 +7566,25 @@ async function resolverCiudadPorCpExpo() {
   enlaceSinCp.style.display = 'none';
 }
 
+// Aviso de dominio mal escrito (issue #269): es una SUGERENCIA, nunca bloquea el
+// guardado. `dominioCorreoSugerido` guarda el correo YA corregido para que el
+// boton solo tenga que aplicarlo, igual que en el formulario publico.
+let dominioCorreoSugerido = '';
+
+function ocultarSugerenciaCorreoExpo() {
+  dominioCorreoSugerido = '';
+  document.getElementById('ex-sug-correo').classList.remove('ver');
+}
+
+function revisarDominioCorreoExpo() {
+  const correo = expoVal('ex-correo').trim();
+  const dominio = sugerirDominioCorreo(correo);
+  if (!dominio) { ocultarSugerenciaCorreoExpo(); return; }
+  dominioCorreoSugerido = `${correo.slice(0, correo.indexOf('@') + 1)}${dominio}`;
+  document.getElementById('ex-sug-correo-texto').textContent = `¿Quisiste decir ${dominio}?`;
+  document.getElementById('ex-sug-correo').classList.add('ver');
+}
+
 // El error vive al pie del formulario, junto al boton fijo: en una pantalla
 // larga hay que llevar al vendedor hasta el, o no lo ve.
 function mostrarErrorExpo(msg) {
@@ -7581,7 +7603,7 @@ function abrirCapturaExpo() {
   expoState.interes = '';
   expoState.sinCp = false;
   expoState.ciudadDelIndice = '';
-  for (const id of ['ex-nombre', 'ex-cp', 'ex-ciudad', 'ex-empresa', 'ex-tipo-otro', 'ex-notas']) {
+  for (const id of ['ex-nombre', 'ex-cp', 'ex-ciudad', 'ex-empresa', 'ex-correo', 'ex-tipo-otro', 'ex-notas']) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   }
@@ -7592,6 +7614,7 @@ function abrirCapturaExpo() {
   mostrarCiudadExpo(false);
   fijarTelefono('ex-celular', '');
   mostrarErrorExpo(null);
+  ocultarSugerenciaCorreoExpo();
   document.getElementById('ex-existente').innerHTML = '';
   pintarChipsExpo();
   // Calificacion: los mismos campos que la edicion inline de la tarjeta y en el
@@ -7652,6 +7675,7 @@ function leerFormularioExpo(raiz) {
     ciudad: expoVal('ex-ciudad'),
     canal: 'Feria/Expo',
     empresa: expoVal('ex-empresa'),
+    correo: expoVal('ex-correo'),
   });
   payload.evento = expoState.evento ? expoState.evento.nombre : '';
   // El CP viaja a data.cp (el mismo de la captura publica) para que la
@@ -7777,6 +7801,11 @@ document.addEventListener('DOMContentLoaded', () => {
     e.currentTarget.style.display = 'none';
     mostrarCiudadExpo(true);
     document.getElementById('ex-ciudad').focus();
+  });
+  document.getElementById('ex-correo').addEventListener('blur', revisarDominioCorreoExpo);
+  document.getElementById('ex-btn-corregir-correo').addEventListener('click', () => {
+    if (dominioCorreoSugerido) document.getElementById('ex-correo').value = dominioCorreoSugerido;
+    ocultarSugerenciaCorreoExpo();
   });
   document.getElementById('btn-guardar-expo').addEventListener('click', guardarCapturaExpo);
   document.getElementById('btn-volver-expo').addEventListener('click', () => {

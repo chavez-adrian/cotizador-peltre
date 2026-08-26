@@ -39,7 +39,7 @@ import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-t
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM } from './lib/pipeline.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
-import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
@@ -840,12 +840,16 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   // siempre, que ya viajo arriba.
   const calificacion = buildCalificacion(body.calificacion);
   if (Object.keys(calificacion).length) data.calificacion = calificacion;
+  // Mayusculas corregidas y correo en minusculas en UN solo punto (issue #269,
+  // CONTEXT.md "Prospecto"): lo mismo que aplica la edicion desde la tarjeta, y
+  // por eso una captura de expo y su complemento posterior no pueden divergir.
+  const textos = normalizarTextosProspecto({ nombre: body.nombre, ciudad: body.ciudad, data });
   let id;
   try {
     id = await prospectosStore.crear({
       fecha: new Date().toISOString(), vendedor: capturaAjena ? asesor : req.user.name,
-      celular: body.celular.trim(), nombre: body.nombre.trim(),
-      ciudad: body.ciudad.trim(), canal: body.canal, data,
+      celular: body.celular.trim(), nombre: textos.nombre,
+      ciudad: textos.ciudad, canal: body.canal, data: textos.data,
     });
   } catch (e) {
     if (e.code !== '23505') throw e;
@@ -1191,7 +1195,7 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   // que el stand no alcanzo a preguntar y lo que el importador no trae.
   const errorCalificacion = errorCalificacionYSiguienteContacto(req.body || {});
   if (errorCalificacion) return res.status(400).json({ error: errorCalificacion });
-  await prospectosStore.actualizarDatos(p.id, buildEdicionProspectoDatos(req.body));
+  await prospectosStore.actualizarDatos(p.id, normalizarTextosProspecto(buildEdicionProspectoDatos(req.body)));
   await registrarSiguienteContactoDelBody(p.id, req.body || {}, req.user.name);
   res.json({ ok: true });
 });

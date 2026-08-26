@@ -1074,6 +1074,16 @@
         <label>Nombre de la empresa o proyecto <span class="etiqueta-opcional">(opcional)</span></label>
         <input type="text" id="ex-empresa">
       </div>
+      <!-- Correo (issue #269): opcional, con el mismo aviso de dominio mal
+           escrito del formulario publico (sugerirDominioCorreo, #235). -->
+      <div class="form-group">
+        <label>Correo <span class="etiqueta-opcional">(opcional)</span></label>
+        <input type="email" id="ex-correo" inputmode="email" autocomplete="email">
+        <div class="sug-correo" id="ex-sug-correo">
+          <span id="ex-sug-correo-texto"></span>
+          <button type="button" class="btn btn-sm btn-secondary" id="ex-btn-corregir-correo">Corregir</button>
+        </div>
+      </div>
       <div class="form-group">
         <label>Nivel de inter&eacute;s</label>
         <div id="ex-interes-chips"></div>

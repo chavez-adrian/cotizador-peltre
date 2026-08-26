@@ -27,6 +27,103 @@ export const PIEZAS_ESTIMADAS = ['+100', '+350', '+550', '+1,500', '+6,000'];
 // armar data y el frontend para armar el payload.
 export const OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas'];
 
+// Particulas del espanol que van en minuscula salvo como primera palabra del
+// campo (issue #235). NO es la misma lista que PREPOSICIONES/ARTICULOS de
+// lib/deduplicacion.js: esa lista sirve para TOKENIZAR y comparar candidatos
+// (proposito distinto), esta sirve para CAPITALIZAR texto de presentacion.
+const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'y']);
+
+// Siglas que se preservan SIEMPRE, incluso si el campo entero viene en
+// mayusculas: formas societarias mexicanas + CDMX + las paqueterias con las
+// que ya opera el cotizador. Rescata el caso mas comun de razon social
+// mexicana ("... SA DE CV") de la correccion agresiva de abajo.
+const SIGLAS_FIJAS = new Set(['SA', 'CV', 'RL', 'SC', 'CDMX', 'FEDEX', 'DHL', 'UPS']);
+
+function capitalizarToken(token) {
+  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+}
+
+// "McDonald's": empieza en mayuscula y trae otra adentro. Un token ENTERO en
+// mayusculas no cuenta (eso lo resuelve la regla de siglas cortas).
+function mayusculaInterior(token) {
+  const resto = token.slice(1);
+  return token !== token.toUpperCase()
+    && token.charAt(0) === token.charAt(0).toUpperCase()
+    && resto !== resto.toLowerCase();
+}
+
+// Capitaliza nombre/empresa/ciudad de CUALQUIER captura de prospecto (issue
+// #235, ampliado en #269): un solo nucleo para que la tarjeta, el correo de
+// alerta y la vCard no puedan divergir. Nacio en mayoreo-logica.js para la
+// captura publica y se movio aqui en #269, cuando la regla dejo de ser del
+// formulario publico y paso a ser del PROSPECTO (CONTEXT.md "Prospecto",
+// decision 2026-08-25: "venga de donde venga la captura"); mayoreo-logica la
+// reexporta, mismo patron con el que #261 se llevo TIPOS_CLIENTE al reves.
+// NO se llama normalizarNombre -- ese simbolo ya existe en lib/deduplicacion.js
+// con otro proposito (tokenizar para comparar candidatos); aqui se produce
+// texto de PRESENTACION, no una llave de comparacion. Tampoco reutiliza
+// nombrePropio/empresaPropia de lib/cruce-bitrix.js (#159): esas resuelven un
+// problema parecido pero con otra regla (particulas de nombre extranjero,
+// sigla de hasta 3 letras SIN exigir contraste con el resto del campo) --
+// copiarla aqui rompe la tabla de #235 (p.ej. "GRUPO GNP" tendria que quedar
+// "Grupo Gnp", no "Grupo GNP").
+//
+// Regla de siglas cortas (<=4 letras, fuera de SIGLAS_FIJAS): se preservan
+// SOLO si el campo NO viene entero en mayusculas. El contraste (unas palabras
+// en mayusculas, otras no) es la unica senal de que fue a proposito -- el
+// largo por si solo no sirve ("JUAN" tambien tiene 4 letras). Sin contraste
+// (campo entero en mayusculas) no hay senal y se corrige todo.
+//
+// Regla de mayuscula INTERIOR (issue #269, "McDonald's"): un token que empieza
+// en mayuscula y lleva OTRA mayuscula adentro se preserva tal cual. Es el mismo
+// principio de contraste que la regla de arriba -- nadie teclea una mayuscula a
+// media palabra por accidente -- aplicado al caso que el tope de 4 letras deja
+// fuera. No alcanza a "jUaN": ese empieza en minuscula, que es dedazo y no
+// intencion, y se sigue corrigiendo (tabla de #235).
+export function capitalizarCampo(valor) {
+  const v = String(valor == null ? '' : valor).trim().replace(/\s+/g, ' ');
+  if (!v) return '';
+  const todoMayus = v === v.toUpperCase() && v !== v.toLowerCase();
+  return v.split(' ').map((token, i) => {
+    const tokenMayus = token.toUpperCase();
+    if (SIGLAS_FIJAS.has(tokenMayus)) return tokenMayus;
+    const tokenMinus = token.toLowerCase();
+    if (i > 0 && PARTICULAS.has(tokenMinus)) return tokenMinus;
+    if (!todoMayus && token === tokenMayus && token.length <= 4 && token !== tokenMinus) return token;
+    if (!todoMayus && mayusculaInterior(token)) return token;
+    return capitalizarToken(token);
+  }).join(' ');
+}
+
+// Normaliza los textos de una captura de prospecto (issue #269, CONTEXT.md
+// "Prospecto"): UNICO punto de la regla, compartido por la creacion (captura
+// manual y de expo) y por la edicion desde la tarjeta. Recibe y devuelve la
+// misma forma con la que hablan el store y buildEdicionProspectoDatos
+// ({ nombre?, ciudad?, data? }), asi que los dos caminos lo aplican con una
+// sola linea. Solo toca las llaves PRESENTES: en la edicion, un campo ausente
+// es "no lo cambies", no "vacialo".
+//
+// Que se normaliza y que no: nombre, empresa y ciudad son la identidad visible
+// del prospecto y se guardan con las mayusculas corregidas; el correo, en
+// minusculas y sin espacios (un correo es una direccion, no texto de
+// presentacion, y "Laura @Gmail.com" no entrega). Las notas NO se tocan: son
+// texto del vendedor.
+export function normalizarTextosProspecto(datos) {
+  const d = datos || {};
+  const salida = { ...d };
+  if (d.nombre !== undefined) salida.nombre = capitalizarCampo(d.nombre);
+  if (d.ciudad !== undefined) salida.ciudad = capitalizarCampo(d.ciudad);
+  if (d.data) {
+    const data = { ...d.data };
+    if (data.empresa !== undefined) data.empresa = capitalizarCampo(data.empresa);
+    if (data.correo !== undefined) {
+      data.correo = String(data.correo == null ? '' : data.correo).replace(/\s+/g, '').toLowerCase();
+    }
+    salida.data = data;
+  }
+  return salida;
+}
+
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
 export function escapeHtml(v) {
@@ -427,6 +524,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
         <div>
           <div class="cot-card-cliente">${escapeHtml(p.nombre)}${empresa}</div>
           <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
+          ${d.correo ? `<div class="cot-card-meta cot-card-correo">${escapeHtml(d.correo)}</div>` : ''}
           ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
           ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
           ${d.evento ? `<div style="margin-top:4px"><span class="evento-badge">${escapeHtml(d.evento)}</span></div>` : ''}

@@ -5,7 +5,7 @@
 // implementacion, cero copias espejo.
 
 import { validarTelefono, combinarTelefonoConCodigo, paisDesdeCodigoTelefono } from './alta-logica.js';
-import { PIEZAS_ESTIMADAS, TIPOS_CLIENTE, segmentoDeTipo } from './prospectos-logica.js';
+import { PIEZAS_ESTIMADAS, TIPOS_CLIENTE, segmentoDeTipo, capitalizarCampo } from './prospectos-logica.js';
 
 // Tipo de cliente -> segmento de Operam. El catalogo y su mapeo son UNICOS y
 // viven en el nucleo de prospectos (prospectos-logica.js) desde #261: los tres
@@ -182,51 +182,11 @@ function limpio(v) {
   return String(v == null ? '' : v).trim();
 }
 
-// Particulas del espanol que van en minuscula salvo como primera palabra del
-// campo (issue #235). NO es la misma lista que PREPOSICIONES/ARTICULOS de
-// lib/deduplicacion.js: esa lista sirve para TOKENIZAR y comparar candidatos
-// (proposito distinto), esta sirve para CAPITALIZAR texto de presentacion.
-const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'y']);
-
-// Siglas que se preservan SIEMPRE, incluso si el campo entero viene en
-// mayusculas: formas societarias mexicanas + CDMX + las paqueterias con las
-// que ya opera el cotizador. Rescata el caso mas comun de razon social
-// mexicana ("... SA DE CV") de la correccion agresiva de abajo.
-const SIGLAS_FIJAS = new Set(['SA', 'CV', 'RL', 'SC', 'CDMX', 'FEDEX', 'DHL', 'UPS']);
-
-function capitalizarToken(token) {
-  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
-}
-
-// Capitaliza nombre/apellido/empresa de la captura publica (issue #235): un
-// solo nucleo para que la tarjeta, el correo de alerta y la vCard no puedan
-// divergir. NO se llama normalizarNombre -- ese simbolo ya existe en
-// lib/deduplicacion.js con otro proposito (tokenizar para comparar
-// candidatos); aqui se produce texto de PRESENTACION, no una llave de
-// comparacion. Tampoco reutiliza nombrePropio/empresaPropia de
-// lib/cruce-bitrix.js (#159): esas resuelven un problema parecido pero con
-// otra regla (particulas de nombre extranjero, sigla de hasta 3 letras SIN
-// exigir contraste con el resto del campo) -- copiarla aqui rompe la tabla de
-// #235 (p.ej. "GRUPO GNP" tendria que quedar "Grupo Gnp", no "Grupo GNP").
-//
-// Regla de siglas cortas (<=4 letras, fuera de SIGLAS_FIJAS): se preservan
-// SOLO si el campo NO viene entero en mayusculas. El contraste (unas palabras
-// en mayusculas, otras no) es la unica senal de que fue a proposito -- el
-// largo por si solo no sirve ("JUAN" tambien tiene 4 letras). Sin contraste
-// (campo entero en mayusculas) no hay senal y se corrige todo.
-export function capitalizarCampo(valor) {
-  const v = limpio(valor).replace(/\s+/g, ' ');
-  if (!v) return '';
-  const todoMayus = v === v.toUpperCase() && v !== v.toLowerCase();
-  return v.split(' ').map((token, i) => {
-    const tokenMayus = token.toUpperCase();
-    if (SIGLAS_FIJAS.has(tokenMayus)) return tokenMayus;
-    const tokenMinus = token.toLowerCase();
-    if (i > 0 && PARTICULAS.has(tokenMinus)) return tokenMinus;
-    if (!todoMayus && token === tokenMayus && token.length <= 4 && token !== tokenMinus) return token;
-    return capitalizarToken(token);
-  }).join(' ');
-}
+// Correccion de mayusculas de nombre/empresa/ciudad: la regla vive en el
+// nucleo de prospectos desde #269 (dejo de ser del formulario publico y paso a
+// ser del PROSPECTO, CONTEXT.md "Prospecto"). Aqui solo se reexpone para los
+// consumidores que ya la importaban de este modulo.
+export { capitalizarCampo };
 
 // Formulario publico -> captura de prospecto de #57 ({ celular, nombre, ciudad,
 // canal, data }). La consumen el endpoint publico (server.js) y sus tests. El

@@ -11,7 +11,7 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   contarPendientesProspectos,
   ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
   CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido,
-  validarSiguienteContacto, buildEventoSiguienteContacto;
+  validarSiguienteContacto, buildEventoSiguienteContacto, normalizarTextosProspecto;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
@@ -23,7 +23,7 @@ before(async () => {
     contarPendientesProspectos,
     ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
     CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido,
-    validarSiguienteContacto, buildEventoSiguienteContacto } = await import('../prospectos-logica.js'));
+    validarSiguienteContacto, buildEventoSiguienteContacto, normalizarTextosProspecto } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -1204,4 +1204,64 @@ test('C10: la edicion inline de la tarjeta incorpora el paso 2 y dicta las notas
   // lo ya capturado llega prellenado para corregirlo
   assert.match(html, /data-valor="1-5 años" data-orden="1" class="chip chip-activo"|class="chip chip-activo"[^>]*data-valor="1-5 años"/);
   assert.match(html, /data-valor="logo" data-orden="1"/);
+});
+
+// === Normalizacion de textos de toda captura de prospecto (issue #269,
+// CONTEXT.md "Prospecto", decision 2026-08-25) ===
+// Un solo punto: lo que se teclea al capturar o al editar se guarda con las
+// mayusculas corregidas y el correo en minusculas. La regla de mayusculas es la
+// de capitalizarCampo (#235), que aqui NO se redefine.
+
+test('NT1: normalizarTextosProspecto titula nombre, empresa y ciudad en mayusculas y baja el correo', () => {
+  const datos = normalizarTextosProspecto({
+    nombre: 'MARIANA LÓPEZ',
+    ciudad: 'SAN LUIS POTOSÍ',
+    data: { empresa: 'HOTEL LA JOYA', correo: '  Mariana.Lopez @GMAIL.COM ' },
+  });
+  assert.equal(datos.nombre, 'Mariana López');
+  assert.equal(datos.ciudad, 'San Luis Potosí');
+  // "la" es particula: la regla de #235 la deja en minuscula dentro del campo.
+  assert.equal(datos.data.empresa, 'Hotel la Joya');
+  assert.equal(datos.data.correo, 'mariana.lopez@gmail.com');
+});
+
+test('NT2: normalizarTextosProspecto respeta una mezcla ya escrita y las siglas', () => {
+  const datos = normalizarTextosProspecto({
+    nombre: "McDonald's", ciudad: 'CDMX', data: { empresa: 'Grupo GNP' },
+  });
+  assert.equal(datos.nombre, "McDonald's");
+  assert.equal(datos.ciudad, 'CDMX');
+  assert.equal(datos.data.empresa, 'Grupo GNP');
+});
+
+test('NT3: normalizarTextosProspecto solo toca las llaves presentes y deja el resto intacto', () => {
+  const datos = normalizarTextosProspecto({
+    ciudad: 'PUEBLA',
+    data: { notas: 'PIDIO CATALOGO', temperatura: 4, piezas_estimadas: '+550' },
+  });
+  assert.equal(datos.ciudad, 'Puebla');
+  assert.equal('nombre' in datos, false);
+  // las notas son texto del vendedor, no un campo de identidad: no se tocan
+  assert.equal(datos.data.notas, 'PIDIO CATALOGO');
+  assert.equal(datos.data.temperatura, 4);
+  assert.equal(datos.data.piezas_estimadas, '+550');
+});
+
+test('NT4: normalizarTextosProspecto no inventa data cuando la captura no trae opcionales', () => {
+  const datos = normalizarTextosProspecto({ nombre: 'LAURA', ciudad: 'PUEBLA' });
+  assert.equal(datos.nombre, 'Laura');
+  assert.equal('data' in datos, false);
+});
+
+test('NT5: la tarjeta muestra el correo capturado, y no deja rastro cuando no hay', () => {
+  const base = {
+    id: 4, nombre: 'Mariana López', ciudad: 'Puebla', canal: 'Feria/Expo',
+    celular: '+52 5512345678', vendedor: 'Memo', fecha: '2026-08-25T10:00:00Z',
+    etapa: 'por_cotizar',
+  };
+  const con = buildProspectoCardHtml({ ...base, data: { correo: 'mariana.lopez@gmail.com' } }, null);
+  // a la vista, no solo prellenado en el formulario de edicion que la tarjeta trae
+  assert.match(con, /<div class="cot-card-meta cot-card-correo">mariana\.lopez@gmail\.com<\/div>/);
+  const sin = buildProspectoCardHtml({ ...base, data: {} }, null);
+  assert.equal(sin.includes('cot-card-correo'), false);
 });
