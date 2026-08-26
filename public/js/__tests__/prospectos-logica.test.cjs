@@ -9,7 +9,8 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   buildCanalModalHtml, reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
   validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml,
   contarPendientesProspectos,
-  ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe;
+  ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
+  CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
@@ -19,7 +20,8 @@ before(async () => {
     reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
     validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml,
     contarPendientesProspectos,
-    ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe } = await import('../prospectos-logica.js'));
+    ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
+    CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -655,4 +657,61 @@ test('K15: la card de un prospecto activo trae el boton Cotizar', () => {
   assert.match(html, /cotizarProspecto\(3\)/);
   const noUtil = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'no_util' });
   assert.equal(noUtil.includes('cotizarProspecto'), false);
+});
+
+// === Issue #262 (spec #260, CONTEXT.md "Siguiente contacto"): compromiso de
+// contacto (canal + fecha) sobre cualquier prospecto. Hermano de la reunion:
+// mientras la fecha es futura suprime la cadencia; pasada la fecha sin toque
+// posterior la tarjeta pide cumplirlo. No tiene resultado que registrar.
+
+const SC_FUTURO = { tipo: 'siguiente_contacto', canal: 'WhatsApp', fecha_contacto: '2026-06-15T15:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
+const SC_VENCIDO = { tipo: 'siguiente_contacto', canal: 'Llamada', fecha_contacto: '2026-06-09T15:00:00.000Z', fecha: '2026-06-08T12:00:00.000Z', vendedor: 'Memo' };
+const toqueEl = fecha => ({ tipo: 'toque', fecha, vendedor: 'Memo' });
+
+test('SC1: el catalogo del canal del siguiente contacto es WhatsApp, Llamada y Correo', () => {
+  assert.deepEqual(CANALES_SIGUIENTE_CONTACTO, ['WhatsApp', 'Llamada', 'Correo']);
+});
+
+test('SC2: siguienteContactoFuturo devuelve canal y fecha mientras la fecha no llega', () => {
+  assert.deepEqual(
+    siguienteContactoFuturo({ ...PROSPECTO, eventos: [SC_FUTURO] }, AHORA),
+    { canal: 'WhatsApp', fecha: '2026-06-15T15:00:00.000Z' }
+  );
+  assert.equal(siguienteContactoFuturo({ ...PROSPECTO, eventos: [SC_VENCIDO] }, AHORA), null);
+  assert.equal(siguienteContactoFuturo(PROSPECTO, AHORA), null);
+});
+
+test('SC3: siguienteContactoVencido aparece pasada la fecha; un toque posterior lo cierra', () => {
+  assert.deepEqual(
+    siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_VENCIDO] }, AHORA),
+    { canal: 'Llamada', fecha: '2026-06-09T15:00:00.000Z' }
+  );
+  assert.equal(siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_FUTURO] }, AHORA), null);
+  // un toque ANTERIOR a la fecha del compromiso no lo cierra: el compromiso sigue vivo
+  assert.deepEqual(
+    siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_VENCIDO, toqueEl('2026-06-09T13:00:00.000Z')] }, AHORA),
+    { canal: 'Llamada', fecha: '2026-06-09T15:00:00.000Z' }
+  );
+  assert.equal(
+    siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_VENCIDO, toqueEl('2026-06-10T13:00:00.000Z')] }, AHORA),
+    null
+  );
+});
+
+test('SC4: manda el ultimo siguiente contacto REGISTRADO, aunque su fecha sea mas temprana', () => {
+  const lejano = { tipo: 'siguiente_contacto', canal: 'Correo', fecha_contacto: '2026-06-20T15:00:00.000Z', fecha: '2026-06-10T08:00:00.000Z', vendedor: 'Memo' };
+  const reagendado = { tipo: 'siguiente_contacto', canal: 'WhatsApp', fecha_contacto: '2026-06-13T15:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
+  assert.deepEqual(
+    siguienteContactoFuturo({ ...PROSPECTO, eventos: [lejano, reagendado] }, AHORA),
+    { canal: 'WhatsApp', fecha: '2026-06-13T15:00:00.000Z' }
+  );
+  // el ultimo registrado ya vencio: el anterior, todavia futuro, no revive
+  assert.deepEqual(
+    siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_FUTURO, { ...SC_VENCIDO, fecha: '2026-06-10T14:00:00.000Z' }] }, AHORA),
+    { canal: 'Llamada', fecha: '2026-06-09T15:00:00.000Z' }
+  );
+  assert.equal(
+    siguienteContactoFuturo({ ...PROSPECTO, eventos: [SC_FUTURO, { ...SC_VENCIDO, fecha: '2026-06-10T14:00:00.000Z' }] }, AHORA),
+    null
+  );
 });

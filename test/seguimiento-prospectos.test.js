@@ -207,3 +207,50 @@ test('R4: re-agendar manda la ultima reunion', () => {
   assert.equal(cola[0].reunionVencida, true);
   assert.equal(cola[0].fechaReunion, '2026-06-10T17:00:00Z');
 });
+
+// === Issue #262 (spec #260, CONTEXT.md "Siguiente contacto") ===
+// El compromiso de contacto suprime la cadencia hasta su fecha; llegada la
+// fecha la tarjeta vuelve a la cola con canal y fecha, y el reloj corre desde
+// el compromiso -- no desde la captura, que puede ser de hace dias.
+
+function siguienteContacto(canal, fechaContacto, fechaRegistro) {
+  return { tipo: 'siguiente_contacto', canal, fecha_contacto: fechaContacto, fecha: fechaRegistro, vendedor: 'Memo' };
+}
+
+test('SC1: con siguiente contacto futuro el prospecto sale de la cola', () => {
+  const p = prospecto({ eventos: [siguienteContacto('WhatsApp', '2026-06-12T17:00:00Z', '2026-06-10T16:30:00Z')] });
+  assert.deepEqual(calcularColaProspectos([p], AHORA), []);
+});
+
+test('SC2: vencido el compromiso la tarjeta vuelve con canal y fecha, y las horas corren desde el compromiso', () => {
+  // capturado el lunes 10:00 CDMX (18 horas habiles hasta AHORA si contara la
+  // captura); compromiso para el miercoles 11:00 CDMX, una hora antes de AHORA.
+  const p = prospecto({
+    fecha: '2026-06-08T16:00:00Z',
+    eventos: [siguienteContacto('WhatsApp', '2026-06-10T17:00:00Z', '2026-06-08T17:00:00Z')],
+  });
+  const cola = calcularColaProspectos([p], AHORA);
+  assert.equal(cola.length, 1);
+  assert.deepEqual(cola[0].siguienteContacto, { canal: 'WhatsApp', fecha: '2026-06-10T17:00:00Z' });
+  assert.equal(cola[0].horas, 1);
+});
+
+test('SC3: un toque posterior cierra el compromiso y la cadencia vuelve a correr desde el toque', () => {
+  const p = prospecto({
+    fecha: '2026-06-08T16:00:00Z',
+    eventos: [
+      siguienteContacto('Llamada', '2026-06-10T16:00:00Z', '2026-06-08T17:00:00Z'),
+      toque('2026-06-10T17:30:00Z'), // miercoles 11:30 CDMX
+    ],
+  });
+  const cola = calcularColaProspectos([p], AHORA);
+  assert.equal(cola.length, 1);
+  assert.equal(cola[0].siguienteContacto, null);
+  assert.equal(cola[0].horas, 0.5);
+  assert.equal(cola[0].toques, 1);
+});
+
+test('SC4: sin compromiso el item trae siguienteContacto en null', () => {
+  const cola = calcularColaProspectos([prospecto()], AHORA);
+  assert.equal(cola[0].siguienteContacto, null);
+});

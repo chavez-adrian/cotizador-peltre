@@ -38,7 +38,7 @@ import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM } from './lib/pipeline.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
-import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, CANALES_SIGUIENTE_CONTACTO, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
@@ -1177,6 +1177,29 @@ app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
   if (f <= new Date()) return res.status(400).json({ error: 'La fecha de la reunión debe ser futura' });
   await prospectosStore.registrarEvento(p.id, {
     tipo: 'reunion', fecha_reunion: f.toISOString(),
+    fecha: new Date().toISOString(), vendedor: req.user.name,
+  });
+  res.json({ ok: true });
+});
+
+// Siguiente contacto (issue #262, spec #260, CONTEXT.md "Siguiente contacto"):
+// compromiso de canal + fecha con el prospecto ("te escribo el lunes"). Mismo
+// mecanismo de evento que la reunion y las mismas garantias (dueno o admin), con
+// dos diferencias: el canal es de catalogo cerrado propio (CANALES_SIGUIENTE_-
+// CONTACTO, distinto del canal de ORIGEN) y no hay resultado que registrar -- lo
+// cierra un toque posterior a la fecha. El ultimo registrado manda.
+app.post('/api/prospectos/:id/siguiente-contacto', authMiddleware, async (req, res) => {
+  const p = await prospectoOperable(req, res);
+  if (!p) return;
+  const { canal, fecha } = req.body || {};
+  if (!CANALES_SIGUIENTE_CONTACTO.includes(canal)) {
+    return res.status(400).json({ error: 'El canal del siguiente contacto es obligatorio (catálogo cerrado)' });
+  }
+  const f = fecha ? new Date(fecha) : null;
+  if (!f || isNaN(f)) return res.status(400).json({ error: 'La fecha del siguiente contacto es obligatoria' });
+  if (f <= new Date()) return res.status(400).json({ error: 'La fecha del siguiente contacto debe ser futura' });
+  await prospectosStore.registrarEvento(p.id, {
+    tipo: 'siguiente_contacto', canal, fecha_contacto: f.toISOString(),
     fecha: new Date().toISOString(), vendedor: req.user.name,
   });
   res.json({ ok: true });

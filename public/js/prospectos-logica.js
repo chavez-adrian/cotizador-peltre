@@ -220,6 +220,46 @@ export function reunionPendienteResultado(p, ahora) {
   return reunionPendienteResultadoDe(p && p.eventos, ahora);
 }
 
+// Siguiente contacto (issue #262, spec #260, CONTEXT.md "Siguiente contacto"):
+// compromiso acordado con el prospecto sobre CUANDO y POR DONDE lo vamos a
+// contactar. Vive en p.eventos como { tipo:'siguiente_contacto', canal,
+// fecha_contacto, fecha, vendedor }, igual que la reunion, y como ella el
+// ULTIMO REGISTRADO manda (por `fecha` de registro, no por la fecha del
+// compromiso). No es una reunion de diagnostico: no tiene resultado que
+// registrar -- un toque posterior a la fecha lo cierra y la tarjeta vuelve a la
+// cadencia normal de su canal de origen.
+
+// Canal del siguiente contacto -- catalogo cerrado, distinto del canal de
+// ORIGEN del prospecto (CANALES): por donde se prometio el contacto.
+export const CANALES_SIGUIENTE_CONTACTO = ['WhatsApp', 'Llamada', 'Correo'];
+
+function ultimoSiguienteContacto(eventos) {
+  let s = null;
+  for (const e of eventos || []) {
+    if (e.tipo === 'siguiente_contacto' && (!s || new Date(e.fecha) > new Date(s.fecha))) s = e;
+  }
+  return s;
+}
+
+// Mientras la fecha es futura la cadencia se suprime (el filtro vive en
+// lib/seguimiento-prospectos.js).
+export function siguienteContactoFuturo(p, ahora) {
+  const s = ultimoSiguienteContacto(p && p.eventos);
+  if (!s || new Date(s.fecha_contacto) <= ahora) return null;
+  return { canal: s.canal, fecha: s.fecha_contacto };
+}
+
+// Vencido: llego la fecha y ningun toque posterior al compromiso lo cerro. Desde
+// aqui corre la cadencia normal, contada desde la fecha del compromiso.
+export function siguienteContactoVencido(p, ahora) {
+  const s = ultimoSiguienteContacto(p && p.eventos);
+  if (!s || new Date(s.fecha_contacto) > ahora) return null;
+  const cerrado = (p && p.eventos || []).some(
+    e => e.tipo === 'toque' && new Date(e.fecha) > new Date(s.fecha_contacto)
+  );
+  return cerrado ? null : { canal: s.canal, fecha: s.fecha_contacto };
+}
+
 // Link wa.me en un tap: solo digitos, el celular del prospecto ya trae codigo de pais.
 export function buildWaLink(celular) {
   const digitos = String(celular || '').replace(/\D/g, '');
