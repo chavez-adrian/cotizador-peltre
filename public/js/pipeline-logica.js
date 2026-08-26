@@ -350,8 +350,14 @@ export const ACCIONES_NUEVO = [
   { label: 'Nuevo cliente', accion: 'nuevoCliente' },
 ];
 
-export function buildMenuNuevoHtml() {
-  return ACCIONES_NUEVO
+// Captura de expo (issue #267): el "+" es su UNICA entrada, y solo con evento
+// activo (CONTEXT.md "Captura de expo"). Va primero porque en feria es LA accion
+// del vendedor; fuera de feria el menu queda exactamente como siempre.
+const ACCION_NUEVO_EXPO = { label: 'Nuevo prospecto expo', accion: 'nuevoProspectoExpo' };
+
+export function buildMenuNuevoHtml(hayEventoActivo = false) {
+  const acciones = hayEventoActivo ? [ACCION_NUEVO_EXPO, ...ACCIONES_NUEVO] : ACCIONES_NUEVO;
+  return acciones
     .map(a => `<button class="btn btn-sm btn-secondary" onclick="${a.accion}()">${escapeHtml(a.label)}</button>`)
     .join('');
 }

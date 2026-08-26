@@ -870,8 +870,6 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-hoy">Volver</button>
   </header>
   <div style="padding:16px">
-    <!-- Captura de expo (issue #261): solo aparece con evento activo -->
-    <button class="btn btn-primary btn-sm" id="btn-expo-hoy" style="display:none;margin-bottom:12px">Captura de expo</button>
     <div style="font-size:13px;font-weight:600;color:var(--text-light);margin-bottom:8px">Prospectos por contactar</div>
     <div id="hoy-loading" style="color:var(--light);font-size:13px">Cargando...</div>
     <div id="hoy-cola"></div>
@@ -1033,15 +1031,18 @@
 </div>
 
 <!-- PIPELINE VIEW (issue #53): tablero unico de 7 etapas + conmutador lista/tablero -->
-<!-- CAPTURA DE EXPO (issue #261, spec #260): paso 1 con el prospecto enfrente y
-     paso 2 (la calificacion, issue #263) cuando se va. -->
+<!-- CAPTURA DE EXPO (issue #267, spec #266): UNA sola pantalla con los tres
+     bloques (Contacto / Calificacion opcional / Siguiente contacto) y el boton
+     Guardar fijo al pie. Se entra por el "+" ("Nuevo prospecto expo"), que solo
+     aparece con evento activo. -->
 <div id="expo-view" style="display:none">
   <header class="historial-header">
-    <h1 id="expo-titulo">Captura de expo</h1>
+    <h1 id="expo-titulo">Nuevo prospecto expo</h1>
     <button class="btn btn-sm btn-secondary" id="btn-volver-expo">Volver</button>
   </header>
-  <div style="padding:16px">
-    <div id="expo-paso1">
+  <div class="expo-cuerpo">
+    <div id="expo-form">
+      <div class="seccion-titulo">Contacto</div>
       <div class="form-group">
         <label>Celular (con c&oacute;digo de pa&iacute;s) *</label>
         <input type="tel" id="ex-celular" inputmode="tel" placeholder="55 1234 5678">
@@ -1051,60 +1052,62 @@
         <input type="text" id="ex-nombre" placeholder="Nombre (se acepta sin apellido)">
       </div>
       <div class="form-group">
-        <label>Ciudad *</label>
-        <div id="ex-ciudad-chips" style="margin-bottom:6px"></div>
-        <input type="text" id="ex-ciudad" placeholder="Otra ciudad">
-      </div>
-      <div class="form-group">
         <label>Tipo de cliente *</label>
         <div id="ex-tipo-chips" style="margin-bottom:6px"></div>
         <input type="text" id="ex-tipo-otro" placeholder="&iquest;Cu&aacute;l?" style="display:none">
       </div>
       <div class="form-group">
+        <label>Ciudad *</label>
+        <div id="ex-ciudad-chips" style="margin-bottom:6px"></div>
+        <input type="text" id="ex-ciudad" placeholder="Otra ciudad">
+      </div>
+      <div class="form-group">
+        <label>Nombre de la empresa o proyecto <span class="etiqueta-opcional">(opcional)</span></label>
+        <input type="text" id="ex-empresa">
+      </div>
+      <div class="form-group">
         <label>Nivel de inter&eacute;s</label>
         <div id="ex-interes-chips"></div>
       </div>
+
+      <!-- Calificacion (issue #263): toda opcional. Los campos los pinta
+           prospectos-logica.js, los mismos que la edicion inline de la tarjeta. -->
+      <div class="seccion-titulo">Calificaci&oacute;n <span class="etiqueta-opcional">(opcional)</span></div>
+      <div id="ex-campos"></div>
       <div class="form-group">
-        <label>Empresa (opcional)</label>
-        <input type="text" id="ex-empresa">
+        <label>Volumen de una primera orden</label>
+        <div id="ex-piezas-chips"></div>
+      </div>
+      <div class="form-group">
+        <label>Notas</label>
+        <div class="campo-dictado">
+          <textarea id="ex-notas" rows="2" placeholder="Lo que haya que recordar"></textarea>
+          <span id="ex-notas-mic"></span>
+        </div>
+      </div>
+
+      <div class="seccion-titulo">Siguiente contacto</div>
+      <div class="form-group">
+        <label>Por d&oacute;nde</label>
+        <div id="ex-canal-chips"></div>
+      </div>
+      <div class="form-group">
+        <label>Cu&aacute;ndo</label>
+        <input type="date" id="ex-sc-fecha">
       </div>
       <div class="form-group">
         <label>Asesor</label>
         <select id="ex-asesor"></select>
       </div>
       <div id="ex-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
-      <div id="ex-existente" style="margin-bottom:8px"></div>
-      <button class="btn btn-primary" id="btn-guardar-expo">Guardar prospecto</button>
+      <div id="ex-existente"></div>
     </div>
     <div id="expo-guardado" style="display:none"></div>
-    <!-- Paso 2 (issue #263): la calificacion cuando el prospecto se va. Todo
-         opcional -- se puede cerrar vacio y completarlo despues desde la
-         tarjeta. Los campos y los chips los pinta prospectos-logica.js. -->
-    <div id="expo-paso2" style="display:none">
-      <div id="ex2-quien" class="cot-card-meta" style="margin-bottom:8px"></div>
-      <div id="ex2-campos"></div>
-      <div class="form-group">
-        <label>Volumen de una primera orden</label>
-        <div id="ex2-piezas-chips"></div>
-      </div>
-      <div class="form-group">
-        <label>Notas</label>
-        <div class="campo-dictado">
-          <textarea id="ex2-notas" rows="2" placeholder="Lo que haya que recordar"></textarea>
-          <span id="ex2-notas-mic"></span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Siguiente contacto</label>
-        <div id="ex2-canal-chips" style="margin-bottom:6px"></div>
-        <input type="date" id="ex2-sc-fecha">
-      </div>
-      <div id="ex2-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
-      <div class="expo-acciones">
-        <button class="btn btn-primary" id="btn-guardar-calificacion">Guardar calificaci&oacute;n</button>
-        <button class="btn btn-secondary" id="btn-cerrar-calificacion">Dejarlo para despu&eacute;s</button>
-      </div>
-    </div>
+  </div>
+  <!-- Guardar fijo sobre el bottom-nav: el vendedor no busca el boton al final
+       de una pantalla larga (prototipo A, spec #266). -->
+  <div class="expo-guardar-fijo" id="expo-guardar-fijo">
+    <button class="btn btn-primary" id="btn-guardar-expo">Guardar prospecto</button>
   </div>
 </div>
 
@@ -1113,7 +1116,6 @@
     <h1>Pipeline</h1>
   </header>
   <div style="padding:16px">
-    <button class="btn btn-primary btn-sm" id="btn-expo-pipeline" style="display:none;margin-bottom:12px">Captura de expo</button>
     <span id="pipeline-modo" style="display:inline-flex;gap:4px;margin-bottom:12px">
       <button class="btn btn-sm btn-secondary" id="btn-pipeline-modo-lista">Lista</button>
       <button class="btn btn-sm btn-primary" id="btn-pipeline-modo-tablero">Tablero</button>

@@ -1083,13 +1083,13 @@ test('C8: un grupo de chips guarda su seleccion en el DOM, y el multi ademas el 
   assert.match(multi, />Resiste fuego\/horno</);
 });
 
-test('C9: los campos del paso 2 se comparten entre la captura y la edicion, con microfono en los textos libres', () => {
-  const html = buildCalificacionCamposHtml('ex2', CALIFICACION);
-  assert.match(html, /id="ex2-calificacion"/);
-  assert.match(html, /id="ex2-concepto"/);
-  assert.match(html, /id="ex2-tipo_clientes"/);
-  assert.match(html, /id="ex2-proveedor_peltre"/);
-  assert.match(html, /id="ex2-otro_valora"/);
+test('C9: los campos de la calificacion se comparten entre la pantalla de captura y la edicion, con microfono en los textos libres', () => {
+  const html = buildCalificacionCamposHtml('ex', CALIFICACION);
+  assert.match(html, /id="ex-calificacion"/);
+  assert.match(html, /id="ex-concepto"/);
+  assert.match(html, /id="ex-tipo_clientes"/);
+  assert.match(html, /id="ex-proveedor_peltre"/);
+  assert.match(html, /id="ex-otro_valora"/);
   // prellenado con lo capturado
   assert.match(html, /Cafetería de especialidad/);
   assert.match(html, /value="Cinsa"/);
@@ -1099,13 +1099,32 @@ test('C9: los campos del paso 2 se comparten entre la captura y la edicion, con 
   assert.match(html, /data-grupo="valora"/);
   // el microfono va SOLO en los campos de texto largo, no en los chips ni en "Otro"
   for (const campo of ['concepto', 'tipo_clientes', 'proveedor_peltre']) {
-    assert.match(html, new RegExp(`data-mic="ex2-${campo}"`), `falta microfono en ${campo}`);
+    assert.match(html, new RegExp(`data-mic="ex-${campo}"`), `falta microfono en ${campo}`);
   }
-  assert.equal(html.includes('data-mic="ex2-otro_valora"'), false);
+  assert.equal(html.includes('data-mic="ex-otro_valora"'), false);
   assert.equal(html.includes('onclick'), false);
   // otro prefijo (la edicion de la tarjeta) no colisiona con la pantalla de expo
   assert.match(buildCalificacionCamposHtml('ed2-7', {}), /id="ed2-7-concepto"/);
   assert.match(buildMicHtml('ed2-7-notas'), /data-mic="ed2-7-notas"/);
+});
+
+// Orden acordado de la calificacion (issue #267, spec #266): los chips primero
+// -- se contestan de un toque con el prospecto enfrente -- y los textos libres
+// despues. Lo comparten la pantalla de captura y la edicion inline de la
+// tarjeta, asi que el orden se verifica una sola vez, aqui.
+test('C9b: los campos de calificacion salen en el orden acordado: chips antes que texto libre', () => {
+  const html = buildCalificacionCamposHtml('ex', {});
+  const posicion = marca => {
+    const i = html.indexOf(marca);
+    assert.notEqual(i, -1, `falta ${marca}`);
+    return i;
+  };
+  const orden = [
+    'data-grupo="anios"', 'data-grupo="sucursales"', 'data-grupo="usa_peltre"',
+    'id="ex-proveedor_peltre"', 'data-grupo="valora"', 'id="ex-otro_valora"',
+    'id="ex-concepto"', 'id="ex-tipo_clientes"',
+  ].map(posicion);
+  assert.deepEqual(orden, [...orden].sort((a, b) => a - b), 'el orden de los campos cambio');
 });
 
 test('C10: la edicion inline de la tarjeta incorpora el paso 2 y dicta las notas', () => {

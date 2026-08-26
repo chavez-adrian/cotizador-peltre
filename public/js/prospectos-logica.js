@@ -73,7 +73,7 @@ export function buildEdicionProspectoDatos(body) {
     const v = typeof b[k] === 'string' ? b[k].trim() : b[k];
     data[k] = v;
   }
-  // Calificacion del paso 2 (issue #263): se completa o se corrige desde la
+  // Calificacion (issue #263): se completa o se corrige desde la
   // tarjeta. Viaja entera (el formulario trae los valores actuales prellenados),
   // asi que reemplaza a la anterior en vez de fusionarse campo por campo.
   if (b.calificacion !== undefined) data.calificacion = buildCalificacion(b.calificacion);
@@ -369,10 +369,10 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // Siguiente contacto (issue #262): el compromiso vivo se lee de un vistazo en
   // la tarjeta, este o no suprimida la cadencia.
   const siguiente = activo ? siguienteContactoVivo(p, ahora) : null;
-  // Calificacion del paso 2 (issue #263): se lee en chips. Mientras no tenga
-  // ningun valor, el prospecto que dejo una feria avisa que le falta -- es lo
-  // que el vendedor completa al final del dia. Un prospecto que no vino de un
-  // evento no tiene paso 2 que reclamar.
+  // Calificacion (issue #263): se lee en chips. Mientras no tenga ningun valor,
+  // el prospecto que dejo una feria avisa que le falta -- es lo que el vendedor
+  // completa al final del dia. Un prospecto que no vino de un evento no tiene
+  // calificacion que reclamar.
   const calificacion = calificacionVacia(d.calificacion)
     ? (d.evento && editable ? '<span class="calificacion-badge">Calificación pendiente</span>' : '')
     : buildCalificacionChipsHtml(d.calificacion);
@@ -616,7 +616,7 @@ export function segmentoDeTipo(tipo) {
   return s === undefined ? null : s;
 }
 
-// Nivel de interes del paso 1 -> temperatura del prospecto (CONTEXT.md
+// Nivel de interes -> temperatura del prospecto (CONTEXT.md
 // "Captura de expo"): con el prospecto enfrente el vendedor no decide entre un
 // 2 y un 3, elige Bajo/Medio/Alto.
 export const NIVELES_INTERES = { Bajo: 1, Medio: 3, Alto: 5 };
@@ -630,7 +630,7 @@ function primerNombre(nombre) {
 }
 
 // Mensaje de WhatsApp de la expo (texto aprobado en el spec #260). Funcion PURA:
-// la usan la pantalla posterior al paso 1 y el boton WhatsApp de la tarjeta, y
+// la usan la pantalla posterior al guardado y el boton WhatsApp de la tarjeta, y
 // SOLO en prospectos con evento (los demas conservan el enlace vacio de siempre).
 // La liga del catalogo va sola en su renglon para que WhatsApp la muestre como
 // vista previa; el renglon en blanco separa el cierre.
@@ -724,11 +724,11 @@ export function buildChipsHtml(grupo, opciones, seleccion) {
   ).join('');
 }
 
-// --- Paso 2 de la captura de expo: la calificacion (issue #263, spec #260;
-// CONTEXT.md "Captura de expo") ---
+// --- La calificacion de la captura de expo (issue #263, spec #260; CONTEXT.md
+// "Captura de expo") ---
 //
-// Lo que se pregunta cuando el prospecto se va, todo OPCIONAL: se puede cerrar
-// vacio y completar despues desde la tarjeta. Vive en el jsonb `data` del
+// El bloque opcional de la pantalla de captura: se puede guardar vacio y
+// completar despues desde la tarjeta. Vive en el jsonb `data` del
 // prospecto bajo `calificacion`; las piezas estimadas NO entran aqui (van al
 // campo de siempre, `piezas_estimadas`) y las notas tampoco (`notas`).
 
@@ -764,7 +764,7 @@ export function etiquetaValora(clave) {
 // en la UI; `notas` no vive aqui, es el campo de siempre del prospecto).
 const CALIFICACION_TEXTOS = ['concepto', 'tipo_clientes', 'proveedor_peltre', 'otro_valora'];
 
-// Valida la calificacion del paso 2. Todo es opcional -- lo que se revisa es que
+// Valida la calificacion. Todo es opcional -- lo que se revisa es que
 // lo elegido pertenezca a su catalogo. La comparten el navegador y el servidor
 // (creacion y edicion del prospecto).
 export function validarCalificacion(cal) {
@@ -790,7 +790,7 @@ export function validarCalificacion(cal) {
 
 // Normaliza la calificacion para guardarla: recorta los textos, suelta lo que
 // viene vacio y CONSERVA EL ORDEN de valora (es el dato: que dijo primero el
-// prospecto). Devuelve {} cuando el paso 2 se cerro sin capturar nada.
+// prospecto). Devuelve {} cuando no se capturo nada.
 export function buildCalificacion(cal) {
   const c = cal && typeof cal === 'object' && !Array.isArray(cal) ? cal : {};
   const limpia = {};
@@ -805,14 +805,14 @@ export function buildCalificacion(cal) {
   return limpia;
 }
 
-// "Calificacion pendiente" (CONTEXT.md "Captura de expo": el paso 2 se puede
-// dejar para despues): la calificacion no existe o no tiene ningun valor.
+// "Calificacion pendiente" (CONTEXT.md "Captura de expo": la calificacion se
+// puede dejar para despues): no existe o no tiene ningun valor.
 export function calificacionVacia(cal) {
   return Object.keys(buildCalificacion(cal)).length === 0;
 }
 
-// El siguiente contacto (#262) tambien se captura DENTRO del paso 2, en el mismo
-// body de la creacion o de la edicion del prospecto. La regla es una sola y vive
+// El siguiente contacto (#262) tambien se captura DENTRO de la pantalla, en el
+// mismo body de la creacion o de la edicion del prospecto. La regla es una sola y vive
 // aqui: la comparten POST /api/prospectos/:id/siguiente-contacto, la captura y
 // la edicion. Opcional: sin compromiso en el body no hay nada que validar.
 export function validarSiguienteContacto(sc, ahora = new Date()) {
@@ -863,8 +863,8 @@ export function buildCalificacionChipsHtml(cal) {
   return partes.join('');
 }
 
-// Chips del paso 2: a diferencia de los del paso 1 (buildChipsHtml, #261), su
-// estado vive EN EL DOM -- la clase chip-activo y, en los grupos de multi
+// Chips de la calificacion: a diferencia de los del bloque Contacto
+// (buildChipsHtml, #261), su estado vive EN EL DOM -- la clase chip-activo y, en los grupos de multi
 // seleccion, el orden en `data-orden`. Asi el mismo grupo sirve en la pantalla
 // de expo y en la edicion inline de la tarjeta, que se re-pinta con la lista y
 // no tiene donde guardar una copia en JS. Sin `onclick` inline: un listener
@@ -896,11 +896,13 @@ export function buildMicHtml(destino) {
   return `<button type="button" class="btn-mic" data-mic="${escapeHtml(destino)}" title="Dictar">&#127908;</button>`;
 }
 
-// Campos del paso 2, UNA sola vez: los pinta la pantalla de la captura de expo
-// (prefijo "ex2") y la edicion inline de la tarjeta (prefijo "ed2-<id>", que ahi
-// completa lo que el stand o el importador no trajeron). Todo opcional: se puede
-// guardar vacio. Las piezas estimadas y las notas NO viven aqui -- son campos de
-// siempre del prospecto y cada pantalla ya los trae.
+// Campos de la calificacion, UNA sola vez: los pinta la pantalla de la captura
+// de expo (prefijo "ex") y la edicion inline de la tarjeta (prefijo "ed2-<id>",
+// que ahi completa lo que el stand o el importador no trajeron). Todo opcional:
+// se puede guardar vacio. El ORDEN es el acordado en #267 -- los chips primero,
+// que se contestan de un toque, y los textos libres al final. Las piezas
+// estimadas y las notas NO viven aqui: son campos de siempre del prospecto y
+// cada pantalla ya los trae.
 export function buildCalificacionCamposHtml(prefijo, cal) {
   const c = cal || {};
   const id = campo => `${prefijo}-${campo}`;
@@ -915,8 +917,6 @@ export function buildCalificacionCamposHtml(prefijo, cal) {
       </div>`;
   return `
     <div class="calificacion-campos" id="${escapeHtml(prefijo)}-calificacion">
-      ${dictado('concepto', 'Concepto del negocio', '¿Qué vende, cómo es el lugar?')}
-      ${dictado('tipo_clientes', '¿A qué clientes atiende?', '¿Quién le compra?')}
       <div class="form-group">
         <label>Años operando</label>
         ${buildGrupoChipsHtml('anios', ANIOS_OPERANDO, c.anios)}
@@ -938,6 +938,8 @@ export function buildCalificacionCamposHtml(prefijo, cal) {
         ${buildGrupoChipsHtml('valora', VALORA, c.valora, true)}
         <input type="text" id="${escapeHtml(id('otro_valora'))}" value="${escapeHtml(c.otro_valora || '')}" placeholder="Otro, ¿cuál?">
       </div>
+      ${dictado('concepto', 'Concepto del negocio', '¿Qué vende, cómo es el lugar?')}
+      ${dictado('tipo_clientes', '¿A qué clientes atiende?', '¿Quién le compra?')}
     </div>
   `;
 }

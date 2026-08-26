@@ -5089,7 +5089,6 @@ async function showPipeline() {
     // permiso de asignacion: quien lo tiene necesita el catalogo de vendedores
     // para el selector. Quien no lo tiene ni siquiera recibe esas tarjetas.
     await cargarPermisoAsignacion();
-    actualizarBotonesExpo();
     loadingEl.style.display = 'none';
     renderPipeline();
   } catch (e) {
@@ -5473,7 +5472,6 @@ async function showHoy() {
     // La cola puede traer tarjetas No Asignado (#156): su unica accion es
     // asignarles dueno, con el mismo control (y el mismo catalogo) del tablero.
     await cargarPermisoAsignacion();
-    actualizarBotonesExpo();
     loadingEl.style.display = 'none';
     actualizarBadgeSeguimiento(cola.length);
     colaEl.innerHTML = buildColaHoyHtml(cola, {
@@ -5718,7 +5716,7 @@ async function agendarReunionProspecto(id) {
 // es UTC-6 fijo desde que Mexico elimino el horario de verano en 2022). Se
 // expone a window JUNTO a su declaracion (trampa del onclick inline, #112).
 // El paso a instante lo hace un solo lugar: lo comparten este boton de la
-// tarjeta y el siguiente contacto del paso 2 de la expo (#263).
+// tarjeta y el siguiente contacto de la captura de expo (#263).
 function instanteSiguienteContacto(dia) {
   return new Date(`${dia}T09:00:00-06:00`).toISOString();
 }
@@ -5791,8 +5789,8 @@ async function guardarEdicionProspecto(id) {
   };
   const body = { nombre: val('nombre'), ciudad: val('ciudad') };
   for (const k of EDICION_OPCIONALES) body[k] = val(k);
-  // Paso 2 (#263): la tarjeta es donde se completa o se corrige la calificacion
-  // -- lo que el stand no alcanzo a preguntar y lo que el importador no trae.
+  // La tarjeta es donde se completa o se corrige la calificacion (#263): lo que
+  // el stand no alcanzo a preguntar y lo que el importador no trae.
   body.calificacion = leerCalificacion(document.getElementById(`pr-edicion-${id}`), `ed2-${id}`);
   const error = validarEdicionProspecto(body);
   if (error) { alert(error); return; }
@@ -6123,18 +6121,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (menu) menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
   });
   // Boton + global (issue #54): visible en todos los destinos; ofrece "Nueva
-  // cotizacion" y "Nuevo prospecto". El menu se arma con la logica pura
+  // cotizacion", "Nuevo prospecto", "Nuevo cliente" y, solo con evento activo,
+  // "Nuevo prospecto expo" (#267). El menu se arma con la logica pura
   // (buildMenuNuevoHtml); cada boton dispara la funcion global homonima.
-  document.getElementById('nav-add')?.addEventListener('click', () => {
+  document.getElementById('nav-add')?.addEventListener('click', async () => {
     cerrarMenuMas();
     const menu = document.getElementById('nav-nuevo-menu');
     if (!menu) return;
-    if (menu.style.display === 'none') {
-      menu.innerHTML = buildMenuNuevoHtml();
-      menu.style.display = 'flex';
-    } else {
-      menu.style.display = 'none';
-    }
+    if (menu.style.display !== 'none') { menu.style.display = 'none'; return; }
+    // El evento activo viaja en /api/catalogos (cacheado por sesion) y decide si
+    // el menu ofrece "Nuevo prospecto expo" (#267): sin leerlo aqui, el "+" no
+    // sabria de la feria hasta que el vendedor pasara por Hoy o Pipeline.
+    await cargarPermisoAsignacion();
+    menu.innerHTML = buildMenuNuevoHtml(!!expoState.evento);
+    menu.style.display = 'flex';
   });
   document.getElementById('mas-historial')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showHistorial(); });
   document.getElementById('mas-prospectos')?.addEventListener('click', () => { cerrarMenuMas(); marcarNavActivo('nav-mas'); showProspectos(); });
@@ -7484,29 +7484,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// === CAPTURA DE EXPO (issue #261, spec #260; CONTEXT.md "Captura de expo") ===
-// Paso 1: lo que se captura con el prospecto enfrente, en segundos. Paso 2
-// (issue #263): la calificacion cuando el prospecto se va, todo opcional. Todo
-// el bloque va junto al final del archivo a proposito: es una pantalla nueva, no
-// un cambio a las que ya existen.
+// === CAPTURA DE EXPO (issue #267, spec #266; CONTEXT.md "Captura de expo") ===
+// UNA sola pantalla -- contacto, calificacion (toda opcional) y siguiente
+// contacto -- que se guarda de una sola vez. Se entra por el "+" del cotizador
+// ("Nuevo prospecto expo"), que solo la ofrece con evento activo. Todo el bloque
+// va junto al final del archivo a proposito: es una pantalla propia, no un
+// cambio a las que ya existen.
 
 const expoState = {
   evento: null, catalogoUrl: '', asesores: [],
-  // Seleccion de los chips (catalogo cerrado): vive aqui, no en el DOM.
+  // Seleccion de los chips del bloque Contacto (catalogo cerrado): vive aqui, no
+  // en el DOM. Los de la calificacion son los otros chips, los que guardan su
+  // estado en el DOM porque la tarjeta tambien los pinta (alternarChipGrupo).
   ciudad: '', tipo_cliente: '', interes: '',
-  // Prospecto recien guardado: el paso 2 lo enriquece por PATCH.
-  prospecto: null,
 };
-
-// El boton de captura solo aparece con evento activo (CONTEXT.md "Evento"):
-// fuera de feria la app se ve como siempre. Lo llaman las vistas Hoy y Pipeline
-// despues de leer los catalogos.
-function actualizarBotonesExpo() {
-  for (const id of ['btn-expo-hoy', 'btn-expo-pipeline']) {
-    const el = document.getElementById(id);
-    if (el) el.style.display = expoState.evento ? 'inline-block' : 'none';
-  }
-}
 
 function expoVal(id) {
   const el = document.getElementById(id);
@@ -7531,31 +7522,45 @@ function ciudadExpo() {
   return expoState.ciudad || expoVal('ex-ciudad');
 }
 
+// El error vive al pie del formulario, junto al boton fijo: en una pantalla
+// larga hay que llevar al vendedor hasta el, o no lo ve.
 function mostrarErrorExpo(msg) {
   const el = document.getElementById('ex-error');
   el.textContent = msg || '';
   el.style.display = msg ? 'block' : 'none';
+  if (msg) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function abrirCapturaExpo() {
   if (!expoState.evento) return;
   ocultarTodasLasVistas();
   document.getElementById('expo-view').style.display = 'block';
-  document.getElementById('expo-titulo').textContent = `Captura de ${expoState.evento.nombre}`;
+  document.getElementById('expo-titulo').textContent = `Nuevo prospecto ${expoState.evento.nombre}`;
   expoState.ciudad = '';
   expoState.tipo_cliente = '';
   expoState.interes = '';
-  for (const id of ['ex-nombre', 'ex-ciudad', 'ex-empresa', 'ex-tipo-otro']) {
+  for (const id of ['ex-nombre', 'ex-ciudad', 'ex-empresa', 'ex-tipo-otro', 'ex-notas']) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   }
   fijarTelefono('ex-celular', '');
   mostrarErrorExpo(null);
   document.getElementById('ex-existente').innerHTML = '';
-  document.getElementById('expo-guardado').style.display = 'none';
-  document.getElementById('expo-paso2').style.display = 'none';
-  document.getElementById('expo-paso1').style.display = 'block';
   pintarChipsExpo();
+  // Calificacion: los mismos campos que la edicion inline de la tarjeta y en el
+  // mismo orden (buildCalificacionCamposHtml). Nace vacia -- todo es opcional.
+  document.getElementById('ex-campos').innerHTML = buildCalificacionCamposHtml('ex', {});
+  document.getElementById('ex-piezas-chips').innerHTML =
+    buildGrupoChipsHtml('piezas_estimadas', PIEZAS_ESTIMADAS, '');
+  document.getElementById('ex-notas-mic').innerHTML = buildMicHtml('ex-notas');
+  // Siguiente contacto: la fecha llega prellenada con el primer dia habil
+  // despues de la feria (CONTEXT.md "Siguiente contacto") y el canal con
+  // WhatsApp, para que el compromiso por omision este COMPLETO. Sin fecha
+  // sugerida no se prellena ninguno de los dos: medio compromiso no se guarda.
+  const dia = (expoState.evento && expoState.evento.siguienteContactoSugerido) || '';
+  document.getElementById('ex-sc-fecha').value = dia;
+  document.getElementById('ex-canal-chips').innerHTML =
+    buildGrupoChipsHtml('canal', CANALES_SIGUIENTE_CONTACTO, dia ? 'WhatsApp' : '');
   // Asesor: por omision quien captura; en la expo se puede capturar a nombre de
   // otro (los formatos en papel se transcriben esa noche).
   const yo = state.user?.name || '';
@@ -7563,10 +7568,34 @@ function abrirCapturaExpo() {
   document.getElementById('ex-asesor').innerHTML = asesores.map(a =>
     `<option value="${escapeHtml(a)}"${a === yo ? ' selected' : ''}>${escapeHtml(a)}</option>`
   ).join('');
+  document.getElementById('expo-form').style.display = 'block';
+  document.getElementById('expo-guardar-fijo').style.display = 'block';
+  document.getElementById('expo-guardado').style.display = 'none';
   document.getElementById('ex-celular').focus();
 }
 
-function leerFormularioExpo() {
+// UNICA entrada de la pantalla (issue #267): el "+" del cotizador. Lo invoca un
+// onclick inline del menu (buildMenuNuevoHtml), asi que se expone a window JUNTO
+// a su declaracion y ningun otro simbolo lleva este nombre (trampa #112).
+window.nuevoProspectoExpo = () => {
+  cerrarMenuNuevo();
+  abrirCapturaExpo();
+};
+
+// El siguiente contacto viaja en el MISMO body de la creacion: es parte de la
+// captura, no un guardado aparte. El dia elegido se manda como las 09:00 de
+// CDMX, igual que el boton de la tarjeta (#262).
+function siguienteContactoExpo(raiz) {
+  const canal = leerGrupoChips(raiz, 'canal');
+  const dia = expoVal('ex-sc-fecha');
+  if (!canal && !dia) return null;
+  if (!canal || !dia) return { error: 'El siguiente contacto lleva canal y fecha' };
+  return { canal, fecha: instanteSiguienteContacto(dia) };
+}
+
+// Todo lo que la pantalla captura, en un solo body: contacto, calificacion,
+// volumen de la primera orden, notas y siguiente contacto.
+function leerFormularioExpo(raiz) {
   const payload = buildProspectoPayload({
     celularCode: celCodeDeCampo('ex-celular'),
     celular: numeroDeCampo('ex-celular'),
@@ -7581,15 +7610,24 @@ function leerFormularioExpo() {
   if (expoState.interes) payload.interes = expoState.interes;
   const otro = expoVal('ex-tipo-otro').trim();
   if (otro) payload.tipo_cliente_otro = otro;
+  payload.calificacion = leerCalificacion(raiz, 'ex');
+  const piezas = leerGrupoChips(raiz, 'piezas_estimadas');
+  if (piezas) payload.piezas_estimadas = piezas;
+  const notas = expoVal('ex-notas').trim();
+  if (notas) payload.notas = notas;
   return payload;
 }
 
 async function guardarCapturaExpo() {
   mostrarErrorExpo(null);
   document.getElementById('ex-existente').innerHTML = '';
-  const payload = leerFormularioExpo();
+  const raiz = document.getElementById('expo-form');
+  const payload = leerFormularioExpo(raiz);
   const error = validarProspectoExpoBody(payload);
   if (error) { mostrarErrorExpo(error); return; }
+  const siguiente = siguienteContactoExpo(raiz);
+  if (siguiente && siguiente.error) { mostrarErrorExpo(siguiente.error); return; }
+  if (siguiente) payload.siguiente_contacto = siguiente;
   // Capa estricta (#176): avisa del numero raro y deja guardar al confirmar.
   if (!await confirmarTelefono('ex-celular')) return;
   try {
@@ -7616,12 +7654,13 @@ async function guardarCapturaExpo() {
   }
 }
 
-// Las tres acciones grandes con el prospecto todavia enfrente. WhatsApp abre el
-// chat con el mensaje aprobado ya escrito; Cotizar entra al cotizador con el
-// prospecto cargado (sin pedir canal: ya es prospecto); Calificar es el paso 2.
+// Las acciones de stand con el prospecto todavia enfrente (CONTEXT.md "Captura
+// de expo"). WhatsApp abre el chat con el mensaje aprobado ya escrito; Cotizar
+// entra al cotizador con el prospecto cargado (sin pedir canal: ya es
+// prospecto); Capturar otro devuelve la pantalla en blanco.
 function mostrarAccionesExpo(prospecto) {
-  expoState.prospecto = prospecto;
-  document.getElementById('expo-paso1').style.display = 'none';
+  document.getElementById('expo-form').style.display = 'none';
+  document.getElementById('expo-guardar-fijo').style.display = 'none';
   const cont = document.getElementById('expo-guardado');
   const wa = buildWaLinkProspecto(prospecto, expoState.catalogoUrl);
   cont.innerHTML = `
@@ -7632,19 +7671,18 @@ function mostrarAccionesExpo(prospecto) {
     <div class="expo-acciones" style="margin-top:16px">
       ${wa ? `<a href="${wa}" target="_blank" class="btn btn-primary">WhatsApp con el catálogo</a>` : ''}
       <button class="btn btn-primary" id="ex-cotizar">Cotizar</button>
-      <button class="btn btn-secondary" id="ex-calificar">Calificar (paso 2)</button>
       <button class="btn btn-secondary" id="ex-otro">Capturar otro</button>
     </div>
   `;
   cont.style.display = 'block';
   document.getElementById('ex-cotizar').addEventListener('click', () => abrirCotizadorConProspecto(prospecto));
-  document.getElementById('ex-calificar').addEventListener('click', abrirPaso2Expo);
   document.getElementById('ex-otro').addEventListener('click', abrirCapturaExpo);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // Entrar al cotizador con el prospecto ya cargado (variante B, #82). Lo
-// comparten la tarjeta del prospecto (window.cotizarProspecto) y la pantalla
-// posterior al paso 1.
+// comparten la tarjeta del prospecto (window.cotizarProspecto) y las acciones
+// posteriores al guardado de la expo.
 function abrirCotizadorConProspecto(p) {
   ocultarTodasLasVistas();
   document.getElementById('app-view').style.display = 'block';
@@ -7654,8 +7692,9 @@ function abrirCotizadorConProspecto(p) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// Los chips van por listener delegado y no por onclick inline: asi no hace falta
-// exponer ningun simbolo nuevo en window (trampa #112).
+// Los chips del bloque Contacto van por listener delegado y no por onclick
+// inline: asi no hace falta exponer ningun simbolo nuevo en window (trampa
+// #112). Los de la calificacion los atiende el listener global de mas abajo.
 document.addEventListener('DOMContentLoaded', () => {
   const vista = document.getElementById('expo-view');
   if (!vista) return;
@@ -7673,8 +7712,6 @@ document.addEventListener('DOMContentLoaded', () => {
     pintarChipsExpo();
   });
   document.getElementById('btn-guardar-expo').addEventListener('click', guardarCapturaExpo);
-  document.getElementById('btn-expo-hoy')?.addEventListener('click', abrirCapturaExpo);
-  document.getElementById('btn-expo-pipeline')?.addEventListener('click', abrirCapturaExpo);
   document.getElementById('btn-volver-expo').addEventListener('click', () => {
     ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
@@ -7682,11 +7719,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// === PASO 2 DE LA CAPTURA DE EXPO: LA CALIFICACION (issue #263, spec #260) ===
-// Lo que se pregunta cuando el prospecto se va, con el paso 1 ya guardado: la
-// calificacion enriquece al prospecto por PATCH. Todo es opcional -- "Dejarlo
-// para despues" cierra la captura sin guardar nada y la tarjeta lo reclama con
-// "Calificacion pendiente".
+// === LA CALIFICACION (issue #263, spec #260) ===
+// El bloque opcional de la pantalla de captura (issue #267), que la edicion
+// inline de la tarjeta vuelve a pintar para completarlo o corregirlo despues.
+// Lo de aqui es lo COMPARTIDO por las dos superficies: el dictado, los chips que
+// guardan su estado en el DOM y la lectura de los campos. Mientras la
+// calificacion siga vacia, la tarjeta lo reclama con "Calificacion pendiente".
 
 // Reconocimiento de voz del navegador (CONTEXT.md "Captura de expo": dictar en
 // vez de teclear parrafos en el stand). Sin soporte no hay boton: el CSS los
@@ -7720,9 +7758,9 @@ function dictarEnCampo(destino, boton) {
   rec.start();
 }
 
-// Chips del paso 2: el estado vive en el DOM (clase chip-activo y, en los grupos
-// multi, `data-orden`) porque el mismo grupo se pinta en la pantalla de expo y
-// dentro de la tarjeta, que se re-pinta con la lista.
+// Chips de la calificacion: el estado vive en el DOM (clase chip-activo y, en
+// los grupos multi, `data-orden`) porque el mismo grupo se pinta en la pantalla
+// de captura y dentro de la tarjeta, que se re-pinta con la lista.
 function alternarChipGrupo(chip) {
   const grupo = chip.parentElement;
   const estabaActivo = chip.classList.contains('chip-activo');
@@ -7751,8 +7789,8 @@ function leerGrupoChips(raiz, grupo) {
   return cont.dataset.multi === undefined ? (elegidos[0] || '') : elegidos;
 }
 
-// Lee los campos del paso 2 que pinta buildCalificacionCamposHtml. La comparten
-// la pantalla de expo (prefijo ex2) y la edicion inline (prefijo ed2-<id>).
+// Lee los campos que pinta buildCalificacionCamposHtml. La comparten la
+// pantalla de captura (prefijo ex) y la edicion inline (prefijo ed2-<id>).
 function leerCalificacion(raiz, prefijo) {
   const texto = campo => (document.getElementById(`${prefijo}-${campo}`)?.value || '').trim();
   const usa = leerGrupoChips(raiz, 'usa_peltre');
@@ -7769,70 +7807,7 @@ function leerCalificacion(raiz, prefijo) {
   return buildCalificacion(calificacion);
 }
 
-function mostrarErrorPaso2(msg) {
-  const el = document.getElementById('ex2-error');
-  el.textContent = msg || '';
-  el.style.display = msg ? 'block' : 'none';
-}
-
-function abrirPaso2Expo() {
-  const p = expoState.prospecto;
-  if (!p) return;
-  document.getElementById('expo-guardado').style.display = 'none';
-  document.getElementById('ex2-quien').textContent = `Calificación de ${p.nombre}`;
-  document.getElementById('ex2-campos').innerHTML = buildCalificacionCamposHtml('ex2', {});
-  document.getElementById('ex2-piezas-chips').innerHTML =
-    buildGrupoChipsHtml('piezas_estimadas', PIEZAS_ESTIMADAS, '');
-  document.getElementById('ex2-notas-mic').innerHTML = buildMicHtml('ex2-notas');
-  document.getElementById('ex2-notas').value = '';
-  document.getElementById('ex2-canal-chips').innerHTML =
-    buildGrupoChipsHtml('canal', CANALES_SIGUIENTE_CONTACTO, '');
-  // La fecha llega prellenada con el primer dia habil despues de la feria
-  // (CONTEXT.md "Siguiente contacto"); el vendedor la puede mover.
-  document.getElementById('ex2-sc-fecha').value =
-    (expoState.evento && expoState.evento.siguienteContactoSugerido) || '';
-  mostrarErrorPaso2(null);
-  document.getElementById('expo-paso2').style.display = 'block';
-}
-
-// El siguiente contacto viaja en el mismo PATCH: es parte del paso 2, no una
-// captura aparte. El dia elegido se manda como las 09:00 de CDMX, igual que el
-// boton de la tarjeta (#262).
-function siguienteContactoDelPaso2(raiz) {
-  const canal = leerGrupoChips(raiz, 'canal');
-  const dia = document.getElementById('ex2-sc-fecha').value;
-  if (!canal && !dia) return null;
-  if (!canal || !dia) return { error: 'El siguiente contacto lleva canal y fecha' };
-  return { canal, fecha: instanteSiguienteContacto(dia) };
-}
-
-async function guardarCalificacionExpo() {
-  const p = expoState.prospecto;
-  if (!p) return;
-  mostrarErrorPaso2(null);
-  const raiz = document.getElementById('expo-paso2');
-  const body = {
-    calificacion: leerCalificacion(raiz, 'ex2'),
-    piezas_estimadas: leerGrupoChips(raiz, 'piezas_estimadas'),
-    notas: document.getElementById('ex2-notas').value.trim(),
-  };
-  const siguiente = siguienteContactoDelPaso2(raiz);
-  if (siguiente && siguiente.error) { mostrarErrorPaso2(siguiente.error); return; }
-  if (siguiente) body.siguiente_contacto = siguiente;
-  try {
-    const res = await api(`/api/prospectos/${p.id}`, { method: 'PATCH', body });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      mostrarErrorPaso2(data.error || 'No se pudo guardar la calificación');
-      return;
-    }
-    abrirCapturaExpo();
-  } catch (e) {
-    mostrarErrorPaso2('Error de conexion');
-  }
-}
-
-// Un solo listener delegado para los chips del paso 2 y los botones de
+// Un solo listener delegado para los chips de la calificacion y los botones de
 // microfono, en cualquier pantalla: no hay que exponer nada en window (#112) ni
 // re-cablear la tarjeta cada vez que se re-pinta.
 document.addEventListener('DOMContentLoaded', () => {
@@ -7843,6 +7818,4 @@ document.addEventListener('DOMContentLoaded', () => {
     const chip = e.target.closest('.chips-grupo > [data-valor]');
     if (chip) alternarChipGrupo(chip);
   });
-  document.getElementById('btn-guardar-calificacion')?.addEventListener('click', guardarCalificacionExpo);
-  document.getElementById('btn-cerrar-calificacion')?.addEventListener('click', abrirCapturaExpo);
 });

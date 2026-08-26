@@ -755,12 +755,12 @@ function eventoActivoConfigurado() {
   return evento && evento.nombre ? evento : null;
 }
 
-// Paso 2 de la captura de expo (issue #263): la calificacion y el siguiente
+// Calificacion de la captura de expo (issue #263): ella y el siguiente
 // contacto viajan en el MISMO body que la captura y que la edicion -- con el
 // prospecto enfrente no hay dos guardados. Las dos rutas comparten validacion y
 // registro para que la regla no se bifurque; el compromiso es el mismo evento
 // que registra su propia ruta (#262).
-function errorPaso2(body) {
+function errorCalificacionYSiguienteContacto(body) {
   const cal = validarCalificacion(body.calificacion);
   if (cal) return cal;
   if (body.siguiente_contacto == null) return null;
@@ -790,8 +790,8 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   }
   const error = eventoBody ? validarProspectoExpoBody(body) : validarProspectoBody(body);
   if (error) return res.status(400).json({ error });
-  const errorPaso2Captura = errorPaso2(body);
-  if (errorPaso2Captura) return res.status(400).json({ error: errorPaso2Captura });
+  const errorCalificacionCaptura = errorCalificacionYSiguienteContacto(body);
+  if (errorCalificacionCaptura) return res.status(400).json({ error: errorCalificacionCaptura });
   // El asesor se valida contra el registro COMPLETO de vendedores, no contra el
   // catalogo filtrado por operam_id de /api/catalogos: quien solo transcribe
   // formatos de papel puede no tener id de Operam todavia.
@@ -828,8 +828,8 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   // Lo de la expo manda sobre los opcionales crudos: el segmento sale del tipo
   // de cliente y la temperatura del nivel de interes, en un solo lugar.
   Object.assign(data, buildDatosExpo(body));
-  // La calificacion del paso 2 (#263) es opcional: si se cerro vacia no se
-  // guarda la llave. Las piezas estimadas NO viven aqui -- son el opcional de
+  // La calificacion (#263) es opcional: si se guardo vacia no se escribe la
+  // llave. Las piezas estimadas NO viven aqui -- son el opcional de
   // siempre, que ya viajo arriba.
   const calificacion = buildCalificacion(body.calificacion);
   if (Object.keys(calificacion).length) data.calificacion = calificacion;
@@ -1180,9 +1180,9 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   }
   const error = validarEdicionProspecto(req.body);
   if (error) return res.status(400).json({ error });
-  // La edicion es el camino para completar despues el paso 2 (#263): lo que el
-  // stand no alcanzo a preguntar y lo que el importador no trae.
-  const errorCalificacion = errorPaso2(req.body || {});
+  // La edicion es el camino para completar despues la calificacion (#263): lo
+  // que el stand no alcanzo a preguntar y lo que el importador no trae.
+  const errorCalificacion = errorCalificacionYSiguienteContacto(req.body || {});
   if (errorCalificacion) return res.status(400).json({ error: errorCalificacion });
   await prospectosStore.actualizarDatos(p.id, buildEdicionProspectoDatos(req.body));
   await registrarSiguienteContactoDelBody(p.id, req.body || {}, req.user.name);

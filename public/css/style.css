@@ -1175,6 +1175,34 @@ body {
 .chip-activo { background: var(--primary); color: var(--white); border-color: var(--primary); }
 .expo-acciones .btn { display: block; width: 100%; margin-bottom: 10px; padding: 14px; font-size: 16px; text-align: center; }
 
+/* Pantalla unica de captura de expo (issue #267): tres bloques en una columna,
+   sin acordeones, y Guardar fijo sobre el bottom-nav para que el vendedor no lo
+   busque al final de una pantalla larga. */
+.expo-cuerpo { padding: 16px 16px 88px; }
+.seccion-titulo {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-light);
+  margin: 18px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.seccion-titulo:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+.etiqueta-opcional { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-light); }
+.expo-guardar-fijo {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 64px;
+  padding: 10px 16px;
+  background: var(--white);
+  border-top: 1px solid var(--border);
+  z-index: 890;
+}
+.expo-guardar-fijo .btn { width: 100%; padding: 14px; font-size: 16px; }
+
 /* Evento de feria (issue #261): el prospecto que dejo la expo se reconoce de
    un vistazo en la tarjeta y en el pipeline. */
 .evento-badge { background: oklch(0.9 0.07 200); color: oklch(0.34 0.09 220); }

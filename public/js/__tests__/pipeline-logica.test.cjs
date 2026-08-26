@@ -628,6 +628,25 @@ test('Q26: buildMenuNuevoHtml pinta un boton por accion con su disparador', () =
   assert.equal((html.match(/<button/g) || []).length, ACCIONES_NUEVO.length);
 });
 
+// Captura de expo (issue #267): el "+" es la UNICA entrada de la pantalla de
+// captura de expo, y solo con evento activo (CONTEXT.md "Captura de expo").
+// Fuera de feria el menu tiene que ser exactamente el de siempre.
+test('Q53: con evento activo el menu + ofrece Nuevo prospecto expo; sin evento es el de siempre', () => {
+  const sinEvento = buildMenuNuevoHtml(false);
+  assert.equal(sinEvento.includes('Nuevo prospecto expo'), false);
+  assert.equal(sinEvento, buildMenuNuevoHtml());
+  assert.equal((sinEvento.match(/<button/g) || []).length, ACCIONES_NUEVO.length);
+
+  const conEvento = buildMenuNuevoHtml(true);
+  assert.match(conEvento, /Nuevo prospecto expo/);
+  assert.match(conEvento, /onclick="nuevoProspectoExpo\(\)"/);
+  assert.equal((conEvento.match(/<button/g) || []).length, ACCIONES_NUEVO.length + 1);
+  // Las tres acciones de siempre siguen ahi, sin cambiar de disparador.
+  for (const accion of ACCIONES_NUEVO) {
+    assert.match(conEvento, new RegExp(`onclick="${accion.accion}\\(\\)"`));
+  }
+});
+
 // Asignar vendedor a una tarjeta en No Asignado (issue #57): la PRIMERA accion de
 // tarjeta del tablero (hasta ahora solo-lectura, #53). Solo aparece para el admin
 // (quien asigna) y solo sobre una oportunidad en no_asignado; al elegir un
