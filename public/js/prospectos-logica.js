@@ -864,8 +864,8 @@ export function buildCalificacionChipsHtml(cal) {
 }
 
 // Chips de la calificacion: a diferencia de los del bloque Contacto
-// (buildChipsHtml, #261), su estado vive EN EL DOM -- la clase chip-activo y, en los grupos de multi
-// seleccion, el orden en `data-orden`. Asi el mismo grupo sirve en la pantalla
+// (buildChipsHtml, #261), su estado vive EN EL DOM -- la clase chip-activo y,
+// en los grupos de multi seleccion, el orden en `data-orden`. Asi el mismo grupo sirve en la pantalla
 // de expo y en la edicion inline de la tarjeta, que se re-pinta con la lista y
 // no tiene donde guardar una copia en JS. Sin `onclick` inline: un listener
 // delegado en app.js los enciende y los apaga (trampa #112).

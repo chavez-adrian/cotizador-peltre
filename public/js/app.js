@@ -5011,7 +5011,11 @@ let pipelineEvento = '';
 let vendedoresPipeline = [];
 let puedeAsignarPipeline = false;
 
-async function cargarPermisoAsignacion() {
+// Un solo lector de /api/catalogos para las pantallas del pipeline: reparte lo
+// que llega en esa respuesta entre el control de asignar y el estado de la expo.
+// El nombre dice "catalogos" y no "permiso" porque de aqui sale tambien el
+// evento activo, que es lo que el boton "+" consulta (#267).
+async function cargarEstadoDeCatalogos() {
   try {
     const catalogos = await cargarCatalogos();
     vendedoresPipeline = catalogos.vendedores || [];
@@ -5088,7 +5092,7 @@ async function showPipeline() {
     // Asignar vendedor a una tarjeta No Asignado (issue #57, #156) exige el
     // permiso de asignacion: quien lo tiene necesita el catalogo de vendedores
     // para el selector. Quien no lo tiene ni siquiera recibe esas tarjetas.
-    await cargarPermisoAsignacion();
+    await cargarEstadoDeCatalogos();
     loadingEl.style.display = 'none';
     renderPipeline();
   } catch (e) {
@@ -5471,7 +5475,7 @@ async function showHoy() {
     const cola = res.ok ? await res.json() : [];
     // La cola puede traer tarjetas No Asignado (#156): su unica accion es
     // asignarles dueno, con el mismo control (y el mismo catalogo) del tablero.
-    await cargarPermisoAsignacion();
+    await cargarEstadoDeCatalogos();
     loadingEl.style.display = 'none';
     actualizarBadgeSeguimiento(cola.length);
     colaEl.innerHTML = buildColaHoyHtml(cola, {
@@ -6132,7 +6136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // El evento activo viaja en /api/catalogos (cacheado por sesion) y decide si
     // el menu ofrece "Nuevo prospecto expo" (#267): sin leerlo aqui, el "+" no
     // sabria de la feria hasta que el vendedor pasara por Hoy o Pipeline.
-    await cargarPermisoAsignacion();
+    await cargarEstadoDeCatalogos();
     menu.innerHTML = buildMenuNuevoHtml(!!expoState.evento);
     menu.style.display = 'flex';
   });
@@ -7535,7 +7539,7 @@ function abrirCapturaExpo() {
   if (!expoState.evento) return;
   ocultarTodasLasVistas();
   document.getElementById('expo-view').style.display = 'block';
-  document.getElementById('expo-titulo').textContent = `Nuevo prospecto ${expoState.evento.nombre}`;
+  document.getElementById('expo-titulo').textContent = `Nuevo prospecto expo · ${expoState.evento.nombre}`;
   expoState.ciudad = '';
   expoState.tipo_cliente = '';
   expoState.interes = '';
