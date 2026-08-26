@@ -1148,6 +1148,26 @@ test('#261: la captura de expo crea el prospecto en Por Cotizar con evento, tipo
   });
 });
 
+test('#268: el codigo postal de la captura de expo se guarda en los datos del prospecto', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ...CAPTURA_EXPO, cp: '72000' });
+    assert.equal(res.status, 201);
+    assert.equal(readProspectos()[0].data.cp, '72000');
+    // Sale en el prospecto que devuelve la lista: es el MISMO data.cp de la
+    // captura publica, el que la cotizacion de envio ya no vuelve a pedir.
+    const lista = await supertest(app).get('/api/prospectos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.equal(lista.body[0].data.cp, '72000');
+
+    // Sin CP (el prospecto no lo sabe) la llave no se escribe vacia.
+    writeProspectos([]);
+    await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA_EXPO);
+    assert.equal(readProspectos()[0].data.cp, undefined);
+  });
+});
+
 test('#261: en la captura de expo el tipo de cliente es obligatorio', async () => {
   await conEventoActivo(async () => {
     writeProspectos([]);

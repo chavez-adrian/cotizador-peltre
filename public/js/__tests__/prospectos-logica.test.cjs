@@ -814,11 +814,22 @@ test('E14: el historial nombra la captura de expo con su evento y quien la hizo'
   assert.equal(html.includes('captura_expo ·'), false);
 });
 
-test('E15: las ciudades frecuentes son un chip de un toque y el campo libre queda debajo', async () => {
-  const { CIUDADES_FRECUENTES } = await import('../prospectos-logica.js');
-  assert.deepEqual(CIUDADES_FRECUENTES, [
-    'CDMX', 'Estado de México', 'Guadalajara', 'Monterrey', 'Puebla', 'Querétaro',
-  ]);
+test('E15: la ciudad de la expo sale del codigo postal, no de un catalogo de ciudades frecuentes', async () => {
+  const mod = await import('../prospectos-logica.js');
+  assert.equal('CIUDADES_FRECUENTES' in mod, false);
+});
+
+test('E15b: en la pantalla de expo el CP es obligatorio salvo con "No sabe su CP", y la ciudad tiene que quedar', async () => {
+  const { validarCpCiudadExpo } = await import('../prospectos-logica.js');
+  // CP resuelto: la ciudad la puso el indice y no hay nada que reclamar.
+  assert.equal(validarCpCiudadExpo({ cp: '72000', ciudad: 'Puebla' }), null);
+  // Sin CP y sin la excepcion del stand: no se guarda.
+  assert.match(validarCpCiudadExpo({ cp: '', ciudad: 'Puebla' }), /postal/i);
+  // "No sabe su CP": la ciudad tecleada basta.
+  assert.equal(validarCpCiudadExpo({ cp: '', ciudad: 'Puebla', sinCp: true }), null);
+  // CP que no resuelve y nadie tecleo la ciudad: tampoco se guarda.
+  assert.match(validarCpCiudadExpo({ cp: '99999', ciudad: '' }), /ciudad/i);
+  assert.match(validarCpCiudadExpo({ cp: '', ciudad: '   ', sinCp: true }), /ciudad/i);
 });
 
 test('E16: buildChipsHtml marca el chip elegido y no usa onclick inline (#112)', async () => {

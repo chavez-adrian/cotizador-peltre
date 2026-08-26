@@ -718,12 +718,22 @@ export function buildWaLinkProspecto(p, catalogoUrl) {
   return `${base}?text=${encodeURIComponent(texto)}`;
 }
 
-// Ciudades frecuentes de la expo: chips de un toque para no teclear la ciudad
-// con el prospecto enfrente. El campo libre de ciudad sigue existiendo debajo
-// (la lista no pretende ser completa).
-export const CIUDADES_FRECUENTES = [
-  'CDMX', 'Estado de México', 'Guadalajara', 'Monterrey', 'Puebla', 'Querétaro',
-];
+// Codigo postal y ciudad en la PANTALLA de expo (issue #268). La ciudad se
+// deriva del CP con el mismo mecanismo de la captura publica, asi que lo que el
+// formulario exige es el CP -- salvo la salida propia del stand, "No sabe su
+// CP", que destapa el campo Ciudad y deja de pedirlo. Es una regla del
+// FORMULARIO, no del prospecto: el servidor sigue pidiendo solo la ciudad
+// (validarProspectoExpoBody), venga resuelta del indice o tecleada a mano, y
+// por eso vive en una funcion aparte que solo llama el navegador.
+export function validarCpCiudadExpo({ cp, ciudad, sinCp } = {}) {
+  if (!sinCp && !String(cp == null ? '' : cp).trim()) {
+    return 'El código postal es obligatorio (o marca "No sabe su CP")';
+  }
+  if (!String(ciudad == null ? '' : ciudad).trim()) {
+    return 'Falta la ciudad: confirma el código postal o escríbela';
+  }
+  return null;
+}
 
 // Chips de catalogo cerrado como botones con estado. Sin `onclick` inline: el
 // grupo (`data-chip`) y el valor (`data-valor`) los lee un listener delegado en

@@ -16,6 +16,7 @@ import {
   celCodeDelWidget, numeroDelWidget, avisoTelefonoWidget, opcionesWidget,
   cablearCapturaMx,
 } from './telefono-widget.js';
+import { ciudadPorCP } from './cp-ciudad.js';
 
 const form = document.getElementById('form-mayoreo');
 const exito = document.getElementById('exito');
@@ -220,41 +221,21 @@ const campoCiudadInput = document.getElementById('f-ciudad');
 const grupoCiudad = grupo('ciudad');
 const chipCp = document.getElementById('chip-cp');
 
-// Longitud minima antes de intentar resolver: 5 digitos en MX/US. En CA son 6
-// (el codigo COMPLETO, sin contar el espacio): lib/validar-cp.js -- el mismo
-// validador que el GET publico reusa -- exige el patron completo de 6
-// caracteres antes de aceptar el formato, aunque el indice solo guarde el FSA
-// de 3 (normalizarCp lo recorta despues de pasar la validacion). Disparar a los
-// 3 caracteres serviria un 400 en cada tecla intermedia sin resolver nunca.
-function longitudMinimaCP(pais) {
-  return pais === 'CA' ? 6 : 5;
-}
-
 function mostrarFallbackCiudad() {
   chipCp.hidden = true;
   grupoCiudad.hidden = false;
 }
 
+// El cuando-preguntar y la llamada viven en cp-ciudad.js (compartidos con la
+// captura de expo, #268); lo de aqui es solo como lo pinta este formulario.
 async function resolverCiudadPorCP() {
-  const cpTecleado = val('f-cp');
-  const pais = paisDelFormulario(leerFormulario());
-  if (cpTecleado.replace(/\s+/g, '').length < longitudMinimaCP(pais)) {
-    mostrarFallbackCiudad();
-    return;
-  }
-  try {
-    const res = await fetch(`/api/cp/${pais}/${encodeURIComponent(cpTecleado)}`);
-    if (!res.ok) { mostrarFallbackCiudad(); return; }
-    const { ciudad, estado } = await res.json();
-    campoCiudadInput.value = ciudad;
-    chipCp.textContent = `✓ ${ciudad}, ${estado}`;
-    chipCp.hidden = false;
-    grupoCiudad.hidden = true;
-    marcar('ciudad', null);
-  } catch (err) {
-    console.error('[mayoreo] no se pudo resolver el CP:', err.message);
-    mostrarFallbackCiudad();
-  }
+  const resuelto = await ciudadPorCP(paisDelFormulario(leerFormulario()), val('f-cp'));
+  if (!resuelto) { mostrarFallbackCiudad(); return; }
+  campoCiudadInput.value = resuelto.ciudad;
+  chipCp.textContent = `✓ ${resuelto.ciudad}, ${resuelto.estado}`;
+  chipCp.hidden = false;
+  grupoCiudad.hidden = true;
+  marcar('ciudad', null);
 }
 
 campoCp.addEventListener('input', resolverCiudadPorCP);

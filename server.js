@@ -828,6 +828,13 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   // Lo de la expo manda sobre los opcionales crudos: el segmento sale del tipo
   // de cliente y la temperatura del nivel de interes, en un solo lugar.
   Object.assign(data, buildDatosExpo(body));
+  // El codigo postal del que la pantalla de expo deriva la ciudad (#268) se
+  // guarda en el MISMO data.cp de la captura publica (buildCapturaMayoreo), no
+  // en una llave propia: es el dato que la cotizacion de envio ya no vuelve a
+  // pedir. La regla del servidor no cambia -- la ciudad sigue siendo lo
+  // obligatorio, venga del indice de CP o tecleada a mano.
+  const cp = String(body.cp == null ? '' : body.cp).trim();
+  if (cp) data.cp = cp;
   // La calificacion (#263) es opcional: si se guardo vacia no se escribe la
   // llave. Las piezas estimadas NO viven aqui -- son el opcional de
   // siempre, que ya viajo arriba.

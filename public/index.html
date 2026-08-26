@@ -1056,10 +1056,19 @@
         <div id="ex-tipo-chips" style="margin-bottom:6px"></div>
         <input type="text" id="ex-tipo-otro" placeholder="&iquest;Cu&aacute;l?" style="display:none">
       </div>
+      <!-- Codigo postal (issue #268): la ciudad se DERIVA del CP con el mismo
+           mecanismo de la captura publica (el pais sale del selector del
+           celular). "No sabe su CP" es la salida propia del stand: destapa
+           Ciudad y deja de exigir el codigo. -->
       <div class="form-group">
+        <label>C&oacute;digo postal *</label>
+        <input type="text" id="ex-cp" inputmode="numeric" autocomplete="postal-code" maxlength="7" placeholder="72000">
+        <span class="chip-cp" id="ex-chip-cp" style="display:none"></span>
+        <button type="button" class="enlace-sin-cp" id="ex-sin-cp">No sabe su CP</button>
+      </div>
+      <div class="form-group" id="ex-grupo-ciudad" style="display:none">
         <label>Ciudad *</label>
-        <div id="ex-ciudad-chips" style="margin-bottom:6px"></div>
-        <input type="text" id="ex-ciudad" placeholder="Otra ciudad">
+        <input type="text" id="ex-ciudad" placeholder="Ciudad">
       </div>
       <div class="form-group">
         <label>Nombre de la empresa o proyecto <span class="etiqueta-opcional">(opcional)</span></label>

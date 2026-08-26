@@ -1191,6 +1191,33 @@ body {
 }
 .seccion-titulo:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
 .etiqueta-opcional { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-light); }
+/* Ciudad por codigo postal en la captura de expo (issue #268): el chip confirma
+   lo que dijo el indice -- la ciudad se ve, no se pide dos veces -- y el enlace
+   "No sabe su CP" es la salida del stand, discreta y siempre a la mano. */
+.chip-cp {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary);
+  background: var(--primary-light);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.enlace-sin-cp {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .expo-guardar-fijo {
   position: fixed;
   left: 0;

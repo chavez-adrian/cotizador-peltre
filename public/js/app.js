@@ -41,6 +41,7 @@ import {
   fijarTelefono,
   confirmarTelefono,
 } from './telefono-widget.js';
+import { ciudadPorCP } from './cp-ciudad.js';
 import {
   CANALES,
   PIEZAS_ESTIMADAS,
@@ -59,10 +60,10 @@ import {
   validarEdicionProspecto,
   TIPOS_CLIENTE,
   NIVELES_INTERES,
-  CIUDADES_FRECUENTES,
   buildChipsHtml,
   segmentoDeTipo,
   validarProspectoExpoBody,
+  validarCpCiudadExpo,
   buildWaLinkProspecto,
   CANALES_SIGUIENTE_CONTACTO,
   buildCalificacion,
@@ -7502,7 +7503,10 @@ const expoState = {
   // Seleccion de los chips del bloque Contacto (catalogo cerrado): vive aqui, no
   // en el DOM. Los de la calificacion son los otros chips, los que guardan su
   // estado en el DOM porque la tarjeta tambien los pinta (alternarChipGrupo).
-  ciudad: '', tipo_cliente: '', interes: '',
+  tipo_cliente: '', interes: '',
+  // "No sabe su CP" (issue #268): la salida del stand que destapa Ciudad y deja
+  // de exigir el codigo postal.
+  sinCp: false,
 };
 
 function expoVal(id) {
@@ -7511,8 +7515,6 @@ function expoVal(id) {
 }
 
 function pintarChipsExpo() {
-  document.getElementById('ex-ciudad-chips').innerHTML =
-    buildChipsHtml('ciudad', CIUDADES_FRECUENTES, expoState.ciudad);
   document.getElementById('ex-tipo-chips').innerHTML =
     buildChipsHtml('tipo_cliente', TIPOS_CLIENTE, expoState.tipo_cliente);
   document.getElementById('ex-interes-chips').innerHTML =
@@ -7522,10 +7524,29 @@ function pintarChipsExpo() {
     expoState.tipo_cliente === 'Otro' ? 'block' : 'none';
 }
 
-// La ciudad sale del chip o del campo libre de abajo, nunca de los dos: elegir
-// chip vacia el campo y teclear el campo suelta el chip.
-function ciudadExpo() {
-  return expoState.ciudad || expoVal('ex-ciudad');
+// Ciudad por codigo postal (issue #268), el mismo mecanismo de la captura
+// publica: el pais sale del selector de pais del celular (el prospecto de fuera
+// teclea su ZIP), y al resolver, el chip confirma "Ciudad, Estado" y el campo
+// Ciudad guarda por detras lo que dijo el indice, TAL CUAL. Cuando no resuelve
+// -- formato invalido, CP fuera del indice o falla de red -- el campo Ciudad se
+// destapa como respaldo y el vendedor la teclea.
+function mostrarCiudadExpo(visible) {
+  document.getElementById('ex-grupo-ciudad').style.display = visible ? 'block' : 'none';
+}
+
+async function resolverCiudadPorCpExpo() {
+  const pais = paisDesdeCodigoTelefono(celCodeDeCampo('ex-celular'));
+  const resuelto = await ciudadPorCP(pais, expoVal('ex-cp'));
+  const chip = document.getElementById('ex-chip-cp');
+  if (!resuelto) {
+    chip.style.display = 'none';
+    mostrarCiudadExpo(true);
+    return;
+  }
+  document.getElementById('ex-ciudad').value = resuelto.ciudad;
+  chip.textContent = `✓ ${resuelto.ciudad}, ${resuelto.estado}`;
+  chip.style.display = 'inline-flex';
+  mostrarCiudadExpo(false);
 }
 
 // El error vive al pie del formulario, junto al boton fijo: en una pantalla
@@ -7542,13 +7563,18 @@ function abrirCapturaExpo() {
   ocultarTodasLasVistas();
   document.getElementById('expo-view').style.display = 'block';
   document.getElementById('expo-titulo').textContent = `Nuevo prospecto expo · ${expoState.evento.nombre}`;
-  expoState.ciudad = '';
   expoState.tipo_cliente = '';
   expoState.interes = '';
-  for (const id of ['ex-nombre', 'ex-ciudad', 'ex-empresa', 'ex-tipo-otro', 'ex-notas']) {
+  expoState.sinCp = false;
+  for (const id of ['ex-nombre', 'ex-cp', 'ex-ciudad', 'ex-empresa', 'ex-tipo-otro', 'ex-notas']) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   }
+  // El bloque del CP vuelve al arranque: chip apagado, Ciudad tapada (solo sale
+  // de respaldo) y la salida del stand otra vez a la mano.
+  document.getElementById('ex-chip-cp').style.display = 'none';
+  document.getElementById('ex-sin-cp').style.display = 'block';
+  mostrarCiudadExpo(false);
   fijarTelefono('ex-celular', '');
   mostrarErrorExpo(null);
   document.getElementById('ex-existente').innerHTML = '';
@@ -7608,11 +7634,15 @@ function leerFormularioExpo(raiz) {
     celularCode: celCodeDeCampo('ex-celular'),
     celular: numeroDeCampo('ex-celular'),
     nombre: expoVal('ex-nombre'),
-    ciudad: ciudadExpo(),
+    ciudad: expoVal('ex-ciudad'),
     canal: 'Feria/Expo',
     empresa: expoVal('ex-empresa'),
   });
   payload.evento = expoState.evento ? expoState.evento.nombre : '';
+  // El CP viaja a data.cp (el mismo de la captura publica) para que la
+  // cotizacion de envio no lo vuelva a pedir.
+  const cp = expoVal('ex-cp').trim();
+  if (cp) payload.cp = cp;
   payload.tipo_cliente = expoState.tipo_cliente;
   payload.asesor = expoVal('ex-asesor');
   if (expoState.interes) payload.interes = expoState.interes;
@@ -7631,6 +7661,10 @@ async function guardarCapturaExpo() {
   document.getElementById('ex-existente').innerHTML = '';
   const raiz = document.getElementById('expo-form');
   const payload = leerFormularioExpo(raiz);
+  // El CP se reclama ANTES que el resto: en esta pantalla la ciudad sale de el,
+  // asi que "la ciudad es obligatoria" senalaria un campo que esta tapado.
+  const errorCp = validarCpCiudadExpo({ cp: payload.cp, ciudad: payload.ciudad, sinCp: expoState.sinCp });
+  if (errorCp) { mostrarErrorExpo(errorCp); return; }
   const error = validarProspectoExpoBody(payload);
   if (error) { mostrarErrorExpo(error); return; }
   const siguiente = siguienteContactoExpo(raiz);
@@ -7711,13 +7745,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chip) return;
     const grupo = chip.dataset.chip;
     expoState[grupo] = expoState[grupo] === chip.dataset.valor ? '' : chip.dataset.valor;
-    if (grupo === 'ciudad' && expoState.ciudad) document.getElementById('ex-ciudad').value = '';
     pintarChipsExpo();
   });
-  document.getElementById('ex-ciudad').addEventListener('input', () => {
-    if (!expoState.ciudad) return;
-    expoState.ciudad = '';
-    pintarChipsExpo();
+  // Se intenta resolver con cada tecla (cp-ciudad.js decide cuando ya vale la
+  // pena preguntarle al indice) y otra vez al salir del campo. El pais cambia
+  // por el widget del celular, que dispara countrychange en su propio input.
+  const campoCpExpo = document.getElementById('ex-cp');
+  campoCpExpo.addEventListener('input', resolverCiudadPorCpExpo);
+  campoCpExpo.addEventListener('blur', resolverCiudadPorCpExpo);
+  document.getElementById('ex-celular').addEventListener('countrychange', resolverCiudadPorCpExpo);
+  // Salida del stand (CONTEXT.md "Captura de expo"): quien no sabe su CP dicta
+  // su ciudad y el codigo deja de pedirse. No se vuelve a ofrecer -- una vez
+  // relajado el requisito, el campo Ciudad ya es el que manda.
+  document.getElementById('ex-sin-cp').addEventListener('click', e => {
+    expoState.sinCp = true;
+    e.currentTarget.style.display = 'none';
+    mostrarCiudadExpo(true);
+    document.getElementById('ex-ciudad').focus();
   });
   document.getElementById('btn-guardar-expo').addEventListener('click', guardarCapturaExpo);
   document.getElementById('btn-volver-expo').addEventListener('click', () => {
