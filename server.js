@@ -1273,12 +1273,14 @@ app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Siguiente contacto (issue #262, spec #260, CONTEXT.md "Siguiente contacto"):
-// compromiso de canal + fecha con el prospecto ("te escribo el lunes"). Mismo
-// mecanismo de evento que la reunion y las mismas garantias (dueno o admin), con
-// dos diferencias: el canal es de catalogo cerrado propio (CANALES_SIGUIENTE_-
-// CONTACTO, distinto del canal de ORIGEN) y no hay resultado que registrar -- lo
-// cierra un toque posterior a la fecha. El ultimo registrado manda.
+// Siguiente contacto (issue #262, #270, spec #260, CONTEXT.md "Siguiente
+// contacto"): compromiso de canales + fecha con el prospecto ("te escribo el
+// lunes por WhatsApp y te mando el catalogo por correo" es UNO solo, con dos
+// canales). Mismo mecanismo de evento que la reunion y las mismas garantias
+// (dueno o admin), con dos diferencias: los canales son de catalogo cerrado
+// propio (CANALES_SIGUIENTE_CONTACTO, distinto del canal de ORIGEN) y no hay
+// resultado que registrar -- lo cierra un toque posterior a la fecha. El ultimo
+// registrado manda.
 app.post('/api/prospectos/:id/siguiente-contacto', authMiddleware, async (req, res) => {
   const p = await prospectoOperable(req, res);
   if (!p) return;

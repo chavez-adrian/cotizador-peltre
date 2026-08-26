@@ -10,7 +10,8 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml,
   contarPendientesProspectos,
   ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
-  CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido;
+  CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido,
+  validarSiguienteContacto, buildEventoSiguienteContacto;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
@@ -21,7 +22,8 @@ before(async () => {
     validarEdicionProspecto, buildEdicionProspectoDatos, buildEdicionProspectoFormHtml,
     contarPendientesProspectos,
     ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
-    CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido } = await import('../prospectos-logica.js'));
+    CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido,
+    validarSiguienteContacto, buildEventoSiguienteContacto } = await import('../prospectos-logica.js'));
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
@@ -835,18 +837,18 @@ test('E16: buildChipsHtml marca el chip elegido y no usa onclick inline (#112)',
 // mientras la fecha es futura suprime la cadencia; pasada la fecha sin toque
 // posterior la tarjeta pide cumplirlo. No tiene resultado que registrar.
 
-const SC_FUTURO = { tipo: 'siguiente_contacto', canal: 'WhatsApp', fecha_contacto: '2026-06-15T15:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
-const SC_VENCIDO = { tipo: 'siguiente_contacto', canal: 'Llamada', fecha_contacto: '2026-06-09T15:00:00.000Z', fecha: '2026-06-08T12:00:00.000Z', vendedor: 'Memo' };
+const SC_FUTURO = { tipo: 'siguiente_contacto', canales: ['WhatsApp'], fecha_contacto: '2026-06-15T15:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
+const SC_VENCIDO = { tipo: 'siguiente_contacto', canales: ['Llamada'], fecha_contacto: '2026-06-09T15:00:00.000Z', fecha: '2026-06-08T12:00:00.000Z', vendedor: 'Memo' };
 const toqueEl = fecha => ({ tipo: 'toque', fecha, vendedor: 'Memo' });
 
 test('SC1: el catalogo del canal del siguiente contacto es WhatsApp, Llamada y Correo', () => {
   assert.deepEqual(CANALES_SIGUIENTE_CONTACTO, ['WhatsApp', 'Llamada', 'Correo']);
 });
 
-test('SC2: siguienteContactoFuturo devuelve canal y fecha mientras la fecha no llega', () => {
+test('SC2: siguienteContactoFuturo devuelve canales y fecha mientras la fecha no llega', () => {
   assert.deepEqual(
     siguienteContactoFuturo({ ...PROSPECTO, eventos: [SC_FUTURO] }, AHORA),
-    { canal: 'WhatsApp', fecha: '2026-06-15T15:00:00.000Z' }
+    { canales: ['WhatsApp'], fecha: '2026-06-15T15:00:00.000Z' }
   );
   assert.equal(siguienteContactoFuturo({ ...PROSPECTO, eventos: [SC_VENCIDO] }, AHORA), null);
   assert.equal(siguienteContactoFuturo(PROSPECTO, AHORA), null);
@@ -855,13 +857,13 @@ test('SC2: siguienteContactoFuturo devuelve canal y fecha mientras la fecha no l
 test('SC3: siguienteContactoVencido aparece pasada la fecha; un toque posterior lo cierra', () => {
   assert.deepEqual(
     siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_VENCIDO] }, AHORA),
-    { canal: 'Llamada', fecha: '2026-06-09T15:00:00.000Z' }
+    { canales: ['Llamada'], fecha: '2026-06-09T15:00:00.000Z' }
   );
   assert.equal(siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_FUTURO] }, AHORA), null);
   // un toque ANTERIOR a la fecha del compromiso no lo cierra: el compromiso sigue vivo
   assert.deepEqual(
     siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_VENCIDO, toqueEl('2026-06-09T13:00:00.000Z')] }, AHORA),
-    { canal: 'Llamada', fecha: '2026-06-09T15:00:00.000Z' }
+    { canales: ['Llamada'], fecha: '2026-06-09T15:00:00.000Z' }
   );
   assert.equal(
     siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_VENCIDO, toqueEl('2026-06-10T13:00:00.000Z')] }, AHORA),
@@ -870,16 +872,16 @@ test('SC3: siguienteContactoVencido aparece pasada la fecha; un toque posterior 
 });
 
 test('SC4: manda el ultimo siguiente contacto REGISTRADO, aunque su fecha sea mas temprana', () => {
-  const lejano = { tipo: 'siguiente_contacto', canal: 'Correo', fecha_contacto: '2026-06-20T15:00:00.000Z', fecha: '2026-06-10T08:00:00.000Z', vendedor: 'Memo' };
-  const reagendado = { tipo: 'siguiente_contacto', canal: 'WhatsApp', fecha_contacto: '2026-06-13T15:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
+  const lejano = { tipo: 'siguiente_contacto', canales: ['Correo'], fecha_contacto: '2026-06-20T15:00:00.000Z', fecha: '2026-06-10T08:00:00.000Z', vendedor: 'Memo' };
+  const reagendado = { tipo: 'siguiente_contacto', canales: ['WhatsApp'], fecha_contacto: '2026-06-13T15:00:00.000Z', fecha: '2026-06-10T12:00:00.000Z', vendedor: 'Memo' };
   assert.deepEqual(
     siguienteContactoFuturo({ ...PROSPECTO, eventos: [lejano, reagendado] }, AHORA),
-    { canal: 'WhatsApp', fecha: '2026-06-13T15:00:00.000Z' }
+    { canales: ['WhatsApp'], fecha: '2026-06-13T15:00:00.000Z' }
   );
   // el ultimo registrado ya vencio: el anterior, todavia futuro, no revive
   assert.deepEqual(
     siguienteContactoVencido({ ...PROSPECTO, eventos: [SC_FUTURO, { ...SC_VENCIDO, fecha: '2026-06-10T14:00:00.000Z' }] }, AHORA),
-    { canal: 'Llamada', fecha: '2026-06-09T15:00:00.000Z' }
+    { canales: ['Llamada'], fecha: '2026-06-09T15:00:00.000Z' }
   );
   assert.equal(
     siguienteContactoFuturo({ ...PROSPECTO, eventos: [SC_FUTURO, { ...SC_VENCIDO, fecha: '2026-06-10T14:00:00.000Z' }] }, AHORA),
@@ -887,15 +889,17 @@ test('SC4: manda el ultimo siguiente contacto REGISTRADO, aunque su fecha sea ma
   );
 });
 
-test('SC5: la card activa ofrece registrar el siguiente contacto con canal y fecha', () => {
+test('SC5: la card activa ofrece registrar el siguiente contacto con varios canales y fecha', () => {
   const html = buildProspectoCardHtml(PROSPECTO);
-  assert.match(html, /id="pr-sc-canal-3"/);
+  // grupo de chips multi, con nombre propio por tarjeta (varias cards a la vez)
+  assert.match(html, /data-grupo="sc-canal-3" data-multi="1"/);
   assert.match(html, /id="pr-sc-fecha-3"/);
   assert.match(html, /type="date"/);
   assert.match(html, /registrarSiguienteContactoProspecto\(3\)/);
   for (const c of CANALES_SIGUIENTE_CONTACTO) assert.ok(html.includes(`>${c}<`), `falta canal ${c}`);
   const noUtil = buildProspectoCardHtml({ ...PROSPECTO, etapa: 'no_util' });
   assert.equal(noUtil.includes('registrarSiguienteContactoProspecto'), false);
+  assert.equal(noUtil.includes('data-grupo="sc-canal-3"'), false);
 });
 
 test('SC6: la card muestra el chip del compromiso vivo (futuro o vencido) y nada sin compromiso', () => {
@@ -917,7 +921,7 @@ test('SC6: la card muestra el chip del compromiso vivo (futuro o vencido) y nada
 
 test('SC7: el item de cola con el compromiso vencido trae la instruccion del dia', () => {
   const html = buildColaProspectosHtml([{
-    ...ITEM_COLA, siguienteContacto: { canal: 'WhatsApp', fecha: '2026-08-31T15:00:00.000Z' },
+    ...ITEM_COLA, siguienteContacto: { canales: ['WhatsApp'], fecha: '2026-08-31T15:00:00.000Z' },
   }]);
   assert.match(html, /siguiente-contacto-badge/);
   assert.match(html, /WhatsApp a Laura/);
@@ -930,12 +934,12 @@ test('SC7: el item de cola con el compromiso vencido trae la instruccion del dia
 
 test('SC8: la instruccion suma el evento del prospecto cuando la cola lo trae, escapado', () => {
   const html = buildColaProspectosHtml([{
-    ...ITEM_COLA, siguienteContacto: { canal: 'Llamada', fecha: '2026-08-31T15:00:00.000Z' },
+    ...ITEM_COLA, siguienteContacto: { canales: ['Llamada'], fecha: '2026-08-31T15:00:00.000Z' },
     evento: 'Abastur 2026',
   }]);
   assert.match(html, /Llamada a Laura — Abastur 2026/);
   const xss = buildColaProspectosHtml([{
-    ...ITEM_COLA, siguienteContacto: { canal: 'Llamada', fecha: '2026-08-31T15:00:00.000Z' },
+    ...ITEM_COLA, siguienteContacto: { canales: ['Llamada'], fecha: '2026-08-31T15:00:00.000Z' },
     evento: '<b>x</b>',
   }]);
   assert.equal(xss.includes('<b>x</b>'), false);
@@ -948,6 +952,57 @@ test('SC9: el historial nombra el evento del siguiente contacto con su canal y f
   assert.match(html, /Memo/);
   const xss = buildHistorialHtml({ ...PROSPECTO, eventos: [{ ...SC_FUTURO, vendedor: '<b>Memo</b>' }] });
   assert.equal(xss.includes('<b>Memo</b>'), false);
+});
+
+// === Issue #270 (CONTEXT.md "Siguiente contacto"): el compromiso es multicanal.
+// "Te escribo por WhatsApp y te mando el catalogo por correo" es UN compromiso
+// con dos canales y una sola fecha; el orden es el que se marco.
+
+test('SC10: la validacion exige canales no vacio de catalogo y fecha futura', () => {
+  const ahora = new Date('2026-06-10T12:00:00.000Z');
+  const futura = '2026-06-15T15:00:00.000Z';
+  assert.equal(validarSiguienteContacto({ canales: ['WhatsApp', 'Correo'], fecha: futura }, ahora), null);
+  for (const sc of [
+    { canales: [], fecha: futura },
+    { canales: ['Paloma mensajera'], fecha: futura },
+    { canales: ['WhatsApp', 'Paloma mensajera'], fecha: futura },
+    { canales: 'WhatsApp', fecha: futura },
+    { canal: 'WhatsApp', fecha: futura },
+    { canales: ['WhatsApp'] },
+    { canales: ['WhatsApp'], fecha: 'no-es-fecha' },
+    { canales: ['WhatsApp'], fecha: '2026-06-09T15:00:00.000Z' },
+  ]) {
+    assert.ok(validarSiguienteContacto(sc, ahora), `${JSON.stringify(sc)} debio rechazarse`);
+  }
+});
+
+test('SC11: el evento guarda los canales en el orden en que se marcaron', () => {
+  const ev = buildEventoSiguienteContacto(
+    { canales: ['Correo', 'WhatsApp'], fecha: '2026-06-15T15:00:00.000Z' },
+    'Memo', new Date('2026-06-10T12:00:00.000Z')
+  );
+  assert.equal(ev.tipo, 'siguiente_contacto');
+  assert.deepEqual(ev.canales, ['Correo', 'WhatsApp']);
+  assert.equal(ev.canal, undefined);
+  assert.equal(ev.fecha_contacto, '2026-06-15T15:00:00.000Z');
+  assert.equal(ev.fecha, '2026-06-10T12:00:00.000Z');
+  assert.equal(ev.vendedor, 'Memo');
+});
+
+test('SC12: el chip de la tarjeta, la instruccion de la cola Hoy y el historial unen los canales con " + "', () => {
+  const multi = { ...SC_FUTURO, canales: ['WhatsApp', 'Correo'] };
+  assert.match(buildProspectoCardHtml({ ...PROSPECTO, eventos: [multi] }, undefined, AHORA), /WhatsApp \+ Correo/);
+  assert.match(
+    buildColaProspectosHtml([{
+      ...ITEM_COLA, siguienteContacto: { canales: ['WhatsApp', 'Correo'], fecha: '2026-08-31T15:00:00.000Z' },
+      evento: 'Abastur 2026',
+    }]),
+    /WhatsApp \+ Correo a Laura — Abastur 2026/
+  );
+  assert.match(
+    buildHistorialHtml({ ...PROSPECTO, eventos: [multi] }),
+    /Siguiente contacto: WhatsApp \+ Correo el/
+  );
 });
 
 // === Issue #263 (spec #260, CONTEXT.md "Captura de expo"): paso 2, la

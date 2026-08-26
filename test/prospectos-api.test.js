@@ -887,14 +887,18 @@ test('re-agendar registra otro evento reunion y la ultima manda en la cola', asy
 // fecha es futura suprime la cadencia; llegada la fecha la tarjeta vuelve a la
 // cola con la instruccion. No tiene resultado que registrar.
 
-test('registrar el siguiente contacto guarda canal y fecha y saca al prospecto de la cola', async () => {
+test('registrar el siguiente contacto guarda los canales en orden y saca al prospecto de la cola', async () => {
   writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
   const res = await supertest(app).post('/api/prospectos/1/siguiente-contacto')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ canal: 'WhatsApp', fecha: FUTURO });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ canales: ['Correo', 'WhatsApp'], fecha: FUTURO });
   assert.equal(res.status, 200);
-  const ev = readProspectos()[0].eventos[0];
+  // el prospecto que devuelve la lista trae los canales en el orden que se mando
+  const lista = await supertest(app).get('/api/prospectos')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  const ev = lista.body[0].eventos[0];
   assert.equal(ev.tipo, 'siguiente_contacto');
-  assert.equal(ev.canal, 'WhatsApp');
+  assert.deepEqual(ev.canales, ['Correo', 'WhatsApp']);
+  assert.equal(ev.canal, undefined);
   assert.equal(ev.fecha_contacto, FUTURO);
   assert.equal(ev.vendedor, 'Memo');
   assert.ok(ev.fecha);
@@ -903,13 +907,17 @@ test('registrar el siguiente contacto guarda canal y fecha y saca al prospecto d
   assert.deepEqual(cola.body, []);
 });
 
-test('el siguiente contacto rechaza fecha pasada o ausente y canal fuera del catalogo con 400', async () => {
+test('el siguiente contacto rechaza fecha pasada o ausente, canal fuera del catalogo y el canal singular con 400', async () => {
   writeProspectos([prospectoDe('Memo')]);
   const cuerpos = [
-    { canal: 'WhatsApp', fecha: PASADO },
-    { canal: 'WhatsApp' },
-    { canal: 'WhatsApp', fecha: 'no-es-fecha' },
-    { canal: 'Paloma mensajera', fecha: FUTURO },
+    { canales: ['WhatsApp'], fecha: PASADO },
+    { canales: ['WhatsApp'] },
+    { canales: ['WhatsApp'], fecha: 'no-es-fecha' },
+    { canales: ['Paloma mensajera'], fecha: FUTURO },
+    { canales: ['WhatsApp', 'Paloma mensajera'], fecha: FUTURO },
+    { canales: [], fecha: FUTURO },
+    // el canal singular ya no existe en el modelo: sin canales el body es invalido
+    { canal: 'WhatsApp', fecha: FUTURO },
     { fecha: FUTURO },
   ];
   for (const body of cuerpos) {
@@ -923,16 +931,16 @@ test('el siguiente contacto rechaza fecha pasada o ausente y canal fuera del cat
 test('el siguiente contacto respeta visibilidad: admin OK, otro vendedor 403, inexistente 404, sin token 401', async () => {
   writeProspectos([prospectoDe('Memo')]);
   const ana = await supertest(app).post('/api/prospectos/1/siguiente-contacto')
-    .set('Authorization', `Bearer ${ANA_TOKEN}`).send({ canal: 'Llamada', fecha: FUTURO });
+    .set('Authorization', `Bearer ${ANA_TOKEN}`).send({ canales: ['Llamada'], fecha: FUTURO });
   assert.equal(ana.status, 403);
   const noExiste = await supertest(app).post('/api/prospectos/9/siguiente-contacto')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ canal: 'Llamada', fecha: FUTURO });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ canales: ['Llamada'], fecha: FUTURO });
   assert.equal(noExiste.status, 404);
   const sinToken = await supertest(app).post('/api/prospectos/1/siguiente-contacto')
-    .send({ canal: 'Llamada', fecha: FUTURO });
+    .send({ canales: ['Llamada'], fecha: FUTURO });
   assert.equal(sinToken.status, 401);
   const admin = await supertest(app).post('/api/prospectos/1/siguiente-contacto')
-    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ canal: 'Llamada', fecha: FUTURO });
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ canales: ['Llamada'], fecha: FUTURO });
   assert.equal(admin.status, 200);
   assert.equal(readProspectos()[0].eventos.length, 1);
 });
@@ -941,9 +949,9 @@ test('registrar otro siguiente contacto manda sobre el anterior', async () => {
   writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
   const lejano = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString();
   await supertest(app).post('/api/prospectos/1/siguiente-contacto')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ canal: 'Correo', fecha: lejano });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ canales: ['Correo'], fecha: lejano });
   await supertest(app).post('/api/prospectos/1/siguiente-contacto')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ canal: 'WhatsApp', fecha: FUTURO });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ canales: ['WhatsApp'], fecha: FUTURO });
   const eventos = readProspectos()[0].eventos.filter(e => e.tipo === 'siguiente_contacto');
   assert.equal(eventos.length, 2);
   const hoy = await supertest(app).get('/api/hoy')
@@ -1249,7 +1257,7 @@ test('#263: la captura de expo guarda la calificacion, las piezas y el siguiente
       .set('Authorization', `Bearer ${MEMO_TOKEN}`)
       .send({
         ...CAPTURA_EXPO, calificacion: CALIFICACION, piezas_estimadas: '+550',
-        notas: 'Pidió muestras', siguiente_contacto: { canal: 'WhatsApp', fecha: FUTURO },
+        notas: 'Pidió muestras', siguiente_contacto: { canales: ['WhatsApp', 'Correo'], fecha: FUTURO },
       });
     assert.equal(res.status, 201);
     const p = readProspectos()[0];
@@ -1260,7 +1268,7 @@ test('#263: la captura de expo guarda la calificacion, las piezas y el siguiente
     assert.equal(p.data.notas, 'Pidió muestras');
     const sc = p.eventos.find(e => e.tipo === 'siguiente_contacto');
     assert.ok(sc, 'el compromiso queda registrado como evento del prospecto');
-    assert.equal(sc.canal, 'WhatsApp');
+    assert.deepEqual(sc.canales, ['WhatsApp', 'Correo']);
     assert.equal(sc.fecha_contacto, FUTURO);
     assert.equal(sc.vendedor, 'Memo');
   });
@@ -1298,9 +1306,11 @@ test('#263: una calificacion fuera de catalogo se rechaza con 400 y no crea el p
 test('#263: el siguiente contacto del body de captura obedece la misma regla que su ruta', async () => {
   await conEventoActivo(async () => {
     for (const siguiente_contacto of [
-      { canal: 'WhatsApp', fecha: PASADO },
-      { canal: 'Paloma mensajera', fecha: FUTURO },
-      { canal: 'WhatsApp' },
+      { canales: ['WhatsApp'], fecha: PASADO },
+      { canales: ['Paloma mensajera'], fecha: FUTURO },
+      { canales: [], fecha: FUTURO },
+      { canal: 'WhatsApp', fecha: FUTURO },
+      { canales: ['WhatsApp'] },
     ]) {
       writeProspectos([]);
       const res = await supertest(app).post('/api/prospectos')
@@ -1338,15 +1348,15 @@ test('#263: la edicion tambien registra el siguiente contacto que venga en el bo
   writeProspectos([prospectoDe('Memo')]);
   const res = await supertest(app).patch('/api/prospectos/1')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ siguiente_contacto: { canal: 'Llamada', fecha: FUTURO } });
+    .send({ siguiente_contacto: { canales: ['Llamada', 'Correo'], fecha: FUTURO } });
   assert.equal(res.status, 200);
   const sc = readProspectos()[0].eventos.find(e => e.tipo === 'siguiente_contacto');
-  assert.equal(sc.canal, 'Llamada');
+  assert.deepEqual(sc.canales, ['Llamada', 'Correo']);
   assert.equal(sc.fecha_contacto, FUTURO);
 
   const invalido = await supertest(app).patch('/api/prospectos/1')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ siguiente_contacto: { canal: 'Llamada', fecha: PASADO } });
+    .send({ siguiente_contacto: { canales: ['Llamada'], fecha: PASADO } });
   assert.equal(invalido.status, 400);
   assert.equal(readProspectos()[0].eventos.filter(e => e.tipo === 'siguiente_contacto').length, 1);
 });

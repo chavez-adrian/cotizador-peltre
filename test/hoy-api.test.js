@@ -189,34 +189,34 @@ function conSiguienteContacto(evs) {
   return [{ ...prospectosFixture()[0], eventos: evs }];
 }
 
-function siguienteContacto(canal, fechaContacto, fechaRegistro) {
-  return { tipo: 'siguiente_contacto', canal, fecha_contacto: fechaContacto, fecha: fechaRegistro, vendedor: 'Memo' };
+function siguienteContacto(canales, fechaContacto, fechaRegistro) {
+  return { tipo: 'siguiente_contacto', canales, fecha_contacto: fechaContacto, fecha: fechaRegistro, vendedor: 'Memo' };
 }
 
 test('#262: con siguiente contacto futuro la tarjeta no aparece en la cola Hoy', async () => {
   writeJson(PROSPECTOS_PATH, conSiguienteContacto([
-    siguienteContacto('WhatsApp', new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString(), haceHoras(1)),
+    siguienteContacto(['WhatsApp', 'Correo'], new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString(), haceHoras(1)),
   ]));
   const res = await supertest(app).get('/api/hoy').set('Authorization', `Bearer ${MEMO_TOKEN}`);
   assert.equal(res.status, 200);
   assert.equal(res.body.some(i => i.tipo === 'prospecto'), false);
 });
 
-test('#262: llegada la fecha la tarjeta vuelve a la cola Hoy con el canal y la fecha del compromiso', async () => {
+test('#262/#270: llegada la fecha la tarjeta vuelve a la cola Hoy con los canales y la fecha del compromiso', async () => {
   const fechaCompromiso = haceHoras(1);
   writeJson(PROSPECTOS_PATH, conSiguienteContacto([
-    siguienteContacto('WhatsApp', fechaCompromiso, haceHoras(30)),
+    siguienteContacto(['WhatsApp', 'Correo'], fechaCompromiso, haceHoras(30)),
   ]));
   const res = await supertest(app).get('/api/hoy').set('Authorization', `Bearer ${MEMO_TOKEN}`);
   assert.equal(res.status, 200);
   const item = res.body.find(i => i.tipo === 'prospecto');
   assert.ok(item, 'el prospecto debio volver a la cola');
-  assert.deepEqual(item.siguienteContacto, { canal: 'WhatsApp', fecha: fechaCompromiso });
+  assert.deepEqual(item.siguienteContacto, { canales: ['WhatsApp', 'Correo'], fecha: fechaCompromiso });
 });
 
 test('#262: un toque posterior a la fecha cierra el compromiso y la tarjeta sigue en la cadencia normal', async () => {
   writeJson(PROSPECTOS_PATH, conSiguienteContacto([
-    siguienteContacto('Llamada', haceHoras(3), haceHoras(30)),
+    siguienteContacto(['Llamada'], haceHoras(3), haceHoras(30)),
     { tipo: 'toque', fecha: haceHoras(1), vendedor: 'Memo' },
   ]));
   const res = await supertest(app).get('/api/hoy').set('Authorization', `Bearer ${MEMO_TOKEN}`);

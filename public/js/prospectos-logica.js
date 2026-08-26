@@ -235,17 +235,19 @@ export function reunionPendienteResultado(p, ahora) {
   return reunionPendienteResultadoDe(p && p.eventos, ahora);
 }
 
-// Siguiente contacto (issue #262, spec #260, CONTEXT.md "Siguiente contacto"):
-// compromiso acordado con el prospecto sobre CUANDO y POR DONDE lo vamos a
-// contactar. Vive en p.eventos como { tipo:'siguiente_contacto', canal,
-// fecha_contacto, fecha, vendedor }, igual que la reunion, y como ella el
+// Siguiente contacto (issue #262 y #270, spec #260, CONTEXT.md "Siguiente
+// contacto"): compromiso acordado con el prospecto sobre CUANDO y POR DONDE lo
+// vamos a contactar. Vive en p.eventos como { tipo:'siguiente_contacto',
+// canales, fecha_contacto, fecha, vendedor }, igual que la reunion, y como ella el
 // ULTIMO REGISTRADO manda (por `fecha` de registro, no por la fecha del
 // compromiso). No es una reunion de diagnostico: no tiene resultado que
 // registrar -- un toque posterior a la fecha lo cierra y la tarjeta vuelve a la
 // cadencia normal de su canal de origen.
 
-// Canal del siguiente contacto -- catalogo cerrado, distinto del canal de
-// ORIGEN del prospecto (CANALES): por donde se prometio el contacto.
+// Canales del siguiente contacto -- catalogo cerrado, distinto del canal de
+// ORIGEN del prospecto (CANALES): por donde se prometio el contacto. El
+// compromiso admite VARIOS con una sola fecha (#270), en el orden en que se
+// acordaron.
 export const CANALES_SIGUIENTE_CONTACTO = ['WhatsApp', 'Llamada', 'Correo'];
 
 // Mientras la fecha es futura la cadencia se suprime (el filtro vive en
@@ -253,7 +255,7 @@ export const CANALES_SIGUIENTE_CONTACTO = ['WhatsApp', 'Llamada', 'Correo'];
 export function siguienteContactoFuturo(p, ahora) {
   const s = ultimoEventoDe(p && p.eventos, 'siguiente_contacto');
   if (!s || new Date(s.fecha_contacto) <= ahora) return null;
-  return { canal: s.canal, fecha: s.fecha_contacto };
+  return { canales: s.canales, fecha: s.fecha_contacto };
 }
 
 // Vencido: llego la fecha y ningun toque posterior al compromiso lo cerro. Desde
@@ -264,7 +266,7 @@ export function siguienteContactoVencido(p, ahora) {
   const cerrado = (p && p.eventos || []).some(
     e => e.tipo === 'toque' && new Date(e.fecha) > new Date(s.fecha_contacto)
   );
-  return cerrado ? null : { canal: s.canal, fecha: s.fecha_contacto };
+  return cerrado ? null : { canales: s.canales, fecha: s.fecha_contacto };
 }
 
 // Compromiso vivo de la tarjeta: el que todavia no llega o el que ya vencio y
@@ -277,14 +279,21 @@ function fechaDiaCorto(fecha) {
   return new Date(fecha).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+// Los canales del compromiso como se leen (#270): uno solo se ve como siempre y
+// varios se suman con " + ", en el orden en que se acordaron ("WhatsApp +
+// Correo"). Lo comparten el chip y la linea de tiempo.
+function etiquetaCanales(canales) {
+  return (canales || []).join(' + ');
+}
+
 // Chip del siguiente contacto: en la tarjeta es el compromiso a secas
-// ("WhatsApp - lun 31 ago"); en la cola Hoy es la instruccion del dia, con el
-// nombre del prospecto y, si viene, el evento del que salio ("WhatsApp a
-// Mariana - Abastur 2026 - lun 31 ago").
+// ("WhatsApp + Correo - lun 31 ago"); en la cola Hoy es la instruccion del dia,
+// con el nombre del prospecto y, si viene, el evento del que salio ("WhatsApp +
+// Correo a Mariana - Abastur 2026 - lun 31 ago").
 function chipSiguienteContactoHtml(sc, { nombre, evento } = {}) {
   const quien = nombre ? ` a ${escapeHtml(nombre)}` : '';
   const deEvento = evento ? ` — ${escapeHtml(evento)}` : '';
-  return `<span class="siguiente-contacto-badge">${escapeHtml(sc.canal)}${quien}${deEvento} · ${escapeHtml(fechaDiaCorto(sc.fecha))}</span>`;
+  return `<span class="siguiente-contacto-badge">${escapeHtml(etiquetaCanales(sc.canales))}${quien}${deEvento} · ${escapeHtml(fechaDiaCorto(sc.fecha))}</span>`;
 }
 
 // Link wa.me en un tap: solo digitos, el celular del prospecto ya trae codigo de pais.
@@ -315,7 +324,7 @@ const ETIQUETAS_EVENTO = {
   cotizacion: e => `Cotización #${escapeHtml(e.cotizacion_id)} · ${escapeHtml(e.vendedor)}`,
   reunion: e => `Reunión agendada para ${escapeHtml(fechaHora(e.fecha_reunion))} · ${escapeHtml(e.vendedor)}`,
   captura_expo: e => `Capturado en ${escapeHtml(e.evento)} · ${escapeHtml(e.vendedor)}`,
-  siguiente_contacto: e => `Siguiente contacto: ${escapeHtml(e.canal)} el ${escapeHtml(fechaCorta(e.fecha_contacto))} · ${escapeHtml(e.vendedor)}`,
+  siguiente_contacto: e => `Siguiente contacto: ${escapeHtml(etiquetaCanales(e.canales))} el ${escapeHtml(fechaCorta(e.fecha_contacto))} · ${escapeHtml(e.vendedor)}`,
 };
 
 function etiquetaEvento(e) {
@@ -383,10 +392,12 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
       `<input type="datetime-local" id="pr-reunion-${p.id}" class="btn-sm">` +
       `<button class="btn btn-secondary btn-sm" onclick="agendarReunionProspecto(${p.id})">Agendar reunión</button>`
     );
+    // Siguiente contacto multicanal (#270): los canales son chips de seleccion
+    // multiple, igual que en la pantalla de expo. El grupo lleva nombre propio
+    // por tarjeta porque el tablero pinta varias a la vez.
     pesadas.push(
-      `<select id="pr-sc-canal-${p.id}" class="btn-sm"><option value="">Canal...</option>` +
-      CANALES_SIGUIENTE_CONTACTO.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') +
-      `</select><input type="date" id="pr-sc-fecha-${p.id}" class="btn-sm">` +
+      buildGrupoChipsHtml(`sc-canal-${p.id}`, CANALES_SIGUIENTE_CONTACTO, [], true) +
+      `<input type="date" id="pr-sc-fecha-${p.id}" class="btn-sm">` +
       `<button class="btn btn-secondary btn-sm" onclick="registrarSiguienteContactoProspecto(${p.id})">Siguiente contacto</button>`
     );
     pesadas.push(
@@ -815,11 +826,14 @@ export function calificacionVacia(cal) {
 // El siguiente contacto (#262) tambien se captura DENTRO de la pantalla, en el
 // mismo body de la creacion o de la edicion del prospecto. La regla es una sola y vive
 // aqui: la comparten POST /api/prospectos/:id/siguiente-contacto, la captura y
-// la edicion. Opcional: sin compromiso en el body no hay nada que validar.
+// la edicion. Opcional: sin compromiso en el body no hay nada que validar. El
+// body lleva `canales` (arreglo, minimo uno); el `canal` singular ya no existe.
 export function validarSiguienteContacto(sc, ahora = new Date()) {
   const s = sc || {};
-  if (!CANALES_SIGUIENTE_CONTACTO.includes(s.canal)) {
-    return 'El canal del siguiente contacto es obligatorio (catálogo cerrado)';
+  const canales = s.canales;
+  if (!Array.isArray(canales) || !canales.length
+    || !canales.every(c => CANALES_SIGUIENTE_CONTACTO.includes(c))) {
+    return 'Los canales del siguiente contacto son obligatorios (catálogo cerrado)';
   }
   const f = s.fecha ? new Date(s.fecha) : null;
   if (!f || isNaN(f)) return 'La fecha del siguiente contacto es obligatoria';
@@ -832,7 +846,7 @@ export function validarSiguienteContacto(sc, ahora = new Date()) {
 // (ultimoEventoDe) se apoya en esa distincion.
 export function buildEventoSiguienteContacto(sc, vendedor, ahora = new Date()) {
   return {
-    tipo: 'siguiente_contacto', canal: sc.canal,
+    tipo: 'siguiente_contacto', canales: [...sc.canales],
     fecha_contacto: new Date(sc.fecha).toISOString(),
     fecha: ahora.toISOString(), vendedor,
   };

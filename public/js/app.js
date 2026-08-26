@@ -5726,13 +5726,15 @@ function instanteSiguienteContacto(dia) {
 }
 
 async function registrarSiguienteContactoProspecto(id) {
-  const canal = document.getElementById(`pr-sc-canal-${id}`)?.value || '';
+  // Multicanal (#270): los chips de la tarjeta llevan grupo propio por prospecto
+  // y devuelven los canales en el orden en que se marcaron.
+  const canales = leerGrupoChips(document, `sc-canal-${id}`) || [];
   const dia = document.getElementById(`pr-sc-fecha-${id}`)?.value || '';
-  if (!canal) { alert('Selecciona el canal del siguiente contacto'); return; }
+  if (!canales.length) { alert('Selecciona al menos un canal del siguiente contacto'); return; }
   if (!dia) { alert('Selecciona la fecha del siguiente contacto'); return; }
   try {
     const res = await api(`/api/prospectos/${id}/siguiente-contacto`, {
-      method: 'POST', body: { canal, fecha: instanteSiguienteContacto(dia) },
+      method: 'POST', body: { canales, fecha: instanteSiguienteContacto(dia) },
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -7558,13 +7560,15 @@ function abrirCapturaExpo() {
     buildGrupoChipsHtml('piezas_estimadas', PIEZAS_ESTIMADAS, '');
   document.getElementById('ex-notas-mic').innerHTML = buildMicHtml('ex-notas');
   // Siguiente contacto: la fecha llega prellenada con el primer dia habil
-  // despues de la feria (CONTEXT.md "Siguiente contacto") y el canal con
+  // despues de la feria (CONTEXT.md "Siguiente contacto") y los canales con
   // WhatsApp, para que el compromiso por omision este COMPLETO. Sin fecha
   // sugerida no se prellena ninguno de los dos: medio compromiso no se guarda.
+  // Los canales son multiples (#270): "te escribo y te mando el catalogo por
+  // correo" es UN compromiso, y el orden es el que se marco.
   const dia = (expoState.evento && expoState.evento.siguienteContactoSugerido) || '';
   document.getElementById('ex-sc-fecha').value = dia;
   document.getElementById('ex-canal-chips').innerHTML =
-    buildGrupoChipsHtml('canal', CANALES_SIGUIENTE_CONTACTO, dia ? 'WhatsApp' : '');
+    buildGrupoChipsHtml('canal', CANALES_SIGUIENTE_CONTACTO, dia ? ['WhatsApp'] : [], true);
   // Asesor: por omision quien captura; en la expo se puede capturar a nombre de
   // otro (los formatos en papel se transcriben esa noche).
   const yo = state.user?.name || '';
@@ -7590,11 +7594,11 @@ window.nuevoProspectoExpo = () => {
 // captura, no un guardado aparte. El dia elegido se manda como las 09:00 de
 // CDMX, igual que el boton de la tarjeta (#262).
 function siguienteContactoExpo(raiz) {
-  const canal = leerGrupoChips(raiz, 'canal');
+  const canales = leerGrupoChips(raiz, 'canal') || [];
   const dia = expoVal('ex-sc-fecha');
-  if (!canal && !dia) return null;
-  if (!canal || !dia) return { error: 'El siguiente contacto lleva canal y fecha' };
-  return { canal, fecha: instanteSiguienteContacto(dia) };
+  if (!canales.length && !dia) return null;
+  if (!canales.length || !dia) return { error: 'El siguiente contacto lleva al menos un canal y una fecha' };
+  return { canales, fecha: instanteSiguienteContacto(dia) };
 }
 
 // Todo lo que la pantalla captura, en un solo body: contacto, calificacion,
