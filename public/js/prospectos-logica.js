@@ -524,7 +524,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
         <div>
           <div class="cot-card-cliente">${escapeHtml(p.nombre)}${empresa}</div>
           <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
-          ${d.correo ? `<div class="cot-card-meta cot-card-correo">${escapeHtml(d.correo)}</div>` : ''}
+          ${d.correo ? `<div class="cot-card-meta">${escapeHtml(d.correo)}</div>` : ''}
           ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
           ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
           ${d.evento ? `<div style="margin-top:4px"><span class="evento-badge">${escapeHtml(d.evento)}</span></div>` : ''}

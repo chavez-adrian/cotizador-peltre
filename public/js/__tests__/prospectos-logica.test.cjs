@@ -1261,7 +1261,9 @@ test('NT5: la tarjeta muestra el correo capturado, y no deja rastro cuando no ha
   };
   const con = buildProspectoCardHtml({ ...base, data: { correo: 'mariana.lopez@gmail.com' } }, null);
   // a la vista, no solo prellenado en el formulario de edicion que la tarjeta trae
-  assert.match(con, /<div class="cot-card-meta cot-card-correo">mariana\.lopez@gmail\.com<\/div>/);
+  assert.match(con, /<div class="cot-card-meta">mariana\.lopez@gmail\.com<\/div>/);
+  // sin correo no queda una linea vacia en su lugar
   const sin = buildProspectoCardHtml({ ...base, data: {} }, null);
-  assert.equal(sin.includes('cot-card-correo'), false);
+  assert.equal(sin.includes('<div class="cot-card-meta"></div>'), false);
+  assert.equal(sin.includes('mariana.lopez@gmail.com'), false);
 });
