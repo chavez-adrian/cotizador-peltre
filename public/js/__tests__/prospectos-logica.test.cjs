@@ -960,8 +960,8 @@ before(async () => {
 });
 
 test('C1: los catalogos del paso 2 son cerrados y valora lleva claves estables', () => {
-  assert.deepEqual(ANIOS_OPERANDO, ['Por abrir', '1-3', '4-10', '11-20', '20+']);
-  assert.deepEqual(SUCURSALES, ['1', '2', '3-5', '6-10', '10+']);
+  assert.deepEqual(ANIOS_OPERANDO, ['Apertura', '1-5 años', '6-10 años', '+10 años']);
+  assert.deepEqual(SUCURSALES, ['1 unidad', '2-5 unidades', '6-10 unidades', '+10 unidades']);
   assert.deepEqual(VALORA.map(v => v.clave), [
     'durabilidad', 'precio', 'estetica', 'no_se_rompe', 'resurtido',
     'variedad', 'logo', 'lavavajillas', 'fuego_horno', 'mexicano',
@@ -980,7 +980,7 @@ before(async () => {
 
 const CALIFICACION = {
   concepto: 'Cafetería de especialidad', tipo_clientes: 'Oficinistas',
-  anios: '4-10', sucursales: '3-5', usa_peltre: true, proveedor_peltre: 'Cinsa',
+  anios: '6-10 años', sucursales: '2-5 unidades', usa_peltre: true, proveedor_peltre: 'Cinsa',
   valora: ['no_se_rompe', 'precio'], otro_valora: 'Que sea apilable',
 };
 
@@ -993,8 +993,9 @@ test('C2: la calificacion completa pasa y todo el paso 2 es opcional', () => {
 });
 
 test('C3: un valor fuera del catalogo se rechaza con su mensaje', () => {
-  assert.match(validarCalificacion({ anios: '2-4' }), /años/i);
-  assert.match(validarCalificacion({ sucursales: '7' }), /sucursales/i);
+  // el catalogo anterior (#271) tambien se rechaza: no hay compatibilidad
+  assert.match(validarCalificacion({ anios: '4-10' }), /años/i);
+  assert.match(validarCalificacion({ sucursales: '3-5' }), /sucursales/i);
   assert.match(validarCalificacion({ valora: ['durabilidad', 'barato'] }), /importante/i);
   assert.match(validarCalificacion({ valora: 'durabilidad' }), /importante/i);
   assert.match(validarCalificacion({ usa_peltre: 'quiza' }), /peltre/i);
@@ -1030,8 +1031,8 @@ before(async () => {
 
 test('C6: la calificacion se lee en la tarjeta como chips en el orden en que se marco', () => {
   const html = buildCalificacionChipsHtml(CALIFICACION);
-  assert.match(html, /4-10 años/);
-  assert.match(html, /3-5 sucursales/);
+  assert.match(html, /6-10 años/);
+  assert.match(html, /2-5 unidades/);
   assert.match(html, /Ya usa peltre: Cinsa/);
   // la etiqueta humana solo vive aqui: la clave estable no se le muestra al vendedor
   assert.equal(html.includes('no_se_rompe'), false);
@@ -1039,9 +1040,9 @@ test('C6: la calificacion se lee en la tarjeta como chips en el orden en que se 
   assert.match(html, /Que sea apilable/);
   assert.match(html, /Cafetería de especialidad/);
   assert.match(html, /Oficinistas/);
-  // una sucursal no se pluraliza y "Por abrir" no lleva sufijo de anios
-  assert.match(buildCalificacionChipsHtml({ sucursales: '1' }), /1 sucursal</);
-  assert.match(buildCalificacionChipsHtml({ anios: 'Por abrir' }), />Por abrir</);
+  // el chip pinta la etiqueta guardada tal cual, sin componer texto (#271)
+  assert.match(buildCalificacionChipsHtml({ sucursales: '1 unidad' }), />1 unidad</);
+  assert.match(buildCalificacionChipsHtml({ anios: 'Apertura' }), />Apertura</);
   assert.match(buildCalificacionChipsHtml({ usa_peltre: false }), /No usa peltre/);
   assert.equal(buildCalificacionChipsHtml({}), '');
   // lo que teclea el vendedor sale escapado
@@ -1067,9 +1068,9 @@ before(async () => {
 });
 
 test('C8: un grupo de chips guarda su seleccion en el DOM, y el multi ademas el orden', () => {
-  const uno = buildGrupoChipsHtml('anios', ANIOS_OPERANDO, '4-10');
+  const uno = buildGrupoChipsHtml('anios', ANIOS_OPERANDO, '6-10 años');
   assert.match(uno, /data-grupo="anios"/);
-  assert.match(uno, /data-valor="4-10" data-orden="1" class="chip chip-activo"|class="chip chip-activo"[^>]*data-valor="4-10"/);
+  assert.match(uno, /data-valor="6-10 años" data-orden="1" class="chip chip-activo"|class="chip chip-activo"[^>]*data-valor="6-10 años"/);
   assert.equal(uno.includes('onclick'), false);
   assert.equal(uno.includes('data-multi'), false);
 
@@ -1130,11 +1131,11 @@ test('C9b: los campos de calificacion salen en el orden acordado: chips antes qu
 test('C10: la edicion inline de la tarjeta incorpora el paso 2 y dicta las notas', () => {
   const html = buildEdicionProspectoFormHtml({
     id: 3, nombre: 'Laura', ciudad: 'Puebla',
-    data: { notas: 'pidio catalogo', calificacion: { anios: '1-3', valora: ['logo'] } },
+    data: { notas: 'pidio catalogo', calificacion: { anios: '1-5 años', valora: ['logo'] } },
   });
   assert.match(html, /id="ed2-3-calificacion"/);
   assert.match(html, /data-mic="ed-notas-3"/);
   // lo ya capturado llega prellenado para corregirlo
-  assert.match(html, /data-valor="1-3" data-orden="1" class="chip chip-activo"|class="chip chip-activo"[^>]*data-valor="1-3"/);
+  assert.match(html, /data-valor="1-5 años" data-orden="1" class="chip chip-activo"|class="chip chip-activo"[^>]*data-valor="1-5 años"/);
   assert.match(html, /data-valor="logo" data-orden="1"/);
 });

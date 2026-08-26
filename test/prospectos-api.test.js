@@ -1238,7 +1238,7 @@ test('#261: el asesor ajeno es de la captura de expo, no de una captura normal d
 
 const CALIFICACION = {
   concepto: 'Cafetería de especialidad', tipo_clientes: 'Oficinistas',
-  anios: '4-10', sucursales: '3-5', usa_peltre: true, proveedor_peltre: 'Cinsa',
+  anios: '6-10 años', sucursales: '2-5 unidades', usa_peltre: true, proveedor_peltre: 'Cinsa',
   valora: ['no_se_rompe', 'precio'], otro_valora: 'Que sea apilable',
 };
 
@@ -1279,8 +1279,9 @@ test('#263: el paso 2 es opcional: la captura sin calificacion no inventa una', 
 test('#263: una calificacion fuera de catalogo se rechaza con 400 y no crea el prospecto', async () => {
   await conEventoActivo(async () => {
     const cuerpos = [
-      { ...CALIFICACION, anios: '2-4' },
-      { ...CALIFICACION, sucursales: '7' },
+      // el catalogo anterior (#271) tambien se rechaza: no hay compatibilidad
+      { ...CALIFICACION, anios: '4-10' },
+      { ...CALIFICACION, sucursales: '3-5' },
       { ...CALIFICACION, valora: ['durabilidad', 'barato'] },
       { ...CALIFICACION, usa_peltre: 'quizá' },
     ];

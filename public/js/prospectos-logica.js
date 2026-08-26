@@ -732,10 +732,11 @@ export function buildChipsHtml(grupo, opciones, seleccion) {
 // prospecto bajo `calificacion`; las piezas estimadas NO entran aqui (van al
 // campo de siempre, `piezas_estimadas`) y las notas tampoco (`notas`).
 
-// Anios operando y sucursales: catalogos cerrados de chips. El valor guardado es
-// la propia etiqueta (son rangos, no conceptos con sinonimos).
-export const ANIOS_OPERANDO = ['Por abrir', '1-3', '4-10', '11-20', '20+'];
-export const SUCURSALES = ['1', '2', '3-5', '6-10', '10+'];
+// Anios operando y sucursales: catalogos cerrados de chips, cuatro rangos que
+// se contestan sin pensar (#271). El valor guardado es la propia etiqueta (son
+// rangos, no conceptos con sinonimos).
+export const ANIOS_OPERANDO = ['Apertura', '1-5 años', '6-10 años', '+10 años'];
+export const SUCURSALES = ['1 unidad', '2-5 unidades', '6-10 unidades', '+10 unidades'];
 
 // Que es importante al escoger la loza: multi-seleccion que se guarda EN EL
 // ORDEN en que se marca (lo primero que dijo el prospecto vale mas). La clave es
@@ -843,8 +844,8 @@ export function buildEventoSiguienteContacto(sc, vendedor, ahora = new Date()) {
 export function buildCalificacionChipsHtml(cal) {
   const c = buildCalificacion(cal);
   const chips = [];
-  if (c.anios) chips.push(c.anios === 'Por abrir' ? c.anios : `${c.anios} años`);
-  if (c.sucursales) chips.push(`${c.sucursales} ${c.sucursales === '1' ? 'sucursal' : 'sucursales'}`);
+  if (c.anios) chips.push(c.anios);
+  if (c.sucursales) chips.push(c.sucursales);
   if (c.usa_peltre !== undefined) {
     chips.push(c.usa_peltre
       ? `Ya usa peltre${c.proveedor_peltre ? `: ${c.proveedor_peltre}` : ''}`
