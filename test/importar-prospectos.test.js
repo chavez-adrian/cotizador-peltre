@@ -1,41 +1,43 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import XLSX from 'xlsx';
-import { importarProspectosFeria, normalizarCelularFeria, matchVendedorDispositivo } from '../lib/importar-prospectos.js';
+import { importarProspectosFeria, normalizarCelularFeria, fechaDeSerialExcel, matchVendedorExpositor } from '../lib/importar-prospectos.js';
 
-// Fixture sintetico: mismas columnas que el export real de la expo (Abastur),
-// hoja "Contactos". El archivo real NUNCA entra al repo (datos personales).
+// Fixture con las columnas EXACTAS del export real de Abastur (hoja "Contacts",
+// segunda hoja "incl. duplicates" que se ignora). Datos anonimizados: el archivo
+// real NUNCA entra al repo (datos personales).
 
-const HEADERS = ['Usuario', 'Dispositivo', 'Fecha/Hora', 'Nombre', 'Apellido Paterno',
-  'Apellido Materno', 'Empresa', 'Puesto', 'Correo electronico', 'Telefono', 'Rankings',
-  'Tipo de lectora', 'Codigo postal', 'Ciudad', 'Estado', 'País', 'Tags', 'Comentarios'];
+const HEADERS = ['First name', 'Last name', 'Job title', 'Company', 'Email', 'Mobile phone',
+  'City', 'State', 'Country', 'Actividad principal de la empresa (es)', 'Puesto (es)',
+  'Tamaño de la empresa (es)', 'Decisión de compra (es)', 'Scoring', 'Note',
+  'Exhibitor member (first connection)', 'First connection date'];
 
-const SIN_DEFINIR = 'Sin definir por el usuario';
+// 45916.48055555556 = 16/09/2025 11:32:00 en el serial de Excel (epoca 1899-12-30).
+const SERIAL = 45916.48055555556;
 
 function fila(o = {}) {
   return [
-    o.usuario ?? '#1 Licencia 1',
-    o.dispositivo ?? 'Caseta 1',
-    o.fechaHora ?? '2024-08-28 01:04:58',
     o.nombre ?? 'OMAR',
-    o.apellidoP ?? 'OLVERA',
-    o.apellidoM ?? 'MUNOZ',
+    o.apellido ?? 'OLVERA',
+    o.jobTitle ?? '',
     o.empresa ?? 'VIANDA CONSULTORES',
-    o.puesto ?? SIN_DEFINIR,
-    o.correo ?? 'omar@x.com',
-    o.telefono ?? 525512952080,
-    o.rankings ?? 'Cold',
-    'App',
-    52784,
+    o.correo ?? 'omar@vianda.mx',
+    o.celular ?? '+52 55 1242 1575',
     o.ciudad ?? 'HUIXQUILUCAN',
     o.estado ?? 'MEXICO',
-    'MEXICO',
-    '',
-    o.comentarios ?? '',
+    o.pais ?? 'Mexico',
+    o.actividad ?? '',
+    o.puesto ?? '',
+    o.tamano ?? '',
+    o.decision ?? '',
+    o.scoring ?? '',
+    o.nota ?? '',
+    o.expositor ?? '',
+    o.fecha ?? SERIAL,
   ];
 }
 
-function workbook(filas, hoja = 'Contactos') {
+function workbook(filas, hoja = 'Contacts') {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, ...filas]), hoja);
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -50,138 +52,184 @@ const VENDEDORES = [
 
 const OPTS = { vendedores: VENDEDORES, vendedorDefault: 'Adrian Chavez' };
 
-test('fila valida completa se normaliza segun el mapeo de la expo', () => {
-  const { listos, descartados } = importarProspectosFeria(workbook([
-    fila({ puesto: 'Director', comentarios: 'Quiere catalogo' }),
-  ]), OPTS);
-  assert.equal(descartados.length, 0);
+test('el archivo sin hoja "Contacts" truena con error claro', () => {
+  assert.throws(() => importarProspectosFeria(workbook([fila()], 'Hoja1'), OPTS), /Contacts/);
+});
+
+test('la segunda hoja "incl. duplicates" se ignora', () => {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, fila()]), 'Contacts');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, fila(), fila()]), 'incl. duplicates');
+  const { listos } = importarProspectosFeria(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), OPTS);
+  assert.equal(listos.length, 1);
+});
+
+test('una fila del export se convierte en un prospecto de Feria/Expo con el nombre titulado', () => {
+  const { listos, sinCelular, descartados } = importarProspectosFeria(workbook([fila()]), OPTS);
+  assert.deepEqual(sinCelular, []);
+  assert.deepEqual(descartados, []);
   assert.equal(listos.length, 1);
   const p = listos[0];
   assert.equal(p.fila, 2);
-  assert.equal(p.celular, '+52 5512952080');
-  assert.equal(p.nombre, 'OMAR OLVERA');
+  assert.equal(p.nombre, 'Omar Olvera');
+  assert.equal(p.celular, '+52 5512421575');
   assert.equal(p.ciudad, 'HUIXQUILUCAN');
   assert.equal(p.canal, 'Feria/Expo');
+  assert.equal(p.correo, 'omar@vianda.mx');
   assert.equal(p.vendedor, 'Adrian Chavez');
-  assert.equal(p.data.escaneado, '2024-08-28 01:04:58');
   assert.equal(p.data.empresa, 'VIANDA CONSULTORES');
-  assert.equal(p.data.correo, 'omar@x.com');
-  assert.equal(p.data.temperatura, 1);
-  assert.equal(p.data.notas, 'Director - Quiere catalogo');
+  assert.equal(p.data.correo, 'omar@vianda.mx');
+  assert.equal(p.data.escaneado, '2025-09-16T11:32:00.000Z');
 });
 
-test('normalizarCelularFeria cubre los formatos del export', () => {
-  assert.equal(normalizarCelularFeria(525512952080), '+52 5512952080');
-  assert.equal(normalizarCelularFeria('525512952080'), '+52 5512952080');
-  assert.equal(normalizarCelularFeria(5587654321), '+52 5587654321');
-  assert.equal(normalizarCelularFeria(13125551234), '+13125551234');
+test('el mismo celular con y sin lada internacional normaliza al mismo numero', () => {
+  assert.equal(normalizarCelularFeria('+52 55 1242 1575'), '+52 5512421575');
+  assert.equal(normalizarCelularFeria('5512421575'), '+52 5512421575');
+  assert.equal(normalizarCelularFeria(5512421575), '+52 5512421575');
+  assert.equal(normalizarCelularFeria('+1 312 555 1234'), '+13125551234');
+  assert.equal(normalizarCelularFeria('+34 612 345 678'), '+34612345678');
   assert.equal(normalizarCelularFeria(''), '');
-  assert.equal(normalizarCelularFeria(undefined), '');
-  assert.equal(normalizarCelularFeria(SIN_DEFINIR), '');
 });
 
-test('filas sin telefono valido se descartan con motivo y las validas pasan', () => {
-  const { listos, descartados } = importarProspectosFeria(workbook([
-    fila({ telefono: 12345, nombre: 'ANA' }),
-    fila({ telefono: '', nombre: 'BETO' }),
-    fila({ telefono: SIN_DEFINIR, nombre: 'CARLA' }),
-    fila({ telefono: 5587654321, nombre: 'DIEGO' }),
-  ]), OPTS);
-  assert.equal(listos.length, 1);
-  assert.equal(listos[0].celular, '+52 5587654321');
-  assert.deepEqual(descartados, [
-    { fila: 2, nombre: 'ANA OLVERA', motivo: 'telefono invalido' },
-    { fila: 3, nombre: 'BETO OLVERA', motivo: 'telefono invalido' },
-    { fila: 4, nombre: 'CARLA OLVERA', motivo: 'telefono invalido' },
-  ]);
+test('fechaDeSerialExcel convierte el serial a ISO y deja pasar el texto', () => {
+  assert.equal(fechaDeSerialExcel(45916), '2025-09-16T00:00:00.000Z');
+  assert.equal(fechaDeSerialExcel(SERIAL), '2025-09-16T11:32:00.000Z');
+  assert.equal(fechaDeSerialExcel('16/09/2025 11:32'), '16/09/2025 11:32');
+  assert.equal(fechaDeSerialExcel(''), '');
 });
 
-test('"Sin definir por el usuario" se trata como vacio en cualquier campo', () => {
-  const { listos, descartados } = importarProspectosFeria(workbook([
-    fila({ apellidoP: SIN_DEFINIR, empresa: SIN_DEFINIR, correo: SIN_DEFINIR, comentarios: SIN_DEFINIR, nombre: 'SHAKTI' }),
-    fila({ nombre: SIN_DEFINIR, apellidoP: SIN_DEFINIR, telefono: 525511112222 }),
-  ]), OPTS);
-  assert.equal(listos.length, 1);
-  assert.equal(listos[0].nombre, 'SHAKTI');
-  assert.equal('empresa' in listos[0].data, false);
-  assert.equal('correo' in listos[0].data, false);
-  assert.equal('notas' in listos[0].data, false);
-  assert.deepEqual(descartados, [{ fila: 3, nombre: '', motivo: 'sin nombre' }]);
-});
-
-test('celulares duplicados dentro del archivo: solo entra la primera fila', () => {
-  const { listos, descartados } = importarProspectosFeria(workbook([
-    fila({ nombre: 'PRIMERA' }),
-    fila({ nombre: 'SEGUNDA', telefono: 5512952080 }),
-    fila({ nombre: 'TERCERA', telefono: 525599887766 }),
-  ]), OPTS);
-  assert.equal(listos.length, 2);
-  assert.equal(listos[0].nombre, 'PRIMERA OLVERA');
-  assert.deepEqual(descartados, [{ fila: 3, nombre: 'SEGUNDA OLVERA', motivo: 'duplicado en archivo' }]);
-});
-
-test('Rankings mapea Cold/Warm/Medium/Hot a temperatura; otro o vacio no manda', () => {
+test('los nombres del export llegan en MAYUSCULAS y se guardan titulados, sin tocar los ya escritos', () => {
   const { listos } = importarProspectosFeria(workbook([
-    fila({ rankings: 'Cold' }),
-    fila({ rankings: 'Warm', telefono: 525511111111 }),
-    fila({ rankings: 'Medium', telefono: 525522222222 }),
-    fila({ rankings: 'Hot', telefono: 525533333333 }),
-    fila({ rankings: 'No ranking', telefono: 525544444444 }),
-    fila({ rankings: '', telefono: 525555555555 }),
+    fila({ nombre: 'MARÍA JOSÉ', apellido: 'DE LA TORRE' }),
+    fila({ nombre: 'Ana', apellido: 'McKenzie', celular: '5512421576' }),
   ]), OPTS);
-  assert.deepEqual(listos.map(p => p.data.temperatura), [1, 2, 3, 5, undefined, undefined]);
+  assert.deepEqual(listos.map(p => p.nombre), ['María José De La Torre', 'Ana McKenzie']);
 });
 
-test('Dispositivo asigna al vendedor que escaneo: nombre completo o primer nombre, sin acentos ni mayusculas', () => {
+test('la actividad principal declarada pre-asigna el tipo de cliente y su segmento', () => {
+  const casos = [
+    ['Restaurante', 'Restaurantes', 10],
+    ['Hotel', 'Hoteles', 10],
+    ['Cafetería', 'Cafeterías', 10],
+    ['Distribuidor / Proveedor', 'Distribuidores', 14],
+    ['Catering / Organizador de eventos', 'Catering | Eventos', 15],
+  ];
+  casos.forEach(([actividad, tipo, segmento], i) => {
+    const { listos } = importarProspectosFeria(workbook([
+      fila({ actividad, celular: `55124215${10 + i}` }),
+    ]), OPTS);
+    assert.equal(listos[0].data.tipo_cliente, tipo, actividad);
+    assert.equal(listos[0].data.segmento_id, segmento, actividad);
+    assert.equal('tipo_cliente_otro' in listos[0].data, false, actividad);
+  });
+});
+
+test('una actividad fuera del mapeo cae en Otro conservando el texto; sin actividad no hay tipo de cliente', () => {
   const { listos } = importarProspectosFeria(workbook([
-    fila({ dispositivo: 'Oswaldo' }),
-    fila({ dispositivo: 'Adrián', telefono: 525511111111 }),
-    fila({ dispositivo: 'oswaldo chavez', telefono: 525522222222 }),
-    fila({ dispositivo: 'Alejandro', telefono: 525533333333 }),
-    fila({ dispositivo: 'Caseta 3', telefono: 525544444444 }),
+    fila({ actividad: 'Tienda de autoservicio' }),
+    fila({ actividad: '', celular: '5512421576' }),
+  ]), OPTS);
+  assert.equal(listos[0].data.tipo_cliente, 'Otro');
+  assert.equal(listos[0].data.tipo_cliente_otro, 'Tienda de autoservicio');
+  assert.equal(listos[0].data.segmento_id, 1);
+  assert.equal('tipo_cliente' in listos[1].data, false);
+  assert.equal('segmento_id' in listos[1].data, false);
+});
+
+test('el Scoring de la app es la temperatura (1-5); vacio o fuera de rango no manda', () => {
+  const { listos } = importarProspectosFeria(workbook([
+    fila({ scoring: 5 }),
+    fila({ scoring: '3', celular: '5512421576' }),
+    fila({ scoring: 1, celular: '5512421577' }),
+    fila({ scoring: '', celular: '5512421578' }),
+    fila({ scoring: 0, celular: '5512421579' }),
+    fila({ scoring: 9, celular: '5512421580' }),
+  ]), OPTS);
+  assert.deepEqual(listos.map(p => p.data.temperatura), [5, 3, 1, undefined, undefined, undefined]);
+});
+
+test('la Note y la linea de puesto, tamano y decision de compra quedan en las notas', () => {
+  const { listos } = importarProspectosFeria(workbook([
+    fila({
+      nota: 'Quiere catalogo de tazas', puesto: 'Dueño / Socio',
+      tamano: 'De 11 a 50 empleados', decision: 'Decido',
+    }),
+    fila({ nota: 'Solo pidio precios', celular: '5512421576' }),
+    fila({ jobTitle: 'Chef Ejecutivo', tamano: 'Más de 250 empleados', celular: '5512421577' }),
+    fila({ celular: '5512421578' }),
+  ]), OPTS);
+  assert.equal(listos[0].data.notas,
+    'Quiere catalogo de tazas\nPuesto: Dueño / Socio | Tamaño de empresa: De 11 a 50 empleados | Decisión de compra: Decido');
+  assert.equal(listos[1].data.notas, 'Solo pidio precios');
+  assert.equal(listos[2].data.notas, 'Puesto: Chef Ejecutivo | Tamaño de empresa: Más de 250 empleados');
+  assert.equal('notas' in listos[3].data, false);
+});
+
+test('el "Exhibitor member" que coincide con un vendedor es el dueno de la fila; sin match manda el default', () => {
+  const { listos } = importarProspectosFeria(workbook([
+    fila({ expositor: 'Oswaldo' }),
+    fila({ expositor: 'ADRIÁN CHÁVEZ', celular: '5512421576' }),
+    fila({ expositor: 'Alejandro', celular: '5512421577' }),
+    fila({ expositor: 'Stand 2', celular: '5512421578' }),
+    fila({ expositor: '', celular: '5512421579' }),
   ]), { vendedores: VENDEDORES, vendedorDefault: 'Jaime Abaroa' });
   assert.deepEqual(listos.map(p => p.vendedor), [
     'Oswaldo Chávez',
     'Adrian Chavez',
-    'Oswaldo Chávez',
     'Jaime Abaroa', // primer nombre ambiguo (dos Alejandros) -> default
     'Jaime Abaroa',
+    'Jaime Abaroa',
+  ]);
+  assert.equal(matchVendedorExpositor('alejandro castanon', VENDEDORES), 'Alejandro Castañón');
+  assert.equal(matchVendedorExpositor('', VENDEDORES), null);
+});
+
+test('el evento activo viaja en cada fila importada', () => {
+  const { listos, sinCelular } = importarProspectosFeria(workbook([
+    fila(),
+    fila({ celular: '', correo: 'sin-cel@vianda.mx' }),
+  ]), { ...OPTS, evento: 'Abastur 2026' });
+  assert.equal(listos[0].data.evento, 'Abastur 2026');
+  assert.equal(sinCelular[0].data.evento, 'Abastur 2026');
+});
+
+test('la fila sin celular sale aparte con lo necesario para perseguirla a mano', () => {
+  const { listos, sinCelular, descartados } = importarProspectosFeria(workbook([
+    fila({ nombre: 'LUZ', apellido: 'RAMOS', celular: '', correo: 'luz@hotelb.mx', empresa: 'HOTEL BONITO', scoring: 4 }),
+    fila(),
+  ]), OPTS);
+  assert.equal(listos.length, 1);
+  assert.deepEqual(descartados, []);
+  assert.equal(sinCelular.length, 1);
+  assert.equal(sinCelular[0].fila, 2);
+  assert.equal(sinCelular[0].nombre, 'Luz Ramos');
+  assert.equal(sinCelular[0].empresa, 'HOTEL BONITO');
+  assert.equal(sinCelular[0].correo, 'luz@hotelb.mx');
+  assert.equal(sinCelular[0].scoring, 4);
+  assert.equal(sinCelular[0].data.temperatura, 4);
+});
+
+test('celular ilegible se descarta con motivo; el celular repetido en el archivo entra una sola vez', () => {
+  const { listos, descartados } = importarProspectosFeria(workbook([
+    fila({ nombre: 'ANA', celular: '12345' }),
+    fila({ nombre: 'BETO' }),
+    fila({ nombre: 'CARLA', celular: '+52 55 1242 1575' }),
+    fila({ nombre: '', apellido: '', celular: '5512421576' }),
+  ]), OPTS);
+  assert.deepEqual(listos.map(p => p.nombre), ['Beto Olvera']);
+  assert.deepEqual(descartados, [
+    { fila: 2, nombre: 'Ana Olvera', motivo: 'telefono invalido' },
+    { fila: 4, nombre: 'Carla Olvera', motivo: 'duplicado en archivo' },
+    { fila: 5, nombre: '', motivo: 'sin nombre' },
   ]);
 });
 
-test('matchVendedorDispositivo devuelve null sin match o sin dispositivo', () => {
-  assert.equal(matchVendedorDispositivo('', VENDEDORES), null);
-  assert.equal(matchVendedorDispositivo(undefined, VENDEDORES), null);
-  assert.equal(matchVendedorDispositivo('Caseta 1', VENDEDORES), null);
-  assert.equal(matchVendedorDispositivo('Alejandro', VENDEDORES), null);
-  assert.equal(matchVendedorDispositivo('alejandro castanon', VENDEDORES), 'Alejandro Castañón');
-});
-
-test('ciudad cae a Estado y luego a vacio', () => {
-  const { listos } = importarProspectosFeria(workbook([
-    fila({ ciudad: SIN_DEFINIR, estado: 'JALISCO' }),
-    fila({ ciudad: '', estado: '', telefono: 525511111111 }),
-  ]), OPTS);
-  assert.equal(listos[0].ciudad, 'JALISCO');
-  assert.equal(listos[1].ciudad, '');
-});
-
-test('sin hoja Contactos truena con error claro; otras hojas se ignoran', () => {
-  assert.throws(() => importarProspectosFeria(workbook([fila()], 'Encuestas'), OPTS), /Contactos/);
+test('las filas vacias del final del archivo se saltan sin reportarse', () => {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Pregunta'], ['basura']]), 'Encuestas');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, fila()]), 'Contactos');
-  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  const { listos, descartados } = importarProspectosFeria(buffer, OPTS);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, fila(), [], ['', '', '']]), 'Contacts');
+  const { listos, sinCelular, descartados } = importarProspectosFeria(
+    XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), OPTS);
   assert.equal(listos.length, 1);
-  assert.equal(descartados.length, 0);
-});
-
-test('filas completamente vacias se saltan sin reportarse', () => {
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, fila(), [], ['', '', '']]), 'Contactos');
-  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  const { listos, descartados } = importarProspectosFeria(buffer, OPTS);
-  assert.equal(listos.length, 1);
-  assert.equal(descartados.length, 0);
+  assert.deepEqual(sinCelular, []);
+  assert.deepEqual(descartados, []);
 });

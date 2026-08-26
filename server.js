@@ -1290,21 +1290,61 @@ app.get('/api/admin/prospectos/no-util', authMiddleware, adminMiddleware, async 
   res.json(contarMotivosNoUtil(todos));
 });
 
-// Importacion de prospectos de Feria/Expo (issue #47, CONTEXT.md "Captura de
-// prospecto"): la plataforma del evento entrega un XLSX de gafetes escaneados
-// que se importa deduplicando por celular. La fecha del prospecto es el
-// momento de la importacion (la del escaneo queda en data.escaneado): con la
-// fecha original toda la cola naceria en rojo con horas habiles vencidas. El
-// indice de clientes Operam se refresca UNA VEZ antes del loop (leccion de
-// #46, no por fila); si falla, las filas se importan igual (best effort,
-// mismo trade-off que la captura manual).
+// Enriquecimiento con el export del evento (issue #265, CONTEXT.md "Importacion
+// del export del evento"): lo capturado en el stand NUNCA se pisa, solo se
+// rellena lo que este vacio. El tipo de cliente y su segmento viajan JUNTOS
+// (poner uno sin el otro dejaria el segmento contradiciendo al texto) y la nota
+// del export se AGREGA debajo de las notas que ya habia.
+function campoVacio(v) {
+  return v === undefined || v === null || String(v).trim() === '';
+}
+
+function datosParaEnriquecer(actual, entrantes) {
+  const merge = {};
+  const juntos = ['tipo_cliente', 'tipo_cliente_otro', 'segmento_id'];
+  for (const [k, v] of Object.entries(entrantes)) {
+    if (k === 'notas' || juntos.includes(k)) continue;
+    if (campoVacio(actual[k]) && !campoVacio(v)) merge[k] = v;
+  }
+  if (!campoVacio(entrantes.tipo_cliente) && campoVacio(actual.tipo_cliente)) {
+    for (const k of juntos) if (entrantes[k] !== undefined) merge[k] = entrantes[k];
+  }
+  if (!campoVacio(entrantes.notas)) {
+    merge.notas = campoVacio(actual.notas) ? entrantes.notas : `${actual.notas}
+${entrantes.notas}`;
+  }
+  return merge;
+}
+
+async function enriquecerConExport(existente, fila, evento, fecha) {
+  const campos = { data: datosParaEnriquecer(existente.data || {}, fila.data) };
+  if (campoVacio(existente.ciudad) && !campoVacio(fila.ciudad)) campos.ciudad = fila.ciudad;
+  await prospectosStore.actualizarDatos(existente.id, campos);
+  await prospectosStore.registrarEvento(existente.id, {
+    tipo: 'importado', fecha, evento, vendedor: existente.vendedor,
+  });
+}
+
+// Importacion del export del evento (issue #265, antes #47): la plataforma de
+// Abastur entrega un XLSX con la hoja "Contacts" y aqui se cruza fila por fila.
+// Un celular libre nace como prospecto del que escaneo el gafete; uno que ya es
+// prospecto se ENRIQUECE; uno que ya es cliente de Operam se descarta; un gafete
+// sin celular se cruza por correo contra los prospectos del mismo evento y, si
+// no cruza, sale en el reporte en vez de nacer (invariante 1 celular = 1
+// prospecto). La fecha del prospecto es el momento de la importacion (la del
+// escaneo queda en data.escaneado): con la fecha original toda la cola naceria
+// en rojo con horas habiles vencidas. El indice de clientes Operam se refresca
+// UNA VEZ antes del loop (leccion de #46, no por fila); si falla, las filas se
+// importan igual (best effort, mismo trade-off que la captura manual).
 app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, upload.single('archivo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se recibio archivo' });
   const vendedores = await vendedoresStore.listar();
   const vendedorDefault = req.body?.vendedor || req.user.name;
+  const eventoActivo = eventoActivoConfigurado();
+  const evento = eventoActivo ? eventoActivo.nombre : undefined;
   let parseo;
   try {
-    parseo = importarProspectosFeria(req.file.buffer, { vendedores, vendedorDefault });
+    parseo = importarProspectosFeria(req.file.buffer, { vendedores, vendedorDefault, evento });
   } catch (err) {
     return res.status(400).json({ error: 'Error procesando archivo: ' + err.message });
   }
@@ -1319,10 +1359,12 @@ app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, uplo
   const fecha = new Date().toISOString();
   const porVendedor = {};
   let importados = 0;
+  let enriquecidos = 0;
   for (const p of parseo.listos) {
     const existente = await prospectosStore.buscarPorCelular(p.celular);
     if (existente) {
-      descartados.push({ fila: p.fila, nombre: p.nombre, motivo: 'ya es prospecto' });
+      await enriquecerConExport(existente, p, evento, fecha);
+      enriquecidos++;
       continue;
     }
     if (indiceListo) {
@@ -1345,8 +1387,26 @@ app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, uplo
     importados++;
     porVendedor[p.vendedor] = (porVendedor[p.vendedor] || 0) + 1;
   }
+  // El cruce por correo es SOLO contra los prospectos del mismo evento (un
+  // correo repetido de otra feria no es la misma oportunidad). Se lee despues
+  // del loop para que un gafete sin celular alcance a los que acaban de nacer.
+  // Sin evento activo no hay contra que cruzar y todos salen al reporte.
+  const delEvento = evento
+    ? (await prospectosStore.listar()).filter(x => (x.data || {}).evento === evento)
+    : [];
+  const sinCelular = [];
+  for (const g of parseo.sinCelular) {
+    const correo = g.correo.toLowerCase();
+    const match = correo && delEvento.find(x => String((x.data || {}).correo || '').trim().toLowerCase() === correo);
+    if (match) {
+      await enriquecerConExport(match, g, evento, fecha);
+      enriquecidos++;
+      continue;
+    }
+    sinCelular.push({ fila: g.fila, nombre: g.nombre, empresa: g.empresa, correo: g.correo, scoring: g.scoring });
+  }
   descartados.sort((a, b) => a.fila - b.fila);
-  res.json({ importados, descartados, porVendedor });
+  res.json({ importados, enriquecidos, descartados, sinCelular, porVendedor });
 });
 
 app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('excel'), (req, res) => {
