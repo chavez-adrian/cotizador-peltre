@@ -184,12 +184,19 @@ export function validarTransicion(actual, nueva, motivo, folio) {
 // cita): re-agendar registra otro evento y ese ultimo gana, aunque su cita sea
 // mas temprana (CONTEXT.md "Reunion de diagnostico"). Cualquier evento con fecha
 // posterior a esa reunion limpia el pendiente de resultado.
-export function ultimaReunionDe(eventos) {
-  let r = null;
+// El ultimo evento REGISTRADO de un tipo (por `fecha` de registro, no por la
+// fecha de la cita ni la del compromiso): la regla "el ultimo manda" que
+// comparten la reunion y el siguiente contacto.
+function ultimoEventoDe(eventos, tipo) {
+  let ultimo = null;
   for (const e of eventos || []) {
-    if (e.tipo === 'reunion' && (!r || new Date(e.fecha) > new Date(r.fecha))) r = e;
+    if (e.tipo === tipo && (!ultimo || new Date(e.fecha) > new Date(ultimo.fecha))) ultimo = e;
   }
-  return r;
+  return ultimo;
+}
+
+export function ultimaReunionDe(eventos) {
+  return ultimoEventoDe(eventos, 'reunion');
 }
 
 export function reunionFuturaDe(eventos, ahora) {
@@ -220,6 +227,58 @@ export function reunionPendienteResultado(p, ahora) {
   return reunionPendienteResultadoDe(p && p.eventos, ahora);
 }
 
+// Siguiente contacto (issue #262, spec #260, CONTEXT.md "Siguiente contacto"):
+// compromiso acordado con el prospecto sobre CUANDO y POR DONDE lo vamos a
+// contactar. Vive en p.eventos como { tipo:'siguiente_contacto', canal,
+// fecha_contacto, fecha, vendedor }, igual que la reunion, y como ella el
+// ULTIMO REGISTRADO manda (por `fecha` de registro, no por la fecha del
+// compromiso). No es una reunion de diagnostico: no tiene resultado que
+// registrar -- un toque posterior a la fecha lo cierra y la tarjeta vuelve a la
+// cadencia normal de su canal de origen.
+
+// Canal del siguiente contacto -- catalogo cerrado, distinto del canal de
+// ORIGEN del prospecto (CANALES): por donde se prometio el contacto.
+export const CANALES_SIGUIENTE_CONTACTO = ['WhatsApp', 'Llamada', 'Correo'];
+
+// Mientras la fecha es futura la cadencia se suprime (el filtro vive en
+// lib/seguimiento-prospectos.js).
+export function siguienteContactoFuturo(p, ahora) {
+  const s = ultimoEventoDe(p && p.eventos, 'siguiente_contacto');
+  if (!s || new Date(s.fecha_contacto) <= ahora) return null;
+  return { canal: s.canal, fecha: s.fecha_contacto };
+}
+
+// Vencido: llego la fecha y ningun toque posterior al compromiso lo cerro. Desde
+// aqui corre la cadencia normal, contada desde la fecha del compromiso.
+export function siguienteContactoVencido(p, ahora) {
+  const s = ultimoEventoDe(p && p.eventos, 'siguiente_contacto');
+  if (!s || new Date(s.fecha_contacto) > ahora) return null;
+  const cerrado = (p && p.eventos || []).some(
+    e => e.tipo === 'toque' && new Date(e.fecha) > new Date(s.fecha_contacto)
+  );
+  return cerrado ? null : { canal: s.canal, fecha: s.fecha_contacto };
+}
+
+// Compromiso vivo de la tarjeta: el que todavia no llega o el que ya vencio y
+// nadie ha cerrado. Un compromiso cerrado por un toque ya no se muestra.
+function siguienteContactoVivo(p, ahora) {
+  return siguienteContactoFuturo(p, ahora) || siguienteContactoVencido(p, ahora);
+}
+
+function fechaDiaCorto(fecha) {
+  return new Date(fecha).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// Chip del siguiente contacto: en la tarjeta es el compromiso a secas
+// ("WhatsApp - lun 31 ago"); en la cola Hoy es la instruccion del dia, con el
+// nombre del prospecto y, si viene, el evento del que salio ("WhatsApp a
+// Mariana - Abastur 2026 - lun 31 ago").
+function chipSiguienteContactoHtml(sc, { nombre, evento } = {}) {
+  const quien = nombre ? ` a ${escapeHtml(nombre)}` : '';
+  const deEvento = evento ? ` — ${escapeHtml(evento)}` : '';
+  return `<span class="siguiente-contacto-badge">${escapeHtml(sc.canal)}${quien}${deEvento} · ${escapeHtml(fechaDiaCorto(sc.fecha))}</span>`;
+}
+
 // Link wa.me en un tap: solo digitos, el celular del prospecto ya trae codigo de pais.
 export function buildWaLink(celular) {
   const digitos = String(celular || '').replace(/\D/g, '');
@@ -248,6 +307,7 @@ const ETIQUETAS_EVENTO = {
   cotizacion: e => `Cotización #${escapeHtml(e.cotizacion_id)} · ${escapeHtml(e.vendedor)}`,
   reunion: e => `Reunión agendada para ${escapeHtml(fechaHora(e.fecha_reunion))} · ${escapeHtml(e.vendedor)}`,
   captura_expo: e => `Capturado en ${escapeHtml(e.evento)} · ${escapeHtml(e.vendedor)}`,
+  siguiente_contacto: e => `Siguiente contacto: ${escapeHtml(e.canal)} el ${escapeHtml(fechaCorta(e.fecha_contacto))} · ${escapeHtml(e.vendedor)}`,
 };
 
 function etiquetaEvento(e) {
@@ -298,12 +358,21 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.
   const reunion = activo ? reunionFutura(p, ahora) : null;
+  // Siguiente contacto (issue #262): el compromiso vivo se lee de un vistazo en
+  // la tarjeta, este o no suprimida la cadencia.
+  const siguiente = activo ? siguienteContactoVivo(p, ahora) : null;
   const pesadas = [];
   if (activo) {
     pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">Registrar contacto</button>`);
     pesadas.push(
       `<input type="datetime-local" id="pr-reunion-${p.id}" class="btn-sm">` +
       `<button class="btn btn-secondary btn-sm" onclick="agendarReunionProspecto(${p.id})">Agendar reunión</button>`
+    );
+    pesadas.push(
+      `<select id="pr-sc-canal-${p.id}" class="btn-sm"><option value="">Canal...</option>` +
+      CANALES_SIGUIENTE_CONTACTO.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') +
+      `</select><input type="date" id="pr-sc-fecha-${p.id}" class="btn-sm">` +
+      `<button class="btn btn-secondary btn-sm" onclick="registrarSiguienteContactoProspecto(${p.id})">Siguiente contacto</button>`
     );
     pesadas.push(
       `<select id="pr-motivo-${p.id}" class="btn-sm"><option value="">Motivo...</option>` +
@@ -336,6 +405,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
           ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
           ${d.evento ? `<div style="margin-top:4px"><span class="evento-badge">${escapeHtml(d.evento)}</span></div>` : ''}
           ${reunion ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión el ${escapeHtml(fechaHora(reunion))}</span></div>` : ''}
+          ${siguiente ? `<div style="margin-top:4px">${chipSiguienteContactoHtml(siguiente)}</div>` : ''}
         </div>
         ${compacta ? '' : `<div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>`}
       </div>
@@ -380,6 +450,7 @@ export function buildColaProspectosHtml(cola) {
             <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[item.etapa] || item.etapa)} · ${escapeHtml(item.canal)} · ${escapeHtml(item.ciudad)} · ${escapeHtml(item.celular)}</div>
             <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}${item.yaEsCliente ? ` ${CLIENTE_BADGE}` : ''}</div>
             ${item.reunionVencida ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión del ${escapeHtml(fechaHora(item.fechaReunion))} — registrar resultado</span></div>` : ''}
+            ${item.siguienteContacto ? `<div style="margin-top:4px">${chipSiguienteContactoHtml(item.siguienteContacto, { nombre: item.nombre, evento: item.evento })}</div>` : ''}
           </div>
         </div>
         <div class="cot-card-actions">${acciones.join(' ')}</div>
