@@ -990,3 +990,162 @@ test('un fallo del store de prospectos no rompe el alta de cliente (fire-and-for
   assert.equal(res.body.ok, true);
   writeProspectos([]);
 });
+
+// === Captura de expo (issue #261, spec #260) ===
+
+const CONFIG_PATH = join(__dirname, '..', 'data', 'config.json');
+const EVENTO = { nombre: 'Abastur 2026', fin: '2026-08-28' };
+const CATALOGO_URL = 'https://cdn.shopify.com/s/files/catalogo.pdf';
+
+// El evento activo y la liga del catalogo viven en data/config.json (la misma
+// lectura/escritura del panel admin). Cada test que los necesita los pone y
+// restaura el archivo original al terminar.
+async function conConfig(parcial, fn) {
+  const original = leerArchivoSync(CONFIG_PATH);
+  try {
+    escribirArchivoSync(CONFIG_PATH, JSON.stringify({ ...JSON.parse(original), ...parcial }, null, 2));
+    await fn();
+  } finally {
+    escribirArchivoSync(CONFIG_PATH, original);
+  }
+}
+
+const conEventoActivo = fn => conConfig({ eventoActivo: EVENTO, catalogoUrl: CATALOGO_URL }, fn);
+
+const CAPTURA_EXPO = {
+  celular: '+52 5544332211', nombre: 'Laura Mendoza', ciudad: 'CDMX', canal: 'Feria/Expo',
+  evento: EVENTO.nombre, tipo_cliente: 'Hoteles', interes: 'Alto', empresa: 'Hotel Azul',
+};
+
+test('#261: el admin guarda evento activo y liga del catalogo, y el frontend los recibe en /api/catalogos', async () => {
+  const original = leerArchivoSync(CONFIG_PATH);
+  try {
+    const guardar = await supertest(app).post('/api/admin/config')
+      .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+      .send({ tiposActivos: ['PL'], texturasActivas: [1], eventoActivo: EVENTO, catalogoUrl: CATALOGO_URL });
+    assert.equal(guardar.status, 200);
+
+    const leer = await supertest(app).get('/api/admin/config').set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+    assert.deepEqual(leer.body.config.eventoActivo, EVENTO);
+    assert.equal(leer.body.config.catalogoUrl, CATALOGO_URL);
+    // Lo que ya estaba configurado no se pierde al guardar el evento.
+    assert.deepEqual(leer.body.config.tiposActivos, ['PL']);
+
+    const catalogos = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.deepEqual(catalogos.body.eventoActivo, EVENTO);
+    assert.equal(catalogos.body.catalogoUrl, CATALOGO_URL);
+  } finally {
+    escribirArchivoSync(CONFIG_PATH, original);
+  }
+});
+
+test('#261: sin evento activo /api/catalogos no ofrece evento y la captura normal no cambia', async () => {
+  await conConfig({ eventoActivo: null }, async () => {
+    const catalogos = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.equal(catalogos.body.eventoActivo, null);
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA);
+    assert.equal(res.status, 201);
+    assert.equal(readProspectos()[0].data.evento, undefined);
+  });
+});
+
+test('#261: la captura de expo crea el prospecto en Por Cotizar con evento, tipo de cliente, segmento y temperatura', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA_EXPO);
+    assert.equal(res.status, 201);
+    const p = readProspectos()[0];
+    assert.equal(p.etapa, 'por_cotizar');
+    assert.equal(p.vendedor, 'Memo');
+    assert.equal(p.canal, 'Feria/Expo');
+    assert.equal(p.data.evento, 'Abastur 2026');
+    assert.equal(p.data.tipo_cliente, 'Hoteles');
+    assert.equal(p.data.segmento_id, 10);
+    assert.equal(p.data.temperatura, 5);
+    assert.equal(p.data.empresa, 'Hotel Azul');
+  });
+});
+
+test('#261: en la captura de expo el tipo de cliente es obligatorio', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ...CAPTURA_EXPO, tipo_cliente: undefined });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /tipo de cliente/i);
+    assert.equal(readProspectos().length, 0);
+  });
+});
+
+test('#261: con evento activo el prospecto nace a nombre del asesor elegido', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ...CAPTURA_EXPO, asesor: VENDEDOR_CATALOGO });
+    assert.equal(res.status, 201);
+    const p = readProspectos()[0];
+    assert.equal(p.vendedor, VENDEDOR_CATALOGO);
+    const captura = p.eventos.find(e => e.tipo === 'captura_expo');
+    assert.ok(captura, 'la captura a nombre de otro deja rastro de quien la hizo');
+    assert.equal(captura.vendedor, 'Memo');
+  });
+});
+
+test('#261: un asesor fuera del registro de vendedores se rechaza con 400', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ...CAPTURA_EXPO, asesor: 'Fantasma' });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /asesor/i);
+    assert.equal(readProspectos().length, 0);
+  });
+});
+
+test('#261: sin evento activo no se captura a nombre de otro vendedor', async () => {
+  await conConfig({ eventoActivo: null }, async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+      .send({ ...CAPTURA, asesor: VENDEDOR_CATALOGO });
+    assert.equal(res.status, 400);
+    assert.equal(readProspectos().length, 0);
+  });
+});
+
+test('#261: un evento que no es el activo se rechaza con 400', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([]);
+    const res = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ ...CAPTURA_EXPO, evento: 'Expo Inventada' });
+    assert.equal(res.status, 400);
+    assert.equal(readProspectos().length, 0);
+  });
+});
+
+test('#261: los guardrails de celular repetido son los mismos en la captura de expo', async () => {
+  await conEventoActivo(async () => {
+    writeProspectos([deOtroVendedor()]);
+    const ajeno = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${ANA_TOKEN}`)
+      .send({ ...CAPTURA_EXPO, celular: '+52 5533333333' });
+    assert.equal(ajeno.status, 409);
+    assert.equal(ajeno.body.tipo, 'prospecto_ajeno');
+    assert.match(ajeno.body.error, /Memo/);
+    assert.equal(readProspectos().length, 1);
+
+    writeProspectos([]);
+    mockOperamFetch({
+      '/login': () => jsonResponse({ token: 't' }),
+      '/customers': () => jsonResponse({ data: [{ id: 5, cust_name: 'HOTEL AZUL SA', phone: '5544332211' }] }),
+    });
+    const cliente = await supertest(app).post('/api/prospectos')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA_EXPO);
+    assert.equal(cliente.status, 409);
+    assert.equal(cliente.body.tipo, 'cliente');
+    assert.equal(readProspectos().length, 0);
+  });
+});

@@ -38,7 +38,7 @@ import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM } from './lib/pipeline.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
-import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES } from './public/js/prospectos-logica.js';
+import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, validarProspectoExpoBody, buildDatosExpo } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
 import { piezasDeProducto } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
@@ -742,10 +742,50 @@ function respuestaCelularDeCliente(res, cliente) {
   });
 }
 
+// Evento activo y liga del catalogo (issue #261, CONTEXT.md "Evento"): se
+// configuran UNA vez desde el panel admin y viven en data/config.json, la misma
+// lectura/escritura que ya usa la configuracion del catalogo. Un evento sin
+// nombre no es evento: el resto del sistema pregunta solo "hay evento activo".
+// La fecha de fin NO apaga el evento sola -- es un dato del evento (de ahi sale
+// el primer dia habil despues de la feria); apagarlo es del admin, para que la
+// app nunca deje de ofrecer la captura a media feria por un reloj.
+function eventoActivoConfigurado() {
+  const evento = (readJSON('config.json') || {}).eventoActivo;
+  return evento && evento.nombre ? evento : null;
+}
+
+// Captura de expo (issue #261, spec #260) = esta MISMA ruta con mas campos, no
+// una ruta nueva: es la misma entidad, el mismo pipeline y los mismos guardrails
+// de celular. Lo que agrega el evento: tipo de cliente obligatorio y la
+// posibilidad de capturar a nombre de OTRO asesor (los formatos en papel de
+// quien no usa la app se transcriben esa noche), excepcion a la auto-asignacion
+// que solo existe mientras hay evento activo.
 app.post('/api/prospectos', authMiddleware, async (req, res) => {
   const body = req.body || {};
-  const error = validarProspectoBody(body);
+  const evento = eventoActivoConfigurado();
+  const eventoBody = String(body.evento == null ? '' : body.evento).trim();
+  // El evento no lo elige el que captura: es el activo o no es. Sin este candado
+  // cualquier captura podria etiquetarse con un evento inventado y el filtro del
+  // pipeline dejaria de significar algo.
+  if (eventoBody && (!evento || eventoBody !== evento.nombre)) {
+    return res.status(400).json({ error: 'El evento no coincide con el evento activo' });
+  }
+  const error = eventoBody ? validarProspectoExpoBody(body) : validarProspectoBody(body);
   if (error) return res.status(400).json({ error });
+  // El asesor se valida contra el registro COMPLETO de vendedores, no contra el
+  // catalogo filtrado por operam_id de /api/catalogos: quien solo transcribe
+  // formatos de papel puede no tener id de Operam todavia.
+  const asesor = String(body.asesor == null ? '' : body.asesor).trim();
+  const capturaAjena = !!asesor && asesor !== req.user.name;
+  if (capturaAjena) {
+    if (!evento) {
+      return res.status(400).json({ error: 'Solo durante un evento se captura a nombre de otro asesor' });
+    }
+    const registro = await vendedoresStore.listar();
+    if (!registro.some(v => v.name === asesor)) {
+      return res.status(400).json({ error: 'El asesor debe ser un vendedor del registro' });
+    }
+  }
   // Guardrail best effort (CONTEXT.md, Prospecto): un cliente con alta en Operam
   // nunca vuelve a ser prospecto. Si el indice falla o no esta listo, la
   // clasificacion cae a libre y la captura procede.
@@ -760,10 +800,13 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   for (const k of PROSPECTO_OPCIONALES) {
     if (body[k] !== undefined && body[k] !== null && body[k] !== '') data[k] = body[k];
   }
+  // Lo de la expo manda sobre los opcionales crudos: el segmento sale del tipo
+  // de cliente y la temperatura del nivel de interes, en un solo lugar.
+  Object.assign(data, buildDatosExpo(body));
   let id;
   try {
     id = await prospectosStore.crear({
-      fecha: new Date().toISOString(), vendedor: req.user.name,
+      fecha: new Date().toISOString(), vendedor: capturaAjena ? asesor : req.user.name,
       celular: body.celular.trim(), nombre: body.nombre.trim(),
       ciudad: body.ciudad.trim(), canal: body.canal, data,
     });
@@ -772,6 +815,14 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
     const dup = await prospectosStore.buscarPorCelular(body.celular);
     if (dup) return respuestaProspectoExistente(res, dup, req.user);
     return res.status(409).json({ error: 'Este celular ya es un prospecto' });
+  }
+  // Rastro de la captura de expo: el prospecto es del asesor, pero el historial
+  // dice en que evento y QUIEN lo capturo (no siempre son la misma persona).
+  if (eventoBody) {
+    await prospectosStore.registrarEvento(id, {
+      tipo: 'captura_expo', fecha: new Date().toISOString(),
+      evento: eventoBody, vendedor: req.user.name,
+    });
   }
   res.status(201).json({ ok: true, id });
 });
@@ -1296,12 +1347,32 @@ app.get('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
   });
 });
 
+// Evento activo del panel admin (issue #261): nombre + fecha de fin, o null para
+// apagar la captura de expo. Un evento a medias (sin nombre o sin fin) se
+// rechaza: con el nombre viaja el etiquetado de TODO lo que entra por la feria.
+function normalizarEventoActivo(evento) {
+  if (evento == null || evento === '') return { evento: null };
+  if (typeof evento !== 'object') return { error: 'Evento invalido' };
+  const nombre = String(evento.nombre == null ? '' : evento.nombre).trim();
+  const fin = String(evento.fin == null ? '' : evento.fin).trim();
+  if (!nombre || !fin) return { error: 'El evento activo necesita nombre y fecha de fin' };
+  return { evento: { nombre, fin } };
+}
+
 app.post('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
-  const { tiposActivos, texturasActivas } = req.body;
+  const { tiposActivos, texturasActivas, eventoActivo, catalogoUrl } = req.body;
   if (!Array.isArray(tiposActivos) || !Array.isArray(texturasActivas)) {
     return res.status(400).json({ error: 'Formato invalido' });
   }
-  writeJSON('config.json', { tiposActivos, texturasActivas });
+  const { evento, error } = normalizarEventoActivo(eventoActivo);
+  if (error) return res.status(400).json({ error });
+  // Merge sobre lo guardado: el panel manda lo que edita y lo demas se conserva
+  // (antes este POST reescribia el archivo entero con dos llaves).
+  const actual = readJSON('config.json') || {};
+  const nuevo = { ...actual, tiposActivos, texturasActivas };
+  if (eventoActivo !== undefined) nuevo.eventoActivo = evento;
+  if (catalogoUrl !== undefined) nuevo.catalogoUrl = String(catalogoUrl == null ? '' : catalogoUrl).trim();
+  writeJSON('config.json', nuevo);
   res.json({ saved: true });
 });
 
@@ -3043,9 +3114,18 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
       .filter(v => v.operam_id != null)
       .map(v => ({ id: v.id, name: v.name, operam_id: v.operam_id }));
     const yo = registro.find(v => v.id === req.user?.id);
+    // Evento activo y liga del catalogo (issue #261): viajan aqui porque es la
+    // pregunta que la pantalla hace al arrancar -- si hay evento ofrece la
+    // captura de expo, si no, la app se ve como siempre. `asesores` es el
+    // registro COMPLETO (no el filtrado por operam_id de `vendedores`): en la
+    // expo se captura a nombre de quien todavia no tiene id de Operam.
+    const config = readJSON('config.json') || {};
     res.json({
       segmentos: SEGMENTOS, vendedores, listas_precios: await obtenerListasPrecios(),
       puedeAsignar: puedeAsignar({ role: req.user?.role, puedeAsignar: yo?.puedeAsignar }),
+      eventoActivo: eventoActivoConfigurado(),
+      catalogoUrl: config.catalogoUrl || '',
+      asesores: registro.map(v => v.name),
     });
   } catch (err) {
     res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
