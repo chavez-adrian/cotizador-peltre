@@ -184,12 +184,19 @@ export function validarTransicion(actual, nueva, motivo, folio) {
 // cita): re-agendar registra otro evento y ese ultimo gana, aunque su cita sea
 // mas temprana (CONTEXT.md "Reunion de diagnostico"). Cualquier evento con fecha
 // posterior a esa reunion limpia el pendiente de resultado.
-export function ultimaReunionDe(eventos) {
-  let r = null;
+// El ultimo evento REGISTRADO de un tipo (por `fecha` de registro, no por la
+// fecha de la cita ni la del compromiso): la regla "el ultimo manda" que
+// comparten la reunion y el siguiente contacto.
+function ultimoEventoDe(eventos, tipo) {
+  let ultimo = null;
   for (const e of eventos || []) {
-    if (e.tipo === 'reunion' && (!r || new Date(e.fecha) > new Date(r.fecha))) r = e;
+    if (e.tipo === tipo && (!ultimo || new Date(e.fecha) > new Date(ultimo.fecha))) ultimo = e;
   }
-  return r;
+  return ultimo;
+}
+
+export function ultimaReunionDe(eventos) {
+  return ultimoEventoDe(eventos, 'reunion');
 }
 
 export function reunionFuturaDe(eventos, ahora) {
@@ -233,18 +240,10 @@ export function reunionPendienteResultado(p, ahora) {
 // ORIGEN del prospecto (CANALES): por donde se prometio el contacto.
 export const CANALES_SIGUIENTE_CONTACTO = ['WhatsApp', 'Llamada', 'Correo'];
 
-function ultimoSiguienteContacto(eventos) {
-  let s = null;
-  for (const e of eventos || []) {
-    if (e.tipo === 'siguiente_contacto' && (!s || new Date(e.fecha) > new Date(s.fecha))) s = e;
-  }
-  return s;
-}
-
 // Mientras la fecha es futura la cadencia se suprime (el filtro vive en
 // lib/seguimiento-prospectos.js).
 export function siguienteContactoFuturo(p, ahora) {
-  const s = ultimoSiguienteContacto(p && p.eventos);
+  const s = ultimoEventoDe(p && p.eventos, 'siguiente_contacto');
   if (!s || new Date(s.fecha_contacto) <= ahora) return null;
   return { canal: s.canal, fecha: s.fecha_contacto };
 }
@@ -252,7 +251,7 @@ export function siguienteContactoFuturo(p, ahora) {
 // Vencido: llego la fecha y ningun toque posterior al compromiso lo cerro. Desde
 // aqui corre la cadencia normal, contada desde la fecha del compromiso.
 export function siguienteContactoVencido(p, ahora) {
-  const s = ultimoSiguienteContacto(p && p.eventos);
+  const s = ultimoEventoDe(p && p.eventos, 'siguiente_contacto');
   if (!s || new Date(s.fecha_contacto) > ahora) return null;
   const cerrado = (p && p.eventos || []).some(
     e => e.tipo === 'toque' && new Date(e.fecha) > new Date(s.fecha_contacto)

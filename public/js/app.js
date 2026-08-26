@@ -5673,10 +5673,12 @@ async function agendarReunionProspecto(id) {
 
 // Siguiente contacto (issue #262, CONTEXT.md "Siguiente contacto"): el
 // compromiso de canal + fecha que el vendedor acuerda con el prospecto. La
-// fecha se captura como dia (no hay hora acordada) y viaja a las 9:00 locales:
-// asi el compromiso vence al abrir ese dia, antes de la primera hora habil, y
-// la cadencia arranca en cero. Se expone a window JUNTO a su declaracion
-// (trampa del onclick inline, #112).
+// fecha se captura como dia (no hay hora acordada) y viaja a las 9:00 de CDMX,
+// no del reloj del equipo: asi el compromiso vence al abrir ese dia, antes de
+// la primera hora habil, y la cadencia arranca en cero para todos (el horario
+// habil del dominio es siempre America/Mexico_City, lib/horas-habiles.js; CDMX
+// es UTC-6 fijo desde que Mexico elimino el horario de verano en 2022). Se
+// expone a window JUNTO a su declaracion (trampa del onclick inline, #112).
 async function registrarSiguienteContactoProspecto(id) {
   const canal = document.getElementById(`pr-sc-canal-${id}`)?.value || '';
   const dia = document.getElementById(`pr-sc-fecha-${id}`)?.value || '';
@@ -5684,7 +5686,7 @@ async function registrarSiguienteContactoProspecto(id) {
   if (!dia) { alert('Selecciona la fecha del siguiente contacto'); return; }
   try {
     const res = await api(`/api/prospectos/${id}/siguiente-contacto`, {
-      method: 'POST', body: { canal, fecha: new Date(`${dia}T09:00`).toISOString() },
+      method: 'POST', body: { canal, fecha: new Date(`${dia}T09:00:00-06:00`).toISOString() },
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
