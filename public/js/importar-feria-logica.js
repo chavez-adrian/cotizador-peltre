@@ -7,6 +7,8 @@ import { escapeHtml } from './prospectos-logica.js';
 // con motivo y los gafetes sin celular, que no nacen como prospecto y hay que
 // perseguir a mano.
 
+const MOTIVO_YA_CLIENTE = 'ya es cliente';
+
 function linea(texto, estilo = '') {
   return `<div class="cot-card-meta"${estilo ? ` style="${estilo}"` : ''}>${texto}</div>`;
 }
@@ -17,14 +19,18 @@ function nombreLegible(nombre) {
 
 export function buildReporteImportacionHtml(reporte) {
   const r = reporte || {};
+  const descartados = r.descartados || [];
+  // "ya es cliente" es una de las cinco categorias del resumen, no un descarte
+  // mas: se cuenta aparte para que no se pierda entre los telefonos ilegibles.
+  const yaClientes = descartados.filter(d => d.motivo === MOTIVO_YA_CLIENTE).length;
   const partes = [
     linea(`<strong>${r.importados || 0} prospectos nuevos</strong>`),
     linea(`<strong>${r.enriquecidos || 0} prospectos enriquecidos</strong>`),
+    linea(`<strong>${yaClientes} ${yaClientes === 1 ? 'celular que ya es cliente' : 'celulares que ya son clientes'}</strong>`),
   ];
   for (const [vendedor, n] of Object.entries(r.porVendedor || {})) {
     partes.push(linea(`${escapeHtml(vendedor)}: ${n}`));
   }
-  const descartados = r.descartados || [];
   if (descartados.length) {
     partes.push(linea(`<strong>${descartados.length} filas descartadas</strong>`, 'margin-top:8px'));
     for (const d of descartados) {

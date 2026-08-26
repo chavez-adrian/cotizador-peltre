@@ -20,6 +20,8 @@ test('IF1: el reporte muestra nuevos, enriquecidos, desglose por vendedor y desc
   });
   assert.match(html, /3 prospectos nuevos/);
   assert.match(html, /2 prospectos enriquecidos/);
+  // "ya es cliente" es una categoria del resumen, no un descarte mas de la lista
+  assert.match(html, /1 celular que ya es cliente/);
   assert.match(html, /Oswaldo Chávez: 2/);
   assert.match(html, /Jaime Abaroa: 1/);
   assert.match(html, /2 filas descartadas/);
