@@ -1033,9 +1033,8 @@
 </div>
 
 <!-- PIPELINE VIEW (issue #53): tablero unico de 7 etapas + conmutador lista/tablero -->
-<!-- CAPTURA DE EXPO (issue #261, spec #260): paso 1 con el prospecto enfrente.
-     El paso 2 (calificacion) llega en su propio ticket; aqui el boton Calificar
-     es un placeholder deshabilitado. -->
+<!-- CAPTURA DE EXPO (issue #261, spec #260): paso 1 con el prospecto enfrente y
+     paso 2 (la calificacion, issue #263) cuando se va. -->
 <div id="expo-view" style="display:none">
   <header class="historial-header">
     <h1 id="expo-titulo">Captura de expo</h1>
@@ -1078,6 +1077,34 @@
       <button class="btn btn-primary" id="btn-guardar-expo">Guardar prospecto</button>
     </div>
     <div id="expo-guardado" style="display:none"></div>
+    <!-- Paso 2 (issue #263): la calificacion cuando el prospecto se va. Todo
+         opcional -- se puede cerrar vacio y completarlo despues desde la
+         tarjeta. Los campos y los chips los pinta prospectos-logica.js. -->
+    <div id="expo-paso2" style="display:none">
+      <div id="ex2-quien" class="cot-card-meta" style="margin-bottom:8px"></div>
+      <div id="ex2-campos"></div>
+      <div class="form-group">
+        <label>Volumen de una primera orden</label>
+        <div id="ex2-piezas-chips"></div>
+      </div>
+      <div class="form-group">
+        <label>Notas</label>
+        <div class="campo-dictado">
+          <textarea id="ex2-notas" rows="2" placeholder="Lo que haya que recordar"></textarea>
+          <span id="ex2-notas-mic"></span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Siguiente contacto</label>
+        <div id="ex2-canal-chips" style="margin-bottom:6px"></div>
+        <input type="date" id="ex2-sc-fecha">
+      </div>
+      <div id="ex2-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
+      <div class="expo-acciones">
+        <button class="btn btn-primary" id="btn-guardar-calificacion">Guardar calificaci&oacute;n</button>
+        <button class="btn btn-secondary" id="btn-cerrar-calificacion">Dejarlo para despu&eacute;s</button>
+      </div>
+    </div>
   </div>
 </div>
 

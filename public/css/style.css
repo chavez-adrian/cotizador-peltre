@@ -1180,6 +1180,38 @@ body {
 .evento-badge { background: oklch(0.9 0.07 200); color: oklch(0.34 0.09 220); }
 .siguiente-contacto-badge { background: oklch(0.89 0.07 230); color: oklch(0.34 0.1 250); }
 
+/* Calificacion del paso 2 (issue #263): se lee de un vistazo en la tarjeta, y
+   "Calificacion pendiente" usa el mismo chip mientras este vacia. */
+.calificacion-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 9px;
+  padding: 2px 8px;
+  margin: 0 4px 4px 0;
+  vertical-align: middle;
+  background: oklch(0.91 0.05 100);
+  color: oklch(0.35 0.08 90);
+}
+
+/* Campo de texto libre con dictado: el microfono va pegado al campo. Sin
+   soporte del navegador (marca sin-dictado en <body>) desaparece, para no
+   ofrecer un boton que no hace nada. */
+.campo-dictado { display: flex; gap: 6px; align-items: flex-start; }
+.campo-dictado > input, .campo-dictado > textarea { flex: 1; }
+.btn-mic {
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.btn-mic-activo { background: var(--primary); border-color: var(--primary); }
+.sin-dictado .btn-mic { display: none; }
+
 /* PRE / #Operam (issue #63): una pre-cotizacion (sin folio de Operam) lleva el
    chip ambar "PRE"; una cotizacion registrada lleva el chip azul "#Operam N". */
 .cot-badge {
