@@ -1022,3 +1022,100 @@ test('C5: "Calificacion pendiente" es la calificacion ausente o sin ningun valor
   assert.equal(calificacionVacia({ usa_peltre: false }), false);
   assert.equal(calificacionVacia(CALIFICACION), false);
 });
+
+let buildCalificacionChipsHtml;
+before(async () => {
+  ({ buildCalificacionChipsHtml } = await import('../prospectos-logica.js'));
+});
+
+test('C6: la calificacion se lee en la tarjeta como chips en el orden en que se marco', () => {
+  const html = buildCalificacionChipsHtml(CALIFICACION);
+  assert.match(html, /4-10 años/);
+  assert.match(html, /3-5 sucursales/);
+  assert.match(html, /Ya usa peltre: Cinsa/);
+  // la etiqueta humana solo vive aqui: la clave estable no se le enseña al vendedor
+  assert.equal(html.includes('no_se_rompe'), false);
+  assert.ok(html.indexOf('No se rompe') < html.indexOf('Precio'), 'valora conserva el orden capturado');
+  assert.match(html, /Que sea apilable/);
+  assert.match(html, /Cafetería de especialidad/);
+  assert.match(html, /Oficinistas/);
+  // una sucursal no se pluraliza y "Por abrir" no lleva "años"
+  assert.match(buildCalificacionChipsHtml({ sucursales: '1' }), /1 sucursal</);
+  assert.match(buildCalificacionChipsHtml({ anios: 'Por abrir' }), />Por abrir</);
+  assert.match(buildCalificacionChipsHtml({ usa_peltre: false }), /No usa peltre/);
+  assert.equal(buildCalificacionChipsHtml({}), '');
+  // lo que teclea el vendedor sale escapado
+  assert.equal(buildCalificacionChipsHtml({ proveedor_peltre: '<b>x</b>', usa_peltre: true }).includes('<b>x</b>'), false);
+});
+
+test('C7: la tarjeta del prospecto de feria avisa "Calificacion pendiente" hasta que hay un valor', () => {
+  const pendiente = buildProspectoCardHtml(PROSPECTO_EXPO, null, new Date(), { catalogoUrl: LIGA });
+  assert.match(pendiente, /Calificación pendiente/);
+  const calificado = buildProspectoCardHtml(
+    { ...PROSPECTO_EXPO, data: { ...PROSPECTO_EXPO.data, calificacion: CALIFICACION } },
+    null, new Date(), { catalogoUrl: LIGA }
+  );
+  assert.equal(calificado.includes('Calificación pendiente'), false);
+  assert.match(calificado, /Ya usa peltre: Cinsa/);
+  // un prospecto que no vino de una feria no tiene paso 2 que reclamar
+  assert.equal(buildProspectoCardHtml(PROSPECTO).includes('Calificación pendiente'), false);
+});
+
+let buildGrupoChipsHtml, buildCalificacionCamposHtml, buildMicHtml;
+before(async () => {
+  ({ buildGrupoChipsHtml, buildCalificacionCamposHtml, buildMicHtml } = await import('../prospectos-logica.js'));
+});
+
+test('C8: un grupo de chips guarda su seleccion en el DOM, y el multi ademas el orden', () => {
+  const uno = buildGrupoChipsHtml('anios', ANIOS_OPERANDO, '4-10');
+  assert.match(uno, /data-grupo="anios"/);
+  assert.match(uno, /data-valor="4-10" data-orden="1" class="chip chip-activo"|class="chip chip-activo"[^>]*data-valor="4-10"/);
+  assert.equal(uno.includes('onclick'), false);
+  assert.equal(uno.includes('data-multi'), false);
+
+  const multi = buildGrupoChipsHtml('valora', VALORA, ['precio', 'durabilidad'], true);
+  assert.match(multi, /data-multi="1"/);
+  // el orden capturado viaja en el DOM para poder releerlo al guardar
+  assert.match(multi, /data-valor="precio" data-orden="1"/);
+  assert.match(multi, /data-valor="durabilidad" data-orden="2"/);
+  assert.equal(/data-valor="logo"[^>]*chip-activo/.test(multi), false);
+  // la etiqueta humana se pinta, la clave estable es la que se guarda
+  assert.match(multi, />Resiste fuego\/horno</);
+});
+
+test('C9: los campos del paso 2 se comparten entre la captura y la edicion, con microfono en los textos libres', () => {
+  const html = buildCalificacionCamposHtml('ex2', CALIFICACION);
+  assert.match(html, /id="ex2-calificacion"/);
+  assert.match(html, /id="ex2-concepto"/);
+  assert.match(html, /id="ex2-tipo_clientes"/);
+  assert.match(html, /id="ex2-proveedor_peltre"/);
+  assert.match(html, /id="ex2-otro_valora"/);
+  // prellenado con lo capturado
+  assert.match(html, /Cafetería de especialidad/);
+  assert.match(html, /value="Cinsa"/);
+  assert.match(html, /data-grupo="anios"/);
+  assert.match(html, /data-grupo="sucursales"/);
+  assert.match(html, /data-grupo="usa_peltre"/);
+  assert.match(html, /data-grupo="valora"/);
+  // el microfono va SOLO en los campos de texto largo, no en los chips ni en "Otro"
+  for (const campo of ['concepto', 'tipo_clientes', 'proveedor_peltre']) {
+    assert.match(html, new RegExp(`data-mic="ex2-${campo}"`), `falta microfono en ${campo}`);
+  }
+  assert.equal(html.includes('data-mic="ex2-otro_valora"'), false);
+  assert.equal(html.includes('onclick'), false);
+  // otro prefijo (la edicion de la tarjeta) no colisiona con la pantalla de expo
+  assert.match(buildCalificacionCamposHtml('ed2-7', {}), /id="ed2-7-concepto"/);
+  assert.match(buildMicHtml('ed2-7-notas'), /data-mic="ed2-7-notas"/);
+});
+
+test('C10: la edicion inline de la tarjeta incorpora el paso 2 y dicta las notas', () => {
+  const html = buildEdicionProspectoFormHtml({
+    id: 3, nombre: 'Laura', ciudad: 'Puebla',
+    data: { notas: 'pidio catalogo', calificacion: { anios: '1-3', valora: ['logo'] } },
+  });
+  assert.match(html, /id="ed2-3-calificacion"/);
+  assert.match(html, /data-mic="ed-notas-3"/);
+  // lo ya capturado llega prellenado para corregirlo
+  assert.match(html, /data-valor="1-3" data-orden="1" class="chip chip-activo"|class="chip chip-activo"[^>]*data-valor="1-3"/);
+  assert.match(html, /data-valor="logo" data-orden="1"/);
+});

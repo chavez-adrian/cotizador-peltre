@@ -101,8 +101,12 @@ export function buildEdicionProspectoFormHtml(p) {
         <select id="ed-piezas_estimadas-${p.id}">${piezasOpts}</select>
         <input type="email" id="ed-correo-${p.id}" value="${v(d.correo)}" placeholder="Correo">
         <input type="number" id="ed-temperatura-${p.id}" min="1" max="5" value="${v(d.temperatura)}" placeholder="Temperatura (1-5)">
-        <textarea id="ed-notas-${p.id}" placeholder="Notas">${v(d.notas)}</textarea>
+        <div class="campo-dictado">
+          <textarea id="ed-notas-${p.id}" placeholder="Notas">${v(d.notas)}</textarea>
+          ${buildMicHtml(`ed-notas-${p.id}`)}
+        </div>
       </div>
+      ${buildCalificacionCamposHtml(`ed2-${p.id}`, d.calificacion)}
       <div class="cot-card-actions" style="margin-top:6px">
         <button class="btn btn-primary btn-sm" onclick="guardarEdicionProspecto(${p.id})">Guardar</button>
         <button class="btn btn-secondary btn-sm" onclick="abrirEdicionProspecto(${p.id})">Cancelar</button>
@@ -365,6 +369,13 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // Siguiente contacto (issue #262): el compromiso vivo se lee de un vistazo en
   // la tarjeta, este o no suprimida la cadencia.
   const siguiente = activo ? siguienteContactoVivo(p, ahora) : null;
+  // Calificacion del paso 2 (issue #263): se lee en chips. Mientras no tenga
+  // ningun valor, el prospecto que dejo una feria avisa que le falta -- es lo
+  // que el vendedor completa al final del dia. Un prospecto que no vino de un
+  // evento no tiene paso 2 que reclamar.
+  const calificacion = calificacionVacia(d.calificacion)
+    ? (d.evento && editable ? '<span class="calificacion-badge">Calificación pendiente</span>' : '')
+    : buildCalificacionChipsHtml(d.calificacion);
   const pesadas = [];
   if (activo) {
     pesadas.push(`<button class="btn btn-secondary btn-sm" onclick="registrarToqueProspecto(${p.id})">Registrar contacto</button>`);
@@ -410,6 +421,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
           ${d.evento ? `<div style="margin-top:4px"><span class="evento-badge">${escapeHtml(d.evento)}</span></div>` : ''}
           ${reunion ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión el ${escapeHtml(fechaHora(reunion))}</span></div>` : ''}
           ${siguiente ? `<div style="margin-top:4px">${chipSiguienteContactoHtml(siguiente)}</div>` : ''}
+          ${calificacion ? `<div style="margin-top:4px">${calificacion}</div>` : ''}
         </div>
         ${compacta ? '' : `<div class="cot-card-tier">${escapeHtml(ETAPA_LABELS[p.etapa] || p.etapa)}</div>`}
       </div>
@@ -843,4 +855,109 @@ export function buildEventoSiguienteContacto(sc, vendedor, ahora = new Date()) {
     fecha_contacto: new Date(sc.fecha).toISOString(),
     fecha: ahora.toISOString(), vendedor,
   };
+}
+
+// La calificacion como se lee en la tarjeta: chips cortos en el mismo orden en
+// que se capturaron, mas los textos libres abajo. La etiqueta humana de `valora`
+// se resuelve AQUI -- lo guardado son claves estables.
+export function buildCalificacionChipsHtml(cal) {
+  const c = buildCalificacion(cal);
+  const chips = [];
+  if (c.anios) chips.push(c.anios === 'Por abrir' ? c.anios : `${c.anios} años`);
+  if (c.sucursales) chips.push(`${c.sucursales} ${c.sucursales === '1' ? 'sucursal' : 'sucursales'}`);
+  if (c.usa_peltre !== undefined) {
+    chips.push(c.usa_peltre
+      ? `Ya usa peltre${c.proveedor_peltre ? `: ${c.proveedor_peltre}` : ''}`
+      : 'No usa peltre');
+  }
+  for (const clave of c.valora || []) chips.push(etiquetaValora(clave));
+  if (c.otro_valora) chips.push(c.otro_valora);
+  const textos = [c.concepto, c.tipo_clientes].filter(Boolean);
+  const partes = [];
+  if (chips.length) {
+    partes.push(chips.map(t => `<span class="calificacion-badge">${escapeHtml(t)}</span>`).join(' '));
+  }
+  if (textos.length) {
+    partes.push(`<div class="cot-card-meta">${textos.map(escapeHtml).join(' · ')}</div>`);
+  }
+  return partes.join('');
+}
+
+// Chips del paso 2: a diferencia de los del paso 1 (buildChipsHtml, #261), su
+// estado vive EN EL DOM -- la clase chip-activo y, en los grupos de multi
+// seleccion, el orden en `data-orden`. Asi el mismo grupo sirve en la pantalla
+// de expo y en la edicion inline de la tarjeta, que se re-pinta con la lista y
+// no tiene donde guardar una copia en JS. Sin `onclick` inline: un listener
+// delegado en app.js los enciende y los apaga (trampa #112).
+export function buildGrupoChipsHtml(grupo, opciones, seleccion, multi = false) {
+  const elegidas = multi
+    ? (Array.isArray(seleccion) ? seleccion : [])
+    : (seleccion ? [seleccion] : []);
+  const chips = (opciones || []).map(op => {
+    const valor = typeof op === 'string' ? op : op.clave;
+    const etiqueta = typeof op === 'string' ? op : op.etiqueta;
+    const orden = elegidas.indexOf(valor) + 1;
+    const estado = orden > 0 ? ` data-orden="${orden}" class="chip chip-activo"` : ' class="chip"';
+    return `<button type="button" data-valor="${escapeHtml(valor)}"${estado}>${escapeHtml(etiqueta)}</button>`;
+  }).join('');
+  return `<div class="chips-grupo" data-grupo="${escapeHtml(grupo)}"${multi ? ' data-multi="1"' : ''}>${chips}</div>`;
+}
+
+// "Ya usa o vende peltre" se guarda como booleano; los chips hablan en español.
+export const USA_PELTRE_OPCIONES = [
+  { clave: 'si', etiqueta: 'Sí' },
+  { clave: 'no', etiqueta: 'No' },
+];
+
+// Boton de microfono: dicta al campo `destino` (reconocimiento de voz del
+// navegador en es-MX, wiring en app.js). Sin soporte del navegador la app lo
+// esconde por CSS, para no ofrecer un boton que no hace nada.
+export function buildMicHtml(destino) {
+  return `<button type="button" class="btn-mic" data-mic="${escapeHtml(destino)}" title="Dictar">&#127908;</button>`;
+}
+
+// Campos del paso 2, UNA sola vez: los pinta la pantalla de la captura de expo
+// (prefijo "ex2") y la edicion inline de la tarjeta (prefijo "ed2-<id>", que ahi
+// completa lo que el stand o el importador no trajeron). Todo opcional: se puede
+// guardar vacio. Las piezas estimadas y las notas NO viven aqui -- son campos de
+// siempre del prospecto y cada pantalla ya los trae.
+export function buildCalificacionCamposHtml(prefijo, cal) {
+  const c = cal || {};
+  const id = campo => `${prefijo}-${campo}`;
+  const usa = typeof c.usa_peltre === 'boolean' ? (c.usa_peltre ? 'si' : 'no') : '';
+  const dictado = (campo, etiqueta, placeholder) => `
+      <div class="form-group">
+        <label>${etiqueta}</label>
+        <div class="campo-dictado">
+          <textarea id="${escapeHtml(id(campo))}" rows="2" placeholder="${escapeHtml(placeholder)}">${escapeHtml(c[campo] || '')}</textarea>
+          ${buildMicHtml(id(campo))}
+        </div>
+      </div>`;
+  return `
+    <div class="calificacion-campos" id="${escapeHtml(prefijo)}-calificacion">
+      ${dictado('concepto', 'Concepto del negocio', '¿Qué vende, cómo es el lugar?')}
+      ${dictado('tipo_clientes', '¿A qué clientes atiende?', '¿Quién le compra?')}
+      <div class="form-group">
+        <label>Años operando</label>
+        ${buildGrupoChipsHtml('anios', ANIOS_OPERANDO, c.anios)}
+      </div>
+      <div class="form-group">
+        <label>Sucursales</label>
+        ${buildGrupoChipsHtml('sucursales', SUCURSALES, c.sucursales)}
+      </div>
+      <div class="form-group">
+        <label>¿Ya usa o vende peltre?</label>
+        ${buildGrupoChipsHtml('usa_peltre', USA_PELTRE_OPCIONES, usa)}
+        <div class="campo-dictado" style="margin-top:6px">
+          <input type="text" id="${escapeHtml(id('proveedor_peltre'))}" value="${escapeHtml(c.proveedor_peltre || '')}" placeholder="¿De qué proveedor?">
+          ${buildMicHtml(id('proveedor_peltre'))}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>¿Qué es importante al escoger la loza?</label>
+        ${buildGrupoChipsHtml('valora', VALORA, c.valora, true)}
+        <input type="text" id="${escapeHtml(id('otro_valora'))}" value="${escapeHtml(c.otro_valora || '')}" placeholder="Otro, ¿cuál?">
+      </div>
+    </div>
+  `;
 }
