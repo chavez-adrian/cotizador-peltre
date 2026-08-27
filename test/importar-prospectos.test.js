@@ -233,3 +233,104 @@ test('las filas vacias del final del archivo se saltan sin reportarse', () => {
   assert.deepEqual(sinCelular, []);
   assert.deepEqual(descartados, []);
 });
+
+// --- Export real de Abastur edicion 2026 (issue #277): mismas columnas que
+// trae la plataforma para esta edicion, cabeceras REALES, datos anonimizados.
+// El export anterior (arriba) sigue tal cual: el alias promete aceptar ambos.
+
+const HEADERS_2026 = ['First name', 'Last name', 'Job title', 'Company', 'Email', 'Mobile phone',
+  'Landline phone', 'Website', 'Place', 'Street', 'Zip code', 'City', 'State', 'Country',
+  'Biography', 'X (Twitter)', 'Linkedin', 'Photo', 'Tipo (es)', 'NA (es)', 'Edad (es)',
+  'Género (es)', 'Nombre de la empresa (es)', 'Actividad principal de la empresa (es)',
+  'Distribuidor o proveedor (es)', 'Tamaño de la empresa (es)', 'Cargo (es)', 'Área (es)',
+  'En una toma de decisión (es)', '¿Cuál es tu objetivo de visita en Abastur? (es)',
+  'Selecciona tu área de interés (es)', 'Nombre de la empresa (en)', 'Connected via',
+  'First connection date', 'Exhibitor member (first connection)', 'Business card scanned',
+  'Scoring', 'Note', 'Assigned to', 'Interaction score'];
+
+function fila2026(o = {}) {
+  return [
+    o.nombre ?? 'OMAR', o.apellido ?? 'OLVERA', o.jobTitle ?? '', o.empresa ?? 'VIANDA CONSULTORES',
+    o.correo ?? 'omar@vianda.mx', o.celular ?? '+52 55 1242 1575', '', '', '', '', '', o.ciudad ?? 'HUIXQUILUCAN',
+    o.estado ?? 'MEXICO', 'Mexico', '', '', '', '', '', '', '', '', '', o.actividad ?? '', '',
+    o.tamano ?? '', o.cargo ?? '', o.area ?? '', o.decision ?? '', '', o.interes ?? '', '', '',
+    o.fecha ?? SERIAL, o.expositor ?? '', '', o.scoring ?? '', o.nota ?? '', '', '',
+  ];
+}
+
+function workbook2026(filas) {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS_2026, ...filas]), 'Contacts');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+test('el export 2026 usa guion en la actividad; las 4 actividades del ticket mapean al tipo correcto', () => {
+  const casos = [
+    ['Distribuidor - Proveedor', 'Distribuidores', 14],
+    ['Catering - Banquetes', 'Catering | Eventos', 15],
+    ['Pasteleria - Panaderia', 'Cafeterías', 10],
+  ];
+  casos.forEach(([actividad, tipo, segmento], i) => {
+    const { listos } = importarProspectosFeria(workbook2026([
+      fila2026({ actividad, celular: `55124216${10 + i}` }),
+    ]), OPTS);
+    assert.equal(listos[0].data.tipo_cliente, tipo, actividad);
+    assert.equal(listos[0].data.segmento_id, segmento, actividad);
+  });
+});
+
+test('Fabricante - Manufactura (decision explicita) se queda en Otro conservando el texto original con guion', () => {
+  const { listos } = importarProspectosFeria(workbook2026([
+    fila2026({ actividad: 'Fabricante - Manufactura' }),
+  ]), OPTS);
+  assert.equal(listos[0].data.tipo_cliente, 'Otro');
+  assert.equal(listos[0].data.tipo_cliente_otro, 'Fabricante - Manufactura');
+});
+
+test('el alias de cabecera: decision acepta "En una toma de decision (es)" y puesto acepta "Cargo (es)"', () => {
+  const { listos } = importarProspectosFeria(workbook2026([
+    fila2026({ cargo: 'Chef Ejecutivo', decision: 'Decido / apruebo' }),
+  ]), OPTS);
+  assert.match(listos[0].data.notas, /Puesto: Chef Ejecutivo/);
+  assert.match(listos[0].data.notas, /Decisión de compra: Decido \/ apruebo/);
+});
+
+test('el area de interes del export 2026 entra como una senal mas de la linea de calificacion', () => {
+  const { listos } = importarProspectosFeria(workbook2026([
+    fila2026({ cargo: 'Dueño', interes: 'Alimentos; Cristalería - Vajillas; Mobiliario' }),
+  ]), OPTS);
+  assert.match(listos[0].data.notas, /Área de interés: Alimentos; Cristalería - Vajillas; Mobiliario/);
+});
+
+test('avisos: columnas esperadas que no aparecen en el archivo, incluidos ambos alias', () => {
+  const wb = XLSX.utils.book_new();
+  const headersSinScoringNiDecision = HEADERS_2026.filter(h =>
+    h !== 'Scoring' && h !== 'En una toma de decisión (es)');
+  const filaSinEsas = fila2026().filter((_, i) => HEADERS_2026[i] !== 'Scoring' && HEADERS_2026[i] !== 'En una toma de decisión (es)');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersSinScoringNiDecision, filaSinEsas]), 'Contacts');
+  const { avisos } = importarProspectosFeria(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), OPTS);
+  assert.ok(avisos.columnasNoEncontradas.includes('Scoring'));
+  assert.ok(avisos.columnasNoEncontradas.some(c => c.includes('Decisión de compra (es)') && c.includes('En una toma de decisión (es)')));
+});
+
+test('avisos: con el juego completo de cabeceras 2026 (ambos alias presentes) no falta ninguna columna', () => {
+  const { avisos } = importarProspectosFeria(workbook2026([fila2026()]), OPTS);
+  assert.deepEqual(avisos.columnasNoEncontradas, []);
+});
+
+test('avisos: las actividades que caen a Otro sin mapeo se cuentan por fila, listas o no', () => {
+  const { avisos } = importarProspectosFeria(workbook2026([
+    fila2026({ actividad: 'Fabricante - Manufactura' }),
+    fila2026({ actividad: 'Fabricante - Manufactura', celular: '5512421699' }),
+    fila2026({ actividad: 'Tienda de autoservicio', celular: '5512421698' }),
+  ]), OPTS);
+  assert.deepEqual(avisos.actividadesSinMapeo.sort((a, b) => a.actividad.localeCompare(b.actividad)), [
+    { actividad: 'Fabricante - Manufactura', filas: 2 },
+    { actividad: 'Tienda de autoservicio', filas: 1 },
+  ]);
+});
+
+test('el archivo del formato anterior sigue sin avisos por actividad ni columnas cuando todo mapea', () => {
+  const { avisos } = importarProspectosFeria(workbook([fila({ actividad: 'Restaurante' })]), OPTS);
+  assert.deepEqual(avisos.actividadesSinMapeo, []);
+});

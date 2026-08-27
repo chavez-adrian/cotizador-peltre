@@ -72,3 +72,44 @@ test('IF4: fila sin nombre se reporta legible y el reporte vacio no truena', () 
   assert.equal(typeof buildReporteImportacionHtml(null), 'string');
   assert.match(buildReporteImportacionHtml(null), /0 prospectos nuevos/);
 });
+
+test('IF5: los avisos de forma del archivo (issue #277) se pintan junto a los descartados', () => {
+  const html = buildReporteImportacionHtml({
+    importados: 1,
+    enriquecidos: 0,
+    porVendedor: { Tester: 1 },
+    descartados: [],
+    sinCelular: [],
+    avisos: {
+      columnasNoEncontradas: ['Scoring'],
+      actividadesSinMapeo: [{ actividad: 'Fabricante - Manufactura', filas: 2 }],
+    },
+  });
+  assert.match(html, /Scoring/);
+  assert.match(html, /Fabricante - Manufactura/);
+  assert.match(html, /2/);
+});
+
+test('IF6: sin avisos (o sin ambas listas) no se pinta nada de mas ni truena', () => {
+  const html = buildReporteImportacionHtml({
+    importados: 1, enriquecidos: 0, porVendedor: {}, descartados: [], sinCelular: [],
+    avisos: { columnasNoEncontradas: [], actividadesSinMapeo: [] },
+  });
+  assert.equal(/aviso/i.test(html), false);
+  const sinAvisos = buildReporteImportacionHtml({
+    importados: 1, enriquecidos: 0, porVendedor: {}, descartados: [], sinCelular: [],
+  });
+  assert.equal(typeof sinAvisos, 'string');
+});
+
+test('IF7: escapa HTML en los avisos', () => {
+  const html = buildReporteImportacionHtml({
+    importados: 0, enriquecidos: 0, porVendedor: {}, descartados: [], sinCelular: [],
+    avisos: {
+      columnasNoEncontradas: ['<img onerror=x>'],
+      actividadesSinMapeo: [{ actividad: '<b>x</b>', filas: 1 }],
+    },
+  });
+  assert.equal(html.includes('<img'), false);
+  assert.equal(html.includes('<b>x</b>'), false);
+});

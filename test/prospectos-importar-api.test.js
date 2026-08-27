@@ -199,6 +199,27 @@ test('un celular que ya es prospecto se enriquece: rellena vacios, no pisa el st
   assert.equal(importado.evento, EVENTO);
 });
 
+test('re-importar el mismo archivo no duplica la nota que el prospecto ya tiene (issue #277)', async () => {
+  writeProspectos([prospectoDeStand()]);
+  const buffer = xlsxBuffer([fila({ actividad: 'Hotel', scoring: 1, nota: 'Pidio precio de jarros' })]);
+  const res1 = await importar(ADMIN_TOKEN, buffer, 'Jaime Abaroa');
+  assert.equal(res1.body.enriquecidos, 1);
+  const res2 = await importar(ADMIN_TOKEN, buffer, 'Jaime Abaroa');
+  assert.equal(res2.status, 200);
+  assert.equal(res2.body.enriquecidos, 1);
+  const p = readProspectos()[0];
+  assert.equal(p.data.notas, 'Pidio tazas\nPidio precio de jarros');
+});
+
+test('el cruce por correo de un gafete sin celular tampoco duplica la nota en una segunda pasada', async () => {
+  writeProspectos([prospectoDeStand({ correo: 'omar@vianda.mx', notas: undefined })]);
+  const buffer = xlsxBuffer([fila({ celular: '', correo: 'omar@vianda.mx', nota: 'Dejo tarjeta' })]);
+  await importar(ADMIN_TOKEN, buffer, 'Jaime Abaroa');
+  await importar(ADMIN_TOKEN, buffer, 'Jaime Abaroa');
+  const p = readProspectos()[0];
+  assert.equal(p.data.notas, 'Dejo tarjeta');
+});
+
 test('el prospecto sin tipo de cliente ni temperatura si los toma del export', async () => {
   writeProspectos([prospectoDeStand({ tipo_cliente: undefined, segmento_id: undefined, temperatura: undefined })]);
   const res = await importar(ADMIN_TOKEN, xlsxBuffer([
@@ -303,6 +324,17 @@ test('sin archivo responde 400; archivo sin hoja Contacts responde 400', async (
   assert.equal(malo.status, 400);
   assert.match(malo.body.error, /Contacts/);
   assert.equal(readProspectos().length, 0);
+});
+
+test('la respuesta propaga los avisos de forma del archivo (issue #277)', async () => {
+  writeProspectos([]);
+  const res = await importar(ADMIN_TOKEN, xlsxBuffer([
+    fila({ actividad: 'Tienda de autoservicio' }),
+  ]), 'Jaime Abaroa');
+  assert.equal(res.status, 200);
+  assert.ok(res.body.avisos);
+  assert.deepEqual(res.body.avisos.actividadesSinMapeo, [{ actividad: 'Tienda de autoservicio', filas: 1 }]);
+  assert.ok(Array.isArray(res.body.avisos.columnasNoEncontradas));
 });
 
 test('la importacion es solo admin: vendedor 403, sin token 401', async () => {

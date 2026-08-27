@@ -1355,7 +1355,10 @@ function datosParaEnriquecer(actual, entrantes) {
     for (const k of juntos) if (entrantes[k] !== undefined) merge[k] = entrantes[k];
   }
   if (!campoVacio(entrantes.notas)) {
-    merge.notas = campoVacio(actual.notas) ? entrantes.notas : `${actual.notas}
+    // Re-importar un archivo que trae filas ya importadas no debe repetir la
+    // nota que el prospecto ya tiene (issue #277).
+    if (campoVacio(actual.notas)) merge.notas = entrantes.notas;
+    else if (!actual.notas.includes(entrantes.notas)) merge.notas = `${actual.notas}
 ${entrantes.notas}`;
   }
   return merge;
@@ -1451,7 +1454,7 @@ app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, uplo
     sinCelular.push({ fila: g.fila, nombre: g.nombre, empresa: g.empresa, correo: g.correo, scoring: g.scoring });
   }
   descartados.sort((a, b) => a.fila - b.fila);
-  res.json({ importados, enriquecidos, descartados, sinCelular, porVendedor });
+  res.json({ importados, enriquecidos, descartados, sinCelular, porVendedor, avisos: parseo.avisos });
 });
 
 app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('excel'), (req, res) => {

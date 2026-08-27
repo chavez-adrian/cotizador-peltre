@@ -50,5 +50,20 @@ export function buildReporteImportacionHtml(reporte) {
       partes.push(linea(`Fila ${g.fila}: ${nombreLegible(g.nombre)}${detalle ? ' - ' + detalle : ''}`));
     }
   }
+  // Avisos de forma del archivo (issue #277): columnas esperadas que no
+  // aparecieron y actividades que cayeron a "Otro" sin mapeo. Best effort, no
+  // son un descarte: el archivo se importa igual.
+  const avisos = r.avisos || {};
+  const columnasNoEncontradas = avisos.columnasNoEncontradas || [];
+  const actividadesSinMapeo = avisos.actividadesSinMapeo || [];
+  if (columnasNoEncontradas.length || actividadesSinMapeo.length) {
+    partes.push(linea('<strong>Avisos del archivo</strong>', 'margin-top:8px'));
+    if (columnasNoEncontradas.length) {
+      partes.push(linea(`Columnas no encontradas: ${columnasNoEncontradas.map(escapeHtml).join(', ')}`));
+    }
+    for (const a of actividadesSinMapeo) {
+      partes.push(linea(`Actividad sin mapeo "${escapeHtml(a.actividad)}": ${a.filas} ${a.filas === 1 ? 'fila' : 'filas'}`));
+    }
+  }
   return partes.join('');
 }
