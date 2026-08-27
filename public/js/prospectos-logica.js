@@ -752,7 +752,7 @@ export function mensajeWhatsAppExpo(prospecto, vendedorNombre, catalogoUrl) {
       ? `una propuesta de mayoreo para ${empresa}`
       : `una cotización para ${empresa}`;
   return [
-    `Hola ${primerNombre(p.nombre)}, soy ${primerNombre(vendedorNombre)} de pp.peltre. ` +
+    `Hola ${primerNombre(p.nombre)}, soy ${String(vendedorNombre == null ? '' : vendedorNombre).trim()} de pp.peltre. ` +
       `Un gusto haberte conocido en ${String(p.evento == null ? '' : p.evento).trim()}. Te comparto nuestro catálogo:`,
     String(catalogoUrl == null ? '' : catalogoUrl).trim(),
     '',

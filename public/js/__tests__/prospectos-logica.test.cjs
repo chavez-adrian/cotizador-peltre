@@ -692,18 +692,27 @@ test('E3: el nivel de interes de la expo se traduce a temperatura 1/3/5', () => 
 
 const LIGA = 'https://cdn.shopify.com/catalogo.pdf';
 
-test('E4: mensajeWhatsAppExpo devuelve el texto aprobado con primer nombre y liga en renglon propio', async () => {
+test('E4: mensajeWhatsAppExpo devuelve el texto aprobado con primer nombre del prospecto y liga en renglon propio', async () => {
   const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
   const texto = mensajeWhatsAppExpo(
     { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
     'Alejandro Chávez', LIGA
   );
   assert.equal(texto, [
-    'Hola Laura, soy Alejandro de pp.peltre. Un gusto haberte conocido en Abastur 2026. Te comparto nuestro catálogo:',
+    'Hola Laura, soy Alejandro Chávez de pp.peltre. Un gusto haberte conocido en Abastur 2026. Te comparto nuestro catálogo:',
     LIGA,
     '',
     'Si te sirve, con gusto te preparo una cotización para Hotel Azul. ¿Qué piezas te llamaron la atención?',
   ].join('\n'));
+});
+
+test('E4b: el vendedor se presenta con el nombre integro del registro, incluido uno de tres palabras', async () => {
+  const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  const texto = mensajeWhatsAppExpo(
+    { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
+    'Ana Maria Lopez', LIGA
+  );
+  assert.match(texto, /^Hola Laura, soy Ana Maria Lopez de pp\.peltre\. /);
 });
 
 test('E5: sin empresa el mensaje ofrece una cotizacion a tu medida', async () => {
