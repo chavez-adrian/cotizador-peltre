@@ -758,9 +758,12 @@ function bloqueLiga(frase, url) {
 // y el boton WhatsApp de la tarjeta, y SOLO en prospectos con evento (los demas
 // conservan el enlace vacio de siempre). Las ligas llegan en UN objeto para que
 // agregar una no cambie la firma en cada llamador. Cada bloque va separado por
-// un renglon en blanco: la vista previa de WhatsApp la genera la PRIMERA URL del
-// mensaje (la del sitio), no el catalogo -- un PDF no genera vista previa.
-export function mensajeWhatsAppExpo(prospecto, vendedorNombre, { sitioUrl = '', catalogoUrl = '' } = {}) {
+// un renglon en blanco. Lo que la liga NO hace es servir de vista previa: la
+// version anterior de este comentario decia que iba sola en su renglon "para que
+// WhatsApp la muestre como vista previa", y eso no ocurria -- el catalogo era un
+// PDF y un PDF no genera vista previa. El renglon propio es de legibilidad.
+export function mensajeWhatsAppExpo(prospecto, vendedorNombre, ligas) {
+  const { sitioUrl = '', catalogoUrl = '' } = ligas || {};
   const p = prospecto || {};
   const empresa = String(p.empresa == null ? '' : p.empresa).trim();
   const oferta = !empresa

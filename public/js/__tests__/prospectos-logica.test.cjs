@@ -738,12 +738,15 @@ test('E4d: sin liga de catalogo desaparece el bloque entero, sin renglon en blan
     '',
     'Si te sirve, con gusto te preparo una cotización para Hotel Azul. ¿Qué piezas te llamaron la atención?',
   ].join('\n'));
-  // sin ningun dato de ligas el mensaje sigue completo (llamador que no lo pasa)
-  assert.equal(mensajeWhatsAppExpo({ nombre: 'Laura', evento: 'Abastur 2026' }, 'Pilar'), [
+  // sin ningun dato de ligas el mensaje sigue completo (llamador que no lo pasa),
+  // y `null` se absorbe igual que el resto de los campos del nucleo
+  const sinLigas = [
     'Hola Laura, soy Pilar de pp.peltre. Un gusto haberte conocido en Abastur 2026.',
     '',
     'Si te sirve, con gusto te preparo una cotización a tu medida. ¿Qué piezas te llamaron la atención?',
-  ].join('\n'));
+  ].join('\n');
+  assert.equal(mensajeWhatsAppExpo({ nombre: 'Laura', evento: 'Abastur 2026' }, 'Pilar'), sinLigas);
+  assert.equal(mensajeWhatsAppExpo({ nombre: 'Laura', evento: 'Abastur 2026' }, 'Pilar', null), sinLigas);
 });
 
 test('E4e: con liga del sitio su bloque va antes del catalogo; vacia se omite sin dejar hueco', async () => {
@@ -771,7 +774,7 @@ test('E4e: con liga del sitio su bloque va antes del catalogo; vacia se omite si
 test('E5: sin empresa el mensaje ofrece una cotizacion a tu medida', async () => {
   const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
   const texto = mensajeWhatsAppExpo(
-    { nombre: 'Laura', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' }, 'Pilar Rosete', LIGA
+    { nombre: 'Laura', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' }, 'Pilar Rosete', LIGAS
   );
   assert.match(texto, /con gusto te preparo una cotización a tu medida\. ¿Qué piezas te llamaron la atención\?$/);
   assert.equal(texto.includes('para '), false);
@@ -781,12 +784,12 @@ test('E6: los tipos mayoristas cambian la oferta a una propuesta de mayoreo', as
   const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
   for (const tipo of ['Distribuidores', 'Menudistas', 'Agencias | Marcas']) {
     const texto = mensajeWhatsAppExpo(
-      { nombre: 'Laura', empresa: 'Casa Azul', tipo_cliente: tipo, evento: 'Abastur 2026' }, 'Pilar', LIGA
+      { nombre: 'Laura', empresa: 'Casa Azul', tipo_cliente: tipo, evento: 'Abastur 2026' }, 'Pilar', LIGAS
     );
     assert.match(texto, /con gusto te preparo una propuesta de mayoreo para Casa Azul\./);
   }
   const restaurante = mensajeWhatsAppExpo(
-    { nombre: 'Laura', empresa: 'Casa Azul', tipo_cliente: 'Restaurantes', evento: 'Abastur 2026' }, 'Pilar', LIGA
+    { nombre: 'Laura', empresa: 'Casa Azul', tipo_cliente: 'Restaurantes', evento: 'Abastur 2026' }, 'Pilar', LIGAS
   );
   assert.match(restaurante, /una cotización para Casa Azul\./);
 });
@@ -794,7 +797,7 @@ test('E6: los tipos mayoristas cambian la oferta a una propuesta de mayoreo', as
 test('E7: un tipo mayorista sin empresa cae en la variante a tu medida', async () => {
   const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
   const texto = mensajeWhatsAppExpo(
-    { nombre: 'Laura', tipo_cliente: 'Distribuidores', evento: 'Abastur 2026' }, 'Pilar', LIGA
+    { nombre: 'Laura', tipo_cliente: 'Distribuidores', evento: 'Abastur 2026' }, 'Pilar', LIGAS
   );
   assert.match(texto, /una cotización a tu medida\./);
 });
