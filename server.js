@@ -33,6 +33,7 @@ import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
 import * as vendedoresStore from './lib/vendedores-store.js';
+import * as configStore from './lib/config-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
@@ -210,7 +211,7 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
   try {
     const precios = readJSON('precios.json');
     if (!precios) return res.status(500).json({ error: 'Precios no disponibles' });
-    const config = readJSON('config.json') || {
+    const config = configStore.leer() || {
       tiposActivos: precios.tiposProducto || [],
       texturasActivas: Object.keys(precios.texturas || {}).map(Number).filter(t => ![0, 8, 9].includes(t)),
     };
@@ -744,14 +745,15 @@ function respuestaCelularDeCliente(res, cliente) {
 }
 
 // Evento activo y liga del catalogo (issue #261, CONTEXT.md "Evento"): se
-// configuran UNA vez desde el panel admin y viven en data/config.json, la misma
-// lectura/escritura que ya usa la configuracion del catalogo. Un evento sin
-// nombre no es evento: el resto del sistema pregunta solo "hay evento activo".
+// configuran UNA vez desde el panel admin y viven en el store de configuracion
+// (#276), la misma lectura/escritura que ya usa la configuracion del catalogo.
+// Un evento sin nombre no es evento: el resto del sistema pregunta solo "hay
+// evento activo".
 // La fecha de fin NO apaga el evento sola -- es un dato del evento (de ahi sale
 // el primer dia habil despues de la feria); apagarlo es del admin, para que la
 // app nunca deje de ofrecer la captura a media feria por un reloj.
 function eventoActivoConfigurado() {
-  const evento = (readJSON('config.json') || {}).eventoActivo;
+  const evento = (configStore.leer() || {}).eventoActivo;
   return evento && evento.nombre ? evento : null;
 }
 
@@ -1468,7 +1470,7 @@ app.post('/api/admin/precios', authMiddleware, adminMiddleware, upload.single('e
 });
 
 app.get('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
-  const config = readJSON('config.json') || { tiposActivos: [], texturasActivas: [] };
+  const config = configStore.leer() || { tiposActivos: [], texturasActivas: [] };
   const precios = readJSON('precios.json') || {};
   res.json({
     config,
@@ -1490,21 +1492,33 @@ function normalizarEventoActivo(evento) {
   return { evento: { nombre, fin } };
 }
 
-app.post('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/api/admin/config', authMiddleware, adminMiddleware, async (req, res) => {
   const { tiposActivos, texturasActivas, eventoActivo, catalogoUrl, sitioUrl } = req.body;
   if (!Array.isArray(tiposActivos) || !Array.isArray(texturasActivas)) {
     return res.status(400).json({ error: 'Formato invalido' });
   }
   const { evento, error } = normalizarEventoActivo(eventoActivo);
   if (error) return res.status(400).json({ error });
-  // Merge sobre lo guardado: el panel manda lo que edita y lo demas se conserva
-  // (antes este POST reescribia el archivo entero con dos llaves).
-  const actual = readJSON('config.json') || {};
-  const nuevo = { ...actual, tiposActivos, texturasActivas };
-  if (eventoActivo !== undefined) nuevo.eventoActivo = evento;
-  if (catalogoUrl !== undefined) nuevo.catalogoUrl = String(catalogoUrl == null ? '' : catalogoUrl).trim();
-  if (sitioUrl !== undefined) nuevo.sitioUrl = String(sitioUrl == null ? '' : sitioUrl).trim();
-  writeJSON('config.json', nuevo);
+  // La lectura va DENTRO del try junto con el guardado: el handler es async
+  // desde #276 y Express 4 no atrapa lo que rechaza una promesa -- un fallo de
+  // la base o un config.json corrupto tumbarian el proceso en vez de dar 500.
+  try {
+    // El merge parte de lo que hay en la BASE, no de la cache fria: si el warm
+    // de arranque fallo o va en vuelo, leer() contesta con el archivo semilla y
+    // guardar lo escribiria encima de lo configurado en el panel -- justo la
+    // reversion al commit que #276 vino a eliminar.
+    await configStore.cargar();
+    // Merge sobre lo guardado: el panel manda lo que edita y lo demas se
+    // conserva (antes este POST reescribia el archivo entero con dos llaves).
+    const actual = configStore.leer() || {};
+    const nuevo = { ...actual, tiposActivos, texturasActivas };
+    if (eventoActivo !== undefined) nuevo.eventoActivo = evento;
+    if (catalogoUrl !== undefined) nuevo.catalogoUrl = String(catalogoUrl == null ? '' : catalogoUrl).trim();
+    if (sitioUrl !== undefined) nuevo.sitioUrl = String(sitioUrl == null ? '' : sitioUrl).trim();
+    await configStore.guardar(nuevo);
+  } catch (err) {
+    return res.status(500).json({ error: 'Configuracion no disponible: ' + err.message });
+  }
   res.json({ saved: true });
 });
 
@@ -3251,7 +3265,7 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
     // captura de expo, si no, la app se ve como siempre. `asesores` es el
     // registro COMPLETO (no el filtrado por operam_id de `vendedores`): en la
     // expo se captura a nombre de quien todavia no tiene id de Operam.
-    const config = readJSON('config.json') || {};
+    const config = configStore.leer() || {};
     // La fecha prellenada del siguiente contacto (#263) se DERIVA del fin del
     // evento aqui, no se guarda: si el admin corrige la fecha de cierre, la
     // sugerencia se mueve sola. Es el primer dia habil despues de la feria.
@@ -3365,9 +3379,15 @@ export async function obtenerListasPrecios() {
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
-  cargarListasPrecios().then(() => {
-    app.listen(PORT, () => console.log(`Cotizador corriendo en http://localhost:${PORT}`));
-  });
+  // La configuracion del panel (#276) se sirve de una cache en memoria porque
+  // sus lectores son sincronos: se calienta ANTES de escuchar para que el
+  // primer request ya vea lo guardado en Neon y no la semilla del archivo.
+  configStore.cargar()
+    .catch(err => console.warn('[config-store] warm de arranque fallo:', err.message))
+    .then(() => cargarListasPrecios())
+    .then(() => {
+      app.listen(PORT, () => console.log(`Cotizador corriendo en http://localhost:${PORT}`));
+    });
   // Calienta el indice de telefonos de Operam al arrancar (issue #73 parte 2): el
   // refresh tarda ~7s (440 clientes) y el lookup en cache frio se rinde a los 5s, por
   // eso el PRIMER formulario no reconocia al cliente existente. Eager + fire-and-forget:

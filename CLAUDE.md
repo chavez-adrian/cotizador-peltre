@@ -58,6 +58,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 | `recolector-genericos.mjs` | Lote historico de quotes de debtors genericos → bandeja (#124); orquestado por `scripts/rescatar-genericos.mjs` |
 | `catalogo-operam.js` | Catalogo generado desde Operam (#128/#131); orquestado por `scripts/sync-catalogo.mjs` |
 | `operam-web.js` | Web legacy (FrontAccounting): vigencia (#106) + actualizar quote conservando folio (#104) + ronda de descripcion por partida (#139) + post-fix del segmento del cliente (#172) + deteccion de cancelados |
+| `config-store.js` | Configuracion del panel `/admin` (tipos y texturas activos, Evento activo, ligas del sitio y del catalogo) en Neon (#276); `data/config.json` es SEMILLA de la tabla vacia y fallback sin `DATABASE_URL`; cache en memoria porque los lectores son sincronos (`leer()`), refrescada al guardar y calentada al arrancar (`cargar()`) |
 | `vendedores-store.js` | Registro de vendedores (identidad, PIN en claro, rol, operam_id, tope) en Neon (#140/#141); auto-siembra desde `data/vendedores.json` si la tabla esta vacia; el PUT de admin reemplaza el registro completo |
 | `db.js` | Pool pg; `query()` retorna null sin pool (graceful); auto-crea `clientes_log` y `operam_webhooks_log` en Neon |
 | `dropbox.js` | OAuth refresh; `upload` y `subirCsfDropbox` (backup de CSF, fire-and-forget) |
@@ -87,6 +88,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 ## Persistencia (reglas vigentes; historia en docs/arquitectura.md y ADR-0008/0009)
 
 - Neon Postgres (`DATABASE_URL`) es la fuente de verdad en produccion; sin `DATABASE_URL` los stores caen a `data/*.json` (dev y tests). El disco de Render es efimero.
+- **La configuracion del panel `/admin` tambien vive en Neon desde #276** (`lib/config-store.js`). `data/config.json` quedo como semilla de la tabla vacia y como fallback de dev: editarlo en un commit ya NO llega a produccion. Feria nueva o liga nueva se configuran DESDE EL PANEL, no con un commit.
 - **El numero de la cotizacion ES el folio de Operam** (ADR-0009), nunca el id interno (clave tecnica de URLs). Un solo punto lo decide: `datosDocumento(entry)` en `server.js`. En la UI siempre `etiquetaFolioOperam` (`pipeline-logica.js`).
 - Los GET `/api/cotizacion/pdf/:id` y `/html/:id` REGENERAN desde `data` jsonb y son el UNICO camino que genera documento; `POST /api/cotizacion` solo guarda. Van sin auth a proposito (compartir por WhatsApp).
 - El flujo guarda → espera subida a Operam → abre el documento numerado; si Operam falla o excede `TIMEOUT_OPERAM_MS`, el documento sale igual como PRE-COTIZACION explicita (nunca sin numero silencioso).
