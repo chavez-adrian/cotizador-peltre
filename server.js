@@ -1491,7 +1491,7 @@ function normalizarEventoActivo(evento) {
 }
 
 app.post('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
-  const { tiposActivos, texturasActivas, eventoActivo, catalogoUrl } = req.body;
+  const { tiposActivos, texturasActivas, eventoActivo, catalogoUrl, sitioUrl } = req.body;
   if (!Array.isArray(tiposActivos) || !Array.isArray(texturasActivas)) {
     return res.status(400).json({ error: 'Formato invalido' });
   }
@@ -1503,6 +1503,7 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
   const nuevo = { ...actual, tiposActivos, texturasActivas };
   if (eventoActivo !== undefined) nuevo.eventoActivo = evento;
   if (catalogoUrl !== undefined) nuevo.catalogoUrl = String(catalogoUrl == null ? '' : catalogoUrl).trim();
+  if (sitioUrl !== undefined) nuevo.sitioUrl = String(sitioUrl == null ? '' : sitioUrl).trim();
   writeJSON('config.json', nuevo);
   res.json({ saved: true });
 });
@@ -3260,6 +3261,7 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
       puedeAsignar: puedeAsignar({ role: req.user?.role, puedeAsignar: yo?.puedeAsignar }),
       eventoActivo: evento && { ...evento, siguienteContactoSugerido: primerDiaHabilDespues(evento.fin) },
       catalogoUrl: config.catalogoUrl || '',
+      sitioUrl: config.sitioUrl || '',
       asesores: registro.map(v => v.name),
     });
   } catch (err) {

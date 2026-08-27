@@ -1087,7 +1087,9 @@ async function conConfig(parcial, fn) {
   }
 }
 
-const conEventoActivo = fn => conConfig({ eventoActivo: EVENTO, catalogoUrl: CATALOGO_URL }, fn);
+const SITIO_URL = 'https://pppeltre.mx';
+
+const conEventoActivo = fn => conConfig({ eventoActivo: EVENTO, catalogoUrl: CATALOGO_URL, sitioUrl: SITIO_URL }, fn);
 
 const CAPTURA_EXPO = {
   celular: '+52 5544332211', nombre: 'Laura Mendoza', ciudad: 'CDMX', canal: 'Feria/Expo',
@@ -1116,6 +1118,46 @@ test('#261: el admin guarda evento activo y liga del catalogo, y el frontend los
   } finally {
     escribirArchivoSync(CONFIG_PATH, original);
   }
+});
+
+test('#275: el admin guarda la liga del sitio y el frontend la recibe en /api/catalogos', async () => {
+  const original = leerArchivoSync(CONFIG_PATH);
+  try {
+    const guardar = await supertest(app).post('/api/admin/config')
+      .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+      .send({ tiposActivos: ['PL'], texturasActivas: [1], eventoActivo: EVENTO, catalogoUrl: CATALOGO_URL, sitioUrl: SITIO_URL });
+    assert.equal(guardar.status, 200);
+
+    const leer = await supertest(app).get('/api/admin/config').set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+    assert.equal(leer.body.config.sitioUrl, SITIO_URL);
+
+    const catalogos = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.equal(catalogos.body.sitioUrl, SITIO_URL);
+  } finally {
+    escribirArchivoSync(CONFIG_PATH, original);
+  }
+});
+
+test('#275: el merge de /api/admin/config conserva la liga del sitio cuando el panel no la manda', async () => {
+  await conConfig({ sitioUrl: SITIO_URL }, async () => {
+    const guardar = await supertest(app).post('/api/admin/config')
+      .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+      .send({ tiposActivos: ['PL'], texturasActivas: [1] });
+    assert.equal(guardar.status, 200);
+    const leer = await supertest(app).get('/api/admin/config').set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+    assert.equal(leer.body.config.sitioUrl, SITIO_URL);
+  });
+});
+
+test('#275: liga del sitio vacia se guarda y desaparece de /api/catalogos', async () => {
+  await conConfig({ sitioUrl: SITIO_URL }, async () => {
+    const guardar = await supertest(app).post('/api/admin/config')
+      .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+      .send({ tiposActivos: ['PL'], texturasActivas: [1], sitioUrl: '' });
+    assert.equal(guardar.status, 200);
+    const catalogos = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.equal(catalogos.body.sitioUrl, '');
+  });
 });
 
 test('#261: sin evento activo /api/catalogos no ofrece evento y la captura normal no cambia', async () => {

@@ -5028,6 +5028,7 @@ async function cargarEstadoDeCatalogos() {
     // misma respuesta y deciden si la app ofrece la captura de expo.
     expoState.evento = catalogos.eventoActivo || null;
     expoState.catalogoUrl = catalogos.catalogoUrl || '';
+    expoState.sitioUrl = catalogos.sitioUrl || '';
     expoState.asesores = catalogos.asesores || [];
   } catch {
     vendedoresPipeline = [];
@@ -7502,7 +7503,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // cambio a las que ya existen.
 
 const expoState = {
-  evento: null, catalogoUrl: '', asesores: [],
+  evento: null, catalogoUrl: '', sitioUrl: '', asesores: [],
   // Seleccion de los chips del bloque Contacto (catalogo cerrado): vive aqui, no
   // en el DOM. Los de la calificacion son los otros chips, los que guardan su
   // estado en el DOM porque la tarjeta tambien los pinta (alternarChipGrupo).
@@ -7514,10 +7515,10 @@ const expoState = {
 };
 
 // Las ligas del mensaje de WhatsApp viajan al nucleo puro en UN objeto (#274),
-// para que agregar una no cambie la firma en cada llamador. La del sitio todavia
-// no es configurable (#275): llega vacia y su bloque se omite.
+// para que agregar una no cambie la firma en cada llamador. Las dos se configuran
+// desde el panel (#275); vacias, su bloque se omite.
 function ligasExpo() {
-  return { sitioUrl: '', catalogoUrl: expoState.catalogoUrl };
+  return { sitioUrl: expoState.sitioUrl, catalogoUrl: expoState.catalogoUrl };
 }
 
 function expoVal(id) {

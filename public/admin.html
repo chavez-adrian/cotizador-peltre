@@ -108,6 +108,7 @@
           <input type="text" id="evento-nombre" placeholder="Nombre del evento (ej. Abastur 2026)" style="flex:1;min-width:220px">
           <input type="date" id="evento-fin">
         </div>
+        <input type="url" id="sitio-url" placeholder="Liga de la pagina web con https:// (en el mensaje sale corta)" style="width:100%;margin-bottom:8px">
         <input type="url" id="catalogo-url" placeholder="Liga del catalogo con https:// (en el mensaje sale corta)" style="width:100%;margin-bottom:14px">
         <button class="btn btn-primary btn-sm" id="btn-save-config">Guardar</button>
         <div id="config-msg" style="display:none;margin-top:8px"></div>
@@ -509,6 +510,7 @@ async function loadConfig() {
   const evento = data.config.eventoActivo || {};
   document.getElementById('evento-nombre').value = evento.nombre || '';
   document.getElementById('evento-fin').value = evento.fin || '';
+  document.getElementById('sitio-url').value = data.config.sitioUrl || '';
   document.getElementById('catalogo-url').value = data.config.catalogoUrl || '';
 
   document.getElementById('config-loading').style.display = 'none';
@@ -522,9 +524,10 @@ async function saveConfig() {
   const nombre = document.getElementById('evento-nombre').value.trim();
   const fin = document.getElementById('evento-fin').value.trim();
   const eventoActivo = nombre ? { nombre, fin } : null;
+  const sitioUrl = document.getElementById('sitio-url').value.trim();
   const catalogoUrl = document.getElementById('catalogo-url').value.trim();
   const res = await adminApi('/api/admin/config', {
-    method: 'POST', body: { tiposActivos, texturasActivas, eventoActivo, catalogoUrl },
+    method: 'POST', body: { tiposActivos, texturasActivas, eventoActivo, catalogoUrl, sitioUrl },
   });
   const data = await res.json();
   const msg = document.getElementById('config-msg');
