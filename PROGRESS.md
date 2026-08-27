@@ -1,3 +1,135 @@
+# PROGRESS — sesión 2026-08-26 · mensaje de WhatsApp de la expo (#272): spec lista, código sin escribir
+
+Estado al cierre. La spec está publicada como **[#272](https://github.com/chavez-adrian/cotizador-peltre/issues/272)** con `ready-for-agent`.
+**No se escribió una sola línea de código**: Adrián pidió explícitamente solo el ticket padre.
+`main` limpio y sincronizado con `origin/main`.
+
+> Más abajo se conserva íntegro el PROGRESS de la sesión de **sincronización de contactos
+> a Google (#224)**, que tiene sus propios pendientes HITL vivos.
+
+---
+
+## 1. Qué se pedía y por qué
+
+Adrián pidió tres cambios "menores" al mensaje de WhatsApp prellenado de la **captura de expo**:
+apellido del vendedor, incluir la página web, y acortar la liga del catálogo ("esa liga tan larga
+hace mucho ruido"). Se corrió `/grill-with-docs` (entrevista decisión por decisión, una pregunta a
+la vez) y después `/mattpocock-skills:to-spec` con instrucción explícita: **solo el ticket padre,
+sin tickets hijos**.
+
+El grilling cambió el planteamiento: lo que parecían tres cambios sueltos resultó ser uno solo
+—la liga corta en dominio propio *es* la mención de la web— más una decisión de copy que Adrián
+escribió él mismo.
+
+## 2. Estado exacto al cierre
+
+| Cosa | Estado |
+|---|---|
+| Issue #272 | Publicado, `ready-for-agent`, cuerpo completo con plantilla de to-spec |
+| Código | **Cero cambios.** Working tree limpio, `main == origin/main` |
+| Redirect de Shopify | **Creado por Adrián y verificado en vivo por mí** (ver §4) |
+| Memoria | Nueva: `project-config-admin-no-persiste.md` + línea en `MEMORY.md` |
+| Índice de git | Estaba **destruido**; reparado (ver §4) |
+
+## 3. El texto aprobado (literal, lo escribió Adrián)
+
+```
+Hola Ana, soy Adrián Chávez de pp.peltre. Un gusto haberte conocido en Abastur 2026.
+
+Te dejo una liga a nuestra página web:
+pppeltre.mx
+
+También puedes descargar nuestro catálogo desde:
+pppeltre.mx/catalogo
+
+Si te sirve, con gusto te preparo una cotización para Acme. ¿Qué piezas te llamaron la atención?
+```
+
+El cierre ("Si te sirve…") **se conserva tal cual**, con su bifurcación mayoreo/cotización por tipo
+de cliente. Adrián lo había omitido de su borrador; al señalarle que es lo único que provoca
+respuesta, decidió conservarlo.
+
+## 4. Restricciones y hallazgos descubiertos en la sesión
+
+Todo esto se midió, no se supuso:
+
+1. **La config de `/admin` no persiste a un deploy.** `data/config.json` está versionado en git y el
+   disco de Render es efímero → lo guardado en el panel vuelve a lo commiteado en cada despliegue.
+   **Consecuencia para este trabajo: las ligas nuevas tienen que ir en el commit**, no solo en el
+   panel. Guardado en memoria.
+2. **El índice de git estaba destruido.** No existía `.git/index`, solo un `index-Huawei-Matebook`
+   huérfano (OneDrive tomando locks — la misma clase de problema que motivó `lib/fs-reintento.js`).
+   `git status` reportaba los ~280 archivos del proyecto como borrados-y-staged. Reparado con
+   `git reset` (mixed, sin tocar archivos). **Si reaparece, es la misma receta.**
+3. **El redirect ya existe y funciona**: `pppeltre.mx/catalogo` → 301 → PDF, `200`,
+   `application/pdf`, `6 544 400` bytes. `www.pppeltre.mx/catalogo` también. Se registró **sin** el
+   parámetro `?v=` del CDN a propósito: ese número cambia al resubir el archivo y rompería el
+   redirect en silencio.
+4. **El dominio canónico es sin `www`**: `www.pppeltre.mx` responde 301 a `pppeltre.mx`. La petición
+   original decía "www.pppeltre.mx"; el texto acordado usa la forma corta.
+5. **El PDF no genera vista previa en WhatsApp** (no tiene etiquetas `og:`), así que el mensaje de
+   hoy no muestra ninguna. `pppeltre.mx` sí las tiene, con imagen de 1976×1111 → por eso la web va
+   **primero**. El comentario que hoy vive en el código ("la liga va sola para que WhatsApp la
+   muestre como vista previa") describe algo que no ocurre.
+6. **El campo del panel es `<input type="url">`**, así que el navegador exige guardar con esquema →
+   el despojado de `https://` tiene que hacerse al **renderizar** el texto, no al guardar.
+7. El PDF pesa **6.5 MB**. Irrelevante para el código, relevante en un stand con señal mala.
+
+## 5. Decisiones tomadas (todas confirmadas por Adrián)
+
+| Decisión | Resultado |
+|---|---|
+| Alcance | Solo `mensajeWhatsAppExpo`. `mensajeSeguimiento` y `shareWhatsApp` **no se tocan** |
+| Vendedor | Nombre completo del registro; se borra `primerNombre()` **solo** para el vendedor (el del prospecto se queda) |
+| Orden de ligas | Web primero (da la vista previa), catálogo después, cada una con su frase |
+| Formato | Desnudas: el núcleo puro despoja `https://`/`http://` y la diagonal final. **No** despoja `www.` |
+| Liga de la web | Campo **configurable** nuevo en `/admin`, junto al del catálogo |
+| Liga vacía | Se omite el **bloque completo** (frase + liga + renglón en blanco), por separado para cada una |
+| Firma | El núcleo puro pasa de recibir `catalogoUrl` suelto a un **objeto de ligas** `{ sitioUrl, catalogoUrl }` |
+| Mecanismo de la liga corta | URL Redirect en Shopify, **no** acortador externo, **no** página `/pages/catalogo` |
+| Seams | Los dos que ya existen: el núcleo puro (texto) y la API de config (ida y vuelta). Ninguno nuevo |
+
+## 6. Lo que falta, paso a paso
+
+1. `public/js/prospectos-logica.js` — `mensajeWhatsAppExpo` (~:746): estructura de cuatro bloques,
+   nombre completo del vendedor, despojado de esquema, omisión por bloque. Cambiar la firma al
+   objeto de ligas. Actualizar el comentario de la vista previa (hoy es falso, §4.5).
+2. Mismo archivo — `buildWaLinkProspecto` (~:807) y `buildProspectoCardHtml` (~:459): propagar el
+   objeto de ligas.
+3. `public/admin.html` — campo `<input type="url">` nuevo junto a `catalogo-url` (:111), su lectura
+   (:512) y su envío en el POST (:525-527).
+4. `server.js` — `POST /api/admin/config` (:1494, :1505) guarda el campo nuevo con el mismo merge;
+   `GET /api/prospectos/catalogos` (:3262) lo sirve.
+5. `public/js/app.js` — `expoState` (:7505), la carga desde el endpoint (:5030), y los dos llamadores
+   (:5461 tarjeta, :7746 pantalla posterior al guardado). **Ojo trampa #112.**
+6. Tests: `public/js/__tests__/prospectos-logica.test.cjs` E4–E7 (~:695-740) más los casos nuevos
+   (liga vacía × 3, esquema despojado, vendedor de tres palabras) y los de la tarjeta (~:787-796,
+   ~:1119-1123); `test/prospectos-api.test.js` (~:1090-1115) para el campo nuevo.
+7. `CONTEXT.md` — entrada "Captura de expo" (~línea 120): dice "WhatsApp con el mensaje aprobado y
+   el catálogo"; ahora lleva página web **y** catálogo. Sin ADR (es contenido y configuración).
+8. `data/config.json` — **commitear** `catalogoUrl: "https://pppeltre.mx/catalogo"` y el `sitioUrl`
+   nuevo. Sin esto, el siguiente deploy revierte lo que se ponga en el panel (§4.1).
+9. Suite completa (`npm test`), ASCII estricto en código y commit, y push.
+10. **Verificación humana de Adrián en navegador**: guardar la liga en `/admin`, capturar un
+    prospecto de expo, abrir el enlace de WhatsApp y mirar el mensaje en un teléfono real. Ningún
+    test cubre el trayecto formulario → servidor → mensaje.
+
+## 7. Siguiente acción exacta al reanudar
+
+Leer [#272](https://github.com/chavez-adrian/cotizador-peltre/issues/272) completo y empezar por el
+paso 1 de §6, **con TDD en el seam del núcleo puro**: escribir primero el `assert.equal` del mensaje
+completo con las dos ligas (el patrón exacto de E4), verlo fallar, y después cambiar la función.
+
+Antes de nada, `git status` — si vuelve a reportar todo el repo como borrado, es el índice otra vez
+(§4.2): `git reset` y seguir.
+
+**Advertencia de tiempo:** Abastur 2026 está activo hasta el **28 de agosto de 2026**. Este cambio
+toca un mensaje que se está mandando ahora mismo; el redirect ya existe, así que no hay ventana de
+liga muerta, pero cualquier error de copy sale a prospectos reales el mismo día del push.
+
+---
+---
+
 # PROGRESS — sesión 2026-08-21/22 · sincronización de contactos a Google (#224): código completo y primera carga real
 
 Estado al cierre. **Todo el código de la spec está en `main` y desplegado en Render**
