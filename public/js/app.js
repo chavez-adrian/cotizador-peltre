@@ -5458,7 +5458,7 @@ function renderProspectos() {
     return;
   }
   listEl.innerHTML = ultimosProspectos.slice().reverse()
-    .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true, catalogoUrl: expoState.catalogoUrl })).join('');
+    .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true, ligas: ligasExpo() })).join('');
 }
 
 // === HOY (issue #64, ADR-0005 "Cola Hoy"): el destino Hoy muestra la cola UNICA
@@ -7513,6 +7513,13 @@ const expoState = {
   sinCp: false, ciudadDelIndice: '',
 };
 
+// Las ligas del mensaje de WhatsApp viajan al nucleo puro en UN objeto (#274),
+// para que agregar una no cambie la firma en cada llamador. La del sitio todavia
+// no es configurable (#275): llega vacia y su bloque se omite.
+function ligasExpo() {
+  return { sitioUrl: '', catalogoUrl: expoState.catalogoUrl };
+}
+
 function expoVal(id) {
   const el = document.getElementById(id);
   return el ? el.value : '';
@@ -7743,7 +7750,7 @@ function mostrarAccionesExpo(prospecto) {
   document.getElementById('expo-form').style.display = 'none';
   document.getElementById('expo-guardar-fijo').style.display = 'none';
   const cont = document.getElementById('expo-guardado');
-  const wa = buildWaLinkProspecto(prospecto, expoState.catalogoUrl);
+  const wa = buildWaLinkProspecto(prospecto, ligasExpo());
   cont.innerHTML = `
     <div class="cot-card">
       <div class="cot-card-cliente">${escapeHtml(prospecto.nombre)}</div>

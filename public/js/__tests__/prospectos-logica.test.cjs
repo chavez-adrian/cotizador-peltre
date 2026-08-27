@@ -690,17 +690,20 @@ test('E3: el nivel de interes de la expo se traduce a temperatura 1/3/5', () => 
   assert.deepEqual(NIVELES_INTERES, { Bajo: 1, Medio: 3, Alto: 5 });
 });
 
-const LIGA = 'https://cdn.shopify.com/catalogo.pdf';
+const LIGA = 'https://pppeltre.mx/catalogo';
+const LIGAS = { sitioUrl: '', catalogoUrl: LIGA };
 
-test('E4: mensajeWhatsAppExpo devuelve el texto aprobado con primer nombre del prospecto y liga en renglon propio', async () => {
+test('E4: mensajeWhatsAppExpo devuelve el texto aprobado con el catalogo en bloque propio y sin esquema', async () => {
   const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
   const texto = mensajeWhatsAppExpo(
     { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
-    'Alejandro Chávez', LIGA
+    'Alejandro Chávez', LIGAS
   );
   assert.equal(texto, [
-    'Hola Laura, soy Alejandro Chávez de pp.peltre. Un gusto haberte conocido en Abastur 2026. Te comparto nuestro catálogo:',
-    LIGA,
+    'Hola Laura, soy Alejandro Chávez de pp.peltre. Un gusto haberte conocido en Abastur 2026.',
+    '',
+    'También puedes descargar nuestro catálogo desde:',
+    'pppeltre.mx/catalogo',
     '',
     'Si te sirve, con gusto te preparo una cotización para Hotel Azul. ¿Qué piezas te llamaron la atención?',
   ].join('\n'));
@@ -710,9 +713,59 @@ test('E4b: el vendedor se presenta con el nombre integro del registro, incluido 
   const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
   const texto = mensajeWhatsAppExpo(
     { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
-    'Ana Maria Lopez', LIGA
+    'Ana Maria Lopez', LIGAS
   );
   assert.match(texto, /^Hola Laura, soy Ana Maria Lopez de pp\.peltre\. /);
+});
+
+test('E4c: la liga se muestra sin esquema y sin diagonal final; el www. se respeta', async () => {
+  const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  const prospecto = { nombre: 'Laura', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' };
+  const conDiagonal = mensajeWhatsAppExpo(prospecto, 'Pilar', { catalogoUrl: 'https://pppeltre.mx/catalogo/' });
+  assert.match(conDiagonal, /^pppeltre\.mx\/catalogo$/m);
+  const http = mensajeWhatsAppExpo(prospecto, 'Pilar', { catalogoUrl: 'http://www.pppeltre.mx/catalogo' });
+  assert.match(http, /^www\.pppeltre\.mx\/catalogo$/m);
+});
+
+test('E4d: sin liga de catalogo desaparece el bloque entero, sin renglon en blanco huerfano', async () => {
+  const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  const texto = mensajeWhatsAppExpo(
+    { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
+    'Alejandro Chávez', { sitioUrl: '', catalogoUrl: '' }
+  );
+  assert.equal(texto, [
+    'Hola Laura, soy Alejandro Chávez de pp.peltre. Un gusto haberte conocido en Abastur 2026.',
+    '',
+    'Si te sirve, con gusto te preparo una cotización para Hotel Azul. ¿Qué piezas te llamaron la atención?',
+  ].join('\n'));
+  // sin ningun dato de ligas el mensaje sigue completo (llamador que no lo pasa)
+  assert.equal(mensajeWhatsAppExpo({ nombre: 'Laura', evento: 'Abastur 2026' }, 'Pilar'), [
+    'Hola Laura, soy Pilar de pp.peltre. Un gusto haberte conocido en Abastur 2026.',
+    '',
+    'Si te sirve, con gusto te preparo una cotización a tu medida. ¿Qué piezas te llamaron la atención?',
+  ].join('\n'));
+});
+
+test('E4e: con liga del sitio su bloque va antes del catalogo; vacia se omite sin dejar hueco', async () => {
+  const { mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
+  const texto = mensajeWhatsAppExpo(
+    { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
+    'Alejandro Chávez', { sitioUrl: 'https://pppeltre.mx/', catalogoUrl: LIGA }
+  );
+  assert.equal(texto, [
+    'Hola Laura, soy Alejandro Chávez de pp.peltre. Un gusto haberte conocido en Abastur 2026.',
+    '',
+    'Te dejo una liga a nuestra página web:',
+    'pppeltre.mx',
+    '',
+    'También puedes descargar nuestro catálogo desde:',
+    'pppeltre.mx/catalogo',
+    '',
+    'Si te sirve, con gusto te preparo una cotización para Hotel Azul. ¿Qué piezas te llamaron la atención?',
+  ].join('\n'));
+  assert.equal(mensajeWhatsAppExpo(
+    { nombre: 'Laura', evento: 'Abastur 2026' }, 'Pilar', { sitioUrl: '   ', catalogoUrl: LIGA }
+  ).includes('página web'), false);
 });
 
 test('E5: sin empresa el mensaje ofrece una cotizacion a tu medida', async () => {
@@ -794,14 +847,16 @@ const PROSPECTO_EXPO = {
 
 test('E12: el WhatsApp de la tarjeta lleva el mensaje del evento solo cuando el prospecto tiene evento', async () => {
   const { buildProspectoCardHtml, mensajeWhatsAppExpo } = await import('../prospectos-logica.js');
-  const conEvento = buildProspectoCardHtml(PROSPECTO_EXPO, null, new Date(), { catalogoUrl: LIGA });
+  const conEvento = buildProspectoCardHtml(PROSPECTO_EXPO, null, new Date(), { ligas: LIGAS });
   const esperado = encodeURIComponent(mensajeWhatsAppExpo(
     { nombre: 'Laura Mendoza', empresa: 'Hotel Azul', tipo_cliente: 'Hoteles', evento: 'Abastur 2026' },
-    'Alejandro Chávez', LIGA
+    'Alejandro Chávez', LIGAS
   ));
   assert.ok(conEvento.includes(`https://wa.me/525544332211?text=${esperado}`));
+  // el objeto de ligas llega de verdad hasta el mensaje: la liga corta va dentro
+  assert.ok(conEvento.includes(encodeURIComponent('pppeltre.mx/catalogo')));
 
-  const sinEvento = buildProspectoCardHtml({ ...PROSPECTO_EXPO, data: {} }, null, new Date(), { catalogoUrl: LIGA });
+  const sinEvento = buildProspectoCardHtml({ ...PROSPECTO_EXPO, data: {} }, null, new Date(), { ligas: LIGAS });
   assert.ok(sinEvento.includes('href="https://wa.me/525544332211"'));
   assert.equal(sinEvento.includes('?text='), false);
 });
@@ -1125,11 +1180,11 @@ test('C6: la calificacion se lee en la tarjeta como chips en el orden en que se 
 });
 
 test('C7: la tarjeta del prospecto de feria avisa "Calificacion pendiente" hasta que hay un valor', () => {
-  const pendiente = buildProspectoCardHtml(PROSPECTO_EXPO, null, new Date(), { catalogoUrl: LIGA });
+  const pendiente = buildProspectoCardHtml(PROSPECTO_EXPO, null, new Date(), { ligas: LIGAS });
   assert.match(pendiente, /Calificación pendiente/);
   const calificado = buildProspectoCardHtml(
     { ...PROSPECTO_EXPO, data: { ...PROSPECTO_EXPO.data, calificacion: CALIFICACION } },
-    null, new Date(), { catalogoUrl: LIGA }
+    null, new Date(), { ligas: LIGAS }
   );
   assert.equal(calificado.includes('Calificación pendiente'), false);
   assert.match(calificado, /Ya usa peltre: Cinsa/);

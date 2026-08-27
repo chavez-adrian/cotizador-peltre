@@ -456,7 +456,7 @@ const CLIENTE_BADGE = '<span class="cliente-badge">Ya es cliente — falta cotiz
 // Las acciones llaman funciones globales de app.js (mismo patron que las
 // cards de seguimiento: onclick + window.fn). colaItem es el item del
 // prospecto en GET /api/prospectos/cola, si esta en la cola (issue #44).
-export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compacta = false, catalogoUrl = '' } = {}) {
+export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compacta = false, ligas = {} } = {}) {
   const d = p.data || {};
   const empresa = d.empresa ? ` · ${escapeHtml(d.empresa)}` : '';
   // En el pipeline unificado el prospecto se trabaja en Por Cotizar (cadencia,
@@ -468,7 +468,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // historial). Distinto de `activo`, que habilita el trabajo de prospeccion
   // (toques, reunion) solo en Por Cotizar.
   const editable = !['no_util', 'perdida'].includes(p.etapa);
-  const wa = buildWaLinkProspecto(p, catalogoUrl);
+  const wa = buildWaLinkProspecto(p, ligas);
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.
   const reunion = activo ? reunionFutura(p, ahora) : null;
@@ -738,12 +738,29 @@ function primerNombre(nombre) {
   return String(nombre == null ? '' : nombre).trim().split(/\s+/)[0] || '';
 }
 
-// Mensaje de WhatsApp de la expo (texto aprobado en el spec #260). Funcion PURA:
-// la usan la pantalla posterior al guardado y el boton WhatsApp de la tarjeta, y
-// SOLO en prospectos con evento (los demas conservan el enlace vacio de siempre).
-// La liga del catalogo va sola en su renglon para que WhatsApp la muestre como
-// vista previa; el renglon en blanco separa el cierre.
-export function mensajeWhatsAppExpo(prospecto, vendedorNombre, catalogoUrl) {
+// Las ligas se GUARDAN con esquema (el campo del panel es <input type="url"> y
+// lo exige) y se MUESTRAN sin el: en el mensaje se lee `pppeltre.mx/catalogo`,
+// no la URL completa. El despojado es de presentacion, nunca del guardado. El
+// `www.` no se toca: es parte del dominio que el cliente reconoce.
+function ligaVisible(url) {
+  return String(url == null ? '' : url).trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
+// Un bloque de liga = frase en un renglon y liga en el siguiente. Sin liga no
+// hay bloque (ni renglon en blanco huerfano donde iria).
+function bloqueLiga(frase, url) {
+  const liga = ligaVisible(url);
+  return liga ? `${frase}\n${liga}` : '';
+}
+
+// Mensaje de WhatsApp de la expo (texto aprobado en el spec #260, reestructurado
+// en bloques por #272). Funcion PURA: la usan la pantalla posterior al guardado
+// y el boton WhatsApp de la tarjeta, y SOLO en prospectos con evento (los demas
+// conservan el enlace vacio de siempre). Las ligas llegan en UN objeto para que
+// agregar una no cambie la firma en cada llamador. Cada bloque va separado por
+// un renglon en blanco: la vista previa de WhatsApp la genera la PRIMERA URL del
+// mensaje (la del sitio), no el catalogo -- un PDF no genera vista previa.
+export function mensajeWhatsAppExpo(prospecto, vendedorNombre, { sitioUrl = '', catalogoUrl = '' } = {}) {
   const p = prospecto || {};
   const empresa = String(p.empresa == null ? '' : p.empresa).trim();
   const oferta = !empresa
@@ -753,11 +770,11 @@ export function mensajeWhatsAppExpo(prospecto, vendedorNombre, catalogoUrl) {
       : `una cotización para ${empresa}`;
   return [
     `Hola ${primerNombre(p.nombre)}, soy ${String(vendedorNombre == null ? '' : vendedorNombre).trim()} de pp.peltre. ` +
-      `Un gusto haberte conocido en ${String(p.evento == null ? '' : p.evento).trim()}. Te comparto nuestro catálogo:`,
-    String(catalogoUrl == null ? '' : catalogoUrl).trim(),
-    '',
+      `Un gusto haberte conocido en ${String(p.evento == null ? '' : p.evento).trim()}.`,
+    bloqueLiga('Te dejo una liga a nuestra página web:', sitioUrl),
+    bloqueLiga('También puedes descargar nuestro catálogo desde:', catalogoUrl),
     `Si te sirve, con gusto te preparo ${oferta}. ¿Qué piezas te llamaron la atención?`,
-  ].join('\n');
+  ].filter(Boolean).join('\n\n');
 }
 
 // Validacion de la captura de expo: la MISMA de la captura normal (celular,
@@ -804,14 +821,14 @@ export function buildDatosExpo(body) {
 // escrito (el lunes, no solo en el stand); sin evento es el enlace vacio de
 // siempre -- un prospecto que no viene de una feria no tiene de que "gusto
 // haberte conocido".
-export function buildWaLinkProspecto(p, catalogoUrl) {
+export function buildWaLinkProspecto(p, ligas) {
   const base = buildWaLink(p && p.celular);
   if (!base) return null;
   const d = (p && p.data) || {};
   if (!d.evento) return base;
   const texto = mensajeWhatsAppExpo(
     { nombre: p.nombre, empresa: d.empresa, tipo_cliente: d.tipo_cliente, evento: d.evento },
-    p.vendedor, catalogoUrl
+    p.vendedor, ligas
   );
   return `${base}?text=${encodeURIComponent(texto)}`;
 }
