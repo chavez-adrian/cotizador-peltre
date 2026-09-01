@@ -20,6 +20,12 @@ test('B2: el buffer es un PDF valido (empieza con %PDF)', async () => {
   assert.equal(result.slice(0, 4).toString(), '%PDF');
 });
 
+test('B2b: la pagina es A4 vertical como el formato oficial de Operam', async () => {
+  const result = await generateQuotePDF({ _compress: false });
+  const text = result.toString('latin1');
+  assert.ok(text.includes('/MediaBox [0 0 595.28 841.89]'), 'la pagina debe ser A4 (595.28 x 841.89), no Letter');
+});
+
 test('B3: el PDF contiene el texto COTIZACION', async () => {
   const result = await generateQuotePDF({ _compress: false });
   const text = result.toString('latin1');

@@ -296,7 +296,11 @@ test('#110-1: el PDF y el HTML del mismo registro muestran el MISMO numero, y es
   assert.ok(textoPdf.includes(toHex('57310')), 'el PDF imprime el folio de Operam');
   assert.ok(html.text.includes('57310'), 'el HTML imprime el folio de Operam');
   // Y ninguno de los dos presenta el id interno como numero de cotizacion.
-  assert.ok(!textoPdf.includes(toHex(`No. Cotizacion: ${id}`)), 'el PDF no numera con el id interno');
+  // Desde el layout Operam la etiqueta y el numero van en llamadas .text()
+  // separadas, asi que la verificacion positiva es que la linea del numero
+  // exista ("Cotización:" con acento, como Operam) y el numero impreso sea el
+  // folio (arriba); el par sin-folio vive en #111-1.
+  assert.ok(textoPdf.includes(toHex('Cotización:')), 'el PDF imprime la linea del numero con el folio');
   assert.ok(!html.text.includes(`Cotizacion #${id}`), 'el HTML no numera con el id interno');
 });
 
@@ -311,10 +315,12 @@ test('#111-1: sin folio de Operam el documento no lleva numero y se identifica c
   const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
   const html = await supertest(app).get(`/api/cotizacion/html/${id}`);
   const textoPdf = Buffer.from(pdf.body).toString('latin1');
-  // PDFKit kern-splita el titulo tras "PRE-CO" y el meta tras "Cotizacion:";
-  // esos son los prefijos contiguos fiables (mismo criterio que B6/B14).
+  // PDFKit kern-splita el titulo tras "PRE-CO"; "Cotización:" (con acento,
+  // como Operam) es el fragmento contiguo fiable de la linea del numero, que
+  // solo se imprime con folio (el header de la tabla dice "Cotización" sin
+  // dos puntos y no confunde la asercion).
   assert.ok(textoPdf.includes(toHex('PRE-CO')), 'el PDF se identifica como pre-cotizacion');
-  assert.ok(!textoPdf.includes(toHex('Cotizacion:')), 'el PDF no imprime la linea del numero');
+  assert.ok(!textoPdf.includes(toHex('Cotización:')), 'el PDF no imprime la linea del numero');
   assert.ok(html.text.includes('PRE-COTIZACION'), 'el HTML se identifica como pre-cotizacion');
   assert.ok(!html.text.includes('qm-val quote-num'), 'el HTML no pinta la fila del numero');
   assert.ok(!html.text.includes('Cotizacion Peltre Nacional #'), 'el HTML no titula con ningun numero');
