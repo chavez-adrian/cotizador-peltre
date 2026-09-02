@@ -169,6 +169,8 @@ import {
   precioCalca,
   precioEfectivoCalca,
   normalizarPrecioManual,
+  precioManualAlCargar,
+  MENSAJE_COPIA_PRECIO_MANUAL,
   productoCalca,
   piezasDeProducto,
   hayCalcaEnCarrito,
@@ -1316,7 +1318,7 @@ function renderCartLines() {
             onkeydown="if(event.key==='Enter')cartLineConfirmEdit('${key}')">
           <button class="qty-icon-btn qty-ok-btn" style="display:none" onclick="cartLineConfirmEdit('${key}')" title="Confirmar">&#10003;</button>
         </div>
-        <span class="cart-line-price col-num"><span class="cart-line-etiqueta">Precio</span>${celdaPrecioLinea(key, product, precio)}</span>
+        <span class="cart-line-price col-num"><span class="cart-line-etiqueta">Precio</span>${celdaPrecioLinea(key, product, precio, precioManual)}</span>
         <span class="cart-line-desc col-num"><span class="cart-line-etiqueta">Dscto.</span>${celdaDescuentoLinea(key, desc)}</span>
         <span class="cart-line-total col-num"><span class="cart-line-etiqueta">Total</span>${precio === null ? '&mdash;' : '$' + fmt(total)}</span>
         <div class="cart-line-del col-del"><button onclick="removeItem('${key}')" title="Quitar">&times;</button></div>
@@ -1539,13 +1541,24 @@ function puedePrecioCalca() {
 // 2026-09-01): el precio de la linea es el precio. Vaciar el campo (o poner 0)
 // borra la captura y regresa a la lista vigente, mismo patron que la
 // descripcion de partida.
-function celdaPrecioLinea(key, product, precio) {
-  if (!product.esCalca || !puedePrecioCalca()) {
+// #283: quien NO tiene el permiso pero heredo una captura al Editar puede
+// DEJARLA o QUITARLA, nunca cambiarla a otro valor (lo mismo que hace valer el
+// servidor contra el registro previo). Por eso ahi la celda no es un input sino
+// el precio con un boton de quitar, que vacia la captura por el MISMO camino
+// que el input (cartLineSetPrecioCalca con cadena vacia). Sin captura heredada
+// y sin permiso, la celda es texto como siempre.
+function celdaPrecioLinea(key, product, precio, precioManual) {
+  if (!product.esCalca) return precio === null ? 'sin precio' : '$' + fmt(precio);
+  if (puedePrecioCalca()) {
+    return `<input class="precio-input" type="number" min="0" step="0.01" inputmode="decimal"
+      value="${precio ?? ''}" placeholder="0.00"
+      onchange="cartLineSetPrecioCalca('${key}', this.value)">`;
+  }
+  if (normalizarPrecioManual(precioManual) === null) {
     return precio === null ? 'sin precio' : '$' + fmt(precio);
   }
-  return `<input class="precio-input" type="number" min="0" step="0.01" inputmode="decimal"
-    value="${precio ?? ''}" placeholder="0.00"
-    onchange="cartLineSetPrecioCalca('${key}', this.value)">`;
+  return `$${fmt(precio)}<button class="qty-icon-btn" onclick="cartLineSetPrecioCalca('${key}', '')"
+    title="Quitar el precio capturado y volver al precio de lista">&#10005;</button>`;
 }
 
 function cartLineSetPrecioCalca(key, valor) {
@@ -6003,6 +6016,10 @@ async function cargarCotizacion(id, modo = 'nueva') {
       state.user?.role === 'admin' || state.puedeFijarLista
     );
     state.tierFijado = tierListaCargada.tierFijado;
+    // #283: el precio manual de calca sigue la MISMA regla que la lista fijada.
+    // El aviso es UNO por carga (no uno por linea): basta con que una partida
+    // pierda su captura para decirlo una vez, junto al de la lista.
+    let avisoPrecioManualPerdido = false;
     for (const item of (cot.items || [])) {
       if (item.codigo === 'ENVIO') continue;
       // Codigo guardado -> producto del catalogo vigente por el UNICO camino que
@@ -6020,7 +6037,14 @@ async function cargarCotizacion(id, modo = 'nueva') {
       // El descuento por linea se restaura junto con la cantidad (#137): sin el,
       // regenerar reescribiria el quote SIN la negociacion (mismo agujero que ya
       // mordio con la calca). La descripcion editada (#139), por lo mismo.
-      state.cart.set(llaveCarrito(item.codigo, item.diseno), { product: cartProduct, cantidad: item.cantidad, descuento: item.descuento || 0, ...descripcionRestaurada(item) });
+      // El precio manual de calca (#283), por lo mismo: Editar lo conserva
+      // siempre; Copiar solo con permiso, y sin el la linea arranca del precio
+      // de lista vigente. La llave NO se pone cuando no hay captura, igual que
+      // en el carrito: es lo que distingue capturado de precio de lista.
+      const manualCargado = precioManualAlCargar(item, modo, puedePrecioCalca());
+      if (manualCargado.avisoPrecioManualPerdido) avisoPrecioManualPerdido = true;
+      const capturaPrecio = manualCargado.precioManual === null ? {} : { precioManual: manualCargado.precioManual };
+      state.cart.set(llaveCarrito(item.codigo, item.diseno), { product: cartProduct, cantidad: item.cantidad, descuento: item.descuento || 0, ...descripcionRestaurada(item), ...capturaPrecio });
     }
     reanudarNumeracionDisenos();
 
@@ -6059,10 +6083,16 @@ async function cargarCotizacion(id, modo = 'nueva') {
       // asi que aqui siempre esta presente en modo actualizacion.
       // #154: sin modo actualizacion, el aviso de lista fijada perdida (Copiar
       // sin permiso) ocupa el mismo lugar que el aviso de modo actualizacion --
-      // nunca coexisten, porque Copiar nunca esta en modo actualizacion.
+      // nunca coexisten, porque Copiar nunca esta en modo actualizacion. #283:
+      // el precio manual perdido entra por el MISMO canal, y una copia sin
+      // permiso puede perder las dos cosas a la vez.
+      const avisosCopia = [
+        tierListaCargada.avisoListaPerdida ? MENSAJE_COPIA_LISTA_FIJADA : null,
+        avisoPrecioManualPerdido ? MENSAJE_COPIA_PRECIO_MANUAL : null,
+      ].filter(Boolean);
       operamStatus.innerHTML = state.modoActualizacion
         ? buildAvisoModoActualizacion(cot.folioOperam)
-        : (tierListaCargada.avisoListaPerdida ? `<span class="operam-status">${MENSAJE_COPIA_LISTA_FIJADA}</span>` : '');
+        : avisosCopia.map(m => `<span class="operam-status">${m}</span>`).join(' ');
     }
     // Etiquetas de los botones (#109): en modo actualizacion comunican que
     // reescriben el documento/quote existente, no que crean uno nuevo.
