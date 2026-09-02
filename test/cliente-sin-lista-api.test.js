@@ -159,9 +159,34 @@ test('SL3: el 406 de "rate de moneda" que igual llega sale con el mismo codigo a
   assert.strictEqual(registro(id).data.motivoPre, 'sin-lista');
 });
 
-// Auditoria de escrituras: ningun camino puede mandar sales_type ''. Operam lo
-// coerciona a 0 y el cliente pierde su lista -- asi se rompio el cliente 15.
-test('SL4: el PATCH de cliente con sales_type vacio no manda la llave al PUT de Operam', async () => {
+// Auditoria de escrituras, camino 1: el PUT directo de cliente, que manda el body
+// tal cual lo recibe. Es el que perdio la configuracion del cliente 15.
+test('SL4a: actualizar cliente con sales_type vacio no manda la llave al PUT de Operam', async () => {
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers/77': (u, opts) => {
+      putBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, ...putBody });
+    },
+  });
+  try {
+    const res = await supertest(app).put('/api/actualizar-cliente/77')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ sales_type: '', segmento_id: '', cust_name: 'HOTEL SIN LISTA SA DE CV' });
+    assert.strictEqual(res.status, 200);
+  } finally {
+    restore();
+  }
+  assert.ok(putBody, 'el PUT debe haberse hecho');
+  assert.strictEqual('sales_type' in putBody, false, 'sales_type vacio NUNCA viaja: Operam lo coerciona a 0');
+  assert.strictEqual('segmento_id' in putBody, false);
+  assert.strictEqual(putBody.cust_name, 'HOTEL SIN LISTA SA DE CV', 'el resto del body si viaja');
+});
+
+// Camino 2: el PATCH por diff (las llaves del diff son de lectura y se traducen
+// antes de escribir, #169). Mismo desenlace: la llave vacia no viaja.
+test('SL4b: el PATCH de cliente con sales_type vacio no manda la llave al PUT de Operam', async () => {
   let putBody = null;
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
