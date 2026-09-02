@@ -186,6 +186,134 @@ test('#280: vendedor CON checkbox de precio de calca genera cotizacion con preci
   }
 });
 
+// #283: herencia en Editar, espejo exacto de las pruebas de lista fijada de
+// test/tier-api.test.js (#154). El registro nace CON el permiso y despues se le
+// quita: queda una cotizacion con precio de proveedor capturado cuyo vendedor
+// ya no tiene el permiso -- exactamente el caso que el ticket describe.
+async function cotizacionDeVendedorConPermiso(registroOriginal) {
+  const registro = JSON.parse(registroOriginal);
+  registro.find(v => v.id === 2).puedePrecioCalca = true;
+  escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+  const creada = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenVendedor}`)
+    .send(cotizacionCon([PARTIDA_PRODUCTO, partidaCalca({ precio: PRECIO_PROVEEDOR, precioManual: PRECIO_PROVEEDOR })]));
+  assert.strictEqual(creada.status, 200);
+  registro.find(v => v.id === 2).puedePrecioCalca = false;
+  escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+  return creada.body.id;
+}
+
+test('#283 Editar sin permiso, registro PROPIO: el MISMO precio manual se acepta y se conserva', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const id = await cotizacionDeVendedorConPermiso(original);
+    const editada = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send({
+        ...cotizacionCon([PARTIDA_PRODUCTO, partidaCalca({ precio: PRECIO_PROVEEDOR, precioManual: PRECIO_PROVEEDOR })]),
+        cotizacionId: id,
+      });
+    assert.strictEqual(editada.status, 200);
+    assert.strictEqual(editada.body.id, id);
+    assert.strictEqual(partidaGuardada(id, 'CAL1050').precioManual, PRECIO_PROVEEDOR);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+test('#283 Editar sin permiso, registro PROPIO: QUITAR la captura se acepta y la linea vuelve al precio de lista', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const id = await cotizacionDeVendedorConPermiso(original);
+    const editada = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send({ ...cotizacionCon([PARTIDA_PRODUCTO, partidaCalca()]), cotizacionId: id });
+    assert.strictEqual(editada.status, 200);
+    const calca = partidaGuardada(id, 'CAL1050');
+    assert.strictEqual(calca.precio, PRECIO_LISTA_CALCA);
+    assert.strictEqual('precioManual' in calca, false);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+test('#283 Editar sin permiso, registro PROPIO: un valor DISTINTO se rechaza con 403 y no toca lo guardado', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const id = await cotizacionDeVendedorConPermiso(original);
+    const res = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send({ ...cotizacionCon([PARTIDA_PRODUCTO, partidaCalca({ precio: 200, precioManual: 200 })]), cotizacionId: id });
+    assert.strictEqual(res.status, 403);
+    assert.match(res.body.error, /permiso/i);
+    assert.strictEqual(partidaGuardada(id, 'CAL1050').precioManual, PRECIO_PROVEEDOR);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+// El hallazgo central del riesgo de #154, aplicado al precio manual: el valor
+// identico NO basta si el registro es ajeno -- sin el chequeo de dueno,
+// cualquier vendedor sin permiso podria tomar el cotizacionId de una cotizacion
+// ajena con captura y colarse la excepcion.
+test('#283 Editar sin permiso, registro AJENO con el MISMO precio manual: se rechaza (el dueno importa)', async () => {
+  const creada = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenAdmin}`)
+    .send(cotizacionCon([PARTIDA_PRODUCTO, partidaCalca({ precio: PRECIO_PROVEEDOR, precioManual: PRECIO_PROVEEDOR })]));
+  assert.strictEqual(creada.status, 200);
+  const id = creada.body.id;
+
+  const res = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenVendedor}`)
+    .send({
+      ...cotizacionCon([PARTIDA_PRODUCTO, partidaCalca({ precio: PRECIO_PROVEEDOR, precioManual: PRECIO_PROVEEDOR })]),
+      cotizacionId: id,
+    });
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(partidaGuardada(id, 'CAL1050').precioManual, PRECIO_PROVEEDOR);
+});
+
+// Con permiso el precio manual se cambia libremente, y el cambio cuenta como
+// cambio de contenido del quote: la regeneracion reescribe el quote conservando
+// el folio (#114-#116) en vez de crear otro.
+test('#283 Editar con permiso: el admin cambia el precio manual y el quote queda marcado para actualizarse', async () => {
+  const creada = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenAdmin}`)
+    .send(cotizacionCon(
+      [PARTIDA_PRODUCTO, partidaCalca({ precio: PRECIO_PROVEEDOR, precioManual: PRECIO_PROVEEDOR })],
+      { cliente: { razonSocial: 'CALCA SA DE CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', rfc: 'CAL010101AAA' } },
+    ));
+  assert.strictEqual(creada.status, 200);
+  const id = creada.body.id;
+
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '77', tax_id: 'CAL010101AAA', CustName: 'CALCA SA DE CV', branches: [{ branch_code: '1' }] }] }),
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, quote_id: 55283 }),
+  });
+  try {
+    const subida = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+      .set('Authorization', `Bearer ${tokenAdmin}`).send({});
+    assert.strictEqual(subida.status, 200);
+  } finally {
+    restore();
+  }
+
+  const editada = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenAdmin}`)
+    .send({
+      ...cotizacionCon(
+        [PARTIDA_PRODUCTO, partidaCalca({ precio: 200, precioManual: 200 })],
+        { cliente: { razonSocial: 'CALCA SA DE CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', rfc: 'CAL010101AAA' } },
+      ),
+      cotizacionId: id,
+    });
+  assert.strictEqual(editada.status, 200);
+  assert.strictEqual(editada.body.id, id);
+  assert.strictEqual(editada.body.requiereActualizacionOperam, true);
+  assert.strictEqual(partidaGuardada(id, 'CAL1050').precio, 200);
+});
+
 test('#279: precio manual en una partida que no es calca -> 400 y nada guardado', async () => {
   const antes = readCots().length;
   const res = await supertest(app).post('/api/cotizacion')

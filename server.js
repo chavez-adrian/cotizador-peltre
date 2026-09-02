@@ -375,12 +375,32 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   // permiso: 400, no 403.
   const descripciones = validarDescripcionesCotizacion(req.body?.items);
   if (!descripciones.ok) return res.status(400).json({ error: descripciones.mensaje });
+  // #154: si se esta editando un registro existente (cotizacionId) Y ese
+  // registro es del vendedor que edita (o el editor es admin), lo que YA estaba
+  // autorizado ahi -- el tier fijado (#154) y el precio manual de calca (#283)
+  // -- sigue siendo valido aunque quien edita no tenga el permiso: corregir
+  // cantidades o notas no debe tumbar una autorizacion que ya ocurrio. El
+  // chequeo de dueno (mismo predicado que GET /api/cotizaciones/:id) es
+  // obligatorio: sin el, un cotizacionId AJENO seria una via para colarse el
+  // permiso -- justo el riesgo que el propio ticket #154 senala ("muy laxa =
+  // bypass del permiso via edicion").
+  const idPrevio = parseInt(req.body?.cotizacionId, 10);
+  const prevEntry = Number.isInteger(idPrevio) && idPrevio > 0
+    ? await cotStore.obtener(idPrevio)
+    : null;
+  const esDuenoDelPrevio = !!prevEntry && (req.user.role === 'admin' || prevEntry.vendedor === req.user.name);
   // El precio manual de calca tampoco depende de la pantalla (#279, spec #278):
   // esconder el input no frena un POST armado a mano. Dos desenlaces distintos,
   // igual que en el resto del endpoint: una partida que no es calca o un valor
   // imposible son dato mal formado (400), y capturar sin permiso es falta de
-  // permiso (403).
-  const preciosCalca = validarPreciosManualesCalca(req.body?.items, await puedePrecioCalcaDeUsuario(req.user));
+  // permiso (403). #283: sin permiso, la captura que YA traia esa partida en el
+  // registro propio que se edita tambien pasa (dejarla como esta o quitarla,
+  // nunca cambiarla a otro valor).
+  const preciosCalca = validarPreciosManualesCalca(
+    req.body?.items,
+    await puedePrecioCalcaDeUsuario(req.user),
+    esDuenoDelPrevio ? (prevEntry.data?.items ?? null) : null,
+  );
   if (!preciosCalca.ok) {
     const status = preciosCalca.motivo === MOTIVOS_PRECIO_MANUAL.SIN_PERMISO ? 403 : 400;
     return res.status(status).json({ error: preciosCalca.mensaje });
@@ -388,23 +408,10 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   // La lista fijada tampoco depende de la pantalla (#151/#153, spec #98): un
   // tier ajeno al tabulador solo pasa con rol admin o checkbox de vendedor,
   // mismo patron que el tope de descuento -- el permiso lo hace valer el
-  // servidor, no el selector oculto.
+  // servidor, no el selector oculto. El tabulador del volumen ACTUAL no es la
+  // comparacion correcta al editar: se compara contra el tier YA guardado.
   const precios = readJSON('precios.json');
-  // #154: si se esta editando un registro existente (cotizacionId) Y ese
-  // registro es del vendedor que edita (o el editor es admin), el tier YA
-  // guardado ahi tambien es valido aunque quien edita no tenga el permiso --
-  // el tabulador del volumen ACTUAL no es la comparacion correcta, porque
-  // corregir cantidades no debe tumbar una autorizacion que ya ocurrio. El
-  // chequeo de dueno (mismo predicado que GET /api/cotizaciones/:id) es
-  // obligatorio: sin el, un cotizacionId AJENO con lista fijada seria una via
-  // para colarse el permiso -- justo el riesgo que el propio ticket #154
-  // senala ("muy laxa = bypass del permiso via edicion").
-  const idPrevioTier = parseInt(req.body?.cotizacionId, 10);
-  const prevEntryTier = Number.isInteger(idPrevioTier) && idPrevioTier > 0
-    ? await cotStore.obtener(idPrevioTier)
-    : null;
-  const esDuenoDelPrevio = !!prevEntryTier && (req.user.role === 'admin' || prevEntryTier.vendedor === req.user.name);
-  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await puedeFijarListaDeUsuario(req.user), esDuenoDelPrevio ? (prevEntryTier.tier ?? null) : null);
+  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await puedeFijarListaDeUsuario(req.user), esDuenoDelPrevio ? (prevEntry.tier ?? null) : null);
   if (!tierValidado.ok) return res.status(403).json({ error: tierValidado.mensaje });
   try {
     const data = req.body;
@@ -413,7 +420,7 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
     // ahi cotizaria el estimado con el precio del proveedor guardado al lado.
     if (Array.isArray(data.items)) data.items = aplicarPrecioManualEnPartidas(data.items);
     data.vendedor = req.user.name;
-    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, req.user.name, prevEntryTier);
+    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, req.user.name, prevEntry);
     const entry = await cotStore.obtener(id);
     res.json({ id, folioOperam: entry?.folioOperam ?? null, requiereActualizacionOperam });
   } catch (err) {
