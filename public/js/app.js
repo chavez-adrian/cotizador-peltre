@@ -1190,7 +1190,7 @@ function renderCalcas() {
     const el = document.getElementById(id);
     if (!el) continue;
     el.style.display = motivo ? 'block' : 'none';
-    el.textContent = motivo ? avisoCalcaInvalida() : '';
+    el.textContent = motivo ? avisoCalcaInvalida(puedePrecioCalca()) : '';
   }
 }
 
@@ -1200,8 +1200,10 @@ function renderCalcas() {
 // precio, y ahi el `?? 0` de getPrice la imprimiria en $0.
 function motivoCalcaInvalidaActual() {
   const items = itemsDelCarrito();
+  // El precio EFECTIVO (manual incluido, #281): una linea con precio manual
+  // capturado ya no es "sin precio" aunque la lista vigente no tenga esa fila.
   const calcaSinPrecio = [...state.cart.values()]
-    .some(({ product }) => product.esCalca && precioUnitario(product) === null);
+    .some(({ product, precioManual }) => product.esCalca && precioUnitario(product, precioManual) === null);
   return motivoCalcaInvalida({ hayCalca: hayCalcaEnCarrito(items), calcaSinPrecio });
 }
 
@@ -2477,7 +2479,7 @@ async function generatePDF() {
   }
   const motivoCalca = motivoCalcaInvalidaActual();
   if (bloqueaGeneracionPorCalcaSinPrecio(motivoCalca !== null)) {
-    alert(avisoCalcaInvalida());
+    alert(avisoCalcaInvalida(puedePrecioCalca()));
     switchTab('productos');
     return;
   }
@@ -2577,7 +2579,7 @@ async function generateHTML() {
   }
   const motivoCalca = motivoCalcaInvalidaActual();
   if (bloqueaGeneracionPorCalcaSinPrecio(motivoCalca !== null)) {
-    alert(avisoCalcaInvalida());
+    alert(avisoCalcaInvalida(puedePrecioCalca()));
     switchTab('productos');
     return;
   }
