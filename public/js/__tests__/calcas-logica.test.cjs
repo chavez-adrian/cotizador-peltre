@@ -372,6 +372,44 @@ test('#152-14: avisoCalcaInvalida habla de precio, no del piso de piezas', () =>
   assert.ok(/precio/i.test(aviso), aviso);
 });
 
+// === #281: una calca sin fila en el tier vigente deja de invalidar el carrito
+// si la linea tiene precio manual capturado -- el precio EFECTIVO (manual
+// incluido) es lo que decide calcaSinPrecio, no solo la lista. ===
+const CAL_SIN_M350 = {
+  code: 'CAL1025S',
+  name: 'Calca vitrificable chica (25 cm2) 1 tinta',
+  unit: 'SER',
+  prices: { Menudeo: null, M100: 26.9, M550: 17.96, M1500: 14.19, M6000: 13.31 },
+};
+
+test('#281-1: calca sin precio en el tier + manual capturado -> ya no invalida el carrito', () => {
+  const sinManual = precioEfectivoCalca(CAL_SIN_M350, 'M350', undefined) === null;
+  assert.strictEqual(sinManual, true, 'sin manual, CAL1025S no tiene fila M350');
+  assert.strictEqual(motivoCalcaInvalida({ hayCalca: true, calcaSinPrecio: sinManual }), MOTIVOS_CALCA_INVALIDA.SIN_PRECIO);
+
+  const conManual = precioEfectivoCalca(CAL_SIN_M350, 'M350', 137.5) === null;
+  assert.strictEqual(conManual, false, 'con manual valido el precio efectivo ya no es null');
+  assert.strictEqual(motivoCalcaInvalida({ hayCalca: true, calcaSinPrecio: conManual }), null);
+});
+
+test('#281-2: calca sin precio y sin manual sigue bloqueando identico al actual', () => {
+  const calcaSinPrecio = precioEfectivoCalca(CAL_SIN_M350, 'M350', null) === null;
+  assert.strictEqual(motivoCalcaInvalida({ hayCalca: true, calcaSinPrecio }), MOTIVOS_CALCA_INVALIDA.SIN_PRECIO);
+});
+
+test('#281-3: avisoCalcaInvalida sin permiso conserva el texto actual (nadie pierde nada)', () => {
+  const sinArgumento = avisoCalcaInvalida();
+  const sinPermiso = avisoCalcaInvalida(false);
+  assert.strictEqual(sinPermiso, sinArgumento);
+  assert.ok(!/manual/i.test(sinPermiso), sinPermiso);
+});
+
+test('#281-4: avisoCalcaInvalida con permiso agrega la salida del precio manual', () => {
+  const aviso = avisoCalcaInvalida(true);
+  assert.ok(/precio manualmente/i.test(aviso), aviso);
+  assert.ok(/Operam/.test(aviso), aviso);
+});
+
 // === Decision 8: la linea muestra la relacion, sin juzgarla (el pedido mixto y
 // la doble calca por pieza son ambos legitimos) ===
 test('#91-23: relacionCalcaProducto describe cuantas piezas llevan calca', () => {

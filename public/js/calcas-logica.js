@@ -272,9 +272,15 @@ export function bloqueaGeneracionPorCalcaSinPrecio(carritoInvalido) {
   return !!carritoInvalido;
 }
 
-export function avisoCalcaInvalida() {
-  return 'Hay una calca sin precio en la lista vigente de esta cotización. '
-    + 'Quítala o corrige su precio en Operam: no se puede generar un documento con una partida sin precio.';
+// Con permiso de precio manual (#279/#281), la salida sugerida incluye
+// capturarlo en la linea; sin permiso el texto es el de siempre (#152), sin
+// mencionar una salida que esa persona no puede usar.
+export function avisoCalcaInvalida(tienePermiso) {
+  const salida = tienePermiso
+    ? 'Quítala, captura el precio manualmente en la línea o corrige el precio en Operam'
+    : 'Quítala o corrige su precio en Operam';
+  return `Hay una calca sin precio en la lista vigente de esta cotización. ${salida}: `
+    + 'no se puede generar un documento con una partida sin precio.';
 }
 
 // La linea describe la relacion sin juzgarla (decision 8): el pedido mixto (solo
