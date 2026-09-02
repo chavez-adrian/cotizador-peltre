@@ -96,21 +96,46 @@ export const MENSAJE_PRECIO_MANUAL_INVALIDO = 'El precio manual de la calca debe
 // podria inventar. El orden importa: primero la forma del dato (partida
 // equivocada, valor imposible) y luego el permiso, porque un payload mal
 // formado no se vuelve valido por tener permiso.
-export function validarPreciosManualesCalca(items, tienePermiso) {
+//
+// partidasPrevias (#283, espejo de tierPrevioEditado en validarTierCotizacion):
+// las partidas del registro que se esta editando. Sin permiso, una captura pasa
+// SOLO si es exactamente la que esa misma partida ya traia -- dejarla como esta
+// no es capturar un precio nuevo. Quitarla siempre pasa (la partida llega sin
+// la llave y ni siquiera entra al chequeo). Cualquier otro valor sigue siendo
+// falta de permiso. Aplica solo al MISMO registro y solo si quien edita es su
+// dueno: el servidor resuelve ese gate y manda null cuando no se cumple, para
+// que un cotizacionId AJENO no preste permisos (bypass que #154 cerro).
+export function validarPreciosManualesCalca(items, tienePermiso, partidasPrevias) {
+  const previos = capturasPorPartida(partidasPrevias);
   for (const i of items || []) {
     const crudo = i ? i.precioManual : undefined;
     if (crudo === null || crudo === undefined || crudo === '') continue;
     if (!esCodigoCalca(i.codigo)) {
       return { ok: false, motivo: MOTIVOS_PRECIO_MANUAL.NO_CALCA, mensaje: MENSAJE_PRECIO_MANUAL_NO_CALCA };
     }
-    if (normalizarPrecioManual(crudo) === null) {
+    const manual = normalizarPrecioManual(crudo);
+    if (manual === null) {
       return { ok: false, motivo: MOTIVOS_PRECIO_MANUAL.INVALIDO, mensaje: MENSAJE_PRECIO_MANUAL_INVALIDO };
     }
-    if (!tienePermiso) {
+    if (!tienePermiso && previos.get(llaveCarrito(i.codigo, i.diseno)) !== manual) {
       return { ok: false, motivo: MOTIVOS_PRECIO_MANUAL.SIN_PERMISO, mensaje: MENSAJE_SIN_PERMISO_PRECIO_CALCA };
     }
   }
   return { ok: true };
+}
+
+// Capturas validas de un juego de partidas, indexadas por la identidad de la
+// linea (codigo + diseno, llaveCarrito): dos disenos del mismo codigo son dos
+// partidas y la captura de uno no respalda a la otra. Lo que no es captura
+// valida no entra, asi que una ausencia nunca coincide con un valor.
+function capturasPorPartida(partidas) {
+  const mapa = new Map();
+  for (const p of partidas || []) {
+    if (!p || !esCodigoCalca(p.codigo)) continue;
+    const manual = normalizarPrecioManual(p.precioManual);
+    if (manual !== null) mapa.set(llaveCarrito(p.codigo, p.diseno), manual);
+  }
+  return mapa;
 }
 
 // Permiso de capturar el precio de una calca (#280, spec #278), espejo exacto

@@ -330,6 +330,89 @@ test('#283-9: MENSAJE_COPIA_PRECIO_MANUAL existe y menciona el precio de lista',
   assert.match(MENSAJE_COPIA_PRECIO_MANUAL, /lista/i);
 });
 
+// === #283: el validador contra el registro previo (Editar sin permiso puede
+// dejar la captura o quitarla, nunca cambiarla). Las previas son las partidas
+// del registro que se edita, y el servidor solo las pasa si quien edita es su
+// dueno -- un cotizacionId ajeno llega aqui como null. ===
+const PREVIAS_CON_MANUAL = [{ ...PARTIDA_CALCA, precio: 137.5, precioManual: 137.5 }];
+
+test('#283-10: sin permiso, el MISMO precio manual que ya traia la partida pasa', () => {
+  const r = validarPreciosManualesCalca(
+    [PARTIDA_PRODUCTO, { ...PARTIDA_CALCA, precio: 137.5, precioManual: 137.5 }], false, PREVIAS_CON_MANUAL);
+  assert.strictEqual(r.ok, true);
+});
+
+test('#283-11: sin permiso, QUITAR la captura pasa (la linea vuelve al precio de lista)', () => {
+  const r = validarPreciosManualesCalca([PARTIDA_PRODUCTO, PARTIDA_CALCA], false, PREVIAS_CON_MANUAL);
+  assert.strictEqual(r.ok, true);
+});
+
+test('#283-12: sin permiso, un valor DISTINTO al previo se rechaza por falta de permiso', () => {
+  const r = validarPreciosManualesCalca(
+    [{ ...PARTIDA_CALCA, precio: 200, precioManual: 200 }], false, PREVIAS_CON_MANUAL);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, MOTIVOS_PRECIO_MANUAL.SIN_PERMISO);
+  assert.strictEqual(r.mensaje, MENSAJE_SIN_PERMISO_PRECIO_CALCA);
+});
+
+test('#283-13: sin permiso, una partida NUEVA con captura se rechaza aunque el registro previo tenga otras', () => {
+  const otroDiseno = { ...PARTIDA_CALCA, diseno: 2, precio: 137.5, precioManual: 137.5 };
+  const r = validarPreciosManualesCalca([otroDiseno], false, PREVIAS_CON_MANUAL);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, MOTIVOS_PRECIO_MANUAL.SIN_PERMISO);
+});
+
+// El gate de dueno vive en el servidor: un cotizacionId ajeno no presta
+// permisos, y aqui eso llega como ausencia de previas (bypass que #154 cerro).
+test('#283-14: sin previas (Copiar o registro ajeno), el mismo valor se rechaza igual que antes', () => {
+  for (const previas of [null, undefined, []]) {
+    const r = validarPreciosManualesCalca(
+      [{ ...PARTIDA_CALCA, precio: 137.5, precioManual: 137.5 }], false, previas);
+    assert.strictEqual(r.ok, false, JSON.stringify(previas));
+    assert.strictEqual(r.motivo, MOTIVOS_PRECIO_MANUAL.SIN_PERMISO);
+  }
+});
+
+test('#283-15: con permiso, un valor distinto al previo pasa (se cambia libremente)', () => {
+  const r = validarPreciosManualesCalca(
+    [{ ...PARTIDA_CALCA, precio: 200, precioManual: 200 }], true, PREVIAS_CON_MANUAL);
+  assert.strictEqual(r.ok, true);
+});
+
+// La forma del dato se revisa ANTES que el permiso: un payload mal formado no
+// se vuelve valido por coincidir con nada.
+test('#283-16: con previas, un valor imposible sigue siendo dato mal formado', () => {
+  const r = validarPreciosManualesCalca([{ ...PARTIDA_CALCA, precioManual: -5 }], false, PREVIAS_CON_MANUAL);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, MOTIVOS_PRECIO_MANUAL.INVALIDO);
+});
+
+// La identidad de la partida es codigo + diseno (llaveCarrito): el mismo codigo
+// en otro diseno es otra partida y su captura no la respalda.
+test('#283-17: sin permiso, el mismo valor en OTRO diseno del mismo codigo se rechaza', () => {
+  const previaDiseno2 = [{ ...PARTIDA_CALCA, diseno: 2, precio: 137.5, precioManual: 137.5 }];
+  const r = validarPreciosManualesCalca(
+    [{ ...PARTIDA_CALCA, diseno: 1, precio: 137.5, precioManual: 137.5 }], false, previaDiseno2);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, MOTIVOS_PRECIO_MANUAL.SIN_PERMISO);
+});
+
+// Una partida guardada antes de #220 no lleva `diseno` y es el Diseno 1: sigue
+// respaldando a la misma linea del carrito, sin migracion.
+test('#283-18: una previa sin diseno respalda al Diseno 1', () => {
+  const previaSinDiseno = [{ codigo: 'CAL1050', cantidad: 100, precio: 137.5, precioManual: 137.5 }];
+  const r = validarPreciosManualesCalca(
+    [{ ...PARTIDA_CALCA, diseno: 1, precio: 137.5, precioManual: 137.5 }], false, previaSinDiseno);
+  assert.strictEqual(r.ok, true);
+});
+
+// El input manda texto: 137.5 y '137.5' son la misma captura, no un cambio.
+test('#283-19: la comparacion es por valor normalizado, no por tipo', () => {
+  const r = validarPreciosManualesCalca(
+    [{ ...PARTIDA_CALCA, precio: 137.5, precioManual: '137.5' }], false, PREVIAS_CON_MANUAL);
+  assert.strictEqual(r.ok, true);
+});
+
 // Sin numero de diseño explicito la partida es el Diseño 1 (#220): es lo que
 // vale para una calca guardada antes del cambio, que se lee sin migrarla.
 test('#91-11: productoCalca arma la entrada del carrito marcada como calca', () => {
