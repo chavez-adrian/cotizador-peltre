@@ -44,6 +44,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 | Modulo | Que hace |
 |--------|----------|
 | `operam-client.js` | Bearer auth con auto-refresh; `buildClienteBody` = UNICO mapeo cliente→Operam (ahi viven los overrides fiscales del RFC generico #121); `buscarClientes` (por NOMBRE) vs `buscarClientesPorRfc` (pool por RFC, #194) no son intercambiables; lectores read-only con retry y throttle anti-429 |
+| `lista-precios-cliente.js` | Nucleo puro del cliente sin lista de precios (#285): `clienteSinListaPrecios` (sales_type 0/''/null), el texto accionable y `esErrorRateMoneda` (traduce el 406 "Debe haber al menos un rate de moneda", que en realidad dice que al CLIENTE le falta lista) |
 | `alta-generica.js` | Alta con RFC generico al subir cotizacion (#81/#83) + PUT del branch con domicilio de entrega (#96) |
 | `deduplicacion.js` | RFC genericos + dedup (#78); `DEBTORS_GENERICOS`; `normalizarNombre` |
 | `cruce-identidad.js` | Nucleo puro del cruce por identidad (#123): CERRO/COMPRO_OTRA_COSA/SIN_SENAL, banda ±15%, normalizacion de telefono |
