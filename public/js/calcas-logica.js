@@ -272,6 +272,16 @@ export function bloqueaGeneracionPorCalcaSinPrecio(carritoInvalido) {
   return !!carritoInvalido;
 }
 
+// Compuerta de AGREGAR (#281, rebanada 2): sin permiso, una calca sin fila en
+// el tier vigente nunca llega al carrito -- identico a siempre, porque sin
+// permiso no hay forma de capturarle un precio despues. Con permiso, agregarla
+// es la UNICA forma de que exista una linea donde capturar el precio manual
+// (CAL1025S sin M350 es el caso real): bloquear el agregar dejaria el ticket
+// sin salida. Una calca que si tiene precio nunca se impide, con o sin permiso.
+export function impideAgregarCalcaSinPrecio({ sinPrecio, tienePermiso } = {}) {
+  return !!sinPrecio && !tienePermiso;
+}
+
 // Con permiso de precio manual (#279/#281), la salida sugerida incluye
 // capturarlo en la linea; sin permiso el texto es el de siempre (#152), sin
 // mencionar una salida que esa persona no puede usar.

@@ -8,7 +8,7 @@ let precioEfectivoCalca, validarPreciosManualesCalca, aplicarPrecioManualEnParti
 let MOTIVOS_PRECIO_MANUAL, MENSAJE_SIN_PERMISO_PRECIO_CALCA;
 let normalizarPuedePrecioCalca, puedePrecioCalca;
 let piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca;
-let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio;
+let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio, impideAgregarCalcaSinPrecio;
 let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito;
 let avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado;
 let MAX_DISENOS_POR_LINEA_PRODUCTO, MOTIVOS_TOPE_DISENOS;
@@ -22,7 +22,7 @@ before(async () => {
     MOTIVOS_PRECIO_MANUAL, MENSAJE_SIN_PERMISO_PRECIO_CALCA,
     normalizarPuedePrecioCalca, puedePrecioCalca,
     piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca,
-    motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio,
+    motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio, impideAgregarCalcaSinPrecio,
     siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito,
     avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado,
     MAX_DISENOS_POR_LINEA_PRODUCTO, MOTIVOS_TOPE_DISENOS,
@@ -408,6 +408,22 @@ test('#281-4: avisoCalcaInvalida con permiso agrega la salida del precio manual'
   const aviso = avisoCalcaInvalida(true);
   assert.ok(/precio manualmente/i.test(aviso), aviso);
   assert.ok(/Operam/.test(aviso), aviso);
+});
+
+// === #281 (rebanada 2): con permiso, una calca sin fila en el tier vigente SI
+// se puede agregar al carrito -- es la unica forma de que exista una linea
+// donde capturarle el precio manual. Sin permiso, identico a siempre. ===
+test('#281-5: impideAgregarCalcaSinPrecio bloquea sin precio y SIN permiso (como siempre)', () => {
+  assert.strictEqual(impideAgregarCalcaSinPrecio({ sinPrecio: true, tienePermiso: false }), true);
+});
+
+test('#281-6: impideAgregarCalcaSinPrecio deja agregar sin precio CON permiso', () => {
+  assert.strictEqual(impideAgregarCalcaSinPrecio({ sinPrecio: true, tienePermiso: true }), false);
+});
+
+test('#281-7: impideAgregarCalcaSinPrecio nunca impide una calca que si tiene precio', () => {
+  assert.strictEqual(impideAgregarCalcaSinPrecio({ sinPrecio: false, tienePermiso: false }), false);
+  assert.strictEqual(impideAgregarCalcaSinPrecio({ sinPrecio: false, tienePermiso: true }), false);
 });
 
 // === Decision 8: la linea muestra la relacion, sin juzgarla (el pedido mixto y
