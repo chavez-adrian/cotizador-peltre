@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Leads de feria - Cotizador Peltre Nacional</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .leads-container { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .leads-barra { background: var(--white); border-radius: var(--radius); padding: 12px;
+    margin-bottom: 12px; border: 1px solid var(--border); }
+  .leads-filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+  .leads-filtro { display: flex; flex-direction: column; gap: 4px; flex: 1 1 150px; min-width: 0; }
+  .leads-filtro label { font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.04em; }
+  .leads-filtro select, .leads-filtro input { padding: 7px 10px; border: 1px solid var(--border);
+    border-radius: var(--radius-input); font-size: 13px; font-family: inherit; min-width: 0; }
+  .leads-resumen { font-size: 13px; color: var(--text-muted); margin-top: 10px; }
+  .leads-resumen strong { color: var(--primary-dark); }
+
+  /* La tabla scrollea dentro de su tarjeta, nunca el documento (#286). */
+  .leads-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch;
+    background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); }
+  table.leads { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.leads th, table.leads td { padding: 8px 10px; text-align: left; white-space: nowrap;
+    border-bottom: 1px solid var(--border); }
+  table.leads th { background: var(--bg); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--text-muted); cursor: pointer; user-select: none;
+    position: sticky; top: 0; }
+  table.leads th .orden-flecha { color: var(--primary); }
+  table.leads tbody tr.fila-lead { cursor: pointer; }
+  table.leads tbody tr.fila-lead:hover { background: var(--bg); }
+  td.celda-ancha { white-space: normal; max-width: 220px; }
+
+  .estado-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px;
+    font-weight: 600; white-space: nowrap; }
+  .estado-0 { background: oklch(0.94 0.05 30); color: oklch(0.45 0.15 30); }
+  .estado-1 { background: oklch(0.95 0.04 80); color: oklch(0.45 0.12 70); }
+  .estado-2 { background: oklch(0.94 0.05 240); color: oklch(0.45 0.14 250); }
+  .estado-3 { background: oklch(0.93 0.06 150); color: oklch(0.40 0.13 155); }
+
+  .btn-wa { display: inline-block; padding: 5px 12px; border-radius: var(--radius-input);
+    background: oklch(0.62 0.16 150); color: var(--white); font-size: 12px; font-weight: 600;
+    text-decoration: none; white-space: nowrap; }
+  .btn-wa.deshabilitado { background: var(--border); color: var(--text-muted); pointer-events: none; }
+
+  /* La columna de WhatsApp va anclada a la derecha: es la accion de la pantalla
+     y en el telefono la tabla no cabe, asi que sin esto habria que arrastrarla
+     hasta el final para alcanzar el boton. Fondo opaco propio porque queda
+     encima de las demas celdas al scrollear. */
+  table.leads th:last-child, table.leads tr.fila-lead > td:last-child {
+    position: sticky; right: 0; background: var(--white);
+    box-shadow: -6px 0 8px -6px oklch(0 0 0 / 0.18); }
+  table.leads th:last-child { background: var(--bg); }
+  table.leads tbody tr.fila-lead:hover > td:last-child { background: var(--bg); }
+
+  tr.detalle-lead td { background: var(--bg); white-space: normal; font-size: 12.5px;
+    line-height: 1.7; }
+  tr.detalle-lead dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+  tr.detalle-lead dt { color: var(--text-muted); }
+  tr.detalle-lead dd { margin: 0; }
+  .aviso-vacio { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="leads-login" class="login-container" style="display:none">
+  <div class="login-card">
+    <h1>Leads de feria</h1>
+    <p class="subtitle">Entra con tu PIN de vendedor</p>
+    <div class="form-group">
+      <label>Vendedor</label>
+      <select id="login-vendedor"></select>
+    </div>
+    <div class="form-group">
+      <label>PIN</label>
+      <input type="password" id="login-pin" maxlength="4" inputmode="numeric">
+    </div>
+    <div id="login-error" class="alert alert-error" style="display:none"></div>
+    <button class="btn btn-primary btn-block" id="login-btn">Entrar</button>
+  </div>
+</div>
+
+<div id="leads-app" class="leads-container" style="display:none">
+  <div class="leads-barra">
+    <div class="leads-filtros">
+      <div class="leads-filtro">
+        <label for="f-evento">Evento</label>
+        <select id="f-evento"></select>
+      </div>
+      <div class="leads-filtro">
+        <label for="f-vendedor">Vendedor</label>
+        <select id="f-vendedor"></select>
+      </div>
+      <div class="leads-filtro">
+        <label for="f-tipo">Tipo de cliente</label>
+        <select id="f-tipo"></select>
+      </div>
+      <div class="leads-filtro">
+        <label for="f-area">Área de interés</label>
+        <select id="f-area"></select>
+      </div>
+      <div class="leads-filtro">
+        <label for="f-origen">Origen</label>
+        <select id="f-origen"></select>
+      </div>
+      <div class="leads-filtro">
+        <label for="f-estado">Estado</label>
+        <select id="f-estado"></select>
+      </div>
+      <div class="leads-filtro">
+        <label for="f-texto">Buscar</label>
+        <input type="search" id="f-texto" placeholder="nombre, empresa, ciudad">
+      </div>
+    </div>
+    <div class="leads-resumen" id="leads-resumen"></div>
+  </div>
+
+  <div class="leads-scroll">
+    <table class="leads">
+      <thead><tr id="leads-cabeceras"></tr></thead>
+      <tbody id="leads-cuerpo"></tbody>
+    </table>
+    <div class="aviso-vacio" id="leads-vacio" style="display:none">
+      Ningún lead coincide con los filtros.
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { buildWaLinkProspecto } from '/js/prospectos-logica.js';
+
+// Tabla de leads de feria. Lee GET /api/prospectos, que ya resuelve la
+// visibilidad: un vendedor ve los suyos y el admin ve todos (por eso el filtro
+// de vendedor solo aparece cuando de verdad hay mas de uno a la vista).
+// Comparte el token de localStorage con la app principal: quien ya entro al
+// cotizador en este navegador no vuelve a teclear el PIN.
+const ESTADOS = [
+  { rango: 0, etiqueta: 'Sin siguiente paso' },
+  { rango: 1, etiqueta: 'Contacto agendado' },
+  { rango: 2, etiqueta: 'Cotizado' },
+  { rango: 3, etiqueta: 'Ya es cliente' },
+];
+const ORIGENES = {
+  ambos: 'Gafete y captura',
+  gafete: 'Solo gafete',
+  captura: 'Solo captura',
+};
+
+const COLUMNAS = [
+  { llave: 'estado', titulo: 'Estado', valor: p => p._estado, texto: p => ESTADOS[p._estado].etiqueta },
+  { llave: 'nombre', titulo: 'Nombre', valor: p => p.nombre || '', ancha: true },
+  { llave: 'empresa', titulo: 'Empresa', valor: p => p.data.empresa || '', ancha: true },
+  { llave: 'tipo', titulo: 'Tipo', valor: p => p.data.tipo_cliente || '' },
+  { llave: 'area', titulo: 'Área de interés', valor: p => p.data.area_interes || '', ancha: true },
+  { llave: 'ciudad', titulo: 'Ciudad', valor: p => p.ciudad || '' },
+  { llave: 'tamano', titulo: 'Tamaño', valor: p => p.data.tamano || '' },
+  { llave: 'vendedor', titulo: 'Vendedor', valor: p => p.vendedor || '' },
+];
+
+const estado = {
+  token: localStorage.getItem('token'),
+  prospectos: [],
+  ligas: { catalogoUrl: '', sitioUrl: '' },
+  orden: { llave: 'estado', asc: true },
+  abierta: null,
+};
+
+function el(id) { return document.getElementById(id); }
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// --- Derivados del prospecto ---
+
+function rangoEstado(p) {
+  if (p.data.cliente_id) return 3;
+  const eventos = p.eventos || [];
+  if (eventos.some(e => e.tipo === 'cotizacion')) return 2;
+  if (eventos.some(e => e.tipo === 'siguiente_contacto')) return 1;
+  return 0;
+}
+
+// El gafete deja `data.escaneado`; cualquier evento que no sea `importado` es
+// una captura hecha por una persona. Un lead puede venir de las dos fuentes.
+function origenDe(p) {
+  const gafete = !!p.data.escaneado;
+  const captura = (p.eventos || []).some(e => e.tipo && e.tipo !== 'importado');
+  if (gafete && captura) return 'ambos';
+  return gafete ? 'gafete' : 'captura';
+}
+
+// El area de interes es multi-valor separado por punto y coma
+// ("Alimentos; Cristalería - Vajillas"): el filtro es por valor suelto.
+function areasDe(p) {
+  return String(p.data.area_interes || '').split(';').map(a => a.trim()).filter(Boolean);
+}
+
+function prepara(p) {
+  p.data = p.data || {};
+  p._estado = rangoEstado(p);
+  p._origen = origenDe(p);
+  p._areas = areasDe(p);
+  p._busqueda = [p.nombre, p.data.empresa, p.ciudad, p.data.puesto].filter(Boolean).join(' ').toLowerCase();
+  return p;
+}
+
+// --- Filtros ---
+
+function opciones(sel, valores, etiquetaTodos) {
+  sel.innerHTML = `<option value="">${escapeHtml(etiquetaTodos)}</option>` +
+    valores.map(v => `<option value="${escapeHtml(v.valor)}">${escapeHtml(v.texto)}</option>`).join('');
+}
+
+function unicos(lista) {
+  return [...new Set(lista.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+}
+
+function poblarFiltros() {
+  const ps = estado.prospectos;
+  opciones(el('f-evento'), unicos(ps.map(p => p.data.evento)).map(v => ({ valor: v, texto: v })), 'Todos');
+  opciones(el('f-tipo'), unicos(ps.map(p => p.data.tipo_cliente)).map(v => ({ valor: v, texto: v })), 'Todos');
+  opciones(el('f-area'), unicos(ps.flatMap(p => p._areas)).map(v => ({ valor: v, texto: v })), 'Todas');
+  opciones(el('f-origen'), Object.entries(ORIGENES).map(([valor, texto]) => ({ valor, texto })), 'Todos');
+  opciones(el('f-estado'), ESTADOS.map(e => ({ valor: String(e.rango), texto: e.etiqueta })), 'Todos');
+
+  const vendedores = unicos(ps.map(p => p.vendedor));
+  const filtroVendedor = el('f-vendedor').closest('.leads-filtro');
+  // Con un solo vendedor a la vista el filtro no decide nada: estorba.
+  filtroVendedor.style.display = vendedores.length > 1 ? '' : 'none';
+  opciones(el('f-vendedor'), vendedores.map(v => ({ valor: v, texto: v })), 'Todos');
+
+  // El evento activo suele ser el que se esta trabajando: si existe, arranca ahi.
+  const eventos = unicos(ps.map(p => p.data.evento));
+  if (eventos.length === 1) el('f-evento').value = eventos[0];
+}
+
+function filtrados() {
+  const evento = el('f-evento').value;
+  const vendedor = el('f-vendedor').value;
+  const tipo = el('f-tipo').value;
+  const area = el('f-area').value;
+  const origen = el('f-origen').value;
+  const est = el('f-estado').value;
+  const texto = el('f-texto').value.trim().toLowerCase();
+  return estado.prospectos.filter(p =>
+    (!evento || p.data.evento === evento) &&
+    (!vendedor || p.vendedor === vendedor) &&
+    (!tipo || p.data.tipo_cliente === tipo) &&
+    (!area || p._areas.includes(area)) &&
+    (!origen || p._origen === origen) &&
+    (!est || String(p._estado) === est) &&
+    (!texto || p._busqueda.includes(texto)));
+}
+
+// --- Render ---
+
+function ordena(lista) {
+  const col = COLUMNAS.find(c => c.llave === estado.orden.llave);
+  const signo = estado.orden.asc ? 1 : -1;
+  return [...lista].sort((a, b) => {
+    const va = col.valor(a), vb = col.valor(b);
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * signo;
+    // Lo vacio siempre al final, ordene como ordene: una celda en blanco no es
+    // informacion y no debe ganarle el lugar de arriba a una que si lo es.
+    if (!va && vb) return 1;
+    if (va && !vb) return -1;
+    return String(va).localeCompare(String(vb), 'es') * signo;
+  });
+}
+
+function pintaCabeceras() {
+  el('leads-cabeceras').innerHTML = COLUMNAS.map(c => {
+    const activa = estado.orden.llave === c.llave;
+    const flecha = activa ? `<span class="orden-flecha">${estado.orden.asc ? '↑' : '↓'}</span>` : '';
+    return `<th data-orden="${c.llave}">${escapeHtml(c.titulo)} ${flecha}</th>`;
+  }).join('') + '<th>WhatsApp</th>';
+}
+
+function celdaWa(p) {
+  const liga = buildWaLinkProspecto(p, estado.ligas);
+  if (!liga) return '<span class="btn-wa deshabilitado">Sin celular</span>';
+  return `<a class="btn-wa" href="${escapeHtml(liga)}" target="_blank" rel="noopener">WhatsApp</a>`;
+}
+
+function filaDetalle(p) {
+  const cal = p.data.calificacion || {};
+  const filas = [
+    ['Celular', p.celular],
+    ['Correo', p.data.correo],
+    ['Puesto', p.data.puesto],
+    ['Decisión de compra', p.data.decision],
+    ['Años operando', cal.anios],
+    ['Sucursales', cal.sucursales],
+    ['Usa peltre', cal.usa_peltre === undefined ? '' : (cal.usa_peltre ? `Sí${cal.proveedor_peltre ? ' - ' + cal.proveedor_peltre : ''}` : 'No')],
+    ['Valora', (cal.valora || []).join(', ')],
+    ['Concepto', cal.concepto],
+    ['Piezas estimadas', p.data.piezas_estimadas],
+    ['Origen', ORIGENES[p._origen]],
+    ['Notas', p.data.notas],
+  ].filter(([, v]) => v !== undefined && v !== null && v !== '');
+  const dl = filas.map(([k, v]) =>
+    `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v).replace(/\n/g, '<br>')}</dd>`).join('');
+  return `<tr class="detalle-lead"><td colspan="${COLUMNAS.length + 1}"><dl>${dl}</dl></td></tr>`;
+}
+
+function pinta() {
+  const lista = ordena(filtrados());
+  pintaCabeceras();
+  el('leads-cuerpo').innerHTML = lista.map(p => {
+    const celdas = COLUMNAS.map(c => {
+      const texto = c.texto ? c.texto(p) : c.valor(p);
+      const contenido = c.llave === 'estado'
+        ? `<span class="estado-badge estado-${p._estado}">${escapeHtml(texto)}</span>`
+        : escapeHtml(texto);
+      return `<td class="${c.ancha ? 'celda-ancha' : ''}">${contenido}</td>`;
+    }).join('');
+    const detalle = estado.abierta === p.id ? filaDetalle(p) : '';
+    return `<tr class="fila-lead" data-id="${p.id}">${celdas}<td>${celdaWa(p)}</td></tr>${detalle}`;
+  }).join('');
+  el('leads-vacio').style.display = lista.length ? 'none' : 'block';
+
+  const sinPaso = lista.filter(p => p._estado === 0).length;
+  el('leads-resumen').innerHTML =
+    `<strong>${lista.length}</strong> leads · <strong>${sinPaso}</strong> sin siguiente paso · ` +
+    `toca una fila para ver el detalle`;
+}
+
+// --- Eventos de la pantalla (sin onclick inline, trampa #112) ---
+
+function conectaEventos() {
+  for (const id of ['f-evento', 'f-vendedor', 'f-tipo', 'f-area', 'f-origen', 'f-estado']) {
+    el(id).addEventListener('change', pinta);
+  }
+  el('f-texto').addEventListener('input', pinta);
+
+  el('leads-cabeceras').addEventListener('click', e => {
+    const th = e.target.closest('th[data-orden]');
+    if (!th) return;
+    const llave = th.dataset.orden;
+    estado.orden = llave === estado.orden.llave
+      ? { llave, asc: !estado.orden.asc }
+      : { llave, asc: true };
+    pinta();
+  });
+
+  el('leads-cuerpo').addEventListener('click', e => {
+    if (e.target.closest('a')) return;
+    const tr = e.target.closest('tr.fila-lead');
+    if (!tr) return;
+    const id = Number(tr.dataset.id);
+    estado.abierta = estado.abierta === id ? null : id;
+    pinta();
+  });
+}
+
+// --- Arranque y sesion ---
+
+async function api(ruta) {
+  return fetch(ruta, { headers: { Authorization: `Bearer ${estado.token}` } });
+}
+
+async function cargar() {
+  const [resProspectos, resCatalogos] = await Promise.all([api('/api/prospectos'), api('/api/catalogos')]);
+  if (resProspectos.status === 401 || resProspectos.status === 403) return false;
+  if (!resProspectos.ok) throw new Error('No se pudieron cargar los prospectos');
+  if (resCatalogos.ok) {
+    const c = await resCatalogos.json();
+    estado.ligas = { catalogoUrl: c.catalogoUrl || '', sitioUrl: c.sitioUrl || '' };
+  }
+  // La pantalla es de leads de FERIA: un prospecto sin evento no entra.
+  estado.prospectos = (await resProspectos.json()).filter(p => p.data && p.data.evento).map(prepara);
+  poblarFiltros();
+  pinta();
+  el('leads-login').style.display = 'none';
+  el('leads-app').style.display = 'block';
+  return true;
+}
+
+async function muestraLogin() {
+  el('leads-app').style.display = 'none';
+  el('leads-login').style.display = 'flex';
+  const res = await fetch('/api/vendedores');
+  if (!res.ok) return;
+  const vendedores = await res.json();
+  el('login-vendedor').innerHTML = vendedores.map(v =>
+    `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
+}
+
+async function entrar() {
+  const errEl = el('login-error');
+  errEl.style.display = 'none';
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vendedorId: parseInt(el('login-vendedor').value), pin: el('login-pin').value }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    errEl.textContent = data.error || 'PIN incorrecto';
+    errEl.style.display = 'block';
+    return;
+  }
+  estado.token = data.token;
+  localStorage.setItem('token', data.token);
+  localStorage.setItem('user', JSON.stringify(data.user));
+  await cargar();
+}
+
+el('login-btn').addEventListener('click', entrar);
+el('login-pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+conectaEventos();
+
+if (estado.token) {
+  cargar().then(ok => { if (!ok) muestraLogin(); }).catch(() => muestraLogin());
+} else {
+  muestraLogin();
+}
+</script>
+</body>
+</html>

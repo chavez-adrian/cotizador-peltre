@@ -3351,6 +3351,13 @@ app.get('/admin', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'admin.html'));
 });
 
+// Tabla de leads de feria. El HTML no lleva datos: los pide a /api/prospectos
+// con el token del vendedor, asi que la visibilidad es la de siempre (cada quien
+// los suyos, el admin todos) y la liga se puede compartir sin exponer a nadie.
+app.get('/leads', (req, res) => {
+  res.sendFile(join(PUBLIC_DIR, 'leads.html'));
+});
+
 // Pagina publica de captacion de mayoreo (issue #157). Sin auth a proposito: es
 // la cara que ve el prospecto desconocido, enlazada desde la pagina de mayoreo
 // de la tienda. El catch-all de abajo devolveria index.html (el cotizador).
