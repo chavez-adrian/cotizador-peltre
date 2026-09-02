@@ -152,6 +152,25 @@ test('Q16: badgeFolioOperamHtml unifica el chip PRE / #Operam / vacio', () => {
   assert.equal(badgeFolioOperamHtml({ folioOperam: null, registroDesconocido: true }), '');
 });
 
+// #285: la PRE por cliente sin lista de precios se explica en el propio chip. El
+// PRE generico no dice nada y el vendedor no tenia como saber que el arreglo
+// esta en el CLIENTE (asignarle una lista en Operam), no en la cotizacion: eso
+// es lo que convertia el reintento en un callejon sin salida.
+test('Q16b: el chip de la PRE por cliente sin lista dice el motivo en vez de "PRE"', () => {
+  const html = badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'sin-lista' });
+  assert.match(html, /badge-pre/);
+  assert.match(html, /cliente sin lista de precios en Operam/);
+  assert.equal(html.includes('>PRE<'), false);
+  // La entrada completa (data.motivoPre) llega igual que la fila aplanada del
+  // Historial: el mismo campo a dos alturas, como folioOperam.
+  assert.match(badgeFolioOperamHtml({ folioOperam: null, data: { motivoPre: 'sin-lista' } }), /cliente sin lista/);
+  // Los otros motivos siguen con el chip generico.
+  assert.match(badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'operam' }), />PRE</);
+  assert.match(badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'dedup' }), />PRE</);
+  // Con folio ya no hay PRE que explicar.
+  assert.match(badgeFolioOperamHtml({ folioOperam: '900', motivoPre: 'sin-lista' }), /#Operam 900/);
+});
+
 // Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1): el boton
 // "Completar" solo aplica sobre una cotizacion que todavia es PRE (sin folio y
 // no historica de registro desconocido). Una cotizacion ya registrada (#Operam

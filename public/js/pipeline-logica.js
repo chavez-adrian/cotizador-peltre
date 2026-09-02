@@ -26,6 +26,18 @@ export function documentoBloqueado(cot) {
   return (cot?.data?.motivoPre ?? cot?.motivoPre ?? null) === 'dedup';
 }
 
+// Leyenda del chip de una PRE con motivo conocido (#285). Hoy solo el cliente sin
+// lista de precios tiene una: el PRE generico no dice nada y el vendedor no tiene
+// como saber que el arreglo esta en el CLIENTE (asignarle una lista en Operam) y
+// no en la cotizacion -- reintentar sin eso falla igual, para siempre. El motivo
+// llega en data.motivoPre (entrada completa) o plano (fila del Historial): el
+// mismo campo a dos alturas que ya maneja documentoBloqueado.
+export const LEYENDA_PRE_SIN_LISTA = 'PRE: cliente sin lista de precios en Operam';
+
+export function leyendaPre(cot) {
+  return (cot?.data?.motivoPre ?? cot?.motivoPre ?? null) === 'sin-lista' ? LEYENDA_PRE_SIN_LISTA : '';
+}
+
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,
 // Perdida) NO son columnas: viven en filtro/historial.
 export const COLUMNAS_PIPELINE = [
@@ -565,7 +577,11 @@ export function badgeFolioOperamHtml(cot) {
   const etiqueta = etiquetaFolioOperam(cot);
   if (!etiqueta) return '';
   const clase = etiqueta === 'PRE' ? 'badge-pre' : 'badge-operam';
-  return `<span class="cot-badge ${clase}">${escapeHtml(etiqueta)}</span>`;
+  // #285: una PRE con motivo conocido se explica en el propio chip, en lugar del
+  // "PRE" mudo. etiquetaFolioOperam NO cambia: sigue siendo la regla de dominio
+  // que decide si la cotizacion es PRE (puedeCompletarPreCotizacion la lee).
+  const texto = (etiqueta === 'PRE' && leyendaPre(cot)) || etiqueta;
+  return `<span class="cot-badge ${clase}">${escapeHtml(texto)}</span>`;
 }
 
 // Badge de folio de un PROSPECTO movido a mano a Seguimiento (issue #56, AC3,

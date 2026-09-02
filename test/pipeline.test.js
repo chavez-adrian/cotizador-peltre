@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion, transicionPorAsignacion, esPreCotizacion, etiquetaFolioOperam, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE, cotizacionesDedupVencidas, HORAS_VIDA_DEDUP } from '../lib/pipeline.js';
+import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion, transicionPorAsignacion, esPreCotizacion, etiquetaFolioOperam, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_SIN_LISTA, cotizacionesDedupVencidas, HORAS_VIDA_DEDUP } from '../lib/pipeline.js';
 
 // El vocabulario canonico de las 7 etapas del pipeline unificado (CONTEXT.md
 // "Etapas del pipeline", ADR-0005). El orden es el del embudo: del primer
@@ -182,6 +182,16 @@ test('P2: la leyenda del candado nombra el duplicado pendiente', () => {
   assert.match(LEYENDA_DEDUP_PENDIENTE, /duplicado/i);
 });
 
+// #285: tercer motivo de PRE. El cliente de Operam se quedo sin lista de precios
+// y no puede valuar el documento; el arreglo esta en el CLIENTE, no en la
+// cotizacion. Como 'operam', el documento SI sale (ADR-0009) -- lo que cambia es
+// que reintentar sin tocar Operam da exactamente el mismo error.
+test('P2c: motivoPre sin-lista no bloquea el documento', () => {
+  assert.equal(MOTIVO_PRE_SIN_LISTA, 'sin-lista');
+  assert.equal(documentoBloqueado({ data: { motivoPre: MOTIVO_PRE_SIN_LISTA } }), false);
+  assert.equal(documentoBloqueado({ id: 1, motivoPre: MOTIVO_PRE_SIN_LISTA }), false);
+});
+
 // public/js/pipeline-logica.js NO puede importar de lib/ (solo public/ se sirve
 // al navegador: un import a ../../lib/ da 404 y solo se ve EJECUTANDO). Por eso
 // reexpresa el candado, igual que ya hace con el vocabulario de etapas. Esta es
@@ -194,6 +204,8 @@ test('P2b: la reexpresion frontend del candado coincide con la de lib/', async (
     { data: { motivoPre: 'operam' } },
     { motivoPre: 'dedup' },
     { motivoPre: 'operam' },
+    { data: { motivoPre: 'sin-lista' } },
+    { motivoPre: 'sin-lista' },
     { data: {} },
     {},
   ]) {
