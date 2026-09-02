@@ -2603,3 +2603,24 @@ test('subirCotizacionOperam: con branchId ya ligado no se le pregunta la sucursa
     assert.equal(leyoCliente, false, 'con branchId ligado no hay lectura extra a Operam');
   } finally { restore(); }
 });
+
+// #284: cambiar COMO se arma la fecha no puede mover la huella de una cotizacion
+// que ya se subio. Su `data` trae fecha y vigencia explicitas, asi que el reloj de
+// quien la regenera es irrelevante -- lo que entra a la huella es el PLAZO en dias
+// (#115), no la fecha. El guardia mide justo eso: la misma cotizacion evaluada de
+// noche (cuando la fecha UTC ya era la de manana) y de dia da la misma huella.
+test('#284 huellaContenidoQuote: la huella de una cotizacion ya subida no depende del reloj', () => {
+  const deNoche = conRelojFijado('2026-09-02T01:07:48Z', () => huellaContenidoQuote(cotizacionBase()));
+  const deDia = conRelojFijado('2026-09-01T18:00:00Z', () => huellaContenidoQuote(cotizacionBase()));
+  assert.equal(deNoche, deDia);
+});
+
+// El mismo guardia para el caso que SI toca el fallback: sin vigencia explicita el
+// plazo sale de fecha + 30, y esa suma tampoco puede depender del reloj.
+test('#284 huellaContenidoQuote: sin vigencia explicita el plazo derivado tampoco depende del reloj', () => {
+  const sinVigencia = () => huellaContenidoQuote(cotizacionBase({ vigencia: '' }));
+  assert.equal(
+    conRelojFijado('2026-09-02T01:07:48Z', sinVigencia),
+    conRelojFijado('2026-09-01T18:00:00Z', sinVigencia),
+  );
+});
