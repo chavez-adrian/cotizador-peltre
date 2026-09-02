@@ -334,3 +334,40 @@ test('el archivo del formato anterior sigue sin avisos por actividad ni columnas
   const { avisos } = importarProspectosFeria(workbook([fila({ actividad: 'Restaurante' })]), OPTS);
   assert.deepEqual(avisos.actividadesSinMapeo, []);
 });
+
+// Tabla de leads del evento: las senales de calificacion tienen que ser
+// filtrables y ordenables, y una linea de texto no se puede filtrar. Se guardan
+// como campos propios SIN tocar la linea de notas: cambiarla rompería la
+// idempotencia de #277 (la nota entrante dejaria de coincidir con la guardada y
+// re-subir el archivo duplicaria la nota en cada prospecto).
+test('las senales de calificacion se guardan como campos propios ademas de la linea de notas', () => {
+  const { listos } = importarProspectosFeria(workbook2026([
+    fila2026({
+      cargo: 'Chef Ejecutivo', tamano: '51-250', decision: 'Decido / apruebo',
+      interes: 'Alimentos; Cristalería - Vajillas',
+    }),
+  ]), OPTS);
+  const d = listos[0].data;
+  assert.equal(d.puesto, 'Chef Ejecutivo');
+  assert.equal(d.tamano, '51-250');
+  assert.equal(d.decision, 'Decido / apruebo');
+  assert.equal(d.area_interes, 'Alimentos; Cristalería - Vajillas');
+  assert.equal(d.notas,
+    'Puesto: Chef Ejecutivo | Tamaño de empresa: 51-250 | Decisión de compra: Decido / apruebo | Área de interés: Alimentos; Cristalería - Vajillas');
+});
+
+test('los campos de calificacion que el gafete no trae no se escriben', () => {
+  const { listos } = importarProspectosFeria(workbook2026([fila2026()]), OPTS);
+  for (const k of ['puesto', 'tamano', 'decision', 'area_interes']) {
+    assert.equal(k in listos[0].data, false, k);
+  }
+});
+
+test('el formato anterior tambien puebla los campos propios que ese export si trae', () => {
+  const { listos } = importarProspectosFeria(workbook([
+    fila({ puesto: 'Gerente de Compras', tamano: '11-50' }),
+  ]), OPTS);
+  assert.equal(listos[0].data.puesto, 'Gerente de Compras');
+  assert.equal(listos[0].data.tamano, '11-50');
+  assert.equal('area_interes' in listos[0].data, false);
+});
