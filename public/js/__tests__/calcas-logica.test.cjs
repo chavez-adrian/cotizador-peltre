@@ -7,6 +7,7 @@ let esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdPara
 let precioEfectivoCalca, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas;
 let MOTIVOS_PRECIO_MANUAL, MENSAJE_SIN_PERMISO_PRECIO_CALCA;
 let normalizarPuedePrecioCalca, puedePrecioCalca;
+let precioManualAlCargar, MENSAJE_COPIA_PRECIO_MANUAL;
 let piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca;
 let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio, impideAgregarCalcaSinPrecio;
 let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito;
@@ -21,6 +22,7 @@ before(async () => {
     precioEfectivoCalca, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas,
     MOTIVOS_PRECIO_MANUAL, MENSAJE_SIN_PERMISO_PRECIO_CALCA,
     normalizarPuedePrecioCalca, puedePrecioCalca,
+    precioManualAlCargar, MENSAJE_COPIA_PRECIO_MANUAL,
     piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca,
     motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio, impideAgregarCalcaSinPrecio,
     siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito,
@@ -262,6 +264,70 @@ test('#280-3: puedePrecioCalca: vendedor depende del flag normalizado', () => {
   assert.strictEqual(puedePrecioCalca({ role: 'vendedor', puedePrecioCalca: false }), false);
   assert.strictEqual(puedePrecioCalca({ role: 'vendedor' }), false);
   assert.strictEqual(puedePrecioCalca(null), false);
+});
+
+// === #283: herencia del precio manual en Editar y Copiar, espejo exacto de
+// tierAlCargarCotizacion (#154, tier-logica.test.cjs). Editar (mismo registro,
+// mismo folio) conserva SIEMPRE; Copiar (registro nuevo) solo con permiso. ===
+
+test('#283-1: Editar con permiso conserva el precio manual guardado', () => {
+  const r = precioManualAlCargar({ ...PARTIDA_CALCA, precioManual: 137.5 }, 'actualizar', true);
+  assert.deepStrictEqual(r, { precioManual: 137.5, avisoPrecioManualPerdido: false });
+});
+
+test('#283-2: Editar SIN permiso conserva el precio manual guardado y no avisa', () => {
+  const r = precioManualAlCargar({ ...PARTIDA_CALCA, precioManual: 137.5 }, 'actualizar', false);
+  assert.deepStrictEqual(r, { precioManual: 137.5, avisoPrecioManualPerdido: false });
+});
+
+test('#283-3: Copiar con permiso hereda el precio manual', () => {
+  const r = precioManualAlCargar({ ...PARTIDA_CALCA, precioManual: 137.5 }, 'nueva', true);
+  assert.deepStrictEqual(r, { precioManual: 137.5, avisoPrecioManualPerdido: false });
+});
+
+test('#283-4: Copiar SIN permiso arranca del precio de lista y marca el aviso', () => {
+  const r = precioManualAlCargar({ ...PARTIDA_CALCA, precioManual: 137.5 }, 'nueva', false);
+  assert.deepStrictEqual(r, { precioManual: null, avisoPrecioManualPerdido: true });
+});
+
+test('#283-5: una partida sin captura no hereda nada ni avisa, en los cuatro cruces', () => {
+  for (const modo of ['actualizar', 'nueva']) {
+    for (const permiso of [true, false]) {
+      assert.deepStrictEqual(
+        precioManualAlCargar(PARTIDA_CALCA, modo, permiso),
+        { precioManual: null, avisoPrecioManualPerdido: false },
+        `${modo}/${permiso}`,
+      );
+    }
+  }
+});
+
+// El aviso solo tiene sentido cuando se PIERDE algo: una calca cuyo manual
+// guardado es basura (o cero) no es captura y no genera aviso al copiarla.
+test('#283-6: un manual guardado que no es captura valida se ignora sin aviso', () => {
+  for (const valor of [0, -5, 'abc', '']) {
+    assert.deepStrictEqual(
+      precioManualAlCargar({ ...PARTIDA_CALCA, precioManual: valor }, 'nueva', false),
+      { precioManual: null, avisoPrecioManualPerdido: false },
+      JSON.stringify(valor),
+    );
+  }
+});
+
+// "Es calca" se decide por el codigo, igual que en el validador: una partida de
+// producto que traiga la llave (registro viejo, payload manipulado) no hereda.
+test('#283-7: una partida que no es calca nunca hereda precio manual', () => {
+  const r = precioManualAlCargar({ ...PARTIDA_PRODUCTO, precioManual: 45 }, 'actualizar', true);
+  assert.deepStrictEqual(r, { precioManual: null, avisoPrecioManualPerdido: false });
+});
+
+test('#283-8: el manual guardado como texto se hereda como numero', () => {
+  const r = precioManualAlCargar({ ...PARTIDA_CALCA, precioManual: '18.75' }, 'actualizar', false);
+  assert.strictEqual(r.precioManual, 18.75);
+});
+
+test('#283-9: MENSAJE_COPIA_PRECIO_MANUAL existe y menciona el precio de lista', () => {
+  assert.match(MENSAJE_COPIA_PRECIO_MANUAL, /lista/i);
 });
 
 // Sin numero de diseño explicito la partida es el Diseño 1 (#220): es lo que

@@ -127,6 +127,30 @@ export function puedePrecioCalca(vendedor) {
   return normalizarPuedePrecioCalca(vendedor.puedePrecioCalca);
 }
 
+export const MENSAJE_COPIA_PRECIO_MANUAL =
+  'La cotizacion original tenia un precio de calca capturado a mano; esta copia arranca con el precio de lista (sin permiso para capturarlo).';
+
+// Que hereda Editar/Copiar del precio manual guardado en una partida (#283),
+// espejo exacto de tierAlCargarCotizacion (#154, tier-logica.js).
+//
+// Editar (mismo registro, mismo folio) conserva SIEMPRE la captura, con o sin
+// permiso: el servidor la deja pasar comparando contra la partida ya guardada
+// en ESE registro (validarPreciosManualesCalca con partidasPrevias), igual que
+// el tier fijado. Copiar (registro nuevo) solo la hereda con permiso --
+// heredarla sin el seria auto-otorgarselo, y ademas el servidor la rechazaria
+// al guardar porque no hay registro previo contra el cual compararla.
+//
+// El aviso se marca SOLO cuando de verdad se pierde una captura valida: una
+// partida sin manual, o con un manual que nunca fue captura (cero, basura), no
+// tiene nada que perder. "Es calca" se decide por el codigo, nunca por una
+// bandera del item, misma regla que validarPreciosManualesCalca.
+export function precioManualAlCargar(item, modo, tienePermiso) {
+  const manual = item && esCodigoCalca(item.codigo) ? normalizarPrecioManual(item.precioManual) : null;
+  if (manual === null) return { precioManual: null, avisoPrecioManualPerdido: false };
+  if (modo === 'actualizar' || tienePermiso) return { precioManual: manual, avisoPrecioManualPerdido: false };
+  return { precioManual: null, avisoPrecioManualPerdido: true };
+}
+
 // Coherencia de lo que se persiste (#279): con precio manual valido, el precio
 // de la linea ES el manual. El servidor no confia en que el cliente los haya
 // mandado iguales -- el documento, el quote y la huella leen `precio`, asi que
