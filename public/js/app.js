@@ -177,6 +177,7 @@ import {
   tierIdParaCalca,
   motivoCalcaInvalida,
   bloqueaGeneracionPorCalcaSinPrecio,
+  impideAgregarCalcaSinPrecio,
   avisoCalcaInvalida,
   relacionCalcaProducto,
   estadoMarcaDecorado,
@@ -1175,15 +1176,21 @@ function renderCalcas() {
   }
 
   // El piso de 100 piezas ya no bloquea agregar (#152: se resuelve con clamp al
-  // capturar). Lo unico que sigue impidiendo agregar es una calca sin precio en
-  // la lista vigente: meterla al carrito bloquearia la generacion en el acto.
+  // capturar). Una calca sin precio en la lista vigente bloquea agregar SOLO
+  // sin permiso (#281): con permiso, agregarla es la UNICA forma de tener una
+  // linea donde capturar el precio manual -- bloquear ahi dejaria el caso real
+  // (CAL1025S sin fila M350) sin salida. El aviso se muestra en los dos casos:
+  // con permiso, la sugerencia de capturar el precio en la linea es la accion
+  // correcta despues de agregar.
   const avisoEl = document.getElementById('cal-aviso');
   const tope = estadoTopeDisenos();
-  const impedimentoPrecio = ficha && precio === null ? avisoCalcaInvalida() : '';
+  const sinPrecio = !!ficha && precio === null;
+  const impedimentoPrecio = sinPrecio ? avisoCalcaInvalida(puedePrecioCalca()) : '';
   const impedimentoTope = tope.ok ? '' : avisoTopeDisenos(tope.lineasProducto);
   const impedimento = impedimentoTope || impedimentoPrecio;
   avisoEl.innerHTML = impedimento ? `<div class="alert alert-error">${impedimento}</div>` : '';
-  document.getElementById('btn-agregar-calca').disabled = !!impedimento || !ficha || !tope.ok;
+  const bloqueaPrecio = impideAgregarCalcaSinPrecio({ sinPrecio, tienePermiso: puedePrecioCalca() });
+  document.getElementById('btn-agregar-calca').disabled = bloqueaPrecio || !!impedimentoTope || !ficha || !tope.ok;
 
   const motivo = motivoCalcaInvalidaActual();
   for (const id of ['calca-invalido-productos', 'resumen-calca-invalido']) {
@@ -1229,9 +1236,13 @@ function aplicarPisoCalca(product, cantidad) {
 function agregarCalca() {
   const ficha = calcaElegida();
   if (!ficha) return;
-  if (precioCalca(ficha, tierIdParaCalca(getCurrentTier().id)) === null) return;
-  // Defensa contra un click que llegue con el DOM desactualizado (#222): el
-  // boton ya se deshabilita en renderCalcas, esto es el segundo cierre.
+  // Segundo cierre contra un click con el DOM desactualizado (#222/#281): el
+  // boton ya se deshabilita en renderCalcas con la misma compuerta pura, esto
+  // es la defensa. Sin permiso, sin precio nunca se agrega (igual que #91);
+  // con permiso SI se agrega -- es la unica forma de tener una linea donde
+  // capturar el precio manual (el caso real, CAL1025S sin fila M350).
+  const sinPrecio = precioCalca(ficha, tierIdParaCalca(getCurrentTier().id)) === null;
+  if (impideAgregarCalcaSinPrecio({ sinPrecio, tienePermiso: puedePrecioCalca() })) return;
   if (!estadoTopeDisenos().ok) return;
 
   const cantidad = parseInt(document.getElementById('cal-cantidad')?.value) || 0;
