@@ -18,8 +18,19 @@
   .vendedor-row label { flex: none; display: flex; align-items: center; gap: 4px; }
   .vendedor-row label input[type="checkbox"] { flex: none; width: auto; padding: 0; border: none; }
   .vendedor-row select { width: 100px; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
-  .vendedor-grupo { display: flex; gap: 8px; align-items: center; }
-  .vendedor-grupo-identidad, .vendedor-grupo-contacto { flex: 1; }
+  /* Layout de la fila de vendedor (issue #286). La fila completa (nombre, PIN,
+     correo, rol, tope, tres permisos y X) mide ~860px, mas que la tarjeta de
+     600px: NO cabe en un renglon en NINGUN ancho de pantalla, asi que envuelve
+     siempre por contenido y no por breakpoint. Identidad y contacto comparten
+     renglon cuando hay lugar (>= 240px cada uno) y se apilan en movil; los
+     permisos van en su propio renglon. min-width: 0 en los inputs para que
+     puedan encoger por debajo de su ancho intrinseco (~173px). */
+  .vendedor-row { flex-wrap: wrap; }
+  .vendedor-grupo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+  .vendedor-grupo-identidad, .vendedor-grupo-contacto { flex: 1 1 240px; }
+  .vendedor-grupo-permisos { flex: 1 1 100%; }
+  .vendedor-row input, .vendedor-row select { min-width: 0; }
+  .vendedor-permisos-admin { min-width: 0; white-space: normal; }
   .toggle-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
     border: 1px solid var(--border); border-radius: 20px; font-size: 13px; cursor: pointer;
     background: var(--white); color: var(--text); user-select: none; transition: all 0.15s; }
@@ -28,15 +39,7 @@
   .higiene-candidato { background: oklch(0.97 0.03 80); }
   .higiene-candidato td:first-child { border-left: 3px solid var(--warning); }
 
-  /* Layout movil (issue #286): en Android (~412px) Vendedores y Cajas se
-     desbordaban horizontalmente. Breakpoint de 480px, el mismo que ya usa
-     public/css/style.css para el carrito (.cart-line). */
-  @media (max-width: 480px) {
-    .vendedor-row { flex-wrap: wrap; }
-    .vendedor-grupo { flex: 1 1 100%; flex-wrap: wrap; min-width: 0; }
-    .vendedor-row input, .vendedor-row select { min-width: 0; }
-    .vendedor-permisos-admin { flex: 1 1 100%; min-width: 0; white-space: normal; }
-  }
+  /* Las tablas del panel scrollean dentro de su tarjeta, nunca el documento (#286). */
   .cajas-tabla-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 </style>
 </head>
