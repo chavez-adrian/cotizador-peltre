@@ -1693,6 +1693,40 @@ test('armarContenidoQuote: un envio Lalamove sigue sin ser partida', async () =>
   assert.match(comments, /Lalamove sedan/);
 });
 
+// #284: el fallback de la fecha de emision (data.fecha ausente) se resolvia con
+// `new Date().toISOString()`, la fecha UTC. Render corre en UTC, asi que de 18:00
+// a 23:59 hora del centro el quote se armaba con el ord_date de MANANA y Operam lo
+// rechazaba con 406 "Debe haber al menos un rate de moneda". El instante es el de
+// la evidencia del issue: 2026-09-01 19:07 GMT-0600 = 2026-09-02T01:07:48Z.
+function conRelojFijado(iso, fn) {
+  const DateReal = globalThis.Date;
+  const fijo = new DateReal(iso).getTime();
+  globalThis.Date = class extends DateReal {
+    constructor(...args) { if (args.length === 0) super(fijo); else super(...args); }
+    static now() { return fijo; }
+  };
+  try { return fn(); } finally { globalThis.Date = DateReal; }
+}
+
+test('#284 armarContenidoQuote: sin data.fecha el ord_date es la fecha del centro de Mexico, no la de UTC', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const contenido = conRelojFijado('2026-09-02T01:07:48Z', () => armarContenidoQuote({
+    cliente: { cpEntrega: '44100' },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100, descuento: 0 }],
+  }));
+  assert.equal(contenido.orderDate, '2026-09-01');
+});
+
+test('#284 armarContenidoQuote: la vigencia derivada tampoco se corre un dia', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const contenido = conRelojFijado('2026-09-02T01:07:48Z', () => armarContenidoQuote({
+    cliente: { cpEntrega: '44100' },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100, descuento: 0 }],
+  }));
+  assert.equal(contenido.vigencia, '2026-10-01');
+  assert.match(contenido.comments, /Valido hasta: 2026-10-01/);
+});
+
 test('subirCotizacionOperam: CP de entrega ausente -> flete foraneo por defecto (251021002)', async () => {
   resetSession();
   let quoteBody = null;
