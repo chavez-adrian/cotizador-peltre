@@ -1,89 +1,89 @@
-# PROGRESS - Sesion 2026-08-27: leads Abastur dia 1 + parche del importador (#277)
+# PROGRESS - Sesion 2026-09-02: cierre de la importacion de leads Abastur 2026
 
 ## Que se estaba haciendo y por que
 
-Llego el primer archivo de gafetes escaneados de Abastur 2026 (dia 1):
-`C:\Users\chave\Dropbox\PELTRE NACIONAL\1.0 COMERCIALIZACION\PUBLICIDAD\Abastur\2026\Prospectos escaneados\abastur-hub-leads-2026-08-27.xlsx`
-(la carpeta real lleva acento en COMERCIALIZACION). Antes de importarlo se paso
-por el parser real en seco y se descubrio que el export 2026 cambio de forma
-respecto a la edicion con la que se calibro #265: actividad con GUION en vez de
-diagonal (11 leads caian en tipo "Otro", incluidos los 8 distribuidores),
-cabecera de decision de compra renombrada (senal perdida), y ademas
-datosParaEnriquecer duplicaba notas en cada re-importacion. El parche era
-BLOQUEANTE pre-importacion: el tipo mal clasificado se pega (solo se escribe
-sobre vacio) y TIPOS_MAYORISTAS decide mayoreo vs cotizacion por ese campo.
+Adrian no recordaba si ya habia subido el archivo de gafetes escaneados del
+TERCER dia de Abastur 2026. La duda era real: los exports del hub se nombran
+por la FECHA DE DESCARGA, no por el dia que contienen, y en `Downloads` habia
+cinco archivos con nombres que sugerian mas dias de los que hubo de feria.
 
 ## Estado exacto al momento de escribirlo
 
-- Issue #277: creado, implementado y CERRADO el mismo dia.
-  Commit `18f601e` en main, pusheado -> Render desplego. Suite 2911/2911.
-- Importacion del dia 1 EJECUTADA por Adrian en /admin con exito:
-  41 prospectos nuevos + 8 enriquecidos (ya existian por captura manual en el
-  stand) + 0 ya-clientes. Reparto: Adrian 29, Alejandro 12 (los 12 = gafetes
-  escaneados por "Raul Chavez" en la app, sin match en el registro de
-  vendedores, caidos al default del formulario - inferencia consistente con la
-  aritmetica: 18 escaneados por Raul - 6 enriquecidos = 12).
-- 4 gafetes sin celular (no nacen): Isaac Valderrama/Informa Markets (es el
-  ORGANIZADOR del evento, ignorar), Marlene Vazquez/LEMON PIE (real, la
-  atendio Pilar, no cruzo por correo), Estefany Castro (calif. 1),
-  Karla Torres/PIXKUY MOBILITY (transporte ejecutivo).
-- Avisos de drift del import: 11 actividades sin mapeo, todas legitimas
-  (los "Otro: ..." libres + Fabricante-Manufactura que es decision explicita).
+CERRADO. El dia 3 SI faltaba y Adrian lo importo en /admin durante esta sesion.
+Resultado de la importacion: **27 nuevos + 78 enriquecidos + 1 ya-cliente**
+(106 = total de filas con celular usable del export). Reparto de los nuevos:
+Adrian Chavez 21, Alejandro Chavez 6.
 
-## Lo que se hizo (detalle del parche, commit 18f601e)
+Los tres dias de feria quedaron completos en el sistema.
 
-1. `lib/importar-prospectos.js`: `llaveActividad` local (guion->diagonal) solo
-   en tipoClienteDeActividad, sin tocar `llaveTexto`; llaves nuevas
-   catering/banquetes -> Catering | Eventos y pasteleria/panaderia ->
-   Cafeterias; COLUMNAS.decision y .puesto aceptan array de cabeceras
-   (indicesDeCabeceras usa la primera presente); area de interes como senal
-   mas de lineaCalificacion; retorno `avisos` {columnasNoEncontradas,
-   actividadesSinMapeo} best-effort.
-2. `server.js`: datosParaEnriquecer no re-agrega una nota que actual.notas ya
-   incluye (idempotencia dia 2); la ruta propaga `avisos`.
-3. `public/js/importar-feria-logica.js`: /admin pinta los avisos junto a
-   descartados.
-4. Tests: fixture 2026 real agregado SIN tocar los del formato anterior
-   (test/importar-prospectos.test.js 23/23, prospectos-importar-api 13/13,
-   importar-feria.test.cjs 7/7).
+## Convencion de nombres de los exports (no derivable del nombre)
+
+| Archivo en Downloads | Contiene | Leads |
+|---|---|---|
+| `abastur-hub-leads-2026-08-27.xlsx` | dia 1 (26-ago) | 53 |
+| `abastur-hub-leads-2026-08-28.xlsx` | dia 2 (27-ago) | 27 |
+| `abastur-hub-leads-2026-08-29.xlsx` | dias 1+2+3 ACUMULADOS | 113 |
+
+`abastur-hub-leads-2026-08-29.xlsx`, `...2026-08-31.xlsx` y
+`...2026-08-31 (1).xlsx` tienen el MISMO md5 (`4028a991...`): son el mismo
+export descargado tres veces el 31-ago 10:21. No hay un cuarto archivo.
+
+Los dos primeros exports fueron INCREMENTALES (solo el dia previo); el ultimo
+salio ACUMULATIVO. El hub cambio de comportamiento entre descargas.
+
+## Como se verifico que faltaba el dia 3 (aritmetica, sin tocar produccion)
+
+El export esta ordenado cronologicamente: dia 1 = filas 2-54, dia 2 = 55-81,
+dia 3 = 82-114. Con eso los 78 enriquecidos se descomponen sin ambiguedad:
+
+- 49 del dia 1 (53 leads - 4 sin celular) -> ya estaban desde el 27-ago
+- 26 del dia 2 (27 leads - 1 sin celular) -> ya estaban: el dia 2 SI se subio
+- 3 del dia 3 -> capturados a mano en el stand
+
+Y el dia 3 cierra: 33 leads = 27 nuevos + 1 ya-cliente + 2 sin celular + 3
+enriquecidos. El ya-cliente es Luis Eusebio Landero / KOY KOY (fila 92, 28-ago).
 
 ## Decisiones tomadas y restricciones descubiertas
 
-- Pasteleria-Panaderia -> Cafeterias (seg. 10); Fabricante-Manufactura -> Otro
-  conservando texto (explicito, NO mapear a Distribuidores); area de interes SI
-  entra a notas; `Area (es)` y `Distribuidor o proveedor (es)` NO entran.
-- Fabricante aparece en actividadesSinMapeo A PROPOSITO: el aviso es
-  informativo de todo lo que cae a Otro, el admin distingue.
-- "Organizador de eventos" a secas cae en Otro (preexistente, la tabla solo
-  mapea "catering/organizador de eventos" junto). Pendiente de decision: llave
-  de una linea si se quiere -> Catering | Eventos.
-- El export de feria CAMBIA de forma entre ediciones y degrada en silencio con
-  la suite en verde: con cada nuevo export, correr el parser real en seco antes
-  de importar (memoria project-277-import-abastur-2026).
-- Orquestacion: implementador Sonnet con /implement embebido + TDD en seams
-  pre-acordados + review dos ejes (Standards/Spec). El ruteo de notificaciones
-  entre subagentes fallo (llegaban al orquestador, no al padre) y hubo que
-  hacer de hub con 3 reactivaciones manuales via SendMessage. ~805k tokens de
-  subagentes en total.
+- Re-subir un export ya importado es SEGURO: `datosParaEnriquecer`
+  (server.js:1379) solo escribe sobre campos vacios y no repite una nota que el
+  prospecto ya tenga (parche #277). El unico residuo es un evento `importado`
+  extra en la bitacora. Ante la duda, subir cuesta menos que averiguar.
+- El export NO cambio de forma esta vez: `columnasNoEncontradas` vacio.
+- El patron acordado sigue siendo correcto: correr el parser real en seco antes
+  de importar (script efimero en scratchpad, import por ruta absoluta a
+  `node_modules/xlsx/xlsx.mjs` con `XLSX.read(buffer)`, porque el build .mjs no
+  trae `fs` enlazado y `readFile` truena).
+- `data/prospectos.json` local esta vacio a proposito (los prospectos viven en
+  Neon): NO sirve para verificar estado de produccion desde el repo.
 
 ## Lo que falta, paso a paso
 
-1. Manana 28-ago (ultimo dia de feria): subir el archivo del dia 2 por /admin
-   igual que hoy. Enriquece a los repetidos sin duplicar notas (ya verificado
-   por test); revisar los avisos por si el archivo vuelve a cambiar de forma.
-2. Trabajar la cola de hoy con el mensaje de expo (#273-#275): 8 notas piden
-   catalogo por WhatsApp; oportunidades concretas TONYJOE (100 pz decoradas
-   con resistencia quimica) y SIETE GAMBAS (tequileros de cortesia).
-3. Seguimiento manual de LEMON PIE (via Pilar o correo) y, si interesan,
-   Estefany Castro y PIXKUY MOBILITY.
-4. Decidir si "Organizador de eventos" mapea a Catering | Eventos.
-5. Si los 12 de Alejandro no debian ser suyos, reasignar desde las tarjetas.
-6. Pendiente heredado de #276: verificar en vivo que la config guardada en
-   /admin sobrevive al siguiente deploy (el deploy de #277 ya ocurrio: basta
-   revisar que el Evento activo "Abastur 2026" sigue configurado).
+1. **Reasignar 6 prospectos** si no le tocan a Alejandro. Son gafetes que
+   escaneo Raul Chavez y cayeron al default del formulario (Raul no esta en el
+   registro de vendedores, asi que nunca hace match). Los 8 que escaneo en el
+   dia 3, de los cuales salieron esos 6:
+   CASA CRISTAL (Alejandro Puente), B2B SOURCING MX (Pablo Montes),
+   RESTAURANTE BOLICHERA 21 (Ronal Bautista), ATIPICO (David Campos),
+   TMS (Edna Fragoso), NEGOCIOS Y COMIDA (Victor Leon), BENNU (Pablo Gil),
+   MKKO (Marco Vega).
+   Mismo patron del dia 1, donde fueron 12. **Decision de fondo pendiente:**
+   dar de alta a Raul como vendedor (si va a dar seguimiento) o elegir a Adrian
+   como default en el formulario (si no).
+2. **Tabla de mapeo `ACTIVIDAD_A_TIPO`** (lib/importar-prospectos.js:44, 10
+   llaves). Caen a "Otro": Servicios (7), Comedor industrial (3),
+   Bar - Centro nocturno (3), Motel (1), Franquicia (1), Wellness (1).
+   Los dos claros serian Motel -> Hoteles y Comedor industrial -> Catering |
+   Eventos; el resto probablemente no vale forzarlo al catalogo cerrado.
+   Sigue pendiente tambien "Organizador de eventos" (heredado del dia 1).
+3. Trabajar la cola con el mensaje de expo (#273-#275) y los 7 gafetes sin
+   celular, de los cuales solo 4 son reales: Marlene Vazquez/LEMON PIE (la
+   atendio Pilar), Oscar Hurtado/TIENDA LA LUNA, Paul Valdez/SEGUNDO PISO y
+   Martha Leticia Parra/RESTAURANT CAFE LUKUMBE. Isaac Valderrama es el
+   ORGANIZADOR del evento (ignorar); Estefany Castro tiene calificacion 1;
+   Karla Torres/PIXKUY MOBILITY es transporte ejecutivo.
 
 ## Siguiente accion exacta al reanudar
 
-Preguntar a Adrian si ya llego el archivo del dia 2; si si, verificarlo en seco
-con el parser real (script efimero en scratchpad, patron de esta sesion) y
-darle luz verde para subirlo por /admin.
+Preguntar a Adrian si los 6 prospectos de Raul se quedan con Alejandro o se
+reasignan, y si quiere que Raul entre al registro de vendedores.
