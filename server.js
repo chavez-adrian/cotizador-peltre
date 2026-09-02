@@ -42,7 +42,7 @@ import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBl
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
-import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL } from './public/js/calcas-logica.js';
+import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL, puedePrecioCalca, normalizarPuedePrecioCalca } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
@@ -182,12 +182,13 @@ async function puedeFijarListaDeUsuario(user) {
   return puedeFijarLista({ role: user?.role, puedeFijarLista: registro?.puedeFijarLista });
 }
 
-// Permiso de capturar el precio de una calca (#279, spec #278). En este ticket
-// es solo el rol admin -- que siempre lo tiene --; el checkbox por vendedor es
-// #280 y solo tiene que ampliar ESTA funcion, del mismo modo que #153 amplio
-// puedeFijarListaDeUsuario (y entonces se leera del registro, no del JWT).
-function puedePrecioCalcaDeUsuario(user) {
-  return user?.role === 'admin';
+// Permiso de capturar el precio de una calca (#280, spec #278), espejo exacto
+// de puedeFijarListaDeUsuario: se lee del registro en cada consulta, no del
+// JWT, porque el token no se re-emite cuando el admin otorga o quita el
+// checkbox.
+async function puedePrecioCalcaDeUsuario(user) {
+  const registro = (await vendedoresStore.listar()).find(v => v.id === user?.id);
+  return puedePrecioCalca({ role: user?.role, puedePrecioCalca: registro?.puedePrecioCalca });
 }
 
 // Permiso de asignacion VIGENTE del usuario autenticado (#156, spec #155,
@@ -230,6 +231,7 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
       ...precios, config,
       topeDescuento: await topeDescuentoDeUsuario(req.user),
       puedeFijarLista: await puedeFijarListaDeUsuario(req.user),
+      puedePrecioCalca: await puedePrecioCalcaDeUsuario(req.user),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -378,7 +380,7 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   // igual que en el resto del endpoint: una partida que no es calca o un valor
   // imposible son dato mal formado (400), y capturar sin permiso es falta de
   // permiso (403).
-  const preciosCalca = validarPreciosManualesCalca(req.body?.items, puedePrecioCalcaDeUsuario(req.user));
+  const preciosCalca = validarPreciosManualesCalca(req.body?.items, await puedePrecioCalcaDeUsuario(req.user));
   if (!preciosCalca.ok) {
     const status = preciosCalca.motivo === MOTIVOS_PRECIO_MANUAL.SIN_PERMISO ? 403 : 400;
     return res.status(status).json({ error: preciosCalca.mensaje });
@@ -1568,6 +1570,7 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, re
       if (v.topeDescuento !== undefined) out.topeDescuento = normalizarTope(v.topeDescuento);
       if (v.puedeFijarLista !== undefined) out.puedeFijarLista = normalizarPuedeFijarLista(v.puedeFijarLista);
       if (v.puedeAsignar !== undefined) out.puedeAsignar = normalizarPuedeAsignar(v.puedeAsignar);
+      if (v.puedePrecioCalca !== undefined) out.puedePrecioCalca = normalizarPuedePrecioCalca(v.puedePrecioCalca);
       return out;
     }));
     res.json({ saved: true });

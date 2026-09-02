@@ -14,6 +14,7 @@ import supertest from 'supertest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+const VENDEDORES_PATH = join(DATA_DIR, 'vendedores.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -140,6 +141,49 @@ test('#279 vendedor sin permiso: una cotizacion con calca SIN captura se guarda 
     .set('Authorization', `Bearer ${tokenVendedor}`)
     .send(cotizacionCon([PARTIDA_PRODUCTO, partidaCalca()]));
   assert.strictEqual(res.status, 200);
+});
+
+// #280: checkbox de precio de calca por vendedor, espejo exacto de las pruebas
+// de fijar lista en test/tier-api.test.js (#153). Se modifica el registro real
+// y se restaura al final (mismo cuidado que esa suite).
+test('#280: la pantalla recibe su permiso de precio de calca vigente en /api/precios', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === 2).puedePrecioCalca = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const conFlag = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenVendedor}`);
+    assert.strictEqual(conFlag.body.puedePrecioCalca, true);
+
+    registro.find(v => v.id === 2).puedePrecioCalca = false;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+    const sinFlag = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenVendedor}`);
+    assert.strictEqual(sinFlag.body.puedePrecioCalca, false);
+
+    const admin = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
+    assert.strictEqual(admin.body.puedePrecioCalca, true);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+test('#280: vendedor CON checkbox de precio de calca genera cotizacion con precio manual de punta a punta', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === 2).puedePrecioCalca = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+
+    const res = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon([PARTIDA_PRODUCTO, partidaCalca({ precio: PRECIO_PROVEEDOR, precioManual: PRECIO_PROVEEDOR })]));
+    assert.strictEqual(res.status, 200);
+    const calca = partidaGuardada(res.body.id, 'CAL1050');
+    assert.strictEqual(calca.precio, PRECIO_PROVEEDOR);
+    assert.strictEqual(calca.precioManual, PRECIO_PROVEEDOR);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
 });
 
 test('#279: precio manual en una partida que no es calca -> 400 y nada guardado', async () => {
