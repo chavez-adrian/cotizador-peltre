@@ -54,6 +54,79 @@ export function precioCalca(ficha, tierId) {
   return typeof p === 'number' && p > 0 ? p : null;
 }
 
+// Precio manual de calca (#279, spec #278; CONTEXT.md "Precio manual de calca"):
+// lo que el proveedor cotizo por ESE diseno, capturado a mano. Solo cuenta como
+// captura un numero mayor que cero: vacio, cero, negativo o basura significan
+// "sin captura", que es como se vacia el campo para regresar a la lista.
+export function normalizarPrecioManual(valor) {
+  // Solo numero o texto del input: un booleano o un objeto en el payload no es
+  // captura, y Number(true) daria un precio de $1 salido de la nada.
+  if (typeof valor !== 'number' && typeof valor !== 'string') return null;
+  const n = Number(valor);
+  return valor !== '' && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// Precio unitario de una partida de calca: el manual capturado manda sobre la
+// lista, y sin captura queda la resolucion de siempre (precioCalca sobre el
+// tier ya pasado por tierIdParaCalca). La ausencia sigue siendo null EXPLICITO
+// y nunca 0 (#91): el manual agrega una fuente de precio, no un fallback a cero.
+export function precioEfectivoCalca(ficha, tierId, precioManual) {
+  const manual = normalizarPrecioManual(precioManual);
+  return manual !== null ? manual : precioCalca(ficha, tierId);
+}
+
+// Se comparan por IGUALDAD contra estas constantes, nunca por prefijo (misma
+// leccion de #118 que ya aplican MOTIVOS_CALCA_INVALIDA y MOTIVOS_TOPE_DISENOS).
+// El motivo lo traduce a codigo HTTP quien valida: dato mal formado (400) vs
+// falta de permiso (403); el nucleo puro no conoce HTTP.
+export const MOTIVOS_PRECIO_MANUAL = {
+  NO_CALCA: 'no-calca',
+  INVALIDO: 'invalido',
+  SIN_PERMISO: 'sin-permiso',
+};
+
+export const MENSAJE_SIN_PERMISO_PRECIO_CALCA = 'No tienes permiso para capturar el precio de una calca; pidelo al administrador.';
+export const MENSAJE_PRECIO_MANUAL_NO_CALCA = 'El precio manual solo existe en las partidas de calca.';
+export const MENSAJE_PRECIO_MANUAL_INVALIDO = 'El precio manual de la calca debe ser un numero mayor que cero.';
+
+// Enforcement del servidor (#279), espejo de validarTierCotizacion: el permiso
+// de capturar precio de proveedor lo hace valer el servidor, no la pantalla --
+// esconder el input no frena un POST armado a mano. "Es calca" se decide por el
+// CODIGO (esCodigoCalca) y no por una bandera del payload, que el cliente
+// podria inventar. El orden importa: primero la forma del dato (partida
+// equivocada, valor imposible) y luego el permiso, porque un payload mal
+// formado no se vuelve valido por tener permiso.
+export function validarPreciosManualesCalca(items, tienePermiso) {
+  for (const i of items || []) {
+    const crudo = i ? i.precioManual : undefined;
+    if (crudo === null || crudo === undefined || crudo === '') continue;
+    if (!esCodigoCalca(i.codigo)) {
+      return { ok: false, motivo: MOTIVOS_PRECIO_MANUAL.NO_CALCA, mensaje: MENSAJE_PRECIO_MANUAL_NO_CALCA };
+    }
+    if (normalizarPrecioManual(crudo) === null) {
+      return { ok: false, motivo: MOTIVOS_PRECIO_MANUAL.INVALIDO, mensaje: MENSAJE_PRECIO_MANUAL_INVALIDO };
+    }
+    if (!tienePermiso) {
+      return { ok: false, motivo: MOTIVOS_PRECIO_MANUAL.SIN_PERMISO, mensaje: MENSAJE_SIN_PERMISO_PRECIO_CALCA };
+    }
+  }
+  return { ok: true };
+}
+
+// Coherencia de lo que se persiste (#279): con precio manual valido, el precio
+// de la linea ES el manual. El servidor no confia en que el cliente los haya
+// mandado iguales -- el documento, el quote y la huella leen `precio`, asi que
+// una divergencia ahi cotizaria el precio de lista con el manual guardado al
+// lado. Se corre DESPUES de validar; una partida sin captura sale intacta y no
+// gana la llave (igual que `descripcion`).
+export function aplicarPrecioManualEnPartidas(items) {
+  return (items || []).map(i => {
+    if (!i || !esCodigoCalca(i.codigo)) return i;
+    const manual = normalizarPrecioManual(i.precioManual);
+    return manual === null ? i : { ...i, precio: manual, precioManual: manual };
+  });
+}
+
 // El texto del rotulo, en un solo lugar: viaja en el `name` de la entrada del
 // carrito y de ahi lo heredan la descripcion por omision, la linea del carrito,
 // el documento y el quote (#220).

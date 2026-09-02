@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 
 let PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA, MOTIVOS_CALCA_INVALIDA;
 let esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdParaCalca;
+let precioEfectivoCalca, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas;
+let MOTIVOS_PRECIO_MANUAL, MENSAJE_SIN_PERMISO_PRECIO_CALCA;
 let piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca;
 let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio;
 let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito;
@@ -15,6 +17,8 @@ before(async () => {
   ({
     PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA, MOTIVOS_CALCA_INVALIDA,
     esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdParaCalca,
+    precioEfectivoCalca, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas,
+    MOTIVOS_PRECIO_MANUAL, MENSAJE_SIN_PERMISO_PRECIO_CALCA,
     piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca,
     motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio,
     siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito,
@@ -122,6 +126,116 @@ test('#91-10: precioCalca tolera ficha o tier ausente -> null', () => {
   assert.strictEqual(precioCalca(null, 'M100'), null);
   assert.strictEqual(precioCalca(CAL1050, 'TierQueNoExiste'), null);
   assert.strictEqual(precioCalca(CAL1050, undefined), null);
+});
+
+// === #279 (spec #278): Precio manual de calca. El precio de lista es un
+// estimado; el real lo dicta el proveedor por diseno y puede ser mayor o menor.
+// El precio capturado reemplaza al de lista como base de la linea; vaciarlo
+// regresa a la lista vigente. Los valores esperados son literales de las fichas
+// de arriba (M100 = 29.66) y del precio inventado del proveedor. ===
+test('#279-1: con precio manual MAYOR que la lista, la linea vale el manual', () => {
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'M100', 45), 45);
+});
+
+test('#279-2: con precio manual MENOR que la lista, la linea vale el manual', () => {
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'M100', 12.5), 12.5);
+});
+
+test('#279-3: sin precio manual la linea vale la lista vigente, con salto Menudeo->M100', () => {
+  assert.strictEqual(precioEfectivoCalca(CAL1050, tierIdParaCalca('Menudeo')), 29.66);
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'M6000', null), 14.68);
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'M6000', ''), 14.68);
+});
+
+test('#279-4: sin manual y sin precio en el tier sigue siendo null, NUNCA 0 (#91)', () => {
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'Menudeo'), null);
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'Menudeo', 0), null, '0 no es captura: vuelve a lista, y en Menudeo no hay precio');
+  assert.strictEqual(precioEfectivoCalca(null, 'M100', ''), null);
+});
+
+test('#279-5: un manual que no es numero mayor que cero no es captura: la linea vuelve a lista', () => {
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'M100', 0), 29.66);
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'M100', -5), 29.66);
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'M100', 'abc'), 29.66);
+});
+
+test('#279-6: el manual llega del input como texto y se lee como numero', () => {
+  assert.strictEqual(precioEfectivoCalca(CAL1050, 'M100', '18.75'), 18.75);
+});
+
+// === #279: enforcement del servidor, espejo de validarTierCotizacion (#151).
+// Las partidas son las que se persisten (codigo del catalogo + precio), no las
+// del carrito: "es calca" se decide por el codigo, nunca por una bandera del
+// payload que el cliente podria inventar. ===
+const PARTIDA_PRODUCTO = { codigo: 'AB12', descripcion: 'Olla', cantidad: 10, precio: 100 };
+const PARTIDA_CALCA = { codigo: 'CAL1050', descripcion: 'Calca - Diseño 1', cantidad: 100, precio: 29.66, diseno: 1 };
+
+test('#279-7: partidas sin precio manual pasan siempre, con permiso y sin el', () => {
+  const partidas = [PARTIDA_PRODUCTO, PARTIDA_CALCA];
+  assert.strictEqual(validarPreciosManualesCalca(partidas, false).ok, true);
+  assert.strictEqual(validarPreciosManualesCalca(partidas, true).ok, true);
+  assert.strictEqual(validarPreciosManualesCalca([], false).ok, true);
+  assert.strictEqual(validarPreciosManualesCalca(undefined, false).ok, true);
+});
+
+test('#279-8: con permiso, una calca con precio manual pasa', () => {
+  const r = validarPreciosManualesCalca([{ ...PARTIDA_CALCA, precio: 45, precioManual: 45 }], true);
+  assert.strictEqual(r.ok, true);
+});
+
+test('#279-9: sin permiso, una calca con precio manual se rechaza con el mensaje de permiso', () => {
+  const r = validarPreciosManualesCalca([PARTIDA_PRODUCTO, { ...PARTIDA_CALCA, precio: 45, precioManual: 45 }], false);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, MOTIVOS_PRECIO_MANUAL.SIN_PERMISO);
+  assert.strictEqual(r.mensaje, MENSAJE_SIN_PERMISO_PRECIO_CALCA);
+});
+
+test('#279-10: un precio manual en una partida que NO es calca se rechaza aunque haya permiso', () => {
+  const r = validarPreciosManualesCalca([{ ...PARTIDA_PRODUCTO, precioManual: 45 }], true);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.motivo, MOTIVOS_PRECIO_MANUAL.NO_CALCA);
+  assert.ok(/calca/i.test(r.mensaje), r.mensaje);
+});
+
+test('#279-11: un precio manual que no es numero mayor que cero se rechaza como dato mal formado', () => {
+  for (const valor of [0, -5, 'abc', {}, true]) {
+    const r = validarPreciosManualesCalca([{ ...PARTIDA_CALCA, precioManual: valor }], true);
+    assert.strictEqual(r.ok, false, `${JSON.stringify(valor)} deberia rechazarse`);
+    assert.strictEqual(r.motivo, MOTIVOS_PRECIO_MANUAL.INVALIDO);
+  }
+});
+
+test('#279-12: precioManual null o vacio es ausencia de captura, no dato invalido', () => {
+  assert.strictEqual(validarPreciosManualesCalca([{ ...PARTIDA_CALCA, precioManual: null }], false).ok, true);
+  assert.strictEqual(validarPreciosManualesCalca([{ ...PARTIDA_CALCA, precioManual: '' }], false).ok, true);
+});
+
+test('#279-13: los motivos se comparan por igualdad contra constantes explicitas', () => {
+  assert.deepStrictEqual(Object.values(MOTIVOS_PRECIO_MANUAL).sort(), ['invalido', 'no-calca', 'sin-permiso']);
+});
+
+// El servidor no confia en que el cliente haya mandado precio y precioManual
+// iguales: el precio efectivo de la linea lo impone el manual capturado.
+test('#279-14: aplicar el precio manual fuerza el precio de la partida de calca', () => {
+  const partidas = aplicarPrecioManualEnPartidas([
+    PARTIDA_PRODUCTO,
+    { ...PARTIDA_CALCA, precio: 29.66, precioManual: 45 },
+  ]);
+  assert.strictEqual(partidas[0].precio, 100, 'la partida de producto no se toca');
+  assert.strictEqual(partidas[1].precio, 45);
+  assert.strictEqual(partidas[1].precioManual, 45);
+});
+
+test('#279-15: sin captura la partida sale igual y no gana la llave precioManual', () => {
+  const partidas = aplicarPrecioManualEnPartidas([PARTIDA_CALCA]);
+  assert.strictEqual(partidas[0].precio, 29.66);
+  assert.strictEqual('precioManual' in partidas[0], false);
+});
+
+test('#279-16: el manual capturado como texto se persiste como numero', () => {
+  const partidas = aplicarPrecioManualEnPartidas([{ ...PARTIDA_CALCA, precioManual: '18.75' }]);
+  assert.strictEqual(partidas[0].precio, 18.75);
+  assert.strictEqual(partidas[0].precioManual, 18.75);
 });
 
 // Sin numero de diseño explicito la partida es el Diseño 1 (#220): es lo que
