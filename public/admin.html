@@ -406,11 +406,15 @@ function renderVendedores() {
         : `<input type="number" class="tope-input" min="0" max="100" step="1" value="${v.topeDescuento ?? 0}"
             onchange="vendedoresData[${i}].topeDescuento=this.value" title="Tope de descuento (%)" placeholder="% dscto.">`}
       ${v.role === 'admin'
-        ? '<span style="font-size:12px;color:var(--text-light)">fija lista y asigna</span>'
+        ? '<span style="font-size:12px;color:var(--text-light)">fija lista, precio calca y asigna</span>'
         : `<label style="font-size:12px;white-space:nowrap">
             <input type="checkbox" ${v.puedeFijarLista ? 'checked' : ''}
               onchange="vendedoresData[${i}].puedeFijarLista=this.checked">
             fijar lista</label>
+          <label style="font-size:12px;white-space:nowrap" title="Puede capturar el precio de proveedor de una calca en la linea del carrito">
+            <input type="checkbox" ${v.puedePrecioCalca ? 'checked' : ''}
+              onchange="vendedoresData[${i}].puedePrecioCalca=this.checked">
+            precio calca</label>
           <label style="font-size:12px;white-space:nowrap" title="Ve la columna No Asignado y asigna esas tarjetas a cualquier vendedor">
             <input type="checkbox" ${v.puedeAsignar ? 'checked' : ''}
               onchange="vendedoresData[${i}].puedeAsignar=this.checked">
