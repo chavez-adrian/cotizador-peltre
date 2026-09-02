@@ -121,6 +121,34 @@ test('PUT /api/admin/vendedores: un valor basura en puedeAsignar se normaliza a 
   assert.ok(!res.body.find(v => v.id === 2).puedeAsignar);
 });
 
+// #280: tercer checkbox por vendedor (permiso de precio de calca), independiente
+// de los otros dos y con el mismo contrato de reemplazo total.
+test('PUT /api/admin/vendedores persiste el checkbox de precio de calca, independiente de los otros dos', async () => {
+  escribirRegistro(REGISTRO);
+  const nuevo = REGISTRO.map(v => (v.id === 2 ? { ...v, puedePrecioCalca: true } : v));
+  const put = await supertest(app).put('/api/admin/vendedores')
+    .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+  assert.strictEqual(put.status, 200);
+
+  const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+  const v2 = res.body.find(v => v.id === 2);
+  assert.strictEqual(v2.puedePrecioCalca, true);
+  assert.ok(!v2.puedeFijarLista, 'el permiso de precio de calca no arrastra el de fijar lista');
+  assert.ok(!v2.puedeAsignar, 'el permiso de precio de calca no arrastra el de asignar');
+  assert.ok(!res.body.find(v => v.id === 3).puedePrecioCalca);
+});
+
+test('PUT /api/admin/vendedores: un valor basura en puedePrecioCalca se normaliza a sin permiso', async () => {
+  escribirRegistro(REGISTRO);
+  const nuevo = REGISTRO.map(v => (v.id === 2 ? { ...v, puedePrecioCalca: 'si' } : v));
+  const put = await supertest(app).put('/api/admin/vendedores')
+    .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+  assert.strictEqual(put.status, 200);
+
+  const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.ok(!res.body.find(v => v.id === 2).puedePrecioCalca);
+});
+
 // #163: la alerta de mayoreo deriva destinatarios del correo del vendedor -- el
 // registro no lo tenia antes de este issue.
 test('PUT /api/admin/vendedores persiste el correo del vendedor', async () => {
