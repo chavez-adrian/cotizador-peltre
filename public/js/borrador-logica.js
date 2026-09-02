@@ -2,7 +2,7 @@
 // "Borrador de cotizacion"). Sin efectos de navegador: aqui vive QUE se guarda,
 // COMO se lee y QUE se restaura; el localStorage, el DOM y el enganche del
 // autosave son pegamento en app.js.
-import { esCodigoCalca, productoCalca } from './calcas-logica.js';
+import { esCodigoCalca, productoCalca, normalizarPrecioManual } from './calcas-logica.js';
 import { escapeHtml } from './prospectos-logica.js';
 
 // El formato viaja versionado dentro del payload, no en la llave: una version
@@ -43,6 +43,12 @@ function normalizarLinea(linea) {
   if (Number.isFinite(descuento) && descuento > 0) salida.descuento = descuento;
   const descripcion = typeof linea.descripcion === 'string' ? linea.descripcion.trim() : '';
   if (descripcion) salida.descripcion = descripcion;
+  // Precio manual de calca (#282, spec #278; CONTEXT.md "Precio manual de
+  // calca"): es captura del vendedor, no catalogo -- la UNICA excepcion a "los
+  // precios no reviven con el borrador". Misma defensa que descuento: solo un
+  // numero finito > 0 sobrevive.
+  const precioManual = normalizarPrecioManual(linea.precioManual);
+  if (precioManual !== null) salida.precioManual = precioManual;
   return salida;
 }
 
@@ -183,7 +189,7 @@ export function reResolverCarrito(borrador, catalogo) {
     const diseno = Number(linea.diseno) || 1;
     const product = resolverProductoDelCatalogo(linea.codigo, catalogo, diseno);
     if (!product) codigosSinCatalogo.push(linea.codigo);
-    lineas.push({
+    const restaurada = {
       codigo: linea.codigo,
       diseno,
       cantidad: linea.cantidad,
@@ -191,7 +197,12 @@ export function reResolverCarrito(borrador, catalogo) {
       descripcion: linea.descripcion || '',
       product: product || productoSinCatalogo(linea.codigo),
       motivo: product ? null : MOTIVOS_LINEA_INVALIDA.SIN_CATALOGO,
-    });
+    };
+    // El precio manual de calca (#282) viaja SOLO si existe, mismo patron que
+    // descripcion: no toca la resolucion del producto -- un SKU desaparecido
+    // sigue siendo SIN_CATALOGO aunque traiga manual.
+    if (linea.precioManual != null) restaurada.precioManual = linea.precioManual;
+    lineas.push(restaurada);
   }
   return { lineas, codigosSinCatalogo };
 }

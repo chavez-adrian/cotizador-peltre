@@ -588,3 +588,63 @@ test('#221-8: un borrador guardado antes de #221 (sin diseno) sigue siendo valid
   assert.notEqual(leido, null, 'agregar un campo opcional no invalida los borradores en el telefono');
   assert.equal(leido.carrito.length, 1);
 });
+
+// === #282: el precio manual de calca sobrevive al borrador (spec #278) ===
+// Es captura del vendedor, no catalogo -- la unica excepcion a "los precios no
+// reviven con el borrador" (CONTEXT.md "Borrador de cotizacion").
+const ENTRADA_CALCA_MANUAL = {
+  codigo: 'CAL2050S',
+  cantidad: 100,
+  descuento: 5,
+  precioManual: 137.5,
+  product: {
+    key: 'CAL2050S',
+    name: 'Calca vitrificable mediana (50 cm2) 2 tintas',
+    model: 'CAL2050S',
+    prices: { Menudeo: null, M100: 35.5, M350: 26.1 },
+    esCalca: true,
+  },
+};
+
+test('#282-1: una calca con precio manual hace ida y vuelta -- serializar, deserializar y re-resolver -- con su precio y su descuento', () => {
+  const borrador = serializarBorrador({ carrito: [ENTRADA_CALCA_MANUAL], ahora: AHORA });
+  const leido = deserializarBorrador(JSON.stringify(borrador));
+  const { lineas } = reResolverCarrito(leido, CATALOGO);
+
+  assert.equal(lineas.length, 1);
+  assert.equal(lineas[0].precioManual, 137.5);
+  assert.equal(lineas[0].descuento, 5);
+  assert.equal(lineas[0].motivo, null);
+});
+
+test('#282-2: una calca SIN manual se sigue re-resolviendo contra el catalogo vigente, sin la llave precioManual', () => {
+  const borrador = serializarBorrador({ carrito: [ENTRADA_CALCA], ahora: AHORA });
+
+  const { lineas } = reResolverCarrito(borrador, CATALOGO);
+
+  assert.equal('precioManual' in lineas[0], false);
+  assert.equal(lineas[0].product.prices.M100, 35.5);
+});
+
+test('#282-3: un precio manual invalido -- cero, negativo o texto no numerico -- se descarta al serializar (misma defensa que descuento)', () => {
+  const sinManualCero = serializarBorrador({ carrito: [{ ...ENTRADA_CALCA_MANUAL, precioManual: 0 }], ahora: AHORA });
+  const sinManualNegativo = serializarBorrador({ carrito: [{ ...ENTRADA_CALCA_MANUAL, precioManual: -5 }], ahora: AHORA });
+  const sinManualTexto = serializarBorrador({ carrito: [{ ...ENTRADA_CALCA_MANUAL, precioManual: 'gratis' }], ahora: AHORA });
+
+  assert.equal('precioManual' in sinManualCero.carrito[0], false);
+  assert.equal('precioManual' in sinManualNegativo.carrito[0], false);
+  assert.equal('precioManual' in sinManualTexto.carrito[0], false);
+});
+
+test('#282-4: una calca desaparecida del catalogo con manual sigue marcando SIN_CATALOGO (una linea invalida no se cotiza, con o sin captura)', () => {
+  const borrador = serializarBorrador({
+    carrito: [{ codigo: 'CAL8200S', cantidad: 100, precioManual: 137.5 }],
+    ahora: AHORA,
+  });
+
+  const { lineas, codigosSinCatalogo } = reResolverCarrito(borrador, CATALOGO);
+
+  assert.deepEqual(codigosSinCatalogo, ['CAL8200S']);
+  assert.equal(lineas[0].motivo, MOTIVOS_LINEA_INVALIDA.SIN_CATALOGO);
+  assert.equal(lineas[0].precioManual, 137.5);
+});

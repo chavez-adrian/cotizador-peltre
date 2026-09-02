@@ -672,6 +672,10 @@ function aplicarBorrador(borrador) {
     for (const linea of lineas) {
       const entrada = { product: linea.product, cantidad: linea.cantidad, descuento: linea.descuento };
       if (linea.descripcion) entrada.descripcion = linea.descripcion;
+      // Precio manual de calca (#282, spec #278): es captura del vendedor, no
+      // catalogo -- la unica excepcion a "los precios no reviven con el
+      // borrador" (CONTEXT.md "Borrador de cotizacion").
+      if (linea.precioManual) entrada.precioManual = linea.precioManual;
       // La llave sale del codigo + el diseno (#221): indexar por el codigo a
       // secas fusionaba dos disenos de la misma calca en una sola linea.
       state.cart.set(llaveCarrito(linea.codigo, linea.diseno), entrada);
