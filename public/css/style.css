@@ -985,6 +985,20 @@ body {
   color: var(--text-light);
 }
 
+/* Precio manual de calca (#279): mismo control que el % de descuento por linea,
+   un poco mas ancho porque lleva pesos y centavos. Sin permiso la celda es solo
+   texto, igual que el descuento. */
+.cart-line-price .precio-input {
+  width: 64px;
+  height: 22px;
+  font-size: 11px;
+  text-align: right;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  font-family: inherit;
+}
+
 /* % de descuento por linea (#137): sin permiso la celda es solo texto */
 .cart-line-desc { text-align: right; }
 

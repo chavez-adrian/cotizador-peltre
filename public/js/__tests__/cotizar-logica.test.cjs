@@ -481,6 +481,28 @@ test('#135-12: buildItemsYTotales con carrito vacio y sin envio -> items vacio, 
   assert.deepStrictEqual({ subtotal: r.subtotal, iva: r.iva, total: r.total }, { subtotal: 0, iva: 0, total: 0 });
 });
 
+// === #279: el precio manual de calca es dato de la partida y tiene que llegar
+// al payload -- sin el, el servidor no puede distinguir una captura de un
+// precio de lista y los tickets siguientes (borrador, Editar/Copiar) no tienen
+// de donde leerla. Sin captura la llave NO viaja, igual que la descripcion. ===
+test('#279-1: buildItemsYTotales lleva el precio manual de la calca al payload', () => {
+  const cartEntries = [
+    { codigo: 'AB12', nombre: 'AB12 Olla peltre', cantidad: 3, precio: 100 },
+    { codigo: 'CAL1050', nombre: 'CAL1050 Calca - Diseño 1', cantidad: 100, precio: 45, descuento: 10, diseno: 1, precioManual: 45 },
+  ];
+  const r = buildItemsYTotales(cartEntries, { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
+  assert.strictEqual(r.items[1].precioManual, 45);
+  assert.strictEqual(r.items[1].precio, 45);
+  // 3*100 + 100*45*0.9
+  assert.strictEqual(r.subtotal, 4350);
+});
+
+test('#279-2: sin captura la partida no lleva la llave precioManual', () => {
+  const cartEntries = [{ codigo: 'CAL1050', nombre: 'CAL1050 Calca - Diseño 1', cantidad: 100, precio: 29.66, diseno: 1 }];
+  const r = buildItemsYTotales(cartEntries, { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
+  assert.strictEqual('precioManual' in r.items[0], false);
+});
+
 // === #137: el descuento por linea viaja del carrito al documento y a Operam ===
 test('#137-1: buildItemsYTotales conserva el descuento de cada entrada del carrito', () => {
   const cartEntries = [

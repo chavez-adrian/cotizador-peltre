@@ -167,6 +167,8 @@ import {
   siguienteNumeroDiseno,
   buscarCalcaEnCatalogo,
   precioCalca,
+  precioEfectivoCalca,
+  normalizarPrecioManual,
   productoCalca,
   piezasDeProducto,
   hayCalcaEnCarrito,
@@ -862,18 +864,22 @@ function getNextTier() {
 // La calca no tiene menudeo (#91): resolverla con el `?? 0` de siempre la
 // regalaria en el documento y en el quote. La ausencia se dice con null y el
 // carrito la pinta como invalida, en vez de imprimir un cero silencioso.
-function precioUnitario(product) {
+// El precio manual de la calca (#279) viaja en la ENTRADA del carrito, no en el
+// producto (es captura de la partida, como el descuento y la descripcion), asi
+// que llega por parametro: quien pinta o suma una linea lo pasa, y los caminos
+// de catalogo (buscador, flujo guiado) no lo conocen ni lo necesitan.
+function precioUnitario(product, precioManual) {
   const tier = getCurrentTier();
   // Partida restaurada de un borrador cuyo codigo ya no esta en el catalogo
   // (#179): no tiene precio y lo dice, en vez de caer al `?? 0` y cotizarse en
   // cero. Se pinta con el mismo tratamiento de partida invalida que la calca.
   if (product.sinCatalogo) return null;
-  if (product.esCalca) return precioCalca(product, tierIdParaCalca(tier.id));
+  if (product.esCalca) return precioEfectivoCalca(product, tierIdParaCalca(tier.id), precioManual);
   return product.prices[tier.id] ?? product.prices['Menudeo'] ?? 0;
 }
 
-function getPrice(product) {
-  return precioUnitario(product) ?? 0;
+function getPrice(product, precioManual) {
+  return precioUnitario(product, precioManual) ?? 0;
 }
 
 function updateTierBar() {
@@ -1258,8 +1264,8 @@ function renderCartLines() {
   let html = '';
 
   const piezasProducto = getPiezasProducto();
-  for (const [key, { product, cantidad, descuento, descripcion }] of state.cart) {
-    const precio = precioUnitario(product);
+  for (const [key, { product, cantidad, descuento, descripcion, precioManual }] of state.cart) {
+    const precio = precioUnitario(product, precioManual);
     const price = precio ?? 0;
     const desc = descuento || 0;
     const total = importeLinea({ cantidad, precio: price, descuento: desc });
@@ -1287,7 +1293,7 @@ function renderCartLines() {
             onkeydown="if(event.key==='Enter')cartLineConfirmEdit('${key}')">
           <button class="qty-icon-btn qty-ok-btn" style="display:none" onclick="cartLineConfirmEdit('${key}')" title="Confirmar">&#10003;</button>
         </div>
-        <span class="cart-line-price col-num"><span class="cart-line-etiqueta">Precio</span>${precio === null ? 'sin precio' : '$' + fmt(price)}</span>
+        <span class="cart-line-price col-num"><span class="cart-line-etiqueta">Precio</span>${celdaPrecioLinea(key, product, precio)}</span>
         <span class="cart-line-desc col-num"><span class="cart-line-etiqueta">Dscto.</span>${celdaDescuentoLinea(key, desc)}</span>
         <span class="cart-line-total col-num"><span class="cart-line-etiqueta">Total</span>${precio === null ? '&mdash;' : '$' + fmt(total)}</span>
         <div class="cart-line-del col-del"><button onclick="removeItem('${key}')" title="Quitar">&times;</button></div>
@@ -1494,6 +1500,49 @@ function cartLineCancelarDescripcion(key) {
 }
 window.cartLineCancelarDescripcion = cartLineCancelarDescripcion;
 
+// Permiso de capturar el precio de una calca (#279, spec #278). En este ticket
+// es solo el rol admin -- que siempre lo tiene --; el checkbox por vendedor
+// llega en #280 y solo tiene que ampliar esta funcion (el patron de "poder de
+// precio" del vendedor es `state.user?.role === 'admin' || state.puedeXxx`).
+// La reja de verdad esta en el servidor: esto solo decide si se pinta el campo.
+function puedePrecioCalca() {
+  return state.user?.role === 'admin';
+}
+
+// Celda de precio de una linea (#279). Solo la calca y solo con permiso se
+// capturan: el precio del proveedor se teclea aqui y reemplaza al de lista como
+// base de la linea (el % de descuento sigue aplicando encima). Sin marca de
+// ningun tipo -- ni badge, ni precio de referencia, ni aviso (decision
+// 2026-09-01): el precio de la linea es el precio. Vaciar el campo (o poner 0)
+// borra la captura y regresa a la lista vigente, mismo patron que la
+// descripcion de partida.
+function celdaPrecioLinea(key, product, precio) {
+  if (!product.esCalca || !puedePrecioCalca()) {
+    return precio === null ? 'sin precio' : '$' + fmt(precio);
+  }
+  return `<input class="precio-input" type="number" min="0" step="0.01" inputmode="decimal"
+    value="${precio ?? ''}" placeholder="0.00"
+    onchange="cartLineSetPrecioCalca('${key}', this.value)">`;
+}
+
+function cartLineSetPrecioCalca(key, valor) {
+  const item = state.cart.get(key);
+  if (!item) return;
+  const manual = normalizarPrecioManual(valor);
+  // Sin captura la llave NO se queda en la entrada (igual que `descripcion`):
+  // es lo que distingue "el vendedor tecleo este precio" de "quedo el de lista".
+  if (manual === null) delete item.precioManual;
+  else item.precioManual = manual;
+  // Mismo motivo que en la captura de descuento (#137 AC7): el precio mueve el
+  // valor que se declara a la paqueteria para el seguro, asi que la tarifa
+  // vigente de envia.com ya no corresponde a lo que se va a enviar.
+  invalidarEnvioSiAplica();
+  updateCartSummary();
+  updateResumen();
+  renderCartLines();
+}
+window.cartLineSetPrecioCalca = cartLineSetPrecioCalca;
+
 // Celda de % de descuento de una linea (#137). Sin tope asignado no hay captura:
 // se muestra en solo lectura, porque una cotizacion cargada del historial puede
 // traer descuentos que el vendedor ya no tiene permiso de mover.
@@ -1697,8 +1746,8 @@ function updateCartSummary() {
 // todas las superficies dicen el mismo numero que el documento.
 function calcSubtotal() {
   let subtotal = 0;
-  for (const { product, cantidad, descuento } of state.cart.values()) {
-    subtotal += importeLinea({ cantidad, precio: getPrice(product), descuento });
+  for (const { product, cantidad, descuento, precioManual } of state.cart.values()) {
+    subtotal += importeLinea({ cantidad, precio: getPrice(product, precioManual), descuento });
   }
   return subtotal;
 }
@@ -1982,8 +2031,8 @@ function updateResumen() {
 
   const piezasProducto = getPiezasProducto();
   let html = '';
-  for (const [key, { product, cantidad, descuento, descripcion }] of state.cart) {
-    const precio = precioUnitario(product);
+  for (const [key, { product, cantidad, descuento, descripcion, precioManual }] of state.cart) {
+    const precio = precioUnitario(product, precioManual);
     const price = precio ?? 0;
     const total = importeLinea({ cantidad, precio: price, descuento });
     // El resumen es la ultima pantalla antes de generar: muestra la descripcion
@@ -2360,8 +2409,8 @@ async function guardarYNumerarCotizacion(body, progreso) {
 // (nucleo puro sin IO) porque lee state.cart y el formulario.
 function cartEntriesDesdeEstado() {
   const cartEntries = [];
-  for (const [key, { product, cantidad, descuento, descripcion }] of state.cart) {
-    cartEntries.push({ codigo: codigoDeLlave(key), nombre: product.name, cantidad, precio: getPrice(product), descuento: descuento || 0, descripcion, diseno: product.diseno });
+  for (const [key, { product, cantidad, descuento, descripcion, precioManual }] of state.cart) {
+    cartEntries.push({ codigo: codigoDeLlave(key), nombre: product.name, cantidad, precio: getPrice(product, precioManual), descuento: descuento || 0, descripcion, diseno: product.diseno, precioManual });
   }
   return cartEntries;
 }

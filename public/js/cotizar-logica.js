@@ -245,7 +245,7 @@ export function calcularTotalesItems(items) {
 // y sus totales. cartEntries ya trae el precio resuelto (depende del tier
 // vigente, estado que vive en app.js) -- esta funcion solo ensambla el payload.
 export function buildItemsYTotales(cartEntries, envioInfo) {
-  const items = cartEntries.map(({ codigo, nombre, cantidad, precio, descuento, descripcion, diseno }) => ({
+  const items = cartEntries.map(({ codigo, nombre, cantidad, precio, descuento, descripcion, diseno, precioManual }) => ({
     codigo,
     // La descripcion que escribio el vendedor manda sobre la del catalogo (#139), y
     // viaja marcada: es lo que hace que al ACTUALIZAR el quote de Operam se re-escriba
@@ -259,6 +259,12 @@ export function buildItemsYTotales(cartEntries, envioInfo) {
     // borraria el "Diseño N" de las lineas que no entran a la ronda de reescritura.
     ...(diseno ? { diseno } : {}),
     ...(descripcion || diseno ? { descripcionEditada: true } : {}),
+    // Precio manual de calca (#279): el precio ya viene resuelto en `precio`
+    // (app.js lo resuelve con el mismo nucleo puro que pinta la linea); esta
+    // llave viaja aparte porque es la marca de "esto lo capturo el vendedor" --
+    // la que el servidor valida contra el permiso y la que leeran el borrador
+    // (#282) y Editar/Copiar (#283). Sin captura no viaja.
+    ...(precioManual ? { precioManual } : {}),
   }));
   const itemEnvio = buildItemEnvio(envioInfo);
   if (itemEnvio) items.push(itemEnvio);
