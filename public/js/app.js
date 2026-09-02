@@ -299,6 +299,10 @@ const state = {
   // precios, y el servidor lo vuelve a hacer valer al guardar. El rol admin
   // siempre puede (checkeado aparte via state.user?.role).
   puedeFijarLista: false,
+  // Permiso de capturar el precio de proveedor de una calca (#280, spec #278):
+  // mismo patron que puedeFijarLista -- lo manda el servidor con los precios y
+  // el servidor lo vuelve a hacer valer al guardar. El rol admin siempre puede.
+  puedePrecioCalca: false,
   // Lista fijada de la cotizacion en curso (#151, spec #98): '' es Auto (el
   // tabulador manda). Solo admin o vendedor con permiso puede escribirlo
   // (selector oculto para el resto); vive en la cotizacion, nunca en el
@@ -501,6 +505,7 @@ async function loadPrecios() {
   state.precios = await res.json();
   state.topeDescuento = state.precios.topeDescuento || 0;
   state.puedeFijarLista = !!state.precios.puedeFijarLista;
+  state.puedePrecioCalca = !!state.precios.puedePrecioCalca;
   const date = new Date(state.precios.extracted).toLocaleDateString('es-MX', {
     day: 'numeric', month: 'short', year: 'numeric'
   });
@@ -1505,13 +1510,13 @@ function cartLineCancelarDescripcion(key) {
 }
 window.cartLineCancelarDescripcion = cartLineCancelarDescripcion;
 
-// Permiso de capturar el precio de una calca (#279, spec #278). En este ticket
-// es solo el rol admin -- que siempre lo tiene --; el checkbox por vendedor
-// llega en #280 y solo tiene que ampliar esta funcion (el patron de "poder de
-// precio" del vendedor es `state.user?.role === 'admin' || state.puedeXxx`).
-// La reja de verdad esta en el servidor: esto solo decide si se pinta el campo.
+// Permiso de capturar el precio de una calca (#279/#280, spec #278): admin
+// siempre puede, o vendedor con el checkbox otorgado desde /admin -- mismo
+// patron de "poder de precio" del vendedor que state.puedeFijarLista. La reja
+// de verdad esta en el servidor (puedePrecioCalcaDeUsuario, calcas-logica.js):
+// esto solo decide si se pinta el campo.
 function puedePrecioCalca() {
-  return state.user?.role === 'admin';
+  return state.user?.role === 'admin' || state.puedePrecioCalca;
 }
 
 // Celda de precio de una linea (#279). Solo la calca y solo con permiso se
