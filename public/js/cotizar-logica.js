@@ -58,6 +58,23 @@ export function validarDomicilioEntrega({ calle } = {}) {
   return { ok: true };
 }
 
+// Checkbox "Usar el mismo correo de entrega" (issue #290): nucleo puro de la
+// sincronizacion entre cl-email-entrega y cl-email-factura. Recibe el estado
+// actual y el evento que disparo el cambio, devuelve el estado nuevo.
+// evento 'checkbox' = el vendedor marco/desmarco el checkbox; al marcar copia
+// el correo de entrega vigente. evento 'entrega' = el correo de entrega cambio
+// (a mano o por codigo, ver pcAplicarContacto en app.js, #99); si esta marcado
+// sigue copiando. evento 'factura' = el vendedor edito a mano el correo de
+// factura; eso siempre desmarca el checkbox, sin tocar lo que ya escribio.
+export function sincronizarCorreoFactura({ marcado, entrega, factura, evento }) {
+  if (evento === 'factura') return { marcado: false, factura };
+  if (evento === 'checkbox' || evento === 'entrega') {
+    if (marcado) return { marcado: true, factura: entrega || '' };
+    return { marcado: false, factura };
+  }
+  return { marcado, factura };
+}
+
 // Nombres canonicos de paqueteria (issue #71, decision Adrian): el carrier se
 // muestra con su marca real (preserva acronimos: DHL, UPS, FedEx) y el servicio en
 // Title Case. Arregla el "fedex ground" feo sin convertir DHL->Dhl ni UPS->Ups.

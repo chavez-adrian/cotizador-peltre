@@ -3,6 +3,7 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
+let sincronizarCorreoFactura;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
@@ -16,6 +17,7 @@ before(async () => {
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     fechaEmisionHoy, sumarDiasFecha,
+    sincronizarCorreoFactura,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -665,4 +667,40 @@ test('#284-7: sumarDiasFecha cruza fin de mes y fin de anio', () => {
 test('#284-8: sumarDiasFecha no arrastra la zona horaria de quien la corre', () => {
   // La fecha plana no es un instante: sumarle 0 dias tiene que devolverla igual.
   assert.strictEqual(sumarDiasFecha('2026-09-01', 0), '2026-09-01');
+});
+
+// === #290: checkbox "Usar el mismo correo de entrega" ===
+test('#290-1: marcar el checkbox copia el correo de entrega al de factura', () => {
+  const r = sincronizarCorreoFactura({ marcado: true, entrega: 'juan@ej.com', factura: '', evento: 'checkbox' });
+  assert.deepStrictEqual(r, { marcado: true, factura: 'juan@ej.com' });
+});
+
+test('#290-2: marcar con correo de entrega vacio deja la factura vacia', () => {
+  const r = sincronizarCorreoFactura({ marcado: true, entrega: '', factura: 'previo@ej.com', evento: 'checkbox' });
+  assert.deepStrictEqual(r, { marcado: true, factura: '' });
+});
+
+test('#290-3: con el checkbox marcado, cambiar el correo de entrega actualiza el de factura', () => {
+  const r = sincronizarCorreoFactura({ marcado: true, entrega: 'nuevo@ej.com', factura: 'juan@ej.com', evento: 'entrega' });
+  assert.deepStrictEqual(r, { marcado: true, factura: 'nuevo@ej.com' });
+});
+
+test('#290-4: con el checkbox desmarcado, cambiar el correo de entrega NO toca el de factura', () => {
+  const r = sincronizarCorreoFactura({ marcado: false, entrega: 'nuevo@ej.com', factura: 'propio@ej.com', evento: 'entrega' });
+  assert.deepStrictEqual(r, { marcado: false, factura: 'propio@ej.com' });
+});
+
+test('#290-5: desmarcar deja el campo de factura editable con su valor actual', () => {
+  const r = sincronizarCorreoFactura({ marcado: false, entrega: 'juan@ej.com', factura: 'juan@ej.com', evento: 'checkbox' });
+  assert.deepStrictEqual(r, { marcado: false, factura: 'juan@ej.com' });
+});
+
+test('#290-6: editar a mano el correo de factura desmarca el checkbox y conserva lo escrito', () => {
+  const r = sincronizarCorreoFactura({ marcado: true, entrega: 'juan@ej.com', factura: 'editado@ej.com', evento: 'factura' });
+  assert.deepStrictEqual(r, { marcado: false, factura: 'editado@ej.com' });
+});
+
+test('#290-7: editar el correo de factura sin estar marcado no cambia nada de estado', () => {
+  const r = sincronizarCorreoFactura({ marcado: false, entrega: 'juan@ej.com', factura: 'libre@ej.com', evento: 'factura' });
+  assert.deepStrictEqual(r, { marcado: false, factura: 'libre@ej.com' });
 });

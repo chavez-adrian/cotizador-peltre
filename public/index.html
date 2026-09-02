@@ -731,6 +731,11 @@
       <div class="form-group">
         <label>Correo para factura <span style="opacity:0.6;font-weight:normal">(opcional)</span></label>
         <input type="email" id="cl-email-factura" placeholder="facturacion@empresa.com">
+        <!-- issue #290: nace desmarcado a proposito (#105) -->
+        <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:6px">
+          <input type="checkbox" id="cl-email-factura-igual" style="width:16px;height:16px;accent-color:var(--primary)">
+          Usar el mismo correo de entrega
+        </label>
       </div>
       <div class="form-group">
         <label>Referencias</label>
