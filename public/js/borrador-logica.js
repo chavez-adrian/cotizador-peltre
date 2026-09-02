@@ -173,11 +173,13 @@ export function resolverProductoDelCatalogo(codigo, catalogo, numeroDiseno = 1) 
   return productos.find(p => p.key === codigo) || null;
 }
 
-// El carrito del borrador contra el catalogo vigente. Los precios NUNCA salen
+// El carrito del borrador contra el catalogo vigente. Los precios NO salen
 // del borrador: la intencion (que, cuanto, con que descuento y con que texto)
 // es del vendedor y el precio es del catalogo de hoy (CONTEXT.md "Borrador de
-// cotizacion"). El orden de captura se conserva, invalidas incluidas, para que
-// el carrito restaurado se lea igual al que se dejo.
+// cotizacion") -- salvo el precio manual de calca (#282), la UNICA excepcion:
+// es captura del vendedor, no catalogo, y viaja tal cual cuando existe. El
+// orden de captura se conserva, invalidas incluidas, para que el carrito
+// restaurado se lea igual al que se dejo.
 export function reResolverCarrito(borrador, catalogo) {
   const lineas = [];
   const codigosSinCatalogo = [];

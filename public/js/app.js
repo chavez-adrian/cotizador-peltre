@@ -664,7 +664,8 @@ function restaurarContactoNuevoDelBorrador(borrador) {
 // Aplica al estado en vivo un borrador ya decidido para restaurar -- misma
 // ruta para la rama silenciosa y para el Continuar del prompt (#181): en
 // ambos casos el carrito se re-resuelve contra el catalogo vigente, nunca
-// contra los precios guardados.
+// contra los precios guardados -- salvo el precio manual de calca (#282), la
+// unica excepcion: es captura del vendedor, no catalogo.
 function aplicarBorrador(borrador) {
   const { lineas } = reResolverCarrito(borrador, state.precios);
   if (lineas.length > 0) {
