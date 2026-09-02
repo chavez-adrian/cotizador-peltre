@@ -139,6 +139,8 @@ import {
   buildItemEnvio,
   importeLinea,
   nombreVisibleProducto,
+  fechaEmisionHoy,
+  sumarDiasFecha,
 } from './cotizar-logica.js';
 import {
   puedeDescontar,
@@ -2527,15 +2529,18 @@ async function generatePDF() {
     const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
 
     const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
-    const vigenciaDate = new Date();
-    vigenciaDate.setDate(vigenciaDate.getDate() + vigenciaDias);
+    // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
+    // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
+    // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
+    // se deriva de ella con aritmetica de fechas planas para que no puedan diferir.
+    const fechaEmision = fechaEmisionHoy();
 
     const notasText = document.getElementById('resumen-notas').value;
     const notas = notasText.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
 
     const body = {
-      fecha: new Date().toISOString().split('T')[0],
-      vigencia: vigenciaDate.toISOString().split('T')[0],
+      fecha: fechaEmision,
+      vigencia: sumarDiasFecha(fechaEmision, vigenciaDias),
       tier: tier.id,
       cliente: leerClienteFormulario(domio.leyenda),
       condicionesPago: document.getElementById('cl-condiciones').value,
@@ -2634,15 +2639,18 @@ async function generateHTML() {
     const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
 
     const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
-    const vigenciaDate = new Date();
-    vigenciaDate.setDate(vigenciaDate.getDate() + vigenciaDias);
+    // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
+    // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
+    // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
+    // se deriva de ella con aritmetica de fechas planas para que no puedan diferir.
+    const fechaEmision = fechaEmisionHoy();
 
     const notasText = document.getElementById('resumen-notas').value;
     const notas = notasText.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
 
     const body = {
-      fecha: new Date().toISOString().split('T')[0],
-      vigencia: vigenciaDate.toISOString().split('T')[0],
+      fecha: fechaEmision,
+      vigencia: sumarDiasFecha(fechaEmision, vigenciaDias),
       tier: tier.id,
       incluirFotos: document.getElementById('incluir-fotos')?.checked || false,
       cliente: leerClienteFormulario(domio.leyenda),
