@@ -141,6 +141,7 @@ import {
   nombreVisibleProducto,
   fechaEmisionHoy,
   sumarDiasFecha,
+  sincronizarCorreoFactura,
 } from './cotizar-logica.js';
 import {
   puedeDescontar,
@@ -3139,7 +3140,9 @@ function pcLlenarCamposContacto(cliente) {
   set('cl-rfc', cliente.rfc || '');
   set('cl-segmento', cliente.segmentoId || '');
   set('cl-municipio', cliente.municipio || '');
+  // #290: este set() escribe cl-email-entrega por codigo (no dispara 'input').
   if (cliente.email) set('cl-email-entrega', cliente.email);
+  sincronizarEmailFactura('entrega');
   const pais = document.getElementById('cl-pais');
   if (pais && cliente.pais) pais.value = cliente.pais;
   if (cliente.telefono) {
@@ -3177,7 +3180,9 @@ async function pcElegirReciente(cotizacionId) {
     set('cl-cp-entrega', c.cpEntrega);
     set('cl-municipio', c.municipio);
     set('cl-estado', c.estado);
+    // #290: este set() escribe cl-email-entrega por codigo (no dispara 'input').
     set('cl-email-entrega', c.emailEntrega);
+    sincronizarEmailFactura('entrega');
     const pais = document.getElementById('cl-pais');
     if (pais) pais.value = c.pais || 'MX';
     if (c.telefono) fijarTelefono('cl-telefono', c.telefono);
@@ -3507,7 +3512,27 @@ function pcAplicarContacto(c) {
   f('cl-nombre-entrega', c?.nombre);
   fijarTelefono('cl-cel-entrega', c?.telefono || '');
   f('cl-email-entrega', c?.email);
+  // #290: este prellenado escribe cl-email-entrega por codigo (no dispara
+  // 'input'), asi que hay que sincronizar el correo de factura a mano.
+  sincronizarEmailFactura('entrega');
   pcRenderChips();
+}
+
+// Checkbox "Usar el mismo correo de entrega" (issue #290). Nucleo puro en
+// sincronizarCorreoFactura (cotizar-logica.js); esta funcion es el unico
+// punto que lo conecta con los tres inputs del paso Envio, para que tanto los
+// listeners (wiring de abajo) como el prellenado por codigo de #99
+// (pcAplicarContacto) disparen la misma regla.
+function sincronizarEmailFactura(evento) {
+  const chk = document.getElementById('cl-email-factura-igual');
+  const entrega = document.getElementById('cl-email-entrega');
+  const factura = document.getElementById('cl-email-factura');
+  if (!chk || !entrega || !factura) return;
+  const r = sincronizarCorreoFactura({
+    marcado: chk.checked, entrega: entrega.value, factura: factura.value, evento,
+  });
+  chk.checked = r.marcado;
+  factura.value = r.factura;
 }
 
 function pcRenderContactoSelect() {
@@ -7580,6 +7605,23 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('alta-uso-cfdi');
   if (sel) sel.addEventListener('change', () => { altaState.usoCfdiElegido = true; });
+});
+
+// Checkbox "Usar el mismo correo de entrega" (#290): marcarlo copia y
+// sincroniza cl-email-factura mientras cl-email-entrega cambie; editar a mano
+// cl-email-factura lo desmarca. Via addEventListener y no onclick inline
+// (#112). La regla vive en sincronizarEmailFactura, que tambien se llama
+// desde los sitios que escriben cl-email-entrega por codigo (pcAplicarContacto
+// del selector de contacto #99, entre otros) porque esos .value= no disparan
+// 'input'.
+document.addEventListener('DOMContentLoaded', () => {
+  const chk = document.getElementById('cl-email-factura-igual');
+  const entrega = document.getElementById('cl-email-entrega');
+  const factura = document.getElementById('cl-email-factura');
+  if (!chk || !entrega || !factura) return;
+  chk.addEventListener('change', () => sincronizarEmailFactura('checkbox'));
+  entrega.addEventListener('input', () => sincronizarEmailFactura('entrega'));
+  factura.addEventListener('input', () => sincronizarEmailFactura('factura'));
 });
 
 // Widget internacional en los campos de telefono que ya viven en el HTML
