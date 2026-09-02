@@ -36,8 +36,8 @@ export function fechaEmisionHoy(ahora = new Date()) {
 }
 
 // Suma 'dias' naturales a una fecha plana YYYY-MM-DD y devuelve YYYY-MM-DD. Se
-// resuelve en UTC A PROPOSITO: una fecha plana no es un instante, y anclarla al
-// mediodia UTC de si misma es lo que impide que la zona de quien corre el codigo
+// resuelve en UTC A PROPOSITO: una fecha plana no es un instante, y anclarla a
+// las 00:00Z de si misma es lo que impide que la zona de quien corre el codigo
 // le mueva el dia. Vivia en lib/operam-client.js hasta #284; subio aqui para que
 // la vigencia del frontend y la del servidor se deriven de la MISMA aritmetica.
 export function sumarDiasFecha(fechaISO, dias) {
