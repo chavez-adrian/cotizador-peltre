@@ -122,6 +122,42 @@ test('M6: tolera listas nulas/indefinidas', () => {
   assert.deepStrictEqual(mezclarResultadosBusqueda(null, null, 'x'), []);
 });
 
+// === #292: acentos y mayusculas no deben descartar coincidencias ===
+const OPERAM_ACENTOS = [
+  { id: 20, name: 'Raúl Chávez', ref: 'Raul Chavez', rfc: 'CARR800101AB1', telefonos: [] },
+  { id: 21, name: 'Adrian Chavez Rosete', ref: 'Adrian Chavez', rfc: 'CARA850202CD2', telefonos: [] },
+  { id: 22, name: 'Chávez Distribuidora', ref: 'Chavez Dist', rfc: 'CDI900303EF3', telefonos: [] },
+];
+const PROSPECTOS_ACENTOS = [
+  { id: 3, nombre: 'Adrián Pérez', ciudad: 'Toluca', celular: '', etapa: 'por_cotizar', vendedor: 'Ana' },
+];
+
+test('M7 (#292): "chavez" y "chavez" (con acento) devuelven los mismos clientes, con o sin acento en el dato', () => {
+  const sinAcento = mezclarResultadosBusqueda(OPERAM_ACENTOS, [], 'chavez');
+  assert.deepStrictEqual(sinAcento.map(r => r.id).sort(), [20, 21, 22]);
+  const conAcento = mezclarResultadosBusqueda(OPERAM_ACENTOS, [], 'chávez');
+  assert.deepStrictEqual(conAcento.map(r => r.id).sort(), [20, 21, 22]);
+});
+
+test('M8 (#292): un prospecto con acento aparece buscando con y sin acento', () => {
+  const sinAcento = mezclarResultadosBusqueda([], PROSPECTOS_ACENTOS, 'adrian');
+  assert.strictEqual(sinAcento.length, 1);
+  assert.strictEqual(sinAcento[0].nombre, 'Adrián Pérez');
+  const conAcento = mezclarResultadosBusqueda([], PROSPECTOS_ACENTOS, 'adrián');
+  assert.strictEqual(conAcento.length, 1);
+  assert.strictEqual(conAcento[0].nombre, 'Adrián Pérez');
+});
+
+test('M9 (#292): el orden por prefijo trata acentos igual de un lado y del otro', () => {
+  // "Chavez Distribuidora" (id 22) empieza con "chavez" -> prefijo; "Raul Chavez"
+  // (id 20) lo trae en medio -> interno. El resultado es el mismo con o sin
+  // acento en la query, y con o sin acento en el dato.
+  const conAcentoEnQuery = mezclarResultadosBusqueda(OPERAM_ACENTOS, [], 'chávez');
+  const sinAcentoEnQuery = mezclarResultadosBusqueda(OPERAM_ACENTOS, [], 'chavez');
+  assert.strictEqual(conAcentoEnQuery[0].id, 22);
+  assert.strictEqual(sinAcentoEnQuery[0].id, 22);
+});
+
 // === recientesDesdeCotizaciones: ultimos clientes cotizados por el vendedor ===
 
 test('R1: deriva recientes distintos, mas nuevo primero', () => {

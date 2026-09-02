@@ -262,6 +262,22 @@ test('buscarClientesPorTexto: razon social sigue funcionando', async () => {
   assert.equal(r[0].customer_id, '101');
 });
 
+// === #292: acentos y mayusculas no deben descartar coincidencias ===
+
+test('buscarClientesPorTexto: pliega acentos y mayusculas en ambos sentidos (#292)', async () => {
+  const CON_ACENTOS = [
+    { customer_id: '505', CustName: 'CHÁVEZ DISTRIBUIDORA', cust_ref: 'Chavez', contacts: [], branches: [] },
+  ];
+  const contadores = { login: 0, paginas: 0 };
+  restore = mockListado(CON_ACENTOS, contadores);
+  const sinAcento = await buscarClientesPorTexto('chavez');
+  assert.equal(sinAcento.length, 1);
+  assert.equal(sinAcento[0].customer_id, '505');
+  const conAcento = await buscarClientesPorTexto('chávez');
+  assert.equal(conAcento.length, 1);
+  assert.equal(conAcento[0].customer_id, '505');
+});
+
 test('buscarClientesPorTexto: telefono en formato +52..., 10 digitos y sin lada encuentran al mismo cliente', async () => {
   const contadores = { login: 0, paginas: 0 };
   restore = mockListado(CLIENTES, contadores);

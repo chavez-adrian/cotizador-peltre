@@ -7,7 +7,7 @@
 
 import { escapeHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
-import { nombreConCorto } from './alta-logica.js';
+import { nombreConCorto, normalizarBusqueda } from './alta-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -255,19 +255,6 @@ function enRangoFecha(fecha, desde, hasta) {
   if (desde && dia < desde) return false;
   if (hasta && dia > hasta) return false;
   return true;
-}
-
-// Case-insensitive y sin acentos (NFD): "hernandez" encuentra "Hernandez" y al
-// reves. Solo pliega la cadena: a diferencia de normalizarNombre
-// (lib/deduplicacion.js) no tokeniza ni descarta articulos, porque aqui se
-// busca por subcadena, no se comparan razones sociales.
-function normalizarBusqueda(valor) {
-  if (valor == null) return '';
-  return String(valor)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
 }
 
 // Solo digitos, sin recortar a 10 (a diferencia de ultimos10): aqui se busca

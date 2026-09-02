@@ -7,6 +7,24 @@
 import { cpValido } from './cotizar-logica.js';
 import { esRegimenValido } from './regimen-fiscal-logica.js';
 
+// Case-insensitive y sin acentos (NFD): pliega mayusculas y diacriticos para
+// que dos grafias del mismo nombre (con o sin acento) comparen igual.
+// UN solo pliegue de texto para todo el cotizador (issue #292): antes habia dos
+// copias casi identicas (esta y normalizarBusqueda de cotizaciones-logica.js,
+// #146) mas comparaciones literales en mezclarResultadosBusqueda e
+// indice-telefonos.js que se perdian resultados con acentos de cualquier lado.
+// Vive aqui (y no en cotizaciones-logica.js) porque alta-logica.js ya es el
+// nucleo que server.js y lib/ cross-importan (mismo patron que
+// regimen-fiscal-logica.js con server.js/app.js): los modulos de public/js
+// nunca importan de lib/, pero lib/ SI importa de public/js.
+export function normalizarBusqueda(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 // === Formato unificado "RAZON SOCIAL (Nombre corto)" (issue #196) ===
 //
 // UN helper puro de TEXTO (no HTML) para toda superficie que identifica a un
@@ -23,12 +41,7 @@ import { esRegimenValido } from './regimen-fiscal-logica.js';
 // real). El escape HTML sigue siendo responsabilidad del render que consume
 // el texto (escapeHtml en el punto de pintado) -- este helper NUNCA produce HTML.
 function normalizarNombreLigero(valor) {
-  return String(valor || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
+  return normalizarBusqueda(valor).replace(/\s+/g, ' ');
 }
 
 export function nombreConCorto(nombre, nombreCorto) {
@@ -816,25 +829,25 @@ function normalizarProspecto(p) {
 // los digitos del celular. Ordena coincidencias por prefijo antes que internas
 // (mezcla los tipos, no los agrupa: "distinguibles" no es "separados").
 export function mezclarResultadosBusqueda(clientesOperam, prospectos, query) {
-  const q = String(query || '').toLowerCase().trim();
+  const q = normalizarBusqueda(query);
   if (q.length < 2) return [];
   const qDigitos = q.replace(/\D/g, '');
   const filas = [
     ...(clientesOperam || []).map(normalizarOperam).filter(r =>
-      r.nombre.toLowerCase().includes(q) ||
-      r.rfc.toLowerCase().includes(q) ||
-      r.ref.toLowerCase().includes(q) ||
+      normalizarBusqueda(r.nombre).includes(q) ||
+      normalizarBusqueda(r.rfc).includes(q) ||
+      normalizarBusqueda(r.ref).includes(q) ||
       // >=8 digitos (formato "sin lada" en adelante, ver indice-telefonos.js): con
       // menos, un fragmento corto empataria demasiados telefonos del catalogo completo.
       (qDigitos.length >= 8 && r.telefonos.some(t => t.replace(/\D/g, '').includes(qDigitos)))),
     ...(prospectos || []).map(normalizarProspecto).filter(r =>
-      r.nombre.toLowerCase().includes(q) ||
-      r.ciudad.toLowerCase().includes(q) ||
+      normalizarBusqueda(r.nombre).includes(q) ||
+      normalizarBusqueda(r.ciudad).includes(q) ||
       (qDigitos.length >= 2 && r.celular.replace(/\D/g, '').includes(qDigitos))),
   ];
   return filas.sort((a, b) => {
-    const pa = a.nombre.toLowerCase().startsWith(q) ? 0 : 1;
-    const pb = b.nombre.toLowerCase().startsWith(q) ? 0 : 1;
+    const pa = normalizarBusqueda(a.nombre).startsWith(q) ? 0 : 1;
+    const pb = normalizarBusqueda(b.nombre).startsWith(q) ? 0 : 1;
     if (pa !== pb) return pa - pb;
     return a.nombre.localeCompare(b.nombre);
   });
