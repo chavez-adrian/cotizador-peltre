@@ -250,3 +250,19 @@ test('#220: dos disenos del mismo codigo pintan dos filas con su propio texto', 
   assert.strictEqual(filasCalca, 2, 'las dos partidas del mismo codigo no pueden fusionarse en una fila');
   assert.ok(html.includes('Sub-Total [420]'), '200 + 100 + 120 piezas');
 });
+
+// #284: el fallback de la fecha del documento tenia el mismo defecto UTC que el
+// del quote. De 18:00 a 23:59 hora del centro el documento imprimia la fecha de
+// manana. Instante de la evidencia del issue: 2026-09-01 19:07 GMT-0600.
+test('#284: sin data.fecha el documento imprime la fecha del centro de Mexico, no la de UTC', () => {
+  const DateReal = globalThis.Date;
+  const fijo = new DateReal('2026-09-02T01:07:48Z').getTime();
+  globalThis.Date = class extends DateReal {
+    constructor(...args) { if (args.length === 0) super(fijo); else super(...args); }
+    static now() { return fijo; }
+  };
+  let html;
+  try { html = generateQuoteHTML({}); } finally { globalThis.Date = DateReal; }
+  assert.ok(html.includes('>2026-09-01<'), 'la celda Fecha lleva la fecha local del vendedor');
+  assert.ok(!html.includes('>2026-09-02<'), 'nunca la fecha UTC de manana');
+});
