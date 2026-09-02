@@ -7,6 +7,7 @@ let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
+let fechaEmisionHoy, sumarDiasFecha;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
@@ -14,6 +15,7 @@ before(async () => {
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
+    fechaEmisionHoy, sumarDiasFecha,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -623,4 +625,44 @@ test('#220-15: una entrada sin diseno no gana campos (el carrito de producto no 
     { shippingOpt: 'none', shippingCost: 0, shippingDesc: '' });
   assert.strictEqual(r.items[0].diseno, undefined);
   assert.strictEqual(r.items[0].descripcionEditada, undefined);
+});
+
+// === #284: la fecha de emision es la del calendario del vendedor, no la de UTC ===
+// El instante y la hora local salen de la evidencia del issue: 2026-09-01 19:07
+// GMT-0600 = 2026-09-02T01:07:48Z. Armada en UTC, la cotizacion salia con fecha de
+// manana y Operam la rechazaba (406: sin rate de moneda para esa fecha).
+
+test('#284-1: a las 19:07 del centro de Mexico la fecha de emision sigue siendo la de hoy', () => {
+  assert.strictEqual(fechaEmisionHoy(new Date('2026-09-02T01:07:48Z')), '2026-09-01');
+});
+
+test('#284-2: de dia la fecha de emision coincide con la de UTC', () => {
+  assert.strictEqual(fechaEmisionHoy(new Date('2026-09-01T18:00:00Z')), '2026-09-01');
+});
+
+// Los bordes de la ventana rota: America/Mexico_City es UTC-6 fijo desde 2022 (sin
+// horario de verano), asi que el dia local cambia a las 06:00Z en punto.
+test('#284-3: un segundo antes de las 06:00Z sigue siendo el dia anterior', () => {
+  assert.strictEqual(fechaEmisionHoy(new Date('2026-09-02T05:59:59Z')), '2026-09-01');
+});
+
+test('#284-4: a las 06:00Z ya es el dia nuevo', () => {
+  assert.strictEqual(fechaEmisionHoy(new Date('2026-09-02T06:00:00Z')), '2026-09-02');
+});
+
+test('#284-5: el mes y el dia van a dos digitos', () => {
+  assert.strictEqual(fechaEmisionHoy(new Date('2026-01-05T18:00:00Z')), '2026-01-05');
+});
+
+test('#284-6: la vigencia se deriva de la fecha de emision con aritmetica de fechas planas', () => {
+  assert.strictEqual(sumarDiasFecha('2026-09-01', 30), '2026-10-01');
+});
+
+test('#284-7: sumarDiasFecha cruza fin de mes y fin de anio', () => {
+  assert.strictEqual(sumarDiasFecha('2026-12-20', 30), '2027-01-19');
+});
+
+test('#284-8: sumarDiasFecha no arrastra la zona horaria de quien la corre', () => {
+  // La fecha plana no es un instante: sumarle 0 dias tiene que devolverla igual.
+  assert.strictEqual(sumarDiasFecha('2026-09-01', 0), '2026-09-01');
 });

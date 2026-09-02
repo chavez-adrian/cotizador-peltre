@@ -12,6 +12,40 @@ export function cpValido(cp, pais) {
   return /^\d{5}$/.test(cp);
 }
 
+// Zona horaria del negocio (issue #284). La fecha de emision de la cotizacion es
+// la del CALENDARIO de la fabrica, no la del navegador ni la del servidor: un
+// vendedor de viaje sigue cotizando en la fecha de Ixtapaluca, y es la fecha que
+// Operam considera "hoy" cuando busca el rate de moneda del documento.
+export const ZONA_HORARIA_NEGOCIO = 'America/Mexico_City';
+
+const FORMATO_FECHA_NEGOCIO = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ZONA_HORARIA_NEGOCIO, year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+// Fecha de emision de HOY como YYYY-MM-DD (issue #284). Antes cada sitio la armaba
+// con `new Date().toISOString().split('T')[0]`, que es la fecha UTC: de 18:00 a
+// 23:59 hora del centro la cotizacion salia con la fecha de MANANA y Operam la
+// rechazaba con 406 "Debe haber al menos un rate de moneda" (todavia no existe el
+// tipo de cambio de manana), dejando el documento como PRE-COTIZACION sin folio.
+// Se arma por partes en vez de con format() para no depender del orden que el ICU
+// de cada navegador le de al locale.
+export function fechaEmisionHoy(ahora = new Date()) {
+  const partes = {};
+  for (const { type, value } of FORMATO_FECHA_NEGOCIO.formatToParts(ahora)) partes[type] = value;
+  return `${partes.year}-${partes.month}-${partes.day}`;
+}
+
+// Suma 'dias' naturales a una fecha plana YYYY-MM-DD y devuelve YYYY-MM-DD. Se
+// resuelve en UTC A PROPOSITO: una fecha plana no es un instante, y anclarla al
+// mediodia UTC de si misma es lo que impide que la zona de quien corre el codigo
+// le mueva el dia. Vivia en lib/operam-client.js hasta #284; subio aqui para que
+// la vigencia del frontend y la del servidor se deriven de la MISMA aritmetica.
+export function sumarDiasFecha(fechaISO, dias) {
+  const base = new Date(`${fechaISO}T00:00:00Z`);
+  base.setUTCDate(base.getUTCDate() + dias);
+  return base.toISOString().split('T')[0];
+}
+
 // Domicilio de entrega para el DOCUMENTO (issue #84): nada es requisito para
 // generar. Solo decide si hace falta la leyenda de confirmacion -- ausente que
 // falte Calle (con o sin CP/pais) -> leyenda; Calle presente -> sin leyenda.
