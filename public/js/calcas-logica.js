@@ -113,6 +113,20 @@ export function validarPreciosManualesCalca(items, tienePermiso) {
   return { ok: true };
 }
 
+// Permiso de capturar el precio de una calca (#280, spec #278), espejo exacto
+// de normalizarPuedeFijarLista/puedeFijarLista (tier-logica.js): basura,
+// string o ausente degradan a false (sin permiso), nunca a permiso implicito.
+// Vive aqui y no en tier-logica.js porque es el nucleo de calca, no de tier.
+export function normalizarPuedePrecioCalca(valor) {
+  return valor === true;
+}
+
+export function puedePrecioCalca(vendedor) {
+  if (!vendedor) return false;
+  if (vendedor.role === 'admin') return true;
+  return normalizarPuedePrecioCalca(vendedor.puedePrecioCalca);
+}
+
 // Coherencia de lo que se persiste (#279): con precio manual valido, el precio
 // de la linea ES el manual. El servidor no confia en que el cliente los haya
 // mandado iguales -- el documento, el quote y la huella leen `precio`, asi que

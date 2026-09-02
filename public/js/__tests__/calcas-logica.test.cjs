@@ -6,6 +6,7 @@ let PIEZAS_MINIMAS_CALCA, TAMANOS_CALCA, TINTAS_CALCA, MOTIVOS_CALCA_INVALIDA;
 let esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdParaCalca;
 let precioEfectivoCalca, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas;
 let MOTIVOS_PRECIO_MANUAL, MENSAJE_SIN_PERMISO_PRECIO_CALCA;
+let normalizarPuedePrecioCalca, puedePrecioCalca;
 let piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca;
 let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio;
 let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito;
@@ -19,6 +20,7 @@ before(async () => {
     esCodigoCalca, buscarCalcaEnCatalogo, precioCalca, productoCalca, tierIdParaCalca,
     precioEfectivoCalca, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas,
     MOTIVOS_PRECIO_MANUAL, MENSAJE_SIN_PERMISO_PRECIO_CALCA,
+    normalizarPuedePrecioCalca, puedePrecioCalca,
     piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca,
     motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio,
     siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito,
@@ -236,6 +238,30 @@ test('#279-16: el manual capturado como texto se persiste como numero', () => {
   const partidas = aplicarPrecioManualEnPartidas([{ ...PARTIDA_CALCA, precioManual: '18.75' }]);
   assert.strictEqual(partidas[0].precio, 18.75);
   assert.strictEqual(partidas[0].precioManual, 18.75);
+});
+
+// === #280: permiso de precio de calca por vendedor, espejo exacto de
+// normalizarPuedeFijarLista/puedeFijarLista (tier-logica.test.cjs, #153) ===
+
+test('#280-1: normalizarPuedePrecioCalca: solo true exacto es permiso; basura, string y ausente degradan a false', () => {
+  assert.strictEqual(normalizarPuedePrecioCalca(true), true);
+  assert.strictEqual(normalizarPuedePrecioCalca(false), false);
+  assert.strictEqual(normalizarPuedePrecioCalca('true'), false);
+  assert.strictEqual(normalizarPuedePrecioCalca(1), false);
+  assert.strictEqual(normalizarPuedePrecioCalca(null), false);
+  assert.strictEqual(normalizarPuedePrecioCalca(undefined), false);
+});
+
+test('#280-2: puedePrecioCalca: admin siempre puede, sin checkbox', () => {
+  assert.strictEqual(puedePrecioCalca({ role: 'admin' }), true);
+  assert.strictEqual(puedePrecioCalca({ role: 'admin', puedePrecioCalca: false }), true);
+});
+
+test('#280-3: puedePrecioCalca: vendedor depende del flag normalizado', () => {
+  assert.strictEqual(puedePrecioCalca({ role: 'vendedor', puedePrecioCalca: true }), true);
+  assert.strictEqual(puedePrecioCalca({ role: 'vendedor', puedePrecioCalca: false }), false);
+  assert.strictEqual(puedePrecioCalca({ role: 'vendedor' }), false);
+  assert.strictEqual(puedePrecioCalca(null), false);
 });
 
 // Sin numero de diseño explicito la partida es el Diseño 1 (#220): es lo que
