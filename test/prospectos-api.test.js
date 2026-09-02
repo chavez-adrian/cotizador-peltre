@@ -1013,7 +1013,7 @@ function mockAltaCliente() {
     '/api/v3/sales/branches/188': () => jsonResponse({ result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 88 });
-      if (u.includes('/88')) return jsonResponse({ data: [{ branches: [{ branch_code: 188 }] }] });
+      if (u.includes('/88')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 188 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
   });

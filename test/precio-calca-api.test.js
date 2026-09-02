@@ -288,7 +288,7 @@ test('#283 Editar con permiso: el admin cambia el precio manual y el quote queda
 
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '77', tax_id: 'CAL010101AAA', CustName: 'CALCA SA DE CV', branches: [{ branch_code: '1' }] }] }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '77', tax_id: 'CAL010101AAA', CustName: 'CALCA SA DE CV', sales_type: '12', branches: [{ branch_code: '1' }] }] }),
     '/api/v3/sales/quote': () => jsonResponse({ result: true, quote_id: 55283 }),
   });
   try {
@@ -367,7 +367,7 @@ test('#279: el quote de Operam se sube con el precio del proveedor', async () =>
   let quoteBody = null;
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '77', tax_id: 'CAL010101AAA', CustName: 'CALCA SA DE CV', branches: [{ branch_code: '1' }] }] }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '77', tax_id: 'CAL010101AAA', CustName: 'CALCA SA DE CV', sales_type: '12', branches: [{ branch_code: '1' }] }] }),
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, quote_id: 55279 }); },
   });
   try {

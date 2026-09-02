@@ -46,6 +46,7 @@ const CLIENTES_RESPONSE = {
     postal_code: '06000',
     city: 'Cuauhtemoc',
     state: 'Ciudad de Mexico',
+    sales_type: '12',
     branches: [{
       branch_code: '1',
       branch_ref: 'PRINCIPAL',

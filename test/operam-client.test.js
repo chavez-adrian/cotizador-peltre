@@ -436,7 +436,7 @@ test('obtenerDomicilios: cliente sin contacts -> contacts es []', async () => {
   resetSession();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
-    '/api/v3/sales/customers/902': () => jsonResponse({ data: [{ customer_id: 902, branches: [] }] }),
+    '/api/v3/sales/customers/902': () => jsonResponse({ data: [{ customer_id: 902, sales_type: '12', branches: [] }] }),
   });
   try {
     const r = await obtenerDomicilios(902);
@@ -545,7 +545,7 @@ test('crearCliente: retorna { duplicado:true } con datos cuando RFC ya existe', 
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 42, CustName: 'Existente SA', tax_id: 'EXT010101ABC', street: 'Reforma', street_number: '1', suite_number: '', district: 'Juarez', postal_code: '06600', city: 'CDMX', state: 'CDMX', cfdi_regimen_fiscal: '601', branches: [] }],
+      data: [{ customer_id: 42, CustName: 'Existente SA', tax_id: 'EXT010101ABC', street: 'Reforma', street_number: '1', suite_number: '', district: 'Juarez', postal_code: '06600', city: 'CDMX', state: 'CDMX', cfdi_regimen_fiscal: '601', sales_type: '12', branches: [] }],
     }),
   });
   try {
@@ -569,7 +569,7 @@ test('crearCliente: un RFC tecleado en minusculas y con espacios encuentra al cl
       urlBusqueda = url.toString();
       return jsonResponse({
         total: 1,
-        data: [{ customer_id: 42, CustName: 'Existente SA', tax_id: 'EXT010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', branches: [] }],
+        data: [{ customer_id: 42, CustName: 'Existente SA', tax_id: 'EXT010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', sales_type: '12', branches: [] }],
       });
     },
   });
@@ -671,6 +671,20 @@ test('buildClienteBody: incluye sales_type desde input', () => {
 test('buildClienteBody: incluye segmento_id desde input', () => {
   const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', segmento_id: '3' });
   assert.strictEqual(body.segmento_id, '3', 'segmento_id debe venir del input');
+});
+
+// #285: vacio NO es un valor. Operam coerciona sales_type '' a 0 y el cliente se
+// queda sin lista de precios: incapaz de valuar un documento, con la subida de
+// toda cotizacion suya rota hasta que alguien lo note. La llave se OMITE.
+test('buildClienteBody: omite sales_type y segmento_id vacios en vez de mandar ""', () => {
+  for (const vacio of ['', null, undefined]) {
+    const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', sales_type: vacio, segmento_id: vacio });
+    assert.strictEqual('sales_type' in body, false, `sales_type ${JSON.stringify(vacio)} no debe viajar`);
+    assert.strictEqual('segmento_id' in body, false, `segmento_id ${JSON.stringify(vacio)} no debe viajar`);
+  }
+  const sinCampos = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  assert.strictEqual('sales_type' in sinCampos, false);
+  assert.strictEqual('segmento_id' in sinCampos, false);
 });
 
 test('buildClienteBody: salesman usa operam_id, no id interno', () => {
@@ -974,7 +988,7 @@ test('actualizarBranchCliente: cuando branchId es null hace GET customer para ob
     '/api/v3/sales/customers/100': (url, opts) => {
       if (!opts || opts.method !== 'POST') {
         getCustomerCalled = true;
-        return jsonResponse({ data: [{ branches: [{ branch_code: 300 }] }] });
+        return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 300 }] }] });
       }
       return jsonResponse({ result: true, customer_id: 100 });
     },
@@ -1169,7 +1183,7 @@ test('subirCotizacionOperam: RFC con match unico -> usa ESE customer_id (no clie
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'Cafebreria El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'Cafebreria El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1195,7 +1209,12 @@ test('subirCotizacionOperam: cuando la cotizacion trae customer_id del cliente, 
   let busquedaLlamada = false;
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
-    '/api/v3/sales/customers': () => { busquedaLlamada = true; return jsonResponse({ total: 0, data: [] }); },
+    // La lectura del cliente por id (#285, lista de precios) no es una BUSQUEDA:
+    // lo que este test prohibe es resolver la identidad por RFC teniendo el id.
+    '/api/v3/sales/customers': (url) => {
+      if (url.includes('tax_id=') || url.includes('search=')) busquedaLlamada = true;
+      return jsonResponse({ total: 1, data: [{ customer_id: 500, sales_type: '12', branches: [{ branch_code: 77 }] }] });
+    },
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
       return jsonResponse({ result: true, quote_id: 1300 });
@@ -1243,7 +1262,7 @@ test('subirCotizacionOperam: sin RFC -> lanza error claro y NO sube', async () =
   let quoteLlamado = false;
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
-    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: 999, tax_id: 'AAA010101AAA', branches: [] }] }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: 999, tax_id: 'AAA010101AAA', sales_type: '12', branches: [] }] }),
     '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, quote_id: 1 }); },
   });
   try {
@@ -1268,7 +1287,7 @@ test('subirCotizacionOperam: el branch_id sale del branch del cliente resuelto p
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1294,7 +1313,7 @@ test('subirCotizacionOperam: el quote lleva cust_ref (referencia), deliver_to y 
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 320, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 320, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1328,7 +1347,7 @@ async function subirYCapturarCustRef(cliente, customerId) {
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: customerId, tax_id: cliente.rfc, CustName: cliente.razonSocial || '', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: customerId, tax_id: cliente.rfc, CustName: cliente.razonSocial || '', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1416,7 +1435,7 @@ test('subirCotizacionOperam: sin vigencia explicita usa OrderDate + 30 dias', as
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 321, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 321, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1443,7 +1462,7 @@ test('subirCotizacionOperam: la linea de envio (ENVIO) NO se pierde del quote', 
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 322, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 322, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1521,7 +1540,7 @@ test('subirCotizacionOperam: envio paqueteria con CP local -> partida flete stoc
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 330, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 330, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1560,7 +1579,7 @@ test('subirCotizacionOperam: envio paqueteria con CP foraneo -> partida flete st
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 331, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 331, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1597,7 +1616,7 @@ test('subirCotizacionOperam: el descuento de la partida de envio viaja en su Dis
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 333, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 333, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1634,7 +1653,7 @@ test('subirCotizacionOperam: la descripcion editada viaja en stock_id_text y la 
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 334, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 334, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1734,7 +1753,7 @@ test('subirCotizacionOperam: CP de entrega ausente -> flete foraneo por defecto 
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 332, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 332, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1765,7 +1784,7 @@ test('subirCotizacionOperam: sin linea de envio -> NO se agrega partida de flete
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 333, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 333, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1792,7 +1811,7 @@ test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (di
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 334, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 334, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1854,7 +1873,7 @@ test('subirCotizacionOperam: comments no lleva ".." con notas ya puntuadas', asy
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 340, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 340, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1883,7 +1902,7 @@ test('subirCotizacionOperam: una nota sin punto final no queda pegada a la sigui
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 341, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }],
+      data: [{ customer_id: 341, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }],
     }),
     '/api/v3/sales/quote': (url, opts) => {
       quoteBody = JSON.parse(opts.body);
@@ -1914,7 +1933,7 @@ test('subirCotizacionOperam: devuelve el folio real del quote (added_trans_no)',
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: 14, tax_id: 'XAXX010101000', CustName: 'PUBLICO EN GENERAL', branches: [{ branch_code: 29 }] }],
+      data: [{ customer_id: 14, tax_id: 'XAXX010101000', CustName: 'PUBLICO EN GENERAL', sales_type: '12', branches: [{ branch_code: 29 }] }],
     }),
     '/api/v3/sales/quote': () => jsonResponse({
       result: true, added_trans_type: 32, added_trans_no: 1160, ref: 'C2606222',
@@ -2569,7 +2588,7 @@ test('subirCotizacionOperam: con customerId y sin branchId, la sucursal sale de 
   let quoteBody = null;
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
-    '/api/v3/sales/customers/499': () => jsonResponse({ data: [{ customer_id: '499', branches: [{ branch_code: '640' }] }] }),
+    '/api/v3/sales/customers/499': () => jsonResponse({ data: [{ customer_id: '499', sales_type: '12', branches: [{ branch_code: '640' }] }] }),
     '/api/v3/sales/quote': (url, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1301 }); },
   });
   try {
@@ -2583,14 +2602,16 @@ test('subirCotizacionOperam: con customerId y sin branchId, la sucursal sale de 
   } finally { restore(); }
 });
 
-// El branchId que YA trae la cotizacion manda: no se vuelve a preguntar.
-test('subirCotizacionOperam: con branchId ya ligado no se le pregunta la sucursal a Operam', async () => {
+// El branchId que YA trae la cotizacion manda: la sucursal no se vuelve a
+// preguntar. Desde #285 el cliente SI se lee antes del POST (para comprobar su
+// lista de precios), y esa lectura no puede cambiar la sucursal ya ligada:
+// el mock devuelve a proposito otra (640) y el quote debe seguir yendo a la 77.
+test('subirCotizacionOperam: con branchId ya ligado la sucursal no se re-resuelve', async () => {
   resetSession();
-  let leyoCliente = false;
   let quoteBody = null;
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
-    '/api/v3/sales/customers': () => { leyoCliente = true; return jsonResponse({ data: [] }); },
+    '/api/v3/sales/customers': () => jsonResponse({ data: [{ customer_id: 499, sales_type: '12', branches: [{ branch_code: 640 }] }] }),
     '/api/v3/sales/quote': (url, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1302 }); },
   });
   try {
@@ -2600,7 +2621,6 @@ test('subirCotizacionOperam: con branchId ya ligado no se le pregunta la sucursa
       items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
     });
     assert.equal(quoteBody.branch_id, 77);
-    assert.equal(leyoCliente, false, 'con branchId ligado no hay lectura extra a Operam');
   } finally { restore(); }
 });
 

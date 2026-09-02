@@ -534,7 +534,7 @@ test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 2
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 88 }) };
-      if (u.includes('/88')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 188 }] }] }) };
+      if (u.includes('/88')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 188 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/188': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -616,7 +616,7 @@ test('UF2: RFC real ya existe con OTRO cliente -> 409 freno de fusion, sin PUT',
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 1 }) };
-      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 800, branches: [{ branch_code: 1 }], CustName: 'Cliente Formal SA', tax_id: 'REA010101AB1' }] }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 800, sales_type: '12', branches: [{ branch_code: 1 }], CustName: 'Cliente Formal SA', tax_id: 'REA010101AB1' }] }) };
       return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
     },
   });
@@ -712,7 +712,7 @@ test('UF3b: RFC de la CSF en minusculas SI frena la fusion (gate normaliza a may
       if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
       if (u.includes('tax_id=')) {
         assert.ok(u.includes('REA010101AB1'), 'el query a Operam debe ir en mayusculas: ' + u);
-        return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 800, branches: [{ branch_code: 1 }], CustName: 'Cliente Formal SA', tax_id: 'REA010101AB1' }] }) };
+        return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 800, sales_type: '12', branches: [{ branch_code: 1 }], CustName: 'Cliente Formal SA', tax_id: 'REA010101AB1' }] }) };
       }
       return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
     },
@@ -758,7 +758,7 @@ test('UF4: RFC ya existe con el MISMO customer_id (reintento idempotente) -> pro
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { putCalled = true; return { ok: true, json: async () => ({ result: true }) }; }
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 1 }) };
-      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 500, branches: [{ branch_code: 1 }], CustName: 'Real SA de CV', tax_id: 'REA010101AB1' }] }) };
+      if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 500, sales_type: '12', branches: [{ branch_code: 1 }], CustName: 'Real SA de CV', tax_id: 'REA010101AB1' }] }) };
       return { ok: true, json: async () => ({ data: [clienteRereleido()] }) };
     },
   });
@@ -1415,7 +1415,7 @@ test('POST /api/crear-cliente crea cliente nuevo y retorna { ok:true, customer_i
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 77 }) };
-      if (u.includes('/77')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 177 }] }] }) };
+      if (u.includes('/77')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 177 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/177': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -1440,7 +1440,7 @@ test('POST /api/crear-cliente crea cliente nuevo y retorna { ok:true, customer_i
 test('POST /api/crear-cliente con RFC duplicado retorna duplicado:true con datos', async () => {
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', tax_id: 'DUP010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', branches: [] }] }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', tax_id: 'DUP010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', sales_type: '12', branches: [] }] }) }),
   });
   try {
     const res = await supertest(app).post('/api/crear-cliente')
@@ -1474,13 +1474,13 @@ test('POST /api/crear-cliente: dos altas concurrentes con el mismo RFC nuevo cre
         creado = true;
         return { ok: true, json: async () => ({ result: true, customer_id: 501 }) };
       }
-      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 601 }] }] }) };
+      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 601 }] }] }) };
       if (creado) {
         return {
           ok: true,
           json: async () => ({
             total: 1,
-            data: [{ customer_id: 501, CustName: 'Concurrente SA', tax_id: 'CON010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', branches: [] }],
+            data: [{ customer_id: 501, CustName: 'Concurrente SA', tax_id: 'CON010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', sales_type: '12', branches: [] }],
           }),
         };
       }
@@ -1512,7 +1512,7 @@ test('POST /api/crear-cliente registra el telefono sospechoso sin rechazar el al
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 78 }) };
-      if (u.includes('/78')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 178 }] }] }) };
+      if (u.includes('/78')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 178 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/178': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -1556,7 +1556,7 @@ test('GET /api/buscar-cliente sin token retorna 401', async () => {
 test('GET /api/buscar-cliente?rfc=... retorna 200 con datos cuando existe en Operam', async () => {
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Aceros SA de CV', tax_id: 'ACE010101ABC', street: 'Reforma', street_number: '1', suite_number: '', district: 'Juarez', postal_code: '06600', city: 'CDMX', state: 'CDMX', cfdi_regimen_fiscal: '601', branches: [{ br_name: 'Aceros', addr_street: 'Reforma', addr_colony: 'Juarez', addr_zip: '06600', addr_city: 'CDMX', addr_state: 'CDMX', phone: '', email: '' }] }] }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Aceros SA de CV', tax_id: 'ACE010101ABC', street: 'Reforma', street_number: '1', suite_number: '', district: 'Juarez', postal_code: '06600', city: 'CDMX', state: 'CDMX', cfdi_regimen_fiscal: '601', sales_type: '12', branches: [{ br_name: 'Aceros', addr_street: 'Reforma', addr_colony: 'Juarez', addr_zip: '06600', addr_city: 'CDMX', addr_state: 'CDMX', phone: '', email: '' }] }] }) }),
   });
   try {
     const res = await supertest(app).get('/api/buscar-cliente?rfc=ACE010101ABC').set('Authorization', `Bearer ${TEST_TOKEN}`);
@@ -1996,7 +1996,7 @@ test('D1: POST /api/crear-cliente flujo completo retorna customer_id, branch_id 
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 500 }) };
-      if (u.includes('/500')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 600 }] }] }) };
+      if (u.includes('/500')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 600 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/600': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2027,7 +2027,7 @@ test('D1b: POST /api/crear-cliente envia invoice_email/celular_nota en notes y p
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, customer_id: 510 }) }; }
-      if (u.includes('/510')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 610 }] }] }) };
+      if (u.includes('/510')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 610 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/610': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2061,7 +2061,7 @@ test('D1c: POST /api/crear-cliente configura el domicilio con vendedor, area, al
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 520 }) };
-      if (u.includes('/520')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 620 }] }] }) };
+      if (u.includes('/520')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 620 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/620': (u, opts) => {
@@ -2094,7 +2094,7 @@ test('D1d: POST /api/crear-cliente con domicilio extranjero usa tax_group exento
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 530 }) };
-      if (u.includes('/530')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 630 }] }] }) };
+      if (u.includes('/530')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 630 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/630': (u, opts) => {
@@ -2128,7 +2128,7 @@ test('D1e: POST /api/crear-cliente en alta NUEVA persiste dimension_id=1 y dimen
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 540 }) };
       if (opts?.method === 'PUT' && u.includes('/540')) { dimPutBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
-      if (u.includes('/540')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 640 }] }] }) };
+      if (u.includes('/540')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 640 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/640': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2154,7 +2154,7 @@ test('D2: POST /api/crear-cliente fallo en PUT branch retorna steps con error y 
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 501 }) };
-      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 601 }] }] }) };
+      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 601 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/601': () => ({ ok: true, json: async () => ({ result: false, messages: ['Error en branch'] }) }),
@@ -2184,7 +2184,7 @@ test('D3: POST /api/crear-cliente con customer_id existente salta POST y no dupl
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomerCalled = true; return { ok: true, json: async () => ({ result: true, customer_id: 999 }) }; }
-      if (u.includes('/502')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 602 }] }] }) };
+      if (u.includes('/502')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 602 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/602': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2212,7 +2212,7 @@ test('D4: POST /api/crear-cliente con customer_id existente actualiza sales_type
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { putCustomerCalled = true; putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 999 }) };
-      if (u.includes('/503')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 603 }] }] }) };
+      if (u.includes('/503')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 603 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/603': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2252,7 +2252,7 @@ test('D5: POST /api/crear-cliente cliente nuevo NO hace PUT customers/:id de con
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 504 }) };
-      if (u.includes('/504')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 604 }] }] }) };
+      if (u.includes('/504')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 604 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/604': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2278,7 +2278,7 @@ test('D6: POST /api/crear-cliente fallo en PUT customer (config comercial) retor
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: false, messages: ['No se pudo actualizar'] }) };
-      if (u.includes('/505')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 605 }] }] }) };
+      if (u.includes('/505')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 605 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/605': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2316,7 +2316,7 @@ test('D7: alta NUEVA con segmento capturado -> el post-fix web lo escribe en la 
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 540 }) };
-      if (u.includes('/540')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 640 }] }] }) };
+      if (u.includes('/540')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 640 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/640': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2348,7 +2348,7 @@ test('D8: cliente EXISTENTE (Step 1b) -> el post-fix web tambien corre (el PUT b
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/541')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 641 }] }] }) };
+      if (u.includes('/541')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 641 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/641': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2375,7 +2375,7 @@ test('D9: sin segmento capturado el alta NO toca la web legacy', async () => {
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 542 }) };
-      if (u.includes('/542')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 642 }] }] }) };
+      if (u.includes('/542')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 642 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/642': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2405,7 +2405,7 @@ test('D10: la web rechaza el guardado -> el alta termina igual y el step lleva e
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/543')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 643 }] }] }) };
+      if (u.includes('/543')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 643 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/643': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2437,7 +2437,7 @@ test('D11: cliente existente YA clasificado -> se conserva su segmento, no se re
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/544')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 644 }] }] }) };
+      if (u.includes('/544')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 644 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/644': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2468,7 +2468,7 @@ test('D12: cliente existente en "Sin segmento" -> se le escribe el capturado', a
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/545')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 645 }] }] }) };
+      if (u.includes('/545')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 645 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches/645': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2503,7 +2503,7 @@ test('D13: cliente EXISTENTE (cliente_existente:true) NO hace ningun PUT a /bran
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/15')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 15 }] }] }) };
+      if (u.includes('/15')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 15 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches': (u, opts) => {
@@ -2536,7 +2536,7 @@ test('D14: reintento de un alta NUEVA (customer_id sin la marca) conserva su PUT
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/546')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 646 }] }] }) };
+      if (u.includes('/546')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 646 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches': (u, opts) => {
@@ -2569,7 +2569,7 @@ test('D15: selects comerciales vacios -> ni un PUT de config comercial (issue #2
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { putCustomerLlamado = true; return { ok: true, json: async () => ({ result: true }) }; }
-      if (u.includes('/547')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 647 }] }] }) };
+      if (u.includes('/547')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 647 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2598,7 +2598,7 @@ test('D16: solo el campo que el vendedor si eligio viaja en el PUT de config com
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'PUT') { putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
-      if (u.includes('/548')) return { ok: true, json: async () => ({ data: [{ branches: [{ branch_code: 648 }] }] }) };
+      if (u.includes('/548')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 648 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
     '/api/v3/sales/branches': () => ({ ok: true, json: async () => ({ result: true }) }),
@@ -2969,7 +2969,7 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
   let quoteBody = null;
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }] }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }] }) }),
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, quote_id: 1600 }) }; },
     // Sin esto, si ya existe sesionCompartida viva de un test anterior (#172/#186), el
     // post-fix de vigencia (server.js postFixVigencia) manda un GET real a la web legacy
@@ -3363,7 +3363,7 @@ test('#114-6: subir a Operam persiste la huella de lo que quedo en el quote', as
   writeCots([...snap, { id, fecha: '2026-07-29T00:00:00Z', vendedor: 'Tester', cliente: 'Pendulo', totalPiezas: 10, total: 1160, tier: 'Mayoreo', data }]);
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', branches: [{ branch_code: 88 }] }] }) }),
+    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }] }) }),
     '/api/v3/sales/quote': () => ({ ok: true, json: async () => ({ result: true, added_trans_no: 1601 }) }),
     'trans_type=30': () => ({ headers: {}, text: async () => '<html>login</html>' }),
     'trans_type=32': () => ({ headers: {}, text: async () => '<html></html>' }),

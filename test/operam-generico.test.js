@@ -143,10 +143,10 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { llamadas.push('POST customer'); clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 910 }); }
       if (opts?.method === 'PUT') { llamadas.push('PUT customer'); return jsonResponse({ result: true }); }
-      if (u.includes('/910')) { llamadas.push('GET customer'); return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] }); }
+      if (u.includes('/910')) { llamadas.push('GET customer'); return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] }); }
       // MINA (#81): la dedup por RFC EXACTO de crearCliente matchearia este otro
       // generico y reutilizaria el cliente EQUIVOCADO. El flujo debe saltarla.
-      if (u.includes('tax_id=')) { llamadas.push('GET tax_id'); return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XAXX010101000', branches: [{ branch_code: 445 }] }] }); }
+      if (u.includes('tax_id=')) { llamadas.push('GET tax_id'); return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XAXX010101000', sales_type: '12', branches: [{ branch_code: 445 }] }] }); }
       // Dedup por nombre (ADR-0001): hay genericos pero ninguno con nombre similar.
       llamadas.push('GET search');
       return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'FERRETERIA EL CLAVO', cust_ref: 'El Clavo', tax_id: 'XAXX010101000' }] });
@@ -226,7 +226,7 @@ test('G1b: tier Menudeo (sin lista homonima en Operam) -> sales_type cae a "Prec
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 910 }); }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/911': () => jsonResponse({ result: true, data: [{}] }),
@@ -253,7 +253,7 @@ test('#246-5: alta generica con listasPrecios vacia al inicio -> la recarga pere
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 910 }); }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/911': () => jsonResponse({ result: true, data: [{}] }),
@@ -281,7 +281,7 @@ test('G2: celular ya convertido en cliente -> reutiliza el customer_id, no crea 
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      if (u.includes('/555')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 556 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1702 }); },
@@ -417,7 +417,7 @@ test('G3b: crearNuevo salta la parada por nombre similar, crea el generico y sub
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/999')) return jsonResponse({ data: [{ branches: [{ branch_code: 998 }] }] });
+      if (u.includes('/999')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 998 }] }] });
       if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
       return jsonResponse({ total: 1, data: [
         { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
@@ -461,7 +461,7 @@ test('G3c: crearNuevo NO salta la reutilizacion por celular de un prospecto conv
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      if (u.includes('/555')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 556 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1705 }); },
@@ -504,7 +504,7 @@ test('G4: reintento con customerId elegido tras candidatos -> reutiliza, liga el
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }] }] });
       // #208: la revalidacion recalcula el pool por tax_id -- el elegido debe
       // seguir apareciendo en el.
       if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
@@ -586,7 +586,7 @@ test('G5: reintento tras fallo parcial (cliente creado, subida fallida) no dupli
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postsCustomer++; return jsonResponse({ result: true, customer_id: 920 }); }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/920')) return jsonResponse({ data: [{ branches: [{ branch_code: 921 }] }] });
+      if (u.includes('/920')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 921 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/921': () => jsonResponse({ result: true, data: [{}] }),
@@ -609,6 +609,9 @@ test('G5: reintento tras fallo parcial (cliente creado, subida fallida) no dupli
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postsCustomer++; return jsonResponse({ result: true, customer_id: 999 }); }
+      // #285: el cliente ya creado se relee antes del POST del quote para
+      // comprobar que tiene lista de precios; sin lista no puede valuarse.
+      if (u.includes('/920')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 921 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1705 }); },
@@ -636,7 +639,7 @@ test('G6: cliente extranjero usa XEXX010101000 y deduplica contra los genericos 
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 930 }); }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/930')) return jsonResponse({ data: [{ branches: [{ branch_code: 931 }] }] });
+      if (u.includes('/930')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 931 }] }] });
       dedupUrls.push(u);
       return jsonResponse({ total: 0, data: [] });
     },
@@ -689,7 +692,7 @@ test('F2: fallo al ligar el prospecto no aborta la operacion (cliente creado y c
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 950 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/950')) return jsonResponse({ data: [{ branches: [{ branch_code: 951 }] }] });
+      if (u.includes('/950')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 951 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/951': () => jsonResponse({ result: true, data: [{}] }),
@@ -747,7 +750,7 @@ test('F3c: con customerId elegido no se reutiliza un branchId persistido (pudo s
   mockOperamFetch({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u) => {
-      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }] }] });
       // #208: la revalidacion recalcula el pool por tax_id -- el elegido debe
       // seguir apareciendo en el.
       if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
@@ -775,8 +778,8 @@ test('F6: POST /api/crear-cliente con RFC generico NO deduplica por RFC exacto',
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 940 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('tax_id=')) { taxIdLookup = true; return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XEXX010101000', branches: [{ branch_code: 445 }] }] }); }
-      if (u.includes('/940')) return jsonResponse({ data: [{ branches: [{ branch_code: 941 }] }] });
+      if (u.includes('tax_id=')) { taxIdLookup = true; return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XEXX010101000', sales_type: '12', branches: [{ branch_code: 445 }] }] }); }
+      if (u.includes('/940')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 941 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/941': () => jsonResponse({ result: true }),
@@ -825,7 +828,7 @@ test('D1: cliente generico recien creado con domicilio -> PUT del branch con cus
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1801 }),
@@ -870,7 +873,7 @@ test('D2: sin domicilio de entrega -> el PUT del branch corre igual (SOLO tax_gr
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1802 }),
@@ -906,7 +909,7 @@ test('D2b: sin domicilio de entrega, cliente extranjero -> tax_group_id/sales_ac
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1807 }),
@@ -937,7 +940,7 @@ test('D3: Operam ignora un campo del branch -> verificacion lo reporta, la subid
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1803 }),
@@ -967,7 +970,7 @@ test('D4: fallo del PUT del branch NO tumba la subida (cliente creado, quote sub
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ branches: [{ branch_code: 911 }] }] });
+      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1804 }),
@@ -991,7 +994,7 @@ test('D5: retry con customerId elegido (cliente preexistente) NUNCA pisa su bran
     '/api/v3/sales/branches/20': (u, opts) => { if (opts?.method === 'PUT') branchPut = true; return jsonResponse({ result: true, data: [{}] }); },
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
-      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }] }] });
       // #208: la revalidacion recalcula el pool por tax_id -- el elegido debe
       // seguir apareciendo en el.
       if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
@@ -1020,7 +1023,7 @@ test('D6: cliente reutilizado por celular (preexistente) NUNCA pisa su branch, a
     '/api/v3/sales/branches/556': (u, opts) => { if (opts?.method === 'PUT') branchPut = true; return jsonResponse({ result: true, data: [{}] }); },
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
-      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      if (u.includes('/555')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 556 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1806 }),
@@ -1068,7 +1071,7 @@ test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente exi
     },
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      if (u.includes('/10')) return jsonResponse({ data: [{ branches: branchesDelCliente }] });
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: branchesDelCliente }] });
       if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
         { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
       ] });
@@ -1133,7 +1136,7 @@ test('SUC2: la sucursal no aparece en la relectura -> paso en error, la cotizaci
       return jsonResponse({ data: [{}] });
     },
     '/api/v3/sales/customers': (u, opts) => {
-      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20, br_name: 'Matriz' }] }] });
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20, br_name: 'Matriz' }] }] });
       if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
         { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
       ] });
@@ -1171,7 +1174,7 @@ test('SUC3: reintentar "es sucursal" sobre la misma cotizacion NO crea una segun
       return jsonResponse({ data: [{}] });
     },
     '/api/v3/sales/customers': (u, opts) => {
-      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }, { branch_code: 33 }] }] });
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }, { branch_code: 33 }] }] });
       if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
         { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
       ] });
@@ -1218,7 +1221,7 @@ test('SUC3b: el POST escribio pero la relectura fallo -> el reintento reusa esa 
     },
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
-      if (u.includes('/10')) return jsonResponse({ data: [{ branches: branchesVisibles }] });
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: branchesVisibles }] });
       if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
         { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
       ] });
@@ -1316,7 +1319,7 @@ test('C1: dos requests concurrentes al mismo id crean UN solo cliente generico (
         return jsonResponse({ result: true, customer_id: 930 });
       }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/930')) return jsonResponse({ data: [{ branches: [{ branch_code: 931 }] }] });
+      if (u.includes('/930')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 931 }] }] });
       return jsonResponse({ total: 0, data: [] }); // dedup por nombre: libre
     },
     '/api/v3/sales/branches/931': () => jsonResponse({ result: true, data: [{}] }),
@@ -1358,7 +1361,7 @@ test('C2: el lock se libera tras un fallo (el reintento posterior NO recibe 425)
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 940 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/940')) return jsonResponse({ data: [{ branches: [{ branch_code: 941 }] }] });
+      if (u.includes('/940')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 941 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/941': () => jsonResponse({ result: true, data: [{}] }),
@@ -1381,7 +1384,7 @@ function mockSubidaBase(extra = {}) {
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 960 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/960')) return jsonResponse({ data: [{ branches: [{ branch_code: 961 }] }] });
+      if (u.includes('/960')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 961 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     // issue #189: el PUT del branch ya no se omite sin domicilio (escribe tax_group_id/
@@ -1545,7 +1548,7 @@ test('S3: cliente reutilizado por celular YA clasificado -> conserva su segmento
   mockOperamFetch({
     ...handlers,
     '/api/v3/sales/customers': (u, opts) => {
-      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      if (u.includes('/555')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 556 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
   });
@@ -1569,7 +1572,7 @@ test('S5: cliente reutilizado por celular SIN clasificar -> recibe el segmento c
   mockOperamFetch({
     ...handlers,
     '/api/v3/sales/customers': (u, opts) => {
-      if (u.includes('/555')) return jsonResponse({ data: [{ branches: [{ branch_code: 556 }] }] });
+      if (u.includes('/555')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 556 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
   });
@@ -1648,7 +1651,7 @@ test('M2: resolver eligiendo candidato limpia motivoPre y libera el documento', 
   mockOperamFetch({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u) => {
-      if (u.includes('/10')) return jsonResponse({ data: [{ branches: [{ branch_code: 20 }] }] });
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }] }] });
       if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
       return jsonResponse({ total: 1, data: [
         { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
@@ -1680,7 +1683,7 @@ test('M3: un fallo de Operam deja motivoPre operam y el documento SI se genera',
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 930 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/930')) return jsonResponse({ data: [{ branches: [{ branch_code: 931 }] }] });
+      if (u.includes('/930')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 931 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/branches/931': () => jsonResponse({ result: true, data: [{}] }),
@@ -1795,7 +1798,7 @@ test('CR2: elegir al dueno del nombre corto pasa la revalidacion (#208) y sube e
           { customer_id: 499, CustName: 'CUMBIARCA SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'CPE921211N76' },
         ] });
       }
-      if (u.includes('/499')) return jsonResponse({ data: [{ branches: [{ branch_code: 546 }] }] });
+      if (u.includes('/499')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 546 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1801 }); },
@@ -1919,7 +1922,7 @@ test('CR5: sin nombre corto no hay busqueda por cust_ref y el alta corre como si
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 940 }); }
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/940')) return jsonResponse({ data: [{ branches: [{ branch_code: 941 }] }] });
+      if (u.includes('/940')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 941 }] }] });
       // Un cliente del padron CON cust_ref vacio no puede volverse candidato de
       // una cotizacion sin nombre corto (dos vacios no son una coincidencia).
       if (esListadoPadron(u)) {

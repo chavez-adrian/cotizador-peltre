@@ -38,7 +38,8 @@ import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosFeria } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
-import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM } from './lib/pipeline.js';
+import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
+import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
@@ -2452,7 +2453,11 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       // regeneracion si lo trae (crearOActualizarCotizacion lo copia del registro).
       // Calcularla sobre entry.data haria que toda regeneracion pareciera un cambio.
       const dataSubida = { ...entry.data, cliente: { ...c, customerId, branchId } };
-      const folio = await subirCotizacionOperam(dataSubida);
+      // El cliente que ACABA de crear esta alta nace con la lista de su tier
+      // (buildClienteGenerico): releerlo solo para comprobarlo seria una lectura de
+      // mas dentro del camino critico de la subida (#285). El cliente reusado o
+      // elegido si se checa: puede llevar anos sin lista.
+      const folio = await subirCotizacionOperam(dataSubida, { verificarListaPrecios: !creadoNuevo });
       if (folio != null && folio !== '') {
         await cotStore.setFolioOperam(id, folio);
         await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida) });
@@ -2469,6 +2474,10 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       return res.json({ ok: true, folio, customer_id: customerId, clienteGenerico: true, steps });
     } catch (err) {
       steps.push({ name: 'POST quote', status: 'error', error: err.message });
+      // Cliente sin lista de precios (#285): el cliente EXISTENTE que el vendedor
+      // eligio (o al que se le colgo la sucursal) puede estar sin lista; el recien
+      // creado por esta misma alta nace con la de su tier y no se checa.
+      if (await responderSiClienteSinLista(res, id, err, { customer_id: customerId, steps })) return;
       await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
       return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps });
     } finally {
@@ -2524,6 +2533,24 @@ export async function barrerCotizacionesDedupVencidas(ahora = new Date()) {
   }
   if (ids.length) console.log('[dedup] barrido: borradas', ids.length, 'cotizacion(es) detenidas por duplicado sin resolver:', ids.join(', '));
   return ids;
+}
+
+// Cliente sin lista de precios (#285). Dos entradas al mismo desenlace: el corte
+// ANTES del POST (ErrorClienteSinLista, lanzado por subirCotizacionOperam) y el
+// 406 "rate de moneda" que llegue de todos modos. No es un fallo de Operam sino
+// un cliente mal configurado, asi que va como 422 CON codigo estructurado (el
+// frontend clasifica por codigo, nunca por el texto) y SIN Reintentar: el boton
+// volveria a chocar contra lo mismo hasta que alguien le asigne una lista en
+// Operam. El motivo se guarda para que el historial lo explique en vez de
+// mostrar el PRE mudo. Devuelve true si se hizo cargo del error.
+async function responderSiClienteSinLista(res, id, err, extra = {}) {
+  const sinLista = err instanceof ErrorClienteSinLista;
+  if (!sinLista && !esErrorRateMoneda(err.message)) return false;
+  await marcarMotivoPre(id, MOTIVO_PRE_SIN_LISTA);
+  // El fallback no siempre tiene el nombre a mano; el mensaje sin el sigue
+  // diciendo que hacer.
+  res.status(422).json({ error: sinLista ? err.message : MENSAJE_CLIENTE_SIN_LISTA(), codigo: CODIGO_CLIENTE_SIN_LISTA, ...extra });
+  return true;
 }
 
 // Lock en memoria por id de cotizacion (F3 de la revision de #83): la
@@ -2673,6 +2700,8 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
       if (/identificar el cliente/i.test(err.message)) {
         return res.status(422).json({ error: err.message });
       }
+      // Cliente sin lista de precios (#285): tampoco es indisponibilidad de Operam.
+      if (await responderSiClienteSinLista(res, id, err)) return;
       // PRE por Operam (#204): el documento SIGUE saliendo, sin numero (ADR-0009).
       await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
       res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });

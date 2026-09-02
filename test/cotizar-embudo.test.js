@@ -319,7 +319,7 @@ test('O1: subir una cotizacion a Operam le guarda el folio devuelto (deja de ser
   assert.equal((await cotStore.obtener(id)).folioOperam, null);
   mockFetchByUrl({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '77', tax_id: 'HSU010101AAA', CustName: 'HOTELERA DEL SUR SA DE CV', branches: [{ branch_code: '1' }] }] }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '77', tax_id: 'HSU010101AAA', CustName: 'HOTELERA DEL SUR SA DE CV', sales_type: '12', branches: [{ branch_code: '1' }] }] }),
     '/api/v3/sales/quote': () => jsonResponse({ result: true, quote_id: 55123 }),
   });
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
@@ -372,7 +372,7 @@ test('F1: formalizar una pre-cotizacion da de alta el cliente y registra la coti
     '/api/v3/sales/branches/600': () => jsonResponse({ result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 500 });
-      if (u.includes('/500')) return jsonResponse({ data: [{ branches: [{ branch_code: 600 }] }] });
+      if (u.includes('/500')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 600 }] }] });
       return jsonResponse({ total: 0, data: [] }); // dedup: RFC no existe -> alta procede
     },
   });
@@ -388,7 +388,7 @@ test('F1: formalizar una pre-cotizacion da de alta el cliente y registra la coti
   resetSession();
   mockFetchByUrl({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '500', tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', branches: [{ branch_code: '600' }] }] }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{ customer_id: '500', tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', sales_type: '12', branches: [{ branch_code: '600' }] }] }),
     '/api/v3/sales/quote': () => jsonResponse({ result: true, quote_id: 77001 }),
   });
   const reg = await supertest(app).post(`/api/cotizacion/operam/${id}`)
@@ -411,7 +411,7 @@ test('F2: el alta del paso de formalizacion conserva el guardrail de deduplicaci
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { postCustomerCalled = true; return jsonResponse({ result: true, customer_id: 999 }); }
       // GET por tax_id (dedup): el cliente ya existe.
-      return jsonResponse({ total: 1, data: [{ customer_id: 500, CustName: 'LAURA SA DE CV', tax_id: 'LAU010101AAA', branches: [] }] });
+      return jsonResponse({ total: 1, data: [{ customer_id: 500, CustName: 'LAURA SA DE CV', tax_id: 'LAU010101AAA', sales_type: '12', branches: [] }] });
     },
   });
   const alta = await supertest(app).post('/api/crear-cliente')
