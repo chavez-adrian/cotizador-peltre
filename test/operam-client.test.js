@@ -2412,6 +2412,25 @@ test('#221 contenidoQuoteCambio: mover el descuento de un solo diseno dispara la
   assert.equal(contenidoQuoteCambio(conDescuento(15), subido), true);
 });
 
+// #279 (spec #278): capturar o cambiar el precio manual de una calca cuenta como
+// cambio de contenido del quote. No hay codigo nuevo detras -- el manual se
+// persiste como el `precio` de la partida, que ya entra en la huella --, pero el
+// AC lo pide explicito: sin esto, regenerar tras recotizar con el proveedor
+// dejaria el quote de Operam con el precio viejo y el documento con el nuevo.
+test('#279 contenidoQuoteCambio: cambiar el precio de una calca dispara la actualizacion del quote', () => {
+  const conPrecio = (precioCalca) => cotizacionBase({
+    items: [
+      { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
+      { codigo: 'CAL1025S', descripcion: 'Calca chica - Diseño 1', cantidad: 100, precio: precioCalca, descuento: 0, diseno: 1, descripcionEditada: true },
+    ],
+  });
+  // 26.9 = precio de lista M100 de CAL1025S; 45 = lo que cotizo el proveedor.
+  const subido = huellaContenidoQuote(conPrecio(26.9));
+  assert.equal(contenidoQuoteCambio(conPrecio(26.9), subido), false, 'sin tocar el precio no se reescribe el quote');
+  assert.equal(contenidoQuoteCambio(conPrecio(45), subido), true, 'capturar el precio del proveedor lo reescribe');
+  assert.equal(contenidoQuoteCambio(conPrecio(12.5), subido), true, 'un precio menor que la lista tambien');
+});
+
 test('#221 contenidoQuoteCambio: renombrar el segundo diseno dispara la actualizacion', () => {
   const conTexto = (texto) => cotizacionBase({
     items: [
