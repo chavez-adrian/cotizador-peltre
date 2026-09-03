@@ -139,6 +139,14 @@
         <select id="f-estado"></select>
       </div>
       <div class="leads-filtro">
+        <label for="f-pendientes">Pendientes</label>
+        <select id="f-pendientes">
+          <option value="">Todos</option>
+          <option value="con">Con pendientes</option>
+          <option value="sin">Sin pendientes</option>
+        </select>
+      </div>
+      <div class="leads-filtro">
         <label for="f-texto">Buscar</label>
         <input type="search" id="f-texto" placeholder="nombre, empresa, ciudad">
       </div>
@@ -186,6 +194,14 @@ const GAFETES = {
   gafete_y_stand: 'Gafete + stand',
   sin_gafete: 'Sin gafete',
 };
+// Las cuatro llaves de LLAVES_QUE_FALTA desde hoy (#321), aunque el servidor
+// hoy solo emita 'calificacion' y 'correo': asi #322 no toca esta pagina.
+const ETIQUETAS_QUE_FALTA = {
+  calificacion: 'Calificación pendiente',
+  correo: 'Sin correo',
+  datos_fiscales: 'Datos fiscales',
+  domicilio: 'Domicilio de entrega',
+};
 
 const COLUMNAS = [
   { llave: 'estado', titulo: 'Estado', valor: p => ESTADOS[p.estado].rango,
@@ -206,6 +222,10 @@ const COLUMNAS = [
   { llave: 'vendedor', titulo: 'Vendedor', valor: p => p.vendedor || '' },
   { llave: 'gafete', titulo: 'Gafete', valor: p => RANGO_GAFETE.indexOf(p.gafete),
     texto: p => GAFETES[p.gafete] },
+  // Vacio (nada falta) cuenta como '' para que la regla de siempre -- lo vacio
+  // al final -- lo empuje al fondo en vez de ordenarlo como un cero numerico.
+  { llave: 'queFalta', titulo: 'Qué falta', valor: p => p.queFalta.length || '',
+    texto: p => p.queFalta.map(k => ETIQUETAS_QUE_FALTA[k]).join(', '), ancho: 220 },
 ];
 
 const estado = {
@@ -280,6 +300,7 @@ function filtrados() {
   const area = el('f-area').value;
   const gafete = el('f-gafete').value;
   const est = el('f-estado').value;
+  const pendientes = el('f-pendientes').value;
   const texto = el('f-texto').value.trim().toLowerCase();
   return estado.prospectos.filter(p =>
     (!evento || p.data.evento === evento) &&
@@ -288,6 +309,7 @@ function filtrados() {
     (!area || p._areas.includes(area)) &&
     (!gafete || p.gafete === gafete) &&
     (!est || p.estado === est) &&
+    (!pendientes || (pendientes === 'con' ? p.queFalta.length > 0 : p.queFalta.length === 0)) &&
     (!texto || p._busqueda.includes(texto)));
 }
 
@@ -343,6 +365,7 @@ function filaDetalle(p) {
     ['Concepto', cal.concepto],
     ['Piezas estimadas', p.data.piezas_estimadas],
     ['Gafete', GAFETES[p.gafete]],
+    ['Qué falta', p.queFalta.map(k => ETIQUETAS_QUE_FALTA[k]).join(', ')],
     ['Notas', p.data.notas],
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
   const dl = filas.map(([k, v]) =>
@@ -385,7 +408,7 @@ function pinta() {
 // --- Eventos de la pantalla (sin onclick inline, trampa #112) ---
 
 function conectaEventos() {
-  for (const id of ['f-evento', 'f-vendedor', 'f-tipo', 'f-area', 'f-gafete', 'f-estado']) {
+  for (const id of ['f-evento', 'f-vendedor', 'f-tipo', 'f-area', 'f-gafete', 'f-estado', 'f-pendientes']) {
     el(id).addEventListener('change', pinta);
   }
   el('f-texto').addEventListener('input', pinta);

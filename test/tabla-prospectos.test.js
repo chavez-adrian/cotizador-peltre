@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { estadoProspecto, filaTabla, gafeteDe } from '../lib/tabla-prospectos.js';
+import { estadoProspecto, filaTabla, gafeteDe, queFalta, LLAVES_QUE_FALTA } from '../lib/tabla-prospectos.js';
 
 // --- #313: quien ya fue contactado ---
 // El Toque es la UNICA verdad de "ya lo contacte" (CONTEXT.md "Toque"): de el
@@ -144,4 +144,55 @@ test('#314: un toque ANTERIOR al compromiso vencido no lo cierra y sigue agendad
     siguienteContacto('2026-09-08T17:00:00.000Z'),
   ]), [], AHORA_314);
   assert.equal(estado, 'agendado');
+});
+
+// --- #321: que falta (prospectos) ---
+// 'calificacion' solo aplica a un prospecto DE EVENTO (misma regla del aviso
+// "Calificación pendiente" de la tarjeta, CONTEXT.md "Qué sigue / Qué falta);
+// 'datos_fiscales' y 'domicilio' los agrega #322 y aqui NUNCA se emiten.
+
+function prospecto321(data) {
+  return {
+    id: 80, fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+    etapa: 'por_cotizar', eventos: [], data,
+  };
+}
+
+test('#321: LLAVES_QUE_FALTA tiene las cuatro llaves en orden fijo', () => {
+  assert.deepEqual(LLAVES_QUE_FALTA, ['calificacion', 'correo', 'datos_fiscales', 'domicilio']);
+});
+
+test('#321: prospecto de evento sin calificacion incluye calificacion, en el orden fijo con correo', () => {
+  const huecos = queFalta(prospecto321({ evento: 'Abastur 2026', correo: '' }));
+  assert.deepEqual(huecos, ['calificacion', 'correo']);
+});
+
+test('#321: prospecto de evento con calificacion parcial no incluye calificacion', () => {
+  const huecos = queFalta(prospecto321({
+    evento: 'Abastur 2026', correo: 'laura@ejemplo.com', calificacion: { anios: '1-5 años' },
+  }));
+  assert.equal(huecos.includes('calificacion'), false);
+});
+
+test('#321: prospecto sin evento y sin calificacion no reclama calificacion', () => {
+  const huecos = queFalta(prospecto321({ correo: 'laura@ejemplo.com' }));
+  assert.equal(huecos.includes('calificacion'), false);
+});
+
+test('#321: sin correo incluye correo', () => {
+  const huecos = queFalta(prospecto321({ evento: 'Abastur 2026', calificacion: { anios: '1-5 años' } }));
+  assert.deepEqual(huecos, ['correo']);
+});
+
+test('#321: con correo y calificacion no falta nada', () => {
+  const huecos = queFalta(prospecto321({
+    evento: 'Abastur 2026', correo: 'laura@ejemplo.com', calificacion: { anios: '1-5 años' },
+  }));
+  assert.deepEqual(huecos, []);
+});
+
+test('#321: filaTabla agrega queFalta', () => {
+  const fila = filaTabla(prospecto321({ evento: 'Abastur 2026', correo: '' }));
+  assert.deepEqual(fila.queFalta, ['calificacion', 'correo']);
 });

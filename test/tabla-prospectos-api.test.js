@@ -156,3 +156,20 @@ test('#314: la fila de un prospecto con siguiente contacto abierto dice agendado
   assert.equal(fila.ultimoContacto, '2026-08-21T09:00:00.000Z');
   assert.equal(fila.toques, 1);
 });
+
+// --- #321: que falta (prospectos) ---
+
+const DIANA = {
+  id: 80, fecha: '2026-09-01T12:00:00.000Z', vendedor: 'Memo', celular: '+52 5511122233',
+  celular10: '5511122233', nombre: 'Diana', ciudad: 'Puebla', canal: 'WhatsApp',
+  etapa: 'por_cotizar', eventos: [],
+  data: { evento: 'Abastur 2026', correo: '' },
+};
+
+test('#321: la fila trae queFalta con la calificacion pendiente de un prospecto de evento sin correo', async () => {
+  escribirFixtures([DIANA]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Diana');
+  assert.deepEqual(fila.queFalta, ['calificacion', 'correo']);
+});
