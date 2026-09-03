@@ -3407,11 +3407,17 @@ app.get('/admin', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'admin.html'));
 });
 
-// Tabla de leads de feria. El HTML no lleva datos: los pide a /api/prospectos
+// Tabla de prospectos. El HTML no lleva datos: los pide a /api/prospectos/tabla
 // con el token del vendedor, asi que la visibilidad es la de siempre (cada quien
 // los suyos, el admin todos) y la liga se puede compartir sin exponer a nadie.
+app.get('/prospectos', (req, res) => {
+  res.sendFile(join(PUBLIC_DIR, 'prospectos.html'));
+});
+
+// La liga vieja de la tabla de feria (#317): el vendedor la tiene guardada en
+// el telefono desde Abastur, asi que no se rompe, redirige.
 app.get('/leads', (req, res) => {
-  res.sendFile(join(PUBLIC_DIR, 'leads.html'));
+  res.redirect('/prospectos');
 });
 
 // Pagina publica de captacion de mayoreo (issue #157). Sin auth a proposito: es

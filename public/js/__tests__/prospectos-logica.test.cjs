@@ -1416,3 +1416,22 @@ test('OR4: el item de la cola de prospectos pinta el chip Origen fuera de la lin
   assert.ok(metas.length > 0);
   assert.equal(metas.some(m => m.includes('Instagram')), false);
 });
+
+// --- #317: cualquier prospecto, Origen y /prospectos ---
+// La Tabla de prospectos llama a buildWaLinkProspecto DIRECTO (E12 cubre la
+// misma regla, pero a traves de la tarjeta): entran prospectos que no vienen de
+// ninguna feria y esos no tienen de que "gusto haberte conocido".
+
+test('#317: la liga de WhatsApp lleva mensaje solo cuando el prospecto tiene evento', async () => {
+  const { buildWaLinkProspecto } = await import('../prospectos-logica.js');
+  const sinEvento = {
+    id: 40, vendedor: 'Memo', celular: '+52 5512345678', nombre: 'Laura',
+    canal: 'Instagram', data: {},
+  };
+  assert.equal(buildWaLinkProspecto(sinEvento, LIGAS), 'https://wa.me/525512345678');
+
+  const conEvento = { ...sinEvento, data: { evento: 'Abastur 2026' } };
+  const liga = buildWaLinkProspecto(conEvento, LIGAS);
+  assert.ok(liga.startsWith('https://wa.me/525512345678?text='));
+  assert.ok(liga.includes(encodeURIComponent('Abastur 2026')));
+});

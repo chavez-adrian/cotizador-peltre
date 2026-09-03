@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Leads de feria - Cotizador Peltre Nacional</title>
+<title>Prospectos - Cotizador Peltre Nacional</title>
 <link rel="stylesheet" href="/css/style.css">
 <style>
   .leads-container { max-width: 1100px; margin: 0 auto; padding: 16px; }
@@ -16,6 +16,7 @@
     letter-spacing: 0.04em; }
   .leads-filtro select, .leads-filtro input { padding: 7px 10px; border: 1px solid var(--border);
     border-radius: var(--radius-input); font-size: 13px; font-family: inherit; min-width: 0; }
+  .leads-titulo { font-size: 15px; font-weight: 600; color: var(--primary-dark); margin: 0 0 10px; }
   .leads-resumen { font-size: 13px; color: var(--text-muted); margin-top: 10px; }
   .leads-resumen strong { color: var(--primary-dark); }
 
@@ -96,7 +97,7 @@
 
 <div id="leads-login" class="login-container" style="display:none">
   <div class="login-card">
-    <h1>Leads de feria</h1>
+    <h1>Prospectos</h1>
     <p class="subtitle">Entra con tu PIN de vendedor</p>
     <div class="form-group">
       <label>Vendedor</label>
@@ -112,11 +113,16 @@
 </div>
 
 <div id="leads-app" class="leads-container" style="display:none">
+  <h2 class="leads-titulo" id="leads-titulo">Prospectos</h2>
   <div class="leads-barra">
     <div class="leads-filtros">
       <div class="leads-filtro">
         <label for="f-evento">Evento</label>
         <select id="f-evento"></select>
+      </div>
+      <div class="leads-filtro">
+        <label for="f-origen">Origen</label>
+        <select id="f-origen"></select>
       </div>
       <div class="leads-filtro">
         <label for="f-vendedor">Vendedor</label>
@@ -160,15 +166,15 @@
       <tbody id="leads-cuerpo"></tbody>
     </table>
     <div class="aviso-vacio" id="leads-vacio" style="display:none">
-      Ningún lead coincide con los filtros.
+      Ningún prospecto coincide con los filtros.
     </div>
   </div>
 </div>
 
 <script type="module">
-import { buildWaLinkProspecto } from '/js/prospectos-logica.js';
+import { buildWaLinkProspecto, CANALES } from '/js/prospectos-logica.js';
 
-// Tabla de leads de feria. Lee GET /api/prospectos/tabla, que ya resuelve la
+// Tabla de prospectos. Lee GET /api/prospectos/tabla, que ya resuelve la
 // visibilidad -- un vendedor ve los suyos y el admin ve todos (por eso el
 // filtro de vendedor solo aparece cuando de verdad hay mas de uno a la vista) --
 // y ademas los campos derivados: la pantalla NO calcula el Estado del prospecto.
@@ -280,6 +286,10 @@ function poblarFiltros() {
   opciones(el('f-tipo'), unicos(ps.map(p => p.data.tipo_cliente)).map(v => ({ valor: v, texto: v })), 'Todos');
   opciones(el('f-area'), unicos(ps.flatMap(p => p._areas)).map(v => ({ valor: v, texto: v })), 'Todas');
   opciones(el('f-gafete'), RANGO_GAFETE.map(valor => ({ valor, texto: GAFETES[valor] })), 'Todos');
+  // El Origen se ofrece completo (catalogo cerrado del glosario), no solo los
+  // valores presentes: la lista es corta y estable, y asi no cambia de tamano
+  // segun a quien tenga cargado el vendedor.
+  opciones(el('f-origen'), CANALES.map(v => ({ valor: v, texto: v })), 'Todos');
   opciones(el('f-estado'), Object.entries(ESTADOS).map(([valor, e]) => ({ valor, texto: e.etiqueta })), 'Todos');
 
   const vendedores = unicos(ps.map(p => p.vendedor));
@@ -287,10 +297,16 @@ function poblarFiltros() {
   // Con un solo vendedor a la vista el filtro no decide nada: estorba.
   filtroVendedor.style.display = vendedores.length > 1 ? '' : 'none';
   opciones(el('f-vendedor'), vendedores.map(v => ({ valor: v, texto: v })), 'Todos');
+}
 
-  // El evento activo suele ser el que se esta trabajando: si existe, arranca ahi.
-  const eventos = unicos(ps.map(p => p.data.evento));
-  if (eventos.length === 1) el('f-evento').value = eventos[0];
+// #317: el titulo dice de que es la tabla. Sin filtro de evento es la de todos
+// los prospectos; con uno activo es la cola de esa feria, y el nombre del evento
+// tiene que verse tambien en la pestana (la tabla se abre desde el telefono con
+// varias pestanas del cotizador encima).
+function pintaTitulo() {
+  const evento = el('f-evento').value;
+  el('leads-titulo').textContent = evento || 'Prospectos';
+  document.title = `${evento || 'Prospectos'} - Cotizador Peltre Nacional`;
 }
 
 function filtrados() {
@@ -299,6 +315,7 @@ function filtrados() {
   const tipo = el('f-tipo').value;
   const area = el('f-area').value;
   const gafete = el('f-gafete').value;
+  const origen = el('f-origen').value;
   const est = el('f-estado').value;
   const pendientes = el('f-pendientes').value;
   const texto = el('f-texto').value.trim().toLowerCase();
@@ -308,6 +325,7 @@ function filtrados() {
     (!tipo || p.data.tipo_cliente === tipo) &&
     (!area || p._areas.includes(area)) &&
     (!gafete || p.gafete === gafete) &&
+    (!origen || p.origen === origen) &&
     (!est || p.estado === est) &&
     (!pendientes || (pendientes === 'con' ? p.queFalta.length > 0 : p.queFalta.length === 0)) &&
     (!texto || p._busqueda.includes(texto)));
@@ -374,6 +392,7 @@ function filaDetalle(p) {
 }
 
 function pinta() {
+  pintaTitulo();
   const lista = ordena(filtrados());
   pintaCabeceras();
   el('leads-cuerpo').innerHTML = lista.map(p => {
@@ -408,7 +427,7 @@ function pinta() {
 // --- Eventos de la pantalla (sin onclick inline, trampa #112) ---
 
 function conectaEventos() {
-  for (const id of ['f-evento', 'f-vendedor', 'f-tipo', 'f-area', 'f-gafete', 'f-estado', 'f-pendientes']) {
+  for (const id of ['f-evento', 'f-vendedor', 'f-tipo', 'f-area', 'f-gafete', 'f-origen', 'f-estado', 'f-pendientes']) {
     el(id).addEventListener('change', pinta);
   }
   el('f-texto').addEventListener('input', pinta);
@@ -470,8 +489,9 @@ async function pideFilas() {
   const res = await api('/api/prospectos/tabla');
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) throw new Error('No se pudieron cargar los prospectos');
-  // La pantalla es de leads de FERIA: un prospecto sin evento no entra.
-  return (await res.json()).filter(p => p.data && p.data.evento).map(prepara);
+  // #317: entran TODOS los prospectos visibles, vengan o no de una feria. El
+  // evento quedo como filtro, no como poblacion.
+  return (await res.json()).map(prepara);
 }
 
 async function cargar() {

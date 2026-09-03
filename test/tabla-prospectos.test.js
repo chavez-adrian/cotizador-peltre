@@ -196,3 +196,24 @@ test('#321: filaTabla agrega queFalta', () => {
   const fila = filaTabla(prospecto321({ evento: 'Abastur 2026', correo: '' }));
   assert.deepEqual(fila.queFalta, ['calificacion', 'correo']);
 });
+
+// --- #317: cualquier prospecto, Origen y /prospectos ---
+// El Origen del glosario (CONTEXT.md "Origen") es el `canal` del prospecto. La
+// fila lo trae resuelto por origenDe para que la pantalla filtre por el mismo
+// campo que pintan el pipeline, el Historial y Hoy.
+
+function prospecto317(canal) {
+  return {
+    id: 1, fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal,
+    etapa: 'por_cotizar', eventos: [], data: {},
+  };
+}
+
+test('#317: la fila trae el Origen del prospecto', () => {
+  assert.equal(filaTabla(prospecto317('Instagram')).origen, 'Instagram');
+});
+
+test('#317: sin origen capturado la fila trae origen vacio', () => {
+  assert.equal(filaTabla(prospecto317('')).origen, '');
+});

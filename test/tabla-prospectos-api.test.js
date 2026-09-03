@@ -173,3 +173,18 @@ test('#321: la fila trae queFalta con la calificacion pendiente de un prospecto 
   const fila = res.body.find(f => f.nombre === 'Diana');
   assert.deepEqual(fila.queFalta, ['calificacion', 'correo']);
 });
+
+// --- #317: cualquier prospecto, Origen y /prospectos ---
+// La tabla dejo de ser de feria: un prospecto que nunca vino de un evento entra
+// igual, y su fila trae el Origen del glosario para que la pantalla filtre por
+// el.
+
+test('#317: un prospecto sin evento sale en la tabla con su Origen', async () => {
+  const deInstagram = { ...PEDRO, vendedor: 'Memo', canal: 'Instagram' };
+  escribirFixtures([deInstagram]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Pedro');
+  assert.equal(fila.data.evento, undefined);
+  assert.equal(fila.origen, 'Instagram');
+});
