@@ -8,6 +8,7 @@ El embudo comercial único, del primer interés al producto entregado. Reemplaza
 
 La unidad de trabajo del pipeline: una intención de compra que se sigue de punta a punta. Antes de cotizar, la oportunidad coincide con el **prospecto** (la persona o entidad detrás de un celular). Al generarse la primera cotización (pre-cotización o cotización), la oportunidad lleva esa cotización por el resto del embudo. Un mismo prospecto que cotiza una segunda vez (p. ej. una agencia que cotiza para dos clientes finales) genera una **segunda oportunidad** (segunda tarjeta). Esta es la invariante que mantiene limpio el sync con Operam: una tarjeta en etapas post-venta corresponde a un pedido. (Cambio respecto al modelo previo, que no reconocía "oportunidad" como entidad y trataba cada cotización solo como historial del prospecto: ver ADR-0005.)
 
+El pipeline (tablero y su lista) se mira **por oportunidad**; la Tabla de prospectos se mira **por persona** (una fila por celular). Son dos unidades porque responden dos preguntas distintas: "¿qué dinero hay en cada etapa?" y "¿a quién le escribo y qué sigue con él?" (decisión 2026-09-03). Ninguna reemplaza a la otra.
 ## Prospecto
 
 La persona o entidad detrás de un número de celular que mostró interés comercial pero aún no tiene alta de cliente en Operam. Un celular corresponde siempre a exactamente un prospecto. El prospecto es la cara de la oportunidad antes de cotizar; sus cotizaciones se acumulan en su historial y cada una, al existir, define una oportunidad en el pipeline. Lo que se teclea al capturarlo — nombre, empresa, ciudad — se guarda con las mayúsculas corregidas y el correo en minúsculas, venga de donde venga la captura (manual, de expo, pública o importada; decisión 2026-08-25): la libreta de WhatsApp y los documentos leen lo guardado tal cual.
@@ -105,9 +106,38 @@ El reloj con el que se mide la espera de un prospecto en Por Cotizar: lunes a vi
 
 Los tiempos de seguimiento de un prospecto en Por Cotizar corren en horas hábiles y dependen del origen: WhatsApp e Instagram esperan respuesta en horas (rojo a las 2 horas hábiles sin contactar); correo y formulario toleran más (rojo a las 8). Cada prospecto muestra una etiqueta visible de horas hábiles sin respuesta con semáforo (verde < 2, ámbar 2–8, rojo > 8). Tras 3 toques sin respuesta el sistema sugiere — nunca aplica solo — la salida a No útil (sin respuesta). Una reunión de diagnóstico futura suprime la cadencia.
 
+## Toque
+
+Cada contacto que el vendedor hace al prospecto, registrado a mano con fecha y autor. Es un **intento**, no un contacto logrado: el toque no lleva resultado (decisión 2026-09-03). Que el prospecto haya respondido se expresa por el siguiente paso que se acuerda (un Siguiente contacto o una cotización), no por una bandera. Abrir WhatsApp con el mensaje prellenado **no** registra un toque: el envío ocurre en otra app y el vendedor puede no mandarlo; el toque es un tap aparte. No existe ninguna marca de "contactado" distinta del toque en ninguna vista: el toque es la única verdad de "ya lo contacté", y de él salen el Último contacto, el cierre del Siguiente contacto y el conteo de la cadencia.
 ## Cola Hoy (seguimiento fusionado)
 
 La cola única de pendientes del día: fusiona el seguimiento de prospectos en Por Cotizar (cadencia en horas hábiles, semáforo por origen) con el de cotizaciones en Seguimiento (cadencia en días naturales 2/7/21/28). Se ordena por urgencia relativa al umbral de cada tipo (cada reloj con su medida). Reemplaza las dos colas separadas del modelo previo. Permanece fija sobre el tablero y la vista de lista. Es el contenido del destino "Hoy" en la navegación. Incluye además las tarjetas No Asignado, visibles solo para quien tiene el permiso de asignación (decisión 2026-08-15): un lead sin dueño es un pendiente del día, no un detalle del tablero. Encabezan la cola **incondicionalmente** — por encima incluso de una reunión vencida, que es la otra excepción al orden por urgencia (decisión del dueño 2026-08-16): no compiten por urgencia relativa porque su reloj no mide lo mismo, mientras cualquier otra tarjeta ya tiene a alguien trabajándola, esta no tiene a nadie.
+
+## Tabla de prospectos
+
+La forma de **tabla** de la vista Prospectos: una fila por prospecto (por celular), ordenable por cualquier columna, con filtros por evento, vendedor, tipo de cliente, área de interés, Origen (el del glosario), Gafete y Estado del prospecto, más búsqueda por texto. Sirve para cualquier prospecto, no solo los de feria (decisión 2026-09-03: nació como tabla de Abastur 2026 y se generalizó; no lleva el nombre de ningún evento ni se llama "Seguimiento", que es una etapa del pipeline). Desde la fila se abre WhatsApp con el mensaje aprobado del evento, se registra un Toque ("Contacté") y, si ya es cliente, se salta a su ficha en Operam. Cada fila muestra su Estado del prospecto, su Último contacto, Qué sigue y Qué falta.
+
+La columna **Gafete** dice por cuál camino entró el dato de un prospecto de evento: "Solo gafete" (solo el export escaneado), "Gafete + stand" (export y captura manual) o "Sin gafete" (todo lo demás, incluido cualquier prospecto que no vino de una feria). Ordena por ese rango, no alfabéticamente, para que los de solo gafete queden arriba: son los únicos sin siguiente paso acordado. No se llama Origen (decisión 2026-09-03, sustituye la del mismo día que la llamaba así): Origen es por dónde llegó el prospecto; Gafete es por dónde llegó el dato.
+
+## Estado del prospecto
+
+Resumen calculado de en qué va un prospecto, cinco escalones con precedencia de arriba hacia abajo (decisión 2026-09-03):
+
+1. **Ya es cliente**: tiene cliente en Operam ligado.
+2. **Cotizado**: tiene al menos una cotización.
+3. **Agendado**: tiene un Siguiente contacto **abierto**, es decir con fecha futura, o vencida sin un toque posterior que lo cierre. Son las mismas reglas de la cola Hoy, para que las dos vistas nunca discrepen.
+4. **Contactado**: tiene al menos un toque y ningún Siguiente contacto abierto.
+5. **Sin contactar**: nada de lo anterior.
+
+Un toque que cumple el compromiso baja la fila de Agendado a Contactado, y eso no es una regresión: el compromiso se cumplió y no hay siguiente paso acordado, que es exactamente lo que el vendedor debe ver; si acordó otro, registra otro Siguiente contacto y vuelve a Agendado. "Contactado" sin siguiente paso es el intento; "Agendado" y "Cotizado" son el contacto logrado (equivalente a *Attempted to contact* vs *Connected* de un CRM), sin bandera adicional.
+
+## Qué sigue / Qué falta
+
+Dos preguntas distintas que la Tabla de prospectos responde por fila, las dos a partir de lo que el cotizador **ya guarda**, sin consultar Operam en vivo (decisión 2026-09-03).
+
+**Qué sigue** es la siguiente acción en el embudo, una sola, derivada del Estado del prospecto: Sin contactar → escribirle; Contactado → insistir (toque N de 3) o, al llegar a 3, la sugerencia de No útil que ya define la cadencia; Agendado → los canales y la fecha del compromiso; Cotizado → seguimiento a la cotización y su día de cadencia; Ya es cliente → cotizarle si no tiene cotización, y si la tiene, la etapa de su cadena en Operam que el sync post-venta ya conoce (seguimiento, anticipo pagado, pedido liberado, saldo pagado, producto entregado). Cuando el cliente tiene varias cotizaciones vivas, **la más avanzada en el embudo manda** y la fila avisa que hay más; el detalle las lista todas.
+
+**Qué falta** son los huecos que impiden avanzar o facturar, cero o varios, independientes de la etapa: calificación de feria pendiente, sin correo, y para un cliente, datos fiscales (RFC genérico) y domicilio de entrega sin capturar. Quedan fuera a propósito: la **confirmación** del domicilio por el cliente (nadie la registra; hacerlo sería un toque con resultado, que se descartó), el saldo total del cliente (no importa al vendedor), y los pedidos o facturas nacidos directo en Operam sin cotización del cotizador (invisibles por diseño del sync, que se ata a la cotización; se cierran por proceso, no por software). Para ese detalle está la liga "Ver en Operam" de la fila, que es complemento y no la respuesta.
 
 ## Origen
 
