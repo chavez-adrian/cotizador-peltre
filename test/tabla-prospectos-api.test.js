@@ -244,3 +244,34 @@ test('#318: la fila de un prospecto sin toques trae queSigue con la accion de es
   const fila = res.body.find(f => f.nombre === 'Elena');
   assert.equal(fila.queSigue.accion, 'Escribirle');
 });
+
+// --- #323: liga Ver en Operam ---
+// server.js pisa process.env con el .env al importarse (arriba en este mismo
+// archivo), asi que OPERAM_URL se fija DESPUES de ese import, dentro del test,
+// y se restaura al terminar para no filtrar a otras suites.
+
+test('#323: GET /api/catalogos expone operamUrl sin la barra final', async () => {
+  const original = process.env.OPERAM_URL;
+  process.env.OPERAM_URL = 'https://ejemplo.operam.pro/';
+  try {
+    const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.operamUrl, 'https://ejemplo.operam.pro');
+  } finally {
+    if (original === undefined) delete process.env.OPERAM_URL;
+    else process.env.OPERAM_URL = original;
+  }
+});
+
+test('#323: GET /api/catalogos expone operamUrl vacio sin OPERAM_URL', async () => {
+  const original = process.env.OPERAM_URL;
+  delete process.env.OPERAM_URL;
+  try {
+    const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.operamUrl, '');
+  } finally {
+    if (original === undefined) delete process.env.OPERAM_URL;
+    else process.env.OPERAM_URL = original;
+  }
+});

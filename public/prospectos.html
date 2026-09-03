@@ -50,11 +50,12 @@
   .estado-cotizado { background: oklch(0.93 0.06 150); color: oklch(0.40 0.13 155); }
   .estado-cliente { background: oklch(0.93 0.05 300); color: oklch(0.42 0.14 300); }
 
-  .btn-wa, .btn-contacte { display: inline-block; padding: 5px 12px;
+  .btn-wa, .btn-contacte, .btn-operam { display: inline-block; padding: 5px 12px;
     border-radius: var(--radius-input); color: var(--white); font-size: 12px; font-weight: 600;
     text-decoration: none; white-space: nowrap; border: none; font-family: inherit; }
   .btn-wa { background: oklch(0.62 0.16 150); }
   .btn-contacte { background: var(--primary); cursor: pointer; }
+  .btn-operam { background: var(--text-muted); }
   .btn-wa.deshabilitado { background: var(--border); color: var(--text-muted); pointer-events: none; }
 
   /* La columna de acciones va anclada a la derecha: son las acciones de la
@@ -244,7 +245,7 @@ const COLUMNAS = [
 const estado = {
   token: localStorage.getItem('token'),
   prospectos: [],
-  ligas: { catalogoUrl: '', sitioUrl: '' },
+  ligas: { catalogoUrl: '', sitioUrl: '', operamUrl: '' },
   orden: { llave: 'estado', asc: true },
   abierta: null,
 };
@@ -365,12 +366,18 @@ function pintaCabeceras() {
 // La liga de WhatsApp NO registra nada (CONTEXT.md "Toque"): abrir el chat con
 // el mensaje prellenado no es un contacto, el envio ocurre en otra app. El
 // toque es el tap aparte del boton Contacte.
+// #323: "Ver en Operam" es complemento, no la respuesta (CONTEXT.md "Que sigue
+// / Que falta") -- solo aparece con cliente ligado y con la base de Operam
+// disponible, para consultar en la web legacy lo que la tabla no modela.
 function celdaAcciones(p) {
   const liga = buildWaLinkProspecto(p, estado.ligas);
   const wa = liga
     ? `<a class="btn-wa" href="${escapeHtml(liga)}" target="_blank" rel="noopener">WhatsApp</a>`
     : '<span class="btn-wa deshabilitado">Sin celular</span>';
-  return `${wa} <button type="button" class="btn-contacte" data-toque="${escapeHtml(p.id)}">Contacté</button>`;
+  const operam = (p.clienteId != null && estado.ligas.operamUrl)
+    ? ` <a class="btn-operam" href="${escapeHtml(estado.ligas.operamUrl)}/sales/manage/customers.php?debtor_no=${escapeHtml(p.clienteId)}" target="_blank" rel="noopener">Ver en Operam</a>`
+    : '';
+  return `${wa}${operam} <button type="button" class="btn-contacte" data-toque="${escapeHtml(p.id)}">Contacté</button>`;
 }
 
 function filaDetalle(p) {
@@ -508,7 +515,7 @@ async function cargar() {
   if (!filas) return false;
   if (resCatalogos.ok) {
     const c = await resCatalogos.json();
-    estado.ligas = { catalogoUrl: c.catalogoUrl || '', sitioUrl: c.sitioUrl || '' };
+    estado.ligas = { catalogoUrl: c.catalogoUrl || '', sitioUrl: c.sitioUrl || '', operamUrl: c.operamUrl || '' };
   }
   estado.prospectos = filas;
   poblarFiltros();

@@ -38,3 +38,13 @@ test('GET /leads redirige a /prospectos', async () => {
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/prospectos');
 });
+
+// --- #323: liga Ver en Operam ---
+// La base de la instalacion de Operam viaja en la respuesta de /api/catalogos,
+// nunca en el HTML del repo (spec #323).
+test('GET /prospectos no incrusta la base de Operam en el HTML', async () => {
+  const res = await supertest(app).get('/prospectos');
+  for (const llave of ['operam.pro', 'OPERAM_URL']) {
+    assert.equal(res.text.includes(llave), false, `el HTML incrusta ${llave}`);
+  }
+});

@@ -3396,6 +3396,10 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
       eventoActivo: evento && { ...evento, siguienteContactoSugerido: primerDiaHabilDespues(evento.fin) },
       catalogoUrl: config.catalogoUrl || '',
       sitioUrl: config.sitioUrl || '',
+      // #323: base de la instalacion de Operam, para la liga "Ver en Operam" de
+      // la Tabla de prospectos (ficha del cliente en la web legacy). Sin barra
+      // final, como arma la liga lib/operam-web.js.
+      operamUrl: String(process.env.OPERAM_URL || '').replace(/\/+$/, ''),
       asesores: registro.map(v => v.name),
     });
   } catch (err) {
