@@ -254,6 +254,55 @@ test('#220: dos disenos del mismo codigo pintan dos filas con su propio texto', 
 // #284: el fallback de la fecha del documento tenia el mismo defecto UTC que el
 // del quote. De 18:00 a 23:59 hora del centro el documento imprimia la fecha de
 // manana. Instante de la evidencia del issue: 2026-09-01 19:07 GMT-0600.
+// === #302: layout movil (tarjetas por partida) en viewports de celular ===
+
+test('#302.1: el HTML incluye el bloque @media screen and (max-width: 480px)', () => {
+  const html = generateQuoteHTML({});
+  assert.ok(html.includes('@media screen and (max-width: 480px)'), 'debe traer el bloque movil fijado por el spec');
+});
+
+test('#302.2: las partidas traen las etiquetas/clases que usa la tarjeta movil (con folio)', () => {
+  const html = generateQuoteHTML({
+    folio: '12345',
+    items: [{ codigo: 'A001', descripcion: 'Item A', cantidad: 3, unidad: 'pza', precio: 100, descuento: 15 }],
+  });
+  assert.ok(html.includes('class="td-desc"'), 'la descripcion debe tener la clase que usa la tarjeta');
+  assert.ok(html.includes('data-field="cant"'), 'falta el hook de cantidad');
+  assert.ok(html.includes('data-field="precio"'), 'falta el hook de precio');
+  assert.ok(html.includes('data-field="dscto"'), 'falta el hook de descuento');
+  assert.ok(html.includes('data-field="total"'), 'falta el hook de total de linea');
+});
+
+test('#302.3: la pre-cotizacion (sin folio) recibe las mismas etiquetas/clases de tarjeta', () => {
+  const html = generateQuoteHTML({
+    items: [{ codigo: 'B002', descripcion: 'Item B', cantidad: 1, unidad: 'pza', precio: 200 }],
+  });
+  assert.ok(html.includes('class="td-desc"'), 'la descripcion debe tener la clase que usa la tarjeta');
+  assert.ok(html.includes('data-field="cant"'), 'falta el hook de cantidad');
+  assert.ok(html.includes('data-field="precio"'), 'falta el hook de precio');
+  assert.ok(html.includes('data-field="total"'), 'falta el hook de total de linea');
+});
+
+test('#302.4: la variante con incluirFotos integra la imagen a la tarjeta sin perder las etiquetas', () => {
+  const html = generateQuoteHTML({
+    items: [{ codigo: 'PH20A3P32112', descripcion: 'Plato hondo 20', cantidad: 2, unidad: 'pza', precio: 150 }],
+  }, { incluirFotos: true });
+  assert.ok(html.includes('class="td-img"'), 'la celda de imagen debe estar presente en la variante con fotos');
+  assert.ok(html.includes('class="product-img"'), 'la imagen del producto debe imprimirse');
+  assert.ok(html.includes('data-field="cant"') && html.includes('data-field="total"'), 'la tarjeta sigue trayendo sus hooks con fotos');
+});
+
+test('#302.5: @media print sigue intacto y las reglas moviles viven solo bajo @media screen', () => {
+  const html = generateQuoteHTML({});
+  const printBlock = '@media print {\n  body { background: #fff; }\n  .print-bar { display: none !important; }\n  .page { margin: 0; box-shadow: none; border-radius: 0; padding: 20px; }\n}';
+  assert.ok(html.includes(printBlock), 'el bloque @media print debe seguir exactamente igual');
+  assert.ok(!printBlock.includes('480px'), 'el bloque print no debe traer la guarda movil');
+  assert.ok(!printBlock.includes('data-field'), 'el bloque print no debe traer selectores de la tarjeta movil');
+  const idxPrint = html.indexOf(printBlock);
+  const idxScreen = html.indexOf('@media screen and (max-width: 480px)');
+  assert.ok(idxScreen > idxPrint + printBlock.length, 'el bloque movil vive despues y fuera del bloque print, no anidado');
+});
+
 test('#284: sin data.fecha el documento imprime la fecha del centro de Mexico, no la de UTC', () => {
   const DateReal = globalThis.Date;
   const fijo = new DateReal('2026-09-02T01:07:48Z').getTime();
