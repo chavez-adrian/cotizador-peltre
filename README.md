@@ -80,7 +80,7 @@ test/                  # tests de backend (supertest + node:test)
 
 ### Cotizar (vendedores)
 1. Login con ID de vendedor + PIN
-2. Paso Cliente: "Ya lo conozco" (buscar en Operam o en prospectos propios, con recientes) o "Contacto nuevo" (celular, nombre, ciudad, canal — crea/usa el prospecto, issue #82)
+2. Paso Cliente: "Ya lo conozco" (buscar en Operam o en prospectos propios, con recientes) o "Contacto nuevo" (celular, nombre, ciudad, origen — crea/usa el prospecto, issue #82)
 3. Agregar productos al carrito (tier de precio calculado automaticamente)
 4. Cotizar envio con envia.com (opcional; direccion de entrega se captura en el paso Envio)
 5. Generar PDF o HTML, compartir por WhatsApp — la cotizacion se sube sola a Operam (issue #83); si la oportunidad no tenia cliente en Operam, primero se crea el cliente generico (issue #81, ADR-0006)
