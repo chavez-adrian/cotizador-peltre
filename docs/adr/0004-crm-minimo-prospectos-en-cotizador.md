@@ -14,6 +14,8 @@ No se construye el sync Operam↔Bitrix24. En su lugar, se construye un módulo 
 
 El módulo implementa el modelo documentado en `CONTEXT.md`: prospecto identificado por celular (1 celular = 1 prospecto), etapas Nuevo → Contactado → Calificado → Cotizado con salida No útil, transición automática a Cotizado al ligarse una cotización (con auto-creación de prospecto pidiendo canal cuando el celular es nuevo), cadencia en horas hábiles con semáforo por canal, captura mínima desde el teléfono y visibilidad por vendedor (admin ve todo).
 
+> Nota (2026-09-02, #287): lo que este ADR llama "canal" es lo que desde esa fecha el glosario llama **Origen** (`CONTEXT.md`). El campo en código, API y base de datos sigue siendo `canal`; el texto de arriba se conserva como registro histórico.
+
 Los prospectos vivos de Bitrix se importan una sola vez (deduplicando por celular, descartando los que no tengan celular válido); Bitrix queda en solo-lectura durante el experimento.
 
 ## Consequences

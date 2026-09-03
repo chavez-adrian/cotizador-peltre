@@ -1284,3 +1284,60 @@ test('#289: la cola Hoy se filtra sin alterar su orden por urgencia', () => {
   assert.deepEqual(filtrarColaHoy(cola, { desde: '2026-06-03' }).map(i => i.id), [2, 3]);
   assert.deepEqual(filtrarColaHoy(cola, {}).map(i => i.id), [1, 2, 3]);
 });
+
+// === Issue #287: chip Origen en el pipeline y en la cola Hoy ===
+// La cotizacion no guarda origen: llega anotado (`origen`) por quien resolvio la
+// herencia -- el navegador en el pipeline, el servidor en Hoy y el Historial.
+
+function metasDe(html) {
+  return [...html.matchAll(/<div class="cot-card-meta">(.*?)<\/div>/g)].map(m => m[1]);
+}
+
+test('OR5: la tarjeta del tablero pinta el Origen propio, el heredado y el que falta', () => {
+  const html = buildTableroPipelineHtml([
+    prospecto({ id: 1, canal: 'Instagram', etapa: 'por_cotizar' }),
+    cotizacion({ id: 10, cliente: 'Hotel Azul', origen: 'Feria/Expo', etapa: 'seguimiento' }),
+    cotizacion({ id: 11, cliente: 'Sin prospecto', etapa: 'seguimiento' }),
+  ]);
+  assert.match(html, /origen-badge">Origen: Instagram/);
+  assert.match(html, /origen-badge">Origen: Feria\/Expo/);
+  assert.match(html, /origen-badge-vacio">Origen sin identificar/);
+  // el origen sale de la linea gris: no se muestra dos veces
+  assert.equal(metasDe(html).some(m => m.includes('Instagram')), false);
+});
+
+test('OR6: la lista de cerradas pinta el chip Origen fuera de la linea gris', () => {
+  const html = buildCerradasHtml([
+    prospecto({ id: 2, nombre: 'Pedro', canal: 'Referido', etapa: 'no_util', motivoNoUtil: 'spam' }),
+  ]);
+  assert.match(html, /origen-badge">Origen: Referido/);
+  assert.equal(metasDe(html).some(m => m.includes('Referido')), false);
+});
+
+test('OR7: el item de cotizacion de la cola Hoy pinta el Origen heredado', () => {
+  const conOrigen = buildColaCotizacionItemHtml(itemCotizacion({ id: 10, origen: 'Meta Ads' }));
+  assert.match(conOrigen, /origen-badge">Origen: Meta Ads/);
+  const sinOrigen = buildColaCotizacionItemHtml(itemCotizacion({ id: 11 }));
+  assert.match(sinOrigen, /origen-badge-vacio">Origen sin identificar/);
+});
+
+// La limitacion que dejo #289: "Instagram" encontraba al prospecto pero no a sus
+// cotizaciones, porque la cotizacion no traia origen. Con la herencia anotada, si.
+test('OR9: el buscador del pipeline y de Hoy encuentran la cotizacion por su Origen heredado', () => {
+  const oportunidades = [
+    cotizacion({ id: 2, cliente: 'Hotel Azul', origen: 'Instagram' }),
+    cotizacion({ id: 3, cliente: 'Cafe Sol', origen: 'Referido' }),
+  ];
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'instagram' }).map(o => o.id), [2]);
+  const cola = [
+    { tipo: 'cotizacion', id: 2, cliente: 'Hotel Azul', origen: 'Instagram', fecha: '2026-06-20T15:00:00' },
+    { tipo: 'cotizacion', id: 3, cliente: 'Cafe Sol', origen: 'Referido', fecha: '2026-06-20T15:00:00' },
+  ];
+  assert.deepEqual(filtrarColaHoy(cola, { texto: 'instagram' }).map(i => i.id), [2]);
+});
+
+test('OR8: el item No Asignado pinta el chip Origen fuera de la linea gris', () => {
+  const html = buildColaNoAsignadoItemHtml(itemNoAsignado({ id: 42 }), VENDEDORES_HOY, true);
+  assert.match(html, /origen-badge">Origen: Formulario web/);
+  assert.equal(metasDe(html).some(m => m.includes('Formulario web')), false);
+});

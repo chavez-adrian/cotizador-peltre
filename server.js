@@ -43,6 +43,10 @@ import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, COD
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
+// Origen heredado (#287): el MISMO nucleo puro que usa el navegador. El
+// Historial y la cola Hoy no cargan prospectos, asi que la herencia se resuelve
+// en su propio GET; nunca se persiste en la cotizacion.
+import { indiceOrigenPorCelular, anotarOrigen } from './public/js/origen-logica.js';
 import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL, puedePrecioCalca, normalizarPuedePrecioCalca } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
@@ -503,7 +507,12 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   const filtradas = req.user.role === 'admin'
     ? log
     : log.filter(c => c.vendedor === req.user.name);
-  res.json(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido }) => ({
+  // Origen heredado (#287): el Historial no carga prospectos, asi que la
+  // herencia se resuelve aqui. El indice se arma con los prospectos VISIBLES
+  // para quien pregunta, la misma puerta que usa el pipeline en el navegador
+  // (GET /api/prospectos): las dos vistas dicen lo mismo del mismo cliente.
+  const indiceOrigen = indiceOrigenPorCelular(await prospectosVisiblesPara(req.user));
+  res.json(anotarOrigen(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
     estado: estado || 'abierta',
     etapa,
@@ -537,7 +546,7 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     nombreCorto: data?.cliente?.nombreCorto ?? null,
     contactoEntrega: data?.cliente?.contactoEntrega ?? null,
     hasData: !!data,
-  })));
+  })), indiceOrigen));
 });
 
 app.get('/api/cotizaciones/:id', authMiddleware, async (req, res) => {
@@ -578,7 +587,10 @@ app.get('/api/hoy', authMiddleware, async (req, res) => {
     const cotizacionesVisibles = req.user.role === 'admin'
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
-    res.json(calcularColaHoy(prospectosVisibles, cotizacionesVisibles, new Date()));
+    // Origen (#287): la cola llega fusionada del servidor, asi que aqui se anota
+    // el heredado de las cotizaciones. El item de prospecto ya trae su `canal`.
+    const cola = calcularColaHoy(prospectosVisibles, cotizacionesVisibles, new Date());
+    res.json(anotarOrigen(cola, indiceOrigenPorCelular(prospectosVisibles)));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo armar la cola de hoy: ' + err.message });
   }

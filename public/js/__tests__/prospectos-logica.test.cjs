@@ -12,7 +12,7 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
   CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido,
   validarSiguienteContacto, buildEventoSiguienteContacto, normalizarTextosProspecto,
-  filtrarProspectos;
+  filtrarProspectos, chipOrigenHtml;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
@@ -25,7 +25,7 @@ before(async () => {
     ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
     CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido,
     validarSiguienteContacto, buildEventoSiguienteContacto, normalizarTextosProspecto,
-    filtrarProspectos } = await import('../prospectos-logica.js'));
+    filtrarProspectos, chipOrigenHtml } = await import('../prospectos-logica.js'));
 });
 
 // Buscador de la vista Prospectos (#289): UNA caja filtra los dos bloques (la
@@ -1379,4 +1379,40 @@ test('NT5: la tarjeta muestra el correo capturado, y no deja rastro cuando no ha
   const sin = buildProspectoCardHtml({ ...base, data: {} }, null);
   assert.equal(sin.includes('<div class="cot-card-meta"></div>'), false);
   assert.equal(sin.includes('mariana.lopez@gmail.com'), false);
+});
+
+// === Issue #287: chip "Origen" ===
+
+test('OR1: chipOrigenHtml pinta "Origen: <valor>" del canal propio o del origen anotado', () => {
+  assert.match(chipOrigenHtml({ canal: 'Feria/Expo' }), /origen-badge">Origen: Feria\/Expo/);
+  assert.match(chipOrigenHtml({ origen: 'Instagram' }), /origen-badge">Origen: Instagram/);
+  assert.equal(chipOrigenHtml({ canal: '<b>Instagram</b>' }).includes('<b>'), false);
+});
+
+test('OR2: sin origen el chip dice "Origen sin identificar" y va atenuado', () => {
+  for (const vacio of [{}, null, undefined, { canal: '   ' }, { origen: '' }]) {
+    const chip = chipOrigenHtml(vacio);
+    assert.match(chip, /Origen sin identificar/);
+    assert.match(chip, /origen-badge-vacio/);
+  }
+});
+
+// El origen sale de la linea gris de metadatos: se lee en el chip y no se
+// muestra dos veces. Se usa Instagram (y no el WhatsApp del fixture) porque la
+// tarjeta trae ademas los chips de canal del siguiente contacto, donde
+// "WhatsApp" aparece por otra razon.
+test('OR3: la tarjeta de prospecto pinta el chip Origen y la linea gris ya no lo repite', () => {
+  const html = buildProspectoCardHtml({ ...PROSPECTO, canal: 'Instagram' });
+  assert.match(html, /origen-badge">Origen: Instagram/);
+  const metas = [...html.matchAll(/<div class="cot-card-meta">(.*?)<\/div>/g)].map(m => m[1]);
+  assert.ok(metas.length > 0);
+  assert.equal(metas.some(m => m.includes('Instagram')), false);
+});
+
+test('OR4: el item de la cola de prospectos pinta el chip Origen fuera de la linea gris', () => {
+  const html = buildColaProspectosHtml([{ ...ITEM_COLA, canal: 'Instagram' }]);
+  assert.match(html, /origen-badge">Origen: Instagram/);
+  const metas = [...html.matchAll(/<div class="cot-card-meta">(.*?)<\/div>/g)].map(m => m[1]);
+  assert.ok(metas.length > 0);
+  assert.equal(metas.some(m => m.includes('Instagram')), false);
 });
