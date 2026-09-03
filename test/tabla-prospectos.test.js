@@ -217,3 +217,55 @@ test('#317: la fila trae el Origen del prospecto', () => {
 test('#317: sin origen capturado la fila trae origen vacio', () => {
   assert.equal(filaTabla(prospecto317('')).origen, '');
 });
+
+// --- #315: cotizado y cliente ---
+// Los dos escalones de arriba de CONTEXT.md "Estado del prospecto", con la
+// precedencia completa: cliente > cotizado > agendado > contactado >
+// sin_contactar. Cotizado tiene DOS fuentes (el evento de cotizacion del
+// prospecto y el arreglo de cotizaciones ligadas que resolvera #319) porque el
+// glosario dice "tiene al menos una cotizacion", no "tiene el evento".
+
+const AHORA_315 = new Date('2026-09-10T12:00:00.000Z');
+
+function prospecto315(eventos, data = {}) {
+  return {
+    id: 20, fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+    etapa: 'por_cotizar', eventos, data,
+  };
+}
+
+test('#315: una cotizacion gana al siguiente contacto abierto y el prospecto queda cotizado', () => {
+  const estado = estadoProspecto(prospecto315([
+    { tipo: 'siguiente_contacto', canales: ['WhatsApp'], fecha_contacto: '2026-09-15T17:00:00.000Z', fecha: '2026-09-05T10:00:00.000Z', vendedor: 'Memo' },
+    { tipo: 'cotizacion', cotizacion_id: 600, fecha: '2026-09-06T10:00:00.000Z', vendedor: 'Memo' },
+  ]), [], AHORA_315);
+  assert.equal(estado, 'cotizado');
+});
+
+test('#315: una cotizacion ligada sin evento tambien deja al prospecto cotizado', () => {
+  const estado = estadoProspecto(prospecto315([
+    { tipo: 'toque', fecha: '2026-09-02T09:00:00.000Z', vendedor: 'Memo' },
+  ]), [{ id: 600 }], AHORA_315);
+  assert.equal(estado, 'cotizado');
+});
+
+test('#315: el cliente ligado gana a la cotizacion y el prospecto queda en cliente', () => {
+  const estado = estadoProspecto(prospecto315([
+    { tipo: 'cotizacion', cotizacion_id: 600, fecha: '2026-09-06T10:00:00.000Z', vendedor: 'Memo' },
+    { tipo: 'cliente', cliente_id: 4321, nombre: 'Laura', fecha: '2026-09-07T10:00:00.000Z' },
+  ], { cliente_id: 4321 }), [], AHORA_315);
+  assert.equal(estado, 'cliente');
+});
+
+test('#315: filaTabla trae el clienteId ligado', () => {
+  const fila = filaTabla(prospecto315([], { cliente_id: 4321 }), [], AHORA_315);
+  assert.equal(fila.clienteId, 4321);
+  assert.equal(fila.estado, 'cliente');
+});
+
+test('#315: filaTabla trae clienteId null cuando el prospecto no es cliente', () => {
+  const fila = filaTabla(prospecto315([]), [], AHORA_315);
+  assert.equal(fila.clienteId, null);
+  assert.equal(fila.estado, 'sin_contactar');
+});

@@ -47,6 +47,8 @@
   .estado-sin_contactar { background: oklch(0.94 0.05 30); color: oklch(0.45 0.15 30); }
   .estado-contactado { background: oklch(0.95 0.04 80); color: oklch(0.45 0.12 70); }
   .estado-agendado { background: oklch(0.94 0.05 240); color: oklch(0.45 0.14 250); }
+  .estado-cotizado { background: oklch(0.93 0.06 150); color: oklch(0.40 0.13 155); }
+  .estado-cliente { background: oklch(0.93 0.05 300); color: oklch(0.42 0.14 300); }
 
   .btn-wa, .btn-contacte { display: inline-block; padding: 5px 12px;
     border-radius: var(--radius-input); color: var(--white); font-size: 12px; font-weight: 600;
@@ -188,6 +190,8 @@ const ESTADOS = {
   sin_contactar: { etiqueta: 'Sin contactar', corta: 'Sin contactar', rango: 0 },
   contactado: { etiqueta: 'Contactado', corta: 'Contactado', rango: 1 },
   agendado: { etiqueta: 'Agendado', corta: 'Agendado', rango: 2 },
+  cotizado: { etiqueta: 'Cotizado', corta: 'Cotizado', rango: 3 },
+  cliente: { etiqueta: 'Ya es cliente', corta: 'Cliente', rango: 4 },
 };
 // #316: el rango es el orden de CONTEXT.md "Gafete" (RANGO_GAFETE de
 // lib/tabla-prospectos.js), no el alfabetico -- los de solo gafete quedan
@@ -383,6 +387,7 @@ function filaDetalle(p) {
     ['Concepto', cal.concepto],
     ['Piezas estimadas', p.data.piezas_estimadas],
     ['Gafete', GAFETES[p.gafete]],
+    ['Cliente en Operam', p.clienteId],
     ['Qué falta', p.queFalta.map(k => ETIQUETAS_QUE_FALTA[k]).join(', ')],
     ['Notas', p.data.notas],
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');

@@ -188,3 +188,43 @@ test('#317: un prospecto sin evento sale en la tabla con su Origen', async () =>
   assert.equal(fila.data.evento, undefined);
   assert.equal(fila.origen, 'Instagram');
 });
+
+// --- #315: cotizado y cliente ---
+
+const RAQUEL = {
+  id: 20, fecha: '2026-08-15T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5566778899',
+  celular10: '5566778899', nombre: 'Raquel', ciudad: 'Queretaro', canal: 'WhatsApp',
+  etapa: 'seguimiento',
+  eventos: [
+    { tipo: 'cotizacion', cotizacion_id: 600, fecha: '2026-08-18T10:00:00.000Z', vendedor: 'Memo' },
+    { tipo: 'cliente', cliente_id: 4321, nombre: 'Raquel', fecha: '2026-08-19T10:00:00.000Z' },
+  ],
+  data: { cliente_id: 4321 },
+};
+const TOMAS = {
+  id: 21, fecha: '2026-08-16T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5533445566',
+  celular10: '5533445566', nombre: 'Tomas', ciudad: 'Leon', canal: 'Instagram',
+  etapa: 'seguimiento',
+  eventos: [
+    { tipo: 'cotizacion', cotizacion_id: 601, fecha: '2026-08-20T10:00:00.000Z', vendedor: 'Memo' },
+  ],
+  data: {},
+};
+
+test('#315: la fila de un prospecto con cliente ligado dice cliente y trae el clienteId', async () => {
+  escribirFixtures([RAQUEL]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Raquel');
+  assert.equal(fila.estado, 'cliente');
+  assert.equal(fila.clienteId, 4321);
+});
+
+test('#315: la fila de un prospecto con cotizacion y sin cliente dice cotizado y trae clienteId null', async () => {
+  escribirFixtures([TOMAS]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Tomas');
+  assert.equal(fila.estado, 'cotizado');
+  assert.equal(fila.clienteId, null);
+});
