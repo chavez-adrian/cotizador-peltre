@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { estadoProspecto, filaTabla, gafeteDe, queFalta, queSigue, LLAVES_QUE_FALTA } from '../lib/tabla-prospectos.js';
+import { estadoProspecto, filaTabla, gafeteDe, queFalta, queSigue, LLAVES_QUE_FALTA, cotizacionesDelProspecto, cotizacionesVivas } from '../lib/tabla-prospectos.js';
 
 // --- #313: quien ya fue contactado ---
 // El Toque es la UNICA verdad de "ya lo contacte" (CONTEXT.md "Toque"): de el
@@ -360,4 +360,203 @@ test('#318: un compromiso vencido y sin cerrar lo dice al final de la accion', (
 test('#318: filaTabla agrega queSigue', () => {
   const fila = filaTabla(prospecto318([]), [], AHORA_318);
   assert.deepEqual(fila.queSigue, { tipo: 'escribirle', accion: 'Escribirle' });
+});
+
+// --- #319: cotizaciones del prospecto ---
+// El prospecto y sus cotizaciones se ligan por DOS caminos, porque ninguno
+// solo alcanza: el evento 'cotizacion' que el prospecto guarda al cotizar, y
+// el celular del cliente de la cotizacion (la llave de identidad del glosario,
+// 1 celular = 1 prospecto), que rescata las cotizaciones nacidas sin pasar por
+// la tarjeta del prospecto.
+
+function prospecto319(eventos = [], over = {}) {
+  return {
+    id: 60, fecha: '2026-08-15T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+    etapa: 'seguimiento', eventos, data: {}, ...over,
+  };
+}
+
+function eventoCotizacion(cotizacionId, fecha = '2026-08-18T10:00:00.000Z') {
+  return { tipo: 'cotizacion', cotizacion_id: cotizacionId, fecha, vendedor: 'Memo' };
+}
+
+function cot319(over = {}) {
+  const { cliente: sobreCliente, ...resto } = over;
+  return {
+    id: 600, fecha: '2026-08-20T10:00:00.000Z', vendedor: 'Memo', cliente: 'LA LUPITA',
+    total: 15000, totalPiezas: 200, tier: 'M100', estado: 'abierta', etapa: 'seguimiento',
+    folioOperam: 1141, registroDesconocido: false, seguimientos: [],
+    data: {
+      cliente: {
+        razonSocial: 'LA LUPITA', nombreCorto: 'La Lupita', rfc: 'XAXX010101000',
+        telefono: '5599887766', celEntrega: '', customerId: 900, ...sobreCliente,
+      },
+    },
+    ...resto,
+  };
+}
+
+test('#319: el evento de cotizacion liga la cotizacion aunque el cliente traiga otro telefono', () => {
+  const p = prospecto319([eventoCotizacion(600)]);
+  const ligadas = cotizacionesDelProspecto(p, [cot319(), cot319({ id: 601 })]);
+  assert.deepEqual(ligadas.map(c => c.id), [600]);
+});
+
+test('#319: el celular del cliente liga la cotizacion aunque el prospecto no tenga el evento', () => {
+  const p = prospecto319([]);
+  const porTelefono = cot319({ id: 610, cliente: { telefono: '+52 55 1234 5678' } });
+  const ligadas = cotizacionesDelProspecto(p, [porTelefono, cot319({ id: 611 })]);
+  assert.deepEqual(ligadas.map(c => c.id), [610]);
+});
+
+test('#319: el celular de entrega tambien liga', () => {
+  const p = prospecto319([]);
+  const porEntrega = cot319({ id: 620, cliente: { celEntrega: '5512345678' } });
+  assert.deepEqual(cotizacionesDelProspecto(p, [porEntrega]).map(c => c.id), [620]);
+});
+
+test('#319: una cotizacion ligada por los dos caminos aparece una sola vez', () => {
+  const p = prospecto319([eventoCotizacion(630)]);
+  const ambas = cot319({ id: 630, cliente: { telefono: '5512345678' } });
+  assert.equal(cotizacionesDelProspecto(p, [ambas]).length, 1);
+});
+
+test('#319: sin celular10 la liga usa los ultimos 10 digitos del celular', () => {
+  const p = prospecto319([], { celular10: undefined });
+  const porTelefono = cot319({ id: 640, cliente: { telefono: '5512345678' } });
+  assert.deepEqual(cotizacionesDelProspecto(p, [porTelefono]).map(c => c.id), [640]);
+});
+
+// El orden es el de CONTEXT.md "Que sigue / Que falta": con varias cotizaciones
+// vivas la MAS AVANZADA en el embudo manda. Los fixtures entran al reves del
+// resultado esperado para que el orden de entrada no pueda dar el test por
+// bueno.
+
+test('#319: la cotizacion mas avanzada en el embudo va primero', () => {
+  const p = prospecto319([eventoCotizacion(650), eventoCotizacion(651)]);
+  const ligadas = cotizacionesDelProspecto(p, [
+    cot319({ id: 650, etapa: 'por_cotizar' }),
+    cot319({ id: 651, etapa: 'seguimiento' }),
+  ]);
+  assert.deepEqual(ligadas.map(c => c.id), [651, 650]);
+});
+
+test('#319: un anticipo pagado va antes que un seguimiento', () => {
+  const p = prospecto319([eventoCotizacion(652), eventoCotizacion(653)]);
+  const ligadas = cotizacionesDelProspecto(p, [
+    cot319({ id: 652, etapa: 'seguimiento' }),
+    cot319({ id: 653, etapa: 'anticipo_pagado' }),
+  ]);
+  assert.deepEqual(ligadas.map(c => c.id), [653, 652]);
+});
+
+test('#319: a igual etapa manda la mas reciente', () => {
+  const p = prospecto319([eventoCotizacion(654), eventoCotizacion(655)]);
+  const ligadas = cotizacionesDelProspecto(p, [
+    cot319({ id: 654, etapa: 'seguimiento', fecha: '2026-08-10T10:00:00.000Z' }),
+    cot319({ id: 655, etapa: 'seguimiento', fecha: '2026-08-25T10:00:00.000Z' }),
+  ]);
+  assert.deepEqual(ligadas.map(c => c.id), [655, 654]);
+});
+
+test('#319: las salidas del embudo van al final aunque sean las mas recientes', () => {
+  const p = prospecto319([eventoCotizacion(656), eventoCotizacion(657)]);
+  const ligadas = cotizacionesDelProspecto(p, [
+    cot319({ id: 656, etapa: 'no_util', fecha: '2026-08-30T10:00:00.000Z' }),
+    cot319({ id: 657, etapa: 'por_cotizar', fecha: '2026-08-01T10:00:00.000Z' }),
+  ]);
+  assert.deepEqual(ligadas.map(c => c.id), [657, 656]);
+});
+
+test('#319: cotizacionesVivas deja fuera las salidas del embudo', () => {
+  const vivas = cotizacionesVivas([
+    cot319({ id: 660, etapa: 'seguimiento' }),
+    cot319({ id: 661, etapa: 'no_util' }),
+    cot319({ id: 662, etapa: 'perdida' }),
+  ]);
+  assert.deepEqual(vivas.map(c => c.id), [660]);
+});
+
+// Que sigue para Cotizado: la accion se afirma como cadena COMPLETA -- es el
+// texto que el vendedor lee en la fila -- y el numero que nombra la cotizacion
+// es SIEMPRE el folio, nunca el id interno (ADR-0009, CONTEXT.md "Numero de la
+// cotizacion"). El reloj es fijo para poder afirmar el dia de cadencia.
+const AHORA_319 = new Date('2026-09-10T12:00:00.000Z');
+
+function cotizadoQueSigue(cots) {
+  return queSigue(prospecto319([]), cots, AHORA_319);
+}
+
+test('#319: cotizado el mismo dia todavia no tiene paso de cadencia', () => {
+  const q = cotizadoQueSigue([cot319({ fecha: '2026-09-09T12:00:00.000Z' })]);
+  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, enviada hoy');
+  assert.equal(q.paso, null);
+  assert.equal(q.dias, 1);
+});
+
+test('#319: al dia 2 la fila pide el seguimiento del dia 2 con el folio de la cotizacion', () => {
+  const q = cotizadoQueSigue([cot319({ fecha: '2026-09-08T12:00:00.000Z' })]);
+  assert.deepEqual(q, {
+    tipo: 'seguimiento', accion: 'Seguimiento a la #Operam 1141, día 2',
+    cotizacionId: 600, folio: '#Operam 1141', paso: 'dia2', dias: 2, masCotizaciones: 0,
+  });
+});
+
+test('#319: al dia 7 la fila pide el seguimiento del dia 7', () => {
+  const q = cotizadoQueSigue([cot319({ fecha: '2026-09-03T12:00:00.000Z' })]);
+  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, día 7');
+});
+
+test('#319: al dia 21 la fila pide el seguimiento del dia 21', () => {
+  const q = cotizadoQueSigue([cot319({ fecha: '2026-08-20T12:00:00.000Z' })]);
+  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, día 21');
+});
+
+test('#319: pasado el dia 28 la fila dice que la cotizacion esta vencida', () => {
+  const q = cotizadoQueSigue([cot319({ fecha: '2026-08-13T12:00:00.000Z' })]);
+  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, vencida');
+});
+
+test('#319: una pre-cotizacion se nombra PRE, nunca con su id interno', () => {
+  const q = cotizadoQueSigue([cot319({ fecha: '2026-09-08T12:00:00.000Z', folioOperam: null })]);
+  assert.equal(q.accion, 'Seguimiento a la PRE, día 2');
+  assert.equal(q.folio, 'PRE');
+});
+
+test('#319: con varias vivas manda la primera y la fila avisa cuantas mas hay', () => {
+  const q = cotizadoQueSigue([
+    cot319({ id: 670, fecha: '2026-09-08T12:00:00.000Z', folioOperam: 1141 }),
+    cot319({ id: 671, fecha: '2026-09-08T12:00:00.000Z', folioOperam: 1140 }),
+  ]);
+  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, día 2 y 1 más');
+  assert.equal(q.masCotizaciones, 1);
+  assert.equal(q.cotizacionId, 670);
+});
+
+test('#319: cotizado sin ninguna cotizacion viva pide cotizarle de nuevo', () => {
+  const q = queSigue(prospecto319([eventoCotizacion(680)]), [], AHORA_319);
+  assert.deepEqual(q, { tipo: 'cotizado', accion: 'Cotizarle de nuevo', masCotizaciones: 0 });
+});
+
+test('#319: con todas las cotizaciones fuera del embudo tambien pide cotizarle de nuevo', () => {
+  const q = cotizadoQueSigue([cot319({ id: 681, etapa: 'perdida' })]);
+  assert.equal(q.accion, 'Cotizarle de nuevo');
+});
+
+test('#319: la fila lleva las cotizaciones con su folio, su etapa y su fecha', () => {
+  const fila = filaTabla(prospecto319([]), [cot319({ fecha: '2026-09-08T12:00:00.000Z' })], AHORA_319);
+  assert.deepEqual(fila.cotizaciones, [{
+    id: 600, folio: '#Operam 1141', folioOperam: 1141, etapa: 'seguimiento',
+    fecha: '2026-09-08T12:00:00.000Z',
+  }]);
+});
+
+test('#319: una cotizacion fuera del embudo no cuenta como viva pero si viaja en la fila', () => {
+  const fila = filaTabla(prospecto319([]), [
+    cot319({ id: 690, fecha: '2026-09-08T12:00:00.000Z' }),
+    cot319({ id: 691, fecha: '2026-09-08T12:00:00.000Z', etapa: 'no_util', folioOperam: 1142 }),
+  ], AHORA_319);
+  assert.deepEqual(fila.cotizaciones.map(c => c.id), [690, 691]);
+  assert.equal(fila.queSigue.masCotizaciones, 0);
 });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calcularCola, telefonoWa, telefonoValido } from '../lib/seguimiento.js';
+import { calcularCola, pasoCadencia, telefonoWa, telefonoValido } from '../lib/seguimiento.js';
 
 const HOY = new Date('2026-06-10T12:00:00Z');
 
@@ -255,4 +255,34 @@ test('REU5: una cotizacion sin reunion conserva el flujo normal (sin flag de reu
   assert.equal(cola[0].reunionVencida, false);
   assert.equal(cola[0].fechaReunion, null);
   assert.equal(cola[0].paso, 'dia2');
+});
+
+// --- #319: paso de cadencia compartido ---
+// La cadencia 2/7/21/28 dejo de estar solo dentro de calcularCola: la Tabla de
+// prospectos necesita el MISMO paso para decir "Seguimiento a la N, dia X". Se
+// afirma por dia con un reloj fijo, contra los dias que declara CONTEXT.md
+// "Cola Hoy", no contra el calculo del codigo.
+
+function cotEnviada(fecha) {
+  return cot({ fecha });
+}
+
+test('#319: al dia 1 todavia no toca ningun paso de cadencia', () => {
+  assert.deepEqual(pasoCadencia(cotEnviada('2026-06-09T12:00:00Z'), HOY), { paso: null, dias: 1 });
+});
+
+test('#319: al dia 2 toca el primer paso', () => {
+  assert.deepEqual(pasoCadencia(cotEnviada('2026-06-08T12:00:00Z'), HOY), { paso: 'dia2', dias: 2 });
+});
+
+test('#319: al dia 7 toca el segundo paso', () => {
+  assert.deepEqual(pasoCadencia(cotEnviada('2026-06-03T12:00:00Z'), HOY), { paso: 'dia7', dias: 7 });
+});
+
+test('#319: al dia 21 toca el tercer paso', () => {
+  assert.deepEqual(pasoCadencia(cotEnviada('2026-05-20T12:00:00Z'), HOY), { paso: 'dia21', dias: 21 });
+});
+
+test('#319: al dia 28 la cotizacion ya esta vencida', () => {
+  assert.deepEqual(pasoCadencia(cotEnviada('2026-05-13T12:00:00Z'), HOY), { paso: 'vencida', dias: 28 });
 });

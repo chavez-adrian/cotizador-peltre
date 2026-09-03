@@ -28,7 +28,7 @@ import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
-import { filaTabla } from './lib/tabla-prospectos.js';
+import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
@@ -1181,7 +1181,14 @@ app.get('/api/prospectos/tabla', authMiddleware, async (req, res) => {
   try {
     const ahora = new Date();
     const visibles = await prospectosVisiblesPara(req.user);
-    res.json(visibles.map(p => filaTabla(p, [], ahora)));
+    // #319: las cotizaciones se filtran por la MISMA visibilidad que en
+    // GET /api/hoy antes de ligarlas, para que un vendedor nunca vea por la
+    // fila del prospecto la cotizacion de otro.
+    const cotizaciones = await cotStore.listar();
+    const cotizacionesVisibles = req.user.role === 'admin'
+      ? cotizaciones
+      : cotizaciones.filter(c => c.vendedor === req.user.name);
+    res.json(visibles.map(p => filaTabla(p, cotizacionesDelProspecto(p, cotizacionesVisibles), ahora)));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo armar la tabla de prospectos: ' + err.message });
   }

@@ -176,6 +176,9 @@
 
 <script type="module">
 import { buildWaLinkProspecto, CANALES } from '/js/prospectos-logica.js';
+// #319: las etiquetas de etapa del pipeline, para que el detalle nombre la
+// etapa de cada cotizacion igual que el tablero.
+import { COLUMNA_LABELS } from '/js/pipeline-logica.js';
 
 // Tabla de prospectos. Lee GET /api/prospectos/tabla, que ya resuelve la
 // visibilidad -- un vendedor ve los suyos y el admin ve todos (por eso el
@@ -398,6 +401,11 @@ function filaDetalle(p) {
     ['Piezas estimadas', p.data.piezas_estimadas],
     ['Gafete', GAFETES[p.gafete]],
     ['Cliente en Operam', p.clienteId],
+    // #319: todas las cotizaciones del prospecto, una por linea. El folio lo
+    // decide el servidor (ADR-0009): aqui nunca se arma un numero.
+    ['Cotizaciones', (p.cotizaciones || [])
+      .map(c => `${c.folio} · ${COLUMNA_LABELS[c.etapa] || c.etapa} · ${fechaCorta(c.fecha)}`)
+      .join('\n')],
     ['Qué falta', p.queFalta.map(k => ETIQUETAS_QUE_FALTA[k]).join(', ')],
     ['Notas', p.data.notas],
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');

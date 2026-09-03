@@ -275,3 +275,75 @@ test('#323: GET /api/catalogos expone operamUrl vacio sin OPERAM_URL', async () 
     else process.env.OPERAM_URL = original;
   }
 });
+
+// --- #319: cotizaciones del prospecto ---
+// La ruta liga las cotizaciones al prospecto por los dos caminos y respeta la
+// visibilidad: un vendedor nunca ve la cotizacion de otro, ni siquiera cuando
+// el celular del cliente es el mismo prospecto. El dia de cadencia no se
+// afirma aqui (la ruta usa el reloj real): eso lo cubren los tests del nucleo.
+
+const NORA = {
+  id: 60, fecha: '2026-08-15T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+  celular10: '5512345678', nombre: 'Nora', ciudad: 'Puebla', canal: 'WhatsApp',
+  etapa: 'seguimiento',
+  eventos: [{ tipo: 'cotizacion', cotizacion_id: 600, fecha: '2026-08-18T10:00:00.000Z', vendedor: 'Memo' }],
+  data: {},
+};
+const OLGA = {
+  id: 61, fecha: '2026-08-16T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5577665544',
+  celular10: '5577665544', nombre: 'Olga', ciudad: 'León', canal: 'Instagram',
+  etapa: 'seguimiento', eventos: [], data: {},
+};
+
+function cotFixture(over = {}) {
+  const { cliente: sobreCliente, ...resto } = over;
+  return {
+    id: 600, fecha: '2026-08-20T10:00:00.000Z', vendedor: 'Memo', cliente: 'LA LUPITA',
+    total: 15000, totalPiezas: 200, tier: 'M100', estado: 'abierta', etapa: 'seguimiento',
+    folioOperam: 1141, registroDesconocido: false, seguimientos: [],
+    data: {
+      cliente: {
+        razonSocial: 'LA LUPITA', nombreCorto: 'La Lupita', rfc: 'XAXX010101000',
+        telefono: '5599887766', celEntrega: '', customerId: 900, ...sobreCliente,
+      },
+    },
+    ...resto,
+  };
+}
+
+test('#319: la ruta liga la cotizacion por el evento del prospecto aunque el celular no coincida', async () => {
+  escribirFixtures([NORA], [cotFixture(), cotFixture({ id: 601 })]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Nora');
+  assert.deepEqual(fila.cotizaciones.map(c => c.id), [600]);
+});
+
+test('#319: la ruta liga la cotizacion por el celular del cliente aunque no haya evento', async () => {
+  escribirFixtures([OLGA], [cotFixture({ id: 602, cliente: { telefono: '+52 55 7766 5544' } })]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Olga');
+  assert.deepEqual(fila.cotizaciones.map(c => c.id), [602]);
+});
+
+test('#319: la cotizacion de otro vendedor no llega a la fila del vendedor, pero si a la del admin', async () => {
+  const ajena = cotFixture({ id: 603, vendedor: 'Ana', cliente: { telefono: '5577665544' } });
+  escribirFixtures([OLGA], [ajena]);
+  const deMemo = await tabla(MEMO_TOKEN);
+  assert.equal(deMemo.status, 200);
+  assert.deepEqual(deMemo.body.find(f => f.nombre === 'Olga').cotizaciones, []);
+  const deAdmin = await tabla(ADMIN_TOKEN);
+  assert.equal(deAdmin.status, 200);
+  assert.deepEqual(deAdmin.body.find(f => f.nombre === 'Olga').cotizaciones.map(c => c.id), [603]);
+});
+
+test('#319: la fila nombra la cotizacion por su folio, nunca por el id interno', async () => {
+  escribirFixtures([NORA], [cotFixture()]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Nora');
+  assert.equal(fila.cotizaciones[0].folio, '#Operam 1141');
+  assert.equal(fila.estado, 'cotizado');
+  assert.equal(fila.queSigue.folio, '#Operam 1141');
+});
