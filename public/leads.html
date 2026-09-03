@@ -31,7 +31,15 @@
   table.leads th .orden-flecha { color: var(--primary); }
   table.leads tbody tr.fila-lead { cursor: pointer; }
   table.leads tbody tr.fila-lead:hover { background: var(--bg); }
-  td.celda-ancha { white-space: normal; max-width: 220px; }
+  /* El limite de ancho va en un elemento INTERNO, no en la celda: max-width
+     sobre un <td> no se respeta con table-layout automatico (la columna se
+     dimensiona por su contenido mas largo) y el texto se derramaba encima de la
+     celda vecina. El texto completo queda en la fila de detalle.
+     El tope por viewport es para el telefono: con el ancho de escritorio, la
+     primera columna ya no cabria junto al boton anclado y el nombre quedaria
+     cortado desde el arranque. */
+  td .recorte { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: min(var(--ancho), 42vw); }
 
   .estado-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px;
     font-weight: 600; white-space: nowrap; }
@@ -55,12 +63,32 @@
   table.leads th:last-child { background: var(--bg); }
   table.leads tbody tr.fila-lead:hover > td:last-child { background: var(--bg); }
 
+  /* La fila de detalle se ancla a la izquierda y se mide contra la PANTALLA, no
+     contra la tabla: la tabla es mas ancha que el telefono, asi que un detalle
+     que herede su ancho se sale de la vista y hay que arrastrarlo para leerlo. */
   tr.detalle-lead td { background: var(--bg); white-space: normal; font-size: 12.5px;
-    line-height: 1.7; }
-  tr.detalle-lead dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+    line-height: 1.7; position: sticky; left: 0; }
+  tr.detalle-lead dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0;
+    width: calc(100vw - 60px); max-width: 820px; overflow-wrap: anywhere; }
   tr.detalle-lead dt { color: var(--text-muted); }
   tr.detalle-lead dd { margin: 0; }
   .aviso-vacio { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+  .sub-fila, .txt-corto { display: none; }
+
+  /* En el telefono la tabla completa no cabe, y con scroll horizontal el boton
+     anclado se monta encima de la columna de al lado. En vez de pelearse con el
+     ancho, la pantalla angosta muestra SOLO las tres columnas que importan para
+     escribir -- estado, a quien, y el boton -- con la empresa debajo del nombre.
+     Lo demas se lee tocando la fila. */
+  @media (max-width: 560px) {
+    table.leads th:nth-child(n+3):not(:last-child),
+    table.leads tr.fila-lead > td:nth-child(n+3):not(:last-child) { display: none; }
+    .sub-fila { display: block; font-size: 11px; color: var(--text-muted); }
+    .txt-largo { display: none; }
+    .txt-corto { display: inline; }
+    table.leads th, table.leads td { padding: 8px 6px; }
+    td .recorte { max-width: 40vw; }
+  }
 </style>
 </head>
 <body>
@@ -136,11 +164,13 @@ import { buildWaLinkProspecto } from '/js/prospectos-logica.js';
 // de vendedor solo aparece cuando de verdad hay mas de uno a la vista).
 // Comparte el token de localStorage con la app principal: quien ya entro al
 // cotizador en este navegador no vuelve a teclear el PIN.
+// La etiqueta corta es para el telefono: la larga se come el ancho que necesita
+// el nombre y lo empuja debajo del boton anclado.
 const ESTADOS = [
-  { rango: 0, etiqueta: 'Sin siguiente paso' },
-  { rango: 1, etiqueta: 'Contacto agendado' },
-  { rango: 2, etiqueta: 'Cotizado' },
-  { rango: 3, etiqueta: 'Ya es cliente' },
+  { rango: 0, etiqueta: 'Sin siguiente paso', corta: 'Pendiente' },
+  { rango: 1, etiqueta: 'Contacto agendado', corta: 'Agendado' },
+  { rango: 2, etiqueta: 'Cotizado', corta: 'Cotizado' },
+  { rango: 3, etiqueta: 'Ya es cliente', corta: 'Cliente' },
 ];
 const ORIGENES = {
   ambos: 'Gafete y captura',
@@ -150,10 +180,13 @@ const ORIGENES = {
 
 const COLUMNAS = [
   { llave: 'estado', titulo: 'Estado', valor: p => p._estado, texto: p => ESTADOS[p._estado].etiqueta },
-  { llave: 'nombre', titulo: 'Nombre', valor: p => p.nombre || '', ancha: true },
-  { llave: 'empresa', titulo: 'Empresa', valor: p => p.data.empresa || '', ancha: true },
+  // La empresa se repite debajo del nombre para la pantalla angosta, donde su
+  // columna no se muestra (ver el media query).
+  { llave: 'nombre', titulo: 'Nombre', valor: p => p.nombre || '', ancho: 180,
+    sub: p => p.data.empresa || '' },
+  { llave: 'empresa', titulo: 'Empresa', valor: p => p.data.empresa || '', ancho: 200 },
   { llave: 'tipo', titulo: 'Tipo', valor: p => p.data.tipo_cliente || '' },
-  { llave: 'area', titulo: 'Área de interés', valor: p => p.data.area_interes || '', ancha: true },
+  { llave: 'area', titulo: 'Área de interés', valor: p => p.data.area_interes || '', ancho: 240 },
   { llave: 'ciudad', titulo: 'Ciudad', valor: p => p.ciudad || '' },
   { llave: 'tamano', titulo: 'Tamaño', valor: p => p.data.tamano || '' },
   { llave: 'vendedor', titulo: 'Vendedor', valor: p => p.vendedor || '' },
@@ -289,6 +322,9 @@ function celdaWa(p) {
 function filaDetalle(p) {
   const cal = p.data.calificacion || {};
   const filas = [
+    // Empresa y area de interes se recortan en la tabla: aqui van completas.
+    ['Empresa', p.data.empresa],
+    ['Área de interés', p.data.area_interes],
     ['Celular', p.celular],
     ['Correo', p.data.correo],
     ['Puesto', p.data.puesto],
@@ -312,11 +348,21 @@ function pinta() {
   pintaCabeceras();
   el('leads-cuerpo').innerHTML = lista.map(p => {
     const celdas = COLUMNAS.map(c => {
-      const texto = c.texto ? c.texto(p) : c.valor(p);
-      const contenido = c.llave === 'estado'
-        ? `<span class="estado-badge estado-${p._estado}">${escapeHtml(texto)}</span>`
-        : escapeHtml(texto);
-      return `<td class="${c.ancha ? 'celda-ancha' : ''}">${contenido}</td>`;
+      const texto = String(c.texto ? c.texto(p) : c.valor(p));
+      if (c.llave === 'estado') {
+        const corta = ESTADOS[p._estado].corta;
+        return `<td><span class="estado-badge estado-${p._estado}">` +
+          `<span class="txt-largo">${escapeHtml(texto)}</span>` +
+          `<span class="txt-corto">${escapeHtml(corta)}</span></span></td>`;
+      }
+      if (!c.ancho) return `<td>${escapeHtml(texto)}</td>`;
+      const sub = c.sub ? c.sub(p) : '';
+      const subHtml = sub
+        ? `<div class="recorte sub-fila" style="--ancho:${c.ancho}px">${escapeHtml(sub)}</div>`
+        : '';
+      // title deja leer el valor completo sin abrir la fila (en el escritorio).
+      return `<td><div class="recorte" style="--ancho:${c.ancho}px" title="${escapeHtml(texto)}">` +
+        `${escapeHtml(texto)}</div>${subHtml}</td>`;
     }).join('');
     const detalle = estado.abierta === p.id ? filaDetalle(p) : '';
     return `<tr class="fila-lead" data-id="${p.id}">${celdas}<td>${celdaWa(p)}</td></tr>${detalle}`;
