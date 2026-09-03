@@ -391,3 +391,42 @@ test('#320: con dos cotizaciones vivas la fila del cliente muestra la mas avanza
   assert.equal(fila.queSigue.accion, 'Anticipo pagado (#Operam 1150) y 1 más');
   assert.equal(fila.queSigue.masCotizaciones, 1);
 });
+
+// --- #322: que falta (clientes) ---
+// El AC del ticket: la tabla se arma SIN consultar Operam. El test lo hace
+// verificable dejando un `globalThis.fetch` que revienta -- cualquier llamada
+// saldria como 500 -- y aun asi la fila del cliente generico trae sus huecos.
+
+const RITA_322 = {
+  id: 90, fecha: '2026-08-10T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5511223344',
+  celular10: '5511223344', nombre: 'Rita', ciudad: 'Puebla', canal: 'WhatsApp',
+  etapa: 'seguimiento', eventos: [],
+  data: { correo: 'rita@ejemplo.com', cliente_id: 507 },
+};
+
+const COT_RITA = {
+  id: 900, fecha: '2026-08-20T10:00:00.000Z', vendedor: 'Memo', cliente: 'RITA',
+  total: 8000, totalPiezas: 100, tier: 'M100', estado: 'abierta', etapa: 'seguimiento',
+  folioOperam: 1200, registroDesconocido: false, seguimientos: [],
+  data: {
+    cliente: {
+      razonSocial: 'RITA', nombreCorto: 'Rita', rfc: 'XAXX010101000',
+      telefono: '5511223344', celEntrega: '', calle: '', cpEntrega: '', customerId: 507,
+    },
+  },
+};
+
+test('#322: la tabla arma los huecos del cliente sin una sola llamada a Operam', async () => {
+  escribirFixtures([RITA_322], [COT_RITA]);
+  const fetchOriginal = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error('fetch prohibido'); };
+  try {
+    const res = await tabla(MEMO_TOKEN);
+    assert.equal(res.status, 200);
+    const fila = res.body.find(f => f.nombre === 'Rita');
+    assert.equal(fila.estado, 'cliente');
+    assert.deepEqual(fila.queFalta, ['datos_fiscales', 'domicilio']);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});

@@ -684,3 +684,107 @@ test('#320: una No util no es viva y no se cuenta en el aviso de cuantas mas hay
   assert.equal(q.accion, 'Saldo pagado (#Operam 1171)');
   assert.equal(q.masCotizaciones, 0);
 });
+
+// --- #322: que falta (clientes) ---
+// Los huecos del CLIENTE salen de lo que el cotizador YA GUARDA de la subida a
+// Operam (#81/#83) -- la cotizacion de referencia -- y nunca de una consulta a
+// Operam (CONTEXT.md "Que sigue / Que falta"). Sin ninguna cotizacion ligada no
+// hay evidencia y no se inventan huecos.
+
+function prospecto322(data = {}) {
+  return {
+    id: 90, fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+    etapa: 'seguimiento', eventos: [],
+    data: { correo: 'laura@ejemplo.com', cliente_id: 507, ...data },
+  };
+}
+
+function cot322(cliente = {}, over = {}) {
+  return {
+    id: 900, fecha: '2026-08-20T10:00:00.000Z', vendedor: 'Memo', cliente: 'LA LUPITA',
+    etapa: 'seguimiento', folioOperam: 1141,
+    data: {
+      cliente: {
+        razonSocial: 'LA LUPITA', nombreCorto: 'La Lupita', rfc: 'CPE921211N76',
+        telefono: '5512345678', celEntrega: '', calle: 'Hamburgo 100', colonia: 'Juarez',
+        cpEntrega: '06600', municipio: 'Cuauhtemoc', customerId: 507, ...cliente,
+      },
+    },
+    ...over,
+  };
+}
+
+test('#322: el cliente cuya cotizacion salio con RFC generico reclama datos fiscales', () => {
+  const huecos = queFalta(prospecto322(), [cot322({ rfc: 'XAXX010101000' })]);
+  assert.deepEqual(huecos, ['datos_fiscales']);
+});
+
+test('#322: el cliente extranjero con el generico XEXX tambien reclama datos fiscales', () => {
+  const huecos = queFalta(prospecto322(), [cot322({ rfc: 'xexx010101000' })]);
+  assert.deepEqual(huecos, ['datos_fiscales']);
+});
+
+test('#322: el cliente cuya cotizacion salio con RFC real no reclama datos fiscales', () => {
+  const huecos = queFalta(prospecto322(), [cot322()]);
+  assert.deepEqual(huecos, []);
+});
+
+test('#322: el cliente cuya cotizacion salio sin calle reclama domicilio de entrega', () => {
+  const huecos = queFalta(prospecto322(), [cot322({ calle: '' })]);
+  assert.deepEqual(huecos, ['domicilio']);
+});
+
+test('#322: el cliente cuya cotizacion salio sin CP reclama domicilio de entrega', () => {
+  const huecos = queFalta(prospecto322(), [cot322({ cpEntrega: '  ' })]);
+  assert.deepEqual(huecos, ['domicilio']);
+});
+
+test('#322: el cliente con calle y CP en su cotizacion no reclama domicilio de entrega', () => {
+  const huecos = queFalta(prospecto322(), [cot322()]);
+  assert.equal(huecos.includes('domicilio'), false);
+});
+
+test('#322: el cliente sin ninguna cotizacion ligada no reclama nada: sin evidencia no se inventan huecos', () => {
+  const huecos = queFalta(prospecto322(), []);
+  assert.deepEqual(huecos, []);
+});
+
+test('#322: el prospecto que todavia no es cliente no reclama datos fiscales ni domicilio, aunque su cotizacion sea generica', () => {
+  const huecos = queFalta(
+    prospecto322({ cliente_id: undefined }),
+    [cot322({ rfc: 'XAXX010101000', calle: '' })]
+  );
+  assert.deepEqual(huecos, []);
+});
+
+test('#322: con dos cotizaciones del mismo cliente manda la mas reciente, no la vieja generica', () => {
+  const vieja = cot322({ rfc: 'XAXX010101000', calle: '' }, { id: 901, fecha: '2026-07-01T10:00:00.000Z' });
+  const nueva = cot322({}, { id: 902, fecha: '2026-08-20T10:00:00.000Z' });
+  assert.deepEqual(queFalta(prospecto322(), [vieja, nueva]), []);
+  assert.deepEqual(queFalta(prospecto322(), [nueva, vieja]), []);
+});
+
+test('#322: la referencia es la cotizacion subida A ESE cliente, aunque otra ligada mas reciente sea de otro', () => {
+  const deOtroCliente = cot322(
+    { customerId: 611, rfc: 'XAXX010101000', calle: '' },
+    { id: 903, fecha: '2026-08-30T10:00:00.000Z' }
+  );
+  const delCliente = cot322({}, { id: 904, fecha: '2026-08-01T10:00:00.000Z' });
+  assert.deepEqual(queFalta(prospecto322(), [deOtroCliente, delCliente]), []);
+});
+
+test('#322: el customerId guardado como texto es el mismo cliente que el cliente_id numerico', () => {
+  const referencia = cot322({ customerId: '507', rfc: 'XAXX010101000' }, { id: 905 });
+  const otra = cot322({ customerId: 611, calle: '' }, { id: 906, fecha: '2026-08-30T10:00:00.000Z' });
+  assert.deepEqual(queFalta(prospecto322(), [otra, referencia]), ['datos_fiscales']);
+});
+
+test('#322: con las cuatro llaves presentes el orden de salida es el de LLAVES_QUE_FALTA', () => {
+  const huecos = queFalta(
+    prospecto322({ evento: 'Abastur 2026', correo: '' }),
+    [cot322({ rfc: 'XAXX010101000', calle: '' })]
+  );
+  assert.deepEqual(huecos, ['calificacion', 'correo', 'datos_fiscales', 'domicilio']);
+  assert.deepEqual(huecos, LLAVES_QUE_FALTA);
+});
