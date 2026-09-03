@@ -347,3 +347,47 @@ test('#319: la fila nombra la cotizacion por su folio, nunca por el id interno',
   assert.equal(fila.estado, 'cotizado');
   assert.equal(fila.queSigue.folio, '#Operam 1141');
 });
+
+// --- #320: que sigue (clientes) ---
+// La ruta arma la fila del cliente con lo que los dos stores ya guardan: la
+// etapa post-venta que dejo el sync y el orden de "la mas avanzada manda". El
+// texto de la etapa no depende del reloj, asi que se afirma completo.
+
+const RITA = {
+  id: 70, fecha: '2026-08-15T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512340070',
+  celular10: '5512340070', nombre: 'Rita', ciudad: 'Querétaro', canal: 'WhatsApp',
+  etapa: 'anticipo_pagado',
+  eventos: [
+    { tipo: 'cotizacion', cotizacion_id: 700, fecha: '2026-08-18T10:00:00.000Z', vendedor: 'Memo' },
+    { tipo: 'cotizacion', cotizacion_id: 701, fecha: '2026-08-25T10:00:00.000Z', vendedor: 'Memo' },
+  ],
+  data: { cliente_id: 900 },
+};
+const TERE = {
+  id: 71, fecha: '2026-08-16T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512340071',
+  celular10: '5512340071', nombre: 'Tere', ciudad: 'Morelia', canal: 'Instagram',
+  etapa: 'por_cotizar', eventos: [], data: { cliente_id: 901 },
+};
+
+test('#320: la fila del cliente sin cotizacion pide cotizarle', async () => {
+  escribirFixtures([TERE], []);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Tere');
+  assert.equal(fila.estado, 'cliente');
+  assert.equal(fila.queSigue.accion, 'Cotizarle');
+});
+
+test('#320: con dos cotizaciones vivas la fila del cliente muestra la mas avanzada y avisa que hay una mas', async () => {
+  escribirFixtures([RITA], [
+    cotFixture({ id: 700, etapa: 'seguimiento', folioOperam: 1141 }),
+    cotFixture({ id: 701, etapa: 'anticipo_pagado', folioOperam: 1150 }),
+  ]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Rita');
+  assert.equal(fila.queSigue.tipo, 'etapa');
+  assert.equal(fila.queSigue.etapa, 'anticipo_pagado');
+  assert.equal(fila.queSigue.accion, 'Anticipo pagado (#Operam 1150) y 1 más');
+  assert.equal(fila.queSigue.masCotizaciones, 1);
+});
