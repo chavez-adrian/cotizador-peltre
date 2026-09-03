@@ -27,7 +27,7 @@ Las etapas intermedias de prospección del modelo previo (Contactado, Calificado
 
 ## Pre-cotización
 
-Deja de ser un modo de trabajo elegible (ADR-0006): toda cotización nueva se sube automáticamente a Operam al generarse, creando de paso un Cliente Genérico si la oportunidad todavía no tiene cliente. **PRE** queda solo como estado de excepción — el folio de Operam está ausente únicamente cuando Operam falló al generar la cotización (caída de red, error de API), con reintento idempotente sobre el mismo intento. La distinción **PRE** vs **"#Operam N"** se conserva visible en la tarjeta, en la cola Hoy y en el tablero, pero en operación normal debería ser rara y transitoria, no un estado en el que una cotización permanezca a propósito. Una PRE **no tiene número** (no existe folio que imprimir) y su documento se identifica como **pre-cotización**: ponerle el id interno sería reintroducir la doble numeración que ADR-0009 cierra.
+Deja de ser un modo de trabajo elegible (ADR-0006): toda cotización nueva se sube automáticamente a Operam al generarse, creando de paso un Cliente Genérico si la oportunidad todavía no tiene cliente. **PRE** queda solo como estado de excepción — el folio de Operam está ausente únicamente cuando Operam falló al generar la cotización (caída de red, error de API), con reintento idempotente sobre el mismo intento. La distinción **PRE** vs **"Cotización N"** se conserva visible en la tarjeta, en la cola Hoy y en el tablero, pero en operación normal debería ser rara y transitoria, no un estado en el que una cotización permanezca a propósito. Una PRE **no tiene número** (no existe folio que imprimir) y su documento se identifica como **pre-cotización**: ponerle el id interno sería reintroducir la doble numeración que ADR-0009 cierra.
 
 **Por qué quedó en PRE** (`motivoPre`, #204): hay dos motivos y no son equivalentes. `'operam'` es el de arriba — el ERP falló — y el documento sale igual, sin número. `'dedup'` es una subida detenida por un posible duplicado sin resolver: ahí el documento queda **bajo candado** (los GET que lo regeneran responden un aviso en vez del documento) hasta que el vendedor elija un candidato o declare que ninguno lo es, y si nadie resuelve en 24 horas la cotización se borra. Ver ADR-0001, nota del 2026-08-19.
 
@@ -35,7 +35,7 @@ Corte histórico (decisión 2026-06-16): el folio de Operam no se persistía ant
 
 ## Número de la cotización
 
-Es el **folio del quote en Operam**, y sólo ése (ADR-0009). El id interno del registro del cotizador es una clave técnica — vive en las URL de los documentos y del historial — y nunca se presenta como "cotización #N": el cliente que recibe el documento y quien abre el ERP tienen que leer el mismo número. Para poder imprimirlo, generar un documento **espera** a que la cotización esté subida a Operam; si no lo consigue, el documento se entrega igual **sin número**, como pre-cotización, y el numerado se re-comparte desde el historial cuando el folio llegue. En la UI el folio se nombra siempre con la convención **"#Operam N"** (#63) — pero esa convención es **hacia adentro**: existe para que el vendedor distinga el folio del id interno, y el cliente no sabe qué es Operam. En lo que el cliente lee —el documento y el **Resumen de la cotización**— el folio va solo: "Cotización 928".
+Es el **folio del quote en Operam**, y sólo ése (ADR-0009). El id interno del registro del cotizador es una clave técnica — vive en las URL de los documentos y del historial — y nunca se presenta como "cotización #N": el cliente que recibe el documento y quien abre el ERP tienen que leer el mismo número. Para poder imprimirlo, generar un documento **espera** a que la cotización esté subida a Operam; si no lo consigue, el documento se entrega igual **sin número**, como pre-cotización, y el numerado se re-comparte desde el historial cuando el folio llegue. El folio se nombra **siempre "Cotización N"**, en toda superficie y sin excepción: el documento, el **Resumen de la cotización**, el tablero, el historial, la cola Hoy y la bandeja. La convención **"#Operam N"** de #63 queda **retirada** (decisión 2026-09-03): nombraba el ERP en vez de la cosa, y no hace falta ni hacia adentro — decir "Cotización" ya dice que no es el id interno, que nunca se presenta como número. Un solo punto lo decide en el código, el mismo de siempre.
 
 ## Editar / Copiar cotización
 
@@ -103,13 +103,15 @@ El agrupador comercial del modelo: Platos, Tazas, Tazones, Salseras, Portavasos,
 
 **No se deriva del prefijo del SKU.** El prefijo es código de molde, no familia: `VA` mezcla tazas con pocillos, `VT` mezcla tequileros con vasos, y platos hondos y trincheros viven en prefijos distintos (`PH` y `PL`) siendo la misma familia. La asignación es modelo por modelo y la decide una persona.
 
-Su origen es la columna `amazon_type` del Excel maestro de precios — la clasificación con la que ya se listan los productos en Amazon, que resulta ser la misma pregunta ("¿qué es esta pieza para quien la compra?"). Deja de vivir ahí: pasa al **Maestro de modelos**, donde se puede corregir sin tocar un archivo. Un modelo puede no tener familia asignada, y eso es un pendiente visible, no un silencio: hoy `BA30 Base` y `OL24 Olla` no la tienen.
+Su origen es la columna `amazon_type` del Excel maestro de precios — la clasificación con la que ya se listan los productos en Amazon, que resulta ser la misma pregunta ("¿qué es esta pieza para quien la compra?"). Deja de vivir ahí: pasa al **Maestro de artículos**, donde se puede corregir sin tocar un archivo. Un modelo puede no tener familia asignada, y eso es un pendiente visible, no un silencio: hoy `BA30 Base` y `OL24 Olla` no la tienen.
 
-## Maestro de modelos
+## Maestro de artículos
 
-La fuente de verdad de qué es cada modelo: su nombre comercial, su familia, su peso, sus medidas, su caja, su código SAT y su clasificación GS1. Vive en el sistema y se edita desde el panel de administración, no en el Excel de una computadora ni en un archivo del repositorio — es dato que una persona corrige cuando el catálogo cambia, no una constante del código. Operam no modela nada de esto; el catálogo que el cotizador lee del ERP trae precios y artículos, no lo que un modelo *es*.
+La fuente de verdad de la que se deriva todo artículo de Peltre Nacional: los modelos con su nombre comercial, familia, peso, medidas, caja, código SAT y clasificación GS1; los colores y las texturas con su vocabulario; las cajas; y las reglas que combinan todo eso en SKUs. De ahí salen los artículos que se cargan a Operam, los códigos GS1 y los listados de la tienda en línea.
 
-Es el primer pedazo de un maestro de producto más grande —colores, texturas, cajas, y las reglas que generan los SKUs, los artículos de Operam y los listados de GS1 y Shopify— que por ahora sigue viviendo en el Excel.
+Vive en el sistema y se edita desde el panel de administración, no en el Excel de una computadora ni en un archivo del repositorio: es dato que una persona corrige cuando el catálogo cambia, no una constante del código. Operam no modela nada de esto — el catálogo que el cotizador lee del ERP trae precios y artículos, no lo que un artículo *es*.
+
+Se puebla por partes. Los **modelos** son la primera, porque son los que el **Resumen de la cotización** necesita y los que hoy están duplicados. Lo demás sigue en el Excel por ahora, y mientras tanto el maestro es fuente de datos pero todavía no del generador: el libro sigue produciendo los SKUs y las cargas.
 
 ## Prospecto convertido en cliente
 
