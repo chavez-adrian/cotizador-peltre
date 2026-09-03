@@ -6146,6 +6146,10 @@ async function cargarCotizacion(id, modo = 'nueva') {
     }
     fijarTelefono('cl-telefono', c.telefono || '');
     fijarTelefono('cl-cel-entrega', c.celEntrega || '');
+    // El municipio/estado que viene del registro lo escribio alguien, no el
+    // indice (#291): olvidar la memoria evita que un valor identico al del CP
+    // anterior quede marcado como pisable.
+    olvidarCpAsistido('entrega');
     if (cot.condicionesPago) document.getElementById('cl-condiciones').value = cot.condicionesPago;
     const paisEl = document.getElementById('cl-pais');
     if (paisEl) paisEl.value = c.pais || 'MX';
