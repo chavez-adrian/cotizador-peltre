@@ -1227,3 +1227,60 @@ test('#261: el selector ofrece los eventos presentes, sin repetir, y "Todos"', (
   // Sin eventos capturados el filtro no se pinta: fuera de feria la app se ve igual.
   assert.equal(buildFiltroEventoHtml([prospecto({ id: 1 })], ''), '');
 });
+
+// --- Buscador del Pipeline y de la cola Hoy (#289): el mismo control del
+// Historial (texto + Desde/Hasta), aqui sobre oportunidades y sobre la cola. ---
+let filtrarOportunidades, filtrarColaHoy;
+before(async () => {
+  ({ filtrarOportunidades, filtrarColaHoy } = await import('../pipeline-logica.js'));
+});
+
+test('#289: el pipeline filtra por nombre/cliente, ciudad, vendedor, Origen y folio de Operam', () => {
+  const oportunidades = [
+    prospecto({ id: 1, nombre: 'Mariana López', ciudad: 'Puebla', canal: 'Instagram', vendedor: 'Laura' }),
+    cotizacion({ id: 2, nombre: 'Hotel Azul', folioOperam: 1216, vendedor: 'Memo' }),
+  ];
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'mariana' }).map(o => o.id), [1]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'PUEBLA' }).map(o => o.id), [1]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'instagram' }).map(o => o.id), [1]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'laura' }).map(o => o.id), [1]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'hotel' }).map(o => o.id), [2]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: '1216' }).map(o => o.id), [2]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, {}).map(o => o.id), [1, 2]);
+});
+
+test('#289: el pipeline matchea el celular por digitos donde la oportunidad lo trae', () => {
+  const oportunidades = [
+    prospecto({ id: 1, celular: '+52 55 1234 5678' }),
+    cotizacion({ id: 2, telefono: '5219981234567' }),
+  ];
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: '5512' }).map(o => o.id), [1]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: '99812' }).map(o => o.id), [2]);
+});
+
+test('#289: el pipeline acota por la fecha de creacion de la oportunidad', () => {
+  const oportunidades = [
+    prospecto({ id: 1, nombre: 'Mariana', fecha: '2026-06-02T15:00:00' }),
+    cotizacion({ id: 2, nombre: 'Hotel Azul', fecha: '2026-06-20T15:00:00' }),
+  ];
+  assert.deepEqual(filtrarOportunidades(oportunidades, { desde: '2026-06-10' }).map(o => o.id), [2]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, { hasta: '2026-06-10' }).map(o => o.id), [1]);
+  // Texto y fechas con AND: "hotel" fuera del rango no sobrevive.
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'hotel', hasta: '2026-06-10' }), []);
+});
+
+test('#289: la cola Hoy se filtra sin alterar su orden por urgencia', () => {
+  const cola = [
+    { tipo: 'no_asignado', id: 1, nombre: 'Sin dueno', ciudad: 'Puebla', canal: 'Formulario web', celular: '5512345678', fecha: '2026-06-02T15:00:00' },
+    { tipo: 'cotizacion', id: 2, cliente: 'Hotel Azul', vendedor: 'Memo', folioOperam: 1216, telefono: '5219981234567', fecha: '2026-06-20T15:00:00' },
+    { tipo: 'prospecto', id: 3, nombre: 'Mariana', ciudad: 'Mérida', canal: 'Instagram', celular: '9987654321', fecha: '2026-06-05T15:00:00' },
+  ];
+  assert.deepEqual(filtrarColaHoy(cola, { texto: 'puebla' }).map(i => i.id), [1]);
+  assert.deepEqual(filtrarColaHoy(cola, { texto: 'hotel' }).map(i => i.id), [2]);
+  assert.deepEqual(filtrarColaHoy(cola, { texto: '1216' }).map(i => i.id), [2]);
+  assert.deepEqual(filtrarColaHoy(cola, { texto: '99876' }).map(i => i.id), [3]);
+  assert.deepEqual(filtrarColaHoy(cola, { texto: '99812' }).map(i => i.id), [2]);
+  // El orden que llego del servidor es el de urgencia: filtrar no lo reordena.
+  assert.deepEqual(filtrarColaHoy(cola, { desde: '2026-06-03' }).map(i => i.id), [2, 3]);
+  assert.deepEqual(filtrarColaHoy(cola, {}).map(i => i.id), [1, 2, 3]);
+});

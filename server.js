@@ -1397,9 +1397,38 @@ ${entrantes.notas}`;
   return merge;
 }
 
+// Los textos que el importador guardo antes de aplicar la regla de la casa
+// quedaron como venian del gafete (MAYUSCULAS) y de ahi pasaron a la libreta de
+// Google. Volver a subir el export los corrige. Es la UNICA excepcion a "lo
+// capturado en el stand nunca se pisa", y se sostiene porque capitalizar no
+// cambia el dato sino como esta escrito: la regla es la misma "venga de donde
+// venga la captura" (#235/#269, y desde #293 con el titulador unico del repo
+// via normalizarTextosProspecto). Sobre lo capturado a mano,
+// que ya nacio normalizado, no escribe nada -- es idempotente. Las notas NO
+// entran: son texto del vendedor, no identidad del prospecto.
+function correccionDeTextos(existente, campos) {
+  const fusionado = {
+    nombre: existente.nombre,
+    ciudad: campos.ciudad === undefined ? existente.ciudad : campos.ciudad,
+    data: { ...(existente.data || {}), ...campos.data },
+  };
+  const limpio = normalizarTextosProspecto(fusionado);
+  const correccion = {};
+  if (limpio.nombre !== fusionado.nombre) correccion.nombre = limpio.nombre;
+  if (limpio.ciudad !== fusionado.ciudad) correccion.ciudad = limpio.ciudad;
+  const data = {};
+  for (const k of ['empresa', 'correo']) {
+    if (limpio.data[k] !== fusionado.data[k]) data[k] = limpio.data[k];
+  }
+  if (Object.keys(data).length) correccion.data = data;
+  return correccion;
+}
+
 async function enriquecerConExport(existente, fila, evento, fecha) {
   const campos = { data: datosParaEnriquecer(existente.data || {}, fila.data) };
   if (campoVacio(existente.ciudad) && !campoVacio(fila.ciudad)) campos.ciudad = fila.ciudad;
+  const correccion = correccionDeTextos(existente, campos);
+  Object.assign(campos, correccion, { data: { ...campos.data, ...(correccion.data || {}) } });
   await prospectosStore.actualizarDatos(existente.id, campos);
   await prospectosStore.registrarEvento(existente.id, {
     tipo: 'importado', fecha, evento, vendedor: existente.vendedor,

@@ -362,3 +362,40 @@ test('la importacion es solo admin: vendedor 403, sin token 401', async () => {
   assert.equal(sinToken.status, 401);
   assert.equal(readProspectos().length, 0);
 });
+
+// Los textos que este importador guardo ANTES de aplicar la regla de la casa
+// quedaron como venian del gafete (MAYUSCULAS) y de ahi pasaron a la libreta de
+// Google. Volver a subir el export los corrige: capitalizar no cambia el dato,
+// solo como esta escrito, y la regla es la misma "venga de donde venga la
+// captura". Sin esto, los 99 nombres de empresa ya importados se quedan en
+// mayusculas para siempre, porque el enriquecimiento solo escribe sobre vacio.
+test('re-importar corrige las MAYUSCULAS que el importador viejo dejo guardadas', async () => {
+  writeProspectos([prospectoDeStand({ empresa: 'LOS ANTOJOS DEL GORDO', correo: 'Omar@VIANDA.MX' })]);
+  const guardadoAntes = readProspectos()[0];
+  guardadoAntes.nombre = 'OMAR OLVERA';
+  guardadoAntes.ciudad = 'TLALNEPANTLA DE BAZ';
+  writeProspectos([guardadoAntes]);
+
+  const res = await importar(ADMIN_TOKEN, xlsxBuffer([fila({ actividad: 'Hotel' })]), 'Jaime Abaroa');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.enriquecidos, 1);
+  const p = readProspectos()[0];
+  assert.equal(p.data.empresa, 'Los Antojos del Gordo');
+  assert.equal(p.ciudad, 'Tlalnepantla de Baz');
+  assert.equal(p.nombre, 'Omar Olvera');
+  assert.equal(p.data.correo, 'omar@vianda.mx');
+  // Las notas del vendedor NO se tocan: son texto suyo, no un campo de identidad.
+  assert.equal(p.data.notas, 'Pidio tazas');
+});
+
+test('la correccion de mayusculas es idempotente y no toca lo que ya esta bien escrito', async () => {
+  writeProspectos([prospectoDeStand({ empresa: 'Casa Maguey' })]);
+  const buffer = xlsxBuffer([fila({ actividad: 'Hotel' })]);
+  await importar(ADMIN_TOKEN, buffer, 'Jaime Abaroa');
+  const primera = readProspectos()[0];
+  await importar(ADMIN_TOKEN, buffer, 'Jaime Abaroa');
+  const segunda = readProspectos()[0];
+  assert.equal(primera.data.empresa, 'Casa Maguey');
+  assert.equal(segunda.data.empresa, 'Casa Maguey');
+  assert.equal(segunda.nombre, primera.nombre);
+});

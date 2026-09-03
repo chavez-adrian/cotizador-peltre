@@ -106,6 +106,8 @@ test('los nombres del export llegan en MAYUSCULAS y se guardan titulados, sin to
     fila({ nombre: 'MARÍA JOSÉ', apellido: 'DE LA TORRE' }),
     fila({ nombre: 'Ana', apellido: 'McKenzie', celular: '5512421576' }),
   ]), OPTS);
+  // Las particulas van en minuscula (regla de #235, que la funcion propia del
+  // importador no tenia) y la mayuscula interior de "McKenzie" se preserva.
   assert.deepEqual(listos.map(p => p.nombre), ['María José de la Torre', 'Ana McKenzie']);
 });
 
@@ -391,4 +393,40 @@ test('el formato anterior tambien puebla los campos propios que ese export si tr
   assert.equal(listos[0].data.puesto, 'Gerente de Compras');
   assert.equal(listos[0].data.tamano, '11-50');
   assert.equal('area_interes' in listos[0].data, false);
+});
+
+// Mayusculas del gafete (decision 2026-08-25 en capitalizarCampo, "venga de
+// donde venga la captura"). El importador tenia su propia funcion `titular`,
+// mas pobre que la regla de la casa y aplicada SOLO al nombre de la persona:
+// empresa y ciudad se guardaban tal como venian del gafete, en MAYUSCULAS, y
+// de ahi pasaban a la libreta de Google.
+test('empresa, ciudad y nombre del gafete se guardan con la capitalizacion de la casa', () => {
+  const { listos } = importarProspectosFeria(workbook2026([
+    fila2026({
+      nombre: 'ISAAC', apellido: 'VALDERRAMA',
+      empresa: 'EQUIPAMIENTO HOTELERO DE MEXICO SA DE CV',
+      ciudad: 'TLALNEPANTLA DE BAZ',
+      correo: 'Isaac.Valderrama@Informa.COM',
+    }),
+  ]), OPTS);
+  assert.equal(listos[0].nombre, 'Isaac Valderrama');
+  assert.equal(listos[0].data.empresa, 'Equipamiento Hotelero de Mexico SA de CV');
+  assert.equal(listos[0].ciudad, 'Tlalnepantla de Baz');
+  assert.equal(listos[0].data.correo, 'isaac.valderrama@informa.com');
+});
+
+test('la capitalizacion respeta particulas y siglas fijas, no solo la primera letra', () => {
+  const { listos } = importarProspectosFeria(workbook2026([
+    fila2026({ empresa: 'LOS ANTOJOS DEL GORDO', ciudad: 'CIUDAD DE MÉXICO' }),
+  ]), OPTS);
+  assert.equal(listos[0].data.empresa, 'Los Antojos del Gordo');
+  assert.equal(listos[0].ciudad, 'Ciudad de México');
+});
+
+test('el gafete sin celular tambien sale capitalizado (va al reporte del admin)', () => {
+  const { sinCelular } = importarProspectosFeria(workbook2026([
+    fila2026({ nombre: 'MARLENE', apellido: 'VAZQUEZ', empresa: 'LEMON PIE', celular: '' }),
+  ]), OPTS);
+  assert.equal(sinCelular[0].nombre, 'Marlene Vazquez');
+  assert.equal(sinCelular[0].empresa, 'Lemon Pie');
 });

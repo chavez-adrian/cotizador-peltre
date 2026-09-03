@@ -70,6 +70,7 @@ import {
   buildCalificacionCamposHtml,
   buildGrupoChipsHtml,
   buildMicHtml,
+  filtrarProspectos,
 } from './prospectos-logica.js';
 // Aviso de dominio mal escrito del correo (issue #269): el MISMO nucleo que usa
 // el formulario publico, sin copia. mayoreo-logica.js es puro y browser-safe.
@@ -101,6 +102,8 @@ import {
   buildMenuNuevoHtml,
   buildCerradasHtml,
   filtrarPorEvento,
+  filtrarOportunidades,
+  filtrarColaHoy,
   buildFiltroEventoHtml,
   filaResultadoClienteHtml,
   filaCrearClienteHtml,
@@ -4330,7 +4333,7 @@ async function marcarSeguimiento(id, paso) {
     const res = await api(`/api/seguimiento/${id}`, { method: 'POST', body: { paso } });
     if (!res.ok) { alert('No se pudo registrar el seguimiento'); return; }
     avisoTablero('Registrado: la tarjeta sale de la cola y volverá cuando toque el siguiente paso (día 2 → 7 → 21 → vencida)');
-    showHoy();
+    recargarHoy();
   } catch (e) {
     alert('Error de conexion');
   }
@@ -4340,7 +4343,7 @@ async function cambiarEstadoCotizacion(id, estado) {
   try {
     const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
     if (!res.ok) { alert('No se pudo actualizar el estado'); return; }
-    showHoy();
+    recargarHoy();
   } catch (e) {
     alert('Error de conexion');
   }
@@ -4362,7 +4365,7 @@ async function agendarReunionCotizacion(id) {
       alert(data.error || 'No se pudo agendar la reunión');
       return;
     }
-    showHoy();
+    recargarHoy();
   } catch (e) {
     alert('Error de conexion');
   }
@@ -4378,7 +4381,7 @@ async function resultadoReunionCotizacion(id, resultado) {
       alert(data.error || 'No se pudo registrar el resultado');
       return;
     }
-    showHoy();
+    recargarHoy();
   } catch (e) {
     alert('Error de conexion');
   }
@@ -4741,9 +4744,33 @@ async function poblarSelectoresProspectoAhora() {
     catalogos.segmentos.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
 }
 
+// Buscador en vivo de las listas (#289): el MISMO control del Historial (caja
+// de texto + Desde/Hasta) en Prospectos, Rescatados, Pipeline y Hoy. El criterio
+// vive en memoria por vista, no persiste y se limpia al entrar. Los inputs son
+// estaticos (index.html) y el listener se cuelga UNA vez en DOMContentLoaded,
+// nunca desde un onclick inline (trampa #112).
+function limpiarCriterioVista(prefijo, criterio) {
+  criterio.texto = '';
+  criterio.desde = '';
+  criterio.hasta = '';
+  for (const campo of ['buscar', 'desde', 'hasta']) {
+    const el = document.getElementById(`${prefijo}-${campo}`);
+    if (el) el.value = '';
+  }
+}
+
+function conectarCriterioVista(prefijo, criterio, alCambiar) {
+  for (const [campo, llave] of [['buscar', 'texto'], ['desde', 'desde'], ['hasta', 'hasta']]) {
+    const el = document.getElementById(`${prefijo}-${campo}`);
+    if (!el) continue;
+    el.addEventListener('input', e => { criterio[llave] = e.target.value; alCambiar(); });
+  }
+}
+
 function showProspectos() {
   ocultarTodasLasVistas();
   document.getElementById('prospectos-view').style.display = 'block';
+  limpiarCriterioVista('prospectos', prospectosCriterio);
   poblarSelectoresProspecto().catch(() => {});
   cargarListaProspectos();
   cargarMotivosNoUtil();
@@ -4971,7 +4998,12 @@ window.nuevoCliente = () => {
 // Los handlers de las tarjetas se invocan desde onclick inline, que resuelve
 // contra window (trampa #112): cada uno se expone a window JUNTO a su
 // declaracion y no existe ningun otro simbolo con ese nombre.
-const bandejaState = { filtro: 'pendiente', candidatos: [], vendedores: [], busqueda: {} };
+// `busqueda` es el estado del boton "Buscar nuevas en Operam" (#126); `criterio`
+// es el del buscador en vivo de la vista (#289). No son lo mismo.
+const bandejaState = {
+  filtro: 'pendiente', candidatos: [], vendedores: [], busqueda: {},
+  criterio: { texto: '', desde: '', hasta: '' },
+};
 
 async function showBandeja() {
   ocultarTodasLasVistas();
@@ -4979,6 +5011,7 @@ async function showBandeja() {
   marcarNavActivo('nav-mas');
   bandejaState.filtro = 'pendiente';
   bandejaState.busqueda = {};
+  limpiarCriterioVista('bandeja', bandejaState.criterio);
   await cargarBandeja();
 }
 
@@ -5004,7 +5037,10 @@ async function cargarBandeja() {
 function renderBandeja() {
   const root = document.getElementById('bandeja-root');
   if (!root) return;
-  root.innerHTML = buildBandejaHtml(bandejaState.candidatos, bandejaState.filtro, bandejaState.vendedores, bandejaState.busqueda);
+  root.innerHTML = buildBandejaHtml(
+    bandejaState.candidatos, bandejaState.filtro, bandejaState.vendedores,
+    bandejaState.busqueda, bandejaState.criterio
+  );
 }
 
 function bandejaCandidato(folio) {
@@ -5121,6 +5157,9 @@ let pipelineModo = PIPELINE_MODOS.has(localStorage.getItem('pipelineModo')) ? lo
 let ultimasOportunidades = [];
 // Evento elegido en el filtro del pipeline (issue #261); vacio = todos.
 let pipelineEvento = '';
+// Criterio del buscador (#289): se combina con AND con el filtro por evento y
+// aplica a los tres modos. Vive en memoria; entrar a la vista lo limpia.
+let pipelineCriterio = { texto: '', desde: '', hasta: '' };
 // Catalogo de vendedores para el control de asignar de la tarjeta No Asignado
 // (issue #57) y el permiso vigente de asignacion (#156): quien puede asignar ya
 // no es solo el admin, sino tambien el vendedor con el checkbox de /admin. El
@@ -5169,6 +5208,8 @@ function prospectoAOportunidad(p) {
     tipo: 'prospecto', id: `p${p.id}`, refId: p.id, nombre: p.nombre,
     vendedor: p.vendedor, ciudad: p.ciudad, canal: p.canal, etapa: p.etapa,
     total: 0, fecha: p.fecha,
+    // Celular para el buscador del pipeline (#289): match por digitos.
+    celular: p.celular,
     // Folio de Operam de un prospecto movido a mano (issue #56): vive en el bag
     // data porque cotizo por fuera (no hay cotizacion en el sistema). La tarjeta
     // pinta "#Operam N" solo si hay folio (nunca PRE, eso es de cotizaciones).
@@ -5187,6 +5228,9 @@ function cotizacionAOportunidad(c) {
     tipo: 'cotizacion', id: `c${c.id}`, refId: c.id, nombre: c.cliente,
     vendedor: c.vendedor, etapa: c.etapa, total: c.total, totalPiezas: c.totalPiezas,
     fecha: c.fecha, folioOperam: c.folioOperam ?? null,
+    // Telefono para el buscador del pipeline (#289): la cotizacion lo trae con
+    // ese nombre (el prospecto lo trae como celular); los dos se buscan igual.
+    telefono: c.telefono,
     decorado: c.decorado === true, calcaChecklist: c.calcaChecklist ?? null,
     // Cadena de folios de Operam (issue #67, AC4): el espejo persistido por el sync
     // (data.espejoOperam) que la tarjeta pinta para trazabilidad.
@@ -5200,6 +5244,14 @@ function cotizacionAOportunidad(c) {
 async function showPipeline() {
   ocultarTodasLasVistas();
   document.getElementById('pipeline-view').style.display = 'block';
+  limpiarCriterioVista('pipeline', pipelineCriterio);
+  await recargarPipeline();
+}
+
+// Recarga las oportunidades conservando el criterio del buscador (#289, mismo
+// patron que recargarHistorial): las acciones de tarjeta refrescan la vista sin
+// que el vendedor pierda lo que estaba buscando.
+async function recargarPipeline() {
   const loadingEl = document.getElementById('pipeline-loading');
   loadingEl.style.display = 'block';
   document.getElementById('pipeline-tablero').innerHTML = '';
@@ -5235,7 +5287,11 @@ function renderPipeline() {
     const select = document.getElementById('pipeline-filtro-evento');
     if (select) select.addEventListener('change', () => { pipelineEvento = select.value; renderPipeline(); });
   }
-  const oportunidades = filtrarPorEvento(ultimasOportunidades, pipelineEvento);
+  // El buscador (#289) se combina con AND con el filtro por evento y aplica a
+  // los tres modos: tablero, lista y cerradas.
+  const oportunidades = filtrarOportunidades(
+    filtrarPorEvento(ultimasOportunidades, pipelineEvento), pipelineCriterio
+  );
   const esTablero = pipelineModo === 'tablero';
   const esCerradas = pipelineModo === 'cerradas';
   const btnLista = document.getElementById('btn-pipeline-modo-lista');
@@ -5269,7 +5325,13 @@ function renderPipeline() {
   const activas = oportunidadesActivas(oportunidades)
     .slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
   if (!activas.length) {
-    listEl.innerHTML = '<div class="empty-state"><p>Sin oportunidades en el pipeline.</p></div>';
+    // "No hay resultados" no es "no hay oportunidades" (#289): si el listado
+    // completo trae activas, lo que dejo la lista vacia fue un filtro -- el de
+    // evento, el del buscador, o los dos.
+    const hayActivasSinFiltrar = oportunidadesActivas(ultimasOportunidades).length > 0;
+    listEl.innerHTML = hayActivasSinFiltrar
+      ? '<div class="empty-state"><p>Ninguna oportunidad coincide con el filtro.</p></div>'
+      : '<div class="empty-state"><p>Sin oportunidades en el pipeline.</p></div>';
     return;
   }
   listEl.innerHTML = activas.map(o => {
@@ -5317,8 +5379,8 @@ async function asignarVendedorTablero(id, btn) {
     // El mismo control vive en el tablero y en la cola Hoy (#156): se refresca
     // la vista visible, no siempre el pipeline (mismo criterio que
     // refrescarProspectos).
-    if (document.getElementById('hoy-view')?.style.display === 'block') showHoy();
-    else showPipeline();
+    if (document.getElementById('hoy-view')?.style.display === 'block') recargarHoy();
+    else recargarPipeline();
   } catch (e) {
     avisoTablero('Error de conexion');
   }
@@ -5343,7 +5405,7 @@ async function moverASeguimientoTablero(id) {
       return;
     }
     avisoTablero(`Movido a Seguimiento (folio ${folio})`);
-    showPipeline();
+    recargarPipeline();
   } catch (e) {
     avisoTablero('Error de conexion');
   }
@@ -5374,7 +5436,7 @@ async function marcarNoUtilTablero(id) {
       return;
     }
     avisoTablero(`Salida a No útil (${motivo})`);
-    showPipeline();
+    recargarPipeline();
   } catch (e) {
     avisoTablero('Error de conexion');
   }
@@ -5402,7 +5464,7 @@ async function cerrarPerdidaTablero(id) {
       return;
     }
     avisoTablero('Cerrada como Perdida');
-    showPipeline();
+    recargarPipeline();
   } catch (e) {
     avisoTablero('Error de conexion');
   }
@@ -5418,7 +5480,7 @@ async function marcarDecorada(id, decorado) {
   try {
     const res = await api(`/api/cotizacion/${id}/decorado`, { method: 'PATCH', body: { decorado: !!decorado } });
     if (!res.ok) { avisoTablero('No se pudo actualizar decorada'); return; }
-    showPipeline();
+    recargarPipeline();
   } catch (e) { avisoTablero('Error de conexion'); }
 }
 window.marcarDecorada = marcarDecorada;
@@ -5427,7 +5489,7 @@ async function toggleCalcaPaso(id, paso, completo) {
   try {
     const res = await api(`/api/cotizacion/${id}/calca-paso`, { method: 'PATCH', body: { paso, completo: !!completo } });
     if (!res.ok) { avisoTablero('No se pudo actualizar el paso de calca'); return; }
-    showPipeline();
+    recargarPipeline();
   } catch (e) { avisoTablero('Error de conexion'); }
 }
 window.toggleCalcaPaso = toggleCalcaPaso;
@@ -5452,7 +5514,7 @@ async function subirCalcaArchivos(id) {
     const res = await api(`/api/cotizacion/${id}/calca-paso`, { method: 'PATCH', body: { paso: 'archivos_dropbox', completo: true, archivos } });
     if (!res.ok) { avisoTablero('No se pudo subir la posicion de calca'); return; }
     avisoTablero('Archivos enviados a Dropbox');
-    showPipeline();
+    recargarPipeline();
   } catch (e) { avisoTablero('Error de conexion'); }
 }
 window.subirCalcaArchivos = subirCalcaArchivos;
@@ -5545,10 +5607,12 @@ async function cargarMotivosNoUtil() {
 // captura + cola "Que toca hoy", accesible desde "Mas".
 let ultimosProspectos = [];
 let ultimaColaProspectos = [];
+// Criterio del buscador (#289): vive en memoria, no persiste. Entrar a la vista
+// lo limpia. UNA sola caja filtra los DOS bloques de la pantalla.
+let prospectosCriterio = { texto: '', desde: '', hasta: '' };
 
 async function cargarListaProspectos() {
   const loadingEl = document.getElementById('prospectos-loading');
-  const colaSeccion = document.getElementById('prospectos-cola-seccion');
   loadingEl.style.display = 'block';
   document.getElementById('prospectos-list').innerHTML = '';
   try {
@@ -5559,8 +5623,6 @@ async function cargarListaProspectos() {
     ultimosProspectos = await res.json();
     ultimaColaProspectos = resCola.ok ? await resCola.json() : [];
     loadingEl.style.display = 'none';
-    colaSeccion.style.display = ultimosProspectos.length ? 'block' : 'none';
-    document.getElementById('prospectos-cola').innerHTML = buildColaProspectosHtml(ultimaColaProspectos);
     renderProspectos();
   } catch (e) {
     loadingEl.textContent = 'Error cargando prospectos';
@@ -5570,13 +5632,27 @@ async function cargarListaProspectos() {
 function renderProspectos() {
   const listEl = document.getElementById('prospectos-list');
   const tituloEl = document.getElementById('prospectos-list-titulo');
+  const colaSeccion = document.getElementById('prospectos-cola-seccion');
+  // El filtro se aplica a los dos bloques ANTES de pintar (#289): la cola de
+  // arriba y la lista completa de abajo responden a la misma caja.
+  const cola = filtrarProspectos(ultimaColaProspectos, prospectosCriterio);
+  const visibles = filtrarProspectos(ultimosProspectos, prospectosCriterio);
+  colaSeccion.style.display = ultimosProspectos.length ? 'block' : 'none';
+  // "No hay resultados" no es "nada pendiente" (#289).
+  document.getElementById('prospectos-cola').innerHTML = (!cola.length && ultimaColaProspectos.length)
+    ? '<div class="cot-card-meta">Ningún pendiente coincide con la búsqueda.</div>'
+    : buildColaProspectosHtml(cola);
   tituloEl.style.display = ultimosProspectos.length ? 'block' : 'none';
   const colaPorId = new Map(ultimaColaProspectos.map(i => [i.id, i]));
   if (!ultimosProspectos.length) {
     listEl.innerHTML = '<div class="empty-state"><p>Sin prospectos capturados.</p></div>';
     return;
   }
-  listEl.innerHTML = ultimosProspectos.slice().reverse()
+  if (!visibles.length) {
+    listEl.innerHTML = '<div class="empty-state"><p>Ningún prospecto coincide con la búsqueda.</p></div>';
+    return;
+  }
+  listEl.innerHTML = visibles.slice().reverse()
     .map(p => buildProspectoCardHtml(p, colaPorId.get(p.id), new Date(), { compacta: true, ligas: ligasExpo() })).join('');
 }
 
@@ -5586,34 +5662,61 @@ function renderProspectos() {
 // de cada tipo. El backend (lib/cola-hoy.js via GET /api/hoy) ya fusiona y ordena;
 // el frontend solo pinta con buildColaHoyHtml, que delega por tipo (prospecto =
 // buildColaProspectosHtml; cotizacion = buildColaCotizacionItemHtml).
+// La cola se retiene en memoria (#289) para poder refiltrarla al teclear sin
+// volver al servidor. El criterio no persiste: entrar a Hoy lo limpia.
+let ultimaColaHoy = [];
+let hoyCriterio = { texto: '', desde: '', hasta: '' };
+
 async function showHoy() {
   ocultarTodasLasVistas();
   document.getElementById('hoy-view').style.display = 'block';
+  limpiarCriterioVista('hoy', hoyCriterio);
+  await recargarHoy();
+}
+
+// Recarga la cola conservando el criterio del buscador (#289, mismo patron que
+// recargarHistorial): registrar un toque no borra lo que se estaba buscando.
+async function recargarHoy() {
   const loadingEl = document.getElementById('hoy-loading');
   const colaEl = document.getElementById('hoy-cola');
   loadingEl.style.display = 'block';
   colaEl.innerHTML = '';
   try {
     const res = await api('/api/hoy');
-    const cola = res.ok ? await res.json() : [];
+    ultimaColaHoy = res.ok ? await res.json() : [];
     // La cola puede traer tarjetas No Asignado (#156): su unica accion es
     // asignarles dueno, con el mismo control (y el mismo catalogo) del tablero.
     await cargarEstadoDeCatalogos();
     loadingEl.style.display = 'none';
-    actualizarBadgeSeguimiento(cola.length);
-    colaEl.innerHTML = buildColaHoyHtml(cola, {
-      vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline,
-    });
+    // El badge cuenta la cola COMPLETA (#289): es el pendiente del dia, no el
+    // resultado de una busqueda.
+    actualizarBadgeSeguimiento(ultimaColaHoy.length);
+    renderHoy();
   } catch (e) {
     loadingEl.textContent = 'Error cargando la cola de hoy';
   }
+}
+
+// Pinta la cola ya cargada aplicando el criterio del buscador (#289). El filtro
+// respeta el orden por urgencia con el que llego del servidor.
+function renderHoy() {
+  const colaEl = document.getElementById('hoy-cola');
+  if (!colaEl) return;
+  const visibles = filtrarColaHoy(ultimaColaHoy, hoyCriterio);
+  if (!visibles.length && ultimaColaHoy.length) {
+    colaEl.innerHTML = '<div class="cot-card-meta">Ningún pendiente coincide con la búsqueda.</div>';
+    return;
+  }
+  colaEl.innerHTML = buildColaHoyHtml(visibles, {
+    vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline,
+  });
 }
 
 // Tras una accion sobre un prospecto, refresca la vista visible (Hoy o la lista
 // de Prospectos en Mas) sin asumir desde donde se disparo.
 function refrescarProspectos() {
   if (document.getElementById('hoy-view')?.style.display === 'block') {
-    showHoy();
+    recargarHoy();
   } else {
     cargarListaProspectos();
   }
@@ -6324,6 +6427,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     cotizacionesFiltro.hasta = e.target.value;
     renderHistorial();
   });
+  // El mismo buscador en las otras cuatro vistas (#289): texto y fechas filtran
+  // en vivo lo que ya esta en memoria, cada una con sus campos y su fecha.
+  conectarCriterioVista('prospectos', prospectosCriterio, renderProspectos);
+  conectarCriterioVista('bandeja', bandejaState.criterio, renderBandeja);
+  conectarCriterioVista('pipeline', pipelineCriterio, renderPipeline);
+  conectarCriterioVista('hoy', hoyCriterio, renderHoy);
   initDragEnTablero('cotizaciones-tablero', {
     atributo: 'col',
     puedeSoltar: puedeArrastrarCotizacion,

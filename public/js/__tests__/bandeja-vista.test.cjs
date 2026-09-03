@@ -266,3 +266,47 @@ test('B6: la vista completa recibe el estado de la busqueda y lo pinta junto al 
   const htmlSinBusqueda = buildBandejaHtml([], 'pendiente', VENDEDORES);
   assert.match(htmlSinBusqueda, /onclick="bandejaBuscarNuevas\(\)"/);
 });
+
+// --- Buscador de Rescatados (#289): el mismo control del Historial, combinado
+// con AND con el filtro por estado. La fecha que acota es la del quote. ---
+
+const OTRO_PENDIENTE = {
+  ...PENDIENTE, folio: '940', fecha: '2026-08-02T00:00:00.000Z',
+  contacto: 'Beto Ruiz', celular: '+52 998 123 4567',
+  debtorNombre: 'PANADERIA SOL', vendedor: 'Oswaldo Chávez',
+};
+
+test('#289: candidatosVisibles combina el filtro por estado con el criterio de busqueda', () => {
+  const candidatos = [PENDIENTE, OTRO_PENDIENTE, { ...PENDIENTE, folio: '901', estado: 'descartado' }];
+  const folios = criterio => candidatosVisibles(candidatos, 'pendiente', criterio).map(c => c.folio);
+  assert.deepEqual(folios({}), ['940', '934']);
+  assert.deepEqual(folios({ texto: 'mariana' }), ['934']);
+  assert.deepEqual(folios({ texto: 'panaderia' }), ['940']);
+  assert.deepEqual(folios({ texto: 'oswaldo' }), ['940']);
+  assert.deepEqual(folios({ texto: '934' }), ['934']);
+  assert.deepEqual(folios({ texto: '99812' }), ['940']);
+  // El estado sigue mandando: el descartado no vuelve por matchear el texto.
+  assert.deepEqual(candidatosVisibles(candidatos, 'pendiente', { texto: '901' }), []);
+  assert.deepEqual(candidatosVisibles(candidatos, 'todos', { texto: '901' }).map(c => c.folio), ['901']);
+});
+
+// La fecha del quote es la del documento en Operam: la tarjeta la pinta sin
+// pasar por Date (fmtFecha) porque convertirla a hora local la correria un dia
+// en husos negativos. El filtro tiene que acotar por ESE mismo dia.
+test('#289: el rango acota por el dia del quote, el mismo que pinta la tarjeta', () => {
+  const candidatos = [PENDIENTE, OTRO_PENDIENTE];
+  const folios = criterio => candidatosVisibles(candidatos, 'pendiente', criterio).map(c => c.folio);
+  assert.deepEqual(folios({ desde: '2026-07-21' }), ['940', '934']);
+  assert.deepEqual(folios({ desde: '2026-07-22' }), ['940']);
+  assert.deepEqual(folios({ hasta: '2026-07-21' }), ['934']);
+  assert.deepEqual(folios({ texto: 'mariana', desde: '2026-08-01' }), []);
+});
+
+test('#289: buildBandejaHtml pinta solo los candidatos que pasan el criterio', () => {
+  const html = buildBandejaHtml([PENDIENTE, OTRO_PENDIENTE], 'pendiente', VENDEDORES, {}, { texto: 'beto' });
+  assert.match(html, /Beto Ruiz/);
+  assert.equal(html.includes('Mariana Gutiérrez Solís'), false);
+  // Los conteos de los filtros por estado siguen contando TODO: son el estado
+  // de la bandeja, no el resultado de la busqueda.
+  assert.match(html, /Pendientes \(2\)/);
+});
