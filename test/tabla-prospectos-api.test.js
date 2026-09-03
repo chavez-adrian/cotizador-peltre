@@ -228,3 +228,19 @@ test('#315: la fila de un prospecto con cotizacion y sin cliente dice cotizado y
   assert.equal(fila.estado, 'cotizado');
   assert.equal(fila.clienteId, null);
 });
+
+// --- #318: que sigue (prospectos) ---
+
+const ELENA = {
+  id: 50, fecha: '2026-09-01T13:00:00.000Z', vendedor: 'Memo', celular: '+52 5566778899',
+  celular10: '5566778899', nombre: 'Elena', ciudad: 'Puebla', canal: 'WhatsApp',
+  etapa: 'por_cotizar', eventos: [], data: {},
+};
+
+test('#318: la fila de un prospecto sin toques trae queSigue con la accion de escribirle', async () => {
+  escribirFixtures([ELENA]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Elena');
+  assert.equal(fila.queSigue.accion, 'Escribirle');
+});

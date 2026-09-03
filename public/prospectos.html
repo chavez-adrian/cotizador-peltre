@@ -219,11 +219,14 @@ const COLUMNAS = [
   // La empresa se repite debajo del nombre para la pantalla angosta, donde su
   // columna no se muestra (ver el media query).
   { llave: 'nombre', titulo: 'Nombre', valor: p => p.nombre || '', ancho: 180,
-    sub: p => p.data.empresa || '' },
+    sub: p => [p.data.empresa || '', p.queSigue.accion] },
   // Ordena por el ISO que manda el servidor (los vacios al final, como toda
   // celda en blanco) y se lee como fecha corta: el ano no dice nada aqui.
   { llave: 'ultimoContacto', titulo: 'Último contacto', valor: p => p.ultimoContacto || '',
     texto: p => fechaCorta(p.ultimoContacto) },
+  // #318: la unica accion en palabras de la fila. En el telefono esta columna
+  // queda oculta (media query) y la accion se lee como sub-fila bajo el nombre.
+  { llave: 'queSigue', titulo: 'Qué sigue', valor: p => p.queSigue.accion, ancho: 220 },
   { llave: 'empresa', titulo: 'Empresa', valor: p => p.data.empresa || '', ancho: 200 },
   { llave: 'tipo', titulo: 'Tipo', valor: p => p.data.tipo_cliente || '' },
   { llave: 'area', titulo: 'Área de interés', valor: p => p.data.area_interes || '', ancho: 240 },
@@ -410,10 +413,11 @@ function pinta() {
           `<span class="txt-corto">${escapeHtml(corta)}</span></span></td>`;
       }
       if (!c.ancho) return `<td>${escapeHtml(texto)}</td>`;
-      const sub = c.sub ? c.sub(p) : '';
-      const subHtml = sub
-        ? `<div class="recorte sub-fila" style="--ancho:${c.ancho}px">${escapeHtml(sub)}</div>`
-        : '';
+      // Varias sub-filas por columna: en el telefono el nombre carga la empresa
+      // y la accion de Que sigue, cuyas columnas no se pintan (#318).
+      const subs = (c.sub ? c.sub(p) : []).filter(Boolean);
+      const subHtml = subs.map(s =>
+        `<div class="recorte sub-fila" style="--ancho:${c.ancho}px">${escapeHtml(s)}</div>`).join('');
       // title deja leer el valor completo sin abrir la fila (en el escritorio).
       return `<td><div class="recorte" style="--ancho:${c.ancho}px" title="${escapeHtml(texto)}">` +
         `${escapeHtml(texto)}</div>${subHtml}</td>`;

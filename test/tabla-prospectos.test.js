@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { estadoProspecto, filaTabla, gafeteDe, queFalta, LLAVES_QUE_FALTA } from '../lib/tabla-prospectos.js';
+import { estadoProspecto, filaTabla, gafeteDe, queFalta, queSigue, LLAVES_QUE_FALTA } from '../lib/tabla-prospectos.js';
 
 // --- #313: quien ya fue contactado ---
 // El Toque es la UNICA verdad de "ya lo contacte" (CONTEXT.md "Toque"): de el
@@ -268,4 +268,96 @@ test('#315: filaTabla trae clienteId null cuando el prospecto no es cliente', ()
   const fila = filaTabla(prospecto315([]), [], AHORA_315);
   assert.equal(fila.clienteId, null);
   assert.equal(fila.estado, 'sin_contactar');
+});
+
+// --- #318: que sigue (prospectos) ---
+// Una sola accion en palabras derivada del Estado del prospecto (CONTEXT.md
+// "Que sigue / Que falta"). El umbral de la sugerencia de No util sale de
+// SUGERIR_NO_UTIL_TOQUES (lib/seguimiento-prospectos.js), no de un literal: es
+// la MISMA cadencia que ya corre en la cola Hoy.
+
+const AHORA_318 = new Date('2026-09-10T12:00:00.000Z');
+
+function prospecto318(eventos) {
+  return {
+    id: 50, fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+    etapa: 'por_cotizar', eventos, data: {},
+  };
+}
+
+test('#318: sin contactar lo que sigue es escribirle', () => {
+  assert.deepEqual(queSigue(prospecto318([]), [], AHORA_318), { tipo: 'escribirle', accion: 'Escribirle' });
+});
+
+function toque(fecha) {
+  return { tipo: 'toque', fecha, vendedor: 'Memo' };
+}
+
+test('#318: contactado con un toque pide insistir y dice cuantos toques van', () => {
+  const q = queSigue(prospecto318([toque('2026-09-02T09:00:00.000Z')]), [], AHORA_318);
+  assert.deepEqual(q, { tipo: 'insistir', accion: 'Insistir (toque 1 de 3)', toques: 1 });
+});
+
+test('#318: contactado con dos toques sigue pidiendo insistir', () => {
+  const q = queSigue(prospecto318([
+    toque('2026-09-02T09:00:00.000Z'),
+    toque('2026-09-04T09:00:00.000Z'),
+  ]), [], AHORA_318);
+  assert.deepEqual(q, { tipo: 'insistir', accion: 'Insistir (toque 2 de 3)', toques: 2 });
+});
+
+test('#318: al tercer toque el sistema SUGIERE la salida a No util, nunca la aplica', () => {
+  const q = queSigue(prospecto318([
+    toque('2026-09-02T09:00:00.000Z'),
+    toque('2026-09-04T09:00:00.000Z'),
+    toque('2026-09-08T09:00:00.000Z'),
+  ]), [], AHORA_318);
+  assert.deepEqual(q, {
+    tipo: 'sugerir_no_util', accion: 'Sugerir No útil (3 toques sin respuesta)', toques: 3,
+  });
+});
+
+// La accion del escalon Agendado se afirma como cadena COMPLETA con un reloj y
+// un compromiso fijos: es el texto que el vendedor lee en la fila. El formato
+// de la fecha es el mismo dia corto del chip de la tarjeta (es-MX, 'mar 15 de
+// sep' tal como lo entrega Node).
+function siguienteContacto318(fechaContacto, canales) {
+  return {
+    tipo: 'siguiente_contacto', canales, fecha_contacto: fechaContacto,
+    fecha: '2026-09-05T10:00:00.000Z', vendedor: 'Memo',
+  };
+}
+
+test('#318: agendado con un canal dice el canal y la fecha del compromiso', () => {
+  const q = queSigue(prospecto318([
+    siguienteContacto318('2026-09-15T17:00:00.000Z', ['WhatsApp']),
+  ]), [], AHORA_318);
+  assert.deepEqual(q, {
+    tipo: 'agendado', accion: 'WhatsApp el mar 15 de sep', canales: ['WhatsApp'],
+    fecha: '2026-09-15T17:00:00.000Z', vencido: false,
+  });
+});
+
+test('#318: agendado con dos canales los suma en el orden en que se acordaron', () => {
+  const q = queSigue(prospecto318([
+    siguienteContacto318('2026-09-15T17:00:00.000Z', ['WhatsApp', 'Correo']),
+  ]), [], AHORA_318);
+  assert.equal(q.accion, 'WhatsApp + Correo el mar 15 de sep');
+  assert.deepEqual(q.canales, ['WhatsApp', 'Correo']);
+});
+
+test('#318: un compromiso vencido y sin cerrar lo dice al final de la accion', () => {
+  const q = queSigue(prospecto318([
+    siguienteContacto318('2026-09-08T17:00:00.000Z', ['Llamada']),
+  ]), [], AHORA_318);
+  assert.deepEqual(q, {
+    tipo: 'agendado', accion: 'Llamada el mar 8 de sep (vencido)', canales: ['Llamada'],
+    fecha: '2026-09-08T17:00:00.000Z', vencido: true,
+  });
+});
+
+test('#318: filaTabla agrega queSigue', () => {
+  const fila = filaTabla(prospecto318([]), [], AHORA_318);
+  assert.deepEqual(fila.queSigue, { tipo: 'escribirle', accion: 'Escribirle' });
 });
