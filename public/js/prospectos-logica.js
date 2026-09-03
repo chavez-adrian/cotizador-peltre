@@ -5,6 +5,7 @@
 // alta-logica.js: una sola implementacion, cero copias espejo.
 
 import { validarTelefono, combinarTelefonoConCodigo } from './alta-logica.js';
+import { filtrarPorCriterio } from './busqueda-logica.js';
 
 // Canal de origen del prospecto -- catalogo cerrado (CONTEXT.md, Captura de prospecto).
 export const CANALES = [
@@ -539,6 +540,22 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
       ${editable ? `<div id="pr-edicion-${p.id}" style="display:none">${buildEdicionProspectoFormHtml(p)}</div>` : ''}
     </div>
   `;
+}
+
+// Buscador de la vista Prospectos (#289): UNA caja filtra los DOS bloques de la
+// pantalla, asi que estos campos tienen que valer igual para la ficha completa
+// del prospecto y para el item de la cola. La empresa es el unico campo con dos
+// domicilios: en la ficha vive en el bag `data`, en el item de la cola llega
+// plana (lib/seguimiento-prospectos.js). El Origen del prospecto es el campo
+// `canal` (glosario, 2026-09-02). La fecha que acota es la de captura.
+export const BUSCABLES_PROSPECTO = {
+  camposDe: p => [p?.nombre, p?.ciudad, p?.vendedor, p?.canal, p?.data?.empresa ?? p?.empresa],
+  digitosDe: p => p?.celular,
+  fechaDe: p => p?.fecha,
+};
+
+export function filtrarProspectos(prospectos, criterio) {
+  return filtrarPorCriterio(prospectos, criterio, BUSCABLES_PROSPECTO);
 }
 
 // Seccion "Que toca hoy" (issue #44): la cola llega ya ordenada por urgencia

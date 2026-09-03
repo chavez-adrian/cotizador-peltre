@@ -254,3 +254,16 @@ test('SC4: sin compromiso el item trae siguienteContacto en null', () => {
   const cola = calcularColaProspectos([prospecto()], AHORA);
   assert.equal(cola[0].siguienteContacto, null);
 });
+
+// El buscador de Prospectos y el de Hoy (#289) acotan por la fecha de CAPTURA y
+// buscan por empresa: las dos viajan en el item para que el filtro de la cola
+// use el mismo criterio que la lista, sin ir a buscar la ficha completa.
+test('S17: el item de la cola trae la fecha de captura y la empresa del prospecto', () => {
+  const cola = calcularColaProspectos([
+    prospecto({ fecha: '2026-06-09T16:00:00Z', data: { empresa: 'Hotel Azul' } }),
+    prospecto({ fecha: '2026-06-09T16:00:00Z', data: {} }),
+  ], AHORA);
+  assert.equal(cola[0].fecha, '2026-06-09T16:00:00Z');
+  assert.equal(cola[0].empresa, 'Hotel Azul');
+  assert.equal(cola[1].empresa, null);
+});

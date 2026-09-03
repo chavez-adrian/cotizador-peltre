@@ -13,6 +13,7 @@
 import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
+import { filtrarPorCriterio } from './busqueda-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
 // del motivo de PRE que define lib/pipeline.js (este modulo NO importa de lib/,
@@ -969,6 +970,36 @@ export function buildCerradasHtml(oportunidades) {
 // en el tablero despues de cotizar (su etapa avanza a Seguimiento), y el
 // pipeline lo filtra en los tres modos. La tarjeta de la cotizacion no lleva
 // evento: la cotizacion no conoce al prospecto del que salio.
+
+// --- Buscador del Pipeline y de la cola Hoy (#289) ---
+// El mismo control del Historial (texto + Desde/Hasta) sobre las dos listas que
+// se pintan aqui. En el pipeline se combina con AND con el filtro por evento y
+// aplica a los tres modos (tablero, lista y cerradas); en Hoy filtra la cola ya
+// ordenada por urgencia sin reordenarla y sin tocar el badge de pendientes, que
+// sigue contando la cola COMPLETA.
+//
+// El telefono tiene dos nombres segun de donde viene la tarjeta (el prospecto
+// trae `celular`, la cotizacion `telefono`) y la cola Hoy mezcla los dos tipos:
+// por eso los dos se declaran y el match es por digitos.
+export const BUSCABLES_OPORTUNIDAD = {
+  camposDe: o => [o?.nombre, o?.ciudad, o?.vendedor, o?.canal, o?.folioOperam],
+  digitosDe: o => [o?.celular, o?.telefono],
+  fechaDe: o => o?.fecha,
+};
+
+export const BUSCABLES_COLA_HOY = {
+  camposDe: i => [i?.nombre, i?.cliente, i?.ciudad, i?.vendedor, i?.canal, i?.folioOperam],
+  digitosDe: i => [i?.celular, i?.telefono],
+  fechaDe: i => i?.fecha,
+};
+
+export function filtrarOportunidades(oportunidades, criterio) {
+  return filtrarPorCriterio(oportunidades, criterio, BUSCABLES_OPORTUNIDAD);
+}
+
+export function filtrarColaHoy(cola, criterio) {
+  return filtrarPorCriterio(cola, criterio, BUSCABLES_COLA_HOY);
+}
 
 export function filtrarPorEvento(oportunidades, evento) {
   if (!evento) return oportunidades || [];

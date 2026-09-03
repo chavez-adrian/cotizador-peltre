@@ -11,7 +11,8 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   contarPendientesProspectos,
   ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
   CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido,
-  validarSiguienteContacto, buildEventoSiguienteContacto, normalizarTextosProspecto;
+  validarSiguienteContacto, buildEventoSiguienteContacto, normalizarTextosProspecto,
+  filtrarProspectos;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
     buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
@@ -23,7 +24,51 @@ before(async () => {
     contarPendientesProspectos,
     ultimaReunionDe, reunionFuturaDe, reunionPendienteResultadoDe,
     CANALES_SIGUIENTE_CONTACTO, siguienteContactoFuturo, siguienteContactoVencido,
-    validarSiguienteContacto, buildEventoSiguienteContacto, normalizarTextosProspecto } = await import('../prospectos-logica.js'));
+    validarSiguienteContacto, buildEventoSiguienteContacto, normalizarTextosProspecto,
+    filtrarProspectos } = await import('../prospectos-logica.js'));
+});
+
+// Buscador de la vista Prospectos (#289): UNA caja filtra los dos bloques (la
+// cola de seguimiento de arriba y la lista completa de abajo), asi que el mismo
+// criterio tiene que servir a la ficha del prospecto y al item de la cola.
+const FICHA = {
+  id: 1, nombre: 'Mariana López', ciudad: 'Puebla', vendedor: 'Laura',
+  canal: 'Instagram', celular: '+52 55 1234 5678', fecha: '2026-06-02T15:00:00',
+  data: { empresa: 'Hotel Azul' },
+};
+const OTRA = {
+  id: 2, nombre: 'Beto Ruiz', ciudad: 'Mérida', vendedor: 'Memo',
+  canal: 'WhatsApp', celular: '9981234567', fecha: '2026-06-20T15:00:00',
+  data: { empresa: 'Panaderia Sol' },
+};
+
+test('FP1: filtrarProspectos matchea nombre, ciudad, vendedor, Origen y empresa', () => {
+  const lista = [FICHA, OTRA];
+  assert.deepEqual(filtrarProspectos(lista, { texto: 'mariana' }).map(p => p.id), [1]);
+  assert.deepEqual(filtrarProspectos(lista, { texto: 'MERIDA' }).map(p => p.id), [2]);
+  assert.deepEqual(filtrarProspectos(lista, { texto: 'laura' }).map(p => p.id), [1]);
+  assert.deepEqual(filtrarProspectos(lista, { texto: 'Instagram' }).map(p => p.id), [1]);
+  assert.deepEqual(filtrarProspectos(lista, { texto: 'hotel' }).map(p => p.id), [1]);
+  assert.deepEqual(filtrarProspectos(lista, { texto: '' }).map(p => p.id), [1, 2]);
+});
+
+test('FP2: filtrarProspectos matchea el celular por digitos y acota por la fecha de captura', () => {
+  const lista = [FICHA, OTRA];
+  assert.deepEqual(filtrarProspectos(lista, { texto: '5512' }).map(p => p.id), [1]);
+  assert.deepEqual(filtrarProspectos(lista, { desde: '2026-06-10' }).map(p => p.id), [2]);
+  assert.deepEqual(filtrarProspectos(lista, { hasta: '2026-06-02' }).map(p => p.id), [1]);
+  assert.deepEqual(filtrarProspectos(lista, { texto: 'ruiz', hasta: '2026-06-02' }), []);
+});
+
+test('FP3: el item de la cola trae los mismos campos planos y lo filtra el mismo criterio', () => {
+  const item = {
+    id: 1, nombre: 'Mariana López', ciudad: 'Puebla', vendedor: 'Laura',
+    canal: 'Instagram', celular: '+52 55 1234 5678', fecha: '2026-06-02T15:00:00',
+    empresa: 'Hotel Azul', horas: 3, color: 'ambar',
+  };
+  assert.deepEqual(filtrarProspectos([item], { texto: 'hotel' }).map(p => p.id), [1]);
+  assert.deepEqual(filtrarProspectos([item], { texto: '5512' }).map(p => p.id), [1]);
+  assert.deepEqual(filtrarProspectos([item], { desde: '2026-06-03' }), []);
 });
 
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
