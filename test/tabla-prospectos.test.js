@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { estadoProspecto, filaTabla } from '../lib/tabla-prospectos.js';
+import { estadoProspecto, filaTabla, gafeteDe } from '../lib/tabla-prospectos.js';
 
 // --- #313: quien ya fue contactado ---
 // El Toque es la UNICA verdad de "ya lo contacte" (CONTEXT.md "Toque"): de el
@@ -46,4 +46,49 @@ test('#313: la fila conserva los campos del prospecto que la tabla pinta', () =>
   assert.equal(fila.nombre, 'Laura');
   assert.equal(fila.celular, '+52 5512345678');
   assert.equal(fila.vendedor, 'Memo');
+});
+
+// --- #316: gafete ---
+// La columna Gafete (CONTEXT.md "Gafete"): dice por cual camino entro el dato,
+// no por donde llego el prospecto (eso es Origen). Solo cuentan como captura
+// humana los eventos 'captura_expo' y 'captura_publica'; un toque o una
+// cotizacion son actividad posterior, no captura.
+
+function prospecto316(data, eventos = []) {
+  return {
+    id: 1, fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+    etapa: 'por_cotizar', eventos, data,
+  };
+}
+
+test('#316: escaneado sin captura humana es solo_gafete', () => {
+  const p = prospecto316({ escaneado: '2026-09-01' }, []);
+  assert.equal(gafeteDe(p), 'solo_gafete');
+});
+
+test('#316: escaneado con captura_expo es gafete_y_stand', () => {
+  const p = prospecto316({ escaneado: '2026-09-01' }, [
+    { tipo: 'captura_expo', fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo' },
+  ]);
+  assert.equal(gafeteDe(p), 'gafete_y_stand');
+});
+
+test('#316: sin escanear es sin_gafete aunque haya captura humana', () => {
+  const p = prospecto316({}, [
+    { tipo: 'captura_publica', fecha: '2026-09-01T10:00:00.000Z' },
+  ]);
+  assert.equal(gafeteDe(p), 'sin_gafete');
+});
+
+test('#316: un prospecto escaneado con un toque sigue siendo solo_gafete', () => {
+  const p = prospecto316({ escaneado: '2026-09-01' }, [
+    { tipo: 'toque', fecha: '2026-09-02T09:00:00.000Z', vendedor: 'Memo' },
+  ]);
+  assert.equal(gafeteDe(p), 'solo_gafete');
+});
+
+test('#316: filaTabla agrega gafete', () => {
+  const fila = filaTabla(prospecto316({ escaneado: '2026-09-01' }, []));
+  assert.equal(fila.gafete, 'solo_gafete');
 });

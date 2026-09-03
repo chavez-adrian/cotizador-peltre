@@ -226,6 +226,7 @@ Nucleo puro del **Origen** (CONTEXT.md "Origen"): de donde vino el prospecto. El
 - **`GET /api/prospectos/tabla`** (`authMiddleware`) devuelve una fila por prospecto **visible** -- `prospectosVisiblesPara`, la misma regla que `GET /api/prospectos` -- y va registrada ANTES de cualquier `/api/prospectos/:id`, como `cola` y `clasificar`, o "tabla" se interpretaria como un id.
 - **La pantalla no calcula derivados**: `public/leads.html` pide esta ruta y solo pinta, filtra y ordena. `ESTADOS` esta indexado por la llave del estado (etiqueta, etiqueta corta para el telefono y `rango` para ordenar por la escalera y no alfabeticamente); un estado que no este en ese objeto no se puede pintar.
 - **El boton Contacte** llama a `POST /api/prospectos/:id/toques` (la ruta de siempre) por delegacion en `#leads-cuerpo` -- nada de `onclick` inline, trampa #112 -- y con el 200 vuelve a pedir la tabla y repinta conservando filtros y fila abierta. La liga de WhatsApp sigue SIN efecto secundario: abrir el chat no es un toque.
+- **`gafeteDe(p)` (#316)** -> `'solo_gafete' | 'gafete_y_stand' | 'sin_gafete'`, con `RANGO_GAFETE` en ese orden para que la columna ordene por rango y no alfabeticamente. Cuenta como captura humana SOLO `'captura_expo'` y `'captura_publica'` -- nunca cualquier evento -- porque el boton Contacte de #313 le agrega toques al prospecto y un toque no es una captura (CONTEXT.md "Gafete"): contar cualquier evento habria convertido "Solo gafete" en "Gafete + stand" en cuanto se le diera clic.
 
 ### alta-logica.js
 

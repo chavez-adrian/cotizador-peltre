@@ -130,8 +130,8 @@
         <select id="f-area"></select>
       </div>
       <div class="leads-filtro">
-        <label for="f-origen">Origen</label>
-        <select id="f-origen"></select>
+        <label for="f-gafete">Gafete</label>
+        <select id="f-gafete"></select>
       </div>
       <div class="leads-filtro">
         <label for="f-estado">Estado</label>
@@ -173,10 +173,16 @@ const ESTADOS = {
   sin_contactar: { etiqueta: 'Sin contactar', corta: 'Sin contactar', rango: 0 },
   contactado: { etiqueta: 'Contactado', corta: 'Contactado', rango: 1 },
 };
-const ORIGENES = {
-  ambos: 'Gafete y captura',
-  gafete: 'Solo gafete',
-  captura: 'Solo captura',
+// #316: el rango es el orden de CONTEXT.md "Gafete" (RANGO_GAFETE de
+// lib/tabla-prospectos.js), no el alfabetico -- los de solo gafete quedan
+// arriba porque son los unicos sin siguiente paso acordado. La pagina no
+// importa del nucleo (cross-import server<->public/js es para modulos
+// compartidos, no para una copia local de un arreglo de tres literales).
+const RANGO_GAFETE = ['solo_gafete', 'gafete_y_stand', 'sin_gafete'];
+const GAFETES = {
+  solo_gafete: 'Solo gafete',
+  gafete_y_stand: 'Gafete + stand',
+  sin_gafete: 'Sin gafete',
 };
 
 const COLUMNAS = [
@@ -196,6 +202,8 @@ const COLUMNAS = [
   { llave: 'ciudad', titulo: 'Ciudad', valor: p => p.ciudad || '' },
   { llave: 'tamano', titulo: 'Tamaño', valor: p => p.data.tamano || '' },
   { llave: 'vendedor', titulo: 'Vendedor', valor: p => p.vendedor || '' },
+  { llave: 'gafete', titulo: 'Gafete', valor: p => RANGO_GAFETE.indexOf(p.gafete),
+    texto: p => GAFETES[p.gafete] },
 ];
 
 const estado = {
@@ -220,15 +228,6 @@ function fechaCorta(iso) {
   return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
 }
 
-// El gafete deja `data.escaneado`; cualquier evento que no sea `importado` es
-// una captura hecha por una persona. Un lead puede venir de las dos fuentes.
-function origenDe(p) {
-  const gafete = !!p.data.escaneado;
-  const captura = (p.eventos || []).some(e => e.tipo && e.tipo !== 'importado');
-  if (gafete && captura) return 'ambos';
-  return gafete ? 'gafete' : 'captura';
-}
-
 // El area de interes es multi-valor separado por punto y coma
 // ("Alimentos; Cristalería - Vajillas"): el filtro es por valor suelto.
 function areasDe(p) {
@@ -237,7 +236,6 @@ function areasDe(p) {
 
 function prepara(p) {
   p.data = p.data || {};
-  p._origen = origenDe(p);
   p._areas = areasDe(p);
   p._busqueda = [p.nombre, p.data.empresa, p.ciudad, p.data.puesto].filter(Boolean).join(' ').toLowerCase();
   return p;
@@ -259,7 +257,7 @@ function poblarFiltros() {
   opciones(el('f-evento'), unicos(ps.map(p => p.data.evento)).map(v => ({ valor: v, texto: v })), 'Todos');
   opciones(el('f-tipo'), unicos(ps.map(p => p.data.tipo_cliente)).map(v => ({ valor: v, texto: v })), 'Todos');
   opciones(el('f-area'), unicos(ps.flatMap(p => p._areas)).map(v => ({ valor: v, texto: v })), 'Todas');
-  opciones(el('f-origen'), Object.entries(ORIGENES).map(([valor, texto]) => ({ valor, texto })), 'Todos');
+  opciones(el('f-gafete'), RANGO_GAFETE.map(valor => ({ valor, texto: GAFETES[valor] })), 'Todos');
   opciones(el('f-estado'), Object.entries(ESTADOS).map(([valor, e]) => ({ valor, texto: e.etiqueta })), 'Todos');
 
   const vendedores = unicos(ps.map(p => p.vendedor));
@@ -278,7 +276,7 @@ function filtrados() {
   const vendedor = el('f-vendedor').value;
   const tipo = el('f-tipo').value;
   const area = el('f-area').value;
-  const origen = el('f-origen').value;
+  const gafete = el('f-gafete').value;
   const est = el('f-estado').value;
   const texto = el('f-texto').value.trim().toLowerCase();
   return estado.prospectos.filter(p =>
@@ -286,7 +284,7 @@ function filtrados() {
     (!vendedor || p.vendedor === vendedor) &&
     (!tipo || p.data.tipo_cliente === tipo) &&
     (!area || p._areas.includes(area)) &&
-    (!origen || p._origen === origen) &&
+    (!gafete || p.gafete === gafete) &&
     (!est || p.estado === est) &&
     (!texto || p._busqueda.includes(texto)));
 }
@@ -342,7 +340,7 @@ function filaDetalle(p) {
     ['Valora', (cal.valora || []).join(', ')],
     ['Concepto', cal.concepto],
     ['Piezas estimadas', p.data.piezas_estimadas],
-    ['Origen', ORIGENES[p._origen]],
+    ['Gafete', GAFETES[p.gafete]],
     ['Notas', p.data.notas],
   ].filter(([, v]) => v !== undefined && v !== null && v !== '');
   const dl = filas.map(([k, v]) =>
@@ -385,7 +383,7 @@ function pinta() {
 // --- Eventos de la pantalla (sin onclick inline, trampa #112) ---
 
 function conectaEventos() {
-  for (const id of ['f-evento', 'f-vendedor', 'f-tipo', 'f-area', 'f-origen', 'f-estado']) {
+  for (const id of ['f-evento', 'f-vendedor', 'f-tipo', 'f-area', 'f-gafete', 'f-estado']) {
     el(id).addEventListener('change', pinta);
   }
   el('f-texto').addEventListener('input', pinta);

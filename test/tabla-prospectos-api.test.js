@@ -116,3 +116,14 @@ test('#313: la fila de un prospecto con toques trae el mas reciente como ultimo 
   assert.equal(fila.ultimoContacto, '2026-09-02T09:00:00.000Z');
   assert.equal(fila.toques, 2);
 });
+
+// --- #316: gafete ---
+
+test('#316: la fila trae gafete solo_gafete para un prospecto solo escaneado', async () => {
+  const escaneada = { ...LAURA, data: { escaneado: '2026-09-01' } };
+  escribirFixtures([escaneada]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Laura');
+  assert.equal(fila.gafete, 'solo_gafete');
+});
