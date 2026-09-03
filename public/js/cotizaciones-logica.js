@@ -5,7 +5,7 @@
 // Ganada o Perdida. Modulo sin efectos de navegador, mismo patron que
 // prospectos-logica.js: lo consumen app.js y los tests .cjs via import().
 
-import { escapeHtml } from './prospectos-logica.js';
+import { escapeHtml, chipOrigenHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
 import { nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
@@ -90,6 +90,7 @@ function buildCotizacionCardHtml(c, col, hoy) {
         <div>
           <div class="cot-card-cliente">${escapeHtml(nombreConCorto(c.cliente || 'Sin nombre', c.nombreCorto))}${badgeFolioOperamHtml(c)}</div>
           <div class="cot-card-meta">${fechaCorta(c.fecha)} · hace ${dias} días · ${escapeHtml(c.vendedor)} · ${c.totalPiezas} pzs</div>
+          <div style="margin-top:4px">${chipOrigenHtml(c)}</div>
         </div>
         <div class="cot-card-total">$${fmtMoneda(c.total)}</div>
       </div>

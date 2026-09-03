@@ -71,7 +71,11 @@ import {
   buildGrupoChipsHtml,
   buildMicHtml,
   filtrarProspectos,
+  chipOrigenHtml,
 } from './prospectos-logica.js';
+// Origen heredado (#287): el pipeline y los buscadores de cliente cargan los
+// prospectos junto con lo demas, asi que la herencia se resuelve aqui mismo.
+import { indiceOrigenPorCelular, anotarOrigen } from './origen-logica.js';
 // Aviso de dominio mal escrito del correo (issue #269): el MISMO nucleo que usa
 // el formulario publico, sin copia. mayoreo-logica.js es puro y browser-safe.
 import { sugerirDominioCorreo } from './mayoreo-logica.js';
@@ -3072,7 +3076,11 @@ async function pcBuscarMezclado(q) {
           .then(p => { pcProspectosCache = p; return p; }),
   ]);
   if (seq !== pcBusquedaSeq) return null;
-  return mezclarResultadosBusqueda(clientes, prospectos, q);
+  // Origen (#287): las filas se anotan con los MISMOS prospectos que ya se
+  // trajeron para mezclar; el cliente de Operam hereda el origen del prospecto de
+  // su celular y, si nunca fue prospecto, la fila lo dice ("sin identificar").
+  return anotarOrigen(mezclarResultadosBusqueda(clientes, prospectos, q),
+    indiceOrigenPorCelular(prospectos));
 }
 
 async function pcBuscar() {
@@ -3108,7 +3116,9 @@ function pcFilaResultado(r, i) {
   return `<button type="button" class="pc-res-row" onclick="pcElegirResultado(${i})">` +
     `<span class="pc-res-ini ${r.tipo}">${escapeHtml(pcIniciales(r.nombre))}</span>` +
     `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(nombreTexto)}</span>` +
-    `<span class="pc-res-sub">${escapeHtml(r.sub || '')}</span></span>${tag}</button>`;
+    `<span class="pc-res-sub">${escapeHtml(r.sub || '')}</span>` +
+    // Origen (#287): mismo chip que la fila de la vista Clientes.
+    `${chipOrigenHtml(r)}</span>${tag}</button>`;
 }
 
 function pcFilaCrear(query) {
@@ -4274,6 +4284,7 @@ function renderHistorial() {
           <div>
             <div class="cot-card-cliente">${escapeHtml(nombreConCorto(c.cliente || 'Sin nombre', c.nombreCorto))}${badge}</div>
             <div class="cot-card-meta">${fecha} · ${c.vendedor} · ${c.totalPiezas} pzs</div>
+            <div style="margin-top:4px">${chipOrigenHtml(c)}</div>
           </div>
           <div>
             <div class="cot-card-total">$${fmt(c.total)}</div>
@@ -4878,9 +4889,12 @@ async function cvBuscar() {
 function cvElegirResultado(i) {
   const r = cvResultadosCache[i];
   if (!r) return;
-  const card = r.tipo === 'operam'
+  const base = r.tipo === 'operam'
     ? { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' }
     : clienteDesdeProspecto(r.raw);
+  // El Origen de la tarjeta es el que ya resolvio la fila (#287): la tarjeta se
+  // arma desde `raw`, que no lo trae.
+  const card = { ...base, origen: r.origen };
   cvState.seleccion = { tipo: r.tipo, card, raw: r.raw };
   cvRenderTarjeta();
 }
@@ -5230,6 +5244,11 @@ function cotizacionAOportunidad(c) {
     fecha: c.fecha, folioOperam: c.folioOperam ?? null,
     // Telefono para el buscador del pipeline (#289): la cotizacion lo trae con
     // ese nombre (el prospecto lo trae como celular); los dos se buscan igual.
+    // Es tambien por donde el pipeline hereda el Origen (#287): el `origen` que
+    // anota GET /api/cotizaciones para el Historial NO se copia a proposito --
+    // aqui la herencia se resuelve en el navegador (recargarPipeline), contra
+    // los MISMOS prospectos visibles que usa el servidor, asi que las dos
+    // vistas dicen lo mismo del mismo cliente.
     telefono: c.telefono,
     decorado: c.decorado === true, calcaChecklist: c.calcaChecklist ?? null,
     // Cadena de folios de Operam (issue #67, AC4): el espejo persistido por el sync
@@ -5260,10 +5279,15 @@ async function recargarPipeline() {
     const [resP, resC] = await Promise.all([api('/api/prospectos'), api('/api/cotizaciones')]);
     const prospectos = resP.ok ? await resP.json() : [];
     const cotizaciones = resC.ok ? await resC.json() : [];
-    ultimasOportunidades = [
+    // Origen (#287): el pipeline carga prospectos y cotizaciones juntos, asi que
+    // la herencia se resuelve aqui -- la cotizacion toma el origen del prospecto
+    // con su mismo celular. Nunca se persiste: corregir el origen del prospecto
+    // lo corrige en todas sus cotizaciones.
+    const indiceOrigen = indiceOrigenPorCelular(prospectos);
+    ultimasOportunidades = anotarOrigen([
       ...prospectos.map(prospectoAOportunidad),
       ...cotizaciones.map(cotizacionAOportunidad),
-    ];
+    ], indiceOrigen);
     // Asignar vendedor a una tarjeta No Asignado (issue #57, #156) exige el
     // permiso de asignacion: quien lo tiene necesita el catalogo de vendedores
     // para el selector. Quien no lo tiene ni siquiera recibe esas tarjetas.
@@ -5336,12 +5360,14 @@ function renderPipeline() {
   }
   listEl.innerHTML = activas.map(o => {
     const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
-    const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
+    // El Origen sale de la linea gris y se lee en su chip (#287).
+    const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
     const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
     const cadena = cadenaOperamHtml(o.espejoOperam);
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgePagoSinRegistrarHtml(o)}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
+      <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
       ${cadena}
     </div>${total}</div></div>`;
   }).join('');

@@ -6,8 +6,10 @@
 
 import { validarTelefono, combinarTelefonoConCodigo } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
+import { origenDe } from './origen-logica.js';
 
-// Canal de origen del prospecto -- catalogo cerrado (CONTEXT.md, Captura de prospecto).
+// Origen del prospecto -- catalogo cerrado (CONTEXT.md "Origen"; el campo en
+// codigo, API y BD se sigue llamando `canal`, solo cambio la palabra visible).
 export const CANALES = [
   'WhatsApp',
   'Instagram',
@@ -129,6 +131,27 @@ const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&
 
 export function escapeHtml(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ESCAPES[ch]);
+}
+
+// Chip "Origen" (issue #287, CONTEXT.md "Origen"): UN solo render para toda
+// tarjeta de prospecto, cotizacion y cliente -- el origen se lee con etiqueta
+// propia y ya no como un segmento mas de la linea gris de metadatos. Recibe el
+// ITEM (prospecto, oportunidad, item de cola, cotizacion del Historial o fila de
+// cliente) y deja que origenDe decida: el prospecto lo trae en `canal`, los
+// demas en el `origen` que ya les anoto quien resolvio la herencia (el pipeline
+// en el navegador, los GET del Historial y de Hoy en el servidor). Sin origen
+// (cliente historico de Operam, cotizacion sin prospecto ligado) dice "Origen
+// sin identificar", atenuado para no confundirse con un origen real.
+//
+// El chip vive en este modulo -- y no junto al nucleo -- porque necesita
+// escapeHtml: origen-logica.js no importa nada (lo cross-importa server.js) e
+// importar este archivo desde alla cerraria un ciclo.
+export const ORIGEN_SIN_IDENTIFICAR = 'Origen sin identificar';
+
+export function chipOrigenHtml(item) {
+  const { origen, identificado } = origenDe(item);
+  if (!identificado) return `<span class="origen-badge origen-badge-vacio">${ORIGEN_SIN_IDENTIFICAR}</span>`;
+  return `<span class="origen-badge">Origen: ${escapeHtml(origen)}</span>`;
 }
 
 // Valida el body de POST /api/prospectos (celular ya combinado con codigo de pais).
@@ -524,8 +547,9 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
       <div class="cot-card-header">
         <div>
           <div class="cot-card-cliente">${escapeHtml(p.nombre)}${empresa}</div>
-          <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.canal)} · ${escapeHtml(p.celular)}</div>
+          <div class="cot-card-meta">${fechaCorta(p.fecha)} · ${escapeHtml(p.vendedor)} · ${escapeHtml(p.ciudad)} · ${escapeHtml(p.celular)}</div>
           ${d.correo ? `<div class="cot-card-meta">${escapeHtml(d.correo)}</div>` : ''}
+          <div style="margin-top:4px">${chipOrigenHtml(p)}</div>
           ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
           ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
           ${d.evento ? `<div style="margin-top:4px"><span class="evento-badge">${escapeHtml(d.evento)}</span></div>` : ''}
@@ -589,8 +613,8 @@ export function buildColaProspectosHtml(cola) {
         <div class="cot-card-header">
           <div>
             <div class="cot-card-cliente">${escapeHtml(item.nombre)}</div>
-            <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[item.etapa] || item.etapa)} · ${escapeHtml(item.canal)} · ${escapeHtml(item.ciudad)} · ${escapeHtml(item.celular)}</div>
-            <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}${item.yaEsCliente ? ` ${CLIENTE_BADGE}` : ''}</div>
+            <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[item.etapa] || item.etapa)} · ${escapeHtml(item.ciudad)} · ${escapeHtml(item.celular)}</div>
+            <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}${item.yaEsCliente ? ` ${CLIENTE_BADGE}` : ''} ${chipOrigenHtml(item)}</div>
             ${item.reunionVencida ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión del ${escapeHtml(fechaHora(item.fechaReunion))} — registrar resultado</span></div>` : ''}
             ${item.siguienteContacto ? `<div style="margin-top:4px">${chipSiguienteContactoHtml(item.siguienteContacto, { nombre: item.nombre, evento: item.evento })}</div>` : ''}
           </div>

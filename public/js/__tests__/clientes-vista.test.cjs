@@ -280,3 +280,22 @@ test('D5 (#196): cardClienteHtml sin nombre corto informativo no agrega parentes
   const html = cardClienteHtml({ tipo: 'operam', id: 479, name: 'Peltre Nacional', ref: 'PELTRE NACIONAL', rfc: 'VAZ990101QX3' });
   assert.doesNotMatch(html, /pc-cli-nombre">[^<]*\(/);
 });
+
+// === Issue #287: chip Origen en la vista Clientes ===
+// Un cliente de Operam no tiene origen propio: solo lo tiene si alguna vez fue
+// prospecto en el cotizador. La herencia la anota el buscador (pcBuscarMezclado,
+// que ya carga los prospectos) y aqui solo se pinta.
+
+test('OR11: la fila de resultado pinta el Origen heredado y el que falta', () => {
+  const conOrigen = filaResultadoClienteHtml({ tipo: 'operam', nombre: 'Yazmin Vazquez', sub: '', rfc: 'VAZ990101QX3', origen: 'Referido' }, 0);
+  assert.match(conOrigen, /origen-badge">Origen: Referido/);
+  const historico = filaResultadoClienteHtml({ tipo: 'operam', nombre: 'Cliente historico', sub: '', rfc: 'VAZ990101QX3' }, 1);
+  assert.match(historico, /origen-badge-vacio">Origen sin identificar/);
+});
+
+test('OR12: la tarjeta del cliente pinta el Origen heredado y el que falta', () => {
+  const conOrigen = cardClienteHtml({ tipo: 'operam', id: 479, name: 'Yazmin Vazquez', rfc: 'VAZ990101QX3', origen: 'Feria/Expo' });
+  assert.match(conOrigen, /origen-badge">Origen: Feria\/Expo/);
+  const historico = cardClienteHtml({ tipo: 'operam', id: 480, name: 'Cliente historico', rfc: 'VAZ990101QX3' });
+  assert.match(historico, /origen-badge-vacio">Origen sin identificar/);
+});

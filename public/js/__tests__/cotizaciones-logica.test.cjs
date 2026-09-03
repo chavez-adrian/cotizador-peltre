@@ -579,3 +579,14 @@ test('Q43: registros sin data persistida (hasData false) no matchean por los cam
   // el registro sin data si matchea por lo que si tiene (razon social)
   assert.deepEqual(filtrarCotizaciones(lista, { texto: 'historica' }).map(c => c.id), [1]);
 });
+
+// === Issue #287: chip Origen en la tarjeta del Historial ===
+// La cotizacion no guarda el origen: GET /api/cotizaciones lo anota heredandolo
+// del prospecto del mismo celular.
+
+test('OR10: la tarjeta del tablero del Historial pinta el Origen heredado y el que falta', () => {
+  const conOrigen = buildTableroCotizacionesHtml([cot(3, { id: 1, origen: 'Bazar Sabado' })], HOY);
+  assert.match(conOrigen, /origen-badge">Origen: Bazar Sabado/);
+  const sinOrigen = buildTableroCotizacionesHtml([cot(3, { id: 2 })], HOY);
+  assert.match(sinOrigen, /origen-badge-vacio">Origen sin identificar/);
+});

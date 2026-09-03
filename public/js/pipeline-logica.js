@@ -10,7 +10,7 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml } from './prospectos-logica.js';
+import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
@@ -444,7 +444,10 @@ export function filaResultadoClienteHtml(r, i) {
   return '<button type="button" class="pc-res-row" onclick="cvElegirResultado(' + i + ')">' +
     '<span class="pc-res-ini ' + escapeHtml(row.tipo || '') + '">' + escapeHtml(inicialesCliente(row.nombre)) + '</span>' +
     '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(nombreTexto) + '</span>' +
-    '<span class="pc-res-sub">' + escapeHtml(row.sub || '') + '</span></span>' +
+    '<span class="pc-res-sub">' + escapeHtml(row.sub || '') + '</span>' +
+    // Origen (#287): heredado del prospecto del mismo celular, o sin identificar
+    // cuando el cliente nunca fue prospecto en el cotizador.
+    chipOrigenHtml(row) + '</span>' +
     tagResultadoClienteHtml(row) + '</button>' +
     accionEditarFilaHtml(row, i);
 }
@@ -527,6 +530,7 @@ export function cardClienteHtml(cliente) {
   return '<div class="pc-cli-card">' +
     '<div class="pc-cli-nombre">' + escapeHtml(nombre) + '</div>' +
     '<div class="pc-cli-sub">' + sub + '</div>' +
+    '<div style="margin-top:8px">' + chipOrigenHtml(c) + '</div>' +
     '<div class="pc-chips">' + chipsClienteViewHtml(chips, custId) + '</div>' +
     botonCsf +
     '<button type="button" class="btn btn-secondary btn-block" style="margin-top:8px" onclick="cvCotizar()">Cotizar a este cliente &rsaquo;</button>' +
@@ -788,7 +792,8 @@ export function buildDecoradoControlHtml(o) {
 
 function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
-  const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
+  // El Origen sale de la linea gris y se lee en su chip (#287).
+  const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
   const badge = badgeFolioOperam(o);
   const cadena = cadenaOperamHtml(o.espejoOperam);
   const asignar = buildAsignarControlHtml(o, vendedores, tienePermiso);
@@ -801,6 +806,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
         <div>
           <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
+          <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
         </div>
         ${total}
       </div>
@@ -894,6 +900,7 @@ export function buildColaCotizacionItemHtml(item) {
         <div>
           <div class="cot-card-cliente">${escapeHtml(item.cliente || 'Sin nombre')}${badge}</div>
           <div class="cot-card-meta">${escapeHtml(pasoLabel)} · cotizada el ${escapeHtml(fecha)} (hace ${item.dias} dias) · ${item.totalPiezas} pzs</div>
+          <div style="margin-top:4px">${chipOrigenHtml(item)}</div>
           ${reunionBadge}
         </div>
         <div>
@@ -916,7 +923,7 @@ export function buildColaCotizacionItemHtml(item) {
 // espera del vendedor, y aqui todavia no hay vendedor.
 export function buildColaNoAsignadoItemHtml(item, vendedores, tienePermiso) {
   const espera = item.horas != null ? ` · ${item.horas} h sin asignar` : '';
-  const meta = [item.canal, item.ciudad, item.celular].filter(Boolean).map(escapeHtml).join(' · ');
+  const meta = [item.ciudad, item.celular].filter(Boolean).map(escapeHtml).join(' · ');
   const asignar = buildAsignarControlHtml({ ...item, refId: item.id }, vendedores, tienePermiso, 'hoy');
   return `
     <div class="cot-card">
@@ -924,6 +931,7 @@ export function buildColaNoAsignadoItemHtml(item, vendedores, tienePermiso) {
         <div>
           <div class="cot-card-cliente">${escapeHtml(item.nombre || 'Sin nombre')}</div>
           <div class="cot-card-meta">Sin vendedor${escapeHtml(espera)}${meta ? ' · ' + meta : ''}</div>
+          <div style="margin-top:4px">${chipOrigenHtml(item)}</div>
         </div>
       </div>
       ${asignar}
@@ -956,10 +964,11 @@ export function buildCerradasHtml(oportunidades) {
   return cerradas.map(o => {
     const cierre = SALIDA_LABELS[o.etapa] || o.etapa;
     const motivo = o.etapa === 'no_util' && o.motivoNoUtil ? ` · ${escapeHtml(o.motivoNoUtil)}` : '';
-    const meta = [o.vendedor, o.ciudad, o.canal].filter(Boolean).map(escapeHtml).join(' · ');
+    const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}</div>
       <div class="cot-card-meta">${escapeHtml(cierre)}${motivo}${meta ? ' · ' + meta : ''}</div>
+      <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
     </div></div></div>`;
   }).join('');
 }
@@ -981,14 +990,19 @@ export function buildCerradasHtml(oportunidades) {
 // El telefono tiene dos nombres segun de donde viene la tarjeta (el prospecto
 // trae `celular`, la cotizacion `telefono`) y la cola Hoy mezcla los dos tipos:
 // por eso los dos se declaran y el match es por digitos.
+//
+// El Origen viaja con dos nombres por la misma razon: el prospecto lo trae
+// capturado en `canal` y la cotizacion lo trae HEREDADO en `origen` (#287, lo
+// anota quien resuelve la herencia). Declarar los dos cierra la limitacion que
+// dejo #289: "Instagram" encontraba al prospecto pero no a sus cotizaciones.
 export const BUSCABLES_OPORTUNIDAD = {
-  camposDe: o => [o?.nombre, o?.ciudad, o?.vendedor, o?.canal, o?.folioOperam],
+  camposDe: o => [o?.nombre, o?.ciudad, o?.vendedor, o?.canal, o?.origen, o?.folioOperam],
   digitosDe: o => [o?.celular, o?.telefono],
   fechaDe: o => o?.fecha,
 };
 
 export const BUSCABLES_COLA_HOY = {
-  camposDe: i => [i?.nombre, i?.cliente, i?.ciudad, i?.vendedor, i?.canal, i?.folioOperam],
+  camposDe: i => [i?.nombre, i?.cliente, i?.ciudad, i?.vendedor, i?.canal, i?.origen, i?.folioOperam],
   digitosDe: i => [i?.celular, i?.telefono],
   fechaDe: i => i?.fecha,
 };
