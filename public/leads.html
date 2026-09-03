@@ -43,20 +43,20 @@
 
   .estado-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px;
     font-weight: 600; white-space: nowrap; }
-  .estado-0 { background: oklch(0.94 0.05 30); color: oklch(0.45 0.15 30); }
-  .estado-1 { background: oklch(0.95 0.04 80); color: oklch(0.45 0.12 70); }
-  .estado-2 { background: oklch(0.94 0.05 240); color: oklch(0.45 0.14 250); }
-  .estado-3 { background: oklch(0.93 0.06 150); color: oklch(0.40 0.13 155); }
+  .estado-sin_contactar { background: oklch(0.94 0.05 30); color: oklch(0.45 0.15 30); }
+  .estado-contactado { background: oklch(0.95 0.04 80); color: oklch(0.45 0.12 70); }
 
-  .btn-wa { display: inline-block; padding: 5px 12px; border-radius: var(--radius-input);
-    background: oklch(0.62 0.16 150); color: var(--white); font-size: 12px; font-weight: 600;
-    text-decoration: none; white-space: nowrap; }
+  .btn-wa, .btn-contacte { display: inline-block; padding: 5px 12px;
+    border-radius: var(--radius-input); color: var(--white); font-size: 12px; font-weight: 600;
+    text-decoration: none; white-space: nowrap; border: none; font-family: inherit; }
+  .btn-wa { background: oklch(0.62 0.16 150); }
+  .btn-contacte { background: var(--primary); cursor: pointer; }
   .btn-wa.deshabilitado { background: var(--border); color: var(--text-muted); pointer-events: none; }
 
-  /* La columna de WhatsApp va anclada a la derecha: es la accion de la pantalla
-     y en el telefono la tabla no cabe, asi que sin esto habria que arrastrarla
-     hasta el final para alcanzar el boton. Fondo opaco propio porque queda
-     encima de las demas celdas al scrollear. */
+  /* La columna de acciones va anclada a la derecha: son las acciones de la
+     pantalla y en el telefono la tabla no cabe, asi que sin esto habria que
+     arrastrarla hasta el final para alcanzar los botones. Fondo opaco propio
+     porque queda encima de las demas celdas al scrollear. */
   table.leads th:last-child, table.leads tr.fila-lead > td:last-child {
     position: sticky; right: 0; background: var(--white);
     box-shadow: -6px 0 8px -6px oklch(0 0 0 / 0.18); }
@@ -159,19 +159,20 @@
 <script type="module">
 import { buildWaLinkProspecto } from '/js/prospectos-logica.js';
 
-// Tabla de leads de feria. Lee GET /api/prospectos, que ya resuelve la
-// visibilidad: un vendedor ve los suyos y el admin ve todos (por eso el filtro
-// de vendedor solo aparece cuando de verdad hay mas de uno a la vista).
+// Tabla de leads de feria. Lee GET /api/prospectos/tabla, que ya resuelve la
+// visibilidad -- un vendedor ve los suyos y el admin ve todos (por eso el
+// filtro de vendedor solo aparece cuando de verdad hay mas de uno a la vista) --
+// y ademas los campos derivados: la pantalla NO calcula el Estado del prospecto.
 // Comparte el token de localStorage con la app principal: quien ya entro al
 // cotizador en este navegador no vuelve a teclear el PIN.
 // La etiqueta corta es para el telefono: la larga se come el ancho que necesita
-// el nombre y lo empuja debajo del boton anclado.
-const ESTADOS = [
-  { rango: 0, etiqueta: 'Sin siguiente paso', corta: 'Pendiente' },
-  { rango: 1, etiqueta: 'Contacto agendado', corta: 'Agendado' },
-  { rango: 2, etiqueta: 'Cotizado', corta: 'Cotizado' },
-  { rango: 3, etiqueta: 'Ya es cliente', corta: 'Cliente' },
-];
+// el nombre y lo empuja debajo de los botones anclados. El rango es el orden de
+// la escalera del glosario, no el alfabetico. Los escalones que faltan se
+// AGREGAN aqui: la tabla no conoce ningun estado que no este en este objeto.
+const ESTADOS = {
+  sin_contactar: { etiqueta: 'Sin contactar', corta: 'Sin contactar', rango: 0 },
+  contactado: { etiqueta: 'Contactado', corta: 'Contactado', rango: 1 },
+};
 const ORIGENES = {
   ambos: 'Gafete y captura',
   gafete: 'Solo gafete',
@@ -179,11 +180,16 @@ const ORIGENES = {
 };
 
 const COLUMNAS = [
-  { llave: 'estado', titulo: 'Estado', valor: p => p._estado, texto: p => ESTADOS[p._estado].etiqueta },
+  { llave: 'estado', titulo: 'Estado', valor: p => ESTADOS[p.estado].rango,
+    texto: p => ESTADOS[p.estado].etiqueta },
   // La empresa se repite debajo del nombre para la pantalla angosta, donde su
   // columna no se muestra (ver el media query).
   { llave: 'nombre', titulo: 'Nombre', valor: p => p.nombre || '', ancho: 180,
     sub: p => p.data.empresa || '' },
+  // Ordena por el ISO que manda el servidor (los vacios al final, como toda
+  // celda en blanco) y se lee como fecha corta: el ano no dice nada aqui.
+  { llave: 'ultimoContacto', titulo: 'Último contacto', valor: p => p.ultimoContacto || '',
+    texto: p => fechaCorta(p.ultimoContacto) },
   { llave: 'empresa', titulo: 'Empresa', valor: p => p.data.empresa || '', ancho: 200 },
   { llave: 'tipo', titulo: 'Tipo', valor: p => p.data.tipo_cliente || '' },
   { llave: 'area', titulo: 'Área de interés', valor: p => p.data.area_interes || '', ancho: 240 },
@@ -209,12 +215,9 @@ function escapeHtml(s) {
 
 // --- Derivados del prospecto ---
 
-function rangoEstado(p) {
-  if (p.data.cliente_id) return 3;
-  const eventos = p.eventos || [];
-  if (eventos.some(e => e.tipo === 'cotizacion')) return 2;
-  if (eventos.some(e => e.tipo === 'siguiente_contacto')) return 1;
-  return 0;
+function fechaCorta(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
 }
 
 // El gafete deja `data.escaneado`; cualquier evento que no sea `importado` es
@@ -234,7 +237,6 @@ function areasDe(p) {
 
 function prepara(p) {
   p.data = p.data || {};
-  p._estado = rangoEstado(p);
   p._origen = origenDe(p);
   p._areas = areasDe(p);
   p._busqueda = [p.nombre, p.data.empresa, p.ciudad, p.data.puesto].filter(Boolean).join(' ').toLowerCase();
@@ -258,7 +260,7 @@ function poblarFiltros() {
   opciones(el('f-tipo'), unicos(ps.map(p => p.data.tipo_cliente)).map(v => ({ valor: v, texto: v })), 'Todos');
   opciones(el('f-area'), unicos(ps.flatMap(p => p._areas)).map(v => ({ valor: v, texto: v })), 'Todas');
   opciones(el('f-origen'), Object.entries(ORIGENES).map(([valor, texto]) => ({ valor, texto })), 'Todos');
-  opciones(el('f-estado'), ESTADOS.map(e => ({ valor: String(e.rango), texto: e.etiqueta })), 'Todos');
+  opciones(el('f-estado'), Object.entries(ESTADOS).map(([valor, e]) => ({ valor, texto: e.etiqueta })), 'Todos');
 
   const vendedores = unicos(ps.map(p => p.vendedor));
   const filtroVendedor = el('f-vendedor').closest('.leads-filtro');
@@ -285,7 +287,7 @@ function filtrados() {
     (!tipo || p.data.tipo_cliente === tipo) &&
     (!area || p._areas.includes(area)) &&
     (!origen || p._origen === origen) &&
-    (!est || String(p._estado) === est) &&
+    (!est || p.estado === est) &&
     (!texto || p._busqueda.includes(texto)));
 }
 
@@ -310,13 +312,18 @@ function pintaCabeceras() {
     const activa = estado.orden.llave === c.llave;
     const flecha = activa ? `<span class="orden-flecha">${estado.orden.asc ? '↑' : '↓'}</span>` : '';
     return `<th data-orden="${c.llave}">${escapeHtml(c.titulo)} ${flecha}</th>`;
-  }).join('') + '<th>WhatsApp</th>';
+  }).join('') + '<th>Acciones</th>';
 }
 
-function celdaWa(p) {
+// La liga de WhatsApp NO registra nada (CONTEXT.md "Toque"): abrir el chat con
+// el mensaje prellenado no es un contacto, el envio ocurre en otra app. El
+// toque es el tap aparte del boton Contacte.
+function celdaAcciones(p) {
   const liga = buildWaLinkProspecto(p, estado.ligas);
-  if (!liga) return '<span class="btn-wa deshabilitado">Sin celular</span>';
-  return `<a class="btn-wa" href="${escapeHtml(liga)}" target="_blank" rel="noopener">WhatsApp</a>`;
+  const wa = liga
+    ? `<a class="btn-wa" href="${escapeHtml(liga)}" target="_blank" rel="noopener">WhatsApp</a>`
+    : '<span class="btn-wa deshabilitado">Sin celular</span>';
+  return `${wa} <button type="button" class="btn-contacte" data-toque="${escapeHtml(p.id)}">Contacté</button>`;
 }
 
 function filaDetalle(p) {
@@ -350,8 +357,8 @@ function pinta() {
     const celdas = COLUMNAS.map(c => {
       const texto = String(c.texto ? c.texto(p) : c.valor(p));
       if (c.llave === 'estado') {
-        const corta = ESTADOS[p._estado].corta;
-        return `<td><span class="estado-badge estado-${p._estado}">` +
+        const corta = ESTADOS[p.estado].corta;
+        return `<td><span class="estado-badge estado-${escapeHtml(p.estado)}">` +
           `<span class="txt-largo">${escapeHtml(texto)}</span>` +
           `<span class="txt-corto">${escapeHtml(corta)}</span></span></td>`;
       }
@@ -365,13 +372,13 @@ function pinta() {
         `${escapeHtml(texto)}</div>${subHtml}</td>`;
     }).join('');
     const detalle = estado.abierta === p.id ? filaDetalle(p) : '';
-    return `<tr class="fila-lead" data-id="${p.id}">${celdas}<td>${celdaWa(p)}</td></tr>${detalle}`;
+    return `<tr class="fila-lead" data-id="${p.id}">${celdas}<td>${celdaAcciones(p)}</td></tr>${detalle}`;
   }).join('');
   el('leads-vacio').style.display = lista.length ? 'none' : 'block';
 
-  const sinPaso = lista.filter(p => p._estado === 0).length;
+  const sinContactar = lista.filter(p => p.estado === 'sin_contactar').length;
   el('leads-resumen').innerHTML =
-    `<strong>${lista.length}</strong> leads · <strong>${sinPaso}</strong> sin siguiente paso · ` +
+    `<strong>${lista.length}</strong> prospectos · <strong>${sinContactar}</strong> sin contactar · ` +
     `toca una fila para ver el detalle`;
 }
 
@@ -394,7 +401,10 @@ function conectaEventos() {
   });
 
   el('leads-cuerpo').addEventListener('click', e => {
-    if (e.target.closest('a')) return;
+    const boton = e.target.closest('button[data-toque]');
+    if (boton) return registrarToque(Number(boton.dataset.toque));
+    // Ni la liga de WhatsApp ni ningun boton abren o cierran el detalle.
+    if (e.target.closest('a, button')) return;
     const tr = e.target.closest('tr.fila-lead');
     if (!tr) return;
     const id = Number(tr.dataset.id);
@@ -403,22 +413,52 @@ function conectaEventos() {
   });
 }
 
+// Contacte (spec #306): registra el Toque por la ruta que ya existe y vuelve a
+// pedir la tabla, para que el estado y el ultimo contacto los siga decidiendo el
+// servidor. Se repinta sin recargar, asi que los filtros y la fila abierta
+// sobreviven; el error se avisa en el resumen y la tabla se queda como estaba.
+async function registrarToque(id) {
+  try {
+    const res = await fetch(`/api/prospectos/${id}/toques`, {
+      method: 'POST', headers: { Authorization: `Bearer ${estado.token}` },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      el('leads-resumen').textContent = data.error || 'No se pudo registrar el toque';
+      return;
+    }
+    const filas = await pideFilas();
+    if (!filas) return muestraLogin();
+    estado.prospectos = filas;
+    pinta();
+  } catch (err) {
+    el('leads-resumen').textContent = 'No se pudo registrar el toque';
+  }
+}
+
 // --- Arranque y sesion ---
 
 async function api(ruta) {
   return fetch(ruta, { headers: { Authorization: `Bearer ${estado.token}` } });
 }
 
+// Devuelve las filas ya resueltas por el servidor, o null si la sesion no sirve.
+async function pideFilas() {
+  const res = await api('/api/prospectos/tabla');
+  if (res.status === 401 || res.status === 403) return null;
+  if (!res.ok) throw new Error('No se pudieron cargar los prospectos');
+  // La pantalla es de leads de FERIA: un prospecto sin evento no entra.
+  return (await res.json()).filter(p => p.data && p.data.evento).map(prepara);
+}
+
 async function cargar() {
-  const [resProspectos, resCatalogos] = await Promise.all([api('/api/prospectos'), api('/api/catalogos')]);
-  if (resProspectos.status === 401 || resProspectos.status === 403) return false;
-  if (!resProspectos.ok) throw new Error('No se pudieron cargar los prospectos');
+  const [filas, resCatalogos] = await Promise.all([pideFilas(), api('/api/catalogos')]);
+  if (!filas) return false;
   if (resCatalogos.ok) {
     const c = await resCatalogos.json();
     estado.ligas = { catalogoUrl: c.catalogoUrl || '', sitioUrl: c.sitioUrl || '' };
   }
-  // La pantalla es de leads de FERIA: un prospecto sin evento no entra.
-  estado.prospectos = (await resProspectos.json()).filter(p => p.data && p.data.evento).map(prepara);
+  estado.prospectos = filas;
   poblarFiltros();
   pinta();
   el('leads-login').style.display = 'none';
