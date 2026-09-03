@@ -35,7 +35,7 @@ Corte histórico (decisión 2026-06-16): el folio de Operam no se persistía ant
 
 ## Número de la cotización
 
-Es el **folio del quote en Operam**, y sólo ése (ADR-0009). El id interno del registro del cotizador es una clave técnica — vive en las URL de los documentos y del historial — y nunca se presenta como "cotización #N": el cliente que recibe el documento y quien abre el ERP tienen que leer el mismo número. Para poder imprimirlo, generar un documento **espera** a que la cotización esté subida a Operam; si no lo consigue, el documento se entrega igual **sin número**, como pre-cotización, y el numerado se re-comparte desde el historial cuando el folio llegue. En la UI el folio se nombra siempre con la convención **"#Operam N"** (#63).
+Es el **folio del quote en Operam**, y sólo ése (ADR-0009). El id interno del registro del cotizador es una clave técnica — vive en las URL de los documentos y del historial — y nunca se presenta como "cotización #N": el cliente que recibe el documento y quien abre el ERP tienen que leer el mismo número. Para poder imprimirlo, generar un documento **espera** a que la cotización esté subida a Operam; si no lo consigue, el documento se entrega igual **sin número**, como pre-cotización, y el numerado se re-comparte desde el historial cuando el folio llegue. En la UI el folio se nombra siempre con la convención **"#Operam N"** (#63) — pero esa convención es **hacia adentro**: existe para que el vendedor distinga el folio del id interno, y el cliente no sabe qué es Operam. En lo que el cliente lee —el documento y el **Resumen de la cotización**— el folio va solo: "Cotización 928".
 
 ## Editar / Copiar cotización
 
@@ -76,6 +76,40 @@ Es **captura de un dato externo, no catálogo**: sobrevive al borrador (la excep
 ## Aplicación extra
 
 Cargo por aplicar una calca **adicional sobre la misma pieza**. Tiene precio por lista pero no existe como artículo en el ERP, así que hoy no puede cotizarse.
+
+## Resumen de la cotización
+
+Lo que el cliente recibe por WhatsApp. No es la cotización: es la invitación a abrirla. Su trabajo es que en un golpe de vista se sepa qué se cotizó, cuánto cuesta y hasta cuándo se sostiene — y que eso baste para abrir el documento, donde vive el detalle.
+
+Se arma con un renglón por **Familia de producto**, con el número de modelos y las piezas, sin importe por renglón: una columna de cifras se lee como lista de precios e invita a auditar línea por línea, que no es la conversación que se busca en un chat. El dinero aparece una sola vez, al cierre, como total con IVA junto a las piezas totales. Lleva el número de la cotización, la vigencia y una invitación explícita a revisar el documento y preguntar.
+
+Las partidas que no son producto no se esconden y no se mezclan. La **calca** lleva renglón propio contado en piezas decoradas, que no se suman a las piezas de producto — la misma separación que ya hace la lista de precios. El **envío** lleva renglón siempre: con partida de envío se promete el servicio y el tiempo tal como los reporta la paquetería; sin ella se dice que no está incluido. Ese renglón existe porque el resumen no lleva las condiciones comerciales, y "¿el flete está incluido?" es la pregunta que sigue al precio.
+
+**Una cotización sin folio no se resume**: el botón de compartir exige número, sin importar por qué falta. Una pre-cotización no se puede citar por teléfono ni buscar en el ERP, así que mandarla deja al cliente con un documento que nadie puede nombrar; y si Operam falló, lo que hay que arreglar es Operam, no disculparse en el chat. El vendedor conserva la salida manual —abrir el documento y compartir la liga, o adjuntar el PDF— y el botón se enciende solo en cuanto llega el folio. Es la misma regla que el candado por duplicado ya aplicaba por otra razón.
+
+El resumen no guarda nada: se deriva del mismo registro que regenera el documento, así que corregir la cotización corrige el mensaje que se vuelva a compartir. Es el mismo texto se comparta desde donde se comparta.
+
+## Modelo
+
+La pieza, sin color ni textura: `VA08` es la Taza de mesa 8 cm, `PH20` el Plato hondo 20 cm. Está un nivel arriba del SKU — `VA08P1N1M0` es esa misma taza rosa con interior blanco y filete negro — y un nivel abajo de la **Familia de producto**. Son 36 modelos contra más de mil SKUs, y esa razón es la que hace útil al modelo para resumir: una cotización con muchas partidas casi siempre es pocos modelos con muchas variantes de acabado, no muchas piezas distintas.
+
+Su nombre para el cliente es el **nombre comercial** ("Plato hondo 20 cm", "Taza para expreso"), que se mantiene a mano y no se deriva del código ni del nombre interno. El precio no es un atributo del modelo: dentro de un mismo modelo el acabado lo cambia, así que un modelo agrupado tiene un rango de precios, no uno solo.
+
+El **acabado** —"blanco con manchas cobalto filete azul"— no es un dato, es prosa: no existe como campo, solo como texto dentro del nombre del SKU, y el mismo acabado aparece escrito de varias formas. Por eso no sirve como eje para agrupar nada.
+
+## Familia de producto
+
+El agrupador comercial del modelo: Platos, Tazas, Tazones, Salseras, Portavasos, Pocillos, Vasos, Tequileros. Es lo que un cliente reconoce sin pensar, y el eje con el que el **Resumen de la cotización** colapsa una cotización de cualquier tamaño a unos pocos renglones.
+
+**No se deriva del prefijo del SKU.** El prefijo es código de molde, no familia: `VA` mezcla tazas con pocillos, `VT` mezcla tequileros con vasos, y platos hondos y trincheros viven en prefijos distintos (`PH` y `PL`) siendo la misma familia. La asignación es modelo por modelo y la decide una persona.
+
+Su origen es la columna `amazon_type` del Excel maestro de precios — la clasificación con la que ya se listan los productos en Amazon, que resulta ser la misma pregunta ("¿qué es esta pieza para quien la compra?"). Deja de vivir ahí: pasa al **Maestro de modelos**, donde se puede corregir sin tocar un archivo. Un modelo puede no tener familia asignada, y eso es un pendiente visible, no un silencio: hoy `BA30 Base` y `OL24 Olla` no la tienen.
+
+## Maestro de modelos
+
+La fuente de verdad de qué es cada modelo: su nombre comercial, su familia, su peso, sus medidas, su caja, su código SAT y su clasificación GS1. Vive en el sistema y se edita desde el panel de administración, no en el Excel de una computadora ni en un archivo del repositorio — es dato que una persona corrige cuando el catálogo cambia, no una constante del código. Operam no modela nada de esto; el catálogo que el cotizador lee del ERP trae precios y artículos, no lo que un modelo *es*.
+
+Es el primer pedazo de un maestro de producto más grande —colores, texturas, cajas, y las reglas que generan los SKUs, los artículos de Operam y los listados de GS1 y Shopify— que por ahora sigue viviendo en el Excel.
 
 ## Prospecto convertido en cliente
 
