@@ -42,6 +42,7 @@ import {
   confirmarTelefono,
 } from './telefono-widget.js';
 import { ciudadPorCP } from './cp-ciudad.js';
+import { planAutollenadoCP, paisTieneIndiceCP } from './cp-autollenado.js';
 import {
   CANALES,
   PIEZAS_ESTIMADAS,
@@ -665,6 +666,10 @@ function restaurarClienteDelBorrador(borrador) {
   if (paisEl) paisEl.value = campos.pais || 'MX';
   pcState.cliente = pcCliente || null;
   pcRenderTarjeta();
+  // Borrador con CP y municipio/estado vacios (#291, decision de Adrian
+  // 2026-09-02): el indice los llena aunque el vendedor no pase por el paso
+  // Envio. Lo que el borrador si traia escrito no se toca.
+  resolverCpAsistido('entrega');
 }
 
 // Contacto nuevo a medio capturar restaurado (#180): reabre el formulario de
@@ -2755,6 +2760,7 @@ function nuevaCotizacion() {
   // Vaciar el input no devuelve la bandera a Mexico: eso lo hace el widget.
   fijarTelefono('cl-telefono', '');
   fijarTelefono('cl-cel-entrega', '');
+  olvidarCpAsistido('entrega');
   const paisEl = document.getElementById('cl-pais');
   if (paisEl) paisEl.value = 'MX';
   document.getElementById('shipping-option').value = 'none';
@@ -2946,6 +2952,7 @@ function pcLimpiarCamposCliente() {
   for (const id of campos) { const el = document.getElementById(id); if (el) el.value = ''; }
   fijarTelefono('cl-telefono', '');
   fijarTelefono('cl-cel-entrega', '');
+  olvidarCpAsistido('entrega');
   const pais = document.getElementById('cl-pais'); if (pais) pais.value = 'MX';
   const rfc = document.getElementById('cl-rfc'); if (rfc) rfc.readOnly = false;
   window._operamDomicilios = null;
@@ -3969,6 +3976,10 @@ function switchTab(name) {
   if (name === 'resumen') updateResumen();
   if (name === 'envio') {
     updateShippingSummary();
+    // Al PINTAR la pantalla (#291): un domicilio que llego prellenado -- de
+    // Operam, del prospecto, del borrador -- con CP y municipio/estado vacios
+    // se completa con el indice; con municipio/estado ya escritos no se toca.
+    resolverCpAsistido('entrega');
     // Auto-cotizar con el CP ya capturado en el bloque de entrega si aplica
     // (#84: mismo campo, ya no hay que copiarlo a un envia-cp aparte).
     const cpCliente = document.getElementById('cl-cp-entrega')?.value?.trim();
@@ -4451,8 +4462,10 @@ const SUPERFICIES_BORRADOR = {
   'alta-completa': {
     contenedor: 'panel-alta-cliente',
     esperarListo: () => altaEsperarCatalogosCompletos(),
-    alRestaurar: () => altaRepintarCsfRestaurada(),
-    alVaciar: () => altaLimpiarAvisosAlta(),
+    // El segundo (#291) completa ciudad/estado del domicilio si el borrador
+    // restaurado trae CP y esos dos vacios; lo restaurado con valor no se toca.
+    alRestaurar: () => { altaRepintarCsfRestaurada(); resolverCpAsistido('alta'); },
+    alVaciar: () => { altaLimpiarAvisosAlta(); olvidarCpAsistido('alta'); },
   },
   // Upgrade fiscal (issue #185, #85) NO vive aqui: es por-instancia (por
   // customer_id, ver DEF_UPGRADE_FISCAL + defSuperficie abajo) -- un intento de
@@ -6133,6 +6146,10 @@ async function cargarCotizacion(id, modo = 'nueva') {
     }
     fijarTelefono('cl-telefono', c.telefono || '');
     fijarTelefono('cl-cel-entrega', c.celEntrega || '');
+    // El municipio/estado que viene del registro lo escribio alguien, no el
+    // indice (#291): olvidar la memoria evita que un valor identico al del CP
+    // anterior quede marcado como pisable.
+    olvidarCpAsistido('entrega');
     if (cot.condicionesPago) document.getElementById('cl-condiciones').value = cot.condicionesPago;
     const paisEl = document.getElementById('cl-pais');
     if (paisEl) paisEl.value = c.pais || 'MX';
@@ -7731,6 +7748,85 @@ document.addEventListener('DOMContentLoaded', () => {
   chk.addEventListener('change', () => sincronizarEmailFactura('checkbox'));
   entrega.addEventListener('input', () => sincronizarEmailFactura('entrega'));
   factura.addEventListener('input', () => sincronizarEmailFactura('factura'));
+});
+
+// === Autollenado de ciudad/estado por codigo postal (issue #291) ===
+//
+// Dos pantallas, UN motor: el domicilio de entrega del paso Envio (cl-*) y el
+// domicilio del alta completa (alta-*). Lo unico que cambia entre ellas son los
+// ids; la regla de no pisar y el texto del aviso viven en `cp-autollenado.js`, y
+// la consulta al indice en `cp-ciudad.js` (el mismo modulo que usan la captura
+// de expo y el formulario publico).
+const CAMPOS_CP_ASISTIDO = {
+  entrega: {
+    cp: 'cl-cp-entrega', pais: 'cl-pais',
+    ciudad: 'cl-municipio', estado: 'cl-estado', chip: 'cl-chip-cp',
+  },
+  alta: {
+    cp: 'alta-addr-zip', pais: 'alta-pais',
+    ciudad: 'alta-addr-city', estado: 'alta-addr-state', chip: 'alta-chip-cp',
+  },
+};
+
+// Lo ultimo que dejo el indice en cada pantalla: sin esta memoria no hay forma
+// de distinguir "Puebla" que puso el CP de "Puebla" que escribio el vendedor.
+const cpDelIndice = {
+  entrega: { ciudad: '', estado: '' },
+  alta: { ciudad: '', estado: '' },
+};
+
+// Vaciar los campos tambien tira la memoria: si no, un municipio prellenado
+// despues que coincidiera letra por letra con el del CP anterior quedaria
+// marcado como "puesto por el indice" y seria pisable.
+function olvidarCpAsistido(pantalla) {
+  cpDelIndice[pantalla] = { ciudad: '', estado: '' };
+  const chip = document.getElementById(CAMPOS_CP_ASISTIDO[pantalla]?.chip);
+  if (chip) { chip.textContent = ''; chip.style.display = 'none'; }
+}
+
+async function resolverCpAsistido(pantalla) {
+  const ids = CAMPOS_CP_ASISTIDO[pantalla];
+  if (!ids) return;
+  const campoCiudad = document.getElementById(ids.ciudad);
+  const campoEstado = document.getElementById(ids.estado);
+  if (!campoCiudad || !campoEstado) return;
+  const pais = document.getElementById(ids.pais)?.value || 'MX';
+  const cp = document.getElementById(ids.cp)?.value || '';
+  const resuelto = paisTieneIndiceCP(pais) ? await ciudadPorCP(pais, cp) : null;
+  // Se consulta con cada tecla, asi que dos respuestas pueden cruzarse: si el CP
+  // o el pais ya cambiaron, esta respuesta es de otro codigo y escribirla
+  // dejaria la ciudad de un CP que el vendedor acaba de corregir.
+  if ((document.getElementById(ids.cp)?.value || '') !== cp) return;
+  if ((document.getElementById(ids.pais)?.value || 'MX') !== pais) return;
+  const plan = planAutollenadoCP(
+    { ciudad: campoCiudad.value, estado: campoEstado.value },
+    cpDelIndice[pantalla],
+    resuelto,
+  );
+  campoCiudad.value = plan.valores.ciudad;
+  campoEstado.value = plan.valores.estado;
+  cpDelIndice[pantalla] = plan.delIndice;
+  const chip = document.getElementById(ids.chip);
+  if (chip) {
+    chip.textContent = plan.aviso;
+    chip.style.display = plan.aviso ? 'inline-flex' : 'none';
+  }
+}
+
+// Tres disparos por pantalla: cada tecla (cp-ciudad.js decide cuando ya vale la
+// pena preguntar), al salir del campo y al cambiar el pais. El repintado tras un
+// prellenado -- cliente de Operam, prospecto, borrador -- lo disparan
+// switchTab('envio') y el alRestaurar de la superficie 'alta-completa'.
+document.addEventListener('DOMContentLoaded', () => {
+  for (const pantalla of Object.keys(CAMPOS_CP_ASISTIDO)) {
+    const ids = CAMPOS_CP_ASISTIDO[pantalla];
+    const campoCp = document.getElementById(ids.cp);
+    if (campoCp) {
+      campoCp.addEventListener('input', () => resolverCpAsistido(pantalla));
+      campoCp.addEventListener('blur', () => resolverCpAsistido(pantalla));
+    }
+    document.getElementById(ids.pais)?.addEventListener('change', () => resolverCpAsistido(pantalla));
+  }
 });
 
 // Widget internacional en los campos de telefono que ya viven en el HTML
