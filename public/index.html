@@ -377,6 +377,9 @@
                 <div class="form-group" style="flex:0 0 100px">
                   <label>CP <span style="color:var(--danger)">*</span></label>
                   <input type="text" id="alta-addr-zip" inputmode="numeric" placeholder="06600">
+                  <!-- Ciudad y estado por CP (#291): mismo indice y misma regla
+                       de no pisar que el paso Envio. -->
+                  <span class="chip-cp" id="alta-chip-cp" style="display:none"></span>
                 </div>
               </div>
               <div class="form-row">
@@ -686,7 +689,12 @@
         </div>
         <div class="form-group">
           <label>CP</label>
-          <input type="text" id="cl-cp-entrega" placeholder="00000" maxlength="5" inputmode="numeric">
+          <!-- maxlength 7 (no 5) desde #291: el CP canadiense completo son 6
+               caracteres mas el espacio, y el selector de pais ya ofrece CA. -->
+          <input type="text" id="cl-cp-entrega" placeholder="00000" maxlength="7" inputmode="numeric">
+          <!-- Municipio y estado por CP (#291): el chip dice lo que resolvio el
+               indice; los campos siguen siendo capturables a mano. -->
+          <span class="chip-cp" id="cl-chip-cp" style="display:none"></span>
         </div>
       </div>
       <!-- Selector de contacto de entrega (issue #99): elige QUIEN recibe, con
