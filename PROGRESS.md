@@ -1,89 +1,115 @@
-# PROGRESS - Sesion 2026-09-02: cierre de la importacion de leads Abastur 2026
+# PROGRESS - Sesion 2026-09-02: leads de Abastur 2026 consolidados y tabla /leads
 
 ## Que se estaba haciendo y por que
 
-Adrian no recordaba si ya habia subido el archivo de gafetes escaneados del
-TERCER dia de Abastur 2026. La duda era real: los exports del hub se nombran
-por la FECHA DE DESCARGA, no por el dia que contienen, y en `Downloads` habia
-cinco archivos con nombres que sugerian mas dias de los que hubo de feria.
+Adrian no recordaba si habia subido el archivo del tercer dia de Abastur. De
+ahi salio todo lo demas: resulto que faltaba, y al revisar el padron se vio que
+el evento tiene DOS fuentes que se enriquecen entre si (el gafete escaneado del
+xlsx y la captura manual en el cotizador) sin una pantalla que las mostrara
+juntas. La tabla /leads es esa pantalla.
 
 ## Estado exacto al momento de escribirlo
 
-CERRADO. El dia 3 SI faltaba y Adrian lo importo en /admin durante esta sesion.
-Resultado de la importacion: **27 nuevos + 78 enriquecidos + 1 ya-cliente**
-(106 = total de filas con celular usable del export). Reparto de los nuevos:
-Adrian Chavez 21, Alejandro Chavez 6.
+CERRADO Y EN PRODUCCION. Tres commits en main:
 
-Los tres dias de feria quedaron completos en el sistema.
+- `f6f4d98` feat(prospectos): las senales del gafete se guardan como campos propios
+- `1edefc7` feat(leads): tabla de leads de feria con filtros, orden y WhatsApp
+- `9a5df02` fix(leads): las columnas ya no se derraman sobre la de al lado
 
-## Convencion de nombres de los exports (no derivable del nombre)
+Suite 3027/3027 (3024 previos + 3 de la vista). Render desplego.
 
-| Archivo en Downloads | Contiene | Leads |
-|---|---|---|
-| `abastur-hub-leads-2026-08-27.xlsx` | dia 1 (26-ago) | 53 |
-| `abastur-hub-leads-2026-08-28.xlsx` | dia 2 (27-ago) | 27 |
-| `abastur-hub-leads-2026-08-29.xlsx` | dias 1+2+3 ACUMULADOS | 113 |
+Adrian ya: importo el dia 3, re-subio el export para poblar los campos nuevos
+(0 nuevos / 105 enriquecidos / 1 ya-cliente, lo esperado) y borro por SQL los
+dos prospectos de prueba (ids 56 y 57, "Test Apellidotest" y "Test 2").
 
-`abastur-hub-leads-2026-08-29.xlsx`, `...2026-08-31.xlsx` y
-`...2026-08-31 (1).xlsx` tienen el MISMO md5 (`4028a991...`): son el mismo
-export descargado tres veces el 31-ago 10:21. No hay un cuarto archivo.
+Padron final de Abastur 2026: **160 prospectos**, 82 de Adrian y 78 de
+Alejandro.
 
-Los dos primeros exports fueron INCREMENTALES (solo el dia previo); el ultimo
-salio ACUMULATIVO. El hub cambio de comportamiento entre descargas.
+## El consolidado (medido, no estimado)
 
-## Como se verifico que faltaba el dia 3 (aritmetica, sin tocar produccion)
+Cruce del export de Neon contra el xlsx por celular10:
 
-El export esta ordenado cronologicamente: dia 1 = filas 2-54, dia 2 = 55-81,
-dia 3 = 82-114. Con eso los 78 enriquecidos se descomponen sin ambiguedad:
+| Poblacion | Que es | Total | Adrian | Alejandro |
+|---|---|---:|---:|---:|
+| A | gafete Y captura manual | 14 | 3 | 11 |
+| B | solo gafete | 91 | 63 | 28 |
+| C | solo captura manual | 55 | 18 | 37 |
 
-- 49 del dia 1 (53 leads - 4 sin celular) -> ya estaban desde el 27-ago
-- 26 del dia 2 (27 leads - 1 sin celular) -> ya estaban: el dia 2 SI se subio
-- 3 del dia 3 -> capturados a mano en el stand
+**El dato que manda el trabajo comercial: los 91 de solo-gafete son los UNICOS
+sin siguiente contacto agendado.** Todos los capturados a mano (A+C = 69) si lo
+tienen. Del padron completo solo 5 llegaron a cotizacion y 5 a cliente.
 
-Y el dia 3 cierra: 33 leads = 27 nuevos + 1 ya-cliente + 2 sin celular + 3
-enriquecidos. El ya-cliente es Luis Eusebio Landero / KOY KOY (fila 92, 28-ago).
+Cobertura de columnas sobre 160: tipo de cliente 99%, empresa 85%, correo 69%
+(pero solo 8 de 55 en C: a los capturados a mano casi no se les pidio correo,
+WhatsApp es el unico canal), puesto 66%, tamano 65%, area de interes 63%,
+nota a mano 34%, calificacion de expo **17%**.
+
+## Convencion de nombres de los exports del hub (no derivable del nombre)
+
+Se nombran por FECHA DE DESCARGA, no por el dia que contienen:
+`...08-27.xlsx` = dia 1 (53 leads), `...08-28.xlsx` = dia 2 (27),
+`...08-29.xlsx` = los TRES dias acumulados (113). Los archivos `08-29`,
+`08-31` y `08-31 (1)` tienen el mismo md5: son el mismo export bajado 3 veces.
+
+Los dos primeros fueron incrementales y el ultimo acumulativo: el hub cambio de
+comportamiento entre descargas.
 
 ## Decisiones tomadas y restricciones descubiertas
 
-- Re-subir un export ya importado es SEGURO: `datosParaEnriquecer`
-  (server.js:1379) solo escribe sobre campos vacios y no repite una nota que el
-  prospecto ya tenga (parche #277). El unico residuo es un evento `importado`
-  extra en la bitacora. Ante la duda, subir cuesta menos que averiguar.
-- El export NO cambio de forma esta vez: `columnasNoEncontradas` vacio.
-- El patron acordado sigue siendo correcto: correr el parser real en seco antes
-  de importar (script efimero en scratchpad, import por ruta absoluta a
-  `node_modules/xlsx/xlsx.mjs` con `XLSX.read(buffer)`, porque el build .mjs no
-  trae `fs` enlazado y `readFile` truena).
-- `data/prospectos.json` local esta vacio a proposito (los prospectos viven en
-  Neon): NO sirve para verificar estado de produccion desde el repo.
+- **Camino B para el area de interes**: la fusion pasa por el IMPORTADOR, no
+  por la pantalla. `senalesDeCalificacion` es el punto unico (incluida la
+  precedencia puesto -> jobTitle) y las senales salen por dos caminos: campos
+  propios de `data` (filtrables) y la MISMA linea de notas. La linea NO se toca:
+  la idempotencia de #277 compara la nota entrante contra la guardada.
+- **La pantalla se protege con el PIN de siempre**, no con un token en la URL.
+  El HTML no lleva datos (un test lo verifica): los pide a /api/prospectos con
+  el token, asi que la visibilidad es la de siempre y compartir la liga no
+  expone a nadie. Alejandro ve sus 78, el admin los 160.
+- **`temperatura` mezcla dos escalas y por eso NO es columna**: del gafete llega
+  el Scoring 1-5 de la app de Abastur, de la captura el nivel de interes del
+  vendedor ({Bajo:1, Medio:3, Alto:5}). Como el enriquecimiento solo escribe
+  sobre vacio, donde el vendedor califico se descarto el Scoring en silencio.
+  Un 5 no significa lo mismo segun de donde venga.
+- **El reparto Adrian/Alejandro es correcto** (decision de Adrian): solo lo que
+  el escaneo o registro es suyo; los gafetes de Raul Chavez se quedan con
+  Alejandro. Raul no esta en el registro de vendedores, por eso todo lo que
+  escanea cae al default del formulario. Queda CERRADO el pendiente que venia
+  arrastrandose desde el dia 1.
+- Re-subir un export ya importado es seguro y es la forma barata de salir de
+  dudas: sale 0 nuevos y N enriquecidos.
+- Para leer produccion desde el repo NO hay camino: `data/prospectos.json` esta
+  vacio a proposito y el `.env` local no lleva `DATABASE_URL` (ver abajo). El
+  export se saco a mano por la consola de Neon con `row_to_json(p)`.
+- Trampas de CSS que costaron dos vueltas en /leads, ambas encontradas EN EL
+  NAVEGADOR y no por review: `max-width` sobre un `<td>` no se respeta con
+  table-layout automatico (hay que ponerlo en un div interno), y una columna
+  `sticky` se monta sobre la de al lado cuando la tabla no cabe -- en el
+  telefono eso tapaba el nombre, y se resolvio mostrando solo tres columnas y
+  la etiqueta de estado en forma corta.
+- Parser en seco: importar `node_modules/xlsx/xlsx.mjs` por ruta absoluta y usar
+  `XLSX.read(buffer)`; ese build no trae `fs` enlazado y `readFile` truena.
 
 ## Lo que falta, paso a paso
 
-1. **Reasignar 6 prospectos** si no le tocan a Alejandro. Son gafetes que
-   escaneo Raul Chavez y cayeron al default del formulario (Raul no esta en el
-   registro de vendedores, asi que nunca hace match). Los 8 que escaneo en el
-   dia 3, de los cuales salieron esos 6:
-   CASA CRISTAL (Alejandro Puente), B2B SOURCING MX (Pablo Montes),
-   RESTAURANTE BOLICHERA 21 (Ronal Bautista), ATIPICO (David Campos),
-   TMS (Edna Fragoso), NEGOCIOS Y COMIDA (Victor Leon), BENNU (Pablo Gil),
-   MKKO (Marco Vega).
-   Mismo patron del dia 1, donde fueron 12. **Decision de fondo pendiente:**
-   dar de alta a Raul como vendedor (si va a dar seguimiento) o elegir a Adrian
-   como default en el formulario (si no).
-2. **Tabla de mapeo `ACTIVIDAD_A_TIPO`** (lib/importar-prospectos.js:44, 10
+1. **Trabajar los 91 sin siguiente paso** desde /leads, que es para lo que se
+   hizo. Ordenar por estado y filtrar por area de interes (quien marco
+   "Cristaleria - Vajillas" es el comprador real; "Restaurantes" son 66 de 160
+   y no discrimina).
+2. **Decidir la tabla `ACTIVIDAD_A_TIPO`** (lib/importar-prospectos.js:44, 10
    llaves). Caen a "Otro": Servicios (7), Comedor industrial (3),
-   Bar - Centro nocturno (3), Motel (1), Franquicia (1), Wellness (1).
-   Los dos claros serian Motel -> Hoteles y Comedor industrial -> Catering |
-   Eventos; el resto probablemente no vale forzarlo al catalogo cerrado.
-   Sigue pendiente tambien "Organizador de eventos" (heredado del dia 1).
-3. Trabajar la cola con el mensaje de expo (#273-#275) y los 7 gafetes sin
-   celular, de los cuales solo 4 son reales: Marlene Vazquez/LEMON PIE (la
-   atendio Pilar), Oscar Hurtado/TIENDA LA LUNA, Paul Valdez/SEGUNDO PISO y
-   Martha Leticia Parra/RESTAURANT CAFE LUKUMBE. Isaac Valderrama es el
-   ORGANIZADOR del evento (ignorar); Estefany Castro tiene calificacion 1;
-   Karla Torres/PIXKUY MOBILITY es transporte ejecutivo.
+   Bar - Centro nocturno (3), Motel (1), Franquicia (1), Wellness (1). Los dos
+   claros serian Motel -> Hoteles y Comedor industrial -> Catering | Eventos.
+   Sigue pendiente "Organizador de eventos", heredado del dia 1.
+3. **Los 4 gafetes sin celular que son reales** (de 7): Marlene Vazquez/LEMON
+   PIE (la atendio Pilar), Oscar Hurtado/TIENDA LA LUNA, Paul Valdez/SEGUNDO
+   PISO y Martha Leticia Parra/RESTAURANT CAFE LUKUMBE. No nacen como prospecto
+   (invariante 1 celular = 1 prospecto) y solo existen en el xlsx.
+4. Pendiente heredado: la convencion del `.env` sin `DATABASE_URL` es un parche
+   que falla en silencio y ademas bloquea LEER produccion. Lo correcto seria un
+   guard en `lib/db.js` (si NODE_ENV es test, no crear pool o lanzar cuando la
+   URL no es local). Unas lineas y un test.
 
 ## Siguiente accion exacta al reanudar
 
-Preguntar a Adrian si los 6 prospectos de Raul se quedan con Alejandro o se
-reasignan, y si quiere que Raul entre al registro de vendedores.
+Preguntar a Adrian si ya trabajo la cola de 91 desde /leads y si decidio el
+mapeo de Motel y Comedor industrial.
