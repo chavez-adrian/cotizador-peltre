@@ -106,24 +106,46 @@ function escritoConIntencion(texto) {
 //
 // { siglasCortas: true } lo activa el consumidor que sabe que su campo puede
 // traer siglas comerciales cortas (ver esSiglaCorta).
+// Sigla por contraste (#269): en un campo que NO viene entero en mayusculas, un
+// token corto escrito todo en mayusculas es a proposito ("MHW Mexico Central")
+// y se respeta. Sin contraste (campo entero gritado) no hay senal y se corrige;
+// medido en el parche de #293, donde "MHW Mexico" salia "Mhw Mexico".
+function esSiglaPorContraste(nucleo) {
+  if (nucleo.length > 4 || nucleo !== nucleo.toUpperCase() || !/\p{L}/u.test(nucleo)) return false;
+  const baja = nucleo.toLowerCase();
+  return !ENLACES.has(baja) && !ARTICULOS.has(baja);
+}
+
+// La puntuacion pegada a la palabra ("Flamingos,", "(los", "C.V.)") no es parte
+// de ella: se separa para clasificar el nucleo y se vuelve a pegar tal cual.
+// Sin esto la coma convertia la palabra en "simbolo raro" y salia gritada
+// ("Villas FLAMINGOS, Holbox", medido en el parche de #293).
+function partirPuntuacion(token) {
+  const m = token.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
+  return { pre: m[1], nucleo: m[2], post: m[3] };
+}
+
 export function aTitulo(valor, { siglasCortas = false } = {}) {
   const texto = String(valor == null ? '' : valor).trim().replace(/\s+/g, ' ');
   if (!texto) return '';
   if (escritoConIntencion(texto)) return texto;
-  const palabras = texto.split(' ');
+  const todoMayus = texto === texto.toUpperCase();
+  const palabras = texto.split(' ').map(partirPuntuacion);
   const salida = [];
   for (let i = 0; i < palabras.length; i++) {
-    const palabra = palabras[i];
-    if (esSigla(palabra) || esRomano(palabra) || (siglasCortas && esSiglaCorta(palabra))) {
-      salida.push(palabra.toUpperCase()); continue;
+    const { pre, nucleo, post } = palabras[i];
+    if (!nucleo) { salida.push(pre + post); continue; }
+    if (esSigla(nucleo) || esRomano(nucleo) || (siglasCortas && esSiglaCorta(nucleo)) ||
+        (!todoMayus && esSiglaPorContraste(nucleo))) {
+      salida.push(pre + nucleo.toUpperCase() + post); continue;
     }
-    const baja = palabra.toLowerCase();
-    const alta = capitalizar(palabra);
+    const baja = nucleo.toLowerCase();
+    const alta = pre + capitalizar(nucleo) + post;
     if (i === 0) { salida.push(alta); continue; }
-    if (ENLACES.has(baja)) { salida.push(baja); continue; }
+    if (ENLACES.has(baja)) { salida.push(pre + baja + post); continue; }
     if (ARTICULOS.has(baja)) {
-      const anterior = palabras[i - 1].toLowerCase();
-      salida.push(ENLACES.has(anterior) ? baja : alta);
+      const anterior = palabras[i - 1].nucleo.toLowerCase();
+      salida.push(ENLACES.has(anterior) ? pre + baja + post : alta);
       continue;
     }
     salida.push(alta);

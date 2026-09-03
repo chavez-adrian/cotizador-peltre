@@ -127,3 +127,18 @@ test('T16: un campo parcialmente mixto no trae senal de intencion y se corrige',
 test('T17: un campo sin letras no se altera', () => {
   assert.equal(aTitulo('5512345678'), '5512345678');
 });
+
+// Medidos en el dry-run del parche de #293 contra produccion: la coma pegada
+// convertia la palabra en "simbolo raro" y salia gritada.
+test('T18: la puntuacion pegada a la palabra no la vuelve sigla', () => {
+  assert.equal(aTitulo('Villas flamingos, Holbox'), 'Villas Flamingos, Holbox');
+  assert.equal(aTitulo('VILLAS FLAMINGOS, HOLBOX'), 'Villas Flamingos, Holbox');
+  assert.equal(aTitulo('HOTEL PLAYA, S.A. DE C.V.'), 'Hotel Playa, S.A. de C.V.');
+  assert.equal(aTitulo('tacos (los buenos)'), 'Tacos (Los Buenos)');
+});
+
+test('T19: una sigla corta en mayusculas dentro de un campo mixto se respeta por contraste', () => {
+  assert.equal(aTitulo('MHW Mexico Central de Compras'), 'MHW Mexico Central de Compras');
+  assert.equal(aTitulo('MHW MEXICO CENTRAL DE COMPRAS'), 'Mhw Mexico Central de Compras');
+  assert.equal(aTitulo('hotel DE mexico'), 'Hotel de Mexico');
+});
