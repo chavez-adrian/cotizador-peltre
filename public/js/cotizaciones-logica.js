@@ -7,7 +7,8 @@
 
 import { escapeHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
-import { nombreConCorto, normalizarBusqueda } from './alta-logica.js';
+import { nombreConCorto } from './alta-logica.js';
+import { filtrarPorCriterio } from './busqueda-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -214,64 +215,18 @@ export function textoBotonGenerar(tipo, modoActualizacion) {
 // como subcadena de los digitos del telefono -- consistente con la llave
 // ultimos10 (lib/telefono-llave.js): sin importar como se capturo el
 // telefono, "5512" lo encuentra. Texto y rango de fechas se combinan con AND.
+//
+// Desde #289 el filtro en si vive en busqueda-logica.js, compartido con las
+// otras cuatro vistas; aqui solo queda la declaracion de QUE es buscable en
+// una cotizacion y de que fecha se acota (la de la cotizacion).
+export const BUSCABLES_COTIZACION = {
+  camposDe: c => [c?.cliente, c?.folioOperam, c?.nombreCorto, c?.contactoEntrega, c?.vendedor],
+  digitosDe: c => c?.telefono,
+  fechaDe: c => c?.fecha,
+};
+
 export function filtrarCotizaciones(cotizaciones, criterio) {
-  const lista = cotizaciones || [];
-  const texto = normalizarBusqueda(criterio?.texto);
-  const desde = criterio?.desde || '';
-  const hasta = criterio?.hasta || '';
-  if (!texto && !desde && !hasta) return lista.slice();
-  const digitos = soloDigitos(criterio?.texto);
-  return lista.filter(c => {
-    if (texto && !(
-      camposBuscables(c).some(campo => campo.includes(texto)) ||
-      (digitos && soloDigitos(c?.telefono).includes(digitos))
-    )) return false;
-    return enRangoFecha(c?.fecha, desde, hasta);
-  });
-}
-
-// "Desde" y "Hasta" son independientes: solo uno acota por ese lado (#148).
-// c.fecha es ISO (server la guarda con toISOString via Date); el input nativo
-// entrega yyyy-mm-dd, un dia calendario sin zona horaria. A diferencia de los
-// scripts de backend que comparan contra el dia UTC (backfill-operam.mjs,
-// sync-operam-io.js), aqui el dia se calcula en hora LOCAL: este nucleo solo
-// corre en el navegador (nunca en server.js), y la tarjeta ya muestra la
-// fecha en hora local (fechaCorta/toLocaleDateString mas abajo). Usar UTC
-// aqui desincroniza el filtro de lo que el vendedor ve en pantalla -- una
-// cotizacion de las 11pm del 12 puede caer en el dia 13 en UTC y quedar
-// oculta al filtrar "Desde 13" aunque su tarjeta siga diciendo "12 ago".
-function diaLocal(fecha) {
-  const d = new Date(fecha);
-  const anio = d.getFullYear();
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  const dia = String(d.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function enRangoFecha(fecha, desde, hasta) {
-  if (!desde && !hasta) return true;
-  if (!fecha) return false;
-  const dia = diaLocal(fecha);
-  if (desde && dia < desde) return false;
-  if (hasta && dia > hasta) return false;
-  return true;
-}
-
-// Solo digitos, sin recortar a 10 (a diferencia de ultimos10): aqui se busca
-// una subcadena parcial del celular, no se calcula la llave de identidad.
-function soloDigitos(valor) {
-  if (valor == null) return '';
-  return String(valor).replace(/\D/g, '');
-}
-
-function camposBuscables(c) {
-  return [
-    normalizarBusqueda(c?.cliente),
-    normalizarBusqueda(c?.folioOperam),
-    normalizarBusqueda(c?.nombreCorto),
-    normalizarBusqueda(c?.contactoEntrega),
-    normalizarBusqueda(c?.vendedor),
-  ];
+  return filtrarPorCriterio(cotizaciones, criterio, BUSCABLES_COTIZACION);
 }
 
 export function buildTableroCotizacionesHtml(cotizaciones, hoy = new Date()) {

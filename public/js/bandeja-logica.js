@@ -9,6 +9,7 @@
 
 import { escapeHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam } from './pipeline-logica.js';
+import { filtrarPorCriterio } from './busqueda-logica.js';
 
 // Estados de la bandeja como filtros, en el orden en que se trabajan. Pendientes
 // es el default: es lo que falta decidir.
@@ -60,12 +61,21 @@ export function conteosBandeja(candidatos) {
   };
 }
 
+// Buscador de Rescatados (#289): el mismo control del Historial (texto +
+// Desde/Hasta), combinado con AND con el filtro por estado. La fecha que acota
+// es la del quote en Operam, recortada a su dia calendario -- el MISMO que pinta
+// la tarjeta (fmtFecha, que tampoco pasa por Date).
+export const BUSCABLES_CANDIDATO = {
+  camposDe: c => [c?.folio, c?.contacto, c?.debtorNombre, c?.vendedor],
+  digitosDe: c => c?.celular,
+  diaDe: c => String(c?.fecha || '').slice(0, 10),
+};
+
 // Filtra por estado y ordena del quote mas reciente al mas viejo: la bandeja se
 // trabaja empezando por lo ultimo que paso en Operam.
-export function candidatosVisibles(candidatos, filtro) {
-  return (candidatos || [])
-    .filter(c => filtro === 'todos' || c.estado === filtro)
-    .slice()
+export function candidatosVisibles(candidatos, filtro, criterio) {
+  const delEstado = (candidatos || []).filter(c => filtro === 'todos' || c.estado === filtro);
+  return filtrarPorCriterio(delEstado, criterio, BUSCABLES_CANDIDATO)
     .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
 }
 
@@ -228,8 +238,8 @@ export function buildResultadoBuscarNuevasHtml(resultado) {
   return `<span class="bandeja-resultado-busqueda">${escapeHtml(texto)}${desglose ? ` (saltados: ${escapeHtml(desglose)})` : ''}</span>`;
 }
 
-export function buildBandejaHtml(candidatos, filtro, vendedores, busqueda) {
-  const visibles = candidatosVisibles(candidatos, filtro);
+export function buildBandejaHtml(candidatos, filtro, vendedores, busqueda, criterio) {
+  const visibles = candidatosVisibles(candidatos, filtro, criterio);
   const lista = visibles.length
     ? visibles.map(c => buildTarjetaBandejaHtml(c, vendedores)).join('')
     : '<div class="empty-state"><p>No hay candidatos en este filtro.</p></div>';

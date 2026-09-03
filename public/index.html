@@ -875,6 +875,20 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-hoy">Volver</button>
   </header>
   <div style="padding:16px">
+    <!-- Buscador + rango de fechas (issue #289): el mismo control del Historial.
+         Filtra la cola ya cargada en memoria; el badge de pendientes sigue
+         contando la cola completa. No persiste. -->
+    <div class="search-input-wrap" style="margin-bottom:10px">
+      <input type="text" id="hoy-buscar" autocomplete="off" placeholder="Buscar por cliente, celular, ciudad, Origen o folio...">
+    </div>
+    <div class="historial-fechas">
+      <label>Desde
+        <input type="date" id="hoy-desde">
+      </label>
+      <label>Hasta
+        <input type="date" id="hoy-hasta">
+      </label>
+    </div>
     <div style="font-size:13px;font-weight:600;color:var(--text-light);margin-bottom:8px">Prospectos por contactar</div>
     <div id="hoy-loading" style="color:var(--light);font-size:13px">Cargando...</div>
     <div id="hoy-cola"></div>
@@ -945,6 +959,21 @@
         <button class="btn btn-primary" id="btn-guardar-prospecto">Guardar prospecto</button>
         <button class="btn btn-secondary" id="btn-cancelar-prospecto">Cancelar</button>
       </div>
+    </div>
+
+    <!-- Buscador + rango de fechas (issue #289): el mismo control del Historial.
+         UNA caja filtra los DOS bloques de abajo (cola y lista) por la fecha de
+         captura. No persiste. -->
+    <div class="search-input-wrap" style="margin-top:16px;margin-bottom:10px">
+      <input type="text" id="prospectos-buscar" autocomplete="off" placeholder="Buscar por nombre, celular, ciudad, Origen o empresa...">
+    </div>
+    <div class="historial-fechas">
+      <label>Desde
+        <input type="date" id="prospectos-desde">
+      </label>
+      <label>Hasta
+        <input type="date" id="prospectos-hasta">
+      </label>
     </div>
 
     <div id="prospectos-loading" style="color:var(--light);font-size:13px;margin-top:16px">Cargando...</div>
@@ -1031,6 +1060,20 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-bandeja">Volver</button>
   </header>
   <div style="padding:16px">
+    <!-- Buscador + rango de fechas (issue #289): el mismo control del Historial.
+         Se combina con AND con el filtro por estado; la fecha es la del quote
+         en Operam. Vive FUERA de #bandeja-root, que se repinta entero. -->
+    <div class="search-input-wrap" style="margin-bottom:10px">
+      <input type="text" id="bandeja-buscar" autocomplete="off" placeholder="Buscar por folio, cliente, deudor o vendedor...">
+    </div>
+    <div class="historial-fechas">
+      <label>Desde
+        <input type="date" id="bandeja-desde">
+      </label>
+      <label>Hasta
+        <input type="date" id="bandeja-hasta">
+      </label>
+    </div>
     <div id="bandeja-root"></div>
   </div>
 </div>
@@ -1140,6 +1183,20 @@
     <h1>Pipeline</h1>
   </header>
   <div style="padding:16px">
+    <!-- Buscador + rango de fechas (issue #289): el mismo control del Historial.
+         Se combina con AND con el filtro por evento y aplica a los tres modos;
+         la fecha es la de creacion de la oportunidad. No persiste. -->
+    <div class="search-input-wrap" style="margin-bottom:10px">
+      <input type="text" id="pipeline-buscar" autocomplete="off" placeholder="Buscar por cliente, celular, ciudad, Origen o folio...">
+    </div>
+    <div class="historial-fechas">
+      <label>Desde
+        <input type="date" id="pipeline-desde">
+      </label>
+      <label>Hasta
+        <input type="date" id="pipeline-hasta">
+      </label>
+    </div>
     <span id="pipeline-modo" style="display:inline-flex;gap:4px;margin-bottom:12px">
       <button class="btn btn-sm btn-secondary" id="btn-pipeline-modo-lista">Lista</button>
       <button class="btn btn-sm btn-primary" id="btn-pipeline-modo-tablero">Tablero</button>
