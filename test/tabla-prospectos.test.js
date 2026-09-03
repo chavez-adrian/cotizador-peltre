@@ -148,7 +148,7 @@ test('#314: un toque ANTERIOR al compromiso vencido no lo cierra y sigue agendad
 
 // --- #321: que falta (prospectos) ---
 // 'calificacion' solo aplica a un prospecto DE EVENTO (misma regla del aviso
-// "Calificación pendiente" de la tarjeta, CONTEXT.md "Qué sigue / Qué falta);
+// "Calificacion pendiente" de la tarjeta, CONTEXT.md "Que sigue / Que falta").
 // 'datos_fiscales' y 'domicilio' los agrega #322 y aqui NUNCA se emiten.
 
 function prospecto321(data) {
