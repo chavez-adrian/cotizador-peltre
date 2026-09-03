@@ -109,6 +109,14 @@ test('un nombre ya en mixto no se toca', () => {
     'BGE Esquivel - Cocinas del Valle');
 });
 
+// #293: la guarda paso a ser de INTENCION al unificar los tres tituladores. Un
+// nombre a medio escribir ya no cuenta como "mixto" y se corrige; el que trae
+// TODA palabra en alta (el de arriba) sigue intacto.
+test('un nombre PARCIALMENTE mixto si se corrige desde #293', () => {
+  assert.equal(nombreVisible({ persona: 'MARIA lopez', empresa: 'Cocinas del Valle' }),
+    'Maria Lopez - Cocinas del Valle');
+});
+
 test('la organizacion no se toca aunque venga en mayusculas', () => {
   assert.equal(nombreVisible({ persona: 'ALEJANDRA VAZQUEZ', empresa: 'MAG IMPRESIONES' }),
     'Alejandra Vazquez - MAG IMPRESIONES');

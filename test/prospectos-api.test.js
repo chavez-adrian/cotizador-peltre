@@ -1442,8 +1442,10 @@ test('#263: /api/catalogos trae la fecha prellenada del siguiente contacto del e
 // CONTEXT.md "Prospecto" (decision 2026-08-25): lo que se teclea al capturar --
 // nombre, empresa, ciudad -- se guarda con las mayusculas corregidas y el correo
 // en minusculas, venga de donde venga la captura. La regla vive en un solo lugar
-// (normalizarTextosProspecto, prospectos-logica.js) y la aplican la creacion y la
-// edicion desde la tarjeta.
+// (normalizarTextosProspecto, prospectos-logica.js) y la aplican la creacion, la
+// edicion desde la tarjeta y, desde #293, el importador del export de feria.
+// "Hotel la Joya" antes de #293: al unificar los tres tituladores gano la regla
+// de #241, donde el articulo que encabeza el nombre de la marca va ALTO.
 
 test('#269: la captura manual guarda nombre, empresa y ciudad con mayusculas corregidas y el correo en minusculas', async () => {
   writeProspectos([]);
@@ -1457,7 +1459,7 @@ test('#269: la captura manual guarda nombre, empresa y ciudad con mayusculas cor
   const p = readProspectos()[0];
   assert.equal(p.nombre, 'Mariana López');
   assert.equal(p.ciudad, 'San Luis Potosí');
-  assert.equal(p.data.empresa, 'Hotel la Joya');
+  assert.equal(p.data.empresa, 'Hotel La Joya');
   assert.equal(p.data.correo, 'mariana.lopez@gmail.com');
 });
 
@@ -1474,7 +1476,7 @@ test('#269: la captura de expo aplica la misma regla y el correo viaja al campo 
     const p = readProspectos()[0];
     assert.equal(p.nombre, 'Mariana López');
     assert.equal(p.ciudad, 'San Luis Potosí');
-    assert.equal(p.data.empresa, 'Hotel la Joya');
+    assert.equal(p.data.empresa, 'Hotel La Joya');
     assert.equal(p.data.correo, 'mariana.lopez@gmail.com');
   });
 });
@@ -1491,7 +1493,7 @@ test('#269: editar por la tarjeta aplica la misma regla a los mismos campos', as
   const p = readProspectos()[0];
   assert.equal(p.nombre, 'Mariana López');
   assert.equal(p.ciudad, 'San Luis Potosí');
-  assert.equal(p.data.empresa, 'Hotel la Joya');
+  assert.equal(p.data.empresa, 'Hotel La Joya');
   assert.equal(p.data.correo, 'mariana.lopez@gmail.com');
 });
 
@@ -1533,6 +1535,6 @@ test('#269: la captura sin asignar (admin) aplica la misma normalizacion de text
   assert.equal(p.vendedor, null);
   assert.equal(p.nombre, 'Mariana López');
   assert.equal(p.ciudad, 'San Luis Potosí');
-  assert.equal(p.data.empresa, 'Hotel la Joya');
+  assert.equal(p.data.empresa, 'Hotel La Joya');
   assert.equal(p.data.correo, 'mariana.lopez@gmail.com');
 });

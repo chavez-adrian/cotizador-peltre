@@ -47,7 +47,8 @@ import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPar
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
-import { validarMayoreo, buildCapturaMayoreo, capitalizarCampo } from './public/js/mayoreo-logica.js';
+import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
+import { aTitulo } from './public/js/titulo-logica.js';
 import { numeroTelefonoEsPosible } from './lib/telefono-posible.js';
 import { permitirCaptura } from './lib/rate-limit-publico.js';
 import { verificarTurnstile, turnstileConfigurado } from './lib/turnstile.js';
@@ -1037,7 +1038,7 @@ export function _inyectarAlertaMayoreo(fn) { _enviarAlertaMayoreo = fn ?? enviar
 // la misma razon: la tarjeta guarda un solo nombre, asi que el corte entre los
 // dos campos no sobrevive al aplanado -- y la vCard los necesita separados para
 // emitir N: sin adivinar donde parte un nombre completo. Van con
-// capitalizarCampo porque el form es crudo: sin eso la ficha diria
+// EL titulador del repo porque el form es crudo: sin eso la ficha diria
 // "Laura Mendoza" en FN: y "MENDOZA" en N:, el mismo apellido de dos formas.
 // `fechaCaptura` (issue #238) es el MISMO instante con el que se armo la
 // captura, no uno nuevo: la nota de la vCard lo imprime como fecha de la foto y
@@ -1048,7 +1049,7 @@ function dispararAlertaMayoreo(captura, form, fechaCaptura) {
   const prospecto = {
     fechaCaptura,
     nombre: captura.nombre,
-    nombrePila: capitalizarCampo(form.nombre), apellido: capitalizarCampo(form.apellido),
+    nombrePila: aTitulo(form.nombre), apellido: aTitulo(form.apellido),
     celular: captura.celular, ciudad: captura.ciudad,
     cp: d.cp, tipoProyecto: form.tipo,
     tipoProyectoOtro: form.tipo === 'Otro' ? form.otro : '',

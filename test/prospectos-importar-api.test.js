@@ -154,7 +154,7 @@ test('una fila nueva nace como prospecto del "Exhibitor member", con evento, tip
   assert.equal(p.vendedor, 'Oswaldo Chávez');
   assert.equal(p.nombre, 'Omar Olvera');
   assert.equal(p.celular, '+52 5512421575');
-  assert.equal(p.ciudad, 'HUIXQUILUCAN');
+  assert.equal(p.ciudad, 'Huixquilucan');
   assert.equal(p.canal, 'Feria/Expo');
   assert.equal(p.etapa, 'por_cotizar');
   assert.equal(p.data.evento, EVENTO);
@@ -162,7 +162,7 @@ test('una fila nueva nace como prospecto del "Exhibitor member", con evento, tip
   assert.equal(p.data.segmento_id, 10);
   assert.equal(p.data.temperatura, 4);
   assert.equal(p.data.correo, 'omar@vianda.mx');
-  assert.equal(p.data.empresa, 'VIANDA CONSULTORES');
+  assert.equal(p.data.empresa, 'Vianda Consultores');
   assert.equal(p.data.escaneado, '2025-09-16T11:32:00.000Z');
   assert.equal(p.data.notas,
     'Quiere catalogo\nPuesto: Dueño / Socio | Tamaño de empresa: De 11 a 50 empleados | Decisión de compra: Decido');
@@ -187,16 +187,33 @@ test('un celular que ya es prospecto se enriquece: rellena vacios, no pisa el st
   assert.equal(p.data.temperatura, 5);
   assert.equal(p.data.tipo_cliente, 'Hoteles');
   assert.equal(p.data.segmento_id, 10);
-  // Lo vacio se rellena
-  assert.equal(p.ciudad, 'PUEBLA');
+  // Lo vacio se rellena, con el texto YA normalizado (#293)
+  assert.equal(p.ciudad, 'Puebla');
   assert.equal(p.data.correo, 'omar@vianda.mx');
-  assert.equal(p.data.empresa, 'VIANDA CONSULTORES');
+  assert.equal(p.data.empresa, 'Vianda Consultores');
   // La nota se agrega, no reemplaza
   assert.equal(p.data.notas, 'Pidio tazas\nPidio precio de jarros');
   // La importacion queda en el historial
   const importado = p.eventos.find(e => e.tipo === 'importado');
   assert.ok(importado);
   assert.equal(importado.evento, EVENTO);
+});
+
+// Issue #293: el enriquecimiento escribia la empresa CRUDA del export. Es el
+// camino por el que 8 de los 14 prospectos capturados en el stand de Abastur
+// terminaron con la empresa gritando.
+test('el enriquecimiento guarda la empresa del export titulada y no altera la que ya viene en mezcla', async () => {
+  writeProspectos([prospectoDeStand()]);
+  await importar(ADMIN_TOKEN, xlsxBuffer([
+    fila({ empresa: 'DORADOS CONVENTION & RESORT' }),
+  ]), 'Jaime Abaroa');
+  assert.equal(readProspectos()[0].data.empresa, 'Dorados Convention & Resort');
+
+  writeProspectos([prospectoDeStand()]);
+  await importar(ADMIN_TOKEN, xlsxBuffer([
+    fila({ empresa: "McDonald's Insurgentes" }),
+  ]), 'Jaime Abaroa');
+  assert.equal(readProspectos()[0].data.empresa, "McDonald's Insurgentes");
 });
 
 test('re-importar el mismo archivo no duplica la nota que el prospecto ya tiene (issue #277)', async () => {
@@ -270,8 +287,8 @@ test('el gafete sin celular cruza por correo contra los prospectos del evento; e
   assert.equal(res.body.importados, 0);
   assert.equal(res.body.enriquecidos, 1);
   assert.deepEqual(res.body.sinCelular, [
-    { fila: 3, nombre: 'Luz Ramos', empresa: 'VIANDA CONSULTORES', correo: 'luz@hotelb.mx', scoring: '' },
-    { fila: 4, nombre: 'Raul Diaz', empresa: 'ABARROTES RD', correo: 'nadie@ajeno.mx', scoring: 2 },
+    { fila: 3, nombre: 'Luz Ramos', empresa: 'Vianda Consultores', correo: 'luz@hotelb.mx', scoring: '' },
+    { fila: 4, nombre: 'Raul Diaz', empresa: 'Abarrotes Rd', correo: 'nadie@ajeno.mx', scoring: 2 },
   ]);
   const guardados = readProspectos();
   assert.equal(guardados.length, 2);

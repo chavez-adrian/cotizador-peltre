@@ -73,11 +73,11 @@ test('una fila del export se convierte en un prospecto de Feria/Expo con el nomb
   assert.equal(p.fila, 2);
   assert.equal(p.nombre, 'Omar Olvera');
   assert.equal(p.celular, '+52 5512421575');
-  assert.equal(p.ciudad, 'HUIXQUILUCAN');
+  assert.equal(p.ciudad, 'Huixquilucan');
   assert.equal(p.canal, 'Feria/Expo');
   assert.equal(p.correo, 'omar@vianda.mx');
   assert.equal(p.vendedor, 'Adrian Chavez');
-  assert.equal(p.data.empresa, 'VIANDA CONSULTORES');
+  assert.equal(p.data.empresa, 'Vianda Consultores');
   assert.equal(p.data.correo, 'omar@vianda.mx');
   assert.equal(p.data.escaneado, '2025-09-16T11:32:00.000Z');
 });
@@ -98,12 +98,33 @@ test('fechaDeSerialExcel convierte el serial a ISO y deja pasar el texto', () =>
   assert.equal(fechaDeSerialExcel(''), '');
 });
 
+// "De La Torre" antes de #293: el titulador propio del importador iba
+// palabra por palabra y no conocia preposiciones ni articulos. Con la regla
+// unica (la de #241) el complemento va bajo.
 test('los nombres del export llegan en MAYUSCULAS y se guardan titulados, sin tocar los ya escritos', () => {
   const { listos } = importarProspectosFeria(workbook([
     fila({ nombre: 'MARÍA JOSÉ', apellido: 'DE LA TORRE' }),
     fila({ nombre: 'Ana', apellido: 'McKenzie', celular: '5512421576' }),
   ]), OPTS);
-  assert.deepEqual(listos.map(p => p.nombre), ['María José De La Torre', 'Ana McKenzie']);
+  assert.deepEqual(listos.map(p => p.nombre), ['María José de la Torre', 'Ana McKenzie']);
+});
+
+// Issue #293: la fila entera pasa por normalizarTextosProspecto, no solo el
+// nombre. El importador titulaba la persona con una funcion propia y guardaba la
+// empresa CRUDA: asi nacieron los 98 prospectos de Abastur cuya ficha de Google
+// decia "Alejandra Arena - DORADOS CONVENTION & RESORT".
+test('la empresa del export tambien se guarda titulada, con la misma regla que la captura', () => {
+  const { listos } = importarProspectosFeria(workbook([
+    fila({ nombre: 'ALEJANDRA', apellido: 'ARENA', empresa: 'DORADOS CONVENTION & RESORT', ciudad: 'MAZATLAN', correo: 'Alejandra.Arena@DORADOS.MX' }),
+    fila({ nombre: 'Ana', apellido: 'McKenzie', empresa: "McDonald's Insurgentes", celular: '5512421576' }),
+  ]), OPTS);
+  assert.equal(listos[0].nombre, 'Alejandra Arena');
+  assert.equal(listos[0].data.empresa, 'Dorados Convention & Resort');
+  assert.equal(listos[0].ciudad, 'Mazatlan');
+  assert.equal(listos[0].data.correo, 'alejandra.arena@dorados.mx');
+  // lo que ya venia escrito con mayusculas y minusculas no se toca
+  assert.equal(listos[1].nombre, 'Ana McKenzie');
+  assert.equal(listos[1].data.empresa, "McDonald's Insurgentes");
 });
 
 test('la actividad principal declarada pre-asigna el tipo de cliente y su segmento', () => {
@@ -203,7 +224,7 @@ test('la fila sin celular sale aparte con lo necesario para perseguirla a mano',
   assert.equal(sinCelular.length, 1);
   assert.equal(sinCelular[0].fila, 2);
   assert.equal(sinCelular[0].nombre, 'Luz Ramos');
-  assert.equal(sinCelular[0].empresa, 'HOTEL BONITO');
+  assert.equal(sinCelular[0].empresa, 'Hotel Bonito');
   assert.equal(sinCelular[0].correo, 'luz@hotelb.mx');
   assert.equal(sinCelular[0].scoring, 4);
   assert.equal(sinCelular[0].data.temperatura, 4);

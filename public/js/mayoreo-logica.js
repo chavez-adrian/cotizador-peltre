@@ -5,7 +5,8 @@
 // implementacion, cero copias espejo.
 
 import { validarTelefono, combinarTelefonoConCodigo, paisDesdeCodigoTelefono } from './alta-logica.js';
-import { PIEZAS_ESTIMADAS, TIPOS_CLIENTE, segmentoDeTipo, capitalizarCampo } from './prospectos-logica.js';
+import { PIEZAS_ESTIMADAS, TIPOS_CLIENTE, segmentoDeTipo } from './prospectos-logica.js';
+import { aTitulo } from './titulo-logica.js';
 
 // Tipo de cliente -> segmento de Operam. El catalogo y su mapeo son UNICOS y
 // viven en el nucleo de prospectos (prospectos-logica.js) desde #261: los tres
@@ -182,12 +183,6 @@ function limpio(v) {
   return String(v == null ? '' : v).trim();
 }
 
-// Correccion de mayusculas de nombre/empresa/ciudad: la regla vive en el
-// nucleo de prospectos desde #269 (dejo de ser del formulario publico y paso a
-// ser del PROSPECTO, CONTEXT.md "Prospecto"). Aqui solo se reexpone para los
-// consumidores que ya la importaban de este modulo.
-export { capitalizarCampo };
-
 // Formulario publico -> captura de prospecto de #57 ({ celular, nombre, ciudad,
 // canal, data }). La consumen el endpoint publico (server.js) y sus tests. El
 // vendedor y la etapa NO se deciden aqui: son del endpoint (no_asignado, sin dueno).
@@ -219,7 +214,7 @@ export function buildCapturaMayoreo(form, fechaISO, eventoActivo) {
   // Mayusculas corregidas UNA vez aqui (issue #235): la tarjeta, el correo de
   // alerta y la vCard leen nombre/empresa de esta captura, nunca del form
   // crudo, asi que heredan la correccion sin tocar esos otros puntos.
-  opcional('empresa', capitalizarCampo(f.empresa));
+  opcional('empresa', aTitulo(f.empresa));
   opcional('cp', f.cp);
   opcional('cuando', f.cuando);
   opcional('web', f.web);
@@ -247,7 +242,7 @@ export function buildCapturaMayoreo(form, fechaISO, eventoActivo) {
 
   return {
     celular: celularDeMayoreo(f),
-    nombre: unirNombre(capitalizarCampo(f.nombre), capitalizarCampo(f.apellido)),
+    nombre: unirNombre(aTitulo(f.nombre), aTitulo(f.apellido)),
     ciudad: limpio(f.ciudad),
     canal: conEvento ? CANAL_FERIA_EXPO : CANAL_MAYOREO,
     data,

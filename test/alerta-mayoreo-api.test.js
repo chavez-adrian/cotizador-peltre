@@ -162,7 +162,7 @@ test('#236: rama prospecto NUEVO -- nombre de pila y apellido llegan como campos
   let recibido = null;
   _inyectarAlertaMayoreo(async (prospecto) => { recibido = prospecto; });
 
-  // Campos CRUDOS en mayusculas: capitalizarCampo (#235) solo se aplica dentro
+  // Campos CRUDOS en mayusculas: el titulador del repo (#235, #293) solo se aplica dentro
   // de buildCapturaMayoreo, asi que sin corregirlos aqui la ficha diria
   // "Laura Mendoza" en FN: y "LAURA"/"MENDOZA" en N:, el mismo nombre de dos formas.
   const res = await enviar(formulario({ nombre: 'LAURA', apellido: 'MENDOZA' }));

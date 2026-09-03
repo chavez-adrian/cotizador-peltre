@@ -1277,7 +1277,7 @@ test('C10: la edicion inline de la tarjeta incorpora el paso 2 y dicta las notas
 // CONTEXT.md "Prospecto", decision 2026-08-25) ===
 // Un solo punto: lo que se teclea al capturar o al editar se guarda con las
 // mayusculas corregidas y el correo en minusculas. La regla de mayusculas es la
-// de capitalizarCampo (#235), que aqui NO se redefine.
+// del titulador del repo (#293, titulo-logica.js), que aqui NO se redefine.
 
 test('NT1: normalizarTextosProspecto titula nombre, empresa y ciudad en mayusculas y baja el correo', () => {
   const datos = normalizarTextosProspecto({
@@ -1287,8 +1287,9 @@ test('NT1: normalizarTextosProspecto titula nombre, empresa y ciudad en mayuscul
   });
   assert.equal(datos.nombre, 'Mariana López');
   assert.equal(datos.ciudad, 'San Luis Potosí');
-  // "la" es particula: la regla de #235 la deja en minuscula dentro del campo.
-  assert.equal(datos.data.empresa, 'Hotel la Joya');
+  // El articulo que encabeza el nombre de la marca va ALTO desde #293 (regla de
+  // #241, que gano al unificar los tres tituladores): "Hotel la Joya" antes.
+  assert.equal(datos.data.empresa, 'Hotel La Joya');
   assert.equal(datos.data.correo, 'mariana.lopez@gmail.com');
 });
 

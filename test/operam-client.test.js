@@ -742,10 +742,30 @@ test('buildClienteBody: RFC generico -> ignora overrides explicitos de CP/regime
 
 test('buildClienteBody: RFC real -> sin overrides de RFC generico (comportamiento actual)', () => {
   const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro', postal_code: '01000' });
-  assert.strictEqual(body.cust_name, 'hotel azul centro');
   assert.strictEqual(body.postal_code, '01000');
   assert.strictEqual(body.cfdi_regimen_fiscal, '612');
   assert.strictEqual(body.timbrado_uso_cfdi, 'S01');
+});
+
+// Convencion de Operam (Adrian, 2026-09-02, issue #293): la razon social va
+// SIEMPRE en MAYUSCULAS, para distinguirla del nombre corto/comercial. Antes de
+// #293 solo se forzaba con RFC generico y con RFC real viajaba como llegara (del
+// SAT en mayusculas, del alta completa como la tecleara el vendedor).
+test('buildClienteBody: cust_name en MAYUSCULAS con RFC real, no solo con generico (#293)', () => {
+  const real = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro' });
+  assert.strictEqual(real.cust_name, 'HOTEL AZUL CENTRO');
+  const generico = buildClienteBody({ tax_id: 'XAXX010101000', CustName: 'hotel azul centro' });
+  assert.strictEqual(generico.cust_name, 'HOTEL AZUL CENTRO');
+});
+
+test('buildClienteBody: el nombre corto derivado sigue en Titulo, no en mayusculas (#293)', () => {
+  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'HOTEL AZUL CENTRO' });
+  assert.strictEqual(body.cust_ref, 'Hotel Azul Centro');
+});
+
+test('buildClienteBody: el nombre corto explicito manda sobre el derivado', () => {
+  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'HOTEL AZUL CENTRO', cust_ref: 'Azul Centro' });
+  assert.strictEqual(body.cust_ref, 'Azul Centro');
 });
 
 // === buildClienteBody() — campos huerfanos #17/#18 y contacto principal #16 (issue #26) ===
