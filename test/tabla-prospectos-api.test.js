@@ -127,3 +127,32 @@ test('#316: la fila trae gafete solo_gafete para un prospecto solo escaneado', a
   const fila = res.body.find(f => f.nombre === 'Laura');
   assert.equal(fila.gafete, 'solo_gafete');
 });
+
+// --- #314: agendado ---
+// El compromiso va con fecha PASADA y sin ningun toque que lo cierre: la ruta
+// usa el reloj real, y un compromiso vencido y abierto sigue siendo Agendado
+// corra el test hoy o dentro de un ano (una fecha futura caducaria).
+
+const CARMEN = {
+  id: 10, fecha: '2026-08-20T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5511223344',
+  celular10: '5511223344', nombre: 'Carmen', ciudad: 'Morelia', canal: 'WhatsApp',
+  etapa: 'por_cotizar',
+  eventos: [
+    { tipo: 'toque', fecha: '2026-08-21T09:00:00.000Z', vendedor: 'Memo' },
+    {
+      tipo: 'siguiente_contacto', canales: ['WhatsApp'], fecha_contacto: '2026-08-25T17:00:00.000Z',
+      fecha: '2026-08-21T09:05:00.000Z', vendedor: 'Memo',
+    },
+  ],
+  data: {},
+};
+
+test('#314: la fila de un prospecto con siguiente contacto abierto dice agendado', async () => {
+  escribirFixtures([CARMEN]);
+  const res = await tabla(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  const fila = res.body.find(f => f.nombre === 'Carmen');
+  assert.equal(fila.estado, 'agendado');
+  assert.equal(fila.ultimoContacto, '2026-08-21T09:00:00.000Z');
+  assert.equal(fila.toques, 1);
+});

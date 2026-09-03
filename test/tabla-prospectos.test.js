@@ -92,3 +92,56 @@ test('#316: filaTabla agrega gafete', () => {
   const fila = filaTabla(prospecto316({ escaneado: '2026-09-01' }, []));
   assert.equal(fila.gafete, 'solo_gafete');
 });
+
+// --- #314: agendado ---
+// El escalon Agendado es "Siguiente contacto abierto" (CONTEXT.md "Estado del
+// prospecto"): fecha futura, o vencida sin un toque POSTERIOR que la cierre.
+// Son las mismas reglas de la cola Hoy, por eso el nucleo reusa
+// siguienteContactoFuturo/siguienteContactoVencido en vez de reescribirlas.
+
+const AHORA_314 = new Date('2026-09-10T12:00:00.000Z');
+
+function prospecto314(eventos) {
+  return {
+    id: 10, fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+    etapa: 'por_cotizar', eventos, data: {},
+  };
+}
+
+function siguienteContacto(fechaContacto) {
+  return {
+    tipo: 'siguiente_contacto', canales: ['WhatsApp'], fecha_contacto: fechaContacto,
+    fecha: '2026-09-05T10:00:00.000Z', vendedor: 'Memo',
+  };
+}
+
+test('#314: un siguiente contacto con fecha futura deja al prospecto agendado', () => {
+  const estado = estadoProspecto(prospecto314([
+    siguienteContacto('2026-09-15T17:00:00.000Z'),
+  ]), [], AHORA_314);
+  assert.equal(estado, 'agendado');
+});
+
+test('#314: un siguiente contacto vencido que nadie cerro sigue agendado', () => {
+  const estado = estadoProspecto(prospecto314([
+    siguienteContacto('2026-09-08T17:00:00.000Z'),
+  ]), [], AHORA_314);
+  assert.equal(estado, 'agendado');
+});
+
+test('#314: un toque posterior al compromiso lo cierra y la fila baja a contactado', () => {
+  const estado = estadoProspecto(prospecto314([
+    siguienteContacto('2026-09-08T17:00:00.000Z'),
+    { tipo: 'toque', fecha: '2026-09-09T11:00:00.000Z', vendedor: 'Memo' },
+  ]), [], AHORA_314);
+  assert.equal(estado, 'contactado');
+});
+
+test('#314: un toque ANTERIOR al compromiso vencido no lo cierra y sigue agendado', () => {
+  const estado = estadoProspecto(prospecto314([
+    { tipo: 'toque', fecha: '2026-09-06T11:00:00.000Z', vendedor: 'Memo' },
+    siguienteContacto('2026-09-08T17:00:00.000Z'),
+  ]), [], AHORA_314);
+  assert.equal(estado, 'agendado');
+});

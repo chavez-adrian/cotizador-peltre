@@ -45,6 +45,7 @@
     font-weight: 600; white-space: nowrap; }
   .estado-sin_contactar { background: oklch(0.94 0.05 30); color: oklch(0.45 0.15 30); }
   .estado-contactado { background: oklch(0.95 0.04 80); color: oklch(0.45 0.12 70); }
+  .estado-agendado { background: oklch(0.94 0.05 240); color: oklch(0.45 0.14 250); }
 
   .btn-wa, .btn-contacte { display: inline-block; padding: 5px 12px;
     border-radius: var(--radius-input); color: var(--white); font-size: 12px; font-weight: 600;
@@ -172,6 +173,7 @@ import { buildWaLinkProspecto } from '/js/prospectos-logica.js';
 const ESTADOS = {
   sin_contactar: { etiqueta: 'Sin contactar', corta: 'Sin contactar', rango: 0 },
   contactado: { etiqueta: 'Contactado', corta: 'Contactado', rango: 1 },
+  agendado: { etiqueta: 'Agendado', corta: 'Agendado', rango: 2 },
 };
 // #316: el rango es el orden de CONTEXT.md "Gafete" (RANGO_GAFETE de
 // lib/tabla-prospectos.js), no el alfabetico -- los de solo gafete quedan
