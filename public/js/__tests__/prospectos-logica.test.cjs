@@ -128,8 +128,8 @@ test('P5: validarProspectoBody exige nombre y ciudad', () => {
 });
 
 test('P6: validarProspectoBody rechaza canal fuera del catalogo cerrado', () => {
-  assert.match(validarProspectoBody({ celular: '+52 5512345678', nombre: 'L', ciudad: 'P', canal: 'TikTok' }), /canal/i);
-  assert.match(validarProspectoBody({ celular: '+52 5512345678', nombre: 'L', ciudad: 'P' }), /canal/i);
+  assert.match(validarProspectoBody({ celular: '+52 5512345678', nombre: 'L', ciudad: 'P', canal: 'TikTok' }), /origen/i);
+  assert.match(validarProspectoBody({ celular: '+52 5512345678', nombre: 'L', ciudad: 'P' }), /origen/i);
 });
 
 const PROSPECTO = {
@@ -482,9 +482,9 @@ test('M2: validarCanalCotizacion acepta el catalogo cerrado y rechaza lo demas',
   for (const canal of CANALES) {
     assert.equal(validarCanalCotizacion(canal), null);
   }
-  assert.match(validarCanalCotizacion(''), /canal/i);
-  assert.match(validarCanalCotizacion('TikTok'), /canal/i);
-  assert.match(validarCanalCotizacion(undefined), /canal/i);
+  assert.match(validarCanalCotizacion(''), /origen/i);
+  assert.match(validarCanalCotizacion('TikTok'), /origen/i);
+  assert.match(validarCanalCotizacion(undefined), /origen/i);
 });
 
 test('M3: buildCanalModalHtml trae el select obligatorio con todos los canales y Confirmar/Cancelar', () => {

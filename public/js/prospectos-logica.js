@@ -101,7 +101,7 @@ export function validarProspectoBody(body) {
   if (errTel) return `Celular: ${errTel}`;
   if (!(b.nombre || '').trim()) return 'El nombre es obligatorio';
   if (!(b.ciudad || '').trim()) return 'La ciudad es obligatoria';
-  if (!CANALES.includes(b.canal)) return 'El canal de origen es obligatorio (catálogo cerrado)';
+  if (!CANALES.includes(b.canal)) return 'El origen es obligatorio (catálogo cerrado)';
   return null;
 }
 
@@ -634,7 +634,7 @@ export function necesitaCanal(clasificacion) {
 }
 
 export function validarCanalCotizacion(canal) {
-  return CANALES.includes(canal) ? null : 'El canal de origen es obligatorio (catálogo cerrado)';
+  return CANALES.includes(canal) ? null : 'El origen es obligatorio (catálogo cerrado)';
 }
 
 export function buildCanalModalHtml() {

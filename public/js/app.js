@@ -3239,7 +3239,7 @@ function pcCaminoNuevo(prefill, restore) {
     '<div id="pc-cel-aviso" class="pc-cel-aviso" style="display:none"></div></div>' +
     '<div class="form-group"><label>Ciudad *</label>' +
     '<input type="text" id="pc-ciudad" placeholder="Para estimar envio"></div>' +
-    `<div class="form-group"><label>Canal de origen *</label><select id="pc-canal"><option value="">-- Selecciona --</option>${canales}</select></div>` +
+    `<div class="form-group"><label>Origen *</label><select id="pc-canal"><option value="">-- Selecciona --</option>${canales}</select></div>` +
     '<div class="form-group"><label>Segmento <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>' +
     '<select id="pc-segmento"><option value="">-- Selecciona --</option></select></div>' +
     '<div id="pc-nuevo-error" class="pc-error" style="display:none"></div>' +
