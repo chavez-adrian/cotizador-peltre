@@ -5325,9 +5325,11 @@ function renderPipeline() {
   const activas = oportunidadesActivas(oportunidades)
     .slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
   if (!activas.length) {
-    // "No hay resultados" no es "no hay oportunidades" (#289).
-    const filtrando = oportunidadesActivas(ultimasOportunidades).length > 0;
-    listEl.innerHTML = filtrando
+    // "No hay resultados" no es "no hay oportunidades" (#289): si el listado
+    // completo trae activas, lo que dejo la lista vacia fue un filtro -- el de
+    // evento, el del buscador, o los dos.
+    const hayActivasSinFiltrar = oportunidadesActivas(ultimasOportunidades).length > 0;
+    listEl.innerHTML = hayActivasSinFiltrar
       ? '<div class="empty-state"><p>Ninguna oportunidad coincide con el filtro.</p></div>'
       : '<div class="empty-state"><p>Sin oportunidades en el pipeline.</p></div>';
     return;
