@@ -92,7 +92,14 @@
     .txt-largo { display: none; }
     .txt-corto { display: inline; }
     table.leads th, table.leads td { padding: 8px 6px; }
-    td .recorte { max-width: 40vw; }
+    /* El nombre necesita un piso: con los botones en linea la celda anclada se
+       comia todo el ancho y el nombre quedaba en una letra (#306 en Android).
+       Los botones se apilan para que Acciones mida lo que mide el mas ancho. */
+    td .recorte { max-width: 40vw; min-width: 30vw; }
+    table.leads tr.fila-lead > td:last-child .btn-wa,
+    table.leads tr.fila-lead > td:last-child .btn-contacte,
+    table.leads tr.fila-lead > td:last-child .btn-operam {
+      display: block; width: 100%; box-sizing: border-box; text-align: center; margin: 3px 0; }
   }
 </style>
 </head>
