@@ -470,7 +470,7 @@ app.get('/api/cotizacion/html/:id', async (req, res) => {
   if (documentoBloqueado(entry)) return res.status(409).send(`<p>${LEYENDA_DEDUP_PENDIENTE}.</p>`);
   try {
     const data = datosDocumento(entry);
-    const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos });
+    const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos, id });
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
     res.send(html);
   } catch (err) {
