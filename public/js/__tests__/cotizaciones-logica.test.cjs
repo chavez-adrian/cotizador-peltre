@@ -159,19 +159,19 @@ test('Q10: la tarjeta muestra cliente, total formateado, piezas, vendedor y dias
 // que Operam. La vista lista ya lo hacia con el badge de #63; el tablero -- la
 // otra mitad de la misma vista -- no identificaba la tarjeta con nada, asi que
 // una cotizacion vista ahi no se podia cruzar con el ERP. Se usa siempre
-// etiquetaFolioOperam ("#Operam N" / "PRE"), nunca el id interno.
+// etiquetaFolioOperam ("Cotizacion N" / "PRE"), nunca el id interno.
 test('Q11b: la tarjeta del tablero identifica la cotizacion por su folio de Operam, y las PRE siguen distinguibles', () => {
   const conFolio = buildTableroCotizacionesHtml([cot(3, { id: 1, folioOperam: '1200' })], HOY);
-  assert.ok(conFolio.includes('#Operam 1200'));
+  assert.ok(conFolio.includes('Cotización 1200'));
   assert.ok(!conFolio.includes('#1'), 'no identifica por el id interno');
 
   const pre = buildTableroCotizacionesHtml([cot(3, { id: 2 })], HOY);
   assert.ok(pre.includes('>PRE<'));
 
-  // Historica anterior a #63: se asume registrada, sin badge (ni PRE ni #Operam).
+  // Historica anterior a #63: se asume registrada, sin badge (ni PRE ni Cotizacion).
   const historica = buildTableroCotizacionesHtml([cot(3, { id: 3, registroDesconocido: true })], HOY);
   assert.ok(!historica.includes('>PRE<'));
-  assert.ok(!historica.includes('#Operam'));
+  assert.ok(!historica.includes('Cotización'));
 });
 
 test('Q11: la tarjeta trae link wa.me cuando hay telefono y lo omite cuando no', () => {
@@ -269,25 +269,64 @@ test('Q18b: buildHistorialAccionesHtml deshabilita las 3 acciones con un duplica
   assert.match(html, /disabled title="[^"]*duplicado[^"]*">WhatsApp/);
 });
 
-// El PRE por fallo de Operam (motivoPre 'operam') NO bloquea: el documento es
-// legitimo y sale sin numero, que es justo lo que ADR-0009 decidio.
-test('Q18c: buildHistorialAccionesHtml no bloquea el PRE por fallo de Operam', () => {
-  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true, motivoPre: 'operam' }));
+// El PRE por fallo de Operam (motivoPre 'operam') NO bloquea Ver PDF / Ver HTML:
+// el documento es legitimo y sale sin numero, que es justo lo que ADR-0009
+// decidio. Pero sin folio (#311) WhatsApp si se apaga: sin numero no hay nada
+// que citar en el chat.
+test('Q18c: buildHistorialAccionesHtml no bloquea Ver PDF/Ver HTML en el PRE por fallo de Operam, pero apaga WhatsApp sin folio', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true, motivoPre: 'operam', folioOperam: null }));
   assert.ok(html.includes('href="/api/cotizacion/pdf/42"'));
   assert.ok(html.includes('href="/api/cotizacion/html/42"'));
+  assert.ok(!html.includes('wa.me'));
+  assert.match(html, /disabled title="Sin número de cotización[^"]*">WhatsApp/);
 });
 
-test('Q19: buildWhatsAppLinkHistorial arma un wa.me con el HTML regenerado (con origin) y el cliente/total en el mensaje', () => {
-  const url = buildWhatsAppLinkHistorial(cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5 }), 'https://cotizador.example');
-  assert.match(url, /^https:\/\/wa\.me\/\?text=/);
-  const msg = decodeURIComponent(url.split('text=')[1]);
-  assert.ok(msg.includes('Hotel Azul'));
-  assert.ok(msg.includes('12,345.50'));
-  assert.ok(msg.includes('https://cotizador.example/api/cotizacion/html/42'));
+// Con folio de Operam (#311) las tres acciones quedan activas, incluido WhatsApp.
+test('Q18d: buildHistorialAccionesHtml habilita las tres acciones, incluido WhatsApp, en cuanto hay folio', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true, folioOperam: '1200' }), 'https://cotizador.example');
+  assert.ok(html.includes('href="/api/cotizacion/pdf/42"'));
+  assert.ok(html.includes('href="/api/cotizacion/html/42"'));
+  assert.ok(html.includes('wa.me'));
+  assert.ok(!html.includes('disabled'));
+});
+
+// #307/#312: el texto del Resumen de la cotizacion lo arma UN solo lugar
+// (resumen-cotizacion-logica.js) y el historial es una envoltura sobre el, para
+// que compartir desde aqui y desde la cotizacion recien generada diga lo mismo.
+// Estas pruebas afirman que DELEGA -- el texto en si lo afirma la suite del
+// nucleo, con las dos cotizaciones reales.
+const FAMILIAS = { VA05: 'taza', PL27: 'plato' };
+
+function cotConItems(extra = {}) {
+  return cot(3, {
+    id: 42, folioOperam: 928, cliente: 'Hotel Azul', total: 12345.5, vigencia: '2026-10-03',
+    items: [
+      { codigo: 'VA05B1001112', descripcion: 'Taza 5', cantidad: 144, precio: 27.59, descuento: 0 },
+      { codigo: 'PL27B1A32112', descripcion: 'Plato 27', cantidad: 4, precio: 331.9, descuento: 0 },
+    ],
+    ...extra,
+  });
+}
+
+test('Q19: buildWhatsAppLinkHistorial delega en el nucleo del Resumen de la cotizacion, indice incluido', async () => {
+  const { mensajeCotizacion } = await import('../resumen-cotizacion-logica.js');
+  const c = cotConItems();
+  assert.equal(
+    buildWhatsAppLinkHistorial(c, 'https://cotizador.example', FAMILIAS),
+    mensajeCotizacion(c, 'https://cotizador.example', FAMILIAS).waUrl
+  );
+});
+
+test('Q19b: buildHistorialAccionesHtml pasa el indice de familias al nucleo', async () => {
+  const { mensajeCotizacion } = await import('../resumen-cotizacion-logica.js');
+  const c = cotConItems({ hasData: true });
+  const esperado = mensajeCotizacion(c, 'https://cotizador.example', FAMILIAS).waUrl;
+  const html = buildHistorialAccionesHtml(c, 'https://cotizador.example', FAMILIAS);
+  assert.ok(html.includes(`href="${esperado.replace(/&/g, '&amp;')}"`));
 });
 
 test('Q20: buildHistorialAccionesHtml usa el link wa.me de buildWhatsAppLinkHistorial y escapa datos de usuario', () => {
-  const html = buildHistorialAccionesHtml(cot(3, { id: 7, cliente: '<img src=x onerror=alert(1)>', hasData: true }), 'https://cotizador.example');
+  const html = buildHistorialAccionesHtml(cot(3, { id: 7, cliente: '<img src=x onerror=alert(1)>', hasData: true, folioOperam: '1200' }), 'https://cotizador.example');
   assert.ok(html.includes('wa.me'));
   assert.ok(!html.includes('<img src=x'));
 });
@@ -348,15 +387,15 @@ test('Q27: buildAccionesCargaHtml sin data deshabilita las dos acciones', () => 
 });
 
 // === #109: el aviso de modo actualizacion identifica el documento por el
-// folio REAL de Operam (badge "#Operam N" de pipeline-logica.js, issue #63),
+// folio REAL de Operam (badge "Cotizacion N" de pipeline-logica.js, issue #63),
 // nunca por el id interno del registro -- ese era el bug reportado por Adrian
 // en la verificacion de #104 ("#16" leido junto a "mismo folio" como si 16 y
 // 1200 fueran el mismo numero). En modo actualizacion el folio SIEMPRE existe
 // (gate puedeActualizarCotizacion), asi que no hay caso "sin folio" que cubrir.
 
-test('Q28: buildAvisoModoActualizacion nombra el folio real de Operam con la convencion #Operam N', () => {
+test('Q28: buildAvisoModoActualizacion nombra el folio real de Operam con la etiqueta Cotizacion N', () => {
   const html = buildAvisoModoActualizacion('1200');
-  assert.ok(html.includes('#Operam 1200'));
+  assert.ok(html.includes('Cotización 1200'));
   assert.ok(!html.includes('#16'));
 });
 

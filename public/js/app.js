@@ -89,6 +89,9 @@ import {
   textoBotonGenerar,
   filtrarCotizaciones,
 } from './cotizaciones-logica.js';
+// Resumen de la cotizacion (#307): UN solo constructor del mensaje de WhatsApp,
+// compartido con el historial.
+import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import {
   buildTableroPipelineHtml,
   oportunidadesActivas,
@@ -751,6 +754,7 @@ function aplicarBorrador(borrador) {
     state.modoActualizacion = true;
     state.lastCotizacionId = String(borrador.cotizacionId);
     state.folioOperam = borrador.folioOperam;
+    aplicarEstadoWhatsApp();
     const operamStatus = document.getElementById('operam-status-cotizar');
     if (operamStatus) operamStatus.innerHTML = buildAvisoModoActualizacion(state.folioOperam);
     aplicarEtiquetasBotonesGenerar();
@@ -2342,6 +2346,23 @@ function aplicarCandadoDocumento(bloqueado) {
     if (documentoBajoCandado) btn.title = LEYENDA_DEDUP_PENDIENTE;
     else btn.removeAttribute('title');
   }
+  aplicarEstadoWhatsApp();
+}
+
+// #311: el boton de WhatsApp exige folio de Operam, sea cual sea el motivo por
+// el que falta (misma regla que el historial, motivoSinResumen de
+// resumen-cotizacion-logica.js, para que las dos vistas no puedan discrepar). El
+// candado por duplicado sin resolver (#204) manda sobre eso: ahi el documento
+// tampoco existe.
+function aplicarEstadoWhatsApp() {
+  const btn = document.getElementById('btn-whatsapp');
+  if (!btn) return;
+  const motivo = documentoBajoCandado
+    ? LEYENDA_DEDUP_PENDIENTE
+    : motivoSinResumen({ id: state.lastCotizacionId, folioOperam: state.folioOperam });
+  btn.disabled = !!motivo;
+  if (motivo) btn.title = motivo;
+  else btn.removeAttribute('title');
 }
 
 // Cuanto se espera a Operam antes de entregar el documento sin numero (ADR-0009,
@@ -2409,6 +2430,12 @@ async function guardarYNumerarCotizacion(body, progreso) {
   }
   const { id, requiereActualizacionOperam, folioOperam } = await res.json();
   state.lastCotizacionId = String(id);
+  // #311: el POST ya devuelve el folio cuando la cotizacion existia (modo
+  // actualizacion o regeneracion de una ya subida). Sin esto el boton de
+  // WhatsApp se quedaba apagado hasta la siguiente subida, aunque el folio ya
+  // existiera.
+  if (folioOperam != null && folioOperam !== '') state.folioOperam = folioOperam;
+  aplicarEstadoWhatsApp();
   // La cotizacion ya esta guardada en el servidor: el borrador cumplio su
   // funcion y muere aqui (#179), pasa lo que pase despues con Operam. Es el
   // unico punto por el que salen las dos generaciones (PDF y HTML).
@@ -2464,6 +2491,16 @@ function cartEntriesDesdeEstado() {
     cartEntries.push({ codigo: codigoDeLlave(key), nombre: product.name, cantidad, precio: getPrice(product, precioManual), descuento: descuento || 0, descripcion, diseno: product.diseno, precioManual });
   }
   return cartEntries;
+}
+
+// Vigencia capturada en el Resumen, resuelta a fecha plana. Recibe la fecha de
+// emision en vez de pedirla: el #284 la deriva de ella A PROPOSITO para que no
+// puedan diferir, y ese amarre se conserva. Vive aparte desde #312, donde el
+// Resumen de la cotizacion la necesita para anunciar la MISMA vigencia que se
+// guarda, sin que exista una tercera copia de la aritmetica.
+function vigenciaDesdeFormulario(fechaEmision) {
+  const dias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
+  return sumarDiasFecha(fechaEmision, dias);
 }
 
 function envioCapturadoEnFormulario() {
@@ -2541,7 +2578,6 @@ async function generatePDF() {
     const envioForm = envioCapturadoEnFormulario();
     const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
 
-    const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
     // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
     // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
     // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
@@ -2553,7 +2589,7 @@ async function generatePDF() {
 
     const body = {
       fecha: fechaEmision,
-      vigencia: sumarDiasFecha(fechaEmision, vigenciaDias),
+      vigencia: vigenciaDesdeFormulario(fechaEmision),
       tier: tier.id,
       cliente: leerClienteFormulario(domio.leyenda),
       condicionesPago: document.getElementById('cl-condiciones').value,
@@ -2651,7 +2687,6 @@ async function generateHTML() {
     const envioForm = envioCapturadoEnFormulario();
     const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
 
-    const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
     // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
     // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
     // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
@@ -2663,7 +2698,7 @@ async function generateHTML() {
 
     const body = {
       fecha: fechaEmision,
-      vigencia: sumarDiasFecha(fechaEmision, vigenciaDias),
+      vigencia: vigenciaDesdeFormulario(fechaEmision),
       tier: tier.id,
       incluirFotos: document.getElementById('incluir-fotos')?.checked || false,
       cliente: leerClienteFormulario(domio.leyenda),
@@ -2704,21 +2739,28 @@ async function generateHTML() {
   }
 }
 
+// El texto lo arma el nucleo del Resumen de la cotizacion (#307), el mismo que
+// usa el historial: aqui solo se arma el registro con lo que hay en pantalla.
+// El total sale de buildItemsYTotales -- el mismo numero que se guarda y que
+// imprime el documento -- no del texto ya formateado del resumen. Sin registro
+// guardado no hay documento que citar y no se abre nada.
 function shareWhatsApp() {
-  const cliente = document.getElementById('cl-razon-social').value ||
-                  document.getElementById('cl-nombre-corto').value || 'Cliente';
-  const total = document.getElementById('resumen-total').textContent;
-
-  let pdfUrl = '';
-  if (state.lastCotizacionId) {
-    pdfUrl = `${window.location.origin}/api/cotizacion/pdf/${state.lastCotizacionId}`;
-  }
-
-  const msg = encodeURIComponent(
-    `Cotizacion Peltre Nacional\nCliente: ${cliente}\nTotal: ${total}` +
-    (pdfUrl ? `\n\nDescargar PDF:\n${pdfUrl}` : '\n\nGenera el PDF primero para incluir el enlace.')
+  const { items, total } = buildItemsYTotales(cartEntriesDesdeEstado(), envioCapturadoEnFormulario());
+  const mensaje = mensajeCotizacion(
+    {
+      id: state.lastCotizacionId,
+      folioOperam: state.folioOperam,
+      cliente: document.getElementById('cl-razon-social').value,
+      nombreCorto: document.getElementById('cl-nombre-corto').value,
+      vigencia: vigenciaDesdeFormulario(fechaEmisionHoy()),
+      total,
+      items,
+    },
+    window.location.origin,
+    state.precios?.familias
   );
-  window.open(`https://wa.me/?text=${msg}`, '_blank');
+  if (!mensaje) return;
+  window.open(mensaje.waUrl, '_blank');
 }
 
 // #112: una sola nuevaCotizacion. Habia dos homonimas -- esta, de modulo, que
@@ -2746,6 +2788,7 @@ function nuevaCotizacion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
+  aplicarEstadoWhatsApp();
   state.vendedorConfirmado = false;
   state.tierFijado = '';
 
@@ -2984,6 +3027,7 @@ function pcPrepararSeleccion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
+  aplicarEstadoWhatsApp();
   state.vendedorConfirmado = false;
   state.tierFijado = '';
   const operamStatus = document.getElementById('operam-status-cotizar');
@@ -3799,7 +3843,7 @@ function renderHistorialCliente(cotizaciones) {
     cotizaciones.slice(-5).reverse().map(c => {
       const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
       // "Reintentar subida" solo si la cotizacion sigue en PRE (sin folio); una ya
-      // registrada (#Operam N) o historica no lo ofrece (#83, AC6). El contenedor
+      // registrada (Cotizacion N) o historica no lo ofrece (#83, AC6). El contenedor
       // por-cotizacion recibe el estado al reintentar.
       return `<div class="cot-mini">
         <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}${badgeFolioOperamHtml(c)}${badgeQuoteDesactualizadoHtml(c)}</span>
@@ -3890,6 +3934,12 @@ async function autoSubirOperam(id, slot, extraBody) {
     pcState.cliente.clienteOperamId = vista.customerId;
     if (pcEl()?.querySelector('.pc-cli-card')) pcRenderChips();
   }
+  // #311: el folio recien asignado enciende el boton de WhatsApp. Solo si el
+  // folio es de la cotizacion que sigue en pantalla (key === lastCotizacionId):
+  // el vendedor pudo haber empezado otra mientras esta subida seguia en vuelo.
+  if (vista.folio != null && vista.folio !== '' && key === String(state.lastCotizacionId)) {
+    state.folioOperam = vista.folio;
+  }
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
   // #204: candidatos sin resolver = documento bajo candado. Cualquier otro
   // desenlace (folio, PRE por Operam, sin datos) lo libera.
@@ -3936,6 +3986,12 @@ async function actualizarQuoteEnOperam(id, slot) {
     subidasOperamEnVuelo.delete(key);
   }
   const vista = interpretarActualizacionOperam(resultado);
+  // #311: si la actualizacion trae folio (la misma cotizacion en pantalla), el
+  // boton de WhatsApp se enciende igual que tras una subida nueva.
+  if (vista.folio != null && vista.folio !== '' && key === String(state.lastCotizacionId)) {
+    state.folioOperam = vista.folio;
+  }
+  aplicarEstadoWhatsApp();
   if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);
   // #114: bloqueada = el quote ya tiene pedido y Operam no deja editarlo, asi que el
   // documento recien generado lleva un folio cuyo quote conserva el contenido viejo.
@@ -4280,11 +4336,11 @@ function renderHistorial() {
     const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
     // Ver PDF / Ver HTML / WhatsApp regeneran desde el registro guardado
     // (issue #103), no desde disco ni desde el estado del formulario.
-    const accionesDocumento = buildHistorialAccionesHtml(c, window.location.origin);
+    const accionesDocumento = buildHistorialAccionesHtml(c, window.location.origin, state.precios?.familias);
     // "Cargar" hacia dos cosas a la vez (#104): restaurar el carrito y, calladamente,
     // empezar una cotizacion NUEVA. Ahora son dos acciones explicitas.
     const btnCargar = buildAccionesCargaHtml(c);
-    // Estado PRE / #Operam (issue #63) visible en el Historial; "Completar"
+    // Estado PRE / Cotizacion N (issue #63) visible en el Historial; "Completar"
     // (issue #66) formaliza la pre-cotizacion desde su tarjeta. Solo aparece
     // mientras la cotizacion sigue siendo PRE.
     const badge = badgeFolioOperamHtml(c) + badgeQuoteDesactualizadoHtml(c);
@@ -5239,7 +5295,7 @@ function prospectoAOportunidad(p) {
     celular: p.celular,
     // Folio de Operam de un prospecto movido a mano (issue #56): vive en el bag
     // data porque cotizo por fuera (no hay cotizacion en el sistema). La tarjeta
-    // pinta "#Operam N" solo si hay folio (nunca PRE, eso es de cotizaciones).
+    // pinta "Cotizacion N" solo si hay folio (nunca PRE, eso es de cotizaciones).
     folioOperam: p.data?.folioOperam ?? null,
     // Motivo de la salida a No util (issue #59, AC3): lo muestra el filtro de
     // cerradas. Solo aplica a prospectos (Modelo A).
@@ -6252,6 +6308,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Folio de Operam del binding (#184): viaja con el modo actualizacion, solo
     // para reconstruir el aviso si la sesion se restaura de un borrador.
     state.folioOperam = state.modoActualizacion ? (cot.folioOperam ?? null) : null;
+    aplicarEstadoWhatsApp();
     // #113: cargar OTRA cotizacion es exactamente cuando puede cambiar quien queda
     // estampado, asi que la confirmacion se vuelve a pedir en los dos modos.
     state.vendedorConfirmado = false;
@@ -6389,6 +6446,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-pdf').addEventListener('click', generatePDF);
   document.getElementById('btn-html').addEventListener('click', generateHTML);
   document.getElementById('btn-whatsapp').addEventListener('click', shareWhatsApp);
+  aplicarEstadoWhatsApp();
   document.getElementById('btn-nueva').addEventListener('click', nuevaCotizacion);
 
   // Navegacion inferior (bottom-nav, issue #53): Cotizar / Hoy / Pipeline / Mas.

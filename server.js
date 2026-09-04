@@ -35,6 +35,7 @@ import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
 import * as vendedoresStore from './lib/vendedores-store.js';
 import * as configStore from './lib/config-store.js';
+import * as modelosStore from './lib/modelos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, actualizarClienteEnCache } from './lib/indice-telefonos.js';
@@ -231,11 +232,17 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
       tiposActivos: precios.tiposProducto || [],
       texturasActivas: Object.keys(precios.texturas || {}).map(Number).filter(t => ![0, 8, 9].includes(t)),
     };
+    // El indice modelo -> familia del maestro de articulos (#312, ADR-0016)
+    // viaja con el catalogo: el Resumen de la cotizacion se arma en el navegador
+    // y agrupa por Familia de producto, asi que sin el indice no podria. Va
+    // indexado por MODELO (los 4 primeros caracteres del SKU), que es la llave
+    // del maestro.
+    const familias = Object.fromEntries((await modelosStore.listar()).map(m => [m.modelo, m.familia]));
     // El tope y el permiso de fijar lista viajan con los precios porque son
     // parte del poder de precio del vendedor y la pantalla los refresca en
     // cada arranque de sesion (showApp).
     res.json({
-      ...precios, config,
+      ...precios, config, familias,
       topeDescuento: await topeDescuentoDeUsuario(req.user),
       puedeFijarLista: await puedeFijarListaDeUsuario(req.user),
       puedePrecioCalca: await puedePrecioCalcaDeUsuario(req.user),
@@ -470,7 +477,7 @@ app.get('/api/cotizacion/html/:id', async (req, res) => {
   if (documentoBloqueado(entry)) return res.status(409).send(`<p>${LEYENDA_DEDUP_PENDIENTE}.</p>`);
   try {
     const data = datosDocumento(entry);
-    const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos });
+    const html = generateQuoteHTML(data, { incluirFotos: !!data.incluirFotos, id });
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
     res.send(html);
   } catch (err) {
@@ -546,6 +553,14 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // buscador del Historial (filtrarCotizaciones) mas alla de razon social.
     nombreCorto: data?.cliente?.nombreCorto ?? null,
     contactoEntrega: data?.cliente?.contactoEntrega ?? null,
+    // Vigencia y partidas del Resumen de la cotizacion (#312): el texto lo arma
+    // el navegador con el mismo nucleo que la cotizacion recien generada, y
+    // desde el Historial estos son los dos datos que le faltaban. Los items van
+    // PROYECTADOS a lo que el resumen agrupa -- el detalle completo (diseno,
+    // descripcionEditada, precioManual) no tiene por que viajar en cada fila.
+    vigencia: data?.vigencia ?? null,
+    items: (data?.items ?? []).map(({ codigo, descripcion, cantidad, precio, descuento }) =>
+      ({ codigo, descripcion, cantidad, precio, descuento })),
     hasData: !!data,
   })), indiceOrigen));
 });
@@ -1647,6 +1662,30 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, re
     res.json({ saved: true });
   } catch (err) {
     res.status(500).json({ error: 'No se pudo guardar el registro: ' + err.message });
+  }
+});
+
+// Maestro de articulos, bloque de modelos (#310, ADR-0016). `sinFamilia` viaja
+// aparte de las filas para que el panel marque los pendientes sin re-derivar la
+// regla en el navegador.
+app.get('/api/admin/modelos', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    res.json({ modelos: await modelosStore.listar(), sinFamilia: await modelosStore.sinFamilia() });
+  } catch (err) {
+    res.status(500).json({ error: 'Maestro de modelos no disponible: ' + err.message });
+  }
+});
+
+app.put('/api/admin/modelos/:modelo', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const campos = req.body || {};
+    const noEditables = Object.keys(campos).filter(c => !modelosStore.CAMPOS_EDITABLES.includes(c));
+    if (noEditables.length) return res.status(400).json({ error: 'Columnas no editables: ' + noEditables.join(', ') });
+    const fila = await modelosStore.actualizar(req.params.modelo, campos);
+    if (!fila) return res.status(404).json({ error: 'Modelo no encontrado' });
+    res.json(fila);
+  } catch (err) {
+    res.status(500).json({ error: 'Maestro de modelos no disponible: ' + err.message });
   }
 });
 
@@ -3433,6 +3472,12 @@ app.get('/admin', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'admin.html'));
 });
 
+// Maestro de articulos (#310). El HTML va sin auth, igual que /admin: los datos
+// los pide a /api/admin/modelos con el token de administrador.
+app.get('/admin/catalogo', (req, res) => {
+  res.sendFile(join(PUBLIC_DIR, 'admin-catalogo.html'));
+});
+
 // Tabla de prospectos. El HTML no lleva datos: los pide a /api/prospectos/tabla
 // con el token del vendedor, asi que la visibilidad es la de siempre (cada quien
 // los suyos, el admin todos) y la liga se puede compartir sin exponer a nadie.
@@ -3543,6 +3588,10 @@ if (isMain) {
   // primer request ya vea lo guardado en Neon y no la semilla del archivo.
   configStore.cargar()
     .catch(err => console.warn('[config-store] warm de arranque fallo:', err.message))
+    // El maestro de modelos (#310) crea su tabla y la siembra en el mismo
+    // momento: asi la primera visita a /admin/catalogo ya ve las 36 filas.
+    .then(() => modelosStore.cargar())
+    .catch(err => console.warn('[modelos-store] warm de arranque fallo:', err.message))
     .then(() => cargarListasPrecios())
     .then(() => {
       app.listen(PORT, () => console.log(`Cotizador corriendo en http://localhost:${PORT}`));

@@ -9,6 +9,7 @@ import { escapeHtml, chipOrigenHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
 import { nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
+import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -99,17 +100,14 @@ function buildCotizacionCardHtml(c, col, hoy) {
   </div>`;
 }
 
-// Link wa.me para compartir una cotizacion del historial (issue #103): mismo
-// formato de mensaje que shareWhatsApp (app.js) para la cotizacion recien
-// generada, pero apuntando al HTML regenerado desde el registro guardado en
-// vez del PDF de la sesion en curso. origin lo pasa el caller
-// (window.location.origin no existe en este modulo sin efectos de navegador).
-export function buildWhatsAppLinkHistorial(c, origin = '') {
-  const htmlUrl = `${origin}/api/cotizacion/html/${c.id}`;
-  const msg = encodeURIComponent(
-    `Cotizacion Peltre Nacional\nCliente: ${c.cliente || 'Cliente'}\nTotal: $${fmtMoneda(c.total)}\n\nVer cotizacion:\n${htmlUrl}`
-  );
-  return `https://wa.me/?text=${msg}`;
+// Link wa.me para compartir una cotizacion del historial (issue #103). El texto
+// lo arma el nucleo del Resumen de la cotizacion (#307), el mismo que usa la
+// cotizacion recien generada en app.js: aqui solo se pasa el registro guardado.
+// origin lo pasa el caller (window.location.origin no existe en este modulo sin
+// efectos de navegador), igual que el indice modelo -> familia con el que el
+// nucleo agrupa (#312): viaja en el catalogo (state.precios.familias).
+export function buildWhatsAppLinkHistorial(c, origin = '', indiceFamilias = {}) {
+  return mensajeCotizacion(c, origin, indiceFamilias)?.waUrl;
 }
 
 // Acciones de una fila del historial (issue #103): Ver PDF / Ver HTML regeneran
@@ -117,9 +115,13 @@ export function buildWhatsAppLinkHistorial(c, origin = '') {
 // depender de disco); WhatsApp abre wa.me con el link al HTML regenerado. Sin
 // data persistida (registro historico, c.hasData false) no hay nada que
 // regenerar: las tres quedan deshabilitadas en vez de apuntar a un 404.
-export function buildHistorialAccionesHtml(c, origin = '') {
+function botonDeshabilitado(label, motivo) {
+  return `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(motivo)}">${label}</button>`;
+}
+
+export function buildHistorialAccionesHtml(c, origin = '', indiceFamilias = {}) {
   const deshabilitadas = motivo => ['Ver PDF', 'Ver HTML', 'WhatsApp']
-    .map(label => `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(motivo)}">${label}</button>`)
+    .map(label => botonDeshabilitado(label, motivo))
     .join(' ');
   if (!c.hasData) return deshabilitadas('Datos no disponibles');
   // Candado por duplicado sin resolver (#204): las TRES abren el mismo documento
@@ -129,10 +131,16 @@ export function buildHistorialAccionesHtml(c, origin = '') {
   if (documentoBloqueado(c)) return deshabilitadas(LEYENDA_DEDUP_PENDIENTE);
   const pdfUrl = `/api/cotizacion/pdf/${c.id}`;
   const htmlUrl = `/api/cotizacion/html/${c.id}`;
-  const waUrl = buildWhatsAppLinkHistorial(c, origin);
+  // #311: el documento existe (PRE por fallo de Operam incluida) pero sin folio
+  // no hay numero que citar por WhatsApp -- Ver PDF y Ver HTML siguen abiertos,
+  // solo WhatsApp se apaga (motivoSinResumen, resumen-cotizacion-logica.js).
+  const motivoSinFolio = motivoSinResumen(c);
+  const whatsappHtml = motivoSinFolio
+    ? botonDeshabilitado('WhatsApp', motivoSinFolio)
+    : `<a href="${escapeHtml(buildWhatsAppLinkHistorial(c, origin, indiceFamilias))}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
   return `<a href="${escapeHtml(pdfUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>` +
     ` <a href="${escapeHtml(htmlUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver HTML</a>` +
-    ` <a href="${escapeHtml(waUrl)}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
+    ` ${whatsappHtml}`;
 }
 
 // Gate de "Actualizar cotizacion" (#104, ADR-0008). Hasta ahora "Cargar" hacia dos

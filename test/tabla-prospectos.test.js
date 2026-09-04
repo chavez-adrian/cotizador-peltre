@@ -490,7 +490,7 @@ function cotizadoQueSigue(cots) {
 
 test('#319: cotizado el mismo dia todavia no tiene paso de cadencia', () => {
   const q = cotizadoQueSigue([cot319({ fecha: '2026-09-09T12:00:00.000Z' })]);
-  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, enviada hoy');
+  assert.equal(q.accion, 'Seguimiento a la Cotización 1141, enviada hoy');
   assert.equal(q.paso, null);
   assert.equal(q.dias, 1);
 });
@@ -498,24 +498,24 @@ test('#319: cotizado el mismo dia todavia no tiene paso de cadencia', () => {
 test('#319: al dia 2 la fila pide el seguimiento del dia 2 con el folio de la cotizacion', () => {
   const q = cotizadoQueSigue([cot319({ fecha: '2026-09-08T12:00:00.000Z' })]);
   assert.deepEqual(q, {
-    tipo: 'seguimiento', accion: 'Seguimiento a la #Operam 1141, día 2',
-    cotizacionId: 600, folio: '#Operam 1141', paso: 'dia2', dias: 2, masCotizaciones: 0,
+    tipo: 'seguimiento', accion: 'Seguimiento a la Cotización 1141, día 2',
+    cotizacionId: 600, folio: 'Cotización 1141', paso: 'dia2', dias: 2, masCotizaciones: 0,
   });
 });
 
 test('#319: al dia 7 la fila pide el seguimiento del dia 7', () => {
   const q = cotizadoQueSigue([cot319({ fecha: '2026-09-03T12:00:00.000Z' })]);
-  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, día 7');
+  assert.equal(q.accion, 'Seguimiento a la Cotización 1141, día 7');
 });
 
 test('#319: al dia 21 la fila pide el seguimiento del dia 21', () => {
   const q = cotizadoQueSigue([cot319({ fecha: '2026-08-20T12:00:00.000Z' })]);
-  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, día 21');
+  assert.equal(q.accion, 'Seguimiento a la Cotización 1141, día 21');
 });
 
 test('#319: pasado el dia 28 la fila dice que la cotizacion esta vencida', () => {
   const q = cotizadoQueSigue([cot319({ fecha: '2026-08-13T12:00:00.000Z' })]);
-  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, vencida');
+  assert.equal(q.accion, 'Seguimiento a la Cotización 1141, vencida');
 });
 
 test('#319: una pre-cotizacion se nombra PRE, nunca con su id interno', () => {
@@ -529,7 +529,7 @@ test('#319: con varias vivas manda la primera y la fila avisa cuantas mas hay', 
     cot319({ id: 670, fecha: '2026-09-08T12:00:00.000Z', folioOperam: 1141 }),
     cot319({ id: 671, fecha: '2026-09-08T12:00:00.000Z', folioOperam: 1140 }),
   ]);
-  assert.equal(q.accion, 'Seguimiento a la #Operam 1141, día 2 y 1 más');
+  assert.equal(q.accion, 'Seguimiento a la Cotización 1141, día 2 y 1 más');
   assert.equal(q.masCotizaciones, 1);
   assert.equal(q.cotizacionId, 670);
 });
@@ -547,7 +547,7 @@ test('#319: con todas las cotizaciones fuera del embudo tambien pide cotizarle d
 test('#319: la fila lleva las cotizaciones con su folio, su etapa y su fecha', () => {
   const fila = filaTabla(prospecto319([]), [cot319({ fecha: '2026-09-08T12:00:00.000Z' })], AHORA_319);
   assert.deepEqual(fila.cotizaciones, [{
-    id: 600, folio: '#Operam 1141', folioOperam: 1141, etapa: 'seguimiento',
+    id: 600, folio: 'Cotización 1141', folioOperam: 1141, etapa: 'seguimiento',
     fecha: '2026-09-08T12:00:00.000Z',
   }]);
 });
@@ -592,24 +592,24 @@ function cot320({ pago, ...over } = {}) {
 test('#320: el cliente con anticipo pagado lee la etapa que el sync ya conoce, con el folio', () => {
   const q = queSigue(cliente320(), [cot320({ etapa: 'anticipo_pagado' })], AHORA_320);
   assert.deepEqual(q, {
-    tipo: 'etapa', etapa: 'anticipo_pagado', accion: 'Anticipo pagado (#Operam 1141)',
-    cotizacionId: 700, folio: '#Operam 1141', masCotizaciones: 0, pago: null,
+    tipo: 'etapa', etapa: 'anticipo_pagado', accion: 'Anticipo pagado (Cotización 1141)',
+    cotizacionId: 700, folio: 'Cotización 1141', masCotizaciones: 0, pago: null,
   });
 });
 
 test('#320: el cliente con pedido liberado lo dice con el nombre de la etapa del pipeline', () => {
   const q = queSigue(cliente320(), [cot320({ etapa: 'pedido_liberado' })], AHORA_320);
-  assert.equal(q.accion, 'Pedido liberado (#Operam 1141)');
+  assert.equal(q.accion, 'Pedido liberado (Cotización 1141)');
 });
 
 test('#320: el cliente con saldo pagado lo dice con el nombre de la etapa del pipeline', () => {
   const q = queSigue(cliente320(), [cot320({ etapa: 'saldo_pagado' })], AHORA_320);
-  assert.equal(q.accion, 'Saldo pagado (#Operam 1141)');
+  assert.equal(q.accion, 'Saldo pagado (Cotización 1141)');
 });
 
 test('#320: el cliente con producto entregado lo dice con el nombre de la etapa del pipeline', () => {
   const q = queSigue(cliente320(), [cot320({ etapa: 'producto_entregado' })], AHORA_320);
-  assert.equal(q.accion, 'Producto entregado (#Operam 1141)');
+  assert.equal(q.accion, 'Producto entregado (Cotización 1141)');
 });
 
 test('#320: el estado de pago viaja tal como lo dejo el sync post-venta', () => {
@@ -620,8 +620,8 @@ test('#320: el estado de pago viaja tal como lo dejo el sync post-venta', () => 
 test('#320: el cliente con una cotizacion todavia en seguimiento lee lo mismo que un cotizado', () => {
   const q = queSigue(cliente320(), [cot320({ etapa: 'seguimiento', fecha: '2026-09-03T12:00:00.000Z' })], AHORA_320);
   assert.deepEqual(q, {
-    tipo: 'seguimiento', accion: 'Seguimiento a la #Operam 1141, día 7',
-    cotizacionId: 700, folio: '#Operam 1141', paso: 'dia7', dias: 7, masCotizaciones: 0,
+    tipo: 'seguimiento', accion: 'Seguimiento a la Cotización 1141, día 7',
+    cotizacionId: 700, folio: 'Cotización 1141', paso: 'dia7', dias: 7, masCotizaciones: 0,
   });
 });
 
@@ -658,7 +658,7 @@ test('#320: entre dos vivas manda la mas avanzada y la fila avisa que hay una ma
   ]);
   const q = queSigue(p, ligadas, AHORA_320);
   assert.equal(q.tipo, 'etapa');
-  assert.equal(q.accion, 'Anticipo pagado (#Operam 1150) y 1 más');
+  assert.equal(q.accion, 'Anticipo pagado (Cotización 1150) y 1 más');
   assert.equal(q.cotizacionId, 701);
   assert.equal(q.masCotizaciones, 1);
 });
@@ -670,7 +670,7 @@ test('#320: a igual etapa manda la mas reciente', () => {
     cot320({ id: 704, etapa: 'pedido_liberado', folioOperam: 1161, fecha: '2026-09-05T10:00:00.000Z' }),
   ]);
   const q = queSigue(p, ligadas, AHORA_320);
-  assert.equal(q.accion, 'Pedido liberado (#Operam 1161) y 1 más');
+  assert.equal(q.accion, 'Pedido liberado (Cotización 1161) y 1 más');
   assert.equal(q.cotizacionId, 704);
 });
 
@@ -681,7 +681,7 @@ test('#320: una No util no es viva y no se cuenta en el aviso de cuantas mas hay
     cot320({ id: 706, etapa: 'saldo_pagado', folioOperam: 1171 }),
   ]);
   const q = queSigue(p, ligadas, AHORA_320);
-  assert.equal(q.accion, 'Saldo pagado (#Operam 1171)');
+  assert.equal(q.accion, 'Saldo pagado (Cotización 1171)');
   assert.equal(q.masCotizaciones, 0);
 });
 

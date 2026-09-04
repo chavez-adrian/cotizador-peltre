@@ -1294,8 +1294,9 @@ body {
 .btn-mic-activo { background: var(--primary); border-color: var(--primary); }
 .sin-dictado .btn-mic { display: none; }
 
-/* PRE / #Operam (issue #63): una pre-cotizacion (sin folio de Operam) lleva el
-   chip ambar "PRE"; una cotizacion registrada lleva el chip azul "#Operam N". */
+/* PRE / Cotizacion N (issue #63, #309): una pre-cotizacion (sin folio de Operam)
+   lleva el chip ambar "PRE"; una cotizacion registrada lleva el chip azul
+   "Cotizacion N". */
 .cot-badge {
   display: inline-block;
   font-size: 10px;

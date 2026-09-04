@@ -119,7 +119,7 @@ test('transicionPorAsignacion: una etapa desconocida no mueve la tarjeta', () =>
 // Estado PRE / folio Operam nullable (issue #63, CONTEXT.md "Pre-cotizacion"):
 // una cotizacion sin folio de Operam es una pre-cotizacion (estado "PRE"); la
 // ausencia del folio define el estado. Con folio, la cotizacion esta registrada
-// en Operam y muestra "#Operam N". El folio puede valer 0 legitimamente? No:
+// en Operam y muestra "Cotizacion N". El folio puede valer 0 legitimamente? No:
 // Operam devuelve quote_id/factura_no, un identificador positivo; null/undefined
 // y cadena vacia cuentan como ausencia.
 test('esPreCotizacion: sin folio de Operam la cotizacion es PRE', () => {
@@ -134,16 +134,16 @@ test('esPreCotizacion: con folio de Operam la cotizacion ya no es PRE', () => {
   assert.equal(esPreCotizacion({ folioOperam: '12345' }), false);
 });
 
-test('etiquetaFolioOperam: PRE sin folio, #Operam N con folio', () => {
+test('etiquetaFolioOperam: PRE sin folio, Cotizacion N con folio', () => {
   assert.equal(etiquetaFolioOperam({ folioOperam: null }), 'PRE');
   assert.equal(etiquetaFolioOperam({}), 'PRE');
-  assert.equal(etiquetaFolioOperam({ folioOperam: 12345 }), '#Operam 12345');
-  assert.equal(etiquetaFolioOperam({ folioOperam: '7788' }), '#Operam 7788');
+  assert.equal(etiquetaFolioOperam({ folioOperam: 12345 }), 'Cotización 12345');
+  assert.equal(etiquetaFolioOperam({ folioOperam: '7788' }), 'Cotización 7788');
 });
 
 // Cotizacion historica sin folio (registroDesconocido, ver migrar-pipeline): se
 // asume registrada en Operam (el folio no se capturaba antes de #63), asi que NO
-// es PRE y NO muestra badge (ni "PRE" ni "#Operam N").
+// es PRE y NO muestra badge (ni "PRE" ni "Cotizacion N").
 test('esPreCotizacion: una historica con registro desconocido no es PRE', () => {
   assert.equal(esPreCotizacion({ folioOperam: null, registroDesconocido: true }), false);
 });
@@ -210,6 +210,22 @@ test('P2b: la reexpresion frontend del candado coincide con la de lib/', async (
     {},
   ]) {
     assert.equal(frontend.documentoBloqueado(cot), documentoBloqueado(cot), JSON.stringify(cot));
+  }
+});
+
+// La reexpresion browser-safe de etiquetaFolioOperam (public/js/pipeline-logica.js)
+// no puede divergir del vocabulario de lib/pipeline.js: mismo folio, misma
+// etiqueta, en las dos caras (#309).
+test('P2d: la reexpresion frontend de etiquetaFolioOperam coincide con la de lib/', async () => {
+  const frontend = await import('../public/js/pipeline-logica.js');
+  for (const cot of [
+    { folioOperam: null },
+    {},
+    { folioOperam: 12345 },
+    { folioOperam: '7788' },
+    { folioOperam: null, registroDesconocido: true },
+  ]) {
+    assert.equal(frontend.etiquetaFolioOperam(cot), etiquetaFolioOperam(cot), JSON.stringify(cot));
   }
 });
 

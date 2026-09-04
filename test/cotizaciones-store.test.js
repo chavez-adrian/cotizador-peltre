@@ -82,7 +82,7 @@ test('setEstado actualiza el estado y persiste', async () => {
 // Folio de Operam nullable (issue #63): una cotizacion nace sin folio (es una
 // pre-cotizacion); al registrarse en Operam se le guarda el folio. El store
 // persiste y expone folioOperam, frontera donde la presentacion decide PRE vs
-// #Operam.
+// Cotizacion N.
 test('una cotizacion nace sin folio de Operam (es pre-cotizacion)', async () => {
   writeCots([]);
   const id = await crear({

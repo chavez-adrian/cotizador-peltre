@@ -51,7 +51,7 @@ test('cotizacion de 1 dia no aparece en cola', () => {
 });
 
 // La cola Hoy expone el folio de Operam de cada cotizacion para que la tarjeta
-// distinga PRE / #Operam N (issue #63). Sin folio, el item lo trae como null.
+// distinga PRE / Cotizacion N (issue #63). Sin folio, el item lo trae como null.
 test('cada item de la cola expone el folio de Operam (null si es pre-cotizacion)', () => {
   const pre = calcularCola([cot({ id: 1 })], HOY);
   assert.equal(pre[0].folioOperam, null);

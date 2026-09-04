@@ -303,6 +303,24 @@ test('#302.5: @media print sigue intacto y las reglas moviles viven solo bajo @m
   assert.ok(idxScreen > idxPrint + printBlock.length, 'el bloque movil vive despues y fuera del bloque print, no anidado');
 });
 
+// === #308: el boton de impresion del navegador se sustituye por un enlace al
+// PDF real del servidor (el HTML y el PDF ya no pueden ser dos documentos
+// distintos). El enlace usa el id interno (clave tecnica de URL, no el folio).
+
+test('#308.1: con opts.id el HTML enlaza al PDF del server y ya no llama a la impresion del navegador', () => {
+  const html = generateQuoteHTML({ folio: '12345' }, { id: 77 });
+  assert.ok(html.includes('href="/api/cotizacion/pdf/77"'), 'debe enlazar al PDF regenerable del server con el id interno');
+  assert.ok(html.includes('target="_blank"'), 'el PDF debe abrirse en pestana nueva');
+  assert.ok(!html.includes('window.print'), 'ya no debe llamar a la impresion del navegador');
+  assert.ok(!html.includes('Imprimir'), 'ya no debe existir el texto del boton de impresion');
+});
+
+test('#308.2: la pre-cotizacion (sin folio) tambien recibe el enlace al PDF con opts.id', () => {
+  const html = generateQuoteHTML({}, { id: 88 });
+  assert.ok(html.includes('href="/api/cotizacion/pdf/88"'), 'la pre-cotizacion tambien debe enlazar su PDF');
+  assert.ok(html.includes('target="_blank"'));
+});
+
 test('#284: sin data.fecha el documento imprime la fecha del centro de Mexico, no la de UTC', () => {
   const DateReal = globalThis.Date;
   const fijo = new DateReal('2026-09-02T01:07:48Z').getTime();
