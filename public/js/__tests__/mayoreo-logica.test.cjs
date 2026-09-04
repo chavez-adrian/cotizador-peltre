@@ -4,12 +4,12 @@ const assert = require('node:assert/strict');
 
 let TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
   segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo, buildCapturaMayoreo,
-  paisDelFormulario, CANAL_MAYOREO, CANAL_FERIA_EXPO, eventoDeQuery;
+  paisDelFormulario, CANAL_MAYOREO, CANAL_EXPO, eventoDeQuery;
 before(async () => {
   ({ TIPOS_PROYECTO, CANTIDADES, CUANDO_OPCIONES, DOMINIOS_CORREO, CODIGOS_PAIS,
     segmentoDeTipo, unirNombre, sugerirDominioCorreo, validarMayoreo,
     buildCapturaMayoreo, paisDelFormulario,
-    CANAL_MAYOREO, CANAL_FERIA_EXPO, eventoDeQuery } = await import('../mayoreo-logica.js'));
+    CANAL_MAYOREO, CANAL_EXPO, eventoDeQuery } = await import('../mayoreo-logica.js'));
 });
 
 // M1: el mapeo tipo -> segmento de Operam es el del ticket #157 (tabla de campos).
@@ -325,7 +325,7 @@ test('M40: eventoDeQuery sin el parametro, o sin query string, devuelve vacio', 
 
 test('M41: buildCapturaMayoreo con evento coincidente con el activo nace Feria/Expo con el evento guardado', () => {
   const c = buildCapturaMayoreo(formValido({ evento: 'Abastur 2026' }), AHORA, EVENTO_ACTIVO);
-  assert.equal(c.canal, CANAL_FERIA_EXPO);
+  assert.equal(c.canal, CANAL_EXPO);
   assert.equal(c.data.evento, 'Abastur 2026');
 });
 

@@ -3456,7 +3456,7 @@ function pcRenderTarjeta() {
   const esOperam = pcState.cliente?.tipo === 'operam';
   const chips = chipsCompletitud(c);
   // Cada parte se escapa ANTES de unir con la entidad &middot; (escapar el join
-  // completo la romperia); telefono/ciudad son datos (p. ej. CSV de feria) y van
+  // completo la romperia); telefono/ciudad son datos (p. ej. CSV de expo) y van
   // a innerHTML: sin escape seria un stored XSS.
   const subPartes = esOperam
     ? [c.rfc, 'Cliente en Operam']
@@ -5244,7 +5244,7 @@ function prospectoAOportunidad(p) {
     // Motivo de la salida a No util (issue #59, AC3): lo muestra el filtro de
     // cerradas. Solo aplica a prospectos (Modelo A).
     motivoNoUtil: motivoNoUtilDe(p),
-    // Evento de feria (issue #261): el filtro del pipeline responde cuantos
+    // Evento de expo (issue #261): el filtro del pipeline responde cuantos
     // prospectos dejo Abastur.
     evento: p.data?.evento ?? null,
   };
@@ -6423,7 +6423,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (menu.style.display !== 'none') { menu.style.display = 'none'; return; }
     // El evento activo viaja en /api/catalogos (cacheado por sesion) y decide si
     // el menu ofrece "Nuevo prospecto expo" (#267): sin leerlo aqui, el "+" no
-    // sabria de la feria hasta que el vendedor pasara por Hoy o Pipeline.
+    // sabria de la expo hasta que el vendedor pasara por Hoy o Pipeline.
     await cargarEstadoDeCatalogos();
     menu.innerHTML = buildMenuNuevoHtml(!!expoState.evento);
     menu.style.display = 'flex';
@@ -8015,7 +8015,7 @@ function abrirCapturaExpo() {
     buildGrupoChipsHtml('piezas_estimadas', PIEZAS_ESTIMADAS, '');
   document.getElementById('ex-notas-mic').innerHTML = buildMicHtml('ex-notas');
   // Siguiente contacto: la fecha llega prellenada con el primer dia habil
-  // despues de la feria (CONTEXT.md "Siguiente contacto") y los canales con
+  // despues de la expo (CONTEXT.md "Siguiente contacto") y los canales con
   // WhatsApp, para que el compromiso por omision este COMPLETO. Sin fecha
   // sugerida no se prellena ninguno de los dos: medio compromiso no se guarda.
   // Los canales son multiples (#270): "te escribo y te mando el catalogo por

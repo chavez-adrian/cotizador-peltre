@@ -170,7 +170,7 @@ export const CANAL_MAYOREO = 'Formulario web';
 // coincide con el evento activo la captura nace con este canal (del mismo
 // catalogo cerrado de CANALES); si no coincide, o no hay evento activo, se
 // ignora y la captura es la de siempre. Quien captura nunca elige el canal.
-export const CANAL_FERIA_EXPO = 'Feria/Expo';
+export const CANAL_EXPO = 'Feria/Expo';
 
 // Lee el parametro `evento` de la URL del formulario publico. Recibe el query
 // string crudo (`location.search`) en vez de leer `location` directo para que
@@ -244,7 +244,7 @@ export function buildCapturaMayoreo(form, fechaISO, eventoActivo) {
     celular: celularDeMayoreo(f),
     nombre: unirNombre(aTitulo(f.nombre), aTitulo(f.apellido)),
     ciudad: limpio(f.ciudad),
-    canal: conEvento ? CANAL_FERIA_EXPO : CANAL_MAYOREO,
+    canal: conEvento ? CANAL_EXPO : CANAL_MAYOREO,
     data,
   };
 }

@@ -318,7 +318,7 @@ function poblarFiltros() {
 }
 
 // #317: el titulo dice de que es la tabla. Sin filtro de evento es la de todos
-// los prospectos; con uno activo es la cola de esa feria, y el nombre del evento
+// los prospectos; con uno activo es la cola de esa expo, y el nombre del evento
 // tiene que verse tambien en la pestana (la tabla se abre desde el telefono con
 // varias pestanas del cotizador encima).
 function pintaTitulo() {
@@ -520,7 +520,7 @@ async function pideFilas() {
   const res = await api('/api/prospectos/tabla');
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) throw new Error('No se pudieron cargar los prospectos');
-  // #317: entran TODOS los prospectos visibles, vengan o no de una feria. El
+  // #317: entran TODOS los prospectos visibles, vengan o no de una expo. El
   // evento quedo como filtro, no como poblacion.
   return (await res.json()).map(prepara);
 }

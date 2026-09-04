@@ -909,7 +909,7 @@ test('E12: el WhatsApp de la tarjeta lleva el mensaje del evento solo cuando el 
   assert.equal(sinEvento.includes('?text='), false);
 });
 
-test('E13: la tarjeta de un prospecto de feria muestra el evento', async () => {
+test('E13: la tarjeta de un prospecto de expo muestra el evento', async () => {
   const { buildProspectoCardHtml } = await import('../prospectos-logica.js');
   assert.match(buildProspectoCardHtml(PROSPECTO_EXPO), /Abastur 2026/);
   assert.equal(buildProspectoCardHtml({ ...PROSPECTO_EXPO, data: {} }).includes('Abastur'), false);
@@ -1227,7 +1227,7 @@ test('C6: la calificacion se lee en la tarjeta como chips en el orden en que se 
   assert.equal(buildCalificacionChipsHtml({ proveedor_peltre: '<b>x</b>', usa_peltre: true }).includes('<b>x</b>'), false);
 });
 
-test('C7: la tarjeta del prospecto de feria avisa "Calificacion pendiente" hasta que hay un valor', () => {
+test('C7: la tarjeta del prospecto de expo avisa "Calificacion pendiente" hasta que hay un valor', () => {
   const pendiente = buildProspectoCardHtml(PROSPECTO_EXPO, null, new Date(), { ligas: LIGAS });
   assert.match(pendiente, /Calificación pendiente/);
   const calificado = buildProspectoCardHtml(
@@ -1236,7 +1236,7 @@ test('C7: la tarjeta del prospecto de feria avisa "Calificacion pendiente" hasta
   );
   assert.equal(calificado.includes('Calificación pendiente'), false);
   assert.match(calificado, /Ya usa peltre: Cinsa/);
-  // un prospecto que no vino de una feria no tiene paso 2 que reclamar
+  // un prospecto que no vino de una expo no tiene paso 2 que reclamar
   assert.equal(buildProspectoCardHtml(PROSPECTO).includes('Calificación pendiente'), false);
 });
 
@@ -1420,7 +1420,7 @@ test('OR4: el item de la cola de prospectos pinta el chip Origen fuera de la lin
 // --- #317: cualquier prospecto, Origen y /prospectos ---
 // La Tabla de prospectos llama a buildWaLinkProspecto DIRECTO (E12 cubre la
 // misma regla, pero a traves de la tarjeta): entran prospectos que no vienen de
-// ninguna feria y esos no tienen de que "gusto haberte conocido".
+// ninguna expo y esos no tienen de que "gusto haberte conocido".
 
 test('#317: la liga de WhatsApp lleva mensaje solo cuando el prospecto tiene evento', async () => {
   const { buildWaLinkProspecto } = await import('../prospectos-logica.js');

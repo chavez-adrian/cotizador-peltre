@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 
 let buildReporteImportacionHtml;
 before(async () => {
-  ({ buildReporteImportacionHtml } = await import('../importar-feria-logica.js'));
+  ({ buildReporteImportacionHtml } = await import('../importar-expo-logica.js'));
 });
 
 test('IF1: el reporte muestra nuevos, enriquecidos, desglose por vendedor y descartados con motivo', () => {

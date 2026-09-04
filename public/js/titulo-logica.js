@@ -1,7 +1,7 @@
 // EL titulador del repo (issue #293): la UNICA regla "texto gritado -> Titulo".
 // Antes vivian tres, cada una con su tabla y sus huecos: normalizarNombreFiscal
 // (#241, razon social del SAT), capitalizarCampo (#235/#269, captura de
-// prospecto) y titular (importador del export de feria, palabra por palabra).
+// prospecto) y titular (importador del export de expo, palabra por palabra).
 // La empresa de 98 prospectos de Abastur se guardo gritando porque el importador
 // solo titulaba el nombre: con una sola regla eso ya no se puede repetir.
 //
@@ -91,7 +91,7 @@ function empiezaEnAlta(token) {
 //
 // La senal de intencion es que TODA palabra con letras empiece en mayuscula y
 // que el campo no venga entero en mayusculas (eso ultimo es grito del SAT o del
-// export de feria, no intencion). Un campo entero en minusculas o tecleado a
+// export de expo, no intencion). Un campo entero en minusculas o tecleado a
 // dedazos ("jUaN pErEz") tampoco trae senal y se corrige: es la tabla de #235,
 // donde el vendedor teclea de corrido en el celular.
 function escritoConIntencion(texto) {

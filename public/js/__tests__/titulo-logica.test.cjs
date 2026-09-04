@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 
 // EL titulador del repo (issue #293): un solo "MAYUSCULAS -> Titulo" para la
 // razon social (#241), el contacto de Google (#247), la captura de prospecto
-// (#235/#269) y el importador del export de feria. Los tres primeros bloques de
+// (#235/#269) y el importador del export de expo. Los tres primeros bloques de
 // casos son los que ya probaban esas funciones antes de unificarlas; el ultimo
 // es la tabla del brief de #293.
 

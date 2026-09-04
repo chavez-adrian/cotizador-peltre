@@ -91,15 +91,15 @@
         Sube el XLSX de contactos escaneados que entrega la app del evento (hoja "Contacts"). Solo aplica a ese layout; otros eventos necesitaran su propio importador. Un celular libre nace como prospecto en Por Cotizar, canal Feria/Expo, con el evento activo; uno que ya es prospecto se enriquece sin pisar lo capturado en el stand; uno que ya es cliente se descarta. Los gafetes sin celular no nacen como prospecto: salen en el reporte para perseguirlos a mano.
       </p>
       <div class="form-group">
-        <input type="file" id="imp-feria-archivo" accept=".xlsx">
+        <input type="file" id="imp-expo-archivo" accept=".xlsx">
       </div>
       <div class="form-group">
         <label>Vendedor default (filas que no se identifican por quien escane&oacute;)</label>
-        <select id="imp-feria-vendedor"></select>
+        <select id="imp-expo-vendedor"></select>
       </div>
-      <button class="btn btn-primary" id="btn-importar-feria">Importar</button>
-      <div id="imp-feria-error" style="display:none;color:var(--danger);font-size:13px;margin-top:8px"></div>
-      <div id="imp-feria-reporte" style="margin-top:8px"></div>
+      <button class="btn btn-primary" id="btn-importar-expo">Importar</button>
+      <div id="imp-expo-error" style="display:none;color:var(--danger);font-size:13px;margin-top:8px"></div>
+      <div id="imp-expo-reporte" style="margin-top:8px"></div>
     </div>
 
     <!-- Catalogo cotizable -->
@@ -116,7 +116,7 @@
         <div id="texturas-toggles" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
         <!-- Evento activo y liga del catalogo (issue #261): con evento activo la app
              ofrece la captura de expo; vaciar el nombre la apaga. -->
-        <div style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Evento activo (feria o expo)</div>
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Evento activo (expo)</div>
         <p style="font-size:12px;color:var(--text-light);margin-bottom:6px">
           Con un evento activo los vendedores ven el boton &quot;Captura de expo&quot;. Deja el nombre vacio para apagarlo.
         </p>
@@ -287,12 +287,12 @@ async function adminLogin() {
   loadCajas();
   loadHigiene();
   loadSyncContactos();
-  cargarVendedoresFeria();
+  cargarVendedoresExpo();
 }
 
 // --- Importacion del export del evento (issue #265, antes #47) ---
-async function cargarVendedoresFeria() {
-  const sel = document.getElementById('imp-feria-vendedor');
+async function cargarVendedoresExpo() {
+  const sel = document.getElementById('imp-expo-vendedor');
   if (!sel || sel.options.length) return;
   try {
     const res = await adminApi('/api/vendedores');
@@ -302,11 +302,11 @@ async function cargarVendedoresFeria() {
   } catch (e) { /* sin red no hay importacion */ }
 }
 
-async function importarFeria() {
-  const errEl = document.getElementById('imp-feria-error');
-  const reporteEl = document.getElementById('imp-feria-reporte');
-  const input = document.getElementById('imp-feria-archivo');
-  const btn = document.getElementById('btn-importar-feria');
+async function importarExpo() {
+  const errEl = document.getElementById('imp-expo-error');
+  const reporteEl = document.getElementById('imp-expo-reporte');
+  const input = document.getElementById('imp-expo-archivo');
+  const btn = document.getElementById('btn-importar-expo');
   errEl.style.display = 'none';
   reporteEl.innerHTML = '';
   const archivo = input.files[0];
@@ -317,7 +317,7 @@ async function importarFeria() {
   }
   const fd = new FormData();
   fd.append('archivo', archivo);
-  fd.append('vendedor', document.getElementById('imp-feria-vendedor').value);
+  fd.append('vendedor', document.getElementById('imp-expo-vendedor').value);
   btn.disabled = true;
   try {
     const res = await adminApi('/api/admin/prospectos/importar', { method: 'POST', body: fd });
@@ -327,7 +327,7 @@ async function importarFeria() {
       errEl.style.display = 'block';
       return;
     }
-    const { buildReporteImportacionHtml } = await import('/js/importar-feria-logica.js');
+    const { buildReporteImportacionHtml } = await import('/js/importar-expo-logica.js');
     reporteEl.innerHTML = buildReporteImportacionHtml(data);
     input.value = '';
   } catch (e) {
@@ -871,7 +871,7 @@ document.getElementById('admin-pin').addEventListener('keydown', e => { if (e.ke
 document.getElementById('admin-logout').addEventListener('click', () => location.reload());
 document.getElementById('btn-preview').addEventListener('click', previewExcel);
 document.getElementById('btn-apply').addEventListener('click', applyExcel);
-document.getElementById('btn-importar-feria').addEventListener('click', importarFeria);
+document.getElementById('btn-importar-expo').addEventListener('click', importarExpo);
 document.getElementById('btn-add-vendedor').addEventListener('click', addVendedor);
 document.getElementById('btn-save-vendedores').addEventListener('click', saveVendedores);
 document.getElementById('btn-save-config').addEventListener('click', saveConfig);

@@ -649,7 +649,7 @@ test('Q26: buildMenuNuevoHtml pinta un boton por accion con su disparador', () =
 
 // Captura de expo (issue #267): el "+" es la UNICA entrada de la pantalla de
 // captura de expo, y solo con evento activo (CONTEXT.md "Captura de expo").
-// Fuera de feria el menu tiene que ser exactamente el de siempre.
+// Fuera de expo el menu tiene que ser exactamente el de siempre.
 test('Q53: con evento activo el menu + ofrece Nuevo prospecto expo; sin evento es el de siempre', () => {
   const sinEvento = buildMenuNuevoHtml(false);
   assert.equal(sinEvento.includes('Nuevo prospecto expo'), false);
@@ -1193,7 +1193,7 @@ test('A104: badgeQuoteDesactualizadoHtml marca la tarjeta solo cuando hay marca 
   assert.equal(badgeQuoteDesactualizadoHtml(undefined), '');
 });
 
-// --- Filtro por evento (issue #261): despues de la feria hay que poder
+// --- Filtro por evento (issue #261): despues de la expo hay que poder
 // responder cuantos prospectos dejo Abastur y cuantos cotizaron. ---
 let filtrarPorEvento, eventosDeOportunidades, buildFiltroEventoHtml;
 before(async () => {
@@ -1224,7 +1224,7 @@ test('#261: el selector ofrece los eventos presentes, sin repetir, y "Todos"', (
   const html = buildFiltroEventoHtml(oportunidades, 'Abastur 2026');
   assert.match(html, /Todos los eventos/);
   assert.match(html, /<option value="Abastur 2026" selected>/);
-  // Sin eventos capturados el filtro no se pinta: fuera de feria la app se ve igual.
+  // Sin eventos capturados el filtro no se pinta: fuera de expo la app se ve igual.
   assert.equal(buildFiltroEventoHtml([prospecto({ id: 1 })], ''), '');
 });
 

@@ -38,7 +38,7 @@ export const OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo
 // ({ nombre?, ciudad?, data? }), asi que los dos caminos lo aplican con una
 // sola linea. Solo toca las llaves PRESENTES: en la edicion, un campo ausente
 // es "no lo cambies", no "vacialo". Desde #293 tambien lo aplica el importador
-// del export de feria, que antes titulaba el nombre con una funcion propia y
+// del export de expo, que antes titulaba el nombre con una funcion propia y
 // guardaba la empresa cruda (98 prospectos de Abastur gritando).
 //
 // La regla de mayusculas es EL titulador del repo (titulo-logica.js): aqui no
@@ -438,7 +438,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // la tarjeta, este o no suprimida la cadencia.
   const siguiente = activo ? siguienteContactoVivo(p, ahora) : null;
   // Calificacion (issue #263): se lee en chips. Mientras no tenga ningun valor,
-  // el prospecto que dejo una feria avisa que le falta -- es lo que el vendedor
+  // el prospecto que dejo una expo avisa que le falta -- es lo que el vendedor
   // completa al final del dia. Un prospecto que no vino de un evento no tiene
   // calificacion que reclamar.
   const calificacion = calificacionVacia(d.calificacion)
@@ -801,7 +801,7 @@ export function buildDatosExpo(body) {
 
 // Enlace de WhatsApp de la tarjeta. Con evento lleva el mensaje aprobado ya
 // escrito (el lunes, no solo en el stand); sin evento es el enlace vacio de
-// siempre -- un prospecto que no viene de una feria no tiene de que "gusto
+// siempre -- un prospecto que no viene de una expo no tiene de que "gusto
 // haberte conocido".
 export function buildWaLinkProspecto(p, ligas) {
   const base = buildWaLink(p && p.celular);

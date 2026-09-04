@@ -364,8 +364,8 @@ export const ACCIONES_NUEVO = [
 ];
 
 // Captura de expo (issue #267): el "+" es su UNICA entrada, y solo con evento
-// activo (CONTEXT.md "Captura de expo"). Va primero porque en feria es LA accion
-// del vendedor; fuera de feria el menu queda exactamente como siempre.
+// activo (CONTEXT.md "Captura de expo"). Va primero porque en expo es LA accion
+// del vendedor; fuera de expo el menu queda exactamente como siempre.
 const ACCION_NUEVO_EXPO = { label: 'Nuevo prospecto expo', accion: 'nuevoProspectoExpo' };
 
 export function buildMenuNuevoHtml(hayEventoActivo = false) {
@@ -974,7 +974,7 @@ export function buildCerradasHtml(oportunidades) {
 }
 
 // --- Filtro por evento (issue #261, CONTEXT.md "Evento") ---
-// Despues de la feria el director pregunta cuantos prospectos dejo Abastur y en
+// Despues de la expo el director pregunta cuantos prospectos dejo Abastur y en
 // que etapa quedaron: el evento viaja en la oportunidad del PROSPECTO, que sigue
 // en el tablero despues de cotizar (su etapa avanza a Seguimiento), y el
 // pipeline lo filtra en los tres modos. La tarjeta de la cotizacion no lleva
@@ -1028,7 +1028,7 @@ export function eventosDeOportunidades(oportunidades) {
   return [...vistos].sort();
 }
 
-// Sin eventos capturados el filtro no existe: fuera de feria el pipeline se ve
+// Sin eventos capturados el filtro no existe: fuera de expo el pipeline se ve
 // como siempre.
 export function buildFiltroEventoHtml(oportunidades, seleccionado) {
   const eventos = eventosDeOportunidades(oportunidades);
