@@ -238,7 +238,7 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
 export function buildOperamStatusHtml(id, vista) {
   const v = vista || {};
   if (v.estado === 'folio') {
-    const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
+    const folio = v.folio != null && v.folio !== '' ? ` — <strong>${escapeHtml(etiquetaFolioOperam({ folioOperam: v.folio }))}</strong>` : '';
     // yaSubida (#83 F1c) cambia de significado con #114: el endpoint ya solo corta sin
     // tocar Operam cuando el contenido NO cambio (regenerar el mismo carrito en otro
     // formato). Un cambio real ya no se queda en local -- viaja por el camino de
@@ -312,7 +312,7 @@ export function interpretarActualizacionOperam(resultado) {
 export function buildActualizacionStatusHtml(id, vista) {
   const v = vista || {};
   if (v.estado === 'actualizada') {
-    const folio = v.folio != null && v.folio !== '' ? ` — <strong>#Operam ${escapeHtml(String(v.folio))}</strong>` : '';
+    const folio = v.folio != null && v.folio !== '' ? ` — <strong>${escapeHtml(etiquetaFolioOperam({ folioOperam: v.folio }))}</strong>` : '';
     return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>`;
   }
   // Bloqueada = el quote ya se convirtio en pedido y Operam no deja editarlo. Es el
