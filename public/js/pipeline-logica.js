@@ -64,19 +64,21 @@ export function esSalida(etapa) {
 
 // Estado PRE / folio Operam (issue #63, CONTEXT.md "Pre-cotizacion"): la
 // ausencia del folio define el estado "PRE"; con folio la cotizacion muestra
-// "#Operam N". Reexpresion browser-safe de lib/pipeline.etiquetaFolioOperam
+// "Cotizacion N". Reexpresion browser-safe de lib/pipeline.etiquetaFolioOperam
 // (este modulo no importa de lib/, mismo criterio que el resto del vocabulario).
+// La convencion "#Operam N" (#63) se retiro en #309: nombraba el ERP en vez de
+// la cosa.
 export function etiquetaFolioOperam(o) {
   const folio = o && o.folioOperam;
-  if (folio != null && folio !== '') return `#Operam ${folio}`;
+  if (folio != null && folio !== '') return `Cotización ${folio}`;
   // Historica de registro desconocido (anterior a #63): se asume registrada, sin
-  // badge (ni PRE ni #Operam). Las nuevas sin folio si son PRE.
+  // badge (ni PRE ni Cotizacion N). Las nuevas sin folio si son PRE.
   return o && o.registroDesconocido ? '' : 'PRE';
 }
 
 // Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1): el disparador
 // "Completar" solo aplica mientras la cotizacion sigue siendo PRE. Reusa la regla
-// de dominio del badge: con folio ya esta registrada (#Operam N) y una historica
+// de dominio del badge: con folio ya esta registrada (Cotizacion N) y una historica
 // de registro desconocido se asume registrada -- ninguna ofrece "Completar".
 export function puedeCompletarPreCotizacion(cot) {
   return !!cot && etiquetaFolioOperam(cot) === 'PRE';
@@ -575,7 +577,7 @@ function nombreOportunidad(o) {
 }
 
 // Badge HTML del estado de folio de una cotizacion: '' si es historica de
-// registro desconocido (sin etiqueta), si no el chip "PRE" (ambar) o "#Operam N"
+// registro desconocido (sin etiqueta), si no el chip "PRE" (ambar) o "Cotizacion N"
 // (azul). Unica fuente del badge: la reusan el tablero, la cola Hoy y la vista
 // lista, para que las tres pinten lo mismo (incluido el caso sin badge).
 export function badgeFolioOperamHtml(cot) {
@@ -592,7 +594,7 @@ export function badgeFolioOperamHtml(cot) {
 // Badge de folio de un PROSPECTO movido a mano a Seguimiento (issue #56, AC3,
 // CONTEXT.md "Etapas del pipeline"): el vendedor cotizo POR FUERA, asi que no hay
 // cotizacion en el sistema y el folio vive en el prospecto (data.folioOperam,
-// mapeado a o.folioOperam por prospectoAOportunidad). Muestra "#Operam N" SOLO si
+// mapeado a o.folioOperam por prospectoAOportunidad). Muestra "Cotizacion N" SOLO si
 // hay folio; jamas "PRE" (PRE es un concepto de cotizacion, no de prospecto). Sin
 // folio no pinta nada. Reusa etiquetaFolioOperam unicamente cuando hay folio.
 export function badgeFolioOperamProspectoHtml(o) {
@@ -602,8 +604,8 @@ export function badgeFolioOperamProspectoHtml(o) {
 }
 
 // El badge de la tarjeta del tablero depende del tipo de oportunidad: una
-// cotizacion lleva el chip PRE / #Operam (issue #63); un prospecto solo lleva
-// #Operam N si fue movido a mano con folio (issue #56), nunca PRE.
+// cotizacion lleva el chip PRE / Cotizacion N (issue #63); un prospecto solo lleva
+// Cotizacion N si fue movido a mano con folio (issue #56), nunca PRE.
 function badgeFolioOperam(o) {
   return o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
 }

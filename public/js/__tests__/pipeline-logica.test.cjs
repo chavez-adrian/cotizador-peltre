@@ -109,46 +109,46 @@ test('Q9: el tablero escapa los datos de usuario (XSS)', () => {
 });
 
 // Estado PRE / folio Operam (issue #63): la tarjeta del tablero distingue una
-// pre-cotizacion (badge "PRE") de una cotizacion registrada en Operam ("#Operam
-// N"). Reusa la regla pura del dominio (etiquetaFolioOperam).
-test('Q11: etiquetaFolioOperam reexpone la regla de dominio: PRE sin folio, #Operam N con folio', () => {
+// pre-cotizacion (badge "PRE") de una cotizacion registrada en Operam
+// ("Cotizacion N"). Reusa la regla pura del dominio (etiquetaFolioOperam).
+test('Q11: etiquetaFolioOperam reexpone la regla de dominio: PRE sin folio, Cotizacion N con folio', () => {
   assert.equal(etiquetaFolioOperam({ folioOperam: null }), 'PRE');
   assert.equal(etiquetaFolioOperam({}), 'PRE');
-  assert.equal(etiquetaFolioOperam({ folioOperam: '7788' }), '#Operam 7788');
+  assert.equal(etiquetaFolioOperam({ folioOperam: '7788' }), 'Cotización 7788');
 });
 
 test('Q12: la tarjeta de una cotizacion sin folio muestra el badge PRE', () => {
   const html = buildTableroPipelineHtml([cotizacion({ id: 10, etapa: 'seguimiento', folioOperam: null })]);
   assert.match(html, /PRE/);
-  assert.equal(html.includes('#Operam'), false);
+  assert.equal(html.includes('Cotización'), false);
 });
 
-test('Q13: la tarjeta de una cotizacion con folio muestra #Operam N en vez de PRE', () => {
+test('Q13: la tarjeta de una cotizacion con folio muestra Cotizacion N en vez de PRE', () => {
   const html = buildTableroPipelineHtml([cotizacion({ id: 10, etapa: 'seguimiento', folioOperam: '55123' })]);
-  assert.match(html, /#Operam 55123/);
+  assert.match(html, /Cotización 55123/);
   assert.equal(/>PRE</.test(html), false);
 });
 
-test('Q14: un prospecto (aun sin cotizar) no muestra badge PRE/Operam', () => {
+test('Q14: un prospecto (aun sin cotizar) no muestra badge PRE/Cotizacion', () => {
   const html = buildTableroPipelineHtml([prospecto({ id: 1, etapa: 'por_cotizar' })]);
   assert.equal(html.includes('PRE'), false);
-  assert.equal(html.includes('#Operam'), false);
+  assert.equal(html.includes('Cotización'), false);
 });
 
-test('Q15: una cotizacion historica (registro desconocido, sin folio) no muestra badge PRE ni #Operam', () => {
+test('Q15: una cotizacion historica (registro desconocido, sin folio) no muestra badge PRE ni Cotizacion', () => {
   const html = buildTableroPipelineHtml([cotizacion({ id: 10, etapa: 'seguimiento', folioOperam: null, registroDesconocido: true })]);
   assert.equal(html.includes('PRE'), false);
-  assert.equal(html.includes('#Operam'), false);
+  assert.equal(html.includes('Cotización'), false);
 });
 
 // El badge es una sola fuente reusada por tablero, cola Hoy y vista lista: PRE
-// (ambar) sin folio, #Operam (azul) con folio, y nada para una historica de
+// (ambar) sin folio, Cotizacion N (azul) con folio, y nada para una historica de
 // registro desconocido (evita el chip vacio en cola/lista).
-test('Q16: badgeFolioOperamHtml unifica el chip PRE / #Operam / vacio', () => {
+test('Q16: badgeFolioOperamHtml unifica el chip PRE / Cotizacion N / vacio', () => {
   assert.match(badgeFolioOperamHtml({ folioOperam: null }), /badge-pre/);
   assert.match(badgeFolioOperamHtml({ folioOperam: null }), />PRE</);
   assert.match(badgeFolioOperamHtml({ folioOperam: '900' }), /badge-operam/);
-  assert.match(badgeFolioOperamHtml({ folioOperam: '900' }), /#Operam 900/);
+  assert.match(badgeFolioOperamHtml({ folioOperam: '900' }), /Cotización 900/);
   assert.equal(badgeFolioOperamHtml({ folioOperam: null, registroDesconocido: true }), '');
 });
 
@@ -168,13 +168,13 @@ test('Q16b: el chip de la PRE por cliente sin lista dice el motivo en vez de "PR
   assert.match(badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'operam' }), />PRE</);
   assert.match(badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'dedup' }), />PRE</);
   // Con folio ya no hay PRE que explicar.
-  assert.match(badgeFolioOperamHtml({ folioOperam: '900', motivoPre: 'sin-lista' }), /#Operam 900/);
+  assert.match(badgeFolioOperamHtml({ folioOperam: '900', motivoPre: 'sin-lista' }), /Cotización 900/);
 });
 
 // Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1): el boton
 // "Completar" solo aplica sobre una cotizacion que todavia es PRE (sin folio y
-// no historica de registro desconocido). Una cotizacion ya registrada (#Operam
-// N) o una historica no ofrece "Completar". Misma regla de dominio que el badge.
+// no historica de registro desconocido). Una cotizacion ya registrada
+// (Cotizacion N) o una historica no ofrece "Completar". Misma regla de dominio que el badge.
 test('Q17: puedeCompletarPreCotizacion solo es true para una cotizacion PRE (sin folio, no historica)', () => {
   assert.equal(puedeCompletarPreCotizacion({ folioOperam: null }), true);
   assert.equal(puedeCompletarPreCotizacion({}), true);
@@ -190,7 +190,7 @@ test('Q18: botonCompletarHtml pinta "Reintentar subida" solo sobre una tarjeta P
   // Pasa `this` para que app.js resuelva el slot de SU tarjeta (F2: la misma
   // cotizacion puede estar pintada en dos paneles a la vez).
   assert.match(pre, /completarPreCotizacion\(42, this\)/);
-  // Una cotizacion ya registrada (#Operam N) no ofrece reintento.
+  // Una cotizacion ya registrada (Cotizacion N) no ofrece reintento.
   assert.equal(botonCompletarHtml({ id: 7, folioOperam: '900' }), '');
   // Una historica de registro desconocido tampoco.
   assert.equal(botonCompletarHtml({ id: 9, folioOperam: null, registroDesconocido: true }), '');
@@ -237,7 +237,7 @@ test('Q19: interpretarSubidaOperam clasifica la respuesta del endpoint por statu
 // revision de #83). app.js resuelve el slot relativo al disparador.
 test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candidatos', () => {
   const ok = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001 });
-  assert.match(ok, /#Operam 77001/);
+  assert.match(ok, /Cotización 77001/);
   assert.doesNotMatch(ok, /Reintentar/);
   assert.doesNotMatch(ok, /coincide/, 'sin nota cuando la subida fue nueva');
 
@@ -247,7 +247,7 @@ test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candi
   // el bug, no el comportamiento: ahora un cambio SI viaja por el camino de
   // actualizacion.
   const ya = buildOperamStatusHtml(5, { estado: 'folio', folio: '55123', yaSubida: true });
-  assert.match(ya, /#Operam 55123/);
+  assert.match(ya, /Cotización 55123/);
   assert.doesNotMatch(ya, /cambios locales no actualizan/);
   assert.match(ya, /coincide/i);
   assert.doesNotMatch(ya, /Reintentar/);
@@ -288,7 +288,7 @@ test('Q19c: la lista de candidatos ofrece crear cliente nuevo cuando ninguno es 
 // hay nada que ofrecer -- mismo criterio que el chip Fiscal de la tarjeta.
 test('Q19d: buildOperamStatusHtml ofrece subir la CSF junto al folio cuando el cliente quedo generico', () => {
   const gen = buildOperamStatusHtml(5, { estado: 'folio', folio: 90001, customerId: 501, clienteGenerico: true });
-  assert.match(gen, /#Operam 90001/);
+  assert.match(gen, /Cotización 90001/);
   assert.match(gen, /Ya tienes su CSF/);
   // origen 'resumen' explicito: pcAbrirUpgradeFiscal lo usa para saber que debe
   // cambiar al tab cliente antes de mostrar el panel (el panel vive oculto
@@ -510,7 +510,7 @@ test('Q22: el item de cotizacion en Hoy reutiliza un builder propio (WhatsApp, b
     folioOperam: '7788', waLink: 'https://wa.me/525598765432?text=Hola',
   }));
   assert.match(html, /Hotel Azul/);
-  assert.match(html, /Operam 7788/);          // badge de folio (#Operam N)
+  assert.match(html, /Cotización 7788/);      // badge de folio (Cotizacion N)
   assert.match(html, /Vencida/);               // etiqueta del paso
   assert.match(html, /href="https:\/\/wa\.me\/525598765432/);
   assert.match(html, /marcarSeguimiento\(10, 'vencida'\)/);
@@ -753,10 +753,10 @@ test('Q31: el tablero sin opciones (sin permiso o sin vendedores) no pinta el co
 
 // Folio de Operam de un PROSPECTO movido a mano (issue #56, AC3): el folio vive
 // en el prospecto (data.folioOperam, cotizo por fuera). La tarjeta muestra
-// "#Operam N" SOLO si hay folio; jamas pinta "PRE" (PRE es un concepto de
+// "Cotizacion N" SOLO si hay folio; jamas pinta "PRE" (PRE es un concepto de
 // cotizacion, no de prospecto). Sin folio no muestra nada.
-test('Q32: badgeFolioOperamProspectoHtml pinta #Operam N solo con folio; nunca PRE', () => {
-  assert.match(badgeFolioOperamProspectoHtml({ folioOperam: '55123' }), /#Operam 55123/);
+test('Q32: badgeFolioOperamProspectoHtml pinta Cotizacion N solo con folio; nunca PRE', () => {
+  assert.match(badgeFolioOperamProspectoHtml({ folioOperam: '55123' }), /Cotización 55123/);
   assert.match(badgeFolioOperamProspectoHtml({ folioOperam: '55123' }), /badge-operam/);
   assert.equal(badgeFolioOperamProspectoHtml({ folioOperam: null }), '');
   assert.equal(badgeFolioOperamProspectoHtml({ folioOperam: '' }), '');
@@ -764,16 +764,16 @@ test('Q32: badgeFolioOperamProspectoHtml pinta #Operam N solo con folio; nunca P
   assert.equal(/PRE/.test(badgeFolioOperamProspectoHtml({ folioOperam: null })), false);
 });
 
-test('Q33: la tarjeta de un prospecto movido a mano (con folio) muestra #Operam N y nunca PRE', () => {
+test('Q33: la tarjeta de un prospecto movido a mano (con folio) muestra Cotizacion N y nunca PRE', () => {
   const html = buildTableroPipelineHtml([prospecto({ id: 1, etapa: 'seguimiento', folioOperam: '55123' })]);
-  assert.match(html, /#Operam 55123/);
+  assert.match(html, /Cotización 55123/);
   assert.equal(html.includes('PRE'), false);
 });
 
-test('Q34: un prospecto sin folio no muestra badge (ni PRE ni #Operam)', () => {
+test('Q34: un prospecto sin folio no muestra badge (ni PRE ni Cotizacion)', () => {
   const html = buildTableroPipelineHtml([prospecto({ id: 1, etapa: 'por_cotizar', folioOperam: null })]);
   assert.equal(html.includes('PRE'), false);
-  assert.equal(html.includes('#Operam'), false);
+  assert.equal(html.includes('Cotización'), false);
 });
 
 // Cadena de folios de Operam en la tarjeta (issue #67, AC4): la oportunidad que ya
@@ -1073,7 +1073,7 @@ test('Q19d: buildOperamStatusHtml avisa solo cuando la vigencia quedo sin correg
   assert.doesNotMatch(ok, /vigencia/i, 'el caso normal no agrega ruido');
 
   const revisar = buildOperamStatusHtml(5, { estado: 'folio', folio: 77001, vigencia: 'revisar' });
-  assert.match(revisar, /#Operam 77001/, 'la subida sigue siendo un exito');
+  assert.match(revisar, /Cotización 77001/, 'la subida sigue siendo un exito');
   assert.match(revisar, /vigencia/i);
   assert.match(revisar, /V(&aacute;|á)lido hasta/i, 'nombra el campo tal como se ve en Operam');
 
@@ -1145,7 +1145,7 @@ test('A104: una caida de red no se confunde con "quedo mal en Operam"', () => {
 
 test('A104: buildActualizacionStatusHtml pinta el folio conservado en el exito', () => {
   const html = buildActualizacionStatusHtml(5, { estado: 'actualizada', folio: '1200' });
-  assert.match(html, /#Operam 1200/);
+  assert.match(html, /Cotización 1200/);
   assert.doesNotMatch(html, /Reintentar/);
 });
 

@@ -161,10 +161,11 @@ function motivoNoCotizacion(c) {
 
 function accionesHtml(c, vendedores) {
   if (c.estado === 'aceptado') {
-    // El folio se nombra SIEMPRE con la convencion #Operam N (#63); el id interno
+    // El folio se nombra SIEMPRE "Cotizacion N" (#63, retirada la convencion
+    // "#Operam N" en #309); el id interno
     // del registro creado es clave tecnica y no se presenta como numero.
     const creado = c.tipo === 'cotizacion'
-      ? `cotización ${escapeHtml(etiquetaFolioOperam({ folioOperam: c.folio }))} creada`
+      ? `${escapeHtml(etiquetaFolioOperam({ folioOperam: c.folio }))} creada`
       : 'prospecto creado';
     return `<div class="alert alert-success" style="margin:8px 0 0">Aceptado &mdash; ${creado} con vendedor <b>${escapeHtml(c.vendedor || '')}</b>. <button type="button" class="pc-link" onclick="bandejaVerEnTablero()">Ver en el tablero</button></div>`;
   }
@@ -188,7 +189,7 @@ export function buildTarjetaBandejaHtml(c, vendedores) {
   const claseExtra = c.estado === 'descartado'
     ? ' bandeja-card-descartada'
     : (c.estado === 'aceptado' ? ' bandeja-card-aceptada' : '');
-  // El folio SIEMPRE se nombra con la convencion #Operam N (#63): en la bandeja
+  // El folio SIEMPRE se nombra "Cotizacion N" (#63): en la bandeja
   // no hay id interno que mostrar, el candidato es el quote de Operam.
   const folio = escapeHtml(etiquetaFolioOperam({ folioOperam: c.folio }));
   const meta = [folio, fmtFecha(c.fecha), c.debtorNombre ? escapeHtml(c.debtorNombre) : '']

@@ -105,7 +105,7 @@ test('M2: un candidato sin celular se marca "sin celular" aunque no traiga bande
 
 test('T1: la tarjeta pendiente muestra folio de Operam, datos del quote y las acciones', () => {
   const html = buildTarjetaBandejaHtml(PENDIENTE, VENDEDORES);
-  assert.match(html, /#Operam 934/);
+  assert.match(html, /Cotización 934/);
   assert.ok(!html.includes('PRE'), 'un candidato de la bandeja nunca es PRE');
   assert.match(html, /Mariana Gutiérrez Solís/);
   assert.match(html, /\+52 55 2314 8890/);
@@ -159,8 +159,8 @@ test('T4: un candidato aceptado muestra el resultado y ya no ofrece acciones', (
 test('T4b: una cotizacion aceptada nombra la oportunidad creada con su folio de Operam', () => {
   const html = buildTarjetaBandejaHtml({ ...COTIZACION, estado: 'aceptado', vendedor: 'Oswaldo Chávez', cotizacionId: 308 }, VENDEDORES);
   assert.match(html, /bandeja-card-aceptada/);
-  // el folio SIEMPRE con la convencion #Operam N (#63), nunca el id interno
-  assert.match(html, /Aceptado &mdash; cotización #Operam 934 creada/);
+  // el folio SIEMPRE se nombra "Cotizacion N" (#63), nunca el id interno
+  assert.match(html, /Aceptado &mdash; Cotización 934 creada/);
   assert.ok(!html.includes('308'), 'el id interno del registro no se presenta como numero');
   assert.match(html, /Oswaldo Chávez/);
   assert.ok(!html.includes('bandejaAceptarCotizacion('), 'sin boton de aceptar');
@@ -204,9 +204,9 @@ test('V1: la vista arma la barra de filtros y una tarjeta por candidato visible'
   assert.match(html, /bandeja-toolbar/);
   assert.match(html, /Pendientes \(2\)/);
   assert.equal((html.match(/bandeja-datos/g) || []).length, 2);
-  assert.match(html, /#Operam 934/);
-  assert.match(html, /#Operam 921/);
-  assert.ok(!html.includes('#Operam 881'), 'el descartado no entra en el filtro Pendientes');
+  assert.match(html, /Cotización 934/);
+  assert.match(html, /Cotización 921/);
+  assert.ok(!html.includes('Cotización 881'), 'el descartado no entra en el filtro Pendientes');
 });
 
 test('V2: sin candidatos visibles la vista lo dice, sin tarjetas vacias', () => {

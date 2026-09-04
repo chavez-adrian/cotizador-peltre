@@ -3802,7 +3802,7 @@ function renderHistorialCliente(cotizaciones) {
     cotizaciones.slice(-5).reverse().map(c => {
       const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
       // "Reintentar subida" solo si la cotizacion sigue en PRE (sin folio); una ya
-      // registrada (#Operam N) o historica no lo ofrece (#83, AC6). El contenedor
+      // registrada (Cotizacion N) o historica no lo ofrece (#83, AC6). El contenedor
       // por-cotizacion recibe el estado al reintentar.
       return `<div class="cot-mini">
         <span>${fecha} - ${c.tier} - $${c.total?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}${badgeFolioOperamHtml(c)}${badgeQuoteDesactualizadoHtml(c)}</span>
@@ -4287,7 +4287,7 @@ function renderHistorial() {
     // "Cargar" hacia dos cosas a la vez (#104): restaurar el carrito y, calladamente,
     // empezar una cotizacion NUEVA. Ahora son dos acciones explicitas.
     const btnCargar = buildAccionesCargaHtml(c);
-    // Estado PRE / #Operam (issue #63) visible en el Historial; "Completar"
+    // Estado PRE / Cotizacion N (issue #63) visible en el Historial; "Completar"
     // (issue #66) formaliza la pre-cotizacion desde su tarjeta. Solo aparece
     // mientras la cotizacion sigue siendo PRE.
     const badge = badgeFolioOperamHtml(c) + badgeQuoteDesactualizadoHtml(c);
@@ -5242,7 +5242,7 @@ function prospectoAOportunidad(p) {
     celular: p.celular,
     // Folio de Operam de un prospecto movido a mano (issue #56): vive en el bag
     // data porque cotizo por fuera (no hay cotizacion en el sistema). La tarjeta
-    // pinta "#Operam N" solo si hay folio (nunca PRE, eso es de cotizaciones).
+    // pinta "Cotizacion N" solo si hay folio (nunca PRE, eso es de cotizaciones).
     folioOperam: p.data?.folioOperam ?? null,
     // Motivo de la salida a No util (issue #59, AC3): lo muestra el filtro de
     // cerradas. Solo aplica a prospectos (Modelo A).

@@ -159,19 +159,19 @@ test('Q10: la tarjeta muestra cliente, total formateado, piezas, vendedor y dias
 // que Operam. La vista lista ya lo hacia con el badge de #63; el tablero -- la
 // otra mitad de la misma vista -- no identificaba la tarjeta con nada, asi que
 // una cotizacion vista ahi no se podia cruzar con el ERP. Se usa siempre
-// etiquetaFolioOperam ("#Operam N" / "PRE"), nunca el id interno.
+// etiquetaFolioOperam ("Cotizacion N" / "PRE"), nunca el id interno.
 test('Q11b: la tarjeta del tablero identifica la cotizacion por su folio de Operam, y las PRE siguen distinguibles', () => {
   const conFolio = buildTableroCotizacionesHtml([cot(3, { id: 1, folioOperam: '1200' })], HOY);
-  assert.ok(conFolio.includes('#Operam 1200'));
+  assert.ok(conFolio.includes('Cotización 1200'));
   assert.ok(!conFolio.includes('#1'), 'no identifica por el id interno');
 
   const pre = buildTableroCotizacionesHtml([cot(3, { id: 2 })], HOY);
   assert.ok(pre.includes('>PRE<'));
 
-  // Historica anterior a #63: se asume registrada, sin badge (ni PRE ni #Operam).
+  // Historica anterior a #63: se asume registrada, sin badge (ni PRE ni Cotizacion).
   const historica = buildTableroCotizacionesHtml([cot(3, { id: 3, registroDesconocido: true })], HOY);
   assert.ok(!historica.includes('>PRE<'));
-  assert.ok(!historica.includes('#Operam'));
+  assert.ok(!historica.includes('Cotización'));
 });
 
 test('Q11: la tarjeta trae link wa.me cuando hay telefono y lo omite cuando no', () => {
@@ -351,15 +351,15 @@ test('Q27: buildAccionesCargaHtml sin data deshabilita las dos acciones', () => 
 });
 
 // === #109: el aviso de modo actualizacion identifica el documento por el
-// folio REAL de Operam (badge "#Operam N" de pipeline-logica.js, issue #63),
+// folio REAL de Operam (badge "Cotizacion N" de pipeline-logica.js, issue #63),
 // nunca por el id interno del registro -- ese era el bug reportado por Adrian
 // en la verificacion de #104 ("#16" leido junto a "mismo folio" como si 16 y
 // 1200 fueran el mismo numero). En modo actualizacion el folio SIEMPRE existe
 // (gate puedeActualizarCotizacion), asi que no hay caso "sin folio" que cubrir.
 
-test('Q28: buildAvisoModoActualizacion nombra el folio real de Operam con la convencion #Operam N', () => {
+test('Q28: buildAvisoModoActualizacion nombra el folio real de Operam con la etiqueta Cotizacion N', () => {
   const html = buildAvisoModoActualizacion('1200');
-  assert.ok(html.includes('#Operam 1200'));
+  assert.ok(html.includes('Cotización 1200'));
   assert.ok(!html.includes('#16'));
 });
 
