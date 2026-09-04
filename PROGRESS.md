@@ -1,107 +1,93 @@
 # PROGRESS — sesión 2026-09-04 (incidente cliente 517 / cotización 1263)
 
-Corte planeado por contexto lleno. Todo commiteado y pusheado; nada se pierde.
+## Estado: #327 y #328 CERRADOS y en producción
 
-## La siguiente acción exacta al reanudar
+`main` = `cc31b22` (merge de `fix/327-328-cache-y-domicilio-quote` sobre los 12 commits que
+main había avanzado, #307-#312). Suite **3271 / 0**. Render desplegando.
 
-**El sondeo de escritura sobre el cliente 15 — Adrián YA lo autorizó explícitamente en
-esta sesión (2026-09-04).** Es lo único que bloquea el merge de #328 a `main`.
+El sondeo que bloqueaba el merge se ejecutó y salió **positivo**.
 
-Qué hay que probar: que FrontAccounting **persiste `delivery_address`** cuando se lo manda
-un `ProcessOrder`. Es el mismo mecanismo que ya escribe `delivery_date`, `Comments` y
-`cust_ref` (los tres medidos en su momento con el quote 1216), pero para este campo NO
-está medido. `deliver_to` es un `<input>`; `delivery_address` es un `<textarea>` — de ahí
-la duda.
+## El sondeo (2026-09-04)
 
-Receta:
-1. Rama: `fix/327-328-cache-y-domicilio-quote` (ya pusheada).
-2. Cliente desechable para escrituras de prueba: **el 15, "Adrian Chavez Rosete"**.
-3. Crear (o reusar) un quote de prueba suyo, correr `actualizarQuoteOperam` con un
-   domicilio distinto, y **releer** para confirmar que quedó escrito.
-4. `compararQuoteVista` (`lib/operam-web.js`) NO compara la dirección. Si la vista
-   read-only no la expone, se deja sin verificar (mismo trato que `verificado:false`) — no
-   bloquea; así lo autoriza el issue #328.
-5. Si persiste → mergear a main. Si NO persiste → revertir la parte de
-   `serializarBodyQuote`/`actualizarQuoteOperam` y dejar solo la huella (que igual avisa
-   del cambio), y documentarlo en #328.
+Pregunta: ¿FrontAccounting persiste `delivery_address` cuando se lo manda un `ProcessOrder`?
+`deliver_to` es un `<input>`, `delivery_address` un `<textarea>` — de ahí la duda.
 
-> **Push a `main` = producción** (Render auto-deploy). La rama no despliega.
+Método: escritura de **solo header** sobre el quote de prueba **1216** (cliente 15, el
+desechable), sin tocar partidas, y restauración al terminar.
 
-## Qué se hizo
+Resultado: **sí persiste**, confirmado por las tres lecturas (GET de la API, formulario
+re-parseado, vista read-only). Las partidas quedaron intactas (1 línea antes, 1 después) y los
+valores originales se restauraron y se verificaron.
 
-Diagnóstico completo (`/diagnosing-bugs`) + `/code-review` de dos ejes. **Suite 3242 / 0.**
+Dos hallazgos que salieron de regalo:
 
-Tres commits en `fix/327-328-cache-y-domicilio-quote`:
+- **La vista read-only sí expone el domicilio**, así que `compararQuoteVista` *podría*
+  verificarlo. No se hizo — #328 autorizaba dejarlo sin verificar. Ticket aparte si se quiere.
+- **El POST de solo header no toca el carrito**: es la evidencia que pedía **#331** (camino
+  barato para reescrituras que solo cambian el header). Comentada ahí.
 
-- `a99da16` — **#327**: el caché del padrón (`lib/indice-telefonos.js`, TTL 1 h) no se
-  enteraba del upgrade fiscal, así que el buscador seguía sirviendo el nombre y el RFC
-  genérico viejos. `actualizarClienteEnCache` se alimenta de la relectura que el endpoint
-  ya hacía (cero llamadas extra a Operam).
-- `d01c582` — **#328**: `deliver_to` y `delivery_address` no estaban en la huella del
-  quote, así que corregir el domicilio de entrega no contaba como cambio y el vendedor
-  recibía "el quote de Operam ya coincide" (falso). Ahora salen de `armarContenidoQuote`
-  (una definición para el POST y la huella) y se reescriben por la web legacy.
-- `65a4f30` — correcciones del code-review (ver abajo).
+Documentado como punto 5 de `peltre-operam.md` §12.7.
 
-## Issues abiertos por esta sesión
+## Issues de esta sesión
 
-| # | Qué es |
+| # | Estado |
 |---|---|
-| #327 | Caché del padrón — **implementado**, listo para merge |
-| #328 | Domicilio de entrega en la huella — **implementado**, bloqueado por el sondeo |
-| #329 | `contact_phone`/`contact_email` del quote nunca viajan |
-| #330 | Branch del cliente degradado (`br_name` viejo, `br_address` " CP 56577") |
-| #331 | Camino "solo header" para reescrituras baratas (mejora de costo) |
-| #332 | `delivery_address` omite el número interior. **Entrar junto con #329**: tocan la misma función y así la migración de huella se paga una vez |
-| #333 | **Decisión de dominio**: ¿la cotización guardada es documento congelado o vista viva? Necesita `/grilling` en sesión limpia, no un fix |
+| #327 | **CERRADO** — caché del padrón (`a99da16`). Falta que Adrián verifique en prod: upgrade fiscal → el buscador sirve el nombre y el RFC nuevos de inmediato |
+| #328 | **CERRADO** — domicilio de entrega en la huella (`d01c582`), sondeo positivo |
+| #329 | Abierto — `contact_phone`/`contact_email` del quote nunca viajan |
+| #330 | Abierto — branch del cliente degradado (`br_name` viejo, `br_address` " CP 56577") |
+| #331 | Abierto — camino "solo header" para reescrituras baratas. **Ya tiene la evidencia en vivo**; falta decidir cómo se detecta el caso (la huella es hoy un solo hash) |
+| #332 | Abierto — `delivery_address` omite el número interior. **Entrar junto con #329**: misma función, la migración de huella se paga una vez |
+| #333 | Abierto — **decisión de dominio**: ¿la cotización guardada es documento congelado o vista viva? Necesita `/grilling` en sesión limpia, no un fix. Material en `.temporales/handoff-snapshot-cliente.md` |
 
-Material del #333 también en `.temporales/handoff-snapshot-cliente.md` (fuera del repo).
+## Siguiente acción al reanudar
 
-## Decisiones y restricciones descubiertas
+Nada bloqueado. Lo que sigue, por orden de valor:
+
+1. **#333** — la sesión de `/grilling` (fue el motivo del corte anterior).
+2. **#329 + #332 juntos** — tocan la misma función.
+3. **#331** — ya con la medición hecha.
+
+## Estado de la cotización 1263 — OJO, SIGUE VIGENTE
+
+**Adrián la corrigió A MANO en Operam** el 2026-09-04: dirección de entrega, lista de precios
+y envío.
+
+⚠️ **NO regenerar la 1263 desde el cotizador.** El envío y los precios son **partidas**, y la
+reescritura borra todas las partidas y las re-agrega desde el snapshot local, que no sabe nada
+de esos tres cambios. Con #328 ya desplegado, la primera regeneración **sí** dispara
+reescritura (la huella cambió de forma). Se perdería el trabajo manual.
+
+Si alguna vez hay que tocarla: primero re-elegir el cliente y recapturar todo en el cotizador,
+y sólo entonces generar.
+
+## Decisiones y restricciones descubiertas (se conservan)
 
 - **`cache.ts = 0` no sirve** para invalidar: `obtenerCache` es stale-while-revalidate
-  (`if (cache.mapa) return cache`), así que el vendedor que re-busca a los 2 s sigue viendo
-  lo viejo mientras el refresh de ~7 s vuela.
+  (`if (cache.mapa) return cache`), así que el vendedor que re-busca a los 2 s sigue viendo lo
+  viejo mientras el refresh de ~7 s vuela.
 - **El detalle y el listado de clientes traen las MISMAS llaves.** Medido en vivo contra el
-  padrón completo (478 clientes, muestra de 5 incluido el 517): mismos `contacts`,
-  `branches` y teléfonos, cero pérdida. Por eso meter el detalle al caché es seguro. Ningún
-  mock puede demostrar esto — lección de #194.
-- **`delivery_address` es columna propia del quote**, no derivada del branch. Medido: el
-  pedido convertido la hereda, y el listado de pedidos la devuelve por pedido.
+  padrón completo (478 clientes, muestra de 5 incluido el 517): mismos `contacts`, `branches` y
+  teléfonos, cero pérdida. Por eso meter el detalle al caché es seguro. Ningún mock puede
+  demostrar esto — lección de #194.
+- **`delivery_address` es columna propia del quote**, no derivada del branch. Medido: el pedido
+  convertido la hereda, y el listado de pedidos la devuelve por pedido.
 - **El formulario de FA declara `delivery_address` con comillas SIMPLES** (`<textarea
-  name='delivery_address'>`). Un grep con comillas dobles no lo ve — así fallé el
-  diagnóstico inicial. El mock de la web legacy en `test/server.test.js` no lo reflejaba;
-  ahora sí.
+  name='delivery_address'>`). Un grep con comillas dobles no lo ve — así falló el diagnóstico
+  inicial. El mock de la web legacy en `test/server.test.js` ya lo refleja.
 - **Agregar campos a la huella hace que las guardadas no coincidan**, así que la primera
-  regeneración de cada cotización ya subida pedirá una reescritura. No es un falso positivo
-  que tapar: hasta #328 el domicilio del quote nunca se comparó. Documentado en
+  regeneración de cada cotización ya subida pedirá una reescritura. No es un falso positivo que
+  tapar: hasta #328 el domicilio del quote nunca se comparó. Documentado en
   `contenidoQuoteCambio`.
+- **Push a `main` = producción** (Render auto-deploy).
 
-## Estado de la cotización 1263 — OJO
+## Hallazgos del code-review que se cerraron (commit 65a4f30)
 
-**Adrián ya la corrigió A MANO en Operam** el 2026-09-04: dirección de entrega, lista de
-precios y envío.
-
-⚠️ **NO regenerar la 1263 desde el cotizador.** El envío y los precios son **partidas**, y
-la reescritura borra todas las partidas y las re-agrega desde el snapshot local, que no
-sabe nada de esos tres cambios. Con #328 desplegado, la primera regeneración **sí**
-dispara reescritura (la huella cambió de forma). Se perdería el trabajo manual.
-
-Si alguna vez hay que tocarla: primero re-elegir el cliente y recapturar todo en el
-cotizador, y sólo entonces generar.
-
-## Hallazgos del code-review que ya se cerraron (commit 65a4f30)
-
-- `actualizarClienteEnCache` exigía `cache.clientes` a secas; un listado que vuelve vacío
-  deja `[]`, que es un caché "caliente", y se habría fabricado un padrón de **un** cliente
-  (el freno del barrido de contactos de #231 sólo detecta la fuente vacía). Ahora `?.length`.
-- El `refrescarIndice()` del fallo de verificación estaba en un `catch` demasiado ancho:
-  releía el padrón entero aunque el caché ya estuviera al día. Acotado con `cacheAlDia`.
-- Los invariantes de `actualizarClienteEnCache` no los probaba nadie (los tests pasaban
-  igual con la posición rota). Tests unitarios agregados y verificados contra un sabotaje.
+- `actualizarClienteEnCache` exigía `cache.clientes` a secas; un listado que vuelve vacío deja
+  `[]`, que es un caché "caliente", y se habría fabricado un padrón de **un** cliente (el freno
+  del barrido de contactos de #231 sólo detecta la fuente vacía). Ahora `?.length`.
+- El `refrescarIndice()` del fallo de verificación estaba en un `catch` demasiado ancho: releía
+  el padrón entero aunque el caché ya estuviera al día. Acotado con `cacheAlDia`.
+- Los invariantes de `actualizarClienteEnCache` no los probaba nadie (los tests pasaban igual
+  con la posición rota). Tests unitarios agregados y verificados contra un sabotaje.
 - Cuatro guardas duplicadas en `serializarBodyQuote` → `sustituirSiViene`.
-
-## Pendientes de decisión de Adrián
-
-- Nada bloqueante salvo el sondeo, que ya autorizó.
-- #333 quiere sesión de `/grilling` limpia (era el motivo del corte).
