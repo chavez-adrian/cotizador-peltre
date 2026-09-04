@@ -269,12 +269,25 @@ test('Q18b: buildHistorialAccionesHtml deshabilita las 3 acciones con un duplica
   assert.match(html, /disabled title="[^"]*duplicado[^"]*">WhatsApp/);
 });
 
-// El PRE por fallo de Operam (motivoPre 'operam') NO bloquea: el documento es
-// legitimo y sale sin numero, que es justo lo que ADR-0009 decidio.
-test('Q18c: buildHistorialAccionesHtml no bloquea el PRE por fallo de Operam', () => {
-  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true, motivoPre: 'operam' }));
+// El PRE por fallo de Operam (motivoPre 'operam') NO bloquea Ver PDF / Ver HTML:
+// el documento es legitimo y sale sin numero, que es justo lo que ADR-0009
+// decidio. Pero sin folio (#311) WhatsApp si se apaga: sin numero no hay nada
+// que citar en el chat.
+test('Q18c: buildHistorialAccionesHtml no bloquea Ver PDF/Ver HTML en el PRE por fallo de Operam, pero apaga WhatsApp sin folio', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true, motivoPre: 'operam', folioOperam: null }));
   assert.ok(html.includes('href="/api/cotizacion/pdf/42"'));
   assert.ok(html.includes('href="/api/cotizacion/html/42"'));
+  assert.ok(!html.includes('wa.me'));
+  assert.match(html, /disabled title="Sin número de cotización[^"]*">WhatsApp/);
+});
+
+// Con folio de Operam (#311) las tres acciones quedan activas, incluido WhatsApp.
+test('Q18d: buildHistorialAccionesHtml habilita las tres acciones, incluido WhatsApp, en cuanto hay folio', () => {
+  const html = buildHistorialAccionesHtml(cot(3, { id: 42, hasData: true, folioOperam: '1200' }), 'https://cotizador.example');
+  assert.ok(html.includes('href="/api/cotizacion/pdf/42"'));
+  assert.ok(html.includes('href="/api/cotizacion/html/42"'));
+  assert.ok(html.includes('wa.me'));
+  assert.ok(!html.includes('disabled'));
 });
 
 // #307: el texto del Resumen de la cotizacion lo arma UN solo lugar
@@ -282,7 +295,7 @@ test('Q18c: buildHistorialAccionesHtml no bloquea el PRE por fallo de Operam', (
 // que compartir desde aqui y desde la cotizacion recien generada diga lo mismo.
 test('Q19: buildWhatsAppLinkHistorial delega en el nucleo del Resumen de la cotizacion', async () => {
   const { mensajeCotizacion } = await import('../resumen-cotizacion-logica.js');
-  const c = cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5 });
+  const c = cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5, folioOperam: '1200' });
   assert.equal(
     buildWhatsAppLinkHistorial(c, 'https://cotizador.example'),
     mensajeCotizacion(c, 'https://cotizador.example').waUrl
@@ -290,7 +303,7 @@ test('Q19: buildWhatsAppLinkHistorial delega en el nucleo del Resumen de la coti
 });
 
 test('Q20: buildHistorialAccionesHtml usa el link wa.me de buildWhatsAppLinkHistorial y escapa datos de usuario', () => {
-  const html = buildHistorialAccionesHtml(cot(3, { id: 7, cliente: '<img src=x onerror=alert(1)>', hasData: true }), 'https://cotizador.example');
+  const html = buildHistorialAccionesHtml(cot(3, { id: 7, cliente: '<img src=x onerror=alert(1)>', hasData: true, folioOperam: '1200' }), 'https://cotizador.example');
   assert.ok(html.includes('wa.me'));
   assert.ok(!html.includes('<img src=x'));
 });

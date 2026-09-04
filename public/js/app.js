@@ -91,7 +91,7 @@ import {
 } from './cotizaciones-logica.js';
 // Resumen de la cotizacion (#307): UN solo constructor del mensaje de WhatsApp,
 // compartido con el historial.
-import { mensajeCotizacion } from './resumen-cotizacion-logica.js';
+import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import {
   buildTableroPipelineHtml,
   oportunidadesActivas,
@@ -754,6 +754,7 @@ function aplicarBorrador(borrador) {
     state.modoActualizacion = true;
     state.lastCotizacionId = String(borrador.cotizacionId);
     state.folioOperam = borrador.folioOperam;
+    aplicarEstadoWhatsApp();
     const operamStatus = document.getElementById('operam-status-cotizar');
     if (operamStatus) operamStatus.innerHTML = buildAvisoModoActualizacion(state.folioOperam);
     aplicarEtiquetasBotonesGenerar();
@@ -2345,6 +2346,23 @@ function aplicarCandadoDocumento(bloqueado) {
     if (documentoBajoCandado) btn.title = LEYENDA_DEDUP_PENDIENTE;
     else btn.removeAttribute('title');
   }
+  aplicarEstadoWhatsApp();
+}
+
+// #311: el boton de WhatsApp exige folio de Operam, sea cual sea el motivo por
+// el que falta (misma regla que el historial, motivoSinResumen de
+// resumen-cotizacion-logica.js, para que las dos vistas no puedan discrepar). El
+// candado por duplicado sin resolver (#204) manda sobre eso: ahi el documento
+// tampoco existe.
+function aplicarEstadoWhatsApp() {
+  const btn = document.getElementById('btn-whatsapp');
+  if (!btn) return;
+  const motivo = documentoBajoCandado
+    ? LEYENDA_DEDUP_PENDIENTE
+    : motivoSinResumen({ id: state.lastCotizacionId, folioOperam: state.folioOperam });
+  btn.disabled = !!motivo;
+  if (motivo) btn.title = motivo;
+  else btn.removeAttribute('title');
 }
 
 // Cuanto se espera a Operam antes de entregar el documento sin numero (ADR-0009,
@@ -2412,6 +2430,12 @@ async function guardarYNumerarCotizacion(body, progreso) {
   }
   const { id, requiereActualizacionOperam, folioOperam } = await res.json();
   state.lastCotizacionId = String(id);
+  // #311: el POST ya devuelve el folio cuando la cotizacion existia (modo
+  // actualizacion o regeneracion de una ya subida). Sin esto el boton de
+  // WhatsApp se quedaba apagado hasta la siguiente subida, aunque el folio ya
+  // existiera.
+  if (folioOperam != null && folioOperam !== '') state.folioOperam = folioOperam;
+  aplicarEstadoWhatsApp();
   // La cotizacion ya esta guardada en el servidor: el borrador cumplio su
   // funcion y muere aqui (#179), pasa lo que pase despues con Operam. Es el
   // unico punto por el que salen las dos generaciones (PDF y HTML).
@@ -2717,7 +2741,7 @@ function shareWhatsApp() {
                   document.getElementById('cl-nombre-corto').value;
   const { total } = buildItemsYTotales(cartEntriesDesdeEstado(), envioCapturadoEnFormulario());
   const mensaje = mensajeCotizacion(
-    { id: state.lastCotizacionId, cliente, total },
+    { id: state.lastCotizacionId, cliente, total, folioOperam: state.folioOperam },
     window.location.origin
   );
   if (!mensaje) return;
@@ -2749,6 +2773,7 @@ function nuevaCotizacion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
+  aplicarEstadoWhatsApp();
   state.vendedorConfirmado = false;
   state.tierFijado = '';
 
@@ -2987,6 +3012,7 @@ function pcPrepararSeleccion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
+  aplicarEstadoWhatsApp();
   state.vendedorConfirmado = false;
   state.tierFijado = '';
   const operamStatus = document.getElementById('operam-status-cotizar');
@@ -3893,6 +3919,12 @@ async function autoSubirOperam(id, slot, extraBody) {
     pcState.cliente.clienteOperamId = vista.customerId;
     if (pcEl()?.querySelector('.pc-cli-card')) pcRenderChips();
   }
+  // #311: el folio recien asignado enciende el boton de WhatsApp. Solo si el
+  // folio es de la cotizacion que sigue en pantalla (key === lastCotizacionId):
+  // el vendedor pudo haber empezado otra mientras esta subida seguia en vuelo.
+  if (vista.folio != null && vista.folio !== '' && key === String(state.lastCotizacionId)) {
+    state.folioOperam = vista.folio;
+  }
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
   // #204: candidatos sin resolver = documento bajo candado. Cualquier otro
   // desenlace (folio, PRE por Operam, sin datos) lo libera.
@@ -3939,6 +3971,12 @@ async function actualizarQuoteEnOperam(id, slot) {
     subidasOperamEnVuelo.delete(key);
   }
   const vista = interpretarActualizacionOperam(resultado);
+  // #311: si la actualizacion trae folio (la misma cotizacion en pantalla), el
+  // boton de WhatsApp se enciende igual que tras una subida nueva.
+  if (vista.folio != null && vista.folio !== '' && key === String(state.lastCotizacionId)) {
+    state.folioOperam = vista.folio;
+  }
+  aplicarEstadoWhatsApp();
   if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);
   // #114: bloqueada = el quote ya tiene pedido y Operam no deja editarlo, asi que el
   // documento recien generado lleva un folio cuyo quote conserva el contenido viejo.
@@ -6255,6 +6293,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Folio de Operam del binding (#184): viaja con el modo actualizacion, solo
     // para reconstruir el aviso si la sesion se restaura de un borrador.
     state.folioOperam = state.modoActualizacion ? (cot.folioOperam ?? null) : null;
+    aplicarEstadoWhatsApp();
     // #113: cargar OTRA cotizacion es exactamente cuando puede cambiar quien queda
     // estampado, asi que la confirmacion se vuelve a pedir en los dos modos.
     state.vendedorConfirmado = false;
@@ -6392,6 +6431,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-pdf').addEventListener('click', generatePDF);
   document.getElementById('btn-html').addEventListener('click', generateHTML);
   document.getElementById('btn-whatsapp').addEventListener('click', shareWhatsApp);
+  aplicarEstadoWhatsApp();
   document.getElementById('btn-nueva').addEventListener('click', nuevaCotizacion);
 
   // Navegacion inferior (bottom-nav, issue #53): Cotizar / Hoy / Pipeline / Mas.

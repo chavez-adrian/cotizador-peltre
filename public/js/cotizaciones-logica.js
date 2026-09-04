@@ -9,7 +9,7 @@ import { escapeHtml, chipOrigenHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
 import { nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
-import { mensajeCotizacion } from './resumen-cotizacion-logica.js';
+import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -114,9 +114,13 @@ export function buildWhatsAppLinkHistorial(c, origin = '') {
 // depender de disco); WhatsApp abre wa.me con el link al HTML regenerado. Sin
 // data persistida (registro historico, c.hasData false) no hay nada que
 // regenerar: las tres quedan deshabilitadas en vez de apuntar a un 404.
+function botonDeshabilitado(label, motivo) {
+  return `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(motivo)}">${label}</button>`;
+}
+
 export function buildHistorialAccionesHtml(c, origin = '') {
   const deshabilitadas = motivo => ['Ver PDF', 'Ver HTML', 'WhatsApp']
-    .map(label => `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(motivo)}">${label}</button>`)
+    .map(label => botonDeshabilitado(label, motivo))
     .join(' ');
   if (!c.hasData) return deshabilitadas('Datos no disponibles');
   // Candado por duplicado sin resolver (#204): las TRES abren el mismo documento
@@ -126,10 +130,16 @@ export function buildHistorialAccionesHtml(c, origin = '') {
   if (documentoBloqueado(c)) return deshabilitadas(LEYENDA_DEDUP_PENDIENTE);
   const pdfUrl = `/api/cotizacion/pdf/${c.id}`;
   const htmlUrl = `/api/cotizacion/html/${c.id}`;
-  const waUrl = buildWhatsAppLinkHistorial(c, origin);
+  // #311: el documento existe (PRE por fallo de Operam incluida) pero sin folio
+  // no hay numero que citar por WhatsApp -- Ver PDF y Ver HTML siguen abiertos,
+  // solo WhatsApp se apaga (motivoSinResumen, resumen-cotizacion-logica.js).
+  const motivoSinFolio = motivoSinResumen(c);
+  const whatsappHtml = motivoSinFolio
+    ? botonDeshabilitado('WhatsApp', motivoSinFolio)
+    : `<a href="${escapeHtml(buildWhatsAppLinkHistorial(c, origin))}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
   return `<a href="${escapeHtml(pdfUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>` +
     ` <a href="${escapeHtml(htmlUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver HTML</a>` +
-    ` <a href="${escapeHtml(waUrl)}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
+    ` ${whatsappHtml}`;
 }
 
 // Gate de "Actualizar cotizacion" (#104, ADR-0008). Hasta ahora "Cargar" hacia dos
