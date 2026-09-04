@@ -1,115 +1,107 @@
-# PROGRESS - Sesion 2026-09-02: leads de Abastur 2026 consolidados y tabla /leads
+# PROGRESS — sesión 2026-09-04 (incidente cliente 517 / cotización 1263)
 
-## Que se estaba haciendo y por que
+Corte planeado por contexto lleno. Todo commiteado y pusheado; nada se pierde.
 
-Adrian no recordaba si habia subido el archivo del tercer dia de Abastur. De
-ahi salio todo lo demas: resulto que faltaba, y al revisar el padron se vio que
-el evento tiene DOS fuentes que se enriquecen entre si (el gafete escaneado del
-xlsx y la captura manual en el cotizador) sin una pantalla que las mostrara
-juntas. La tabla /leads es esa pantalla.
+## La siguiente acción exacta al reanudar
 
-## Estado exacto al momento de escribirlo
+**El sondeo de escritura sobre el cliente 15 — Adrián YA lo autorizó explícitamente en
+esta sesión (2026-09-04).** Es lo único que bloquea el merge de #328 a `main`.
 
-CERRADO Y EN PRODUCCION. Tres commits en main:
+Qué hay que probar: que FrontAccounting **persiste `delivery_address`** cuando se lo manda
+un `ProcessOrder`. Es el mismo mecanismo que ya escribe `delivery_date`, `Comments` y
+`cust_ref` (los tres medidos en su momento con el quote 1216), pero para este campo NO
+está medido. `deliver_to` es un `<input>`; `delivery_address` es un `<textarea>` — de ahí
+la duda.
 
-- `f6f4d98` feat(prospectos): las senales del gafete se guardan como campos propios
-- `1edefc7` feat(leads): tabla de leads de feria con filtros, orden y WhatsApp
-- `9a5df02` fix(leads): las columnas ya no se derraman sobre la de al lado
+Receta:
+1. Rama: `fix/327-328-cache-y-domicilio-quote` (ya pusheada).
+2. Cliente desechable para escrituras de prueba: **el 15, "Adrian Chavez Rosete"**.
+3. Crear (o reusar) un quote de prueba suyo, correr `actualizarQuoteOperam` con un
+   domicilio distinto, y **releer** para confirmar que quedó escrito.
+4. `compararQuoteVista` (`lib/operam-web.js`) NO compara la dirección. Si la vista
+   read-only no la expone, se deja sin verificar (mismo trato que `verificado:false`) — no
+   bloquea; así lo autoriza el issue #328.
+5. Si persiste → mergear a main. Si NO persiste → revertir la parte de
+   `serializarBodyQuote`/`actualizarQuoteOperam` y dejar solo la huella (que igual avisa
+   del cambio), y documentarlo en #328.
 
-Suite 3027/3027 (3024 previos + 3 de la vista). Render desplego.
+> **Push a `main` = producción** (Render auto-deploy). La rama no despliega.
 
-Adrian ya: importo el dia 3, re-subio el export para poblar los campos nuevos
-(0 nuevos / 105 enriquecidos / 1 ya-cliente, lo esperado) y borro por SQL los
-dos prospectos de prueba (ids 56 y 57, "Test Apellidotest" y "Test 2").
+## Qué se hizo
 
-Padron final de Abastur 2026: **160 prospectos**, 82 de Adrian y 78 de
-Alejandro.
+Diagnóstico completo (`/diagnosing-bugs`) + `/code-review` de dos ejes. **Suite 3242 / 0.**
 
-## El consolidado (medido, no estimado)
+Tres commits en `fix/327-328-cache-y-domicilio-quote`:
 
-Cruce del export de Neon contra el xlsx por celular10:
+- `a99da16` — **#327**: el caché del padrón (`lib/indice-telefonos.js`, TTL 1 h) no se
+  enteraba del upgrade fiscal, así que el buscador seguía sirviendo el nombre y el RFC
+  genérico viejos. `actualizarClienteEnCache` se alimenta de la relectura que el endpoint
+  ya hacía (cero llamadas extra a Operam).
+- `d01c582` — **#328**: `deliver_to` y `delivery_address` no estaban en la huella del
+  quote, así que corregir el domicilio de entrega no contaba como cambio y el vendedor
+  recibía "el quote de Operam ya coincide" (falso). Ahora salen de `armarContenidoQuote`
+  (una definición para el POST y la huella) y se reescriben por la web legacy.
+- `65a4f30` — correcciones del code-review (ver abajo).
 
-| Poblacion | Que es | Total | Adrian | Alejandro |
-|---|---|---:|---:|---:|
-| A | gafete Y captura manual | 14 | 3 | 11 |
-| B | solo gafete | 91 | 63 | 28 |
-| C | solo captura manual | 55 | 18 | 37 |
+## Issues abiertos por esta sesión
 
-**El dato que manda el trabajo comercial: los 91 de solo-gafete son los UNICOS
-sin siguiente contacto agendado.** Todos los capturados a mano (A+C = 69) si lo
-tienen. Del padron completo solo 5 llegaron a cotizacion y 5 a cliente.
+| # | Qué es |
+|---|---|
+| #327 | Caché del padrón — **implementado**, listo para merge |
+| #328 | Domicilio de entrega en la huella — **implementado**, bloqueado por el sondeo |
+| #329 | `contact_phone`/`contact_email` del quote nunca viajan |
+| #330 | Branch del cliente degradado (`br_name` viejo, `br_address` " CP 56577") |
+| #331 | Camino "solo header" para reescrituras baratas (mejora de costo) |
+| #332 | `delivery_address` omite el número interior. **Entrar junto con #329**: tocan la misma función y así la migración de huella se paga una vez |
+| #333 | **Decisión de dominio**: ¿la cotización guardada es documento congelado o vista viva? Necesita `/grilling` en sesión limpia, no un fix |
 
-Cobertura de columnas sobre 160: tipo de cliente 99%, empresa 85%, correo 69%
-(pero solo 8 de 55 en C: a los capturados a mano casi no se les pidio correo,
-WhatsApp es el unico canal), puesto 66%, tamano 65%, area de interes 63%,
-nota a mano 34%, calificacion de expo **17%**.
+Material del #333 también en `.temporales/handoff-snapshot-cliente.md` (fuera del repo).
 
-## Convencion de nombres de los exports del hub (no derivable del nombre)
+## Decisiones y restricciones descubiertas
 
-Se nombran por FECHA DE DESCARGA, no por el dia que contienen:
-`...08-27.xlsx` = dia 1 (53 leads), `...08-28.xlsx` = dia 2 (27),
-`...08-29.xlsx` = los TRES dias acumulados (113). Los archivos `08-29`,
-`08-31` y `08-31 (1)` tienen el mismo md5: son el mismo export bajado 3 veces.
+- **`cache.ts = 0` no sirve** para invalidar: `obtenerCache` es stale-while-revalidate
+  (`if (cache.mapa) return cache`), así que el vendedor que re-busca a los 2 s sigue viendo
+  lo viejo mientras el refresh de ~7 s vuela.
+- **El detalle y el listado de clientes traen las MISMAS llaves.** Medido en vivo contra el
+  padrón completo (478 clientes, muestra de 5 incluido el 517): mismos `contacts`,
+  `branches` y teléfonos, cero pérdida. Por eso meter el detalle al caché es seguro. Ningún
+  mock puede demostrar esto — lección de #194.
+- **`delivery_address` es columna propia del quote**, no derivada del branch. Medido: el
+  pedido convertido la hereda, y el listado de pedidos la devuelve por pedido.
+- **El formulario de FA declara `delivery_address` con comillas SIMPLES** (`<textarea
+  name='delivery_address'>`). Un grep con comillas dobles no lo ve — así fallé el
+  diagnóstico inicial. El mock de la web legacy en `test/server.test.js` no lo reflejaba;
+  ahora sí.
+- **Agregar campos a la huella hace que las guardadas no coincidan**, así que la primera
+  regeneración de cada cotización ya subida pedirá una reescritura. No es un falso positivo
+  que tapar: hasta #328 el domicilio del quote nunca se comparó. Documentado en
+  `contenidoQuoteCambio`.
 
-Los dos primeros fueron incrementales y el ultimo acumulativo: el hub cambio de
-comportamiento entre descargas.
+## Estado de la cotización 1263 — OJO
 
-## Decisiones tomadas y restricciones descubiertas
+**Adrián ya la corrigió A MANO en Operam** el 2026-09-04: dirección de entrega, lista de
+precios y envío.
 
-- **Camino B para el area de interes**: la fusion pasa por el IMPORTADOR, no
-  por la pantalla. `senalesDeCalificacion` es el punto unico (incluida la
-  precedencia puesto -> jobTitle) y las senales salen por dos caminos: campos
-  propios de `data` (filtrables) y la MISMA linea de notas. La linea NO se toca:
-  la idempotencia de #277 compara la nota entrante contra la guardada.
-- **La pantalla se protege con el PIN de siempre**, no con un token en la URL.
-  El HTML no lleva datos (un test lo verifica): los pide a /api/prospectos con
-  el token, asi que la visibilidad es la de siempre y compartir la liga no
-  expone a nadie. Alejandro ve sus 78, el admin los 160.
-- **`temperatura` mezcla dos escalas y por eso NO es columna**: del gafete llega
-  el Scoring 1-5 de la app de Abastur, de la captura el nivel de interes del
-  vendedor ({Bajo:1, Medio:3, Alto:5}). Como el enriquecimiento solo escribe
-  sobre vacio, donde el vendedor califico se descarto el Scoring en silencio.
-  Un 5 no significa lo mismo segun de donde venga.
-- **El reparto Adrian/Alejandro es correcto** (decision de Adrian): solo lo que
-  el escaneo o registro es suyo; los gafetes de Raul Chavez se quedan con
-  Alejandro. Raul no esta en el registro de vendedores, por eso todo lo que
-  escanea cae al default del formulario. Queda CERRADO el pendiente que venia
-  arrastrandose desde el dia 1.
-- Re-subir un export ya importado es seguro y es la forma barata de salir de
-  dudas: sale 0 nuevos y N enriquecidos.
-- Para leer produccion desde el repo NO hay camino: `data/prospectos.json` esta
-  vacio a proposito y el `.env` local no lleva `DATABASE_URL` (ver abajo). El
-  export se saco a mano por la consola de Neon con `row_to_json(p)`.
-- Trampas de CSS que costaron dos vueltas en /leads, ambas encontradas EN EL
-  NAVEGADOR y no por review: `max-width` sobre un `<td>` no se respeta con
-  table-layout automatico (hay que ponerlo en un div interno), y una columna
-  `sticky` se monta sobre la de al lado cuando la tabla no cabe -- en el
-  telefono eso tapaba el nombre, y se resolvio mostrando solo tres columnas y
-  la etiqueta de estado en forma corta.
-- Parser en seco: importar `node_modules/xlsx/xlsx.mjs` por ruta absoluta y usar
-  `XLSX.read(buffer)`; ese build no trae `fs` enlazado y `readFile` truena.
+⚠️ **NO regenerar la 1263 desde el cotizador.** El envío y los precios son **partidas**, y
+la reescritura borra todas las partidas y las re-agrega desde el snapshot local, que no
+sabe nada de esos tres cambios. Con #328 desplegado, la primera regeneración **sí**
+dispara reescritura (la huella cambió de forma). Se perdería el trabajo manual.
 
-## Lo que falta, paso a paso
+Si alguna vez hay que tocarla: primero re-elegir el cliente y recapturar todo en el
+cotizador, y sólo entonces generar.
 
-1. **Trabajar los 91 sin siguiente paso** desde /leads, que es para lo que se
-   hizo. Ordenar por estado y filtrar por area de interes (quien marco
-   "Cristaleria - Vajillas" es el comprador real; "Restaurantes" son 66 de 160
-   y no discrimina).
-2. **Decidir la tabla `ACTIVIDAD_A_TIPO`** (lib/importar-prospectos.js:44, 10
-   llaves). Caen a "Otro": Servicios (7), Comedor industrial (3),
-   Bar - Centro nocturno (3), Motel (1), Franquicia (1), Wellness (1). Los dos
-   claros serian Motel -> Hoteles y Comedor industrial -> Catering | Eventos.
-   Sigue pendiente "Organizador de eventos", heredado del dia 1.
-3. **Los 4 gafetes sin celular que son reales** (de 7): Marlene Vazquez/LEMON
-   PIE (la atendio Pilar), Oscar Hurtado/TIENDA LA LUNA, Paul Valdez/SEGUNDO
-   PISO y Martha Leticia Parra/RESTAURANT CAFE LUKUMBE. No nacen como prospecto
-   (invariante 1 celular = 1 prospecto) y solo existen en el xlsx.
-4. Pendiente heredado: la convencion del `.env` sin `DATABASE_URL` es un parche
-   que falla en silencio y ademas bloquea LEER produccion. Lo correcto seria un
-   guard en `lib/db.js` (si NODE_ENV es test, no crear pool o lanzar cuando la
-   URL no es local). Unas lineas y un test.
+## Hallazgos del code-review que ya se cerraron (commit 65a4f30)
 
-## Siguiente accion exacta al reanudar
+- `actualizarClienteEnCache` exigía `cache.clientes` a secas; un listado que vuelve vacío
+  deja `[]`, que es un caché "caliente", y se habría fabricado un padrón de **un** cliente
+  (el freno del barrido de contactos de #231 sólo detecta la fuente vacía). Ahora `?.length`.
+- El `refrescarIndice()` del fallo de verificación estaba en un `catch` demasiado ancho:
+  releía el padrón entero aunque el caché ya estuviera al día. Acotado con `cacheAlDia`.
+- Los invariantes de `actualizarClienteEnCache` no los probaba nadie (los tests pasaban
+  igual con la posición rota). Tests unitarios agregados y verificados contra un sabotaje.
+- Cuatro guardas duplicadas en `serializarBodyQuote` → `sustituirSiViene`.
 
-Preguntar a Adrian si ya trabajo la cola de 91 desde /leads y si decidio el
-mapeo de Motel y Comedor industrial.
+## Pendientes de decisión de Adrián
+
+- Nada bloqueante salvo el sondeo, que ya autorizó.
+- #333 quiere sesión de `/grilling` limpia (era el motivo del corte).
