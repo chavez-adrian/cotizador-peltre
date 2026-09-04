@@ -37,7 +37,7 @@ import * as vendedoresStore from './lib/vendedores-store.js';
 import * as configStore from './lib/config-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
-import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
+import { refrescarIndice, matchCliente, clientesCacheados, actualizarClienteEnCache } from './lib/indice-telefonos.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
 import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
@@ -3065,6 +3065,10 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
   try {
     const fresco = await obtenerClientePorId(id);
     if (!fresco) throw new Error('Operam no devolvio el cliente en la relectura');
+    // El padron cacheado (#42) se entera del cambio AQUI (#327): sin esto el buscador
+    // seguia ofreciendo al cliente con su nombre y su RFC generico viejos hasta 1 h.
+    // Esta relectura ya se hacia para verificar, asi que no cuesta una llamada mas.
+    actualizarClienteEnCache(fresco);
     const diff = calcularDiffFiscal(fresco, csfDatos);
     camposNoActualizados = camposNoAplicados(diff, ecoPut);
     // El motivo generico ("Operam ignoro este campo en el PUT") es cierto pero inutil
@@ -3093,6 +3097,11 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     }
   } catch (err) {
     verificacionFallida = true;
+    // Sin relectura no hay entrada fresca que meterle al cache, pero el PUT SI se
+    // aplico (#327): sin esto el buscador mostraria el cliente viejo hasta 1 h. Se
+    // dispara el refresh completo sin esperarlo -- mismo patron stale-while-revalidate
+    // que ya usa obtenerCache -- y el agujero baja de 1 h a lo que tarde el refresh.
+    refrescarIndice().catch(() => {});
     console.error('[csf-upgrade] verificacion post-PUT fallo:', err.message);
   }
 
