@@ -343,9 +343,9 @@ test('#319: la fila nombra la cotizacion por su folio, nunca por el id interno',
   const res = await tabla(MEMO_TOKEN);
   assert.equal(res.status, 200);
   const fila = res.body.find(f => f.nombre === 'Nora');
-  assert.equal(fila.cotizaciones[0].folio, '#Operam 1141');
+  assert.equal(fila.cotizaciones[0].folio, 'Cotización 1141');
   assert.equal(fila.estado, 'cotizado');
-  assert.equal(fila.queSigue.folio, '#Operam 1141');
+  assert.equal(fila.queSigue.folio, 'Cotización 1141');
 });
 
 // --- #320: que sigue (clientes) ---
@@ -388,7 +388,7 @@ test('#320: con dos cotizaciones vivas la fila del cliente muestra la mas avanza
   const fila = res.body.find(f => f.nombre === 'Rita');
   assert.equal(fila.queSigue.tipo, 'etapa');
   assert.equal(fila.queSigue.etapa, 'anticipo_pagado');
-  assert.equal(fila.queSigue.accion, 'Anticipo pagado (#Operam 1150) y 1 más');
+  assert.equal(fila.queSigue.accion, 'Anticipo pagado (Cotización 1150) y 1 más');
   assert.equal(fila.queSigue.masCotizaciones, 1);
 });
 
