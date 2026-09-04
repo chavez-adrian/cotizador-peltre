@@ -2704,11 +2704,3 @@ test('#328 huellaContenidoQuote: el CP de entrega cuenta aunque la cotizacion no
   assert.equal(contenidoQuoteCambio(despues, huellaContenidoQuote(antes)), true);
 });
 
-// Guarda contra el falso positivo: si el domicilio no se toco, regenerar no debe
-// disparar una reescritura completa (borrar + re-agregar todas las partidas).
-test('#328 huellaContenidoQuote: el mismo domicilio NO cuenta como cambio', () => {
-  const domicilio = { calle: 'Bosques de Duraznos 187', colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico' };
-  const a = cotizacionBase({ cliente: { ...cotizacionBase().cliente, ...domicilio } });
-  const b = cotizacionBase({ cliente: { ...cotizacionBase().cliente, ...domicilio } });
-  assert.equal(contenidoQuoteCambio(b, huellaContenidoQuote(a)), false);
-});

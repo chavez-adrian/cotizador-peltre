@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
-  normalizarTelefono, construirIndice, matchCliente, refrescarIndice, resetIndice,
+  normalizarTelefono, construirIndice, matchCliente, refrescarIndice, resetIndice, actualizarClienteEnCache,
   buscarClientesPorTexto, clientesCacheados, enumerarTelefonosClientes,
 } from '../lib/indice-telefonos.js';
 import { resetSession } from '../lib/operam-client.js';
@@ -335,4 +335,68 @@ test('clientesCacheados: si Operam falla devuelve [] sin lanzar (best effort)', 
     '/api/v3/login': () => { throw new Error('ECONNREFUSED'); },
   });
   assert.deepEqual(await clientesCacheados(), []);
+});
+
+// === actualizarClienteEnCache (#327) ===
+// El PUT del upgrade fiscal mete la entrada RELEIDA al cache para que el buscador deje
+// de servir el nombre y el RFC viejos. Los invariantes de abajo son justo lo que la
+// prueba de integracion NO puede ver: pasaria igual con una implementacion que mueva la
+// entrada al final o que extienda el TTL.
+
+const DOS_CON_EL_MISMO_TELEFONO = () => ([
+  { customer_id: '1', CustName: 'PRIMERO', cust_ref: 'Primero', contacts: [{ phone: '5511111111' }], branches: [] },
+  { customer_id: '2', CustName: 'SEGUNDO', cust_ref: 'Segundo', contacts: [{ phone: '5511111111' }], branches: [] },
+]);
+
+test('actualizarClienteEnCache: conserva la POSICION, asi que no cambia quien gana un telefono compartido', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  const restore = mockListado(DOS_CON_EL_MISMO_TELEFONO(), contadores);
+  try {
+    await refrescarIndice();
+    // El telefono lo gana el PRIMERO del padron (construirIndice: primer cliente gana).
+    assert.equal((await matchCliente('5511111111')).customer_id, '1');
+    // Se actualiza el SEGUNDO: si la implementacion lo moviera al final del arreglo el
+    // ganador no cambiaria, pero si moviera al PRIMERO si -- por eso se prueban los dos.
+    actualizarClienteEnCache({ customer_id: '2', CustName: 'SEGUNDO SA DE CV', cust_ref: 'Segundo', contacts: [{ phone: '5511111111' }], branches: [] });
+    assert.equal((await matchCliente('5511111111')).customer_id, '1', 'actualizar al segundo no debe robarle el telefono al primero');
+    actualizarClienteEnCache({ customer_id: '1', CustName: 'PRIMERO SA DE CV', cust_ref: 'Primero', contacts: [{ phone: '5511111111' }], branches: [] });
+    assert.equal((await matchCliente('5511111111')).customer_id, '1', 'actualizar al primero tampoco debe cederlo');
+    assert.equal((await matchCliente('5511111111')).cust_name, 'PRIMERO SA DE CV', 'y el nombre cacheado si es el nuevo');
+  } finally {
+    restore();
+  }
+});
+
+test('actualizarClienteEnCache: reemplaza los datos del cliente sin releer el padron', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  const restore = mockListado([
+    { customer_id: '9', CustName: 'LUIS EMILIO ZARABOZO', cust_ref: 'Luis Emilio Zarabozo', tax_id: 'XAXX010101000', contacts: [{ phone: '5554368426' }], branches: [] },
+  ], contadores);
+  try {
+    await refrescarIndice();
+    const paginasAntes = contadores.paginas;
+    actualizarClienteEnCache({ customer_id: '9', CustName: 'ROYAL TABLE', cust_ref: 'Royal Table', tax_id: 'RTA910503989', contacts: [{ phone: '5554368426' }], branches: [] });
+    assert.equal(contadores.paginas, paginasAntes, 'no debe releer el padron paginado');
+    const porNombreNuevo = await buscarClientesPorTexto('Royal');
+    assert.equal(porNombreNuevo.length, 1);
+    assert.equal(porNombreNuevo[0].tax_id, 'RTA910503989');
+    assert.equal((await buscarClientesPorTexto('Zarabozo')).length, 0, 'el nombre viejo ya no lo encuentra');
+  } finally {
+    restore();
+  }
+});
+
+// Un listado que volvio VACIO deja cache.clientes = [], que para el resto del modulo es
+// un cache caliente. Insertar ahi dejaria un padron de UN cliente: el barrido de
+// contactos (#231) solo frena con la fuente vacia, y con uno ya no se dispara.
+test('actualizarClienteEnCache: con el padron vacio NO inserta (no fabrica un padron de uno)', async () => {
+  const contadores = { login: 0, paginas: 0 };
+  const restore = mockListado([], contadores);
+  try {
+    await refrescarIndice();
+    actualizarClienteEnCache({ customer_id: '9', CustName: 'UNO', cust_ref: 'Uno', contacts: [{ phone: '5554368426' }], branches: [] });
+    assert.deepEqual(await clientesCacheados(), [], 'el padron sigue vacio');
+  } finally {
+    restore();
+  }
 });

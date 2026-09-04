@@ -3062,6 +3062,7 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
   // auditoria con 'error' para una escritura que en realidad tuvo exito.
   let camposNoActualizados = [];
   let verificacionFallida = false;
+  let cacheAlDia = false;
   try {
     const fresco = await obtenerClientePorId(id);
     if (!fresco) throw new Error('Operam no devolvio el cliente en la relectura');
@@ -3069,6 +3070,7 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     // seguia ofreciendo al cliente con su nombre y su RFC generico viejos hasta 1 h.
     // Esta relectura ya se hacia para verificar, asi que no cuesta una llamada mas.
     actualizarClienteEnCache(fresco);
+    cacheAlDia = true;
     const diff = calcularDiffFiscal(fresco, csfDatos);
     camposNoActualizados = camposNoAplicados(diff, ecoPut);
     // El motivo generico ("Operam ignoro este campo en el PUT") es cierto pero inutil
@@ -3097,11 +3099,15 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     }
   } catch (err) {
     verificacionFallida = true;
-    // Sin relectura no hay entrada fresca que meterle al cache, pero el PUT SI se
-    // aplico (#327): sin esto el buscador mostraria el cliente viejo hasta 1 h. Se
-    // dispara el refresh completo sin esperarlo -- mismo patron stale-while-revalidate
-    // que ya usa obtenerCache -- y el agujero baja de 1 h a lo que tarde el refresh.
-    refrescarIndice().catch(() => {});
+    // Solo si el cache NO alcanzo a actualizarse: este catch cubre tambien el diff y la
+    // verificacion de notas, que corren DESPUES de actualizarClienteEnCache -- un fallo
+    // ahi no justifica releer el padron paginado entero, el cache ya quedo al dia.
+    // Cuando si fallo la relectura no hay entrada fresca que meter, pero el PUT SI se
+    // aplico (#327): se dispara el refresh completo sin esperarlo (mismo patron
+    // stale-while-revalidate de obtenerCache) y el agujero baja de 1 h a lo que tarde.
+    if (!cacheAlDia) {
+      refrescarIndice().catch(e => console.warn('[indice-telefonos] refresh tras upgrade fallo:', e.message));
+    }
     console.error('[csf-upgrade] verificacion post-PUT fallo:', err.message);
   }
 

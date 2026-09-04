@@ -38,12 +38,16 @@ const NUEVO = {
   city: 'MIGUEL HIDALGO', state: 'CIUDAD DE MEXICO',
 };
 
-// El DETALLE (GET /customers/:id) es un SUPERCONJUNTO del listado: trae ademas
-// sales_type, segmento y regimen (sondeo del 517, 2026-09-04). Se modela distinto a
-// proposito -- usar el mismo objeto para las dos formas es el error de #194: el mock
-// contestaria lo que el codigo espera y el test no podria detectar que meter el detalle
-// al cache le quite a esa entrada algo que el listado si traia.
-const detalleDe = c => ({ ...c, sales_type: '12', regimen: '601', segmento: { id: '15', clave: '600' } });
+// El cache se construye con la forma del LISTADO y aqui se le mete la del DETALLE
+// (GET /customers/:id), asi que el detalle no puede traer MENOS. Medido en vivo el
+// 2026-09-04 contra el padron completo (478 clientes, muestra de 5 incluido el 517):
+// las dos formas traen las mismas llaves -- contacts y branches incluidos -- y los
+// mismos telefonos. Ningun mock puede demostrar eso (leccion de #194: los mocks
+// contestan lo que el codigo espera); si Operam las separa algun dia, el sondeo esta en
+// el issue #327 para repetirlo.
+// El mock agrega llaves de mas a proposito: si el detalle se enriquece, la entrada
+// enriquecida tampoco debe romper a los otros consumidores del cache.
+const detalleDe = c => ({ ...c, campo_extra_del_detalle: 'x' });
 
 const CSF = {
   rfc: 'RTA910503989', razonSocial: 'ROYAL TABLE', idcif: 'IDCIF1',
