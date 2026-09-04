@@ -89,6 +89,9 @@ import {
   textoBotonGenerar,
   filtrarCotizaciones,
 } from './cotizaciones-logica.js';
+// Resumen de la cotizacion (#307): UN solo constructor del mensaje de WhatsApp,
+// compartido con el historial.
+import { mensajeCotizacion } from './resumen-cotizacion-logica.js';
 import {
   buildTableroPipelineHtml,
   oportunidadesActivas,
@@ -2704,21 +2707,21 @@ async function generateHTML() {
   }
 }
 
+// El texto lo arma el nucleo del Resumen de la cotizacion (#307), el mismo que
+// usa el historial: aqui solo se arma el registro con lo que hay en pantalla.
+// El total sale de buildItemsYTotales -- el mismo numero que se guarda y que
+// imprime el documento -- no del texto ya formateado del resumen. Sin registro
+// guardado no hay documento que citar y no se abre nada.
 function shareWhatsApp() {
   const cliente = document.getElementById('cl-razon-social').value ||
-                  document.getElementById('cl-nombre-corto').value || 'Cliente';
-  const total = document.getElementById('resumen-total').textContent;
-
-  let pdfUrl = '';
-  if (state.lastCotizacionId) {
-    pdfUrl = `${window.location.origin}/api/cotizacion/pdf/${state.lastCotizacionId}`;
-  }
-
-  const msg = encodeURIComponent(
-    `Cotizacion Peltre Nacional\nCliente: ${cliente}\nTotal: ${total}` +
-    (pdfUrl ? `\n\nDescargar PDF:\n${pdfUrl}` : '\n\nGenera el PDF primero para incluir el enlace.')
+                  document.getElementById('cl-nombre-corto').value;
+  const { total } = buildItemsYTotales(cartEntriesDesdeEstado(), envioCapturadoEnFormulario());
+  const mensaje = mensajeCotizacion(
+    { id: state.lastCotizacionId, cliente, total },
+    window.location.origin
   );
-  window.open(`https://wa.me/?text=${msg}`, '_blank');
+  if (!mensaje) return;
+  window.open(mensaje.waUrl, '_blank');
 }
 
 // #112: una sola nuevaCotizacion. Habia dos homonimas -- esta, de modulo, que

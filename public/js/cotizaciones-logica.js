@@ -9,6 +9,7 @@ import { escapeHtml, chipOrigenHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
 import { nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
+import { mensajeCotizacion } from './resumen-cotizacion-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -99,17 +100,13 @@ function buildCotizacionCardHtml(c, col, hoy) {
   </div>`;
 }
 
-// Link wa.me para compartir una cotizacion del historial (issue #103): mismo
-// formato de mensaje que shareWhatsApp (app.js) para la cotizacion recien
-// generada, pero apuntando al HTML regenerado desde el registro guardado en
-// vez del PDF de la sesion en curso. origin lo pasa el caller
-// (window.location.origin no existe en este modulo sin efectos de navegador).
+// Link wa.me para compartir una cotizacion del historial (issue #103). El texto
+// lo arma el nucleo del Resumen de la cotizacion (#307), el mismo que usa la
+// cotizacion recien generada en app.js: aqui solo se pasa el registro guardado.
+// origin lo pasa el caller (window.location.origin no existe en este modulo sin
+// efectos de navegador).
 export function buildWhatsAppLinkHistorial(c, origin = '') {
-  const htmlUrl = `${origin}/api/cotizacion/html/${c.id}`;
-  const msg = encodeURIComponent(
-    `Cotizacion Peltre Nacional\nCliente: ${c.cliente || 'Cliente'}\nTotal: $${fmtMoneda(c.total)}\n\nVer cotizacion:\n${htmlUrl}`
-  );
-  return `https://wa.me/?text=${msg}`;
+  return mensajeCotizacion(c, origin)?.waUrl;
 }
 
 // Acciones de una fila del historial (issue #103): Ver PDF / Ver HTML regeneran

@@ -277,13 +277,16 @@ test('Q18c: buildHistorialAccionesHtml no bloquea el PRE por fallo de Operam', (
   assert.ok(html.includes('href="/api/cotizacion/html/42"'));
 });
 
-test('Q19: buildWhatsAppLinkHistorial arma un wa.me con el HTML regenerado (con origin) y el cliente/total en el mensaje', () => {
-  const url = buildWhatsAppLinkHistorial(cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5 }), 'https://cotizador.example');
-  assert.match(url, /^https:\/\/wa\.me\/\?text=/);
-  const msg = decodeURIComponent(url.split('text=')[1]);
-  assert.ok(msg.includes('Hotel Azul'));
-  assert.ok(msg.includes('12,345.50'));
-  assert.ok(msg.includes('https://cotizador.example/api/cotizacion/html/42'));
+// #307: el texto del Resumen de la cotizacion lo arma UN solo lugar
+// (resumen-cotizacion-logica.js) y el historial es una envoltura sobre el, para
+// que compartir desde aqui y desde la cotizacion recien generada diga lo mismo.
+test('Q19: buildWhatsAppLinkHistorial delega en el nucleo del Resumen de la cotizacion', async () => {
+  const { mensajeCotizacion } = await import('../resumen-cotizacion-logica.js');
+  const c = cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5 });
+  assert.equal(
+    buildWhatsAppLinkHistorial(c, 'https://cotizador.example'),
+    mensajeCotizacion(c, 'https://cotizador.example').waUrl
+  );
 });
 
 test('Q20: buildHistorialAccionesHtml usa el link wa.me de buildWhatsAppLinkHistorial y escapa datos de usuario', () => {
