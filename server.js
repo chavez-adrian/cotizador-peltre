@@ -35,6 +35,7 @@ import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
 import * as vendedoresStore from './lib/vendedores-store.js';
 import * as configStore from './lib/config-store.js';
+import * as modelosStore from './lib/modelos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
@@ -1647,6 +1648,30 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, re
     res.json({ saved: true });
   } catch (err) {
     res.status(500).json({ error: 'No se pudo guardar el registro: ' + err.message });
+  }
+});
+
+// Maestro de articulos, bloque de modelos (#310, ADR-0016). `sinFamilia` viaja
+// aparte de las filas para que el panel marque los pendientes sin re-derivar la
+// regla en el navegador.
+app.get('/api/admin/modelos', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    res.json({ modelos: await modelosStore.listar(), sinFamilia: await modelosStore.sinFamilia() });
+  } catch (err) {
+    res.status(500).json({ error: 'Maestro de modelos no disponible: ' + err.message });
+  }
+});
+
+app.put('/api/admin/modelos/:modelo', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const campos = req.body || {};
+    const noEditables = Object.keys(campos).filter(c => !modelosStore.CAMPOS_EDITABLES.includes(c));
+    if (noEditables.length) return res.status(400).json({ error: 'Columnas no editables: ' + noEditables.join(', ') });
+    const fila = await modelosStore.actualizar(req.params.modelo, campos);
+    if (!fila) return res.status(404).json({ error: 'Modelo no encontrado' });
+    res.json(fila);
+  } catch (err) {
+    res.status(500).json({ error: 'Maestro de modelos no disponible: ' + err.message });
   }
 });
 
@@ -3418,6 +3443,12 @@ app.get('/admin', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'admin.html'));
 });
 
+// Maestro de articulos (#310). El HTML va sin auth, igual que /admin: los datos
+// los pide a /api/admin/modelos con el token de administrador.
+app.get('/admin/catalogo', (req, res) => {
+  res.sendFile(join(PUBLIC_DIR, 'admin-catalogo.html'));
+});
+
 // Tabla de prospectos. El HTML no lleva datos: los pide a /api/prospectos/tabla
 // con el token del vendedor, asi que la visibilidad es la de siempre (cada quien
 // los suyos, el admin todos) y la liga se puede compartir sin exponer a nadie.
@@ -3528,6 +3559,10 @@ if (isMain) {
   // primer request ya vea lo guardado en Neon y no la semilla del archivo.
   configStore.cargar()
     .catch(err => console.warn('[config-store] warm de arranque fallo:', err.message))
+    // El maestro de modelos (#310) crea su tabla y la siembra en el mismo
+    // momento: asi la primera visita a /admin/catalogo ya ve las 36 filas.
+    .then(() => modelosStore.cargar())
+    .catch(err => console.warn('[modelos-store] warm de arranque fallo:', err.message))
     .then(() => cargarListasPrecios())
     .then(() => {
       app.listen(PORT, () => console.log(`Cotizador corriendo en http://localhost:${PORT}`));

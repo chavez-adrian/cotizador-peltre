@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maestro de art&iacute;culos - Cotizador Peltre Nacional</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .admin-container { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .admin-section { background: var(--white); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+  .admin-section h2 { font-size: 15px; color: var(--primary-dark); margin-bottom: 12px; font-weight: 700; }
+
+  /* Pestanas del maestro. Hoy solo esta Modelos; los otros cinco bloques del
+     Excel (colores, texturas, cajas, la regla de clave de precio, listas) son
+     #303 y entran como pestanas hermanas. */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .tab { padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; border: none;
+    background: none; color: var(--text-light); border-bottom: 2px solid transparent; font-family: inherit; }
+  .tab.active { color: var(--primary-dark); border-bottom-color: var(--primary); }
+
+  /* La tabla scrollea dentro de su tarjeta, nunca el documento. */
+  .modelos-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .modelos-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .modelos-tabla th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-light);
+    font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .modelos-tabla td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .modelos-tabla input { width: 100%; min-width: 130px; padding: 5px 8px; border: 1px solid var(--border);
+    border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
+  .modelos-tabla .col-modelo { font-weight: 700; color: var(--primary-dark); white-space: nowrap; }
+  .modelos-tabla .col-num { text-align: right; white-space: nowrap; color: var(--text-light); }
+
+  /* Un modelo sin familia es un pendiente VISIBLE (ADR-0016): nunca cae callado
+     en un cajon de "Otros". */
+  .modelo-pendiente td:first-child { border-left: 3px solid var(--warning); }
+  .modelo-pendiente { background: oklch(0.97 0.03 80); }
+  .chip-pendiente { display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; color: var(--warning); }
+  .fila-estado { font-size: 11px; color: var(--text-light); white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div id="admin-login" class="login-container">
+  <div class="login-card">
+    <h1>Maestro de art&iacute;culos</h1>
+    <p class="subtitle">Panel de administraci&oacute;n</p>
+    <div class="form-group">
+      <label>PIN de administrador</label>
+      <input type="password" id="admin-pin" maxlength="4" inputmode="numeric">
+    </div>
+    <div id="admin-error" class="alert alert-error" style="display:none"></div>
+    <button class="btn btn-primary btn-block" id="admin-login-btn">Entrar</button>
+  </div>
+</div>
+
+<div id="admin-app" style="display:none">
+  <header class="app-header">
+    <h1>Maestro de art&iacute;culos</h1>
+    <div>
+      <a href="/admin" class="btn btn-sm btn-secondary">Ir al panel</a>
+      <button class="btn btn-sm btn-secondary" id="admin-logout">Salir</button>
+    </div>
+  </header>
+
+  <div class="admin-container">
+    <div class="tabs">
+      <button class="tab active" id="tab-modelos">Modelos</button>
+    </div>
+
+    <div class="admin-section">
+      <h2>Modelos</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        La pieza sin color ni textura, con su nombre comercial y su familia de producto. La familia agrupa la cotizaci&oacute;n en el resumen que se comparte por WhatsApp; un modelo sin familia queda pendiente hasta que se le asigne una. Se escribe en min&uacute;sculas y en singular (taza, plato, salsera).
+      </p>
+      <div id="modelos-pendientes" style="display:none" class="alert alert-info" ></div>
+      <div id="modelos-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="modelos-error" style="display:none;color:var(--danger);font-size:13px"></div>
+      <div class="modelos-scroll">
+        <table class="modelos-tabla" id="modelos-tabla" style="display:none">
+          <thead>
+            <tr>
+              <th>Modelo</th>
+              <th>Nombre</th>
+              <th>Nombre comercial</th>
+              <th>Familia</th>
+              <th class="col-num">Peso (g)</th>
+              <th>Medidas (cm)</th>
+              <th>Caja</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="modelos-cuerpo"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let adminToken = null;
+let modelos = [];
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function adminApi(url, opts = {}) {
+  const headers = { Authorization: `Bearer ${adminToken}`, ...opts.headers };
+  if (opts.body) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  return fetch(url, { ...opts, headers });
+}
+
+async function adminLogin() {
+  const pin = document.getElementById('admin-pin').value;
+  const errEl = document.getElementById('admin-error');
+  errEl.style.display = 'none';
+
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vendedorId: 1, pin }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.user?.role !== 'admin') {
+    errEl.textContent = 'PIN incorrecto o no es administrador';
+    errEl.style.display = 'block';
+    return;
+  }
+  adminToken = data.token;
+  document.getElementById('admin-login').style.display = 'none';
+  document.getElementById('admin-app').style.display = 'block';
+  cargarModelos();
+}
+
+async function cargarModelos() {
+  const loading = document.getElementById('modelos-loading');
+  const errEl = document.getElementById('modelos-error');
+  loading.style.display = 'block';
+  errEl.style.display = 'none';
+  try {
+    const res = await adminApi('/api/admin/modelos');
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'No se pudo leer el maestro de modelos';
+      errEl.style.display = 'block';
+      return;
+    }
+    modelos = data.modelos;
+    renderModelos(data.sinFamilia);
+    document.getElementById('modelos-tabla').style.display = 'table';
+  } catch (e) {
+    errEl.textContent = 'Error de conexion';
+    errEl.style.display = 'block';
+  } finally {
+    loading.style.display = 'none';
+  }
+}
+
+function medidasDe(m) {
+  const partes = [m.largo, m.ancho, m.alto].filter(v => v != null);
+  return partes.length ? partes.join(' x ') : '--';
+}
+
+function cajaDe(m) {
+  if (!m.caja_wholesale) return '--';
+  return m.caja_wholesale_pzxcaja ? `${m.caja_wholesale} (${m.caja_wholesale_pzxcaja} pz)` : m.caja_wholesale;
+}
+
+function renderModelos(sinFamilia) {
+  const aviso = document.getElementById('modelos-pendientes');
+  if (sinFamilia.length) {
+    aviso.textContent = `${sinFamilia.length} modelo(s) sin familia asignada: ${sinFamilia.join(', ')}`;
+    aviso.style.display = 'block';
+  } else {
+    aviso.style.display = 'none';
+  }
+
+  document.getElementById('modelos-cuerpo').innerHTML = modelos.map((m, i) => `
+    <tr data-fila="${i}" class="${m.familia ? '' : 'modelo-pendiente'}">
+      <td class="col-modelo">${escapeHtml(m.modelo)}</td>
+      <td>${escapeHtml(m.nombre)}</td>
+      <td><input type="text" data-campo="nombre_comercial" value="${escapeHtml(m.nombre_comercial)}"></td>
+      <td>
+        <input type="text" data-campo="familia" value="${escapeHtml(m.familia)}" placeholder="sin familia">
+        ${m.familia ? '' : '<div class="chip-pendiente">Pendiente</div>'}
+      </td>
+      <td class="col-num">${m.peso ?? '--'}</td>
+      <td class="col-num">${escapeHtml(medidasDe(m))}</td>
+      <td>${escapeHtml(cajaDe(m))}</td>
+      <td>
+        <button class="btn btn-sm btn-primary" data-guardar="${i}">Guardar</button>
+        <div class="fila-estado" data-estado="${i}"></div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// Delegacion en el cuerpo de la tabla: los botones nacen y mueren con cada
+// render, y un onclick inline resolveria contra window (#112).
+async function guardarFila(i) {
+  const fila = document.querySelector(`tr[data-fila="${i}"]`);
+  const estado = fila.querySelector(`[data-estado="${i}"]`);
+  const boton = fila.querySelector(`[data-guardar="${i}"]`);
+  const campos = {};
+  for (const input of fila.querySelectorAll('input[data-campo]')) campos[input.dataset.campo] = input.value;
+
+  boton.disabled = true;
+  estado.textContent = 'Guardando...';
+  try {
+    const res = await adminApi(`/api/admin/modelos/${encodeURIComponent(modelos[i].modelo)}`, {
+      method: 'PUT', body: campos,
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      estado.textContent = data.error || 'No se pudo guardar';
+      return;
+    }
+    // El servidor devuelve la fila como quedo: se recarga todo para que el
+    // aviso de pendientes y el resaltado salgan de la misma fuente que la lista.
+    estado.textContent = 'Guardado';
+    await cargarModelos();
+  } catch (e) {
+    estado.textContent = 'Error de conexion';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+document.getElementById('admin-login-btn').addEventListener('click', adminLogin);
+document.getElementById('admin-pin').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
+document.getElementById('admin-logout').addEventListener('click', () => location.reload());
+document.getElementById('modelos-cuerpo').addEventListener('click', e => {
+  const boton = e.target.closest('[data-guardar]');
+  if (boton) guardarFila(Number(boton.dataset.guardar));
+});
+</script>
+</body>
+</html>
