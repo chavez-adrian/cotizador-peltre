@@ -2664,3 +2664,51 @@ test('#284 huellaContenidoQuote: sin vigencia explicita el plazo derivado tampoc
     conRelojFijado('2026-09-01T18:00:00Z', sinVigencia),
   );
 });
+
+// === Domicilio de entrega en la huella (issue #328) ===
+// Sintoma real (cotizacion 1263, cliente 517): el vendedor corrigio el domicilio de
+// entrega en el paso Envio, regenero, y el cotizador respondio "El contenido no cambio:
+// el quote de Operam ya coincide" mientras el quote se quedaba con el domicilio viejo
+// (delivery_address decia "CDMX"). deliver_to y delivery_address son columnas propias
+// del quote: el POST las escribe y el pedido convertido las hereda.
+
+test('#328 huellaContenidoQuote: cambiar la CALLE de entrega cuenta como cambio', () => {
+  const antes = cotizacionBase();
+  const despues = cotizacionBase({ cliente: { ...antes.cliente, calle: 'Bosques de Duraznos 187' } });
+  assert.notEqual(huellaContenidoQuote(antes), huellaContenidoQuote(despues));
+  assert.equal(contenidoQuoteCambio(despues, huellaContenidoQuote(antes)), true);
+});
+
+test('#328 huellaContenidoQuote: colonia, municipio y estado de entrega tambien cuentan', () => {
+  const base = cotizacionBase();
+  const huellaBase = huellaContenidoQuote(base);
+  for (const campo of ['colonia', 'municipio', 'estado']) {
+    const cambiada = cotizacionBase({ cliente: { ...base.cliente, [campo]: 'OTRO VALOR' } });
+    assert.equal(contenidoQuoteCambio(cambiada, huellaBase), true, `${campo} deberia contar como cambio`);
+  }
+});
+
+// nombreEntrega es el "Entregar a" del quote (deliver_to): quien recibe. Cambiarlo es un
+// cambio de contenido tanto como cambiar una nota.
+test('#328 huellaContenidoQuote: cambiar quien recibe (nombreEntrega) cuenta como cambio', () => {
+  const antes = cotizacionBase();
+  const despues = cotizacionBase({ cliente: { ...antes.cliente, nombreEntrega: 'Almacen Central' } });
+  assert.notEqual(huellaContenidoQuote(antes), huellaContenidoQuote(despues));
+});
+
+// El CP de entrega ya contaba de rebote (decide el SKU de flete local/foraneo), pero solo
+// cuando el carrito trae ENVIO. Ahora cuenta siempre, porque viaja en delivery_address.
+test('#328 huellaContenidoQuote: el CP de entrega cuenta aunque la cotizacion no lleve envio', () => {
+  const antes = cotizacionBase();
+  const despues = cotizacionBase({ cliente: { ...antes.cliente, cpEntrega: '11700' } });
+  assert.equal(contenidoQuoteCambio(despues, huellaContenidoQuote(antes)), true);
+});
+
+// Guarda contra el falso positivo: si el domicilio no se toco, regenerar no debe
+// disparar una reescritura completa (borrar + re-agregar todas las partidas).
+test('#328 huellaContenidoQuote: el mismo domicilio NO cuenta como cambio', () => {
+  const domicilio = { calle: 'Bosques de Duraznos 187', colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico' };
+  const a = cotizacionBase({ cliente: { ...cotizacionBase().cliente, ...domicilio } });
+  const b = cotizacionBase({ cliente: { ...cotizacionBase().cliente, ...domicilio } });
+  assert.equal(contenidoQuoteCambio(b, huellaContenidoQuote(a)), false);
+});

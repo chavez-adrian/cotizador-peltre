@@ -2996,12 +2996,15 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
 // Doble de la web legacy de FrontAccounting. El PARSEO real esta cubierto contra el
 // HTML de produccion en test/operam-web.test.js (fixtures capturados de los quotes de
 // prueba 1199/1200); lo que se prueba aqui es la ORQUESTACION del endpoint, asi que
-// basta un formulario con la misma FORMA (cart_id, delivery_date, Comments, cust_ref y
-// un boton Delete{n} por partida) sobre un carrito en memoria que reacciona igual que
-// FA: Delete0 y AddItem mutan la "sesion", y solo ProcessOrder escribe el documento.
+// basta un formulario con la misma FORMA (cart_id, delivery_date, Comments, cust_ref,
+// deliver_to, delivery_address y un boton Delete{n} por partida) sobre un carrito en
+// memoria que reacciona igual que FA: Delete0 y AddItem mutan la "sesion", y solo
+// ProcessOrder escribe el documento.
+// delivery_address va como TEXTAREA con comillas SIMPLES a proposito (#328): asi lo
+// declara el HTML real de FA, y esa es justo la forma que un parser descuidado no ve.
 function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = false } = {}) {
   const sesion = { carrito: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })) };
-  const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01' };
+  const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01', deliverTo: 'VIEJO', deliveryAddress: 'DOMICILIO VIEJO' };
   const bitacora = [];
   const formHtml = () => `<form method='post' action='/sales/sales_order_entry.php'>
 <input type="hidden" name="cart_id" value='CART1'>
@@ -3014,6 +3017,8 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
 <input type="text" name="Disc" value="0.0">
 <input type="text" name="delivery_date" value="${doc.vigencia}">
 <input type="text" name="cust_ref" value="${doc.custRef}">
+<input type="text" name="deliver_to" value="${doc.deliverTo}">
+<textarea name='delivery_address'>${doc.deliveryAddress}</textarea>
 <textarea name="Comments">${doc.comments}</textarea>
 <button type='submit' name='ProcessOrder' value='Confirmar Cambios'></button>
 <button type='submit' name='CancelOrder' value='Cancelar Cotización'></button>
@@ -3048,6 +3053,8 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
         doc.comments = p.get('Comments');
         doc.custRef = p.get('cust_ref');
         doc.vigencia = p.get('delivery_date');
+        doc.deliverTo = p.get('deliver_to');
+        doc.deliveryAddress = p.get('delivery_address');
       }
       return { headers: {}, text: async () => formHtml() };
     },
@@ -3396,6 +3403,48 @@ test('#114-7: actualizar el quote con exito reescribe la huella con lo que quedo
     const post = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
       .send({ ...guardada.data, cotizacionId: String(id) });
     assert.strictEqual(post.body.requiereActualizacionOperam, false);
+  } finally {
+    restore();
+  }
+});
+
+// #328: el caso REPORTADO de punta a punta. El vendedor corrige el domicilio de entrega
+// de una cotizacion ya subida y regenera. Antes, la huella no veia el domicilio: el
+// endpoint respondia "el contenido no cambio" y el quote se quedaba con el domicilio
+// viejo (cotizacion 1263: delivery_address decia "CDMX"). Ahora la huella cambia, la
+// reescritura corre, y el domicilio nuevo queda EN EL DOCUMENTO de Operam.
+test('#328: corregir el domicilio de entrega llega al quote de Operam', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const clienteViejo = {
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
+    telefono: '+52 5551234567',
+    cpEntrega: '56530', calle: 'Calle Vieja 1', colonia: 'Centro', municipio: 'Chalco', estado: 'Mexico',
+  };
+  const id = cotizacionActualizable({ cliente: clienteViejo });
+  const { restore, doc } = mockOperamWebLegacy();
+  try {
+    // 1. Se sube tal cual: la huella queda con el domicilio viejo.
+    await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    const subida = readCots().find(c => c.id === id);
+    assert.strictEqual(doc.deliveryAddress.includes('Calle Vieja 1'), true, 'precondicion: el quote quedo con el domicilio viejo');
+
+    // 2. El vendedor corrige el domicilio en el paso Envio y regenera.
+    const corregido = {
+      ...subida.data,
+      cliente: { ...clienteViejo, calle: 'Bosques de Duraznos 187', colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico', cpEntrega: '11700' },
+      cotizacionId: String(id),
+    };
+    const post = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(corregido);
+    assert.strictEqual(post.body.requiereActualizacionOperam, true,
+      'cambiar el domicilio de entrega TIENE que pedir la reescritura');
+
+    // 3. Y la reescritura deja el domicilio nuevo en el documento.
+    const act = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(act.body.ok, true, JSON.stringify(act.body));
+    assert.strictEqual(doc.deliveryAddress.includes('Bosques de Duraznos 187'), true,
+      `el quote debe quedar con el domicilio nuevo, quedo con "${doc.deliveryAddress}"`);
+    assert.strictEqual(doc.deliveryAddress.includes('11700'), true, 'con su CP nuevo');
   } finally {
     restore();
   }

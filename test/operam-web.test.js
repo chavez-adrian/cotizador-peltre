@@ -690,3 +690,54 @@ test('parsearFormularioCliente: un form posterior (modal, pie de pagina) no entr
   assert.equal(campos._token, 'TOK', 'lo que vive tras el form anidado si entra');
   assert.equal('respaldo' in campos, false, 'lo que vive tras el cierre del form NO entra');
 });
+
+// --- Domicilio de entrega en el ProcessOrder (#328) ---------------------------
+// Hasta #328 el domicilio de entrega viajaba SOLO en el POST de creacion y nunca se
+// reescribia: cambiarlo en el paso Envio no llegaba al quote y el vendedor recibia un
+// "el quote de Operam ya coincide" que era falso (cotizacion 1263, cliente 517).
+
+test('serializarBodyQuote: sustituye deliver_to y delivery_address cuando se los pasan', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyQuote(campos, {
+    deliveryDate: '2026-08-26',
+    deliverTo: 'Royal Table',
+    deliveryAddress: 'Bosques de Duraznos, Bosque de las Lomas, 11700, Miguel Hidalgo, Ciudad de Mexico',
+  });
+  assert.equal(body.get('deliver_to'), 'Royal Table');
+  assert.equal(body.get('delivery_address'), 'Bosques de Duraznos, Bosque de las Lomas, 11700, Miguel Hidalgo, Ciudad de Mexico');
+  // Y el resto del formulario sigue intacto: el post-fix repostea el form completo.
+  assert.equal(body.get('delivery_date'), '2026-08-26');
+  assert.equal(body.get('cart_id'), campos.cart_id);
+});
+
+// Sin pasarlos, el body conserva lo que traia el formulario: el post-fix de vigencia
+// (#106) sigue siendo "solo cambia delivery_date" y no arrastra el domicilio.
+test('serializarBodyQuote: sin deliverTo/deliveryAddress conserva los del formulario', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyQuote(campos, { deliveryDate: '2026-08-26' });
+  assert.equal(body.get('deliver_to'), campos.deliver_to);
+  assert.equal(body.get('delivery_address'), campos.delivery_address);
+});
+
+// delivery_address es un TEXTAREA declarado con comillas simples en el HTML de FA. Si
+// extraerCampos dejara de recogerlo, la guarda tiene que abortar en vez de postear el
+// formulario sin ese campo (FA lo interpretaria como domicilio vacio).
+test('serializarBodyQuote: lanza si el formulario no trae los campos de entrega', () => {
+  const base = { delivery_date: '2026-07-26', deliver_to: 'X' };
+  assert.throws(
+    () => serializarBodyQuote(base, { deliveryDate: '2026-08-26', deliveryAddress: 'Calle 1' }),
+    /delivery_address/,
+  );
+  assert.throws(
+    () => serializarBodyQuote({ delivery_date: '2026-07-26' }, { deliveryDate: '2026-08-26', deliverTo: 'X' }),
+    /deliver_to/,
+  );
+});
+
+// El parser tiene que ver los dos campos en el HTML REAL de la pagina de edicion: es la
+// premisa de todo el fix (si delivery_address no se puede leer, no se puede reescribir).
+test('parsearFormularioQuote: lee deliver_to y delivery_address del formulario real', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  assert.equal('deliver_to' in campos, true);
+  assert.equal('delivery_address' in campos, true);
+});
