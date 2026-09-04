@@ -290,16 +290,39 @@ test('Q18d: buildHistorialAccionesHtml habilita las tres acciones, incluido What
   assert.ok(!html.includes('disabled'));
 });
 
-// #307: el texto del Resumen de la cotizacion lo arma UN solo lugar
+// #307/#312: el texto del Resumen de la cotizacion lo arma UN solo lugar
 // (resumen-cotizacion-logica.js) y el historial es una envoltura sobre el, para
 // que compartir desde aqui y desde la cotizacion recien generada diga lo mismo.
-test('Q19: buildWhatsAppLinkHistorial delega en el nucleo del Resumen de la cotizacion', async () => {
+// Estas pruebas afirman que DELEGA -- el texto en si lo afirma la suite del
+// nucleo, con las dos cotizaciones reales.
+const FAMILIAS = { VA05: 'taza', PL27: 'plato' };
+
+function cotConItems(extra = {}) {
+  return cot(3, {
+    id: 42, folioOperam: 928, cliente: 'Hotel Azul', total: 12345.5, vigencia: '2026-10-03',
+    items: [
+      { codigo: 'VA05B1001112', descripcion: 'Taza 5', cantidad: 144, precio: 27.59, descuento: 0 },
+      { codigo: 'PL27B1A32112', descripcion: 'Plato 27', cantidad: 4, precio: 331.9, descuento: 0 },
+    ],
+    ...extra,
+  });
+}
+
+test('Q19: buildWhatsAppLinkHistorial delega en el nucleo del Resumen de la cotizacion, indice incluido', async () => {
   const { mensajeCotizacion } = await import('../resumen-cotizacion-logica.js');
-  const c = cot(3, { id: 42, cliente: 'Hotel Azul', total: 12345.5, folioOperam: '1200' });
+  const c = cotConItems();
   assert.equal(
-    buildWhatsAppLinkHistorial(c, 'https://cotizador.example'),
-    mensajeCotizacion(c, 'https://cotizador.example').waUrl
+    buildWhatsAppLinkHistorial(c, 'https://cotizador.example', FAMILIAS),
+    mensajeCotizacion(c, 'https://cotizador.example', FAMILIAS).waUrl
   );
+});
+
+test('Q19b: buildHistorialAccionesHtml pasa el indice de familias al nucleo', async () => {
+  const { mensajeCotizacion } = await import('../resumen-cotizacion-logica.js');
+  const c = cotConItems({ hasData: true });
+  const esperado = mensajeCotizacion(c, 'https://cotizador.example', FAMILIAS).waUrl;
+  const html = buildHistorialAccionesHtml(c, 'https://cotizador.example', FAMILIAS);
+  assert.ok(html.includes(`href="${esperado.replace(/&/g, '&amp;')}"`));
 });
 
 test('Q20: buildHistorialAccionesHtml usa el link wa.me de buildWhatsAppLinkHistorial y escapa datos de usuario', () => {

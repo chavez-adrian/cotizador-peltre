@@ -2493,6 +2493,16 @@ function cartEntriesDesdeEstado() {
   return cartEntries;
 }
 
+// Vigencia capturada en el Resumen, resuelta a fecha plana. Recibe la fecha de
+// emision en vez de pedirla: el #284 la deriva de ella A PROPOSITO para que no
+// puedan diferir, y ese amarre se conserva. Vive aparte desde #312, donde el
+// Resumen de la cotizacion la necesita para anunciar la MISMA vigencia que se
+// guarda, sin que exista una tercera copia de la aritmetica.
+function vigenciaDesdeFormulario(fechaEmision) {
+  const dias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
+  return sumarDiasFecha(fechaEmision, dias);
+}
+
 function envioCapturadoEnFormulario() {
   const shippingOpt = document.getElementById('shipping-option').value;
   const shippingDesc = document.getElementById('shipping-desc').value;
@@ -2568,7 +2578,6 @@ async function generatePDF() {
     const envioForm = envioCapturadoEnFormulario();
     const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
 
-    const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
     // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
     // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
     // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
@@ -2580,7 +2589,7 @@ async function generatePDF() {
 
     const body = {
       fecha: fechaEmision,
-      vigencia: sumarDiasFecha(fechaEmision, vigenciaDias),
+      vigencia: vigenciaDesdeFormulario(fechaEmision),
       tier: tier.id,
       cliente: leerClienteFormulario(domio.leyenda),
       condicionesPago: document.getElementById('cl-condiciones').value,
@@ -2678,7 +2687,6 @@ async function generateHTML() {
     const envioForm = envioCapturadoEnFormulario();
     const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
 
-    const vigenciaDias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
     // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
     // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
     // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
@@ -2690,7 +2698,7 @@ async function generateHTML() {
 
     const body = {
       fecha: fechaEmision,
-      vigencia: sumarDiasFecha(fechaEmision, vigenciaDias),
+      vigencia: vigenciaDesdeFormulario(fechaEmision),
       tier: tier.id,
       incluirFotos: document.getElementById('incluir-fotos')?.checked || false,
       cliente: leerClienteFormulario(domio.leyenda),
@@ -2737,12 +2745,19 @@ async function generateHTML() {
 // imprime el documento -- no del texto ya formateado del resumen. Sin registro
 // guardado no hay documento que citar y no se abre nada.
 function shareWhatsApp() {
-  const cliente = document.getElementById('cl-razon-social').value ||
-                  document.getElementById('cl-nombre-corto').value;
-  const { total } = buildItemsYTotales(cartEntriesDesdeEstado(), envioCapturadoEnFormulario());
+  const { items, total } = buildItemsYTotales(cartEntriesDesdeEstado(), envioCapturadoEnFormulario());
   const mensaje = mensajeCotizacion(
-    { id: state.lastCotizacionId, cliente, total, folioOperam: state.folioOperam },
-    window.location.origin
+    {
+      id: state.lastCotizacionId,
+      folioOperam: state.folioOperam,
+      cliente: document.getElementById('cl-razon-social').value,
+      nombreCorto: document.getElementById('cl-nombre-corto').value,
+      vigencia: vigenciaDesdeFormulario(fechaEmisionHoy()),
+      total,
+      items,
+    },
+    window.location.origin,
+    state.precios?.familias
   );
   if (!mensaje) return;
   window.open(mensaje.waUrl, '_blank');
@@ -4321,7 +4336,7 @@ function renderHistorial() {
     const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
     // Ver PDF / Ver HTML / WhatsApp regeneran desde el registro guardado
     // (issue #103), no desde disco ni desde el estado del formulario.
-    const accionesDocumento = buildHistorialAccionesHtml(c, window.location.origin);
+    const accionesDocumento = buildHistorialAccionesHtml(c, window.location.origin, state.precios?.familias);
     // "Cargar" hacia dos cosas a la vez (#104): restaurar el carrito y, calladamente,
     // empezar una cotizacion NUEVA. Ahora son dos acciones explicitas.
     const btnCargar = buildAccionesCargaHtml(c);

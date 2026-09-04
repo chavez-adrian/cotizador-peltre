@@ -1,0 +1,304 @@
+{
+  "id": 4821,
+  "folioOperam": 928,
+  "cliente": "Hotel Ejemplo",
+  "nombreCorto": null,
+  "vigencia": "2026-10-03",
+  "total": 266595.3064,
+  "items": [
+    {
+      "codigo": "VA05B1001112",
+      "descripcion": "Taza 5 blanco filete azul",
+      "cantidad": 144,
+      "precio": 27.59,
+      "descuento": 0
+    },
+    {
+      "codigo": "SA08B11112",
+      "descripcion": "Salsera blanca filete azul",
+      "cantidad": 144,
+      "precio": 31.03,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA08B1001112",
+      "descripcion": "Taza 8 blanco filete azul",
+      "cantidad": 126,
+      "precio": 34.48,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA09B1001112",
+      "descripcion": "Pocillo 9 blanco filete azul",
+      "cantidad": 12,
+      "precio": 43.1,
+      "descuento": 0
+    },
+    {
+      "codigo": "TA14B11112",
+      "descripcion": "Tazón 14 blanco filete azul",
+      "cantidad": 120,
+      "precio": 43.1,
+      "descuento": 0
+    },
+    {
+      "codigo": "PH20B1001112",
+      "descripcion": "Plato hondo blanco filete azul",
+      "cantidad": 96,
+      "precio": 68.97,
+      "descuento": 0
+    },
+    {
+      "codigo": "PV08B1001112",
+      "descripcion": "Portavasos 8 blanco filete azul",
+      "cantidad": 72,
+      "precio": 24.14,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL14B1001112",
+      "descripcion": "Plato 14 blanco filete azul",
+      "cantidad": 72,
+      "precio": 34.48,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL20B11112",
+      "descripcion": "Plato 20 blanco filete azul",
+      "cantidad": 80,
+      "precio": 44.83,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL24B11112",
+      "descripcion": "Plato 24 blanco filete azul",
+      "cantidad": 90,
+      "precio": 68.97,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL27B1001112",
+      "descripcion": "Plato 27 blanco filete azul",
+      "cantidad": 72,
+      "precio": 91.38,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA05A3B11212",
+      "descripcion": "Taza 5 cobalto interior blanco filete azul",
+      "cantidad": 144,
+      "precio": 39.66,
+      "descuento": 0
+    },
+    {
+      "codigo": "SA08A3B11212",
+      "descripcion": "Salsera 8 azul cobalto interior blanco filete azul",
+      "cantidad": 144,
+      "precio": 43.1,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA08A3B11212",
+      "descripcion": "Taza 8 cobalto interior blanco filete azul",
+      "cantidad": 126,
+      "precio": 46.55,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA09A3B11212",
+      "descripcion": "Pocillo 9 cobalto interior blanco filete azul",
+      "cantidad": 12,
+      "precio": 67.24,
+      "descuento": 0
+    },
+    {
+      "codigo": "TA14A31212",
+      "descripcion": "Tazón 14 cobalto interior blanco filete azul",
+      "cantidad": 120,
+      "precio": 65.52,
+      "descuento": 0
+    },
+    {
+      "codigo": "PH20A3B11212",
+      "descripcion": "Plato 20 hondo cobalto interior blanco filete azul",
+      "cantidad": 96,
+      "precio": 101.72,
+      "descuento": 0
+    },
+    {
+      "codigo": "PV08A3001112",
+      "descripcion": "Portavasos 8 cobalto filete azul",
+      "cantidad": 72,
+      "precio": 24.14,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL14A3001112",
+      "descripcion": "Plato 14 cobalto filete azul",
+      "cantidad": 72,
+      "precio": 34.48,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL20A31112",
+      "descripcion": "Plato 20 cobalto filete azul",
+      "cantidad": 80,
+      "precio": 44.83,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL24A31112",
+      "descripcion": "Plato 24 cobalto filete azul",
+      "cantidad": 90,
+      "precio": 68.97,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL27A3001112",
+      "descripcion": "Plato 27 cobalto filete azul",
+      "cantidad": 72,
+      "precio": 91.38,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA05B1A32112",
+      "descripcion": "Taza 5 blanco con manchas cobalto filete azul",
+      "cantidad": 144,
+      "precio": 39.66,
+      "descuento": 0
+    },
+    {
+      "codigo": "SA08B1A32112",
+      "descripcion": "Salsera blanca con manchas cobalto filete azul",
+      "cantidad": 144,
+      "precio": 43.1,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA08B1A32112",
+      "descripcion": "Taza 8 blanco con manchas cobalto filete azul",
+      "cantidad": 126,
+      "precio": 46.55,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA09B1A32112",
+      "descripcion": "Pocillo 9 blanco con manchas cobalto filete azul",
+      "cantidad": 12,
+      "precio": 67.24,
+      "descuento": 0
+    },
+    {
+      "codigo": "TA14B1A32112",
+      "descripcion": "Tazón 14 blanco con manchas cobalto filete azul",
+      "cantidad": 120,
+      "precio": 65.52,
+      "descuento": 0
+    },
+    {
+      "codigo": "PH20B1A32112",
+      "descripcion": "Plato 20 hondo blanco con manchas azul cobalto filete azul",
+      "cantidad": 96,
+      "precio": 101.72,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL14B1A32112",
+      "descripcion": "Plato 14 blanco con manchas cobalto filete azul",
+      "cantidad": 72,
+      "precio": 46.55,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL20B1A32112",
+      "descripcion": "Plato 20 blanco con manchas cobalto filete azul",
+      "cantidad": 80,
+      "precio": 67.24,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL24B1A32112",
+      "descripcion": "Plato 24 blanco con manchas cobalto filete azul",
+      "cantidad": 90,
+      "precio": 101.72,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL27B1A32112",
+      "descripcion": "Plato 27 blanco con manchas cobalto filete azul",
+      "cantidad": 72,
+      "precio": 132.76,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA05B17021",
+      "descripcion": "Taza 5 blanco salpicado azul s/filetes",
+      "cantidad": 144,
+      "precio": 39.66,
+      "descuento": 0
+    },
+    {
+      "codigo": "SA08B1A37020",
+      "descripcion": "Salsera blanca salpicada cobalto s/filetes",
+      "cantidad": 144,
+      "precio": 43.1,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA08B17021",
+      "descripcion": "Taza 8 blanco salpicado azul s/filetes",
+      "cantidad": 126,
+      "precio": 46.55,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA09B17021",
+      "descripcion": "Pocillo 9 blanco salpicado azul s/filetes",
+      "cantidad": 12,
+      "precio": 67.24,
+      "descuento": 0
+    },
+    {
+      "codigo": "TA14B17021",
+      "descripcion": "Tazón 14 blanco salpicado azul s/filetes",
+      "cantidad": 120,
+      "precio": 65.52,
+      "descuento": 0
+    },
+    {
+      "codigo": "PH20B1A37120",
+      "descripcion": "Plato 20 hondo blanco salpicado azul cobalto s/filetes",
+      "cantidad": 96,
+      "precio": 101.72,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL14B1A37120",
+      "descripcion": "Plato 14 blanco salpicado cobalto s/filetes",
+      "cantidad": 72,
+      "precio": 46.55,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL20B17021",
+      "descripcion": "Plato 20 blanco salpicado azul s/filetes",
+      "cantidad": 80,
+      "precio": 67.24,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL24B17021",
+      "descripcion": "Plato 24 blanco salpicado azul s/filetes",
+      "cantidad": 90,
+      "precio": 101.72,
+      "descuento": 0
+    },
+    {
+      "codigo": "PL27B1A37120",
+      "descripcion": "Plato 27 blanco salpicado cobalto s/filetes",
+      "cantidad": 72,
+      "precio": 132.76,
+      "descuento": 0
+    }
+  ]
+}

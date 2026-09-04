@@ -232,11 +232,17 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
       tiposActivos: precios.tiposProducto || [],
       texturasActivas: Object.keys(precios.texturas || {}).map(Number).filter(t => ![0, 8, 9].includes(t)),
     };
+    // El indice modelo -> familia del maestro de articulos (#312, ADR-0016)
+    // viaja con el catalogo: el Resumen de la cotizacion se arma en el navegador
+    // y agrupa por Familia de producto, asi que sin el indice no podria. Va
+    // indexado por MODELO (los 4 primeros caracteres del SKU), que es la llave
+    // del maestro.
+    const familias = Object.fromEntries((await modelosStore.listar()).map(m => [m.modelo, m.familia]));
     // El tope y el permiso de fijar lista viajan con los precios porque son
     // parte del poder de precio del vendedor y la pantalla los refresca en
     // cada arranque de sesion (showApp).
     res.json({
-      ...precios, config,
+      ...precios, config, familias,
       topeDescuento: await topeDescuentoDeUsuario(req.user),
       puedeFijarLista: await puedeFijarListaDeUsuario(req.user),
       puedePrecioCalca: await puedePrecioCalcaDeUsuario(req.user),
@@ -547,6 +553,14 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // buscador del Historial (filtrarCotizaciones) mas alla de razon social.
     nombreCorto: data?.cliente?.nombreCorto ?? null,
     contactoEntrega: data?.cliente?.contactoEntrega ?? null,
+    // Vigencia y partidas del Resumen de la cotizacion (#312): el texto lo arma
+    // el navegador con el mismo nucleo que la cotizacion recien generada, y
+    // desde el Historial estos son los dos datos que le faltaban. Los items van
+    // PROYECTADOS a lo que el resumen agrupa -- el detalle completo (diseno,
+    // descripcionEditada, precioManual) no tiene por que viajar en cada fila.
+    vigencia: data?.vigencia ?? null,
+    items: (data?.items ?? []).map(({ codigo, descripcion, cantidad, precio, descuento }) =>
+      ({ codigo, descripcion, cantidad, precio, descuento })),
     hasData: !!data,
   })), indiceOrigen));
 });

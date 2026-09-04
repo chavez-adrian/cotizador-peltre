@@ -450,6 +450,47 @@ test('#147-2: GET /api/cotizaciones sin data expone nombreCorto y contactoEntreg
   assert.strictEqual(entry.contactoEntrega, null);
 });
 
+// #312: el Resumen de la cotizacion se arma en el navegador tambien desde el
+// Historial, asi que el listado tiene que traer la vigencia y las partidas. Los
+// items van PROYECTADOS a lo que el resumen agrupa: el detalle completo (diseno,
+// descripcionEditada, precioManual) no tiene por que viajar en cada fila.
+test('#312-1: GET /api/cotizaciones expone vigencia y los items proyectados que agrupa el resumen', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Hotel Ejemplo',
+    totalPiezas: 144, total: 4608, tier: 'Mayoreo',
+    data: {
+      cliente: { razonSocial: 'Hotel Ejemplo' }, vigencia: '2026-10-03',
+      items: [{
+        codigo: 'VA05B1001112', descripcion: 'Taza 5 blanco filete azul', cantidad: 144,
+        unidad: 'pza', precio: 27.59, descuento: 0, descripcionEditada: true, diseno: 2,
+      }],
+    },
+  }]);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  const entry = res.body.find(c => c.id === id);
+  assert.ok(entry);
+  assert.strictEqual(entry.vigencia, '2026-10-03');
+  assert.deepStrictEqual(entry.items, [
+    { codigo: 'VA05B1001112', descripcion: 'Taza 5 blanco filete azul', cantidad: 144, precio: 27.59, descuento: 0 },
+  ]);
+});
+
+test('#312-2: GET /api/cotizaciones sin data expone vigencia null e items vacios (no rompe)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Historica',
+    totalPiezas: 1, total: 50, tier: 'Menudeo',
+  }]);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  const entry = res.body.find(c => c.id === id);
+  assert.ok(entry);
+  assert.strictEqual(entry.vigencia, null);
+  assert.deepStrictEqual(entry.items, []);
+});
+
 test('B4: POST /api/cotizacion/envio usa paisDestino en destination.country', async () => {
   let capturedPayload = null;
   const originalFetch = globalThis.fetch;

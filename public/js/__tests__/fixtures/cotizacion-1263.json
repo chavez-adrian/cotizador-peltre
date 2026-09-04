@@ -1,0 +1,66 @@
+{
+  "id": 5104,
+  "folioOperam": 1263,
+  "cliente": "Hotel Ejemplo",
+  "nombreCorto": null,
+  "vigencia": "2026-10-03",
+  "total": 6439.2064,
+  "items": [
+    {
+      "codigo": "PL27B1A32112",
+      "descripcion": "Plato 27 blanco con manchas azules filete azul",
+      "cantidad": 4,
+      "precio": 331.9,
+      "descuento": 0
+    },
+    {
+      "codigo": "PH20B1A32112",
+      "descripcion": "Plato 20 hondo blanco con manchas azules filete azul",
+      "cantidad": 4,
+      "precio": 254.31,
+      "descuento": 0
+    },
+    {
+      "codigo": "PH20A3001112",
+      "descripcion": "Plato 20 hondo azul filete azul",
+      "cantidad": 4,
+      "precio": 172.41,
+      "descuento": 0
+    },
+    {
+      "codigo": "TA14B1A32112",
+      "descripcion": "Tazón 14 blanco con manchas azules filete azul",
+      "cantidad": 4,
+      "precio": 163.79,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA08B1A32112",
+      "descripcion": "Taza 8 blanca con manchas azules filete azul",
+      "cantidad": 4,
+      "precio": 116.38,
+      "descuento": 0
+    },
+    {
+      "codigo": "VA08A31112",
+      "descripcion": "Taza 8 azul filete azul",
+      "cantidad": 4,
+      "precio": 86.21,
+      "descuento": 0
+    },
+    {
+      "codigo": "SA08A3B11212",
+      "descripcion": "Salsera 8 azul interior blanco filete azul",
+      "cantidad": 4,
+      "precio": 107.76,
+      "descuento": 0
+    },
+    {
+      "codigo": "ENVIO",
+      "descripcion": "Envio mismo día",
+      "cantidad": 1,
+      "precio": 620,
+      "descuento": 0
+    }
+  ]
+}

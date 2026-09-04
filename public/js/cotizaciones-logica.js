@@ -104,9 +104,10 @@ function buildCotizacionCardHtml(c, col, hoy) {
 // lo arma el nucleo del Resumen de la cotizacion (#307), el mismo que usa la
 // cotizacion recien generada en app.js: aqui solo se pasa el registro guardado.
 // origin lo pasa el caller (window.location.origin no existe en este modulo sin
-// efectos de navegador).
-export function buildWhatsAppLinkHistorial(c, origin = '') {
-  return mensajeCotizacion(c, origin)?.waUrl;
+// efectos de navegador), igual que el indice modelo -> familia con el que el
+// nucleo agrupa (#312): viaja en el catalogo (state.precios.familias).
+export function buildWhatsAppLinkHistorial(c, origin = '', indiceFamilias = {}) {
+  return mensajeCotizacion(c, origin, indiceFamilias)?.waUrl;
 }
 
 // Acciones de una fila del historial (issue #103): Ver PDF / Ver HTML regeneran
@@ -118,7 +119,7 @@ function botonDeshabilitado(label, motivo) {
   return `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(motivo)}">${label}</button>`;
 }
 
-export function buildHistorialAccionesHtml(c, origin = '') {
+export function buildHistorialAccionesHtml(c, origin = '', indiceFamilias = {}) {
   const deshabilitadas = motivo => ['Ver PDF', 'Ver HTML', 'WhatsApp']
     .map(label => botonDeshabilitado(label, motivo))
     .join(' ');
@@ -136,7 +137,7 @@ export function buildHistorialAccionesHtml(c, origin = '') {
   const motivoSinFolio = motivoSinResumen(c);
   const whatsappHtml = motivoSinFolio
     ? botonDeshabilitado('WhatsApp', motivoSinFolio)
-    : `<a href="${escapeHtml(buildWhatsAppLinkHistorial(c, origin))}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
+    : `<a href="${escapeHtml(buildWhatsAppLinkHistorial(c, origin, indiceFamilias))}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`;
   return `<a href="${escapeHtml(pdfUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver PDF</a>` +
     ` <a href="${escapeHtml(htmlUrl)}" target="_blank" class="btn btn-secondary btn-sm">Ver HTML</a>` +
     ` ${whatsappHtml}`;
