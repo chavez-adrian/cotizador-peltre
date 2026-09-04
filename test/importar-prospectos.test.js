@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import XLSX from 'xlsx';
-import { importarProspectosFeria, normalizarCelularFeria, fechaDeSerialExcel, matchVendedorExpositor } from '../lib/importar-prospectos.js';
+import { importarProspectosExpo, normalizarCelularExpo, fechaDeSerialExcel, matchVendedorExpositor } from '../lib/importar-prospectos.js';
 
 // Fixture con las columnas EXACTAS del export real de Abastur (hoja "Contacts",
 // segunda hoja "incl. duplicates" que se ignora). Datos anonimizados: el archivo
@@ -53,19 +53,19 @@ const VENDEDORES = [
 const OPTS = { vendedores: VENDEDORES, vendedorDefault: 'Adrian Chavez' };
 
 test('el archivo sin hoja "Contacts" truena con error claro', () => {
-  assert.throws(() => importarProspectosFeria(workbook([fila()], 'Hoja1'), OPTS), /Contacts/);
+  assert.throws(() => importarProspectosExpo(workbook([fila()], 'Hoja1'), OPTS), /Contacts/);
 });
 
 test('la segunda hoja "incl. duplicates" se ignora', () => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, fila()]), 'Contacts');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, fila(), fila()]), 'incl. duplicates');
-  const { listos } = importarProspectosFeria(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), OPTS);
+  const { listos } = importarProspectosExpo(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), OPTS);
   assert.equal(listos.length, 1);
 });
 
 test('una fila del export se convierte en un prospecto de Feria/Expo con el nombre titulado', () => {
-  const { listos, sinCelular, descartados } = importarProspectosFeria(workbook([fila()]), OPTS);
+  const { listos, sinCelular, descartados } = importarProspectosExpo(workbook([fila()]), OPTS);
   assert.deepEqual(sinCelular, []);
   assert.deepEqual(descartados, []);
   assert.equal(listos.length, 1);
@@ -83,12 +83,21 @@ test('una fila del export se convierte en un prospecto de Feria/Expo con el nomb
 });
 
 test('el mismo celular con y sin lada internacional normaliza al mismo numero', () => {
-  assert.equal(normalizarCelularFeria('+52 55 1242 1575'), '+52 5512421575');
-  assert.equal(normalizarCelularFeria('5512421575'), '+52 5512421575');
-  assert.equal(normalizarCelularFeria(5512421575), '+52 5512421575');
-  assert.equal(normalizarCelularFeria('+1 312 555 1234'), '+13125551234');
-  assert.equal(normalizarCelularFeria('+34 612 345 678'), '+34612345678');
-  assert.equal(normalizarCelularFeria(''), '');
+  assert.equal(normalizarCelularExpo('+52 55 1242 1575'), '+52 5512421575');
+  assert.equal(normalizarCelularExpo('5512421575'), '+52 5512421575');
+  assert.equal(normalizarCelularExpo(5512421575), '+52 5512421575');
+  assert.equal(normalizarCelularExpo('+1 312 555 1234'), '+13125551234');
+  assert.equal(normalizarCelularExpo('+34 612 345 678'), '+34612345678');
+  assert.equal(normalizarCelularExpo(''), '');
+});
+
+// Issue #325: el importador del export de la expo se llama por su nombre del
+// glosario. Repite un caso ya cubierto para fijar el nombre publico.
+test('el importador del export de la expo arma el prospecto y normaliza su celular', () => {
+  const { listos } = importarProspectosExpo(workbook([fila()]), OPTS);
+  assert.equal(listos.length, 1);
+  assert.equal(listos[0].celular, '+52 5512421575');
+  assert.equal(normalizarCelularExpo('5512421575'), '+52 5512421575');
 });
 
 test('fechaDeSerialExcel convierte el serial a ISO y deja pasar el texto', () => {
@@ -102,7 +111,7 @@ test('fechaDeSerialExcel convierte el serial a ISO y deja pasar el texto', () =>
 // palabra por palabra y no conocia preposiciones ni articulos. Con la regla
 // unica (la de #241) el complemento va bajo.
 test('los nombres del export llegan en MAYUSCULAS y se guardan titulados, sin tocar los ya escritos', () => {
-  const { listos } = importarProspectosFeria(workbook([
+  const { listos } = importarProspectosExpo(workbook([
     fila({ nombre: 'MARÍA JOSÉ', apellido: 'DE LA TORRE' }),
     fila({ nombre: 'Ana', apellido: 'McKenzie', celular: '5512421576' }),
   ]), OPTS);
@@ -116,7 +125,7 @@ test('los nombres del export llegan en MAYUSCULAS y se guardan titulados, sin to
 // empresa CRUDA: asi nacieron los 98 prospectos de Abastur cuya ficha de Google
 // decia "Alejandra Arena - DORADOS CONVENTION & RESORT".
 test('la empresa del export tambien se guarda titulada, con la misma regla que la captura', () => {
-  const { listos } = importarProspectosFeria(workbook([
+  const { listos } = importarProspectosExpo(workbook([
     fila({ nombre: 'ALEJANDRA', apellido: 'ARENA', empresa: 'DORADOS CONVENTION & RESORT', ciudad: 'MAZATLAN', correo: 'Alejandra.Arena@DORADOS.MX' }),
     fila({ nombre: 'Ana', apellido: 'McKenzie', empresa: "McDonald's Insurgentes", celular: '5512421576' }),
   ]), OPTS);
@@ -138,7 +147,7 @@ test('la actividad principal declarada pre-asigna el tipo de cliente y su segmen
     ['Catering / Organizador de eventos', 'Catering | Eventos', 15],
   ];
   casos.forEach(([actividad, tipo, segmento], i) => {
-    const { listos } = importarProspectosFeria(workbook([
+    const { listos } = importarProspectosExpo(workbook([
       fila({ actividad, celular: `55124215${10 + i}` }),
     ]), OPTS);
     assert.equal(listos[0].data.tipo_cliente, tipo, actividad);
@@ -148,7 +157,7 @@ test('la actividad principal declarada pre-asigna el tipo de cliente y su segmen
 });
 
 test('una actividad fuera del mapeo cae en Otro conservando el texto; sin actividad no hay tipo de cliente', () => {
-  const { listos } = importarProspectosFeria(workbook([
+  const { listos } = importarProspectosExpo(workbook([
     fila({ actividad: 'Tienda de autoservicio' }),
     fila({ actividad: '', celular: '5512421576' }),
   ]), OPTS);
@@ -160,7 +169,7 @@ test('una actividad fuera del mapeo cae en Otro conservando el texto; sin activi
 });
 
 test('el Scoring de la app es la temperatura (1-5); vacio o fuera de rango no manda', () => {
-  const { listos } = importarProspectosFeria(workbook([
+  const { listos } = importarProspectosExpo(workbook([
     fila({ scoring: 5 }),
     fila({ scoring: '3', celular: '5512421576' }),
     fila({ scoring: 1, celular: '5512421577' }),
@@ -172,7 +181,7 @@ test('el Scoring de la app es la temperatura (1-5); vacio o fuera de rango no ma
 });
 
 test('la Note y la linea de puesto, tamano y decision de compra quedan en las notas', () => {
-  const { listos } = importarProspectosFeria(workbook([
+  const { listos } = importarProspectosExpo(workbook([
     fila({
       nota: 'Quiere catalogo de tazas', puesto: 'Dueño / Socio',
       tamano: 'De 11 a 50 empleados', decision: 'Decido',
@@ -189,7 +198,7 @@ test('la Note y la linea de puesto, tamano y decision de compra quedan en las no
 });
 
 test('el "Exhibitor member" que coincide con un vendedor es el dueno de la fila; sin match manda el default', () => {
-  const { listos } = importarProspectosFeria(workbook([
+  const { listos } = importarProspectosExpo(workbook([
     fila({ expositor: 'Oswaldo' }),
     fila({ expositor: 'ADRIÁN CHÁVEZ', celular: '5512421576' }),
     fila({ expositor: 'Alejandro', celular: '5512421577' }),
@@ -208,7 +217,7 @@ test('el "Exhibitor member" que coincide con un vendedor es el dueno de la fila;
 });
 
 test('el evento activo viaja en cada fila importada', () => {
-  const { listos, sinCelular } = importarProspectosFeria(workbook([
+  const { listos, sinCelular } = importarProspectosExpo(workbook([
     fila(),
     fila({ celular: '', correo: 'sin-cel@vianda.mx' }),
   ]), { ...OPTS, evento: 'Abastur 2026' });
@@ -217,7 +226,7 @@ test('el evento activo viaja en cada fila importada', () => {
 });
 
 test('la fila sin celular sale aparte con lo necesario para perseguirla a mano', () => {
-  const { listos, sinCelular, descartados } = importarProspectosFeria(workbook([
+  const { listos, sinCelular, descartados } = importarProspectosExpo(workbook([
     fila({ nombre: 'LUZ', apellido: 'RAMOS', celular: '', correo: 'luz@hotelb.mx', empresa: 'HOTEL BONITO', scoring: 4 }),
     fila(),
   ]), OPTS);
@@ -233,7 +242,7 @@ test('la fila sin celular sale aparte con lo necesario para perseguirla a mano',
 });
 
 test('celular ilegible se descarta con motivo; el celular repetido en el archivo entra una sola vez', () => {
-  const { listos, descartados } = importarProspectosFeria(workbook([
+  const { listos, descartados } = importarProspectosExpo(workbook([
     fila({ nombre: 'ANA', celular: '12345' }),
     fila({ nombre: 'BETO' }),
     fila({ nombre: 'CARLA', celular: '+52 55 1242 1575' }),
@@ -250,7 +259,7 @@ test('celular ilegible se descarta con motivo; el celular repetido en el archivo
 test('las filas vacias del final del archivo se saltan sin reportarse', () => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, fila(), [], ['', '', '']]), 'Contacts');
-  const { listos, sinCelular, descartados } = importarProspectosFeria(
+  const { listos, sinCelular, descartados } = importarProspectosExpo(
     XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), OPTS);
   assert.equal(listos.length, 1);
   assert.deepEqual(sinCelular, []);
@@ -294,7 +303,7 @@ test('el export 2026 usa guion en la actividad; las 4 actividades del ticket map
     ['Pasteleria - Panaderia', 'Cafeterías', 10],
   ];
   casos.forEach(([actividad, tipo, segmento], i) => {
-    const { listos } = importarProspectosFeria(workbook2026([
+    const { listos } = importarProspectosExpo(workbook2026([
       fila2026({ actividad, celular: `55124216${10 + i}` }),
     ]), OPTS);
     assert.equal(listos[0].data.tipo_cliente, tipo, actividad);
@@ -303,7 +312,7 @@ test('el export 2026 usa guion en la actividad; las 4 actividades del ticket map
 });
 
 test('Fabricante - Manufactura (decision explicita) se queda en Otro conservando el texto original con guion', () => {
-  const { listos } = importarProspectosFeria(workbook2026([
+  const { listos } = importarProspectosExpo(workbook2026([
     fila2026({ actividad: 'Fabricante - Manufactura' }),
   ]), OPTS);
   assert.equal(listos[0].data.tipo_cliente, 'Otro');
@@ -311,7 +320,7 @@ test('Fabricante - Manufactura (decision explicita) se queda en Otro conservando
 });
 
 test('el alias de cabecera: decision acepta "En una toma de decision (es)" y puesto acepta "Cargo (es)"', () => {
-  const { listos } = importarProspectosFeria(workbook2026([
+  const { listos } = importarProspectosExpo(workbook2026([
     fila2026({ cargo: 'Chef Ejecutivo', decision: 'Decido / apruebo' }),
   ]), OPTS);
   assert.match(listos[0].data.notas, /Puesto: Chef Ejecutivo/);
@@ -319,7 +328,7 @@ test('el alias de cabecera: decision acepta "En una toma de decision (es)" y pue
 });
 
 test('el area de interes del export 2026 entra como una senal mas de la linea de calificacion', () => {
-  const { listos } = importarProspectosFeria(workbook2026([
+  const { listos } = importarProspectosExpo(workbook2026([
     fila2026({ cargo: 'Dueño', interes: 'Alimentos; Cristalería - Vajillas; Mobiliario' }),
   ]), OPTS);
   assert.match(listos[0].data.notas, /Área de interés: Alimentos; Cristalería - Vajillas; Mobiliario/);
@@ -331,18 +340,18 @@ test('avisos: columnas esperadas que no aparecen en el archivo, incluidos ambos 
     h !== 'Scoring' && h !== 'En una toma de decisión (es)');
   const filaSinEsas = fila2026().filter((_, i) => HEADERS_2026[i] !== 'Scoring' && HEADERS_2026[i] !== 'En una toma de decisión (es)');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersSinScoringNiDecision, filaSinEsas]), 'Contacts');
-  const { avisos } = importarProspectosFeria(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), OPTS);
+  const { avisos } = importarProspectosExpo(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), OPTS);
   assert.ok(avisos.columnasNoEncontradas.includes('Scoring'));
   assert.ok(avisos.columnasNoEncontradas.some(c => c.includes('Decisión de compra (es)') && c.includes('En una toma de decisión (es)')));
 });
 
 test('avisos: con el juego completo de cabeceras 2026 (ambos alias presentes) no falta ninguna columna', () => {
-  const { avisos } = importarProspectosFeria(workbook2026([fila2026()]), OPTS);
+  const { avisos } = importarProspectosExpo(workbook2026([fila2026()]), OPTS);
   assert.deepEqual(avisos.columnasNoEncontradas, []);
 });
 
 test('avisos: las actividades que caen a Otro sin mapeo se cuentan por fila, listas o no', () => {
-  const { avisos } = importarProspectosFeria(workbook2026([
+  const { avisos } = importarProspectosExpo(workbook2026([
     fila2026({ actividad: 'Fabricante - Manufactura' }),
     fila2026({ actividad: 'Fabricante - Manufactura', celular: '5512421699' }),
     fila2026({ actividad: 'Tienda de autoservicio', celular: '5512421698' }),
@@ -354,7 +363,7 @@ test('avisos: las actividades que caen a Otro sin mapeo se cuentan por fila, lis
 });
 
 test('el archivo del formato anterior sigue sin avisos por actividad ni columnas cuando todo mapea', () => {
-  const { avisos } = importarProspectosFeria(workbook([fila({ actividad: 'Restaurante' })]), OPTS);
+  const { avisos } = importarProspectosExpo(workbook([fila({ actividad: 'Restaurante' })]), OPTS);
   assert.deepEqual(avisos.actividadesSinMapeo, []);
 });
 
@@ -364,7 +373,7 @@ test('el archivo del formato anterior sigue sin avisos por actividad ni columnas
 // idempotencia de #277 (la nota entrante dejaria de coincidir con la guardada y
 // re-subir el archivo duplicaria la nota en cada prospecto).
 test('las senales de calificacion se guardan como campos propios ademas de la linea de notas', () => {
-  const { listos } = importarProspectosFeria(workbook2026([
+  const { listos } = importarProspectosExpo(workbook2026([
     fila2026({
       cargo: 'Chef Ejecutivo', tamano: '51-250', decision: 'Decido / apruebo',
       interes: 'Alimentos; Cristalería - Vajillas',
@@ -380,14 +389,14 @@ test('las senales de calificacion se guardan como campos propios ademas de la li
 });
 
 test('los campos de calificacion que el gafete no trae no se escriben', () => {
-  const { listos } = importarProspectosFeria(workbook2026([fila2026()]), OPTS);
+  const { listos } = importarProspectosExpo(workbook2026([fila2026()]), OPTS);
   for (const k of ['puesto', 'tamano', 'decision', 'area_interes']) {
     assert.equal(k in listos[0].data, false, k);
   }
 });
 
 test('el formato anterior tambien puebla los campos propios que ese export si trae', () => {
-  const { listos } = importarProspectosFeria(workbook([
+  const { listos } = importarProspectosExpo(workbook([
     fila({ puesto: 'Gerente de Compras', tamano: '11-50' }),
   ]), OPTS);
   assert.equal(listos[0].data.puesto, 'Gerente de Compras');
@@ -401,7 +410,7 @@ test('el formato anterior tambien puebla los campos propios que ese export si tr
 // empresa y ciudad se guardaban tal como venian del gafete, en MAYUSCULAS, y
 // de ahi pasaban a la libreta de Google.
 test('empresa, ciudad y nombre del gafete se guardan con la capitalizacion de la casa', () => {
-  const { listos } = importarProspectosFeria(workbook2026([
+  const { listos } = importarProspectosExpo(workbook2026([
     fila2026({
       nombre: 'ISAAC', apellido: 'VALDERRAMA',
       empresa: 'EQUIPAMIENTO HOTELERO DE MEXICO SA DE CV',
@@ -416,7 +425,7 @@ test('empresa, ciudad y nombre del gafete se guardan con la capitalizacion de la
 });
 
 test('la capitalizacion respeta particulas y siglas fijas, no solo la primera letra', () => {
-  const { listos } = importarProspectosFeria(workbook2026([
+  const { listos } = importarProspectosExpo(workbook2026([
     fila2026({ empresa: 'LOS ANTOJOS DEL GORDO', ciudad: 'CIUDAD DE MÉXICO' }),
   ]), OPTS);
   assert.equal(listos[0].data.empresa, 'Los Antojos del Gordo');
@@ -424,7 +433,7 @@ test('la capitalizacion respeta particulas y siglas fijas, no solo la primera le
 });
 
 test('el gafete sin celular tambien sale capitalizado (va al reporte del admin)', () => {
-  const { sinCelular } = importarProspectosFeria(workbook2026([
+  const { sinCelular } = importarProspectosExpo(workbook2026([
     fila2026({ nombre: 'MARLENE', apellido: 'VAZQUEZ', empresa: 'LEMON PIE', celular: '' }),
   ]), OPTS);
   assert.equal(sinCelular[0].nombre, 'Marlene Vazquez');

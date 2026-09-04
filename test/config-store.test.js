@@ -34,7 +34,7 @@ const ADMIN_TOKEN = jwt.sign({ id: 1, name: 'Jefa Test', role: 'admin' }, JWT_SE
 
 const CONFIG_ARCHIVO = {
   tiposActivos: ['PL'], texturasActivas: [1],
-  eventoActivo: { nombre: 'Feria del archivo', fin: '2026-08-28' },
+  eventoActivo: { nombre: 'Expo del archivo', fin: '2026-08-28' },
   catalogoUrl: 'https://ejemplo.mx/catalogo', sitioUrl: 'https://ejemplo.mx',
 };
 
@@ -110,7 +110,7 @@ test('redeploy: lo guardado sobrevive a un proceso nuevo contra la misma base', 
   const base = baseFalsa();
   store._reiniciar(base.query);
   await store.cargar();
-  await store.guardar({ ...CONFIG_ARCHIVO, eventoActivo: { nombre: 'Feria nueva', fin: '2026-09-30' } });
+  await store.guardar({ ...CONFIG_ARCHIVO, eventoActivo: { nombre: 'Expo nueva', fin: '2026-09-30' } });
   // El archivo versionado NO se toca cuando manda la base.
   assert.deepEqual(JSON.parse(leerArchivoSync(CONFIG_PATH)), CONFIG_ARCHIVO);
 
@@ -118,7 +118,7 @@ test('redeploy: lo guardado sobrevive a un proceso nuevo contra la misma base', 
   // pisar lo guardado. Esa es exactamente la reversion que hoy hace el deploy.
   store._reiniciar(base.query); // proceso nuevo: cache fria, misma base
   await store.cargar();
-  assert.deepEqual(store.leer().eventoActivo, { nombre: 'Feria nueva', fin: '2026-09-30' });
+  assert.deepEqual(store.leer().eventoActivo, { nombre: 'Expo nueva', fin: '2026-09-30' });
 });
 
 test('guardar() con base refresca la cache: la lectura sincrona siguiente ya trae lo nuevo', async () => {
@@ -177,7 +177,7 @@ test('con la cache fria el merge parte de la base, no del archivo semilla', asyn
 test('el evento activo y las ligas llegan a /api/catalogos desde la base', async () => {
   const enBase = {
     tiposActivos: ['VT'], texturasActivas: [7],
-    eventoActivo: { nombre: 'Feria de la base', fin: '2026-09-30' },
+    eventoActivo: { nombre: 'Expo de la base', fin: '2026-09-30' },
     catalogoUrl: 'https://base.mx/catalogo', sitioUrl: 'https://base.mx',
   };
   const base = baseFalsa({ fila: enBase });
@@ -186,7 +186,7 @@ test('el evento activo y las ligas llegan a /api/catalogos desde la base', async
 
   const res = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${ADMIN_TOKEN}`);
   assert.equal(res.status, 200);
-  assert.equal(res.body.eventoActivo.nombre, 'Feria de la base');
+  assert.equal(res.body.eventoActivo.nombre, 'Expo de la base');
   assert.equal(res.body.catalogoUrl, 'https://base.mx/catalogo');
   assert.equal(res.body.sitioUrl, 'https://base.mx');
 });

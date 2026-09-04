@@ -175,7 +175,7 @@ test('#321: la fila trae queFalta con la calificacion pendiente de un prospecto 
 });
 
 // --- #317: cualquier prospecto, Origen y /prospectos ---
-// La tabla dejo de ser de feria: un prospecto que nunca vino de un evento entra
+// La tabla dejo de ser de la expo: un prospecto que nunca vino de un evento entra
 // igual, y su fila trae el Origen del glosario para que la pantalla filtre por
 // el.
 

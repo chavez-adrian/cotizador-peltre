@@ -1,5 +1,5 @@
 // Importacion de los candidatos aprobados del cruce de Bitrix (issue #159,
-// padre #155). Sigue el patron del import de Feria/Expo (#47): crea PROSPECTOS
+// padre #155). Sigue el patron del import de la expo (#47): crea PROSPECTOS
 // en Por Cotizar, deduplicando por celular contra los prospectos del cotizador
 // y contra los clientes de Operam, con la fecha de la IMPORTACION (no la del
 // registro original: con la fecha vieja toda la cola naceria en rojo con las
@@ -28,10 +28,10 @@ import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 import { ordenarCandidatos, nombrePropio, empresaPropia } from '../lib/cruce-bitrix.js';
 
-// Mismas dos funciones que usa el import de Feria/Expo (#47) para el celular:
+// Mismas dos funciones que usa el import de la expo (#47) para el celular:
 // normalizar primero (Bitrix guarda numeros mexicanos como "+2225592022", con
 // el "+" pegado y sin lada de pais) y validar despues con el gate del sistema.
-import { normalizarCelularFeria } from '../lib/importar-prospectos.js';
+import { normalizarCelularExpo } from '../lib/importar-prospectos.js';
 import { validarTelefono } from '../public/js/alta-logica.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -137,7 +137,7 @@ const { matchCliente, refrescarIndice } = await import('../lib/indice-telefonos.
 
 // El indice de Operam se refresca UNA VEZ antes del loop (leccion de #46: no
 // por fila). Si falla, se importa igual -- best effort, mismo trade-off que la
-// captura manual y que el import de Feria.
+// captura manual y que el import de la expo.
 let indiceListo = false;
 try {
   await refrescarIndice();
@@ -151,7 +151,7 @@ const importados = [];
 const descartados = [];
 
 for (const p of plan) {
-  const celular = normalizarCelularFeria(p.telefono);
+  const celular = normalizarCelularExpo(p.telefono);
   const invalido = validarTelefono('', celular);
   if (invalido) {
     descartados.push({ numero: p.numero, nombre: p.nombre, motivo: `telefono invalido (${invalido})` });

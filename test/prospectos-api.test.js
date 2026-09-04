@@ -1291,7 +1291,7 @@ test('#261: los guardrails de celular repetido son los mismos en la captura de e
   });
 });
 
-test('#261: el asesor ajeno es de la captura de expo, no de una captura normal durante la feria', async () => {
+test('#261: el asesor ajeno es de la captura de expo, no de una captura normal durante la expo', async () => {
   await conEventoActivo(async () => {
     writeProspectos([]);
     const res = await supertest(app).post('/api/prospectos')
@@ -1443,7 +1443,7 @@ test('#263: /api/catalogos trae la fecha prellenada del siguiente contacto del e
 // nombre, empresa, ciudad -- se guarda con las mayusculas corregidas y el correo
 // en minusculas, venga de donde venga la captura. La regla vive en un solo lugar
 // (normalizarTextosProspecto, prospectos-logica.js) y la aplican la creacion, la
-// edicion desde la tarjeta y, desde #293, el importador del export de feria.
+// edicion desde la tarjeta y, desde #293, el importador del export de la expo.
 // "Hotel la Joya" antes de #293: al unificar los tres tituladores gano la regla
 // de #241, donde el articulo que encabeza el nombre de la marca va ALTO.
 

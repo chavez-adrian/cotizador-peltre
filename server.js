@@ -36,7 +36,7 @@ import * as bandejaStore from './lib/bandeja-store.js';
 import * as vendedoresStore from './lib/vendedores-store.js';
 import * as configStore from './lib/config-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
-import { importarProspectosFeria } from './lib/importar-prospectos.js';
+import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados } from './lib/indice-telefonos.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
@@ -796,8 +796,8 @@ function respuestaCelularDeCliente(res, cliente) {
 // Un evento sin nombre no es evento: el resto del sistema pregunta solo "hay
 // evento activo".
 // La fecha de fin NO apaga el evento sola -- es un dato del evento (de ahi sale
-// el primer dia habil despues de la feria); apagarlo es del admin, para que la
-// app nunca deje de ofrecer la captura a media feria por un reloj.
+// el primer dia habil despues de la expo); apagarlo es del admin, para que la
+// app nunca deje de ofrecer la captura a media expo por un reloj.
 function eventoActivoConfigurado() {
   const evento = (configStore.leer() || {}).eventoActivo;
   return evento && evento.nombre ? evento : null;
@@ -847,7 +847,7 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   const capturaAjena = !!asesor && asesor !== req.user.name;
   if (capturaAjena) {
     // La excepcion a la auto-asignacion es de la CAPTURA DE EXPO (CONTEXT.md
-    // "Captura de expo"), no de cualquier captura hecha mientras hay feria: sin
+    // "Captura de expo"), no de cualquier captura hecha mientras hay expo: sin
     // evento en el cuerpo el prospecto nace del que captura, como siempre. Asi
     // ademas ningun prospecto de otro dueno se queda sin el rastro de quien lo
     // capturo.
@@ -1487,7 +1487,7 @@ app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, uplo
   const evento = eventoActivo ? eventoActivo.nombre : undefined;
   let parseo;
   try {
-    parseo = importarProspectosFeria(req.file.buffer, { vendedores, vendedorDefault, evento });
+    parseo = importarProspectosExpo(req.file.buffer, { vendedores, vendedorDefault, evento });
   } catch (err) {
     return res.status(400).json({ error: 'Error procesando archivo: ' + err.message });
   }
@@ -1531,7 +1531,7 @@ app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, uplo
     porVendedor[p.vendedor] = (porVendedor[p.vendedor] || 0) + 1;
   }
   // El cruce por correo es SOLO contra los prospectos del mismo evento (un
-  // correo repetido de otra feria no es la misma oportunidad). Se lee despues
+  // correo repetido de otra expo no es la misma oportunidad). Se lee despues
   // del loop para que un gafete sin celular alcance a los que acaban de nacer.
   // Sin evento activo no hay contra que cruzar y todos salen al reporte.
   const delEvento = evento
@@ -1580,7 +1580,7 @@ app.get('/api/admin/config', authMiddleware, adminMiddleware, (req, res) => {
 
 // Evento activo del panel admin (issue #261): nombre + fecha de fin, o null para
 // apagar la captura de expo. Un evento a medias (sin nombre o sin fin) se
-// rechaza: con el nombre viaja el etiquetado de TODO lo que entra por la feria.
+// rechaza: con el nombre viaja el etiquetado de TODO lo que entra por la expo.
 function normalizarEventoActivo(evento) {
   if (evento == null || evento === '') return { evento: null };
   if (typeof evento !== 'object') return { error: 'Evento invalido' };
@@ -3395,7 +3395,7 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
     const config = configStore.leer() || {};
     // La fecha prellenada del siguiente contacto (#263) se DERIVA del fin del
     // evento aqui, no se guarda: si el admin corrige la fecha de cierre, la
-    // sugerencia se mueve sola. Es el primer dia habil despues de la feria.
+    // sugerencia se mueve sola. Es el primer dia habil despues de la expo.
     const evento = eventoActivoConfigurado();
     res.json({
       segmentos: SEGMENTOS, vendedores, listas_precios: await obtenerListasPrecios(),
@@ -3425,7 +3425,7 @@ app.get('/prospectos', (req, res) => {
   res.sendFile(join(PUBLIC_DIR, 'prospectos.html'));
 });
 
-// La liga vieja de la tabla de feria (#317): el vendedor la tiene guardada en
+// La liga vieja de la tabla de la expo (#317): el vendedor la tiene guardada en
 // el telefono desde Abastur, asi que no se rompe, redirige.
 app.get('/leads', (req, res) => {
   res.redirect('/prospectos');

@@ -94,7 +94,7 @@ test('H14: FESTIVOS trae los siete festivos de 2026 y 2027 con los lunes moviles
 // oficina (L-V, festivos fuera): el sabado corto de la ventana de espera no
 // cuenta para agendar un compromiso -- el spec lo fija con "viernes -> lunes".
 
-test('H15: el viernes de cierre de la feria manda el compromiso al lunes', () => {
+test('H15: el viernes de cierre de la expo manda el compromiso al lunes', () => {
   // Abastur 2026 cierra el viernes 28 de agosto
   assert.equal(primerDiaHabilDespues('2026-08-28'), '2026-08-31');
   // un evento que cierra en sabado tambien cae en el lunes

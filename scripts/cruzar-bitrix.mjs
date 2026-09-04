@@ -263,7 +263,7 @@ function generarReporte({ resultado, sensibilidad, cotizador, operam, hoy, expor
       usados.get(source) || 0,
     ])));
   L.push('');
-  L.push('**Ojo con `REPEAT_SALE`:** el nombre suena a recompra, pero en este Bitrix es la etiqueta de **Abastur** (la feria). Por eso mapea a `Feria/Expo`.');
+  L.push('**Ojo con `REPEAT_SALE`:** el nombre suena a recompra, pero en este Bitrix es la etiqueta de **Abastur** (la expo). Por eso mapea a `Feria/Expo`.');
   L.push('');
   const sinCanal = candidatos.filter(c => !c.canal);
   L.push(`**Sin canal equivalente (${sinCanal.length} candidatos).** El catalogo del cotizador no tiene entrada para estos origenes. El importador **se niega** a importarlos hasta que decidas:`);

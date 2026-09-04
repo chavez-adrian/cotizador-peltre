@@ -72,7 +72,7 @@ before(() => {
   savedVendedores = leerArchivoSync(VENDEDORES_PATH);
   savedConfig = leerArchivoSync(CONFIG_PATH);
   escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(VENDEDORES_TEST, null, 2));
-  // El evento activo (issue #261) etiqueta todo lo que entra por la feria: la
+  // El evento activo (issue #261) etiqueta todo lo que entra por la expo: la
   // importacion lo lee de config.json igual que la captura de expo.
   escribirArchivoSync(CONFIG_PATH, JSON.stringify({
     ...JSON.parse(savedConfig), eventoActivo: { nombre: EVENTO, fin: '2026-09-18' },

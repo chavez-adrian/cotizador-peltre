@@ -32,7 +32,7 @@ test('GET /prospectos pide a los buscadores que no la indexen', async () => {
 
 // --- #317: cualquier prospecto, Origen y /prospectos ---
 // La liga vieja sigue sirviendo: el vendedor la tiene guardada en el telefono
-// desde la feria.
+// desde la expo.
 test('GET /leads redirige a /prospectos', async () => {
   const res = await supertest(app).get('/leads');
   assert.equal(res.status, 302);
