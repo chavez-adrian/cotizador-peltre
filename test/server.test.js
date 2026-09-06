@@ -3491,6 +3491,44 @@ test('#328: corregir el domicilio de entrega llega al quote de Operam', async ()
   }
 });
 
+// #332: el mismo caso de punta a punta cuando lo UNICO que se corrige es el numero
+// interior. Comprobado con el cliente 517, cuyo suite_number en Operam es "27" y no
+// aparecia por ningun lado en el delivery_address del quote 1263. El interior se captura
+// en el paso Envio pero no viajaba al quote, asi que corregirlo no contaba como cambio.
+test('#332: corregir SOLO el numero interior llega al quote de Operam', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const sinInterior = {
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
+    telefono: '+52 5551234567',
+    cpEntrega: '11700', calle: 'Bosques de Duraznos 187', numInt: '',
+    colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
+  };
+  const id = cotizacionActualizable({ cliente: sinInterior });
+  const { restore, doc } = mockOperamWebLegacy();
+  try {
+    await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    const subida = readCots().find(c => c.id === id);
+    assert.strictEqual(doc.deliveryAddress.includes('Int.'), false, 'precondicion: el quote quedo sin interior');
+
+    const corregido = {
+      ...subida.data,
+      cliente: { ...sinInterior, numInt: '27' },
+      cotizacionId: String(id),
+    };
+    const post = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(corregido);
+    assert.strictEqual(post.body.requiereActualizacionOperam, true,
+      'capturar el numero interior TIENE que pedir la reescritura');
+
+    const act = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(act.body.ok, true, JSON.stringify(act.body));
+    assert.strictEqual(doc.deliveryAddress, 'Bosques de Duraznos 187 Int. 27, Bosque de las Lomas, 11700, Miguel Hidalgo, Ciudad de Mexico',
+      `el quote debe quedar con el interior, quedo con "${doc.deliveryAddress}"`);
+  } finally {
+    restore();
+  }
+});
+
 // === GET /api/admin/paridad-catalogo (issue #130) ===
 
 test('GET /api/admin/paridad-catalogo exige admin: vendedor 403, sin token 401', async () => {

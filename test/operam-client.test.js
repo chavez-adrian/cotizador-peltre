@@ -2704,3 +2704,70 @@ test('#328 huellaContenidoQuote: el CP de entrega cuenta aunque la cotizacion no
   assert.equal(contenidoQuoteCambio(despues, huellaContenidoQuote(antes)), true);
 });
 
+
+// === Numero interior en el domicilio de entrega del quote (issue #332) ===
+// Sintoma medido: el cliente 517 tiene suite_number "27" en Operam y ese interior no
+// aparece por ningun lado en el delivery_address del quote 1263. `numInt` SI se captura
+// en el paso Envio y SI llega al branch (addr_interior, buildBranchGenerico), pero la
+// composicion del domicilio del quote no lo miraba: una entrega a un departamento, local
+// o piso llegaba a Operam sin el, y corregir SOLO el interior no contaba como cambio.
+// Convencion mexicana del ticket: el interior va PEGADO a la calle -- que ya trae el
+// numero exterior desde el formulario del paso Envio -- y no como elemento suelto entre
+// comas: "Calle 123 Int. 4, Colonia, CP, Municipio, Estado".
+test('#332 armarContenidoQuote: el numero interior va pegado a la calle en el domicilio de entrega', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const { deliveryAddress } = armarContenidoQuote({
+    cliente: {
+      calle: 'Bosques de Duraznos 187', numInt: '27', colonia: 'Bosque de las Lomas',
+      cpEntrega: '11700', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
+    },
+  });
+  assert.equal(
+    deliveryAddress,
+    'Bosques de Duraznos 187 Int. 27, Bosque de las Lomas, 11700, Miguel Hidalgo, Ciudad de Mexico',
+  );
+});
+
+// El sintoma literal del ticket: corregir SOLO el numero interior tiene que contar como
+// cambio. Mientras el interior no viajaba en delivery_address, la huella era la misma
+// antes y despues de la correccion, el vendedor recibia "el quote de Operam ya coincide"
+// y el quote se quedaba sin el interior -- el mismo caso que #328 cerro para el resto de
+// los campos del domicilio.
+test('#332 contenidoQuoteCambio: corregir SOLO el numero interior dispara la actualizacion', () => {
+  const sinInterior = cotizacionBase({
+    cliente: { ...cotizacionBase().cliente, calle: 'Bosques de Duraznos 187', numInt: '' },
+  });
+  const conInterior = cotizacionBase({
+    cliente: { ...cotizacionBase().cliente, calle: 'Bosques de Duraznos 187', numInt: '27' },
+  });
+  assert.equal(contenidoQuoteCambio(conInterior, huellaContenidoQuote(sinInterior)), true);
+});
+
+// Guardia del COSTO de la migracion: cambiar la forma de la huella obliga a reescribir el
+// quote la primera vez que se regenera cada cotizacion ya subida. Sin interior capturado
+// la cadena queda identica a la de #328 ([calle, colonia, cp, municipio, estado]), asi que
+// esa reescritura solo la pagan las cotizaciones cuyo cliente SI tiene interior. Un
+// interior en blanco no cuenta como interior.
+test('#332 armarContenidoQuote: sin numero interior el domicilio queda como lo dejo #328', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const domicilio = (numInt) => armarContenidoQuote({
+    cliente: {
+      calle: 'Bosques de Duraznos 187', numInt, colonia: 'Bosque de las Lomas',
+      cpEntrega: '11700', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
+    },
+  }).deliveryAddress;
+  const esperado = 'Bosques de Duraznos 187, Bosque de las Lomas, 11700, Miguel Hidalgo, Ciudad de Mexico';
+  assert.equal(domicilio(''), esperado);
+  assert.equal(domicilio(undefined), esperado);
+  assert.equal(domicilio('   '), esperado, 'un interior en blanco no agrega "Int."');
+});
+
+// Sin calle el interior sigue siendo el primer elemento y no se pega a la colonia: un
+// domicilio a medias es un dato incompleto, no un domicilio con la colonia de calle.
+test('#332 armarContenidoQuote: sin calle el interior queda como primer elemento', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const { deliveryAddress } = armarContenidoQuote({
+    cliente: { calle: '', numInt: '27', colonia: 'Bosque de las Lomas', cpEntrega: '11700' },
+  });
+  assert.equal(deliveryAddress, 'Int. 27, Bosque de las Lomas, 11700');
+});
