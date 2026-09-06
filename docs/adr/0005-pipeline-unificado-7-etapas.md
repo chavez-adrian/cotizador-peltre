@@ -35,6 +35,8 @@ Documentado en el PRD #52 y descompuesto en los issues #53–#66.
 - **Supersede el modelo de etapas de ADR-0004.** El resto de ADR-0004 sigue vigente: el CRM mínimo vive en el cotizador, no se sincroniza con Bitrix24, el celular es la llave prospecto↔cotización, y el guardrail "cliente Operam nunca regresa a prospecto" se resuelve con el índice local de teléfonos.
 - **Obsoleta parte de #43–#45** (etapas manuales de prospección) y **unifica los tableros de #49–#50**. Se conservan re-encuadrados: la reunión de #45, la cadencia, el semáforo en horas hábiles, el índice de teléfonos y la auto-creación de prospecto al cotizar.
 - **Introduce "oportunidad"** como unidad del pipeline; CONTEXT.md ya no afirma que no existe entidad de oportunidad.
+
+> Nota (2026-09-06, ADR-0016): la Oportunidad ya no "coincide con el prospecto" antes de cotizar. Nace con la intención (captura, o "Nueva oportunidad" desde la ficha de un Contacto) y toda tarjeta del tablero, en toda etapa, es una Oportunidad; el prospecto pasa a ser una etiqueta del Contacto (el celular). La invariante 1 tarjeta post-venta = 1 pedido se conserva.
 - **Migración de datos**: etapas viejas → nuevas (`nuevo`/`contactado`/`calificado` → `por_cotizar`; `cotizado` → `seguimiento`; `no_util` se conserva); estados de cotización mapean a la etapa post-venta correspondiente. Idempotente, preserva el historial de eventos.
 - **Dependencia técnica abierta**: el sync post-venta depende de lo que exponga la API/webhooks de Operam; es la única pieza del modelo sin cerrar (issue #62, HITL).
 - **Costo**: el monolito (`server.js` + `app.js`) crece otra vez; se mitiga extrayendo módulos de dominio puro (`pipeline`, `cola-hoy`, `decorado-checklist`, núcleo de `operam-sync`) testeables en aislamiento.

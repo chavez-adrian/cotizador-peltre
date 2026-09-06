@@ -44,6 +44,8 @@ Invertir qué es genérico (el RFC, no el cliente) elimina toda necesidad de rea
 
 ## Consequences
 
+> Nota (2026-09-06, ADR-0016): lo que este ADR llama "cliente genérico" es desde esa fecha el **Cliente Operam sin datos fiscales**; el RFC genérico no es una espera sino un estado legítimo y permanente para quien no factura, y el upgrade por CSF es el paso a *Con datos fiscales* conservando el mismo `customer_id`. "Cliente" ya no va a secas en el glosario. El texto de arriba se conserva como registro histórico.
+
 - Operam refleja en tiempo real lo que el equipo de ventas cotiza, sin paso de formalización manual ni cotizaciones invisibles fuera de Operam.
 - El vendedor deja de tener un paso extra ("completar después"); la carga se mueve al servidor en el momento de generar la cotización.
 - La distinción PRE / "#Operam N" en la tarjeta se conserva pero cambia de significado: PRE pasa de ser un modo elegido a ser una falla transitoria con reintento, y debería ser rara en operación normal.
