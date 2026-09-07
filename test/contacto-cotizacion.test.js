@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 
 import {
   FUENTES,
-  ORDEN_CASILLA,
   celularAnotado,
   celularAlNacer,
   celularesDeCruce,
@@ -74,6 +73,9 @@ test('#342 fuente 2: telefono anotado sin Contacto -> nace un Contacto ligado al
   assert.equal(r.fuente, FUENTES.TELEFONO);
   assert.equal(r.crear, true);
   assert.equal(r.clienteOperam, 514);
+  // El numero TAL COMO estaba escrito, para que la ficha del Contacto nuevo
+  // guarde lo mismo que guardaria una captura y no diez digitos pelados.
+  assert.equal(r.telefono, '+52 55 8888 7777');
 });
 
 test('#342 fuente 3: sin telefono se cae al indice de Operam bajo su customer_id', () => {
@@ -84,12 +86,12 @@ test('#342 fuente 3: sin telefono se cae al indice de Operam bajo su customer_id
 });
 
 test('#342 fuente 3: el orden de las casillas es Cel > Telefono > Telefono Secundario', () => {
-  assert.deepEqual(ORDEN_CASILLA, ['cel', 'telefono', 'telefono_secundario']);
   // Con las tres casillas presentes gana el Cel: es el numero mas probable de
   // WhatsApp (spec #337, user story 28).
   const conTres = contactoDeCotizacion(cot({ data: { cliente: { customerId: 514 } } }), indice());
   assert.equal(conTres.contacto, '5544443333');
   assert.equal(conTres.casilla, 'cel');
+  assert.equal(conTres.telefono, '+52 55 4444 3333', 'el numero como lo tiene Operam');
   // Sin Cel gana el Telefono.
   const sinCel = new Map([['514', TELEFONOS_OPERAM.get('514').filter(t => t.casilla !== 'cel')]]);
   const conDos = contactoDeCotizacion(cot({ data: { cliente: { customerId: 514 } } }), { contactos: new Set(), telefonosOperam: sinCel });

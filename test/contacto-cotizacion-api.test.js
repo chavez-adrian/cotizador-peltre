@@ -36,13 +36,13 @@ const CEL_EQUIVOCADO = '5599998888';
 
 // El Contacto real de la Oportunidad: su Origen es el que la tarjeta hereda.
 const CONTACTO = {
-  id: 1, fecha: hace(10), vendedor: 'Admin Test', celular: `+52 ${CEL_CONTACTO}`,
+  id: 1, fecha: hace(10), vendedor: 'Admin Test', celular: `+52 ${CEL_CONTACTO}`, celular10: CEL_CONTACTO,
   nombre: 'Jorge Orea', ciudad: 'CDMX', canal: 'Feria/Expo', etapa: 'seguimiento',
   eventos: [], data: {},
 };
 // Otra persona, la del telefono mal tecleado: no debe adoptar la Oportunidad.
 const OTRO_CONTACTO = {
-  id: 2, fecha: hace(4), vendedor: 'Admin Test', celular: `+52 ${CEL_EQUIVOCADO}`,
+  id: 2, fecha: hace(4), vendedor: 'Admin Test', celular: `+52 ${CEL_EQUIVOCADO}`, celular10: CEL_EQUIVOCADO,
   nombre: 'Ana Perez', ciudad: 'Puebla', canal: 'Instagram', etapa: 'por_cotizar',
   eventos: [], data: {},
 };
@@ -162,6 +162,31 @@ test('#342: capturar el celular a mano liga la Oportunidad con su Contacto', asy
   assert.equal(tarjeta.origen, 'Feria/Expo', 'ya hereda el Origen de su Contacto');
 });
 
+// AC6 + AC5: capturar un celular que todavia no es Contacto lo crea, con la
+// misma marca que la migracion -- si no, la Oportunidad quedaria ligada a un
+// celular sin ficha, sin Origen que heredar y sin nada que abrir.
+test('#342: capturar un celular que no era Contacto crea la ficha, sin etiqueta prospecto', async () => {
+  const res = await supertest(app).post('/api/cotizacion/51/contacto')
+    .set('Authorization', `Bearer ${TOKEN}`).send({ celular: '+52 55 7070 6060' });
+  assert.equal(res.status, 200);
+  const nuevo = readJson(PROSPECTOS_PATH).find(p => p.celular10 === '5570706060');
+  assert.ok(nuevo, 'el Contacto nuevo existe');
+  assert.equal(nuevo.data.sinCaptura, true);
+  assert.equal(nuevo.canal, '', 'sin Origen: no llego por ninguna puerta');
+  assert.equal(nuevo.celular, '+52 55 7070 6060', 'guarda el numero como se escribio');
+  // Y no aparece como tarjeta: su Oportunidad es la cotizacion.
+  const tablero = await get('/api/oportunidades');
+  assert.equal(tablero.body.some(o => o.nombre === 'CLIENTE HISTORICO' && o.tipo === 'prospecto'), false);
+});
+
+test('#342: capturar un celular que YA es Contacto no duplica la ficha', async () => {
+  const antes = readJson(PROSPECTOS_PATH).length;
+  const res = await supertest(app).post('/api/cotizacion/51/contacto')
+    .set('Authorization', `Bearer ${TOKEN}`).send({ celular: `+52 ${CEL_CONTACTO}` });
+  assert.equal(res.status, 200);
+  assert.equal(readJson(PROSPECTOS_PATH).length, antes);
+});
+
 test('#342: un celular que no alcanza 10 digitos no liga nada', async () => {
   const res = await supertest(app).post('/api/cotizacion/51/contacto')
     .set('Authorization', `Bearer ${TOKEN}`).send({ celular: '55 12' });
@@ -177,7 +202,7 @@ test('#342: un celular que no alcanza 10 digitos no liga nada', async () => {
 test('#342: un Contacto nacido de la migracion no genera tarjeta en el tablero', async () => {
   const contactos = readJson(PROSPECTOS_PATH);
   contactos.push({
-    id: 3, fecha: hace(1), vendedor: 'Admin Test', celular: '+52 5500009999',
+    id: 3, fecha: hace(1), vendedor: 'Admin Test', celular: '+52 5500009999', celular10: '5500009999',
     nombre: 'CLIENTE HISTORICO', ciudad: '', canal: '', etapa: 'seguimiento',
     eventos: [], data: { sinCaptura: true, cliente_id: 514, fuenteContacto: 'operam' },
   });

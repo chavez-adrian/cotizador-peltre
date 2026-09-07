@@ -32,7 +32,7 @@ import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
 import { tarjetasOportunidades } from './lib/oportunidades.js';
-import { celularAlNacer } from './lib/contacto-cotizacion.js';
+import { celularAlNacer, llaveContacto } from './lib/contacto-cotizacion.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
@@ -709,6 +709,32 @@ app.post('/api/cotizacion/:id/reunion', authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
+// El Contacto que nace sin captura (#342, AC5): existe para que una Oportunidad
+// tenga de quien ser, no porque alguien lo haya prospectado. Sin etiqueta
+// prospecto (la marca sinCaptura lo dice), sin Origen -- no llego por ninguna
+// puerta -- y fuera del tablero: su Oportunidad es la cotizacion, no una tarjeta
+// propia. Best effort: si el celular ya era Contacto no se crea nada, y un fallo
+// aqui no tumba la liga, que es lo que el vendedor vino a hacer.
+async function crearContactoSinCaptura(entry, celular, telefonoTecleado) {
+  try {
+    if (await prospectosStore.buscarPorCelular(celular)) return;
+    const cli = entry.data?.cliente || {};
+    await prospectosStore.crear({
+      fecha: new Date().toISOString(), vendedor: entry.vendedor,
+      celular: telefonoTecleado || celular,
+      nombre: cli.nombreCorto || entry.cliente || 'Sin nombre',
+      ciudad: cli.municipio || cli.estado || '',
+      canal: '', etapa: 'seguimiento',
+      data: {
+        sinCaptura: true, fuenteContacto: 'captura_manual',
+        ...(cli.customerId != null ? { cliente_id: cli.customerId } : {}),
+      },
+    });
+  } catch (err) {
+    console.warn('[contacto] no se pudo crear el Contacto de la cotizacion:', err.message);
+  }
+}
+
 // Capturar a mano el Contacto de una Oportunidad que se quedo sin el (#342,
 // spec #337, user story 22): la migracion resuelve la mayoria, pero una
 // cotizacion historica sin telefono y sin nada en el indice de Operam queda
@@ -719,7 +745,8 @@ app.post('/api/cotizacion/:id/reunion', authMiddleware, async (req, res) => {
 app.post('/api/cotizacion/:id/contacto', authMiddleware, async (req, res) => {
   const entry = await cotizacionOperable(req, res);
   if (!entry) return;
-  const celular = celularAlNacer({ telefono: req.body?.celular });
+  const tecleado = req.body?.celular;
+  const celular = llaveContacto(tecleado);
   if (!celular) {
     return res.status(400).json({ error: 'El celular del Contacto debe traer 10 dígitos' });
   }
@@ -730,6 +757,10 @@ app.post('/api/cotizacion/:id/contacto', authMiddleware, async (req, res) => {
       contactoCelular: entry.contactoCelular ?? null,
     });
   }
+  // Si ese celular todavia no es Contacto, nace aqui igual que en la migracion
+  // (misma marca sinCaptura): ligar la Oportunidad a un celular sin ficha la
+  // dejaria apuntando a nadie -- sin Origen que heredar y sin ficha que abrir.
+  await crearContactoSinCaptura(entry, celular, tecleado);
   res.json({ ok: true, contactoCelular: celular });
 });
 

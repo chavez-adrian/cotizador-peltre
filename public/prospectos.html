@@ -410,7 +410,7 @@ function filaDetalle(p) {
     // #342: el Contacto que la migracion creo para que una cotizacion historica
     // tuviera de quien ser. Nadie lo capturo: se dice, para que no se lea como
     // un prospecto trabajado.
-    ['Contacto', p.sinCaptura ? 'Venido de Operam (nunca capturado)' : ''],
+    ['Procedencia', p.sinCaptura ? 'Venido de Operam (nunca capturado)' : ''],
     ['Cliente en Operam', p.clienteId],
     // #319: todas las cotizaciones del prospecto, una por linea. El folio lo
     // decide el servidor (ADR-0009): aqui nunca se arma un numero.

@@ -18,6 +18,12 @@
 // cotizador: el campo propio de la cotizacion y, cuando hace falta, la ficha del
 // Contacto que nadie capturo.
 //
+// El dry-run no escribe NINGUN dato. Lo unico que toca es el esquema: leer las
+// cotizaciones por el store dispara su `ensureSchema` (el ALTER TABLE ... ADD
+// COLUMN IF NOT EXISTS contacto_celular), que es idempotente y que el propio
+// servidor corre en su primera lectura tras el despliegue. Se dice aqui para que
+// nadie lo descubra despues.
+//
 // Uso:
 //   node scripts/migrar-contacto-cotizaciones.mjs              # DRY-RUN: imprime el log (NO escribe)
 //   node scripts/migrar-contacto-cotizaciones.mjs --dry-run    # lo mismo, explicito
@@ -52,7 +58,7 @@ if (APPLY && !process.env.DATABASE_URL) {
 
 const { listarTodosClientes, obtenerPedido } = await import('../lib/operam-client.js');
 const { enumerarTelefonosClientes } = await import('../lib/indice-telefonos.js');
-const { planearMigracion, FUENTES, MOTIVO_SIN_CONTACTO } = await import('../lib/contacto-cotizacion.js');
+const { planearMigracion, celularAlNacer, FUENTES, MOTIVO_SIN_CONTACTO } = await import('../lib/contacto-cotizacion.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
 const prospectosStore = await import('../lib/prospectos-store.js');
 const { ultimos10 } = await import('../lib/telefono-llave.js');
@@ -90,8 +96,7 @@ async function resolverClienteOperam(cotizaciones) {
   const resueltas = [];
   for (const c of cotizaciones) {
     const cli = c.data?.cliente || {};
-    const tieneTelefono = ultimos10(cli.telefono).length === 10 || ultimos10(cli.celEntrega).length === 10;
-    if (tieneTelefono || cli.customerId != null || !c.data?.orderOperam) {
+    if (celularAlNacer(cli) || cli.customerId != null || !c.data?.orderOperam) {
       resueltas.push(c);
       continue;
     }
@@ -142,7 +147,10 @@ for (const p of plan) {
     try {
       await prospectosStore.crear({
         fecha: cot.fecha, vendedor: cot.vendedor,
-        celular: p.contacto,
+        // El numero como estaba escrito (con lada si la traia), no los diez
+        // digitos pelados: la llave la deriva el store, pero el numero que se
+        // guarda es el que despues marca WhatsApp.
+        celular: p.telefono || p.contacto,
         nombre: cot.data?.cliente?.nombreCorto || cot.cliente || 'Sin nombre',
         ciudad: cot.data?.cliente?.municipio || cot.data?.cliente?.estado || '',
         // Sin Origen: nadie lo capturo, asi que no hay puerta por la que haya
