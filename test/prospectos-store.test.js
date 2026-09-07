@@ -254,3 +254,25 @@ test('obtener migra la etapa vieja del prospecto recuperado', async () => {
   const p = await obtener(7);
   assert.equal(p.etapa, 'por_cotizar');
 });
+
+// Origen "Cliente Actual" retirado (issue #341, ADR-0016): el prospecto ya
+// guardado con el valor viejo se lee como "Relacion existente" sin reescribir
+// el disco, el mismo patron que la migracion de etapas de arriba.
+test('listar migra el canal viejo "Cliente Actual" a "Relacion existente"', async () => {
+  writeProspectos([
+    { id: 8, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511111111', celular10: '5511111111', nombre: 'Jorge', canal: 'Cliente Actual', etapa: 'por_cotizar', eventos: [] },
+  ]);
+  const todos = await listar();
+  assert.equal(todos[0].canal, 'Relación existente');
+  assert.equal(readProspectos()[0].canal, 'Cliente Actual'); // el disco no se toca
+});
+
+test('buscarPorCelular y obtener tambien migran el canal viejo', async () => {
+  writeProspectos([
+    { id: 9, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5522223333', celular10: '5522223333', nombre: 'Rosa', canal: 'Cliente Actual', etapa: 'por_cotizar', eventos: [] },
+  ]);
+  const porCelular = await buscarPorCelular('+52 5522223333');
+  assert.equal(porCelular.canal, 'Relación existente');
+  const porId = await obtener(9);
+  assert.equal(porId.canal, 'Relación existente');
+});
