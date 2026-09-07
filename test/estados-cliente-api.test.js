@@ -148,6 +148,18 @@ test('#344: sin movimientos registrados la fila declara la fuente incompleta', a
   assert.equal(fila.fuenteIncompleta, true);
 });
 
+// Muchos a muchos (ADR-0016): la etiqueta del Contacto mira TODOS sus Clientes
+// Operam ligados. Laura cotizo a Jorge Orea (514, sin pedido) y ademas esta
+// ligada al 233, que si tiene pedido: sigue siendo un Contacto con pedido.
+test('#344: la etiqueta con pedido cuenta un Cliente Operam ligado que no es el de la fila', async () => {
+  writeJson(PROSPECTOS_PATH, [{ ...CONTACTO_LAURA, data: { cliente_id: 233 } }]);
+  mockOperam({ padron: [JORGE, HISTORICO], pedidos: [{ order_no: '6100', debtor_no: '233', trans_no_from: '' }] });
+  const res = await buscar('Jorge Orea');
+  const fila = res.body.find(c => c.id === '514');
+  assert.equal(fila.comercial, 'cotizado', 'el Cliente Operam de la fila sigue solo cotizado');
+  assert.deepEqual(fila.etiquetas, ['prospecto', 'cotizado', 'con_pedido']);
+});
+
 // Un pedido cancelado no vuelve con pedido a nadie: la cancelacion no esta en la
 // API v3 y sale de data/cancelados.json, que este test no monta -- por eso el
 // caso cancelado se prueba en el nucleo puro (test/estado-cliente-operam.test.js)

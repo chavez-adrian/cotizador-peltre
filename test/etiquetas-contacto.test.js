@@ -11,8 +11,10 @@ import {
   COTIZADO as ET_COTIZADO,
   PROSPECTO,
   anotarEstadosOportunidades,
+  clientesOperamLigados,
   esProspecto,
   etiquetasDeContacto,
+  indiceContactosPorCelular,
 } from '../lib/etiquetas-contacto.js';
 
 // --- etiqueta prospecto: la marca de que ALGUIEN lo capturo ---
@@ -95,7 +97,7 @@ const estados = new Map([
 
 test('#344: la tarjeta de una cotizacion trae el Cliente Operam con sus dos estados', () => {
   const [t] = anotarEstadosOportunidades(
-    [{ tipo: 'cotizacion', id: 'c51', contactoCelular: '5512345678', clienteOperamId: 517, folioOperam: '1240' }],
+    [{ tipo: 'cotizacion', id: 'c51', celularCruce: '5512345678', clienteOperamId: 517, folioOperam: '1240' }],
     { estados }
   );
   assert.deepEqual(t.clienteOperam, {
@@ -106,7 +108,7 @@ test('#344: la tarjeta de una cotizacion trae el Cliente Operam con sus dos esta
 test('#344: la tarjeta hereda las etiquetas del Contacto, no las suyas', () => {
   const tarjetas = anotarEstadosOportunidades([
     { tipo: 'prospecto', id: 'p7', celular: '5512345678', clienteOperamId: null },
-    { tipo: 'cotizacion', id: 'c51', contactoCelular: '5512345678', clienteOperamId: 517, folioOperam: '1240' },
+    { tipo: 'cotizacion', id: 'c51', celularCruce: '5512345678', clienteOperamId: 517, folioOperam: '1240' },
   ], { estados, contactos: new Map([['5512345678', { id: 7 }]]) });
   assert.deepEqual(tarjetas[0].etiquetas, [PROSPECTO, ET_COTIZADO, ET_CON_PEDIDO]);
   assert.deepEqual(tarjetas[1].etiquetas, [PROSPECTO, ET_COTIZADO, ET_CON_PEDIDO]);
@@ -114,7 +116,7 @@ test('#344: la tarjeta hereda las etiquetas del Contacto, no las suyas', () => {
 
 test('#344: una tarjeta sin Contacto no inventa etiquetas ni Cliente Operam', () => {
   const [t] = anotarEstadosOportunidades(
-    [{ tipo: 'cotizacion', id: 'c52', contactoCelular: null, clienteOperamId: null }],
+    [{ tipo: 'cotizacion', id: 'c52', celularCruce: null, clienteOperamId: null }],
     { estados }
   );
   assert.deepEqual(t.etiquetas, []);
@@ -123,26 +125,56 @@ test('#344: una tarjeta sin Contacto no inventa etiquetas ni Cliente Operam', ()
 
 test('#344: un Cliente Operam que el cache todavia no conoce no se inventa estados', () => {
   const [t] = anotarEstadosOportunidades(
-    [{ tipo: 'cotizacion', id: 'c53', contactoCelular: '5599990000', clienteOperamId: 999 }],
+    [{ tipo: 'cotizacion', id: 'c53', celularCruce: '5599990000', clienteOperamId: 999 }],
     { estados }
   );
   assert.equal(t.clienteOperam, null);
 });
 
-// Mismo respaldo que celularesDeCruce (#342): una cotizacion que la migracion
-// no ha tocado cruza por el telefono del documento, y su tarjeta tiene que
-// llevar las etiquetas de esa misma persona.
-test('#344: la cotizacion sin Contacto anotado cruza por el telefono del documento', () => {
+// La tarjeta trae su celular de Contacto YA resuelto por celularesDeCruce
+// (#342, lib/oportunidades.js): con liga fija es esa, y en una historica sin
+// migrar es lo tecleado. Este modulo no reimplementa ese cruce.
+test('#344: la tarjeta cruza por el celular que celularesDeCruce ya resolvio', () => {
   const [t] = anotarEstadosOportunidades(
-    [{ tipo: 'cotizacion', id: 'c60', contactoCelular: null, telefono: '525512345678', clienteOperamId: 517, folioOperam: '1240' }],
+    [{ tipo: 'cotizacion', id: 'c60', celularCruce: '5512345678', clienteOperamId: 517, folioOperam: '1240' }],
     { estados, contactos: new Map([['5512345678', { id: 7 }]]) }
   );
   assert.deepEqual(t.etiquetas, [PROSPECTO, ET_COTIZADO, ET_CON_PEDIDO]);
 });
 
+// Muchos a muchos (ADR-0016): el comprador de dos restaurantes tiene pedido
+// bajo uno y no bajo el otro, y sigue siendo un Contacto con pedido. La liga que
+// el Contacto guarda (`data.cliente_id`) cuenta aunque ninguna tarjeta la nombre
+// -- pasa cuando su tarjeta de prospecto ya la callo una cotizacion.
+test('#344: la etiqueta con pedido mira TODOS los Clientes Operam ligados, no solo el de la tarjeta', () => {
+  const [t] = anotarEstadosOportunidades(
+    [{ tipo: 'cotizacion', id: 'c55', celularCruce: '5512345678', clienteOperamId: 518 }],
+    { estados, contactos: new Map([['5512345678', { id: 7, data: { cliente_id: 517 } }]]) }
+  );
+  assert.deepEqual(t.etiquetas, [PROSPECTO, ET_CON_PEDIDO]);
+  // El Cliente Operam de la tarjeta sigue siendo el suyo, no el del Contacto.
+  assert.equal(t.clienteOperam.id, 518);
+});
+
+test('#344: los Clientes Operam ligados son la liga del Contacto y la de cada Oportunidad, sin repetir', () => {
+  const ids = clientesOperamLigados(
+    { id: 7, data: { cliente_id: 517 } },
+    [{ clienteOperamId: 518 }, { clienteOperamId: 517 }, { clienteOperamId: null }]
+  );
+  assert.deepEqual(ids, ['517', '518']);
+  assert.deepEqual(clientesOperamLigados(null, []), []);
+});
+
+test('#344: el indice de Contactos por celular descarta lo que no llega a diez digitos', () => {
+  const indice = indiceContactosPorCelular([
+    { id: 7, celular: '+52 55 1234 5678' }, { id: 8, celular: '5512' }, { id: 9, celular: '' },
+  ]);
+  assert.deepEqual([...indice.keys()], ['5512345678']);
+});
+
 test('#344: el celular en los pedidos de la tienda marca Cliente en linea en la tarjeta', () => {
   const [t] = anotarEstadosOportunidades(
-    [{ tipo: 'cotizacion', id: 'c54', contactoCelular: '5599990000', clienteOperamId: 518 }],
+    [{ tipo: 'cotizacion', id: 'c54', celularCruce: '5599990000', clienteOperamId: 518 }],
     { estados, enLinea: new Set(['5599990000']) }
   );
   assert.deepEqual(t.etiquetas, [CLIENTE_EN_LINEA]);

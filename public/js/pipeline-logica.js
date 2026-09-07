@@ -14,7 +14,7 @@ import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProsp
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
-import { SIN_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL } from './estado-cliente-logica.js';
+import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
 // del motivo de PRE que define lib/pipeline.js (este modulo NO importa de lib/,
@@ -401,9 +401,8 @@ export function tagResultadoClienteHtml(r) {
   const row = r || {};
   if (row.tipo !== 'operam') return '<span class="pc-tag prospecto">Prospecto</span>';
   const sinDatos = row.fiscal ? row.fiscal === SIN_DATOS_FISCALES : esRfcGenerico(row.rfc);
-  const clase = sinDatos ? 'generico' : 'operam';
-  const texto = ETIQUETA_FISCAL[sinDatos ? SIN_DATOS_FISCALES : 'con_datos_fiscales'];
-  return `<span class="pc-tag ${clase}">${escapeHtml(texto)}</span>`;
+  const estado = sinDatos ? SIN_DATOS_FISCALES : CON_DATOS_FISCALES;
+  return `<span class="pc-tag ${sinDatos ? 'generico' : 'operam'}">${escapeHtml(ETIQUETA_FISCAL[estado])}</span>`;
 }
 
 // El estado COMERCIAL de la fila, y solo cuando dice algo que el vendedor tiene
