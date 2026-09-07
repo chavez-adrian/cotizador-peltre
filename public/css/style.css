@@ -1998,6 +1998,8 @@ body {
 .pc-res-row:hover { border-color: var(--primary); }
 .pc-res-ini { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; background: var(--primary-light); color: var(--primary-dark); }
 .pc-res-ini.prospecto { background: oklch(0.93 0.05 85); color: oklch(0.42 0.08 70); }
+/* La fila de un Contacto en la vista Clientes (#346): la persona, no la entidad */
+.pc-res-ini.contacto { background: oklch(0.93 0.05 85); color: oklch(0.42 0.08 70); }
 .pc-res-main { flex: 1; min-width: 0; }
 .pc-res-nombre { display: block; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pc-res-sub { display: block; font-size: 12.5px; color: var(--text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2008,6 +2010,9 @@ body {
 .pc-tag.generico { background: oklch(0.9 0.06 25); color: oklch(0.42 0.13 25); }
 /* Estado comercial con pedido (#344): verde -- ya nos compro */
 .pc-tag.con-pedido { background: oklch(0.9 0.07 150); color: oklch(0.4 0.11 150); }
+/* Etiquetas del Contacto (#346): las dos que no reusan un tag existente */
+.pc-tag.cotizado { background: oklch(0.93 0.04 262); color: oklch(0.4 0.09 262); }
+.pc-tag.cliente-en-linea { background: oklch(0.93 0.05 310); color: oklch(0.42 0.1 310); }
 /* Banner de contexto del upgrade fiscal (#94): contra quien se actualiza */
 .banner-upgrade { display: flex; gap: 10px; align-items: flex-start; background: var(--primary-light); border: 1px solid var(--primary); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; margin-bottom: 14px; }
 .banner-upgrade b { display: block; }
@@ -2048,6 +2053,11 @@ body {
 .pc-chip.pend { background: oklch(0.94 0.01 85); color: var(--text-light); }
 .pc-chip.parcial { background: oklch(0.94 0.06 80); color: oklch(0.4 0.1 70); }
 .pc-chip-btn { background: none; border: none; padding: 0; cursor: pointer; font: inherit; display: inline-flex; }
+
+/* Ficha del Contacto (#346): sus Oportunidades y sus Clientes Operam */
+.pc-ficha-seccion { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.pc-ficha-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; }
+.pc-ficha-item + .pc-ficha-item { border-top: 1px solid oklch(0.94 0.005 262); }
 .pc-chip-btn .pc-chip.pend { border: 1px dashed oklch(0.82 0.03 262); }
 .pc-dom { margin-top: 14px; }
 

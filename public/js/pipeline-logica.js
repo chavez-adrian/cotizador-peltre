@@ -10,11 +10,11 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion } from './prospectos-logica.js';
+import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
-import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL } from './estado-cliente-logica.js';
+import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
 // del motivo de PRE que define lib/pipeline.js (este modulo NO importa de lib/,
@@ -452,10 +452,15 @@ function inicialesCliente(nombre) {
 // otra fuente (o de una respuesta anterior a #344) -- misma regla, peor dato.
 // Antes decia "RFC generico" y "Operam": "generico" describe al RFC y no a la
 // persona, y la etiqueta tiene que decirle al vendedor que hacer (ADR-0016).
+export function sinDatosFiscales(r) {
+  const row = r || {};
+  return row.fiscal ? row.fiscal === SIN_DATOS_FISCALES : esRfcGenerico(row.rfc);
+}
+
 export function tagResultadoClienteHtml(r) {
   const row = r || {};
   if (row.tipo !== 'operam') return '<span class="pc-tag prospecto">Prospecto</span>';
-  const sinDatos = row.fiscal ? row.fiscal === SIN_DATOS_FISCALES : esRfcGenerico(row.rfc);
+  const sinDatos = sinDatosFiscales(row);
   const estado = sinDatos ? SIN_DATOS_FISCALES : CON_DATOS_FISCALES;
   return `<span class="pc-tag ${sinDatos ? 'generico' : 'operam'}">${escapeHtml(ETIQUETA_FISCAL[estado])}</span>`;
 }
@@ -510,6 +515,9 @@ function accionEditarFilaHtml(row, i) {
 
 export function filaResultadoClienteHtml(r, i) {
   const row = r || {};
+  // #346: la fila de un Contacto es otra cosa -- la PERSONA con sus Clientes
+  // Operam anidados -- y la pinta su propio builder.
+  if (row.tipo === 'contacto') return filaContactoHtml(row, i);
   // #196: nombre corto (cust_ref) entre parentesis, formato unico. Solo en
   // filas 'operam' (row.ref = cust_ref real); prospectos no lo tienen.
   const nombreTexto = row.tipo === 'operam' ? nombreConCorto(row.nombre, row.ref) : (row.nombre || '');
@@ -1179,4 +1187,101 @@ export function buildFiltroEventoHtml(oportunidades, seleccionado) {
     `<option value="${escapeHtml(e)}"${e === (seleccionado || '') ? ' selected' : ''}>${e ? escapeHtml(e) : 'Todos los eventos'}</option>`
   ).join('');
   return `<select id="pipeline-filtro-evento" class="btn-sm" style="margin-left:8px">${opciones}</select>`;
+}
+
+// === La vista Clientes por Contacto (#346, spec #337, ADR-0016) ===
+//
+// La unidad de la pantalla deja de ser el registro de Operam y pasa a ser la
+// PERSONA: Jorge Orea salia dos veces -- como Cliente Operam y como prospecto --
+// aunque el prospecto ya estuviera ligado a ese mismo `customer_id`. Aqui sale
+// una vez, con sus Clientes Operam colgando de el.
+
+// Los chips de las etiquetas del Contacto (#344). Se acumulan y no se quitan:
+// una Oportunidad Perdida no le quita ninguna, porque describen su historia. El
+// texto y el orden salen del vocabulario que comparte con el servidor.
+export function etiquetasContactoHtml(etiquetas) {
+  const tiene = new Set(etiquetas || []);
+  return ETIQUETAS_CONTACTO_ORDEN.filter(e => tiene.has(e))
+    .map(e => `<span class="pc-tag ${e.replace(/_/g, '-')}">${escapeHtml(ETIQUETA_CONTACTO[e])}</span>`)
+    .join('');
+}
+
+// Una Oportunidad en la ficha: su etapa y su folio. El badge es el MISMO del
+// tablero (badgeFolioOperam, que ya distingue cotizacion de prospecto y nunca
+// pinta "PRE" sobre una Oportunidad pre-cotizacion), y la etiqueta de etapa es
+// ETAPA_LABELS, que si nombra las salidas -- la ficha lista tambien las
+// perdidas y las no utiles.
+function oportunidadFichaHtml(o) {
+  const op = o || {};
+  return '<div class="pc-ficha-item">' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">' +
+    escapeHtml(ETAPA_LABELS[op.etapa] || op.etapa || 'Sin etapa') + '</span>' +
+    '<span class="pc-res-sub">' + escapeHtml(op.nombre || '') + '</span></span>' +
+    badgeFolioOperam(op) + '</div>';
+}
+
+// Un Cliente Operam en la ficha: sus dos estados y, cuando le faltan los datos
+// fiscales, el salto a completarlos CONTRA SU id -- un Contacto puede tener
+// varios y solo uno necesitar la constancia.
+function clienteOperamFichaHtml(c) {
+  const row = { ...(c || {}), tipo: 'operam' };
+  const nombre = row.name || row.nombre || 'Sin nombre';
+  const id = row.id == null ? '' : String(row.id);
+  const accion = sinDatosFiscales(row) && id
+    ? '<div style="margin-top:4px"><button type="button" class="btn btn-secondary btn-sm" ' +
+      'onclick="cvUpgradeClienteOperam(\'' + escapeHtml(id) + '\')">Completar datos fiscales</button></div>'
+    : '';
+  return '<div class="pc-ficha-item">' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(nombreConCorto(nombre, row.ref)) + '</span>' +
+    '<span class="pc-res-sub">' + escapeHtml('Cliente en Operam' + (id ? ' (ID ' + id + ')' : '')) + '</span>' +
+    accion + '</span>' +
+    tagResultadoClienteHtml({ ...row, nombre }) + tagPedidoClienteHtml(row) + '</div>';
+}
+
+// La ficha del Contacto: su historia completa antes de escribirle (user story 6
+// de la spec). Etiquetas, TODAS sus Oportunidades -- activas, ganadas y
+// perdidas, con folio y etapa -- y TODOS sus Clientes Operam con sus dos
+// estados, mas las tres puertas de salida: Nueva oportunidad, cotizar y
+// completar datos fiscales.
+export function fichaContactoHtml(r) {
+  const row = r || {};
+  const celular = celularDeContacto(row);
+  const sub = [row.celular, row.ciudad].filter(Boolean).map(escapeHtml).join(' &middot; ');
+  const oportunidades = (row.oportunidades || []).length
+    ? (row.oportunidades || []).map(oportunidadFichaHtml).join('')
+    : '<div class="pc-res-sub">Sin oportunidades</div>';
+  const clientes = (row.clientesOperam || []).length
+    ? (row.clientesOperam || []).map(clienteOperamFichaHtml).join('')
+    : '<div class="pc-res-sub">Sin Clientes Operam</div>';
+  const nueva = celular
+    ? '<button type="button" class="btn btn-secondary btn-block" style="margin-top:8px" ' +
+      'onclick="abrirNuevaOportunidad(\'' + escapeHtml(celular) + '\')">Nueva oportunidad</button>'
+    : '';
+  return '<div class="pc-cli-card">' +
+    '<div class="pc-cli-nombre">' + escapeHtml(row.nombre || 'Sin nombre') + '</div>' +
+    '<div class="pc-cli-sub">' + sub + '</div>' +
+    '<div style="margin-top:8px">' + chipOrigenHtml(row) + '</div>' +
+    '<div class="pc-chips">' + etiquetasContactoHtml(row.etiquetas) + '</div>' +
+    '<div class="pc-ficha-seccion"><div class="pc-res-titulo">Oportunidades</div>' + oportunidades + '</div>' +
+    '<div class="pc-ficha-seccion"><div class="pc-res-titulo">Clientes Operam</div>' + clientes + '</div>' +
+    nueva +
+    '<button type="button" class="btn btn-secondary btn-block" style="margin-top:8px" onclick="cvCotizar()">Cotizar a este Contacto &rsaquo;</button>' +
+    '</div>';
+}
+
+// La fila de un Contacto en Resultados: la persona, sus etiquetas y los nombres
+// de sus Clientes Operam anidados -- para que se vea de un vistazo que ese
+// registro de Operam que el vendedor buscaba ya esta ahi dentro y no falta.
+export function filaContactoHtml(r, i) {
+  const row = r || {};
+  const nombres = (row.clientesOperam || []).map(c => (c && (c.name || c.nombre)) || '').filter(Boolean);
+  const anidados = nombres.length
+    ? '<span class="pc-res-sub">' + nombres.map(escapeHtml).join(' &middot; ') + '</span>'
+    : '';
+  return '<button type="button" class="pc-res-row" onclick="cvElegirResultado(' + i + ')">' +
+    '<span class="pc-res-ini contacto">' + escapeHtml(inicialesCliente(row.nombre)) + '</span>' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(row.nombre || '') + '</span>' +
+    '<span class="pc-res-sub">' + escapeHtml(row.sub || '') + '</span>' +
+    anidados + chipOrigenHtml(row) + '</span>' +
+    etiquetasContactoHtml(row.etiquetas) + '</button>';
 }

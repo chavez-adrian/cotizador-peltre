@@ -829,6 +829,21 @@ function normalizarProspecto(p) {
   };
 }
 
+// Cuando un Contacto responde al texto tecleado: por su nombre, por su ciudad o
+// por los digitos de su celular. Lo comparten el buscador mezclado del paso
+// Cliente (aqui abajo) y el de la vista Clientes, que desde #346 arma sus filas
+// en el SERVIDOR (cross-import de la casa) -- una sola definicion de "este
+// Contacto sale en esta busqueda".
+export function contactoCoincideBusqueda(contacto, query) {
+  const p = contacto || {};
+  const q = normalizarBusqueda(query);
+  if (q.length < 2) return false;
+  const qDigitos = q.replace(/\D/g, '');
+  return normalizarBusqueda(p.nombre || '').includes(q) ||
+    normalizarBusqueda(p.ciudad || '').includes(q) ||
+    (qDigitos.length >= 2 && String(p.celular || '').replace(/\D/g, '').includes(qDigitos));
+}
+
 // Un solo buscador que encuentra a la vez clientes de Operam y prospectos del
 // vendedor, distinguibles por tipo (AC2). Query < 2 chars -> [] (el caller muestra
 // recientes). Operam matchea por razon social, RFC, nombre corto (cust_ref, #97) o
@@ -847,10 +862,7 @@ export function mezclarResultadosBusqueda(clientesOperam, prospectos, query) {
       // >=8 digitos (formato "sin lada" en adelante, ver indice-telefonos.js): con
       // menos, un fragmento corto empataria demasiados telefonos del catalogo completo.
       (qDigitos.length >= 8 && r.telefonos.some(t => t.replace(/\D/g, '').includes(qDigitos)))),
-    ...(prospectos || []).map(normalizarProspecto).filter(r =>
-      normalizarBusqueda(r.nombre).includes(q) ||
-      normalizarBusqueda(r.ciudad).includes(q) ||
-      (qDigitos.length >= 2 && r.celular.replace(/\D/g, '').includes(qDigitos))),
+    ...(prospectos || []).map(normalizarProspecto).filter(r => contactoCoincideBusqueda(r, query)),
   ];
   return filas.sort((a, b) => {
     const pa = normalizarBusqueda(a.nombre).startsWith(q) ? 0 : 1;

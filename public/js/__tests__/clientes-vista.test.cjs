@@ -11,13 +11,15 @@ const assert = require('node:assert/strict');
 
 let esRfcGenerico, customerIdFiscal, mostrarBotonCsf;
 let tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
-  bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade;
+  bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade,
+  filaContactoHtml, fichaContactoHtml;
 
 before(async () => {
   ({ esRfcGenerico, customerIdFiscal, mostrarBotonCsf } = await import('../alta-logica.js'));
   ({
     tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
     bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade,
+    filaContactoHtml, fichaContactoHtml,
   } = await import('../pipeline-logica.js'));
 });
 
@@ -323,4 +325,95 @@ test('OR12: la tarjeta del cliente pinta el Origen heredado y el que falta', () 
   assert.match(conOrigen, /origen-badge">Origen: Feria\/Expo/);
   const historico = cardClienteHtml({ tipo: 'operam', id: 480, name: 'Cliente historico', rfc: 'VAZ990101QX3' });
   assert.match(historico, /origen-badge-vacio">Origen sin identificar/);
+});
+
+// === #346: la vista Clientes agrupa por Contacto (spec #337, ADR-0016) ===
+// La unidad de la fila es la PERSONA, no la entidad legal: la misma persona una
+// sola vez, con sus etiquetas y sus Clientes Operam anidados. La ficha es su
+// historia completa antes de escribirle.
+
+const CONTACTO = {
+  tipo: 'contacto', id: 1, nombre: 'Laura Mendez', ciudad: 'Puebla',
+  celular: '+52 55 1234 5678', sub: 'Puebla - +52 55 1234 5678', origen: 'WhatsApp',
+  etiquetas: ['prospecto', 'cotizado', 'con_pedido'],
+  oportunidades: [
+    { tipo: 'cotizacion', id: 'c50', refId: 50, etapa: 'seguimiento', folioOperam: 1240 },
+    { tipo: 'cotizacion', id: 'c51', refId: 51, etapa: 'perdida', folioOperam: 1199 },
+    { tipo: 'prospecto', id: 'p1', refId: 1, etapa: 'por_cotizar', folioOperam: null },
+  ],
+  clientesOperam: [
+    { id: '514', name: 'JORGE OREA', rfc: 'XAXX010101000', fiscal: 'sin_datos_fiscales', comercial: 'con_pedido' },
+    { id: '780', name: 'OREA EVENTOS SA DE CV', rfc: 'OEV220101QX3', fiscal: 'con_datos_fiscales', comercial: 'cotizado' },
+  ],
+  raw: { id: 1, nombre: 'Laura Mendez', ciudad: 'Puebla', celular: '+52 55 1234 5678', etapa: 'seguimiento', data: {} },
+};
+
+test('CT1: la ficha nombra al Contacto, su celular y su Origen', () => {
+  const html = fichaContactoHtml(CONTACTO);
+  assert.match(html, /Laura Mendez/);
+  assert.match(html, /\+52 55 1234 5678/);
+  assert.match(html, /origen-badge">Origen: WhatsApp/);
+});
+
+test('CT2: la ficha pinta las etiquetas del Contacto con su texto de pantalla', () => {
+  const html = fichaContactoHtml(CONTACTO);
+  assert.match(html, />Prospecto</);
+  assert.match(html, />Cotizado</);
+  assert.match(html, />con pedido</);
+});
+
+test('CT3: la ficha lista TODAS sus Oportunidades con su folio y su etapa', () => {
+  const html = fichaContactoHtml(CONTACTO);
+  assert.match(html, /Cotización 1240/);
+  assert.match(html, /Seguimiento/);
+  assert.match(html, /Cotización 1199/);
+  assert.match(html, /Perdida/);
+  assert.match(html, /Por Cotizar/);
+});
+
+test('CT4: la ficha lista sus Clientes Operam con sus dos estados', () => {
+  const html = fichaContactoHtml(CONTACTO);
+  assert.match(html, /JORGE OREA/);
+  assert.match(html, /Sin datos fiscales/);
+  assert.match(html, /OREA EVENTOS SA DE CV/);
+  assert.match(html, /Con datos fiscales/);
+  assert.match(html, /pc-tag con-pedido/);
+});
+
+// AC4: el salto a completar datos fiscales apunta al Cliente Operam que le
+// falta, no al Contacto -- un Contacto puede tener varios.
+test('CT5: solo el Cliente Operam sin datos fiscales ofrece completarlos, contra SU id', () => {
+  const html = fichaContactoHtml(CONTACTO);
+  assert.match(html, /cvUpgradeClienteOperam\('514'\)/);
+  assert.doesNotMatch(html, /cvUpgradeClienteOperam\('780'\)/);
+});
+
+test('CT6: la ficha abre Nueva oportunidad con el celular y deja cotizar', () => {
+  const html = fichaContactoHtml(CONTACTO);
+  assert.match(html, /abrirNuevaOportunidad\('\+525512345678'\)/);
+  assert.match(html, /cvCotizar\(\)/);
+});
+
+test('CT7: un Contacto sin Oportunidades ni Clientes Operam lo dice, sin huecos', () => {
+  const html = fichaContactoHtml({ ...CONTACTO, oportunidades: [], clientesOperam: [], etiquetas: [] });
+  assert.match(html, /Sin oportunidades/);
+  assert.match(html, /Sin Clientes Operam/);
+});
+
+test('CT8: la ficha escapa el nombre del Contacto', () => {
+  const html = fichaContactoHtml({ ...CONTACTO, nombre: '<img src=x>' });
+  assert.doesNotMatch(html, /<img src=x>/);
+  assert.match(html, /&lt;img/);
+});
+
+test('CT9: la fila del Contacto abre su ficha por indice y nombra sus Clientes Operam', () => {
+  const html = filaContactoHtml(CONTACTO, 2);
+  assert.match(html, /cvElegirResultado\(2\)/);
+  assert.match(html, /Laura Mendez/);
+  assert.match(html, /JORGE OREA/);
+  assert.match(html, /OREA EVENTOS SA DE CV/);
+});
+
+test('CT10: filaResultadoClienteHtml despacha a la fila de Contacto por su tipo', () => {
+  assert.equal(filaResultadoClienteHtml(CONTACTO, 2), filaContactoHtml(CONTACTO, 2));
 });

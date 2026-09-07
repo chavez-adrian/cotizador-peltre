@@ -116,6 +116,7 @@ import {
   filaResultadoClienteHtml,
   filaCrearClienteHtml,
   cardClienteHtml,
+  fichaContactoHtml,
   bannerUpgradeHtml,
   rotuloPanelUpgrade,
 } from './pipeline-logica.js';
@@ -4873,7 +4874,7 @@ function showProspectos() {
 // paso Cliente (chipsCompletitud); el render vive en pipeline-logica.js. El panel
 // de alta (#panel-alta-cliente) se re-parenta a #clientes-panel-slot (moverPanelA)
 // y vuelve a su casa al salir (devolverPanelACasa, via ocultarTodasLasVistas).
-const cvState = { seleccion: null };
+const cvState = { seleccion: null, query: '' };
 let cvResultadosCache = [];
 
 function cvRoot() { return document.getElementById('clientes-root'); }
@@ -4947,6 +4948,32 @@ async function cvBuscarPrefill(nombre) {
 }
 window.cvBuscarPrefill = cvBuscarPrefill;
 
+// #346: la vista Clientes tiene su propio buscador, que agrupa por CONTACTO. El
+// paso Cliente sigue con pcBuscarMezclado (busca entidades para cotizar); aqui
+// la unidad es la persona y las filas vienen ya armadas del servidor -- con sus
+// etiquetas, sus Oportunidades, sus Clientes Operam anidados y el Origen
+// resuelto. El query se recuerda para poder refrescar la ficha abierta, cuando
+// ya no hay caja de busqueda en pantalla.
+async function cvBuscarContactos(q) {
+  cvState.query = q;
+  return api(`/api/contactos/buscar?q=${encodeURIComponent(q)}`)
+    .then(r => (r.ok ? r.json() : []))
+    .catch(() => []);
+}
+
+// Vuelve a pedir la fila del Contacto que se esta viendo y repinta su ficha:
+// lo que se abre desde ella (una Nueva oportunidad) cambia lo que ella lista.
+async function cvRefrescarFicha() {
+  const sel = cvState.seleccion;
+  if (!sel || sel.tipo !== 'contacto') return;
+  const rows = await cvBuscarContactos(cvState.query || '');
+  cvResultadosCache = rows;
+  const fila = rows.find(r => r.tipo === 'contacto' && r.id === sel.contacto.id);
+  if (!fila) return;
+  cvState.seleccion = { ...sel, contacto: fila };
+  cvRenderTarjeta();
+}
+
 async function cvBuscar() {
   const q = document.getElementById('cv-q')?.value || '';
   if (q.trim().length < 2) { await cvRenderRecientes(); return; }
@@ -4954,8 +4981,7 @@ async function cvBuscar() {
   const zonaAntes = document.getElementById('cv-zona');
   if (!zonaAntes) return;
   zonaAntes.innerHTML = '<div class="pc-res-titulo">Buscando...</div>';
-  const rows = await pcBuscarMezclado(q);
-  if (!rows) return; // respuesta vieja descartada
+  const rows = await cvBuscarContactos(q);
   if (seq !== cvZonaSeq) return; // un render de recientes mas nuevo se adueno de la zona
   const zona = document.getElementById('cv-zona');
   if (!zona) return;
@@ -4968,13 +4994,20 @@ async function cvBuscar() {
 function cvElegirResultado(i) {
   const r = cvResultadosCache[i];
   if (!r) return;
-  const base = r.tipo === 'operam'
-    ? { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' }
-    : clienteDesdeProspecto(r.raw);
-  // El Origen de la tarjeta es el que ya resolvio la fila (#287): la tarjeta se
-  // arma desde `raw`, que no lo trae.
+  // #346: la fila de un Contacto abre su FICHA (la persona con sus
+  // Oportunidades y sus Clientes Operam), no una tarjeta de cliente.
+  if (r.tipo === 'contacto') {
+    cvState.seleccion = {
+      tipo: 'contacto', contacto: r, raw: r.raw,
+      card: { ...clienteDesdeProspecto(r.raw), origen: r.origen },
+    };
+    cvRenderTarjeta();
+    return;
+  }
+  const base = { ...r, tipo: 'operam', pais: r.pais || 'MX' };
+  // El Origen de la tarjeta es el que ya resolvio la fila (#287).
   const card = { ...base, origen: r.origen };
-  cvState.seleccion = { tipo: r.tipo, card, raw: r.raw };
+  cvState.seleccion = { tipo: r.tipo, card, raw: r };
   cvRenderTarjeta();
 }
 window.cvElegirResultado = cvElegirResultado;
@@ -4983,12 +5016,35 @@ function cvRenderTarjeta() {
   const root = cvRoot();
   const sel = cvState.seleccion;
   if (!root || !sel) return;
-  root.innerHTML =
-    '<div class="pc-pregunta">Cliente</div>' +
-    cardClienteHtml(sel.card) +
-    '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Buscar otro cliente</button>';
+  const cuerpo = sel.tipo === 'contacto'
+    ? '<div class="pc-pregunta">Contacto</div>' + fichaContactoHtml(sel.contacto)
+    : '<div class="pc-pregunta">Cliente Operam</div>' + cardClienteHtml(sel.card);
+  root.innerHTML = cuerpo +
+    '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Buscar otro</button>';
 }
 window.cvRenderTarjeta = cvRenderTarjeta;
+
+// "Completar datos fiscales" desde la ficha del Contacto (#346): apunta a UN
+// Cliente Operam suyo, porque puede tener varios y solo a uno faltarle la
+// constancia. Abre el MISMO panel de upgrade (#85/#197) sobre ese customer_id,
+// sin perder de vista de quien es la ficha (volver regresa a ella).
+// Se expone a `window` junto a su declaracion: los onclick inline resuelven
+// contra window (trampa de #112).
+function cvUpgradeClienteOperam(id) {
+  const sel = cvState.seleccion;
+  if (!sel || sel.tipo !== 'contacto') return;
+  const cliente = (sel.contacto.clientesOperam || []).find(c => String(c.id) === String(id));
+  if (!cliente) return;
+  const root = cvRoot();
+  if (root) {
+    root.innerHTML =
+      '<div class="pc-pregunta">' + escapeHtml(rotuloPanelUpgrade(false)) + '</div>' +
+      '<button type="button" class="pc-back" onclick="cvRenderTarjeta()">&lsaquo; Volver al Contacto</button>';
+  }
+  moverPanelA(document.getElementById('clientes-panel-slot'));
+  pcAbrirUpgradeFiscal(cliente.id, { nombre: cliente.name || cliente.ref || '', rfc: cliente.rfc || '' }, 'clientes');
+}
+window.cvUpgradeClienteOperam = cvUpgradeClienteOperam;
 
 // Fila punteada -> alta COMPLETA (acordeon 1-4, POST). Re-parenta el panel a la
 // vista y lo abre en modo creacion (abrirAcordeonAlta resetea modoUpgrade).
@@ -5038,7 +5094,9 @@ window.cvAbrirUpgrade = cvAbrirUpgrade;
 function cvEditarClienteFila(i) {
   const r = cvResultadosCache[i];
   if (!r || r.tipo !== 'operam') return;
-  cvState.seleccion = { tipo: r.tipo, card: { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' }, raw: r.raw };
+  // #346: la fila de un Cliente Operam ES el registro (el buscador por Contacto
+  // no la envuelve en `raw`).
+  cvState.seleccion = { tipo: r.tipo, card: { ...r, tipo: 'operam', pais: r.pais || 'MX' }, raw: r };
   cvAbrirUpgrade(true);
 }
 window.cvEditarClienteFila = cvEditarClienteFila;
@@ -5071,6 +5129,9 @@ function cvCotizar() {
   document.getElementById('app-view').style.display = 'block';
   marcarNavActivo('nav-cotizar');
   switchTab('cliente');
+  // #346: desde la ficha de un Contacto se cotiza con SUS datos; el vendedor
+  // elige la razon social en el propio paso Cliente, que es donde vive esa
+  // decision (y donde #345 pregunta si es otra razon social del mismo Contacto).
   if (sel.tipo === 'operam') pcElegirOperam(sel.raw);
   else pcElegirProspecto(sel.raw);
 }
@@ -5500,6 +5561,8 @@ async function abrirNuevaOportunidad(celular) {
       if (existente) existente.innerHTML = '';
       cargarListaProspectos();
     }
+    // #346: la tercera superficie es la ficha del Contacto en la vista Clientes.
+    if (document.getElementById('clientes-view')?.style.display === 'block') cvRefrescarFicha();
   } catch (e) {
     avisoTablero('Error de conexion');
   }

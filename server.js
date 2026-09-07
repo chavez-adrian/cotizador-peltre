@@ -12,7 +12,7 @@ import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacio
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
-import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados, precargaComercialUpgrade } from './public/js/alta-logica.js';
+import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados, precargaComercialUpgrade, contactoCoincideBusqueda } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoDe, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, sucursalEquivalente, diffBranchDomicilio } from './lib/alta-generica.js';
 import { celsNoAplicados } from './lib/cel-operam.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
@@ -40,6 +40,7 @@ import { ligasDeContacto, ligaPrincipal, conLigaDerivada, decidirLiga } from './
 // ADR-0016): derivados en el servidor desde lo que Operam registra, nunca
 // capturados. El nucleo decide; lib/actividad-operam.js es quien lee y cachea.
 import { anotarEstadosOportunidades, etiquetasDeContacto, clientesOperamLigados, indiceContactosPorCelular } from './lib/etiquetas-contacto.js';
+import { filasBuscadorClientes } from './lib/buscador-clientes.js';
 import { estadosDeClientes, estadosPorId, celularesEnLinea, refrescarActividad } from './lib/actividad-operam.js';
 import { ultimos10 } from './lib/telefono-llave.js';
 import * as cotStore from './lib/cotizaciones-store.js';
@@ -2266,29 +2267,83 @@ function titleCase(str) {
   }).join(' ');
 }
 
+// Issue #97: buscarClientes(q) es la busqueda de Operam (razon social);
+// buscarClientesPorTexto(q) cablea el indice de telefonos/nombre corto de
+// #42 (best effort, nunca lanza) para cubrir telefono de contacto y
+// cust_ref, que Operam no indexa. Se combinan y deduplican por customer_id.
+// OJO (#194): ninguna de las dos indexa el RFC, asi que un vendedor que
+// teclee un RFC en esta caja no encuentra nada. NO es el bug de #194 (aqui
+// el texto es libre, no una llave de dedup) y se dejo como estaba; si se
+// quiere cubrir, el camino es un fallback a buscarClientesPorRfc cuando q
+// tenga forma de RFC.
+async function clientesOperamPorTexto(q) {
+  const [porOperam, porIndice] = await Promise.all([
+    buscarClientes(q),
+    buscarClientesPorTexto(q),
+  ]);
+  const vistos = new Set();
+  return [...(Array.isArray(porOperam) ? porOperam : []), ...porIndice].filter(c => {
+    if (vistos.has(c.customer_id)) return false;
+    vistos.add(c.customer_id);
+    return true;
+  });
+}
+
+// Los celulares por los que un Cliente Operam liga con un Contacto: los de sus
+// SEIS casillas (regla estructural de ADR-0016). La enumeracion es la de
+// `enumerarTelefonosClientes` (#338/#342), que es quien conoce la forma de
+// Operam y etiqueta la `casilla`; el orden es el del respaldo de la migracion
+// (Cel > Telefono > Secundario, ORDEN_CASILLA), porque el Cel es el numero mas
+// probable de WhatsApp.
+function celularesDeClienteOperam(c) {
+  return enumerarTelefonosClientes([c])
+    .map(e => ({ cel: ultimos10(e.telefono), casilla: e.casilla }))
+    .filter(x => x.cel.length === 10)
+    .sort((a, b) => ORDEN_CASILLA.indexOf(a.casilla) - ORDEN_CASILLA.indexOf(b.casilla))
+    .map(x => x.cel);
+}
+
+// La fila de un Cliente Operam que leen el paso Cliente y la vista Clientes.
+// Sin las etiquetas: esas son del CONTACTO (ADR-0016) y las agrega quien sabe
+// de quien es la fila.
+function filaClienteOperam(c, estadoOperam) {
+  const branch = c.branches?.[0] || {};
+  // OJO: telefonos trae los de TODOS los branches/contactos (no solo branches[0]) --
+  // buscarClientesPorTexto puede matchear por un telefono que viva en otro branch.
+  const telefonos = [
+    ...(c.branches || []).map(b => b.phone),
+    ...(c.contacts || []).flatMap(ct => [ct.phone, ct.phone2]),
+  ].filter(Boolean);
+  return {
+    id: c.customer_id, name: c.CustName || '', ref: c.cust_ref || '', rfc: c.tax_id || '',
+    calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),
+    numInt: c.suite_number || '', colonia: titleCase(c.district || ''),
+    cp: c.postal_code || '', municipio: titleCase(c.city || ''),
+    // `estado` aqui es el estado de la republica del domicilio; los dos estados
+    // del Cliente Operam viajan como `fiscal` y `comercial`.
+    estado: titleCase(c.state || ''),
+    telefono: telefonos[0] || '',
+    telefonos,
+    email: branch.email || c.contacts?.[0]?.email || '',
+    nombreEntrega: branch.br_name || branch.contact_name || '',
+    // #245: pais ISO (MX/US/CA) derivado del texto libre country, o null si
+    // no se puede determinar (ver paisDeClienteOperam). El frontend fija
+    // cl-pais solo cuando esto viene no nulo.
+    pais: paisDeClienteOperam(c),
+    // #344: los dos estados del Cliente Operam. `fiscal` sale del RFC de HOY,
+    // no del que se capturo alguna vez; `fuenteIncompleta` declara el hueco de
+    // los quotes web.
+    fiscal: estadoOperam?.fiscal ?? null,
+    comercial: estadoOperam?.comercial ?? null,
+    fuenteIncompleta: estadoOperam?.fuenteIncompleta ?? null,
+  };
+}
+
 app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
   const q = req.query.q || '';
   if (!q.trim()) return res.json([]);
   try {
-    // Issue #97: buscarClientes(q) es la busqueda de Operam (razon social);
-    // buscarClientesPorTexto(q) cablea el indice de telefonos/nombre corto de
-    // #42 (best effort, nunca lanza) para cubrir telefono de contacto y
-    // cust_ref, que Operam no indexa. Se combinan y deduplican por customer_id.
-    // OJO (#194): ninguna de las dos indexa el RFC, asi que un vendedor que
-    // teclee un RFC en esta caja no encuentra nada. NO es el bug de #194 (aqui
-    // el texto es libre, no una llave de dedup) y se dejo como estaba; si se
-    // quiere cubrir, el camino es un fallback a buscarClientesPorRfc cuando q
-    // tenga forma de RFC.
-    const [porOperam, porIndice] = await Promise.all([
-      buscarClientes(q),
-      buscarClientesPorTexto(q),
-    ]);
-    const vistos = new Set();
-    const raw = [...(Array.isArray(porOperam) ? porOperam : []), ...porIndice].filter(c => {
-      if (vistos.has(c.customer_id)) return false;
-      vistos.add(c.customer_id);
-      return true;
-    });
+    const raw = await clientesOperamPorTexto(q);
     // Los dos estados de cada Cliente Operam del resultado (#344, ADR-0016) y
     // las etiquetas del Contacto que comparte su celular. Ambos derivados: el
     // vendedor lee "Sin datos fiscales" y "con pedido" sin capturar nada, y el
@@ -2303,19 +2358,13 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
     const contactoPorCelular = indiceContactosPorCelular(contactos);
     // De que Contacto es cada Cliente Operam del resultado, por la regla
     // estructural de ADR-0016: un celular en cualquiera de las SEIS casillas
-    // liga. La enumeracion es la de `enumerarTelefonosClientes` (#338/#342),
-    // que es quien conoce la forma de Operam y etiqueta la `casilla`; el orden
-    // es el mismo del respaldo de la migracion (Cel > Telefono > Secundario,
-    // ORDEN_CASILLA), porque el Cel es el numero mas probable de WhatsApp.
-    // El primero que resulte ser Contacto manda: una fila POR Contacto es #346.
+    // liga (celularesDeClienteOperam). El primero que resulte ser Contacto
+    // manda: una fila POR Contacto es la vista Clientes de #346, que tiene su
+    // propia ruta.
     const contactoDeCliente = (c) => {
-      const candidatos = enumerarTelefonosClientes([c])
-        .map(e => ({ cel: ultimos10(e.telefono), casilla: e.casilla }))
-        .filter(x => x.cel.length === 10)
-        .sort((a, b) => ORDEN_CASILLA.indexOf(a.casilla) - ORDEN_CASILLA.indexOf(b.casilla));
-      for (const x of candidatos) {
-        const ficha = contactoPorCelular.get(x.cel);
-        if (ficha || enLinea.has(x.cel)) return { cel: x.cel, ficha: ficha || null };
+      for (const cel of celularesDeClienteOperam(c)) {
+        const ficha = contactoPorCelular.get(cel);
+        if (ficha || enLinea.has(cel)) return { cel, ficha: ficha || null };
       }
       return null;
     };
@@ -2328,13 +2377,6 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
       .flatMap(x => clientesOperamLigados(x.ficha, oportunidadesDe(x.ficha).map(o => ({ customerId: o.data?.cliente?.customerId }))));
     const estadosLigados = await estadosPorId(ligados);
     const clientes = raw.map(c => {
-      const branch = c.branches?.[0] || {};
-      // OJO: telefonos trae los de TODOS los branches/contactos (no solo branches[0]) --
-      // buscarClientesPorTexto puede matchear por un telefono que viva en otro branch.
-      const telefonos = [
-        ...(c.branches || []).map(b => b.phone),
-        ...(c.contacts || []).flatMap(ct => [ct.phone, ct.phone2]),
-      ].filter(Boolean);
       // `estadoOperam` y no `estado`: en esta misma fila `estado` es el estado
       // de la republica del domicilio.
       const estadoOperam = estados.get(String(c.customer_id)) || null;
@@ -2348,24 +2390,8 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
           .filter(Boolean),
       ];
       return {
-        id: c.customer_id, name: c.CustName || '', ref: c.cust_ref || '', rfc: c.tax_id || '',
-        calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),
-        numInt: c.suite_number || '', colonia: titleCase(c.district || ''),
-        cp: c.postal_code || '', municipio: titleCase(c.city || ''), estado: titleCase(c.state || ''),
-        telefono: telefonos[0] || '',
-        telefonos,
-        email: branch.email || c.contacts?.[0]?.email || '',
-        nombreEntrega: branch.br_name || branch.contact_name || '',
-        // #245: pais ISO (MX/US/CA) derivado del texto libre country, o null si
-        // no se puede determinar (ver paisDeClienteOperam). El frontend fija
-        // cl-pais solo cuando esto viene no nulo.
-        pais: paisDeClienteOperam(c),
-        // #344: los dos estados del Cliente Operam y las etiquetas de su
-        // Contacto. `fiscal` sale del RFC de HOY, no del que se capturo alguna
-        // vez; `fuenteIncompleta` declara el hueco de los quotes web.
-        fiscal: estadoOperam?.fiscal ?? null,
-        comercial: estadoOperam?.comercial ?? null,
-        fuenteIncompleta: estadoOperam?.fuenteIncompleta ?? null,
+        ...filaClienteOperam(c, estadoOperam),
+        // #344: las etiquetas del Contacto que comparte el celular de esta fila.
         etiquetas: contacto
           ? etiquetasDeContacto({
             contacto: contacto.ficha,
@@ -2379,6 +2405,126 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
       };
     });
     res.json(clientes);
+  } catch (err) {
+    res.status(503).json({ error: 'Operam no disponible: ' + err.message });
+  }
+});
+
+// El buscador de la vista Clientes, por CONTACTO (#346, spec #337, ADR-0016).
+//
+// La vista mezclaba dos listas en el navegador -- los Clientes Operam y los
+// prospectos del vendedor -- y la misma persona salia dos veces. Aqui la unidad
+// de la fila es el Contacto: una fila por celular, con sus etiquetas, sus
+// Oportunidades y sus Clientes Operam ANIDADOS, mas las filas de los Clientes
+// Operam de los que no conocemos a nadie. Quien decide la forma es el nucleo
+// puro (lib/buscador-clientes.js); aqui solo se lee.
+//
+// La visibilidad es la de siempre: se parte del embudo visible para quien
+// pregunta, asi que el Contacto de otro vendedor no aparece -- y su Cliente
+// Operam sigue saliendo como fila suelta, igual que hoy.
+//
+// El paso Cliente NO cambia: sigue con GET /api/operam/clientes, que es la
+// busqueda de entidades para cotizar.
+app.get('/api/contactos/buscar', authMiddleware, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  try {
+    const raw = await clientesOperamPorTexto(q);
+    const celularesPorCliente = new Map(
+      raw.map(c => [String(c.customer_id), celularesDeClienteOperam(c)]));
+
+    const embudo = await embudoVisiblePara(req.user);
+    const cotizaciones = await cotStore.listar();
+    // #319: las cotizaciones se filtran por la MISMA visibilidad antes de
+    // ligarlas, para que un vendedor nunca vea por la ficha de un Contacto la
+    // cotizacion de otro.
+    const cotizacionesVisibles = req.user.role === 'admin'
+      ? cotizaciones
+      : cotizaciones.filter(c => c.vendedor === req.user.name);
+
+    // Los Contactos que entran: los que responden al texto y los de los
+    // Clientes Operam que ya respondieron. Buscar "Orea" tiene que traer a su
+    // comprador aunque el se llame de otra forma -- si no, el Cliente Operam
+    // volveria a salir como fila suelta y la persona quedaria escondida.
+    const celularesDelResultado = new Set([...celularesPorCliente.values()].flat());
+    const fichas = embudo.contactos.filter(c =>
+      contactoCoincideBusqueda(c, q) || celularesDelResultado.has(ultimos10(c.celular)));
+
+    const oportunidadesPre = oportunidadesDeContactos(fichas, await oportunidadesStore.listar());
+    const porContacto = fichas.map(ficha => {
+      const cots = cotizacionesDelProspecto(ficha, cotizacionesVisibles);
+      const suyas = oportunidadesPre.filter(o => o.contactoId === ficha.id);
+      return {
+        ficha,
+        cots,
+        // Todas sus Oportunidades, en la misma forma que las tarjetas del
+        // tablero (#340): las pre-cotizacion y las que ya son cotizacion, sin
+        // que la persona salga dos veces por la misma intencion.
+        tarjetas: tarjetasOportunidades(suyas, cots),
+        ligados: clientesOperamLigados(ficha, cots.map(c => ({ customerId: c.data?.cliente?.customerId }))),
+      };
+    });
+
+    // Las fichas de Operam de todo lo que va a viajar: las del resultado y las
+    // de las ligas persistidas del Contacto, que pueden no estar en el
+    // resultado (muchos a muchos, ADR-0016). Lo que el padron no conoce no se
+    // inventa: sin ficha no hay Cliente Operam que anidar.
+    const padron = await clientesCacheados({ timeoutMs: 5000 }).catch(() => []);
+    const padronPorId = new Map((padron || []).map(c => [String(c.customer_id), c]));
+    const fichasOperam = new Map(raw.map(c => [String(c.customer_id), c]));
+    for (const id of porContacto.flatMap(x => x.ligados)) {
+      if (fichasOperam.has(id)) continue;
+      const ficha = padronPorId.get(id);
+      if (ficha) fichasOperam.set(id, ficha);
+    }
+    const [estados, enLinea] = await Promise.all([
+      estadosDeClientes([...fichasOperam.values()]),
+      celularesEnLinea(),
+    ]);
+    const filaOperamDe = (id) => {
+      const ficha = fichasOperam.get(String(id));
+      return ficha ? filaClienteOperam(ficha, estados.get(String(id)) || null) : null;
+    };
+
+    const contactos = porContacto.map(({ ficha, tarjetas, ligados }) => {
+      const clientesOperam = ligados.map(filaOperamDe).filter(Boolean);
+      return {
+        id: ficha.id,
+        celular: ficha.celular,
+        nombre: ficha.nombre || '',
+        ciudad: ficha.ciudad || '',
+        canal: ficha.canal || '',
+        // El sub de la fila, con el mismo formato que la lista mezclada.
+        sub: [ficha.ciudad, ficha.celular].filter(Boolean).join(' - '),
+        etiquetas: etiquetasDeContacto({
+          contacto: ficha,
+          oportunidades: tarjetas,
+          clientesOperam,
+          enLinea: enLinea.has(ultimos10(ficha.celular)),
+        }),
+        oportunidades: tarjetas,
+        clientesOperam,
+        // La ficha cruda: de ahi salen el salto a cotizar (clienteDesdeProspecto)
+        // y la edicion del Contacto, igual que en la lista mezclada.
+        raw: ficha,
+      };
+    });
+
+    const filas = filasBuscadorClientes({
+      // `nombre` y `sub` son los campos con los que la fila se pinta (los mismos
+      // que ponia `normalizarOperam` en el navegador): aqui las filas viajan ya
+      // armadas, porque quien decide que sale y bajo quien es el servidor.
+      clientesOperam: raw.map(c => {
+        const fila = filaClienteOperam(c, estados.get(String(c.customer_id)) || null);
+        return { ...fila, nombre: fila.name, sub: fila.rfc };
+      }),
+      contactos,
+      celularesPorCliente,
+    });
+    // El Origen (#287) se resuelve aqui, donde estan los Contactos: la fila del
+    // Contacto lo trae propio y la del Cliente Operam suelto lo hereda si algun
+    // Contacto visible comparte su telefono.
+    res.json(anotarOrigen(filas, indiceOrigenPorCelular(embudo.contactos)));
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }

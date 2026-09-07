@@ -183,7 +183,10 @@ export function buildEdicionProspectoFormHtml(p) {
 // Labels de las etapas del pipeline unificado (issue #53, ADR-0005). La unica
 // fuente del vocabulario es lib/pipeline.js; aqui se reexpone para el frontend
 // (este modulo es browser-safe y no importa de lib/).
-const ETAPA_LABELS = {
+// Exportado desde #346: la ficha del Contacto lista Oportunidades en TODAS las
+// etapas -- activas, ganadas y perdidas -- y COLUMNA_LABELS (pipeline-logica.js)
+// solo nombra las 7 columnas del tablero, no las salidas.
+export const ETAPA_LABELS = {
   no_asignado: 'No Asignado',
   por_cotizar: 'Por Cotizar',
   seguimiento: 'Seguimiento',

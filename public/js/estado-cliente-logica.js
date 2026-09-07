@@ -28,3 +28,24 @@ export const ETIQUETA_COMERCIAL = {
   [COTIZADO]: 'cotizado',
   [CON_PEDIDO]: 'con pedido',
 };
+
+// Las etiquetas del CONTACTO (#344/#346, ADR-0016, CONTEXT.md "Contacto"), aqui
+// por la misma razon: el servidor las deriva (lib/etiquetas-contacto.js las
+// reexporta) y la vista Clientes las pinta. Se acumulan y no se quitan -- una
+// Oportunidad Perdida no le quita ninguna al Contacto -- y el orden es el de la
+// historia de la persona, que es el que lee la pantalla.
+//
+// `cotizado` y `con pedido` son literalmente los mismos valores del estado
+// comercial del Cliente Operam: la persona los hereda de sus entidades, y
+// duplicar la cadena seria abrir la puerta a que un dia dejaran de coincidir.
+export const PROSPECTO = 'prospecto';
+export const CLIENTE_EN_LINEA = 'cliente_en_linea';
+
+export const ETIQUETAS_CONTACTO_ORDEN = [PROSPECTO, COTIZADO, CON_PEDIDO, CLIENTE_EN_LINEA];
+
+export const ETIQUETA_CONTACTO = {
+  [PROSPECTO]: 'Prospecto',
+  [COTIZADO]: 'Cotizado',
+  [CON_PEDIDO]: 'con pedido',
+  [CLIENTE_EN_LINEA]: 'Cliente en linea',
+};
