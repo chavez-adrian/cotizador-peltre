@@ -5276,59 +5276,6 @@ async function cargarEstadoDeCatalogos() {
   }
 }
 
-function motivoNoUtilDe(p) {
-  // El motivo de la salida a No util vive en el evento no_util (issue #59, AC3:
-  // el filtro de cerradas lo muestra). El ultimo evento no_util manda.
-  let motivo = null;
-  for (const e of p.eventos || []) {
-    if (e.tipo === 'no_util' && e.motivo) motivo = e.motivo;
-  }
-  return motivo;
-}
-
-function prospectoAOportunidad(p) {
-  return {
-    tipo: 'prospecto', id: `p${p.id}`, refId: p.id, nombre: p.nombre,
-    vendedor: p.vendedor, ciudad: p.ciudad, canal: p.canal, etapa: p.etapa,
-    total: 0, fecha: p.fecha,
-    // Celular para el buscador del pipeline (#289): match por digitos.
-    celular: p.celular,
-    // Folio de Operam de un prospecto movido a mano (issue #56): vive en el bag
-    // data porque cotizo por fuera (no hay cotizacion en el sistema). La tarjeta
-    // pinta "Cotizacion N" solo si hay folio (nunca PRE, eso es de cotizaciones).
-    folioOperam: p.data?.folioOperam ?? null,
-    // Motivo de la salida a No util (issue #59, AC3): lo muestra el filtro de
-    // cerradas. Solo aplica a prospectos (Modelo A).
-    motivoNoUtil: motivoNoUtilDe(p),
-    // Evento de expo (issue #261): el filtro del pipeline responde cuantos
-    // prospectos dejo Abastur.
-    evento: p.data?.evento ?? null,
-  };
-}
-
-function cotizacionAOportunidad(c) {
-  return {
-    tipo: 'cotizacion', id: `c${c.id}`, refId: c.id, nombre: c.cliente,
-    vendedor: c.vendedor, etapa: c.etapa, total: c.total, totalPiezas: c.totalPiezas,
-    fecha: c.fecha, folioOperam: c.folioOperam ?? null,
-    // Telefono para el buscador del pipeline (#289): la cotizacion lo trae con
-    // ese nombre (el prospecto lo trae como celular); los dos se buscan igual.
-    // Es tambien por donde el pipeline hereda el Origen (#287): el `origen` que
-    // anota GET /api/cotizaciones para el Historial NO se copia a proposito --
-    // aqui la herencia se resuelve en el navegador (recargarPipeline), contra
-    // los MISMOS prospectos visibles que usa el servidor, asi que las dos
-    // vistas dicen lo mismo del mismo cliente.
-    telefono: c.telefono,
-    decorado: c.decorado === true, calcaChecklist: c.calcaChecklist ?? null,
-    // Cadena de folios de Operam (issue #67, AC4): el espejo persistido por el sync
-    // (data.espejoOperam) que la tarjeta pinta para trazabilidad.
-    espejoOperam: c.espejoOperam ?? null,
-    // Pago sin registrar (issue #77): la entregada-impaga muestra el badge hasta que
-    // el sync detecte el pago (allocated ~ total) y apague el flag.
-    pagoSinRegistrar: c.pagoSinRegistrar === true,
-  };
-}
-
 async function showPipeline() {
   ocultarTodasLasVistas();
   document.getElementById('pipeline-view').style.display = 'block';
@@ -5345,18 +5292,12 @@ async function recargarPipeline() {
   document.getElementById('pipeline-tablero').innerHTML = '';
   document.getElementById('pipeline-list').innerHTML = '';
   try {
-    const [resP, resC] = await Promise.all([api('/api/prospectos'), api('/api/cotizaciones')]);
-    const prospectos = resP.ok ? await resP.json() : [];
-    const cotizaciones = resC.ok ? await resC.json() : [];
-    // Origen (#287): el pipeline carga prospectos y cotizaciones juntos, asi que
-    // la herencia se resuelve aqui -- la cotizacion toma el origen del prospecto
-    // con su mismo celular. Nunca se persiste: corregir el origen del prospecto
-    // lo corrige en todas sus cotizaciones.
-    const indiceOrigen = indiceOrigenPorCelular(prospectos);
-    ultimasOportunidades = anotarOrigen([
-      ...prospectos.map(prospectoAOportunidad),
-      ...cotizaciones.map(cotizacionAOportunidad),
-    ], indiceOrigen);
+    // Endpoint unico de Oportunidades (#340): el tablero ya no fusiona dos
+    // respuestas. El servidor decide que tarjetas existen -- una por Oportunidad,
+    // sin la del prospecto que ya cotizo -- y anota el Origen heredado del
+    // Contacto (#287), que aqui se recibe ya resuelto.
+    const res = await api('/api/oportunidades');
+    ultimasOportunidades = res.ok ? await res.json() : [];
     // Asignar vendedor a una tarjeta No Asignado (issue #57, #156) exige el
     // permiso de asignacion: quien lo tiene necesita el catalogo de vendedores
     // para el selector. Quien no lo tiene ni siquiera recibe esas tarjetas.

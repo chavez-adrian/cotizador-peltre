@@ -30,6 +30,7 @@ import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
+import { tarjetasOportunidades } from './lib/oportunidades.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
@@ -609,6 +610,31 @@ app.get('/api/hoy', authMiddleware, async (req, res) => {
     res.json(anotarOrigen(cola, indiceOrigenPorCelular(prospectosVisibles)));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo armar la cola de hoy: ' + err.message });
+  }
+});
+
+// Endpoint unico de Oportunidades (#340, spec #337, ADR-0016, CONTEXT.md
+// "Oportunidad"): TODAS las tarjetas visibles para quien pregunta, en todas las
+// etapas y con una sola forma. El tablero deja de fusionar dos respuestas en el
+// navegador -- de ahi salia la persona duplicada, con su tarjeta de prospecto
+// inerte y la de su cotizacion avanzando.
+//
+// La visibilidad es la MISMA de siempre y por las MISMAS puertas: los prospectos
+// por prospectosVisiblesPara (lo suyo, todo si es admin, y No Asignado con el
+// permiso de asignacion) y las cotizaciones por el filtro del Historial. El
+// Origen se hereda del Contacto con el indice de los prospectos visibles, igual
+// que en el Historial y en la cola Hoy.
+app.get('/api/oportunidades', authMiddleware, async (req, res) => {
+  try {
+    const cotizaciones = await cotStore.listar();
+    const prospectosVisibles = await prospectosVisiblesPara(req.user);
+    const cotizacionesVisibles = req.user.role === 'admin'
+      ? cotizaciones
+      : cotizaciones.filter(c => c.vendedor === req.user.name);
+    const tarjetas = tarjetasOportunidades(prospectosVisibles, cotizacionesVisibles);
+    res.json(anotarOrigen(tarjetas, indiceOrigenPorCelular(prospectosVisibles)));
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudieron listar las oportunidades: ' + err.message });
   }
 });
 
