@@ -174,6 +174,50 @@ test('#343: sin celular responde 400', async () => {
   assert.equal((await abrir(ADMIN_TOKEN, {})).status, 400);
 });
 
+// --- El mundo DESPUES de la separacion (scripts/migrar-oportunidades.mjs) ---
+//
+// La fila del Contacto conserva su etapa y su vendedor como respaldo, pero la
+// verdad de la tarjeta pasa a ser el registro propio. Estos tests montan ese
+// estado a mano, que es lo que deja la migracion.
+
+test('#343: ya separada, trabajar la tarjeta escribe en la Oportunidad y no en el Contacto', async () => {
+  writeJson(OPORTUNIDADES_PATH, [{
+    id: 2, fecha: hace(2), contactoId: 2, contacto10: '5512345678',
+    vendedor: 'Memo', etapa: 'por_cotizar', eventos: [], data: {},
+  }]);
+  const toque = await supertest(app).post('/api/prospectos/2/toques')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(toque.status, 200);
+  assert.equal(readJson(OPORTUNIDADES_PATH)[0].eventos.filter(e => e.tipo === 'toque').length, 1);
+  assert.deepEqual(readJson(PROSPECTOS_PATH).find(p => p.id === 2).eventos, []);
+  // Y la tarjeta sigue siendo UNA sola: el Contacto ya no sintetiza la suya.
+  const tablero = await supertest(app).get('/api/oportunidades').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(tablero.body.filter(o => o.nombre === 'Laura').length, 1);
+});
+
+// El dueno lo estrena la Oportunidad, pero un Contacto sin dueno seguiria
+// invisible para el vendedor al que se le acaba de asignar su unica tarjeta.
+test('#343: asignar una tarjeta separada sin dueno le pone vendedor tambien al Contacto', async () => {
+  const sinDueno = {
+    id: 4, fecha: hace(1), vendedor: null, celular: '+52 5511112222', celular10: '5511112222',
+    nombre: 'Mayoreo Web', ciudad: 'Toluca', canal: 'Formulario web',
+    etapa: 'no_asignado', eventos: [], data: {},
+  };
+  writeJson(PROSPECTOS_PATH, [JORGE, LAURA, PEDRO, sinDueno]);
+  writeJson(OPORTUNIDADES_PATH, [{
+    id: 4, fecha: hace(1), contactoId: 4, contacto10: '5511112222',
+    vendedor: null, etapa: 'no_asignado', eventos: [], data: {},
+  }]);
+  const res = await supertest(app).patch('/api/prospectos/4/asignar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Alejandro Chávez' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.etapa, 'por_cotizar');
+  const oportunidad = readJson(OPORTUNIDADES_PATH).find(o => o.id === 4);
+  assert.equal(oportunidad.vendedor, 'Alejandro Chávez');
+  assert.equal(oportunidad.etapa, 'por_cotizar');
+  assert.equal(readJson(PROSPECTOS_PATH).find(p => p.id === 4).vendedor, 'Alejandro Chávez');
+});
+
 // AC6: la tarjeta nueva se trabaja por las MISMAS rutas de siempre, con su
 // propio id -- sin esto la Oportunidad nueva seria inerte.
 test('#343: la tarjeta nueva se trabaja por las rutas de siempre y no mueve a la anterior', async () => {

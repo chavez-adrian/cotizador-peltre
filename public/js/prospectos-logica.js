@@ -636,12 +636,20 @@ export function buildProspectoExistenteHtml(resp) {
   return buildProspectoCardHtml(resp.prospecto) + buildOfertaNuevaOportunidadHtml(resp);
 }
 
+// EL unico saneo del celular que viaja dentro de un onclick inline (#343).
+// Vive aqui y no en pipeline-logica.js porque ese modulo ya importa de este (al
+// reves cerraria un ciclo, la misma razon por la que `chipOrigenHtml` vive
+// aqui). Recorta a digitos y "+": el servidor identifica al Contacto por los
+// ultimos 10 digitos, asi que no se pierde nada.
+export function celularParaAccion(celular) {
+  return celular ? String(celular).replace(/[^0-9+]/g, '') : '';
+}
+
 export function buildOfertaNuevaOportunidadHtml(resp) {
-  const celular = resp && resp.nuevaOportunidad && resp.nuevaOportunidad.celular;
+  const celular = celularParaAccion(resp && resp.nuevaOportunidad && resp.nuevaOportunidad.celular);
   if (!celular) return '';
-  const limpio = String(celular).replace(/[^0-9+]/g, '');
   return `<div class="cot-card-actions" style="margin-top:8px">
-    <button class="btn btn-primary btn-sm" onclick="abrirNuevaOportunidad('${escapeHtml(limpio)}')">Nueva oportunidad</button>
+    <button class="btn btn-primary btn-sm" onclick="abrirNuevaOportunidad('${escapeHtml(celular)}')">Nueva oportunidad</button>
   </div>`;
 }
 

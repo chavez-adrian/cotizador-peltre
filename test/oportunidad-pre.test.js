@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  planearSeparacion, oportunidadesDeContactos, principalPorContacto,
+  planearSeparacion, oportunidadesDeContactos, principalPorContacto, oportunidadQueCotiza,
   filaNuevaOportunidad, MOTIVO_YA_SEPARADA, MOTIVO_SIN_CAPTURA, MOTIVO_ES_LA_COTIZACION,
 } from '../lib/oportunidad-pre.js';
 
@@ -132,6 +132,32 @@ test('#343: principalPorContacto devuelve una fila por Contacto y prefiere la ac
   const filas = oportunidadesDeContactos([LAURA, SIN_DUENO], [vieja, nueva]);
   const principales = principalPorContacto(filas);
   assert.deepEqual(principales.map(f => f.id).sort((a, b) => a - b), [2, 101]);
+});
+
+// Cual Oportunidad hace avanzar una cotizacion nueva. Con varias por Contacto
+// "la mas reciente" seria arbitrario: a una Oportunidad propia solo la
+// representa la cotizacion que nacio de ELLA, asi que elegir mal deja a la otra
+// sin cotizacion para siempre.
+const enPorCotizar = (extra) => ({
+  id: 100, contactoId: 1, celular10: '5512345678', etapa: 'por_cotizar',
+  vendedor: 'Memo', fecha: hace(1), propia: true, eventos: [], data: {}, ...extra,
+});
+
+test('#343: la cotizacion avanza la Oportunidad que TODAVIA puede avanzar, no la mas reciente', () => {
+  const enSeguimiento = enPorCotizar({ id: 101, etapa: 'seguimiento', fecha: hace(0) });
+  assert.equal(oportunidadQueCotiza([enPorCotizar(), enSeguimiento], 'Memo').id, 100);
+});
+
+test('#343: entre las que pueden avanzar gana la del vendedor que cotiza', () => {
+  const deAna = enPorCotizar({ id: 101, vendedor: 'Ana', fecha: hace(0) });
+  assert.equal(oportunidadQueCotiza([enPorCotizar(), deAna], 'Memo').id, 100);
+  assert.equal(oportunidadQueCotiza([enPorCotizar(), deAna], 'Ana').id, 101);
+});
+
+test('#343: sin ninguna que pueda avanzar, el evento queda en la principal', () => {
+  const cerrada = enPorCotizar({ id: 101, etapa: 'no_util' });
+  const enSeguimiento = enPorCotizar({ id: 102, etapa: 'seguimiento', fecha: hace(0) });
+  assert.equal(oportunidadQueCotiza([cerrada, enSeguimiento], 'Memo').id, 102);
 });
 
 // AC1/AC2: la Oportunidad nueva nace en Por Cotizar, asignada a quien la abre,

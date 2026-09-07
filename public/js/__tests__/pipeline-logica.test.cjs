@@ -1384,16 +1384,13 @@ test('#343: una cotizacion sin Contacto no puede abrir nada (no se sabe de quien
   assert.equal(buildNuevaOportunidadControlHtml(cotizacion({ contactoCelular: null })), '');
 });
 
-test('#343: no se ofrece sobre una Oportunidad que sigue en Por Cotizar o sin dueno', () => {
-  assert.equal(puedeAbrirNuevaOportunidad(prospecto({ etapa: 'por_cotizar' })), false);
-  assert.equal(puedeAbrirNuevaOportunidad(prospecto({ etapa: 'no_asignado' })), false);
-  assert.equal(buildNuevaOportunidadControlHtml(prospecto({ etapa: 'por_cotizar' })), '');
-});
-
-test('#343: el prospecto que ya salio del embudo si puede abrir una Oportunidad nueva', () => {
-  assert.equal(puedeAbrirNuevaOportunidad(prospecto({ etapa: 'no_util' })), true);
-  const html = buildNuevaOportunidadControlHtml(prospecto({ etapa: 'no_util' }));
-  assert.ok(html.includes("abrirNuevaOportunidad('+525512345678')"));
+// Un Contacto, varias tarjetas: la etapa de la tarjeta que se tiene enfrente no
+// limita el interes nuevo de la persona.
+test('#343: la tarjeta de un prospecto tambien ofrece abrirle una Oportunidad nueva, en cualquier etapa', () => {
+  for (const etapa of ['por_cotizar', 'no_asignado', 'no_util']) {
+    assert.equal(puedeAbrirNuevaOportunidad(prospecto({ etapa })), true, etapa);
+    assert.ok(buildNuevaOportunidadControlHtml(prospecto({ etapa })).includes("abrirNuevaOportunidad('+525512345678')"), etapa);
+  }
 });
 
 test('#343: el boton viaja en la tarjeta del tablero', () => {

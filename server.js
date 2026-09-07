@@ -32,7 +32,7 @@ import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { filaTabla } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
 import { tarjetasOportunidades, cotizacionesDeLaOportunidad, prospectoAOportunidad } from './lib/oportunidades.js';
-import { oportunidadesDeContactos, principalPorContacto } from './lib/oportunidad-pre.js';
+import { oportunidadesDeContactos, principalPorContacto, oportunidadQueCotiza } from './lib/oportunidad-pre.js';
 import * as oportunidadPreIo from './lib/oportunidad-pre-io.js';
 import { celularAlNacer, llaveContacto } from './lib/contacto-cotizacion.js';
 import * as cotStore from './lib/cotizaciones-store.js';
@@ -285,15 +285,17 @@ function validarTelefonoCotizacion(req, res) {
 async function pasarProspectoASeguimiento(contacto, cotizacionId, vendedor) {
   // #343: lo que avanza por el embudo es la OPORTUNIDAD del Contacto, no el
   // Contacto. Si no la moviera aqui, la tarjeta se quedaria en Por Cotizar y la
-  // misma persona saldria dos veces en la cola Hoy.
-  const p = oportunidadPrincipalDe(contacto, await oportunidadesStore.listar());
+  // misma persona saldria dos veces en la cola Hoy. Con varias, la regla de cual
+  // avanza vive en el nucleo puro (oportunidadQueCotiza), no aqui.
+  const filas = oportunidadesDeContactos([contacto], await oportunidadesStore.listar());
+  const op = oportunidadQueCotiza(filas, vendedor);
   const evento = {
-    tipo: 'cotizacion', cotizacion_id: cotizacionId, de: p.etapa,
+    tipo: 'cotizacion', cotizacion_id: cotizacionId, de: op.etapa,
     fecha: new Date().toISOString(), vendedor,
   };
-  const destino = transicionPorCotizacion(p.etapa);
-  if (destino && destino !== p.etapa) await oportunidadPreIo.cambiarEtapa(p, destino, evento);
-  else await oportunidadPreIo.registrarEvento(p, evento);
+  const destino = transicionPorCotizacion(op.etapa);
+  if (destino && destino !== op.etapa) await oportunidadPreIo.cambiarEtapa(op, destino, evento);
+  else await oportunidadPreIo.registrarEvento(op, evento);
 }
 
 async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
@@ -618,14 +620,14 @@ app.get('/api/seguimiento', authMiddleware, async (req, res) => {
 app.get('/api/hoy', authMiddleware, async (req, res) => {
   try {
     const cotizaciones = await cotStore.listar();
-    const prospectosVisibles = await oportunidadesVisiblesPara(req.user);
+    const embudo = await embudoVisiblePara(req.user);
     const cotizacionesVisibles = req.user.role === 'admin'
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
     // Origen (#287): la cola llega fusionada del servidor, asi que aqui se anota
     // el heredado de las cotizaciones. El item de prospecto ya trae su `canal`.
-    const cola = calcularColaHoy(prospectosVisibles, cotizacionesVisibles, new Date());
-    res.json(anotarOrigen(cola, indiceOrigenPorCelular(await contactosVisiblesPara(req.user))));
+    const cola = calcularColaHoy(embudo.oportunidades, cotizacionesVisibles, new Date());
+    res.json(anotarOrigen(cola, indiceOrigenPorCelular(embudo.contactos)));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo armar la cola de hoy: ' + err.message });
   }
@@ -645,12 +647,12 @@ app.get('/api/hoy', authMiddleware, async (req, res) => {
 app.get('/api/oportunidades', authMiddleware, async (req, res) => {
   try {
     const cotizaciones = await cotStore.listar();
-    const prospectosVisibles = await oportunidadesVisiblesPara(req.user);
+    const embudo = await embudoVisiblePara(req.user);
     const cotizacionesVisibles = req.user.role === 'admin'
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
-    const tarjetas = tarjetasOportunidades(prospectosVisibles, cotizacionesVisibles);
-    res.json(anotarOrigen(tarjetas, indiceOrigenPorCelular(await contactosVisiblesPara(req.user))));
+    const tarjetas = tarjetasOportunidades(embudo.oportunidades, cotizacionesVisibles);
+    res.json(anotarOrigen(tarjetas, indiceOrigenPorCelular(embudo.contactos)));
   } catch (err) {
     res.status(500).json({ error: 'No se pudieron listar las oportunidades: ' + err.message });
   }
@@ -1335,24 +1337,35 @@ function oportunidadPrincipalDe(contacto, oportunidades) {
 // una sola cosa (ADR-0016): los CONTACTOS (la persona, con su Origen) y sus
 // OPORTUNIDADES pre-cotizacion (la intencion de compra, que es lo que se
 // trabaja). Un Contacto puede tener varias.
-async function contactosVisiblesPara(user) {
-  const todos = await prospectosStore.listar();
-  if (user.role === 'admin') return todos;
+// Una sola lectura del embudo por request: las rutas que necesitan las dos
+// listas piden `embudoVisiblePara` y las que necesitan una sola usan su
+// envoltura.
+//
+// Las Oportunidades se filtran por SU vendedor, no por el del Contacto: la
+// tarjeta es de quien la trabaja. El Contacto es visible si es suyo o si alguna
+// de sus Oportunidades lo es -- por eso la columna sin dueno se lee de la
+// OPORTUNIDAD y no de la etapa que quedo congelada en la fila del Contacto tras
+// la separacion. Mientras esta no ha corrido las dos reglas coinciden, asi que
+// la visibilidad no cambia para nada de lo existente.
+async function embudoVisiblePara(user) {
+  const contactos = await prospectosStore.listar();
+  const filas = oportunidadesDeContactos(contactos, await oportunidadesStore.listar());
+  if (user.role === 'admin') return { contactos, oportunidades: filas };
   const asigna = await puedeAsignarDeUsuario(user);
-  return todos.filter(p => p.vendedor === user.name || (asigna && p.etapa === 'no_asignado'));
+  const oportunidades = filas.filter(o => o.vendedor === user.name || (asigna && o.etapa === 'no_asignado'));
+  const conTarjetaVisible = new Set(oportunidades.map(o => o.contactoId));
+  return {
+    contactos: contactos.filter(c => c.vendedor === user.name || conTarjetaVisible.has(c.id)),
+    oportunidades,
+  };
 }
 
-// Las Oportunidades se filtran por SU vendedor, no por el del Contacto: la
-// tarjeta es de quien la trabaja. Mientras la separacion no ha corrido son la
-// misma persona, asi que la visibilidad no cambia para nada de lo existente.
-// Se parte de TODOS los Contactos a proposito -- una Oportunidad propia puede
-// ser de otro vendedor que el que capturo al Contacto.
+async function contactosVisiblesPara(user) {
+  return (await embudoVisiblePara(user)).contactos;
+}
+
 async function oportunidadesVisiblesPara(user) {
-  const filas = oportunidadesDeContactos(
-    await prospectosStore.listar(), await oportunidadesStore.listar());
-  if (user.role === 'admin') return filas;
-  const asigna = await puedeAsignarDeUsuario(user);
-  return filas.filter(o => o.vendedor === user.name || (asigna && o.etapa === 'no_asignado'));
+  return (await embudoVisiblePara(user)).oportunidades;
 }
 
 // Una fila por PERSONA (#343): el buscador del paso Cliente y la lista de
@@ -1437,14 +1450,14 @@ async function oportunidadOperable(req, res, { incluyeSinDueno = false } = {}) {
   const id = parseInt(req.params.id);
   const contactos = await prospectosStore.listar();
   const filas = oportunidadesDeContactos(contactos, await oportunidadesStore.listar());
-  const p = filas.find(f => f.id === id);
-  if (!p) {
+  const op = filas.find(f => f.id === id);
+  if (!op) {
     res.status(404).json({ error: 'No encontrado' });
     return null;
   }
-  const contacto = contactos.find(c => c.id === p.contactoId);
-  if (req.user.role === 'admin' || p.vendedor === req.user.name) return { p, contacto };
-  if (incluyeSinDueno && p.etapa === 'no_asignado' && await puedeAsignarDeUsuario(req.user)) return { p, contacto };
+  const contacto = contactos.find(c => c.id === op.contactoId);
+  if (req.user.role === 'admin' || op.vendedor === req.user.name) return { op, contacto };
+  if (incluyeSinDueno && op.etapa === 'no_asignado' && await puedeAsignarDeUsuario(req.user)) return { op, contacto };
   res.status(403).json({ error: 'Sin acceso' });
   return null;
 }
@@ -1458,8 +1471,8 @@ async function oportunidadOperable(req, res, { incluyeSinDueno = false } = {}) {
 app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   const operable = await oportunidadOperable(req, res);
   if (!operable) return;
-  const { p, contacto } = operable;
-  if (esSalida(p.etapa)) {
+  const { op, contacto } = operable;
+  if (esSalida(op.etapa)) {
     return res.status(400).json({ error: 'No se edita un prospecto que ya salió del pipeline (No útil/Perdida)' });
   }
   const error = validarEdicionProspecto(req.body);
@@ -1471,7 +1484,7 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   // Los datos editables son de la PERSONA (nombre, ciudad, empresa, correo,
   // tipo): se escriben en el Contacto, no en la Oportunidad.
   await prospectosStore.actualizarDatos(contacto.id, normalizarTextosProspecto(buildEdicionProspectoDatos(req.body)));
-  await registrarSiguienteContactoDelBody(p, req.body || {}, req.user.name);
+  await registrarSiguienteContactoDelBody(op, req.body || {}, req.user.name);
   res.json({ ok: true });
 });
 
@@ -1492,14 +1505,14 @@ app.patch('/api/prospectos/:id/asignar', authMiddleware, asignacionMiddleware, a
     }
     const id = parseInt(req.params.id);
     const contactos = await prospectosStore.listar();
-    const p = oportunidadesDeContactos(contactos, await oportunidadesStore.listar()).find(f => f.id === id);
-    if (!p) return res.status(404).json({ error: 'No encontrado' });
-    const destino = transicionPorAsignacion(p.etapa);
+    const op = oportunidadesDeContactos(contactos, await oportunidadesStore.listar()).find(f => f.id === id);
+    if (!op) return res.status(404).json({ error: 'No encontrado' });
+    const destino = transicionPorAsignacion(op.etapa);
     if (!destino) {
       return res.status(400).json({ error: 'Solo se asigna vendedor a una tarjeta en No Asignado' });
     }
-    await oportunidadPreIo.asignarVendedor(p, contactos.find(c => c.id === p.contactoId), vendedor, destino, {
-      tipo: 'asignacion', de: p.etapa, a: vendedor,
+    await oportunidadPreIo.asignarVendedor(op, contactos.find(c => c.id === op.contactoId), vendedor, destino, {
+      tipo: 'asignacion', de: op.etapa, a: vendedor,
       fecha: new Date().toISOString(), vendedor: req.user.name,
     });
     res.json({ ok: true, etapa: destino });
@@ -1514,8 +1527,8 @@ app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
   // asignacion: desde no_asignado el dominio solo deja descartar (#156).
   const operable = await oportunidadOperable(req, res, { incluyeSinDueno: true });
   if (!operable) return;
-  const { p } = operable;
-  const error = validarTransicion(p.etapa, etapa, motivo, folio);
+  const { op } = operable;
+  const error = validarTransicion(op.etapa, etapa, motivo, folio);
   if (error) return res.status(400).json({ error });
   const fecha = new Date().toISOString();
   // Mover a Seguimiento a mano (issue #56): el vendedor cotizo por fuera, asi
@@ -1524,22 +1537,22 @@ app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
   // es Por Cotizar; aqui se persiste etapa + folio + evento juntos.
   if (etapa === 'seguimiento') {
     const folioLimpio = String(folio).trim();
-    await oportunidadPreIo.moverASeguimientoConFolio(p, folioLimpio, {
-      tipo: 'etapa', de: p.etapa, a: 'seguimiento', folio: folioLimpio, fecha, vendedor: req.user.name,
+    await oportunidadPreIo.moverASeguimientoConFolio(op, folioLimpio, {
+      tipo: 'etapa', de: op.etapa, a: 'seguimiento', folio: folioLimpio, fecha, vendedor: req.user.name,
     });
     return res.json({ ok: true, etapa, folio: folioLimpio });
   }
   const evento = etapa === 'no_util'
     ? { tipo: 'no_util', motivo, fecha, vendedor: req.user.name }
-    : { tipo: 'etapa', de: p.etapa, a: etapa, fecha, vendedor: req.user.name };
-  await oportunidadPreIo.cambiarEtapa(p, etapa, evento);
+    : { tipo: 'etapa', de: op.etapa, a: etapa, fecha, vendedor: req.user.name };
+  await oportunidadPreIo.cambiarEtapa(op, etapa, evento);
   res.json({ ok: true, etapa });
 });
 
 app.post('/api/prospectos/:id/toques', authMiddleware, async (req, res) => {
   const operable = await oportunidadOperable(req, res);
   if (!operable) return;
-  const eventos = await oportunidadPreIo.registrarEvento(operable.p, {
+  const eventos = await oportunidadPreIo.registrarEvento(operable.op, {
     tipo: 'toque', fecha: new Date().toISOString(), vendedor: req.user.name,
   });
   res.json({ ok: true, eventos });
@@ -1555,7 +1568,7 @@ app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
   const f = fecha ? new Date(fecha) : null;
   if (!f || isNaN(f)) return res.status(400).json({ error: 'La fecha de la reunión es obligatoria' });
   if (f <= new Date()) return res.status(400).json({ error: 'La fecha de la reunión debe ser futura' });
-  await oportunidadPreIo.registrarEvento(operable.p, {
+  await oportunidadPreIo.registrarEvento(operable.op, {
     tipo: 'reunion', fecha_reunion: f.toISOString(),
     fecha: new Date().toISOString(), vendedor: req.user.name,
   });
@@ -1575,7 +1588,7 @@ app.post('/api/prospectos/:id/siguiente-contacto', authMiddleware, async (req, r
   if (!operable) return;
   const error = validarSiguienteContacto(req.body);
   if (error) return res.status(400).json({ error });
-  await oportunidadPreIo.registrarEvento(operable.p, buildEventoSiguienteContacto(req.body, req.user.name));
+  await oportunidadPreIo.registrarEvento(operable.op, buildEventoSiguienteContacto(req.body, req.user.name));
   res.json({ ok: true });
 });
 
@@ -1588,15 +1601,15 @@ app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, re
   const { resultado, motivo } = req.body || {};
   const operable = await oportunidadOperable(req, res);
   if (!operable) return;
-  const { p } = operable;
-  if (!reunionPendienteResultado(p, new Date())) {
+  const { op } = operable;
+  if (!reunionPendienteResultado(op, new Date())) {
     return res.status(400).json({ error: 'No hay reunión pendiente de resultado' });
   }
   if (resultado === 'no_util') {
     if (!MOTIVOS_NO_UTIL.includes(motivo)) {
       return res.status(400).json({ error: 'El motivo de No útil es obligatorio (catálogo cerrado)' });
     }
-    await oportunidadPreIo.cambiarEtapa(p, 'no_util', {
+    await oportunidadPreIo.cambiarEtapa(op, 'no_util', {
       tipo: 'no_util', motivo, fecha: new Date().toISOString(), vendedor: req.user.name,
     });
     return res.json({ ok: true, etapa: 'no_util' });

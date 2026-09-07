@@ -10,7 +10,7 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml } from './prospectos-logica.js';
+import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
@@ -812,24 +812,21 @@ export function buildSinContactoControlHtml(o) {
 }
 
 // El celular del Contacto de la tarjeta (#343): la cotizacion lo trae en su liga
-// fija (#342) y el prospecto ES su celular. Recortado a digitos y "+" porque
-// viaja dentro de un onclick inline; el servidor identifica al Contacto por los
-// ultimos 10 digitos, asi que no se pierde nada.
+// fija (#342) y el prospecto ES su celular. El saneo para el onclick lo hace
+// `celularParaAccion` (prospectos-logica.js), el unico punto que lo define.
 export function celularDeContacto(o) {
-  const cel = o && (o.tipo === 'cotizacion' ? o.contactoCelular : o.celular);
-  return cel ? String(cel).replace(/[^0-9+]/g, '') : '';
+  return celularParaAccion(o && (o.tipo === 'cotizacion' ? o.contactoCelular : o.celular));
 }
 
 // "Nueva oportunidad" desde la tarjeta (#343, spec #337, ADR-0016): un Contacto
 // que ya cotizo vuelve a preguntar y ese interes necesita tarjeta propia -- su
-// celular ya es prospecto y no se puede capturar otra vez.
+// celular ya es prospecto y no se puede capturar otra vez. Un Contacto, varias
+// tarjetas.
 //
-// NO se ofrece sobre una Oportunidad que sigue en Por Cotizar o sin dueno: ahi
-// la intencion nueva es la que ya esta abierta, y abrir otra solo partiria el
-// trabajo en dos tarjetas iguales. Tampoco pide origen: lo hereda del Contacto.
+// El unico requisito es saber de QUIEN es la tarjeta: una cotizacion sin Contacto
+// (#342) no puede abrir nada. No pide origen: lo hereda del Contacto.
 export function puedeAbrirNuevaOportunidad(o) {
-  if (!o || !celularDeContacto(o)) return false;
-  return o.tipo === 'cotizacion' || !['por_cotizar', 'no_asignado'].includes(o.etapa);
+  return !!celularDeContacto(o);
 }
 
 export function buildNuevaOportunidadControlHtml(o) {
