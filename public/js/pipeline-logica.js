@@ -133,6 +133,20 @@ export function interpretarSubidaOperam(resultado) {
   // el vendedor cambie el nombre corto, reintentar da exactamente el mismo error
   // -- por eso es un estado propio y no el 'pre' con Reintentar. Se clasifica por
   // el codigo estructurado, nunca parseando el texto.
+  // #345: el celular ya esta ligado a OTRO Cliente Operam. No es un fallo: casi
+  // siempre es la segunda razon social del mismo Contacto, asi que el servidor
+  // exige una confirmacion explicita (428) y esto es una PREGUNTA con su boton,
+  // nunca el 'pre' con Reintentar -- reintentar sin confirmar daria lo mismo.
+  // Se clasifica por el codigo, jamas por el texto.
+  if (r.status === 428 && r.codigo === 'CONFIRMAR_OTRA_RAZON_SOCIAL') {
+    return {
+      estado: 'otra_razon_social',
+      mensaje: r.error || 'El celular de esta cotizacion ya esta ligado a otro Cliente Operam',
+      ligado: Array.isArray(r.ligado) ? r.ligado : [],
+      elegido: r.elegido || null,
+      reintentar: r.reintentar || null,
+    };
+  }
   if (r.status === 409 && r.codigo === 'CUST_REF_DUPLICADO') {
     return { estado: 'cust_ref', mensaje: r.error || 'El nombre corto ya lo usa otro cliente en Operam', nombreCorto: r.nombreCorto ?? null };
   }
@@ -230,6 +244,44 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
   </div>`;
 }
 
+// Un Cliente Operam nombrado para la pregunta de #345: razon social si el padron
+// la alcanzo a dar, y siempre su id -- sin nombre el vendedor todavia puede
+// buscarlo en Operam, sin id no tendria nada.
+function textoClienteOperam(c) {
+  const k = c || {};
+  const id = k.customerId != null ? `#${k.customerId}` : '';
+  const nombre = k.nombre ? `${k.nombre} ` : '';
+  return `${nombre}${id}`.trim();
+}
+
+// La pregunta de #345 (spec #337 user story 13): el celular ya esta ligado a otro
+// Cliente Operam y la salida NO es un error sino una decision del vendedor. Una
+// sola salida afirmativa ("si, es otra razon social del mismo Contacto") que
+// reintenta con la confirmacion; la negativa es dejar la cotizacion como PRE, el
+// mismo boton que ya existe para el fallo de Operam. La liga que vino del indice
+// de Operam se marca como tal: no la decidio el cotizador y puede ser un telefono
+// compartido. Los botones pasan `this` (ver buildCandidatosOperamHtml).
+function buildOtraRazonSocialHtml(id, vista) {
+  const ligado = (vista.ligado || []).map(c => {
+    const origen = c.fuente === 'operam' ? ' <span class="operam-status-nota">(seg&uacute;n Operam)</span>' : '';
+    return `<li>${escapeHtml(textoClienteOperam(c))}${origen}</li>`;
+  }).join('');
+  const elegido = vista.elegido ? escapeHtml(textoClienteOperam(vista.elegido)) : '';
+  // El cuerpo del reintento lo dicta el servidor (`reintentar`): la pregunta
+  // puede nacer de un candidato elegido, de "es sucursal de este cliente" o del
+  // camino normal, y cada uno se reintenta distinto. Va serializado en el
+  // onclick, mismo patron que la fila "Crear contacto" del paso Cliente.
+  const cuerpo = JSON.stringify(vista.reintentar || { otraRazonSocial: true }).replace(/"/g, '&quot;');
+  return `<div class="operam-status operam-status-candidatos">
+    <div class="operam-candidatos-msg">${escapeHtml(vista.mensaje || '')}</div>
+    <div>Este celular ya est&aacute; ligado a:</div>
+    <ul class="operam-candidatos-lista">${ligado}</ul>
+    <div>La cotizaci&oacute;n va a: <strong>${elegido}</strong></div>
+    <button class="btn btn-sm btn-primary" onclick="confirmarOtraRazonSocialOperam(${id}, ${cuerpo}, this)">S&iacute;, es otra raz&oacute;n social del mismo Contacto</button>
+    <button class="btn btn-sm btn-secondary" onclick="dejarPreOperam(${id}, this)">No, dejar como PRE</button>
+  </div>`;
+}
+
 // Estado de la auto-subida (#83) para pintar en el resumen (al generar) o en la
 // tarjeta del historial (al reintentar). Unica fuente del bloque de estado, sobre
 // la vista pura de interpretarSubidaOperam. 'folio' = subio (verde), con nota si
@@ -265,6 +317,9 @@ export function buildOperamStatusHtml(id, vista) {
   }
   if (v.estado === 'candidatos') {
     return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje);
+  }
+  if (v.estado === 'otra_razon_social') {
+    return buildOtraRazonSocialHtml(id, v);
   }
   if (v.estado === 'sin_datos') {
     return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>`;

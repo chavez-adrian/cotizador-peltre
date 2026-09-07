@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, moverASeguimientoConFolio, ultimos10, borrar } from '../lib/prospectos-store.js';
+import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, moverASeguimientoConFolio, ultimos10, borrar, ligarCliente } from '../lib/prospectos-store.js';
 import { ETAPAS, SALIDAS } from '../lib/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -275,4 +275,38 @@ test('buscarPorCelular y obtener tambien migran el canal viejo', async () => {
   assert.equal(porCelular.canal, 'Relación existente');
   const porId = await obtener(9);
   assert.equal(porId.canal, 'Relación existente');
+});
+
+// Ligas Contacto -> Cliente Operam (#345, ADR-0016): la liga pasa de un valor
+// unico a una lista y la segunda razon social se AGREGA. La llave singular
+// `data.cliente_id` sigue existiendo como la primera liga, para los lectores
+// anteriores al cambio.
+test('ligarCliente agrega la segunda razon social sin borrar la primera', async () => {
+  writeProspectos([
+    { id: 20, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511110000', celular10: '5511110000', nombre: 'Jorge', etapa: 'seguimiento', eventos: [], data: {} },
+  ]);
+  await ligarCliente(20, 555, { tipo: 'cliente', cliente_id: 555, fecha: '2026-06-02T00:00:00Z' });
+  await ligarCliente(20, 777, { tipo: 'cliente', cliente_id: 777, fecha: '2026-06-03T00:00:00Z' });
+
+  const p = await obtener(20);
+  assert.deepEqual(p.data.clientes_operam, [
+    { cliente_id: 555, fuente: 'cotizador' },
+    { cliente_id: 777, fuente: 'cotizador' },
+  ]);
+  assert.equal(p.data.cliente_id, 555, 'la liga anterior sigue siendo la principal');
+  assert.equal(p.eventos.length, 2, 'cada liga deja su evento en el historial');
+});
+
+test('ligarCliente al mismo Cliente Operam no duplica la liga', async () => {
+  writeProspectos([
+    { id: 21, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', celular: '+52 5511110001', celular10: '5511110001', nombre: 'Rosa', etapa: 'seguimiento', eventos: [], data: { cliente_id: 555 } },
+  ]);
+  await ligarCliente(21, '555', { tipo: 'cliente', cliente_id: 555, fecha: '2026-06-02T00:00:00Z' });
+  const p = await obtener(21);
+  assert.deepEqual(p.data.clientes_operam, [{ cliente_id: 555, fuente: 'cotizador' }]);
+});
+
+test('ligarCliente sobre un prospecto inexistente devuelve false', async () => {
+  writeProspectos([]);
+  assert.equal(await ligarCliente(99, 555, { tipo: 'cliente' }), false);
 });

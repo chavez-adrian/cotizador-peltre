@@ -3913,6 +3913,9 @@ async function autoSubirOperam(id, slot, extraBody) {
       // #242: el 409 por nombre corto repetido se clasifica por codigo, no por el
       // texto del error (misma disciplina que el resto de interpretarSubidaOperam).
       codigo: data.codigo, nombreCorto: data.nombreCorto,
+      // #345: la pregunta por la otra razon social trae a los dos Clientes Operam
+      // y el cuerpo con el que se reintenta al confirmar.
+      ligado: data.ligado, elegido: data.elegido, reintentar: data.reintentar,
       customerId: data.customer_id, clienteGenerico: data.clienteGenerico,
       // #106: los steps traen el resultado del post-fix de la vigencia; sin esto un
       // fallo solo viviria en los logs del servidor y el vendedor mandaria la
@@ -4019,6 +4022,13 @@ window.crearNuevoClienteOperam = (id, el) => autoSubirOperam(id, slotOperamDesde
 // nunca PUT sobre branches existentes) con el domicilio de entrega capturado y
 // sube el quote a nombre de ese cliente. Mismas guardas que elegir candidato.
 window.marcarSucursalOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { sucursalDe: customerId });
+// #345: "si, es otra razon social del mismo Contacto". El cuerpo del reintento lo
+// dicta el SERVIDOR en su respuesta (`reintentar`), no lo arma el navegador: la
+// pregunta puede venir de la eleccion de un candidato, de "es sucursal de este
+// cliente" o del camino normal, y cada uno se reintenta distinto. Con la
+// confirmacion el server agrega la liga a las que el Contacto ya tenia (nunca
+// reemplaza). Sin este click no se sube nada ni se crea ningun Cliente Operam.
+window.confirmarOtraRazonSocialOperam = (id, cuerpo, el) => autoSubirOperam(id, slotOperamDesde(el), cuerpo);
 window.dejarPreOperam = (id, el) => {
   const slot = slotOperamDesde(el);
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' });

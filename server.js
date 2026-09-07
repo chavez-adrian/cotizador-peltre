@@ -32,7 +32,8 @@ import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
 import { tarjetasOportunidades } from './lib/oportunidades.js';
-import { celularAlNacer, llaveContacto } from './lib/contacto-cotizacion.js';
+import { celularAlNacer, celularesDeCruce, llaveContacto } from './lib/contacto-cotizacion.js';
+import { ligasDeContacto, ligaPrincipal, conLigaDerivada, decidirLiga } from './lib/ligas-contacto.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
@@ -2383,6 +2384,83 @@ function mensajeCustRefDuplicado(nombreCorto, padron) {
     ' Cambia el nombre corto del cliente y vuelve a generar la cotizacion.';
 }
 
+// --- Ligas Contacto -> Cliente Operam al subir (#345, spec #337, ADR-0016) ---
+//
+// El Contacto de la cotizacion: el celular ANOTADO al nacer (#342) manda, y solo
+// si la cotizacion es anterior a ese campo se cae a lo tecleado. Asi corregir un
+// telefono despues no cambia de quien es la Oportunidad ni a quien se le liga el
+// Cliente Operam.
+async function contactoDeLaSubida(entry) {
+  for (const celular of celularesDeCruce(entry)) {
+    const p = await prospectosStore.buscarPorCelular(celular);
+    if (p) return p;
+  }
+  return null;
+}
+
+const CODIGO_OTRA_RAZON_SOCIAL = 'CONFIRMAR_OTRA_RAZON_SOCIAL';
+
+// Un Cliente Operam con nombre, para que la pregunta no sea sobre dos numeros
+// pelados. El padron cacheado (#42) es best effort: si Operam no responde, la
+// pregunta sale igual con el id, que es lo que el vendedor necesita para no
+// quedarse detenido.
+function clienteALaVista(clienteId, padron, fuente) {
+  const k = (padron || []).find(c => String(c?.customer_id) === String(clienteId));
+  return {
+    customerId: clienteId,
+    nombre: k?.CustName || '',
+    nombreCorto: k?.cust_ref || '',
+    rfc: k?.tax_id || '',
+    ...(fuente ? { fuente } : {}),
+  };
+}
+
+// La pregunta que sustituye al 409 "ya esta ligado ... y difiere del elegido"
+// (ADR-0016): el celular ligado a otro Cliente Operam es la segunda razon social
+// del mismo Contacto casi siempre, y bloquear la venta por eso era el peor
+// desenlace. 428 (el servidor exige que el request venga confirmado) y NO 409:
+// el frontend clasifica por el codigo, nunca por el texto, y 409 ya significa
+// otras dos cosas en esta misma ruta (candidatos de dedup, cust_ref duplicado).
+// La liga derivada de Operam se calcula AQUI, en lectura, y nunca se persiste:
+// es informacion para el vendedor, jamas un bloqueo -- un telefono compartido en
+// una casilla de Operam no puede frenar una cotizacion.
+// `reintentar` es el cuerpo EXACTO con el que se vuelve a pedir la subida al
+// confirmar: la pregunta puede nacer de un candidato elegido, de "es sucursal de
+// este cliente" o del camino normal, y cada uno se reintenta distinto. Lo decide
+// el servidor, que es quien sabe por que camino entro; el navegador solo lo
+// reenvia (y las guardas de #208 vuelven a correr sobre el, como siempre).
+async function responderConfirmarOtraRazonSocial(res, { contacto, ligadas, clienteId, reintentar }) {
+  const padron = await clientesCacheados({ timeoutMs: 5000 });
+  const derivada = contacto ? await matchCliente(contacto.celular) : null;
+  const todas = conLigaDerivada(ligadas, derivada?.customer_id ?? null);
+  return res.status(428).json({
+    error: 'El celular de esta cotizacion ya esta ligado a otro Cliente Operam. ' +
+      'Confirma si es otra razon social del mismo Contacto para agregar la liga sin quitar la que ya tenia.',
+    codigo: CODIGO_OTRA_RAZON_SOCIAL,
+    ligado: todas.map(l => clienteALaVista(l.cliente_id, padron, l.fuente)),
+    elegido: clienteALaVista(clienteId, padron),
+    contacto: contacto ? { celular: contacto.celular, nombre: contacto.nombre || '' } : null,
+    reintentar: { ...(reintentar || {}), otraRazonSocial: true },
+  });
+}
+
+// La liga se AGREGA, nunca reemplaza (ADR-0016). Fire-and-forget como el resto
+// de este camino: el quote ya esta en Operam y un fallo del store solo se
+// reporta como paso.
+async function agregarLigaAlContacto(contacto, clienteId, entry, steps) {
+  try {
+    await prospectosStore.ligarCliente(contacto.id, clienteId, {
+      tipo: 'cliente', cliente_id: clienteId,
+      nombre: entry.data?.cliente?.razonSocial || entry.data?.cliente?.nombreCorto || '',
+      fecha: new Date().toISOString(), vendedor: entry.vendedor,
+    });
+    steps?.push({ name: 'ligar prospecto', status: 'ok' });
+  } catch (err) {
+    console.error('[prospectos] No se pudo ligar el Contacto al Cliente Operam:', err.message);
+    steps?.push({ name: 'ligar prospecto', status: 'error', error: err.message });
+  }
+}
+
 // Vendedor de la cotizacion -> su operam_id (el `salesman` que Operam guarda en
 // la SUCURSAL, no en el cliente; ver docs/arquitectura.md). Lo necesitan el alta
 // generica y la creacion de sucursal (#211), que escriben el mismo campo.
@@ -2390,7 +2468,7 @@ async function salesmanDeVendedor(nombreVendedor) {
   return (await vendedoresStore.listar()).find(v => v.name === nombreVendedor)?.operam_id ?? undefined;
 }
 
-async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe) {
+async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial) {
   const c = entry.data?.cliente || {};
   const steps = [];
   // "Es sucursal de este cliente" (#211): el cliente existente manda igual que al
@@ -2404,17 +2482,28 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
   let creadoNuevo = false;
   let salesman;
   try {
-    const prospecto = await prospectosStore.buscarPorCelular(c.telefono);
+    const prospecto = await contactoDeLaSubida(entry);
+    const ligas = ligasDeContacto(prospecto?.data);
 
     if (customerId != null) {
-      // El customerId elegido no puede contradecir lo ya ligado -- ni el de la
-      // cotizacion (reintento con otro cliente) ni el del prospecto (celular ya
-      // convertido). Mejor frenar que mezclar cuentas.
+      // El customerId elegido no puede contradecir lo ya ligado por la propia
+      // COTIZACION (reintento con otro cliente): esa liga es fija y mezclarla
+      // seria mandar el mismo documento a dos cuentas.
       if (c.customerId != null && String(c.customerId) !== String(customerId)) {
         return res.status(409).json({ error: `La cotizacion ya esta ligada al cliente ${c.customerId} en Operam y difiere del elegido (${customerId})` });
       }
-      if (prospecto?.data?.cliente_id != null && String(prospecto.data.cliente_id) !== String(customerId)) {
-        return res.status(409).json({ error: `El celular de la cotizacion ya esta ligado al cliente ${prospecto.data.cliente_id} en Operam y difiere del elegido (${customerId})` });
+      // La del CONTACTO, en cambio, ya no bloquea (#345): una persona compra para
+      // varias razones sociales, asi que se le pregunta y con su confirmacion la
+      // liga se agrega. Sin confirmar no se sube ni se crea nada.
+      if (decidirLiga(ligas, customerId, { confirmado: otraRazonSocial }).accion === 'confirmar') {
+        return await responderConfirmarOtraRazonSocial(res, {
+          contacto: prospecto, ligadas: ligas, clienteId: customerId,
+          reintentar: {
+            ...(customerIdElegido != null ? { customerId: customerIdElegido } : {}),
+            ...(crearSucursal ? { sucursalDe } : {}),
+            ...(crearNuevo ? { crearNuevo: true } : {}),
+          },
+        });
       }
       // #208: el customerId viene del BODY como eleccion del vendedor -- puede
       // venir manipulado o apuntar a una lista de candidatos que ya cambio desde
@@ -2436,8 +2525,12 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         }
       }
       steps.push({ name: 'dedup', status: 'ok', info: crearSucursal ? 'candidato elegido como matriz de la sucursal' : 'candidato elegido' });
-    } else if (prospecto?.data?.cliente_id != null) {
-      customerId = prospecto.data.cliente_id;
+    } else if (ligas.length) {
+      // Reutilizacion por celular (capa 1): la PRIMERA liga del Contacto, la misma
+      // que antes de #345 vivia sola en data.cliente_id. Con varias razones
+      // sociales el vendedor elige desde el picker; sin eleccion se conserva el
+      // desenlace conservador de siempre.
+      customerId = ligaPrincipal(ligas);
       steps.push({ name: 'dedup', status: 'ok', info: 'cliente reutilizado por celular' });
     } else {
       const { rfcGenerico, nombre, padron, dedup } = await poolDedupGenerico(c, entry);
@@ -2570,21 +2663,14 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
     // cliente aunque la subida falle.
     await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
     steps.push({ name: 'persistir customer_id', status: 'ok' });
-    // Ligar el prospecto es fire-and-forget (mismo trato que Dropbox): el cliente
+    // Ligar el Contacto es fire-and-forget (mismo trato que Dropbox): el cliente
     // YA existe y la subida debe completarse; un fallo del store solo se reporta.
     // Si abortara aqui, el reintento entraria por el camino normal (customerId ya
-    // persistido) y el prospecto quedaria sin mapear para siempre.
-    if (prospecto && prospecto.data?.cliente_id == null) {
-      try {
-        await prospectosStore.ligarCliente(prospecto.id, customerId, {
-          tipo: 'cliente', cliente_id: customerId, nombre: c.razonSocial || c.nombreCorto || '',
-          fecha: new Date().toISOString(), vendedor: entry.vendedor,
-        });
-        steps.push({ name: 'ligar prospecto', status: 'ok' });
-      } catch (err) {
-        console.error('[prospectos] No se pudo ligar prospecto al cliente generico:', err.message);
-        steps.push({ name: 'ligar prospecto', status: 'error', error: err.message });
-      }
+    // persistido) y el Contacto quedaria sin mapear para siempre.
+    // Desde #345 la liga se AGREGA: si el Contacto ya tenia otra razon social, la
+    // pregunta de arriba ya se contesto y esta es la segunda liga, no un cambio.
+    if (prospecto && decidirLiga(ligas, customerId, { confirmado: true }).accion === 'agregar') {
+      await agregarLigaAlContacto(prospecto, customerId, entry, steps);
     }
 
     // El POST de Operam ignora dimension_id/dimension2_id (#74): persistirlas via
@@ -2896,12 +2982,33 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     // este cliente": mismo cliente existente que al elegirlo, mas una sucursal
     // nueva con el domicilio de entrega. Entra por el mismo camino y con las
     // mismas guardas; con customerId en el mismo body manda el elegido.
+    // otraRazonSocial (#345) = el vendedor vio la pregunta y contesto que si: el
+    // Cliente Operam al que se sube es otra razon social del MISMO Contacto, asi
+    // que la liga se agrega a las que ya tenia en vez de bloquear la subida.
     const customerIdElegido = req.body?.customerId ?? null;
     const crearNuevo = req.body?.crearNuevo === true;
     const sucursalDe = req.body?.sucursalDe ?? null;
+    const otraRazonSocial = req.body?.otraRazonSocial === true;
     if (customerIdElegido != null || sucursalDe != null || necesitaAltaGenerica(entry)) {
       // await: el finally debe liberar el lock hasta que la operacion termine.
-      return await subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe);
+      return await subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial);
+    }
+    // Camino normal: el Cliente Operam ya lo eligio el vendedor en el paso Cliente
+    // ("Ya lo conozco"). Aqui tambien nace una liga Contacto -> Cliente Operam
+    // (#345): sin ella, cotizarle al restaurante desde el celular propio de la
+    // compradora dejaba al Contacto sin ningun Cliente Operam, y la unica forma de
+    // ligarlo era dar de alta uno sin datos fiscales que duplicaba al que ya
+    // existia. Con el Contacto ya ligado a OTRO Cliente Operam se pregunta,
+    // exactamente igual que en el alta generica.
+    // Sin customerId en la cotizacion (cliente resuelto por RFC dentro de
+    // subirCotizacionOperam) no hay a quien ligar todavia: no se inventa.
+    const contactoSubida = await contactoDeLaSubida(entry);
+    const ligasSubida = ligasDeContacto(contactoSubida?.data);
+    const decisionLiga = decidirLiga(ligasSubida, entry.data?.cliente?.customerId ?? null, { confirmado: otraRazonSocial });
+    if (decisionLiga.accion === 'confirmar') {
+      return await responderConfirmarOtraRazonSocial(res, {
+        contacto: contactoSubida, ligadas: ligasSubida, clienteId: entry.data.cliente.customerId,
+      });
     }
     try {
       const folio = await subirCotizacionOperam(entry.data);
@@ -2915,7 +3022,13 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
         await marcarMotivoPre(id, null);
       }
       const pasoVigencia = await postFixVigencia(folio, entry.data);
-      res.json({ ok: true, folio, steps: pasoVigencia ? [pasoVigencia] : [] });
+      // La liga solo se anota cuando el quote ya existe: sin folio no hubo venta
+      // que ligar, y el reintento vuelve a pasar por aqui.
+      const pasosLiga = [];
+      if (folio != null && folio !== '' && contactoSubida && decisionLiga.accion === 'agregar') {
+        await agregarLigaAlContacto(contactoSubida, entry.data.cliente.customerId, entry, pasosLiga);
+      }
+      res.json({ ok: true, folio, steps: [...(pasoVigencia ? [pasoVigencia] : []), ...pasosLiga] });
     } catch (err) {
       // Cliente no identificado (#68): es un problema de datos de la cotizacion,
       // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.

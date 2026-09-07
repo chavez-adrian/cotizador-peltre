@@ -339,6 +339,68 @@ test('Q242c: el choque de nombre corto se lee como estado propio, con el texto d
   assert.doesNotMatch(html, /Reintentar/, 'reintentar sin cambiar el nombre corto da el mismo error');
 });
 
+// #345 (spec #337 user story 13, ADR-0016): el celular ya ligado a otro Cliente
+// Operam llega como 428 con codigo propio -- NUNCA como el 'pre' con Reintentar,
+// que volveria a hacer la misma pregunta -- y se pinta como pregunta con las dos
+// razones sociales a la vista.
+test('Q345a: la confirmacion de otra razon social se lee como estado propio, no como PRE', () => {
+  const vista = interpretarSubidaOperam({
+    ok: false, status: 428, codigo: 'CONFIRMAR_OTRA_RAZON_SOCIAL',
+    error: 'El celular de esta cotizacion ya esta ligado a otro Cliente Operam.',
+    ligado: [{ customerId: 555, nombre: 'HOTEL AZUL EVENTOS SA DE CV', fuente: 'cotizador' }],
+    elegido: { customerId: 10, nombre: 'HOTEL AZUL SA DE CV' },
+    reintentar: { customerId: 10, otraRazonSocial: true },
+  });
+  assert.equal(vista.estado, 'otra_razon_social');
+  assert.equal(vista.elegido.customerId, 10);
+  assert.deepEqual(vista.ligado.map(c => c.customerId), [555]);
+  assert.deepEqual(vista.reintentar, { customerId: 10, otraRazonSocial: true });
+});
+
+test('Q345b: el bloque pregunta por la otra razon social, nombra a los dos y ofrece confirmar', () => {
+  const html = buildOperamStatusHtml(7, {
+    estado: 'otra_razon_social',
+    mensaje: 'El celular de esta cotizacion ya esta ligado a otro Cliente Operam.',
+    ligado: [{ customerId: 555, nombre: 'HOTEL AZUL EVENTOS SA DE CV', fuente: 'cotizador' }],
+    elegido: { customerId: 10, nombre: 'HOTEL AZUL SA DE CV' },
+    reintentar: { customerId: 10, otraRazonSocial: true },
+  });
+  assert.match(html, /otra raz&oacute;n social|otra razon social/i);
+  assert.match(html, /HOTEL AZUL EVENTOS SA DE CV/);
+  assert.match(html, /HOTEL AZUL SA DE CV/);
+  // El cuerpo del reintento es el que dicto el servidor, no uno que arme la vista.
+  assert.match(html, /confirmarOtraRazonSocialOperam\(7, \{&quot;customerId&quot;:10,&quot;otraRazonSocial&quot;:true\}, this\)/);
+  assert.doesNotMatch(html, /Reintentar/, 'reintentar sin confirmar vuelve a preguntar lo mismo');
+});
+
+// La liga que sale del indice de telefonos de Operam es informacion, no algo que
+// el cotizador haya decidido: se distingue en pantalla para que el vendedor sepa
+// de donde salio.
+test('Q345c: la liga derivada de Operam se pinta distinguida de la que hizo el cotizador', () => {
+  const html = buildOperamStatusHtml(7, {
+    estado: 'otra_razon_social', mensaje: 'Ya ligado',
+    ligado: [
+      { customerId: 555, nombre: 'HOTEL AZUL EVENTOS SA DE CV', fuente: 'cotizador' },
+      { customerId: 88, nombre: 'BANQUETES DEL VALLE SA DE CV', fuente: 'operam' },
+    ],
+    elegido: { customerId: 10, nombre: 'HOTEL AZUL SA DE CV' },
+  });
+  assert.match(html, /BANQUETES DEL VALLE SA DE CV/);
+  assert.match(html, /seg&uacute;n Operam|segun Operam/i);
+});
+
+test('Q345d: sin nombre en el padron el bloque nombra al Cliente Operam por su id', () => {
+  const html = buildOperamStatusHtml(7, {
+    estado: 'otra_razon_social', mensaje: 'Ya ligado',
+    ligado: [{ customerId: 555, nombre: '', fuente: 'cotizador' }],
+    elegido: { customerId: 10, nombre: '' },
+  });
+  assert.match(html, /555/);
+  // Sin cuerpo de reintento del servidor queda la confirmacion pelada, que es el
+  // reintento del camino normal.
+  assert.match(html, /confirmarOtraRazonSocialOperam\(7, \{&quot;otraRazonSocial&quot;:true\}, this\)/);
+});
+
 test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece elegir o crear nuevo', () => {
   const html = buildCandidatosOperamHtml(9, [{ id: 3, CustName: 'A & B <SA>', cust_ref: 'AB' }], 'Elige el cliente');
   assert.match(html, /A &amp; B &lt;SA&gt;/);

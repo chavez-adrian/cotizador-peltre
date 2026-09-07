@@ -478,7 +478,19 @@ test('G3c: crearNuevo NO salta la reutilizacion por celular de un prospecto conv
   assert.equal(quoteBody.customer_id, 555);
 });
 
-test('G3d: crearNuevo no debilita la guarda del customerId contradictorio', async () => {
+// #345 (spec #337 user story 13, ADR-0016): el celular ligado a OTRO Cliente
+// Operam deja de ser un 409 sin salida y pasa a ser una pregunta -- "es otra
+// razon social del mismo Contacto?" -- con los dos Clientes Operam a la vista.
+const CODIGO_OTRA_RAZON_SOCIAL = 'CONFIRMAR_OTRA_RAZON_SOCIAL';
+
+// Padron cacheado (lib/indice-telefonos.js): de ahi salen los nombres con los
+// que la pregunta nombra a los dos Clientes Operam.
+const PADRON_DOS_RAZONES = [
+  { customer_id: 555, CustName: 'HOTEL AZUL EVENTOS SA DE CV', cust_ref: 'Azul Eventos', tax_id: 'XAXX010101000' },
+  { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
+];
+
+test('G3d: crearNuevo no debilita la pregunta por el celular ya ligado', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
   const id = nuevaCotizacion();
   let postCustomer = false;
@@ -493,8 +505,151 @@ test('G3d: crearNuevo no debilita la guarda del customerId contradictorio', asyn
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
     .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10, crearNuevo: true });
 
-  assert.equal(res.status, 409, 'el celular ya esta ligado a 555 y el elegido es otro');
+  assert.equal(res.status, 428, 'el celular ya esta ligado a 555 y el elegido es otro: se pregunta');
+  assert.equal(res.body.codigo, CODIGO_OTRA_RAZON_SOCIAL);
   assert.equal(postCustomer, false);
+});
+
+test('#345-1: el celular ligado a otro Cliente Operam pide confirmacion (no 409) y no sube ni crea nada', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion();
+  let postCustomer = false;
+  let postQuote = false;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      if (u.includes('limit=')) return jsonResponse({ total: PADRON_DOS_RAZONES.length, data: PADRON_DOS_RAZONES });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': () => { postQuote = true; return jsonResponse({ result: true, added_trans_no: 1710 }); },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10 });
+
+  assert.equal(res.status, 428);
+  assert.equal(res.body.codigo, CODIGO_OTRA_RAZON_SOCIAL);
+  // Los DOS Clientes Operam a la vista, con nombre: el vendedor no puede decidir
+  // sobre dos numeros de cliente pelados.
+  assert.equal(String(res.body.elegido.customerId), '10');
+  assert.equal(res.body.elegido.nombre, 'HOTEL AZUL SA DE CV');
+  assert.deepEqual(res.body.ligado.map(c => String(c.customerId)), ['555']);
+  assert.equal(res.body.ligado[0].nombre, 'HOTEL AZUL EVENTOS SA DE CV');
+  assert.equal(res.body.ligado[0].fuente, 'cotizador');
+  // El cuerpo del reintento lo dicta el servidor: aqui la pregunta nacio de un
+  // candidato elegido, asi que la confirmacion tiene que volver con ese mismo id.
+  assert.deepEqual(res.body.reintentar, { customerId: 10, otraRazonSocial: true });
+
+  // Sin confirmacion no se sube nada ni se crea ningun Cliente Operam.
+  assert.equal(postCustomer, false);
+  assert.equal(postQuote, false);
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.ok(cot.folioOperam == null || cot.folioOperam === '');
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.equal(p.data.cliente_id, 555, 'la liga que tenia no se toco');
+});
+
+test('#345-2: al confirmar, la cotizacion sube al elegido y la liga se AGREGA (la anterior intacta)', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion();
+  let postCustomer = false;
+  let quoteBody = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }] }] });
+      // #208: la revalidacion del elegido corre igual con la confirmacion puesta.
+      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [PADRON_DOS_RAZONES[1]] });
+      if (u.includes('limit=')) return jsonResponse({ total: PADRON_DOS_RAZONES.length, data: PADRON_DOS_RAZONES });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1711 }); },
+  });
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10, otraRazonSocial: true });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.customer_id, 10);
+  assert.equal(postCustomer, false, 'confirmar una razon social existente nunca crea un Cliente Operam');
+  assert.equal(quoteBody.customer_id, 10);
+
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.deepEqual(p.data.clientes_operam, [
+    { cliente_id: 555, fuente: 'cotizador' },
+    { cliente_id: 10, fuente: 'cotizador' },
+  ], 'el Contacto queda con dos ligas');
+  assert.equal(p.data.cliente_id, 555, 'la liga anterior queda intacta');
+});
+
+// Los dos siguientes NO pasan por el alta generica: la cotizacion ya trae el
+// Cliente Operam que el vendedor eligio en "Ya lo conozco"
+// (data.cliente.customerId) y sube por el camino normal. La liga al Contacto
+// nace ahi tambien desde #345.
+function mockCaminoNormal({ onQuote = () => {} } = {}) {
+  return {
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { onQuote('POST customer'); return jsonResponse({ result: true, customer_id: 999 }); }
+      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }] }] });
+      if (u.includes('limit=')) return jsonResponse({ total: PADRON_DOS_RAZONES.length, data: PADRON_DOS_RAZONES });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/quote': (u, opts) => { onQuote('POST quote', JSON.parse(opts.body)); return jsonResponse({ result: true, added_trans_no: 1712 }); },
+    ...mockWebLegacy(),
+  };
+}
+
+// Spec #337 user story 14: la compradora del restaurante escribe desde SU celular.
+// Ese Contacto es nuevo y se liga al Cliente Operam del restaurante -- no nace un
+// segundo Cliente Operam sin datos fiscales para ella.
+test('#345-3: "Ya lo conozco" con un celular nuevo liga el Contacto sin crear un Cliente Operam', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]); // Contacto sin ninguna liga
+  const id = nuevaCotizacion({ customerId: 10, rfc: 'HAZ010203AB1' });
+  const llamadas = [];
+  mockOperamFetch(mockCaminoNormal({ onQuote: (n) => llamadas.push(n) }));
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.folio, 1712);
+  assert.ok(!llamadas.includes('POST customer'), 'no se da de alta ningun Cliente Operam');
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.deepEqual(p.data.clientes_operam, [{ cliente_id: 10, fuente: 'cotizador' }]);
+  assert.equal(p.data.cliente_id, 10);
+});
+
+test('#345-4: "Ya lo conozco" con un celular ya ligado a otro Cliente Operam pregunta antes de subir', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion({ customerId: 10, rfc: 'HAZ010203AB1' });
+  const llamadas = [];
+  mockOperamFetch(mockCaminoNormal({ onQuote: (n) => llamadas.push(n) }));
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 428);
+  assert.equal(res.body.codigo, CODIGO_OTRA_RAZON_SOCIAL);
+  assert.equal(res.body.elegido.nombre, 'HOTEL AZUL SA DE CV');
+  assert.equal(res.body.ligado[0].nombre, 'HOTEL AZUL EVENTOS SA DE CV');
+  assert.ok(!llamadas.includes('POST quote'), 'sin confirmacion no se sube nada');
+  // Camino normal: el Cliente Operam ya vive en la cotizacion, asi que el
+  // reintento no lleva customerId (mandarlo lo desviaria al alta generica).
+  assert.deepEqual(res.body.reintentar, { otraRazonSocial: true });
+
+  // El mismo request CON la confirmacion sube y agrega la liga.
+  const ok = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ otraRazonSocial: true });
+  assert.equal(ok.status, 200);
+  assert.ok(llamadas.includes('POST quote'));
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.deepEqual(p.data.clientes_operam, [
+    { cliente_id: 555, fuente: 'cotizador' },
+    { cliente_id: 10, fuente: 'cotizador' },
+  ]);
 });
 
 test('G4: reintento con customerId elegido tras candidatos -> reutiliza, liga el prospecto y sube', async () => {
@@ -734,15 +889,20 @@ test('F3a: customerId elegido que difiere del ya ligado a la cotizacion -> 409 s
   assert.match(res.body.error, /920/);
 });
 
-test('F3b: customerId elegido que difiere del cliente ya ligado al celular -> 409 sin tocar Operam', async () => {
+// #345: el elegido que difiere del ya ligado al celular ya no es un error sino
+// una pregunta, y el padron ni siquiera responde (sin mock de Operam): la
+// pregunta sale igual, con los ids, porque el nombre es un lujo y no puede
+// dejar al vendedor detenido.
+test('F3b: customerId elegido que difiere del ya ligado al celular -> pregunta, sin escribir en Operam', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
   const id = nuevaCotizacion();
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
     .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10 });
-  assert.equal(res.status, 409);
-  assert.match(res.body.error, /555/);
+  assert.equal(res.status, 428);
+  assert.equal(res.body.codigo, CODIGO_OTRA_RAZON_SOCIAL);
+  assert.deepEqual(res.body.ligado.map(c => String(c.customerId)), ['555']);
   const cot = readJson(COTS_PATH).find(c => c.id === id);
-  assert.equal(cot.data.cliente.customerId, undefined, 'no persiste el elegido contradictorio');
+  assert.equal(cot.data.cliente.customerId, undefined, 'no persiste el elegido sin confirmar');
 });
 
 test('F3c: con customerId elegido no se reutiliza un branchId persistido (pudo ser de otro cliente)', async () => {
@@ -1252,7 +1412,7 @@ test('SUC3b: el POST escribio pero la relectura fallo -> el reintento reusa esa 
   assert.equal(quoteBody.branch_id, 33, 'el quote sale con la sucursal que si quedo en Operam');
 });
 
-test('SUC4: el flag de sucursal no debilita la guarda del celular ya ligado a OTRO cliente', async () => {
+test('SUC4: el flag de sucursal no salta la pregunta del celular ya ligado a OTRO Cliente Operam', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
   const id = nuevaCotizacion(DOMICILIO);
   let escrituras = 0;
@@ -1266,8 +1426,9 @@ test('SUC4: el flag de sucursal no debilita la guarda del celular ya ligado a OT
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
     .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
 
-  assert.equal(res.status, 409);
-  assert.match(res.body.error, /555/, 'dice a que cliente esta ligado el celular');
+  assert.equal(res.status, 428);
+  assert.equal(res.body.codigo, CODIGO_OTRA_RAZON_SOCIAL);
+  assert.deepEqual(res.body.ligado.map(c => String(c.customerId)), ['555'], 'dice a que Cliente Operam esta ligado el celular');
   assert.equal(escrituras, 0, 'cero escrituras en Operam');
 });
 
