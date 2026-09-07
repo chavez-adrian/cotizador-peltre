@@ -5478,6 +5478,34 @@ async function capturarContactoTablero(id) {
 }
 window.capturarContactoTablero = capturarContactoTablero;
 
+// "Nueva oportunidad" sobre un Contacto (#343, spec #337, ADR-0016): quien ya
+// cotizo vuelve a preguntar y ese interes necesita su propia tarjeta en Por
+// Cotizar. NO pide origen: lo hereda del Contacto (#287).
+//
+// La disparan DOS superficies -- la tarjeta del tablero
+// (buildNuevaOportunidadControlHtml) y el guardrail de la captura
+// (buildOfertaNuevaOportunidadHtml) -- asi que refresca la que este a la vista.
+// Se expone a `window` junto a su declaracion: los onclick inline resuelven
+// contra window (trampa de #112).
+async function abrirNuevaOportunidad(celular) {
+  try {
+    const res = await api('/api/oportunidades', { method: 'POST', body: { celular } });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    if (!res.ok) { avisoTablero(data.error || 'No se pudo abrir la oportunidad'); return; }
+    avisoTablero('Nueva oportunidad abierta en Por Cotizar');
+    if (document.getElementById('pipeline-view')?.style.display === 'block') recargarPipeline();
+    if (document.getElementById('prospectos-view')?.style.display === 'block') {
+      const existente = document.getElementById('pr-existente');
+      if (existente) existente.innerHTML = '';
+      cargarListaProspectos();
+    }
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.abrirNuevaOportunidad = abrirNuevaOportunidad;
+
 // Salidas del embudo desde la tarjeta del tablero (issue #59, Modelo A). El
 // control pinta el id numerico (refId); aqui se ubica la oportunidad por ese id
 // para conocer su tipo (la salida de un prospecto y la de una cotizacion pegan a

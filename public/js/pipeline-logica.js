@@ -10,7 +10,7 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml } from './prospectos-logica.js';
+import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
@@ -866,6 +866,31 @@ export function buildSinContactoControlHtml(o) {
   </div>`;
 }
 
+// El celular del Contacto de la tarjeta (#343): la cotizacion lo trae en su liga
+// fija (#342) y el prospecto ES su celular. El saneo para el onclick lo hace
+// `celularParaAccion` (prospectos-logica.js), el unico punto que lo define.
+export function celularDeContacto(o) {
+  return celularParaAccion(o && (o.tipo === 'cotizacion' ? o.contactoCelular : o.celular));
+}
+
+// "Nueva oportunidad" desde la tarjeta (#343, spec #337, ADR-0016): un Contacto
+// que ya cotizo vuelve a preguntar y ese interes necesita tarjeta propia -- su
+// celular ya es prospecto y no se puede capturar otra vez. Un Contacto, varias
+// tarjetas.
+//
+// El unico requisito es saber de QUIEN es la tarjeta: una cotizacion sin Contacto
+// (#342) no puede abrir nada. No pide origen: lo hereda del Contacto.
+export function puedeAbrirNuevaOportunidad(o) {
+  return !!celularDeContacto(o);
+}
+
+export function buildNuevaOportunidadControlHtml(o) {
+  if (!puedeAbrirNuevaOportunidad(o)) return '';
+  return `<div class="cot-card-actions tablero-nueva-oportunidad">
+    <button class="btn btn-secondary btn-sm" onclick="abrirNuevaOportunidad('${escapeHtml(celularDeContacto(o))}')">Nueva oportunidad</button>
+  </div>`;
+}
+
 function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   // El Origen sale de la linea gris y se lee en su chip (#287).
@@ -877,6 +902,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const salida = buildSalidaControlHtml(o);
   const decorado = buildDecoradoControlHtml(o);
   const sinContacto = buildSinContactoControlHtml(o);
+  const nuevaOportunidad = buildNuevaOportunidadControlHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -892,6 +918,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
       ${asignar}
       ${mover}
       ${decorado}
+      ${nuevaOportunidad}
       ${salida}
     </div>
   </div>`;

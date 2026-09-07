@@ -626,9 +626,31 @@ export function buildMotivosNoUtilHtml(conteo) {
 // Mapeo de la respuesta 409 de POST /api/prospectos: si el body trae el
 // prospecto existente (duplicado propio o admin), devuelve su tarjeta; si no
 // (prospecto de otro vendedor, issue #42), no hay nada que mostrar aqui.
+//
+// #343: cuando el celular ya es un Contacto, el guardrail deja de ser un
+// callejon sin salida. La respuesta ofrece abrirle una Nueva oportunidad (POST
+// /api/oportunidades con ese mismo celular) -- el interes nuevo de alguien que
+// ya conocemos tiene donde vivir sin volver a capturar a la persona.
 export function buildProspectoExistenteHtml(resp) {
   if (!resp || !resp.prospecto) return '';
-  return buildProspectoCardHtml(resp.prospecto);
+  return buildProspectoCardHtml(resp.prospecto) + buildOfertaNuevaOportunidadHtml(resp);
+}
+
+// EL unico saneo del celular que viaja dentro de un onclick inline (#343).
+// Vive aqui y no en pipeline-logica.js porque ese modulo ya importa de este (al
+// reves cerraria un ciclo, la misma razon por la que `chipOrigenHtml` vive
+// aqui). Recorta a digitos y "+": el servidor identifica al Contacto por los
+// ultimos 10 digitos, asi que no se pierde nada.
+export function celularParaAccion(celular) {
+  return celular ? String(celular).replace(/[^0-9+]/g, '') : '';
+}
+
+export function buildOfertaNuevaOportunidadHtml(resp) {
+  const celular = celularParaAccion(resp && resp.nuevaOportunidad && resp.nuevaOportunidad.celular);
+  if (!celular) return '';
+  return `<div class="cot-card-actions" style="margin-top:8px">
+    <button class="btn btn-primary btn-sm" onclick="abrirNuevaOportunidad('${escapeHtml(celular)}')">Nueva oportunidad</button>
+  </div>`;
 }
 
 // Modal de canal antes de generar cotizacion (issue #46): solo se pide canal

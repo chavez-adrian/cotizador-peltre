@@ -3,7 +3,7 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
-  buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
+  buildProspectoCardHtml, buildProspectoExistenteHtml, buildOfertaNuevaOportunidadHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
   validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil, buildMotivosNoUtilHtml,
   buildEsperaBadgeHtml, buildColaProspectosHtml, necesitaCanal, validarCanalCotizacion,
   buildCanalModalHtml, reunionFutura, reunionPendienteResultado, buildMotivoNoUtilModalHtml,
@@ -15,7 +15,7 @@ let CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoP
   filtrarProspectos, chipOrigenHtml;
 before(async () => {
   ({ CANALES, PIEZAS_ESTIMADAS, OPCIONALES, validarProspectoBody, buildProspectoPayload,
-    buildProspectoCardHtml, buildProspectoExistenteHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
+    buildProspectoCardHtml, buildProspectoExistenteHtml, buildOfertaNuevaOportunidadHtml, MOTIVOS_NO_UTIL, siguienteEtapa,
     validarTransicion, buildWaLink, buildHistorialHtml, contarMotivosNoUtil,
     buildMotivosNoUtilHtml, buildEsperaBadgeHtml, buildColaProspectosHtml,
     necesitaCanal, validarCanalCotizacion, buildCanalModalHtml,
@@ -1450,4 +1450,25 @@ test('#317: la liga de WhatsApp lleva mensaje solo cuando el prospecto tiene eve
   const liga = buildWaLinkProspecto(conEvento, LIGAS);
   assert.ok(liga.startsWith('https://wa.me/525512345678?text='));
   assert.ok(liga.includes(encodeURIComponent('Abastur 2026')));
+});
+
+// --- #343: el guardrail de la captura ofrece Nueva oportunidad ---
+//
+// Un celular que ya es Contacto no se vuelve a capturar (CONTEXT.md "Contacto"),
+// pero su interes nuevo ya no se queda sin salida.
+
+test('#343: el 409 de un Contacto propio ofrece abrirle una Nueva oportunidad', () => {
+  const resp = {
+    tipo: 'prospecto_propio',
+    prospecto: { id: 1, nombre: 'Jorge Orea', celular: '+52 5555550001', ciudad: 'CDMX', canal: 'Feria/Expo', etapa: 'seguimiento', eventos: [] },
+    nuevaOportunidad: { celular: '+52 5555550001' },
+  };
+  const html = buildProspectoExistenteHtml(resp);
+  assert.ok(html.includes('Jorge Orea'));
+  assert.ok(html.includes("abrirNuevaOportunidad('+525555550001')"));
+});
+
+test('#343: el 409 de un Contacto de otro vendedor no ofrece nada', () => {
+  assert.equal(buildOfertaNuevaOportunidadHtml({ tipo: 'prospecto_ajeno' }), '');
+  assert.equal(buildProspectoExistenteHtml({ tipo: 'prospecto_ajeno' }), '');
 });
