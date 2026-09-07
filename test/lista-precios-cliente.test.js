@@ -34,9 +34,10 @@ test('L2: clienteSinListaPrecios deja pasar al cliente con lista asignada', () =
   assert.equal(clienteSinListaPrecios({ sales_type: 12 }), false);
 });
 
-test('L3: el mensaje nombra al cliente, la lista que falta y que hacer', () => {
+test('L3: el mensaje nombra al Cliente Operam, la lista que falta y que hacer (#347)', () => {
   const msg = MENSAJE_CLIENTE_SIN_LISTA('Hotel Azul');
   assert.match(msg, /Hotel Azul/);
+  assert.match(msg, /Cliente Operam/);
   assert.match(msg, /lista de precios en Operam/);
   assert.match(msg, /Precio de lista/);
   assert.match(msg, /M100/);
@@ -47,6 +48,7 @@ test('L3: el mensaje nombra al cliente, la lista que falta y que hacer', () => {
 // mensaje sigue siendo accionable sin el, y nunca dice "undefined".
 test('L4: sin nombre el mensaje sigue siendo accionable y no imprime un hueco', () => {
   const msg = MENSAJE_CLIENTE_SIN_LISTA();
+  assert.match(msg, /Cliente Operam/);
   assert.match(msg, /lista de precios en Operam/);
   assert.match(msg, /vuelve a subir/);
   assert.ok(!/undefined|null/.test(msg), msg);

@@ -142,7 +142,7 @@ test('T3b: un candidato tipo cotizacion de debtor generico no se puede aceptar, 
   const html = buildTarjetaBandejaHtml({ ...PENDIENTE, tipo: 'cotizacion' }, VENDEDORES);
   assert.ok(!html.includes('bandejaAceptarCotizacion('), 'el boton no debe disparar nada');
   assert.match(html, /disabled/);
-  assert.match(html, /genérico/i);
+  assert.match(html, /Cliente Operam sin datos fiscales/i);
   assert.match(html, /bandejaDescartar\('934'\)/);
 });
 

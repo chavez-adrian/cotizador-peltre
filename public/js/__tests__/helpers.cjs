@@ -213,7 +213,7 @@ function buildDedupExactoHtml(cliente) {
   return '<div class="dedup-exacto">' +
     '<p class="dedup-alerta-roja">Este RFC ya existe en Operam</p>' +
     '<p><strong>' + nombre + '</strong> (ID: ' + id + ', RFC: ' + rfc + ')</p>' +
-    '<button type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este cliente</button>' +
+    '<button type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este Cliente Operam</button>' +
     '</div>';
 }
 

@@ -167,7 +167,7 @@ La cola única de pendientes del día: fusiona el seguimiento de prospectos en P
 
 ## Tabla de prospectos
 
-La forma de **tabla** de la vista Prospectos: una fila por prospecto (por celular), ordenable por cualquier columna, con filtros por evento, vendedor, tipo de cliente, área de interés, Origen (el del glosario), Gafete y Estado del prospecto, más búsqueda por texto. Sirve para cualquier prospecto, no solo los de expo (decisión 2026-09-03: nació como tabla de Abastur 2026 y se generalizó; no lleva el nombre de ningún evento ni se llama "Seguimiento", que es una etapa del pipeline). Desde la fila se abre WhatsApp con el mensaje aprobado del evento, se registra un Toque ("Contacté") y, si ya es cliente, se salta a su ficha en Operam. Cada fila muestra su Estado del prospecto, su Último contacto, Qué sigue y Qué falta.
+La forma de **tabla** de la vista Prospectos: una fila por prospecto (por celular), ordenable por cualquier columna, con filtros por evento, vendedor, tipo de cliente, área de interés, Origen (el del glosario), Gafete y Estado del prospecto, más búsqueda por texto. Sirve para cualquier prospecto, no solo los de expo (decisión 2026-09-03: nació como tabla de Abastur 2026 y se generalizó; no lleva el nombre de ningún evento ni se llama "Seguimiento", que es una etapa del pipeline). Desde la fila se abre WhatsApp con el mensaje aprobado del evento, se registra un Toque ("Contacté") y, si ya tiene Cliente Operam, se salta a su ficha en Operam. Cada fila muestra su Estado del prospecto, su Último contacto, Qué sigue y Qué falta.
 
 La columna **Gafete** dice por cuál camino entró el dato de un prospecto de evento: "Solo gafete" (solo el export escaneado), "Gafete + stand" (export y captura manual) o "Sin gafete" (todo lo demás, incluido cualquier prospecto que no vino de una expo). Ordena por ese rango, no alfabéticamente, para que los de solo gafete queden arriba: son los únicos sin siguiente paso acordado. No se llama Origen (decisión 2026-09-03, sustituye la del mismo día que la llamaba así): Origen es por dónde llegó el prospecto; Gafete es por dónde llegó el dato.
 
@@ -175,7 +175,7 @@ La columna **Gafete** dice por cuál camino entró el dato de un prospecto de ev
 
 Resumen calculado de en qué va un prospecto, cinco escalones con precedencia de arriba hacia abajo (decisión 2026-09-03):
 
-1. **Ya es cliente**: tiene cliente en Operam ligado.
+1. **Cliente Operam**: tiene un Cliente Operam ligado.
 2. **Cotizado**: tiene al menos una cotización.
 3. **Agendado**: tiene un Siguiente contacto **abierto**, es decir con fecha futura, o vencida sin un toque posterior que lo cierre. Son las mismas reglas de la cola Hoy, para que las dos vistas nunca discrepen.
 4. **Contactado**: tiene al menos un toque y ningún Siguiente contacto abierto.
@@ -187,9 +187,9 @@ Un toque que cumple el compromiso baja la fila de Agendado a Contactado, y eso n
 
 Dos preguntas distintas que la Tabla de prospectos responde por fila, las dos a partir de lo que el cotizador **ya guarda**, sin consultar Operam en vivo (decisión 2026-09-03).
 
-**Qué sigue** es la siguiente acción en el embudo, una sola, derivada del Estado del prospecto: Sin contactar → escribirle; Contactado → insistir (toque N de 3) o, al llegar a 3, la sugerencia de No útil que ya define la cadencia; Agendado → los canales y la fecha del compromiso; Cotizado → seguimiento a la cotización y su día de cadencia; Ya es cliente → cotizarle si no tiene cotización, y si la tiene, la etapa de su cadena en Operam que el sync post-venta ya conoce (seguimiento, anticipo pagado, pedido liberado, saldo pagado, producto entregado). Cuando el cliente tiene varias cotizaciones vivas, **la más avanzada en el embudo manda** y la fila avisa que hay más; el detalle las lista todas.
+**Qué sigue** es la siguiente acción en el embudo, una sola, derivada del Estado del prospecto: Sin contactar → escribirle; Contactado → insistir (toque N de 3) o, al llegar a 3, la sugerencia de No útil que ya define la cadencia; Agendado → los canales y la fecha del compromiso; Cotizado → seguimiento a la cotización y su día de cadencia; Cliente Operam → cotizarle si no tiene cotización, y si la tiene, la etapa de su cadena en Operam que el sync post-venta ya conoce (seguimiento, anticipo pagado, pedido liberado, saldo pagado, producto entregado). Cuando el Contacto tiene varias cotizaciones vivas, **la más avanzada en el embudo manda** y la fila avisa que hay más; el detalle las lista todas.
 
-**Qué falta** son los huecos que impiden avanzar o facturar, cero o varios, independientes de la etapa: calificación de expo pendiente, sin correo, y para un cliente, datos fiscales (RFC genérico) y domicilio de entrega sin capturar. Quedan fuera a propósito: la **confirmación** del domicilio por el cliente (nadie la registra; hacerlo sería un toque con resultado, que se descartó), el saldo total del cliente (no importa al vendedor), y los pedidos o facturas nacidos directo en Operam sin cotización del cotizador (invisibles por diseño del sync, que se ata a la cotización; se cierran por proceso, no por software). Para ese detalle está la liga "Ver en Operam" de la fila, que es complemento y no la respuesta.
+**Qué falta** son los huecos que impiden avanzar o facturar, cero o varios, independientes de la etapa: calificación de expo pendiente, sin correo, y para un Cliente Operam, Sin datos fiscales y domicilio de entrega sin capturar. Quedan fuera a propósito: la **confirmación** del domicilio por el Contacto (nadie la registra; hacerlo sería un toque con resultado, que se descartó), el saldo total del Cliente Operam (no importa al vendedor), y los pedidos o facturas nacidos directo en Operam sin cotización del cotizador (invisibles por diseño del sync, que se ata a la cotización; se cierran por proceso, no por software). Para ese detalle está la liga "Ver en Operam" de la fila, que es complemento y no la respuesta.
 
 ## Origen
 
@@ -255,7 +255,7 @@ Tres caminos (todos desde el cotizador): el **cliente genérico** nace solo al g
 
 ## Vista Clientes
 
-Superficie de **mantenimiento de clientes** sin cotización de por medio (menú Más, issue #94): buscar a un Contacto o a un Cliente Operam — cada Contacto aparece **una sola vez**, con sus etiquetas y sus Clientes Operam, en vez de una fila por tabla (decisión 2026-09-06; antes el buscador mixto listaba la fila de Operam y la del prospecto como si fueran dos personas, y así se vio el "duplicado" de #288); los Sin datos fiscales se marcan en rojo —, completar sus datos fiscales con CSF o captura manual, dar de alta un cliente completo, o saltar a cotizarle. Existe porque los casos "ya tengo los datos fiscales de un genérico" y "alta completa sin cotizar" son poco frecuentes pero reales, y antes obligaban a ir a la UI de Operam.
+Superficie de **mantenimiento de Contactos y Clientes Operam** sin cotización de por medio (menú Más, issue #94): buscar a un Contacto o a un Cliente Operam — cada Contacto aparece **una sola vez**, con sus etiquetas y sus Clientes Operam, en vez de una fila por tabla (decisión 2026-09-06; antes el buscador mixto listaba la fila de Operam y la del prospecto como si fueran dos personas, y así se vio el "duplicado" de #288); los Sin datos fiscales se marcan en rojo —, completar sus datos fiscales con CSF o captura manual, dar de alta un Cliente Operam completo, o saltar a cotizarle. Existe porque los casos "ya tengo los datos fiscales de un genérico" y "alta completa sin cotizar" son poco frecuentes pero reales, y antes obligaban a ir a la UI de Operam.
 
 ## Aprobación de pedido
 
@@ -311,7 +311,7 @@ Cuando se crea un cliente via API (`POST /api/v3/sales/customers`), Operam auto-
 
 ## Contacto de Google
 
-Entrada en la libreta de Contactos de Google de la cuenta `pppeltre@gmail.com`. Su única razón de existir es que el WhatsApp Business del Android asociado a esa cuenta muestre un nombre en lugar de un número desconocido. No confundir con el **Contacto de cliente**: aquél es la persona registrada en Operam, con su rol de facturación o entrega; éste solo existe para que la pantalla del teléfono sea legible, y nada del negocio depende de él.
+Entrada en la libreta de Contactos de Google de la cuenta `pppeltre@gmail.com`. Su única razón de existir es que el WhatsApp Business del Android asociado a esa cuenta muestre un nombre en lugar de un número desconocido. No confundir con el **Contacto en Operam**: aquél es la persona registrada en Operam, con su rol de facturación o entrega; éste solo existe para que la pantalla del teléfono sea legible, y nada del negocio depende de él.
 
 El nombre visible se lee `Persona - Empresa`, con el nombre comercial del cliente y no su razón social, y con la ciudad como respaldo cuando un prospecto no declaró empresa. La forma la impone el medio: WhatsApp muestra únicamente el nombre —nunca el campo de organización— y lo corta alrededor de los 25 caracteres, así que lo que va primero es lo que sobrevive.
 

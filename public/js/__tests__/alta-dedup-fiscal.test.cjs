@@ -476,7 +476,7 @@ test('G12: buildDedupExactoConDiffHtml sin diferencias fiscales NO agrega panel 
     numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '', regimenFiscal: '',
   };
   const html = buildDedupExactoConDiffHtml(clienteExacto, csfDatosIgualesAlCliente);
-  assert.ok(html.includes('Usar este cliente'), 'banner exacto debe seguir presente');
+  assert.ok(html.includes('Usar este Cliente Operam'), 'banner exacto debe seguir presente');
   assert.ok(!html.includes('diff-fiscal-panel'), 'sin diferencias no debe renderizar panel de diff');
 });
 
@@ -486,14 +486,14 @@ test('G13: buildDedupExactoConDiffHtml con diferencias fiscales agrega el panel 
     calle: '', numExt: '', numInt: '', colonia: '', cp: '', municipio: '', estado: '', regimenFiscal: '',
   };
   const html = buildDedupExactoConDiffHtml(clienteExacto, csfDatosConCambios);
-  assert.ok(html.includes('Usar este cliente'), 'boton Usar este cliente debe seguir disponible (no bloquea)');
+  assert.ok(html.includes('Usar este Cliente Operam'), 'boton Usar este Cliente Operam debe seguir disponible (no bloquea)');
   assert.ok(html.includes('diff-fiscal-panel'), 'con diferencias debe mostrar el panel de diff');
   assert.ok(html.includes('Peltre Nacional Industrias SA de CV'), 'debe mostrar el valor nuevo de razon social');
 });
 
 test('G14: buildDedupExactoConDiffHtml sin csfDatos (undefined) no truena y omite el diff', () => {
   const html = buildDedupExactoConDiffHtml(clienteExacto, undefined);
-  assert.ok(html.includes('Usar este cliente'));
+  assert.ok(html.includes('Usar este Cliente Operam'));
   assert.ok(!html.includes('diff-fiscal-panel'));
 });
 

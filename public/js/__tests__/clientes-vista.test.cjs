@@ -25,7 +25,7 @@ before(async () => {
 
 // === rotuloPanelUpgrade: titulo del panel de upgrade segun de donde se llega
 // (#198) -- el chip/boton Fiscal sigue diciendo "Completar datos fiscales"; la
-// puerta nueva "Editar datos de cliente" (fila de Resultados en vista Clientes)
+// puerta nueva "Editar datos de Cliente Operam" (fila de Resultados en vista Clientes)
 // dice eso. Cambio de texto visible unicamente, el flujo del panel es el mismo. ===
 
 test('R1: sin editar (llegada por el chip/boton Fiscal) -> "Completar datos fiscales"', () => {
@@ -33,8 +33,8 @@ test('R1: sin editar (llegada por el chip/boton Fiscal) -> "Completar datos fisc
   assert.equal(rotuloPanelUpgrade(undefined), 'Completar datos fiscales');
 });
 
-test('R2: editar (llegada por "Editar datos de cliente") -> ese mismo rotulo', () => {
-  assert.equal(rotuloPanelUpgrade(true), 'Editar datos de cliente');
+test('R2: editar (llegada por "Editar datos de Cliente Operam") -> ese mismo rotulo', () => {
+  assert.equal(rotuloPanelUpgrade(true), 'Editar datos de Cliente Operam');
 });
 
 // === esRfcGenerico ===
@@ -148,7 +148,7 @@ test('F2: la fila de crear abre el alta completa con el query (no un prospecto m
   assert.match(html, /pc-crear/);
   assert.match(html, /cvCaminoAlta/);
   assert.match(html, /yazmin/);
-  assert.match(html, /alta cliente completo/i);
+  assert.match(html, /alta Cliente Operam completo/i);
 });
 
 // La fila tambien se pinta en el ESTADO INICIAL de la vista, con el buscador vacio
@@ -157,7 +157,7 @@ test('F2b: sin query la fila se ofrece igual, pero sin comillas vacias', () => {
   const html = filaCrearClienteHtml('');
   assert.match(html, /pc-crear/);
   assert.match(html, /cvCaminoAlta/);
-  assert.match(html, /alta cliente completo/i);
+  assert.match(html, /alta Cliente Operam completo/i);
   assert.doesNotMatch(html, /&laquo;\s*&raquo;/);
 });
 
@@ -192,10 +192,10 @@ test('F6 (#196): fila prospecto NO aplica el helper aunque traiga un ref (no tie
 // === Accion "Editar" de la fila (#198): puerta de entrada explicita segun tipo,
 // sin mover ni duplicar la fila de alta (#190). ===
 
-test('E1: fila de cliente Operam emite "Editar datos de cliente" contra su indice', () => {
+test('E1: fila de cliente Operam emite "Editar datos de Cliente Operam" contra su indice', () => {
   const html = filaResultadoClienteHtml({ tipo: 'operam', nombre: 'Yazmin Vazquez', sub: 'XAXX010101000', rfc: 'XAXX010101000' }, 3);
   assert.match(html, /cvEditarClienteFila\(3\)/);
-  assert.match(html, /Editar datos de cliente/);
+  assert.match(html, /Editar datos de Cliente Operam/);
 });
 
 // #346: la vista dejo de listar prospectos sueltos y lista CONTACTOS, asi que la
@@ -233,7 +233,7 @@ test('N1: el banner nombra al cliente, su id y el RFC generico que se sustituye'
   assert.match(html, /Yazmin Vazquez/);
   assert.match(html, /479/);
   assert.match(html, /XAXX010101000/);
-  assert.match(html, /No se crea un cliente nuevo/);
+  assert.match(html, /No se crea un Cliente Operam nuevo/);
 });
 
 test('N2: el banner escapa el nombre del cliente', () => {

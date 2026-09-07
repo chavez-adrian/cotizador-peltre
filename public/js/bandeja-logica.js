@@ -27,12 +27,12 @@ export const MARCAS_BANDEJA = {
   'compro-otra': {
     clase: 'badge-compro-otra',
     texto: 'Compró otra cosa',
-    title: 'El contacto ya es cliente con un pedido de otro monto - la cotización puede seguir viva',
+    title: 'El Contacto ya tiene Cliente Operam con un pedido de otro monto - la cotización puede seguir viva',
   },
   dup: {
     clase: 'badge-dup',
     texto: 'Posible duplicado',
-    title: 'El celular coincide con un prospecto o cliente existente',
+    title: 'El celular coincide con un prospecto o Cliente Operam existente',
   },
   'sin-cel': {
     clase: 'badge-sin-cel',
@@ -156,7 +156,8 @@ function selectVendedorHtml(c, vendedores) {
 // gate REAL vive alla, aqui solo se pinta.
 function motivoNoCotizacion(c) {
   if (!c || !c.debtorGenerico) return '';
-  return `${c.debtorNombre || 'Este cliente'} es un cliente genérico: su quote se acepta como prospecto, no como cotización`;
+  const quien = c.debtorNombre || 'Este Cliente Operam';
+  return `${quien} es Cliente Operam sin datos fiscales: su quote se acepta como prospecto, no como cotización`;
 }
 
 function accionesHtml(c, vendedores) {

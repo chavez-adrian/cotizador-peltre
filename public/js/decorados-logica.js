@@ -12,7 +12,7 @@
 // Cada paso: clave estable (persistencia/server) + label legible (UI).
 export const PASOS_DECORADO = [
   { clave: 'cotizacion_proveedor', label: 'Cotizacion con proveedor de calca' },
-  { clave: 'posicion_cliente', label: 'Posicion de calca enviada al cliente para autorizacion' },
+  { clave: 'posicion_cliente', label: 'Posicion de calca enviada al Cliente Operam para autorizacion' },
   { clave: 'arte_final', label: 'Arte final enviado al proveedor' },
   { clave: 'dummy_autorizado', label: 'Dummy del proveedor autorizado' },
   { clave: 'liberacion_produccion', label: 'Liberacion de produccion autorizada' },

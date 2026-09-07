@@ -269,7 +269,7 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
 function validarTelefonoCotizacion(req, res) {
   const tel = req.body?.cliente?.telefono;
   if (!tel) {
-    res.status(400).json({ error: 'El telefono del cliente es obligatorio' });
+    res.status(400).json({ error: 'El telefono es obligatorio' });
     return false;
   }
   if (!telefonoValido(tel)) {
@@ -1758,7 +1758,7 @@ app.post('/api/admin/prospectos/importar', authMiddleware, adminMiddleware, uplo
     if (indiceListo) {
       const cliente = await matchCliente(p.celular);
       if (cliente) {
-        descartados.push({ fila: p.fila, nombre: p.nombre, motivo: 'ya es cliente' });
+        descartados.push({ fila: p.fila, nombre: p.nombre, motivo: 'ya tiene Cliente Operam' });
         continue;
       }
     }
@@ -2115,7 +2115,7 @@ async function aceptarComoCotizacion(candidato, vendedor, res) {
   // aqui se frena. Esos quotes se rescatan como PROSPECTO (#124).
   if (esDebtorGenerico(candidato.debtorId)) {
     return res.status(422).json({
-      error: `${candidato.debtorNombre || 'Este cliente'} es un cliente genérico: su quote se acepta como prospecto, no como cotización (sus pedidos son de muchos contactos distintos)`,
+      error: `${candidato.debtorNombre || 'Este Cliente Operam'} es Cliente Operam sin datos fiscales: su quote se acepta como prospecto, no como cotización (sus pedidos son de muchos contactos distintos)`,
     });
   }
   // El payload sembrado tiene que alcanzar para una oportunidad de verdad: sin
@@ -2603,9 +2603,9 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
       return res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
     }
     if (verificacion.estado === 'otro') {
-      logCliente(normalizarRfc(rfcNuevo), null, 'rfc-bloqueado', id, FUENTE_PATCH_CLIENTE, null, `El RFC ya pertenece al cliente ${verificacion.dueno.cliente_id} (${verificacion.dueno.CustName})`);
+      logCliente(normalizarRfc(rfcNuevo), null, 'rfc-bloqueado', id, FUENTE_PATCH_CLIENTE, null, `El RFC ya pertenece al Cliente Operam ${verificacion.dueno.cliente_id} (${verificacion.dueno.CustName})`);
       return res.status(409).json({
-        error: `Este RFC ya pertenece a otro cliente en Operam: ${verificacion.dueno.cliente_id} (${verificacion.dueno.CustName}).`,
+        error: `Este RFC ya pertenece a otro Cliente Operam: ${verificacion.dueno.cliente_id} (${verificacion.dueno.CustName}).`,
         fusion: true,
         cliente: verificacion.dueno,
       });
@@ -2752,11 +2752,11 @@ function esErrorCustRefDuplicado(err) {
 function mensajeCustRefDuplicado(nombreCorto, padron) {
   const dueno = (padron || []).find(k => coincideCustRef(k?.cust_ref, nombreCorto));
   const quien = dueno
-    ? ` Lo usa ${dueno.CustName || `el cliente ${dueno.customer_id}`}${dueno.tax_id ? ` (RFC ${dueno.tax_id})` : ''}.`
+    ? ` Lo usa ${dueno.CustName || `el Cliente Operam ${dueno.customer_id}`}${dueno.tax_id ? ` (RFC ${dueno.tax_id})` : ''}.`
     : '';
   const cual = nombreCorto ? ` "${nombreCorto}"` : '';
-  return `El nombre corto${cual} ya lo usa otro cliente en Operam, que lo exige unico.${quien}` +
-    ' Cambia el nombre corto del cliente y vuelve a generar la cotizacion.';
+  return `El nombre corto${cual} ya lo usa otro Cliente Operam, que lo exige unico.${quien}` +
+    ' Cambia el nombre corto y vuelve a generar la cotizacion.';
 }
 
 // --- Ligas Contacto -> Cliente Operam al subir (#345, spec #337, ADR-0016) ---
@@ -2894,7 +2894,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
           await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
           const ctx = contextoHechos(c, nombreRevalida);
           return res.status(409).json({
-            error: 'El cliente elegido ya no esta en la lista de candidatos: elige uno para continuar',
+            error: 'El Cliente Operam elegido ya no esta en la lista de candidatos: elige uno para continuar',
             candidatos: candidatosFrescos.map(k => candidatoParaContrato(k, ctx)),
           });
         }
@@ -2915,7 +2915,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
         const ctx = contextoHechos(c, nombre);
         return res.status(409).json({
-          error: 'Hay clientes con RFC generico y nombre similar en Operam: elige uno para continuar',
+          error: 'Hay Clientes Operam sin datos fiscales y nombre similar en Operam: elige uno para continuar',
           candidatos: dedup.candidatos.map(k => candidatoParaContrato(k, ctx)),
         });
       }
@@ -2952,7 +2952,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
             codigo: 'CUST_REF_DUPLICADO', nombreCorto: c.nombreCorto || '', steps,
           });
         }
-        return res.status(503).json({ error: 'No se pudo crear el cliente generico en Operam: ' + err.message, steps });
+        return res.status(503).json({ error: 'No se pudo crear el Cliente Operam: ' + err.message, steps });
       }
       customerId = creado.cliente_id;
       creadoNuevo = true;
@@ -3070,7 +3070,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       } catch (err) {
         steps.push({ name: 'GET branch_id', status: 'error', error: err.message });
         await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
-        return res.status(503).json({ error: 'No se pudo obtener el domicilio del cliente en Operam: ' + err.message, customer_id: customerId, steps });
+        return res.status(503).json({ error: 'No se pudo obtener el domicilio del Cliente Operam: ' + err.message, customer_id: customerId, steps });
       }
     }
 
@@ -3613,13 +3613,13 @@ app.put('/api/actualizar-cliente/:id', authMiddleware, async (req, res) => {
 
 // --- CSF: upgrade del cliente generico con los datos fiscales reales (issue #85, ADR-0006) ---
 //
-// Cuando llega la Constancia de Situacion Fiscal se hace PUT sobre el cliente generico
+// Cuando llega la Constancia de Situacion Fiscal se hace PUT sobre el Cliente Operam
 // existente (RFC real, razon social, regimen, domicilio fiscal), NUNCA un POST nuevo.
 // Dos zonas de robustez:
-//  - Gate anti-fusion: si el RFC real ya existe en Operam con OTRO cliente, frena (409)
-//    sin escribir nada -- el prospecto resulto ser un cliente formal existente y la
-//    fusion es manual. Si el match es el MISMO cliente (reintento) o no hay match, procede.
-//  - Verificacion post-PUT: releer el cliente y comparar (quirk de Operam: PUT 200 que
+//  - Gate anti-fusion: si el RFC real ya existe en Operam con OTRO Cliente Operam, frena (409)
+//    sin escribir nada -- el prospecto resulto ser un Cliente Operam con datos fiscales y la
+//    fusion es manual. Si el match es el MISMO Cliente Operam (reintento) o no hay match, procede.
+//  - Verificacion post-PUT: releer el Cliente Operam y comparar (quirk de Operam: PUT 200 que
 //    ignora campos en silencio, ver CLAUDE.md cliente 457); los campos que no pegaron se
 //    reportan en camposNoActualizados para que el vendedor los corrija en Operam.
 const FUENTE_CSF_UPGRADE = 'csf-upgrade';
@@ -3648,7 +3648,7 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
   if (verificacion.estado === 'otro') {
     logCliente(rfc, csfDatos.razonSocial, 'fusion-bloqueada', verificacion.dueno.cliente_id, FUENTE_CSF_UPGRADE, null, null);
     return res.status(409).json({
-      error: 'Este RFC ya pertenece a otro cliente en Operam. Es una fusion manual: el prospecto resulto ser un cliente formal existente.',
+      error: 'Este RFC ya pertenece a otro Cliente Operam. Es una fusion manual: el prospecto resulto ser un Cliente Operam con datos fiscales existente.',
       fusion: true,
       cliente: verificacion.dueno,
     });
@@ -3969,7 +3969,7 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     // sucursal (#211), nunca este PUT.
     let sucursalEscrita = false;
     if (esClienteExistente) {
-      steps.push({ name: 'PUT branch', status: 'omitido', info: 'Cliente existente: se conserva su domicilio en Operam' });
+      steps.push({ name: 'PUT branch', status: 'omitido', info: 'Cliente Operam existente: se conserva su domicilio en Operam' });
     } else {
       try {
         const entrega = cliente.entrega || {};

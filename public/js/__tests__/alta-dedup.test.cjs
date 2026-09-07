@@ -17,10 +17,10 @@ test('F4: buildDedupExactoHtml contiene alerta roja', () => {
   assert.ok(html.includes('77') || html.includes('Peltre Nacional'), 'debe mostrar datos del cliente');
 });
 
-test('F5: buildDedupExactoHtml incluye boton "Usar este cliente"', () => {
+test('F5: buildDedupExactoHtml incluye boton "Usar este Cliente Operam"', () => {
   const cliente = { id: 77, CustName: 'Peltre Nacional SA de CV', RFC: 'PNA010203ABC' };
   const html = buildDedupExactoHtml(cliente);
-  assert.ok(html.includes('Usar este cliente'), 'debe incluir boton Usar este cliente');
+  assert.ok(html.includes('Usar este Cliente Operam'), 'debe incluir boton Usar este Cliente Operam');
 });
 
 test('F6: buildDedupExactoHtml NO incluye opcion de crear nuevo cliente', () => {

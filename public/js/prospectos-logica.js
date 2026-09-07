@@ -387,7 +387,7 @@ const ETIQUETAS_EVENTO = {
   no_util: e => `Salida a No útil (${escapeHtml(e.motivo)}) · ${escapeHtml(e.vendedor)}`,
   cliente: e => {
     const nombre = e.nombre ? `${escapeHtml(e.nombre)} (#${escapeHtml(e.cliente_id)})` : `#${escapeHtml(e.cliente_id)}`;
-    return `Convertido en cliente ${nombre} · ${escapeHtml(e.vendedor)}`;
+    return `Convertido en Cliente Operam ${nombre} · ${escapeHtml(e.vendedor)}`;
   },
   cotizacion: e => `Cotización #${escapeHtml(e.cotizacion_id)} · ${escapeHtml(e.vendedor)}`,
   reunion: e => `Reunión agendada para ${escapeHtml(fechaHora(e.fecha_reunion))} · ${escapeHtml(e.vendedor)}`,
@@ -417,10 +417,10 @@ export function buildEsperaBadgeHtml(item) {
   return `<span class="espera-badge espera-${escapeHtml(item.color)}">${h} h hábiles sin respuesta</span>`;
 }
 
-// Etiqueta del prospecto convertido en cliente (#46, CONTEXT.md "Prospecto
-// convertido en cliente"): sigue en seguimiento hasta que una cotizacion lo
-// pase a Cotizado.
-const CLIENTE_BADGE = '<span class="cliente-badge">Ya es cliente — falta cotizar</span>';
+// Etiqueta del Contacto ya ligado a un Cliente Operam (#46/#347, CONTEXT.md
+// "Ya tiene Cliente Operam, falta cotizar"): sigue en Por Cotizar hasta que
+// una cotizacion lo pase a Seguimiento.
+const CLIENTE_BADGE = '<span class="cliente-badge">Ya tiene Cliente Operam, falta cotizar</span>';
 
 // Tarjeta de un prospecto en la lista (mismo formato visual que las cards de
 // historial/seguimiento de app.js). Funcion pura sin DOM: testeable en Node.

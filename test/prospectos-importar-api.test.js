@@ -265,7 +265,7 @@ test('un celular que ya es cliente de Operam se descarta con motivo', async () =
   ]), 'Jaime Abaroa');
   assert.equal(res.status, 200);
   assert.equal(res.body.importados, 1);
-  assert.deepEqual(res.body.descartados, [{ fila: 2, nombre: 'Omar Olvera', motivo: 'ya es cliente' }]);
+  assert.deepEqual(res.body.descartados, [{ fila: 2, nombre: 'Omar Olvera', motivo: 'ya tiene Cliente Operam' }]);
   assert.equal(readProspectos().length, 1);
 });
 

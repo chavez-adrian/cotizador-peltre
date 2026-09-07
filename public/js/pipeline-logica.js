@@ -34,7 +34,7 @@ export function documentoBloqueado(cot) {
 // no en la cotizacion -- reintentar sin eso falla igual, para siempre. El motivo
 // llega en data.motivoPre (entrada completa) o plano (fila del Historial): el
 // mismo campo a dos alturas que ya maneja documentoBloqueado.
-export const LEYENDA_PRE_SIN_LISTA = 'PRE: cliente sin lista de precios en Operam';
+export const LEYENDA_PRE_SIN_LISTA = 'PRE: Cliente Operam sin lista de precios';
 
 export function leyendaPre(cot) {
   return (cot?.data?.motivoPre ?? cot?.motivoPre ?? null) === 'sin-lista' ? LEYENDA_PRE_SIN_LISTA : '';
@@ -127,7 +127,7 @@ export function interpretarSubidaOperam(resultado) {
   if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps) };
   const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];
   if (r.status === 409 && candidatos.length) {
-    return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay clientes con nombre similar en Operam' };
+    return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay Clientes Operam con nombre similar' };
   }
   // #242: el nombre corto (cust_ref) es UNICO GLOBAL en Operam y el que se
   // capturo ya lo usa otro cliente. No es un fallo transitorio del ERP: hasta que
@@ -149,10 +149,10 @@ export function interpretarSubidaOperam(resultado) {
     };
   }
   if (r.status === 409 && r.codigo === 'CUST_REF_DUPLICADO') {
-    return { estado: 'cust_ref', mensaje: r.error || 'El nombre corto ya lo usa otro cliente en Operam', nombreCorto: r.nombreCorto ?? null };
+    return { estado: 'cust_ref', mensaje: r.error || 'El nombre corto ya lo usa otro Cliente Operam', nombreCorto: r.nombreCorto ?? null };
   }
   if (r.status === 422) {
-    return { estado: 'sin_datos', mensaje: r.error || 'Faltan datos minimos para dar de alta el cliente' };
+    return { estado: 'sin_datos', mensaje: r.error || 'Faltan datos minimos para dar de alta el Cliente Operam' };
   }
   return { estado: 'pre', mensaje: r.error || 'No se pudo subir a Operam' };
 }
@@ -234,14 +234,14 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
       </div>
       <div class="operam-candidato-acciones">
         <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
-        <button class="btn btn-sm btn-secondary" onclick="marcarSucursalOperam(${id}, ${c.id}, this)">Es sucursal de este cliente</button>
+        <button class="btn btn-sm btn-secondary" onclick="marcarSucursalOperam(${id}, ${c.id}, this)">Es sucursal de este Cliente Operam</button>
       </div>
     </li>`;
   }).join('');
   return `<div class="operam-status operam-status-candidatos">
-    <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el cliente correcto en Operam:')}</div>
+    <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el Cliente Operam correcto:')}</div>
     <ul class="operam-candidatos-lista">${items}</ul>
-    <button class="btn btn-sm btn-secondary" onclick="crearNuevoClienteOperam(${id}, this)">Ninguno es el mismo cliente - crear nuevo</button>
+    <button class="btn btn-sm btn-secondary" onclick="crearNuevoClienteOperam(${id}, this)">Ninguno es el mismo Cliente Operam - crear nuevo</button>
   </div>`;
 }
 
@@ -418,7 +418,7 @@ export function botonCompletarHtml(cot) {
 export const ACCIONES_NUEVO = [
   { label: 'Nueva cotizacion', accion: 'nuevaCotizacion' },
   { label: 'Nuevo prospecto', accion: 'nuevoProspecto' },
-  { label: 'Nuevo cliente', accion: 'nuevoCliente' },
+  { label: 'Nuevo Cliente Operam', accion: 'nuevoCliente' },
 ];
 
 // Captura de expo (issue #267): el "+" es su UNICA entrada, y solo con evento
@@ -504,7 +504,7 @@ function botonEditarFilaHtml(onclick, texto) {
 
 function accionEditarFilaHtml(row, i) {
   if (row.tipo === 'operam') {
-    return botonEditarFilaHtml('cvEditarClienteFila(' + i + ')', 'Editar datos de cliente');
+    return botonEditarFilaHtml('cvEditarClienteFila(' + i + ')', 'Editar datos de Cliente Operam');
   }
   // #346: la vista dejo de listar prospectos sueltos y lista CONTACTOS, asi que
   // la puerta de #198 es la misma sobre la persona -- mismo formulario inline,
@@ -545,7 +545,7 @@ export function filaCrearClienteHtml(query) {
   const conQuery = q ? ' &laquo;' + escapeHtml(q) + '&raquo;' : '';
   return '<button type="button" class="pc-res-row pc-crear" onclick="cvCaminoAlta(' + JSON.stringify(q).replace(/"/g, '&quot;') + ')">' +
     '<span class="pc-res-ini">+</span>' +
-    '<span class="pc-res-main"><span class="pc-res-nombre">Dar de alta cliente completo' + conQuery + '</span>' +
+    '<span class="pc-res-main"><span class="pc-res-nombre">Dar de alta Cliente Operam completo' + conQuery + '</span>' +
     '<span class="pc-res-sub">Con datos fiscales, comerciales y domicilio &mdash; sin cotizacion</span></span></button>';
 }
 
@@ -554,11 +554,11 @@ export function filaCrearClienteHtml(query) {
 // cuando el upgrade se abre desde el paso Cliente).
 export function bannerUpgradeHtml(ctx) {
   const c = ctx || {};
-  const nombre = c.nombre || 'este cliente';
+  const nombre = c.nombre || 'este Cliente Operam';
   const id = c.id != null ? String(c.id) : '';
   const rfc = c.rfc || '';
   const texto = esRfcGenerico(rfc)
-    ? 'RFC generico ' + escapeHtml(rfc) + ' se sustituira con el RFC real de la CSF. No se crea un cliente nuevo.'
+    ? 'RFC generico ' + escapeHtml(rfc) + ' se sustituira con el RFC real de la CSF. No se crea un Cliente Operam nuevo.'
     : 'Editando datos de: ' + escapeHtml(nombre) + '. RFC actual: ' + escapeHtml(rfc || 'pendiente') +
       '. La CSF es opcional; el RFC solo cambia si subes una CSF con otro RFC.';
   return '<div class="banner-upgrade"><span>&#8635;</span>' +
@@ -568,11 +568,11 @@ export function bannerUpgradeHtml(ctx) {
 
 // Rotulo del panel de upgrade fiscal segun de donde se llega (#198): el
 // chip/boton Fiscal existente sigue diciendo "Completar datos fiscales"; la
-// puerta nueva "Editar datos de cliente" (accion de la fila en Resultados)
+// puerta nueva "Editar datos de Cliente Operam" (accion de la fila en Resultados)
 // dice eso. Cambio de texto visible unicamente -- el panel y su flujo (PUT
 // #85, CSF opcional) son el mismo en los dos casos.
 export function rotuloPanelUpgrade(editar) {
-  return editar ? 'Editar datos de cliente' : 'Completar datos fiscales';
+  return editar ? 'Editar datos de Cliente Operam' : 'Completar datos fiscales';
 }
 
 // Chips de completitud de la tarjeta en la vista Clientes. A diferencia del paso
@@ -617,7 +617,7 @@ export function cardClienteHtml(cliente) {
     '<div style="margin-top:8px">' + chipOrigenHtml(c) + '</div>' +
     '<div class="pc-chips">' + chipsClienteViewHtml(chips, custId) + '</div>' +
     botonCsf +
-    '<button type="button" class="btn btn-secondary btn-block" style="margin-top:8px" onclick="cvCotizar()">Cotizar a este cliente &rsaquo;</button>' +
+    '<button type="button" class="btn btn-secondary btn-block" style="margin-top:8px" onclick="cvCotizar()">Cotizar a este Cliente Operam &rsaquo;</button>' +
     '</div>';
 }
 

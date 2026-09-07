@@ -14,19 +14,19 @@ test('IF1: el reporte muestra nuevos, enriquecidos, desglose por vendedor y desc
     porVendedor: { 'Oswaldo Chávez': 2, 'Jaime Abaroa': 1 },
     descartados: [
       { fila: 4, nombre: 'Ana Lopez', motivo: 'telefono invalido' },
-      { fila: 7, nombre: 'Omar Olvera', motivo: 'ya es cliente' },
+      { fila: 7, nombre: 'Omar Olvera', motivo: 'ya tiene Cliente Operam' },
     ],
     sinCelular: [],
   });
   assert.match(html, /3 prospectos nuevos/);
   assert.match(html, /2 prospectos enriquecidos/);
-  // "ya es cliente" es una categoria del resumen, no un descarte mas de la lista
-  assert.match(html, /1 celular que ya es cliente/);
+  // "ya tiene Cliente Operam" es una categoria del resumen, no un descarte mas de la lista
+  assert.match(html, /1 celular que ya tiene Cliente Operam/);
   assert.match(html, /Oswaldo Chávez: 2/);
   assert.match(html, /Jaime Abaroa: 1/);
   assert.match(html, /2 filas descartadas/);
   assert.match(html, /Fila 4: Ana Lopez - telefono invalido/);
-  assert.match(html, /Fila 7: Omar Olvera - ya es cliente/);
+  assert.match(html, /Fila 7: Omar Olvera - ya tiene Cliente Operam/);
 });
 
 test('IF2: los gafetes sin celular salen con empresa, correo y scoring para perseguirlos a mano', () => {

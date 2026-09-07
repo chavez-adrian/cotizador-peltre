@@ -254,7 +254,7 @@ test('un candidato de debtor generico NO se acepta como cotizacion, aunque su ti
   const res = await supertest(app).post('/api/admin/bandeja/952/aceptar')
     .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Chávez' });
   assert.equal(res.status, 422);
-  assert.match(res.body.error, /genérico/i);
+  assert.match(res.body.error, /Cliente Operam sin datos fiscales/i);
   assert.match(res.body.error, /prospecto/i);
   assert.equal((await cotStore.listar()).length, 0);
   assert.equal((await obtener('952')).estado, 'pendiente');

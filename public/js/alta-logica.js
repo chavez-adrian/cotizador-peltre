@@ -617,9 +617,9 @@ export function buildDiffFiscalHtml(diff) {
     '</div>';
 }
 
-// Compone el banner "RFC ya existe" (igual al existente, "Usar este cliente" SIEMPRE
+// Compone el banner "RFC ya existe" (igual al existente, "Usar este Cliente Operam" SIEMPRE
 // disponible -- AC3) + panel de diff fiscal cuando hay diferencias (AC1/AC4). Es
-// deliberadamente NO bloqueante: el vendedor puede avanzar con "Usar este cliente" sin
+// deliberadamente NO bloqueante: el vendedor puede avanzar con "Usar este Cliente Operam" sin
 // resolver el diff -- es un paso paralelo/opcional, no un gate (decision documentada en
 // ralph-progress.txt iter 2: bloquear forzaria al vendedor a decidir sobre datos fiscales
 // en medio de un flujo de cotizacion, friccion injustificada para un caso que no impide
@@ -633,7 +633,7 @@ export function buildDedupExactoConDiffHtml(cliente, csfDatos) {
     '<div class="dedup-exacto">' +
     '<p class="dedup-alerta-roja">Este RFC ya existe en Operam</p>' +
     '<p><strong>' + nombreConCorto(nombre, cliente.cust_ref) + '</strong> (ID: ' + id + ', RFC: ' + rfcC + ')</p>' +
-    '<button class="btn btn-secondary" type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este cliente</button>' +
+    '<button class="btn btn-secondary" type="button" onclick="altaDedupUsarCliente(' + id + ')">Usar este Cliente Operam</button>' +
     '</div>';
   if (!csfDatos) return base;
   const diff = calcularDiffFiscal(cliente, csfDatos);
@@ -661,7 +661,7 @@ export function buildCandidatosRfcGenericoHtml(candidatos) {
     );
   }).join('');
   return '<div class="dedup-candidatos-generico">' +
-    '<p class="dedup-alerta-naranja">Este contacto coincide con un cliente ya existente en Operam (dado de alta sin RFC)</p>' +
+    '<p class="dedup-alerta-naranja">Este contacto coincide con un Cliente Operam ya existente (dado de alta sin RFC)</p>' +
     filas +
     '</div>';
 }
@@ -707,7 +707,7 @@ export function mensajeBusquedaCelular(clasificacion) {
   const c = clasificacion || {};
   if (c.tipo === 'cliente') {
     const nombre = c.cust_name || (c.cliente && c.cliente.cust_name) || '';
-    return { encontrado: true, tipo: 'cliente', mensaje: `Este celular ya es un cliente en Operam${nombre ? ': ' + nombre : ''}` };
+    return { encontrado: true, tipo: 'cliente', mensaje: `Este celular ya tiene Cliente Operam${nombre ? ': ' + nombre : ''}` };
   }
   if (c.tipo === 'prospecto') {
     const p = c.prospecto || {};
@@ -945,14 +945,14 @@ export function decidirVistaTrasBusqueda(query, resultados) {
 }
 
 // Decision ante el 409 de POST /api/prospectos, por el campo estructurado `tipo`
-// del server (#82) -- NUNCA parseando el string de error (el mensaje de "es un
-// cliente" contiene la palabra "prospecto"; cualquier regex se rompe con el copy).
+// del server (#82) -- NUNCA parseando el string de error (el mensaje de "tiene
+// Cliente Operam" contiene la palabra "prospecto"; cualquier regex se rompe con el copy).
 // Sin tipo reconocible se bloquea: fail-safe, no se crea un contacto fantasma
 // sobre un estado desconocido.
 export function accionProspecto409(data) {
   const d = data || {};
   if (d.tipo === 'cliente') {
-    return { accion: 'cotizar_cliente', cust_name: d.cust_name || '', mensaje: d.error || 'Este celular ya es un cliente en Operam' };
+    return { accion: 'cotizar_cliente', cust_name: d.cust_name || '', mensaje: d.error || 'Este celular ya tiene Cliente Operam' };
   }
   if (d.tipo === 'prospecto_propio') {
     return { accion: 'usar_prospecto', prospecto: d.prospecto || null, mensaje: d.error || '' };
@@ -1033,8 +1033,8 @@ export function usoCfdiCuentaComoElegido({ valor, defaultVigente } = {}) {
   return !!valor && valor !== defaultVigente;
 }
 
-// `opciones.clienteExistente` marca el alta que va sobre un cliente elegido por dedup
-// ("Usar este cliente", por RFC o por celular): el servidor no puede deducirlo del
+// `opciones.clienteExistente` marca el alta que va sobre un Cliente Operam elegido por dedup
+// ("Usar este Cliente Operam", por RFC o por celular): el servidor no puede deducirlo del
 // customer_id, que en el reintento de un alta nueva significa lo contrario (#250).
 export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId, opciones = {}) {
   const clienteExistente = opciones.clienteExistente === true;
@@ -1114,7 +1114,7 @@ function mensajeExitoPaso(step) {
   if (step.status === 'omitido') return step.info || '';
   if (step.info === 'conservado') {
     const nombre = step.actualNombre || '';
-    return 'Se conservo el segmento que el cliente ya tenia en Operam' +
+    return 'Se conservo el segmento que el Cliente Operam ya tenia' +
       (nombre ? ' (' + nombre + ')' : '') + '; el que elegiste no se aplico.';
   }
   return '';

@@ -493,10 +493,10 @@ test('#181-8: con contacto nuevo a medio capturar, el nombre se marca como conta
 });
 
 test('#181-9: sin cliente ni contacto nuevo (o sin nombre util), un texto neutro', () => {
-  assert.equal(textoClienteBorrador({}), 'sin cliente');
-  assert.equal(textoClienteBorrador(null), 'sin cliente');
-  assert.equal(textoClienteBorrador({ cliente: { pcCliente: {}, campos: {} } }), 'sin cliente');
-  assert.equal(textoClienteBorrador({ contactoNuevo: { nombre: '' } }), 'sin cliente');
+  assert.equal(textoClienteBorrador({}), 'sin nombre');
+  assert.equal(textoClienteBorrador(null), 'sin nombre');
+  assert.equal(textoClienteBorrador({ cliente: { pcCliente: {}, campos: {} } }), 'sin nombre');
+  assert.equal(textoClienteBorrador({ contactoNuevo: { nombre: '' } }), 'sin nombre');
 });
 
 // === Prompt Continuar / Descartar (#181): HTML ===

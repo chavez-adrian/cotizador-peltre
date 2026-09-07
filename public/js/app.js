@@ -7418,11 +7418,11 @@ async function altaDedupCorrer(rfc, razonSocial, telefono) {
         ).join('');
         dedupDiv.innerHTML =
           '<div class="dedup-candidatos">' +
-          '<p class="dedup-alerta-naranja">Posibles clientes existentes</p>' +
+          '<p class="dedup-alerta-naranja">Posibles Clientes Operam existentes</p>' +
           items +
           '<label style="display:block;padding:4px 0;cursor:pointer">' +
           '<input type="radio" name="dedup-candidato" value="escalar">' +
-          ' Ninguno es el mismo cliente - escalar a Adrian' +
+          ' Ninguno es el mismo Cliente Operam - escalar a Adrian' +
           '</label>' +
           '</div>';
       } else {

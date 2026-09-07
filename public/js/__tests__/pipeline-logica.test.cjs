@@ -159,11 +159,11 @@ test('Q16: badgeFolioOperamHtml unifica el chip PRE / Cotizacion N / vacio', () 
 test('Q16b: el chip de la PRE por cliente sin lista dice el motivo en vez de "PRE"', () => {
   const html = badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'sin-lista' });
   assert.match(html, /badge-pre/);
-  assert.match(html, /cliente sin lista de precios en Operam/);
+  assert.match(html, /Cliente Operam sin lista de precios/);
   assert.equal(html.includes('>PRE<'), false);
   // La entrada completa (data.motivoPre) llega igual que la fila aplanada del
   // Historial: el mismo campo a dos alturas, como folioOperam.
-  assert.match(badgeFolioOperamHtml({ folioOperam: null, data: { motivoPre: 'sin-lista' } }), /cliente sin lista/);
+  assert.match(badgeFolioOperamHtml({ folioOperam: null, data: { motivoPre: 'sin-lista' } }), /Cliente Operam sin lista/);
   // Los otros motivos siguen con el chip generico.
   assert.match(badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'operam' }), />PRE</);
   assert.match(badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'dedup' }), />PRE</);
@@ -276,9 +276,9 @@ test('Q19b: buildOperamStatusHtml pinta folio, PRE+Reintentar, sin_datos y candi
 // dedup por nombre deja al vendedor eligiendo un cliente que NO es el suyo o
 // entregando el documento como PRE. Mismo patron que el "Ninguno es el mismo
 // cliente" del alta completa, con el flag que solo salta esa parada.
-test('Q19c: la lista de candidatos ofrece crear cliente nuevo cuando ninguno es el mismo', () => {
+test('Q19c: la lista de candidatos ofrece crear Cliente Operam nuevo cuando ninguno es el mismo', () => {
   const cands = buildCandidatosOperamHtml(5, [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }], 'Elige');
-  assert.match(cands, /Ninguno es el mismo cliente/);
+  assert.match(cands, /Ninguno es el mismo Cliente Operam/);
   assert.match(cands, /crearNuevoClienteOperam\(5, this\)/);
 });
 
@@ -491,12 +491,12 @@ test('#210: buildCandidatosOperamHtml escapa la diferencia de nombre', () => {
 // conservadora (no escribe nada) a la que mas cuentas crea. El handler recibe el
 // elemento clickeado (`this`), nunca un id de contenedor: la misma cotizacion
 // puede estar pintada en dos paneles a la vez.
-test('#211: cada candidato ofrece "Es sucursal de este cliente" entre Elegir y Crear nuevo', () => {
+test('#211: cada candidato ofrece "Es sucursal de este Cliente Operam" entre Elegir y Crear nuevo', () => {
   const html = buildCandidatosOperamHtml(5, [
     { id: 70, CustName: 'OJO DE AGUA PUEBLA', cust_ref: 'OJOAGUA-PUE', diferenciaNombre: { soloInput: ['sur'], soloCandidato: ['puebla'] }, celularMatch: 'no_coincide', correoMatch: 'sin_dato' },
   ], 'Elige');
   assert.match(html, /marcarSucursalOperam\(5, 70, this\)/);
-  assert.match(html, /Es sucursal de este cliente/);
+  assert.match(html, /Es sucursal de este Cliente Operam/);
   const posElegir = html.indexOf('elegirCandidatoOperam(5, 70, this)');
   const posSucursal = html.indexOf('marcarSucursalOperam(5, 70, this)');
   const posNuevo = html.indexOf('crearNuevoClienteOperam(5, this)');
@@ -690,10 +690,10 @@ test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma 
 // Boton + global (issue #54, PRD #52 historias 4-5, CONTEXT.md "Captura de
 // prospecto"): visible en todos los destinos del bottom-nav. "Nueva cotizacion"
 // (la vista de cotizar existente), "Nuevo prospecto" (la captura minima existente)
-// y "Nuevo cliente" (#94: abre la vista Clientes con el alta completa). Logica pura
+// y "Nuevo Cliente Operam" (#94: abre la vista Clientes con el alta completa). Logica pura
 // de presentacion del menu, sin DOM (mismo patron que el resto del modulo).
-test('Q25: ACCIONES_NUEVO ofrece Nueva cotizacion, Nuevo prospecto y Nuevo cliente', () => {
-  assert.deepEqual(ACCIONES_NUEVO.map(a => a.label), ['Nueva cotizacion', 'Nuevo prospecto', 'Nuevo cliente']);
+test('Q25: ACCIONES_NUEVO ofrece Nueva cotizacion, Nuevo prospecto y Nuevo Cliente Operam', () => {
+  assert.deepEqual(ACCIONES_NUEVO.map(a => a.label), ['Nueva cotizacion', 'Nuevo prospecto', 'Nuevo Cliente Operam']);
   assert.deepEqual(ACCIONES_NUEVO.map(a => a.accion), ['nuevaCotizacion', 'nuevoProspecto', 'nuevoCliente']);
 });
 
@@ -701,7 +701,7 @@ test('Q26: buildMenuNuevoHtml pinta un boton por accion con su disparador', () =
   const html = buildMenuNuevoHtml();
   assert.match(html, /Nueva cotizacion/);
   assert.match(html, /Nuevo prospecto/);
-  assert.match(html, /Nuevo cliente/);
+  assert.match(html, /Nuevo Cliente Operam/);
   assert.match(html, /onclick="nuevaCotizacion\(\)"/);
   assert.match(html, /onclick="nuevoProspecto\(\)"/);
   assert.match(html, /onclick="nuevoCliente\(\)"/);

@@ -288,7 +288,7 @@ export function textoClienteBorrador(borrador) {
   }
   const nombreContacto = borrador?.contactoNuevo?.nombre || '';
   if (nombreContacto) return `${nombreContacto} (contacto nuevo)`;
-  return 'sin cliente';
+  return 'sin nombre';
 }
 
 // HTML del prompt. Los botones llevan id, no onclick: el pegamento en app.js
