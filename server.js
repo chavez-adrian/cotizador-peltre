@@ -29,7 +29,7 @@ import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
-import { filaTabla } from './lib/tabla-prospectos.js';
+import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
 import { tarjetasOportunidades, cotizacionesDeLaOportunidad, prospectoAOportunidad } from './lib/oportunidades.js';
 import { oportunidadesDeContactos, principalPorContacto, oportunidadQueCotiza } from './lib/oportunidad-pre.js';
