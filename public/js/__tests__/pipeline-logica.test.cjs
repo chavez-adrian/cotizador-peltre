@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -1340,4 +1340,30 @@ test('OR8: el item No Asignado pinta el chip Origen fuera de la linea gris', () 
   const html = buildColaNoAsignadoItemHtml(itemNoAsignado({ id: 42 }), VENDEDORES_HOY, true);
   assert.match(html, /origen-badge">Origen: Formulario web/);
   assert.equal(metasDe(html).some(m => m.includes('Formulario web')), false);
+});
+
+
+// === #342: la Oportunidad sin Contacto lo dice en su tarjeta ===
+//
+// La migracion resuelve la mayoria, pero una cotizacion historica sin telefono
+// y sin nada en el indice de Operam queda sin Contacto (spec #337, user story
+// 22): la tarjeta lo muestra y ofrece capturarle el celular a mano.
+
+test('CT1: la tarjeta de una cotizacion sin Contacto lo dice y ofrece capturarlo', () => {
+  const html = buildSinContactoControlHtml(cotizacion({ refId: 51, contactoCelular: null }));
+  assert.match(html, /Sin Contacto/);
+  assert.match(html, /capturarContactoTablero\(51\)/);
+});
+
+test('CT2: una Oportunidad ya ligada a su Contacto no pinta el control', () => {
+  assert.equal(buildSinContactoControlHtml(cotizacion({ contactoCelular: '5512345678' })), '');
+});
+
+test('CT3: el prospecto no lleva el control -- su celular ES su identidad', () => {
+  assert.equal(buildSinContactoControlHtml(prospecto()), '');
+});
+
+test('CT4: el tablero pinta el aviso dentro de la tarjeta de la cotizacion sin Contacto', () => {
+  const html = buildTableroPipelineHtml([cotizacion({ refId: 51, contactoCelular: null })], {});
+  assert.match(html, /Sin Contacto/);
 });

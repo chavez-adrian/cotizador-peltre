@@ -160,7 +160,7 @@ test('enumerarTelefonosClientes: cada telefono conserva su persona, su rol y su 
   assert.deepEqual(primera, {
     customerId: '101', nombreCorto: 'Cocinas del Valle', razonSocial: 'COCINAS DEL VALLE SA DE CV',
     telefono: '55 4444 1111', persona: 'Laura Mendez', rol: 'general',
-    correo: 'laura@cocinas.mx', domicilio: '', fuente: 'contacto',
+    correo: 'laura@cocinas.mx', domicilio: '', fuente: 'contacto', casilla: 'telefono',
   });
   assert.equal(entradas.find(e => e.telefono === '55 4444 2222').persona, 'Laura Mendez',
     'phone2 es de la misma persona');
@@ -173,7 +173,7 @@ test('enumerarTelefonosClientes: el Cel (fax) de un Contacto en Operam trae la M
   assert.deepEqual(cel, {
     customerId: '101', nombreCorto: 'Cocinas del Valle', razonSocial: 'COCINAS DEL VALLE SA DE CV',
     telefono: '55 8888 1111', persona: 'Laura Mendez', rol: 'general',
-    correo: 'laura@cocinas.mx', domicilio: '', fuente: 'contacto',
+    correo: 'laura@cocinas.mx', domicilio: '', fuente: 'contacto', casilla: 'cel',
   });
 });
 
@@ -201,6 +201,21 @@ test('enumerarTelefonosClientes: los telefonos de todos los clientes salen en un
   const entradas = enumerarTelefonosClientes(CLIENTES);
   assert.deepEqual(entradas.map(e => e.telefono).sort(),
     ['+52 1 55 6207 1948', '+52(55)53952615 ext.123', '1234', '55 4039 4937'].sort());
+});
+
+// === Casilla de cada telefono (#342): el respaldo automatico de la migracion
+// necesita SABER de que casilla salio el numero, porque el orden Cel >
+// Telefono > Telefono Secundario es parte de la regla (spec #337, user story
+// 28). La enumeracion ya recorria las seis casillas; solo faltaba nombrarlas.
+
+test('enumerarTelefonosClientes: cada telefono dice de que casilla de Operam salio', () => {
+  const porTelefono = Object.fromEntries(
+    enumerarTelefonosClientes([CLIENTE_RICO]).map(e => [e.telefono, e.casilla]));
+  assert.equal(porTelefono['55 4444 1111'], 'telefono');
+  assert.equal(porTelefono['55 4444 2222'], 'telefono_secundario');
+  assert.equal(porTelefono['55 8888 1111'], 'cel');
+  assert.equal(porTelefono['55 7777 2222'], 'telefono', 'el Telefono de la sucursal');
+  assert.equal(porTelefono['55 9999 3333'], 'cel', 'el Cel de la sucursal');
 });
 
 // === matchCliente: cache, refresh y best effort ===

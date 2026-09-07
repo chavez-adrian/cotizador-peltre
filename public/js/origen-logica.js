@@ -37,8 +37,15 @@ export function indiceOrigenPorCelular(prospectos) {
 // Los telefonos con los que un item puede ligar a un prospecto: el prospecto
 // trae `celular`, la cotizacion `telefono` y el cliente de Operam la lista
 // `telefonos` (una ficha puede tener varios contactos).
+//
+// Una Oportunidad con su Contacto ya anotado (#342, `contactoCelular`) cruza por
+// ESE celular y por ninguno mas: es la liga fija de ADR-0016. El telefono
+// tecleado es dato del documento y puede corregirse -- si siguiera cruzando,
+// corregirlo heredaria el Origen de otra persona, que es justo lo que el ticket
+// viene a cerrar.
 function telefonosDe(item) {
   const i = item || {};
+  if (i.contactoCelular) return [i.contactoCelular];
   const varios = Array.isArray(i.telefonos) ? i.telefonos : [];
   return [i.celular, i.telefono, ...varios];
 }

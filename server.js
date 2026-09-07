@@ -32,6 +32,7 @@ import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
 import { tarjetasOportunidades } from './lib/oportunidades.js';
+import { celularAlNacer } from './lib/contacto-cotizacion.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
@@ -368,6 +369,12 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
       return { id: idPrevio, requiereActualizacionOperam };
     }
   }
+  // La Oportunidad nace ligada a su Contacto (#342, ADR-0016, CONTEXT.md
+  // "Oportunidad"): el celular se anota AQUI, en el unico punto donde una
+  // cotizacion nace, y ninguna regeneracion posterior lo recalcula -- el camino
+  // de actualizacion de arriba ni siquiera lo menciona. Corregir un telefono mal
+  // tecleado deja de mover la tarjeta a otra persona.
+  entry.contactoCelular = celularAlNacer(data.cliente);
   const id = await cotStore.crear(entry);
   await actualizarEmbudoPorCotizacion(data, id, vendedor);
   return { id, requiereActualizacionOperam: false };
@@ -522,10 +529,13 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   // para quien pregunta, la misma puerta que usa el pipeline en el navegador
   // (GET /api/prospectos): las dos vistas dicen lo mismo del mismo cliente.
   const indiceOrigen = indiceOrigenPorCelular(await prospectosVisiblesPara(req.user));
-  res.json(anotarOrigen(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido }) => ({
+  res.json(anotarOrigen(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido, contactoCelular }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
     estado: estado || 'abierta',
     etapa,
+    // El Contacto de la Oportunidad (#342): por AQUI se hereda el Origen, no por
+    // el telefono tecleado, que es dato del documento y puede corregirse.
+    contactoCelular: contactoCelular ?? null,
     // Folio de Operam nullable (issue #63): null = pre-cotizacion (badge "PRE");
     // registroDesconocido = historica anterior a #63 (se asume registrada, sin badge).
     folioOperam: folioOperam ?? null,
@@ -697,6 +707,30 @@ app.post('/api/cotizacion/:id/reunion', authMiddleware, async (req, res) => {
     fecha: new Date().toISOString(), vendedor: req.user.name,
   });
   res.json({ ok: true });
+});
+
+// Capturar a mano el Contacto de una Oportunidad que se quedo sin el (#342,
+// spec #337, user story 22): la migracion resuelve la mayoria, pero una
+// cotizacion historica sin telefono y sin nada en el indice de Operam queda
+// "sin Contacto" a la vista, y el vendedor -- que si sabe de quien es -- le
+// captura el celular desde la tarjeta. La liga sigue siendo FIJA: la guarda del
+// store (setContactoCelular) no pisa una ya anotada, y aqui eso sale como 409
+// con el celular que ya tiene, nunca como un cambio silencioso.
+app.post('/api/cotizacion/:id/contacto', authMiddleware, async (req, res) => {
+  const entry = await cotizacionOperable(req, res);
+  if (!entry) return;
+  const celular = celularAlNacer({ telefono: req.body?.celular });
+  if (!celular) {
+    return res.status(400).json({ error: 'El celular del Contacto debe traer 10 dígitos' });
+  }
+  const ligado = await cotStore.setContactoCelular(entry.id, celular);
+  if (!ligado) {
+    return res.status(409).json({
+      error: 'Esta cotización ya está ligada a un Contacto y esa liga no se mueve',
+      contactoCelular: entry.contactoCelular ?? null,
+    });
+  }
+  res.json({ ok: true, contactoCelular: celular });
 });
 
 // Resultado de la reunion pasada sobre una cotizacion (issue #65, Modelo A #59):

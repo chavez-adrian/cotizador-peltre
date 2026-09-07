@@ -5448,6 +5448,26 @@ async function moverASeguimientoTablero(id) {
 }
 window.moverASeguimientoTablero = moverASeguimientoTablero;
 
+// Capturar a mano el Contacto de una Oportunidad que la migracion no pudo
+// resolver (#342, spec #337 user story 22). Es lo unico que puede escribir esa
+// liga despues de nacida, y solo cuando esta vacia: el servidor responde 409 si
+// ya tiene Contacto, y el aviso lo dice en vez de pisarla.
+async function capturarContactoTablero(id) {
+  const celular = (prompt('Celular del Contacto de esta cotización (10 dígitos):') || '').trim();
+  if (!celular) return;
+  try {
+    const res = await api(`/api/cotizacion/${id}/contacto`, { method: 'POST', body: { celular } });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    if (!res.ok) { avisoTablero(data.error || 'No se pudo ligar el Contacto'); return; }
+    avisoTablero('Contacto ligado a la oportunidad');
+    recargarPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.capturarContactoTablero = capturarContactoTablero;
+
 // Salidas del embudo desde la tarjeta del tablero (issue #59, Modelo A). El
 // control pinta el id numerico (refId); aqui se ubica la oportunidad por ese id
 // para conocer su tipo (la salida de un prospecto y la de una cotizacion pegan a

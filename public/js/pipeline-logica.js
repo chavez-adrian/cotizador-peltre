@@ -792,6 +792,25 @@ export function buildDecoradoControlHtml(o) {
   </div>`;
 }
 
+// Oportunidad sin Contacto (#342, spec #337 user story 22, ADR-0016): la
+// migracion le asigna Contacto a casi todo lo existente, pero una cotizacion
+// historica sin telefono y sin nada bajo su Cliente Operam en el indice se queda
+// sin persona a la que colgarse. En vez de adivinarla, la tarjeta lo DICE y el
+// vendedor -- que si sabe de quien es -- le captura el celular ahi mismo; ese
+// celular la liga en ese momento y ya no se mueve.
+//
+// Solo aplica a COTIZACIONES: el celular de un prospecto ES su identidad, no
+// puede faltar. Usa el id numerico (refId), nunca el prefijado ("c51"), leccion
+// del bug de #57.
+export function buildSinContactoControlHtml(o) {
+  if (!o || o.tipo !== 'cotizacion' || o.contactoCelular) return '';
+  const id = o.refId ?? o.id;
+  return `<div class="cot-card-actions tablero-sin-contacto">
+    <span class="cot-badge badge-sin-contacto">Sin Contacto</span>
+    <button class="btn btn-secondary btn-sm" onclick="capturarContactoTablero(${id})">Capturar celular</button>
+  </div>`;
+}
+
 function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   // El Origen sale de la linea gris y se lee en su chip (#287).
@@ -802,6 +821,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const mover = buildMoverSeguimientoControlHtml(o);
   const salida = buildSalidaControlHtml(o);
   const decorado = buildDecoradoControlHtml(o);
+  const sinContacto = buildSinContactoControlHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -813,6 +833,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
         ${total}
       </div>
       ${cadena}
+      ${sinContacto}
       ${asignar}
       ${mover}
       ${decorado}
