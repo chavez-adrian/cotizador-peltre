@@ -2094,6 +2094,70 @@ test('D1b: POST /api/crear-cliente envia invoice_email/celular_nota en notes y p
   }
 });
 
+// #339 (ADR-0016): la casilla que la web de Operam etiqueta "Cel" viaja en la API
+// como `fax`. El alta completa la escribe con el celular del Contacto (el campo
+// Celular del panel, que ya viajaba como `celular_nota`) en el Contacto en Operam
+// auto-generado y en la sucursal, y lo verifica releyendo (#74).
+test('D1b-cel: POST /api/crear-cliente manda el celular del Contacto en Cel (fax) del cliente y de la sucursal', async () => {
+  let postBody = null;
+  let branchBody = null;
+  _resetSesionWeb();
+  const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { postBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, customer_id: 515 }) }; }
+      if (u.includes('/515')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: '5599998888' }], branches: [{ branch_code: 615, fax: '5599998888' }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/615': (u, opts) => {
+      if (opts?.method === 'PUT') branchBody = JSON.parse(opts.body);
+      return { ok: true, json: async () => ({ result: true }) };
+    },
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, celular_nota: '5599998888' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(postBody.fax, '5599998888', 'el POST del cliente lleva el celular del Contacto en Cel');
+    assert.strictEqual(branchBody.fax, '5599998888', 'el PUT de la sucursal lleva el mismo celular en Cel');
+    assert.strictEqual(branchBody.phone, '5512345678', 'el telefono de la sucursal sigue siendo el de la entrega');
+    const paso = res.body.steps.find(s => s.name === 'verificar Cel');
+    assert.ok(paso, 'reporta el paso de verificacion del Cel');
+    assert.strictEqual(paso.status, 'ok');
+  } finally {
+    restore();
+  }
+});
+
+test('D1b-cel2: si Operam ignora el Cel, el alta completa sigue en ok y lo lista como campo no aplicado (#339)', async () => {
+  _resetSesionWeb();
+  const restore = mockOperamFetch({
+    ...FICHA_ALTA.handlers,
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 516 }) };
+      if (u.includes('/516')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: '' }], branches: [{ branch_code: 616, fax: '' }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/616': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, celular_nota: '5599998888' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true, 'el alta no falla por un Cel que Operam ignoro');
+    const paso = res.body.steps.find(s => s.name === 'verificar Cel');
+    assert.strictEqual(paso.status, 'warn');
+    assert.deepStrictEqual(paso.camposNoActualizados.map(c => c.label), ['Cel del contacto', 'Cel de la sucursal']);
+  } finally {
+    restore();
+  }
+});
+
 test('D1c: POST /api/crear-cliente configura el domicilio con vendedor, area, almacen y tax_group (issue #74)', async () => {
   let branchBody = null;
   _resetSesionWeb();
