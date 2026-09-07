@@ -5004,10 +5004,11 @@ function cvElegirResultado(i) {
     cvRenderTarjeta();
     return;
   }
-  const base = { ...r, tipo: 'operam', pais: r.pais || 'MX' };
-  // El Origen de la tarjeta es el que ya resolvio la fila (#287).
+  const base = { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' };
+  // El Origen de la tarjeta es el que ya resolvio la fila (#287): la tarjeta se
+  // arma desde `raw`, que no lo trae.
   const card = { ...base, origen: r.origen };
-  cvState.seleccion = { tipo: r.tipo, card, raw: r };
+  cvState.seleccion = { tipo: r.tipo, card, raw: r.raw };
   cvRenderTarjeta();
 }
 window.cvElegirResultado = cvElegirResultado;
@@ -5094,9 +5095,7 @@ window.cvAbrirUpgrade = cvAbrirUpgrade;
 function cvEditarClienteFila(i) {
   const r = cvResultadosCache[i];
   if (!r || r.tipo !== 'operam') return;
-  // #346: la fila de un Cliente Operam ES el registro (el buscador por Contacto
-  // no la envuelve en `raw`).
-  cvState.seleccion = { tipo: r.tipo, card: { ...r, tipo: 'operam', pais: r.pais || 'MX' }, raw: r };
+  cvState.seleccion = { tipo: r.tipo, card: { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' }, raw: r.raw };
   cvAbrirUpgrade(true);
 }
 window.cvEditarClienteFila = cvEditarClienteFila;

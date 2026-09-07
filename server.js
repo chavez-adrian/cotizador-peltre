@@ -12,7 +12,7 @@ import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacio
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
-import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados, precargaComercialUpgrade, contactoCoincideBusqueda } from './public/js/alta-logica.js';
+import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoDe, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, sucursalEquivalente, diffBranchDomicilio } from './lib/alta-generica.js';
 import { celsNoAplicados } from './lib/cel-operam.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
@@ -2432,6 +2432,7 @@ app.get('/api/contactos/buscar', authMiddleware, async (req, res) => {
     const raw = await clientesOperamPorTexto(q);
     const celularesPorCliente = new Map(
       raw.map(c => [String(c.customer_id), celularesDeClienteOperam(c)]));
+    const idsDelResultado = new Set(raw.map(c => String(c.customer_id)));
 
     const embudo = await embudoVisiblePara(req.user);
     const cotizaciones = await cotStore.listar();
@@ -2442,33 +2443,65 @@ app.get('/api/contactos/buscar', authMiddleware, async (req, res) => {
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
 
-    // Los Contactos que entran: los que responden al texto y los de los
-    // Clientes Operam que ya respondieron. Buscar "Orea" tiene que traer a su
-    // comprador aunque el se llame de otra forma -- si no, el Cliente Operam
-    // volveria a salir como fila suelta y la persona quedaria escondida.
+    // Los Contactos que entran: los que responden al texto y los de los Clientes
+    // Operam que ya respondieron. Buscar "Orea" tiene que traer a su comprador
+    // aunque el se llame de otra forma -- si no, el Cliente Operam volveria a
+    // salir como fila suelta y la persona quedaria escondida.
+    //
+    // "Ser de" tiene las DOS fuentes de ADR-0016: el celular en una de las seis
+    // casillas (derivada) y la liga que el cotizador persistio -- la del propio
+    // Contacto y la que anoto cada cotizacion suya al subirse. Con solo la
+    // derivada, el Cliente Operam ligado a mano cuyo celular Operam no conoce
+    // dejaba a su comprador escondido.
     const celularesDelResultado = new Set([...celularesPorCliente.values()].flat());
+    const contactoPorCelular = indiceContactosPorCelular(embudo.contactos);
+    const ligadosAlResultado = new Set();
+    for (const c of embudo.contactos) {
+      if (ligasDeContacto(c.data).some(l => idsDelResultado.has(String(l.cliente_id)))) {
+        ligadosAlResultado.add(c.id);
+      }
+    }
+    for (const cot of cotizacionesVisibles) {
+      const customerId = cot.data?.cliente?.customerId;
+      if (customerId == null || !idsDelResultado.has(String(customerId))) continue;
+      for (const cel of celularesDeCruce(cot)) {
+        const ficha = contactoPorCelular.get(cel);
+        if (ficha) ligadosAlResultado.add(ficha.id);
+      }
+    }
     const fichas = embudo.contactos.filter(c =>
-      contactoCoincideBusqueda(c, q) || celularesDelResultado.has(ultimos10(c.celular)));
+      contactoCoincideBusqueda(c, q) ||
+      celularesDelResultado.has(ultimos10(c.celular)) ||
+      ligadosAlResultado.has(c.id));
 
     const oportunidadesPre = oportunidadesDeContactos(fichas, await oportunidadesStore.listar());
-    const porContacto = fichas.map(ficha => {
+    const porContacto = await Promise.all(fichas.map(async ficha => {
       const cots = cotizacionesDelProspecto(ficha, cotizacionesVisibles);
       const suyas = oportunidadesPre.filter(o => o.contactoId === ficha.id);
+      // Sus Clientes Operam: los que el cotizador persistio (`ligasDeContacto`
+      // via `clientesOperamLigados`) MAS el que deriva del indice de telefonos,
+      // que no se guarda y se calcula en lectura (`conLigaDerivada`, #345). Sin
+      // el, la ficha de quien nunca cotizo por aqui no mostraria el Cliente
+      // Operam que comparte su numero -- y "todos sus Clientes Operam" es justo
+      // lo que la ficha promete.
+      const persistidas = clientesOperamLigados(ficha, cots.map(c => ({ customerId: c.data?.cliente?.customerId })))
+        .map(cliente_id => ({ cliente_id }));
+      const derivada = await matchCliente(ficha.celular);
       return {
         ficha,
-        cots,
         // Todas sus Oportunidades, en la misma forma que las tarjetas del
         // tablero (#340): las pre-cotizacion y las que ya son cotizacion, sin
         // que la persona salga dos veces por la misma intencion.
         tarjetas: tarjetasOportunidades(suyas, cots),
-        ligados: clientesOperamLigados(ficha, cots.map(c => ({ customerId: c.data?.cliente?.customerId }))),
+        ligados: conLigaDerivada(persistidas, derivada?.customer_id ?? null).map(l => String(l.cliente_id)),
       };
-    });
+    }));
 
     // Las fichas de Operam de todo lo que va a viajar: las del resultado y las
-    // de las ligas persistidas del Contacto, que pueden no estar en el
-    // resultado (muchos a muchos, ADR-0016). Lo que el padron no conoce no se
-    // inventa: sin ficha no hay Cliente Operam que anidar.
+    // de las ligas de cada Contacto, que pueden no estar en el resultado
+    // (muchos a muchos, ADR-0016). Lo que el padron no conoce no se inventa:
+    // sin ficha no hay RFC con el que decir su estado fiscal, y una fila sin
+    // Cliente Operam es mejor que una con la etiqueta equivocada.
     const padron = await clientesCacheados({ timeoutMs: 5000 }).catch(() => []);
     const padronPorId = new Map((padron || []).map(c => [String(c.customer_id), c]));
     const fichasOperam = new Map(raw.map(c => [String(c.customer_id), c]));
@@ -2481,50 +2514,44 @@ app.get('/api/contactos/buscar', authMiddleware, async (req, res) => {
       estadosDeClientes([...fichasOperam.values()]),
       celularesEnLinea(),
     ]);
+    // La fila de un Cliente Operam, con la forma que el navegador ya sabia leer
+    // (`normalizarOperam`, el MISMO normalizador del buscador mezclado): la fila
+    // se arma aqui porque quien decide que sale y bajo quien es el servidor,
+    // pero su forma no se reexpresa.
     const filaOperamDe = (id) => {
       const ficha = fichasOperam.get(String(id));
-      return ficha ? filaClienteOperam(ficha, estados.get(String(id)) || null) : null;
+      return ficha ? normalizarOperam(filaClienteOperam(ficha, estados.get(String(id)) || null)) : null;
     };
 
-    const contactos = porContacto.map(({ ficha, tarjetas, ligados }) => {
-      const clientesOperam = ligados.map(filaOperamDe).filter(Boolean);
-      return {
-        id: ficha.id,
-        celular: ficha.celular,
-        nombre: ficha.nombre || '',
-        ciudad: ficha.ciudad || '',
-        canal: ficha.canal || '',
-        // El sub de la fila, con el mismo formato que la lista mezclada.
-        sub: [ficha.ciudad, ficha.celular].filter(Boolean).join(' - '),
-        etiquetas: etiquetasDeContacto({
-          contacto: ficha,
-          oportunidades: tarjetas,
-          clientesOperam,
-          enLinea: enLinea.has(ultimos10(ficha.celular)),
-        }),
-        oportunidades: tarjetas,
-        clientesOperam,
-        // La ficha cruda: de ahi salen el salto a cotizar (clienteDesdeProspecto)
-        // y la edicion del Contacto, igual que en la lista mezclada.
-        raw: ficha,
-      };
-    });
+    const contactos = porContacto.map(({ ficha, tarjetas, ligados }) => ({
+      ...normalizarProspecto(ficha),
+      tipo: 'contacto',
+      oportunidades: tarjetas,
+      clientesOperam: ligados.map(filaOperamDe).filter(Boolean),
+    }));
 
     const filas = filasBuscadorClientes({
-      // `nombre` y `sub` son los campos con los que la fila se pinta (los mismos
-      // que ponia `normalizarOperam` en el navegador): aqui las filas viajan ya
-      // armadas, porque quien decide que sale y bajo quien es el servidor.
-      clientesOperam: raw.map(c => {
-        const fila = filaClienteOperam(c, estados.get(String(c.customer_id)) || null);
-        return { ...fila, nombre: fila.name, sub: fila.rfc };
-      }),
+      clientesOperam: raw.map(c => filaOperamDe(c.customer_id)).filter(Boolean),
       contactos,
       celularesPorCliente,
     });
+    // Las etiquetas se derivan DESPUES de anidar (#344): miran TODOS los
+    // Clientes Operam del Contacto, tambien el que solo se supo por el indice de
+    // telefonos. Calcularlas antes dejaba a un Contacto sin la etiqueta "con
+    // pedido" del Cliente Operam que su propia fila ya mostraba con pedido.
+    const conEtiquetas = filas.map(f => (f.tipo !== 'contacto' ? f : {
+      ...f,
+      etiquetas: etiquetasDeContacto({
+        contacto: f.raw,
+        oportunidades: f.oportunidades,
+        clientesOperam: f.clientesOperam,
+        enLinea: enLinea.has(ultimos10(f.celular)),
+      }),
+    }));
     // El Origen (#287) se resuelve aqui, donde estan los Contactos: la fila del
     // Contacto lo trae propio y la del Cliente Operam suelto lo hereda si algun
     // Contacto visible comparte su telefono.
-    res.json(anotarOrigen(filas, indiceOrigenPorCelular(embudo.contactos)));
+    res.json(anotarOrigen(conEtiquetas, indiceOrigenPorCelular(embudo.contactos)));
   } catch (err) {
     res.status(503).json({ error: 'Operam no disponible: ' + err.message });
   }

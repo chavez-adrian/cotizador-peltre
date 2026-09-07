@@ -506,9 +506,13 @@ function accionEditarFilaHtml(row, i) {
   if (row.tipo === 'operam') {
     return botonEditarFilaHtml('cvEditarClienteFila(' + i + ')', 'Editar datos de cliente');
   }
-  if (row.tipo === 'prospecto' && row.raw && !esSalida(row.etapa)) {
-    return botonEditarFilaHtml('cvAbrirEdicionProspectoFila(' + row.id + ')', 'Editar prospecto') +
-      '<div id="pr-edicion-' + row.id + '" style="display:none">' + buildEdicionProspectoFormHtml(row.raw) + '</div>';
+  // #346: la vista dejo de listar prospectos sueltos y lista CONTACTOS, asi que
+  // la puerta de #198 es la misma sobre la persona -- mismo formulario inline,
+  // mismo guardarEdicionProspecto, mismo id pr-edicion-<id>. Sigue sin ofrecerse
+  // sobre una etapa de salida (el servidor rechaza esa edicion con 400, #66).
+  if (row.tipo === 'contacto' && row.raw && !esSalida(row.raw.etapa)) {
+    return botonEditarFilaHtml('cvAbrirEdicionProspectoFila(' + row.raw.id + ')', 'Editar Contacto') +
+      '<div id="pr-edicion-' + row.raw.id + '" style="display:none">' + buildEdicionProspectoFormHtml(row.raw) + '</div>';
   }
   return '';
 }
@@ -1225,7 +1229,7 @@ function oportunidadFichaHtml(o) {
 // varios y solo uno necesitar la constancia.
 function clienteOperamFichaHtml(c) {
   const row = { ...(c || {}), tipo: 'operam' };
-  const nombre = row.name || row.nombre || 'Sin nombre';
+  const nombre = row.nombre || 'Sin nombre';
   const id = row.id == null ? '' : String(row.id);
   const accion = sinDatosFiscales(row) && id
     ? '<div style="margin-top:4px"><button type="button" class="btn btn-secondary btn-sm" ' +
@@ -1274,7 +1278,7 @@ export function fichaContactoHtml(r) {
 // registro de Operam que el vendedor buscaba ya esta ahi dentro y no falta.
 export function filaContactoHtml(r, i) {
   const row = r || {};
-  const nombres = (row.clientesOperam || []).map(c => (c && (c.name || c.nombre)) || '').filter(Boolean);
+  const nombres = (row.clientesOperam || []).map(c => (c && c.nombre) || '').filter(Boolean);
   const anidados = nombres.length
     ? '<span class="pc-res-sub">' + nombres.map(escapeHtml).join(' &middot; ') + '</span>'
     : '';
@@ -1283,5 +1287,6 @@ export function filaContactoHtml(r, i) {
     '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(row.nombre || '') + '</span>' +
     '<span class="pc-res-sub">' + escapeHtml(row.sub || '') + '</span>' +
     anidados + chipOrigenHtml(row) + '</span>' +
-    etiquetasContactoHtml(row.etiquetas) + '</button>';
+    etiquetasContactoHtml(row.etiquetas) + '</button>' +
+    accionEditarFilaHtml(row, i);
 }

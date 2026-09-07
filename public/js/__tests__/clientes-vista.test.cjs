@@ -198,29 +198,31 @@ test('E1: fila de cliente Operam emite "Editar datos de cliente" contra su indic
   assert.match(html, /Editar datos de cliente/);
 });
 
-test('E2: fila de prospecto en etapa activa emite "Editar prospecto" con el formulario inline de #66', () => {
+// #346: la vista dejo de listar prospectos sueltos y lista CONTACTOS, asi que la
+// puerta de #198 es la misma sobre la persona -- mismo formulario inline de #66.
+test('E2: fila de Contacto en etapa activa emite "Editar Contacto" con el formulario inline de #66', () => {
   const raw = { id: 77, nombre: 'Maria Torres', ciudad: 'CDMX', celular: '+525511112222', etapa: 'por_cotizar', data: {} };
-  const html = filaResultadoClienteHtml({ tipo: 'prospecto', id: 77, nombre: 'Maria Torres', etapa: 'por_cotizar', sub: '', raw }, 0);
+  const html = filaResultadoClienteHtml({ tipo: 'contacto', id: 77, nombre: 'Maria Torres', sub: '', raw }, 0);
   assert.match(html, /cvAbrirEdicionProspectoFila\(77\)/);
-  assert.match(html, /Editar prospecto/);
+  assert.match(html, /Editar Contacto/);
   assert.match(html, /id="pr-edicion-77"/);
   assert.match(html, /id="ed-nombre-77"/); // reusa buildEdicionProspectoFormHtml de #66, sin copia
 });
 
-test('E3 (#66): prospecto en etapa de salida (no_util/perdida) no ofrece la accion -- el server rechaza con 400', () => {
+test('E3 (#66): Contacto en etapa de salida (no_util/perdida) no ofrece la accion -- el server rechaza con 400', () => {
   const rawNoUtil = { id: 78, nombre: 'Cerrado', ciudad: 'CDMX', celular: '+525511112222', etapa: 'no_util', data: {} };
-  const htmlNoUtil = filaResultadoClienteHtml({ tipo: 'prospecto', id: 78, nombre: 'Cerrado', etapa: 'no_util', sub: '', raw: rawNoUtil }, 0);
-  assert.doesNotMatch(htmlNoUtil, /Editar prospecto/);
+  const htmlNoUtil = filaResultadoClienteHtml({ tipo: 'contacto', id: 78, nombre: 'Cerrado', sub: '', raw: rawNoUtil }, 0);
+  assert.doesNotMatch(htmlNoUtil, /Editar Contacto/);
   assert.doesNotMatch(htmlNoUtil, /pr-edicion-78/);
 
   const rawPerdida = { id: 79, nombre: 'Cerrado', ciudad: 'CDMX', celular: '+525511112222', etapa: 'perdida', data: {} };
-  const htmlPerdida = filaResultadoClienteHtml({ tipo: 'prospecto', id: 79, nombre: 'Cerrado', etapa: 'perdida', sub: '', raw: rawPerdida }, 0);
-  assert.doesNotMatch(htmlPerdida, /Editar prospecto/);
+  const htmlPerdida = filaResultadoClienteHtml({ tipo: 'contacto', id: 79, nombre: 'Cerrado', sub: '', raw: rawPerdida }, 0);
+  assert.doesNotMatch(htmlPerdida, /Editar Contacto/);
 });
 
-test('E4: fila de prospecto sin raw resuelto (compatibilidad) no revienta ni ofrece editar', () => {
-  const html = filaResultadoClienteHtml({ tipo: 'prospecto', nombre: 'Sin raw', sub: '' }, 0);
-  assert.doesNotMatch(html, /Editar prospecto/);
+test('E4: fila de Contacto sin raw resuelto (compatibilidad) no revienta ni ofrece editar', () => {
+  const html = filaResultadoClienteHtml({ tipo: 'contacto', nombre: 'Sin raw', sub: '' }, 0);
+  assert.doesNotMatch(html, /Editar Contacto/);
 });
 
 // === bannerUpgradeHtml ===
@@ -342,8 +344,8 @@ const CONTACTO = {
     { tipo: 'prospecto', id: 'p1', refId: 1, etapa: 'por_cotizar', folioOperam: null },
   ],
   clientesOperam: [
-    { id: '514', name: 'JORGE OREA', rfc: 'XAXX010101000', fiscal: 'sin_datos_fiscales', comercial: 'con_pedido' },
-    { id: '780', name: 'OREA EVENTOS SA DE CV', rfc: 'OEV220101QX3', fiscal: 'con_datos_fiscales', comercial: 'cotizado' },
+    { id: '514', nombre: 'JORGE OREA', rfc: 'XAXX010101000', fiscal: 'sin_datos_fiscales', comercial: 'con_pedido' },
+    { id: '780', nombre: 'OREA EVENTOS SA DE CV', rfc: 'OEV220101QX3', fiscal: 'con_datos_fiscales', comercial: 'cotizado' },
   ],
   raw: { id: 1, nombre: 'Laura Mendez', ciudad: 'Puebla', celular: '+52 55 1234 5678', etapa: 'seguimiento', data: {} },
 };
@@ -364,9 +366,9 @@ test('CT2: la ficha pinta las etiquetas del Contacto con su texto de pantalla', 
 
 test('CT3: la ficha lista TODAS sus Oportunidades con su folio y su etapa', () => {
   const html = fichaContactoHtml(CONTACTO);
-  assert.match(html, /Cotización 1240/);
+  assert.match(html, /badge-operam">[^<]*1240/);
   assert.match(html, /Seguimiento/);
-  assert.match(html, /Cotización 1199/);
+  assert.match(html, /badge-operam">[^<]*1199/);
   assert.match(html, /Perdida/);
   assert.match(html, /Por Cotizar/);
 });

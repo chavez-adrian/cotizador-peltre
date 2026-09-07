@@ -176,7 +176,7 @@ test('#346: la fila del Contacto trae etiquetas, Oportunidades y los estados de 
   const cliente = fila.clientesOperam.find(c => String(c.id) === '514');
   assert.equal(cliente.fiscal, 'sin_datos_fiscales');
   assert.equal(cliente.comercial, 'con_pedido');
-  assert.equal(cliente.name, 'JORGE OREA');
+  assert.equal(cliente.nombre, 'JORGE OREA');
   const op = fila.oportunidades.find(o => o.folioOperam === 1240);
   assert.equal(op.etapa, 'seguimiento');
 });
@@ -199,4 +199,34 @@ test('#346: la fila anida tambien el Cliente Operam que solo esta en la lista de
   const res = await buscar('Laura');
   const fila = res.body.find(f => f.tipo === 'contacto' && f.nombre === 'Laura Mendez');
   assert.deepEqual(fila.clientesOperam.map(c => String(c.id)).sort(), ['233', '514']);
+});
+
+// Buscar la razon social tiene que traer a su comprador aunque su celular no
+// viva en ninguna casilla de Operam: la liga persistida (#345) tambien "es de".
+// Sin esto el Cliente Operam volvia a salir suelto y la persona quedaba
+// escondida -- el sintoma exacto que el ticket cierra.
+test('#346: el Contacto ligado a mano entra al resultado aunque Operam no tenga su celular', async () => {
+  writeJson(PROSPECTOS_PATH, [
+    { ...LAURA, celular: '+52 55 7777 6666', eventos: [], data: { clientes_operam: [{ cliente_id: 910, fuente: 'cotizador' }] } },
+  ]);
+  writeJson(COTS_PATH, []);
+  mockOperam({ padron: [SOLITARIO], pedidos: [] });
+  const res = await buscar('Abarrotes');
+  assert.equal(res.body.filter(f => f.tipo === 'operam').length, 0, 'no queda como fila suelta');
+  const fila = res.body.find(f => f.tipo === 'contacto');
+  assert.equal(fila.nombre, 'Laura Mendez');
+  assert.deepEqual(fila.clientesOperam.map(c => String(c.id)), ['910']);
+});
+
+// Las etiquetas se derivan DESPUES de anidar: miran tambien el Cliente Operam
+// que solo se supo por el indice de telefonos. Mario no tiene ninguna liga
+// persistida ni cotizacion; su unico Cliente Operam es el del restaurante que
+// comparte su numero, y ese si tiene pedido.
+test('#346: la etiqueta con pedido cuenta el Cliente Operam que solo llego por el indice', async () => {
+  writeJson(COTS_PATH, []);
+  mockOperam({ padron: [RESTAURANTE], pedidos: [{ order_no: '6100', debtor_no: '233', trans_no_from: '' }] });
+  const res = await buscar('Mario');
+  const fila = res.body.find(f => f.tipo === 'contacto' && f.nombre === 'Mario Solis');
+  assert.deepEqual(fila.clientesOperam.map(c => String(c.id)), ['233']);
+  assert.deepEqual(fila.etiquetas, ['prospecto', 'con_pedido']);
 });

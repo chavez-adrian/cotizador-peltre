@@ -65,3 +65,15 @@ test('B5: un Cliente Operam que ya venia ligado al Contacto no se anida dos vece
   });
   assert.deepEqual(filas[0].clientesOperam.map(c => c.id), ['514']);
 });
+
+// La liga persistida y la derivada apagan IGUAL la fila suelta: un Cliente
+// Operam ligado a mano cuyo celular Operam no conoce salia anidado Y suelto.
+test('B6: el Cliente Operam ligado SOLO por la lista del Contacto tampoco sale suelto', () => {
+  const filas = filasBuscadorClientes({
+    clientesOperam: [HOTELERA],
+    contactos: [{ ...LAURA, clientesOperam: [HOTELERA] }],
+    celularesPorCliente: new Map([['233', []]]),
+  });
+  assert.deepEqual(filas.map(f => f.tipo), ['contacto']);
+  assert.deepEqual(filas[0].clientesOperam.map(c => c.id), ['233']);
+});

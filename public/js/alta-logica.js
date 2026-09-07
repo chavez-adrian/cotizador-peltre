@@ -806,7 +806,9 @@ export function clienteDesdeProspecto(prospecto) {
   };
 }
 
-function normalizarOperam(c) {
+// Exportados desde #346: el buscador de la vista Clientes arma sus filas en el
+// SERVIDOR y usa ESTOS normalizadores, no una copia con los mismos literales.
+export function normalizarOperam(c) {
   return {
     tipo: 'operam', id: c.id, nombre: c.name || '', rfc: c.rfc || '', ref: c.ref || '',
     telefonos: c.telefonos || (c.telefono ? [c.telefono] : []),
@@ -821,7 +823,7 @@ function normalizarOperam(c) {
   };
 }
 
-function normalizarProspecto(p) {
+export function normalizarProspecto(p) {
   return {
     tipo: 'prospecto', id: p.id, nombre: p.nombre || '',
     ciudad: p.ciudad || '', celular: p.celular || '', etapa: p.etapa || '',
