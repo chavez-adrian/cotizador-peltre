@@ -113,6 +113,30 @@ test('construirIndice: ante el mismo telefono en dos clientes gana el primero', 
   assert.equal(idx.get('5511111111').customer_id, '1');
 });
 
+// === Cel (`fax`, #338/ADR-0016): sexta y quinta casilla del indice ===
+
+test('construirIndice: un celular que SOLO vive en el Cel (fax) de un Contacto en Operam liga al cliente', () => {
+  const idx = construirIndice([
+    { customer_id: '9', CustName: 'SOLO EN CEL', contacts: [{ phone: '', fax: '5551112233' }], branches: [] },
+  ]);
+  assert.deepEqual(idx.get('5551112233'), { customer_id: '9', cust_name: 'SOLO EN CEL' });
+});
+
+test('construirIndice: un celular que SOLO vive en el Cel (fax) de una sucursal liga al cliente', () => {
+  const idx = construirIndice([
+    { customer_id: '9', CustName: 'SOLO EN CEL SUCURSAL', contacts: [], branches: [{ phone: '', fax: '5554445566' }] },
+  ]);
+  assert.deepEqual(idx.get('5554445566'), { customer_id: '9', cust_name: 'SOLO EN CEL SUCURSAL' });
+});
+
+test('construirIndice: el mismo numero en Telefono y Cel de la misma persona produce una sola llave', () => {
+  const idx = construirIndice([
+    { customer_id: '9', CustName: 'REPETIDO', contacts: [{ phone: '5551112233', fax: '5551112233' }], branches: [] },
+  ]);
+  assert.equal(idx.size, 1);
+  assert.equal(idx.get('5551112233').customer_id, '9');
+});
+
 // === enumerarTelefonosClientes (#228): la misma pasada, sin tirar la persona ===
 //
 // El indice se queda con id y nombre del cliente y DESCARTA quien contesta ese
@@ -122,11 +146,11 @@ test('construirIndice: ante el mismo telefono en dos clientes gana el primero', 
 const CLIENTE_RICO = {
   customer_id: '101', CustName: 'COCINAS DEL VALLE SA DE CV', cust_ref: 'Cocinas del Valle',
   contacts: [
-    { action: 'general', name: 'Laura Mendez', phone: '55 4444 1111', phone2: '55 4444 2222', email: 'laura@cocinas.mx' },
+    { action: 'general', name: 'Laura Mendez', phone: '55 4444 1111', phone2: '55 4444 2222', fax: '55 8888 1111', email: 'laura@cocinas.mx' },
     { action: 'invoice', name: '', phone: '', email: 'pagos@cocinas.mx' },
   ],
   branches: [
-    { branch_code: '1', br_name: 'Almacen Norte', contact_name: 'Beto Ramos', phone: '55 7777 2222', email: 'almacen@cocinas.mx' },
+    { branch_code: '1', br_name: 'Almacen Norte', contact_name: 'Beto Ramos', phone: '55 7777 2222', fax: '55 9999 3333', email: 'almacen@cocinas.mx' },
   ],
 };
 
@@ -142,9 +166,27 @@ test('enumerarTelefonosClientes: cada telefono conserva su persona, su rol y su 
     'phone2 es de la misma persona');
 });
 
+// === Cel (`fax`, #338/ADR-0016): misma persona y rol que su Telefono ===
+
+test('enumerarTelefonosClientes: el Cel (fax) de un Contacto en Operam trae la MISMA persona y rol que su Telefono', () => {
+  const cel = enumerarTelefonosClientes([CLIENTE_RICO]).find(e => e.telefono === '55 8888 1111');
+  assert.deepEqual(cel, {
+    customerId: '101', nombreCorto: 'Cocinas del Valle', razonSocial: 'COCINAS DEL VALLE SA DE CV',
+    telefono: '55 8888 1111', persona: 'Laura Mendez', rol: 'general',
+    correo: 'laura@cocinas.mx', domicilio: '', fuente: 'contacto',
+  });
+});
+
+test('enumerarTelefonosClientes: el Cel (fax) de una sucursal trae la MISMA persona y domicilio que su Telefono', () => {
+  const cel = enumerarTelefonosClientes([CLIENTE_RICO]).find(e => e.telefono === '55 9999 3333');
+  assert.equal(cel.persona, 'Beto Ramos');
+  assert.equal(cel.domicilio, 'Almacen Norte');
+  assert.equal(cel.correo, 'almacen@cocinas.mx');
+  assert.equal(cel.fuente, 'domicilio');
+});
+
 test('enumerarTelefonosClientes: el telefono de un domicilio trae su nombre y su contacto', () => {
-  const domicilio = enumerarTelefonosClientes([CLIENTE_RICO]).find(e => e.fuente === 'domicilio');
-  assert.equal(domicilio.telefono, '55 7777 2222');
+  const domicilio = enumerarTelefonosClientes([CLIENTE_RICO]).find(e => e.telefono === '55 7777 2222');
   assert.equal(domicilio.persona, 'Beto Ramos');
   assert.equal(domicilio.domicilio, 'Almacen Norte');
   assert.equal(domicilio.correo, 'almacen@cocinas.mx');
@@ -152,7 +194,7 @@ test('enumerarTelefonosClientes: el telefono de un domicilio trae su nombre y su
 
 test('enumerarTelefonosClientes: un contacto sin telefono no produce entrada', () => {
   const entradas = enumerarTelefonosClientes([CLIENTE_RICO]);
-  assert.equal(entradas.length, 3, 'dos telefonos del contacto general y uno del domicilio');
+  assert.equal(entradas.length, 5, 'dos telefonos y el Cel del contacto general, mas el telefono y el Cel del domicilio');
 });
 
 test('enumerarTelefonosClientes: los telefonos de todos los clientes salen en una sola lista', () => {

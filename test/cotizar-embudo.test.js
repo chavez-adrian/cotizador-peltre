@@ -134,6 +134,25 @@ test('E4: celular de cliente Operam clasifica como cliente con su nombre', async
   assert.deepEqual(res.body, { tipo: 'cliente', cust_name: 'HOTELERA DEL SUR SA DE CV' });
 });
 
+// #338/ADR-0016: el celular puede vivir SOLO en la casilla Cel (`fax`), sin
+// Telefono -- esta es la clasificacion que hoy trata a esas 68 personas como
+// numero desconocido.
+const CLIENTE_SOLO_CEL = {
+  customer_id: '78', CustName: 'MOLINOS DEL BAJIO SA DE CV',
+  contacts: [{ phone: '', fax: '+52 55 9988 7766' }],
+  branches: [],
+};
+
+test('E4b: celular que SOLO vive en Cel (fax) clasifica como cliente con su nombre (#338)', async () => {
+  writeProspectos([]);
+  mockListadoClientes([CLIENTE_SOLO_CEL]);
+  const res = await supertest(app).get('/api/prospectos/clasificar')
+    .query({ celular: '+52 5599887766' })
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { tipo: 'cliente', cust_name: 'MOLINOS DEL BAJIO SA DE CV' });
+});
+
 test('E5: celular desconocido clasifica libre, tambien cuando Operam falla (best effort)', async () => {
   writeProspectos([]);
   mockListadoClientes([CLIENTE_OPERAM]);

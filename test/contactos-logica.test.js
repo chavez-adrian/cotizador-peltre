@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { aFormatoWhatsApp, nombreVisible, planificarContactos, MASCARAS } from '../lib/contactos-logica.js';
+import { enumerarTelefonosClientes } from '../lib/indice-telefonos.js';
 
 // El formato MEDIDO en el dispositivo (#226, 2026-08-21): E.164 limpio, +52 y
 // los diez digitos, SIN el "1". Contradice la documentacion de WhatsApp y el
@@ -279,6 +280,26 @@ const TELEFONO_CLIENTE = {
 
 test('un Contacto de cliente produce ficha con la persona y el nombre corto', () => {
   const plan = planificarContactos({ clientes: [TELEFONO_CLIENTE], mapeo: [] });
+  const ficha = fichaCreada(plan);
+  assert.equal(ficha.nombreVisible, 'Laura Mendez - Cocinas del Valle');
+  assert.equal(ficha.telefono, '+525544441111');
+  assert.equal(ficha.correo, 'laura@cocinas.mx');
+  assert.equal(ficha.organizacion, 'Cocinas del Valle');
+});
+
+// #338/ADR-0016: un celular que SOLO vive en el Cel (fax) de Operam produce la
+// MISMA ficha que si viniera de Telefono -- misma persona, mismo rol. Pasa por
+// el modulo real que traduce la forma de Operam (enumerarTelefonosClientes),
+// no por un objeto `entrada` armado a mano como el resto de este archivo: es
+// la costura donde el AC3 del ticket se verifica de verdad.
+test('un celular que SOLO vive en el Cel (fax) de Operam produce la misma ficha que si viniera de Telefono (#338)', () => {
+  const clienteSoloCel = {
+    customer_id: '101', CustName: 'COCINAS DEL VALLE SA DE CV', cust_ref: 'Cocinas del Valle',
+    contacts: [{ action: 'general', name: 'Laura Mendez', phone: '', fax: '55 4444 1111', email: 'laura@cocinas.mx' }],
+    branches: [],
+  };
+  const [entradaDeCel] = enumerarTelefonosClientes([clienteSoloCel]);
+  const plan = planificarContactos({ clientes: [entradaDeCel], mapeo: [] });
   const ficha = fichaCreada(plan);
   assert.equal(ficha.nombreVisible, 'Laura Mendez - Cocinas del Valle');
   assert.equal(ficha.telefono, '+525544441111');
