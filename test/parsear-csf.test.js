@@ -39,6 +39,23 @@ Régimen Fiscal : 601 General de Ley Personas Morales
 // delimiten el fin de cada campo. Fuente: Csf_ISI1801183Z4 (IMPORTACIONES SISCANI).
 const CSF_UNA_LINEA = `Pagina [1] de [2] CEDULA DE IDENTIFICACION FISCAL ISI1801183Z4 Registro Federal de Contribuyentes IMPORTACIONES SISCANI Nombre, denominacion o razon social idCIF: 18020373831 CONSTANCIA DE SITUACION FISCAL Datos de Identificacion del Contribuyente: RFC: ISI1801183Z4 Denominación/Razón Social: IMPORTACIONES SISCANI Régimen Capital: SOCIEDAD ANONIMA DE CAPITAL VARIABLE Nombre Comercial: IMPORTACIONES SISCANI Fecha inicio de operaciones: 18 DE ENERO DE 2018 Estatus en el padrón: ACTIVO Fecha de último cambio de estado: 18 DE ENERO DE 2018 Datos del domicilio registrado Código Postal:23405 Tipo de Vialidad: CARRETERA (CARR.) Nombre de Vialidad: TRANSPENINSULAR Número Exterior: MODULO L 12 Número Interior:LOCAL 11 Y 12 Nombre de la Colonia: CABO COLORADO Nombre de la Localidad: SAN JOSE DEL CABO Nombre del Municipio o Demarcación Territorial: LOS CABOS Nombre de la Entidad Federativa: BAJA CALIFORNIA SUR Entre Calle: CALLE LOMA ENCANTADA Y Calle: REFERENCIA FRESKO PALMILLA Actividades Económicas: Orden Actividad Económica Porcentaje Fecha Inicio Fecha Fin 1 Otros intermediarios del comercio al por menor 100 18/01/2018 Regímenes: Régimen Fecha Inicio Fecha Fin Régimen General de Ley Personas Morales 18/01/2018 Obligaciones: `;
 
+// issue #349: la CSF deja campos del domicilio presentes pero VACIOS. El
+// separador ":\s*" cruzaba el salto de linea y el campo vacio se llevaba la
+// etiqueta siguiente con su valor (asi llego "Nombre de la Co" a Operam).
+const CSF_DOMICILIO_VACIO = `
+CONSTANCIA DE SITUACION FISCAL
+Denominación/Razón Social : COMERCIALIZADORA EJEMPLO
+R.F.C. : CEJ140604560
+Nombre de la Vialidad :
+Número Exterior :
+Número Interior :
+Nombre de la Colonia :
+Código Postal : 06000
+Nombre del Municipio o Demarcación Territorial :
+Nombre de la Entidad Federativa :
+Régimen Fiscal : 601 General de Ley Personas Morales
+`;
+
 const CSF_PERSONA_FISICA = `
 CONSTANCIA DE SITUACION FISCAL
 Nombre (s) : ADRIANA
@@ -174,5 +191,50 @@ describe('parsearCSF', () => {
 
   it('B21: sin seccion de Actividades Economicas, actividades es lista vacia', () => {
     assert.deepEqual(parsearCSF(CSF_RFC_SIN_SUFIJO_EXTRA).actividades, []);
+  });
+
+  // issue #349: campo presente y vacio produce cadena vacia, nunca la etiqueta
+  // siguiente con su valor.
+  it('B22: numero interior vacio en la CSF de persona moral no arrastra la colonia', () => {
+    const d = parsearCSF(CSF_PERSONA_MORAL);
+    assert.equal(d.numInt, '');
+    assert.equal(d.colonia, 'CENTRO DE LA CIUDAD DE MEXICO AREA 1');
+  });
+
+  describe('B23: todos los campos del domicilio presentes y vacios', () => {
+    const d = parsearCSF(CSF_DOMICILIO_VACIO);
+    it('calle', () => assert.equal(d.calle, ''));
+    it('numExt', () => assert.equal(d.numExt, ''));
+    it('numInt', () => assert.equal(d.numInt, ''));
+    it('colonia', () => assert.equal(d.colonia, ''));
+    it('municipio', () => assert.equal(d.municipio, ''));
+    it('estado', () => assert.equal(d.estado, ''));
+    it('lo que si trae valor sigue saliendo', () => {
+      assert.equal(d.rfc, 'CEJ140604560');
+      assert.equal(d.cp, '06000');
+      assert.equal(d.razonSocial, 'COMERCIALIZADORA EJEMPLO');
+      assert.equal(d.regimenFiscal, '601');
+    });
+  });
+
+  // El caso que produjo el dato malo en produccion (clientes 504 y 516) es una
+  // CSF de UNA sola linea, no una multilinea: pdf.js une los items con espacios
+  // y normalizarLineas es quien inserta el \n que el \s* goloso se comia.
+  it('B24: CSF en una sola linea con Numero Interior vacio no arrastra la colonia', () => {
+    const t = 'Código Postal:23405 Nombre de Vialidad: TRANSPENINSULAR Número Exterior: MODULO L 12 '
+      + 'Número Interior: Nombre de la Colonia: GARITA DE JALISCO '
+      + 'Nombre del Municipio o Demarcación Territorial: LOS CABOS';
+    const d = parsearCSF(t);
+    assert.equal(d.numInt, '');
+    assert.equal(d.colonia, 'GARITA DE JALISCO');
+    assert.equal(d.numExt, 'MODULO L 12');
+    assert.equal(d.calle, 'TRANSPENINSULAR');
+    assert.equal(d.municipio, 'LOS CABOS');
+  });
+
+  it('B25: razon social presente y vacia no arrastra el RFC', () => {
+    const d = parsearCSF('Denominación/Razón Social :\nR.F.C. : CEJ140604560\n');
+    assert.equal(d.razonSocial, '');
+    assert.equal(d.rfc, 'CEJ140604560');
   });
 });

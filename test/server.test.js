@@ -1693,6 +1693,7 @@ R.F.C. : BMF821130AR3
 idCIF : 12345678901
 Nombre de la Vialidad : AV 5 DE MAYO
 Número Exterior : 2
+Número Interior :
 Nombre de la Colonia : CENTRO DE LA CIUDAD DE MEXICO AREA 1
 Código Postal : 06000
 Nombre del Municipio o Demarcación Territorial : CUAUHTEMOC
