@@ -1313,6 +1313,11 @@ body {
 .badge-impago { background: oklch(0.9 0.06 25); color: oklch(0.42 0.13 25); }
 /* Oportunidad sin Contacto (#342): falta la persona, no el dinero -- ambar. */
 .badge-sin-contacto { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); margin-left: 0; }
+/* Estados del Cliente Operam de la Oportunidad (#344, ADR-0016): rojo cuando
+   falta la constancia, gris cuando ya la tiene, verde cuando ya nos compro. */
+.badge-fiscal-pendiente { background: oklch(0.9 0.06 25); color: oklch(0.42 0.13 25); }
+.badge-fiscal-listo { background: oklch(0.94 0.005 262); color: oklch(0.45 0.02 262); }
+.badge-con-pedido { background: oklch(0.9 0.07 150); color: oklch(0.4 0.11 150); }
 
 /* Estado de auto-subida a Operam (#83): bloque bajo los botones de generar y en
    las tarjetas del historial. Vacio cuando no hay subida en curso. */
@@ -1999,8 +2004,10 @@ body {
 .pc-tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
 .pc-tag.operam { background: var(--primary-light); color: var(--primary-dark); }
 .pc-tag.prospecto { background: oklch(0.93 0.05 85); color: oklch(0.42 0.08 70); }
-/* Cliente en Operam sin CSF (RFC generico): salta a la vista Clientes (#94) */
+/* Cliente Operam Sin datos fiscales: salta a la vista Clientes (#94/#344) */
 .pc-tag.generico { background: oklch(0.9 0.06 25); color: oklch(0.42 0.13 25); }
+/* Estado comercial con pedido (#344): verde -- ya nos compro */
+.pc-tag.con-pedido { background: oklch(0.9 0.07 150); color: oklch(0.4 0.11 150); }
 /* Banner de contexto del upgrade fiscal (#94): contra quien se actualiza */
 .banner-upgrade { display: flex; gap: 10px; align-items: flex-start; background: var(--primary-light); border: 1px solid var(--primary); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; margin-bottom: 14px; }
 .banner-upgrade b { display: block; }

@@ -14,6 +14,7 @@ import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProsp
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
+import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
 // del motivo de PRE que define lib/pipeline.js (este modulo NO importa de lib/,
@@ -442,17 +443,31 @@ function inicialesCliente(nombre) {
   return ((p[0] || ' ')[0] + ((p[1] || ' ')[0] || '')).toUpperCase().trim() || '?';
 }
 
-// El tag de una fila de resultado: rojo "RFC generico" para clientes de Operam que
-// siguen sin CSF (NOVEDAD #94, saltan a la vista para completarlos), azul "Operam"
-// con RFC real, gris "Prospecto".
+// El tag de una fila de resultado: el ESTADO FISCAL del Cliente Operam en rojo
+// cuando es "Sin datos fiscales" (saltan a la vista para completarlos, #94) y en
+// azul cuando ya los tiene; gris "Prospecto" para la fila del Contacto.
+//
+// El estado lo manda el servidor (#344): ahi se decide contra el RFC que Operam
+// tiene HOY. El respaldo por RFC de la propia fila es para una fila que venga de
+// otra fuente (o de una respuesta anterior a #344) -- misma regla, peor dato.
+// Antes decia "RFC generico" y "Operam": "generico" describe al RFC y no a la
+// persona, y la etiqueta tiene que decirle al vendedor que hacer (ADR-0016).
 export function tagResultadoClienteHtml(r) {
   const row = r || {};
-  if (row.tipo === 'operam') {
-    return esRfcGenerico(row.rfc)
-      ? '<span class="pc-tag generico">RFC generico</span>'
-      : '<span class="pc-tag operam">Operam</span>';
-  }
-  return '<span class="pc-tag prospecto">Prospecto</span>';
+  if (row.tipo !== 'operam') return '<span class="pc-tag prospecto">Prospecto</span>';
+  const sinDatos = row.fiscal ? row.fiscal === SIN_DATOS_FISCALES : esRfcGenerico(row.rfc);
+  const estado = sinDatos ? SIN_DATOS_FISCALES : CON_DATOS_FISCALES;
+  return `<span class="pc-tag ${sinDatos ? 'generico' : 'operam'}">${escapeHtml(ETIQUETA_FISCAL[estado])}</span>`;
+}
+
+// El estado COMERCIAL de la fila, y solo cuando dice algo que el vendedor tiene
+// que ver: "con pedido". "cotizado" y "sin actividad" no se pintan -- una fila
+// con tres etiquetas deja de leerse de un vistazo, y el hueco de los quotes web
+// (fuenteIncompleta) haria de "sin actividad" una afirmacion que no se sostiene.
+export function tagPedidoClienteHtml(r) {
+  const row = r || {};
+  if (row.comercial !== CON_PEDIDO) return '';
+  return `<span class="pc-tag con-pedido">${escapeHtml(ETIQUETA_COMERCIAL[CON_PEDIDO])}</span>`;
 }
 
 // Accion "Editar" de la fila (#198): puerta de entrada explicita por tipo, sin
@@ -505,7 +520,7 @@ export function filaResultadoClienteHtml(r, i) {
     // Origen (#287): heredado del prospecto del mismo celular, o sin identificar
     // cuando el cliente nunca fue prospecto en el cotizador.
     chipOrigenHtml(row) + '</span>' +
-    tagResultadoClienteHtml(row) + '</button>' +
+    tagResultadoClienteHtml(row) + tagPedidoClienteHtml(row) + '</button>' +
     accionEditarFilaHtml(row, i);
 }
 
@@ -708,6 +723,28 @@ export function badgePagoSinRegistrarHtml(o) {
   return '<span class="cot-badge badge-impago">Pago sin registrar</span>';
 }
 
+// Los dos estados del Cliente Operam de la Oportunidad, en la tarjeta (#344,
+// spec #337 user stories 8-10). Los manda el servidor ya derivados de Operam:
+// aqui NO se recalcula nada -- el RFC de la cotizacion puede ser el de antes de
+// un upgrade fiscal, y esa es justo la etiqueta que no debe mentir.
+//
+// Sin Cliente Operam ligado (o con uno que el cache no conoce) no se pinta nada:
+// una tarjeta sin etiqueta es mejor que una con la etiqueta equivocada. El
+// estado comercial solo se pinta cuando es "con pedido", por lo mismo que en la
+// fila de resultado.
+export function badgeClienteOperamHtml(o) {
+  const cli = o && o.clienteOperam;
+  if (!cli) return '';
+  const fiscal = ETIQUETA_FISCAL[cli.fiscal];
+  const badges = fiscal
+    ? `<span class="cot-badge badge-fiscal-${cli.fiscal === SIN_DATOS_FISCALES ? 'pendiente' : 'listo'}">${escapeHtml(fiscal)}</span>`
+    : '';
+  const pedido = cli.comercial === CON_PEDIDO
+    ? `<span class="cot-badge badge-con-pedido">${escapeHtml(ETIQUETA_COMERCIAL[CON_PEDIDO])}</span>`
+    : '';
+  return badges + pedido;
+}
+
 // Asignar vendedor desde la tarjeta (issue #57, CONTEXT.md "Etapas del pipeline"
 // + "Visibilidad"): la PRIMERA accion de tarjeta del tablero, que hasta ahora era
 // solo-lectura (#53). Solo aplica a una oportunidad en No Asignado (la unica que
@@ -907,7 +944,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}${badgeClienteOperamHtml(o)}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
           <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
         </div>

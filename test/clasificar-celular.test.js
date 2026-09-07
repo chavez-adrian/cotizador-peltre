@@ -120,3 +120,37 @@ test('CC5: si el indice de Operam falla, clasifica libre (best effort, trade-off
   const r = await clasificarCelular('+52 5512345678');
   assert.deepEqual(r, { tipo: 'libre' });
 });
+
+// #344: la etiqueta prospecto la decide lib/etiquetas-contacto.js, no "tener
+// fila". El Contacto que nacio de la migracion (#342, marca sinCaptura) NUNCA
+// fue capturado por nadie: lo que tiene es Cliente Operam.
+
+const CONTACTO_SIN_CAPTURA = {
+  ...PROSPECTO, id: 9, nombre: 'Jorge Orea', canal: '', etapa: 'seguimiento',
+  data: { sinCaptura: true, cliente_id: 514 },
+};
+
+test('CC6: el Contacto sin captura ligado a un Cliente Operam del indice no es prospecto', async () => {
+  writeProspectos([CONTACTO_SIN_CAPTURA]);
+  mockListadoClientes([CLIENTE_OPERAM]);
+  const r = await clasificarCelular('+52 5512345678');
+  assert.equal(r.tipo, 'cliente');
+  assert.equal(r.cliente.customer_id, '77');
+});
+
+test('CC7: sin el numero en Operam, el Cliente Operam ligado del Contacto sin captura manda', async () => {
+  writeProspectos([CONTACTO_SIN_CAPTURA]);
+  mockListadoClientes([]);
+  const r = await clasificarCelular('+52 5512345678');
+  assert.equal(r.tipo, 'cliente');
+  assert.equal(r.cliente.customer_id, 514);
+  assert.equal(r.cliente.cust_name, 'Jorge Orea');
+});
+
+test('CC8: el Contacto sin captura del que no se conoce Cliente Operam sigue frenando la captura', async () => {
+  writeProspectos([{ ...CONTACTO_SIN_CAPTURA, data: { sinCaptura: true } }]);
+  mockListadoClientes([]);
+  const r = await clasificarCelular('+52 5512345678');
+  assert.equal(r.tipo, 'prospecto');
+  assert.equal(r.prospecto.id, 9);
+});

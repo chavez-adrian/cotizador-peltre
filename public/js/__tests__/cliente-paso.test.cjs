@@ -79,6 +79,26 @@ test('M1: mezcla clientes Operam y prospectos, cada uno con su tipo', () => {
   assert.ok(tipos.includes('prospecto'));
 });
 
+// #344: los dos estados del Cliente Operam y las etiquetas de su Contacto los
+// deriva el servidor; la fila los lleva para que el tag no tenga que recalcular
+// nada contra un RFC que puede estar viejo.
+test('M1b: la fila de Operam conserva los estados y las etiquetas que mando el servidor', () => {
+  const clientes = [{ id: 514, name: 'Jorge Orea', rfc: 'XAXX010101000', telefonos: [],
+    fiscal: 'sin_datos_fiscales', comercial: 'con_pedido', etiquetas: ['prospecto', 'con_pedido'] }];
+  const [fila] = mezclarResultadosBusqueda(clientes, [], 'jorge');
+  assert.strictEqual(fila.fiscal, 'sin_datos_fiscales');
+  assert.strictEqual(fila.comercial, 'con_pedido');
+  assert.deepStrictEqual(fila.etiquetas, ['prospecto', 'con_pedido']);
+});
+
+test('M1c: una respuesta sin estados deja la fila sin ellos, no con unos inventados', () => {
+  const [fila] = mezclarResultadosBusqueda(
+    [{ id: 520, name: 'Pedro SA', rfc: 'PSA950101AB1', telefonos: [] }], [], 'pedro');
+  assert.strictEqual(fila.fiscal, null);
+  assert.strictEqual(fila.comercial, null);
+  assert.deepStrictEqual(fila.etiquetas, []);
+});
+
 test('M2: filtra por nombre (case-insensitive) en ambos origenes', () => {
   const r = mezclarResultadosBusqueda(OPERAM, PROSPECTOS, 'comal');
   assert.strictEqual(r.length, 1);

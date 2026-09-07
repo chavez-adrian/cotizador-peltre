@@ -811,6 +811,13 @@ function normalizarOperam(c) {
     tipo: 'operam', id: c.id, nombre: c.name || '', rfc: c.rfc || '', ref: c.ref || '',
     telefonos: c.telefonos || (c.telefono ? [c.telefono] : []),
     sub: c.rfc || '', raw: c,
+    // Los dos estados del Cliente Operam y las etiquetas de su Contacto (#344):
+    // los deriva el servidor y la fila los pinta. Viajan en la fila y no solo en
+    // `raw` porque el tag los lee ahi (tagResultadoClienteHtml); null cuando la
+    // respuesta no los trae -- ahi el tag cae al RFC de la propia fila.
+    fiscal: c.fiscal ?? null,
+    comercial: c.comercial ?? null,
+    etiquetas: c.etiquetas || [],
   };
 }
 
