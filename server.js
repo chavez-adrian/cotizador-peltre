@@ -33,6 +33,12 @@ import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
 import { tarjetasOportunidades } from './lib/oportunidades.js';
 import { celularAlNacer, llaveContacto } from './lib/contacto-cotizacion.js';
+// Los dos estados del Cliente Operam y las etiquetas del Contacto (#344,
+// ADR-0016): derivados en el servidor desde lo que Operam registra, nunca
+// capturados. El nucleo decide; lib/actividad-operam.js es quien lee y cachea.
+import { anotarEstadosOportunidades, etiquetasDeContacto } from './lib/etiquetas-contacto.js';
+import { estadosDeClientes, estadosPorId, celularesEnLinea, refrescarActividad } from './lib/actividad-operam.js';
+import { ultimos10 } from './lib/telefono-llave.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
@@ -643,7 +649,20 @@ app.get('/api/oportunidades', authMiddleware, async (req, res) => {
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
     const tarjetas = tarjetasOportunidades(prospectosVisibles, cotizacionesVisibles);
-    res.json(anotarOrigen(tarjetas, indiceOrigenPorCelular(prospectosVisibles)));
+    // Los estados del Cliente Operam y las etiquetas del Contacto (#344): se
+    // DERIVAN aqui, nunca se guardan. Todo es best effort -- si el cache de
+    // Operam o la tabla de la tienda no responden, la tarjeta viaja sin
+    // Cliente Operam y sin las etiquetas que dependan de ellos, jamas con una
+    // etiqueta inventada.
+    const [estados, enLinea] = await Promise.all([
+      estadosPorId(tarjetas.map(t => t.clienteOperamId)),
+      celularesEnLinea(),
+    ]);
+    const contactos = new Map(prospectosVisibles
+      .map(p => [ultimos10(p.celular), p])
+      .filter(([cel]) => cel.length === 10));
+    const conEstados = anotarEstadosOportunidades(tarjetas, { estados, contactos, enLinea });
+    res.json(anotarOrigen(conEstados, indiceOrigenPorCelular(prospectosVisibles)));
   } catch (err) {
     res.status(500).json({ error: 'No se pudieron listar las oportunidades: ' + err.message });
   }
@@ -2152,6 +2171,20 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
       vistos.add(c.customer_id);
       return true;
     });
+    // Los dos estados de cada Cliente Operam del resultado (#344, ADR-0016) y
+    // las etiquetas del Contacto que comparte su celular. Ambos derivados: el
+    // vendedor lee "Sin datos fiscales" y "con pedido" sin capturar nada, y el
+    // Cliente Operam del historico que nunca paso por el cotizador aparece con
+    // pedido cuando lo tiene. Best effort igual que el resto de la ruta.
+    const [estados, enLinea, contactos, cotizaciones] = await Promise.all([
+      estadosDeClientes(raw),
+      celularesEnLinea(),
+      prospectosStore.listar().catch(() => []),
+      cotStore.listar().catch(() => []),
+    ]);
+    const contactoPorCelular = new Map((contactos || [])
+      .map(p => [ultimos10(p.celular), p])
+      .filter(([cel]) => cel.length === 10));
     const clientes = raw.map(c => {
       const branch = c.branches?.[0] || {};
       // OJO: telefonos trae los de TODOS los branches/contactos (no solo branches[0]) --
@@ -2160,6 +2193,19 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
         ...(c.branches || []).map(b => b.phone),
         ...(c.contacts || []).flatMap(ct => [ct.phone, ct.phone2]),
       ].filter(Boolean);
+      // `estadoOperam` y no `estado`: en esta misma fila `estado` es el estado
+      // de la republica del domicilio.
+      const estadoOperam = estados.get(String(c.customer_id)) || null;
+      // El Contacto de este Cliente Operam por la regla estructural de ADR-0016:
+      // un celular en cualquiera de las SEIS casillas liga (por eso entra `fax`,
+      // la casilla que la web etiqueta "Cel" y donde viven 68 celulares que
+      // ninguna otra lectura ve). El primero que resulte ser Contacto manda;
+      // una fila por Contacto es #346, no este ticket.
+      const contacto = [...telefonos, ...(c.contacts || []).map(ct => ct.fax), ...(c.branches || []).map(b => b.fax), c.phone]
+        .map(t => ultimos10(t))
+        .filter(cel => cel.length === 10)
+        .map(cel => ({ cel, ficha: contactoPorCelular.get(cel) }))
+        .find(x => x.ficha || enLinea.has(x.cel)) || null;
       return {
         id: c.customer_id, name: c.CustName || '', ref: c.cust_ref || '', rfc: c.tax_id || '',
         calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),
@@ -2173,6 +2219,22 @@ app.get('/api/operam/clientes', authMiddleware, async (req, res) => {
         // no se puede determinar (ver paisDeClienteOperam). El frontend fija
         // cl-pais solo cuando esto viene no nulo.
         pais: paisDeClienteOperam(c),
+        // #344: los dos estados del Cliente Operam y las etiquetas de su
+        // Contacto. `fiscal` sale del RFC de HOY, no del que se capturo alguna
+        // vez; `fuenteIncompleta` declara el hueco de los quotes web.
+        fiscal: estadoOperam?.fiscal ?? null,
+        comercial: estadoOperam?.comercial ?? null,
+        fuenteIncompleta: estadoOperam?.fuenteIncompleta ?? null,
+        etiquetas: contacto
+          ? etiquetasDeContacto({
+            contacto: contacto.ficha || null,
+            // La MISMA liga Contacto -> Oportunidades de la Tabla de prospectos
+            // (#319/#342): evento de cotizacion o el Contacto anotado.
+            oportunidades: contacto.ficha ? cotizacionesDelProspecto(contacto.ficha, cotizaciones) : [],
+            clientesOperam: estadoOperam ? [{ id: c.customer_id, ...estadoOperam }] : [],
+            enLinea: enLinea.has(contacto.cel),
+          })
+          : [],
       };
     });
     res.json(clientes);
@@ -3751,6 +3813,12 @@ if (isMain) {
   // para cuando el vendedor busca, el indice ya esta caliente. Un fallo no bloquea el
   // arranque (matchCliente ya degrada a "libre" si el indice no esta).
   refrescarIndice().catch(err => console.warn('[indice-telefonos] warm de arranque fallo:', err.message));
+  // Misma razon para el estado comercial de los Clientes Operam (#344): la
+  // barrida de pedidos es paginada y la primera pantalla se rendiria antes de
+  // que llegara, mostrando "sin actividad" a Clientes Operam que si tienen
+  // pedido. Fire-and-forget; un fallo deja el cache vacio y la respuesta lo
+  // declara como fuente incompleta.
+  refrescarActividad().catch(err => console.warn('[actividad-operam] warm de arranque fallo:', err.message));
   // Aviso UNA VEZ al arrancar (issue #162), no por request: la verificacion en
   // POST /api/prospectos/publico se omite mientras falte la llave.
   if (!turnstileConfigurado()) {

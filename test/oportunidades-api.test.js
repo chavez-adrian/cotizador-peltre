@@ -68,12 +68,12 @@ const PEDRO = {
 const COT_JORGE = {
   id: 10, fecha: hace(8), vendedor: 'Memo', cliente: 'JORGE OREA', etapa: 'seguimiento',
   totalPiezas: 200, total: 15000, tier: 'M100', folioOperam: 1240,
-  data: { cliente: { razonSocial: 'JORGE OREA', telefono: '+52 5555550001' }, items: [] },
+  data: { cliente: { razonSocial: 'JORGE OREA', telefono: '+52 5555550001', customerId: 514 }, items: [] },
 };
 const COT_ANA = {
   id: 11, fecha: hace(3), vendedor: 'Ana', cliente: 'PEDRO SA', etapa: 'seguimiento',
   totalPiezas: 50, total: 4000, tier: 'M100', folioOperam: null,
-  data: { cliente: { razonSocial: 'PEDRO SA', telefono: '+52 5599999999' }, items: [] },
+  data: { cliente: { razonSocial: 'PEDRO SA', telefono: '+52 5599999999', customerId: 520 }, items: [] },
 };
 
 // Cotizacion sin Contacto conocido: no hay Origen que heredar.
@@ -110,20 +110,57 @@ async function conPermisoDeAsignacion(idVendedor, fn) {
 
 const pedir = (token) => supertest(app).get('/api/oportunidades').set('Authorization', `Bearer ${token}`);
 
+// Desde #344 la ruta consulta el padron de Operam y la barrida de pedidos para
+// derivar los estados del Cliente Operam: ningun test pega a Operam real --
+// fetch bloqueado por defecto, y el que necesita Operam instala sus handlers.
+const { resetIndice } = await import('../lib/indice-telefonos.js');
+const { resetActividad } = await import('../lib/actividad-operam.js');
+const { resetSession } = await import('../lib/operam-client.js');
+
+const originalFetch = globalThis.fetch;
+const fetchBloqueado = async (url) => { throw new Error('fetch sin mock en tests: ' + url); };
+
+function mockFetchByUrl(handlers) {
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    for (const [pat, fn] of Object.entries(handlers)) {
+      if (u.includes(pat)) return fn(u, opts);
+    }
+    throw new Error('Unmocked fetch: ' + u);
+  };
+}
+const jsonResponse = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
+
+function mockOperam({ clientes = [], pedidos = [] } = {}) {
+  mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_orders': (u) => jsonResponse({ data: /skip=0/.test(u) ? pedidos : [] }),
+    '/api/v3/sales/customers': () => jsonResponse({ total: clientes.length, data: clientes }),
+  });
+}
+
 let savedProspectos, savedCots, existiaProspectos, existiaCots;
 before(() => {
   existiaProspectos = existsSync(PROSPECTOS_PATH);
   existiaCots = existsSync(COTS_PATH);
   savedProspectos = readJson(PROSPECTOS_PATH);
   savedCots = readJson(COTS_PATH);
+  globalThis.fetch = fetchBloqueado;
 });
 after(() => {
   if (existiaProspectos) writeJson(PROSPECTOS_PATH, savedProspectos);
   else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
   if (existiaCots) writeJson(COTS_PATH, savedCots);
   else if (existsSync(COTS_PATH)) borrarArchivoSync(COTS_PATH);
+  globalThis.fetch = originalFetch;
 });
-beforeEach(() => { fixtures(); });
+beforeEach(() => {
+  fixtures();
+  globalThis.fetch = fetchBloqueado;
+  resetIndice();
+  resetActividad();
+  resetSession();
+});
 
 test('#340: sin token responde 401', async () => {
   const res = await supertest(app).get('/api/oportunidades');
@@ -222,4 +259,66 @@ test('#340: una cotizacion Perdida no calla la tarjeta del prospecto que sigue a
   const ids = res.body.map(o => o.id).sort();
   assert.deepEqual(ids, ['c20', 'p1']);
   assert.equal(res.body.find(o => o.id === 'p1').etapa, 'por_cotizar');
+});
+
+// === #344: los dos estados del Cliente Operam y las etiquetas del Contacto ===
+// Se DERIVAN en el servidor desde lo que Operam registra (ADR-0016) y viajan en
+// cada tarjeta. Ninguno se captura, y lo que no se puede saber no se inventa.
+
+const PADRON = [
+  // Jorge Orea: RFC generico (Sin datos fiscales) y con pedido en Operam.
+  { customer_id: 514, CustName: 'JORGE OREA', cust_ref: 'JORGE', tax_id: 'XAXX010101000', contacts: [], branches: [] },
+  // Pedro SA: RFC real y ningun movimiento registrado.
+  { customer_id: 520, CustName: 'PEDRO SA DE CV', cust_ref: 'PEDRO', tax_id: 'PSA950101AB1', contacts: [], branches: [] },
+];
+
+const PEDIDO_DE_JORGE = { order_no: 7269, debtor_no: '514', trans_no_from: '1240' };
+
+test('#344: la tarjeta trae el estado fiscal y el comercial de su Cliente Operam', async () => {
+  mockOperam({ clientes: PADRON, pedidos: [PEDIDO_DE_JORGE] });
+  const res = await pedir(ADMIN_TOKEN);
+  assert.equal(res.status, 200);
+  const jorge = res.body.find(o => o.id === 'c10');
+  assert.deepEqual(jorge.clienteOperam, {
+    id: 514, fiscal: 'sin_datos_fiscales', comercial: 'con_pedido', fuenteIncompleta: false,
+  });
+});
+
+test('#344: un Cliente Operam sin movimientos declara la fuente incompleta en vez de adivinar', async () => {
+  mockOperam({ clientes: PADRON, pedidos: [] });
+  const res = await pedir(ADMIN_TOKEN);
+  const pedro = res.body.find(o => o.id === 'c11');
+  assert.deepEqual(pedro.clienteOperam, {
+    id: 520, fiscal: 'con_datos_fiscales', comercial: 'sin_actividad', fuenteIncompleta: true,
+  });
+});
+
+test('#344: las etiquetas del Contacto viajan en su tarjeta', async () => {
+  mockOperam({ clientes: PADRON, pedidos: [PEDIDO_DE_JORGE] });
+  const res = await pedir(ADMIN_TOKEN);
+  // Jorge Orea fue capturado, cotizo con folio y su Cliente Operam tiene pedido.
+  assert.deepEqual(res.body.find(o => o.id === 'c10').etiquetas, ['prospecto', 'cotizado', 'con_pedido']);
+  // Laura fue capturada y nada mas.
+  assert.deepEqual(res.body.find(o => o.id === 'p1').etiquetas, ['prospecto']);
+});
+
+// El Contacto ES el celular (ADR-0016): un numero del que no hay ficha sigue
+// siendo un Contacto y sus etiquetas se derivan igual -- lo que NO puede tener
+// es la de prospecto, porque nadie lo capturo. Y sin Cliente Operam anotado la
+// tarjeta no inventa ninguno.
+test('#344: el Contacto sin ficha se etiqueta por su historia, nunca como prospecto', async () => {
+  mockOperam({ clientes: PADRON, pedidos: [] });
+  const res = await pedir(ADMIN_TOKEN);
+  const huerfana = res.body.find(o => o.id === 'c12');
+  assert.deepEqual(huerfana.etiquetas, ['cotizado']);
+  assert.equal(huerfana.clienteOperam, null);
+});
+
+// Best effort, igual que el indice de telefonos: sin Operam la tarjeta sale sin
+// Cliente Operam, jamas con una etiqueta que no se pudo verificar.
+test('#344: con Operam caido la tarjeta viaja sin Cliente Operam, no con uno inventado', async () => {
+  const res = await pedir(ADMIN_TOKEN);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.find(o => o.id === 'c10').clienteOperam, null);
+  assert.deepEqual(res.body.find(o => o.id === 'c10').etiquetas, ['prospecto', 'cotizado']);
 });

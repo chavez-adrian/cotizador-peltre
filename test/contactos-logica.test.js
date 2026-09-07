@@ -472,6 +472,17 @@ test('un comprador que ya es prospecto conserva su ficha de prospecto', () => {
   assert.equal(plan.crear[0].ficha.origen, 'cotizador:prospecto:12', 'gana el prospecto');
 });
 
+// #344 (ADR-0016): la libreta consume la etiqueta prospecto, no "tener fila".
+// El Contacto que nacio de la migracion (#342, marca sinCaptura) sigue teniendo
+// ficha -- es una persona a la que se le escribe -- pero no se marca como algo
+// que nunca fue. La precedencia no cambia: el Cliente Operam sigue ganando.
+test('el Contacto que nadie capturo tiene ficha, pero no como prospecto', () => {
+  const sinCaptura = { ...PROSPECTO, id: 13, data: { ...PROSPECTO.data, sinCaptura: true } };
+  const ficha = fichaCreada(planificarContactos({ prospectos: [sinCaptura], mapeo: [] }));
+  assert.equal(ficha.origen, 'cotizador:contacto:13');
+  assert.equal(ficha.nombreVisible, 'Laura Mendez - Cocinas del Valle');
+});
+
 test('un comprador que ya es cliente de Operam conserva su ficha de cliente', () => {
   const mismoCelular = { ...PEDIDO_EN_LINEA, telefono: '+52 55 4444 1111', celular10: '5544441111' };
   const plan = planificarContactos({

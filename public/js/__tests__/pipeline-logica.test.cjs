@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, badgeClienteOperamHtml;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, badgeClienteOperamHtml } =
     await import('../pipeline-logica.js'));
 });
 
@@ -1366,4 +1366,42 @@ test('CT3: el prospecto no lleva el control -- su celular ES su identidad', () =
 test('CT4: el tablero pinta el aviso dentro de la tarjeta de la cotizacion sin Contacto', () => {
   const html = buildTableroPipelineHtml([cotizacion({ refId: 51, contactoCelular: null })], {});
   assert.match(html, /Sin Contacto/);
+});
+
+// === #344: los estados del Cliente Operam en la tarjeta ===
+//
+// El servidor los deriva de lo que Operam registra (ADR-0016) y la tarjeta los
+// lee: "Sin datos fiscales" le dice al vendedor que pida la constancia, "con
+// pedido" que esa persona ya nos compro. Nada se recalcula aqui.
+
+test('EC1: la tarjeta dice Sin datos fiscales y con pedido', () => {
+  const html = badgeClienteOperamHtml(cotizacion({
+    clienteOperam: { id: 514, fiscal: 'sin_datos_fiscales', comercial: 'con_pedido', fuenteIncompleta: false },
+  }));
+  assert.match(html, /Sin datos fiscales/);
+  assert.match(html, /con pedido/);
+});
+
+test('EC2: el Cliente Operam con datos fiscales lo dice, y sin pedido no promete nada', () => {
+  const html = badgeClienteOperamHtml(cotizacion({
+    clienteOperam: { id: 520, fiscal: 'con_datos_fiscales', comercial: 'cotizado', fuenteIncompleta: false },
+  }));
+  assert.match(html, /Con datos fiscales/);
+  assert.doesNotMatch(html, /con pedido/);
+});
+
+// Sin Cliente Operam (o con uno que el cache de Operam no conoce) la tarjeta no
+// pinta nada: una etiqueta equivocada es peor que ninguna.
+test('EC3: sin Cliente Operam la tarjeta no inventa etiquetas', () => {
+  assert.equal(badgeClienteOperamHtml(cotizacion({ clienteOperam: null })), '');
+  assert.equal(badgeClienteOperamHtml(prospecto()), '');
+  assert.equal(badgeClienteOperamHtml(null), '');
+});
+
+test('EC4: el tablero pinta los estados dentro de la tarjeta', () => {
+  const html = buildTableroPipelineHtml([cotizacion({
+    clienteOperam: { id: 514, fiscal: 'sin_datos_fiscales', comercial: 'con_pedido', fuenteIncompleta: false },
+  })], {});
+  assert.match(html, /badge-fiscal-pendiente/);
+  assert.match(html, /badge-con-pedido/);
 });

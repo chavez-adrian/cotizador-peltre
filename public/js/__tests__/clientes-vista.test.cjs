@@ -10,13 +10,13 @@ const assert = require('node:assert/strict');
 // pipeline-logica.js (mismo patron de funciones puras testeables). Sin DOM en Node.
 
 let esRfcGenerico, customerIdFiscal, mostrarBotonCsf;
-let tagResultadoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
+let tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
   bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade;
 
 before(async () => {
   ({ esRfcGenerico, customerIdFiscal, mostrarBotonCsf } = await import('../alta-logica.js'));
   ({
-    tagResultadoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
+    tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
     bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade,
   } = await import('../pipeline-logica.js'));
 });
@@ -89,21 +89,46 @@ test('B4: prospecto ligado a un generico -> muestra el boton', () => {
 
 // === tagResultadoClienteHtml ===
 
-test('T1: Operam con RFC generico -> tag rojo "RFC generico"', () => {
+test('T1: Cliente Operam sin datos fiscales -> tag rojo "Sin datos fiscales" (#344)', () => {
   const html = tagResultadoClienteHtml({ tipo: 'operam', rfc: 'XAXX010101000' });
   assert.match(html, /pc-tag generico/);
-  assert.match(html, /RFC gen/);
+  assert.match(html, /Sin datos fiscales/);
+  assert.doesNotMatch(html, /RFC gen/);
 });
 
-test('T2: Operam con RFC real -> tag "Operam"', () => {
+test('T2: Cliente Operam con RFC real -> tag "Con datos fiscales" (#344)', () => {
   const html = tagResultadoClienteHtml({ tipo: 'operam', rfc: 'VAZ990101QX3' });
   assert.match(html, /pc-tag operam/);
-  assert.doesNotMatch(html, /generico/);
+  assert.match(html, /Con datos fiscales/);
 });
 
 test('T3: prospecto -> tag "Prospecto"', () => {
   const html = tagResultadoClienteHtml({ tipo: 'prospecto' });
   assert.match(html, /pc-tag prospecto/);
+});
+
+// #344: el estado lo decide el SERVIDOR contra el RFC que Operam tiene hoy. Si
+// llega, manda sobre el RFC de la fila -- que puede ser el de antes de un
+// upgrade fiscal.
+test('T4: el estado fiscal que manda el servidor gana sobre el RFC de la fila (#344)', () => {
+  const html = tagResultadoClienteHtml({ tipo: 'operam', rfc: 'XAXX010101000', fiscal: 'con_datos_fiscales' });
+  assert.match(html, /Con datos fiscales/);
+  assert.doesNotMatch(html, /Sin datos fiscales/);
+});
+
+test('T5: el Cliente Operam con pedido lo dice, y el que no tiene no dice nada (#344)', () => {
+  assert.match(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'con_pedido' }), /pc-tag con-pedido/);
+  assert.match(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'con_pedido' }), /con pedido/);
+  assert.equal(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'cotizado' }), '');
+  assert.equal(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'sin_actividad' }), '');
+  assert.equal(tagPedidoClienteHtml({ tipo: 'operam' }), '');
+});
+
+test('T6: la fila de resultado pinta los dos estados juntos (#344)', () => {
+  const html = filaResultadoClienteHtml(
+    { tipo: 'operam', nombre: 'Jorge Orea', sub: '', rfc: 'XAXX010101000', fiscal: 'sin_datos_fiscales', comercial: 'con_pedido' }, 0);
+  assert.match(html, /Sin datos fiscales/);
+  assert.match(html, /con pedido/);
 });
 
 // === filaResultadoClienteHtml / filaCrearClienteHtml ===
