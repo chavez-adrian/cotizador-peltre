@@ -1397,6 +1397,14 @@ test('OR1: chipOrigenHtml pinta "Origen: <valor>" del canal propio o del origen 
   assert.equal(chipOrigenHtml({ canal: '<b>Instagram</b>' }).includes('<b>'), false);
 });
 
+// El prospecto ya migrado (issue #341: lib/migrar-pipeline.js reescribe
+// "Cliente Actual" a "Relacion existente" en la lectura del store, antes de
+// que el item llegue aqui) pinta el chip con el valor nuevo en cualquiera de
+// las nueve superficies que comparten chipOrigenHtml.
+test('OR1b: chipOrigenHtml pinta "Relación existente" en un prospecto ya migrado (#341)', () => {
+  assert.match(chipOrigenHtml({ canal: 'Relación existente' }), /origen-badge">Origen: Relación existente/);
+});
+
 test('OR2: sin origen el chip dice "Origen sin identificar" y va atenuado', () => {
   for (const vacio of [{}, null, undefined, { canal: '   ' }, { origen: '' }]) {
     const chip = chipOrigenHtml(vacio);
