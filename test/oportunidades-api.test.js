@@ -83,9 +83,17 @@ const COT_HUERFANA = {
   data: { cliente: { razonSocial: 'CLIENTE HISTORICO', telefono: '+52 5544443333' }, items: [] },
 };
 
+// Cotizacion de Memo sobre el celular del prospecto de Ana: Memo no ve ese
+// Contacto, asi que no puede heredar su Origen.
+const COT_CRUZADA = {
+  id: 13, fecha: hace(5), vendedor: 'Memo', cliente: 'PEDRO OTRA RAZON', etapa: 'seguimiento',
+  totalPiezas: 30, total: 2500, tier: 'M100', folioOperam: 1210,
+  data: { cliente: { razonSocial: 'PEDRO OTRA RAZON', telefono: '+52 5599999999' }, items: [] },
+};
+
 function fixtures() {
   writeJson(PROSPECTOS_PATH, [LAURA, JORGE, SIN_DUENO, PEDRO]);
-  writeJson(COTS_PATH, [COT_JORGE, COT_ANA, COT_HUERFANA]);
+  writeJson(COTS_PATH, [COT_JORGE, COT_ANA, COT_HUERFANA, COT_CRUZADA]);
 }
 
 async function conPermisoDeAsignacion(idVendedor, fn) {
@@ -126,7 +134,7 @@ test('#340: una tarjeta por Oportunidad -- el prospecto cuya Oportunidad ya es c
   const res = await pedir(ADMIN_TOKEN);
   assert.equal(res.status, 200);
   const ids = res.body.map(o => o.id).sort();
-  assert.deepEqual(ids, ['c10', 'c11', 'c12', 'p1', 'p3']);
+  assert.deepEqual(ids, ['c10', 'c11', 'c12', 'c13', 'p1', 'p3']);
   assert.equal(res.body.some(o => o.id === 'p2'), false, 'Jorge Orea no puede tener dos tarjetas');
 });
 
@@ -145,7 +153,7 @@ test('#340: el vendedor ve lo suyo y nada mas', async () => {
   const res = await pedir(MEMO_TOKEN);
   assert.equal(res.status, 200);
   const ids = res.body.map(o => o.id).sort();
-  assert.deepEqual(ids, ['c10', 'c12', 'p1']);
+  assert.deepEqual(ids, ['c10', 'c12', 'c13', 'p1']);
 });
 
 test('#340: el vendedor sin permiso de asignacion no recibe tarjetas No Asignado', async () => {
@@ -194,8 +202,24 @@ test('#340: toda tarjeta trae su Origen, el propio del prospecto o el heredado d
 });
 
 // La herencia usa el indice de los prospectos VISIBLES, la misma puerta que el
-// Historial y la cola Hoy: un vendedor no hereda de un Contacto que no ve.
+// Historial y la cola Hoy: un vendedor no hereda de un Contacto que no ve. La
+// cotizacion 13 es de Memo pero su celular es el del prospecto de Ana.
 test('#340: no se hereda el Origen de un prospecto que el vendedor no ve', async () => {
   const res = await pedir(MEMO_TOKEN);
-  assert.equal(res.body.find(o => o.id === 'c10').origen, 'Feria/Expo');
+  assert.equal(res.body.find(o => o.id === 'c13').origen, '');
+  const admin = await pedir(ADMIN_TOKEN);
+  assert.equal(admin.body.find(o => o.id === 'c13').origen, 'Instagram');
+});
+
+// La supresion la disparan las cotizaciones VIVAS: una salida (Perdida o No
+// util) ya no es la Oportunidad que reemplaza a la tarjeta del prospecto, y sin
+// esta regla el prospecto activo desapareceria del tablero entero.
+test('#340: una cotizacion Perdida no calla la tarjeta del prospecto que sigue activo', async () => {
+  writeJson(PROSPECTOS_PATH, [LAURA]);
+  writeJson(COTS_PATH, [{ ...COT_JORGE, id: 20, etapa: 'perdida', cliente: 'LAURA MENDEZ',
+    data: { cliente: { razonSocial: 'LAURA MENDEZ', telefono: '+52 5512345678' }, items: [] } }]);
+  const res = await pedir(ADMIN_TOKEN);
+  const ids = res.body.map(o => o.id).sort();
+  assert.deepEqual(ids, ['c20', 'p1']);
+  assert.equal(res.body.find(o => o.id === 'p1').etapa, 'por_cotizar');
 });
