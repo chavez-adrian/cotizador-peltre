@@ -11,6 +11,12 @@ import { origenDe } from './origen-logica.js';
 
 // Origen del prospecto -- catalogo cerrado (CONTEXT.md "Origen"; el campo en
 // codigo, API y BD se sigue llamando `canal`, solo cambio la palabra visible).
+// "Cliente Actual" se retiro (issue #341, ADR-0016): el celular que vuelve a
+// comprar no llega por ninguna puerta, conserva el origen que ya tenia y abre
+// una Nueva oportunidad. "Relacion existente" es el Contacto NUEVO que llega
+// por una relacion comercial que ya tenemos (otra persona del mismo Cliente
+// Operam, u otra razon social del mismo grupo). Los prospectos guardados con
+// el valor viejo migran en la lectura del store (lib/migrar-pipeline.js).
 export const CANALES = [
   'WhatsApp',
   'Instagram',
@@ -21,7 +27,7 @@ export const CANALES = [
   'Referido',
   'Bazar Sábado',
   'Feria/Expo',
-  'Cliente Actual',
+  'Relación existente',
 ];
 
 // Piezas estimadas -- mismos cortes que las listas de mayoreo.

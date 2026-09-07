@@ -378,6 +378,8 @@ test('el canal sale del SOURCE_ID; un source sin equivalente deja canal en null'
   assert.equal(canalDeSource('WEBFORM'), 'Formulario web');
   assert.equal(canalDeSource('REPEAT_SALE'), 'Feria/Expo');
   assert.equal(canalDeSource('WZdaac8842-31c5-4d24-b0b4-1e3f81aef185'), 'WhatsApp');
+  // "Cliente Actual" retirado del catalogo de Origen (issue #341, ADR-0016)
+  assert.equal(canalDeSource('PARTNER'), 'Relación existente');
   assert.equal(canalDeSource('CALL'), null);
   assert.equal(canalDeSource(''), null);
 

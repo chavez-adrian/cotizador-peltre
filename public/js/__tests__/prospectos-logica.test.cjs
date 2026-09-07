@@ -94,13 +94,21 @@ test('P2: buildProspectoPayload incluye opcionales solo si tienen valor', () => 
   assert.equal('piezas_estimadas' in payload, false);
 });
 
-test('P2b: "Cliente Actual" es un canal valido del catalogo (issue #73)', () => {
-  // Un cliente que ya nos compro abre una operacion nueva (a veces bajo otra razon
-  // social): el canal "Cliente Actual" debe estar disponible al capturar el prospecto.
-  assert.ok(CANALES.includes('Cliente Actual'));
+test('P2b: "Relación existente" es un canal valido del catalogo (issue #73, renombrado en #341)', () => {
+  // Un Contacto nuevo que llega por una relacion comercial que ya tenemos (otra
+  // persona del mismo Cliente Operam, u otra razon social del mismo grupo)
+  // debe estar disponible al capturar el prospecto.
+  assert.ok(CANALES.includes('Relación existente'));
   assert.equal(validarProspectoBody({
-    celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'Cliente Actual',
+    celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'Relación existente',
   }), null);
+});
+
+test('P2c: "Cliente Actual" ya no es un canal valido del catalogo (issue #341, ADR-0016)', () => {
+  assert.equal(CANALES.includes('Cliente Actual'), false);
+  assert.match(validarProspectoBody({
+    celular: '+52 5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'Cliente Actual',
+  }), /origen/i);
 });
 
 test('P3: validarProspectoBody acepta captura completa con celular con codigo de pais', () => {
@@ -166,7 +174,7 @@ test('P10: buildProspectoExistenteHtml muestra el prospecto propio del 409 y nad
 test('P7: catalogos cerrados con los valores canonicos de CONTEXT.md', () => {
   assert.deepEqual(CANALES, [
     'WhatsApp', 'Instagram', 'Facebook/Messenger', 'Meta Ads', 'Formulario web',
-    'Correo', 'Referido', 'Bazar Sábado', 'Feria/Expo', 'Cliente Actual',
+    'Correo', 'Referido', 'Bazar Sábado', 'Feria/Expo', 'Relación existente',
   ]);
   assert.deepEqual(PIEZAS_ESTIMADAS, ['+100', '+350', '+550', '+1,500', '+6,000']);
   assert.deepEqual(OPCIONALES, ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas']);

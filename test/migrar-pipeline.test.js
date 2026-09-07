@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   etapaProspectoMigrada,
   etapaCotizacionMigrada,
+  canalMigrado,
   migrarProspecto,
   migrarCotizacion,
 } from '../lib/migrar-pipeline.js';
@@ -66,6 +67,27 @@ test('migrarProspecto es idempotente: aplicado dos veces da el mismo resultado',
   const dos = migrarProspecto(una);
   assert.deepEqual(dos, una);
   assert.equal(dos.etapa, 'seguimiento');
+});
+
+// Origen "Cliente Actual" retirado (issue #341, ADR-0016): los prospectos ya
+// guardados con el valor viejo se leen como "Relacion existente".
+test('canalMigrado traduce "Cliente Actual" a "Relacion existente"', () => {
+  assert.equal(canalMigrado('Cliente Actual'), 'Relación existente');
+});
+
+test('canalMigrado es idempotente y no toca un canal ajeno al valor viejo', () => {
+  assert.equal(canalMigrado('Relación existente'), 'Relación existente');
+  assert.equal(canalMigrado('WhatsApp'), 'WhatsApp');
+  assert.equal(canalMigrado(undefined), undefined);
+  assert.equal(canalMigrado(null), null);
+  assert.equal(canalMigrado(''), '');
+});
+
+test('migrarProspecto migra el canal "Cliente Actual" preservando el resto', () => {
+  const original = { id: 7, nombre: 'Jorge', etapa: 'seguimiento', canal: 'Cliente Actual', eventos: [] };
+  const m = migrarProspecto(original);
+  assert.equal(m.canal, 'Relación existente');
+  assert.equal(m.nombre, 'Jorge');
 });
 
 test('migrarCotizacion deriva la etapa del estado y preserva seguimientos', () => {
