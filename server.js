@@ -29,12 +29,15 @@ import { parsearCSF } from './lib/parsear-csf.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
-import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
+import { filaTabla } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
-import { tarjetasOportunidades } from './lib/oportunidades.js';
+import { tarjetasOportunidades, cotizacionesDeLaOportunidad, prospectoAOportunidad } from './lib/oportunidades.js';
+import { oportunidadesDeContactos, principalPorContacto } from './lib/oportunidad-pre.js';
+import * as oportunidadPreIo from './lib/oportunidad-pre-io.js';
 import { celularAlNacer, llaveContacto } from './lib/contacto-cotizacion.js';
 import * as cotStore from './lib/cotizaciones-store.js';
 import * as prospectosStore from './lib/prospectos-store.js';
+import * as oportunidadesStore from './lib/oportunidades-store.js';
 import * as bandejaStore from './lib/bandeja-store.js';
 import * as vendedoresStore from './lib/vendedores-store.js';
 import * as configStore from './lib/config-store.js';
@@ -279,14 +282,18 @@ function validarTelefonoCotizacion(req, res) {
 // no se crea: el frontend siempre lo manda, la API directa sin canal no genera
 // prospecto); celular de cliente Operam -> nada. Best effort: un fallo aqui jamas
 // rompe la generacion.
-async function pasarProspectoASeguimiento(p, cotizacionId, vendedor) {
+async function pasarProspectoASeguimiento(contacto, cotizacionId, vendedor) {
+  // #343: lo que avanza por el embudo es la OPORTUNIDAD del Contacto, no el
+  // Contacto. Si no la moviera aqui, la tarjeta se quedaria en Por Cotizar y la
+  // misma persona saldria dos veces en la cola Hoy.
+  const p = oportunidadPrincipalDe(contacto, await oportunidadesStore.listar());
   const evento = {
     tipo: 'cotizacion', cotizacion_id: cotizacionId, de: p.etapa,
     fecha: new Date().toISOString(), vendedor,
   };
   const destino = transicionPorCotizacion(p.etapa);
-  if (destino && destino !== p.etapa) await prospectosStore.cambiarEtapa(p.id, destino, evento);
-  else await prospectosStore.registrarEvento(p.id, evento);
+  if (destino && destino !== p.etapa) await oportunidadPreIo.cambiarEtapa(p, destino, evento);
+  else await oportunidadPreIo.registrarEvento(p, evento);
 }
 
 async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
@@ -528,7 +535,7 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   // herencia se resuelve aqui. El indice se arma con los prospectos VISIBLES
   // para quien pregunta, la misma puerta que usa el pipeline en el navegador
   // (GET /api/prospectos): las dos vistas dicen lo mismo del mismo cliente.
-  const indiceOrigen = indiceOrigenPorCelular(await prospectosVisiblesPara(req.user));
+  const indiceOrigen = indiceOrigenPorCelular(await contactosVisiblesPara(req.user));
   res.json(anotarOrigen(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido, contactoCelular }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
     estado: estado || 'abierta',
@@ -605,20 +612,20 @@ app.get('/api/seguimiento', authMiddleware, async (req, res) => {
 // vendedor es la misma de /api/prospectos/cola y /api/seguimiento.
 //
 // Las tarjetas No Asignado entran a la cola (#156) por la MISMA puerta que el
-// tablero (prospectosVisiblesPara): solo llegan al admin y a quien tiene el
+// tablero (oportunidadesVisiblesPara): solo llegan al admin y a quien tiene el
 // permiso de asignacion. El nucleo (lib/cola-hoy.js) las incorpora si llegan y
 // las pone al frente; quien no tiene el permiso simplemente no las recibe.
 app.get('/api/hoy', authMiddleware, async (req, res) => {
   try {
     const cotizaciones = await cotStore.listar();
-    const prospectosVisibles = await prospectosVisiblesPara(req.user);
+    const prospectosVisibles = await oportunidadesVisiblesPara(req.user);
     const cotizacionesVisibles = req.user.role === 'admin'
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
     // Origen (#287): la cola llega fusionada del servidor, asi que aqui se anota
     // el heredado de las cotizaciones. El item de prospecto ya trae su `canal`.
     const cola = calcularColaHoy(prospectosVisibles, cotizacionesVisibles, new Date());
-    res.json(anotarOrigen(cola, indiceOrigenPorCelular(prospectosVisibles)));
+    res.json(anotarOrigen(cola, indiceOrigenPorCelular(await contactosVisiblesPara(req.user))));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo armar la cola de hoy: ' + err.message });
   }
@@ -631,21 +638,55 @@ app.get('/api/hoy', authMiddleware, async (req, res) => {
 // inerte y la de su cotizacion avanzando.
 //
 // La visibilidad es la MISMA de siempre y por las MISMAS puertas: los prospectos
-// por prospectosVisiblesPara (lo suyo, todo si es admin, y No Asignado con el
+// por oportunidadesVisiblesPara (lo suyo, todo si es admin, y No Asignado con el
 // permiso de asignacion) y las cotizaciones por el filtro del Historial. El
 // Origen se hereda del Contacto con el indice de los prospectos visibles, igual
 // que en el Historial y en la cola Hoy.
 app.get('/api/oportunidades', authMiddleware, async (req, res) => {
   try {
     const cotizaciones = await cotStore.listar();
-    const prospectosVisibles = await prospectosVisiblesPara(req.user);
+    const prospectosVisibles = await oportunidadesVisiblesPara(req.user);
     const cotizacionesVisibles = req.user.role === 'admin'
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
     const tarjetas = tarjetasOportunidades(prospectosVisibles, cotizacionesVisibles);
-    res.json(anotarOrigen(tarjetas, indiceOrigenPorCelular(prospectosVisibles)));
+    res.json(anotarOrigen(tarjetas, indiceOrigenPorCelular(await contactosVisiblesPara(req.user))));
   } catch (err) {
     res.status(500).json({ error: 'No se pudieron listar las oportunidades: ' + err.message });
+  }
+});
+
+// "Nueva oportunidad" desde la tarjeta o la ficha del Contacto (#343, spec #337,
+// ADR-0016): un Contacto que ya cotizo vuelve a preguntar. Hasta este ticket ese
+// interes no tenia donde vivir -- su celular ya era prospecto y no se podia
+// capturar otra vez.
+//
+// NO pide origen (AC2): el Origen es del Contacto y solo de el (#287), y la
+// tarjeta lo hereda como cualquier otra. El unico dato del cuerpo es el celular,
+// que es la identidad del Contacto (CONTEXT.md "Contacto").
+//
+// La visibilidad es la de la captura: sobre el Contacto de otro vendedor no se
+// abre nada, igual que hoy no se puede capturar su celular.
+app.post('/api/oportunidades', authMiddleware, async (req, res) => {
+  try {
+    const celular = String((req.body || {}).celular || '').trim();
+    if (!celular) return res.status(400).json({ error: 'El celular es obligatorio' });
+    const contacto = await prospectosStore.buscarPorCelular(celular);
+    if (!contacto) {
+      return res.status(404).json({ error: 'Este celular todavia no es un Contacto: captura el prospecto' });
+    }
+    if (req.user.role !== 'admin' && contacto.vendedor && contacto.vendedor !== req.user.name) {
+      return res.status(403).json({ error: `Este celular ya lo atiende ${contacto.vendedor}` });
+    }
+    const nueva = await oportunidadPreIo.abrirNuevaOportunidad(
+      contacto, await cotStore.listar(), req.user.name, new Date());
+    const filas = oportunidadesDeContactos([contacto], await oportunidadesStore.listar());
+    const fila = filas.find(f => f.id === nueva.id);
+    const [tarjeta] = anotarOrigen(
+      [prospectoAOportunidad(fila)], indiceOrigenPorCelular([contacto]));
+    res.status(201).json({ ok: true, oportunidad: tarjeta });
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudo abrir la oportunidad: ' + err.message });
   }
 });
 
@@ -880,11 +921,18 @@ app.post('/api/cotizacion/:id/liberar', authMiddleware, async (req, res) => {
 // (#82): el frontend decide por el (prospecto_propio -> usar el existente;
 // prospecto_ajeno -> bloquear; cliente -> cotizar sobre el cliente), nunca
 // parseando el string de error.
+// El guardrail de siempre (un celular = un Contacto) mas la salida que #343 le
+// abre: en vez de dejar al vendedor sin nada que hacer con el interes nuevo de
+// alguien que ya conocemos, la respuesta ofrece abrirle una Nueva oportunidad
+// (POST /api/oportunidades con ese mismo celular). No se crea prospecto.
 function respuestaProspectoExistente(res, existente, user) {
   const visible = user.role === 'admin' || existente.vendedor === user.name;
   return res.status(409).json(
     visible
-      ? { error: 'Este celular ya es un prospecto', tipo: 'prospecto_propio', prospecto: existente }
+      ? {
+        error: 'Este celular ya es un prospecto', tipo: 'prospecto_propio', prospecto: existente,
+        nuevaOportunidad: { celular: existente.celular },
+      }
       : { error: `Este celular ya lo atiende ${existente.vendedor}`, tipo: 'prospecto_ajeno' }
   );
 }
@@ -922,9 +970,12 @@ function errorCalificacionYSiguienteContacto(body) {
   return validarSiguienteContacto(body.siguiente_contacto);
 }
 
-async function registrarSiguienteContactoDelBody(id, body, vendedor) {
+// El compromiso es de la OPORTUNIDAD (#343): se registra donde ella vive. La
+// captura pasa `{ propia: false, id }` porque su Contacto recien creado todavia
+// es su propia Oportunidad.
+async function registrarSiguienteContactoDelBody(op, body, vendedor) {
   if (body.siguiente_contacto == null) return;
-  await prospectosStore.registrarEvento(id, buildEventoSiguienteContacto(body.siguiente_contacto, vendedor));
+  await oportunidadPreIo.registrarEvento(op, buildEventoSiguienteContacto(body.siguiente_contacto, vendedor));
 }
 
 // Captura de expo (issue #261, spec #260) = esta MISMA ruta con mas campos, no
@@ -1020,7 +1071,7 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
       evento: eventoBody, vendedor: req.user.name,
     });
   }
-  await registrarSiguienteContactoDelBody(id, body, req.user.name);
+  await registrarSiguienteContactoDelBody({ propia: false, id }, body, req.user.name);
   res.status(201).json({ ok: true, id });
 });
 
@@ -1224,7 +1275,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
   const clasificacion = await clasificarCelular(captura.celular);
   if (clasificacion.tipo === 'cliente') return opaca();
   if (clasificacion.tipo === 'prospecto') {
-    await registrarCapturaPublica(clasificacion.prospecto.id, captura);
+    await registrarCapturaPublica(clasificacion.prospecto, captura);
     dispararAlertaMayoreo(captura, form, fechaCaptura);
     return opaca();
   }
@@ -1245,7 +1296,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
     }
     const dup = await prospectosStore.buscarPorCelular(captura.celular);
     if (dup) {
-      await registrarCapturaPublica(dup.id, captura);
+      await registrarCapturaPublica(dup, captura);
       dispararAlertaMayoreo(captura, form, fechaCaptura);
     }
   }
@@ -1255,39 +1306,76 @@ app.post('/api/prospectos/publico', async (req, res) => {
 // Evento en la tarjeta que ya existia: el prospecto volvio a levantar la mano por
 // el formulario. Lleva lo que pidio esta vez (notas y piezas) para que el
 // vendedor vea el cambio de intencion sin abrir nada mas.
-function registrarCapturaPublica(id, captura) {
-  return prospectosStore.registrarEvento(id, {
-    tipo: 'captura_publica', fecha: new Date().toISOString(), canal: captura.canal,
-    notas: captura.data.notas, piezas_estimadas: captura.data.piezas_estimadas,
-  }).catch(err => console.error('[mayoreo] no se pudo registrar el evento:', err.message));
+async function registrarCapturaPublica(contacto, captura) {
+  try {
+    // #343: el evento va a la Oportunidad principal del Contacto, que es la
+    // tarjeta que el vendedor tiene enfrente.
+    const op = oportunidadPrincipalDe(contacto, await oportunidadesStore.listar());
+    await oportunidadPreIo.registrarEvento(op, {
+      tipo: 'captura_publica', fecha: new Date().toISOString(), canal: captura.canal,
+      notas: captura.data.notas, piezas_estimadas: captura.data.piezas_estimadas,
+    });
+  } catch (err) {
+    console.error('[mayoreo] no se pudo registrar el evento:', err.message);
+  }
+}
+
+// La Oportunidad que representa hoy a un Contacto (#343): la misma regla de la
+// lista de personas. Mientras la separacion no ha corrido es su propia fila.
+function oportunidadPrincipalDe(contacto, oportunidades) {
+  return principalPorContacto(oportunidadesDeContactos([contacto], oportunidades))[0];
 }
 
 // Visibilidad (CONTEXT.md): cada vendedor ve unicamente sus propias
 // oportunidades; el admin ve todas. Las tarjetas No Asignado no son de nadie: las
 // ve ademas quien tiene el permiso de asignacion (#156), y SOLO esas -- el
 // permiso abre la columna sin dueno, nunca la cartera de otro vendedor.
-async function prospectosVisiblesPara(user) {
+//
+// Desde #343 hay DOS listas visibles, porque la fila de prospectos dejo de ser
+// una sola cosa (ADR-0016): los CONTACTOS (la persona, con su Origen) y sus
+// OPORTUNIDADES pre-cotizacion (la intencion de compra, que es lo que se
+// trabaja). Un Contacto puede tener varias.
+async function contactosVisiblesPara(user) {
   const todos = await prospectosStore.listar();
   if (user.role === 'admin') return todos;
   const asigna = await puedeAsignarDeUsuario(user);
   return todos.filter(p => p.vendedor === user.name || (asigna && p.etapa === 'no_asignado'));
 }
 
+// Las Oportunidades se filtran por SU vendedor, no por el del Contacto: la
+// tarjeta es de quien la trabaja. Mientras la separacion no ha corrido son la
+// misma persona, asi que la visibilidad no cambia para nada de lo existente.
+// Se parte de TODOS los Contactos a proposito -- una Oportunidad propia puede
+// ser de otro vendedor que el que capturo al Contacto.
+async function oportunidadesVisiblesPara(user) {
+  const filas = oportunidadesDeContactos(
+    await prospectosStore.listar(), await oportunidadesStore.listar());
+  if (user.role === 'admin') return filas;
+  const asigna = await puedeAsignarDeUsuario(user);
+  return filas.filter(o => o.vendedor === user.name || (asigna && o.etapa === 'no_asignado'));
+}
+
+// Una fila por PERSONA (#343): el buscador del paso Cliente y la lista de
+// prospectos hablan de Contactos, no de intenciones, y un Contacto con dos
+// Oportunidades no puede volver a salir dos veces (ADR-0016). De cada uno viaja
+// su Oportunidad principal, que es la que la tarjeta de la lista trabaja.
 app.get('/api/prospectos', authMiddleware, async (req, res) => {
   try {
-    res.json(await prospectosVisiblesPara(req.user));
+    res.json(principalPorContacto(await oportunidadesVisiblesPara(req.user)));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo listar prospectos: ' + err.message });
   }
 });
 
 // Tabla de prospectos (spec #306, CONTEXT.md "Tabla de prospectos"): una fila
-// por prospecto visible con los campos derivados que la pantalla NO calcula.
+// por Oportunidad pre-cotizacion visible con los campos derivados que la
+// pantalla NO calcula. Desde #343 la fila es de la INTENCION, no de la persona:
+// un Contacto que volvio a preguntar tiene dos renglones que trabajar.
 // Registrada antes de cualquier ruta /api/prospectos/:id, como "cola".
 app.get('/api/prospectos/tabla', authMiddleware, async (req, res) => {
   try {
     const ahora = new Date();
-    const visibles = await prospectosVisiblesPara(req.user);
+    const visibles = await oportunidadesVisiblesPara(req.user);
     // #319: las cotizaciones se filtran por la MISMA visibilidad que en
     // GET /api/hoy antes de ligarlas, para que un vendedor nunca vea por la
     // fila del prospecto la cotizacion de otro.
@@ -1295,7 +1383,7 @@ app.get('/api/prospectos/tabla', authMiddleware, async (req, res) => {
     const cotizacionesVisibles = req.user.role === 'admin'
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
-    res.json(visibles.map(p => filaTabla(p, cotizacionesDelProspecto(p, cotizacionesVisibles), ahora)));
+    res.json(visibles.map(p => filaTabla(p, cotizacionesDeLaOportunidad(p, cotizacionesVisibles), ahora)));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo armar la tabla de prospectos: ' + err.message });
   }
@@ -1304,11 +1392,7 @@ app.get('/api/prospectos/tabla', authMiddleware, async (req, res) => {
 // Cola de seguimiento (issue #44). Registrada antes de cualquier ruta
 // /api/prospectos/:id para que "cola" nunca se interprete como un id.
 app.get('/api/prospectos/cola', authMiddleware, async (req, res) => {
-  const todos = await prospectosStore.listar();
-  const visibles = req.user.role === 'admin'
-    ? todos
-    : todos.filter(p => p.vendedor === req.user.name);
-  res.json(calcularColaProspectos(visibles, new Date()));
+  res.json(calcularColaProspectos(await oportunidadesVisiblesPara(req.user), new Date()));
 });
 
 // Pre-clasificacion de celular (issue #46): el frontend la consulta antes de
@@ -1343,14 +1427,24 @@ app.get('/api/prospectos/clasificar', authMiddleware, async (req, res) => {
 // las rutas (editar, toques, reunion) NO pasan la opcion: trabajar la tarjeta
 // sigue exigiendo dueno o admin. Nunca alcanza la cartera de otro vendedor: la
 // excepcion pide etapa no_asignado, que por definicion no tiene dueno.
-async function prospectoOperable(req, res, { incluyeSinDueno = false } = {}) {
-  const p = await prospectosStore.obtener(parseInt(req.params.id));
+//
+// Desde #343 el id de la ruta es el de la OPORTUNIDAD, no el del Contacto: es la
+// intencion de compra lo que se trabaja. Mientras la separacion no ha corrido
+// los dos ids coinciden (el Contacto sintetiza su propia Oportunidad), asi que
+// ninguna liga existente cambia. Devuelve la Oportunidad fusionada y su Contacto:
+// la edicion de datos escribe en la persona, todo lo demas en la intencion.
+async function oportunidadOperable(req, res, { incluyeSinDueno = false } = {}) {
+  const id = parseInt(req.params.id);
+  const contactos = await prospectosStore.listar();
+  const filas = oportunidadesDeContactos(contactos, await oportunidadesStore.listar());
+  const p = filas.find(f => f.id === id);
   if (!p) {
     res.status(404).json({ error: 'No encontrado' });
     return null;
   }
-  if (req.user.role === 'admin' || p.vendedor === req.user.name) return p;
-  if (incluyeSinDueno && p.etapa === 'no_asignado' && await puedeAsignarDeUsuario(req.user)) return p;
+  const contacto = contactos.find(c => c.id === p.contactoId);
+  if (req.user.role === 'admin' || p.vendedor === req.user.name) return { p, contacto };
+  if (incluyeSinDueno && p.etapa === 'no_asignado' && await puedeAsignarDeUsuario(req.user)) return { p, contacto };
   res.status(403).json({ error: 'Sin acceso' });
   return null;
 }
@@ -1362,8 +1456,9 @@ async function prospectoOperable(req, res, { incluyeSinDueno = false } = {}) {
 // operaciones del prospecto. No mueve la etapa ni registra evento: la edicion
 // enriquece, no avanza el embudo.
 app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
-  const p = await prospectoOperable(req, res);
-  if (!p) return;
+  const operable = await oportunidadOperable(req, res);
+  if (!operable) return;
+  const { p, contacto } = operable;
   if (esSalida(p.etapa)) {
     return res.status(400).json({ error: 'No se edita un prospecto que ya salió del pipeline (No útil/Perdida)' });
   }
@@ -1373,8 +1468,10 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   // que el stand no alcanzo a preguntar y lo que el importador no trae.
   const errorCalificacion = errorCalificacionYSiguienteContacto(req.body || {});
   if (errorCalificacion) return res.status(400).json({ error: errorCalificacion });
-  await prospectosStore.actualizarDatos(p.id, normalizarTextosProspecto(buildEdicionProspectoDatos(req.body)));
-  await registrarSiguienteContactoDelBody(p.id, req.body || {}, req.user.name);
+  // Los datos editables son de la PERSONA (nombre, ciudad, empresa, correo,
+  // tipo): se escriben en el Contacto, no en la Oportunidad.
+  await prospectosStore.actualizarDatos(contacto.id, normalizarTextosProspecto(buildEdicionProspectoDatos(req.body)));
+  await registrarSiguienteContactoDelBody(p, req.body || {}, req.user.name);
   res.json({ ok: true });
 });
 
@@ -1393,13 +1490,15 @@ app.patch('/api/prospectos/:id/asignar', authMiddleware, asignacionMiddleware, a
     if (!vendedor || !catalogo.some(v => v.name === vendedor)) {
       return res.status(400).json({ error: 'El vendedor a asignar debe ser uno del catálogo' });
     }
-    const p = await prospectosStore.obtener(parseInt(req.params.id));
+    const id = parseInt(req.params.id);
+    const contactos = await prospectosStore.listar();
+    const p = oportunidadesDeContactos(contactos, await oportunidadesStore.listar()).find(f => f.id === id);
     if (!p) return res.status(404).json({ error: 'No encontrado' });
     const destino = transicionPorAsignacion(p.etapa);
     if (!destino) {
       return res.status(400).json({ error: 'Solo se asigna vendedor a una tarjeta en No Asignado' });
     }
-    await prospectosStore.asignarVendedor(p.id, vendedor, destino, {
+    await oportunidadPreIo.asignarVendedor(p, contactos.find(c => c.id === p.contactoId), vendedor, destino, {
       tipo: 'asignacion', de: p.etapa, a: vendedor,
       fecha: new Date().toISOString(), vendedor: req.user.name,
     });
@@ -1413,8 +1512,9 @@ app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
   const { etapa, motivo, folio } = req.body || {};
   // Unica ruta que acepta tarjetas sin dueno para quien tiene el permiso de
   // asignacion: desde no_asignado el dominio solo deja descartar (#156).
-  const p = await prospectoOperable(req, res, { incluyeSinDueno: true });
-  if (!p) return;
+  const operable = await oportunidadOperable(req, res, { incluyeSinDueno: true });
+  if (!operable) return;
+  const { p } = operable;
   const error = validarTransicion(p.etapa, etapa, motivo, folio);
   if (error) return res.status(400).json({ error });
   const fecha = new Date().toISOString();
@@ -1424,7 +1524,7 @@ app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
   // es Por Cotizar; aqui se persiste etapa + folio + evento juntos.
   if (etapa === 'seguimiento') {
     const folioLimpio = String(folio).trim();
-    await prospectosStore.moverASeguimientoConFolio(p.id, folioLimpio, {
+    await oportunidadPreIo.moverASeguimientoConFolio(p, folioLimpio, {
       tipo: 'etapa', de: p.etapa, a: 'seguimiento', folio: folioLimpio, fecha, vendedor: req.user.name,
     });
     return res.json({ ok: true, etapa, folio: folioLimpio });
@@ -1432,14 +1532,14 @@ app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
   const evento = etapa === 'no_util'
     ? { tipo: 'no_util', motivo, fecha, vendedor: req.user.name }
     : { tipo: 'etapa', de: p.etapa, a: etapa, fecha, vendedor: req.user.name };
-  await prospectosStore.cambiarEtapa(p.id, etapa, evento);
+  await oportunidadPreIo.cambiarEtapa(p, etapa, evento);
   res.json({ ok: true, etapa });
 });
 
 app.post('/api/prospectos/:id/toques', authMiddleware, async (req, res) => {
-  const p = await prospectoOperable(req, res);
-  if (!p) return;
-  const eventos = await prospectosStore.registrarEvento(p.id, {
+  const operable = await oportunidadOperable(req, res);
+  if (!operable) return;
+  const eventos = await oportunidadPreIo.registrarEvento(operable.p, {
     tipo: 'toque', fecha: new Date().toISOString(), vendedor: req.user.name,
   });
   res.json({ ok: true, eventos });
@@ -1449,13 +1549,13 @@ app.post('/api/prospectos/:id/toques', authMiddleware, async (req, res) => {
 // con fecha, NO una etapa. Agendar registra el evento; re-agendar agrega otro
 // (la ultima manda). La supresion de cadencia vive en el motor de la cola.
 app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
-  const p = await prospectoOperable(req, res);
-  if (!p) return;
+  const operable = await oportunidadOperable(req, res);
+  if (!operable) return;
   const { fecha } = req.body || {};
   const f = fecha ? new Date(fecha) : null;
   if (!f || isNaN(f)) return res.status(400).json({ error: 'La fecha de la reunión es obligatoria' });
   if (f <= new Date()) return res.status(400).json({ error: 'La fecha de la reunión debe ser futura' });
-  await prospectosStore.registrarEvento(p.id, {
+  await oportunidadPreIo.registrarEvento(operable.p, {
     tipo: 'reunion', fecha_reunion: f.toISOString(),
     fecha: new Date().toISOString(), vendedor: req.user.name,
   });
@@ -1471,11 +1571,11 @@ app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
 // resultado que registrar -- lo cierra un toque posterior a la fecha. El ultimo
 // registrado manda.
 app.post('/api/prospectos/:id/siguiente-contacto', authMiddleware, async (req, res) => {
-  const p = await prospectoOperable(req, res);
-  if (!p) return;
+  const operable = await oportunidadOperable(req, res);
+  if (!operable) return;
   const error = validarSiguienteContacto(req.body);
   if (error) return res.status(400).json({ error });
-  await prospectosStore.registrarEvento(p.id, buildEventoSiguienteContacto(req.body, req.user.name));
+  await oportunidadPreIo.registrarEvento(operable.p, buildEventoSiguienteContacto(req.body, req.user.name));
   res.json({ ok: true });
 });
 
@@ -1486,8 +1586,9 @@ app.post('/api/prospectos/:id/siguiente-contacto', authMiddleware, async (req, r
 // Calificado, etapa eliminada por ADR-0005).
 app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, res) => {
   const { resultado, motivo } = req.body || {};
-  const p = await prospectoOperable(req, res);
-  if (!p) return;
+  const operable = await oportunidadOperable(req, res);
+  if (!operable) return;
+  const { p } = operable;
   if (!reunionPendienteResultado(p, new Date())) {
     return res.status(400).json({ error: 'No hay reunión pendiente de resultado' });
   }
@@ -1495,7 +1596,7 @@ app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, re
     if (!MOTIVOS_NO_UTIL.includes(motivo)) {
       return res.status(400).json({ error: 'El motivo de No útil es obligatorio (catálogo cerrado)' });
     }
-    await prospectosStore.cambiarEtapa(p.id, 'no_util', {
+    await oportunidadPreIo.cambiarEtapa(p, 'no_util', {
       tipo: 'no_util', motivo, fecha: new Date().toISOString(), vendedor: req.user.name,
     });
     return res.json({ ok: true, etapa: 'no_util' });
@@ -1504,7 +1605,8 @@ app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, re
 });
 
 app.get('/api/admin/prospectos/no-util', authMiddleware, adminMiddleware, async (req, res) => {
-  const todos = await prospectosStore.listar();
+  const todos = oportunidadesDeContactos(
+    await prospectosStore.listar(), await oportunidadesStore.listar());
   res.json(contarMotivosNoUtil(todos));
 });
 

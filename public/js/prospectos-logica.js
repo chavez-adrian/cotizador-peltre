@@ -626,9 +626,23 @@ export function buildMotivosNoUtilHtml(conteo) {
 // Mapeo de la respuesta 409 de POST /api/prospectos: si el body trae el
 // prospecto existente (duplicado propio o admin), devuelve su tarjeta; si no
 // (prospecto de otro vendedor, issue #42), no hay nada que mostrar aqui.
+//
+// #343: cuando el celular ya es un Contacto, el guardrail deja de ser un
+// callejon sin salida. La respuesta ofrece abrirle una Nueva oportunidad (POST
+// /api/oportunidades con ese mismo celular) -- el interes nuevo de alguien que
+// ya conocemos tiene donde vivir sin volver a capturar a la persona.
 export function buildProspectoExistenteHtml(resp) {
   if (!resp || !resp.prospecto) return '';
-  return buildProspectoCardHtml(resp.prospecto);
+  return buildProspectoCardHtml(resp.prospecto) + buildOfertaNuevaOportunidadHtml(resp);
+}
+
+export function buildOfertaNuevaOportunidadHtml(resp) {
+  const celular = resp && resp.nuevaOportunidad && resp.nuevaOportunidad.celular;
+  if (!celular) return '';
+  const limpio = String(celular).replace(/[^0-9+]/g, '');
+  return `<div class="cot-card-actions" style="margin-top:8px">
+    <button class="btn btn-primary btn-sm" onclick="abrirNuevaOportunidad('${escapeHtml(limpio)}')">Nueva oportunidad</button>
+  </div>`;
 }
 
 // Modal de canal antes de generar cotizacion (issue #46): solo se pide canal

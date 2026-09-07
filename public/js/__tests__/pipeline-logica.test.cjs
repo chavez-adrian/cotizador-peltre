@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad } =
     await import('../pipeline-logica.js'));
 });
 
@@ -1366,4 +1366,38 @@ test('CT3: el prospecto no lleva el control -- su celular ES su identidad', () =
 test('CT4: el tablero pinta el aviso dentro de la tarjeta de la cotizacion sin Contacto', () => {
   const html = buildTableroPipelineHtml([cotizacion({ refId: 51, contactoCelular: null })], {});
   assert.match(html, /Sin Contacto/);
+});
+
+// --- #343: "Nueva oportunidad" desde la tarjeta (spec #337, ADR-0016) ---
+//
+// Un Contacto que ya cotizo vuelve a preguntar: su celular ya es prospecto y no
+// se puede capturar otra vez, asi que el interes nuevo se abre desde la tarjeta.
+
+test('#343: la tarjeta de una cotizacion con Contacto ofrece abrir una Oportunidad nueva', () => {
+  const html = buildNuevaOportunidadControlHtml(cotizacion({ contactoCelular: '5555550001' }));
+  assert.ok(html.includes('Nueva oportunidad'));
+  assert.ok(html.includes("abrirNuevaOportunidad('5555550001')"));
+});
+
+test('#343: una cotizacion sin Contacto no puede abrir nada (no se sabe de quien es)', () => {
+  assert.equal(puedeAbrirNuevaOportunidad(cotizacion({ contactoCelular: null })), false);
+  assert.equal(buildNuevaOportunidadControlHtml(cotizacion({ contactoCelular: null })), '');
+});
+
+test('#343: no se ofrece sobre una Oportunidad que sigue en Por Cotizar o sin dueno', () => {
+  assert.equal(puedeAbrirNuevaOportunidad(prospecto({ etapa: 'por_cotizar' })), false);
+  assert.equal(puedeAbrirNuevaOportunidad(prospecto({ etapa: 'no_asignado' })), false);
+  assert.equal(buildNuevaOportunidadControlHtml(prospecto({ etapa: 'por_cotizar' })), '');
+});
+
+test('#343: el prospecto que ya salio del embudo si puede abrir una Oportunidad nueva', () => {
+  assert.equal(puedeAbrirNuevaOportunidad(prospecto({ etapa: 'no_util' })), true);
+  const html = buildNuevaOportunidadControlHtml(prospecto({ etapa: 'no_util' }));
+  assert.ok(html.includes("abrirNuevaOportunidad('+525512345678')"));
+});
+
+test('#343: el boton viaja en la tarjeta del tablero', () => {
+  const html = buildTableroPipelineHtml([cotizacion({ contactoCelular: '5555550001' })], {});
+  assert.ok(html.includes('tablero-nueva-oportunidad'));
+  assert.ok(html.includes('Nueva oportunidad'));
 });

@@ -811,6 +811,34 @@ export function buildSinContactoControlHtml(o) {
   </div>`;
 }
 
+// El celular del Contacto de la tarjeta (#343): la cotizacion lo trae en su liga
+// fija (#342) y el prospecto ES su celular. Recortado a digitos y "+" porque
+// viaja dentro de un onclick inline; el servidor identifica al Contacto por los
+// ultimos 10 digitos, asi que no se pierde nada.
+export function celularDeContacto(o) {
+  const cel = o && (o.tipo === 'cotizacion' ? o.contactoCelular : o.celular);
+  return cel ? String(cel).replace(/[^0-9+]/g, '') : '';
+}
+
+// "Nueva oportunidad" desde la tarjeta (#343, spec #337, ADR-0016): un Contacto
+// que ya cotizo vuelve a preguntar y ese interes necesita tarjeta propia -- su
+// celular ya es prospecto y no se puede capturar otra vez.
+//
+// NO se ofrece sobre una Oportunidad que sigue en Por Cotizar o sin dueno: ahi
+// la intencion nueva es la que ya esta abierta, y abrir otra solo partiria el
+// trabajo en dos tarjetas iguales. Tampoco pide origen: lo hereda del Contacto.
+export function puedeAbrirNuevaOportunidad(o) {
+  if (!o || !celularDeContacto(o)) return false;
+  return o.tipo === 'cotizacion' || !['por_cotizar', 'no_asignado'].includes(o.etapa);
+}
+
+export function buildNuevaOportunidadControlHtml(o) {
+  if (!puedeAbrirNuevaOportunidad(o)) return '';
+  return `<div class="cot-card-actions tablero-nueva-oportunidad">
+    <button class="btn btn-secondary btn-sm" onclick="abrirNuevaOportunidad('${escapeHtml(celularDeContacto(o))}')">Nueva oportunidad</button>
+  </div>`;
+}
+
 function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   // El Origen sale de la linea gris y se lee en su chip (#287).
@@ -822,6 +850,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const salida = buildSalidaControlHtml(o);
   const decorado = buildDecoradoControlHtml(o);
   const sinContacto = buildSinContactoControlHtml(o);
+  const nuevaOportunidad = buildNuevaOportunidadControlHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -837,6 +866,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
       ${asignar}
       ${mover}
       ${decorado}
+      ${nuevaOportunidad}
       ${salida}
     </div>
   </div>`;
