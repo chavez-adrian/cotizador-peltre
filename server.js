@@ -14,6 +14,7 @@ import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados, precargaComercialUpgrade } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, rfcGenericoDe, buildClienteGenerico, resolverSalesTypeId, FUENTE_ALTA_GENERICA, FUENTE_SUCURSAL_CREADA, buildBranchGenerico, sucursalEquivalente, diffBranchDomicilio } from './lib/alta-generica.js';
+import { celsNoAplicados } from './lib/cel-operam.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
@@ -2412,6 +2413,9 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
     if (crearSucursal && String(c.customerId ?? '') === String(customerId)) {
       branchId = c.branchId ?? c.branch_id ?? null;
     }
+    // Sucursal RECIEN escrita por esta corrida (#339): solo lo que se escribio se
+    // verifica -- una sucursal reusada de un intento anterior no se toco aqui.
+    let sucursalEscrita = false;
 
     // Sucursal nueva bajo el cliente existente (#211): SOLO POST -- un PUT sobre
     // un branch ya configurado es REPLACE destructivo con campos irrecuperables
@@ -2440,6 +2444,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
           steps.push({ name: 'POST branch (sucursal)', status: 'ok', info: 'omitido: la sucursal ya existia en Operam de un intento anterior' });
         } else {
           creada = await crearBranchCliente(customerId, datosSucursal);
+          sucursalEscrita = true;
           steps.push({ name: 'POST branch (sucursal)', status: 'ok' });
           // RELEER: Operam responde result:true aunque no haya escrito nada (#74).
           // La sucursal tiene que aparecer entre las del cliente o el paso queda en
@@ -2531,6 +2536,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       const branchDatos = buildBranchGenerico(c, { salesman });
       try {
         await actualizarBranchCliente(customerId, branchId, branchDatos);
+        sucursalEscrita = true;
         steps.push({ name: 'PUT branch (domicilio)', status: 'ok' });
         // Releer y verificar: Operam responde result:true aunque ignore campos (#74).
         try {
@@ -2546,6 +2552,29 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         }
       } catch (err) {
         steps.push({ name: 'PUT branch (domicilio)', status: 'error', error: err.message });
+      }
+    }
+
+    // Verificacion del Cel (#339): Operam responde 200 sin garantizar nada (#74) y
+    // el GET /branches/:code NO expone `fax` -- el unico lector es
+    // GET /customers/:id, que trae contacts[] y branches[] en una sola llamada. Un
+    // Cel que no quedo escrito NO tumba el alta ni la subida: viaja como campo no
+    // aplicado en el reporte de pasos (ADR-0002), igual que el warn de
+    // `verificar branch` de #96. Solo se verifica lo que esta corrida escribio.
+    const celContacto = c.telefono || '';
+    if (celContacto && (creadoNuevo || sucursalEscrita)) {
+      try {
+        const fresco = await obtenerClientePorId(customerId);
+        const noAplicados = celsNoAplicados(fresco, {
+          celCliente: creadoNuevo ? celContacto : '',
+          celBranch: sucursalEscrita ? celContacto : '',
+          branchId,
+        });
+        steps.push(noAplicados.length
+          ? { name: 'verificar Cel', status: 'warn', camposNoActualizados: noAplicados }
+          : { name: 'verificar Cel', status: 'ok' });
+      } catch (err) {
+        steps.push({ name: 'verificar Cel', status: 'error', error: err.message });
       }
     }
 
@@ -3359,6 +3388,7 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     // real -- nombre, vendedor, cuentas contables y br_post_address, varias de ellas
     // irrecuperables por API. Agregarle una plaza a un cliente existente es POST de
     // sucursal (#211), nunca este PUT.
+    let sucursalEscrita = false;
     if (esClienteExistente) {
       steps.push({ name: 'PUT branch', status: 'omitido', info: 'Cliente existente: se conserva su domicilio en Operam' });
     } else {
@@ -3368,12 +3398,40 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
           ...entrega,
           pais: entrega.pais || cliente.pais || 'MX',
           salesman: cliente.salesman,
+          // Cel de la sucursal (#339): el celular del CONTACTO (campo Celular del
+          // panel), no el telefono de quien recibe la mercancia, que sigue en `phone`.
+          fax: cliente.celular_nota || '',
         });
+        sucursalEscrita = true;
         steps.push({ name: 'PUT branch', status: 'ok' });
       } catch (err) {
         steps.push({ name: 'PUT branch', status: 'error', error: err.message });
         logCliente(cliente.tax_id, cliente.CustName, 'error', customer_id, fuente, null, err.message);
         return res.json({ ok: false, customer_id, branch_id, steps });
+      }
+    }
+
+    // Verificacion del Cel (#339): Operam responde 200 sin garantizar nada (#74) y
+    // el GET /branches/:code NO expone `fax` -- el unico lector es
+    // GET /customers/:id, que trae contacts[] y branches[] en una sola llamada. Un
+    // Cel que no quedo escrito NO tumba el alta: viaja como campo no aplicado en el
+    // reporte de pasos (ADR-0002). OJO: el panel de la Seccion 4 pinta los pasos por
+    // NOMBRE contra ALTA_PASO_FILA (#112) y este no tiene fila, asi que hoy el warn
+    // vive solo en la respuesta -- darle fila es decision de pantalla, no de #339.
+    // Solo se verifica lo que esta alta escribio: sobre un cliente existente no
+    // corrio ni el POST ni el PUT del branch.
+    const celContacto = cliente.celular_nota || '';
+    const celEnCliente = celContacto && !customerIdYaConocido ? celContacto : '';
+    const celEnBranch = celContacto && sucursalEscrita ? celContacto : '';
+    if (celEnCliente || celEnBranch) {
+      try {
+        const fresco = await obtenerClientePorId(customer_id);
+        const noAplicados = celsNoAplicados(fresco, { celCliente: celEnCliente, celBranch: celEnBranch, branchId: branch_id });
+        steps.push(noAplicados.length
+          ? { name: 'verificar Cel', status: 'warn', camposNoActualizados: noAplicados }
+          : { name: 'verificar Cel', status: 'ok' });
+      } catch (err) {
+        steps.push({ name: 'verificar Cel', status: 'error', error: err.message });
       }
     }
 

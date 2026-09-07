@@ -192,6 +192,21 @@ test('buildBranchGenerico: mapea el domicilio de entrega a los campos del branch
   assert.equal(d.salesman, 2);
 });
 
+// #339: el Cel de la sucursal es el celular del CONTACTO (la llave de identidad),
+// no el de quien recibe la mercancia, y no depende del domicilio: una sucursal sin
+// calle ni CP tambien lo lleva.
+test('buildBranchGenerico: el Cel de la sucursal es el celular del Contacto, con o sin domicilio (#339)', () => {
+  const conDomicilio = buildBranchGenerico(CLIENTE_ENTREGA, {});
+  assert.equal(conDomicilio.fax, '+52 5588776655');
+  assert.equal(conDomicilio.phone, '+52 5511223344', 'el telefono sigue siendo el de la entrega');
+
+  const sinDomicilio = buildBranchGenerico({ ...CLIENTE_ENTREGA, calle: '', cpEntrega: '' }, {});
+  assert.equal(sinDomicilio.fax, '+52 5588776655');
+  assert.ok(!('phone' in sinDomicilio), 'sin domicilio no hay telefono de entrega que mandar');
+
+  assert.ok(!('fax' in buildBranchGenerico({ ...CLIENTE_ENTREGA, telefono: '' }, {})), 'sin celular no se manda la llave');
+});
+
 test('buildBranchGenerico: sin celular de entrega cae al telefono del contacto', () => {
   const d = buildBranchGenerico({ ...CLIENTE_ENTREGA, celEntrega: '' }, {});
   assert.equal(d.phone, '+52 5588776655');

@@ -143,7 +143,9 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') { llamadas.push('POST customer'); clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 910 }); }
       if (opts?.method === 'PUT') { llamadas.push('PUT customer'); return jsonResponse({ result: true }); }
-      if (u.includes('/910')) { llamadas.push('GET customer'); return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] }); }
+      // El Cel (#339) viaja en `fax` y solo el GET del CLIENTE lo expone, tanto del
+      // Contacto en Operam auto-generado como de la sucursal.
+      if (u.includes('/910')) { llamadas.push('GET customer'); return jsonResponse({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: CELULAR }], branches: [{ branch_code: 911, fax: CELULAR }] }] }); }
       // MINA (#81): la dedup por RFC EXACTO de crearCliente matchearia este otro
       // generico y reutilizaria el cliente EQUIVOCADO. El flujo debe saltarla.
       if (u.includes('tax_id=')) { llamadas.push('GET tax_id'); return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XAXX010101000', sales_type: '12', branches: [{ branch_code: 445 }] }] }); }
@@ -1063,7 +1065,7 @@ test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente exi
         branchPost = JSON.parse(opts.body);
         // Operam devuelve el codigo de la sucursal creada; la relectura es la
         // unica prueba de que existe (un 200 no garantiza nada, quirk #74).
-        branchesDelCliente = [...branchesDelCliente, { branch_code: 33, br_name: branchPost.br_name }];
+        branchesDelCliente = [...branchesDelCliente, { branch_code: 33, br_name: branchPost.br_name, fax: branchPost.fax }];
         return jsonResponse({ result: true, cust_branch_id: 33 });
       }
       if (opts?.method === 'PUT') { branchPuts++; return jsonResponse({ result: true }); }
@@ -1101,6 +1103,7 @@ test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente exi
   assert.equal(branchPost.addr_zip, '06600');
   assert.equal(branchPost.addr_city, 'Cuauhtemoc');
   assert.equal(branchPost.phone, '+52 5511223344');
+  assert.equal(branchPost.fax, CELULAR, 'el POST de la sucursal lleva el celular del Contacto en Cel (#339)');
   assert.equal(branchPost.email, 'entrega@hotelazul.mx');
   assert.equal(branchPost.location, 40, 'POST usa location (no default_location)');
   assert.equal(branchPost.ship_via, 1);
@@ -1945,4 +1948,82 @@ test('CR5: sin nombre corto no hay busqueda por cust_ref y el alta corre como si
   assert.equal(res.status, 200);
   assert.equal(postCustomer, true);
   assert.equal(res.body.customer_id, 940);
+});
+
+// --- #339: el celular del Contacto en la casilla Cel (`fax`) de Operam ---
+//
+// ADR-0016: la casilla que la web etiqueta "Cel" viaja en la API como `fax`, y es
+// donde el equipo busca el celular. El alta lo escribe ahi ademas de donde ya lo
+// escribia (phone del cliente y notas), y lo VERIFICA releyendo: Operam responde
+// 200 sin garantizar nada (#74).
+
+test('#339-1: el alta generica manda el celular del Contacto en Cel (fax) del cliente y de la sucursal', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({ calle: 'Pestalozzi 123', cpEntrega: '03810', celEntrega: '5511112222' });
+  let clienteBody = null;
+  let branchBody = null;
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 950 }); }
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      if (u.includes('/950')) {
+        return jsonResponse({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: CELULAR }], branches: [{ branch_code: 951, fax: CELULAR }] }] });
+      }
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/branches/951': (u, opts) => {
+      if (opts?.method === 'PUT') { branchBody = JSON.parse(opts.body); return jsonResponse({ result: true }); }
+      return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1901 }),
+    ...mockWebLegacy(),
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(clienteBody.fax, CELULAR, 'el POST del cliente lleva el celular del Contacto en Cel');
+  assert.equal(clienteBody.phone, CELULAR, 'y sigue llevandolo donde ya lo llevaba');
+  assert.equal(branchBody.fax, CELULAR, 'el PUT de la sucursal lleva el mismo celular del Contacto en Cel');
+  assert.equal(branchBody.phone, '5511112222', 'el telefono de la sucursal sigue siendo el de la entrega');
+  const paso = res.body.steps.find(s => s.name === 'verificar Cel');
+  assert.ok(paso, 'reporta el paso de verificacion del Cel');
+  assert.equal(paso.status, 'ok');
+});
+
+test('#339-2: si Operam ignora el Cel, el alta NO falla: lo reporta como campo no aplicado', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  mockOperamFetch({
+    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
+    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 960 });
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      // Operam acepto el POST pero no guardo el Cel en ningun lado (quirk #74).
+      if (u.includes('/960')) return jsonResponse({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: '' }], branches: [{ branch_code: 961, fax: '' }] }] });
+      return jsonResponse({ total: 0, data: [] });
+    },
+    '/api/v3/sales/branches/961': (u, opts) => {
+      if (opts?.method === 'PUT') return jsonResponse({ result: true });
+      return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
+    },
+    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1902 }),
+    ...mockWebLegacy(),
+  });
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200, 'el alta no falla por un Cel que Operam ignoro');
+  assert.equal(res.body.ok, true);
+  assert.equal(String(res.body.folio), '1902', 'la cotizacion se sube igual');
+  const paso = res.body.steps.find(s => s.name === 'verificar Cel');
+  assert.equal(paso.status, 'warn');
+  assert.deepEqual(paso.camposNoActualizados.map(c => c.label), ['Cel del contacto', 'Cel de la sucursal']);
 });
