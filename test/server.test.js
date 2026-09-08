@@ -570,16 +570,23 @@ function mockOperamFetch(handlers) {
 
 // === POST /api/crear-cliente + Dropbox (#24) ===
 
-test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 200', async () => {
-  const restore = mockOperamFetch({
+// Un alta que llega hasta el PUT del branch, para los tests que miran lo que pasa
+// ALREDEDOR del alta (el respaldo de la CSF) y no el alta misma.
+function mocksAltaClienteOk(customerId, branchId, extra = {}) {
+  return {
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 88 }) };
-      if (u.includes('/88')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 188 }] }] }) };
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: customerId }) };
+      if (u.includes(`/${customerId}`)) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: branchId }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
-    '/api/v3/sales/branches/188': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
+    [`/api/v3/sales/branches/${branchId}`]: () => ({ ok: true, json: async () => ({ result: true }) }),
+    ...extra,
+  };
+}
+
+test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 200', async () => {
+  const restore = mockOperamFetch(mocksAltaClienteOk(88, 188));
   try {
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
@@ -589,6 +596,74 @@ test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 2
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
     assert.strictEqual(res.body.customer_id, 88);
+  } finally {
+    restore();
+  }
+});
+
+// El alta completa nunca respaldaba la constancia porque el frontend no mandaba el PDF
+// (#350). Este test mide el respaldo COMPLETO -- hasta la subida a Dropbox nombrada con
+// el RFC y la razon social -- para que la rama no vuelva a quedarse sin nadie que la
+// dispare. La cobertura del payload que arma el frontend vive en
+// public/js/__tests__/alta-sec4.test.cjs (F1f-F1j).
+test('POST /api/crear-cliente con pdf_base64: respalda la CSF en Dropbox con RFC y razon social (#350)', async () => {
+  const envPrevio = {
+    DROPBOX_REFRESH_TOKEN: process.env.DROPBOX_REFRESH_TOKEN,
+    DROPBOX_APP_KEY: process.env.DROPBOX_APP_KEY,
+    DROPBOX_APP_SECRET: process.env.DROPBOX_APP_SECRET,
+  };
+  process.env.DROPBOX_REFRESH_TOKEN = 'refresh';
+  process.env.DROPBOX_APP_KEY = 'key';
+  process.env.DROPBOX_APP_SECRET = 'secret';
+  let resolverSubida;
+  const subida = new Promise(resolve => { resolverSubida = resolve; });
+  const restore = mockOperamFetch(mocksAltaClienteOk(89, 189, {
+    // expires_in 0 a proposito: lib/dropbox.js cachea el token en una variable de
+    // modulo que este test no puede restaurar, y un token vivo haria que el siguiente
+    // consumidor de Dropbox se saltara su propio mock del refresh.
+    'oauth2/token': () => ({ ok: true, json: async () => ({ access_token: 'dbx', expires_in: 0 }) }),
+    'files/upload': (u, opts) => {
+      resolverSubida({ arg: JSON.parse(opts.headers['Dropbox-API-Arg']), body: opts.body });
+      return { ok: true, json: async () => ({ path_display: 'ok' }) };
+    },
+  }));
+  let timer;
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ tax_id: 'OGA140604560', CustName: 'Operadora Gastronomica Agua Blanca', pdf_base64: Buffer.from('%PDF-1.4').toString('base64'),
+              entrega: { br_name: 'OGA', br_ref: 'OGA', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
+              salesman: 47 });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.customer_id, 89);
+    const expiro = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('Dropbox nunca recibio la CSF')), 3000); });
+    const { arg, body } = await Promise.race([subida, expiro]);
+    assert.ok(arg.path.includes('OGA140604560'), 'el archivo se nombra con el RFC: ' + arg.path);
+    assert.ok(arg.path.includes('Operadora Gastronomica Agua Blanca'), 'y con la razon social: ' + arg.path);
+    assert.strictEqual(body.toString('utf8'), '%PDF-1.4', 'sube el PDF, no el base64');
+  } finally {
+    clearTimeout(timer);
+    restore();
+    for (const [k, v] of Object.entries(envPrevio)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+});
+
+// Una CSF escaneada (justo la del camino del QR) pesa mas que las de texto, y en base64
+// crece un tercio. Con el limite de 1mb que traia express.json, ese alta moria con 413
+// ANTES de llegar a la ruta: el respaldo habria tumbado el alta entera, que es peor que
+// no respaldar (#350).
+test('POST /api/crear-cliente acepta la CSF escaneada que no cabia en el limite viejo (#350)', async () => {
+  const restore = mockOperamFetch(mocksAltaClienteOk(90, 190));
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ tax_id: 'ESC010101ABC', CustName: 'Escaneada SA', pdf_base64: 'A'.repeat(2 * 1024 * 1024),
+              entrega: { br_name: 'ESC', br_ref: 'ESC', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
+              salesman: 47 });
+    assert.strictEqual(res.status, 200, 'un PDF grande no puede tumbar el alta');
+    assert.strictEqual(res.body.customer_id, 90);
   } finally {
     restore();
   }

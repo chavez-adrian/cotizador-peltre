@@ -1033,12 +1033,33 @@ export function usoCfdiCuentaComoElegido({ valor, defaultVigente } = {}) {
   return !!valor && valor !== defaultVigente;
 }
 
+// El PDF de la constancia que el vendedor solto en la Seccion 1 (#350). El servidor
+// sabe respaldarlo en Dropbox desde #24, pero por el camino del alta nunca le llegaba
+// uno, asi que esa rama era codigo muerto y ninguna constancia dada de alta aqui se
+// respaldo jamas. Dos guardas, porque el estado del panel sobrevive al cambio de
+// pestana: solo viaja el PDF de ESTE RFC (con otro, Dropbox archivaria el archivo
+// equivocado bajo el nombre del cliente nuevo) y solo cuando el alta va a CREAR el
+// cliente -- sobre uno existente el servidor no sube nada. Sin archivo no viaja la
+// llave, y eso no es un error: hay altas sin constancia.
+export function pdfCsfParaRespaldo({ pdfBase64, pdfRfc, rfc, clienteExistente } = {}) {
+  if (!pdfBase64 || clienteExistente === true) return null;
+  const mismo = (v) => String(v || '').trim().toUpperCase();
+  return mismo(pdfRfc) && mismo(pdfRfc) === mismo(rfc) ? pdfBase64 : null;
+}
+
 // `opciones.clienteExistente` marca el alta que va sobre un Cliente Operam elegido por dedup
 // ("Usar este Cliente Operam", por RFC o por celular): el servidor no puede deducirlo del
 // customer_id, que en el reintento de un alta nueva significa lo contrario (#250).
 export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, customerId, branchId, opciones = {}) {
   const clienteExistente = opciones.clienteExistente === true;
+  const pdfBase64 = pdfCsfParaRespaldo({
+    pdfBase64: opciones.pdfBase64,
+    pdfRfc: opciones.pdfRfc,
+    rfc: csfDatos.rfc,
+    clienteExistente,
+  });
   return {
+    ...(pdfBase64 ? { pdf_base64: pdfBase64 } : {}),
     tax_id: csfDatos.rfc || '',
     CustName: csfDatos.razonSocial || '',
     cust_ref: csfDatos.nombreCorto || '',
@@ -1073,7 +1094,8 @@ export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, custom
     customer_id: customerId || null,
     branch_id: branchId || null,
     cliente_existente: clienteExistente,
-    fuente: 'cotizador',
+    // `fuente` NO viaja (#350): el servidor ya la deriva del PDF, y mandarla fija en
+    // 'cotizador' era justamente lo que dejaba muerta esa rama. Un solo dueno de la regla.
   };
 }
 

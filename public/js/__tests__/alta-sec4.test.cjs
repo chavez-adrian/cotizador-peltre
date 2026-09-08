@@ -3,9 +3,9 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveClienteId } = require('./helpers.cjs');
 
-let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido;
+let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido, pdfCsfParaRespaldo;
 before(async () => {
-  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido } = await import('../alta-logica.js'));
+  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido, pdfCsfParaRespaldo } = await import('../alta-logica.js'));
 });
 
 test('F1: buildAltaDarDeAltaPayload incluye campos comerciales y domicilio', () => {
@@ -58,6 +58,46 @@ test('F1e: buildAltaDarDeAltaPayload sin actividades en la CSF envia lista vacia
   const payload = buildAltaDarDeAltaPayload({}, {}, {}, null, null);
   assert.deepEqual(payload.actividades, []);
   assert.strictEqual(payload.csf_fecha, '');
+});
+
+// El respaldo de la CSF en Dropbox (#24) se implemento en el servidor y nunca llego
+// ningun PDF por este camino: el payload del alta completa no lo llevaba (#350). El
+// test del servidor inyectaba pdf_base64 a mano en el body, asi que la rama pasaba en
+// verde sin que ningun alta real la disparara -- por eso la cobertura tiene que estar
+// AQUI, sobre el payload que arma el frontend.
+const PDF_CSF = 'JVBERi0xLjQK';
+
+test('F1f: buildAltaDarDeAltaPayload lleva el PDF de la CSF que subio el vendedor (#350)', () => {
+  const csfDatos = { rfc: 'OGA140604560', razonSocial: 'Operadora Gastronomica Agua Blanca' };
+  const payload = buildAltaDarDeAltaPayload(csfDatos, {}, {}, null, null, { pdfBase64: PDF_CSF, pdfRfc: 'OGA140604560' });
+  assert.strictEqual(payload.pdf_base64, PDF_CSF, 'sin este campo el respaldo en Dropbox nunca se intenta');
+});
+
+test('F1g: buildAltaDarDeAltaPayload sin archivo no manda la llave pdf_base64 (#350)', () => {
+  const payload = buildAltaDarDeAltaPayload({}, {}, {}, null, null);
+  assert.ok(!('pdf_base64' in payload), 'un alta sin PDF no manda el campo (no es un error)');
+});
+
+test('F1h: el payload nunca manda fuente -- la deriva el servidor del PDF (#350)', () => {
+  const conPdf = buildAltaDarDeAltaPayload({ rfc: 'OGA140604560' }, {}, {}, null, null, { pdfBase64: PDF_CSF, pdfRfc: 'OGA140604560' });
+  assert.ok(!('fuente' in conPdf), 'mandarla fija era lo que dejaba muerta la rama del servidor');
+  assert.ok(!('fuente' in buildAltaDarDeAltaPayload({}, {}, {}, null, null)));
+});
+
+test('F1i: pdfCsfParaRespaldo no deja viajar el PDF de otro RFC (#350)', () => {
+  // El panel conserva el archivo al cambiar a la pestana de captura a mano: sin esta
+  // guarda, Dropbox archivaria la constancia de otro bajo el nombre del cliente nuevo.
+  const payload = buildAltaDarDeAltaPayload({ rfc: 'SMS200716NZ4' }, {}, {}, null, null, { pdfBase64: PDF_CSF, pdfRfc: 'OGA140604560' });
+  assert.ok(!('pdf_base64' in payload));
+  assert.strictEqual(pdfCsfParaRespaldo({ pdfBase64: PDF_CSF, pdfRfc: ' oga140604560 ', rfc: 'OGA140604560' }), PDF_CSF, 'mismo RFC con otro formato sigue siendo el mismo dueno');
+  assert.strictEqual(pdfCsfParaRespaldo({ pdfBase64: PDF_CSF, pdfRfc: '', rfc: 'OGA140604560' }), null, 'un PDF sin RFC conocido no se atribuye a nadie');
+});
+
+test('F1j: sobre un Cliente Operam existente el PDF no viaja (#350)', () => {
+  // El servidor no sube nada en ese camino (subirCsfDropbox vive en la rama del POST):
+  // mandarlo solo ensuciaria clientes_log con un respaldo que nunca ocurrio.
+  const payload = buildAltaDarDeAltaPayload({ rfc: 'OGA140604560' }, {}, {}, 15, null, { clienteExistente: true, pdfBase64: PDF_CSF, pdfRfc: 'OGA140604560' });
+  assert.ok(!('pdf_base64' in payload));
 });
 
 test('F2: buildAltaDarDeAltaPayload pasa customer_id y branch_id para reintento', () => {

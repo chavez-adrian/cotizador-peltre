@@ -124,7 +124,11 @@ const app = express();
 // seria peor que nada aqui: dejaria que el cliente falsee su IP con un
 // X-Forwarded-For propio.
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '1mb' }));
+// 10mb, el mismo tope que multer de aqui abajo (#350): el PDF de la CSF viaja en
+// base64 DENTRO del JSON (alta completa y upgrade fiscal), y una constancia escaneada
+// crece un tercio al codificarse. Con 1mb un alta con constancia pesada moria con 413
+// antes de tocar la ruta -- el respaldo tumbando el alta, que es peor que no respaldar.
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(PUBLIC_DIR));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });

@@ -7167,6 +7167,9 @@ async function altaCsfConfirmar() {
   const datos = altaCsfLeerFormulario();
   altaCsfState.datos = datos;
   altaCsfState.confirmado = true;
+  // El RFC confirmado es el dueno del PDF (#350): si el vendedor corrigio lo que el
+  // parseo saco mal, el respaldo sigue al RFC corregido en vez de perderse.
+  if (altaCsfState.pdfBase64 && datos.rfc) altaCsfState.rfc = datos.rfc;
 
   // Modo upgrade (#85): el destino es el PUT sobre el cliente generico existente,
   // no el POST de creacion con dedup por nombre del acordeon viejo.
@@ -7759,6 +7762,10 @@ function altaDarDeAlta() {
   const payload = buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, resolvedCustomerId, altaState.branch_id, {
     clienteExistente: esClienteExistente,
     usoCfdiElegido: altaState.usoCfdiElegido === true,
+    // El PDF de la constancia y el RFC del que salio, para que pdfCsfParaRespaldo
+    // decida si este alta es la duena de ese archivo (#350).
+    pdfBase64: altaCsfState.pdfBase64,
+    pdfRfc: altaCsfState.rfc,
   });
 
   ALTA_PASO_FILAS.forEach(i => altaPasoSetStatus(i, 'loading'));
