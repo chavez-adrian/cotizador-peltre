@@ -10,7 +10,8 @@ const assert = require('node:assert/strict');
 let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
   decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
-  contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto;
+  contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
+  contactoEntregaDelCliente, seleccionContactoEntrega;
 
 before(async () => {
   ({
@@ -18,6 +19,7 @@ before(async () => {
     buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
     contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
+    contactoEntregaDelCliente, seleccionContactoEntrega,
   } = await import('../alta-logica.js'));
 });
 
@@ -479,4 +481,118 @@ test('X6: etiquetaTagContacto con tag desconocido lo regresa tal cual; vacio -> 
   assert.strictEqual(etiquetaTagContacto('otro'), 'otro');
   assert.strictEqual(etiquetaTagContacto(''), '');
   assert.strictEqual(etiquetaTagContacto(undefined), '');
+});
+
+// === El Contacto de la cotizacion como TERCERA fuente del selector (issue #353) ===
+// Cotizando para un Contacto (persona del celular) sin Cliente Operam con contactos,
+// las dos fuentes de Operam estan vacias, el selector no se pintaba y "Entregar a"
+// se tecleaba a mano -- aunque la app ya sabe como se llama esa persona. El Contacto
+// entra AL FINAL: las fuentes de Operam conservan su orden y su autollenado.
+
+test('X7: solo el Contacto de la cotizacion (sin fuentes de Operam) -> es la unica opcion, tag "contacto"', () => {
+  const contacto = { tag: 'contacto', nombre: 'Jorge Orea', telefono: '+52 55 1234 5678', email: 'jorge@orea.mx' };
+  const r = contactosEntregaDisponibles(null, null, contacto);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].tag, 'contacto');
+  assert.strictEqual(r[0].nombre, 'Jorge Orea');
+  assert.strictEqual(r[0].telefono, '+52 55 1234 5678');
+});
+
+test('X8: con fuentes de Operam, el Contacto va AL FINAL y la opcion 0 sigue siendo la de siempre', () => {
+  const dom = { contacto: 'Adriana Urena', telefono: '55 1072 7542', email: 'a.urena@museo.mx' };
+  const contactosCliente = [{ tag: 'general', nombre: 'Gustavo Barcia', telefono: '55 4860 9144', email: '' }];
+  const contacto = { tag: 'contacto', nombre: 'Jorge Orea', telefono: '+52 55 1234 5678', email: '' };
+  const r = contactosEntregaDisponibles(dom, contactosCliente, contacto);
+  assert.strictEqual(r.length, 3);
+  assert.strictEqual(r[0].tag, 'domicilio');
+  assert.strictEqual(r[1].nombre, 'Gustavo Barcia');
+  assert.strictEqual(r[2].tag, 'contacto');
+});
+
+test('X9: un Contacto sin nombre NI telefono NI email no entra a la lista', () => {
+  assert.deepStrictEqual(contactosEntregaDisponibles(null, null, { tag: 'contacto', nombre: '', telefono: '', email: '' }), []);
+  assert.deepStrictEqual(contactosEntregaDisponibles(null, null, null), []);
+});
+
+// contactoEntregaDelCliente traduce el cliente elegido en el paso Cliente a una
+// entrada del selector. Solo la persona: un Cliente Operam es una razon social y sus
+// personas ya vienen por contacts[] (glosario: Contacto vs Contacto en Operam).
+test('X10: contactoEntregaDelCliente convierte al prospecto/contacto nuevo; el Cliente Operam no', () => {
+  const prospecto = { tipo: 'prospecto', name: 'Jorge Orea', telefono: '+52 55 1234 5678', email: 'jorge@orea.mx' };
+  assert.deepStrictEqual(contactoEntregaDelCliente(prospecto), {
+    tag: 'contacto', nombre: 'Jorge Orea', telefono: '+52 55 1234 5678', email: 'jorge@orea.mx',
+  });
+  const nuevo = { tipo: 'nuevo', name: 'Ana Ruiz', telefono: '55 9999 0000', email: '' };
+  assert.strictEqual(contactoEntregaDelCliente(nuevo).nombre, 'Ana Ruiz');
+  assert.strictEqual(contactoEntregaDelCliente({ tipo: 'operam', name: 'GRUPO URUGUAYO MINAS SA DE CV' }), null);
+  assert.strictEqual(contactoEntregaDelCliente(null), null);
+});
+
+// El upgrade fiscal (#85) pisa `name` con la razon social del SAT sin cambiar el
+// tipo: ese prospecto ya no lleva ahi el nombre de una persona, y ofrecerlo pondria
+// la razon social en MAYUSCULAS en el "Entregar a" que se imprime.
+test('X10b: un prospecto que ya subio su constancia deja de ser el Contacto de entrega', () => {
+  const conCsf = { tipo: 'prospecto', name: 'LAURA DANIRA GONZALEZ FERNANDEZ', rfc: 'GOFL851023IT6', telefono: '+52 55 1234 5678' };
+  assert.strictEqual(contactoEntregaDelCliente(conCsf), null);
+});
+
+// El telefono compara por la llave de identidad del repo, no como texto: Operam
+// entrega extensiones pegadas al numero y el widget (#176) reescribe el campo.
+test('X10c: el mismo numero empata aunque Operam lo traiga con extension', () => {
+  const contactos = [{ tag: 'general', nombre: 'Patricia Hamui', telefono: '55 5395 2615 ext 116', email: '' }];
+  const r = seleccionContactoEntrega(contactos, { nombre: '', telefono: '+52 55 5395 2615', email: '' });
+  assert.deepStrictEqual(r, { indice: 0, aplicar: true });
+});
+
+test('X11: etiquetaTagContacto traduce el tag del Contacto de la cotizacion', () => {
+  assert.strictEqual(etiquetaTagContacto('contacto'), 'Contacto');
+});
+
+// === seleccionContactoEntrega: que opcion queda elegida y si se pisa lo capturado ===
+// El selector se re-pinta en cada pcRenderTarjeta (cambio de cliente, upgrade fiscal,
+// borrador restaurado). Aplicar la opcion 0 en cada repintada pisaba en silencio el
+// "Entregar a" que el vendedor habia tecleado y que el borrador acababa de restaurar
+// (misma clase de bug que #352). La pregunta es de QUIEN es lo que ya esta en los
+// campos: si es de una de las opciones se completan sus huecos, y si no es de nadie
+// lo escribio una persona y no se toca.
+const CONTACTOS = [
+  { tag: 'domicilio', nombre: 'Adriana Urena', telefono: '55 1072 7542', email: 'a.urena@museo.mx' },
+  { tag: 'contacto', nombre: 'Jorge Orea', telefono: '+52 55 1234 5678', email: 'jorge@orea.mx' },
+];
+
+test('X12: sin nada capturado -> se elige y se aplica la primera opcion (autollenado de siempre)', () => {
+  assert.deepStrictEqual(
+    seleccionContactoEntrega(CONTACTOS, { nombre: '', telefono: '', email: '' }),
+    { indice: 0, aplicar: true },
+  );
+});
+
+test('X13: lo capturado ES una de las opciones -> queda elegida esa', () => {
+  const r = seleccionContactoEntrega(CONTACTOS, { nombre: 'Jorge Orea', telefono: '55 1234 5678', email: 'JORGE@orea.mx' });
+  assert.deepStrictEqual(r, { indice: 1, aplicar: true });
+});
+
+// EL caso del ticket: elegir un Contacto ya escribia su celular y su correo de
+// entrega (pcLlenarCamposContacto) pero nunca su nombre. Esos dos campos son suyos,
+// asi que no son captura ajena que proteger: se completa el hueco de "Entregar a".
+test('X14: capturado el celular y el correo del Contacto, falta el nombre -> se elige y se aplica', () => {
+  const r = seleccionContactoEntrega(CONTACTOS, { nombre: '', telefono: '+52 55 1234 5678', email: 'jorge@orea.mx' });
+  assert.deepStrictEqual(r, { indice: 1, aplicar: true });
+});
+
+test('X15: lo capturado no es ninguna opcion -> "+ Nuevo contacto" y NO se pisa', () => {
+  const r = seleccionContactoEntrega(CONTACTOS, { nombre: 'Recepcion almacen', telefono: '', email: '' });
+  assert.deepStrictEqual(r, { indice: null, aplicar: false });
+});
+
+// Un nombre tecleado a mano manda aunque el celular si sea el del Contacto: el
+// borrador restaurado con "Recepcion almacen" no se vuelve "Jorge Orea" solo.
+test('X16: un solo campo capturado que no corresponde basta para no pisar nada', () => {
+  const r = seleccionContactoEntrega(CONTACTOS, { nombre: 'Recepcion almacen', telefono: '+52 55 1234 5678', email: 'jorge@orea.mx' });
+  assert.deepStrictEqual(r, { indice: null, aplicar: false });
+});
+
+test('X17: sin opciones no hay nada que elegir ni que aplicar', () => {
+  assert.deepStrictEqual(seleccionContactoEntrega([], { nombre: '', telefono: '', email: '' }), { indice: null, aplicar: false });
+  assert.deepStrictEqual(seleccionContactoEntrega(null, null), { indice: null, aplicar: false });
 });

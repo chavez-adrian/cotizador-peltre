@@ -25,6 +25,8 @@ import {
   validarAltaManualMinimos,
   emailFacturaParaUpgrade,
   contactosEntregaDisponibles,
+  contactoEntregaDelCliente,
+  seleccionContactoEntrega,
   etiquetaTagContacto,
   usoCfdiPorDefecto,
   usoCfdiCuentaComoElegido,
@@ -3559,7 +3561,7 @@ function pcCambiarDomicilio() {
   const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
   pcState.domicilioIdx = idx;
   aplicarDomicilio(window._operamDomicilios?.[idx]);
-  pcRenderContactoSelect();
+  pcRenderContactoSelect({ forzarDefault: true });
   pcRenderChips();
 }
 window.pcCambiarDomicilio = pcCambiarDomicilio;
@@ -3569,9 +3571,21 @@ window.pcCambiarDomicilio = pcCambiarDomicilio;
 // con tag de Operam) para que el vendedor elija A QUIEN entregar, con nombre visible
 // -- nunca un telefono/correo suelto sin dueno. Se re-renderiza al cambiar de
 // domicilio (pcCambiarDomicilio) porque el contacto propio del domicilio cambia.
+// Tercera fuente desde #353: el Contacto de la cotizacion (pcState.cliente), que es
+// la unica que hay cuando se cotiza para una persona sin Cliente Operam con contactos.
 function pcContactosDisponibles() {
   const dom = window._operamDomicilios?.[pcState.domicilioIdx || 0];
-  return contactosEntregaDisponibles(dom, window._operamContactosCliente);
+  return contactosEntregaDisponibles(dom, window._operamContactosCliente, contactoEntregaDelCliente(pcState.cliente));
+}
+
+// Lo que hay AHORA en los tres campos de la persona que recibe. Decide si la
+// repintada del selector puede prellenarlos (seleccionContactoEntrega, #353).
+function pcCamposContactoEntrega() {
+  return {
+    nombre: document.getElementById('cl-nombre-entrega')?.value || '',
+    telefono: telefonoDeCampo('cl-cel-entrega'),
+    email: document.getElementById('cl-email-entrega')?.value || '',
+  };
 }
 
 function pcAplicarContacto(c) {
@@ -3602,7 +3616,12 @@ function sincronizarEmailFactura(evento) {
   factura.value = r.factura;
 }
 
-function pcRenderContactoSelect() {
+// `forzarDefault` = el vendedor acaba de cambiar de domicilio: el contacto de ESA
+// sucursal manda aunque los campos traigan al de la anterior. Sin el, la repintada
+// respeta lo capturado (#353): pcRenderTarjeta corre tambien al restaurar un
+// borrador y al volver de un upgrade fiscal, y ahi el prellenado de la opcion 0
+// pisaba en silencio el "Entregar a" que el vendedor ya habia tecleado.
+function pcRenderContactoSelect({ forzarDefault } = {}) {
   const slot = document.getElementById('pc-contacto-slot');
   if (!slot) return;
   const contactos = pcContactosDisponibles();
@@ -3610,18 +3629,21 @@ function pcRenderContactoSelect() {
     slot.innerHTML = '';
     return;
   }
+  const sel = forzarDefault
+    ? { indice: 0, aplicar: true }
+    : seleccionContactoEntrega(contactos, pcCamposContactoEntrega());
   const opciones = contactos.map((c, i) => {
     const tag = etiquetaTagContacto(c.tag);
     const datos = [c.telefono, c.email].filter(Boolean).join(' · ');
     const etiqueta = (c.nombre || 'Sin nombre') + (tag ? ` (${tag})` : '') + (datos ? ' — ' + datos : '');
-    return `<option value="${i}">${escapeHtml(etiqueta)}</option>`;
+    return `<option value="${i}"${sel.indice === i ? ' selected' : ''}>${escapeHtml(etiqueta)}</option>`;
   }).join('');
   slot.innerHTML = '<div class="form-group pc-dom"><label>Contacto de entrega</label>' +
     '<select id="pc-contacto-select" onchange="pcCambiarContacto()">' +
     opciones +
-    '<option value="nuevo">+ Nuevo contacto</option>' +
+    `<option value="nuevo"${sel.indice === null ? ' selected' : ''}>+ Nuevo contacto</option>` +
     '</select></div>';
-  pcAplicarContacto(contactos[0]);
+  if (sel.aplicar) pcAplicarContacto(contactos[sel.indice]);
 }
 
 function pcCambiarContacto() {

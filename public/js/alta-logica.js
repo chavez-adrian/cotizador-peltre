@@ -6,6 +6,7 @@
 
 import { cpValido } from './cotizar-logica.js';
 import { esRegimenValido } from './regimen-fiscal-logica.js';
+import { llaveCelularOrigen } from './origen-logica.js';
 
 // Case-insensitive y sin acentos (NFD): pliega mayusculas y diacriticos para
 // que dos grafias del mismo nombre (con o sin acento) comparen igual.
@@ -995,7 +996,13 @@ export const CEL_CODE_POR_ISO2 = { mx: '+52', us: '+1', ca: '+1-CA' };
 // El contacto propio del domicilio (branch) va primero porque es el mas especifico
 // a esa direccion; los contactos del cliente (contacts[], con su tag de Operam:
 // general/invoice/delivery) le siguen en el orden que trae la API.
-export function contactosEntregaDisponibles(domicilio, contactosCliente) {
+//
+// El Contacto de la cotizacion (la persona del celular, tercera fuente desde #353)
+// va AL FINAL: cotizando para un Contacto sin Cliente Operam con contactos las dos
+// fuentes de Operam quedan vacias, no se pintaba selector y "Entregar a" se tecleaba
+// a mano aunque la app ya sepa como se llama. Ultimo y no primero para que el
+// autollenado por defecto de un Cliente Operam con contactos no cambie.
+export function contactosEntregaDisponibles(domicilio, contactosCliente, contacto) {
   const lista = [];
   const d = domicilio || {};
   if (d.contacto || d.telefono || d.email) {
@@ -1004,13 +1011,71 @@ export function contactosEntregaDisponibles(domicilio, contactosCliente) {
   for (const c of contactosCliente || []) {
     if (c && (c.nombre || c.telefono || c.email)) lista.push(c);
   }
+  if (contacto && (contacto.nombre || contacto.telefono || contacto.email)) lista.push(contacto);
   return lista;
 }
 
-const TAGS_CONTACTO = { general: 'General', invoice: 'Facturacion', delivery: 'Entrega', domicilio: 'Domicilio' };
+// El cliente elegido en el paso Cliente, traducido a entrada del selector. Solo la
+// PERSONA: un Cliente Operam es una razon social y sus personas ya llegan por
+// contacts[] con su rol (glosario: Contacto vs Contacto en Operam). Prospecto y
+// contacto nuevo comparten forma (buildClienteDesdeContactoNuevo/clienteDesdeProspecto),
+// asi que un solo mapeo cubre los dos caminos.
+//
+// El RFC descarta igual que el tipo: el upgrade fiscal (#85) pisa `name` con la
+// razon social del SAT y NO cambia el tipo, asi que un prospecto que ya subio su
+// constancia deja de tener ahi el nombre de la persona. Sin esta guarda, "Entregar
+// a" acabaria diciendo la razon social en MAYUSCULAS, que es lo que se imprime en
+// el documento y viaja como deliver_to del quote.
+export function contactoEntregaDelCliente(cliente) {
+  const c = cliente || {};
+  if (!c.tipo || c.tipo === 'operam' || c.rfc) return null;
+  const entrada = { tag: 'contacto', nombre: c.name || '', telefono: c.telefono || '', email: c.email || '' };
+  return (entrada.nombre || entrada.telefono || entrada.email) ? entrada : null;
+}
+
+const TAGS_CONTACTO = {
+  general: 'General', invoice: 'Facturacion', delivery: 'Entrega', domicilio: 'Domicilio', contacto: 'Contacto',
+};
 
 export function etiquetaTagContacto(tag) {
   return TAGS_CONTACTO[tag] || tag || '';
+}
+
+// Que opcion queda elegida al pintar el selector y si se llenan los campos de
+// entrega con ella (#353). El selector se re-pinta en CADA pcRenderTarjeta (cambio
+// de cliente, upgrade fiscal, borrador restaurado), y aplicar la opcion 0 en cada
+// repintada pisaba en silencio lo que el vendedor tecleo en "Entregar a" y lo que el
+// borrador acababa de restaurar (la clase de bug de #352).
+//
+// La pregunta es de QUIEN es lo que ya esta en los campos, y la contesta la
+// coincidencia: si todo lo capturado que no esta vacio corresponde a una de las
+// opciones, esa persona es la que esta ahi y se aplica para completar los huecos
+// -- ese es el caso que motiva el ticket, porque al elegir un Contacto la app ya
+// escribe su celular y su correo de entrega pero nunca su nombre. Si algo capturado
+// no le corresponde a nadie, lo escribio una persona: queda "+ Nuevo contacto"
+// (indice null) y no se toca nada.
+export function seleccionContactoEntrega(contactos, capturado) {
+  const lista = contactos || [];
+  if (lista.length === 0) return { indice: null, aplicar: false };
+  const cap = capturado || {};
+  if (!cap.nombre && !cap.telefono && !cap.email) return { indice: 0, aplicar: true };
+  const i = lista.findIndex(c => contactoExplicaLoCapturado(c, cap));
+  return i === -1 ? { indice: null, aplicar: false } : { indice: i, aplicar: true };
+}
+
+// Solo se comparan los campos capturados que traen algo: un hueco no descarta a
+// nadie (es justo lo que falta por llenar). El telefono va por su llave de
+// identidad y no como texto: el campo lo reescribe el widget (#176), asi que el
+// mismo numero vuelve del input como "+52 55 ..." y nunca empataria con el
+// "55 ... ext 116" que trae Operam. Se usa la llave canonica del repo y no una
+// copia local, que ademas de derivar se comeria la extension como digitos.
+function contactoExplicaLoCapturado(contacto, capturado) {
+  const c = contacto || {};
+  const igualTexto = (a, b) => normalizarBusqueda(a) === normalizarBusqueda(b);
+  if (capturado.nombre && !igualTexto(c.nombre, capturado.nombre)) return false;
+  if (capturado.email && !igualTexto(c.email, capturado.email)) return false;
+  if (capturado.telefono && llaveCelularOrigen(c.telefono) !== llaveCelularOrigen(capturado.telefono)) return false;
+  return true;
 }
 
 // Uso de CFDI que va al payload (issue #250). Sobre un cliente EXISTENTE el select
