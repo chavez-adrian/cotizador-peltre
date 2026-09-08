@@ -223,9 +223,11 @@ import {
   serializarBorradorFormulario,
   deserializarBorradorFormulario,
   decidirRestauracionFormulario,
-  valoresAplicables,
   campoRestaurable,
   borradorFormularioMuerePorEvento,
+  RESTAURACION_SUPERFICIE,
+  AVISO_CONSTANCIA,
+  planRestauracionFormulario,
 } from './borrador-form-logica.js';
 
 // === TELEFONOS (widget internacional + bloqueo duro con codigo de pais) ===
@@ -4520,6 +4522,9 @@ window.resultadoReunionCotizacion = resultadoReunionCotizacion;
 //                 dejaria vacio y el siguiente autoguardado borraria el dato
 //   alRestaurar   (opcional) repinta UI derivada de esos campos tras prellenar o vaciar
 //   alVaciar      (opcional) limpia lo que no es campo (errores, avisos) al vaciar
+//   restauracion  (opcional) politica de que valores se aplican al restaurar (#352);
+//                 sin ella se aplican todos, que es lo que hace una superficie sin
+//                 constancia de por medio
 const SUPERFICIES_BORRADOR = {
   prospecto: {
     contenedor: 'prospecto-form',
@@ -4537,8 +4542,12 @@ const SUPERFICIES_BORRADOR = {
   // sin logica especial por campo. altaRepintarCsfRestaurada (definida junto al
   // resto del acordeon) es la unica pieza no obvia: sin ella los datos de la CSF
   // quedarian restaurados en el DOM pero invisibles, dentro del <details> colapsado.
+  // SIN_CONSTANCIA (#352): esos campos capturados se guardan pero NO se reponen --
+  // el PDF que los respalda no sobrevive al borrador y reponerlos solos produce un
+  // alta que se ve completa y no respalda la constancia ni conserva las actividades.
   'alta-completa': {
     contenedor: 'panel-alta-cliente',
+    restauracion: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
     esperarListo: () => altaEsperarCatalogosCompletos(),
     // El segundo (#291) completa ciudad/estado del domicilio si el borrador
     // restaurado trae CP y esos dos vacios; lo restaurado con valor no se toca.
@@ -4561,8 +4570,13 @@ const SUPERFICIES_BORRADOR = {
 // es el mismo nodo DOM para cualquier cliente, pero la llave de localStorage no
 // puede serlo -- sin esto, un upgrade abandonado a medias del cliente A
 // reaparece prellenando (con SU rfc/razon social) el upgrade del cliente B.
+// Su contenido es UNICAMENTE la seccion de datos fiscales, o sea exactamente los
+// campos que la constancia deberia llenar: por eso no se prellena (#352). El
+// borrador se sigue guardando -- es lo que delata que el upgrade quedo a medias y
+// permite avisarlo en vez de abrir un formulario vacio sin razon aparente.
 const DEF_UPGRADE_FISCAL = {
   contenedor: 'alta-body-1',
+  restauracion: RESTAURACION_SUPERFICIE.SIN_PRELLENADO,
   esperarListo: () => altaEsperarCatalogosCompletos(),
   alRestaurar: () => altaRepintarCsfRestaurada(),
   alVaciar: () => altaLimpiarAvisosAlta(),
@@ -4684,6 +4698,43 @@ function pintarMarcaBorrador(formId, visible) {
   marca.style.display = 'flex';
 }
 
+// Aviso de "vuelve a cargar la constancia" (#352). Va aparte de la marca "Borrador
+// restaurado" y con otro color: dicen cosas distintas y en el alta completa aparecen
+// juntos -- uno celebra lo que se conservo, el otro explica lo que falta. Se pinta
+// arriba de todo (insertBefore firstChild, igual que la marca) para que quede
+// primero en el cuerpo.
+const TEXTO_AVISO_CONSTANCIA = {
+  [AVISO_CONSTANCIA.ALTA]: 'La constancia no se guarda en el borrador: los datos fiscales quedaron'
+    + ' vac&iacute;os. Vuelve a cargar el PDF de la CSF para continuar (lo comercial y el'
+    + ' domicilio de entrega siguen aqu&iacute;).',
+  [AVISO_CONSTANCIA.UPGRADE]: 'Este upgrade fiscal hab&iacute;a quedado a medias. La constancia'
+    + ' no se guarda en el borrador, as&iacute; que los datos fiscales no se prellenan: vuelve a'
+    + ' cargar el PDF de la CSF (o captura los datos a mano) para continuar.',
+};
+
+function pintarAvisoConstancia(formId, aviso) {
+  const cont = contenedorSuperficie(formId);
+  if (!cont) return;
+  const propio = `borrador-csf-aviso-${formId}`;
+  // El upgrade fiscal es POR CUSTOMER_ID sobre el MISMO nodo: el aviso del cliente
+  // anterior no puede quedarse colgado en el panel del siguiente.
+  for (const otro of cont.querySelectorAll('[id^="borrador-csf-aviso-"]')) {
+    if (otro.id !== propio) otro.style.display = 'none';
+  }
+  let el = document.getElementById(propio);
+  const texto = TEXTO_AVISO_CONSTANCIA[aviso];
+  if (!texto) { if (el) el.style.display = 'none'; return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = propio;
+    el.style.cssText = 'margin-bottom:12px;padding:8px 10px;border-radius:6px;'
+      + 'background:#e7f1fb;border:1px solid #9dc2e8;font-size:13px;color:#1c4f80';
+    cont.insertBefore(el, cont.firstChild);
+  }
+  el.innerHTML = texto;
+  el.style.display = 'block';
+}
+
 // Prellena la superficie con su borrador. Marca la superficie como restaurada
 // ANTES de leer el storage: a partir de ahi el autoguardado ya puede escribir, y
 // hasta ahi no, para que ningun evento previo pise el borrador que se esta
@@ -4710,18 +4761,28 @@ async function restaurarBorradorFormulario(formId) {
   }
   if (decision !== RESTAURACION_FORM.PREFILL) return;
   const campos = camposSuperficie(formId);
-  const valores = valoresAplicables(borrador, campos.map(c => c.id));
+  // Que valores se aplican y cual se omite lo decide el nucleo puro (#352): aqui
+  // solo se escribe lo que autorizo y se pinta el aviso que devolvio.
+  const plan = planRestauracionFormulario({
+    borrador,
+    idsPresentes: campos.map(c => c.id),
+    superficie: def.restauracion,
+  });
   // Solo se prellena el campo que sigue en su default: esperar `esperarListo`
   // deja una ventana en la que el vendedor ya puede estar tecleando (abrir la
   // captura rapida enfoca el celular de inmediato), y prellenar encima le
   // borraria lo que acaba de escribir. Contra el default y no contra "vacio"
   // porque hay campos que nacen con valor, como el <select> de lada.
-  const aplicados = campos.filter(c => valores[c.id] !== undefined
+  const aplicados = campos.filter(c => plan.valores[c.id] !== undefined
     && leerCampoSuperficie(c) === valorDefaultCampo(c));
-  if (aplicados.length === 0) return;
-  for (const campo of aplicados) escribirCampoSuperficie(campo, valores[campo.id]);
-  def.alRestaurar?.();
-  pintarMarcaBorrador(formId, true);
+  if (aplicados.length > 0) {
+    for (const campo of aplicados) escribirCampoSuperficie(campo, plan.valores[campo.id]);
+    def.alRestaurar?.();
+    pintarMarcaBorrador(formId, true);
+  }
+  // El aviso va aunque no se haya aplicado NADA: es justo el caso del upgrade
+  // fiscal y el del alta cuyo borrador solo traia los campos de la constancia.
+  pintarAvisoConstancia(formId, plan.aviso);
 }
 
 // El "montado" se marca en el NODO, no en un Set por formId (#185): las
@@ -4752,6 +4813,11 @@ function abrirFormularioBorrador(formId) {
   cont.style.display = 'block';
   superficiesAbiertas.add(formId);
   superficiesRestauradas.delete(formId);
+  // Ninguna superficie abre con un aviso heredado (#352): el del upgrade fiscal del
+  // cliente ANTERIOR vive en el mismo nodo, y la restauracion puede terminar por
+  // cualquiera de sus salidas tempranas sin llegar a pintar nada. Solo el plan de
+  // restauracion de abajo puede encender uno.
+  pintarAvisoConstancia(formId, null);
   return restaurarBorradorFormulario(formId);
 }
 
@@ -4765,6 +4831,7 @@ function cerrarFormularioBorrador(formId, evento, { ocultar = true } = {}) {
   superficiesRestauradas.delete(formId);
   matarBorradorFormulario(formId, evento);
   pintarMarcaBorrador(formId, false);
+  pintarAvisoConstancia(formId, null);
   if (!ocultar) return;
   const cont = contenedorSuperficie(formId);
   if (cont) cont.style.display = 'none';
@@ -4801,6 +4868,7 @@ window.limpiarBorradorFormulario = formId => {
   matarBorradorFormulario(formId, EVENTOS_BORRADOR_FORM.LIMPIADO);
   vaciarCamposSuperficie(formId);
   pintarMarcaBorrador(formId, false);
+  pintarAvisoConstancia(formId, null);
 };
 
 // === PROSPECTOS (issue #41) ===
@@ -7108,8 +7176,12 @@ async function altaCsfProcesarArchivo(file) {
     // NO dispara 'input'/'change' -- sin este guardado explicito, los datos que
     // el parseo acaba de rellenar no entrarian al borrador hasta el siguiente
     // click/tecleo del vendedor en el contenedor.
-    autoguardarBorradorFormulario(altaCsfState.modoUpgrade != null
-      ? `upgrade-fiscal-${altaCsfState.modoUpgrade}` : 'alta-completa');
+    const formIdCsf = altaCsfState.modoUpgrade != null
+      ? `upgrade-fiscal-${altaCsfState.modoUpgrade}` : 'alta-completa';
+    autoguardarBorradorFormulario(formIdCsf);
+    // La constancia ya esta cargada: el aviso de volver a cargarla (#352) sale de
+    // pantalla en cuanto deja de ser cierto.
+    pintarAvisoConstancia(formIdCsf, null);
   } catch (err) {
     altaCsfSetStatus('error', { mensaje: 'Error al leer el PDF: ' + err.message });
   }

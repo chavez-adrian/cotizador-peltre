@@ -8,6 +8,8 @@ let deserializarBorradorFormulario;
 let RESTAURACION_FORM, decidirRestauracionFormulario;
 let valoresAplicables, campoRestaurable;
 let EVENTOS_BORRADOR_FORM, borradorFormularioMuerePorEvento;
+let RESTAURACION_SUPERFICIE, AVISO_CONSTANCIA, planRestauracionFormulario;
+let esCampoDeConstancia, esCampoDeCapturaManual;
 
 const AHORA = 1755400000000;
 const MINUTO = 60 * 1000;
@@ -30,8 +32,25 @@ before(async () => {
     RESTAURACION_FORM, decidirRestauracionFormulario,
     valoresAplicables, campoRestaurable,
     EVENTOS_BORRADOR_FORM, borradorFormularioMuerePorEvento,
+    RESTAURACION_SUPERFICIE, AVISO_CONSTANCIA, planRestauracionFormulario,
+    esCampoDeConstancia, esCampoDeCapturaManual,
   } = await import('../borrador-form-logica.js'));
 });
+
+// Borrador guardado como lo guarda la superficie de verdad y leido como lo lee:
+// el plan nunca se prueba contra un objeto inventado a mano (#350, criterio 5).
+function borradorGuardado(formId, valores) {
+  return deserializarBorradorFormulario(
+    JSON.stringify(serializarBorradorFormulario({ formId, valores, ahora: AHORA })),
+    formId,
+  );
+}
+
+const CAMPOS_ALTA = [
+  'csf-rfc', 'csf-razon-social', 'csf-nombre-corto', 'csf-calle', 'csf-cp',
+  'manual-rfc', 'manual-razon-social',
+  'alta-lista-precios', 'alta-segmento', 'cl-email-factura', 'env-calle',
+];
 
 test('la llave del borrador de formulario separa por formulario y por vendedor', () => {
   assert.equal(llaveBorradorFormulario('prospecto', 3), 'borrador:form:prospecto:3');
@@ -216,6 +235,121 @@ test('nada mas mata el borrador: salir de la sesion o un evento ajeno lo conserv
   assert.equal(borradorFormularioMuerePorEvento(EVENTOS_BORRADOR_FORM.LOGOUT), false);
   assert.equal(borradorFormularioMuerePorEvento('cerrar-formulario'), false);
   assert.equal(borradorFormularioMuerePorEvento(undefined), false);
+});
+
+// === Que valores se aplican al restaurar (issue #352) ===
+
+test('los campos que llena la constancia se reconocen por concepto, en un solo lugar', () => {
+  assert.equal(esCampoDeConstancia('csf-rfc'), true);
+  assert.equal(esCampoDeConstancia('csf-regimen-fiscal'), true);
+  assert.equal(esCampoDeConstancia('manual-rfc'), false);
+  assert.equal(esCampoDeConstancia('alta-segmento'), false);
+  assert.equal(esCampoDeConstancia(''), false);
+  assert.equal(esCampoDeConstancia(null), false);
+  assert.equal(esCampoDeCapturaManual('manual-razon-social'), true);
+  assert.equal(esCampoDeCapturaManual('csf-razon-social'), false);
+  assert.equal(esCampoDeCapturaManual(undefined), false);
+});
+
+test('el alta del camino CSF no repone los campos fiscales: el archivo no sobrevive al borrador', () => {
+  const borrador = borradorGuardado('alta-completa', {
+    'csf-rfc': 'OGA140604560',
+    'csf-razon-social': 'OPERADORA GASTRONOMICA',
+    'csf-calle': 'Reforma',
+    'alta-lista-precios': '3',
+    'cl-email-factura': 'pagos@ejemplo.mx',
+    'env-calle': 'Bodega 4',
+  });
+  const plan = planRestauracionFormulario({
+    borrador, idsPresentes: CAMPOS_ALTA, superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+  });
+  assert.deepEqual(plan.valores, {
+    'alta-lista-precios': '3',
+    'cl-email-factura': 'pagos@ejemplo.mx',
+    'env-calle': 'Bodega 4',
+  });
+  assert.deepEqual(plan.omitidos.sort(), ['csf-calle', 'csf-razon-social', 'csf-rfc']);
+  assert.equal(plan.aviso, AVISO_CONSTANCIA.ALTA);
+});
+
+test('un alta que nunca vio una constancia se restaura completa y sin aviso', () => {
+  const borrador = borradorGuardado('alta-completa', {
+    'alta-lista-precios': '3', 'env-calle': 'Bodega 4',
+  });
+  const plan = planRestauracionFormulario({
+    borrador, idsPresentes: CAMPOS_ALTA, superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+  });
+  assert.deepEqual(plan.valores, { 'alta-lista-precios': '3', 'env-calle': 'Bodega 4' });
+  assert.deepEqual(plan.omitidos, []);
+  assert.equal(plan.aviso, null);
+});
+
+test('el borrador de captura a mano se restaura como siempre, tambien el mixto', () => {
+  const manual = borradorGuardado('alta-completa', {
+    'manual-rfc': 'OGA140604560', 'manual-razon-social': 'OPERADORA', 'alta-segmento': '7',
+  });
+  const planManual = planRestauracionFormulario({
+    borrador: manual, idsPresentes: CAMPOS_ALTA, superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+  });
+  assert.deepEqual(planManual.valores, {
+    'manual-rfc': 'OGA140604560', 'manual-razon-social': 'OPERADORA', 'alta-segmento': '7',
+  });
+  assert.equal(planManual.aviso, null);
+
+  // Mixto (se cargo una CSF y luego se capturo a mano): manda el camino manual, o sea
+  // que lo tecleado a mano se restaura y no se pide constancia alguna. Los campos de la
+  // constancia siguen sin reponerse: el archivo tampoco esta en este borrador, y
+  // reponerlos dejaria la pestana CSF completa y a un clic de dar de alta sin respaldo.
+  const mixto = borradorGuardado('alta-completa', {
+    'csf-rfc': 'OGA140604560', 'manual-rfc': 'XAXX010101000', 'alta-segmento': '7',
+  });
+  const planMixto = planRestauracionFormulario({
+    borrador: mixto, idsPresentes: CAMPOS_ALTA, superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+  });
+  assert.deepEqual(planMixto.valores, { 'manual-rfc': 'XAXX010101000', 'alta-segmento': '7' });
+  assert.deepEqual(planMixto.omitidos, ['csf-rfc']);
+  assert.equal(planMixto.aviso, null, 'el camino manual no pide constancia');
+});
+
+test('el upgrade fiscal a medias no prellena nada, pero lo dice', () => {
+  const borrador = borradorGuardado('upgrade-fiscal-15', {
+    'csf-rfc': 'OGA140604560', 'csf-razon-social': 'OPERADORA GASTRONOMICA',
+  });
+  const plan = planRestauracionFormulario({
+    borrador, idsPresentes: ['csf-rfc', 'csf-razon-social', 'manual-rfc'],
+    superficie: RESTAURACION_SUPERFICIE.SIN_PRELLENADO,
+  });
+  assert.deepEqual(plan.valores, {});
+  assert.deepEqual(plan.omitidos.sort(), ['csf-razon-social', 'csf-rfc']);
+  assert.equal(plan.aviso, AVISO_CONSTANCIA.UPGRADE);
+});
+
+test('sin borrador que reanudar no hay aviso que dar', () => {
+  for (const superficie of [...Object.values(RESTAURACION_SUPERFICIE), undefined]) {
+    const plan = planRestauracionFormulario({ borrador: null, idsPresentes: CAMPOS_ALTA, superficie });
+    assert.deepEqual(plan.valores, {});
+    assert.deepEqual(plan.omitidos, []);
+    assert.equal(plan.aviso, null);
+  }
+});
+
+test('una superficie sin constancia de por medio (prospecto, edicion) restaura todo, como hoy', () => {
+  const borrador = borradorGuardado('prospecto', { 'pr-nombre': 'Juan', 'pr-ciudad': 'Puebla' });
+  const plan = planRestauracionFormulario({ borrador, idsPresentes: ['pr-nombre', 'pr-ciudad'] });
+  assert.deepEqual(plan.valores, { 'pr-nombre': 'Juan', 'pr-ciudad': 'Puebla' });
+  assert.deepEqual(plan.omitidos, []);
+  assert.equal(plan.aviso, null);
+});
+
+test('un campo de constancia que el formulario ya no tiene no dispara el aviso', () => {
+  const borrador = borradorGuardado('alta-completa', {
+    'csf-fax': '5555', 'alta-lista-precios': '3',
+  });
+  const plan = planRestauracionFormulario({
+    borrador, idsPresentes: CAMPOS_ALTA, superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+  });
+  assert.deepEqual(plan.valores, { 'alta-lista-precios': '3' });
+  assert.equal(plan.aviso, null);
 });
 
 test('un borrador cuyos campos quedaron todos vacios no es nada que restaurar', () => {

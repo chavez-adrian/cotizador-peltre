@@ -106,6 +106,80 @@ export function valoresAplicables(borrador, idsPresentes) {
   return salida;
 }
 
+// Que valores del borrador se APLICAN al restaurar (issue #352). El borrador
+// guarda el DOM, no el estado de JS: el PDF de la constancia (altaCsfState.pdfBase64),
+// el RFC dueno de ese PDF y las actividades economicas de #171 NO sobreviven. Reponer
+// los campos que la constancia llena, sin lo que la constancia trae consigo, deja un
+// panel que se ve identico a tener la CSF cargada y da de alta sin respaldo en Dropbox
+// y sin la nota de actividades -- en silencio. La salida no es guardar el archivo (son
+// megabytes en localStorage) sino no fingir que esta: esos campos no se aplican y se
+// pide cargar la constancia de nuevo.
+//
+// La politica la declara cada superficie en su definicion (SUPERFICIES_BORRADOR en
+// app.js); aqui se decide que se aplica y que se avisa. No declararla es la politica
+// de siempre -- se repone todo lo capturado --, que es lo que corresponde a una
+// superficie sin constancia de por medio (prospecto, edicion de prospecto).
+export const RESTAURACION_SUPERFICIE = {
+  // Alta completa: lo comercial y el domicilio de entrega se reponen -- son lo caro de
+  // recapturar y no dependen de la CSF --, los campos de la constancia no.
+  SIN_CONSTANCIA: 'sin-constancia',
+  // Upgrade fiscal: su superficie es UNICAMENTE la seccion de datos fiscales, asi que
+  // restaurarla a medias es justo el bug. No se prellena nada.
+  SIN_PRELLENADO: 'sin-prellenado',
+};
+
+// Aviso que el vendedor tiene que ver para saber por que el panel esta vacio. Es
+// distinto de la marca "Borrador restaurado" (dicen cosas distintas y aparecen juntos)
+// y el texto lo pone el pegamento: aqui solo se decide cual toca.
+export const AVISO_CONSTANCIA = {
+  ALTA: 'recargar-constancia-alta',
+  UPGRADE: 'recargar-constancia-upgrade',
+};
+
+// El grupo "campos que llena la constancia" se declara UNA vez y por concepto: son
+// los de la pestana CSF de la Seccion 1 (altaCsfPonerDatos los escribe), que se
+// distinguen de los de captura a mano por el prefijo de su id.
+const PREFIJO_CONSTANCIA = 'csf-';
+const PREFIJO_CAPTURA_MANUAL = 'manual-';
+
+export function esCampoDeConstancia(id) {
+  return String(id == null ? '' : id).startsWith(PREFIJO_CONSTANCIA);
+}
+
+export function esCampoDeCapturaManual(id) {
+  return String(id == null ? '' : id).startsWith(PREFIJO_CAPTURA_MANUAL);
+}
+
+// Borrador + campos del formulario de hoy -> que se escribe, que se omitio y que
+// aviso toca. `omitidos` es informacion para quien quiera explicarlo; el aviso es
+// lo que decide si se pinta algo.
+export function planRestauracionFormulario({ borrador, idsPresentes, superficie } = {}) {
+  const aplicables = valoresAplicables(borrador, idsPresentes);
+  const campos = Object.keys(aplicables);
+  if (campos.length === 0) return { valores: {}, omitidos: [], aviso: null };
+
+  if (superficie === RESTAURACION_SUPERFICIE.SIN_PRELLENADO) {
+    return { valores: {}, omitidos: campos, aviso: AVISO_CONSTANCIA.UPGRADE };
+  }
+  if (superficie === RESTAURACION_SUPERFICIE.SIN_CONSTANCIA) {
+    const omitidos = [];
+    const valores = {};
+    for (const campo of campos) {
+      if (esCampoDeConstancia(campo)) omitidos.push(campo);
+      else valores[campo] = aplicables[campo];
+    }
+    // Un borrador mixto (se cargo una CSF y luego se capturo a mano) se rige por el
+    // camino manual: lo tecleado se repone y no se pide constancia, porque ahi el dato
+    // que vale es el del formulario y no depende de ningun archivo. Lo que NO cambia es
+    // que los campos de la constancia se queden vacios: reponerlos dejaria la pestana
+    // CSF completa, sin archivo detras, a un clic de dar de alta sin respaldo.
+    const hayCapturaManual = campos.some(esCampoDeCapturaManual);
+    const aviso = !hayCapturaManual && omitidos.length ? AVISO_CONSTANCIA.ALTA : null;
+    return { valores, omitidos, aviso };
+  }
+  return { valores: aplicables, omitidos: [], aviso: null };
+}
+
 // Campos que el borrador nunca toca. El input de archivo porque el navegador no
 // deja re-poblarlo (limitacion real, no decision); el de password porque una
 // credencial no es captura que valga la pena conservar en el dispositivo; los
