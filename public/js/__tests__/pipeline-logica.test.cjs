@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar } =
     await import('../pipeline-logica.js'));
 });
 
@@ -408,6 +408,26 @@ test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece elegir o crear nue
   // #204 (ajuste): "Dejar como PRE" se quito -- dejaba un documento entregable
   // con el duplicado sin resolver. Se resuelve o el registro muere a las 24h.
   assert.doesNotMatch(html, /Dejar como PRE/);
+});
+
+// #368: el formulario de alta reusa la MISMA pieza con las tres salidas en
+// palabras del glosario y sus propios onclick, que reciben el indice del
+// candidato (el navegador ya tiene el cuerpo de reintento de cada uno).
+test('#368: buildCandidatosAltaHtml ofrece las tres salidas del formulario con los textos del glosario', () => {
+  const html = buildCandidatosAltaHtml(
+    [{ id: 55, CustName: 'Duplicado SA', cust_ref: 'Dup', celularMatch: 'coincide', correoMatch: 'sin_dato' }],
+    'Ya hay un Cliente Operam parecido: elige uno para continuar',
+  );
+  assert.match(html, /Usar este Cliente Operam/);
+  assert.match(html, /Es otro domicilio de este Cliente Operam/);
+  assert.match(html, /Ninguno es el mismo/);
+  assert.match(html, /altaPreguntaUsar\(0\)/);
+  assert.match(html, /altaPreguntaOtroDomicilio\(0\)/);
+  assert.match(html, /altaPreguntaNinguno\(\)/);
+  // Los mismos hechos que la pantalla de cotizar: es la misma pieza (#210).
+  assert.match(html, /Celular: coincide/);
+  assert.match(html, /Correo: sin dato/);
+  assert.doesNotMatch(html, /sucursal/i, 'la palabra sucursal no sale al vendedor');
 });
 
 // #196: el separador ad hoc " . cust_ref" migra al formato unificado de

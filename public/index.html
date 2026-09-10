@@ -498,6 +498,10 @@
                    un 400 no trae `steps`, asi que no hay fila donde pintarlo y hasta
                    #213 el error se descartaba y el vendedor no veia absolutamente nada. -->
               <div id="alta-sec4-error" style="display:none;margin-bottom:8px;padding:10px 12px;border:1px solid var(--danger);border-radius:var(--radius);background:#fff5f5;color:var(--danger);font-size:13px;line-height:1.4"></div>
+              <!-- La pregunta de duplicado con sus tres salidas (#368). No es un error:
+                   el alta no se completo porque falta una decision del vendedor, y por
+                   eso vive fuera del banner rojo. Misma pieza que la pantalla de cotizar. -->
+              <div id="alta-sec4-pregunta" style="display:none;margin-bottom:8px"></div>
               <!-- Boton principal -->
               <button class="btn btn-primary" id="alta-btn-dar-alta" style="width:100%;margin-bottom:8px" onclick="altaDarDeAlta()">
                 Dar de alta

@@ -8,6 +8,8 @@ import {
   buildCandidatosRfcGenericoHtml,
   buildAltaDarDeAltaPayload,
   interpretarRespuestaAlta,
+  cuerpoDeReintentoAlta,
+  pdfCsfParaRespaldo,
   errorAltaSinConfirmar,
   ALTA_PASO_FILAS,
   buildClienteDesdeAlta,
@@ -105,6 +107,7 @@ import {
   botonCompletarHtml,
   interpretarSubidaOperam,
   buildOperamStatusHtml,
+  buildCandidatosAltaHtml,
   LEYENDA_DEDUP_PENDIENTE,
   interpretarActualizacionOperam,
   buildActualizacionStatusHtml,
@@ -7579,21 +7582,31 @@ async function altaDedupSelCandidato(clienteId) {
   await altaDedupUsarCliente(clienteId);
 }
 
-function altaDedupMostrarDomicilios(clienteId, domicilios) {
-  const dedupDiv = document.getElementById('alta-dedup-resultado');
+// La lista de domicilios de entrega del Cliente Operam elegido. La comparten los
+// dos momentos en que el vendedor elige uno (#368): la dedup previa de la
+// Seccion 1 y la pregunta de duplicado de la Seccion 4. Lo unico que cambia son
+// el contenedor y los handlers, que cada uno dicta -- el nombre viaja como texto
+// porque el onchange inline resuelve contra window (#112).
+function altaDedupMostrarDomicilios(clienteId, domicilios, opciones = {}) {
+  const dedupDiv = opciones.contenedor || document.getElementById('alta-dedup-resultado');
   if (!dedupDiv) return;
+  // El branch_code de cada domicilio se guarda aqui: los radios mandan el indice y
+  // el handler lo traduce al codigo real, que es lo que entiende Operam (#252).
+  altaState.domiciliosCliente = domicilios;
+  const alSeleccionar = opciones.alSeleccionar || 'altaDedupSelDomicilio';
+  const alCrearNuevo = opciones.alCrearNuevo || 'altaDedupNuevoDomicilio';
   const items = domicilios.map((d, i) =>
     '<label style="display:block;padding:4px 0;cursor:pointer">' +
-    '<input type="radio" name="dedup-domicilio" value="' + i + '" onchange="altaDedupSelDomicilio(' + clienteId + ',' + i + ')">' +
+    '<input type="radio" name="dedup-domicilio" value="' + i + '" onchange="' + alSeleccionar + '(' + clienteId + ',' + i + ')">' +
     ' ' + (d.descripcion || 'Domicilio ' + (i + 1)) + ' - ' + (d.calle || '') + ', ' + (d.municipio || '') +
     '</label>'
   ).join('');
   const crearOpcion =
     '<label style="display:block;padding:4px 0;cursor:pointer">' +
-    '<input type="radio" name="dedup-domicilio" value="nuevo" onchange="altaDedupNuevoDomicilio(' + clienteId + ')">' +
+    '<input type="radio" name="dedup-domicilio" value="nuevo" onchange="' + alCrearNuevo + '(' + clienteId + ')">' +
     ' Crear nuevo domicilio' +
     '</label>';
-  const existingDedup = dedupDiv.querySelector('.dedup-exacto, .dedup-candidatos');
+  const existingDedup = opciones.contenedor ? null : dedupDiv.querySelector('.dedup-exacto, .dedup-candidatos');
   const domDiv = document.createElement('div');
   domDiv.className = 'dedup-domicilios';
   domDiv.innerHTML = '<p style="font-weight:600;font-size:13px;margin-top:12px">Selecciona un domicilio de entrega:</p>' + items + crearOpcion;
@@ -7601,13 +7614,20 @@ function altaDedupMostrarDomicilios(clienteId, domicilios) {
   else dedupDiv.appendChild(domDiv);
 }
 
+// El codigo de Operam del domicilio que el vendedor eligio por su posicion en la
+// lista. Sin el, la eleccion se queda en un indice que nadie puede traducir.
+function altaBranchCodeDeIndice(idx) {
+  const d = (altaState.domiciliosCliente || [])[idx];
+  return d && d.branch_code != null ? d.branch_code : null;
+}
+
 function altaDedupSelDomicilio(clienteId, domicilioIdx) {
-  altaState.clienteExistente = { id: clienteId, branchIdx: domicilioIdx };
+  altaState.clienteExistente = { id: clienteId, branchIdx: domicilioIdx, branchCode: altaBranchCodeDeIndice(domicilioIdx) };
   altaDedupDesbloquear();
 }
 
 function altaDedupNuevoDomicilio(clienteId) {
-  altaState.clienteExistente = { id: clienteId, branchIdx: 'nuevo' };
+  altaState.clienteExistente = { id: clienteId, branchIdx: 'nuevo', branchCode: null };
   altaDedupDesbloquear();
 }
 
@@ -7861,23 +7881,29 @@ function altaSec4Error(mensaje) {
   else { el.textContent = ''; el.style.display = 'none'; }
 }
 
-function altaDarDeAlta() {
-  const btn = document.getElementById('alta-btn-dar-alta');
-  const reintBtn = document.getElementById('alta-btn-reintentar');
-  const exitoDiv = document.getElementById('alta-btns-exito');
+// La pregunta de duplicado del formulario (#368). Vive aparte de altaState porque
+// muere con la pregunta: en cuanto el vendedor elige una salida deja de aplicar.
+// `opciones` son los cuerpos de reintento que dicto el SERVIDOR y que el navegador
+// solo reenvia; `candidatos` es lo que se esta pintando, en el mismo orden que los
+// indices que llevan los botones.
+const altaPreguntaState = { opciones: null, candidatos: [] };
 
+function altaSec4Pregunta(pregunta) {
+  altaPreguntaState.opciones = pregunta ? pregunta.opciones : null;
+  altaPreguntaState.candidatos = pregunta ? pregunta.candidatos : [];
+  const el = document.getElementById('alta-sec4-pregunta');
+  if (!el) return;
+  if (!pregunta) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.innerHTML = buildCandidatosAltaHtml(pregunta.candidatos, pregunta.mensaje);
+  el.style.display = '';
+}
+
+function altaDarDeAlta() {
   const csfDatos = altaState.datos || altaCsfState.datos || {};
   // Guardia ANTES de deshabilitar el boton y de resetear los pasos (#213): sin RFC el
   // POST muere en un 400 y hasta ahora eso se veia igual que no hacer nada.
   const errPrevio = errorAltaSinConfirmar(csfDatos);
   if (errPrevio) { altaSec4Error(errPrevio); return; }
-
-  if (btn) btn.disabled = true;
-  if (reintBtn) reintBtn.style.display = 'none';
-  if (exitoDiv) exitoDiv.style.display = 'none';
-  altaSec4Error(null);
-
-  altaPasosReset();
 
   const getComercial = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   const domicilio = altaState.domicilio || {};
@@ -7895,15 +7921,46 @@ function altaDarDeAlta() {
     invoice_email: getComercial('alta-email-factura'),
     celular_nota: telefonoDeCampo('alta-celular'),
   };
+  // La salida de la dedup previa del navegador, por fin leida (#252): "usar este
+  // Cliente Operam" con el domicilio de entrega que el vendedor eligio entre los
+  // suyos, o "es otro domicilio de este cliente" cuando pidio crear uno. Hasta
+  // ahora ese radio solo fijaba un branchIdx que no leia nadie.
+  const elegido = altaState.clienteExistente || {};
+  const decision = esClienteExistente
+    ? {
+      tipo: elegido.branchIdx === 'nuevo' ? 'otro-domicilio' : 'usar',
+      clienteId: elegido.id,
+      ...(elegido.branchIdx !== 'nuevo' && elegido.branchCode != null ? { domicilioId: elegido.branchCode } : {}),
+    }
+    : null;
   const payload = buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, resolvedCustomerId, altaState.branch_id, {
     clienteExistente: esClienteExistente,
     usoCfdiElegido: altaState.usoCfdiElegido === true,
+    decision,
     // El PDF de la constancia y el RFC del que salio, para que pdfCsfParaRespaldo
     // decida si este alta es la duena de ese archivo (#350).
     pdfBase64: altaCsfState.pdfBase64,
     pdfRfc: altaCsfState.rfc,
   });
 
+  altaEnviarAlta(payload);
+}
+
+// El POST del alta y todo lo que se pinta con su respuesta. Lo comparten el boton
+// "Dar de alta" y el reintento con el cuerpo que dicta el servidor al contestar la
+// pregunta de duplicado (#368): es el MISMO endpoint y el mismo reporte de pasos.
+function altaEnviarAlta(payload) {
+  const btn = document.getElementById('alta-btn-dar-alta');
+  const reintBtn = document.getElementById('alta-btn-reintentar');
+  const exitoDiv = document.getElementById('alta-btns-exito');
+
+  if (btn) btn.disabled = true;
+  if (reintBtn) reintBtn.style.display = 'none';
+  if (exitoDiv) exitoDiv.style.display = 'none';
+  altaSec4Error(null);
+  altaSec4Pregunta(null);
+
+  altaPasosReset();
   ALTA_PASO_FILAS.forEach(i => altaPasoSetStatus(i, 'loading'));
 
   const token = window._authToken || localStorage.getItem('token') || '';
@@ -7927,6 +7984,9 @@ function altaDarDeAlta() {
       const vista = interpretarRespuestaAlta(data);
       vista.filas.forEach(f => altaPasoSetStatus(f.fila, f.status, f.msg, f.detalle));
       altaSec4Error(vista.mensajeError);
+      // La pregunta de duplicado con sus tres salidas (#368): no es un fallo, es
+      // una decision pendiente, y de ahi sale el cuerpo con el que se reintenta.
+      altaSec4Pregunta(vista.pregunta);
 
       if (vista.exito) {
         // Marca de "este panel ya cumplio" (#192): la lee estadoAltaAlAbrirPanel
@@ -7961,6 +8021,83 @@ function altaDarDeAlta() {
 
 function altaReintentar() {
   altaDarDeAlta();
+}
+
+// Las TRES salidas de la Deduplicacion de cliente en el formulario (#368). Reciben
+// el INDICE del candidato que pinto la pieza compartida; el cuerpo con el que se
+// reintenta lo dicto el servidor y aqui solo se elige cual. Expuestas a window
+// JUNTO a su declaracion porque el onclick inline resuelve contra window (#112).
+function altaPreguntaUsar(idx) {
+  const candidato = altaPreguntaState.candidatos[idx];
+  if (!candidato) return;
+  altaPreguntaElegirDomicilio(candidato.id);
+}
+window.altaPreguntaUsar = altaPreguntaUsar;
+
+function altaPreguntaOtroDomicilio(idx) {
+  const candidato = altaPreguntaState.candidatos[idx];
+  if (!candidato) return;
+  altaPreguntaReintentar({ tipo: 'otro-domicilio', clienteId: candidato.id });
+}
+window.altaPreguntaOtroDomicilio = altaPreguntaOtroDomicilio;
+
+function altaPreguntaNinguno() {
+  altaPreguntaReintentar({ tipo: 'ninguno' });
+}
+window.altaPreguntaNinguno = altaPreguntaNinguno;
+
+// "Usar este Cliente Operam" con varios domicilios de entrega: el vendedor tiene
+// que decir a cual va la operacion, o la cotizacion heredaria el primero de la
+// lista (#252). Con uno solo no hay nada que elegir y se reintenta de una vez.
+async function altaPreguntaElegirDomicilio(clienteId) {
+  try {
+    const res = await api('/api/operam/clientes/' + clienteId + '/domicilios');
+    if (!res.ok) throw new Error('Error ' + res.status);
+    const { domicilios } = await res.json();
+    const lista = domicilios || [];
+    if (lista.length <= 1) {
+      altaState.domiciliosCliente = lista;
+      altaPreguntaReintentar({ tipo: 'usar', clienteId }, { domicilioId: lista[0] ? lista[0].branch_code : null });
+      return;
+    }
+    altaDedupMostrarDomicilios(clienteId, lista, {
+      contenedor: document.getElementById('alta-sec4-pregunta'),
+      alSeleccionar: 'altaPreguntaSelDomicilio',
+      alCrearNuevo: 'altaPreguntaNuevoDomicilio',
+    });
+  } catch (err) {
+    altaSec4Error('No se pudieron leer los domicilios de entrega del Cliente Operam: ' + (err && err.message ? err.message : 'error de red'));
+  }
+}
+
+function altaPreguntaSelDomicilio(clienteId, idx) {
+  altaPreguntaReintentar({ tipo: 'usar', clienteId }, { domicilioId: altaBranchCodeDeIndice(idx) });
+}
+window.altaPreguntaSelDomicilio = altaPreguntaSelDomicilio;
+
+function altaPreguntaNuevoDomicilio(clienteId) {
+  altaPreguntaReintentar({ tipo: 'otro-domicilio', clienteId });
+}
+window.altaPreguntaNuevoDomicilio = altaPreguntaNuevoDomicilio;
+
+function altaPreguntaReintentar(eleccion, extras) {
+  const csfDatos = altaState.datos || altaCsfState.datos || {};
+  const cuerpo = cuerpoDeReintentoAlta(altaPreguntaState.opciones, eleccion, {
+    ...(extras || {}),
+    // El PDF de la constancia no vuelve en el 428 (pesa): se readjunta aqui, y
+    // solo cuando la salida elegida va a CREAR el Cliente Operam (#350).
+    pdfBase64: pdfCsfParaRespaldo({
+      pdfBase64: altaCsfState.pdfBase64,
+      pdfRfc: altaCsfState.rfc,
+      rfc: csfDatos.rfc,
+      clienteExistente: eleccion.tipo !== 'ninguno',
+    }),
+  });
+  if (!cuerpo) {
+    altaSec4Error('No se pudo continuar con la respuesta del servidor: vuelve a presionar "Dar de alta".');
+    return;
+  }
+  altaEnviarAlta(cuerpo);
 }
 
 async function altaCotizarAhora() {

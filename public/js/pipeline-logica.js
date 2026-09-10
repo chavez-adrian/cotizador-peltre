@@ -242,8 +242,14 @@ function textoCustRefIgual(c) {
 // #210: cada candidato trae hechos (diferenciaNombre, celularMatch, correoMatch)
 // que se pintan como evidencia -- ninguna combinacion bloquea ni deshabilita
 // Elegir/Crear nuevo, el humano sigue decidiendo.
-export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
-  const items = (candidatos || []).map(c => {
+// LA pieza de los candidatos, compartida por los dos sitios donde el vendedor
+// contesta la pregunta de duplicado (#368): la pantalla de cotizar y el
+// formulario de alta. Mismo HTML y mismos hechos; lo unico que cambia son las
+// etiquetas y los `onclick`, que cada pantalla dicta en `acciones` --
+// `{ usar, otroDomicilio, ninguno }`, cada una `{ texto, onclick }`, donde
+// `onclick` recibe el candidato y su indice y devuelve la llamada ya escrita.
+export function buildCandidatosDedupHtml(candidatos, mensaje, acciones) {
+  const items = (candidatos || []).map((c, i) => {
     // #196: mismo formato unico de parentesis que el resto de la app (antes
     // separador ad hoc " . cust_ref").
     const nombre = escapeHtml(nombreConCorto(c.CustName || c.cust_name || 'Sin nombre', c.cust_ref));
@@ -259,16 +265,36 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
         ${letreros}
       </div>
       <div class="operam-candidato-acciones">
-        <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
-        <button class="btn btn-sm btn-secondary" onclick="marcarSucursalOperam(${id}, ${c.id}, this)">Es otro domicilio de este Cliente Operam</button>
+        <button class="btn btn-sm btn-primary" onclick="${acciones.usar.onclick(c, i)}">${escapeHtml(acciones.usar.texto)}</button>
+        <button class="btn btn-sm btn-secondary" onclick="${acciones.otroDomicilio.onclick(c, i)}">${escapeHtml(acciones.otroDomicilio.texto)}</button>
       </div>
     </li>`;
   }).join('');
   return `<div class="operam-status operam-status-candidatos">
     <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el Cliente Operam correcto:')}</div>
     <ul class="operam-candidatos-lista">${items}</ul>
-    <button class="btn btn-sm btn-secondary" onclick="crearNuevoClienteOperam(${id}, this)">Ninguno es el mismo Cliente Operam - crear nuevo</button>
+    <button class="btn btn-sm btn-secondary" onclick="${acciones.ninguno.onclick()}">${escapeHtml(acciones.ninguno.texto)}</button>
   </div>`;
+}
+
+export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
+  return buildCandidatosDedupHtml(candidatos, mensaje, {
+    usar: { texto: 'Elegir', onclick: c => `elegirCandidatoOperam(${id}, ${c.id}, this)` },
+    otroDomicilio: { texto: 'Es otro domicilio de este Cliente Operam', onclick: c => `marcarSucursalOperam(${id}, ${c.id}, this)` },
+    ninguno: { texto: 'Ninguno es el mismo Cliente Operam - crear nuevo', onclick: () => `crearNuevoClienteOperam(${id}, this)` },
+  });
+}
+
+// La misma pieza en el formulario de alta (#368), con las tres salidas de la
+// Deduplicacion de cliente en palabras del glosario. Los handlers reciben el
+// INDICE del candidato -- no su id --: el navegador ya tiene el cuerpo de
+// reintento que el servidor dicto para cada uno y solo tiene que dar con el suyo.
+export function buildCandidatosAltaHtml(candidatos, mensaje) {
+  return buildCandidatosDedupHtml(candidatos, mensaje, {
+    usar: { texto: 'Usar este Cliente Operam', onclick: (c, i) => `altaPreguntaUsar(${i})` },
+    otroDomicilio: { texto: 'Es otro domicilio de este Cliente Operam', onclick: (c, i) => `altaPreguntaOtroDomicilio(${i})` },
+    ninguno: { texto: 'Ninguno es el mismo', onclick: () => 'altaPreguntaNinguno()' },
+  });
 }
 
 // Un Cliente Operam nombrado para la pregunta de #345: razon social si el padron

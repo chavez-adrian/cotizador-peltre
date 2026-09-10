@@ -1196,6 +1196,11 @@ export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, custom
     customer_id: customerId || null,
     branch_id: branchId || null,
     cliente_existente: clienteExistente,
+    // La salida de la dedup que el vendedor eligio, cuando la eligio (#368): con
+    // "usar" viaja tambien el domicilio de entrega que escogio entre los del
+    // Cliente Operam, que hasta #252 se quedaba en el navegador sin que nadie lo
+    // leyera y la cotizacion heredaba el primero de la lista.
+    ...(opciones.decision ? { decision: opciones.decision } : {}),
     // `fuente` NO viaja (#350): el servidor ya la deriva del PDF, y mandarla fija en
     // 'cotizador' era justamente lo que dejaba muerta esa rama. Un solo dueno de la regla.
   };
