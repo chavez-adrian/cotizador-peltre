@@ -238,13 +238,17 @@ test('con el segmento diferido el alta NO espera a la web legacy', async () => {
   assert.equal(resuelto, false, 'el alta devolvio antes de que la web legacy contestara');
   assert.equal(paso(res, 'segmento').status, 'omitido');
   assert.match(paso(res, 'segmento').mensaje, /se escribe despues/);
-  await vaciarPendientes();
+  assert.equal(typeof res.segmentoDiferido, 'function', 'la escritura diferida se devuelve para dispararla despues de responder');
+  assert.equal(operam.pedidos('actualizarSegmentoClienteWeb').length, 0, 'nada se escribio antes de dispararla');
+  await res.segmentoDiferido();
+  assert.equal(resuelto, true);
 });
 
 test('el segmento diferido que Operam rechaza queda en la auditoria como segmento pendiente', async () => {
   const operam = operamEnMemoria({ segmentoWeb: { ok: false, error: 'El codigo postal no puede ser vacio' } });
 
   const res = await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+  await res.segmentoDiferido();
   await vaciarPendientes();
 
   assert.equal(res.tipo, 'lograda');
@@ -264,7 +268,8 @@ test('el segmento diferido que Operam rechaza queda en la auditoria como segment
 test('el segmento diferido que si se escribe no deja fila de pendiente', async () => {
   const operam = operamEnMemoria({ segmentoWeb: { ok: true } });
 
-  await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+  const res = await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+  await res.segmentoDiferido();
   await vaciarPendientes();
 
   assert.equal(operam.pedidos('actualizarSegmentoClienteWeb').length, 1);
@@ -274,7 +279,8 @@ test('el segmento diferido que si se escribe no deja fila de pendiente', async (
 test('el segmento diferido que truena tambien queda como pendiente, con el motivo tecnico', async () => {
   const operam = operamEnMemoria({ falla: { actualizarSegmentoClienteWeb: 'ECONNRESET' } });
 
-  await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+  const res = await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+  await res.segmentoDiferido();
   await vaciarPendientes();
 
   const [pendiente] = filasPendientes(operam);

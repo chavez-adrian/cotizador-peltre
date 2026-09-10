@@ -2842,7 +2842,7 @@ function responderBloqueoAlta(res, bloqueo) {
 // La subida del quote sobre el Cliente Operam que dejo listo el alta, con sus post-fixes
 // (vigencia y segmento). Es la que escribe en la cotizacion lo que sale de aqui: folio,
 // huella y motivo de PRE.
-async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creadoNuevo, pasos }) {
+async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creadoNuevo, pasos, segmentoDiferido }) {
   const c = entry.data?.cliente || {};
   try {
     // La huella (#114) se toma de ESTE objeto, no de entry.data: el cliente recien
@@ -2885,6 +2885,11 @@ async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creado
     if (await responderSiClienteSinLista(res, id, err, { customer_id: customerId, steps: pasos })) return;
     await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
     return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps: pasos });
+  } finally {
+    // La escritura diferida del segmento (#365) se dispara DESPUES de responder, suba el
+    // quote o no: el cliente ya existe y un reintento no vuelve a pasar por aqui. Antes
+    // del POST del quote se encolaria delante del post-fix de vigencia, que si se espera.
+    segmentoDiferido?.();
   }
 }
 
@@ -2941,6 +2946,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
   }
   return await subirQuoteTrasAlta(res, id, entry, {
     customerId: alta.clienteId, branchId: alta.domicilioId, creadoNuevo: alta.creadoNuevo, pasos: alta.pasos,
+    segmentoDiferido: alta.segmentoDiferido,
   });
 }
 

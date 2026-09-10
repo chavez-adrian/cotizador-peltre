@@ -1201,12 +1201,10 @@ test('S1: cliente generico recien creado con segmento capturado -> el post-fix w
   assert.equal(web.posts[0].get('segmento_id'), '14');
   assert.equal(web.posts[0].get('process'), 'Actualizar Cliente', 'el submit real de la ficha');
   assert.equal(web.estado.segmento, '14', 'el segmento quedo escrito en Operam');
-  // #365: la escritura la dispara ahora el modulo Alta de cliente, en su ultimo paso,
-  // asi que entra a la cola de post-fixes ANTES que la vigencia (que se encola tras el
-  // POST del quote). La cola es FIFO y compartida, y la subida SI espera la vigencia:
-  // el precio de este orden es que la escritura del segmento entra al camino critico de
-  // la subida. Ver el reporte de #365.
-  assert.deepEqual(orden, ['segmento', 'vigencia']);
+  // #365: el modulo devuelve la escritura diferida y la subida la dispara DESPUES de
+  // responder, asi que entra a la cola de post-fixes detras de la vigencia y nunca en
+  // el camino critico de la subida.
+  assert.deepEqual(orden, ['vigencia', 'segmento']);
 });
 
 test('S2: sin segmento capturado la subida NO toca la ficha de cliente', async () => {
@@ -1288,7 +1286,7 @@ test('S5: cliente reutilizado por celular SIN clasificar -> recibe el segmento c
 // de responder (el modulo la devuelve en el resultado en vez de dispararla), (b) darle a
 // la escritura diferida su propia sesion de FA (como abrirSesionWeb) para que no compita
 // por la cola, o (c) aceptar el costo. Es decision del dueno, no del implementador.
-test('S6: la subida diferida no paga la latencia de la web legacy del segmento', { todo: 'la escritura diferida se encola antes del post-fix de vigencia, que la subida si espera' }, async () => {
+test('S6: la subida diferida no paga la latencia de la web legacy del segmento', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase()]);
   const id = nuevaCotizacion({ segmentoId: '14' });
   const LATENCIA_MS = 300;
