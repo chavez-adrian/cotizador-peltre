@@ -188,6 +188,19 @@ test('tras un alta con datos fiscales lograda se refresca el padron de telefonos
   assert.equal(operam.pedidos('refrescarIndice').length, 1);
 });
 
+test('el nombre corto repetido en el alta con datos fiscales manda a dar de alta otra vez, no a generar una cotizacion', async () => {
+  const operam = operamEnMemoria({
+    padron: [{ customer_id: 12, CustName: 'Azul Hoteles SA de CV', cust_ref: 'Hotel Azul', tax_id: 'AHO010101AAA' }],
+    falla: { crearClienteDirecto: 'Operam 406: Already exists customer with same cust_ref' },
+  });
+  const res = await darDeAlta(solicitudFiscal({ decision: { tipo: 'ninguno' } }), operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'cust-ref-duplicado');
+  assert.match(res.mensaje, /vuelve a dar de alta al cliente/);
+  assert.doesNotMatch(res.mensaje, /cotizacion/);
+});
+
 test('el alta sin datos fiscales no releee el padron completo: le basta la entrada del cliente', async () => {
   const operam = operamEnMemoria();
   const res = await darDeAlta(solicitud(), operam.deps);

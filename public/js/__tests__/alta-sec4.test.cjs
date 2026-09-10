@@ -364,7 +364,7 @@ test('J5: el nombre corto repetido tampoco se reintenta: hay que cambiarlo', () 
   const r = interpretarRespuestaAlta({
     ok: false,
     codigo: 'CUST_REF_DUPLICADO',
-    error: 'El nombre corto "Nueva" ya lo usa otro Cliente Operam, que lo exige unico. Cambia el nombre corto y vuelve a generar la cotizacion.',
+    error: 'El nombre corto "Nueva" ya lo usa otro Cliente Operam, que lo exige unico. Cambia el nombre corto y vuelve a dar de alta al cliente.',
     steps: [{ name: 'POST customer', status: 'error', mensaje: 'No se pudo crear el Cliente Operam en Operam', detalle: 'POST /customers: same cust_ref' }],
   });
   assert.strictEqual(r.mostrarReintentar, false);

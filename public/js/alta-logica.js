@@ -339,7 +339,10 @@ function resolverValorNuevo({ csf, default: def }, csfDatos, { forzarDefault = f
   return crudo;
 }
 
-function leerValorOperam(clienteOperam, { operam, read }) {
+// Exportada desde #366: lib/alta-cliente.js compara la configuracion comercial de
+// un Cliente Operam reutilizado con la MISMA regla de lectura (#169), sin copiar
+// la tabla.
+export function leerValorOperam(clienteOperam, { operam, read }) {
   const alterno = read
     ? read.split('.').reduce((v, k) => (v == null ? undefined : v[k]), clienteOperam)
     : undefined;
