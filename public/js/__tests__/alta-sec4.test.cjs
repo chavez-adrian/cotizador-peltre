@@ -3,9 +3,9 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveClienteId } = require('./helpers.cjs');
 
-let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido, pdfCsfParaRespaldo;
+let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, cuerpoDeReintentoAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido, pdfCsfParaRespaldo;
 before(async () => {
-  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido, pdfCsfParaRespaldo } = await import('../alta-logica.js'));
+  ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, cuerpoDeReintentoAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido, pdfCsfParaRespaldo } = await import('../alta-logica.js'));
 });
 
 test('F1: buildAltaDarDeAltaPayload incluye campos comerciales y domicilio', () => {
@@ -349,16 +349,81 @@ test('J3: el Cliente Operam reutilizado deja su motivo en la fila de arriba, aun
   assert.strictEqual(ALTA_PASO_FILA.dedup, ALTA_PASO_FILA['POST customer']);
 });
 
-test('J4: el posible duplicado (428) muestra el aviso minimo y NO ofrece reintentar', () => {
-  const r = interpretarRespuestaAlta({
-    codigo: 'POSIBLE_DUPLICADO',
-    error: 'Puede ser un Cliente Operam que ya existe: buscalo antes de dar de alta',
-    candidatos: [{ id: 55, CustName: 'Duplicado SA' }],
-  });
+// La pregunta de duplicado en el formulario (#368). Mismo patron que la
+// interpretacion de la subida a Operam: el nucleo puro traduce la respuesta y el
+// navegador solo pinta.
+const RESPUESTA_DUPLICADO = {
+  codigo: 'POSIBLE_DUPLICADO',
+  error: 'Hay Clientes Operam sin datos fiscales con nombre parecido: elige uno para continuar',
+  candidatos: [{
+    id: 55, razonSocial: 'Duplicado SA', rfc: 'DUP010101ABC', nombreCorto: 'Dup',
+    porque: {
+      diferenciaNombre: { soloInput: ['centro'], soloCandidato: [] },
+      celularMatch: 'coincide', correoMatch: 'sin_dato', custRefIgual: true,
+    },
+  }],
+  opciones: {
+    porCandidato: [{
+      id: 55,
+      usar: { tax_id: 'DUP010101ABC', decision: { tipo: 'usar', clienteId: 55 } },
+      otroDomicilio: { tax_id: 'DUP010101ABC', decision: { tipo: 'otro-domicilio', clienteId: 55 } },
+    }],
+    ninguno: { tax_id: 'DUP010101ABC', decision: { tipo: 'ninguno' } },
+  },
+};
+
+test('J4: el posible duplicado (428) devuelve la pregunta y NO ofrece reintentar', () => {
+  const r = interpretarRespuestaAlta(RESPUESTA_DUPLICADO);
   assert.strictEqual(r.exito, false);
-  assert.strictEqual(r.mensajeError, 'Puede ser un Cliente Operam que ya existe: buscalo antes de dar de alta');
-  assert.strictEqual(r.mostrarReintentar, false, 'reintentar daria exactamente lo mismo');
+  assert.strictEqual(r.mostrarReintentar, false, 'con la pregunta pintada, el boton generico sobra');
+  assert.strictEqual(r.mensajeError, null, 'el mensaje lo lleva la pregunta, no el banner de error');
+  assert.strictEqual(r.pregunta.mensaje, RESPUESTA_DUPLICADO.error);
+  assert.strictEqual(r.pregunta.opciones, RESPUESTA_DUPLICADO.opciones);
   assert.ok(r.filas.every(f => f.status === 'pending'), 'no se creo nada: ninguna fila afirma un paso');
+});
+
+test('J4b: el candidato llega en la forma que pinta la pieza de la pantalla de cotizar', () => {
+  const c = interpretarRespuestaAlta(RESPUESTA_DUPLICADO).pregunta.candidatos[0];
+  assert.strictEqual(c.id, 55);
+  assert.strictEqual(c.CustName, 'Duplicado SA');
+  assert.strictEqual(c.cust_ref, 'Dup');
+  assert.strictEqual(c.tax_id, 'DUP010101ABC');
+  assert.strictEqual(c.celularMatch, 'coincide');
+  assert.strictEqual(c.correoMatch, 'sin_dato');
+  assert.strictEqual(c.custRefIgual, true);
+  assert.deepStrictEqual(c.diferenciaNombre, { soloInput: ['centro'], soloCandidato: [] });
+});
+
+test('J4c: una respuesta que no es la pregunta de duplicado no trae pregunta', () => {
+  assert.strictEqual(interpretarRespuestaAlta({ ok: true, steps: [] }).pregunta, null);
+  assert.strictEqual(interpretarRespuestaAlta({ ok: false, codigo: 'CUST_REF_DUPLICADO', error: 'x' }).pregunta, null);
+});
+
+test('J4d: el cuerpo del reintento sale de las opciones que dicto el servidor, tal cual', () => {
+  const { opciones } = RESPUESTA_DUPLICADO;
+  assert.deepStrictEqual(cuerpoDeReintentoAlta(opciones, { tipo: 'ninguno' }), opciones.ninguno);
+  assert.deepStrictEqual(cuerpoDeReintentoAlta(opciones, { tipo: 'usar', clienteId: 55 }), opciones.porCandidato[0].usar);
+  assert.deepStrictEqual(
+    cuerpoDeReintentoAlta(opciones, { tipo: 'otro-domicilio', clienteId: 55 }),
+    opciones.porCandidato[0].otroDomicilio,
+  );
+});
+
+test('J4e: el domicilio de entrega elegido se agrega al cuerpo dictado sin tocar el resto', () => {
+  const cuerpo = cuerpoDeReintentoAlta(RESPUESTA_DUPLICADO.opciones, { tipo: 'usar', clienteId: 55 }, { domicilioId: 777 });
+  assert.deepStrictEqual(cuerpo.decision, { tipo: 'usar', clienteId: 55, domicilioId: 777 });
+  assert.strictEqual(cuerpo.tax_id, 'DUP010101ABC');
+});
+
+test('J4f: el PDF de la constancia, que el servidor no devolvio, se vuelve a adjuntar', () => {
+  const cuerpo = cuerpoDeReintentoAlta(RESPUESTA_DUPLICADO.opciones, { tipo: 'ninguno' }, { pdfBase64: 'JVBERi0xLjQK' });
+  assert.strictEqual(cuerpo.pdf_base64, 'JVBERi0xLjQK');
+  assert.strictEqual(RESPUESTA_DUPLICADO.opciones.ninguno.pdf_base64, undefined, 'las opciones dictadas no se mutan');
+});
+
+test('J4g: una eleccion sin cuerpo dictado no inventa uno', () => {
+  assert.strictEqual(cuerpoDeReintentoAlta(RESPUESTA_DUPLICADO.opciones, { tipo: 'usar', clienteId: 999 }), null);
+  assert.strictEqual(cuerpoDeReintentoAlta(null, { tipo: 'ninguno' }), null);
 });
 
 test('J5: el nombre corto repetido tampoco se reintenta: hay que cambiarlo', () => {

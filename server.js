@@ -3527,7 +3527,7 @@ function solicitudDelFormulario(body, vendedor) {
 // navegador no arma decisiones por su cuenta. El PDF de la constancia NO viaja de
 // vuelta: pesa (va en base64) y el navegador todavia lo tiene en memoria, asi que
 // lo vuelve a adjuntar al reintentar.
-function cuerpoDeReintentoAlta(body, decision) {
+function cuerpoDeReintento(body, decision) {
   const { pdf_base64: _pdf, ...sinPdf } = body || {};
   return { ...sinPdf, decision };
 }
@@ -3557,10 +3557,10 @@ function opcionesDeLaPregunta(body, candidatos) {
   return {
     porCandidato: (candidatos || []).map(c => ({
       id: c.id,
-      usar: cuerpoDeReintentoAlta(body, { tipo: 'usar', clienteId: c.id }),
-      otroDomicilio: cuerpoDeReintentoAlta(body, { tipo: 'otro-domicilio', clienteId: c.id }),
+      usar: cuerpoDeReintento(body, { tipo: 'usar', clienteId: c.id }),
+      otroDomicilio: cuerpoDeReintento(body, { tipo: 'otro-domicilio', clienteId: c.id }),
     })),
-    ninguno: cuerpoDeReintentoAlta(body, { tipo: 'ninguno' }),
+    ninguno: cuerpoDeReintento(body, { tipo: 'ninguno' }),
   };
 }
 

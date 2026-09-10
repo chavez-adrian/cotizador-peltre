@@ -1249,9 +1249,70 @@ function mensajeExitoPaso(step) {
 
 // Respuestas donde Reintentar es una trampa: el boton daria exactamente lo mismo
 // hasta que el vendedor haga algo distinto (#366). El posible duplicado se
-// resuelve buscando al Cliente Operam; el nombre corto repetido, cambiandolo --
-// Operam lo exige unico global (#242).
+// resuelve eligiendo una de las tres salidas que el 428 trae pintadas (#368), y
+// el boton generico ademas reintentaria con el cuerpo original -- sin decision --
+// para volver a la misma pregunta; el nombre corto repetido se resuelve
+// cambiandolo, porque Operam lo exige unico global (#242).
 const SIN_REINTENTO = new Set(['POSIBLE_DUPLICADO', 'CUST_REF_DUPLICADO']);
+
+export const CODIGO_POSIBLE_DUPLICADO = 'POSIBLE_DUPLICADO';
+
+// El candidato del 428, que viene en palabras del glosario, traducido a la forma
+// que lee la pieza de candidatos de la pantalla de cotizar (nombres de campo de
+// Operam). La traduccion vive aqui, en el nucleo puro, y no en app.js: es parte
+// de entender la respuesta, y asi tiene test sin DOM.
+function candidatoParaPintar(c) {
+  const porque = c?.porque || {};
+  return {
+    id: c?.id,
+    CustName: c?.razonSocial || '',
+    cust_ref: c?.nombreCorto || '',
+    tax_id: c?.rfc || '',
+    diferenciaNombre: porque.diferenciaNombre,
+    celularMatch: porque.celularMatch,
+    correoMatch: porque.correoMatch,
+    custRefIgual: porque.custRefIgual === true,
+  };
+}
+
+// La pregunta de duplicado (428 POSIBLE_DUPLICADO, #368): el mensaje, los
+// candidatos ya listos para pintar y las opciones TAL CUAL las dicto el servidor
+// -- son los cuerpos de reintento y el navegador no los interpreta, solo los
+// reenvia (#345).
+function preguntaDeDuplicado(d) {
+  if (d.codigo !== CODIGO_POSIBLE_DUPLICADO) return null;
+  return {
+    mensaje: d.error || '',
+    candidatos: (Array.isArray(d.candidatos) ? d.candidatos : []).map(candidatoParaPintar),
+    opciones: d.opciones || null,
+  };
+}
+
+// El cuerpo con el que el navegador reintenta el alta tras elegir una salida. Sale
+// ENTERO de las opciones que dicto el servidor (la misma Solicitud mas la
+// decision); aqui solo se le agregan las dos cosas que el servidor no podia poner:
+// el domicilio de entrega que el vendedor eligio entre los del Cliente Operam
+// (#252) y el PDF de la constancia, que no viaja de vuelta porque pesa.
+// Sin cuerpo dictado devuelve null: no se inventa una decision.
+const LLAVE_OPCION_CANDIDATO = { usar: 'usar', 'otro-domicilio': 'otroDomicilio' };
+
+export function cuerpoDeReintentoAlta(opciones, eleccion, extras = {}) {
+  const tipo = eleccion?.tipo;
+  const llave = LLAVE_OPCION_CANDIDATO[tipo];
+  const dictado = tipo === 'ninguno'
+    ? opciones?.ninguno
+    : llave && (opciones?.porCandidato || []).find(o => String(o?.id) === String(eleccion?.clienteId))?.[llave];
+  if (!dictado) return null;
+  const domicilioId = extras.domicilioId;
+  return {
+    ...dictado,
+    ...(extras.pdfBase64 ? { pdf_base64: extras.pdfBase64 } : {}),
+    decision: {
+      ...dictado.decision,
+      ...(domicilioId != null && domicilioId !== '' ? { domicilioId } : {}),
+    },
+  };
+}
 
 export function interpretarRespuestaAlta(data) {
   const d = data || {};
@@ -1284,7 +1345,11 @@ export function interpretarRespuestaAlta(data) {
   // fallo queda invisible. `d.error` manda sobre el paso que fallo cuando existe
   // (#366): es el motivo del BLOQUEO en palabras del vendedor, con lo que hay que
   // hacer -- "cambia el nombre corto" dice mas que "no se pudo crear el cliente".
-  const mensajeError = exito
+  // La pregunta de duplicado es la excepcion (#368): no es un fallo, es una
+  // decision pendiente, y su mensaje encabeza la pregunta -- repetirlo en el
+  // banner rojo lo pintaria como error y diria dos veces lo mismo.
+  const pregunta = preguntaDeDuplicado(d);
+  const mensajeError = exito || pregunta
     ? null
     : (d.error
       || primerError
@@ -1293,6 +1358,7 @@ export function interpretarRespuestaAlta(data) {
   return {
     exito,
     mensajeError,
+    pregunta,
     filas: [...porFila.values()],
     mostrarReintentar: !exito && !SIN_REINTENTO.has(d.codigo),
   };
