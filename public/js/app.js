@@ -7785,7 +7785,7 @@ const ALTA_ICO_ERR = '✗';
 // un PUT destructivo y la del segmento una escritura que el servidor decidio no hacer.
 const ALTA_ICO_OMITIDO = '-';
 
-function altaPasoSetStatus(idx, status, msg) {
+function altaPasoSetStatus(idx, status, msg, detalle) {
   const ico = document.getElementById(`alta-paso-ico-${idx}`);
   const msgEl = document.getElementById(`alta-paso-msg-${idx}`);
   const row = document.getElementById(`alta-paso-${idx}`);
@@ -7798,6 +7798,19 @@ function altaPasoSetStatus(idx, status, msg) {
   if (msgEl) {
     if (msg && (status === 'error' || status === 'ok' || status === 'omitido')) {
       msgEl.textContent = msg;
+      // Mensaje en dos capas (ADR-0017): lo que se lee es el mensaje del glosario y el
+      // detalle tecnico va PLEGADO, nunca a la vista. textContent ya vacio la fila, asi
+      // que el <details> se agrega despues y no sobrevive a la siguiente pasada.
+      if (detalle) {
+        const det = document.createElement('details');
+        const sum = document.createElement('summary');
+        sum.textContent = 'Ver detalle tecnico';
+        const cuerpo = document.createElement('div');
+        cuerpo.textContent = detalle;
+        det.appendChild(sum);
+        det.appendChild(cuerpo);
+        msgEl.appendChild(det);
+      }
       // Explicito en las dos ramas: vaciar style.color borraria el color del HTML.
       msgEl.style.color = status === 'error' ? 'var(--danger)' : 'var(--text-light)';
       msgEl.style.display = '';
@@ -7880,7 +7893,7 @@ function altaDarDeAlta() {
       // que quedaron fuera porque un paso previo aborto el alta; dejarlos girando diria
       // que siguen en curso -- y un fallo SIN steps (el 400) sale por el banner.
       const vista = interpretarRespuestaAlta(data);
-      vista.filas.forEach(f => altaPasoSetStatus(f.fila, f.status, f.msg));
+      vista.filas.forEach(f => altaPasoSetStatus(f.fila, f.status, f.msg, f.detalle));
       altaSec4Error(vista.mensajeError);
 
       if (vista.exito) {

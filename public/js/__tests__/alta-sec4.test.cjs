@@ -285,6 +285,20 @@ test('I8: un paso omitido se pinta omitido, con su motivo, y no es un fallo del 
   assert.strictEqual(r.mostrarReintentar, false);
 });
 
+// Mensaje en dos capas (#364, ADR-0017): el vendedor lee el mensaje del glosario y el
+// detalle tecnico va aparte, plegado. El error crudo sigue de respaldo para las
+// respuestas que todavia no mandan mensaje.
+test('I8b: un paso fallido muestra su mensaje del glosario y guarda el detalle tecnico aparte', () => {
+  const r = interpretarRespuestaAlta({
+    ok: false,
+    steps: [{ name: 'PUT branch', status: 'error', mensaje: 'El domicilio de entrega no quedo guardado en Operam', detalle: 'PUT /branches/7: Operam 500', error: 'Operam 500' }],
+  });
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  assert.strictEqual(branch.msg, 'El domicilio de entrega no quedo guardado en Operam');
+  assert.strictEqual(branch.detalle, 'PUT /branches/7: Operam 500');
+  assert.strictEqual(r.mensajeError, 'El domicilio de entrega no quedo guardado en Operam');
+});
+
 test('I9: un status desconocido sigue siendo error (solo ok y omitido son buenos)', () => {
   const r = interpretarRespuestaAlta({ ok: false, steps: [{ name: 'PUT branch', status: 'warn', error: 'algo raro' }] });
   const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);

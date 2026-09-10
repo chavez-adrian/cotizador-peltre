@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar } =
     await import('../pipeline-logica.js'));
 });
 
@@ -202,17 +202,17 @@ test('Q18: botonCompletarHtml pinta "Reintentar subida" solo sobre una tarjeta P
 // candidatos; 422 -> sin_datos (PRE sin reintento util); 503/red/409-conflicto ->
 // pre (reintento idempotente).
 test('Q19: interpretarSubidaOperam clasifica la respuesta del endpoint por status y campos', () => {
-  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001, yaSubida: false, customerId: null, clienteGenerico: false, vigencia: null });
-  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null, yaSubida: false, customerId: null, clienteGenerico: false, vigencia: null });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: 77001 }), { estado: 'folio', folio: 77001, yaSubida: false, customerId: null, clienteGenerico: false, vigencia: null, pasos: [] });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true }), { estado: 'folio', folio: null, yaSubida: false, customerId: null, clienteGenerico: false, vigencia: null, pasos: [] });
   // yaSubida (#83 F1c): ya habia folio, el endpoint no re-subio (los quotes de
   // Operam no se editan por API; una regeneracion local no viaja a Operam).
-  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: '55123', yaSubida: true }), { estado: 'folio', folio: '55123', yaSubida: true, customerId: null, clienteGenerico: false, vigencia: null });
+  assert.deepEqual(interpretarSubidaOperam({ ok: true, folio: '55123', yaSubida: true }), { estado: 'folio', folio: '55123', yaSubida: true, customerId: null, clienteGenerico: false, vigencia: null, pasos: [] });
 
   // #93: la subida con alta generica (#81) devuelve el customer_id creado/reutilizado
   // y si el cliente quedo con RFC generico, para ofrecer la CSF junto al folio.
   assert.deepEqual(
     interpretarSubidaOperam({ ok: true, folio: 90001, customerId: 501, clienteGenerico: true }),
-    { estado: 'folio', folio: 90001, yaSubida: false, customerId: 501, clienteGenerico: true, vigencia: null }
+    { estado: 'folio', folio: 90001, yaSubida: false, customerId: 501, clienteGenerico: true, vigencia: null, pasos: [] }
   );
 
   const cand = interpretarSubidaOperam({ ok: false, status: 409, error: 'Elige uno', candidatos: [{ id: 10, CustName: 'ABARROTES SA', cust_ref: 'ABA' }] });
@@ -1497,4 +1497,41 @@ test('EC4: el tablero pinta los estados dentro de la tarjeta', () => {
   })], {});
   assert.match(html, /badge-fiscal-pendiente/);
   assert.match(html, /badge-con-pedido/);
+});
+
+// Reporte de pasos del alta en dos capas (#364, ADR-0017): el slot de la cotizacion
+// muestra el mensaje del glosario y pliega el detalle tecnico, en vez del nombre del
+// paso y el error crudo de la API.
+test('Q40: pasosParaMostrar deja fuera los pasos que salieron bien y los omitidos', () => {
+  const pasos = pasosParaMostrar([
+    { name: 'POST customer', status: 'ok', mensaje: 'Se creo el Cliente Operam', detalle: 'POST /customers' },
+    { name: 'PUT branch (domicilio)', status: 'omitido', mensaje: 'El Cliente Operam ya existia', detalle: 'branch 7' },
+    { name: 'verificar branch', status: 'warn', mensaje: 'El domicilio de entrega no quedo completo en Operam', detalle: 'GET /branches/7' },
+  ]);
+  assert.deepEqual(pasos, [{ estado: 'warn', mensaje: 'El domicilio de entrega no quedo completo en Operam', detalle: 'GET /branches/7' }]);
+});
+
+test('Q41: el post-fix de la vigencia no se repite en la lista: ya tiene su propio aviso', () => {
+  assert.deepEqual(pasosParaMostrar([{ name: 'post-fix vigencia', status: 'warn', mensaje: 'Revisa la vigencia' }]), []);
+});
+
+test('Q42: un paso fallido sin mensaje no se calla: sale con texto propio y el error como detalle', () => {
+  assert.deepEqual(pasosParaMostrar([{ name: 'POST quote', status: 'error', error: 'Operam 500' }]), [
+    { estado: 'error', mensaje: 'Un paso del alta del Cliente Operam no se completo.', detalle: 'Operam 500' },
+  ]);
+});
+
+test('Q43: el slot pinta el mensaje a la vista y el detalle tecnico plegado, nunca el nombre del paso', () => {
+  const vista = interpretarSubidaOperam({
+    ok: true, folio: 1701,
+    steps: [{ name: 'verificar Cel', status: 'warn', mensaje: 'El celular del Contacto no quedo guardado en la casilla Cel de Operam', detalle: 'GET /customers/910 campo fax' }],
+  });
+  const html = buildOperamStatusHtml(5, vista);
+  assert.ok(html.includes('El celular del Contacto no quedo guardado en la casilla Cel de Operam'));
+  assert.ok(html.includes('<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>GET /customers/910 campo fax</div></details>'));
+  assert.ok(!html.includes('verificar Cel'), 'el nombre tecnico del paso no llega a pantalla');
+});
+
+test('Q44: sin pasos que reportar el slot no pinta lista vacia', () => {
+  assert.ok(!buildOperamStatusHtml(5, interpretarSubidaOperam({ ok: true, folio: 1701 })).includes('operam-pasos'));
 });

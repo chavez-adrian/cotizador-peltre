@@ -106,8 +106,34 @@ function estadoVigencia(steps) {
   return paso.status === 'ok' ? 'ok' : 'revisar';
 }
 
+// Los pasos del alta que el vendedor tiene que LEER (#364, ADR-0017): los que no
+// salieron bien. Cada uno viaja en dos capas -- `mensaje` en palabras del glosario,
+// que se muestra siempre, y `detalle` tecnico, que va plegado --, asi que el slot ya
+// no pinta el nombre del paso ni el `error` crudo de la API.
+//
+// Los pasos en ok y los omitidos NO se pintan aqui: viajan igual en `steps` para
+// quien depure, y listarlos todos convertiria cada subida exitosa en un muro de diez
+// renglones. 'post-fix vigencia' queda fuera porque ya tiene su propio aviso, con
+// texto propio (estadoVigencia): pintarlo dos veces seria decir lo mismo dos veces.
+//
+// Un paso que fallo SIN mensaje (una respuesta anterior a #364, u otro endpoint) no
+// se calla: sale con un texto generico y su detalle, porque el silencio nunca es una
+// salida valida.
+const PASO_CON_AVISO_PROPIO = new Set(['post-fix vigencia']);
+
+export function pasosParaMostrar(steps) {
+  return (Array.isArray(steps) ? steps : [])
+    .filter(s => s && (s.status === 'warn' || s.status === 'error') && !PASO_CON_AVISO_PROPIO.has(s.name))
+    .map(s => ({
+      estado: s.status,
+      mensaje: s.mensaje || 'Un paso del alta del Cliente Operam no se completo.',
+      detalle: s.detalle || s.error || '',
+    }));
+}
+
 export function interpretarSubidaOperam(resultado) {
   const r = resultado || {};
+  const pasos = pasosParaMostrar(r.steps);
   // ADR-0009: con la subida en la ruta critica de la generacion, "ya hay una
   // subida en vuelo" y "Operam no respondio a tiempo" dejan de ser detalles
   // internos -- son la razon de que el documento salga como PRE, y el vendedor
@@ -124,7 +150,7 @@ export function interpretarSubidaOperam(resultado) {
   // customerId/clienteGenerico (#93): la subida con alta generica (#81) devuelve
   // el customer_id creado/reutilizado; con clienteGenerico se ofrece la CSF junto
   // al folio (mismo criterio que el chip Fiscal de la tarjeta).
-  if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps) };
+  if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps), pasos };
   const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];
   if (r.status === 409 && candidatos.length) {
     return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay Clientes Operam con nombre similar' };
@@ -149,12 +175,12 @@ export function interpretarSubidaOperam(resultado) {
     };
   }
   if (r.status === 409 && r.codigo === 'CUST_REF_DUPLICADO') {
-    return { estado: 'cust_ref', mensaje: r.error || 'El nombre corto ya lo usa otro Cliente Operam', nombreCorto: r.nombreCorto ?? null };
+    return { estado: 'cust_ref', mensaje: r.error || 'El nombre corto ya lo usa otro Cliente Operam', nombreCorto: r.nombreCorto ?? null, pasos };
   }
   if (r.status === 422) {
-    return { estado: 'sin_datos', mensaje: r.error || 'Faltan datos minimos para dar de alta el Cliente Operam' };
+    return { estado: 'sin_datos', mensaje: r.error || 'Faltan datos minimos para dar de alta el Cliente Operam', pasos };
   }
-  return { estado: 'pre', mensaje: r.error || 'No se pudo subir a Operam' };
+  return { estado: 'pre', mensaje: r.error || 'No se pudo subir a Operam', pasos };
 }
 
 // Texto de la diferencia de nombre (#210): palabras CRUDAS en AMBAS direcciones,
@@ -290,8 +316,24 @@ function buildOtraRazonSocialHtml(id, vista) {
 // de dedup; 'sin_datos' = PRE sin reintento (falta de datos, no de Operam);
 // 'pre' = fallo transitorio de Operam con Reintentar idempotente. Los botones
 // pasan `this` (ver buildCandidatosOperamHtml).
+// El reporte de pasos en dos capas (#364): el mensaje del glosario a la vista y el
+// detalle tecnico dentro de un <details>, cerrado. Sin pasos que reportar no pinta
+// nada -- un contenedor vacio solo agrega ruido a la subida que salio bien.
+function buildPasosAltaHtml(pasos) {
+  const lista = Array.isArray(pasos) ? pasos : [];
+  if (!lista.length) return '';
+  const items = lista.map(p => {
+    const detalle = p.detalle
+      ? `<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>${escapeHtml(p.detalle)}</div></details>`
+      : '';
+    return `<li class="operam-paso operam-paso-${escapeHtml(p.estado || 'warn')}">${escapeHtml(p.mensaje || '')}${detalle}</li>`;
+  }).join('');
+  return `<ul class="operam-pasos">${items}</ul>`;
+}
+
 export function buildOperamStatusHtml(id, vista) {
   const v = vista || {};
+  const pasos = buildPasosAltaHtml(v.pasos);
   if (v.estado === 'folio') {
     const folio = v.folio != null && v.folio !== '' ? ` — <strong>${escapeHtml(etiquetaFolioOperam({ folioOperam: v.folio }))}</strong>` : '';
     // yaSubida (#83 F1c) cambia de significado con #114: el endpoint ya solo corta sin
@@ -314,7 +356,7 @@ export function buildOperamStatusHtml(id, vista) {
     const vig = v.vigencia === 'revisar'
       ? ` <span class="operam-status-nota">Revisa el campo &laquo;V&aacute;lido hasta&raquo; en Operam: pudo no quedar corregido. El PDF y las notas de la cotizacion si llevan la vigencia correcta.</span>`
       : '';
-    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${vig}${csf}`;
+    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${vig}${csf}${pasos}`;
   }
   if (v.estado === 'candidatos') {
     return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje);
@@ -323,7 +365,7 @@ export function buildOperamStatusHtml(id, vista) {
     return buildOtraRazonSocialHtml(id, v);
   }
   if (v.estado === 'sin_datos') {
-    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>`;
+    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>${pasos}`;
   }
   // #242: choque de nombre corto. SIN Reintentar a proposito (mismo criterio que
   // 'sin_datos'): el boton volveria a chocar contra la unicidad global del
@@ -331,10 +373,10 @@ export function buildOperamStatusHtml(id, vista) {
   // volver a generar; el texto del servidor es el que lo dice, con el dueno del
   // nombre corto cuando el padron alcanza a nombrarlo.
   if (v.estado === 'cust_ref') {
-    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>`;
+    return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || '')}</span>${pasos}`;
   }
   return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">PRE</span> ${escapeHtml(v.mensaje || 'No se pudo subir a Operam')}</span>` +
-    ` <button class="btn btn-sm btn-primary" onclick="reintentarSubidaOperam(${id}, this)">Reintentar</button>`;
+    ` <button class="btn btn-sm btn-primary" onclick="reintentarSubidaOperam(${id}, this)">Reintentar</button>` + pasos;
 }
 
 // --- Actualizacion del quote conservando el folio (#104, ADR-0008) -----------

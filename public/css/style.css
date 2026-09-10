@@ -1343,6 +1343,14 @@ body {
 /* Acciones por candidato (#211): Elegir y "Es sucursal de este cliente" -- envuelven
    en movil en vez de desbordar la fila. */
 .operam-candidato-acciones { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+/* Reporte de pasos del alta en dos capas (#364, ADR-0017): el mensaje del glosario
+   siempre a la vista y el detalle tecnico plegado dentro de un <details>. Discreto:
+   lo normal es que la subida salga bien y esta lista ni aparezca. */
+.operam-pasos { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.operam-paso { font-size: 12px; line-height: 1.4; padding-left: 10px; border-left: 3px solid oklch(0.75 0.13 85); }
+.operam-paso-error { border-left-color: oklch(0.6 0.18 25); }
+.operam-paso-detalle > summary { cursor: pointer; font-size: 11px; color: oklch(0.5 0 0); }
+.operam-paso-detalle > div { font-size: 11px; color: oklch(0.45 0 0); word-break: break-word; }
 /* Hechos del picker de candidatos (#210): diferencia de nombre cruda y letreros
    de celular/correo -- evidencia, nunca candado (no deshabilitan Elegir/Crear
    nuevo). Sobrios y legibles en movil: texto chico, chips que envuelven. */

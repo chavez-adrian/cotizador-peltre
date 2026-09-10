@@ -1198,7 +1198,7 @@ export const ALTA_PASO_FILAS = [...new Set(Object.values(ALTA_PASO_FILA))];
 // PUT destructivo. Un paso omitido lleva su motivo en `info`; un exito normal no dice
 // nada, que es lo correcto.
 function mensajeExitoPaso(step) {
-  if (step.status === 'omitido') return step.info || '';
+  if (step.status === 'omitido') return step.mensaje || step.info || '';
   if (step.info === 'conservado') {
     const nombre = step.actualNombre || '';
     return 'Se conservo el segmento que el Cliente Operam ya tenia' +
@@ -1212,16 +1212,21 @@ export function interpretarRespuestaAlta(data) {
   const steps = Array.isArray(d.steps) ? d.steps : [];
   const exito = d.ok === true;
 
-  const porFila = new Map(ALTA_PASO_FILAS.map(f => [f, { fila: f, status: 'pending', msg: '' }]));
+  const porFila = new Map(ALTA_PASO_FILAS.map(f => [f, { fila: f, status: 'pending', msg: '', detalle: '' }]));
   let primerError = null;
   for (const step of steps) {
     const fila = ALTA_PASO_FILA[step?.name];
     if (fila === undefined) continue;
     const omitido = step.status === 'omitido';
     const esError = step.status !== 'ok' && !omitido;
-    const msg = esError ? (step.error || '') : mensajeExitoPaso(step);
-    porFila.set(fila, { fila, status: esError ? 'error' : omitido ? 'omitido' : 'ok', msg });
-    if (esError && !primerError) primerError = msg || 'El paso "' + step.name + '" fallo sin motivo.';
+    // Mensaje en dos capas (ADR-0017): el vendedor lee el mensaje en palabras del
+    // glosario y el detalle tecnico va plegado. El error crudo queda como respaldo
+    // de las respuestas que todavia no mandan mensaje; el nombre del paso ya nunca
+    // es el texto que se muestra.
+    const msg = esError ? (step.mensaje || step.error || '') : mensajeExitoPaso(step);
+    const detalle = step.detalle || (step.mensaje ? step.error || '' : '');
+    porFila.set(fila, { fila, status: esError ? 'error' : omitido ? 'omitido' : 'ok', msg, detalle });
+    if (esError && !primerError) primerError = msg || 'Un paso del alta fallo sin decir por que.';
   }
 
   // Sin steps no hay nada que pintar: el motivo tiene que salir por el banner o el
