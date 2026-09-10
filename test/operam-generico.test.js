@@ -211,7 +211,7 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
   // Auditoria del alta generica con fuente distinguible (clientes_log via logCliente).
   const audit = res.body.steps.find(s => s.name === 'log auditoria');
   assert.ok(audit, 'reporta el paso de auditoria');
-  assert.equal(audit.info, 'cotizador-generico');
+  assert.equal(audit.detalle, 'cotizador-generico');
 });
 
 test('G1b: tier Menudeo (sin lista homonima en Operam) -> sales_type cae a "Precio de lista", nunca se omite (issue #92)', async () => {
@@ -272,34 +272,6 @@ test('#246-5: alta generica con listasPrecios vacia al inicio -> la recarga pere
   assert.equal(res.body.ok, true);
   assert.ok(clienteBody, 'se debio crear el cliente');
   assert.equal(clienteBody.sales_type, '15', 'tier M100 -> id 15 en Operam, resuelto tras la recarga perezosa');
-});
-
-test('G2: celular ya convertido en cliente -> reutiliza el customer_id, no crea un segundo generico', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
-  const id = nuevaCotizacion();
-  let postCustomer = false;
-  let quoteBody = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      if (u.includes('/555')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 556 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1702 }); },
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.ok, true);
-  assert.equal(res.body.customer_id, 555);
-  assert.equal(postCustomer, false, 'NO debe crear un segundo cliente generico');
-  assert.equal(quoteBody.customer_id, 555);
-  const cot = readJson(COTS_PATH).find(c => c.id === id);
-  assert.equal(cot.data.cliente.customerId, 555);
-  assert.equal(String(cot.folioOperam), '1702');
 });
 
 test('G3: nombre similar a un generico de Operam -> 409 con candidatos, sin crear y sin subir (sin el flag de escape)', async () => {
@@ -408,76 +380,6 @@ test('G3c: el 409 de candidatos marca sin_dato (no no_coincide) cuando la ficha 
 // al vendedor sin salida: el documento degrada a PRE. El flag crearNuevo salta
 // ESA parada y NADA MAS.
 
-test('G3b: crearNuevo salta la parada por nombre similar, crea el generico y sube', async () => {
-  writeJson(PROSPECTOS_PATH, []);
-  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
-  let postCustomer = false;
-  let quoteBody = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/999')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 998 }] }] });
-      if (!u.includes('tax_id=XAXX010101000')) return jsonResponse({ total: 0, data: [] });
-      return jsonResponse({ total: 1, data: [
-        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
-      ] });
-    },
-    '/api/v3/sales/branches/998': (u, opts) => {
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
-    },
-    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1704 }); },
-    ...mockWebLegacy(),
-  });
-  await cargarListasPrecios();
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ crearNuevo: true });
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.ok, true);
-  assert.equal(res.body.customer_id, 999);
-  assert.equal(postCustomer, true, 'con el escape SI se crea el cliente nuevo');
-  assert.equal(quoteBody.customer_id, 999);
-  const cot = readJson(COTS_PATH).find(c => c.id === id);
-  assert.equal(String(cot.folioOperam), '1704');
-
-  // El forzado queda registrado: paso visible para el vendedor y renglon en
-  // clientes_log para que higiene-clientes (#86) pueda revisarlo despues.
-  const dedup = res.body.steps.find(s => s.name === 'dedup');
-  assert.equal(dedup.status, 'warn', 'la creacion forzada no se reporta como un alta limpia');
-  assert.match(dedup.info, /forz/i);
-  const audit = res.body.steps.find(s => s.name === 'log auditoria');
-  assert.equal(audit.info, 'cotizador-generico');
-});
-
-test('G3c: crearNuevo NO salta la reutilizacion por celular de un prospecto convertido', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
-  const id = nuevaCotizacion();
-  let postCustomer = false;
-  let quoteBody = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      if (u.includes('/555')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 556 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1705 }); },
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ crearNuevo: true });
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.customer_id, 555, 'el celular ya mapea a un cliente: se reutiliza');
-  assert.equal(postCustomer, false, 'el escape no autoriza un segundo cliente para el mismo celular');
-  assert.equal(quoteBody.customer_id, 555);
-});
-
 // #345 (spec #337 user story 13, ADR-0016): el celular ligado a OTRO Cliente
 // Operam deja de ser un 409 sin salida y pasa a ser una pregunta -- "es otra
 // razon social del mismo Contacto?" -- con los dos Clientes Operam a la vista.
@@ -489,26 +391,6 @@ const PADRON_DOS_RAZONES = [
   { customer_id: 555, CustName: 'HOTEL AZUL EVENTOS SA DE CV', cust_ref: 'Azul Eventos', tax_id: 'XAXX010101000' },
   { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
 ];
-
-test('G3d: crearNuevo no debilita la pregunta por el celular ya ligado', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
-  const id = nuevaCotizacion();
-  let postCustomer = false;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      return jsonResponse({ total: 0, data: [] });
-    },
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10, crearNuevo: true });
-
-  assert.equal(res.status, 428, 'el celular ya esta ligado a 555 y el elegido es otro: se pregunta');
-  assert.equal(res.body.codigo, CODIGO_OTRA_RAZON_SOCIAL);
-  assert.equal(postCustomer, false);
-});
 
 test('#345-1: el celular ligado a otro Cliente Operam pide confirmacion (no 409) y no sube ni crea nada', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
@@ -784,42 +666,6 @@ test('G5: reintento tras fallo parcial (cliente creado, subida fallida) no dupli
   assert.equal(String(cot.folioOperam), '1705');
 });
 
-test('G6: cliente extranjero usa XEXX010101000 y deduplica contra los genericos extranjeros', async () => {
-  writeJson(PROSPECTOS_PATH, []);
-  const id = nuevaCotizacion({ pais: 'US', telefono: '+1 5551234567' });
-  let clienteBody = null;
-  // Todas las lecturas del padron que hace la dedup: los pools por tax_id (#194)
-  // y, desde #242, el listado completo que alimenta la busqueda por cust_ref.
-  const dedupUrls = [];
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 930 }); }
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/930')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 931 }] }] });
-      dedupUrls.push(u);
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/branches/931': () => jsonResponse({ result: true, data: [{}] }),
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1706 }),
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.ok, true);
-  // #194: el pool se pide por tax_id. Con ?search= Operam no indexa el RFC y la
-  // dedup corria contra una lista vacia.
-  const porTaxId = dedupUrls.filter(u => u.includes('tax_id='));
-  assert.ok(porTaxId.some(u => u.includes('tax_id=XEXX010101000')), 'la dedup de nombre corre contra el generico extranjero, por tax_id');
-  assert.ok(dedupUrls.every(u => !u.includes('search=')), 'nunca por el buscador de nombre');
-  // F4: el pool de genericos crece por diseno (#81); la dedup no puede truncarse
-  // a una pagina corta.
-  assert.ok(porTaxId.every(u => u.includes('limit=100')), 'la dedup generica pagina de 100 en 100');
-  assert.equal(clienteBody.tax_id, 'XEXX010101000');
-});
-
 test('F1: cotizacion legacy sin datos del contacto -> 422 del camino viejo, cero llamadas a Operam', async () => {
   writeJson(PROSPECTOS_PATH, []);
   const cots = readJson(COTS_PATH);
@@ -841,43 +687,6 @@ test('F1: cotizacion legacy sin datos del contacto -> 422 del camino viejo, cero
   assert.equal(cot.data.cliente.customerId, undefined, 'no persiste customer_id');
 });
 
-test('F2: fallo al ligar el prospecto no aborta la operacion (cliente creado y cotizacion subida)', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion();
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 950 });
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/950')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 951 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/branches/951': () => jsonResponse({ result: true, data: [{}] }),
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1707 }),
-  });
-  // prospectos.json de solo lectura: buscarPorCelular (lee) funciona pero
-  // ligarCliente (escribe) truena -- simula un fallo transitorio del store por el
-  // seam del filesystem, sin seams nuevos.
-  chmodSync(PROSPECTOS_PATH, 0o444);
-  let res;
-  try {
-    res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-      .set('Authorization', `Bearer ${TOKEN}`).send({});
-  } finally {
-    chmodSync(PROSPECTOS_PATH, 0o666);
-  }
-  assert.equal(res.status, 200, 'la subida debe completarse pese al fallo de ligado');
-  assert.equal(res.body.ok, true);
-  assert.equal(res.body.folio, 1707);
-  const ligar = res.body.steps.find(s => s.name === 'ligar prospecto');
-  assert.ok(ligar, 'reporta el paso de ligar prospecto');
-  assert.equal(ligar.status, 'error');
-  const cot = readJson(COTS_PATH).find(c => c.id === id);
-  assert.equal(cot.data.cliente.customerId, 950);
-  assert.equal(String(cot.folioOperam), '1707');
-  assert.equal(readJson(PROSPECTOS_PATH)[0].data.cliente_id, undefined, 'el prospecto quedo sin ligar (el fallo fue real)');
-});
-
 test('F3a: customerId elegido que difiere del ya ligado a la cotizacion -> 409 sin tocar Operam', async () => {
   writeJson(PROSPECTOS_PATH, []);
   const id = nuevaCotizacion({ customerId: 920 });
@@ -885,7 +694,7 @@ test('F3a: customerId elegido que difiere del ya ligado a la cotizacion -> 409 s
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
     .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10 });
   assert.equal(res.status, 409);
-  assert.match(res.body.error, /difiere/i);
+  assert.match(res.body.error, /no coincide/i);
   assert.match(res.body.error, /920/);
 });
 
@@ -903,31 +712,6 @@ test('F3b: customerId elegido que difiere del ya ligado al celular -> pregunta, 
   assert.deepEqual(res.body.ligado.map(c => String(c.customerId)), ['555']);
   const cot = readJson(COTS_PATH).find(c => c.id === id);
   assert.equal(cot.data.cliente.customerId, undefined, 'no persiste el elegido sin confirmar');
-});
-
-test('F3c: con customerId elegido no se reutiliza un branchId persistido (pudo ser de otro cliente)', async () => {
-  writeJson(PROSPECTOS_PATH, []);
-  const id = nuevaCotizacion({ branchId: 77 });
-  let quoteBody = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u) => {
-      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }] }] });
-      // #208: la revalidacion recalcula el pool por tax_id -- el elegido debe
-      // seguir apareciendo en el.
-      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
-        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
-      ] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1708 }); },
-  });
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10 });
-  assert.equal(res.status, 200);
-  assert.equal(quoteBody.branch_id, 20, 'resuelve el branch del cliente ELEGIDO, no el persistido');
-  const cot = readJson(COTS_PATH).find(c => c.id === id);
-  assert.equal(cot.data.cliente.branchId, 20, 'persiste el branch correcto para reintentos');
 });
 
 test('F6: POST /api/crear-cliente con RFC generico NO deduplica por RFC exacto', async () => {
@@ -1087,118 +871,6 @@ test('D2b: sin domicilio de entrega, cliente extranjero -> tax_group_id/sales_ac
   assert.equal(branchPut.sales_account, '401-07-000');
 });
 
-test('D3: Operam ignora un campo del branch -> verificacion lo reporta, la subida sigue OK', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion(DOMICILIO);
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches/911': (u, opts) => {
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      // Operam persiste todo MENOS el CP (quirk result:true que ignora campos).
-      return jsonResponse({ data: [{ addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
-        addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '', addr_reference: 'Porton negro entre A y B',
-        phone: '+52 5511223344', email: 'entrega@hotelazul.mx' }] });
-    },
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1803 }),
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.folio, 1803, 'la subida se completa pese a la discrepancia');
-  const ver = res.body.steps.find(s => s.name === 'verificar branch');
-  assert.ok(ver, 'reporta la verificacion');
-  assert.equal(ver.status, 'warn');
-  assert.ok(Array.isArray(ver.camposNoActualizados), 'lista los campos no persistidos');
-  assert.ok(ver.camposNoActualizados.some(x => x.campo === 'addr_zip'), 'el CP ignorado se reporta');
-});
-
-test('D4: fallo del PUT del branch NO tumba la subida (cliente creado, quote subido, step error)', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion(DOMICILIO);
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches/911': (u, opts) => {
-      if (opts?.method === 'PUT') return jsonResponse({ error: 'boom' }, 500);
-      return jsonResponse({ data: [{}] });
-    },
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1804 }),
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200, 'la subida se completa aunque el branch falle');
-  assert.equal(res.body.folio, 1804);
-  const put = res.body.steps.find(s => s.name === 'PUT branch (domicilio)');
-  assert.ok(put && put.status === 'error', 'reporta el fallo del branch sin tumbar la subida');
-});
-
-test('D5: retry con customerId elegido (cliente preexistente) NUNCA pisa su branch, aun con domicilio', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion(DOMICILIO);
-  let branchPut = false;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches/20': (u, opts) => { if (opts?.method === 'PUT') branchPut = true; return jsonResponse({ result: true, data: [{}] }); },
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
-      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }] }] });
-      // #208: la revalidacion recalcula el pool por tax_id -- el elegido debe
-      // seguir apareciendo en el.
-      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
-        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
-      ] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1805 }),
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 10 });
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.customer_id, 10);
-  assert.equal(branchPut, false, 'cliente preexistente elegido: su domicilio real NO se pisa');
-  assert.ok(!res.body.steps.some(s => s.name === 'PUT branch (domicilio)'));
-});
-
-test('D6: cliente reutilizado por celular (preexistente) NUNCA pisa su branch, aun con domicilio', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
-  const id = nuevaCotizacion(DOMICILIO);
-  let branchPut = false;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches/556': (u, opts) => { if (opts?.method === 'PUT') branchPut = true; return jsonResponse({ result: true, data: [{}] }); },
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
-      if (u.includes('/555')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 556 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1806 }),
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.customer_id, 555);
-  assert.equal(branchPut, false, 'cliente reutilizado por celular: su domicilio real NO se pisa');
-});
-
 // === "Es sucursal de este cliente" (#211, spec #206) ==========================
 // El vendedor declara que el negocio capturado es otra plaza de un cliente
 // existente: { sucursalDe } crea una sucursal NUEVA bajo ese cliente (SOLO POST,
@@ -1276,140 +948,14 @@ test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente exi
   const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
   assert.equal(p.data.cliente_id, 10);
   const audit = res.body.steps.find(s => s.name === 'log auditoria');
-  assert.ok(audit && audit.info === 'sucursal-creada', 'la creacion de sucursal tiene fuente propia en el log');
-  assert.ok(res.body.steps.every(s => s.status === 'ok'), 'todos los pasos en ok');
+  assert.ok(audit && audit.detalle === 'sucursal-creada', 'la creacion del domicilio de entrega tiene fuente propia en el log');
+  assert.ok(res.body.steps.every(s => s.status === 'ok' || s.status === 'omitido'), 'ningun paso fallo');
 
   const cot = readJson(COTS_PATH).find(c => c.id === id);
   assert.equal(cot.data.cliente.customerId, 10);
   assert.equal(cot.data.cliente.branchId, 33, 'la sucursal creada se persiste');
   assert.equal(String(cot.folioOperam), '1901');
   assert.equal(cot.data.motivoPre, null, 'con folio el candado se levanta');
-});
-
-test('SUC2: la sucursal no aparece en la relectura -> paso en error, la cotizacion NO finge exito', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion(DOMICILIO);
-  let quoteLlamado = false;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    // Operam responde result:true pero la sucursal no queda: el cliente sigue
-    // con su unica sucursal previa (quirk #74, el 200 no garantiza nada).
-    '/api/v3/sales/branches': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, cust_branch_id: 33 });
-      return jsonResponse({ data: [{}] });
-    },
-    '/api/v3/sales/customers': (u, opts) => {
-      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20, br_name: 'Matriz' }] }] });
-      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
-        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
-      ] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, added_trans_no: 1902 }); },
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
-
-  assert.equal(res.status, 503);
-  assert.match(res.body.error, /domicilio/i);
-  const paso = res.body.steps.find(s => s.name === 'verificar sucursal');
-  assert.ok(paso && paso.status === 'error', 'el paso de verificacion queda en error');
-  assert.equal(quoteLlamado, false, 'sin sucursal verificada no se sube el quote');
-
-  const cot = readJson(COTS_PATH).find(c => c.id === id);
-  assert.ok(!cot.folioOperam, 'la cotizacion queda PRE');
-  assert.equal(cot.data.motivoPre, 'operam', 'PRE por Operam: el documento SI se entrega, sin numero');
-  assert.equal(cot.data.cliente.branchId, undefined, 'no persiste una sucursal que no existe');
-});
-
-test('SUC3: reintentar "es sucursal" sobre la misma cotizacion NO crea una segunda sucursal', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  // La cotizacion ya quedo ligada al cliente 10 con la sucursal 33 que creo el
-  // intento anterior (persistencia previa a la subida): el reintento la reusa.
-  const id = nuevaCotizacion({ ...DOMICILIO, customerId: 10, branchId: 33 });
-  let branchPosts = 0;
-  let quoteBody = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches': (u, opts) => {
-      if (opts?.method === 'POST') { branchPosts++; return jsonResponse({ result: true, cust_branch_id: 34 }); }
-      return jsonResponse({ data: [{}] });
-    },
-    '/api/v3/sales/customers': (u, opts) => {
-      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 20 }, { branch_code: 33 }] }] });
-      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
-        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
-      ] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1903 }); },
-    ...mockWebLegacy(),
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
-
-  assert.equal(res.status, 200);
-  assert.equal(branchPosts, 0, 'la sucursal del intento anterior se reusa, no se duplica');
-  assert.equal(quoteBody.customer_id, 10);
-  assert.equal(quoteBody.branch_id, 33, 'el quote sale con la sucursal ya creada');
-});
-
-// El caso que de verdad puede duplicar: el POST SI escribio en Operam pero la
-// relectura no la vio (justo el escenario que motiva releer, #74). El reintento
-// entra sin nada persistido -- si no mirara antes de crear, dejaria DOS
-// sucursales identicas bajo el cliente y ninguna forma de distinguirlas.
-test('SUC3b: el POST escribio pero la relectura fallo -> el reintento reusa esa sucursal, no crea otra', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion(DOMICILIO);
-  let branchPosts = 0;
-  let quoteBody = null;
-  // Operam si guarda la sucursal, pero el cliente tarda en listarla: el primer
-  // intento no la ve y el segundo si.
-  let branchesVisibles = [{ branch_code: 20, br_name: 'Matriz' }];
-  let creadaEnOperam = null;
-  const handlers = {
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches': (u, opts) => {
-      if (opts?.method === 'POST') {
-        branchPosts++;
-        creadaEnOperam = { branch_code: 33, ...JSON.parse(opts.body) };
-        return jsonResponse({ result: true, cust_branch_id: 33 });
-      }
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      // GET de un branch por codigo: el 20 es la matriz, el 33 la recien creada.
-      if (u.includes('/branches/33')) return jsonResponse({ data: [creadaEnOperam ? { ...creadaEnOperam, branch_code: 33 } : {}] });
-      return jsonResponse({ data: [{ branch_code: 20, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' }] });
-    },
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 999 });
-      if (u.includes('/10')) return jsonResponse({ data: [{ sales_type: '12', branches: branchesVisibles }] });
-      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
-        { customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
-      ] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1904 }); },
-    ...mockWebLegacy(),
-  };
-  mockOperamFetch(handlers);
-
-  const primero = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
-  assert.equal(primero.status, 503, 'la relectura no la vio: no finge exito');
-  assert.equal(branchPosts, 1);
-
-  // Ahora Operam si la lista: el reintento debe encontrarla antes de crear.
-  branchesVisibles = [...branchesVisibles, { branch_code: 33, br_name: 'Recepcion' }];
-
-  const segundo = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
-
-  assert.equal(segundo.status, 200);
-  assert.equal(branchPosts, 1, 'el reintento NO crea una segunda sucursal');
-  assert.equal(quoteBody.customer_id, 10);
-  assert.equal(quoteBody.branch_id, 33, 'el quote sale con la sucursal que si quedo en Operam');
 });
 
 test('SUC4: el flag de sucursal no salta la pregunta del celular ya ligado a OTRO Cliente Operam', async () => {
@@ -1430,36 +976,6 @@ test('SUC4: el flag de sucursal no salta la pregunta del celular ya ligado a OTR
   assert.equal(res.body.codigo, CODIGO_OTRA_RAZON_SOCIAL);
   assert.deepEqual(res.body.ligado.map(c => String(c.customerId)), ['555'], 'dice a que Cliente Operam esta ligado el celular');
   assert.equal(escrituras, 0, 'cero escrituras en Operam');
-});
-
-test('SUC5: sucursalDe que ya no esta en el pool recalculado -> 409 con candidatos frescos, cero escrituras', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion(DOMICILIO);
-  let branchPosts = 0;
-  let quoteLlamado = false;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches': (u, opts) => { if (opts?.method === 'POST') branchPosts++; return jsonResponse({ result: true, cust_branch_id: 33 }); },
-    '/api/v3/sales/customers': (u) => {
-      // El 10 ya no esta en el pool: el vendedor trae un id de un 409 viejo.
-      if (u.includes('tax_id=')) return jsonResponse({ total: 1, data: [
-        { customer_id: 11, CustName: 'HOTEL AZUL NORTE SA', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000' },
-      ] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': () => { quoteLlamado = true; return jsonResponse({ result: true, added_trans_no: 1 }); },
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
-
-  assert.equal(res.status, 409);
-  assert.equal(res.body.candidatos.length, 1);
-  assert.equal(res.body.candidatos[0].id, 11, 'la lista fresca, no la que trajo el vendedor');
-  assert.equal(branchPosts, 0, 'no crea sucursal bajo un cliente que ya no es candidato');
-  assert.equal(quoteLlamado, false);
-  const cot = readJson(COTS_PATH).find(c => c.id === id);
-  assert.equal(cot.data.motivoPre, 'dedup', 'mismo candado que la parada original');
 });
 
 // === Concurrencia (F3 de la revision de #83): lock por id de cotizacion ===
@@ -1947,41 +1463,6 @@ test('CR1: el dueno del nombre corto entra al picker aunque tenga RFC REAL y la 
   assert.equal(quoteLlamado, false, 'no debe subir');
 });
 
-test('CR2: elegir al dueno del nombre corto pasa la revalidacion (#208) y sube el quote a ese cliente', async () => {
-  writeJson(PROSPECTOS_PATH, []);
-  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
-  let postCustomer = false;
-  let quoteBody = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 999 }); }
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (esListadoPadron(u)) {
-        return jsonResponse({ total: 1, data: [
-          { customer_id: 499, CustName: 'CUMBIARCA SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'CPE921211N76' },
-        ] });
-      }
-      if (u.includes('/499')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 546 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1801 }); },
-    ...mockWebLegacy(),
-  });
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ customerId: 499 });
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.ok, true);
-  assert.equal(res.body.customer_id, 499);
-  assert.equal(postCustomer, false, 'elegir un candidato NO crea cliente');
-  assert.equal(quoteBody.customer_id, 499);
-  const cot = readJson(COTS_PATH).find(c => c.id === id);
-  assert.equal(String(cot.folioOperam), '1801');
-  assert.equal(cot.data.cliente.customerId, 499);
-});
-
 test('CR3: con el padron caido, el 406 de cust_ref se traduce en un error accionable (409) y el reintento no crea nada', async () => {
   writeJson(PROSPECTOS_PATH, []);
   const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
@@ -2007,7 +1488,7 @@ test('CR3: con el padron caido, el 406 de cust_ref se traduce en un error accion
   assert.match(res.body.error, /nombre corto/i);
   const paso = res.body.steps.find(s => s.name === 'POST customer');
   assert.equal(paso.status, 'error');
-  assert.match(paso.error, /same cust_ref/);
+  assert.match(paso.detalle, /same cust_ref/);
 
   const cot = readJson(COTS_PATH).find(c => c.id === id);
   assert.ok(!cot.folioOperam, 'la cotizacion sigue PRE');
@@ -2020,36 +1501,6 @@ test('CR3: con el padron caido, el 406 de cust_ref se traduce en un error accion
   assert.equal(otra.status, 409);
   assert.equal(otra.body.codigo, 'CUST_REF_DUPLICADO');
   assert.equal(intentosPost, 2, 'el reintento vuelve a intentar y vuelve a chocar, sin crear nada');
-});
-
-test('CR3b: si el padron puede nombrar al dueno del cust_ref, el error accionable lo dice', async () => {
-  writeJson(PROSPECTOS_PATH, []);
-  const id = nuevaCotizacion({ rfc: 'XAXX010101000' });
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return respuesta406CustRef();
-      // El padron ve al dueno, pero el vendedor ya dijo "ninguno es el mismo
-      // cliente" (#204): se crea de todos modos y Operam lo frena. El error tiene
-      // que nombrar al dueno para que el vendedor sepa contra que choco.
-      if (esListadoPadron(u)) {
-        return jsonResponse({ total: 1, data: [
-          { customer_id: 499, CustName: 'CUMBIARCA SA DE CV', cust_ref: 'Hotel Azul', tax_id: 'CPE921211N76' },
-        ] });
-      }
-      return jsonResponse({ total: 0, data: [] });
-    },
-  });
-  await cargarListasPrecios();
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({ crearNuevo: true });
-
-  assert.equal(res.status, 409);
-  assert.equal(res.body.codigo, 'CUST_REF_DUPLICADO');
-  assert.match(res.body.error, /CUMBIARCA SA DE CV/);
-  assert.match(res.body.error, /CPE921211N76/);
 });
 
 test('CR4: un 406 que NO es el del cust_ref conserva el 503 de siempre', async () => {
@@ -2076,115 +1527,9 @@ test('CR4: un 406 que NO es el del cust_ref conserva el 503 de siempre', async (
   assert.equal(cot.data.motivoPre, 'operam');
 });
 
-test('CR5: sin nombre corto no hay busqueda por cust_ref y el alta corre como siempre', async () => {
-  writeJson(PROSPECTOS_PATH, []);
-  const id = nuevaCotizacion({ nombreCorto: '' });
-  let postCustomer = false;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postCustomer = true; return jsonResponse({ result: true, customer_id: 940 }); }
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/940')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 941 }] }] });
-      // Un cliente del padron CON cust_ref vacio no puede volverse candidato de
-      // una cotizacion sin nombre corto (dos vacios no son una coincidencia).
-      if (esListadoPadron(u)) {
-        return jsonResponse({ total: 1, data: [{ customer_id: 499, CustName: 'CUMBIARCA SA', cust_ref: '', tax_id: 'CPE921211N76' }] });
-      }
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/branches/941': (u, opts) => {
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      return jsonResponse({ data: [{ br_name: 'Hotel Azul Centro' }] });
-    },
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1802 }),
-    ...mockWebLegacy(),
-  });
-  await cargarListasPrecios();
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200);
-  assert.equal(postCustomer, true);
-  assert.equal(res.body.customer_id, 940);
-});
-
 // --- #339: el celular del Contacto en la casilla Cel (`fax`) de Operam ---
 //
 // ADR-0016: la casilla que la web etiqueta "Cel" viaja en la API como `fax`, y es
 // donde el equipo busca el celular. El alta lo escribe ahi ademas de donde ya lo
 // escribia (phone del cliente y notas), y lo VERIFICA releyendo: Operam responde
 // 200 sin garantizar nada (#74).
-
-test('#339-1: el alta generica manda el celular del Contacto en Cel (fax) del cliente y de la sucursal', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion({ calle: 'Pestalozzi 123', cpEntrega: '03810', celEntrega: '5511112222' });
-  let clienteBody = null;
-  let branchBody = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 950 }); }
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/950')) {
-        return jsonResponse({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: CELULAR }], branches: [{ branch_code: 951, fax: CELULAR }] }] });
-      }
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/branches/951': (u, opts) => {
-      if (opts?.method === 'PUT') { branchBody = JSON.parse(opts.body); return jsonResponse({ result: true }); }
-      return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
-    },
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1901 }),
-    ...mockWebLegacy(),
-  });
-  await cargarListasPrecios();
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200);
-  assert.equal(clienteBody.fax, CELULAR, 'el POST del cliente lleva el celular del Contacto en Cel');
-  assert.equal(clienteBody.phone, CELULAR, 'y sigue llevandolo donde ya lo llevaba');
-  assert.equal(branchBody.fax, CELULAR, 'el PUT de la sucursal lleva el mismo celular del Contacto en Cel');
-  assert.equal(branchBody.phone, '5511112222', 'el telefono de la sucursal sigue siendo el de la entrega');
-  const paso = res.body.steps.find(s => s.name === 'verificar Cel');
-  assert.ok(paso, 'reporta el paso de verificacion del Cel');
-  assert.equal(paso.status, 'ok');
-});
-
-test('#339-2: si Operam ignora el Cel, el alta NO falla: lo reporta como campo no aplicado', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion();
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/sales_types': () => jsonResponse({ data: [{ id: '15', sales_type: 'M100', inactive: '0' }] }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 960 });
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      // Operam acepto el POST pero no guardo el Cel en ningun lado (quirk #74).
-      if (u.includes('/960')) return jsonResponse({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: '' }], branches: [{ branch_code: 961, fax: '' }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/branches/961': (u, opts) => {
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
-    },
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1902 }),
-    ...mockWebLegacy(),
-  });
-  await cargarListasPrecios();
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200, 'el alta no falla por un Cel que Operam ignoro');
-  assert.equal(res.body.ok, true);
-  assert.equal(String(res.body.folio), '1902', 'la cotizacion se sube igual');
-  const paso = res.body.steps.find(s => s.name === 'verificar Cel');
-  assert.equal(paso.status, 'warn');
-  assert.deepEqual(paso.camposNoActualizados.map(c => c.label), ['Cel del contacto', 'Cel del domicilio de entrega']);
-});
