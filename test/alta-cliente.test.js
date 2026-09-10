@@ -492,6 +492,29 @@ test('el upgrade fiscal si llena el nombre corto que dejo el alta generica', asy
   assert.equal(paso(res, 'nombre corto'), undefined);
 });
 
+test('el nombre corto que el vendedor no capturo NO borra el que el Cliente Operam ya tenia', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()] });
+  const res = await upgradeFiscal(500, { ...CSF, nombreCorto: '' }, operam.deps);
+
+  assert.equal(operam.cliente(500).cust_ref, 'Hotel Azul Centro');
+  assert.equal(operam.pedidos('actualizarClienteDirecto')[0].args[1].cust_ref, undefined);
+  assert.equal(paso(res, 'nombre corto').status, 'omitido');
+});
+
+test('el nombre corto que ya usa otro Cliente Operam bloquea el upgrade pidiendo cambiarlo', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales()],
+    falla: { actualizarClienteDirecto: 'Operam 406: Already exists customer with same cust_ref' },
+  });
+  const res = await upgradeFiscal(500, { ...CSF, nombreCorto: 'Hotel Azul' }, operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'cust-ref-duplicado');
+  assert.match(res.mensaje, /"Hotel Azul" ya lo usa otro Cliente Operam/);
+  assert.match(res.mensaje, /Cambialo/);
+  assert.match(res.detalle, /same cust_ref/);
+});
+
 test('el upgrade fiscal llena el nombre corto vacio', async () => {
   const operam = operamEnMemoria({ clientes: [sinDatosFiscales({ cust_ref: '' })] });
   await upgradeFiscal(500, { ...CSF, nombreCorto: 'Hotel Azul' }, operam.deps);
