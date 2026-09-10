@@ -55,10 +55,9 @@ const CSF = {
   cp: '11700', municipio: 'MIGUEL HIDALGO', estado: 'CIUDAD DE MEXICO', regimenFiscal: '601',
 };
 
-function mockOperam({ relecturaFalla = false } = {}) {
+function mockOperam() {
   const original = globalThis.fetch;
   let padron = [VIEJO];
-  let listados = 0;
   globalThis.fetch = async (url, opts) => {
     const u = String(url);
     if (u.includes('/api/v3/login')) return { ok: true, json: async () => ({ token: 'tok', result: true }) };
@@ -68,14 +67,8 @@ function mockOperam({ relecturaFalla = false } = {}) {
         return { ok: true, json: async () => ({ version: '3', ...JSON.parse(opts.body) }) };
       }
       if (u.includes('tax_id=')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
-      if (/\/customers\/\d+/.test(u)) {
-        if (relecturaFalla) return { ok: false, status: 503, text: async () => 'boom' };
-        return { ok: true, json: async () => ({ data: [detalleDe(padron[0])] }) };
-      }
-      if (u.includes('limit=100')) {
-        listados++;
-        return { ok: true, json: async () => ({ total: padron.length, data: padron }) };
-      }
+      if (/\/customers\/\d+/.test(u)) return { ok: true, json: async () => ({ data: [detalleDe(padron[0])] }) };
+      if (u.includes('limit=100')) return { ok: true, json: async () => ({ total: padron.length, data: padron }) };
       // El ?search= de Operam busca por NOMBRE (#194): con el CustName ya cambiado,
       // "Luis Emilio" no matchea nada. Medido en vivo contra el 517.
       const search = decodeURIComponent((u.match(/[?&]search=([^&]*)/) || [])[1] || '');
@@ -84,7 +77,7 @@ function mockOperam({ relecturaFalla = false } = {}) {
     }
     throw new Error('Unmocked fetch: ' + u);
   };
-  return { restore: () => { globalThis.fetch = original; }, listados: () => listados };
+  return { restore: () => { globalThis.fetch = original; } };
 }
 
 const buscar = q => supertest(app)
@@ -126,19 +119,6 @@ test('#327: tras el upgrade fiscal el buscador ya no devuelve el RFC generico vi
   }
 });
 
-test('#327: la actualizacion puntual NO relee el padron entero', async () => {
-  const m = mockOperam();
-  try {
-    await buscar('Luis Emilio Zarabozo');
-    const trasCalentar = m.listados();
-    await upgrade();
-    assert.strictEqual(m.listados(), trasCalentar,
-      'el upgrade no debe disparar listarTodosClientes: la entrada fresca sale de la relectura que ya se hacia');
-  } finally {
-    m.restore();
-  }
-});
-
 test('#327: el telefono del cliente sigue resolviendo despues del upgrade', async () => {
   const m = mockOperam();
   try {
@@ -155,19 +135,3 @@ test('#327: el telefono del cliente sigue resolviendo despues del upgrade', asyn
   }
 });
 
-test('#327: si la relectura falla, el upgrade responde ok y el cache se refresca igual', async () => {
-  const m = mockOperam({ relecturaFalla: true });
-  try {
-    await buscar('Luis Emilio Zarabozo');
-    const trasCalentar = m.listados();
-    const put = await upgrade();
-    // El PUT si se aplico: la verificacion es un paso aparte y su fallo no es un error.
-    assert.strictEqual(put.status, 200);
-    assert.strictEqual(put.body.verificacionFallida, true);
-    // Sin entrada fresca que insertar, el unico camino honesto es releer el padron.
-    assert.ok(m.listados() > trasCalentar,
-      'sin relectura del cliente, el cache se refresca entero en vez de quedarse viejo 1 h');
-  } finally {
-    m.restore();
-  }
-});

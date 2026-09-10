@@ -383,6 +383,10 @@ test('el upgrade fiscal escribe los datos de la CSF sobre el mismo Cliente Opera
   assert.equal(res.clienteId, 500);
   assert.deepEqual(res.camposNoAplicados, []);
   assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
+  // El domicilio de entrega no se toca NUNCA en el upgrade: el PUT es un REPLACE
+  // destructivo sobre uno ya configurado (#189, danos reales en #195).
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 0);
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0);
   const fresco = operam.cliente(500);
   assert.equal(fresco.tax_id, 'HAC010203AB1');
   assert.equal(fresco.CustName, 'HOTEL AZUL CENTRO SA DE CV');

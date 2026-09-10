@@ -12,9 +12,9 @@ import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacio
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
-import { buildActualizarFiscalPayload, bodyDesdeDiffFiscal, calcularDiffFiscal, camposNoAplicados, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
+import { bodyDesdeDiffFiscal, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
-import { darDeAlta } from './lib/alta-cliente.js';
+import { darDeAlta, upgradeFiscal } from './lib/alta-cliente.js';
 import { logCliente } from './lib/clientes-log.js';
 import { celsNoAplicados } from './lib/cel-operam.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
@@ -55,7 +55,7 @@ import * as configStore from './lib/config-store.js';
 import * as modelosStore from './lib/modelos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
-import { refrescarIndice, matchCliente, clientesCacheados, actualizarClienteEnCache, enumerarTelefonosClientes } from './lib/indice-telefonos.js';
+import { refrescarIndice, matchCliente, clientesCacheados, enumerarTelefonosClientes } from './lib/indice-telefonos.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
 import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
@@ -3374,17 +3374,11 @@ app.put('/api/actualizar-cliente/:id', authMiddleware, async (req, res) => {
 
 // --- CSF: upgrade del cliente generico con los datos fiscales reales (issue #85, ADR-0006) ---
 //
-// Cuando llega la Constancia de Situacion Fiscal se hace PUT sobre el Cliente Operam
-// existente (RFC real, razon social, regimen, domicilio fiscal), NUNCA un POST nuevo.
-// Dos zonas de robustez:
-//  - Gate anti-fusion: si el RFC real ya existe en Operam con OTRO Cliente Operam, frena (409)
-//    sin escribir nada -- el prospecto resulto ser un Cliente Operam con datos fiscales y la
-//    fusion es manual. Si el match es el MISMO Cliente Operam (reintento) o no hay match, procede.
-//  - Verificacion post-PUT: releer el Cliente Operam y comparar (quirk de Operam: PUT 200 que
-//    ignora campos en silencio, ver CLAUDE.md cliente 457); los campos que no pegaron se
-//    reportan en camposNoActualizados para que el vendedor los corrija en Operam.
-const FUENTE_CSF_UPGRADE = 'csf-upgrade';
-
+// Desde #367 (ADR-0017) la operacion entera vive en lib/alta-cliente.js
+// (upgradeFiscal): el gate anti-fusion, el PUT con el eco, el post-fix del segmento y
+// la relectura que compara. Aqui solo queda la traduccion HTTP -- Solicitud <- body,
+// resultado -> status -- mas el respaldo de la constancia en Dropbox, que no es del
+// alta sino de este endpoint.
 app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) => {
   const { csfDatos: csfDatosCrudo, pdf_base64 } = req.body || {};
   const rfc = (csfDatosCrudo && csfDatosCrudo.rfc || '').trim().toUpperCase();
@@ -3396,139 +3390,34 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
   // formal ya existente en Operam y colar una fusion silenciosa.
   const csfDatos = { ...csfDatosCrudo, rfc };
 
-  // Gate anti-fusion (#85) via el verificador compartido de "RFC libre" (#207): mismo
-  // criterio que el PATCH de clientes, para que no exista un camino debil que lo
-  // contradiga. Comportamiento sin cambios respecto al gate anterior (buscarClientePorRFC
-  // + comparacion manual): la suite UF1-UF6 es la red de seguridad.
-  let verificacion;
-  try {
-    verificacion = await verificarRfcLibre(rfc, id);
-  } catch (err) {
-    return res.status(503).json({ error: 'Operam no disponible: ' + err.message });
-  }
-  if (verificacion.estado === 'otro') {
-    logCliente(rfc, csfDatos.razonSocial, 'fusion-bloqueada', verificacion.dueno.cliente_id, FUENTE_CSF_UPGRADE, null, null);
-    return res.status(409).json({
-      error: 'Este RFC ya pertenece a otro Cliente Operam. Es una fusion manual: el prospecto resulto ser un Cliente Operam con datos fiscales existente.',
-      fusion: true,
-      cliente: verificacion.dueno,
-    });
+  const resultado = await upgradeFiscal(id, csfDatos);
+  if (resultado.tipo === 'bloqueo') {
+    // La fusion es la unica parada con nombre propio para el navegador: identifica al
+    // Cliente Operam dueno del RFC para que el vendedor sepa contra quien fusionar.
+    if (resultado.motivo === 'fusion') {
+      return res.status(409).json({ error: resultado.mensaje, fusion: true, dueno: resultado.dueno });
+    }
+    return res.status(503).json({ error: resultado.mensaje, detalle: resultado.detalle });
   }
 
-  // Tax ID extranjero (issue #95 regla 5) y actividades economicas de la CSF (issue
-  // #171): ninguno tiene campo dedicado en la API v3, se componen sobre las notas
-  // EXISTENTES del cliente (sin borrarlas). Requiere conocer esas notas ANTES del
-  // PUT -- una relectura extra, solo cuando se capturo alguno de los dos (el camino
-  // comun sin ninguno no paga este GET adicional).
-  const hayActividades = Array.isArray(csfDatos.actividades) && csfDatos.actividades.length > 0;
-  let notasActuales;
-  if (csfDatos.taxIdExtranjero || hayActividades) {
-    try {
-      const clienteActual = await obtenerClientePorId(id);
-      notasActuales = (clienteActual && clienteActual.notes) || '';
-    } catch (err) {
-      // Relectura fallida: null le dice a buildActualizarFiscalPayload que OMITA
-      // notes (reconstruirlas desde '' pisaria notas reales del cliente). El Tax ID
-      // y las actividades quedan sin aplicar y la verificacion post-PUT lo reporta.
-      notasActuales = null;
-      console.error('[csf-upgrade] relectura de notas fallo, Tax ID/actividades omitidos:', err.message);
-    }
-  }
-
-  // El PUT responde con el eco de los campos que Operam acepto (#169): es la unica
-  // senal del motivo real cuando un campo no pega, y la unica confirmacion posible
-  // para los que el GET de detalle no expone (idcif, invoice_email).
-  let ecoPut = null;
-  try {
-    ecoPut = await actualizarClienteDirecto(id, buildActualizarFiscalPayload(csfDatos, notasActuales));
-  } catch (err) {
-    logCliente(rfc, csfDatos.razonSocial, 'error', id, FUENTE_CSF_UPGRADE, null, err.message);
-    return res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
-  }
-
-  // Post-fix del SEGMENTO por la web legacy (#172): la API v3 no puede escribir
-  // segmento_id por ningun camino (sondeo en vivo, peltre-operam.md 12.5c), asi que se
-  // repostea la ficha de cliente de FrontAccounting. El orden importa por partida doble:
-  // corre DESPUES del PUT (que ya escribio el postal_code de la CSF, sin el cual FA
-  // rechaza el guardado entero) y ANTES de la relectura (asi la verificacion ve el
-  // segmento ya aplicado y deja de reportarlo). Un fallo aqui NO tumba el upgrade: el
-  // PUT ya se aplico; el segmento queda sin escribir y la verificacion lo reporta con
-  // el motivo real de la web en vez del generico.
-  let motivoSegmentoWeb = null;
-  if (csfDatos.segmentoId) {
-    const r = await actualizarSegmentoClienteWeb(id, csfDatos.segmentoId);
-    if (!r.ok) {
-      motivoSegmentoWeb = `No se pudo escribir el segmento por la web de Operam: ${r.error}`;
-      console.error('[csf-upgrade] post-fix web del segmento fallo:', r.error);
-    }
-  }
-
-  // La relectura de verificacion es un paso APARTE del PUT: si el PUT ya tuvo exito
-  // en Operam, un fallo aqui (red, o Operam devolviendo el cliente vacio) no debe
-  // reportarse como "no se pudo actualizar" -- el dato SI quedo escrito, solo no se
-  // pudo confirmar. Colapsar ambos pasos en un mismo catch contaminaba el log de
-  // auditoria con 'error' para una escritura que en realidad tuvo exito.
-  let camposNoActualizados = [];
-  let verificacionFallida = false;
-  let cacheAlDia = false;
-  try {
-    const fresco = await obtenerClientePorId(id);
-    if (!fresco) throw new Error('Operam no devolvio el cliente en la relectura');
-    // El padron cacheado (#42) se entera del cambio AQUI (#327): sin esto el buscador
-    // seguia ofreciendo al cliente con su nombre y su RFC generico viejos hasta 1 h.
-    // Esta relectura ya se hacia para verificar, asi que no cuesta una llamada mas.
-    actualizarClienteEnCache(fresco);
-    cacheAlDia = true;
-    const diff = calcularDiffFiscal(fresco, csfDatos);
-    camposNoActualizados = camposNoAplicados(diff, ecoPut);
-    // El motivo generico ("Operam ignoro este campo en el PUT") es cierto pero inutil
-    // cuando lo que fallo fue el post-fix web: ahi el motivo real (CP vacio, sesion
-    // caducada) es lo unico que le dice al vendedor que hacer.
-    const segmentoPendiente = motivoSegmentoWeb && camposNoActualizados.find(c => c.campo === 'segmento_id');
-    if (segmentoPendiente) segmentoPendiente.motivo = motivoSegmentoWeb;
-    // notes no esta en DIFF_FISCAL_CAMPOS (su valor "nuevo" depende de las notas
-    // previas, no es un campo de comparacion directa) -- se verifica aparte: la
-    // linea del Tax ID debe estar presente en las notas releidas.
-    if (csfDatos.taxIdExtranjero) {
-      const prefijo = `Tax ID: ${csfDatos.taxIdExtranjero}`;
-      const notasFrescas = fresco.notes || '';
-      if (!notasFrescas.includes(prefijo)) {
-        camposNoActualizados.push({ campo: 'notes', label: 'Tax ID extranjero', anterior: notasFrescas, nuevo: prefijo });
-      }
-    }
-    if (hayActividades) {
-      const encabezadoActividades = csfDatos.csf_fecha
-        ? `Actividades economicas (CSF ${csfDatos.csf_fecha}):`
-        : 'Actividades economicas:';
-      const notasFrescas = fresco.notes || '';
-      if (!notasFrescas.includes(encabezadoActividades)) {
-        camposNoActualizados.push({ campo: 'notes', label: 'Actividades economicas', anterior: notasFrescas, nuevo: encabezadoActividades });
-      }
-    }
-  } catch (err) {
-    verificacionFallida = true;
-    // Solo si el cache NO alcanzo a actualizarse: este catch cubre tambien el diff y la
-    // verificacion de notas, que corren DESPUES de actualizarClienteEnCache -- un fallo
-    // ahi no justifica releer el padron paginado entero, el cache ya quedo al dia.
-    // Cuando si fallo la relectura no hay entrada fresca que meter, pero el PUT SI se
-    // aplico (#327): se dispara el refresh completo sin esperarlo (mismo patron
-    // stale-while-revalidate de obtenerCache) y el agujero baja de 1 h a lo que tarde.
-    if (!cacheAlDia) {
-      refrescarIndice().catch(e => console.warn('[indice-telefonos] refresh tras upgrade fallo:', e.message));
-    }
-    console.error('[csf-upgrade] verificacion post-PUT fallo:', err.message);
-  }
-
+  // Respaldo de la constancia (fire-and-forget, como en /api/crear-cliente): es del
+  // endpoint, no del alta -- el modulo no conoce Dropbox ni el PDF.
   if (pdf_base64) {
     import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
       subirCsfDropbox(pdf_base64, rfc, csfDatos.razonSocial)
         .catch(err => console.error('[dropbox]', err.message))
     );
   }
-  // dropbox_ok en null (no true): la subida es fire-and-forget, igual que en
-  // /api/crear-cliente -- en este punto no se sabe si de verdad se subio.
-  logCliente(rfc, csfDatos.razonSocial, 'actualizado', id, FUENTE_CSF_UPGRADE, null, verificacionFallida ? 'La verificacion post-PUT fallo (el PUT si se aplico)' : null);
-  res.json({ ok: true, customer_id: Number(id), camposNoActualizados, verificacionFallida });
+  res.json({
+    ok: true,
+    customer_id: Number(id),
+    // El navegador sigue leyendo camposNoActualizados: la llave del contrato HTTP no
+    // cambia porque el modulo la nombre camposNoAplicados.
+    camposNoActualizados: resultado.camposNoAplicados,
+    verificacionFallida: resultado.pasos.some(p => p.name === 'verificar fiscal' && p.status === 'error'),
+    segmento: resultado.segmento,
+    pasos: resultado.pasos,
+  });
 });
 
 // --- CSF: crear cliente desde datos de CSF ---
