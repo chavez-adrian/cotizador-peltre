@@ -35,6 +35,167 @@ const DOMICILIO = {
   telefono: '5511223344', correo: 'entrega@hotelazul.mx',
 };
 
+// El alta completa (#366): la misma Solicitud, con datos fiscales reales y el
+// segmento esperado. El RFC real es lo que la distingue del alta que nace con la
+// cotizacion, y de ahi salen la dedup por RFC exacto y el lock.
+const RFC_REAL = 'HAZ010203AB1';
+
+function solicitudFiscal(extra = {}) {
+  return solicitud({
+    datosFiscales: {
+      rfc: RFC_REAL, razonSocial: 'Hoteles Azules SA de CV', regimen: '601',
+      idcif: '12345678901', calle: 'Av. Juarez', numExt: '55', numInt: '3',
+      colonia: 'Centro', cp: '06000', municipio: 'Cuauhtemoc', estado: 'CDMX',
+      actividades: [], csfFecha: '',
+    },
+    segmento: { preferencia: 'esperar' },
+    ...extra,
+  });
+}
+
+test('un alta con datos fiscales crea el Cliente Operam con su RFC real y su domicilio fiscal', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitudFiscal({ domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.creadoNuevo, true);
+  const creado = operam.cliente(res.clienteId);
+  assert.equal(creado.tax_id, RFC_REAL);
+  assert.equal(creado.CustName, 'Hotel Azul Centro');
+  assert.equal(creado.cfdi_regimen_fiscal, '601');
+  assert.equal(creado.postal_code, '06000');
+  assert.equal(creado.street, 'Av. Juarez');
+});
+
+test('el RFC real que ya tiene Cliente Operam detiene el alta con la pregunta, sin crear nada', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 61, CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Otro', tax_id: RFC_REAL, branches: [{ branch_code: 3 }] }],
+  });
+  const res = await darDeAlta(solicitudFiscal(), operam.deps);
+
+  assert.equal(res.tipo, 'pregunta');
+  assert.equal(res.motivo, 'candidatos');
+  assert.deepEqual(res.candidatos.map(c => c.id), [61]);
+  assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
+});
+
+test('el uso de CFDI elegido queda escrito por el PUT, que es el unico que Operam respeta', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitudFiscal({
+    comercial: { vendedor: 'Alejandro Chavez', tier: 'M100', salesTypeId: 15, segmentoId: null, correoFacturacion: '', usoCfdi: 'G03' },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const put = operam.pedidos('actualizarClienteDirecto').find(l => l.args[1].dimension_id != null);
+  assert.equal(put.args[1].timbrado_uso_cfdi, 'G03');
+  assert.equal(operam.cliente(res.clienteId).timbrado_uso_cfdi, 'G03');
+});
+
+test('sin datos fiscales el PUT lleva el uso de CFDI que impone el RFC generico, no el capturado', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitud({
+    comercial: { vendedor: 'Alejandro Chavez', tier: 'M100', salesTypeId: 15, segmentoId: null, correoFacturacion: '', usoCfdi: 'G03' },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const put = operam.pedidos('actualizarClienteDirecto').find(l => l.args[1].dimension_id != null);
+  assert.equal(put.args[1].timbrado_uso_cfdi, 'S01');
+});
+
+test('sobre el Cliente Operam que el vendedor eligio no se escribe ningun domicilio de entrega', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 61, CustName: 'HOTELES AZULES SA DE CV', tax_id: RFC_REAL,
+      branches: [{ branch_code: 3, br_name: 'Matriz', addr_street: 'Domicilio real del cliente' }],
+    }],
+  });
+  const res = await darDeAlta(solicitudFiscal({
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'usar', clienteId: 61 },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.clienteId, 61);
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 0);
+  assert.equal(operam.branch(3).addr_street, 'Domicilio real del cliente');
+  assert.equal(paso(res, 'PUT branch (domicilio)').status, 'omitido');
+});
+
+test('el Cliente Operam reutilizado que ya tiene la configuracion comercial capturada no se toca', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 61, CustName: 'HOTELES AZULES SA DE CV', tax_id: RFC_REAL,
+      sales_type: 15, timbrado_uso_cfdi: 'G03', segmento: { id: 9 },
+      branches: [{ branch_code: 3 }],
+    }],
+  });
+  const res = await darDeAlta(solicitudFiscal({
+    comercial: { vendedor: 'Alejandro Chavez', salesTypeId: 15, segmentoId: 9, correoFacturacion: '', usoCfdi: 'G03' },
+    decision: { tipo: 'usar', clienteId: 61 },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(paso(res, 'PUT customer (config comercial)').status, 'omitido');
+  assert.equal(operam.pedidos('actualizarClienteDirecto').length, 0);
+});
+
+test('del Cliente Operam reutilizado solo viaja lo que cambia de la configuracion comercial', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 61, CustName: 'HOTELES AZULES SA DE CV', tax_id: RFC_REAL,
+      sales_type: 15, timbrado_uso_cfdi: 'S01', segmento: { id: 9 },
+      branches: [{ branch_code: 3 }],
+    }],
+  });
+  const res = await darDeAlta(solicitudFiscal({
+    comercial: { vendedor: 'Alejandro Chavez', salesTypeId: 15, segmentoId: 9, correoFacturacion: '', usoCfdi: 'G03' },
+    decision: { tipo: 'usar', clienteId: 61 },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(paso(res, 'PUT customer (config comercial)').status, 'ok');
+  const puts = operam.pedidos('actualizarClienteDirecto');
+  assert.equal(puts.length, 1);
+  assert.deepEqual(puts[0].args[1], { timbrado_uso_cfdi: 'G03' });
+});
+
+test('el Cliente Operam recien creado omite la configuracion comercial porque nacio con ella', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitudFiscal(), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const p = paso(res, 'PUT customer (config comercial)');
+  assert.equal(p.status, 'omitido');
+  assert.match(p.mensaje, /nacio/);
+});
+
+test('dos altas simultaneas con el mismo RFC real crean un solo Cliente Operam', async () => {
+  const operam = operamEnMemoria();
+  const [a, b] = await Promise.all([
+    darDeAlta(solicitudFiscal(), operam.deps),
+    darDeAlta(solicitudFiscal(), operam.deps),
+  ]);
+
+  assert.equal(operam.pedidos('crearClienteDirecto').length, 1);
+  assert.deepEqual([a.tipo, b.tipo].sort(), ['lograda', 'pregunta']);
+});
+
+test('tras un alta con datos fiscales lograda se refresca el padron de telefonos', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitudFiscal(), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('refrescarIndice').length, 1);
+});
+
+test('el alta sin datos fiscales no releee el padron completo: le basta la entrada del cliente', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitud(), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('refrescarIndice').length, 0);
+});
+
 test('un Contacto sin Cliente Operam parecido da de alta un Cliente Operam nuevo', async () => {
   const operam = operamEnMemoria();
   const res = await darDeAlta(solicitud(), operam.deps);

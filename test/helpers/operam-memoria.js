@@ -48,6 +48,7 @@ export function operamEnMemoria({
     proximoCliente: siguienteClienteId,
     proximoBranch: siguienteBranchId,
     cache: [],
+    refrescos: 0,
     auditoria: [],
     ligas: [],
   };
@@ -80,6 +81,10 @@ export function operamEnMemoria({
     actualizarClienteEnCache(cliente) {
       registrar('actualizarClienteEnCache', cliente);
       estado.cache.push(cliente);
+    },
+    async refrescarIndice() {
+      registrar('refrescarIndice');
+      estado.refrescos++;
     },
     async crearClienteDirecto(body) {
       registrar('crearClienteDirecto', body);

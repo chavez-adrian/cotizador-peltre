@@ -180,10 +180,12 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
   assert.ok(Array.isArray(res.body.steps), 'la respuesta reporta los pasos (ADR-0002)');
   // #365: el segmento es el ultimo paso de la secuencia y esta cotizacion no trae
   // ninguno capturado, asi que sale omitido con su motivo -- un paso que no aplica
-  // nunca se salta en silencio (ADR-0017).
+  // nunca se salta en silencio (ADR-0017). La configuracion comercial tambien sale
+  // omitida: el cliente acaba de nacer con ella en el POST (#366).
   const segmento = res.body.steps.find(s => s.name === 'segmento');
   assert.equal(segmento.status, 'omitido');
-  assert.ok(res.body.steps.filter(s => s !== segmento).every(s => s.name && s.status === 'ok'), 'todos los pasos en ok');
+  assert.equal(res.body.steps.find(s => s.name === 'PUT customer (config comercial)').status, 'omitido');
+  assert.ok(res.body.steps.every(s => s.name && (s.status === 'ok' || s.status === 'omitido')), 'ningun paso en error');
 
   // Orden: primero el POST del cliente, despues la cotizacion a su nombre.
   assert.ok(llamadas.includes('POST customer'));
