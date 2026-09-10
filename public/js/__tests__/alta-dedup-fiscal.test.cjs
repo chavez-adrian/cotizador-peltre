@@ -904,3 +904,63 @@ test('C21: sin panel comercial (precarga ausente, no fallida) los datos viajan t
   assert.deepEqual(datos, datosDelAlta);
   assert.equal(buildActualizarFiscalPayload(datos).segmento_id, '3');
 });
+
+// === Reporte del upgrade fiscal (#367) ===
+// El navegador no interpreta la respuesta: la traduce este nucleo, que decide que
+// lee el vendedor (mensaje del glosario) y que queda plegado (detalle tecnico).
+
+test('RU1: el upgrade logrado sin pendientes no tiene nada que corregir', async () => {
+  const { interpretarRespuestaUpgrade, UPGRADE_TITULO_LOGRADO } = await import('../alta-logica.js');
+  const vista = interpretarRespuestaUpgrade(200, { ok: true, customer_id: 500, camposNoActualizados: [] });
+  assert.equal(vista.tipo, 'lograda');
+  assert.equal(vista.mensaje, UPGRADE_TITULO_LOGRADO);
+  assert.deepEqual(vista.campos, []);
+  assert.deepEqual(vista.noAplicados, []);
+});
+
+test('RU2: cada campo que Operam no guardo llega con su mensaje y su detalle aparte', async () => {
+  const { interpretarRespuestaUpgrade } = await import('../alta-logica.js');
+  const vista = interpretarRespuestaUpgrade(200, {
+    ok: true,
+    camposNoActualizados: [{
+      campo: 'CustName', label: 'Razon Social',
+      mensaje: 'Operam no guardo este dato: sigue con el valor anterior: Razon Social quedo en "Prospecto" y no en "Real SA"',
+      detalle: 'PUT /customers/500 campo CustName: Operam ignoro este campo en el PUT',
+      esperado: 'Real SA', leido: 'Prospecto',
+    }],
+  });
+  assert.equal(vista.campos.length, 1);
+  assert.match(vista.campos[0].mensaje, /Razon Social quedo en "Prospecto"/);
+  assert.match(vista.campos[0].detalle, /PUT \/customers\/500/);
+  assert.deepEqual(vista.noAplicados, ['CustName']);
+});
+
+test('RU3: un campo sin las dos capas no se queda mudo: el motivo crudo sirve de detalle', async () => {
+  const { interpretarRespuestaUpgrade } = await import('../alta-logica.js');
+  const vista = interpretarRespuestaUpgrade(200, {
+    ok: true,
+    camposNoActualizados: [{ campo: 'segmento_id', label: 'Segmento', motivo: 'Operam ignoro este campo en el PUT' }],
+  });
+  assert.equal(vista.campos[0].mensaje, 'Segmento no quedo guardado en Operam');
+  assert.equal(vista.campos[0].detalle, 'Operam ignoro este campo en el PUT');
+});
+
+test('RU4: el RFC de otro Cliente Operam se lee como fusion, con el dueno ya nombrado en el mensaje', async () => {
+  const { interpretarRespuestaUpgrade } = await import('../alta-logica.js');
+  const vista = interpretarRespuestaUpgrade(409, {
+    fusion: true,
+    error: 'Este RFC ya pertenece a otro Cliente Operam (Cliente Formal SA): es una fusion manual',
+    dueno: { cliente_id: 800, nombre: 'Cliente Formal SA' },
+  });
+  assert.equal(vista.tipo, 'fusion');
+  assert.match(vista.mensaje, /Cliente Formal SA/);
+  assert.deepEqual(vista.campos, []);
+});
+
+test('RU5: cualquier otro fallo es un error con el texto que mando el servidor', async () => {
+  const { interpretarRespuestaUpgrade } = await import('../alta-logica.js');
+  assert.equal(interpretarRespuestaUpgrade(503, { error: 'No se pudieron guardar los datos fiscales en Operam' }).tipo, 'error');
+  assert.equal(interpretarRespuestaUpgrade(503, { error: 'No se pudieron guardar los datos fiscales en Operam' }).mensaje,
+    'No se pudieron guardar los datos fiscales en Operam');
+  assert.equal(interpretarRespuestaUpgrade(200, {}).tipo, 'error', 'un 200 sin ok no es un upgrade logrado');
+});

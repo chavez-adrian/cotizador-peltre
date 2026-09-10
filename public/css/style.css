@@ -1351,6 +1351,12 @@ body {
 .operam-paso-error { border-left-color: oklch(0.6 0.18 25); }
 .operam-paso-detalle > summary { cursor: pointer; font-size: 11px; color: oklch(0.5 0 0); }
 .operam-paso-detalle > div { font-size: 11px; color: oklch(0.45 0 0); word-break: break-word; }
+/* Reporte del upgrade fiscal (#367): los datos que Operam no guardo, con el mismo
+   patron de dos capas que el reporte de pasos del alta. Vive junto al panel de alta
+   y solo aparece cuando queda algo que corregir. */
+.upgrade-reporte { margin: 12px 0; padding: 10px 12px; border: 1px solid oklch(0.8 0.09 85); border-radius: 8px; background: oklch(0.98 0.02 85); }
+.upgrade-reporte-titulo { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.upgrade-reporte .btn { margin-top: 10px; }
 /* Hechos del picker de candidatos (#210): diferencia de nombre cruda y letreros
    de celular/correo -- evidencia, nunca candado (no deshabilitan Elegir/Crear
    nuevo). Sobrios y legibles en movil: texto chico, chips que envuelven. */

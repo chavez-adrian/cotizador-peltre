@@ -34,6 +34,7 @@ import {
   nombreConCorto,
   datosUpgradeConComercial,
   modoComercialUpgrade,
+  interpretarRespuestaUpgrade,
 } from './alta-logica.js';
 import {
   montarTelefono,
@@ -3772,6 +3773,39 @@ function pcAbrirUpgradeFiscalDesdePaso() {
 }
 window.pcAbrirUpgradeFiscalDesdePaso = pcAbrirUpgradeFiscalDesdePaso;
 
+// Reporte del upgrade fiscal (#367, ADR-0017): el vendedor lee por campo el mensaje
+// en palabras del glosario y el detalle tecnico va PLEGADO, nunca a la vista. Se
+// pinta junto al panel de alta -- que se re-parenta con la vista (#94) -- para que
+// salga donde el vendedor esta, tanto desde el chip Fiscal como desde Clientes.
+// Sin campos pendientes no se pinta nada: lo normal es que todo pegue.
+function pcRenderReporteUpgrade(vista) {
+  const previo = document.getElementById('upgrade-reporte');
+  if (previo) previo.remove();
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel || !panel.parentNode || !vista.campos.length) return;
+  const caja = document.createElement('div');
+  caja.id = 'upgrade-reporte';
+  caja.className = 'upgrade-reporte';
+  caja.innerHTML = `<p class="upgrade-reporte-titulo">${escapeHtml(vista.mensaje)}</p>` +
+    '<ul class="operam-pasos">' +
+    vista.campos.map(c =>
+      '<li class="operam-paso operam-paso-error">' +
+      `<strong>${escapeHtml(c.label)}:</strong> ${escapeHtml(c.mensaje)}` +
+      (c.detalle
+        ? `<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>${escapeHtml(c.detalle)}</div></details>`
+        : '') +
+      '</li>'
+    ).join('') +
+    '</ul>' +
+    '<button type="button" class="btn btn-secondary" onclick="pcCerrarReporteUpgrade()">Cerrar</button>';
+  panel.parentNode.insertBefore(caja, panel.nextSibling);
+}
+
+function pcCerrarReporteUpgrade() {
+  document.getElementById('upgrade-reporte')?.remove();
+}
+window.pcCerrarReporteUpgrade = pcCerrarReporteUpgrade;
+
 async function pcEjecutarUpgradeFiscal(datos) {
   const customerId = altaCsfState.modoUpgrade;
   const btn = document.getElementById('csf-btn-confirmar');
@@ -3807,17 +3841,14 @@ async function pcEjecutarUpgradeFiscal(datos) {
       body: { csfDatos: csfDatosConFactura, pdf_base64: altaCsfState.pdfBase64 || null },
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 409 && data.fusion) {
-      const c = data.cliente || {};
-      mostrarError(`${data.error} Cliente existente: ${c.CustName || ''} (ID ${c.cliente_id || ''}).`);
+    // Quien decide que significo la respuesta es alta-logica.js (#367): aqui solo
+    // se pinta. El mensaje de la fusion ya nombra al Cliente Operam dueno del RFC.
+    const vista = interpretarRespuestaUpgrade(res.status, data);
+    if (vista.tipo !== 'lograda') {
+      mostrarError(vista.mensaje);
       return;
     }
-    if (!res.ok || !data.ok) {
-      mostrarError(data.error || 'No se pudo actualizar en Operam');
-      return;
-    }
-    const ignorado = data.camposNoActualizados || [];
-    const campoPego = campo => !ignorado.some(x => x.campo === campo);
+    const campoPego = campo => !vista.noAplicados.includes(campo);
     const panel = document.getElementById('panel-alta-cliente');
     if (panel) panel.style.display = 'none';
     // El upgrade fiscal ya quedo escrito en Operam: el borrador cumplio su
@@ -3847,12 +3878,7 @@ async function pcEjecutarUpgradeFiscal(datos) {
     const razonInput = document.getElementById('cl-razon-social');
     if (razonInput && campoPego('CustName') && datos.razonSocial) razonInput.value = datos.razonSocial;
     pcRenderTarjeta();
-    if (ignorado.length) {
-      // El motivo viene del eco del PUT (#169): Operam no devuelve el campo que ignoro.
-      const motivo = ignorado[0].motivo ? '\n\n' + ignorado[0].motivo : '';
-      alert('Datos fiscales actualizados, pero Operam ignoro estos campos (corrigelos en Operam): ' +
-        ignorado.map(x => x.label || x.campo).join(', ') + motivo);
-    }
+    pcRenderReporteUpgrade(vista);
   } catch (e) {
     mostrarError('Error de conexion');
   } finally {

@@ -428,6 +428,40 @@ export function camposNoAplicados(diff, ecoPut) {
     .map(([campo, d]) => ({ campo, label: d.label, anterior: d.anterior, nuevo: d.nuevo, motivo: MOTIVO_IGNORADO }));
 }
 
+// Respuesta del upgrade fiscal -> lo que el vendedor tiene que ver (#367). Es el
+// unico lugar que decide que significo la respuesta; el navegador solo pinta, y
+// por eso esto se prueba sin DOM.
+//
+// Mensaje en dos capas (ADR-0017): por campo viaja el `mensaje` del glosario, que
+// se muestra siempre, y el `detalle` tecnico, que va plegado. El motivo crudo
+// queda de respaldo para una respuesta que todavia no mande las dos capas.
+export const UPGRADE_TITULO_PENDIENTES = 'Datos fiscales actualizados, pero Operam no guardo todo: corrige estos datos en la ficha del cliente en Operam.';
+export const UPGRADE_TITULO_LOGRADO = 'Datos fiscales actualizados en Operam.';
+
+export function interpretarRespuestaUpgrade(status, body) {
+  const data = body || {};
+  if (status === 409 && data.fusion) {
+    return { tipo: 'fusion', mensaje: data.error || 'Este RFC ya pertenece a otro Cliente Operam: es una fusion manual', campos: [], noAplicados: [] };
+  }
+  if (status !== 200 || data.ok !== true) {
+    return { tipo: 'error', mensaje: data.error || 'No se pudo actualizar en Operam', campos: [], noAplicados: [] };
+  }
+  const pendientes = Array.isArray(data.camposNoActualizados) ? data.camposNoActualizados : [];
+  const campos = pendientes.map(c => ({
+    label: c.label || c.campo,
+    mensaje: c.mensaje || `${c.label || c.campo} no quedo guardado en Operam`,
+    detalle: c.detalle || c.motivo || '',
+  }));
+  return {
+    tipo: 'lograda',
+    mensaje: campos.length ? UPGRADE_TITULO_PENDIENTES : UPGRADE_TITULO_LOGRADO,
+    campos,
+    // Las llaves de los campos que NO pegaron: la tarjeta del cliente solo
+    // adopta lo que Operam si guardo.
+    noAplicados: pendientes.map(c => c.campo),
+  };
+}
+
 // Configuracion comercial en el upgrade fiscal (issue #197). El vendedor VE la
 // Seccion 2 durante el upgrade, asi que lo que corrija ahi tiene que viajar; hasta
 // #197 se ignoraba en silencio. Tres campos entran (lista de precios, segmento,
