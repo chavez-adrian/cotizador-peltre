@@ -281,7 +281,7 @@ Nombre fiscal del cliente tal como aparece en la constancia de situación fiscal
 
 ## Nombre corto (cust_ref)
 
-Nombre comercial del cliente, distinto del nombre fiscal. Se usa para referirse al cliente en el día a día. En México puede ser el nombre de la tienda o marca. En Estados Unidos equivale al "doing business as" (DBA). Se escribe en mayúsculas/minúsculas normales, no en mayúsculas fiscales. No confundir con la Referencia del cliente.
+Nombre comercial del cliente, distinto del nombre fiscal. Se usa para referirse al cliente en el día a día. En México puede ser el nombre de la tienda o marca. En Estados Unidos equivale al "doing business as" (DBA). Se escribe en mayúsculas/minúsculas normales, no en mayúsculas fiscales. No confundir con la Referencia del cliente. El **upgrade fiscal no lo pisa** (#360, decisión 2026-09-10): la razón social normalizada solo lo ocupa cuando está vacío o cuando sigue siendo el que le puso el alta del Cliente Operam sin datos fiscales; si el vendedor ya escribió uno, ése manda.
 
 ## Referencia del cliente
 
@@ -341,7 +341,7 @@ El teléfono que identifica al cliente en línea es el que el comprador tecleó 
 
 ## Configuración comercial del cliente
 
-Conjunto de campos que definen las condiciones de venta de un cliente: lista de precios, segmento, vendedor asignado, términos de pago, área/zona de venta. El vendedor puede revisar y editar estos campos tanto al crear un cliente nuevo como al seleccionar un cliente existente durante el flujo de alta.
+Conjunto de campos que definen las condiciones de venta de un cliente: lista de precios, segmento, vendedor asignado, términos de pago, área/zona de venta. El vendedor puede revisar y editar estos campos tanto al crear un cliente nuevo como al seleccionar un cliente existente durante el flujo de alta. El **segmento** se escribe por la ficha web de Operam (la API v3 no lo persiste, #172) y el **upgrade fiscal es la vía para corregir uno mal asignado** (#253, decisión 2026-09-10): ahí el vendedor lo edita a propósito, así que se escribe aunque el cliente ya tuviera otro, la respuesta dice de cuál a cuál y queda en la auditoría; la subida de cotización sigue conservando el segmento que el cliente ya tenía.
 
 ## RFC genérico
 
