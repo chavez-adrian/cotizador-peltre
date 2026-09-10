@@ -254,13 +254,14 @@ test('I7: el segmento conservado se ve en su fila, no como exito mudo', () => {
     ok: true,
     steps: [
       { name: 'POST customer', status: 'ok', info: 'reintento' },
-      { name: 'post-fix segmento (web)', status: 'ok', info: 'conservado', actual: '9', actualNombre: 'Familia y Amigos' },
+      // #365: el modulo reporta el segmento conservado como paso omitido con su mensaje.
+      { name: 'segmento', status: 'omitido', mensaje: 'El Cliente Operam ya estaba clasificado en Operam: se conservo su segmento', detalle: 'cliente 9 conserva el segmento 9; se pidio 14' },
     ],
   });
-  const seg = r.filas.find(f => f.fila === ALTA_PASO_FILA['post-fix segmento (web)']);
-  assert.strictEqual(seg.status, 'ok');
+  const seg = r.filas.find(f => f.fila === ALTA_PASO_FILA.segmento);
+  assert.strictEqual(seg.status, 'omitido');
   assert.ok(seg.msg && seg.msg.trim(), 'una escritura omitida a proposito tiene que decirse');
-  assert.ok(seg.msg.includes('Familia y Amigos'), 'con el segmento que se conservo');
+  assert.ok(seg.msg.includes('se conservo su segmento'), 'con el motivo del modulo');
   assert.strictEqual(r.exito, true);
 });
 

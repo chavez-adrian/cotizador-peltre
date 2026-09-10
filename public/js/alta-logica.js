@@ -1215,7 +1215,7 @@ export const ALTA_PASO_FILA = {
   'POST customer': 0,
   'PUT customer (config comercial)': 1,
   'PUT customer (dimensiones)': 5,
-  'post-fix segmento (web)': 2,
+  segmento: 2,
   'GET branch_id': 3,
   // Los tres pasos del domicilio de entrega comparten fila y el ULTIMO manda: la
   // verificacion por relectura es la que sabe como quedo de verdad (#366).
@@ -1244,11 +1244,6 @@ export const ALTA_PASO_FILAS = [...new Set(Object.values(ALTA_PASO_FILA))];
 // nada, que es lo correcto.
 function mensajeExitoPaso(step) {
   if (step.status === 'omitido') return step.mensaje || step.info || '';
-  if (step.info === 'conservado') {
-    const nombre = step.actualNombre || '';
-    return 'Se conservo el segmento que el Cliente Operam ya tenia' +
-      (nombre ? ' (' + nombre + ')' : '') + '; el que elegiste no se aplico.';
-  }
   return '';
 }
 
