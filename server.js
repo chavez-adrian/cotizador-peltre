@@ -3397,6 +3397,9 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
     if (resultado.motivo === 'fusion') {
       return res.status(409).json({ error: resultado.mensaje, fusion: true, dueno: resultado.dueno });
     }
+    if (resultado.motivo === 'cust-ref-duplicado') {
+      return res.status(409).json({ error: resultado.mensaje, codigo: 'CUST_REF_DUPLICADO', nombreCorto: resultado.nombreCorto });
+    }
     return res.status(503).json({ error: resultado.mensaje, detalle: resultado.detalle });
   }
 
