@@ -355,6 +355,7 @@ test('J3: el Cliente Operam reutilizado deja su motivo en la fila de arriba, aun
 const RESPUESTA_DUPLICADO = {
   codigo: 'POSIBLE_DUPLICADO',
   error: 'Hay Clientes Operam sin datos fiscales con nombre parecido: elige uno para continuar',
+  detalle: 'pool por RFC XAXX010101000 + nombre corto: 55',
   candidatos: [{
     id: 55, razonSocial: 'Duplicado SA', rfc: 'DUP010101ABC', nombreCorto: 'Dup',
     porque: {
@@ -378,6 +379,7 @@ test('J4: el posible duplicado (428) devuelve la pregunta y NO ofrece reintentar
   assert.strictEqual(r.mostrarReintentar, false, 'con la pregunta pintada, el boton generico sobra');
   assert.strictEqual(r.mensajeError, null, 'el mensaje lo lleva la pregunta, no el banner de error');
   assert.strictEqual(r.pregunta.mensaje, RESPUESTA_DUPLICADO.error);
+  assert.strictEqual(r.pregunta.detalle, RESPUESTA_DUPLICADO.detalle, 'el detalle tecnico viaja aparte, para pintarlo plegado');
   assert.strictEqual(r.pregunta.opciones, RESPUESTA_DUPLICADO.opciones);
   assert.ok(r.filas.every(f => f.status === 'pending'), 'no se creo nada: ninguna fila afirma un paso');
 });

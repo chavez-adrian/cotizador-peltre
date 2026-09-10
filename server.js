@@ -3549,18 +3549,28 @@ function candidatoDeLaPregunta(c) {
   };
 }
 
-// Las tres salidas de la Deduplicacion de cliente (CONTEXT.md), ya serializadas:
-// dos por candidato ("usar este Cliente Operam" y "es otro domicilio de este
-// cliente") y una global ("ninguno es el mismo"). Con varios domicilios el
+// Como se llama en el contrato HTTP cada salida por candidato. QUE salidas hay lo
+// decide el MODULO y viaja en `alta.opciones` (ADR-0017: el modulo devuelve la
+// decision, el handler arma el cuerpo); aqui solo se sabe serializar cada una, y
+// por eso las tres salidas no vuelven a enumerarse.
+const LLAVE_SALIDA_CANDIDATO = { usar: 'usar', 'otro-domicilio': 'otroDomicilio' };
+
+// Las salidas de la Deduplicacion de cliente (CONTEXT.md) ya serializadas: las que
+// van por candidato ("usar este Cliente Operam", "es otro domicilio de este
+// cliente") y la global ("ninguno es el mismo"). Con varios domicilios el
 // navegador le agrega `decision.domicilioId` al cuerpo de `usar` tras elegir.
-function opcionesDeLaPregunta(body, candidatos) {
+function opcionesDeLaPregunta(body, candidatos, salidas) {
+  const hay = new Set(salidas || []);
+  const porCandidato = (candidatos || []).map(c => {
+    const fila = { id: c.id };
+    for (const [salida, llave] of Object.entries(LLAVE_SALIDA_CANDIDATO)) {
+      if (hay.has(salida)) fila[llave] = cuerpoDeReintento(body, { tipo: salida, clienteId: c.id });
+    }
+    return fila;
+  });
   return {
-    porCandidato: (candidatos || []).map(c => ({
-      id: c.id,
-      usar: cuerpoDeReintento(body, { tipo: 'usar', clienteId: c.id }),
-      otroDomicilio: cuerpoDeReintento(body, { tipo: 'otro-domicilio', clienteId: c.id }),
-    })),
-    ninguno: cuerpoDeReintento(body, { tipo: 'ninguno' }),
+    porCandidato,
+    ...(hay.has('ninguno') ? { ninguno: cuerpoDeReintento(body, { tipo: 'ninguno' }) } : {}),
   };
 }
 
@@ -3588,9 +3598,12 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     const candidatos = alta.candidatos || [];
     return res.status(428).json({
       codigo: 'POSIBLE_DUPLICADO',
+      // Mensaje en dos capas (CONTEXT.md): el vendedor lee `error` y el `detalle`
+      // -- de que pool salieron estos candidatos -- va plegado bajo la pregunta.
       error: alta.mensaje,
+      detalle: alta.detalle || '',
       candidatos: candidatos.map(candidatoDeLaPregunta),
-      opciones: opcionesDeLaPregunta(cliente, candidatos),
+      opciones: opcionesDeLaPregunta(cliente, candidatos, alta.opciones),
     });
   }
 

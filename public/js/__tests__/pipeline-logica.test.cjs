@@ -430,6 +430,15 @@ test('#368: buildCandidatosAltaHtml ofrece las tres salidas del formulario con l
   assert.doesNotMatch(html, /sucursal/i, 'la palabra sucursal no sale al vendedor');
 });
 
+test('#368: el detalle tecnico de la pregunta va plegado, nunca a la vista', () => {
+  const candidatos = [{ id: 55, CustName: 'Duplicado SA' }];
+  const conDetalle = buildCandidatosAltaHtml(candidatos, 'Elige uno', 'pool por RFC XAXX010101000: 55');
+  assert.match(conDetalle, /<details[^>]*><summary>Ver detalle t&eacute;cnico<\/summary>/);
+  assert.match(conDetalle, /pool por RFC XAXX010101000: 55/);
+  assert.doesNotMatch(conDetalle, /<details[^>]*open/, 'plegado, no abierto');
+  assert.doesNotMatch(buildCandidatosAltaHtml(candidatos, 'Elige uno'), /<details/, 'sin detalle no pinta el bloque vacio');
+});
+
 // #196: el separador ad hoc " . cust_ref" migra al formato unificado de
 // parentesis (nombreConCorto), igual que el resto de la app.
 test('N196a: buildCandidatosOperamHtml muestra el nombre corto del candidato entre parentesis', () => {

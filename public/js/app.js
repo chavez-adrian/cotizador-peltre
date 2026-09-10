@@ -7894,7 +7894,7 @@ function altaSec4Pregunta(pregunta) {
   const el = document.getElementById('alta-sec4-pregunta');
   if (!el) return;
   if (!pregunta) { el.innerHTML = ''; el.style.display = 'none'; return; }
-  el.innerHTML = buildCandidatosAltaHtml(pregunta.candidatos, pregunta.mensaje);
+  el.innerHTML = buildCandidatosAltaHtml(pregunta.candidatos, pregunta.mensaje, pregunta.detalle);
   el.style.display = '';
 }
 

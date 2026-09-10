@@ -1588,6 +1588,9 @@ test('D2b: la pregunta serializa las tres salidas como cuerpos de reintento, sin
     // ...menos el PDF de la constancia, que pesa y el navegador todavia tiene.
     assert.strictEqual(opcion.usar.pdf_base64, undefined);
     assert.strictEqual(res.body.opciones.ninguno.pdf_base64, undefined);
+    // Mensaje en dos capas: de que pool salieron los candidatos va aparte del
+    // mensaje que lee el vendedor, para pintarlo plegado.
+    assert.match(res.body.detalle, /pool por RFC/);
   } finally {
     restore();
   }

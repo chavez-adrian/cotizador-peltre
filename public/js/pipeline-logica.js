@@ -289,12 +289,16 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
 // Deduplicacion de cliente en palabras del glosario. Los handlers reciben el
 // INDICE del candidato -- no su id --: el navegador ya tiene el cuerpo de
 // reintento que el servidor dicto para cada uno y solo tiene que dar con el suyo.
-export function buildCandidatosAltaHtml(candidatos, mensaje) {
-  return buildCandidatosDedupHtml(candidatos, mensaje, {
+export function buildCandidatosAltaHtml(candidatos, mensaje, detalle) {
+  const pregunta = buildCandidatosDedupHtml(candidatos, mensaje, {
     usar: { texto: 'Usar este Cliente Operam', onclick: (c, i) => `altaPreguntaUsar(${i})` },
     otroDomicilio: { texto: 'Es otro domicilio de este Cliente Operam', onclick: (c, i) => `altaPreguntaOtroDomicilio(${i})` },
     ninguno: { texto: 'Ninguno es el mismo', onclick: () => 'altaPreguntaNinguno()' },
   });
+  // Mensaje en dos capas (CONTEXT.md): de que pool salieron estos candidatos se
+  // muestra PLEGADO, igual que el detalle de cada paso del alta.
+  if (!detalle) return pregunta;
+  return `${pregunta}<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>${escapeHtml(detalle)}</div></details>`;
 }
 
 // Un Cliente Operam nombrado para la pregunta de #345: razon social si el padron

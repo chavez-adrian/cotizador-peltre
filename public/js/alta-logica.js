@@ -1288,6 +1288,7 @@ function preguntaDeDuplicado(d) {
   if (d.codigo !== CODIGO_POSIBLE_DUPLICADO) return null;
   return {
     mensaje: d.error || '',
+    detalle: d.detalle || '',
     candidatos: (Array.isArray(d.candidatos) ? d.candidatos : []).map(candidatoParaPintar),
     opciones: d.opciones || null,
   };
