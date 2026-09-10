@@ -421,3 +421,136 @@ test('el campo que Operam ignora sale como campo no aplicado, con mensaje y deta
   assert.match(campo.mensaje, /Razon Social/);
   assert.ok(campo.detalle, 'el detalle tecnico acompana al mensaje');
 });
+
+// El segmento no lo escribe la API v3 por ningun camino (#172): lo aplica el
+// post-fix por la web legacy, que corre antes de la relectura.
+test('el segmento que la web si aplico deja de reportarse como campo no aplicado', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()], ignoraCliente: ['segmento_id'] });
+  const res = await upgradeFiscal(500, { ...CSF, segmentoId: '3' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.deepEqual(res.camposNoAplicados, []);
+  assert.equal(paso(res, 'segmento').status, 'ok');
+});
+
+test('el segmento que la web no pudo escribir sale como paso con el motivo real, no como campo ignorado', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales()],
+    ignoraCliente: ['segmento_id'],
+    segmentoWeb: { ok: false, error: 'El codigo postal no puede ser vacio' },
+  });
+  const res = await upgradeFiscal(500, { ...CSF, segmentoId: '3' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const pasoSegmento = paso(res, 'segmento');
+  assert.equal(pasoSegmento.status, 'error');
+  assert.match(pasoSegmento.detalle, /codigo postal/);
+  assert.equal(res.camposNoAplicados.find(c => c.campo === 'segmento_id'), undefined,
+    'el motivo real ya viaja en el paso: repetirlo como campo ignorado por el PUT seria falso');
+});
+
+// #253: esta es la via para corregir un segmento mal asignado -- el vendedor lo
+// edita a proposito, asi que se escribe aunque el cliente ya tuviera otro.
+test('el segmento elegido se escribe aunque el Cliente Operam ya tuviera otro, y el resultado dice de cual a cual', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales({ segmento: { id: '5' } })],
+    ignoraCliente: ['segmento_id'],
+  });
+  const res = await upgradeFiscal(500, { ...CSF, segmentoId: '3' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.deepEqual(res.segmento, { anterior: '5', actual: '3' });
+  assert.equal(operam.cliente(500).segmento.id, '3');
+  assert.equal(operam.pedidos('actualizarSegmentoClienteWeb')[0].args[2], undefined,
+    'sin soloSinSegmento: el segmento ya asignado no frena la correccion');
+  const auditoria = operam.estado.auditoria.find(a => a[2] === 'segmento-escrito');
+  assert.ok(auditoria, 'la correccion del segmento queda en la auditoria');
+  assert.match(auditoria[6], /5 -> 3/);
+});
+
+// #360: el nombre corto es el nombre comercial del cliente, no su razon social.
+test('el upgrade fiscal no toca el nombre corto propio del Cliente Operam', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales({ cust_ref: 'Azulito' })] });
+  const res = await upgradeFiscal(500, { ...CSF, nombreCorto: 'Hotel Azul Centro' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.cliente(500).cust_ref, 'Azulito');
+  assert.equal(operam.pedidos('actualizarClienteDirecto')[0].args[1].cust_ref, undefined);
+  assert.equal(paso(res, 'nombre corto').status, 'omitido');
+});
+
+test('el upgrade fiscal si llena el nombre corto que dejo el alta generica', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()] });
+  const res = await upgradeFiscal(500, { ...CSF, nombreCorto: 'Hotel Azul' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.cliente(500).cust_ref, 'Hotel Azul');
+  assert.equal(paso(res, 'nombre corto'), undefined);
+});
+
+test('el upgrade fiscal llena el nombre corto vacio', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales({ cust_ref: '' })] });
+  await upgradeFiscal(500, { ...CSF, nombreCorto: 'Hotel Azul' }, operam.deps);
+
+  assert.equal(operam.cliente(500).cust_ref, 'Hotel Azul');
+});
+
+// #95 regla 5 y #171: lo que no tiene campo propio en la API viaja compuesto
+// sobre las notas del cliente, sin borrar las que ya tenia.
+test('el Tax ID extranjero se antepone a las notas que el Cliente Operam ya tenia', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales({ notes: 'Notas previas del cliente' })] });
+  await upgradeFiscal(500, { ...CSF, taxIdExtranjero: 'US123456789' }, operam.deps);
+
+  assert.equal(operam.cliente(500).notes, 'Tax ID: US123456789\nNotas previas del cliente');
+});
+
+test('las notas que Operam no guardo salen como campo no aplicado', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales({ notes: 'Notas previas del cliente' })],
+    ignoraCliente: ['notes'],
+  });
+  const res = await upgradeFiscal(500, { ...CSF, actividades: ['Comercio al por menor'], csf_fecha: '8 DE MAYO DE 2026' }, operam.deps);
+
+  const notas = res.camposNoAplicados.find(c => c.campo === 'notes');
+  assert.ok(notas, 'las actividades que no quedaron en las notas se reportan');
+  assert.equal(notas.label, 'Actividades economicas');
+  assert.ok(notas.detalle.includes('Actividades economicas (CSF 8 DE MAYO DE 2026):'));
+});
+
+// #327: sin entrada fresca que meterle al padron cacheado, el unico camino
+// honesto es releerlo entero en vez de dejarlo viejo una hora.
+test('si la relectura falla, el upgrade sigue logrado y el padron se refresca entero', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales()],
+    falla: { obtenerClientePorId: 'Operam 503' },
+  });
+  const res = await upgradeFiscal(500, CSF, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(paso(res, 'verificar fiscal').status, 'error');
+  assert.equal(operam.pedidos('refrescarIndice').length, 1);
+  assert.equal(operam.pedidos('actualizarClienteEnCache').length, 0);
+});
+
+test('el upgrade fiscal no puede completarse si Operam rechaza el PUT', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales()],
+    falla: { actualizarClienteDirecto: 'Operam 500' },
+  });
+  const res = await upgradeFiscal(500, CSF, operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'operam');
+  assert.match(res.detalle, /Operam 500/);
+});
+
+test('todo paso del upgrade fiscal lleva mensaje para el vendedor y detalle tecnico', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()], ignoraCliente: ['segmento_id'] });
+  const res = await upgradeFiscal(500, { ...CSF, segmentoId: '3' }, operam.deps);
+
+  for (const p of res.pasos) {
+    assert.ok(p.mensaje, `el paso ${p.name} no trae mensaje`);
+    assert.ok(p.detalle, `el paso ${p.name} no trae detalle`);
+    assert.doesNotMatch(p.mensaje, /sucursal|branch|customer|endpoint/i, `el paso ${p.name} usa vocabulario tecnico en el mensaje`);
+  }
+});
