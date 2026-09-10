@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { darDeAlta } from '../lib/alta-cliente.js';
+import { darDeAlta, upgradeFiscal } from '../lib/alta-cliente.js';
 import { operamEnMemoria } from './helpers/operam-memoria.js';
 import { fuenteSegmento, RESULTADO_SEGMENTO_PENDIENTE } from '../lib/segmento-pendiente.js';
 
@@ -352,4 +352,72 @@ test('todo paso del alta lleva mensaje para el vendedor y detalle tecnico', asyn
     assert.ok(p.detalle, `el paso ${p.name} no trae detalle`);
     assert.doesNotMatch(p.mensaje, /sucursal|branch|customer|endpoint/i, `el paso ${p.name} usa vocabulario tecnico en el mensaje`);
   }
+});
+
+// === Upgrade fiscal (#367; #85, #207, #360, #253) ===========================
+// El Cliente Operam que nacio sin datos fiscales se completa con la CSF (o con
+// los minimos capturados a mano). Nunca nace uno nuevo aqui.
+
+const CSF = {
+  rfc: 'HAC010203AB1', razonSocial: 'HOTEL AZUL CENTRO SA DE CV', idcif: 'IDCIF9',
+  calle: 'Reforma', numExt: '100', numInt: '', colonia: 'Juarez',
+  cp: '06600', municipio: 'Cuauhtemoc', estado: 'CDMX', regimenFiscal: '601',
+};
+
+// Cliente Operam sin datos fiscales tal como lo devuelve el GET de detalle: RFC
+// generico, nombre corto igual al nombre con el que nacio y segmento anidado.
+function sinDatosFiscales(over = {}) {
+  return {
+    customer_id: 500, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul Centro',
+    tax_id: 'XAXX010101000', segmento: { id: '1' },
+    branches: [{ branch_code: 7, br_name: 'HOTEL AZUL CENTRO' }], contacts: [],
+    ...over,
+  };
+}
+
+test('el upgrade fiscal escribe los datos de la CSF sobre el mismo Cliente Operam, sin crear ninguno', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()] });
+  const res = await upgradeFiscal(500, CSF, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.clienteId, 500);
+  assert.deepEqual(res.camposNoAplicados, []);
+  assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
+  const fresco = operam.cliente(500);
+  assert.equal(fresco.tax_id, 'HAC010203AB1');
+  assert.equal(fresco.CustName, 'HOTEL AZUL CENTRO SA DE CV');
+  assert.equal(fresco.postal_code, '06600');
+});
+
+test('el RFC que ya pertenece a otro Cliente Operam bloquea la fusion, lo nombra y no escribe nada', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales(), { customer_id: 800, CustName: 'Hotel Azul SA de CV', tax_id: 'HAC010203AB1', branches: [] }],
+  });
+  const res = await upgradeFiscal(500, CSF, operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'fusion');
+  assert.match(res.mensaje, /Hotel Azul SA de CV/);
+  assert.match(res.mensaje, /fusion manual/);
+  assert.equal(res.dueno.cliente_id, 800);
+  assert.equal(res.dueno.nombre, 'Hotel Azul SA de CV');
+  assert.equal(operam.pedidos('actualizarClienteDirecto').length, 0);
+  const auditoria = operam.estado.auditoria.find(a => a[2] === 'fusion-bloqueada');
+  assert.ok(auditoria, 'la fusion bloqueada queda en la auditoria');
+  assert.equal(auditoria[3], 800);
+});
+
+test('el campo que Operam ignora sale como campo no aplicado, con mensaje y detalle', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()], ignoraCliente: ['cust_name'] });
+  const res = await upgradeFiscal(500, CSF, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.camposNoAplicados.length, 1);
+  const campo = res.camposNoAplicados[0];
+  assert.equal(campo.campo, 'CustName');
+  assert.equal(campo.label, 'Razon Social');
+  assert.equal(campo.esperado, 'HOTEL AZUL CENTRO SA DE CV');
+  assert.equal(campo.leido, 'Hotel Azul Centro');
+  assert.match(campo.mensaje, /Razon Social/);
+  assert.ok(campo.detalle, 'el detalle tecnico acompana al mensaje');
 });

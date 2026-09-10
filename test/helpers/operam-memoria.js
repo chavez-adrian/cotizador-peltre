@@ -15,8 +15,14 @@
 // diferencia entre "recien creado" y "preexistente" se ve en el estado.
 
 import { CAMPO_CEL } from '../../lib/cel-operam.js';
+import { RFC_GENERICOS } from '../../lib/deduplicacion.js';
+import { DIFF_FISCAL_CAMPOS } from '../../public/js/alta-logica.js';
 
 const CAMPOS_BRANCH_DESDE_CLIENTE = ['phone', 'email'];
+
+// write -> llave con la que el GET devuelve ese mismo campo (#169), desde la
+// UNICA tabla del mapeo fiscal.
+const LLAVE_LECTURA = new Map(DIFF_FISCAL_CAMPOS.map(c => [c.write || c.operam, c.operam]));
 
 export function operamEnMemoria({
   clientes = [],
@@ -32,6 +38,10 @@ export function operamEnMemoria({
   falla = {},
   siguienteClienteId = 900,
   siguienteBranchId = 800,
+  // Respuesta de la web legacy al post-fix del segmento (#172): la API v3 no
+  // puede escribirlo por ningun camino, asi que el upgrade fiscal depende de
+  // esta y su fallo tiene que poder probarse.
+  segmentoWeb = { ok: true },
 } = {}) {
   const estado = {
     clientes: clientes.map(c => ({ ...c, branches: (c.branches || []).map(b => ({ ...b })) })),
@@ -90,8 +100,16 @@ export function operamEnMemoria({
       registrar('actualizarClienteDirecto', id, campos);
       const cliente = buscarCliente(id);
       if (!cliente) throw new Error(`Cliente ${id} inexistente`);
-      aplicar(cliente, campos, ignoraCliente);
-      return campos;
+      // Las llaves del PUT NO son las del GET (#169): lo escrito con `cust_name`
+      // se relee como `CustName`. Y el PUT responde con el ECO de lo que acepto:
+      // lo ignorado ni se escribe ni vuelve, que es la unica senal del rechazo.
+      const eco = {};
+      for (const [k, v] of Object.entries(campos || {})) {
+        if (ignoraCliente.includes(k)) continue;
+        eco[k] = v;
+        cliente[LLAVE_LECTURA.get(k) || k] = v;
+      }
+      return eco;
     },
     async obtenerClientePorId(id) {
       registrar('obtenerClientePorId', id);
@@ -155,6 +173,29 @@ export function operamEnMemoria({
     async ligarCliente(prospectoId, clienteId, evento) {
       registrar('ligarCliente', prospectoId, clienteId, evento);
       estado.ligas.push({ prospectoId, clienteId, evento });
+    },
+    // Gate anti-fusion compartido (#207): mismo contrato que operam-client, con
+    // los RFC genericos exentos (los comparten por diseno, ADR-0001).
+    async verificarRfcLibre(rfcCandidato, customerId) {
+      registrar('verificarRfcLibre', rfcCandidato, customerId);
+      const norm = v => String(v ?? '').trim().toUpperCase();
+      const rfc = norm(rfcCandidato);
+      if (RFC_GENERICOS.has(rfc)) return { estado: 'libre' };
+      const match = estado.clientes.find(c => norm(c.tax_id) === rfc);
+      if (!match) return { estado: 'libre' };
+      if (String(match.customer_id) === String(customerId)) return { estado: 'mismo' };
+      return { estado: 'otro', dueno: { cliente_id: match.customer_id, CustName: match.CustName, tax_id: match.tax_id } };
+    },
+    async actualizarSegmentoClienteWeb(clienteId, segmentoId, opciones) {
+      registrar('actualizarSegmentoClienteWeb', clienteId, segmentoId, opciones);
+      if (!segmentoWeb.ok) return segmentoWeb;
+      const cliente = buscarCliente(clienteId);
+      // El GET de Operam devuelve el segmento ANIDADO, nunca plano (#172).
+      if (cliente) cliente.segmento = { id: String(segmentoId) };
+      return segmentoWeb;
+    },
+    async refrescarIndice() {
+      registrar('refrescarIndice');
     },
   };
 
