@@ -423,7 +423,8 @@ test('F1: formalizar una pre-cotizacion da de alta el cliente y registra la coti
 test('F2: el alta del paso de formalizacion conserva el guardrail de deduplicacion (RFC ya en Operam no duplica)', async () => {
   writeProspectos([]);
   // Caso "ya es cliente Operam": el RFC ya existe. El alta NO crea un duplicado;
-  // devuelve el cliente existente para que la formalizacion solo registre.
+  // desde #366 se detiene con la pregunta (428) y nombra al Cliente Operam que ya
+  // lo tiene, para que el vendedor lo busque antes de dar de alta.
   let postCustomerCalled = false;
   mockFetchByUrl({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
@@ -436,9 +437,9 @@ test('F2: el alta del paso de formalizacion conserva el guardrail de deduplicaci
   const alta = await supertest(app).post('/api/crear-cliente')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
     .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', entrega: {} });
-  assert.equal(alta.status, 200);
-  assert.equal(alta.body.duplicado, true, 'el guardrail detecta el RFC existente');
-  assert.equal(alta.body.customer_id, 500, 'reutiliza el cliente existente');
+  assert.equal(alta.status, 428, 'el guardrail detecta el RFC existente y pregunta');
+  assert.equal(alta.body.codigo, 'POSIBLE_DUPLICADO');
+  assert.deepEqual(alta.body.candidatos.map(c => c.id), [500], 'nombra al Cliente Operam que ya tiene ese RFC');
   assert.equal(postCustomerCalled, false, 'no crea un cliente duplicado');
 });
 

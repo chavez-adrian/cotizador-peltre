@@ -983,7 +983,7 @@ test('PUT /api/actualizar-cliente/:id Operam error retorna 503', async () => {
   }
 });
 
-// === POST /api/crear-cliente ===
+// === POST /api/crear-cliente: guardas del endpoint ===
 
 test('POST /api/crear-cliente sin tax_id retorna 400', async () => {
   const res = await supertest(app).post('/api/crear-cliente')
@@ -998,99 +998,6 @@ test('POST /api/crear-cliente sin token retorna 401', async () => {
   assert.strictEqual(res.status, 401);
 });
 
-test('POST /api/crear-cliente crea cliente nuevo y retorna { ok:true, customer_id }', async () => {
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 77 }) };
-      if (u.includes('/77')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 177 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/177': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({
-        tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV',
-        entrega: { br_name: 'Almacen', br_ref: 'ALM', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
-        salesman: 47,
-      });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.strictEqual(res.body.customer_id, 77);
-    assert.strictEqual(res.body.duplicado, false);
-  } finally {
-    restore();
-  }
-});
-
-test('POST /api/crear-cliente con RFC duplicado retorna duplicado:true con datos', async () => {
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', tax_id: 'DUP010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', sales_type: '12', branches: [] }] }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ tax_id: 'DUP010101ABC', CustName: 'Duplicado SA' });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.strictEqual(res.body.duplicado, true);
-    assert.strictEqual(res.body.customer_id, 55);
-  } finally {
-    restore();
-  }
-});
-
-// Concurrencia (issue #209): dos altas EN VUELO con el mismo RFC nuevo (doble
-// click, dos pestanas) no deben crear dos clientes en Operam. El lock por RFC
-// normalizado (crearClienteConLock, server.js) serializa las dos llamadas a
-// crearCliente -- la que gana la carrera crea el cliente; la que pierde solo
-// corre su dedup DESPUES, cuando el mock ya "sabe" del recien creado, y recibe
-// duplicado:true. Cual de las dos gana no es determinista (llegan por sockets
-// HTTP reales via supertest) asi que el assert no fija cual es cual -- solo que
-// hubo UN solo POST y que las dos respuestas, juntas, son [false, true].
-test('POST /api/crear-cliente: dos altas concurrentes con el mismo RFC nuevo crean UN solo cliente (#209)', async () => {
-  let postCount = 0;
-  let creado = false;
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') {
-        postCount++;
-        creado = true;
-        return { ok: true, json: async () => ({ result: true, customer_id: 501 }) };
-      }
-      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 601 }] }] }) };
-      if (creado) {
-        return {
-          ok: true,
-          json: async () => ({
-            total: 1,
-            data: [{ customer_id: 501, CustName: 'Concurrente SA', tax_id: 'CON010101ABC', street: '', street_number: '', suite_number: '', district: '', postal_code: '', city: '', state: '', cfdi_regimen_fiscal: '601', sales_type: '12', branches: [] }],
-          }),
-        };
-      }
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/601': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const payload = { tax_id: 'CON010101ABC', CustName: 'Concurrente SA' };
-    const [r1, r2] = await Promise.all([
-      supertest(app).post('/api/crear-cliente').set('Authorization', `Bearer ${TEST_TOKEN}`).send(payload),
-      supertest(app).post('/api/crear-cliente').set('Authorization', `Bearer ${TEST_TOKEN}`).send(payload),
-    ]);
-    assert.strictEqual(postCount, 1, 'exactamente UN POST de cliente debe llegar a Operam');
-    assert.deepStrictEqual([r1.body.duplicado, r2.body.duplicado].sort(), [false, true]);
-    assert.strictEqual(r1.body.customer_id, 501);
-    assert.strictEqual(r2.body.customer_id, 501);
-  } finally {
-    restore();
-  }
-});
-
 // Backstop del telefono (issue #176): la capa estricta del navegador AVISA pero
 // deja guardar, asi que un numero imposible puede llegar al alta. El servidor lo
 // deja registrado para revision y responde EXACTAMENTE igual que siempre --
@@ -1103,7 +1010,7 @@ test('POST /api/crear-cliente registra el telefono sospechoso sin rechazar el al
       if (u.includes('/78')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 178 }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
-    '/api/v3/sales/branches/178': () => ({ ok: true, json: async () => ({ result: true }) }),
+    '/api/v3/sales/branches/178': () => ({ ok: true, json: async () => ({ result: true, data: [{}] }) }),
   });
   const warnOriginal = console.warn;
   const avisos = [];
@@ -1127,7 +1034,6 @@ test('POST /api/crear-cliente registra el telefono sospechoso sin rechazar el al
     restore();
   }
 });
-
 // === GET /api/buscar-cliente ===
 
 test('GET /api/buscar-cliente sin rfc retorna 400', async () => {
@@ -1554,11 +1460,17 @@ test('#246-5: lista ya cargada + fallo en un cargarListasPrecios forzado NO la p
   }
 });
 
-// === POST /api/crear-cliente flujo atomico POST+GET+PUT (issue #29) ===
+// === POST /api/crear-cliente: traduccion HTTP del alta completa (#366) ===
+//
+// Desde #366 el alta la hace lib/alta-cliente.js y este endpoint solo traduce:
+// Solicitud <- body, y resultado -> 200 / 428 / 409 / 503. Las REGLAS del alta
+// (dedup, domicilio de entrega, configuracion comercial, uso de CFDI, lock por
+// RFC) se prueban en test/alta-cliente.test.js contra el adaptador en memoria,
+// una regla por test -- aqui solo se prueba lo que es de HTTP.
 
 const BASE_CLIENTE = {
   tax_id: 'NUE010101ABC', CustName: 'Nueva SA de CV',
-  pais: 'MX', sales_type: 'M350', segmento_id: '3', salesman: 47,
+  pais: 'MX', sales_type: '15', segmento_id: '3', salesman: 47,
   timbrado_uso_cfdi: 'G03',
   entrega: {
     br_name: 'Almacen Central', br_ref: 'ALMCEN',
@@ -1569,708 +1481,157 @@ const BASE_CLIENTE = {
   },
 };
 
-// BASE_CLIENTE trae segmento capturado, asi que desde #186 el alta completa toca la ficha
-// web en TODOS estos tests. Sin montarla, cada uno pagaria los 15s del reintento con
-// backoff de pedir() antes de reportar el fallo del post-fix.
-//
-// Es UNA instancia compartida por los tests del flujo POST+GET+PUT, que no assertan sobre
-// ella: `posts`/`gets`/`estado` acumulan entre tests y dependerian del orden. Un test que
-// necesite mirar lo que viajo a la web monta la suya (asi lo hacen D7-D10).
-const FICHA_ALTA = handlersWebFichaCliente();
-
-test('D1: POST /api/crear-cliente flujo completo retorna customer_id, branch_id y steps', async () => {
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
+// Operam con un alta feliz: sin clientes con ese RFC, POST que crea, GET que
+// devuelve el domicilio de entrega auto-creado y PUT que acepta todo.
+function mockAltaFeliz({ customerId = 500, branchId = 600 } = {}) {
+  return mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 500 }) };
-      if (u.includes('/500')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 600 }] }] }) };
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: customerId }) };
+      if (u.includes('/' + customerId)) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: branchId }] }] }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
-    '/api/v3/sales/branches/600': () => ({ ok: true, json: async () => ({ result: true }) }),
+    ['/api/v3/sales/branches/' + branchId]: () => ({ ok: true, json: async () => ({ result: true, data: [{}] }) }),
   });
+}
+
+test('D1: un alta lograda responde 200 con customer_id, branch_id y el reporte de pasos', async () => {
+  const restore = mockAltaFeliz();
   try {
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
       .send(BASE_CLIENTE);
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
-    assert.strictEqual(res.body.customer_id, 500, 'debe retornar customer_id');
-    assert.strictEqual(res.body.branch_id, 600, 'debe retornar branch_id');
+    assert.strictEqual(res.body.customer_id, 500);
+    assert.strictEqual(res.body.branch_id, 600);
     assert.ok(Array.isArray(res.body.steps), 'debe retornar array steps');
-    assert.strictEqual(res.body.steps.length, 5, 'debe tener 5 steps (POST, PUT dimensiones, post-fix segmento, GET branch_id, PUT branch)');
-    assert.ok(res.body.steps.find(s => s.name === 'PUT customer (dimensiones)'), 'el alta nueva debe incluir el step de dimensiones');
     assert.ok(res.body.steps.every(s => s.name && s.status), 'cada step debe tener name y status');
-    assert.ok(res.body.steps.every(s => s.status === 'ok'), 'todos los steps deben ser ok');
+    // Mensaje en dos capas (ADR-0017): el reporte llega con lo que lee el
+    // vendedor y con el detalle tecnico, no con nombres de endpoint sueltos.
+    assert.ok(res.body.steps.every(s => s.mensaje && s.detalle), 'cada step trae mensaje y detalle');
   } finally {
     restore();
   }
 });
 
-test('D1b: POST /api/crear-cliente envia invoice_email/celular_nota en notes y phone/email a nivel cliente (issues #16/#17/#18)', async () => {
-  let postBody = null;
-  _resetSesionWeb();
+test('D2: el alta que el modulo detiene con una pregunta responde 428 y no crea nada', async () => {
+  let posts = 0;
   const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, customer_id: 510 }) }; }
-      if (u.includes('/510')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 610 }] }] }) };
+      if (opts?.method === 'POST') { posts++; return { ok: true, json: async () => ({ result: true, customer_id: 999 }) }; }
+      return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', cust_ref: 'Dup', tax_id: 'DUP010101ABC', branches: [] }] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, tax_id: 'DUP010101ABC', CustName: 'Duplicado SA' });
+    assert.strictEqual(res.status, 428);
+    assert.strictEqual(res.body.codigo, 'POSIBLE_DUPLICADO');
+    assert.match(res.body.error, /Puede ser un Cliente Operam que ya existe/);
+    assert.deepStrictEqual(res.body.candidatos.map(c => c.id), [55]);
+    assert.strictEqual(posts, 0, 'una pregunta no escribe nada en Operam');
+  } finally {
+    restore();
+  }
+});
+
+test('D3: el nombre corto que ya usa otro Cliente Operam responde 409 con su codigo', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') {
+        // El detalle del error de Operam se lee del cuerpo crudo (text), no de json.
+        return { ok: false, status: 406, text: async () => JSON.stringify({ messages: ['Already exists customer with same cust_ref'] }) };
+      }
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },
-    '/api/v3/sales/branches/610': () => ({ ok: true, json: async () => ({ result: true }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, cust_ref: 'Almacen Central' });
+    assert.strictEqual(res.status, 409);
+    assert.strictEqual(res.body.codigo, 'CUST_REF_DUPLICADO');
+    assert.match(res.body.error, /nombre corto/);
+    assert.ok(Array.isArray(res.body.steps));
+  } finally {
+    restore();
+  }
+});
+
+test('D4: Operam caido en el alta responde 503 con el motivo en palabras del vendedor', async () => {
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: false, status: 500, json: async () => ({ result: false, messages: ['Operam caido'] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+  });
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send(BASE_CLIENTE);
+    assert.strictEqual(res.status, 503);
+    assert.strictEqual(res.body.ok, false);
+    assert.match(res.body.error, /Cliente Operam/);
+    assert.ok(res.body.steps.find(s => s.name === 'POST customer' && s.status === 'error'));
+  } finally {
+    restore();
+  }
+});
+
+test('D5: el body del formulario llega al alta completo -- datos fiscales, comercial y domicilio de entrega', async () => {
+  let clienteBody = null;
+  let branchBody = null;
+  const restore = mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, customer_id: 501 }) }; }
+      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 601 }] }] }) };
+      return { ok: true, json: async () => ({ total: 0, data: [] }) };
+    },
+    '/api/v3/sales/branches/601': (u, opts) => {
+      if (opts?.method === 'PUT') branchBody = JSON.parse(opts.body);
+      return { ok: true, json: async () => ({ result: true, data: [{}] }) };
+    },
   });
   try {
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
       .send({
         ...BASE_CLIENTE,
-        invoice_email: 'facturacion@nueva.com',
-        celular_nota: '5599998888',
-        phone: '+52 5512345678',
-        email: 'entrega@nueva.com',
+        cust_ref: 'Nueva', idcif: '12345678901',
+        street: 'Insurgentes', street_number: '10', suite_number: '2', district: 'Roma',
+        postal_code: '06700', city: 'Cuauhtemoc', state: 'CDMX', cfdi_regimen_fiscal: '601',
+        invoice_email: 'factura@nueva.com', celular_nota: '5599887766',
       });
     assert.strictEqual(res.status, 200);
-    assert.ok(postBody, 'debe haber hecho POST /customers');
-    assert.ok(postBody.notes.includes('facturacion@nueva.com'), 'notes debe incluir el email de facturacion');
-    assert.ok(postBody.notes.includes('5599998888'), 'notes debe incluir el celular');
-    assert.strictEqual(postBody.phone, '+52 5512345678', 'phone a nivel cliente debe ir en el POST a Operam');
-    assert.strictEqual(postBody.email, 'entrega@nueva.com', 'email a nivel cliente debe ir en el POST a Operam');
+    // Datos fiscales -> el UNICO mapeo cliente -> Operam (#169: se escribe
+    // cust_name / cfdi_regimen_fiscal, no las llaves del GET).
+    assert.strictEqual(clienteBody.cust_name, 'NUEVA SA DE CV');
+    assert.strictEqual(clienteBody.tax_id, 'NUE010101ABC');
+    assert.strictEqual(clienteBody.cfdi_regimen_fiscal, '601');
+    assert.strictEqual(clienteBody.postal_code, '06700');
+    assert.strictEqual(clienteBody.street, 'Insurgentes');
+    assert.strictEqual(clienteBody.sales_type, '15');
+    assert.strictEqual(clienteBody.salesman, 47);
+    assert.ok(clienteBody.notes.includes('factura@nueva.com'));
+    // Domicilio de ENTREGA (otro domicilio, otro concepto): nombre, referencia
+    // corta, numero exterior y el Cel del Contacto en la casilla `fax` (#339).
+    assert.strictEqual(branchBody.br_name, 'Almacen Central');
+    assert.strictEqual(branchBody.br_ref, 'ALMCEN');
+    assert.strictEqual(branchBody.addr_street, 'Reforma');
+    assert.strictEqual(branchBody.addr_exterior, '1');
+    assert.strictEqual(branchBody.addr_zip, '06600');
+    assert.strictEqual(branchBody.salesman, 47);
+    assert.strictEqual(branchBody.fax, '5599887766');
   } finally {
     restore();
   }
 });
-
-// #339 (ADR-0016): la casilla que la web de Operam etiqueta "Cel" viaja en la API
-// como `fax`. El alta completa la escribe con el celular del Contacto (el campo
-// Celular del panel, que ya viajaba como `celular_nota`) en el Contacto en Operam
-// auto-generado y en la sucursal, y lo verifica releyendo (#74).
-test('D1b-cel: POST /api/crear-cliente manda el celular del Contacto en Cel (fax) del cliente y de la sucursal', async () => {
-  let postBody = null;
-  let branchBody = null;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, customer_id: 515 }) }; }
-      if (u.includes('/515')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: '5599998888' }], branches: [{ branch_code: 615, fax: '5599998888' }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/615': (u, opts) => {
-      if (opts?.method === 'PUT') branchBody = JSON.parse(opts.body);
-      return { ok: true, json: async () => ({ result: true }) };
-    },
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, celular_nota: '5599998888' });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.strictEqual(postBody.fax, '5599998888', 'el POST del cliente lleva el celular del Contacto en Cel');
-    assert.strictEqual(branchBody.fax, '5599998888', 'el PUT de la sucursal lleva el mismo celular en Cel');
-    assert.strictEqual(branchBody.phone, '5512345678', 'el telefono de la sucursal sigue siendo el de la entrega');
-    const paso = res.body.steps.find(s => s.name === 'verificar Cel');
-    assert.ok(paso, 'reporta el paso de verificacion del Cel');
-    assert.strictEqual(paso.status, 'ok');
-  } finally {
-    restore();
-  }
-});
-
-test('D1b-cel2: si Operam ignora el Cel, el alta completa sigue en ok y lo lista como campo no aplicado (#339)', async () => {
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 516 }) };
-      if (u.includes('/516')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: '' }], branches: [{ branch_code: 616, fax: '' }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/616': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, celular_nota: '5599998888' });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true, 'el alta no falla por un Cel que Operam ignoro');
-    const paso = res.body.steps.find(s => s.name === 'verificar Cel');
-    assert.strictEqual(paso.status, 'warn');
-    assert.deepStrictEqual(paso.camposNoActualizados.map(c => c.label), ['Cel del contacto', 'Cel del domicilio de entrega']);
-  } finally {
-    restore();
-  }
-});
-
-test('D1c: POST /api/crear-cliente configura el domicilio con vendedor, area, almacen y tax_group (issue #74)', async () => {
-  let branchBody = null;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 520 }) };
-      if (u.includes('/520')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 620 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/620': (u, opts) => {
-      branchBody = JSON.parse(opts.body);
-      return { ok: true, json: async () => ({ result: true }) };
-    },
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send(BASE_CLIENTE);
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.ok(branchBody, 'el alta debe configurar el domicilio (PUT /branches)');
-    assert.strictEqual(branchBody.salesman, 47, 'el domicilio debe llevar el vendedor del alta');
-    assert.strictEqual(branchBody.area, 1, 'el domicilio MX debe llevar area 1 (10 Mexico)');
-    assert.strictEqual(branchBody.location, 40, 'el domicilio debe llevar almacen 40 (PT)');
-    assert.strictEqual(branchBody.tax_group_id, 1, 'domicilio MX debe llevar tax_group_id 1 (gravado)');
-    assert.strictEqual(branchBody.sales_account, '401-01-001', 'domicilio MX debe llevar la cuenta de ventas gravada (issue #189)');
-  } finally {
-    restore();
-  }
-});
-
-test('D1d: POST /api/crear-cliente con domicilio extranjero usa tax_group exento (issue #74)', async () => {
-  let branchBody = null;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 530 }) };
-      if (u.includes('/530')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 630 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/630': (u, opts) => {
-      branchBody = JSON.parse(opts.body);
-      return { ok: true, json: async () => ({ result: true }) };
-    },
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, entrega: { ...BASE_CLIENTE.entrega, pais: 'US' } });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.ok(branchBody, 'el alta debe configurar el domicilio (PUT /branches)');
-    assert.strictEqual(branchBody.tax_group_id, 2, 'domicilio extranjero debe llevar tax_group_id 2 (exento)');
-    assert.strictEqual(branchBody.area, 5, 'domicilio US debe llevar area 5 (20 USA)');
-    assert.strictEqual(branchBody.sales_account, '401-07-000', 'domicilio extranjero debe llevar la cuenta de ventas de exportacion (issue #189)');
-  } finally {
-    restore();
-  }
-});
-
-test('D1e: POST /api/crear-cliente en alta NUEVA persiste dimension_id=1 y dimension2_id=5 via PUT /customers/:id (issue #74)', async () => {
-  // El POST /customers de Operam IGNORA dimension_id/dimension2_id (los guarda en 0).
-  // Solo un PUT /customers/:id los persiste. En un alta NUEVA debe correr ese PUT.
-  let dimPutBody = null;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 540 }) };
-      if (opts?.method === 'PUT' && u.includes('/540')) { dimPutBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
-      if (u.includes('/540')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 640 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/640': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send(BASE_CLIENTE);
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.ok(dimPutBody, 'el alta nueva debe hacer PUT /customers/:id para persistir dimensiones');
-    assert.strictEqual(dimPutBody.dimension_id, 1, 'el PUT debe persistir dimension_id=1 (D1 Taller Casino de la Selva)');
-    assert.strictEqual(dimPutBody.dimension2_id, 5, 'el PUT debe persistir dimension2_id=5 (D2 Corporativo)');
-  } finally {
-    restore();
-  }
-});
-
-test('D2: POST /api/crear-cliente fallo en PUT branch retorna steps con error y customer_id/branch_id', async () => {
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 501 }) };
-      if (u.includes('/501')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 601 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/601': () => ({ ok: true, json: async () => ({ result: false, messages: ['Error en branch'] }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send(BASE_CLIENTE);
-    assert.strictEqual(res.status, 200, 'respuesta debe ser 200 incluso con fallo en PUT');
-    assert.strictEqual(res.body.ok, false, 'ok debe ser false cuando falla un paso');
-    assert.strictEqual(res.body.customer_id, 501, 'debe retornar customer_id aunque falle el PUT');
-    assert.strictEqual(res.body.branch_id, 601, 'debe retornar branch_id aunque falle el PUT');
-    const putStep = res.body.steps.find(s => s.name === 'PUT branch');
-    assert.ok(putStep, 'debe existir step PUT branch');
-    assert.strictEqual(putStep.status, 'error', 'el step de PUT branch debe tener status error');
-    assert.ok(putStep.error, 'el step de PUT branch debe incluir mensaje de error');
-  } finally {
-    restore();
-  }
-});
-
-test('D3: POST /api/crear-cliente con customer_id existente salta POST y no duplica cliente', async () => {
-  let postCustomerCalled = false;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { postCustomerCalled = true; return { ok: true, json: async () => ({ result: true, customer_id: 999 }) }; }
-      if (u.includes('/502')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 602 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/602': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 502 });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.strictEqual(res.body.customer_id, 502, 'debe usar el customer_id existente');
-    assert.ok(!postCustomerCalled, 'NO debe hacer POST /customers cuando ya se conoce el customer_id');
-  } finally {
-    restore();
-  }
-});
-
-test('D4: POST /api/crear-cliente con customer_id existente actualiza sales_type/segmento_id/timbrado_uso_cfdi via PUT customers/:id (issue #11)', async () => {
-  let putCustomerBody = null;
-  let putCustomerCalled = false;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') { putCustomerCalled = true; putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 999 }) };
-      if (u.includes('/503')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 603 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/603': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 503 });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.ok(putCustomerCalled, 'debe hacer PUT /customers/:id para cliente existente');
-    assert.strictEqual(putCustomerBody.sales_type, BASE_CLIENTE.sales_type, 'debe enviar sales_type seleccionado');
-    assert.strictEqual(putCustomerBody.segmento_id, BASE_CLIENTE.segmento_id, 'debe enviar segmento_id seleccionado');
-    assert.strictEqual(putCustomerBody.timbrado_uso_cfdi, BASE_CLIENTE.timbrado_uso_cfdi, 'debe enviar timbrado_uso_cfdi seleccionado');
-    // issue #187: salesman es campo de la sucursal, no del cliente -- el PUT de
-    // customers/:id no debe mandarlo (el vendedor SI se escribe, pero via PUT /branches,
-    // cubierto por el assert de branchBody.salesman en D1c).
-    assert.ok(!('salesman' in putCustomerBody), 'salesman NO debe viajar en el PUT de customers (es campo de la sucursal)');
-    const putCustomerStep = res.body.steps.find(s => s.name === 'PUT customer (config comercial)');
-    assert.ok(putCustomerStep, 'debe existir step PUT customer (config comercial)');
-    assert.strictEqual(putCustomerStep.status, 'ok');
-  } finally {
-    restore();
-  }
-});
-
-test('D5: POST /api/crear-cliente cliente nuevo NO hace PUT customers/:id de config comercial (ya viaja en el POST)', async () => {
-  // El alta nueva SI hace un PUT /customers/:id para persistir dimensiones (#74, el
-  // POST las ignora). Lo que NO debe hacer es un PUT de CONFIG COMERCIAL
-  // (sales_type/segmento_id/salesman/timbrado), que ya viajo en el POST. Se captura
-  // el body de cualquier PUT para verificar que solo lleva dimensiones.
-  let putCustomerBody = null;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') { putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 504 }) };
-      if (u.includes('/504')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 604 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/604': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send(BASE_CLIENTE);
-    assert.strictEqual(res.status, 200);
-    assert.ok(!res.body.steps.find(s => s.name === 'PUT customer (config comercial)'), 'no debe existir el step de config comercial para cliente nuevo');
-    assert.ok(putCustomerBody, 'el alta nueva hace un PUT (de dimensiones)');
-    assert.ok(!('sales_type' in putCustomerBody), 'el PUT del alta nueva NO debe llevar config comercial (sales_type ya fue en el POST)');
-    assert.ok(!('segmento_id' in putCustomerBody), 'el PUT del alta nueva NO debe llevar config comercial (segmento_id ya fue en el POST)');
-  } finally {
-    restore();
-  }
-});
-
-test('D6: POST /api/crear-cliente fallo en PUT customer (config comercial) retorna step con error sin bloquear PUT branch posterior', async () => {
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: false, messages: ['No se pudo actualizar'] }) };
-      if (u.includes('/505')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 605 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/605': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 505 });
-    assert.strictEqual(res.status, 200);
-    const putCustomerStep = res.body.steps.find(s => s.name === 'PUT customer (config comercial)');
-    assert.ok(putCustomerStep, 'debe existir el step aunque falle');
-    assert.strictEqual(putCustomerStep.status, 'error');
-    assert.ok(putCustomerStep.error, 'debe incluir mensaje de error');
-    const putBranchStep = res.body.steps.find(s => s.name === 'PUT branch');
-    assert.ok(putBranchStep, 'PUT branch debe seguir ejecutandose pese al fallo de config comercial');
-    assert.strictEqual(putBranchStep.status, 'ok');
-  } finally {
-    restore();
-  }
-});
-
-// === Post-fix del segmento en el alta completa (issue #186) ===
-//
-// segmento_id no pega por la API v3 en NINGUNA de las dos ramas: ni el POST /customers
-// del alta nueva ni el PUT bundleado del Step 1b lo persisten (#172, sondeo en vivo). El
-// segmento que el vendedor eligio se perdia en silencio; lo escribe el mismo post-fix web
-// que ya usaba el upgrade fiscal.
-
-test('D7: alta NUEVA con segmento capturado -> el post-fix web lo escribe en la ficha del cliente creado', async () => {
-  _resetSesionWeb();
-  const web = handlersWebFichaCliente();
-  const restore = mockOperamFetch({
-    ...web.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 540 }) };
-      if (u.includes('/540')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 640 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/640': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send(BASE_CLIENTE);
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.deepEqual(web.gets, ['540'], 'pide la ficha del cliente que acaba de crear');
-    assert.strictEqual(web.posts.length, 1, 'un solo POST a la ficha');
-    assert.strictEqual(web.posts[0].get('segmento_id'), BASE_CLIENTE.segmento_id);
-    assert.strictEqual(web.posts[0].get('process'), 'Actualizar Cliente', 'el submit real de la ficha');
-    assert.strictEqual(web.estado.segmento, BASE_CLIENTE.segmento_id, 'el segmento quedo escrito');
-    const paso = res.body.steps.find(s => s.name === 'post-fix segmento (web)');
-    assert.ok(paso, 'el vendedor tiene que ver el paso en el panel de alta');
-    assert.strictEqual(paso.status, 'ok');
-  } finally {
-    restore();
-  }
-});
-
-test('D8: cliente EXISTENTE (Step 1b) -> el post-fix web tambien corre (el PUT bundleado no persiste el segmento)', async () => {
-  _resetSesionWeb();
-  const web = handlersWebFichaCliente();
-  const restore = mockOperamFetch({
-    ...web.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/541')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 641 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/641': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 541 });
-    assert.strictEqual(res.status, 200);
-    assert.deepEqual(web.gets, ['541'], 'la ficha es la del cliente elegido por dedup, no la de uno nuevo');
-    assert.strictEqual(web.estado.segmento, BASE_CLIENTE.segmento_id);
-    assert.strictEqual(res.body.steps.find(s => s.name === 'post-fix segmento (web)').status, 'ok');
-  } finally {
-    restore();
-  }
-});
-
-test('D9: sin segmento capturado el alta NO toca la web legacy', async () => {
-  _resetSesionWeb();
-  const web = handlersWebFichaCliente();
-  const restore = mockOperamFetch({
-    ...web.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 542 }) };
-      if (u.includes('/542')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 642 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/642': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, segmento_id: '' });
-    assert.strictEqual(res.status, 200);
-    assert.deepEqual(web.gets, [], 'sin segmento capturado no hay nada que corregir');
-    assert.deepEqual(web.posts, []);
-    assert.ok(!res.body.steps.find(s => s.name === 'post-fix segmento (web)'), 'ni step: el paso no corrio');
-  } finally {
-    restore();
-  }
-});
-
-// Trampa 1 de #172: con el CP vacio FA rechaza el guardado ENTERO y la unica senal es el
-// err_msg. Un cliente existente elegido por dedup puede estar asi en Operam. El alta NO
-// puede caerse por eso -- el domicilio (PUT branch) es lo critico para terminar -- y el
-// motivo REAL de la web es lo unico que le dice al vendedor que hacer.
-test('D10: la web rechaza el guardado -> el alta termina igual y el step lleva el motivo real', async () => {
-  _resetSesionWeb();
-  const web = handlersWebFichaCliente({ err: 'El codigo postal no puede ser vacio' });
-  const restore = mockOperamFetch({
-    ...web.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/543')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 643 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/643': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 543 });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true, 'un fallo del post-fix no puede impedir terminar el alta');
-    assert.strictEqual(res.body.steps.find(s => s.name === 'PUT branch').status, 'ok', 'el domicilio sigue siendo lo critico y se configuro');
-    const paso = res.body.steps.find(s => s.name === 'post-fix segmento (web)');
-    assert.strictEqual(paso.status, 'error');
-    assert.match(paso.error, /codigo postal/i, 'el motivo REAL de la web, no uno generico');
-  } finally {
-    restore();
-  }
-});
-
-// Regla de #186 (decision de Adrian): a un cliente que YA existe solo se le escribe el
-// segmento si estaba en "Sin segmento". Un cliente clasificado antes -- en Operam o por
-// otro vendedor -- no pierde su clasificacion porque en esta alta se eligiera otra cosa.
-// El upgrade fiscal NO sigue esta regla: ahi el vendedor edita la ficha a proposito.
-test('D11: cliente existente YA clasificado -> se conserva su segmento, no se repostea la ficha', async () => {
-  _resetSesionWeb();
-  const web = handlersWebFichaCliente({ segmentoInicial: '10' });
-  const restore = mockOperamFetch({
-    ...web.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/544')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 644 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/644': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 544, segmento_id: '14' });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.deepEqual(web.gets, ['544'], 'lee la ficha: es la unica forma de saber como esta hoy');
-    assert.deepEqual(web.posts, [], 'pero NO escribe: el cliente ya estaba clasificado');
-    assert.strictEqual(web.estado.segmento, '10', 'conserva el segmento que tenia en Operam');
-    const paso = res.body.steps.find(s => s.name === 'post-fix segmento (web)');
-    assert.strictEqual(paso.status, 'ok');
-    assert.strictEqual(paso.info, 'conservado', 'el vendedor debe ver que su seleccion no se aplico y por que');
-    assert.strictEqual(paso.actualNombre, 'Restaurantes, hoteles', 'el segmento conservado se nombra: el id no le dice nada al vendedor (#250)');
-  } finally {
-    restore();
-  }
-});
-
-test('D12: cliente existente en "Sin segmento" -> se le escribe el capturado', async () => {
-  _resetSesionWeb();
-  const web = handlersWebFichaCliente({ segmentoInicial: '1' });
-  const restore = mockOperamFetch({
-    ...web.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/545')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 645 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches/645': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 545, segmento_id: '14' });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(web.posts.length, 1, 'sin clasificar previa: aqui si se escribe');
-    assert.strictEqual(web.posts[0].get('segmento_id'), '14');
-    assert.strictEqual(web.estado.segmento, '14');
-    assert.strictEqual(res.body.steps.find(s => s.name === 'post-fix segmento (web)').status, 'ok');
-  } finally {
-    restore();
-  }
-});
-
-// === Cliente EXISTENTE elegido por dedup: nada de PUT sobre su sucursal (issue #250) ===
-//
-// El alta completa corria los MISMOS PUT del camino de creacion sobre el cliente que el
-// vendedor eligio con "Usar este cliente": el PUT /branches es REPLACE y le borro el
-// vendedor, el nombre y el domicilio reales al cliente 15 en produccion. La marca
-// `cliente_existente` es lo unico que distingue ese caso del reintento legitimo de un
-// alta nueva, que si tiene que terminar de configurar SU sucursal recien creada.
-
-test('D13: cliente EXISTENTE (cliente_existente:true) NO hace ningun PUT a /branches (issue #250)', async () => {
-  const llamadasBranches = [];
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/15')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 15 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches': (u, opts) => {
-      llamadasBranches.push({ metodo: opts?.method || 'GET', url: u });
-      return { ok: true, json: async () => ({ result: true }) };
-    },
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 15, cliente_existente: true });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true, 'omitir un paso no es un fallo del alta');
-    assert.deepEqual(llamadasBranches.filter(l => l.metodo === 'PUT'), [], 'el PUT de branches es REPLACE: sobre un cliente existente no corre NUNCA');
-    const paso = res.body.steps.find(s => s.name === 'PUT branch');
-    assert.ok(paso, 'la fila del domicilio debe seguir existiendo');
-    assert.strictEqual(paso.status, 'omitido', 'no es exito: es una escritura deliberadamente omitida');
-    assert.ok(paso.info && paso.info.trim(), 'el vendedor tiene que leer por que no se toco el domicilio');
-    assert.strictEqual(res.body.branch_id, 15, 'el GET del branch_id si corre: es read-only y el frontend lo usa');
-  } finally {
-    restore();
-  }
-});
-
-test('D14: reintento de un alta NUEVA (customer_id sin la marca) conserva su PUT de branch (issue #250)', async () => {
-  const llamadasBranches = [];
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') return { ok: true, json: async () => ({ result: true }) };
-      if (u.includes('/546')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 646 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches': (u, opts) => {
-      llamadasBranches.push({ metodo: opts?.method || 'GET', url: u });
-      return { ok: true, json: async () => ({ result: true }) };
-    },
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 546 });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    const puts = llamadasBranches.filter(l => l.metodo === 'PUT');
-    assert.strictEqual(puts.length, 1, 'el alta que creo esta sucursal tiene que terminar de configurarla');
-    assert.ok(puts[0].url.endsWith('/branches/646'), 'sobre la sucursal del cliente del reintento');
-    assert.strictEqual(res.body.steps.find(s => s.name === 'PUT branch').status, 'ok');
-  } finally {
-    restore();
-  }
-});
-
-test('D15: selects comerciales vacios -> ni un PUT de config comercial (issue #250)', async () => {
-  // Los tres campos nacen en '' ("-- Selecciona --") y viajaban crudos: Operam
-  // coerciono el sales_type '' a 0 y el cliente 15 perdio su lista de precios.
-  let putCustomerLlamado = false;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') { putCustomerLlamado = true; return { ok: true, json: async () => ({ result: true }) }; }
-      if (u.includes('/547')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 647 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 547, cliente_existente: true, sales_type: '', segmento_id: '', timbrado_uso_cfdi: '' });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    assert.ok(!putCustomerLlamado, 'sin nada que escribir no se toca al cliente');
-    const paso = res.body.steps.find(s => s.name === 'PUT customer (config comercial)');
-    assert.ok(paso, 'la fila debe existir para que el vendedor sepa que no se escribio');
-    assert.strictEqual(paso.status, 'omitido');
-    assert.ok(paso.info && paso.info.trim(), 'con motivo legible');
-  } finally {
-    restore();
-  }
-});
-
-test('D16: solo el campo que el vendedor si eligio viaja en el PUT de config comercial (issue #250)', async () => {
-  let putCustomerBody = null;
-  _resetSesionWeb();
-  const restore = mockOperamFetch({
-    ...FICHA_ALTA.handlers,
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'PUT') { putCustomerBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true }) }; }
-      if (u.includes('/548')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 648 }] }] }) };
-      return { ok: true, json: async () => ({ total: 0, data: [] }) };
-    },
-    '/api/v3/sales/branches': () => ({ ok: true, json: async () => ({ result: true }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/crear-cliente')
-      .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ ...BASE_CLIENTE, customer_id: 548, cliente_existente: true, sales_type: '12', segmento_id: '', timbrado_uso_cfdi: '' });
-    assert.strictEqual(res.status, 200);
-    assert.ok(putCustomerBody, 'con un campo elegido si se escribe');
-    assert.strictEqual(putCustomerBody.sales_type, '12');
-    assert.ok(!('segmento_id' in putCustomerBody), 'el segmento vacio NO viaja');
-    assert.ok(!('timbrado_uso_cfdi' in putCustomerBody), 'el uso de CFDI vacio NO viaja');
-    assert.strictEqual(res.body.steps.find(s => s.name === 'PUT customer (config comercial)').status, 'ok');
-  } finally {
-    restore();
-  }
-});
-
 // === GET /api/buscar-cliente-duplicado (issue #31) ===
 
 test('E1: GET /api/buscar-cliente-duplicado retorna exacto cuando RFC real ya existe en Operam', async () => {

@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, crearCliente, crearClienteDirecto, actualizarBranchCliente, crearBranchCliente, obtenerBranchId, obtenerBranchesCliente, obtenerBranch, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
+import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
@@ -16,7 +16,6 @@ import { bodyDesdeDiffFiscal, precargaComercialUpgrade, contactoCoincideBusqueda
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
 import { darDeAlta, upgradeFiscal } from './lib/alta-cliente.js';
 import { logCliente } from './lib/clientes-log.js';
-import { celsNoAplicados } from './lib/cel-operam.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
@@ -3015,36 +3014,9 @@ async function responderSiClienteSinLista(res, id, err, extra = {}) {
 // segundo request recibe 425 claro y reintenta cuando el primero termine.
 const subidasOperamEnCurso = new Set();
 
-// Lock en memoria por RFC normalizado para el alta completa (#209, POST
-// /api/crear-cliente): mismo problema check-then-act que subidasOperamEnCurso de
-// arriba, pero con un RFC en vez de un id de cotizacion -- dos requests EN VUELO
-// con el MISMO RFC nuevo (doble click, dos pestanas) verian ambas el pool vacio en
-// la dedup de crearCliente y crearian DOS clientes en Operam para el mismo RFC. A
-// diferencia de subidasOperamEnCurso, aqui la segunda request no debe fallar con
-// 425: debe ESPERAR a que la primera termine y solo entonces correr su propia
-// dedup, que para ese momento SI encuentra al cliente recien creado (mismo
-// resultado que si hubiera llegado tarde) -- ningun segundo POST de cliente llega
-// a Operam. RFC_GENERICOS queda exento (comparten RFC por diseno, ADR-0001), igual
-// que la dedup por RFC exacto de crearCliente. Map<rfc, Promise> hace de cola FIFO
-// por RFC -- misma asuncion de instancia unica en Render (plan Starter) que
-// subidasOperamEnCurso: con varias instancias haria falta un lock compartido
-// (Neon).
-const altaClienteEnCurso = new Map();
-
-async function crearClienteConLock(cliente) {
-  const rfc = normalizarRfc(cliente.tax_id);
-  if (RFC_GENERICOS.has(rfc)) return crearCliente(cliente);
-  const previa = altaClienteEnCurso.get(rfc);
-  const actual = (previa ? previa.catch(() => {}) : Promise.resolve()).then(() => crearCliente(cliente));
-  altaClienteEnCurso.set(rfc, actual);
-  try {
-    return await actual;
-  } finally {
-    // Solo se borra la entrada si nadie se encolo detras -- si ya hay una promesa
-    // mas nueva en el mapa, esa es la que manda liberar el lock cuando termine.
-    if (altaClienteEnCurso.get(rfc) === actual) altaClienteEnCurso.delete(rfc);
-  }
-}
+// El lock por RFC real del alta completa (#209) vive desde #366 en
+// lib/alta-cliente.js (conLockPorRfc): es del alta, no del handler, y asi lo
+// comparten sus tres caminos (ADR-0017).
 
 // Post-fix de la vigencia (#106, ADR-0007). El POST del quote ignora valid_until y deja
 // el campo nativo "Valido hasta" en ord_date-1, asi que Operam marca como vencidas
@@ -3457,217 +3429,125 @@ function marcarTelefonoSospechoso(cliente) {
   }
 }
 
-function nombreSegmento(id) {
-  return SEGMENTOS.find(s => String(s.id) === String(id))?.nombre || '';
+// El customer_id del formulario significa una de dos cosas, y las dos terminan en
+// la MISMA decision (#366): un Cliente Operam EXISTENTE elegido por dedup
+// (`cliente_existente`, por RFC o por celular) o el reintento de un alta que ya
+// creo el cliente. En ambos el cliente ya existe y hay que reusarlo, asi que la
+// casilla del navegador viaja solo como pista: quien decide si el domicilio de
+// entrega es nuevo -- y por lo tanto si se escribe -- es el modulo, con su propia
+// bandera (ADR-0017). Es lo que cierra #250, donde esa casilla gobernaba el PUT.
+function decisionDelFormulario(body) {
+  const id = body?.customer_id;
+  return id ? { tipo: 'usar', clienteId: id } : null;
 }
 
-// Solo las llaves que traen un valor capturado (issue #250). Mandar '' a Operam no es
-// "no cambiar": es escribir vacio, y varios campos lo coercionan a 0.
-function camposConValor(campos) {
-  return Object.fromEntries(Object.entries(campos).filter(([, v]) => v !== '' && v !== null && v !== undefined));
+// La Solicitud de alta armada desde el formulario de la vista Clientes (#366,
+// ADR-0017): TODA la traduccion del body HTTP hacia el modulo. Siempre con datos
+// fiscales (la Seccion 1 es una constancia o la captura minima) y con el segmento
+// en 'esperar': el vendedor esta mirando el reporte de pasos.
+function solicitudDelFormulario(body, vendedor) {
+  const b = body || {};
+  const entrega = b.entrega || {};
+  return {
+    contacto: { celular: b.celular_nota || '', prospecto: null, ligas: [] },
+    identidad: {
+      razonSocial: b.CustName || '',
+      nombreCorto: b.cust_ref || '',
+      nombreVisible: b.CustName || '',
+      rfc: b.tax_id || '',
+      pais: b.pais || 'MX',
+    },
+    datosFiscales: {
+      rfc: b.tax_id || '',
+      razonSocial: b.CustName || '',
+      regimen: b.cfdi_regimen_fiscal || '',
+      idcif: b.idcif || '',
+      calle: b.street || '',
+      numExt: b.street_number || '',
+      numInt: b.suite_number || '',
+      colonia: b.district || '',
+      cp: b.postal_code || '',
+      municipio: b.city || '',
+      estado: b.state || '',
+      actividades: b.actividades || [],
+      csfFecha: b.csf_fecha || '',
+    },
+    comercial: {
+      vendedor,
+      // El selector de vendedor manda el operam_id del catalogo, no el nombre.
+      salesmanId: b.salesman,
+      salesTypeId: b.sales_type || undefined,
+      segmentoId: b.segmento_id || undefined,
+      correoFacturacion: b.invoice_email || '',
+      usoCfdi: b.timbrado_uso_cfdi || '',
+    },
+    domicilioEntrega: {
+      nombre: entrega.br_name || '',
+      referenciaCorta: entrega.br_ref || '',
+      calle: entrega.addr_street || '',
+      numExt: entrega.addr_exterior || '',
+      numInt: entrega.addr_interior || '',
+      colonia: entrega.addr_colony || '',
+      municipio: entrega.addr_city || '',
+      estado: entrega.addr_state || '',
+      cp: entrega.addr_zip || '',
+      referencias: entrega.addr_reference || '',
+      telefono: entrega.phone || '',
+      correo: entrega.email || '',
+    },
+    ligaFija: { clienteId: null, domicilioId: b.branch_id ?? null },
+    decision: decisionDelFormulario(b),
+    segmento: { preferencia: 'esperar' },
+    auditoria: { fuente: b.fuente || (b.pdf_base64 ? 'csf-upload' : 'cotizador') },
+  };
 }
+
+// El resultado del modulo -> HTTP (ADR-0017: el modulo devuelve valores, el
+// handler traduce). La pregunta de duplicado sale 428 con el aviso minimo y sin
+// crear nada; sus tres salidas son #368.
+const MENSAJE_POSIBLE_DUPLICADO = 'Puede ser un Cliente Operam que ya existe: buscalo antes de dar de alta';
 
 app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   const cliente = req.body;
   if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
   marcarTelefonoSospechoso(cliente);
-  const fuente = cliente.fuente || (cliente.pdf_base64 ? 'csf-upload' : 'cotizador');
-  const steps = [];
-  let customer_id = cliente.customer_id || null;
-  let branch_id = cliente.branch_id || null;
-  // customer_id ya viaja en el payload: puede ser reintento de un alta nueva (los
-  // datos comerciales ya se mandaron en el POST /customers de ese mismo flujo) o un
-  // cliente EXISTENTE elegido via deduplicacion (altaState.clienteExistente, issue #31)
-  // -- en ese caso el POST /customers nunca corrio y sales_type/segmento_id/
-  // timbrado_uso_cfdi seleccionados en la seccion 2 se perdian en silencio (issue #11,
-  // gap confirmado en auditoria de #26). Reenviar esos campos via PUT /customers/:id
-  // cierra ese gap y es idempotente para el reintento.
-  //
-  // Los dos casos NO son equivalentes y aqui se distinguen (issue #250): fundirlos
-  // costo la configuracion del cliente 15 en produccion. Sobre un cliente EXISTENTE el
-  // alta no esta terminando de configurar lo que acaba de crear, esta escribiendo
-  // encima de lo que otro configuro -- el PUT del branch (REPLACE destructivo) se omite
-  // por completo, mismo contrato que el gate `creadoNuevo` del alta generica. La marca
-  // la pone el frontend (`cliente_existente`) porque es el unico que sabe de donde
-  // salio el customer_id; sin ella, `customer_id` significa reintento.
-  const customerIdYaConocido = !!customer_id;
-  const esClienteExistente = cliente.cliente_existente === true;
 
-  try {
-    // Step 1: POST customer (skip if customer_id already known — reintento)
-    if (!customer_id) {
-      try {
-        const resultado = await crearClienteConLock(cliente);
-        if (resultado.duplicado) {
-          // Salida temprana ANTES del post-fix del segmento (#186) a proposito: aqui no
-          // se escribe NADA sobre el cliente encontrado -- el vendedor todavia no decidio
-          // usarlo. Escribirle el segmento seria tocar un cliente ajeno sin su visto bueno.
-          steps.push({ name: 'POST customer', status: 'ok', info: 'duplicado' });
-          logCliente(cliente.tax_id, cliente.CustName, 'duplicado', resultado.cliente_id, fuente, null, null);
-          return res.json({ ok: true, customer_id: resultado.cliente_id, branch_id, duplicado: true, steps });
-        }
-        customer_id = resultado.cliente_id;
-        steps.push({ name: 'POST customer', status: 'ok' });
-        if (cliente.pdf_base64) {
-          import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
-            subirCsfDropbox(cliente.pdf_base64, cliente.tax_id, cliente.CustName)
-              .catch(err => console.error('[dropbox]', err.message))
-          );
-        }
-      } catch (err) {
-        steps.push({ name: 'POST customer', status: 'error', error: err.message });
-        logCliente(cliente.tax_id, cliente.CustName, 'error', null, fuente, null, err.message);
-        return res.json({ ok: false, customer_id, branch_id, steps });
-      }
-    } else {
-      steps.push({ name: 'POST customer', status: 'ok', info: 'reintento' });
-    }
+  const alta = await darDeAlta(solicitudDelFormulario(cliente, req.user.name));
 
-    // Step 1b: PUT customer — sincronizar config comercial cuando el customer_id ya
-    // era conocido al entrar (cliente existente via dedup, o reintento). No bloquea el
-    // flujo si falla -- el domicilio (PUT branch) sigue siendo lo critico para terminar
-    // el alta (issue #11).
-    if (customerIdYaConocido) {
-      // salesman NO viaja aqui (issue #187): es campo de la SUCURSAL en FrontAccounting,
-      // no del cliente -- el PUT /customers/:id lo ignora porque a ese nivel no existe.
-      // Se escribe donde vive, en el PUT /branches del Step 3. segmento_id se deja aunque
-      // la API v3 tampoco lo persista (mismo criterio que #172): si algun dia Operam lo
-      // arregla, empieza a funcionar solo.
-      //
-      // Un campo vacio NO es un dato (issue #250): los tres selects nacen en '' y sin
-      // filtrarlos el PUT escribia ese vacio -- Operam lo coerciona (sales_type '' -> 0)
-      // y el cliente pierde su configuracion. Vacio = "el vendedor no eligio", y de eso
-      // no se sigue nada que escribir.
-      const comercial = camposConValor({
-        sales_type: cliente.sales_type,
-        segmento_id: cliente.segmento_id,
-        timbrado_uso_cfdi: cliente.timbrado_uso_cfdi,
-      });
-      if (!Object.keys(comercial).length) {
-        steps.push({ name: 'PUT customer (config comercial)', status: 'omitido', info: 'Sin cambios de configuracion comercial' });
-      } else {
-        try {
-          await actualizarClienteDirecto(customer_id, comercial);
-          steps.push({ name: 'PUT customer (config comercial)', status: 'ok' });
-        } catch (err) {
-          steps.push({ name: 'PUT customer (config comercial)', status: 'error', error: err.message });
-        }
-      }
-    } else {
-      // Step 1c: PUT customer — persistir dimensiones en un alta NUEVA. El POST
-      // /customers de Operam IGNORA dimension_id/dimension2_id (los guarda en 0,
-      // verificado en vivo #74); solo un PUT /customers/:id los persiste. No bloquea
-      // el flujo si falla -- el domicilio sigue siendo lo critico (issue #74).
-      try {
-        await actualizarClienteDirecto(customer_id, { dimension_id: 1, dimension2_id: 5 });
-        steps.push({ name: 'PUT customer (dimensiones)', status: 'ok' });
-      } catch (err) {
-        steps.push({ name: 'PUT customer (dimensiones)', status: 'error', error: err.message });
-      }
-    }
-
-    // Step 1d: post-fix del SEGMENTO por la web legacy (#186, mismo motivo que #172). Ni
-    // el POST /customers del alta nueva ni el PUT del Step 1b escriben segmento_id: la
-    // API v3 no lo persiste por NINGUN camino, asi que el segmento que el vendedor eligio
-    // se perdia en silencio en las DOS ramas. Corre aqui, con el customer_id ya resuelto
-    // y ANTES del branch, y NO bloquea: un fallo (tipicamente FA rechazando el formulario
-    // entero por un CP vacio del cliente, trampa 1 de #172) no puede impedir el PUT del
-    // branch, que es lo critico para terminar el alta -- mismo criterio del Step 1b.
-    //
-    // El `ok` es un exito TENTATIVO, no una relectura: no se agrega el GET extra porque
-    // actualizarSegmentoClienteWeb ya lee la ficha antes de escribir (sabe si el segmento
-    // ya era el correcto) y `leerErrorWeb` cubre el unico rechazo conocido de FA. Si algun
-    // dia FA ignorara el campo en silencio, esto lo reportaria como ok -- ahi si haria
-    // falta releer.
-    if (cliente.segmento_id) {
-      const r = await actualizarSegmentoClienteWeb(customer_id, cliente.segmento_id, { soloSinSegmento: true });
-      if (r.ok) {
-        // `conservado` no es un fallo: el cliente ya estaba clasificado y su segmento
-        // manda sobre lo que se eligio en esta alta. Se reporta igual para que el vendedor
-        // no crea que su seleccion se aplico.
-        // `actual` es el id interno de Operam: al vendedor le sirve el nombre, que es lo
-        // que el panel pinta junto a la paloma (#250).
-        steps.push({ name: 'post-fix segmento (web)', status: 'ok', ...(r.conservado ? { info: 'conservado', actual: r.actual, actualNombre: nombreSegmento(r.actual) } : {}) });
-      } else {
-        // El motivo REAL de la web es lo unico que le dice al vendedor que hacer.
-        console.error('[crear-cliente] post-fix web del segmento fallo:', r.error);
-        steps.push({ name: 'post-fix segmento (web)', status: 'error', error: r.error });
-      }
-    }
-
-    // Step 2: GET customer to resolve branch_id
-    if (!branch_id) {
-      try {
-        branch_id = await obtenerBranchId(customer_id);
-        steps.push({ name: 'GET branch_id', status: 'ok' });
-      } catch (err) {
-        steps.push({ name: 'GET branch_id', status: 'error', error: err.message });
-        return res.json({ ok: false, customer_id, branch_id, steps });
-      }
-    } else {
-      steps.push({ name: 'GET branch_id', status: 'ok', info: 'reintento' });
-    }
-
-    // Step 3: PUT branch - configure domicilio. SOLO sobre la sucursal que esta misma
-    // alta creo (#250): el PUT es REPLACE y sobre un cliente existente pisa su domicilio
-    // real -- nombre, vendedor, cuentas contables y br_post_address, varias de ellas
-    // irrecuperables por API. Agregarle una plaza a un cliente existente es POST de
-    // sucursal (#211), nunca este PUT.
-    let sucursalEscrita = false;
-    if (esClienteExistente) {
-      steps.push({ name: 'PUT branch', status: 'omitido', info: 'Cliente Operam existente: se conserva su domicilio en Operam' });
-    } else {
-      try {
-        const entrega = cliente.entrega || {};
-        await actualizarBranchCliente(customer_id, branch_id, {
-          ...entrega,
-          pais: entrega.pais || cliente.pais || 'MX',
-          salesman: cliente.salesman,
-          // Cel de la sucursal (#339): el celular del CONTACTO (campo Celular del
-          // panel), no el telefono de quien recibe la mercancia, que sigue en `phone`.
-          fax: cliente.celular_nota || '',
-        });
-        sucursalEscrita = true;
-        steps.push({ name: 'PUT branch', status: 'ok' });
-      } catch (err) {
-        steps.push({ name: 'PUT branch', status: 'error', error: err.message });
-        logCliente(cliente.tax_id, cliente.CustName, 'error', customer_id, fuente, null, err.message);
-        return res.json({ ok: false, customer_id, branch_id, steps });
-      }
-    }
-
-    // Verificacion del Cel (#339): Operam responde 200 sin garantizar nada (#74) y
-    // el GET /branches/:code NO expone `fax` -- el unico lector es
-    // GET /customers/:id, que trae contacts[] y branches[] en una sola llamada. Un
-    // Cel que no quedo escrito NO tumba el alta: viaja como campo no aplicado en el
-    // reporte de pasos (ADR-0002). OJO: el panel de la Seccion 4 pinta los pasos por
-    // NOMBRE contra ALTA_PASO_FILA (#112) y este no tiene fila, asi que hoy el warn
-    // vive solo en la respuesta -- darle fila es decision de pantalla, no de #339.
-    // Solo se verifica lo que esta alta escribio: sobre un cliente existente no
-    // corrio ni el POST ni el PUT del branch.
-    const celContacto = cliente.celular_nota || '';
-    const celEnCliente = celContacto && !customerIdYaConocido ? celContacto : '';
-    const celEnBranch = celContacto && sucursalEscrita ? celContacto : '';
-    if (celEnCliente || celEnBranch) {
-      try {
-        const fresco = await obtenerClientePorId(customer_id);
-        const noAplicados = celsNoAplicados(fresco, { celCliente: celEnCliente, celBranch: celEnBranch, branchId: branch_id });
-        steps.push(noAplicados.length
-          ? { name: 'verificar Cel', status: 'warn', camposNoActualizados: noAplicados }
-          : { name: 'verificar Cel', status: 'ok' });
-      } catch (err) {
-        steps.push({ name: 'verificar Cel', status: 'error', error: err.message });
-      }
-    }
-
-    logCliente(cliente.tax_id, cliente.CustName, 'creado', customer_id, fuente, null, null);
-    ligarProspectoACliente(cliente, customer_id, req.user.name)
-      .catch(err => console.error('[prospectos] No se pudo ligar prospecto a cliente:', err.message));
-    res.json({ ok: true, customer_id, branch_id, duplicado: false, steps });
-  } catch (err) {
-    logCliente(cliente.tax_id, cliente.CustName, 'error', null, fuente, null, err.message);
-    res.status(500).json({ error: err.message });
+  // Respaldo de la constancia en Dropbox (#24/#350): no es del alta, es del
+  // archivo que el vendedor solto. Fire-and-forget, y solo cuando esta alta creo
+  // al cliente -- sobre uno que ya existia no hay constancia nueva que archivar.
+  if (cliente.pdf_base64 && alta.creadoNuevo) {
+    import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
+      subirCsfDropbox(cliente.pdf_base64, cliente.tax_id, cliente.CustName)
+        .catch(err => console.error('[dropbox]', err.message))
+    );
   }
+
+  if (alta.tipo === 'pregunta') {
+    // 428 y NADA escrito: el navegador ya pre-consulta la dedup, asi que llegar
+    // aqui significa que se le escapo un posible duplicado. El aviso es minimo a
+    // proposito -- elegir entre los candidatos es #368.
+    return res.status(428).json({
+      codigo: 'POSIBLE_DUPLICADO',
+      error: MENSAJE_POSIBLE_DUPLICADO,
+      candidatos: alta.candidatos || [],
+    });
+  }
+
+  if (alta.tipo === 'bloqueo') {
+    // El nombre corto ya usado es un hecho duro de Operam, no una falla suya: el
+    // vendedor tiene que cambiarlo, no reintentar (#242). El customer_id viaja
+    // aunque el alta se haya bloqueado, para que un reintento reuse ese cliente.
+    const cuerpo = { ok: false, error: alta.mensaje, detalle: alta.detalle, customer_id: alta.clienteId ?? null, branch_id: null, steps: alta.pasos };
+    if (alta.motivo === 'cust-ref-duplicado') return res.status(409).json({ ...cuerpo, codigo: 'CUST_REF_DUPLICADO' });
+    if (alta.motivo === 'liga-fija') return res.status(409).json(cuerpo);
+    return res.status(503).json(cuerpo);
+  }
+
+  ligarProspectoACliente(cliente, alta.clienteId, req.user.name)
+    .catch(err => console.error('[prospectos] No se pudo ligar prospecto a cliente:', err.message));
+  res.json({ ok: true, customer_id: alta.clienteId, branch_id: alta.domicilioId, duplicado: false, steps: alta.pasos });
 });
 
 // --- CSF: buscar cliente por RFC ---
