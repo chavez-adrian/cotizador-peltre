@@ -7810,19 +7810,22 @@ const ALTA_ICO_ERR = '✗';
 // Un paso que NO corrio a proposito no es una paloma (#250): la del domicilio tapaba
 // un PUT destructivo y la del segmento una escritura que el servidor decidio no hacer.
 const ALTA_ICO_OMITIDO = '-';
+// Un AVISO tampoco es una paloma (#366): el paso corrio y el alta quedo hecha,
+// pero Operam no aplico algo (el Cel, un campo del domicilio de entrega).
+const ALTA_ICO_AVISO = '!';
 
 function altaPasoSetStatus(idx, status, msg, detalle) {
   const ico = document.getElementById(`alta-paso-ico-${idx}`);
   const msgEl = document.getElementById(`alta-paso-msg-${idx}`);
   const row = document.getElementById(`alta-paso-${idx}`);
   if (ico) {
-    ico.textContent = status === 'ok' ? ALTA_ICO_OK : status === 'error' ? ALTA_ICO_ERR : status === 'omitido' ? ALTA_ICO_OMITIDO : status === 'loading' ? ALTA_ICO_SPIN : ALTA_ICO_PENDING;
-    ico.style.color = status === 'ok' ? 'var(--success, #22c55e)' : status === 'error' ? 'var(--danger)' : status === 'omitido' ? 'var(--text-light)' : '';
+    ico.textContent = status === 'ok' ? ALTA_ICO_OK : status === 'error' ? ALTA_ICO_ERR : status === 'warn' ? ALTA_ICO_AVISO : status === 'omitido' ? ALTA_ICO_OMITIDO : status === 'loading' ? ALTA_ICO_SPIN : ALTA_ICO_PENDING;
+    ico.style.color = status === 'ok' ? 'var(--success, #22c55e)' : status === 'error' ? 'var(--danger)' : status === 'warn' ? 'var(--warning, #d97706)' : status === 'omitido' ? 'var(--text-light)' : '';
   }
-  // El mensaje ya no es exclusivo del error: un exito degradado (segmento conservado) y
-  // un paso omitido tienen que decir que paso, o la fila vuelve a mentir.
+  // El mensaje ya no es exclusivo del error: un exito degradado (segmento conservado),
+  // un aviso y un paso omitido tienen que decir que paso, o la fila vuelve a mentir.
   if (msgEl) {
-    if (msg && (status === 'error' || status === 'ok' || status === 'omitido')) {
+    if (msg && (status === 'error' || status === 'warn' || status === 'ok' || status === 'omitido')) {
       msgEl.textContent = msg;
       // Mensaje en dos capas (ADR-0017): lo que se lee es el mensaje del glosario y el
       // detalle tecnico va PLEGADO, nunca a la vista. textContent ya vacio la fila, asi
@@ -7837,8 +7840,8 @@ function altaPasoSetStatus(idx, status, msg, detalle) {
         det.appendChild(cuerpo);
         msgEl.appendChild(det);
       }
-      // Explicito en las dos ramas: vaciar style.color borraria el color del HTML.
-      msgEl.style.color = status === 'error' ? 'var(--danger)' : 'var(--text-light)';
+      // Explicito en las tres ramas: vaciar style.color borraria el color del HTML.
+      msgEl.style.color = status === 'error' ? 'var(--danger)' : status === 'warn' ? 'var(--warning, #d97706)' : 'var(--text-light)';
       msgEl.style.display = '';
     } else { msgEl.style.display = 'none'; }
   }
@@ -7911,8 +7914,11 @@ function altaDarDeAlta() {
   })
     .then(r => r.json())
     .then(data => {
-      altaState.customer_id = data.customer_id;
-      altaState.branch_id = data.branch_id;
+      // La pregunta de duplicado (428, #366) no trae Cliente Operam: nada se
+      // creo. Pisar lo anotado con undefined le quitaria al Reintentar de un
+      // alta a medias el cliente que ya existia y crearia un duplicado.
+      if (data.customer_id != null) altaState.customer_id = data.customer_id;
+      if (data.branch_id != null) altaState.branch_id = data.branch_id;
 
       // Toda la decision de que mostrar vive en el nucleo puro (#213). Un paso que no
       // corrio vuelve a pending -- el del segmento cuando no se capturo ninguno, o los

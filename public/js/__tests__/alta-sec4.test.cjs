@@ -170,7 +170,7 @@ test('H3: ok:false con steps pinta la fila que fallo y sube su motivo al banner'
 test('H4: ok:true no muestra error ni reintentar', () => {
   const r = interpretarRespuestaAlta({
     ok: true,
-    steps: [{ name: 'POST customer', status: 'ok' }, { name: 'PUT branch', status: 'ok' }],
+    steps: [{ name: 'POST customer', status: 'ok' }, { name: 'PUT branch (domicilio)', status: 'ok' }],
   });
   assert.strictEqual(r.exito, true);
   assert.strictEqual(r.mensajeError, null);
@@ -183,17 +183,17 @@ test('H5: los steps se mapean por NOMBRE, nunca por posicion (#112)', () => {
     steps: [
       { name: 'PUT customer (config comercial)', status: 'ok' },
       { name: 'paso que el panel no pinta', status: 'ok' },
-      { name: 'PUT branch', status: 'error', error: 'boom' },
+      { name: 'PUT branch (domicilio)', status: 'error', error: 'boom' },
     ],
   });
-  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch (domicilio)']);
   assert.strictEqual(branch.status, 'error', 'PUT branch cae en SU fila, no en la tercera');
   assert.strictEqual(branch.msg, 'boom');
 });
 
 test('H6: un step que no corrio vuelve a pending, no se queda girando', () => {
   const r = interpretarRespuestaAlta({ ok: false, steps: [{ name: 'POST customer', status: 'error', error: 'x' }] });
-  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch (domicilio)']);
   assert.strictEqual(branch.status, 'pending');
 });
 
@@ -271,10 +271,10 @@ test('I8: un paso omitido se pinta omitido, con su motivo, y no es un fallo del 
       { name: 'POST customer', status: 'ok', info: 'reintento' },
       { name: 'PUT customer (config comercial)', status: 'omitido', info: 'Sin cambios de configuracion comercial' },
       { name: 'GET branch_id', status: 'ok' },
-      { name: 'PUT branch', status: 'omitido', info: 'Cliente existente: se conserva su domicilio en Operam' },
+      { name: 'PUT branch (domicilio)', status: 'omitido', info: 'Cliente existente: se conserva su domicilio en Operam' },
     ],
   });
-  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch (domicilio)']);
   assert.strictEqual(branch.status, 'omitido');
   assert.strictEqual(branch.msg, 'Cliente existente: se conserva su domicilio en Operam');
   const comercial = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT customer (config comercial)']);
@@ -291,19 +291,84 @@ test('I8: un paso omitido se pinta omitido, con su motivo, y no es un fallo del 
 test('I8b: un paso fallido muestra su mensaje del glosario y guarda el detalle tecnico aparte', () => {
   const r = interpretarRespuestaAlta({
     ok: false,
-    steps: [{ name: 'PUT branch', status: 'error', mensaje: 'El domicilio de entrega no quedo guardado en Operam', detalle: 'PUT /branches/7: Operam 500', error: 'Operam 500' }],
+    steps: [{ name: 'PUT branch (domicilio)', status: 'error', mensaje: 'El domicilio de entrega no quedo guardado en Operam', detalle: 'PUT /branches/7: Operam 500', error: 'Operam 500' }],
   });
-  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch (domicilio)']);
   assert.strictEqual(branch.msg, 'El domicilio de entrega no quedo guardado en Operam');
   assert.strictEqual(branch.detalle, 'PUT /branches/7: Operam 500');
   assert.strictEqual(r.mensajeError, 'El domicilio de entrega no quedo guardado en Operam');
 });
 
-test('I9: un status desconocido sigue siendo error (solo ok y omitido son buenos)', () => {
-  const r = interpretarRespuestaAlta({ ok: false, steps: [{ name: 'PUT branch', status: 'warn', error: 'algo raro' }] });
-  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch']);
+test('I9: un status desconocido sigue siendo error (solo ok, omitido y warn son buenos)', () => {
+  const r = interpretarRespuestaAlta({ ok: false, steps: [{ name: 'PUT branch (domicilio)', status: 'vaya-usted-a-saber', error: 'algo raro' }] });
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch (domicilio)']);
   assert.strictEqual(branch.status, 'error');
   assert.strictEqual(r.mensajeError, 'algo raro');
+});
+
+// === El alta por el modulo en el panel (#366) ===
+
+test('J1: el Cel que Operam no aplico sale como aviso con su fila propia, no como fallo del alta', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'POST customer', status: 'ok', mensaje: 'Se creo el Cliente Operam', detalle: 'POST /customers -> cliente 900' },
+      { name: 'verificar Cel', status: 'warn', mensaje: 'El celular del Contacto no quedo guardado en la casilla Cel de Operam', detalle: 'GET /customers/900: campo fax sin el celular enviado' },
+    ],
+  });
+  const cel = r.filas.find(f => f.fila === ALTA_PASO_FILA['verificar Cel']);
+  assert.strictEqual(cel.status, 'warn');
+  assert.strictEqual(cel.msg, 'El celular del Contacto no quedo guardado en la casilla Cel de Operam');
+  assert.strictEqual(cel.detalle, 'GET /customers/900: campo fax sin el celular enviado');
+  assert.strictEqual(r.exito, true);
+  assert.strictEqual(r.mensajeError, null, 'un aviso no es un fallo del alta');
+  assert.strictEqual(r.mostrarReintentar, false);
+});
+
+test('J2: la verificacion del domicilio de entrega manda sobre su escritura en la misma fila', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'PUT branch (domicilio)', status: 'ok', mensaje: 'Se guardo el domicilio de entrega en Operam', detalle: 'PUT /branches/600' },
+      { name: 'verificar branch', status: 'warn', mensaje: 'El domicilio de entrega no quedo completo en Operam', detalle: 'GET /branches/600: Operam ignoro addr_interior' },
+    ],
+  });
+  const dom = r.filas.find(f => f.fila === ALTA_PASO_FILA['verificar branch']);
+  assert.strictEqual(dom.status, 'warn');
+  assert.strictEqual(dom.msg, 'El domicilio de entrega no quedo completo en Operam');
+});
+
+test('J3: el Cliente Operam reutilizado deja su motivo en la fila de arriba, aunque no haya POST', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [{ name: 'dedup', status: 'ok', mensaje: 'Se uso el Cliente Operam que elegiste', detalle: 'cliente 41 revalidado contra el pool' }],
+  });
+  const arriba = r.filas.find(f => f.fila === ALTA_PASO_FILA['POST customer']);
+  assert.strictEqual(arriba.status, 'ok');
+  assert.strictEqual(ALTA_PASO_FILA.dedup, ALTA_PASO_FILA['POST customer']);
+});
+
+test('J4: el posible duplicado (428) muestra el aviso minimo y NO ofrece reintentar', () => {
+  const r = interpretarRespuestaAlta({
+    codigo: 'POSIBLE_DUPLICADO',
+    error: 'Puede ser un Cliente Operam que ya existe: buscalo antes de dar de alta',
+    candidatos: [{ id: 55, CustName: 'Duplicado SA' }],
+  });
+  assert.strictEqual(r.exito, false);
+  assert.strictEqual(r.mensajeError, 'Puede ser un Cliente Operam que ya existe: buscalo antes de dar de alta');
+  assert.strictEqual(r.mostrarReintentar, false, 'reintentar daria exactamente lo mismo');
+  assert.ok(r.filas.every(f => f.status === 'pending'), 'no se creo nada: ninguna fila afirma un paso');
+});
+
+test('J5: el nombre corto repetido tampoco se reintenta: hay que cambiarlo', () => {
+  const r = interpretarRespuestaAlta({
+    ok: false,
+    codigo: 'CUST_REF_DUPLICADO',
+    error: 'El nombre corto "Nueva" ya lo usa otro Cliente Operam, que lo exige unico. Cambia el nombre corto y vuelve a generar la cotizacion.',
+    steps: [{ name: 'POST customer', status: 'error', mensaje: 'No se pudo crear el Cliente Operam en Operam', detalle: 'POST /customers: same cust_ref' }],
+  });
+  assert.strictEqual(r.mostrarReintentar, false);
+  assert.match(r.mensajeError, /nombre corto/);
 });
 
 // #251: el borrador (#185) repone el select sin disparar `change`; lo que decide si el

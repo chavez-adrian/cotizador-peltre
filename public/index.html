@@ -432,7 +432,10 @@
               <span class="alta-sec-icono" id="alta-ico-4">&#128274;</span>
             </div>
             <div class="alta-sec-body" id="alta-body-4" style="display:none">
-              <!-- Filas de progreso POST+GET+PUT -->
+              <!-- Filas de progreso del alta. El id de cada fila NO es su posicion:
+                   el mapa step -> fila (ALTA_PASO_FILA, alta-logica.js) va por
+                   NOMBRE del paso (#112), y las filas 5 y 6 se agregaron en #366
+                   en el lugar que les toca en la secuencia, no al final. -->
               <div id="alta-pasos" style="margin-bottom:16px">
                 <div class="alta-paso" id="alta-paso-0" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
                   <div class="alta-paso-icono" id="alta-paso-ico-0" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
@@ -446,9 +449,17 @@
                   <div class="alta-paso-icono" id="alta-paso-ico-1" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
                   <div style="flex:1">
                     <div style="font-size:13px;font-weight:600">Configuracion comercial</div>
-                    <div style="font-size:11px;color:var(--text-light)">PUT /customers/{id} &mdash; lista, uso de CFDI, dimensiones</div>
+                    <div style="font-size:11px;color:var(--text-light)">PUT /customers/{id} &mdash; lista de precios, segmento, uso de CFDI</div>
                   </div>
                   <div class="alta-paso-msg" id="alta-paso-msg-1" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
+                <div class="alta-paso" id="alta-paso-5" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+                  <div class="alta-paso-icono" id="alta-paso-ico-5" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Clasificacion interna y uso de CFDI</div>
+                    <div style="font-size:11px;color:var(--text-light)">PUT /customers/{id} &mdash; el POST los ignora</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-5" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
                 <div class="alta-paso" id="alta-paso-2" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
                   <div class="alta-paso-icono" id="alta-paso-ico-2" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
@@ -466,13 +477,21 @@
                   </div>
                   <div class="alta-paso-msg" id="alta-paso-msg-3" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
-                <div class="alta-paso" id="alta-paso-4" style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                <div class="alta-paso" id="alta-paso-4" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
                   <div class="alta-paso-icono" id="alta-paso-ico-4" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
                   <div style="flex:1">
-                    <div style="font-size:13px;font-weight:600">Configurar domicilio</div>
-                    <div style="font-size:11px;color:var(--text-light)">PUT /branches/{branch_id}</div>
+                    <div style="font-size:13px;font-weight:600">Domicilio de entrega</div>
+                    <div style="font-size:11px;color:var(--text-light)">PUT /branches/{branch_id} y relectura de verificacion</div>
                   </div>
                   <div class="alta-paso-msg" id="alta-paso-msg-4" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
+                <div class="alta-paso" id="alta-paso-6" style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                  <div class="alta-paso-icono" id="alta-paso-ico-6" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Celular del Contacto</div>
+                    <div style="font-size:11px;color:var(--text-light)">GET /customers/{id} &mdash; casilla Cel (campo fax)</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-6" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
               </div>
               <!-- Motivo del fallo (#213). Vive FUERA de las filas de pasos a proposito:

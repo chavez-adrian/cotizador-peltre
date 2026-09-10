@@ -1204,14 +1204,22 @@ export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, custom
 // indice, el resultado del PUT de customers se pintaba sobre la fila del GET del
 // branch y "Configurar domicilio" nunca llegaba a pintarse.
 export const ALTA_PASO_FILA = {
+  // El alta puede CREAR el Cliente Operam o reutilizar uno (#366): la fila de
+  // arriba dice cual de las dos cosas paso, y por eso la comparte con el paso
+  // de deduplicacion, que es el que lo decide. Con cliente reutilizado no hay
+  // 'POST customer' y la fila se queda con el mensaje de la dedup.
+  dedup: 0,
   'POST customer': 0,
-  // Las dos ramas del alta mandan un PUT de customers distinto y EXCLUYENTE (config
-  // comercial en el cliente existente, dimensiones en el nuevo): comparten fila.
   'PUT customer (config comercial)': 1,
-  'PUT customer (dimensiones)': 1,
+  'PUT customer (dimensiones)': 5,
   'post-fix segmento (web)': 2,
   'GET branch_id': 3,
-  'PUT branch': 4,
+  // Los tres pasos del domicilio de entrega comparten fila y el ULTIMO manda: la
+  // verificacion por relectura es la que sabe como quedo de verdad (#366).
+  'POST branch': 4,
+  'PUT branch (domicilio)': 4,
+  'verificar branch': 4,
+  'verificar Cel': 6,
 };
 
 export const ALTA_PASO_FILAS = [...new Set(Object.values(ALTA_PASO_FILA))];
@@ -1241,6 +1249,12 @@ function mensajeExitoPaso(step) {
   return '';
 }
 
+// Respuestas donde Reintentar es una trampa: el boton daria exactamente lo mismo
+// hasta que el vendedor haga algo distinto (#366). El posible duplicado se
+// resuelve buscando al Cliente Operam; el nombre corto repetido, cambiandolo --
+// Operam lo exige unico global (#242).
+const SIN_REINTENTO = new Set(['POSIBLE_DUPLICADO', 'CUST_REF_DUPLICADO']);
+
 export function interpretarRespuestaAlta(data) {
   const d = data || {};
   const steps = Array.isArray(d.steps) ? d.steps : [];
@@ -1252,30 +1266,37 @@ export function interpretarRespuestaAlta(data) {
     const fila = ALTA_PASO_FILA[step?.name];
     if (fila === undefined) continue;
     const omitido = step.status === 'omitido';
-    const esError = step.status !== 'ok' && !omitido;
+    // Un AVISO no es un fallo (#366): el Cel que Operam no aplico o el campo del
+    // domicilio de entrega que ignoro no tumban el alta -- el cliente quedo
+    // creado y lo que falta se arregla en Operam. Pintarlo de error mandaria a
+    // reintentar un alta que ya paso.
+    const aviso = step.status === 'warn';
+    const esError = step.status !== 'ok' && !omitido && !aviso;
     // Mensaje en dos capas (ADR-0017): el vendedor lee el mensaje en palabras del
     // glosario y el detalle tecnico va plegado. El error crudo queda como respaldo
     // de las respuestas que todavia no mandan mensaje; el nombre del paso ya nunca
     // es el texto que se muestra.
-    const msg = esError ? (step.mensaje || step.error || '') : mensajeExitoPaso(step);
+    const msg = esError || aviso ? (step.mensaje || step.error || '') : mensajeExitoPaso(step);
     const detalle = step.detalle || (step.mensaje ? step.error || '' : '');
-    porFila.set(fila, { fila, status: esError ? 'error' : omitido ? 'omitido' : 'ok', msg, detalle });
+    porFila.set(fila, { fila, status: esError ? 'error' : aviso ? 'warn' : omitido ? 'omitido' : 'ok', msg, detalle });
     if (esError && !primerError) primerError = msg || 'Un paso del alta fallo sin decir por que.';
   }
 
   // Sin steps no hay nada que pintar: el motivo tiene que salir por el banner o el
-  // fallo queda invisible. `d.error` es lo que mandan los 400 del endpoint.
+  // fallo queda invisible. `d.error` manda sobre el paso que fallo cuando existe
+  // (#366): es el motivo del BLOQUEO en palabras del vendedor, con lo que hay que
+  // hacer -- "cambia el nombre corto" dice mas que "no se pudo crear el cliente".
   const mensajeError = exito
     ? null
-    : (primerError
-      || d.error
+    : (d.error
+      || primerError
       || 'El alta no se completo y el servidor no explico por que. Reintenta; si sigue igual, avisa.');
 
   return {
     exito,
     mensajeError,
     filas: [...porFila.values()],
-    mostrarReintentar: !exito,
+    mostrarReintentar: !exito && !SIN_REINTENTO.has(d.codigo),
   };
 }
 
