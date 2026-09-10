@@ -723,15 +723,16 @@ test('F3b: customerId elegido que difiere del ya ligado al celular -> pregunta, 
 
 test('F6: POST /api/crear-cliente con RFC generico NO deduplica por RFC exacto', async () => {
   writeJson(PROSPECTOS_PATH, []);
-  // Antes de F6, el lookup por tax_id matchearia este OTRO generico y el alta
-  // devolveria duplicado:true con el cliente equivocado.
-  let taxIdLookup = false;
+  // Antes de F6, el lookup por RFC exacto matchearia este OTRO generico y el alta
+  // devolveria duplicado:true con el cliente equivocado. Desde #366 el alta completa
+  // deduplica como la subida (ADR-0001): el pool por RFC generico SI se consulta,
+  // pero solo un nombre parecido es candidato; otro generico con otro nombre no.
   mockOperamFetch({
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 940 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('tax_id=')) { taxIdLookup = true; return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XEXX010101000', sales_type: '12', branches: [{ branch_code: 445 }] }] }); }
+      if (u.includes('tax_id=')) { return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XEXX010101000', sales_type: '12', branches: [{ branch_code: 445 }] }] }); }
       if (u.includes('/940')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 941 }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
@@ -747,7 +748,6 @@ test('F6: POST /api/crear-cliente con RFC generico NO deduplica por RFC exacto',
   assert.equal(res.body.ok, true);
   assert.equal(res.body.duplicado, false, 'no debe reportar duplicado contra otro generico');
   assert.equal(res.body.customer_id, 940);
-  assert.equal(taxIdLookup, false, 'con RFC generico no debe consultar por tax_id exacto');
 });
 
 // === Domicilio de entrega -> branch del cliente generico (issue #96) ===
