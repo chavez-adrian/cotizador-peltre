@@ -1,7 +1,7 @@
 // Adaptador de Operam EN MEMORIA para los tests de lib/alta-cliente.js (#364,
 // ADR-0017). Implementa las MISMAS dependencias que el adaptador real (las
-// funciones de operam-client, indice-telefonos, la auditoria, el registro de
-// vendedores y el store de prospectos) y registra que se le pidio, para que las
+// funciones de operam-client, operam-web, indice-telefonos, la auditoria, el
+// registro de vendedores y el store de prospectos) y registra que se le pidio, para que las
 // reglas del alta se prueben sin tocar globalThis.fetch ni el protocolo HTTP de
 // Operam.
 //
@@ -28,6 +28,7 @@ export function operamEnMemoria({
   salesman = 2,
   ignoraCliente = [],
   ignoraBranch = [],
+  segmentoWeb = { ok: true },
   falla = {},
   siguienteClienteId = 900,
   siguienteBranchId = 800,
@@ -134,6 +135,18 @@ export function operamEnMemoria({
     logCliente(...args) {
       registrar('logCliente', ...args);
       estado.auditoria.push(args);
+    },
+    // El segmento NO lo escribe la API v3 por ningun camino (#172): lo escribe la
+    // web legacy. Aqui solo se registra la llamada y se responde lo que el test
+    // configure en `segmentoWeb` -- un objeto para el desenlace fijo, o una
+    // funcion cuando el test necesita controlar CUANDO resuelve (post-fix
+    // diferido). El contrato real nunca lanza; para probar el catch del diferido
+    // esta `falla.actualizarSegmentoClienteWeb`.
+    async actualizarSegmentoClienteWeb(clienteId, segmentoId, opciones) {
+      registrar('actualizarSegmentoClienteWeb', clienteId, segmentoId, opciones);
+      return typeof segmentoWeb === 'function'
+        ? await segmentoWeb(clienteId, segmentoId, opciones)
+        : segmentoWeb;
     },
     async listar() {
       registrar('listar');

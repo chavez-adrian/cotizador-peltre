@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { darDeAlta } from '../lib/alta-cliente.js';
 import { operamEnMemoria } from './helpers/operam-memoria.js';
+import { fuenteSegmento, RESULTADO_SEGMENTO_PENDIENTE } from '../lib/segmento-pendiente.js';
 
 // Modulo Alta de cliente (#364, ADR-0017). Una regla por test, contra el
 // adaptador de Operam en memoria: ningun test de este archivo sobreescribe
@@ -204,6 +205,135 @@ test('el Cliente Operam sin lista de precios se bloquea con la accion a tomar, n
   assert.match(res.mensaje, /no tiene lista de precios en Operam/);
   assert.match(res.detalle, /rate de moneda/);
   assert.equal(res.clienteId, 41);
+});
+
+// --- Segmento comercial (#365) ----------------------------------------------
+// La API v3 no escribe el segmento por ningun camino (#172): lo escribe la web
+// legacy despues del alta. La Solicitud decide si el alta ESPERA esa escritura
+// (el vendedor esta mirando) o la deja DIFERIDA (la subida de la cotizacion, cuya
+// latencia manda). Diferida, el fallo no cabe en la respuesta: se anota en la
+// auditoria como segmento pendiente para que se vea en el panel.
+
+const comercialConSegmento = { vendedor: 'Alejandro Chavez', tier: 'M100', salesTypeId: 15, segmentoId: '14', correoFacturacion: '', usoCfdi: '' };
+
+function filasPendientes(operam) {
+  return operam.estado.auditoria.filter(a => a[2] === RESULTADO_SEGMENTO_PENDIENTE);
+}
+
+// Un tick de la cola de microtareas: lo que necesita el post-fix diferido para
+// llegar a su .then/.catch una vez que su promesa resolvio.
+function vaciarPendientes() {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+test('con el segmento diferido el alta NO espera a la web legacy', async () => {
+  let resuelto = false;
+  const operam = operamEnMemoria({
+    segmentoWeb: () => new Promise(resolve => setTimeout(() => { resuelto = true; resolve({ ok: true }); }, 50)),
+  });
+
+  const res = await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(resuelto, false, 'el alta devolvio antes de que la web legacy contestara');
+  assert.equal(paso(res, 'segmento').status, 'omitido');
+  assert.match(paso(res, 'segmento').mensaje, /se escribe despues/);
+  await vaciarPendientes();
+});
+
+test('el segmento diferido que Operam rechaza queda en la auditoria como segmento pendiente', async () => {
+  const operam = operamEnMemoria({ segmentoWeb: { ok: false, error: 'El codigo postal no puede ser vacio' } });
+
+  const res = await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+  await vaciarPendientes();
+
+  assert.equal(res.tipo, 'lograda');
+  const [pendiente] = filasPendientes(operam);
+  assert.ok(pendiente, 'el fallo diferido deja su fila de auditoria');
+  const [rfc, nombre, , clienteId, fuente, dropbox, motivo] = pendiente;
+  assert.equal(rfc, 'XAXX010101000');
+  assert.equal(nombre, 'Hotel Azul Centro');
+  assert.equal(clienteId, res.clienteId);
+  assert.equal(fuente, fuenteSegmento('14'));
+  assert.equal(dropbox, null);
+  const [mensaje, detalle] = motivo.split(' | ');
+  assert.equal(mensaje, 'El segmento no quedo guardado en Operam');
+  assert.match(detalle, /El codigo postal no puede ser vacio/);
+});
+
+test('el segmento diferido que si se escribe no deja fila de pendiente', async () => {
+  const operam = operamEnMemoria({ segmentoWeb: { ok: true } });
+
+  await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+  await vaciarPendientes();
+
+  assert.equal(operam.pedidos('actualizarSegmentoClienteWeb').length, 1);
+  assert.deepEqual(filasPendientes(operam), []);
+});
+
+test('el segmento diferido que truena tambien queda como pendiente, con el motivo tecnico', async () => {
+  const operam = operamEnMemoria({ falla: { actualizarSegmentoClienteWeb: 'ECONNRESET' } });
+
+  await darDeAlta(solicitud({ comercial: comercialConSegmento }), operam.deps);
+  await vaciarPendientes();
+
+  const [pendiente] = filasPendientes(operam);
+  assert.ok(pendiente);
+  assert.match(pendiente[6], /ECONNRESET/);
+});
+
+test('con el segmento en esperar el alta espera la escritura y la reporta como un paso mas', async () => {
+  let resuelto = false;
+  const operam = operamEnMemoria({
+    segmentoWeb: () => new Promise(resolve => setTimeout(() => { resuelto = true; resolve({ ok: true }); }, 20)),
+  });
+
+  const res = await darDeAlta(solicitud({
+    comercial: comercialConSegmento,
+    segmento: { preferencia: 'esperar' },
+  }), operam.deps);
+
+  assert.equal(resuelto, true, 'el alta espero a la web legacy');
+  assert.equal(paso(res, 'segmento').status, 'ok');
+  assert.equal(operam.estado.auditoria.filter(a => a[2] === 'segmento-escrito').length, 1);
+});
+
+test('con el segmento en esperar un rechazo de Operam sale como paso en error con sus dos capas', async () => {
+  const operam = operamEnMemoria({ segmentoWeb: { ok: false, error: 'La sesion de Operam caduco' } });
+
+  const res = await darDeAlta(solicitud({
+    comercial: comercialConSegmento,
+    segmento: { preferencia: 'esperar' },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const seg = paso(res, 'segmento');
+  assert.equal(seg.status, 'error');
+  assert.equal(seg.mensaje, 'El segmento no quedo guardado en Operam');
+  assert.match(seg.detalle, /La sesion de Operam caduco/);
+});
+
+test('el Cliente Operam que ya venia clasificado conserva su segmento y el paso lo dice', async () => {
+  const operam = operamEnMemoria({ segmentoWeb: { ok: true, conservado: true, actual: '10' } });
+
+  const res = await darDeAlta(solicitud({
+    comercial: comercialConSegmento,
+    segmento: { preferencia: 'esperar' },
+  }), operam.deps);
+
+  const seg = paso(res, 'segmento');
+  assert.equal(seg.status, 'omitido');
+  assert.match(seg.mensaje, /ya estaba clasificado/);
+  assert.equal(operam.estado.auditoria.filter(a => a[2] === 'segmento-escrito').length, 0);
+});
+
+test('sin segmento capturado el alta no toca la web legacy y omite el paso', async () => {
+  const operam = operamEnMemoria();
+
+  const res = await darDeAlta(solicitud(), operam.deps);
+
+  assert.equal(paso(res, 'segmento').status, 'omitido');
+  assert.equal(operam.pedidos('actualizarSegmentoClienteWeb').length, 0);
 });
 
 test('todo paso del alta lleva mensaje para el vendedor y detalle tecnico', async () => {
