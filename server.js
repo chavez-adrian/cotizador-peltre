@@ -3436,7 +3436,22 @@ function marcarTelefonoSospechoso(cliente) {
 // casilla del navegador viaja solo como pista: quien decide si el domicilio de
 // entrega es nuevo -- y por lo tanto si se escribe -- es el modulo, con su propia
 // bandera (ADR-0017). Es lo que cierra #250, donde esa casilla gobernaba el PUT.
+// Desde #368 el formulario tambien contesta la pregunta de duplicado: `decision`
+// llega tal cual el servidor la dicto en el 428 ({ tipo, clienteId, domicilioId? }).
+// El `customer_id` sobrevive como compatibilidad -- significa lo mismo, "usar" --
+// para el reintento del boton generico y para el alta que ya venia con un cliente
+// elegido por la dedup previa del navegador.
+const DECISIONES_ALTA = new Set(['usar', 'otro-domicilio', 'ninguno']);
+
 function decisionDelFormulario(body) {
+  const d = body?.decision;
+  if (d && DECISIONES_ALTA.has(d.tipo)) {
+    return {
+      tipo: d.tipo,
+      clienteId: d.clienteId ?? null,
+      ...(d.domicilioId != null && d.domicilioId !== '' ? { domicilioId: d.domicilioId } : {}),
+    };
+  }
   const id = body?.customer_id;
   return id ? { tipo: 'usar', clienteId: id } : null;
 }
@@ -3503,9 +3518,51 @@ function solicitudDelFormulario(body, vendedor) {
 }
 
 // El resultado del modulo -> HTTP (ADR-0017: el modulo devuelve valores, el
-// handler traduce). La pregunta de duplicado sale 428 con el aviso minimo y sin
-// crear nada; sus tres salidas son #368.
-const MENSAJE_POSIBLE_DUPLICADO = 'Puede ser un Cliente Operam que ya existe: buscalo antes de dar de alta';
+// handler traduce). La pregunta de duplicado sale 428 con sus TRES salidas ya
+// serializadas y sin crear nada.
+//
+// El cuerpo del reintento lo dicta el SERVIDOR (#345, #368): es la MISMA
+// Solicitud que llego mas la decision que el vendedor eligio, y el navegador lo
+// reenvia TAL CUAL -- asi el modulo no aprende la forma del contrato HTTP y el
+// navegador no arma decisiones por su cuenta. El PDF de la constancia NO viaja de
+// vuelta: pesa (va en base64) y el navegador todavia lo tiene en memoria, asi que
+// lo vuelve a adjuntar al reintentar.
+function cuerpoDeReintentoAlta(body, decision) {
+  const { pdf_base64: _pdf, ...sinPdf } = body || {};
+  return { ...sinPdf, decision };
+}
+
+// El candidato en palabras del glosario, con `porque` = los hechos crudos que el
+// modulo calculo (#210). Ninguno bloquea ninguna salida: el vendedor decide.
+function candidatoDeLaPregunta(c) {
+  return {
+    id: c.id,
+    razonSocial: c.CustName || '',
+    rfc: c.tax_id || '',
+    nombreCorto: c.cust_ref || '',
+    porque: {
+      diferenciaNombre: c.diferenciaNombre,
+      celularMatch: c.celularMatch,
+      correoMatch: c.correoMatch,
+      custRefIgual: c.custRefIgual,
+    },
+  };
+}
+
+// Las tres salidas de la Deduplicacion de cliente (CONTEXT.md), ya serializadas:
+// dos por candidato ("usar este Cliente Operam" y "es otro domicilio de este
+// cliente") y una global ("ninguno es el mismo"). Con varios domicilios el
+// navegador le agrega `decision.domicilioId` al cuerpo de `usar` tras elegir.
+function opcionesDeLaPregunta(body, candidatos) {
+  return {
+    porCandidato: (candidatos || []).map(c => ({
+      id: c.id,
+      usar: cuerpoDeReintentoAlta(body, { tipo: 'usar', clienteId: c.id }),
+      otroDomicilio: cuerpoDeReintentoAlta(body, { tipo: 'otro-domicilio', clienteId: c.id }),
+    })),
+    ninguno: cuerpoDeReintentoAlta(body, { tipo: 'ninguno' }),
+  };
+}
 
 app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   const cliente = req.body;
@@ -3526,12 +3583,14 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
 
   if (alta.tipo === 'pregunta') {
     // 428 y NADA escrito: el navegador ya pre-consulta la dedup, asi que llegar
-    // aqui significa que se le escapo un posible duplicado. El aviso es minimo a
-    // proposito -- elegir entre los candidatos es #368.
+    // aqui significa que se le escapo un posible duplicado. El vendedor elige una
+    // de las tres salidas y el navegador reintenta con el cuerpo que va aqui.
+    const candidatos = alta.candidatos || [];
     return res.status(428).json({
       codigo: 'POSIBLE_DUPLICADO',
-      error: MENSAJE_POSIBLE_DUPLICADO,
-      candidatos: alta.candidatos || [],
+      error: alta.mensaje,
+      candidatos: candidatos.map(candidatoDeLaPregunta),
+      opciones: opcionesDeLaPregunta(cliente, candidatos),
     });
   }
 

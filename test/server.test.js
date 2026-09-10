@@ -1530,9 +1530,84 @@ test('D2: el alta que el modulo detiene con una pregunta responde 428 y no crea 
       .send({ ...BASE_CLIENTE, tax_id: 'DUP010101ABC', CustName: 'Duplicado SA' });
     assert.strictEqual(res.status, 428);
     assert.strictEqual(res.body.codigo, 'POSIBLE_DUPLICADO');
-    assert.match(res.body.error, /Puede ser un Cliente Operam que ya existe/);
+    assert.match(res.body.error, /elige uno para continuar/);
     assert.deepStrictEqual(res.body.candidatos.map(c => c.id), [55]);
     assert.strictEqual(posts, 0, 'una pregunta no escribe nada en Operam');
+  } finally {
+    restore();
+  }
+});
+
+// El Cliente Operam duplicado de las tres salidas (#368), con su domicilio de
+// entrega para que el reintento "usar" pueda terminar el alta.
+function mocksDuplicado() {
+  return {
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 999 }) };
+      if (u.includes('/999')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 888 }] }] }) };
+      if (u.includes('/55')) return { ok: true, json: async () => ({ data: [{ customer_id: 55, sales_type: '15', branches: [{ branch_code: 777 }] }] }) };
+      return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', cust_ref: 'Dup', tax_id: 'DUP010101ABC', sales_type: '15', branches: [{ branch_code: 777 }] }] }) };
+    },
+    '/api/v3/sales/branches/888': () => ({ ok: true, json: async () => ({ result: true, data: [{}] }) }),
+    '/api/v3/sales/branches/777': () => ({ ok: true, json: async () => ({ result: true, data: [{ branch_code: 777 }] }) }),
+  };
+}
+
+const CLIENTE_DUPLICADO = { tax_id: 'DUP010101ABC', CustName: 'Duplicado SA' };
+
+// El cuerpo del reintento lo dicta el SERVIDOR (#345, ADR-0017) y el navegador lo
+// reenvia tal cual. Estos dos tests prueban la TRADUCCION HTTP -- que las tres
+// salidas salgan serializadas y que el cuerpo dictado vuelva a entrar --, no las
+// reglas del alta, que ya tienen sus propios tests contra el modulo.
+test('D2b: la pregunta serializa las tres salidas como cuerpos de reintento, sin el PDF', async () => {
+  const restore = mockOperamFetch(mocksDuplicado());
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, ...CLIENTE_DUPLICADO, pdf_base64: 'JVBERi0xLjQK' });
+    assert.strictEqual(res.status, 428);
+    assert.strictEqual(res.body.codigo, 'POSIBLE_DUPLICADO');
+
+    // El candidato, en palabras del glosario y con por que es candidato.
+    const candidato = res.body.candidatos[0];
+    assert.strictEqual(candidato.id, 55);
+    assert.strictEqual(candidato.razonSocial, 'Duplicado SA');
+    assert.strictEqual(candidato.rfc, 'DUP010101ABC');
+    assert.strictEqual(candidato.nombreCorto, 'Dup');
+    assert.ok(candidato.porque, 'el candidato dice por que lo es');
+
+    const opcion = res.body.opciones.porCandidato[0];
+    assert.strictEqual(opcion.id, 55);
+    assert.deepStrictEqual(opcion.usar.decision, { tipo: 'usar', clienteId: 55 });
+    assert.deepStrictEqual(opcion.otroDomicilio.decision, { tipo: 'otro-domicilio', clienteId: 55 });
+    assert.deepStrictEqual(res.body.opciones.ninguno.decision, { tipo: 'ninguno' });
+    // El cuerpo dictado es la MISMA Solicitud mas la decision...
+    assert.strictEqual(opcion.usar.tax_id, 'DUP010101ABC');
+    assert.strictEqual(opcion.usar.entrega.br_name, 'Almacen Central');
+    // ...menos el PDF de la constancia, que pesa y el navegador todavia tiene.
+    assert.strictEqual(opcion.usar.pdf_base64, undefined);
+    assert.strictEqual(res.body.opciones.ninguno.pdf_base64, undefined);
+  } finally {
+    restore();
+  }
+});
+
+test('D2c: el reintento con el cuerpo que dicto el servidor termina el alta sobre el Cliente Operam elegido', async () => {
+  const restore = mockOperamFetch(mocksDuplicado());
+  try {
+    const pregunta = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, ...CLIENTE_DUPLICADO });
+    assert.strictEqual(pregunta.status, 428);
+
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send(pregunta.body.opciones.porCandidato[0].usar);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.ok, true);
+    assert.strictEqual(res.body.customer_id, 55);
+    assert.strictEqual(res.body.branch_id, 777);
   } finally {
     restore();
   }
