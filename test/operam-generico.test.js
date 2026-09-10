@@ -178,7 +178,12 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
   // accionable de inmediato, sin depender de una nueva busqueda.
   assert.equal(res.body.clienteGenerico, true);
   assert.ok(Array.isArray(res.body.steps), 'la respuesta reporta los pasos (ADR-0002)');
-  assert.ok(res.body.steps.every(s => s.name && s.status === 'ok'), 'todos los pasos en ok');
+  // #365: el segmento es el ultimo paso de la secuencia y esta cotizacion no trae
+  // ninguno capturado, asi que sale omitido con su motivo -- un paso que no aplica
+  // nunca se salta en silencio (ADR-0017).
+  const segmento = res.body.steps.find(s => s.name === 'segmento');
+  assert.equal(segmento.status, 'omitido');
+  assert.ok(res.body.steps.filter(s => s !== segmento).every(s => s.name && s.status === 'ok'), 'todos los pasos en ok');
 
   // Orden: primero el POST del cliente, despues la cotizacion a su nombre.
   assert.ok(llamadas.includes('POST customer'));
@@ -1196,9 +1201,12 @@ test('S1: cliente generico recien creado con segmento capturado -> el post-fix w
   assert.equal(web.posts[0].get('segmento_id'), '14');
   assert.equal(web.posts[0].get('process'), 'Actualizar Cliente', 'el submit real de la ficha');
   assert.equal(web.estado.segmento, '14', 'el segmento quedo escrito en Operam');
-  // La cola de post-fixes es FIFO y compartida: encolar el segmento ANTES meteria su
-  // latencia en el camino critico aunque no se esperara el resultado.
-  assert.deepEqual(orden, ['vigencia', 'segmento']);
+  // #365: la escritura la dispara ahora el modulo Alta de cliente, en su ultimo paso,
+  // asi que entra a la cola de post-fixes ANTES que la vigencia (que se encola tras el
+  // POST del quote). La cola es FIFO y compartida, y la subida SI espera la vigencia:
+  // el precio de este orden es que la escritura del segmento entra al camino critico de
+  // la subida. Ver el reporte de #365.
+  assert.deepEqual(orden, ['segmento', 'vigencia']);
 });
 
 test('S2: sin segmento capturado la subida NO toca la ficha de cliente', async () => {
@@ -1266,6 +1274,42 @@ test('S5: cliente reutilizado por celular SIN clasificar -> recibe el segmento c
   assert.equal(web.posts.length, 1, 'estaba en "Sin segmento": aqui si se escribe');
   assert.equal(web.posts[0].get('segmento_id'), '14');
   assert.equal(web.estado.segmento, '14');
+});
+
+// AC de #365: con la preferencia 'diferido' la respuesta de la subida no espera al
+// post-fix del segmento, asi que su latencia no puede aparecer en la duracion de la
+// subida.
+//
+// TODO (#365, pendiente de decision): hoy NO se cumple, y el test lo documenta en vez
+// de esconderlo. El modulo dispara la escritura en su ultimo paso, o sea ANTES del POST
+// del quote; la cola de post-fixes de la web legacy es FIFO y compartida, y la subida SI
+// espera el post-fix de vigencia, que queda detras. Medido: 629 ms con 300 ms simulados
+// por pagina. Salidas posibles: (a) que la subida dispare la escritura diferida DESPUES
+// de responder (el modulo la devuelve en el resultado en vez de dispararla), (b) darle a
+// la escritura diferida su propia sesion de FA (como abrirSesionWeb) para que no compita
+// por la cola, o (c) aceptar el costo. Es decision del dueno, no del implementador.
+test('S6: la subida diferida no paga la latencia de la web legacy del segmento', { todo: 'la escritura diferida se encola antes del post-fix de vigencia, que la subida si espera' }, async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({ segmentoId: '14' });
+  const LATENCIA_MS = 300;
+  const web = handlersWebFichaCliente();
+  mockOperamFetch(mockSubidaBase({
+    ...mockWebLegacy(),
+    '/sales/manage/customers.php': async (u, opts) => {
+      await new Promise(resolve => setTimeout(resolve, LATENCIA_MS));
+      return web.handlers['/sales/manage/customers.php'](u, opts);
+    },
+  }));
+  await cargarListasPrecios();
+
+  const desde = Date.now();
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+  const duracion = Date.now() - desde;
+  await _esperarPostFixes();
+
+  assert.equal(res.status, 200);
+  assert.ok(duracion < LATENCIA_MS, `la subida tardo ${duracion} ms y la web legacy simulada tarda ${LATENCIA_MS} ms por pagina`);
 });
 
 test('S4: la web rechaza el guardado -> la subida ya respondio con folio y nada se cae', async () => {

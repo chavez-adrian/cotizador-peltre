@@ -1437,6 +1437,27 @@ test('GET /api/admin/higiene-clientes-genericos exige admin: vendedor 403, sin t
   assert.strictEqual(sinToken.status, 401);
 });
 
+// === GET /api/admin/segmento-pendiente (issue #365) ===
+// La regla de que sigue pendiente vive en el nucleo puro (test/segmento-pendiente.test.js);
+// aqui se prueba la traduccion HTTP: la ausencia de DB y el gate de admin, mismo contrato
+// que el reporte de higiene con el que comparte panel.
+
+test('GET /api/admin/segmento-pendiente sin DATABASE_URL responde filas vacias y sinDb:true', async () => {
+  const res = await supertest(app).get('/api/admin/segmento-pendiente')
+    .set('Authorization', `Bearer ${TEST_TOKEN}`);
+  assert.strictEqual(res.status, 200);
+  assert.deepEqual(res.body, { filas: [], sinDb: true });
+});
+
+test('GET /api/admin/segmento-pendiente exige admin: vendedor 403, sin token 401', async () => {
+  const vendedorToken = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
+  const vendedor = await supertest(app).get('/api/admin/segmento-pendiente')
+    .set('Authorization', `Bearer ${vendedorToken}`);
+  assert.strictEqual(vendedor.status, 403);
+  const sinToken = await supertest(app).get('/api/admin/segmento-pendiente');
+  assert.strictEqual(sinToken.status, 401);
+});
+
 // === GET /api/admin/sync-contactos-google (issue #230) ===
 
 test('GET /api/admin/sync-contactos-google sin DATABASE_URL responde barridos vacios y sinDb:true', async () => {

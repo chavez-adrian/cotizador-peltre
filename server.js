@@ -18,6 +18,7 @@ import { darDeAlta } from './lib/alta-cliente.js';
 import { logCliente } from './lib/clientes-log.js';
 import { celsNoAplicados } from './lib/cel-operam.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
+import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
@@ -2003,6 +2004,23 @@ app.get('/api/admin/higiene-clientes-genericos', authMiddleware, adminMiddleware
   res.json({ filas: construirReporteHigiene(rows.rows, cotizaciones, new Date()), sinDb: false });
 });
 
+// Clientes Operam con el SEGMENTO PENDIENTE (issue #365, ADR-0017): la subida de
+// cotizacion escribe el segmento diferido, asi que su fallo no cabe en la respuesta
+// al vendedor. La regla de que sigue pendiente vive en el nucleo puro
+// filasSegmentoPendiente, que ademas traduce el id del segmento a su nombre y arma
+// la liga "Ver en Operam" con el catalogo y la URL que se le pasan desde aqui.
+// Sin DB: lista vacia y sinDb:true, mismo patron que el reporte de higiene.
+app.get('/api/admin/segmento-pendiente', authMiddleware, adminMiddleware, async (_req, res) => {
+  const rows = await dbQuery(
+    'SELECT created_at, rfc, nombre, resultado, cliente_id, fuente, error_msg FROM clientes_log ORDER BY created_at ASC'
+  );
+  if (rows === null) return res.json({ filas: [], sinDb: true });
+  res.json({
+    filas: filasSegmentoPendiente(rows.rows, { segmentos: SEGMENTOS, operamUrl: process.env.OPERAM_URL }),
+    sinDb: false,
+  });
+});
+
 // Observabilidad de los barridos de sincronizacion de contactos a Google
 // (issue #230, padre #224): ultima corrida por barrido, totales de la ultima
 // pasada y sus errores clasificados en autorizacion/datos/red/otro -- el caso
@@ -2735,8 +2753,9 @@ function decisionDeLaSubida(customerIdElegido, crearNuevo, sucursalDe) {
 // La Solicitud de alta armada desde la cotizacion: TODA la traduccion que hace la
 // subida hacia el modulo Alta de cliente (ADR-0017). Sin datos fiscales, porque
 // este camino siempre da de alta un Cliente Operam sin ellos (ADR-0006), y con el
-// segmento en 'diferido' -- la latencia de la subida manda y su post-fix corre
-// despues, en el finally de subirQuoteTrasAlta.
+// segmento en 'diferido' -- la latencia de la subida manda, asi que el modulo
+// dispara su escritura sin esperarla y anota el fallo como segmento pendiente
+// (#365), que el administrador ve en /admin.
 //
 // salesTypeId viaja RESUELTO: el catalogo de listas de precios ya vive cacheado
 // aqui (obtenerListasPrecios, con la recarga perezosa de #246) y pasarselo le
@@ -2866,16 +2885,6 @@ async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creado
     if (await responderSiClienteSinLista(res, id, err, { customer_id: customerId, steps: pasos })) return;
     await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
     return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps: pasos });
-  } finally {
-    // En el finally y no en cada salida: el cliente YA existe con el segmento sin
-    // aplicar, suba el quote o no, y un reintento no vuelve a pasar por aqui (entra por
-    // el camino normal con el customerId persistido). Si no se corrige ahora, nadie lo
-    // corrige. Corre despues de armar la respuesta, que es justo lo que se busca.
-    //
-    // Sin distinguir cliente creado de reutilizado: la regla soloSinSegmento (#186) ya
-    // decide por si sola -- el recien creado siempre esta en "Sin segmento" y lo recibe;
-    // al reutilizado se le respeta el suyo si ya venia clasificado.
-    postFixSegmentoGenerico(customerId, c.segmentoId);
   }
 }
 
@@ -3065,27 +3074,6 @@ async function postFixVigencia(folio, data) {
       detalle: 'quote ' + folio + ': ' + err.message,
     };
   }
-}
-
-// Post-fix del SEGMENTO del cliente generico (#186). El POST /customers manda segmento_id
-// desde #121 y Operam lo IGNORA -- la API v3 no lo escribe por NINGUN camino (#172,
-// sondeo en vivo) -- asi que todo prospecto creado al subir una cotizacion quedaba en
-// "Sin segmento" aunque el vendedor lo hubiera capturado. Lo escribe la web legacy, la
-// misma funcion que ya usa el upgrade fiscal.
-//
-// FIRE-AND-FORGET y encolado SIEMPRE despues del post-fix de vigencia, nunca antes: este
-// camino corre dentro de la subida de la cotizacion, que el frontend abandona a los
-// TIMEOUT_OPERAM_MS entregando una PRE-COTIZACION (ADR-0009). La cola de post-fixes es
-// FIFO y compartida, asi que encolarlo primero meteria su latencia en el camino critico
-// aunque no se esperara el resultado. El precio es que un fallo solo vive en el log: la
-// respuesta ya se fue y este flujo no puede reportarlo en `steps`.
-function postFixSegmentoGenerico(customerId, segmentoId) {
-  if (!segmentoId) return;
-  actualizarSegmentoClienteWeb(customerId, segmentoId, { soloSinSegmento: true })
-    .then(r => {
-      if (!r.ok) console.error('[alta-generica] post-fix web del segmento fallo en el cliente', customerId, r.error);
-    })
-    .catch(err => console.error('[alta-generica] post-fix web del segmento fallo en el cliente', customerId, err.message));
 }
 
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {

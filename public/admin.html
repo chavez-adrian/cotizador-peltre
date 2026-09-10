@@ -210,6 +210,35 @@
       </div>
     </div>
 
+    <!-- Clientes Operam con el segmento pendiente (issue #365, ADR-0017) -->
+    <div class="admin-section">
+      <h2>Clientes con segmento pendiente</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Clientes Operam a los que el cotizador no le pudo escribir el segmento comercial al subir la cotizacion
+        (la ficha de Operam fallo o rechazo el guardado). Se corrige a mano en Operam; la entrada desaparece
+        cuando un alta posterior del mismo cliente si deja el segmento escrito.
+      </p>
+      <div id="segmento-pendiente-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="segmento-pendiente-sin-db" style="display:none;color:var(--text-light);font-size:13px">Sin base de datos configurada: no hay historial de altas que mostrar.</div>
+      <div id="segmento-pendiente-vacio" style="display:none;color:var(--text-light);font-size:13px">Ningun cliente tiene el segmento pendiente.</div>
+      <div id="segmento-pendiente-content" style="display:none;overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg);text-align:left">
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Nombre</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Customer ID</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">RFC</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Segmento</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Fecha</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Motivo</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)"></th>
+            </tr>
+          </thead>
+          <tbody id="segmento-pendiente-rows"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Sincronizacion de contactos a Google (issue #230, padre #224) -->
     <div class="admin-section">
       <h2>Sincronizacion de contactos a Google</h2>
@@ -287,6 +316,7 @@ async function adminLogin() {
   loadConfig();
   loadCajas();
   loadHigiene();
+  loadSegmentoPendiente();
   loadSyncContactos();
   cargarVendedoresExpo();
 }
@@ -652,6 +682,37 @@ async function loadHigiene() {
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${higieneFecha(f.fechaAlta)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${higieneFecha(f.ultimaActividad)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${f.etapa ? (HIGIENE_ETAPA_LABELS[f.etapa] || f.etapa) : '-'}</td>
+      </tr>
+    `).join('');
+    content.style.display = 'block';
+  } catch (e) {
+    loading.textContent = 'No se pudo cargar';
+  }
+}
+
+// --- Clientes Operam con el segmento pendiente (issue #365) ---
+// Mensaje en dos capas (CONTEXT.md): la columna Motivo muestra el mensaje y el
+// detalle tecnico viaja en el title, para no llenar la tabla de eco del ERP.
+async function loadSegmentoPendiente() {
+  const loading = document.getElementById('segmento-pendiente-loading');
+  const sinDb = document.getElementById('segmento-pendiente-sin-db');
+  const vacio = document.getElementById('segmento-pendiente-vacio');
+  const content = document.getElementById('segmento-pendiente-content');
+  try {
+    const res = await adminApi('/api/admin/segmento-pendiente');
+    const data = await res.json();
+    loading.style.display = 'none';
+    if (data.sinDb) { sinDb.style.display = 'block'; return; }
+    if (!data.filas || data.filas.length === 0) { vacio.style.display = 'block'; return; }
+    document.getElementById('segmento-pendiente-rows').innerHTML = data.filas.map(f => `
+      <tr class="higiene-candidato">
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${(f.nombre || '-').replace(/</g, '&lt;')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${f.cliente_id}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${(f.rfc || '-').replace(/</g, '&lt;')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${(f.segmento || '-').replace(/</g, '&lt;')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${higieneFecha(f.created_at)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)" title="${(f.detalle || '').replace(/</g, '&lt;').replace(/"/g, '&quot;')}">${(f.motivo || '-').replace(/</g, '&lt;')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)"><a href="${(f.url || '').replace(/"/g, '&quot;')}" target="_blank" rel="noopener">Ver en Operam</a></td>
       </tr>
     `).join('');
     content.style.display = 'block';

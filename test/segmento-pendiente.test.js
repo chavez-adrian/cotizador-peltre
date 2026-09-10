@@ -26,6 +26,24 @@ test('una escritura pendiente se lista con el Cliente Operam, el segmento que se
   assert.equal(filas[0].created_at, new Date('2026-09-09T10:00:00Z').toISOString());
 });
 
+test('la fila sale lista para pintar: el segmento por su nombre y la liga a la ficha de Operam', () => {
+  const [f] = filasSegmentoPendiente([fila({ cliente_id: 900, created_at: '2026-09-09T10:00:00Z' })], {
+    segmentos: [{ id: 14, nombre: 'Distribuidores' }],
+    operamUrl: 'https://peltrenacional.operam.pro/',
+  });
+
+  assert.equal(f.segmento, 'Distribuidores');
+  assert.equal(f.url, 'https://peltrenacional.operam.pro/sales/manage/customers.php?debtor_no=900');
+});
+
+test('un segmento que no esta en el catalogo se lista con su id, no con una celda vacia', () => {
+  const [f] = filasSegmentoPendiente([fila({ cliente_id: 900, created_at: '2026-09-09T10:00:00Z', segmento: '99' })], {
+    segmentos: [{ id: 14, nombre: 'Distribuidores' }],
+  });
+
+  assert.equal(f.segmento, '99');
+});
+
 test('el segmento escrito despues borra al cliente de la lista', () => {
   const filas = filasSegmentoPendiente([
     fila({ cliente_id: 900, created_at: '2026-09-09T10:00:00Z' }),
