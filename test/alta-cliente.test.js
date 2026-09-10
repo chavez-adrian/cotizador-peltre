@@ -234,6 +234,119 @@ test('el Cliente Operam que el vendedor eligio se reutiliza sin crear otro', asy
   assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
 });
 
+// El domicilio de entrega que el vendedor eligio entre los del Cliente Operam
+// (#252, absorbido por #368): con varios domicilios, el primero de la lista no es
+// el que el vendedor escogio, y la cotizacion heredaria la plaza equivocada.
+test('con dos domicilios de entrega, usar devuelve el que eligio el vendedor y no el primero', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [{ branch_code: 7, br_name: 'Matriz' }, { branch_code: 9, br_name: 'Planta Norte' }],
+    }],
+  });
+  const res = await darDeAlta(solicitud({ decision: { tipo: 'usar', clienteId: 41, domicilioId: 9 } }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.clienteId, 41);
+  assert.equal(res.domicilioId, 9);
+});
+
+test('usar sin domicilio elegido conserva el domicilio de entrega que ya tenia el Cliente Operam', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [{ branch_code: 7, br_name: 'Matriz' }, { branch_code: 9, br_name: 'Planta Norte' }],
+    }],
+  });
+  const res = await darDeAlta(solicitud({ decision: { tipo: 'usar', clienteId: 41 } }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.domicilioId, 7);
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0);
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 0);
+});
+
+test('el domicilio de entrega que no es del Cliente Operam elegido vuelve a preguntar, nunca se crea a ciegas', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [{ branch_code: 7, br_name: 'Matriz' }],
+    }],
+  });
+  const res = await darDeAlta(solicitud({ decision: { tipo: 'usar', clienteId: 41, domicilioId: 999 } }), operam.deps);
+
+  assert.equal(res.tipo, 'pregunta');
+  assert.equal(res.motivo, 'candidatos');
+  assert.deepEqual(res.opciones, ['usar', 'otro-domicilio', 'ninguno']);
+  assert.deepEqual(res.candidatos.map(c => c.id), [41]);
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0);
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 0);
+});
+
+test('otro domicilio de este cliente crea uno nuevo y deja intactos los que ya existian', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [
+        { branch_code: 7, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' },
+        { branch_code: 8, br_name: 'Planta', addr_street: 'Camino viejo', addr_zip: '54000' },
+      ],
+    }],
+  });
+  const res = await darDeAlta(solicitud({
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'otro-domicilio', clienteId: 41 },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente').length, 1);
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 0);
+  assert.equal(operam.branch(7).addr_street, 'Otra calle');
+  assert.equal(operam.branch(8).addr_street, 'Camino viejo');
+  assert.equal(operam.branch(res.domicilioId).addr_street, 'Av. Reforma 100');
+});
+
+// La decision que ya no es valida (#208): el candidato pudo desaparecer del pool
+// entre la pregunta y la respuesta. Se vuelve a preguntar con la lista fresca,
+// cero escrituras -- las tres decisiones sobre un cliente elegido pasan por aqui.
+test('usar un Cliente Operam que ya no esta en la lista de parecidos vuelve a preguntar sin escribir', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 41, CustName: 'Otra Cosa SA', cust_ref: 'Otra', tax_id: 'XAXX010101000', branches: [{ branch_code: 7 }] }],
+  });
+  const res = await darDeAlta(solicitud({ decision: { tipo: 'usar', clienteId: 77 } }), operam.deps);
+
+  assert.equal(res.tipo, 'pregunta');
+  assert.equal(res.motivo, 'candidatos');
+  assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0);
+});
+
+test('otro domicilio de un Cliente Operam que ya no esta en la lista vuelve a preguntar sin crear el domicilio', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 41, CustName: 'Otra Cosa SA', cust_ref: 'Otra', tax_id: 'XAXX010101000', branches: [{ branch_code: 7 }] }],
+  });
+  const res = await darDeAlta(solicitud({
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'otro-domicilio', clienteId: 77 },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'pregunta');
+  assert.equal(res.motivo, 'candidatos');
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0);
+});
+
+test('en el alta con datos fiscales el Cliente Operam elegido que ya no esta en el pool vuelve a preguntar', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 61, CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Otro', tax_id: RFC_REAL, branches: [{ branch_code: 3 }] }],
+  });
+  const res = await darDeAlta(solicitudFiscal({ decision: { tipo: 'usar', clienteId: 88 } }), operam.deps);
+
+  assert.equal(res.tipo, 'pregunta');
+  assert.equal(res.motivo, 'candidatos');
+  assert.deepEqual(res.candidatos.map(c => c.id), [61]);
+  assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
+});
+
 test('el celular ya ligado a un Cliente Operam lo reutiliza sin preguntar', async () => {
   const operam = operamEnMemoria({
     clientes: [{ customer_id: 55, CustName: 'Hotel Azul Centro', tax_id: 'XAXX010101000', branches: [{ branch_code: 9 }] }],
