@@ -38,10 +38,6 @@ export function operamEnMemoria({
   falla = {},
   siguienteClienteId = 900,
   siguienteBranchId = 800,
-  // Respuesta de la web legacy al post-fix del segmento (#172): la API v3 no
-  // puede escribirlo por ningun camino, asi que el upgrade fiscal depende de
-  // esta y su fallo tiene que poder probarse.
-  segmentoWeb = { ok: true },
 } = {}) {
   const estado = {
     clientes: clientes.map(c => ({ ...c, branches: (c.branches || []).map(b => ({ ...b })) })),
@@ -167,9 +163,12 @@ export function operamEnMemoria({
     // esta `falla.actualizarSegmentoClienteWeb`.
     async actualizarSegmentoClienteWeb(clienteId, segmentoId, opciones) {
       registrar('actualizarSegmentoClienteWeb', clienteId, segmentoId, opciones);
-      return typeof segmentoWeb === 'function'
-        ? await segmentoWeb(clienteId, segmentoId, opciones)
-        : segmentoWeb;
+      if (typeof segmentoWeb === 'function') return await segmentoWeb(clienteId, segmentoId, opciones);
+      if (!segmentoWeb.ok) return segmentoWeb;
+      const cliente = buscarCliente(clienteId);
+      // El GET de Operam devuelve el segmento ANIDADO, nunca plano (#172).
+      if (cliente) cliente.segmento = { id: String(segmentoId) };
+      return segmentoWeb;
     },
     async listar() {
       registrar('listar');
@@ -190,17 +189,6 @@ export function operamEnMemoria({
       if (!match) return { estado: 'libre' };
       if (String(match.customer_id) === String(customerId)) return { estado: 'mismo' };
       return { estado: 'otro', dueno: { cliente_id: match.customer_id, CustName: match.CustName, tax_id: match.tax_id } };
-    },
-    async actualizarSegmentoClienteWeb(clienteId, segmentoId, opciones) {
-      registrar('actualizarSegmentoClienteWeb', clienteId, segmentoId, opciones);
-      if (!segmentoWeb.ok) return segmentoWeb;
-      const cliente = buscarCliente(clienteId);
-      // El GET de Operam devuelve el segmento ANIDADO, nunca plano (#172).
-      if (cliente) cliente.segmento = { id: String(segmentoId) };
-      return segmentoWeb;
-    },
-    async refrescarIndice() {
-      registrar('refrescarIndice');
     },
   };
 
