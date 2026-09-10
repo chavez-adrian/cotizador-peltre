@@ -3038,15 +3038,15 @@ async function altaClienteGenerica(entry, { customerIdElegido, crearNuevo, sucur
           const branches = await obtenerBranchesCliente(customerId);
           const fresca = branches.find(b => String(b.branch_code) === String(creada.branch_id));
           if (!fresca) {
-            throw new Error(`la sucursal ${creada.branch_id ?? '(sin codigo)'} no aparece bajo el cliente ${customerId} al releer`);
+            throw new Error(`el domicilio de entrega ${creada.branch_id ?? '(sin codigo)'} no aparece bajo el cliente ${customerId} al releer`);
           }
           branchId = fresca.branch_code;
           pasos.push({ name: 'verificar sucursal', status: 'ok' });
         }
         logCliente(rfcGenericoDe(c), nombreCliente, 'creado', customerId, FUENTE_SUCURSAL_CREADA, null,
           yaCreada
-            ? `Sucursal ${branchId} del cliente ${customerId} reusada: ya existia de un intento anterior (#211)`
-            : `Sucursal ${branchId} creada bajo el cliente ${customerId} por decision del vendedor (#211)`);
+            ? `Domicilio de entrega ${branchId} del cliente ${customerId} reusado: ya existia de un intento anterior (#211)`
+            : `Domicilio de entrega ${branchId} creado bajo el cliente ${customerId} por decision del vendedor (#211)`);
         pasos.push({ name: 'log auditoria', status: 'ok', info: FUENTE_SUCURSAL_CREADA });
       } catch (err) {
         // El nombre del paso distingue "no se pudo crear" de "se creo pero la
@@ -3056,7 +3056,7 @@ async function altaClienteGenerica(entry, { customerIdElegido, crearNuevo, sucur
         logCliente(rfcGenericoDe(c), nombreCliente, 'error', customerId, FUENTE_SUCURSAL_CREADA, null, err.message);
         return {
           tipo: 'bloqueo', motivo: 'operam', pasos, motivoPre: MOTIVO_PRE_OPERAM, customerId,
-          mensaje: 'No se pudo crear la sucursal en Operam: ' + err.message,
+          mensaje: 'No se pudo crear el domicilio de entrega en Operam: ' + err.message,
         };
       }
     } else if (crearSucursal) {

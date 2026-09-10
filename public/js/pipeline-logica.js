@@ -234,7 +234,7 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
       </div>
       <div class="operam-candidato-acciones">
         <button class="btn btn-sm btn-primary" onclick="elegirCandidatoOperam(${id}, ${c.id}, this)">Elegir</button>
-        <button class="btn btn-sm btn-secondary" onclick="marcarSucursalOperam(${id}, ${c.id}, this)">Es sucursal de este Cliente Operam</button>
+        <button class="btn btn-sm btn-secondary" onclick="marcarSucursalOperam(${id}, ${c.id}, this)">Es otro domicilio de este Cliente Operam</button>
       </div>
     </li>`;
   }).join('');

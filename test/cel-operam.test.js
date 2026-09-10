@@ -32,7 +32,7 @@ test('sin el Cel en ningun Contacto lo reporta como campo no aplicado', () => {
 test('la sucursal se identifica por su branch_code: el Cel en otra sucursal no cuenta', () => {
   const fresco = { contacts: [], branches: [{ branch_code: '15', fax: '5534667682' }, { branch_code: '564', fax: '' }] };
   assert.deepEqual(celsNoAplicados(fresco, { celBranch: '5534667682', branchId: 564 }), [
-    { campo: 'fax', label: 'Cel de la sucursal', nuevo: '5534667682' },
+    { campo: 'fax', label: 'Cel del domicilio de entrega', nuevo: '5534667682' },
   ]);
   assert.deepEqual(celsNoAplicados(fresco, { celBranch: '5534667682', branchId: '15' }), []);
 });
@@ -45,6 +45,6 @@ test('lo que no se envio no se verifica', () => {
 test('un cliente releido sin contacts ni branches reporta lo enviado, no truena', () => {
   assert.deepEqual(celsNoAplicados({}, { celCliente: '5534667682', celBranch: '5534667682', branchId: 1 }), [
     { campo: 'fax', label: 'Cel del contacto', nuevo: '5534667682' },
-    { campo: 'fax', label: 'Cel de la sucursal', nuevo: '5534667682' },
+    { campo: 'fax', label: 'Cel del domicilio de entrega', nuevo: '5534667682' },
   ]);
 });

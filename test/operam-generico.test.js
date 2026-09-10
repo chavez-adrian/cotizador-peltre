@@ -1312,7 +1312,7 @@ test('SUC2: la sucursal no aparece en la relectura -> paso en error, la cotizaci
     .set('Authorization', `Bearer ${TOKEN}`).send({ sucursalDe: 10 });
 
   assert.equal(res.status, 503);
-  assert.match(res.body.error, /sucursal/i);
+  assert.match(res.body.error, /domicilio/i);
   const paso = res.body.steps.find(s => s.name === 'verificar sucursal');
   assert.ok(paso && paso.status === 'error', 'el paso de verificacion queda en error');
   assert.equal(quoteLlamado, false, 'sin sucursal verificada no se sube el quote');
@@ -2186,5 +2186,5 @@ test('#339-2: si Operam ignora el Cel, el alta NO falla: lo reporta como campo n
   assert.equal(String(res.body.folio), '1902', 'la cotizacion se sube igual');
   const paso = res.body.steps.find(s => s.name === 'verificar Cel');
   assert.equal(paso.status, 'warn');
-  assert.deepEqual(paso.camposNoActualizados.map(c => c.label), ['Cel del contacto', 'Cel de la sucursal']);
+  assert.deepEqual(paso.camposNoActualizados.map(c => c.label), ['Cel del contacto', 'Cel del domicilio de entrega']);
 });

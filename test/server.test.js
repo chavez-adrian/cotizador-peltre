@@ -2228,7 +2228,7 @@ test('D1b-cel2: si Operam ignora el Cel, el alta completa sigue en ok y lo lista
     assert.strictEqual(res.body.ok, true, 'el alta no falla por un Cel que Operam ignoro');
     const paso = res.body.steps.find(s => s.name === 'verificar Cel');
     assert.strictEqual(paso.status, 'warn');
-    assert.deepStrictEqual(paso.camposNoActualizados.map(c => c.label), ['Cel del contacto', 'Cel de la sucursal']);
+    assert.deepStrictEqual(paso.camposNoActualizados.map(c => c.label), ['Cel del contacto', 'Cel del domicilio de entrega']);
   } finally {
     restore();
   }

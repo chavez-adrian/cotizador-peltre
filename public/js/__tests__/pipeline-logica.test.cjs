@@ -491,12 +491,12 @@ test('#210: buildCandidatosOperamHtml escapa la diferencia de nombre', () => {
 // conservadora (no escribe nada) a la que mas cuentas crea. El handler recibe el
 // elemento clickeado (`this`), nunca un id de contenedor: la misma cotizacion
 // puede estar pintada en dos paneles a la vez.
-test('#211: cada candidato ofrece "Es sucursal de este Cliente Operam" entre Elegir y Crear nuevo', () => {
+test('#211: cada candidato ofrece "Es otro domicilio de este Cliente Operam" entre Elegir y Crear nuevo', () => {
   const html = buildCandidatosOperamHtml(5, [
     { id: 70, CustName: 'OJO DE AGUA PUEBLA', cust_ref: 'OJOAGUA-PUE', diferenciaNombre: { soloInput: ['sur'], soloCandidato: ['puebla'] }, celularMatch: 'no_coincide', correoMatch: 'sin_dato' },
   ], 'Elige');
   assert.match(html, /marcarSucursalOperam\(5, 70, this\)/);
-  assert.match(html, /Es sucursal de este Cliente Operam/);
+  assert.match(html, /Es otro domicilio de este Cliente Operam/);
   const posElegir = html.indexOf('elegirCandidatoOperam(5, 70, this)');
   const posSucursal = html.indexOf('marcarSucursalOperam(5, 70, this)');
   const posNuevo = html.indexOf('crearNuevoClienteOperam(5, this)');
