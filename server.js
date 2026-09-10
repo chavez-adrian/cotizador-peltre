@@ -2857,7 +2857,9 @@ async function salesmanDeVendedor(nombreVendedor) {
 // No conoce el registro de la cotizacion: quien lo escribe es `anotarCliente(customerId,
 // branchId)`, que le pasa la subida. El alta solo decide CUANDO -- en cuanto el cliente
 // existe y antes de tocar nada mas --, porque de ese momento depende que un reintento
-// reuse el cliente en vez de crear un segundo (idempotencia).
+// reuse el cliente en vez de crear un segundo (idempotencia): moverlo al final cambiaria
+// el comportamiento, y este ticket no lo cambia. El aviso muere con el modulo de #364:
+// en la secuencia de ADR-0017 ese paso ya no es del alta.
 async function altaClienteGenerica(entry, { customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial, anotarCliente }) {
   const c = entry.data?.cliente || {};
   const pasos = [];
