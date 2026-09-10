@@ -2847,9 +2847,20 @@ async function salesmanDeVendedor(nombreVendedor) {
   return (await vendedoresStore.listar()).find(v => v.name === nombreVendedor)?.operam_id ?? undefined;
 }
 
-async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial) {
+// El alta del Cliente Operam sin datos fiscales que corre DENTRO de la subida de la
+// cotizacion (ADR-0017): dedup -> crear o reutilizar -> domicilio de entrega ->
+// verificacion -> Cel. Devuelve VALORES, nunca respuestas HTTP: el alta lograda
+// ({ tipo: 'alta' } con customerId, branchId, si el cliente nacio aqui y la lista de
+// pasos), la pregunta al vendedor ({ tipo: 'pregunta' }, el 428 de #345) o el bloqueo
+// con su motivo. Traducir eso a HTTP y subir el quote es de subirConAltaGenerica.
+//
+// No conoce el registro de la cotizacion: quien lo escribe es `anotarCliente(customerId,
+// branchId)`, que le pasa la subida. El alta solo decide CUANDO -- en cuanto el cliente
+// existe y antes de tocar nada mas --, porque de ese momento depende que un reintento
+// reuse el cliente en vez de crear un segundo (idempotencia).
+async function altaClienteGenerica(entry, { customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial, anotarCliente }) {
   const c = entry.data?.cliente || {};
-  const steps = [];
+  const pasos = [];
   // "Es sucursal de este cliente" (#211): el cliente existente manda igual que al
   // elegirlo -- mismas guardas, misma revalidacion contra el pool -- y ademas se
   // le crea una sucursal nueva. Con AMBOS en el body manda el elegido:
@@ -2869,20 +2880,26 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       // COTIZACION (reintento con otro cliente): esa liga es fija y mezclarla
       // seria mandar el mismo documento a dos cuentas.
       if (c.customerId != null && String(c.customerId) !== String(customerId)) {
-        return res.status(409).json({ error: `La cotizacion ya esta ligada al cliente ${c.customerId} en Operam y difiere del elegido (${customerId})` });
+        return {
+          tipo: 'bloqueo', motivo: 'liga-fija', pasos,
+          mensaje: `La cotizacion ya esta ligada al cliente ${c.customerId} en Operam y difiere del elegido (${customerId})`,
+        };
       }
       // La del CONTACTO, en cambio, ya no bloquea (#345): una persona compra para
       // varias razones sociales, asi que se le pregunta y con su confirmacion la
       // liga se agrega. Sin confirmar no se sube ni se crea nada.
       if (decidirLiga(ligas, customerId, { confirmado: otraRazonSocial }).accion === 'confirmar') {
-        return await responderConfirmarOtraRazonSocial(res, {
-          contacto: prospecto, ligadas: ligas, clienteId: customerId,
-          reintentar: {
-            ...(customerIdElegido != null ? { customerId: customerIdElegido } : {}),
-            ...(crearSucursal ? { sucursalDe } : {}),
-            ...(crearNuevo ? { crearNuevo: true } : {}),
+        return {
+          tipo: 'pregunta', pasos,
+          pregunta: {
+            contacto: prospecto, ligadas: ligas, clienteId: customerId,
+            reintentar: {
+              ...(customerIdElegido != null ? { customerId: customerIdElegido } : {}),
+              ...(crearSucursal ? { sucursalDe } : {}),
+              ...(crearNuevo ? { crearNuevo: true } : {}),
+            },
           },
-        });
+        };
       }
       // #208: el customerId viene del BODY como eleccion del vendedor -- puede
       // venir manipulado o apuntar a una lista de candidatos que ya cambio desde
@@ -2895,33 +2912,35 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         const { nombre: nombreRevalida, dedup: dedupRevalida } = await poolDedupGenerico(c, entry);
         const candidatosFrescos = dedupRevalida.tipo === 'candidatos' ? dedupRevalida.candidatos : [];
         if (!candidatosFrescos.some(k => String(k.customer_id) === String(customerId))) {
-          await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
+          // Sin resolver no hay documento (#204): el motivo se marca ANTES de
+          // responder para que el candado de los GET aplique de inmediato.
           const ctx = contextoHechos(c, nombreRevalida);
-          return res.status(409).json({
-            error: 'El Cliente Operam elegido ya no esta en la lista de candidatos: elige uno para continuar',
+          return {
+            tipo: 'bloqueo', motivo: 'candidatos', pasos, motivoPre: MOTIVO_PRE_DEDUP,
+            mensaje: 'El Cliente Operam elegido ya no esta en la lista de candidatos: elige uno para continuar',
             candidatos: candidatosFrescos.map(k => candidatoParaContrato(k, ctx)),
-          });
+          };
         }
       }
-      steps.push({ name: 'dedup', status: 'ok', info: crearSucursal ? 'candidato elegido como matriz de la sucursal' : 'candidato elegido' });
+      pasos.push({ name: 'dedup', status: 'ok', info: crearSucursal ? 'candidato elegido como matriz de la sucursal' : 'candidato elegido' });
     } else if (ligas.length) {
       // Reutilizacion por celular (capa 1): la PRIMERA liga del Contacto, la misma
       // que antes de #345 vivia sola en data.cliente_id. Con varias razones
       // sociales el vendedor elige desde el picker; sin eleccion se conserva el
       // desenlace conservador de siempre.
       customerId = ligaPrincipal(ligas);
-      steps.push({ name: 'dedup', status: 'ok', info: 'cliente reutilizado por celular' });
+      pasos.push({ name: 'dedup', status: 'ok', info: 'cliente reutilizado por celular' });
     } else {
       const { rfcGenerico, nombre, padron, dedup } = await poolDedupGenerico(c, entry);
       if (dedup.tipo === 'candidatos' && !crearNuevo) {
-        // Sin resolver no hay documento (#204): se marca el motivo ANTES de
+        // Sin resolver no hay documento (#204): el motivo se marca ANTES de
         // responder para que el candado de los GET aplique de inmediato.
-        await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
         const ctx = contextoHechos(c, nombre);
-        return res.status(409).json({
-          error: 'Hay Clientes Operam sin datos fiscales y nombre similar en Operam: elige uno para continuar',
+        return {
+          tipo: 'bloqueo', motivo: 'candidatos', pasos, motivoPre: MOTIVO_PRE_DEDUP,
+          mensaje: 'Hay Clientes Operam sin datos fiscales y nombre similar en Operam: elige uno para continuar',
           candidatos: dedup.candidatos.map(k => candidatoParaContrato(k, ctx)),
-        });
+        };
       }
       // El vendedor dijo "ninguno es el mismo cliente" (#204). Se crea, pero el
       // paso queda en warn (no es un alta limpia) y el motivo viaja al log de
@@ -2931,8 +2950,8 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       const forzado = dedup.tipo === 'candidatos'
         ? dedup.candidatos.map(k => k.customer_id).join(', ')
         : null;
-      if (forzado) steps.push({ name: 'dedup', status: 'warn', info: `creacion forzada por el vendedor pese a candidatos (${forzado})` });
-      else steps.push({ name: 'dedup', status: 'ok', info: 'libre' });
+      if (forzado) pasos.push({ name: 'dedup', status: 'warn', info: `creacion forzada por el vendedor pese a candidatos (${forzado})` });
+      else pasos.push({ name: 'dedup', status: 'ok', info: 'libre' });
 
       salesman = await salesmanDeVendedor(entry.vendedor);
       const salesTypeId = resolverSalesTypeId(entry.tier, await obtenerListasPrecios());
@@ -2943,27 +2962,29 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         // por nombre ya corrio arriba).
         creado = await crearClienteDirecto(buildClienteGenerico(entry, { salesman, salesTypeId }));
       } catch (err) {
-        steps.push({ name: 'POST customer', status: 'error', error: err.message });
+        pasos.push({ name: 'POST customer', status: 'error', error: err.message });
         logCliente(rfcGenerico, nombre, 'error', null, FUENTE_ALTA_GENERICA, null, err.message);
-        await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
         // Choque de nombre corto (#242): no es un fallo de Operam sino un dato que
         // el vendedor tiene que corregir, y el 503 generico lo mandaba a reintentar
         // en un bucle que siempre da lo mismo. NUNCA se desambigua el cust_ref por
         // nuestra cuenta (un sufijo automatico esconderia que el cliente ya existia).
         if (esErrorCustRefDuplicado(err)) {
-          return res.status(409).json({
-            error: mensajeCustRefDuplicado(c.nombreCorto || '', padron),
-            codigo: 'CUST_REF_DUPLICADO', nombreCorto: c.nombreCorto || '', steps,
-          });
+          return {
+            tipo: 'bloqueo', motivo: 'cust-ref-duplicado', pasos, motivoPre: MOTIVO_PRE_OPERAM,
+            mensaje: mensajeCustRefDuplicado(c.nombreCorto || '', padron), nombreCorto: c.nombreCorto || '',
+          };
         }
-        return res.status(503).json({ error: 'No se pudo crear el Cliente Operam: ' + err.message, steps });
+        return {
+          tipo: 'bloqueo', motivo: 'operam', pasos, motivoPre: MOTIVO_PRE_OPERAM,
+          mensaje: 'No se pudo crear el Cliente Operam: ' + err.message,
+        };
       }
       customerId = creado.cliente_id;
       creadoNuevo = true;
-      steps.push({ name: 'POST customer', status: 'ok' });
+      pasos.push({ name: 'POST customer', status: 'ok' });
       logCliente(rfcGenerico, nombre, forzado ? 'creado-forzado' : 'creado', customerId, FUENTE_ALTA_GENERICA, null,
         forzado ? `El vendedor eligio "ninguno es el mismo cliente" pese a los candidatos ${forzado} (#204)` : null);
-      steps.push({ name: 'log auditoria', status: 'ok', info: FUENTE_ALTA_GENERICA });
+      pasos.push({ name: 'log auditoria', status: 'ok', info: FUENTE_ALTA_GENERICA });
     }
 
     // Con customerId elegido NUNCA se reutiliza un branchId persistido (pudo
@@ -2995,7 +3016,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         // intento anterior pudo haber escrito la sucursal en Operam y morir
         // despues (relectura que no la vio, persistencia que no corrio). Sin
         // esto el reintento dejaria una segunda sucursal identica. Si la lectura
-        // falla se cae al catch: 503 SIN escribir, que es la salida segura --
+        // falla se cae al catch: bloqueo SIN escribir, que es la salida segura --
         // sin saber que hay, crear es lo unico que no se puede deshacer.
         const previas = await Promise.all(
           (await obtenerBranchesCliente(customerId))
@@ -3004,11 +3025,11 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
         const yaCreada = sucursalEquivalente(previas, datosSucursal);
         if (yaCreada) {
           branchId = yaCreada.branch_code;
-          steps.push({ name: 'POST branch (sucursal)', status: 'ok', info: 'omitido: la sucursal ya existia en Operam de un intento anterior' });
+          pasos.push({ name: 'POST branch (sucursal)', status: 'ok', info: 'omitido: la sucursal ya existia en Operam de un intento anterior' });
         } else {
           creada = await crearBranchCliente(customerId, datosSucursal);
           sucursalEscrita = true;
-          steps.push({ name: 'POST branch (sucursal)', status: 'ok' });
+          pasos.push({ name: 'POST branch (sucursal)', status: 'ok' });
           // RELEER: Operam responde result:true aunque no haya escrito nada (#74).
           // La sucursal tiene que aparecer entre las del cliente o el paso queda en
           // error -- la cotizacion NO finge exito ni se sube a un branch inventado.
@@ -3018,30 +3039,32 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
             throw new Error(`la sucursal ${creada.branch_id ?? '(sin codigo)'} no aparece bajo el cliente ${customerId} al releer`);
           }
           branchId = fresca.branch_code;
-          steps.push({ name: 'verificar sucursal', status: 'ok' });
+          pasos.push({ name: 'verificar sucursal', status: 'ok' });
         }
         logCliente(rfcGenericoDe(c), nombreCliente, 'creado', customerId, FUENTE_SUCURSAL_CREADA, null,
           yaCreada
             ? `Sucursal ${branchId} del cliente ${customerId} reusada: ya existia de un intento anterior (#211)`
             : `Sucursal ${branchId} creada bajo el cliente ${customerId} por decision del vendedor (#211)`);
-        steps.push({ name: 'log auditoria', status: 'ok', info: FUENTE_SUCURSAL_CREADA });
+        pasos.push({ name: 'log auditoria', status: 'ok', info: FUENTE_SUCURSAL_CREADA });
       } catch (err) {
         // El nombre del paso distingue "no se pudo crear" de "se creo pero la
         // relectura no la vio": el segundo caso puede haber dejado una sucursal
         // en Operam y el reintento tiene que volver a mirar antes de crear.
-        steps.push({ name: creada ? 'verificar sucursal' : 'POST branch (sucursal)', status: 'error', error: err.message });
+        pasos.push({ name: creada ? 'verificar sucursal' : 'POST branch (sucursal)', status: 'error', error: err.message });
         logCliente(rfcGenericoDe(c), nombreCliente, 'error', customerId, FUENTE_SUCURSAL_CREADA, null, err.message);
-        await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
-        return res.status(503).json({ error: 'No se pudo crear la sucursal en Operam: ' + err.message, customer_id: customerId, steps });
+        return {
+          tipo: 'bloqueo', motivo: 'operam', pasos, motivoPre: MOTIVO_PRE_OPERAM, customerId,
+          mensaje: 'No se pudo crear la sucursal en Operam: ' + err.message,
+        };
       }
     } else if (crearSucursal) {
-      steps.push({ name: 'POST branch (sucursal)', status: 'ok', info: 'omitido: la sucursal ya se creo en un intento anterior' });
+      pasos.push({ name: 'POST branch (sucursal)', status: 'ok', info: 'omitido: la sucursal ya se creo en un intento anterior' });
     }
 
-    // Persistir ANTES de subir (idempotencia): la cotizacion queda ligada al
+    // Anotar ANTES de subir (idempotencia): la cotizacion queda ligada al
     // cliente aunque la subida falle.
-    await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
-    steps.push({ name: 'persistir customer_id', status: 'ok' });
+    await anotarCliente(customerId, branchId);
+    pasos.push({ name: 'persistir customer_id', status: 'ok' });
     // Ligar el Contacto es fire-and-forget (mismo trato que Dropbox): el cliente
     // YA existe y la subida debe completarse; un fallo del store solo se reporta.
     // Si abortara aqui, el reintento entraria por el camino normal (customerId ya
@@ -3049,7 +3072,7 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
     // Desde #345 la liga se AGREGA: si el Contacto ya tenia otra razon social, la
     // pregunta de arriba ya se contesto y esta es la segunda liga, no un cambio.
     if (prospecto && decidirLiga(ligas, customerId, { confirmado: true }).accion === 'agregar') {
-      await agregarLigaAlContacto(prospecto, customerId, entry, steps);
+      await agregarLigaAlContacto(prospecto, customerId, entry, pasos);
     }
 
     // El POST de Operam ignora dimension_id/dimension2_id (#74): persistirlas via
@@ -3057,24 +3080,26 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
     if (creadoNuevo) {
       try {
         await actualizarClienteDirecto(customerId, { dimension_id: 1, dimension2_id: 5 });
-        steps.push({ name: 'PUT customer (dimensiones)', status: 'ok' });
+        pasos.push({ name: 'PUT customer (dimensiones)', status: 'ok' });
       } catch (err) {
-        steps.push({ name: 'PUT customer (dimensiones)', status: 'error', error: err.message });
+        pasos.push({ name: 'PUT customer (dimensiones)', status: 'error', error: err.message });
       }
     }
 
     // El quote debe ir al branch del cliente (Operam lo auto-crea en el POST), no
-    // al fallback branch_id 1 de subirCotizacionOperam. Se persiste para que un
+    // al fallback branch_id 1 de subirCotizacionOperam. Se anota para que un
     // reintento (camino normal por customerId) tambien lo use.
     if (branchId == null) {
       try {
         branchId = await obtenerBranchId(customerId);
-        steps.push({ name: 'GET branch_id', status: 'ok' });
-        await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
+        pasos.push({ name: 'GET branch_id', status: 'ok' });
+        await anotarCliente(customerId, branchId);
       } catch (err) {
-        steps.push({ name: 'GET branch_id', status: 'error', error: err.message });
-        await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
-        return res.status(503).json({ error: 'No se pudo obtener el domicilio del Cliente Operam: ' + err.message, customer_id: customerId, steps });
+        pasos.push({ name: 'GET branch_id', status: 'error', error: err.message });
+        return {
+          tipo: 'bloqueo', motivo: 'operam', pasos, motivoPre: MOTIVO_PRE_OPERAM, customerId,
+          mensaje: 'No se pudo obtener el domicilio del Cliente Operam: ' + err.message,
+        };
       }
     }
 
@@ -3093,21 +3118,21 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
       try {
         await actualizarBranchCliente(customerId, branchId, branchDatos);
         sucursalEscrita = true;
-        steps.push({ name: 'PUT branch (domicilio)', status: 'ok' });
+        pasos.push({ name: 'PUT branch (domicilio)', status: 'ok' });
         // Releer y verificar: Operam responde result:true aunque ignore campos (#74).
         try {
           const fresco = await obtenerBranch(branchId);
           const camposNoActualizados = diffBranchDomicilio(fresco, branchDatos);
           if (camposNoActualizados.length) {
-            steps.push({ name: 'verificar branch', status: 'warn', camposNoActualizados });
+            pasos.push({ name: 'verificar branch', status: 'warn', camposNoActualizados });
           } else {
-            steps.push({ name: 'verificar branch', status: 'ok' });
+            pasos.push({ name: 'verificar branch', status: 'ok' });
           }
         } catch (err) {
-          steps.push({ name: 'verificar branch', status: 'error', error: err.message });
+          pasos.push({ name: 'verificar branch', status: 'error', error: err.message });
         }
       } catch (err) {
-        steps.push({ name: 'PUT branch (domicilio)', status: 'error', error: err.message });
+        pasos.push({ name: 'PUT branch (domicilio)', status: 'error', error: err.message });
       }
     }
 
@@ -3126,62 +3151,107 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
           celBranch: sucursalEscrita ? celContacto : '',
           branchId,
         });
-        steps.push(noAplicados.length
+        pasos.push(noAplicados.length
           ? { name: 'verificar Cel', status: 'warn', camposNoActualizados: noAplicados }
           : { name: 'verificar Cel', status: 'ok' });
       } catch (err) {
-        steps.push({ name: 'verificar Cel', status: 'error', error: err.message });
+        pasos.push({ name: 'verificar Cel', status: 'error', error: err.message });
       }
     }
 
-    try {
-      // La huella (#114) se toma de ESTE objeto, no de entry.data: el cliente recien
-      // ligado (customerId/branchId) forma parte de lo que se subio, y la siguiente
-      // regeneracion si lo trae (crearOActualizarCotizacion lo copia del registro).
-      // Calcularla sobre entry.data haria que toda regeneracion pareciera un cambio.
-      const dataSubida = { ...entry.data, cliente: { ...c, customerId, branchId } };
-      // El cliente que ACABA de crear esta alta nace con la lista de su tier
-      // (buildClienteGenerico): releerlo solo para comprobarlo seria una lectura de
-      // mas dentro del camino critico de la subida (#285). El cliente reusado o
-      // elegido si se checa: puede llevar anos sin lista.
-      const folio = await subirCotizacionOperam(dataSubida, { verificarListaPrecios: !creadoNuevo });
-      if (folio != null && folio !== '') {
-        await cotStore.setFolioOperam(id, folio);
-        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida) });
-        // Hay folio: se resolvio por el camino que sea (candidato elegido, cliente
-        // nuevo forzado o reintento) y el candado se levanta (#204).
-        await marcarMotivoPre(id, null);
-      }
-      steps.push({ name: 'POST quote', status: 'ok' });
-      const pasoVigencia = await postFixVigencia(folio, entry.data);
-      if (pasoVigencia) steps.push(pasoVigencia);
-      // clienteGenerico (#93): este camino SIEMPRE deja el cliente con RFC generico
-      // (creado nuevo o reutilizado por celular/dedup de nombre, ambos genericos) --
-      // el frontend lo usa para refrescar el chip Fiscal y ofrecer la CSF junto al folio.
-      return res.json({ ok: true, folio, customer_id: customerId, clienteGenerico: true, steps });
-    } catch (err) {
-      steps.push({ name: 'POST quote', status: 'error', error: err.message });
-      // Cliente sin lista de precios (#285): el cliente EXISTENTE que el vendedor
-      // eligio (o al que se le colgo la sucursal) puede estar sin lista; el recien
-      // creado por esta misma alta nace con la de su tier y no se checa.
-      if (await responderSiClienteSinLista(res, id, err, { customer_id: customerId, steps })) return;
-      await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
-      return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps });
-    } finally {
-      // En el finally y no en cada salida: el cliente YA existe con el segmento sin
-      // aplicar, suba el quote o no, y un reintento no vuelve a pasar por aqui (entra por
-      // el camino normal con el customerId persistido). Si no se corrige ahora, nadie lo
-      // corrige. Corre despues de armar la respuesta, que es justo lo que se busca.
-      //
-      // Sin distinguir cliente creado de reutilizado: la regla soloSinSegmento (#186) ya
-      // decide por si sola -- el recien creado siempre esta en "Sin segmento" y lo recibe;
-      // al reutilizado se le respeta el suyo si ya venia clasificado.
-      postFixSegmentoGenerico(customerId, c.segmentoId);
-    }
+    return { tipo: 'alta', customerId, branchId, creadoNuevo, pasos };
   } catch (err) {
-    await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
-    return res.status(503).json({ error: 'No se pudo completar la subida con alta generica: ' + err.message, steps });
+    return {
+      tipo: 'bloqueo', motivo: 'inesperado', pasos, motivoPre: MOTIVO_PRE_OPERAM,
+      mensaje: 'No se pudo completar la subida con alta generica: ' + err.message,
+    };
   }
+}
+
+// Un bloqueo del alta -> la MISMA respuesta HTTP de siempre. El codigo de estado lo pone
+// aqui el handler y no el alta (ADR-0017): 409 para lo que el vendedor tiene que
+// resolver (liga fija de la cotizacion, candidatos de dedup, nombre corto duplicado) y
+// 503 para lo que fallo en Operam.
+function responderBloqueoAlta(res, bloqueo) {
+  const { motivo, mensaje, pasos } = bloqueo;
+  if (motivo === 'liga-fija') return res.status(409).json({ error: mensaje });
+  if (motivo === 'candidatos') return res.status(409).json({ error: mensaje, candidatos: bloqueo.candidatos });
+  if (motivo === 'cust-ref-duplicado') {
+    return res.status(409).json({ error: mensaje, codigo: 'CUST_REF_DUPLICADO', nombreCorto: bloqueo.nombreCorto, steps: pasos });
+  }
+  return res.status(503).json({
+    error: mensaje,
+    ...(bloqueo.customerId != null ? { customer_id: bloqueo.customerId } : {}),
+    steps: pasos,
+  });
+}
+
+// La subida del quote sobre el Cliente Operam que dejo listo el alta, con sus post-fixes
+// (vigencia y segmento). Es la que escribe en la cotizacion lo que sale de aqui: folio,
+// huella y motivo de PRE.
+async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creadoNuevo, pasos }) {
+  const c = entry.data?.cliente || {};
+  try {
+    // La huella (#114) se toma de ESTE objeto, no de entry.data: el cliente recien
+    // ligado (customerId/branchId) forma parte de lo que se subio, y la siguiente
+    // regeneracion si lo trae (crearOActualizarCotizacion lo copia del registro).
+    // Calcularla sobre entry.data haria que toda regeneracion pareciera un cambio.
+    const dataSubida = { ...entry.data, cliente: { ...c, customerId, branchId } };
+    // El cliente que ACABA de crear esta alta nace con la lista de su tier
+    // (buildClienteGenerico): releerlo solo para comprobarlo seria una lectura de
+    // mas dentro del camino critico de la subida (#285). El cliente reusado o
+    // elegido si se checa: puede llevar anos sin lista.
+    const folio = await subirCotizacionOperam(dataSubida, { verificarListaPrecios: !creadoNuevo });
+    if (folio != null && folio !== '') {
+      await cotStore.setFolioOperam(id, folio);
+      await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida) });
+      // Hay folio: se resolvio por el camino que sea (candidato elegido, cliente
+      // nuevo forzado o reintento) y el candado se levanta (#204).
+      await marcarMotivoPre(id, null);
+    }
+    pasos.push({ name: 'POST quote', status: 'ok' });
+    const pasoVigencia = await postFixVigencia(folio, entry.data);
+    if (pasoVigencia) pasos.push(pasoVigencia);
+    // clienteGenerico (#93): este camino SIEMPRE deja el cliente con RFC generico
+    // (creado nuevo o reutilizado por celular/dedup de nombre, ambos genericos) --
+    // el frontend lo usa para refrescar el chip Fiscal y ofrecer la CSF junto al folio.
+    return res.json({ ok: true, folio, customer_id: customerId, clienteGenerico: true, steps: pasos });
+  } catch (err) {
+    pasos.push({ name: 'POST quote', status: 'error', error: err.message });
+    // Cliente sin lista de precios (#285): el cliente EXISTENTE que el vendedor
+    // eligio (o al que se le colgo la sucursal) puede estar sin lista; el recien
+    // creado por esta misma alta nace con la de su tier y no se checa.
+    if (await responderSiClienteSinLista(res, id, err, { customer_id: customerId, steps: pasos })) return;
+    await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
+    return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps: pasos });
+  } finally {
+    // En el finally y no en cada salida: el cliente YA existe con el segmento sin
+    // aplicar, suba el quote o no, y un reintento no vuelve a pasar por aqui (entra por
+    // el camino normal con el customerId persistido). Si no se corrige ahora, nadie lo
+    // corrige. Corre despues de armar la respuesta, que es justo lo que se busca.
+    //
+    // Sin distinguir cliente creado de reutilizado: la regla soloSinSegmento (#186) ya
+    // decide por si sola -- el recien creado siempre esta en "Sin segmento" y lo recibe;
+    // al reutilizado se le respeta el suyo si ya venia clasificado.
+    postFixSegmentoGenerico(customerId, c.segmentoId);
+  }
+}
+
+// Las dos mitades de este camino: primero el alta del Cliente Operam sin datos fiscales,
+// que devuelve valores, y luego la subida del quote sobre lo que devolvio. Aqui viven la
+// traduccion a HTTP y las escrituras en la cotizacion, que son de la subida.
+async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial) {
+  const c = entry.data?.cliente || {};
+  const alta = await altaClienteGenerica(entry, {
+    customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial,
+    anotarCliente: (customerId, branchId) => cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } }),
+  });
+  if (alta.tipo === 'pregunta') return await responderConfirmarOtraRazonSocial(res, alta.pregunta);
+  if (alta.tipo === 'bloqueo') {
+    if (alta.motivoPre) await marcarMotivoPre(id, alta.motivoPre);
+    return responderBloqueoAlta(res, alta);
+  }
+  return await subirQuoteTrasAlta(res, id, entry, alta);
 }
 
 // UNICO punto de escritura del motivo de PRE (#204). Guarda POR QUE la cotizacion
