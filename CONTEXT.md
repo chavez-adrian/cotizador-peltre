@@ -261,7 +261,7 @@ Lo que el vendedor pide cuando da de alta un Cliente Operam, sin importar desde 
 
 ## Mensaje en dos capas
 
-Regla para todo lo que el cotizador le dice al vendedor sobre un alta, un paso o un campo que Operam no aceptó (decisión 2026-09-09): un **mensaje** en términos de este glosario, que es lo que se muestra siempre ("El domicilio de entrega no quedó guardado en Operam", "Este RFC ya pertenece a otro Cliente Operam: es una fusión manual"), y un **detalle** técnico para depurar (endpoint, campo de la API, eco de Operam) que se muestra plegado o en el reporte de pasos. Nunca un nombre de variable, de endpoint ni de campo de la API a solas como texto para el vendedor.
+Regla para todo lo que el cotizador le dice al vendedor sobre un alta, un paso o un campo que Operam no aceptó (decisión 2026-09-09): un **mensaje** en términos de este glosario, que es lo que se muestra siempre ("El domicilio de entrega no quedó guardado en Operam", "Este RFC ya es del Cliente Operam Hotel Azul SA de CV (800). No se cambió nada. Si es a quien le estás cotizando, cotiza sobre ese Cliente Operam; si hay dos cuentas del mismo contribuyente, hay que unificarlas a mano en Operam."), y un **detalle** técnico para depurar (endpoint, campo de la API, eco de Operam) que se muestra plegado o en el reporte de pasos. Nunca un nombre de variable, de endpoint ni de campo de la API a solas como texto para el vendedor.
 
 ## Vista Clientes
 

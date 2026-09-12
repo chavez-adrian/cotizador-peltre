@@ -949,7 +949,7 @@ test('RU4: el RFC de otro Cliente Operam se lee como fusion, con el dueno ya nom
   const { interpretarRespuestaUpgrade } = await import('../alta-logica.js');
   const vista = interpretarRespuestaUpgrade(409, {
     fusion: true,
-    error: 'Este RFC ya es del Cliente Operam Cliente Formal SA (800). No se cambio nada. Si es la misma empresa, cotiza sobre ese Cliente Operam; si hay dos cuentas del mismo contribuyente, hay que unificarlas a mano en Operam.',
+    error: 'Este RFC ya es del Cliente Operam Cliente Formal SA (800). No se cambio nada. Si es a quien le estas cotizando, cotiza sobre ese Cliente Operam; si hay dos cuentas del mismo contribuyente, hay que unificarlas a mano en Operam.',
     dueno: { cliente_id: 800, nombre: 'Cliente Formal SA' },
   });
   assert.equal(vista.tipo, 'fusion');
@@ -965,6 +965,15 @@ test('RU4b: sin `error` del servidor el fallback dice lo mismo sin nombrar al du
   assert.match(vista.mensaje, /No se cambio nada/);
   assert.match(vista.mensaje, /unificarlas a mano en Operam/);
   assert.ok(!/fusion/.test(vista.mensaje), 'la jerga del modulo no llega al vendedor');
+});
+
+test('RU4c: el texto del RFC ajeno nombra al dueno si lo conoce y nunca deja un id en blanco', async () => {
+  const { mensajeRfcDeOtroClienteOperam } = await import('../alta-logica.js');
+  assert.match(mensajeRfcDeOtroClienteOperam({ cliente_id: 800, nombre: 'Hotel Azul SA de CV' }),
+    /^Este RFC ya es del Cliente Operam Hotel Azul SA de CV \(800\)\./);
+  assert.match(mensajeRfcDeOtroClienteOperam({ cliente_id: 800 }), /^Este RFC ya es del Cliente Operam 800\./);
+  assert.match(mensajeRfcDeOtroClienteOperam(), /^Este RFC ya es de otro Cliente Operam\./);
+  assert.ok(!/undefined/.test(mensajeRfcDeOtroClienteOperam({})), 'un dueno sin datos no imprime undefined');
 });
 
 test('RU5: cualquier otro fallo es un error con el texto que mando el servidor', async () => {

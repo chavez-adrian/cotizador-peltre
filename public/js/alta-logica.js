@@ -441,11 +441,25 @@ export function camposNoAplicados(diff, ecoPut) {
 export const UPGRADE_TITULO_PENDIENTES = 'Datos fiscales actualizados, pero Operam no guardo todo: corrige estos datos en la ficha del cliente en Operam.';
 export const UPGRADE_TITULO_LOGRADO = 'Datos fiscales actualizados en Operam.';
 
+// EL texto del RFC que ya es de otro Cliente Operam (#375). Vive aqui porque lo
+// comparten el bloqueo del servidor (lib/alta-cliente.js lo cross-importa) y el
+// respaldo del navegador, que solo difieren en si conocen al dueno: sin nombre
+// ni id sale la misma redaccion sin nombrarlo. "Fusion" es jerga del modulo y se
+// queda en el `detalle`. Dice tambien que no se escribio nada, porque lo primero
+// que el vendedor no sabia era si el bloqueo habia dejado el cliente a medias.
+export function mensajeRfcDeOtroClienteOperam(dueno) {
+  const id = dueno?.cliente_id;
+  const nombre = dueno?.nombre;
+  let quien = 'de otro Cliente Operam';
+  if (nombre) quien = id ? `del Cliente Operam ${nombre} (${id})` : `del Cliente Operam ${nombre}`;
+  else if (id) quien = `del Cliente Operam ${id}`;
+  return `Este RFC ya es ${quien}. No se cambio nada. Si es a quien le estas cotizando, cotiza sobre ese Cliente Operam; si hay dos cuentas del mismo contribuyente, hay que unificarlas a mano en Operam.`;
+}
+
 export function interpretarRespuestaUpgrade(status, body) {
   const data = body || {};
   if (status === 409 && data.fusion) {
-    const respaldo = 'Este RFC ya es de otro Cliente Operam. No se cambio nada. Si es la misma empresa, cotiza sobre ese Cliente Operam; si hay dos cuentas del mismo contribuyente, hay que unificarlas a mano en Operam.';
-    return { tipo: 'fusion', mensaje: data.error || respaldo, campos: [], noAplicados: [] };
+    return { tipo: 'fusion', mensaje: data.error || mensajeRfcDeOtroClienteOperam(), campos: [], noAplicados: [] };
   }
   if (status !== 200 || data.ok !== true) {
     return { tipo: 'error', mensaje: data.error || 'No se pudo actualizar en Operam', campos: [], noAplicados: [] };
