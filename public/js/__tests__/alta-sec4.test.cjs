@@ -305,8 +305,8 @@ test('I8c: con domicilio nuevo sobre un cliente que ya existia, las filas del do
   assert.strictEqual(obtener.status, 'ok', 'la fila Obtener domicilio ya no se queda pendiente');
   const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch (domicilio)']);
   assert.strictEqual(branch.status, 'ok');
-  assert.ok(!branch.msg.includes('preexistente'), 'el domicilio nacio en esta alta');
-  assert.ok(branch.detalle.includes('571'), 'la fila cierra en la verificacion del domicilio nuevo');
+  assert.strictEqual(branch.detalle, 'GET /customers/522 branches -> 571',
+    'la fila cierra en la verificacion del domicilio nuevo, no en un omitido posterior');
   assert.strictEqual(r.exito, true);
 });
 
