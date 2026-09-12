@@ -93,7 +93,7 @@ function filaCaptura() {
 </tr>`;
 }
 
-function formularioEdicion({ lineas, editando, deliveryDate, comments, custRef, customerId }) {
+function formularioEdicion({ lineas, editando, deliveryDate, comments, custRef, customerId, phoneInicial = '', emailInicial = '' }) {
   const filas = lineas.map((l, i) => (i === editando ? filaEnEdicion(i, l) : filaNormal(i, l))).join('\n');
   const captura = editando == null ? filaCaptura() : '';
   return `<!DOCTYPE HTML><html><body><div id='msgbox'></div>
@@ -108,6 +108,8 @@ ${captura}
 <input type="text" name="delivery_date" value="${deliveryDate}">
 <input type="text" name="deliver_to" value="Cliente de prueba">
 <textarea name='delivery_address'>N/A - quote de prueba</textarea>
+<input type="text" name="phone" value="${phoneInicial}">
+<input type="text" name="email" value="${emailInicial}">
 <input type="text" name="cust_ref" value="${custRef}">
 <textarea name='Comments'>${comments}</textarea>
 <select name='ship_via'><option value='1' selected>Default</option></select>
@@ -157,6 +159,8 @@ function crearServidorFA({
   deliveryDateInicial = '2026-08-12',
   commentsInicial = 'comentario viejo del quote',
   custRefInicial = 'REF-VIEJA',
+  phoneInicial = '',
+  emailInicial = '',
   romperEdicion = false,
   edicionEnLineaFija = null,
   vistaFinalHtml = null,
@@ -167,6 +171,8 @@ function crearServidorFA({
     deliveryDate: deliveryDateInicial,
     comments: commentsInicial,
     custRef: custRefInicial,
+    phone: phoneInicial,
+    email: emailInicial,
     customerId,
     posts: [],
   };
@@ -174,6 +180,7 @@ function crearServidorFA({
   const formularioActual = () => formularioEdicion({
     lineas: state.lineas, editando: state.editando, deliveryDate: state.deliveryDate,
     comments: state.comments, custRef: state.custRef, customerId: state.customerId,
+    phoneInicial: state.phone, emailInicial: state.email,
   });
   const vistaActual = () => vistaFinalHtml ?? vistaDesdeEstado(state);
 
@@ -230,6 +237,8 @@ function crearServidorFA({
         state.deliveryDate = params.get('delivery_date');
         state.comments = params.get('Comments');
         state.custRef = params.get('cust_ref');
+        state.phone = params.get('phone');
+        state.email = params.get('email');
         return new Response(formularioActual(), { status: 200 });
       }
       throw new Error('mock FA: POST sin submit reconocido: ' + bodyStr);
@@ -499,6 +508,53 @@ test('actualizarQuoteOperam: con dos partidas del mismo stock_id, abrir la equiv
     assert.equal(r.ok, false);
     assert.match(r.error, /partida 1 \(CAL1025S\)/);
     assert.equal(state.posts.some((p) => p.params.has('ProcessOrder')), false, 'el quote debe quedar intacto');
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+// --- Contacto de entrega en la reescritura del quote (#329) -------------------
+// La reescritura tiene que dejar phone/email con el valor del cotizador, no con el que
+// Operam habia heredado del contacto por defecto del cliente. En el formulario legacy de
+// FA los campos se llaman `phone` y `email`, no contact_phone / contact_email.
+test('actualizarQuoteOperam: el ProcessOrder lleva el contacto de entrega en phone y email', async () => {
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock, state } = crearServidorFA({
+    lineasIniciales: [],
+    phoneInicial: '+52 1 55 4860 9144',
+    emailInicial: 'gustavo_barcia@yahoo.com',
+  });
+  globalThis.fetch = fetchMock;
+  try {
+    const data = dataDe([{ codigo: 'TA14Y31111', descripcion: 'Plato', cantidad: 1, precio: 107.76, descuento: 0 }]);
+    data.cliente.celEntrega = '+52 1 55 1002 1463';
+    data.cliente.emailEntrega = 'donasado.compras2@gmail.com';
+    await actualizarQuoteOperam(QUOTE_NO, data);
+    const process = state.posts.find((p) => p.params.has('ProcessOrder'));
+    assert.equal(process.params.get('phone'), '+52 1 55 1002 1463');
+    assert.equal(process.params.get('email'), 'donasado.compras2@gmail.com');
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+// Sin contacto de entrega capturado, la reescritura BORRA el que traia el quote: vacio
+// explicito, nunca el contacto por defecto del cliente.
+test('actualizarQuoteOperam: sin contacto de entrega el ProcessOrder deja phone y email vacios', async () => {
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock, state } = crearServidorFA({
+    lineasIniciales: [],
+    phoneInicial: '+52 1 55 4860 9144',
+    emailInicial: 'gustavo_barcia@yahoo.com',
+  });
+  globalThis.fetch = fetchMock;
+  try {
+    await actualizarQuoteOperam(QUOTE_NO, dataDe([{ codigo: 'TA14Y31111', descripcion: 'Plato', cantidad: 1, precio: 107.76, descuento: 0 }]));
+    const process = state.posts.find((p) => p.params.has('ProcessOrder'));
+    assert.equal(process.params.get('phone'), '');
+    assert.equal(process.params.get('email'), '');
   } finally {
     globalThis.fetch = fetchOriginal;
   }

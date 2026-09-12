@@ -2771,3 +2771,111 @@ test('#332 armarContenidoQuote: sin calle el interior queda como primer elemento
   });
   assert.equal(deliveryAddress, 'Int. 27, Bosque de las Lomas, 11700');
 });
+
+// === Telefono y correo de contacto del quote (issue #329) ====================
+// Sintoma medido en vivo (quote 1270, cliente 376 "Don Asado"): el POST del cotizador
+// nunca mandaba contact_phone ni contact_email, asi que Operam los rellenaba solo con el
+// contacto POR DEFECTO del cliente -- el primero de su lista, un Director General que no
+// era el contacto de entrega que el vendedor eligio ni el que imprime el documento.
+// Decision de Adrian (2026-09-12): los dos salen del contacto de ENTREGA capturado
+// (celEntrega / emailEntrega), que es exactamente lo que el PDF/HTML ya le enseno al
+// cliente; sin dato capturado el campo viaja VACIO -- nunca se deja que Operam herede.
+
+test('#329 armarContenidoQuote: el contacto del quote es el de ENTREGA capturado', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const { contactPhone, contactEmail } = armarContenidoQuote({
+    cliente: {
+      razonSocial: 'GRUPO URUGUAYO MINAS', nombreEntrega: 'Flor Sosa',
+      telefono: '+52 1 55 4860 9144', emailFactura: 'gustavo_barcia@yahoo.com',
+      celEntrega: '+52 1 55 1002 1463', emailEntrega: 'donasado.compras2@gmail.com',
+    },
+  });
+  assert.equal(contactPhone, '+52 1 55 1002 1463');
+  assert.equal(contactEmail, 'donasado.compras2@gmail.com');
+});
+
+// El punto entero del ticket: sin dato de entrega el campo va VACIO. Caer al telefono del
+// cliente o al del vendedor devolveria el bug por otra puerta -- el quote diria algo que
+// el documento del cliente no dice.
+test('#329 armarContenidoQuote: sin contacto de entrega los campos van vacios, no heredados', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const { contactPhone, contactEmail } = armarContenidoQuote({
+    cliente: {
+      razonSocial: 'GRUPO URUGUAYO MINAS', telefono: '+52 1 55 4860 9144',
+      emailFactura: 'gustavo_barcia@yahoo.com',
+    },
+  });
+  assert.equal(contactPhone, '');
+  assert.equal(contactEmail, '');
+});
+
+test('#329 huellaContenidoQuote: cambiar el correo o el telefono de entrega cuenta como cambio', () => {
+  const base = cotizacionBase();
+  const huellaBase = huellaContenidoQuote(base);
+  for (const campo of ['celEntrega', 'emailEntrega']) {
+    const cambiada = cotizacionBase({ cliente: { ...base.cliente, [campo]: 'nuevo-valor' } });
+    assert.equal(contenidoQuoteCambio(cambiada, huellaBase), true, `${campo} deberia contar como cambio`);
+  }
+});
+
+test('#329 subirCotizacionOperam: el POST manda contact_phone y contact_email', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 376, tax_id: 'GUM921211N76', CustName: 'GRUPO URUGUAYO MINAS', sales_type: '12', branches: [{ branch_code: 406 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, added_trans_no: 1270 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-09-12',
+      cliente: {
+        rfc: 'GUM921211N76', razonSocial: 'GRUPO URUGUAYO MINAS', nombreEntrega: 'Flor Sosa',
+        celEntrega: '+52 1 55 1002 1463', emailEntrega: 'donasado.compras2@gmail.com',
+      },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    });
+    assert.equal(quoteBody.contact_phone, '+52 1 55 1002 1463');
+    assert.equal(quoteBody.contact_email, 'donasado.compras2@gmail.com');
+  } finally {
+    restore();
+  }
+});
+
+// Vacio EXPLICITO en el payload: la llave viaja con cadena vacia en vez de ausente. Si se
+// omitiera, Operam volveria a poner el contacto por defecto del cliente -- exactamente lo
+// que el ticket prohibe.
+test('#329 subirCotizacionOperam: sin contacto de entrega las llaves viajan vacias, no ausentes', async () => {
+  resetSession();
+  let quoteBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({
+      total: 1,
+      data: [{ customer_id: 376, tax_id: 'GUM921211N76', CustName: 'GRUPO URUGUAYO MINAS', sales_type: '12', branches: [{ branch_code: 406 }] }],
+    }),
+    '/api/v3/sales/quote': (url, opts) => {
+      quoteBody = JSON.parse(opts.body);
+      return jsonResponse({ result: true, added_trans_no: 1271 });
+    },
+  });
+  try {
+    await subirCotizacionOperam({
+      fecha: '2026-09-12',
+      cliente: { rfc: 'GUM921211N76', razonSocial: 'GRUPO URUGUAYO MINAS', telefono: '+52 1 55 4860 9144' },
+      items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    });
+    assert.equal('contact_phone' in quoteBody, true);
+    assert.equal('contact_email' in quoteBody, true);
+    assert.equal(quoteBody.contact_phone, '');
+    assert.equal(quoteBody.contact_email, '');
+  } finally {
+    restore();
+  }
+});

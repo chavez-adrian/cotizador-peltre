@@ -2097,7 +2097,7 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
 // declara el HTML real de FA, y esa es justo la forma que un parser descuidado no ve.
 function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = false } = {}) {
   const sesion = { carrito: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })) };
-  const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01', deliverTo: 'VIEJO', deliveryAddress: 'DOMICILIO VIEJO' };
+  const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01', deliverTo: 'VIEJO', deliveryAddress: 'DOMICILIO VIEJO', phone: 'TEL VIEJO', email: 'viejo@ejemplo.mx' };
   const bitacora = [];
   const formHtml = () => `<form method='post' action='/sales/sales_order_entry.php'>
 <input type="hidden" name="cart_id" value='CART1'>
@@ -2112,6 +2112,8 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
 <input type="text" name="cust_ref" value="${doc.custRef}">
 <input type="text" name="deliver_to" value="${doc.deliverTo}">
 <textarea name='delivery_address'>${doc.deliveryAddress}</textarea>
+<input type="text" name="phone" value="${doc.phone}">
+<input type="text" name="email" value="${doc.email}">
 <textarea name="Comments">${doc.comments}</textarea>
 <button type='submit' name='ProcessOrder' value='Confirmar Cambios'></button>
 <button type='submit' name='CancelOrder' value='Cancelar Cotización'></button>
@@ -2148,6 +2150,8 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
         doc.vigencia = p.get('delivery_date');
         doc.deliverTo = p.get('deliver_to');
         doc.deliveryAddress = p.get('delivery_address');
+        doc.phone = p.get('phone');
+        doc.email = p.get('email');
       }
       return { headers: {}, text: async () => formHtml() };
     },
@@ -2576,6 +2580,50 @@ test('#332: corregir SOLO el numero interior llega al quote de Operam', async ()
     assert.strictEqual(act.body.ok, true, JSON.stringify(act.body));
     assert.strictEqual(doc.deliveryAddress, 'Bosques de Duraznos 187 Int. 27, Bosque de las Lomas, 11700, Miguel Hidalgo, Ciudad de Mexico',
       `el quote debe quedar con el interior, quedo con "${doc.deliveryAddress}"`);
+  } finally {
+    restore();
+  }
+});
+
+// #329: el mismo caso de punta a punta para el contacto de entrega. El quote 1270 (Don
+// Asado) quedo con el correo y el telefono del Director General -- el contacto POR
+// DEFECTO del cliente 376 -- mientras el documento que recibio el cliente decia los de
+// Flor Sosa, la compradora que el vendedor eligio. El cotizador nunca mandaba esos dos
+// campos, asi que Operam los rellenaba solo.
+test('#329: corregir el contacto de entrega llega al quote de Operam', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const sinContacto = {
+    rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
+    telefono: '+52 5551234567',
+    cpEntrega: '11700', calle: 'Bosques de Duraznos 187',
+    colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
+  };
+  const id = cotizacionActualizable({ cliente: sinContacto });
+  const { restore, doc } = mockOperamWebLegacy();
+  try {
+    // 1. Sin contacto de entrega capturado, la reescritura BORRA lo que el quote traia:
+    // vacio explicito, nunca el contacto por defecto que Operam habia heredado.
+    await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    const subida = readCots().find(c => c.id === id);
+    assert.strictEqual(doc.phone, '', 'sin celular de entrega el quote queda con el telefono vacio');
+    assert.strictEqual(doc.email, '', 'sin correo de entrega el quote queda con el correo vacio');
+
+    // 2. El vendedor captura el contacto de entrega y regenera.
+    const corregido = {
+      ...subida.data,
+      cliente: { ...sinContacto, celEntrega: '+52 1 55 1002 1463', emailEntrega: 'donasado.compras2@gmail.com' },
+      cotizacionId: String(id),
+    };
+    const post = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(corregido);
+    assert.strictEqual(post.body.requiereActualizacionOperam, true,
+      'capturar el contacto de entrega TIENE que pedir la reescritura');
+
+    // 3. Y la reescritura los deja en el documento de Operam.
+    const act = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(act.body.ok, true, JSON.stringify(act.body));
+    assert.strictEqual(doc.phone, '+52 1 55 1002 1463');
+    assert.strictEqual(doc.email, 'donasado.compras2@gmail.com');
   } finally {
     restore();
   }

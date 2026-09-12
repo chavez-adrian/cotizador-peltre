@@ -741,3 +741,60 @@ test('parsearFormularioQuote: lee deliver_to y delivery_address del formulario r
   assert.equal('deliver_to' in campos, true);
   assert.equal('delivery_address' in campos, true);
 });
+
+// --- Telefono y correo de contacto en el ProcessOrder (#329) ------------------
+// Los nombres del formulario legacy NO son los de la API: lo que la API v3 llama
+// contact_phone / contact_email, el formulario de edicion de FA lo expone como `phone` y
+// `email` (verificado en el fixture real del quote 1216). Sin esta sustitucion, la
+// reescritura dejaria el quote con el contacto que Operam habia heredado del cliente.
+
+test('serializarBodyQuote: sustituye phone y email desde contactPhone/contactEmail', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyQuote(campos, {
+    deliveryDate: '2026-08-26',
+    contactPhone: '+52 1 55 1002 1463',
+    contactEmail: 'donasado.compras2@gmail.com',
+  });
+  assert.equal(body.get('phone'), '+52 1 55 1002 1463');
+  assert.equal(body.get('email'), 'donasado.compras2@gmail.com');
+  assert.equal(body.get('delivery_date'), '2026-08-26');
+  assert.equal(body.get('cart_id'), campos.cart_id);
+});
+
+// Vacio EXPLICITO: una cotizacion sin contacto de entrega tiene que BORRAR lo que Operam
+// habia heredado, no dejarlo. Por eso el vacio se sustituye igual que un valor.
+test('serializarBodyQuote: un contacto vacio borra el que traia el formulario', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyQuote({ ...campos, phone: '+52 1 55 4860 9144', email: 'gustavo_barcia@yahoo.com' }, {
+    deliveryDate: '2026-08-26',
+    contactPhone: '',
+    contactEmail: '',
+  });
+  assert.equal(body.get('phone'), '');
+  assert.equal(body.get('email'), '');
+});
+
+// El post-fix de vigencia (#106) sigue siendo "solo cambia delivery_date".
+test('serializarBodyQuote: sin contactPhone/contactEmail conserva los del formulario', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyQuote({ ...campos, phone: '5555555555', email: 'x@y.mx' }, { deliveryDate: '2026-08-26' });
+  assert.equal(body.get('phone'), '5555555555');
+  assert.equal(body.get('email'), 'x@y.mx');
+});
+
+test('serializarBodyQuote: lanza si el formulario no trae phone o email', () => {
+  assert.throws(
+    () => serializarBodyQuote({ delivery_date: '2026-07-26', email: '' }, { deliveryDate: '2026-08-26', contactPhone: '55' }),
+    /phone/,
+  );
+  assert.throws(
+    () => serializarBodyQuote({ delivery_date: '2026-07-26', phone: '' }, { deliveryDate: '2026-08-26', contactEmail: 'a@b.mx' }),
+    /email/,
+  );
+});
+
+test('parsearFormularioQuote: lee phone y email del formulario real', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  assert.equal('phone' in campos, true);
+  assert.equal('email' in campos, true);
+});
