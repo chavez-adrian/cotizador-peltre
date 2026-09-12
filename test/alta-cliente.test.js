@@ -306,6 +306,53 @@ test('otro domicilio de este cliente crea uno nuevo y deja intactos los que ya e
   assert.equal(operam.branch(res.domicilioId).addr_street, 'Av. Reforma 100');
 });
 
+// #374: el domicilio de entrega nacio en ESTA corrida aunque el Cliente Operam
+// sea viejo. Los pasos del domicilio no pueden hablar de uno preexistente -- el
+// panel manda los tres a la misma fila y el vendedor leia que no se habia tocado
+// nada justo despues de crearlo.
+test('otro domicilio no reporta el domicilio recien creado como preexistente', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [{ branch_code: 7, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' }],
+    }],
+  });
+  const res = await darDeAlta(solicitud({
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'otro-domicilio', clienteId: 41 },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const delDomicilio = res.pasos.filter(p => /branch/.test(p.name));
+  for (const p of delDomicilio) {
+    assert.ok(!`${p.mensaje} ${p.detalle}`.includes('no se toco su domicilio'),
+      `el paso ${p.name} dice que no se toco el domicilio: ${p.mensaje}`);
+    assert.ok(!`${p.mensaje} ${p.detalle}`.includes('preexistente'),
+      `el paso ${p.name} llama preexistente al domicilio recien creado: ${p.detalle}`);
+  }
+});
+
+// La fila "Obtener domicilio" se quedaba en pendiente: por este camino el
+// domicilio ya quedo resuelto al crearlo, y el paso que lo dice faltaba.
+test('otro domicilio reporta cual domicilio de entrega se usa', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [{ branch_code: 7, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' }],
+    }],
+  });
+  const res = await darDeAlta(solicitud({
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'otro-domicilio', clienteId: 41 },
+  }), operam.deps);
+
+  const obtener = paso(res, 'GET branch_id');
+  assert.ok(obtener, 'el alta tiene que decir a que domicilio de entrega va la cotizacion');
+  assert.equal(obtener.status, 'ok');
+  assert.ok(obtener.mensaje.includes('recien creado'));
+  assert.ok(obtener.detalle.includes(String(res.domicilioId)));
+});
+
 // La decision que ya no es valida (#208): el candidato pudo desaparecer del pool
 // entre la pregunta y la respuesta. Se vuelve a preguntar con la lista fresca,
 // cero escrituras -- las tres decisiones sobre un cliente elegido pasan por aqui.

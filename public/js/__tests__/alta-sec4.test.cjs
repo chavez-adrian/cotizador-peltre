@@ -286,6 +286,30 @@ test('I8: un paso omitido se pinta omitido, con su motivo, y no es un fallo del 
   assert.strictEqual(r.mostrarReintentar, false);
 });
 
+// #374: alta sobre un Cliente Operam que ya existia, con domicilio de entrega
+// nuevo. Los tres pasos del domicilio comparten fila y el ultimo manda, asi que el
+// modulo ya no empuja un omitido de "preexistente" detras de la creacion: la fila
+// tiene que cerrar en la verificacion del domicilio que acaba de nacer.
+test('I8c: con domicilio nuevo sobre un cliente que ya existia, las filas del domicilio muestran la creacion', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'dedup', status: 'ok', mensaje: 'Se uso el Cliente Operam que elegiste y se le agrega un domicilio de entrega' },
+      { name: 'POST branch', status: 'ok', mensaje: 'Se creo el domicilio de entrega', detalle: 'POST /branches -> branch 571' },
+      { name: 'verificar branch', status: 'ok', mensaje: 'El domicilio de entrega quedo guardado en Operam', detalle: 'GET /customers/522 branches -> 571' },
+      { name: 'PUT customer (dimensiones)', status: 'omitido', mensaje: 'El Cliente Operam ya existia: se conserva su clasificacion interna', detalle: 'cliente 522 preexistente' },
+      { name: 'GET branch_id', status: 'ok', mensaje: 'Se usa el domicilio de entrega recien creado', detalle: 'branch 571 del cliente 522' },
+    ],
+  });
+  const obtener = r.filas.find(f => f.fila === ALTA_PASO_FILA['GET branch_id']);
+  assert.strictEqual(obtener.status, 'ok', 'la fila Obtener domicilio ya no se queda pendiente');
+  const branch = r.filas.find(f => f.fila === ALTA_PASO_FILA['PUT branch (domicilio)']);
+  assert.strictEqual(branch.status, 'ok');
+  assert.ok(!branch.msg.includes('preexistente'), 'el domicilio nacio en esta alta');
+  assert.ok(branch.detalle.includes('571'), 'la fila cierra en la verificacion del domicilio nuevo');
+  assert.strictEqual(r.exito, true);
+});
+
 // Mensaje en dos capas (#364, ADR-0017): el vendedor lee el mensaje del glosario y el
 // detalle tecnico va aparte, plegado. El error crudo sigue de respaldo para las
 // respuestas que todavia no mandan mensaje.
