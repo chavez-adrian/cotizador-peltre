@@ -323,12 +323,11 @@ test('otro domicilio no reporta el domicilio recien creado como preexistente', a
   }), operam.deps);
 
   assert.equal(res.tipo, 'lograda');
-  const delDomicilio = res.pasos.filter(p => /branch/.test(p.name));
-  for (const p of delDomicilio) {
+  for (const p of res.pasos) {
     assert.ok(!`${p.mensaje} ${p.detalle}`.includes('no se toco su domicilio'),
       `el paso ${p.name} dice que no se toco el domicilio: ${p.mensaje}`);
     assert.ok(!`${p.mensaje} ${p.detalle}`.includes('preexistente'),
-      `el paso ${p.name} llama preexistente al domicilio recien creado: ${p.detalle}`);
+      `el paso ${p.name} habla de algo preexistente en un alta que creo el domicilio: ${p.detalle}`);
   }
 });
 
@@ -351,6 +350,33 @@ test('otro domicilio reporta cual domicilio de entrega se usa', async () => {
   assert.equal(obtener.status, 'ok');
   assert.ok(obtener.mensaje.includes('recien creado'));
   assert.ok(obtener.detalle.includes(String(res.domicilioId)));
+});
+
+// El guard que faltaba (#374): los pasos del modulo pasados POR EL PANEL. Los tres
+// pasos del domicilio comparten fila y el ultimo manda (#366), asi que un omitido
+// empujado detras de la creacion vuelve a tapar la fila -- que es exactamente como
+// nacio este bug. Esto se prueba de punta a punta o no se prueba: el test del panel
+// solo por su lado usa pasos escritos a mano, que no son los que el modulo emite.
+test('los pasos del alta con domicilio nuevo dejan las filas del panel en la creacion', async () => {
+  const { interpretarRespuestaAlta, ALTA_PASO_FILA } = await import('../public/js/alta-logica.js');
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [{ branch_code: 7, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' }],
+    }],
+  });
+  const res = await darDeAlta(solicitud({
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'otro-domicilio', clienteId: 41 },
+  }), operam.deps);
+
+  const { filas } = interpretarRespuestaAlta({ ok: true, steps: res.pasos });
+  const fila = n => filas.find(f => f.fila === ALTA_PASO_FILA[n]);
+
+  assert.equal(fila('GET branch_id').status, 'ok', 'Obtener domicilio no puede quedarse pendiente');
+  const domicilio = fila('PUT branch (domicilio)');
+  assert.equal(domicilio.status, 'ok', 'la fila del domicilio cierra en la creacion, no en un omitido');
+  assert.ok(domicilio.detalle.includes(String(res.domicilioId)));
 });
 
 // La decision que ya no es valida (#208): el candidato pudo desaparecer del pool
