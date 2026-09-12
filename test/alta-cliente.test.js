@@ -79,6 +79,58 @@ test('el RFC real que ya tiene Cliente Operam detiene el alta con la pregunta, s
   assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
 });
 
+// #377: el RFC real exacto no es un "parecido" -- es el mismo contribuyente, y
+// por eso la pregunta pierde la salida que crea una segunda cuenta.
+test('la pregunta por RFC real exacto no ofrece "ninguno es el mismo"', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 61, CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Otro', tax_id: RFC_REAL, branches: [{ branch_code: 3 }] }],
+  });
+  const res = await darDeAlta(solicitudFiscal(), operam.deps);
+
+  assert.equal(res.tipo, 'pregunta');
+  assert.deepEqual(res.opciones, ['usar', 'otro-domicilio']);
+  assert.match(res.mensaje, /mismo RFC/);
+});
+
+test('"ninguno es el mismo" contra un candidato con el mismo RFC real bloquea sin crear nada', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 61, CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Otro', tax_id: RFC_REAL, branches: [{ branch_code: 3 }] }],
+  });
+  const res = await darDeAlta(solicitudFiscal({ decision: { tipo: 'ninguno' } }), operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'fusion');
+  assert.match(res.mensaje, /Este RFC ya es del Cliente Operam HOTELES AZULES SA DE CV \(61\)/);
+  assert.equal(res.clienteId, undefined, 'el bloqueo no liga la operacion al cliente ajeno');
+  assert.deepEqual(res.dueno, { cliente_id: 61, nombre: 'HOTELES AZULES SA DE CV' });
+  assert.equal(paso(res, 'dedup').status, 'error');
+  assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
+  assert.deepEqual(operam.estado.auditoria.map(a => a[2]), ['fusion-bloqueada']);
+});
+
+test('el candidato que solo coincide por nombre corto conserva las tres salidas', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 62, CustName: 'HOTEL AZUL DE OCCIDENTE', cust_ref: 'Hotel Azul', tax_id: 'HAO050607CD2', branches: [{ branch_code: 4 }] }],
+  });
+  const res = await darDeAlta(solicitudFiscal(), operam.deps);
+
+  assert.equal(res.tipo, 'pregunta');
+  assert.deepEqual(res.candidatos.map(c => c.id), [62]);
+  assert.deepEqual(res.opciones, ['usar', 'otro-domicilio', 'ninguno']);
+  assert.doesNotMatch(res.mensaje, /mismo RFC/);
+});
+
+test('con nombre corto distinto "ninguno es el mismo" crea el Cliente Operam como siempre', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 62, CustName: 'HOTEL AZUL DE OCCIDENTE', cust_ref: 'Hotel Azul', tax_id: 'HAO050607CD2', branches: [{ branch_code: 4 }] }],
+  });
+  const res = await darDeAlta(solicitudFiscal({ decision: { tipo: 'ninguno' } }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.creadoNuevo, true);
+  assert.equal(paso(res, 'dedup').status, 'warn');
+});
+
 test('el uso de CFDI elegido queda escrito por el PUT, que es el unico que Operam respeta', async () => {
   const operam = operamEnMemoria();
   const res = await darDeAlta(solicitudFiscal({

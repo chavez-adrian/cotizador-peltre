@@ -410,6 +410,13 @@ test('Q19c: buildCandidatosOperamHtml escapa nombres y ofrece elegir o crear nue
   assert.doesNotMatch(html, /Dejar como PRE/);
 });
 
+// Las opciones TAL CUAL las dicta el servidor (#368): un cuerpo de reintento por
+// salida y por candidato. Es lo que decide que botones se pintan (#377).
+const OPCIONES_ALTA_TRES = {
+  porCandidato: [{ id: 55, usar: { decision: { tipo: 'usar' } }, otroDomicilio: { decision: { tipo: 'otro-domicilio' } } }],
+  ninguno: { decision: { tipo: 'ninguno' } },
+};
+
 // #368: el formulario de alta reusa la MISMA pieza con las tres salidas en
 // palabras del glosario y sus propios onclick, que reciben el indice del
 // candidato (el navegador ya tiene el cuerpo de reintento de cada uno).
@@ -417,6 +424,8 @@ test('#368: buildCandidatosAltaHtml ofrece las tres salidas del formulario con l
   const html = buildCandidatosAltaHtml(
     [{ id: 55, CustName: 'Duplicado SA', cust_ref: 'Dup', celularMatch: 'coincide', correoMatch: 'sin_dato' }],
     'Ya hay un Cliente Operam parecido: elige uno para continuar',
+    '',
+    OPCIONES_ALTA_TRES,
   );
   assert.match(html, /Usar este Cliente Operam/);
   assert.match(html, /Es otro domicilio de este Cliente Operam/);
@@ -432,11 +441,49 @@ test('#368: buildCandidatosAltaHtml ofrece las tres salidas del formulario con l
 
 test('#368: el detalle tecnico de la pregunta va plegado, nunca a la vista', () => {
   const candidatos = [{ id: 55, CustName: 'Duplicado SA' }];
-  const conDetalle = buildCandidatosAltaHtml(candidatos, 'Elige uno', 'pool por RFC XAXX010101000: 55');
+  const conDetalle = buildCandidatosAltaHtml(candidatos, 'Elige uno', 'pool por RFC XAXX010101000: 55', OPCIONES_ALTA_TRES);
   assert.match(conDetalle, /<details[^>]*><summary>Ver detalle t&eacute;cnico<\/summary>/);
   assert.match(conDetalle, /pool por RFC XAXX010101000: 55/);
   assert.doesNotMatch(conDetalle, /<details[^>]*open/, 'plegado, no abierto');
-  assert.doesNotMatch(buildCandidatosAltaHtml(candidatos, 'Elige uno'), /<details/, 'sin detalle no pinta el bloque vacio');
+  assert.doesNotMatch(buildCandidatosAltaHtml(candidatos, 'Elige uno', '', OPCIONES_ALTA_TRES), /<details/, 'sin detalle no pinta el bloque vacio');
+});
+
+// #377: las salidas que se pintan son las que el servidor dicto, y solo esas. Con
+// un candidato del MISMO RFC real el modulo no manda cuerpo de reintento para
+// "ninguno es el mismo", asi que el boton no existe -- no basta con que el
+// servidor lo rechace despues.
+test('#377: buildCandidatosAltaHtml no pinta "Ninguno es el mismo" sin cuerpo de reintento para esa salida', () => {
+  const html = buildCandidatosAltaHtml(
+    [{ id: 55, CustName: 'Duplicado SA' }],
+    'Ya hay un Cliente Operam con este RFC: elige uno para continuar',
+    '',
+    { porCandidato: [{ id: 55, usar: { decision: { tipo: 'usar' } }, otroDomicilio: { decision: { tipo: 'otro-domicilio' } } }] },
+  );
+  assert.match(html, /Usar este Cliente Operam/);
+  assert.match(html, /Es otro domicilio de este Cliente Operam/);
+  assert.doesNotMatch(html, /Ninguno es el mismo/);
+  assert.doesNotMatch(html, /altaPreguntaNinguno/);
+});
+
+// #377: la otra pantalla donde se contesta la misma pregunta. Ahi las salidas
+// llegan como la lista del modulo, no como cuerpos de reintento.
+test('#377: buildCandidatosOperamHtml no pinta "crear nuevo" cuando el modulo no ofrece esa salida', () => {
+  const candidatos = [{ id: 3, CustName: 'Duplicado SA' }];
+  const html = buildCandidatosOperamHtml(9, candidatos, 'Elige', ['usar', 'otro-domicilio']);
+  assert.match(html, /elegirCandidatoOperam\(9, 3, this\)/);
+  assert.doesNotMatch(html, /crearNuevoClienteOperam/);
+  const conTodas = buildCandidatosOperamHtml(9, candidatos, 'Elige', ['usar', 'otro-domicilio', 'ninguno']);
+  assert.match(conTodas, /crearNuevoClienteOperam\(9, this\)/);
+});
+
+test('#377: el 409 de la subida lleva las salidas del modulo hasta la vista', () => {
+  const v = interpretarSubidaOperam({ status: 409, error: 'Ya hay un Cliente Operam con este RFC', candidatos: [{ id: 3 }], opciones: ['usar', 'otro-domicilio'] });
+  assert.equal(v.estado, 'candidatos');
+  assert.deepEqual(v.opciones, ['usar', 'otro-domicilio']);
+  // Sin el campo (respuesta vieja) se conservan las tres: quitar botones por un
+  // dato ausente dejaria al vendedor sin salida.
+  const viejo = interpretarSubidaOperam({ status: 409, error: 'x', candidatos: [{ id: 3 }] });
+  assert.deepEqual(viejo.opciones, ['usar', 'otro-domicilio', 'ninguno']);
 });
 
 // #196: el separador ad hoc " . cust_ref" migra al formato unificado de

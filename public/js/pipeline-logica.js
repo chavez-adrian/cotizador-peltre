@@ -131,6 +131,10 @@ export function pasosParaMostrar(steps) {
     }));
 }
 
+// Las salidas de la Deduplicacion de cliente (CONTEXT.md), en el orden en que se
+// pintan. Aqui solo se usan como respaldo: quien decide cuales hay es el modulo.
+const SALIDAS_DEDUP = ['usar', 'otro-domicilio', 'ninguno'];
+
 export function interpretarSubidaOperam(resultado) {
   const r = resultado || {};
   const pasos = pasosParaMostrar(r.steps);
@@ -153,7 +157,13 @@ export function interpretarSubidaOperam(resultado) {
   if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps), pasos };
   const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];
   if (r.status === 409 && candidatos.length) {
-    return { estado: 'candidatos', candidatos, mensaje: r.error || 'Hay Clientes Operam con nombre similar' };
+    // Las salidas que ofrece el modulo del alta (#377), tal cual: la vista no las
+    // decide. Sin el campo se conservan las tres, que es lo que respondia antes.
+    return {
+      estado: 'candidatos', candidatos,
+      mensaje: r.error || 'Hay Clientes Operam con nombre similar',
+      opciones: Array.isArray(r.opciones) ? r.opciones : SALIDAS_DEDUP,
+    };
   }
   // #242: el nombre corto (cust_ref) es UNICO GLOBAL en Operam y el que se
   // capturo ya lo usa otro cliente. No es un fallo transitorio del ERP: hasta que
@@ -210,6 +220,16 @@ function letreroMatch(etiqueta, estado) {
   return `<span class="operam-letrero ${clase}">${escapeHtml(etiqueta)}: ${texto}</span>`;
 }
 
+// Una salida que no viene NO se pinta (#377): QUE salidas hay lo decide el modulo
+// del alta segun el motivo del candidato -- con el mismo RFC real "ninguno es el
+// mismo" no existe, porque crearia una segunda cuenta del mismo contribuyente --
+// y cada pantalla traduce esa lista a sus acciones. Un boton que el servidor va a
+// rechazar es peor que no tenerlo: el vendedor lo aprieta y pierde el intento.
+function botonSalida(accion, clase, c, i) {
+  if (!accion) return '';
+  return `<button class="btn btn-sm ${clase}" onclick="${accion.onclick(c, i)}">${escapeHtml(accion.texto)}</button>`;
+}
+
 // Hecho del nombre corto repetido (#242): este candidato usa EXACTAMENTE el
 // mismo cust_ref que la cotizacion, y Operam lo exige unico en todo el padron
 // (no dejaria crear el cliente). Es el unico hecho del picker que puede venir de
@@ -247,7 +267,8 @@ function textoCustRefIgual(c) {
 // formulario de alta. Mismo HTML y mismos hechos; lo unico que cambia son las
 // etiquetas y los `onclick`, que cada pantalla dicta en `acciones` --
 // `{ usar, otroDomicilio, ninguno }`, cada una `{ texto, onclick }`, donde
-// `onclick` recibe el candidato y su indice y devuelve la llamada ya escrita.
+// `onclick` recibe el candidato y su indice y devuelve la llamada ya escrita. Una
+// accion NULA es una salida que no se ofrece y no se pinta (#377, ver botonSalida).
 export function buildCandidatosDedupHtml(candidatos, mensaje, acciones) {
   const items = (candidatos || []).map((c, i) => {
     // #196: mismo formato unico de parentesis que el resto de la app (antes
@@ -265,23 +286,28 @@ export function buildCandidatosDedupHtml(candidatos, mensaje, acciones) {
         ${letreros}
       </div>
       <div class="operam-candidato-acciones">
-        <button class="btn btn-sm btn-primary" onclick="${acciones.usar.onclick(c, i)}">${escapeHtml(acciones.usar.texto)}</button>
-        <button class="btn btn-sm btn-secondary" onclick="${acciones.otroDomicilio.onclick(c, i)}">${escapeHtml(acciones.otroDomicilio.texto)}</button>
+        ${botonSalida(acciones.usar, 'btn-primary', c, i)}
+        ${botonSalida(acciones.otroDomicilio, 'btn-secondary', c, i)}
       </div>
     </li>`;
   }).join('');
   return `<div class="operam-status operam-status-candidatos">
     <div class="operam-candidatos-msg">${escapeHtml(mensaje || 'Elige el Cliente Operam correcto:')}</div>
     <ul class="operam-candidatos-lista">${items}</ul>
-    <button class="btn btn-sm btn-secondary" onclick="${acciones.ninguno.onclick()}">${escapeHtml(acciones.ninguno.texto)}</button>
+    ${botonSalida(acciones.ninguno, 'btn-secondary')}
   </div>`;
 }
 
-export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
+// En la pantalla de cotizar las salidas llegan como la LISTA del modulo (#377):
+// los onclick de aqui no son cuerpos dictados sino llamadas a los handlers de la
+// cotizacion. Sin lista se conservan las tres: quitar botones por un dato ausente
+// dejaria al vendedor sin ninguna salida.
+export function buildCandidatosOperamHtml(id, candidatos, mensaje, salidas) {
+  const hay = s => !Array.isArray(salidas) || salidas.includes(s);
   return buildCandidatosDedupHtml(candidatos, mensaje, {
-    usar: { texto: 'Elegir', onclick: c => `elegirCandidatoOperam(${id}, ${c.id}, this)` },
-    otroDomicilio: { texto: 'Es otro domicilio de este Cliente Operam', onclick: c => `marcarSucursalOperam(${id}, ${c.id}, this)` },
-    ninguno: { texto: 'Ninguno es el mismo Cliente Operam - crear nuevo', onclick: () => `crearNuevoClienteOperam(${id}, this)` },
+    usar: hay('usar') ? { texto: 'Elegir', onclick: c => `elegirCandidatoOperam(${id}, ${c.id}, this)` } : null,
+    otroDomicilio: hay('otro-domicilio') ? { texto: 'Es otro domicilio de este Cliente Operam', onclick: c => `marcarSucursalOperam(${id}, ${c.id}, this)` } : null,
+    ninguno: hay('ninguno') ? { texto: 'Ninguno es el mismo Cliente Operam - crear nuevo', onclick: () => `crearNuevoClienteOperam(${id}, this)` } : null,
   });
 }
 
@@ -289,11 +315,17 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje) {
 // Deduplicacion de cliente en palabras del glosario. Los handlers reciben el
 // INDICE del candidato -- no su id --: el navegador ya tiene el cuerpo de
 // reintento que el servidor dicto para cada uno y solo tiene que dar con el suyo.
-export function buildCandidatosAltaHtml(candidatos, mensaje, detalle) {
+// En el formulario cada salida se pinta solo si el servidor dicto CON QUE cuerpo
+// se reintenta (#377): `opciones` son esos cuerpos y no se interpretan, asi que
+// "hay boton" y "hay con que reintentar" son la misma cosa -- un boton sin cuerpo
+// dictado moriria en el "vuelve a presionar Dar de alta" de cuerpoDeReintentoAlta.
+export function buildCandidatosAltaHtml(candidatos, mensaje, detalle, opciones) {
+  const porCandidato = Array.isArray(opciones?.porCandidato) ? opciones.porCandidato : [];
+  const dictada = llave => porCandidato.some(f => f && f[llave]);
   const pregunta = buildCandidatosDedupHtml(candidatos, mensaje, {
-    usar: { texto: 'Usar este Cliente Operam', onclick: (c, i) => `altaPreguntaUsar(${i})` },
-    otroDomicilio: { texto: 'Es otro domicilio de este Cliente Operam', onclick: (c, i) => `altaPreguntaOtroDomicilio(${i})` },
-    ninguno: { texto: 'Ninguno es el mismo', onclick: () => 'altaPreguntaNinguno()' },
+    usar: dictada('usar') ? { texto: 'Usar este Cliente Operam', onclick: (c, i) => `altaPreguntaUsar(${i})` } : null,
+    otroDomicilio: dictada('otroDomicilio') ? { texto: 'Es otro domicilio de este Cliente Operam', onclick: (c, i) => `altaPreguntaOtroDomicilio(${i})` } : null,
+    ninguno: opciones?.ninguno ? { texto: 'Ninguno es el mismo', onclick: () => 'altaPreguntaNinguno()' } : null,
   });
   // Mensaje en dos capas (CONTEXT.md): de que pool salieron estos candidatos se
   // muestra PLEGADO, igual que el detalle de cada paso del alta.
@@ -389,7 +421,7 @@ export function buildOperamStatusHtml(id, vista) {
     return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${vig}${csf}${pasos}`;
   }
   if (v.estado === 'candidatos') {
-    return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje);
+    return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje, v.opciones);
   }
   if (v.estado === 'otra_razon_social') {
     return buildOtraRazonSocialHtml(id, v);

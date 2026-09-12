@@ -2936,7 +2936,9 @@ async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuev
     // Sin resolver no hay documento (#204): el motivo se marca ANTES de responder para
     // que el candado de los GET aplique de inmediato.
     await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
-    return res.status(409).json({ error: alta.mensaje, candidatos: alta.candidatos });
+    // Las salidas las manda el MODULO (#377): con un candidato del mismo RFC real no
+    // viene "ninguno es el mismo", y el navegador no pinta el boton que no recibe.
+    return res.status(409).json({ error: alta.mensaje, candidatos: alta.candidatos, opciones: alta.opciones });
   }
   if (alta.tipo === 'bloqueo') {
     const motivoPre = alta.motivo in MOTIVO_PRE_DE_BLOQUEO ? MOTIVO_PRE_DE_BLOQUEO[alta.motivo] : MOTIVO_PRE_OPERAM;
@@ -3614,6 +3616,9 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     const cuerpo = { ok: false, error: alta.mensaje, detalle: alta.detalle, customer_id: alta.clienteId ?? null, branch_id: null, steps: alta.pasos };
     if (alta.motivo === 'cust-ref-duplicado') return res.status(409).json({ ...cuerpo, codigo: 'CUST_REF_DUPLICADO' });
     if (alta.motivo === 'liga-fija') return res.status(409).json(cuerpo);
+    // El mismo RFC real de otro Cliente Operam (#377) es un conflicto que el vendedor
+    // resuelve, no una falla de Operam: 409 como la liga fija, jamas el 503 del ERP.
+    if (alta.motivo === 'fusion') return res.status(409).json(cuerpo);
     return res.status(503).json(cuerpo);
   }
 

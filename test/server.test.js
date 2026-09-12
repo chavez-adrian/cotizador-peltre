@@ -1540,7 +1540,10 @@ test('D2: el alta que el modulo detiene con una pregunta responde 428 y no crea 
 });
 
 // El Cliente Operam duplicado de las tres salidas (#368), con su domicilio de
-// entrega para que el reintento "usar" pueda terminar el alta.
+// entrega para que el reintento "usar" pueda terminar el alta. Es un candidato
+// por NOMBRE contra un Cliente Operam sin datos fiscales (#78): el que coincide
+// por RFC real exacto ya no ofrece las tres salidas (#377) y no serviria para
+// probar que las tres se serializan.
 function mocksDuplicado() {
   return {
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
@@ -1548,7 +1551,7 @@ function mocksDuplicado() {
       if (opts?.method === 'POST') return { ok: true, json: async () => ({ result: true, customer_id: 999 }) };
       if (u.includes('/999')) return { ok: true, json: async () => ({ data: [{ sales_type: '12', branches: [{ branch_code: 888 }] }] }) };
       if (u.includes('/55')) return { ok: true, json: async () => ({ data: [{ customer_id: 55, sales_type: '15', branches: [{ branch_code: 777 }] }] }) };
-      return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', cust_ref: 'Dup', tax_id: 'DUP010101ABC', sales_type: '15', branches: [{ branch_code: 777 }] }] }) };
+      return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', cust_ref: 'Dup', tax_id: 'XAXX010101000', sales_type: '15', branches: [{ branch_code: 777 }] }] }) };
     },
     '/api/v3/sales/branches/888': () => ({ ok: true, json: async () => ({ result: true, data: [{}] }) }),
     '/api/v3/sales/branches/777': () => ({ ok: true, json: async () => ({ result: true, data: [{ branch_code: 777 }] }) }),
@@ -1574,7 +1577,7 @@ test('D2b: la pregunta serializa las tres salidas como cuerpos de reintento, sin
     const candidato = res.body.candidatos[0];
     assert.strictEqual(candidato.id, 55);
     assert.strictEqual(candidato.razonSocial, 'Duplicado SA');
-    assert.strictEqual(candidato.rfc, 'DUP010101ABC');
+    assert.strictEqual(candidato.rfc, 'XAXX010101000');
     assert.strictEqual(candidato.nombreCorto, 'Dup');
     assert.ok(candidato.porque, 'el candidato dice por que lo es');
 
@@ -1612,6 +1615,53 @@ test('D2c: el reintento con el cuerpo que dicto el servidor termina el alta sobr
     assert.strictEqual(res.body.ok, true);
     assert.strictEqual(res.body.customer_id, 55);
     assert.strictEqual(res.body.branch_id, 777);
+  } finally {
+    restore();
+  }
+});
+
+// #377: el candidato por RFC real exacto es el mismo contribuyente. La traduccion
+// HTTP no puede ofrecer una salida que el modulo no dio, y el reintento con esa
+// decision tiene que morir en el servidor: el navegador viejo la sigue pintando.
+// El Cliente Operam que ya tiene el MISMO RFC real que se esta capturando.
+function mocksMismoRfc(onPost) {
+  return {
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/customers': (u, opts) => {
+      if (opts?.method === 'POST') { if (onPost) onPost(); return { ok: true, json: async () => ({ result: true, customer_id: 999 }) }; }
+      if (u.includes('/55')) return { ok: true, json: async () => ({ data: [{ customer_id: 55, sales_type: '15', branches: [{ branch_code: 777 }] }] }) };
+      return { ok: true, json: async () => ({ total: 1, data: [{ customer_id: 55, CustName: 'Duplicado SA', cust_ref: 'Dup', tax_id: 'DUP010101ABC', sales_type: '15', branches: [{ branch_code: 777 }] }] }) };
+    },
+    '/api/v3/sales/branches/777': () => ({ ok: true, json: async () => ({ result: true, data: [{ branch_code: 777 }] }) }),
+  };
+}
+
+test('D2d: el 428 del RFC real exacto no serializa "ninguno es el mismo"', async () => {
+  const restore = mockOperamFetch(mocksMismoRfc());
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, ...CLIENTE_DUPLICADO });
+    assert.strictEqual(res.status, 428);
+    assert.strictEqual(res.body.opciones.ninguno, undefined, 'sin cuerpo de reintento no hay boton');
+    assert.deepStrictEqual(res.body.opciones.porCandidato[0].usar.decision, { tipo: 'usar', clienteId: 55 });
+    assert.match(res.body.error, /mismo RFC/);
+  } finally {
+    restore();
+  }
+});
+
+test('D2e: "ninguno es el mismo" contra el mismo RFC real responde 409 sin crear nada', async () => {
+  let posts = 0;
+  const restore = mockOperamFetch(mocksMismoRfc(() => { posts++; }));
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ ...BASE_CLIENTE, ...CLIENTE_DUPLICADO, decision: { tipo: 'ninguno' } });
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.error, /Este RFC ya es del Cliente Operam/);
+    assert.strictEqual(res.body.customer_id, null, 'el bloqueo no liga la operacion al cliente ajeno');
+    assert.strictEqual(posts, 0, 'no se crea un segundo Cliente Operam con el mismo RFC');
   } finally {
     restore();
   }
