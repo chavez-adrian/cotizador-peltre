@@ -238,3 +238,97 @@ describe('parsearCSF', () => {
     assert.equal(d.rfc, 'CEJ140604560');
   });
 });
+
+// === Validador QR del SAT (issue #378) ===
+//
+// La pagina que abre el QR de la CSF (validadorqr.jsf) NO es la constancia: usa
+// otras etiquetas ("CP", "Municipio o delegacion", "Entidad Federativa",
+// "Colonia", "Apellido Paterno") y pone el VALOR EN LA LINEA SIGUIENTE a su
+// etiqueta.
+//
+// La ESTRUCTURA de abajo se calco de lo que htmlATexto devolvio sobre el HTML
+// real del SAT el 2026-09-12 (orden de campos, saltos y campos vacios incluidos);
+// los DATOS son inventados, para no meter los de una persona en el repo. Por eso
+// mismo esta fixture no puede detectar que el SAT cambie su pagina: eso lo
+// verifica en vivo `node scripts/verificar-csf-qr.mjs <url del QR>`.
+const VALIDADOR_QR = `Validador QR 
+ El RFC: PEGJ850214HN2, tiene asociada la siguiente informacion.
+ Datos de Identificacion
+ CURP: 
+ PEGJ850214HDFRRN09
+ Nombre: 
+ JUAN CARLOS
+ Apellido Paterno: 
+ PEREZ
+ Apellido Materno: 
+ GARCIA
+ Fecha Nacimiento: 
+ 14-02-1985
+ Fecha de Inicio de operaciones: 
+ 01-03-2010
+ Situacion del contribuyente: 
+ ACTIVO
+ Fecha del ultimo cambio de situacion: 
+ 05-06-2012
+ Datos de Ubicacion (domicilio fiscal, vigente)
+ Entidad Federativa: 
+ MEXICO
+ Municipio o delegacion: 
+ IXTAPALUCA
+ Colonia: 
+ SAN BUENAVENTURA
+ Tipo de vialidad: 
+ Nombre de la vialidad: 
+ AVENIDA DE LOS PINOS
+ Numero exterior: 
+ 45
+ Numero interior: 
+ CP: 
+ 56530
+ AL: 
+ MEXICO 2
+ Caracteristicas fiscales (vigente)
+ Regimen: 
+ Regimen de Sueldos y Salarios e Ingresos Asimilados a Salarios
+ Fecha de alta: 
+ 16-01-2006`;
+
+describe('parsearCSF sobre el texto del validador QR (issue #378)', () => {
+  const d = parsearCSF(`idCIF: 17030802592
+${VALIDADOR_QR}`);
+
+  it('RFC', () => assert.equal(d.rfc, 'PEGJ850214HN2'));
+  it('idCIF (lo antepone el navegador desde la URL del QR)', () => assert.equal(d.idcif, '17030802592'));
+  it('razon social compuesta de nombre y apellidos', () => assert.equal(d.razonSocial, 'JUAN CARLOS PEREZ GARCIA'));
+  it('nombre corto propuesto', () => assert.equal(d.nombreCorto, 'Juan Carlos Perez'));
+  it('CP', () => assert.equal(d.cp, '56530'));
+  it('municipio ("Municipio o delegacion")', () => assert.equal(d.municipio, 'IXTAPALUCA'));
+  it('estado ("Entidad Federativa" sin "Nombre de la")', () => assert.equal(d.estado, 'MEXICO'));
+  it('colonia ("Colonia" sin "Nombre de la")', () => assert.equal(d.colonia, 'SAN BUENAVENTURA'));
+  it('calle', () => assert.equal(d.calle, 'AVENIDA DE LOS PINOS'));
+  it('numero exterior', () => assert.equal(d.numExt, '45'));
+  it('numero interior vacio no se lleva el CP de abajo', () => assert.equal(d.numInt, ''));
+  it('regimen por descripcion (el validador no imprime el codigo)', () => assert.equal(d.regimenFiscal, '605'));
+});
+
+// Las etiquetas cortas del validador ("CP", "AL") aparecen dentro de palabras
+// comunes de un domicilio: sin exigir inicio de palabra, el "AL:" de
+// "CALLE LOCAL: 5" partia el valor y la calle llegaba a Operam como "CALLE LOC".
+describe('etiquetas cortas dentro de un valor (issue #378)', () => {
+  it('el AL de LOCAL no parte la calle', () => {
+    const d = parsearCSF('Nombre de la vialidad: \nCALLE LOCAL: 5\nCP: \n56530');
+    assert.equal(d.calle, 'CALLE LOCAL: 5');
+    assert.equal(d.cp, '56530');
+  });
+
+  it('un CP sin dos puntos dentro de una colonia no se lee como codigo postal', () => {
+    const d = parsearCSF('Nombre de la Colonia: RINCONADA ACP12345\nCódigo Postal: 06000');
+    assert.equal(d.cp, '06000');
+  });
+
+  it('el CP pegado a otra palabra no se confunde con la etiqueta', () => {
+    const d = parsearCSF('Colonia: \nRINCONADA ACP: 3\nCP: \n06000');
+    assert.equal(d.colonia, 'RINCONADA ACP: 3');
+    assert.equal(d.cp, '06000');
+  });
+});

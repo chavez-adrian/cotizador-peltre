@@ -63,20 +63,72 @@ export const CSF_DATOS_VACIOS = {
 // parser viejo (que nunca fallaba), no queremos dejar al usuario sin salida -- siempre se
 // devuelve success con un objeto datos completo (vacio si no hubo deteccion) para captura
 // y edicion manual (issue #34).
-export function altaCsfResultadoParseo(respuestaInterpretada, fileName) {
+export function altaCsfResultadoParseo(respuestaInterpretada, fileName, resultadoQR = null) {
   if (respuestaInterpretada && respuestaInterpretada.datos) {
     const datos = { ...CSF_DATOS_VACIOS, ...respuestaInterpretada.datos };
+    const viaQR = resultadoQR === RESULTADO_QR.OK ? ' (leido del codigo QR del SAT)' : '';
     return {
       status: 'success',
       datos,
-      bannerText: `${fileName} -- RFC: ${datos.rfc || '(no detectado)'}`,
+      bannerText: `${fileName} -- RFC: ${datos.rfc || '(no detectado)'}${viaQR}`,
     };
   }
   return {
     status: 'success',
     datos: { ...CSF_DATOS_VACIOS },
-    bannerText: `${fileName} -- RFC no detectado, captura los datos manualmente`,
+    bannerText: `${fileName} -- ${motivoCsfSinRfc(resultadoQR)}`,
   };
+}
+
+// EL vocabulario de como le fue al QR, en un solo lugar: lo produce app.js (que
+// no es importable en Node) y lo consume el banner de aqui, asi que si cada lado
+// escribiera sus propias cadenas un typo pasaria la suite entera. Mismo patron
+// que estado-cliente-logica.js con los estados del Cliente Operam.
+export const RESULTADO_QR = {
+  OK: 'ok',
+  SIN_LECTOR: 'sin-lector',
+  SIN_CODIGO: 'sin-codigo',
+  SIN_RESPUESTA: 'sin-respuesta',
+  SIN_RFC: 'sin-rfc',
+};
+
+// El respaldo por QR fallaba en SILENCIO (issue #378): el vendedor leia "RFC no
+// detectado" sin saber si el QR se habia intentado siquiera. El banner ahora
+// nombra la via que fallo, porque cada una se corrige distinto -- volver a
+// escanear la constancia, recargar la pagina, o esperar al SAT. Ningun mensaje
+// afirma nada del texto del PDF salvo el ultimo, que es el unico caso en que se
+// sabe que las DOS vias se agotaron.
+function motivoCsfSinRfc(resultadoQR) {
+  if (!resultadoQR) return 'RFC no detectado, captura los datos manualmente';
+  if (resultadoQR === RESULTADO_QR.SIN_LECTOR) {
+    return 'RFC no detectado: no se pudo cargar el lector de codigos QR, captura los datos manualmente';
+  }
+  if (resultadoQR === RESULTADO_QR.SIN_CODIGO) {
+    return 'RFC no detectado: el PDF no trae un codigo QR del SAT, captura los datos manualmente';
+  }
+  if (resultadoQR === RESULTADO_QR.SIN_RESPUESTA) {
+    return 'RFC no detectado: el SAT no respondio la consulta del codigo QR, captura los datos manualmente';
+  }
+  return 'RFC no detectado: ni el texto del PDF ni el codigo QR del SAT dieron el RFC, captura los datos manualmente';
+}
+
+// === Cuando ir al QR del SAT (issue #378) ===
+//
+// pdf.js devuelve items de texto vacios en una CSF cuyos glifos son trazos
+// vectoriales; unos pocos caracteres (numeros de pagina, sellos) tampoco son una
+// constancia legible. El umbral de 50 caracteres es el que trae el flujo desde
+// #28: un texto mas corto que eso nunca ha producido un RFC.
+export function csfTieneCapaDeTexto(itemsTotal, texto) {
+  return itemsTotal > 0 && String(texto || '').trim().length >= 50;
+}
+
+// El QR es la fuente oficial y la mas robusta, pero consultarlo pega al servidor
+// del SAT: se intenta SOLO cuando el PDF no dio RFC. Antes de #378 la condicion
+// era "el PDF no trae texto", asi que una constancia CON texto que el parser no
+// supiera leer terminaba en captura manual sin intentar la via buena.
+export function csfDebeIntentarQR({ hayCapaDeTexto, rfcDetectado }) {
+  if (!hayCapaDeTexto) return true;
+  return !rfcDetectado;
 }
 
 // Combina el codigo de pais del select alta-addr-phone-code con el numero capturado

@@ -5,6 +5,9 @@ import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
+import https from 'node:https';
+import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
 import supertest from 'supertest';
 import { handlersWebFichaCliente } from './helpers/ficha-cliente-web.js';
 
@@ -1089,13 +1092,27 @@ test('GET /api/buscar-cliente retorna 503 si Operam lanza error', async () => {
 
 // === POST /api/csf-from-url (issue #33: reusa parsearCSF) ===
 
+// El proxy ya no usa fetch: el SAT exige un TLS relajado que fetch no sabe pedir
+// (issue #378), asi que la descarga vive en lib/sat-qr.js sobre node:https y el
+// mock reemplaza https.get.
+function mockHttpsGet(html, statusCode = 200) {
+  const original = https.get;
+  https.get = (url, opciones, cb) => {
+    assert.ok(String(url).includes('sat.gob.mx'));
+    const req = new EventEmitter();
+    req.setTimeout = () => {};
+    req.destroy = () => {};
+    const res = Readable.from([html]);
+    res.statusCode = statusCode;
+    setImmediate(() => cb(res));
+    return req;
+  };
+  return () => { https.get = original; };
+}
+
 test('POST /api/csf-from-url responde texto crudo y datos parseados de la CSF', async () => {
   const html = '<html><body>R.F.C. : UEGA850312KL5<br>Nombre (s) : ADRIANA<br>Primer Apellido : URENA</body></html>';
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
-    assert.ok(String(url).includes('sat.gob.mx'));
-    return { ok: true, text: async () => html };
-  };
+  const restore = mockHttpsGet(html);
   try {
     const res = await supertest(app).post('/api/csf-from-url')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
@@ -1105,7 +1122,32 @@ test('POST /api/csf-from-url responde texto crudo y datos parseados de la CSF', 
     assert.ok(res.body.texto.includes('UEGA850312KL5'));
     assert.strictEqual(res.body.datos.rfc, 'UEGA850312KL5');
   } finally {
-    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+test('POST /api/csf-from-url rechaza un host que no es del SAT sin salir a la red', async () => {
+  const restore = mockHttpsGet('<html>no deberia llegar aqui</html>');
+  try {
+    const res = await supertest(app).post('/api/csf-from-url')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ url: 'https://siat.sat.gob.mx.evil.com/qr?id=123' });
+    assert.strictEqual(res.status, 400);
+    assert.strictEqual(res.body.error, 'URL no pertenece al SAT');
+  } finally {
+    restore();
+  }
+});
+
+test('POST /api/csf-from-url responde 502 cuando el SAT no da 200', async () => {
+  const restore = mockHttpsGet('', 503);
+  try {
+    const res = await supertest(app).post('/api/csf-from-url')
+      .set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ url: 'https://siat.sat.gob.mx/qr?id=123' });
+    assert.strictEqual(res.status, 502);
+  } finally {
+    restore();
   }
 });
 

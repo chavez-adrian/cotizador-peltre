@@ -74,7 +74,8 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 | `vendedores-store.js` | Registro de vendedores (identidad, PIN en claro, rol, operam_id, tope) en Neon (#140/#141); auto-siembra desde `data/vendedores.json` si la tabla esta vacia; el PUT de admin reemplaza el registro completo |
 | `db.js` | Pool pg; `query()` retorna null sin pool (graceful); auto-crea `clientes_log` y `operam_webhooks_log` en Neon |
 | `dropbox.js` | OAuth refresh; `upload` y `subirCsfDropbox` (backup de CSF, fire-and-forget) |
-| `parsear-csf.js` | Puro: extrae RFC/razon social/domicilio/regimen del PDF de CSF; el catalogo del SAT lo cross-importa de `public/js/regimen-fiscal-logica.js` (#191) |
+| `parsear-csf.js` | Puro: extrae RFC/razon social/domicilio/regimen del PDF de CSF **y del validador QR** (#378: otras etiquetas -- `CP`, `Municipio o delegacion`, `Entidad Federativa`, `Colonia`, `Apellido Paterno` -- y el valor EN LA LINEA SIGUIENTE a su etiqueta, que solo se pliega si abajo no viene otra etiqueta); el catalogo del SAT lo cross-importa de `public/js/regimen-fiscal-logica.js` (#191) |
+| `sat-qr.js` | Validador QR del SAT (#378), el respaldo cuando el PDF no da RFC: `esHostDelSat`, `htmlATexto` y la descarga por `node:https` -- **no `fetch`**, porque el SAT negocia un DH corto que OpenSSL 3 rechaza (`ERR_SSL_DH_KEY_TOO_SMALL`) y solo `opcionesTlsPara` (SECLEVEL=0 acotado a sus hosts) lo salva. `node scripts/verificar-csf-qr.mjs <url del QR>` lo verifica EN VIVO (read-only); ningun mock puede |
 | `pdf-generator.js` / `html-generator.js` | PDFKit / HTML auto-contenido para WhatsApp, mismo formato visual |
 | `calcular-envio.js` | Carrito → paquetes fisicos para envia.com; excluye `ENVIO` y la calca |
 | `extract-prices.js` | LEGADO desde el corte #131: contraste contra el Excel, ya no genera `data/precios.json` |

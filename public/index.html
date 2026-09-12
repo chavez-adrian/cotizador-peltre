@@ -1262,6 +1262,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script src="/vendor/intl-tel-input/js/intlTelInput.min.js"></script>
+<!-- Lector de codigos QR de la CSF (issue #378). Vendoreado como intl-tel-input:
+     jsqr no esta publicado en cdnjs y el respaldo por QR no puede depender de un
+     CDN de terceros. Sin este script altaCsfExtraerQR se rendia en silencio. -->
+<script src="/vendor/jsqr/jsQR.js"></script>
 <script src="/js/app.js" type="module"></script>
 </body>
 </html>

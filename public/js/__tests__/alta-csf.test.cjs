@@ -3,9 +3,9 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildCsfDropzoneState, buildCsfDatosExtraidos } = require('./helpers.cjs');
 
-let altaCsfResultadoParseo;
+let altaCsfResultadoParseo, csfTieneCapaDeTexto, csfDebeIntentarQR, RESULTADO_QR;
 before(async () => {
-  ({ altaCsfResultadoParseo } = await import('../alta-logica.js'));
+  ({ altaCsfResultadoParseo, csfTieneCapaDeTexto, csfDebeIntentarQR, RESULTADO_QR } = await import('../alta-logica.js'));
 });
 
 // ─── buildCsfDropzoneState ────────────────────────────────────────────────────
@@ -296,4 +296,79 @@ test('C35: datos vacios producen un objeto datos con todas las claves esperadas 
   for (const k of ['rfc','razonSocial','nombreCorto','idcif','regimenFiscal','calle','numExt','numInt','colonia','cp','municipio','estado']) {
     assert.strictEqual(r.datos[k], '', `${k} deberia ser string vacio`);
   }
+});
+
+// ─── Cuando intentar el QR del SAT (issue #378) ───────────────────────────────
+//
+// El QR es la fuente oficial y la mas robusta, pero consultarlo pega al servidor
+// del SAT: se intenta SOLO cuando la lectura del PDF no dio RFC, ya sea porque
+// no tiene capa de texto (los glifos vienen como trazos) o porque el texto que
+// tiene no produjo RFC.
+
+test('C36: un PDF con capa de texto de verdad se declara legible', () => {
+  assert.strictEqual(csfTieneCapaDeTexto(180, 'CONSTANCIA DE SITUACION FISCAL R.F.C. : PEGJ850214HN2 ' + 'x'.repeat(60)), true);
+});
+
+test('C37: sin items de texto no hay capa de texto (la CSF viene como trazos)', () => {
+  assert.strictEqual(csfTieneCapaDeTexto(0, ''), false);
+});
+
+test('C38: unos pocos caracteres sueltos no son una capa de texto', () => {
+  assert.strictEqual(csfTieneCapaDeTexto(12, 'Pagina 1 de 2'), false);
+});
+
+test('C39: sin capa de texto -> se intenta el QR', () => {
+  assert.strictEqual(csfDebeIntentarQR({ hayCapaDeTexto: false, rfcDetectado: false }), true);
+});
+
+test('C40: con capa de texto pero SIN RFC -> se intenta el QR (el caso del ticket)', () => {
+  assert.strictEqual(csfDebeIntentarQR({ hayCapaDeTexto: true, rfcDetectado: false }), true);
+});
+
+test('C41: el texto del PDF dio RFC -> el QR no se consulta (no se pega al SAT)', () => {
+  assert.strictEqual(csfDebeIntentarQR({ hayCapaDeTexto: true, rfcDetectado: true }), false);
+});
+
+// ─── El banner dice por que vias se intento (issue #378) ──────────────────────
+
+test('C42: datos leidos del QR -> el banner lo dice', () => {
+  const r = altaCsfResultadoParseo({ datos: { rfc: 'PEGJ850214HN2' } }, 'csf.pdf', RESULTADO_QR.OK);
+  assert.strictEqual(r.status, 'success');
+  assert.ok(r.bannerText.includes('PEGJ850214HN2'), `bannerText: ${r.bannerText}`);
+  assert.ok(/QR/i.test(r.bannerText), `bannerText: ${r.bannerText}`);
+});
+
+test('C43: el PDF no trae codigo QR -> el banner lo dice', () => {
+  const r = altaCsfResultadoParseo(null, 'csf.pdf', RESULTADO_QR.SIN_CODIGO);
+  assert.strictEqual(r.status, 'success');
+  assert.ok(/QR/i.test(r.bannerText), `bannerText: ${r.bannerText}`);
+  assert.ok(r.bannerText.includes('manualmente'), `bannerText: ${r.bannerText}`);
+});
+
+test('C44: el lector de QR no cargo -> el banner lo dice en vez de callarlo', () => {
+  const r = altaCsfResultadoParseo(null, 'csf.pdf', RESULTADO_QR.SIN_LECTOR);
+  assert.ok(/lector/i.test(r.bannerText), `bannerText: ${r.bannerText}`);
+});
+
+test('C45: el SAT contesto y tampoco dio RFC -> el banner dice que se intentaron las dos vias', () => {
+  const r = altaCsfResultadoParseo(null, 'csf.pdf', RESULTADO_QR.SIN_RFC);
+  assert.ok(/texto/i.test(r.bannerText) && /QR/i.test(r.bannerText), `bannerText: ${r.bannerText}`);
+});
+
+// El PDF sin capa de texto llega aqui con respuesta null: el banner NO puede
+// decir "se intento por el texto del PDF" cuando por ahi no se intento nada.
+test('C47: el SAT no respondio -> el banner culpa al SAT y no inventa un intento por texto', () => {
+  const r = altaCsfResultadoParseo(null, 'csf.pdf', RESULTADO_QR.SIN_RESPUESTA);
+  assert.ok(/SAT/.test(r.bannerText), `bannerText: ${r.bannerText}`);
+  assert.ok(!/texto del PDF/i.test(r.bannerText), `bannerText: ${r.bannerText}`);
+});
+
+test('C48: el PDF sin codigo QR tampoco afirma nada del texto del PDF', () => {
+  const r = altaCsfResultadoParseo(null, 'csf.pdf', RESULTADO_QR.SIN_CODIGO);
+  assert.ok(!/texto/i.test(r.bannerText), `bannerText: ${r.bannerText}`);
+});
+
+test('C46: sin intento de QR el banner es el de siempre', () => {
+  const r = altaCsfResultadoParseo({ error: 'No se detecto un RFC en el texto' }, 'archivo.pdf');
+  assert.ok(r.bannerText.includes('RFC no detectado, captura los datos manualmente'), `bannerText: ${r.bannerText}`);
 });

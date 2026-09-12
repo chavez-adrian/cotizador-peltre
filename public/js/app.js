@@ -1,5 +1,8 @@
 import {
   altaCsfResultadoParseo,
+  csfTieneCapaDeTexto,
+  csfDebeIntentarQR,
+  RESULTADO_QR,
   combinarTelefonoConCodigo,
   validarTelefono,
   calcularDiffFiscal,
@@ -7152,8 +7155,11 @@ async function altaCsfParsearEnServidor(texto) {
   return { error: (json && json.error) || 'No se pudo parsear la CSF' };
 }
 
+// Devuelve la URL del validador del SAT o el motivo por el que no la hay: el
+// respaldo por QR fallaba en silencio (issue #378) y el vendedor no distinguia
+// "el PDF no trae QR" de "el lector no cargo".
 async function altaCsfExtraerQR(pdfDoc) {
-  if (typeof jsQR === 'undefined') return null;
+  if (typeof jsQR === 'undefined') return { url: '', motivo: RESULTADO_QR.SIN_LECTOR };
   const totalPaginas = Math.min(pdfDoc.numPages, 2);
   for (let i = 1; i <= totalPaginas; i++) {
     const page = await pdfDoc.getPage(i);
@@ -7164,9 +7170,9 @@ async function altaCsfExtraerQR(pdfDoc) {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
     const code = jsQR(imageData.data, imageData.width, imageData.height);
-    if (code && code.data && code.data.includes('sat.gob.mx')) return code.data;
+    if (code && code.data && code.data.includes('sat.gob.mx')) return { url: code.data, motivo: '' };
   }
-  return null;
+  return { url: '', motivo: RESULTADO_QR.SIN_CODIGO };
 }
 
 function altaCsfExtraerIdCifDeUrl(url) {
@@ -7181,9 +7187,7 @@ function altaCsfExtraerIdCifDeUrl(url) {
   } catch { return ''; }
 }
 
-async function altaCsfLeerPDF(file) {
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+async function altaCsfTextoDelPDF(pdf) {
   const totalPaginas = Math.min(pdf.numPages, 2);
   let textoTotal = '';
   let itemsTotal = 0;
@@ -7193,19 +7197,48 @@ async function altaCsfLeerPDF(file) {
     itemsTotal += content.items.length;
     textoTotal += content.items.filter(it => it.str !== undefined).map(it => it.str).join(' ') + '\n';
   }
-  if (itemsTotal === 0 || textoTotal.trim().length < 50) {
-    const urlQR = await altaCsfExtraerQR(pdf);
-    if (urlQR) {
-      const token = window._authToken || localStorage.getItem('token') || '';
-      const r = await fetch('/api/csf-from-url', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ url: urlQR }) });
-      const data = await r.json();
-      if (data.ok && data.texto) {
-        const idcifDelQR = altaCsfExtraerIdCifDeUrl(urlQR);
-        return idcifDelQR ? `idCIF: ${idcifDelQR}\n${data.texto}` : data.texto;
-      }
-    }
+  return { texto: textoTotal, itemsTotal };
+}
+
+// El validador del SAT no imprime el idCIF, pero viene en la URL del QR y el
+// formulario lo pide: se antepone como un campo mas del texto a parsear.
+async function altaCsfTextoDelQR(pdf) {
+  const { url, motivo } = await altaCsfExtraerQR(pdf);
+  if (!url) return { texto: '', resultado: motivo };
+  const token = window._authToken || localStorage.getItem('token') || '';
+  try {
+    const r = await fetch('/api/csf-from-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ url }),
+    });
+    const data = await r.json();
+    if (!data.ok || !data.texto) return { texto: '', resultado: RESULTADO_QR.SIN_RESPUESTA };
+    const idcifDelQR = altaCsfExtraerIdCifDeUrl(url);
+    return { texto: idcifDelQR ? `idCIF: ${idcifDelQR}\n${data.texto}` : data.texto, resultado: RESULTADO_QR.OK };
+  } catch {
+    return { texto: '', resultado: RESULTADO_QR.SIN_RESPUESTA };
   }
-  return textoTotal;
+}
+
+// Texto primero, QR de respaldo (issue #378). Devuelve ademas como le fue al QR
+// para que el banner no se calle la via que fallo.
+async function altaCsfLeerPDF(file) {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const { texto, itemsTotal } = await altaCsfTextoDelPDF(pdf);
+  const hayCapaDeTexto = csfTieneCapaDeTexto(itemsTotal, texto);
+  const respuesta = hayCapaDeTexto ? await altaCsfParsearEnServidor(texto) : null;
+  const rfcDetectado = !!(respuesta && respuesta.datos && respuesta.datos.rfc);
+  if (!csfDebeIntentarQR({ hayCapaDeTexto, rfcDetectado })) return { respuesta, resultadoQR: null };
+
+  const viaQR = await altaCsfTextoDelQR(pdf);
+  if (!viaQR.texto) return { respuesta, resultadoQR: viaQR.resultado };
+  const respuestaQR = await altaCsfParsearEnServidor(viaQR.texto);
+  if (respuestaQR && respuestaQR.datos && respuestaQR.datos.rfc) {
+    return { respuesta: respuestaQR, resultadoQR: RESULTADO_QR.OK };
+  }
+  return { respuesta, resultadoQR: RESULTADO_QR.SIN_RFC };
 }
 
 async function altaCsfProcesarArchivo(file) {
@@ -7213,9 +7246,8 @@ async function altaCsfProcesarArchivo(file) {
   try {
     // Base64 del PDF para respaldarlo en Dropbox al confirmar el upgrade fiscal (#85).
     altaCsfState.pdfBase64 = await leerArchivoBase64(file).catch(() => null);
-    const texto = await altaCsfLeerPDF(file);
-    const respuesta = await altaCsfParsearEnServidor(texto);
-    const resultado = altaCsfResultadoParseo(respuesta, file.name);
+    const { respuesta, resultadoQR } = await altaCsfLeerPDF(file);
+    const resultado = altaCsfResultadoParseo(respuesta, file.name, resultadoQR);
     altaCsfState.datos = resultado.datos;
     altaCsfPonerDatos(resultado.datos);
     altaCsfSetStatus(resultado.status, { bannerText: resultado.bannerText });

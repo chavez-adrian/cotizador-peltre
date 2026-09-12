@@ -28,6 +28,7 @@ import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento
 import { GRACIA_DIAS } from './lib/cruce-identidad.js';
 import { paisDeClienteOperam } from './lib/pais-operam.js';
 import { parsearCSF } from './lib/parsear-csf.js';
+import { esHostDelSat, htmlATexto, descargarValidadorQR } from './lib/sat-qr.js';
 import { query as dbQuery } from './lib/db.js';
 import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
@@ -3297,21 +3298,13 @@ app.post('/api/csf-from-url', authMiddleware, async (req, res) => {
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'Falta url' });
   let parsed;
   try { parsed = new URL(url); } catch { return res.status(400).json({ error: 'URL invalida' }); }
-  if (!/\.sat\.gob\.mx$/i.test(parsed.hostname) && parsed.hostname !== 'sat.gob.mx') {
+  if (!esHostDelSat(parsed.hostname)) {
     return res.status(400).json({ error: 'URL no pertenece al SAT' });
   }
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PeltreBot/1.0)' } });
-    if (!r.ok) return res.status(502).json({ error: `SAT respondio ${r.status}` });
-    const html = await r.text();
-    const texto = html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/(tr|div|p|li|td|th)>/gi, '\n')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
-      .replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n').trim();
+    const { status, html } = await descargarValidadorQR(url);
+    if (status !== 200) return res.status(502).json({ error: `SAT respondio ${status}` });
+    const texto = htmlATexto(html);
     res.json({ ok: true, texto, datos: parsearCSF(texto) });
   } catch (err) {
     res.status(500).json({ error: err.message });

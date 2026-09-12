@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "intl-tel-input": "^29.2.3",
+    "jsqr": "^1.4.0",
     "supertest": "^7.0.0"
   },
   "dependencies": {
