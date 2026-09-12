@@ -297,7 +297,7 @@ test('I8c: con domicilio nuevo sobre un cliente que ya existia, las filas del do
       { name: 'dedup', status: 'ok', mensaje: 'Se uso el Cliente Operam que elegiste y se le agrega un domicilio de entrega' },
       { name: 'POST branch', status: 'ok', mensaje: 'Se creo el domicilio de entrega', detalle: 'POST /branches -> branch 571' },
       { name: 'verificar branch', status: 'ok', mensaje: 'El domicilio de entrega quedo guardado en Operam', detalle: 'GET /customers/522 branches -> 571' },
-      { name: 'PUT customer (dimensiones)', status: 'omitido', mensaje: 'El Cliente Operam ya existia: se conserva su clasificacion interna', detalle: 'cliente 522 preexistente' },
+      { name: 'PUT customer (dimensiones)', status: 'omitido', mensaje: 'El Cliente Operam ya existia: se conserva su clasificacion interna', detalle: 'cliente 522 conserva dimension_id/dimension2_id/timbrado_uso_cfdi' },
       { name: 'GET branch_id', status: 'ok', mensaje: 'Se usa el domicilio de entrega recien creado', detalle: 'branch 571 del cliente 522' },
     ],
   });

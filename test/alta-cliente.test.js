@@ -352,6 +352,33 @@ test('otro domicilio reporta cual domicilio de entrega se usa', async () => {
   assert.ok(obtener.detalle.includes(String(res.domicilioId)));
 });
 
+// La otra salida del paso nuevo: el reintento donde el domicilio ya se habia
+// creado en una corrida anterior (sucursalEquivalente lo encuentra y no crea otro).
+// El mensaje no puede decir "recien creado" ahi: no nacio en esta corrida.
+test('otro domicilio reusado de un intento anterior lo dice en vez de fingir que acaba de nacer', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [
+        { branch_code: 7, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' },
+        { branch_code: 9, br_name: DOMICILIO.nombre, addr_street: DOMICILIO.calle, addr_zip: DOMICILIO.cp },
+      ],
+    }],
+  });
+  const res = await darDeAlta(solicitud({
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'otro-domicilio', clienteId: 41 },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0, 'no se crea un segundo domicilio identico');
+  assert.equal(paso(res, 'POST branch').status, 'omitido');
+  const obtener = paso(res, 'GET branch_id');
+  assert.equal(obtener.status, 'ok');
+  assert.ok(obtener.mensaje.includes('intento anterior'), obtener.mensaje);
+  assert.ok(!obtener.mensaje.includes('recien creado'), 'no nacio en esta corrida');
+});
+
 // El guard que faltaba (#374): los pasos del modulo pasados POR EL PANEL. Los tres
 // pasos del domicilio comparten fila y el ultimo manda (#366), asi que un omitido
 // empujado detras de la creacion vuelve a tapar la fila -- que es exactamente como
