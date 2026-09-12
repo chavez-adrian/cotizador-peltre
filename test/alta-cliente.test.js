@@ -871,6 +871,21 @@ test('el upgrade fiscal no toca el nombre corto propio del Cliente Operam', asyn
   assert.equal(operam.cliente(500).cust_ref, 'Azulito');
   assert.equal(operam.pedidos('actualizarClienteDirecto')[0].args[1].cust_ref, undefined);
   assert.equal(paso(res, 'nombre corto').status, 'omitido');
+  // #379: lo que el modulo decidio no mandar no puede salir como "Operam lo
+  // ignoro" -- seria pedirle al vendedor que corrija algo que esta bien.
+  assert.deepEqual(res.camposNoAplicados, []);
+  assert.equal(paso(res, 'verificar fiscal').status, 'ok');
+});
+
+// #379: lo que absuelve al campo es haberlo omitido, no llamarse cust_ref: uno que
+// SI viajo y Operam ignoro sigue siendo un pendiente del vendedor.
+test('el nombre corto que Operam ignora en el PUT si sale como campo no aplicado', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()], ignoraCliente: ['cust_ref'] });
+  const res = await upgradeFiscal(500, { ...CSF, nombreCorto: 'Hotel Azul' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(paso(res, 'nombre corto'), undefined);
+  assert.deepEqual(res.camposNoAplicados.map(c => c.campo), ['cust_ref']);
 });
 
 test('el upgrade fiscal si llena el nombre corto que dejo el alta generica', async () => {
@@ -889,6 +904,7 @@ test('el nombre corto que el vendedor no capturo NO borra el que el Cliente Oper
   assert.equal(operam.cliente(500).cust_ref, 'Hotel Azul Centro');
   assert.equal(operam.pedidos('actualizarClienteDirecto')[0].args[1].cust_ref, undefined);
   assert.equal(paso(res, 'nombre corto').status, 'omitido');
+  assert.deepEqual(res.camposNoAplicados, []);
 });
 
 test('el nombre corto que ya usa otro Cliente Operam bloquea el upgrade pidiendo cambiarlo', async () => {
