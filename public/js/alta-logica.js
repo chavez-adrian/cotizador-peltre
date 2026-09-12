@@ -444,7 +444,8 @@ export const UPGRADE_TITULO_LOGRADO = 'Datos fiscales actualizados en Operam.';
 export function interpretarRespuestaUpgrade(status, body) {
   const data = body || {};
   if (status === 409 && data.fusion) {
-    return { tipo: 'fusion', mensaje: data.error || 'Este RFC ya pertenece a otro Cliente Operam: es una fusion manual', campos: [], noAplicados: [] };
+    const respaldo = 'Este RFC ya es de otro Cliente Operam. No se cambio nada. Si es la misma empresa, cotiza sobre ese Cliente Operam; si hay dos cuentas del mismo contribuyente, hay que unificarlas a mano en Operam.';
+    return { tipo: 'fusion', mensaje: data.error || respaldo, campos: [], noAplicados: [] };
   }
   if (status !== 200 || data.ok !== true) {
     return { tipo: 'error', mensaje: data.error || 'No se pudo actualizar en Operam', campos: [], noAplicados: [] };

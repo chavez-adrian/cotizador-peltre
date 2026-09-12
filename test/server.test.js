@@ -746,7 +746,8 @@ test('UF2: RFC real ya existe con OTRO cliente -> 409 freno de fusion, sin PUT',
     assert.strictEqual(res.body.fusion, true);
     assert.strictEqual(res.body.dueno.cliente_id, 800);
     assert.strictEqual(res.body.dueno.nombre, 'Cliente Formal SA');
-    assert.match(res.body.error, /fusion manual/);
+    assert.match(res.body.error, /Cliente Formal SA \(800\)/);
+    assert.match(res.body.error, /unificarlas a mano en Operam/);
     assert.strictEqual(putCalled, false, 'no toca Operam en escritura cuando frena por fusion');
   } finally {
     restore();

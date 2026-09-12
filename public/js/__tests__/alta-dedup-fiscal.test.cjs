@@ -949,12 +949,22 @@ test('RU4: el RFC de otro Cliente Operam se lee como fusion, con el dueno ya nom
   const { interpretarRespuestaUpgrade } = await import('../alta-logica.js');
   const vista = interpretarRespuestaUpgrade(409, {
     fusion: true,
-    error: 'Este RFC ya pertenece a otro Cliente Operam (Cliente Formal SA): es una fusion manual',
+    error: 'Este RFC ya es del Cliente Operam Cliente Formal SA (800). No se cambio nada. Si es la misma empresa, cotiza sobre ese Cliente Operam; si hay dos cuentas del mismo contribuyente, hay que unificarlas a mano en Operam.',
     dueno: { cliente_id: 800, nombre: 'Cliente Formal SA' },
   });
   assert.equal(vista.tipo, 'fusion');
   assert.match(vista.mensaje, /Cliente Formal SA/);
   assert.deepEqual(vista.campos, []);
+});
+
+test('RU4b: sin `error` del servidor el fallback dice lo mismo sin nombrar al dueno', async () => {
+  const { interpretarRespuestaUpgrade } = await import('../alta-logica.js');
+  const vista = interpretarRespuestaUpgrade(409, { fusion: true });
+  assert.equal(vista.tipo, 'fusion');
+  assert.match(vista.mensaje, /Este RFC ya es de otro Cliente Operam/);
+  assert.match(vista.mensaje, /No se cambio nada/);
+  assert.match(vista.mensaje, /unificarlas a mano en Operam/);
+  assert.ok(!/fusion/.test(vista.mensaje), 'la jerga del modulo no llega al vendedor');
 });
 
 test('RU5: cualquier otro fallo es un error con el texto que mando el servidor', async () => {

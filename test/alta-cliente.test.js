@@ -788,8 +788,11 @@ test('el RFC que ya pertenece a otro Cliente Operam bloquea la fusion, lo nombra
 
   assert.equal(res.tipo, 'bloqueo');
   assert.equal(res.motivo, 'fusion');
-  assert.match(res.mensaje, /Hotel Azul SA de CV/);
-  assert.match(res.mensaje, /fusion manual/);
+  assert.match(res.mensaje, /Hotel Azul SA de CV \(800\)/);
+  assert.match(res.mensaje, /No se cambio nada/);
+  assert.match(res.mensaje, /unificarlas a mano en Operam/);
+  assert.ok(!/fusion/.test(res.mensaje), 'la jerga del modulo no llega al vendedor');
+  assert.match(res.detalle, /fusion manual, la API no unifica cuentas/);
   assert.equal(res.dueno.cliente_id, 800);
   assert.equal(res.dueno.nombre, 'Hotel Azul SA de CV');
   assert.equal(operam.pedidos('actualizarClienteDirecto').length, 0);
