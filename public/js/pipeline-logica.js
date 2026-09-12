@@ -12,7 +12,7 @@
 
 import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
-import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto } from './alta-logica.js';
+import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
@@ -130,10 +130,6 @@ export function pasosParaMostrar(steps) {
       detalle: s.detalle || s.error || '',
     }));
 }
-
-// Las salidas de la Deduplicacion de cliente (CONTEXT.md), en el orden en que se
-// pintan. Aqui solo se usan como respaldo: quien decide cuales hay es el modulo.
-const SALIDAS_DEDUP = ['usar', 'otro-domicilio', 'ninguno'];
 
 export function interpretarSubidaOperam(resultado) {
   const r = resultado || {};
@@ -320,12 +316,16 @@ export function buildCandidatosOperamHtml(id, candidatos, mensaje, salidas) {
 // "hay boton" y "hay con que reintentar" son la misma cosa -- un boton sin cuerpo
 // dictado moriria en el "vuelve a presionar Dar de alta" de cuerpoDeReintentoAlta.
 export function buildCandidatosAltaHtml(candidatos, mensaje, detalle, opciones) {
-  const porCandidato = Array.isArray(opciones?.porCandidato) ? opciones.porCandidato : [];
-  const dictada = llave => porCandidato.some(f => f && f[llave]);
+  // Sin opciones dictadas NO se quitan botones, misma regla que la pantalla de
+  // cotizar: una pregunta sin ninguna salida deja al vendedor sin nada que
+  // apretar, y el boton que no tenga cuerpo ya muere con el "vuelve a presionar
+  // Dar de alta" de cuerpoDeReintentoAlta. Con opciones, solo lo que dicen.
+  const porCandidato = Array.isArray(opciones?.porCandidato) ? opciones.porCandidato : null;
+  const dictada = llave => porCandidato === null || porCandidato.some(f => f && f[llave]);
   const pregunta = buildCandidatosDedupHtml(candidatos, mensaje, {
     usar: dictada('usar') ? { texto: 'Usar este Cliente Operam', onclick: (c, i) => `altaPreguntaUsar(${i})` } : null,
     otroDomicilio: dictada('otroDomicilio') ? { texto: 'Es otro domicilio de este Cliente Operam', onclick: (c, i) => `altaPreguntaOtroDomicilio(${i})` } : null,
-    ninguno: opciones?.ninguno ? { texto: 'Ninguno es el mismo', onclick: () => 'altaPreguntaNinguno()' } : null,
+    ninguno: (porCandidato === null || opciones?.ninguno) ? { texto: 'Ninguno es el mismo', onclick: () => 'altaPreguntaNinguno()' } : null,
   });
   // Mensaje en dos capas (CONTEXT.md): de que pool salieron estos candidatos se
   // muestra PLEGADO, igual que el detalle de cada paso del alta.

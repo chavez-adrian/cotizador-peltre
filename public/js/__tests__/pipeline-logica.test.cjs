@@ -437,6 +437,9 @@ test('#368: buildCandidatosAltaHtml ofrece las tres salidas del formulario con l
   assert.match(html, /Celular: coincide/);
   assert.match(html, /Correo: sin dato/);
   assert.doesNotMatch(html, /sucursal/i, 'la palabra sucursal no sale al vendedor');
+  // Sin opciones dictadas se conservan las tres (#377): una pregunta sin ninguna
+  // salida dejaria al vendedor sin nada que apretar.
+  assert.match(buildCandidatosAltaHtml([{ id: 55, CustName: 'Duplicado SA' }], 'Elige uno'), /Ninguno es el mismo/);
 });
 
 test('#368: el detalle tecnico de la pregunta va plegado, nunca a la vista', () => {
@@ -466,7 +469,9 @@ test('#377: buildCandidatosAltaHtml no pinta "Ninguno es el mismo" sin cuerpo de
 });
 
 // #377: la otra pantalla donde se contesta la misma pregunta. Ahi las salidas
-// llegan como la lista del modulo, no como cuerpos de reintento.
+// llegan como la lista del modulo, no como cuerpos de reintento. Es el contrato de
+// la pieza: el camino de la subida hoy siempre manda las tres, y esta es la guarda
+// que impide que el boton se pinte solo el dia que mande menos.
 test('#377: buildCandidatosOperamHtml no pinta "crear nuevo" cuando el modulo no ofrece esa salida', () => {
   const candidatos = [{ id: 3, CustName: 'Duplicado SA' }];
   const html = buildCandidatosOperamHtml(9, candidatos, 'Elige', ['usar', 'otro-domicilio']);
@@ -476,12 +481,14 @@ test('#377: buildCandidatosOperamHtml no pinta "crear nuevo" cuando el modulo no
   assert.match(conTodas, /crearNuevoClienteOperam\(9, this\)/);
 });
 
-test('#377: el 409 de la subida lleva las salidas del modulo hasta la vista', () => {
-  const v = interpretarSubidaOperam({ status: 409, error: 'Ya hay un Cliente Operam con este RFC', candidatos: [{ id: 3 }], opciones: ['usar', 'otro-domicilio'] });
+// El 409 de la subida pasa la lista del modulo TAL CUAL. Hoy ese camino solo puede
+// mandar las tres (la Solicitud de la subida lleva `datosFiscales: null`, asi que no
+// hay RFC real con el que coincidir): esto prueba el paso de la lista y el respaldo
+// cuando no viene, no una respuesta que el servidor ya sepa producir reducida.
+test('#377: la vista de la subida pasa las salidas del modulo tal cual, y sin ellas conserva las tres', () => {
+  const v = interpretarSubidaOperam({ status: 409, error: 'Hay Clientes Operam parecidos', candidatos: [{ id: 3 }], opciones: ['usar', 'otro-domicilio', 'ninguno'] });
   assert.equal(v.estado, 'candidatos');
-  assert.deepEqual(v.opciones, ['usar', 'otro-domicilio']);
-  // Sin el campo (respuesta vieja) se conservan las tres: quitar botones por un
-  // dato ausente dejaria al vendedor sin salida.
+  assert.deepEqual(v.opciones, ['usar', 'otro-domicilio', 'ninguno']);
   const viejo = interpretarSubidaOperam({ status: 409, error: 'x', candidatos: [{ id: 3 }] });
   assert.deepEqual(viejo.opciones, ['usar', 'otro-domicilio', 'ninguno']);
 });

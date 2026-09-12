@@ -108,6 +108,35 @@ test('"ninguno es el mismo" contra un candidato con el mismo RFC real bloquea si
   assert.deepEqual(operam.estado.auditoria.map(a => a[2]), ['fusion-bloqueada']);
 });
 
+// #377: la marca no puede depender de POR DONDE entro el candidato. El dueno del
+// nombre corto sale del padron completo (#242) y es el unico camino que descubre
+// que el cliente ya existia bajo un RFC real: si trae el mismo RFC real que se
+// esta capturando, es el mismo contribuyente aunque el pool por ?tax_id= no lo
+// haya devuelto.
+test('el dueno del nombre corto con el mismo RFC real tampoco ofrece "ninguno es el mismo"', async () => {
+  const operam = operamEnMemoria({
+    clientes: [],
+    padron: [{ customer_id: 70, CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Hotel Azul', tax_id: RFC_REAL }],
+  });
+  const res = await darDeAlta(solicitudFiscal(), operam.deps);
+
+  assert.equal(res.tipo, 'pregunta');
+  assert.deepEqual(res.candidatos.map(c => c.id), [70]);
+  assert.deepEqual(res.opciones, ['usar', 'otro-domicilio']);
+});
+
+test('"ninguno es el mismo" contra el dueno del nombre corto con el mismo RFC real bloquea', async () => {
+  const operam = operamEnMemoria({
+    clientes: [],
+    padron: [{ customer_id: 70, CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Hotel Azul', tax_id: RFC_REAL }],
+  });
+  const res = await darDeAlta(solicitudFiscal({ decision: { tipo: 'ninguno' } }), operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'fusion');
+  assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
+});
+
 test('el candidato que solo coincide por nombre corto conserva las tres salidas', async () => {
   const operam = operamEnMemoria({
     clientes: [{ customer_id: 62, CustName: 'HOTEL AZUL DE OCCIDENTE', cust_ref: 'Hotel Azul', tax_id: 'HAO050607CD2', branches: [{ branch_code: 4 }] }],

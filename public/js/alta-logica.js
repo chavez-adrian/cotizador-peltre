@@ -1317,6 +1317,14 @@ function preguntaDeDuplicado(d) {
 // Sin cuerpo dictado devuelve null: no se inventa una decision.
 const LLAVE_OPCION_CANDIDATO = { usar: 'usar', 'otro-domicilio': 'otroDomicilio' };
 
+// LAS salidas de la Deduplicacion de cliente (CONTEXT.md), en el orden en que se
+// pintan, en UN solo lugar: las decide el modulo del alta (`lib/alta-cliente.js`
+// las cross-importa) y las pinta el navegador (`pipeline-logica.js`), y con una
+// copia en cada lado la lista podria divergir sin que nada avisara. CUALES se
+// ofrecen en una pregunta concreta depende del motivo del candidato (#377); esta
+// es la lista completa.
+export const SALIDAS_DEDUP = ['usar', 'otro-domicilio', 'ninguno'];
+
 export function cuerpoDeReintentoAlta(opciones, eleccion, extras = {}) {
   const tipo = eleccion?.tipo;
   const llave = LLAVE_OPCION_CANDIDATO[tipo];

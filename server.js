@@ -2817,6 +2817,9 @@ async function anotarClienteEnCotizacion(id, c, customerId, branchId) {
 // por falta de resolucion sino una cotizacion que ya pertenece a otro cliente.
 const MOTIVO_PRE_DE_BLOQUEO = {
   'liga-fija': null,
+  // El mismo RFC real de otro Cliente Operam (#377) es un duplicado que el vendedor
+  // tiene que resolver, igual que los candidatos: el documento queda bajo candado.
+  fusion: MOTIVO_PRE_DEDUP,
   'sin-lista-precios': MOTIVO_PRE_SIN_LISTA,
 };
 
@@ -2829,6 +2832,10 @@ function responderBloqueoAlta(res, bloqueo) {
   const { motivo, mensaje, pasos } = bloqueo;
   const cliente = bloqueo.clienteId != null ? { customer_id: bloqueo.clienteId } : {};
   if (motivo === 'liga-fija') return res.status(409).json({ error: mensaje });
+  // La tabla enumera los motivos del modulo y no puede dejar ninguno afuera: el que
+  // falte cae al 503 de "fallo Operam" y entrega el documento. `fusion` (#377) es lo
+  // contrario de una falla del ERP -- es un duplicado que el vendedor resuelve.
+  if (motivo === 'fusion') return res.status(409).json({ error: mensaje, steps: pasos });
   if (motivo === 'cust-ref-duplicado') {
     return res.status(409).json({ error: mensaje, codigo: 'CUST_REF_DUPLICADO', nombreCorto: bloqueo.nombreCorto, steps: pasos });
   }
