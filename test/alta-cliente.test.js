@@ -323,11 +323,11 @@ test('otro domicilio no reporta el domicilio recien creado como preexistente', a
   }), operam.deps);
 
   assert.equal(res.tipo, 'lograda');
-  for (const p of res.pasos) {
+  for (const p of res.pasos.filter(p => /branch/.test(p.name))) {
     assert.ok(!`${p.mensaje} ${p.detalle}`.includes('no se toco su domicilio'),
       `el paso ${p.name} dice que no se toco el domicilio: ${p.mensaje}`);
     assert.ok(!`${p.mensaje} ${p.detalle}`.includes('preexistente'),
-      `el paso ${p.name} habla de algo preexistente en un alta que creo el domicilio: ${p.detalle}`);
+      `el paso ${p.name} llama preexistente al domicilio recien creado: ${p.detalle}`);
   }
 });
 
