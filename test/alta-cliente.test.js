@@ -1068,3 +1068,42 @@ test('todo paso del upgrade fiscal lleva mensaje para el vendedor y detalle tecn
     assert.doesNotMatch(p.mensaje, /sucursal|branch|customer|endpoint/i, `el paso ${p.name} usa vocabulario tecnico en el mensaje`);
   }
 });
+
+// === #356: el id de la fila de auditoria sale del modulo ===
+// clientes_log.dropbox_ok se escribia SIEMPRE en null porque al insertar el log
+// la subida de la constancia todavia no resolvia. Quien la respalda (el
+// endpoint, no el modulo) necesita saber QUE fila corregir despues, y la fila es
+// la del alta -- no la ultima del cliente, que puede ser de otro intento.
+
+// logCliente devuelve el id de lo que inserto (#356). Aqui se numeran las
+// llamadas para poder afirmar a CUAL de ellas corresponde el logId devuelto.
+function conAuditoriaNumerada(deps) {
+  const filas = [];
+  return {
+    filas,
+    deps: { ...deps, logCliente: (...args) => { filas.push(args); return filas.length; } },
+  };
+}
+
+test('el alta devuelve el id de la fila de auditoria del cliente que creo (#356)', async () => {
+  const operam = operamEnMemoria();
+  const auditoria = conAuditoriaNumerada(operam.deps);
+  const res = await darDeAlta(solicitudFiscal({ domicilioEntrega: DOMICILIO }), auditoria.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.creadoNuevo, true);
+  const esperado = auditoria.filas.findIndex(a => a[2] === 'creado') + 1;
+  assert.ok(esperado > 0, 'el alta registro la creacion en la auditoria');
+  assert.equal(await res.logId, esperado);
+});
+
+test('el upgrade fiscal devuelve el id de la fila de auditoria de su actualizacion (#356)', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()] });
+  const auditoria = conAuditoriaNumerada(operam.deps);
+  const res = await upgradeFiscal(500, CSF, auditoria.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const esperado = auditoria.filas.findIndex(a => a[2] === 'actualizado') + 1;
+  assert.ok(esperado > 0, 'el upgrade registro la actualizacion en la auditoria');
+  assert.equal(await res.logId, esperado);
+});
