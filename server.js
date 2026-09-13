@@ -69,7 +69,7 @@ import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDec
 import { indiceOrigenPorCelular, anotarOrigen } from './public/js/origen-logica.js';
 import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL, puedePrecioCalca, normalizarPuedePrecioCalca } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
-import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
+import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -203,17 +203,28 @@ async function topeDescuentoDeUsuario(user) {
   return topeDescuentoVendedor({ role: user?.role, topeDescuento: registro?.topeDescuento });
 }
 
-// Permiso de fijar lista VIGENTE del usuario autenticado (#153, spec #98).
-// Mismo motivo que topeDescuentoDeUsuario: se lee del registro en cada
-// consulta, no del JWT, porque el token no se re-emite cuando el admin
-// otorga o quita el checkbox.
-async function puedeFijarListaDeUsuario(user) {
+// Los ids de lista de Operam de los escalones de volumen del catalogo vigente:
+// el insumo de la migracion de lectura de #296 (flag de #153 encendido y sin
+// campo nuevo = estas listas). Salen del catalogo, no de una tabla copiada.
+function listasDelCatalogo() {
+  return (readJSON('precios.json')?.tiers || []).map(t => t.listaId).filter(Boolean);
+}
+
+// Permiso de lista VIGENTE del usuario autenticado (#296, ADR-0015): rol admin
+// (todas) o las celdas de SU renglon de la matriz, ya migradas si el registro
+// todavia trae el flag binario de #153. Mismo motivo que topeDescuentoDeUsuario
+// para releerlo del registro y no del JWT: el token no se re-emite cuando el
+// admin mueve una celda.
+async function permisoListasDeUsuario(user) {
   const registro = (await vendedoresStore.listar()).find(v => v.id === user?.id);
-  return puedeFijarLista({ role: user?.role, puedeFijarLista: registro?.puedeFijarLista });
+  return {
+    esAdmin: user?.role === 'admin',
+    listasHabilitadas: listasHabilitadasDeVendedor(registro, listasDelCatalogo()),
+  };
 }
 
 // Permiso de capturar el precio de una calca (#280, spec #278), espejo exacto
-// de puedeFijarListaDeUsuario: se lee del registro en cada consulta, no del
+// de permisoListasDeUsuario: se lee del registro en cada consulta, no del
 // JWT, porque el token no se re-emite cuando el admin otorga o quita el
 // checkbox.
 async function puedePrecioCalcaDeUsuario(user) {
@@ -260,13 +271,16 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
     // indexado por MODELO (los 4 primeros caracteres del SKU), que es la llave
     // del maestro.
     const familias = Object.fromEntries((await modelosStore.listar()).map(m => [m.modelo, m.familia]));
-    // El tope y el permiso de fijar lista viajan con los precios porque son
-    // parte del poder de precio del vendedor y la pantalla los refresca en
-    // cada arranque de sesion (showApp).
+    // El tope y las listas habilitadas viajan con los precios porque son parte
+    // del poder de precio del vendedor y la pantalla los refresca en cada
+    // arranque de sesion (showApp). Desde #296 lo que viaja es la coleccion de
+    // listas, no el flag binario de #153; el rol admin recibe todas las que el
+    // catalogo sabe preciar, que son las unicas fijables.
+    const permisoListas = await permisoListasDeUsuario(req.user);
     res.json({
       ...precios, config, familias,
       topeDescuento: await topeDescuentoDeUsuario(req.user),
-      puedeFijarLista: await puedeFijarListaDeUsuario(req.user),
+      listasHabilitadas: permisoListas.esAdmin ? listasDelCatalogo() : permisoListas.listasHabilitadas,
       puedePrecioCalca: await puedePrecioCalcaDeUsuario(req.user),
     });
   } catch (err) {
@@ -454,12 +468,13 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
     return res.status(status).json({ error: preciosCalca.mensaje });
   }
   // La lista fijada tampoco depende de la pantalla (#151/#153, spec #98): un
-  // tier ajeno al tabulador solo pasa con rol admin o checkbox de vendedor,
-  // mismo patron que el tope de descuento -- el permiso lo hace valer el
-  // servidor, no el selector oculto. El tabulador del volumen ACTUAL no es la
-  // comparacion correcta al editar: se compara contra el tier YA guardado.
+  // tier ajeno al tabulador solo pasa con rol admin o con ESA lista habilitada
+  // en la matriz de quien guarda (#296), mismo patron que el tope de descuento
+  // -- el permiso lo hace valer el servidor, no el selector oculto. El
+  // tabulador del volumen ACTUAL no es la comparacion correcta al editar: se
+  // compara contra el tier YA guardado.
   const precios = readJSON('precios.json');
-  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await puedeFijarListaDeUsuario(req.user), esDuenoDelPrevio ? (prevEntry.tier ?? null) : null);
+  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await permisoListasDeUsuario(req.user), esDuenoDelPrevio ? (prevEntry.tier ?? null) : null);
   if (!tierValidado.ok) return res.status(403).json({ error: tierValidado.mensaje });
   try {
     const data = req.body;
@@ -1879,9 +1894,15 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, async (req, res) 
   res.json({ saved: true });
 });
 
+// La matriz de listas habilitadas se pinta con lo que este GET devuelve, asi
+// que sale ya NORMALIZADA (#296): un registro que todavia trae el flag binario
+// de #153 se lee con los escalones de volumen marcados, y el primer guardado
+// materializa la migracion en vez de borrarle el permiso.
 app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    res.json(await vendedoresStore.listar());
+    const listasVolumen = listasDelCatalogo();
+    const registro = await vendedoresStore.listar();
+    res.json(registro.map(v => ({ ...v, listasHabilitadas: listasHabilitadasDeVendedor(v, listasVolumen) })));
   } catch (err) {
     res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
   }
@@ -1899,6 +1920,11 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, re
       const out = { ...v };
       if (v.topeDescuento !== undefined) out.topeDescuento = normalizarTope(v.topeDescuento);
       if (v.puedeFijarLista !== undefined) out.puedeFijarLista = normalizarPuedeFijarLista(v.puedeFijarLista);
+      // Las celdas de la matriz (#296) viajan en el mismo PUT de reemplazo
+      // completo: basura capturada ahi se guarda como sin permiso, nunca como
+      // permiso implicito. La lista vacia SI se guarda (destildar todo es una
+      // decision, distinta de "sin configurar", que es lo que migra).
+      if (v.listasHabilitadas !== undefined) out.listasHabilitadas = normalizarListasHabilitadas(v.listasHabilitadas);
       if (v.puedeAsignar !== undefined) out.puedeAsignar = normalizarPuedeAsignar(v.puedeAsignar);
       if (v.puedePrecioCalca !== undefined) out.puedePrecioCalca = normalizarPuedePrecioCalca(v.puedePrecioCalca);
       return out;
