@@ -2060,6 +2060,8 @@ body {
 .pc-cli-nombre { font-size: 18px; font-weight: 700; line-height: 1.3; color: var(--text); }
 .pc-cli-sub { font-size: 13px; color: var(--text-light); margin-top: 2px; }
 .pc-cli-hint { font-size: 12.5px; color: var(--text-light); margin-top: 12px; line-height: 1.45; }
+/* Cliente en moneda extranjera (#297): ocupa el lugar del CTA a Productos */
+.pc-cli-bloqueo { margin-top: 16px; font-size: 12.5px; padding: 10px 12px; border-radius: 8px; line-height: 1.45; background: oklch(0.95 0.04 25); color: var(--danger); }
 .pc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
 .pc-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: 999px; min-height: 30px; }
 .pc-chip.ok { background: oklch(0.94 0.04 150); color: oklch(0.32 0.08 150); }

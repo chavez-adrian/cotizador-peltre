@@ -90,6 +90,9 @@ import { indiceOrigenPorCelular, anotarOrigen } from './origen-logica.js';
 // Aviso de dominio mal escrito del correo (issue #269): el MISMO nucleo que usa
 // el formulario publico, sin copia. mayoreo-logica.js es puro y browser-safe.
 import { sugerirDominioCorreo } from './mayoreo-logica.js';
+// Moneda del cliente (#297, ADR-0015): el MISMO juicio que aplica el servidor al
+// subir el quote. Aqui se usa para avisar al seleccionar y no dejar cotizar.
+import { bloqueoMonedaCliente } from './moneda-cliente-logica.js';
 import {
   puedeArrastrarCotizacion,
   buildTableroCotizacionesHtml,
@@ -2552,7 +2555,20 @@ function aplicarEnvioRestaurado(envio) {
 }
 
 // === PDF GENERATION ===
+// Compuerta de generacion por moneda del cliente (#297, ADR-0015), hermana de
+// bloqueaGeneracionPorCalcaSinPrecio: el documento y el quote saldrian en pesos y
+// Operam los registraria en la moneda del cliente (17x). Devuelve true cuando ya
+// aviso y hay que abortar la generacion.
+function bloqueaGeneracionPorMoneda() {
+  const bloqueoMoneda = bloqueoMonedaActual();
+  if (!bloqueoMoneda) return false;
+  alert(bloqueoMoneda.mensaje);
+  switchTab('cliente');
+  return true;
+}
+
 async function generatePDF() {
+  if (bloqueaGeneracionPorMoneda()) return;
   const telErr = validarTelefonosCotizacion();
   if (telErr) {
     alert(telErr);
@@ -2655,6 +2671,7 @@ async function generatePDF() {
 }
 
 async function generateHTML() {
+  if (bloqueaGeneracionPorMoneda()) return;
   const telErr = validarTelefonosCotizacion();
   if (telErr) {
     alert(telErr);
@@ -3508,10 +3525,23 @@ function pcChipsHtml(chips, customerIdFiscal) {
     fiscalChip;
 }
 
+// Moneda del cliente (#297, ADR-0015): el veredicto lo da el nucleo puro sobre la
+// fila que trajo el buscador (viene con `moneda`), sin volver a preguntarle a
+// Operam. Sin senal de moneda -- un cliente restaurado de un borrador o cargado
+// del historial -- no bloquea aqui: esa red la pone el servidor al subir.
+function bloqueoMonedaActual() {
+  const c = pcState.cliente;
+  return c ? bloqueoMonedaCliente(c, c.name || c.ref || '') : null;
+}
+
 function pcRenderTarjeta() {
   const root = pcEl();
   const c = pcClienteActual();
   const esOperam = pcState.cliente?.tipo === 'operam';
+  // Cliente en moneda extranjera: en vez del CTA a Productos va el aviso. El
+  // cotizador calcula e imprime pesos y Operam los etiquetaria con la moneda del
+  // cliente, asi que no se deja avanzar a cotizar (#297).
+  const bloqueoMoneda = bloqueoMonedaActual();
   const chips = chipsCompletitud(c);
   // Cada parte se escapa ANTES de unir con la entidad &middot; (escapar el join
   // completo la romperia); telefono/ciudad son datos (p. ej. CSV de expo) y van
@@ -3530,7 +3560,9 @@ function pcRenderTarjeta() {
     `<div class="pc-cli-sub">${sub}</div>` +
     `<div class="pc-chips">${pcChipsHtml(chips, pcCustomerIdFiscal())}</div>` +
     (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
-    '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>' +
+    (bloqueoMoneda
+      ? `<div class="pc-cli-bloqueo">${escapeHtml(bloqueoMoneda.mensaje)}</div>`
+      : '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>') +
     '</div>' +
     '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Cambiar de cliente</button>';
 
@@ -3543,6 +3575,13 @@ function pcRenderTarjeta() {
 }
 
 function pcContinuar() {
+  // Las pestanas se pueden tocar directo, asi que el freno por moneda (#297) se
+  // repite en las dos puertas que llevan al documento: esta y la generacion.
+  const bloqueoMoneda = bloqueoMonedaActual();
+  if (bloqueoMoneda) {
+    alert(bloqueoMoneda.mensaje);
+    return;
+  }
   switchTab('productos');
 }
 window.pcContinuar = pcContinuar;

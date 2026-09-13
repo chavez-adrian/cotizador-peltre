@@ -59,6 +59,7 @@ import { refrescarIndice, matchCliente, clientesCacheados, enumerarTelefonosClie
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
 import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
+import { monedaDelCliente, ErrorClienteMonedaExtranjera, CODIGO_MONEDA_EXTRANJERA } from './public/js/moneda-cliente-logica.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
@@ -2354,6 +2355,10 @@ function filaClienteOperam(c, estadoOperam) {
     // no se puede determinar (ver paisDeClienteOperam). El frontend fija
     // cl-pais solo cuando esto viene no nulo.
     pais: paisDeClienteOperam(c),
+    // #297: la Moneda del cliente (curr_code). Viaja en la fila porque el paso
+    // Cliente tiene que avisar AL SELECCIONAR, sin volver a preguntarle a Operam;
+    // el juicio lo da el mismo nucleo puro que usa la subida. '' = sin senal.
+    moneda: monedaDelCliente(c),
     // #344: los dos estados del Cliente Operam. `fiscal` sale del RFC de HOY,
     // no del que se capturo alguna vez; `fuenteIncompleta` declara el hueco de
     // los quotes web.
@@ -2898,6 +2903,10 @@ async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creado
     // eligio (o al que se le colgo la sucursal) puede estar sin lista; el recien
     // creado por esta misma alta nace con la de su tier y no se checa.
     if (await responderSiClienteSinLista(res, id, err, { customer_id: customerId, steps: pasos })) return;
+    // Moneda extranjera (#297): el cliente EXISTENTE que el vendedor eligio (o al
+    // que se le colgo la sucursal) puede cotizar en otra moneda; el recien creado
+    // por esta misma alta nace en MXN y no se checa.
+    if (responderSiMonedaExtranjera(res, err, { customer_id: customerId, steps: pasos })) return;
     await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
     return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps: pasos });
   } finally {
@@ -3020,6 +3029,18 @@ async function responderSiClienteSinLista(res, id, err, extra = {}) {
   // El fallback no siempre tiene el nombre a mano; el mensaje sin el sigue
   // diciendo que hacer.
   res.status(422).json({ error: sinLista ? err.message : MENSAJE_CLIENTE_SIN_LISTA(), codigo: CODIGO_CLIENTE_SIN_LISTA, ...extra });
+  return true;
+}
+
+// Cliente con moneda extranjera (#297, ADR-0015). Mismo trato que el cliente sin
+// lista: no es un fallo de Operam sino un cliente al que el cotizador todavia no
+// le puede cotizar, asi que va como 422 CON codigo estructurado y SIN Reintentar
+// -- reintentar subiria pesos etiquetados en otra moneda. No marca motivo de PRE:
+// el 422 dice el motivo completo en cada intento, y el catalogo de motivos es
+// vocabulario del pipeline. Devuelve true si se hizo cargo del error.
+function responderSiMonedaExtranjera(res, err, extra = {}) {
+  if (!(err instanceof ErrorClienteMonedaExtranjera)) return false;
+  res.status(422).json({ error: err.message, codigo: CODIGO_MONEDA_EXTRANJERA, moneda: err.moneda, ...extra });
   return true;
 }
 
@@ -3163,6 +3184,9 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
       }
       // Cliente sin lista de precios (#285): tampoco es indisponibilidad de Operam.
       if (await responderSiClienteSinLista(res, id, err)) return;
+      // Cliente con moneda extranjera (#297): el cotizador no puede subir este
+      // quote hasta que exista el soporte de moneda.
+      if (responderSiMonedaExtranjera(res, err)) return;
       // PRE por Operam (#204): el documento SIGUE saliendo, sin numero (ADR-0009).
       await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
       res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
