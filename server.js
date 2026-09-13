@@ -12,7 +12,7 @@ import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacio
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
-import { bodyDesdeDiffFiscal, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
+import { bodyDesdeDiffFiscal, camposNoAplicados, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
 import { darDeAlta, upgradeFiscal } from './lib/alta-cliente.js';
 import { logCliente } from './lib/clientes-log.js';
@@ -2636,9 +2636,17 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
     }
   }
   try {
-    await actualizarClienteDirecto(id, bodyDesdeDiffFiscal(diff));
+    // El eco del PUT es lo unico que dice que acepto Operam (#248): un 200 no
+    // garantiza nada (quirk #74) y hasta aqui el vendedor leia "actualizados"
+    // incluso cuando Operam habia ignorado el campo en silencio -- la misma clase de
+    // fallo de #169, en otra superficie. La pieza de verificacion es la del upgrade
+    // fiscal, sin copia: las llaves del diff son de LECTURA y camposNoAplicados ya
+    // las traduce a las de escritura para buscarlas en el eco.
+    const eco = await actualizarClienteDirecto(id, bodyDesdeDiffFiscal(diff));
     if (hayCambioRfc) logCliente(normalizarRfc(rfcNuevo), null, 'rfc-actualizado', id, FUENTE_PATCH_CLIENTE, null, null);
-    res.json({ ok: true });
+    // Misma llave de respuesta que el upgrade fiscal, para que el navegador lea los
+    // dos caminos con interpretarRespuestaUpgrade.
+    res.json({ ok: true, camposNoActualizados: camposNoAplicados(diff, eco) });
   } catch (err) {
     if (hayCambioRfc) logCliente(normalizarRfc(rfcNuevo), null, 'error', id, FUENTE_PATCH_CLIENTE, null, err.message);
     res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });

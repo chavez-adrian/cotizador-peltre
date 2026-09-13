@@ -6,7 +6,9 @@ import {
   combinarTelefonoConCodigo,
   validarTelefono,
   calcularDiffFiscal,
+  datosFiscalesDelDedup,
   buildDiffFiscalHtml,
+  buildDiffFiscalResultadoHtml,
   buildDedupExactoConDiffHtml,
   buildCandidatosRfcGenericoHtml,
   buildAltaDarDeAltaPayload,
@@ -7493,8 +7495,10 @@ async function altaDiffFiscalConfirmar() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error al actualizar');
 
+    // El eco del PUT decide el mensaje (#248): un 200 no significa que Operam haya
+    // guardado todo. La respuesta se lee con la misma vista del upgrade fiscal.
     if (panel) {
-      panel.innerHTML = '<p class="alert alert-success" style="margin:0">Datos fiscales actualizados en Operam.</p>';
+      panel.innerHTML = buildDiffFiscalResultadoHtml(interpretarRespuestaUpgrade(res.status, data));
     }
     altaDiffFiscalState.cliente = null;
     altaDiffFiscalState.diff = null;
@@ -7555,7 +7559,12 @@ async function altaDedupCorrer(rfc, razonSocial, telefono) {
 
     if (resultado.tipo === 'exacto') {
       const c = resultado.cliente;
-      const csfDatos = altaState.datos || null;
+      // El diff se calcula contra lo que el vendedor de verdad capturo, no contra
+      // altaState.datos crudo (#248): ahi viven tambien el default del select de uso
+      // de CFDI y el segmento de la Seccion 2, que sigue bloqueada en este momento.
+      const csfDatos = altaState.datos
+        ? datosFiscalesDelDedup(altaState.datos, { usoCfdiElegido: altaState.usoCfdiElegido === true })
+        : null;
       altaDiffFiscalState.cliente = c;
       altaDiffFiscalState.diff = csfDatos ? calcularDiffFiscal(c, csfDatos) : {};
       dedupDiv.innerHTML = buildDedupExactoConDiffHtml(c, csfDatos);

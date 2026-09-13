@@ -983,3 +983,137 @@ test('RU5: cualquier otro fallo es un error con el texto que mando el servidor',
     'No se pudieron guardar los datos fiscales en Operam');
   assert.equal(interpretarRespuestaUpgrade(200, {}).tipo, 'error', 'un 200 sin ok no es un upgrade logrado');
 });
+
+// === #248: el diff del dedup por RFC no ofrece defaults del formulario ===
+//
+// Observado en vivo el 2026-08-22 sobre el cliente 15 de produccion: el panel del
+// ALTA COMPLETA ofrecia escribirle `timbrado_uso_cfdi: 'G03'` (el default con el que
+// nace el select, USO_CFDI_DEFAULT_ALTA) encima de su S01, y una fila
+// `Segmento: 9 -> (vacio)` leida de la Seccion 2, que esta BLOQUEADA cuando corre la
+// dedup. Como "Confirmar y actualizar en Operam" es todo-o-nada, quien queria aplicar
+// el regimen fiscal real se llevaba las dos de encima.
+//
+// El estado del cliente 15 y los valores de estas fixtures son los que el issue #248
+// leyo por API ese mismo dia; el regimen 616 es el de su CSF real.
+const CLIENTE_15_OPERAM = {
+  customer_id: 15,
+  CustName: 'Adrian Chavez Rosete',
+  cust_ref: 'Adrian Chavez',
+  tax_id: 'CARA830713D53',
+  timbrado_uso_cfdi: 'S01',
+  segmento: { id: '9', clave: '900', description: 'Familia y Amigos' },
+  regimen: '605',
+  sales_type: '12',
+  street: 'Reforma',
+  street_number: '100',
+  suite_number: 'A',
+  district: 'Juarez',
+  postal_code: '06600',
+  city: 'CDMX',
+  state: 'CDMX',
+};
+
+// Lo que altaCsfLeerFormulario entrega con el formulario en sus defaults: el select de
+// uso de CFDI preseleccionado en G03 sin que nadie lo toque y el segmento vacio porque
+// su seccion sigue bloqueada. Lo unico que de verdad viene de la CSF y difiere es el
+// regimen fiscal. (Las filas que solo difieren en acentos son el punto 4 del issue y
+// quedan fuera de este ticket: aqui los textos coinciden.)
+const FORMULARIO_EN_DEFAULTS = {
+  rfc: 'CARA830713D53',
+  razonSocial: 'Adrian Chavez Rosete',
+  nombreCorto: 'Adrian Chavez',
+  idcif: '',
+  regimenFiscal: '616',
+  usoCfdi: 'G03',
+  segmentoId: '',
+  calle: 'Reforma',
+  numExt: '100',
+  numInt: 'A',
+  colonia: 'Juarez',
+  cp: '06600',
+  municipio: 'CDMX',
+  estado: 'CDMX',
+};
+
+test('D1: el diff del alta completa en defaults NO ofrece el G03 del formulario ni el segmento de la seccion bloqueada (#248)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const diff = calcularDiffFiscal(
+    CLIENTE_15_OPERAM,
+    datosFiscalesDelDedup(FORMULARIO_EN_DEFAULTS, { usoCfdiElegido: false })
+  );
+  assert.ok(!('timbrado_uso_cfdi' in diff), 'el default G03 no es captura del vendedor');
+  assert.ok(!('segmento_id' in diff), 'la Seccion 2 esta bloqueada: su vacio no es "borralo"');
+  assert.deepEqual(Object.keys(diff), ['cfdi_regimen_fiscal'], 'solo queda el diff legitimo de la CSF');
+  assert.equal(diff.cfdi_regimen_fiscal.anterior, '605');
+  assert.equal(diff.cfdi_regimen_fiscal.nuevo, '616');
+});
+
+test('D2: el uso de CFDI SI entra al diff cuando el vendedor lo cambio a proposito (#248)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const datos = { ...FORMULARIO_EN_DEFAULTS, usoCfdi: 'G01' };
+  const diff = calcularDiffFiscal(CLIENTE_15_OPERAM, datosFiscalesDelDedup(datos, { usoCfdiElegido: true }));
+  assert.equal(diff.timbrado_uso_cfdi.anterior, 'S01');
+  assert.equal(diff.timbrado_uso_cfdi.nuevo, 'G01');
+});
+
+// El segmento sale SIEMPRE, incluso con valor: este PATCH no invoca el post-fix web
+// (actualizarSegmentoClienteWeb) por ningun lado y la API v3 no lo persiste (#172),
+// asi que ofrecerlo seria prometer una escritura que nunca ocurre.
+test('D3: el segmento nunca entra al diff de este panel, ni siquiera con un valor capturado (#248)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const datos = { ...FORMULARIO_EN_DEFAULTS, segmentoId: '3' };
+  const diff = calcularDiffFiscal(CLIENTE_15_OPERAM, datosFiscalesDelDedup(datos, { usoCfdiElegido: false }));
+  assert.ok(!('segmento_id' in diff));
+});
+
+test('D4: datosFiscalesDelDedup no toca lo demas capturado ni muta el original (#248)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const original = { ...FORMULARIO_EN_DEFAULTS };
+  const salida = datosFiscalesDelDedup(original, { usoCfdiElegido: false });
+  assert.equal(salida.rfc, 'CARA830713D53');
+  assert.equal(salida.regimenFiscal, '616');
+  assert.equal(salida.cp, '06600');
+  assert.equal(original.usoCfdi, 'G03', 'altaState.datos sigue completo para el alta');
+  assert.equal(original.segmentoId, '', 'altaState.datos sigue completo para el alta');
+});
+
+test('D5: el panel del RFC duplicado pinta el regimen y ya no las filas de Uso de CFDI ni Segmento (#248)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const html = buildDedupExactoConDiffHtml(
+    CLIENTE_15_OPERAM,
+    datosFiscalesDelDedup(FORMULARIO_EN_DEFAULTS, { usoCfdiElegido: false })
+  );
+  assert.ok(html.includes('Regimen Fiscal'), 'el diff legitimo se sigue mostrando');
+  assert.ok(!html.includes('Uso de CFDI'), 'no se ofrece escribir el default del formulario');
+  assert.ok(!html.includes('Segmento'), 'no se ofrece escribir el vacio de la seccion bloqueada');
+});
+
+// El panel "Confirmar y actualizar en Operam" pintaba "Datos fiscales actualizados en
+// Operam" pasara lo que pasara (#248, defecto 3). Ahora lee la respuesta con el MISMO
+// interpretarRespuestaUpgrade del upgrade fiscal y pinta lo que Operam de verdad guardo.
+test('D6: el resultado del panel avisa cuando Operam no guardo un campo, con su detalle plegado (#248)', async () => {
+  const { buildDiffFiscalResultadoHtml, interpretarRespuestaUpgrade, UPGRADE_TITULO_PENDIENTES } =
+    await import('../alta-logica.js');
+  const vista = interpretarRespuestaUpgrade(200, {
+    ok: true,
+    camposNoActualizados: [{
+      campo: 'segmento_id', label: 'Segmento', anterior: '9', nuevo: '3',
+      motivo: 'Operam ignoro este campo en el PUT (no lo devolvio en la respuesta)',
+    }],
+  });
+  const html = buildDiffFiscalResultadoHtml(vista);
+  assert.ok(html.includes(UPGRADE_TITULO_PENDIENTES), 'el titulo dice que no todo quedo guardado');
+  assert.ok(html.includes('Segmento'), 'nombra el campo pendiente');
+  assert.ok(html.includes('no quedo guardado en Operam'));
+  assert.ok(html.includes('<details'), 'el detalle tecnico va plegado (ADR-0017)');
+  assert.ok(!html.includes('alert-success'), 'no se pinta como exito limpio');
+});
+
+test('D7: sin campos pendientes el resultado del panel sigue siendo el exito de siempre (#248)', async () => {
+  const { buildDiffFiscalResultadoHtml, interpretarRespuestaUpgrade, UPGRADE_TITULO_LOGRADO } =
+    await import('../alta-logica.js');
+  const html = buildDiffFiscalResultadoHtml(interpretarRespuestaUpgrade(200, { ok: true, camposNoActualizados: [] }));
+  assert.ok(html.includes('alert-success'));
+  assert.ok(html.includes(UPGRADE_TITULO_LOGRADO));
+  assert.ok(!html.includes('<details'), 'sin pendientes no hay nada que desplegar');
+});

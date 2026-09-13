@@ -417,6 +417,31 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
   return diff;
 }
 
+// Lo que el panel de diff del dedup por RFC puede ofrecerle a Operam (issue #248).
+// Hasta aqui el panel del ALTA COMPLETA comparaba contra `altaState.datos` CRUDO, que
+// mezcla lo que si viene de la CSF con defaults del formulario y con campos de
+// secciones que el vendedor todavia no puede tocar, y los presentaba a todos como
+// "datos fiscales de la CSF". Como "Confirmar y actualizar en Operam" es todo-o-nada,
+// esas filas arrastraban escrituras que nadie pidio (visto en vivo sobre el cliente 15):
+//   - Uso de CFDI: el select nace en USO_CFDI_DEFAULT_ALTA (G03) y altaFijarDefaultUsoCfdi
+//     lo escribe por JS, que no dispara `change`, asi que el diff ofrecia pisarle su S01.
+//     Misma regla que usoCfdiParaPayload (#250): un default es la pregunta, no la
+//     respuesta -- solo viaja lo que el vendedor cambio a proposito.
+//   - Segmento: vive en la Seccion 2, BLOQUEADA mientras corre la dedup, asi que su
+//     vacio no significa "borralo" (vacio-no-viaja, #197). Sale SIEMPRE, tambien con
+//     valor: este camino no tiene con que escribirlo -- el PATCH no invoca el post-fix
+//     web y la API v3 no persiste segmento_id por ningun camino (#172) -- y ofrecer una
+//     escritura que jamas ocurre es peor que no ofrecerla.
+// Se quita la LLAVE, no su valor: resolverValorNuevo distingue ausente de vacio, y un
+// vacio con `default` caeria justo en el G03 que este ticket saca del diff.
+export function datosFiscalesDelDedup(csfDatos, { usoCfdiElegido = false } = {}) {
+  const salida = { ...(csfDatos || {}) };
+  const llaveCsf = operam => DIFF_FISCAL_CAMPOS.find(c => c.operam === operam).csf;
+  delete salida[llaveCsf('segmento_id')];
+  if (!usoCfdiElegido) delete salida[llaveCsf('timbrado_uso_cfdi')];
+  return salida;
+}
+
 // Body del PUT del upgrade de CSF (issue #85): escribe los datos fiscales reales
 // (RFC, razon social, regimen, domicilio fiscal) sobre el cliente generico existente.
 // Recorre la MISMA tabla que calcularDiffFiscal para que lo enviado y lo verificado
@@ -530,6 +555,34 @@ export function interpretarRespuestaUpgrade(status, body) {
     // adopta lo que Operam si guardo.
     noAplicados: pendientes.map(c => c.campo),
   };
+}
+
+// Resultado del panel "Confirmar y actualizar en Operam" del dedup por RFC (#248).
+// Hasta aqui el panel pintaba "Datos fiscales actualizados en Operam" pasara lo que
+// pasara: el mensaje mentia cuando Operam ignoraba un campo en silencio (quirk #74).
+// Consume la MISMA vista de interpretarRespuestaUpgrade que el upgrade fiscal, y por
+// eso los dos caminos no pueden discrepar sobre que significo la respuesta. Los
+// textos son constantes del modulo y las etiquetas salen de DIFF_FISCAL_CAMPOS: no
+// llega dato capturado que haya que escapar (misma regla que buildDiffFiscalHtml).
+export function buildDiffFiscalResultadoHtml(vista) {
+  const campos = (vista && vista.campos) || [];
+  const mensaje = (vista && vista.mensaje) || '';
+  if (campos.length === 0) {
+    return '<p class="alert alert-success" style="margin:0">' + mensaje + '</p>';
+  }
+  return '<div class="upgrade-reporte">' +
+    '<p class="upgrade-reporte-titulo">' + mensaje + '</p>' +
+    '<ul class="operam-pasos">' +
+    campos.map(c =>
+      '<li class="operam-paso operam-paso-error">' +
+      '<strong>' + c.label + ':</strong> ' + c.mensaje +
+      (c.detalle
+        ? '<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>' + c.detalle + '</div></details>'
+        : '') +
+      '</li>'
+    ).join('') +
+    '</ul>' +
+    '</div>';
 }
 
 // Configuracion comercial en el upgrade fiscal (issue #197). El vendedor VE la

@@ -273,3 +273,68 @@ test('PATCH /api/operam/clientes/:id: diff vacio igual llama a Operam (validacio
     restore();
   }
 });
+
+// === El eco del PUT decide el mensaje, no el 200 (issue #248, mismo patron de #169) ===
+//
+// Hasta #248 este endpoint respondia {ok:true} sin mirar la respuesta de Operam y la UI
+// pintaba "Datos fiscales actualizados en Operam" aunque Operam hubiera ignorado campos
+// en silencio (quirk #74). El PUT responde con el ECO de lo que acepto: lo enviado que
+// no vuelve es exactamente lo que ignoro, y esa es la pieza que ya existe en
+// alta-logica.js (camposNoAplicados), la misma que usa el upgrade fiscal.
+
+test('PATCH /api/operam/clientes/:id: reporta los campos que Operam no devolvio en el eco (#248)', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    // Eco real del quirk: cust_name vuelve (se aplico), segmento_id no (#172).
+    '/api/v3/sales/customers/42': () => jsonResponse({ version: '3.26.32', cust_name: 'Peltre Nacional SA de CV' }),
+  });
+  try {
+    const diff = {
+      CustName: { anterior: 'PROSPECTO', nuevo: 'Peltre Nacional SA de CV', label: 'Razon Social' },
+      segmento_id: { anterior: '9', nuevo: '3', label: 'Segmento' },
+    };
+    const res = await req
+      .patch('/api/operam/clientes/42')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({ diff });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.deepEqual(res.body.camposNoActualizados.map(c => c.campo), ['segmento_id'],
+      'la razon social la ABSUELVE el eco; el segmento no vuelve y se reporta');
+    assert.equal(res.body.camposNoActualizados[0].label, 'Segmento');
+    assert.equal(res.body.camposNoActualizados[0].anterior, '9');
+    assert.equal(res.body.camposNoActualizados[0].nuevo, '3');
+    assert.ok(res.body.camposNoActualizados[0].motivo, 'el vendedor recibe el motivo real');
+  } finally {
+    restore();
+  }
+});
+
+test('PATCH /api/operam/clientes/:id: eco completo -> sin campos pendientes (#248)', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/42': () => jsonResponse({
+      version: '3.26.32',
+      cfdi_regimen_fiscal: '616',
+      postal_code: '45100',
+    }),
+  });
+  try {
+    const diff = {
+      cfdi_regimen_fiscal: { anterior: '605', nuevo: '616', label: 'Regimen Fiscal' },
+      postal_code: { anterior: '44100', nuevo: '45100', label: 'Codigo Postal' },
+    };
+    const res = await req
+      .patch('/api/operam/clientes/42')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({ diff });
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.camposNoActualizados, []);
+  } finally {
+    restore();
+  }
+});
