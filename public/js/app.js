@@ -2980,7 +2980,13 @@ function aplicarDomicilio(d) {
 // (mezclar/recientes/chips/guardrails). Ver CONTEXT.md.
 // ============================================================================
 
-const pcState = { cliente: null, domicilioIdx: 0 };
+// `contactoManual` = el vendedor eligio "+ Nuevo contacto" en el selector del paso
+// Envio para capturar a mano a quien recibe (#355). Vive aqui porque los campos no
+// lo pueden decir: vacios por esa eleccion se ven igual que vacios por no haber
+// tecleado todavia, y la repintada de la tarjeta re-aplicaba la opcion 0 encima.
+// Lo lee seleccionContactoEntrega y lo limpian los tres cambios que lo desmienten:
+// otra opcion del selector, otro domicilio y otro cliente.
+const pcState = { cliente: null, domicilioIdx: 0, contactoManual: false };
 
 function pcEl() { return document.getElementById('pc-root'); }
 
@@ -3036,6 +3042,9 @@ function pcLimpiarCamposCliente() {
   window._operamDomicilios = null;
   window._operamContactosCliente = null;
   pcState.domicilioIdx = 0;
+  // Los campos de entrega que este limpiador acaba de vaciar ya no son la captura
+  // a mano de nadie: el cliente que sigue arranca con su autollenado (#355).
+  pcState.contactoManual = false;
 }
 
 // Punto UNICO de preparacion antes de seleccionar/crear un cliente: limpia los
@@ -3677,9 +3686,12 @@ function pcRenderContactoSelect({ forzarDefault } = {}) {
     slot.innerHTML = '';
     return;
   }
+  // Forzar el default es aplicar el contacto de otra sucursal: la captura a mano
+  // que el vendedor habia elegido queda desmentida ahi mismo (#355).
+  if (forzarDefault) pcState.contactoManual = false;
   const sel = forzarDefault
     ? { indice: 0, aplicar: true }
-    : seleccionContactoEntrega(contactos, pcCamposContactoEntrega());
+    : seleccionContactoEntrega(contactos, pcCamposContactoEntrega(), pcState.contactoManual);
   const opciones = contactos.map((c, i) => {
     const tag = etiquetaTagContacto(c.tag);
     const datos = [c.telefono, c.email].filter(Boolean).join(' · ');
@@ -3697,10 +3709,15 @@ function pcRenderContactoSelect({ forzarDefault } = {}) {
 function pcCambiarContacto() {
   const val = document.getElementById('pc-contacto-select')?.value;
   if (val === 'nuevo') {
+    // La eleccion se anota ANTES de vaciar los campos: sin la marca, la siguiente
+    // repintada leeria esos tres vacios como "todavia no hay nada" y volveria a
+    // aplicar la opcion 0 encima de la decision del vendedor (#355).
+    pcState.contactoManual = true;
     pcAplicarContacto(null);
     document.getElementById('cl-nombre-entrega')?.focus();
     return;
   }
+  pcState.contactoManual = false;
   pcAplicarContacto(pcContactosDisponibles()[parseInt(val)]);
 }
 window.pcCambiarContacto = pcCambiarContacto;

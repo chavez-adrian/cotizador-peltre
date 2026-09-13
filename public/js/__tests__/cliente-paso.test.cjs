@@ -596,3 +596,34 @@ test('X17: sin opciones no hay nada que elegir ni que aplicar', () => {
   assert.deepStrictEqual(seleccionContactoEntrega([], { nombre: '', telefono: '', email: '' }), { indice: null, aplicar: false });
   assert.deepStrictEqual(seleccionContactoEntrega(null, null), { indice: null, aplicar: false });
 });
+
+// EL caso de #355: el vendedor eligio "+ Nuevo contacto" para capturar a mano a
+// quien recibe y todavia no teclea nada. Mirando solo los campos, ese vacio es
+// identico al de "todavia no hay nada", asi que la repintada de la tarjeta (hoy el
+// regreso del upgrade fiscal) re-aplicaba la opcion 0 sobre su decision explicita.
+// La marca de captura manual es la que distingue los dos vacios.
+test('X18: con captura manual y campos vacios -> "+ Nuevo contacto", sin autollenado', () => {
+  assert.deepStrictEqual(
+    seleccionContactoEntrega(CONTACTOS, { nombre: '', telefono: '', email: '' }, true),
+    { indice: null, aplicar: false },
+  );
+});
+
+// La marca dura hasta que el vendedor la quite (otra opcion del selector, otro
+// domicilio u otro cliente), asi que tampoco un dato que CASUALMENTE sea el de una
+// opcion vuelve a elegirla: tecleo esos digitos a mano y el selector no se le mueve.
+test('X19: con captura manual, ni lo que corresponde a una opcion la re-elige', () => {
+  assert.deepStrictEqual(
+    seleccionContactoEntrega(CONTACTOS, { nombre: '', telefono: '+52 55 1234 5678', email: 'jorge@orea.mx' }, true),
+    { indice: null, aplicar: false },
+  );
+});
+
+// Limpiar la marca (cambio de cliente, otra opcion del selector) devuelve el
+// autollenado de siempre: la marca es lo unico que cambia el veredicto.
+test('X20: sin la marca, el autollenado de #353 no cambia', () => {
+  assert.deepStrictEqual(
+    seleccionContactoEntrega(CONTACTOS, { nombre: '', telefono: '', email: '' }, false),
+    { indice: 0, aplicar: true },
+  );
+});

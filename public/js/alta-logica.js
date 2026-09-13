@@ -1211,9 +1211,18 @@ export function etiquetaTagContacto(tag) {
 // escribe su celular y su correo de entrega pero nunca su nombre. Si algo capturado
 // no le corresponde a nadie, lo escribio una persona: queda "+ Nuevo contacto"
 // (indice null) y no se toca nada.
-export function seleccionContactoEntrega(contactos, capturado) {
+//
+// `capturaManual` es la marca de que el vendedor eligio "+ Nuevo contacto" en el
+// selector (#355). Sin ella, los campos vacios de esa eleccion son indistinguibles
+// de los de "todavia no hay nada" y la repintada re-aplicaba la opcion 0 encima de
+// una decision explicita. Mientras este puesta NO se elige ni se aplica a nadie --
+// tampoco cuando lo capturado coincide con una opcion: la marca solo la quita el
+// vendedor (otra opcion del selector, otro domicilio, otro cliente), y hasta
+// entonces quien captura es el.
+export function seleccionContactoEntrega(contactos, capturado, capturaManual) {
   const lista = contactos || [];
   if (lista.length === 0) return { indice: null, aplicar: false };
+  if (capturaManual) return { indice: null, aplicar: false };
   const cap = capturado || {};
   if (!cap.nombre && !cap.telefono && !cap.email) return { indice: 0, aplicar: true };
   const i = lista.findIndex(c => contactoExplicaLoCapturado(c, cap));
