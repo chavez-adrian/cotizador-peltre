@@ -86,6 +86,35 @@ export function tierAlCargarCotizacion(tiers, piezasProducto, tierGuardado, modo
 export const MENSAJE_COPIA_LISTA_FIJADA =
   'La cotizacion original tenia una lista de precios fijada; esta copia arranca en Auto (sin permiso para fijarla).';
 
+// Que pasa con la lista fijada y que hay que avisar al CAMBIAR DE CLIENTE
+// (#385, decision de Adrian 2026-09-14): el cambio se comporta como Copiar
+// sobre el carrito actual -- la lista fijada se conserva si quien cotiza puede
+// fijarla y si no cae a Auto con aviso (misma semantica que
+// tierAlCargarCotizacion en modo 'nueva'). Si se estaba EDITANDO (modo
+// actualizacion), se avisa que se salio de la edicion: al generar se creara
+// una cotizacion nueva y la del folio se queda como estaba.
+//
+// avisoPrevio: el aviso que ya estaba vigente en esta sesion de cotizacion.
+// "Cambiar de cliente" en la tarjeta vuelve a la pantalla de inicio (primera
+// preparacion) y elegir al nuevo cliente prepara otra vez (segunda): en la
+// segunda ya no hay edicion ni lista que perder, y sin acumular la primera
+// el aviso se borraria justo cuando el vendedor lo tiene que leer.
+export function estadoAlCambiarCliente({ tiers, piezasProducto, tierFijado, tienePermiso, modoActualizacion, folioOperam, avisoPrevio }) {
+  const lista = tierAlCargarCotizacion(tiers, piezasProducto, tierFijado, 'nueva', tienePermiso);
+  const previo = avisoPrevio || {};
+  const salidaEdicion = !!modoActualizacion || !!previo.salidaEdicion;
+  const listaPerdida = lista.avisoListaPerdida || !!previo.listaPerdida;
+  if (!salidaEdicion && !listaPerdida) return { tierFijado: lista.tierFijado, aviso: null };
+  return {
+    tierFijado: lista.tierFijado,
+    aviso: {
+      salidaEdicion,
+      folioOperam: modoActualizacion ? (folioOperam ?? null) : (previo.folioOperam ?? null),
+      listaPerdida,
+    },
+  };
+}
+
 // Opciones del selector cuando quien lo ve NO tiene permiso pero esta editando
 // una cotizacion cuya lista fijada se conservo (#154): solo Auto (siempre
 // agregado aparte por el caller) y el tier ya fijado, nunca el tabulador

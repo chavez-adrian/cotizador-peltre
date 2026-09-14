@@ -10,6 +10,7 @@ import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_
 import { nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
+import { MENSAJE_COPIA_LISTA_FIJADA } from './tier-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -199,6 +200,23 @@ export function buildAccionesCargaHtml(cot) {
 export function buildAvisoModoActualizacion(folioOperam) {
   const badge = etiquetaFolioOperam({ folioOperam });
   return `<span class="operam-status">Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span>`;
+}
+
+// Avisos al cambiar de cliente (#385): el `aviso` que devuelve
+// estadoAlCambiarCliente (tier-logica.js) pintado en el mismo canal que el
+// aviso de modo actualizacion. Cadena vacia sin aviso: el slot se oculta solo
+// (.operam-status-slot:empty). La salida de la edicion nombra el folio con la
+// etiqueta Cotizacion N (ADR-0009: nunca el id interno); la lista perdida es
+// el MISMO mensaje que Copiar sin permiso, porque es la misma regla.
+export function buildAvisoCambioClienteHtml(aviso) {
+  if (!aviso) return '';
+  const partes = [];
+  if (aviso.salidaEdicion) {
+    const badge = escapeHtml(etiquetaFolioOperam({ folioOperam: aviso.folioOperam }));
+    partes.push(`Saliste de la edici&oacute;n de la <strong>${badge}</strong>: al generar se crear&aacute; una cotizaci&oacute;n nueva y la ${badge} se queda en Operam como estaba.`);
+  }
+  if (aviso.listaPerdida) partes.push(MENSAJE_COPIA_LISTA_FIJADA);
+  return partes.map(m => `<span class="operam-status">${m}</span>`).join(' ');
 }
 
 // Etiquetas de los botones de generacion segun el modo (#109): en modo

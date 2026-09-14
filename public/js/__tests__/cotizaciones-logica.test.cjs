@@ -6,14 +6,17 @@ let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
   buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
   puedeActualizarCotizacion, buildAccionesCargaHtml,
-  buildAvisoModoActualizacion, textoBotonGenerar, filtrarCotizaciones;
+  buildAvisoModoActualizacion, textoBotonGenerar, filtrarCotizaciones,
+  buildAvisoCambioClienteHtml;
+let MENSAJE_COPIA_LISTA_FIJADA;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
     buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
     puedeActualizarCotizacion, buildAccionesCargaHtml,
     buildAvisoModoActualizacion, textoBotonGenerar,
-    filtrarCotizaciones } = await import('../cotizaciones-logica.js'));
+    filtrarCotizaciones, buildAvisoCambioClienteHtml } = await import('../cotizaciones-logica.js'));
+  ({ MENSAJE_COPIA_LISTA_FIJADA } = await import('../tier-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -403,6 +406,36 @@ test('Q29: buildAvisoModoActualizacion describe la accion en terminos de los bot
   const html = buildAvisoModoActualizacion('1200');
   assert.match(html, /actualizar el pdf o el html/i);
   assert.match(html, /se actualizar.* en operam/i);
+});
+
+// === #385: avisos al cambiar de cliente (salida de la edicion, lista perdida)
+
+test('buildAvisoCambioClienteHtml sin aviso devuelve cadena vacia (el slot se oculta solo)', () => {
+  assert.equal(buildAvisoCambioClienteHtml(null), '');
+});
+
+test('buildAvisoCambioClienteHtml: la salida de la edicion nombra el folio como Cotizacion N y dice que se creara una nueva', () => {
+  const html = buildAvisoCambioClienteHtml({ salidaEdicion: true, folioOperam: '1264', listaPerdida: false });
+  assert.ok(html.includes('<span class="operam-status">'));
+  assert.match(html, /Cotizaci\S+n 1264/);
+  assert.ok(!html.includes('#'));
+  assert.match(html, /cotizaci.{1,8}n nueva/i);
+  assert.match(html, /como estaba/i);
+  assert.ok(!html.includes(MENSAJE_COPIA_LISTA_FIJADA));
+});
+
+test('buildAvisoCambioClienteHtml: la lista perdida usa el mismo mensaje que Copiar sin permiso', () => {
+  const html = buildAvisoCambioClienteHtml({ salidaEdicion: false, folioOperam: null, listaPerdida: true });
+  assert.ok(html.includes(MENSAJE_COPIA_LISTA_FIJADA));
+  assert.ok(!html.includes('1264'));
+  assert.ok(!/edici/i.test(html));
+});
+
+test('buildAvisoCambioClienteHtml: las dos cosas a la vez salen como dos avisos', () => {
+  const html = buildAvisoCambioClienteHtml({ salidaEdicion: true, folioOperam: '1264', listaPerdida: true });
+  assert.equal((html.match(/<span class="operam-status">/g) || []).length, 2);
+  assert.match(html, /Cotizaci\S+n 1264/);
+  assert.ok(html.includes(MENSAJE_COPIA_LISTA_FIJADA));
 });
 
 // === #109: los botones comunican que actualizan (no "generar" generico) en

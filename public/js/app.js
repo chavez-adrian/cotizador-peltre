@@ -99,6 +99,7 @@ import {
   buildHistorialAccionesHtml,
   buildAccionesCargaHtml,
   buildAvisoModoActualizacion,
+  buildAvisoCambioClienteHtml,
   textoBotonGenerar,
   filtrarCotizaciones,
 } from './cotizaciones-logica.js';
@@ -184,6 +185,7 @@ import {
   avisoListaFijada,
   tierAlCargarCotizacion,
   opcionesTierSelect,
+  estadoAlCambiarCliente,
   MENSAJE_COPIA_LISTA_FIJADA,
 } from './tier-logica.js';
 import {
@@ -340,9 +342,17 @@ const state = {
   // Lista fijada de la cotizacion en curso (#151, spec #98): '' es Auto (el
   // tabulador manda). Solo admin o vendedor con permiso puede escribirlo
   // (selector oculto para el resto); vive en la cotizacion, nunca en el
-  // cliente ni en el vendedor -- arranca en Auto en cotizacion nueva, cambio
-  // de cliente y Cargar del historial (mismos tres puntos que vendedorConfirmado).
+  // cliente ni en el vendedor -- arranca en Auto en cotizacion nueva y en
+  // Copiar del historial sin permiso (Editar la conserva siempre, #154). El
+  // cambio de cliente (#385, decision 2026-09-14) la hereda con la misma regla
+  // que Copiar: se conserva si quien cotiza puede fijarla, y si no cae a Auto
+  // con aviso (estadoAlCambiarCliente).
   tierFijado: '',
+  // Avisos vigentes del ultimo cambio de cliente (#385): salida de la edicion
+  // (con el folio que se abandono) y/o lista fijada perdida. null = nada que
+  // avisar. Los pone pcPrepararSeleccion y los apagan las fronteras de la
+  // sesion de cotizacion: Nueva cotizacion, Cargar del historial y generar.
+  avisoCambioCliente: null,
   lastCotizacionId: null,
   // Modo actualizacion (#104, ADR-0008): se entro por "Actualizar cotizacion" desde
   // el historial, asi que generar reescribe el MISMO registro y el MISMO quote de
@@ -504,6 +514,14 @@ async function showApp() {
   // pcState.cliente, tierFijado y vendedorConfirmado) ANTES de restaurar (#180):
   // si corriera despues, se comeria el cliente/lista/vendedor que el borrador
   // acaba de traer de vuelta.
+  // Arrancar la sesion NO es un cambio de cliente (#385): lo que quedo en
+  // memoria de la sesion anterior (logout no lo toca) se descarta ANTES, para
+  // que pcPrepararSeleccion no herede una lista fijada ni derive un aviso de
+  // salida de edicion con un folio ajeno. El borrador repone lo suyo despues.
+  state.tierFijado = '';
+  state.modoActualizacion = false;
+  state.folioOperam = null;
+  state.avisoCambioCliente = null;
   pcRenderInicio();
   // Decorado y envio son de la COTIZACION, no del vendedor (#91/#102, mismo
   // motivo que pcPrepararSeleccion): se dejan en su default ANTES de restaurar.
@@ -2447,6 +2465,11 @@ async function guardarYNumerarCotizacion(body, progreso) {
   }
   const { id, requiereActualizacionOperam, folioOperam } = await res.json();
   state.lastCotizacionId = String(id);
+  // La cotizacion nueva que anunciaba el aviso de cambio de cliente (#385) ya
+  // se creo: el aviso cumplio. El slot del paso Cotizacion lo vuelve a pintar
+  // la subida en todas sus ramas.
+  state.avisoCambioCliente = null;
+  pintarAvisoCambioCliente();
   // #311: el POST ya devuelve el folio cuando la cotizacion existia (modo
   // actualizacion o regeneracion de una ya subida). Sin esto el boton de
   // WhatsApp se quedaba apagado hasta la siguiente subida, aunque el folio ya
@@ -2822,6 +2845,9 @@ function nuevaCotizacion() {
   aplicarEstadoWhatsApp();
   state.vendedorConfirmado = false;
   state.tierFijado = '';
+  // Empezar de cero es una sesion nueva: no hay edicion que abandonar ni lista
+  // que perder (#385). Va ANTES de pcRenderInicio, que repinta los avisos.
+  state.avisoCambioCliente = null;
 
   // Limpiar campos
   const campos = [
@@ -3064,16 +3090,48 @@ function pcPrepararSeleccion() {
   // Cambio de cliente = fin de la sesion de cotizacion (#83, F1): la proxima
   // generacion crea SU entry, no actualiza el del cliente anterior. El estado de
   // subida del resumen tambien era del anterior.
+  // #385: la lista fijada y los avisos se deciden ANTES del reset, con lo que
+  // habia (modo Editar, folio, lista): el cambio de cliente se comporta como
+  // Copiar sobre el carrito actual. avisoPrevio acumula porque "Cambiar de
+  // cliente" en la tarjeta prepara dos veces (pcRenderInicio y luego elegir).
+  const cambio = estadoAlCambiarCliente({
+    tiers: state.precios?.tiers || [],
+    piezasProducto: getPiezasProducto(),
+    tierFijado: state.tierFijado,
+    tienePermiso: state.user?.role === 'admin' || state.puedeFijarLista,
+    modoActualizacion: state.modoActualizacion,
+    folioOperam: state.folioOperam,
+    avisoPrevio: state.avisoCambioCliente,
+  });
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
   aplicarEstadoWhatsApp();
   state.vendedorConfirmado = false;
-  state.tierFijado = '';
-  const operamStatus = document.getElementById('operam-status-cotizar');
-  if (operamStatus) operamStatus.innerHTML = '';
+  state.tierFijado = cambio.tierFijado;
+  state.avisoCambioCliente = cambio.aviso;
+  pintarAvisoCambioCliente();
   // #109: cambio de cliente tambien sale de modo actualizacion.
   aplicarEtiquetasBotonesGenerar();
+  // Pantalla y estado nunca divergen (#385): sin esto Productos, el selector y
+  // el aviso de lista se quedaban con el render del cliente anterior mientras
+  // el paso Cotizacion y el quote ya salian con otra lista. Mismo cuarteto que
+  // el change de #tier-select; con carrito vacio es inocuo.
+  updateTierBar();
+  updateCartSummary();
+  renderCartLines();
+  updateResumen();
+}
+
+// Pinta (o borra) los avisos del cambio de cliente (#385) donde el vendedor
+// los tiene que ver: el paso Productos, junto al selector de lista, y el paso
+// Cotizacion, en el mismo slot del aviso de modo actualizacion.
+function pintarAvisoCambioCliente() {
+  const html = buildAvisoCambioClienteHtml(state.avisoCambioCliente);
+  for (const id of ['aviso-cambio-cliente', 'operam-status-cotizar']) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
 }
 
 // --- Entrada: dos caminos ---
@@ -6553,6 +6611,10 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // #113: cargar OTRA cotizacion es exactamente cuando puede cambiar quien queda
     // estampado, asi que la confirmacion se vuelve a pedir en los dos modos.
     state.vendedorConfirmado = false;
+    // Cargar del historial arranca otra sesion de cotizacion (#385): los avisos
+    // del cambio de cliente anterior se apagan ANTES de pintar los de esta carga.
+    state.avisoCambioCliente = null;
+    pintarAvisoCambioCliente();
     const operamStatus = document.getElementById('operam-status-cotizar');
     if (operamStatus) {
       // folioOperam viaja en la respuesta del detalle (#109): el gate de

@@ -4,12 +4,12 @@ const assert = require('node:assert/strict');
 
 let tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, MENSAJE_SIN_PERMISO_TIER;
 let normalizarPuedeFijarLista, puedeFijarLista;
-let tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA;
+let tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA, estadoAlCambiarCliente;
 before(async () => {
   ({
     tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, MENSAJE_SIN_PERMISO_TIER,
     normalizarPuedeFijarLista, puedeFijarLista,
-    tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA,
+    tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA, estadoAlCambiarCliente,
   } = await import('../tier-logica.js'));
 });
 
@@ -195,4 +195,62 @@ test('sin permiso y con tierFijado: solo esa opcion, nunca el resto del tabulado
 
 test('MENSAJE_COPIA_LISTA_FIJADA existe y menciona Auto', () => {
   assert.match(MENSAJE_COPIA_LISTA_FIJADA, /Auto/);
+});
+
+// === estadoAlCambiarCliente: cambiar de cliente se comporta como Copiar (#385) ===
+
+// 4 partidas x 16 pzs = 64 pzs: el tabulador da Menudeo, asi que M1500 ERA una
+// lista fijada (el caso de la cotizacion 1264 del reporte).
+const CAMBIO_BASE = {
+  tiers: TIERS, piezasProducto: 64, tierFijado: 'M1500', tienePermiso: true,
+  modoActualizacion: false, folioOperam: null, avisoPrevio: null,
+};
+
+test('AC1: lista fijada y permiso para fijarla: el cambio de cliente la conserva, sin avisos', () => {
+  const r = estadoAlCambiarCliente(CAMBIO_BASE);
+  assert.strictEqual(r.tierFijado, 'M1500');
+  assert.strictEqual(r.aviso, null);
+});
+
+test('AC2: lista fijada SIN permiso: cae a Auto y avisa la lista perdida', () => {
+  const r = estadoAlCambiarCliente({ ...CAMBIO_BASE, tienePermiso: false });
+  assert.strictEqual(r.tierFijado, '');
+  assert.deepStrictEqual(r.aviso, { salidaEdicion: false, folioOperam: null, listaPerdida: true });
+});
+
+test('AC3: lista que coincide con el tabulador o sin lista fijada: Auto sin avisos, con o sin permiso', () => {
+  for (const tienePermiso of [true, false]) {
+    const coincide = estadoAlCambiarCliente({ ...CAMBIO_BASE, piezasProducto: 1600, tienePermiso });
+    assert.deepStrictEqual(coincide, { tierFijado: '', aviso: null });
+    const sinLista = estadoAlCambiarCliente({ ...CAMBIO_BASE, tierFijado: '', tienePermiso });
+    assert.deepStrictEqual(sinLista, { tierFijado: '', aviso: null });
+  }
+});
+
+test('AC4: cambio de cliente en modo Editar: avisa la salida de la edicion con el folio de Operam', () => {
+  const r = estadoAlCambiarCliente({ ...CAMBIO_BASE, modoActualizacion: true, folioOperam: '1264' });
+  assert.strictEqual(r.tierFijado, 'M1500');
+  assert.deepStrictEqual(r.aviso, { salidaEdicion: true, folioOperam: '1264', listaPerdida: false });
+});
+
+test('AC4: fuera de modo Editar no hay aviso de salida de edicion aunque haya folio', () => {
+  const r = estadoAlCambiarCliente({ ...CAMBIO_BASE, modoActualizacion: false, folioOperam: '1264' });
+  assert.strictEqual(r.aviso, null);
+});
+
+test('AC6: cotizacion nueva (carrito vacio, sin lista, sin edicion): Auto y sin avisos', () => {
+  const r = estadoAlCambiarCliente({ ...CAMBIO_BASE, piezasProducto: 0, tierFijado: '' });
+  assert.deepStrictEqual(r, { tierFijado: '', aviso: null });
+});
+
+test('la segunda preparacion (elegir al nuevo cliente tras "Cambiar de cliente") conserva los avisos de la primera', () => {
+  const primera = estadoAlCambiarCliente({ ...CAMBIO_BASE, tienePermiso: false, modoActualizacion: true, folioOperam: '1264' });
+  assert.deepStrictEqual(primera.aviso, { salidaEdicion: true, folioOperam: '1264', listaPerdida: true });
+  // Tras la primera el estado ya esta en Auto y fuera de edicion.
+  const segunda = estadoAlCambiarCliente({
+    ...CAMBIO_BASE, tienePermiso: false, tierFijado: primera.tierFijado,
+    modoActualizacion: false, folioOperam: null, avisoPrevio: primera.aviso,
+  });
+  assert.strictEqual(segunda.tierFijado, '');
+  assert.deepStrictEqual(segunda.aviso, primera.aviso);
 });
