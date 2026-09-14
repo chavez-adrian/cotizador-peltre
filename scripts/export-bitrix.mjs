@@ -41,8 +41,9 @@
 //
 // === Empaquetado ===
 // Sin dependencias nuevas (sin librerias de zip): se suben los JSON sueltos a
-// Dropbox, un archivo por PUT, bajo BITRIX_EXPORT_DROPBOX_PATH (env,
-// opcional) o el default definido abajo.
+// Dropbox, un archivo por PUT, al destino del flujo `bitrix`
+// (lib/dropbox-destinos.js, #357): DROPBOX_NS_BITRIX + DROPBOX_PATH_BITRIX y,
+// sin ellas, la ruta heredada -- que sigue respetando BITRIX_EXPORT_DROPBOX_PATH.
 //
 // === Reintentos y reanudacion ===
 // Cada llamada a Bitrix reintenta con backoff exponencial ante fallos de red
@@ -61,8 +62,6 @@ import { leerArchivoSync, escribirArchivoSync, agregarArchivoSync, borrarArchivo
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
-
-const DROPBOX_PATH_DEFAULT = '/PELTRE NACIONAL/3.0 ADMINISTRACION/CRM/BACKUP BITRIX24';
 
 // Entidades CRM del export. tipoTimeline = ENTITY_TYPE de crm.timeline.comment.list
 // (string); ownerTypeId = OWNER_TYPE_ID de crm.activity.list (numerico, constante
@@ -339,15 +338,13 @@ async function main() {
 
   console.log('\nSubiendo a Dropbox...');
   const { upload } = await import('../lib/dropbox.js');
-  const destino = (process.env.BITRIX_EXPORT_DROPBOX_PATH || DROPBOX_PATH_DEFAULT).replace(/\/$/, '');
   const archivos = ['leads.json', 'contactos.json', 'companias.json', 'deals.json', 'timeline.json', 'actividades.json', 'resumen.json'];
   for (const archivo of archivos) {
     const ruta = join(dir, archivo);
     if (!existsSync(ruta)) continue;
     const contenido = leerArchivoSync(ruta);
-    const pathDropbox = `${destino}/${fecha}/${archivo}`;
-    await upload(pathDropbox, contenido, 'overwrite');
-    console.log(`  subido: ${pathDropbox}`);
+    const subido = await upload({ flujo: 'bitrix', archivo: `${fecha}/${archivo}` }, contenido, 'overwrite');
+    console.log(`  subido: ${subido.path_display}`);
   }
 
   console.log('\nListo. Revisa resumen.json contra los conteos de la UI de Bitrix y pega la evidencia en el issue #158.');
