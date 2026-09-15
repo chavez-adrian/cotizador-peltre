@@ -127,7 +127,27 @@ La fuente de verdad de la que se deriva todo artículo de Peltre Nacional: los m
 
 Vive en el sistema y se edita desde el panel de administración, no en el Excel de una computadora ni en un archivo del repositorio: es dato que una persona corrige cuando el catálogo cambia, no una constante del código. Operam no modela nada de esto — el catálogo que el cotizador lee del ERP trae precios y artículos, no lo que un artículo *es*.
 
-Se puebla por partes. Los **modelos** son la primera, porque son los que el **Resumen de la cotización** necesita y los que hoy están duplicados. Lo demás sigue en el Excel por ahora, y mientras tanto el maestro es fuente de datos pero todavía no del generador: el libro sigue produciendo los SKUs y las cargas.
+Se puebla por partes. Los **modelos** fueron la primera, porque son los que el **Resumen de la cotización** necesita. Siguen (decisión 2026-09-15, ADR-0020) el vocabulario completo con sus formas de género, número e inglés —colores, decorados y colaboraciones, texturas, capas, filetes, colores de filete—, la regla que asigna la letra de la **Clave de precio**, la tabla de precios por clave, y la tabla de **Artículos** con sus atributos. Cuando eso entra, el Excel deja de existir como fuente: todo se edita desde el panel de administración, y el **Alta de artículo** es agregar una fila ahí.
+
+## Alta de artículo
+
+Crear un artículo nuevo a partir del **Maestro de artículos**: se elige una combinación —modelo, tamaño, color principal, textura, capas, filetes, segundo color, color de riso, color de oreja y si va decorado— y de esa elección se derivan el código del artículo, su nombre, su precio y su clave SAT. El alta se considera completa cuando el artículo existe en Operam con precio y clave SAT y el cotizador ya lo ofrece sin pasos manuales. Nombrado por simetría con el **Alta de cliente** (decisión 2026-09-14).
+
+Hoy es manual y depende de una sola persona: una fila nueva en la hoja de carga del Excel maestro, y tres archivos que se suben a mano a Operam (artículos, precios, clave SAT). La convención de códigos y de nombres que ese Excel impone es lo que ha mantenido el catálogo sin duplicados; el alta en el sistema hereda esa convención como regla, no la relaja.
+
+## Artículo
+
+Una combinación concreta de partes: **Modelo**, color principal, segundo color, textura, capas, filetes y color de riso, y, cuando aplican, un decorado y un número de piezas por paquete. `VA08B1N11211` es la Taza de mesa 8 cm blanca, interior negro, filete negro. Lo que se vende y se cotiza es el artículo; el Modelo está un nivel arriba y la **Clave de precio** en medio.
+
+**El artículo son sus atributos** (decisión 2026-09-15, ADR-0020). El código y los nombres se derivan de ellos y del vocabulario del maestro, cada canal con su forma: el nombre interno que ve Operam ("Taza 8 blanco interior negro filete negro"), la descripción comercial ("Taza de mesa blanca interior negro borde negro"), y las de Shopify, GS1 y Amazon. Un artículo puede declarar un nombre propio que rompe la plantilla ("Taza 8 Museo Jumex filete negro"), y eso es una excepción visible, no un dato perdido. **El nombre es único entre artículos activos.**
+
+## Clave de precio
+
+La unidad que lleva el precio: un **Modelo** más una letra de acabado (`VA08B` es la Taza de mesa 8 cm bicolor). Todos los artículos de una misma clave de precio comparten el **precio de lista**; el acabado exacto (qué colores, qué filete) no lo cambia. Son 62 claves contra más de mil artículos.
+
+La letra se deriva de la combinación de textura y capas (un color, bicolor, salpicado; y dos letras reservadas para pieza decorada que hoy ningún artículo usa). De los demás escalones por volumen no se decide nada: cada lista de Operam es el precio de lista por un factor.
+
+**El precio de lista de cada clave se define en el Maestro de artículos** (decisión 2026-09-15, ADR-0018): es lo único que una persona decide en un ajuste anual de precios, y el resto —el precio de cada artículo, en cada lista— se deriva y se carga a Operam desde ahí. Lo que Operam tiene cargado es el estado, no la definición; cuando difieren, la paridad lo denuncia.
 
 ## Ya tiene Cliente Operam, falta cotizar
 
