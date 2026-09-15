@@ -332,13 +332,14 @@ const state = {
   // servidor con los precios en cada arranque de sesion; el servidor lo vuelve a
   // hacer valer al guardar, esto solo decide que puede capturar la pantalla.
   topeDescuento: 0,
-  // Permiso de fijar lista del vendedor logueado (#153, spec #98): false = sin
-  // permiso. Mismo patron que topeDescuento -- lo manda el servidor con los
-  // precios, y el servidor lo vuelve a hacer valer al guardar. El rol admin
-  // siempre puede (checkeado aparte via state.user?.role).
-  puedeFijarLista: false,
+  // Listas habilitadas del vendedor logueado (#296, ADR-0015): los ids de lista
+  // de Operam de SU renglon de la matriz; [] = no puede fijar ninguna. Mismo
+  // patron que topeDescuento -- lo manda el servidor con los precios, y el
+  // servidor lo vuelve a hacer valer al guardar. El rol admin siempre puede
+  // todas (checkeado aparte via state.user?.role, en permisoListas()).
+  listasHabilitadas: [],
   // Permiso de capturar el precio de proveedor de una calca (#280, spec #278):
-  // mismo patron que puedeFijarLista -- lo manda el servidor con los precios y
+  // mismo patron que listasHabilitadas -- lo manda el servidor con los precios y
   // el servidor lo vuelve a hacer valer al guardar. El rol admin siempre puede.
   puedePrecioCalca: false,
   // Lista fijada de la cotizacion en curso (#151, spec #98): '' es Auto (el
@@ -558,13 +559,21 @@ async function loadPrecios() {
   const res = await api('/api/precios');
   state.precios = await res.json();
   state.topeDescuento = state.precios.topeDescuento || 0;
-  state.puedeFijarLista = !!state.precios.puedeFijarLista;
+  state.listasHabilitadas = state.precios.listasHabilitadas || [];
   state.puedePrecioCalca = !!state.precios.puedePrecioCalca;
   const date = new Date(state.precios.extracted).toLocaleDateString('es-MX', {
     day: 'numeric', month: 'short', year: 'numeric'
   });
   document.getElementById('prices-date').textContent = `Precios: ${date}`;
   renderTierSelect();
+}
+
+// El permiso de lista de quien esta logueado (#296), en la forma que consumen
+// los nucleos puros: rol admin (todas) o las celdas de su renglon de la matriz.
+// UN solo lugar lo arma para que el selector, la herencia y el aviso no puedan
+// discrepar; la reja de verdad sigue estando en el servidor.
+function permisoListas() {
+  return { esAdmin: state.user?.role === 'admin', listasHabilitadas: state.listasHabilitadas };
 }
 
 // Opciones del selector de lista fijada (#151): Auto + los tiers del tabulador
@@ -574,13 +583,15 @@ function renderTierSelect() {
   const select = document.getElementById('tier-select');
   if (!select) return;
   const tiers = state.precios?.tiers || [];
-  // Sin permiso pero con una lista fijada heredada de Editar (#154), las
-  // opciones se acotan a Auto + el tier ya fijado -- "dejarla o regresarla a
-  // Auto" no es "cambiarla a otra".
-  const opciones = opcionesTierSelect(tiers, state.user?.role === 'admin' || state.puedeFijarLista, state.tierFijado);
+  // Auto + las listas habilitadas + la lista fijada del registro que se edita,
+  // aunque no este habilitada (#154/#296) -- "dejarla o regresarla a Auto" es
+  // distinto de "cambiarla a otra". Sin opciones el selector no se pinta: es
+  // el caso del vendedor sin ninguna celda marcada, que solo ve Auto.
+  const opciones = opcionesTierSelect(tiers, permisoListas(), state.tierFijado);
   select.innerHTML = '<option value="">Auto (tabulador)</option>' +
     opciones.map(t => `<option value="${t.id}">${t.id}</option>`).join('');
   select.value = state.tierFijado;
+  select.style.display = opciones.length ? 'inline-block' : 'none';
 }
 
 // === BORRADOR DE COTIZACION (issue #179/#180, spec #178, CONTEXT.md) ===
@@ -961,17 +972,13 @@ function updateTierBar() {
   document.getElementById('tier-stats').textContent = total > 0 ? `${total} pzs de producto` : '';
   document.getElementById('tier-next').textContent = '';
 
-  // Selector de lista fijada (#151/#153): oculto, no deshabilitado, para quien
-  // no tiene el permiso (rol admin, o vendedor con el checkbox de #153) -- EXCEPTO
-  // con una lista fijada heredada de Editar sin permiso (#154), donde se muestra
-  // acotado a Auto + el tier fijado para poder regresarla a Auto. renderTierSelect
-  // recalcula las opciones en cada paso (Cargar del historial, cambio de cliente,
-  // cambio de carrito) porque dependen de state.tierFijado, no solo del permiso.
-  const tierSelect = document.getElementById('tier-select');
-  if (tierSelect) {
-    renderTierSelect();
-    tierSelect.style.display = (state.user?.role === 'admin' || state.puedeFijarLista || state.tierFijado) ? 'inline-block' : 'none';
-  }
+  // Selector de lista fijada (#151/#153/#296): oculto, no deshabilitado, para
+  // quien no tiene ninguna lista habilitada -- EXCEPTO con una lista fijada
+  // heredada de Editar, donde se muestra acotado a Auto + el tier fijado para
+  // poder regresarla a Auto (#154). Lo decide renderTierSelect, que recalcula
+  // las opciones en cada paso (Cargar del historial, cambio de cliente, cambio
+  // de carrito) porque dependen de state.tierFijado, no solo del permiso.
+  renderTierSelect();
 
   // Aviso bidireccional e informativo (#98): nunca bloquea la generacion.
   const avisoEl = document.getElementById('tier-aviso');
@@ -1583,7 +1590,7 @@ window.cartLineCancelarDescripcion = cartLineCancelarDescripcion;
 
 // Permiso de capturar el precio de una calca (#279/#280, spec #278): admin
 // siempre puede, o vendedor con el checkbox otorgado desde /admin -- mismo
-// patron de "poder de precio" del vendedor que state.puedeFijarLista. La reja
+// patron de "poder de precio" del vendedor que state.listasHabilitadas. La reja
 // de verdad esta en el servidor (puedePrecioCalcaDeUsuario, calcas-logica.js):
 // esto solo decide si se pinta el campo.
 function puedePrecioCalca() {
@@ -3098,7 +3105,7 @@ function pcPrepararSeleccion() {
     tiers: state.precios?.tiers || [],
     piezasProducto: getPiezasProducto(),
     tierFijado: state.tierFijado,
-    tienePermiso: state.user?.role === 'admin' || state.puedeFijarLista,
+    permiso: permisoListas(),
     modoActualizacion: state.modoActualizacion,
     folioOperam: state.folioOperam,
     avisoPrevio: state.avisoCambioCliente,
@@ -6549,12 +6556,12 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // #154: Editar (mismo registro) conserva la lista fijada SIN IMPORTAR el
     // permiso de quien edita -- el servidor la deja pasar comparando contra el
     // tier ya guardado en ESE registro. Copiar (registro nuevo) solo la hereda
-    // si quien copia tiene el permiso; sin el arranca en Auto con un aviso
-    // (tierListaCargada.avisoListaPerdida, aplicado mas abajo junto al aviso
-    // de modo actualizacion).
+    // si quien copia tiene habilitada ESA lista (#296); sin ella arranca en
+    // Auto con un aviso (tierListaCargada.avisoListaPerdida, aplicado mas
+    // abajo junto al aviso de modo actualizacion).
     const tierListaCargada = tierAlCargarCotizacion(
       state.precios?.tiers || [], piezasDeProducto(cot.items || []), cot.tier, modo,
-      state.user?.role === 'admin' || state.puedeFijarLista
+      permisoListas()
     );
     state.tierFijado = tierListaCargada.tierFijado;
     // #283: el precio manual de calca sigue la MISMA regla que la lista fijada.

@@ -6,10 +6,18 @@
 //
 // Glosario (CONTEXT.md, "Lista fijada (override)"): la lista fijada manda de
 // forma ABSOLUTA sobre el volumen, en ambas direcciones. #151 acota el permiso
-// a rol admin; #153 lo extiende a vendedores con checkbox (prior art:
-// topeDescuentoVendedor/normalizarTope en descuento-logica.js, #137).
+// a rol admin; #153 lo extiende a vendedores con checkbox; #296 (ADR-0015) lo
+// vuelve una MATRIZ (vendedor, lista): el permiso es "puede fijar ESTA lista".
+//
+// El permiso viaja como `{ esAdmin, listasHabilitadas }` -- rol admin puede
+// todas sin celdas, y el resto exactamente las listas de Operam marcadas en su
+// renglon. El cruce con el tier del cotizador pasa por `listaId`, el id de la
+// sales_type de Operam que el catalogo expone en cada tier: una lista marcada
+// que el catalogo todavia no precia no vuelve fijable ningun tier.
 
-export const MENSAJE_SIN_PERMISO_TIER = 'No tienes permiso para fijar la lista de precios; pidelo al administrador.';
+export function mensajeListaNoHabilitada(tierId) {
+  return `No tienes habilitada la lista ${tierId}; pide el permiso al administrador.`;
+}
 
 // El tabulador: el tier mas alto cuyo min_qty cabe en el volumen. tiers[0] por
 // omision (carrito vacio) para nunca devolver undefined.
@@ -45,22 +53,33 @@ export function avisoListaFijada(tiers, piezasProducto, tierFijadoId) {
   return `Lista fijada: ${tier.id} - el volumen (${pzs} pzs) corresponde a ${auto.id}`;
 }
 
-// Enforcement del servidor (#151/#153): un tier ajeno al tabulador solo pasa
-// si quien guarda tiene permiso (rol admin, o checkbox por vendedor).
+// Puede quien trae este permiso fijar ESTE tier (#296). El rol admin siempre;
+// el resto solo si la lista de Operam del tier esta en su renglon de la matriz.
+// Un tier sin `listaId` (catalogo viejo, o una lista que el ERP ya no tiene) no
+// es fijable por nadie mas que el admin: falla cerrado, nunca implicito.
+export function puedeFijarTier(tiers, tierId, permiso) {
+  if (permiso?.esAdmin) return true;
+  const tier = (tiers || []).find(t => t.id === tierId);
+  if (!tier || tier.listaId == null || tier.listaId === '') return false;
+  return normalizarListasHabilitadas(permiso?.listasHabilitadas).includes(String(tier.listaId));
+}
+
+// Enforcement del servidor (#151/#153, por lista desde #296): un tier ajeno al
+// tabulador solo pasa si quien guarda tiene habilitada ESA lista (o es admin).
 // Releido en cada guardado -- mismo motivo que topeDescuentoDeUsuario en
 // server.js: el JWT no se re-emite si el permiso cambia.
 //
 // tierPrevioEditado (#154): al editar un registro existente, el tier YA
-// guardado ahi tambien pasa aunque quien edita no tenga permiso -- corregir
-// cantidades o notas no debe tumbar una autorizacion que ya ocurrio. Solo
-// aplica al MISMO registro (server.js lo resuelve por cotizacionId); Copiar
-// crea un registro nuevo y no lo manda, asi que cae al chequeo normal.
-export function validarTierCotizacion(tiers, piezasProducto, tierGuardado, tienePermiso, tierPrevioEditado) {
-  if (tienePermiso) return { ok: true };
+// guardado ahi tambien pasa aunque quien edita no lo tenga habilitado --
+// corregir cantidades o notas no debe tumbar una autorizacion que ya ocurrio.
+// Solo aplica al MISMO registro (server.js lo resuelve por cotizacionId);
+// Copiar crea un registro nuevo y no lo manda, asi que cae al chequeo normal.
+export function validarTierCotizacion(tiers, piezasProducto, tierGuardado, permiso, tierPrevioEditado) {
   const auto = tierPorVolumen(tiers, piezasProducto);
-  if (!tierGuardado || tierGuardado === auto.id) return { ok: true };
+  if (!tierGuardado || tierGuardado === auto?.id) return { ok: true };
   if (tierPrevioEditado && tierGuardado === tierPrevioEditado) return { ok: true };
-  return { ok: false, mensaje: MENSAJE_SIN_PERMISO_TIER };
+  if (puedeFijarTier(tiers, tierGuardado, permiso)) return { ok: true };
+  return { ok: false, mensaje: mensajeListaNoHabilitada(tierGuardado) };
 }
 
 // Que hereda Editar/Copiar del historial (#154, spec #98) segun el tier
@@ -72,24 +91,25 @@ export function validarTierCotizacion(tiers, piezasProducto, tierGuardado, tiene
 // Editar (mismo registro, mismo folio) conserva la lista fijada SIEMPRE: el
 // servidor la deja pasar comparando contra el tier ya guardado del registro
 // que se edita (validarTierCotizacion, tierPrevioEditado). Copiar (registro
-// nuevo) solo la hereda si quien copia tiene el permiso -- heredarla sin el
-// seria auto-otorgarsela.
-export function tierAlCargarCotizacion(tiers, piezasProducto, tierGuardado, modo, tienePermiso) {
+// nuevo) solo la hereda si quien copia tiene habilitada ESA lista (#296) --
+// heredarla sin ella seria auto-otorgarsela.
+export function tierAlCargarCotizacion(tiers, piezasProducto, tierGuardado, modo, permiso) {
   const auto = tierPorVolumen(tiers, piezasProducto);
-  const eraFijada = !!tierGuardado && tierGuardado !== auto.id;
+  const eraFijada = !!tierGuardado && tierGuardado !== auto?.id;
   if (!eraFijada) return { tierFijado: '', avisoListaPerdida: false };
   if (modo === 'actualizar') return { tierFijado: tierGuardado, avisoListaPerdida: false };
-  if (tienePermiso) return { tierFijado: tierGuardado, avisoListaPerdida: false };
+  if (puedeFijarTier(tiers, tierGuardado, permiso)) return { tierFijado: tierGuardado, avisoListaPerdida: false };
   return { tierFijado: '', avisoListaPerdida: true };
 }
 
 export const MENSAJE_COPIA_LISTA_FIJADA =
-  'La cotizacion original tenia una lista de precios fijada; esta copia arranca en Auto (sin permiso para fijarla).';
+  'La cotizacion original tenia una lista de precios fijada; esta copia arranca en Auto (no tienes habilitada esa lista).';
 
 // Que pasa con la lista fijada y que hay que avisar al CAMBIAR DE CLIENTE
 // (#385, decision de Adrian 2026-09-14): el cambio se comporta como Copiar
-// sobre el carrito actual -- la lista fijada se conserva si quien cotiza puede
-// fijarla y si no cae a Auto con aviso (misma semantica que
+// sobre el carrito actual -- la lista fijada se conserva si quien cotiza tiene
+// habilitada ESA lista (#296: `permiso` es la matriz de listas, no un
+// booleano) y si no cae a Auto con aviso (misma semantica que
 // tierAlCargarCotizacion en modo 'nueva'). Si se estaba EDITANDO (modo
 // actualizacion), se avisa que se salio de la edicion: al generar se creara
 // una cotizacion nueva y la del folio se queda como estaba.
@@ -99,8 +119,8 @@ export const MENSAJE_COPIA_LISTA_FIJADA =
 // preparacion) y elegir al nuevo cliente prepara otra vez (segunda): en la
 // segunda ya no hay edicion ni lista que perder, y sin acumular la primera
 // el aviso se borraria justo cuando el vendedor lo tiene que leer.
-export function estadoAlCambiarCliente({ tiers, piezasProducto, tierFijado, tienePermiso, modoActualizacion, folioOperam, avisoPrevio }) {
-  const lista = tierAlCargarCotizacion(tiers, piezasProducto, tierFijado, 'nueva', tienePermiso);
+export function estadoAlCambiarCliente({ tiers, piezasProducto, tierFijado, permiso, modoActualizacion, folioOperam, avisoPrevio }) {
+  const lista = tierAlCargarCotizacion(tiers, piezasProducto, tierFijado, 'nueva', permiso);
   const previo = avisoPrevio || {};
   const salidaEdicion = !!modoActualizacion || !!previo.salidaEdicion;
   const listaPerdida = lista.avisoListaPerdida || !!previo.listaPerdida;
@@ -115,25 +135,50 @@ export function estadoAlCambiarCliente({ tiers, piezasProducto, tierFijado, tien
   };
 }
 
-// Opciones del selector cuando quien lo ve NO tiene permiso pero esta editando
-// una cotizacion cuya lista fijada se conservo (#154): solo Auto (siempre
-// agregado aparte por el caller) y el tier ya fijado, nunca el tabulador
-// completo -- "dejarla o regresarla a Auto" no es "cambiarla a otra".
-export function opcionesTierSelect(tiers, tienePermiso, tierFijado) {
-  if (tienePermiso) return tiers || [];
-  if (!tierFijado) return [];
-  return (tiers || []).filter(t => t.id === tierFijado);
+// Opciones del selector (#154, por lista desde #296): Auto (siempre agregado
+// aparte por el caller) + las listas habilitadas de quien lo ve + la lista ya
+// fijada del registro que se edita, aunque no este habilitada -- esa es una
+// autorizacion que ya ocurrio, y una vez cambiada deja de ser opcion. Sin
+// ninguna habilitada y sin lista fijada no hay opciones: el selector se oculta.
+export function opcionesTierSelect(tiers, permiso, tierFijado) {
+  return (tiers || []).filter(t => (tierFijado && t.id === tierFijado) || puedeFijarTier(tiers, t.id, permiso));
 }
 
-// Flag tal como se guarda en el registro de vendedores (#153): basura o
+// Flag tal como se guardaba en el registro de vendedores (#153): basura o
 // ausente degradan a false (sin permiso), nunca a permiso implicito. Mismo
-// patron que normalizarTope en descuento-logica.js.
+// patron que normalizarTope en descuento-logica.js. Desde #296 ya NO decide
+// nada: sobrevive como el unico insumo de la migracion de lectura de abajo.
 export function normalizarPuedeFijarLista(valor) {
   return valor === true;
 }
 
-export function puedeFijarLista(vendedor) {
-  if (!vendedor) return false;
-  if (vendedor.role === 'admin') return true;
-  return normalizarPuedeFijarLista(vendedor.puedeFijarLista);
+// Listas habilitadas tal como se guardan en el registro (#296, ADR-0015): una
+// coleccion de ids de lista de Operam (la celda referencia la lista por su id
+// numerico, estable ante renombres). Todo lo que no sea un arreglo -- y toda
+// entrada que no sea un id -- degrada a sin permiso, nunca a permiso implicito
+// (mismo patron que normalizarTope y normalizarPuedeFijarLista).
+export function normalizarListasHabilitadas(valor) {
+  if (!Array.isArray(valor)) return [];
+  const ids = valor
+    .filter(v => typeof v === 'string' || typeof v === 'number')
+    .map(v => String(v).trim())
+    .filter(Boolean);
+  return [...new Set(ids)];
+}
+
+// Las listas habilitadas VIGENTES de un registro de vendedor, con la migracion
+// de lectura del permiso binario de #153 (ADR-0015): el flag viejo se queda en
+// la tabla solo como insumo de esta funcion. Campo nuevo presente = manda el
+// campo (la lista vacia es "ninguna", no "sin configurar"); campo ausente y
+// flag encendido = los escalones de volumen que el cotizador ya conocia; sin
+// flag, ninguna. `listasVolumen` son los ids de esos escalones, que salen del
+// catalogo vigente (tiers) -- no de una tabla copiada aqui.
+export function listasHabilitadasDeVendedor(vendedor, listasVolumen) {
+  const guardadas = vendedor?.listasHabilitadas;
+  if (guardadas === undefined || guardadas === null) {
+    return normalizarPuedeFijarLista(vendedor?.puedeFijarLista)
+      ? normalizarListasHabilitadas(listasVolumen)
+      : [];
+  }
+  return normalizarListasHabilitadas(guardadas);
 }

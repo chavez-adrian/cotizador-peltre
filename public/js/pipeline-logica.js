@@ -874,7 +874,7 @@ export function esAsignable(o) {
 // columna No Asignado y asignarle dueno a esas tarjetas. El admin lo tiene
 // siempre; un vendedor lo puede tener por checkbox en /admin (el gerente
 // comercial -- el sistema NO modela un rol gerente, decision explicita). Mismo
-// patron y misma normalizacion defensiva que puedeFijarLista (#153): basura o
+// patron y misma normalizacion defensiva que normalizarListasHabilitadas (#153, #296): basura o
 // ausencia degradan a SIN permiso, nunca a permiso implicito.
 export function normalizarPuedeAsignar(valor) {
   return valor === true;
