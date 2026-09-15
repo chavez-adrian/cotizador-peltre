@@ -1598,3 +1598,18 @@ export function errorAltaSinConfirmar(csfDatos) {
   if (!rfc) return 'Falta confirmar la Seccion 1 (datos fiscales): abrela y presiona "Verificar y confirmar" antes de dar de alta.';
   return null;
 }
+
+// Guardia de "Dar de alta" en modo upgrade fiscal (#376). El acordeon del alta
+// (#panel-alta-cliente) es UN solo nodo y el upgrade fiscal (#85) lo reusa: las
+// Secciones 3 y 4 que desbloqueo un alta anterior de la MISMA pestana siguen abiertas
+// cuando el upgrade se abre despues, y desde ahi "Dar de alta" manda un
+// POST /api/crear-cliente con la CSF del upgrade (altaDarDeAlta cae a
+// altaCsfState.datos). Asi, en el HITL de #361, un upgrade que el gate de fusion ya
+// habia bloqueado degenero en un alta del cliente que ya existia. En modo upgrade no
+// hay alta posible: el trabajo termina en la Seccion 1 (+ la 2 por #197). La guardia
+// mira el MODO, no el DOM -- el candado de las secciones es lo que el vendedor ve,
+// esto es lo que lo hace cierto.
+export function errorAltaEnModoUpgrade(modoUpgrade) {
+  if (modoUpgrade == null) return null;
+  return `Este panel esta actualizando los datos fiscales del Cliente Operam ${modoUpgrade}: aqui no se da de alta, se actualiza. Confirma la Seccion 1 para actualizarlo; para un alta nueva, cierra el panel y vuelve a abrirlo.`;
+}

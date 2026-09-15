@@ -16,6 +16,7 @@ import {
   cuerpoDeReintentoAlta,
   pdfCsfParaRespaldo,
   errorAltaSinConfirmar,
+  errorAltaEnModoUpgrade,
   ALTA_PASO_FILAS,
   buildClienteDesdeAlta,
   mensajeBusquedaCelular,
@@ -3820,6 +3821,12 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   }
   panel.style.display = 'block';
   altaTabSwitch('csf');
+  // El acordeon es UN solo nodo (#376): las Secciones 3 y 4 que dejo desbloqueadas un
+  // alta anterior de esta misma pestana siguen abiertas aqui, y desde ellas "Dar de
+  // alta" daria de alta -- con la CSF de ESTE upgrade -- al cliente que se esta
+  // actualizando. Candar antes de altaToggleSeccion, que respeta el candado.
+  altaCandarSeccionesAvanzadas();
+  altaBotonDarDeAltaSegunModo();
   altaState.seccionAbierta = null;
   altaToggleSeccion(1);
   altaCsfSetStatus('idle');
@@ -5960,6 +5967,7 @@ function devolverPanelACasa() {
     cerrarFormularioBorrador(`upgrade-fiscal-${altaCsfState.modoUpgrade}`, null);
   }
   altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+  altaBotonDarDeAltaSegunModo(); // el modo se apago: el boton del alta vuelve (#376)
   const banner = document.getElementById('alta-upgrade-banner');
   if (banner) { banner.innerHTML = ''; banner.style.display = 'none'; }
   if (!_panelHome) return;
@@ -7050,6 +7058,9 @@ function abrirAcordeonAlta() {
   // (p. ej. tras un error sin cerrar el panel), confirmar aqui NO debe aplicarse sobre
   // ese customer_id viejo.
   altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+  // Con el modo apagado, "Dar de alta" vuelve (#376). Aqui y no solo en
+  // altaReiniciarPanel: un alta a medias no pasa por el reinicio y se quedaria sin boton.
+  altaBotonDarDeAltaSegunModo();
   const bannerEl = document.getElementById('alta-upgrade-banner');
   if (bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
   // Rastro del alta ANTERIOR (#192): si la de antes se completo, su cliente
@@ -7087,6 +7098,29 @@ function abrirAcordeonAlta() {
 const ALTA_SECCIONES_BLOQUEADAS_AL_INICIO = [3, 4];
 const ALTA_ICO_CANDADO = '\u{1F512}';
 
+// Secciones 3 y 4 de vuelta a su candado de origen. Lo comparten el reinicio del panel
+// tras un alta ya completada (#192) y la apertura del upgrade fiscal (#376): el
+// acordeon es UN solo nodo, asi que el upgrade hereda las secciones que un alta
+// anterior de la misma pestana dejo desbloqueadas.
+function altaCandarSeccionesAvanzadas() {
+  ALTA_SECCIONES_BLOQUEADAS_AL_INICIO.forEach(n => {
+    const sec = document.getElementById(`alta-sec-${n}`);
+    if (sec) sec.classList.add('alta-seccion-bloqueada');
+    const hdr = document.getElementById(`alta-hd-${n}`);
+    if (hdr) hdr.style.cursor = 'not-allowed';
+    const ico = document.getElementById(`alta-ico-${n}`);
+    if (ico) ico.textContent = ALTA_ICO_CANDADO;
+  });
+}
+
+// "Dar de alta" existe solo en modo alta (#376): el boton vive en el mismo panel que
+// el upgrade fiscal. Se deriva del modo cada vez que el modo cambia, nunca se deja
+// pegado -- un boton deshabilitado sin quien lo reponga deja al vendedor sin alta.
+function altaBotonDarDeAltaSegunModo() {
+  const btn = document.getElementById('alta-btn-dar-alta');
+  if (btn) btn.disabled = altaCsfState.modoUpgrade != null;
+}
+
 function altaReiniciarPanel() {
   altaCsfState.datos = null;
   altaCsfState.confirmado = false;
@@ -7095,8 +7129,7 @@ function altaReiniciarPanel() {
   altaCsfState.fileName = null;
   altaCsfSetStatus('idle');
   altaPasosReset();
-  const btn = document.getElementById('alta-btn-dar-alta');
-  if (btn) btn.disabled = false;
+  altaBotonDarDeAltaSegunModo();
   const exitoDiv = document.getElementById('alta-btns-exito');
   if (exitoDiv) exitoDiv.style.display = 'none';
   const reintBtn = document.getElementById('alta-btn-reintentar');
@@ -7109,14 +7142,7 @@ function altaReiniciarPanel() {
   // Secciones 3 y 4 vuelven a su candado de origen: sin esto el vendedor puede
   // saltar a "Dar de alta" sin pasar por la Seccion 1, que es justo donde se
   // decide sobre que cliente aplica el alta.
-  ALTA_SECCIONES_BLOQUEADAS_AL_INICIO.forEach(n => {
-    const sec = document.getElementById(`alta-sec-${n}`);
-    if (sec) sec.classList.add('alta-seccion-bloqueada');
-    const hdr = document.getElementById(`alta-hd-${n}`);
-    if (hdr) hdr.style.cursor = 'not-allowed';
-    const ico = document.getElementById(`alta-ico-${n}`);
-    if (ico) ico.textContent = ALTA_ICO_CANDADO;
-  });
+  altaCandarSeccionesAvanzadas();
   altaLimpiarAvisosAlta();
 }
 
@@ -7801,6 +7827,7 @@ window.altaDedupNuevoDomicilio = altaDedupNuevoDomicilio;
 // parseada en altaState.datos -- no se reabre el formulario, ya se tienen los datos.
 async function altaCandidatoActualizar(clienteId) {
   altaCsfState.modoUpgrade = clienteId;
+  altaBotonDarDeAltaSegunModo(); // mientras el upgrade decide, el alta no corre (#376)
   // Este camino NO abre el panel de upgrade ni precarga la Seccion 2: los datos son
   // los que el vendedor capturo en el ALTA, y ahi el segmento SI es captura suya y
   // tiene que viajar (#193). undefined = "no hay panel comercial que podar" (#197),
@@ -7820,6 +7847,11 @@ function altaCandidatoCrearNuevo() {
   if (dedupDiv) { dedupDiv.innerHTML = ''; dedupDiv.style.display = 'none'; }
   const candDiv = document.getElementById('alta-celular-candidatos');
   if (candDiv) { candDiv.innerHTML = ''; candDiv.style.display = 'none'; }
+  // Un "Actualizar este" que fallo dejo el modo upgrade prendido (#376): descartar el
+  // candidato es justamente decir que ese cliente no era, asi que el modo se apaga y el
+  // alta vuelve a ser posible. Sin esto la guardia de altaDarDeAlta no tendria salida.
+  altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+  altaBotonDarDeAltaSegunModo();
   const sec2 = document.getElementById('alta-sec-2');
   if (sec2 && sec2.classList.contains('alta-seccion-bloqueada')) altaDedupDesbloquear();
 }
@@ -8108,6 +8140,14 @@ function altaDarDeAlta() {
 // "Dar de alta" y el reintento con el cuerpo que dicta el servidor al contestar la
 // pregunta de duplicado (#368): es el MISMO endpoint y el mismo reporte de pasos.
 function altaEnviarAlta(payload) {
+  // Modo upgrade fiscal (#376): este panel es el MISMO nodo que el del upgrade, y ahi
+  // no hay alta que dar -- el POST crearia un segundo Cliente Operam del que se esta
+  // actualizando. La guardia vive AQUI, que es el unico punto del POST: el boton
+  // "Dar de alta" y las tres salidas del 428 de duplicado (altaPreguntaReintentar)
+  // pasan por el mismo sitio. Va antes que nada y no mira el DOM: el candado de las
+  // Secciones 3 y 4 es lo que el vendedor ve, esto es lo que lo hace cierto.
+  const errUpgrade = errorAltaEnModoUpgrade(altaCsfState.modoUpgrade);
+  if (errUpgrade) { altaSec4Error(errUpgrade); return; }
   const btn = document.getElementById('alta-btn-dar-alta');
   const reintBtn = document.getElementById('alta-btn-reintentar');
   const exitoDiv = document.getElementById('alta-btns-exito');

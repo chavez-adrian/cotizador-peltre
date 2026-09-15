@@ -4,8 +4,10 @@ const assert = require('node:assert/strict');
 const { resolveClienteId } = require('./helpers.cjs');
 
 let buildAltaDarDeAltaPayload, interpretarRespuestaAlta, cuerpoDeReintentoAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido, pdfCsfParaRespaldo;
+let errorAltaEnModoUpgrade, interpretarRespuestaUpgrade;
 before(async () => {
   ({ buildAltaDarDeAltaPayload, interpretarRespuestaAlta, cuerpoDeReintentoAlta, errorAltaSinConfirmar, ALTA_PASO_FILA, usoCfdiParaPayload, usoCfdiCuentaComoElegido, pdfCsfParaRespaldo } = await import('../alta-logica.js'));
+  ({ errorAltaEnModoUpgrade, interpretarRespuestaUpgrade } = await import('../alta-logica.js'));
 });
 
 test('F1: buildAltaDarDeAltaPayload incluye campos comerciales y domicilio', () => {
@@ -470,4 +472,39 @@ test('I10: un uso de CFDI restaurado distinto del default cuenta como eleccion; 
   assert.strictEqual(usoCfdiCuentaComoElegido({ valor: 'G03', defaultVigente: 'G03' }), false, 'sigue en su default = no eligio');
   assert.strictEqual(usoCfdiCuentaComoElegido({ valor: '', defaultVigente: 'G03' }), false, 'vacio nunca es eleccion');
   assert.strictEqual(usoCfdiCuentaComoElegido(), false, 'sin datos no es eleccion');
+});
+
+// === Modo upgrade fiscal: desde este panel no se da de alta (issue #376) ===
+//
+// El acordeon del alta (#panel-alta-cliente) es UN solo nodo y el upgrade fiscal (#85)
+// lo reusa: si en la misma pestana hubo antes un alta completa, las Secciones 3 y 4
+// siguen desbloqueadas cuando el upgrade se abre despues. En el HITL de #361 (upgrade
+// del cliente 15 con la CSF del 522) el gate de fusion bloqueo el upgrade, la Seccion 4
+// seguia abierta y "Dar de alta" mando un POST /api/crear-cliente con esa misma CSF:
+// un upgrade fallido degenero en un alta. La guardia no mira el DOM, mira el modo.
+test('K1: en modo upgrade la guardia corta el alta y nombra al Cliente Operam destino', () => {
+  const msg = errorAltaEnModoUpgrade(15);
+  assert.ok(msg, 'con modo upgrade activo el alta no puede correr');
+  assert.match(msg, /15/, 'el mensaje nombra al Cliente Operam que se esta actualizando');
+  assert.match(msg, /Seccion 1/, 'dice QUE hacer, no solo que no se puede');
+});
+
+test('K2: fuera del modo upgrade la guardia deja pasar', () => {
+  assert.strictEqual(errorAltaEnModoUpgrade(null), null);
+  assert.strictEqual(errorAltaEnModoUpgrade(undefined), null);
+});
+
+// AC2 del ticket: un upgrade bloqueado deja el panel EN modo upgrade (pcEjecutarUpgradeFiscal
+// solo lo apaga cuando la vista es 'lograda'), asi que la guardia sigue cortando.
+test('K3: un upgrade bloqueado (fusion, 409, 503) no queda logrado y la guardia sigue cortando', () => {
+  const respuestas = [
+    [409, { fusion: true, error: 'Este RFC ya es de otro Cliente Operam' }],
+    [409, { error: 'Ya existe un cliente con ese nombre corto' }],
+    [503, { error: 'Operam no responde' }],
+  ];
+  for (const [status, body] of respuestas) {
+    const vista = interpretarRespuestaUpgrade(status, body);
+    assert.notStrictEqual(vista.tipo, 'lograda', `${status} no es un upgrade logrado`);
+    assert.ok(errorAltaEnModoUpgrade(15), `tras el ${status} el panel sigue sin camino a "Dar de alta"`);
+  }
 });
