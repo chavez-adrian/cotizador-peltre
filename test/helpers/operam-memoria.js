@@ -24,6 +24,11 @@ const CAMPOS_BRANCH_DESDE_CLIENTE = ['phone', 'email'];
 // UNICA tabla del mapeo fiscal.
 const LLAVE_LECTURA = new Map(DIFF_FISCAL_CAMPOS.map(c => [c.write || c.operam, c.operam]));
 
+// La sucursal tiene su propio par asimetrico (#386): la referencia se ESCRIBE como
+// `br_ref` y se RELEE como `branch_ref`. Modelarlo es lo que hace visible si el
+// PUT conserva la referencia auto-creada o la pisa.
+const LLAVE_LECTURA_BRANCH = new Map([['br_ref', 'branch_ref']]);
+
 export function operamEnMemoria({
   clientes = [],
   padron = null,
@@ -58,10 +63,10 @@ export function operamEnMemoria({
   const buscarBranch = code => estado.clientes
     .flatMap(c => c.branches || [])
     .find(b => String(b.branch_code) === String(code)) || null;
-  const aplicar = (destino, campos, ignorados) => {
+  const aplicar = (destino, campos, ignorados, llaves = null) => {
     for (const [k, v] of Object.entries(campos || {})) {
       if (ignorados.includes(k)) continue;
-      destino[k] = v;
+      destino[llaves?.get(k) || k] = v;
     }
   };
 
@@ -86,7 +91,7 @@ export function operamEnMemoria({
       registrar('crearClienteDirecto', body);
       const customer_id = estado.proximoCliente++;
       const branch_code = estado.proximoBranch++;
-      const branch = { branch_code, br_name: String(body.CustName || '').toUpperCase(), br_ref: 'AUTO' };
+      const branch = { branch_code, br_name: String(body.CustName || '').toUpperCase(), branch_ref: 'AUTO' };
       for (const campo of CAMPOS_BRANCH_DESDE_CLIENTE) if (body[campo]) branch[campo] = body[campo];
       // El Cel del Contacto en Operam sale de `celular_nota` (buildClienteBody lo
       // escribe en la casilla `fax`, #339): el adaptador lo imita para que la
@@ -136,7 +141,7 @@ export function operamEnMemoria({
       if (!cliente) throw new Error(`Cliente ${customerId} inexistente`);
       const branch_code = estado.proximoBranch++;
       const branch = { branch_code };
-      aplicar(branch, datos, ignoraBranch);
+      aplicar(branch, datos, ignoraBranch, LLAVE_LECTURA_BRANCH);
       cliente.branches.push(branch);
       return { branch_id: branch_code };
     },
@@ -144,7 +149,7 @@ export function operamEnMemoria({
       registrar('actualizarBranchCliente', customerId, branchId, datos);
       const branch = buscarBranch(branchId);
       if (!branch) throw new Error(`Domicilio ${branchId} inexistente`);
-      aplicar(branch, datos, ignoraBranch);
+      aplicar(branch, datos, ignoraBranch, LLAVE_LECTURA_BRANCH);
       return { branch_id: branchId };
     },
     async listarSalesTypes() {

@@ -901,6 +901,51 @@ test('actualizarBranchCliente: PUT /api/v3/sales/branches/:id con location:40 y 
   }
 });
 
+// issue #386: sin br_ref el PUT rebota con 406 "La referencia de sucursal es
+// requerida" y el domicilio nunca se aplica. Ningun camino puede quedarse sin
+// ella: cuando el caller no la trae (el paso Envio no la captura y la relectura
+// del branch pudo no darla) el respaldo es el nombre de la sucursal, el mismo
+// criterio del POST de sucursal.
+test('actualizarBranchCliente: el PUT SIEMPRE lleva br_ref; sin la del caller cae al br_name (issue #386)', async () => {
+  resetSession();
+  let putSinRef = null;
+  const restoreSinRef = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/200': (url, opts) => {
+      putSinRef = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 200, {
+      br_name: 'Recepcion', pais: 'MX', salesman: 47,
+      addr_street: 'Av Reforma 100', addr_zip: '06600',
+    });
+    assert.strictEqual(putSinRef.br_ref, 'Recepcion', 'sin referencia del caller viaja el nombre de la sucursal');
+  } finally {
+    restoreSinRef();
+  }
+
+  resetSession();
+  let putConRef = null;
+  const restoreConRef = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/branches/200': (url, opts) => {
+      putConRef = JSON.parse(opts.body);
+      return jsonResponse({ result: true });
+    },
+  });
+  try {
+    await actualizarBranchCliente(100, 200, {
+      br_name: 'Recepcion', br_ref: 'HOTEL AZUL CENTRO', pais: 'MX', salesman: 47,
+      addr_street: 'Av Reforma 100', addr_zip: '06600',
+    });
+    assert.strictEqual(putConRef.br_ref, 'HOTEL AZUL CENTRO', 'la referencia del caller manda sobre el respaldo');
+  } finally {
+    restoreConRef();
+  }
+});
+
 test('actualizarBranchCliente: tax_group_id 1 para MX', async () => {
   resetSession();
   let putBody = null;

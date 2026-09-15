@@ -238,7 +238,9 @@ test('buildBranchGenerico: sin domicilio, cliente extranjero -> pais del cliente
   assert.equal(d.br_name, 'Blue Hotel Llc');
 });
 
-test('buildBranchGenerico: NO emite br_ref (no lo captura el paso Envio; Operam conserva el auto-creado)', () => {
+// #386: el PUT de branch EXIGE br_ref, pero no sale de aqui -- el paso Envio no lo
+// captura y darDeAlta lo rellena con la referencia que relee del branch.
+test('buildBranchGenerico: NO emite br_ref (no lo captura el paso Envio; lo rellena darDeAlta con el releido)', () => {
   const d = buildBranchGenerico(CLIENTE_ENTREGA, {});
   assert.ok(!('br_ref' in d));
 });
