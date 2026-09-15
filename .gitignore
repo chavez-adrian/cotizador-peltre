@@ -13,3 +13,4 @@ data/contactos-excluidos.json
 backups/
 .temporales/
 data/export-bitrix/
+data/dropbox-subidas.json

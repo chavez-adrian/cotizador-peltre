@@ -15,7 +15,7 @@ import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
 import { darDeAlta, upgradeFiscal } from './lib/alta-cliente.js';
-import { logCliente } from './lib/clientes-log.js';
+import { logCliente, marcarDropbox } from './lib/clientes-log.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
@@ -86,6 +86,7 @@ import { credencialesConfiguradas as shopifyConfigurado } from './lib/shopify-pe
 import { credencialesConfiguradas as googleConfigurado } from './lib/google-contactos.js';
 import { registrarBarrido as registrarBarridoContactos } from './lib/contactos-observabilidad-io.js';
 import { listarTodos as listarBarridosContactos } from './lib/contactos-observabilidad-store.js';
+import { listarRecientes as listarSubidasDropbox } from './lib/dropbox-subidas-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -919,12 +920,12 @@ function subirCalcaDropbox(entry, archivos) {
   const CALCA_PATH = '/1.0 Comercialización/DISEÑO/CALCAS/OT Decorado';
   const proyecto = String(entry.data?.cliente?.referencia || entry.cliente || `Pedido ${entry.id}`)
     .replace(/[/\\:*?"<>|]/g, '').trim() || `Pedido ${entry.id}`;
-  import('./lib/dropbox.js').then(({ upload }) => {
+  import('./lib/dropbox.js').then(({ upload, FLUJO_CALCA }) => {
     for (const a of archivos) {
       if (!a || !a.nombre || !a.contenidoBase64) continue;
       const ext = (String(a.nombre).match(/\.[a-zA-Z0-9]+$/) || [''])[0];
       const path = `${CALCA_PATH}/${proyecto} - Pedido ${entry.id}${ext}`;
-      upload(path, Buffer.from(a.contenidoBase64, 'base64'), 'add')
+      upload(path, Buffer.from(a.contenidoBase64, 'base64'), 'add', FLUJO_CALCA)
         .catch(err => console.error('[dropbox][calca]', err.message));
     }
   }).catch(err => console.error('[dropbox][calca]', err.message));
@@ -2037,6 +2038,15 @@ app.get('/api/admin/segmento-pendiente', authMiddleware, adminMiddleware, async 
 app.get('/api/admin/sync-contactos-google', authMiddleware, adminMiddleware, async (_req, res) => {
   const barridos = await listarBarridosContactos();
   res.json({ barridos, sinDb: !process.env.DATABASE_URL });
+});
+
+// Intentos de subida a Dropbox (issue #356, hijo de #354): las tres subidas del
+// repo son fire-and-forget y su fallo solo llegaba a console.error. Esta es la
+// superficie donde se ve, con la mas reciente primero. El store se traga sus
+// propios fallos y devuelve lista vacia, asi que aqui no hay sinDb que reportar:
+// sin DATABASE_URL el registro cae al JSON de disco y se muestra igual.
+app.get('/api/admin/dropbox-subidas', authMiddleware, adminMiddleware, async (_req, res) => {
+  res.json({ subidas: await listarSubidasDropbox() });
 });
 
 // Reporte de paridad del catalogo Excel vs Operam (issue #130, padre #120, bloqueado
@@ -3424,7 +3434,11 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
   if (pdf_base64) {
     import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
       subirCsfDropbox(pdf_base64, rfc, csfDatos.razonSocial)
-        .catch(err => console.error('[dropbox]', err.message))
+        .then(() => marcarDropbox(resultado.logId, true))
+        .catch(err => {
+          console.error('[dropbox]', err.message);
+          return marcarDropbox(resultado.logId, false);
+        })
     );
   }
   res.json({
@@ -3628,10 +3642,18 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   // Respaldo de la constancia en Dropbox (#24/#350): no es del alta, es del
   // archivo que el vendedor solto. Fire-and-forget, y solo cuando esta alta creo
   // al cliente -- sobre uno que ya existia no hay constancia nueva que archivar.
+  // #356: el resultado de la subida vuelve a la fila de auditoria del alta
+  // (clientes_log.dropbox_ok), que hasta ahora era siempre null porque al
+  // insertarla la promesa todavia no resolvia. El detalle del fallo -- flujo,
+  // destino y mensaje -- lo guarda el envoltorio comun de lib/dropbox.js.
   if (cliente.pdf_base64 && alta.creadoNuevo) {
     import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
       subirCsfDropbox(cliente.pdf_base64, cliente.tax_id, cliente.CustName)
-        .catch(err => console.error('[dropbox]', err.message))
+        .then(() => marcarDropbox(alta.logId, true))
+        .catch(err => {
+          console.error('[dropbox]', err.message);
+          return marcarDropbox(alta.logId, false);
+        })
     );
   }
 

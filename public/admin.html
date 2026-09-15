@@ -269,6 +269,33 @@
       </div>
     </div>
 
+    <!-- Intentos de subida a Dropbox (issue #356, padre #354) -->
+    <div class="admin-section">
+      <h2>Subidas a Dropbox</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Cada intento de subida a Dropbox -- constancia fiscal, posicion de calca y backup del export de Bitrix24 --
+        con su destino y su resultado. Las subidas son fire-and-forget: un fallo no rompe nada y por eso, sin esta
+        vista, no se nota. Los renglones marcados son los que fallaron.
+      </p>
+      <div id="dropbox-subidas-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="dropbox-subidas-vacio" style="display:none;color:var(--text-light);font-size:13px">Ninguna subida registrada todavia.</div>
+      <div id="dropbox-subidas-content" style="display:none;overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg);text-align:left">
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Resultado</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Fecha</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Flujo</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Archivo</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Destino</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Error</th>
+            </tr>
+          </thead>
+          <tbody id="dropbox-subidas-rows"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Paridad de catalogo Excel vs Operam (issue #130) -->
     <div class="admin-section">
       <h2>Paridad de catalogo vs Operam</h2>
@@ -318,6 +345,7 @@ async function adminLogin() {
   loadHigiene();
   loadSegmentoPendiente();
   loadSyncContactos();
+  loadDropboxSubidas();
   cargarVendedoresExpo();
 }
 
@@ -785,6 +813,41 @@ async function loadSyncContactos() {
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${b.inactivados}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosTotalesHtml(b.totales)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosErroresHtml(b.errores)}</td>
+      </tr>
+    `).join('');
+    content.style.display = 'block';
+  } catch (e) {
+    loading.textContent = 'No se pudo cargar';
+  }
+}
+
+// --- Intentos de subida a Dropbox (issue #356, padre #354) ---
+// El flujo se pinta con nombre legible; uno nuevo entra con su propia clave sin
+// tocar esta tabla (lib/dropbox.js decide el vocabulario).
+const DROPBOX_FLUJO_NOMBRES = {
+  csf: 'Constancia de situacion fiscal',
+  calca: 'Posicion de calca',
+  bitrix: 'Backup del export de Bitrix24',
+  desconocido: 'Sin declarar',
+};
+
+async function loadDropboxSubidas() {
+  const loading = document.getElementById('dropbox-subidas-loading');
+  const vacio = document.getElementById('dropbox-subidas-vacio');
+  const content = document.getElementById('dropbox-subidas-content');
+  try {
+    const res = await adminApi('/api/admin/dropbox-subidas');
+    const data = await res.json();
+    loading.style.display = 'none';
+    if (!data.subidas || data.subidas.length === 0) { vacio.style.display = 'block'; return; }
+    document.getElementById('dropbox-subidas-rows').innerHTML = data.subidas.map(s => `
+      <tr${s.ok ? '' : ' class="higiene-candidato"'}>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border);font-weight:700;color:${s.ok ? 'var(--text)' : 'var(--danger)'}">${s.ok ? 'Subido' : 'Fallo'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosFecha(s.momento)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${DROPBOX_FLUJO_NOMBRES[s.flujo] || paridadEsc(s.flujo)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${paridadEsc(s.archivo)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text-light)">${paridadEsc(s.destino)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--danger)">${paridadEsc(s.error || '')}</td>
       </tr>
     `).join('');
     content.style.display = 'block';
