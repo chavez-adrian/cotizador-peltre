@@ -349,15 +349,25 @@ export function estadoAltaAlAbrirPanel(estado) {
   };
 }
 
+// `noLegible` marca los campos que Operam NO devuelve en NINGUNA lectura de la API v3
+// (medido en vivo 2026-09-15, cliente 522, Operam 3.26.36: el detalle GET /customers/:id
+// y el listado por ?tax_id= traen EXACTAMENTE las mismas 43 llaves, y ni idcif ni
+// invoice_email estan entre ellas; no hay "ficha recortada" que releer). Es la regla de
+// #169 vista desde el otro lado: ahi las llaves de escritura y de lectura son distintas,
+// aqui la de lectura no existe. Esos campos SI se escriben -- van en el PUT como
+// cualquier otro y el eco es su unica verificacion -- pero no se pueden COMPARAR, asi
+// que calcularDiffFiscal no finge un valor anterior: los saca marcados y el panel lo
+// dice (#373; hasta ahi el vendedor leia "IdCIF (SAT): (vacio) -> 15070019293" sobre un
+// cliente que si lo tenia).
 export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social', write: 'cust_name' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
   { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
   { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
-  { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion' },
+  { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion', noLegible: true },
   { operam: 'segmento_id',         csf: 'segmentoId',     label: 'Segmento', read: 'segmento.id' },
   { operam: 'sales_type',          csf: 'salesType',      label: 'Lista de precios' },
-  { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
+  { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)', noLegible: true },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
   { operam: 'suite_number',        csf: 'numInt',        label: 'Numero Interior' },
@@ -410,6 +420,14 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
     const leido = leerValorOperam(clienteOperam, campo);
     const anterior = String(leido == null ? '' : leido).trim();
     const nuevo = String(nuevoValor).trim();
+    // Lo que Operam no expone en lectura no se compara (#373): con valor capturado la
+    // fila SALE SIEMPRE -- este diff es el cuerpo del PUT del panel (bodyDesdeDiffFiscal
+    // en el PATCH) y el dato tiene que llegar a Operam -- y viaja marcada para que el
+    // panel no invente el valor anterior. Sin valor capturado no hay nada que escribir.
+    if (campo.noLegible) {
+      if (nuevo) diff[operam] = { anterior, nuevo, label, noLegible: true };
+      continue;
+    }
     if (anterior !== nuevo) {
       diff[operam] = { anterior, nuevo, label };
     }
@@ -485,10 +503,11 @@ export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
 // ignoro (verificado en vivo: `CustName` y `segmento_id` no vuelven y no se aplican;
 // `cust_name`, `notes` y el domicilio fiscal si vuelven y si se aplican).
 //
-// El eco tambien ABSUELVE: el GET de detalle no expone idcif ni invoice_email, asi que
-// la relectura los marca como distintos aunque el PUT los haya escrito. Un campo que
-// Operam confirmo en su propia respuesta no se le reporta al vendedor como no aplicado
-// -- seria ruido permanente sobre una escritura que si ocurrio.
+// El eco tambien ABSUELVE, y es la UNICA verificacion posible de los campos noLegible
+// (#373): ninguna lectura de la API v3 devuelve idcif ni invoice_email, asi que entran
+// al diff siempre que se capturen -- no hay con que compararlos -- aunque el PUT los
+// haya escrito. Un campo que Operam confirmo en su propia respuesta no se le reporta al
+// vendedor como no aplicado: seria ruido permanente sobre una escritura que si ocurrio.
 const MOTIVO_IGNORADO = 'Operam ignoro este campo en el PUT (no lo devolvio en la respuesta)';
 
 const LLAVE_ESCRITURA = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, write }) => {
@@ -795,15 +814,21 @@ export function buildNotasConActividades(notasActuales, actividades, csfFecha) {
   return actual ? `${actual}\n${seccion}` : seccion;
 }
 
+const ANTERIOR_NO_LEGIBLE = '(no se puede leer de Operam)';
+
 export function buildDiffFiscalHtml(diff) {
   const campos = Object.keys(diff);
   if (campos.length === 0) return '';
   const mostrar = valor => valor || '(vacio)';
   const filas = campos.map(fieldId => {
-    const { anterior, nuevo, label } = diff[fieldId];
+    const { anterior, nuevo, label, noLegible } = diff[fieldId];
+    // "(vacio)" seria una afirmacion sobre el cliente que la lectura nunca hizo (#373):
+    // el campo no viene en NINGUNA lectura de la API v3. La fila se queda porque el dato
+    // SI se va a escribir; lo que el vendedor necesita saber es que no se pudo comparar.
+    const anteriorTexto = noLegible ? ANTERIOR_NO_LEGIBLE : mostrar(anterior);
     return '<div class="diff-fiscal-fila">' +
       '<strong>' + (label || DIFF_FISCAL_LABELS[fieldId] || fieldId) + ':</strong> ' +
-      '<span class="diff-fiscal-anterior">' + mostrar(anterior) + '</span>' +
+      '<span class="diff-fiscal-anterior">' + anteriorTexto + '</span>' +
       ' &rarr; ' +
       '<span class="diff-fiscal-nuevo">' + mostrar(nuevo) + '</span>' +
       '</div>';

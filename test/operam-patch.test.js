@@ -422,3 +422,36 @@ test('PATCH /api/operam/clientes/:id: un segmento y una lista CON valor siguen v
     restore();
   }
 });
+
+// #373: la fila del IdCIF viaja marcada `noLegible` (ninguna lectura de la API v3 lo
+// devuelve: medido en vivo 2026-09-15 sobre el cliente 522, Operam 3.26.36). La marca
+// es para el PANEL, que deja de fingir un valor anterior; el PUT no cambia. Si el campo
+// saliera del diff dejaria de escribirse, porque este diff ES el cuerpo del PUT.
+test('PATCH /api/operam/clientes/:id: un campo marcado noLegible (idcif) sigue viajando en el PUT (#373)', async () => {
+  resetSession();
+  let putBody = null;
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/522': (url, opts) => {
+      putBody = JSON.parse(opts.body);
+      // El eco del PUT es la UNICA confirmacion posible de un campo que no se relee.
+      return jsonResponse({ version: '3.26.36', idcif: '15070019293', cfdi_regimen_fiscal: '612' });
+    },
+  });
+  try {
+    const diff = {
+      idcif: { anterior: '', nuevo: '15070019293', label: 'IdCIF (SAT)', noLegible: true },
+      cfdi_regimen_fiscal: { anterior: '601', nuevo: '612', label: 'Regimen Fiscal' },
+    };
+    const res = await req
+      .patch('/api/operam/clientes/522')
+      .set(`Authorization`, `Bearer ${TOKEN}`)
+      .send({ diff });
+
+    assert.equal(res.status, 200);
+    assert.equal(putBody.idcif, '15070019293', 'el IdCIF de la CSF tiene que llegar a Operam');
+    assert.deepEqual(res.body.camposNoActualizados, [], 'el eco del PUT lo absuelve');
+  } finally {
+    restore();
+  }
+});
