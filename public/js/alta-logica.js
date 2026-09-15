@@ -1054,7 +1054,7 @@ export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
 
 // Reexpresion browser-safe de normalizarRfc (lib/deduplicacion.js): mayusculas y
 // sin espacios, para que el mismo RFC capturado de dos formas compare igual.
-function llaveRfc(rfc) {
+export function llaveRfc(rfc) {
   return String(rfc || '').toUpperCase().replace(/\s+/g, '');
 }
 

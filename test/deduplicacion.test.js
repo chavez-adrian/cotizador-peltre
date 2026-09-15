@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico, coincideCustRef, agregarCandidatosPorCustRef } from '../lib/deduplicacion.js';
+import { normalizarRfc, normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico, coincideCustRef, agregarCandidatosPorCustRef } from '../lib/deduplicacion.js';
 
 // N1: quita acentos
 test('N1: normalizarNombre quita acentos', () => {
@@ -565,4 +565,13 @@ test('#242: los candidatos por nombre que NO chocan de cust_ref se conservan sin
 test('#242: un padron vacio o ilegible deja el veredicto tal cual', () => {
   assert.deepEqual(agregarCandidatosPorCustRef({ tipo: 'libre' }, [], 'Studio Iken'), { tipo: 'libre' });
   assert.deepEqual(agregarCandidatosPorCustRef({ tipo: 'libre' }, null, 'Studio Iken'), { tipo: 'libre' });
+});
+
+// La llave del RFC es una sola: si la reexpresion browser-safe de alta-logica.js
+// (#389) deriva de normalizarRfc, el historial de la tarjeta deja de ligar las
+// cotizaciones viejas por RFC en silencio.
+test('llaveRfc y normalizarRfc son la MISMA llave', async () => {
+  const { llaveRfc } = await import('../public/js/alta-logica.js');
+  const casos = ['romp580101ab1', 'ROMP 580101 AB1', ' XAXX010101000 ', 'cogc6108293fa', '', null, undefined];
+  for (const caso of casos) assert.equal(llaveRfc(caso), normalizarRfc(caso), `llave distinta para ${caso}`);
 });
