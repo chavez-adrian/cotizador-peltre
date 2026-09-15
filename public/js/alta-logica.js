@@ -519,6 +519,9 @@ export function bodyDesdeDiffFiscal(diff) {
 // Solo frena el VACIO: un segmento o una lista con valor siguen viajando igual.
 export const MOTIVO_COMERCIAL_VACIO = 'No se envio a Operam: vaciar este campo borraria la configuracion comercial del Cliente Operam (el vacio se guarda como 0). Se captura en la Seccion 2 o en la ficha del Cliente Operam.';
 
+// Misma lista que CAMPOS_QUE_OPERAM_COERCIONA_A_CERO (lib/operam-client.js): este
+// modulo va al navegador y no puede importarla; si Operam coerciona un tercer campo,
+// se agrega en las DOS.
 const COMERCIAL_VACIO_NO_VIAJA = ['segmento_id', 'sales_type'];
 
 export function diffSinVaciadosComerciales(diff) {
