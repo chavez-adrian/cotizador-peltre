@@ -432,12 +432,18 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
 //     valor: este camino no tiene con que escribirlo -- el PATCH no invoca el post-fix
 //     web y la API v3 no persiste segmento_id por ningun camino (#172) -- y ofrecer una
 //     escritura que jamas ocurre es peor que no ofrecerla.
+//   - Lista de precios: el otro campo de la Seccion 2 (#372), por el mismo motivo. La
+//     API v3 SI la escribe, y justamente por eso su vacio es peligroso: Operam lo
+//     guarda como 0 y el cliente se queda sin lista (clienteSinListaPrecios, #285).
+//     Tambien sale siempre: la configuracion comercial se captura en la Seccion 2, no
+//     en el panel de la CSF.
 // Se quita la LLAVE, no su valor: resolverValorNuevo distingue ausente de vacio, y un
 // vacio con `default` caeria justo en el G03 que este ticket saca del diff.
 export function datosFiscalesDelDedup(csfDatos, { usoCfdiElegido = false } = {}) {
   const salida = { ...(csfDatos || {}) };
   const llaveCsf = operam => DIFF_FISCAL_CAMPOS.find(c => c.operam === operam).csf;
   delete salida[llaveCsf('segmento_id')];
+  delete salida[llaveCsf('sales_type')];
   if (!usoCfdiElegido) delete salida[llaveCsf('timbrado_uso_cfdi')];
   return salida;
 }
@@ -499,6 +505,40 @@ export function bodyDesdeDiffFiscal(diff) {
     body[LLAVE_ESCRITURA[campo] || campo] = nuevo;
   }
   return body;
+}
+
+// Vaciar la configuracion comercial NO viaja por el diff (#372). Los dos campos de la
+// Seccion 2 son los que Operam coerciona a 0 cuando llegan vacios (#285): un
+// `sales_type: ''` deja al cliente sin lista de precios y un `segmento_id: ''` le borra
+// el segmento. `actualizarClienteDirecto` ya los deja en tierra en el punto de escritura
+// (sinCamposCoercionables), pero el diff seguia contandolos como enviados y la
+// verificacion por eco se los reportaba al vendedor como "Operam ignoro este campo": es
+// falso -- nunca viajaron -- y le pide corregir algo que esta bien (misma leccion de
+// #379). Podarlos ANTES del PUT deja las dos cosas dichas en un solo lugar: lo que se
+// manda y el motivo real de lo que no.
+// Solo frena el VACIO: un segmento o una lista con valor siguen viajando igual.
+export const MOTIVO_COMERCIAL_VACIO = 'No se envio a Operam: vaciar este campo borraria la configuracion comercial del Cliente Operam (el vacio se guarda como 0). Se captura en la Seccion 2 o en la ficha del Cliente Operam.';
+
+const COMERCIAL_VACIO_NO_VIAJA = ['segmento_id', 'sales_type'];
+
+export function diffSinVaciadosComerciales(diff) {
+  const enviable = {};
+  const ignorados = [];
+  for (const [campo, d] of Object.entries(diff || {})) {
+    const nuevo = d && typeof d === 'object' ? d.nuevo : undefined;
+    if (COMERCIAL_VACIO_NO_VIAJA.includes(campo) && String(nuevo == null ? '' : nuevo).trim() === '') {
+      ignorados.push({
+        campo,
+        label: (d && d.label) || DIFF_FISCAL_LABELS[campo] || campo,
+        anterior: d && d.anterior,
+        nuevo,
+        motivo: MOTIVO_COMERCIAL_VACIO,
+      });
+      continue;
+    }
+    enviable[campo] = d;
+  }
+  return { enviable, ignorados };
 }
 
 export function camposNoAplicados(diff, ecoPut) {

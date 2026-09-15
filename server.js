@@ -12,7 +12,7 @@ import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacio
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
-import { bodyDesdeDiffFiscal, camposNoAplicados, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
+import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
 import { darDeAlta, upgradeFiscal } from './lib/alta-cliente.js';
 import { logCliente } from './lib/clientes-log.js';
@@ -2653,11 +2653,15 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
     // fallo de #169, en otra superficie. La pieza de verificacion es la del upgrade
     // fiscal, sin copia: las llaves del diff son de LECTURA y camposNoAplicados ya
     // las traduce a las de escritura para buscarlas en el eco.
-    const eco = await actualizarClienteDirecto(id, bodyDesdeDiffFiscal(diff));
+    // Vaciar el segmento o la lista de precios no viaja (#372): el diff puede traerlos
+    // en vacio desde la Seccion 2 bloqueada, y Operam los guardaria como 0. Se quedan
+    // fuera del PUT y de su verificacion, con su motivo real.
+    const { enviable, ignorados } = diffSinVaciadosComerciales(diff);
+    const eco = await actualizarClienteDirecto(id, bodyDesdeDiffFiscal(enviable));
     if (hayCambioRfc) logCliente(normalizarRfc(rfcNuevo), null, 'rfc-actualizado', id, FUENTE_PATCH_CLIENTE, null, null);
     // Misma llave de respuesta que el upgrade fiscal, para que el navegador lea los
     // dos caminos con interpretarRespuestaUpgrade.
-    res.json({ ok: true, camposNoActualizados: camposNoAplicados(diff, eco) });
+    res.json({ ok: true, camposNoActualizados: camposNoAplicados(enviable, eco).concat(ignorados) });
   } catch (err) {
     if (hayCambioRfc) logCliente(normalizarRfc(rfcNuevo), null, 'error', id, FUENTE_PATCH_CLIENTE, null, err.message);
     res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });

@@ -1117,3 +1117,47 @@ test('D7: sin campos pendientes el resultado del panel sigue siendo el exito de 
   assert.ok(html.includes(UPGRADE_TITULO_LOGRADO));
   assert.ok(!html.includes('<details'), 'sin pendientes no hay nada que desplegar');
 });
+
+// === #372: la Lista de precios de la Seccion 2 tampoco entra al diff ===
+//
+// HITL de #361 (2026-09-11, cliente 522 con segmento 10): el panel "Los datos fiscales
+// de la CSF no coinciden con los guardados en Operam" mostraba `Segmento: 10 -> (vacio)`.
+// #248 saco el segmento; `sales_type` es el otro campo de la Seccion 2 y llega por el
+// mismo camino (el panel del upgrade lo deja en altaState.datos), asi que su vacio
+// arrastraria la misma escritura que nadie pidio: Operam coerciona '' a 0 y el cliente
+// pierde su lista de precios (ver clienteSinListaPrecios, #285).
+const FORMULARIO_CON_COMERCIAL_VACIO = { ...FORMULARIO_EN_DEFAULTS, salesType: '' };
+
+test('D8: el diff del dedup no ofrece vaciar la Lista de precios de la Seccion 2 (#372)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const diff = calcularDiffFiscal(
+    CLIENTE_15_OPERAM,
+    datosFiscalesDelDedup(FORMULARIO_CON_COMERCIAL_VACIO, { usoCfdiElegido: false })
+  );
+  assert.ok(!('sales_type' in diff), 'la Seccion 2 esta bloqueada: su vacio no es "borralo"');
+  assert.deepEqual(Object.keys(diff), ['cfdi_regimen_fiscal'], 'solo queda el diff legitimo de la CSF');
+});
+
+test('D9: la Lista de precios nunca entra al diff de este panel, ni con un valor capturado (#372)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const datos = { ...FORMULARIO_EN_DEFAULTS, salesType: '16' };
+  const diff = calcularDiffFiscal(CLIENTE_15_OPERAM, datosFiscalesDelDedup(datos, { usoCfdiElegido: false }));
+  assert.ok(!('sales_type' in diff), 'la configuracion comercial se captura en la Seccion 2, no en este panel');
+});
+
+test('D10: el panel del RFC duplicado ya no pinta la fila de Lista de precios (#372)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const html = buildDedupExactoConDiffHtml(
+    CLIENTE_15_OPERAM,
+    datosFiscalesDelDedup(FORMULARIO_CON_COMERCIAL_VACIO, { usoCfdiElegido: false })
+  );
+  assert.ok(html.includes('Regimen Fiscal'), 'el diff legitimo se sigue mostrando');
+  assert.ok(!html.includes('Lista de precios'), 'no se ofrece borrar la lista del cliente');
+});
+
+test('D11: datosFiscalesDelDedup no muta el original al podar la Lista de precios (#372)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const original = { ...FORMULARIO_EN_DEFAULTS, salesType: '16' };
+  datosFiscalesDelDedup(original, { usoCfdiElegido: false });
+  assert.equal(original.salesType, '16', 'altaState.datos sigue completo para el alta');
+});
