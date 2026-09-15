@@ -107,8 +107,9 @@ export const MENSAJE_COPIA_LISTA_FIJADA =
 
 // Que pasa con la lista fijada y que hay que avisar al CAMBIAR DE CLIENTE
 // (#385, decision de Adrian 2026-09-14): el cambio se comporta como Copiar
-// sobre el carrito actual -- la lista fijada se conserva si quien cotiza puede
-// fijarla y si no cae a Auto con aviso (misma semantica que
+// sobre el carrito actual -- la lista fijada se conserva si quien cotiza tiene
+// habilitada ESA lista (#296: `permiso` es la matriz de listas, no un
+// booleano) y si no cae a Auto con aviso (misma semantica que
 // tierAlCargarCotizacion en modo 'nueva'). Si se estaba EDITANDO (modo
 // actualizacion), se avisa que se salio de la edicion: al generar se creara
 // una cotizacion nueva y la del folio se queda como estaba.
@@ -118,8 +119,8 @@ export const MENSAJE_COPIA_LISTA_FIJADA =
 // preparacion) y elegir al nuevo cliente prepara otra vez (segunda): en la
 // segunda ya no hay edicion ni lista que perder, y sin acumular la primera
 // el aviso se borraria justo cuando el vendedor lo tiene que leer.
-export function estadoAlCambiarCliente({ tiers, piezasProducto, tierFijado, tienePermiso, modoActualizacion, folioOperam, avisoPrevio }) {
-  const lista = tierAlCargarCotizacion(tiers, piezasProducto, tierFijado, 'nueva', tienePermiso);
+export function estadoAlCambiarCliente({ tiers, piezasProducto, tierFijado, permiso, modoActualizacion, folioOperam, avisoPrevio }) {
+  const lista = tierAlCargarCotizacion(tiers, piezasProducto, tierFijado, 'nueva', permiso);
   const previo = avisoPrevio || {};
   const salidaEdicion = !!modoActualizacion || !!previo.salidaEdicion;
   const listaPerdida = lista.avisoListaPerdida || !!previo.listaPerdida;

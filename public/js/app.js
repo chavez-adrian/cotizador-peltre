@@ -3105,7 +3105,7 @@ function pcPrepararSeleccion() {
     tiers: state.precios?.tiers || [],
     piezasProducto: getPiezasProducto(),
     tierFijado: state.tierFijado,
-    tienePermiso: state.user?.role === 'admin' || state.puedeFijarLista,
+    permiso: permisoListas(),
     modoActualizacion: state.modoActualizacion,
     folioOperam: state.folioOperam,
     avisoPrevio: state.avisoCambioCliente,

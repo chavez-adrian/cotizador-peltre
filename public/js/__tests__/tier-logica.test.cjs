@@ -316,29 +316,44 @@ test('MENSAJE_COPIA_LISTA_FIJADA existe y menciona Auto', () => {
 // === estadoAlCambiarCliente: cambiar de cliente se comporta como Copiar (#385) ===
 
 // 4 partidas x 16 pzs = 64 pzs: el tabulador da Menudeo, asi que M1500 ERA una
-// lista fijada (el caso de la cotizacion 1264 del reporte).
+// lista fijada (el caso de la cotizacion 1264 del reporte). El permiso es el de
+// la matriz (#296), no un booleano: M1500 es la lista 6 de Operam, asi que la
+// celda que decide es esa y no otra.
+const SOLO_M1500 = { esAdmin: false, listasHabilitadas: ['6'] };
 const CAMBIO_BASE = {
-  tiers: TIERS, piezasProducto: 64, tierFijado: 'M1500', tienePermiso: true,
+  tiers: TIERS, piezasProducto: 64, tierFijado: 'M1500', permiso: SOLO_M1500,
   modoActualizacion: false, folioOperam: null, avisoPrevio: null,
 };
 
-test('AC1: lista fijada y permiso para fijarla: el cambio de cliente la conserva, sin avisos', () => {
+test('AC1: con la lista fijada habilitada en la matriz, el cambio de cliente la conserva sin avisos', () => {
   const r = estadoAlCambiarCliente(CAMBIO_BASE);
   assert.strictEqual(r.tierFijado, 'M1500');
   assert.strictEqual(r.aviso, null);
 });
 
-test('AC2: lista fijada SIN permiso: cae a Auto y avisa la lista perdida', () => {
-  const r = estadoAlCambiarCliente({ ...CAMBIO_BASE, tienePermiso: false });
+test('AC1: el rol admin la conserva aunque no tenga ninguna celda marcada', () => {
+  const r = estadoAlCambiarCliente({ ...CAMBIO_BASE, permiso: ADMIN });
+  assert.strictEqual(r.tierFijado, 'M1500');
+  assert.strictEqual(r.aviso, null);
+});
+
+test('AC2: con OTRA lista habilitada pero no esa: cae a Auto y avisa la lista perdida', () => {
+  const r = estadoAlCambiarCliente({ ...CAMBIO_BASE, permiso: SOLO_M550 });
   assert.strictEqual(r.tierFijado, '');
   assert.deepStrictEqual(r.aviso, { salidaEdicion: false, folioOperam: null, listaPerdida: true });
 });
 
-test('AC3: lista que coincide con el tabulador o sin lista fijada: Auto sin avisos, con o sin permiso', () => {
-  for (const tienePermiso of [true, false]) {
-    const coincide = estadoAlCambiarCliente({ ...CAMBIO_BASE, piezasProducto: 1600, tienePermiso });
+test('AC2: sin ninguna lista habilitada: cae a Auto y avisa la lista perdida', () => {
+  const r = estadoAlCambiarCliente({ ...CAMBIO_BASE, permiso: SIN_LISTAS });
+  assert.strictEqual(r.tierFijado, '');
+  assert.deepStrictEqual(r.aviso, { salidaEdicion: false, folioOperam: null, listaPerdida: true });
+});
+
+test('AC3: lista que coincide con el tabulador o sin lista fijada: Auto sin avisos, con o sin la celda', () => {
+  for (const permiso of [SOLO_M1500, SIN_LISTAS]) {
+    const coincide = estadoAlCambiarCliente({ ...CAMBIO_BASE, piezasProducto: 1600, permiso });
     assert.deepStrictEqual(coincide, { tierFijado: '', aviso: null });
-    const sinLista = estadoAlCambiarCliente({ ...CAMBIO_BASE, tierFijado: '', tienePermiso });
+    const sinLista = estadoAlCambiarCliente({ ...CAMBIO_BASE, tierFijado: '', permiso });
     assert.deepStrictEqual(sinLista, { tierFijado: '', aviso: null });
   }
 });
@@ -360,11 +375,11 @@ test('AC6: cotizacion nueva (carrito vacio, sin lista, sin edicion): Auto y sin 
 });
 
 test('la segunda preparacion (elegir al nuevo cliente tras "Cambiar de cliente") conserva los avisos de la primera', () => {
-  const primera = estadoAlCambiarCliente({ ...CAMBIO_BASE, tienePermiso: false, modoActualizacion: true, folioOperam: '1264' });
+  const primera = estadoAlCambiarCliente({ ...CAMBIO_BASE, permiso: SIN_LISTAS, modoActualizacion: true, folioOperam: '1264' });
   assert.deepStrictEqual(primera.aviso, { salidaEdicion: true, folioOperam: '1264', listaPerdida: true });
   // Tras la primera el estado ya esta en Auto y fuera de edicion.
   const segunda = estadoAlCambiarCliente({
-    ...CAMBIO_BASE, tienePermiso: false, tierFijado: primera.tierFijado,
+    ...CAMBIO_BASE, permiso: SIN_LISTAS, tierFijado: primera.tierFijado,
     modoActualizacion: false, folioOperam: null, avisoPrevio: primera.aviso,
   });
   assert.strictEqual(segunda.tierFijado, '');
