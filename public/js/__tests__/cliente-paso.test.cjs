@@ -11,7 +11,7 @@ let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
   decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
   contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
-  contactoEntregaDelCliente, seleccionContactoEntrega;
+  contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente;
 
 before(async () => {
   ({
@@ -19,7 +19,7 @@ before(async () => {
     buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
     contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
-    contactoEntregaDelCliente, seleccionContactoEntrega,
+    contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente,
   } = await import('../alta-logica.js'));
 });
 
@@ -626,4 +626,84 @@ test('X20: sin la marca, el autollenado de #353 no cambia', () => {
     seleccionContactoEntrega(CONTACTOS, { nombre: '', telefono: '', email: '' }, false),
     { indice: 0, aplicar: true },
   );
+});
+
+// === cotizacionesPreviasDelCliente: el historial de la tarjeta es POR IDENTIDAD (#389) ===
+// El panel "Cotizaciones previas" filtraba TODAS las cotizaciones por los primeros
+// 10 caracteres del nombre, asi que "maria del " empataba a cualquier "Maria del
+// ...". Como el panel ofrece Editar y Copiar cotizacion sobre esas filas, el
+// vendedor podia abrir la de otro cliente creyendo que era del elegido.
+
+// Los dos casos del ticket: el Cliente Operam 44 y la clienta 248, que comparten
+// los primeros 10 caracteres del nombre y no son la misma persona.
+const CLIENTE_44 = {
+  id: 44, name: 'MARIA DEL PILAR ROSETE MELGOZA', ref: 'Maria del Pilar Rosete',
+  rfc: 'ROMP580101AB1', telefonos: ['+52 55 4001 2233'],
+};
+const PREVIAS_248 = [
+  { id: 57, fecha: '2026-02-16T18:00:00.000Z', cliente: 'MARIA DEL PILAR CORREA VERGARA', customerId: 248, rfc: 'COVM700202XY8', contactoCelular: '5599887766', total: 8022 },
+  { id: 51, fecha: '2026-05-11T18:00:00.000Z', cliente: 'MARIA DEL PILAR CORREA VERGARA', customerId: 248, rfc: 'COVM700202XY8', contactoCelular: '5599887766', total: 6763.88 },
+];
+
+test('H1: mismo prefijo de nombre y otro Cliente Operam -> no aparece ninguna (el caso del ticket)', () => {
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(PREVIAS_248, CLIENTE_44), []);
+});
+
+test('H2: las cotizaciones del propio Cliente Operam siguen apareciendo, en el orden que llegaron', () => {
+  const propias = [
+    { id: 90, fecha: '2026-03-02T18:00:00.000Z', cliente: 'MARIA DEL PILAR ROSETE MELGOZA', customerId: 44, rfc: 'ROMP580101AB1', total: 1200 },
+    { id: 95, fecha: '2026-06-02T18:00:00.000Z', cliente: 'Maria del Pilar Rosete', customerId: '44', rfc: 'ROMP580101AB1', total: 3400 },
+  ];
+  assert.deepStrictEqual(
+    cotizacionesPreviasDelCliente([PREVIAS_248[0], propias[0], PREVIAS_248[1], propias[1]], CLIENTE_44),
+    propias,
+  );
+});
+
+// Respaldo para la cotizacion vieja que no anoto su Cliente Operam (las del
+// backfill #76 y las anteriores al alta generica): el RFC real EXACTO es el mismo
+// contribuyente.
+test('H3: cotizacion sin customerId pero con el RFC real del cliente -> aparece', () => {
+  const vieja = { id: 12, fecha: '2025-11-02T18:00:00.000Z', cliente: 'M. DEL PILAR ROSETE', customerId: null, rfc: 'romp580101ab1', total: 500 };
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([vieja, ...PREVIAS_248], CLIENTE_44), [vieja]);
+});
+
+// El RFC generico lo comparten todos los Clientes Operam sin datos fiscales: no
+// identifica a nadie y por eso nunca liga (ni del lado del cliente ni del de la
+// cotizacion).
+test('H4: RFC generico de los dos lados -> no liga nada', () => {
+  const generico = { ...CLIENTE_44, rfc: 'XAXX010101000' };
+  const cots = [
+    { id: 20, fecha: '2026-01-05T18:00:00.000Z', cliente: 'OTRA PERSONA', customerId: null, rfc: 'XAXX010101000', total: 300 },
+    { id: 21, fecha: '2026-01-06T18:00:00.000Z', cliente: 'UN EXTRANJERO', customerId: null, rfc: 'XEXX010101000', total: 400 },
+  ];
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(cots, generico), []);
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(cots, CLIENTE_44), []);
+});
+
+// La liga que la cotizacion ya trae manda: si dice de que Cliente Operam es, ese
+// es el veredicto. Dos cuentas del mismo contribuyente son dos clientes distintos
+// en Operam y se unifican a mano, no en este panel.
+test('H5: cotizacion con customerId de OTRO cliente no entra por el RFC', () => {
+  const ajena = { id: 30, fecha: '2026-04-01T18:00:00.000Z', cliente: 'ROSETE MELGOZA MARIA', customerId: 900, rfc: 'ROMP580101AB1', total: 700 };
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([ajena], CLIENTE_44), []);
+});
+
+// Segundo respaldo de la cotizacion sin customerId: el Contacto con el que nacio
+// (`contactoCelular`) esta en una casilla de telefono del Cliente Operam elegido.
+// La comparacion es por los ultimos 10 digitos, como toda identidad de Contacto.
+test('H6: cotizacion sin customerId ni RFC real, con el celular del cliente -> aparece', () => {
+  const vieja = { id: 40, fecha: '2025-09-09T18:00:00.000Z', cliente: 'PILAR', customerId: null, rfc: 'XAXX010101000', contactoCelular: '+52 1 55 4001 2233', total: 900 };
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([vieja, ...PREVIAS_248], CLIENTE_44), [vieja]);
+});
+
+test('H7: el celular de otro Contacto no liga, aunque el nombre se parezca', () => {
+  const ajena = { id: 41, fecha: '2025-09-10T18:00:00.000Z', cliente: 'MARIA DEL PILAR CORREA VERGARA', customerId: null, rfc: '', contactoCelular: '5599887766', total: 950 };
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([ajena], CLIENTE_44), []);
+});
+
+test('H8: tolera listas y cliente nulos', () => {
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(null, CLIENTE_44), []);
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(PREVIAS_248, null), []);
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([null, undefined], CLIENTE_44), []);
 });

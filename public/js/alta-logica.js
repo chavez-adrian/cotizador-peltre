@@ -1052,6 +1052,42 @@ export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
   return out;
 }
 
+// Reexpresion browser-safe de normalizarRfc (lib/deduplicacion.js): mayusculas y
+// sin espacios, para que el mismo RFC capturado de dos formas compare igual.
+function llaveRfc(rfc) {
+  return String(rfc || '').toUpperCase().replace(/\s+/g, '');
+}
+
+// Las cotizaciones del cliente elegido para el panel "Cotizaciones previas" de la
+// tarjeta del paso Cliente (#389). Filtra por IDENTIDAD, nunca por prefijo ni por
+// pedazo del nombre: el Cliente Operam que la cotizacion anoto al subirse
+// (`data.cliente.customerId`, que GET /api/cotizaciones expone como `customerId`)
+// es la respuesta cuando la cotizacion lo tiene -- otro `customerId` es otro
+// cliente, aunque se llamen casi igual.
+//
+// Los respaldos son para la cotizacion que NO lo anoto (las del backfill #76 y las
+// anteriores al alta generica): el RFC real EXACTO, que es el mismo contribuyente,
+// y el Contacto con el que nacio (`contactoCelular`) contra las casillas de
+// telefono del Cliente Operam, por los ultimos 10 digitos. Un RFC generico no
+// identifica a nadie (lo comparten los Clientes Operam sin datos fiscales), asi
+// que nunca liga.
+export function cotizacionesPreviasDelCliente(cotizaciones, cliente) {
+  const c = cliente || {};
+  const clienteId = c.id != null ? String(c.id) : null;
+  const rfcCliente = esRfcGenerico(c.rfc) ? '' : llaveRfc(c.rfc);
+  const celulares = new Set(
+    (Array.isArray(c.telefonos) && c.telefonos.length ? c.telefonos : [c.telefono])
+      .map(llaveCelularOrigen).filter(t => t.length === 10));
+  return (cotizaciones || []).filter(cot => {
+    if (!cot) return false;
+    if (cot.customerId != null) return clienteId !== null && String(cot.customerId) === clienteId;
+    const rfcCot = esRfcGenerico(cot.rfc) ? '' : llaveRfc(cot.rfc);
+    if (rfcCliente && rfcCot === rfcCliente) return true;
+    const cel = llaveCelularOrigen(cot.contactoCelular);
+    return cel.length === 10 && celulares.has(cel);
+  });
+}
+
 // Estado de los chips de completitud de la tarjeta (AC6/#82; tri-estado de
 // Entrega extendido en #84), desde datos reales:
 //  - Contacto: nombre resoluble (name||ref) Y telefono (lo minimo para cotizar).

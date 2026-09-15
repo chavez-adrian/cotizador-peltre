@@ -21,6 +21,7 @@ import {
   mensajeBusquedaCelular,
   mezclarResultadosBusqueda,
   recientesDesdeCotizaciones,
+  cotizacionesPreviasDelCliente,
   chipsCompletitud,
   buildClienteDesdeContactoNuevo,
   clienteDesdeProspecto,
@@ -2960,17 +2961,15 @@ async function seleccionarClienteOperam(cliente) {
   pcState.domicilioIdx = 0;
   if (window._operamDomicilios.length >= 1) aplicarDomicilio(window._operamDomicilios[0]);
 
-  // Mostrar historial de cotizaciones para este cliente
-  const nombreCliente = (cliente.name || '').toLowerCase();
-  const rfcCliente = (cliente.rfc || '').toLowerCase();
+  // Mostrar historial de cotizaciones para este cliente. Quien decide cuales son
+  // SUYAS es cotizacionesPreviasDelCliente (alta-logica.js, #389): identidad
+  // (customerId de Operam, RFC real exacto o Contacto), nunca el prefijo del
+  // nombre -- con el, "maria del " empataba a cualquier "Maria del ..." y el panel
+  // ofrecia Editar y Copiar cotizacion sobre las de otro cliente.
   try {
     const r = await api('/api/cotizaciones');
     const todas = await r.json();
-    const previas = todas.filter(c => {
-      const n = (c.cliente || '').toLowerCase();
-      return n.includes(nombreCliente.slice(0, 10)) ||
-        (rfcCliente && n.includes(rfcCliente));
-    });
+    const previas = cotizacionesPreviasDelCliente(todas, cliente);
     if (previas.length > 0) {
       renderHistorialCliente(previas);
     }

@@ -590,6 +590,12 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // buscador del Historial (filtrarCotizaciones) mas alla de razon social.
     nombreCorto: data?.cliente?.nombreCorto ?? null,
     contactoEntrega: data?.cliente?.contactoEntrega ?? null,
+    // De quien es la cotizacion (#389): el Cliente Operam al que se subio y el RFC
+    // con el que se subio. Con esto el panel "Cotizaciones previas" del paso Cliente
+    // filtra por IDENTIDAD (cotizacionesPreviasDelCliente, alta-logica.js) en vez de
+    // por los primeros 10 caracteres del nombre, que mezclaba clientes distintos.
+    customerId: data?.cliente?.customerId ?? null,
+    rfc: data?.cliente?.rfc ?? null,
     // Vigencia y partidas del Resumen de la cotizacion (#312): el texto lo arma
     // el navegador con el mismo nucleo que la cotizacion recien generada, y
     // desde el Historial estos son los dos datos que le faltaban. Los items van
