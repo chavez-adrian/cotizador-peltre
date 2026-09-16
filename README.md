@@ -38,6 +38,9 @@ Copiar `.env.example` a `.env` y completar las variables:
 | `DROPBOX_REFRESH_TOKEN` | OAuth refresh token de Dropbox |
 | `DROPBOX_APP_KEY` | App key de Dropbox |
 | `DROPBOX_APP_SECRET` | App secret de Dropbox |
+| `DROPBOX_NS_CSF` / `DROPBOX_PATH_CSF` | Destino del respaldo de constancias: `namespace_id` + ruta relativa. Opcionales y en PAREJA: sin las dos, el flujo escribe donde escribia (sandbox de la app) |
+| `DROPBOX_NS_CALCA` / `DROPBOX_PATH_CALCA` | Destino de los archivos de posicion de calca (mismas reglas) |
+| `DROPBOX_NS_BITRIX` / `DROPBOX_PATH_BITRIX` | Destino del backup de Bitrix24 (mismas reglas) |
 | `OPERAM_WEBHOOK_SECRET` | Secreto compartido del webhook de sync post-venta (header `X-Operam-Webhook-Secret`). Sin el, el endpoint es fail-closed (401) |
 
 ## Uso
