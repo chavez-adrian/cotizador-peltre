@@ -7260,6 +7260,9 @@ function altaCsfSetStatus(status, opts = {}) {
   if (bannerOk) bannerOk.style.display = status === 'success' ? '' : 'none';
   if (bannerErr) bannerErr.style.display = status === 'error' ? '' : 'none';
   if (detalles) detalles.style.display = status === 'success' ? '' : 'none';
+  // Leida la CSF, los campos y el boton "Confirmar datos fiscales" se ven sin un
+  // clic extra en el resumen del <details>.
+  if (detalles && status === 'success') detalles.open = true;
 
   if (status === 'loading') {
     const txt = document.getElementById('csf-spinner-text');
