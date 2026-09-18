@@ -2817,6 +2817,26 @@ test('#332 armarContenidoQuote: sin calle el interior queda como primer elemento
   assert.equal(deliveryAddress, 'Int. 27, Bosque de las Lomas, 11700');
 });
 
+// El "Int." solo se antepone a un interior DESNUDO (empieza con digito o es corto). Los
+// vendedores capturan el interior con su propia etiqueta, o capturan algo que ni siquiera
+// es un interior: medido en Neon 2026-09-18, la mitad de los numInt reales ("Dept 301",
+// "Local 11", "Mz. 4 Lts. 13 y 15" de la 1263, "Residencial Via Vento PH2") quedaban como
+// "Int. Mz. 4 Lts. 13 y 15" -- incorrecto. Esos van tal cual despues de la calle.
+test('#332 armarContenidoQuote: "Int." solo antecede a un interior sin etiqueta propia', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const calle = (numInt) => armarContenidoQuote({
+    cliente: { calle: '2a. Cda. de Av. Iman', numInt },
+  }).deliveryAddress;
+  assert.equal(calle('5'), '2a. Cda. de Av. Iman Int. 5');
+  assert.equal(calle('502 C'), '2a. Cda. de Av. Iman Int. 502 C');
+  assert.equal(calle('B'), '2a. Cda. de Av. Iman Int. B');
+  assert.equal(calle('12A'), '2a. Cda. de Av. Iman Int. 12A');
+  assert.equal(calle('Mz. 4 Lts. 13 y 15'), '2a. Cda. de Av. Iman Mz. 4 Lts. 13 y 15');
+  assert.equal(calle('Dept 301'), '2a. Cda. de Av. Iman Dept 301');
+  assert.equal(calle('Local 11'), '2a. Cda. de Av. Iman Local 11');
+  assert.equal(calle('Int. 4'), '2a. Cda. de Av. Iman Int. 4');
+});
+
 // === Telefono y correo de contacto del quote (issue #329) ====================
 // Sintoma medido en vivo (quote 1270, cliente 376 "Don Asado"): el POST del cotizador
 // nunca mandaba contact_phone ni contact_email, asi que Operam los rellenaba solo con el
