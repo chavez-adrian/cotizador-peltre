@@ -199,7 +199,7 @@ export function buildAccionesCargaHtml(cot) {
 // folio" que resolver aqui.
 export function buildAvisoModoActualizacion(folioOperam) {
   const badge = etiquetaFolioOperam({ folioOperam });
-  return `<span class="operam-status">Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span>`;
+  return `<span class="operam-status"><span>Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span></span>`;
 }
 
 // Avisos al cambiar de cliente (#385): el `aviso` que devuelve
@@ -213,7 +213,9 @@ export function buildAvisoCambioClienteHtml(aviso) {
   const partes = [];
   if (aviso.salidaEdicion) {
     const badge = escapeHtml(etiquetaFolioOperam({ folioOperam: aviso.folioOperam }));
-    partes.push(`Saliste de la edici&oacute;n de la <strong>${badge}</strong>: al generar se crear&aacute; una cotizaci&oacute;n nueva y la ${badge} se queda en Operam como estaba.`);
+    // Envuelto en un solo <span>: .operam-status es inline-flex y el texto tras el
+    // <strong> se partia en otro renglon.
+    partes.push(`<span>Saliste de la edici&oacute;n de la <strong>${badge}</strong>: al generar se crear&aacute; una cotizaci&oacute;n nueva y la ${badge} se queda en Operam como estaba.</span>`);
   }
   if (aviso.listaPerdida) partes.push(MENSAJE_COPIA_LISTA_FIJADA);
   return partes.map(m => `<span class="operam-status">${m}</span>`).join(' ');

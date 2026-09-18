@@ -431,6 +431,15 @@ test('buildAvisoCambioClienteHtml: la lista perdida usa el mismo mensaje que Cop
   assert.ok(!/edici/i.test(html));
 });
 
+// .operam-status es inline-flex con wrap: cada nodo hijo es un flex item, asi que
+// el texto que sigue al <strong> se iba entero al renglon de abajo (HITL #385).
+// El mensaje con negritas viaja envuelto en UN solo hijo para que fluya como texto.
+test('los avisos con folio en negritas son un solo hijo de .operam-status (no se parten en renglones)', () => {
+  const unHijo = /^<span class="operam-status"><span>[^]*<strong>[^]*<\/strong>[^]*<\/span><\/span>$/;
+  assert.match(buildAvisoCambioClienteHtml({ salidaEdicion: true, folioOperam: '1264', listaPerdida: false }), unHijo);
+  assert.match(buildAvisoModoActualizacion('1200'), unHijo);
+});
+
 test('buildAvisoCambioClienteHtml: las dos cosas a la vez salen como dos avisos', () => {
   const html = buildAvisoCambioClienteHtml({ salidaEdicion: true, folioOperam: '1264', listaPerdida: true });
   assert.equal((html.match(/<span class="operam-status">/g) || []).length, 2);
