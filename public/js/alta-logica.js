@@ -695,6 +695,14 @@ export function precargaComercialUpgrade(clienteOperam) {
 // lo expone, asi que el campo arranca vacio y eso NO significa que el cliente no tenga
 // uno. En modo alta todo vuelve a como estaba (el argumento es el customer_id destino
 // o null: el modo lo decide la PRESENCIA del id, igual que usoCfdiPorDefecto).
+// El acordeon abre una seccion a la vez, pero en el upgrade la Configuracion
+// comercial (Seccion 2) queda abierta junto a la que este activa: trae lo que el
+// cliente tiene HOY en Operam y el vendedor debe verlo antes de confirmar, sin un
+// clic que nada le pide dar (HITL de #396). Bloqueada, no se abre por esta regla.
+export function seccionAltaAbierta(n, { seccionAbierta, modoUpgrade, bloqueada } = {}) {
+  return seccionAbierta === n || (n === 2 && modoUpgrade != null && !bloqueada);
+}
+
 export const EMAIL_FACTURA_PLACEHOLDER_ALTA = 'facturacion@empresa.com';
 export const EMAIL_FACTURA_PLACEHOLDER_UPGRADE = '(no visible desde Operam; escribe uno solo si quieres actualizarlo)';
 

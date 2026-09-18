@@ -909,6 +909,22 @@ test('C19: en modo alta nada se bloquea y el email vuelve a su placeholder norma
   assert.equal(modo.emailPlaceholder, 'facturacion@empresa.com');
 });
 
+// La Seccion 2 trae la configuracion que el cliente tiene HOY en Operam: en el
+// upgrade se ve junto a la CSF sin un clic (HITL de #396); en el alta el acordeon
+// sigue abriendo una seccion a la vez.
+test('C19b: en modo upgrade la Seccion 2 queda abierta junto a la seccion activa', async () => {
+  const { seccionAltaAbierta } = await import('../alta-logica.js');
+  const upgrade = { seccionAbierta: 1, modoUpgrade: 15 };
+  assert.equal(seccionAltaAbierta(1, upgrade), true);
+  assert.equal(seccionAltaAbierta(2, upgrade), true);
+  assert.equal(seccionAltaAbierta(3, upgrade), false);
+  assert.equal(seccionAltaAbierta(2, { ...upgrade, bloqueada: true }), false);
+  const alta = { seccionAbierta: 1, modoUpgrade: null };
+  assert.equal(seccionAltaAbierta(1, alta), true);
+  assert.equal(seccionAltaAbierta(2, alta), false);
+  assert.equal(seccionAltaAbierta(2, { seccionAbierta: 2, modoUpgrade: null }), true);
+});
+
 test('C20: en modo upgrade el email de facturacion avisa que no es legible desde Operam (decision 1)', async () => {
   const { modoComercialUpgrade } = await import('../alta-logica.js');
   const modo = modoComercialUpgrade(500, '');

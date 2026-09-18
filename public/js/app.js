@@ -44,6 +44,7 @@ import {
   nombreConCorto,
   datosUpgradeConComercial,
   modoComercialUpgrade,
+  seccionAltaAbierta,
   interpretarRespuestaUpgrade,
 } from './alta-logica.js';
 import {
@@ -7220,8 +7221,10 @@ function altaToggleSeccion(n) {
     const body = document.getElementById(`alta-body-${i}`);
     const ico = document.getElementById(`alta-ico-${i}`);
     if (!s || !body) return;
-    const isOpen = altaState.seccionAbierta === i;
     const isLocked = s.classList.contains('alta-seccion-bloqueada');
+    const isOpen = seccionAltaAbierta(i, {
+      seccionAbierta: altaState.seccionAbierta, modoUpgrade: altaCsfState.modoUpgrade, bloqueada: isLocked,
+    });
     body.style.display = isOpen ? 'block' : 'none';
     s.classList.toggle('alta-sec-activa', isOpen);
     if (ico && !isLocked) ico.textContent = isOpen ? '-' : '+';
