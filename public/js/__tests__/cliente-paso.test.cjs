@@ -11,7 +11,8 @@ let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
   decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
   contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
-  contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente;
+  contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente,
+  clienteDesdeCotizacionReciente;
 
 before(async () => {
   ({
@@ -20,6 +21,7 @@ before(async () => {
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
     contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
     contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente,
+    clienteDesdeCotizacionReciente,
   } = await import('../alta-logica.js'));
 });
 
@@ -542,6 +544,34 @@ test('X10c: el mismo numero empata aunque Operam lo traiga con extension', () =>
   const contactos = [{ tag: 'general', nombre: 'Patricia Hamui', telefono: '55 5395 2615 ext 116', email: '' }];
   const r = seleccionContactoEntrega(contactos, { nombre: '', telefono: '+52 55 5395 2615', email: '' });
   assert.deepStrictEqual(r, { indice: 0, aplicar: true });
+});
+
+// Recientes copia a Envio la entrega de la cotizacion elegida (pcElegirReciente).
+// El cliente de la tarjeta no traia correo: la opcion "(Contacto)" no explicaba lo
+// capturado, el selector arrancaba en "+ Nuevo contacto" y elegirla borraba el
+// correo (Erick Tellez, cotizacion 106, HITL de #353).
+test('X10d: una cotizacion de Recientes deja elegida la opcion del Contacto con su correo', () => {
+  const cotizacion = {
+    rfc: '', razonSocial: 'Erick Tellez', nombreCorto: 'Erick Tellez', telefono: '+523221508025',
+    nombreEntrega: 'Erick Tellez', celEntrega: '+523221508025', emailEntrega: 'erick.tellez@auberge.com',
+    cpEntrega: '63734', pais: 'MX', customerId: 528,
+  };
+  const cliente = clienteDesdeCotizacionReciente(cotizacion);
+  assert.strictEqual(cliente.clienteOperamId, 528);
+  const contactos = contactosEntregaDisponibles(null, null, contactoEntregaDelCliente(cliente));
+  const capturado = { nombre: cotizacion.nombreEntrega, telefono: cotizacion.celEntrega, email: cotizacion.emailEntrega };
+  assert.deepStrictEqual(seleccionContactoEntrega(contactos, capturado), { indice: 0, aplicar: true });
+  assert.strictEqual(contactos[0].email, 'erick.tellez@auberge.com');
+});
+
+test('X10e: si esa cotizacion se entrego a otra persona, lo capturado no es del Contacto', () => {
+  const cotizacion = {
+    razonSocial: 'Erick Tellez', telefono: '+523221508025',
+    nombreEntrega: 'Rosa Mena', celEntrega: '+525511112222', emailEntrega: 'rosa@hotel.mx',
+  };
+  const contactos = contactosEntregaDisponibles(null, null, contactoEntregaDelCliente(clienteDesdeCotizacionReciente(cotizacion)));
+  const capturado = { nombre: 'Rosa Mena', telefono: '+525511112222', email: 'rosa@hotel.mx' };
+  assert.deepStrictEqual(seleccionContactoEntrega(contactos, capturado), { indice: null, aplicar: false });
 });
 
 test('X11: etiquetaTagContacto traduce el tag del Contacto de la cotizacion', () => {

@@ -1032,6 +1032,21 @@ export function clienteDesdeProspecto(prospecto) {
   };
 }
 
+// Cliente de la tarjeta al elegir una cotizacion de Recientes. Los campos de
+// entrega salen de ESA cotizacion, correo incluido; sin `email` aqui la opcion
+// "(Contacto)" del selector de entrega no los explicaba y el paso Envio arrancaba
+// en "+ Nuevo contacto", y elegirla borraba el correo (#353).
+export function clienteDesdeCotizacionReciente(c) {
+  const cl = c || {};
+  return {
+    tipo: cl.rfc ? 'operam' : 'nuevo',
+    name: cl.razonSocial || cl.nombreCorto || '', ref: cl.nombreCorto || '',
+    rfc: cl.rfc || '', telefono: cl.telefono || '', email: cl.emailEntrega || '',
+    cp: cl.cpEntrega || '', pais: cl.pais || 'MX',
+    clienteOperamId: cl.customerId ?? null,
+  };
+}
+
 // Exportados desde #346: el buscador de la vista Clientes arma sus filas en el
 // SERVIDOR y usa ESTOS normalizadores, no una copia con los mismos literales.
 export function normalizarOperam(c) {

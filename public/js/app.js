@@ -26,6 +26,7 @@ import {
   chipsCompletitud,
   buildClienteDesdeContactoNuevo,
   clienteDesdeProspecto,
+  clienteDesdeCotizacionReciente,
   accionCelularContactoNuevo,
   decidirVistaTrasBusqueda,
   accionProspecto409,
@@ -3356,12 +3357,7 @@ async function pcElegirReciente(cotizacionId) {
     if (pais) pais.value = c.pais || 'MX';
     if (c.telefono) fijarTelefono('cl-telefono', c.telefono);
     if (c.celEntrega) fijarTelefono('cl-cel-entrega', c.celEntrega);
-    pcState.cliente = {
-      tipo: c.rfc ? 'operam' : 'nuevo',
-      name: c.razonSocial || c.nombreCorto || '', ref: c.nombreCorto || '',
-      rfc: c.rfc || '', telefono: c.telefono || '', cp: c.cpEntrega || '', pais: c.pais || 'MX',
-      clienteOperamId: c.customerId ?? null,
-    };
+    pcState.cliente = clienteDesdeCotizacionReciente(c);
     pcRenderTarjeta();
   } catch {
     pcRenderInicio();
