@@ -3797,6 +3797,19 @@ function pcRenderChips() {
 async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
+  // El panel vive dentro de #tab-cliente (oculto si el usuario esta en otro
+  // tab del stepper o en otra vista, p. ej. el boton de la tarjeta del
+  // historial). 'clientes' re-parenta el panel a la vista Clientes (no es un
+  // tab) y no debe tocar nada; cualquier otro origen necesita #app-view
+  // visible y el tab cliente activo para que el panel se vea.
+  // Va ANTES de prender el modo: ocultarTodasLasVistas -> devolverPanelACasa lo
+  // apaga, y el chip "Fiscal - subir CSF" abria el panel en modo ALTA (confirmar
+  // corria la dedup de un cliente nuevo en vez del PUT del upgrade).
+  if (origen !== 'clientes') {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    switchTab('cliente');
+  }
   altaCsfState.modoUpgrade = customerId;
   altaCsfState.comercialPrecargado = null;
   // Origen del upgrade ('paso' | 'clientes'): decide si cl-email-factura es
@@ -3811,16 +3824,6 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   if (bannerEl) {
     bannerEl.innerHTML = bannerUpgradeHtml({ id: customerId, nombre: banner?.nombre, rfc: banner?.rfc });
     bannerEl.style.display = '';
-  }
-  // El panel vive dentro de #tab-cliente (oculto si el usuario esta en otro
-  // tab del stepper o en otra vista, p. ej. el boton de la tarjeta del
-  // historial). 'clientes' re-parenta el panel a la vista Clientes (no es un
-  // tab) y no debe tocar nada; cualquier otro origen necesita #app-view
-  // visible y el tab cliente activo para que el panel se vea.
-  if (origen !== 'clientes') {
-    ocultarTodasLasVistas();
-    document.getElementById('app-view').style.display = 'block';
-    switchTab('cliente');
   }
   panel.style.display = 'block';
   altaTabSwitch('csf');
