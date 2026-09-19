@@ -616,3 +616,25 @@ test('#326.14: las columnas de las dos tablas guardan la proporcion del formato 
   }, { incluirFotos: true });
   assert.deepEqual(colgroupDe(conFotos, '<table class="products">'), [10, 10, 30, 10, 10, 10, 10, 10], 'la columna Foto le quita ancho a Descripcion, no al resto');
 });
+
+// #332: el domicilio de entrega del documento es EL MISMO que el `delivery_address` del
+// quote. Medido con la cotizacion 1283 (cliente 15): el quote decia "Bosques de Europa
+// 163 Int. 4, Bosques de Aragon, ..." y el HTML de la misma cotizacion "Bosques de Europa
+// 163, 4, ..." -- el interior suelto entre comas se lee como un dato mas del domicilio.
+// La composicion vive en `lib/domicilio-entrega.js` y la comparten los tres.
+test('#332: el domicilio de entrega del documento coincide con el del quote', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const cliente = {
+    nombreEntrega: 'Adrian Cliente Nombre', calle: 'Bosques de Europa 163', numInt: '4',
+    colonia: 'Bosques de Aragon', cpEntrega: '57170', municipio: 'Nezahualcoyotl', estado: 'Mexico',
+  };
+  const esperado = 'Bosques de Europa 163 Int. 4, Bosques de Aragon, 57170, Nezahualcoyotl, Mexico';
+  assert.equal(armarContenidoQuote({ cliente }).deliveryAddress, esperado, 'quote');
+  assert.ok(generateQuoteHTML({ cliente }).includes(esperado), 'HTML');
+  // PDFKit parte el texto por kerning y lo escribe en hex: se busca un tramo contiguo.
+  const pdf = await generateQuotePDF({ cliente, _compress: false });
+  const hex = (s) => Buffer.from(s, 'latin1').toString('hex');
+  const texto = pdf.toString('latin1');
+  assert.ok(texto.includes(hex('Bosques de Europa 163 Int.')), 'PDF');
+  assert.ok(!texto.includes(hex('Bosques de Europa 163,')), 'el PDF no deja el interior suelto entre comas');
+});
