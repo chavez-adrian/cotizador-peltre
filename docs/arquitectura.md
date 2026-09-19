@@ -153,6 +153,15 @@ Web legacy de Operam (FrontAccounting) para lo que la API v3 no permite. Login p
 
 Tambien expone la **deteccion de cancelacion** (#76): `estaCanceladoHtml` (puro), `abrirSesionWeb` (consultar la vista sobre `crearSesionFA`) y `transaccionCancelada`, que usa `scripts/detectar-cancelados.mjs` para generar `data/cancelados.json` (el backfill NO scrapea en runtime).
 
+### dropbox.js / dropbox-destinos.js (#357, padre #354) -- el destino es del flujo
+
+`upload({ flujo, archivo }, contenido, mode)` recibe la CONFIGURACION del destino, nunca una ruta absoluta suelta; `archivo` es la ruta relativa dentro del destino de ese flujo. Los tres flujos del repo son `csf` (respaldo de constancias), `calca` (paso 6 del checklist de decorado) y `bitrix` (`scripts/export-bitrix.mjs`); el de reportes mensuales vive en el repo `peltre-reportes`.
+
+- **Un flujo esta configurado solo con AMBAS variables**: `DROPBOX_NS_<FLUJO>` + `DROPBOX_PATH_<FLUJO>` (`CSF`, `CALCA`, `BITRIX`; nombres = contrato con Render). Con las dos, la peticion lleva `Dropbox-API-Path-Root: {".tag":"namespace_id","namespace_id":"<id>"}` y la ruta RELATIVA a ese namespace.
+- **Sin configuracion el comportamiento es el de antes de #357**: la MISMA ruta absoluta (`sandbox` en `dropbox-destinos.js`, declarada una vez para que ningun flujo la lleve incrustada; en `bitrix` sigue mandando `BITRIX_EXPORT_DROPBOX_PATH`) y sin header nuevo, mas una advertencia por consola de que ese flujo sigue apuntando al sandbox de la app. Cuando exista #356 esa advertencia es lo que pasa al registro de intentos.
+- **El respaldo al sandbox es por AUSENCIA de configuracion, JAMAS por fallo**: con namespace, un error de Dropbox rechaza y ahi termina. Dropbox CREA la ruta de texto que no existe y responde 200 -- asi nacio la replica fantasma del arbol de la empresa (#354) -- y ademas cada miembro de una carpeta compartida puede renombrar SU montaje, asi que la ruta de texto es fragil aunque nadie reorganice nada.
+- La escritura sigue siendo fire-and-forget en los tres flujos: el rechazo se traga arriba (`.catch` en `server.js`) y no altera respuestas HTTP ni el checklist.
+
 ### importar-prospectos.js (#265, antes #47) — el export REAL del evento
 
 Parser puro del archivo de contactos escaneados que entrega la plataforma del evento (Abastur). El importador de #47 se construyo contra un fixture **inventado** (hoja `Contactos`, columnas `Dispositivo`, `Fecha/Hora`, `Rankings`, `Sin definir por el usuario`) y con el archivo real no importaba ni una fila: se reemplazo completo. El formato real, para que nadie lo vuelva a adivinar:
