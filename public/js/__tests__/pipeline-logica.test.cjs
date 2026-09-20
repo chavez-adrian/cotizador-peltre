@@ -608,7 +608,7 @@ function itemProspecto(extra) {
   return {
     tipo: 'prospecto', id: 1, nombre: 'Laura', celular: '+52 5512345678',
     ciudad: 'Puebla', canal: 'WhatsApp', etapa: 'por_cotizar', vendedor: 'Memo',
-    horas: 30, toques: 1, color: 'rojo', sugerirNoUtil: false, yaEsCliente: false,
+    horas: 30, toques: 1, color: 'rojo', sugerirNoUtil: false, faltaCotizar: false,
     reunionVencida: false, fechaReunion: null, urgencia: 3, ...extra,
   };
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { estadoProspecto, filaTabla, gafeteDe, queFalta, queSigue, LLAVES_QUE_FALTA, cotizacionesDelProspecto, cotizacionesVivas } from '../lib/tabla-prospectos.js';
+import { estadoProspecto, faltaCotizar, filaTabla, gafeteDe, queFalta, queSigue, LLAVES_QUE_FALTA, cotizacionesDelProspecto, cotizacionesVivas } from '../lib/tabla-prospectos.js';
 
 // --- #313: quien ya fue contactado ---
 // El Toque es la UNICA verdad de "ya lo contacte" (CONTEXT.md "Toque"): de el
@@ -787,4 +787,44 @@ test('#322: con las cuatro llaves presentes el orden de salida es el de LLAVES_Q
   );
   assert.deepEqual(huecos, ['calificacion', 'correo', 'datos_fiscales', 'domicilio']);
   assert.deepEqual(huecos, LLAVES_QUE_FALTA);
+});
+
+// --- #400: la etiqueta "Ya tiene Cliente Operam, falta cotizar" ---
+// El glosario (CONTEXT.md) la lee literal: vale mientras el Contacto tiene
+// Cliente Operam ligado y TODAVIA no cotiza -- existe para vigilar las altas
+// que nunca cotizan. El juicio de "ya cotizo" es el MISMO del escalon Cotizado
+// de la escalera (tieneCotizacion), no una segunda opinion.
+
+function contacto400(over = {}) {
+  return {
+    id: 80, fecha: '2026-09-01T10:00:00.000Z', vendedor: 'Memo', celular: '+52 5512345678',
+    celular10: '5512345678', nombre: 'Laura', ciudad: 'Puebla', canal: 'WhatsApp',
+    etapa: 'por_cotizar', eventos: [], data: { cliente_id: 514 }, ...over,
+  };
+}
+
+test('#400: el Contacto con Cliente Operam y sin ninguna cotizacion es el que falta cotizar', () => {
+  assert.equal(faltaCotizar(contacto400(), []), true);
+});
+
+test('#400: el Contacto con Cliente Operam que ya tiene una cotizacion ligada no falta cotizar', () => {
+  assert.equal(faltaCotizar(contacto400(), [cot319()]), false);
+});
+
+test('#400: el evento cotizacion del propio Contacto basta para que no falte cotizar', () => {
+  assert.equal(faltaCotizar(contacto400({ eventos: [eventoCotizacion(600)] }), []), false);
+});
+
+test('#400: el Contacto sin Cliente Operam no lleva la etiqueta, cotice o no', () => {
+  assert.equal(faltaCotizar(contacto400({ data: {} }), []), false);
+  assert.equal(faltaCotizar(contacto400({ data: {} }), [cot319()]), false);
+  assert.equal(faltaCotizar(contacto400({ data: null }), []), false);
+});
+
+test('#400: el que falta cotizar es exactamente el escalon cliente de la escalera sin cotizaciones', () => {
+  const p = contacto400();
+  assert.equal(estadoProspecto(p, []), 'cliente');
+  assert.equal(faltaCotizar(p, []), true);
+  assert.equal(estadoProspecto(p, [cot319()]), 'cliente');
+  assert.equal(faltaCotizar(p, [cot319()]), false);
 });
