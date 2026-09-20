@@ -1884,6 +1884,14 @@ body {
   font-weight: 600;
 }
 
+/* Frase de un campo que Operam no devuelve en ninguna lectura (#395): no es una
+   diferencia medida, asi que no lleva el fondo de alerta del encabezado -- solo el
+   ritmo del panel y el ancho de linea del texto corrido. */
+.diff-fiscal-no-verificable {
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+
 .diff-fiscal-acciones {
   margin-top: 10px;
   display: flex;
