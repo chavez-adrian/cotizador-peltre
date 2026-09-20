@@ -139,6 +139,22 @@
         Nombre, PIN, rol y <strong>tope de descuento</strong> (% maximo que puede aplicar por partida; 0 = no puede descontar).
       </p>
       <div id="vendedores-list"></div>
+
+      <!-- Matriz de listas habilitadas (#296, ADR-0015): listas de precios
+           ACTIVAS de Operam en renglones, vendedores en columnas. La celda
+           marcada = ese vendedor puede fijar esa lista en una cotizacion. El
+           rol admin no aparece: siempre puede todas. Se guarda con el mismo
+           boton del registro. -->
+      <div style="margin-top:16px">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Listas habilitadas</div>
+        <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+          Que listas de precios puede fijar cada vendedor. Los renglones son las listas activas de Operam;
+          una lista nueva aparece desmarcada para todos. Los administradores siempre pueden todas.
+        </p>
+        <div id="matriz-listas-error" style="display:none;color:var(--danger);font-size:12px;margin-bottom:8px"></div>
+        <div id="matriz-listas" style="overflow-x:auto"></div>
+      </div>
+
       <button class="btn btn-secondary btn-sm" id="btn-add-vendedor" style="margin-top:8px">+ Agregar vendedor</button>
       <button class="btn btn-primary btn-sm" id="btn-save-vendedores" style="margin-top:8px">Guardar cambios</button>
       <div id="vendedores-msg" style="display:none;margin-top:8px"></div>
@@ -269,6 +285,33 @@
       </div>
     </div>
 
+    <!-- Intentos de subida a Dropbox (issue #356, padre #354) -->
+    <div class="admin-section">
+      <h2>Subidas a Dropbox</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Cada intento de subida a Dropbox -- constancia fiscal, posicion de calca y backup del export de Bitrix24 --
+        con su destino y su resultado. Las subidas son fire-and-forget: un fallo no rompe nada y por eso, sin esta
+        vista, no se nota. Los renglones marcados son los que fallaron.
+      </p>
+      <div id="dropbox-subidas-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="dropbox-subidas-vacio" style="display:none;color:var(--text-light);font-size:13px">Ninguna subida registrada todavia.</div>
+      <div id="dropbox-subidas-content" style="display:none;overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg);text-align:left">
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Resultado</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Fecha</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Flujo</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Archivo</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Destino</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Error</th>
+            </tr>
+          </thead>
+          <tbody id="dropbox-subidas-rows"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Paridad de catalogo Excel vs Operam (issue #130) -->
     <div class="admin-section">
       <h2>Paridad de catalogo vs Operam</h2>
@@ -318,6 +361,7 @@ async function adminLogin() {
   loadHigiene();
   loadSegmentoPendiente();
   loadSyncContactos();
+  loadDropboxSubidas();
   cargarVendedoresExpo();
 }
 
@@ -432,11 +476,33 @@ async function applyExcel() {
 
 // --- Vendedores ---
 let vendedoresData = [];
+// Renglones de la matriz de listas habilitadas (#296): las listas de precios
+// ACTIVAS de Operam, leidas del ERP (nunca una copia en codigo). Si no se
+// pueden leer, la matriz no se pinta y los permisos guardados no se tocan.
+let listasPreciosData = [];
 
 async function loadVendedores() {
   const res = await adminApi('/api/admin/vendedores');
   vendedoresData = await res.json();
   renderVendedores();
+  await cargarListasPrecios();
+  renderMatrizListas();
+}
+
+async function cargarListasPrecios() {
+  const errEl = document.getElementById('matriz-listas-error');
+  errEl.style.display = 'none';
+  try {
+    const res = await adminApi('/api/catalogos');
+    const data = await res.json();
+    listasPreciosData = res.ok ? (data.listas_precios || []) : [];
+  } catch (e) {
+    listasPreciosData = [];
+  }
+  if (!listasPreciosData.length) {
+    errEl.textContent = 'No se pudieron leer las listas de precios de Operam: la matriz no se puede editar ahora. Los permisos guardados no cambian.';
+    errEl.style.display = 'block';
+  }
 }
 
 function renderVendedores() {
@@ -461,11 +527,7 @@ function renderVendedores() {
               onchange="vendedoresData[${i}].topeDescuento=this.value" title="Tope de descuento (%)" placeholder="% dscto.">`}
         ${v.role === 'admin'
           ? '<span class="vendedor-permisos-admin" style="font-size:12px;color:var(--text-light)">fija lista, precio calca y asigna</span>'
-          : `<label style="font-size:12px;white-space:nowrap">
-              <input type="checkbox" ${v.puedeFijarLista ? 'checked' : ''}
-                onchange="vendedoresData[${i}].puedeFijarLista=this.checked">
-              fijar lista</label>
-            <label style="font-size:12px;white-space:nowrap" title="Puede capturar el precio de proveedor de una calca en la linea del carrito">
+          : `<label style="font-size:12px;white-space:nowrap" title="Puede capturar el precio de proveedor de una calca en la linea del carrito">
               <input type="checkbox" ${v.puedePrecioCalca ? 'checked' : ''}
                 onchange="vendedoresData[${i}].puedePrecioCalca=this.checked">
               precio calca</label>
@@ -477,6 +539,58 @@ function renderVendedores() {
       </div>
     </div>
   `).join('');
+  // Las columnas de la matriz son estos mismos vendedores: cambiar un nombre,
+  // el rol, agregar o borrar tiene que repintarla en el mismo paso.
+  renderMatrizListas();
+}
+
+// Matriz (#296): un renglon por lista ACTIVA de Operam, una columna por
+// vendedor del registro. El rol admin no aparece (siempre puede todas). La
+// celda escribe directo en vendedoresData[i].listasHabilitadas, asi que una
+// lista que hoy no se pinta -- porque Operam la desactivo o no contesto -- no
+// pierde su marca al guardar: el PUT sigue mandando el registro completo.
+function renderMatrizListas() {
+  const el = document.getElementById('matriz-listas');
+  if (!el) return;
+  const columnas = vendedoresData
+    .map((v, i) => ({ v, i }))
+    .filter(({ v }) => v.role !== 'admin');
+  if (!listasPreciosData.length || !columnas.length) { el.innerHTML = ''; return; }
+  const encabezados = columnas
+    .map(({ v }) => `<th style="padding:6px 8px;text-align:center;font-weight:600">${(v.name || 'Sin nombre').replace(/</g, '&lt;')}</th>`)
+    .join('');
+  const renglones = listasPreciosData.map((lista, fila) => {
+    const listaId = String(lista.id);
+    const celdas = columnas.map(({ v, i }) => {
+      const marcada = (v.listasHabilitadas || []).map(String).includes(listaId);
+      // La celda manda los dos INDICES (vendedor, renglon) y toggleListaHabilitada
+      // resuelve el id contra listasPreciosData: el id nunca viaja interpolado
+      // dentro del onchange.
+      return `<td style="padding:6px 8px;text-align:center">
+        <input type="checkbox" ${marcada ? 'checked' : ''}
+          onchange="toggleListaHabilitada(${i}, ${fila}, this.checked)">
+      </td>`;
+    }).join('');
+    return `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap">${(lista.nombre || listaId).replace(/</g, '&lt;')}</td>
+      ${celdas}
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="background:var(--bg);text-align:left">
+      <th style="padding:6px 8px">Lista de precios</th>${encabezados}
+    </tr></thead>
+    <tbody>${renglones}</tbody>
+  </table>`;
+}
+
+function toggleListaHabilitada(i, fila, marcada) {
+  const v = vendedoresData[i];
+  const lista = listasPreciosData[fila];
+  if (!v || !lista) return;
+  const listaId = String(lista.id);
+  const actuales = (v.listasHabilitadas || []).map(String).filter(id => id !== listaId);
+  v.listasHabilitadas = marcada ? [...actuales, listaId] : actuales;
 }
 
 function removeVendedor(i) {
@@ -785,6 +899,41 @@ async function loadSyncContactos() {
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${b.inactivados}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosTotalesHtml(b.totales)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosErroresHtml(b.errores)}</td>
+      </tr>
+    `).join('');
+    content.style.display = 'block';
+  } catch (e) {
+    loading.textContent = 'No se pudo cargar';
+  }
+}
+
+// --- Intentos de subida a Dropbox (issue #356, padre #354) ---
+// El flujo se pinta con nombre legible; uno nuevo entra con su propia clave sin
+// tocar esta tabla (lib/dropbox.js decide el vocabulario).
+const DROPBOX_FLUJO_NOMBRES = {
+  csf: 'Constancia de situacion fiscal',
+  calca: 'Posicion de calca',
+  bitrix: 'Backup del export de Bitrix24',
+  desconocido: 'Sin declarar',
+};
+
+async function loadDropboxSubidas() {
+  const loading = document.getElementById('dropbox-subidas-loading');
+  const vacio = document.getElementById('dropbox-subidas-vacio');
+  const content = document.getElementById('dropbox-subidas-content');
+  try {
+    const res = await adminApi('/api/admin/dropbox-subidas');
+    const data = await res.json();
+    loading.style.display = 'none';
+    if (!data.subidas || data.subidas.length === 0) { vacio.style.display = 'block'; return; }
+    document.getElementById('dropbox-subidas-rows').innerHTML = data.subidas.map(s => `
+      <tr${s.ok ? '' : ' class="higiene-candidato"'}>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border);font-weight:700;color:${s.ok ? 'var(--text)' : 'var(--danger)'}">${s.ok ? 'Subido' : 'Fallo'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosFecha(s.momento)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${DROPBOX_FLUJO_NOMBRES[s.flujo] || paridadEsc(s.flujo)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${paridadEsc(s.archivo)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text-light)">${paridadEsc(s.destino)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--danger)">${paridadEsc(s.error || '')}</td>
       </tr>
     `).join('');
     content.style.display = 'block';

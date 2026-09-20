@@ -494,6 +494,38 @@ test('#312-2: GET /api/cotizaciones sin data expone vigencia null e items vacios
   assert.deepStrictEqual(entry.items, []);
 });
 
+// #389: el panel "Cotizaciones previas" del paso Cliente filtra por IDENTIDAD
+// (cotizacionesPreviasDelCliente, alta-logica.js), asi que el listado tiene que
+// traer de que Cliente Operam es cada cotizacion y con que RFC se subio.
+test('#389-1: GET /api/cotizaciones expone customerId y rfc desde data.cliente', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'MARIA DEL PILAR ROSETE MELGOZA',
+    totalPiezas: 1, total: 116, tier: 'Mayoreo',
+    data: { cliente: { razonSocial: 'MARIA DEL PILAR ROSETE MELGOZA', customerId: 44, rfc: 'ROMP580101AB1' }, items: [] },
+  }]);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  const entry = res.body.find(c => c.id === id);
+  assert.ok(entry);
+  assert.strictEqual(entry.customerId, 44);
+  assert.strictEqual(entry.rfc, 'ROMP580101AB1');
+});
+
+test('#389-2: GET /api/cotizaciones sin data expone customerId y rfc como null (no rompe)', async () => {
+  const snap = readCots();
+  const id = snap.length + 1;
+  writeCots([...snap, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Historica',
+    totalPiezas: 1, total: 50, tier: 'Menudeo',
+  }]);
+  const res = await supertest(app).get('/api/cotizaciones').set('Authorization', `Bearer ${TEST_TOKEN}`);
+  const entry = res.body.find(c => c.id === id);
+  assert.ok(entry);
+  assert.strictEqual(entry.customerId, null);
+  assert.strictEqual(entry.rfc, null);
+});
+
 test('B4: POST /api/cotizacion/envio usa paisDestino en destination.country', async () => {
   let capturedPayload = null;
   const originalFetch = globalThis.fetch;

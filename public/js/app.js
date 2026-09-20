@@ -16,14 +16,17 @@ import {
   cuerpoDeReintentoAlta,
   pdfCsfParaRespaldo,
   errorAltaSinConfirmar,
+  errorAltaEnModoUpgrade,
   ALTA_PASO_FILAS,
   buildClienteDesdeAlta,
   mensajeBusquedaCelular,
   mezclarResultadosBusqueda,
   recientesDesdeCotizaciones,
+  cotizacionesPreviasDelCliente,
   chipsCompletitud,
   buildClienteDesdeContactoNuevo,
   clienteDesdeProspecto,
+  clienteDesdeCotizacionReciente,
   accionCelularContactoNuevo,
   decidirVistaTrasBusqueda,
   accionProspecto409,
@@ -41,6 +44,7 @@ import {
   nombreConCorto,
   datosUpgradeConComercial,
   modoComercialUpgrade,
+  seccionAltaAbierta,
   interpretarRespuestaUpgrade,
 } from './alta-logica.js';
 import {
@@ -99,6 +103,7 @@ import {
   buildHistorialAccionesHtml,
   buildAccionesCargaHtml,
   buildAvisoModoActualizacion,
+  buildAvisoCambioClienteHtml,
   textoBotonGenerar,
   filtrarCotizaciones,
 } from './cotizaciones-logica.js';
@@ -184,6 +189,7 @@ import {
   avisoListaFijada,
   tierAlCargarCotizacion,
   opcionesTierSelect,
+  estadoAlCambiarCliente,
   MENSAJE_COPIA_LISTA_FIJADA,
 } from './tier-logica.js';
 import {
@@ -328,21 +334,30 @@ const state = {
   // servidor con los precios en cada arranque de sesion; el servidor lo vuelve a
   // hacer valer al guardar, esto solo decide que puede capturar la pantalla.
   topeDescuento: 0,
-  // Permiso de fijar lista del vendedor logueado (#153, spec #98): false = sin
-  // permiso. Mismo patron que topeDescuento -- lo manda el servidor con los
-  // precios, y el servidor lo vuelve a hacer valer al guardar. El rol admin
-  // siempre puede (checkeado aparte via state.user?.role).
-  puedeFijarLista: false,
+  // Listas habilitadas del vendedor logueado (#296, ADR-0015): los ids de lista
+  // de Operam de SU renglon de la matriz; [] = no puede fijar ninguna. Mismo
+  // patron que topeDescuento -- lo manda el servidor con los precios, y el
+  // servidor lo vuelve a hacer valer al guardar. El rol admin siempre puede
+  // todas (checkeado aparte via state.user?.role, en permisoListas()).
+  listasHabilitadas: [],
   // Permiso de capturar el precio de proveedor de una calca (#280, spec #278):
-  // mismo patron que puedeFijarLista -- lo manda el servidor con los precios y
+  // mismo patron que listasHabilitadas -- lo manda el servidor con los precios y
   // el servidor lo vuelve a hacer valer al guardar. El rol admin siempre puede.
   puedePrecioCalca: false,
   // Lista fijada de la cotizacion en curso (#151, spec #98): '' es Auto (el
   // tabulador manda). Solo admin o vendedor con permiso puede escribirlo
   // (selector oculto para el resto); vive en la cotizacion, nunca en el
-  // cliente ni en el vendedor -- arranca en Auto en cotizacion nueva, cambio
-  // de cliente y Cargar del historial (mismos tres puntos que vendedorConfirmado).
+  // cliente ni en el vendedor -- arranca en Auto en cotizacion nueva y en
+  // Copiar del historial sin permiso (Editar la conserva siempre, #154). El
+  // cambio de cliente (#385, decision 2026-09-14) la hereda con la misma regla
+  // que Copiar: se conserva si quien cotiza puede fijarla, y si no cae a Auto
+  // con aviso (estadoAlCambiarCliente).
   tierFijado: '',
+  // Avisos vigentes del ultimo cambio de cliente (#385): salida de la edicion
+  // (con el folio que se abandono) y/o lista fijada perdida. null = nada que
+  // avisar. Los pone pcPrepararSeleccion y los apagan las fronteras de la
+  // sesion de cotizacion: Nueva cotizacion, Cargar del historial y generar.
+  avisoCambioCliente: null,
   lastCotizacionId: null,
   // Modo actualizacion (#104, ADR-0008): se entro por "Actualizar cotizacion" desde
   // el historial, asi que generar reescribe el MISMO registro y el MISMO quote de
@@ -504,6 +519,14 @@ async function showApp() {
   // pcState.cliente, tierFijado y vendedorConfirmado) ANTES de restaurar (#180):
   // si corriera despues, se comeria el cliente/lista/vendedor que el borrador
   // acaba de traer de vuelta.
+  // Arrancar la sesion NO es un cambio de cliente (#385): lo que quedo en
+  // memoria de la sesion anterior (logout no lo toca) se descarta ANTES, para
+  // que pcPrepararSeleccion no herede una lista fijada ni derive un aviso de
+  // salida de edicion con un folio ajeno. El borrador repone lo suyo despues.
+  state.tierFijado = '';
+  state.modoActualizacion = false;
+  state.folioOperam = null;
+  state.avisoCambioCliente = null;
   pcRenderInicio();
   // Decorado y envio son de la COTIZACION, no del vendedor (#91/#102, mismo
   // motivo que pcPrepararSeleccion): se dejan en su default ANTES de restaurar.
@@ -538,13 +561,21 @@ async function loadPrecios() {
   const res = await api('/api/precios');
   state.precios = await res.json();
   state.topeDescuento = state.precios.topeDescuento || 0;
-  state.puedeFijarLista = !!state.precios.puedeFijarLista;
+  state.listasHabilitadas = state.precios.listasHabilitadas || [];
   state.puedePrecioCalca = !!state.precios.puedePrecioCalca;
   const date = new Date(state.precios.extracted).toLocaleDateString('es-MX', {
     day: 'numeric', month: 'short', year: 'numeric'
   });
   document.getElementById('prices-date').textContent = `Precios: ${date}`;
   renderTierSelect();
+}
+
+// El permiso de lista de quien esta logueado (#296), en la forma que consumen
+// los nucleos puros: rol admin (todas) o las celdas de su renglon de la matriz.
+// UN solo lugar lo arma para que el selector, la herencia y el aviso no puedan
+// discrepar; la reja de verdad sigue estando en el servidor.
+function permisoListas() {
+  return { esAdmin: state.user?.role === 'admin', listasHabilitadas: state.listasHabilitadas };
 }
 
 // Opciones del selector de lista fijada (#151): Auto + los tiers del tabulador
@@ -554,13 +585,15 @@ function renderTierSelect() {
   const select = document.getElementById('tier-select');
   if (!select) return;
   const tiers = state.precios?.tiers || [];
-  // Sin permiso pero con una lista fijada heredada de Editar (#154), las
-  // opciones se acotan a Auto + el tier ya fijado -- "dejarla o regresarla a
-  // Auto" no es "cambiarla a otra".
-  const opciones = opcionesTierSelect(tiers, state.user?.role === 'admin' || state.puedeFijarLista, state.tierFijado);
+  // Auto + las listas habilitadas + la lista fijada del registro que se edita,
+  // aunque no este habilitada (#154/#296) -- "dejarla o regresarla a Auto" es
+  // distinto de "cambiarla a otra". Sin opciones el selector no se pinta: es
+  // el caso del vendedor sin ninguna celda marcada, que solo ve Auto.
+  const opciones = opcionesTierSelect(tiers, permisoListas(), state.tierFijado);
   select.innerHTML = '<option value="">Auto (tabulador)</option>' +
     opciones.map(t => `<option value="${t.id}">${t.id}</option>`).join('');
   select.value = state.tierFijado;
+  select.style.display = opciones.length ? 'inline-block' : 'none';
 }
 
 // === BORRADOR DE COTIZACION (issue #179/#180, spec #178, CONTEXT.md) ===
@@ -941,17 +974,13 @@ function updateTierBar() {
   document.getElementById('tier-stats').textContent = total > 0 ? `${total} pzs de producto` : '';
   document.getElementById('tier-next').textContent = '';
 
-  // Selector de lista fijada (#151/#153): oculto, no deshabilitado, para quien
-  // no tiene el permiso (rol admin, o vendedor con el checkbox de #153) -- EXCEPTO
-  // con una lista fijada heredada de Editar sin permiso (#154), donde se muestra
-  // acotado a Auto + el tier fijado para poder regresarla a Auto. renderTierSelect
-  // recalcula las opciones en cada paso (Cargar del historial, cambio de cliente,
-  // cambio de carrito) porque dependen de state.tierFijado, no solo del permiso.
-  const tierSelect = document.getElementById('tier-select');
-  if (tierSelect) {
-    renderTierSelect();
-    tierSelect.style.display = (state.user?.role === 'admin' || state.puedeFijarLista || state.tierFijado) ? 'inline-block' : 'none';
-  }
+  // Selector de lista fijada (#151/#153/#296): oculto, no deshabilitado, para
+  // quien no tiene ninguna lista habilitada -- EXCEPTO con una lista fijada
+  // heredada de Editar, donde se muestra acotado a Auto + el tier fijado para
+  // poder regresarla a Auto (#154). Lo decide renderTierSelect, que recalcula
+  // las opciones en cada paso (Cargar del historial, cambio de cliente, cambio
+  // de carrito) porque dependen de state.tierFijado, no solo del permiso.
+  renderTierSelect();
 
   // Aviso bidireccional e informativo (#98): nunca bloquea la generacion.
   const avisoEl = document.getElementById('tier-aviso');
@@ -1563,7 +1592,7 @@ window.cartLineCancelarDescripcion = cartLineCancelarDescripcion;
 
 // Permiso de capturar el precio de una calca (#279/#280, spec #278): admin
 // siempre puede, o vendedor con el checkbox otorgado desde /admin -- mismo
-// patron de "poder de precio" del vendedor que state.puedeFijarLista. La reja
+// patron de "poder de precio" del vendedor que state.listasHabilitadas. La reja
 // de verdad esta en el servidor (puedePrecioCalcaDeUsuario, calcas-logica.js):
 // esto solo decide si se pinta el campo.
 function puedePrecioCalca() {
@@ -2447,6 +2476,11 @@ async function guardarYNumerarCotizacion(body, progreso) {
   }
   const { id, requiereActualizacionOperam, folioOperam } = await res.json();
   state.lastCotizacionId = String(id);
+  // La cotizacion nueva que anunciaba el aviso de cambio de cliente (#385) ya
+  // se creo: el aviso cumplio. El slot del paso Cotizacion lo vuelve a pintar
+  // la subida en todas sus ramas.
+  state.avisoCambioCliente = null;
+  pintarAvisoCambioCliente();
   // #311: el POST ya devuelve el folio cuando la cotizacion existia (modo
   // actualizacion o regeneracion de una ya subida). Sin esto el boton de
   // WhatsApp se quedaba apagado hasta la siguiente subida, aunque el folio ya
@@ -2822,6 +2856,9 @@ function nuevaCotizacion() {
   aplicarEstadoWhatsApp();
   state.vendedorConfirmado = false;
   state.tierFijado = '';
+  // Empezar de cero es una sesion nueva: no hay edicion que abandonar ni lista
+  // que perder (#385). Va ANTES de pcRenderInicio, que repinta los avisos.
+  state.avisoCambioCliente = null;
 
   // Limpiar campos
   const campos = [
@@ -2934,17 +2971,15 @@ async function seleccionarClienteOperam(cliente) {
   pcState.domicilioIdx = 0;
   if (window._operamDomicilios.length >= 1) aplicarDomicilio(window._operamDomicilios[0]);
 
-  // Mostrar historial de cotizaciones para este cliente
-  const nombreCliente = (cliente.name || '').toLowerCase();
-  const rfcCliente = (cliente.rfc || '').toLowerCase();
+  // Mostrar historial de cotizaciones para este cliente. Quien decide cuales son
+  // SUYAS es cotizacionesPreviasDelCliente (alta-logica.js, #389): identidad
+  // (customerId de Operam, RFC real exacto o Contacto), nunca el prefijo del
+  // nombre -- con el, "maria del " empataba a cualquier "Maria del ..." y el panel
+  // ofrecia Editar y Copiar cotizacion sobre las de otro cliente.
   try {
     const r = await api('/api/cotizaciones');
     const todas = await r.json();
-    const previas = todas.filter(c => {
-      const n = (c.cliente || '').toLowerCase();
-      return n.includes(nombreCliente.slice(0, 10)) ||
-        (rfcCliente && n.includes(rfcCliente));
-    });
+    const previas = cotizacionesPreviasDelCliente(todas, cliente);
     if (previas.length > 0) {
       renderHistorialCliente(previas);
     }
@@ -3064,16 +3099,48 @@ function pcPrepararSeleccion() {
   // Cambio de cliente = fin de la sesion de cotizacion (#83, F1): la proxima
   // generacion crea SU entry, no actualiza el del cliente anterior. El estado de
   // subida del resumen tambien era del anterior.
+  // #385: la lista fijada y los avisos se deciden ANTES del reset, con lo que
+  // habia (modo Editar, folio, lista): el cambio de cliente se comporta como
+  // Copiar sobre el carrito actual. avisoPrevio acumula porque "Cambiar de
+  // cliente" en la tarjeta prepara dos veces (pcRenderInicio y luego elegir).
+  const cambio = estadoAlCambiarCliente({
+    tiers: state.precios?.tiers || [],
+    piezasProducto: getPiezasProducto(),
+    tierFijado: state.tierFijado,
+    permiso: permisoListas(),
+    modoActualizacion: state.modoActualizacion,
+    folioOperam: state.folioOperam,
+    avisoPrevio: state.avisoCambioCliente,
+  });
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
   aplicarEstadoWhatsApp();
   state.vendedorConfirmado = false;
-  state.tierFijado = '';
-  const operamStatus = document.getElementById('operam-status-cotizar');
-  if (operamStatus) operamStatus.innerHTML = '';
+  state.tierFijado = cambio.tierFijado;
+  state.avisoCambioCliente = cambio.aviso;
+  pintarAvisoCambioCliente();
   // #109: cambio de cliente tambien sale de modo actualizacion.
   aplicarEtiquetasBotonesGenerar();
+  // Pantalla y estado nunca divergen (#385): sin esto Productos, el selector y
+  // el aviso de lista se quedaban con el render del cliente anterior mientras
+  // el paso Cotizacion y el quote ya salian con otra lista. Mismo cuarteto que
+  // el change de #tier-select; con carrito vacio es inocuo.
+  updateTierBar();
+  updateCartSummary();
+  renderCartLines();
+  updateResumen();
+}
+
+// Pinta (o borra) los avisos del cambio de cliente (#385) donde el vendedor
+// los tiene que ver: el paso Productos, junto al selector de lista, y el paso
+// Cotizacion, en el mismo slot del aviso de modo actualizacion.
+function pintarAvisoCambioCliente() {
+  const html = buildAvisoCambioClienteHtml(state.avisoCambioCliente);
+  for (const id of ['aviso-cambio-cliente', 'operam-status-cotizar']) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
 }
 
 // --- Entrada: dos caminos ---
@@ -3291,12 +3358,7 @@ async function pcElegirReciente(cotizacionId) {
     if (pais) pais.value = c.pais || 'MX';
     if (c.telefono) fijarTelefono('cl-telefono', c.telefono);
     if (c.celEntrega) fijarTelefono('cl-cel-entrega', c.celEntrega);
-    pcState.cliente = {
-      tipo: c.rfc ? 'operam' : 'nuevo',
-      name: c.razonSocial || c.nombreCorto || '', ref: c.nombreCorto || '',
-      rfc: c.rfc || '', telefono: c.telefono || '', cp: c.cpEntrega || '', pais: c.pais || 'MX',
-      clienteOperamId: c.customerId ?? null,
-    };
+    pcState.cliente = clienteDesdeCotizacionReciente(c);
     pcRenderTarjeta();
   } catch {
     pcRenderInicio();
@@ -3736,6 +3798,19 @@ function pcRenderChips() {
 async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
+  // El panel vive dentro de #tab-cliente (oculto si el usuario esta en otro
+  // tab del stepper o en otra vista, p. ej. el boton de la tarjeta del
+  // historial). 'clientes' re-parenta el panel a la vista Clientes (no es un
+  // tab) y no debe tocar nada; cualquier otro origen necesita #app-view
+  // visible y el tab cliente activo para que el panel se vea.
+  // Va ANTES de prender el modo: ocultarTodasLasVistas -> devolverPanelACasa lo
+  // apaga, y el chip "Fiscal - subir CSF" abria el panel en modo ALTA (confirmar
+  // corria la dedup de un cliente nuevo en vez del PUT del upgrade).
+  if (origen !== 'clientes') {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    switchTab('cliente');
+  }
   altaCsfState.modoUpgrade = customerId;
   altaCsfState.comercialPrecargado = null;
   // Origen del upgrade ('paso' | 'clientes'): decide si cl-email-factura es
@@ -3751,18 +3826,14 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
     bannerEl.innerHTML = bannerUpgradeHtml({ id: customerId, nombre: banner?.nombre, rfc: banner?.rfc });
     bannerEl.style.display = '';
   }
-  // El panel vive dentro de #tab-cliente (oculto si el usuario esta en otro
-  // tab del stepper o en otra vista, p. ej. el boton de la tarjeta del
-  // historial). 'clientes' re-parenta el panel a la vista Clientes (no es un
-  // tab) y no debe tocar nada; cualquier otro origen necesita #app-view
-  // visible y el tab cliente activo para que el panel se vea.
-  if (origen !== 'clientes') {
-    ocultarTodasLasVistas();
-    document.getElementById('app-view').style.display = 'block';
-    switchTab('cliente');
-  }
   panel.style.display = 'block';
   altaTabSwitch('csf');
+  // El acordeon es UN solo nodo (#376): las Secciones 3 y 4 que dejo desbloqueadas un
+  // alta anterior de esta misma pestana siguen abiertas aqui, y desde ellas "Dar de
+  // alta" daria de alta -- con la CSF de ESTE upgrade -- al cliente que se esta
+  // actualizando. Candar antes de altaToggleSeccion, que respeta el candado.
+  altaCandarSeccionesAvanzadas();
+  altaBotonDarDeAltaSegunModo();
   altaState.seccionAbierta = null;
   altaToggleSeccion(1);
   altaCsfSetStatus('idle');
@@ -5903,6 +5974,7 @@ function devolverPanelACasa() {
     cerrarFormularioBorrador(`upgrade-fiscal-${altaCsfState.modoUpgrade}`, null);
   }
   altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+  altaBotonDarDeAltaSegunModo(); // el modo se apago: el boton del alta vuelve (#376)
   const banner = document.getElementById('alta-upgrade-banner');
   if (banner) { banner.innerHTML = ''; banner.style.display = 'none'; }
   if (!_panelHome) return;
@@ -6484,12 +6556,12 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // #154: Editar (mismo registro) conserva la lista fijada SIN IMPORTAR el
     // permiso de quien edita -- el servidor la deja pasar comparando contra el
     // tier ya guardado en ESE registro. Copiar (registro nuevo) solo la hereda
-    // si quien copia tiene el permiso; sin el arranca en Auto con un aviso
-    // (tierListaCargada.avisoListaPerdida, aplicado mas abajo junto al aviso
-    // de modo actualizacion).
+    // si quien copia tiene habilitada ESA lista (#296); sin ella arranca en
+    // Auto con un aviso (tierListaCargada.avisoListaPerdida, aplicado mas
+    // abajo junto al aviso de modo actualizacion).
     const tierListaCargada = tierAlCargarCotizacion(
       state.precios?.tiers || [], piezasDeProducto(cot.items || []), cot.tier, modo,
-      state.user?.role === 'admin' || state.puedeFijarLista
+      permisoListas()
     );
     state.tierFijado = tierListaCargada.tierFijado;
     // #283: el precio manual de calca sigue la MISMA regla que la lista fijada.
@@ -6553,6 +6625,10 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // #113: cargar OTRA cotizacion es exactamente cuando puede cambiar quien queda
     // estampado, asi que la confirmacion se vuelve a pedir en los dos modos.
     state.vendedorConfirmado = false;
+    // Cargar del historial arranca otra sesion de cotizacion (#385): los avisos
+    // del cambio de cliente anterior se apagan ANTES de pintar los de esta carga.
+    state.avisoCambioCliente = null;
+    pintarAvisoCambioCliente();
     const operamStatus = document.getElementById('operam-status-cotizar');
     if (operamStatus) {
       // folioOperam viaja en la respuesta del detalle (#109): el gate de
@@ -6989,6 +7065,9 @@ function abrirAcordeonAlta() {
   // (p. ej. tras un error sin cerrar el panel), confirmar aqui NO debe aplicarse sobre
   // ese customer_id viejo.
   altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+  // Con el modo apagado, "Dar de alta" vuelve (#376). Aqui y no solo en
+  // altaReiniciarPanel: un alta a medias no pasa por el reinicio y se quedaria sin boton.
+  altaBotonDarDeAltaSegunModo();
   const bannerEl = document.getElementById('alta-upgrade-banner');
   if (bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
   // Rastro del alta ANTERIOR (#192): si la de antes se completo, su cliente
@@ -7026,6 +7105,29 @@ function abrirAcordeonAlta() {
 const ALTA_SECCIONES_BLOQUEADAS_AL_INICIO = [3, 4];
 const ALTA_ICO_CANDADO = '\u{1F512}';
 
+// Secciones 3 y 4 de vuelta a su candado de origen. Lo comparten el reinicio del panel
+// tras un alta ya completada (#192) y la apertura del upgrade fiscal (#376): el
+// acordeon es UN solo nodo, asi que el upgrade hereda las secciones que un alta
+// anterior de la misma pestana dejo desbloqueadas.
+function altaCandarSeccionesAvanzadas() {
+  ALTA_SECCIONES_BLOQUEADAS_AL_INICIO.forEach(n => {
+    const sec = document.getElementById(`alta-sec-${n}`);
+    if (sec) sec.classList.add('alta-seccion-bloqueada');
+    const hdr = document.getElementById(`alta-hd-${n}`);
+    if (hdr) hdr.style.cursor = 'not-allowed';
+    const ico = document.getElementById(`alta-ico-${n}`);
+    if (ico) ico.textContent = ALTA_ICO_CANDADO;
+  });
+}
+
+// "Dar de alta" existe solo en modo alta (#376): el boton vive en el mismo panel que
+// el upgrade fiscal. Se deriva del modo cada vez que el modo cambia, nunca se deja
+// pegado -- un boton deshabilitado sin quien lo reponga deja al vendedor sin alta.
+function altaBotonDarDeAltaSegunModo() {
+  const btn = document.getElementById('alta-btn-dar-alta');
+  if (btn) btn.disabled = altaCsfState.modoUpgrade != null;
+}
+
 function altaReiniciarPanel() {
   altaCsfState.datos = null;
   altaCsfState.confirmado = false;
@@ -7034,8 +7136,7 @@ function altaReiniciarPanel() {
   altaCsfState.fileName = null;
   altaCsfSetStatus('idle');
   altaPasosReset();
-  const btn = document.getElementById('alta-btn-dar-alta');
-  if (btn) btn.disabled = false;
+  altaBotonDarDeAltaSegunModo();
   const exitoDiv = document.getElementById('alta-btns-exito');
   if (exitoDiv) exitoDiv.style.display = 'none';
   const reintBtn = document.getElementById('alta-btn-reintentar');
@@ -7048,14 +7149,7 @@ function altaReiniciarPanel() {
   // Secciones 3 y 4 vuelven a su candado de origen: sin esto el vendedor puede
   // saltar a "Dar de alta" sin pasar por la Seccion 1, que es justo donde se
   // decide sobre que cliente aplica el alta.
-  ALTA_SECCIONES_BLOQUEADAS_AL_INICIO.forEach(n => {
-    const sec = document.getElementById(`alta-sec-${n}`);
-    if (sec) sec.classList.add('alta-seccion-bloqueada');
-    const hdr = document.getElementById(`alta-hd-${n}`);
-    if (hdr) hdr.style.cursor = 'not-allowed';
-    const ico = document.getElementById(`alta-ico-${n}`);
-    if (ico) ico.textContent = ALTA_ICO_CANDADO;
-  });
+  altaCandarSeccionesAvanzadas();
   altaLimpiarAvisosAlta();
 }
 
@@ -7127,8 +7221,10 @@ function altaToggleSeccion(n) {
     const body = document.getElementById(`alta-body-${i}`);
     const ico = document.getElementById(`alta-ico-${i}`);
     if (!s || !body) return;
-    const isOpen = altaState.seccionAbierta === i;
     const isLocked = s.classList.contains('alta-seccion-bloqueada');
+    const isOpen = seccionAltaAbierta(i, {
+      seccionAbierta: altaState.seccionAbierta, modoUpgrade: altaCsfState.modoUpgrade, bloqueada: isLocked,
+    });
     body.style.display = isOpen ? 'block' : 'none';
     s.classList.toggle('alta-sec-activa', isOpen);
     if (ico && !isLocked) ico.textContent = isOpen ? '-' : '+';
@@ -7167,6 +7263,9 @@ function altaCsfSetStatus(status, opts = {}) {
   if (bannerOk) bannerOk.style.display = status === 'success' ? '' : 'none';
   if (bannerErr) bannerErr.style.display = status === 'error' ? '' : 'none';
   if (detalles) detalles.style.display = status === 'success' ? '' : 'none';
+  // Leida la CSF, los campos y el boton "Confirmar datos fiscales" se ven sin un
+  // clic extra en el resumen del <details>.
+  if (detalles && status === 'success') detalles.open = true;
 
   if (status === 'loading') {
     const txt = document.getElementById('csf-spinner-text');
@@ -7740,6 +7839,7 @@ window.altaDedupNuevoDomicilio = altaDedupNuevoDomicilio;
 // parseada en altaState.datos -- no se reabre el formulario, ya se tienen los datos.
 async function altaCandidatoActualizar(clienteId) {
   altaCsfState.modoUpgrade = clienteId;
+  altaBotonDarDeAltaSegunModo(); // mientras el upgrade decide, el alta no corre (#376)
   // Este camino NO abre el panel de upgrade ni precarga la Seccion 2: los datos son
   // los que el vendedor capturo en el ALTA, y ahi el segmento SI es captura suya y
   // tiene que viajar (#193). undefined = "no hay panel comercial que podar" (#197),
@@ -7759,6 +7859,11 @@ function altaCandidatoCrearNuevo() {
   if (dedupDiv) { dedupDiv.innerHTML = ''; dedupDiv.style.display = 'none'; }
   const candDiv = document.getElementById('alta-celular-candidatos');
   if (candDiv) { candDiv.innerHTML = ''; candDiv.style.display = 'none'; }
+  // Un "Actualizar este" que fallo dejo el modo upgrade prendido (#376): descartar el
+  // candidato es justamente decir que ese cliente no era, asi que el modo se apaga y el
+  // alta vuelve a ser posible. Sin esto la guardia de altaDarDeAlta no tendria salida.
+  altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+  altaBotonDarDeAltaSegunModo();
   const sec2 = document.getElementById('alta-sec-2');
   if (sec2 && sec2.classList.contains('alta-seccion-bloqueada')) altaDedupDesbloquear();
 }
@@ -8047,6 +8152,14 @@ function altaDarDeAlta() {
 // "Dar de alta" y el reintento con el cuerpo que dicta el servidor al contestar la
 // pregunta de duplicado (#368): es el MISMO endpoint y el mismo reporte de pasos.
 function altaEnviarAlta(payload) {
+  // Modo upgrade fiscal (#376): este panel es el MISMO nodo que el del upgrade, y ahi
+  // no hay alta que dar -- el POST crearia un segundo Cliente Operam del que se esta
+  // actualizando. La guardia vive AQUI, que es el unico punto del POST: el boton
+  // "Dar de alta" y las tres salidas del 428 de duplicado (altaPreguntaReintentar)
+  // pasan por el mismo sitio. Va antes que nada y no mira el DOM: el candado de las
+  // Secciones 3 y 4 es lo que el vendedor ve, esto es lo que lo hace cierto.
+  const errUpgrade = errorAltaEnModoUpgrade(altaCsfState.modoUpgrade);
+  if (errUpgrade) { altaSec4Error(errUpgrade); return; }
   const btn = document.getElementById('alta-btn-dar-alta');
   const reintBtn = document.getElementById('alta-btn-reintentar');
   const exitoDiv = document.getElementById('alta-btns-exito');

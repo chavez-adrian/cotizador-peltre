@@ -65,8 +65,10 @@ export function conteosBandeja(candidatos) {
 // Desde/Hasta), combinado con AND con el filtro por estado. La fecha que acota
 // es la del quote en Operam, recortada a su dia calendario -- el MISMO que pinta
 // la tarjeta (fmtFecha, que tampoco pasa por Date).
+// El vendedor NO es buscable (ver BUSCABLES_COTIZACION): filtrar por persona
+// es un selector aparte, no texto libre que ahogue al candidato tecleado.
 export const BUSCABLES_CANDIDATO = {
-  camposDe: c => [c?.folio, c?.contacto, c?.debtorNombre, c?.vendedor],
+  camposDe: c => [c?.folio, c?.contacto, c?.debtorNombre],
   digitosDe: c => c?.celular,
   diaDe: c => String(c?.fecha || '').slice(0, 10),
 };

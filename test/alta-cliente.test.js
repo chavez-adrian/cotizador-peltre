@@ -600,6 +600,48 @@ test('un campo que Operam ignora del domicilio de entrega recien creado sale com
   assert.deepEqual(verificacion.camposNoActualizados.map(x => x.campo), ['addr_interior']);
 });
 
+// #386: el PUT de branch EXIGE br_ref -- sin el Operam responde 406 ("La
+// referencia de sucursal es requerida") y el domicilio capturado en el paso Envio
+// nunca se aplica. Como ese paso no captura referencia corta, la del branch que
+// Operam auto-creo se relee y se reenvia tal cual: el PUT es REPLACE, asi que
+// omitirla (#96) no la conservaba, la rechazaba.
+test('el domicilio de entrega del paso Envio viaja con la referencia que Operam auto-creo, sin cambiarla', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const [put] = operam.pedidos('actualizarBranchCliente');
+  assert.equal(put.args[2].br_ref, 'AUTO', 'el PUT reenvia la referencia releida del branch');
+  assert.equal(operam.branch(res.domicilioId).branch_ref, 'AUTO', 'la referencia del domicilio no cambia por el PUT');
+  assert.equal(operam.branch(res.domicilioId).addr_street, 'Av. Reforma 100');
+});
+
+// El alta completa SI captura referencia corta (#366) y esa es la que manda: la
+// releida solo cubre al paso Envio, que no la captura (#386).
+test('el alta completa manda la referencia corta capturada, no la que Operam auto-creo', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitudFiscal({
+    domicilioEntrega: { ...DOMICILIO, referenciaCorta: 'ALMCEN' },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const [put] = operam.pedidos('actualizarBranchCliente');
+  assert.equal(put.args[2].br_ref, 'ALMCEN');
+  assert.equal(operam.branch(res.domicilioId).branch_ref, 'ALMCEN');
+});
+
+// La relectura previa es best effort: si truena, el PUT sale igual (sin ella
+// actualizarBranchCliente cae a br_name) en vez de perder el domicilio capturado.
+test('el domicilio de entrega se escribe aunque la relectura previa del branch falle', async () => {
+  const operam = operamEnMemoria({ falla: { obtenerBranch: 'Operam 500' } });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 1);
+  assert.equal(paso(res, 'PUT branch (domicilio)').status, 'ok');
+  assert.equal(operam.branch(res.domicilioId).addr_street, 'Av. Reforma 100');
+});
+
 test('sobre un domicilio de entrega que el alta no acaba de crear nunca se escribe', async () => {
   const operam = operamEnMemoria({
     clientes: [{ customer_id: 55, CustName: 'Hotel Azul Centro', tax_id: 'XAXX010101000', branches: [{ branch_code: 9, addr_street: 'Domicilio real del cliente' }] }],
@@ -1067,4 +1109,43 @@ test('todo paso del upgrade fiscal lleva mensaje para el vendedor y detalle tecn
     assert.ok(p.detalle, `el paso ${p.name} no trae detalle`);
     assert.doesNotMatch(p.mensaje, /sucursal|branch|customer|endpoint/i, `el paso ${p.name} usa vocabulario tecnico en el mensaje`);
   }
+});
+
+// === #356: el id de la fila de auditoria sale del modulo ===
+// clientes_log.dropbox_ok se escribia SIEMPRE en null porque al insertar el log
+// la subida de la constancia todavia no resolvia. Quien la respalda (el
+// endpoint, no el modulo) necesita saber QUE fila corregir despues, y la fila es
+// la del alta -- no la ultima del cliente, que puede ser de otro intento.
+
+// logCliente devuelve el id de lo que inserto (#356). Aqui se numeran las
+// llamadas para poder afirmar a CUAL de ellas corresponde el logId devuelto.
+function conAuditoriaNumerada(deps) {
+  const filas = [];
+  return {
+    filas,
+    deps: { ...deps, logCliente: (...args) => { filas.push(args); return filas.length; } },
+  };
+}
+
+test('el alta devuelve el id de la fila de auditoria del cliente que creo (#356)', async () => {
+  const operam = operamEnMemoria();
+  const auditoria = conAuditoriaNumerada(operam.deps);
+  const res = await darDeAlta(solicitudFiscal({ domicilioEntrega: DOMICILIO }), auditoria.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.creadoNuevo, true);
+  const esperado = auditoria.filas.findIndex(a => a[2] === 'creado') + 1;
+  assert.ok(esperado > 0, 'el alta registro la creacion en la auditoria');
+  assert.equal(await res.logId, esperado);
+});
+
+test('el upgrade fiscal devuelve el id de la fila de auditoria de su actualizacion (#356)', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()] });
+  const auditoria = conAuditoriaNumerada(operam.deps);
+  const res = await upgradeFiscal(500, CSF, auditoria.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const esperado = auditoria.filas.findIndex(a => a[2] === 'actualizado') + 1;
+  assert.ok(esperado > 0, 'el upgrade registro la actualizacion en la auditoria');
+  assert.equal(await res.logId, esperado);
 });

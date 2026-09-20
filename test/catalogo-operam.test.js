@@ -327,7 +327,38 @@ test('construirCatalogo: el vocabulario viene del complementario y los tipos se 
   assert.deepEqual(catalogo.tiposNombre, comp.tiposNombre);
   assert.deepEqual(catalogo.tiposProducto, ['PV']);
   assert.deepEqual(catalogo.tiers.map(t => t.id), ['Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000']);
-  assert.deepEqual(catalogo.tiers[1], { id: 'M100', label: '100+ pzs', min_qty: 100 });
+  assert.deepEqual(catalogo.tiers[1], { id: 'M100', label: '100+ pzs', min_qty: 100, listaId: '15' });
+});
+
+// #296 (ADR-0015): el permiso de fijar lista es una matriz (vendedor, lista de
+// Operam) y el tier del cotizador tiene que poder cruzarse con la celda. El id
+// de la sales_type viaja en cada tier, resuelto por NOMBRE contra Operam --
+// el mismo resultado que ya usan los precios, expuesto ahora en el catalogo.
+test('cada tier del catalogo trae el id de la sales_type de Operam que le corresponde', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: SALES_TYPES,
+    precios: [fila('PV08A', '12', 100)],
+    items: [{ stock_id: 'PV08A', description: 'Portavasos' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.deepEqual(
+    Object.fromEntries(catalogo.tiers.map(t => [t.id, t.listaId])),
+    { Menudeo: '12', M100: '15', M350: '16', M550: '1', M1500: '6', M6000: '3' },
+  );
+});
+
+// Si Operam renombra una lista, el id de respaldo de la tabla la sigue
+// identificando: el tier no puede quedarse sin listaId o dejaria de ser
+// fijable para todos (puedeFijarTier falla cerrado).
+test('una lista renombrada en Operam conserva el listaId por el id de respaldo', () => {
+  const renombrada = SALES_TYPES.map(s => (s.id === '1' ? { ...s, sales_type: 'M550 (2026)' } : s));
+  const { catalogo } = construirCatalogo({
+    salesTypes: renombrada,
+    precios: [fila('PV08A', '12', 100)],
+    items: [{ stock_id: 'PV08A', description: 'Portavasos' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.equal(catalogo.tiers.find(t => t.id === 'M550').listaId, '1');
 });
 
 // El reporte de paridad es la red del corte (#131): dice, contra el catalogo vigente,

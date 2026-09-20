@@ -519,8 +519,11 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
 // domicilios: en la ficha vive en el bag `data`, en el item de la cola llega
 // plana (lib/seguimiento-prospectos.js). El Origen del prospecto es el campo
 // `canal` (glosario, 2026-09-02). La fecha que acota es la de captura.
+//
+// El vendedor NO es buscable (ver BUSCABLES_COTIZACION): filtrar por persona
+// es un selector aparte, no texto libre que ahogue al prospecto tecleado.
 export const BUSCABLES_PROSPECTO = {
-  camposDe: p => [p?.nombre, p?.ciudad, p?.vendedor, p?.canal, p?.data?.empresa ?? p?.empresa],
+  camposDe: p => [p?.nombre, p?.ciudad, p?.canal, p?.data?.empresa ?? p?.empresa],
   digitosDe: p => p?.celular,
   fechaDe: p => p?.fecha,
 };

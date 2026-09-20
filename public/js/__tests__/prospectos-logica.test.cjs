@@ -42,11 +42,12 @@ const OTRA = {
   data: { empresa: 'Panaderia Sol' },
 };
 
-test('FP1: filtrarProspectos matchea nombre, ciudad, vendedor, Origen y empresa', () => {
+test('FP1: filtrarProspectos matchea nombre, ciudad, Origen y empresa -- el vendedor NO', () => {
   const lista = [FICHA, OTRA];
   assert.deepEqual(filtrarProspectos(lista, { texto: 'mariana' }).map(p => p.id), [1]);
   assert.deepEqual(filtrarProspectos(lista, { texto: 'MERIDA' }).map(p => p.id), [2]);
-  assert.deepEqual(filtrarProspectos(lista, { texto: 'laura' }).map(p => p.id), [1]);
+  // el vendedor salio de la caja: filtrar por persona es un selector aparte
+  assert.deepEqual(filtrarProspectos(lista, { texto: 'laura' }), []);
   assert.deepEqual(filtrarProspectos(lista, { texto: 'Instagram' }).map(p => p.id), [1]);
   assert.deepEqual(filtrarProspectos(lista, { texto: 'hotel' }).map(p => p.id), [1]);
   assert.deepEqual(filtrarProspectos(lista, { texto: '' }).map(p => p.id), [1, 2]);

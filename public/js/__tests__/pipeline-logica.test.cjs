@@ -1380,7 +1380,7 @@ before(async () => {
   ({ filtrarOportunidades, filtrarColaHoy } = await import('../pipeline-logica.js'));
 });
 
-test('#289: el pipeline filtra por nombre/cliente, ciudad, vendedor, Origen y folio de Operam', () => {
+test('#289: el pipeline filtra por nombre/cliente, ciudad, Origen y folio de Operam -- el vendedor NO', () => {
   const oportunidades = [
     prospecto({ id: 1, nombre: 'Mariana López', ciudad: 'Puebla', canal: 'Instagram', vendedor: 'Laura' }),
     cotizacion({ id: 2, nombre: 'Hotel Azul', folioOperam: 1216, vendedor: 'Memo' }),
@@ -1388,7 +1388,8 @@ test('#289: el pipeline filtra por nombre/cliente, ciudad, vendedor, Origen y fo
   assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'mariana' }).map(o => o.id), [1]);
   assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'PUEBLA' }).map(o => o.id), [1]);
   assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'instagram' }).map(o => o.id), [1]);
-  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'laura' }).map(o => o.id), [1]);
+  // el vendedor salio de la caja: filtrar por persona es un selector aparte
+  assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'laura' }), []);
   assert.deepEqual(filtrarOportunidades(oportunidades, { texto: 'hotel' }).map(o => o.id), [2]);
   assert.deepEqual(filtrarOportunidades(oportunidades, { texto: '1216' }).map(o => o.id), [2]);
   assert.deepEqual(filtrarOportunidades(oportunidades, {}).map(o => o.id), [1, 2]);

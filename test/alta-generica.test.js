@@ -238,7 +238,9 @@ test('buildBranchGenerico: sin domicilio, cliente extranjero -> pais del cliente
   assert.equal(d.br_name, 'Blue Hotel Llc');
 });
 
-test('buildBranchGenerico: NO emite br_ref (no lo captura el paso Envio; Operam conserva el auto-creado)', () => {
+// #386: el PUT de branch EXIGE br_ref, pero no sale de aqui -- el paso Envio no lo
+// captura y darDeAlta lo rellena con la referencia que relee del branch.
+test('buildBranchGenerico: NO emite br_ref (no lo captura el paso Envio; lo rellena darDeAlta con el releido)', () => {
   const d = buildBranchGenerico(CLIENTE_ENTREGA, {});
   assert.ok(!('br_ref' in d));
 });
@@ -350,4 +352,24 @@ test('#244 rfcGenericoDe: un RFC real no manda, se cae al pais', async () => {
 test('#244 buildClienteGenerico: el tax_id sale del RFC capturado, no del pais', () => {
   const entry = { data: { cliente: { razonSocial: 'CUMBIARCA SA', rfc: 'XEXX010101000', pais: 'MX', telefono: '5512345678' } } };
   assert.equal(buildClienteGenerico(entry).tax_id, 'XEXX010101000');
+});
+
+// issue #369: el formulario manda el telefono del domicilio con espacio tras el
+// codigo de pais (+52 2222933000) y Operam lo persiste sin el espacio. Comparar
+// como texto lo reportaba "ignorado" aunque SI quedo guardado (falso warn del
+// paso "Domicilio de entrega"). El telefono se compara por digitos.
+test('diffBranchDomicilio: phone releido sin espacio coincide con el enviado con espacio (#369)', () => {
+  const enviado = { addr_street: 'Av Reforma 100', phone: '+52 2222933000' };
+  const fresco = { addr_street: 'Av Reforma 100', phone: '+522222933000' };
+  assert.deepEqual(diffBranchDomicilio(fresco, enviado), []);
+});
+
+test('diffBranchDomicilio: phone realmente distinto se sigue reportando (#369)', () => {
+  const enviado = { phone: '+52 2222933000' };
+  const fresco = { phone: '+52 5511223344' };
+  const diff = diffBranchDomicilio(fresco, enviado);
+  assert.equal(diff.length, 1);
+  assert.equal(diff[0].campo, 'phone');
+  assert.equal(diff[0].nuevo, '+52 2222933000');
+  assert.equal(diff[0].anterior, '+52 5511223344');
 });

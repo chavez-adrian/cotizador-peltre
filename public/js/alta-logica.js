@@ -349,15 +349,25 @@ export function estadoAltaAlAbrirPanel(estado) {
   };
 }
 
+// `noLegible` marca los campos que Operam NO devuelve en NINGUNA lectura de la API v3
+// (medido en vivo 2026-09-15, cliente 522, Operam 3.26.36: el detalle GET /customers/:id
+// y el listado por ?tax_id= traen EXACTAMENTE las mismas 43 llaves, y ni idcif ni
+// invoice_email estan entre ellas; no hay "ficha recortada" que releer). Es la regla de
+// #169 vista desde el otro lado: ahi las llaves de escritura y de lectura son distintas,
+// aqui la de lectura no existe. Esos campos SI se escriben -- van en el PUT como
+// cualquier otro y el eco es su unica verificacion -- pero no se pueden COMPARAR, asi
+// que calcularDiffFiscal no finge un valor anterior: los saca marcados y el panel lo
+// dice (#373; hasta ahi el vendedor leia "IdCIF (SAT): (vacio) -> 15070019293" sobre un
+// cliente que si lo tenia).
 export const DIFF_FISCAL_CAMPOS = [
   { operam: 'CustName',            csf: 'razonSocial',   label: 'Razon Social', write: 'cust_name' },
   { operam: 'tax_id',              csf: 'rfc',           label: 'RFC' },
   { operam: 'cust_ref',            csf: 'nombreCorto',   label: 'Nombre corto' },
   { operam: 'timbrado_uso_cfdi',   csf: 'usoCfdi',        label: 'Uso de CFDI', default: 'S01' },
-  { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion' },
+  { operam: 'invoice_email',       csf: 'invoiceEmail',   label: 'Email de facturacion', noLegible: true },
   { operam: 'segmento_id',         csf: 'segmentoId',     label: 'Segmento', read: 'segmento.id' },
   { operam: 'sales_type',          csf: 'salesType',      label: 'Lista de precios' },
-  { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)' },
+  { operam: 'idcif',               csf: 'idcif',         label: 'IdCIF (SAT)', noLegible: true },
   { operam: 'street',              csf: 'calle',         label: 'Calle' },
   { operam: 'street_number',       csf: 'numExt',        label: 'Numero Exterior' },
   { operam: 'suite_number',        csf: 'numInt',        label: 'Numero Interior' },
@@ -410,6 +420,14 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
     const leido = leerValorOperam(clienteOperam, campo);
     const anterior = String(leido == null ? '' : leido).trim();
     const nuevo = String(nuevoValor).trim();
+    // Lo que Operam no expone en lectura no se compara (#373): con valor capturado la
+    // fila SALE SIEMPRE -- este diff es el cuerpo del PUT del panel (bodyDesdeDiffFiscal
+    // en el PATCH) y el dato tiene que llegar a Operam -- y viaja marcada para que el
+    // panel no invente el valor anterior. Sin valor capturado no hay nada que escribir.
+    if (campo.noLegible) {
+      if (nuevo) diff[operam] = { anterior, nuevo, label, noLegible: true };
+      continue;
+    }
     if (anterior !== nuevo) {
       diff[operam] = { anterior, nuevo, label };
     }
@@ -432,12 +450,18 @@ export function calcularDiffFiscal(clienteOperam, csfDatos) {
 //     valor: este camino no tiene con que escribirlo -- el PATCH no invoca el post-fix
 //     web y la API v3 no persiste segmento_id por ningun camino (#172) -- y ofrecer una
 //     escritura que jamas ocurre es peor que no ofrecerla.
+//   - Lista de precios: el otro campo de la Seccion 2 (#372), por el mismo motivo. La
+//     API v3 SI la escribe, y justamente por eso su vacio es peligroso: Operam lo
+//     guarda como 0 y el cliente se queda sin lista (clienteSinListaPrecios, #285).
+//     Tambien sale siempre: la configuracion comercial se captura en la Seccion 2, no
+//     en el panel de la CSF.
 // Se quita la LLAVE, no su valor: resolverValorNuevo distingue ausente de vacio, y un
 // vacio con `default` caeria justo en el G03 que este ticket saca del diff.
 export function datosFiscalesDelDedup(csfDatos, { usoCfdiElegido = false } = {}) {
   const salida = { ...(csfDatos || {}) };
   const llaveCsf = operam => DIFF_FISCAL_CAMPOS.find(c => c.operam === operam).csf;
   delete salida[llaveCsf('segmento_id')];
+  delete salida[llaveCsf('sales_type')];
   if (!usoCfdiElegido) delete salida[llaveCsf('timbrado_uso_cfdi')];
   return salida;
 }
@@ -479,10 +503,11 @@ export function buildActualizarFiscalPayload(csfDatos, notasActuales) {
 // ignoro (verificado en vivo: `CustName` y `segmento_id` no vuelven y no se aplican;
 // `cust_name`, `notes` y el domicilio fiscal si vuelven y si se aplican).
 //
-// El eco tambien ABSUELVE: el GET de detalle no expone idcif ni invoice_email, asi que
-// la relectura los marca como distintos aunque el PUT los haya escrito. Un campo que
-// Operam confirmo en su propia respuesta no se le reporta al vendedor como no aplicado
-// -- seria ruido permanente sobre una escritura que si ocurrio.
+// El eco tambien ABSUELVE, y es la UNICA verificacion posible de los campos noLegible
+// (#373): ninguna lectura de la API v3 devuelve idcif ni invoice_email, asi que entran
+// al diff siempre que se capturen -- no hay con que compararlos -- aunque el PUT los
+// haya escrito. Un campo que Operam confirmo en su propia respuesta no se le reporta al
+// vendedor como no aplicado: seria ruido permanente sobre una escritura que si ocurrio.
 const MOTIVO_IGNORADO = 'Operam ignoro este campo en el PUT (no lo devolvio en la respuesta)';
 
 const LLAVE_ESCRITURA = DIFF_FISCAL_CAMPOS.reduce((acc, { operam, write }) => {
@@ -499,6 +524,43 @@ export function bodyDesdeDiffFiscal(diff) {
     body[LLAVE_ESCRITURA[campo] || campo] = nuevo;
   }
   return body;
+}
+
+// Vaciar la configuracion comercial NO viaja por el diff (#372). Los dos campos de la
+// Seccion 2 son los que Operam coerciona a 0 cuando llegan vacios (#285): un
+// `sales_type: ''` deja al cliente sin lista de precios y un `segmento_id: ''` le borra
+// el segmento. `actualizarClienteDirecto` ya los deja en tierra en el punto de escritura
+// (sinCamposCoercionables), pero el diff seguia contandolos como enviados y la
+// verificacion por eco se los reportaba al vendedor como "Operam ignoro este campo": es
+// falso -- nunca viajaron -- y le pide corregir algo que esta bien (misma leccion de
+// #379). Podarlos ANTES del PUT deja las dos cosas dichas en un solo lugar: lo que se
+// manda y el motivo real de lo que no.
+// Solo frena el VACIO: un segmento o una lista con valor siguen viajando igual.
+export const MOTIVO_COMERCIAL_VACIO = 'No se envio a Operam: vaciar este campo borraria la configuracion comercial del Cliente Operam (el vacio se guarda como 0). Se captura en la Seccion 2 o en la ficha del Cliente Operam.';
+
+// Misma lista que CAMPOS_QUE_OPERAM_COERCIONA_A_CERO (lib/operam-client.js): este
+// modulo va al navegador y no puede importarla; si Operam coerciona un tercer campo,
+// se agrega en las DOS.
+const COMERCIAL_VACIO_NO_VIAJA = ['segmento_id', 'sales_type'];
+
+export function diffSinVaciadosComerciales(diff) {
+  const enviable = {};
+  const ignorados = [];
+  for (const [campo, d] of Object.entries(diff || {})) {
+    const nuevo = d && typeof d === 'object' ? d.nuevo : undefined;
+    if (COMERCIAL_VACIO_NO_VIAJA.includes(campo) && String(nuevo == null ? '' : nuevo).trim() === '') {
+      ignorados.push({
+        campo,
+        label: (d && d.label) || DIFF_FISCAL_LABELS[campo] || campo,
+        anterior: d && d.anterior,
+        nuevo,
+        motivo: MOTIVO_COMERCIAL_VACIO,
+      });
+      continue;
+    }
+    enviable[campo] = d;
+  }
+  return { enviable, ignorados };
 }
 
 export function camposNoAplicados(diff, ecoPut) {
@@ -633,6 +695,14 @@ export function precargaComercialUpgrade(clienteOperam) {
 // lo expone, asi que el campo arranca vacio y eso NO significa que el cliente no tenga
 // uno. En modo alta todo vuelve a como estaba (el argumento es el customer_id destino
 // o null: el modo lo decide la PRESENCIA del id, igual que usoCfdiPorDefecto).
+// El acordeon abre una seccion a la vez, pero en el upgrade la Configuracion
+// comercial (Seccion 2) queda abierta junto a la que este activa: trae lo que el
+// cliente tiene HOY en Operam y el vendedor debe verlo antes de confirmar, sin un
+// clic que nada le pide dar (HITL de #396). Bloqueada, no se abre por esta regla.
+export function seccionAltaAbierta(n, { seccionAbierta, modoUpgrade, bloqueada } = {}) {
+  return seccionAbierta === n || (n === 2 && modoUpgrade != null && !bloqueada);
+}
+
 export const EMAIL_FACTURA_PLACEHOLDER_ALTA = 'facturacion@empresa.com';
 export const EMAIL_FACTURA_PLACEHOLDER_UPGRADE = '(no visible desde Operam; escribe uno solo si quieres actualizarlo)';
 
@@ -752,15 +822,21 @@ export function buildNotasConActividades(notasActuales, actividades, csfFecha) {
   return actual ? `${actual}\n${seccion}` : seccion;
 }
 
+const ANTERIOR_NO_LEGIBLE = '(no se puede leer de Operam)';
+
 export function buildDiffFiscalHtml(diff) {
   const campos = Object.keys(diff);
   if (campos.length === 0) return '';
   const mostrar = valor => valor || '(vacio)';
   const filas = campos.map(fieldId => {
-    const { anterior, nuevo, label } = diff[fieldId];
+    const { anterior, nuevo, label, noLegible } = diff[fieldId];
+    // "(vacio)" seria una afirmacion sobre el cliente que la lectura nunca hizo (#373):
+    // el campo no viene en NINGUNA lectura de la API v3. La fila se queda porque el dato
+    // SI se va a escribir; lo que el vendedor necesita saber es que no se pudo comparar.
+    const anteriorTexto = noLegible ? ANTERIOR_NO_LEGIBLE : mostrar(anterior);
     return '<div class="diff-fiscal-fila">' +
       '<strong>' + (label || DIFF_FISCAL_LABELS[fieldId] || fieldId) + ':</strong> ' +
-      '<span class="diff-fiscal-anterior">' + mostrar(anterior) + '</span>' +
+      '<span class="diff-fiscal-anterior">' + anteriorTexto + '</span>' +
       ' &rarr; ' +
       '<span class="diff-fiscal-nuevo">' + mostrar(nuevo) + '</span>' +
       '</div>';
@@ -964,6 +1040,21 @@ export function clienteDesdeProspecto(prospecto) {
   };
 }
 
+// Cliente de la tarjeta al elegir una cotizacion de Recientes. Los campos de
+// entrega salen de ESA cotizacion, correo incluido; sin `email` aqui la opcion
+// "(Contacto)" del selector de entrega no los explicaba y el paso Envio arrancaba
+// en "+ Nuevo contacto", y elegirla borraba el correo (#353).
+export function clienteDesdeCotizacionReciente(c) {
+  const cl = c || {};
+  return {
+    tipo: cl.rfc ? 'operam' : 'nuevo',
+    name: cl.razonSocial || cl.nombreCorto || '', ref: cl.nombreCorto || '',
+    rfc: cl.rfc || '', telefono: cl.telefono || '', email: cl.emailEntrega || '',
+    cp: cl.cpEntrega || '', pais: cl.pais || 'MX',
+    clienteOperamId: cl.customerId ?? null,
+  };
+}
+
 // Exportados desde #346: el buscador de la vista Clientes arma sus filas en el
 // SERVIDOR y usa ESTOS normalizadores, no una copia con los mismos literales.
 export function normalizarOperam(c) {
@@ -1050,6 +1141,42 @@ export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
     if (out.length >= limite) break;
   }
   return out;
+}
+
+// Reexpresion browser-safe de normalizarRfc (lib/deduplicacion.js): mayusculas y
+// sin espacios, para que el mismo RFC capturado de dos formas compare igual.
+export function llaveRfc(rfc) {
+  return String(rfc || '').toUpperCase().replace(/\s+/g, '');
+}
+
+// Las cotizaciones del cliente elegido para el panel "Cotizaciones previas" de la
+// tarjeta del paso Cliente (#389). Filtra por IDENTIDAD, nunca por prefijo ni por
+// pedazo del nombre: el Cliente Operam que la cotizacion anoto al subirse
+// (`data.cliente.customerId`, que GET /api/cotizaciones expone como `customerId`)
+// es la respuesta cuando la cotizacion lo tiene -- otro `customerId` es otro
+// cliente, aunque se llamen casi igual.
+//
+// Los respaldos son para la cotizacion que NO lo anoto (las del backfill #76 y las
+// anteriores al alta generica): el RFC real EXACTO, que es el mismo contribuyente,
+// y el Contacto con el que nacio (`contactoCelular`) contra las casillas de
+// telefono del Cliente Operam, por los ultimos 10 digitos. Un RFC generico no
+// identifica a nadie (lo comparten los Clientes Operam sin datos fiscales), asi
+// que nunca liga.
+export function cotizacionesPreviasDelCliente(cotizaciones, cliente) {
+  const c = cliente || {};
+  const clienteId = c.id != null ? String(c.id) : null;
+  const rfcCliente = esRfcGenerico(c.rfc) ? '' : llaveRfc(c.rfc);
+  const celulares = new Set(
+    (Array.isArray(c.telefonos) && c.telefonos.length ? c.telefonos : [c.telefono])
+      .map(llaveCelularOrigen).filter(t => t.length === 10));
+  return (cotizaciones || []).filter(cot => {
+    if (!cot) return false;
+    if (cot.customerId != null) return clienteId !== null && String(cot.customerId) === clienteId;
+    const rfcCot = esRfcGenerico(cot.rfc) ? '' : llaveRfc(cot.rfc);
+    if (rfcCliente && rfcCot === rfcCliente) return true;
+    const cel = llaveCelularOrigen(cot.contactoCelular);
+    return cel.length === 10 && celulares.has(cel);
+  });
 }
 
 // Estado de los chips de completitud de la tarjeta (AC6/#82; tri-estado de
@@ -1518,4 +1645,19 @@ export function errorAltaSinConfirmar(csfDatos) {
   const rfc = String(csfDatos?.rfc || '').trim();
   if (!rfc) return 'Falta confirmar la Seccion 1 (datos fiscales): abrela y presiona "Verificar y confirmar" antes de dar de alta.';
   return null;
+}
+
+// Guardia de "Dar de alta" en modo upgrade fiscal (#376). El acordeon del alta
+// (#panel-alta-cliente) es UN solo nodo y el upgrade fiscal (#85) lo reusa: las
+// Secciones 3 y 4 que desbloqueo un alta anterior de la MISMA pestana siguen abiertas
+// cuando el upgrade se abre despues, y desde ahi "Dar de alta" manda un
+// POST /api/crear-cliente con la CSF del upgrade (altaDarDeAlta cae a
+// altaCsfState.datos). Asi, en el HITL de #361, un upgrade que el gate de fusion ya
+// habia bloqueado degenero en un alta del cliente que ya existia. En modo upgrade no
+// hay alta posible: el trabajo termina en la Seccion 1 (+ la 2 por #197). La guardia
+// mira el MODO, no el DOM -- el candado de las secciones es lo que el vendedor ve,
+// esto es lo que lo hace cierto.
+export function errorAltaEnModoUpgrade(modoUpgrade) {
+  if (modoUpgrade == null) return null;
+  return `Este panel esta actualizando los datos fiscales del Cliente Operam ${modoUpgrade}: aqui no se da de alta, se actualiza. Confirma la Seccion 1 para actualizarlo; para un alta nueva, cierra el panel y vuelve a abrirlo.`;
 }

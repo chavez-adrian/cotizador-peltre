@@ -12,10 +12,10 @@ import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacio
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
-import { bodyDesdeDiffFiscal, camposNoAplicados, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
+import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
 import { darDeAlta, upgradeFiscal } from './lib/alta-cliente.js';
-import { logCliente } from './lib/clientes-log.js';
+import { logCliente, marcarDropbox } from './lib/clientes-log.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
@@ -69,7 +69,7 @@ import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDec
 import { indiceOrigenPorCelular, anotarOrigen } from './public/js/origen-logica.js';
 import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL, puedePrecioCalca, normalizarPuedePrecioCalca } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
-import { validarTierCotizacion, puedeFijarLista, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
+import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -86,6 +86,7 @@ import { credencialesConfiguradas as shopifyConfigurado } from './lib/shopify-pe
 import { credencialesConfiguradas as googleConfigurado } from './lib/google-contactos.js';
 import { registrarBarrido as registrarBarridoContactos } from './lib/contactos-observabilidad-io.js';
 import { listarTodos as listarBarridosContactos } from './lib/contactos-observabilidad-store.js';
+import { listarRecientes as listarSubidasDropbox } from './lib/dropbox-subidas-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -203,17 +204,28 @@ async function topeDescuentoDeUsuario(user) {
   return topeDescuentoVendedor({ role: user?.role, topeDescuento: registro?.topeDescuento });
 }
 
-// Permiso de fijar lista VIGENTE del usuario autenticado (#153, spec #98).
-// Mismo motivo que topeDescuentoDeUsuario: se lee del registro en cada
-// consulta, no del JWT, porque el token no se re-emite cuando el admin
-// otorga o quita el checkbox.
-async function puedeFijarListaDeUsuario(user) {
+// Los ids de lista de Operam de los escalones de volumen del catalogo vigente:
+// el insumo de la migracion de lectura de #296 (flag de #153 encendido y sin
+// campo nuevo = estas listas). Salen del catalogo, no de una tabla copiada.
+function listasDelCatalogo() {
+  return (readJSON('precios.json')?.tiers || []).map(t => t.listaId).filter(Boolean);
+}
+
+// Permiso de lista VIGENTE del usuario autenticado (#296, ADR-0015): rol admin
+// (todas) o las celdas de SU renglon de la matriz, ya migradas si el registro
+// todavia trae el flag binario de #153. Mismo motivo que topeDescuentoDeUsuario
+// para releerlo del registro y no del JWT: el token no se re-emite cuando el
+// admin mueve una celda.
+async function permisoListasDeUsuario(user) {
   const registro = (await vendedoresStore.listar()).find(v => v.id === user?.id);
-  return puedeFijarLista({ role: user?.role, puedeFijarLista: registro?.puedeFijarLista });
+  return {
+    esAdmin: user?.role === 'admin',
+    listasHabilitadas: listasHabilitadasDeVendedor(registro, listasDelCatalogo()),
+  };
 }
 
 // Permiso de capturar el precio de una calca (#280, spec #278), espejo exacto
-// de puedeFijarListaDeUsuario: se lee del registro en cada consulta, no del
+// de permisoListasDeUsuario: se lee del registro en cada consulta, no del
 // JWT, porque el token no se re-emite cuando el admin otorga o quita el
 // checkbox.
 async function puedePrecioCalcaDeUsuario(user) {
@@ -260,13 +272,16 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
     // indexado por MODELO (los 4 primeros caracteres del SKU), que es la llave
     // del maestro.
     const familias = Object.fromEntries((await modelosStore.listar()).map(m => [m.modelo, m.familia]));
-    // El tope y el permiso de fijar lista viajan con los precios porque son
-    // parte del poder de precio del vendedor y la pantalla los refresca en
-    // cada arranque de sesion (showApp).
+    // El tope y las listas habilitadas viajan con los precios porque son parte
+    // del poder de precio del vendedor y la pantalla los refresca en cada
+    // arranque de sesion (showApp). Desde #296 lo que viaja es la coleccion de
+    // listas, no el flag binario de #153; el rol admin recibe todas las que el
+    // catalogo sabe preciar, que son las unicas fijables.
+    const permisoListas = await permisoListasDeUsuario(req.user);
     res.json({
       ...precios, config, familias,
       topeDescuento: await topeDescuentoDeUsuario(req.user),
-      puedeFijarLista: await puedeFijarListaDeUsuario(req.user),
+      listasHabilitadas: permisoListas.esAdmin ? listasDelCatalogo() : permisoListas.listasHabilitadas,
       puedePrecioCalca: await puedePrecioCalcaDeUsuario(req.user),
     });
   } catch (err) {
@@ -454,12 +469,13 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
     return res.status(status).json({ error: preciosCalca.mensaje });
   }
   // La lista fijada tampoco depende de la pantalla (#151/#153, spec #98): un
-  // tier ajeno al tabulador solo pasa con rol admin o checkbox de vendedor,
-  // mismo patron que el tope de descuento -- el permiso lo hace valer el
-  // servidor, no el selector oculto. El tabulador del volumen ACTUAL no es la
-  // comparacion correcta al editar: se compara contra el tier YA guardado.
+  // tier ajeno al tabulador solo pasa con rol admin o con ESA lista habilitada
+  // en la matriz de quien guarda (#296), mismo patron que el tope de descuento
+  // -- el permiso lo hace valer el servidor, no el selector oculto. El
+  // tabulador del volumen ACTUAL no es la comparacion correcta al editar: se
+  // compara contra el tier YA guardado.
   const precios = readJSON('precios.json');
-  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await puedeFijarListaDeUsuario(req.user), esDuenoDelPrevio ? (prevEntry.tier ?? null) : null);
+  const tierValidado = validarTierCotizacion(precios?.tiers, piezasDeProducto(req.body?.items), req.body?.tier, await permisoListasDeUsuario(req.user), esDuenoDelPrevio ? (prevEntry.tier ?? null) : null);
   if (!tierValidado.ok) return res.status(403).json({ error: tierValidado.mensaje });
   try {
     const data = req.body;
@@ -590,6 +606,12 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // buscador del Historial (filtrarCotizaciones) mas alla de razon social.
     nombreCorto: data?.cliente?.nombreCorto ?? null,
     contactoEntrega: data?.cliente?.contactoEntrega ?? null,
+    // De quien es la cotizacion (#389): el Cliente Operam al que se subio y el RFC
+    // con el que se subio. Con esto el panel "Cotizaciones previas" del paso Cliente
+    // filtra por IDENTIDAD (cotizacionesPreviasDelCliente, alta-logica.js) en vez de
+    // por los primeros 10 caracteres del nombre, que mezclaba clientes distintos.
+    customerId: data?.cliente?.customerId ?? null,
+    rfc: data?.cliente?.rfc ?? null,
     // Vigencia y partidas del Resumen de la cotizacion (#312): el texto lo arma
     // el navegador con el mismo nucleo que la cotizacion recien generada, y
     // desde el Historial estos son los dos datos que le faltaban. Los items van
@@ -1872,9 +1894,15 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, async (req, res) 
   res.json({ saved: true });
 });
 
+// La matriz de listas habilitadas se pinta con lo que este GET devuelve, asi
+// que sale ya NORMALIZADA (#296): un registro que todavia trae el flag binario
+// de #153 se lee con los escalones de volumen marcados, y el primer guardado
+// materializa la migracion en vez de borrarle el permiso.
 app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    res.json(await vendedoresStore.listar());
+    const listasVolumen = listasDelCatalogo();
+    const registro = await vendedoresStore.listar();
+    res.json(registro.map(v => ({ ...v, listasHabilitadas: listasHabilitadasDeVendedor(v, listasVolumen) })));
   } catch (err) {
     res.status(500).json({ error: 'Registro de vendedores no disponible: ' + err.message });
   }
@@ -1892,6 +1920,11 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, re
       const out = { ...v };
       if (v.topeDescuento !== undefined) out.topeDescuento = normalizarTope(v.topeDescuento);
       if (v.puedeFijarLista !== undefined) out.puedeFijarLista = normalizarPuedeFijarLista(v.puedeFijarLista);
+      // Las celdas de la matriz (#296) viajan en el mismo PUT de reemplazo
+      // completo: basura capturada ahi se guarda como sin permiso, nunca como
+      // permiso implicito. La lista vacia SI se guarda (destildar todo es una
+      // decision, distinta de "sin configurar", que es lo que migra).
+      if (v.listasHabilitadas !== undefined) out.listasHabilitadas = normalizarListasHabilitadas(v.listasHabilitadas);
       if (v.puedeAsignar !== undefined) out.puedeAsignar = normalizarPuedeAsignar(v.puedeAsignar);
       if (v.puedePrecioCalca !== undefined) out.puedePrecioCalca = normalizarPuedePrecioCalca(v.puedePrecioCalca);
       return out;
@@ -2030,6 +2063,15 @@ app.get('/api/admin/segmento-pendiente', authMiddleware, adminMiddleware, async 
 app.get('/api/admin/sync-contactos-google', authMiddleware, adminMiddleware, async (_req, res) => {
   const barridos = await listarBarridosContactos();
   res.json({ barridos, sinDb: !process.env.DATABASE_URL });
+});
+
+// Intentos de subida a Dropbox (issue #356, hijo de #354): las tres subidas del
+// repo son fire-and-forget y su fallo solo llegaba a console.error. Esta es la
+// superficie donde se ve, con la mas reciente primero. El store se traga sus
+// propios fallos y devuelve lista vacia, asi que aqui no hay sinDb que reportar:
+// sin DATABASE_URL el registro cae al JSON de disco y se muestra igual.
+app.get('/api/admin/dropbox-subidas', authMiddleware, adminMiddleware, async (_req, res) => {
+  res.json({ subidas: await listarSubidasDropbox() });
 });
 
 // Reporte de paridad del catalogo Excel vs Operam (issue #130, padre #120, bloqueado
@@ -2646,11 +2688,15 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
     // fallo de #169, en otra superficie. La pieza de verificacion es la del upgrade
     // fiscal, sin copia: las llaves del diff son de LECTURA y camposNoAplicados ya
     // las traduce a las de escritura para buscarlas en el eco.
-    const eco = await actualizarClienteDirecto(id, bodyDesdeDiffFiscal(diff));
+    // Vaciar el segmento o la lista de precios no viaja (#372): el diff puede traerlos
+    // en vacio desde la Seccion 2 bloqueada, y Operam los guardaria como 0. Se quedan
+    // fuera del PUT y de su verificacion, con su motivo real.
+    const { enviable, ignorados } = diffSinVaciadosComerciales(diff);
+    const eco = await actualizarClienteDirecto(id, bodyDesdeDiffFiscal(enviable));
     if (hayCambioRfc) logCliente(normalizarRfc(rfcNuevo), null, 'rfc-actualizado', id, FUENTE_PATCH_CLIENTE, null, null);
     // Misma llave de respuesta que el upgrade fiscal, para que el navegador lea los
     // dos caminos con interpretarRespuestaUpgrade.
-    res.json({ ok: true, camposNoActualizados: camposNoAplicados(diff, eco) });
+    res.json({ ok: true, camposNoActualizados: camposNoAplicados(enviable, eco).concat(ignorados) });
   } catch (err) {
     if (hayCambioRfc) logCliente(normalizarRfc(rfcNuevo), null, 'error', id, FUENTE_PATCH_CLIENTE, null, err.message);
     res.status(503).json({ error: 'No se pudo actualizar en Operam: ' + err.message });
@@ -3413,7 +3459,11 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
   if (pdf_base64) {
     import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
       subirCsfDropbox(pdf_base64, rfc, csfDatos.razonSocial)
-        .catch(err => console.error('[dropbox]', err.message))
+        .then(() => marcarDropbox(resultado.logId, true))
+        .catch(err => {
+          console.error('[dropbox]', err.message);
+          return marcarDropbox(resultado.logId, false);
+        })
     );
   }
   res.json({
@@ -3617,10 +3667,18 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   // Respaldo de la constancia en Dropbox (#24/#350): no es del alta, es del
   // archivo que el vendedor solto. Fire-and-forget, y solo cuando esta alta creo
   // al cliente -- sobre uno que ya existia no hay constancia nueva que archivar.
+  // #356: el resultado de la subida vuelve a la fila de auditoria del alta
+  // (clientes_log.dropbox_ok), que hasta ahora era siempre null porque al
+  // insertarla la promesa todavia no resolvia. El detalle del fallo -- flujo,
+  // destino y mensaje -- lo guarda el envoltorio comun de lib/dropbox.js.
   if (cliente.pdf_base64 && alta.creadoNuevo) {
     import('./lib/dropbox.js').then(({ subirCsfDropbox }) =>
       subirCsfDropbox(cliente.pdf_base64, cliente.tax_id, cliente.CustName)
-        .catch(err => console.error('[dropbox]', err.message))
+        .then(() => marcarDropbox(alta.logId, true))
+        .catch(err => {
+          console.error('[dropbox]', err.message);
+          return marcarDropbox(alta.logId, false);
+        })
     );
   }
 

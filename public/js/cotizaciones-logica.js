@@ -10,6 +10,7 @@ import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_
 import { nombreConCorto } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
+import { MENSAJE_COPIA_LISTA_FIJADA } from './tier-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -198,7 +199,26 @@ export function buildAccionesCargaHtml(cot) {
 // folio" que resolver aqui.
 export function buildAvisoModoActualizacion(folioOperam) {
   const badge = etiquetaFolioOperam({ folioOperam });
-  return `<span class="operam-status">Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span>`;
+  return `<span class="operam-status"><span>Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span></span>`;
+}
+
+// Avisos al cambiar de cliente (#385): el `aviso` que devuelve
+// estadoAlCambiarCliente (tier-logica.js) pintado en el mismo canal que el
+// aviso de modo actualizacion. Cadena vacia sin aviso: el slot se oculta solo
+// (.operam-status-slot:empty). La salida de la edicion nombra el folio con la
+// etiqueta Cotizacion N (ADR-0009: nunca el id interno); la lista perdida es
+// el MISMO mensaje que Copiar sin permiso, porque es la misma regla.
+export function buildAvisoCambioClienteHtml(aviso) {
+  if (!aviso) return '';
+  const partes = [];
+  if (aviso.salidaEdicion) {
+    const badge = escapeHtml(etiquetaFolioOperam({ folioOperam: aviso.folioOperam }));
+    // Envuelto en un solo <span>: .operam-status es inline-flex y el texto tras el
+    // <strong> se partia en otro renglon.
+    partes.push(`<span>Saliste de la edici&oacute;n de la <strong>${badge}</strong>: al generar se crear&aacute; una cotizaci&oacute;n nueva y la ${badge} se queda en Operam como estaba.</span>`);
+  }
+  if (aviso.listaPerdida) partes.push(MENSAJE_COPIA_LISTA_FIJADA);
+  return partes.map(m => `<span class="operam-status">${m}</span>`).join(' ');
 }
 
 // Etiquetas de los botones de generacion segun el modo (#109): en modo
@@ -218,18 +238,24 @@ export function textoBotonGenerar(tipo, modoActualizacion) {
 // matchea. Se aplica antes de pintar, asi que Lista y Tablero comparten el
 // filtro gratis y cambiar de modo lo conserva.
 //
-// Matchea por razon social, nombre corto, contacto de entrega y vendedor
-// (texto, case/acentos), por el folio REAL de Operam (ADR-0009 -- nunca el id
+// Matchea por razon social, nombre corto y contacto de entrega (texto,
+// case/acentos), por el folio REAL de Operam (ADR-0009 -- nunca el id
 // interno, que es clave tecnica de URLs), y por el celular reducido a digitos
 // como subcadena de los digitos del telefono -- consistente con la llave
 // ultimos10 (lib/telefono-llave.js): sin importar como se capturo el
 // telefono, "5512" lo encuentra. Texto y rango de fechas se combinan con AND.
 //
+// El VENDEDOR no es buscable: #147 lo habia sumado para que el admin hallara
+// las cotizaciones de una persona del equipo, y en produccion eso ahogaba la
+// busqueda que la caja anuncia (un vendedor firma decenas de cotizaciones, un
+// cliente una o dos, y en el OR gana el vendedor). Filtrar por persona es un
+// selector aparte, no texto libre. Misma regla en las cinco vistas.
+//
 // Desde #289 el filtro en si vive en busqueda-logica.js, compartido con las
 // otras cuatro vistas; aqui solo queda la declaracion de QUE es buscable en
 // una cotizacion y de que fecha se acota (la de la cotizacion).
 export const BUSCABLES_COTIZACION = {
-  camposDe: c => [c?.cliente, c?.folioOperam, c?.nombreCorto, c?.contactoEntrega, c?.vendedor],
+  camposDe: c => [c?.cliente, c?.folioOperam, c?.nombreCorto, c?.contactoEntrega],
   digitosDe: c => c?.telefono,
   fechaDe: c => c?.fecha,
 };

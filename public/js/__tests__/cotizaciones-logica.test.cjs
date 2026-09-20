@@ -6,14 +6,17 @@ let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
   buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
   puedeActualizarCotizacion, buildAccionesCargaHtml,
-  buildAvisoModoActualizacion, textoBotonGenerar, filtrarCotizaciones;
+  buildAvisoModoActualizacion, textoBotonGenerar, filtrarCotizaciones,
+  buildAvisoCambioClienteHtml;
+let MENSAJE_COPIA_LISTA_FIJADA;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
     buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
     puedeActualizarCotizacion, buildAccionesCargaHtml,
     buildAvisoModoActualizacion, textoBotonGenerar,
-    filtrarCotizaciones } = await import('../cotizaciones-logica.js'));
+    filtrarCotizaciones, buildAvisoCambioClienteHtml } = await import('../cotizaciones-logica.js'));
+  ({ MENSAJE_COPIA_LISTA_FIJADA } = await import('../tier-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -405,6 +408,45 @@ test('Q29: buildAvisoModoActualizacion describe la accion en terminos de los bot
   assert.match(html, /se actualizar.* en operam/i);
 });
 
+// === #385: avisos al cambiar de cliente (salida de la edicion, lista perdida)
+
+test('buildAvisoCambioClienteHtml sin aviso devuelve cadena vacia (el slot se oculta solo)', () => {
+  assert.equal(buildAvisoCambioClienteHtml(null), '');
+});
+
+test('buildAvisoCambioClienteHtml: la salida de la edicion nombra el folio como Cotizacion N y dice que se creara una nueva', () => {
+  const html = buildAvisoCambioClienteHtml({ salidaEdicion: true, folioOperam: '1264', listaPerdida: false });
+  assert.ok(html.includes('<span class="operam-status">'));
+  assert.match(html, /Cotizaci\S+n 1264/);
+  assert.ok(!html.includes('#'));
+  assert.match(html, /cotizaci.{1,8}n nueva/i);
+  assert.match(html, /como estaba/i);
+  assert.ok(!html.includes(MENSAJE_COPIA_LISTA_FIJADA));
+});
+
+test('buildAvisoCambioClienteHtml: la lista perdida usa el mismo mensaje que Copiar sin permiso', () => {
+  const html = buildAvisoCambioClienteHtml({ salidaEdicion: false, folioOperam: null, listaPerdida: true });
+  assert.ok(html.includes(MENSAJE_COPIA_LISTA_FIJADA));
+  assert.ok(!html.includes('1264'));
+  assert.ok(!/edici/i.test(html));
+});
+
+// .operam-status es inline-flex con wrap: cada nodo hijo es un flex item, asi que
+// el texto que sigue al <strong> se iba entero al renglon de abajo (HITL #385).
+// El mensaje con negritas viaja envuelto en UN solo hijo para que fluya como texto.
+test('los avisos con folio en negritas son un solo hijo de .operam-status (no se parten en renglones)', () => {
+  const unHijo = /^<span class="operam-status"><span>[^]*<strong>[^]*<\/strong>[^]*<\/span><\/span>$/;
+  assert.match(buildAvisoCambioClienteHtml({ salidaEdicion: true, folioOperam: '1264', listaPerdida: false }), unHijo);
+  assert.match(buildAvisoModoActualizacion('1200'), unHijo);
+});
+
+test('buildAvisoCambioClienteHtml: las dos cosas a la vez salen como dos avisos', () => {
+  const html = buildAvisoCambioClienteHtml({ salidaEdicion: true, folioOperam: '1264', listaPerdida: true });
+  assert.equal((html.match(/<span class="operam-status">/g) || []).length, 2);
+  assert.match(html, /Cotizaci\S+n 1264/);
+  assert.ok(html.includes(MENSAJE_COPIA_LISTA_FIJADA));
+});
+
 // === #109: los botones comunican que actualizan (no "generar" generico) en
 // modo actualizacion, y conservan el texto historico fuera de ese modo.
 
@@ -517,13 +559,39 @@ test('Q41: filtrarCotizaciones matchea el celular como fragmento de digitos sin 
   assert.deepEqual(filtrarCotizaciones(lista, { texto: '9999' }), []);
 });
 
-test('Q42: filtrarCotizaciones matchea por vendedor (util para admin, que ve todas)', () => {
+// El vendedor SALIO de la caja de texto. #147 lo habia sumado al matching para
+// que el admin encontrara las cotizaciones de una persona del equipo; medido en
+// produccion 2026-09-19 eso rompe la busqueda que la caja SI anuncia: el
+// vendedor aparece en decenas de cotizaciones y el cliente en una o dos, asi
+// que en el OR el vendedor siempre gana y ahoga al cliente. Filtrar por persona
+// es un FILTRO (un selector aparte, como en /prospectos), no una busqueda de
+// texto libre. Aplica igual en las cinco vistas que comparten el control.
+test('Q42: filtrarCotizaciones NO matchea por vendedor (la caja busca al cliente, no a quien vende)', () => {
   const lista = [
     cot(1, { id: 1, cliente: 'Hotel Azul', vendedor: 'Laura' }),
     cot(2, { id: 2, cliente: 'Panaderia Lopez', vendedor: 'Marco' }),
   ];
-  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'laura' }).map(c => c.id), [1]);
-  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'MARCO' }).map(c => c.id), [2]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'laura' }), []);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'MARCO' }), []);
+  // y lo que la caja si promete sigue igual
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'hotel' }).map(c => c.id), [1]);
+});
+
+// Regresion del caso REAL que abrio el ticket (medido en produccion con la
+// cuenta de admin): 101 cotizaciones, 50 con vendedor "Adrian Chavez", y el
+// cliente desechable de pruebas se llama IGUAL que ese vendedor. Teclear "Adr"
+// para buscar al cliente devolvia las 50 de la cartera propia -- media pantalla
+// de clientes ajenos a lo tecleado, indistinguible de un buscador descompuesto.
+test('Q42b: buscar el nombre del propio vendedor devuelve a su cliente homonimo, no su cartera', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Adrian Chavez Rosete', vendedor: 'Adrián Chávez' }),
+    cot(2, { id: 2, cliente: 'Carlos Couturier Gaya', vendedor: 'Adrián Chávez' }),
+    cot(3, { id: 3, cliente: 'GALGUVE', vendedor: 'Adrián Chávez' }),
+    cot(4, { id: 4, cliente: 'Don Asado', vendedor: 'Adrián Chávez' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'Adr' }).map(c => c.id), [1]);
+  // el apellido que comparten tres vendedores tampoco barre el historial
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'chavez' }).map(c => c.id), [1]);
 });
 
 // === #148: rango de fechas Desde/Hasta -- se combina con AND con el texto.

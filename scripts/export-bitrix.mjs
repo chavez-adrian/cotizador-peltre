@@ -337,6 +337,17 @@ async function main() {
   console.log(JSON.stringify(resumen, null, 2));
 
   console.log('\nSubiendo a Dropbox...');
+  await subirExportDropbox(dir, fecha);
+
+  console.log('\nListo. Revisa resumen.json contra los conteos de la UI de Bitrix y pega la evidencia en el issue #158.');
+}
+
+// Sale de main() con #356 para poder medirlo sin hablar con Bitrix: es el unico
+// punto de este script que toca Dropbox y el tercero de los tres flujos que el
+// registro de subidas tiene que cubrir. El destino ya no se arma aqui: es el
+// flujo `bitrix` de lib/dropbox-destinos.js (#357), que sigue respetando
+// BITRIX_EXPORT_DROPBOX_PATH mientras no haya namespace configurado.
+export async function subirExportDropbox(dir, fecha) {
   const { upload } = await import('../lib/dropbox.js');
   const archivos = ['leads.json', 'contactos.json', 'companias.json', 'deals.json', 'timeline.json', 'actividades.json', 'resumen.json'];
   for (const archivo of archivos) {
@@ -346,8 +357,6 @@ async function main() {
     const subido = await upload({ flujo: 'bitrix', archivo: `${fecha}/${archivo}` }, contenido, 'overwrite');
     console.log(`  subido: ${subido.path_display}`);
   }
-
-  console.log('\nListo. Revisa resumen.json contra los conteos de la UI de Bitrix y pega la evidencia en el issue #158.');
 }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);

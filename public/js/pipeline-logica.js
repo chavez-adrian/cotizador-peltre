@@ -874,7 +874,7 @@ export function esAsignable(o) {
 // columna No Asignado y asignarle dueno a esas tarjetas. El admin lo tiene
 // siempre; un vendedor lo puede tener por checkbox en /admin (el gerente
 // comercial -- el sistema NO modela un rol gerente, decision explicita). Mismo
-// patron y misma normalizacion defensiva que puedeFijarLista (#153): basura o
+// patron y misma normalizacion defensiva que normalizarListasHabilitadas (#153, #296): basura o
 // ausencia degradan a SIN permiso, nunca a permiso implicito.
 export function normalizarPuedeAsignar(valor) {
   return valor === true;
@@ -1253,14 +1253,17 @@ export function buildCerradasHtml(oportunidades) {
 // capturado en `canal` y la cotizacion lo trae HEREDADO en `origen` (#287, lo
 // anota quien resuelve la herencia). Declarar los dos cierra la limitacion que
 // dejo #289: "Instagram" encontraba al prospecto pero no a sus cotizaciones.
+//
+// El vendedor NO es buscable (ver BUSCABLES_COTIZACION): filtrar por persona
+// es un selector aparte, no texto libre que ahogue a la tarjeta tecleada.
 export const BUSCABLES_OPORTUNIDAD = {
-  camposDe: o => [o?.nombre, o?.ciudad, o?.vendedor, o?.canal, o?.origen, o?.folioOperam],
+  camposDe: o => [o?.nombre, o?.ciudad, o?.canal, o?.origen, o?.folioOperam],
   digitosDe: o => [o?.celular, o?.telefono],
   fechaDe: o => o?.fecha,
 };
 
 export const BUSCABLES_COLA_HOY = {
-  camposDe: i => [i?.nombre, i?.cliente, i?.ciudad, i?.vendedor, i?.canal, i?.origen, i?.folioOperam],
+  camposDe: i => [i?.nombre, i?.cliente, i?.ciudad, i?.canal, i?.origen, i?.folioOperam],
   digitosDe: i => [i?.celular, i?.telefono],
   fechaDe: i => i?.fecha,
 };

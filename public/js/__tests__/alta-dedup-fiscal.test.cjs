@@ -25,7 +25,9 @@ const clienteOperamBase = {
   customer_id: 77,
   CustName: 'Peltre Nacional SA de CV',
   tax_id: 'PNA010203ABC',
-  idcif: 'IDCIF123',
+  // Sin idcif ni invoice_email: la API v3 no los devuelve en NINGUNA lectura (#373,
+  // medido sobre el cliente 522). Un fixture que los trajera probaria un Operam que
+  // no existe.
   street: 'Reforma',
   street_number: '100',
   suite_number: 'A',
@@ -36,10 +38,11 @@ const clienteOperamBase = {
   cfdi_regimen_fiscal: '601',
 };
 
+// "Iguales" son los campos COMPARABLES: el IdCIF de la CSF no entra aqui porque nunca
+// puede coincidir con nada (#373), y los tests que hablan de el lo agregan.
 const csfDatosIguales = {
   rfc: 'PNA010203ABC',
   razonSocial: 'Peltre Nacional SA de CV',
-  idcif: 'IDCIF123',
   calle: 'Reforma',
   numExt: '100',
   numInt: 'A',
@@ -92,13 +95,13 @@ test('G4: calcularDiffFiscal detecta cambio de regimen fiscal (cfdi_regimen_fisc
   assert.equal(diff.cfdi_regimen_fiscal.nuevo, '612');
 });
 
-test('G5: calcularDiffFiscal detecta cambio de RFC (tax_id) e idcif', () => {
+test('G5: calcularDiffFiscal detecta cambio de RFC (tax_id) y manda el idcif capturado', () => {
   const csfDatos = { ...csfDatosIguales, rfc: 'NUE010101XYZ', idcif: 'IDCIF999' };
   const diff = calcularDiffFiscal(clienteOperamBase, csfDatos);
   assert.equal(diff.tax_id.anterior, 'PNA010203ABC');
   assert.equal(diff.tax_id.nuevo, 'NUE010101XYZ');
-  assert.equal(diff.idcif.anterior, 'IDCIF123');
   assert.equal(diff.idcif.nuevo, 'IDCIF999');
+  assert.equal(diff.idcif.anterior, '', 'el idcif no se lee de Operam (#373): no hay anterior');
 });
 
 test('G6: calcularDiffFiscal ignora diferencias de espacios en blanco al inicio/final', () => {
@@ -125,7 +128,6 @@ test('G7b: calcularDiffFiscal omite campos de domicilio ausentes en la CSF/formu
   const csfDatosDeAltaManual = {
     rfc: 'PNA010203ABC',
     razonSocial: 'Peltre Nacional SA de CV',
-    idcif: 'IDCIF123',
     cp: '06600',
     municipio: 'CDMX',
     estado: 'CDMX',
@@ -153,7 +155,7 @@ test('G7c: calcularDiffFiscal SI reporta domicilio vacio cuando el campo fue cap
 // que calcularDiffFiscal, para que lo que se manda y lo que se verifica sean simetricos.
 
 test('U1: buildActualizarFiscalPayload mapea los datos de la CSF a nombres de campo de Operam', () => {
-  const body = buildActualizarFiscalPayload(csfDatosIguales);
+  const body = buildActualizarFiscalPayload({ ...csfDatosIguales, idcif: 'IDCIF123' });
   assert.equal(body.cust_name, 'Peltre Nacional SA de CV');
   assert.equal(body.tax_id, 'PNA010203ABC');
   assert.equal(body.idcif, 'IDCIF123');
@@ -852,6 +854,29 @@ test('C16: los campos que precarga el upgrade viven fuera de #alta-body-1, la su
   }
 });
 
+// devolverPanelACasa (que corre dentro de ocultarTodasLasVistas) APAGA modoUpgrade.
+// pcAbrirUpgradeFiscal lo llamaba DESPUES de prender el modo, asi que el chip
+// "Fiscal - subir CSF" del paso Cliente abria el panel en modo alta: confirmar la
+// CSF corria la dedup de un cliente nuevo y, sin coincidencia por nombre, daba de
+// alta un Cliente Operam en vez de actualizar el generico (HITL de #355 con el 15).
+// app.js no se importa en Node: solo el orden en el fuente lo protege.
+test('C16b: pcAbrirUpgradeFiscal prende modoUpgrade DESPUES de ocultarTodasLasVistas', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+  const inicio = src.indexOf('async function pcAbrirUpgradeFiscal(');
+  const fin = src.indexOf('\n}\n', inicio);
+  assert.ok(inicio > 0 && fin > inicio, 'pcAbrirUpgradeFiscal debe existir');
+  const cuerpo = src.slice(inicio, fin);
+  const ocultar = cuerpo.indexOf('ocultarTodasLasVistas()');
+  const prender = cuerpo.indexOf('altaCsfState.modoUpgrade = customerId');
+  assert.ok(ocultar > 0 && prender > 0, 'las dos llamadas deben seguir en la funcion');
+  assert.ok(ocultar < prender, 'ocultarTodasLasVistas apaga el modo: tiene que correr antes de prenderlo');
+  const casa = src.slice(src.indexOf('function devolverPanelACasa('));
+  assert.ok(casa.slice(0, casa.indexOf('\n}\n')).includes('altaCsfState.modoUpgrade = null'),
+    'si devolverPanelACasa deja de apagar el modo, este test ya no cuida nada: revisarlo');
+});
+
 test('C17: la precarga normaliza a texto lo que Operam entregue como numero (un 15 no debe verse como cambio contra "15")', async () => {
   const { precargaComercialUpgrade, datosUpgradeConComercial } = await import('../alta-logica.js');
   const pre = precargaComercialUpgrade({ sales_type: 15, segmento: { id: 3 } });
@@ -882,6 +907,22 @@ test('C19: en modo alta nada se bloquea y el email vuelve a su placeholder norma
   assert.equal(modo.vendedorNota, '');
   assert.equal(modo.celularNota, '');
   assert.equal(modo.emailPlaceholder, 'facturacion@empresa.com');
+});
+
+// La Seccion 2 trae la configuracion que el cliente tiene HOY en Operam: en el
+// upgrade se ve junto a la CSF sin un clic (HITL de #396); en el alta el acordeon
+// sigue abriendo una seccion a la vez.
+test('C19b: en modo upgrade la Seccion 2 queda abierta junto a la seccion activa', async () => {
+  const { seccionAltaAbierta } = await import('../alta-logica.js');
+  const upgrade = { seccionAbierta: 1, modoUpgrade: 15 };
+  assert.equal(seccionAltaAbierta(1, upgrade), true);
+  assert.equal(seccionAltaAbierta(2, upgrade), true);
+  assert.equal(seccionAltaAbierta(3, upgrade), false);
+  assert.equal(seccionAltaAbierta(2, { ...upgrade, bloqueada: true }), false);
+  const alta = { seccionAbierta: 1, modoUpgrade: null };
+  assert.equal(seccionAltaAbierta(1, alta), true);
+  assert.equal(seccionAltaAbierta(2, alta), false);
+  assert.equal(seccionAltaAbierta(2, { seccionAbierta: 2, modoUpgrade: null }), true);
 });
 
 test('C20: en modo upgrade el email de facturacion avisa que no es legible desde Operam (decision 1)', async () => {
@@ -1116,4 +1157,119 @@ test('D7: sin campos pendientes el resultado del panel sigue siendo el exito de 
   assert.ok(html.includes('alert-success'));
   assert.ok(html.includes(UPGRADE_TITULO_LOGRADO));
   assert.ok(!html.includes('<details'), 'sin pendientes no hay nada que desplegar');
+});
+
+// === #372: la Lista de precios de la Seccion 2 tampoco entra al diff ===
+//
+// HITL de #361 (2026-09-11, cliente 522 con segmento 10): el panel "Los datos fiscales
+// de la CSF no coinciden con los guardados en Operam" mostraba `Segmento: 10 -> (vacio)`.
+// #248 saco el segmento; `sales_type` es el otro campo de la Seccion 2 y llega por el
+// mismo camino (el panel del upgrade lo deja en altaState.datos), asi que su vacio
+// arrastraria la misma escritura que nadie pidio: Operam coerciona '' a 0 y el cliente
+// pierde su lista de precios (ver clienteSinListaPrecios, #285).
+const FORMULARIO_CON_COMERCIAL_VACIO = { ...FORMULARIO_EN_DEFAULTS, salesType: '' };
+
+test('D8: el diff del dedup no ofrece vaciar la Lista de precios de la Seccion 2 (#372)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const diff = calcularDiffFiscal(
+    CLIENTE_15_OPERAM,
+    datosFiscalesDelDedup(FORMULARIO_CON_COMERCIAL_VACIO, { usoCfdiElegido: false })
+  );
+  assert.ok(!('sales_type' in diff), 'la Seccion 2 esta bloqueada: su vacio no es "borralo"');
+  assert.deepEqual(Object.keys(diff), ['cfdi_regimen_fiscal'], 'solo queda el diff legitimo de la CSF');
+});
+
+test('D9: la Lista de precios nunca entra al diff de este panel, ni con un valor capturado (#372)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const datos = { ...FORMULARIO_EN_DEFAULTS, salesType: '16' };
+  const diff = calcularDiffFiscal(CLIENTE_15_OPERAM, datosFiscalesDelDedup(datos, { usoCfdiElegido: false }));
+  assert.ok(!('sales_type' in diff), 'la configuracion comercial se captura en la Seccion 2, no en este panel');
+});
+
+test('D10: el panel del RFC duplicado ya no pinta la fila de Lista de precios (#372)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const html = buildDedupExactoConDiffHtml(
+    CLIENTE_15_OPERAM,
+    datosFiscalesDelDedup(FORMULARIO_CON_COMERCIAL_VACIO, { usoCfdiElegido: false })
+  );
+  assert.ok(html.includes('Regimen Fiscal'), 'el diff legitimo se sigue mostrando');
+  assert.ok(!html.includes('Lista de precios'), 'no se ofrece borrar la lista del cliente');
+});
+
+test('D11: datosFiscalesDelDedup no muta el original al podar la Lista de precios (#372)', async () => {
+  const { datosFiscalesDelDedup } = await import('../alta-logica.js');
+  const original = { ...FORMULARIO_EN_DEFAULTS, salesType: '16' };
+  datosFiscalesDelDedup(original, { usoCfdiElegido: false });
+  assert.equal(original.salesType, '16', 'altaState.datos sigue completo para el alta');
+});
+
+// === #373: la fila de un campo que Operam no expone en lectura dice la verdad ===
+//
+// HITL de #361 (2026-09-11, cliente 522): el panel de la Seccion 1 mostraba
+// "IdCIF (SAT): (vacio) -> 15070019293" contra un cliente al que nadie le habia
+// cambiado el IdCIF. Medido en vivo el 2026-09-15 (read-only, cliente 522, Operam
+// 3.26.36): ni el detalle GET /customers/:id ni el listado por ?tax_id= devuelven
+// idcif ni invoice_email -- las dos lecturas traen exactamente las mismas 43 llaves.
+// Ese "(vacio)" no era el dato del Cliente Operam: era la llave que nunca llega.
+//
+// La fila SE QUEDA: este diff es el cuerpo del PUT del panel (bodyDesdeDiffFiscal en
+// el PATCH), asi que sacarla dejaria de escribir el IdCIF de la CSF. Lo que cambia es
+// que viaja marcada `noLegible` y el panel deja de inventar un valor anterior.
+const CLIENTE_COMO_LO_DEVUELVE_OPERAM = (() => {
+  const c = { ...clienteOperamBase };
+  delete c.idcif;
+  return c;
+})();
+
+test('L1: el IdCIF entra al diff marcado noLegible, sin inventar el valor anterior (#373)', () => {
+  const diff = calcularDiffFiscal(CLIENTE_COMO_LO_DEVUELVE_OPERAM, { ...csfDatosIguales, idcif: '15070019293' });
+  assert.equal(diff.idcif.nuevo, '15070019293', 'el valor de la CSF sigue viajando al PUT');
+  assert.equal(diff.idcif.noLegible, true, 'la lectura de Operam no trae idcif: no hay con que comparar');
+  assert.equal(diff.idcif.anterior, '');
+});
+
+test('L2: el email de facturacion tambien sale marcado noLegible (#373)', () => {
+  const diff = calcularDiffFiscal(CLIENTE_COMO_LO_DEVUELVE_OPERAM, { ...csfDatosIguales, invoiceEmail: 'facturacion@peltre.mx' });
+  assert.equal(diff.invoice_email.nuevo, 'facturacion@peltre.mx');
+  assert.equal(diff.invoice_email.noLegible, true, 'el GET de Operam tampoco expone invoice_email');
+});
+
+test('L3: los campos que Operam SI expone siguen comparandose, sin la marca (#373)', () => {
+  const diff = calcularDiffFiscal(CLIENTE_COMO_LO_DEVUELVE_OPERAM, {
+    ...csfDatosIguales,
+    idcif: '15070019293',
+    regimenFiscal: '612',
+  });
+  assert.deepEqual(Object.keys(diff).sort(), ['cfdi_regimen_fiscal', 'idcif']);
+  assert.equal(diff.cfdi_regimen_fiscal.anterior, '601', 'lo legible si se lee');
+  assert.equal(diff.cfdi_regimen_fiscal.nuevo, '612');
+  assert.ok(!('noLegible' in diff.cfdi_regimen_fiscal), 'solo se marca lo que no se puede leer');
+});
+
+test('L4: el panel dice que el IdCIF no se puede leer, en vez de fingir un (vacio) (#373)', () => {
+  const html = buildDedupExactoConDiffHtml(CLIENTE_COMO_LO_DEVUELVE_OPERAM, {
+    ...csfDatosIguales,
+    idcif: '15070019293',
+    regimenFiscal: '612',
+  });
+  assert.ok(html.includes('IdCIF (SAT)'), 'la fila se queda: el PUT si escribe el IdCIF');
+  assert.ok(html.includes('15070019293'), 'el valor que se va a escribir se sigue viendo');
+  assert.ok(html.includes('no se puede leer de Operam'), 'el vendedor lee por que no hay valor anterior');
+  assert.ok(!html.includes('(vacio)'), 'ningun (vacio) inventado: esa era la mentira del panel');
+  assert.ok(html.includes('601'), 'las filas legibles se pintan igual que siempre');
+});
+
+// El diff ES el cuerpo del PUT: el panel lo manda tal cual al PATCH y el servidor lo
+// traduce con bodyDesdeDiffFiscal. Un campo que salga del diff deja de escribirse.
+test('L5: el diff nuevo sigue mandando el IdCIF al PUT del panel (#373)', async () => {
+  const { bodyDesdeDiffFiscal } = await import('../alta-logica.js');
+  const diff = calcularDiffFiscal(CLIENTE_COMO_LO_DEVUELVE_OPERAM, {
+    ...csfDatosIguales,
+    idcif: '15070019293',
+    regimenFiscal: '612',
+  });
+  assert.deepEqual(bodyDesdeDiffFiscal(diff), {
+    idcif: '15070019293',
+    cfdi_regimen_fiscal: '612',
+  });
 });
