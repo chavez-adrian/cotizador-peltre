@@ -29,7 +29,10 @@ delete process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app } = await import('../server.js');
 const store = await import('../lib/dropbox-subidas-store.js');
-const { FLUJO_CSF, FLUJO_CALCA } = await import('../lib/dropbox.js');
+// Las llaves de flujo viven en lib/dropbox-destinos.js desde #357 (son las
+// mismas que deciden el destino); aqui solo se afirman como texto.
+const FLUJO_CSF = 'csf';
+const FLUJO_CALCA = 'calca';
 
 const ADMIN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 const VENDEDOR = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });

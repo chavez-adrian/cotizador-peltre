@@ -13,8 +13,14 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const JSON_PATH = join(__dirname, '..', 'data', 'dropbox-subidas.json');
 
-const { upload, FLUJO_BITRIX, FLUJO_CSF } = await import('../lib/dropbox.js');
+const { upload } = await import('../lib/dropbox.js');
 const store = await import('../lib/dropbox-subidas-store.js');
+
+// Desde #357 el destino lo arma el flujo, no el llamador: `upload` recibe
+// `{flujo, archivo}` con la ruta RELATIVA y el registro guarda la ruta que
+// realmente se pidio. Por eso aqui se afirma el FINAL del destino y no la
+// cadena completa -- la base la decide lib/dropbox-destinos.js, y en el flujo
+// bitrix depende ademas de BITRIX_EXPORT_DROPBOX_PATH.
 
 const envPrevio = {
   DROPBOX_REFRESH_TOKEN: process.env.DROPBOX_REFRESH_TOKEN,
@@ -67,13 +73,14 @@ const CONFLICTO = () => ({ ok: false, status: 409, text: async () => 'path/confl
 test('una subida exitosa deja un registro de exito con su flujo y su destino', async () => {
   const restore = mockDropbox(OK);
   try {
-    await upload('/CRM/BACKUP BITRIX24/2026-09-13/leads.json', '{}', 'overwrite', FLUJO_BITRIX);
+    await upload({ flujo: 'bitrix', archivo: '2026-09-13/leads.json' }, '{}', 'overwrite');
   } finally {
     restore();
   }
   const [fila] = await store.listarRecientes();
-  assert.equal(fila.flujo, FLUJO_BITRIX);
-  assert.equal(fila.destino, '/CRM/BACKUP BITRIX24/2026-09-13/leads.json');
+  assert.equal(fila.flujo, 'bitrix');
+  assert.ok(fila.destino.endsWith('/2026-09-13/leads.json'), 'destino: ' + fila.destino);
+  assert.ok(fila.destino.startsWith('/'), 'el destino es una ruta absoluta: ' + fila.destino);
   assert.equal(fila.archivo, 'leads.json');
   assert.equal(fila.ok, true);
   assert.equal(fila.error, null);
@@ -83,14 +90,14 @@ test('una subida fallida deja el mensaje de error y sigue lanzando como antes', 
   const restore = mockDropbox(CONFLICTO);
   try {
     await assert.rejects(
-      () => upload('/CONSTANCIA/ABC010101AB1 - Cliente.pdf', Buffer.from('x'), 'add', FLUJO_CSF),
+      () => upload({ flujo: 'csf', archivo: 'ABC010101AB1 - Cliente.pdf' }, Buffer.from('x'), 'add'),
       /Dropbox 409/
     );
   } finally {
     restore();
   }
   const [fila] = await store.listarRecientes();
-  assert.equal(fila.flujo, FLUJO_CSF);
+  assert.equal(fila.flujo, 'csf');
   assert.equal(fila.archivo, 'ABC010101AB1 - Cliente.pdf');
   assert.equal(fila.ok, false);
   assert.match(fila.error, /Dropbox 409: path\/conflict\/file/);
@@ -102,7 +109,7 @@ test('el fallo del token tambien es una subida fallida, no un hueco en el regist
     throw new Error('Unmocked fetch: ' + url);
   };
   try {
-    await assert.rejects(() => upload('/CONSTANCIA/sin-token.pdf', 'x', 'add', FLUJO_CSF), /token refresh 401/);
+    await assert.rejects(() => upload({ flujo: 'csf', archivo: 'sin-token.pdf' }, 'x', 'add'), /token refresh 401/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -137,7 +144,7 @@ test('el backup del export de Bitrix registra su subida con flujo bitrix', async
       restore();
     }
     const [fila] = await store.listarRecientes();
-    assert.equal(fila.flujo, FLUJO_BITRIX);
+    assert.equal(fila.flujo, 'bitrix');
     assert.equal(fila.ok, true);
     assert.equal(fila.archivo, 'resumen.json');
     assert.ok(fila.destino.includes('test-356'), 'el destino pretendido queda registrado: ' + fila.destino);
@@ -155,7 +162,7 @@ test('un backup de Bitrix que falla queda registrado con su error', async () => 
       restore();
     }
     const [fila] = await store.listarRecientes();
-    assert.equal(fila.flujo, FLUJO_BITRIX);
+    assert.equal(fila.flujo, 'bitrix');
     assert.equal(fila.ok, false);
     assert.match(fila.error, /Dropbox 409: path\/conflict\/file/);
   });
@@ -165,9 +172,29 @@ test('un fallo del propio registro no altera lo que devuelve upload', async () =
   escribirArchivoSync(JSON_PATH, '{esto no es JSON');
   const restore = mockDropbox(OK);
   try {
-    const data = await upload('/CRM/BACKUP BITRIX24/2026-09-13/deals.json', '{}', 'overwrite', FLUJO_BITRIX);
+    const data = await upload({ flujo: 'bitrix', archivo: '2026-09-13/deals.json' }, '{}', 'overwrite');
     assert.equal(data.path_display, '/CRM/BACKUP/leads.json');
   } finally {
     restore();
   }
+});
+
+// La union de #356 y #357: el flujo dejo de ser una etiqueta suelta del
+// registro y es la llave que decide el destino, asi que uno que no exista no
+// puede caer en 'desconocido' -- no hay ruta que armar. Revienta antes de pedir
+// token, sin emitir peticion y sin dejar fila: es un error de programacion, no
+// una subida fallida.
+test('un flujo inexistente revienta sin subir y sin registrar', async () => {
+  let peticiones = 0;
+  globalThis.fetch = async () => { peticiones++; throw new Error('no deberia llamarse'); };
+  try {
+    await assert.rejects(
+      () => upload({ flujo: 'inventado', archivo: 'x.json' }, '{}', 'overwrite'),
+      /Flujo de Dropbox desconocido: inventado/
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(peticiones, 0);
+  assert.deepEqual(await store.listarRecientes(), []);
 });

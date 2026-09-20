@@ -927,20 +927,19 @@ app.patch('/api/cotizacion/:id/calca-paso', authMiddleware, async (req, res) => 
 });
 
 function subirCalcaDropbox(entry, archivos) {
-  // Ruta y nombre confirmados por Adrian (#61): la posicion de calca vive en
-  // 1.0 Comercializacion/DISENO/CALCAS/OT Decorado y el archivo se nombra
-  // "<Nombre del proyecto> - Pedido <id>". El "Nombre del proyecto" es la
-  // referencia de la cotizacion (data.cliente.referencia); si falta, cae al
-  // cliente y luego al id. La extension original se conserva.
-  const CALCA_PATH = '/1.0 Comercialización/DISEÑO/CALCAS/OT Decorado';
+  // Nombre confirmado por Adrian (#61): "<Nombre del proyecto> - Pedido <id>".
+  // El "Nombre del proyecto" es la referencia de la cotizacion
+  // (data.cliente.referencia); si falta, cae al cliente y luego al id. La
+  // extension original se conserva. El destino ya no viaja aqui: es el flujo
+  // `calca` de lib/dropbox-destinos.js (#357).
   const proyecto = String(entry.data?.cliente?.referencia || entry.cliente || `Pedido ${entry.id}`)
     .replace(/[/\\:*?"<>|]/g, '').trim() || `Pedido ${entry.id}`;
-  import('./lib/dropbox.js').then(({ upload, FLUJO_CALCA }) => {
+  import('./lib/dropbox.js').then(({ upload }) => {
     for (const a of archivos) {
       if (!a || !a.nombre || !a.contenidoBase64) continue;
       const ext = (String(a.nombre).match(/\.[a-zA-Z0-9]+$/) || [''])[0];
-      const path = `${CALCA_PATH}/${proyecto} - Pedido ${entry.id}${ext}`;
-      upload(path, Buffer.from(a.contenidoBase64, 'base64'), 'add', FLUJO_CALCA)
+      const archivo = `${proyecto} - Pedido ${entry.id}${ext}`;
+      upload({ flujo: 'calca', archivo }, Buffer.from(a.contenidoBase64, 'base64'), 'add')
         .catch(err => console.error('[dropbox][calca]', err.message));
     }
   }).catch(err => console.error('[dropbox][calca]', err.message));
