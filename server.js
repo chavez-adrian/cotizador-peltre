@@ -10,7 +10,7 @@ import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
-import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
+import { puedeActualizarCotizacion, ligaClienteAlGuardar } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
@@ -413,8 +413,17 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
     if (prev) {
       const prevCli = prev.data?.cliente || {};
       if (data.cliente) {
-        if (data.cliente.customerId == null && prevCli.customerId != null) data.cliente.customerId = prevCli.customerId;
-        if (data.cliente.branchId == null && prevCli.branchId != null) data.cliente.branchId = prevCli.branchId;
+        // #394: la liga con el Cliente Operam es FIJA, asi que aqui no se
+        // "rellena" lo que falte sino que manda la persistida. Editar desde el
+        // historial mandaba el customerId del cliente que quedo en la sesion del
+        // navegador y ese id ajeno pisaba el registro en silencio.
+        const liga = ligaClienteAlGuardar(data.cliente, prevCli);
+        if (liga.customerId != null) data.cliente.customerId = liga.customerId;
+        if (liga.branchId != null) data.cliente.branchId = liga.branchId;
+        if (liga.customerIdIgnorado != null) {
+          console.warn('[liga] la cotizacion', idPrevio, 'esta ligada al Cliente Operam', liga.customerId,
+            '- se ignoro el', liga.customerIdIgnorado, 'que llego al guardar');
+        }
       }
       const yaEnOperam = prev.folioOperam != null && prev.folioOperam !== '';
       const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote);

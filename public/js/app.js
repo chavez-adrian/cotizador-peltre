@@ -106,6 +106,7 @@ import {
   buildAvisoCambioClienteHtml,
   textoBotonGenerar,
   filtrarCotizaciones,
+  clienteAlCargarCotizacion,
 } from './cotizaciones-logica.js';
 // Resumen de la cotizacion (#307): UN solo constructor del mensaje de WhatsApp,
 // compartido con el historial.
@@ -6549,6 +6550,21 @@ async function cargarCotizacion(id, modo = 'nueva') {
     const paisEl = document.getElementById('cl-pais');
     if (paisEl) paisEl.value = c.pais || 'MX';
 
+    // La identidad de la sesion se repone desde la cotizacion cargada (#394).
+    // Hasta aqui solo se llenaban los campos cl-*, y el cliente elegido seguia
+    // siendo el de la sesion anterior: leerClienteFormulario manda su
+    // customerId (customerIdFiscal) y el cuerpo viajaba con el Cliente Operam
+    // equivocado -- Editar lo pisaba en el registro (hoy el servidor ya no lo
+    // acepta) y Copiar subia el quote nuevo a su nombre. Los satelites del
+    // cliente anterior (domicilios y contactos leidos de Operam) se van con el:
+    // son de la otra razon social y el selector de entrega los seguiria
+    // ofreciendo sobre esta cotizacion.
+    // La tarjeta se repinta abajo, con el resto de los render.
+    window._operamDomicilios = null;
+    window._operamContactosCliente = null;
+    pcState.domicilioIdx = 0;
+    pcState.cliente = clienteAlCargarCotizacion(c, pcState.cliente);
+
     // Poblar carrito
     vaciarCarrito();
     descripcionesAbiertas.clear();
@@ -6654,6 +6670,10 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Volver a la app
     document.getElementById('historial-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
+    // La tarjeta del paso Cliente muestra al de ESTA cotizacion (#394): sin
+    // esto seguia anunciando al de la sesion anterior encima de los campos ya
+    // repuestos, que es como se ve el cruce desde la pantalla.
+    pcRenderTarjeta();
     switchTab('productos');
     updateTierBar();
     updateCartSummary();

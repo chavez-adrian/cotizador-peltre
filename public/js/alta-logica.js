@@ -1040,14 +1040,23 @@ export function clienteDesdeProspecto(prospecto) {
   };
 }
 
-// Cliente de la tarjeta al elegir una cotizacion de Recientes. Los campos de
+// Cliente de la tarjeta al elegir una cotizacion de Recientes, y desde #394
+// tambien al cargar una del historial (clienteAlCargarCotizacion). Los campos de
 // entrega salen de ESA cotizacion, correo incluido; sin `email` aqui la opcion
 // "(Contacto)" del selector de entrega no los explicaba y el paso Envio arrancaba
 // en "+ Nuevo contacto", y elegirla borraba el correo (#353).
+//
+// El customerId de la cotizacion se pone en las DOS llaves de identidad (#394)
+// porque customerIdFiscal las lee por separado: `id` cuando el tipo es operam
+// (lo que una cotizacion con RFC real es) y `clienteOperamId` en los demas. Con
+// solo la segunda, una cotizacion con RFC real viajaba sin Cliente Operam --
+// para el resto de la pantalla era un cliente de Operam y para lo que se manda
+// no lo era.
 export function clienteDesdeCotizacionReciente(c) {
   const cl = c || {};
   return {
     tipo: cl.rfc ? 'operam' : 'nuevo',
+    id: cl.customerId ?? null,
     name: cl.razonSocial || cl.nombreCorto || '', ref: cl.nombreCorto || '',
     rfc: cl.rfc || '', telefono: cl.telefono || '', email: cl.emailEntrega || '',
     cp: cl.cpEntrega || '', pais: cl.pais || 'MX',

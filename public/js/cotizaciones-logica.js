@@ -7,7 +7,7 @@
 
 import { escapeHtml, chipOrigenHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
-import { nombreConCorto } from './alta-logica.js';
+import { nombreConCorto, clienteDesdeCotizacionReciente } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import { MENSAJE_COPIA_LISTA_FIJADA } from './tier-logica.js';
@@ -165,6 +165,52 @@ export function puedeActualizarCotizacion(cot) {
     return { puede: false, motivo: 'La cotización ya tiene un pedido asociado en Operam: copia la cotización' };
   }
   return { puede: true };
+}
+
+// Cliente de la sesion al CARGAR una cotizacion del historial, en los dos modos
+// -- Editar y Copiar (#394). cargarCotizacion llenaba los campos cl-* con la
+// cotizacion y dejaba el cliente de la sesion como estaba, asi que el customerId
+// que viajaba en el cuerpo (customerIdFiscal del cliente elegido) era el del
+// anterior: la 1280 se guardo con el nombre y el domicilio de Sofia Rodriguez y
+// la identidad de Gerardo Cardenas, que era quien quedaba en la pestana.
+//
+// La identidad sale de la cotizacion cargada por el MISMO normalizador que usa
+// Recientes (clienteDesdeCotizacionReciente): un solo lugar decide como se lee
+// una cotizacion guardada como cliente de la tarjeta. `clienteEnSesion` entra
+// para dejar escrito que se DESCARTA: no se hereda nada de el, ni el Cliente
+// Operam ni el domicilio. Una cotizacion que nunca se subio se carga sin liga,
+// que es lo correcto: todavia no hay Cliente Operam a su nombre.
+export function clienteAlCargarCotizacion(cotCliente, clienteEnSesion) {
+  return clienteDesdeCotizacionReciente(cotCliente);
+}
+
+// La liga de una cotizacion con su Cliente Operam es FIJA (#394, ADR-0006;
+// CONTEXT.md "Oportunidad": en Operam la cotizacion nunca se reasigna). Al
+// guardar sobre un registro que YA tiene liga, la persistida manda: el cuerpo
+// puede traer un id ajeno -- el del cliente de la sesion anterior del navegador,
+// que es como la cotizacion 1280 termino apuntando al Cliente Operam 529 con el
+// quote a nombre del 527 -- y ese valor no puede pisar el registro. Hasta #394
+// el previo solo se copiaba cuando llegaba `null`, asi que el ajeno ganaba.
+//
+// El domicilio viaja con la liga y no aparte: un branchId que llego junto a un
+// customerId ajeno es del OTRO Cliente Operam y se descarta con el. Sin liga
+// previa no hay nada que proteger -- ahi el cuerpo la estrena, que es como la
+// subida (#81) la anota por primera vez.
+//
+// `customerIdIgnorado` es el id que llego y no se acepto: el caller lo registra.
+// Silenciar el descarte es lo que dejo el cruce invisible durante seis dias.
+export function ligaClienteAlGuardar(clienteNuevo, clientePrevio) {
+  const nuevo = clienteNuevo || {};
+  const prev = clientePrevio || {};
+  const idPrevio = prev.customerId ?? null;
+  const idNuevo = nuevo.customerId ?? null;
+  const ajeno = idPrevio != null && idNuevo != null && String(idNuevo) !== String(idPrevio);
+  const branchNuevo = ajeno ? null : (nuevo.branchId ?? null);
+  return {
+    customerId: idPrevio != null ? idPrevio : idNuevo,
+    branchId: branchNuevo != null ? branchNuevo : (prev.branchId ?? null),
+    customerIdIgnorado: ajeno ? idNuevo : null,
+  };
 }
 
 // Las dos acciones de carga del historial (#104): "Actualizar cotización" (mismo

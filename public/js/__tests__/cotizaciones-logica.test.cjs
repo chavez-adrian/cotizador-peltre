@@ -9,14 +9,17 @@ let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   buildAvisoModoActualizacion, textoBotonGenerar, filtrarCotizaciones,
   buildAvisoCambioClienteHtml;
 let MENSAJE_COPIA_LISTA_FIJADA;
+let clienteAlCargarCotizacion, ligaClienteAlGuardar, customerIdFiscal;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
     buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
     puedeActualizarCotizacion, buildAccionesCargaHtml,
     buildAvisoModoActualizacion, textoBotonGenerar,
-    filtrarCotizaciones, buildAvisoCambioClienteHtml } = await import('../cotizaciones-logica.js'));
+    filtrarCotizaciones, buildAvisoCambioClienteHtml,
+    clienteAlCargarCotizacion, ligaClienteAlGuardar } = await import('../cotizaciones-logica.js'));
   ({ MENSAJE_COPIA_LISTA_FIJADA } = await import('../tier-logica.js'));
+  ({ customerIdFiscal } = await import('../alta-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -696,4 +699,60 @@ test('OR10: la tarjeta del tablero del Historial pinta el Origen heredado y el q
   assert.match(conOrigen, /origen-badge">Origen: Bazar Sabado/);
   const sinOrigen = buildTableroCotizacionesHtml([cot(3, { id: 2 })], HOY);
   assert.match(sinOrigen, /origen-badge-vacio">Origen sin identificar/);
+});
+
+// === Issue #394: Editar y Copiar reponen la identidad de la cotizacion cargada ===
+// Caso real (produccion, 2026-09-18): Alejandro venia de dar de alta a Gerardo
+// Cardenas (Cliente Operam 529) y abrio Editar sobre la cotizacion 1280, de
+// Sofia Rodriguez (527). Los campos cl-* se llenaron con Sofia, pero el cliente
+// de la sesion seguia siendo Gerardo: el customerId que viajaba en el cuerpo
+// era el 529 y el registro quedo cruzado.
+
+const COT_SOFIA = {
+  razonSocial: 'SOFIA RODRIGUEZ MARTINEZ', nombreCorto: 'Sofia Rodriguez', rfc: 'ROMS900101AA1',
+  telefono: '+52 5551234567', emailEntrega: 'sofia@correo.mx', cpEntrega: '56530', pais: 'MX',
+  customerId: 527, branchId: 576,
+};
+const SESION_GERARDO = { tipo: 'operam', id: 529, name: 'GERARDO CARDENAS', ref: 'Gerardo Cardenas', rfc: 'XAXX010101000' };
+
+test('#394-C1: Editar repone la identidad de la cotizacion cargada, no la de la sesion', () => {
+  const cliente = clienteAlCargarCotizacion(COT_SOFIA, SESION_GERARDO);
+  assert.strictEqual(customerIdFiscal(cliente), 527);
+  assert.strictEqual(cliente.name, 'SOFIA RODRIGUEZ MARTINEZ');
+  assert.strictEqual(cliente.rfc, 'ROMS900101AA1');
+});
+
+// Copiar es la misma carga con otro modo (cargarCotizacion(id, 'nueva')): el
+// registro nace sin liga previa, asi que aqui no hay red del servidor y la
+// identidad que ponga el navegador es la que sube el quote nuevo.
+test('#394-C2: Copiar tambien parte de la cotizacion cargada, sin heredar la sesion', () => {
+  const sinDatosFiscales = { ...COT_SOFIA, rfc: '', customerId: 527 };
+  assert.strictEqual(customerIdFiscal(clienteAlCargarCotizacion(sinDatosFiscales, SESION_GERARDO)), 527);
+});
+
+test('#394-C3: una cotizacion sin Cliente Operam no hereda el de la sesion', () => {
+  const nuncaSubida = { ...COT_SOFIA, customerId: null, branchId: null };
+  assert.strictEqual(customerIdFiscal(clienteAlCargarCotizacion(nuncaSubida, SESION_GERARDO)), null);
+});
+
+// === #394: la liga persistida manda al guardar sobre un registro existente ===
+
+test('#394-C4: un customerId ajeno no pisa la liga del registro y se reporta', () => {
+  const liga = ligaClienteAlGuardar({ customerId: 529 }, { customerId: 527, branchId: 576 });
+  assert.deepStrictEqual(liga, { customerId: 527, branchId: 576, customerIdIgnorado: 529 });
+});
+
+test('#394-C5: el mismo Cliente Operam en otro tipo de dato no es una liga ajena', () => {
+  const liga = ligaClienteAlGuardar({ customerId: '527' }, { customerId: 527, branchId: 576 });
+  assert.deepStrictEqual(liga, { customerId: 527, branchId: 576, customerIdIgnorado: null });
+});
+
+test('#394-C6: el domicilio que llega con un customerId ajeno se descarta con el', () => {
+  const liga = ligaClienteAlGuardar({ customerId: 529, branchId: 599 }, { customerId: 527, branchId: 576 });
+  assert.strictEqual(liga.branchId, 576);
+});
+
+test('#394-C7: sin liga previa el cuerpo la estrena (es como la subida la anota)', () => {
+  const liga = ligaClienteAlGuardar({ customerId: 529, branchId: 599 }, {});
+  assert.deepStrictEqual(liga, { customerId: 529, branchId: 599, customerIdIgnorado: null });
 });
