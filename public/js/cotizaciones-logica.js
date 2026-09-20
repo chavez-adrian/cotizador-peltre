@@ -238,18 +238,24 @@ export function textoBotonGenerar(tipo, modoActualizacion) {
 // matchea. Se aplica antes de pintar, asi que Lista y Tablero comparten el
 // filtro gratis y cambiar de modo lo conserva.
 //
-// Matchea por razon social, nombre corto, contacto de entrega y vendedor
-// (texto, case/acentos), por el folio REAL de Operam (ADR-0009 -- nunca el id
+// Matchea por razon social, nombre corto y contacto de entrega (texto,
+// case/acentos), por el folio REAL de Operam (ADR-0009 -- nunca el id
 // interno, que es clave tecnica de URLs), y por el celular reducido a digitos
 // como subcadena de los digitos del telefono -- consistente con la llave
 // ultimos10 (lib/telefono-llave.js): sin importar como se capturo el
 // telefono, "5512" lo encuentra. Texto y rango de fechas se combinan con AND.
 //
+// El VENDEDOR no es buscable: #147 lo habia sumado para que el admin hallara
+// las cotizaciones de una persona del equipo, y en produccion eso ahogaba la
+// busqueda que la caja anuncia (un vendedor firma decenas de cotizaciones, un
+// cliente una o dos, y en el OR gana el vendedor). Filtrar por persona es un
+// selector aparte, no texto libre. Misma regla en las cinco vistas.
+//
 // Desde #289 el filtro en si vive en busqueda-logica.js, compartido con las
 // otras cuatro vistas; aqui solo queda la declaracion de QUE es buscable en
 // una cotizacion y de que fecha se acota (la de la cotizacion).
 export const BUSCABLES_COTIZACION = {
-  camposDe: c => [c?.cliente, c?.folioOperam, c?.nombreCorto, c?.contactoEntrega, c?.vendedor],
+  camposDe: c => [c?.cliente, c?.folioOperam, c?.nombreCorto, c?.contactoEntrega],
   digitosDe: c => c?.telefono,
   fechaDe: c => c?.fecha,
 };

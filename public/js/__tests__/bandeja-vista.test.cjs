@@ -282,7 +282,8 @@ test('#289: candidatosVisibles combina el filtro por estado con el criterio de b
   assert.deepEqual(folios({}), ['940', '934']);
   assert.deepEqual(folios({ texto: 'mariana' }), ['934']);
   assert.deepEqual(folios({ texto: 'panaderia' }), ['940']);
-  assert.deepEqual(folios({ texto: 'oswaldo' }), ['940']);
+  // el vendedor salio de la caja: filtrar por persona es un selector aparte
+  assert.deepEqual(folios({ texto: 'oswaldo' }), []);
   assert.deepEqual(folios({ texto: '934' }), ['934']);
   assert.deepEqual(folios({ texto: '99812' }), ['940']);
   // El estado sigue mandando: el descartado no vuelve por matchear el texto.

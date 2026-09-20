@@ -559,13 +559,39 @@ test('Q41: filtrarCotizaciones matchea el celular como fragmento de digitos sin 
   assert.deepEqual(filtrarCotizaciones(lista, { texto: '9999' }), []);
 });
 
-test('Q42: filtrarCotizaciones matchea por vendedor (util para admin, que ve todas)', () => {
+// El vendedor SALIO de la caja de texto. #147 lo habia sumado al matching para
+// que el admin encontrara las cotizaciones de una persona del equipo; medido en
+// produccion 2026-09-19 eso rompe la busqueda que la caja SI anuncia: el
+// vendedor aparece en decenas de cotizaciones y el cliente en una o dos, asi
+// que en el OR el vendedor siempre gana y ahoga al cliente. Filtrar por persona
+// es un FILTRO (un selector aparte, como en /prospectos), no una busqueda de
+// texto libre. Aplica igual en las cinco vistas que comparten el control.
+test('Q42: filtrarCotizaciones NO matchea por vendedor (la caja busca al cliente, no a quien vende)', () => {
   const lista = [
     cot(1, { id: 1, cliente: 'Hotel Azul', vendedor: 'Laura' }),
     cot(2, { id: 2, cliente: 'Panaderia Lopez', vendedor: 'Marco' }),
   ];
-  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'laura' }).map(c => c.id), [1]);
-  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'MARCO' }).map(c => c.id), [2]);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'laura' }), []);
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'MARCO' }), []);
+  // y lo que la caja si promete sigue igual
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'hotel' }).map(c => c.id), [1]);
+});
+
+// Regresion del caso REAL que abrio el ticket (medido en produccion con la
+// cuenta de admin): 101 cotizaciones, 50 con vendedor "Adrian Chavez", y el
+// cliente desechable de pruebas se llama IGUAL que ese vendedor. Teclear "Adr"
+// para buscar al cliente devolvia las 50 de la cartera propia -- media pantalla
+// de clientes ajenos a lo tecleado, indistinguible de un buscador descompuesto.
+test('Q42b: buscar el nombre del propio vendedor devuelve a su cliente homonimo, no su cartera', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Adrian Chavez Rosete', vendedor: 'Adrián Chávez' }),
+    cot(2, { id: 2, cliente: 'Carlos Couturier Gaya', vendedor: 'Adrián Chávez' }),
+    cot(3, { id: 3, cliente: 'GALGUVE', vendedor: 'Adrián Chávez' }),
+    cot(4, { id: 4, cliente: 'Don Asado', vendedor: 'Adrián Chávez' }),
+  ];
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'Adr' }).map(c => c.id), [1]);
+  // el apellido que comparten tres vendedores tampoco barre el historial
+  assert.deepEqual(filtrarCotizaciones(lista, { texto: 'chavez' }).map(c => c.id), [1]);
 });
 
 // === #148: rango de fechas Desde/Hasta -- se combina con AND con el texto.
