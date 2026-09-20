@@ -189,6 +189,7 @@ import {
   avisoListaFijada,
   tierAlCargarCotizacion,
   opcionesTierSelect,
+  opcionesListaCliente,
   estadoAlCambiarCliente,
   MENSAJE_COPIA_LISTA_FIJADA,
 } from './tier-logica.js';
@@ -3883,6 +3884,11 @@ async function pcPrecargarComercialUpgrade(customerId) {
     const pre = await res.json();
     altaCsfState.comercialPrecargado = pre;
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    // La lista que el cliente ya tiene entra al selector aunque quien edita no la
+    // tenga habilitada (#300): conservarla es valido y el servidor la deja pasar.
+    // Se repuebla ANTES de fijar el valor -- un <select> sin esa opcion se quedaria
+    // en "-- Selecciona --" y el vendedor leeria un cliente sin lista.
+    altaPoblarListasPrecios(altaState.catalogos, pre.salesType);
     set('alta-lista-precios', pre.salesType);
     set('alta-segmento', pre.segmentoId);
     // Vacio a proposito: el GET de Operam no expone invoice_email (solo lo confirma
@@ -6947,14 +6953,28 @@ async function cargarCatalogos() {
   return altaState.catalogos;
 }
 
+// El selector de Lista de precios del alta/edicion (#300, ADR-0015): la misma matriz
+// que gobierna la lista fijada de una cotizacion. Se ofrecen las listas habilitadas de
+// quien captura (el rol admin las recibe todas del servidor) mas `listaActual`, la que
+// el cliente que se edita ya tiene -- conservarla siempre es valido, y sin su opcion el
+// <select> se quedaria vacio y pareceria que el cliente no tiene lista. Quien decide es
+// el nucleo puro; la reja de verdad la vuelve a aplicar el servidor al guardar.
+function altaPoblarListasPrecios(catalogos, listaActual) {
+  const selLista = document.getElementById('alta-lista-precios');
+  if (!selLista || !catalogos) return;
+  const permiso = { esAdmin: state.user?.role === 'admin', listasHabilitadas: catalogos.listasHabilitadas || [] };
+  const opciones = opcionesListaCliente(catalogos.listas_precios || [], permiso, listaActual);
+  selLista.innerHTML = '<option value="">-- Selecciona --</option>' +
+    opciones.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+}
+
 function altaPoblarSelectores(catalogos) {
   const selLista = document.getElementById('alta-lista-precios');
   const selSeg = document.getElementById('alta-segmento');
   const selVend = document.getElementById('alta-vendedor');
   if (!selLista || !selSeg || !selVend) return;
 
-  selLista.innerHTML = '<option value="">-- Selecciona --</option>' +
-    catalogos.listas_precios.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+  altaPoblarListasPrecios(catalogos);
 
   selSeg.innerHTML = '<option value="">-- Selecciona --</option>' +
     catalogos.segmentos.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
@@ -6996,6 +7016,11 @@ function altaVaciarComercial() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   }
+  // Las OPCIONES del selector de lista tambien vuelven a las habilitadas (#300): la
+  // lista del cliente anterior entro como opcion por ser SUYA, y el panel es un solo
+  // nodo -- dejarla ahi le ofreceria al siguiente cliente una lista que el vendedor
+  // no tiene habilitada.
+  altaPoblarListasPrecios(altaState.catalogos);
 }
 
 // Lo que el vendedor tiene HOY en la Seccion 2, en el formato de la precarga

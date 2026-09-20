@@ -5,11 +5,13 @@ const assert = require('node:assert/strict');
 let tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, mensajeListaNoHabilitada;
 let normalizarPuedeFijarLista, normalizarListasHabilitadas, listasHabilitadasDeVendedor, puedeFijarTier;
 let tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA, estadoAlCambiarCliente;
+let puedeAsignarLista, opcionesListaCliente, validarListaCliente;
 before(async () => {
   ({
     tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, mensajeListaNoHabilitada,
     normalizarPuedeFijarLista, normalizarListasHabilitadas, listasHabilitadasDeVendedor, puedeFijarTier,
     tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA, estadoAlCambiarCliente,
+    puedeAsignarLista, opcionesListaCliente, validarListaCliente,
   } = await import('../tier-logica.js'));
 });
 
@@ -456,4 +458,105 @@ test('la segunda preparacion (elegir al nuevo cliente tras "Cambiar de cliente")
   });
   assert.strictEqual(segunda.tierFijado, '');
   assert.deepStrictEqual(segunda.aviso, primera.aviso);
+});
+
+// === #300 (spec #294, ADR-0015): la SEGUNDA superficie de la misma matriz ===
+//
+// La lista que se le ASIGNA a un cliente en el alta o en la edicion. Las listas de
+// esa superficie son las ACTIVAS de Operam (las de GET /api/catalogos), no los tiers
+// del catalogo de precios: a un cliente se le puede asignar una lista que el
+// cotizador todavia no sabe preciar -- quien precia ahi es el ERP. Los ids son los
+// REALES de Operam, los mismos que ya cruzan la matriz.
+const LISTAS_OPERAM = [
+  { id: '12', nombre: 'Precio de lista' },
+  { id: '1', nombre: 'M550' },
+  { id: '6', nombre: 'M1500' },
+  { id: '9', nombre: 'Segundas' },
+];
+
+test('#300 selector del cliente: el vendedor solo ve sus listas habilitadas', () => {
+  assert.deepStrictEqual(
+    opcionesListaCliente(LISTAS_OPERAM, SOLO_M550).map(l => l.nombre),
+    ['M550']
+  );
+});
+
+test('#300 selector del cliente: el rol admin ve todas, sin celdas en la matriz', () => {
+  assert.deepStrictEqual(
+    opcionesListaCliente(LISTAS_OPERAM, ADMIN).map(l => l.id),
+    ['12', '1', '6', '9']
+  );
+});
+
+test('#300 selector del cliente: sin ninguna celda marcada no hay lista que ofrecer', () => {
+  assert.deepStrictEqual(opcionesListaCliente(LISTAS_OPERAM, SIN_LISTAS), []);
+});
+
+test('#300 selector del cliente: la lista que el cliente YA tiene se ofrece aunque no este habilitada', () => {
+  const opciones = opcionesListaCliente(LISTAS_OPERAM, SOLO_M550, '9');
+  assert.deepStrictEqual(opciones.map(l => l.nombre), ['M550', 'Segundas']);
+});
+
+test('#300 selector del cliente: la lista actual habilitada no se ofrece dos veces', () => {
+  assert.deepStrictEqual(opcionesListaCliente(LISTAS_OPERAM, SOLO_M550, '1').map(l => l.id), ['1']);
+});
+
+test('#300 selector del cliente: el id numerico de Operam cruza con la celda de texto', () => {
+  const listasNumericas = [{ id: 1, nombre: 'M550' }, { id: 9, nombre: 'Segundas' }];
+  assert.deepStrictEqual(opcionesListaCliente(listasNumericas, SOLO_M550).map(l => l.nombre), ['M550']);
+  assert.deepStrictEqual(opcionesListaCliente(listasNumericas, SOLO_SEGUNDAS, 1).map(l => l.nombre), ['M550', 'Segundas']);
+});
+
+// El juicio del guardado (el servidor lo hace valer en el alta y en la edicion):
+// que la lista NO viaje es distinto de conservar la que el cliente ya tiene, y las
+// dos pasan; cambiarla a una no habilitada es lo unico que se detiene.
+test('#300 guardar: sin lista en la peticion no hay nada que permitir', () => {
+  assert.deepStrictEqual(validarListaCliente({ solicitada: '', permiso: SIN_LISTAS }), { ok: true });
+  assert.deepStrictEqual(validarListaCliente({ permiso: SIN_LISTAS }), { ok: true });
+});
+
+test('#300 guardar: la lista habilitada se acepta', () => {
+  assert.deepStrictEqual(validarListaCliente({ solicitada: '1', permiso: SOLO_M550 }), { ok: true });
+});
+
+test('#300 guardar: la lista no habilitada se rechaza nombrandola y diciendo que hacer', () => {
+  const r = validarListaCliente({ solicitada: '9', permiso: SOLO_M550, nombre: 'Segundas' });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.mensaje, /Segundas/);
+  assert.match(r.mensaje, /administrador/i);
+});
+
+test('#300 guardar: sin nombre a la mano el rechazo cita el id de la lista', () => {
+  const r = validarListaCliente({ solicitada: '9', permiso: SOLO_M550 });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.mensaje, /9/);
+});
+
+test('#300 guardar: conservar la lista que el cliente YA tiene es valido aunque no este habilitada', () => {
+  assert.deepStrictEqual(
+    validarListaCliente({ solicitada: '9', actual: '9', permiso: SOLO_M550 }),
+    { ok: true }
+  );
+});
+
+test('#300 guardar: el cliente en una lista ajena solo se puede mover a una habilitada', () => {
+  const aPropia = validarListaCliente({ solicitada: '1', actual: '9', permiso: SOLO_M550 });
+  assert.deepStrictEqual(aPropia, { ok: true });
+  const aOtraAjena = validarListaCliente({ solicitada: '6', actual: '9', permiso: SOLO_M550, nombre: 'M1500' });
+  assert.strictEqual(aOtraAjena.ok, false);
+});
+
+test('#300 guardar: el rol admin puede asignar cualquier lista sin celdas en la matriz', () => {
+  assert.deepStrictEqual(validarListaCliente({ solicitada: '9', permiso: ADMIN }), { ok: true });
+});
+
+test('#300 guardar: la lista actual que llega como numero cuenta igual que la de texto', () => {
+  assert.deepStrictEqual(validarListaCliente({ solicitada: '9', actual: 9, permiso: SIN_LISTAS }), { ok: true });
+});
+
+test('#300 puedeAsignarLista: sin celdas no hay lista asignable, con la celda si', () => {
+  assert.strictEqual(puedeAsignarLista('9', SIN_LISTAS), false);
+  assert.strictEqual(puedeAsignarLista('9', SOLO_SEGUNDAS), true);
+  assert.strictEqual(puedeAsignarLista('', ADMIN), true);
+  assert.strictEqual(puedeAsignarLista('', SOLO_SEGUNDAS), false);
 });

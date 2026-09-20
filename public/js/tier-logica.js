@@ -14,6 +14,11 @@
 // renglon. El cruce con el tier del cotizador pasa por `listaId`, el id de la
 // sales_type de Operam que el catalogo expone en cada tier: una lista marcada
 // que el catalogo todavia no precia no vuelve fijable ningun tier.
+//
+// #300 suma la SEGUNDA superficie de la misma matriz -- la lista que se le
+// ASIGNA a un cliente en el alta o en la edicion --, que vive al final de este
+// modulo: mismo permiso, mismo `{ esAdmin, listasHabilitadas }`, y por eso una
+// sola fuente para las dos (ADR-0015).
 
 export function mensajeListaNoHabilitada(tierId) {
   return `No tienes habilitada la lista ${tierId}; pide el permiso al administrador.`;
@@ -192,4 +197,58 @@ export function listasHabilitadasDeVendedor(vendedor, listasVolumen) {
       : [];
   }
   return normalizarListasHabilitadas(guardadas);
+}
+
+// === La lista de precios del CLIENTE (#300, spec #294, ADR-0015) ===
+//
+// La segunda superficie donde un vendedor elige lista: el alta y la edicion del
+// Cliente Operam. Es la misma matriz -- prohibirle cotizar en Segundas y dejarlo
+// inscribir clientes en Segundas seria incoherente, y la lista del cliente es MAS
+// permanente que la de una cotizacion (queda escrita en el ERP y gobierna lo que
+// Operam facture despues).
+//
+// Lo que cambia respecto de fijar un tier es el universo: aqui las listas son las
+// ACTIVAS de Operam (`listas_precios` de GET /api/catalogos, `{ id, nombre }`), no
+// los tiers del catalogo de precios. A un cliente se le puede asignar una lista que
+// el cotizador todavia no sabe preciar: quien precia en ese campo es el ERP.
+
+// Puede quien trae este permiso ASIGNARLE esta lista a un cliente. El rol admin
+// siempre; el resto solo con la celda marcada. Sin lista no hay permiso que dar.
+export function puedeAsignarLista(listaId, permiso) {
+  if (permiso?.esAdmin) return true;
+  const id = String(listaId ?? '').trim();
+  if (!id) return false;
+  return normalizarListasHabilitadas(permiso?.listasHabilitadas).includes(id);
+}
+
+// Opciones del selector de lista del alta/edicion: las habilitadas de quien captura
+// MAS la que el cliente ya tiene, aunque no este habilitada -- conservarla siempre
+// es valido (mismo principio que la lista fijada previa al editar una cotizacion,
+// #154). Sin ninguna habilitada y sin lista actual no hay nada que ofrecer.
+export function opcionesListaCliente(listas, permiso, listaActual) {
+  const actual = String(listaActual ?? '').trim();
+  return (listas || []).filter(l => (actual && String(l.id) === actual) || puedeAsignarLista(l.id, permiso));
+}
+
+// El mensaje del rechazo: nombra la lista que se pidio -- el vendedor no tiene por
+// que traducir un id de Operam -- y dice las dos salidas reales.
+export function mensajeListaClienteNoHabilitada(lista) {
+  return `No tienes habilitada la lista de precios ${lista} para asignarsela a un cliente;` +
+    ' elige una de tus listas o pide el permiso al administrador.';
+}
+
+// Enforcement del guardado, en las dos operaciones del cliente (alta y edicion).
+// Tres cosas pasan, y solo una se detiene:
+//   - la peticion que no trae lista no toca la del cliente (vacio no es dato, #285);
+//   - conservar la que el Cliente Operam YA tiene siempre es valido, aunque quien
+//     guarda no la tenga habilitada (la comparacion es contra lo que dice OPERAM,
+//     no contra lo que diga el cuerpo de la peticion: eso lo decide el servidor);
+//   - cambiarla a una lista no habilitada es lo unico que se rechaza.
+// `nombre` es opcional: sin el, el mensaje cita el id.
+export function validarListaCliente({ solicitada, actual, permiso, nombre } = {}) {
+  const pedida = String(solicitada ?? '').trim();
+  if (!pedida) return { ok: true };
+  if (String(actual ?? '').trim() === pedida) return { ok: true };
+  if (puedeAsignarLista(pedida, permiso)) return { ok: true };
+  return { ok: false, mensaje: mensajeListaClienteNoHabilitada(nombre || pedida) };
 }

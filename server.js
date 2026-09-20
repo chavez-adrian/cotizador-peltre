@@ -69,7 +69,7 @@ import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDec
 import { indiceOrigenPorCelular, anotarOrigen } from './public/js/origen-logica.js';
 import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL, puedePrecioCalca, normalizarPuedePrecioCalca } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
-import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen } from './public/js/tier-logica.js';
+import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -235,6 +235,49 @@ async function permisoListasDeUsuario(user) {
     esAdmin: user?.role === 'admin',
     listasHabilitadas: listasHabilitadasDeVendedor(registro, listasVolumenDelCatalogo()),
   };
+}
+
+// Las listas que quien captura puede ASIGNARLE a un cliente (#300, ADR-0015):
+// la misma matriz que gobierna la lista fijada de una cotizacion. El universo es
+// otro a proposito -- aqui son las sales_types ACTIVAS de Operam, no los tiers del
+// catalogo: a un cliente se le puede asignar una lista que el cotizador todavia no
+// sabe preciar (quien precia ese campo es el ERP), y por eso el rol admin recibe
+// todas las activas y no `listasDelCatalogo`.
+async function listasAsignablesDeUsuario(user) {
+  const permiso = await permisoListasDeUsuario(user);
+  if (!permiso.esAdmin) return permiso.listasHabilitadas;
+  return (await obtenerListasPrecios()).map(l => String(l.id));
+}
+
+// El veredicto del guardado en las DOS operaciones del cliente (alta y edicion):
+// devuelve el mensaje del rechazo, o null si la lista puede viajar. El juicio vive
+// en el nucleo puro; aqui solo se reunen sus tres insumos, y los dos caros se pagan
+// SOLO en el camino raro (una lista que quien guarda no tiene habilitada):
+//   - `leerActual` es la lista que el Cliente Operam tiene HOY, leida de OPERAM y
+//     nunca del cuerpo de la peticion: conservarla siempre es valido, y creerle al
+//     navegador seria dejar el permiso en manos de la pantalla. Sin lectura posible
+//     (alta de un cliente nuevo, o Operam caido) no hay excepcion que aplicar.
+//   - el nombre de la lista, para que el vendedor lea "Segundas" y no un id.
+async function rechazoListaCliente(user, solicitada, leerActual) {
+  const pedida = String(solicitada ?? '').trim();
+  if (!pedida) return null;
+  const permiso = await permisoListasDeUsuario(user);
+  if (validarListaCliente({ solicitada: pedida, permiso }).ok) return null;
+  let actual;
+  try {
+    actual = leerActual ? await leerActual() : undefined;
+  } catch {
+    actual = undefined;
+  }
+  const nombre = (await obtenerListasPrecios()).find(l => String(l.id) === pedida)?.nombre;
+  const veredicto = validarListaCliente({ solicitada: pedida, actual, permiso, nombre });
+  return veredicto.ok ? null : veredicto.mensaje;
+}
+
+// La lista de precios que el Cliente Operam tiene HOY, para la excepcion de arriba.
+async function listaActualDeCliente(clienteId) {
+  if (clienteId == null || clienteId === '') return undefined;
+  return (await obtenerClientePorId(clienteId))?.sales_type;
 }
 
 // Permiso de capturar el precio de una calca (#280, spec #278), espejo exacto
@@ -2672,6 +2715,16 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
   const { diff } = req.body || {};
   if (!diff || typeof diff !== 'object') return res.status(400).json({ error: 'diff requerido' });
   const id = req.params.id;
+  // Listas habilitadas (#300): una lista CON valor si viaja en este diff (#372), asi
+  // que este camino tambien puede mover la lista del cliente. El valor "anterior" del
+  // diff lo arma el navegador: la excepcion de conservar la actual se comprueba contra
+  // Operam, nunca contra el.
+  const rechazoLista = await rechazoListaCliente(
+    req.user,
+    diff.sales_type && typeof diff.sales_type === 'object' ? diff.sales_type.nuevo : undefined,
+    () => listaActualDeCliente(id)
+  );
+  if (rechazoLista) return res.status(403).json({ error: rechazoLista });
   // Gate anti-fusion (#207, mismo verificador del upgrade fiscal #85): un vendedor
   // autenticado NO puede asignarle a un cliente el RFC real de OTRO cliente por este
   // camino. Solo corre cuando el diff toca tax_id -- el resto de los campos no
@@ -3428,6 +3481,11 @@ app.put('/api/actualizar-cliente/:id', authMiddleware, async (req, res) => {
   if (!campos || Object.keys(campos).length === 0) {
     return res.status(400).json({ error: 'No se enviaron campos a actualizar' });
   }
+  // Listas habilitadas (#300): este PUT escribe los mismos campos del cliente sin
+  // pasar por ningun panel, asi que el permiso tambien se exige aqui -- dejarlo
+  // fuera seria dejarlo en manos de la pantalla.
+  const rechazoLista = await rechazoListaCliente(req.user, campos.sales_type, () => listaActualDeCliente(req.params.id));
+  if (rechazoLista) return res.status(403).json({ error: rechazoLista });
   try {
     await actualizarClienteDirecto(req.params.id, campos);
     res.json({ ok: true });
@@ -3453,6 +3511,13 @@ app.put('/api/actualizar-cliente-fiscal/:id', authMiddleware, async (req, res) =
   // comparar; sin esto, un RFC capturado en minusculas podria no matchear un cliente
   // formal ya existente en Operam y colar una fusion silenciosa.
   const csfDatos = { ...csfDatosCrudo, rfc };
+
+  // Listas habilitadas (#300): la Seccion 2 de este panel puede mover la lista de
+  // precios del cliente. Cambiarla exige la celda; conservar la que el cliente ya
+  // tiene -- lo que Operam dice, no lo que diga el navegador -- siempre es valido.
+  // Va antes de upgradeFiscal: un rechazo no escribe nada.
+  const rechazoLista = await rechazoListaCliente(req.user, csfDatos.salesType, () => listaActualDeCliente(id));
+  if (rechazoLista) return res.status(403).json({ error: rechazoLista });
 
   const resultado = await upgradeFiscal(id, csfDatos);
   if (resultado.tipo === 'bloqueo') {
@@ -3538,6 +3603,15 @@ function marcarTelefonoSospechoso(cliente) {
 // para el reintento del boton generico y para el alta que ya venia con un cliente
 // elegido por la dedup previa del navegador.
 const DECISIONES_ALTA = new Set(['usar', 'otro-domicilio', 'ninguno']);
+
+// El Cliente Operam sobre el que un alta va a escribir cuando REUTILIZA uno (#300):
+// misma regla que aplica lib/alta-cliente.js -- solo 'usar' y 'otro-domicilio' caen
+// sobre un cliente que ya existe; 'ninguno' crea uno nuevo, asi que ahi no hay lista
+// actual que conservar por mucho que el cuerpo traiga un clienteId.
+function clienteReutilizadoDelAlta(body) {
+  const d = decisionDelFormulario(body);
+  return d && (d.tipo === 'usar' || d.tipo === 'otro-domicilio') ? d.clienteId : null;
+}
 
 function decisionDelFormulario(body) {
   const d = body?.decision;
@@ -3673,6 +3747,16 @@ function opcionesDeLaPregunta(body, candidatos, salidas) {
 app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   const cliente = req.body;
   if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
+  // Listas habilitadas (#300): asignarle una lista a un cliente es mas permanente
+  // que fijarla en una cotizacion -- queda escrita en el ERP y gobierna lo que
+  // Operam facture despues --, asi que la gobierna la misma matriz. Va ANTES de
+  // darDeAlta: un alta rechazada no escribe nada en Operam. Sobre un Cliente Operam
+  // reutilizado, conservar la lista que ya tiene sigue siendo valido.
+  const rechazoLista = await rechazoListaCliente(
+    req.user, cliente.sales_type,
+    () => listaActualDeCliente(clienteReutilizadoDelAlta(cliente))
+  );
+  if (rechazoLista) return res.status(403).json({ error: rechazoLista });
   marcarTelefonoSospechoso(cliente);
 
   const alta = await darDeAlta(solicitudDelFormulario(cliente, req.user.name));
@@ -3795,6 +3879,12 @@ app.get('/api/catalogos', authMiddleware, async (req, res) => {
     const evento = eventoActivoConfigurado();
     res.json({
       segmentos: SEGMENTOS, vendedores, listas_precios: await obtenerListasPrecios(),
+      // Listas habilitadas (#300): el catalogo COMPLETO sigue viajando -- de ahi sale
+      // el nombre de la lista que el cliente ya tiene, que el selector ofrece aunque
+      // no este habilitada -- y aparte van las que quien captura puede asignar. Quien
+      // filtra el selector es el nucleo puro (opcionesListaCliente); esto solo decide
+      // que se pinta, y el servidor lo vuelve a exigir en cada escritura.
+      listasHabilitadas: await listasAsignablesDeUsuario(req.user),
       puedeAsignar: puedeAsignar({ role: req.user?.role, puedeAsignar: yo?.puedeAsignar }),
       eventoActivo: evento && { ...evento, siguienteContactoSugerido: primerDiaHabilDespues(evento.fin) },
       catalogoUrl: config.catalogoUrl || '',
