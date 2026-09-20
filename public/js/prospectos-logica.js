@@ -420,6 +420,12 @@ export function buildEsperaBadgeHtml(item) {
 // Etiqueta del Contacto ya ligado a un Cliente Operam (#46/#347, CONTEXT.md
 // "Ya tiene Cliente Operam, falta cotizar"): sigue en Por Cotizar hasta que
 // una cotizacion lo pase a Seguimiento.
+//
+// #400: la decide el SERVIDOR y viaja ya juzgada en la fila (`faltaCotizar`) y
+// en el item de la cola, porque el juicio incluye "todavia no cotiza" y las
+// cotizaciones que el vendedor puede ver no estan en el navegador. La liga a
+// secas (`data.cliente_id`) NO es la etiqueta: el Contacto que nacio como
+// Cliente Operam AL cotizar la lleva puesta y ya cotizo. Sin senal no se pinta.
 const CLIENTE_BADGE = '<span class="cliente-badge">Ya tiene Cliente Operam, falta cotizar</span>';
 
 // Tarjeta de un prospecto en la lista (mismo formato visual que las cards de
@@ -498,7 +504,7 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
           ${d.correo ? `<div class="cot-card-meta">${escapeHtml(d.correo)}</div>` : ''}
           <div style="margin-top:4px">${chipOrigenHtml(p)}</div>
           ${activo && colaItem ? `<div style="margin-top:4px">${buildEsperaBadgeHtml(colaItem)}</div>` : ''}
-          ${d.cliente_id ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
+          ${p.faltaCotizar ? `<div style="margin-top:4px">${CLIENTE_BADGE}</div>` : ''}
           ${d.evento ? `<div style="margin-top:4px"><span class="evento-badge">${escapeHtml(d.evento)}</span></div>` : ''}
           ${reunion ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión el ${escapeHtml(fechaHora(reunion))}</span></div>` : ''}
           ${siguiente ? `<div style="margin-top:4px">${chipSiguienteContactoHtml(siguiente)}</div>` : ''}
@@ -564,7 +570,7 @@ export function buildColaProspectosHtml(cola) {
           <div>
             <div class="cot-card-cliente">${escapeHtml(item.nombre)}</div>
             <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[item.etapa] || item.etapa)} · ${escapeHtml(item.ciudad)} · ${escapeHtml(item.celular)}</div>
-            <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}${item.yaEsCliente ? ` ${CLIENTE_BADGE}` : ''} ${chipOrigenHtml(item)}</div>
+            <div style="margin-top:4px">${buildEsperaBadgeHtml(item)}${item.faltaCotizar ? ` ${CLIENTE_BADGE}` : ''} ${chipOrigenHtml(item)}</div>
             ${item.reunionVencida ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión del ${escapeHtml(fechaHora(item.fechaReunion))} — registrar resultado</span></div>` : ''}
             ${item.siguienteContacto ? `<div style="margin-top:4px">${chipSiguienteContactoHtml(item.siguienteContacto, { nombre: item.nombre, evento: item.evento })}</div>` : ''}
           </div>

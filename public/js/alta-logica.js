@@ -822,28 +822,49 @@ export function buildNotasConActividades(notasActuales, actividades, csfFecha) {
   return actual ? `${actual}\n${seccion}` : seccion;
 }
 
-const ANTERIOR_NO_LEGIBLE = '(no se puede leer de Operam)';
+function etiquetaDiffFiscal(fieldId, label) {
+  return label || DIFF_FISCAL_LABELS[fieldId] || fieldId;
+}
+
+// Un campo `noLegible` (#373) no se comparo con nada: Operam no lo devuelve en NINGUNA
+// lectura de la API v3. Hasta #395 su fila viajaba bajo el encabezado "no coinciden", asi
+// que toda CSF con IdCIF abria el panel contra CUALQUIER Cliente Operam afirmando una
+// diferencia que nadie pudo medir (HITL 2026-09-18, RFC CARA830713D53 sobre el cliente
+// 15) -- y un panel que sale siempre ensena al vendedor a confirmar sin leer, de modo que
+// la vez que la diferencia sea real la pasa igual. El campo SE QUEDA en el panel, porque
+// el diff ES el cuerpo del PUT (bodyDesdeDiffFiscal) y Confirmar es el unico camino por
+// el que el IdCIF llega a Operam desde esta pantalla (#391); lo que cambia es lo que el
+// panel DICE: una frase por campo, sin "anterior -> nuevo", con la unica pregunta que el
+// vendedor puede contestar. El valor siempre existe (calcularDiffFiscal solo marca el
+// campo cuando la CSF trajo algo que escribir). Los signos de apertura van como entidad
+// HTML: el codigo es ASCII estricto.
+function fraseNoVerificable(fieldId, { nuevo, label }) {
+  return '<p class="diff-fiscal-no-verificable">La CSF trae el ' +
+    etiquetaDiffFiscal(fieldId, label) + ' ' + nuevo +
+    ', que puede ser diferente al registrado en Operam. &iquest;Lo sobrescribimos en Operam?</p>';
+}
 
 export function buildDiffFiscalHtml(diff) {
   const campos = Object.keys(diff);
   if (campos.length === 0) return '';
   const mostrar = valor => valor || '(vacio)';
-  const filas = campos.map(fieldId => {
-    const { anterior, nuevo, label, noLegible } = diff[fieldId];
-    // "(vacio)" seria una afirmacion sobre el cliente que la lectura nunca hizo (#373):
-    // el campo no viene en NINGUNA lectura de la API v3. La fila se queda porque el dato
-    // SI se va a escribir; lo que el vendedor necesita saber es que no se pudo comparar.
-    const anteriorTexto = noLegible ? ANTERIOR_NO_LEGIBLE : mostrar(anterior);
+  const noVerificables = campos.filter(fieldId => diff[fieldId].noLegible);
+  const reales = campos.filter(fieldId => !diff[fieldId].noLegible);
+  const filas = reales.map(fieldId => {
+    const { anterior, nuevo, label } = diff[fieldId];
     return '<div class="diff-fiscal-fila">' +
-      '<strong>' + (label || DIFF_FISCAL_LABELS[fieldId] || fieldId) + ':</strong> ' +
-      '<span class="diff-fiscal-anterior">' + anteriorTexto + '</span>' +
+      '<strong>' + etiquetaDiffFiscal(fieldId, label) + ':</strong> ' +
+      '<span class="diff-fiscal-anterior">' + mostrar(anterior) + '</span>' +
       ' &rarr; ' +
       '<span class="diff-fiscal-nuevo">' + mostrar(nuevo) + '</span>' +
       '</div>';
   }).join('');
+  const bloqueDiferencias = reales.length
+    ? '<p class="dedup-alerta-naranja">Los datos fiscales de la CSF no coinciden con los guardados en Operam</p>' + filas
+    : '';
   return '<div class="diff-fiscal-panel">' +
-    '<p class="dedup-alerta-naranja">Los datos fiscales de la CSF no coinciden con los guardados en Operam</p>' +
-    filas +
+    bloqueDiferencias +
+    noVerificables.map(fieldId => fraseNoVerificable(fieldId, diff[fieldId])).join('') +
     '<div class="diff-fiscal-acciones">' +
     '<button type="button" class="btn btn-secondary" onclick="altaDiffFiscalConfirmar()">Confirmar y actualizar en Operam</button> ' +
     '<button type="button" class="btn btn-secondary diff-fiscal-btn-descartar" onclick="altaDiffFiscalDescartar()">Descartar y continuar sin actualizar</button>' +
@@ -1040,14 +1061,23 @@ export function clienteDesdeProspecto(prospecto) {
   };
 }
 
-// Cliente de la tarjeta al elegir una cotizacion de Recientes. Los campos de
+// Cliente de la tarjeta al elegir una cotizacion de Recientes, y desde #394
+// tambien al cargar una del historial (clienteAlCargarCotizacion). Los campos de
 // entrega salen de ESA cotizacion, correo incluido; sin `email` aqui la opcion
 // "(Contacto)" del selector de entrega no los explicaba y el paso Envio arrancaba
 // en "+ Nuevo contacto", y elegirla borraba el correo (#353).
+//
+// El customerId de la cotizacion se pone en las DOS llaves de identidad (#394)
+// porque customerIdFiscal las lee por separado: `id` cuando el tipo es operam
+// (lo que una cotizacion con RFC real es) y `clienteOperamId` en los demas. Con
+// solo la segunda, una cotizacion con RFC real viajaba sin Cliente Operam --
+// para el resto de la pantalla era un cliente de Operam y para lo que se manda
+// no lo era.
 export function clienteDesdeCotizacionReciente(c) {
   const cl = c || {};
   return {
     tipo: cl.rfc ? 'operam' : 'nuevo',
+    id: cl.customerId ?? null,
     name: cl.razonSocial || cl.nombreCorto || '', ref: cl.nombreCorto || '',
     rfc: cl.rfc || '', telefono: cl.telefono || '', email: cl.emailEntrega || '',
     cp: cl.cpEntrega || '', pais: cl.pais || 'MX',

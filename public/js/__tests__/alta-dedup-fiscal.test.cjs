@@ -1246,15 +1246,17 @@ test('L3: los campos que Operam SI expone siguen comparandose, sin la marca (#37
   assert.ok(!('noLegible' in diff.cfdi_regimen_fiscal), 'solo se marca lo que no se puede leer');
 });
 
-test('L4: el panel dice que el IdCIF no se puede leer, en vez de fingir un (vacio) (#373)', () => {
+test('L4: el panel no finge un (vacio) para el IdCIF y sigue mostrando lo que se va a escribir (#373, redactado por #395)', () => {
   const html = buildDedupExactoConDiffHtml(CLIENTE_COMO_LO_DEVUELVE_OPERAM, {
     ...csfDatosIguales,
     idcif: '15070019293',
     regimenFiscal: '612',
   });
-  assert.ok(html.includes('IdCIF (SAT)'), 'la fila se queda: el PUT si escribe el IdCIF');
+  assert.ok(html.includes('IdCIF (SAT)'), 'el campo se queda: el PUT si escribe el IdCIF');
   assert.ok(html.includes('15070019293'), 'el valor que se va a escribir se sigue viendo');
-  assert.ok(html.includes('no se puede leer de Operam'), 'el vendedor lee por que no hay valor anterior');
+  // #395 cambio la REDACCION de este caso: en vez de una fila con el hueco explicado
+  // ("(no se puede leer de Operam)") va la frase que pregunta si se sobrescribe.
+  assert.ok(html.includes('&iquest;Lo sobrescribimos en Operam?'), 'el vendedor lee que no hay comparacion, en forma de pregunta');
   assert.ok(!html.includes('(vacio)'), 'ningun (vacio) inventado: esa era la mentira del panel');
   assert.ok(html.includes('601'), 'las filas legibles se pintan igual que siempre');
 });
@@ -1272,4 +1274,137 @@ test('L5: el diff nuevo sigue mandando el IdCIF al PUT del panel (#373)', async 
     idcif: '15070019293',
     cfdi_regimen_fiscal: '612',
   });
+});
+
+// === #395: el panel no afirma "no coinciden" por un campo que no se puede leer ===
+//
+// HITL de #372/#248 (2026-09-18, RFC CARA830713D53 sobre el cliente 15): el panel
+// salio con UNA fila -- "IdCIF (SAT): (no se puede leer de Operam) -> 17030802592" --
+// bajo el encabezado "Los datos fiscales de la CSF no coinciden con los guardados en
+// Operam". Toda CSF con IdCIF abre ese panel contra CUALQUIER Cliente Operam, y el
+// encabezado afirma una diferencia que nadie puede saber (los campos noLegible, #373,
+// no se comparan con nada). El costo es de habito: un panel que sale siempre entrena
+// al vendedor a confirmar sin leer, y la vez que la diferencia sea real (razon social,
+// regimen) la pasa igual. Las filas NO se van -- el diff ES el cuerpo del PUT
+// (bodyDesdeDiffFiscal) y "Confirmar" es el unico camino por el que el IdCIF llega a
+// Operam desde esta pantalla (#391) -- lo que cambia es lo que el panel DICE de ellas.
+const diffSoloIdcif = {
+  idcif: { anterior: '', nuevo: '17030802592', label: 'IdCIF (SAT)', noLegible: true },
+};
+
+test('M1 (#395): con solo campos no verificables el panel NO dice "no coinciden"', () => {
+  const html = buildDiffFiscalHtml(diffSoloIdcif);
+  assert.ok(!html.includes('no coinciden'), 'no hay comparacion posible: afirmar la diferencia es mentir');
+  assert.ok(html.includes('diff-fiscal-panel'), 'el panel sigue apareciendo: el vendedor decide si se escribe');
+});
+
+test('M2 (#395): la frase nombra el campo, el valor de la CSF y pregunta si se sobrescribe', () => {
+  const html = buildDiffFiscalHtml(diffSoloIdcif);
+  assert.ok(
+    html.includes('La CSF trae el IdCIF (SAT) 17030802592, que puede ser diferente al registrado en Operam. &iquest;Lo sobrescribimos en Operam?'),
+    'la frase de la decision de Adrian (2026-09-18), con el signo de apertura como entidad HTML'
+  );
+});
+
+test('M3 (#395): sin fila anterior -> nuevo ni "(no se puede leer de Operam)" para el campo no verificable', () => {
+  const html = buildDiffFiscalHtml(diffSoloIdcif);
+  assert.ok(!html.includes('no se puede leer de Operam'), 'la frase ya explica por que no hay comparacion');
+  assert.ok(!html.includes('&rarr;'), 'un campo que no se lee no tiene "anterior -> nuevo" que pintar');
+  assert.ok(!html.includes('(vacio)'), 'ningun valor anterior inventado');
+});
+
+test('M4 (#395): los botones siguen ahi cuando solo hay campos no verificables', () => {
+  const html = buildDiffFiscalHtml(diffSoloIdcif);
+  assert.ok(html.includes('altaDiffFiscalConfirmar()'), 'Confirmar aplica TODO el diff, incluido el IdCIF');
+  assert.ok(html.includes('altaDiffFiscalDescartar()'), 'Descartar sigue sin escribir nada');
+});
+
+test('M5 (#395): con diferencias reales Y no verificables salen los dos bloques, en ese orden', () => {
+  const html = buildDiffFiscalHtml({
+    cfdi_regimen_fiscal: { anterior: '601', nuevo: '612', label: 'Regimen Fiscal' },
+    idcif: { anterior: '', nuevo: '17030802592', label: 'IdCIF (SAT)', noLegible: true },
+  });
+  const idxEncabezado = html.indexOf('no coinciden');
+  const idxFilaRegimen = html.indexOf('Regimen Fiscal');
+  const idxFrase = html.indexOf('La CSF trae el IdCIF (SAT)');
+  const idxAcciones = html.indexOf('diff-fiscal-acciones');
+  assert.ok(idxEncabezado >= 0, 'la diferencia del regimen SI se midio: el encabezado de hoy se queda');
+  assert.ok(idxFilaRegimen > idxEncabezado, 'la fila del regimen va bajo su encabezado');
+  assert.ok(idxFrase > idxFilaRegimen, 'la frase del campo no verificable va DEBAJO, como bloque aparte');
+  assert.ok(idxAcciones > idxFrase, 'los botones cierran el panel');
+  assert.ok(!html.includes('<strong>IdCIF (SAT):</strong>'), 'el campo no verificable no vuelve a aparecer como fila');
+});
+
+test('M6 (#395): el campo no verificable no arrastra al encabezado cuando la unica fila real desaparece', () => {
+  const conAmbos = buildDiffFiscalHtml({
+    CustName: { anterior: 'Antes SA', nuevo: 'Despues SA', label: 'Razon Social' },
+    invoice_email: { anterior: '', nuevo: 'facturacion@peltre.mx', label: 'Email de facturacion', noLegible: true },
+  });
+  const soloNoVerificable = buildDiffFiscalHtml({
+    invoice_email: { anterior: '', nuevo: 'facturacion@peltre.mx', label: 'Email de facturacion', noLegible: true },
+  });
+  assert.ok(conAmbos.includes('no coinciden'), 'la razon social si se comparo');
+  assert.ok(!soloNoVerificable.includes('no coinciden'), 'sin ninguna diferencia medida no hay nada que afirmar');
+  assert.ok(
+    soloNoVerificable.includes('La CSF trae el Email de facturacion facturacion@peltre.mx, que puede ser diferente al registrado en Operam. &iquest;Lo sobrescribimos en Operam?'),
+    'la misma plantilla sirve para el otro campo noLegible (#373)'
+  );
+});
+
+test('M7 (#395): dos campos no verificables salen con una frase cada uno, cada una con su valor', () => {
+  const html = buildDiffFiscalHtml({
+    invoice_email: { anterior: '', nuevo: 'facturacion@peltre.mx', label: 'Email de facturacion', noLegible: true },
+    idcif: { anterior: '', nuevo: '17030802592', label: 'IdCIF (SAT)', noLegible: true },
+  });
+  assert.ok(html.includes('La CSF trae el Email de facturacion facturacion@peltre.mx, que puede'), 'frase del email');
+  assert.ok(html.includes('La CSF trae el IdCIF (SAT) 17030802592, que puede'), 'frase del IdCIF');
+  assert.equal((html.match(/&iquest;Lo sobrescribimos en Operam\?/g) || []).length, 2, 'una pregunta por campo: cada valor es una decision distinta');
+});
+
+// El HTML de un diff SIN campos noLegible no cambio ni un caracter con #395: el panel de
+// las diferencias medidas es exactamente el de antes (texto capturado de la version
+// anterior de buildDiffFiscalHtml, antes de tocarla).
+test('M8 (#395): un diff sin campos no verificables produce el HTML de siempre, identico', () => {
+  const html = buildDiffFiscalHtml({
+    CustName: { anterior: 'Antes SA', nuevo: 'Despues SA', label: 'Razon Social' },
+    cfdi_regimen_fiscal: { anterior: '601', nuevo: '612', label: 'Regimen Fiscal' },
+  });
+  assert.equal(html,
+    '<div class="diff-fiscal-panel">' +
+    '<p class="dedup-alerta-naranja">Los datos fiscales de la CSF no coinciden con los guardados en Operam</p>' +
+    '<div class="diff-fiscal-fila"><strong>Razon Social:</strong> <span class="diff-fiscal-anterior">Antes SA</span> &rarr; <span class="diff-fiscal-nuevo">Despues SA</span></div>' +
+    '<div class="diff-fiscal-fila"><strong>Regimen Fiscal:</strong> <span class="diff-fiscal-anterior">601</span> &rarr; <span class="diff-fiscal-nuevo">612</span></div>' +
+    '<div class="diff-fiscal-acciones">' +
+    '<button type="button" class="btn btn-secondary" onclick="altaDiffFiscalConfirmar()">Confirmar y actualizar en Operam</button> ' +
+    '<button type="button" class="btn btn-secondary diff-fiscal-btn-descartar" onclick="altaDiffFiscalDescartar()">Descartar y continuar sin actualizar</button>' +
+    '</div>' +
+    '</div>'
+  );
+});
+
+// "Se escapan igual que hoy" (AC4): el panel nunca escapo estos valores -- son datos de
+// la CSF ya parseados y las etiquetas salen de DIFF_FISCAL_CAMPOS -- y la frase nueva no
+// estrena una regla propia. Lo que este test fija es que el valor llegue a la pantalla
+// TAL CUAL, sin recortes ni entidades de mas, igual que en la fila de una diferencia real.
+test('M9 (#395): el valor del campo no verificable viaja a la frase sin tocarlo, como en las filas', () => {
+  const valor = 'AB&CD "01" <x>';
+  const frase = buildDiffFiscalHtml({ idcif: { anterior: '', nuevo: valor, label: 'IdCIF (SAT)', noLegible: true } });
+  const fila = buildDiffFiscalHtml({ idcif: { anterior: '', nuevo: valor, label: 'IdCIF (SAT)' } });
+  assert.ok(frase.includes(valor), 'la frase muestra el valor tal como lo trae el diff');
+  assert.ok(fila.includes(valor), 'la fila hace lo mismo desde antes de #395');
+});
+
+// El caso EXACTO del HITL (2026-09-18): una CSF cuyos datos legibles coinciden con el
+// Cliente Operam y que solo trae ademas el IdCIF. Ese panel -- una sola fila bajo "no
+// coinciden" -- es el que abre este ticket, y es el que sale por el camino completo
+// (calcularDiffFiscal -> buildDedupExactoConDiffHtml), no solo con un diff a mano.
+test('M10 (#395): la CSF que solo agrega el IdCIF no abre un panel que afirme diferencias', () => {
+  const html = buildDedupExactoConDiffHtml(CLIENTE_COMO_LO_DEVUELVE_OPERAM, {
+    ...csfDatosIguales,
+    idcif: '17030802592',
+  });
+  assert.ok(html.includes('Usar este Cliente Operam'), 'el banner del RFC existente no cambia');
+  assert.ok(!html.includes('no coinciden'), 'todo lo legible coincide: no hay diferencia que afirmar');
+  assert.ok(html.includes('La CSF trae el IdCIF (SAT) 17030802592'), 'lo que si hay que decidir se pregunta');
+  assert.ok(html.includes('altaDiffFiscalConfirmar()'), 'Confirmar sigue siendo el camino del IdCIF a Operam (#391)');
 });

@@ -510,20 +510,33 @@ test('M3: buildCanalModalHtml trae el select obligatorio con todos los canales y
   assert.match(html, /Confirmar/);
 });
 
-// === Issue #46/#347: etiqueta de Contacto ya ligado a un Cliente Operam ===
+// === Issue #46/#347/#400: etiqueta de Contacto ya ligado a un Cliente Operam ===
+// #400: la etiqueta es de la fila que el SERVIDOR ya juzgo (faltaCotizar), no
+// de la liga a secas: el Contacto que cotizo -- y que por esa cotizacion nacio
+// como Cliente Operam -- sigue trayendo `cliente_id` y no debe llevarla.
 
-test('C6: la card muestra la etiqueta "Cliente Operam" cuando el prospecto esta ligado a un Cliente Operam', () => {
-  const html = buildProspectoCardHtml({ ...PROSPECTO, data: { cliente_id: 88 } });
+test('C6: la card muestra la etiqueta "Cliente Operam" cuando la fila dice que falta cotizar', () => {
+  const html = buildProspectoCardHtml({ ...PROSPECTO, data: { cliente_id: 88 }, faltaCotizar: true });
   assert.match(html, /Ya tiene Cliente Operam, falta cotizar/);
   const sin = buildProspectoCardHtml(PROSPECTO);
   assert.equal(sin.includes('Ya tiene Cliente Operam'), false);
 });
 
-test('C7: la cola muestra la etiqueta "Cliente Operam" cuando el item trae yaEsCliente', () => {
-  const html = buildColaProspectosHtml([{ ...ITEM_COLA, yaEsCliente: true }]);
+test('C6b: el Contacto ligado a un Cliente Operam que ya cotizo no lleva la etiqueta (#400)', () => {
+  const html = buildProspectoCardHtml({ ...PROSPECTO, data: { cliente_id: 88 }, faltaCotizar: false });
+  assert.equal(html.includes('Ya tiene Cliente Operam'), false);
+});
+
+test('C7: la cola muestra la etiqueta "Cliente Operam" cuando el item dice que falta cotizar', () => {
+  const html = buildColaProspectosHtml([{ ...ITEM_COLA, faltaCotizar: true }]);
   assert.match(html, /Ya tiene Cliente Operam, falta cotizar/);
   const sin = buildColaProspectosHtml([ITEM_COLA]);
   assert.equal(sin.includes('Ya tiene Cliente Operam'), false);
+});
+
+test('C7b: el item de la cola de un Contacto que ya cotizo no lleva la etiqueta (#400)', () => {
+  const html = buildColaProspectosHtml([{ ...ITEM_COLA, faltaCotizar: false }]);
+  assert.equal(html.includes('Ya tiene Cliente Operam'), false);
 });
 
 // === Issue #45: reunion diagnostico ===
@@ -551,7 +564,7 @@ test('RU2: la card activa ofrece agendar reunion con input datetime-local', () =
 });
 
 test('RU3: la card muestra la etiqueta de reunion futura y convive con la de cliente', () => {
-  const p = { ...PROSPECTO, eventos: [REUNION_FUTURA], data: { cliente_id: 88 } };
+  const p = { ...PROSPECTO, eventos: [REUNION_FUTURA], data: { cliente_id: 88 }, faltaCotizar: true };
   const html = buildProspectoCardHtml(p, undefined, AHORA);
   assert.match(html, /reunion-badge/);
   assert.match(html, /Reunión el/);
@@ -582,7 +595,7 @@ test('RU5: el item de cola sin reunion vencida conserva el flujo normal y los ba
   assert.equal(normal.includes('Reunión del'), false);
   assert.match(normal, /registrarToqueProspecto\(3\)/);
   const conTodo = buildColaProspectosHtml([{
-    ...ITEM_COLA, yaEsCliente: true, reunionVencida: true, fechaReunion: '2026-06-09T17:00:00.000Z',
+    ...ITEM_COLA, faltaCotizar: true, reunionVencida: true, fechaReunion: '2026-06-09T17:00:00.000Z',
   }]);
   assert.match(conTodo, /Ya tiene Cliente Operam, falta cotizar/);
   assert.match(conTodo, /Reunión del/);

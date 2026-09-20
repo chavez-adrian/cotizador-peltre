@@ -134,15 +134,29 @@ test('S10: la cola expone los datos que la UI necesita', () => {
   assert.equal(item.color, 'rojo');
 });
 
-test('S12: el prospecto convertido en cliente sigue en la cola con la bandera yaEsCliente (#46)', () => {
-  const convertido = prospecto({ etapa: 'por_cotizar', data: { cliente_id: 88 } });
+// #400: la bandera del item dejo de ser "ya es cliente" (la liga a secas) y es
+// la etiqueta completa del glosario: tiene Cliente Operam y TODAVIA no cotiza.
+// Quien puede ver las cotizaciones que la callan lo decide la ruta, como con las
+// tarjetas sin dueno: el motor recibe los ids ya juzgados y solo los transporta.
+test('S12: el prospecto que falta cotizar sigue en la cola con la bandera faltaCotizar (#46/#400)', () => {
+  const faltaCotizar = prospecto({ etapa: 'por_cotizar', data: { cliente_id: 88 } });
+  const yaCotizo = prospecto({ etapa: 'por_cotizar', data: { cliente_id: 89 } });
   const normal = prospecto({ data: {} });
   const sinData = prospecto({ data: null });
-  const cola = calcularColaProspectos([convertido, normal, sinData], AHORA);
-  assert.equal(cola.length, 3);
-  assert.equal(cola.find(i => i.id === convertido.id).yaEsCliente, true);
-  assert.equal(cola.find(i => i.id === normal.id).yaEsCliente, false);
-  assert.equal(cola.find(i => i.id === sinData.id).yaEsCliente, false);
+  const cola = calcularColaProspectos(
+    [faltaCotizar, yaCotizo, normal, sinData], AHORA, new Set([faltaCotizar.id])
+  );
+  assert.equal(cola.length, 4);
+  assert.equal(cola.find(i => i.id === faltaCotizar.id).faltaCotizar, true);
+  assert.equal(cola.find(i => i.id === yaCotizo.id).faltaCotizar, false);
+  assert.equal(cola.find(i => i.id === normal.id).faltaCotizar, false);
+  assert.equal(cola.find(i => i.id === sinData.id).faltaCotizar, false);
+});
+
+test('S12b: sin los ids juzgados el motor no inventa la bandera desde la liga (#400)', () => {
+  const convertido = prospecto({ etapa: 'por_cotizar', data: { cliente_id: 88 } });
+  const [item] = calcularColaProspectos([convertido], AHORA);
+  assert.equal(item.faltaCotizar, false);
 });
 
 test('S11: lista vacia o sin activos devuelve cola vacia', () => {

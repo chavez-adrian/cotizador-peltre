@@ -10,7 +10,7 @@ import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
-import { puedeActualizarCotizacion } from './public/js/cotizaciones-logica.js';
+import { puedeActualizarCotizacion, ligaClienteAlGuardar } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
@@ -34,7 +34,7 @@ import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
-import { tarjetasOportunidades, cotizacionesDeLaOportunidad, prospectoAOportunidad } from './lib/oportunidades.js';
+import { tarjetasOportunidades, cotizacionesDeLaOportunidad, oportunidadesQueFaltaCotizar, prospectoAOportunidad } from './lib/oportunidades.js';
 import { oportunidadesDeContactos, principalPorContacto, oportunidadQueCotiza } from './lib/oportunidad-pre.js';
 import * as oportunidadPreIo from './lib/oportunidad-pre-io.js';
 import { celularAlNacer, celularesDeCruce, llaveContacto, ORDEN_CASILLA } from './lib/contacto-cotizacion.js';
@@ -456,8 +456,17 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
     if (prev) {
       const prevCli = prev.data?.cliente || {};
       if (data.cliente) {
-        if (data.cliente.customerId == null && prevCli.customerId != null) data.cliente.customerId = prevCli.customerId;
-        if (data.cliente.branchId == null && prevCli.branchId != null) data.cliente.branchId = prevCli.branchId;
+        // #394: la liga con el Cliente Operam es FIJA, asi que aqui no se
+        // "rellena" lo que falte sino que manda la persistida. Editar desde el
+        // historial mandaba el customerId del cliente que quedo en la sesion del
+        // navegador y ese id ajeno pisaba el registro en silencio.
+        const liga = ligaClienteAlGuardar(data.cliente, prevCli);
+        if (liga.customerId != null) data.cliente.customerId = liga.customerId;
+        if (liga.branchId != null) data.cliente.branchId = liga.branchId;
+        if (liga.customerIdIgnorado != null) {
+          console.warn('[liga] la cotizacion', idPrevio, 'esta ligada al Cliente Operam', liga.customerId,
+            '- se ignoro el', liga.customerIdIgnorado, 'que llego al guardar');
+        }
       }
       const yaEnOperam = prev.folioOperam != null && prev.folioOperam !== '';
       const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote);
@@ -1480,9 +1489,22 @@ async function oportunidadesVisiblesPara(user) {
 // prospectos hablan de Contactos, no de intenciones, y un Contacto con dos
 // Oportunidades no puede volver a salir dos veces (ADR-0016). De cada uno viaja
 // su Oportunidad principal, que es la que la tarjeta de la lista trabaja.
+//
+// #400: la fila viaja con la etiqueta "Ya tiene Cliente Operam, falta cotizar"
+// ya juzgada (`faltaCotizar`). El navegador no puede calcularla -- la mitad de
+// "todavia no cotiza" son las cotizaciones que este vendedor PUEDE VER --, y de
+// la liga a secas salia sobre Contactos que el cotizador dio de alta AL cotizar.
 app.get('/api/prospectos', authMiddleware, async (req, res) => {
   try {
-    res.json(principalPorContacto(await oportunidadesVisiblesPara(req.user)));
+    const filas = principalPorContacto(await oportunidadesVisiblesPara(req.user));
+    // La MISMA visibilidad de GET /api/prospectos/tabla: se filtran por vendedor
+    // antes de ligarlas, para que la senal no cuente ninguna cotizacion ajena.
+    const cotizaciones = await cotStore.listar();
+    const cotizacionesVisibles = req.user.role === 'admin'
+      ? cotizaciones
+      : cotizaciones.filter(c => c.vendedor === req.user.name);
+    const faltan = oportunidadesQueFaltaCotizar(filas, cotizacionesVisibles);
+    res.json(filas.map(p => ({ ...p, faltaCotizar: faltan.has(p.id) })));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo listar prospectos: ' + err.message });
   }
@@ -1512,8 +1534,19 @@ app.get('/api/prospectos/tabla', authMiddleware, async (req, res) => {
 
 // Cola de seguimiento (issue #44). Registrada antes de cualquier ruta
 // /api/prospectos/:id para que "cola" nunca se interprete como un id.
+//
+// #400: la etiqueta "Ya tiene Cliente Operam, falta cotizar" del item sale del
+// mismo juicio que la de la lista, con las cotizaciones ya filtradas por
+// visibilidad (lo que GET /api/hoy hace dentro de lib/cola-hoy.js).
 app.get('/api/prospectos/cola', authMiddleware, async (req, res) => {
-  res.json(calcularColaProspectos(await oportunidadesVisiblesPara(req.user), new Date()));
+  const visibles = await oportunidadesVisiblesPara(req.user);
+  const cotizaciones = await cotStore.listar();
+  const cotizacionesVisibles = req.user.role === 'admin'
+    ? cotizaciones
+    : cotizaciones.filter(c => c.vendedor === req.user.name);
+  res.json(calcularColaProspectos(
+    visibles, new Date(), oportunidadesQueFaltaCotizar(visibles, cotizacionesVisibles)
+  ));
 });
 
 // Pre-clasificacion de celular (issue #46): el frontend la consulta antes de

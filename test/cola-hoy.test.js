@@ -163,3 +163,30 @@ test('H8: una reunion de COTIZACION vencida encabeza la cola por encima de cualq
   assert.equal(cola[0].reunionVencida, true);
   assert.equal(cola[0].fechaReunion, '2026-06-09T18:00:00Z');
 });
+
+// === #400: "Ya tiene Cliente Operam, falta cotizar" en la cola del dia ===
+// La etiqueta es de quien tiene Cliente Operam y TODAVIA no cotiza. La cola Hoy
+// ya recibe las cotizaciones que quien pregunta puede ver, asi que el juicio
+// sale de ahi y no de la liga a secas.
+
+test('H13: el prospecto con Cliente Operam y sin ninguna cotizacion lleva la etiqueta en la cola del dia', () => {
+  const p = prospecto({ data: { cliente_id: 514 } });
+  const cola = calcularColaHoy([p], [], AHORA);
+  assert.equal(cola.find(i => i.id === p.id).faltaCotizar, true);
+});
+
+test('H13b: el prospecto cuya cotizacion esta en la cola del dia ya no la lleva', () => {
+  const p = prospecto({ data: { cliente_id: 514 } });
+  // Cruza por el telefono tecleado: es la cotizacion de ese mismo Contacto.
+  const cola = calcularColaHoy([p], [cotizacion()], AHORA);
+  assert.equal(cola.find(i => i.id === p.id).faltaCotizar, false);
+});
+
+test('H13c: la cotizacion de otro Contacto no calla la etiqueta', () => {
+  const p = prospecto({ data: { cliente_id: 514 } });
+  const ajena = cotizacion({
+    data: { cliente: { razonSocial: 'OTRA', telefono: '5599887766' }, items: [] },
+  });
+  const cola = calcularColaHoy([p], [ajena], AHORA);
+  assert.equal(cola.find(i => i.id === p.id).faltaCotizar, true);
+});
