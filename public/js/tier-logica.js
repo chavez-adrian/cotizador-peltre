@@ -19,10 +19,21 @@ export function mensajeListaNoHabilitada(tierId) {
   return `No tienes habilitada la lista ${tierId}; pide el permiso al administrador.`;
 }
 
-// El tabulador: el tier mas alto cuyo min_qty cabe en el volumen. tiers[0] por
-// omision (carrito vacio) para nunca devolver undefined.
+// Que tiers participan en el tabulador (#298, ADR-0015): SOLO los escalones de
+// volumen, que son los que traen `min_qty`. El catalogo tambien lleva las listas
+// sin escalon (Segundas y, desde #299, las de canal y exportacion) para poder
+// fijarlas, pero Auto no las puede alcanzar. La pertenencia se decide aqui y no
+// en la comparacion contra `min_qty`: sin llave da false por accidente, pero un
+// `min_qty: null` daria TRUE (null >= 0) y volveria tabulable lo que no lo es.
+// Lo comparte server.js, que separa por aqui las listas de la migracion de #296.
+export function esEscalonDeVolumen(tier) {
+  return Number.isFinite(tier?.min_qty);
+}
+
+// El tabulador: el escalon mas alto cuyo min_qty cabe en el volumen. El primer
+// escalon por omision (carrito vacio) para nunca devolver undefined.
 export function tierPorVolumen(tiers, piezasProducto) {
-  const lista = tiers || [];
+  const lista = (tiers || []).filter(esEscalonDeVolumen);
   let actual = lista[0];
   for (const t of lista) {
     if ((piezasProducto || 0) >= t.min_qty) actual = t;

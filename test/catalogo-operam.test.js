@@ -361,6 +361,84 @@ test('una lista renombrada en Operam conserva el listaId por el id de respaldo',
   assert.equal(catalogo.tiers.find(t => t.id === 'M550').listaId, '1');
 });
 
+// === #298 (ADR-0015): las listas SIN escalon de volumen ===
+//
+// Segundas (id 9, factor 0.165) estrena el mecanismo: es una lista de condicion del
+// producto, no un escalon del tabulador, y no tiene NI UNA fila propia en prices_list
+// (verificado en vivo 2026-08-20), asi que todo su precio sale de base x factor. Entra
+// al catalogo SIN min_qty -- Auto sigue tabulando solo sobre los escalones de volumen
+// y a Segundas solo se llega fijandola.
+const SEGUNDAS = { id: '9', sales_type: 'Segundas', factor: '0.165', inactive: '0' };
+const CON_SEGUNDAS = [...SALES_TYPES, SEGUNDAS];
+
+test('construirCatalogo: Segundas entra como lista sin min_qty, con el id de su sales_type', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: CON_SEGUNDAS,
+    precios: [fila('PV08B1001111', '12', 100)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  const segundas = catalogo.tiers.find(t => t.id === 'Segundas');
+  assert.deepEqual(segundas, { id: 'Segundas', label: 'Segundas', listaId: '9' });
+  assert.equal('min_qty' in segundas, false, 'sin min_qty no puede salir del tabulador');
+  assert.deepEqual(
+    catalogo.tiers.filter(t => t.min_qty !== undefined).map(t => t.id),
+    ['Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000'],
+    'los escalones de volumen quedan como estaban',
+  );
+});
+
+test('construirCatalogo: sin fila propia, Segundas es base x factor y los escalones no se mueven', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: CON_SEGUNDAS,
+    precios: [fila('PV08B1001111', '12', 100)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.deepEqual(catalogo.products[0].prices, {
+    Menudeo: 100, M100: 70, M350: 60, M550: 50, M1500: 45, M6000: 40, Segundas: 16.5,
+  });
+});
+
+// La regla del catalogo no cambia por ser una lista sin escalon: si Operam tiene fila
+// propia para el articulo en esa lista, esa manda sobre el factor.
+test('construirCatalogo: la fila explicita de Segundas gana sobre base x factor', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: CON_SEGUNDAS,
+    precios: [fila('PV08B1001111', '12', 100), fila('PV08B1001111', '9', 22)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.equal(catalogo.products[0].prices.Segundas, 22);
+  assert.equal(catalogo.products[0].prices.M550, 50, 'las demas listas siguen saliendo del factor');
+});
+
+// Regla de las calcas (#91): sin precio base y sin fila propia, el precio es null y
+// NUNCA 0 -- un 0 imprimiria calcas regaladas en el documento y en el quote.
+test('construirCatalogo: sin precio base, Segundas queda en null y nunca en 0', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: CON_SEGUNDAS,
+    precios: [fila('CAL1025', '15', 26.9), fila('CAL1025', '1', 17.96)],
+    items: [{ stock_id: 'CAL1025', description: 'Calca vitrificable chica (25 cm2) 1 tinta' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.equal(catalogo.calcas[0].prices.Segundas, null);
+  assert.equal(catalogo.calcas[0].prices.Menudeo, null);
+});
+
+// El ERP es la fuente de verdad de que listas existen (ADR-0015): desactivar Segundas
+// en sales_types.php la retira del catalogo, y sin tier no la puede fijar nadie.
+test('construirCatalogo: una lista sin escalon inactiva en Operam no entra al catalogo', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: [...SALES_TYPES, { ...SEGUNDAS, inactive: '1' }],
+    precios: [fila('PV08B1001111', '12', 100)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.equal(catalogo.tiers.find(t => t.id === 'Segundas'), undefined);
+  assert.equal('Segundas' in catalogo.products[0].prices, false);
+});
+
 // El reporte de paridad es la red del corte (#131): dice, contra el catalogo vigente,
 // que clave cuadra, cual cobra distinto en Operam y cual ya no tiene articulo con
 // precio. Se compara SIEMPRE por igualdad contra las constantes de estado.
@@ -684,6 +762,19 @@ test('reconstruccion: products y calcas cuadran con el catalogo vigente salvo lo
   assert.equal(paridad.inactivasConPrecio.length, 66);
   assert.equal(paridad.skusEnDesuso.length, 57);
   assert.equal(paridad.skusInexistentes.length, 19);
+});
+
+// #298 sobre los volcados REALES: Segundas no tiene ni una fila propia en el
+// prices_list del 2026-08-03 (las 2010 filas se reparten entre las listas 1, 3, 6, 12,
+// 15, 16, 18 y 20), asi que TODO su precio sale del factor y ninguna calca -- que no
+// tiene base -- queda preciada en esa lista.
+test('reconstruccion: Segundas sale de base x factor en todos los productos y sin precio en las calcas', () => {
+  const { catalogo } = construirDesdeDumps();
+  assert.equal(dumps.precios.filter(f => String(f.sales_type_id) === '9').length, 0, 'el volcado real no tiene filas de Segundas');
+  assert.ok(catalogo.products.length >= 60);
+  const desviados = catalogo.products.filter(p => Math.abs(p.prices.Segundas - p.prices.Menudeo * 0.165) > 1e-9);
+  assert.deepEqual(desviados.map(p => p.key), []);
+  assert.deepEqual([...new Set(catalogo.calcas.map(c => c.prices.Segundas))], [null]);
 });
 
 // Dos SKUs con la MISMA base pueden acabar en precios distintos si uno tiene fila

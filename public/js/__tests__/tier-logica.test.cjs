@@ -29,6 +29,13 @@ const TIERS = [
 // Los ids de lista de los 6 escalones de volumen, el insumo de la migracion.
 const LISTAS_VOLUMEN = TIERS.map(t => t.listaId);
 
+// El catalogo con una lista SIN escalon (#298, ADR-0015): Segundas es la lista 9 de
+// Operam, va al final y NO trae min_qty -- no es un escalon de volumen, solo se
+// alcanza fijandola. Misma forma que emite construirCatalogo.
+const SEGUNDAS = { id: 'Segundas', label: 'Segundas', listaId: '9' };
+const TIERS_CON_SEGUNDAS = [...TIERS, SEGUNDAS];
+const SOLO_SEGUNDAS = { esAdmin: false, listasHabilitadas: ['9'] };
+
 // Permisos de uso frecuente en los tests (forma que consumen el enforcement, el
 // selector y la herencia): rol admin, o la coleccion de listas habilitadas.
 const ADMIN = { esAdmin: true };
@@ -49,6 +56,28 @@ test('el volumen exacto de un umbral entra a ese tier', () => {
 
 test('volumen por encima del ultimo umbral cae en el tier mas alto', () => {
   assert.strictEqual(tierPorVolumen(TIERS, 50000).id, 'M6000');
+});
+
+// === #298: una lista SIN escalon jamas sale del tabulador ===
+
+// Auto sigue decidiendo SOLO entre los escalones de volumen en pesos (ADR-0015): a
+// Segundas se llega fijandola y por ningun otro camino, con cualquier volumen.
+test('el tabulador nunca devuelve una lista sin escalon, con cualquier volumen', () => {
+  for (const piezas of [0, 1, 99, 100, 500, 6000, 50000]) {
+    assert.notStrictEqual(tierPorVolumen(TIERS_CON_SEGUNDAS, piezas).id, 'Segundas');
+  }
+  assert.strictEqual(tierPorVolumen(TIERS_CON_SEGUNDAS, 0).id, 'Menudeo');
+  assert.strictEqual(tierPorVolumen(TIERS_CON_SEGUNDAS, 500).id, 'M350');
+  assert.strictEqual(tierPorVolumen(TIERS_CON_SEGUNDAS, 50000).id, 'M6000');
+});
+
+// El carrito vacio cae en el PRIMER escalon de volumen, no en el primer tier del
+// arreglo: el orden en que el catalogo liste las listas no puede volver a Segundas
+// el default de Auto.
+test('el carrito vacio cae en el primer escalon de volumen aunque la lista sin escalon venga primero', () => {
+  const alReves = [SEGUNDAS, ...TIERS];
+  assert.strictEqual(tierPorVolumen(alReves, 0).id, 'Menudeo');
+  assert.strictEqual(tierPorVolumen(alReves, 500).id, 'M350');
 });
 
 // === resolverTier: Auto vs fijado ===
@@ -311,6 +340,49 @@ test('con listas habilitadas MAS la fijada previa ajena: se suma sin repetirse, 
 
 test('MENSAJE_COPIA_LISTA_FIJADA existe y menciona Auto', () => {
   assert.match(MENSAJE_COPIA_LISTA_FIJADA, /Auto/);
+});
+
+// === #298: Segundas se comporta como cualquier lista fijada, sin tabular ===
+
+test('fijar Segundas manda sobre el volumen, como cualquier lista fijada', () => {
+  const r = resolverTier(TIERS_CON_SEGUNDAS, 500, 'Segundas');
+  assert.strictEqual(r.fijado, true);
+  assert.strictEqual(r.tier.id, 'Segundas');
+});
+
+// El aviso del ticket, palabra por palabra: fijar Segundas con 500 piezas dice que
+// el volumen corresponderia a M350. Es informativo y no bloquea nada.
+test('fijar Segundas con 500 piezas avisa que el volumen corresponde a M350', () => {
+  const aviso = avisoListaFijada(TIERS_CON_SEGUNDAS, 500, 'Segundas');
+  assert.strictEqual(aviso, 'Lista fijada: Segundas - el volumen (500 pzs) corresponde a M350');
+});
+
+test('con la celda de Segundas: guardar en Segundas pasa; sin ella se rechaza nombrandola', () => {
+  assert.strictEqual(validarTierCotizacion(TIERS_CON_SEGUNDAS, 500, 'Segundas', SOLO_SEGUNDAS).ok, true);
+  const sinCelda = validarTierCotizacion(TIERS_CON_SEGUNDAS, 500, 'Segundas', SOLO_M550);
+  assert.strictEqual(sinCelda.ok, false);
+  assert.strictEqual(sinCelda.mensaje, mensajeListaNoHabilitada('Segundas'));
+});
+
+// La celda de Segundas no arrastra ningun escalon de volumen, y los escalones de
+// volumen no arrastran a Segundas: el permiso es exactamente por lista.
+test('el selector ofrece exactamente las listas habilitadas, con o sin escalon', () => {
+  assert.deepStrictEqual(opcionesTierSelect(TIERS_CON_SEGUNDAS, SOLO_SEGUNDAS, '').map(t => t.id), ['Segundas']);
+  assert.deepStrictEqual(opcionesTierSelect(TIERS_CON_SEGUNDAS, VOLUMEN_COMPLETO, '').map(t => t.id),
+    ['Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000']);
+  assert.deepStrictEqual(opcionesTierSelect(TIERS_CON_SEGUNDAS, SIN_LISTAS, '').map(t => t.id), []);
+  assert.strictEqual(puedeFijarTier(TIERS_CON_SEGUNDAS, 'Segundas', ADMIN), true);
+});
+
+// Editar/Copiar aplican a Segundas las mismas reglas por lista (#154/#296): Editar
+// conserva la autorizacion que ya ocurrio, Copiar solo hereda con ESA celda.
+test('Editar conserva Segundas sin la celda; Copiar solo la hereda con ella', () => {
+  assert.deepStrictEqual(tierAlCargarCotizacion(TIERS_CON_SEGUNDAS, 500, 'Segundas', 'actualizar', SIN_LISTAS),
+    { tierFijado: 'Segundas', avisoListaPerdida: false });
+  assert.deepStrictEqual(tierAlCargarCotizacion(TIERS_CON_SEGUNDAS, 500, 'Segundas', 'nueva', SOLO_SEGUNDAS),
+    { tierFijado: 'Segundas', avisoListaPerdida: false });
+  assert.deepStrictEqual(tierAlCargarCotizacion(TIERS_CON_SEGUNDAS, 500, 'Segundas', 'nueva', VOLUMEN_COMPLETO),
+    { tierFijado: '', avisoListaPerdida: true });
 });
 
 // === estadoAlCambiarCliente: cambiar de cliente se comporta como Copiar (#385) ===

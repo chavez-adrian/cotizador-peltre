@@ -226,7 +226,9 @@ test('la pantalla recibe sus listas habilitadas vigentes en /api/precios', async
 test('/api/precios: el rol admin recibe todas las listas del catalogo, sin celdas en la matriz', async () => {
   const res = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
   assert.deepStrictEqual(res.body.listasHabilitadas, res.body.tiers.map(t => t.listaId));
-  assert.deepStrictEqual([...res.body.listasHabilitadas].sort(), [...LISTAS_VOLUMEN].sort());
+  // Todas las del catalogo = los escalones de volumen MAS las listas sin escalon
+  // (#298): el admin tambien puede fijar Segundas.
+  assert.deepStrictEqual([...res.body.listasHabilitadas].sort(), [...LISTAS_VOLUMEN, LISTA_SEGUNDAS].sort());
 });
 
 test('/api/precios: el vendedor con el flag viejo y sin campo nuevo recibe los 6 escalones de volumen', async () => {
@@ -240,6 +242,118 @@ test('/api/precios: el vendedor con el flag viejo y sin campo nuevo recibe los 6
   } finally {
     escribirArchivoSync(VENDEDORES_PATH, original);
   }
+});
+
+// === #298 (ADR-0015): Segundas, la primera lista SIN escalon de volumen ===
+//
+// La migracion de lectura de #296 reparte "los escalones de volumen" a quien traia el
+// flag binario de #153. Una lista sin escalon NO es uno de ellos: heredarla seria dar
+// un permiso que nadie marco en la matriz, justo lo que el permiso existe para
+// impedir. El id es el REAL de Operam (Segundas = 9).
+const LISTA_SEGUNDAS = '9';
+
+test('el vendedor migrado del flag viejo NO hereda Segundas, solo los escalones de volumen', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    const registro = JSON.parse(original);
+    registro.find(v => v.id === 2).puedeFijarLista = true;
+    escribirArchivoSync(VENDEDORES_PATH, JSON.stringify(registro, null, 2));
+
+    const precios = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenVendedor}`);
+    assert.strictEqual(precios.body.listasHabilitadas.includes(LISTA_SEGUNDAS), false);
+    const admin = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+    assert.strictEqual(admin.body.find(v => v.id === 2).listasHabilitadas.includes(LISTA_SEGUNDAS), false);
+
+    const guardar = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('Segundas'));
+    assert.strictEqual(guardar.status, 403);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+test('vendedor con Segundas marcada en su renglon: la cotizacion en Segundas se guarda', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    conListas(original, [LISTA_SEGUNDAS]);
+    const res = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('Segundas'));
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(readCots().find(c => c.id === res.body.id).tier, 'Segundas');
+
+    const precios = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenVendedor}`);
+    assert.deepStrictEqual(precios.body.listasHabilitadas, [LISTA_SEGUNDAS]);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+test('vendedor sin Segundas marcada: el guardado en Segundas se rechaza nombrando la lista y no guarda nada', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    conListas(original, [LISTA_M1500]);
+    const antes = readCots().length;
+    const res = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('Segundas'));
+    assert.strictEqual(res.status, 403);
+    assert.match(res.body.error, /Segundas/);
+    assert.strictEqual(readCots().length, antes);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+// Editar/Copiar con una lista sin escalon siguen las reglas por lista del tracer
+// (#154/#296): la lista ya guardada en ESE registro pasa aunque a quien edita le
+// hayan quitado la celda -- y una lista sin escalon nunca coincide con el tabulador,
+// asi que la excepcion del registro es lo unico que la deja pasar.
+test('vendedor que perdio la celda de Segundas, editando SU registro: Segundas pasa y otra lista no', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    conListas(original, [LISTA_SEGUNDAS]);
+    const creado = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('Segundas'));
+    assert.strictEqual(creado.status, 200);
+    const id = creado.body.id;
+
+    conListas(original, []);
+    const editado = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send({ ...cotizacionCon('Segundas'), cotizacionId: id });
+    assert.strictEqual(editado.status, 200);
+    assert.strictEqual(editado.body.id, id);
+
+    const otra = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send({ ...cotizacionCon('M6000'), cotizacionId: id });
+    assert.strictEqual(otra.status, 403);
+    assert.strictEqual(readCots().find(c => c.id === id).tier, 'Segundas');
+
+    // Copiar es un registro nuevo (sin cotizacionId): sin la celda no hereda nada.
+    const copia = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('Segundas'));
+    assert.strictEqual(copia.status, 403);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+// El catalogo que la pantalla recibe trae Segundas preciada y sin min_qty: por eso el
+// selector la puede ofrecer y el tabulador nunca la elige.
+test('/api/precios: Segundas viaja en el catalogo sin min_qty y preciada por factor', async () => {
+  const res = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
+  const segundas = res.body.tiers.find(t => t.id === 'Segundas');
+  assert.deepStrictEqual(segundas, { id: 'Segundas', label: 'Segundas', listaId: LISTA_SEGUNDAS });
+  const producto = res.body.products.find(p => p.prices.Menudeo != null);
+  assert.ok(Math.abs(producto.prices.Segundas - producto.prices.Menudeo * 0.165) < 1e-9,
+    'el precio en Segundas es el precio base por el factor 0.165 de Operam');
+  assert.deepStrictEqual([...new Set(res.body.calcas.map(c => c.prices.Segundas))], [null],
+    'las calcas no tienen precio base: en Segundas quedan en null, nunca en 0');
 });
 
 // === La matriz se guarda con el PUT existente del registro (AC1) ===

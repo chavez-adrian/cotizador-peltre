@@ -149,6 +149,15 @@ test('resolverSalesTypeId: tier Menudeo (sin lista homonima) -> "Precio de lista
   assert.equal(resolverSalesTypeId('Menudeo', LISTAS), 12);
 });
 
+// #298: el cliente que nace al subir una cotizacion en Segundas tiene que quedar en
+// la lista Segundas de Operam (id 9), no en el fallback "Precio de lista". La
+// resolucion es por NOMBRE: el id del tier sin escalon que el catalogo genera
+// (`Segundas`) es el nombre de la sales_type, y de eso depende que el ERP le ponga
+// al cliente la lista con la que se cotizo.
+test('resolverSalesTypeId: una lista sin escalon de volumen resuelve por su nombre igual que un escalon', () => {
+  assert.equal(resolverSalesTypeId('Segundas', LISTAS), 9);
+});
+
 test('resolverSalesTypeId: tier desconocido sin lista homonima -> mismo fallback', () => {
   assert.equal(resolverSalesTypeId('TierInventado', LISTAS), 12);
 });

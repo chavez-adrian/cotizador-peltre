@@ -69,7 +69,7 @@ import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDec
 import { indiceOrigenPorCelular, anotarOrigen } from './public/js/origen-logica.js';
 import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL, puedePrecioCalca, normalizarPuedePrecioCalca } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
-import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista } from './public/js/tier-logica.js';
+import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -204,11 +204,24 @@ async function topeDescuentoDeUsuario(user) {
   return topeDescuentoVendedor({ role: user?.role, topeDescuento: registro?.topeDescuento });
 }
 
-// Los ids de lista de Operam de los escalones de volumen del catalogo vigente:
-// el insumo de la migracion de lectura de #296 (flag de #153 encendido y sin
-// campo nuevo = estas listas). Salen del catalogo, no de una tabla copiada.
+// Los ids de lista de Operam del catalogo vigente. Son DOS lecturas distintas y
+// a proposito desde que el catalogo trae listas SIN escalon de volumen (#298):
+// `listasDelCatalogo` son TODAS las que el catalogo sabe preciar -- las unicas
+// fijables, y lo que el rol admin puede fijar -- y `listasVolumenDelCatalogo`
+// solo los ESCALONES (los tiers con min_qty), que es el insumo de la migracion
+// de lectura de #296: el flag de #153 otorgaba el tabulador, asi que migrarlo a
+// "todas las listas del catalogo" le regalaria Segundas a quien nadie se la
+// marco en la matriz. Salen del catalogo, no de una tabla copiada.
+function tiersDelCatalogo() {
+  return readJSON('precios.json')?.tiers || [];
+}
+
 function listasDelCatalogo() {
-  return (readJSON('precios.json')?.tiers || []).map(t => t.listaId).filter(Boolean);
+  return tiersDelCatalogo().map(t => t.listaId).filter(Boolean);
+}
+
+function listasVolumenDelCatalogo() {
+  return tiersDelCatalogo().filter(esEscalonDeVolumen).map(t => t.listaId).filter(Boolean);
 }
 
 // Permiso de lista VIGENTE del usuario autenticado (#296, ADR-0015): rol admin
@@ -220,7 +233,7 @@ async function permisoListasDeUsuario(user) {
   const registro = (await vendedoresStore.listar()).find(v => v.id === user?.id);
   return {
     esAdmin: user?.role === 'admin',
-    listasHabilitadas: listasHabilitadasDeVendedor(registro, listasDelCatalogo()),
+    listasHabilitadas: listasHabilitadasDeVendedor(registro, listasVolumenDelCatalogo()),
   };
 }
 
@@ -1900,7 +1913,7 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, async (req, res) 
 // materializa la migracion en vez de borrarle el permiso.
 app.get('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const listasVolumen = listasDelCatalogo();
+    const listasVolumen = listasVolumenDelCatalogo();
     const registro = await vendedoresStore.listar();
     res.json(registro.map(v => ({ ...v, listasHabilitadas: listasHabilitadasDeVendedor(v, listasVolumen) })));
   } catch (err) {
