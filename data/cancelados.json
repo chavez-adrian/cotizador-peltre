@@ -1,6 +1,6 @@
 {
-  "generado": "2026-06-22T22:18:59.377Z",
-  "nota": "Pedidos (orders, trans_type 30) y cotizaciones (quotes, trans_type 32) ANULADOS en Operam. La API no expone la cancelacion; detectado por scraping de la web legacy (view_sales_order.php) sobre TODOS los candidatos. Generado por scripts/detectar-cancelados.mjs.",
+  "generado": "2026-09-21T16:55:21.990Z",
+  "nota": "Pedidos (orders, trans_type 30) y cotizaciones (quotes, trans_type 32) ANULADOS en Operam. La API no expone la cancelacion; detectado por scraping de la web legacy (view_sales_order.php) sobre TODOS los candidatos. Generado por scripts/detectar-cancelados.mjs. UNION con la corrida previa (2026-09-21, #406): la Parte B solo verifica los candidatos del BACKFILL, asi que una corrida nueva puede no volver a mirar un documento ya sabido cancelado y lo perderia. El quote 1196 lo detecto la verificacion en vivo de scripts/corregir-lista-quotes.mjs.",
   "orders": [
     "5632",
     "5960",
@@ -13,12 +13,15 @@
     "6985",
     "7021",
     "7043",
-    "7048"
+    "7048",
+    "7267",
+    "7321"
   ],
   "quotes": [
     "1077",
     "1093",
     "1098",
-    "1105"
+    "1105",
+    "1196"
   ]
 }

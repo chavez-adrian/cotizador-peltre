@@ -11,6 +11,9 @@
 //
 // Mismo patron operativo que scripts/migrar-oportunidades.mjs y sync-catalogo.mjs:
 // DRY-RUN por defecto, --apply para escribir, idempotente y con throttle anti-429.
+// La cancelacion de los candidatos se verifica EN VIVO por la web legacy (la foto de
+// data/cancelados.json no cubre este universo: ver mas abajo), y sin esa verificacion
+// --apply no escribe.
 // La escritura es SECUENCIAL (la sesion de captura de FA vive en $_SESSION: dos
 // correcciones simultaneas se pisarian el carrito) y se detiene al primer quote cuya
 // relectura muestre una partida alterada.
@@ -72,7 +75,7 @@ if (!APPLY && !process.env.DATABASE_URL) {
 }
 
 const { obtenerQuote, listarPedidos, _setMinInterval } = await import('../lib/operam-client.js');
-const { corregirListaQuote } = await import('../lib/operam-web.js');
+const { corregirListaQuote, abrirSesionWeb, transaccionCancelada } = await import('../lib/operam-web.js');
 const {
   GRUPOS, foliosPorLeer, planearCorreccionListas, formatearReporte,
 } = await import('../lib/correccion-lista-quotes.js');
@@ -84,9 +87,14 @@ _setMinInterval(Number(process.env.CORRECCION_THROTTLE_MS) || 1100);
 
 const tiers = JSON.parse(leerArchivoSync(join(ROOT, 'data', 'precios.json'))).tiers || [];
 
-// Cotizaciones ANULADAS en Operam: la API NO expone la cancelacion; la lista la genera
-// scripts/detectar-cancelados.mjs (scraping de la web legacy). Sin el archivo no se
-// filtra nada y se avisa -- corregir un quote cancelado seria ruido en el ERP.
+// Cotizaciones ANULADAS en Operam: la API NO expone la cancelacion; solo la web legacy
+// la marca. `data/cancelados.json` (scripts/detectar-cancelados.mjs) es el punto de
+// partida, pero NO es un censo de quotes cancelados: su Parte B solo verifica los
+// candidatos del BACKFILL (#76) -- medido el 2026-09-21, 11 folios, y el refresco dejo
+// `quotes: []` borrando los 4 que traia de junio. Para el universo de aqui (toda
+// cotizacion del cotizador con folio) esa foto es incompleta por construccion, asi que
+// los corregibles se verifican EN VIVO mas abajo, que es la otra via que contempla
+// #406 ("data/cancelados.json / deteccion web").
 const canceladosPath = join(ROOT, 'data', 'cancelados.json');
 let quotesCancelados = [];
 if (existsSync(canceladosPath)) {
@@ -98,12 +106,6 @@ if (existsSync(canceladosPath)) {
   // detector hace poco.
   console.log(`Cancelados: ${quotesCancelados.length} quotes, foto generada ${archivo.generado || '(sin fecha)'}.`);
   if (APPLY) console.log('  Si esa foto es vieja, corta aqui y corre: node scripts/detectar-cancelados.mjs');
-} else if (APPLY) {
-  // Sin la lista no se puede cumplir "excluir cancelados" (#406) y --apply escribe:
-  // degradar en silencio a "no se excluye ninguno" es justo lo que no se vale.
-  console.error('ABORTA: --apply exige data/cancelados.json para excluir los quotes cancelados.\n' +
-    'Corre primero: node scripts/detectar-cancelados.mjs');
-  process.exit(1);
 } else {
   console.warn('AVISO: data/cancelados.json no existe -> NO se excluyen quotes cancelados.\n' +
     'Corre primero: node scripts/detectar-cancelados.mjs');
@@ -162,8 +164,39 @@ let barridoCompleto = false;
     (barridoCompleto ? '' : ` | BARRIDO INCOMPLETO (tope de ${MAX_PAGINAS} paginas)`));
 }
 
-// 3) El inventario.
-const plan = planearCorreccionListas({ cotizaciones, tiers, quotesCancelados, quotes, pedidosPorQuote });
+// 3) El inventario, en dos pasadas. La primera dice QUIENES son candidatos a
+// corregirse; sobre ESOS -- y solo esos, que son pocos -- se verifica la cancelacion
+// EN VIVO por la web legacy, porque es lo unico que la marca y la foto del detector no
+// cubre este universo. La segunda pasada re-planea con lo verificado: un quote anulado
+// sale del grupo corregible por el mismo camino que si hubiera estado en la foto.
+const planPrevio = planearCorreccionListas({ cotizaciones, tiers, quotesCancelados, quotes, pedidosPorQuote });
+const candidatos = planPrevio.grupos[GRUPOS.CORREGIBLE];
+
+const SCRAPE_MS = Number(process.env.SCRAPE_THROTTLE_MS) || 350;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const canceladosEnVivo = [];
+let verificacionEnVivo = candidatos.length === 0;
+if (candidatos.length) {
+  try {
+    // Sesion PROPIA (abrirSesionWeb), no la compartida del post-fix: esto es lectura y
+    // no debe competir por el carrito de edicion de $_SESSION.
+    const consultar = await abrirSesionWeb();
+    for (const fila of candidatos) {
+      if (await transaccionCancelada(consultar, fila.folio, 32)) canceladosEnVivo.push(fila.folio);
+      await sleep(SCRAPE_MS);
+    }
+    verificacionEnVivo = true;
+    console.log(`Cancelacion verificada en vivo sobre ${candidatos.length} candidato(s): ` +
+      `${canceladosEnVivo.length} anulado(s)${canceladosEnVivo.length ? ` (${canceladosEnVivo.join(', ')})` : ''}.`);
+  } catch (err) {
+    console.warn(`AVISO: no se pudo verificar la cancelacion en vivo: ${err.message}`);
+  }
+}
+
+const plan = planearCorreccionListas({
+  cotizaciones, tiers, quotes, pedidosPorQuote,
+  quotesCancelados: [...quotesCancelados, ...canceladosEnVivo],
+});
 console.log('');
 console.log(formatearReporte(plan, { detalleCompleto: DETALLE }));
 console.log('');
@@ -173,6 +206,14 @@ if (!APPLY) {
   console.log('--- DRY-RUN (no se escribio nada) ---');
   console.log(`Corregiria ${corregibles.length} quote(s). Revisa el reporte y vuelve con --apply.`);
   process.exit(0);
+}
+
+// Escribir sobre un quote que nadie comprobo que siga vivo es justo lo que #406 excluye,
+// y la foto del detector no cubre este universo: sin la verificacion en vivo no se aplica.
+if (!verificacionEnVivo) {
+  console.error('ABORTA: no se pudo verificar en vivo si los candidatos estan cancelados en Operam.\n' +
+    'Sin eso no se cumple "excluir cancelados" (#406). Revisa el acceso a la web legacy y reintenta.');
+  process.exit(1);
 }
 
 // Un barrido truncado deja de ser la red que separa corregible de con-pedido: los

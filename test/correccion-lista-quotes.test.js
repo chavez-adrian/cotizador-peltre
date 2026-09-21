@@ -34,7 +34,11 @@ const cot = (over = {}) => ({
   data: { ...(over.data || {}) },
 });
 
-const quote = (orderType, detalles = []) => ({ order_type: orderType, detalles });
+// ord_date/delivery_date por omision en el orden sano (la vigencia DESPUES de la fecha
+// del documento), que es lo que FA exige para dejar repostear.
+const quote = (orderType, detalles = []) => ({
+  order_type: orderType, detalles, ord_date: '2026-09-01', delivery_date: '2026-10-01',
+});
 
 // Un plan de una sola cotizacion: el caso bajo prueba, sin ruido alrededor.
 function planDeUna(cotizacion, { quotes = new Map(), pedidosPorQuote = new Map(), quotesCancelados = [] } = {}) {
@@ -60,6 +64,19 @@ test('#406 el quote cancelado se excluye aunque tenga desfase', () => {
   });
   assert.equal(fila.grupo, GRUPOS.CANCELADO);
   assert.match(fila.motivo, /cancelad/i);
+});
+
+// El script verifica la cancelacion EN VIVO sobre los candidatos y re-planea con lo
+// que encontro: la foto de data/cancelados.json no cubre este universo (su Parte B
+// solo mira candidatos del backfill, y el 2026-09-21 dejo `quotes: []`). Un quote
+// anulado tiene que salir del grupo corregible por ese camino.
+test('#406 un cancelado verificado en vivo saca al quote de corregible en la segunda pasada', () => {
+  const entrada = { cotizaciones: [cot()], tiers: TIERS, quotes: new Map([['1269', quote('15')]]) };
+  assert.equal(planearCorreccionListas(entrada).resumen[GRUPOS.CORREGIBLE], 1);
+
+  const conLoVerificado = planearCorreccionListas({ ...entrada, quotesCancelados: ['1269'] });
+  assert.equal(conLoVerificado.resumen[GRUPOS.CORREGIBLE], 0);
+  assert.equal(conLoVerificado.resumen[GRUPOS.CANCELADO], 1);
 });
 
 test('#406 el tier que ya no existe en el catalogo se reporta, no se adivina', () => {
@@ -182,6 +199,45 @@ test('#406 el quote con pedido y sin desfase sale como sin desfase', () => {
     pedidosPorQuote: new Map([['1269', '6210']]),
   });
   assert.equal(fila.grupo, GRUPOS.SIN_DESFASE);
+});
+
+// --- La vigencia que FA no deja repostear ------------------------------------
+// Medido en vivo sobre el quote 1194 (2026-09-21): con delivery_date anterior a
+// ord_date, FA rechaza el ProcessOrder entero con "La fecha de validez solicitada es
+// anterior a la fecha de la cotizacion" y NO guarda nada. Es la firma del bug que
+// arreglo #106 (la vigencia quedaba en ord_date-1). Corregir la lista de esos quotes
+// exigiria mover la vigencia, que es otro cambio y no se pidio.
+
+test('#406 el quote cuya vigencia es anterior a su fecha no se intenta corregir', () => {
+  const fila = planDeUna(cot(), {
+    quotes: new Map([['1269', { order_type: '15', ord_date: '2026-07-27', delivery_date: '2026-07-26' }]]),
+  });
+  assert.equal(fila.grupo, GRUPOS.VIGENCIA_INVALIDA);
+  assert.match(fila.motivo, /2026-07-26/);
+  assert.match(fila.motivo, /2026-07-27/);
+});
+
+test('#406 la vigencia del MISMO dia que la cotizacion si es corregible', () => {
+  const fila = planDeUna(cot(), {
+    quotes: new Map([['1269', { order_type: '15', ord_date: '2026-07-27', delivery_date: '2026-07-27' }]]),
+  });
+  assert.equal(fila.grupo, GRUPOS.CORREGIBLE);
+});
+
+// Una vigencia vencida respecto de HOY no es el problema: el 1284 se corrigio con la
+// suya vigente y lo que FA compara es contra la fecha del documento, no contra hoy.
+test('#406 una vigencia ya pasada pero posterior a la cotizacion sigue siendo corregible', () => {
+  const fila = planDeUna(cot(), {
+    quotes: new Map([['1269', { order_type: '15', ord_date: '2020-01-01', delivery_date: '2020-02-01' }]]),
+  });
+  assert.equal(fila.grupo, GRUPOS.CORREGIBLE);
+});
+
+// Sin las dos fechas no se puede afirmar que FA lo vaya a rechazar. No se excluye por
+// una sospecha: si FA lo rechaza, la relectura obligatoria lo atrapa y detiene el lote.
+test('#406 sin fechas legibles no se excluye por sospecha', () => {
+  const fila = planDeUna(cot(), { quotes: new Map([['1269', { order_type: '15' }]]) });
+  assert.equal(fila.grupo, GRUPOS.CORREGIBLE);
 });
 
 // --- Los folios que hay que leer de Operam -----------------------------------
