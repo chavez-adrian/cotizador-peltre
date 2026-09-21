@@ -132,6 +132,16 @@ test('lista fijada por encima del volumen: mismo formato en la otra direccion', 
   assert.strictEqual(aviso, 'Lista fijada: M6000 - el volumen (10 pzs) corresponde a Menudeo');
 });
 
+// #299: Amazon es la unica lista mas CARA que el precio base (factor 1.1). El aviso
+// no mira precios -- compara la lista fijada contra la que daria el volumen --, asi
+// que una lista de canal se avisa igual que un escalon y en el mismo formato: el
+// vendedor lee que fijo Amazon aunque el volumen diga M350.
+test('el aviso nombra igual una lista de canal que precia por encima del precio base', () => {
+  const tiers = [...TIERS, { id: 'Amazon', label: 'Amazon', listaId: '19' }];
+  assert.strictEqual(avisoListaFijada(tiers, 500, 'Amazon'),
+    'Lista fijada: Amazon - el volumen (500 pzs) corresponde a M350');
+});
+
 // === validarTierCotizacion: enforcement del servidor (#151/#153, por lista desde #296) ===
 
 test('admin: cualquier tier pasa, incluso uno ajeno al tabulador', () => {

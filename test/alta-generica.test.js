@@ -158,6 +158,17 @@ test('resolverSalesTypeId: una lista sin escalon de volumen resuelve por su nomb
   assert.equal(resolverSalesTypeId('Segundas', LISTAS), 9);
 });
 
+// #299: lo mismo para las otras siete. El cliente que nace al subir la cotizacion
+// queda en la lista con la que se cotizo -- Amazon (19), M6001 (20) o la US del caso
+// --, nunca en el fallback "Precio de lista", que le cobraria el precio base a un
+// cliente de canal o de exportacion. El tier del catalogo ES el nombre de la
+// sales_type porque el catalogo lo toma del ERP.
+test('resolverSalesTypeId: Amazon, M6001 y una lista US resuelven por su nombre', () => {
+  assert.equal(resolverSalesTypeId('Amazon', LISTAS), 19);
+  assert.equal(resolverSalesTypeId('M6001', LISTAS), 20);
+  assert.equal(resolverSalesTypeId('US100', LISTAS), 21);
+});
+
 test('resolverSalesTypeId: tier desconocido sin lista homonima -> mismo fallback', () => {
   assert.equal(resolverSalesTypeId('TierInventado', LISTAS), 12);
 });

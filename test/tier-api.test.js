@@ -227,8 +227,11 @@ test('/api/precios: el rol admin recibe todas las listas del catalogo, sin celda
   const res = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
   assert.deepStrictEqual(res.body.listasHabilitadas, res.body.tiers.map(t => t.listaId));
   // Todas las del catalogo = los escalones de volumen MAS las listas sin escalon
-  // (#298): el admin tambien puede fijar Segundas.
-  assert.deepStrictEqual([...res.body.listasHabilitadas].sort(), [...LISTAS_VOLUMEN, LISTA_SEGUNDAS].sort());
+  // (#298/#299): las 14 listas activas de Operam, que el admin puede fijar todas.
+  assert.deepStrictEqual(
+    [...res.body.listasHabilitadas].sort(),
+    [...LISTAS_VOLUMEN, LISTA_SEGUNDAS, '19', '20', '21', '22', '23', '24', '25'].sort(),
+  );
 });
 
 test('/api/precios: el vendedor con el flag viejo y sin campo nuevo recibe los 6 escalones de volumen', async () => {
@@ -354,6 +357,140 @@ test('/api/precios: Segundas viaja en el catalogo sin min_qty y preciada por fac
     'el precio en Segundas es el precio base por el factor 0.165 de Operam');
   assert.deepStrictEqual([...new Set(res.body.calcas.map(c => c.prices.Segundas))], [null],
     'las calcas no tienen precio base: en Segundas quedan en null, nunca en 0');
+});
+
+// === #299 (ADR-0015): Amazon, M6001 y las cinco US en el catalogo vigente ===
+//
+// Ids REALES de las sales_types de Operam. Lo que se verifica aqui es el catalogo que
+// la PANTALLA recibe (data/precios.json regenerado), no lo que el nucleo sabe
+// calcular: de ahi salen el selector del vendedor y el precio del carrito.
+const LISTA_AMAZON = '19';
+const LISTA_M6001 = '20';
+const LISTAS_US = { US100: '21', US350: '22', US550: '23', US1500: '24', US6000: '25' };
+const FACTORES_US = { US100: 0.84, US350: 0.72, US550: 0.6, US1500: 0.54, US6000: 0.48 };
+
+test('/api/precios: las ocho listas sin escalon viajan en el catalogo y ninguna tabula', async () => {
+  const res = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.deepStrictEqual(res.body.tiers.map(t => t.id), [
+    'Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000',
+    'Segundas', 'Amazon', 'M6001', 'US100', 'US350', 'US550', 'US1500', 'US6000',
+  ]);
+  assert.deepStrictEqual(
+    res.body.tiers.filter(t => t.min_qty !== undefined).map(t => t.id),
+    ['Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000'],
+    'Auto sigue tabulando solo sobre los escalones de volumen',
+  );
+  assert.deepStrictEqual(res.body.tiers.find(t => t.id === 'Amazon'), { id: 'Amazon', label: 'Amazon', listaId: LISTA_AMAZON });
+  assert.deepStrictEqual(res.body.tiers.find(t => t.id === 'M6001'), { id: 'M6001', label: 'M6001', listaId: LISTA_M6001 });
+  for (const [id, listaId] of Object.entries(LISTAS_US)) {
+    assert.deepStrictEqual(res.body.tiers.find(t => t.id === id), { id, label: id, listaId });
+  }
+});
+
+test('/api/precios: Amazon es la unica lista POR ENCIMA del precio base', async () => {
+  const res = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
+  const caros = res.body.products.filter(p => p.prices.Amazon <= p.prices.Menudeo);
+  assert.deepStrictEqual(caros.map(p => p.key), [], 'Amazon (factor 1.1) siempre sube sobre el base');
+  const producto = res.body.products.find(p => p.prices.Menudeo != null);
+  assert.ok(Math.abs(producto.prices.Amazon - producto.prices.Menudeo * 1.1) < 1e-9);
+  for (const [id, factor] of Object.entries(FACTORES_US)) {
+    assert.ok(Math.abs(producto.prices[id] - producto.prices.Menudeo * factor) < 1e-9,
+      `${id} es el factor ${factor} sobre el precio base EN PESOS (la moneda la manda el cliente)`);
+  }
+  assert.ok(Math.abs(producto.prices.M6001 - producto.prices.Menudeo * 0.39) < 1e-9);
+});
+
+// La diferencia de M6001 con las otras siete: Operam SI tiene filas de calca ahi, y
+// esas ganan al factor. La calca no tiene precio base, asi que en Amazon y en las US
+// queda en null (partida sin precio, #91) y en M6001 sale preciada.
+test('/api/precios: en M6001 las calcas traen su precio y en Amazon y las US quedan en null', async () => {
+  const res = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.deepStrictEqual(res.body.calcas.filter(c => c.prices.M6001 == null).map(c => c.code), [],
+    'las 32 calcas del catalogo tienen fila explicita en M6001');
+  for (const id of ['Amazon', ...Object.keys(LISTAS_US)]) {
+    assert.deepStrictEqual([...new Set(res.body.calcas.map(c => c.prices[id]))], [null],
+      `sin precio base y sin fila propia, la calca queda en null en ${id}, nunca en 0`);
+  }
+});
+
+// Cero regresion de precios (AC de #299): el catalogo regenerado no puede mover ni un
+// precio de los escalones de volumen. Los seis numeros son los que data/precios.json
+// ya traia para VA08B antes de que entraran las listas nuevas.
+test('/api/precios: los escalones de volumen del catalogo vigente no se movieron', async () => {
+  const res = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
+  const va08b = res.body.products.find(p => p.key === 'VA08B');
+  assert.deepStrictEqual(
+    ['Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000'].map(t => va08b.prices[t]),
+    [116.37931, 81.46551699999999, 69.827586, 58.189655, 52.370689500000005, 46.55172400000001],
+  );
+  const cal1025s = res.body.calcas.find(c => c.code === 'CAL1025S');
+  assert.deepStrictEqual(
+    ['Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000'].map(t => cal1025s.prices[t]),
+    [null, 26.9, 20.11, 17.96, 14.19, 13.31],
+  );
+});
+
+// Cotizar en cada una de las tres naturalezas nuevas (AC1 de #299, la parte que no
+// necesita navegador ni Operam en vivo): con la celda marcada la cotizacion se guarda
+// en esa lista, y sin ella el servidor la rechaza nombrandola. El mecanismo es el de
+// #296/#298; lo que #299 agrega es que estas tres listas ya existen en el catalogo.
+test('vendedor con la celda de Amazon, de M6001 o de una US: la cotizacion se guarda en esa lista', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    for (const [tier, listaId] of [['Amazon', LISTA_AMAZON], ['M6001', LISTA_M6001], ['US1500', LISTAS_US.US1500]]) {
+      conListas(original, [listaId]);
+      const res = await supertest(app).post('/api/cotizacion')
+        .set('Authorization', `Bearer ${tokenVendedor}`)
+        .send(cotizacionCon(tier));
+      assert.strictEqual(res.status, 200, `${tier} con su celda marcada`);
+      assert.strictEqual(readCots().find(c => c.id === res.body.id).tier, tier);
+
+      const antes = readCots().length;
+      const otra = await supertest(app).post('/api/cotizacion')
+        .set('Authorization', `Bearer ${tokenVendedor}`)
+        .send(cotizacionCon(tier === 'Amazon' ? 'M6001' : 'Amazon'));
+      assert.strictEqual(otra.status, 403, `${tier} marcada no habilita ninguna otra lista`);
+      assert.strictEqual(readCots().length, antes);
+    }
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+test('vendedor sin la celda de Amazon: el guardado se rechaza nombrando la lista y no guarda nada', async () => {
+  const original = leerArchivoSync(VENDEDORES_PATH);
+  try {
+    conListas(original, [LISTA_M1500]);
+    const antes = readCots().length;
+    const res = await supertest(app).post('/api/cotizacion')
+      .set('Authorization', `Bearer ${tokenVendedor}`)
+      .send(cotizacionCon('Amazon'));
+    assert.strictEqual(res.status, 403);
+    assert.match(res.body.error, /Amazon/);
+    assert.strictEqual(readCots().length, antes);
+  } finally {
+    escribirArchivoSync(VENDEDORES_PATH, original);
+  }
+});
+
+// El precio de la lista fijada llega al documento que el cliente recibe. Amazon es el
+// caso que nadie habia ejercitado: la partida vale MAS que en Menudeo y ningun
+// formato ni calculo del documento lo trata distinto.
+test('el documento regenerado imprime el precio de Amazon, por encima del precio base', async () => {
+  const precios = await supertest(app).get('/api/precios').set('Authorization', `Bearer ${tokenAdmin}`);
+  const va08b = precios.body.products.find(p => p.key === 'VA08B');
+  const creada = await supertest(app).post('/api/cotizacion')
+    .set('Authorization', `Bearer ${tokenAdmin}`)
+    .send({
+      ...cotizacionCon('Amazon'),
+      items: [{ ...ITEM_BASE, codigo: 'VA08B', descripcion: 'Taza de mesa 8 cm bicolor', precio: va08b.prices.Amazon }],
+    });
+  assert.strictEqual(creada.status, 200);
+
+  const html = await supertest(app).get(`/api/cotizacion/html/${creada.body.id}`);
+  assert.strictEqual(html.status, 200);
+  assert.ok(html.text.includes('128.02'), 'el HTML imprime el precio de Amazon (128.017241)');
+  assert.ok(!html.text.includes('116.38'), 'y no el precio base de Menudeo');
 });
 
 // === La matriz se guarda con el PUT existente del registro (AC1) ===

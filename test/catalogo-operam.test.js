@@ -439,6 +439,139 @@ test('construirCatalogo: una lista sin escalon inactiva en Operam no entra al ca
   assert.equal('Segundas' in catalogo.products[0].prices, false);
 });
 
+// === #299 (ADR-0015): las siete listas sin escalon restantes ===
+//
+// Los ids y factores son los REALES de Operam (verificados en vivo 2026-08-20, los
+// mismos del volcado de sales_types que sirve de fixture). Amazon es la unica lista
+// mas CARA que el precio base de todo el ERP: es la que ejercita que ningun calculo
+// del catalogo asuma factor <= 1.
+const AMAZON = { id: '19', sales_type: 'Amazon', factor: '1.1', inactive: '0' };
+
+test('construirCatalogo: Amazon precia POR ENCIMA del precio base (factor 1.1)', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: [...CON_SEGUNDAS, AMAZON],
+    precios: [fila('PV08B1001111', '12', 100)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  const amazon = catalogo.tiers.find(t => t.id === 'Amazon');
+  assert.deepEqual(amazon, { id: 'Amazon', label: 'Amazon', listaId: '19' });
+  assert.equal('min_qty' in amazon, false, 'Amazon es canal, no escalon: jamas tabula');
+  const precios = catalogo.products[0].prices;
+  assert.ok(Math.abs(precios.Amazon - 110) < 1e-9, `Amazon = base x 1.1, hubo ${precios.Amazon}`);
+  assert.ok(precios.Amazon > precios.Menudeo, 'la unica lista por encima del precio base');
+  assert.equal(precios.M550, 50, 'los escalones de volumen no se mueven');
+});
+
+// M6001 es la unica de las ocho donde Operam SI tiene filas propias: 33 filas, todas
+// de calcas y ninguna de producto (verificado en vivo 2026-08-20; el volcado del
+// 2026-08-03 trae 32). Ahi se ve la regla completa en una sola lista -- la calca sale
+// de SU fila y el producto, que no tiene, del factor.
+const M6001 = { id: '20', sales_type: 'M6001', factor: '0.39', inactive: '0' };
+
+test('construirCatalogo: en M6001 la fila explicita de la calca gana y el producto sale del factor', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: [...CON_SEGUNDAS, M6001],
+    precios: [
+      fila('PV08B1001111', '12', 100),
+      fila('CAL1025', '15', 26.9), fila('CAL1025', '1', 17.96), fila('CAL1025', '20', 13.31),
+    ],
+    items: [
+      { stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' },
+      { stock_id: 'CAL1025', description: 'Calca vitrificable chica (25 cm2) 1 tinta' },
+    ],
+    complemento: COMPLEMENTO,
+  });
+  assert.equal(catalogo.calcas[0].prices.M6001, 13.31, 'la calca sale de SU fila de Operam');
+  assert.equal(catalogo.calcas[0].prices.Segundas, null, 'sin fila y sin base sigue siendo null');
+  const producto = catalogo.products[0].prices;
+  assert.ok(Math.abs(producto.M6001 - 39) < 1e-9, `el producto no tiene fila en M6001: base x 0.39, hubo ${producto.M6001}`);
+});
+
+// Las cinco listas de exportacion. La MONEDA no depende de la lista: la manda el
+// cliente (`curr_code`, ADR-0015 y CONTEXT.md "Moneda del cliente"), y el cotizador
+// solo sabe pesos -- los clientes en moneda extranjera estan bloqueados por #297.
+// Para un cliente MXN una lista US es SOLO el factor sobre el precio base en pesos:
+// ningun tipo de cambio entra al catalogo (asi opera Williams-Sonoma, US6000/MXN).
+const LISTAS_US = [
+  { id: '21', sales_type: 'US100', factor: '0.84', inactive: '0' },
+  { id: '22', sales_type: 'US350', factor: '0.72', inactive: '0' },
+  { id: '23', sales_type: 'US550', factor: '0.6', inactive: '0' },
+  { id: '24', sales_type: 'US1500', factor: '0.54', inactive: '0' },
+  { id: '25', sales_type: 'US6000', factor: '0.48', inactive: '0' },
+];
+
+test('construirCatalogo: las cinco listas US aplican SOLO el factor, en pesos', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: [...CON_SEGUNDAS, ...LISTAS_US],
+    precios: [fila('PV08B1001111', '12', 100)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.deepEqual(catalogo.tiers.filter(t => t.id.startsWith('US')), [
+    { id: 'US100', label: 'US100', listaId: '21' },
+    { id: 'US350', label: 'US350', listaId: '22' },
+    { id: 'US550', label: 'US550', listaId: '23' },
+    { id: 'US1500', label: 'US1500', listaId: '24' },
+    { id: 'US6000', label: 'US6000', listaId: '25' },
+  ]);
+  const p = catalogo.products[0].prices;
+  const alCentavo = v => Math.round(v * 100) / 100;
+  assert.deepEqual(
+    [p.US100, p.US350, p.US550, p.US1500, p.US6000].map(alCentavo),
+    [84, 72, 60, 54, 48],
+    'base 100 x el factor de cada lista, sin tipo de cambio',
+  );
+});
+
+// Las listas sin escalon NO son una tabla en codigo: son las sales_types ACTIVAS de
+// Operam que no son escalon de volumen (ADR-0015 y CONTEXT.md "Lista de precios": "el
+// universo de listas es el de Operam, no un catalogo fijo del cotizador"). Por eso una
+// lista nueva en el ERP queda cotizable con solo regenerar el catalogo.
+test('construirCatalogo: una lista nueva de Operam entra sola, preciada por su factor', () => {
+  const nueva = { id: '26', sales_type: 'Distribuidor MX', factor: '0.55', inactive: '0' };
+  const { catalogo } = construirCatalogo({
+    salesTypes: [...CON_SEGUNDAS, nueva],
+    precios: [fila('PV08B1001111', '12', 100)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  const tier = catalogo.tiers.find(t => t.id === 'Distribuidor MX');
+  assert.deepEqual(tier, { id: 'Distribuidor MX', label: 'Distribuidor MX', listaId: '26' });
+  const precio = catalogo.products[0].prices['Distribuidor MX'];
+  assert.ok(Math.abs(precio - 55) < 1e-9, `base x 0.55, hubo ${precio}`);
+});
+
+// Las inactivas del ERP (Bazaar, Shopify, Globarco, M20K, M100K) no entran NI con
+// filas de precio vivas -- Bazaar tiene 461 en el volcado real. Quedaron con clientes
+// asignados y precios cargados, pero nadie las puede cotizar.
+test('construirCatalogo: una lista inactiva no entra aunque tenga filas de precio vivas', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: SALES_TYPES,
+    precios: [fila('PV08B1001111', '12', 100), fila('PV08B1001111', '18', 62)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.equal(catalogo.tiers.find(t => t.id === 'Bazaar'), undefined);
+  assert.deepEqual(catalogo.products[0].prices, {
+    Menudeo: 100, M100: 70, M350: 60, M550: 50, M1500: 45, M6000: 40,
+  }, 'la fila viva de Bazaar no crea columna ni mueve ninguna');
+});
+
+// Falla CERRADO: una lista activa cuyo factor Operam no da (o da basura) no se puede
+// preciar, y dejarla entrar sin precios seria peor que dejarla fuera -- el carrito cae
+// al `prices['Menudeo'] ?? 0` de app.js y cobraria menudeo con otra etiqueta.
+test('construirCatalogo: una lista activa sin factor legible no entra al catalogo', () => {
+  const { catalogo } = construirCatalogo({
+    salesTypes: [...CON_SEGUNDAS, { id: '27', sales_type: 'Sin factor', factor: '', inactive: '0' }],
+    precios: [fila('PV08B1001111', '12', 100)],
+    items: [{ stock_id: 'PV08B1001111', description: 'Portavasos 8 blanco' }],
+    complemento: COMPLEMENTO,
+  });
+  assert.equal(catalogo.tiers.find(t => t.id === 'Sin factor'), undefined);
+  assert.equal('Sin factor' in catalogo.products[0].prices, false);
+});
+
 // El reporte de paridad es la red del corte (#131): dice, contra el catalogo vigente,
 // que clave cuadra, cual cobra distinto en Operam y cual ya no tiene articulo con
 // precio. Se compara SIEMPRE por igualdad contra las constantes de estado.
@@ -775,6 +908,73 @@ test('reconstruccion: Segundas sale de base x factor en todos los productos y si
   const desviados = catalogo.products.filter(p => Math.abs(p.prices.Segundas - p.prices.Menudeo * 0.165) > 1e-9);
   assert.deepEqual(desviados.map(p => p.key), []);
   assert.deepEqual([...new Set(catalogo.calcas.map(c => c.prices.Segundas))], [null]);
+});
+
+// #299 sobre el volcado REAL de sales_types: las 14 listas activas de Operam son los 6
+// escalones de volumen mas las 8 sin escalon, en ese orden y ordenadas por id de
+// Operam. Ninguna sale de una tabla en codigo.
+test('reconstruccion: las 14 listas activas del ERP son los 6 escalones mas las 8 sin escalon', () => {
+  const { catalogo } = construirDesdeDumps();
+  assert.deepEqual(catalogo.tiers.map(t => t.id), [
+    'Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000',
+    'Segundas', 'Amazon', 'M6001', 'US100', 'US350', 'US550', 'US1500', 'US6000',
+  ]);
+  assert.deepEqual(
+    catalogo.tiers.filter(t => t.min_qty !== undefined).map(t => t.id),
+    ['Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000'],
+    'solo los escalones de volumen tabulan',
+  );
+  // Las 461 filas vivas de Bazaar (lista 18, inactiva en el ERP) no crean columna: el
+  // volcado de sales_types solo trae las activas, y ademas el filtro las descarta.
+  assert.equal(dumps.precios.filter(f => String(f.sales_type_id) === '18').length, 461);
+  assert.equal(catalogo.tiers.some(t => t.listaId === '18'), false);
+});
+
+// Las tres naturalezas sobre los volcados reales: Amazon por encima del precio base,
+// M6001 con las 32 filas de calca del volcado ganandole al factor (y los productos,
+// que no tienen fila, saliendo de el) y las US en pesos, solo el factor.
+test('reconstruccion: Amazon sube, M6001 usa la fila de la calca y las US son el factor en pesos', () => {
+  const { catalogo } = construirDesdeDumps();
+  const filasM6001 = dumps.precios.filter(f => String(f.sales_type_id) === '20');
+  assert.equal(filasM6001.length, 32);
+  assert.equal(filasM6001.every(f => f.stock_id.startsWith('CAL')), true, 'todas las filas de M6001 son calcas');
+
+  const porFactor = (tier, factor) => catalogo.products
+    .filter(p => Math.abs(p.prices[tier] - p.prices.Menudeo * factor) > 1e-9)
+    .map(p => p.key);
+  assert.deepEqual(porFactor('Amazon', 1.1), [], 'ningun producto tiene fila propia de Amazon');
+  assert.deepEqual(porFactor('M6001', 0.39), [], 'M6001 no tiene ni una fila de producto');
+  for (const [tier, factor] of [['US100', 0.84], ['US350', 0.72], ['US550', 0.6], ['US1500', 0.54], ['US6000', 0.48]]) {
+    assert.deepEqual(porFactor(tier, factor), [], `${tier} sale de base x ${factor}, en pesos`);
+  }
+  assert.equal(catalogo.products.every(p => p.prices.Amazon > p.prices.Menudeo), true);
+
+  const conFila = new Map(filasM6001.map(f => [f.stock_id, Number(f.price)]));
+  const calcasConFila = catalogo.calcas.filter(c => conFila.has(c.code));
+  assert.equal(calcasConFila.length, 32, 'las 32 calcas del volcado tienen su fila de M6001');
+  assert.deepEqual(calcasConFila.filter(c => c.prices.M6001 !== conFila.get(c.code)).map(c => c.code), [],
+    'la fila explicita de Operam gana al factor');
+  assert.deepEqual([...new Set(catalogo.calcas.map(c => c.prices.Amazon))], [null],
+    'sin precio base y sin fila propia, la calca queda en null y nunca en 0');
+});
+
+// AC de #299 (cero regresion de precios): entrar ocho listas nuevas no puede mover ni
+// un precio de los escalones de volumen. Se construye el MISMO volcado dos veces --
+// con las 14 listas activas y con solo los 6 escalones -- y los seis precios de cada
+// producto y de cada calca tienen que salir identicos.
+test('reconstruccion: las listas sin escalon no mueven ningun precio de los escalones de volumen', () => {
+  const ESCALONES = ['Menudeo', 'M100', 'M350', 'M550', 'M1500', 'M6000'];
+  const IDS_ESCALON = ['12', '15', '16', '1', '6', '3'];
+  const { catalogo } = construirDesdeDumps();
+  const { catalogo: soloEscalones } = construirCatalogo({
+    ...dumps,
+    salesTypes: dumps.salesTypes.filter(s => IDS_ESCALON.includes(String(s.id))),
+    extracted: '2026-08-04T00:00:00.000Z',
+  });
+  const volumen = (filas, llave) => filas.map(f => [f[llave], ESCALONES.map(t => f.prices[t])]);
+  assert.ok(catalogo.products.length >= 60 && catalogo.calcas.length >= 30);
+  assert.deepEqual(volumen(catalogo.products, 'key'), volumen(soloEscalones.products, 'key'));
+  assert.deepEqual(volumen(catalogo.calcas, 'code'), volumen(soloEscalones.calcas, 'code'));
 });
 
 // Dos SKUs con la MISMA base pueden acabar en precios distintos si uno tiene fila
