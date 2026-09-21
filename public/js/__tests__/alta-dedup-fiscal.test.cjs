@@ -764,7 +764,7 @@ test('C7: precargaComercialUpgrade toma el vendedor de branches[0].salesman_name
 test('C8: precargaComercialUpgrade devuelve cadenas vacias (nunca undefined) cuando el cliente no trae esos campos', async () => {
   const { precargaComercialUpgrade } = await import('../alta-logica.js');
   const pre = precargaComercialUpgrade({ customer_id: 491 });
-  assert.deepEqual(pre, { salesType: '', segmentoId: '', invoiceEmail: '', vendedorNombre: '' });
+  assert.deepEqual(pre, { salesType: '', segmentoId: '', usoCfdi: '', invoiceEmail: '', vendedorNombre: '' });
 });
 
 // Decision 2 de #197: del panel comercial solo viaja lo que CAMBIO respecto a lo

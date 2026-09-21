@@ -341,6 +341,10 @@ export function estadoAltaAlAbrirPanel(estado) {
       datos: null,
       domicilio: null,
       modo: null,
+      // La linea base de la Seccion 2 del cliente reutilizado (#371) es rastro del
+      // alta anterior igual que customer_id: heredarla podaria la Seccion 2 del
+      // PROXIMO cliente contra la configuracion del que ya se dio de alta.
+      comercialReutilizado: null,
       seccionAbierta: null,
       altaCompletada: false,
       usoCfdiElegido: false,
@@ -669,6 +673,11 @@ const COMERCIAL_UPGRADE = ['sales_type', 'segmento_id', 'invoice_email'];
 // que ese es el correo guardado en Operam (misma leccion de fuga de contexto de
 // #95). El vendedor va con placeholder explicativo: es de la SUCURSAL, no del
 // cliente, y este flujo tiene prohibido escribir branches.
+// El uso de CFDI se suma en #371: lo pide el alta completa, donde reutilizar un
+// Cliente Operam abria la Seccion 2 con el G03 del selector en vez del que el
+// cliente ya tiene. SI es legible (no lleva `noLegible` en DIFF_FISCAL_CAMPOS), y
+// sumarlo aqui no cambia el upgrade fiscal: COMERCIAL_UPGRADE -- lo unico que
+// datosUpgradeConComercial poda y deja viajar -- no lo incluye.
 export function precargaComercialUpgrade(clienteOperam) {
   const cliente = clienteOperam || {};
   const leer = operam => {
@@ -679,6 +688,7 @@ export function precargaComercialUpgrade(clienteOperam) {
   return {
     salesType: leer('sales_type'),
     segmentoId: leer('segmento_id'),
+    usoCfdi: leer('timbrado_uso_cfdi'),
     invoiceEmail: '',
     vendedorNombre: String(cliente.branches?.[0]?.salesman_name || ''),
   };
@@ -1489,6 +1499,115 @@ export function buildAltaDarDeAltaPayload(csfDatos, comercial, domicilio, custom
     ...(opciones.decision ? { decision: opciones.decision } : {}),
     // `fuente` NO viaja (#350): el servidor ya la deriva del PDF, y mandarla fija en
     // 'cotizador' era justamente lo que dejaba muerta esa rama. Un solo dueno de la regla.
+  };
+}
+
+// === Reutilizar el domicilio de entrega del Cliente Operam elegido (#371) ===
+//
+// Con `decision.tipo === 'usar'` el modulo NO escribe ningun branch (el PUT es solo
+// sobre el recien creado, ADR-0017, y lo fija test/alta-cliente.test.js "sobre el
+// Cliente Operam que el vendedor eligio no se escribe ningun domicilio de entrega"):
+// todo lo que el vendedor teclee en la Seccion 3 se tira. Por eso esa seccion deja de
+// pedir captura y pasa a MOSTRAR el domicilio elegido.
+//
+// La entrada es `altaState.clienteExistente`, la MISMA eleccion con la que se arma la
+// `decision` del POST: un solo dueno de "que eligio el vendedor". 'nuevo' es el valor
+// literal con el que altaDedupNuevoDomicilio marca "Crear nuevo domicilio", y ahi la
+// captura sigue siendo obligatoria porque ese branch SI nace en esta alta.
+export function altaReutilizaDomicilio(clienteExistente) {
+  const elegido = clienteExistente || {};
+  if (elegido.id == null) return false;
+  return elegido.branchIdx != null && elegido.branchIdx !== 'nuevo';
+}
+
+// El domicilio elegido dentro de la lista que pinto los radios. El `branch_code`
+// manda sobre el indice: es lo que identifica al domicilio en Operam y lo que viaja
+// como `decision.domicilioId` (#252), mientras que el indice depende del orden en que
+// llego la lista. Uno que ya no esta en la lista devuelve null y no se muestra nada:
+// el servidor lo revalida igual y vuelve a preguntar (#368).
+export function domicilioReutilizadoDelAlta(clienteExistente, domicilios) {
+  if (!altaReutilizaDomicilio(clienteExistente)) return null;
+  const lista = Array.isArray(domicilios) ? domicilios : [];
+  const { branchIdx, branchCode } = clienteExistente;
+  if (branchCode != null) {
+    return lista.find(d => String(d.branch_code) === String(branchCode)) || null;
+  }
+  return lista[Number(branchIdx)] || null;
+}
+
+// Lo que la Seccion 3 muestra del domicilio elegido, en pares etiqueta/valor y NUNCA
+// como HTML: el nucleo no toca el DOM y quien pinta lo hace con textContent, asi que
+// un nombre de sucursal con `<` no puede convertirse en marcado. Las etiquetas son las
+// mismas del formulario que sustituye, para que el vendedor lea lo de siempre. Un
+// campo vacio en Operam no produce fila: una etiqueta hueca parece un dato faltante
+// que hay que llenar, y aqui no hay nada que llenar.
+const DOMICILIO_REUTILIZADO_CAMPOS = [
+  ['descripcion', 'Nombre del domicilio'],
+  ['calle', 'Calle'],
+  ['numInt', 'Num. interior'],
+  ['colonia', 'Colonia'],
+  ['cp', 'CP'],
+  ['municipio', 'Ciudad / Municipio'],
+  ['estado', 'Estado'],
+  ['contacto', 'Contacto'],
+  ['telefono', 'Telefono'],
+  ['email', 'Email de entrega'],
+];
+
+export function filasDomicilioReutilizado(domicilio) {
+  if (!domicilio) return [];
+  return DOMICILIO_REUTILIZADO_CAMPOS
+    .map(([campo, etiqueta]) => ({ etiqueta, valor: String(domicilio[campo] ?? '').trim() }))
+    .filter(f => f.valor !== '');
+}
+
+// El domicilio elegido en las llaves que habla el resto del alta (altaState.domicilio,
+// que alimentan buildAltaDarDeAltaPayload y buildClienteDesdeAlta). Sin esto la
+// Seccion 3 en solo lectura dejaria a "Cotizar ahora" sin calle ni nombre de entrega,
+// que es lo que hoy le da la captura que este ticket quita. Al servidor no le cambia
+// nada: con `decision.tipo === 'usar'` el modulo no escribe ningun branch.
+// `addr_exterior` queda VACIO a proposito: obtenerDomicilios ya une calle y numero
+// exterior en `calle`, y quien consume estas llaves los vuelve a concatenar.
+// La Seccion 2 precargada es la configuracion que el Cliente Operam YA tiene, no una
+// eleccion del vendedor: solo viaja lo que CAMBIO (misma regla de #248/#250 que ya
+// gobierna el uso de CFDI en usoCfdiParaPayload y el upgrade en
+// datosUpgradeConComercial). Si lo precargado viajara, el alta pediria escrituras que
+// nadie pidio -- y el segmento dispara ademas el post-fix por la web legacy, cuyo
+// fallo saldria como "No se pudo guardar el segmento" sobre un campo que nadie toco.
+// Sin precarga (alta nueva, o la lectura fallo) todo viaja tal cual: ahi la Seccion 2
+// SI es captura del vendedor.
+// Solo se podan los dos campos que la precarga escribe. El uso de CFDI ya lo resuelve
+// usoCfdiParaPayload por su bandera de eleccion, y vendedor / celular / email de
+// facturacion no se precargan (el email no es legible desde Operam, #373).
+const COMERCIAL_ALTA_PRECARGADO = [['sales_type', 'salesType'], ['segmento_id', 'segmentoId']];
+
+export function comercialDelAltaReutilizada(comercial, precargado) {
+  const salida = { ...(comercial || {}) };
+  if (!precargado) return salida;
+  for (const [campo, llave] of COMERCIAL_ALTA_PRECARGADO) {
+    const nuevo = String(salida[campo] ?? '').trim();
+    const anterior = String(precargado[llave] ?? '').trim();
+    if (nuevo === anterior) salida[campo] = '';
+  }
+  return salida;
+}
+
+export function entregaDeDomicilioOperam(domicilio) {
+  const d = domicilio || {};
+  return {
+    br_name: d.descripcion || '',
+    br_ref: '',
+    addr_street: d.calle || '',
+    addr_exterior: '',
+    addr_interior: d.numInt || '',
+    addr_colony: d.colonia || '',
+    addr_zip: d.cp || '',
+    addr_city: d.municipio || '',
+    addr_state: d.estado || '',
+    pais: '',
+    phone: d.telefono || '',
+    addr_reference: '',
+    email: d.email || '',
   };
 }
 

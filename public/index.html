@@ -345,6 +345,12 @@
               <span class="alta-sec-icono" id="alta-ico-3">&#128274;</span>
             </div>
             <div class="alta-sec-body" id="alta-body-3" style="display:none">
+              <!-- Domicilio de entrega REUTILIZADO (#371): al elegir uno de los del
+                   Cliente Operam en la Seccion 1 no hay nada que capturar (el modulo
+                   no escribe branches sobre un cliente existente), asi que la captura
+                   se esconde y aqui se muestra el elegido. Lo llena altaModoDomicilio. -->
+              <div id="alta-domicilio-reutilizado" style="display:none"></div>
+              <div id="alta-domicilio-captura">
               <div class="form-row">
                 <div class="form-group" style="flex:1">
                   <label>Nombre del domicilio <span style="color:var(--danger)">*</span></label>
@@ -416,6 +422,7 @@
                 <input type="email" id="alta-addr-email" placeholder="entregas@empresa.com">
               </div>
               <div id="alta-domicilio-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
+              </div>
               <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="altaConfirmarDomicilio()">
                 Confirmar domicilio
               </button>

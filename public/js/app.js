@@ -46,6 +46,11 @@ import {
   modoComercialUpgrade,
   seccionAltaAbierta,
   interpretarRespuestaUpgrade,
+  altaReutilizaDomicilio,
+  domicilioReutilizadoDelAlta,
+  filasDomicilioReutilizado,
+  entregaDeDomicilioOperam,
+  comercialDelAltaReutilizada,
 } from './alta-logica.js';
 import {
   montarTelefono,
@@ -6960,6 +6965,10 @@ const altaState = {
   datos: null,
   domicilio: null,
   modo: null,
+  // Linea base de la Seccion 2 al reutilizar un Cliente Operam (#371): lo que el
+  // cliente ya tiene en Operam, para que solo viaje lo que el vendedor cambie. null =
+  // no hay precarga (alta nueva, o la lectura fallo) y la Seccion 2 viaja tal cual.
+  comercialReutilizado: null,
   // "El vendedor toco el select de Uso de CFDI en ESTA alta" (#250). El campo nace
   // preseleccionado en G03 y altaFijarDefaultUsoCfdi lo escribe por JS, que no dispara
   // `change`: sin esta marca, el default se le escribia encima al cliente existente.
@@ -7163,6 +7172,11 @@ function altaCandarSeccionesAvanzadas() {
     const ico = document.getElementById(`alta-ico-${n}`);
     if (ico) ico.textContent = ALTA_ICO_CANDADO;
   });
+  // La Seccion 3 vuelve a su modo de captura (#371): el acordeon es UN solo nodo, asi
+  // que un alta anterior sobre un Cliente Operam reutilizado la dejaria en solo
+  // lectura -- con el domicilio de ESE cliente a la vista -- para el alta o el
+  // upgrade que se abra despues en la misma pestana (#376).
+  altaModoDomicilio(null);
 }
 
 // "Dar de alta" existe solo en modo alta (#376): el boton vive en el mismo panel que
@@ -7802,12 +7816,98 @@ async function altaDedupCorrer(rfc, razonSocial, telefono) {
   }
 }
 
+// Valor que la precarga escribe en un campo de la Seccion 2 (#371). Mueve TAMBIEN el
+// atributo `selected`, que es con lo que valorDefaultCampo decide que cuenta como
+// captura del vendedor: la configuracion que el cliente ya tiene en Operam es un
+// default, no algo que el vendedor tecleo (#248/#250). Sin esto el borrador de
+// 'alta-completa' (#185) se quedaria con la configuracion de ESTE cliente y la
+// proxima alta -- la de otro -- la restauraria como si alguien la hubiera elegido.
+function altaFijarValorPrecargado(id, valor) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const v = valor || '';
+  if (el.tagName === 'SELECT') {
+    for (const opt of el.options) opt.defaultSelected = opt.value === v;
+  }
+  el.value = v;
+}
+
+// Seccion 2 del ALTA con lo que el Cliente Operam reutilizado ya tiene (#371, HITL de
+// #361). Hasta aqui arrancaba en "-- Selecciona --" y el vendedor no veia que lista,
+// segmento ni uso de CFDI tiene hoy el cliente al que le va a cotizar.
+//
+// NO se usa pcPrecargarComercialUpgrade aunque lea el mismo endpoint: esa funcion
+// ademas muta altaCsfState.comercialPrecargado -- la linea base contra la que el
+// UPGRADE decide que campos viajan -- y aplica altaAplicarModoComercial, y el panel
+// del alta y el del upgrade son EL MISMO nodo (#376): desde el alta la dejaria a
+// medio camino entre los dos modos, sin error y sin sintoma en tests. Aqui la Seccion
+// 2 sigue siendo captura del vendedor y su linea base sigue en undefined.
+//
+// El email de facturacion NO se precarga: Operam no lo expone en ninguna lectura
+// (#373, noLegible en DIFF_FISCAL_CAMPOS), asi que un valor ahi seria inventado.
+// Un fallo de lectura solo avisa: el alta puede seguir con la Seccion 2 en blanco,
+// que es exactamente como funcionaba hasta este ticket.
+async function altaPrecargarComercialReutilizado(clienteId) {
+  const errDiv = document.getElementById('alta-comercial-precarga-aviso');
+  altaState.comercialReutilizado = null;
+  try {
+    const res = await api(`/api/operam/clientes/${clienteId}/comercial`);
+    if (!res.ok) throw new Error('lectura fallida');
+    const pre = await res.json();
+    altaState.comercialReutilizado = pre;
+    // La lista que el cliente ya tiene entra al selector aunque quien captura no la
+    // tenga habilitada (#300): conservarla es valido y el servidor la deja pasar. Se
+    // repuebla ANTES de fijar el valor o el <select> se quedaria en "-- Selecciona --".
+    altaPoblarListasPrecios(altaState.catalogos, pre.salesType);
+    altaFijarValorPrecargado('alta-lista-precios', pre.salesType);
+    altaFijarValorPrecargado('alta-segmento', pre.segmentoId);
+    if (pre.usoCfdi) altaFijarValorPrecargado('alta-uso-cfdi', pre.usoCfdi);
+    if (errDiv) errDiv.style.display = 'none';
+  } catch {
+    if (errDiv) {
+      errDiv.textContent = 'No se pudo leer la configuracion comercial actual del Cliente Operam: revisala en Operam antes de continuar.';
+      errDiv.style.display = '';
+    }
+  }
+}
+
+// La Seccion 3 segun lo que el vendedor eligio (#371): con un domicilio del Cliente
+// Operam se esconde la captura y se muestra ese domicilio; sin el (alta nueva o
+// "Crear nuevo domicilio") vuelve el formulario de siempre. El contenido se pinta con
+// textContent desde los pares del nucleo puro: nada de lo que viene de Operam se
+// interpreta como HTML.
+function altaModoDomicilio(domicilio) {
+  const captura = document.getElementById('alta-domicilio-captura');
+  const caja = document.getElementById('alta-domicilio-reutilizado');
+  if (captura) captura.style.display = domicilio ? 'none' : '';
+  if (!caja) return;
+  caja.textContent = '';
+  if (!domicilio) { caja.style.display = 'none'; return; }
+  const titulo = document.createElement('p');
+  titulo.style.cssText = 'font-weight:600;font-size:13px;margin:0 0 8px';
+  titulo.textContent = 'Domicilio de entrega del Cliente Operam (no se captura ni se modifica aqui)';
+  caja.appendChild(titulo);
+  for (const fila of filasDomicilioReutilizado(domicilio)) {
+    const p = document.createElement('p');
+    p.style.cssText = 'margin:2px 0;font-size:13px';
+    const etq = document.createElement('strong');
+    etq.textContent = fila.etiqueta + ': ';
+    p.appendChild(etq);
+    p.appendChild(document.createTextNode(fila.valor));
+    caja.appendChild(p);
+  }
+  caja.style.display = '';
+}
+
 async function altaDedupUsarCliente(clienteId) {
   altaState.clienteExistente = { id: clienteId };
   const dedupDiv = document.getElementById('alta-dedup-resultado');
   if (dedupDiv) {
     dedupDiv.innerHTML += '<p style="font-size:12px;color:var(--text-light)">Cargando domicilios...</p>';
   }
+  // La Seccion 2 se precarga al elegir el cliente (#371), no al elegir el domicilio:
+  // el vendedor la ve en cuanto se desbloquea. No bloquea la lista de domicilios.
+  const comercial = altaPrecargarComercialReutilizado(clienteId);
   try {
     const res = await api('/api/operam/clientes/' + clienteId + '/domicilios');
     if (!res.ok) throw new Error('Error ' + res.status);
@@ -7816,6 +7916,7 @@ async function altaDedupUsarCliente(clienteId) {
   } catch (err) {
     if (dedupDiv) dedupDiv.innerHTML += '<p style="color:var(--danger);font-size:12px">Error al cargar domicilios: ' + err.message + '</p>';
   }
+  await comercial;
 }
 
 async function altaDedupSelCandidato(clienteId) {
@@ -7864,11 +7965,17 @@ function altaBranchCodeDeIndice(idx) {
 
 function altaDedupSelDomicilio(clienteId, domicilioIdx) {
   altaState.clienteExistente = { id: clienteId, branchIdx: domicilioIdx, branchCode: altaBranchCodeDeIndice(domicilioIdx) };
+  // La Seccion 3 pasa a solo lectura con el domicilio elegido (#371): sobre un
+  // Cliente Operam reutilizado el modulo no escribe branches, asi que exigir la
+  // captura era pedir datos que se tiran.
+  altaModoDomicilio(domicilioReutilizadoDelAlta(altaState.clienteExistente, altaState.domiciliosCliente));
   altaDedupDesbloquear();
 }
 
 function altaDedupNuevoDomicilio(clienteId) {
   altaState.clienteExistente = { id: clienteId, branchIdx: 'nuevo', branchCode: null };
+  // Este branch SI nace en esta alta: la Seccion 3 vuelve a capturarse como siempre.
+  altaModoDomicilio(null);
   altaDedupDesbloquear();
 }
 
@@ -8038,6 +8145,17 @@ function altaValidarDomicilio() {
 
 async function altaConfirmarDomicilio() {
   const errDiv = document.getElementById('alta-domicilio-error');
+  // Domicilio del Cliente Operam reutilizado (#371): no hay captura que validar ni
+  // telefono que revisar -- nada de esto se escribe en Operam --, y lo que ocupa el
+  // lugar de altaLeerDomicilio es el domicilio elegido, para que "Cotizar ahora"
+  // abra el cotizador con el domicilio al que de verdad va la mercancia.
+  const reutilizado = domicilioReutilizadoDelAlta(altaState.clienteExistente, altaState.domiciliosCliente);
+  if (altaReutilizaDomicilio(altaState.clienteExistente)) {
+    if (errDiv) errDiv.style.display = 'none';
+    altaState.domicilio = entregaDeDomicilioOperam(reutilizado);
+    altaDomicilioConfirmado();
+    return;
+  }
   const err = altaValidarDomicilio();
   if (err) {
     if (errDiv) { errDiv.textContent = err; errDiv.style.display = ''; }
@@ -8048,7 +8166,12 @@ async function altaConfirmarDomicilio() {
   if (errDiv) errDiv.style.display = 'none';
 
   altaState.domicilio = altaLeerDomicilio();
+  altaDomicilioConfirmado();
+}
 
+// Lo que pasa cuando la Seccion 3 queda resuelta, venga de la captura o del
+// domicilio reutilizado (#371): un solo lugar decide la paloma y el desbloqueo.
+function altaDomicilioConfirmado() {
   const dot = document.getElementById('chkdot-3');
   if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
 
@@ -8160,14 +8283,19 @@ function altaDarDeAlta() {
   const resolvedCustomerId = esClienteExistente
     ? altaState.clienteExistente.id
     : (altaState.customer_id || null);
-  const comercial = {
+  // Del panel solo viaja lo que el vendedor ELIGIO (#371): sobre un Cliente Operam
+  // reutilizado la Seccion 2 se abrio precargada con lo que ese cliente ya tiene, y
+  // reenviarlo pediria escrituras que nadie pidio (el segmento dispara ademas el
+  // post-fix por la web legacy). Sin precarga la poda no aplica y todo viaja igual
+  // que siempre.
+  const comercial = comercialDelAltaReutilizada({
     uso_cfdi: getComercial('alta-uso-cfdi'),
     sales_type: getComercial('alta-lista-precios'),
     segmento_id: getComercial('alta-segmento'),
     salesman: getComercial('alta-vendedor'),
     invoice_email: getComercial('alta-email-factura'),
     celular_nota: telefonoDeCampo('alta-celular'),
-  };
+  }, altaState.comercialReutilizado);
   // La salida de la dedup previa del navegador, por fin leida (#252): "usar este
   // Cliente Operam" con el domicilio de entrega que el vendedor eligio entre los
   // suyos, o "es otro domicilio de este cliente" cuando pidio crear uno. Hasta
