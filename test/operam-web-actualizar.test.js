@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { actualizarQuoteOperam, _resetSesionWeb } from '../lib/operam-web.js';
+import { actualizarQuoteOperam, parsearFormularioQuote, _resetSesionWeb } from '../lib/operam-web.js';
 
 const DIR_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const VISTA_1216_DESC = readFileSync(join(DIR_FIXTURES, 'quote-1216-vista-2.html'), 'utf8');
@@ -555,6 +555,39 @@ test('actualizarQuoteOperam: sin contacto de entrega el ProcessOrder deja phone 
     const process = state.posts.find((p) => p.params.has('ProcessOrder'));
     assert.equal(process.params.get('phone'), '');
     assert.equal(process.params.get('email'), '');
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+// --- El vendedor del quote no viaja en la reescritura (#405) ------------------
+// La medicion que pedia el ticket: la reescritura del quote conserva al vendedor
+// ORIGINAL porque el cotizador no manda ninguno. El formulario REAL de edicion de
+// FA (quote-1216-form-edicion.html) no tiene campo de vendedor -- el `salesman`
+// del quote lo deriva Operam del domicilio de entrega del cliente --, asi que
+// quien actualiza (un admin corrigiendo la cotizacion de otro) no puede cambiarlo.
+test('#405: la reescritura del quote no manda vendedor por ningun POST', async () => {
+  const { campos } = parsearFormularioQuote(readFileSync(join(DIR_FIXTURES, 'quote-1216-form-edicion.html'), 'utf8'));
+  assert.equal(Object.keys(campos).some((k) => /salesman|vendedor/i.test(k)), false,
+    'el formulario real de edicion del quote no expone el vendedor');
+
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock, state } = crearServidorFA({
+    lineasIniciales: [{ stockId: 'VIEJO1', desc: 'x', qty: 1, price: 1, disc: 0 }],
+  });
+  globalThis.fetch = fetchMock;
+  try {
+    await actualizarQuoteOperam(QUOTE_NO, dataDe([{ codigo: 'TA14Y31111', descripcion: 'Plato', cantidad: 1, precio: 107.76, descuento: 0 }]));
+    for (const p of state.posts) {
+      for (const k of p.params.keys()) {
+        assert.equal(/salesman|vendedor/i.test(k), false, `la reescritura no debe mandar ${k}`);
+      }
+    }
+    // Y el quote sigue siendo del mismo cliente, que es de donde Operam saca el
+    // vendedor: la reescritura reposte el customer_id del formulario.
+    const process = state.posts.find((p) => p.params.has('ProcessOrder'));
+    assert.equal(process.params.get('customer_id'), CUSTOMER_ID);
   } finally {
     globalThis.fetch = fetchOriginal;
   }

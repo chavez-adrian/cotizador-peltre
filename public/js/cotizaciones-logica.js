@@ -213,6 +213,27 @@ export function ligaClienteAlGuardar(clienteNuevo, clientePrevio) {
   };
 }
 
+// El Representante de Ventas de una cotizacion es quien la CREO, y editarla no
+// lo cambia (#405, decision 2026-09-20; CONTEXT.md "Vendedor"). Hay DOS campos y
+// divergian: la columna `vendedor` del registro -- la del Historial, el pipeline
+// y los permisos -- no se toca al actualizar, mientras que `data.vendedor` -- lo
+// que imprime el documento -- se pisaba en cada guardado con quien guardaba, asi
+// que un admin que corregia la cotizacion de un vendedor cambiaba el nombre que
+// el cliente lee como su representante (la 1284 paso de Alejandro a Adrian).
+//
+// El original sale de la columna, que es la duena del registro; solo si el
+// registro no la trae (historicos del backfill, donde el salesman de Operam no
+// mapeo a nadie) se cae a lo que el documento ya decia, y solo sin ninguna de
+// las dos manda quien guarda. Sin registro previo -- cotizacion nueva, incluido
+// Copiar, que nace sin id -- el vendedor es quien la crea, como siempre.
+export function vendedorAlGuardar(registroPrevio, quienGuarda) {
+  const prev = registroPrevio || {};
+  const original = [prev.vendedor, prev.data?.vendedor]
+    .map(v => (typeof v === 'string' ? v.trim() : ''))
+    .find(v => v !== '');
+  return original || quienGuarda;
+}
+
 // Las dos acciones de carga del historial (#104): "Actualizar cotización" (mismo
 // registro, mismo folio de Operam) y "Crear nueva a partir de ésta" (lo que "Cargar"
 // hacia hasta hoy, ahora con nombre honesto). Actualizar es el default cuando se

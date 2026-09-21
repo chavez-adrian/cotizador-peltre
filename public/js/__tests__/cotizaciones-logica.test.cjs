@@ -10,6 +10,7 @@ let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   buildAvisoCambioClienteHtml;
 let MENSAJE_COPIA_LISTA_FIJADA;
 let clienteAlCargarCotizacion, ligaClienteAlGuardar, customerIdFiscal, cotizacionesPreviasDelCliente;
+let vendedorAlGuardar;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
@@ -17,7 +18,8 @@ before(async () => {
     puedeActualizarCotizacion, buildAccionesCargaHtml,
     buildAvisoModoActualizacion, textoBotonGenerar,
     filtrarCotizaciones, buildAvisoCambioClienteHtml,
-    clienteAlCargarCotizacion, ligaClienteAlGuardar } = await import('../cotizaciones-logica.js'));
+    clienteAlCargarCotizacion, ligaClienteAlGuardar,
+    vendedorAlGuardar } = await import('../cotizaciones-logica.js'));
   ({ MENSAJE_COPIA_LISTA_FIJADA } = await import('../tier-logica.js'));
   ({ customerIdFiscal, cotizacionesPreviasDelCliente } = await import('../alta-logica.js'));
 });
@@ -755,6 +757,30 @@ test('#394-C6: el domicilio que llega con un customerId ajeno se descarta con el
 test('#394-C7: sin liga previa el cuerpo la estrena (es como la subida la anota)', () => {
   const liga = ligaClienteAlGuardar({ customerId: 529, branchId: 599 }, {});
   assert.deepStrictEqual(liga, { customerId: 529, branchId: 599, customerIdIgnorado: null });
+});
+
+// === #405: el Representante de Ventas del registro tampoco lo pisa quien edita ===
+// La columna es la duena del registro (Historial, pipeline, permisos) y manda.
+
+test('#405-C1: editar un registro existente conserva al vendedor de la columna', () => {
+  assert.strictEqual(vendedorAlGuardar({ vendedor: 'Alejandro Chavez' }, 'Adrian Chavez'), 'Alejandro Chavez');
+});
+
+test('#405-C2: sin registro previo el vendedor es quien guarda (nueva y Copiar)', () => {
+  assert.strictEqual(vendedorAlGuardar(null, 'Adrian Chavez'), 'Adrian Chavez');
+});
+
+// Historicos del backfill (#76): el salesman de Operam pudo no mapear a nadie y
+// la columna quedo vacia. Ahi el unico rastro del original es lo que el
+// documento ya decia; si tampoco lo hay, manda quien guarda (un documento sin
+// Representante de Ventas seria peor).
+test('#405-C3: con la columna vacia manda el vendedor que ya imprimia el documento', () => {
+  assert.strictEqual(vendedorAlGuardar({ vendedor: null, data: { vendedor: 'Oswaldo Chavez' } }, 'Adrian Chavez'),
+    'Oswaldo Chavez');
+});
+
+test('#405-C4: un registro sin ningun vendedor lo estrena quien guarda', () => {
+  assert.strictEqual(vendedorAlGuardar({ vendedor: '  ', data: {} }, 'Adrian Chavez'), 'Adrian Chavez');
 });
 
 // === Issue #404: "Cotizaciones previas" tambien es satelite del cliente ===

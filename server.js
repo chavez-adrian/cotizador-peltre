@@ -10,7 +10,7 @@ import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
-import { puedeActualizarCotizacion, ligaClienteAlGuardar } from './public/js/cotizaciones-logica.js';
+import { puedeActualizarCotizacion, ligaClienteAlGuardar, vendedorAlGuardar } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
@@ -548,8 +548,13 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
     // documento, el quote y la huella leen `precio`, asi que dejar el de lista
     // ahi cotizaria el estimado con el precio del proveedor guardado al lado.
     if (Array.isArray(data.items)) data.items = aplicarPrecioManualEnPartidas(data.items);
-    data.vendedor = req.user.name;
-    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, req.user.name, prevEntry);
+    // El Representante de Ventas del documento es el del REGISTRO, no quien
+    // guarda (#405): editar la cotizacion de otro vendedor -- que es lo que
+    // hace el admin desde el Historial -- no la reasigna. En una cotizacion
+    // nueva (prevEntry null, tambien en Copiar) sigue siendo quien la crea.
+    const vendedor = vendedorAlGuardar(prevEntry, req.user.name);
+    data.vendedor = vendedor;
+    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, vendedor, prevEntry);
     const entry = await cotStore.obtener(id);
     res.json({ id, folioOperam: entry?.folioOperam ?? null, requiereActualizacionOperam });
   } catch (err) {
