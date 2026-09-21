@@ -3471,6 +3471,20 @@ function pcElegirProspecto(raw) {
   pcLlenarCamposContacto(cliente);
   pcState.cliente = cliente;
   pcRenderTarjeta();
+  // Un prospecto que ya cotizo lleva puesto su Cliente Operam (clienteOperamId,
+  // #81) y por lo tanto tiene domicilios que ofrecer, igual que la fila 'operam'
+  // del mismo buscador -- que sale AL LADO de la suya, porque
+  // mezclarResultadosBusqueda no deduplica: la misma persona aparece dos veces,
+  // etiquetada Operam y Prospecto, y solo una de las dos pedia los satelites.
+  // Elegir la otra llegaba al paso Envio con el gate ABIERTO (customerIdFiscal
+  // != null) y la lista vacia, asi que pcRenderDomSelect borraba su hueco en
+  // silencio: es el bug de #409 por el camino que la tabla del issue no enumera,
+  // y quedo mas transitable cuando Recientes dejo de seleccionar y paso a
+  // prellenar la busqueda. Sin liga (contacto que nunca cotizo) no hay nada que
+  // pedir y pcCargarSatelitesDelCliente sale solo.
+  recordarRespaldoDelCliente();
+  return pcCargarSatelitesDelCliente(customerIdFiscal(cliente), { aplicar: true })
+    .then(() => pcRenderDomSelect());
 }
 
 // --- Camino contacto nuevo ---
