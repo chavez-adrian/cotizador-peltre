@@ -103,6 +103,46 @@ test('una subida fallida deja el mensaje de error y sigue lanzando como antes', 
   assert.match(fila.error, /Dropbox 409: path\/conflict\/file/);
 });
 
+// #399: el registro guardaba solo la ruta, y "Subido" sobre el sandbox se veia
+// igual que "Subido" sobre la carpeta real. El namespace con el que viajo la
+// peticion queda en la fila, en el exito y en el fallo.
+test('una subida con el flujo configurado registra el namespace contra el que viajo', async () => {
+  process.env.DROPBOX_NS_CSF = '5835633';
+  process.env.DROPBOX_PATH_CSF = '/';
+  const restore = mockDropbox(OK);
+  try {
+    await upload({ flujo: 'csf', archivo: 'AAA010101AA1 - Uno.pdf' }, Buffer.from('x'), 'add');
+  } finally {
+    restore();
+  }
+  let [fila] = await store.listarRecientes();
+  assert.equal(fila.namespace, '5835633');
+  assert.equal(fila.destino, '/AAA010101AA1 - Uno.pdf');
+
+  const restoreFallo = mockDropbox(CONFLICTO);
+  try {
+    await assert.rejects(() => upload({ flujo: 'csf', archivo: 'BBB010101BB2 - Dos.pdf' }, Buffer.from('x'), 'add'), /Dropbox 409/);
+  } finally {
+    restoreFallo();
+    delete process.env.DROPBOX_NS_CSF;
+    delete process.env.DROPBOX_PATH_CSF;
+  }
+  [fila] = await store.listarRecientes();
+  assert.equal(fila.ok, false);
+  assert.equal(fila.namespace, '5835633');
+});
+
+test('una subida con el flujo sin configurar queda registrada sin namespace', async () => {
+  const restore = mockDropbox(OK);
+  try {
+    await upload({ flujo: 'calca', archivo: 'Cliente - Pedido 9.pdf' }, Buffer.from('x'), 'add');
+  } finally {
+    restore();
+  }
+  const [fila] = await store.listarRecientes();
+  assert.equal(fila.namespace, null);
+});
+
 test('el fallo del token tambien es una subida fallida, no un hueco en el registro', async () => {
   globalThis.fetch = async (url) => {
     if (String(url).includes('oauth2/token')) return { ok: false, status: 401, text: async () => 'invalid_grant' };

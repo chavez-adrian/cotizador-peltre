@@ -291,8 +291,10 @@
       <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
         Cada intento de subida a Dropbox -- constancia fiscal, posicion de calca y backup del export de Bitrix24 --
         con su destino y su resultado. Las subidas son fire-and-forget: un fallo no rompe nada y por eso, sin esta
-        vista, no se nota. Los renglones marcados son los que fallaron.
+        vista, no se nota. Los renglones marcados son los que fallaron. "Subido" no basta: la columna Lugar dice si el
+        archivo cayo en el Dropbox real (la peticion viajo contra un namespace) o en el sandbox de la app.
       </p>
+      <div id="dropbox-flujos" style="display:none;margin-bottom:12px;font-size:12px"></div>
       <div id="dropbox-subidas-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
       <div id="dropbox-subidas-vacio" style="display:none;color:var(--text-light);font-size:13px">Ninguna subida registrada todavia.</div>
       <div id="dropbox-subidas-content" style="display:none;overflow-x:auto">
@@ -303,6 +305,7 @@
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Fecha</th>
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Flujo</th>
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Archivo</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Lugar</th>
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Destino</th>
               <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Error</th>
             </tr>
@@ -917,6 +920,29 @@ const DROPBOX_FLUJO_NOMBRES = {
   desconocido: 'Sin declarar',
 };
 
+// #399: donde cayo (o iba a caer) la fila. `inferido` = la fila es anterior a
+// que el registro guardara el namespace y el lugar sale de su ruta.
+function dropboxLugarTexto(lugar) {
+  if (!lugar) return '';
+  if (lugar.tipo === 'sandbox') return 'Sandbox de la app' + (lugar.inferido ? ' (inferido)' : '');
+  if (lugar.namespace) return 'Dropbox real, namespace ' + paridadEsc(lugar.namespace);
+  return 'Dropbox real, namespace sin registrar (inferido por la ruta)';
+}
+
+// Estado por flujo, no evento: contra que escribe HOY cada uno. "Sin
+// configurar" va en gris a proposito: hay flujos que se quedan asi por decision
+// (Bitrix24 ya no existe) y no son una alarma.
+function dropboxFlujosHtml(flujos) {
+  return flujos.map(f => `
+    <div style="padding:2px 0">
+      <strong>${DROPBOX_FLUJO_NOMBRES[f.flujo] || paridadEsc(f.flujo)}:</strong>
+      ${f.configurado
+        ? `configurado -- escribe en el Dropbox real, namespace ${paridadEsc(f.namespace)}, bajo <code>${paridadEsc(f.base)}</code>`
+        : `<span style="color:var(--text-light)">sin configurar -- escribe en el sandbox de la app, bajo <code>${paridadEsc(f.base)}</code></span>`}
+    </div>
+  `).join('');
+}
+
 async function loadDropboxSubidas() {
   const loading = document.getElementById('dropbox-subidas-loading');
   const vacio = document.getElementById('dropbox-subidas-vacio');
@@ -925,6 +951,11 @@ async function loadDropboxSubidas() {
     const res = await adminApi('/api/admin/dropbox-subidas');
     const data = await res.json();
     loading.style.display = 'none';
+    if (data.flujos && data.flujos.length) {
+      const flujos = document.getElementById('dropbox-flujos');
+      flujos.innerHTML = dropboxFlujosHtml(data.flujos);
+      flujos.style.display = 'block';
+    }
     if (!data.subidas || data.subidas.length === 0) { vacio.style.display = 'block'; return; }
     document.getElementById('dropbox-subidas-rows').innerHTML = data.subidas.map(s => `
       <tr${s.ok ? '' : ' class="higiene-candidato"'}>
@@ -932,6 +963,7 @@ async function loadDropboxSubidas() {
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosFecha(s.momento)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${DROPBOX_FLUJO_NOMBRES[s.flujo] || paridadEsc(s.flujo)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${paridadEsc(s.archivo)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${dropboxLugarTexto(s.lugar)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text-light)">${paridadEsc(s.destino)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--danger)">${paridadEsc(s.error || '')}</td>
       </tr>

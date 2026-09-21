@@ -53,6 +53,22 @@ test('una subida fallida guarda el mensaje de error', async () => {
   assert.equal(fila.error, 'Dropbox 409: path/conflict/file');
 });
 
+// #399: la ruta sola no dice donde cayo el archivo. El namespace contra el que
+// viajo la subida es columna propia; sin el, la fila es del sandbox.
+test('una subida con namespace lo guarda; sin namespace queda en null', async () => {
+  await store.registrar({ flujo: 'csf', destino: CSF, ok: true });
+  await store.registrar({ flujo: 'csf', destino: '/AAA010101AA1 - Uno.pdf', namespace: '5835633', ok: true });
+  const [conNamespace, sandbox] = await store.listarRecientes();
+  assert.equal(conNamespace.namespace, '5835633');
+  assert.equal(sandbox.namespace, null);
+});
+
+test('una fila escrita antes de #399, sin el campo, se lee con namespace null', async () => {
+  escribirArchivoSync(JSON_PATH, JSON.stringify([{ momento: '2026-09-20T18:00:00.000Z', flujo: 'csf', destino: CSF, archivo: 'x.pdf', ok: true, error: null }]));
+  const [fila] = await store.listarRecientes();
+  assert.equal(fila.namespace, null);
+});
+
 test('listarRecientes devuelve primero la mas reciente y respeta el limite', async () => {
   await store.registrar({ flujo: 'bitrix', destino: '/CRM/BACKUP/leads.json', ok: true });
   await store.registrar({ flujo: 'bitrix', destino: '/CRM/BACKUP/deals.json', ok: true });

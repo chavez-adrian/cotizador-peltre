@@ -87,6 +87,7 @@ import { credencialesConfiguradas as googleConfigurado } from './lib/google-cont
 import { registrarBarrido as registrarBarridoContactos } from './lib/contactos-observabilidad-io.js';
 import { listarTodos as listarBarridosContactos } from './lib/contactos-observabilidad-store.js';
 import { listarRecientes as listarSubidasDropbox } from './lib/dropbox-subidas-store.js';
+import { estadoDeFlujos as estadoFlujosDropbox, lugarDeSubida as lugarSubidaDropbox } from './lib/dropbox-destinos.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -2174,8 +2175,15 @@ app.get('/api/admin/sync-contactos-google', authMiddleware, adminMiddleware, asy
 // superficie donde se ve, con la mas reciente primero. El store se traga sus
 // propios fallos y devuelve lista vacia, asi que aqui no hay sinDb que reportar:
 // sin DATABASE_URL el registro cae al JSON de disco y se muestra igual.
+// #399: cada fila sale con su `lugar` (Dropbox real o sandbox de la app) y,
+// aparte, `flujos` dice contra que escribe HOY cada flujo -- estado calculado
+// al leer, no una fila mas que se iria del LIMIT.
 app.get('/api/admin/dropbox-subidas', authMiddleware, adminMiddleware, async (_req, res) => {
-  res.json({ subidas: await listarSubidasDropbox() });
+  const subidas = await listarSubidasDropbox();
+  res.json({
+    flujos: estadoFlujosDropbox(),
+    subidas: subidas.map(s => ({ ...s, lugar: lugarSubidaDropbox(s) })),
+  });
 });
 
 // Reporte de paridad del catalogo Excel vs Operam (issue #130, padre #120, bloqueado
