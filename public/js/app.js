@@ -26,7 +26,6 @@ import {
   chipsCompletitud,
   buildClienteDesdeContactoNuevo,
   clienteDesdeProspecto,
-  clienteDesdeCotizacionReciente,
   accionCelularContactoNuevo,
   decidirVistaTrasBusqueda,
   accionProspecto409,
@@ -64,6 +63,9 @@ import {
 } from './telefono-widget.js';
 import { ciudadPorCP } from './cp-ciudad.js';
 import { planAutollenadoCP, paisTieneIndiceCP } from './cp-autollenado.js';
+import {
+  camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido, indiceDeDomicilio,
+} from './domicilio-entrega-logica.js';
 import {
   CANALES,
   PIEZAS_ESTIMADAS,
@@ -629,7 +631,15 @@ function llaveBorradorActual() {
 // de entrega.
 function leerClienteParaBorrador() {
   if (!pcState.cliente) return null;
-  return { pcCliente: pcState.cliente, campos: leerClienteFormulario('') };
+  return {
+    pcCliente: pcState.cliente,
+    campos: leerClienteFormulario(''),
+    // El domicilio elegido en el paso Envio se guarda por su branch_code (#409),
+    // no por el indice: al restaurar, la lista se vuelve a pedir a Operam y su
+    // orden no es una promesa. Lo que identifica al domicilio de entrega es el
+    // branch_code (#252).
+    branchId: window._operamDomicilios?.[pcState.domicilioIdx || 0]?.branch_code ?? null,
+  };
 }
 
 // Contacto nuevo a medio capturar: el formulario de "Contacto nuevo" esta
@@ -707,7 +717,7 @@ function matarBorrador(evento) {
 // dejado el paso Cliente en blanco (showApp llama en ese orden).
 function restaurarClienteDelBorrador(borrador) {
   if (!borrador.cliente) return;
-  const { pcCliente, campos } = borrador.cliente;
+  const { pcCliente, campos, branchId } = borrador.cliente;
   if (!campos) return;
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
   set('cl-razon-social', campos.razonSocial);
@@ -731,11 +741,22 @@ function restaurarClienteDelBorrador(borrador) {
   const paisEl = document.getElementById('cl-pais');
   if (paisEl) paisEl.value = campos.pais || 'MX';
   pcState.cliente = pcCliente || null;
+  // La direccion restaurada la escribio alguien -- el vendedor o el cliente de
+  // Operam de la sesion que se interrumpio -- y el selector no es dueno de
+  // ninguno de los seis campos (#409).
+  olvidarDomicilioAsistido();
   pcRenderTarjeta();
   // Borrador con CP y municipio/estado vacios (#291, decision de Adrian
   // 2026-09-02): el indice los llena aunque el vendedor no pase por el paso
   // Envio. Lo que el borrador si traia escrito no se toca.
   resolverCpAsistido('entrega');
+  // Los satelites del cliente se repiden por el UNICO camino (#409): el
+  // borrador guarda la foto de los campos, no la lista de domicilios del ERP,
+  // asi que sin esto el paso Envio restaurado se quedaba sin selector. SIN
+  // aplicar ninguno -- lo capturado manda -- y abriendo en el que el vendedor
+  // habia elegido antes de la interrupcion.
+  pcCargarSatelitesDelCliente(customerIdFiscal(pcState.cliente), { branchId: branchId ?? null })
+    .then(() => pcRenderDomSelect());
 }
 
 // Contacto nuevo a medio capturar restaurado (#180): reabre el formulario de
@@ -2894,6 +2915,7 @@ function nuevaCotizacion() {
   fijarTelefono('cl-telefono', '');
   fijarTelefono('cl-cel-entrega', '');
   olvidarCpAsistido('entrega');
+  olvidarDomicilioAsistido();
   const paisEl = document.getElementById('cl-pais');
   if (paisEl) paisEl.value = 'MX';
   document.getElementById('shipping-option').value = 'none';
@@ -2971,23 +2993,11 @@ async function seleccionarClienteOperam(cliente) {
   // via el selector de contactos (pcRenderContactoSelect), siempre con nombre visible.
   updateTabIndicators();
 
-  // Cargar domicilios + contactos del cliente (issue #99: obtenerDomicilios ahora
-  // devuelve { domicilios, contacts }). Se precarga el primer domicilio; con varios,
-  // el paso Envio ofrece su propio selector (pcRenderDomSelect, #84) sobre
-  // window._operamDomicilios. El selector de contactos (pcRenderContactoSelect)
-  // combina el contacto propio del domicilio actual con window._operamContactosCliente.
-  window._operamDomicilios = [];
-  window._operamContactosCliente = [];
-  try {
-    const res = await api(`/api/operam/clientes/${cliente.id}/domicilios`);
-    if (res.ok) {
-      const { domicilios, contacts } = await res.json();
-      window._operamDomicilios = domicilios || [];
-      window._operamContactosCliente = contacts || [];
-    }
-  } catch {}
-  pcState.domicilioIdx = 0;
-  if (window._operamDomicilios.length >= 1) aplicarDomicilio(window._operamDomicilios[0]);
+  // La direccion que el registro del cliente acaba de prellenar es el RESPALDO
+  // de cualquier domicilio que se elija despues (#409, branches sin calle ni CP
+  // en el ERP: #330).
+  recordarRespaldoDelCliente();
+  await pcCargarSatelitesDelCliente(cliente.id, { aplicar: true });
 
   // Mostrar historial de cotizaciones para este cliente por el UNICO camino que
   // existe (#404): el panel es otro satelite del cliente, como los domicilios y
@@ -2997,18 +3007,118 @@ async function seleccionarClienteOperam(cliente) {
 
 window.seleccionarClienteOperam = seleccionarClienteOperam;
 
+// EL punto unico que le pide a Operam los satelites del cliente -- domicilios y
+// contactos (issue #99: obtenerDomicilios devuelve { domicilios, contacts }).
+// Hasta #409 solo lo hacia seleccionarClienteOperam, asi que los caminos que no
+// pasan por el -- Editar/Copiar del historial y el borrador restaurado -- se
+// quedaban sin domicilios y el selector del paso Envio (pcRenderDomSelect, #84)
+// borraba su hueco EN SILENCIO. Es el mismo patron de #404 con las
+// "Cotizaciones previas": otro satelite del cliente, un solo camino que lo pide.
+//
+// `aplicar` es lo que separa ELEGIR cliente de RESTAURAR una cotizacion: al
+// elegirlo, la direccion del domicilio entra en los campos; al restaurar, la
+// direccion que el documento ya tiene manda y aqui no se toca nada -- solo se
+// repone la lista y se abre el selector en el domicilio que el registro senala.
+// `clienteId` es el Cliente Operam, no el objeto del paso: quien restaura lo
+// resuelve con customerIdFiscal (el UNICO resolvedor de "cual es el cliente en
+// Operam", #243) y quien lo acaba de elegir del buscador ya lo tiene en la mano.
+
+// Token de secuencia (mismo patron que pcBusquedaSeq/cvZonaSeq): desde #409
+// estos satelites se piden tambien al cargar una cotizacion, sin await, asi que
+// dos peticiones pueden estar en vuelo a la vez -- abrir la cotizacion A y
+// enseguida la B. Sin el token, la respuesta lenta de A aterriza despues y deja
+// en pantalla los domicilios de OTRO cliente, que es la forma del cruce de #394.
+let pcSatelitesSeq = 0;
+
+async function pcCargarSatelitesDelCliente(clienteId, { aplicar = false, branchId = null } = {}) {
+  const seq = ++pcSatelitesSeq;
+  window._operamDomicilios = [];
+  window._operamContactosCliente = [];
+  pcState.domicilioIdx = 0;
+  if (clienteId == null) return;
+  let domicilios = [];
+  let contacts = [];
+  try {
+    const res = await api(`/api/operam/clientes/${clienteId}/domicilios`);
+    if (res.ok) {
+      const cuerpo = await res.json();
+      domicilios = cuerpo.domicilios || [];
+      contacts = cuerpo.contacts || [];
+    }
+  } catch {}
+  if (seq !== pcSatelitesSeq) return; // otra peticion mas nueva ya se adueno del cliente
+  window._operamDomicilios = domicilios;
+  window._operamContactosCliente = contacts;
+  pcState.domicilioIdx = indiceDeDomicilio(domicilios, branchId);
+  if (aplicar && domicilios.length >= 1) {
+    aplicarDomicilio(domicilios[pcState.domicilioIdx]);
+  }
+  // Quinto enganche del autosave (#409): la lista llega SEGUNDOS despues de que
+  // pcRenderTarjeta ya guardo el borrador, asi que sin esto el domicilio que el
+  // registro senala nunca alcanzaba a entrar y el borrador restaurado abria en
+  // el primero, contradiciendo al documento. Durante la restauracion no hace
+  // nada (borradorListo aun false), como los otros cuatro.
+  autoguardarBorrador();
+}
+
+// Los seis campos de la direccion de entrega tal como estan en pantalla, en la
+// forma que entiende el nucleo puro (domicilio-entrega-logica.js).
+const IDS_CAMPOS_DOMICILIO = {
+  calle: 'cl-calle', numInt: 'cl-num-int', colonia: 'cl-colonia',
+  cp: 'cl-cp-entrega', municipio: 'cl-municipio', estado: 'cl-estado',
+};
+
+function camposDomicilioEnPantalla() {
+  const out = {};
+  for (const [campo, id] of Object.entries(IDS_CAMPOS_DOMICILIO)) {
+    out[campo] = document.getElementById(id)?.value || '';
+  }
+  return out;
+}
+
+// Lo que el selector de domicilio dejo escrito la vez pasada (#409). Misma forma
+// y mismo proposito que cpDelIndice: sin esa memoria no hay como distinguir el
+// CP que puso el domicilio anterior del que tecleo el vendedor.
+let domicilioDelSelector = camposDomicilioVacios();
+
+// La direccion del REGISTRO del cliente, que llena los huecos de cualquier
+// domicilio que se elija -- no solo el primero. Sobrevive a los cambios de
+// domicilio a proposito: con los dos branches vacios en el ERP (#330), soltarla
+// al cambiar de domicilio borraria la unica direccion conocida del cliente, que
+// desde el asiento del vendedor se lee como "el selector me vacio la entrega".
+let domicilioRespaldo = camposDomicilioVacios();
+
+// La direccion que el registro del cliente acaba de prellenar cuenta como
+// puesta por el SISTEMA: el formulario venia limpio de pcPrepararSeleccion y
+// aqui todavia no tecleo nadie. Sin declararlo, la regla de no pisar la leeria
+// como captura a mano y el domicilio del branch no se aplicaria nunca.
+function recordarRespaldoDelCliente() {
+  domicilioRespaldo = camposDomicilioEnPantalla();
+  domicilioDelSelector = { ...domicilioRespaldo };
+}
+
+function olvidarDomicilioAsistido() {
+  domicilioDelSelector = camposDomicilioVacios();
+  domicilioRespaldo = camposDomicilioVacios();
+}
+
 // Solo aplica la DIRECCION del domicilio (calle/CP/municipio/...); el contacto de
 // entrega (nombre+telefono+email) lo aplica el selector de contactos (issue #99,
 // pcRenderContactoSelect/pcAplicarContacto), siempre con nombre visible.
+//
+// Desde #409 escribe por la regla de no pisar (decidirCampoAsistido, #291) en vez
+// del `if (val)` de antes, que solo sabia escribir: el campo que el domicilio
+// nuevo no trae se BORRA cuando lo habia puesto este mismo selector, para que
+// cambiar de domicilio no deje la calle del nuevo con el CP del anterior.
 function aplicarDomicilio(d) {
-  if (!d) return;
-  const f = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-  f('cl-calle',       d.calle);
-  f('cl-num-int',     d.numInt);
-  f('cl-colonia',     d.colonia);
-  f('cl-cp-entrega',  d.cp);
-  f('cl-municipio',   d.municipio);
-  f('cl-estado',      d.estado);
+  const plan = planDomicilioAsistido(
+    camposDomicilioEnPantalla(), domicilioDelSelector, valoresDeDomicilio(d, domicilioRespaldo),
+  );
+  for (const [campo, id] of Object.entries(IDS_CAMPOS_DOMICILIO)) {
+    const el = document.getElementById(id);
+    if (el) el.value = plan.valores[campo];
+  }
+  domicilioDelSelector = plan.delSelector;
 }
 
 // ============================================================================
@@ -3081,6 +3191,7 @@ function pcLimpiarCamposCliente() {
   fijarTelefono('cl-telefono', '');
   fijarTelefono('cl-cel-entrega', '');
   olvidarCpAsistido('entrega');
+  olvidarDomicilioAsistido();
   const pais = document.getElementById('cl-pais'); if (pais) pais.value = 'MX';
   const rfc = document.getElementById('cl-rfc'); if (rfc) rfc.readOnly = false;
   window._operamDomicilios = null;
@@ -3213,14 +3324,31 @@ async function pcRenderRecientes() {
   if (!zona) return;
   const recientes = await pcCargarRecientes();
   if (!recientes.length) { zona.innerHTML = ''; return; }
+  // Los recientes derivan de cotizaciones (nombre + telefono), no de Operam, asi
+  // que tocarlos PRELLENA la busqueda y deja que el vendedor elija el registro
+  // real -- exactamente lo que ya hacia la vista Clientes (cvRenderRecientes) y
+  // la razon que ahi esta escrita desde #190. Hasta #409 aqui se hacia al reves:
+  // el reciente seleccionaba el cliente desde la cotizacion guardada, sin tocar
+  // el ERP, y por eso llegaba al paso Envio sin domicilios que ofrecer (y con la
+  // identidad de una cotizacion vieja mezclada con satelites frescos, que es la
+  // clase de cruce que produjo la 1280, #394). Decision de Adrian 2026-09-21:
+  // una sola manera de elegir cliente en toda la app, todo fresco del ERP.
+  // Un reciente sin registro en Operam tiene salida igual: la busqueda mezcla
+  // prospectos (pcBuscarMezclado) y siempre ofrece "Crear contacto" (pcFilaCrear).
   zona.innerHTML = '<div class="pc-res-titulo">Recientes</div>' +
-    recientes.map((r, i) =>
-      `<button type="button" class="pc-res-row" onclick="pcElegirReciente(${r.cotizacionId})">` +
+    recientes.map(r =>
+      `<button type="button" class="pc-res-row" onclick="pcBuscarPrefill(${JSON.stringify(r.nombre).replace(/"/g, '&quot;')})">` +
       `<span class="pc-res-ini">${escapeHtml(pcIniciales(r.nombre))}</span>` +
       `<span class="pc-res-main"><span class="pc-res-nombre">${escapeHtml(nombreConCorto(r.nombre, r.nombreCorto))}</span>` +
       `<span class="pc-res-sub">${escapeHtml(r.telefono || 'Cotizado antes')}</span></span></button>`
     ).join('');
 }
+
+async function pcBuscarPrefill(nombre) {
+  const input = document.getElementById('pc-q');
+  if (input) { input.value = nombre || ''; await pcBuscar(); }
+}
+window.pcBuscarPrefill = pcBuscarPrefill;
 
 // Fetch compartido de los dos origenes (Operam + prospectos) + mezcla con la
 // funcion pura, sin endpoint nuevo. Lo usan el buscador y las sugerencias de
@@ -3338,43 +3466,6 @@ function pcElegirProspecto(raw) {
   pcState.cliente = cliente;
   pcRenderTarjeta();
 }
-
-async function pcElegirReciente(cotizacionId) {
-  pcPrepararSeleccion();
-  const root = pcEl();
-  root.innerHTML = '<div class="pc-pregunta">Cargando...</div>';
-  try {
-    const res = await api(`/api/cotizaciones/${cotizacionId}`);
-    const data = await res.json();
-    const c = data.cliente || {};
-    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-    set('cl-razon-social', c.razonSocial);
-    set('cl-nombre-corto', c.nombreCorto);
-    set('cl-rfc', c.rfc);
-    set('cl-cp-fiscal', c.cpFiscal);
-    set('cl-segmento', c.segmentoId);
-    set('cl-nombre-entrega', c.nombreEntrega);
-    set('cl-calle', c.calle);
-    set('cl-num-int', c.numInt);
-    set('cl-colonia', c.colonia);
-    set('cl-cp-entrega', c.cpEntrega);
-    set('cl-municipio', c.municipio);
-    set('cl-estado', c.estado);
-    // #290: este set() escribe cl-email-entrega por codigo (no dispara 'input').
-    set('cl-email-entrega', c.emailEntrega);
-    sincronizarEmailFactura('entrega');
-    const pais = document.getElementById('cl-pais');
-    if (pais) pais.value = c.pais || 'MX';
-    if (c.telefono) fijarTelefono('cl-telefono', c.telefono);
-    if (c.celEntrega) fijarTelefono('cl-cel-entrega', c.celEntrega);
-    pcState.cliente = clienteDesdeCotizacionReciente(c);
-    pcRenderTarjeta();
-  } catch {
-    pcRenderInicio();
-    alert('No se pudo cargar la cotizacion');
-  }
-}
-window.pcElegirReciente = pcElegirReciente;
 
 // --- Camino contacto nuevo ---
 // `restore` solo lo usa restaurarContactoNuevoDelBorrador() (#180): un contacto
@@ -3672,12 +3763,21 @@ window.pcContinuar = pcContinuar;
 function pcRenderDomSelect() {
   const slot = document.getElementById('pc-dom-slot');
   if (!slot) return;
-  const esOperam = pcState.cliente?.tipo === 'operam';
+  // Quien decide si hay Cliente Operam es el UNICO resolvedor del repo (#243),
+  // no el `tipo` del objeto del paso: una cotizacion guardada sin RFC vuelve
+  // como tipo 'nuevo' aunque tenga su customerId ligado, y con el `tipo` a secas
+  // el selector se callaba justo en el camino que #409 vino a arreglar.
+  const esOperam = customerIdFiscal(pcState.cliente) != null;
   const doms = window._operamDomicilios;
   if (esOperam && Array.isArray(doms) && doms.length > 1) {
+    // El selector arranca en el domicilio que la cotizacion ya senala (#409):
+    // pcState.domicilioIdx lo fijo pcCargarSatelitesDelCliente con el branchId
+    // del registro. Sin el `selected` el <select> abre siempre en el primero y
+    // la pantalla contradice al documento que se va a regenerar.
+    const idx = pcState.domicilioIdx || 0;
     slot.innerHTML = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
       '<select id="pc-dom-select" onchange="pcCambiarDomicilio()">' +
-      doms.map((d, i) => `<option value="${i}">${escapeHtml(d.descripcion || d.calle || ('Domicilio ' + (i + 1)))}</option>`).join('') +
+      doms.map((d, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${escapeHtml(d.descripcion || d.calle || ('Domicilio ' + (i + 1)))}</option>`).join('') +
       '</select></div>';
   } else {
     slot.innerHTML = '';
@@ -3689,8 +3789,17 @@ function pcCambiarDomicilio() {
   const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
   pcState.domicilioIdx = idx;
   aplicarDomicilio(window._operamDomicilios?.[idx]);
+  // El domicilio nuevo puede traer CP y no traer municipio/estado -- es la forma
+  // de la mayoria de los branches del ERP (#330) -- y aplicarDomicilio acaba de
+  // borrar los que habia puesto el domicilio anterior: el indice del CP los
+  // vuelve a llenar por su propia regla, la misma de aqui (#291/#409).
+  resolverCpAsistido('entrega');
   pcRenderContactoSelect({ forzarDefault: true });
   pcRenderChips();
+  // Sexto enganche del autosave (#409): elegir domicilio es captura del vendedor
+  // y el borrador la conserva, pero pcRenderChips no repinta la tarjeta, asi que
+  // este camino no pasaba por ninguno de los cinco anteriores.
+  autoguardarBorrador();
 }
 window.pcCambiarDomicilio = pcCambiarDomicilio;
 
@@ -6651,10 +6760,18 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // cliente anterior (domicilios y contactos leidos de Operam) se van con el:
     // son de la otra razon social y el selector de entrega los seguiria
     // ofreciendo sobre esta cotizacion.
-    // La tarjeta se repinta abajo, con el resto de los render.
+    // La tarjeta se repinta abajo, con el resto de los render, y los satelites
+    // de ESTE cliente se repiden al final (#409, pcCargarSatelitesDelCliente):
+    // borrarlos era correcto y suficiente hasta que se vio que nadie los volvia
+    // a pedir, y el paso Envio se quedaba sin selector de domicilio.
     window._operamDomicilios = null;
     window._operamContactosCliente = null;
     pcState.domicilioIdx = 0;
+    // La direccion que acaba de cargarse es la del DOCUMENTO y la escribio
+    // alguien: el selector no es dueno de ninguno de los seis campos y no puede
+    // borrarlos al cambiar de domicilio (#409, mismo motivo por el que mas
+    // arriba se olvida lo que habia puesto el indice del CP).
+    olvidarDomicilioAsistido();
     pcState.cliente = clienteAlCargarCotizacion(c, pcState.cliente);
 
     // Poblar carrito
@@ -6771,6 +6888,12 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // cuando llega el listado. Sin await para no retrasar el regreso a la app;
     // el camino se traga sus propios errores.
     pcCargarPreviasDelCliente(pcState.cliente);
+    // Y sus domicilios y contactos, por el mismo camino y con la misma forma
+    // (#409). SIN aplicar ninguno: la direccion del documento manda. El selector
+    // abre en el domicilio que la cotizacion tiene ligado (`branchId`, que la
+    // subida anota, #81) y no en el primero de la lista de Operam.
+    pcCargarSatelitesDelCliente(customerIdFiscal(pcState.cliente), { branchId: c.branchId ?? null })
+      .then(() => pcRenderDomSelect());
     switchTab('productos');
     updateTierBar();
     updateCartSummary();

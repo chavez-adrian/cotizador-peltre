@@ -546,11 +546,12 @@ test('X10c: el mismo numero empata aunque Operam lo traiga con extension', () =>
   assert.deepStrictEqual(r, { indice: 0, aplicar: true });
 });
 
-// Recientes copia a Envio la entrega de la cotizacion elegida (pcElegirReciente).
-// El cliente de la tarjeta no traia correo: la opcion "(Contacto)" no explicaba lo
-// capturado, el selector arrancaba en "+ Nuevo contacto" y elegirla borraba el
-// correo (Erick Tellez, cotizacion 106, HITL de #353).
-test('X10d: una cotizacion de Recientes deja elegida la opcion del Contacto con su correo', () => {
+// Cargar una cotizacion copia a Envio su entrega (cargarCotizacion, Editar y
+// Copiar; hasta #409 tambien los Recientes del paso Cliente, que hoy prellenan la
+// busqueda). El cliente de la tarjeta no traia correo: la opcion "(Contacto)" no
+// explicaba lo capturado, el selector arrancaba en "+ Nuevo contacto" y elegirla
+// borraba el correo (Erick Tellez, cotizacion 106, HITL de #353).
+test('X10d: una cotizacion cargada deja elegida la opcion del Contacto con su correo', () => {
   const cotizacion = {
     rfc: '', razonSocial: 'Erick Tellez', nombreCorto: 'Erick Tellez', telefono: '+523221508025',
     nombreEntrega: 'Erick Tellez', celEntrega: '+523221508025', emailEntrega: 'erick.tellez@auberge.com',
