@@ -194,7 +194,7 @@ test('R1: deriva recientes distintos, mas nuevo primero', () => {
   assert.strictEqual(r[0].nombre, 'El Comal');       // 07-05
   assert.strictEqual(r[1].nombre, 'La Vasija Azul');  // 07-03 (mas reciente de sus dos)
   assert.strictEqual(r.length, 2, 'deduplica por nombre');
-  assert.strictEqual(r[1].cotizacionId, 3);
+  assert.strictEqual(r[1].fecha, '2026-07-03', 'de las dos suyas se queda la mas reciente');
 });
 
 test('R2: respeta el limite y descarta entradas sin nombre', () => {

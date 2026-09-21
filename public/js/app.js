@@ -64,7 +64,8 @@ import {
 import { ciudadPorCP } from './cp-ciudad.js';
 import { planAutollenadoCP, paisTieneIndiceCP } from './cp-autollenado.js';
 import {
-  camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido, indiceDeDomicilio,
+  camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
+  indiceDeDomicilio, branchIdDeIndice,
 } from './domicilio-entrega-logica.js';
 import {
   CANALES,
@@ -638,7 +639,7 @@ function leerClienteParaBorrador() {
     // no por el indice: al restaurar, la lista se vuelve a pedir a Operam y su
     // orden no es una promesa. Lo que identifica al domicilio de entrega es el
     // branch_code (#252).
-    branchId: window._operamDomicilios?.[pcState.domicilioIdx || 0]?.branch_code ?? null,
+    branchId: branchIdDeIndice(window._operamDomicilios, pcState.domicilioIdx),
   };
 }
 
@@ -3113,6 +3114,11 @@ function olvidarDomicilioAsistido() {
 function aplicarDomicilio(d) {
   const plan = planDomicilioAsistido(
     camposDomicilioEnPantalla(), domicilioDelSelector, valoresDeDomicilio(d, domicilioRespaldo),
+    // La memoria del OTRO escritor del sistema (#291): el municipio y el estado
+    // que el indice del CP dejo puestos no son captura a mano, y sin decirselo
+    // el selector los conservaria pegados a la calle del domicilio siguiente.
+    // El indice los nombra `ciudad`/`estado`; aqui el campo se llama municipio.
+    { municipio: cpDelIndice.entrega.ciudad, estado: cpDelIndice.entrega.estado },
   );
   for (const [campo, id] of Object.entries(IDS_CAMPOS_DOMICILIO)) {
     const el = document.getElementById(id);

@@ -1225,7 +1225,10 @@ export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
     const clave = c.cliente.trim().toLowerCase();
     if (vistos.has(clave)) continue;
     vistos.add(clave);
-    out.push({ nombre: c.cliente, nombreCorto: c.nombreCorto || '', telefono: c.telefono || '', cotizacionId: c.id, fecha: c.fecha });
+    // Sin `cotizacionId` desde #409: lo leia pcElegirReciente para cargar esa
+    // cotizacion, y ese camino ya no existe -- las dos pantallas de Recientes
+    // prellenan la busqueda y resuelven el registro real de Operam por nombre.
+    out.push({ nombre: c.cliente, nombreCorto: c.nombreCorto || '', telefono: c.telefono || '', fecha: c.fecha });
     if (out.length >= limite) break;
   }
   return out;

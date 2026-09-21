@@ -2,11 +2,12 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido, indiceDeDomicilio;
+let CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
+  indiceDeDomicilio, branchIdDeIndice;
 
 before(async () => {
-  ({ CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido, indiceDeDomicilio } =
-    await import('../domicilio-entrega-logica.js'));
+  ({ CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
+    indiceDeDomicilio, branchIdDeIndice } = await import('../domicilio-entrega-logica.js'));
 });
 
 const DOM_A = {
@@ -109,6 +110,37 @@ test('un domicilio sin datos solo borra lo del selector y deja intacto lo demas'
   assert.deepEqual(plan.delSelector, camposDomicilioVacios());
 });
 
+// El municipio y el estado tienen DOS escritores del sistema: este selector y el
+// indice del CP (#291). Sin decirselo, el selector lee lo que dejo el indice como
+// captura a mano y lo conserva: calle y CP del domicilio nuevo con el municipio
+// del anterior, que es exactamente la mezcla que #409 vino a matar.
+test('el municipio que puso el indice del CP no es captura a mano: el domicilio nuevo lo reemplaza', () => {
+  const conCpSinMunicipio = { branch_code: '1', calle: 'Norte 100', cp: '54000' };
+  const otro = { branch_code: '2', calle: 'Sur 5', cp: '72000', municipio: 'Puebla', estado: 'Puebla' };
+  const tras = planDomicilioAsistido(
+    camposDomicilioVacios(), camposDomicilioVacios(), valoresDeDomicilio(conCpSinMunicipio),
+  );
+  assert.equal(tras.valores.municipio, '');
+  // el indice del CP llena el hueco y lo recuerda por su cuenta
+  const enPantalla = { ...tras.valores, municipio: 'Tlalnepantla', estado: 'Mexico' };
+  const delIndiceCp = { municipio: 'Tlalnepantla', estado: 'Mexico' };
+  const plan = planDomicilioAsistido(enPantalla, tras.delSelector, valoresDeDomicilio(otro), delIndiceCp);
+  assert.equal(plan.valores.municipio, 'Puebla');
+  assert.equal(plan.valores.estado, 'Puebla');
+});
+
+test('lo tecleado a mano se sigue respetando aunque el indice del CP haya puesto otra cosa antes', () => {
+  const otro = { branch_code: '2', calle: 'Sur 5', cp: '72000', municipio: 'Puebla' };
+  const plan = planDomicilioAsistido(
+    { ...camposDomicilioVacios(), municipio: 'San Pedro Cholula' },
+    camposDomicilioVacios(),
+    valoresDeDomicilio(otro),
+    { municipio: 'Tlalnepantla' },
+  );
+  assert.equal(plan.valores.municipio, 'San Pedro Cholula');
+  assert.equal(plan.delSelector.municipio, '');
+});
+
 // --- indiceDeDomicilio ---
 
 test('el branch_code del registro decide en que domicilio arranca el selector', () => {
@@ -126,4 +158,18 @@ test('sin branchId, ajeno o sin lista, el selector arranca en el primero', () =>
   assert.equal(indiceDeDomicilio([DOM_A, DOM_B], 999), 0);
   assert.equal(indiceDeDomicilio([], 15), 0);
   assert.equal(indiceDeDomicilio(null, 15), 0);
+});
+
+test('branchIdDeIndice es la vuelta: del indice del select al branch_code que se guarda', () => {
+  assert.equal(branchIdDeIndice([DOM_A, DOM_B], 1), 15);
+  assert.equal(branchIdDeIndice([DOM_A, DOM_B], 0), 564);
+  assert.equal(branchIdDeIndice([DOM_A, DOM_B], undefined), 564);
+  assert.equal(branchIdDeIndice([], 0), null);
+  assert.equal(branchIdDeIndice(null, 0), null);
+  assert.equal(branchIdDeIndice([DOM_A], 5), null);
+});
+
+test('las dos direcciones cierran el circulo sobre el mismo domicilio', () => {
+  const lista = [DOM_A, DOM_B];
+  assert.equal(branchIdDeIndice(lista, indiceDeDomicilio(lista, '15')), 15);
 });

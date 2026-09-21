@@ -46,16 +46,33 @@ export function valoresDeDomicilio(domicilio, respaldo) {
   return out;
 }
 
+// De quien es lo que hay AHORA en el campo. El sistema tiene DOS escritores en
+// el paso Envio -- este selector y el indice del CP (#291) -- y cada uno lleva
+// su propia memoria, asi que hay que preguntarle a los dos: un municipio que
+// dejo el indice NO es captura a mano, aunque este selector no lo haya puesto.
+// Sin esto, cambiar de domicilio dejaba la calle y el CP del nuevo con el
+// municipio del anterior: la misma mezcla que el ticket vino a matar, entrando
+// por la puerta de al lado. Cuando no lo puso ninguno manda la memoria propia,
+// que es la que `decidirCampoAsistido` devuelve actualizada.
+function duenoDelCampo(actual, propio, ajeno) {
+  const v = texto(actual);
+  if (v !== '' && v === texto(ajeno)) return texto(ajeno);
+  return texto(propio);
+}
+
 // Los seis campos en una sola decision. `delSelector` es lo que este mismo
 // selector dejo la vez pasada: sin esa memoria no hay forma de distinguir el CP
-// que puso el domicilio anterior del que tecleo el vendedor.
-export function planDomicilioAsistido(actuales, delSelector, valores) {
+// que puso el domicilio anterior del que tecleo el vendedor. `delIndiceCp` es
+// la memoria del OTRO escritor del sistema, y solo habla de municipio y estado
+// (los dos campos que el indice del CP sabe llenar).
+export function planDomicilioAsistido(actuales, delSelector, valores, delIndiceCp) {
   const a = actuales || {};
   const m = delSelector || {};
   const v = valores || {};
+  const cp = delIndiceCp || {};
   const out = { valores: {}, delSelector: {} };
   for (const campo of CAMPOS_DOMICILIO) {
-    const r = decidirCampoAsistido(a[campo], m[campo], v[campo]);
+    const r = decidirCampoAsistido(a[campo], duenoDelCampo(a[campo], m[campo], cp[campo]), v[campo]);
     out.valores[campo] = r.valor;
     out.delSelector[campo] = r.delIndice;
   }
@@ -72,4 +89,15 @@ export function indiceDeDomicilio(domicilios, branchId) {
   if (branchId == null || branchId === '') return 0;
   const i = lista.findIndex(d => d && d.branch_code != null && String(d.branch_code) === String(branchId));
   return i >= 0 ? i : 0;
+}
+
+// La traduccion de vuelta: que domicilio es el que esta elegido. Vive junto a su
+// inversa porque la pantalla trabaja con el INDICE del <select> y todo lo que se
+// guarda -- el borrador, la cotizacion -- lo hace por `branch_code`; tener las
+// dos direcciones separadas es como el indice se cuela a un lugar donde el orden
+// de la lista no es una promesa.
+export function branchIdDeIndice(domicilios, indice) {
+  const lista = Array.isArray(domicilios) ? domicilios : [];
+  const d = lista[Number(indice) || 0];
+  return d && d.branch_code != null ? d.branch_code : null;
 }
