@@ -1349,9 +1349,14 @@ function clienteOperamFichaHtml(c) {
     ? '<div style="margin-top:4px"><button type="button" class="btn btn-secondary btn-sm" ' +
       'onclick="cvUpgradeClienteOperam(\'' + escapeHtml(id) + '\')">Completar datos fiscales</button></div>'
     : '';
+  // El RFC va en el sub como en la tarjeta (cardClienteHtml, misma forma): es el
+  // dato que cambia al completar la constancia, y sin el la ficha no mostraba el
+  // resultado del upgrade -- solo que el boton desaparecia (#407).
+  const sub = [row.rfc, 'Cliente en Operam' + (id ? ' (ID ' + id + ')' : '')]
+    .filter(Boolean).map(escapeHtml).join(' &middot; ');
   return '<div class="pc-ficha-item">' +
     '<span class="pc-res-main"><span class="pc-res-nombre">' + escapeHtml(nombreConCorto(nombre, row.ref)) + '</span>' +
-    '<span class="pc-res-sub">' + escapeHtml('Cliente en Operam' + (id ? ' (ID ' + id + ')' : '')) + '</span>' +
+    '<span class="pc-res-sub">' + sub + '</span>' +
     accion + '</span>' +
     tagResultadoClienteHtml({ ...row, nombre }) + tagPedidoClienteHtml(row) + '</div>';
 }

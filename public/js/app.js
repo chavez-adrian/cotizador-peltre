@@ -46,6 +46,8 @@ import {
   modoComercialUpgrade,
   seccionAltaAbierta,
   interpretarRespuestaUpgrade,
+  destinoTrasUpgradeLogrado,
+  camposClienteOperamTrasUpgrade,
   altaReutilizaDomicilio,
   domicilioReutilizadoDelAlta,
   filasDomicilioReutilizado,
@@ -3955,6 +3957,9 @@ window.pcCerrarReporteUpgrade = pcCerrarReporteUpgrade;
 
 async function pcEjecutarUpgradeFiscal(datos) {
   const customerId = altaCsfState.modoUpgrade;
+  // El origen se lee al entrar, no al salir (#407): abajo se anula junto con
+  // modoUpgrade, y hasta entonces nadie podia consultarlo para decidir que pintar.
+  const origen = altaCsfState.upgradeOrigen;
   const btn = document.getElementById('csf-btn-confirmar');
   const errDiv = document.getElementById('csf-campos-error');
   const mostrarError = msg => { if (errDiv) { errDiv.style.display = ''; errDiv.textContent = msg; } };
@@ -3976,7 +3981,7 @@ async function pcEjecutarUpgradeFiscal(datos) {
     altaLeerComercialUpgrade()
   );
   const emailFactura = emailFacturaParaUpgrade(
-    altaCsfState.upgradeOrigen,
+    origen,
     document.getElementById('cl-email-factura')?.value
   );
   const csfDatosConFactura = (emailFactura && !csfDatosComercial.invoiceEmail)
@@ -3995,7 +4000,7 @@ async function pcEjecutarUpgradeFiscal(datos) {
       mostrarError(vista.mensaje);
       return;
     }
-    const campoPego = campo => !vista.noAplicados.includes(campo);
+    const cambios = camposClienteOperamTrasUpgrade(datos, vista.noAplicados);
     const panel = document.getElementById('panel-alta-cliente');
     if (panel) panel.style.display = 'none';
     // El upgrade fiscal ya quedo escrito en Operam: el borrador cumplio su
@@ -4017,14 +4022,30 @@ async function pcEjecutarUpgradeFiscal(datos) {
     // El chip Fiscal pasa a verde solo si el RFC real SI pego (chipsCompletitud lo
     // deriva de pcState.cliente.rfc). Si Operam ignoro un campo (quirk del PUT),
     // esa parte de la tarjeta se queda con el valor viejo en vez de mostrar un dato
-    // que Operam en realidad no guardo.
-    if (pcState.cliente && campoPego('tax_id')) pcState.cliente.rfc = datos.rfc;
-    if (pcState.cliente && campoPego('CustName')) pcState.cliente.name = datos.razonSocial || pcState.cliente.name;
-    const rfcInput = document.getElementById('cl-rfc');
-    if (rfcInput && campoPego('tax_id')) rfcInput.value = datos.rfc;
-    const razonInput = document.getElementById('cl-razon-social');
-    if (razonInput && campoPego('CustName') && datos.razonSocial) razonInput.value = datos.razonSocial;
-    pcRenderTarjeta();
+    // que Operam en realidad no guardo: camposClienteOperamTrasUpgrade ya podo esos campos.
+    //
+    // El paso Cliente adopta los cambios solo si su cliente ES el que se acaba de
+    // actualizar: desde la vista Clientes se edita un cliente cualquiera, que no
+    // tiene por que ser al que se esta cotizando (la misma fuga de contexto que
+    // emailFacturaParaUpgrade evita con el email). Desde el chip Fiscal siempre
+    // coinciden, asi que ese camino no cambia.
+    if (pcState.cliente && String(customerIdFiscal(pcState.cliente)) === String(customerId)) {
+      Object.assign(pcState.cliente, cambios);
+      const rfcInput = document.getElementById('cl-rfc');
+      if (rfcInput && cambios.rfc) rfcInput.value = cambios.rfc;
+      const razonInput = document.getElementById('cl-razon-social');
+      if (razonInput && cambios.name) razonInput.value = cambios.name;
+    }
+    // Quien decide a que pantalla volver es alta-logica.js (#407): aqui solo se
+    // pinta. El reporte va DESPUES del repintado y sobrevive a los dos: se inserta
+    // junto a #panel-alta-cliente, que vive fuera de la zona que cada vista reescribe.
+    const destino = destinoTrasUpgradeLogrado(origen, vista);
+    if (destino.pantalla === 'clientes') {
+      cvAdoptarUpgradeFiscal(customerId, cambios);
+      cvRenderTarjeta(destino.confirmacion);
+    } else {
+      pcRenderTarjeta();
+    }
     pcRenderReporteUpgrade(vista);
   } catch (e) {
     mostrarError('Error de conexion');
@@ -5184,6 +5205,10 @@ function cvRenderBusqueda() {
   const root = cvRoot();
   if (!root) return;
   cvState.seleccion = null;
+  // El reporte del upgrade se inserta junto al panel, fuera de #clientes-root, y
+  // sobrevive a los repintados de la vista (#407): al soltar el cliente hay que
+  // quitarlo a mano o se queda hablando del anterior sobre la busqueda del siguiente.
+  pcCerrarReporteUpgrade();
   root.innerHTML =
     '<div class="pc-pregunta">Clientes<small>Busca un cliente para completar sus datos, o da de alta uno nuevo.</small></div>' +
     '<div class="pc-search"><input type="text" id="cv-q" class="pc-input-lg" ' +
@@ -5305,17 +5330,44 @@ function cvElegirResultado(i) {
 }
 window.cvElegirResultado = cvElegirResultado;
 
-function cvRenderTarjeta() {
+// `aviso` (#407): la confirmacion de una escritura que acaba de pasar en esta vista
+// -- hoy el upgrade fiscal logrado. Es un argumento y no estado de cvState porque
+// muere con el repintado: los onclick que vuelven a la tarjeta la llaman sin nada y
+// el aviso no reaparece. Sin seleccion se cae a la busqueda en vez de dejar el hueco
+// que #407 reporto: quedarse en blanco es justo lo que se esta arreglando.
+function cvRenderTarjeta(aviso) {
   const root = cvRoot();
   const sel = cvState.seleccion;
-  if (!root || !sel) return;
+  if (!root) return;
+  if (!sel) { cvRenderBusqueda(); return; }
+  const banner = aviso
+    ? '<p class="alert alert-success" style="margin:0 0 12px">' + escapeHtml(aviso) + '</p>'
+    : '';
   const cuerpo = sel.tipo === 'contacto'
     ? '<div class="pc-pregunta">Contacto</div>' + fichaContactoHtml(sel.contacto)
     : '<div class="pc-pregunta">Cliente Operam</div>' + cardClienteHtml(sel.card);
-  root.innerHTML = cuerpo +
+  root.innerHTML = banner + cuerpo +
     '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Buscar otro</button>';
 }
 window.cvRenderTarjeta = cvRenderTarjeta;
+
+// Lo que quedo escrito en Operam entra a la seleccion viva de la vista ANTES de
+// repintarla (#407), para que el RFC y la razon social que el vendedor ve sean los
+// que acaba de confirmar y no los de antes de la CSF. Las dos formas de la
+// seleccion tienen su propia caja: la tarjeta del Cliente Operam es `card`, y desde
+// la ficha de un Contacto (cvUpgradeClienteOperam) el cliente actualizado es uno de
+// sus clientesOperam -- por eso hace falta el id, puede tener varios. La ficha lee
+// el nombre como `nombre` y la tarjeta como `name`: se escriben los dos.
+function cvAdoptarUpgradeFiscal(customerId, cambios) {
+  const sel = cvState.seleccion;
+  if (!sel || !cambios) return;
+  const destino = sel.tipo === 'contacto'
+    ? (sel.contacto?.clientesOperam || []).find(c => String(c?.id) === String(customerId))
+    : sel.card;
+  if (!destino) return;
+  if (cambios.rfc) destino.rfc = cambios.rfc;
+  if (cambios.name) { destino.name = cambios.name; destino.nombre = cambios.name; }
+}
 
 // "Completar datos fiscales" desde la ficha del Contacto (#346): apunta a UN
 // Cliente Operam suyo, porque puede tener varios y solo a uno faltarle la

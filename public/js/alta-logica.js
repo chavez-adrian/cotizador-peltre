@@ -623,6 +623,54 @@ export function interpretarRespuestaUpgrade(status, body) {
   };
 }
 
+// A que pantalla vuelve el vendedor cuando el upgrade fiscal SI se logro, y si hace
+// falta decirselo con todas sus letras (#407). El upgrade se abre por dos puertas:
+// el chip Fiscal del paso Cliente (origen 'paso'), que deja la tarjeta de ese paso
+// visible detras del panel, y la vista Clientes (origen 'clientes'), que deja ahi
+// solo el titulo y "Volver al cliente". Repintar la tarjeta del paso al volver de
+// la segunda no se ve, y el reporte calla cuando todo pego: el exito total salia
+// como pantalla en blanco, y el vendedor repetia la operacion sin saberlo.
+//
+// La confirmacion explicita solo se pide cuando el reporte no va a salir: con campos
+// pendientes su propio titulo (UPGRADE_TITULO_PENDIENTES) ya dice que paso, y dos
+// avisos encimados dirian cosas distintas del mismo PUT.
+export function destinoTrasUpgradeLogrado(origen, vista) {
+  const enClientes = origen === 'clientes';
+  // La confirmacion se ata a la vista LOGRADA, no solo a que no haya campos: una
+  // vista de error o de fusion tambien llega sin campos, y su mensaje bajo el verde
+  // de exito diria lo contrario de lo que paso.
+  const lograda = !!vista && vista.tipo === 'lograda' && ((vista.campos || []).length === 0);
+  return {
+    pantalla: enClientes ? 'clientes' : 'paso',
+    confirmacion: enClientes && lograda ? vista.mensaje : null,
+  };
+}
+
+// El puente Operam -> tarjeta. La llave del dato capturado NO se repite aqui: sale
+// del mapeo canonico por campo (DIFF_FISCAL_CAMPOS.csf). Lo unico propio de esta
+// tabla es como se llama el campo EN LA TARJETA, que Operam no conoce.
+const CAMPOS_TARJETA_TRAS_UPGRADE = [
+  { operam: 'tax_id', tarjeta: 'rfc' },
+  { operam: 'CustName', tarjeta: 'name' },
+];
+
+// Lo que la tarjeta del Cliente Operam adopta del upgrade recien escrito: solo los
+// campos que Operam SI guardo (quirk #74 -- el PUT ignora algunos en silencio y los
+// reporta en camposNoActualizados). Un valor vacio no borra el que ya tenia: el
+// vendedor puede subir una CSF sin tocar el nombre.
+export function camposClienteOperamTrasUpgrade(datos, noAplicados) {
+  const d = datos || {};
+  const no = noAplicados || [];
+  const cambios = {};
+  for (const { operam, tarjeta } of CAMPOS_TARJETA_TRAS_UPGRADE) {
+    if (no.includes(operam)) continue;
+    const llave = DIFF_FISCAL_CAMPOS.find(c => c.operam === operam)?.csf;
+    const valor = llave ? d[llave] : undefined;
+    if (valor) cambios[tarjeta] = valor;
+  }
+  return cambios;
+}
+
 // Resultado del panel "Confirmar y actualizar en Operam" del dedup por RFC (#248).
 // Hasta aqui el panel pintaba "Datos fiscales actualizados en Operam" pasara lo que
 // pasara: el mensaje mentia cuando Operam ignoraba un campo en silencio (quirk #74).

@@ -10,12 +10,18 @@ const assert = require('node:assert/strict');
 // pipeline-logica.js (mismo patron de funciones puras testeables). Sin DOM en Node.
 
 let esRfcGenerico, customerIdFiscal, mostrarBotonCsf;
+let destinoTrasUpgradeLogrado, camposClienteOperamTrasUpgrade, interpretarRespuestaUpgrade,
+  UPGRADE_TITULO_LOGRADO;
 let tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
   bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade,
   filaContactoHtml, fichaContactoHtml;
 
 before(async () => {
-  ({ esRfcGenerico, customerIdFiscal, mostrarBotonCsf } = await import('../alta-logica.js'));
+  ({
+    esRfcGenerico, customerIdFiscal, mostrarBotonCsf,
+    destinoTrasUpgradeLogrado, camposClienteOperamTrasUpgrade, interpretarRespuestaUpgrade,
+    UPGRADE_TITULO_LOGRADO,
+  } = await import('../alta-logica.js'));
   ({
     tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
     bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade,
@@ -418,4 +424,100 @@ test('CT9: la fila del Contacto abre su ficha por indice y nombra sus Clientes O
 
 test('CT10: filaResultadoClienteHtml despacha a la fila de Contacto por su tipo', () => {
   assert.equal(filaResultadoClienteHtml(CONTACTO, 2), filaContactoHtml(CONTACTO, 2));
+});
+
+// === Que se pinta cuando el upgrade fiscal SI se logro (#407) ===
+// El upgrade se abre desde dos puertas y la de la vista Clientes deja en pantalla
+// solo el titulo y "Volver al cliente": al lograrse habia que repintar ALGO ahi, y
+// hasta #407 se repintaba la tarjeta del paso Cliente -- invisible desde Clientes --
+// y el reporte, que por diseno calla cuando todo pego. Resultado: pantalla en
+// blanco tras un exito total. La decision de a que pantalla volver y si hace falta
+// una confirmacion explicita vive aqui; app.js solo pinta.
+
+test('UD1: origen clientes y todo pego -> vuelve a la vista Clientes con confirmacion explicita', () => {
+  const vista = interpretarRespuestaUpgrade(200, { ok: true, camposNoActualizados: [] });
+  const destino = destinoTrasUpgradeLogrado('clientes', vista);
+  assert.equal(destino.pantalla, 'clientes');
+  assert.equal(destino.confirmacion, UPGRADE_TITULO_LOGRADO);
+});
+
+test('UD2: origen clientes con campos pendientes -> vuelve ahi sin confirmacion (la da el reporte)', () => {
+  const vista = interpretarRespuestaUpgrade(200, {
+    ok: true,
+    camposNoActualizados: [{ campo: 'tax_id', label: 'RFC', mensaje: 'Operam no lo guardo' }],
+  });
+  const destino = destinoTrasUpgradeLogrado('clientes', vista);
+  assert.equal(destino.pantalla, 'clientes');
+  assert.equal(destino.confirmacion, null);
+});
+
+test('UD3: origen paso -> el camino del paso Cliente no cambia (su tarjeta, sin banner)', () => {
+  const logrado = interpretarRespuestaUpgrade(200, { ok: true, camposNoActualizados: [] });
+  const conPendientes = interpretarRespuestaUpgrade(200, {
+    ok: true,
+    camposNoActualizados: [{ campo: 'CustName', label: 'Razon social' }],
+  });
+  assert.deepEqual(destinoTrasUpgradeLogrado('paso', logrado), { pantalla: 'paso', confirmacion: null });
+  assert.deepEqual(destinoTrasUpgradeLogrado('paso', conPendientes), { pantalla: 'paso', confirmacion: null });
+});
+
+test('UD4: sin origen conocido -> el paso Cliente, que es lo que hacia antes de #407', () => {
+  assert.equal(destinoTrasUpgradeLogrado(null, { campos: [] }).pantalla, 'paso');
+  assert.equal(destinoTrasUpgradeLogrado(undefined, { campos: [] }).pantalla, 'paso');
+  assert.equal(destinoTrasUpgradeLogrado('otro', { campos: [] }).pantalla, 'paso');
+});
+
+test('UD5: una vista que NO se logro no lleva confirmacion, aunque venga sin campos', () => {
+  const fusion = interpretarRespuestaUpgrade(409, { fusion: true });
+  const error = interpretarRespuestaUpgrade(500, { error: 'Operam no responde' });
+  assert.equal(fusion.campos.length, 0);
+  assert.equal(destinoTrasUpgradeLogrado('clientes', fusion).confirmacion, null);
+  assert.equal(destinoTrasUpgradeLogrado('clientes', error).confirmacion, null);
+  assert.equal(destinoTrasUpgradeLogrado('clientes', undefined).confirmacion, null);
+});
+
+// === Que adopta la tarjeta del Cliente Operam tras el upgrade (#407) ===
+// Misma regla que ya aplicaba el paso Cliente en app.js: solo se adopta lo que
+// Operam SI guardo (quirk #74), para no mostrar un dato que alla no existe. Se
+// extrae para que la tarjeta de la vista Clientes use exactamente la misma.
+
+test('UA1: todo pego -> la tarjeta adopta RFC y razon social', () => {
+  const cambios = camposClienteOperamTrasUpgrade({ rfc: 'CARA830713D53', razonSocial: 'ADRIAN CHAVEZ ROSETE' }, []);
+  assert.deepEqual(cambios, { rfc: 'CARA830713D53', name: 'ADRIAN CHAVEZ ROSETE' });
+});
+
+test('UA2: tax_id no aplicado -> el RFC viejo se queda; la razon social si entra', () => {
+  const cambios = camposClienteOperamTrasUpgrade(
+    { rfc: 'CARA830713D53', razonSocial: 'ADRIAN CHAVEZ ROSETE' },
+    ['tax_id']
+  );
+  assert.deepEqual(cambios, { name: 'ADRIAN CHAVEZ ROSETE' });
+});
+
+test('UA3: CustName no aplicado -> el nombre viejo se queda; el RFC si entra', () => {
+  const cambios = camposClienteOperamTrasUpgrade(
+    { rfc: 'CARA830713D53', razonSocial: 'ADRIAN CHAVEZ ROSETE' },
+    ['CustName']
+  );
+  assert.deepEqual(cambios, { rfc: 'CARA830713D53' });
+});
+
+test('UA4: sin razon social capturada no se borra la que ya tenia', () => {
+  assert.deepEqual(camposClienteOperamTrasUpgrade({ rfc: 'CARA830713D53', razonSocial: '' }, []), {
+    rfc: 'CARA830713D53',
+  });
+});
+
+test('CT11: la ficha muestra el RFC de cada Cliente Operam -- lo que cambia al completar la CSF (#407)', () => {
+  const html = fichaContactoHtml(CONTACTO);
+  assert.match(html, /OEV220101QX3 &middot; Cliente en Operam \(ID 780\)/);
+  assert.match(html, /XAXX010101000 &middot; Cliente en Operam \(ID 514\)/);
+});
+
+test('CT12: un Cliente Operam sin RFC no deja un separador colgando en su sub', () => {
+  const html = fichaContactoHtml({
+    ...CONTACTO,
+    clientesOperam: [{ id: '900', nombre: 'SIN RFC SA', fiscal: 'sin_datos_fiscales' }],
+  });
+  assert.match(html, /<span class="pc-res-sub">Cliente en Operam \(ID 900\)<\/span>/);
 });
