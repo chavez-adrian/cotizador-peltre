@@ -11,6 +11,7 @@ import {
   leerLineasVista, leerComentariosVista, compararQuoteVista,
   parsearFormularioCliente, serializarBodyCliente, leerErrorWeb,
   opcionesListaQuote, decidirListaQuote,
+  partidasDeQuote, compararPartidasQuote,
 } from '../lib/operam-web.js';
 
 const DIR_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -885,4 +886,65 @@ test('parsearFormularioQuote: lee phone y email del formulario real', () => {
   const { campos } = parsearFormularioQuote(FIXTURE);
   assert.equal('phone' in campos, true);
   assert.equal('email' in campos, true);
+});
+
+// --- Las partidas leidas por la API (#406) -----------------------------------
+// La correccion de un quote historico (corregirListaQuote) compara la lectura de ANTES
+// contra la de DESPUES por aqui: escribir la lista del encabezado no puede mover una
+// sola partida. El fixture del GET real es test/fixtures/quote-1216-api-get-2.json.
+
+const quote = (orderType, detalles = []) => ({ order_type: orderType, detalles });
+
+test('#406 partidasDeQuote lee sku, cantidad, precio y descuento del detalle de la API', () => {
+  const p = partidasDeQuote(quote('12', [
+    { stk_code: 'TA14Y31111', quantity: '3', unit_price: '107.76', discount_percent: '0' },
+  ]));
+  assert.deepEqual(p, [{ sku: 'TA14Y31111', cantidad: 3, precio: 107.76, descuento: 0 }]);
+});
+
+test('#406 dos lecturas identicas del quote no reportan ninguna discrepancia', () => {
+  const q = quote('12', [{ stk_code: 'A1', quantity: '3', unit_price: '107.76', discount_percent: '0' }]);
+  const r = compararPartidasQuote(partidasDeQuote(q), partidasDeQuote(q));
+  assert.equal(r.ok, true);
+  assert.equal(r.verificado, true);
+  assert.deepEqual(r.discrepancias, []);
+});
+
+test('#406 un precio distinto tras escribir la lista se reporta como discrepancia', () => {
+  const antes = partidasDeQuote(quote('12', [{ stk_code: 'A1', quantity: '3', unit_price: '107.76' }]));
+  const despues = partidasDeQuote(quote('16', [{ stk_code: 'A1', quantity: '3', unit_price: '95.00' }]));
+  const r = compararPartidasQuote(antes, despues);
+  assert.equal(r.ok, false);
+  assert.equal(r.discrepancias[0].campo, 'precio');
+  assert.equal(r.discrepancias[0].sku, 'A1');
+});
+
+test('#406 una cantidad distinta se reporta como discrepancia', () => {
+  const antes = partidasDeQuote(quote('12', [{ stk_code: 'A1', quantity: '3', unit_price: '107.76' }]));
+  const despues = partidasDeQuote(quote('16', [{ stk_code: 'A1', quantity: '4', unit_price: '107.76' }]));
+  assert.equal(compararPartidasQuote(antes, despues).discrepancias[0].campo, 'cantidad');
+});
+
+test('#406 una partida que desaparece se reporta como discrepancia', () => {
+  const antes = partidasDeQuote(quote('12', [
+    { stk_code: 'A1', quantity: '3', unit_price: '107.76' },
+    { stk_code: 'A2', quantity: '1', unit_price: '10' },
+  ]));
+  const despues = partidasDeQuote(quote('16', [{ stk_code: 'A1', quantity: '3', unit_price: '107.76' }]));
+  const r = compararPartidasQuote(antes, despues);
+  assert.equal(r.ok, false);
+  assert.equal(r.discrepancias[0].campo, 'partidas');
+});
+
+test('#406 el medio centavo del redondeo no es una discrepancia', () => {
+  const antes = partidasDeQuote(quote('12', [{ stk_code: 'A1', quantity: '3', unit_price: '107.760' }]));
+  const despues = partidasDeQuote(quote('16', [{ stk_code: 'A1', quantity: '3.00', unit_price: '107.762' }]));
+  assert.equal(compararPartidasQuote(antes, despues).ok, true);
+});
+
+// Sin partidas no hay nada que comparar: eso NO es "quedo igual".
+test('#406 un quote sin partidas legibles no se da por verificado', () => {
+  const r = compararPartidasQuote([], []);
+  assert.equal(r.verificado, false);
+  assert.equal(r.ok, false);
 });

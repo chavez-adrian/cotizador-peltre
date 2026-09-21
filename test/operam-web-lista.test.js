@@ -14,7 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { corregirVigenciaQuote, actualizarQuoteOperam, _resetSesionWeb } from '../lib/operam-web.js';
+import { corregirVigenciaQuote, actualizarQuoteOperam, corregirListaQuote, _resetSesionWeb } from '../lib/operam-web.js';
 
 process.env.OPERAM_URL = 'https://fa.mentira.test';
 process.env.OPERAM_USER = 'usuario_de_prueba';
@@ -40,14 +40,16 @@ function selectListas(seleccionada, listas = LISTAS) {
 // Servidor FA de mentiras: mantiene el encabezado y el carrito, y solo ProcessOrder
 // los escribe (como FA real, ADR-0008). `sinSelect` quita el select de listas: es la
 // pagina inesperada, donde la lista NO se escribe y se reporta.
+// `alConfirmar` (#406) deja simular un FA que SI toca las partidas al confirmar: es
+// el escenario que la correccion historica tiene que detectar y frenar.
 function crearServidorFA({
   listaInicial = '12', deliveryDateInicial = '2026-08-12', lineasIniciales = [],
-  sinSelect = false, listas = LISTAS,
+  sinSelect = false, listas = LISTAS, alConfirmar = null,
 } = {}) {
   const state = {
     lista: listaInicial, deliveryDate: deliveryDateInicial,
     lineas: lineasIniciales.map(l => ({ ...l })), comments: 'comentario viejo', custRef: 'REF',
-    posts: [],
+    posts: [], formularios: 0,
   };
 
   const formulario = () => `<!DOCTYPE HTML><html><body>
@@ -91,7 +93,7 @@ ${state.lineas.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?sto
     const metodo = (init.method || 'GET').toUpperCase();
     const u = String(url);
     if (u.includes('trans_no=1&trans_type=30')) return new Response('<html>login de mentira</html>', { status: 200 });
-    if (metodo === 'GET' && u.includes('ModifyQuotationNumber=')) return new Response(formulario(), { status: 200 });
+    if (metodo === 'GET' && u.includes('ModifyQuotationNumber=')) { state.formularios++; return new Response(formulario(), { status: 200 }); }
     if (metodo === 'GET' && u.includes(`trans_no=${QUOTE_NO}&trans_type=32`)) return new Response(vista(), { status: 200 });
     if (metodo === 'POST' && u.endsWith('/sales/sales_order_entry.php')) {
       const params = new URLSearchParams(String(init.body || ''));
@@ -107,6 +109,7 @@ ${state.lineas.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?sto
         state.custRef = params.get('cust_ref');
         // FA escribe la lista del encabezado y NO re-precia las partidas.
         if (params.has('sales_type')) state.lista = params.get('sales_type');
+        if (alConfirmar) alConfirmar(state, params);
         return new Response(formulario(), { status: 200 });
       }
       throw new Error('mock FA: POST sin submit reconocido: ' + String(init.body));
@@ -119,7 +122,18 @@ ${state.lineas.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?sto
   // estado del servidor de mentiras, que es lo que quedo escrito.
   const leerLista = async () => state.lista;
 
-  return { fetchMock, state, leerLista };
+  // La cabecera del quote como la devuelve GET /api/v3/sales/quote/:folio, que es por
+  // donde la correccion historica (#406) mira el encabezado Y las partidas.
+  const leerQuote = async () => ({
+    order_no: QUOTE_NO,
+    order_type: state.lista,
+    delivery_date: state.deliveryDate,
+    detalles: state.lineas.map(l => ({
+      stk_code: l.stockId, quantity: String(l.qty), unit_price: String(l.price), discount_percent: String(l.disc ?? 0),
+    })),
+  });
+
+  return { fetchMock, state, leerLista, leerQuote };
 }
 
 async function conFA(servidor, fn) {
@@ -300,4 +314,124 @@ test('#403 al actualizar: la lista que no quedo escrita sale como discrepancia',
 
   assert.equal(r.ok, false);
   assert.ok(r.discrepancias.some(d => d.campo === 'lista' && String(d.esperado) === '9' && String(d.encontrado) === '12'));
+});
+
+// --- Corregir la lista de un quote HISTORICO (#406) --------------------------
+// Los quotes anteriores a #403 quedaron registrados con la lista del CLIENTE. Aqui
+// solo se corrige ESE campo: ni la vigencia (el "Valido hasta" que el vendedor ya
+// acordo con el cliente) ni una sola partida se pueden mover.
+
+const LINEAS = [
+  { stockId: 'VA08B11111', qty: 500, price: 14.224138, disc: 0 },
+  { stockId: 'TA14Y31111', qty: 12, price: 107.76, disc: 0 },
+];
+
+test('#406 corrige la lista del encabezado sin mover la vigencia ni las partidas', async () => {
+  const fa = crearServidorFA({ listaInicial: '12', deliveryDateInicial: '2026-08-12', lineasIniciales: LINEAS });
+  const r = await conFA(fa, () => corregirListaQuote(QUOTE_NO, '16', { leerQuote: fa.leerQuote }));
+
+  assert.equal(procesos(fa.state).length, 1);
+  assert.equal(procesos(fa.state)[0].get('sales_type'), '16');
+  assert.equal(procesos(fa.state)[0].get('delivery_date'), '2026-08-12', 'la vigencia viaja como estaba');
+  assert.equal(fa.state.deliveryDate, '2026-08-12');
+  assert.equal(fa.state.lista, '16');
+  assert.deepEqual(fa.state.lineas.map(l => [l.stockId, l.qty, l.price]), LINEAS.map(l => [l.stockId, l.qty, l.price]));
+
+  assert.equal(r.ok, true);
+  assert.equal(r.escrito, true);
+  assert.equal(r.lista.ok, true);
+  assert.equal(r.lista.encontrado, '16');
+  assert.equal(r.partidas.ok, true);
+  assert.equal(r.partidas.verificado, true);
+});
+
+// El criterio duro del ticket: la relectura compara CADA partida y una alterada
+// detiene la correccion (el script no sigue con el siguiente quote).
+test('#406 si FA reprecia una partida al confirmar, la relectura lo reporta', async () => {
+  const fa = crearServidorFA({
+    listaInicial: '12', lineasIniciales: LINEAS,
+    alConfirmar: (state) => { state.lineas[0].price = 11.5; },
+  });
+  const r = await conFA(fa, () => corregirListaQuote(QUOTE_NO, '16', { leerQuote: fa.leerQuote }));
+
+  assert.equal(r.escrito, true);
+  assert.equal(r.ok, false);
+  assert.equal(r.partidas.ok, false);
+  assert.equal(r.partidas.discrepancias[0].campo, 'precio');
+  assert.equal(r.partidas.discrepancias[0].sku, 'VA08B11111');
+});
+
+test('#406 el quote que ya esta en la lista cotizada no se repostea', async () => {
+  const fa = crearServidorFA({ listaInicial: '16', lineasIniciales: LINEAS });
+  const r = await conFA(fa, () => corregirListaQuote(QUOTE_NO, '16', { leerQuote: fa.leerQuote }));
+
+  assert.equal(fa.state.posts.length, 0);
+  assert.equal(r.escrito, false);
+  assert.equal(r.ok, true);
+  assert.equal(r.lista.yaCorrecto, true);
+});
+
+// Sin partidas legibles no habria contra que verificar despues de escribir: se
+// abstiene ANTES de tocar nada, que es la direccion segura.
+test('#406 un quote sin partidas legibles no se escribe', async () => {
+  const fa = crearServidorFA({ listaInicial: '12', lineasIniciales: [] });
+  const r = await conFA(fa, () => corregirListaQuote(QUOTE_NO, '16', { leerQuote: fa.leerQuote }));
+
+  assert.equal(fa.state.posts.length, 0);
+  assert.equal(r.escrito, false);
+  assert.equal(r.ok, false);
+  assert.match(r.motivo, /partidas/i);
+});
+
+test('#406 si el quote no se puede leer, ni siquiera se abre el formulario de FA', async () => {
+  const fa = crearServidorFA({ listaInicial: '12', lineasIniciales: LINEAS });
+  const r = await conFA(fa, () => corregirListaQuote(QUOTE_NO, '16', {
+    leerQuote: async () => { throw new Error('Operam 503'); },
+  }));
+
+  assert.equal(fa.state.formularios, 0);
+  assert.equal(fa.state.posts.length, 0);
+  assert.equal(r.escrito, false);
+  assert.equal(r.ok, false);
+  assert.match(r.motivo, /503/);
+});
+
+test('#406 una lista que el formulario no ofrece no se escribe y se reporta', async () => {
+  const fa = crearServidorFA({ listaInicial: '12', lineasIniciales: LINEAS });
+  const r = await conFA(fa, () => corregirListaQuote(QUOTE_NO, '99', { leerQuote: fa.leerQuote }));
+
+  assert.equal(fa.state.posts.length, 0);
+  assert.equal(r.escrito, false);
+  assert.equal(r.ok, false);
+  assert.match(r.motivo, /99/);
+});
+
+// Operam responde 200 aunque ignore campos: sin relectura, una lista que no pego se
+// reportaria como exito (el quirk de siempre).
+test('#406 la lista que no quedo escrita se reporta, no se da por exitosa', async () => {
+  const fa = crearServidorFA({ listaInicial: '12', lineasIniciales: LINEAS });
+  const r = await conFA(fa, () => corregirListaQuote(QUOTE_NO, '16', {
+    leerQuote: async () => ({ order_type: '12', detalles: (await fa.leerQuote()).detalles }),
+  }));
+
+  assert.equal(r.escrito, true);
+  assert.equal(r.ok, false);
+  assert.equal(r.lista.ok, false);
+  assert.equal(r.lista.encontrado, '12');
+});
+
+test('#406 si la relectura falla despues de escribir, no se afirma nada', async () => {
+  const fa = crearServidorFA({ listaInicial: '12', lineasIniciales: LINEAS });
+  let vuelta = 0;
+  const r = await conFA(fa, () => corregirListaQuote(QUOTE_NO, '16', {
+    leerQuote: async () => {
+      if (vuelta++ === 0) return fa.leerQuote();
+      throw new Error('Operam 503');
+    },
+  }));
+
+  assert.equal(r.escrito, true);
+  assert.equal(r.ok, false);
+  assert.equal(r.lista.verificado, false);
+  assert.equal(r.partidas.verificado, false);
 });
