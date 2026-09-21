@@ -998,7 +998,9 @@ function updateTierBar() {
   }
 
   // El selector de calca y el aviso de carrito invalido dependen del volumen:
-  // este es el unico punto por el que pasan TODOS los cambios del carrito.
+  // este es el unico punto por el que pasan todos los cambios de VOLUMEN del
+  // carrito. El otro enganche esta en cartLineSetPrecioCalca (#402): el precio
+  // manual mueve el aviso sin mover el volumen y no llega hasta aqui.
   renderCalcas();
   updateTabIndicators();
   // Autosave del borrador (#179). El otro enganche esta en renderCartLines,
@@ -1645,6 +1647,13 @@ function cartLineSetPrecioCalca(key, valor) {
   // valor que se declara a la paqueteria para el seguro, asi que la tarifa
   // vigente de envia.com ya no corresponde a lo que se va a enviar.
   invalidarEnvioSiAplica();
+  // La captura cambia el precio EFECTIVO de la linea, que es lo que decide el
+  // aviso de "calca sin precio" del carrito (#402): sin este repintado los dos
+  // avisos -- Productos y Cotizacion -- se quedaban con el veredicto anterior y
+  // seguian rojos sobre una condicion que ya no existia. Corre en el tramo
+  // incondicional para que quitar la captura los vuelva a prender igual de
+  // rapido. No pasa por updateTierBar porque el precio no mueve el volumen.
+  renderCalcas();
   updateCartSummary();
   updateResumen();
   renderCartLines();

@@ -796,3 +796,56 @@ test('#222-11: avisoTopeDisenos con lineas de producto trae los conteos de linea
   assert.strictEqual(avisoTopeDisenos(1), 'Maximo 2 disenos de calca por linea de producto: 1 linea -> 2 disenos');
   assert.strictEqual(avisoTopeDisenos(3), 'Maximo 2 disenos de calca por linea de producto: 3 lineas -> 6 disenos');
 });
+
+// === #402: el juicio del aviso ya miraba el precio manual (#281-1 y #281-2 lo
+// afirman), lo que faltaba era volver a correrlo. Los dos avisos del CARRITO
+// (#calca-invalido-productos y #resumen-calca-invalido) los pinta renderCalcas,
+// y cartLineSetPrecioCalca no la llamaba: capturar el precio manual dejaba el
+// aviso rojo sobre una condicion que ya no existia (HITL de #298, cotizacion
+// 1284, Segundas + CAL1050). Sin DOM no se puede afirmar el repintado y app.js
+// no es importable en Node, asi que lo que se cuida aqui es el cableado en el
+// fuente -- mismo recurso que C16b de alta-dedup-fiscal.test.cjs. Que el aviso
+// se apague en pantalla es HITL. ===
+function fuenteApp() {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  return fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+}
+
+function cuerpoDeFuncion(src, firma) {
+  const inicio = src.indexOf(firma);
+  assert.ok(inicio > 0, `${firma} debe existir en app.js`);
+  const fin = src.indexOf('\n}\n', inicio);
+  assert.ok(fin > inicio, `${firma} debe cerrar`);
+  return src.slice(inicio, fin);
+}
+
+test('#402-1: capturar o quitar el precio manual vuelve a evaluar el aviso de calca sin precio', () => {
+  const src = fuenteApp();
+  const cuerpo = cuerpoDeFuncion(src, 'function cartLineSetPrecioCalca(');
+  const reevaluar = cuerpo.indexOf('renderCalcas()');
+  assert.ok(reevaluar > 0, 'el handler del precio manual tiene que volver a correr el juicio de los dos avisos');
+  assert.ok(reevaluar > cuerpo.indexOf('item.precioManual'),
+    'va despues de escribir o borrar la captura, en el tramo incondicional: capturar Y quitar pasan por ahi');
+  assert.strictEqual((cuerpo.match(/\breturn\b/g) || []).length, 1,
+    'el unico corte temprano es la guarda de la linea inexistente; otro podria saltarse la reevaluacion');
+
+  const render = cuerpoDeFuncion(src, 'function renderCalcas(');
+  assert.ok(render.includes('motivoCalcaInvalidaActual()'),
+    'renderCalcas es quien corre el juicio: si se mueve, este test ya no cuida nada');
+  for (const id of ['calca-invalido-productos', 'resumen-calca-invalido']) {
+    assert.ok(render.includes(`'${id}'`),
+      `si ${id} deja de pintarse en renderCalcas, este test ya no cuida nada: revisarlo`);
+  }
+});
+
+test('#402-2: el aviso del armador sigue hablando de la calca por agregar, no del carrito', () => {
+  const render = cuerpoDeFuncion(fuenteApp(), 'function renderCalcas(');
+  assert.ok(/const precio = ficha \? precioCalca\(/.test(render),
+    'el precio del armador sale de la LISTA vigente para la calca de los selectores');
+  assert.ok(!render.includes('precioEfectivoCalca'),
+    'un precio manual capturado en una linea del carrito no puede apagar el aviso de la calca que se va a agregar');
+  const armador = render.indexOf("getElementById('cal-aviso')");
+  assert.ok(armador > 0 && render.indexOf('motivoCalcaInvalidaActual()') > armador,
+    'son dos avisos distintos: el del armador (#cal-aviso) y el del carrito');
+});
