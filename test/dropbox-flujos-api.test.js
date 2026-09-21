@@ -311,16 +311,21 @@ test('ADM1: GET /api/admin/dropbox-subidas lista los intentos, el fallido con su
   assert.equal(exitosa.archivo, 'AAA010101AA1 - Uno.pdf');
 });
 
+test('ADM2: GET /api/admin/dropbox-subidas sin rol admin responde 403', async () => {
+  const res = await supertest(app).get('/api/admin/dropbox-subidas').set('Authorization', `Bearer ${VENDEDOR}`);
+  assert.equal(res.status, 403);
+});
+
 // #399: "Subido" sobre el sandbox se veia igual que "Subido" sobre la carpeta
 // real. La respuesta trae, por fila, donde cayo; y aparte, como ESTADO, contra
 // que escribe hoy cada uno de los tres flujos.
 test('ADM3: cada fila dice si cayo en el Dropbox real o en el sandbox', async () => {
-  await store.registrar({ flujo: FLUJO_CALCA, destino: '/1.0 Comercialización/DISEÑO/CALCAS/OT Decorado/Dos - Pedido 9.pdf', ok: true });
+  await store.registrar({ flujo: FLUJO_CALCA, destino: '/1.0 Comercializaci\u00f3n/DISE\u00d1O/CALCAS/OT Decorado/Dos - Pedido 9.pdf', ok: true });
   await store.registrar({ flujo: FLUJO_CSF, destino: '/AAA010101AA1 - Uno.pdf', namespace: '5835633', ok: true });
   const res = await supertest(app).get('/api/admin/dropbox-subidas').set('Authorization', `Bearer ${ADMIN}`);
   const [real, sandbox] = res.body.subidas;
   assert.deepEqual(real.lugar, { tipo: 'namespace', namespace: '5835633', inferido: false });
-  assert.deepEqual(sandbox.lugar, { tipo: 'sandbox', namespace: null, inferido: false });
+  assert.deepEqual(sandbox.lugar, { tipo: 'sandbox', namespace: null, inferido: true });
 });
 
 test('ADM4: la respuesta trae el estado de configuracion de los tres flujos', async () => {
@@ -335,9 +340,4 @@ test('ADM4: la respuesta trae el estado de configuracion de los tres flujos', as
     if (previo.ns === undefined) delete process.env.DROPBOX_NS_CSF; else process.env.DROPBOX_NS_CSF = previo.ns;
     if (previo.path === undefined) delete process.env.DROPBOX_PATH_CSF; else process.env.DROPBOX_PATH_CSF = previo.path;
   }
-});
-
-test('ADM2: GET /api/admin/dropbox-subidas sin rol admin responde 403', async () => {
-  const res = await supertest(app).get('/api/admin/dropbox-subidas').set('Authorization', `Bearer ${VENDEDOR}`);
-  assert.equal(res.status, 403);
 });

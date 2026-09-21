@@ -291,8 +291,9 @@
       <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
         Cada intento de subida a Dropbox -- constancia fiscal, posicion de calca y backup del export de Bitrix24 --
         con su destino y su resultado. Las subidas son fire-and-forget: un fallo no rompe nada y por eso, sin esta
-        vista, no se nota. Los renglones marcados son los que fallaron. "Subido" no basta: la columna Lugar dice si el
-        archivo cayo en el Dropbox real (la peticion viajo contra un namespace) o en el sandbox de la app.
+        vista, no se nota. Los renglones marcados son los que fallaron. "Subido" no basta: la columna Lugar dice si la
+        peticion viajo contra el Dropbox real (un namespace) o contra el sandbox de la app; en un renglon fallido es
+        a donde iba, no a donde llego.
       </p>
       <div id="dropbox-flujos" style="display:none;margin-bottom:12px;font-size:12px"></div>
       <div id="dropbox-subidas-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
@@ -920,13 +921,15 @@ const DROPBOX_FLUJO_NOMBRES = {
   desconocido: 'Sin declarar',
 };
 
-// #399: donde cayo (o iba a caer) la fila. `inferido` = la fila es anterior a
-// que el registro guardara el namespace y el lugar sale de su ruta.
-function dropboxLugarTexto(lugar) {
+// #399: donde cayo (o, en un fallo, a donde iba) la fila. `inferido` = la fila
+// no guardo su namespace y el lugar sale de su ruta.
+function dropboxLugarTexto(s) {
+  const lugar = s.lugar;
   if (!lugar) return '';
-  if (lugar.tipo === 'sandbox') return 'Sandbox de la app' + (lugar.inferido ? ' (inferido)' : '');
-  if (lugar.namespace) return 'Dropbox real, namespace ' + paridadEsc(lugar.namespace);
-  return 'Dropbox real, namespace sin registrar (inferido por la ruta)';
+  const iba = s.ok ? '' : 'Iba a: ';
+  if (lugar.namespace) return iba + 'Dropbox real, namespace ' + paridadEsc(lugar.namespace);
+  const donde = lugar.tipo === 'sandbox' ? 'Sandbox de la app' : 'Dropbox real, namespace sin registrar';
+  return iba + donde + (lugar.inferido ? ' (inferido por la ruta)' : '');
 }
 
 // Estado por flujo, no evento: contra que escribe HOY cada uno. "Sin
@@ -963,7 +966,7 @@ async function loadDropboxSubidas() {
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${syncContactosFecha(s.momento)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${DROPBOX_FLUJO_NOMBRES[s.flujo] || paridadEsc(s.flujo)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${paridadEsc(s.archivo)}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${dropboxLugarTexto(s.lugar)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${dropboxLugarTexto(s)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text-light)">${paridadEsc(s.destino)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--danger)">${paridadEsc(s.error || '')}</td>
       </tr>

@@ -26,6 +26,8 @@ const envPrevio = {
   DROPBOX_REFRESH_TOKEN: process.env.DROPBOX_REFRESH_TOKEN,
   DROPBOX_APP_KEY: process.env.DROPBOX_APP_KEY,
   DROPBOX_APP_SECRET: process.env.DROPBOX_APP_SECRET,
+  DROPBOX_NS_CSF: process.env.DROPBOX_NS_CSF,
+  DROPBOX_PATH_CSF: process.env.DROPBOX_PATH_CSF,
 };
 const originalFetch = globalThis.fetch;
 

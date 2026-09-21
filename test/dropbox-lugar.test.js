@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { estadoDeFlujos, lugarDeSubida } from '../lib/dropbox-destinos.js';
 
-const CSF_SANDBOX = '/PELTRE NACIONAL/3.0 ADMINISTRACIÓN/CONTABILIDAD/PNA170810CF1/CONSTANCIA SITUACION FISCAL CLIENTES';
+const CSF_SANDBOX = '/PELTRE NACIONAL/3.0 ADMINISTRACI\u00d3N/CONTABILIDAD/PNA170810CF1/CONSTANCIA SITUACION FISCAL CLIENTES';
 
 test('estadoDeFlujos devuelve los tres flujos, configurados o no, con su base', () => {
   const flujos = estadoDeFlujos({ DROPBOX_NS_CSF: '123', DROPBOX_PATH_CSF: '/CSF/' });
@@ -14,7 +14,7 @@ test('estadoDeFlujos devuelve los tres flujos, configurados o no, con su base', 
   assert.deepEqual(flujos[0], { flujo: 'csf', configurado: true, namespace: '123', base: '/CSF' });
   assert.equal(flujos[1].configurado, false);
   assert.equal(flujos[1].namespace, null);
-  assert.equal(flujos[1].base, '/1.0 Comercialización/DISEÑO/CALCAS/OT Decorado');
+  assert.equal(flujos[1].base, '/1.0 Comercializaci\u00f3n/DISE\u00d1O/CALCAS/OT Decorado');
   assert.equal(flujos[2].configurado, false);
 });
 
@@ -29,9 +29,11 @@ test('una fila con namespace registrado cayo en el Dropbox real, contra ese name
   assert.deepEqual(lugar, { tipo: 'namespace', namespace: '5835633', inferido: false });
 });
 
+// Sin namespace guardado el lugar sale SIEMPRE de la ruta, en las dos
+// direcciones: la fila no puede afirmar con certeza lo que nadie anoto.
 test('una fila historica bajo la ruta heredada del flujo cayo en el sandbox', () => {
   const lugar = lugarDeSubida({ flujo: 'csf', destino: `${CSF_SANDBOX}/CARA830713D53 - Uno.pdf` }, {});
-  assert.deepEqual(lugar, { tipo: 'sandbox', namespace: null, inferido: false });
+  assert.deepEqual(lugar, { tipo: 'sandbox', namespace: null, inferido: true });
 });
 
 // Las filas del 2026-09-21 entre la carga de las variables en Render y el
