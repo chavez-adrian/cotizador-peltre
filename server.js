@@ -69,7 +69,7 @@ import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDec
 import { indiceOrigenPorCelular, anotarOrigen } from './public/js/origen-logica.js';
 import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL, puedePrecioCalca, normalizarPuedePrecioCalca } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
-import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente } from './public/js/tier-logica.js';
+import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -222,6 +222,14 @@ function listasDelCatalogo() {
 
 function listasVolumenDelCatalogo() {
   return tiersDelCatalogo().filter(esEscalonDeVolumen).map(t => t.listaId).filter(Boolean);
+}
+
+// La lista de precios que le toca al ENCABEZADO del quote (#403): la que se cotizo,
+// no la que el cliente tiene en su ficha. Es el mismo `listaId` del catalogo por el
+// que ya cruza el permiso (#296); null cuando el tier del registro no existe en el
+// catalogo vigente -- entonces no se escribe nada y el post-fix lo reporta.
+function listaDelQuote(entry) {
+  return listaIdDeTier(tiersDelCatalogo(), entry?.tier);
 }
 
 // Permiso de lista VIGENTE del usuario autenticado (#296, ADR-0015): rol admin
@@ -469,7 +477,9 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
         }
       }
       const yaEnOperam = prev.folioOperam != null && prev.folioOperam !== '';
-      const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote);
+      // La lista del encabezado entra a la comparacion desde #403: con el mismo
+      // precio en dos listas nada mas se movia y el quote se quedaba con la vieja.
+      const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote, { listaId: listaDelQuote(entry) });
       await cotStore.actualizarCotizacion(idPrevio, entry);
       return { id: idPrevio, requiereActualizacionOperam };
     }
@@ -3026,7 +3036,7 @@ async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creado
     const folio = await subirCotizacionOperam(dataSubida, { verificarListaPrecios: !creadoNuevo });
     if (folio != null && folio !== '') {
       await cotStore.setFolioOperam(id, folio);
-      await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida) });
+      await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida, { listaId: listaDelQuote(entry) }) });
       // Hay folio: se resolvio por el camino que sea (candidato elegido, cliente
       // nuevo forzado o reintento) y el candado se levanta (#204).
       await marcarMotivoPre(id, null);
@@ -3036,8 +3046,7 @@ async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creado
       mensaje: folio ? 'La cotizacion quedo registrada en Operam' : 'La cotizacion se envio a Operam pero volvio sin numero',
       detalle: 'POST quote -> folio ' + (folio == null || folio === '' ? '(ninguno)' : folio),
     });
-    const pasoVigencia = await postFixVigencia(folio, entry.data);
-    if (pasoVigencia) pasos.push(pasoVigencia);
+    pasos.push(...await postFixQuote(folio, entry));
     // clienteGenerico (#93): este camino SIEMPRE deja el cliente con RFC generico
     // (creado nuevo o reutilizado por celular/dedup de nombre, ambos genericos) --
     // el frontend lo usa para refrescar el chip Fiscal y ofrecer la CSF junto al folio.
@@ -3213,33 +3222,91 @@ const subidasOperamEnCurso = new Set();
 // fallo aqui se reporta como step y nunca tumba la subida. La verificacion post-escritura
 // (releer y comparar) sigue el mismo patron que el PUT del branch (#96) y el quirk del
 // PUT de clientes, que responde 200 aunque ignore campos.
-async function postFixVigencia(folio, data) {
-  if (folio == null || folio === '') return null;
+//
+// Desde #403 el mismo POST lleva la LISTA DE PRECIOS del encabezado, el otro campo del
+// quote que la API v3 no escribe: el quote nacia con la lista del CLIENTE aunque se
+// hubiera cotizado en otra, y de ese encabezado hereda el pedido. Son dos campos
+// independientes y se reportan como dos pasos -- que la lista no se pueda escribir no
+// dice nada de la vigencia, ni al reves.
+async function postFixQuote(folio, entry) {
+  if (folio == null || folio === '') return [];
+  const data = entry?.data;
   try {
-    const r = await corregirVigenciaQuote(folio, vigenciaDeCotizacion(data));
+    const r = await corregirVigenciaQuote(folio, vigenciaDeCotizacion(data), { lista: listaDelQuote(entry) });
+    const pasos = [];
     if (r.ok) {
-      return {
+      pasos.push({
         name: 'post-fix vigencia', status: 'ok',
         mensaje: 'La vigencia quedo corregida en Operam',
         detalle: 'quote ' + folio + ' campo Valido hasta',
-      };
+      });
+    } else {
+      // verificado false = la vista no traia el campo, asi que no se sabe como quedo; se
+      // reporta distinto de "quedo con otra fecha" para no afirmar lo que no se comprobo.
+      pasos.push({
+        name: 'post-fix vigencia', status: 'warn',
+        mensaje: 'Revisa la vigencia de la cotizacion en Operam: pudo no quedar corregida',
+        detalle: 'quote ' + folio + ': se esperaba ' + (r.esperado ?? '(sin dato)') + ' y se leyo ' + (r.encontrado ?? '(sin dato)'),
+        verificado: r.verificado, esperado: r.esperado, encontrado: r.encontrado,
+      });
     }
-    // verificado false = la vista no traia el campo, asi que no se sabe como quedo; se
-    // reporta distinto de "quedo con otra fecha" para no afirmar lo que no se comprobo.
-    return {
-      name: 'post-fix vigencia', status: 'warn',
-      mensaje: 'Revisa la vigencia de la cotizacion en Operam: pudo no quedar corregida',
-      detalle: 'quote ' + folio + ': se esperaba ' + (r.esperado ?? '(sin dato)') + ' y se leyo ' + (r.encontrado ?? '(sin dato)'),
-      verificado: r.verificado, esperado: r.esperado, encontrado: r.encontrado,
-    };
+    const pasoLista = pasoListaQuote(folio, r.lista);
+    if (pasoLista) pasos.push(pasoLista);
+    return pasos;
   } catch (err) {
     console.error('[post-fix vigencia] fallo en el quote', folio, err.message);
-    return {
+    // El post-fix no llego a escribir NADA, asi que la lista tampoco: se nombra con su
+    // motivo real en vez de callarla -- desde #403 el vendedor espera un paso por cada
+    // uno de los dos campos, y el silencio se leeria como "la lista si quedo".
+    const lista = listaDelQuote(entry);
+    return [{
       name: 'post-fix vigencia', status: 'error',
       mensaje: 'No se pudo corregir la vigencia de la cotizacion en Operam',
       detalle: 'quote ' + folio + ': ' + err.message,
+    }, ...(lista == null ? [] : [{
+      name: 'lista del quote', status: 'warn',
+      mensaje: 'Revisa la lista de precios de la cotizacion en Operam: pudo quedar con la del cliente',
+      detalle: 'quote ' + folio + ': se esperaba la lista ' + lista + ' y no se envio -- el post-fix fallo antes de escribir: ' + err.message,
+      verificado: false, esperado: lista, encontrado: null,
+    }]),];
+  }
+}
+
+// El paso de la lista del encabezado (#403), en dos capas como los demas. Los tres
+// desenlaces son distintos a proposito: escrita y verificada, no aplicaba (la
+// cotizacion no resuelve lista y el quote se queda con la del cliente, que es lo que
+// pasaba siempre antes de #403) y "no quedo", que es lo unico que el vendedor tiene
+// que ir a revisar. El detalle dice si se escribio y no pego o si ni se intento, con
+// el motivo real -- nunca "Operam lo ignoro" sobre un campo que no viajo (#379).
+function pasoListaQuote(folio, lista) {
+  if (!lista) return null;
+  const nombre = 'lista del quote';
+  if (!lista.aplica) {
+    return {
+      name: nombre, status: 'omitido',
+      mensaje: 'La cotizacion quedo en Operam con la lista de precios que ya tenia el cliente',
+      detalle: 'quote ' + folio + ': ' + (lista.motivo ?? 'no habia lista que escribir'),
     };
   }
+  if (lista.ok) {
+    return {
+      name: nombre, status: 'ok',
+      mensaje: lista.yaCorrecto
+        ? 'La cotizacion ya estaba en Operam con la lista de precios cotizada'
+        : 'La lista de precios de la cotizacion quedo corregida en Operam',
+      detalle: 'quote ' + folio + ' lista ' + lista.esperado,
+    };
+  }
+  return {
+    name: nombre, status: 'warn',
+    mensaje: 'Revisa la lista de precios de la cotizacion en Operam: pudo quedar con la del cliente',
+    detalle: 'quote ' + folio + ': se esperaba la lista ' + (lista.esperado ?? '(sin dato)') + (lista.escrita
+      // Escrita y sin confirmar: el motivo dice si la relectura fallo (y por que) o si
+      // Operam contesto con otra lista. Sin el, "se leyo (sin dato)" tapaba la causa.
+      ? ' y se leyo ' + (lista.encontrado ?? '(sin dato)') + (lista.motivo ? ' -- ' + lista.motivo : '')
+      : ' y no se envio -- ' + (lista.motivo ?? 'sin motivo')),
+    verificado: lista.verificado, esperado: lista.esperado, encontrado: lista.encontrado,
+  };
 }
 
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
@@ -3314,17 +3381,17 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
         // Huella de lo que quedo en el quote (#114): sin ella la proxima regeneracion
         // no puede saber si el contenido cambio, que es lo que decide si hay que
         // reescribir el quote o dejarlo en paz.
-        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(entry.data) });
+        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(entry.data, { listaId: listaDelQuote(entry) }) });
         await marcarMotivoPre(id, null);
       }
-      const pasoVigencia = await postFixVigencia(folio, entry.data);
+      const pasosPostFix = await postFixQuote(folio, entry);
       // La liga solo se anota cuando el quote ya existe: sin folio no hubo venta
       // que ligar, y el reintento vuelve a pasar por aqui.
       const pasosLiga = [];
       if (folio != null && folio !== '' && contactoSubida && decisionLiga.accion === 'agregar') {
         await agregarLigaAlContacto(contactoSubida, entry.data.cliente.customerId, entry, pasosLiga);
       }
-      res.json({ ok: true, folio, steps: [...(pasoVigencia ? [pasoVigencia] : []), ...pasosLiga] });
+      res.json({ ok: true, folio, steps: [...pasosPostFix, ...pasosLiga] });
     } catch (err) {
       // Cliente no identificado (#68): es un problema de datos de la cotizacion,
       // no de disponibilidad de Operam. 422 con el mensaje claro, sin subir.
@@ -3376,12 +3443,16 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
     });
     if (!gate.puede) return res.status(409).json({ error: gate.motivo });
 
-    const r = await actualizarQuoteOperam(entry.folioOperam, entry.data);
+    const r = await actualizarQuoteOperam(entry.folioOperam, entry.data, { lista: listaDelQuote(entry) });
+    const pasoLista = pasoListaQuote(entry.folioOperam, r.lista);
     if (r.ok) {
       // Nueva huella (#114): el quote acaba de quedar con ESTE contenido, asi que
       // regenerar el mismo carrito (otro formato) ya no debe reescribir nada.
-      await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data) });
-      return res.json({ ok: true, folio: entry.folioOperam, actualizada: true, steps: [{ name: 'actualizar quote', status: 'ok' }] });
+      await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data, { listaId: listaDelQuote(entry) }) });
+      return res.json({
+        ok: true, folio: entry.folioOperam, actualizada: true,
+        steps: [{ name: 'actualizar quote', status: 'ok' }, ...(pasoLista ? [pasoLista] : [])],
+      });
     }
     const marca = {
       fecha: new Date().toISOString(),
@@ -3394,7 +3465,10 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
       ok: false, folio: entry.folioOperam, actualizada: false,
       escrito: !!r.escrito, verificado: !!r.verificado,
       error: r.error ?? null, discrepancias: r.discrepancias ?? [],
-      steps: [{ name: 'actualizar quote', status: 'error', error: r.error ?? null, discrepancias: r.discrepancias ?? [] }],
+      steps: [
+        { name: 'actualizar quote', status: 'error', error: r.error ?? null, discrepancias: r.discrepancias ?? [] },
+        ...(pasoLista ? [pasoLista] : []),
+      ],
     });
   } finally {
     subidasOperamEnCurso.delete(id);

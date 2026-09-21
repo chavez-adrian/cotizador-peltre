@@ -252,3 +252,21 @@ export function validarListaCliente({ solicitada, actual, permiso, nombre } = {}
   if (puedeAsignarLista(pedida, permiso)) return { ok: true };
   return { ok: false, mensaje: mensajeListaClienteNoHabilitada(nombre || pedida) };
 }
+
+// La lista de precios con la que se COTIZO, como id de sales_type de Operam
+// (#403). Es lo que el ENCABEZADO del quote tiene que decir: hasta ahora el quote
+// subia con la lista del CLIENTE (Operam la toma de su ficha y la API v3 no acepta
+// ninguna llave para cambiarla), asi que un cliente de Menudeo cotizado en Segundas
+// quedaba en el ERP con precios de Segundas bajo un encabezado que decia Menudeo --
+// y el pedido que se deriva hereda ESE encabezado.
+//
+// Sale del mismo `listaId` por el que ya cruza el permiso (#296) y que el catalogo
+// generado desde el ERP expone en cada tier (#298): una sola fuente, nunca una tabla
+// en codigo. null cuando el tier no existe en el catalogo vigente o no trae lista --
+// falla cerrado como puedeFijarTier: quien escribe el encabezado se abstiene y lo
+// reporta, en vez de inventar una lista.
+export function listaIdDeTier(tiers, tierId) {
+  const tier = (tiers || []).find(t => t.id === tierId);
+  const id = tier?.listaId;
+  return id == null || id === '' ? null : String(id);
+}

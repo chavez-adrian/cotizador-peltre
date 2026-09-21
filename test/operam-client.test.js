@@ -2944,3 +2944,37 @@ test('#329 subirCotizacionOperam: sin contacto de entrega las llaves viajan vaci
     restore();
   }
 });
+
+// --- La lista del encabezado entra a la huella (#403) ------------------------
+// El encabezado del quote ahora lo escribe el cotizador, asi que cambiar de lista es
+// un cambio del documento en Operam. Casi siempre el tier ya mueve los precios y la
+// huella cambia sola; pero con el MISMO precio en dos listas nada se movia y el
+// encabezado se quedaba con la lista vieja.
+test('#403 huellaContenidoQuote: la lista del encabezado SI cuenta como cambio', () => {
+  const data = cotizacionBase();
+  assert.notEqual(huellaContenidoQuote(data, { listaId: '9' }), huellaContenidoQuote(data, { listaId: '12' }));
+  assert.equal(huellaContenidoQuote(data, { listaId: '9' }), huellaContenidoQuote(data, { listaId: 9 }));
+  assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data, { listaId: '12' }), { listaId: '9' }), true);
+  assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data, { listaId: '9' }), { listaId: '9' }), false);
+});
+
+// Lo que NO puede pasar: que la ausencia del campo nuevo cuente como cambio. Las
+// cotizaciones subidas antes de #403 tienen la huella vieja guardada, y leerla como
+// "cambio" mandaria a reescribir por la web legacy TODA cotizacion que se regenere,
+// sin que nada del documento se haya movido.
+test('#403 contenidoQuoteCambio: una huella guardada SIN la lista no cuenta como cambio', () => {
+  const data = cotizacionBase();
+  const huellaVieja = huellaContenidoQuote(data);
+  assert.equal(huellaVieja.includes('listaId'), false, 'la huella vieja no traia el campo');
+  assert.equal(contenidoQuoteCambio(data, huellaVieja, { listaId: '9' }), false);
+  // y lo que SI cambio se sigue viendo con la huella vieja
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ total: 99 }), huellaVieja, { listaId: '9' }), true);
+});
+
+// Sin lista resoluble (tier fuera del catalogo) la huella no inventa una: el campo
+// viaja en null y se distingue de "la lista es la 12".
+test('#403 huellaContenidoQuote: sin lista resoluble el campo va en null, no ausente', () => {
+  const data = cotizacionBase();
+  assert.equal(huellaContenidoQuote(data, { listaId: null }).includes('"listaId":null'), true);
+  assert.notEqual(huellaContenidoQuote(data, { listaId: null }), huellaContenidoQuote(data, { listaId: '12' }));
+});

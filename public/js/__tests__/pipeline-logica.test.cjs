@@ -1256,7 +1256,7 @@ test('Q19e: una subida ya en vuelo y un timeout son PRE explicitos con reintento
 test('A104: interpretarActualizacionOperam distingue exito, no-escrito, escrito-con-diferencias y gate', () => {
   assert.deepEqual(
     interpretarActualizacionOperam({ ok: true, status: 200, folio: '1200' }),
-    { estado: 'actualizada', folio: '1200' },
+    { estado: 'actualizada', folio: '1200', pasos: [] },
   );
   const intacto = interpretarActualizacionOperam({ ok: false, status: 200, escrito: false, error: 'no se agrego la partida' });
   assert.equal(intacto.estado, 'desactualizado');
@@ -1269,6 +1269,38 @@ test('A104: interpretarActualizacionOperam distingue exito, no-escrito, escrito-
   const bloqueada = interpretarActualizacionOperam({ status: 409, error: 'ya tiene un pedido asociado' });
   assert.equal(bloqueada.estado, 'bloqueada');
   assert.match(bloqueada.mensaje, /pedido/);
+});
+
+// #403: la lista del encabezado se escribe tambien al actualizar, y puede no quedar
+// (formulario sin el select, lista fuera de sus opciones) SIN que la actualizacion
+// falle. Con `ok` y un paso en warn el vendedor tiene que enterarse: si el navegador
+// se queda solo con `ok`, el unico rastro de que el quote quedo con la lista del
+// cliente vive en el log del servidor.
+test('#403 interpretarActualizacionOperam: un paso en warn se lee aunque la actualizacion haya salido bien', () => {
+  const vista = interpretarActualizacionOperam({
+    ok: true, status: 200, folio: '1200',
+    steps: [
+      { name: 'actualizar quote', status: 'ok' },
+      { name: 'lista del quote', status: 'warn', mensaje: 'Revisa la lista de precios de la cotizacion en Operam: pudo quedar con la del cliente', detalle: 'quote 1200: se esperaba la lista 15 y no se envio' },
+    ],
+  });
+  assert.equal(vista.estado, 'actualizada');
+  assert.equal(vista.pasos.length, 1);
+  assert.match(vista.pasos[0].mensaje, /lista de precios/);
+  const html = buildActualizacionStatusHtml(7, vista);
+  assert.match(html, /lista de precios/);
+  assert.match(html, /se esperaba la lista 15/);
+});
+
+// El paso en ok no se pinta: listar todos convertiria cada actualizacion exitosa en un
+// muro de renglones (mismo criterio que pasosParaMostrar en la subida).
+test('#403 interpretarActualizacionOperam: los pasos en ok no se pintan', () => {
+  const vista = interpretarActualizacionOperam({
+    ok: true, status: 200, folio: '1200',
+    steps: [{ name: 'actualizar quote', status: 'ok' }, { name: 'lista del quote', status: 'ok', mensaje: 'quedo', detalle: 'lista 15' }],
+  });
+  assert.deepEqual(vista.pasos, []);
+  assert.equal(buildActualizacionStatusHtml(7, vista).includes('lista 15'), false);
 });
 
 // #114: con la reescritura del quote en la ruta critica de la generacion, "ya hay una

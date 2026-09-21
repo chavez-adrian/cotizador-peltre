@@ -10,6 +10,7 @@ import {
   serializarBodyEditarLinea, serializarBodyDescripcionLinea,
   leerLineasVista, leerComentariosVista, compararQuoteVista,
   parsearFormularioCliente, serializarBodyCliente, leerErrorWeb,
+  opcionesListaQuote, decidirListaQuote,
 } from '../lib/operam-web.js';
 
 const DIR_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -153,6 +154,93 @@ test('serializarBodyQuote: exige una fecha YYYY-MM-DD', () => {
   for (const mala of ['26-08-2026', '2026/08/26', '', null, undefined, 'manana']) {
     assert.throws(() => serializarBodyQuote(campos, { deliveryDate: mala }), /fecha/i);
   }
+});
+
+// --- La lista de precios del ENCABEZADO del quote (#403) ---------------------
+// La API v3 ignora toda llave de lista en el POST del quote (medido con 12 nombres
+// distintos), asi que el encabezado se queda con la lista del CLIENTE aunque se
+// haya cotizado en otra: precios de Segundas bajo un encabezado que dice Menudeo.
+// La web legacy SI la escribe, en el MISMO ProcessOrder que ya corrige la vigencia,
+// y NO re-precia las partidas (verificado en vivo sobre el quote 1287).
+
+test('#403 opcionesListaQuote: lee las listas del select real del formulario', () => {
+  const opciones = opcionesListaQuote(FIXTURE);
+  assert.equal(opciones.length, 14);
+  assert.deepEqual(opciones.find(o => o.id === '9'), { id: '9', nombre: 'Segundas' });
+  assert.deepEqual(opciones.find(o => o.id === '12'), { id: '12', nombre: 'Precio de lista' });
+  assert.ok(opciones.some(o => o.id === '15' && o.nombre === 'M100'));
+});
+
+// Un formulario sin el select no es la pagina de edicion que creemos: la lista de
+// opciones vacia es lo que hace que la decision se abstenga de escribir.
+test('#403 opcionesListaQuote: sin el select devuelve lista vacia', () => {
+  assert.deepEqual(opcionesListaQuote('<form><input name="delivery_date" value="2026-08-26"></form>'), []);
+  assert.deepEqual(opcionesListaQuote(''), []);
+  assert.deepEqual(opcionesListaQuote(null), []);
+});
+
+const OPCIONES_FIXTURE = [{ id: '9', nombre: 'Segundas' }, { id: '12', nombre: 'Precio de lista' }];
+
+test('#403 decidirListaQuote: la lista cotizada distinta de la del quote SI se escribe', () => {
+  const d = decidirListaQuote({ esperado: '9', actual: '12', opciones: OPCIONES_FIXTURE });
+  assert.equal(d.escribir, true);
+  assert.equal(d.salesType, '9');
+});
+
+// El quote que ya esta en la lista cotizada no se repostea por la lista: escribir
+// sin necesidad solo agrega riesgo (mismo criterio que la vigencia, #106).
+test('#403 decidirListaQuote: el quote que ya esta en esa lista no se escribe', () => {
+  const d = decidirListaQuote({ esperado: '9', actual: 9, opciones: OPCIONES_FIXTURE });
+  assert.equal(d.escribir, false);
+  assert.equal(d.yaCorrecto, true);
+});
+
+// Los tres motivos de abstencion. Ninguno tumba la cotizacion: el quote ya existe
+// con sus precios correctos y lo unico que queda mal es el encabezado, asi que se
+// reporta y se sigue (mismo contrato que el post-fix de vigencia).
+test('#403 decidirListaQuote: sin lista resuelta, sin campo o fuera de las opciones no se escribe y se da el motivo', () => {
+  const sinLista = decidirListaQuote({ esperado: null, actual: '12', opciones: OPCIONES_FIXTURE });
+  assert.equal(sinLista.escribir, false);
+  assert.match(sinLista.motivo, /cotizacion/i);
+
+  const sinCampo = decidirListaQuote({ esperado: '9', actual: undefined, opciones: OPCIONES_FIXTURE });
+  assert.equal(sinCampo.escribir, false);
+  assert.match(sinCampo.motivo, /sales_type/);
+
+  const ajena = decidirListaQuote({ esperado: '99', actual: '12', opciones: OPCIONES_FIXTURE });
+  assert.equal(ajena.escribir, false);
+  assert.match(ajena.motivo, /99/);
+});
+
+test('#403 serializarBodyQuote: salesType sustituye sales_type y no toca nada mas', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  assert.equal(campos.sales_type, '16');
+  const body = serializarBodyQuote(campos, { deliveryDate: '2026-08-26', salesType: '9' });
+  assert.equal(body.get('sales_type'), '9');
+  assert.equal(body.get('delivery_date'), '2026-08-26');
+  assert.equal(body.get('customer_id'), campos.customer_id);
+  assert.equal(body.get('Comments'), campos.Comments);
+});
+
+// Las partidas NO se tocan: el precio de cada linea ya viajo explicito y FA no
+// re-precia al recibir otra lista (verificado en vivo). Si el body arrastrara la
+// fila de captura con otro precio, la lista "corregida" cambiaria el documento.
+test('#403 serializarBodyQuote: escribir la lista no mueve ninguna llave de linea', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const sinLista = serializarBodyQuote(campos, { deliveryDate: '2026-08-26' });
+  const conLista = serializarBodyQuote(campos, { deliveryDate: '2026-08-26', salesType: '9' });
+  const diferencias = [...conLista.keys()].filter(k => conLista.get(k) !== sinLista.get(k));
+  assert.deepEqual(diferencias, ['sales_type']);
+  assert.deepEqual([...conLista.keys()].sort(), [...sinLista.keys()].sort());
+});
+
+// Misma regla que los otros seis campos opcionales (#329): si el formulario no
+// trae sales_type, la pagina no es la que creemos y se aborta ANTES de escribir.
+test('#403 serializarBodyQuote: lanza si se pide la lista y el formulario no la trae', () => {
+  assert.throws(
+    () => serializarBodyQuote({ delivery_date: '2026-07-26' }, { deliveryDate: '2026-08-26', salesType: '9' }),
+    /sales_type/,
+  );
 });
 
 // Verificacion post-escritura: se relee la vista read-only (no la de edicion, que

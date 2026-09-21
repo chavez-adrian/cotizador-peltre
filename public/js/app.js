@@ -4206,6 +4206,9 @@ async function actualizarQuoteEnOperam(id, slot) {
       ok: data.ok === true, status: res.status, folio: data.folio,
       escrito: data.escrito, verificado: data.verificado,
       error: data.error, discrepancias: data.discrepancias,
+      // #403: los pasos que hay que leer (la lista del encabezado puede no quedar
+      // sin que la actualizacion falle). Descartarlos aqui los volvia invisibles.
+      steps: data.steps,
     };
   } catch (e) {
     resultado = { ok: false, status: 0, error: e.message };

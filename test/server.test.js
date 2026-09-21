@@ -2189,7 +2189,7 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
     '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }] }) }),
     '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ result: true, quote_id: 1600 }) }; },
     // Sin esto, si ya existe sesionCompartida viva de un test anterior (#172/#186), el
-    // post-fix de vigencia (server.js postFixVigencia) manda un GET real a la web legacy
+    // post-fix del quote (server.js postFixQuote) manda un GET real a la web legacy
     // que cae en el retry con backoff de pedir() (1+2+4+8 = 15s) antes de rendirse (#188).
     // Mismo patron minimo que #114-6.
     'trans_type=30': () => ({ headers: {}, text: async () => '<html>login ok</html>' }),
@@ -2219,14 +2219,22 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
 // ProcessOrder escribe el documento.
 // delivery_address va como TEXTAREA con comillas SIMPLES a proposito (#328): asi lo
 // declara el HTML real de FA, y esa es justo la forma que un parser descuidado no ve.
-function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = false } = {}) {
+// `conSelectListas` pone el `<select name='sales_type'>` que el formulario REAL de FA
+// trae (#403): sin el, la lista del encabezado no se puede escribir y el mock solo
+// prueba el camino de la abstencion. `lista` es la que el quote tiene antes.
+function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = false, conSelectListas = false, lista = '12' } = {}) {
   const sesion = { carrito: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })) };
-  const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01', deliverTo: 'VIEJO', deliveryAddress: 'DOMICILIO VIEJO', phone: 'TEL VIEJO', email: 'viejo@ejemplo.mx' };
+  const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01', deliverTo: 'VIEJO', deliveryAddress: 'DOMICILIO VIEJO', phone: 'TEL VIEJO', email: 'viejo@ejemplo.mx', lista };
   const bitacora = [];
+  const OPCIONES_LISTA = [['12', 'Precio de lista'], ['15', 'M100'], ['9', 'Segundas']];
+  const selectListas = () => (conSelectListas
+    ? `<select name='sales_type'>${OPCIONES_LISTA.map(o => `<option ${o[0] === doc.lista ? 'selected' : ''} value='${o[0]}'>${o[1]}</option>`).join('')}</select>`
+    : '');
   const formHtml = () => `<form method='post' action='/sales/sales_order_entry.php'>
 <input type="hidden" name="cart_id" value='CART1'>
 <input type="hidden" name="customer_id" value='376'>
 <input type="hidden" name="_token" value='TOK'>
+${selectListas()}
 ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?stock_id=${l.stockId}'>x</a><button type='submit' name='Delete${i}' value='1'></button>`).join('\n')}
 <input type="text" name="stock_id" value=''>
 <input type="text" name="qty" value="1">
@@ -2260,6 +2268,9 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
     'trans_type=30': () => ({ headers: {}, text: async () => '<html>login ok</html>' }),
     'ModifyQuotationNumber': () => ({ headers: {}, text: async () => formHtml() }),
     'trans_type=32': () => ({ headers: {}, text: async () => vistaHtml() }),
+    // La relectura del encabezado va por la API v3 (#403): `order_type` es la lista.
+    '/api/v3/sales/quote/': () => ({ ok: true, json: async () => ({ data: [{ order_type: doc.lista }] }) }),
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
     'sales_order_entry.php': (u, opts) => {
       const p = new URLSearchParams(opts.body || '');
       if (p.has('CancelOrder')) throw new Error('JAMAS debe mandarse CancelOrder');
@@ -2269,6 +2280,8 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
         if (!romperAddItem) sesion.carrito.push({ stockId: p.get('stock_id'), qty: Number(p.get('qty')), price: Number(p.get('price')), disc: Number(p.get('Disc')) });
       } else if (p.has('ProcessOrder')) {
         doc.lineas = sesion.carrito.map(l => ({ ...l }));
+        // FA escribe la lista del encabezado y NO re-precia las partidas (#403).
+        if (p.has('sales_type')) doc.lista = p.get('sales_type');
         doc.comments = p.get('Comments');
         doc.custRef = p.get('cust_ref');
         doc.vigencia = p.get('delivery_date');
@@ -2283,12 +2296,12 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
   return { restore, doc, bitacora };
 }
 
-function cotizacionActualizable(extra = {}) {
+function cotizacionActualizable(extra = {}, { tier = 'Mayoreo' } = {}) {
   const snap = readCots();
   const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
   writeCots([...snap, {
     id, fecha: '2026-07-28T00:00:00Z', vendedor: 'Tester', cliente: 'EL PENDULO',
-    totalPiezas: 3, total: 300, tier: 'Mayoreo', folioOperam: '1200',
+    totalPiezas: 3, total: 300, tier, folioOperam: '1200',
     data: {
       fecha: '2026-07-28', vigencia: '2026-08-27',
       cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530' },
@@ -2320,6 +2333,47 @@ test('A104: actualizar reescribe el quote (borra las viejas, agrega las nuevas) 
     assert.match(doc.comments, /Nota nueva/);
     assert.match(doc.comments, /Valido hasta: 2026-08-27/);
     assert.strictEqual(doc.custRef, 'Pendulo');
+  } finally {
+    restore();
+  }
+});
+
+// #403: actualizar un quote existente tambien corrige la lista del ENCABEZADO. Es el
+// mismo ProcessOrder que ya reescribia el header, y las partidas NO se mueven: cada
+// una viaja con su precio explicito y FA no re-precia al recibir otra lista.
+test('#403 actualizar: el ProcessOrder corrige la lista del encabezado sin mover las partidas', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({}, { tier: 'M100' });
+  const { restore, doc } = mockOperamWebLegacy({ conSelectListas: true, lista: '12' });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    assert.strictEqual(doc.lista, '15', 'el encabezado queda con la lista del tier M100, no con la del cliente');
+    assert.deepStrictEqual(doc.lineas.map(l => [l.stockId, l.qty, l.price]), [['SKU-NUEVO', 3, 99.5]]);
+    const paso = res.body.steps.find(s => s.name === 'lista del quote');
+    assert.strictEqual(paso.status, 'ok');
+  } finally {
+    restore();
+  }
+});
+
+// Sin el select en el formulario no se escribe nada y la actualizacion sale igual: el
+// contenido si quedo y el encabezado ya estaba asi antes. Lo que NO puede pasar es que
+// se calle -- el paso lo reporta con su motivo REAL (no se envio, no "Operam lo ignoro").
+test('#403 actualizar: sin el select de listas la actualizacion se completa y lo reporta', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({}, { tier: 'M100' });
+  const { restore, doc } = mockOperamWebLegacy({ conSelectListas: false, lista: '12' });
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
+    assert.strictEqual(doc.lista, '12', 'el encabezado se queda como estaba');
+    const paso = res.body.steps.find(s => s.name === 'lista del quote');
+    assert.strictEqual(paso.status, 'warn');
+    assert.match(paso.detalle, /no se envio/);
+    assert.match(paso.detalle, /sales_type/);
   } finally {
     restore();
   }
@@ -2601,7 +2655,11 @@ test('#114-6: subir a Operam persiste la huella de lo que quedo en el quote', as
     const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.body.ok, true);
     const guardada = readCots().find(c => c.id === id);
-    assert.strictEqual(guardada.data.huellaQuote, huella114(data), 'la huella debe describir lo que se subio');
+    // #403: la huella describe tambien la LISTA del encabezado. El tier "Mayoreo" de
+    // este montaje no existe en el catalogo, asi que no hay lista resoluble y el campo
+    // va en null explicito -- que es distinto de "esta cotizacion se subio antes de
+    // #403", el caso que contenidoQuoteCambio compara en la forma vieja.
+    assert.strictEqual(guardada.data.huellaQuote, huella114(data, { listaId: null }), 'la huella debe describir lo que se subio');
   } finally {
     restore();
   }

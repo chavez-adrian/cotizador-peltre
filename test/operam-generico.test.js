@@ -68,10 +68,21 @@ const FORM_QUOTE = readFileSync(join(__dirname, 'fixtures', 'operam-quote-form.h
 // sintetico no probaria que la verificacion sabe leer la pagina que Operam devuelve.
 // validoHasta null = la vista no trae el campo (no se pudo verificar).
 const VISTA_QUOTE = readFileSync(join(__dirname, 'fixtures', 'operam-quote-vista.html'), 'utf8');
+// La lista del ENCABEZADO (#403) viaja en el MISMO ProcessOrder que la vigencia, y se
+// verifica releyendo `order_type` por la API. El doble guarda lo que el post-fix
+// posteo (como haria FA) y el GET del quote lo devuelve; `16` es la que trae el
+// formulario real del fixture, o sea la del cliente antes de corregir.
+const LISTA_DEL_FORMULARIO = '16';
+let listaEscritaWeb = LISTA_DEL_FORMULARIO;
 function mockWebLegacy({ validoHasta = '2026-08-05', onPost = () => {} } = {}) {
   return {
     'sales_order_entry.php': (u, opts) => {
-      if (opts?.method === 'POST') { onPost(String(opts.body)); return htmlResponse('<html>ok</html>'); }
+      if (opts?.method === 'POST') {
+        const posteado = new URLSearchParams(String(opts.body));
+        if (posteado.has('sales_type')) listaEscritaWeb = posteado.get('sales_type');
+        onPost(String(opts.body));
+        return htmlResponse('<html>ok</html>');
+      }
       return htmlResponse(FORM_QUOTE);
     },
     'view_sales_order.php': () => htmlResponse(
@@ -94,6 +105,7 @@ after(() => {
 });
 beforeEach(() => {
   globalThis.fetch = fetchBloqueado;
+  listaEscritaWeb = LISTA_DEL_FORMULARIO;
   resetSession();
   _resetSesionWeb();
   // La dedup por cust_ref (#242) lee el padron cacheado de indice-telefonos, que
@@ -161,7 +173,10 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
       llamadas.push('GET branch');
       return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
     },
-    '/api/v3/sales/quote': (u, opts) => { llamadas.push('POST quote'); quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1701 }); },
+    '/api/v3/sales/quote': (u, opts) => {
+      if (opts?.method !== 'POST') return jsonResponse({ data: [{ order_type: listaEscritaWeb }] });
+      llamadas.push('POST quote'); quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1701 });
+    },
     ...mockWebLegacy(),
   });
   await cargarListasPrecios();
@@ -918,7 +933,10 @@ test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente exi
       ] });
       return jsonResponse({ total: 0, data: [] });
     },
-    '/api/v3/sales/quote': (u, opts) => { quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1901 }); },
+    '/api/v3/sales/quote': (u, opts) => {
+      if (opts?.method !== 'POST') return jsonResponse({ data: [{ order_type: listaEscritaWeb }] });
+      quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1901 });
+    },
     ...mockWebLegacy(),
   });
 
@@ -1077,7 +1095,11 @@ function mockSubidaBase(extra = {}) {
     // issue #189: el PUT del branch ya no se omite sin domicilio (escribe tax_group_id/
     // sales_account); estos tests no verifican el branch, solo necesitan que no truene.
     '/api/v3/sales/branches/961': () => jsonResponse({ result: true, data: [{}] }),
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1801 }),
+    // El mismo prefijo sirve al POST que crea el quote y al GET que relee su
+    // encabezado (#403): se distinguen por metodo, como en Operam.
+    '/api/v3/sales/quote': (u, opts) => (opts?.method === 'POST'
+      ? jsonResponse({ result: true, added_trans_no: 1801 })
+      : jsonResponse({ data: [{ order_type: listaEscritaWeb }] })),
     ...extra,
   };
 }
@@ -1105,7 +1127,57 @@ test('V1: tras subir el quote se corrige la vigencia y el body lleva ProcessOrde
   assert.equal(enviado.has('update'), false, 'update es "Recalculate"');
   // El resto del documento viaja intacto: el post-fix no decide su contenido.
   assert.equal(enviado.get('customer_id'), '376');
-  assert.equal(enviado.get('sales_type'), '16');
+  // ...salvo la lista del encabezado, que desde #403 SI decide: la cotizacion es del
+  // tier M100 (lista 15) y el formulario venia con la 16, la del cliente. Antes de
+  // #403 el quote se quedaba con la del cliente y los precios eran de otra lista.
+  assert.equal(enviado.get('sales_type'), '15');
+  const pasoLista = res.body.steps.find(s => s.name === 'lista del quote');
+  assert.equal(pasoLista.status, 'ok');
+  assert.match(pasoLista.detalle, /lista 15/);
+});
+
+// #403: el encabezado se verifica releyendo `order_type` por la API, porque la vista
+// read-only no muestra el campo y releer el formulario abriria otra sesion de captura.
+// Un 200 de FA no garantiza nada (el quirk de siempre).
+test('V5: si el encabezado releido sigue con la lista del cliente, el paso queda en warn', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion();
+  mockOperamFetch(mockSubidaBase({
+    ...mockWebLegacy(),
+    // El POST crea el quote; el GET miente diciendo que la lista no se movio.
+    '/api/v3/sales/quote': (u, opts) => (opts?.method === 'POST'
+      ? jsonResponse({ result: true, added_trans_no: 1801 })
+      : jsonResponse({ data: [{ order_type: '16' }] })),
+  }));
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  const paso = res.body.steps.find(s => s.name === 'lista del quote');
+  assert.equal(paso.status, 'warn');
+  assert.equal(paso.esperado, '15');
+  assert.equal(paso.encontrado, '16');
+});
+
+// Un tier que el catalogo no conoce no resuelve lista: no se escribe nada y el quote
+// se queda con la del cliente, que es lo que pasaba siempre antes de #403. No es un
+// fallo -- es que no se sabe que lista poner, y el paso lo dice.
+test('V6: tier fuera del catalogo -> la lista no se escribe y el paso sale omitido', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({}, 'TierInventado');
+  let bodyPosteado = null;
+  mockOperamFetch(mockSubidaBase(mockWebLegacy({ onPost: (b) => { bodyPosteado = b; } })));
+  await cargarListasPrecios();
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(new URLSearchParams(bodyPosteado).get('sales_type'), '16', 'la que el formulario ya traia');
+  const paso = res.body.steps.find(s => s.name === 'lista del quote');
+  assert.equal(paso.status, 'omitido');
 });
 
 test('V2: si la web legacy falla, la subida NO se cae -- el quote ya existe', async () => {

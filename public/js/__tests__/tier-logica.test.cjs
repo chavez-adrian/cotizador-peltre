@@ -5,13 +5,13 @@ const assert = require('node:assert/strict');
 let tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, mensajeListaNoHabilitada;
 let normalizarPuedeFijarLista, normalizarListasHabilitadas, listasHabilitadasDeVendedor, puedeFijarTier;
 let tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA, estadoAlCambiarCliente;
-let puedeAsignarLista, opcionesListaCliente, validarListaCliente;
+let puedeAsignarLista, opcionesListaCliente, validarListaCliente, listaIdDeTier;
 before(async () => {
   ({
     tierPorVolumen, resolverTier, avisoListaFijada, validarTierCotizacion, mensajeListaNoHabilitada,
     normalizarPuedeFijarLista, normalizarListasHabilitadas, listasHabilitadasDeVendedor, puedeFijarTier,
     tierAlCargarCotizacion, opcionesTierSelect, MENSAJE_COPIA_LISTA_FIJADA, estadoAlCambiarCliente,
-    puedeAsignarLista, opcionesListaCliente, validarListaCliente,
+    puedeAsignarLista, opcionesListaCliente, validarListaCliente, listaIdDeTier,
   } = await import('../tier-logica.js'));
 });
 
@@ -569,4 +569,34 @@ test('#300 puedeAsignarLista: sin celdas no hay lista asignable, con la celda si
   assert.strictEqual(puedeAsignarLista('9', SOLO_SEGUNDAS), true);
   assert.strictEqual(puedeAsignarLista('', ADMIN), true);
   assert.strictEqual(puedeAsignarLista('', SOLO_SEGUNDAS), false);
+});
+
+// === La lista del ENCABEZADO del quote (#403) ===
+// El quote sube a Operam con la lista del CLIENTE, no con la que se cotizo: los
+// precios de cada partida viajan explicitos y quedan bien, pero el encabezado
+// miente. La lista que hay que escribir sale del mismo `listaId` que ya cruza el
+// permiso (#296) y que el catalogo generado desde el ERP expone en cada tier
+// (#298) -- nunca de una tabla nueva en codigo.
+
+test('#403 listaIdDeTier: el tier cotizado resuelve al id de su sales_type', () => {
+  assert.strictEqual(listaIdDeTier(TIERS_CON_SEGUNDAS, 'Segundas'), '9');
+  assert.strictEqual(listaIdDeTier(TIERS, 'M100'), '15');
+  assert.strictEqual(listaIdDeTier(TIERS, 'Menudeo'), '12');
+});
+
+// Falla cerrado, igual que puedeFijarTier: sin lista resoluble no se inventa una
+// -- quien escribe el encabezado se abstiene y lo reporta.
+test('#403 listaIdDeTier: tier ausente, sin listaId o catalogo vacio -> null', () => {
+  assert.strictEqual(listaIdDeTier(TIERS, 'TierInventado'), null);
+  assert.strictEqual(listaIdDeTier([{ id: 'Viejo', min_qty: 1 }], 'Viejo'), null);
+  assert.strictEqual(listaIdDeTier([{ id: 'Viejo', min_qty: 1, listaId: '' }], 'Viejo'), null);
+  assert.strictEqual(listaIdDeTier([], 'M100'), null);
+  assert.strictEqual(listaIdDeTier(undefined, 'M100'), null);
+  assert.strictEqual(listaIdDeTier(TIERS, ''), null);
+});
+
+// El catalogo puede traer el id como numero (lo genera lib/catalogo-operam.js desde
+// la API): el valor que se escribe es SIEMPRE texto, como el del formulario.
+test('#403 listaIdDeTier: un listaId numerico sale como texto', () => {
+  assert.strictEqual(listaIdDeTier([{ id: 'M100', min_qty: 100, listaId: 15 }], 'M100'), '15');
 });

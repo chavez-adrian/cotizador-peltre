@@ -455,17 +455,23 @@ export function buildOperamStatusHtml(id, vista) {
 //                                    mirar el ERP)
 //   409                           -> 'bloqueada'      (gate: PRE o con pedido; un
 //                                    reintento volveria a fallar igual)
+// Los pasos que hay que LEER viajan tambien aqui desde #403: la lista del encabezado
+// se escribe en este camino igual que en la subida, y puede no quedar (formulario sin
+// el select, lista fuera de sus opciones) sin que la actualizacion falle. Con `ok` y
+// un paso en warn el vendedor tiene que enterarse igual: si no, el unico rastro de que
+// el quote quedo con la lista del cliente seria el log del servidor.
 export function interpretarActualizacionOperam(resultado) {
   const r = resultado || {};
-  if (r.ok) return { estado: 'actualizada', folio: r.folio ?? null };
+  const pasos = pasosParaMostrar(r.steps);
+  if (r.ok) return { estado: 'actualizada', folio: r.folio ?? null, pasos };
   if (r.status === 409) {
-    return { estado: 'bloqueada', mensaje: r.error || 'Esta cotizacion no se puede actualizar en Operam' };
+    return { estado: 'bloqueada', mensaje: r.error || 'Esta cotizacion no se puede actualizar en Operam', pasos };
   }
   const discrepancias = Array.isArray(r.discrepancias) ? r.discrepancias : [];
   if (r.escrito === true) {
-    return { estado: 'revisar', mensaje: r.error || 'La cotizacion se confirmo en Operam pero no quedo como se esperaba', discrepancias };
+    return { estado: 'revisar', mensaje: r.error || 'La cotizacion se confirmo en Operam pero no quedo como se esperaba', discrepancias, pasos };
   }
-  return { estado: 'desactualizado', mensaje: r.error || 'No se pudo actualizar la cotizacion en Operam', discrepancias };
+  return { estado: 'desactualizado', mensaje: r.error || 'No se pudo actualizar la cotizacion en Operam', discrepancias, pasos };
 }
 
 // Estado de la actualizacion para pintar en el slot (resumen o tarjeta). Mismo
@@ -473,9 +479,10 @@ export function interpretarActualizacionOperam(resultado) {
 // contenedor (la misma cotizacion puede estar pintada en dos paneles a la vez).
 export function buildActualizacionStatusHtml(id, vista) {
   const v = vista || {};
+  const pasos = buildPasosAltaHtml(v.pasos);
   if (v.estado === 'actualizada') {
     const folio = v.folio != null && v.folio !== '' ? ` — <strong>${escapeHtml(etiquetaFolioOperam({ folioOperam: v.folio }))}</strong>` : '';
-    return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>`;
+    return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>${pasos}`;
   }
   // Bloqueada = el quote ya se convirtio en pedido y Operam no deja editarlo. Es el
   // peor momento para callarse (#114): el documento ya salio numerado con ese folio y
@@ -485,12 +492,12 @@ export function buildActualizacionStatusHtml(id, vista) {
   // simbolo nuevo para el onclick (trampa de #112).
   if (v.estado === 'bloqueada') {
     return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">Operam desactualizado</span> ${escapeHtml(v.mensaje || '')}</span>` +
-      ` <button class="btn btn-sm btn-primary" onclick="cargarCotizacion(${id}, 'nueva')">Copiar cotizaci&oacute;n</button>`;
+      ` <button class="btn btn-sm btn-primary" onclick="cargarCotizacion(${id}, 'nueva')">Copiar cotizaci&oacute;n</button>` + pasos;
   }
   const aviso = (badge, texto) =>
     `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">${badge}</span> ` +
     `${texto} ${escapeHtml(v.mensaje || '')}</span>` +
-    ` <button class="btn btn-sm btn-primary" onclick="reintentarActualizacionOperam(${id}, this)">Reintentar</button>`;
+    ` <button class="btn btn-sm btn-primary" onclick="reintentarActualizacionOperam(${id}, this)">Reintentar</button>` + pasos;
   if (v.estado === 'revisar') {
     return aviso('Revisar', 'El cambio se confirm&oacute; en Operam pero la verificaci&oacute;n vio diferencias: revisa el quote en Operam.');
   }
