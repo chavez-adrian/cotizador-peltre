@@ -2987,19 +2987,10 @@ async function seleccionarClienteOperam(cliente) {
   pcState.domicilioIdx = 0;
   if (window._operamDomicilios.length >= 1) aplicarDomicilio(window._operamDomicilios[0]);
 
-  // Mostrar historial de cotizaciones para este cliente. Quien decide cuales son
-  // SUYAS es cotizacionesPreviasDelCliente (alta-logica.js, #389): identidad
-  // (customerId de Operam, RFC real exacto o Contacto), nunca el prefijo del
-  // nombre -- con el, "maria del " empataba a cualquier "Maria del ..." y el panel
-  // ofrecia Editar y Copiar cotizacion sobre las de otro cliente.
-  try {
-    const r = await api('/api/cotizaciones');
-    const todas = await r.json();
-    const previas = cotizacionesPreviasDelCliente(todas, cliente);
-    if (previas.length > 0) {
-      renderHistorialCliente(previas);
-    }
-  } catch {}
+  // Mostrar historial de cotizaciones para este cliente por el UNICO camino que
+  // existe (#404): el panel es otro satelite del cliente, como los domicilios y
+  // los contactos de aqui arriba.
+  await pcCargarPreviasDelCliente(cliente);
 }
 
 window.seleccionarClienteOperam = seleccionarClienteOperam;
@@ -4040,6 +4031,32 @@ async function pcEjecutarUpgradeFiscal(datos) {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Confirmar datos fiscales'; }
   }
+}
+
+// EL camino a "Cotizaciones previas" (#389, #404). El panel es un satelite del
+// cliente de la sesion -- como window._operamDomicilios y los contactos leidos
+// de Operam -- y cambia en los DOS puntos donde ese cliente cambia: elegirlo a
+// mano en el paso Cliente (seleccionarClienteOperam) y cargar una cotizacion del
+// historial (cargarCotizacion, Editar y Copiar). Hasta #404 solo lo llenaba el
+// primero: cargada la 1284 de Adrian con Jorge Orea elegido antes, la tarjeta
+// pasaba a Adrian (#394) y debajo seguia la cotizacion previa de Jorge, con sus
+// botones Editar y Copiar cotizacion encima.
+//
+// El panel se apaga ANTES de pedir el listado: el fetch tarda, y un cliente sin
+// previas tiene que quedar en blanco en vez de conservar la lista del anterior.
+// Quien decide cuales son SUYAS es cotizacionesPreviasDelCliente (alta-logica.js,
+// #389): identidad -- customerId de Operam, RFC real exacto o Contacto --, nunca
+// el prefijo del nombre; con el, "maria del " empataba a cualquier "Maria del
+// ..." y el panel ofrecia Editar y Copiar cotizacion sobre las de otro cliente.
+async function pcCargarPreviasDelCliente(cliente) {
+  const panel = document.getElementById('historial-cliente-panel');
+  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+  try {
+    const r = await api('/api/cotizaciones');
+    const todas = await r.json();
+    const previas = cotizacionesPreviasDelCliente(todas, cliente);
+    if (previas.length > 0) renderHistorialCliente(previas);
+  } catch {}
 }
 
 function renderHistorialCliente(cotizaciones) {
@@ -6694,6 +6711,11 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // esto seguia anunciando al de la sesion anterior encima de los campos ya
     // repuestos, que es como se ve el cruce desde la pantalla.
     pcRenderTarjeta();
+    // Y sus "Cotizaciones previas" son las del cliente que la tarjeta muestra
+    // (#404): el panel apaga lo del cliente anterior de inmediato y se rellena
+    // cuando llega el listado. Sin await para no retrasar el regreso a la app;
+    // el camino se traga sus propios errores.
+    pcCargarPreviasDelCliente(pcState.cliente);
     switchTab('productos');
     updateTierBar();
     updateCartSummary();

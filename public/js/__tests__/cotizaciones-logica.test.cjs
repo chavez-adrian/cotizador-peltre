@@ -9,7 +9,7 @@ let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   buildAvisoModoActualizacion, textoBotonGenerar, filtrarCotizaciones,
   buildAvisoCambioClienteHtml;
 let MENSAJE_COPIA_LISTA_FIJADA;
-let clienteAlCargarCotizacion, ligaClienteAlGuardar, customerIdFiscal;
+let clienteAlCargarCotizacion, ligaClienteAlGuardar, customerIdFiscal, cotizacionesPreviasDelCliente;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
@@ -19,7 +19,7 @@ before(async () => {
     filtrarCotizaciones, buildAvisoCambioClienteHtml,
     clienteAlCargarCotizacion, ligaClienteAlGuardar } = await import('../cotizaciones-logica.js'));
   ({ MENSAJE_COPIA_LISTA_FIJADA } = await import('../tier-logica.js'));
-  ({ customerIdFiscal } = await import('../alta-logica.js'));
+  ({ customerIdFiscal, cotizacionesPreviasDelCliente } = await import('../alta-logica.js'));
 });
 
 const HOY = new Date('2026-06-11T12:00:00.000Z');
@@ -755,4 +755,94 @@ test('#394-C6: el domicilio que llega con un customerId ajeno se descarta con el
 test('#394-C7: sin liga previa el cuerpo la estrena (es como la subida la anota)', () => {
   const liga = ligaClienteAlGuardar({ customerId: 529, branchId: 599 }, {});
   assert.deepStrictEqual(liga, { customerId: 529, branchId: 599, customerIdIgnorado: null });
+});
+
+// === Issue #404: "Cotizaciones previas" tambien es satelite del cliente ===
+// HITL de #394 (produccion, 2026-09-20): con JORGE OREA (Cliente Operam 514)
+// elegido en el paso Cliente se cargo desde el Historial la cotizacion 1284, de
+// ADRIAN CHAVEZ ROSETE (15). La tarjeta paso a Adrian (#394) pero debajo siguio
+// "Cotizaciones previas (1): 1 sep - M100 - $20,483.24 - Cotizacion 1254", que
+// es de Jorge: la lista es otro satelite del cliente elegido -- como los
+// domicilios y los contactos de Operam -- y cargarCotizacion no la volvia a
+// pedir, asi que la pantalla afirmaba que la 1254 era previa de Adrian y sus
+// botones Editar y Copiar cotizacion abrian la de otro cliente.
+
+const PREVIA_JORGE = {
+  id: 611, folioOperam: 1254, fecha: '2026-09-01T18:00:00.000Z', cliente: 'JORGE OREA',
+  customerId: 514, rfc: 'OEAJ800101AB1', tier: 'M100', total: 20483.24, hasData: true,
+};
+const PREVIA_ADRIAN = {
+  id: 641, folioOperam: 1284, fecha: '2026-09-20T18:00:00.000Z', cliente: 'ADRIAN CHAVEZ ROSETE',
+  customerId: 15, rfc: 'CARA850101XY9', tier: 'M100', total: 5120.5, hasData: true,
+};
+const COT_ADRIAN = {
+  razonSocial: 'ADRIAN CHAVEZ ROSETE', nombreCorto: 'Adrian Chavez', rfc: 'CARA850101XY9',
+  telefono: '+52 55 1122 3344', cpEntrega: '56530', pais: 'MX', customerId: 15, branchId: 61,
+};
+const SESION_JORGE = { tipo: 'operam', id: 514, name: 'JORGE OREA', ref: 'Jorge Orea', rfc: 'OEAJ800101AB1' };
+
+// El cliente que la carga repone (clienteAlCargarCotizacion, #394) es el mismo
+// que ya sabe filtrar el panel (cotizacionesPreviasDelCliente, #389): la lista
+// de la cotizacion cargada sale de esos dos, sin una regla nueva. Este es el
+// contrato del que depende el cableado: si la identidad repuesta dejara de
+// llevar el Cliente Operam, el panel volveria a mentir.
+test('#404-C1: con Jorge en sesion, cargar la 1284 deja las previas de Adrian y ninguna de Jorge', () => {
+  const cliente = clienteAlCargarCotizacion(COT_ADRIAN, SESION_JORGE);
+  assert.deepStrictEqual(
+    cotizacionesPreviasDelCliente([PREVIA_JORGE, PREVIA_ADRIAN], cliente),
+    [PREVIA_ADRIAN],
+  );
+});
+
+test('#404-C2: una cotizacion que nunca se subio no hereda las previas del cliente de la sesion', () => {
+  const nuncaSubida = { ...COT_ADRIAN, customerId: null, branchId: null, rfc: 'XAXX010101000' };
+  const cliente = clienteAlCargarCotizacion(nuncaSubida, SESION_JORGE);
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([PREVIA_JORGE, PREVIA_ADRIAN], cliente), []);
+});
+
+// El cableado: app.js no es importable en Node (efectos de navegador en scope de
+// modulo) y sin DOM no se puede afirmar el repintado, asi que lo que se cuida
+// aqui es el fuente -- mismo recurso que #402-1 (calcas-logica.test.cjs) y C16b
+// (alta-dedup-fiscal.test.cjs). Que el panel quede vacio en pantalla es HITL.
+function fuenteApp() {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  return fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+}
+
+function cuerpoDeFuncion(src, firma) {
+  const inicio = src.indexOf(firma);
+  assert.ok(inicio > 0, `${firma} debe existir en app.js`);
+  const fin = src.indexOf('\n}\n', inicio);
+  assert.ok(fin > inicio, `${firma} debe cerrar`);
+  return src.slice(inicio, fin);
+}
+
+test('#404-C3: cargar del historial vuelve a pedir las previas del cliente repuesto', () => {
+  const cuerpo = cuerpoDeFuncion(fuenteApp(), 'async function cargarCotizacion(');
+  const repone = cuerpo.indexOf('pcState.cliente = clienteAlCargarCotizacion(');
+  assert.ok(repone > 0, 'si la identidad deja de reponerse aqui, este test ya no cuida nada: revisarlo');
+  const refresca = cuerpo.indexOf('pcCargarPreviasDelCliente(pcState.cliente)');
+  assert.ok(refresca > repone,
+    'las previas se piden DESPUES de reponer la identidad, y para el cliente de la cotizacion cargada');
+});
+
+test('#404-C4: el paso Cliente y la carga del historial comparten UN camino a las previas', () => {
+  const src = fuenteApp();
+  assert.ok(cuerpoDeFuncion(src, 'async function seleccionarClienteOperam(').includes('pcCargarPreviasDelCliente('),
+    'elegir el cliente a mano pasa por el mismo camino, no por una copia');
+  assert.strictEqual((src.match(/cotizacionesPreviasDelCliente\(/g) || []).length, 1,
+    'quien decide cuales son SUYAS se llama desde un solo lugar');
+  assert.strictEqual((src.match(/renderHistorialCliente\(/g) || []).length, 2,
+    'el panel lo pinta su declaracion y un solo llamador');
+});
+
+test('#404-C5: el camino apaga el panel del cliente anterior antes de pedir las nuevas', () => {
+  const cuerpo = cuerpoDeFuncion(fuenteApp(), 'async function pcCargarPreviasDelCliente(');
+  const apaga = cuerpo.indexOf("getElementById('historial-cliente-panel')");
+  assert.ok(apaga > 0, 'el camino es dueno del panel');
+  assert.ok(cuerpo.includes("display = 'none'") && cuerpo.includes("innerHTML = ''"),
+    'un cliente sin previas tiene que dejar el panel vacio, no la lista del anterior');
+  assert.ok(apaga < cuerpo.indexOf('cotizacionesPreviasDelCliente('),
+    'se apaga antes de pedir el listado: el fetch tarda y mientras tanto no puede quedar lo ajeno');
 });
