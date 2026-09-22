@@ -312,6 +312,20 @@ function leerClienteFormulario(leyenda) {
     // se veia en genericos. customerIdFiscal es el mismo resolvedor que ya decide
     // el chip Fiscal, para no tener dos ideas de "cual es el cliente en Operam".
     customerId: customerIdFiscal(pcState.cliente),
+    // El domicilio de entrega que el vendedor ELIGIO en el paso Envio (#409),
+    // por su branch_code -- lo que identifica al domicilio (#252), nunca el
+    // indice del <select>, cuyo orden no es una promesa. Sin esto la eleccion se
+    // quedaba en la pantalla: el registro conservaba el branchId que la subida
+    // anoto (#81) porque ligaClienteAlGuardar cae al persistido cuando el cuerpo
+    // no trae ninguno, asi que Editar volvia a abrir en el domicilio viejo y el
+    // quote seguia apuntando a ESE branch aunque el documento imprimiera la
+    // direccion del nuevo. Esa divergencia entre lo que el cliente lee y lo que
+    // Operam tiene es la 1288, con la que nace el ticket. La regla del servidor
+    // no cambia: la liga sigue siendo FIJA (#394) y un branchId que llega junto
+    // a un customerId ajeno se descarta con el; lo que cambia es que el mismo
+    // cliente por fin puede mover su domicilio. Sin lista (cliente sin satelites
+    // todavia) sale null, que el servidor ya lee como "no toques lo persistido".
+    branchId: branchIdDeIndice(window._operamDomicilios, pcState.domicilioIdx),
     razonSocial: document.getElementById('cl-razon-social').value,
     nombreCorto: document.getElementById('cl-nombre-corto').value,
     rfc: document.getElementById('cl-rfc').value,

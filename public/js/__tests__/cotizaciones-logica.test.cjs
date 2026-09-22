@@ -759,6 +759,18 @@ test('#394-C7: sin liga previa el cuerpo la estrena (es como la subida la anota)
   assert.deepStrictEqual(liga, { customerId: 529, branchId: 599, customerIdIgnorado: null });
 });
 
+// #409: la contraparte de C6. La liga es fija en cuanto al CLIENTE, no en cuanto
+// al domicilio: el mismo Cliente Operam si puede mover su domicilio de entrega al
+// editar, y es lo que hace que la eleccion del selector del paso Envio sobreviva
+// al guardado. La regla ya estaba escrita asi; lo que faltaba era que el
+// navegador mandara el branchId (leerClienteFormulario). Sin este caso, C5 --
+// mismo cliente SIN branchId nuevo -- es la unica evidencia y deja leer la regla
+// como "el domicilio persistido siempre manda", que es justo lo que no dice.
+test('#409-C8: el mismo Cliente Operam SI puede cambiar su domicilio al editar', () => {
+  const liga = ligaClienteAlGuardar({ customerId: 527, branchId: 15 }, { customerId: 527, branchId: 564 });
+  assert.deepStrictEqual(liga, { customerId: 527, branchId: 15, customerIdIgnorado: null });
+});
+
 // === #405: el Representante de Ventas del registro tampoco lo pisa quien edita ===
 // La columna es la duena del registro (Historial, pipeline, permisos) y manda.
 
