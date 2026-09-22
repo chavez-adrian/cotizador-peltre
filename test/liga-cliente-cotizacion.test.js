@@ -181,3 +181,25 @@ test('#394-4: regenerar sin cambios no pide reescribir el quote por el id ajeno'
     .send({ ...contenido({ customerId: 529 }), cotizacionId: String(id) });
   assert.strictEqual(res.body.requiereActualizacionOperam, false);
 });
+
+// El domicilio de entrega SELECCIONADO (`branch_id`) entra a la huella desde #415.
+// Dos domicilios del mismo cliente que se leen IGUAL en texto (#330 midio 33 branches
+// sin calle en el ERP; los vacios caen al respaldo del cliente, #409) producian la
+// misma huella, asi que cambiar de uno a otro respondia "no cambio": el registro y la
+// pantalla decian el domicilio nuevo y el quote se quedaba con el viejo, que es el
+// encabezado que hereda el pedido (#252). Aqui se mide en la costura real: el branch
+// que manda el navegador sobrevive a la liga fija de #394 y llega a la comparacion.
+test('#415: cambiar el domicilio de entrega pide reescribir el quote', async () => {
+  const id = cotizacionLigada({ customerId: 527, branchId: 576 });
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido({ customerId: 527, branchId: 577 }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+  assert.strictEqual(guardada(id).data.cliente.branchId, 577);
+});
+
+test('#415: regenerar con el mismo domicilio no pide reescribir nada', async () => {
+  const id = cotizacionLigada({ customerId: 527, branchId: 576 });
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido({ customerId: 527, branchId: 576 }), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+});

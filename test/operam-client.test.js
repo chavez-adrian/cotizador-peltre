@@ -2978,3 +2978,78 @@ test('#403 huellaContenidoQuote: sin lista resoluble el campo va en null, no aus
   assert.equal(huellaContenidoQuote(data, { listaId: null }).includes('"listaId":null'), true);
   assert.notEqual(huellaContenidoQuote(data, { listaId: null }), huellaContenidoQuote(data, { listaId: '12' }));
 });
+
+// --- El domicilio de entrega SELECCIONADO entra a la huella (#415) ------------
+// La huella ya miraba el domicilio como TEXTO desde #328, pero no el `branch_id`
+// que el quote lleva en el encabezado. #330 midio 33 domicilios SIN CALLE en el
+// ERP: cuando el domicilio viene vacio los seis campos caen al respaldo del
+// cliente (#409), asi que dos domicilios vacios del MISMO cliente producen
+// exactamente el mismo texto de direccion. Cambiar de uno a otro no movia la
+// huella, contenidoQuoteCambio respondia "no cambio" y el quote se quedaba con el
+// domicilio viejo mientras la pantalla decia el nuevo; el pedido que se derive
+// hereda ese encabezado (#252). El branch dejo de ser irrelevante en #409: desde
+// ahi la edicion por la web legacy SI lo reescribe.
+const { armarContenidoQuote: armarContenidoQuoteHuella } = await import('../lib/operam-client.js');
+
+function conDomicilio(branchId, extra = {}) {
+  return cotizacionBase({ cliente: { ...cotizacionBase().cliente, branchId }, ...extra });
+}
+
+// Reproduce una huella GUARDADA antes de que el campo existiera: los campos nuevos
+// van al final del objeto, asi que quitarlos deja la huella byte-identica a la que
+// producia el codigo de entonces.
+function huellaSinCampos(huella, ...campos) {
+  const o = JSON.parse(huella);
+  for (const c of campos) delete o[c];
+  return JSON.stringify(o);
+}
+
+test('#415 huellaContenidoQuote: cambiar de domicilio SI cuenta como cambio aunque la direccion de texto sea identica', () => {
+  assert.equal(armarContenidoQuoteHuella(conDomicilio(576)).deliveryAddress,
+    armarContenidoQuoteHuella(conDomicilio(577)).deliveryAddress,
+    'el caso del ticket: los dos domicilios se leen igual en texto');
+  assert.notEqual(huellaContenidoQuote(conDomicilio(576)), huellaContenidoQuote(conDomicilio(577)));
+  assert.equal(contenidoQuoteCambio(conDomicilio(577), huellaContenidoQuote(conDomicilio(576))), true);
+  assert.equal(contenidoQuoteCambio(conDomicilio(576), huellaContenidoQuote(conDomicilio(576))), false);
+  // el id del domicilio llega como numero o como texto segun el camino: es el mismo
+  assert.equal(huellaContenidoQuote(conDomicilio(576)), huellaContenidoQuote(conDomicilio('576')));
+});
+
+// Sin domicilio ligado la huella no inventa uno: el campo viaja en null y se
+// distingue de "la cotizacion apunta al domicilio 576" y de la huella vieja.
+test('#415 huellaContenidoQuote: sin domicilio ligado el campo va en null, no ausente', () => {
+  assert.equal(huellaContenidoQuote(cotizacionBase()).includes('"branchId":null'), true);
+  assert.notEqual(huellaContenidoQuote(cotizacionBase()), huellaContenidoQuote(conDomicilio(576)));
+});
+
+// Lo que NO puede pasar (mismo riesgo que en #403): que la ausencia del campo
+// nuevo cuente como cambio. Las cotizaciones ya subidas guardaron su huella sin
+// el, y leerla como "cambio" mandaria a reescribir por la web legacy TODA
+// cotizacion que se regenere. No las rescata retroactivamente, y es deliberado.
+test('#415 contenidoQuoteCambio: una huella guardada SIN el domicilio (formato viejo) no cuenta como cambio', () => {
+  const huellaVieja = huellaSinCampos(huellaContenidoQuote(conDomicilio(576)), 'branchId');
+  assert.equal(huellaVieja.includes('branchId'), false, 'la huella vieja no traia el campo');
+  assert.equal(contenidoQuoteCambio(conDomicilio(577), huellaVieja), false);
+  // y lo que SI guardaba esa huella se sigue viendo
+  assert.equal(contenidoQuoteCambio(conDomicilio(577, { total: 99 }), huellaVieja), true);
+});
+
+// Con DOS campos opcionales la regla es POR CAMPO AUSENTE, no por el primero que
+// difiera: una huella de #403 (con lista, sin domicilio) sigue decidiendo por la
+// lista -- que esa huella si guardaba -- y sigue exenta del domicilio.
+test('#415 contenidoQuoteCambio: con una huella de #403 la lista sigue decidiendo y el domicilio sigue exento', () => {
+  const huella403 = huellaSinCampos(huellaContenidoQuote(conDomicilio(576), { listaId: '12' }), 'branchId');
+  assert.equal(huella403.includes('"listaId":"12"'), true);
+  assert.equal(huella403.includes('branchId'), false);
+  assert.equal(contenidoQuoteCambio(conDomicilio(577), huella403, { listaId: '12' }), false, 'solo el domicilio: exento');
+  assert.equal(contenidoQuoteCambio(conDomicilio(576), huella403, { listaId: '9' }), true, 'la lista si decide');
+  assert.equal(contenidoQuoteCambio(conDomicilio(577), huella403, { listaId: '9' }), true);
+});
+
+// Y una huella que YA trae el domicilio (de aqui en adelante) lo compara: cambiar
+// de domicilio con la lista igual pide reescribir el quote.
+test('#415 contenidoQuoteCambio: con la huella nueva el domicilio decide junto a la lista', () => {
+  const huellaNueva = huellaContenidoQuote(conDomicilio(576), { listaId: '12' });
+  assert.equal(contenidoQuoteCambio(conDomicilio(577), huellaNueva, { listaId: '12' }), true);
+  assert.equal(contenidoQuoteCambio(conDomicilio(576), huellaNueva, { listaId: '12' }), false);
+});
