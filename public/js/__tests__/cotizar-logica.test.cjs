@@ -7,7 +7,7 @@ let sincronizarCorreoFactura;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
-let debeProponerEnvia;
+let debeProponerEnvia, cpListoParaCotizarEnvia;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha;
@@ -17,7 +17,7 @@ before(async () => {
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
-    debeProponerEnvia,
+    debeProponerEnvia, cpListoParaCotizarEnvia,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha,
@@ -797,4 +797,14 @@ test('#419-4: carrito vacio -> no se propone envia.com', () => {
 test('#419-5: con una opcion ya puesta distinta de "Sin envio" no hay nada que proponer', () => {
   assert.strictEqual(debeProponerEnvia({ envioDecidido: false, shippingOpt: 'envia', cp: '56577', cartSize: 3 }), false);
   assert.strictEqual(debeProponerEnvia({ envioDecidido: false, shippingOpt: 'manual', cp: '56577', cartSize: 3 }), false);
+});
+
+// El mismo CP habilita la propuesta y el auto-cotizado que dispara switchTab; el
+// segundo lo evalua app.js, que no es importable en Node. Vive en el nucleo para
+// que la regla se pruebe una vez y no haya una copia espejo en el manejador.
+test('#419-6: cpListoParaCotizarEnvia es la regla MX de 5 digitos, y tolera la ausencia de CP', () => {
+  assert.strictEqual(cpListoParaCotizarEnvia('56577'), true);
+  for (const cp of ['', '5657', '565778', 'K1A 0A9', undefined, null]) {
+    assert.strictEqual(cpListoParaCotizarEnvia(cp), false, String(cp));
+  }
 });

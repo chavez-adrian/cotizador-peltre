@@ -241,13 +241,19 @@ export function debeAutoCotizarEnvia(shippingOpt, cartSize, enviaRateSeleccionad
 // paso. Por eso la llave no es la opcion sino envioDecidido -- tocar el selector
 // (cualquier valor, incluido "Sin envio") o cargar una cotizacion del historial
 // cuentan como decision, y con decision tomada no se propone nada.
-// El CP se juzga con la regla MX a proposito: es la que ha regido siempre a esta
-// propuesta (envia.com se auto-cotiza sobre 5 digitos), aparte del pais del
-// domicilio, que si manda en cotizarEnvia.
 export function debeProponerEnvia({ envioDecidido, shippingOpt, cp, cartSize }) {
   if (envioDecidido) return false;
   if (shippingOpt !== 'none') return false;
-  if (!(cartSize > 0)) return false;
+  return cartSize > 0 && cpListoParaCotizarEnvia(cp);
+}
+
+// El CP que habilita todo lo automatico de envia.com al pintar el tab Envio: la
+// propuesta de arriba y el auto-cotizado que dispara switchTab. Se juzga con la
+// regla MX a proposito -- es la que ha regido siempre a este automatismo, aparte
+// del pais del domicilio, que si manda dentro de cotizarEnvia. Vive aqui y no
+// inline en el manejador de tab (#419) porque son DOS consumidores: repetir el
+// literal alla dejaria una copia espejo que app.js no puede probar.
+export function cpListoParaCotizarEnvia(cp) {
   return cpValido(cp || '', 'MX');
 }
 

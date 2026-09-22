@@ -178,6 +178,7 @@ import {
   restaurarEnvioDesdeCotizacion,
   debeAutoCotizarEnvia,
   debeProponerEnvia,
+  cpListoParaCotizarEnvia,
   buildEnviaRateRestauradaHtml,
   buildItemsYTotales,
   buildItemEnvio,
@@ -1944,11 +1945,8 @@ function updateShippingSummary() {
 // === ENVIA.COM ===
 let enviaRateSeleccionado = null; // { carrier, servicio, desc, cost }
 let envioInvalidadoPorCantidad = false; // issue #89: cambio de cantidad invalido la tarifa vigente
-// issue #419: hay decision de envio. "Sin envio" ('none') es a la vez el default
-// de una cotizacion nueva y una eleccion deliberada del vendedor; sin esta marca
-// el tab Envio no podia distinguirlas y pisaba la segunda con la auto-propuesta
-// de envia.com en cada render. Es de la COTIZACION, no del vendedor: nace apagada
-// y vuelve a apagarse con una cotizacion nueva.
+// issue #419: hay decision de envio (el motivo, en debeProponerEnvia). Es de la
+// COTIZACION, no del vendedor: nace apagada y vuelve a apagarse con una nueva.
 let envioDecidido = false;
 let envioDescuento = 0; // issue #137: % de descuento de la partida de flete
 
@@ -4513,7 +4511,7 @@ function switchTab(name) {
     // misma sesion) no se vuelve a consultar envia.com al re-entrar al tab.
     // El CP sigue siendo requisito aparte (#84): con la opcion en envia.com y un
     // CP a medio capturar, consultar solo pintaria el error de CP invalido.
-    if (cpValido(cpCliente || '', 'MX') && debeAutoCotizarEnvia(opt?.value, state.cart.size, enviaRateSeleccionado)) {
+    if (cpListoParaCotizarEnvia(cpCliente) && debeAutoCotizarEnvia(opt?.value, state.cart.size, enviaRateSeleccionado)) {
       setTimeout(cotizarEnvia, 100);
     }
   }
