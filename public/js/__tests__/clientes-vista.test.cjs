@@ -10,8 +10,8 @@ const assert = require('node:assert/strict');
 // pipeline-logica.js (mismo patron de funciones puras testeables). Sin DOM en Node.
 
 let esRfcGenerico, customerIdFiscal, mostrarBotonCsf;
-let destinoTrasUpgradeLogrado, camposClienteOperamTrasUpgrade, interpretarRespuestaUpgrade,
-  UPGRADE_TITULO_LOGRADO;
+let destinoTrasUpgradeLogrado, destinoTrasAltaLograda, camposClienteOperamTrasUpgrade,
+  interpretarRespuestaUpgrade, UPGRADE_TITULO_LOGRADO;
 let tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
   bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade,
   filaContactoHtml, fichaContactoHtml;
@@ -19,8 +19,8 @@ let tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, fil
 before(async () => {
   ({
     esRfcGenerico, customerIdFiscal, mostrarBotonCsf,
-    destinoTrasUpgradeLogrado, camposClienteOperamTrasUpgrade, interpretarRespuestaUpgrade,
-    UPGRADE_TITULO_LOGRADO,
+    destinoTrasUpgradeLogrado, destinoTrasAltaLograda, camposClienteOperamTrasUpgrade,
+    interpretarRespuestaUpgrade, UPGRADE_TITULO_LOGRADO,
   } = await import('../alta-logica.js'));
   ({
     tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
@@ -474,6 +474,82 @@ test('UD5: una vista que NO se logro no lleva confirmacion, aunque venga sin cam
   assert.equal(destinoTrasUpgradeLogrado('clientes', fusion).confirmacion, null);
   assert.equal(destinoTrasUpgradeLogrado('clientes', error).confirmacion, null);
   assert.equal(destinoTrasUpgradeLogrado('clientes', undefined).confirmacion, null);
+});
+
+// === A donde va el vendedor tras los dos botones post-exito del alta (#412) ===
+// El panel del alta es un nodo UNICO que viaja (#376): la vista Clientes lo toma
+// prestado con moverPanelA y hasta #412 "Cotizar ahora" solo lo escondia con
+// display:none y cambiaba de pestana, dejandolo colgado de #clientes-panel-slot --
+// el alta quedaba inutilizable en el paso Cliente hasta recargar, y la vista
+// Clientes se quedaba con el encabezado del alta y nada debajo. Quien decide a que
+// pantalla se va y si hay que limpiar la vista Clientes vive aqui; app.js solo
+// mueve el panel y pinta.
+
+test('AD1: "Cotizar ahora" con el panel prestado -> al cotizador, y la vista Clientes se limpia', () => {
+  const destino = destinoTrasAltaLograda('cotizar', { panelEnVistaClientes: true });
+  assert.deepEqual(destino, { pantalla: 'cotizador', limpiarVistaClientes: true });
+});
+
+test('AD2: "Terminar" con el panel prestado -> el vendedor se queda en la vista Clientes, limpia', () => {
+  const destino = destinoTrasAltaLograda('terminar', { panelEnVistaClientes: true });
+  assert.deepEqual(destino, { pantalla: 'clientes', limpiarVistaClientes: true });
+});
+
+test('AD3: "Terminar" con el panel en su casa -> el paso Cliente, sin tocar la vista Clientes', () => {
+  const destino = destinoTrasAltaLograda('terminar', { panelEnVistaClientes: false });
+  assert.deepEqual(destino, { pantalla: 'paso', limpiarVistaClientes: false });
+});
+
+test('AD4: "Cotizar ahora" desde el paso Cliente -> al cotizador sin repintar Clientes', () => {
+  const destino = destinoTrasAltaLograda('cotizar', { panelEnVistaClientes: false });
+  assert.deepEqual(destino, { pantalla: 'cotizador', limpiarVistaClientes: false });
+});
+
+test('AD5: sin opciones -> se comporta como si el panel estuviera en su casa', () => {
+  assert.deepEqual(destinoTrasAltaLograda('cotizar'), { pantalla: 'cotizador', limpiarVistaClientes: false });
+  assert.deepEqual(destinoTrasAltaLograda('terminar'), { pantalla: 'paso', limpiarVistaClientes: false });
+});
+
+// El cableado de los dos botones no se puede ejercer en Node (app.js no se importa):
+// lo que lo protege es el fuente, como en C16b de alta-dedup-fiscal. Lo que este
+// test cuida es el bug exacto de #412 -- un display:none suelto en vez de devolver
+// el nodo -- y que "Cotizar ahora" haga visible el cotizador, no solo cambie de
+// pestana (switchTab solo mueve pestanas DENTRO de #app-view, que desde la vista
+// Clientes esta oculto: ese era el "no pasa nada" que vio el vendedor).
+function cuerpoDeFuncionApp(nombre) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+  const inicio = src.indexOf(nombre);
+  assert.ok(inicio > 0, `${nombre} debe existir en app.js`);
+  const fin = src.indexOf('\n}\n', inicio);
+  assert.ok(fin > inicio, `no se pudo delimitar el cuerpo de ${nombre}`);
+  return src.slice(inicio, fin);
+}
+
+test('AD6: los dos botones post-exito recogen el panel, nunca lo esconden con display:none', () => {
+  for (const nombre of ['async function altaCotizarAhora(', 'function altaTerminar(']) {
+    const cuerpo = cuerpoDeFuncionApp(nombre);
+    assert.ok(cuerpo.includes('altaCerrarPanelPostExito(destino)'),
+      `${nombre} debe cerrar el panel por el camino unico`);
+    assert.ok(!/panel\.style\.display\s*=\s*'none'/.test(cuerpo),
+      `${nombre} no puede volver a esconder el panel dejandolo en la vista Clientes (#412)`);
+  }
+});
+
+test('AD7: el cierre devuelve el panel a su casa en las dos pantallas y lleva al cotizador', () => {
+  const cuerpo = cuerpoDeFuncionApp('function altaCerrarPanelPostExito(');
+  assert.ok(cuerpo.includes('ocultarTodasLasVistas()'), 'ir al cotizador es cambiar de vista, no solo de pestana');
+  assert.ok(cuerpo.includes("document.getElementById('app-view').style.display = 'block'"),
+    'el cotizador tiene que quedar visible');
+  assert.ok(cuerpo.includes('devolverPanelACasa()'),
+    'quedarse en la vista Clientes o en el paso tambien devuelve el panel');
+  assert.ok(cuerpo.includes('cvRenderBusqueda()'), 'la vista Clientes se repinta cuando le prestaba el panel');
+  // Si ocultarTodasLasVistas deja de recoger el panel, la rama del cotizador ya no
+  // cuida nada: mismo candado que C16b (alta-dedup-fiscal).
+  const ocultar = cuerpoDeFuncionApp('function ocultarTodasLasVistas(');
+  assert.ok(ocultar.includes('devolverPanelACasa()'),
+    'ocultarTodasLasVistas es quien devuelve el panel en la rama del cotizador: revisar este test si deja de hacerlo');
 });
 
 // === Que adopta la tarjeta del Cliente Operam tras el upgrade (#407) ===

@@ -46,6 +46,7 @@ import {
   seccionAltaAbierta,
   interpretarRespuestaUpgrade,
   destinoTrasUpgradeLogrado,
+  destinoTrasAltaLograda,
   camposClienteOperamTrasUpgrade,
   altaReutilizaDomicilio,
   domicilioReutilizadoDelAlta,
@@ -8745,24 +8746,62 @@ function altaPreguntaReintentar(eleccion, extras) {
   altaEnviarAlta(cuerpo);
 }
 
+// Donde esta el panel del alta AHORA (#412). El nodo es unico y viaja (#376): la
+// vista Clientes lo toma prestado en #clientes-panel-slot y los dos botones
+// post-exito viven dentro de el, asi que se pulsan desde donde el panel este. El
+// DOM es la fuente: es exactamente el hecho que hay que deshacer.
+function altaPanelEnVistaClientes() {
+  const slot = document.getElementById('clientes-panel-slot');
+  const panel = document.getElementById('panel-alta-cliente');
+  return !!(slot && panel && slot.contains(panel));
+}
+
+// Cierre comun de los dos botones post-exito (#412). El panel SIEMPRE vuelve a su
+// casa -- por ocultarTodasLasVistas, que llama a devolverPanelACasa, o por esa misma
+// funcion cuando no hay cambio de vista --, nunca con un display:none suelto:
+// dejarlo colgado de #clientes-panel-slot es lo que volvia inutilizable el alta en
+// el paso Cliente hasta recargar. devolverPanelACasa ademas apaga modoUpgrade y
+// cierra el borrador de la superficie, que es la proteccion de #376.
+//
+// La vista Clientes se repinta a su busqueda -- lo mismo que hace su "Cancelar" --
+// solo si el panel estaba prestado ahi; si no, queda el encabezado del alta con un
+// hueco debajo. Va al FINAL para que, al irse al cotizador, esa vista ya este oculta
+// cuando cvRenderBusqueda enfoque su caja de busqueda.
+function altaCerrarPanelPostExito(destino) {
+  if (destino.pantalla === 'cotizador') {
+    ocultarTodasLasVistas();
+    document.getElementById('app-view').style.display = 'block';
+    marcarNavActivo('nav-cotizar');
+  } else {
+    // 'clientes' y 'paso': el vendedor se queda donde esta y solo se recoge el panel.
+    devolverPanelACasa();
+  }
+  if (destino.limpiarVistaClientes) cvRenderBusqueda();
+}
+
 async function altaCotizarAhora() {
   const customerId = altaState.customer_id;
   if (!customerId) return;
-  const panel = document.getElementById('panel-alta-cliente');
-  if (panel) panel.style.display = 'none';
   // Estado compartido (#69): el cotizador abre con el cliente recien dado de alta
   // YA cargado -- razon social, telefono (con codigo de pais) y domicilio prellenados
   // desde lo capturado en el alta, sin re-pedir datos ni round-trip a Operam por RFC.
   // pcElegirOperam es el punto central de seleccion (#82): limpia los campos del
-  // cliente anterior y muestra la tarjeta.
+  // cliente anterior y muestra la tarjeta. Se arma ANTES de cerrar el panel: el
+  // cierre no toca altaState, pero el orden deja claro de donde salen los datos.
   const cliente = buildClienteDesdeAlta(altaState);
+  // Desde la vista Clientes, "Cotizar ahora" tiene que LLEVAR al cotizador:
+  // switchTab solo mueve las pestanas dentro de #app-view, que sigue oculto detras
+  // de esa vista (el trio de la navegacion vive en altaCerrarPanelPostExito, mismo
+  // que usa cvCotizar, #94). Donde esta el panel se mide ANTES de recogerlo.
+  const destino = destinoTrasAltaLograda('cotizar', { panelEnVistaClientes: altaPanelEnVistaClientes() });
+  altaCerrarPanelPostExito(destino);
   switchTab('cliente');
   await pcElegirOperam(cliente);
 }
 
 function altaTerminar() {
-  const panel = document.getElementById('panel-alta-cliente');
-  if (panel) panel.style.display = 'none';
+  const destino = destinoTrasAltaLograda('terminar', { panelEnVistaClientes: altaPanelEnVistaClientes() });
+  altaCerrarPanelPostExito(destino);
   const btnNuevo = document.getElementById('btn-nuevo-cliente');
   if (btnNuevo) btnNuevo.textContent = 'Nuevo cliente';
 }

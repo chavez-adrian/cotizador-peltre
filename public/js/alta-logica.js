@@ -646,6 +646,26 @@ export function destinoTrasUpgradeLogrado(origen, vista) {
   };
 }
 
+// A donde va el vendedor cuando el alta completa SI se logro y pulsa uno de los dos
+// botones post-exito, "Cotizar ahora" o "Terminar" (#412). El panel del alta es un
+// nodo UNICO que viaja (#376): la vista Clientes lo toma prestado (moverPanelA) y
+// hasta #412 esos dos botones solo lo escondian con display:none, asi que el panel
+// se quedaba colgado de #clientes-panel-slot mientras el vendedor cotizaba -- pedir
+// "Nuevo cliente" en el paso Cliente ya no abria nada hasta recargar -- y la vista
+// Clientes quedaba con el encabezado del alta y nada debajo.
+//
+// Quien decide es esto; app.js devuelve el panel a su casa SIEMPRE (devolverPanelACasa,
+// que ademas apaga modoUpgrade y cierra el borrador de la superficie) y pinta la
+// pantalla que sale de aqui. La vista Clientes solo se limpia cuando el panel estaba
+// prestado ahi: repintarla desde el paso Cliente borraria la busqueda de otro momento.
+export function destinoTrasAltaLograda(accion, opciones = {}) {
+  const prestado = !!(opciones && opciones.panelEnVistaClientes);
+  return {
+    pantalla: accion === 'cotizar' ? 'cotizador' : (prestado ? 'clientes' : 'paso'),
+    limpiarVistaClientes: prestado,
+  };
+}
+
 // El puente Operam -> tarjeta. La llave del dato capturado NO se repite aqui: sale
 // del mapeo canonico por campo (DIFF_FISCAL_CAMPOS.csf). Lo unico propio de esta
 // tabla es como se llama el campo EN LA TARJETA, que Operam no conoce.
