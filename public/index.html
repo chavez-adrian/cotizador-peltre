@@ -58,6 +58,20 @@
          diferimiento; el render lo maneja app.js (pcRenderInicio). -->
     <div id="pc-root"></div>
 
+    <!-- Telefono del cliente (#418): el MISMO cl-telefono que leen la validacion,
+         los generadores y el cuerpo de la cotizacion, fuera del bloque oculto de
+         facturacion para que el vendedor lo pueda capturar cuando el cliente no
+         lo trae. Hermano de #pc-root (los innerHTML del paso no lo tocan); lo
+         muestra pcRenderTarjeta solo si falta el telefono, y la reja de la
+         generacion lo abre al rechazar. -->
+    <div id="pc-tel-captura" class="pc-tel-captura" style="display:none">
+      <div class="form-group">
+        <label for="cl-telefono">Telefono del cliente (con codigo de pais) *</label>
+        <input type="tel" id="cl-telefono" inputmode="tel" placeholder="55 1234 5678">
+        <small class="pc-tel-captura-hint">Sin telefono no se puede generar la cotizacion.</small>
+      </div>
+    </div>
+
     <!-- Cotizaciones previas del cliente seleccionado (Cargar / PDF / Reintentar
          subida). Hermano de #pc-root: lo llena renderHistorialCliente al elegir
          un cliente Operam con historial y se muestra bajo la tarjeta. -->
@@ -556,10 +570,10 @@
     </div>
 
     <!-- Formulario legacy (#82): fuente unica de los campos cl-* de facturacion
-         que consumen los generadores de PDF/HTML/WhatsApp y la validacion de
-         telefono (#81). No se muestra como formulario plano de ~20 campos (AC);
-         lo llenan los tres caminos del paso (Operam / prospecto / contacto
-         nuevo). Los campos de entrega viven en #pc-entrega-wrap, dentro del
+         que consumen los generadores de PDF/HTML/WhatsApp (el telefono salio
+         a #pc-tel-captura en #418). No se muestra como formulario plano de
+         ~20 campos (AC); lo llenan los tres caminos del paso (Operam /
+         prospecto / contacto nuevo). Los campos de entrega viven en #pc-entrega-wrap, dentro del
          paso Envio (movido en #84). -->
     <div id="cliente-form-legacy">
 
@@ -586,10 +600,6 @@
              oculto -- lo llena pcGuardarContactoNuevo, lo lee leerClienteFormulario
              para que el alta generica lo mande a Operam. -->
         <input type="hidden" id="cl-segmento">
-        <div class="form-group">
-          <label>Telefono (con codigo de pais)</label>
-          <input type="tel" id="cl-telefono" inputmode="tel" placeholder="55 1234 5678">
-        </div>
         <div class="form-group">
           <label>Condiciones de pago</label>
           <select id="cl-condiciones">

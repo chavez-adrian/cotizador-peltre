@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 // alta-logica.js y se prueba aqui; el render en app.js es tonto (sin DOM en
 // Node, no se prueba). Ver CONTEXT.md.
 
-let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
+let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud, contactoAccionable,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
   decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
   contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
@@ -16,7 +16,7 @@ let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
 
 before(async () => {
   ({
-    mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud,
+    mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud, contactoAccionable,
     buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
     contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
@@ -254,6 +254,69 @@ test('C3: RFC generico no cuenta como fiscal completo', () => {
 
 test('C4: sin telefono no hay chip de Contacto', () => {
   assert.strictEqual(chipsCompletitud({ name: 'X' }).contacto, false);
+});
+
+// === contactoAccionable: el chip Contacto abre la captura del telefono (#418) ===
+// Un Cliente Operam sin telefono no tenia por donde capturarlo: el campo vive en
+// el formulario legacy oculto. El chip se vuelve boton solo cuando falta el
+// telefono -- lo unico que el paso Cliente sabe capturar de ese chip.
+
+test('CA1: Cliente Operam sin telefono -> el chip Contacto es accionable', () => {
+  const c = { name: 'G J Y ASOCIADOS ABOGADOS SC', ref: 'GJY', telefono: '', rfc: 'GAA010101AB1', tipo: 'operam' };
+  assert.strictEqual(contactoAccionable(c), true);
+});
+
+test('CA2: cliente con telefono -> el chip Contacto NO es accionable', () => {
+  const c = { name: 'La Vasija', telefono: '+52 55 1234 5678', tipo: 'operam' };
+  assert.strictEqual(contactoAccionable(c), false);
+});
+
+test('CA3: telefono de puros espacios cuenta como ausente (misma lectura que chipsCompletitud)', () => {
+  const c = { name: 'X', telefono: '   ' };
+  assert.strictEqual(contactoAccionable(c), true);
+  assert.strictEqual(chipsCompletitud(c).contacto, false);
+});
+
+test('CA4: sin la llave telefono (fila Operam sin branches ni contacts) -> accionable', () => {
+  assert.strictEqual(contactoAccionable({ name: 'X' }), true);
+});
+
+test('CA5: telefono incompleto -> sigue accionable y el chip NO se pone verde', () => {
+  const c = { name: 'X', telefono: '+52 55' };
+  assert.strictEqual(contactoAccionable(c), true);
+  assert.strictEqual(chipsCompletitud(c).contacto, false);
+});
+
+test('CA6: numero sin codigo de pais (pais "Otro") -> accionable, igual que la reja de la generacion', () => {
+  const c = { name: 'X', telefono: '12345678' };
+  assert.strictEqual(contactoAccionable(c), true);
+  assert.strictEqual(chipsCompletitud(c).contacto, false);
+});
+
+test('CA7: E.164 del widget (sin espacios) -> chip verde y no accionable', () => {
+  const c = { name: 'X', telefono: '+525512345678' };
+  assert.strictEqual(contactoAccionable(c), false);
+  assert.strictEqual(chipsCompletitud(c).contacto, true);
+});
+
+test('CA8: el campo cl-telefono vive en #pc-tel-captura, fuera del bloque oculto de facturacion', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+  const bloque = (id) => {
+    const ini = html.indexOf(`<div id="${id}"`);
+    assert.ok(ini >= 0, `falta #${id}`);
+    let prof = 0;
+    const re = /<div\b|<\/div>/g;
+    re.lastIndex = ini;
+    for (let m; (m = re.exec(html));) {
+      prof += m[0] === '</div>' ? -1 : 1;
+      if (prof === 0) return html.slice(ini, re.lastIndex);
+    }
+    assert.fail(`#${id} sin cerrar`);
+  };
+  assert.ok(bloque('pc-tel-captura').includes('id="cl-telefono"'));
+  assert.ok(!bloque('pc-factura-hidden').includes('id="cl-telefono"'));
 });
 
 test('C5: CP + pais validos sin Calle -> entrega "cp" (#84)', () => {

@@ -1292,7 +1292,9 @@ export function cotizacionesPreviasDelCliente(cotizaciones, cliente) {
 
 // Estado de los chips de completitud de la tarjeta (AC6/#82; tri-estado de
 // Entrega extendido en #84), desde datos reales:
-//  - Contacto: nombre resoluble (name||ref) Y telefono (lo minimo para cotizar).
+//  - Contacto: nombre resoluble (name||ref) Y un telefono que pasa la reja de la
+//    generacion (#418: con cualquier digito se ponia verde sobre un numero que
+//    igual iba a bloquear).
 //  - Entrega: tri-estado -- 'pendiente' (sin CP valido), 'cp' (CP+pais validos,
 //    sin Calle) o 'completo' (CP+pais validos y Calle). El domicilio se captura
 //    en el paso Envio (#84); Operam ya lo trae con el cliente.
@@ -1300,17 +1302,35 @@ export function cotizacionesPreviasDelCliente(cotizaciones, cliente) {
 export function chipsCompletitud(cliente) {
   const c = cliente || {};
   const nombre = (c.name || c.ref || '').trim();
-  const telefono = (c.telefono || '').trim();
   const cp = (c.cp || c.cpEntrega || '').trim();
   const pais = (c.pais || '').trim();
   const calle = (c.calle || '').trim();
   const rfc = (c.rfc || '').toUpperCase().trim();
   const cpOk = !!(cp && pais && cpValido(cp, pais));
   return {
-    contacto: !!(nombre && telefono),
+    contacto: !!(nombre && telefonoPasaLaReja(c.telefono)),
     entrega: cpOk ? (calle ? 'completo' : 'cp') : 'pendiente',
     fiscal: !!(rfc && !RFC_GENERICOS_BROWSER.has(rfc)),
   };
+}
+
+// El telefono del cliente tal como lo junta el widget (codigo + numero, #176)
+// contra la MISMA regla que la reja de la generacion: un numero armado con su
+// codigo empieza con '+' y validarTelefono lo juzga completo, sin mirar el
+// select; el que no lo trae es el de pais "Otro" tecleado sin codigo, que la
+// reja tambien rechaza.
+function telefonoPasaLaReja(telefono) {
+  const tel = (telefono || '').trim();
+  return !!tel && !validarTelefono('', tel);
+}
+
+// El chip Contacto se vuelve boton cuando al telefono le falta algo (#418): un
+// Cliente Operam sin telefono no tenia por donde capturarlo -- el campo vivia en
+// el formulario legacy oculto -- y la reja de la generacion lo mandaba a un campo
+// invisible. El nombre que falte no lo captura este chip, por eso solo mira el
+// telefono.
+export function contactoAccionable(cliente) {
+  return !telefonoPasaLaReja((cliente || {}).telefono);
 }
 
 // Decide que hacer cuando, en el camino "Contacto nuevo", se clasifica el celular

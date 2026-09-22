@@ -24,6 +24,7 @@ import {
   recientesDesdeCotizaciones,
   cotizacionesPreviasDelCliente,
   chipsCompletitud,
+  contactoAccionable,
   buildClienteDesdeContactoNuevo,
   clienteDesdeProspecto,
   accionCelularContactoNuevo,
@@ -276,22 +277,35 @@ import {
 // '+1-CA' | '+') lo entrega celCodeDeCampo y el numero, ya en E.164 y sin el
 // "1" legacy mexicano, numeroDeCampo -- el contrato que consumen
 // validarTelefono y combinarTelefonoConCodigo no cambio.
+// Devuelve { campo, mensaje } del primer telefono que no pasa, o null: el campo
+// es a donde irAlTelefono manda al vendedor (#418).
 function validarTelefonosCotizacion() {
   const errTel = validarTelefono(celCodeDeCampo('cl-telefono'), numeroDeCampo('cl-telefono'));
-  if (errTel) return `Telefono: ${errTel}`;
+  if (errTel) return { campo: 'cl-telefono', mensaje: `Telefono: ${errTel}` };
   const cel = numeroDeCampo('cl-cel-entrega');
   if (cel) {
     const errCel = validarTelefono(celCodeDeCampo('cl-cel-entrega'), cel);
-    if (errCel) return `Celular de entrega: ${errCel}`;
+    if (errCel) return { campo: 'cl-cel-entrega', mensaje: `Celular de entrega: ${errCel}` };
   }
   return null;
 }
 
 // Capa estricta de la cotizacion (#176): AVISA sobre un numero que se ve mal y
 // deja guardar con confirmacion. Nunca es la razon por la que no se genera.
-async function telefonosCotizacionConfirmados() {
-  if (!await confirmarTelefono('cl-telefono')) return false;
-  return confirmarTelefono('cl-cel-entrega');
+// Devuelve el campo cuyo aviso el vendedor no confirmo, o null.
+async function telefonoSinConfirmar() {
+  if (!await confirmarTelefono('cl-telefono')) return 'cl-telefono';
+  if (!await confirmarTelefono('cl-cel-entrega')) return 'cl-cel-entrega';
+  return null;
+}
+
+// A donde va el vendedor cuando un telefono lo detiene (#418): cada campo en el
+// paso donde se ve. El del cliente se abre en el paso Cliente; antes la reja le
+// hacia foco dentro del bloque oculto y el celular de entrega tambien caia ahi.
+function irAlTelefono(campo) {
+  if (campo === 'cl-telefono') { pcAbrirCapturaTelefono(); return; }
+  switchTab('envio');
+  document.getElementById(campo)?.focus();
 }
 
 // Lee el domicilio de entrega del DOM y delega en la funcion pura (#71/#84).
@@ -2684,12 +2698,12 @@ async function generatePDF() {
   if (bloqueaGeneracionPorMoneda()) return;
   const telErr = validarTelefonosCotizacion();
   if (telErr) {
-    alert(telErr);
-    switchTab('cliente');
-    document.getElementById('cl-telefono')?.focus();
+    alert(telErr.mensaje);
+    irAlTelefono(telErr.campo);
     return;
   }
-  if (!await telefonosCotizacionConfirmados()) { switchTab('cliente'); return; }
+  const sinConfirmar = await telefonoSinConfirmar();
+  if (sinConfirmar) { irAlTelefono(sinConfirmar); return; }
   const domio = validarDomicilioCotizacion();
   if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
     alert(MENSAJE_ENVIO_INVALIDADO);
@@ -2787,12 +2801,12 @@ async function generateHTML() {
   if (bloqueaGeneracionPorMoneda()) return;
   const telErr = validarTelefonosCotizacion();
   if (telErr) {
-    alert(telErr);
-    switchTab('cliente');
-    document.getElementById('cl-telefono')?.focus();
+    alert(telErr.mensaje);
+    irAlTelefono(telErr.campo);
     return;
   }
-  if (!await telefonosCotizacionConfirmados()) { switchTab('cliente'); return; }
+  const sinConfirmar = await telefonoSinConfirmar();
+  if (sinConfirmar) { irAlTelefono(sinConfirmar); return; }
   const domio = validarDomicilioCotizacion();
   if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
     alert(MENSAJE_ENVIO_INVALIDADO);
@@ -3264,6 +3278,7 @@ function pcPrepararSeleccion() {
   // seleccionarClienteOperam lo re-renderiza si el nuevo cliente tiene previas.
   const hist = document.getElementById('historial-cliente-panel');
   if (hist) { hist.style.display = 'none'; hist.innerHTML = ''; }
+  pcMostrarCapturaTelefono(false);
   // Cambio de cliente = fin de la sesion de cotizacion (#83, F1): la proxima
   // generacion crea SU entry, no actualiza el del cliente anterior. El estado de
   // subida del resumen tambien era del anterior.
@@ -3736,10 +3751,14 @@ function pcCustomerIdFiscal() {
   return customerIdFiscal(pcState.cliente);
 }
 
-function pcChipsHtml(chips, customerIdFiscal) {
-  const chip = (ok, okLabel, pendLabel) => ok
-    ? `<span class="pc-chip ok">&#10003; ${okLabel}</span>`
-    : `<span class="pc-chip pend">${pendLabel}</span>`;
+function pcChipsHtml(chips, customerIdFiscal, contactoPorCapturar) {
+  // El chip Contacto abre la captura del telefono cuando falta (#418), mismo
+  // patron que Entrega y Fiscal; con telefono pero sin nombre queda estatico.
+  const contactoChip = chips.contacto
+    ? '<span class="pc-chip ok">&#10003; Contacto</span>'
+    : (contactoPorCapturar
+        ? '<button type="button" class="pc-chip-btn" onclick="pcAbrirCapturaTelefono()"><span class="pc-chip pend">Contacto &middot; falta telefono</span></button>'
+        : '<span class="pc-chip pend">Contacto</span>');
   const entregaChip = chips.entrega === 'completo'
     ? '<span class="pc-chip ok">&#10003; Entrega</span>'
     : chips.entrega === 'cp'
@@ -3753,7 +3772,7 @@ function pcChipsHtml(chips, customerIdFiscal) {
     : (customerIdFiscal != null
         ? '<button type="button" class="pc-chip-btn" onclick="pcAbrirUpgradeFiscalDesdePaso()"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>'
         : '<span class="pc-chip pend">Fiscal &middot; al subir a Operam</span>');
-  return chip(chips.contacto, 'Contacto', 'Contacto') +
+  return contactoChip +
     `<button type="button" class="pc-chip-btn" onclick="switchTab('envio')">${entregaChip}</button>` +
     fiscalChip;
 }
@@ -3791,7 +3810,7 @@ function pcRenderTarjeta() {
     '<div class="pc-cli-card">' +
     `<div class="pc-cli-nombre">${escapeHtml(nombreTarjeta)}</div>` +
     `<div class="pc-cli-sub">${sub}</div>` +
-    `<div class="pc-chips">${pcChipsHtml(chips, pcCustomerIdFiscal())}</div>` +
+    `<div class="pc-chips">${pcChipsHtml(chips, pcCustomerIdFiscal(), contactoAccionable(c))}</div>` +
     (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
     (bloqueoMoneda
       ? `<div class="pc-cli-bloqueo">${escapeHtml(bloqueoMoneda.mensaje)}</div>`
@@ -3799,6 +3818,7 @@ function pcRenderTarjeta() {
     '</div>' +
     '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Cambiar de cliente</button>';
 
+  pcMostrarCapturaTelefono(contactoAccionable(c));
   pcRenderDomSelect();
   updateTabIndicators();
   // Cuarto enganche del autosave (#180): unico punto por el que pasa TODO
@@ -3818,6 +3838,23 @@ function pcContinuar() {
   switchTab('productos');
 }
 window.pcContinuar = pcContinuar;
+
+// Captura del telefono del cliente (#418). El campo es el MISMO cl-telefono de
+// siempre, en #pc-tel-captura (hermano de #pc-root). Su visibilidad se decide
+// al pintar la tarjeta y NO en cada tecla: el primer digito ya deja de faltar y
+// el campo desapareceria bajo el cursor del vendedor.
+function pcMostrarCapturaTelefono(visible) {
+  const wrap = document.getElementById('pc-tel-captura');
+  if (wrap) wrap.style.display = visible ? '' : 'none';
+}
+
+// Lo abren el chip Contacto y, via irAlTelefono, las dos rejas de la generacion.
+function pcAbrirCapturaTelefono() {
+  switchTab('cliente');
+  pcMostrarCapturaTelefono(true);
+  document.getElementById('cl-telefono')?.focus();
+}
+window.pcAbrirCapturaTelefono = pcAbrirCapturaTelefono;
 
 // Selector de domicilio para cliente Operam con varios branches (#84: vive en
 // el paso Envio, dentro de #pc-dom-slot -- HERMANO de #pc-root igual que antes
@@ -3987,7 +4024,8 @@ window.pcCambiarContacto = pcCambiarContacto;
 function pcRenderChips() {
   const cont = pcEl()?.querySelector('.pc-chips');
   if (!cont) return;
-  cont.innerHTML = pcChipsHtml(chipsCompletitud(pcClienteActual()), pcCustomerIdFiscal());
+  const c = pcClienteActual();
+  cont.innerHTML = pcChipsHtml(chipsCompletitud(c), pcCustomerIdFiscal(), contactoAccionable(c));
 }
 
 // --- Upgrade fiscal desde el chip Fiscal (issue #85) ---
@@ -7025,6 +7063,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Tab indicator para cliente y envio (el bloque de entrega vive en Envio, #84)
   document.getElementById('tab-cliente').addEventListener('input', updateTabIndicators);
   document.getElementById('tab-envio').addEventListener('input', () => { pcRenderChips(); updateTabIndicators(); });
+  // El telefono capturado en el paso Cliente (#418) pone el chip Contacto en
+  // verde sin repintar la tarjeta; el indicador del tab ya lo cubre el de arriba.
+  document.getElementById('pc-tel-captura').addEventListener('input', () => { pcRenderChips(); autoguardarBorrador(); });
 
   // Botones Siguiente
   document.getElementById('btn-sig-cliente').addEventListener('click', () => switchTab('productos'));
