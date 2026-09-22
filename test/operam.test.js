@@ -285,7 +285,7 @@ test('B7: buscarClientes normaliza campos: id, name, rfc, calle, cp, municipio, 
     assert.equal(c.cp, '06000',                      'cp = postal_code');
     assert.equal(c.municipio, 'Cuauhtemoc',          'municipio = city');
     assert.equal(c.estado, 'Ciudad de Mexico',       'estado = state');
-    assert.equal(c.telefono, '55 1072 7542',         'telefono = branches[0].phone');
+    assert.equal(c.telefono, '55 1072 7542',         'telefono = el primero por casilla (#426); aqui el unico, branches[0].phone');
     assert.equal(c.email, 'a.urena@museofridakahlo.org.mx', 'email = branches[0].email');
     assert.equal(c.nombreEntrega, 'Museo Frida Kahlo', 'nombreEntrega = branches[0].br_name');
   } finally { restore(); }
@@ -384,5 +384,42 @@ test('B11: el campo telefonos trae los de TODOS los branches, no solo branches[0
     assert.equal(res.body.length, 1);
     assert.ok(res.body[0].telefonos.some(t => t.replace(/\D/g, '').includes('44332211')),
       'telefonos debe incluir el de branches[1], no solo branches[0]');
+  } finally { restore(); }
+});
+
+// #426: el Cliente Operam cuyo unico numero es el Cel (fax) de una sucursal. La
+// fila del servidor no lo leia, y los tres consumidores del paso Cliente
+// juzgaban sobre esa fila: chip "falta telefono", busqueda por el Cel que el
+// navegador descartaba y cotizaciones previas sin ligar.
+test('B12 (#426): la fila del cliente 52 lleva su Cel y el paso Cliente lo encuentra, lo da por completo y liga sus previas', async () => {
+  const { mezclarResultadosBusqueda, chipsCompletitud, contactoAccionable, cotizacionesPreviasDelCliente } =
+    await import('../public/js/alta-logica.js');
+  const cliente52 = {
+    customer_id: '52',
+    CustName: 'G J Y ASOCIADOS ABOGADOS SC',
+    cust_ref: 'Pizza Studio',
+    tax_id: 'XAXX010101000',
+    contacts: [{ action: 'general', phone: '', phone2: '', fax: '' }],
+    branches: [{ branch_code: '59', phone: '', fax: '+1(337)2924966' }],
+  };
+  resetSession();
+  resetIndice();
+  const restore = mockBusquedaVaciaMasIndice(cliente52);
+  try {
+    const q = '3372924966';
+    const res = await req.get(`/api/operam/clientes?q=${q}`).set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.length, 1, 'el indice encuentra al 52 por su Cel');
+    const fila = res.body[0];
+    assert.equal(fila.telefono, '+1(337)2924966', 'el Cel con su codigo de pais, para la bandera del widget');
+    assert.deepEqual(fila.telefonos, ['+1(337)2924966']);
+
+    const enPantalla = mezclarResultadosBusqueda(res.body, [], q);
+    assert.equal(enPantalla.length, 1, 'el navegador no descarta la fila que el servidor encontro por el Cel');
+    assert.equal(chipsCompletitud(fila).contacto, true);
+    assert.equal(contactoAccionable(fila), false, 'el campo de captura de #418 no se muestra');
+
+    const previa = { id: 1, customerId: null, rfc: 'XAXX010101000', contactoCelular: '3372924966' };
+    assert.deepEqual(cotizacionesPreviasDelCliente([previa], fila), [previa]);
   } finally { restore(); }
 });

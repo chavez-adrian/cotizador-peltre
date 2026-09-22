@@ -37,7 +37,7 @@ import { calcularColaHoy } from './lib/cola-hoy.js';
 import { tarjetasOportunidades, cotizacionesDeLaOportunidad, oportunidadesQueFaltaCotizar, prospectoAOportunidad } from './lib/oportunidades.js';
 import { oportunidadesDeContactos, principalPorContacto, oportunidadQueCotiza } from './lib/oportunidad-pre.js';
 import * as oportunidadPreIo from './lib/oportunidad-pre-io.js';
-import { celularAlNacer, celularesDeCruce, llaveContacto, ORDEN_CASILLA } from './lib/contacto-cotizacion.js';
+import { celularAlNacer, celularesDeCruce, llaveContacto } from './lib/contacto-cotizacion.js';
 import { ligasDeContacto, conLigaDerivada, decidirLiga } from './lib/ligas-contacto.js';
 // Los dos estados del Cliente Operam y las etiquetas del Contacto (#344,
 // ADR-0016): derivados en el servidor desde lo que Operam registra, nunca
@@ -55,7 +55,7 @@ import * as configStore from './lib/config-store.js';
 import * as modelosStore from './lib/modelos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
-import { refrescarIndice, matchCliente, clientesCacheados, enumerarTelefonosClientes } from './lib/indice-telefonos.js';
+import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
 import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
@@ -2468,17 +2468,12 @@ async function clientesOperamPorTexto(q) {
 }
 
 // Los celulares por los que un Cliente Operam liga con un Contacto: los de sus
-// SEIS casillas (regla estructural de ADR-0016). La enumeracion es la de
-// `enumerarTelefonosClientes` (#338/#342), que es quien conoce la forma de
-// Operam y etiqueta la `casilla`; el orden es el del respaldo de la migracion
-// (Cel > Telefono > Secundario, ORDEN_CASILLA), porque el Cel es el numero mas
-// probable de WhatsApp.
+// SEIS casillas (regla estructural de ADR-0016), en el orden del respaldo de la
+// migracion (Cel > Telefono > Secundario), porque el Cel es el numero mas
+// probable de WhatsApp. Son los mismos numeros de su fila (#426), reducidos a
+// la llave de 10 digitos.
 function celularesDeClienteOperam(c) {
-  return enumerarTelefonosClientes([c])
-    .map(e => ({ cel: ultimos10(e.telefono), casilla: e.casilla }))
-    .filter(x => x.cel.length === 10)
-    .sort((a, b) => ORDEN_CASILLA.indexOf(a.casilla) - ORDEN_CASILLA.indexOf(b.casilla))
-    .map(x => x.cel);
+  return telefonosDeClienteOperam(c).map(llaveContacto).filter(Boolean);
 }
 
 // La fila de un Cliente Operam que leen el paso Cliente y la vista Clientes.
@@ -2486,12 +2481,10 @@ function celularesDeClienteOperam(c) {
 // de quien es la fila.
 function filaClienteOperam(c, estadoOperam) {
   const branch = c.branches?.[0] || {};
-  // OJO: telefonos trae los de TODOS los branches/contactos (no solo branches[0]) --
-  // buscarClientesPorTexto puede matchear por un telefono que viva en otro branch.
-  const telefonos = [
-    ...(c.branches || []).map(b => b.phone),
-    ...(c.contacts || []).flatMap(ct => [ct.phone, ct.phone2]),
-  ].filter(Boolean);
+  // OJO: telefonos trae los de TODAS las casillas (#426: el Cel incluido) --
+  // buscarClientesPorTexto puede matchear por cualquiera y el navegador vuelve a
+  // filtrar sobre este campo.
+  const telefonos = telefonosDeClienteOperam(c);
   return {
     id: c.customer_id, name: c.CustName || '', ref: c.cust_ref || '', rfc: c.tax_id || '',
     calle: titleCase([c.street, c.street_number].filter(Boolean).join(' ')),

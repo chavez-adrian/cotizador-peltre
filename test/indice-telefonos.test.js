@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   normalizarTelefono, construirIndice, matchCliente, refrescarIndice, resetIndice, actualizarClienteEnCache,
-  buscarClientesPorTexto, clientesCacheados, enumerarTelefonosClientes,
+  buscarClientesPorTexto, clientesCacheados, enumerarTelefonosClientes, telefonosDeClienteOperam,
 } from '../lib/indice-telefonos.js';
 import { resetSession } from '../lib/operam-client.js';
 
@@ -216,6 +216,43 @@ test('enumerarTelefonosClientes: cada telefono dice de que casilla de Operam sal
   assert.equal(porTelefono['55 8888 1111'], 'cel');
   assert.equal(porTelefono['55 7777 2222'], 'telefono', 'el Telefono de la sucursal');
   assert.equal(porTelefono['55 9999 3333'], 'cel', 'el Cel de la sucursal');
+});
+
+// === telefonosDeClienteOperam (#426): los numeros de la fila del Cliente Operam ===
+//
+// La fila que leen el paso Cliente y la vista Clientes juntaba sus telefonos con
+// una lista propia que no leia el Cel (fax): el cliente cuyo unico numero vive
+// ahi salia "sin telefono", no se encontraba por su Cel y no ligaba sus
+// cotizaciones previas.
+
+test('telefonosDeClienteOperam: el Cel de una sucursal, unico numero del cliente, sale con su codigo de pais', () => {
+  // El cliente 52 (G J Y ASOCIADOS ABOGADOS SC), medido 2026-09-22.
+  const cliente52 = {
+    customer_id: '52', CustName: 'G J Y ASOCIADOS ABOGADOS SC',
+    contacts: [{ action: 'general', phone: '', phone2: '', fax: '' }],
+    branches: [{ branch_code: '59', phone: '', fax: '+1(337)2924966' }],
+  };
+  assert.deepEqual(telefonosDeClienteOperam(cliente52), ['+1(337)2924966']);
+});
+
+test('telefonosDeClienteOperam: Cel primero, luego Telefono y al final el Telefono secundario', () => {
+  assert.deepEqual(telefonosDeClienteOperam(CLIENTE_RICO),
+    ['55 8888 1111', '55 9999 3333', '55 4444 1111', '55 7777 2222', '55 4444 2222']);
+});
+
+test('telefonosDeClienteOperam: un numero repetido sale una vez, con el texto de su casilla de mayor precedencia', () => {
+  const cliente = {
+    customer_id: '9',
+    contacts: [{ phone: '55 1111 2233', phone2: '55 3333 4444', fax: '+52 55 1111 2233' }],
+    branches: [{ phone: '5533334444' }],
+  };
+  // Telefono y Cel del contacto: gana el Cel. Secundario del contacto y Telefono
+  // de la sucursal: gana el Telefono, aunque la sucursal se enumere despues.
+  assert.deepEqual(telefonosDeClienteOperam(cliente), ['+52 55 1111 2233', '5533334444']);
+});
+
+test('telefonosDeClienteOperam: sin ningun numero devuelve la lista vacia', () => {
+  assert.deepEqual(telefonosDeClienteOperam({ customer_id: '1', contacts: [{ phone: '' }], branches: [] }), []);
 });
 
 // === matchCliente: cache, refresh y best effort ===
