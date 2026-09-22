@@ -181,6 +181,9 @@ import {
   buildItemsYTotales,
   buildItemEnvio,
   importeLinea,
+  importeLineaOAusente,
+  textoImporteLinea,
+  subtotalLineas,
   nombreVisibleProducto,
   fechaEmisionHoy,
   sumarDiasFecha,
@@ -1006,6 +1009,12 @@ function precioUnitario(product, precioManual) {
   return product.prices[tier.id] ?? product.prices['Menudeo'] ?? 0;
 }
 
+// El `?? 0` de aqui se queda, medido (#413): getPrice es el precio para SUMAR o
+// para listar un articulo del catalogo -- el buscador y el flujo guiado (que
+// nunca ven calcas), calcSubtotal (donde la ausencia no aporta, y por eso el
+// subtotal nunca mintio) y el payload de la cotizacion, que esta detras del
+// bloqueo de calca sin precio. Lo que NO puede pasar por el es un renglon que
+// afirme un importe: eso va con precioUnitario + importeLineaOAusente.
 function getPrice(product, precioManual) {
   return precioUnitario(product, precioManual) ?? 0;
 }
@@ -1398,16 +1407,17 @@ function renderCartLines() {
 
   section.style.display = 'block';
   renderDescuentoGlobal();
-  let subtotal = 0;
+  const lineas = [];
   let html = '';
 
   const piezasProducto = getPiezasProducto();
   for (const [key, { product, cantidad, descuento, descripcion, precioManual }] of state.cart) {
     const precio = precioUnitario(product, precioManual);
-    const price = precio ?? 0;
     const desc = descuento || 0;
-    const total = importeLinea({ cantidad, precio: price, descuento: desc });
-    subtotal += total;
+    // Una partida sin precio no tiene importe (#413): el mismo juicio -- y el
+    // mismo texto -- que pinta el paso Cotizacion.
+    const total = importeLineaOAusente({ cantidad, precio, descuento: desc });
+    lineas.push({ cantidad, precio, descuento: desc });
     // Lo que se muestra es lo que va a leer el cliente (#139): con descripcion
     // editada, la del vendedor; si no, la del catalogo.
     const nombreCatalogo = nombreVisibleProducto(product.name);
@@ -1433,7 +1443,7 @@ function renderCartLines() {
         </div>
         <span class="cart-line-price col-num"><span class="cart-line-etiqueta">Precio</span>${celdaPrecioLinea(key, product, precio, precioManual)}</span>
         <span class="cart-line-desc col-num"><span class="cart-line-etiqueta">Dscto.</span>${celdaDescuentoLinea(key, desc)}</span>
-        <span class="cart-line-total col-num"><span class="cart-line-etiqueta">Total</span>${precio === null ? '&mdash;' : '$' + fmt(total)}</span>
+        <span class="cart-line-total col-num"><span class="cart-line-etiqueta">Total</span>${textoImporteLinea(total, fmt)}</span>
         <div class="cart-line-del col-del"><button onclick="removeItem('${key}')" title="Quitar">&times;</button></div>
         ${editorDescripcionLinea(key, descripcion, nombreCatalogo)}
       </div>
@@ -1441,6 +1451,7 @@ function renderCartLines() {
   }
 
   container.innerHTML = html;
+  const subtotal = subtotalLineas(lineas);
   const iva = subtotal * 0.16;
   subtotalEl.innerHTML = `Subtotal: <strong>$${fmt(subtotal)}</strong> &nbsp;+&nbsp; IVA $${fmt(iva)} &nbsp;= &nbsp;<strong>$${fmt(subtotal + iva)}</strong>`;
 }
@@ -2189,17 +2200,20 @@ function updateResumen() {
   let html = '';
   for (const [key, { product, cantidad, descuento, descripcion, precioManual }] of state.cart) {
     const precio = precioUnitario(product, precioManual);
-    const price = precio ?? 0;
-    const total = importeLinea({ cantidad, precio: price, descuento });
+    // Una partida sin precio no tiene importe (#413): el renglon decia "sin
+    // precio" en el detalle y "$0.00" en el importe porque cada mitad juzgaba
+    // por su cuenta. Ahora las dos salen del mismo valor, y la ausencia se pinta
+    // como en el paso Productos.
+    const total = importeLineaOAusente({ cantidad, precio, descuento });
     // El resumen es la ultima pantalla antes de generar: muestra la descripcion
     // editada (#139), que es la que va a leer el cliente en el documento.
     const displayName = descripcion || nombreVisibleProducto(product.name);
     const isSkuItem = state.precios.skus?.some(s => s.sku === key);
     // El % negociado se dice junto al precio de lista: el resumen es la ultima
     // pantalla antes de generar y tiene que cuadrar con el documento (#137).
-    const detalle = precio === null
+    const detalle = total === null
       ? `${codigoDeLlave(key)} — sin precio`
-      : `${codigoDeLlave(key)} — $${fmt(price)} / pza${descuento ? ` — ${descuento}% dscto.` : ''}`;
+      : `${codigoDeLlave(key)} — $${fmt(precio)} / pza${descuento ? ` — ${descuento}% dscto.` : ''}`;
     const relacion = product.esCalca
       ? ` <span class="calca-relacion">${relacionCalcaProducto(cantidad, piezasProducto)}</span>`
       : '';
@@ -2219,7 +2233,7 @@ function updateResumen() {
           </div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          <div class="cart-item-total">$${fmt(total)}</div>
+          <div class="cart-item-total">${textoImporteLinea(total, fmt)}</div>
           <button class="remove-btn" onclick="removeItem('${key}')" title="Quitar">&times;</button>
         </div>
       </div>

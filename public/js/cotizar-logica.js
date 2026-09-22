@@ -283,6 +283,38 @@ export function importeLinea({ cantidad, precio, descuento }) {
   return (cantidad || 0) * (precio || 0) * (1 - (descuento || 0) / 100);
 }
 
+// EL juicio de una partida sin precio (#413, regla de #91): sin precio no hay
+// importe, y se dice con null -- nunca con el 0 que `importeLinea` produce al
+// tragarse un precio ausente. De ESTE unico valor salen las dos cosas que el
+// renglon afirma (el detalle y el importe), que antes lo decidian por separado
+// sobre el mismo `precio === null`: en el paso Cotizacion el detalle decia "sin
+// precio" y el importe decia "$0.00" en el mismo renglon.
+// Un precio de 0 SI es un precio (importe 0): la ausencia es la falta de dato.
+export function importeLineaOAusente({ cantidad, precio, descuento }) {
+  if (precio === null || precio === undefined) return null;
+  return importeLinea({ cantidad, precio, descuento });
+}
+
+// Como se pinta esa ausencia, en un solo lugar: el guion largo que el paso
+// Productos ya usaba en su columna Total. Viaja como entidad HTML porque las dos
+// superficies lo inyectan por innerHTML (y el codigo del repo es ASCII).
+export const AUSENCIA_IMPORTE = '&mdash;';
+
+// El importe de un renglon, ya en texto. `formato` es el formateador de moneda
+// de quien pinta (fmt en app.js): el nucleo decide QUE se dice, no como se
+// separan los miles.
+export function textoImporteLinea(importe, formato) {
+  return importe === null || importe === undefined ? AUSENCIA_IMPORTE : `$${formato(importe)}`;
+}
+
+// Suma de los renglones de la tabla del carrito. La partida sin precio no aporta
+// -- eso NO cambia con #413: el subtotal ya la excluia (medido $1,210.67 en el
+// HITL de #402) y lo unico que mentia era su renglon. Aqui esta dicho una vez,
+// en vez de un `?? 0` suelto en medio del render.
+export function subtotalLineas(lineas) {
+  return (lineas || []).reduce((suma, linea) => suma + (importeLineaOAusente(linea) || 0), 0);
+}
+
 // Subtotal/IVA/total de un arreglo de items ya armado, aplicando el % de
 // descuento por linea.
 export function calcularTotalesItems(items) {

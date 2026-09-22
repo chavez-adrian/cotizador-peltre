@@ -8,6 +8,7 @@ let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
+let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha;
 before(async () => {
   ({
@@ -16,6 +17,7 @@ before(async () => {
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
+    importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha,
     sincronizarCorreoFactura,
   } = await import('../cotizar-logica.js'));
@@ -703,4 +705,58 @@ test('#290-6: editar a mano el correo de factura desmarca el checkbox y conserva
 test('#290-7: editar el correo de factura sin estar marcado no cambia nada de estado', () => {
   const r = sincronizarCorreoFactura({ marcado: false, entrega: 'juan@ej.com', factura: 'libre@ej.com', evento: 'factura' });
   assert.deepStrictEqual(r, { marcado: false, factura: 'libre@ej.com' });
+});
+
+// === #413: una partida sin precio no tiene importe (null, nunca 0) ===
+// Medido en produccion (HITL de #402 y de #299): el paso Cotizacion pintaba
+// "CAL1025S - sin precio ... $0.00" en el MISMO renglon donde el detalle decia
+// que no hay precio, porque el importe se calculaba con un `?? 0` aparte. Es la
+// forma que #91 prohibio, sobreviviendo en la pantalla del resumen.
+test('#413-1: sin precio la linea no tiene importe: null, nunca 0', () => {
+  assert.strictEqual(importeLineaOAusente({ cantidad: 100, precio: null, descuento: 0 }), null);
+});
+
+test('#413-2: una partida que ni siquiera trae la llave precio tampoco tiene importe', () => {
+  assert.strictEqual(importeLineaOAusente({ cantidad: 100 }), null);
+});
+
+test('#413-3: con precio capturado el importe es el de siempre', () => {
+  // CAL1050 con precio manual capturado (#281, la salida legitima de esa linea).
+  assert.strictEqual(importeLineaOAusente({ cantidad: 100, precio: 12, descuento: 0 }), 1200);
+  assert.strictEqual(importeLineaOAusente({ cantidad: 3, precio: 100, descuento: 10 }), 270);
+});
+
+test('#413-4: un precio de cero SI es precio: importe 0, no ausencia', () => {
+  assert.strictEqual(importeLineaOAusente({ cantidad: 5, precio: 0, descuento: 0 }), 0);
+});
+
+// El renglon de las DOS pantallas se pinta con el mismo texto: el paso Productos
+// ya decia la ausencia con el guion largo y el paso Cotizacion tiene que decir
+// exactamente eso, no un importe de dinero.
+test('#413-5: el importe ausente se pinta con la misma ausencia del paso Productos', () => {
+  assert.strictEqual(AUSENCIA_IMPORTE, '&mdash;');
+  assert.strictEqual(textoImporteLinea(null, n => n.toFixed(2)), AUSENCIA_IMPORTE);
+});
+
+test('#413-6: con importe el texto lleva el signo de pesos y el formato que recibe', () => {
+  assert.strictEqual(textoImporteLinea(1200, n => n.toFixed(2)), '$1200.00');
+  assert.strictEqual(textoImporteLinea(0, n => n.toFixed(2)), '$0.00');
+});
+
+// El subtotal NUNCA mintio (medido en el HITL de #402: $1,210.67 = 10.67 +
+// 1,200, sin aportar nada la calca sin precio); lo que mentia era el renglon.
+// Sumar la ausencia como 0 es lo que mantiene ese numero igual al de hoy.
+test('#413-7: la partida sin precio no aporta al subtotal', () => {
+  const lineas = [
+    { cantidad: 1, precio: 10.67, descuento: 0 },
+    { cantidad: 100, precio: 12, descuento: 0 },
+    { cantidad: 100, precio: null, descuento: 0 },
+  ];
+  assert.strictEqual(subtotalLineas(lineas), 1210.67);
+  assert.strictEqual(subtotalLineas(lineas.slice(0, 2)), subtotalLineas(lineas));
+});
+
+test('#413-8: subtotalLineas respeta el descuento por partida y el carrito vacio', () => {
+  assert.strictEqual(subtotalLineas([{ cantidad: 3, precio: 100, descuento: 10 }]), 270);
+  assert.strictEqual(subtotalLineas([]), 0);
 });
