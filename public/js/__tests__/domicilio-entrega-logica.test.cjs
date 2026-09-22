@@ -3,11 +3,11 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-  indiceDeDomicilio, branchIdDeIndice;
+  indiceDeDomicilio, branchIdDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio;
 
 before(async () => {
   ({ CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-    indiceDeDomicilio, branchIdDeIndice } = await import('../domicilio-entrega-logica.js'));
+    indiceDeDomicilio, branchIdDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio } = await import('../domicilio-entrega-logica.js'));
 });
 
 const DOM_A = {
@@ -172,4 +172,39 @@ test('branchIdDeIndice es la vuelta: del indice del select al branch_code que se
 test('las dos direcciones cierran el circulo sobre el mismo domicilio', () => {
   const lista = [DOM_A, DOM_B];
   assert.equal(branchIdDeIndice(lista, indiceDeDomicilio(lista, '15')), 15);
+});
+
+// === El almacen que el domicilio arrastra (#409, HITL de la 1288) ===
+// Operam deriva el almacen del `default_location` del domicilio, asi que elegir
+// domicilio decide de donde sale la mercancia y el pedido lo hereda.
+
+test('un domicilio que entrega del almacen de siempre no dice nada', () => {
+  assert.equal(avisoAlmacenDomicilio({ branch_code: 15, almacen: ALMACEN_ESPERADO }), null);
+});
+
+test('un domicilio con otro almacen avisa, y lo nombra como el vendedor lo reconoce', () => {
+  const a = avisoAlmacenDomicilio({ branch_code: 15, almacen: '10', almacenNombre: 'Almacen MP' });
+  assert.ok(a);
+  assert.equal(a.almacen, '10');
+  assert.match(a.mensaje, /Almacen MP/);
+});
+
+// Sin nombre el aviso sigue saliendo: saber que el almacen es raro importa mas que
+// poder nombrarlo, y el catalogo de ubicaciones es best-effort.
+test('sin nombre de almacen el aviso cae al numero, no se calla', () => {
+  const a = avisoAlmacenDomicilio({ branch_code: 15, almacen: '10' });
+  assert.ok(a);
+  assert.match(a.mensaje, /10/);
+});
+
+// "No se midio" no es "esta mal": un aviso que aparece sin evidencia se deja de leer.
+test('un domicilio sin dato de almacen no inventa una alarma', () => {
+  assert.equal(avisoAlmacenDomicilio({ branch_code: 15, almacen: null }), null);
+  assert.equal(avisoAlmacenDomicilio({ branch_code: 15 }), null);
+  assert.equal(avisoAlmacenDomicilio(null), null);
+});
+
+// El numero llega como texto desde el navegador y como numero desde Operam.
+test('el almacen se compara por texto, no por tipo', () => {
+  assert.equal(avisoAlmacenDomicilio({ almacen: 40 }), null);
 });

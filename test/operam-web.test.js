@@ -12,6 +12,7 @@ import {
   parsearFormularioCliente, serializarBodyCliente, leerErrorWeb,
   opcionesListaQuote, decidirListaQuote,
   opcionesBranchQuote, decidirBranchQuote,
+  leerAlmacenVista, cambioDeAlmacen,
   partidasDeQuote, compararPartidasQuote,
 } from '../lib/operam-web.js';
 
@@ -1026,4 +1027,39 @@ test('#406 un quote sin partidas legibles no se da por verificado', () => {
   const r = compararPartidasQuote([], []);
   assert.equal(r.verificado, false);
   assert.equal(r.ok, false);
+});
+
+// === #409: el ALMACEN que el domicilio arrastra ===
+// Consecuencia no prevista, encontrada por Adrian en la 1288: FA toma el almacen del
+// `default_location` del DOMICILIO, asi que escribir el domicilio elegido movio
+// tambien el almacen -- y ese domicilio estaba mal configurado en Operam (Almacen MP
+// en vez de PT). El cotizador no corrige dato del ERP, pero callarlo seria la misma
+// falla silenciosa que el ticket vino a matar.
+
+test('#409 leerAlmacenVista: el almacen sale de la MISMA vista que ya se relee para verificar', () => {
+  assert.equal(leerAlmacenVista(VISTA_1216_DESC), 'PT');
+});
+
+test('#409 leerAlmacenVista: sin el campo devuelve null (no se inventa que no cambio)', () => {
+  assert.equal(leerAlmacenVista('<html><body>otra pagina</body></html>'), null);
+  assert.equal(leerAlmacenVista(null), null);
+});
+
+test('#409 cambioDeAlmacen: dos almacenes distintos se reportan con sus dos puntas', () => {
+  const c = cambioDeAlmacen('PT', 'Almacen MP');
+  assert.equal(c.cambio, true);
+  assert.equal(c.de, 'PT');
+  assert.equal(c.a, 'Almacen MP');
+});
+
+test('#409 cambioDeAlmacen: el mismo almacen no es un cambio', () => {
+  assert.equal(cambioDeAlmacen('PT', 'PT').cambio, false);
+});
+
+// Lo que NO se pudo medir no se declara "sin cambio": eso seria afirmar lo que nadie
+// comprobo, que es como el bug original pasaba por bueno.
+test('#409 cambioDeAlmacen: una punta ilegible no afirma que no cambio, da el motivo', () => {
+  const c = cambioDeAlmacen('PT', null);
+  assert.equal(c.cambio, false);
+  assert.match(c.motivo, /no se pudo leer/i);
 });

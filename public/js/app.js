@@ -65,7 +65,7 @@ import { ciudadPorCP } from './cp-ciudad.js';
 import { planAutollenadoCP, paisTieneIndiceCP } from './cp-autollenado.js';
 import {
   camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-  indiceDeDomicilio, branchIdDeIndice,
+  indiceDeDomicilio, branchIdDeIndice, avisoAlmacenDomicilio,
 } from './domicilio-entrega-logica.js';
 import {
   CANALES,
@@ -3809,20 +3809,39 @@ function pcRenderDomSelect() {
     // del registro. Sin el `selected` el <select> abre siempre en el primero y
     // la pantalla contradice al documento que se va a regenerar.
     const idx = pcState.domicilioIdx || 0;
+    // El almacen del que entrega el domicilio elegido (#409): Operam lo deriva del
+    // domicilio al escribir el quote y el pedido lo hereda, asi que un domicilio mal
+    // configurado manda la mercancia desde otro lado sin que nadie lo pida. Solo se
+    // pinta cuando NO es el de producto terminado: un aviso que sale siempre deja de
+    // leerse. Lo vio Adrian en la 1288, que acabo saliendo de Almacen MP.
     slot.innerHTML = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
       '<select id="pc-dom-select" onchange="pcCambiarDomicilio()">' +
       doms.map((d, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${escapeHtml(d.descripcion || d.calle || ('Domicilio ' + (i + 1)))}</option>`).join('') +
-      '</select></div>';
+      '</select><div id="pc-dom-aviso" class="pc-dom-aviso"></div></div>';
+    pcPintarAvisoAlmacen();
   } else {
     slot.innerHTML = '';
   }
   pcRenderContactoSelect();
 }
 
+// El aviso del almacen, en su propio nodo para poder repintarlo al cambiar de
+// domicilio sin reconstruir el <select> desde dentro de su propio onchange.
+function pcPintarAvisoAlmacen() {
+  const nodo = document.getElementById('pc-dom-aviso');
+  if (!nodo) return;
+  const aviso = avisoAlmacenDomicilio(window._operamDomicilios?.[pcState.domicilioIdx || 0]);
+  nodo.textContent = aviso ? aviso.mensaje : '';
+  nodo.style.display = aviso ? 'block' : 'none';
+}
+
 function pcCambiarDomicilio() {
   const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
   pcState.domicilioIdx = idx;
   aplicarDomicilio(window._operamDomicilios?.[idx]);
+  // El domicilio nuevo puede entregar de otro almacen (#409): el aviso se repinta
+  // con el, o desaparece si este si entrega del de producto terminado.
+  pcPintarAvisoAlmacen();
   // El domicilio nuevo puede traer CP y no traer municipio/estado -- es la forma
   // de la mayoria de los branches del ERP (#330) -- y aplicarDomicilio acaba de
   // borrar los que habia puesto el domicilio anterior: el indice del CP los

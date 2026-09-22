@@ -3317,6 +3317,23 @@ function pasoListaQuote(folio, lista) {
   };
 }
 
+// El almacen del que se entrega, cuando el domicilio nuevo lo movio (#409). NO es un
+// error del cotizador ni de la subida: FA lo deriva del `default_location` del
+// DOMICILIO, asi que un domicilio mal configurado en Operam arrastra el almacen sin
+// que nadie lo pida -- y el pedido que se derive lo hereda. Por eso sale como `warn`
+// accionable y nombra el almacen (el vendedor reconoce "Almacen MP", no un loc_code).
+// Sin cambio no se pinta ningun paso: un aviso que aparece siempre deja de leerse.
+function pasoAlmacenQuote(folio, almacen) {
+  if (!almacen || !almacen.cambio) return null;
+  return {
+    name: 'almacen de entrega',
+    status: 'warn',
+    mensaje: `El domicilio elegido cambio el almacen de entrega a "${almacen.a}". Si no es el correcto, el domicilio esta mal configurado en Operam.`,
+    detalle: 'quote ' + folio + ': el almacen paso de ' + almacen.de + ' a ' + almacen.a +
+      ' porque Operam lo toma del domicilio (default_location del branch)',
+  };
+}
+
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
   if (subidasOperamEnCurso.has(id)) {
@@ -3453,13 +3470,14 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
 
     const r = await actualizarQuoteOperam(entry.folioOperam, entry.data, { lista: listaDelQuote(entry) });
     const pasoLista = pasoListaQuote(entry.folioOperam, r.lista);
+    const pasoAlmacen = pasoAlmacenQuote(entry.folioOperam, r.almacen);
     if (r.ok) {
       // Nueva huella (#114): el quote acaba de quedar con ESTE contenido, asi que
       // regenerar el mismo carrito (otro formato) ya no debe reescribir nada.
       await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data, { listaId: listaDelQuote(entry) }) });
       return res.json({
         ok: true, folio: entry.folioOperam, actualizada: true,
-        steps: [{ name: 'actualizar quote', status: 'ok' }, ...(pasoLista ? [pasoLista] : [])],
+        steps: [{ name: 'actualizar quote', status: 'ok' }, ...(pasoLista ? [pasoLista] : []), ...(pasoAlmacen ? [pasoAlmacen] : [])],
       });
     }
     const marca = {
@@ -3476,6 +3494,7 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
       steps: [
         { name: 'actualizar quote', status: 'error', error: r.error ?? null, discrepancias: r.discrepancias ?? [] },
         ...(pasoLista ? [pasoLista] : []),
+        ...(pasoAlmacen ? [pasoAlmacen] : []),
       ],
     });
   } finally {

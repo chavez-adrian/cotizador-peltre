@@ -101,3 +101,31 @@ export function branchIdDeIndice(domicilios, indice) {
   const d = lista[Number(indice) || 0];
   return d && d.branch_code != null ? d.branch_code : null;
 }
+
+// --- El ALMACEN que el domicilio arrastra (#409) ------------------------------
+// Operam deriva el almacen del que se entrega del `default_location` del DOMICILIO,
+// asi que elegir domicilio decide tambien de donde sale la mercancia, y el pedido
+// que se derive lo hereda. Lo descubrio el HITL de la 1288: el domicilio elegido
+// estaba configurado con Almacen MP y el quote se fue de ahi, sin aviso.
+//
+// El esperado es el que el propio Operam pone al crear un domicilio de cliente:
+// `location` = 40, producto terminado (peltre-operam.md 12). Vive aqui, en UN solo
+// lugar: si el almacen de producto terminado cambiara, cambia esta constante. No es
+// un bloqueo -- puede haber un cliente que legitimamente salga de otro almacen --,
+// es lo que hace que el vendedor se entere antes de guardar en vez de despues.
+export const ALMACEN_ESPERADO = '40';
+
+// null cuando no hay nada que decir: el domicilio entrega del almacen de siempre, o
+// Operam no dijo de cual. "Sin dato" NO se reporta como anomalia -- inventar una
+// alarma sobre lo que no se midio es como se deja de leer los avisos.
+export function avisoAlmacenDomicilio(domicilio, esperado = ALMACEN_ESPERADO) {
+  const d = domicilio || {};
+  const almacen = d.almacen == null ? '' : String(d.almacen).trim();
+  if (almacen === '' || almacen === String(esperado)) return null;
+  const nombre = texto(d.almacenNombre);
+  return {
+    almacen,
+    nombre,
+    mensaje: `Este domicilio entrega desde ${nombre ? `"${nombre}"` : `el almacen ${almacen}`}, no desde el de producto terminado. Si no es correcto, el domicilio esta mal configurado en Operam.`,
+  };
+}
