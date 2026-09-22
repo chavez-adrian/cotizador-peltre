@@ -2,6 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -50,17 +51,11 @@ function writeCots(data) {
 
 // Guardar una cotizacion NUEVA mueve el embudo (hook de prospectos): el archivo
 // se restaura igual que el de cotizaciones.
-function leerCrudo(ruta) {
-  return existsSync(ruta) ? leerArchivoSync(ruta) : null;
-}
-
-let savedCots;
-let savedProspectos;
-before(() => { savedCots = readCots(); savedProspectos = leerCrudo(PROSPECTOS_PATH); });
-after(() => {
-  writeCots(savedCots);
-  if (savedProspectos != null) escribirArchivoSync(PROSPECTOS_PATH, savedProspectos);
-});
+// #411: los data/*.json de la suite quedan como se los encontro, el ausente
+// incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
+let restaurarDatos;
+before(() => { restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]); });
+after(() => { restaurarDatos(); });
 
 function mockOperam(handlers) {
   const original = globalThis.fetch;

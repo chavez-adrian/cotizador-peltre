@@ -1,9 +1,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 
 import { esCandidatoBackfill, esSucursalTlapacoya, esCerrado, etapaBackfill, mapearSalesman, mapearVendedorPorUsuario, construirEntradaCotizacion, subtotalDesdeTotal, folioYaExiste, planearBackfill, memoizarPorClave, descubrirFolioMax, planearBackfillSinPedido, entregaCompleta, DEBTORS_SOCIOS, FOLIOS_EXCLUIDOS_MANUAL, mapearPartidasQuote, esVarianteCerrada, pedidoQueCierra, VENTANA_VARIANTE_DIAS, BANDA_VARIANTE, GRACIA_VARIANTE_DIAS, MONTO_MINIMO_B } from '../lib/backfill-operam.mjs';
 import * as backfillOperam from '../lib/backfill-operam.mjs';
@@ -1010,17 +1010,15 @@ test('planearBackfillSinPedido: SALTA un quote de otra sucursal (Shopify/Amazon/
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
-function readCots() {
-  if (!existsSync(COTS_PATH)) return [];
-  return JSON.parse(leerArchivoSync(COTS_PATH));
-}
 // OneDrive toma locks EBUSY sobre data/*.json mientras sincroniza (#117): todo acceso
 // del test pasa por lib/fs-reintento.js, nunca por fs directo.
 function writeCots(data) { escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2)); }
 
-let savedCots;
-before(() => { savedCots = readCots(); });
-after(() => { writeCots(savedCots); });
+// #411: los data/*.json de la suite quedan como se los encontro, el ausente
+// incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
+let restaurarDatos;
+before(() => { restaurarDatos = fotoDatos([COTS_PATH]); });
+after(() => { restaurarDatos(); });
 
 test('idempotencia: tras crear+setFolioOperam, folioYaExiste lo reconoce en listar()', async () => {
   writeCots([]);

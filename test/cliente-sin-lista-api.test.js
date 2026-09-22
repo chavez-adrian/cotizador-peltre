@@ -9,7 +9,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
-import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { leerArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos, fijarDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -17,6 +18,7 @@ import supertest from 'supertest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
+const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -35,9 +37,6 @@ const token = jwt.sign({ id: 1, name: 'Admin Test', role: 'admin' }, JWT_SECRET,
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
   return JSON.parse(leerArchivoSync(COTS_PATH));
-}
-function writeCots(data) {
-  escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 function registro(id) {
   return readCots().find(c => c.id === id);
@@ -86,9 +85,16 @@ async function crearCotizacion() {
   return res.body.id;
 }
 
-let cotsOriginal;
-before(() => { cotsOriginal = readCots(); });
-after(() => { writeCots(cotsOriginal); globalThis.fetch = originalFetch; });
+// #411: el punto de partida lo FIJA la suite. Sin Contactos en el disco: el
+// Contacto que otra suite dejo con este mismo celular liga a otro Cliente Operam
+// (428 CONFIRMAR_OTRA_RAZON_SOCIAL, #345) y ademas se le anota el evento de la
+// cotizacion, dejando data/prospectos.json distinto de como se encontro.
+let restaurarDatos;
+before(() => {
+  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]);
+  fijarDatos(PROSPECTOS_PATH, []);
+});
+after(() => { restaurarDatos(); globalThis.fetch = originalFetch; });
 
 test('SL1: cliente con sales_type "0" -> 422 accionable, sin POST del quote, y el registro guarda el motivo', async () => {
   const id = await crearCotizacion();

@@ -1,7 +1,8 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, chmodSync } from 'fs';
-import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
+import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -91,16 +92,12 @@ function mockWebLegacy({ validoHasta = '2026-08-05', onPost = () => {} } = {}) {
   };
 }
 
-let savedCots, savedProspectos, existiaProspectos;
-before(() => {
-  savedCots = readJson(COTS_PATH);
-  existiaProspectos = existsSync(PROSPECTOS_PATH);
-  savedProspectos = readJson(PROSPECTOS_PATH);
-});
+// #411: los data/*.json de la suite quedan como se los encontro, el ausente
+// incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
+let restaurarDatos;
+before(() => { restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]); });
 after(() => {
-  writeJson(COTS_PATH, savedCots);
-  if (existiaProspectos) writeJson(PROSPECTOS_PATH, savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
+  restaurarDatos();
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {

@@ -10,6 +10,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -362,9 +363,10 @@ const MOCK_WEB_LEGACY = {
 
 test('L12: el vendedor sin ninguna celda sube su cotizacion y el cliente generico nace con la lista del tier', async () => {
   conListas([]);
+  // #411: los dos archivos vuelven a quedar como se encontraron, el ausente
+  // incluido: restaurar una re-serializacion los CREA donde no habia ninguno.
+  const restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]);
   const cots = leerJson(COTS_PATH);
-  const cotsOriginal = JSON.parse(JSON.stringify(cots));
-  const prospectosOriginal = leerJson(PROSPECTOS_PATH);
   const id = cots.reduce((m, c) => Math.max(m, c.id), 0) + 1;
   cots.push({
     id, fecha: '2026-07-06T00:00:00Z', vendedor: 'Alejandro Chávez', cliente: 'Hotel Sin Celdas',
@@ -403,8 +405,7 @@ test('L12: el vendedor sin ninguna celda sube su cotizacion y el cliente generic
     await _esperarPostFixes();
   } finally {
     restore();
-    escribirJson(COTS_PATH, cotsOriginal);
-    escribirJson(PROSPECTOS_PATH, prospectosOriginal);
+    restaurarDatos();
   }
 });
 

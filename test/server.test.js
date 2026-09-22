@@ -1,7 +1,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, unlinkSync } from 'fs';
-import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -14,6 +15,7 @@ import { handlersWebFichaCliente } from './helpers/ficha-cliente-web.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+const DROPBOX_SUBIDAS_PATH = join(DATA_DIR, 'dropbox-subidas.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -44,9 +46,13 @@ function writeCots(data) {
   escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
-let savedCots;
-before(() => { savedCots = readCots(); });
-after(() => { writeCots(savedCots); });
+// #411: los data/*.json que esta suite escribe quedan como se los encontro, el
+// ausente incluido. El registro de subidas a Dropbox (#356) entra aqui porque es
+// fire-and-forget: los tests de la CSF le agregan filas sin pedirlo y el archivo
+// esta en .gitignore, asi que el residuo no sale en git status.
+let restaurarDatos;
+before(() => { restaurarDatos = fotoDatos([COTS_PATH, DROPBOX_SUBIDAS_PATH]); });
+after(() => { restaurarDatos(); });
 
 test('B1: POST /api/cotizacion persiste cliente.pais', async () => {
   const snap = readCots();
@@ -960,7 +966,9 @@ test('GET /api/admin/sync-contactos-google sin DATABASE_URL responde barridos va
     assert.strictEqual(res.status, 200);
     assert.deepEqual(res.body, { barridos: [], sinDb: true });
   } finally {
-    if (previo === null) escribirArchivoSync(barridosPath, '{}'); else escribirArchivoSync(barridosPath, previo);
+    // #411: el archivo que no existia se BORRA. Dejarlo en '{}' es residuo que
+    // hereda la siguiente suite, y .gitignore lo mantiene fuera de git status.
+    if (previo === null) borrarArchivoSync(barridosPath); else escribirArchivoSync(barridosPath, previo);
   }
 });
 

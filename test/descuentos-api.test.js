@@ -3,6 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos, fijarDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -12,6 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const VENDEDORES_PATH = join(DATA_DIR, 'vendedores.json');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+const PROSPECTOS_PATH = join(DATA_DIR, 'prospectos.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -67,14 +69,20 @@ function readCots() {
 
 // El registro de vendedores esta versionado: se restaura el TEXTO original, no
 // una re-serializacion, para no dejar el archivo del repo reformateado.
-let vendedoresOriginal, cotsOriginal;
+//
+// #411: el punto de partida lo FIJA la suite. Sin Contactos en el disco: un
+// Contacto que otra suite dejo con este mismo celular recibe el evento de cada
+// cotizacion que se guarda, y data/prospectos.json quedaba distinto de como se
+// encontro (esta en .gitignore, asi que no sale en git status).
+let vendedoresOriginal, restaurarDatos;
 before(() => {
   vendedoresOriginal = leerArchivoSync(VENDEDORES_PATH);
-  cotsOriginal = readCots();
+  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]);
+  fijarDatos(PROSPECTOS_PATH, []);
 });
 after(() => {
   escribirArchivoSync(VENDEDORES_PATH, vendedoresOriginal);
-  writeJson(COTS_PATH, cotsOriginal);
+  restaurarDatos();
 });
 
 test('AC3: vendedor SIN tope que manda descuento -> rechazo y nada guardado', async () => {

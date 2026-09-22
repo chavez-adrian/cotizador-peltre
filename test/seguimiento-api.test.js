@@ -2,6 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos, fijarDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -9,6 +10,8 @@ import supertest from 'supertest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
+const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
+const DROPBOX_SUBIDAS_PATH = join(__dirname, '..', 'data', 'dropbox-subidas.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -48,9 +51,17 @@ function fixture() {
   ];
 }
 
-let savedCots;
-before(() => { savedCots = readCots(); });
-after(() => { writeCots(savedCots); });
+// #411: el punto de partida lo FIJA la suite. Sin Contactos en el disco:
+// GET /api/cotizaciones anota el Origen heredado (#287) desde los Contactos que
+// encuentre en data/prospectos.json, asi que lo que devuelve el tablero dependia
+// de lo que otra suite hubiera dejado ahi. El registro de subidas a Dropbox
+// (#356) entra a la foto porque el paso de calca le agrega su fila sin pedirlo.
+let restaurarDatos;
+before(() => {
+  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH, DROPBOX_SUBIDAS_PATH]);
+  fijarDatos(PROSPECTOS_PATH, []);
+});
+after(() => { restaurarDatos(); });
 
 test('GET /api/seguimiento devuelve solo la cola del vendedor autenticado', async () => {
   writeCots(fixture());
@@ -325,11 +336,23 @@ test('DEC7: el paso de archivos (paso 6) acepta contenido y marca el paso aunque
   writeCots(cots);
   // En local Dropbox no esta configurado: la subida es fire-and-forget y NO debe
   // bloquear ni romper la respuesta (mismo patron que subirCsfDropbox).
-  const res = await supertest(app).patch('/api/cotizacion/1/calca-paso')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ paso: 'archivos_dropbox', completo: true, archivos: [{ nombre: 'posicion.pdf', contenidoBase64: 'aGVsbG8=' }] });
-  assert.equal(res.status, 200);
-  assert.equal(readCots().find(c => c.id === 1).data.calcaChecklist.find(p => p.clave === 'archivos_dropbox').completo, true);
+  //
+  // #411: "no configurado" se hace CIERTO quitando las tres vars. Con las
+  // credenciales falsas del .env la subida sale a la red REAL de Dropbox y su
+  // fila del registro (#356) aterriza DESPUES del after() de la suite: por ahi
+  // data/dropbox-subidas.json quedaba distinto de como se encontro.
+  const VARS = ['DROPBOX_REFRESH_TOKEN', 'DROPBOX_APP_KEY', 'DROPBOX_APP_SECRET'];
+  const guardadas = VARS.map(v => [v, process.env[v]]);
+  for (const v of VARS) delete process.env[v];
+  try {
+    const res = await supertest(app).patch('/api/cotizacion/1/calca-paso')
+      .set('Authorization', `Bearer ${MEMO_TOKEN}`)
+      .send({ paso: 'archivos_dropbox', completo: true, archivos: [{ nombre: 'posicion.pdf', contenidoBase64: 'aGVsbG8=' }] });
+    assert.equal(res.status, 200);
+    assert.equal(readCots().find(c => c.id === 1).data.calcaChecklist.find(p => p.clave === 'archivos_dropbox').completo, true);
+  } finally {
+    for (const [v, valor] of guardadas) if (valor !== undefined) process.env[v] = valor;
+  }
 });
 
 // --- AC3: gate server-side a Pedido liberado (#61). El sync Operam (#62) NO

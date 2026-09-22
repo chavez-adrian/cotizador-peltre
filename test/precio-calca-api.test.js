@@ -6,6 +6,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos, fijarDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -15,6 +16,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
 const VENDEDORES_PATH = join(DATA_DIR, 'vendedores.json');
+const PROSPECTOS_PATH = join(DATA_DIR, 'prospectos.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -40,9 +42,6 @@ const tokenVendedor = jwt.sign({ id: 2, name: 'Vendedor Test', role: 'vendedor' 
 function readCots() {
   if (!existsSync(COTS_PATH)) return [];
   return JSON.parse(leerArchivoSync(COTS_PATH));
-}
-function writeCots(data) {
-  escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
 const originalFetch = globalThis.fetch;
@@ -89,9 +88,16 @@ function partidaGuardada(id, codigo) {
   return readCots().find(c => c.id === id).data.items.find(i => i.codigo === codigo);
 }
 
-let cotsOriginal;
-before(() => { cotsOriginal = readCots(); });
-after(() => { writeCots(cotsOriginal); globalThis.fetch = originalFetch; });
+// #411: el punto de partida lo FIJA la suite. Sin Contactos en el disco: un
+// Contacto que otra suite dejo con este mismo celular recibe el evento de cada
+// cotizacion que se guarda (y liga a otro Cliente Operam al subir, 428 de #345),
+// asi que el veredicto dependia de lo que hubiera en data/prospectos.json.
+let restaurarDatos;
+before(() => {
+  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]);
+  fijarDatos(PROSPECTOS_PATH, []);
+});
+after(() => { restaurarDatos(); globalThis.fetch = originalFetch; });
 
 test('#279 admin: la calca se persiste con el precio del proveedor como precio de la linea', async () => {
   const res = await supertest(app).post('/api/cotizacion')

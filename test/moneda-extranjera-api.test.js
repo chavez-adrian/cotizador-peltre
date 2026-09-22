@@ -14,6 +14,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos, fijarDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -21,6 +22,16 @@ import supertest from 'supertest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
+const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
+
+// El fixture de test/operam-generico.test.js: el Contacto del MISMO celular que
+// cotiza MX4, ya ligado al Cliente Operam 555.
+const RESIDUO_OPERAM_GENERICO = [{
+  id: 1, fecha: '2026-07-01T00:00:00Z', vendedor: 'Vendedor Test',
+  celular: '+52 5588776655', celular10: '5588776655', nombre: 'Hotel Azul',
+  ciudad: 'CDMX', canal: 'WhatsApp', etapa: 'seguimiento', eventos: [],
+  data: { cliente_id: 555 },
+}];
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -98,9 +109,20 @@ async function crearCotizacion() {
   return res.body.id;
 }
 
-let cotsOriginal;
-before(() => { cotsOriginal = readCots(); });
-after(() => { writeCots(cotsOriginal); globalThis.fetch = originalFetch; });
+// #411: el punto de partida lo FIJA la suite. Sin Contactos en el disco: estas
+// cotizaciones no nacen de ninguna Oportunidad, y un Contacto del mismo celular
+// ligado a otro Cliente Operam -- el fixture que deja otra suite -- responderia
+// 428 CONFIRMAR_OTRA_RAZON_SOCIAL (#345) antes del gate de moneda.
+function fijarPuntoDePartida() {
+  fijarDatos(PROSPECTOS_PATH, []);
+}
+
+let restaurarDatos;
+before(() => {
+  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]);
+  fijarPuntoDePartida();
+});
+after(() => { restaurarDatos(); globalThis.fetch = originalFetch; });
 
 test('MX1: cliente en USD -> 422 accionable y el quote NUNCA se sube', async () => {
   const id = await crearCotizacion();
@@ -148,7 +170,7 @@ test('MX2: cliente en MXN sube exactamente como hoy', async () => {
 // la que el vendedor eligio un candidato EXISTENTE. Ese cliente no paso por la
 // fila del paso Cliente, asi que es justo el camino por el que un cliente en otra
 // moneda podria colarse -- y tiene su propia traduccion a HTTP (subirQuoteTrasAlta).
-test('MX4: el candidato elegido en la dedup tambien se detiene por su moneda, sin crear ni subir nada', async () => {
+async function escenarioCandidatoEnDolares() {
   const cots = readCots();
   const id = cots.reduce((m, c) => Math.max(m, c.id), 0) + 1;
   cots.push({
@@ -190,16 +212,38 @@ test('MX4: el candidato elegido en la dedup tambien se detiene por su moneda, si
   try {
     const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
       .set('Authorization', `Bearer ${token}`).send({ customerId: 10 });
-    assert.strictEqual(res.status, 422);
-    assert.strictEqual(res.body.codigo, CODIGO_MONEDA_EXTRANJERA);
-    assert.match(res.body.error, /USD/);
-    assert.strictEqual(postCustomer, false, 'elegir candidato nunca crea');
-    assert.strictEqual(postsQuote, 0, 'y aqui tampoco se sube');
+    return { res, id, postCustomer, postsQuote };
   } finally {
     restore();
     resetIndice(); resetSession();
   }
+}
+
+test('MX4: el candidato elegido en la dedup tambien se detiene por su moneda, sin crear ni subir nada', async () => {
+  const { res, id, postCustomer, postsQuote } = await escenarioCandidatoEnDolares();
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual(res.body.codigo, CODIGO_MONEDA_EXTRANJERA);
+  assert.match(res.body.error, /USD/);
+  assert.strictEqual(postCustomer, false, 'elegir candidato nunca crea');
+  assert.strictEqual(postsQuote, 0, 'y aqui tampoco se sube');
   assert.ok(!registro(id).folioOperam, 'la cotizacion sigue PRE');
+});
+
+// #411: el celular de MX4 es el mismo que usa test/operam-generico.test.js, que
+// escribe su Contacto en data/prospectos.json y lo limpia en su after(). Si esa
+// corrida murio antes (TaskStop, Ctrl+C, crash) el archivo queda con el Contacto
+// ligado a OTRO Cliente Operam, y el servidor responde 428
+// CONFIRMAR_OTRA_RAZON_SOCIAL (#345) antes de llegar al gate de moneda: un rojo
+// que parece del codigo y que git status no ve (data/prospectos.json esta en
+// .gitignore). Aqui se planta ese disco a proposito.
+test('MX5: el residuo de otra suite en data/prospectos.json no cambia el veredicto (#411)', async () => {
+  fijarDatos(PROSPECTOS_PATH, RESIDUO_OPERAM_GENERICO);
+  fijarPuntoDePartida(); // lo mismo que corre en el before() de esta suite
+  const { res, postCustomer, postsQuote } = await escenarioCandidatoEnDolares();
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual(res.body.codigo, CODIGO_MONEDA_EXTRANJERA);
+  assert.strictEqual(postCustomer, false);
+  assert.strictEqual(postsQuote, 0);
 });
 
 // La otra mitad del bloqueo: el aviso INMEDIATO al seleccionar al cliente en el

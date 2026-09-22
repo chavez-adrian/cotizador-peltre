@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import supertest from 'supertest';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 
 process.env.DROPBOX_REFRESH_TOKEN = 'refresh-de-prueba';
 process.env.DROPBOX_APP_KEY = 'key-de-prueba';
@@ -19,6 +20,7 @@ process.env.DROPBOX_APP_SECRET = 'secreto-de-prueba';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
+const DROPBOX_SUBIDAS_PATH = join(__dirname, '..', 'data', 'dropbox-subidas.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -162,9 +164,13 @@ function escribirCots(datos) {
   escribirArchivoSync(COTS_PATH, JSON.stringify(datos, null, 2));
 }
 
-let cotsGuardadas = [];
-before(() => { cotsGuardadas = leerCots(); });
-after(() => { escribirCots(cotsGuardadas); });
+// #411: los data/*.json que esta suite escribe quedan como se los encontro, el
+// ausente incluido. El registro de subidas a Dropbox (#356) entra aqui porque
+// cada subida le agrega su fila sin que nadie se lo pida, y el archivo esta en
+// .gitignore: el residuo no sale en git status.
+let restaurarDatos;
+before(() => { restaurarDatos = fotoDatos([COTS_PATH, DROPBOX_SUBIDAS_PATH]); });
+after(() => { restaurarDatos(); });
 
 function cotizacionDecorada() {
   return [{

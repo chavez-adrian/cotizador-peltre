@@ -2,6 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import jwt from 'jsonwebtoken';
@@ -99,14 +100,16 @@ function writeCots(data) {
   escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
-let savedCots;
+// #411: los data/*.json de la suite quedan como se los encontro, el ausente
+// incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
+let restaurarDatos;
 
 before(() => {
-  savedCots = readCots();
+  restaurarDatos = fotoDatos([COTS_PATH]);
 });
 
 after(() => {
-  writeCots(savedCots);
+  restaurarDatos();
 });
 
 // B1: GET /api/operam/clientes?q=banco retorna objetos con customer_id, CustName, tax_id

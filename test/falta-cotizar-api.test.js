@@ -11,7 +11,8 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
-import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
+import { escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -34,7 +35,6 @@ const { app } = await import('../server.js');
 const ADMIN_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 const MEMO_TOKEN = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
 
-function readJson(p) { return existsSync(p) ? JSON.parse(leerArchivoSync(p)) : []; }
 function writeJson(p, data) { escribirArchivoSync(p, JSON.stringify(data, null, 2)); }
 
 function escribirFixtures(prospectos, cotizaciones = []) {
@@ -54,17 +54,15 @@ function cola(token) {
 const originalFetch = globalThis.fetch;
 const fetchBloqueado = async (url) => { throw new Error('fetch sin mock en tests: ' + url); };
 
-let savedProspectos, savedCots, existiaProspectos;
+// #411: los data/*.json de la suite quedan como se los encontro, el ausente
+// incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
+let restaurarDatos;
 before(() => {
-  existiaProspectos = existsSync(PROSPECTOS_PATH);
-  savedProspectos = readJson(PROSPECTOS_PATH);
-  savedCots = readJson(COTS_PATH);
+  restaurarDatos = fotoDatos([PROSPECTOS_PATH, COTS_PATH]);
   globalThis.fetch = fetchBloqueado;
 });
 after(() => {
-  if (existiaProspectos) writeJson(PROSPECTOS_PATH, savedProspectos);
-  else if (existsSync(PROSPECTOS_PATH)) borrarArchivoSync(PROSPECTOS_PATH);
-  writeJson(COTS_PATH, savedCots);
+  restaurarDatos();
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {

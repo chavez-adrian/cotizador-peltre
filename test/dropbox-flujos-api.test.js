@@ -7,7 +7,8 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
-import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
+import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -52,14 +53,12 @@ const envPrevio = {
   DROPBOX_APP_SECRET: process.env.DROPBOX_APP_SECRET,
 };
 
-let cotsPrevias = null;
-let subidasPrevias = null;
-let habiaSubidas = false;
+// #411: los data/*.json de la suite quedan como se los encontro, el ausente
+// incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
+let restaurarDatos;
 
 before(() => {
-  cotsPrevias = readCots();
-  habiaSubidas = existsSync(SUBIDAS_PATH);
-  if (habiaSubidas) subidasPrevias = leerArchivoSync(SUBIDAS_PATH);
+  restaurarDatos = fotoDatos([COTS_PATH, SUBIDAS_PATH]);
   process.env.DROPBOX_REFRESH_TOKEN = 'refresh';
   process.env.DROPBOX_APP_KEY = 'key';
   process.env.DROPBOX_APP_SECRET = 'secret';
@@ -67,12 +66,10 @@ before(() => {
 
 after(() => {
   globalThis.fetch = originalFetch;
-  writeCots(cotsPrevias);
   for (const [k, v] of Object.entries(envPrevio)) {
     if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
-  if (habiaSubidas) escribirArchivoSync(SUBIDAS_PATH, subidasPrevias);
-  else if (existsSync(SUBIDAS_PATH)) borrarArchivoSync(SUBIDAS_PATH);
+  restaurarDatos();
 });
 
 beforeEach(() => {

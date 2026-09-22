@@ -2,6 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
+import { fotoDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -20,9 +21,11 @@ function writeCots(data) {
   escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
-let savedCots;
-before(() => { savedCots = readCots(); });
-after(() => { writeCots(savedCots); });
+// #411: los data/*.json de la suite quedan como se los encontro, el ausente
+// incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
+let restaurarDatos;
+before(() => { restaurarDatos = fotoDatos([COTS_PATH]); });
+after(() => { restaurarDatos(); });
 
 test('crear asigna id secuencial y persiste la entrada completa', async () => {
   writeCots([{ id: 7, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'X', data: {} }]);
