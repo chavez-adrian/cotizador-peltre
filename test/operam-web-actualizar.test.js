@@ -34,6 +34,11 @@ process.env.OPERAM_PASSWORD = 'clave_de_prueba';
 
 const QUOTE_NO = '1216';
 const CUSTOMER_ID = '14';
+// Domicilios de entrega del cliente, tal como el <select name='branch_id'> del
+// formulario real los ofrece: el value ES el branch_code (#409). El quote arranca
+// en el primero, que es el que el vendedor va a querer cambiar.
+const OPCIONES_BRANCH = ['564', '15'];
+const BRANCH_INICIAL = '564';
 
 // --- Servidor FA de mentiras --------------------------------------------------
 // Mantiene el carrito en memoria (como $_SESSION en FA real) y responde el mismo
@@ -93,13 +98,14 @@ function filaCaptura() {
 </tr>`;
 }
 
-function formularioEdicion({ lineas, editando, deliveryDate, comments, custRef, customerId, phoneInicial = '', emailInicial = '' }) {
+function formularioEdicion({ lineas, editando, deliveryDate, comments, custRef, customerId, phoneInicial = '', emailInicial = '', branchId = BRANCH_INICIAL }) {
   const filas = lineas.map((l, i) => (i === editando ? filaEnEdicion(i, l) : filaNormal(i, l))).join('\n');
   const captura = editando == null ? filaCaptura() : '';
   return `<!DOCTYPE HTML><html><body><div id='msgbox'></div>
 <form method='post' action='/sales/sales_order_entry.php'>
 <input type="hidden" name="cart_id" value='CART_TEST_${QUOTE_NO}'>
 <select name='customer_id'><option value='${customerId}' selected>Cliente de prueba</option></select>
+<select name='branch_id' title='Seleccione un Domicilio del Cliente'>${OPCIONES_BRANCH.map(b => `<option${String(b) === String(branchId) ? ' selected' : ''} value='${b}'>Domicilio ${b}</option>`).join('')}</select>
 <input type="text" name="OrderDate" value="2026-08-13">
 <table>
 ${filas}
@@ -588,6 +594,74 @@ test('#405: la reescritura del quote no manda vendedor por ningun POST', async (
     // vendedor: la reescritura reposte el customer_id del formulario.
     const process = state.posts.find((p) => p.params.has('ProcessOrder'));
     assert.equal(process.params.get('customer_id'), CUSTOMER_ID);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+// === #409: el domicilio de entrega del encabezado ===
+// El sintoma medido sobre la 1288: cambiar de domicilio movia la direccion de TEXTO
+// (delivery_address, #328) y no el domicilio SELECCIONADO, asi que el documento
+// decia Pestalozzi y Operam seguia en Bosques de Europa -- y el pedido que se
+// derive hereda ese encabezado (#252). El branch viaja en el MISMO ProcessOrder que
+// la vigencia y la lista: es el unico del ciclo.
+
+test('#409 actualizarQuoteOperam: el domicilio elegido viaja en el ProcessOrder', async () => {
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock, state } = crearServidorFA({
+    lineasIniciales: [{ stockId: 'VIEJO1', desc: 'x', qty: 1, price: 1, disc: 0 }],
+  });
+  globalThis.fetch = fetchMock;
+  try {
+    const data = dataDe([{ codigo: 'TA14Y31111', descripcion: 'Taza', cantidad: 1, precio: 100, descuento: 0 }]);
+    data.cliente.branchId = '15';
+    await actualizarQuoteOperam(QUOTE_NO, data);
+    const process = state.posts.find((p) => p.params.has('ProcessOrder'));
+    assert.equal(process.params.get('branch_id'), '15', 'el ProcessOrder lleva el domicilio elegido');
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+// La contraparte: una actualizacion que NO cambia de domicilio tiene que postear
+// exactamente lo que el formulario traia. Escribir por escribir sobre la web legacy
+// solo agrega riesgo (mismo criterio que la vigencia en #106 y la lista en #403).
+test('#409 actualizarQuoteOperam: sin domicilio elegido el ProcessOrder conserva el del quote', async () => {
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock, state } = crearServidorFA({
+    lineasIniciales: [{ stockId: 'VIEJO1', desc: 'x', qty: 1, price: 1, disc: 0 }],
+  });
+  globalThis.fetch = fetchMock;
+  try {
+    await actualizarQuoteOperam(QUOTE_NO, dataDe([{ codigo: 'TA14Y31111', descripcion: 'Taza', cantidad: 1, precio: 100, descuento: 0 }]));
+    const process = state.posts.find((p) => p.params.has('ProcessOrder'));
+    assert.equal(process.params.get('branch_id'), BRANCH_INICIAL);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+// Un branch que el formulario NO ofrece es de OTRO cliente: escribirlo haria que FA
+// rechazara el ProcessOrder ENTERO, con las partidas adentro. Se abstiene y el ciclo
+// termina bien igual -- el documento queda actualizado y lo unico pendiente es el
+// encabezado, que es justo el contrato de abstencion de #403.
+test('#409 actualizarQuoteOperam: un domicilio ajeno al cliente no se escribe y no tumba la actualizacion', async () => {
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock, state } = crearServidorFA({
+    lineasIniciales: [{ stockId: 'VIEJO1', desc: 'x', qty: 1, price: 1, disc: 0 }],
+  });
+  globalThis.fetch = fetchMock;
+  try {
+    const data = dataDe([{ codigo: 'TA14Y31111', descripcion: 'Taza', cantidad: 1, precio: 100, descuento: 0 }]);
+    data.cliente.branchId = '999';
+    const r = await actualizarQuoteOperam(QUOTE_NO, data);
+    const process = state.posts.find((p) => p.params.has('ProcessOrder'));
+    assert.equal(process.params.get('branch_id'), BRANCH_INICIAL, 'no se escribe el ajeno');
+    assert.equal(r.escrito, true);
+    assert.equal(r.ok, true);
   } finally {
     globalThis.fetch = fetchOriginal;
   }

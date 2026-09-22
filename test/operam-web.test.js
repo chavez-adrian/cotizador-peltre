@@ -11,6 +11,7 @@ import {
   leerLineasVista, leerComentariosVista, compararQuoteVista,
   parsearFormularioCliente, serializarBodyCliente, leerErrorWeb,
   opcionesListaQuote, decidirListaQuote,
+  opcionesBranchQuote, decidirBranchQuote,
   partidasDeQuote, compararPartidasQuote,
 } from '../lib/operam-web.js';
 
@@ -211,6 +212,84 @@ test('#403 decidirListaQuote: sin lista resuelta, sin campo o fuera de las opcio
   const ajena = decidirListaQuote({ esperado: '99', actual: '12', opciones: OPCIONES_FIXTURE });
   assert.equal(ajena.escribir, false);
   assert.match(ajena.motivo, /99/);
+});
+
+// === #409: el domicilio de entrega del encabezado del quote ===
+// El gemelo de la lista, y por la misma razon: al ACTUALIZAR, el header se
+// reposteaba con el branch_id que venia del formulario, asi que cambiar de
+// domicilio movia la direccion de TEXTO (#328) y no el domicilio seleccionado.
+// Medido sobre la 1288: documento en Pestalozzi, quote en Bosques de Europa.
+
+// Las opciones salen del formulario REAL de edicion, no de una cadena escrita a
+// mano: ahi el select se llama branch_id y sus <option value> son los branch_code
+// del cliente, que es lo que la cotizacion guarda. Contra una cadena inventada
+// esto solo confirmaria el regex contra si mismo (leccion de #36).
+test('#409 opcionesBranchQuote: los domicilios del cliente salen del formulario real', () => {
+  const FORM_1216 = readFileSync(join(DIR_FIXTURES, 'quote-1216-form-edicion.html'), 'utf8');
+  const ops = opcionesBranchQuote(FORM_1216);
+  assert.ok(ops.length >= 2, 'el formulario real ofrece varios domicilios');
+  assert.ok(ops.every(o => o.id !== '' && o.nombre !== ''), 'cada opcion trae su branch_code y su nombre');
+  assert.ok(ops.some(o => o.id === '31'), 'entre ellos el que el quote tiene seleccionado');
+});
+
+test('#409 opcionesBranchQuote: sin el select no hay opciones (y entonces no se escribe nada)', () => {
+  assert.deepEqual(opcionesBranchQuote('<html><body>otra pagina</body></html>'), []);
+  assert.deepEqual(opcionesBranchQuote(null), []);
+});
+
+const BRANCHES_FIXTURE = [{ id: '564', nombre: 'Bosques de Europa' }, { id: '15', nombre: 'Pestalozzi' }];
+
+test('#409 decidirBranchQuote: el domicilio elegido distinto del del quote SI se escribe', () => {
+  const d = decidirBranchQuote({ esperado: '15', actual: '564', opciones: BRANCHES_FIXTURE });
+  assert.equal(d.escribir, true);
+  assert.equal(d.branchId, '15');
+});
+
+// Se compara por TEXTO: el branch_code llega como numero desde Operam y como
+// cadena desde la cotizacion, y tratarlos como distintos repostearia el header
+// sin necesidad en cada actualizacion.
+test('#409 decidirBranchQuote: el quote que ya esta en ese domicilio no se repostea', () => {
+  const d = decidirBranchQuote({ esperado: '15', actual: 15, opciones: BRANCHES_FIXTURE });
+  assert.equal(d.escribir, false);
+  assert.equal(d.yaCorrecto, true);
+});
+
+// Los tres motivos de abstencion. Ninguno tumba la actualizacion: las partidas y la
+// vigencia ya quedaron bien y lo unico pendiente es el encabezado. El tercero es el
+// que importa de verdad -- escribir un branch que el formulario no ofrece (de OTRO
+// cliente) hace que FA rechace el ProcessOrder ENTERO, con las partidas adentro.
+test('#409 decidirBranchQuote: sin domicilio, sin campo o ajeno al cliente no se escribe y se da el motivo', () => {
+  const sinBranch = decidirBranchQuote({ esperado: null, actual: '564', opciones: BRANCHES_FIXTURE });
+  assert.equal(sinBranch.escribir, false);
+  assert.match(sinBranch.motivo, /cotizacion/i);
+
+  const sinCampo = decidirBranchQuote({ esperado: '15', actual: undefined, opciones: BRANCHES_FIXTURE });
+  assert.equal(sinCampo.escribir, false);
+  assert.match(sinCampo.motivo, /branch_id/);
+
+  const ajeno = decidirBranchQuote({ esperado: '999', actual: '564', opciones: BRANCHES_FIXTURE });
+  assert.equal(ajeno.escribir, false);
+  assert.match(ajeno.motivo, /999/);
+});
+
+test('#409 serializarBodyQuote: branchId sustituye branch_id y no toca nada mas', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  assert.ok('branch_id' in campos, 'el formulario trae el domicilio del quote');
+  const body = serializarBodyQuote(campos, { deliveryDate: '2026-08-26', branchId: '15' });
+  assert.equal(body.get('branch_id'), '15');
+  assert.equal(body.get('delivery_date'), '2026-08-26');
+  assert.equal(body.get('customer_id'), campos.customer_id);
+  assert.equal(body.get('sales_type'), campos.sales_type);
+  assert.equal(body.get('Comments'), campos.Comments);
+});
+
+// Sin branchId el body sale con el que el formulario traia: es el camino de toda
+// actualizacion que no cambia de domicilio, y tiene que quedar byte a byte como
+// antes de este ticket.
+test('#409 serializarBodyQuote: sin branchId el domicilio del formulario no se toca', () => {
+  const { campos } = parsearFormularioQuote(FIXTURE);
+  const body = serializarBodyQuote(campos, { deliveryDate: '2026-08-26' });
+  assert.equal(body.get('branch_id'), campos.branch_id);
 });
 
 test('#403 serializarBodyQuote: salesType sustituye sales_type y no toca nada mas', () => {
