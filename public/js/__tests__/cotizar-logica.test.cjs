@@ -7,6 +7,7 @@ let sincronizarCorreoFactura;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
+let debeProponerEnvia;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha;
@@ -16,6 +17,7 @@ before(async () => {
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
+    debeProponerEnvia,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha,
@@ -759,4 +761,40 @@ test('#413-7: la partida sin precio no aporta al subtotal', () => {
 test('#413-8: subtotalLineas respeta el descuento por partida y el carrito vacio', () => {
   assert.strictEqual(subtotalLineas([{ cantidad: 3, precio: 100, descuento: 10 }]), 270);
   assert.strictEqual(subtotalLineas([]), 0);
+});
+
+// === #419: "Sin envio" es una eleccion, no la ausencia de una ===
+// Hasta #418, al pintar el tab Envio se forzaba la opcion a envia.com con solo
+// ver 'none' + CP + carrito, y de paso se disparaba una consulta de tarifas. Pero
+// 'none' es a la vez el default de una cotizacion nueva y el "Sin envio" que el
+// vendedor acaba de elegir: en el HITL de #415 hubo que volver a elegirlo tres
+// veces en la misma cotizacion. Lo que faltaba no era una opcion, era saber si
+// ya hubo DECISION. Hermana de debeAutoCotizarEnvia un escalon antes: aquella
+// decide si CONSULTAR tarifas, esta si cambiarle la opcion al vendedor.
+test('#419-1: nadie decidio todavia + CP de entrega valido + carrito con partidas -> se propone envia.com', () => {
+  assert.strictEqual(debeProponerEnvia({ envioDecidido: false, shippingOpt: 'none', cp: '56577', cartSize: 3 }), true);
+});
+
+test('#419-2: con la decision tomada no se propone nada, sea cual sea la opcion vigente', () => {
+  for (const shippingOpt of ['none', 'envia', 'manual']) {
+    assert.strictEqual(debeProponerEnvia({ envioDecidido: true, shippingOpt, cp: '56577', cartSize: 3 }), false, shippingOpt);
+  }
+});
+
+test('#419-3: sin CP de entrega de 5 digitos no se propone envia.com', () => {
+  for (const cp of ['', '5657', 'K1A 0A9', undefined, null]) {
+    assert.strictEqual(debeProponerEnvia({ envioDecidido: false, shippingOpt: 'none', cp, cartSize: 3 }), false, String(cp));
+  }
+});
+
+test('#419-4: carrito vacio -> no se propone envia.com', () => {
+  assert.strictEqual(debeProponerEnvia({ envioDecidido: false, shippingOpt: 'none', cp: '56577', cartSize: 0 }), false);
+});
+
+// El borrador de sesion restaura la opcion tal cual pero NO la decision (queda
+// declarado como fuera de alcance en #419): si lo restaurado ya es envia.com o
+// manual no hay nada que proponer, la propuesta solo existe para salir de 'none'.
+test('#419-5: con una opcion ya puesta distinta de "Sin envio" no hay nada que proponer', () => {
+  assert.strictEqual(debeProponerEnvia({ envioDecidido: false, shippingOpt: 'envia', cp: '56577', cartSize: 3 }), false);
+  assert.strictEqual(debeProponerEnvia({ envioDecidido: false, shippingOpt: 'manual', cp: '56577', cartSize: 3 }), false);
 });

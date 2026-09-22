@@ -177,6 +177,7 @@ import {
   buildEnvioEstructurado,
   restaurarEnvioDesdeCotizacion,
   debeAutoCotizarEnvia,
+  debeProponerEnvia,
   buildEnviaRateRestauradaHtml,
   buildItemsYTotales,
   buildItemEnvio,
@@ -1943,6 +1944,12 @@ function updateShippingSummary() {
 // === ENVIA.COM ===
 let enviaRateSeleccionado = null; // { carrier, servicio, desc, cost }
 let envioInvalidadoPorCantidad = false; // issue #89: cambio de cantidad invalido la tarifa vigente
+// issue #419: hay decision de envio. "Sin envio" ('none') es a la vez el default
+// de una cotizacion nueva y una eleccion deliberada del vendedor; sin esta marca
+// el tab Envio no podia distinguirlas y pisaba la segunda con la auto-propuesta
+// de envia.com en cada render. Es de la COTIZACION, no del vendedor: nace apagada
+// y vuelve a apagarse con una cotizacion nueva.
+let envioDecidido = false;
 let envioDescuento = 0; // issue #137: % de descuento de la partida de flete
 
 // Captura del descuento del flete desde el resumen (#137). Mismo freno que las
@@ -2637,7 +2644,7 @@ function envioCapturadoEnFormulario() {
 // dos caminos que restauran envio tal cual: Cargar del historial (cargarCotizacion)
 // y el borrador de sesion (#180, restaurarBorrador) -- antes eran dos copias
 // espejo del mismo bloque de nueve escrituras.
-function aplicarEnvioRestaurado(envio) {
+function aplicarEnvioRestaurado(envio, { decidido = false } = {}) {
   const envioRestore = restaurarEnvioDesdeCotizacion(envio);
   document.getElementById('shipping-option').value = envioRestore.opcion;
   document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
@@ -2655,6 +2662,11 @@ function aplicarEnvioRestaurado(envio) {
   enviaRateSeleccionado = envioRestore.enviaRateSeleccionado;
   envioInvalidadoPorCantidad = false;
   envioDescuento = envioRestore.descuento || 0;
+  // #419: restaurar del historial es una decision tomada -- esa cotizacion ya se
+  // genero y su total es una promesa hecha al cliente, asi que abrirla a editar
+  // no puede agregarle envio por su cuenta. El borrador de sesion y el arranque
+  // limpio caen en el default y dejan la cotizacion en "nadie decidio".
+  envioDecidido = decidido;
 }
 
 // === PDF GENERATION ===
@@ -2958,6 +2970,9 @@ function nuevaCotizacion() {
   document.getElementById('envia-resumen').style.display = 'none';
   enviaRateSeleccionado = null;
   envioInvalidadoPorCantidad = false;
+  // Una cotizacion nueva vuelve a "nadie decidio el envio" (#419), por el mismo
+  // motivo que el descuento del flete: la decision es de la cotizacion.
+  envioDecidido = false;
   // El descuento del flete es de la cotizacion, no del vendedor (#137).
   envioDescuento = 0;
   // La marca de decorado es de la cotizacion, no del vendedor (#91): una nueva
@@ -4484,18 +4499,22 @@ function switchTab(name) {
     // Auto-cotizar con el CP ya capturado en el bloque de entrega si aplica
     // (#84: mismo campo, ya no hay que copiarlo a un envia-cp aparte).
     const cpCliente = document.getElementById('cl-cp-entrega')?.value?.trim();
-    if (cpCliente && /^\d{5}$/.test(cpCliente)) {
-      const opt = document.getElementById('shipping-option');
-      if (opt && opt.value === 'none' && state.cart.size > 0) {
-        opt.value = 'envia';
-        document.getElementById('shipping-envia').style.display = 'block';
-        document.getElementById('shipping-manual').style.display = 'none';
-      }
-      // #102: si ya hay una tarifa elegida (restaurada del historial o de la
-      // misma sesion) no se vuelve a consultar envia.com al re-entrar al tab.
-      if (debeAutoCotizarEnvia(opt?.value, state.cart.size, enviaRateSeleccionado)) {
-        setTimeout(cotizarEnvia, 100);
-      }
+    const opt = document.getElementById('shipping-option');
+    // #419: la propuesta de envia.com solo corre mientras NADIE ha decidido el
+    // envio; con una decision tomada la opcion vigente se respeta tal cual. El
+    // juicio vive en debeProponerEnvia, no aqui: dentro del manejador de tab no
+    // se podia probar ni compartir con #420.
+    if (opt && debeProponerEnvia({ envioDecidido, shippingOpt: opt.value, cp: cpCliente, cartSize: state.cart.size })) {
+      opt.value = 'envia';
+      document.getElementById('shipping-envia').style.display = 'block';
+      document.getElementById('shipping-manual').style.display = 'none';
+    }
+    // #102: si ya hay una tarifa elegida (restaurada del historial o de la
+    // misma sesion) no se vuelve a consultar envia.com al re-entrar al tab.
+    // El CP sigue siendo requisito aparte (#84): con la opcion en envia.com y un
+    // CP a medio capturar, consultar solo pintaria el error de CP invalido.
+    if (cpValido(cpCliente || '', 'MX') && debeAutoCotizarEnvia(opt?.value, state.cart.size, enviaRateSeleccionado)) {
+      setTimeout(cotizarEnvia, 100);
     }
   }
   updateTabIndicators();
@@ -6892,7 +6911,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Envio (issue #102): restaura carrier/servicio/precio tal cual se guardo,
     // sin re-cotizar con envia.com. Cotizaciones viejas sin envio estructurado
     // degradan a "sin seleccion" (restaurarEnvioDesdeCotizacion lo resuelve).
-    aplicarEnvioRestaurado(cot.envio);
+    aplicarEnvioRestaurado(cot.envio, { decidido: true });
 
     // Notas y vigencia
     if (cot.notas) document.getElementById('resumen-notas').value = cot.notas.map(n => `- ${n}`).join('\n');
@@ -7026,6 +7045,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Salir de "envia" descarta la invalidacion por cantidad (issue #89): ya no
     // aplica, el envio activo dejo de depender de una tarifa de envia.com.
     if (val !== 'envia') envioInvalidadoPorCantidad = false;
+    // #419: tocar el selector ES la decision, y cuenta igual para "Sin envio":
+    // a partir de aqui el tab Envio deja de proponer envia.com por su cuenta.
+    envioDecidido = true;
     updateResumen();
     updateTabIndicators();
   });

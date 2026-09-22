@@ -232,6 +232,25 @@ export function debeAutoCotizarEnvia(shippingOpt, cartSize, enviaRateSeleccionad
   return shippingOpt === 'envia' && cartSize > 0 && !enviaRateSeleccionado;
 }
 
+// Compuerta de la AUTO-PROPUESTA de envia.com al pintar el tab Envio (#419).
+// Hermana de debeAutoCotizarEnvia un escalon antes: aquella decide si CONSULTAR
+// tarifas, esta si cambiarle la opcion al vendedor. Hasta #418 bastaba ver la
+// opcion en 'none' con CP y carrito para forzar envia.com en CADA render, y
+// 'none' es a la vez el default de una cotizacion nueva y el "Sin envio" recien
+// elegido: el vendedor tenia que volver a elegirlo cada vez que pasaba por el
+// paso. Por eso la llave no es la opcion sino envioDecidido -- tocar el selector
+// (cualquier valor, incluido "Sin envio") o cargar una cotizacion del historial
+// cuentan como decision, y con decision tomada no se propone nada.
+// El CP se juzga con la regla MX a proposito: es la que ha regido siempre a esta
+// propuesta (envia.com se auto-cotiza sobre 5 digitos), aparte del pais del
+// domicilio, que si manda en cotizarEnvia.
+export function debeProponerEnvia({ envioDecidido, shippingOpt, cp, cartSize }) {
+  if (envioDecidido) return false;
+  if (shippingOpt !== 'none') return false;
+  if (!(cartSize > 0)) return false;
+  return cpValido(cp || '', 'MX');
+}
+
 // Tarjeta de solo lectura para el envio via envia.com restaurado del historial
 // (#102, hallazgo del code review): sin ella, #envia-results quedaba vacio y el
 // vendedor perdia la confirmacion visual de que ya habia un envio elegido en el
