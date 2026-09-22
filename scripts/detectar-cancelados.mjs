@@ -5,11 +5,25 @@
 // cancelado". Este script enumera TODOS los candidatos del backfill (no solo los que se
 // importarian: la clasificacion importable/cerrado varia con los datos en vivo y con el
 // fix de entrega parcial), scrapea cada uno con login web (lib/operam-web.js, con
-// re-login si la sesion expira) y escribe la lista de cancelados. El backfill lee ese
+// re-login si la sesion expira) y acumula la lista de cancelados. El backfill lee ese
 // json y los excluye (NO scrapea en runtime: la fragilidad de la web queda aislada aqui).
 //
+// EL UNIVERSO QUE SE RECORRE ES EL DE LOS CANDIDATOS DEL BACKFILL (#76), no todos los
+// documentos de Operam: la Parte A filtra por esCandidatoBackfill + esSucursalTlapacoya
+// y la Parte B se limita a los folios que planearBackfillSinPedido propone importar.
+// Por eso data/cancelados.json NO es un censo de cancelados y no se puede leer como tal
+// (#406: el quote 1196 estaba anulado sin que la foto lo supiera). Quien necesite
+// comprobar un conjunto propio verifica EN VIVO sobre esos documentos, como hace
+// scripts/corregir-lista-quotes.mjs.
+//
+// Un documento que deja de ser candidato ya no se vuelve a mirar, asi que la escritura
+// es ACUMULATIVA (#408): cada corrida UNE lo recien verificado con lo que el archivo ya
+// traia (lib/cancelados.js) y nunca quita folios -- una cancelacion en FrontAccounting
+// no se revierte. Reemplazar el archivo perdia lo ya medido: el 2026-09-21 una corrida
+// dejo `quotes: []` y borro los cuatro folios de junio (1077, 1093, 1098, 1105).
+//
 // Uso:  node scripts/detectar-cancelados.mjs
-import { readFileSync, existsSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -26,6 +40,8 @@ if (existsSync(envPath)) {
 const { listarPedidos, obtenerQuote, obtenerCliente, _setMinInterval } = await import('../lib/operam-client.js');
 const { planearBackfillSinPedido, descubrirFolioMax, memoizarPorClave, esCandidatoBackfill, esSucursalTlapacoya } = await import('../lib/backfill-operam.mjs');
 const { abrirSesionWeb, estaCanceladoHtml } = await import('../lib/operam-web.js');
+const { unirCancelados } = await import('../lib/cancelados.js');
+const { leerArchivoSync, escribirArchivoSync } = await import('../lib/fs-reintento.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
 
 _setMinInterval(Number(process.env.BACKFILL_THROTTLE_MS) || 1500);
@@ -92,14 +108,14 @@ const orders = await scrapear(ordersA, 30, 'A');
 console.log('Verificando Parte B (cotizaciones, trans_type 32)...');
 const quotes = await scrapear(quotesB, 32, 'B');
 
-const out = {
-  generado: new Date().toISOString(),
-  nota: 'Pedidos (orders, trans_type 30) y cotizaciones (quotes, trans_type 32) ANULADOS en Operam. La API no expone la cancelacion; detectado por scraping de la web legacy (view_sales_order.php) sobre TODOS los candidatos. Generado por scripts/detectar-cancelados.mjs.',
-  orders: orders.sort((a, b) => Number(a) - Number(b)),
-  quotes: quotes.sort((a, b) => Number(a) - Number(b)),
-};
-writeFileSync(join(ROOT, 'data', 'cancelados.json'), JSON.stringify(out, null, 2) + '\n', 'utf8');
+// La foto previa entra a la union: lo que esta corrida no volvio a mirar (porque dejo
+// de ser candidato del backfill) sigue estando cancelado en Operam.
+const canceladosPath = join(ROOT, 'data', 'cancelados.json');
+const previo = existsSync(canceladosPath) ? leerArchivoSync(canceladosPath) : null;
+const out = unirCancelados({ previo, orders, quotes, generado: new Date().toISOString() });
+escribirArchivoSync(canceladosPath, JSON.stringify(out, null, 2) + '\n');
 console.log(`\nListo. orders cancelados: ${out.orders.length} | quotes cancelados: ${out.quotes.length}`);
+console.log(`  (verificados cancelados en esta corrida: ${orders.length} orders, ${quotes.length} quotes; el resto viene de la foto previa)`);
 console.log(`orders: ${out.orders.join(', ')}`);
 console.log(`quotes: ${out.quotes.join(', ')}`);
 console.log('Escrito data/cancelados.json');
