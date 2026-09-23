@@ -37,6 +37,9 @@ export function operamEnMemoria({
     { id: 15, sales_type: 'M100' },
   ],
   salesman = 2,
+  // El registro de vendedores (`listar`). Por omision, el unico vendedor de
+  // siempre; los tests de la cartera del domicilio (#414) pasan el suyo.
+  vendedores = [{ name: 'Alejandro Chavez', operam_id: salesman }],
   ignoraCliente = [],
   ignoraBranch = [],
   segmentoWeb = { ok: true },
@@ -121,9 +124,13 @@ export function operamEnMemoria({
       registrar('obtenerClientePorId', id);
       return buscarCliente(id);
     },
+    // La lista de domicilios de GET /customers/:id NO trae el id `salesman` (solo
+    // `salesman_name`, en texto con acentos); el id lo trae GET /branches/:code
+    // (#414, llaves medidas en vivo 2026-09-07). Quitarlo aqui es lo que obliga a
+    // leer el vendedor de un domicilio por donde Operam de verdad lo expone.
     async obtenerBranchesCliente(id) {
       registrar('obtenerBranchesCliente', id);
-      return buscarCliente(id)?.branches || [];
+      return (buscarCliente(id)?.branches || []).map(({ salesman: _id, ...resto }) => resto);
     },
     async obtenerBranch(code) {
       registrar('obtenerBranch', code);
@@ -177,7 +184,7 @@ export function operamEnMemoria({
     },
     async listar() {
       registrar('listar');
-      return [{ name: 'Alejandro Chavez', operam_id: salesman }];
+      return vendedores;
     },
     async ligarCliente(prospectoId, clienteId, evento) {
       registrar('ligarCliente', prospectoId, clienteId, evento);

@@ -920,6 +920,9 @@ test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente exi
         return jsonResponse({ result: true, cust_branch_id: 33 });
       }
       if (opts?.method === 'PUT') { branchPuts++; return jsonResponse({ result: true }); }
+      // #414: la Matriz es de Adrian (salesman 1), y GET /branches/:code es quien
+      // trae ese id; la cotizacion es de Alejandro (2).
+      if (u.includes('/branches/20')) return jsonResponse({ data: [{ branch_code: '20', br_name: 'Matriz', salesman: '1', inactive: '0' }] });
       return jsonResponse({ data: [{}] });
     },
     '/api/v3/sales/customers': (u, opts) => {
@@ -961,6 +964,7 @@ test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente exi
   assert.equal(branchPost.email, 'entrega@hotelazul.mx');
   assert.equal(branchPost.location, 40, 'POST usa location (no default_location)');
   assert.equal(branchPost.ship_via, 1);
+  assert.equal(branchPost.salesman, 1, 'el domicilio nuevo hereda la cartera del cliente, no el vendedor de la cotizacion (#414)');
 
   // El quote sale a nombre del cliente existente, con la sucursal recien creada.
   assert.equal(quoteBody.customer_id, 10);

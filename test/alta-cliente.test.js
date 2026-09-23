@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { darDeAlta, upgradeFiscal } from '../lib/alta-cliente.js';
+import { darDeAlta, upgradeFiscal, vendedorDeCartera } from '../lib/alta-cliente.js';
 import { operamEnMemoria } from './helpers/operam-memoria.js';
 import { fuenteSegmento, RESULTADO_SEGMENTO_PENDIENTE } from '../lib/segmento-pendiente.js';
 
@@ -1148,4 +1148,273 @@ test('el upgrade fiscal devuelve el id de la fila de auditoria de su actualizaci
   const esperado = auditoria.filas.findIndex(a => a[2] === 'actualizado') + 1;
   assert.ok(esperado > 0, 'el upgrade registro la actualizacion en la auditoria');
   assert.equal(await res.logId, esperado);
+});
+
+// === #414: el domicilio nuevo de un Cliente Operam existente respeta su cartera ===
+// En Operam el vendedor vive en el DOMICILIO de entrega y el "Reporte de Comisiones
+// Por Flujo" paga por domicilio: ni el quote ni la factura tienen vendedor propio.
+// Crear OTRO domicilio a nombre de quien captura partia la cartera del cliente en
+// silencio. Regla (a') de Adrian (2026-09-22): si los domicilios ACTIVOS que el
+// cliente ya tiene son de UNA sola persona, el nuevo nace a su nombre; si no, como
+// hoy, pero diciendolo. Persona = su id de Operam esta en el registro de vendedores;
+// los canales (Amazon, Shopify, Mostrador, Mercado Libre) y el vacio no lo estan.
+// Ids reales de Operam (peltre-operam.md): 1 Adrian, 2 Alejandro, 3 Shopify.
+
+const REGISTRO = [
+  { name: 'Adrian Chavez', operam_id: 1 },
+  { name: 'Alejandro Chavez', operam_id: 2 },
+  { name: 'Jaime Abaroa', operam_id: null },
+];
+
+test('la cartera cuyos domicilios son de una sola persona le da esa persona al domicilio nuevo', () => {
+  const r = vendedorDeCartera([
+    { branch_code: '7', salesman: '2', inactive: '0' },
+    { branch_code: '8', salesman: '2', inactive: '0' },
+  ], REGISTRO);
+
+  assert.equal(r.salesman, 2);
+  assert.equal(r.motivo, 'persona-unica');
+});
+
+test('la cartera con dos personas distintas no le da vendedor al domicilio nuevo', () => {
+  const r = vendedorDeCartera([
+    { branch_code: '475', salesman: '1', inactive: '0' },
+    { branch_code: '476', salesman: '2', inactive: '0' },
+  ], REGISTRO);
+
+  assert.equal(r.salesman, null);
+  assert.equal(r.motivo, 'varias-personas');
+});
+
+// El vacio no es una persona aunque el registro tenga un vendedor SIN operam_id
+// (Jaime Abaroa): comparar texto contra texto los empataria (la misma trampa de
+// mapearSalesman en el backfill, #76).
+test('la cartera de solo canales o domicilios sin vendedor no tiene persona', () => {
+  const r = vendedorDeCartera([
+    { branch_code: '203', salesman: '3', inactive: '0' },
+    { branch_code: '54', salesman: '', inactive: '0' },
+    { branch_code: '55', salesman: '0', inactive: '0' },
+    { branch_code: '56', salesman: null, inactive: '0' },
+    { branch_code: '57', inactive: '0' },
+  ], REGISTRO);
+
+  assert.equal(r.salesman, null);
+  assert.equal(r.motivo, 'sin-persona');
+});
+
+test('un domicilio inactivo no cuenta para la cartera', () => {
+  const r = vendedorDeCartera([
+    { branch_code: '7', salesman: '2', inactive: '0' },
+    { branch_code: '8', salesman: '1', inactive: '1' },
+  ], REGISTRO);
+
+  assert.equal(r.salesman, 2);
+  assert.equal(r.motivo, 'persona-unica');
+});
+
+// --- darDeAlta: el domicilio nuevo ("es otro domicilio de este cliente") ---
+// Los domicilios del cliente se leen como los devuelve GET /branches/:code: con el
+// id `salesman` en texto e `inactive` "0"/"1" (llaves medidas en vivo, 2026-09-07,
+// branch 564 del cliente 15). La lista de GET /customers/:id solo trae
+// `salesman_name`, y el adaptador en memoria la modela asi.
+
+function clienteConCartera(branches) {
+  return { customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000', branches };
+}
+
+function otroDomicilioPedidoPor(vendedor, extra = {}) {
+  return solicitud({
+    comercial: { vendedor, tier: 'M100', salesTypeId: 15, segmentoId: null, correoFacturacion: '', usoCfdi: '' },
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'otro-domicilio', clienteId: 41 },
+    ...extra,
+  });
+}
+
+test('el domicilio nuevo de un cliente de otra persona nace a nombre de esa persona, no de quien lo pide', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '7', br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000', salesman: '2', inactive: '0' },
+      { branch_code: '8', br_name: 'Planta', addr_street: 'Camino viejo', addr_zip: '54000', salesman: '2', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Adrian Chavez'), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const [post] = operam.pedidos('crearBranchCliente');
+  assert.equal(post.args[1].salesman, 2, 'el POST viaja con el vendedor del cliente');
+  const cartera = paso(res, 'vendedor branch');
+  assert.equal(cartera.status, 'ok');
+  assert.equal(cartera.mensaje, 'El domicilio nuevo queda a nombre de Alejandro Chavez, que atiende a este cliente');
+  assert.match(cartera.detalle, /salesman 2/);
+  assert.match(cartera.detalle, /7, 8/);
+  assert.match(cartera.detalle, /pedia 1/);
+});
+
+test('el domicilio nuevo hereda a la persona aunque el cliente tenga tambien un domicilio de canal', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '7', br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000', salesman: '2', inactive: '0' },
+      { branch_code: '8', br_name: 'Tienda en linea', salesman: '3', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Adrian Chavez'), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente')[0].args[1].salesman, 2);
+  assert.equal(operam.branch(res.domicilioId).salesman, 2);
+  assert.equal(paso(res, 'vendedor branch').status, 'ok');
+});
+
+test('con dos personas en la cartera el domicilio nuevo va a quien lo pide y el paso avisa por que', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '475', br_name: 'Estudio', salesman: '1', inactive: '0' },
+      { branch_code: '476', br_name: 'Lemus', salesman: '2', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Adrian Chavez'), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente')[0].args[1].salesman, 1, 'como hoy: el vendedor de la solicitud');
+  const aviso = paso(res, 'vendedor branch');
+  assert.equal(aviso.status, 'warn');
+  assert.equal(aviso.mensaje, 'El domicilio nuevo queda a nombre de Adrian Chavez: el cliente no tiene un vendedor unico en sus domicilios');
+  assert.match(aviso.detalle, /475=1 Adrian Chavez/);
+  assert.match(aviso.detalle, /476=2 Alejandro Chavez/);
+});
+
+test('con solo canales o vendedor vacio en la cartera el domicilio nuevo va a quien lo pide y el paso avisa', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '203', br_name: 'Shopify', salesman: '3', inactive: '0' },
+      { branch_code: '54', br_name: 'Bodega', salesman: '0', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Alejandro Chavez'), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente')[0].args[1].salesman, 2);
+  const aviso = paso(res, 'vendedor branch');
+  assert.equal(aviso.status, 'warn');
+  assert.equal(aviso.mensaje, 'El domicilio nuevo queda a nombre de Alejandro Chavez: el cliente no tiene un vendedor unico en sus domicilios');
+  assert.match(aviso.detalle, /203=3 \(fuera del registro de vendedores\)/);
+});
+
+test('un domicilio inactivo de otra persona no le quita la cartera al domicilio nuevo', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '7', br_name: 'Matriz', salesman: '2', inactive: '0' },
+      { branch_code: '8', br_name: 'Vieja', salesman: '1', inactive: '1' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Adrian Chavez'), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente')[0].args[1].salesman, 2);
+  assert.equal(paso(res, 'vendedor branch').status, 'ok');
+});
+
+// La cartera es un paso mas del domicilio nuevo y NUNCA lo bloquea: sin registro
+// de vendedores no se sabe de quien es el cliente, asi que se escribe como antes
+// de #414 y el paso lo dice. El alta completa manda el id del selector
+// (`salesmanId`), asi que ahi el registro solo lo lee la cartera.
+test('sin registro de vendedores el domicilio nuevo se crea con el vendedor de la solicitud y el paso avisa', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    falla: { listar: 'Neon no responde' },
+    clientes: [clienteConCartera([
+      { branch_code: '7', br_name: 'Matriz', salesman: '2', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Adrian Chavez', {
+    comercial: { vendedor: 'Adrian Chavez', salesmanId: '1', tier: 'M100', salesTypeId: 15, segmentoId: null, correoFacturacion: '', usoCfdi: '' },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente')[0].args[1].salesman, '1');
+  const aviso = paso(res, 'vendedor branch');
+  assert.equal(aviso.status, 'warn');
+  assert.equal(aviso.mensaje, 'El domicilio nuevo queda con el vendedor que se pidio: no se pudo revisar quien atiende a este cliente');
+  assert.match(aviso.detalle, /Neon no responde/);
+});
+
+// Sin regresion: el Cliente Operam que nace en ESTA corrida no tiene cartera que
+// heredar, asi que su domicilio sigue naciendo con el vendedor de la solicitud.
+test('el cliente recien creado sigue naciendo con el vendedor de la solicitud, sin paso de cartera', async () => {
+  const operam = operamEnMemoria({ vendedores: REGISTRO });
+  const res = await darDeAlta(solicitud({
+    comercial: { vendedor: 'Adrian Chavez', tier: 'M100', salesTypeId: 15, segmentoId: null, correoFacturacion: '', usoCfdi: '' },
+    domicilioEntrega: DOMICILIO,
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.creadoNuevo, true);
+  assert.equal(operam.pedidos('crearClienteDirecto')[0].args[0].salesman, 1);
+  assert.equal(operam.pedidos('actualizarBranchCliente')[0].args[2].salesman, 1);
+  assert.equal(paso(res, 'vendedor branch'), undefined);
+});
+
+// Sin regresion: el reintento que encuentra el domicilio de un intento anterior no
+// lo vuelve a escribir, y la cartera no entra en esa busqueda (nombre + calle + CP).
+test('el reintento que reusa el domicilio equivalente no crea otro ni le cambia el vendedor', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '7', br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000', salesman: '2', inactive: '0' },
+      { branch_code: '9', br_name: DOMICILIO.nombre, addr_street: DOMICILIO.calle, addr_zip: DOMICILIO.cp, salesman: '1', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Adrian Chavez'), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.domicilioId, '9');
+  assert.equal(paso(res, 'POST branch').status, 'omitido');
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0);
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 0);
+  assert.equal(operam.branch('9').salesman, '1');
+  assert.equal(paso(res, 'vendedor branch'), undefined);
+});
+
+// El aviso nombra lo que de verdad se escribio: un id que el registro no conoce
+// (el selector del alta solo ofrece el registro, pero el cuerpo puede traer otro)
+// sigue viajando, asi que decir "sin vendedor" seria falso.
+test('el aviso de la cartera nombra por su id al vendedor pedido que el registro no conoce', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '475', br_name: 'Estudio', salesman: '1', inactive: '0' },
+      { branch_code: '476', br_name: 'Lemus', salesman: '2', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Adrian Chavez', {
+    comercial: { vendedor: 'Adrian Chavez', salesmanId: '7', tier: 'M100', salesTypeId: 15, segmentoId: null, correoFacturacion: '', usoCfdi: '' },
+  }), operam.deps);
+
+  assert.equal(operam.pedidos('crearBranchCliente')[0].args[1].salesman, '7');
+  assert.equal(paso(res, 'vendedor branch').mensaje,
+    'El domicilio nuevo queda a nombre del vendedor 7 de Operam: el cliente no tiene un vendedor unico en sus domicilios');
+});
+
+// Un vendedor del registro sin operam_id (Jaime Abaroa) no resuelve ningun
+// `salesman`: el domicilio viaja sin vendedor, como antes de #414, y el aviso lo dice.
+test('sin vendedor que escribir y sin persona unica el aviso dice que el domicilio nuevo queda sin vendedor', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '475', br_name: 'Estudio', salesman: '1', inactive: '0' },
+      { branch_code: '476', br_name: 'Lemus', salesman: '2', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Jaime Abaroa'), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.ok(!('salesman' in operam.pedidos('crearBranchCliente')[0].args[1]));
+  assert.equal(paso(res, 'vendedor branch').mensaje,
+    'El domicilio nuevo queda sin vendedor: el cliente no tiene un vendedor unico en sus domicilios');
 });
