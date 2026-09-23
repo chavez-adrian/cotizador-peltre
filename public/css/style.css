@@ -2065,6 +2065,8 @@ body {
    el resto de los avisos que piden atencion sin bloquear. Nace oculto; el JS lo
    prende solo cuando el domicilio no entrega del almacen de producto terminado. */
 .pc-dom-aviso { display: none; margin-top: 6px; font-size: 12.5px; padding: 8px 10px; border-radius: 8px; line-height: 1.4; background: oklch(0.95 0.06 85); color: oklch(0.42 0.09 70); }
+/* Domicilio unico del Cliente Operam, en solo lectura donde iria el selector (#424) */
+.pc-dom-unico { font-size: 13px; color: var(--text); padding: 8px 0; }
 .pc-link { background: none; border: none; color: var(--primary-dark); font-weight: 600; cursor: pointer; text-decoration: underline; font-size: 12.5px; padding: 0; }
 
 /* Tarjeta del cliente seleccionado */

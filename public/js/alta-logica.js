@@ -1417,17 +1417,41 @@ export const CEL_CODE_POR_ISO2 = { mx: '+52', us: '+1', ca: '+1-CA' };
 // fuentes de Operam quedan vacias, no se pintaba selector y "Entregar a" se tecleaba
 // a mano aunque la app ya sepa como se llama. Ultimo y no primero para que el
 // autollenado por defecto de un Cliente Operam con contactos no cambie.
+//
+// La MISMA persona es una sola opcion (#424): Operam repite a una persona una vez
+// por rol (Israel Avila, cliente 217, cuatro veces) y en las altas del cotizador el
+// contacto del domicilio nace con los datos del General (Lobo Glamp, cliente 228),
+// asi que el selector ofrecia dos o cuatro opciones identicas y el vendedor lo leia
+// como la lista de domicilios. La opcion que queda esta en el lugar de la primera y
+// lleva en `tags` todos sus papeles en el orden en que aparecieron (decision de
+// Adrian, 2026-09-22); `tag` sigue siendo el primero para quien ya lo lee.
 export function contactosEntregaDisponibles(domicilio, contactosCliente, contacto) {
-  const lista = [];
+  const candidatos = [];
   const d = domicilio || {};
   if (d.contacto || d.telefono || d.email) {
-    lista.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '' });
+    candidatos.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '' });
   }
   for (const c of contactosCliente || []) {
-    if (c && (c.nombre || c.telefono || c.email)) lista.push(c);
+    if (c && (c.nombre || c.telefono || c.email)) candidatos.push(c);
   }
-  if (contacto && (contacto.nombre || contacto.telefono || contacto.email)) lista.push(contacto);
+  if (contacto && (contacto.nombre || contacto.telefono || contacto.email)) candidatos.push(contacto);
+  const lista = [];
+  for (const c of candidatos) {
+    const igual = lista.find(o => mismaPersonaDeEntrega(o, c));
+    if (!igual) lista.push({ ...c, tags: c.tag ? [c.tag] : [] });
+    else if (c.tag && !igual.tags.includes(c.tag)) igual.tags.push(c.tag);
+  }
   return lista;
+}
+
+// Misma persona = mismo nombre, mismo telefono y mismo correo. Un campo vacio en
+// las dos cuenta como igual; vacio contra lleno NO: con lo que se sabe son dos
+// personas distintas y el vendedor tiene que poder elegir entre ellas. El telefono
+// va por la llave de identidad del repo (Operam y el widget lo escriben distinto).
+function mismaPersonaDeEntrega(a, b) {
+  return normalizarBusqueda(a.nombre) === normalizarBusqueda(b.nombre) &&
+    normalizarBusqueda(a.email) === normalizarBusqueda(b.email) &&
+    llaveCelularOrigen(a.telefono) === llaveCelularOrigen(b.telefono);
 }
 
 // El cliente elegido en el paso Cliente, traducido a entrada del selector. Solo la
@@ -1449,11 +1473,18 @@ export function contactoEntregaDelCliente(cliente) {
 }
 
 const TAGS_CONTACTO = {
-  general: 'General', invoice: 'Facturacion', delivery: 'Entrega', domicilio: 'Domicilio', contacto: 'Contacto',
+  general: 'General', invoice: 'Facturacion', delivery: 'Entrega', order: 'Pedido', domicilio: 'Domicilio', contacto: 'Contacto',
 };
 
 export function etiquetaTagContacto(tag) {
   return TAGS_CONTACTO[tag] || tag || '';
+}
+
+// Los papeles de una opcion del selector, juntos y separados por coma (#424):
+// "Domicilio, General". Es lo que va entre parentesis en el <option>.
+export function etiquetaPapelesContacto(contacto) {
+  const c = contacto || {};
+  return (c.tags || [c.tag]).map(etiquetaTagContacto).filter(Boolean).join(', ');
 }
 
 // Que opcion queda elegida al pintar el selector y si se llenan los campos de

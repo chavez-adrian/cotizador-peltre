@@ -11,7 +11,7 @@ let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud, con
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
   decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
   contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
-  contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente,
+  contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente, etiquetaPapelesContacto,
   clienteDesdeCotizacionReciente;
 
 before(async () => {
@@ -20,7 +20,7 @@ before(async () => {
     buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
     contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
-    contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente,
+    contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente, etiquetaPapelesContacto,
     clienteDesdeCotizacionReciente,
   } = await import('../alta-logica.js'));
 });
@@ -719,6 +719,109 @@ test('X20: sin la marca, el autollenado de #353 no cambia', () => {
   assert.deepStrictEqual(
     seleccionContactoEntrega(CONTACTOS, { nombre: '', telefono: '', email: '' }, false),
     { indice: 0, aplicar: true },
+  );
+});
+
+// === La misma persona es UNA opcion, con todos sus papeles (#424) ===
+// Cliente Operam 228 (Lobo Glamp): el contacto de su unico domicilio y su contacto
+// General nacieron con los mismos datos en el alta del cotizador, y el selector
+// ofrecia dos opciones que eran la misma persona. El vendedor leyo el selector de
+// contacto como la lista de domicilios y concluyo que el cotizador no correspondia
+// a Operam. Decision de Adrian (2026-09-22): la opcion que queda lleva TODOS los
+// papeles juntos.
+const LOBO_GLAMP_DOMICILIO = { descripcion: 'Cecilia Avila', contacto: 'Lobo Glamp', telefono: '', email: 'adri3012@hotmail.com' };
+
+test('X21: contacto del domicilio y contacto General con los mismos datos son UNA opcion (Domicilio, General)', () => {
+  const contactosCliente = [{ tag: 'general', nombre: 'Lobo Glamp', telefono: '', email: 'adri3012@hotmail.com' }];
+  const r = contactosEntregaDisponibles(LOBO_GLAMP_DOMICILIO, contactosCliente);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].nombre, 'Lobo Glamp');
+  assert.strictEqual(r[0].tag, 'domicilio');
+  assert.deepStrictEqual(r[0].tags, ['domicilio', 'general']);
+  assert.strictEqual(etiquetaPapelesContacto(r[0]), 'Domicilio, General');
+});
+
+// Cliente 217: Operam entrega a Israel Avila una vez por rol (delivery, general,
+// invoice, order). Sale UNA vez con los cuatro papeles en el orden en que llegaron.
+test('X22: un contacto repetido en 4 papeles sale una vez, con los 4 papeles en orden', () => {
+  const israel = { nombre: 'Israel Avila', telefono: '55 2222 3333', email: 'israel@avila.mx' };
+  const contactosCliente = [
+    { tag: 'general', ...israel },
+    { tag: 'invoice', ...israel },
+    { tag: 'delivery', ...israel },
+    { tag: 'order', ...israel },
+  ];
+  const r = contactosEntregaDisponibles({ calle: 'Reforma 100' }, contactosCliente);
+  assert.strictEqual(r.length, 1);
+  assert.deepStrictEqual(r[0].tags, ['general', 'invoice', 'delivery', 'order']);
+  assert.strictEqual(etiquetaPapelesContacto(r[0]), 'General, Facturacion, Entrega, Pedido');
+});
+
+// Mismo nombre no es misma persona: un telefono o un correo distinto son otra
+// forma de localizar a quien recibe, y el vendedor tiene que poder elegirla.
+test('X23: mismo nombre con otro telefono u otro correo sale por separado', () => {
+  const base = { nombre: 'Israel Avila', telefono: '55 2222 3333', email: 'israel@avila.mx' };
+  const otroTelefono = contactosEntregaDisponibles(null, [
+    { tag: 'general', ...base },
+    { tag: 'delivery', ...base, telefono: '55 9999 8888' },
+  ]);
+  assert.strictEqual(otroTelefono.length, 2);
+  const otroCorreo = contactosEntregaDisponibles(null, [
+    { tag: 'general', ...base },
+    { tag: 'invoice', ...base, email: 'facturas@avila.mx' },
+  ]);
+  assert.strictEqual(otroCorreo.length, 2);
+  assert.deepStrictEqual(otroCorreo.map(c => c.tags), [['general'], ['invoice']]);
+});
+
+// Vacio contra lleno no es "igual": con lo que se sabe son dos personas distintas.
+test('X24: un dato vacio en una entrada y lleno en la otra NO las junta', () => {
+  const r = contactosEntregaDisponibles(
+    { contacto: 'Lobo Glamp', telefono: '', email: 'adri3012@hotmail.com' },
+    [{ tag: 'general', nombre: 'Lobo Glamp', telefono: '55 4444 5555', email: 'adri3012@hotmail.com' }],
+  );
+  assert.strictEqual(r.length, 2);
+});
+
+// El telefono es el mismo numero aunque venga en otro formato: el Contacto de la
+// cotizacion lo trae del widget con lada de pais y Operam sin ella. Nombre y
+// correo se comparan sin mayusculas ni acentos.
+test('X25: el mismo telefono en otro formato SI se junta, tambien con el Contacto de la cotizacion', () => {
+  const r = contactosEntregaDisponibles(
+    null,
+    [{ tag: 'general', nombre: 'Ramon Garcia', telefono: '55 1234 5678', email: 'Ramon@Garcia.mx' }],
+    { tag: 'contacto', nombre: 'Ram\u00f3n Garc\u00eda', telefono: '+52 55 1234 5678', email: 'ramon@garcia.mx' },
+  );
+  assert.strictEqual(r.length, 1);
+  assert.deepStrictEqual(r[0].tags, ['general', 'contacto']);
+  assert.strictEqual(r[0].telefono, '55 1234 5678');
+  assert.strictEqual(etiquetaPapelesContacto(r[0]), 'General, Contacto');
+});
+
+// Juntar duplicados no toca la regla de #353/#355: la opcion por defecto sigue
+// siendo la primera de la lista, ya sin duplicados, y lo capturado se reconoce
+// contra esa misma lista (el indice que devuelve es el del <option> que se pinta).
+test('X26: con la lista sin duplicados, el default sigue siendo la primera opcion y lo capturado se reconoce', () => {
+  const contactos = contactosEntregaDisponibles(LOBO_GLAMP_DOMICILIO, [
+    { tag: 'general', nombre: 'Lobo Glamp', telefono: '', email: 'adri3012@hotmail.com' },
+    { tag: 'invoice', nombre: 'Cecilia Avila', telefono: '55 6666 7777', email: 'cecilia@loboglamp.mx' },
+  ]);
+  assert.strictEqual(contactos.length, 2);
+  assert.deepStrictEqual(
+    seleccionContactoEntrega(contactos, { nombre: '', telefono: '', email: '' }),
+    { indice: 0, aplicar: true },
+  );
+  assert.deepStrictEqual(
+    seleccionContactoEntrega(contactos, { nombre: 'Cecilia Avila', telefono: '+52 55 6666 7777', email: '' }),
+    { indice: 1, aplicar: true },
+  );
+  assert.deepStrictEqual(
+    seleccionContactoEntrega(contactos, { nombre: '', telefono: '', email: '' }, true),
+    { indice: null, aplicar: false },
+  );
+  assert.deepStrictEqual(
+    seleccionContactoEntrega(contactos, { nombre: 'Recepcion almacen', telefono: '', email: '' }),
+    { indice: null, aplicar: false },
   );
 });
 

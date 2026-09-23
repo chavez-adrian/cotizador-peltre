@@ -37,7 +37,7 @@ import {
   contactosEntregaDisponibles,
   contactoEntregaDelCliente,
   seleccionContactoEntrega,
-  etiquetaTagContacto,
+  etiquetaPapelesContacto,
   usoCfdiPorDefecto,
   usoCfdiCuentaComoElegido,
   estadoAltaAlAbrirPanel,
@@ -67,7 +67,7 @@ import { ciudadPorCP } from './cp-ciudad.js';
 import { planAutollenadoCP, paisTieneIndiceCP } from './cp-autollenado.js';
 import {
   camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-  indiceDeDomicilio, branchIdDeIndice, avisoAlmacenDomicilio,
+  indiceDeDomicilio, branchIdDeIndice, avisoAlmacenDomicilio, vistaDomicilioEntrega,
 } from './domicilio-entrega-logica.js';
 import {
   CANALES,
@@ -3880,8 +3880,8 @@ function pcRenderDomSelect() {
   // como tipo 'nuevo' aunque tenga su customerId ligado, y con el `tipo` a secas
   // el selector se callaba justo en el camino que #409 vino a arreglar.
   const esOperam = customerIdFiscal(pcState.cliente) != null;
-  const doms = window._operamDomicilios;
-  if (esOperam && Array.isArray(doms) && doms.length > 1) {
+  const vista = vistaDomicilioEntrega(window._operamDomicilios, esOperam);
+  if (vista.tipo === 'selector') {
     // El selector arranca en el domicilio que la cotizacion ya senala (#409):
     // pcState.domicilioIdx lo fijo pcCargarSatelitesDelCliente con el branchId
     // del registro. Sin el `selected` el <select> abre siempre en el primero y
@@ -3894,8 +3894,16 @@ function pcRenderDomSelect() {
     // leerse. Lo vio Adrian en la 1288, que acabo saliendo de Almacen MP.
     slot.innerHTML = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
       '<select id="pc-dom-select" onchange="pcCambiarDomicilio()">' +
-      doms.map((d, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${escapeHtml(d.descripcion || d.calle || ('Domicilio ' + (i + 1)))}</option>`).join('') +
+      vista.opciones.map((texto, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${escapeHtml(texto)}</option>`).join('') +
       '</select><div id="pc-dom-aviso" class="pc-dom-aviso"></div></div>';
+    pcPintarAvisoAlmacen();
+  } else if (vista.tipo === 'unico') {
+    // Con UN domicilio no hay nada que elegir, pero el vendedor tiene que ver cual
+    // de Operam se usa (#424) y enterarse si su almacen no es el de producto
+    // terminado: hasta aqui el aviso de #409 nunca salia en el caso mas comun.
+    slot.innerHTML = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
+      `<div class="pc-dom-unico">${escapeHtml(vista.texto)}</div>` +
+      '<div id="pc-dom-aviso" class="pc-dom-aviso"></div></div>';
     pcPintarAvisoAlmacen();
   } else {
     slot.innerHTML = '';
@@ -4004,7 +4012,7 @@ function pcRenderContactoSelect({ forzarDefault } = {}) {
     ? { indice: 0, aplicar: true }
     : seleccionContactoEntrega(contactos, pcCamposContactoEntrega(), pcState.contactoManual);
   const opciones = contactos.map((c, i) => {
-    const tag = etiquetaTagContacto(c.tag);
+    const tag = etiquetaPapelesContacto(c);
     const datos = [c.telefono, c.email].filter(Boolean).join(' · ');
     const etiqueta = (c.nombre || 'Sin nombre') + (tag ? ` (${tag})` : '') + (datos ? ' — ' + datos : '');
     return `<option value="${i}"${sel.indice === i ? ' selected' : ''}>${escapeHtml(etiqueta)}</option>`;

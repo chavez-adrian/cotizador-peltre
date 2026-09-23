@@ -102,6 +102,26 @@ export function branchIdDeIndice(domicilios, indice) {
   return d && d.branch_code != null ? d.branch_code : null;
 }
 
+// El nombre con el que el vendedor reconoce un domicilio de Operam: el de su
+// <option> en el selector y el que se lee cuando es el unico.
+function nombreDomicilio(domicilio, indice) {
+  const d = domicilio || {};
+  return d.descripcion || d.calle || ('Domicilio ' + (indice + 1));
+}
+
+// Lo que muestra el bloque "Domicilio de entrega" del paso Envio (#424). Con UN
+// domicilio el selector no se pintaba y el nombre del domicilio de Operam no
+// aparecia en ningun lado (Cliente Operam 228: nadie vio "Cecilia Avila" y el
+// vendedor concluyo que el cotizador no correspondia a Operam). Ahora se lee en
+// solo lectura, en el mismo lugar que el selector; con varios, el selector de
+// siempre. Sin Cliente Operam o sin domicilios no hay nada que mostrar.
+export function vistaDomicilioEntrega(domicilios, esClienteOperam) {
+  const lista = Array.isArray(domicilios) ? domicilios : [];
+  if (!esClienteOperam || lista.length === 0) return { tipo: 'nada' };
+  if (lista.length === 1) return { tipo: 'unico', texto: 'Domicilio en Operam: ' + nombreDomicilio(lista[0], 0) };
+  return { tipo: 'selector', opciones: lista.map((d, i) => nombreDomicilio(d, i)) };
+}
+
 // --- El ALMACEN que el domicilio arrastra (#409) ------------------------------
 // Operam deriva el almacen del que se entrega del `default_location` del DOMICILIO,
 // asi que elegir domicilio decide tambien de donde sale la mercancia, y el pedido

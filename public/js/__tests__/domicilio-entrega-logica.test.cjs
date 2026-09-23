@@ -3,11 +3,11 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-  indiceDeDomicilio, branchIdDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio;
+  indiceDeDomicilio, branchIdDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio, vistaDomicilioEntrega;
 
 before(async () => {
   ({ CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-    indiceDeDomicilio, branchIdDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio } = await import('../domicilio-entrega-logica.js'));
+    indiceDeDomicilio, branchIdDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio, vistaDomicilioEntrega } = await import('../domicilio-entrega-logica.js'));
 });
 
 const DOM_A = {
@@ -208,3 +208,40 @@ test('un domicilio sin dato de almacen no inventa una alarma', () => {
 test('el almacen se compara por texto, no por tipo', () => {
   assert.equal(avisoAlmacenDomicilio({ almacen: 40 }), null);
 });
+
+// === Lo que muestra el bloque "Domicilio de entrega" (#424) ===
+// Con un solo domicilio el selector no se pintaba y el nombre del domicilio de
+// Operam no aparecia en ningun lado: el vendedor del Cliente Operam 228 no vio
+// "Cecilia Avila" (su unico domicilio, branch 254) y concluyo que el cotizador no
+// correspondia a Operam.
+
+const CECILIA_AVILA = {
+  branch_code: 254, descripcion: 'Cecilia Avila',
+  calle: 'Presa Don Martin 5', numInt: '', colonia: 'Irrigacion', cp: '11500',
+  municipio: '', estado: '',
+};
+
+test('con un solo domicilio de un Cliente Operam se ve su nombre en solo lectura', () => {
+  assert.deepEqual(vistaDomicilioEntrega([CECILIA_AVILA], true),
+    { tipo: 'unico', texto: 'Domicilio en Operam: Cecilia Avila' });
+});
+
+// El texto es el mismo que tendria su <option>: sin nombre en Operam, la calle.
+test('un domicilio unico sin nombre se lee por su calle', () => {
+  assert.deepEqual(vistaDomicilioEntrega([{ ...CECILIA_AVILA, descripcion: '' }], true),
+    { tipo: 'unico', texto: 'Domicilio en Operam: Presa Don Martin 5' });
+});
+
+// Con varios, el selector de siempre (#84/#409): mismas opciones con el mismo
+// texto, incluido el "Domicilio N" del branch que no trae ni nombre ni calle.
+test('con varios domicilios el selector se queda como esta', () => {
+  assert.deepEqual(vistaDomicilioEntrega([DOM_A, DOM_B, { branch_code: 99 }], true),
+    { tipo: 'selector', opciones: ['Bosques de Europa', 'Pestalozzi', 'Domicilio 3'] });
+});
+
+test('sin Cliente Operam o sin domicilios el bloque no muestra nada', () => {
+  assert.deepEqual(vistaDomicilioEntrega([CECILIA_AVILA], false), { tipo: 'nada' });
+  assert.deepEqual(vistaDomicilioEntrega([], true), { tipo: 'nada' });
+  assert.deepEqual(vistaDomicilioEntrega(null, true), { tipo: 'nada' });
+});
+
