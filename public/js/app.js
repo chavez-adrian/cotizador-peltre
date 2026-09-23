@@ -29,6 +29,7 @@ import {
   clienteDesdeProspecto,
   accionCelularContactoNuevo,
   decidirVistaTrasBusqueda,
+  ofreceCrearContacto,
   accionProspecto409,
   paisDesdeCodigoTelefono,
   customerIdFiscal,
@@ -3467,9 +3468,10 @@ async function pcBuscar() {
   pcResultadosCache = rows;
   const vista = decidirVistaTrasBusqueda(q, rows);
   if (vista === 'resultados') {
+    // #421: con un RFC que ya encontro un Cliente Operam no se ofrece crear otro.
     zona.innerHTML = '<div class="pc-res-titulo">Resultados</div>' +
       rows.map((r, i) => pcFilaResultado(r, i)).join('') +
-      pcFilaCrear(q);
+      (ofreceCrearContacto(q, rows) ? pcFilaCrear(q) : '');
   } else {
     zona.innerHTML = pcFilaCrear(q);
   }

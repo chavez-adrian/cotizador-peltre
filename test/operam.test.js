@@ -530,3 +530,19 @@ test('B17 (#421): si la consulta por RFC falla, responde con lo que trajeron las
     assert.deepEqual(res.body.map(c => c.id), ['53']);
   } finally { restore(); }
 });
+
+// Medido en produccion (HITL 2026-09-23): el servidor devolvia al 52 con
+// "GJA 990301 TM7" y el paso Cliente lo descartaba al volver a filtrar.
+test('B18 (#421): el paso Cliente no descarta la fila que el servidor encontro por un RFC con espacios', async () => {
+  const { mezclarResultadosBusqueda } = await import('../public/js/alta-logica.js');
+  resetSession();
+  resetIndice();
+  const { restore } = mockOperamConRfc({ porRfc: { GJA990301TM7: [GJ_ASOCIADOS] }, padron: [GJ_ASOCIADOS] });
+  try {
+    const q = 'GJA 990301 TM7';
+    const res = await req.get(`/api/operam/clientes?q=${encodeURIComponent(q)}`).set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.map(c => c.id), ['52']);
+    assert.deepEqual(mezclarResultadosBusqueda(res.body, [], q).map(r => r.id), ['52']);
+  } finally { restore(); }
+});

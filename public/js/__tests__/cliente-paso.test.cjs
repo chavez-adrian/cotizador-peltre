@@ -12,7 +12,7 @@ let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud, con
   decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
   contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
   contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente, etiquetaPapelesContacto,
-  clienteDesdeCotizacionReciente;
+  clienteDesdeCotizacionReciente, ofreceCrearContacto;
 
 before(async () => {
   ({
@@ -21,7 +21,7 @@ before(async () => {
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
     contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
     contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente, etiquetaPapelesContacto,
-    clienteDesdeCotizacionReciente,
+    clienteDesdeCotizacionReciente, ofreceCrearContacto,
   } = await import('../alta-logica.js'));
 });
 
@@ -180,6 +180,16 @@ test('M9 (#292): el orden por prefijo trata acentos igual de un lado y del otro'
   const sinAcentoEnQuery = mezclarResultadosBusqueda(OPERAM_ACENTOS, [], 'chavez');
   assert.strictEqual(conAcentoEnQuery[0].id, 22);
   assert.strictEqual(sinAcentoEnQuery[0].id, 22);
+});
+
+// === #421: el RFC del paso Cliente, con espacios y la fila "Crear contacto" ===
+// Caso real de la prueba HITL: el cliente 52 se llama distinto de su RFC, asi
+// que por RFC solo lo reconoce la columna rfc de la fila.
+const CLIENTE_52 = { id: '52', name: 'G J Y ASOCIADOS ABOGADOS SC', ref: 'Pizza Studio', rfc: 'GJA990301TM7', telefonos: [] };
+
+test('M10 (#421): un RFC tecleado con espacios no descarta al Cliente Operam que el servidor encontro', () => {
+  assert.deepStrictEqual(mezclarResultadosBusqueda([CLIENTE_52], [], 'GJA 990301 TM7').map(r => r.id), ['52']);
+  assert.deepStrictEqual(mezclarResultadosBusqueda([CLIENTE_52], [], 'gja 990301 tm7').map(r => r.id), ['52']);
 });
 
 // === recientesDesdeCotizaciones: ultimos clientes cotizados por el vendedor ===
@@ -502,6 +512,35 @@ test('V2: con resultados -> resultados', () => {
 });
 test('V3: sin resultados -> crear', () => {
   assert.strictEqual(decidirVistaTrasBusqueda('zzz', []), 'crear');
+});
+
+// === ofreceCrearContacto: la fila "Crear contacto" del paso Cliente (#421) ===
+// Decision de Adrian 2026-09-23: con un RFC que ya encontro un Cliente Operam la
+// fila no sale (invita a duplicar); con un nombre, o con un RFC sin resultados,
+// sale como siempre.
+
+test('C1 (#421): un RFC que encontro al Cliente Operam no ofrece crear contacto', () => {
+  for (const q of ['GJA990301TM7', 'gja990301tm7', 'GJA 990301 TM7']) {
+    const filas = mezclarResultadosBusqueda([CLIENTE_52], [], q);
+    assert.strictEqual(filas.length, 1, `"${q}" encuentra al 52`);
+    assert.strictEqual(ofreceCrearContacto(q, filas), false, `"${q}"`);
+  }
+});
+
+test('C2 (#421): un RFC sin resultados si ofrece crear contacto', () => {
+  const filas = mezclarResultadosBusqueda([], [], 'GJA990301TM7');
+  assert.strictEqual(ofreceCrearContacto('GJA990301TM7', filas), true);
+});
+
+test('C3 (#421): un nombre que encuentra al Cliente Operam sigue ofreciendo crear contacto', () => {
+  const filas = mezclarResultadosBusqueda([CLIENTE_52], [], 'G J Y ASOCIADOS');
+  assert.strictEqual(filas.length, 1);
+  assert.strictEqual(ofreceCrearContacto('G J Y ASOCIADOS', filas), true);
+});
+
+test('C4 (#421): un RFC que solo encontro prospectos (ningun Cliente Operam) si ofrece crear contacto', () => {
+  const filas = [{ tipo: 'prospecto', id: 1, nombre: 'Maria Torres' }];
+  assert.strictEqual(ofreceCrearContacto('GJA990301TM7', filas), true);
 });
 
 // === accionProspecto409: decision del frontend ante el 409 estructurado de

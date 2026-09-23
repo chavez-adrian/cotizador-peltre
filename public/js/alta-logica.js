@@ -5,7 +5,7 @@
 // copias espejo que pueden divergir (ver architecture-review-cotizador-20260606.html).
 
 import { cpValido } from './cotizar-logica.js';
-import { esRegimenValido } from './regimen-fiscal-logica.js';
+import { esRegimenValido, tipoPersonaRfc } from './regimen-fiscal-logica.js';
 import { llaveCelularOrigen } from './origen-logica.js';
 
 // Case-insensitive y sin acentos (NFD): pliega mayusculas y diacriticos para
@@ -1213,10 +1213,14 @@ export function mezclarResultadosBusqueda(clientesOperam, prospectos, query) {
   const q = normalizarBusqueda(query);
   if (q.length < 2) return [];
   const qDigitos = q.replace(/\D/g, '');
+  // #421: el RFC se compara SIN espacios de los dos lados, como lo consulta el
+  // servidor (normalizarRfc): "GJA 990301 TM7" lo encontraba el servidor y aqui
+  // se descartaba.
+  const qRfc = q.replace(/\s+/g, '');
   const filas = [
     ...(clientesOperam || []).map(normalizarOperam).filter(r =>
       normalizarBusqueda(r.nombre).includes(q) ||
-      normalizarBusqueda(r.rfc).includes(q) ||
+      normalizarBusqueda(r.rfc).replace(/\s+/g, '').includes(qRfc) ||
       normalizarBusqueda(r.ref).includes(q) ||
       // >=8 digitos (formato "sin lada" en adelante, ver indice-telefonos.js): con
       // menos, un fragmento corto empataria demasiados telefonos del catalogo completo.
@@ -1258,6 +1262,16 @@ export function recientesDesdeCotizaciones(cotizaciones, limite = 6) {
 // sin espacios, para que el mismo RFC capturado de dos formas compare igual.
 export function llaveRfc(rfc) {
   return String(rfc || '').toUpperCase().replace(/\s+/g, '');
+}
+
+// Si un texto libre tiene forma de RFC mexicano (#421): la forma de
+// tipoPersonaRfc (12 = moral, 13 = fisica) sobre el texto ya normalizado, asi
+// que minusculas y espacios no cuentan. La comparten la busqueda de Clientes
+// Operam por texto del servidor (suma el ?tax_id= de Operam, que su ?search= no
+// cubre, #194) y la fila "Crear contacto" del paso Cliente (ofreceCrearContacto):
+// vive aqui y lib/deduplicacion.js la reexporta (cross-import de la casa).
+export function tieneFormaDeRfc(texto) {
+  return tipoPersonaRfc(llaveRfc(texto)) !== null;
 }
 
 // Las cotizaciones del cliente elegido para el panel "Cotizaciones previas" de la
@@ -1368,6 +1382,16 @@ export function accionCelularContactoNuevo(clasificacion, usuarioActual) {
 export function decidirVistaTrasBusqueda(query, resultados) {
   if (String(query || '').trim().length < 2) return 'recientes';
   return (resultados && resultados.length) ? 'resultados' : 'crear';
+}
+
+// Si la busqueda del paso Cliente ofrece la fila "Crear contacto" (#421,
+// decision de Adrian 2026-09-23): siempre, salvo cuando lo tecleado tiene forma
+// de RFC y la busqueda ya encontro al menos un Cliente Operam -- ofrecer crear
+// un contacto con un RFC que ya existe invita a duplicar. Con un nombre, o con
+// un RFC que no encontro ningun Cliente Operam, la fila sale como siempre.
+export function ofreceCrearContacto(query, resultados) {
+  if (!tieneFormaDeRfc(query)) return true;
+  return !(resultados || []).some(r => r && r.tipo === 'operam');
 }
 
 // Decision ante el 409 de POST /api/prospectos, por el campo estructurado `tipo`
