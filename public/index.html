@@ -835,9 +835,10 @@
 
   <!-- TAB: RESUMEN -->
   <div class="tab-content" id="tab-resumen">
-    <div id="resumen-shipping-alert" class="alert alert-warning" style="display:none">
-      Recuerda cotizar el envio antes de generar el PDF. Revisa el tab Envio.
-    </div>
+    <!-- Envio pendiente vs "Sin envio" decidido (#420): textos y veredicto salen de
+         avisoEnvioPasoCotizacion (cotizar-logica.js). La decision va en tono neutro. -->
+    <div id="resumen-shipping-alert" class="alert alert-warning" style="display:none"></div>
+    <div id="resumen-envio-decidido" style="display:none;font-size:12px;color:var(--text-light);margin-bottom:10px"></div>
     <div id="resumen-envio-invalidado" class="alert alert-warning" style="display:none"></div>
     <div id="resumen-calca-invalido" class="alert alert-error" style="display:none"></div>
     <!-- Partidas restauradas de un borrador cuyo codigo ya no existe (#179) -->

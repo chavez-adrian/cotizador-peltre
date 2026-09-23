@@ -180,6 +180,7 @@ import {
   debeAutoCotizarEnvia,
   debeProponerEnvia,
   cpListoParaCotizarEnvia,
+  avisoEnvioPasoCotizacion,
   buildEnviaRateRestauradaHtml,
   buildItemsYTotales,
   buildItemEnvio,
@@ -2173,10 +2174,22 @@ function marcaDecoradoParaGuardar() {
 }
 
 // === RESUMEN ===
+// Los dos nodos del envio en el paso Cotizacion (#420): la advertencia de
+// pendiente y la linea neutra de "Sin envio" decidido. Cual se pinta y con que
+// texto lo decide avisoEnvioPasoCotizacion; aqui solo se muestra.
+function pintarAvisoEnvio(aviso) {
+  for (const [id, veredicto] of [['resumen-shipping-alert', 'pendiente'], ['resumen-envio-decidido', 'decidido']]) {
+    const nodo = document.getElementById(id);
+    if (!nodo) continue;
+    const toca = aviso?.veredicto === veredicto;
+    nodo.textContent = toca ? aviso.texto : '';
+    nodo.style.display = toca ? 'block' : 'none';
+  }
+}
+
 function updateResumen() {
   const empty = document.getElementById('resumen-empty');
   const content = document.getElementById('resumen-content');
-  const shippingAlert = document.getElementById('resumen-shipping-alert');
 
   // Vendedor logueado, visible en el resumen (issue #87): hoy vivia solo en
   // la barra superior (user-name) y era facil de ignorar.
@@ -2195,16 +2208,16 @@ function updateResumen() {
   if (state.cart.size === 0) {
     empty.style.display = 'block';
     content.style.display = 'none';
-    shippingAlert.style.display = 'none';
+    pintarAvisoEnvio(null);
     return;
   }
 
   empty.style.display = 'none';
   content.style.display = 'block';
 
-  // Alerta de envío
+  // Aviso de envio (#420): con "Sin envio" decidido ya no se pide, se declara.
   const shippingOpt = document.getElementById('shipping-option').value;
-  shippingAlert.style.display = shippingOpt === 'none' ? 'block' : 'none';
+  pintarAvisoEnvio(avisoEnvioPasoCotizacion({ shippingOpt, envioDecidido }));
 
   // Aviso de envio invalidado por cambio de cantidades (issue #89)
   const envioInvalidadoAlert = document.getElementById('resumen-envio-invalidado');

@@ -7,7 +7,7 @@ let sincronizarCorreoFactura;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
-let debeProponerEnvia, cpListoParaCotizarEnvia;
+let debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha;
@@ -17,7 +17,7 @@ before(async () => {
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
-    debeProponerEnvia, cpListoParaCotizarEnvia,
+    debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha,
@@ -806,5 +806,37 @@ test('#419-6: cpListoParaCotizarEnvia es la regla MX de 5 digitos, y tolera la a
   assert.strictEqual(cpListoParaCotizarEnvia('56577'), true);
   for (const cp of ['', '5657', '565778', 'K1A 0A9', undefined, null]) {
     assert.strictEqual(cpListoParaCotizarEnvia(cp), false, String(cp));
+  }
+});
+
+// === #420: el paso Cotizacion deja de pedir envio cuando ya se decidio que no hay ===
+// HITL de #415 (cotizacion 1292): con "Sin envio" elegido a proposito el paso
+// Cotizacion seguia diciendo "Recuerda cotizar el envio", porque lo decidia una
+// comparacion en linea contra 'none' -- que es tambien el default que nadie toco.
+// La entrada que las distingue es la misma de #419: envioDecidido.
+test('#420-1: nadie decidio el envio -> advertencia de pendiente con el texto de hoy', () => {
+  assert.deepStrictEqual(avisoEnvioPasoCotizacion({ shippingOpt: 'none', envioDecidido: false }), {
+    veredicto: 'pendiente',
+    texto: 'Recuerda cotizar el envio antes de generar el PDF. Revisa el tab Envio.',
+  });
+});
+
+// "Sin envio" elegido es una decision valida (el cliente recoge o arregla el
+// envio): no falta nada, asi que el paso lo declara en vez de pedirlo.
+test('#420-2: "Sin envio" elegido a proposito -> linea de decision tomada, no la advertencia', () => {
+  assert.deepStrictEqual(avisoEnvioPasoCotizacion({ shippingOpt: 'none', envioDecidido: true }), {
+    veredicto: 'decidido',
+    texto: 'Sin envio: el cliente recoge o arregla el envio',
+  });
+});
+
+// Con paqueteria o costo manual el envio ya esta en los totales: no hay nada que
+// pedir ni que declarar. Sin decision tambien: 'envia' sin decision es la
+// propuesta automatica de #419, que tampoco se pintaba antes.
+test('#420-3: con envio de paqueteria o costo manual no hay nada que pintar, con o sin decision', () => {
+  for (const shippingOpt of ['envia', 'manual']) {
+    for (const envioDecidido of [true, false]) {
+      assert.strictEqual(avisoEnvioPasoCotizacion({ shippingOpt, envioDecidido }), null, `${shippingOpt}/${envioDecidido}`);
+    }
   }
 });

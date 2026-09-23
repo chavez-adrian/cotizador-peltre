@@ -257,6 +257,23 @@ export function cpListoParaCotizarEnvia(cp) {
   return cpValido(cp || '', 'MX');
 }
 
+// Que dice del envio el paso Cotizacion (#420). Hasta aqui lo decidia una
+// comparacion en linea contra 'none' dentro de updateResumen, y 'none' es a la vez
+// el default que nadie toco y el "Sin envio" elegido a proposito (#419): con la
+// decision tomada el aviso mentia, y un aviso que aparece siempre deja de leerse.
+// Tres salidas: 'pendiente' (advertencia, nadie decidio), 'decidido' (linea
+// neutra, "Sin envio" elegido) y null (paqueteria o manual: ya esta en totales).
+export function avisoEnvioPasoCotizacion({ shippingOpt, envioDecidido }) {
+  if (shippingOpt !== 'none') return null;
+  if (envioDecidido) {
+    return { veredicto: 'decidido', texto: 'Sin envio: el cliente recoge o arregla el envio' };
+  }
+  return {
+    veredicto: 'pendiente',
+    texto: 'Recuerda cotizar el envio antes de generar el PDF. Revisa el tab Envio.',
+  };
+}
+
 // Tarjeta de solo lectura para el envio via envia.com restaurado del historial
 // (#102, hallazgo del code review): sin ella, #envia-results quedaba vacio y el
 // vendedor perdia la confirmacion visual de que ya habia un envio elegido en el
