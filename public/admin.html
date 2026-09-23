@@ -255,6 +255,39 @@
       </div>
     </div>
 
+    <!-- Domicilios de entrega fuera del almacen de producto terminado (issue #416, derivado de #409) -->
+    <div class="admin-section" id="almacen-seccion">
+      <h2>Domicilios de entrega fuera del almacen de producto terminado</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
+        Operam toma el almacen del que se entrega del domicilio de entrega, y el pedido lo hereda: un domicilio mal
+        configurado manda la mercancia desde otro almacen. El barrido lee el padron completo de Operam (cientos de
+        lecturas: puede tardar un par de minutos) y lista los domicilios que no entregan desde producto terminado. Se
+        corrige a mano en Operam; el domicilio que legitimamente entrega desde otro almacen se marca "Asi va bien" y
+        deja de salir mientras siga en ese almacen. Solo lectura -- no modifica nada en Operam.
+      </p>
+      <button class="btn btn-secondary btn-sm" id="btn-almacen-barrer">Barrer domicilios</button>
+      <div id="almacen-estado" style="color:var(--text-light);font-size:13px;margin-top:8px">Cargando...</div>
+      <div id="almacen-error" style="display:none;color:var(--danger);font-size:13px;margin-top:8px"></div>
+      <div id="almacen-content" style="display:none;overflow-x:auto;margin-top:12px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg);text-align:left">
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Cliente Operam</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Customer ID</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Domicilio de entrega</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Almacen</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)"></th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)"></th>
+            </tr>
+          </thead>
+          <tbody id="almacen-rows"></tbody>
+        </table>
+      </div>
+      <div id="almacen-sin-leer" style="display:none;font-size:12px;margin-top:12px"></div>
+      <h3 style="font-size:13px;margin:14px 0 6px">Marcados "Asi va bien"</h3>
+      <div id="almacen-asi-va-bien" style="font-size:12px"></div>
+    </div>
+
     <!-- Sincronizacion de contactos a Google (issue #230, padre #224) -->
     <div class="admin-section">
       <h2>Sincronizacion de contactos a Google</h2>
@@ -364,6 +397,7 @@ async function adminLogin() {
   loadCajas();
   loadHigiene();
   loadSegmentoPendiente();
+  loadAlmacenDomicilios();
   loadSyncContactos();
   loadDropboxSubidas();
   cargarVendedoresExpo();
@@ -839,6 +873,118 @@ async function loadSegmentoPendiente() {
   }
 }
 
+// --- Domicilios fuera del almacen de producto terminado (issue #416) ---
+// La regla y la lista "asi va bien" viven en el servidor: el panel solo pinta lo
+// que recibe. Los botones de las filas van por delegacion (data-*), no por
+// onclick inline (#112).
+function almacenEsc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function almacenTexto(codigo, nombre) {
+  return nombre ? `${almacenEsc(nombre)} (${almacenEsc(codigo)})` : `Almacen ${almacenEsc(codigo)}`;
+}
+
+const ALMACEN_TD = 'padding:6px 8px;border-bottom:1px solid var(--border)';
+
+function renderAlmacenDomicilios(data) {
+  const estado = document.getElementById('almacen-estado');
+  const content = document.getElementById('almacen-content');
+  const sinLeer = document.getElementById('almacen-sin-leer');
+  if (!data.barrido) {
+    estado.textContent = 'Todavia no hay barrido desde que arranco el servidor. Usa "Barrer domicilios".';
+    content.style.display = 'none';
+    sinLeer.style.display = 'none';
+  } else {
+    const fecha = new Date(data.barrido.fecha).toLocaleString('es-MX');
+    estado.innerHTML = `Ultimo barrido: ${almacenEsc(fecha)}. ${data.barrido.clientes} Clientes Operam, ${data.revisados} domicilios revisados; ${data.filas.length} no entregan desde ${almacenTexto(data.esperado, data.esperadoNombre)}.`;
+    document.getElementById('almacen-rows').innerHTML = data.filas.map(f => `
+      <tr class="higiene-candidato">
+        <td style="${ALMACEN_TD}">${almacenEsc(f.cliente || '-')}</td>
+        <td style="${ALMACEN_TD}">${almacenEsc(f.clienteId)}</td>
+        <td style="${ALMACEN_TD}">${almacenEsc(f.domicilio || '-')} (${almacenEsc(f.branchCode)})</td>
+        <td style="${ALMACEN_TD}">${almacenTexto(f.almacen, f.almacenNombre)}</td>
+        <td style="${ALMACEN_TD}"><a href="${almacenEsc(f.url)}" target="_blank" rel="noopener">Ver en Operam</a></td>
+        <td style="${ALMACEN_TD}"><button class="btn btn-secondary btn-sm" data-accion="marcar" data-cliente="${almacenEsc(f.clienteId)}" data-branch="${almacenEsc(f.branchCode)}" data-almacen="${almacenEsc(f.almacen)}">Asi va bien</button></td>
+      </tr>
+    `).join('');
+    content.style.display = data.filas.length ? 'block' : 'none';
+    // Lo que no se pudo leer no es anomalia, pero tampoco desaparece: sin esto un
+    // barrido parcial se veria igual que uno completo.
+    if (data.sinLeer.length) {
+      sinLeer.innerHTML = `<strong>${data.sinLeer.length} domicilios no se pudieron leer</strong> (no se sabe de que almacen entregan):<ul style="margin:4px 0 0 18px">` +
+        data.sinLeer.map(x => `<li title="${almacenEsc(x.detalle)}">${almacenEsc(x.cliente || '-')} (${almacenEsc(x.clienteId)}) -- ${almacenEsc(x.domicilio || '-')} (${almacenEsc(x.branchCode)}): ${almacenEsc(x.motivo)}</li>`).join('') +
+        '</ul>';
+      sinLeer.style.display = 'block';
+    } else {
+      sinLeer.style.display = 'none';
+    }
+  }
+  const lista = document.getElementById('almacen-asi-va-bien');
+  lista.innerHTML = data.asiVaBien.length
+    ? data.asiVaBien.map(e => `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <span style="flex:1">${almacenEsc(e.cliente || 'Cliente Operam')} (${almacenEsc(e.clienteId)}) -- ${almacenEsc(e.domicilio || 'domicilio')} (${almacenEsc(e.branchCode)}) -- ${almacenTexto(e.almacen, e.almacenNombre)}</span>
+        <a href="${almacenEsc(e.url)}" target="_blank" rel="noopener">Ver en Operam</a>
+        <button class="btn btn-secondary btn-sm" data-accion="desmarcar" data-branch="${almacenEsc(e.branchCode)}">Quitar</button>
+      </div>
+    `).join('')
+    : '<span style="color:var(--text-light)">Ninguno.</span>';
+}
+
+function almacenError(mensaje) {
+  const errEl = document.getElementById('almacen-error');
+  errEl.textContent = mensaje;
+  errEl.style.display = mensaje ? 'block' : 'none';
+}
+
+async function loadAlmacenDomicilios() {
+  try {
+    const res = await adminApi('/api/admin/almacen-domicilios');
+    const data = await res.json();
+    if (!res.ok) { almacenError(data.error || 'No se pudo cargar'); return; }
+    renderAlmacenDomicilios(data);
+  } catch (e) {
+    document.getElementById('almacen-estado').textContent = 'No se pudo cargar';
+  }
+}
+
+async function barrerAlmacenDomicilios() {
+  const btn = document.getElementById('btn-almacen-barrer');
+  btn.disabled = true;
+  almacenError('');
+  document.getElementById('almacen-estado').textContent = 'Leyendo el padron de Operam (puede tardar un par de minutos)...';
+  try {
+    const res = await adminApi('/api/admin/almacen-domicilios/barrer', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) { almacenError(data.error || 'No se pudo leer el padron de Operam'); return; }
+    renderAlmacenDomicilios(data);
+  } catch (e) {
+    almacenError('Error de conexion');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function accionAsiVaBien(ev) {
+  const btn = ev.target.closest('button[data-accion]');
+  if (!btn) return;
+  btn.disabled = true;
+  almacenError('');
+  const { accion, cliente, branch, almacen } = btn.dataset;
+  try {
+    const res = accion === 'marcar'
+      ? await adminApi('/api/admin/almacen-domicilios/asi-va-bien', { method: 'POST', body: { clienteId: cliente, branchCode: branch, almacen } })
+      : await adminApi(`/api/admin/almacen-domicilios/asi-va-bien/${encodeURIComponent(branch)}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) { almacenError(data.error || 'No se pudo guardar'); btn.disabled = false; return; }
+    renderAlmacenDomicilios(data);
+  } catch (e) {
+    almacenError('Error de conexion');
+    btn.disabled = false;
+  }
+}
+
 // --- Sincronizacion de contactos a Google (issue #230, padre #224) ---
 // 'shopify-pedidos' (#257): el sondeo de pedidos de la tienda en linea es un
 // barrido mas bajo el mismo panel, con su propio nombre (ADR-0014).
@@ -1123,6 +1269,8 @@ document.getElementById('btn-save-vendedores').addEventListener('click', saveVen
 document.getElementById('btn-save-config').addEventListener('click', saveConfig);
 document.getElementById('btn-save-cajas').addEventListener('click', saveCajas);
 document.getElementById('btn-paridad-catalogo').addEventListener('click', cargarParidadCatalogo);
+document.getElementById('btn-almacen-barrer').addEventListener('click', barrerAlmacenDomicilios);
+document.getElementById('almacen-seccion').addEventListener('click', accionAsiVaBien);
 </script>
 </body>
 </html>
