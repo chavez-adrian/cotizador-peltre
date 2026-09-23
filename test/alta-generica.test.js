@@ -292,8 +292,9 @@ test('diffBranchDomicilio: branch que persistio todo -> sin discrepancias', () =
   const enviado = buildBranchGenerico(CLIENTE_ENTREGA, {});
   const fresco = { br_name: 'Recepcion', addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
     addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '06600',
-    addr_reference: 'Entre calle A y B, porton negro', phone: '+52 5511223344', email: 'entrega@hotelazul.mx' };
-  assert.deepEqual(diffBranchDomicilio(fresco, enviado), []);
+    addr_reference: 'Entre calle A y B, porton negro' };
+  const delCliente = { phone: '+52 5511223344', email: 'entrega@hotelazul.mx' };
+  assert.deepEqual(diffBranchDomicilio(fresco, enviado, delCliente), []);
 });
 
 test('diffBranchDomicilio: campo ignorado por Operam se reporta como no actualizado', () => {
@@ -380,16 +381,52 @@ test('#244 buildClienteGenerico: el tax_id sale del RFC capturado, no del pais',
 // paso "Domicilio de entrega"). El telefono se compara por digitos.
 test('diffBranchDomicilio: phone releido sin espacio coincide con el enviado con espacio (#369)', () => {
   const enviado = { addr_street: 'Av Reforma 100', phone: '+52 2222933000' };
-  const fresco = { addr_street: 'Av Reforma 100', phone: '+522222933000' };
-  assert.deepEqual(diffBranchDomicilio(fresco, enviado), []);
+  const fresco = { addr_street: 'Av Reforma 100' };
+  assert.deepEqual(diffBranchDomicilio(fresco, enviado, { phone: '+522222933000' }), []);
 });
 
 test('diffBranchDomicilio: phone realmente distinto se sigue reportando (#369)', () => {
   const enviado = { phone: '+52 2222933000' };
-  const fresco = { phone: '+52 5511223344' };
-  const diff = diffBranchDomicilio(fresco, enviado);
+  const diff = diffBranchDomicilio({}, enviado, { phone: '+52 5511223344' });
   assert.equal(diff.length, 1);
   assert.equal(diff[0].campo, 'phone');
   assert.equal(diff[0].nuevo, '+52 2222933000');
   assert.equal(diff[0].anterior, '+52 5511223344');
+});
+
+// issue #431: el GET /branches/:code NO expone phone ni email (medido en vivo en
+// #211, en #339 sobre el cliente 15 y en el branch 579 del cliente 530 el
+// 2026-09-23). Quien SI los trae es la entrada del domicilio en `branches[]` de
+// GET /customers/:id: el alta del 530 salio con "Operam ignoro phone" (anterior
+// "" -> nuevo "+525500000000") y el telefono SI estaba guardado.
+test('diffBranchDomicilio: el telefono se lee del domicilio en branches[] del cliente, no de GET /branches/:code (#431)', () => {
+  const enviado = { addr_street: 'Av Reforma 100', phone: '+525500000000' };
+  const fresco = { addr_street: 'Av Reforma 100' };
+  const delCliente = { branch_code: 579, phone: '+525500000000' };
+  assert.deepEqual(diffBranchDomicilio(fresco, enviado, delCliente), []);
+});
+
+test('diffBranchDomicilio: un telefono que no quedo en branches[] del cliente se sigue reportando (#431)', () => {
+  const enviado = { addr_street: 'Av Reforma 100', phone: '+525500000000' };
+  const diff = diffBranchDomicilio({ addr_street: 'Av Reforma 100' }, enviado, { branch_code: 579, phone: '' });
+  assert.deepEqual(diff, [{ campo: 'phone', label: 'Telefono', anterior: '', nuevo: '+525500000000' }]);
+});
+
+// El correo de entrega tiene el mismo lector: docs/arquitectura.md lo midio fuera
+// del GET /branches/:code desde #211 (y otra vez en #339, cliente 15).
+test('diffBranchDomicilio: el correo de entrega tambien se lee de branches[] del cliente (#431)', () => {
+  const enviado = { email: 'entrega@hotelazul.mx' };
+  assert.deepEqual(diffBranchDomicilio({}, enviado, { email: 'entrega@hotelazul.mx' }), []);
+  const diff = diffBranchDomicilio({ email: 'entrega@hotelazul.mx' }, enviado, { email: 'otro@hotelazul.mx' });
+  assert.deepEqual(diff.map(x => [x.campo, x.anterior]), [['email', 'otro@hotelazul.mx']]);
+});
+
+// Sin la lectura del cliente (fallo, o el domicilio no aparece en su lista) el
+// telefono y el correo no se pudieron leer: salen de la comparacion en vez de
+// afirmar que Operam los ignoro (patron noLegible de #373). Los campos del
+// domicilio que SI trae GET /branches/:code se siguen comparando.
+test('diffBranchDomicilio: sin la lectura del cliente, telefono y correo no se afirman como ignorados (#431)', () => {
+  const enviado = { addr_street: 'Av Reforma 100', addr_zip: '06600', phone: '+525500000000', email: 'entrega@hotelazul.mx' };
+  const diff = diffBranchDomicilio({ addr_street: 'Av Reforma 100', addr_zip: '' }, enviado, null);
+  assert.deepEqual(diff.map(x => x.campo), ['addr_zip']);
 });

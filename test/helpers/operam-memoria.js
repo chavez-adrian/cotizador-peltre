@@ -29,6 +29,12 @@ const LLAVE_LECTURA = new Map(DIFF_FISCAL_CAMPOS.map(c => [c.write || c.operam, 
 // PUT conserva la referencia auto-creada o la pisa.
 const LLAVE_LECTURA_BRANCH = new Map([['br_ref', 'branch_ref']]);
 
+// GET /branches/:code NO expone las llaves de contacto del domicilio (medido en
+// vivo en #211, #339 y en el branch 579 del cliente 530, #431): phone, email y el
+// Cel (`fax`) solo vienen en `branches[]` de GET /customers/:id. Quitarlas aqui es
+// lo que obliga a verificarlas por donde Operam de verdad las expone.
+const LLAVES_FUERA_DE_GET_BRANCH = ['phone', 'email', CAMPO_CEL];
+
 export function operamEnMemoria({
   clientes = [],
   padron = null,
@@ -134,7 +140,11 @@ export function operamEnMemoria({
     },
     async obtenerBranch(code) {
       registrar('obtenerBranch', code);
-      return buscarBranch(code);
+      const branch = buscarBranch(code);
+      if (!branch) return null;
+      const visible = { ...branch };
+      for (const llave of LLAVES_FUERA_DE_GET_BRANCH) delete visible[llave];
+      return visible;
     },
     async obtenerBranchId(id) {
       registrar('obtenerBranchId', id);

@@ -786,14 +786,15 @@ test('D1: cliente generico recien creado con domicilio -> PUT del branch con cus
     '/api/v3/sales/branches/911': (u, opts) => {
       if (opts?.method === 'PUT') { branchPut = JSON.parse(opts.body); return jsonResponse({ result: true }); }
       branchGets++;
+      // GET /branches/:code NO expone phone ni email (#431, medido en vivo): los
+      // trae la entrada del domicilio en branches[] de GET /customers/:id.
       return jsonResponse({ data: [{ br_name: 'Recepcion', addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
-        addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '06600', addr_reference: 'Porton negro entre A y B',
-        phone: '+52 5511223344', email: 'entrega@hotelazul.mx' }] });
+        addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '06600', addr_reference: 'Porton negro entre A y B' }] });
     },
     '/api/v3/sales/customers': (u, opts) => {
       if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
       if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
+      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911, phone: '+525511223344', email: 'entrega@hotelazul.mx' }] }] });
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1801 }),

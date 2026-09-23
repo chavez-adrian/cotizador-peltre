@@ -600,6 +600,54 @@ test('un campo que Operam ignora del domicilio de entrega recien creado sale com
   assert.deepEqual(verificacion.camposNoActualizados.map(x => x.campo), ['addr_interior']);
 });
 
+// #431: el GET /branches/:code no expone el telefono ni el correo del domicilio
+// (el adaptador lo modela como Operam); quien los trae es `branches[]` de
+// GET /customers/:id. El alta del Cliente Operam 530 salia con "Operam ignoro
+// phone" sobre un telefono que SI quedo guardado.
+test('el telefono del domicilio de entrega se verifica contra GET /customers/:id, que si lo expone (#431)', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('obtenerClientePorId').length, 1, 'la verificacion del Cel reusa la misma relectura del cliente');
+  const releido = await operam.deps.obtenerBranch(res.domicilioId);
+  assert.equal(releido.phone, undefined, 'GET /branches/:code no trae phone');
+  const enCliente = (await operam.deps.obtenerClientePorId(res.clienteId)).branches
+    .find(b => String(b.branch_code) === String(res.domicilioId));
+  assert.equal(enCliente.phone, DOMICILIO.telefono, 'GET /customers/:id si lo trae');
+  const verificacion = paso(res, 'verificar branch');
+  assert.equal(verificacion.status, 'ok');
+  assert.equal(verificacion.mensaje, 'El domicilio de entrega quedo guardado en Operam');
+});
+
+test('un telefono del domicilio de entrega que Operam de verdad no guardo sigue saliendo como aviso (#431)', async () => {
+  const operam = operamEnMemoria({ ignoraBranch: ['phone'] });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const verificacion = paso(res, 'verificar branch');
+  assert.equal(verificacion.status, 'warn');
+  assert.equal(verificacion.mensaje, 'El domicilio de entrega no quedo completo en Operam');
+  assert.deepEqual(verificacion.camposNoActualizados.map(x => [x.campo, x.nuevo]), [['phone', DOMICILIO.telefono]]);
+  assert.match(verificacion.detalle, /Operam ignoro phone/);
+});
+
+// Sin GET /customers/:id el telefono y el correo no se pudieron leer: salen de la
+// comparacion (patron noLegible de #373) y el detalle lo dice, en vez de afirmar
+// que Operam los ignoro. La calle, que SI trae GET /branches/:code, se sigue
+// verificando.
+test('si GET /customers/:id falla, el telefono del domicilio queda sin comprobar y no se reporta como ignorado (#431)', async () => {
+  const operam = operamEnMemoria({ falla: { obtenerClientePorId: 'Operam 503' } });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const verificacion = paso(res, 'verificar branch');
+  assert.equal(verificacion.status, 'ok');
+  assert.match(verificacion.detalle, /phone, email sin comprobar/);
+  assert.match(verificacion.detalle, /Operam 503/);
+  assert.equal(paso(res, 'verificar Cel').status, 'error');
+});
+
 // #386: el PUT de branch EXIGE br_ref -- sin el Operam responde 406 ("La
 // referencia de sucursal es requerida") y el domicilio capturado en el paso Envio
 // nunca se aplica. Como ese paso no captura referencia corta, la del branch que
