@@ -88,3 +88,48 @@ test('R6: sin estado previo devuelve un estado utilizable en vez de reventar', (
   const { reiniciado } = estadoAltaAlAbrirPanel(undefined);
   assert.strictEqual(reiniciado, false);
 });
+
+// --- Progreso del alta al abrir el upgrade fiscal (#432) ---------------------
+// El lateral "Progreso del alta" vive en el MISMO nodo que el upgrade fiscal
+// (#376/#412) y el upgrade nunca marca palomas: las que se ven al abrirlo son de
+// un alta anterior de la misma pestana. Las palomas son solo DOM y app.js no se
+// importa en Node, asi que se cuida el fuente -- mismo recurso que C16b
+// (alta-dedup-fiscal.test.cjs) y AD6/AD7 (clientes-vista.test.cjs). Verlas vacias
+// en pantalla es HITL.
+function fuenteApp() {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  return fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+}
+
+function cuerpoDeFuncion(src, firma) {
+  const inicio = src.indexOf(firma);
+  assert.ok(inicio > 0, `${firma} debe existir en app.js`);
+  const fin = src.indexOf('\n}\n', inicio);
+  assert.ok(fin > inicio, `${firma} debe cerrar`);
+  return src.slice(inicio, fin);
+}
+
+test('#432-2: abrir el upgrade fiscal limpia las palomas que dejo un alta anterior', () => {
+  const src = fuenteApp();
+  const marcadas = [...src.matchAll(/getElementById\('chkdot-(\d+)'\)/g)].map(m => Number(m[1]));
+  assert.ok(marcadas.length >= 3, 'el alta marca sus palomas por id: si deja de hacerlo, este test ya no cuida nada');
+  const limpiar = cuerpoDeFuncion(src, 'function altaLimpiarProgreso(');
+  assert.ok(limpiar.includes("classList.remove('done')"), 'limpiar es quitar la marca de hecho');
+  const lista = limpiar.match(/\[([\d,\s]+)\]\.forEach/);
+  assert.ok(lista, 'la limpieza recorre la lista de palomas');
+  const limpiadas = lista[1].split(',').map(Number);
+  for (const n of marcadas) assert.ok(limpiadas.includes(n), `la paloma ${n} que marca el alta tambien se limpia`);
+  const upgrade = cuerpoDeFuncion(src, 'async function pcAbrirUpgradeFiscal(');
+  const limpia = upgrade.indexOf('altaLimpiarProgreso()');
+  assert.ok(limpia > 0, 'el upgrade no marca palomas: al abrirlo el progreso empieza limpio');
+  assert.ok(limpia < upgrade.indexOf('await '), 'se limpia antes de ceder el hilo: el panel ya esta a la vista');
+});
+
+test('#432-3: el reinicio tras un alta completada y el upgrade comparten UNA limpieza del progreso', () => {
+  const src = fuenteApp();
+  assert.ok(cuerpoDeFuncion(src, 'function altaReiniciarPanel(').includes('altaLimpiarProgreso()'),
+    'el reinicio de #192 limpia por el mismo camino, no por una copia');
+  assert.strictEqual((src.match(/classList\.remove\('done'\)/g) || []).length, 1,
+    'las palomas se limpian en un solo lugar');
+});

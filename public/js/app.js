@@ -2048,6 +2048,9 @@ async function cotizarEnvia() {
     }
 
     const { rates, resumen, warnings } = data;
+    // Hay respuesta: el aviso "Consultando tarifas..." se va antes de pintar (#432).
+    // Las advertencias y las tarjetas se AGREGAN a este contenedor y lo dejaban encima.
+    resultsEl.innerHTML = '';
 
     // Mostrar resumen de cajas
     if (resumen?.length) {
@@ -4095,6 +4098,8 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   // alta" daria de alta -- con la CSF de ESTE upgrade -- al cliente que se esta
   // actualizando. Candar antes de altaToggleSeccion, que respeta el candado.
   altaCandarSeccionesAvanzadas();
+  // Y las palomas de ESA alta tambien se quedaban en el lateral (#432).
+  altaLimpiarProgreso();
   altaBotonDarDeAltaSegunModo();
   altaState.seccionAbierta = null;
   altaToggleSeccion(1);
@@ -7027,6 +7032,8 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // Volver a la app
     document.getElementById('historial-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
+    // La barra inferior sigue a la vista (#432): se llego al Historial desde "Mas".
+    marcarNavActivo('nav-cotizar');
     // La tarjeta del paso Cliente muestra al de ESTA cotizacion (#394): sin
     // esto seguia anunciando al de la sesion anterior encima de los campos ya
     // repuestos, que es como se ve el cruce desde la pantalla.
@@ -7550,6 +7557,17 @@ function altaBotonDarDeAltaSegunModo() {
   if (btn) btn.disabled = altaCsfState.modoUpgrade != null;
 }
 
+// Palomas del lateral "Progreso del alta": las tres vuelven a vacio. Las comparten el
+// reinicio tras un alta completada (#192) y la apertura del upgrade fiscal (#432): el
+// lateral vive en el mismo nodo que viaja (#376/#412) y el upgrade no marca ninguna,
+// asi que las que se verian al abrirlo son de un alta anterior de la misma pestana.
+function altaLimpiarProgreso() {
+  [1, 2, 3].forEach(i => {
+    const dot = document.getElementById(`chkdot-${i}`);
+    if (dot) { dot.classList.remove('done'); dot.textContent = ''; }
+  });
+}
+
 function altaReiniciarPanel() {
   altaCsfState.datos = null;
   altaCsfState.confirmado = false;
@@ -7563,11 +7581,7 @@ function altaReiniciarPanel() {
   if (exitoDiv) exitoDiv.style.display = 'none';
   const reintBtn = document.getElementById('alta-btn-reintentar');
   if (reintBtn) reintBtn.style.display = 'none';
-  // Palomas del lateral "Progreso del alta": las tres vuelven a vacio.
-  [1, 2, 3].forEach(i => {
-    const dot = document.getElementById(`chkdot-${i}`);
-    if (dot) { dot.classList.remove('done'); dot.textContent = ''; }
-  });
+  altaLimpiarProgreso();
   // Secciones 3 y 4 vuelven a su candado de origen: sin esto el vendedor puede
   // saltar a "Dar de alta" sin pasar por la Seccion 1, que es justo donde se
   // decide sobre que cliente aplica el alta.

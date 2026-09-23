@@ -884,3 +884,15 @@ test('#404-C5: el camino apaga el panel del cliente anterior antes de pedir las 
   assert.ok(apaga < cuerpo.indexOf('cotizacionesPreviasDelCliente('),
     'se apaga antes de pedir el listado: el fetch tarda y mientras tanto no puede quedar lo ajeno');
 });
+
+// #432-4: Editar y Copiar del Historial devuelven al cotizador a mano -- esconden el
+// Historial y muestran #app-view -- sin pasar por el trio de navegacion de los demas
+// "volver a Cotizar", asi que la barra inferior se quedaba marcando "Mas" (desde
+// donde se abrio el Historial) con la vista ya en Cotizar. Verlo es HITL.
+test('#432-4: cargar del historial marca Cotizar en la barra de navegacion al mostrar el cotizador', () => {
+  const cuerpo = cuerpoDeFuncion(fuenteApp(), 'async function cargarCotizacion(');
+  const muestra = cuerpo.indexOf("document.getElementById('app-view').style.display = 'block'");
+  assert.ok(muestra > 0, 'si cargar deja de mostrar el cotizador aqui, este test ya no cuida nada: revisarlo');
+  const marca = cuerpo.indexOf("marcarNavActivo('nav-cotizar')");
+  assert.ok(marca > 0, 'la barra tiene que decir la vista a la que se llego: Cotizar, no Mas');
+});

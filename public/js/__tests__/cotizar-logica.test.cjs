@@ -900,3 +900,21 @@ test('#430-5: el stepper juzga el paso Envio con pasoEnvioListo y la bandera de 
   assert.ok(!cuerpo.includes("'none'"),
     "comparar contra 'none' en linea confunde el default que nadie toco con \"Sin envio\" decidido");
 });
+
+// #432-1: "Consultando tarifas..." se pinta en el mismo contenedor donde despues
+// se AGREGAN las advertencias y las tarjetas de tarifa, asi que solo el camino de
+// error lo borraba y en el de exito quedaba encima de las tarifas. Ver que ya no
+// aparece es HITL; aqui se cuida que la respuesta buena lo limpie antes de pintar.
+test('#432-1: con respuesta buena de envia.com el aviso de espera se limpia antes de pintar las tarifas', () => {
+  const cuerpo = cuerpoDeFuncion(fuenteApp(), 'async function cotizarEnvia(');
+  const espera = cuerpo.indexOf('Consultando tarifas...');
+  assert.ok(espera > 0, 'si el aviso de espera deja de vivir en el contenedor, este test ya no cuida nada: revisarlo');
+  const exito = cuerpo.indexOf('const { rates, resumen, warnings } = data;', espera);
+  assert.ok(exito > espera, 'el camino de exito empieza donde se lee la respuesta buena');
+  const pintas = [cuerpo.indexOf('resultsEl.appendChild(', exito), cuerpo.indexOf('resultsEl.innerHTML +=', exito)]
+    .filter(i => i > 0);
+  assert.ok(pintas.length > 0, 'el camino de exito pinta en el contenedor de resultados');
+  const limpia = cuerpo.indexOf("resultsEl.innerHTML = ''", exito);
+  assert.ok(limpia > exito && limpia < Math.min(...pintas),
+    'la respuesta buena tiene que quitar "Consultando tarifas..." antes de agregar advertencias o tarjetas');
+});
