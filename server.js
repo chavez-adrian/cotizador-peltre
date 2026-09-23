@@ -18,6 +18,8 @@ import { darDeAlta, upgradeFiscal } from './lib/alta-cliente.js';
 import { logCliente, marcarDropbox } from './lib/clientes-log.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
+import { reporteAlmacenDomicilios, excepcionesAlmacen, marcarAsiVaBien, desmarcarAsiVaBien } from './lib/almacen-domicilios.js';
+import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
@@ -2158,6 +2160,60 @@ app.get('/api/admin/segmento-pendiente', authMiddleware, adminMiddleware, async 
     sinDb: false,
   });
 });
+
+// Domicilios con almacen mal configurado (issue #416, derivado de #409): el
+// barrido del padron corre A PEDIDO (son cientos de lecturas a Operam) y deja su
+// resultado crudo en memoria; el GET y marcar/desmarcar "asi va bien" recalculan
+// el reporte sobre el sin volver a leer Operam. La regla vive en el nucleo puro
+// reporteAlmacenDomicilios y la lista de excepciones en la configuracion del
+// panel (config-store, #276), con la llave ausente como semilla.
+function respuestaAlmacenDomicilios(config) {
+  const barrido = ultimoBarridoAlmacenes();
+  const reporte = reporteAlmacenDomicilios({
+    ...(barrido || {}),
+    excepciones: excepcionesAlmacen(config),
+    operamUrl: process.env.OPERAM_URL,
+  });
+  return { ...reporte, barrido: barrido ? { fecha: barrido.fecha, clientes: barrido.clientes.length } : null };
+}
+
+app.get('/api/admin/almacen-domicilios', authMiddleware, adminMiddleware, (_req, res) => {
+  res.json(respuestaAlmacenDomicilios(configStore.leer()));
+});
+
+app.post('/api/admin/almacen-domicilios/barrer', authMiddleware, adminMiddleware, async (_req, res) => {
+  try {
+    await barrerAlmacenesDomicilios();
+  } catch (err) {
+    return res.status(503).json({ error: 'No se pudo leer el padron de Operam: ' + err.message });
+  }
+  res.json(respuestaAlmacenDomicilios(configStore.leer()));
+});
+
+// Marcar y desmarcar guardan con el mismo merge que POST /api/admin/config: se
+// parte de lo que hay en la BASE (cargar() antes de leer) y se conserva el resto
+// de la configuracion. Lectura y guardado van en el mismo try: Express 4 no
+// atrapa promesas rechazadas.
+async function guardarExcepcionesAlmacen(res, cambiar) {
+  let config;
+  try {
+    await configStore.cargar();
+    const actual = configStore.leer() || {};
+    const excepciones = cambiar(excepcionesAlmacen(actual));
+    if (!excepciones) return res.status(400).json({ error: 'Falta el domicilio o el almacen que se aprueba' });
+    config = { ...actual, excepcionesAlmacen: excepciones };
+    await configStore.guardar(config);
+  } catch (err) {
+    return res.status(500).json({ error: 'Configuracion no disponible: ' + err.message });
+  }
+  res.json(respuestaAlmacenDomicilios(config));
+}
+
+app.post('/api/admin/almacen-domicilios/asi-va-bien', authMiddleware, adminMiddleware, (req, res) =>
+  guardarExcepcionesAlmacen(res, lista => marcarAsiVaBien(lista, req.body)));
+
+app.delete('/api/admin/almacen-domicilios/asi-va-bien/:branchCode', authMiddleware, adminMiddleware, (req, res) =>
+  guardarExcepcionesAlmacen(res, lista => desmarcarAsiVaBien(lista, req.params.branchCode)));
 
 // Observabilidad de los barridos de sincronizacion de contactos a Google
 // (issue #230, padre #224): ultima corrida por barrido, totales de la ultima
