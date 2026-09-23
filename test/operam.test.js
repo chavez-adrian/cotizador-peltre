@@ -423,3 +423,110 @@ test('B12 (#426): la fila del cliente 52 lleva su Cel y el paso Cliente lo encue
     assert.deepEqual(cotizacionesPreviasDelCliente([previa], fila), [previa]);
   } finally { restore(); }
 });
+
+// B13-B17: #421 -- la busqueda de Clientes Operam por texto tambien encuentra por
+// RFC. Caso real de la prueba HITL de #415: el cliente 52 aparecia por nombre y
+// por su RFC daba cero resultados (y ofrecia "Crear contacto GJA990301TM7").
+const GJ_ASOCIADOS = {
+  customer_id: '52',
+  CustName: 'G J Y ASOCIADOS ABOGADOS SC',
+  cust_ref: 'Pizza Studio',
+  tax_id: 'GJA990301TM7',
+  contacts: [],
+  branches: [{ branch_code: '59', phone: '' }],
+};
+
+// Operam como es: ?search= busca por NOMBRE y un RFC ahi da 404 (#194), ?tax_id=
+// filtra por RFC exacto y el listado paginado es el padron del indice (#42).
+// Registra con que RFC se consulto ?tax_id=.
+function mockOperamConRfc({ porNombre = [], porRfc = {}, padron = [], rfcFalla = false } = {}) {
+  const consultasRfc = [];
+  const lista = (filas) => (filas.length ? jsonResponse({ total: filas.length, data: filas }) : jsonResponse({}, 404));
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers?': (url) => {
+      const params = new URL(String(url), 'http://operam.local').searchParams;
+      if (params.has('search')) return lista(porNombre);
+      if (params.has('tax_id')) {
+        consultasRfc.push(params.get('tax_id'));
+        if (rfcFalla) return jsonResponse({}, 500);
+        return lista(porRfc[params.get('tax_id')] || []);
+      }
+      return jsonResponse({ total: padron.length, data: padron });
+    },
+  });
+  return { restore, consultasRfc };
+}
+
+test('B13 (#421): el RFC exacto encuentra al Cliente Operam cuyo nombre no lo contiene', async () => {
+  const { mezclarResultadosBusqueda } = await import('../public/js/alta-logica.js');
+  resetSession();
+  resetIndice();
+  const { restore } = mockOperamConRfc({ porRfc: { GJA990301TM7: [GJ_ASOCIADOS] }, padron: [GJ_ASOCIADOS] });
+  try {
+    const res = await req.get('/api/operam/clientes?q=GJA990301TM7').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.map(c => c.id), ['52']);
+    assert.equal(res.body[0].name, 'G J Y ASOCIADOS ABOGADOS SC');
+    assert.equal(res.body[0].rfc, 'GJA990301TM7');
+    assert.equal(mezclarResultadosBusqueda(res.body, [], 'GJA990301TM7').length, 1,
+      'el paso Cliente no descarta la fila: la reconoce por su RFC');
+  } finally { restore(); }
+});
+
+test('B14 (#421): el RFC tecleado en minusculas o con espacios consulta el RFC normalizado', async () => {
+  resetSession();
+  resetIndice();
+  const { restore, consultasRfc } = mockOperamConRfc({ porRfc: { GJA990301TM7: [GJ_ASOCIADOS] }, padron: [GJ_ASOCIADOS] });
+  try {
+    for (const q of ['gja990301tm7', 'GJA 990301 TM7']) {
+      resetIndice();
+      const res = await req.get(`/api/operam/clientes?q=${encodeURIComponent(q)}`).set('Authorization', `Bearer ${TOKEN}`);
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.map(c => c.id), ['52'], `"${q}" deberia encontrar al cliente 52`);
+    }
+    assert.deepEqual(consultasRfc, ['GJA990301TM7', 'GJA990301TM7']);
+  } finally { restore(); }
+});
+
+test('B15 (#421): buscar por nombre sigue igual y NO consulta el RFC', async () => {
+  resetSession();
+  resetIndice();
+  const { restore, consultasRfc } = mockOperamConRfc({ porNombre: [GJ_ASOCIADOS], padron: [GJ_ASOCIADOS] });
+  try {
+    for (const q of ['G J Y ASOCIADOS', 'Pizza Studio']) {
+      resetIndice();
+      const res = await req.get(`/api/operam/clientes?q=${encodeURIComponent(q)}`).set('Authorization', `Bearer ${TOKEN}`);
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.map(c => c.id), ['52'], `"${q}" deberia encontrar al cliente 52`);
+    }
+    assert.deepEqual(consultasRfc, [], 'un texto sin forma de RFC no agrega llamadas a Operam');
+  } finally { restore(); }
+});
+
+test('B16 (#421): el cliente que cae por nombre y por RFC a la vez sale una sola vez', async () => {
+  resetSession();
+  resetIndice();
+  const { restore, consultasRfc } = mockOperamConRfc({
+    porNombre: [GJ_ASOCIADOS], porRfc: { GJA990301TM7: [GJ_ASOCIADOS] }, padron: [GJ_ASOCIADOS],
+  });
+  try {
+    const res = await req.get('/api/operam/clientes?q=GJA990301TM7').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(consultasRfc, ['GJA990301TM7'], 'la consulta por RFC si corrio');
+    assert.deepEqual(res.body.map(c => c.id), ['52']);
+  } finally { restore(); }
+});
+
+test('B17 (#421): si la consulta por RFC falla, responde con lo que trajeron las otras fuentes', async () => {
+  const otro = { ...GJ_ASOCIADOS, customer_id: '53', CustName: 'GJA ABOGADOS DEL CENTRO', tax_id: 'GAC010101AB1' };
+  resetSession();
+  resetIndice();
+  const { restore, consultasRfc } = mockOperamConRfc({ porNombre: [otro], padron: [otro], rfcFalla: true });
+  try {
+    const res = await req.get('/api/operam/clientes?q=GJA990301TM7').set('Authorization', `Bearer ${TOKEN}`);
+    assert.deepEqual(consultasRfc, ['GJA990301TM7'], 'la consulta por RFC si se intento');
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.map(c => c.id), ['53']);
+  } finally { restore(); }
+});

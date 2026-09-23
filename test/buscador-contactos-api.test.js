@@ -96,6 +96,13 @@ function mockOperam({ padron, pedidos = [] } = {}) {
       return { ok: true, json: async () => ({ data: /skip=0/.test(u) ? pedidos : [] }) };
     }
     if (u.includes('/api/v3/sales/customers')) {
+      // #421: ?tax_id= filtra por RFC exacto (tambien pide limit=100: va antes
+      // del padron).
+      const taxId = decodeURIComponent((u.match(/[?&]tax_id=([^&]*)/) || [])[1] || '');
+      if (taxId) {
+        const hit = padron.filter(c => c.tax_id === taxId);
+        return { ok: true, json: async () => ({ total: hit.length, data: hit }) };
+      }
       if (u.includes('limit=100')) return { ok: true, json: async () => ({ total: padron.length, data: padron }) };
       const search = decodeURIComponent((u.match(/[?&]search=([^&]*)/) || [])[1] || '');
       const hit = padron.filter(c => c.CustName.toLowerCase().includes(search.toLowerCase()));
@@ -179,6 +186,16 @@ test('#346: la fila del Contacto trae etiquetas, Oportunidades y los estados de 
   assert.equal(cliente.nombre, 'JORGE OREA');
   const op = fila.oportunidades.find(o => o.folioOperam === 1240);
   assert.equal(op.etapa, 'seguimiento');
+});
+
+// #421: el buscador de la vista Clientes pasa por la MISMA busqueda por texto
+// que el paso Cliente, asi que tambien encuentra por RFC.
+test('#421: el RFC de un Cliente Operam lo encuentra aunque su nombre no lo contenga', async () => {
+  mockOperam({ padron: [SOLITARIO, JORGE], pedidos: [] });
+  const res = await buscar('aza900101qx3');
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.filter(f => f.tipo === 'operam').map(f => String(f.id)), ['910']);
+  assert.equal(res.body.filter(f => f.tipo === 'contacto').length, 0);
 });
 
 test('#346: un query de menos de dos caracteres no consulta nada', async () => {

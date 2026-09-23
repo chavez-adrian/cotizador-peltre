@@ -21,7 +21,7 @@ import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
-import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, normalizarRfc, poolClientesParaDedup } from './lib/deduplicacion.js';
+import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, normalizarRfc, tieneFormaDeRfc, poolClientesParaDedup } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
 import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento-operam.mjs';
@@ -2449,18 +2449,19 @@ function titleCase(str) {
 // buscarClientesPorTexto(q) cablea el indice de telefonos/nombre corto de
 // #42 (best effort, nunca lanza) para cubrir telefono de contacto y
 // cust_ref, que Operam no indexa. Se combinan y deduplican por customer_id.
-// OJO (#194): ninguna de las dos indexa el RFC, asi que un vendedor que
-// teclee un RFC en esta caja no encuentra nada. NO es el bug de #194 (aqui
-// el texto es libre, no una llave de dedup) y se dejo como estaba; si se
-// quiere cubrir, el camino es un fallback a buscarClientesPorRfc cuando q
-// tenga forma de RFC.
+// Ninguna de las dos indexa el RFC (#194), asi que un RFC tecleado aqui no
+// encontraba nada y el paso Cliente ofrecia crear un contacto con el (#421):
+// solo cuando q tiene forma de RFC se suma buscarClientesPorRfc (?tax_id=,
+// RFC completo, no prefijo) con el RFC normalizado, best effort como el resto
+// de la ruta -- si falla, responden las otras dos fuentes.
 async function clientesOperamPorTexto(q) {
-  const [porOperam, porIndice] = await Promise.all([
+  const [porOperam, porIndice, porRfc] = await Promise.all([
     buscarClientes(q),
     buscarClientesPorTexto(q),
+    tieneFormaDeRfc(q) ? buscarClientesPorRfc(normalizarRfc(q)).catch(() => []) : [],
   ]);
   const vistos = new Set();
-  return [...(Array.isArray(porOperam) ? porOperam : []), ...porIndice].filter(c => {
+  return [...(Array.isArray(porOperam) ? porOperam : []), ...porIndice, ...porRfc].filter(c => {
     if (vistos.has(c.customer_id)) return false;
     vistos.add(c.customer_id);
     return true;

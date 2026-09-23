@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarRfc, normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico, coincideCustRef, agregarCandidatosPorCustRef } from '../lib/deduplicacion.js';
+import { normalizarRfc, tieneFormaDeRfc, normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico, coincideCustRef, agregarCandidatosPorCustRef } from '../lib/deduplicacion.js';
 
 // N1: quita acentos
 test('N1: normalizarNombre quita acentos', () => {
@@ -574,4 +574,31 @@ test('llaveRfc y normalizarRfc son la MISMA llave', async () => {
   const { llaveRfc } = await import('../public/js/alta-logica.js');
   const casos = ['romp580101ab1', 'ROMP 580101 AB1', ' XAXX010101000 ', 'cogc6108293fa', '', null, undefined];
   for (const caso of casos) assert.equal(llaveRfc(caso), normalizarRfc(caso), `llave distinta para ${caso}`);
+});
+
+// #421: la busqueda de Clientes Operam por texto consulta ademas el ?tax_id= de
+// Operam cuando lo tecleado tiene forma de RFC mexicano. GJA990301TM7 es el RFC
+// del cliente 52 (G J Y ASOCIADOS ABOGADOS SC) de la prueba HITL de #415.
+test('#421: tieneFormaDeRfc acepta 12 (moral) y 13 (fisica) caracteres', () => {
+  assert.equal(tieneFormaDeRfc('GJA990301TM7'), true, 'persona moral, 12');
+  assert.equal(tieneFormaDeRfc('ROMP580101AB1'), true, 'persona fisica, 13');
+  assert.equal(tieneFormaDeRfc('XAXX010101000'), true, 'el RFC generico tambien tiene forma de RFC');
+});
+
+test('#421: tieneFormaDeRfc tolera minusculas y espacios', () => {
+  assert.equal(tieneFormaDeRfc('gja990301tm7'), true);
+  assert.equal(tieneFormaDeRfc('GJA 990301 TM7'), true);
+  assert.equal(tieneFormaDeRfc(' romp 580101 ab1 '), true);
+});
+
+test('#421: tieneFormaDeRfc rechaza lo que no es un RFC', () => {
+  // "G J Y ASOCIADOS" sin espacios son 12 letras: la longitud sola no basta.
+  assert.equal(tieneFormaDeRfc('G J Y ASOCIADOS'), false, 'un nombre');
+  assert.equal(tieneFormaDeRfc('GJ'), false, 'dos letras');
+  assert.equal(tieneFormaDeRfc('5510021463'), false, 'un telefono');
+  assert.equal(tieneFormaDeRfc('GJA990301TM'), false, '11 caracteres');
+  assert.equal(tieneFormaDeRfc('ROMP580101AB12'), false, '14 caracteres');
+  assert.equal(tieneFormaDeRfc(''), false);
+  assert.equal(tieneFormaDeRfc(null), false);
+  assert.equal(tieneFormaDeRfc(undefined), false);
 });
