@@ -12,7 +12,7 @@
 
 import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
-import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP } from './alta-logica.js';
+import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
@@ -111,8 +111,9 @@ function estadoVigencia(steps) {
 // que se muestra siempre, y `detalle` tecnico, que va plegado --, asi que el slot ya
 // no pinta el nombre del paso ni el `error` crudo de la API.
 //
-// Los pasos en ok y los omitidos NO se pintan aqui: viajan igual en `steps` para
-// quien depure, y listarlos todos convertiria cada subida exitosa en un muro de diez
+// Los pasos en ok y los omitidos NO se pintan aqui -- salvo PASOS_OK_QUE_SE_LEEN (#433):
+// a quien quedo el domicilio nuevo es noticia aunque salga bien --: viajan igual en
+// `steps` para quien depure, y listarlos todos convertiria cada subida exitosa en un muro de diez
 // renglones. 'post-fix vigencia' queda fuera porque ya tiene su propio aviso, con
 // texto propio (estadoVigencia): pintarlo dos veces seria decir lo mismo dos veces.
 //
@@ -123,7 +124,7 @@ const PASO_CON_AVISO_PROPIO = new Set(['post-fix vigencia']);
 
 export function pasosParaMostrar(steps) {
   return (Array.isArray(steps) ? steps : [])
-    .filter(s => s && (s.status === 'warn' || s.status === 'error') && !PASO_CON_AVISO_PROPIO.has(s.name))
+    .filter(s => s && (s.status === 'warn' || s.status === 'error' || (s.status === 'ok' && PASOS_OK_QUE_SE_LEEN.has(s.name))) && !PASO_CON_AVISO_PROPIO.has(s.name))
     .map(s => ({
       estado: s.status,
       mensaje: s.mensaje || 'Un paso del alta del Cliente Operam no se completo.',

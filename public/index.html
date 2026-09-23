@@ -506,6 +506,16 @@
                   </div>
                   <div class="alta-paso-msg" id="alta-paso-msg-4" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
+                <!-- Fila opcional (#433): solo se muestra cuando el alta crea otro domicilio
+                     sobre un Cliente Operam existente (paso `vendedor branch` de #414). -->
+                <div class="alta-paso" id="alta-paso-7" style="display:none;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+                  <div class="alta-paso-icono" id="alta-paso-ico-7" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Vendedor del domicilio nuevo</div>
+                    <div style="font-size:11px;color:var(--text-light)">salesman del POST /branches &mdash; cartera del Cliente Operam</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-7" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
                 <div class="alta-paso" id="alta-paso-6" style="display:flex;align-items:center;gap:10px;padding:8px 0">
                   <div class="alta-paso-icono" id="alta-paso-ico-6" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
                   <div style="flex:1">

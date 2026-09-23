@@ -1466,3 +1466,49 @@ test('sin vendedor que escribir y sin persona unica el aviso dice que el domicil
   assert.equal(paso(res, 'vendedor branch').mensaje,
     'El domicilio nuevo queda sin vendedor: el cliente no tiene un vendedor unico en sus domicilios');
 });
+
+// #433, de punta a punta: los pasos que el MODULO emite al crear otro domicilio
+// sobre un Cliente Operam de cartera unica, pasados por el panel del alta completa
+// y por el slot de la subida. Con pasos escritos a mano el panel podia verse bien
+// y no ser lo que el modulo manda (la leccion de #374).
+test('la herencia del domicilio nuevo se lee en el panel del alta y en la subida, y Crear cliente no se palomea', async () => {
+  const { interpretarRespuestaAlta, ALTA_PASO_FILA } = await import('../public/js/alta-logica.js');
+  const { pasosParaMostrar } = await import('../public/js/pipeline-logica.js');
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '7', br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000', salesman: '2', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Adrian Chavez'), operam.deps);
+  assert.equal(res.tipo, 'lograda');
+
+  const { filas, exito } = interpretarRespuestaAlta({ ok: true, steps: res.pasos });
+  const fila = n => filas.find(f => f.fila === ALTA_PASO_FILA[n]);
+  assert.equal(exito, true);
+  const vendedor = fila('vendedor branch');
+  assert.equal(vendedor.oculta, false);
+  assert.equal(vendedor.status, 'ok');
+  assert.equal(vendedor.msg, 'El domicilio nuevo queda a nombre de Alejandro Chavez, que atiende a este cliente');
+  const arriba = fila('POST customer');
+  assert.equal(arriba.status, 'omitido', 'no se creo ningun Cliente Operam: solo el domicilio');
+  assert.match(arriba.msg, /se le agrega un domicilio de entrega/);
+
+  const subida = pasosParaMostrar(res.pasos);
+  assert.ok(subida.some(p => p.estado === 'ok' && p.mensaje === 'El domicilio nuevo queda a nombre de Alejandro Chavez, que atiende a este cliente'),
+    JSON.stringify(subida));
+});
+
+test('sin paso de cartera (cliente recien creado) la fila del vendedor del domicilio nuevo no aparece en el panel', async () => {
+  const { interpretarRespuestaAlta, ALTA_PASO_FILA } = await import('../public/js/alta-logica.js');
+  const operam = operamEnMemoria({ vendedores: REGISTRO });
+  const res = await darDeAlta(solicitud({
+    comercial: { vendedor: 'Adrian Chavez', tier: 'M100', salesTypeId: 15, segmentoId: null, correoFacturacion: '', usoCfdi: '' },
+    domicilioEntrega: DOMICILIO,
+  }), operam.deps);
+  assert.equal(res.tipo, 'lograda');
+
+  const { filas } = interpretarRespuestaAlta({ ok: true, steps: res.pasos });
+  assert.equal(filas.find(f => f.fila === ALTA_PASO_FILA['vendedor branch']).oculta, true);
+  assert.equal(filas.find(f => f.fila === ALTA_PASO_FILA['POST customer']).status, 'ok', 'el cliente si nacio en esta alta');
+});

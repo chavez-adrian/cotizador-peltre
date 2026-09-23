@@ -18,6 +18,7 @@ import {
   errorAltaSinConfirmar,
   errorAltaEnModoUpgrade,
   ALTA_PASO_FILAS,
+  ALTA_PASO_FILAS_OPCIONALES,
   buildClienteDesdeAlta,
   mensajeBusquedaCelular,
   mezclarResultadosBusqueda,
@@ -8615,8 +8616,15 @@ function altaPasoSetStatus(idx, status, msg, detalle) {
   if (row) row.style.background = status === 'error' ? '#fff5f5' : '';
 }
 
+// Una fila opcional (#433) solo se ve cuando su paso corrio; la de siempre, siempre.
+function altaPasoMostrar(idx, visible) {
+  const row = document.getElementById(`alta-paso-${idx}`);
+  if (row) row.style.display = visible ? 'flex' : 'none';
+}
+
 function altaPasosReset() {
   ALTA_PASO_FILAS.forEach(i => altaPasoSetStatus(i, 'pending', ''));
+  ALTA_PASO_FILAS_OPCIONALES.forEach(i => altaPasoMostrar(i, false));
 }
 
 // Banner del motivo del fallo (#213). Es el UNICO lugar donde el vendedor se entera
@@ -8742,7 +8750,10 @@ function altaEnviarAlta(payload) {
       // que quedaron fuera porque un paso previo aborto el alta; dejarlos girando diria
       // que siguen en curso -- y un fallo SIN steps (el 400) sale por el banner.
       const vista = interpretarRespuestaAlta(data);
-      vista.filas.forEach(f => altaPasoSetStatus(f.fila, f.status, f.msg, f.detalle));
+      vista.filas.forEach(f => {
+        altaPasoSetStatus(f.fila, f.status, f.msg, f.detalle);
+        altaPasoMostrar(f.fila, !f.oculta);
+      });
       altaSec4Error(vista.mensajeError);
       // La pregunta de duplicado con sus tres salidas (#368): no es un fallo, es
       // una decision pendiente, y de ahi sale el cuerpo con el que se reintenta.

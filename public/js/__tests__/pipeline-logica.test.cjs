@@ -1648,6 +1648,35 @@ test('Q43: el slot pinta el mensaje a la vista y el detalle tecnico plegado, nun
   assert.ok(!html.includes('verificar Cel'), 'el nombre tecnico del paso no llega a pantalla');
 });
 
+// La herencia del vendedor del domicilio nuevo (#433, paso de #414): su EXITO es
+// noticia -- decide a quien paga el Reporte de Comisiones --, asi que la subida la
+// dice igual que su aviso. Respuesta real del HITL de #414 (nombre en ASCII).
+const PASO_VENDEDOR_OK = {
+  name: 'vendedor branch', status: 'ok',
+  mensaje: 'El domicilio nuevo queda a nombre de Adrian Chavez, que atiende a este cliente',
+  detalle: 'salesman 1 de los domicilios activos 564, 15 del cliente 15; la solicitud pedia 2',
+};
+
+test('Q45: la subida lista la herencia del vendedor en ok, y los demas ok siguen fuera (#433)', () => {
+  const pasos = pasosParaMostrar([
+    { name: 'dedup', status: 'ok', mensaje: 'Se uso el Cliente Operam que elegiste y se le agrega un domicilio de entrega', detalle: 'cliente 15' },
+    PASO_VENDEDOR_OK,
+    { name: 'POST branch', status: 'ok', mensaje: 'Se creo el domicilio de entrega', detalle: 'POST /branches -> branch 580' },
+  ]);
+  assert.deepEqual(pasos, [{
+    estado: 'ok',
+    mensaje: 'El domicilio nuevo queda a nombre de Adrian Chavez, que atiende a este cliente',
+    detalle: 'salesman 1 de los domicilios activos 564, 15 del cliente 15; la solicitud pedia 2',
+  }]);
+});
+
+test('Q46: el slot de la cotizacion subida pinta a quien quedo el domicilio, con el detalle plegado (#433)', () => {
+  const html = buildOperamStatusHtml(5, interpretarSubidaOperam({ ok: true, folio: 1702, steps: [PASO_VENDEDOR_OK] }));
+  assert.ok(html.includes('<li class="operam-paso operam-paso-ok">El domicilio nuevo queda a nombre de Adrian Chavez, que atiende a este cliente'));
+  assert.ok(html.includes('<summary>Ver detalle t&eacute;cnico</summary><div>salesman 1 de los domicilios activos 564, 15 del cliente 15; la solicitud pedia 2</div>'));
+  assert.ok(!html.includes('vendedor branch'), 'el nombre tecnico del paso no llega a pantalla');
+});
+
 test('Q44: sin pasos que reportar el slot no pinta lista vacia', () => {
   assert.ok(!buildOperamStatusHtml(5, interpretarSubidaOperam({ ok: true, folio: 1701 })).includes('operam-pasos'));
 });

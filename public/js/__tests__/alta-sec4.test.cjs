@@ -371,8 +371,103 @@ test('J3: el Cliente Operam reutilizado deja su motivo en la fila de arriba, aun
     steps: [{ name: 'dedup', status: 'ok', mensaje: 'Se uso el Cliente Operam que elegiste', detalle: 'cliente 41 revalidado contra el pool' }],
   });
   const arriba = r.filas.find(f => f.fila === ALTA_PASO_FILA['POST customer']);
-  assert.strictEqual(arriba.status, 'ok');
+  // #433: la fila se titula "Crear cliente" y aqui no se creo ninguno. Una paloma
+  // muda afirmaba la creacion; el paso que no aplico sale omitido con su motivo.
+  assert.strictEqual(arriba.status, 'omitido');
+  assert.strictEqual(arriba.msg, 'Se uso el Cliente Operam que elegiste');
+  assert.strictEqual(arriba.detalle, 'cliente 41 revalidado contra el pool');
   assert.strictEqual(ALTA_PASO_FILA.dedup, ALTA_PASO_FILA['POST customer']);
+});
+
+// HITL de #414 en produccion (#433): salida "es otro domicilio de este cliente"
+// sobre el cliente 15. Solo se hizo POST /branches, y la fila "Crear cliente"
+// salia con paloma: el vendedor leia "cliente creado" donde se creo un domicilio.
+test('J4: con otro domicilio sobre un Cliente Operam existente la fila Crear cliente no afirma una creacion (#433)', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'dedup', status: 'ok', mensaje: 'Se uso el Cliente Operam que elegiste y se le agrega un domicilio de entrega', detalle: 'cliente 15 revalidado contra el pool' },
+      { name: 'PUT customer (config comercial)', status: 'omitido', mensaje: 'Sin cambios de configuracion comercial' },
+      { name: 'vendedor branch', status: 'ok', mensaje: 'El domicilio nuevo queda a nombre de Adrian Chavez, que atiende a este cliente', detalle: 'salesman 1 de los domicilios activos 564, 15 del cliente 15; la solicitud pedia 2' },
+      { name: 'POST branch', status: 'ok', mensaje: 'Se creo el domicilio de entrega', detalle: 'POST /branches -> branch 580' },
+      { name: 'verificar branch', status: 'ok', mensaje: 'El domicilio de entrega quedo guardado en Operam', detalle: 'GET /customers/15 branches -> 580' },
+    ],
+  });
+  const arriba = r.filas.find(f => f.fila === ALTA_PASO_FILA['POST customer']);
+  assert.notStrictEqual(arriba.status, 'ok', 'no se creo ningun Cliente Operam');
+  assert.strictEqual(arriba.status, 'omitido');
+  assert.strictEqual(arriba.msg, 'Se uso el Cliente Operam que elegiste y se le agrega un domicilio de entrega');
+  const domicilio = r.filas.find(f => f.fila === ALTA_PASO_FILA['POST branch']);
+  assert.strictEqual(domicilio.status, 'ok', 'lo que si se creo fue el domicilio, en su fila');
+});
+
+test('J5: el Cliente Operam que si nace en el alta conserva su paloma en Crear cliente (#433)', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'dedup', status: 'ok', mensaje: 'No hay ningun Cliente Operam parecido: se crea uno nuevo', detalle: 'sin candidatos' },
+      { name: 'POST customer', status: 'ok', mensaje: 'Se creo el Cliente Operam', detalle: 'POST /customers -> cliente 900' },
+    ],
+  });
+  const arriba = r.filas.find(f => f.fila === ALTA_PASO_FILA['POST customer']);
+  assert.strictEqual(arriba.status, 'ok');
+  assert.strictEqual(arriba.detalle, 'POST /customers -> cliente 900');
+});
+
+// El vendedor del domicilio nuevo (#433, paso de #414). Respuesta real del HITL de
+// #414 en produccion (branch 580 sobre el cliente 15), con el nombre en ASCII.
+const PASO_VENDEDOR_OK = {
+  name: 'vendedor branch', status: 'ok',
+  mensaje: 'El domicilio nuevo queda a nombre de Adrian Chavez, que atiende a este cliente',
+  detalle: 'salesman 1 de los domicilios activos 564, 15 del cliente 15; la solicitud pedia 2',
+};
+const PASOS_DOMICILIO_NUEVO = [
+  { name: 'POST branch', status: 'ok', mensaje: 'Se creo el domicilio de entrega', detalle: 'POST /branches -> branch 580' },
+  { name: 'verificar branch', status: 'ok', mensaje: 'El domicilio de entrega quedo guardado en Operam', detalle: 'GET /customers/15 branches -> 580' },
+];
+
+test('V1: la herencia del vendedor se lee en su fila con el mensaje del modulo y el detalle aparte (#433)', () => {
+  const r = interpretarRespuestaAlta({ ok: true, steps: [PASO_VENDEDOR_OK, ...PASOS_DOMICILIO_NUEVO] });
+  const vendedor = r.filas.find(f => f.fila === ALTA_PASO_FILA['vendedor branch']);
+  assert.ok(vendedor, 'el paso tiene fila');
+  assert.strictEqual(vendedor.status, 'ok');
+  assert.strictEqual(vendedor.oculta, false);
+  assert.strictEqual(vendedor.msg, 'El domicilio nuevo queda a nombre de Adrian Chavez, que atiende a este cliente',
+    'una paloma muda no dice a quien quedo el domicilio');
+  assert.strictEqual(vendedor.detalle, 'salesman 1 de los domicilios activos 564, 15 del cliente 15; la solicitud pedia 2');
+  const domicilio = r.filas.find(f => f.fila === ALTA_PASO_FILA['verificar branch']);
+  assert.strictEqual(domicilio.detalle, 'GET /customers/15 branches -> 580', 'la fila del domicilio sigue cerrando en su verificacion');
+});
+
+test('V2: el aviso de que la herencia no aplico se lee en su fila y no tumba el alta (#433)', () => {
+  const aviso = {
+    name: 'vendedor branch', status: 'warn',
+    mensaje: 'El domicilio nuevo queda a nombre de Adrian Chavez: el cliente no tiene un vendedor unico en sus domicilios',
+    detalle: 'varias-personas en el cliente 41: domicilios activos 475=1 Adrian Chavez, 476=2 Alejandro Chavez; se escribe el salesman de la solicitud, 1',
+  };
+  const r = interpretarRespuestaAlta({ ok: true, steps: [aviso, ...PASOS_DOMICILIO_NUEVO] });
+  const vendedor = r.filas.find(f => f.fila === ALTA_PASO_FILA['vendedor branch']);
+  assert.strictEqual(vendedor.status, 'warn');
+  assert.strictEqual(vendedor.oculta, false);
+  assert.strictEqual(vendedor.msg, aviso.mensaje);
+  assert.strictEqual(vendedor.detalle, aviso.detalle);
+  assert.strictEqual(r.exito, true);
+  assert.strictEqual(r.mensajeError, null, 'un aviso no es un fallo del alta');
+  assert.strictEqual(r.mostrarReintentar, false);
+});
+
+test('V3: sin paso de cartera (cliente recien creado o domicilio reusado) la fila no aparece (#433)', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'POST customer', status: 'ok', mensaje: 'Se creo el Cliente Operam', detalle: 'POST /customers -> cliente 900' },
+      { name: 'PUT branch (domicilio)', status: 'ok', mensaje: 'Se guardo el domicilio de entrega en Operam', detalle: 'PUT /branches/600' },
+    ],
+  });
+  const vendedor = r.filas.find(f => f.fila === ALTA_PASO_FILA['vendedor branch']);
+  assert.strictEqual(vendedor.oculta, true, 'un paso que no aplica no se queda pendiente para siempre');
+  assert.ok(r.filas.filter(f => f.fila !== ALTA_PASO_FILA['vendedor branch']).every(f => f.oculta === false),
+    'las demas filas se ven siempre, corran o no');
 });
 
 // La pregunta de duplicado en el formulario (#368). Mismo patron que la

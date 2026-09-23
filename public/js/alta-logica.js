@@ -1789,9 +1789,23 @@ export const ALTA_PASO_FILA = {
   'PUT branch (domicilio)': 4,
   'verificar branch': 4,
   'verificar Cel': 6,
+  // A quien quedo el domicilio NUEVO de un Cliente Operam existente (#414, #433):
+  // fila propia, porque en la del domicilio la verificacion lo taparia.
+  'vendedor branch': 7,
 };
 
 export const ALTA_PASO_FILAS = [...new Set(Object.values(ALTA_PASO_FILA))];
+
+// Filas de pasos que solo corren en un camino del alta (#433): sin paso no se
+// pintan, en vez de quedarse pendientes para siempre. `vendedor branch` solo
+// existe al crear otro domicilio sobre un Cliente Operam elegido.
+export const ALTA_PASO_FILAS_OPCIONALES = [ALTA_PASO_FILA['vendedor branch']];
+
+// Pasos cuyo EXITO tambien es noticia para el vendedor (#433): la herencia del
+// vendedor decide a quien paga el Reporte de Comisiones, asi que su paloma no
+// puede ser muda. Lo comparten el panel del alta y la subida de la cotizacion
+// (`pasosParaMostrar`, pipeline-logica.js).
+export const PASOS_OK_QUE_SE_LEEN = new Set(['vendedor branch']);
 
 // Traduce la respuesta de POST /api/crear-cliente a lo que el panel debe mostrar.
 //
@@ -1810,6 +1824,7 @@ export const ALTA_PASO_FILAS = [...new Set(Object.values(ALTA_PASO_FILA))];
 // nada, que es lo correcto.
 function mensajeExitoPaso(step) {
   if (step.status === 'omitido') return step.mensaje || step.info || '';
+  if (PASOS_OK_QUE_SE_LEEN.has(step.name)) return step.mensaje || '';
   return '';
 }
 
@@ -1894,11 +1909,17 @@ export function interpretarRespuestaAlta(data) {
   const steps = Array.isArray(d.steps) ? d.steps : [];
   const exito = d.ok === true;
 
-  const porFila = new Map(ALTA_PASO_FILAS.map(f => [f, { fila: f, status: 'pending', msg: '', detalle: '' }]));
+  const opcional = f => ALTA_PASO_FILAS_OPCIONALES.includes(f);
+  const porFila = new Map(ALTA_PASO_FILAS.map(f => [f, { fila: f, status: 'pending', msg: '', detalle: '', oculta: opcional(f) }]));
   let primerError = null;
-  for (const step of steps) {
-    const fila = ALTA_PASO_FILA[step?.name];
+  for (const crudo of steps) {
+    const fila = ALTA_PASO_FILA[crudo?.name];
     if (fila === undefined) continue;
+    // La fila de arriba se titula "Crear cliente" (#433): un `dedup` en ok que la
+    // cierra sin un POST customer detras que lo pise es un Cliente Operam
+    // REUTILIZADO. Su paloma afirmaba una creacion que no hubo (en el HITL de #414
+    // solo se creo un domicilio); sale omitida con el motivo del modulo.
+    const step = crudo.name === 'dedup' && crudo.status === 'ok' ? { ...crudo, status: 'omitido' } : crudo;
     const omitido = step.status === 'omitido';
     // Un AVISO no es un fallo (#366): el Cel que Operam no aplico o el campo del
     // domicilio de entrega que ignoro no tumban el alta -- el cliente quedo
@@ -1912,7 +1933,7 @@ export function interpretarRespuestaAlta(data) {
     // es el texto que se muestra.
     const msg = esError || aviso ? (step.mensaje || step.error || '') : mensajeExitoPaso(step);
     const detalle = step.detalle || (step.mensaje ? step.error || '' : '');
-    porFila.set(fila, { fila, status: esError ? 'error' : aviso ? 'warn' : omitido ? 'omitido' : 'ok', msg, detalle });
+    porFila.set(fila, { fila, status: esError ? 'error' : aviso ? 'warn' : omitido ? 'omitido' : 'ok', msg, detalle, oculta: false });
     if (esError && !primerError) primerError = msg || 'Un paso del alta fallo sin decir por que.';
   }
 
