@@ -715,8 +715,10 @@ export function cardClienteHtml(cliente) {
   // #196: nombre corto entre parentesis. La regla de igualdad de nombreConCorto
   // protege el caso prospecto/contacto nuevo, donde ref ES el propio nombre.
   const nombre = nombreConCorto(c.name || c.ref || 'Sin nombre', c.ref);
+  // #427: el telefono del Cliente Operam es el de la fila del servidor, el primero
+  // de `telefonos` (Cel > Telefono > Secundario, #426), tal como lo guarda Operam.
   const subPartes = esOperam
-    ? [c.rfc, 'Cliente en Operam' + (c.id != null ? ' (ID ' + c.id + ')' : '')]
+    ? [c.rfc, c.telefono, 'Cliente en Operam' + (c.id != null ? ' (ID ' + c.id + ')' : '')]
     : [c.telefono, c.ciudad || c.municipio, 'Prospecto'];
   const sub = subPartes.filter(Boolean).map(escapeHtml).join(' &middot; ');
   const botonCsf = mostrarBotonCsf(c)

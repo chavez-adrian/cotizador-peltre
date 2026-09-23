@@ -1319,9 +1319,19 @@ export function chipsCompletitud(cliente) {
 // codigo empieza con '+' y validarTelefono lo juzga completo, sin mirar el
 // select; el que no lo trae es el de pais "Otro" tecleado sin codigo, que la
 // reja tambien rechaza.
+// #427: el numero que llega sin codigo (el texto crudo de Operam en la vista
+// Clientes) se completa como lo hace el campo al cargarlo -- separarTelefonoCodigo
+// + combinarTelefonoConCodigo: 10 digitos -> +52, 12 que empiezan con 52 -> +52,
+// 11 que empiezan con 1 -> +1 -- y el resultado pasa por la misma reja; lo que no
+// sabe completar (code '+') sigue pendiente. El que ya trae '+' no se toca, asi
+// que en el paso Cliente el veredicto no cambia. La reja REAL de la generacion
+// (validarTelefonosCotizacion, app.js) juzga el campo del widget, no esto.
 function telefonoPasaLaReja(telefono) {
   const tel = (telefono || '').trim();
-  return !!tel && !validarTelefono('', tel);
+  if (!tel) return false;
+  if (tel.startsWith('+')) return !validarTelefono('', tel);
+  const { code, numero } = separarTelefonoCodigo(tel);
+  return !validarTelefono('', combinarTelefonoConCodigo(code, numero));
 }
 
 // El chip Contacto se vuelve boton cuando al telefono le falta algo (#418): un

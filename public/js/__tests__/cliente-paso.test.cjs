@@ -338,6 +338,55 @@ test('C8: sin nada de entrega -> "pendiente"', () => {
   assert.strictEqual(chipsCompletitud({ name: 'X', telefono: '+52 5555555555' }).entrega, 'pendiente');
 });
 
+// === #427: el chip Contacto juzga el numero de Operam como lo completa el campo ===
+// Operam guarda el numero como se tecleo, casi siempre sin codigo de pais. En el
+// paso Cliente el widget lo carga con separarTelefonoCodigo y lo arma con su
+// codigo; la vista Clientes juzgaba el texto crudo y el mismo cliente salia
+// pendiente ahi y verde en el paso Cliente (casos de produccion, 2026-09-22).
+
+test('C9 (#427): 6 MALTE TALLER, Cel 5565641576 sin codigo -> Contacto verde y no accionable', () => {
+  const fila = { tipo: 'operam', id: '6', name: 'MALTE TALLER', telefono: '5565641576', telefonos: ['5565641576'] };
+  assert.strictEqual(chipsCompletitud(fila).contacto, true);
+  assert.strictEqual(contactoAccionable(fila), false);
+});
+
+test('C10 (#427): 19 LANIFEM, 444 165 8765 con espacios y sin codigo -> mismo resultado', () => {
+  const fila = { tipo: 'operam', id: '19', name: 'LANIFEM', telefono: '444 165 8765', telefonos: ['444 165 8765'] };
+  assert.strictEqual(chipsCompletitud(fila).contacto, true);
+  assert.strictEqual(contactoAccionable(fila), false);
+});
+
+test('C11 (#427): numero que ya trae su codigo (+52 55 6564 1576) -> sin cambios, verde', () => {
+  const fila = { tipo: 'operam', id: '6', name: 'MALTE TALLER', telefono: '+52 55 6564 1576' };
+  assert.strictEqual(chipsCompletitud(fila).contacto, true);
+  assert.strictEqual(contactoAccionable(fila), false);
+});
+
+test('C12 (#427): 12 digitos que empiezan con 52 y 11 que empiezan con 1 se completan como en el campo', () => {
+  assert.strictEqual(chipsCompletitud({ name: 'X', telefono: '52 55 6564 1576' }).contacto, true);
+  assert.strictEqual(chipsCompletitud({ name: 'X', telefono: '1 337 292 4966' }).contacto, true);
+});
+
+test('C13 (#427): lo que el campo no sabe completar sigue pendiente y accionable', () => {
+  for (const telefono of ['656 1576', 'sin numero', 'Tel. 55 65', '565641576']) {
+    const fila = { tipo: 'operam', name: 'X', telefono };
+    assert.strictEqual(chipsCompletitud(fila).contacto, false, telefono);
+    assert.strictEqual(contactoAccionable(fila), true, telefono);
+  }
+});
+
+test('C14 (#427): completar no rescata un nacional mexicano invalido (la reja sigue siendo la misma)', () => {
+  const fila = { name: 'X', telefono: '0565641576' };
+  assert.strictEqual(chipsCompletitud(fila).contacto, false);
+  assert.strictEqual(contactoAccionable(fila), true);
+});
+
+test('C15 (#427): Cliente Operam sin telefono -> Contacto sigue pendiente', () => {
+  const fila = { tipo: 'operam', id: '7', name: 'SIN TELEFONO SA', telefono: '', telefonos: [] };
+  assert.strictEqual(chipsCompletitud(fila).contacto, false);
+  assert.strictEqual(contactoAccionable(fila), true);
+});
+
 // === buildClienteDesdeContactoNuevo: alimenta gate #81 y cl-* ===
 
 test('N1: nombre alimenta name Y ref (gate #81: razonSocial||nombreCorto), ciudad -> municipio', () => {

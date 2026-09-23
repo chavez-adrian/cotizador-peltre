@@ -316,6 +316,59 @@ test('D5 (#196): cardClienteHtml sin nombre corto informativo no agrega parentes
   assert.doesNotMatch(html, /pc-cli-nombre">[^<]*\(/);
 });
 
+// === #427: la tarjeta del Cliente Operam muestra su telefono ===
+// La fila del servidor ya lo trae (`telefono` = el primero de `telefonos`, Cel >
+// Telefono > Secundario desde #426) y la tarjeta solo pintaba RFC e ID. El chip
+// Contacto juzga igual que el paso Cliente: el numero sin codigo se completa como
+// lo hace el campo antes de pasar por la reja.
+const SUB_CARD = /<div class="pc-cli-sub">([^<]*)<\/div>/;
+const CHIP_CONTACTO_OK = '<span class="pc-chip ok">&#10003; Contacto</span>';
+const CHIP_CONTACTO_PEND = '<span class="pc-chip pend">Contacto</span>';
+
+test('D6 (#427): 6 MALTE TALLER (Cel 5565641576) -> la tarjeta muestra el numero y el chip Contacto sale verde', () => {
+  const html = cardClienteHtml({
+    tipo: 'operam', id: '6', name: 'MALTE TALLER', rfc: 'XAXX010101000',
+    telefono: '5565641576', telefonos: ['5565641576'], pais: 'MX',
+  });
+  assert.equal(html.match(SUB_CARD)[1], 'XAXX010101000 &middot; 5565641576 &middot; Cliente en Operam (ID 6)');
+  assert.ok(html.includes(CHIP_CONTACTO_OK));
+});
+
+test('D7 (#427): 19 LANIFEM (444 165 8765) -> mismo resultado', () => {
+  const html = cardClienteHtml({
+    tipo: 'operam', id: '19', name: 'LANIFEM', rfc: 'XAXX010101000',
+    telefono: '444 165 8765', telefonos: ['444 165 8765'], pais: 'MX',
+  });
+  assert.equal(html.match(SUB_CARD)[1], 'XAXX010101000 &middot; 444 165 8765 &middot; Cliente en Operam (ID 19)');
+  assert.ok(html.includes(CHIP_CONTACTO_OK));
+});
+
+test('D8 (#427): numero que ya trae su codigo (+52 55 6564 1576) -> lo muestra y sigue verde', () => {
+  const html = cardClienteHtml({ tipo: 'operam', id: '6', name: 'MALTE TALLER', rfc: 'XAXX010101000', telefono: '+52 55 6564 1576' });
+  assert.equal(html.match(SUB_CARD)[1], 'XAXX010101000 &middot; +52 55 6564 1576 &middot; Cliente en Operam (ID 6)');
+  assert.ok(html.includes(CHIP_CONTACTO_OK));
+});
+
+test('D9 (#427): numero que no se puede completar (7 digitos) -> chip Contacto pendiente', () => {
+  const html = cardClienteHtml({ tipo: 'operam', id: '8', name: 'SIETE DIGITOS', rfc: 'XAXX010101000', telefono: '656 1576' });
+  assert.ok(html.includes(CHIP_CONTACTO_PEND));
+  assert.ok(!html.includes(CHIP_CONTACTO_OK));
+});
+
+test('D10 (#427): Cliente Operam sin telefono -> sin separador vacio y chip Contacto pendiente', () => {
+  const sinTel = cardClienteHtml({ tipo: 'operam', id: '7', name: 'SIN TELEFONO SA', rfc: 'XAXX010101000', telefono: '', telefonos: [] });
+  assert.equal(sinTel.match(SUB_CARD)[1], 'XAXX010101000 &middot; Cliente en Operam (ID 7)');
+  assert.ok(sinTel.includes(CHIP_CONTACTO_PEND));
+  const sinNada = cardClienteHtml({ tipo: 'operam', id: '9', name: 'SIN NADA SA' });
+  assert.equal(sinNada.match(SUB_CARD)[1], 'Cliente en Operam (ID 9)');
+});
+
+test('D11 (#427): la tarjeta de prospecto no cambia (telefono, ciudad y Prospecto)', () => {
+  const html = cardClienteHtml({ tipo: 'prospecto', name: 'Laura Mendez', telefono: '+52 55 1234 5678', ciudad: 'Puebla' });
+  assert.equal(html.match(SUB_CARD)[1], '+52 55 1234 5678 &middot; Puebla &middot; Prospecto');
+  assert.ok(html.includes(CHIP_CONTACTO_OK));
+});
+
 // === Issue #287: chip Origen en la vista Clientes ===
 // Un cliente de Operam no tiene origen propio: solo lo tiene si alguna vez fue
 // prospecto en el cotizador. La herencia la anota el buscador (pcBuscarMezclado,
