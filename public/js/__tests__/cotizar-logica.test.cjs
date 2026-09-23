@@ -7,7 +7,7 @@ let sincronizarCorreoFactura;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
-let debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion;
+let debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha;
@@ -17,7 +17,7 @@ before(async () => {
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
-    debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion,
+    debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha,
@@ -839,4 +839,64 @@ test('#420-3: con envio de paqueteria o costo manual no hay nada que pintar, con
       assert.strictEqual(avisoEnvioPasoCotizacion({ shippingOpt, envioDecidido }), null, `${shippingOpt}/${envioDecidido}`);
     }
   }
+});
+
+// === #430: el stepper palomea el paso Envio con "Sin envio" decidido ===
+// Tercer lugar del 'none' de #419/#420 (HITL de #419/#420, 2026-09-23): el riel
+// del encabezado juzgaba el paso Envio con `opt !== 'none'` en linea dentro de
+// estadoFlujoCotizar (app.js), asi que "Sin envio" elegido a proposito se quedaba
+// sin palomita. La entrada que distingue el default de la decision es la misma
+// de #419/#420: envioDecidido.
+test('#430-1: "Sin envio" decidido -> el paso Envio cuenta como listo', () => {
+  assert.strictEqual(pasoEnvioListo({ shippingOpt: 'none', envioDecidido: true }), true);
+});
+
+test('#430-2: cotizacion nueva con "Sin envio" por default (nadie decidio) -> el paso Envio no esta listo', () => {
+  assert.strictEqual(pasoEnvioListo({ shippingOpt: 'none', envioDecidido: false }), false);
+});
+
+// Paqueteria o costo manual ya contaban como listos antes de #430 (cualquier
+// opcion distinta de 'none'), con o sin decision: el ticket no los mueve.
+test('#430-3: con paqueteria o costo manual el paso Envio esta listo, con o sin decision', () => {
+  for (const shippingOpt of ['envia', 'manual']) {
+    for (const envioDecidido of [true, false]) {
+      assert.strictEqual(pasoEnvioListo({ shippingOpt, envioDecidido }), true, `${shippingOpt}/${envioDecidido}`);
+    }
+  }
+});
+
+// Sin selector que leer, el riel no palomeaba el paso (`!!(opt && ...)`), y la
+// decision sola no lo vuelve listo: no hay opcion de la que hablar.
+test('#430-4: sin opcion de envio que leer el paso Envio no esta listo', () => {
+  for (const shippingOpt of ['', undefined, null]) {
+    for (const envioDecidido of [true, false]) {
+      assert.strictEqual(pasoEnvioListo({ shippingOpt, envioDecidido }), false, `${shippingOpt}/${envioDecidido}`);
+    }
+  }
+});
+
+// El cableado: app.js no es importable en Node (efectos de navegador en scope de
+// modulo) y sin DOM no se puede afirmar el riel, asi que lo que se cuida aqui es
+// el fuente -- mismo recurso que #402-1 (calcas-logica.test.cjs) y #404-C3
+// (cotizaciones-logica.test.cjs). Ver la palomita en pantalla es HITL.
+function fuenteApp() {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  return fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+}
+
+function cuerpoDeFuncion(src, firma) {
+  const inicio = src.indexOf(firma);
+  assert.ok(inicio > 0, `${firma} debe existir en app.js`);
+  const fin = src.indexOf('\n}\n', inicio);
+  assert.ok(fin > inicio, `${firma} debe cerrar`);
+  return src.slice(inicio, fin);
+}
+
+test('#430-5: el stepper juzga el paso Envio con pasoEnvioListo y la bandera de decision, no contra la opcion', () => {
+  const cuerpo = cuerpoDeFuncion(fuenteApp(), 'function estadoFlujoCotizar(');
+  assert.ok(/envioListo:\s*pasoEnvioListo\(\{[^}]*\benvioDecidido\b[^}]*\}\)/.test(cuerpo),
+    'el paso Envio del riel lo decide el nucleo, con la MISMA bandera de #419/#420');
+  assert.ok(!cuerpo.includes("'none'"),
+    "comparar contra 'none' en linea confunde el default que nadie toco con \"Sin envio\" decidido");
 });

@@ -274,6 +274,16 @@ export function avisoEnvioPasoCotizacion({ shippingOpt, envioDecidido }) {
   };
 }
 
+// Si el paso Envio cuenta como listo en el stepper del encabezado (#430). Tercer
+// lugar del 'none' de #419/#420: estadoFlujoCotizar (app.js) lo juzgaba con
+// `opt !== 'none'` en linea y "Sin envio" decidido se quedaba sin palomita. No es
+// un criterio propio: el paso esta listo cuando el paso Cotizacion no tiene envio
+// que pedir -- paqueteria, manual o "Sin envio" decidido.
+export function pasoEnvioListo({ shippingOpt, envioDecidido }) {
+  if (!shippingOpt) return false;
+  return avisoEnvioPasoCotizacion({ shippingOpt, envioDecidido })?.veredicto !== 'pendiente';
+}
+
 // Tarjeta de solo lectura para el envio via envia.com restaurado del historial
 // (#102, hallazgo del code review): sin ella, #envia-results quedaba vacio y el
 // vendedor perdia la confirmacion visual de que ya habia un envio elegido en el

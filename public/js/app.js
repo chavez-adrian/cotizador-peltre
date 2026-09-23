@@ -182,6 +182,7 @@ import {
   debeProponerEnvia,
   cpListoParaCotizarEnvia,
   avisoEnvioPasoCotizacion,
+  pasoEnvioListo,
   buildEnviaRateRestauradaHtml,
   buildItemsYTotales,
   buildItemEnvio,
@@ -1079,7 +1080,8 @@ function updateTierBar() {
 // === STEPPER INDICATOR (issue #60) ===
 // Deriva la completitud de cada paso con los mismos criterios de siempre
 // (cliente = razon social con valor, productos = carrito no vacio, envio =
-// opcion elegida) y delega el modelo de avance/estado a stepper-logica.js
+// pasoEnvioListo, que desde #430 palomea "Sin envio" decidido y no el default
+// que nadie toco) y delega el modelo de avance/estado a stepper-logica.js
 // (modulo puro, probado). Pinta el riel (numero/completo/actual + dots) y la
 // barra de progreso. Guia y muestra avance sin bloquear el clic libre (AC2).
 function pasoActualStepper() {
@@ -1088,11 +1090,11 @@ function pasoActualStepper() {
 }
 
 function estadoFlujoCotizar() {
-  const opt = document.getElementById('shipping-option')?.value;
+  const shippingOpt = document.getElementById('shipping-option')?.value;
   return {
     clienteListo: !!(document.getElementById('cl-razon-social')?.value?.trim()),
     productosListos: state.cart.size > 0,
-    envioListo: !!(opt && opt !== 'none'),
+    envioListo: pasoEnvioListo({ shippingOpt, envioDecidido }),
   };
 }
 

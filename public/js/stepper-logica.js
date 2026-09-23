@@ -9,7 +9,8 @@
 // siendo navegables con un clic. La completitud de cada paso se deriva de un
 // estado plano con los MISMOS criterios que hoy calcula updateTabIndicators en
 // app.js: cliente = razon social con valor, productos = carrito no vacio,
-// envio = una opcion de envio elegida.
+// envio = pasoEnvioListo (cotizar-logica.js, #430: "Sin envio" cuenta solo
+// cuando se decidio, no como el default de una cotizacion nueva).
 
 export const PASOS_STEPPER = ['cliente', 'productos', 'envio', 'resumen'];
 
