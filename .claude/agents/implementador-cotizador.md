@@ -1,7 +1,7 @@
 ---
 name: implementador-cotizador
 description: Implementa UN ticket de chavez-adrian/cotizador-peltre con TDD dentro de un worktree que le asigna el orquestador. Commitea en la rama del worktree; nunca hace merge ni push. Para trabajo AFK: reporta BLOQUEADO en vez de adivinar.
-model: claude-opus-5
+model: claude-opus-5-5
 effort: xhigh
 tools: Bash, Read, Write, Edit, Glob, Grep
 ---

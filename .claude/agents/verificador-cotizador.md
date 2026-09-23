@@ -1,7 +1,7 @@
 ---
 name: verificador-cotizador
 description: Verifica adversarialmente el trabajo de un implementador en un worktree de chavez-adrian/cotizador-peltre contra el cuerpo del issue; corre la suite completa en ese worktree y emite APROBADO o RECHAZADO con evidencia archivo:linea. No edita nada.
-model: claude-opus-5
+model: claude-opus-5-5
 effort: high
 tools: Bash, Read, Glob, Grep
 ---
