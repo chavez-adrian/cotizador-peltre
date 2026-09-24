@@ -72,6 +72,7 @@ import { indiceOrigenPorCelular, anotarOrigen } from './public/js/origen-logica.
 import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPartidas, MOTIVOS_PRECIO_MANUAL, puedePrecioCalca, normalizarPuedePrecioCalca } from './public/js/calcas-logica.js';
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
+import { validarOperamIds } from './public/js/vendedores-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -2020,10 +2021,14 @@ app.put('/api/admin/vendedores', authMiddleware, adminMiddleware, async (req, re
   try {
     const vendedores = req.body;
     if (!Array.isArray(vendedores)) return res.status(400).json({ error: 'Formato invalido' });
+    // operam_id (#434): entero positivo o null, sin repetir; se valida ANTES
+    // de reemplazar porque el reemplazo es del registro entero.
+    const operamIds = validarOperamIds(vendedores);
+    if (operamIds.error) return res.status(400).json({ error: operamIds.error });
     // El tope y el flag de fijar lista se normalizan al guardarlos (#137/#153):
     // un valor basura o fuera de rango capturado en la administracion nunca
     // puede volverse permiso ilimitado.
-    await vendedoresStore.reemplazar(vendedores.map(v => {
+    await vendedoresStore.reemplazar(operamIds.vendedores.map(v => {
       if (!v) return v;
       const out = { ...v };
       if (v.topeDescuento !== undefined) out.topeDescuento = normalizarTope(v.topeDescuento);

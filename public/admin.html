@@ -15,6 +15,7 @@
   .vendedor-row input { flex: 1; padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
   .vendedor-row .pin-input { width: 70px; flex: none; }
   .vendedor-row .tope-input { width: 70px; flex: none; text-align: right; }
+  .vendedor-row .operam-id-input { width: 90px; flex: none; }
   .vendedor-row label { flex: none; display: flex; align-items: center; gap: 4px; }
   .vendedor-row label input[type="checkbox"] { flex: none; width: auto; padding: 0; border: none; }
   .vendedor-row select { width: 100px; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-family: inherit; }
@@ -137,6 +138,10 @@
       <h2>Vendedores</h2>
       <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
         Nombre, PIN, rol y <strong>tope de descuento</strong> (% maximo que puede aplicar por partida; 0 = no puede descontar).
+      </p>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+        <strong>ID Operam</strong>: el numero de vendedor (salesman) de esa persona en Operam; con el se escribe el vendedor de los clientes que da de alta (Reporte de Comisiones).
+        Si queda vacio, el vendedor no aparece en los selectores de vendedor y sus clientes nacen con el vendedor por defecto de Operam. Dos vendedores no pueden compartirlo.
       </p>
       <div id="vendedores-list"></div>
 
@@ -550,6 +555,7 @@ function renderVendedores() {
       <div class="vendedor-grupo vendedor-grupo-identidad">
         <input type="text" value="${v.name}" onchange="vendedoresData[${i}].name=this.value" placeholder="Nombre">
         <input type="text" class="pin-input" value="${v.pin}" onchange="vendedoresData[${i}].pin=this.value" placeholder="PIN" maxlength="4">
+        <input type="text" class="operam-id-input" inputmode="numeric" value="${v.operam_id ?? ''}" onchange="vendedoresData[${i}].operam_id=this.value" placeholder="ID Operam" title="ID Operam (issue #434): numero de vendedor (salesman) en Operam; vacio = sin id">
       </div>
       <div class="vendedor-grupo vendedor-grupo-contacto">
         <input type="email" value="${v.email || ''}" onchange="vendedoresData[${i}].email=this.value" placeholder="correo@pppeltre.mx" title="Correo (issue #163): a donde llega la alerta de mayoreo si tiene permiso de asignacion o es admin">
@@ -639,17 +645,21 @@ function removeVendedor(i) {
 
 function addVendedor() {
   const maxId = Math.max(...vendedoresData.map(v => v.id), 0);
-  vendedoresData.push({ id: maxId + 1, name: '', pin: '', role: 'vendedor', topeDescuento: 0 });
+  vendedoresData.push({ id: maxId + 1, name: '', pin: '', role: 'vendedor', operam_id: null, topeDescuento: 0 });
   renderVendedores();
 }
 
 async function saveVendedores() {
   const invalid = vendedoresData.find(v => !v.name || !v.pin || v.pin.length !== 4);
   if (invalid) { alert('Todos los vendedores necesitan nombre y PIN de 4 digitos'); return; }
+  // Misma regla que el servidor (#434): avisa aqui y el PUT la vuelve a exigir.
+  const { validarOperamIds } = await import('/js/vendedores-logica.js');
+  const operamIds = validarOperamIds(vendedoresData);
+  if (operamIds.error) { alert(operamIds.error); return; }
 
   const res = await adminApi('/api/admin/vendedores', {
     method: 'PUT',
-    body: vendedoresData,
+    body: operamIds.vendedores,
   });
   const data = await res.json();
   const msg = document.getElementById('vendedores-msg');

@@ -191,3 +191,59 @@ test('GET /api/catalogos toma los vendedores del registro y omite los que no est
     { id: 2, name: 'Vendedor Test', operam_id: 2 },
   ]);
 });
+
+// #434: el operam_id (el `salesman` del vendedor en Operam) se captura en el
+// panel. Un texto basura tumbaria el INSERT entero en Neon (`::int`), asi que el
+// servidor lo rechaza ANTES de reemplazar el registro.
+test('PUT /api/admin/vendedores rechaza un operam_id que no es entero positivo y no toca el registro', async () => {
+  // 2147483647 es el tope de int en Postgres: arriba (un celular pegado por error)
+  // Neon truena en `(v->>'operam_id')::int` con 500.
+  for (const basura of ['abc', 1.5, 0, -3, '7x', '5512345678', 2147483648]) {
+    escribirRegistro(REGISTRO);
+    const nuevo = REGISTRO.map(v => (v.id === 3 ? { ...v, operam_id: basura } : v));
+    const put = await supertest(app).put('/api/admin/vendedores')
+      .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+    assert.strictEqual(put.status, 400, `operam_id ${JSON.stringify(basura)} deberia ser 400`);
+    assert.match(put.body.error, /Sin Operam Test/);
+    assert.match(put.body.error, /entero positivo/);
+
+    const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+    assert.strictEqual(res.body.find(v => v.id === 3).operam_id, null);
+  }
+});
+
+test('PUT /api/admin/vendedores rechaza dos vendedores con el mismo operam_id y no toca el registro', async () => {
+  escribirRegistro(REGISTRO);
+  // "2" es el texto que manda el panel: repite el 2 de Vendedor Test.
+  const nuevo = REGISTRO.map(v => (v.id === 3 ? { ...v, operam_id: '2' } : v));
+  const put = await supertest(app).put('/api/admin/vendedores')
+    .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+  assert.strictEqual(put.status, 400);
+  assert.match(put.body.error, /Vendedor Test/);
+  assert.match(put.body.error, /Sin Operam Test/);
+  assert.match(put.body.error, /\b2\b/);
+
+  const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.strictEqual(res.body.find(v => v.id === 3).operam_id, null);
+});
+
+// El panel manda lo que se tecleo: un vendedor nuevo nace con su operam_id como
+// entero, y el campo vacio guarda null (quien solo captura formatos no necesita
+// id; decision del issue).
+test('PUT /api/admin/vendedores guarda el operam_id capturado como entero y el vacio como null', async () => {
+  escribirRegistro(REGISTRO);
+  const nuevo = [
+    ...REGISTRO.map(v => (v.id === 2 ? { ...v, operam_id: '' } : v)),
+    { id: 4, name: 'Recien Llegado', pin: '9004', role: 'vendedor', operam_id: ' 10 ' },
+  ];
+  const put = await supertest(app).put('/api/admin/vendedores')
+    .set('Authorization', `Bearer ${tokenAdmin}`).send(nuevo);
+  assert.strictEqual(put.status, 200);
+
+  const res = await supertest(app).get('/api/admin/vendedores').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.strictEqual(res.body.find(v => v.id === 4).operam_id, 10);
+  assert.strictEqual(res.body.find(v => v.id === 2).operam_id, null);
+
+  const cat = await supertest(app).get('/api/catalogos').set('Authorization', `Bearer ${tokenAdmin}`);
+  assert.deepStrictEqual(cat.body.vendedores.map(v => v.id), [1, 4]);
+});
