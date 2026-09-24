@@ -100,11 +100,22 @@ export function formatServicio(servicio) {
   return tituloPalabras(servicio);
 }
 
-// Servicio que pinta la tarjeta de tarifa. El vehiculo de Lalamove (#72) ya
-// llega nombrado por lib/lalamove-logica.js; el Title Case lo volvia "Suv".
-export function servicioDeTarjeta(rate) {
+// Lo que pinta una tarjeta de tarifa: titulo (negritas, azul oscuro) y detalle
+// (chico, gris). En Lalamove (#72) el selector ya dice que se cotiza Lalamove,
+// asi que el titulo es el VEHICULO -- tal como lo nombra lib/lalamove-logica.js,
+// sin Title Case ("SUV", no "Suv") -- y el detalle su carga y medidas maximas,
+// para que el vendedor vea en que se va la carga. Paqueteria: carrier arriba,
+// servicio y tiempo estimado abajo.
+export function contenidoTarjeta(rate) {
   const servicio = rate?.service ?? rate?.serviceType ?? '';
-  return /lalamove/i.test(rate?.carrier || '') ? servicio : formatServicio(servicio);
+  if (/lalamove/i.test(rate?.carrier || '')) {
+    const partes = [];
+    if (rate.cargaKg > 0) partes.push(`Hasta ${Number(rate.cargaKg).toLocaleString('en-US')} kg`);
+    if (Array.isArray(rate.medidasCm) && rate.medidasCm.length === 3) partes.push(`${rate.medidasCm.join(' x ')} cm`);
+    return { titulo: servicio, detalle: partes.join(' · ') };
+  }
+  const dias = formatTiempoEntrega(rate);
+  return { titulo: formatCarrier(rate?.carrier), detalle: formatServicio(servicio) + (dias ? ' · ' + dias : '') };
 }
 
 // Opciones del selector de envio que se cotizan con tarjetas de tarifa (#72):
@@ -314,11 +325,12 @@ export function pasoEnvioListo({ shippingOpt, envioDecidido }) {
 // listener de click -- no hay tarifas alternativas que ofrecer sin re-consultar.
 export function buildEnviaRateRestauradaHtml({ carrier, servicio, precio }) {
   const money = (typeof precio === 'number' ? precio : 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const { titulo, detalle } = contenidoTarjeta({ carrier, service: servicio });
   return `
     <div class="envia-rate-card selected">
       <div class="envia-rate-info">
-        <div class="envia-rate-carrier">${formatCarrier(carrier)}</div>
-        <div class="envia-rate-servicio">${servicioDeTarjeta({ carrier, service: servicio })}</div>
+        <div class="envia-rate-carrier">${titulo}</div>
+        <div class="envia-rate-servicio">${detalle}</div>
       </div>
       <div class="envia-rate-precio">$${money}</div>
     </div>

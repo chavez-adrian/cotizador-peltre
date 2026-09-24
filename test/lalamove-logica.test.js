@@ -114,12 +114,14 @@ test('cuerpoCotizacion: origen fabrica, destino por coordenadas del CP, coordena
 
 test('tarifaDesdeCotizacion: tarjeta con la forma de envia.com y el vehiculo en espanol', () => {
   const resp = { data: { serviceType: 'VAN', priceBreakdown: { total: '629.76', currency: 'MXN' }, distance: { value: '33400', unit: 'm' } } };
-  assert.deepEqual(tarifaDesdeCotizacion({ key: 'VAN', cargaKg: 1000 }, resp), {
+  assert.deepEqual(tarifaDesdeCotizacion({ key: 'VAN', cargaKg: 1000, medidasCm: [200, 120, 120] }, resp), {
     carrier: 'lalamove',
     service: 'Van',
     serviceDescription: 'Lalamove Van (hasta 1000 kg)',
     totalPrice: 629.76,
     currency: 'MXN',
+    cargaKg: 1000,
+    medidasCm: [200, 120, 120],
     distanciaKm: 33.4,
   });
 });

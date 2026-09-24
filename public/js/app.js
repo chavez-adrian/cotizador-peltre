@@ -167,8 +167,7 @@ import {
 } from './stepper-logica.js';
 import {
   validarDomicilioEntrega,
-  formatCarrier,
-  servicioDeTarjeta,
+  contenidoTarjeta,
   esOpcionTarifa,
   esOpcionConCosto,
   endpointTarifas,
@@ -178,7 +177,6 @@ import {
   bloqueaGeneracionPorEnvioInvalidado,
   MENSAJE_ENVIO_INVALIDADO,
   aplicarNotaTiempoEntrega,
-  formatTiempoEntrega,
   formatDescripcionEnvioEnvia,
   buildEnvioEstructurado,
   restaurarEnvioDesdeCotizacion,
@@ -2097,15 +2095,15 @@ async function cotizarEnvia() {
       const precio = rate.totalPrice ?? rate.rate ?? 0;
       const carrier = rate.carrier ?? '';
       const servicio = rate.service ?? rate.serviceType ?? '';
-      const dias = formatTiempoEntrega(rate);
+      const { titulo, detalle } = contenidoTarjeta(rate);
       const esRecomendado = idx === 0;
 
       const card = document.createElement('div');
       card.className = 'envia-rate-card';
       card.innerHTML = `
         <div class="envia-rate-info">
-          <div class="envia-rate-carrier">${formatCarrier(carrier)}${esRecomendado ? ' <span class="badge-rec">Recomendado</span>' : ''}</div>
-          <div class="envia-rate-servicio">${servicioDeTarjeta(rate)}${dias ? ' · ' + dias : ''}</div>
+          <div class="envia-rate-carrier">${titulo}${esRecomendado ? ' <span class="badge-rec">Recomendado</span>' : ''}</div>
+          <div class="envia-rate-servicio">${detalle}</div>
         </div>
         <div class="envia-rate-precio">$${fmt(precio)}</div>
       `;
