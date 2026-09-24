@@ -266,11 +266,13 @@
       <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
         Operam toma el almacen del que se entrega del domicilio de entrega, y el pedido lo hereda: un domicilio mal
         configurado manda la mercancia desde otro almacen. El barrido lee el padron completo de Operam (cientos de
-        lecturas: puede tardar un par de minutos) y lista los domicilios que no entregan desde producto terminado. Se
+        lecturas, una por segundo para no saturar Operam: tarda unos diez minutos y sigue en el servidor aunque salgas
+        de esta pagina) y lista los domicilios que no entregan desde producto terminado. Se
         corrige a mano en Operam; el domicilio que legitimamente entrega desde otro almacen se marca "Asi va bien" y
         deja de salir mientras siga en ese almacen. Solo lectura -- no modifica nada en Operam.
       </p>
       <button class="btn btn-secondary btn-sm" id="btn-almacen-barrer">Barrer domicilios</button>
+      <div id="almacen-avance" style="display:none;font-size:13px;margin-top:8px"></div>
       <div id="almacen-estado" style="color:var(--text-light);font-size:13px;margin-top:8px">Cargando...</div>
       <div id="almacen-error" style="display:none;color:var(--danger);font-size:13px;margin-top:8px"></div>
       <div id="almacen-content" style="display:none;overflow-x:auto;margin-top:12px">
@@ -897,12 +899,73 @@ function almacenTexto(codigo, nombre) {
 
 const ALMACEN_TD = 'padding:6px 8px;border-bottom:1px solid var(--border)';
 
+// El barrido corre en SEGUNDO PLANO en el servidor (#438): el POST solo lo arranca
+// y el panel consulta el avance cada ALMACEN_SONDEO_MS hasta que termina, en vez de
+// quedarse esperando una sola peticion (en produccion no respondia en 21 minutos).
+// Recargar la pagina a media corrida retoma el sondeo.
+const ALMACEN_SONDEO_MS = 3000;
+const ALMACEN_SONDEO_FALLAS_MAX = 5;
+let almacenSondeo = null;
+let almacenSondeoFallas = 0;
+
+function almacenMinutos(inicio, fin) {
+  const ms = Date.parse(fin) - Date.parse(inicio);
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const min = Math.floor(ms / 60000);
+  const seg = Math.round((ms % 60000) / 1000);
+  return min ? `${min} min ${seg} s` : `${seg} s`;
+}
+
+function pintarAvanceAlmacen(avance) {
+  const el = document.getElementById('almacen-avance');
+  const btn = document.getElementById('btn-almacen-barrer');
+  const enCurso = !!avance && avance.estado === 'en curso';
+  btn.disabled = enCurso;
+  if (!avance) { el.style.display = 'none'; return; }
+  if (enCurso) {
+    el.textContent = avance.total == null
+      ? 'Barrido en curso: leyendo el padron de Operam...'
+      : `Barrido en curso: ${avance.revisados} de ${avance.total} domicilios revisados.`;
+  } else if (avance.estado === 'terminado') {
+    el.textContent = `Barrido terminado: ${avance.revisados} domicilios en ${almacenMinutos(avance.inicio, avance.fin)}.`;
+  } else {
+    el.textContent = `El ultimo barrido fallo: ${avance.error || 'error desconocido'}`;
+  }
+  el.style.color = avance.estado === 'fallo' ? 'var(--danger)' : 'var(--text-light)';
+  el.style.display = 'block';
+  clearTimeout(almacenSondeo);
+  if (enCurso) almacenSondeo = setTimeout(sondearAlmacenDomicilios, ALMACEN_SONDEO_MS);
+}
+
+async function sondearAlmacenDomicilios() {
+  try {
+    const res = await adminApi('/api/admin/almacen-domicilios');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'No se pudo consultar el avance');
+    almacenSondeoFallas = 0;
+    almacenError('');
+    renderAlmacenDomicilios(data);
+  } catch (e) {
+    // Un deploy o un corte de red: se reintenta unas veces antes de rendirse.
+    almacenSondeoFallas++;
+    if (almacenSondeoFallas >= ALMACEN_SONDEO_FALLAS_MAX) {
+      almacenError('No se pudo consultar el avance del barrido. Recarga la pagina para ver si termino.');
+      document.getElementById('btn-almacen-barrer').disabled = false;
+      return;
+    }
+    almacenSondeo = setTimeout(sondearAlmacenDomicilios, ALMACEN_SONDEO_MS);
+  }
+}
+
 function renderAlmacenDomicilios(data) {
+  pintarAvanceAlmacen(data.avance);
   const estado = document.getElementById('almacen-estado');
   const content = document.getElementById('almacen-content');
   const sinLeer = document.getElementById('almacen-sin-leer');
   if (!data.barrido) {
-    estado.textContent = 'Todavia no hay barrido desde que arranco el servidor. Usa "Barrer domicilios".';
+    estado.textContent = data.avance && data.avance.estado === 'en curso'
+      ? 'El reporte sale cuando termine el barrido.'
+      : 'Todavia no hay barrido desde que arranco el servidor. Usa "Barrer domicilios".';
     content.style.display = 'none';
     sinLeer.style.display = 'none';
   } else {
@@ -963,15 +1026,14 @@ async function barrerAlmacenDomicilios() {
   const btn = document.getElementById('btn-almacen-barrer');
   btn.disabled = true;
   almacenError('');
-  document.getElementById('almacen-estado').textContent = 'Leyendo el padron de Operam (puede tardar un par de minutos)...';
+  almacenSondeoFallas = 0;
   try {
     const res = await adminApi('/api/admin/almacen-domicilios/barrer', { method: 'POST' });
     const data = await res.json();
-    if (!res.ok) { almacenError(data.error || 'No se pudo leer el padron de Operam'); return; }
+    if (!res.ok) { almacenError(data.error || 'No se pudo arrancar el barrido'); btn.disabled = false; return; }
     renderAlmacenDomicilios(data);
   } catch (e) {
     almacenError('Error de conexion');
-  } finally {
     btn.disabled = false;
   }
 }

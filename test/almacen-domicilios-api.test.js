@@ -62,11 +62,12 @@ const LOCATIONS = [
   { loc_code: '60', location_name: 'Bazaar' },
 ];
 
-function mockOperam({ branchFalla = null } = {}) {
+function mockOperam({ branchFalla = null, detener = null } = {}) {
   const lecturas = [];
   globalThis.fetch = async (url) => {
     const u = String(url);
     lecturas.push(u);
+    if (detener && u.endsWith('/api/v3/sales/branches/' + detener.codigo)) await detener.hasta;
     if (u.includes('/api/v3/login')) return jsonResponse({ token: 'tok', result: true });
     if (u.includes('/api/v3/sales/customers?')) return jsonResponse({ total: CLIENTES.length, data: CLIENTES });
     if (u.includes('/api/v3/sales/branches/')) {
@@ -80,6 +81,14 @@ function mockOperam({ branchFalla = null } = {}) {
     throw new Error('Unmocked fetch: ' + u);
   };
   return lecturas;
+}
+
+// #438: el POST solo ARRANCA el barrido; el reporte se lee con el GET cuando termina.
+async function barrerYEsperar() {
+  const res = await supertest(app).post('/api/admin/almacen-domicilios/barrer').set('Authorization', ADMIN);
+  assert.equal(res.status, 202, JSON.stringify(res.body));
+  await barridoIo._esperarBarrido();
+  return supertest(app).get('/api/admin/almacen-domicilios').set('Authorization', ADMIN);
 }
 
 function sinOperam() {
@@ -103,6 +112,9 @@ beforeEach(() => {
   fijarDatos(CONFIG_PATH, CONFIG_INICIAL);
   configStore._reiniciar();
   barridoIo._reiniciar();
+  // Sin ritmo en las pruebas de la costura HTTP: el intervalo se mide con reloj
+  // falso en test/almacen-domicilios-io.test.js.
+  barridoIo._setRitmo({ intervaloMs: 0 });
   globalThis.fetch = originalFetch;
 });
 
@@ -126,6 +138,7 @@ test('sin barrido todavia: nada que reportar, sin leer Operam, y la excepcion se
 
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.barrido, null);
+  assert.equal(res.body.avance, null);
   assert.equal(res.body.esperado, '40');
   assert.deepEqual(res.body.filas, []);
   assert.deepEqual(res.body.asiVaBien.map(e => [e.clienteId, e.branchCode, e.almacen]), [['8', '8', '41']]);
@@ -133,7 +146,7 @@ test('sin barrido todavia: nada que reportar, sin leer Operam, y la excepcion se
 
 test('el barrido lee el padron y reporta los domicilios fuera de PT, sin la excepcion sembrada', async () => {
   mockOperam();
-  const res = await supertest(app).post('/api/admin/almacen-domicilios/barrer').set('Authorization', ADMIN);
+  const res = await barrerYEsperar();
 
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.deepEqual(res.body.filas, [
@@ -152,6 +165,8 @@ test('el barrido lee el padron y reporta los domicilios fuera de PT, sin la exce
   assert.equal(res.body.revisados, 4);
   assert.equal(res.body.barrido.clientes, 3);
   assert.ok(!Number.isNaN(Date.parse(res.body.barrido.fecha)));
+  assert.equal(res.body.avance.estado, 'terminado');
+  assert.equal(res.body.avance.revisados, 4);
 
   // El GET sirve el ultimo barrido sin volver a leer Operam.
   sinOperam();
@@ -162,7 +177,7 @@ test('el barrido lee el padron y reporta los domicilios fuera de PT, sin la exce
 
 test('el domicilio que Operam no entrego sale en sinLeer con el detalle, no desaparece', async () => {
   mockOperam({ branchFalla: '21' });
-  const res = await supertest(app).post('/api/admin/almacen-domicilios/barrer').set('Authorization', ADMIN);
+  const res = await barrerYEsperar();
 
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.deepEqual(res.body.sinLeer.map(s => [s.clienteId, s.branchCode, s.motivo]), [
@@ -172,19 +187,58 @@ test('el domicilio que Operam no entrego sale en sinLeer con el detalle, no desa
   assert.deepEqual(res.body.filas.map(f => f.branchCode), ['20', '90']);
 });
 
-test('Operam no disponible: el barrido responde 503', async () => {
+test('Operam no disponible: el avance del barrido dice que no se pudo leer el padron', async (t) => {
+  t.mock.method(console, 'error', () => {});
   resetSession();
   globalThis.fetch = async (url) => {
     if (String(url).includes('/api/v3/login')) throw new Error('timeout');
     throw new Error('Unmocked fetch: ' + url);
   };
+  const res = await barrerYEsperar();
+  assert.equal(res.status, 200);
+  assert.equal(res.body.avance.estado, 'fallo');
+  assert.match(res.body.avance.error, /No se pudo leer el padron de Operam: timeout/);
+  assert.equal(res.body.barrido, null);
+});
+
+// #438: en produccion el POST se quedaba 6 y 21 minutos sin responder. Ahora
+// arranca el barrido y responde de inmediato; el panel consulta el avance.
+test('el POST arranca el barrido y responde en menos de 2 s con estado en curso; el GET da el avance y al final el reporte', async () => {
+  let soltar;
+  const hasta = new Promise(res => { soltar = res; });
+  const lecturas = mockOperam({ detener: { codigo: '21', hasta } });
+
+  const antes = Date.now();
   const res = await supertest(app).post('/api/admin/almacen-domicilios/barrer').set('Authorization', ADMIN);
-  assert.equal(res.status, 503);
+  assert.ok(Date.now() - antes < 2000, `el POST tardo ${Date.now() - antes} ms`);
+  assert.equal(res.status, 202, JSON.stringify(res.body));
+  assert.equal(res.body.avance.estado, 'en curso');
+  assert.equal(res.body.barrido, null);
+
+  while (!lecturas.some(u => u.endsWith('/branches/21'))) await new Promise(r => setImmediate(r));
+  const enCurso = await supertest(app).get('/api/admin/almacen-domicilios').set('Authorization', ADMIN);
+  assert.equal(enCurso.status, 200);
+  assert.equal(enCurso.body.avance.estado, 'en curso');
+  assert.equal(enCurso.body.avance.total, 4);
+  assert.equal(enCurso.body.avance.revisados, 1);
+
+  // Un segundo clic mientras corre no lanza otro barrido.
+  const otro = await supertest(app).post('/api/admin/almacen-domicilios/barrer').set('Authorization', ADMIN);
+  assert.equal(otro.status, 202);
+  assert.equal(otro.body.avance.estado, 'en curso');
+
+  soltar();
+  await barridoIo._esperarBarrido();
+  const fin = await supertest(app).get('/api/admin/almacen-domicilios').set('Authorization', ADMIN);
+  assert.equal(fin.body.avance.estado, 'terminado');
+  assert.equal(fin.body.avance.revisados, 4);
+  assert.deepEqual(fin.body.filas.map(f => f.branchCode), ['20', '90']);
+  assert.equal(lecturas.filter(u => u.includes('/api/v3/sales/customers?')).length, 1, 'el padron se leyo una sola vez');
 });
 
 test('marcar "asi va bien" desde el panel lo saca del reporte y queda guardado en la configuracion', async () => {
   mockOperam();
-  await supertest(app).post('/api/admin/almacen-domicilios/barrer').set('Authorization', ADMIN);
+  await barrerYEsperar();
   sinOperam();
 
   const res = await supertest(app).post('/api/admin/almacen-domicilios/asi-va-bien')
@@ -210,7 +264,7 @@ test('marcar "asi va bien" desde el panel lo saca del reporte y queda guardado e
 
 test('desmarcar desde el panel lo devuelve al reporte; desmarcar la sembrada tambien se guarda', async () => {
   mockOperam();
-  await supertest(app).post('/api/admin/almacen-domicilios/barrer').set('Authorization', ADMIN);
+  await barrerYEsperar();
   sinOperam();
 
   const res = await supertest(app).delete('/api/admin/almacen-domicilios/asi-va-bien/8').set('Authorization', ADMIN);

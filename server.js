@@ -19,7 +19,7 @@ import { logCliente, marcarDropbox } from './lib/clientes-log.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
 import { reporteAlmacenDomicilios, excepcionesAlmacen, marcarAsiVaBien, desmarcarAsiVaBien } from './lib/almacen-domicilios.js';
-import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
+import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes, avanceBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
@@ -2213,7 +2213,9 @@ app.get('/api/admin/segmento-pendiente', authMiddleware, adminMiddleware, async 
 
 // Domicilios con almacen mal configurado (issue #416, derivado de #409): el
 // barrido del padron corre A PEDIDO (son cientos de lecturas a Operam) y deja su
-// resultado crudo en memoria; el GET y marcar/desmarcar "asi va bien" recalculan
+// resultado crudo en memoria. Desde #438 corre en SEGUNDO PLANO con ritmo propio:
+// el POST lo arranca y responde de inmediato (202), y el panel consulta el GET,
+// que trae el `avance` (en curso / terminado / fallo, revisados de total); el GET y marcar/desmarcar "asi va bien" recalculan
 // el reporte sobre el sin volver a leer Operam. La regla vive en el nucleo puro
 // reporteAlmacenDomicilios y la lista de excepciones en la configuracion del
 // panel (config-store, #276), con la llave ausente como semilla.
@@ -2224,20 +2226,20 @@ function respuestaAlmacenDomicilios(config) {
     excepciones: excepcionesAlmacen(config),
     operamUrl: process.env.OPERAM_URL,
   });
-  return { ...reporte, barrido: barrido ? { fecha: barrido.fecha, clientes: barrido.clientes.length } : null };
+  return {
+    ...reporte,
+    barrido: barrido ? { fecha: barrido.fecha, clientes: barrido.clientes.length } : null,
+    avance: avanceBarridoAlmacenes(),
+  };
 }
 
 app.get('/api/admin/almacen-domicilios', authMiddleware, adminMiddleware, (_req, res) => {
   res.json(respuestaAlmacenDomicilios(configStore.leer()));
 });
 
-app.post('/api/admin/almacen-domicilios/barrer', authMiddleware, adminMiddleware, async (_req, res) => {
-  try {
-    await barrerAlmacenesDomicilios();
-  } catch (err) {
-    return res.status(503).json({ error: 'No se pudo leer el padron de Operam: ' + err.message });
-  }
-  res.json(respuestaAlmacenDomicilios(configStore.leer()));
+app.post('/api/admin/almacen-domicilios/barrer', authMiddleware, adminMiddleware, (_req, res) => {
+  barrerAlmacenesDomicilios();
+  res.status(202).json(respuestaAlmacenDomicilios(configStore.leer()));
 });
 
 // Marcar y desmarcar guardan con el mismo merge que POST /api/admin/config: se
