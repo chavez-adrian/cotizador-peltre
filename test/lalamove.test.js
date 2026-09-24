@@ -60,11 +60,11 @@ test('tarifasLalamove: el catalogo de vehiculos se pide una vez y se reusa', asy
   assert.equal(llamadas.filter(l => l.url.endsWith('/v3/cities')).length, 1);
 });
 
-test('tarifasLalamove: fuera del area de servicio no es advertencia', async () => {
+test('tarifasLalamove: fuera del area de servicio -> advertencia con el CP', async () => {
   mockLalamove((u) => u.endsWith('/v3/cities')
     ? { status: 200, json: CITIES }
     : { status: 422, json: { errors: [{ id: 'ERR_OUT_OF_SERVICE_AREA', message: 'out of service area' }] } });
-  assert.deepEqual(await tarifasLalamove({ cp: '06700', pesoKg: 10 }), { rates: [], warnings: [] });
+  assert.deepEqual(await tarifasLalamove({ cp: '06700', pesoKg: 10 }), { rates: [], warnings: ['Lalamove no da servicio en el CP 06700'] });
 });
 
 test('tarifasLalamove: un error distinto se reporta como advertencia sin lanzar', async () => {
@@ -83,10 +83,12 @@ test('tarifasLalamove: el 429 del limite por minuto sale como texto accionable',
   assert.match(warnings[0], /limite de consultas por minuto, reintenta en un minuto/);
 });
 
-test('tarifasLalamove: sin llaves no consulta nada', async () => {
+test('tarifasLalamove: sin llaves no consulta nada y lo dice', async () => {
   delete process.env.LALAMOVE_API_KEY;
   mockLalamove(() => { throw new Error('no debia llamar'); });
-  assert.deepEqual(await tarifasLalamove({ cp: '06700', pesoKg: 10 }), { rates: [], warnings: [] });
+  const r = await tarifasLalamove({ cp: '06700', pesoKg: 10 });
+  assert.deepEqual(r.rates, []);
+  assert.match(r.warnings[0], /Lalamove no esta configurado/);
   assert.equal(llamadas.length, 0);
 });
 

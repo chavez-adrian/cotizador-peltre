@@ -168,7 +168,10 @@ import {
 import {
   validarDomicilioEntrega,
   formatCarrier,
-  formatServicio,
+  servicioDeTarjeta,
+  esOpcionTarifa,
+  esOpcionConCosto,
+  endpointTarifas,
   cpValido,
   buildConfirmarVendedorModalHtml,
   debeInvalidarEnvioPorCantidad,
@@ -2035,7 +2038,7 @@ async function cotizarEnvia() {
   const totalConIVA = (subtotal + shippingCost) * 1.16;
 
   try {
-    const res = await api('/api/cotizacion/envio', {
+    const res = await api(endpointTarifas(document.getElementById('shipping-option').value), {
       method: 'POST',
       body: { cpDestino: cp, paisDestino: pais, items, totalConIVA },
     });
@@ -2102,7 +2105,7 @@ async function cotizarEnvia() {
       card.innerHTML = `
         <div class="envia-rate-info">
           <div class="envia-rate-carrier">${formatCarrier(carrier)}${esRecomendado ? ' <span class="badge-rec">Recomendado</span>' : ''}</div>
-          <div class="envia-rate-servicio">${formatServicio(servicio)}${dias ? ' · ' + dias : ''}</div>
+          <div class="envia-rate-servicio">${servicioDeTarjeta(rate)}${dias ? ' · ' + dias : ''}</div>
         </div>
         <div class="envia-rate-precio">$${fmt(precio)}</div>
       `;
@@ -2284,7 +2287,7 @@ function updateResumen() {
   const shippingSection = document.getElementById('resumen-shipping');
   let shippingCost = 0;
 
-  if (shippingOpt === 'manual' || shippingOpt === 'envia') {
+  if (esOpcionConCosto(shippingOpt)) {
     shippingCost = parseFloat(document.getElementById('shipping-cost').value) || 0;
     const shippingDesc = document.getElementById('shipping-desc').value || 'Envio';
     if (shippingCost > 0) {
@@ -2665,7 +2668,7 @@ function vigenciaDesdeFormulario(fechaEmision) {
 function envioCapturadoEnFormulario() {
   const shippingOpt = document.getElementById('shipping-option').value;
   const shippingDesc = document.getElementById('shipping-desc').value;
-  const shippingCost = (shippingOpt === 'manual' || shippingOpt === 'envia')
+  const shippingCost = esOpcionConCosto(shippingOpt)
     ? (parseFloat(document.getElementById('shipping-cost').value) || 0)
     : 0;
   return { shippingOpt, shippingDesc, shippingCost, shippingDescuento: envioDescuento };
@@ -7108,15 +7111,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Shipping option toggle
   document.getElementById('shipping-option').addEventListener('change', e => {
     const val = e.target.value;
-    document.getElementById('shipping-envia').style.display = val === 'envia' ? 'block' : 'none';
+    document.getElementById('shipping-envia').style.display = esOpcionTarifa(val) ? 'block' : 'none';
     document.getElementById('shipping-manual').style.display = val === 'manual' ? 'block' : 'none';
     // Limpiar costo si cambia la opción
-    if (val !== 'envia' && val !== 'manual') {
+    if (!esOpcionConCosto(val)) {
       document.getElementById('shipping-cost').value = '';
     }
-    // Salir de "envia" descarta la invalidacion por cantidad (issue #89): ya no
-    // aplica, el envio activo dejo de depender de una tarifa de envia.com.
-    if (val !== 'envia') envioInvalidadoPorCantidad = false;
+    // Salir de una opcion con tarifa descarta la invalidacion por cantidad (#89):
+    // ya no aplica, el envio activo dejo de depender de una tarjeta.
+    if (!esOpcionTarifa(val)) envioInvalidadoPorCantidad = false;
+    // Pasar de envia.com a Lalamove (o al reves, #72) no puede arrastrar la tarjeta
+    // del otro proveedor: se descarta y se cotiza con el elegido.
+    if (esOpcionTarifa(val)) {
+      enviaRateSeleccionado = null;
+      document.getElementById('envia-results').innerHTML = '';
+      document.getElementById('shipping-cost').value = '';
+      const cp = document.getElementById('cl-cp-entrega')?.value?.trim();
+      if (cpListoParaCotizarEnvia(cp) && state.cart.size > 0) setTimeout(cotizarEnvia, 50);
+    }
     // #419: tocar el selector ES la decision, y cuenta igual para "Sin envio":
     // a partir de aqui el tab Envio deja de proponer envia.com por su cuenta.
     envioDecidido = true;

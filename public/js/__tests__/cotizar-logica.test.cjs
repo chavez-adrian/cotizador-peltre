@@ -10,7 +10,7 @@ let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia,
 let debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
-let fechaEmisionHoy, sumarDiasFecha;
+let fechaEmisionHoy, sumarDiasFecha, servicioDeTarjeta, esOpcionTarifa, endpointTarifas;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
@@ -20,7 +20,7 @@ before(async () => {
     debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
-    fechaEmisionHoy, sumarDiasFecha,
+    fechaEmisionHoy, sumarDiasFecha, servicioDeTarjeta, esOpcionTarifa, endpointTarifas,
     sincronizarCorreoFactura,
   } = await import('../cotizar-logica.js'));
 });
@@ -125,6 +125,40 @@ test('#72: tarjeta Lalamove -> carrier presentable y descripcion con el vehiculo
   const rate = { carrier: 'lalamove', service: 'Van', serviceDescription: 'Lalamove Van (hasta 1000 kg)', totalPrice: 629.76 };
   assert.strictEqual(formatCarrier(rate.carrier), 'Lalamove');
   assert.strictEqual(formatDescripcionEnvioEnvia(rate), 'Lalamove Van (hasta 1000 kg)');
+});
+
+// #72: el Title Case es para los servicios crudos de envia.com ("ground"); el
+// vehiculo de Lalamove ya llega nombrado y pasarlo por ahi daba "Suv".
+test('#72: servicioDeTarjeta respeta el nombre del vehiculo de Lalamove', () => {
+  assert.strictEqual(servicioDeTarjeta({ carrier: 'lalamove', service: 'SUV' }), 'SUV');
+  assert.strictEqual(servicioDeTarjeta({ carrier: 'lalamove', service: 'Camion 3.5 t' }), 'Camion 3.5 t');
+  assert.strictEqual(servicioDeTarjeta({ carrier: 'fedex', service: 'ground' }), 'Ground');
+  assert.strictEqual(servicioDeTarjeta({ carrier: 'dhl', serviceType: 'express' }), 'Express');
+});
+
+// #72: "Cotizar con Lalamove" es una opcion propia del selector; comparte con
+// envia.com todo lo de las tarjetas de tarifa y solo cambia el endpoint.
+test('#72: esOpcionTarifa y endpointTarifas', () => {
+  assert.strictEqual(esOpcionTarifa('envia'), true);
+  assert.strictEqual(esOpcionTarifa('lalamove'), true);
+  assert.strictEqual(esOpcionTarifa('manual'), false);
+  assert.strictEqual(esOpcionTarifa('none'), false);
+  assert.strictEqual(endpointTarifas('envia'), '/api/cotizacion/envio');
+  assert.strictEqual(endpointTarifas('lalamove'), '/api/cotizacion/envio/lalamove');
+});
+
+test('#72: una tarifa de Lalamove se persiste, se restaura, se invalida y entra al documento', () => {
+  const rate = { carrier: 'lalamove', servicio: 'Van', desc: 'Lalamove Van (hasta 1000 kg)', cost: 984.23 };
+  const envio = buildEnvioEstructurado({ shippingOpt: 'lalamove', shippingCost: 984.23, shippingDesc: rate.desc, shippingDescuento: 0, enviaRateSeleccionado: rate });
+  assert.deepStrictEqual(envio, { opcion: 'lalamove', carrier: 'lalamove', servicio: 'Van', precio: 984.23, descripcion: rate.desc, descuento: 0 });
+  const r = restaurarEnvioDesdeCotizacion(envio);
+  assert.strictEqual(r.opcion, 'lalamove');
+  assert.strictEqual(r.mostrarEnvia, true);
+  assert.strictEqual(r.enviaRateSeleccionado.carrier, 'lalamove');
+  assert.strictEqual(debeInvalidarEnvioPorCantidad('lalamove', rate), true);
+  assert.strictEqual(debeAutoCotizarEnvia('lalamove', 3, null), true);
+  assert.deepStrictEqual(buildItemEnvio({ shippingOpt: 'lalamove', shippingCost: 984.23, shippingDesc: rate.desc, shippingDescuento: 0 }),
+    { codigo: 'ENVIO', descripcion: rate.desc, cantidad: 1, unidad: 'ACT', precio: 984.23, descuento: 0 });
 });
 
 test('AC3-3: servicio en Title Case', () => {

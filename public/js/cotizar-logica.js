@@ -100,6 +100,28 @@ export function formatServicio(servicio) {
   return tituloPalabras(servicio);
 }
 
+// Servicio que pinta la tarjeta de tarifa. El vehiculo de Lalamove (#72) ya
+// llega nombrado por lib/lalamove-logica.js; el Title Case lo volvia "Suv".
+export function servicioDeTarjeta(rate) {
+  const servicio = rate?.service ?? rate?.serviceType ?? '';
+  return /lalamove/i.test(rate?.carrier || '') ? servicio : formatServicio(servicio);
+}
+
+// Opciones del selector de envio que se cotizan con tarjetas de tarifa (#72):
+// envia.com (FedEx/DHL/UPS) y Lalamove comparten tarjetas, seleccion,
+// invalidacion por cantidad y restauracion; solo cambia a quien se consulta.
+export const OPCIONES_TARIFA = ['envia', 'lalamove'];
+export function esOpcionTarifa(shippingOpt) {
+  return OPCIONES_TARIFA.includes(shippingOpt);
+}
+export function esOpcionConCosto(shippingOpt) {
+  return shippingOpt === 'manual' || esOpcionTarifa(shippingOpt);
+}
+
+export function endpointTarifas(shippingOpt) {
+  return shippingOpt === 'lalamove' ? '/api/cotizacion/envio/lalamove' : '/api/cotizacion/envio';
+}
+
 // Tiempo estimado de entrega de una tarifa de envia.com (issue #88). El shape
 // real de api.envia.com/ship/rate/ (verificado en vivo, FedEx/UPS, destino
 // CP 78000) NO trae `rate.days` -- ese campo nunca aparecio en la respuesta real.
@@ -148,7 +170,7 @@ function escapeHtml(v) {
 export const MENSAJE_ENVIO_INVALIDADO = 'Las cantidades cambiaron, vuelve a cotizar el envío';
 
 export function debeInvalidarEnvioPorCantidad(shippingOpt, enviaRateSeleccionado) {
-  return shippingOpt === 'envia' && !!enviaRateSeleccionado;
+  return esOpcionTarifa(shippingOpt) && !!enviaRateSeleccionado;
 }
 
 // Compuerta de generacion: con el envio de envia.com invalidado por un cambio de
@@ -187,10 +209,10 @@ export function aplicarNotaTiempoEntrega(notasText, decorado) {
 // Cargar desde historial no habia forma de restaurar la seleccion, solo el
 // texto de la partida. shippingOpt 'none' o costo <= 0 -> nada que persistir.
 export function buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc, shippingDescuento, enviaRateSeleccionado }) {
-  if (shippingOpt !== 'manual' && shippingOpt !== 'envia') return null;
+  if (!esOpcionConCosto(shippingOpt)) return null;
   if (!(shippingCost > 0)) return null;
-  const carrier = shippingOpt === 'envia' ? (enviaRateSeleccionado?.carrier ?? null) : null;
-  const servicio = shippingOpt === 'envia' ? (enviaRateSeleccionado?.servicio ?? null) : null;
+  const carrier = esOpcionTarifa(shippingOpt) ? (enviaRateSeleccionado?.carrier ?? null) : null;
+  const servicio = esOpcionTarifa(shippingOpt) ? (enviaRateSeleccionado?.servicio ?? null) : null;
   return {
     opcion: shippingOpt, carrier, servicio, precio: shippingCost,
     descripcion: shippingDesc || 'Envio',
@@ -206,18 +228,18 @@ export function buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc
 // Envio SIN volver a llamar a envia.com. opcion desconocida o ausente degrada
 // a 'none' (comportamiento identico al de hoy: sin seleccion, no rompe).
 export function restaurarEnvioDesdeCotizacion(envio) {
-  if (!envio || (envio.opcion !== 'manual' && envio.opcion !== 'envia')) {
+  if (!envio || !esOpcionConCosto(envio.opcion)) {
     return { opcion: 'none', mostrarEnvia: false, mostrarManual: false, cost: '', desc: 'Envio', descuento: 0, enviaRateSeleccionado: null };
   }
   const desc = envio.descripcion || 'Envio';
   const cost = typeof envio.precio === 'number' ? envio.precio.toFixed(2) : '';
   return {
     opcion: envio.opcion,
-    mostrarEnvia: envio.opcion === 'envia',
+    mostrarEnvia: esOpcionTarifa(envio.opcion),
     mostrarManual: envio.opcion === 'manual',
     cost, desc,
     descuento: envio.descuento || 0,
-    enviaRateSeleccionado: envio.opcion === 'envia'
+    enviaRateSeleccionado: esOpcionTarifa(envio.opcion)
       ? { carrier: envio.carrier ?? null, servicio: envio.servicio ?? null, desc, cost: envio.precio }
       : null,
   };
@@ -229,7 +251,7 @@ export function restaurarEnvioDesdeCotizacion(envio) {
 // vigente. Espejo minimo de debeInvalidarEnvioPorCantidad (#89): misma idea,
 // disparador distinto (entrar al tab vs. cambiar cantidades).
 export function debeAutoCotizarEnvia(shippingOpt, cartSize, enviaRateSeleccionado) {
-  return shippingOpt === 'envia' && cartSize > 0 && !enviaRateSeleccionado;
+  return esOpcionTarifa(shippingOpt) && cartSize > 0 && !enviaRateSeleccionado;
 }
 
 // Compuerta de la AUTO-PROPUESTA de envia.com al pintar el tab Envio (#419).
@@ -296,7 +318,7 @@ export function buildEnviaRateRestauradaHtml({ carrier, servicio, precio }) {
     <div class="envia-rate-card selected">
       <div class="envia-rate-info">
         <div class="envia-rate-carrier">${formatCarrier(carrier)}</div>
-        <div class="envia-rate-servicio">${formatServicio(servicio)}</div>
+        <div class="envia-rate-servicio">${servicioDeTarjeta({ carrier, service: servicio })}</div>
       </div>
       <div class="envia-rate-precio">$${money}</div>
     </div>
@@ -318,7 +340,7 @@ export function nombreVisibleProducto(name) {
 // Partida ENVIO para el documento, o null si no hay nada que cobrar (issue #71:
 // el carrito no manda envio con costo 0 ni con la opcion 'none').
 export function buildItemEnvio({ shippingOpt, shippingCost, shippingDesc, shippingDescuento }) {
-  if (shippingOpt !== 'manual' && shippingOpt !== 'envia') return null;
+  if (!esOpcionConCosto(shippingOpt)) return null;
   if (!(shippingCost > 0)) return null;
   return {
     codigo: 'ENVIO', descripcion: shippingDesc || 'Envio',

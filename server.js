@@ -2101,23 +2101,38 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
     if (!r.ok || data.meta === 'error') return [];
     return Array.isArray(data) ? data : (data.data || []);
   };
-  // Lalamove (#72) viaja en la misma lista: solo cubre la zona metro de MX y
-  // elige vehiculo por el peso y las cajas que ya calculo calcularPaquetes.
-  const pesoKg = resumen.reduce((s, g) => s + (g.total_peso_kg || 0), 0);
-  const lalamove = (paisDestino || 'MX') === 'MX'
-    ? tarifasLalamove({ cp: cpDestino, pesoKg: Math.ceil(pesoKg), cajas: packages.map(p => ({ cantidad: p.amount, medidasCm: [p.dimensions.length, p.dimensions.width, p.dimensions.height] })) })
-    : Promise.resolve({ rates: [], warnings: [] });
   try {
-    const [results, deLalamove] = await Promise.all([Promise.allSettled(CARRIERS.map(queryCarrier)), lalamove]);
-    const rates = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value).concat(deLalamove.rates);
+    const results = await Promise.allSettled(CARRIERS.map(queryCarrier));
+    const rates = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
     rates.sort((a, b) => (a.totalPrice ?? a.rate ?? 0) - (b.totalPrice ?? b.rate ?? 0));
-    warnings.push(...deLalamove.warnings);
     if (rates.length === 0 && warnings.length === 0) warnings.push('No se obtuvieron tarifas de ninguna paqueteria');
     res.json({ rates, resumen, warnings });
   } catch (err) {
     console.error('Error cotizando envio:', err);
     res.status(500).json({ error: 'Error de conexion con envia.com: ' + err.message });
   }
+});
+
+// "Cotizar con Lalamove" (#72): opcion propia del selector de envio, con la
+// misma forma de respuesta que envia.com para que el paso Envio pinte las
+// tarjetas igual. Elige vehiculo por el peso y las cajas de calcularPaquetes.
+app.post('/api/cotizacion/envio/lalamove', authMiddleware, async (req, res) => {
+  const { cpDestino, paisDestino, items } = req.body;
+  if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
+  if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
+  if ((paisDestino || 'MX') !== 'MX') return res.status(400).json({ error: 'Lalamove solo entrega en Mexico' });
+  let packages, resumen, warnings;
+  try {
+    ({ packages, resumen, warnings } = calcularPaquetes(items, 0));
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  if (packages.length === 0) return res.status(400).json({ error: 'No se calcularon paquetes', warnings });
+  const pesoKg = Math.ceil(resumen.reduce((s, g) => s + (g.total_peso_kg || 0), 0));
+  const cajas = packages.map(p => ({ cantidad: p.amount, medidasCm: [p.dimensions.length, p.dimensions.width, p.dimensions.height] }));
+  const { rates, warnings: avisos } = await tarifasLalamove({ cp: cpDestino, pesoKg, cajas });
+  rates.sort((a, b) => a.totalPrice - b.totalPrice);
+  res.json({ rates, resumen, warnings: warnings.concat(avisos) });
 });
 
 app.get('/api/admin/cajas', authMiddleware, adminMiddleware, (req, res) => {

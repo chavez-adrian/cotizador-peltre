@@ -131,6 +131,8 @@ test('tarifaDesdeCotizacion: nombres de los vehiculos de MX y fallback a la clav
   assert.equal(t('UV_FIORINO'), 'Camioneta');
   assert.equal(t('PICKUP_MX'), 'Pick up');
   assert.equal(t('TRUCK330'), 'Camion');
+  assert.equal(t('TRUCK3_5T'), 'Camion 3.5 t');
+  assert.equal(t('TRUCK5T'), 'Camion 5 t');
   assert.equal(t('NUEVO_X'), 'NUEVO_X');
 });
 
