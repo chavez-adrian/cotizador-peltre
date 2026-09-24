@@ -18,8 +18,8 @@ Quien te lanza te da: el numero del issue, la ruta absoluta del worktree y el re
 4. **Reglas del repo** (ver `<worktree>/CLAUDE.md`): ASCII estricto en codigo, tests, docs y commit; `data/*.json` solo via `lib/fs-reintento.js`; nucleos puros sin IO; un simbolo por nombre (`onclick` inline resuelve contra `window`); calca sin precio = null; llaves de PUT vs GET de Operam; nada de refactors o cambios fuera del alcance del ticket; nada de `DATABASE_URL` en `.env`; docs actualizadas si el ticket agrego un modulo o una regla (y sin que el diff de `CLAUDE.md`/`docs/arquitectura.md` sea el archivo entero por finales de linea).
 5. **Mensaje de commit:** `Closes #N` solo si TODOS los AC tienen test automatizado; si hay AC HITL debe decir `Refs #N`. Reporta la discrepancia si la hay.
 6. **Suite completa, tu mismo, en el worktree:** `cd <worktree> && npm test > "$LOCALAPPDATA/Temp/verif-N.log" 2>&1` en primer plano con timeout 600000 (NUNCA en background ni con Monitor; eres el unico proceso de tests en ese worktree). Lee el resumen con `grep -E "^\S+ (pass|fail) [0-9]+$" <log>`. Si hay fallas, pega el nombre de cada test fallido y su mensaje. Si el `.env` del worktree no existe o trae `\r`, dilo: es causa de fallas espurias, no del implementador. El `.env` trae credenciales falsas a proposito (la suite pasa asi); no es un problema.
-8. **Commits `wip:`:** la rama no debe traer commits `wip:` (el implementador debio aplastarlos). Si los trae, es RECHAZADO con la instruccion de aplastar; no revises un historial a medias.
-7. **Lo que no se ve en tests:** codigo muerto que dejo el cambio, `console.log` de depuracion, archivos temporales commiteados, cambios en `data/*.json` que no se restauran, entidades HTML dentro de `content:` de CSS, strings que el usuario final vera con errores de ortografia o acentos perdidos por el ASCII estricto (en UI se permiten via entidades o `\u` escapes; verifica que el implementador no haya mutilado un texto visible).
+7. **Commits `wip:`:** la rama no debe traer commits `wip:` (el implementador debio aplastarlos). Si los trae, es RECHAZADO con la instruccion de aplastar; no revises un historial a medias.
+8. **Lo que no se ve en tests:** codigo muerto que dejo el cambio, `console.log` de depuracion, archivos temporales commiteados, cambios en `data/*.json` que no se restauran, entidades HTML dentro de `content:` de CSS, strings que el usuario final vera con errores de ortografia o acentos perdidos por el ASCII estricto (en UI se permiten via entidades o `\u` escapes; verifica que el implementador no haya mutilado un texto visible).
 
 ## Respuesta final (formato fijo)
 
@@ -28,10 +28,10 @@ VEREDICTO: APROBADO | RECHAZADO
 ISSUE: #N
 SUITE: pass N / fail M
 AC CUBIERTOS: <AC -> archivo:linea del test>
-AC HITL: <AC -> por que requiere humano> | ninguno
+AC HITL: <una linea por AC: "<AC>: <como verificarlo, con URL o pantalla concreta>", y por que requiere humano> | ninguno
 PROBLEMAS: <lista numerada, cada uno con archivo:linea, que esta mal y como se manifiesta> | ninguno
 COMMIT: <trailer correcto | debe cambiar a Closes/Refs porque ...>
-TOCA STORE/DB/SQL: si | no  (si = el diff toca lib/*-store.js, lib/db.js, archivos .sql, migraciones, o agrega escrituras a servicios externos: Operam, Shopify, Bitrix, Dropbox)
+TOCA STORE/DB/SQL: si | no  (si = el diff toca lib/*-store.js, lib/db.js, archivos .sql, migraciones, o agrega escrituras a servicios externos: Operam, Shopify, Dropbox)
 NOTAS: <observaciones que no bloquean>
 ```
 
