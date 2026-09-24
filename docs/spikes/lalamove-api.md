@@ -151,3 +151,42 @@ Estas preguntas NO tienen respuesta en la documentacion publica y solo se resuel
 - **Soporte real de tracking/guia:** la documentacion menciona `Get Order Details` y `Get Driver Details`, pero no se investigo en este spike el detalle de que informacion de tracking queda disponible para compartir con el cliente final (link publico de seguimiento, POD/prueba de entrega, etc.) — util para el flujo de WhatsApp del cotizador.
 - **Tipo de cuenta legal/fiscal requerida** para el Partner Portal (persona moral vs persona fisica con actividad empresarial) — no documentado publicamente, habria que preguntar directo a partner.support@lalamove.com.
 - **Idioma/locale exacto** que espera el campo `language` para direcciones en Mexico (los ejemplos documentados son de Hong Kong: `en_HK`, `zh_HK`) — no se encontro el codigo exacto para `es_MX` o similar en la documentacion publica revisada.
+
+---
+
+## Resultados con credenciales de sandbox (2026-09-23)
+
+Llaves `pk_test`/`sk_test` del Partner Portal en `.env` local (`LALAMOVE_API_KEY`, `LALAMOVE_API_SECRET`, `LALAMOVE_BASE_URL=https://rest.sandbox.lalamove.com`). Rate limit de la cuenta: 50 QPM. Firma HMAC tal como la documenta la seccion 3: funciono al primer intento.
+
+**`GET /v3/cities` (Market: MX)** devuelve UNA sola ciudad, `MX MEX` "Mexico City", con estos `serviceType` (carga nominal):
+
+| key | carga | medidas (m) |
+|---|---|---|
+| MOTORCYCLE | 20 kg | 0.4 x 0.4 x 0.3 |
+| HATCHBACK | 100 kg | 0.9 x 0.9 x 0.7 |
+| MPV | 200 kg | 1.2 x 0.8 x 0.6 |
+| CAR | 300 kg | 1.3 x 1.6 x 0.8 |
+| UV_FIORINO | 500 kg | 1.8 x 1.3 x 1.1 |
+| PICKUP_MX | 700 kg | 1.7 x 1.3 x 0.5 |
+| VAN | 1000 kg | (ver respuesta) |
+| TRUCK330 | 1000 kg | 2 x 2 x 1.7 |
+
+Las claves NO coinciden con la tabla de marketing de la seccion 4 (no hay "Camion 1,500 kg"; el mayor es 1000 kg). El peso del `item` es CATEGORICO por vehiculo (ej. TRUCK330: `LESS_THAN_300_KG` / `300_TO_750_KG` / `750_TO_1500_KG`), no un numero.
+
+**Cobertura: la fabrica SI es origen valido.** `POST /v3/quotations` con origen en Col. Alfredo del Mazo, Ixtapaluca (19.2925, -98.9079, centroide aproximado de la colonia via OpenStreetMap):
+
+| destino | CAR | VAN | TRUCK330 | distancia |
+|---|---|---|---|---|
+| CDMX Roma Norte | 229.76 | 629.76 | 833.28 | 33.4 km |
+| Naucalpan | 323.20 | 723.20 | 938.40 | 48.0 km |
+| Texcoco | 222.72 | 622.72 | 825.36 | 32.3 km |
+| Toluca | 602.88 | 1002.88 | 1253.04 | 91.7 km |
+
+(MXN, total con IVA segun `priceBreakdown.total`.) El sandbox SI aplica el poligono de servicio: Guadalajara, Monterrey y Puebla responden 422 `ERR_OUT_OF_SERVICE_AREA`. Por lo tanto el rechazo por cobertura es una respuesta normal que el cotizador debe traducir a mensaje, no un error.
+
+Observaciones:
+- VAN = CAR + 400 exactos en los cuatro destinos: la tarifa parece base por vehiculo + cargo por km (~6.4 MXN/km en CAR). Un error de 2 km en la coordenada mueve el precio ~13 MXN.
+- `expiresAt` = 5 min despues de cotizar (confirmado).
+- Pendiente: que los montos de sandbox sean iguales a los de produccion. Contrastar una ruta contra la app de Lalamove antes de confiar en ellos.
+
+**Riesgo principal del spike (cobertura de Ixtapaluca): despejado en sandbox.** Lo que queda para la Fase 2 es diseno: coordenadas del destino, eleccion del vehiculo y si el envio viaja como partida o en `comments`.
