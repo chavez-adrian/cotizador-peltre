@@ -2102,10 +2102,10 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
     return Array.isArray(data) ? data : (data.data || []);
   };
   // Lalamove (#72) viaja en la misma lista: solo cubre la zona metro de MX y
-  // elige vehiculo por el peso total que ya calculo calcularPaquetes.
+  // elige vehiculo por el peso y las cajas que ya calculo calcularPaquetes.
   const pesoKg = resumen.reduce((s, g) => s + (g.total_peso_kg || 0), 0);
   const lalamove = (paisDestino || 'MX') === 'MX'
-    ? tarifasLalamove({ cp: cpDestino, pesoKg: Math.ceil(pesoKg) })
+    ? tarifasLalamove({ cp: cpDestino, pesoKg: Math.ceil(pesoKg), cajas: packages.map(p => ({ cantidad: p.amount, medidasCm: [p.dimensions.length, p.dimensions.width, p.dimensions.height] })) })
     : Promise.resolve({ rates: [], warnings: [] });
   try {
     const [results, deLalamove] = await Promise.all([Promise.allSettled(CARRIERS.map(queryCarrier)), lalamove]);

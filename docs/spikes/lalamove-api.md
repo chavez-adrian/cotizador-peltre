@@ -168,7 +168,7 @@ Llaves `pk_test`/`sk_test` del Partner Portal en `.env` local (`LALAMOVE_API_KEY
 | CAR | 300 kg | 1.3 x 1.6 x 0.8 |
 | UV_FIORINO | 500 kg | 1.8 x 1.3 x 1.1 |
 | PICKUP_MX | 700 kg | 1.7 x 1.3 x 0.5 |
-| VAN | 1000 kg | (ver respuesta) |
+| VAN | 1000 kg | 2 x 1.2 x 1.2 |
 | TRUCK330 | 1000 kg | 2 x 2 x 1.7 |
 
 Las claves NO coinciden con la tabla de marketing de la seccion 4 (no hay "Camion 1,500 kg"; el mayor es 1000 kg). El peso del `item` es CATEGORICO por vehiculo (ej. TRUCK330: `LESS_THAN_300_KG` / `300_TO_750_KG` / `750_TO_1500_KG`), no un numero.

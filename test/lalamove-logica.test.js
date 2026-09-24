@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {
-  firmaLalamove, encabezadosLalamove, serviciosDeMexico, vehiculosQueAlcanzan,
+  firmaLalamove, encabezadosLalamove, serviciosDeMexico, vehiculosQueCaben, FACTOR_LLENADO,
   cuerpoCotizacion, tarifaDesdeCotizacion, esFueraDeArea, ORIGEN_FABRICA,
 } from '../lib/lalamove-logica.js';
 
@@ -11,14 +11,15 @@ const CITIES = {
   data: [{
     locode: 'MX MEX', name: 'Mexico City',
     services: [
-      { key: 'CAR', load: { value: '300', unit: 'kg' } },
-      { key: 'MOTORCYCLE', load: { value: '20', unit: 'kg' } },
-      { key: 'VAN', load: { value: '1000', unit: 'kg' } },
-      { key: 'TRUCK330', load: { value: '1000', unit: 'kg' } },
-      { key: 'UV_FIORINO', load: { value: '500', unit: 'kg' } },
+      { key: 'CAR', load: { value: '300', unit: 'kg' }, dimensions: { length: { value: '1.3', unit: 'm' }, width: { value: '1.6', unit: 'm' }, height: { value: '0.8', unit: 'm' } } },
+      { key: 'MOTORCYCLE', load: { value: '20', unit: 'kg' }, dimensions: { length: { value: '0.4', unit: 'm' }, width: { value: '0.4', unit: 'm' }, height: { value: '0.3', unit: 'm' } } },
+      { key: 'VAN', load: { value: '1000', unit: 'kg' }, dimensions: { length: { value: '2', unit: 'm' }, width: { value: '1.2', unit: 'm' }, height: { value: '1.2', unit: 'm' } } },
+      { key: 'TRUCK330', load: { value: '1000', unit: 'kg' }, dimensions: { length: { value: '2', unit: 'm' }, width: { value: '2', unit: 'm' }, height: { value: '1.7', unit: 'm' } } },
+      { key: 'UV_FIORINO', load: { value: '500', unit: 'kg' }, dimensions: { length: { value: '1.8', unit: 'm' }, width: { value: '1.3', unit: 'm' }, height: { value: '1.1', unit: 'm' } } },
     ],
   }],
 };
+const caja = (cantidad, l, w, h) => ({ cantidad, medidasCm: [l, w, h] });
 
 test('firmaLalamove: HMAC-SHA256 hex de ts\\r\\nMETODO\\r\\nPATH\\r\\n\\r\\nBODY', () => {
   const esperada = crypto.createHmac('sha256', 'sk_x')
@@ -52,19 +53,49 @@ test('serviciosDeMexico: respuesta sin ciudades -> lista vacia', () => {
   assert.deepEqual(serviciosDeMexico(null), []);
 });
 
-test('vehiculosQueAlcanzan: solo los que cargan al menos el peso del carrito', () => {
+test('serviciosDeMexico: medidas en cm ordenadas de mayor a menor; sin medidas -> null', () => {
   const s = serviciosDeMexico(CITIES);
-  assert.deepEqual(vehiculosQueAlcanzan(s, 350).map(v => v.key), ['UV_FIORINO', 'VAN', 'TRUCK330']);
-  assert.deepEqual(vehiculosQueAlcanzan(s, 300).map(v => v.key), ['CAR', 'UV_FIORINO', 'VAN', 'TRUCK330']);
+  assert.deepEqual(s.find(v => v.key === 'CAR').medidasCm, [160, 130, 80]);
+  const sinMedidas = serviciosDeMexico({ data: [{ locode: 'MX MEX', services: [{ key: 'X', load: { value: '5' } }] }] });
+  assert.equal(sinMedidas[0].medidasCm, null);
 });
 
-test('vehiculosQueAlcanzan: sin peso conocido ofrece todos', () => {
+test('vehiculosQueCaben: por peso, solo los que cargan al menos el peso del carrito', () => {
   const s = serviciosDeMexico(CITIES);
-  assert.equal(vehiculosQueAlcanzan(s, 0).length, s.length);
+  assert.deepEqual(vehiculosQueCaben(s, { pesoKg: 350, cajas: [] }).map(v => v.key), ['UV_FIORINO', 'VAN', 'TRUCK330']);
+  assert.deepEqual(vehiculosQueCaben(s, { pesoKg: 300, cajas: [] }).map(v => v.key), ['CAR', 'UV_FIORINO', 'VAN', 'TRUCK330']);
+  assert.deepEqual(vehiculosQueCaben(s, { pesoKg: 1200, cajas: [] }), []);
 });
 
-test('vehiculosQueAlcanzan: mas pesado que el vehiculo mayor -> ninguno', () => {
-  assert.deepEqual(vehiculosQueAlcanzan(serviciosDeMexico(CITIES), 1200), []);
+test('vehiculosQueCaben: sin peso ni cajas ofrece todos', () => {
+  const s = serviciosDeMexico(CITIES);
+  assert.equal(vehiculosQueCaben(s, { pesoKg: 0, cajas: [] }).length, s.length);
+});
+
+// El volumen de las CAJAS solo puede ocupar FACTOR_LLENADO del espacio de carga:
+// mejor sobrecotizar que ofrecer un vehiculo donde la carga no cabe.
+test('vehiculosQueCaben: por volumen, con margen de llenado', () => {
+  const s = serviciosDeMexico(CITIES);
+  assert.equal(FACTOR_LLENADO, 0.6);
+  // Moto: 40x40x30 = 48 L -> tope 28.8 L. 8 cajas de portavasos = 15.8 L caben.
+  assert.ok(vehiculosQueCaben(s, { pesoKg: 11, cajas: [caja(8, 20.7, 15.4, 6.2)] }).some(v => v.key === 'MOTORCYCLE'));
+  // 15 de esas cajas = 29.6 L: caben en 48 L pero pasan del margen -> sin moto.
+  assert.ok(!vehiculosQueCaben(s, { pesoKg: 11, cajas: [caja(15, 20.7, 15.4, 6.2)] }).some(v => v.key === 'MOTORCYCLE'));
+  // CAR: 160x130x80 = 1.664 m3 -> tope 0.998 m3. 60 cajas de 0.018 m3 = 1.08 m3 -> fuera.
+  const kilos = vehiculosQueCaben(s, { pesoKg: 100, cajas: [caja(60, 30, 30, 20)] }).map(v => v.key);
+  assert.deepEqual(kilos, ['UV_FIORINO', 'VAN', 'TRUCK330']);
+});
+
+test('vehiculosQueCaben: la caja mas grande tiene que caber lado contra lado', () => {
+  const s = serviciosDeMexico(CITIES);
+  // Una sola caja de 66x20x20 cabe por volumen en la moto pero no por largo (66 > 40).
+  assert.ok(!vehiculosQueCaben(s, { pesoKg: 5, cajas: [caja(1, 20, 66, 20)] }).some(v => v.key === 'MOTORCYCLE'));
+  assert.ok(vehiculosQueCaben(s, { pesoKg: 5, cajas: [caja(1, 20, 66, 20)] }).some(v => v.key === 'CAR'));
+});
+
+test('vehiculosQueCaben: vehiculo sin medidas publicadas se juzga solo por peso', () => {
+  const s = [{ key: 'X', cargaKg: 500, medidasCm: null }];
+  assert.deepEqual(vehiculosQueCaben(s, { pesoKg: 100, cajas: [caja(500, 50, 50, 50)] }).map(v => v.key), ['X']);
 });
 
 test('cuerpoCotizacion: origen fabrica, destino por coordenadas del CP, coordenadas como texto', () => {

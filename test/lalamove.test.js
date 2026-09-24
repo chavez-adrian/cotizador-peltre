@@ -102,7 +102,17 @@ test('tarifasLalamove: mas pesado que el vehiculo mayor -> advertencia', async (
   mockLalamove((u) => ({ status: 200, json: CITIES }));
   const r = await tarifasLalamove({ cp: '06700', pesoKg: 1500 });
   assert.deepEqual(r.rates, []);
-  assert.match(r.warnings[0], /1500 kg excede/);
+  assert.match(r.warnings[0], /la carga \(1500 kg, 0 cajas\) no cabe con margen/);
+});
+
+test('tarifasLalamove: las cajas llegan al filtro y descartan el vehiculo donde no caben', async () => {
+  const conMedidas = { data: [{ locode: 'MX MEX', services: [
+    { key: 'CAR', load: { value: '300' }, dimensions: { length: { value: '1.3', unit: 'm' }, width: { value: '1.6', unit: 'm' }, height: { value: '0.8', unit: 'm' } } },
+    { key: 'VAN', load: { value: '1000' }, dimensions: { length: { value: '2', unit: 'm' }, width: { value: '1.2', unit: 'm' }, height: { value: '1.2', unit: 'm' } } },
+  ] }] };
+  mockLalamove((u) => u.endsWith('/v3/cities') ? { status: 200, json: conMedidas } : { status: 201, json: cotizacion('500') });
+  const { rates } = await tarifasLalamove({ cp: '06700', pesoKg: 100, cajas: [{ cantidad: 60, medidasCm: [30, 30, 20] }] });
+  assert.deepEqual(rates.map(r => r.service), ['Van']);
 });
 
 test('tarifasLalamove: catalogo caido -> advertencia, nunca lanza', async () => {
