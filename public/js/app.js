@@ -187,6 +187,7 @@ import {
   cpListoParaCotizarEnvia,
   avisoEnvioPasoCotizacion,
   pasoEnvioListo,
+  envioTrasCambioDeCp,
   buildEnviaRateRestauradaHtml,
   buildItemsYTotales,
   buildItemEnvio,
@@ -1101,7 +1102,7 @@ function estadoFlujoCotizar() {
   return {
     clienteListo: !!(document.getElementById('cl-razon-social')?.value?.trim()),
     productosListos: state.cart.size > 0,
-    envioListo: pasoEnvioListo({ shippingOpt, envioDecidido }),
+    envioListo: pasoEnvioListo({ shippingOpt, envioDecidido, enviaRateSeleccionado }),
   };
 }
 
@@ -2360,6 +2361,31 @@ function invalidarEnvioSiAplica() {
   }
 }
 
+// Borrar o cambiar el CP de entrega suelta la tarifa elegida (#441): se cotizo
+// para otro destino. El paso Envio vuelve a pendiente hasta volver a cotizar o
+// elegir "Sin envio". Lo llaman los caminos por los que el VENDEDOR cambia el
+// CP: teclearlo, elegir otro domicilio y cambiar de cliente (pcPrepararSeleccion);
+// los prellenados del sistema (Editar/Copiar, borrador) no.
+let cpEntregaAntes = '';
+function soltarTarifaSiCambioElCp(cpAnterior) {
+  const r = envioTrasCambioDeCp({
+    shippingOpt: document.getElementById('shipping-option').value,
+    enviaRateSeleccionado,
+    cpAnterior,
+    cpNuevo: document.getElementById('cl-cp-entrega')?.value || '',
+  });
+  if (!r.soltarTarifa) return;
+  enviaRateSeleccionado = r.enviaRateSeleccionado;
+  document.getElementById('shipping-cost').value = '';
+  document.getElementById('shipping-desc').value = 'Envio';
+  document.getElementById('envia-results').innerHTML = '';
+  document.getElementById('envia-resumen').style.display = 'none';
+  sincronizarNotaEnvio();
+  updateResumen();
+  updateTabIndicators();
+  autoguardarBorrador();
+}
+
 function resumenChangeQty(key, delta) {
   const item = state.cart.get(key);
   if (!item) return;
@@ -3314,7 +3340,11 @@ function pcLimpiarCamposCliente() {
 // su PDF puede salir con la direccion equivocada.
 function pcPrepararSeleccion() {
   pcState.cliente = null;
+  const cpAntes = document.getElementById('cl-cp-entrega')?.value || '';
   pcLimpiarCamposCliente();
+  // Cambiar de cliente vacia el CP de entrega: la tarifa elegida era para el
+  // destino del cliente anterior y se suelta (#441), como al borrar el CP.
+  soltarTarifaSiCambioElCp(cpAntes);
   pcRenderDomSelect();
   // El historial de cotizaciones previas es del cliente anterior: se oculta y
   // seleccionarClienteOperam lo re-renderiza si el nuevo cliente tiene previas.
@@ -3954,7 +3984,10 @@ function pcPintarAvisoAlmacen() {
 function pcCambiarDomicilio() {
   const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
   pcState.domicilioIdx = idx;
+  const cpAntes = document.getElementById('cl-cp-entrega')?.value || '';
   aplicarDomicilio(window._operamDomicilios?.[idx]);
+  // Otro domicilio con otro CP suelta la tarifa elegida (#441).
+  soltarTarifaSiCambioElCp(cpAntes);
   // El domicilio nuevo puede entregar de otro almacen (#409): el aviso se repinta
   // con el, o desaparece si este si entrega del de producto terminado.
   pcPintarAvisoAlmacen();
@@ -7166,6 +7199,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('btn-cotizar-envia').addEventListener('click', cotizarEnvia);
   document.getElementById('cl-cp-entrega').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
+  // #441: el CP con el que el vendedor entra al campo es el "antes" de lo que teclee.
+  document.getElementById('cl-cp-entrega').addEventListener('focus', e => { cpEntregaAntes = e.target.value; });
+  document.getElementById('cl-cp-entrega').addEventListener('input', e => { soltarTarifaSiCambioElCp(cpEntregaAntes); cpEntregaAntes = e.target.value; });
   document.getElementById('shipping-cost').addEventListener('input', () => {
     sincronizarNotaEnvio();
     updateResumen();

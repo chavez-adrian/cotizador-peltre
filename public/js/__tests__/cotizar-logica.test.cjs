@@ -9,6 +9,7 @@ let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDesc
 let notaPreciosEnvio, aplicarNotaEnvio, cotizacionLlevaEnvio;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
 let debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo;
+let envioTrasCambioDeCp;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA;
@@ -20,6 +21,7 @@ before(async () => {
     notaPreciosEnvio, aplicarNotaEnvio, cotizacionLlevaEnvio,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
     debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo,
+    envioTrasCambioDeCp,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA,
@@ -1046,11 +1048,13 @@ test('#430-2: cotizacion nueva con "Sin envio" por default (nadie decidio) -> el
 });
 
 // Paqueteria o costo manual ya contaban como listos antes de #430 (cualquier
-// opcion distinta de 'none'), con o sin decision: el ticket no los mueve.
+// opcion distinta de 'none'), con o sin decision: el ticket no los mueve. Desde
+// #441 la paqueteria cuenta con su tarjeta elegida (sin ella, #441-4).
 test('#430-3: con paqueteria o costo manual el paso Envio esta listo, con o sin decision', () => {
+  const enviaRateSeleccionado = { carrier: 'fedex', servicio: 'ground', desc: 'FedEx', cost: 259 };
   for (const shippingOpt of ['envia', 'manual']) {
     for (const envioDecidido of [true, false]) {
-      assert.strictEqual(pasoEnvioListo({ shippingOpt, envioDecidido }), true, `${shippingOpt}/${envioDecidido}`);
+      assert.strictEqual(pasoEnvioListo({ shippingOpt, envioDecidido, enviaRateSeleccionado }), true, `${shippingOpt}/${envioDecidido}`);
     }
   }
 });
@@ -1107,4 +1111,93 @@ test('#432-1: con respuesta buena de envia.com el aviso de espera se limpia ante
   const limpia = cuerpo.indexOf("resultsEl.innerHTML = ''", exito);
   assert.ok(limpia > exito && limpia < Math.min(...pintas),
     'la respuesta buena tiene que quitar "Consultando tarifas..." antes de agregar advertencias o tarjetas');
+});
+
+// === #441: borrar o cambiar el CP suelta la tarifa elegida ===
+// HITL 2026-09-23: con la tarjeta de envia.com elegida, borrar el CP de entrega
+// dejaba la tarifa puesta y el paso Envio en "OK" con punto verde. La tarifa se
+// cotizo para UN destino; con otro CP (o sin CP) ya no vale, y el paso vuelve a
+// estar pendiente hasta volver a cotizar o elegir "Sin envio".
+const TARIFA_ELEGIDA = { carrier: 'ups', servicio: 'saver', desc: 'UPS Saver', cost: 314.61 };
+
+test('#441-1: vaciar o cambiar el CP suelta la tarifa elegida y el paso Envio deja de estar listo, en las tres opciones de tarifa', () => {
+  for (const shippingOpt of OPCIONES_TARIFA) {
+    const antes = { shippingOpt, envioDecidido: true, enviaRateSeleccionado: TARIFA_ELEGIDA };
+    assert.strictEqual(pasoEnvioListo(antes), true, `premisa: ${shippingOpt} con tarifa elegida esta listo`);
+    for (const cpNuevo of ['', '64000']) {
+      const tras = envioTrasCambioDeCp({ ...antes, cpAnterior: '78000', cpNuevo });
+      assert.strictEqual(tras.soltarTarifa, true, `${shippingOpt} 78000 -> '${cpNuevo}'`);
+      assert.strictEqual(tras.enviaRateSeleccionado, null, `${shippingOpt} 78000 -> '${cpNuevo}'`);
+      assert.strictEqual(pasoEnvioListo({ ...antes, enviaRateSeleccionado: tras.enviaRateSeleccionado }), false,
+        `${shippingOpt} 78000 -> '${cpNuevo}': el paso Envio no esta listo`);
+    }
+  }
+});
+
+// El vendedor que vuelve a escribir el MISMO CP (o solo le agrega espacios) no
+// cambio de destino: la tarifa sigue valiendo.
+test('#441-2: el mismo CP no suelta la tarifa', () => {
+  for (const cpNuevo of ['78000', ' 78000 ']) {
+    const tras = envioTrasCambioDeCp({ shippingOpt: 'envia', enviaRateSeleccionado: TARIFA_ELEGIDA, cpAnterior: '78000', cpNuevo });
+    assert.strictEqual(tras.soltarTarifa, false);
+    assert.strictEqual(tras.enviaRateSeleccionado, TARIFA_ELEGIDA);
+  }
+});
+
+// El costo manual y "Sin envio" no dependen del CP: no hay tarifa que soltar, y
+// el paso sigue como estaba.
+test('#441-3: con costo manual o "Sin envio" cambiar el CP no suelta nada ni mueve el paso', () => {
+  for (const shippingOpt of ['manual', 'none']) {
+    const tras = envioTrasCambioDeCp({ shippingOpt, enviaRateSeleccionado: null, cpAnterior: '78000', cpNuevo: '' });
+    assert.strictEqual(tras.soltarTarifa, false, shippingOpt);
+    assert.strictEqual(pasoEnvioListo({ shippingOpt, envioDecidido: true, enviaRateSeleccionado: tras.enviaRateSeleccionado }), true, shippingOpt);
+  }
+});
+
+// Sin tarifa elegida (la soltaron, envia.com no devolvio ninguna o la invalidaron
+// las cantidades, #89) no hay envio en los totales: el paso Envio no esta listo
+// aunque el selector diga paqueteria. Vuelve a estarlo al elegir una tarjeta.
+test('#441-4: una opcion de tarifa sin tarifa elegida no deja listo el paso Envio', () => {
+  for (const shippingOpt of OPCIONES_TARIFA) {
+    for (const envioDecidido of [true, false]) {
+      assert.strictEqual(pasoEnvioListo({ shippingOpt, envioDecidido, enviaRateSeleccionado: null }), false, `${shippingOpt}/${envioDecidido}`);
+      assert.strictEqual(pasoEnvioListo({ shippingOpt, envioDecidido, enviaRateSeleccionado: TARIFA_ELEGIDA }), true, `${shippingOpt}/${envioDecidido}`);
+    }
+  }
+});
+
+// El cableado de #441 en app.js (no importable en Node; ver #430-5): el riel lee
+// la tarifa elegida, y los caminos por los que el VENDEDOR cambia el CP --
+// teclearlo, elegir otro domicilio y cambiar de cliente -- pasan por el mismo
+// punto, que suelta la tarifa con el nucleo y repinta nota (#436), resumen y
+// riel. Cambiar de cliente vacia el CP en pcPrepararSeleccion (punto unico de
+// busqueda, recientes, prospecto y "Cambiar de cliente"): Copiar la cotizacion
+// de A con flete a 78000 y pasarla a B con CP 64000 (#385) dejaba la tarifa de
+// A. Editar/Copiar (cargarCotizacion) restauran tarifa y CP juntos y no pasan
+// por ahi. Ver el "OK" irse en pantalla es HITL.
+test('#441-5: app.js suelta la tarifa por el nucleo al teclear el CP, al cambiar de domicilio y al cambiar de cliente, y el riel lee la tarifa', () => {
+  const src = fuenteApp();
+  assert.ok(/envioListo:\s*pasoEnvioListo\(\{[^}]*\benviaRateSeleccionado\b[^}]*\}\)/.test(cuerpoDeFuncion(src, 'function estadoFlujoCotizar(')),
+    'el paso Envio del riel tiene que saber si hay tarjeta elegida');
+  const soltar = cuerpoDeFuncion(src, 'function soltarTarifaSiCambioElCp(');
+  for (const llamada of ['envioTrasCambioDeCp(', 'sincronizarNotaEnvio()', 'updateResumen()', 'updateTabIndicators()']) {
+    assert.ok(soltar.includes(llamada), `soltarTarifaSiCambioElCp debe llamar ${llamada}`);
+  }
+  assert.ok(/getElementById\('cl-cp-entrega'\)\.addEventListener\('input',[^\n]*soltarTarifaSiCambioElCp\(/.test(src),
+    'teclear o borrar el CP de entrega pasa por soltarTarifaSiCambioElCp');
+  const dom = cuerpoDeFuncion(src, 'function pcCambiarDomicilio(');
+  assert.ok(dom.indexOf('soltarTarifaSiCambioElCp(') > dom.indexOf('aplicarDomicilio('),
+    'elegir otro domicilio compara el CP de antes contra el que dejo aplicarDomicilio');
+  const prep = cuerpoDeFuncion(src, 'function pcPrepararSeleccion(');
+  const limpia = prep.indexOf('pcLimpiarCamposCliente(');
+  assert.ok(limpia > 0, 'premisa: pcPrepararSeleccion limpia los campos del cliente');
+  const leeCp = prep.indexOf("getElementById('cl-cp-entrega')");
+  assert.ok(leeCp > 0 && leeCp < limpia,
+    'cambiar de cliente toma el CP de antes de que pcLimpiarCamposCliente lo vacie');
+  assert.ok(prep.indexOf('soltarTarifaSiCambioElCp(') > limpia,
+    'cambiar de cliente compara ese CP contra el que dejo pcLimpiarCamposCliente');
+  const cargar = cuerpoDeFuncion(src, 'async function cargarCotizacion(');
+  for (const prohibida of ['soltarTarifaSiCambioElCp(', 'pcPrepararSeleccion(']) {
+    assert.ok(!cargar.includes(prohibida), `Editar/Copiar restauran tarifa y CP juntos: cargarCotizacion no llama ${prohibida}`);
+  }
 });

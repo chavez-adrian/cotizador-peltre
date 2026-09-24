@@ -367,10 +367,22 @@ export function avisoEnvioPasoCotizacion({ shippingOpt, envioDecidido }) {
 // lugar del 'none' de #419/#420: estadoFlujoCotizar (app.js) lo juzgaba con
 // `opt !== 'none'` en linea y "Sin envio" decidido se quedaba sin palomita. No es
 // un criterio propio: el paso esta listo cuando el paso Cotizacion no tiene envio
-// que pedir -- paqueteria, manual o "Sin envio" decidido.
-export function pasoEnvioListo({ shippingOpt, envioDecidido }) {
+// que pedir -- paqueteria, manual o "Sin envio" decidido. #441: una opcion de
+// tarifa sin tarjeta elegida (soltada al cambiar el CP, sin tarifas o invalidada
+// por cantidades) no pone envio en los totales, asi que no cuenta como listo.
+export function pasoEnvioListo({ shippingOpt, envioDecidido, enviaRateSeleccionado }) {
   if (!shippingOpt) return false;
+  if (esOpcionTarifa(shippingOpt) && !enviaRateSeleccionado) return false;
   return avisoEnvioPasoCotizacion({ shippingOpt, envioDecidido })?.veredicto !== 'pendiente';
+}
+
+// Borrar o cambiar el CP de entrega (#441): la tarifa elegida se cotizo para
+// OTRO destino, asi que se suelta y el paso Envio vuelve a pendiente hasta
+// volver a cotizar o elegir "Sin envio". El costo manual no depende del CP.
+export function envioTrasCambioDeCp({ shippingOpt, enviaRateSeleccionado, cpAnterior, cpNuevo }) {
+  const cambio = String(cpAnterior ?? '').trim() !== String(cpNuevo ?? '').trim();
+  const soltarTarifa = cambio && esOpcionTarifa(shippingOpt) && !!enviaRateSeleccionado;
+  return { soltarTarifa, enviaRateSeleccionado: soltarTarifa ? null : enviaRateSeleccionado };
 }
 
 // Tarjeta de solo lectura para el envio via envia.com restaurado del historial

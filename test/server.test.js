@@ -734,6 +734,40 @@ test('#437: POST /api/cotizacion/envio/tresguerras con Tresguerras caido -> 200 
   }
 });
 
+// #441: envia.com cotiza CPs que no existen (99999, 00001 y 00000 devolvian "UPS
+// Saver $314.61" en produccion el 2026-09-23) aunque GET /api/cp/MX/<cp> del
+// propio cotizador responde 404. Las tres opciones de tarifa dependen del CP de
+// destino, asi que ninguna consulta afuera con un CP que /api/cp no reconoce.
+for (const [ruta, nombre] of [
+  ['/api/cotizacion/envio', 'envia.com'],
+  ['/api/cotizacion/envio/lalamove', 'Lalamove'],
+  ['/api/cotizacion/envio/tresguerras', 'Tresguerras'],
+]) {
+  test(`#441: ${nombre} con un CP que /api/cp no reconoce -> 404 "CP no encontrado" sin consultar a nadie`, async () => {
+    const originalFetch = globalThis.fetch;
+    const envOriginal = { ...process.env };
+    process.env.ENVIA_API_KEY = 'test-key';
+    process.env.LALAMOVE_API_KEY = 'pk_test_x';
+    process.env.LALAMOVE_API_SECRET = 'sk_test_x';
+    const consultas = [];
+    globalThis.fetch = async (url) => { consultas.push(String(url)); throw new Error('no deberia consultar: ' + url); };
+    try {
+      for (const cp of ['99999', '00001', '00000']) {
+        const cpApi = await supertest(app).get(`/api/cp/MX/${cp}`);
+        assert.strictEqual(cpApi.status, 404, `premisa: /api/cp no reconoce ${cp}`);
+        const res = await supertest(app).post(ruta).set('Authorization', `Bearer ${TEST_TOKEN}`)
+          .send({ cpDestino: cp, paisDestino: 'MX', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 1160 });
+        assert.strictEqual(res.status, 404, `${nombre} con CP ${cp}`);
+        assert.strictEqual(res.body.error, 'CP no encontrado');
+      }
+      assert.deepStrictEqual(consultas, []);
+    } finally {
+      globalThis.fetch = originalFetch;
+      process.env = envOriginal;
+    }
+  });
+}
+
 test('#72: POST /api/cotizacion/envio/lalamove fuera de Mexico -> 400 sin consultar', async () => {
   const originalFetch = globalThis.fetch;
   const llamadas = mockEnviaYLalamove();

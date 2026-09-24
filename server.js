@@ -1287,12 +1287,18 @@ const indiceCP = cargarIndiceCP();
 // al indice. El pais viaja en la URL en mayusculas (MX/US/CA, el mismo
 // catalogo cerrado que paisDesdeCodigoTelefono en alta-logica.js); cualquier
 // otro valor se rechaza igual que un formato invalido.
+function resolverCP(paisCrudo, cp) {
+  const pais = String(paisCrudo || '').toUpperCase();
+  if (!indiceCP[pais]) return { status: 400, error: 'Pais no soportado' };
+  if (!validarCP(cp, pais)) return { status: 400, error: 'CP invalido' };
+  const resultado = buscarCP(indiceCP, pais, cp);
+  if (!resultado) return { status: 404, error: 'CP no encontrado' };
+  return { resultado };
+}
+
 app.get('/api/cp/:pais/:cp', (req, res) => {
-  const pais = String(req.params.pais || '').toUpperCase();
-  if (!indiceCP[pais]) return res.status(400).json({ error: 'Pais no soportado' });
-  if (!validarCP(req.params.cp, pais)) return res.status(400).json({ error: 'CP invalido' });
-  const resultado = buscarCP(indiceCP, pais, req.params.cp);
-  if (!resultado) return res.status(404).json({ error: 'CP no encontrado' });
+  const { status, error, resultado } = resolverCP(req.params.pais, req.params.cp);
+  if (error) return res.status(status).json({ error });
   res.json(resultado);
 });
 
@@ -2086,10 +2092,22 @@ const ENVIA_ORIGIN = {
   state: 'MEX', country: 'MX', postalCode: '56577',
 };
 
+// Las tres opciones de tarifa (envia.com, Lalamove, Tresguerras) cotizan contra
+// el CP de destino, y envia.com cotiza CPs que no existen (99999 devolvia "UPS
+// Saver $314.61", #441). Un CP que GET /api/cp no reconoce no sale a consultar a
+// nadie: misma regla, mismo indice y mismo mensaje que ese GET (resolverCP).
+function rechazarCpDestino(res, paisDestino, cpDestino) {
+  const { status, error } = resolverCP(paisDestino || 'MX', cpDestino);
+  if (!error) return false;
+  res.status(status).json({ error });
+  return true;
+}
+
 app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
   const { cpDestino, paisDestino, items, totalConIVA } = req.body;
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
   if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
+  if (rechazarCpDestino(res, paisDestino, cpDestino)) return;
   const ENVIA_API_KEY = process.env.ENVIA_API_KEY;
   if (!ENVIA_API_KEY) return res.status(500).json({ error: 'ENVIA_API_KEY no configurado en .env' });
   let packages, resumen, warnings;
@@ -2132,6 +2150,7 @@ app.post('/api/cotizacion/envio/lalamove', authMiddleware, async (req, res) => {
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
   if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
   if ((paisDestino || 'MX') !== 'MX') return res.status(400).json({ error: 'Lalamove solo entrega en Mexico' });
+  if (rechazarCpDestino(res, paisDestino, cpDestino)) return;
   let packages, resumen, warnings;
   try {
     ({ packages, resumen, warnings } = calcularPaquetes(items, 0));
@@ -2155,6 +2174,7 @@ app.post('/api/cotizacion/envio/tresguerras', authMiddleware, async (req, res) =
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
   if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
   if ((paisDestino || 'MX') !== 'MX') return res.status(400).json({ error: 'Tresguerras solo cotiza envios en Mexico' });
+  if (rechazarCpDestino(res, paisDestino, cpDestino)) return;
   let packages, resumen, warnings;
   try {
     ({ packages, resumen, warnings } = calcularPaquetes(items, 0));
