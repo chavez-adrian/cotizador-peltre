@@ -48,6 +48,13 @@ test('serviciosDeMexico: vehiculos con su carga numerica, del mas chico al mas g
   ]);
 });
 
+// Medido en produccion: 1.1 m y 2.2 m salian como 110.00000000000001 cm en la tarjeta.
+test('serviciosDeMexico: las medidas se redondean al centimetro', () => {
+  const s = serviciosDeMexico({ data: [{ locode: 'MX MEX', services: [{ key: 'TRUCK5T', load: { value: '5000' },
+    dimensions: { length: { value: '5.8', unit: 'm' }, width: { value: '2.2', unit: 'm' }, height: { value: '1.1', unit: 'm' } } }] }] });
+  assert.deepEqual(s[0].medidasCm, [580, 220, 110]);
+});
+
 test('serviciosDeMexico: respuesta sin ciudades -> lista vacia', () => {
   assert.deepEqual(serviciosDeMexico({}), []);
   assert.deepEqual(serviciosDeMexico(null), []);
