@@ -1764,17 +1764,19 @@ test('armarContenidoQuote: la partida de flete impone su descripcion al actualiz
   assert.equal(items.find(i => i.stock_id === 'CR20-PLATO').editarDescripcion, false);
 });
 
-// Un envio Lalamove NO es partida (#72): vive en comments, asi que no hay descripcion
-// de linea que imponer.
-test('armarContenidoQuote: un envio Lalamove sigue sin ser partida', async () => {
+// #72: Lalamove es partida de flete LOCAL aunque el CP caiga fuera de la zona metro
+// (Toluca esta en su poligono), impone su descripcion y ya no viaja en comments.
+test('armarContenidoQuote: un envio Lalamove es partida de flete local', async () => {
   const { armarContenidoQuote } = await import('../lib/operam-client.js');
   const { items, comments } = armarContenidoQuote({
     fecha: '2026-06-17',
-    cliente: { cpEntrega: '44100' },
-    items: [{ codigo: 'ENVIO', descripcion: 'Lalamove sedan', cantidad: 1, precio: 300, descuento: 0 }],
+    cliente: { cpEntrega: '50000' },
+    items: [{ codigo: 'ENVIO', descripcion: 'Lalamove Van (hasta 1000 kg)', cantidad: 1, precio: 629.76, descuento: 0 }],
   });
-  assert.equal(items.length, 0);
-  assert.match(comments, /Lalamove sedan/);
+  assert.deepEqual(items, [{
+    stock_id: '251021001', stock_id_text: 'Lalamove Van (hasta 1000 kg)', qty: 1, price: 629.76, Disc: 0, editarDescripcion: true,
+  }]);
+  assert.doesNotMatch(comments, /Lalamove/);
 });
 
 // #284: el fallback de la fecha de emision (data.fecha ausente) se resolvia con
@@ -1869,7 +1871,7 @@ test('subirCotizacionOperam: sin linea de envio -> NO se agrega partida de flete
   }
 });
 
-test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (diferido a #72)', async () => {
+test('subirCotizacionOperam: envio Lalamove -> partida de flete local (#72)', async () => {
   resetSession();
   let quoteBody = null;
   const restore = mockFetchByUrl({
@@ -1892,9 +1894,11 @@ test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (di
         { codigo: 'ENVIO', descripcion: 'Lalamove auto', cantidad: 1, precio: 250, descuento: 0 },
       ],
     });
-    assert.equal(partidaFlete(quoteBody), undefined, 'Lalamove NO debe volverse partida de flete');
-    assert.ok(/Lalamove/i.test(quoteBody.comments || ''), 'Lalamove debe quedar en comments');
-    assert.ok(/250/.test(quoteBody.comments || ''), 'el monto de Lalamove debe quedar en comments');
+    const flete = partidaFlete(quoteBody);
+    assert.equal(flete.stock_id, '251021001');
+    assert.equal(flete.price, 250);
+    assert.equal(flete.stock_id_text, 'Lalamove auto');
+    assert.equal(/Lalamove/i.test(quoteBody.comments || ''), false, 'Lalamove ya no viaja en comments');
   } finally {
     restore();
   }
@@ -1902,30 +1906,24 @@ test('subirCotizacionOperam: envio Lalamove -> NO partida, queda en comments (di
 
 // #107: pruebas directas de la funcion pura, sin pasar por subirCotizacionOperam.
 test('armarComentariosQuote: notas puntuadas, sin envio -> sin "..", una nota por linea', () => {
-  const comments = armarComentariosQuote(['A.', 'B.'], '2026-07-17', []);
+  const comments = armarComentariosQuote(['A.', 'B.'], '2026-07-17');
   assert.equal(comments, '- A.\n- B.\nValido hasta: 2026-07-17');
   assert.equal(/\.\./.test(comments), false);
 });
 
 test('armarComentariosQuote: nota sin punto final no se pega a la siguiente linea', () => {
-  const comments = armarComentariosQuote(['Precio sujeto a cambio'], '2026-07-17', []);
+  const comments = armarComentariosQuote(['Precio sujeto a cambio'], '2026-07-17');
   assert.equal(comments, '- Precio sujeto a cambio\nValido hasta: 2026-07-17');
 });
 
 test('armarComentariosQuote: sin notas -> solo Valido hasta (mas envio si aplica)', () => {
-  assert.equal(armarComentariosQuote([], '2026-07-17', []), 'Valido hasta: 2026-07-17');
-  assert.equal(armarComentariosQuote(null, '2026-07-17', []), 'Valido hasta: 2026-07-17');
+  assert.equal(armarComentariosQuote([], '2026-07-17'), 'Valido hasta: 2026-07-17');
+  assert.equal(armarComentariosQuote(null, '2026-07-17'), 'Valido hasta: 2026-07-17');
 });
 
 test('armarComentariosQuote: notas de solo espacios se descartan igual que vacias', () => {
-  const comments = armarComentariosQuote(['A.', '   ', 'B.'], '2026-07-17', []);
+  const comments = armarComentariosQuote(['A.', '   ', 'B.'], '2026-07-17');
   assert.equal(comments, '- A.\n- B.\nValido hasta: 2026-07-17');
-});
-
-test('armarComentariosQuote: envio Lalamove va despues de Valido hasta, sin ".."', () => {
-  const comments = armarComentariosQuote(['A.'], '2026-07-17', [{ descripcion: 'Lalamove auto', precio: 250 }]);
-  assert.equal(comments, '- A.\nValido hasta: 2026-07-17\nEnvio: Lalamove auto $250');
-  assert.equal(/\.\./.test(comments), false);
 });
 
 // #107: las notas ya llegan puntuadas (el vendedor las captura como vinetas terminadas
@@ -2165,9 +2163,8 @@ test('#115 huellaContenidoQuote: el formato del documento NO cuenta como cambio'
   assert.equal(huellaContenidoQuote(cotizacionBase({ incluirFotos: true })), base);
 });
 
-// Lalamove no es partida del quote (#72 pendiente): viaja en comments. Un cambio de su
-// descripcion con el mismo precio no mueve items ni importes, asi que solo lo caza el
-// comments.
+// Lalamove es partida del quote (#72): cambiar de vehiculo con el mismo precio solo
+// mueve la descripcion de la partida, y eso tambien es un cambio.
 test('#115 huellaContenidoQuote: la descripcion de un envio Lalamove SI cuenta como cambio', () => {
   const conLalamove = (desc) => huellaContenidoQuote(cotizacionBase({
     items: [

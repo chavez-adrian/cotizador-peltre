@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarCp, buscarCP, normalizarEstadoMx, construirIndiceCP } from '../lib/codigos-postales.js';
+import { normalizarCp, buscarCP, normalizarEstadoMx, construirIndiceCP, construirCoordenadasMX, coordenadasDeCP } from '../lib/codigos-postales.js';
 
 test('normalizarCp MX: 5 digitos, quita no-digitos', () => {
   assert.equal(normalizarCp('MX', '56530'), '56530');
@@ -77,4 +77,26 @@ test('construirIndiceCP: US usa ciudad (place name) + abreviatura de estado (adm
 test('construirIndiceCP: CA usa ciudad + provincia y la llave es el FSA de 3 caracteres', () => {
   const { CA } = construirIndiceCP({ mx: '', us: '', ca: CA_M5V });
   assert.deepEqual(CA['M5V'], ['Downtown Toronto', 'Ontario']);
+});
+
+// Coordenadas por CP para la tarifa Lalamove (#72): el centroide de las colonias
+// del CP (promedio de sus lat/lng), redondeado a 4 decimales (~11 m).
+test('construirCoordenadasMX: promedia las colonias del CP', () => {
+  const coords = construirCoordenadasMX(MX_56530);
+  const [lat, lng] = coords['56530'];
+  assert.ok(Math.abs(lat - 19.31155) <= 0.0001, `lat ${lat}`);
+  assert.ok(Math.abs(lng - -98.87965) <= 0.0001, `lng ${lng}`);
+});
+
+test('construirCoordenadasMX: una fila sin lat/lng legibles no entra', () => {
+  const coords = construirCoordenadasMX('MX\t01000\tX\tDistrito Federal\t09\tY\t002\tZ\t02\t\t\t4\n' + MX_02000_DF);
+  assert.equal(coords['01000'], undefined);
+  assert.deepEqual(coords['02000'], [19.4815, -99.1862]);
+});
+
+test('coordenadasDeCP: normaliza el CP y devuelve {lat, lng}; desconocido -> null', () => {
+  const coords = construirCoordenadasMX(MX_02000_DF);
+  assert.deepEqual(coordenadasDeCP(coords, ' 02000 '), { lat: 19.4815, lng: -99.1862 });
+  assert.equal(coordenadasDeCP(coords, '99999'), null);
+  assert.equal(coordenadasDeCP(null, '02000'), null);
 });

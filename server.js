@@ -80,6 +80,7 @@ import { permitirCaptura } from './lib/rate-limit-publico.js';
 import { verificarTurnstile, turnstileConfigurado } from './lib/turnstile.js';
 import { validarCP } from './lib/validar-cp.js';
 import { buscarCP } from './lib/codigos-postales.js';
+import { tarifasLalamove } from './lib/lalamove.js';
 import { leerArchivoSync } from './lib/fs-reintento.js';
 import { enviarAlertaMayoreo } from './lib/alerta-mayoreo-io.js';
 import { barrerContactosGoogle } from './lib/contactos-io.js';
@@ -2100,10 +2101,17 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
     if (!r.ok || data.meta === 'error') return [];
     return Array.isArray(data) ? data : (data.data || []);
   };
+  // Lalamove (#72) viaja en la misma lista: solo cubre la zona metro de MX y
+  // elige vehiculo por el peso total que ya calculo calcularPaquetes.
+  const pesoKg = resumen.reduce((s, g) => s + (g.total_peso_kg || 0), 0);
+  const lalamove = (paisDestino || 'MX') === 'MX'
+    ? tarifasLalamove({ cp: cpDestino, pesoKg: Math.ceil(pesoKg) })
+    : Promise.resolve({ rates: [], warnings: [] });
   try {
-    const results = await Promise.allSettled(CARRIERS.map(queryCarrier));
-    const rates = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+    const [results, deLalamove] = await Promise.all([Promise.allSettled(CARRIERS.map(queryCarrier)), lalamove]);
+    const rates = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value).concat(deLalamove.rates);
     rates.sort((a, b) => (a.totalPrice ?? a.rate ?? 0) - (b.totalPrice ?? b.rate ?? 0));
+    warnings.push(...deLalamove.warnings);
     if (rates.length === 0 && warnings.length === 0) warnings.push('No se obtuvieron tarifas de ninguna paqueteria');
     res.json({ rates, resumen, warnings });
   } catch (err) {

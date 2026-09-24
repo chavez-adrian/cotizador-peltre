@@ -118,6 +118,15 @@ test('AC3-2: carrier desconocido -> Title Case (no rompe, presentable)', () => {
   assert.strictEqual(formatCarrier('paqueteria local'), 'Paqueteria Local');
 });
 
+// #72: la tarjeta de Lalamove (lib/lalamove-logica.js) llega con la forma de
+// envia.com; su serviceDescription es la descripcion de la partida, que es la
+// que operam-client.js reconoce como Lalamove para mandarla como flete local.
+test('#72: tarjeta Lalamove -> carrier presentable y descripcion con el vehiculo', () => {
+  const rate = { carrier: 'lalamove', service: 'Van', serviceDescription: 'Lalamove Van (hasta 1000 kg)', totalPrice: 629.76 };
+  assert.strictEqual(formatCarrier(rate.carrier), 'Lalamove');
+  assert.strictEqual(formatDescripcionEnvioEnvia(rate), 'Lalamove Van (hasta 1000 kg)');
+});
+
 test('AC3-3: servicio en Title Case', () => {
   assert.strictEqual(formatServicio('ground'), 'Ground');
   assert.strictEqual(formatServicio('STANDARD OVERNIGHT'), 'Standard Overnight');

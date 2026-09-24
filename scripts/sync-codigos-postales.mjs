@@ -26,7 +26,7 @@ import { inflateRawSync } from 'zlib';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
-import { construirIndiceCP } from '../lib/codigos-postales.js';
+import { construirIndiceCP, construirCoordenadasMX } from '../lib/codigos-postales.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA = join(__dirname, '..', 'data');
@@ -128,6 +128,15 @@ async function main() {
   }
   console.log(`\nPrueba de cordura: 56530 -> ${ixtapaluca[0]}, ${ixtapaluca[1]}`);
 
+  // Coordenadas por CP para la tarifa Lalamove (#72).
+  const coordsMX = construirCoordenadasMX(mx);
+  const coordsFabrica = coordsMX['56577'];
+  if (!coordsFabrica || Math.abs(coordsFabrica[0] - 19.3) > 0.1 || Math.abs(coordsFabrica[1] + 98.9) > 0.1) {
+    console.error('\nABORTA: el CP 56577 no cae junto a la fabrica de Ixtapaluca -- revisar columnas lat/lng.');
+    process.exit(1);
+  }
+  console.log(`Coordenadas: ${Object.keys(coordsMX).length} CPs de MX; 56577 -> ${coordsFabrica.join(', ')}`);
+
   if (!APPLY) {
     console.log('\nDRY-RUN: no se escribio nada (usa --apply para guardar data/cp-*.json).');
     return;
@@ -139,7 +148,8 @@ async function main() {
     // el pretty-print de otros data/*.json no se justifica aqui.
     escribirArchivoSync(archivo, JSON.stringify(indice[pais]));
   }
-  console.log('\nAPPLY: escritos data/cp-mx.json, cp-us.json, cp-ca.json');
+  escribirArchivoSync(join(DATA, 'cp-mx-coords.json'), JSON.stringify(coordsMX));
+  console.log('\nAPPLY: escritos data/cp-mx.json, cp-us.json, cp-ca.json, cp-mx-coords.json');
 }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);

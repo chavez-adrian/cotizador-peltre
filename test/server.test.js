@@ -597,6 +597,50 @@ test('B5 (#88): POST /api/cotizacion/envio propaga deliveryEstimate y deliveryDa
   }
 });
 
+// #72: Lalamove se consulta junto a FedEx/DHL/UPS y sus tarjetas viajan en la
+// MISMA lista de rates; su falla nunca tumba las de envia.com.
+test('#72: POST /api/cotizacion/envio suma las tarifas de Lalamove a las de envia.com (solo MX)', async () => {
+  const originalFetch = globalThis.fetch;
+  const envOriginal = { ...process.env };
+  process.env.ENVIA_API_KEY = 'test-key';
+  process.env.LALAMOVE_API_KEY = 'pk_test_x';
+  process.env.LALAMOVE_API_SECRET = 'sk_test_x';
+  const lalamoveUrls = [];
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.includes('api.envia.com/ship/rate')) {
+      const carrier = JSON.parse(opts.body).shipment.carrier;
+      return { ok: true, json: async () => ({ data: carrier === 'fedex' ? [{ carrier: 'fedex', service: 'ground', totalPrice: 259 }] : [] }) };
+    }
+    if (u.includes('lalamove')) {
+      lalamoveUrls.push(u);
+      if (u.endsWith('/v3/cities')) {
+        return { ok: true, status: 200, json: async () => ({ data: [{ locode: 'MX MEX', services: [{ key: 'VAN', load: { value: '1000' } }] }] }) };
+      }
+      return { ok: true, status: 201, json: async () => ({ data: { priceBreakdown: { total: '629.76', currency: 'MXN' }, distance: { value: '33400' } } }) };
+    }
+    throw new Error('Unmocked fetch: ' + u);
+  };
+  try {
+    const res = await supertest(app).post('/api/cotizacion/envio').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ cpDestino: '06700', paisDestino: 'MX', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 100 });
+    assert.strictEqual(res.status, 200);
+    const lala = res.body.rates.find(r => r.carrier === 'lalamove');
+    assert.ok(lala, JSON.stringify(res.body));
+    assert.strictEqual(lala.totalPrice, 629.76);
+    assert.strictEqual(lala.serviceDescription, 'Lalamove Van (hasta 1000 kg)');
+    assert.ok(res.body.rates.some(r => r.carrier === 'fedex'));
+
+    lalamoveUrls.length = 0;
+    await supertest(app).post('/api/cotizacion/envio').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ cpDestino: '90210', paisDestino: 'US', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 100 });
+    assert.deepStrictEqual(lalamoveUrls, [], 'un destino fuera de MX no consulta Lalamove');
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env = envOriginal;
+  }
+});
+
 function mockOperamFetch(handlers) {
   const original = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {
