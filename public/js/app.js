@@ -177,6 +177,8 @@ import {
   bloqueaGeneracionPorEnvioInvalidado,
   MENSAJE_ENVIO_INVALIDADO,
   aplicarNotaTiempoEntrega,
+  aplicarNotaEnvio,
+  cotizacionLlevaEnvio,
   formatDescripcionEnvioEnvia,
   buildEnvioEstructurado,
   restaurarEnvioDesdeCotizacion,
@@ -590,6 +592,7 @@ async function showApp() {
   // filtrando datos de la anterior.
   decoradoManual = false;
   aplicarEnvioRestaurado(undefined);
+  sincronizarNotaEnvio();
   // El borrador se restaura DESPUES del catalogo (cada linea se re-resuelve
   // contra el vigente) y ANTES de pintar, para que los renders de abajo ya
   // muestren la sesion recuperada -- carrito, cliente, envio, lista fijada,
@@ -841,6 +844,8 @@ function aplicarBorrador(borrador) {
   // Envio (#180, mismo criterio que Cargar del historial #102): se restaura
   // tal cual, sin re-cotizar contra las paqueterias.
   aplicarEnvioRestaurado(borrador.envio);
+  // El borrador no guarda notas (#436): las del textarea siguen al envio restaurado.
+  sincronizarNotaEnvio();
 
   // Lista fijada (#151/#180): se restaura tal cual. La proxima cotizacion sigue
   // arrancando en Auto porque generar con exito y empezar de cero matan el
@@ -2136,8 +2141,22 @@ function seleccionarEnviaRate(card, rate, carrier, servicio, precio) {
   // Sincronizar con los campos manuales para que updateResumen los tome
   document.getElementById('shipping-desc').value = enviaRateSeleccionado.desc;
   document.getElementById('shipping-cost').value = precio.toFixed(2);
+  sincronizarNotaEnvio();
   updateResumen();
   updateTabIndicators();
+}
+
+// Nota de precios y envio (#436): la linea auto-generada sigue al estado del
+// envio en cada cambio (tarjeta, selector, invalidacion, costo manual, reinicio).
+// Cargar del historial NO pasa por aqui: Editar/Copiar conservan sus notas.
+function sincronizarNotaEnvio() {
+  const notasEl = document.getElementById('resumen-notas');
+  if (!notasEl) return;
+  const conEnvio = cotizacionLlevaEnvio(
+    document.getElementById('shipping-option').value,
+    document.getElementById('shipping-cost').value,
+  );
+  notasEl.value = aplicarNotaEnvio(notasEl.value, conEnvio);
 }
 
 window.cotizarEnvia = cotizarEnvia;
@@ -2337,6 +2356,7 @@ function invalidarEnvioSiAplica() {
     envioInvalidadoPorCantidad = true;
     document.getElementById('shipping-cost').value = '';
     document.getElementById('shipping-desc').value = 'Envio';
+    sincronizarNotaEnvio();
   }
 }
 
@@ -3013,6 +3033,7 @@ function nuevaCotizacion() {
   decoradoManual = false;
   const notasNuevas = document.getElementById('resumen-notas');
   if (notasNuevas) notasNuevas.value = aplicarNotaTiempoEntrega(notasNuevas.value, false);
+  sincronizarNotaEnvio();
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
   // #109: salir de modo actualizacion devuelve los botones a su texto normal.
@@ -7130,6 +7151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // #419: tocar el selector ES la decision, y cuenta igual para "Sin envio":
     // a partir de aqui el tab Envio deja de proponer envia.com por su cuenta.
     envioDecidido = true;
+    sincronizarNotaEnvio();
     updateResumen();
     updateTabIndicators();
   });
@@ -7144,7 +7166,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('btn-cotizar-envia').addEventListener('click', cotizarEnvia);
   document.getElementById('cl-cp-entrega').addEventListener('keydown', e => { if (e.key === 'Enter') cotizarEnvia(); });
-  document.getElementById('shipping-cost').addEventListener('input', () => updateResumen());
+  document.getElementById('shipping-cost').addEventListener('input', () => {
+    sincronizarNotaEnvio();
+    updateResumen();
+  });
   document.getElementById('shipping-desc').addEventListener('input', () => updateResumen());
   // Vigencia capturada (#180): sin listener propio, escribirla no dispara
   // ningun otro enganche del autosave (no mueve carrito, envio ni cliente).

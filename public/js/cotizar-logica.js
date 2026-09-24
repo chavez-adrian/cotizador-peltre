@@ -214,6 +214,35 @@ export function aplicarNotaTiempoEntrega(notasText, decorado) {
   return lineas.join('\n');
 }
 
+// Nota de precios y envio en el resumen (issue #436, decision de Adrian
+// 2026-09-23): con envio con costo la cotizacion lleva su partida de flete, asi
+// que "No incluye envio." se contradice; EXW se queda (describe el precio de los
+// productos) y "Envio a costo y riesgo del cliente." no se toca nunca.
+export function notaPreciosEnvio(conEnvio) {
+  const base = '- Precios EXW Ixtapaluca, Estado de Mexico.';
+  return conEnvio ? base : `${base} No incluye envio.`;
+}
+
+// El juicio "lleva envio" de la nota (#436): el mismo que pinta la partida de
+// envio en el resumen -- opcion con costo y costo capturado > 0 --, nunca la
+// opcion comparada con un string.
+export function cotizacionLlevaEnvio(shippingOpt, shippingCost) {
+  return esOpcionConCosto(shippingOpt) && (parseFloat(shippingCost) || 0) > 0;
+}
+
+const LINEAS_AUTO_PRECIOS_ENVIO =[notaPreciosEnvio(false), notaPreciosEnvio(true)];
+
+// Mismo contrato que aplicarNotaTiempoEntrega (#90): solo se reemplaza la linea
+// si coincide con una de las dos versiones auto-generadas; editada o borrada a
+// mano se respeta.
+export function aplicarNotaEnvio(notasText, conEnvio) {
+  const lineas = (notasText || '').split('\n');
+  const idx = lineas.findIndex(l => LINEAS_AUTO_PRECIOS_ENVIO.includes(l.trim()));
+  if (idx === -1) return notasText;
+  lineas[idx] = notaPreciosEnvio(conEnvio);
+  return lineas.join('\n');
+}
+
 // Envio estructurado {carrier, servicio, precio} (issue #102): prefactor de
 // escritura. Antes seleccionarEnviaRate horneaba carrier+servicio en el string
 // de descripcion de la partida ENVIO y nada estructurado se persistia -- al

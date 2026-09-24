@@ -6,6 +6,7 @@ let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfi
 let sincronizarCorreoFactura;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
 let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
+let notaPreciosEnvio, aplicarNotaEnvio, cotizacionLlevaEnvio;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
 let debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
@@ -16,6 +17,7 @@ before(async () => {
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
     notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
+    notaPreciosEnvio, aplicarNotaEnvio, cotizacionLlevaEnvio,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
     debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
@@ -283,6 +285,81 @@ test('#90-6: si el vendedor borro la linea por completo, no se vuelve a agregar'
   const sinLinea = NOTAS_DEFAULT_4.split('\n').filter(l => !l.includes('Tiempo de entrega')).join('\n');
   const r = aplicarNotaTiempoEntrega(sinLinea, true);
   assert.strictEqual(r, sinLinea);
+});
+
+// === #436: la nota de precios dice "No incluye envio." solo sin envio con costo ===
+test('#436-1: notaPreciosEnvio -- con envio conserva EXW y quita "No incluye envio."; sin envio la lleva', () => {
+  assert.strictEqual(notaPreciosEnvio(true), '- Precios EXW Ixtapaluca, Estado de Mexico.');
+  assert.strictEqual(notaPreciosEnvio(false), '- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.');
+});
+
+const NOTAS_CON_ENVIO = `- Precios EXW Ixtapaluca, Estado de Mexico.
+- Envio a costo y riesgo del cliente.
+- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.
+- Se requiere 50% de anticipo para comenzar la produccion.
+- Pago del saldo previo a la entrega.`;
+
+test('#436-2: aplicarNotaEnvio con envio quita "No incluye envio." y deja identico el resto (incluida la de costo y riesgo)', () => {
+  assert.strictEqual(aplicarNotaEnvio(NOTAS_DEFAULT_4, true), NOTAS_CON_ENVIO);
+});
+
+test('#436-3: aplicarNotaEnvio sin envio repone "No incluye envio." y deja identico el resto', () => {
+  assert.strictEqual(aplicarNotaEnvio(NOTAS_CON_ENVIO, false), NOTAS_DEFAULT_4);
+});
+
+test('#436-4: aplicarNotaEnvio es estable: repetir el mismo estado no cambia nada', () => {
+  assert.strictEqual(aplicarNotaEnvio(NOTAS_CON_ENVIO, true), NOTAS_CON_ENVIO);
+  assert.strictEqual(aplicarNotaEnvio(NOTAS_DEFAULT_4, false), NOTAS_DEFAULT_4);
+});
+
+test('#436-5: si el vendedor edito la linea de precios a mano, no se pisa en ningun sentido', () => {
+  const editadas = NOTAS_DEFAULT_4.replace(
+    '- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.',
+    '- Precios LAB Ixtapaluca. Flete por cuenta del cliente.'
+  );
+  assert.strictEqual(aplicarNotaEnvio(editadas, true), editadas);
+  assert.strictEqual(aplicarNotaEnvio(editadas, false), editadas);
+});
+
+test('#436-6: si el vendedor borro la linea de precios, no se vuelve a agregar', () => {
+  const sinLinea = NOTAS_DEFAULT_4.split('\n').filter(l => !l.includes('Precios EXW')).join('\n');
+  assert.strictEqual(aplicarNotaEnvio(sinLinea, true), sinLinea);
+  assert.strictEqual(aplicarNotaEnvio(sinLinea, false), sinLinea);
+});
+
+test('#436-7: la linea "Envio a costo y riesgo del cliente." sobrevive en los dos sentidos', () => {
+  const costoYRiesgo = '- Envio a costo y riesgo del cliente.';
+  assert.ok(aplicarNotaEnvio(NOTAS_DEFAULT_4, true).split('\n').includes(costoYRiesgo));
+  assert.ok(aplicarNotaEnvio(NOTAS_CON_ENVIO, false).split('\n').includes(costoYRiesgo));
+});
+
+test('#436-8: cotizacionLlevaEnvio -- paqueteria, Lalamove o manual con costo > 0 llevan envio (quote 1296: Lalamove $359.90)', () => {
+  assert.strictEqual(cotizacionLlevaEnvio('envia', 259), true);
+  assert.strictEqual(cotizacionLlevaEnvio('lalamove', '359.90'), true);
+  assert.strictEqual(cotizacionLlevaEnvio('manual', '150'), true);
+});
+
+test('#436-9: cotizacionLlevaEnvio -- Sin envio, sin tarifa elegida o costo 0 no llevan envio', () => {
+  assert.strictEqual(cotizacionLlevaEnvio('none', '500'), false);
+  assert.strictEqual(cotizacionLlevaEnvio('envia', ''), false);
+  assert.strictEqual(cotizacionLlevaEnvio('lalamove', ''), false);
+  assert.strictEqual(cotizacionLlevaEnvio('manual', '0'), false);
+  assert.strictEqual(cotizacionLlevaEnvio('manual', 'abc'), false);
+  assert.strictEqual(cotizacionLlevaEnvio(undefined, 300), false);
+});
+
+test('#436-10: las notas por defecto del resumen nacen con la version sin envio, que es la que se ajusta sola', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+  const m = html.match(/<textarea id="resumen-notas"[^>]*>([\s\S]*?)<\/textarea>/);
+  assert.ok(m, 'falta #resumen-notas');
+  const lineas = m[1].split(/\r?\n/).map(l => l.trim());
+  assert.ok(lineas.includes('- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.'));
+  assert.ok(lineas.includes('- Envio a costo y riesgo del cliente.'));
+  const conEnvio = aplicarNotaEnvio(m[1].replace(/\r\n/g, '\n'), true).split('\n');
+  assert.ok(conEnvio.includes('- Precios EXW Ixtapaluca, Estado de Mexico.'));
+  assert.ok(conEnvio.includes('- Envio a costo y riesgo del cliente.'));
 });
 
 // === #88: tiempo estimado de entrega -- envia.com NO puebla rate.days (shape
