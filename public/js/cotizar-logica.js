@@ -114,14 +114,41 @@ export function contenidoTarjeta(rate) {
     if (Array.isArray(rate.medidasCm) && rate.medidasCm.length === 3) partes.push(`${rate.medidasCm.join(' x ')} cm`);
     return { titulo: servicio, detalle: partes.join(' · ') };
   }
+  if (/tresguerras/i.test(rate?.carrier || '')) return contenidoTarjetaTresguerras(rate, servicio);
   const dias = formatTiempoEntrega(rate);
   return { titulo: formatCarrier(rate?.carrier), detalle: formatServicio(servicio) + (dias ? ' · ' + dias : '') };
 }
 
+// Tresguerras (#437): el selector ya dice que se cotiza Tresguerras, asi que el
+// titulo es el servicio ("Puerta a puerta"). El detalle gris SIEMPRE dice que es
+// tarifa estimada -- la leyenda de su cotizacion la declara "de caracter
+// meramente informativo" y sujeta a peso y medidas verificados en su sucursal --,
+// y suma los dias de transito y el desglose que lib/tresguerras-logica.js lee de
+// la respuesta. La tarjeta restaurada del historial no trae desglose: queda la
+// leyenda sola. Texto en escapes \u para mantener el fuente en ASCII.
+const SEP = ' \u00b7 ';
+const pesos = (n) => '$' + Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function contenidoTarjetaTresguerras(rate, servicio) {
+  const partes = ['Tarifa estimada'];
+  if (rate.days > 0) {
+    partes.push(rate.days === 1 ? '1 d\u00eda h\u00e1bil de tr\u00e1nsito' : `${rate.days} d\u00edas h\u00e1biles de tr\u00e1nsito`);
+  }
+  const d = rate.desglose;
+  if (d) {
+    partes.push(`Flete ${pesos(d.flete)}`, `Recolecci\u00f3n ${pesos(d.recoleccion)}`, `Entrega ${pesos(d.entrega)}`, `Seguro ${pesos(d.seguro)}`);
+  }
+  return { titulo: servicio, detalle: partes.join(SEP) };
+}
+
 // Opciones del selector de envio que se cotizan con tarjetas de tarifa (#72):
-// envia.com (FedEx/DHL/UPS) y Lalamove comparten tarjetas, seleccion,
-// invalidacion por cantidad y restauracion; solo cambia a quien se consulta.
-export const OPCIONES_TARIFA = ['envia', 'lalamove'];
+// envia.com (FedEx/DHL/UPS), Lalamove y Tresguerras (#437) comparten tarjetas,
+// seleccion, invalidacion por cantidad y restauracion; solo cambia a quien se
+// consulta.
+export const OPCIONES_TARIFA = ['envia', 'lalamove', 'tresguerras'];
+const ENDPOINT_TARIFAS = {
+  lalamove: '/api/cotizacion/envio/lalamove',
+  tresguerras: '/api/cotizacion/envio/tresguerras',
+};
 export function esOpcionTarifa(shippingOpt) {
   return OPCIONES_TARIFA.includes(shippingOpt);
 }
@@ -130,7 +157,7 @@ export function esOpcionConCosto(shippingOpt) {
 }
 
 export function endpointTarifas(shippingOpt) {
-  return shippingOpt === 'lalamove' ? '/api/cotizacion/envio/lalamove' : '/api/cotizacion/envio';
+  return ENDPOINT_TARIFAS[shippingOpt] || '/api/cotizacion/envio';
 }
 
 // Tiempo estimado de entrega de una tarifa de envia.com (issue #88). El shape

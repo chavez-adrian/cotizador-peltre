@@ -82,6 +82,7 @@ import { verificarTurnstile, turnstileConfigurado } from './lib/turnstile.js';
 import { validarCP } from './lib/validar-cp.js';
 import { buscarCP } from './lib/codigos-postales.js';
 import { tarifasLalamove } from './lib/lalamove.js';
+import { tarifasTresguerras } from './lib/tresguerras.js';
 import { leerArchivoSync } from './lib/fs-reintento.js';
 import { enviarAlertaMayoreo } from './lib/alerta-mayoreo-io.js';
 import { barrerContactosGoogle } from './lib/contactos-io.js';
@@ -2137,6 +2138,27 @@ app.post('/api/cotizacion/envio/lalamove', authMiddleware, async (req, res) => {
   const cajas = packages.map(p => ({ cantidad: p.amount, medidasCm: [p.dimensions.length, p.dimensions.width, p.dimensions.height] }));
   const { rates, warnings: avisos } = await tarifasLalamove({ cp: cpDestino, pesoKg, cajas });
   rates.sort((a, b) => a.totalPrice - b.totalPrice);
+  res.json({ rates, resumen, warnings: warnings.concat(avisos) });
+});
+
+// "Cotizar con Tresguerras" (#437): opcion propia del selector de envio, con la
+// tarifa PUERTA A PUERTA del cotizador publico de Tresguerras (recoleccion en la
+// fabrica). Las cajas de calcularPaquetes van con su peso POR BULTO y el total de
+// la cotizacion como valor declarado (el seguro sale dentro de la tarifa).
+app.post('/api/cotizacion/envio/tresguerras', authMiddleware, async (req, res) => {
+  const { cpDestino, paisDestino, items, totalConIVA } = req.body;
+  if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
+  if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
+  if ((paisDestino || 'MX') !== 'MX') return res.status(400).json({ error: 'Tresguerras solo cotiza envios en Mexico' });
+  let packages, resumen, warnings;
+  try {
+    ({ packages, resumen, warnings } = calcularPaquetes(items, 0));
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  if (packages.length === 0) return res.status(400).json({ error: 'No se calcularon paquetes', warnings });
+  const cajas = packages.map(p => ({ cantidad: p.amount, medidasCm: [p.dimensions.length, p.dimensions.width, p.dimensions.height], pesoKg: p.weight }));
+  const { rates, warnings: avisos } = await tarifasTresguerras({ cp: cpDestino, cajas, valorDeclarado: Number(totalConIVA) || 0 });
   res.json({ rates, resumen, warnings: warnings.concat(avisos) });
 });
 

@@ -1779,6 +1779,21 @@ test('armarContenidoQuote: un envio Lalamove es partida de flete local', async (
   assert.doesNotMatch(comments, /Lalamove/);
 });
 
+// #437: Tresguerras es carga consolidada nacional: va SIEMPRE con el SKU de flete
+// FORANEO que operam-client.js ya tiene, aunque el CP caiga en la zona metro.
+test('armarContenidoQuote: un envio Tresguerras es partida de flete foraneo, tambien a un CP de la zona metro', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const desc = 'Tresguerras puerta a puerta - entrega estimada 1 dia';
+  for (const cpEntrega of ['06700', '64000']) {
+    const { items } = armarContenidoQuote({
+      fecha: '2026-09-23',
+      cliente: { cpEntrega },
+      items: [{ codigo: 'ENVIO', descripcion: desc, cantidad: 1, precio: 3930.95, descuento: 0 }],
+    });
+    assert.deepEqual(items, [{ stock_id: '251021002', stock_id_text: desc, qty: 1, price: 3930.95, Disc: 0, editarDescripcion: true }], cpEntrega);
+  }
+});
+
 // #284: el fallback de la fecha de emision (data.fecha ausente) se resolvia con
 // `new Date().toISOString()`, la fecha UTC. Render corre en UTC, asi que de 18:00
 // a 23:59 hora del centro el quote se armaba con el ord_date de MANANA y Operam lo

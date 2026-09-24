@@ -664,6 +664,76 @@ test('#72: POST /api/cotizacion/envio (envia.com) ya no consulta Lalamove', asyn
   }
 });
 
+// #437: "Cotizar con Tresguerras" es otra opcion propia del selector: su endpoint
+// consulta SOLO el cotizador publico de Tresguerras, con las cajas de
+// calcularPaquetes y el total de la cotizacion como valor declarado.
+const FIXTURES_TG = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
+function mockTresguerrasServer() {
+  const llamadas = { tresguerras: [], otras: [] };
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.startsWith('https://www.tresguerras.com.mx/3G/assets/Ajax/')) {
+      llamadas.tresguerras.push({ url: u, body: opts.body });
+      const f = u.endsWith('cotizadorcp_Ajax.php') ? 'tresguerras-poblaciones-64000.json' : 'tresguerras-cotizar-con-precio.json';
+      return { ok: true, status: 200, text: async () => leerArchivoSync(join(FIXTURES_TG, f)) };
+    }
+    llamadas.otras.push(u);
+    throw new Error('Unmocked fetch: ' + u);
+  };
+  return llamadas;
+}
+
+test('#437: POST /api/cotizacion/envio/tresguerras devuelve la tarjeta puerta a puerta y cotiza las cajas en metros', async () => {
+  const originalFetch = globalThis.fetch;
+  const llamadas = mockTresguerrasServer();
+  try {
+    const res = await supertest(app).post('/api/cotizacion/envio/tresguerras').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ cpDestino: '64000', paisDestino: 'MX', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 1160 });
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(res.body.rates.map(r => [r.carrier, r.service, r.totalPrice]), [['tresguerras', 'Puerta a puerta', 3930.95]]);
+    assert.ok(Array.isArray(res.body.resumen) && res.body.resumen.length === 1);
+    assert.deepStrictEqual(res.body.warnings, []);
+    assert.deepStrictEqual(llamadas.otras, [], 'la opcion Tresguerras no consulta envia.com ni Lalamove');
+    // PV08 va en la caja EMPVA056P (20.7 x 15.4 x 6.2 cm, data/cajas.json): una caja.
+    const df = new URLSearchParams(new URLSearchParams(llamadas.tresguerras[1].body).get('datosForm'));
+    assert.deepStrictEqual([df.get('bulto[0]'), df.get('largo[0]'), df.get('ancho[0]'), df.get('alto[0]'), df.get('valorDec')],
+      ['1', '0.21', '0.15', '0.06', '1160']);
+    assert.strictEqual(df.get('bulto[1]'), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('#437: POST /api/cotizacion/envio/tresguerras fuera de Mexico, sin CP o sin carrito -> 400 sin consultar', async () => {
+  const originalFetch = globalThis.fetch;
+  const llamadas = mockTresguerrasServer();
+  try {
+    const post = (body) => supertest(app).post('/api/cotizacion/envio/tresguerras').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
+    const us = await post({ cpDestino: '90210', paisDestino: 'US', items: [{ codigo: 'PV08', cantidad: 1 }] });
+    assert.strictEqual(us.status, 400);
+    assert.match(us.body.error, /Tresguerras solo cotiza envios en Mexico/);
+    assert.strictEqual((await post({ paisDestino: 'MX', items: [{ codigo: 'PV08', cantidad: 1 }] })).status, 400);
+    assert.strictEqual((await post({ cpDestino: '64000', paisDestino: 'MX', items: [] })).status, 400);
+    assert.deepStrictEqual(llamadas.tresguerras, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('#437: POST /api/cotizacion/envio/tresguerras con Tresguerras caido -> 200 con aviso, nunca 500', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('socket hang up'); };
+  try {
+    const res = await supertest(app).post('/api/cotizacion/envio/tresguerras').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ cpDestino: '64000', paisDestino: 'MX', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 1160 });
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(res.body.rates, []);
+    assert.match(res.body.warnings.join(' '), /Tresguerras no disponible \(socket hang up\); cotiza a mano en/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('#72: POST /api/cotizacion/envio/lalamove fuera de Mexico -> 400 sin consultar', async () => {
   const originalFetch = globalThis.fetch;
   const llamadas = mockEnviaYLalamove();

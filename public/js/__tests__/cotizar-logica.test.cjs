@@ -11,7 +11,7 @@ let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia,
 let debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
-let fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas;
+let fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
@@ -22,7 +22,7 @@ before(async () => {
     debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo,
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
-    fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas,
+    fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA,
     sincronizarCorreoFactura,
   } = await import('../cotizar-logica.js'));
 });
@@ -169,6 +169,61 @@ test('#72: una tarifa de Lalamove se persiste, se restaura, se invalida y entra 
   assert.strictEqual(debeAutoCotizarEnvia('lalamove', 3, null), true);
   assert.deepStrictEqual(buildItemEnvio({ shippingOpt: 'lalamove', shippingCost: 984.23, shippingDesc: rate.desc, shippingDescuento: 0 }),
     { codigo: 'ENVIO', descripcion: rate.desc, cantidad: 1, unidad: 'ACT', precio: 984.23, descuento: 0 });
+});
+
+// #437: "Cotizar con Tresguerras" es la tercera opcion con tarjetas; solo cambia
+// el endpoint. La tarjeta (lib/tresguerras-logica.js) llega con el desglose de la
+// cotizacion puerta a puerta medida en vivo (56577 -> 64000, $3,930.95).
+test('#437: esOpcionTarifa y endpointTarifas de Tresguerras', () => {
+  assert.strictEqual(esOpcionTarifa('tresguerras'), true);
+  assert.strictEqual(endpointTarifas('tresguerras'), '/api/cotizacion/envio/tresguerras');
+  assert.strictEqual(endpointTarifas('lalamove'), '/api/cotizacion/envio/lalamove');
+  assert.strictEqual(endpointTarifas('envia'), '/api/cotizacion/envio');
+});
+
+test('#437: contenidoTarjeta de Tresguerras = "Puerta a puerta" y en gris que es tarifa estimada, transito y desglose', () => {
+  const rate = { carrier: 'tresguerras', service: 'Puerta a puerta', totalPrice: 3930.95, days: 1,
+    desglose: { flete: 1706.34, recoleccion: 783.32, entrega: 783.32, seguro: 100 } };
+  assert.deepStrictEqual(contenidoTarjeta(rate), {
+    titulo: 'Puerta a puerta',
+    detalle: 'Tarifa estimada \u00b7 1 d\u00eda h\u00e1bil de tr\u00e1nsito \u00b7 Flete $1,706.34 \u00b7 Recolecci\u00f3n $783.32 \u00b7 Entrega $783.32 \u00b7 Seguro $100.00',
+  });
+  assert.strictEqual(contenidoTarjeta({ ...rate, days: 5, desglose: null }).detalle,
+    'Tarifa estimada \u00b7 5 d\u00edas h\u00e1biles de tr\u00e1nsito');
+  assert.deepStrictEqual(contenidoTarjeta({ carrier: 'tresguerras', service: 'Puerta a puerta' }),
+    { titulo: 'Puerta a puerta', detalle: 'Tarifa estimada' });
+});
+
+test('#437: una tarifa de Tresguerras se persiste, se restaura, se invalida y entra al documento como partida de envio', () => {
+  const tarjeta = { carrier: 'tresguerras', service: 'Puerta a puerta', serviceDescription: 'Tresguerras puerta a puerta', totalPrice: 3930.95, days: 5 };
+  assert.strictEqual(formatDescripcionEnvioEnvia(tarjeta), 'Tresguerras puerta a puerta \u2014 entrega estimada 5 d\u00edas h\u00e1biles');
+  const rate = { carrier: 'tresguerras', servicio: 'Puerta a puerta', desc: formatDescripcionEnvioEnvia(tarjeta), cost: 3930.95 };
+  const envio = buildEnvioEstructurado({ shippingOpt: 'tresguerras', shippingCost: 3930.95, shippingDesc: rate.desc, shippingDescuento: 0, enviaRateSeleccionado: rate });
+  assert.deepStrictEqual(envio, { opcion: 'tresguerras', carrier: 'tresguerras', servicio: 'Puerta a puerta', precio: 3930.95, descripcion: rate.desc, descuento: 0 });
+  const r = restaurarEnvioDesdeCotizacion(envio);
+  assert.strictEqual(r.opcion, 'tresguerras');
+  assert.strictEqual(r.mostrarEnvia, true);
+  assert.strictEqual(r.cost, '3930.95');
+  assert.strictEqual(r.enviaRateSeleccionado.carrier, 'tresguerras');
+  assert.strictEqual(debeInvalidarEnvioPorCantidad('tresguerras', rate), true);
+  assert.strictEqual(debeAutoCotizarEnvia('tresguerras', 3, null), true);
+  assert.strictEqual(cotizacionLlevaEnvio('tresguerras', '3930.95'), true);
+  assert.deepStrictEqual(buildItemEnvio({ shippingOpt: 'tresguerras', shippingCost: 3930.95, shippingDesc: rate.desc, shippingDescuento: 0 }),
+    { codigo: 'ENVIO', descripcion: rate.desc, cantidad: 1, unidad: 'ACT', precio: 3930.95, descuento: 0 });
+  const html = buildEnviaRateRestauradaHtml({ carrier: 'tresguerras', servicio: 'Puerta a puerta', precio: 3930.95 });
+  assert.match(html, /envia-rate-carrier">Puerta a puerta</);
+  assert.match(html, /envia-rate-servicio">Tarifa estimada</);
+});
+
+test('#437: el selector de envio ofrece Tresguerras y cada opcion con tarjetas de tarifa', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+  const m = html.match(/<select id="shipping-option">([\s\S]*?)<\/select>/);
+  assert.ok(m, 'falta #shipping-option');
+  const opciones = [...m[1].matchAll(/<option value="([^"]+)">([^<]*)<\/option>/g)].map(x => [x[1], x[2]]);
+  for (const op of OPCIONES_TARIFA) assert.ok(opciones.some(([v]) => v === op), `falta la opcion ${op}`);
+  assert.deepStrictEqual(opciones.find(([v]) => v === 'tresguerras'), ['tresguerras', 'Cotizar con Tresguerras (carga consolidada)']);
 });
 
 test('AC3-3: servicio en Title Case', () => {
