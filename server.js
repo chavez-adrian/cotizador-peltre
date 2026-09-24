@@ -178,10 +178,15 @@ function adminMiddleware(req, res, next) {
 // Neon, un fallo transitorio debe ser un 500, no una caida.
 app.post('/api/login', async (req, res) => {
   try {
-    const { vendedorId, pin } = req.body;
+    const { vendedorId, pin, soloAdmin } = req.body;
     const vendedores = await vendedoresStore.listar();
     if (!vendedores.length) return res.status(500).json({ error: 'Vendedores no configurados' });
     const v = vendedores.find(v => v.id === vendedorId && v.pin === pin);
+    // #440: el login de /admin pide `soloAdmin`; el no-admin con PIN correcto
+    // recibe la MISMA respuesta que un PIN equivocado (no confirma el PIN).
+    if (soloAdmin === true && (!v || v.role !== 'admin')) {
+      return res.status(401).json({ error: 'PIN incorrecto o no es administrador' });
+    }
     if (!v) return res.status(401).json({ error: 'PIN incorrecto' });
     const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '24h' });
     res.json({ token, user: { id: v.id, name: v.name, role: v.role } });

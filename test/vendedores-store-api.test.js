@@ -63,6 +63,46 @@ test('login: el PIN del registro autentica y el equivocado no', async () => {
   assert.strictEqual(mal.status, 401);
 });
 
+// #440: el login de /admin mandaba siempre vendedorId 1, asi que ningun otro
+// admin entraba. Con `soloAdmin` la ruta autentica al vendedor ELEGIDO y solo
+// si su rol es admin; un PIN correcto de un no-admin responde igual que un PIN
+// equivocado, para no confirmar el PIN de nadie desde el login de /admin.
+const REGISTRO_DOS_ADMINS = [
+  ...REGISTRO,
+  { id: 7, name: 'Agente Test', pin: '9007', role: 'admin', operam_id: null },
+];
+
+test('#440 login de /admin: entra cada admin con su PIN, no solo el vendedor 1', async () => {
+  escribirRegistro(REGISTRO_DOS_ADMINS);
+  const jefa = await supertest(app).post('/api/login').send({ vendedorId: 1, pin: '9001', soloAdmin: true });
+  assert.strictEqual(jefa.status, 200);
+  assert.strictEqual(jefa.body.user.name, 'Jefa Test');
+
+  const agente = await supertest(app).post('/api/login').send({ vendedorId: 7, pin: '9007', soloAdmin: true });
+  assert.strictEqual(agente.status, 200);
+  assert.deepStrictEqual(agente.body.user, { id: 7, name: 'Agente Test', role: 'admin' });
+  const token = jwt.verify(agente.body.token, JWT_SECRET);
+  assert.strictEqual(token.id, 7);
+  assert.strictEqual(token.role, 'admin');
+
+  const cruzado = await supertest(app).post('/api/login').send({ vendedorId: 7, pin: '9001', soloAdmin: true });
+  assert.strictEqual(cruzado.status, 401, 'el PIN de otro admin no abre la cuenta elegida');
+});
+
+test('#440 login de /admin: un vendedor sin rol admin no entra aunque su PIN sea correcto', async () => {
+  escribirRegistro(REGISTRO_DOS_ADMINS);
+  const noAdmin = await supertest(app).post('/api/login').send({ vendedorId: 2, pin: '9002', soloAdmin: true });
+  assert.strictEqual(noAdmin.status, 401);
+  assert.strictEqual(noAdmin.body.token, undefined);
+  assert.strictEqual(noAdmin.body.user, undefined);
+
+  const pinMalo = await supertest(app).post('/api/login').send({ vendedorId: 2, pin: '0001', soloAdmin: true });
+  assert.deepStrictEqual(noAdmin.body, pinMalo.body, 'no distingue PIN correcto de PIN equivocado');
+
+  const enCotizador = await supertest(app).post('/api/login').send({ vendedorId: 2, pin: '9002' });
+  assert.strictEqual(enCotizador.status, 200, 'el login de / sigue aceptando al vendedor');
+});
+
 test('GET /api/vendedores lista el registro sin exponer el PIN', async () => {
   escribirRegistro(REGISTRO);
   const res = await supertest(app).get('/api/vendedores');

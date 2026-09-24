@@ -126,6 +126,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 ## Auth
 
 - Rutas del cotizador: JWT de 30 dias; el registro de vendedores (ID + PIN) vive en `lib/vendedores-store.js` (Neon con fallback al JSON, #141); rol `admin` desbloquea `/api/admin/*`.
+- Login de `/admin` (#440): elige al vendedor con la misma lista publica de `/` (`GET /api/vendedores`, solo id y nombre) y manda `soloAdmin: true`; `POST /api/login` rechaza entonces al no-admin con la MISMA respuesta 401 que un PIN equivocado (no confirma el PIN ni expone quien es admin).
 - Rutas CSF: mismas garantias (`authMiddleware`). El ciclo de vida del cliente tiene 3 caminos autenticados: alta generica al subir cotizacion, upgrade fiscal (#85, gate anti-fusion por RFC exacto) y alta completa. Detalle en `docs/arquitectura.md` §Auth.
 - `server.js` carga `.env` manualmente sin dotenv (lineas ~24-30) y PISA `process.env`.
 

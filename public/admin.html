@@ -51,6 +51,10 @@
     <h1>Admin</h1>
     <p class="subtitle">Panel de administracion</p>
     <div class="form-group">
+      <label>Administrador</label>
+      <select id="admin-vendedor"></select>
+    </div>
+    <div class="form-group">
       <label>PIN de administrador</label>
       <input type="password" id="admin-pin" maxlength="4" inputmode="numeric">
     </div>
@@ -378,16 +382,28 @@
 <script>
 let adminToken = null;
 
+// #440: la misma lista publica del login de / (id y nombre); el rol lo valida
+// el servidor con `soloAdmin`, asi el login no expone quien es admin.
+async function cargarVendedoresLogin() {
+  const sel = document.getElementById('admin-vendedor');
+  try {
+    const res = await fetch('/api/vendedores');
+    if (!res.ok) return;
+    const vendedores = await res.json();
+    sel.replaceChildren(...vendedores.map(v => new Option(v.name, v.id)));
+  } catch (e) { /* sin red no hay login */ }
+}
+
 async function adminLogin() {
+  const vendedorId = parseInt(document.getElementById('admin-vendedor').value);
   const pin = document.getElementById('admin-pin').value;
   const errEl = document.getElementById('admin-error');
   errEl.style.display = 'none';
 
-  // Find admin user (id 1)
   const res = await fetch('/api/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vendedorId: 1, pin }),
+    body: JSON.stringify({ vendedorId, pin, soloAdmin: true }),
   });
   const data = await res.json();
   if (!res.ok || data.user?.role !== 'admin') {
@@ -1330,6 +1346,7 @@ async function cargarParidadCatalogo() {
 }
 
 // --- Events ---
+cargarVendedoresLogin();
 document.getElementById('admin-login-btn').addEventListener('click', adminLogin);
 document.getElementById('admin-pin').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
 document.getElementById('admin-logout').addEventListener('click', () => location.reload());
