@@ -6,7 +6,9 @@
 // CA = solo el FSA de 3 caracteres -- CA_full.csv.zip NUNCA se toca, es dato
 // licenciado por Canada Post) y lo commitea a data/cp-mx.json / cp-us.json /
 // cp-ca.json: el disco de Render es efimero y el arranque del cotizador no debe
-// depender de que geonames.org este arriba.
+// depender de que geonames.org este arriba. Desde #451 descarga ademas los
+// territorios de EE.UU. (PR/VI/GU/AS/MP.zip, que GeoNames publica como paises
+// aparte) y los suma al indice US con la abreviatura postal del territorio.
 //
 // Mismo patron operativo que scripts/sync-catalogo.mjs: dry-run por default
 // (descarga + resumen, NO escribe), --apply escribe, escritura via
@@ -32,6 +34,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA = join(__dirname, '..', 'data');
 
 const PAISES = ['MX', 'US', 'CA'];
+const TERRITORIOS_US = ['PR', 'VI', 'GU', 'AS', 'MP'];
 // Umbral de cordura por pais (muy por debajo de los conteos reales del #160:
 // 32448/41488/1653): una descarga degenerada (geonames.org caido a medias, zip
 // truncado) no debe pisar el indice commiteado en silencio.
@@ -101,14 +104,16 @@ async function main() {
   const APPLY = argv.includes('--apply');
 
   console.log(`\nSync de codigos postales #160 (${APPLY ? 'APPLY' : 'DRY-RUN'})`);
-  console.log('Descargando GeoNames (CC BY 4.0): MX.zip, US.zip, CA.zip...');
+  console.log(`Descargando GeoNames (CC BY 4.0): MX.zip, US.zip, CA.zip y territorios de EE.UU. (${TERRITORIOS_US.join(', ')})...`);
 
   const [mxBuf, usBuf, caBuf] = await Promise.all(PAISES.map(descargarZip));
   const mx = extraerTxt(mxBuf, 'MX.txt');
   const us = extraerTxt(usBuf, 'US.txt');
   const ca = extraerTxt(caBuf, 'CA.txt');
+  const territoriosBuf = await Promise.all(TERRITORIOS_US.map(descargarZip));
+  const territoriosUS = TERRITORIOS_US.map((t, i) => extraerTxt(territoriosBuf[i], `${t}.txt`));
 
-  const indice = construirIndiceCP({ mx, us, ca });
+  const indice = construirIndiceCP({ mx, us, ca, territoriosUS });
 
   console.log('');
   for (const pais of PAISES) {
@@ -127,6 +132,16 @@ async function main() {
     process.exit(1);
   }
   console.log(`\nPrueba de cordura: 56530 -> ${ixtapaluca[0]}, ${ixtapaluca[1]}`);
+
+  // #451: cada territorio tiene que haber aportado ZIP al indice US.
+  for (const t of TERRITORIOS_US) {
+    const n = Object.values(indice.US).filter(([, estado]) => estado === t).length;
+    if (n === 0) {
+      console.error(`\nABORTA: el territorio ${t} no aporto ningun ZIP al indice US -- descarga degenerada.\nNo se escribio nada.`);
+      process.exit(1);
+    }
+    console.log(`Territorio ${t}: ${n} ZIP en el indice US`);
+  }
 
   // Coordenadas por CP para la tarifa Lalamove (#72).
   const coordsMX = construirCoordenadasMX(mx);

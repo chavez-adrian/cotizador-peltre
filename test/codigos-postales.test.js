@@ -100,3 +100,31 @@ test('coordenadasDeCP: normaliza el CP y devuelve {lat, lng}; desconocido -> nul
   assert.equal(coordenadasDeCP(coords, '99999'), null);
   assert.equal(coordenadasDeCP(null, '02000'), null);
 });
+
+// #451: GeoNames publica los territorios de EE.UU. como paises aparte (PR.zip,
+// VI.zip, GU.zip, AS.zip, MP.zip) y en ellos admin code1 NO es la abreviatura
+// postal (PR trae el codigo del municipio "001", VI "78", AS vacio). Filas
+// reales descargadas de download.geonames.org el 2026-09-25.
+const PR_00601 = 'PR\t00601\tAdjuntas\tAdjuntas\t001\t\t\t\t\t18.1627\t-66.7221\t4';
+const VI_00802 = 'VI\t00802\tSt Thomas\tVi\t78\tSt. Thomas\t030\t\t\t18.3387\t-64.916\t6';
+const GU_96910 = 'GU\t96910\tHagatna\tGu\t66\tGuam\t010\t\t\t13.452\t144.7465\t6';
+const AS_96799 = 'AS\t96799\tPago Pago\tAs\t\t\t\t\t\t-14.2781\t-170.7025\t6';
+const MP_96950 = 'MP\t96950\tSaipan\tSaipan\t110\t\t\t\t\t15.1685\t145.7408\t6';
+
+test('construirIndiceCP (#451): los territorios entran al indice US con ciudad + abreviatura postal del territorio', () => {
+  const { US } = construirIndiceCP({ mx: '', us: US_90210, ca: '', territoriosUS: [PR_00601, VI_00802, GU_96910, AS_96799, MP_96950] });
+  assert.deepEqual(US['00601'], ['Adjuntas', 'PR']);
+  assert.deepEqual(US['00802'], ['St Thomas', 'VI']);
+  assert.deepEqual(US['96910'], ['Hagatna', 'GU']);
+  assert.deepEqual(US['96799'], ['Pago Pago', 'AS']);
+  assert.deepEqual(US['96950'], ['Saipan', 'MP']);
+  assert.deepEqual(US['90210'], ['Beverly Hills', 'CA']);
+});
+
+test('construirIndiceCP (#451): sin territorios el indice US es solo el de los 50 estados y MX/CA no cambian', () => {
+  const sin = construirIndiceCP({ mx: MX_56530, us: US_90210, ca: CA_M5V });
+  const con = construirIndiceCP({ mx: MX_56530, us: US_90210, ca: CA_M5V, territoriosUS: [PR_00601] });
+  assert.deepEqual(Object.keys(sin.US), ['90210']);
+  assert.deepEqual(con.MX, sin.MX);
+  assert.deepEqual(con.CA, sin.CA);
+});

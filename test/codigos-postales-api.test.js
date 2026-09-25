@@ -83,3 +83,20 @@ test('GET /api/cp no exige autenticacion (superficie publica del formulario)', a
   const res = await supertest(app).get('/api/cp/MX/56530');
   assert.notEqual(res.status, 401);
 });
+
+// #451: los territorios de EE.UU. (GeoNames los publica como paises aparte)
+// viven dentro del indice US. Ciudades y territorios verificados contra PR.txt,
+// VI.txt, GU.txt y AS.txt de GeoNames descargados el 2026-09-25.
+for (const [zip, ciudad, estado] of [
+  ['00601', 'Adjuntas', 'PR'],
+  ['00802', 'St Thomas', 'VI'],
+  ['96910', 'Hagatna', 'GU'],
+  ['96799', 'Pago Pago', 'AS'],
+]) {
+  test(`GET /api/cp/US/${zip} (#451): territorio -> ${ciudad}, ${estado}`, async () => {
+    const res = await supertest(app).get(`/api/cp/US/${zip}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ciudad, ciudad);
+    assert.equal(res.body.estado, estado);
+  });
+}

@@ -768,6 +768,48 @@ for (const [ruta, nombre] of [
   });
 }
 
+// #451: los territorios de EE.UU. entraron al indice US, asi que el filtro de
+// #441 deja pasar 00601 (Puerto Rico) a envia.com; un ZIP que no esta en el
+// indice (00000) sigue sin consultar a nadie.
+test('#451: envia.com con el ZIP 00601 de Puerto Rico (pais US) si consulta a envia.com', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.ENVIA_API_KEY;
+  process.env.ENVIA_API_KEY = 'test-key';
+  const destinos = [];
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes('api.envia.com/ship/rate')) destinos.push(JSON.parse(opts.body).destination);
+    return { ok: true, json: async () => ({ data: [] }) };
+  };
+  try {
+    const res = await supertest(app).post('/api/cotizacion/envio').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ cpDestino: '00601', paisDestino: 'US', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 1160 });
+    assert.strictEqual(res.status, 200);
+    assert.ok(destinos.length > 0, 'consulto a envia.com');
+    assert.ok(destinos.every(d => d.postalCode === '00601' && d.country === 'US'));
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.ENVIA_API_KEY = originalApiKey;
+  }
+});
+
+test('#451: envia.com con el ZIP 00000 (pais US) -> 404 "CP no encontrado" sin consultar a nadie', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.ENVIA_API_KEY;
+  process.env.ENVIA_API_KEY = 'test-key';
+  const consultas = [];
+  globalThis.fetch = async (url) => { consultas.push(String(url)); throw new Error('no deberia consultar: ' + url); };
+  try {
+    const res = await supertest(app).post('/api/cotizacion/envio').set('Authorization', `Bearer ${TEST_TOKEN}`)
+      .send({ cpDestino: '00000', paisDestino: 'US', items: [{ codigo: 'PV08', cantidad: 1 }], totalConIVA: 1160 });
+    assert.strictEqual(res.status, 404);
+    assert.strictEqual(res.body.error, 'CP no encontrado');
+    assert.deepStrictEqual(consultas, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.ENVIA_API_KEY = originalApiKey;
+  }
+});
+
 test('#72: POST /api/cotizacion/envio/lalamove fuera de Mexico -> 400 sin consultar', async () => {
   const originalFetch = globalThis.fetch;
   const llamadas = mockEnviaYLalamove();
