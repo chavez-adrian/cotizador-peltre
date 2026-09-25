@@ -41,6 +41,7 @@ import {
   seleccionContactoEntrega,
   contactoAlCambiarDomicilio,
   etiquetaPapelesContacto,
+  avisoCorreosFactura,
   usoCfdiPorDefecto,
   usoCfdiCuentaComoElegido,
   estadoAltaAlAbrirPanel,
@@ -3185,30 +3186,38 @@ window.seleccionarClienteOperam = seleccionarClienteOperam;
 // enseguida la B. Sin el token, la respuesta lenta de A aterriza despues y deja
 // en pantalla los domicilios de OTRO cliente, que es la forma del cruce de #394.
 let pcSatelitesSeq = 0;
+// Si los satelites del cliente llegaron de verdad (#105): sin ellos no se puede
+// afirmar que el Cliente Operam no tiene contactos de Facturacion.
+let pcSatelitesCargados = false;
 
 async function pcCargarSatelitesDelCliente(clienteId, { aplicar = false, branchId = null } = {}) {
   const seq = ++pcSatelitesSeq;
+  pcSatelitesCargados = false;
   window._operamDomicilios = [];
   window._operamContactosCliente = [];
   pcState.domicilioIdx = 0;
   if (clienteId == null) return;
   let domicilios = [];
   let contacts = [];
+  let cargados = false;
   try {
     const res = await api(`/api/operam/clientes/${clienteId}/domicilios`);
     if (res.ok) {
       const cuerpo = await res.json();
       domicilios = cuerpo.domicilios || [];
       contacts = cuerpo.contacts || [];
+      cargados = true;
     }
   } catch {}
   if (seq !== pcSatelitesSeq) return; // otra peticion mas nueva ya se adueno del cliente
+  pcSatelitesCargados = cargados;
   window._operamDomicilios = domicilios;
   window._operamContactosCliente = contacts;
   pcState.domicilioIdx = indiceDeDomicilio(domicilios, branchId);
   if (aplicar && domicilios.length >= 1) {
     aplicarDomicilio(domicilios[pcState.domicilioIdx]);
   }
+  pcPintarCorreosFactura();
   // Quinto enganche del autosave (#409): la lista llega SEGUNDOS despues de que
   // pcRenderTarjeta ya guardo el borrador, asi que sin esto el domicilio que el
   // registro senala nunca alcanzaba a entrar y el borrador restaurado abria en
@@ -3358,6 +3367,7 @@ function pcLimpiarCamposCliente() {
   const rfc = document.getElementById('cl-rfc'); if (rfc) rfc.readOnly = false;
   window._operamDomicilios = null;
   window._operamContactosCliente = null;
+  pcSatelitesCargados = false;
   pcState.domicilioIdx = 0;
   // Los campos de entrega que este limpiador acaba de vaciar ya no son la captura
   // a mano de nadie: el cliente que sigue arranca con su autollenado (#355).
@@ -4097,6 +4107,7 @@ function sincronizarEmailFactura(evento) {
 // al restaurar un borrador y al volver de un upgrade fiscal, y ahi el prellenado de
 // la opcion 0 pisaba en silencio el "Entregar a" que el vendedor ya habia tecleado.
 function pcRenderContactoSelect({ contactosAntes } = {}) {
+  pcPintarCorreosFactura();
   const slot = document.getElementById('pc-contacto-slot');
   if (!slot) return;
   const contactos = pcContactosDisponibles();
@@ -4120,6 +4131,27 @@ function pcRenderContactoSelect({ contactosAntes } = {}) {
     `<option value="nuevo"${sel.indice === null ? ' selected' : ''}>+ Nuevo contacto</option>` +
     '</select></div>';
   if (sel.aplicar) pcAplicarContacto(contactos[sel.indice]);
+}
+
+// A donde llega la factura (#105, solo lectura): los Contactos en Operam con la marca
+// Invoices del domicilio elegido y del Cliente Operam (avisoCorreosFactura). Solo INFORMA:
+// no escribe cl-email-factura, que sigue siendo captura del vendedor o del checkbox
+// de #290 -- un contacto sin la marca nunca lo llena (gustavo_barcia@yahoo.com).
+// Sin Cliente Operam, sin satelites cargados o sin saber aun los contactos del
+// domicilio (y ningun Invoices conocido), no dice nada.
+function pcPintarCorreosFactura() {
+  const nodo = document.getElementById('pc-correos-factura');
+  if (!nodo) return;
+  // Editar/Copiar sueltan los satelites (null) sin pasar por el cargador: sin lista
+  // de contactos tampoco se sabe nada.
+  if (pcCustomerIdFiscal() == null || !pcSatelitesCargados || !Array.isArray(window._operamContactosCliente)) {
+    nodo.textContent = '';
+    nodo.style.display = 'none';
+    return;
+  }
+  const aviso = avisoCorreosFactura(window._operamDomicilios?.[pcState.domicilioIdx || 0], window._operamContactosCliente);
+  nodo.textContent = aviso || '';
+  nodo.style.display = aviso ? 'block' : 'none';
 }
 
 function pcCambiarContacto() {

@@ -1521,6 +1521,44 @@ export function etiquetaPapelesContacto(contacto) {
   return (c.tags || [c.tag]).map(etiquetaTagContacto).filter(Boolean).join(', ');
 }
 
+// Correos a los que llega la factura (#105, solo LECTURA: la API v3 no crea ni marca
+// contactos). Son los Contactos en Operam con la marca Invoices y correo: primero los
+// del domicilio de entrega (`domicilio.contactos`, del padron de contact_list que
+// cachea lib/contactos-domicilio-io.js) y luego los del Cliente Operam (contacts[]).
+// Un contacto sin la marca NUNCA entra: el bug de origen prellenaba el correo del
+// General (gustavo_barcia@yahoo.com). El mismo correo sale una vez, con el primero.
+export function correosFactura(domicilio, contactosCliente) {
+  const candidatos = [...(domicilio?.contactos || []), ...(contactosCliente || [])];
+  const vistos = new Set();
+  const salida = [];
+  for (const c of candidatos) {
+    if (c?.tag !== 'invoice') continue;
+    const email = String(c.email || '').trim();
+    const llave = normalizarBusqueda(email);
+    if (!llave || vistos.has(llave)) continue;
+    vistos.add(llave);
+    salida.push({ nombre: String(c.nombre || '').trim(), email });
+  }
+  return salida;
+}
+
+export function textoCorreosFactura(correos) {
+  if (!correos?.length) {
+    return 'Este Cliente Operam no tiene contactos de Facturacion en Operam: captura el correo para factura a mano.';
+  }
+  const lista = correos.map(c => (c.nombre ? `${c.nombre} (${c.email})` : c.email)).join(', ');
+  return 'La factura llega a los contactos de Facturacion en Operam: ' + lista;
+}
+
+// El aviso del paso Envio. `domicilio.contactos` que no es lista = el servidor aun no
+// tiene el padron de contact_list: sin Invoices conocidos no se puede afirmar que no
+// hay ninguno, y el aviso calla (null) en vez de mandar a capturar en falso.
+export function avisoCorreosFactura(domicilio, contactosCliente) {
+  const correos = correosFactura(domicilio, contactosCliente);
+  if (!correos.length && domicilio && !Array.isArray(domicilio.contactos)) return null;
+  return textoCorreosFactura(correos);
+}
+
 // Que opcion queda elegida al pintar el selector y si se llenan los campos de
 // entrega con ella (#353). El selector se re-pinta en CADA pcRenderTarjeta (cambio
 // de cliente, upgrade fiscal, borrador restaurado), y aplicar la opcion 0 en cada

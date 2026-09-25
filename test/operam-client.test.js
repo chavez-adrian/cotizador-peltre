@@ -14,7 +14,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const { actualizarClienteDirecto, buscarClientes, buscarClientesPorRfc, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setBackoff429Base, _setMinInterval, derivarSalesAccount } = await import('../lib/operam-client.js');
+const { actualizarClienteDirecto, buscarClientes, buscarClientesPorRfc, buscarClientePorRFC, crearCliente, resetSession, buildClienteBody, actualizarBranchCliente, listarTransacciones, listarPedidos, subirCotizacionOperam, esZonaMetroLocal, obtenerClientePorId, obtenerDomicilios, armarComentariosQuote, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, leerPaginaContactos, _setBackoff429Base, _setMinInterval, derivarSalesAccount } = await import('../lib/operam-client.js');
 
 const LOGIN_RESPONSE = { token: 'fake-bearer-token', result: true };
 
@@ -3097,4 +3097,60 @@ test('#448 contenidoQuoteCambio: una huella guardada SIN el transportista no cue
   // y lo que SI guardaba esa huella se sigue viendo
   assert.equal(contenidoQuoteCambio(data, huellaVieja, { listaId: '9', shipVia: 3 }), true);
   assert.equal(contenidoQuoteCambio(conDomicilio(577), huellaVieja, { listaId: '12', shipVia: 3 }), true);
+});
+
+// === leerPaginaContactos (#105, hallazgos de #397) ===
+// GET /api/v3/admin/contact_list ignora todos sus filtros: la unica forma de leerlo
+// es por paginas con limit/skip. Una pagina por llamada para que quien barre ponga
+// SU ritmo entre paginas (#438), nunca una rafaga dentro del cliente.
+
+test('leerPaginaContactos: pide UNA pagina de contact_list con limit y skip y devuelve filas y total', async () => {
+  resetSession();
+  const urls = [];
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/admin/contact_list': (url) => {
+      urls.push(String(url));
+      return jsonResponse({ total: '2089', data: [{ id: '3460', type: 'cust_branch', entity_id: '15' }] });
+    },
+  });
+  try {
+    const r = await leerPaginaContactos(200);
+    assert.equal(urls.length, 1);
+    assert.ok(urls[0].endsWith('/api/v3/admin/contact_list?limit=100&skip=200'), urls[0]);
+    assert.equal(r.total, 2089);
+    assert.deepEqual(r.filas, [{ id: '3460', type: 'cust_branch', entity_id: '15' }]);
+  } finally {
+    restore();
+  }
+});
+
+test('leerPaginaContactos: sin total declarado devuelve total null', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/admin/contact_list': () => jsonResponse({ data: [] }),
+  });
+  try {
+    const r = await leerPaginaContactos(0);
+    assert.equal(r.total, null);
+    assert.deepEqual(r.filas, []);
+  } finally {
+    restore();
+  }
+});
+
+test('leerPaginaContactos: si Operam manda la lista sin sobre (arreglo pelado) tambien la lee', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/admin/contact_list': () => jsonResponse([{ id: '3460', type: 'cust_branch', entity_id: '15' }]),
+  });
+  try {
+    const r = await leerPaginaContactos(0);
+    assert.deepEqual(r.filas, [{ id: '3460', type: 'cust_branch', entity_id: '15' }]);
+    assert.equal(r.total, null);
+  } finally {
+    restore();
+  }
 });

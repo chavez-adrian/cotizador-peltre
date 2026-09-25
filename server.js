@@ -58,6 +58,7 @@ import * as modelosStore from './lib/modelos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
+import { contactosDelDomicilio } from './lib/contactos-domicilio-io.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
 import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
@@ -2951,9 +2952,13 @@ app.get('/api/operam/clientes/:id/comercial', authMiddleware, async (req, res) =
   }
 });
 
+// Cada domicilio lleva sus Contactos en Operam (#105) del padron cacheado de
+// contact_list: nunca espera a Operam, y sin padron todavia salen en null (no se sabe).
 app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) => {
   try {
-    res.json(await obtenerDomicilios(req.params.id));
+    const r = await obtenerDomicilios(req.params.id);
+    for (const d of r.domicilios) d.contactos = contactosDelDomicilio(d.branch_code);
+    res.json(r);
   } catch {
     res.status(503).json({ error: 'Operam no disponible' });
   }
