@@ -73,7 +73,7 @@ import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPar
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
 import { validarOperamIds } from './public/js/vendedores-logica.js';
-import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte } from './public/js/lineas-transporte-logica.js';
+import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -241,6 +241,21 @@ function listasVolumenDelCatalogo() {
 // catalogo vigente -- entonces no se escribe nada y el post-fix lo reporta.
 function listaDelQuote(entry) {
   return listaIdDeTier(tiersDelCatalogo(), entry?.tier);
+}
+
+// El transportista (`ship_via`) que va al ENCABEZADO del quote (#448): el de la linea
+// de transporte que eligio el vendedor, con el id que le da la lista de /admin (#447).
+// { shipVia, linea, motivo }; shipVia null = no se manda nada (sin envio, envio
+// manual o linea sin id) y el quote conserva el del domicilio.
+function transportistaDelQuote(entry) {
+  return transportistaDeEnvio(lineasTransporte(configStore.leer()), entry?.data?.envio);
+}
+
+// Lo que la huella del quote (#114) necesita y no vive en `data`: la lista del
+// encabezado (#403) y el transportista (#448), los dos resueltos contra el catalogo
+// y la configuracion de hoy.
+function opcionesHuellaQuote(entry) {
+  return { listaId: listaDelQuote(entry), shipVia: transportistaDelQuote(entry).shipVia };
 }
 
 // Permiso de lista VIGENTE del usuario autenticado (#296, ADR-0015): rol admin
@@ -492,7 +507,8 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
       const yaEnOperam = prev.folioOperam != null && prev.folioOperam !== '';
       // La lista del encabezado entra a la comparacion desde #403: con el mismo
       // precio en dos listas nada mas se movia y el quote se quedaba con la vieja.
-      const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote, { listaId: listaDelQuote(entry) });
+      // El transportista de la linea de envio entra igual desde #448.
+      const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote, opcionesHuellaQuote(entry));
       await cotStore.actualizarCotizacion(idPrevio, entry);
       return { id: idPrevio, requiereActualizacionOperam };
     }
@@ -3219,7 +3235,7 @@ async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creado
     const folio = await subirCotizacionOperam(dataSubida, { verificarListaPrecios: !creadoNuevo });
     if (folio != null && folio !== '') {
       await cotStore.setFolioOperam(id, folio);
-      await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida, { listaId: listaDelQuote(entry) }) });
+      await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida, opcionesHuellaQuote(entry)) });
       // Hay folio: se resolvio por el camino que sea (candidato elegido, cliente
       // nuevo forzado o reintento) y el candado se levanta (#204).
       await marcarMotivoPre(id, null);
@@ -3411,11 +3427,16 @@ const subidasOperamEnCurso = new Set();
 // hubiera cotizado en otra, y de ese encabezado hereda el pedido. Son dos campos
 // independientes y se reportan como dos pasos -- que la lista no se pueda escribir no
 // dice nada de la vigencia, ni al reves.
+//
+// Desde #448 lleva tambien el TRANSPORTISTA de la linea de envio elegida: el POST de
+// la API v3 no lo manda y el quote heredaba el del domicilio (1 = "Default"). Es un
+// tercer paso con la misma regla: se relee y, si no se confirma, avisa sin tumbar.
 async function postFixQuote(folio, entry) {
   if (folio == null || folio === '') return [];
   const data = entry?.data;
+  const transportista = transportistaDelQuote(entry);
   try {
-    const r = await corregirVigenciaQuote(folio, vigenciaDeCotizacion(data), { lista: listaDelQuote(entry) });
+    const r = await corregirVigenciaQuote(folio, vigenciaDeCotizacion(data), { lista: listaDelQuote(entry), transportista: transportista.shipVia });
     const pasos = [];
     if (r.ok) {
       pasos.push({
@@ -3435,6 +3456,8 @@ async function postFixQuote(folio, entry) {
     }
     const pasoLista = pasoListaQuote(folio, r.lista);
     if (pasoLista) pasos.push(pasoLista);
+    const pasoTransportista = pasoTransportistaQuote(folio, r.transportista, transportista);
+    if (pasoTransportista) pasos.push(pasoTransportista);
     return pasos;
   } catch (err) {
     console.error('[post-fix vigencia] fallo en el quote', folio, err.message);
@@ -3451,6 +3474,11 @@ async function postFixQuote(folio, entry) {
       mensaje: 'Revisa la lista de precios de la cotizacion en Operam: pudo quedar con la del cliente',
       detalle: 'quote ' + folio + ': se esperaba la lista ' + lista + ' y no se envio -- el post-fix fallo antes de escribir: ' + err.message,
       verificado: false, esperado: lista, encontrado: null,
+    }]), ...(transportista.shipVia == null ? [] : [{
+      name: 'transportista del quote', status: 'warn',
+      mensaje: `Revisa el transportista de la cotizacion en Operam: pudo quedar con el del domicilio en vez de ${transportista.linea}`,
+      detalle: 'quote ' + folio + ': se esperaba el transportista ' + transportista.shipVia + ' y no se envio -- el post-fix fallo antes de escribir: ' + err.message,
+      verificado: false, esperado: String(transportista.shipVia), encontrado: null,
     }]),];
   }
 }
@@ -3489,6 +3517,39 @@ function pasoListaQuote(folio, lista) {
       ? ' y se leyo ' + (lista.encontrado ?? '(sin dato)') + (lista.motivo ? ' -- ' + lista.motivo : '')
       : ' y no se envio -- ' + (lista.motivo ?? 'sin motivo')),
     verificado: lista.verificado, esperado: lista.esperado, encontrado: lista.encontrado,
+  };
+}
+
+// El paso del transportista del encabezado (#448), gemelo del de la lista. `r` es lo
+// que devolvio la web legacy y `t` el mapeo de la linea (transportistaDelQuote):
+// cuando no habia transportista que mandar, el motivo util es el del mapeo -- sin
+// envio, envio manual, linea sin id --, no el "no hay nada que escribir" de la web.
+function pasoTransportistaQuote(folio, r, t) {
+  if (!r) return null;
+  const nombre = 'transportista del quote';
+  if (!r.aplica) {
+    return {
+      name: nombre, status: 'omitido',
+      mensaje: 'La cotizacion quedo en Operam con el transportista que ya tenia (el del domicilio)',
+      detalle: 'quote ' + folio + ': ' + (t?.motivo ?? r.motivo ?? 'no habia transportista que escribir'),
+    };
+  }
+  if (r.ok) {
+    return {
+      name: nombre, status: 'ok',
+      mensaje: r.yaCorrecto
+        ? `La cotizacion ya tenia en Operam el transportista de ${t?.linea ?? 'la linea de envio'}`
+        : `El transportista de la cotizacion quedo en Operam: ${t?.linea ?? r.esperado}`,
+      detalle: 'quote ' + folio + ' ship_via ' + r.esperado,
+    };
+  }
+  return {
+    name: nombre, status: 'warn',
+    mensaje: `Revisa el transportista de la cotizacion en Operam: pudo quedar con el del domicilio en vez de ${t?.linea ?? r.esperado}`,
+    detalle: 'quote ' + folio + ': se esperaba el transportista ' + (r.esperado ?? '(sin dato)') + (r.escrita
+      ? ' y se leyo ' + (r.encontrado ?? '(sin dato)') + (r.motivo ? ' -- ' + r.motivo : '')
+      : ' y no se envio -- ' + (r.motivo ?? 'sin motivo')),
+    verificado: r.verificado, esperado: r.esperado, encontrado: r.encontrado,
   };
 }
 
@@ -3581,7 +3642,7 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
         // Huella de lo que quedo en el quote (#114): sin ella la proxima regeneracion
         // no puede saber si el contenido cambio, que es lo que decide si hay que
         // reescribir el quote o dejarlo en paz.
-        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(entry.data, { listaId: listaDelQuote(entry) }) });
+        await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(entry.data, opcionesHuellaQuote(entry)) });
         await marcarMotivoPre(id, null);
       }
       const pasosPostFix = await postFixQuote(folio, entry);
@@ -3643,16 +3704,19 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
     });
     if (!gate.puede) return res.status(409).json({ error: gate.motivo });
 
-    const r = await actualizarQuoteOperam(entry.folioOperam, entry.data, { lista: listaDelQuote(entry) });
+    // El transportista de la linea de envio viaja en el mismo ProcessOrder (#448).
+    const transportista = transportistaDelQuote(entry);
+    const r = await actualizarQuoteOperam(entry.folioOperam, entry.data, { lista: listaDelQuote(entry), transportista: transportista.shipVia });
     const pasoLista = pasoListaQuote(entry.folioOperam, r.lista);
+    const pasoTransportista = pasoTransportistaQuote(entry.folioOperam, r.transportista, transportista);
     const pasoAlmacen = pasoAlmacenQuote(entry.folioOperam, r.almacen);
     if (r.ok) {
       // Nueva huella (#114): el quote acaba de quedar con ESTE contenido, asi que
       // regenerar el mismo carrito (otro formato) ya no debe reescribir nada.
-      await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data, { listaId: listaDelQuote(entry) }) });
+      await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data, opcionesHuellaQuote(entry)) });
       return res.json({
         ok: true, folio: entry.folioOperam, actualizada: true,
-        steps: [{ name: 'actualizar quote', status: 'ok' }, ...(pasoLista ? [pasoLista] : []), ...(pasoAlmacen ? [pasoAlmacen] : [])],
+        steps: [{ name: 'actualizar quote', status: 'ok' }, ...(pasoLista ? [pasoLista] : []), ...(pasoTransportista ? [pasoTransportista] : []), ...(pasoAlmacen ? [pasoAlmacen] : [])],
       });
     }
     const marca = {
@@ -3669,6 +3733,7 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
       steps: [
         { name: 'actualizar quote', status: 'error', error: r.error ?? null, discrepancias: r.discrepancias ?? [] },
         ...(pasoLista ? [pasoLista] : []),
+        ...(pasoTransportista ? [pasoTransportista] : []),
         ...(pasoAlmacen ? [pasoAlmacen] : []),
       ],
     });

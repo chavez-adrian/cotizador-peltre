@@ -3065,3 +3065,36 @@ test('#415 contenidoQuoteCambio: con la huella nueva el domicilio decide junto a
   assert.equal(contenidoQuoteCambio(conDomicilio(577), huellaNueva, { listaId: '12' }), true);
   assert.equal(contenidoQuoteCambio(conDomicilio(576), huellaNueva, { listaId: '12' }), false);
 });
+
+// --- El transportista del encabezado entra a la huella (#448) -----------------
+// El quote lleva el `ship_via` de la linea de transporte elegida, y cambiar la linea
+// de un quote ya subido tiene que moverlo. Como la lista (#403), el id NO vive en
+// `data`: sale de la lista de lineas de /admin, asi que quien escribe el encabezado
+// lo resuelve y lo pasa. null explicito = no hay transportista que mandar.
+test('#448 huellaContenidoQuote: cambiar de FedEx (2) a Lalamove (3) SI cuenta como cambio', () => {
+  const data = cotizacionBase();
+  assert.notEqual(huellaContenidoQuote(data, { listaId: '12', shipVia: 2 }), huellaContenidoQuote(data, { listaId: '12', shipVia: 3 }));
+  assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data, { listaId: '12', shipVia: 2 }), { listaId: '12', shipVia: 3 }), true);
+  assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data, { listaId: '12', shipVia: 3 }), { listaId: '12', shipVia: 2 }), true);
+  assert.equal(contenidoQuoteCambio(data, huellaContenidoQuote(data, { listaId: '12', shipVia: 3 }), { listaId: '12', shipVia: 3 }), false);
+});
+
+test('#448 huellaContenidoQuote: sin transportista el campo va en null, no ausente', () => {
+  const data = cotizacionBase();
+  assert.equal(huellaContenidoQuote(data, { listaId: '12', shipVia: null }).includes('"shipVia":null'), true);
+  assert.notEqual(huellaContenidoQuote(data, { listaId: '12', shipVia: null }), huellaContenidoQuote(data, { listaId: '12', shipVia: 2 }));
+});
+
+// La exencion de #403/#415: las huellas guardadas antes de #448 no traen el campo,
+// y su ausencia no puede mandar a reescribir por la web legacy toda cotizacion que
+// se regenere.
+test('#448 contenidoQuoteCambio: una huella guardada SIN el transportista no cuenta como cambio', () => {
+  const data = conDomicilio(576);
+  const huellaVieja = huellaSinCampos(huellaContenidoQuote(data, { listaId: '12', shipVia: 2 }), 'shipVia');
+  assert.equal(huellaVieja.includes('shipVia'), false, 'la huella vieja no traia el campo');
+  assert.equal(huellaVieja, huellaContenidoQuote(data, { listaId: '12' }), 'es byte-identica a la de #415');
+  assert.equal(contenidoQuoteCambio(data, huellaVieja, { listaId: '12', shipVia: 3 }), false);
+  // y lo que SI guardaba esa huella se sigue viendo
+  assert.equal(contenidoQuoteCambio(data, huellaVieja, { listaId: '9', shipVia: 3 }), true);
+  assert.equal(contenidoQuoteCambio(conDomicilio(577), huellaVieja, { listaId: '12', shipVia: 3 }), true);
+});

@@ -2894,7 +2894,8 @@ test('#114-6: subir a Operam persiste la huella de lo que quedo en el quote', as
     // este montaje no existe en el catalogo, asi que no hay lista resoluble y el campo
     // va en null explicito -- que es distinto de "esta cotizacion se subio antes de
     // #403", el caso que contenidoQuoteCambio compara en la forma vieja.
-    assert.strictEqual(guardada.data.huellaQuote, huella114(data, { listaId: null }), 'la huella debe describir lo que se subio');
+    // #448: el transportista tambien, y sin envio va en null por la misma razon.
+    assert.strictEqual(guardada.data.huellaQuote, huella114(data, { listaId: null, shipVia: null }), 'la huella debe describir lo que se subio');
   } finally {
     restore();
   }
