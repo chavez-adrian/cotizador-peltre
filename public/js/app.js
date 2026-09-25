@@ -105,6 +105,9 @@ import {
 // Origen heredado (#287): el pipeline y los buscadores de cliente cargan los
 // prospectos junto con lo demas, asi que la herencia se resuelve aqui mismo.
 import { indiceOrigenPorCelular, anotarOrigen } from './origen-logica.js';
+// LA lectura de la fecha de una lista (#428): la fecha sin hora del backfill es
+// su dia, no la medianoche UTC que en Mexico cae el dia anterior.
+import { fechaLocal } from './busqueda-logica.js';
 // Aviso de dominio mal escrito del correo (issue #269): el MISMO nucleo que usa
 // el formulario publico, sin copia. mayoreo-logica.js es puro y browser-safe.
 import { sugerirDominioCorreo } from './mayoreo-logica.js';
@@ -4421,7 +4424,7 @@ function renderHistorialCliente(cotizaciones) {
   panel.style.display = 'block';
   panel.innerHTML = `<div class="section-header">Cotizaciones previas (${cotizaciones.length})</div>` +
     cotizaciones.slice(-5).reverse().map(c => {
-      const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+      const fecha = fechaLocal(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
       // "Reintentar subida" solo si la cotizacion sigue en PRE (sin folio); una ya
       // registrada (Cotizacion N) o historica no lo ofrece (#83, AC6). El contenedor
       // por-cotizacion recibe el estado al reintentar.
@@ -4933,7 +4936,7 @@ function renderHistorial() {
   }
 
   listEl.innerHTML = visibles.slice().reverse().map(c => {
-    const fecha = new Date(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+    const fecha = fechaLocal(c.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
     // Ver PDF / Ver HTML / WhatsApp regeneran desde el registro guardado
     // (issue #103), no desde disco ni desde el estado del formulario.
     const accionesDocumento = buildHistorialAccionesHtml(c, window.location.origin, state.precios?.familias);
@@ -6113,7 +6116,7 @@ function renderPipeline() {
   // mas reciente primero. Las salidas No util/Perdida NO se muestran aqui: viven
   // en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
   const activas = oportunidadesActivas(oportunidades)
-    .slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+    .slice().sort((a, b) => fechaLocal(b.fecha || 0) - fechaLocal(a.fecha || 0));
   if (!activas.length) {
     // "No hay resultados" no es "no hay oportunidades" (#289): si el listado
     // completo trae activas, lo que dejo la lista vacia fue un filtro -- el de

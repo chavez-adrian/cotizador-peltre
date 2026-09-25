@@ -186,6 +186,9 @@ import { buildWaLinkProspecto, CANALES } from '/js/prospectos-logica.js';
 // #319: las etiquetas de etapa del pipeline, para que el detalle nombre la
 // etapa de cada cotizacion igual que el tablero.
 import { COLUMNA_LABELS } from '/js/pipeline-logica.js';
+// #428: la fecha sin hora de una cotizacion del backfill es su dia, no la
+// medianoche UTC que en Mexico cae el dia anterior.
+import { fechaLocal } from '/js/busqueda-logica.js';
 
 // Tabla de prospectos. Lee GET /api/prospectos/tabla, que ya resuelve la
 // visibilidad -- un vendedor ve los suyos y el admin ve todos (por eso el
@@ -271,7 +274,7 @@ function escapeHtml(s) {
 
 function fechaCorta(iso) {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+  return fechaLocal(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
 }
 
 // El area de interes es multi-valor separado por punto y coma

@@ -1680,3 +1680,53 @@ test('Q46: el slot de la cotizacion subida pinta a quien quedo el domicilio, con
 test('Q44: sin pasos que reportar el slot no pinta lista vacia', () => {
   assert.ok(!buildOperamStatusHtml(5, interpretarSubidaOperam({ ok: true, folio: 1701 })).includes('operam-pasos'));
 });
+
+// #428: las cotizaciones del backfill (#76) y de los rescates guardan `fecha` =
+// `ord_date` de Operam, un dia SIN hora; `new Date` la leia como medianoche UTC
+// y en Mexico la tarjeta salia un dia antes. La zona se fija dentro de la
+// prueba y se restaura al salir.
+function enMexico(fn) {
+  const previa = process.env.TZ;
+  process.env.TZ = 'America/Mexico_City';
+  try {
+    return fn();
+  } finally {
+    if (previa === undefined) delete process.env.TZ;
+    else process.env.TZ = previa;
+  }
+}
+
+test('#428-P1: la cotizacion de la cola Hoy pinta la fecha sin hora en su dia (1128, 1155, 1166)', () => {
+  enMexico(() => {
+    assert.match(buildColaCotizacionItemHtml(itemCotizacion({ id: 28, folioOperam: '1128', fecha: '2026-05-08' })), /cotizada el 8 may \(/);
+    assert.match(buildColaCotizacionItemHtml(itemCotizacion({ id: 32, folioOperam: '1155', fecha: '2026-06-15' })), /cotizada el 15 jun \(/);
+    assert.match(buildColaCotizacionItemHtml(itemCotizacion({ id: 35, folioOperam: '1166', fecha: '2026-06-29' })), /cotizada el 29 jun \(/);
+  });
+});
+
+test('#428-P2: una fecha ISO con hora se sigue pintando en su dia local', () => {
+  enMexico(() => {
+    assert.match(buildColaCotizacionItemHtml(itemCotizacion({ fecha: '2026-05-08T02:00:00.000Z' })), /cotizada el 7 may \(/);
+  });
+});
+
+test('#428-P3: tablero y cerradas ordenan por el dia que dice cada tarjeta, no por la medianoche UTC', () => {
+  enMexico(() => {
+    // La del 8 (sin hora) es MAS reciente que la de las 21:00 del 7 en Mexico.
+    const sinHora = cotizacion({ id: 1, cliente: 'Sin Hora', fecha: '2026-05-08' });
+    const conHora = cotizacion({ id: 2, cliente: 'Con Hora', fecha: '2026-05-08T03:00:00.000Z' });
+    assert.deepEqual(agruparPipeline([conHora, sinHora]).seguimiento.map(o => o.id), [1, 2]);
+    const html = buildCerradasHtml([{ ...conHora, etapa: 'perdida' }, { ...sinHora, etapa: 'perdida' }]);
+    assert.ok(html.indexOf('Sin Hora') < html.indexOf('Con Hora'), 'la del 8 va primero');
+  });
+});
+
+// #428, decision de Adrian (2026-09-25): la forma que manda el servidor en
+// produccion (TIMESTAMPTZ de Neon serializado con toISOString).
+test('#428-P4: la cola Hoy pinta el ISO a medianoche UTC en su dia (1128, 1155, 1166)', () => {
+  enMexico(() => {
+    assert.match(buildColaCotizacionItemHtml(itemCotizacion({ id: 28, folioOperam: '1128', fecha: '2026-05-08T00:00:00.000Z' })), /cotizada el 8 may \(/);
+    assert.match(buildColaCotizacionItemHtml(itemCotizacion({ id: 32, folioOperam: '1155', fecha: '2026-06-15T00:00:00.000Z' })), /cotizada el 15 jun \(/);
+    assert.match(buildColaCotizacionItemHtml(itemCotizacion({ id: 35, folioOperam: '1166', fecha: '2026-06-29T00:00:00.000Z' })), /cotizada el 29 jun \(/);
+  });
+});

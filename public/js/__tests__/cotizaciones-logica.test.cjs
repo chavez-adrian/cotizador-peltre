@@ -658,21 +658,24 @@ test('Q48: filtrarCotizaciones sin fechas no acota (equivalente al buscador base
   assert.deepEqual(filtrarCotizaciones(lista, {}).map(c => c.id), [1, 2]);
 });
 
-// Bug real encontrado verificando en navegador (Mexico_City, UTC-6): una
-// cotizacion guardada como '2026-08-13' (fecha sin hora, ISO la interpreta
-// como medianoche UTC) se pinta en la tarjeta como "12 ago" porque
-// fechaCorta/toLocaleDateString usan hora local. Comparar contra el dia UTC
-// (como los scripts de backend) la dejaba visible al filtrar "Desde 13 ago",
-// contradiciendo lo que la tarjeta decia. filtrarCotizaciones solo corre en
-// el navegador (nunca en server.js), asi que compara contra el dia LOCAL,
-// igual que lo que ve el vendedor en pantalla.
+// Bug real encontrado verificando en navegador (Mexico_City, UTC-6): la tarjeta
+// pinta la fecha en hora local, y comparar el rango contra el dia UTC (como los
+// scripts de backend) contradecia lo que la tarjeta decia. filtrarCotizaciones
+// solo corre en el navegador (nunca en server.js), asi que compara contra el
+// dia LOCAL, igual que lo que ve el vendedor en pantalla. Desde #428 una fecha
+// SIN hora ('2026-08-13', la ord_date del backfill) ya no se lee como
+// medianoche UTC: se pinta "13 ago" y el filtro la trata como el 13.
 test('Q49: filtrarCotizaciones compara el rango contra el dia LOCAL de c.fecha, no el dia UTC (borde de zona horaria)', () => {
-  const lista = [
-    // medianoche UTC del 13: en Mexico_City (UTC-6) cae en la tarde del 12
-    cot(0, { id: 1, fecha: '2026-08-13' }),
-  ];
-  assert.deepEqual(filtrarCotizaciones(lista, { desde: '2026-08-13' }), []);
-  assert.deepEqual(filtrarCotizaciones(lista, { hasta: '2026-08-12' }).map(c => c.id), [1]);
+  enMexico(() => {
+    const lista = [
+      // las 20:00 del 12 en Mexico_City: el dia UTC ya es el 13
+      cot(0, { id: 1, fecha: '2026-08-13T02:00:00.000Z' }),
+      // dia sin hora: es el 13 en cualquier huso
+      cot(0, { id: 2, fecha: '2026-08-13' }),
+    ];
+    assert.deepEqual(filtrarCotizaciones(lista, { desde: '2026-08-13' }).map(c => c.id), [2]);
+    assert.deepEqual(filtrarCotizaciones(lista, { hasta: '2026-08-12' }).map(c => c.id), [1]);
+  });
 });
 
 test('Q50: filtrarCotizaciones con fecha ausente no matchea ningun rango pero si pasa sin fechas', () => {
@@ -895,4 +898,124 @@ test('#432-4: cargar del historial marca Cotizar en la barra de navegacion al mo
   assert.ok(muestra > 0, 'si cargar deja de mostrar el cotizador aqui, este test ya no cuida nada: revisarlo');
   const marca = cuerpo.indexOf("marcarNavActivo('nav-cotizar')");
   assert.ok(marca > 0, 'la barra tiene que decir la vista a la que se llego: Cotizar, no Mas');
+});
+
+// #428: las cotizaciones del backfill (#76) y de los rescates guardan `fecha` =
+// `ord_date` de Operam, un dia SIN hora. Casos vistos en produccion el
+// 2026-09-22 en el Historial y en "Cotizaciones previas": la 1128 (8 may) se
+// pintaba "7 may". La zona se fija dentro de la prueba y se restaura al salir.
+function enMexico(fn) {
+  const previa = process.env.TZ;
+  process.env.TZ = 'America/Mexico_City';
+  try {
+    return fn();
+  } finally {
+    if (previa === undefined) delete process.env.TZ;
+    else process.env.TZ = previa;
+  }
+}
+
+const COT_1128 = { id: 28, folioOperam: '1128', fecha: '2026-05-08', cliente: 'Hotel Azul', vendedor: 'Laura', total: 1000, totalPiezas: 10, estado: 'abierta' };
+
+test('#428-H1: el filtro del Historial trata la fecha sin hora como el dia que dice', () => {
+  enMexico(() => {
+    assert.deepEqual(filtrarCotizaciones([COT_1128], { desde: '2026-05-08' }).map(c => c.folioOperam), ['1128']);
+    assert.deepEqual(filtrarCotizaciones([COT_1128], { hasta: '2026-05-07' }), []);
+  });
+});
+
+test('#428-H2: el tablero del Historial pinta la fecha sin hora en su dia (1128, 1155, 1166)', () => {
+  enMexico(() => {
+    const hoy = new Date(2026, 6, 1, 12, 0);
+    const html = buildTableroCotizacionesHtml([
+      COT_1128,
+      { ...COT_1128, id: 32, folioOperam: '1155', fecha: '2026-06-15' },
+      { ...COT_1128, id: 35, folioOperam: '1166', fecha: '2026-06-29' },
+    ], hoy);
+    assert.ok(html.includes('8 may 2026'), 'la 1128 dice 8 may');
+    assert.ok(html.includes('15 jun 2026'), 'la 1155 dice 15 jun');
+    assert.ok(html.includes('29 jun 2026'), 'la 1166 dice 29 jun');
+    assert.ok(!html.includes('7 may 2026') && !html.includes('14 jun 2026') && !html.includes('28 jun 2026'),
+      'ninguna sale un dia antes');
+  });
+});
+
+test('#428-H3: "hace N dias" y la columna cuentan desde el dia que dice la tarjeta', () => {
+  enMexico(() => {
+    // El 10 de mayo a las 20:00 la 1128 (8 may) lleva 2 dias, no 3.
+    const html = buildTableroCotizacionesHtml([COT_1128], new Date(2026, 4, 10, 20, 0));
+    assert.ok(html.includes('8 may 2026 \u00b7 hace 2 d\u00edas'), 'la tarjeta dice 8 may y hace 2 dias');
+    // El 14 de mayo a las 20:00 van 6 dias naturales: todavia no es Dia 7.
+    assert.equal(columnaCotizacion(COT_1128, new Date(2026, 4, 14, 20, 0)), 'dia2');
+    assert.equal(columnaCotizacion(COT_1128, new Date(2026, 4, 15, 0, 0)), 'dia7');
+  });
+});
+
+test('#428-H4: una columna ordena por el dia que dice cada tarjeta, no por la medianoche UTC', () => {
+  enMexico(() => {
+    const sinHora = { ...COT_1128, id: 1 };
+    // Las 21:00 del 7 de mayo en Mexico: la tarjeta dice "7 may", va DESPUES de la del 8.
+    const conHora = { ...COT_1128, id: 2, fecha: '2026-05-08T03:00:00.000Z' };
+    const cols = agruparTableroCotizaciones([conHora, sinHora], new Date(2026, 4, 9, 12, 0));
+    assert.deepEqual(cols.reciente.map(c => c.id), [1, 2]);
+  });
+});
+
+test('#428-H5: una fecha ISO con hora se sigue pintando en su dia local', () => {
+  enMexico(() => {
+    const html = buildTableroCotizacionesHtml([{ ...COT_1128, fecha: '2026-05-08T02:00:00.000Z' }], new Date(2026, 4, 10, 12, 0));
+    assert.ok(html.includes('7 may 2026'), 'las 20:00 del 7 de mayo en Mexico');
+  });
+});
+
+// #428, el cableado: "Cotizaciones previas" (renderHistorialCliente) y la lista
+// del Historial (renderHistorial) pintan en app.js, que no es importable; se
+// cuida el fuente con el mismo recurso que #404-C3. Que la fecha que pintan es
+// la correcta lo prueban F1-F4 (busqueda-logica.test.cjs) sobre fechaLocal.
+test('#428-A1: previas y lista del Historial leen c.fecha con fechaLocal', () => {
+  const src = fuenteApp();
+  assert.match(src, /import \{[^}]*\bfechaLocal\b[^}]*\} from '\.\/busqueda-logica\.js';/,
+    'app.js toma fechaLocal del nucleo, no de una copia');
+  for (const firma of ['function renderHistorialCliente(', 'function renderHistorial(']) {
+    const cuerpo = cuerpoDeFuncion(src, firma);
+    assert.ok(cuerpo.includes('fechaLocal(c.fecha).toLocaleDateString('), `${firma} pinta con fechaLocal`);
+  }
+});
+
+test('#428-A2: ninguna lista de app.js lee su fecha con new Date', () => {
+  assert.deepEqual(fuenteApp().match(/new Date\(\w+\.fecha\b/g) || [], [],
+    'una fecha sin hora leida con new Date se pinta, se ordena o se filtra un dia antes');
+});
+
+// #428: la ficha de la Tabla de prospectos (/prospectos) lista las cotizaciones
+// del prospecto con su fecha; es otro pintor de c.fecha y tampoco es importable.
+test('#428-A3: la ficha de la Tabla de prospectos pinta la fecha de sus cotizaciones con fechaLocal', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'prospectos.html'), 'utf8').replace(/\r\n/g, '\n');
+  assert.match(html, /import \{[^}]*\bfechaLocal\b[^}]*\} from '\/js\/busqueda-logica\.js';/);
+  assert.match(html, /function fechaCorta\(iso\) \{\n  if \(!iso\) return '';\n  return fechaLocal\(iso\)\.toLocaleDateString\(/);
+  assert.ok(html.includes('${fechaCorta(c.fecha)}'), 'las cotizaciones de la ficha pasan por fechaCorta');
+});
+
+// #428, decision de Adrian (2026-09-25): en produccion la fecha del backfill
+// llega como TIMESTAMPTZ serializado ('2026-05-08T00:00:00.000Z'), no como
+// '2026-05-08'. Los mismos casos de produccion, con la forma que manda el servidor.
+const COT_1128_NEON = { ...COT_1128, fecha: '2026-05-08T00:00:00.000Z' };
+
+test('#428-H6: el Historial pinta y filtra el ISO a medianoche UTC en su dia (1128, 1155, 1166)', () => {
+  enMexico(() => {
+    const html = buildTableroCotizacionesHtml([
+      COT_1128_NEON,
+      { ...COT_1128, id: 32, folioOperam: '1155', fecha: '2026-06-15T00:00:00.000Z' },
+      { ...COT_1128, id: 35, folioOperam: '1166', fecha: '2026-06-29T00:00:00.000Z' },
+    ], new Date(2026, 6, 1, 12, 0));
+    assert.ok(html.includes('8 may 2026') && html.includes('15 jun 2026') && html.includes('29 jun 2026'));
+    assert.ok(!html.includes('7 may 2026') && !html.includes('14 jun 2026') && !html.includes('28 jun 2026'),
+      'ninguna sale un dia antes');
+    assert.deepEqual(filtrarCotizaciones([COT_1128_NEON], { desde: '2026-05-08' }).map(c => c.folioOperam), ['1128']);
+    assert.deepEqual(filtrarCotizaciones([COT_1128_NEON], { hasta: '2026-05-07' }), []);
+    assert.ok(buildTableroCotizacionesHtml([COT_1128_NEON], new Date(2026, 4, 10, 20, 0))
+      .includes('8 may 2026 \u00b7 hace 2 d\u00edas'), 'hace N dias cuenta desde el 8');
+  });
 });

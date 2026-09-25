@@ -110,6 +110,7 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 - **El body del quote web lleva `ProcessOrder` y NUNCA `CancelOrder`** (viven en el mismo form; CancelOrder anula la cotizacion).
 - **La comparacion de huella del quote (#114) es SIEMPRE local**: el cotizador manda y una edicion hecha directamente en Operam se pierde (decision explicita).
 - **Codigos de calca se BUSCAN en el catalogo, nunca se concatenan**: uno inventado da 406 al subir el quote.
+- **La `fecha` de una lista se lee con `fechaLocal` (`busqueda-logica.js`), nunca con `new Date` (#428)**: el backfill y los rescates guardan la `ord_date` de Operam, un dia SIN hora, y Neon (TIMESTAMPTZ) la devuelve serializada como `2026-05-08T00:00:00.000Z`; con `new Date` en Mexico se pintaba, ordenaba y filtraba un dia antes. `fechaLocal` trata `yyyy-mm-dd` y el ISO EXACTO en medianoche UTC como dia calendario (decision de Adrian 2026-09-25: se acepta que un instante real de las 18:00:00.000 de CDMX salga un dia despues); por ahi pasan el pintado, el orden, el "hace N dias" y el filtro Desde/Hasta (`diaLocal`) para que digan el mismo dia.
 - **ASCII estricto** en codigo y commits: sin acentos, sin comillas tipograficas, sin em-dashes.
 
 ## Persistencia (reglas vigentes; historia en docs/arquitectura.md y ADR-0008/0009)

@@ -13,7 +13,7 @@
 import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
-import { filtrarPorCriterio } from './busqueda-logica.js';
+import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -754,7 +754,7 @@ export function agruparPipeline(oportunidades) {
     if (cols[o.etapa]) cols[o.etapa].push(o);
   }
   for (const c of COLUMNAS_PIPELINE) {
-    cols[c].sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+    cols[c].sort((a, b) => fechaLocal(b.fecha || 0) - fechaLocal(a.fecha || 0));
   }
   return cols;
 }
@@ -1133,7 +1133,7 @@ const PASO_LABELS = {
 // id numerico de la cotizacion (leccion del bug de #57; aqui el id no viene
 // prefijado, pero se documenta el criterio).
 export function buildColaCotizacionItemHtml(item) {
-  const fecha = new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+  const fecha = fechaLocal(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
   const btnWa = item.waLink
     ? `<a href="${item.waLink}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`
     : `<button class="btn btn-secondary btn-sm" disabled title="Sin telefono registrado">WhatsApp</button>`;
@@ -1227,7 +1227,7 @@ const SALIDA_LABELS = { no_util: 'No útil', perdida: 'Perdida' };
 
 export function buildCerradasHtml(oportunidades) {
   const cerradas = (oportunidades || []).filter(o => esSalida(o.etapa))
-    .slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+    .slice().sort((a, b) => fechaLocal(b.fecha || 0) - fechaLocal(a.fecha || 0));
   if (!cerradas.length) return '<div class="cot-card-meta">Sin oportunidades cerradas.</div>';
   return cerradas.map(o => {
     const cierre = SALIDA_LABELS[o.etapa] || o.etapa;

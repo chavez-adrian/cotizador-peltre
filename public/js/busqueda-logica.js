@@ -18,17 +18,39 @@ function soloDigitos(valor) {
   return String(valor).replace(/\D/g, '');
 }
 
-// El dia LOCAL de un instante. El input nativo de fecha entrega yyyy-mm-dd, un
-// dia calendario sin zona horaria. A diferencia de los scripts de backend que
-// comparan contra el dia UTC (backfill-operam.mjs, sync-operam-io.js), aqui el
-// dia se calcula en hora LOCAL: este nucleo solo corre en el navegador (nunca
-// en server.js) y las tarjetas que usan este camino pintan la fecha con
-// toLocaleDateString. Usar UTC desincroniza el filtro de lo que el vendedor ve
-// en pantalla -- una cotizacion guardada como '2026-08-13' (medianoche UTC) se
-// pinta "12 ago" en Mexico_City, y filtrando "Desde 13" no debe aparecer.
+// LA lectura de la `fecha` de una lista (#428). El backfill (#76) y los rescates
+// de genericos guardan la `ord_date` de Operam, un dia SIN hora ('2026-05-08'), y
+// `new Date` lo lee como medianoche UTC: en Mexico eso es el dia ANTERIOR. Un
+// texto exactamente yyyy-mm-dd es un dia calendario y se lee a medianoche LOCAL.
+// En produccion ese dia NO llega asi: Neon guarda `fecha` como TIMESTAMPTZ y el
+// servidor la manda con toISOString(), '2026-05-08T00:00:00.000Z'. Decision de
+// Adrian (2026-09-25): un ISO que cae EXACTO en medianoche UTC tambien es un dia
+// calendario (su dia literal, como `diaDe` en Rescatados); se acepta que un
+// instante real a las 18:00:00.000 exactas de CDMX se pinte un dia despues.
+// Cualquier otra cosa (ISO con otra hora, Date, numero) es un instante y se lee
+// como siempre. Por aqui pasan el pintado, el orden, la cuenta de dias y el
+// filtro, para que la tarjeta, su lugar en la lista y el rango digan el mismo dia.
+const DIA_SIN_HORA = /^(\d{4})-(\d{2})-(\d{2})(?:T00:00:00(?:\.000)?(?:Z|\+00:00))?$/;
+
+export function fechaLocal(valor) {
+  const dia = typeof valor === 'string' ? DIA_SIN_HORA.exec(valor) : null;
+  if (dia) return new Date(Number(dia[1]), Number(dia[2]) - 1, Number(dia[3]));
+  return new Date(valor);
+}
+
+// El dia LOCAL de una fecha, leida con fechaLocal. El input nativo de fecha
+// entrega yyyy-mm-dd, un dia calendario sin zona horaria. A diferencia de los
+// scripts de backend que comparan contra el dia UTC (backfill-operam.mjs,
+// sync-operam-io.js), aqui el dia se calcula en hora LOCAL: este nucleo solo
+// corre en el navegador (nunca en server.js) y las tarjetas que usan este camino
+// pintan la fecha con fechaLocal + toLocaleDateString. El filtro tiene que decir
+// el mismo dia que la tarjeta: un instante de las 23:30 del 12 de agosto en
+// Mexico_City se pinta "12 ago" y filtrando "Desde 13" no aparece, y una
+// cotizacion guardada como '2026-05-08' (sin hora, #428) se pinta "8 may" y
+// filtrando "Desde 8" si aparece.
 function diaLocal(fecha) {
   if (!fecha) return '';
-  const d = new Date(fecha);
+  const d = fechaLocal(fecha);
   const anio = d.getFullYear();
   const mes = String(d.getMonth() + 1).padStart(2, '0');
   const dia = String(d.getDate()).padStart(2, '0');

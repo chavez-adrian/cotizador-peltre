@@ -8,7 +8,7 @@
 import { escapeHtml, chipOrigenHtml } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
 import { nombreConCorto, clienteDesdeCotizacionReciente } from './alta-logica.js';
-import { filtrarPorCriterio } from './busqueda-logica.js';
+import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import { MENSAJE_COPIA_LISTA_FIJADA } from './tier-logica.js';
 
@@ -33,7 +33,7 @@ const CERRADAS = new Set(['ganada', 'perdida']);
 export function columnaCotizacion(c, hoy = new Date()) {
   if (c.estado === 'descartada') return null;
   if (CERRADAS.has(c.estado)) return c.estado;
-  const dias = Math.floor((hoy - new Date(c.fecha)) / MS_DIA);
+  const dias = Math.floor((hoy - fechaLocal(c.fecha)) / MS_DIA);
   if (dias >= 28) return 'vencida';
   if (dias >= 21) return 'por_vencer';
   if (dias >= 7) return 'dia7';
@@ -49,7 +49,7 @@ export function agruparTableroCotizaciones(cotizaciones, hoy = new Date()) {
     if (col) cols[col].push(c);
   }
   for (const col of COLUMNAS_COTIZACIONES) {
-    cols[col].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    cols[col].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
   }
   return cols;
 }
@@ -66,7 +66,7 @@ function fmtMoneda(n) {
 }
 
 function fechaCorta(fecha) {
-  return new Date(fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+  return fechaLocal(fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 // Tarjeta del tablero: cliente, total, piezas, vendedor, dias desde envio y
@@ -76,7 +76,7 @@ function fechaCorta(fecha) {
 // que Operam -- nunca con el id interno -- reusando la unica fuente del badge
 // (badgeFolioOperamHtml), la misma que la vista lista y la cola Hoy.
 function buildCotizacionCardHtml(c, col, hoy) {
-  const dias = Math.floor((hoy - new Date(c.fecha)) / MS_DIA);
+  const dias = Math.floor((hoy - fechaLocal(c.fecha)) / MS_DIA);
   const abierta = !CERRADAS.has(col);
   const acciones = [];
   if (c.telefono) acciones.push(`<a href="https://wa.me/${escapeHtml(c.telefono)}" target="_blank" class="btn btn-primary btn-sm">WhatsApp</a>`);
