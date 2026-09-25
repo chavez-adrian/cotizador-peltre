@@ -217,57 +217,17 @@ export function bloqueaGeneracionPorEnvioInvalidado(envioInvalidado) {
   return !!envioInvalidado;
 }
 
-// Nota de tiempo de entrega en el resumen (issue #90): default 4 semanas para
-// producto normal, 6 semanas cuando el pedido lleva calca/decorado. La deteccion
-// automatica desde el carrito no es posible hoy (no hay forma de meter un SKU de
-// calca/decorado al carrito, ver issue #90) -- por eso es un checkbox manual en
-// el resumen en vez de una regla derivada del carrito.
-export function notaTiempoEntrega(decorado) {
-  const semanas = decorado ? 6 : 4;
-  return `- Tiempo de entrega: ${semanas} semanas contadas a partir del pago del anticipo.`;
-}
-
-const LINEAS_AUTO_TIEMPO_ENTREGA = [notaTiempoEntrega(false), notaTiempoEntrega(true)];
-
-// Actualiza SOLO la linea de tiempo de entrega dentro del textarea de notas, sin
-// tocar el resto. Si el vendedor ya edito esa linea a mano (no coincide con
-// ninguna de las dos versiones auto-generadas) o la borro por completo, se deja
-// tal cual -- togglear el checkbox no debe pisotear una edicion manual.
-export function aplicarNotaTiempoEntrega(notasText, decorado) {
-  const lineas = (notasText || '').split('\n');
-  const idx = lineas.findIndex(l => LINEAS_AUTO_TIEMPO_ENTREGA.includes(l.trim()));
-  if (idx === -1) return notasText;
-  lineas[idx] = notaTiempoEntrega(decorado);
-  return lineas.join('\n');
-}
-
-// Nota de precios y envio en el resumen (issue #436, decision de Adrian
-// 2026-09-23): con envio con costo la cotizacion lleva su partida de flete, asi
-// que "No incluye envio." se contradice; EXW se queda (describe el precio de los
-// productos) y "Envio a costo y riesgo del cliente." no se toca nunca.
-export function notaPreciosEnvio(conEnvio) {
-  const base = '- Precios EXW Ixtapaluca, Estado de Mexico.';
-  return conEnvio ? base : `${base} No incluye envio.`;
-}
+// Las notas de condiciones comerciales (el Tiempo de produccion de #90/#324 y la
+// linea de precios y envio de #436) viven en condiciones-logica.js desde #324:
+// su texto sale de la configuracion del panel. Se reexportan las de #436 para
+// sus consumidores de siempre.
+export { notaPreciosEnvio, aplicarNotaEnvio } from './condiciones-logica.js';
 
 // El juicio "lleva envio" de la nota (#436): el mismo que pinta la partida de
 // envio en el resumen -- opcion con costo y costo capturado > 0 --, nunca la
 // opcion comparada con un string.
 export function cotizacionLlevaEnvio(shippingOpt, shippingCost) {
   return esOpcionConCosto(shippingOpt) && (parseFloat(shippingCost) || 0) > 0;
-}
-
-const LINEAS_AUTO_PRECIOS_ENVIO =[notaPreciosEnvio(false), notaPreciosEnvio(true)];
-
-// Mismo contrato que aplicarNotaTiempoEntrega (#90): solo se reemplaza la linea
-// si coincide con una de las dos versiones auto-generadas; editada o borrada a
-// mano se respeta.
-export function aplicarNotaEnvio(notasText, conEnvio) {
-  const lineas = (notasText || '').split('\n');
-  const idx = lineas.findIndex(l => LINEAS_AUTO_PRECIOS_ENVIO.includes(l.trim()));
-  if (idx === -1) return notasText;
-  lineas[idx] = notaPreciosEnvio(conEnvio);
-  return lineas.join('\n');
 }
 
 // Envio estructurado {carrier, servicio, precio} (issue #102): prefactor de

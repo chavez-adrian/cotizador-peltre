@@ -236,6 +236,72 @@
       </div>
     </div>
 
+    <!-- Condiciones comerciales (issue #324): las notas con las que arranca cada
+         cotizacion y las tablas del Tiempo de produccion. Viven en la
+         configuracion del panel (Neon): un cambio aqui llega sin commit. -->
+    <div class="admin-section">
+      <h2>Condiciones comerciales</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+        Las notas con las que arranca cada cotizacion nueva; el vendedor las sigue editando en cada cotizacion.
+        Cambiarlas no reescribe las cotizaciones ya generadas.
+        El <strong>Tiempo de produccion</strong> sale de las piezas de producto (las de calca no cuentan):
+        aplica el escalon mas alto cuyo "desde" no rebase las piezas, y abajo del primero, el primero.
+        Con calca en el carrito o con la marca de decorado aplica la tabla <strong>con calca</strong>.
+        Los escalones van de menor a mayor: usa Subir y Bajar para reordenarlos.
+      </p>
+      <div id="condiciones-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="condiciones-content" style="display:none">
+        <div style="display:grid;grid-template-columns:max-content 1fr;gap:6px 10px;align-items:center;font-size:12px;max-width:760px">
+          <label for="cond-precios">Precios</label>
+          <input type="text" id="cond-precios" style="border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">
+          <label for="cond-sinEnvio">Sin envio (se agrega a Precios cuando la cotizacion no lleva envio)</label>
+          <input type="text" id="cond-sinEnvio" style="border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">
+          <label for="cond-flete">Flete</label>
+          <input type="text" id="cond-flete" style="border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">
+          <label for="cond-anticipo">Anticipo</label>
+          <input type="text" id="cond-anticipo" style="border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">
+          <label for="cond-saldo">Saldo</label>
+          <input type="text" id="cond-saldo" style="border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">
+        </div>
+        <div id="condiciones-tablas">
+          <h3 style="font-size:13px;margin:14px 0 6px">Tiempo de produccion</h3>
+          <div class="cajas-tabla-scroll">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--bg);text-align:left">
+                <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Desde (piezas)</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Cantidad</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Unidad</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--border)"></th>
+              </tr>
+            </thead>
+            <tbody id="tp-normal-rows"></tbody>
+          </table>
+          </div>
+          <button class="btn btn-secondary btn-sm" data-agregar="normal" style="margin-top:6px">+ Agregar escalon</button>
+          <h3 style="font-size:13px;margin:14px 0 6px">Tiempo de produccion con calca</h3>
+          <div class="cajas-tabla-scroll">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--bg);text-align:left">
+                <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Desde (piezas)</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Cantidad</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Unidad</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--border)"></th>
+              </tr>
+            </thead>
+            <tbody id="tp-calca-rows"></tbody>
+          </table>
+          </div>
+          <button class="btn btn-secondary btn-sm" data-agregar="calca" style="margin-top:6px">+ Agregar escalon</button>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary btn-sm" id="btn-save-condiciones">Guardar</button>
+          <div id="condiciones-msg" style="display:none;font-size:12px"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Cotizaciones log -->
     <div class="admin-section">
       <h2>Cotizaciones generadas</h2>
@@ -427,6 +493,7 @@ function alEntrarAdmin(token) {
   loadConfig();
   loadCajas();
   loadLineasTransporte();
+  loadCondiciones();
   loadHigiene();
   loadSegmentoPendiente();
   loadAlmacenDomicilios();
@@ -912,6 +979,108 @@ async function saveLineasTransporte() {
     ok = res.ok;
     texto = res.ok ? 'Guardado' : data.error;
     if (res.ok) { lineasData = data.lineas; renderLineasTransporte(); }
+  }
+  msg.className = ok ? 'alert alert-success' : 'alert alert-error';
+  msg.textContent = ok ? texto : 'Error: ' + texto;
+  msg.style.display = 'inline-block';
+  setTimeout(() => msg.style.display = 'none', ok ? 3000 : 6000);
+}
+
+// --- Condiciones comerciales (issue #324) ---
+// Mismo patron que las lineas de transporte: filas por delegacion (data-*), sin
+// onclick inline (#112), y la validacion es la MISMA del servidor
+// (condiciones-logica.js).
+const TEXTOS_CONDICIONES = ['precios', 'sinEnvio', 'flete', 'anticipo', 'saldo'];
+const TABLAS_CONDICIONES = { normal: 'tiempoProduccion', calca: 'tiempoProduccionCalca' };
+let condicionesData = null;
+
+async function loadCondiciones() {
+  const loading = document.getElementById('condiciones-loading');
+  const res = await adminApi('/api/admin/condiciones');
+  const data = await res.json();
+  if (!res.ok) {
+    loading.textContent = 'Error: ' + (data.error || res.status);
+    return;
+  }
+  condicionesData = data.condiciones;
+  renderCondiciones();
+  loading.style.display = 'none';
+  document.getElementById('condiciones-content').style.display = 'block';
+}
+
+function renderCondiciones() {
+  for (const campo of TEXTOS_CONDICIONES) {
+    document.getElementById(`cond-${campo}`).value = condicionesData[campo] ?? '';
+  }
+  renderTablasCondiciones();
+}
+
+// Agregar, quitar, subir y bajar repintan SOLO las tablas: los textos cond-*
+// pasan a condicionesData hasta saveCondiciones, y repintarlos aqui borraria lo
+// que el admin escribio sin guardar.
+function renderTablasCondiciones() {
+  const celda = 'padding:6px 8px;border-bottom:1px solid var(--border)';
+  const input = 'border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px';
+  for (const [tabla, campo] of Object.entries(TABLAS_CONDICIONES)) {
+    const escalones = condicionesData[campo];
+    document.getElementById(`tp-${tabla}-rows`).innerHTML = escalones.map((e, i) => `
+      <tr>
+        <td style="${celda}"><input type="text" inputmode="numeric" data-tabla="${tabla}" data-i="${i}" data-campo="desde" value="${lineaEsc(e.desde)}" style="width:90px;${input}"></td>
+        <td style="${celda}"><input type="text" inputmode="numeric" data-tabla="${tabla}" data-i="${i}" data-campo="cantidad" value="${lineaEsc(e.cantidad)}" style="width:60px;${input}"></td>
+        <td style="${celda}">
+          <select data-tabla="${tabla}" data-i="${i}" data-campo="unidad" style="${input}">
+            ${['dias', 'semanas'].map(u => `<option value="${u}"${e.unidad === u ? ' selected' : ''}>${u}</option>`).join('')}
+          </select>
+        </td>
+        <td style="${celda};white-space:nowrap">
+          <button class="btn btn-secondary btn-sm" data-tabla="${tabla}" data-i="${i}" data-accion="subir"${i === 0 ? ' disabled' : ''}>Subir</button>
+          <button class="btn btn-secondary btn-sm" data-tabla="${tabla}" data-i="${i}" data-accion="bajar"${i === escalones.length - 1 ? ' disabled' : ''}>Bajar</button>
+          <button class="btn btn-secondary btn-sm" data-tabla="${tabla}" data-i="${i}" data-accion="quitar">Quitar</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+}
+
+function cambiarEscalon(ev) {
+  const el = ev.target;
+  const escalones = condicionesData?.[TABLAS_CONDICIONES[el.dataset.tabla]];
+  const i = Number(el.dataset.i);
+  if (!escalones || !escalones[i] || !el.dataset.campo) return;
+  escalones[i][el.dataset.campo] = el.value;
+}
+
+function accionEscalon(ev) {
+  const boton = ev.target.closest('[data-accion], [data-agregar]');
+  if (!boton || !condicionesData) return;
+  if (boton.dataset.agregar) {
+    condicionesData[TABLAS_CONDICIONES[boton.dataset.agregar]].push({ desde: '', cantidad: '', unidad: 'semanas' });
+    renderTablasCondiciones();
+    return;
+  }
+  const escalones = condicionesData[TABLAS_CONDICIONES[boton.dataset.tabla]];
+  const i = Number(boton.dataset.i);
+  const j = boton.dataset.accion === 'subir' ? i - 1 : i + 1;
+  if (boton.dataset.accion === 'quitar') escalones.splice(i, 1);
+  else if (escalones[j]) [escalones[i], escalones[j]] = [escalones[j], escalones[i]];
+  renderTablasCondiciones();
+}
+
+async function saveCondiciones() {
+  const msg = document.getElementById('condiciones-msg');
+  for (const campo of TEXTOS_CONDICIONES) {
+    condicionesData[campo] = document.getElementById(`cond-${campo}`).value;
+  }
+  const { validarCondiciones } = await import('/js/condiciones-logica.js');
+  const validas = validarCondiciones(condicionesData);
+  let ok = false;
+  let texto = validas.error;
+  if (!validas.error) {
+    const res = await adminApi('/api/admin/condiciones', { method: 'PUT', body: validas.condiciones });
+    const data = await res.json();
+    ok = res.ok;
+    texto = res.ok ? 'Guardado' : data.error;
+    if (res.ok) { condicionesData = data.condiciones; renderCondiciones(); }
   }
   msg.className = ok ? 'alert alert-success' : 'alert alert-error';
   msg.textContent = ok ? texto : 'Error: ' + texto;
@@ -1452,6 +1621,9 @@ document.getElementById('btn-add-linea').addEventListener('click', addLineaTrans
 document.getElementById('btn-save-lineas').addEventListener('click', saveLineasTransporte);
 document.getElementById('lineas-rows').addEventListener('change', cambiarLineaTransporte);
 document.getElementById('lineas-rows').addEventListener('click', quitarLineaTransporte);
+document.getElementById('condiciones-tablas').addEventListener('change', cambiarEscalon);
+document.getElementById('condiciones-tablas').addEventListener('click', accionEscalon);
+document.getElementById('btn-save-condiciones').addEventListener('click', saveCondiciones);
 document.getElementById('btn-paridad-catalogo').addEventListener('click', cargarParidadCatalogo);
 document.getElementById('btn-almacen-barrer').addEventListener('click', barrerAlmacenDomicilios);
 document.getElementById('almacen-seccion').addEventListener('click', accionAsiVaBien);

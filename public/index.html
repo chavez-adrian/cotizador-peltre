@@ -890,14 +890,12 @@
         </div>
         <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="resumen-decorado" style="width:16px;height:16px;accent-color:var(--primary)">
-          ¿Lleva calca/decorado? (cambia el tiempo de entrega a 6 semanas)
+          &iquest;Lleva calca/decorado? (usa la tabla de Tiempo de producci&oacute;n con calca)
         </label>
         <div id="resumen-decorado-motivo" style="font-size:12px;color:var(--text-light);margin:2px 0 8px 24px"></div>
-        <textarea id="resumen-notas" rows="5" style="width:100%">- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.
-- Envio a costo y riesgo del cliente.
-- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.
-- Se requiere 50% de anticipo para comenzar la produccion.
-- Pago del saldo previo a la entrega.</textarea>
+        <!-- Las notas arrancan de las condiciones comerciales del panel /admin (#324):
+             las pone app.js (reponerNotasPorOmision), no un literal aqui. -->
+        <textarea id="resumen-notas" rows="5" style="width:100%"></textarea>
       </div>
 
       <div class="form-row" style="margin-top:12px">
