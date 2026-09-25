@@ -212,7 +212,7 @@ test('#437: una tarifa de Tresguerras se persiste, se restaura, se invalida y en
   assert.strictEqual(cotizacionLlevaEnvio('tresguerras', '3930.95'), true);
   assert.deepStrictEqual(buildItemEnvio({ shippingOpt: 'tresguerras', shippingCost: 3930.95, shippingDesc: rate.desc, shippingDescuento: 0 }),
     { codigo: 'ENVIO', descripcion: rate.desc, cantidad: 1, unidad: 'ACT', precio: 3930.95, descuento: 0 });
-  const html = buildEnviaRateRestauradaHtml({ carrier: 'tresguerras', servicio: 'Puerta a puerta', precio: 3930.95 });
+  const html = buildEnviaRateRestauradaHtml({ carrier: 'tresguerras', servicio: 'Puerta a puerta', cost: 3930.95 });
   assert.match(html, /envia-rate-carrier">Puerta a puerta</);
   assert.match(html, /envia-rate-servicio">Tarifa estimada</);
 });
@@ -582,7 +582,7 @@ test('#102-14: debeAutoCotizarEnvia -- opcion manual o none -> nunca auto-cotiza
 // no visible cuando opcion es 'envia') pero el vendedor no tenia confirmacion
 // visual y podia pulsar "Cotizar" de nuevo, perdiendo la restauracion.
 test('#102-15: buildEnviaRateRestauradaHtml muestra carrier/servicio/precio formateados', () => {
-  const html = buildEnviaRateRestauradaHtml({ carrier: 'fedex', servicio: 'ground', precio: 259 });
+  const html = buildEnviaRateRestauradaHtml({ carrier: 'fedex', servicio: 'ground', cost: 259 });
   assert.ok(html.includes('FedEx'));
   assert.ok(html.includes('Ground'));
   assert.ok(html.includes('259.00'));
@@ -591,10 +591,27 @@ test('#102-15: buildEnviaRateRestauradaHtml muestra carrier/servicio/precio form
 });
 
 test('#72: la tarjeta restaurada de Lalamove lleva el vehiculo de titulo, sin repetir la marca', () => {
-  const html = buildEnviaRateRestauradaHtml({ carrier: 'lalamove', servicio: 'Van', precio: 984.23 });
+  const html = buildEnviaRateRestauradaHtml({ carrier: 'lalamove', servicio: 'Van', cost: 984.23 });
   assert.match(html, /envia-rate-carrier">Van</);
   assert.ok(!html.includes('Lalamove'));
   assert.ok(html.includes('984.23'));
+});
+
+// #444: la tarjeta restaurada en Editar/Copiar salia en $0.00 -- la restauracion
+// deja el monto en `cost` (la forma de enviaRateSeleccionado) y la tarjeta lo
+// buscaba en `precio`. Montos de las cotizaciones vistas en produccion.
+test('#444: Editar/Copiar pintan en la tarjeta restaurada el mismo monto que la partida de envio', () => {
+  const casos = [
+    { opcion: 'tresguerras', carrier: 'tresguerras', servicio: 'Puerta a puerta', precio: 424.56, descripcion: 'Tresguerras puerta a puerta', monto: '$424.56' },
+    { opcion: 'lalamove', carrier: 'lalamove', servicio: 'Hatchback', precio: 359.9, descripcion: 'Envio Lalamove Hatchback (hasta 100 kg)', monto: '$359.90' },
+    { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 268, descripcion: 'FedEx Ground', monto: '$268.00' },
+  ];
+  for (const { monto, ...envio } of casos) {
+    const r = restaurarEnvioDesdeCotizacion({ ...envio, descuento: 0 });
+    const html = buildEnviaRateRestauradaHtml(r.enviaRateSeleccionado);
+    assert.ok(html.includes(`envia-rate-precio">${monto}<`), `${envio.opcion}: ${html}`);
+    assert.strictEqual(r.cost, monto.slice(1), envio.opcion);
+  }
 });
 
 // === #135 (prefactor de #134): builder unico del payload de items (articulos,

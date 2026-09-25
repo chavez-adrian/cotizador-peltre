@@ -391,8 +391,10 @@ export function envioTrasCambioDeCp({ shippingOpt, enviaRateSeleccionado, cpAnte
 // tab Envio (aunque el valor si estuviera bien restaurado para el Resumen/PDF).
 // Mismo marcado que las tarjetas de cotizarEnvia (app.js) para verse igual, sin
 // listener de click -- no hay tarifas alternativas que ofrecer sin re-consultar.
-export function buildEnviaRateRestauradaHtml({ carrier, servicio, precio }) {
-  const money = (typeof precio === 'number' ? precio : 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// #444: recibe el enviaRateSeleccionado que arma restaurarEnvioDesdeCotizacion,
+// asi que el monto viene en `cost`; leerlo de `precio` pintaba $0.00.
+export function buildEnviaRateRestauradaHtml({ carrier, servicio, cost }) {
+  const money = (typeof cost === 'number' ? cost : 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const { titulo, detalle } = contenidoTarjeta({ carrier, service: servicio });
   return `
     <div class="envia-rate-card selected">
