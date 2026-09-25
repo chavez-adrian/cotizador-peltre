@@ -63,6 +63,36 @@ export function lineaActiva(lineas, fuente) {
 
 const NOMBRE_INTEGRACION = { lalamove: 'Lalamove', tresguerras: 'Tresguerras' };
 
+// El transportista (`ship_via` de Operam) de la linea que eligio el vendedor (#448).
+// `envio` es el envio guardado de la cotizacion ({opcion, carrier, ...}, #102): la
+// opcion de integracion propia se cruza por su fuente y la paqueteria de envia.com
+// por el codigo de carrier. No exige que la linea siga activa: la cotizacion ya
+// eligio su envio, y apagar la linea despues no cambia quien lo lleva.
+// Devuelve { shipVia, linea, motivo }; shipVia null = no se manda nada y el quote
+// conserva el del domicilio, con el motivo en palabras.
+export function transportistaDeEnvio(lineas, envio) {
+  const opcion = envio?.opcion;
+  let linea;
+  if (opcion === 'envia') {
+    const carrier = texto(envio.carrier).toLowerCase();
+    linea = (lineas || []).find(l => l.fuente === 'envia' && texto(l.codigo).toLowerCase() === carrier);
+    if (!linea) {
+      return { shipVia: null, linea: null, motivo: `la paqueteria "${texto(envio.carrier)}" no esta en las lineas de transporte de /admin` };
+    }
+  } else if (opcion === 'lalamove' || opcion === 'tresguerras') {
+    linea = (lineas || []).find(l => l.fuente === opcion);
+    if (!linea) {
+      return { shipVia: null, linea: null, motivo: `${NOMBRE_INTEGRACION[opcion]} no esta en las lineas de transporte de /admin` };
+    }
+  } else {
+    return { shipVia: null, linea: null, motivo: 'la cotizacion no lleva envio de una linea de transporte (sin envio o envio manual)' };
+  }
+  if (!Number.isInteger(linea.shipVia) || linea.shipVia <= 0) {
+    return { shipVia: null, linea: linea.nombre, motivo: `la linea "${linea.nombre}" no tiene transportista de Operam capturado en /admin` };
+  }
+  return { shipVia: linea.shipVia, linea: linea.nombre, motivo: null };
+}
+
 // El aviso con el que responde el endpoint de una integracion desactivada, o null
 // si la linea esta activa.
 export function avisoLineaInactiva(lineas, fuente) {
