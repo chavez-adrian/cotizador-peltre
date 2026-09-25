@@ -5,7 +5,7 @@
 // Ganada o Perdida. Modulo sin efectos de navegador, mismo patron que
 // prospectos-logica.js: lo consumen app.js y los tests .cjs via import().
 
-import { escapeHtml, chipOrigenHtml } from './prospectos-logica.js';
+import { escapeHtml, chipOrigenHtml, CANALES } from './prospectos-logica.js';
 import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
 import { nombreConCorto, clienteDesdeCotizacionReciente } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
@@ -321,10 +321,28 @@ export function textoBotonGenerar(tipo, modoActualizacion) {
 // Desde #289 el filtro en si vive en busqueda-logica.js, compartido con las
 // otras cuatro vistas; aqui solo queda la declaracion de QUE es buscable en
 // una cotizacion y de que fecha se acota (la de la cotizacion).
+//
+// Filtros por selector (#456, spec #398): lo que el texto no busca se ACOTA
+// con un selector -- Vendedor (derivado de los datos: solo las personas que
+// hay en el listado), Origen (catalogo cerrado del glosario; el Historial lo
+// recibe HEREDADO en `origen`, #287) y Estado de la cotizacion (constantes de
+// esta vista). Tipo de cliente no entra: es dato del Contacto y no viaja en el
+// listado (Out of Scope de la spec).
+export const ESTADOS_COTIZACION = [
+  { valor: 'abierta', texto: 'Abierta' },
+  { valor: 'ganada', texto: 'Ganada' },
+  { valor: 'perdida', texto: 'Perdida' },
+];
+
 export const BUSCABLES_COTIZACION = {
   camposDe: c => [c?.cliente, c?.folioOperam, c?.nombreCorto, c?.contactoEntrega],
   digitosDe: c => c?.telefono,
   fechaDe: c => c?.fecha,
+  filtros: {
+    vendedor: { etiqueta: 'Vendedor', lee: c => c?.vendedor, procedencia: 'datos' },
+    origen: { etiqueta: 'Origen', lee: c => c?.origen, procedencia: 'catalogo', valores: CANALES },
+    estado: { etiqueta: 'Estado', lee: c => c?.estado, procedencia: 'vista', valores: ESTADOS_COTIZACION },
+  },
 };
 
 export function filtrarCotizaciones(cotizaciones, criterio) {

@@ -124,8 +124,12 @@ import {
   buildAvisoCambioClienteHtml,
   textoBotonGenerar,
   filtrarCotizaciones,
+  BUSCABLES_COTIZACION,
   clienteAlCargarCotizacion,
 } from './cotizaciones-logica.js';
+// Filtros por selector (#456, spec #398): la rejilla etiqueta+selector y el
+// contador tras filtrar. Cada vista declara sus filtros en su BUSCABLES_*.
+import { buildFiltrosSelectorHtml, buildContadorHtml } from './filtros-logica.js';
 // Resumen de la cotizacion (#307): UN solo constructor del mensaje de WhatsApp,
 // compartido con el historial.
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
@@ -4868,14 +4872,16 @@ window.resetFlujoGuiado = resetFlujoGuiado;
 // prospectos (#49); la preferencia del usuario se recuerda en localStorage.
 let cotizacionesModo = localStorage.getItem('cotizacionesModo') === 'tablero' ? 'tablero' : 'lista';
 let ultimasCotizaciones = [];
-// Criterio del buscador (#146, rango de fechas #148): vive en memoria, no
-// persiste (ni localStorage ni servidor). Re-entrar al Historial lo limpia.
-let cotizacionesFiltro = { texto: '', desde: '', hasta: '' };
+// Criterio del buscador (#146, rango de fechas #148, selectores #456): vive en
+// memoria, no persiste (ni localStorage ni servidor). Re-entrar al Historial lo
+// limpia, filtros incluidos.
+let cotizacionesFiltro = { texto: '', desde: '', hasta: '', filtros: {} };
 
 async function showHistorial() {
   ocultarTodasLasVistas();
   document.getElementById('historial-view').style.display = 'block';
-  cotizacionesFiltro = { texto: '', desde: '', hasta: '' };
+  cotizacionesFiltro = { texto: '', desde: '', hasta: '', filtros: {} };
+  document.getElementById('historial-filtros').innerHTML = '';
   document.getElementById('historial-buscar').value = '';
   document.getElementById('historial-desde').value = '';
   document.getElementById('historial-hasta').value = '';
@@ -4891,11 +4897,16 @@ async function recargarHistorial() {
   document.getElementById('historial-list').innerHTML = '';
   document.getElementById('cotizaciones-tablero').innerHTML = '';
   document.getElementById('historial-sin-resultados').style.display = 'none';
+  document.getElementById('historial-contador').innerHTML = '';
 
   try {
     const res = await api('/api/cotizaciones');
     ultimasCotizaciones = await res.json();
     loadingEl.style.display = 'none';
+    // Las opciones derivadas (Vendedor) salen del listado recien cargado; la
+    // seleccion en curso se conserva al recargar tras cerrar una cotizacion.
+    document.getElementById('historial-filtros').innerHTML = buildFiltrosSelectorHtml(
+      ultimasCotizaciones, BUSCABLES_COTIZACION.filtros, cotizacionesFiltro.filtros, 'historial');
     renderHistorial();
   } catch (e) {
     loadingEl.textContent = 'Error cargando historial';
@@ -4916,6 +4927,8 @@ function renderHistorial() {
   // El filtro se aplica al arreglo ANTES de pintar (#146): Lista y Tablero lo
   // comparten gratis y cambiar de modo lo conserva.
   const visibles = filtrarCotizaciones(ultimasCotizaciones, cotizacionesFiltro);
+  document.getElementById('historial-contador').innerHTML = buildContadorHtml(
+    visibles.length, ultimasCotizaciones.length, { uno: 'cotizaci&oacute;n', varios: 'cotizaciones' });
   // "No hay resultados" no es "no hay cotizaciones": si el listado trae algo y
   // el filtro no matcha nada, manda el aviso del buscador en los dos modos.
   const sinResultados = visibles.length === 0 && ultimasCotizaciones.length > 0;
@@ -7347,6 +7360,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('historial-hasta').addEventListener('input', e => {
     cotizacionesFiltro.hasta = e.target.value;
+    renderHistorial();
+  });
+  // Selectores Vendedor / Origen / Estado (#456): la rejilla se repinta al
+  // cargar, asi que se escucha en el contenedor; cada select dice su campo en
+  // data-filtro. Mismo criterio, mismo render: aplica en Lista y en Tablero.
+  document.getElementById('historial-filtros').addEventListener('change', e => {
+    const campo = e.target?.dataset?.filtro;
+    if (!campo) return;
+    cotizacionesFiltro.filtros[campo] = e.target.value;
     renderHistorial();
   });
   // El mismo buscador en las otras cuatro vistas (#289): texto y fechas filtran

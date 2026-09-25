@@ -1067,6 +1067,11 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-app">Volver</button>
   </header>
   <div style="padding:16px">
+    <!-- Filtros por selector (issue #456, spec #398): Vendedor, Origen y
+         Estado. La rejilla la pinta buildFiltrosSelectorHtml al cargar el
+         listado; acotan en Lista y en Tablero, se combinan con AND con la caja
+         y las fechas y no persisten. -->
+    <div id="historial-filtros"></div>
     <!-- Buscador (issue #146): filtra en vivo el arreglo ya cargado, antes de
          pintar, asi que aplica igual en Lista y en Tablero. No persiste. -->
     <div class="search-input-wrap" style="margin-bottom:10px">
@@ -1087,6 +1092,8 @@
       <button class="btn btn-sm btn-secondary" id="btn-cot-modo-lista">Lista</button>
       <button class="btn btn-sm btn-secondary" id="btn-cot-modo-tablero">Tablero</button>
     </span>
+    <!-- Contador tras filtrar (issue #456): cuantas cotizaciones quedan. -->
+    <div id="historial-contador" class="filtros-contador"></div>
     <div id="historial-loading" style="color:var(--light);font-size:13px">Cargando...</div>
     <!-- Sin resultados de busqueda (issue #146): distinto de "sin cotizaciones
          registradas"; unico para los dos modos. -->

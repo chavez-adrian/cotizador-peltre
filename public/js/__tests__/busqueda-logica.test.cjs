@@ -235,3 +235,74 @@ test('F9: el rango trata el ISO a medianoche UTC como el dia que dice (Desde/Has
     assert.deepEqual(filtrarPorCriterio(lista, { hasta: '2026-05-07' }, opciones), []);
   });
 });
+
+// === #456 (spec #398): filtros por selector. El criterio gana `filtros`
+// (pares campo/valor elegidos en los selectores) y la declaracion por vista
+// gana el mapa de que lee cada filtro (`filtros: { campo: { lee } }`). ===
+
+const CON_FILTROS = {
+  ...CAMPOS,
+  fechaDe: x => x.fecha,
+  filtros: {
+    vendedor: { lee: x => x.vendedor },
+    origen: { lee: x => x.origen },
+    area: { lee: x => x.areas },
+  },
+};
+
+const CARTERA = [
+  { nombre: 'Hotel Azul', vendedor: 'Laura', origen: 'Instagram', areas: ['Alimentos'], fecha: '2026-06-01T15:00:00' },
+  { nombre: 'Hotel Verde', vendedor: 'Marco', origen: 'Instagram', areas: ['Alimentos', 'Hoteleria'], fecha: '2026-06-20T15:00:00' },
+  { nombre: 'Panaderia', vendedor: 'Laura', origen: 'WhatsApp', areas: [], fecha: '2026-06-02T15:00:00' },
+];
+
+test('FS1: un filtro vacio es transparente', () => {
+  const nombres = c => filtrarPorCriterio(CARTERA, c, CON_FILTROS).map(x => x.nombre);
+  const todos = ['Hotel Azul', 'Hotel Verde', 'Panaderia'];
+  assert.deepEqual(nombres({ filtros: {} }), todos);
+  assert.deepEqual(nombres({ filtros: { vendedor: '' } }), todos);
+  assert.deepEqual(nombres({ filtros: { vendedor: null, origen: undefined } }), todos);
+  assert.deepEqual(nombres({ filtros: null }), todos);
+});
+
+test('FS2: un filtro solo deja lo que casa', () => {
+  const nombres = c => filtrarPorCriterio(CARTERA, c, CON_FILTROS).map(x => x.nombre);
+  assert.deepEqual(nombres({ filtros: { vendedor: 'Laura' } }), ['Hotel Azul', 'Panaderia']);
+  assert.deepEqual(nombres({ filtros: { origen: 'WhatsApp' } }), ['Panaderia']);
+  assert.deepEqual(nombres({ filtros: { vendedor: 'Nadie' } }), []);
+});
+
+test('FS3: varios filtros se combinan con AND', () => {
+  const nombres = c => filtrarPorCriterio(CARTERA, c, CON_FILTROS).map(x => x.nombre);
+  assert.deepEqual(nombres({ filtros: { vendedor: 'Laura', origen: 'Instagram' } }), ['Hotel Azul']);
+  assert.deepEqual(nombres({ filtros: { vendedor: 'Marco', origen: 'WhatsApp' } }), []);
+});
+
+test('FS4: los filtros se combinan con AND con el texto y con el rango de fechas', () => {
+  const nombres = c => filtrarPorCriterio(CARTERA, c, CON_FILTROS).map(x => x.nombre);
+  // los selectores recortan y la caja busca dentro de lo recortado
+  assert.deepEqual(nombres({ texto: 'hotel', filtros: { vendedor: 'Laura' } }), ['Hotel Azul']);
+  assert.deepEqual(nombres({ texto: 'panaderia', filtros: { origen: 'Instagram' } }), []);
+  assert.deepEqual(nombres({ desde: '2026-06-02', filtros: { vendedor: 'Laura' } }), ['Panaderia']);
+  assert.deepEqual(
+    nombres({ texto: 'hotel', desde: '2026-06-10', hasta: '2026-06-30', filtros: { origen: 'Instagram' } }),
+    ['Hotel Verde']
+  );
+});
+
+test('FS5: un campo multi-valor casa por pertenencia', () => {
+  const nombres = c => filtrarPorCriterio(CARTERA, c, CON_FILTROS).map(x => x.nombre);
+  assert.deepEqual(nombres({ filtros: { area: 'Hoteleria' } }), ['Hotel Verde']);
+  assert.deepEqual(nombres({ filtros: { area: 'Alimentos' } }), ['Hotel Azul', 'Hotel Verde']);
+});
+
+test('FS6: un item al que le falta el campo no rompe el filtro y no casa', () => {
+  const lista = [{ nombre: 'Ana', vendedor: 'Laura' }, { nombre: 'Beto' }, { nombre: 'Cris', origen: null }];
+  const nombres = c => filtrarPorCriterio(lista, c, CON_FILTROS).map(x => x.nombre);
+  assert.deepEqual(nombres({ filtros: { vendedor: 'Laura' } }), ['Ana']);
+  assert.deepEqual(nombres({ filtros: { origen: 'Instagram' } }), []);
+  assert.deepEqual(nombres({ filtros: { area: 'Alimentos' } }), []);
+  // un filtro que la vista no declaro no tiene de donde leer: nada casa
+  assert.deepEqual(filtrarPorCriterio(CARTERA, { filtros: { tipo: 'Hotel' } }, CON_FILTROS), []);
+  assert.deepEqual(filtrarPorCriterio(CARTERA, { filtros: { vendedor: 'Laura' } }, CAMPOS), []);
+});

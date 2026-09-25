@@ -599,6 +599,30 @@ test('Q42b: buscar el nombre del propio vendedor devuelve a su cliente homonimo,
   assert.deepEqual(filtrarCotizaciones(lista, { texto: 'chavez' }).map(c => c.id), [1]);
 });
 
+// #456 (spec #398): la capacidad de #147 vuelve en el control correcto. Filtrar
+// por persona del equipo es un SELECTOR: Vendedor, Origen (el heredado que anota
+// el GET del Historial en `origen`) y Estado de la cotizacion. La caja sigue
+// sin buscar al vendedor.
+test('Q42c: el Historial filtra por Vendedor, Origen y Estado con selectores; el vendedor sigue fuera de la caja', () => {
+  const lista = [
+    cot(1, { id: 1, cliente: 'Adrian Chavez Rosete', vendedor: 'Adri\u00e1n Ch\u00e1vez', origen: 'Instagram', estado: 'abierta' }),
+    cot(2, { id: 2, cliente: 'Carlos Couturier Gaya', vendedor: 'Adri\u00e1n Ch\u00e1vez', origen: 'WhatsApp', estado: 'ganada' }),
+    cot(3, { id: 3, cliente: 'GALGUVE', vendedor: 'Laura', origen: 'Instagram', estado: 'perdida' }),
+    cot(4, { id: 4, cliente: 'Don Asado', vendedor: 'Laura', origen: '', estado: 'abierta' }),
+  ];
+  const ids = criterio => filtrarCotizaciones(lista, criterio).map(c => c.id);
+  assert.deepEqual(ids({ filtros: { vendedor: 'Adri\u00e1n Ch\u00e1vez' } }), [1, 2]);
+  assert.deepEqual(ids({ filtros: { origen: 'Instagram' } }), [1, 3]);
+  assert.deepEqual(ids({ filtros: { estado: 'abierta' } }), [1, 4]);
+  assert.deepEqual(ids({ filtros: { vendedor: 'Laura', estado: 'abierta' } }), [4]);
+  // el cliente concreto dentro del trabajo de una persona
+  assert.deepEqual(ids({ texto: 'galguve', filtros: { vendedor: 'Laura' } }), [3]);
+  assert.deepEqual(ids({ texto: 'galguve', filtros: { vendedor: 'Adri\u00e1n Ch\u00e1vez' } }), []);
+  // la caja no vuelve a buscar al vendedor aunque exista el selector
+  assert.deepEqual(ids({ texto: 'laura' }), []);
+  assert.deepEqual(ids({ texto: 'Adr' }), [1]);
+});
+
 // === #148: rango de fechas Desde/Hasta -- se combina con AND con el texto.
 // cot(diasAtras) resta dias enteros de HOY (2026-06-11T12:00:00Z, mediodia
 // UTC), asi que el dia UTC de c.fecha coincide con el dia calendario esperado

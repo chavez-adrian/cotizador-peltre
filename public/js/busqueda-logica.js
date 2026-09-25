@@ -83,19 +83,40 @@ function diaDelItem(item, { fechaDe, diaDe }) {
   return fechaDe ? diaLocal(fechaDe(item)) : '';
 }
 
-// El criterio de las cinco vistas: `{ texto, desde, hasta }`, combinados con
-// AND. `camposDe` da los campos de texto del item (los ausentes no estorban) y
-// `digitosDe` los telefonos que se comparan por digitos. Devuelve siempre un
-// arreglo nuevo: ninguna vista muta su listado en memoria al filtrar.
+// Los filtros por selector (#456, spec #398): pares campo/valor del criterio,
+// cada uno leido con el `lee` que la vista declaro para ese campo. Un valor
+// vacio es no-op y queda fuera de la lista.
+function filtrosActivos(filtros, declarados) {
+  return Object.entries(filtros || {})
+    .filter(([, valor]) => valor != null && valor !== '')
+    .map(([campo, valor]) => ({ lee: declarados?.[campo]?.lee, valor: String(valor) }));
+}
+
+// El item casa si el valor elegido esta entre los suyos: un campo multi-valor
+// (el area de interes del prospecto) casa por pertenencia. Sin el campo -- o
+// sin lector declarado -- no casa.
+function casaFiltro(item, { lee, valor }) {
+  const suyos = comoLista(lee ? lee(item) : null);
+  return suyos.some(v => v != null && String(v) === valor);
+}
+
+// El criterio de las cinco vistas: `{ texto, desde, hasta, filtros }`, todo
+// combinado con AND. `camposDe` da los campos de texto del item (los ausentes
+// no estorban), `digitosDe` los telefonos que se comparan por digitos y
+// `filtros` el mapa campo -> `{ lee }` de los selectores de la vista. Devuelve
+// siempre un arreglo nuevo: ninguna vista muta su listado en memoria al
+// filtrar.
 export function filtrarPorCriterio(items, criterio, opciones = {}) {
   const { camposDe, digitosDe } = opciones;
   const lista = items || [];
   const texto = normalizarBusqueda(criterio?.texto);
   const desde = criterio?.desde || '';
   const hasta = criterio?.hasta || '';
-  if (!texto && !desde && !hasta) return lista.slice();
+  const filtros = filtrosActivos(criterio?.filtros, opciones.filtros);
+  if (!texto && !desde && !hasta && !filtros.length) return lista.slice();
   const digitos = soloDigitos(criterio?.texto);
   return lista.filter(item => {
+    if (!filtros.every(f => casaFiltro(item, f))) return false;
     if (texto) {
       const enCampos = comoLista(camposDe ? camposDe(item) : null)
         .some(campo => normalizarBusqueda(campo).includes(texto));

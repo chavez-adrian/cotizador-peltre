@@ -351,6 +351,52 @@ body {
   margin-top: 2px;
 }
 
+/* Rejilla de filtros por selector (#456, spec #398): la pinta
+   buildFiltrosSelectorHtml (filtros-logica.js) y la comparten las vistas con
+   buscador. Mismo aspecto que la Tabla de prospectos; en telefono los bloques
+   bajan de renglon solos (flex-wrap, base de 150px). */
+.filtros-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+
+.filtro-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.filtro-selector label {
+  font-size: 11px;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filtro-selector select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--white);
+  color: var(--text);
+  min-width: 0;
+}
+
+.filtros-contador {
+  font-size: 13px;
+  color: var(--text-light);
+  margin-bottom: 10px;
+}
+
+.filtros-contador strong { color: var(--primary-dark); }
+
 .search-dropdown {
   position: absolute;
   top: calc(100% + 4px);
