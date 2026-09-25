@@ -200,6 +200,7 @@ import {
   sumarDiasFecha,
   sincronizarCorreoFactura,
 } from './cotizar-logica.js';
+import { opcionesSelectorEnvio } from './lineas-transporte-logica.js';
 import {
   puedeDescontar,
   validarDescuentoLinea,
@@ -2718,6 +2719,24 @@ function envioCapturadoEnFormulario() {
   return { shippingOpt, shippingDesc, shippingCost, shippingDescuento: envioDescuento };
 }
 
+// Repinta las opciones del selector de envio con las lineas de transporte que
+// vienen en /api/precios (#447): solo las activas, mas la opcion que trae la
+// cotizacion abierta aunque su linea ya no este activa (Editar/Copiar restauran
+// el envio historico tal como se guardo). Sin lineas en la respuesta se quedan
+// las opciones del HTML.
+function pintarOpcionesEnvio(opcionVigente) {
+  const select = document.getElementById('shipping-option');
+  const lineas = state.precios?.lineasTransporte;
+  if (!select || !Array.isArray(lineas)) return;
+  select.innerHTML = '';
+  for (const { value, texto } of opcionesSelectorEnvio(lineas, opcionVigente)) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = texto;
+    select.appendChild(opt);
+  }
+}
+
 // Aplica al DOM y a las variables de modulo el envio estructurado persistido
 // (issue #102), sin re-cotizar contra las paqueterias. Un solo lugar para los
 // dos caminos que restauran envio tal cual: Cargar del historial (cargarCotizacion)
@@ -2725,6 +2744,7 @@ function envioCapturadoEnFormulario() {
 // espejo del mismo bloque de nueve escrituras.
 function aplicarEnvioRestaurado(envio, { decidido = false } = {}) {
   const envioRestore = restaurarEnvioDesdeCotizacion(envio);
+  pintarOpcionesEnvio(envioRestore.opcion);
   document.getElementById('shipping-option').value = envioRestore.opcion;
   document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
   document.getElementById('shipping-manual').style.display = envioRestore.mostrarManual ? 'block' : 'none';
@@ -3039,6 +3059,7 @@ function nuevaCotizacion() {
   olvidarDomicilioAsistido();
   const paisEl = document.getElementById('cl-pais');
   if (paisEl) paisEl.value = 'MX';
+  pintarOpcionesEnvio(null);
   document.getElementById('shipping-option').value = 'none';
   document.getElementById('shipping-cost').value = '';
   document.getElementById('shipping-desc').value = 'Envio';
@@ -4626,7 +4647,10 @@ function switchTab(name) {
     // envio; con una decision tomada la opcion vigente se respeta tal cual. El
     // juicio vive en debeProponerEnvia, no aqui: dentro del manejador de tab no
     // se podia probar ni compartir con #420.
-    if (opt && debeProponerEnvia({ envioDecidido, shippingOpt: opt.value, cp: cpCliente, cartSize: state.cart.size })) {
+    // #447: sin lineas `envia` activas el selector no ofrece paqueteria y no hay
+    // nada que proponer.
+    const ofrecePaqueteria = !!opt?.querySelector('option[value="envia"]');
+    if (opt && ofrecePaqueteria && debeProponerEnvia({ envioDecidido, shippingOpt: opt.value, cp: cpCliente, cartSize: state.cart.size })) {
       opt.value = 'envia';
       document.getElementById('shipping-envia').style.display = 'block';
       document.getElementById('shipping-manual').style.display = 'none';

@@ -200,6 +200,42 @@
       </div>
     </div>
 
+    <!-- Lineas de transporte (issue #447): la lista que ofrece el paso Envio.
+         Vive en la configuracion del panel (Neon): un cambio aqui llega a
+         produccion sin commit. -->
+    <div class="admin-section">
+      <h2>Lineas de transporte</h2>
+      <p style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+        Las lineas que ofrece el paso Envio; solo las <strong>activas</strong> se cotizan.
+        Fuente <strong>envia</strong> = paqueteria de envia.com con su codigo de carrier (fedex, dhl, estafeta, paquetexpress...): darla de alta aqui basta para cotizarla.
+        <strong>lalamove</strong> y <strong>tresguerras</strong> son integraciones propias: desactivarlas quita su opcion del selector.
+        <strong>Transportista de Operam</strong> = el id de ship_via en Operam (puede quedar vacio).
+      </p>
+      <div id="lineas-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
+      <div id="lineas-content" style="display:none">
+        <div class="cajas-tabla-scroll">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg);text-align:left">
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Nombre</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Fuente</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Codigo envia.com</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Transportista de Operam</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Activa</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--border)"></th>
+            </tr>
+          </thead>
+          <tbody id="lineas-rows"></tbody>
+        </table>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-secondary btn-sm" id="btn-add-linea">+ Agregar linea</button>
+          <button class="btn btn-primary btn-sm" id="btn-save-lineas">Guardar</button>
+          <div id="lineas-msg" style="display:none;font-size:12px"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Cotizaciones log -->
     <div class="admin-section">
       <h2>Cotizaciones generadas</h2>
@@ -418,6 +454,7 @@ async function adminLogin() {
   loadCotizaciones();
   loadConfig();
   loadCajas();
+  loadLineasTransporte();
   loadHigiene();
   loadSegmentoPendiente();
   loadAlmacenDomicilios();
@@ -828,6 +865,86 @@ async function saveCajas() {
   msg.textContent = res.ok ? 'Guardado' : 'Error: ' + data.error;
   msg.style.display = 'inline-block';
   setTimeout(() => msg.style.display = 'none', 3000);
+}
+
+// --- Lineas de transporte (issue #447) ---
+// Las filas van por delegacion (data-*), no por onclick inline (#112). La
+// validacion es la MISMA del servidor (lineas-transporte-logica.js).
+let lineasData = [];
+
+function lineaEsc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+async function loadLineasTransporte() {
+  const res = await adminApi('/api/admin/lineas-transporte');
+  const data = await res.json();
+  lineasData = res.ok ? data.lineas : [];
+  renderLineasTransporte();
+  document.getElementById('lineas-loading').style.display = 'none';
+  document.getElementById('lineas-content').style.display = 'block';
+}
+
+function renderLineasTransporte() {
+  const celda = 'padding:6px 8px;border-bottom:1px solid var(--border)';
+  const input = 'border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px';
+  document.getElementById('lineas-rows').innerHTML = lineasData.map((l, i) => `
+    <tr>
+      <td style="${celda}"><input type="text" data-i="${i}" data-campo="nombre" value="${lineaEsc(l.nombre)}" placeholder="Nombre que ve el vendedor" style="width:100%;${input}"></td>
+      <td style="${celda}">
+        <select data-i="${i}" data-campo="fuente" style="${input}">
+          ${['envia', 'lalamove', 'tresguerras'].map(f => `<option value="${f}"${l.fuente === f ? ' selected' : ''}>${f}</option>`).join('')}
+        </select>
+      </td>
+      <td style="${celda}"><input type="text" data-i="${i}" data-campo="codigo" value="${lineaEsc(l.codigo)}" placeholder="${l.fuente === 'envia' ? 'ej. paquetexpress' : 'no aplica'}"${l.fuente === 'envia' ? '' : ' disabled'} style="width:120px;${input}"></td>
+      <td style="${celda}"><input type="text" inputmode="numeric" data-i="${i}" data-campo="shipVia" value="${lineaEsc(l.shipVia)}" placeholder="vacio" style="width:70px;${input}"></td>
+      <td style="${celda};text-align:center"><input type="checkbox" data-i="${i}" data-campo="activa"${l.activa ? ' checked' : ''}></td>
+      <td style="${celda}"><button class="btn btn-secondary btn-sm" data-quitar="${i}">Quitar</button></td>
+    </tr>
+  `).join('');
+}
+
+function cambiarLineaTransporte(ev) {
+  const el = ev.target;
+  const i = Number(el.dataset.i);
+  const campo = el.dataset.campo;
+  if (!campo || !lineasData[i]) return;
+  lineasData[i][campo] = campo === 'activa' ? el.checked : el.value;
+  if (campo === 'fuente') {
+    if (el.value !== 'envia') lineasData[i].codigo = null;
+    renderLineasTransporte();
+  }
+}
+
+function quitarLineaTransporte(ev) {
+  const boton = ev.target.closest('[data-quitar]');
+  if (!boton) return;
+  lineasData.splice(Number(boton.dataset.quitar), 1);
+  renderLineasTransporte();
+}
+
+function addLineaTransporte() {
+  lineasData.push({ nombre: '', fuente: 'envia', codigo: '', shipVia: null, activa: true });
+  renderLineasTransporte();
+}
+
+async function saveLineasTransporte() {
+  const msg = document.getElementById('lineas-msg');
+  const { validarLineasTransporte } = await import('/js/lineas-transporte-logica.js');
+  const validas = validarLineasTransporte(lineasData);
+  let ok = false;
+  let texto = validas.error;
+  if (!validas.error) {
+    const res = await adminApi('/api/admin/lineas-transporte', { method: 'PUT', body: validas.lineas });
+    const data = await res.json();
+    ok = res.ok;
+    texto = res.ok ? 'Guardado' : data.error;
+    if (res.ok) { lineasData = data.lineas; renderLineasTransporte(); }
+  }
+  msg.className = ok ? 'alert alert-success' : 'alert alert-error';
+  msg.textContent = ok ? texto : 'Error: ' + texto;
+  msg.style.display = 'inline-block';
+  setTimeout(() => msg.style.display = 'none', ok ? 3000 : 6000);
 }
 
 // --- Higiene de clientes genericos (issue #86) ---
@@ -1357,6 +1474,10 @@ document.getElementById('btn-add-vendedor').addEventListener('click', addVendedo
 document.getElementById('btn-save-vendedores').addEventListener('click', saveVendedores);
 document.getElementById('btn-save-config').addEventListener('click', saveConfig);
 document.getElementById('btn-save-cajas').addEventListener('click', saveCajas);
+document.getElementById('btn-add-linea').addEventListener('click', addLineaTransporte);
+document.getElementById('btn-save-lineas').addEventListener('click', saveLineasTransporte);
+document.getElementById('lineas-rows').addEventListener('change', cambiarLineaTransporte);
+document.getElementById('lineas-rows').addEventListener('click', quitarLineaTransporte);
 document.getElementById('btn-paridad-catalogo').addEventListener('click', cargarParidadCatalogo);
 document.getElementById('btn-almacen-barrer').addEventListener('click', barrerAlmacenDomicilios);
 document.getElementById('almacen-seccion').addEventListener('click', accionAsiVaBien);

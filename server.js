@@ -73,6 +73,7 @@ import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPar
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
 import { validarOperamIds } from './public/js/vendedores-logica.js';
+import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte } from './public/js/lineas-transporte-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -355,6 +356,8 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
     const permisoListas = await permisoListasDeUsuario(req.user);
     res.json({
       ...precios, config, familias,
+      // #447: el selector de envio ofrece solo las lineas de transporte activas.
+      lineasTransporte: lineasTransporte(configStore.leer()),
       topeDescuento: await topeDescuentoDeUsuario(req.user),
       listasHabilitadas: permisoListas.esAdmin ? listasDelCatalogo() : permisoListas.listasHabilitadas,
       puedePrecioCalca: await puedePrecioCalcaDeUsuario(req.user),
@@ -2015,6 +2018,27 @@ app.post('/api/admin/config', authMiddleware, adminMiddleware, async (req, res) 
   res.json({ saved: true });
 });
 
+// Lineas de transporte (#447): la lista que ofrece el paso Envio, en la
+// configuracion del panel (#276) bajo `lineasTransporte` (llave ausente = semilla).
+// El PUT reemplaza la lista completa con el mismo merge-desde-la-base del POST de
+// configuracion, y valida ANTES de guardar con la regla que comparte el panel.
+app.get('/api/admin/lineas-transporte', authMiddleware, adminMiddleware, (_req, res) => {
+  res.json({ lineas: lineasTransporte(configStore.leer()) });
+});
+
+app.put('/api/admin/lineas-transporte', authMiddleware, adminMiddleware, async (req, res) => {
+  const { lineas, error } = validarLineasTransporte(req.body);
+  if (error) return res.status(400).json({ error });
+  try {
+    await configStore.cargar();
+    const actual = configStore.leer() || {};
+    await configStore.guardar({ ...actual, lineasTransporte: lineas });
+  } catch (err) {
+    return res.status(500).json({ error: 'Configuracion no disponible: ' + err.message });
+  }
+  res.json({ lineas });
+});
+
 // La matriz de listas habilitadas se pinta con lo que este GET devuelve, asi
 // que sale ya NORMALIZADA (#296): un registro que todavia trae el flag binario
 // de #153 se lee con los escalones de volumen marcados, y el primer guardado
@@ -2103,6 +2127,15 @@ function rechazarCpDestino(res, paisDestino, cpDestino) {
   return true;
 }
 
+// #447: Lalamove y Tresguerras solo cotizan con su linea activa en /admin; si no,
+// responden con aviso (misma forma que un aviso de la integracion) sin consultar.
+function responderLineaInactiva(res, fuente) {
+  const aviso = avisoLineaInactiva(lineasTransporte(configStore.leer()), fuente);
+  if (!aviso) return false;
+  res.json({ rates: [], resumen: [], warnings: [aviso] });
+  return true;
+}
+
 app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
   const { cpDestino, paisDestino, items, totalConIVA } = req.body;
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
@@ -2118,21 +2151,35 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
   }
   if (packages.length === 0) return res.status(400).json({ error: 'No se calcularon paquetes', warnings });
   const destination = { name: 'Destinatario', city: 'Destino', state: 'DF', country: paisDestino || 'MX', postalCode: cpDestino };
-  const CARRIERS = ['fedex', 'dhl', 'ups'];
-  const queryCarrier = async (carrier) => {
-    const payload = { origin: ENVIA_ORIGIN, destination, packages, shipment: { carrier, type: 1 } };
-    const r = await fetch('https://api.envia.com/ship/rate/', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${ENVIA_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await r.json();
-    if (!r.ok || data.meta === 'error') return [];
-    return Array.isArray(data) ? data : (data.data || []);
+  // #447: solo los carriers de las lineas `envia` activas del panel /admin. Un
+  // codigo que envia.com no reconoce (o un carrier que falla) sale como aviso con
+  // el nombre de la linea: las demas cotizan igual.
+  const CARRIERS = carriersEnvia(lineasTransporte(configStore.leer()));
+  if (CARRIERS.length === 0) {
+    return res.json({ rates: [], resumen, warnings: warnings.concat('No hay paqueterias de envia.com activas en las lineas de transporte de /admin') });
+  }
+  const queryCarrier = async ({ codigo, nombre }) => {
+    const payload = { origin: ENVIA_ORIGIN, destination, packages, shipment: { carrier: codigo, type: 1 } };
+    try {
+      const r = await fetch('https://api.envia.com/ship/rate/', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${ENVIA_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok || data.meta === 'error') {
+        const motivo = data?.error?.message || data?.error?.description || `HTTP ${r.status}`;
+        return { rates: [], aviso: `envia.com no cotizo ${nombre} (codigo ${codigo}): ${motivo}` };
+      }
+      return { rates: Array.isArray(data) ? data : (data.data || []) };
+    } catch (err) {
+      return { rates: [], aviso: `envia.com no cotizo ${nombre} (codigo ${codigo}): ${err.message}` };
+    }
   };
   try {
-    const results = await Promise.allSettled(CARRIERS.map(queryCarrier));
-    const rates = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+    const results = await Promise.all(CARRIERS.map(queryCarrier));
+    const rates = results.flatMap(r => r.rates);
+    for (const r of results) if (r.aviso) warnings.push(r.aviso);
     rates.sort((a, b) => (a.totalPrice ?? a.rate ?? 0) - (b.totalPrice ?? b.rate ?? 0));
     if (rates.length === 0 && warnings.length === 0) warnings.push('No se obtuvieron tarifas de ninguna paqueteria');
     res.json({ rates, resumen, warnings });
@@ -2151,6 +2198,7 @@ app.post('/api/cotizacion/envio/lalamove', authMiddleware, async (req, res) => {
   if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
   if ((paisDestino || 'MX') !== 'MX') return res.status(400).json({ error: 'Lalamove solo entrega en Mexico' });
   if (rechazarCpDestino(res, paisDestino, cpDestino)) return;
+  if (responderLineaInactiva(res, 'lalamove')) return;
   let packages, resumen, warnings;
   try {
     ({ packages, resumen, warnings } = calcularPaquetes(items, 0));
@@ -2175,6 +2223,7 @@ app.post('/api/cotizacion/envio/tresguerras', authMiddleware, async (req, res) =
   if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
   if ((paisDestino || 'MX') !== 'MX') return res.status(400).json({ error: 'Tresguerras solo cotiza envios en Mexico' });
   if (rechazarCpDestino(res, paisDestino, cpDestino)) return;
+  if (responderLineaInactiva(res, 'tresguerras')) return;
   let packages, resumen, warnings;
   try {
     ({ packages, resumen, warnings } = calcularPaquetes(items, 0));
