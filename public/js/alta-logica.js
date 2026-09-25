@@ -1540,7 +1540,7 @@ export function etiquetaPapelesContacto(contacto) {
 // de los de "todavia no hay nada" y la repintada re-aplicaba la opcion 0 encima de
 // una decision explicita. Mientras este puesta NO se elige ni se aplica a nadie --
 // tampoco cuando lo capturado coincide con una opcion: la marca solo la quita el
-// vendedor (otra opcion del selector, otro domicilio, otro cliente), y hasta
+// vendedor (otra opcion del selector u otro cliente; otro domicilio ya no, #422), y hasta
 // entonces quien captura es el.
 export function seleccionContactoEntrega(contactos, capturado, capturaManual) {
   const lista = contactos || [];
@@ -1550,6 +1550,29 @@ export function seleccionContactoEntrega(contactos, capturado, capturaManual) {
   if (!cap.nombre && !cap.telefono && !cap.email) return { indice: 0, aplicar: true };
   const i = lista.findIndex(c => contactoExplicaLoCapturado(c, cap));
   return i === -1 ? { indice: null, aplicar: false } : { indice: i, aplicar: true };
+}
+
+// El contacto de entrega cuando el vendedor cambia de domicilio (#422, decision de
+// Adrian del 2026-09-25). Antes ese camino aplicaba a ciegas la opcion 0 del
+// domicilio nuevo (#355) y la 1292 perdio el celular que el vendedor habia
+// tecleado. La regla es la de no pisar de #291/#409: lo que puso el selector se
+// reemplaza por el contacto del domicilio nuevo -- y lo que este no trae se BORRA,
+// igual que la direccion --; lo capturado a mano, y "+ Nuevo contacto", sobrevive.
+//
+// "Lo puso el selector" se contesta contra la lista del domicilio ANTERIOR, no la
+// del nuevo: el contacto propio del domicilio anterior ya no esta en la lista
+// nueva, y seleccionContactoEntrega a secas lo leeria como captura ajena. Lo
+// capturado que nadie de la lista anterior explica lo escribio una persona, y ahi
+// decide seleccionContactoEntrega sobre la lista nueva (no pisa; si coincide con
+// una opcion, la elige). `indice: null` con `aplicar: true` = el domicilio nuevo no
+// ofrece a nadie y los tres campos se vacian.
+export function contactoAlCambiarDomicilio(contactosAntes, contactosDespues, capturado, capturaManual) {
+  if (capturaManual) return { indice: null, aplicar: false };
+  const cap = capturado || {};
+  const hayCaptura = !!(cap.nombre || cap.telefono || cap.email);
+  const loPusoElSelector = hayCaptura && (contactosAntes || []).some(c => contactoExplicaLoCapturado(c, cap));
+  if (loPusoElSelector) return { indice: (contactosDespues || []).length ? 0 : null, aplicar: true };
+  return seleccionContactoEntrega(contactosDespues, capturado, false);
 }
 
 // Solo se comparan los campos capturados que traen algo: un hueco no descarta a

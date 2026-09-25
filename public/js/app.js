@@ -39,6 +39,7 @@ import {
   contactosEntregaDisponibles,
   contactoEntregaDelCliente,
   seleccionContactoEntrega,
+  contactoAlCambiarDomicilio,
   etiquetaPapelesContacto,
   usoCfdiPorDefecto,
   usoCfdiCuentaComoElegido,
@@ -3292,8 +3293,9 @@ function aplicarDomicilio(d) {
 // Envio para capturar a mano a quien recibe (#355). Vive aqui porque los campos no
 // lo pueden decir: vacios por esa eleccion se ven igual que vacios por no haber
 // tecleado todavia, y la repintada de la tarjeta re-aplicaba la opcion 0 encima.
-// Lo lee seleccionContactoEntrega y lo limpian los tres cambios que lo desmienten:
-// otra opcion del selector, otro domicilio y otro cliente.
+// Lo lee seleccionContactoEntrega y lo limpian los dos cambios que lo desmienten:
+// otra opcion del selector y otro cliente. Otro domicilio ya no (#422): la captura
+// a mano sobrevive al cambio de domicilio.
 const pcState = { cliente: null, domicilioIdx: 0, contactoManual: false };
 
 function pcEl() { return document.getElementById('pc-root'); }
@@ -4007,6 +4009,9 @@ function pcPintarAvisoAlmacen() {
 
 function pcCambiarDomicilio() {
   const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
+  // Las opciones del domicilio ANTERIOR dicen si el contacto de los campos lo puso
+  // el selector (y se reemplaza) o lo tecleo el vendedor (y se queda) (#422).
+  const contactosAntes = pcContactosDisponibles();
   pcState.domicilioIdx = idx;
   const cpAntes = document.getElementById('cl-cp-entrega')?.value || '';
   aplicarDomicilio(window._operamDomicilios?.[idx]);
@@ -4020,7 +4025,7 @@ function pcCambiarDomicilio() {
   // borrar los que habia puesto el domicilio anterior: el indice del CP los
   // vuelve a llenar por su propia regla, la misma de aqui (#291/#409).
   resolverCpAsistido('entrega');
-  pcRenderContactoSelect({ forzarDefault: true });
+  pcRenderContactoSelect({ contactosAntes });
   pcRenderChips();
   // Sexto enganche del autosave (#409): elegir domicilio es captura del vendedor
   // y el borrador la conserva, pero pcRenderChips no repinta la tarjeta, asi que
@@ -4079,25 +4084,24 @@ function sincronizarEmailFactura(evento) {
   factura.value = r.factura;
 }
 
-// `forzarDefault` = el vendedor acaba de cambiar de domicilio: el contacto de ESA
-// sucursal manda aunque los campos traigan al de la anterior. Sin el, la repintada
-// respeta lo capturado (#353): pcRenderTarjeta corre tambien al restaurar un
-// borrador y al volver de un upgrade fiscal, y ahi el prellenado de la opcion 0
-// pisaba en silencio el "Entregar a" que el vendedor ya habia tecleado.
-function pcRenderContactoSelect({ forzarDefault } = {}) {
+// `contactosAntes` = el vendedor acaba de cambiar de domicilio y estas eran las
+// opciones del anterior: lo que puso el selector se reemplaza por el contacto de
+// ESTE domicilio y lo capturado a mano se queda (contactoAlCambiarDomicilio, #422).
+// Sin el, la repintada respeta lo capturado (#353): pcRenderTarjeta corre tambien
+// al restaurar un borrador y al volver de un upgrade fiscal, y ahi el prellenado de
+// la opcion 0 pisaba en silencio el "Entregar a" que el vendedor ya habia tecleado.
+function pcRenderContactoSelect({ contactosAntes } = {}) {
   const slot = document.getElementById('pc-contacto-slot');
   if (!slot) return;
   const contactos = pcContactosDisponibles();
+  const sel = contactosAntes
+    ? contactoAlCambiarDomicilio(contactosAntes, contactos, pcCamposContactoEntrega(), pcState.contactoManual)
+    : seleccionContactoEntrega(contactos, pcCamposContactoEntrega(), pcState.contactoManual);
   if (contactos.length === 0) {
     slot.innerHTML = '';
+    if (sel.aplicar) pcAplicarContacto(null);
     return;
   }
-  // Forzar el default es aplicar el contacto de otra sucursal: la captura a mano
-  // que el vendedor habia elegido queda desmentida ahi mismo (#355).
-  if (forzarDefault) pcState.contactoManual = false;
-  const sel = forzarDefault
-    ? { indice: 0, aplicar: true }
-    : seleccionContactoEntrega(contactos, pcCamposContactoEntrega(), pcState.contactoManual);
   const opciones = contactos.map((c, i) => {
     const tag = etiquetaPapelesContacto(c);
     const datos = [c.telefono, c.email].filter(Boolean).join(' · ');

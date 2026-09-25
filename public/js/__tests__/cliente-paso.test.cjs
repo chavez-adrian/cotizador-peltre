@@ -791,8 +791,8 @@ test('X18: con captura manual y campos vacios -> "+ Nuevo contacto", sin autolle
   );
 });
 
-// La marca dura hasta que el vendedor la quite (otra opcion del selector, otro
-// domicilio u otro cliente), asi que tampoco un dato que CASUALMENTE sea el de una
+// La marca dura hasta que el vendedor la quite (otra opcion del selector u otro
+// cliente; otro domicilio ya no, #422), asi que tampoco un dato que CASUALMENTE sea el de una
 // opcion vuelve a elegirla: tecleo esos digitos a mano y el selector no se le mueve.
 test('X19: con captura manual, ni lo que corresponde a una opcion la re-elige', () => {
   assert.deepStrictEqual(
