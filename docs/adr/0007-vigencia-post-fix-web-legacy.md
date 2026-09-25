@@ -4,6 +4,8 @@
 
 Accepted (2026-07-27)
 
+Actualizacion 2026-09-25 (#380, decision de Adrian): el post-fix sigue siendo inmediato y no bloqueante, pero ya no es de un solo intento. Lo que la relectura no confirma se encola persistido en Neon y se reintenta con la misma escritura (backoff 1 min, 10 min, 1 h, 6 h), y un barrido diario relee los quotes del cotizador de los ultimos 30 dias y corrige los desfasados: es un backfill acotado, que "Sin backfill" (abajo) ya no describe. Detalle en docs/arquitectura.md, seccion operam-web.js.
+
 ## Context
 
 La API v3 de Operam no permite fijar la vigencia de una cotización. Verificado en vivo (HITL #68, quotes 1160-1163) y documentado en `lib/operam-client.js:237-241`: el `POST /api/v3/sales/quote` **ignora** `valid_until`, `delivery_date`, `valid_days` y 7 nombres más, y deja el campo nativo "Válido hasta" en `ord_date-1`. Tampoco existe `PUT` de quotes (501).

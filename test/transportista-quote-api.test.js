@@ -18,6 +18,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const CONFIG_PATH = join(DATA_DIR, 'config.json');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+// #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
+const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -41,7 +43,7 @@ const readCots = () => JSON.parse(leerArchivoSync(COTS_PATH));
 const writeCots = (cots) => escribirArchivoSync(COTS_PATH, JSON.stringify(cots, null, 2));
 
 let restaurarDatos;
-before(() => { restaurarDatos = fotoDatos([CONFIG_PATH, COTS_PATH]); });
+before(() => { restaurarDatos = fotoDatos([CONFIG_PATH, COTS_PATH, COLA_POSTFIX_PATH]); });
 after(() => {
   restaurarDatos();
   configStore._reiniciar();
@@ -277,6 +279,18 @@ test('#448 actualizar: de Lalamove a FedEx tambien', async () => {
   assert.equal(res.body.ok, true, JSON.stringify(res.body));
   assert.equal(doc.shipVia, '2');
   assert.equal(pasoTransportista(res).status, 'ok');
+});
+
+test('#380 actualizar: una actualizacion lograda saca el folio de la cola de reintentos del post-fix', async () => {
+  // El vendedor edito el mismo dia: el reintento encolado traeria la lista y el
+  // transportista VIEJOS y revertiria la edicion.
+  fijarDatos(COLA_POSTFIX_PATH, [{ folio: '1296', cotizacionId: 1, origen: 'post-fix', vigencia: '2026-10-24', lista: null, transportista: '2', estado: 'pendiente', intentos: 0, proximoIntento: '2026-09-24T00:01:00.000Z' }]);
+  const id = guardarCotizacion(dataActualizable(ENVIO_LALAMOVE), { folioOperam: '1296' });
+  mockOperam({ shipVia: '2', lineas: ['CR20-PLATO', '251021002'] });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', TOKEN);
+
+  assert.equal(res.body.ok, true, JSON.stringify(res.body));
+  assert.deepEqual(JSON.parse(leerArchivoSync(COLA_POSTFIX_PATH)), []);
 });
 
 // --- Huella al regenerar -------------------------------------------------------

@@ -19,6 +19,8 @@ import supertest from 'supertest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+// #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
+const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 const PROSPECTOS_PATH = join(DATA_DIR, 'prospectos.json');
 
 const envPath = join(__dirname, '..', '.env');
@@ -54,7 +56,7 @@ function writeCots(data) {
 // #411: los data/*.json de la suite quedan como se los encontro, el ausente
 // incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
 let restaurarDatos;
-before(() => { restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]); });
+before(() => { restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH, COLA_POSTFIX_PATH]); });
 after(() => { restaurarDatos(); });
 
 function mockOperam(handlers) {

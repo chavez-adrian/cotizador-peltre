@@ -15,6 +15,8 @@ import supertest from 'supertest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+// #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
+const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 const VENDEDORES_PATH = join(DATA_DIR, 'vendedores.json');
 const PROSPECTOS_PATH = join(DATA_DIR, 'prospectos.json');
 
@@ -94,7 +96,7 @@ function partidaGuardada(id, codigo) {
 // asi que el veredicto dependia de lo que hubiera en data/prospectos.json.
 let restaurarDatos;
 before(() => {
-  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]);
+  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH, COLA_POSTFIX_PATH]);
   fijarDatos(PROSPECTOS_PATH, []);
 });
 after(() => { restaurarDatos(); globalThis.fetch = originalFetch; });

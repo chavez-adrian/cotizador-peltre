@@ -22,6 +22,8 @@ import supertest from 'supertest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
+// #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
+const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
 
 // El fixture de test/operam-generico.test.js: el Contacto del MISMO celular que
@@ -119,7 +121,7 @@ function fijarPuntoDePartida() {
 
 let restaurarDatos;
 before(() => {
-  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]);
+  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH, COLA_POSTFIX_PATH]);
   fijarPuntoDePartida();
 });
 after(() => { restaurarDatos(); globalThis.fetch = originalFetch; });

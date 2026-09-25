@@ -20,6 +20,7 @@ import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
 import { reporteAlmacenDomicilios, excepcionesAlmacen, marcarAsiVaBien, desmarcarAsiVaBien } from './lib/almacen-domicilios.js';
 import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes, avanceBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
+import { encolarPostFix, procesarColaPostFix, barrerQuotesPostFix, sacarDeLaColaPostFix } from './lib/postfix-reintento-io.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
@@ -3490,8 +3491,18 @@ async function postFixQuote(folio, entry) {
   if (folio == null || folio === '') return [];
   const data = entry?.data;
   const transportista = transportistaDelQuote(entry);
+  // Lo que este post-fix debe dejar, tal cual: si no queda verificado se encola CON
+  // estos valores (#380) y el reintento repite exactamente esta escritura.
+  const esperado = {
+    folio, cotizacionId: entry?.id ?? null, vendedor: entry?.vendedor ?? null,
+    vigencia: vigenciaDeCotizacion(data), lista: listaDelQuote(entry), transportista: transportista.shipVia,
+    fechaDocumento: data?.fecha ?? null,
+  };
   try {
-    const r = await corregirVigenciaQuote(folio, vigenciaDeCotizacion(data), { lista: listaDelQuote(entry), transportista: transportista.shipVia });
+    const r = await corregirVigenciaQuote(folio, esperado.vigencia, { lista: esperado.lista, transportista: esperado.transportista });
+    // Fire-and-forget y nunca lanza: lo verificado no se encola, lo demas se reintenta
+    // solo (o se avisa por correo si no tiene caso reintentar).
+    encolarPostFix({ ...esperado, resultado: r });
     const pasos = [];
     if (r.ok) {
       pasos.push({
@@ -3500,6 +3511,9 @@ async function postFixQuote(folio, entry) {
         detalle: 'quote ' + folio + ' campo Valido hasta',
       });
     } else {
+      // Rastro en Render (#380): antes solo la rama de la excepcion escribia en los logs,
+      // y un warn como el del 1263 no dejaba nada que buscar.
+      console.error('[post-fix vigencia] sin verificar en el quote', folio, '- se esperaba', r.esperado ?? '(sin dato)', 'y se leyo', r.encontrado ?? '(sin dato)');
       // verificado false = la vista no traia el campo, asi que no se sabe como quedo; se
       // reporta distinto de "quedo con otra fecha" para no afirmar lo que no se comprobo.
       pasos.push({
@@ -3516,6 +3530,7 @@ async function postFixQuote(folio, entry) {
     return pasos;
   } catch (err) {
     console.error('[post-fix vigencia] fallo en el quote', folio, err.message);
+    encolarPostFix({ ...esperado, error: err.message });
     // El post-fix no llego a escribir NADA, asi que la lista tampoco: se nombra con su
     // motivo real en vez de callarla -- desde #403 el vendedor espera un paso por cada
     // uno de los dos campos, y el silencio se leeria como "la lista si quedo".
@@ -3769,6 +3784,8 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
       // Nueva huella (#114): el quote acaba de quedar con ESTE contenido, asi que
       // regenerar el mismo carrito (otro formato) ya no debe reescribir nada.
       await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data, opcionesHuellaQuote(entry)) });
+      // Lo encolado antes (#380) traeria lista/transportista/vigencia VIEJOS.
+      await sacarDeLaColaPostFix(entry.folioOperam);
       return res.json({
         ok: true, folio: entry.folioOperam, actualizada: true,
         steps: [{ name: 'actualizar quote', status: 'ok' }, ...(pasoLista ? [pasoLista] : []), ...(pasoTransportista ? [pasoTransportista] : []), ...(pasoAlmacen ? [pasoAlmacen] : [])],
@@ -4490,6 +4507,20 @@ if (isMain) {
     .catch(err => console.error('[dedup] barrido periodico fallo:', err.message));
   barrer();
   setInterval(barrer, 3600 * 1000).unref();
+
+  // Reintento del post-fix web del quote (#380, decision de Adrian 2026-09-25). La
+  // cola vive en Neon (postfix_pendientes) y sobrevive a un deploy; el worker revisa
+  // cada minuto lo que ya toca (backoff 1 min, 10 min, 1 h, 6 h) y el barrido diario
+  // relee los quotes del cotizador de los ultimos 30 dias y encola los desfasados.
+  // Los dos comparten UN lock y su ritmo propio (lib/postfix-reintento-io.js): nunca
+  // corren a la vez ni en rafaga. Como los demas barridos, ASUME UNA SOLA INSTANCIA.
+  // El barrido espera 15 min al arrancar: compite con el warm del indice y no tiene prisa.
+  const reintentarPostFixes = () => procesarColaPostFix()
+    .catch(err => console.error('[post-fix reintento] worker fallo:', err.message));
+  setInterval(reintentarPostFixes, 60 * 1000).unref();
+  const barrerPostFixes = () => barrerQuotesPostFix().catch(err => console.error('[post-fix reintento] barrido diario fallo:', err.message));
+  setTimeout(barrerPostFixes, 15 * 60 * 1000).unref();
+  setInterval(barrerPostFixes, 24 * 3600 * 1000).unref();
 
   // Sincronizacion de prospectos y clientes a la libreta de Contactos de Google
   // (spec #224, tickets #227 y #228): quien atiende el WhatsApp comercial ve el

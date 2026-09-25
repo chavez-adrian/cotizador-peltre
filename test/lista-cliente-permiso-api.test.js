@@ -344,6 +344,8 @@ test('L11: el PUT directo de cliente tampoco puede asignar una lista no habilita
 // matriz -- el permiso gobierna lo que el vendedor ELIGE, y ahi no elige --, y un
 // vendedor sin ninguna celda marcada tiene que poder seguir subiendo sus cotizaciones.
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+// #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
+const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 const PROSPECTOS_PATH = join(DATA_DIR, 'prospectos.json');
 const FORM_QUOTE = readFileSync(join(__dirname, 'fixtures', 'operam-quote-form.html'), 'utf8');
 const VISTA_QUOTE = readFileSync(join(__dirname, 'fixtures', 'operam-quote-vista.html'), 'utf8');
@@ -365,7 +367,7 @@ test('L12: el vendedor sin ninguna celda sube su cotizacion y el cliente generic
   conListas([]);
   // #411: los dos archivos vuelven a quedar como se encontraron, el ausente
   // incluido: restaurar una re-serializacion los CREA donde no habia ninguno.
-  const restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH]);
+  const restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH, COLA_POSTFIX_PATH]);
   const cots = leerJson(COTS_PATH);
   const id = cots.reduce((m, c) => Math.max(m, c.id), 0) + 1;
   cots.push({

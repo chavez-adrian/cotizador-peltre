@@ -11,6 +11,8 @@ import supertest from 'supertest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+// #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
+const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 
 // Load .env before importing app
 const envPath = join(__dirname, '..', '.env');
@@ -105,7 +107,7 @@ function writeCots(data) {
 let restaurarDatos;
 
 before(() => {
-  restaurarDatos = fotoDatos([COTS_PATH]);
+  restaurarDatos = fotoDatos([COTS_PATH, COLA_POSTFIX_PATH]);
 });
 
 after(() => {

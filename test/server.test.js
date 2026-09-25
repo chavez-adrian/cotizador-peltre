@@ -15,6 +15,8 @@ import { handlersWebFichaCliente } from './helpers/ficha-cliente-web.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
+// #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
+const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 const DROPBOX_SUBIDAS_PATH = join(DATA_DIR, 'dropbox-subidas.json');
 
 const envPath = join(__dirname, '..', '.env');
@@ -51,7 +53,7 @@ function writeCots(data) {
 // fire-and-forget: los tests de la CSF le agregan filas sin pedirlo y el archivo
 // esta en .gitignore, asi que el residuo no sale en git status.
 let restaurarDatos;
-before(() => { restaurarDatos = fotoDatos([COTS_PATH, DROPBOX_SUBIDAS_PATH]); });
+before(() => { restaurarDatos = fotoDatos([COTS_PATH, DROPBOX_SUBIDAS_PATH, COLA_POSTFIX_PATH]); });
 after(() => { restaurarDatos(); });
 
 test('B1: POST /api/cotizacion persiste cliente.pais', async () => {
