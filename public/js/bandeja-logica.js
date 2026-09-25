@@ -67,17 +67,34 @@ export function conteosBandeja(candidatos) {
 // la tarjeta (fmtFecha, que tampoco pasa por Date).
 // El vendedor NO es buscable (ver BUSCABLES_COTIZACION): filtrar por persona
 // es un selector aparte, no texto libre que ahogue al candidato tecleado.
+//
+// Filtros por selector (#457, spec #398, historia 16): Vendedor (el propuesto
+// del quote, editable en la tarjeta) y el estado del candidato. El estado ya
+// tenia su control -- los botones con conteo, Pendientes al entrar -- y lo
+// conserva: aqui solo se declara para que filtre por el MISMO nucleo. Por eso la
+// rejilla de la vista pinta FILTROS_SELECTOR_CANDIDATO (solo Vendedor) y no el
+// mapa completo: dos controles para el mismo campo se contradirian.
 export const BUSCABLES_CANDIDATO = {
   camposDe: c => [c?.folio, c?.contacto, c?.debtorNombre],
   digitosDe: c => c?.celular,
   diaDe: c => String(c?.fecha || '').slice(0, 10),
+  filtros: {
+    vendedor: { etiqueta: 'Vendedor', lee: c => c?.vendedor, procedencia: 'datos' },
+    estado: {
+      etiqueta: 'Estado', lee: c => c?.estado, procedencia: 'vista',
+      valores: FILTROS_BANDEJA.filter(([clave]) => clave !== 'todos').map(([valor, texto]) => ({ valor, texto })),
+    },
+  },
 };
 
-// Filtra por estado y ordena del quote mas reciente al mas viejo: la bandeja se
-// trabaja empezando por lo ultimo que paso en Operam.
+export const FILTROS_SELECTOR_CANDIDATO = { vendedor: BUSCABLES_CANDIDATO.filtros.vendedor };
+
+// Filtra por estado (el boton; 'todos' no filtra) junto con el criterio, y
+// ordena del quote mas reciente al mas viejo: la bandeja se trabaja empezando
+// por lo ultimo que paso en Operam.
 export function candidatosVisibles(candidatos, filtro, criterio) {
-  const delEstado = (candidatos || []).filter(c => filtro === 'todos' || c.estado === filtro);
-  return filtrarPorCriterio(delEstado, criterio, BUSCABLES_CANDIDATO)
+  const filtros = { ...criterio?.filtros, estado: filtro === 'todos' ? '' : filtro };
+  return filtrarPorCriterio(candidatos, { ...criterio, filtros }, BUSCABLES_CANDIDATO)
     .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
 }
 

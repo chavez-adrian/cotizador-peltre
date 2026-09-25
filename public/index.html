@@ -939,6 +939,9 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-hoy">Volver</button>
   </header>
   <div style="padding:16px">
+    <!-- Filtro por selector (issue #457, spec #398): Vendedor, para ver los
+         pendientes de una persona. No se pinta a quien solo ve su cola. -->
+    <div id="hoy-filtros"></div>
     <!-- Buscador + rango de fechas (issue #289): el mismo control del Historial.
          Filtra la cola ya cargada en memoria; el badge de pendientes sigue
          contando la cola completa. No persiste. -->
@@ -1025,6 +1028,10 @@
       </div>
     </div>
 
+    <!-- Filtros por selector (issue #457, spec #398): Vendedor, Origen, Estado
+         del prospecto y Evento. Acotan los DOS bloques de abajo (cola y lista)
+         con AND junto con la caja y las fechas. No persisten. -->
+    <div id="prospectos-filtros" style="margin-top:16px"></div>
     <!-- Buscador + rango de fechas (issue #289): el mismo control del Historial.
          UNA caja filtra los DOS bloques de abajo (cola y lista) por la fecha de
          captura. No persiste. -->
@@ -1131,11 +1138,15 @@
     <button class="btn btn-sm btn-secondary" id="btn-volver-bandeja">Volver</button>
   </header>
   <div style="padding:16px">
+    <!-- Filtro por selector (issue #457, spec #398): Vendedor. El estado del
+         candidato sigue en sus botones con conteo, dentro de #bandeja-root.
+         Vive FUERA de #bandeja-root, que se repinta entero. No persiste. -->
+    <div id="bandeja-filtros"></div>
     <!-- Buscador + rango de fechas (issue #289): el mismo control del Historial.
          Se combina con AND con el filtro por estado; la fecha es la del quote
          en Operam. Vive FUERA de #bandeja-root, que se repinta entero. -->
     <div class="search-input-wrap" style="margin-bottom:10px">
-      <input type="text" id="bandeja-buscar" autocomplete="off" placeholder="Buscar por folio, cliente, deudor o vendedor...">
+      <input type="text" id="bandeja-buscar" autocomplete="off" placeholder="Buscar por folio, contacto, celular o deudor...">
     </div>
     <div class="historial-fechas">
       <label>Desde
@@ -1254,8 +1265,12 @@
     <h1>Pipeline</h1>
   </header>
   <div style="padding:16px">
+    <!-- Filtros por selector (issue #457, spec #398): Origen, Evento (el de
+         #261, vacio fuera de expo) y Vendedor. Los pinta
+         buildFiltrosSelectorHtml al cargar; no persisten. -->
+    <div id="pipeline-filtros"></div>
     <!-- Buscador + rango de fechas (issue #289): el mismo control del Historial.
-         Se combina con AND con el filtro por evento y aplica a los tres modos;
+         Se combina con AND con los selectores y aplica a los tres modos;
          la fecha es la de creacion de la oportunidad. No persiste. -->
     <div class="search-input-wrap" style="margin-bottom:10px">
       <input type="text" id="pipeline-buscar" autocomplete="off" placeholder="Buscar por cliente, celular, ciudad, Origen o folio...">
@@ -1273,8 +1288,6 @@
       <button class="btn btn-sm btn-primary" id="btn-pipeline-modo-tablero">Tablero</button>
       <button class="btn btn-sm btn-secondary" id="btn-pipeline-modo-cerradas">Cerradas</button>
     </span>
-    <!-- Filtro por evento (issue #261): vacio fuera de expo -->
-    <span id="pipeline-evento"></span>
     <div id="pipeline-loading" style="color:var(--light);font-size:13px">Cargando...</div>
     <!-- Tablero unico de 7 columnas (las salidas viven en filtro/historial) -->
     <div id="pipeline-tablero" class="tablero" style="display:none"></div>

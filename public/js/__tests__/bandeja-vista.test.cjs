@@ -311,3 +311,45 @@ test('#289: buildBandejaHtml pinta solo los candidatos que pasan el criterio', (
   // de la bandeja, no el resultado de la busqueda.
   assert.match(html, /Pendientes \(2\)/);
 });
+
+// --- Filtros por selector de Rescatados (#457, spec #398, historia 16):
+// Vendedor y estado del candidato, sobre el nucleo de #456. El estado conserva
+// sus botones con conteo (Pendientes al entrar) pero filtra por el MISMO nucleo;
+// la rejilla solo pinta Vendedor. ---
+let BUSCABLES_CANDIDATO, FILTROS_SELECTOR_CANDIDATO, filtrarPorCriterio, buildFiltrosSelectorHtml;
+before(async () => {
+  ({ BUSCABLES_CANDIDATO, FILTROS_SELECTOR_CANDIDATO } = await import('../bandeja-logica.js'));
+  ({ filtrarPorCriterio } = await import('../busqueda-logica.js'));
+  ({ buildFiltrosSelectorHtml } = await import('../filtros-logica.js'));
+});
+
+test('#457: cada filtro de Rescatados lee su campo del candidato: vendedor y estado', () => {
+  const candidatos = [
+    PENDIENTE,
+    OTRO_PENDIENTE,
+    { ...PENDIENTE, folio: '901', estado: 'aceptado', vendedor: 'Oswaldo Ch\u00e1vez' },
+  ];
+  const folios = filtros => filtrarPorCriterio(candidatos, { filtros }, BUSCABLES_CANDIDATO).map(c => c.folio);
+  assert.deepEqual(folios({ vendedor: 'Oswaldo Ch\u00e1vez' }), ['940', '901']);
+  assert.deepEqual(folios({ estado: 'aceptado' }), ['901']);
+  assert.deepEqual(folios({ estado: 'pendiente', vendedor: 'Oswaldo Ch\u00e1vez' }), ['940']);
+});
+
+test('#457: el vendedor se combina con el boton de estado y con la busqueda', () => {
+  const candidatos = [PENDIENTE, OTRO_PENDIENTE, { ...PENDIENTE, folio: '901', estado: 'descartado', vendedor: 'Oswaldo Ch\u00e1vez' }];
+  const folios = (filtro, criterio) => candidatosVisibles(candidatos, filtro, criterio).map(c => c.folio);
+  assert.deepEqual(folios('pendiente', { filtros: { vendedor: 'Oswaldo Ch\u00e1vez' } }), ['940']);
+  assert.deepEqual(folios('todos', { filtros: { vendedor: 'Oswaldo Ch\u00e1vez' } }), ['940', '901']);
+  assert.deepEqual(folios('pendiente', { texto: 'mariana', filtros: { vendedor: 'Oswaldo Ch\u00e1vez' } }), []);
+  assert.deepEqual(folios('pendiente', { filtros: { vendedor: '' } }), ['940', '934']);
+});
+
+test('#457: la rejilla de Rescatados pinta Vendedor; el estado sigue en sus botones con conteo', () => {
+  const html = buildFiltrosSelectorHtml([PENDIENTE, OTRO_PENDIENTE], FILTROS_SELECTOR_CANDIDATO, {}, 'bandeja');
+  const etiquetas = [...html.matchAll(/<label [^>]*>([^<]*)<\/label>/g)].map(m => m[1]);
+  assert.deepEqual(etiquetas, ['Vendedor']);
+  assert.match(html, /<option value="Alejandro Ch\u00e1vez">Alejandro Ch\u00e1vez<\/option>/);
+  assert.match(html, /<option value="Oswaldo Ch\u00e1vez">Oswaldo Ch\u00e1vez<\/option>/);
+  // una sola persona a la vista: el selector no decide nada y no se pinta
+  assert.equal(buildFiltrosSelectorHtml([PENDIENTE], FILTROS_SELECTOR_CANDIDATO, {}, 'bandeja'), '');
+});

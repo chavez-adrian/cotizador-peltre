@@ -528,10 +528,31 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
 //
 // El vendedor NO es buscable (ver BUSCABLES_COTIZACION): filtrar por persona
 // es un selector aparte, no texto libre que ahogue al prospecto tecleado.
+//
+// Filtros por selector (#457, spec #398): Vendedor (derivado), Origen (`canal`,
+// catalogo cerrado), Estado del prospecto (la escalera del glosario, que el
+// SERVIDOR anota en `estado` en la lista y en la cola; la pantalla no lo
+// calcula) y Evento, que como la empresa tiene dos domicilios: `data.evento` en
+// la ficha y plano en el item de la cola. El Evento solo lo traen los de expo,
+// asi que con una sola expo el selector SI decide (`pintarConUnaOpcion`).
+export const ESTADOS_PROSPECTO = [
+  { valor: 'sin_contactar', texto: 'Sin contactar' },
+  { valor: 'contactado', texto: 'Contactado' },
+  { valor: 'agendado', texto: 'Agendado' },
+  { valor: 'cotizado', texto: 'Cotizado' },
+  { valor: 'cliente', texto: 'Cliente Operam' },
+];
+
 export const BUSCABLES_PROSPECTO = {
   camposDe: p => [p?.nombre, p?.ciudad, p?.canal, p?.data?.empresa ?? p?.empresa],
   digitosDe: p => p?.celular,
   fechaDe: p => p?.fecha,
+  filtros: {
+    vendedor: { etiqueta: 'Vendedor', lee: p => p?.vendedor, procedencia: 'datos' },
+    origen: { etiqueta: 'Origen', lee: p => p?.canal, procedencia: 'catalogo', valores: CANALES },
+    estado: { etiqueta: 'Estado', lee: p => p?.estado, procedencia: 'catalogo', valores: ESTADOS_PROSPECTO },
+    evento: { etiqueta: 'Evento', lee: p => p?.data?.evento ?? p?.evento, procedencia: 'datos', pintarConUnaOpcion: true },
+  },
 };
 
 export function filtrarProspectos(prospectos, criterio) {

@@ -1370,41 +1370,6 @@ test('A104: badgeQuoteDesactualizadoHtml marca la tarjeta solo cuando hay marca 
   assert.equal(badgeQuoteDesactualizadoHtml(undefined), '');
 });
 
-// --- Filtro por evento (issue #261): despues de la expo hay que poder
-// responder cuantos prospectos dejo Abastur y cuantos cotizaron. ---
-let filtrarPorEvento, eventosDeOportunidades, buildFiltroEventoHtml;
-before(async () => {
-  ({ filtrarPorEvento, eventosDeOportunidades, buildFiltroEventoHtml } = await import('../pipeline-logica.js'));
-});
-
-test('#261: el pipeline filtra las oportunidades por evento', () => {
-  const oportunidades = [
-    prospecto({ id: 1, evento: 'Abastur 2026' }),
-    prospecto({ id: 2, evento: null }),
-    cotizacion({ id: 3, evento: 'Abastur 2026' }),
-    prospecto({ id: 4, evento: 'Expo Cafe 2025' }),
-  ];
-  assert.deepEqual(filtrarPorEvento(oportunidades, 'Abastur 2026').map(o => o.id), [1, 3]);
-  assert.deepEqual(filtrarPorEvento(oportunidades, '').map(o => o.id), [1, 2, 3, 4]);
-  assert.deepEqual(filtrarPorEvento(oportunidades, null).map(o => o.id), [1, 2, 3, 4]);
-});
-
-test('#261: el selector ofrece los eventos presentes, sin repetir, y "Todos"', () => {
-  const oportunidades = [
-    prospecto({ id: 1, evento: 'Abastur 2026' }),
-    prospecto({ id: 2, evento: 'Abastur 2026' }),
-    prospecto({ id: 3 }),
-    prospecto({ id: 4, evento: 'Expo Cafe 2025' }),
-  ];
-  assert.deepEqual(eventosDeOportunidades(oportunidades), ['Abastur 2026', 'Expo Cafe 2025']);
-  assert.equal(eventosDeOportunidades([prospecto({ id: 1 })]).length, 0);
-  const html = buildFiltroEventoHtml(oportunidades, 'Abastur 2026');
-  assert.match(html, /Todos los eventos/);
-  assert.match(html, /<option value="Abastur 2026" selected>/);
-  // Sin eventos capturados el filtro no se pinta: fuera de expo la app se ve igual.
-  assert.equal(buildFiltroEventoHtml([prospecto({ id: 1 })], ''), '');
-});
-
 // --- Buscador del Pipeline y de la cola Hoy (#289): el mismo control del
 // Historial (texto + Desde/Hasta), aqui sobre oportunidades y sobre la cola. ---
 let filtrarOportunidades, filtrarColaHoy;
@@ -1461,6 +1426,134 @@ test('#289: la cola Hoy se filtra sin alterar su orden por urgencia', () => {
   // El orden que llego del servidor es el de urgencia: filtrar no lo reordena.
   assert.deepEqual(filtrarColaHoy(cola, { desde: '2026-06-03' }).map(i => i.id), [2, 3]);
   assert.deepEqual(filtrarColaHoy(cola, {}).map(i => i.id), [1, 2, 3]);
+});
+
+// --- Filtros por selector del pipeline (#457, spec #398, historia 13): Origen,
+// Evento y Vendedor sobre la rejilla y el nucleo de #456. El filtro por evento
+// de #261 se migro aqui: despues de la expo hay que poder responder cuantos
+// prospectos dejo Abastur y cuantos cotizaron. ---
+let BUSCABLES_OPORTUNIDAD, buildFiltrosSelectorHtml, CANALES;
+before(async () => {
+  ({ BUSCABLES_OPORTUNIDAD } = await import('../pipeline-logica.js'));
+  ({ buildFiltrosSelectorHtml } = await import('../filtros-logica.js'));
+  ({ CANALES } = await import('../prospectos-logica.js'));
+});
+
+function opcionesSelect(html, campo) {
+  const inicio = html.indexOf(`data-filtro="${campo}"`);
+  if (inicio < 0) return null;
+  return [...html.slice(inicio, html.indexOf('</select>', inicio))
+    .matchAll(/<option value="([^"]*)"( selected)?>([^<]*)<\/option>/g)]
+    .map(m => ({ valor: m[1], texto: m[3], selected: !!m[2] }));
+}
+
+test('#457: el pipeline declara Origen, Evento y Vendedor, en ese orden', () => {
+  const oportunidades = [
+    prospecto({ id: 1, vendedor: 'Laura', evento: 'Abastur 2026' }),
+    cotizacion({ id: 2, vendedor: 'Memo', origen: 'Instagram' }),
+  ];
+  const html = buildFiltrosSelectorHtml(oportunidades, BUSCABLES_OPORTUNIDAD.filtros, {}, 'pipeline');
+  const etiquetas = [...html.matchAll(/<label [^>]*>([^<]*)<\/label>/g)].map(m => m[1]);
+  assert.deepEqual(etiquetas, ['Origen', 'Evento', 'Vendedor']);
+  // el Origen es el catalogo cerrado del glosario, completo
+  assert.deepEqual(opcionesSelect(html, 'origen').map(o => o.valor).slice(1), CANALES);
+  assert.deepEqual(opcionesSelect(html, 'vendedor').map(o => o.valor), ['', 'Laura', 'Memo']);
+});
+
+test('#457: el Origen se lee propio en el prospecto (canal) y heredado en la cotizacion (origen)', () => {
+  const oportunidades = [
+    prospecto({ id: 1, canal: 'Instagram' }),
+    cotizacion({ id: 2, origen: 'Instagram' }),
+    cotizacion({ id: 3, origen: 'WhatsApp' }),
+    cotizacion({ id: 4 }),
+  ];
+  assert.deepEqual(filtrarOportunidades(oportunidades, { filtros: { origen: 'Instagram' } }).map(o => o.id), [1, 2]);
+  assert.deepEqual(filtrarOportunidades(oportunidades, { filtros: { origen: 'WhatsApp' } }).map(o => o.id), [3]);
+});
+
+test('#261/#457: el pipeline filtra las oportunidades por evento', () => {
+  const oportunidades = [
+    prospecto({ id: 1, evento: 'Abastur 2026' }),
+    prospecto({ id: 2, evento: null }),
+    cotizacion({ id: 3, evento: 'Abastur 2026' }),
+    prospecto({ id: 4, evento: 'Expo Cafe 2025' }),
+  ];
+  const ids = evento => filtrarOportunidades(oportunidades, { filtros: { evento } }).map(o => o.id);
+  assert.deepEqual(ids('Abastur 2026'), [1, 3]);
+  assert.deepEqual(ids(''), [1, 2, 3, 4]);
+  assert.deepEqual(ids(null), [1, 2, 3, 4]);
+});
+
+test('#261/#457: el selector de Evento ofrece los eventos presentes, sin repetir, y "Todos"', () => {
+  const oportunidades = [
+    prospecto({ id: 1, evento: 'Abastur 2026' }),
+    prospecto({ id: 2, evento: 'Abastur 2026' }),
+    prospecto({ id: 3 }),
+    prospecto({ id: 4, evento: 'Expo Cafe 2025' }),
+  ];
+  const html = buildFiltrosSelectorHtml(oportunidades, BUSCABLES_OPORTUNIDAD.filtros, { evento: 'Abastur 2026' }, 'pipeline');
+  assert.deepEqual(opcionesSelect(html, 'evento').map(o => [o.valor, o.texto, o.selected]), [
+    ['', 'Todos', false], ['Abastur 2026', 'Abastur 2026', true], ['Expo Cafe 2025', 'Expo Cafe 2025', false],
+  ]);
+  // Sin eventos capturados el filtro no se pinta: fuera de expo la app se ve igual.
+  assert.equal(opcionesSelect(buildFiltrosSelectorHtml([prospecto({ id: 1 })], BUSCABLES_OPORTUNIDAD.filtros, {}, 'pipeline'), 'evento'), null);
+});
+
+test('#261/#457: con UNA sola expo el selector de Evento si se pinta: separa a los de la expo del resto', () => {
+  const oportunidades = [prospecto({ id: 1, evento: 'Abastur 2026' }), prospecto({ id: 2 })];
+  const html = buildFiltrosSelectorHtml(oportunidades, BUSCABLES_OPORTUNIDAD.filtros, {}, 'pipeline');
+  assert.deepEqual(opcionesSelect(html, 'evento').map(o => o.valor), ['', 'Abastur 2026']);
+});
+
+test('#457: el vendedor que solo ve sus tarjetas no recibe selector de Vendedor', () => {
+  const oportunidades = [prospecto({ id: 1, vendedor: 'Laura' }), cotizacion({ id: 2, vendedor: 'Laura' })];
+  const html = buildFiltrosSelectorHtml(oportunidades, BUSCABLES_OPORTUNIDAD.filtros, {}, 'pipeline');
+  assert.equal(opcionesSelect(html, 'vendedor'), null);
+});
+
+test('#457: Vendedor, Origen y Evento se combinan con AND entre si y con el texto', () => {
+  const oportunidades = [
+    prospecto({ id: 1, nombre: 'Mariana', vendedor: 'Laura', canal: 'Feria/Expo', evento: 'Abastur 2026' }),
+    prospecto({ id: 2, nombre: 'Beto', vendedor: 'Memo', canal: 'Feria/Expo', evento: 'Abastur 2026' }),
+    cotizacion({ id: 3, nombre: 'Hotel Azul', vendedor: 'Laura', origen: 'Instagram' }),
+  ];
+  const ids = criterio => filtrarOportunidades(oportunidades, criterio).map(o => o.id);
+  assert.deepEqual(ids({ filtros: { vendedor: 'Laura' } }), [1, 3]);
+  assert.deepEqual(ids({ filtros: { vendedor: 'Laura', evento: 'Abastur 2026' } }), [1]);
+  assert.deepEqual(ids({ filtros: { origen: 'Feria/Expo', evento: 'Abastur 2026' } }), [1, 2]);
+  assert.deepEqual(ids({ texto: 'beto', filtros: { vendedor: 'Laura' } }), []);
+});
+
+// --- Filtro por selector de la cola Hoy (#457, historia 15): Vendedor, para
+// ver los pendientes de una persona sin revisar toda la cola. ---
+let BUSCABLES_COLA_HOY;
+before(async () => {
+  ({ BUSCABLES_COLA_HOY } = await import('../pipeline-logica.js'));
+});
+
+test('#457: la cola Hoy declara solo Vendedor y filtra sin alterar el orden por urgencia', () => {
+  const cola = [
+    { tipo: 'no_asignado', id: 1, nombre: 'Sin dueno', vendedor: null },
+    { tipo: 'cotizacion', id: 2, cliente: 'Hotel Azul', vendedor: 'Memo' },
+    { tipo: 'prospecto', id: 3, nombre: 'Mariana', vendedor: 'Laura' },
+    { tipo: 'prospecto', id: 4, nombre: 'Beto', vendedor: 'Memo' },
+  ];
+  const html = buildFiltrosSelectorHtml(cola, BUSCABLES_COLA_HOY.filtros, {}, 'hoy');
+  const etiquetas = [...html.matchAll(/<label [^>]*>([^<]*)<\/label>/g)].map(m => m[1]);
+  assert.deepEqual(etiquetas, ['Vendedor']);
+  assert.deepEqual(opcionesSelect(html, 'vendedor').map(o => o.valor), ['', 'Laura', 'Memo']);
+  assert.deepEqual(filtrarColaHoy(cola, { filtros: { vendedor: 'Memo' } }).map(i => i.id), [2, 4]);
+  // la tarjeta No Asignado no tiene dueno: ningun vendedor la reclama
+  assert.deepEqual(filtrarColaHoy(cola, { filtros: { vendedor: 'Laura' } }).map(i => i.id), [3]);
+  assert.deepEqual(filtrarColaHoy(cola, { texto: 'beto', filtros: { vendedor: 'Memo' } }).map(i => i.id), [4]);
+});
+
+test('#457: el vendedor que solo ve su cola no recibe selector de Vendedor', () => {
+  const cola = [
+    { tipo: 'prospecto', id: 1, vendedor: 'Laura' },
+    { tipo: 'cotizacion', id: 2, vendedor: 'Laura' },
+  ];
+  assert.equal(buildFiltrosSelectorHtml(cola, BUSCABLES_COLA_HOY.filtros, {}, 'hoy'), '');
 });
 
 // === Issue #287: chip Origen en el pipeline y en la cola Hoy ===

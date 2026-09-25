@@ -13,7 +13,10 @@
 // Tres procedencias de opciones, declaradas por filtro:
 // - 'datos': los valores presentes en el listado cargado (vendedor, Evento).
 //   Con una sola opcion (o ninguna) el filtro no decide nada y NO se pinta,
-//   como el selector de vendedor de la Tabla de prospectos.
+//   como el selector de vendedor de la Tabla de prospectos. La excepcion la
+//   declara la vista con `pintarConUnaOpcion` (#457): el campo que no todos
+//   los registros traen -- el Evento, solo los prospectos de expo -- si decide
+//   con una sola opcion, porque separa a los de la expo del resto.
 // - 'catalogo': el catalogo cerrado del glosario (Origen), completo aunque hoy
 //   ninguna fila use alguna opcion.
 // - 'vista': constantes de la vista (Estado de la cotizacion).
@@ -47,7 +50,8 @@ export function opcionesDeFiltro(filtro, items) {
 }
 
 function filtroVisible(filtro, opciones) {
-  return filtro?.procedencia === 'datos' ? opciones.length > 1 : opciones.length > 0;
+  if (filtro?.procedencia !== 'datos' || filtro.pintarConUnaOpcion) return opciones.length > 0;
+  return opciones.length > 1;
 }
 
 // La rejilla completa de una vista. `seleccion` es el `filtros` del criterio

@@ -72,6 +72,75 @@ test('FP3: el item de la cola trae los mismos campos planos y lo filtra el mismo
   assert.deepEqual(filtrarProspectos([item], { desde: '2026-06-03' }), []);
 });
 
+// --- Filtros por selector de la vista Prospectos (#457, spec #398): Vendedor,
+// Origen, Estado del prospecto y Evento, sobre el nucleo de #456. La MISMA
+// declaracion sirve a los dos bloques de la pantalla: la ficha trae el Evento
+// en el bag `data` y el item de la cola lo trae plano. ---
+let BUSCABLES_PROSPECTO, ESTADOS_PROSPECTO, buildFiltrosSelectorHtml;
+before(async () => {
+  ({ BUSCABLES_PROSPECTO, ESTADOS_PROSPECTO } = await import('../prospectos-logica.js'));
+  ({ buildFiltrosSelectorHtml } = await import('../filtros-logica.js'));
+});
+
+function opcionesSelect(html, campo) {
+  const inicio = html.indexOf(`data-filtro="${campo}"`);
+  if (inicio < 0) return null;
+  return [...html.slice(inicio, html.indexOf('</select>', inicio))
+    .matchAll(/<option value="([^"]*)"( selected)?>([^<]*)<\/option>/g)]
+    .map(m => ({ valor: m[1], texto: m[3], selected: !!m[2] }));
+}
+
+const FICHA_EXPO = { ...FICHA, id: 3, vendedor: 'Memo', canal: 'Feria/Expo', estado: 'agendado', data: { empresa: 'Cafe Sol', evento: 'Abastur 2026' } };
+const ITEM_COLA_EXPO = { id: 4, nombre: 'Rosa', vendedor: 'Laura', canal: 'Feria/Expo', estado: 'sin_contactar', evento: 'Abastur 2026', empresa: null };
+
+test('#457: Prospectos declara Vendedor, Origen, Estado y Evento, en ese orden', () => {
+  const html = buildFiltrosSelectorHtml([{ ...FICHA, estado: 'contactado' }, FICHA_EXPO], BUSCABLES_PROSPECTO.filtros, {}, 'prospectos');
+  const etiquetas = [...html.matchAll(/<label [^>]*>([^<]*)<\/label>/g)].map(m => m[1]);
+  assert.deepEqual(etiquetas, ['Vendedor', 'Origen', 'Estado', 'Evento']);
+  assert.deepEqual(opcionesSelect(html, 'vendedor').map(o => o.valor), ['', 'Laura', 'Memo']);
+  // Origen y Estado del prospecto: catalogos cerrados del glosario, completos
+  assert.deepEqual(opcionesSelect(html, 'origen').map(o => o.valor).slice(1), CANALES);
+  assert.deepEqual(opcionesSelect(html, 'estado').map(o => [o.valor, o.texto]).slice(1), [
+    ['sin_contactar', 'Sin contactar'], ['contactado', 'Contactado'], ['agendado', 'Agendado'],
+    ['cotizado', 'Cotizado'], ['cliente', 'Cliente Operam'],
+  ]);
+  assert.deepEqual(ESTADOS_PROSPECTO.map(e => e.valor), ['sin_contactar', 'contactado', 'agendado', 'cotizado', 'cliente']);
+  // con UNA sola expo el Evento si se pinta: separa a los de la expo del resto
+  assert.deepEqual(opcionesSelect(html, 'evento').map(o => o.valor), ['', 'Abastur 2026']);
+});
+
+test('#457: el Evento se lee de la ficha (data.evento) y del item de la cola (evento plano)', () => {
+  const ids = lista => filtrarProspectos(lista, { filtros: { evento: 'Abastur 2026' } }).map(p => p.id);
+  assert.deepEqual(ids([FICHA, FICHA_EXPO]), [3]);
+  assert.deepEqual(ids([ITEM_COLA_EXPO, { ...ITEM_COLA_EXPO, id: 5, evento: null }]), [4]);
+  const html = buildFiltrosSelectorHtml([FICHA_EXPO, { ...ITEM_COLA_EXPO, evento: 'Expo Cafe 2025' }], BUSCABLES_PROSPECTO.filtros, {}, 'prospectos');
+  assert.deepEqual(opcionesSelect(html, 'evento').map(o => o.valor), ['', 'Abastur 2026', 'Expo Cafe 2025']);
+});
+
+test('#457: Vendedor, Origen (canal) y Estado del prospecto leen su campo y se combinan con AND y con el texto', () => {
+  const lista = [
+    { ...FICHA, estado: 'contactado' },
+    { ...OTRA, estado: 'sin_contactar' },
+    FICHA_EXPO,
+    ITEM_COLA_EXPO,
+  ];
+  const ids = criterio => filtrarProspectos(lista, criterio).map(p => p.id);
+  assert.deepEqual(ids({ filtros: { vendedor: 'Memo' } }), [2, 3]);
+  assert.deepEqual(ids({ filtros: { origen: 'Feria/Expo' } }), [3, 4]);
+  assert.deepEqual(ids({ filtros: { estado: 'sin_contactar' } }), [2, 4]);
+  assert.deepEqual(ids({ filtros: { vendedor: 'Laura', origen: 'Feria/Expo' } }), [4]);
+  assert.deepEqual(ids({ texto: 'hotel', filtros: { vendedor: 'Laura' } }), [1]);
+  assert.deepEqual(ids({ texto: 'hotel', filtros: { vendedor: 'Memo' } }), []);
+});
+
+test('#457: el vendedor que solo ve sus prospectos no recibe selector de Vendedor; sin expo no hay Evento', () => {
+  const html = buildFiltrosSelectorHtml([FICHA, { ...FICHA, id: 9 }], BUSCABLES_PROSPECTO.filtros, {}, 'prospectos');
+  assert.equal(opcionesSelect(html, 'vendedor'), null);
+  assert.equal(opcionesSelect(html, 'evento'), null);
+  assert.ok(opcionesSelect(html, 'origen'));
+  assert.ok(opcionesSelect(html, 'estado'));
+});
+
 test('P1: buildProspectoPayload combina codigo de pais y limpia obligatorios', () => {
   const payload = buildProspectoPayload({
     celularCode: '+52', celular: '55 1234 5678',

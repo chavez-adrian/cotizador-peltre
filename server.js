@@ -36,7 +36,7 @@ import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
-import { tarjetasOportunidades, cotizacionesDeLaOportunidad, oportunidadesQueFaltaCotizar, prospectoAOportunidad } from './lib/oportunidades.js';
+import { tarjetasOportunidades, cotizacionesDeLaOportunidad, oportunidadesQueFaltaCotizar, estadosDeOportunidades, prospectoAOportunidad } from './lib/oportunidades.js';
 import { oportunidadesDeContactos, principalPorContacto, oportunidadQueCotiza } from './lib/oportunidad-pre.js';
 import * as oportunidadPreIo from './lib/oportunidad-pre-io.js';
 import { celularAlNacer, celularesDeCruce, llaveContacto } from './lib/contacto-cotizacion.js';
@@ -1554,7 +1554,10 @@ app.get('/api/prospectos', authMiddleware, async (req, res) => {
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
     const faltan = oportunidadesQueFaltaCotizar(filas, cotizacionesVisibles);
-    res.json(filas.map(p => ({ ...p, faltaCotizar: faltan.has(p.id) })));
+    // #457: el Estado del prospecto viaja ya juzgado para el selector de la
+    // vista (la pantalla no lo calcula, como en la Tabla de prospectos).
+    const estados = estadosDeOportunidades(filas, cotizacionesVisibles);
+    res.json(filas.map(p => ({ ...p, faltaCotizar: faltan.has(p.id), estado: estados.get(p.id) })));
   } catch (err) {
     res.status(500).json({ error: 'No se pudo listar prospectos: ' + err.message });
   }
@@ -1594,9 +1597,11 @@ app.get('/api/prospectos/cola', authMiddleware, async (req, res) => {
   const cotizacionesVisibles = req.user.role === 'admin'
     ? cotizaciones
     : cotizaciones.filter(c => c.vendedor === req.user.name);
+  const ahora = new Date();
+  const estados = estadosDeOportunidades(visibles, cotizacionesVisibles, ahora);
   res.json(calcularColaProspectos(
-    visibles, new Date(), oportunidadesQueFaltaCotizar(visibles, cotizacionesVisibles)
-  ));
+    visibles, ahora, oportunidadesQueFaltaCotizar(visibles, cotizacionesVisibles)
+  ).map(item => ({ ...item, estado: estados.get(item.id) })));
 });
 
 // Pre-clasificacion de celular (issue #46): el frontend la consulta antes de

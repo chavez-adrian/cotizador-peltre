@@ -101,6 +101,7 @@ import {
   buildGrupoChipsHtml,
   buildMicHtml,
   filtrarProspectos,
+  BUSCABLES_PROSPECTO,
   chipOrigenHtml,
 } from './prospectos-logica.js';
 // Origen heredado (#287): el pipeline y los buscadores de cliente cargan los
@@ -151,10 +152,10 @@ import {
   buildColaHoyHtml,
   buildMenuNuevoHtml,
   buildCerradasHtml,
-  filtrarPorEvento,
   filtrarOportunidades,
   filtrarColaHoy,
-  buildFiltroEventoHtml,
+  BUSCABLES_OPORTUNIDAD,
+  BUSCABLES_COLA_HOY,
   filaResultadoClienteHtml,
   filaCrearClienteHtml,
   cardClienteHtml,
@@ -164,6 +165,7 @@ import {
 } from './pipeline-logica.js';
 import {
   buildBandejaHtml,
+  FILTROS_SELECTOR_CANDIDATO,
 } from './bandeja-logica.js';
 import {
   opcionesRegimenHtml,
@@ -5515,14 +5517,23 @@ async function poblarSelectoresProspectoAhora() {
 // vive en memoria por vista, no persiste y se limpia al entrar. Los inputs son
 // estaticos (index.html) y el listener se cuelga UNA vez en DOMContentLoaded,
 // nunca desde un onclick inline (trampa #112).
+//
+// Los filtros por selector (#457, spec #398) viven en el MISMO criterio
+// (`criterio.filtros`, campo -> valor) y siguen la misma regla: en memoria, se
+// limpian al entrar. La rejilla la pinta `pintarFiltrosVista` en
+// `#<prefijo>-filtros` cuando llegan los datos (las opciones derivadas salen de
+// ahi) y el `change` se escucha en ese contenedor, como en el Historial (#456).
 function limpiarCriterioVista(prefijo, criterio) {
   criterio.texto = '';
   criterio.desde = '';
   criterio.hasta = '';
+  criterio.filtros = {};
   for (const campo of ['buscar', 'desde', 'hasta']) {
     const el = document.getElementById(`${prefijo}-${campo}`);
     if (el) el.value = '';
   }
+  const rejilla = document.getElementById(`${prefijo}-filtros`);
+  if (rejilla) rejilla.innerHTML = '';
 }
 
 function conectarCriterioVista(prefijo, criterio, alCambiar) {
@@ -5531,6 +5542,18 @@ function conectarCriterioVista(prefijo, criterio, alCambiar) {
     if (!el) continue;
     el.addEventListener('input', e => { criterio[llave] = e.target.value; alCambiar(); });
   }
+  document.getElementById(`${prefijo}-filtros`)?.addEventListener('change', e => {
+    const campo = e.target?.dataset?.filtro;
+    if (!campo) return;
+    criterio.filtros = { ...criterio.filtros, [campo]: e.target.value };
+    alCambiar();
+  });
+}
+
+// La seleccion en curso se conserva al repintar (recargas tras una accion).
+function pintarFiltrosVista(prefijo, items, filtros, criterio) {
+  const rejilla = document.getElementById(`${prefijo}-filtros`);
+  if (rejilla) rejilla.innerHTML = buildFiltrosSelectorHtml(items, filtros, criterio.filtros, prefijo);
 }
 
 function showProspectos() {
@@ -5858,10 +5881,11 @@ window.nuevoCliente = () => {
 // contra window (trampa #112): cada uno se expone a window JUNTO a su
 // declaracion y no existe ningun otro simbolo con ese nombre.
 // `busqueda` es el estado del boton "Buscar nuevas en Operam" (#126); `criterio`
-// es el del buscador en vivo de la vista (#289). No son lo mismo.
+// es el del buscador en vivo de la vista (#289) y del selector de Vendedor
+// (#457). No son lo mismo. `filtro` es el estado del candidato (los botones).
 const bandejaState = {
   filtro: 'pendiente', candidatos: [], vendedores: [], busqueda: {},
-  criterio: { texto: '', desde: '', hasta: '' },
+  criterio: { texto: '', desde: '', hasta: '', filtros: {} },
 };
 
 async function showBandeja() {
@@ -5890,6 +5914,7 @@ async function cargarBandeja() {
     root.innerHTML = '<div class="alert alert-warning">Error de conexión al cargar la bandeja.</div>';
     return;
   }
+  pintarFiltrosVista('bandeja', bandejaState.candidatos, FILTROS_SELECTOR_CANDIDATO, bandejaState.criterio);
   renderBandeja();
 }
 
@@ -5998,6 +6023,7 @@ async function bandejaBuscarNuevas() {
     const [listado, catalogos] = await Promise.all([api('/api/admin/bandeja'), cargarCatalogos()]);
     if (listado.ok) bandejaState.candidatos = await listado.json();
     bandejaState.vendedores = catalogos.vendedores || [];
+    pintarFiltrosVista('bandeja', bandejaState.candidatos, FILTROS_SELECTOR_CANDIDATO, bandejaState.criterio);
   } catch (e) {
     alert('Error de conexión al buscar nuevas en Operam');
     bandejaState.busqueda = {};
@@ -6014,11 +6040,10 @@ window.bandejaBuscarNuevas = bandejaBuscarNuevas;
 const PIPELINE_MODOS = new Set(['tablero', 'lista', 'cerradas']);
 let pipelineModo = PIPELINE_MODOS.has(localStorage.getItem('pipelineModo')) ? localStorage.getItem('pipelineModo') : 'tablero';
 let ultimasOportunidades = [];
-// Evento elegido en el filtro del pipeline (issue #261); vacio = todos.
-let pipelineEvento = '';
-// Criterio del buscador (#289): se combina con AND con el filtro por evento y
-// aplica a los tres modos. Vive en memoria; entrar a la vista lo limpia.
-let pipelineCriterio = { texto: '', desde: '', hasta: '' };
+// Criterio del buscador (#289) y de los selectores Origen / Evento / Vendedor
+// (#457; el Evento es el filtro de #261): todo con AND y en los tres modos. Vive
+// en memoria; entrar a la vista lo limpia.
+let pipelineCriterio = { texto: '', desde: '', hasta: '', filtros: {} };
 // Catalogo de vendedores para el control de asignar de la tarjeta No Asignado
 // (issue #57) y el permiso vigente de asignacion (#156): quien puede asignar ya
 // no es solo el admin, sino tambien el vendedor con el checkbox de /admin. El
@@ -6079,6 +6104,8 @@ async function recargarPipeline() {
     // para el selector. Quien no lo tiene ni siquiera recibe esas tarjetas.
     await cargarEstadoDeCatalogos();
     loadingEl.style.display = 'none';
+    // La rejilla Origen / Evento / Vendedor (#457) sale de lo recien cargado.
+    pintarFiltrosVista('pipeline', ultimasOportunidades, BUSCABLES_OPORTUNIDAD.filtros, pipelineCriterio);
     renderPipeline();
   } catch (e) {
     loadingEl.textContent = 'Error cargando el pipeline';
@@ -6088,20 +6115,9 @@ async function recargarPipeline() {
 function renderPipeline() {
   const tableroEl = document.getElementById('pipeline-tablero');
   const listEl = document.getElementById('pipeline-list');
-  // Filtro por evento (issue #261): se pinta desde las oportunidades cargadas y
-  // se aplica a los tres modos. El listener se vuelve a colgar porque el select
-  // se reescribe en cada render.
-  const eventoEl = document.getElementById('pipeline-evento');
-  if (eventoEl) {
-    eventoEl.innerHTML = buildFiltroEventoHtml(ultimasOportunidades, pipelineEvento);
-    const select = document.getElementById('pipeline-filtro-evento');
-    if (select) select.addEventListener('change', () => { pipelineEvento = select.value; renderPipeline(); });
-  }
-  // El buscador (#289) se combina con AND con el filtro por evento y aplica a
-  // los tres modos: tablero, lista y cerradas.
-  const oportunidades = filtrarOportunidades(
-    filtrarPorEvento(ultimasOportunidades, pipelineEvento), pipelineCriterio
-  );
+  // El buscador (#289) y los selectores (#457, el Evento de #261 incluido) se
+  // combinan con AND y aplican a los tres modos: tablero, lista y cerradas.
+  const oportunidades = filtrarOportunidades(ultimasOportunidades, pipelineCriterio);
   const esTablero = pipelineModo === 'tablero';
   const esCerradas = pipelineModo === 'cerradas';
   const btnLista = document.getElementById('btn-pipeline-modo-lista');
@@ -6471,8 +6487,9 @@ async function cargarMotivosNoUtil() {
 let ultimosProspectos = [];
 let ultimaColaProspectos = [];
 // Criterio del buscador (#289): vive en memoria, no persiste. Entrar a la vista
-// lo limpia. UNA sola caja filtra los DOS bloques de la pantalla.
-let prospectosCriterio = { texto: '', desde: '', hasta: '' };
+// lo limpia. UNA sola caja filtra los DOS bloques de la pantalla, y lo mismo los
+// selectores Vendedor / Origen / Estado / Evento (#457).
+let prospectosCriterio = { texto: '', desde: '', hasta: '', filtros: {} };
 
 async function cargarListaProspectos() {
   const loadingEl = document.getElementById('prospectos-loading');
@@ -6486,6 +6503,10 @@ async function cargarListaProspectos() {
     ultimosProspectos = await res.json();
     ultimaColaProspectos = resCola.ok ? await resCola.json() : [];
     loadingEl.style.display = 'none';
+    // Las opciones derivadas salen de los DOS bloques: la cola puede traer una
+    // Oportunidad que la lista (una fila por Contacto) no muestra.
+    pintarFiltrosVista('prospectos', [...ultimosProspectos, ...ultimaColaProspectos],
+      BUSCABLES_PROSPECTO.filtros, prospectosCriterio);
     renderProspectos();
   } catch (e) {
     loadingEl.textContent = 'Error cargando prospectos';
@@ -6526,9 +6547,10 @@ function renderProspectos() {
 // el frontend solo pinta con buildColaHoyHtml, que delega por tipo (prospecto =
 // buildColaProspectosHtml; cotizacion = buildColaCotizacionItemHtml).
 // La cola se retiene en memoria (#289) para poder refiltrarla al teclear sin
-// volver al servidor. El criterio no persiste: entrar a Hoy lo limpia.
+// volver al servidor. El criterio no persiste: entrar a Hoy lo limpia, el
+// selector de Vendedor (#457) incluido.
 let ultimaColaHoy = [];
-let hoyCriterio = { texto: '', desde: '', hasta: '' };
+let hoyCriterio = { texto: '', desde: '', hasta: '', filtros: {} };
 
 async function showHoy() {
   ocultarTodasLasVistas();
@@ -6554,6 +6576,7 @@ async function recargarHoy() {
     // El badge cuenta la cola COMPLETA (#289): es el pendiente del dia, no el
     // resultado de una busqueda.
     actualizarBadgeSeguimiento(ultimaColaHoy.length);
+    pintarFiltrosVista('hoy', ultimaColaHoy, BUSCABLES_COLA_HOY.filtros, hoyCriterio);
     renderHoy();
   } catch (e) {
     loadingEl.textContent = 'Error cargando la cola de hoy';

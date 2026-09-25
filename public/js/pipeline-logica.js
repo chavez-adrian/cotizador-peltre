@@ -10,7 +10,7 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS } from './prospectos-logica.js';
+import { escapeHtml, CANALES, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
@@ -1246,14 +1246,15 @@ export function buildCerradasHtml(oportunidades) {
 // que etapa quedaron: el evento viaja en la oportunidad del PROSPECTO, que sigue
 // en el tablero despues de cotizar (su etapa avanza a Seguimiento), y el
 // pipeline lo filtra en los tres modos. La tarjeta de la cotizacion no lleva
-// evento: la cotizacion no conoce al prospecto del que salio.
+// evento: la cotizacion no conoce al prospecto del que salio. Desde #457 es un
+// filtro mas de la rejilla (BUSCABLES_OPORTUNIDAD.filtros), no un select propio.
 
 // --- Buscador del Pipeline y de la cola Hoy (#289) ---
 // El mismo control del Historial (texto + Desde/Hasta) sobre las dos listas que
-// se pintan aqui. En el pipeline se combina con AND con el filtro por evento y
-// aplica a los tres modos (tablero, lista y cerradas); en Hoy filtra la cola ya
-// ordenada por urgencia sin reordenarla y sin tocar el badge de pendientes, que
-// sigue contando la cola COMPLETA.
+// se pintan aqui. En el pipeline se combina con AND con los filtros por selector
+// y aplica a los tres modos (tablero, lista y cerradas); en Hoy filtra la cola
+// ya ordenada por urgencia sin reordenarla y sin tocar el badge de pendientes,
+// que sigue contando la cola COMPLETA.
 //
 // El telefono tiene dos nombres segun de donde viene la tarjeta (el prospecto
 // trae `celular`, la cotizacion `telefono`) y la cola Hoy mezcla los dos tipos:
@@ -1266,16 +1267,33 @@ export function buildCerradasHtml(oportunidades) {
 //
 // El vendedor NO es buscable (ver BUSCABLES_COTIZACION): filtrar por persona
 // es un selector aparte, no texto libre que ahogue a la tarjeta tecleada.
+//
+// Filtros por selector (#457, spec #398): el Origen se lee con sus dos nombres
+// (el heredado manda: es el que anota quien resolvio la herencia, y en el
+// prospecto coincide con su `canal`); el Evento es un derivado que solo traen
+// los prospectos de expo, asi que con una sola expo el selector SI decide
+// (`pintarConUnaOpcion`) y sin ninguna no se pinta, como el select de #261.
+const ORIGEN_DE_TARJETA = { etiqueta: 'Origen', lee: o => o?.origen || o?.canal, procedencia: 'catalogo', valores: CANALES };
+const VENDEDOR_DE_TARJETA = { etiqueta: 'Vendedor', lee: o => o?.vendedor, procedencia: 'datos' };
+
 export const BUSCABLES_OPORTUNIDAD = {
   camposDe: o => [o?.nombre, o?.ciudad, o?.canal, o?.origen, o?.folioOperam],
   digitosDe: o => [o?.celular, o?.telefono],
   fechaDe: o => o?.fecha,
+  filtros: {
+    origen: ORIGEN_DE_TARJETA,
+    evento: { etiqueta: 'Evento', lee: o => o?.evento, procedencia: 'datos', pintarConUnaOpcion: true },
+    vendedor: VENDEDOR_DE_TARJETA,
+  },
 };
 
 export const BUSCABLES_COLA_HOY = {
   camposDe: i => [i?.nombre, i?.cliente, i?.ciudad, i?.canal, i?.origen, i?.folioOperam],
   digitosDe: i => [i?.celular, i?.telefono],
   fechaDe: i => i?.fecha,
+  // #457 (historia 15): los pendientes de una persona. La tarjeta No Asignado
+  // viaja con vendedor null: ningun vendedor la reclama.
+  filtros: { vendedor: VENDEDOR_DE_TARJETA },
 };
 
 export function filtrarOportunidades(oportunidades, criterio) {
@@ -1284,30 +1302,6 @@ export function filtrarOportunidades(oportunidades, criterio) {
 
 export function filtrarColaHoy(cola, criterio) {
   return filtrarPorCriterio(cola, criterio, BUSCABLES_COLA_HOY);
-}
-
-export function filtrarPorEvento(oportunidades, evento) {
-  if (!evento) return oportunidades || [];
-  return (oportunidades || []).filter(o => o.evento === evento);
-}
-
-// Los eventos que de verdad hay en el tablero, ordenados y sin repetir: el
-// selector no inventa opciones vacias.
-export function eventosDeOportunidades(oportunidades) {
-  const vistos = new Set();
-  for (const o of oportunidades || []) if (o.evento) vistos.add(o.evento);
-  return [...vistos].sort();
-}
-
-// Sin eventos capturados el filtro no existe: fuera de expo el pipeline se ve
-// como siempre.
-export function buildFiltroEventoHtml(oportunidades, seleccionado) {
-  const eventos = eventosDeOportunidades(oportunidades);
-  if (!eventos.length) return '';
-  const opciones = ['', ...eventos].map(e =>
-    `<option value="${escapeHtml(e)}"${e === (seleccionado || '') ? ' selected' : ''}>${e ? escapeHtml(e) : 'Todos los eventos'}</option>`
-  ).join('');
-  return `<select id="pipeline-filtro-evento" class="btn-sm" style="margin-left:8px">${opciones}</select>`;
 }
 
 // === La vista Clientes por Contacto (#346, spec #337, ADR-0016) ===

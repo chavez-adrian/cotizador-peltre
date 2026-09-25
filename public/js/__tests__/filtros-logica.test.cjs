@@ -138,3 +138,14 @@ test('FH2: el vendedor que solo ve sus cotizaciones no recibe selector de Vended
   assert.ok(selectDe(html, 'origen'));
   assert.ok(selectDe(html, 'estado'));
 });
+
+// #457: un derivado que NO todos los registros traen (el Evento: solo los
+// prospectos de expo) si decide algo con una sola opcion -- separa a los de la
+// expo del resto. Lo declara la vista con `pintarConUnaOpcion`; sin la marca
+// sigue la regla de FL4.
+test('FL9: el derivado declarado pintarConUnaOpcion se pinta con una sola opcion; con ninguna, no', () => {
+  const filtros = { evento: { etiqueta: 'Evento', lee: x => x.evento, procedencia: 'datos', pintarConUnaOpcion: true } };
+  const html = buildFiltrosSelectorHtml([{ evento: 'Abastur 2026' }, {}], filtros, {}, 'pipeline');
+  assert.deepEqual(opcionesDe(html).map(o => o.valor), ['', 'Abastur 2026']);
+  assert.equal(buildFiltrosSelectorHtml([{}, {}], filtros, {}, 'pipeline'), '');
+});
