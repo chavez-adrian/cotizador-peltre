@@ -1088,6 +1088,66 @@ export function mostrarBotonCsf(cliente) {
   return !chipsCompletitud(cliente).fiscal && customerIdFiscal(cliente) != null;
 }
 
+// A donde lleva el chip Fiscal del paso Cliente (#166, decision de Adrian
+// 2026-09-25): con RFC real a ningun lado; con Cliente Operam sin datos fiscales al
+// upgrade fiscal (PUT, ADR-0006); sin Cliente Operam al ALTA COMPLETA con CSF
+// (#366), que lo crea con su RFC real desde el inicio. La CSF no se guarda en el
+// navegador para aplicarla al subir: el chip solo conecta con caminos que ya existen.
+export function accionChipFiscal(cliente) {
+  if (chipsCompletitud(cliente).fiscal) return 'ninguna';
+  return customerIdFiscal(cliente) != null ? 'upgrade' : 'alta';
+}
+
+// Lo que el alta completa abierta desde el chip Fiscal hereda del paso Cliente
+// (#166): campo del panel -> valor, solo lo que trae valor. El mapeo es el del alta
+// generica, que ya lleva lo capturado en el paso a un Cliente Operam
+// (buildClienteGenerico / buildBranchGenerico): el telefono es el Cel (#339) y el
+// telefono del domicilio, y el nombre del domicilio prefiere el nombre corto a la
+// razon social. Nada de la Seccion 1: razon social y RFC los trae la CSF y su
+// parseo pisa esos campos. El correo del paso es de contacto, no de facturacion.
+// `enDefault` = los campos que siguen en su default tras restaurar el borrador: lo
+// que el vendedor ya capturo gana, la misma regla de restaurarBorradorFormulario.
+export function prellenadoAltaDesdePasoCliente(cliente, { enDefault } = {}) {
+  const c = cliente || {};
+  const texto = v => String(v || '').trim();
+  const candidatos = {
+    'alta-celular': texto(c.telefono),
+    'alta-segmento': texto(c.segmentoId),
+    'alta-br-name': texto(c.ref) || texto(c.name),
+    'alta-addr-phone': texto(c.telefono),
+    'alta-addr-email': texto(c.email),
+    'alta-addr-city': texto(c.municipio) || texto(c.ciudad),
+    'alta-pais': texto(c.pais),
+  };
+  const libres = Array.isArray(enDefault) ? new Set(enDefault) : null;
+  const plan = {};
+  for (const [campo, valor] of Object.entries(candidatos)) {
+    if (valor && (!libres || libres.has(campo))) plan[campo] = valor;
+  }
+  return plan;
+}
+
+// Precarga no es captura (#166). El panel del alta es UN solo nodo y su borrador es
+// por vendedor y formulario, no por Contacto: lo que la precarga del chip Fiscal
+// escribio y nadie toco se suelta al volver a abrir el alta (si no, el chip del
+// Contacto B -- o "Nuevo cliente" -- mostraria los datos del Contacto A, y
+// restaurarBorradorFormulario y la precarga solo escriben sobre campos en su
+// default). `precarga` = campo -> valor tal como quedo en el DOM; lo tecleado
+// encima ya no coincide y se queda.
+export function camposPrecargaIntactos(precarga, actuales) {
+  const p = precarga || {};
+  const a = actuales || {};
+  return Object.keys(p).filter(id => a[id] !== undefined && a[id] === p[id]);
+}
+
+// Lo que el autoguardado del alta completa guarda: sin lo que sigue tal como lo
+// puso la precarga. Asi el borrador compartido solo lleva captura del vendedor y
+// ni una recarga ni "Nuevo cliente" de la vista Clientes heredan al Contacto A.
+export function valoresBorradorSinPrecarga(valores, precarga) {
+  const p = precarga || {};
+  return Object.fromEntries(Object.entries(valores || {}).filter(([id, v]) => p[id] !== v));
+}
+
 // Un contacto nuevo (persona detras de un celular) y un prospecto se normalizan al
 // MISMO objeto cliente que consume seleccionarClienteOperam (name/ref/telefono/...),
 // para que el prellenado de los campos cl-* y el gate #81 (necesitaAltaGenerica:

@@ -34,6 +34,10 @@ import {
   accionProspecto409,
   paisDesdeCodigoTelefono,
   customerIdFiscal,
+  accionChipFiscal,
+  prellenadoAltaDesdePasoCliente,
+  camposPrecargaIntactos,
+  valoresBorradorSinPrecarga,
   validarAltaManualMinimos,
   emailFacturaParaUpgrade,
   contactosEntregaDisponibles,
@@ -3866,7 +3870,7 @@ function pcCustomerIdFiscal() {
   return customerIdFiscal(pcState.cliente);
 }
 
-function pcChipsHtml(chips, customerIdFiscal, contactoPorCapturar) {
+function pcChipsHtml(chips, accionFiscal, contactoPorCapturar) {
   // El chip Contacto abre la captura del telefono cuando falta (#418), mismo
   // patron que Entrega y Fiscal; con telefono pero sin nombre queda estatico.
   const contactoChip = chips.contacto
@@ -3879,14 +3883,15 @@ function pcChipsHtml(chips, customerIdFiscal, contactoPorCapturar) {
     : chips.entrega === 'cp'
       ? '<span class="pc-chip parcial">Entrega &middot; CP</span>'
       : '<span class="pc-chip pend">Entrega &middot; pendiente</span>';
-  // El chip Fiscal es accionable (patron del chip Entrega, #84) solo cuando el RFC
-  // sigue generico Y hay un cliente en Operam contra el cual actualizar: tocarlo abre
-  // el flujo de CSF en modo upgrade (PUT). Sin cliente en Operam queda estatico.
-  const fiscalChip = chips.fiscal
+  // El chip Fiscal es accionable (patron del chip Entrega, #84) mientras el RFC siga
+  // pendiente; a donde lleva lo decide accionChipFiscal (#166): con Cliente Operam
+  // sin datos fiscales al upgrade (PUT), sin Cliente Operam al alta completa con
+  // CSF. El rotulo es el mismo: lo que el vendedor quiere hacer es subir la CSF.
+  const fiscalChip = accionFiscal === 'ninguna'
     ? '<span class="pc-chip ok">&#10003; Fiscal</span>'
-    : (customerIdFiscal != null
-        ? '<button type="button" class="pc-chip-btn" onclick="pcAbrirUpgradeFiscalDesdePaso()"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>'
-        : '<span class="pc-chip pend">Fiscal &middot; al subir a Operam</span>');
+    : '<button type="button" class="pc-chip-btn" onclick="' +
+        (accionFiscal === 'upgrade' ? 'pcAbrirUpgradeFiscalDesdePaso()' : 'pcAbrirAltaCompletaDesdePaso()') +
+        '"><span class="pc-chip pend">Fiscal &middot; subir CSF</span></button>';
   return contactoChip +
     `<button type="button" class="pc-chip-btn" onclick="switchTab('envio')">${entregaChip}</button>` +
     fiscalChip;
@@ -3925,7 +3930,7 @@ function pcRenderTarjeta() {
     '<div class="pc-cli-card">' +
     `<div class="pc-cli-nombre">${escapeHtml(nombreTarjeta)}</div>` +
     `<div class="pc-cli-sub">${sub}</div>` +
-    `<div class="pc-chips">${pcChipsHtml(chips, pcCustomerIdFiscal(), contactoAccionable(c))}</div>` +
+    `<div class="pc-chips">${pcChipsHtml(chips, accionChipFiscal(c), contactoAccionable(c))}</div>` +
     (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
     (bloqueoMoneda
       ? `<div class="pc-cli-bloqueo">${escapeHtml(bloqueoMoneda.mensaje)}</div>`
@@ -4175,7 +4180,7 @@ function pcRenderChips() {
   const cont = pcEl()?.querySelector('.pc-chips');
   if (!cont) return;
   const c = pcClienteActual();
-  cont.innerHTML = pcChipsHtml(chipsCompletitud(c), pcCustomerIdFiscal(), contactoAccionable(c));
+  cont.innerHTML = pcChipsHtml(chipsCompletitud(c), accionChipFiscal(c), contactoAccionable(c));
 }
 
 // --- Upgrade fiscal desde el chip Fiscal (issue #85) ---
@@ -4247,6 +4252,9 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   altaAplicarModoComercial(customerId, '');
   altaVaciarComercial();
   cerrarFormularioBorrador('alta-completa', null, { ocultar: false });
+  // Lo que precargo el chip Fiscal de OTRO Contacto (#166) tampoco se queda a la
+  // vista en el upgrade de este cliente.
+  altaSoltarPrecargaChip();
   const formIdUpgrade = `upgrade-fiscal-${customerId}`;
   vaciarCamposSuperficie(formIdUpgrade);
   await abrirFormularioBorrador(formIdUpgrade);
@@ -4301,6 +4309,66 @@ function pcAbrirUpgradeFiscalDesdePaso() {
   pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' }, 'paso');
 }
 window.pcAbrirUpgradeFiscalDesdePaso = pcAbrirUpgradeFiscalDesdePaso;
+
+// Chip Fiscal del paso Cliente SIN Cliente Operam (#166, decision de Adrian
+// 2026-09-25): abre el alta completa con CSF (#366) -- el mismo panel de "Nuevo
+// cliente" -- con lo ya capturado en el paso. No crea un camino de escritura nuevo.
+// Mismo trio de navegacion que el upgrade desde el paso: devuelve el panel a casa y
+// apaga un upgrade que hubiera quedado abierto. La precarga va DESPUES de restaurar
+// el borrador -- su esperarListo repuebla los <select> de catalogo y deja
+// alta-segmento en vacio -- y solo sobre los campos que siguen en su default:
+// lo que el vendedor ya tecleo en un alta a medias gana.
+// Lo precargado se recuerda en altaPrecargaChip (campo -> valor como quedo en el
+// DOM) porque precarga no es captura: no entra al borrador compartido del alta
+// (alGuardar de la superficie) y la siguiente apertura del alta lo suelta si nadie
+// lo toco (altaSoltarPrecargaChip), asi el chip del Contacto B o "Nuevo cliente" no
+// heredan al Contacto A.
+let altaPrecargaChip = null;
+
+function altaSoltarPrecargaChip() {
+  if (!altaPrecargaChip) return;
+  const campos = camposSuperficie('alta-completa');
+  const actuales = Object.fromEntries(campos.map(c => [c.id, leerCampoSuperficie(c)]));
+  const intactos = new Set(camposPrecargaIntactos(altaPrecargaChip, actuales));
+  for (const campo of campos) {
+    if (intactos.has(campo.id)) escribirCampoSuperficie(campo, valorDefaultCampo(campo));
+  }
+  altaPrecargaChip = null;
+}
+
+async function pcAbrirAltaCompletaDesdePaso() {
+  const cliente = pcClienteActual();
+  if (accionChipFiscal(cliente) !== 'alta') return;
+  ocultarTodasLasVistas();
+  document.getElementById('app-view').style.display = 'block';
+  switchTab('cliente');
+  const panel = document.getElementById('panel-alta-cliente');
+  if (!panel) return;
+  panel.style.display = 'none'; // abrirAcordeonAlta togglea sobre display
+  const restaurado = abrirAcordeonAlta();
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  await restaurado;
+  const candidatos = Object.keys(prellenadoAltaDesdePasoCliente(cliente));
+  const enDefault = candidatos.filter(id => {
+    const el = document.getElementById(id);
+    return el && el.value === valorDefaultCampo({ el });
+  });
+  const plan = prellenadoAltaDesdePasoCliente(cliente, { enDefault });
+  const precarga = {};
+  for (const [id, valor] of Object.entries(plan)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (id === 'alta-celular' || id === 'alta-addr-phone') fijarTelefono(id, valor);
+    else if (el.tagName !== 'SELECT' || [...el.options].some(o => o.value === valor)) el.value = valor;
+    else continue;
+    precarga[id] = el.value;
+  }
+  altaPrecargaChip = precarga;
+  // fijarTelefono con un codigo que no conoce dispara un 'input' que ya autoguardo
+  // la precarga: se reescribe el borrador ahora que se sabe que no es captura.
+  autoguardarBorradorFormulario('alta-completa');
+}
+window.pcAbrirAltaCompletaDesdePaso = pcAbrirAltaCompletaDesdePaso;
 
 // Reporte del upgrade fiscal (#367, ADR-0017): el vendedor lee por campo el mensaje
 // en palabras del glosario y el detalle tecnico va PLEGADO, nunca a la vista. Se
@@ -5163,6 +5231,7 @@ window.resultadoReunionCotizacion = resultadoReunionCotizacion;
 //                 dejaria vacio y el siguiente autoguardado borraria el dato
 //   alRestaurar   (opcional) repinta UI derivada de esos campos tras prellenar o vaciar
 //   alVaciar      (opcional) limpia lo que no es campo (errores, avisos) al vaciar
+//   alGuardar     (opcional) poda lo que no es captura antes de autoguardar (#166)
 //   restauracion  (opcional) politica de que valores se aplican al restaurar (#352);
 //                 sin ella se aplican todos, que es lo que hace una superficie sin
 //                 constancia de por medio
@@ -5193,7 +5262,9 @@ const SUPERFICIES_BORRADOR = {
     // El segundo (#291) completa ciudad/estado del domicilio si el borrador
     // restaurado trae CP y esos dos vacios; lo restaurado con valor no se toca.
     alRestaurar: () => { altaRepintarCsfRestaurada(); resolverCpAsistido('alta'); },
-    alVaciar: () => { altaLimpiarAvisosAlta(); olvidarCpAsistido('alta'); },
+    alVaciar: () => { altaLimpiarAvisosAlta(); olvidarCpAsistido('alta'); altaPrecargaChip = null; },
+    // Lo que precargo el chip Fiscal (#166) y nadie toco no es captura: no se guarda.
+    alGuardar: valores => valoresBorradorSinPrecarga(valores, altaPrecargaChip),
   },
   // Upgrade fiscal (issue #185, #85) NO vive aqui: es por-instancia (por
   // customer_id, ver DEF_UPGRADE_FISCAL + defSuperficie abajo) -- un intento de
@@ -5300,7 +5371,10 @@ function autoguardarBorradorFormulario(formId) {
     const valor = leerCampoSuperficie(campo);
     if (valor !== valorDefaultCampo(campo)) valores[campo.id] = valor;
   }
-  const borrador = serializarBorradorFormulario({ formId, valores, ahora: Date.now() });
+  const alGuardar = defSuperficie(formId)?.alGuardar;
+  const borrador = serializarBorradorFormulario({
+    formId, valores: alGuardar ? alGuardar(valores) : valores, ahora: Date.now(),
+  });
   try {
     // Formulario en blanco = nada que restaurar: se borra la llave en vez de
     // dejar un borrador hueco.
@@ -5481,6 +5555,8 @@ function cerrarFormularioBorrador(formId, evento, { ocultar = true } = {}) {
 // Deja la superficie como recien abierta: campos en su default y sin los avisos
 // que dejo el intento anterior. Es el UNICO camino de vaciado, lo llame el
 // vendedor desde la marca o el envio exitoso desde el codigo de la superficie.
+// (La precarga del chip Fiscal se suelta aparte, campo por campo, con los mismos
+// helpers: altaSoltarPrecargaChip, #166.)
 function vaciarCamposSuperficie(formId) {
   const def = defSuperficie(formId);
   for (const campo of camposSuperficie(formId)) escribirCampoSuperficie(campo, valorDefaultCampo(campo));
@@ -7698,7 +7774,12 @@ function abrirAcordeonAlta() {
   // el esperarListo de esta superficie): dos llamadas sueltas a
   // cargarCatalogos().then(altaPoblarSelectores) competirian por escribir el
   // <select> y la que terminara despues le pisaria el valor restaurado a la otra.
-  abrirFormularioBorrador('alta-completa');
+  // Devuelve esa promesa: la precarga desde el chip Fiscal (#166) corre despues.
+  // Antes se suelta la precarga anterior que nadie toco: sin eso el borrador y la
+  // nueva precarga se saltarian esos campos (no estan en su default) y este alta
+  // -- la del chip de otro Contacto o "Nuevo cliente" -- mostraria al Contacto A.
+  altaSoltarPrecargaChip();
+  return abrirFormularioBorrador('alta-completa');
 }
 
 // Contraparte en el DOM de estadoAltaAlAbrirPanel (#192): deja el acordeon como

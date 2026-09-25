@@ -12,7 +12,8 @@ let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud, con
   decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
   contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
   contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente, etiquetaPapelesContacto,
-  clienteDesdeCotizacionReciente, ofreceCrearContacto;
+  clienteDesdeCotizacionReciente, ofreceCrearContacto, accionChipFiscal,
+  prellenadoAltaDesdePasoCliente, camposPrecargaIntactos, valoresBorradorSinPrecarga, serializarBorradorFormulario;
 
 before(async () => {
   ({
@@ -21,8 +22,10 @@ before(async () => {
     decidirVistaTrasBusqueda, accionProspecto409, paisDesdeCodigoTelefono,
     contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
     contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente, etiquetaPapelesContacto,
-    clienteDesdeCotizacionReciente, ofreceCrearContacto,
+    clienteDesdeCotizacionReciente, ofreceCrearContacto, accionChipFiscal,
+    prellenadoAltaDesdePasoCliente, camposPrecargaIntactos, valoresBorradorSinPrecarga,
   } = await import('../alta-logica.js'));
+  ({ serializarBorradorFormulario } = await import('../borrador-form-logica.js'));
 });
 
 // === nombreConCorto: formato unificado "RAZON SOCIAL (Nombre corto)" (#196) ===
@@ -264,6 +267,148 @@ test('C3: RFC generico no cuenta como fiscal completo', () => {
 
 test('C4: sin telefono no hay chip de Contacto', () => {
   assert.strictEqual(chipsCompletitud({ name: 'X' }).contacto, false);
+});
+
+// === accionChipFiscal: a donde lleva el chip Fiscal del paso Cliente (#166) ===
+// Decision de Adrian (2026-09-25): sin Cliente Operam el chip abre el ALTA
+// COMPLETA con CSF (#366, nace con su RFC real); con un Cliente Operam sin datos
+// fiscales sigue llevando al upgrade fiscal (ADR-0006). Con RFC real no lleva a
+// ningun lado.
+
+test('F1: Cliente Operam con RFC real -> el chip no lleva a ningun lado', () => {
+  assert.strictEqual(accionChipFiscal({ tipo: 'operam', id: 479, rfc: 'SMS200716NZ4' }), 'ninguna');
+});
+
+test('F2: Cliente Operam sin datos fiscales -> upgrade fiscal, como hoy', () => {
+  assert.strictEqual(accionChipFiscal({ tipo: 'operam', id: 479, rfc: 'XAXX010101000' }), 'upgrade');
+  assert.strictEqual(accionChipFiscal({ tipo: 'prospecto', clienteOperamId: 51 }), 'upgrade');
+  // #167: el contacto nuevo tambien puede llegar ya ligado a un Cliente Operam.
+  assert.strictEqual(accionChipFiscal({ tipo: 'nuevo', clienteOperamId: 88 }), 'upgrade');
+});
+
+test('F3: sin Cliente Operam -> alta completa con CSF', () => {
+  const nuevo = buildClienteDesdeContactoNuevo({ nombre: 'Juan', telefono: '+52 55 1234 5678', ciudad: 'CDMX' });
+  assert.strictEqual(accionChipFiscal(nuevo), 'alta');
+  assert.strictEqual(accionChipFiscal(clienteDesdeProspecto({ id: 7, nombre: 'Ana', celular: '5512345678' })), 'alta');
+  assert.strictEqual(accionChipFiscal({ tipo: 'prospecto', clienteOperamId: null }), 'alta');
+  assert.strictEqual(accionChipFiscal(null), 'alta');
+});
+
+// === prellenadoAltaDesdePasoCliente: lo que el alta completa hereda del paso (#166) ===
+// El mapeo es el del precedente que ya lleva lo capturado en el paso Cliente a un
+// Cliente Operam (buildClienteGenerico / buildBranchGenerico, lib/alta-generica.js):
+// telefono -> Cel (#339) y telefono del domicilio, segmento, nombre del domicilio =
+// nombre corto antes que razon social, correo de entrega, ciudad y pais. La Seccion 1
+// (razon social, RFC, nombre corto) la trae la CSF y el parseo la pisa.
+
+test('P1: contacto nuevo -> Cel, segmento y domicilio de entrega', () => {
+  const c = buildClienteDesdeContactoNuevo({ nombre: 'Juan Perez', telefono: '+52 55 1234 5678', ciudad: 'Puebla', email: 'juan@correo.mx', segmentoId: '4' });
+  assert.deepStrictEqual(prellenadoAltaDesdePasoCliente(c), {
+    'alta-celular': '+52 55 1234 5678',
+    'alta-segmento': '4',
+    'alta-br-name': 'Juan Perez',
+    'alta-addr-phone': '+52 55 1234 5678',
+    'alta-addr-email': 'juan@correo.mx',
+    'alta-addr-city': 'Puebla',
+    'alta-pais': 'MX',
+  });
+});
+
+test('P2: prospecto -> su celular, su correo y su segmento', () => {
+  const c = clienteDesdeProspecto({ id: 7, nombre: 'Ana Ruiz', celular: '5512345678', ciudad: 'Toluca', data: { correo: 'ana@correo.mx', segmento_id: '2' } });
+  assert.deepStrictEqual(prellenadoAltaDesdePasoCliente(c), {
+    'alta-celular': '5512345678',
+    'alta-segmento': '2',
+    'alta-br-name': 'Ana Ruiz',
+    'alta-addr-phone': '5512345678',
+    'alta-addr-email': 'ana@correo.mx',
+    'alta-addr-city': 'Toluca',
+    'alta-pais': 'MX',
+  });
+});
+
+test('P3: el nombre del domicilio prefiere el nombre corto; lo vacio no viaja', () => {
+  const r = prellenadoAltaDesdePasoCliente({ tipo: 'nuevo', name: 'COMERCIAL LA VASIJA SA DE CV', ref: 'La Vasija', telefono: '', pais: 'US' });
+  assert.deepStrictEqual(r, { 'alta-br-name': 'La Vasija', 'alta-pais': 'US' });
+});
+
+test('P4: nada de la Seccion 1 ni del correo de facturacion', () => {
+  const c = { tipo: 'nuevo', name: 'Juan', ref: 'Juan', rfc: 'XAXX010101000', telefono: '+52 55 1234 5678', email: 'juan@correo.mx' };
+  const llaves = Object.keys(prellenadoAltaDesdePasoCliente(c));
+  assert.ok(!llaves.some(k => k.startsWith('csf-') || k.startsWith('manual-')), llaves.join());
+  assert.ok(!llaves.includes('alta-email-factura'));
+});
+
+test('P5: lo que el vendedor ya capturo (borrador) no se pisa: solo se llenan los campos en su default', () => {
+  const c = buildClienteDesdeContactoNuevo({ nombre: 'Juan Perez', telefono: '+52 55 1234 5678', ciudad: 'Puebla' });
+  const r = prellenadoAltaDesdePasoCliente(c, { enDefault: ['alta-addr-city', 'alta-br-name'] });
+  assert.deepStrictEqual(r, { 'alta-br-name': 'Juan Perez', 'alta-addr-city': 'Puebla' });
+});
+
+test('P6: tolera cliente nulo', () => {
+  assert.deepStrictEqual(prellenadoAltaDesdePasoCliente(null), {});
+});
+
+// Precarga no es captura (#166): el panel es UN solo nodo y la llave del borrador es
+// por vendedor y formulario, no por Contacto. Lo que puso la precarga del Contacto A
+// y nadie toco se suelta al volver a abrir el alta; lo tecleado encima sigue ganando.
+const DEFAULTS_ALTA = {
+  'alta-celular': '', 'alta-segmento': '', 'alta-br-name': '', 'alta-addr-phone': '',
+  'alta-addr-email': '', 'alta-addr-city': '', 'alta-pais': 'MX',
+};
+
+// Lo que hace el pegamento: soltar la precarga intacta al abrir y precargar lo que
+// quede en su default.
+function abrirConChip(actuales, precargaPrevia, cliente) {
+  const dom = { ...actuales };
+  for (const id of camposPrecargaIntactos(precargaPrevia, dom)) dom[id] = DEFAULTS_ALTA[id];
+  const enDefault = Object.keys(DEFAULTS_ALTA).filter(id => dom[id] === DEFAULTS_ALTA[id]);
+  return { dom, plan: prellenadoAltaDesdePasoCliente(cliente, { enDefault }) };
+}
+
+const CONTACTO_A = { tipo: 'nuevo', name: 'Juan Perez', telefono: '5511112222', email: 'juan@correo.mx', ciudad: 'Puebla', pais: 'MX' };
+const CONTACTO_B = { tipo: 'nuevo', name: 'Ana Ruiz', telefono: '5533334444', email: 'ana@correo.mx', ciudad: 'Toluca', pais: 'MX' };
+
+test('P7: precarga de A, luego chip con B sin teclear -> sale lo de B', () => {
+  const precargaA = prellenadoAltaDesdePasoCliente(CONTACTO_A);
+  const { plan } = abrirConChip({ ...DEFAULTS_ALTA, ...precargaA }, precargaA, CONTACTO_B);
+  assert.deepStrictEqual(plan, {
+    'alta-celular': '5533334444',
+    'alta-br-name': 'Ana Ruiz',
+    'alta-addr-phone': '5533334444',
+    'alta-addr-email': 'ana@correo.mx',
+    'alta-addr-city': 'Toluca',
+    'alta-pais': 'MX',
+  });
+});
+
+test('P7b: lo que el vendedor tecleo sobre la precarga de A no se suelta ni lo pisa B', () => {
+  const precargaA = prellenadoAltaDesdePasoCliente(CONTACTO_A);
+  const actuales = { ...DEFAULTS_ALTA, ...precargaA, 'alta-addr-city': 'Queretaro' };
+  assert.deepStrictEqual(
+    camposPrecargaIntactos(precargaA, actuales).sort(),
+    ['alta-addr-email', 'alta-addr-phone', 'alta-br-name', 'alta-celular', 'alta-pais'],
+  );
+  const { dom, plan } = abrirConChip(actuales, precargaA, CONTACTO_B);
+  assert.strictEqual(dom['alta-addr-city'], 'Queretaro');
+  assert.ok(!('alta-addr-city' in plan));
+  assert.strictEqual(plan['alta-celular'], '5533334444');
+});
+
+test('P7c: sin precarga previa no se suelta nada', () => {
+  assert.deepStrictEqual(camposPrecargaIntactos(null, { 'alta-celular': '5511112222' }), []);
+});
+
+test('P8: lo precargado y no tocado no se guarda como borrador', () => {
+  const precargaA = prellenadoAltaDesdePasoCliente(CONTACTO_A);
+  const soloPrecarga = valoresBorradorSinPrecarga({ ...precargaA }, precargaA);
+  assert.strictEqual(serializarBorradorFormulario({ formId: 'alta-completa', valores: soloPrecarga, ahora: 1 }), null);
+  const conCaptura = valoresBorradorSinPrecarga({ ...precargaA, 'alta-addr-city': 'Queretaro', 'csf-rfc': 'PEJU800101AB1' }, precargaA);
+  assert.deepStrictEqual(conCaptura, { 'alta-addr-city': 'Queretaro', 'csf-rfc': 'PEJU800101AB1' });
+});
+
+test('P8b: sin precarga vigente el borrador guarda todo lo capturado', () => {
+  assert.deepStrictEqual(valoresBorradorSinPrecarga({ 'alta-celular': '5511112222' }, null), { 'alta-celular': '5511112222' });
 });
 
 // === contactoAccionable: el chip Contacto abre la captura del telefono (#418) ===
