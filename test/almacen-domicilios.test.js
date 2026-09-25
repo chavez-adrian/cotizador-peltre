@@ -193,3 +193,54 @@ test('desmarcar quita el domicilio de la lista y deja lo demas', () => {
   assert.deepEqual(desmarcarAsiVaBien(lista, 8), [{ clienteId: '14', branchCode: '90', almacen: '60' }]);
   assert.deepEqual(desmarcarAsiVaBien(lista, '99'), lista);
 });
+
+// #446: Operam manda el nombre del domicilio con entidades HTML (&#039;, &amp;)
+// y el panel las pintaba tal cual. Los dos casos del barrido de produccion del
+// 2026-09-24.
+test('el nombre del domicilio sale decodificado: &#039; y &amp; como los manda Operam', () => {
+  const r = reporteAlmacenDomicilios({
+    clientes: [
+      cliente('116', "MELINA IVANA D'ANGELO", [{ branch_code: '116', br_name: 'MELINA IVANA D&#039;ANGELO' }]),
+      cliente('159', 'LA M\u00c1QUINA FILM & TAPE SA DE CVV', [{ branch_code: '159', br_name: 'LA M\u00c1QUINA FILM &amp; TAPE SA DE CVV' }]),
+    ],
+    branches: {
+      116: { branch_code: '116', br_name: 'MELINA IVANA D&#039;ANGELO', default_location: '10' },
+      159: { branch_code: '159', br_name: 'LA M\u00c1QUINA FILM &amp; TAPE SA DE CVV', default_location: '10' },
+    },
+    almacenes: ALMACENES,
+  });
+
+  assert.deepEqual(r.filas.map(f => f.domicilio), [
+    "MELINA IVANA D'ANGELO",
+    'LA M\u00c1QUINA FILM & TAPE SA DE CVV',
+  ]);
+});
+
+// Decodificar no abre la puerta a inyectar HTML: el resultado es TEXTO que el panel
+// escapa al pintar, y se decodifica una sola vez -- un `&amp;lt;` guardado en Operam
+// es el texto literal `&lt;`, no una etiqueta. Un nombre heredado de
+// Object.prototype (`&constructor;`) no es una entidad y queda intacto.
+test('la decodificacion es de una sola pasada y el nombre decodificado viaja igual a sinLeer y a "asi va bien"', () => {
+  const r = reporteAlmacenDomicilios({
+    clientes: [cliente('14', 'CLIENTE DE PRUEBA', [
+      { branch_code: '90', br_name: 'X' },
+      { branch_code: '91', br_name: 'Bodega &amp;#039;B&amp;#039; &amp;lt;b&amp;gt;' },
+      { branch_code: '92', br_name: 'O&#039;Higgins &lt;img src=x onerror=alert(1)&gt;' },
+      { branch_code: '93', br_name: 'A &constructor; B &toString; C &__proto__;' },
+    ])],
+    branches: {
+      90: { branch_code: '90', br_name: 'D&#039;Angelo &amp; Hijos', default_location: '10' },
+    },
+    errores: { 92: 'Operam 500', 93: 'Operam 500' },
+    excepciones: [{ clienteId: '14', branchCode: '90', almacen: '41' }],
+    almacenes: ALMACENES,
+  });
+
+  assert.equal(r.filas[0].domicilio, "D'Angelo & Hijos");
+  assert.deepEqual(r.sinLeer.map(x => x.domicilio), [
+    'Bodega &#039;B&#039; &lt;b&gt;',
+    "O'Higgins <img src=x onerror=alert(1)>",
+    'A &constructor; B &toString; C &__proto__;',
+  ]);
+  assert.equal(r.asiVaBien[0].domicilio, "D'Angelo & Hijos");
+});
