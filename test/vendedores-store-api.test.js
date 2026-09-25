@@ -1,7 +1,7 @@
 // #141: el registro de vendedores vive en el store (Neon con fallback al JSON).
 // Sin DATABASE_URL el comportamiento por HTTP tiene que ser el de siempre: login,
 // catalogos y el GET/PUT de administracion, con el array completo como contrato.
-import { test, before, after } from 'node:test';
+import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
@@ -27,6 +27,7 @@ delete process.env.DATABASE_URL;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app } = await import('../server.js');
+const { resetLimiteLogin } = await import('../lib/limite-login.js');
 
 const tokenAdmin = jwt.sign({ id: 1, name: 'Jefa Test', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
@@ -51,6 +52,9 @@ before(() => {
 after(() => {
   escribirArchivoSync(VENDEDORES_PATH, original);
 });
+// #450: todas las peticiones de esta suite salen de la misma IP y varias pruebas
+// fallan el PIN a proposito; sin reiniciar el limite, la quinta ya responde 429.
+beforeEach(() => { resetLimiteLogin(); });
 
 test('login: el PIN del registro autentica y el equivocado no', async () => {
   escribirRegistro(REGISTRO);
@@ -147,6 +151,21 @@ test('#449 login de /admin/catalogo: el no-admin con su PIN correcto ve lo mismo
   assert.deepStrictEqual(noAdmin, { error: 'PIN incorrecto o no es administrador' });
   const pinMalo = await entrarComoAdmin(fetchContraApp, '2', '0001');
   assert.deepStrictEqual(pinMalo, noAdmin, 'no distingue PIN correcto de PIN equivocado');
+});
+
+// #450: el modulo mostraba su mensaje fijo ante cualquier no-ok, asi que el
+// bloqueo por intentos se leia como otro PIN equivocado. El 429 trae su propio
+// texto (con los minutos que faltan) y ese es el que llega a la pantalla.
+test('#450 login de administrador: el bloqueo por intentos muestra su propio mensaje con los minutos', async () => {
+  escribirRegistro(REGISTRO_DOS_ADMINS);
+  const { entrarComoAdmin, MENSAJE_LOGIN_ADMIN } = await import('../public/js/login-admin.js');
+  for (let i = 0; i < 4; i++) {
+    assert.deepStrictEqual(await entrarComoAdmin(fetchContraApp, '7', '0000'), { error: MENSAJE_LOGIN_ADMIN });
+  }
+  const quinto = await entrarComoAdmin(fetchContraApp, '7', '0000');
+  assert.deepStrictEqual(quinto, { error: 'Demasiados intentos, espera 15 min' });
+  const correcto = await entrarComoAdmin(fetchContraApp, '7', '9007');
+  assert.deepStrictEqual(correcto, { error: 'Demasiados intentos, espera 15 min' }, 'bloqueado, ni el PIN correcto entra');
 });
 
 test('#449 el selector "Administrador" ofrece a todo el registro por id y nombre, sin PIN ni rol', async () => {

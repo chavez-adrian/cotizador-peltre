@@ -5,7 +5,9 @@
 // manda `soloAdmin: true`: quien decide si el elegido es admin es POST /api/login,
 // que al no-admin le responde lo MISMO que a un PIN equivocado. El navegador
 // ademas descarta cualquier respuesta cuyo rol no sea admin (defensa extra), pero
-// la regla que cuenta, y la que lleva el limite de intentos, es la del servidor.
+// la regla que cuenta es la del servidor, y ahi vive tambien el limite de
+// intentos (#450, lib/limite-login.js): 5 fallos por vendedor o por IP bloquean
+// 15 min con un 429 cuyo texto (los minutos que faltan) se muestra tal cual.
 
 export const MENSAJE_LOGIN_ADMIN = 'PIN incorrecto o no es administrador';
 
@@ -18,6 +20,7 @@ export async function entrarComoAdmin(fetchFn, vendedorId, pin) {
     body: JSON.stringify({ vendedorId: parseInt(vendedorId, 10), pin, soloAdmin: true }),
   });
   const data = await res.json();
+  if (res.status === 429) return { error: data.error };
   if (!res.ok || data.user?.role !== 'admin') return { error: MENSAJE_LOGIN_ADMIN };
   return { token: data.token, user: data.user };
 }

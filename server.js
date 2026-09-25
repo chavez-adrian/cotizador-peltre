@@ -79,6 +79,7 @@ import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.
 import { aTitulo } from './public/js/titulo-logica.js';
 import { numeroTelefonoEsPosible } from './lib/telefono-posible.js';
 import { permitirCaptura } from './lib/rate-limit-publico.js';
+import { intentarLogin } from './lib/limite-login.js';
 import { verificarTurnstile, turnstileConfigurado } from './lib/turnstile.js';
 import { validarCP } from './lib/validar-cp.js';
 import { buscarCP } from './lib/codigos-postales.js';
@@ -180,15 +181,13 @@ function adminMiddleware(req, res, next) {
 app.post('/api/login', async (req, res) => {
   try {
     const { vendedorId, pin, soloAdmin } = req.body;
-    const vendedores = await vendedoresStore.listar();
-    if (!vendedores.length) return res.status(500).json({ error: 'Vendedores no configurados' });
-    const v = vendedores.find(v => v.id === vendedorId && v.pin === pin);
-    // #440: el login de /admin pide `soloAdmin`; el no-admin con PIN correcto
-    // recibe la MISMA respuesta que un PIN equivocado (no confirma el PIN).
-    if (soloAdmin === true && (!v || v.role !== 'admin')) {
-      return res.status(401).json({ error: 'PIN incorrecto o no es administrador' });
-    }
-    if (!v) return res.status(401).json({ error: 'PIN incorrecto' });
+    // #450: limite de intentos por vendedor y por IP, UNA vez para / y para los
+    // paneles (`soloAdmin`); la orquestacion (bloqueo, PIN y registro en un
+    // mismo tramo sincrono) vive en lib/limite-login.js. El 429 lleva los
+    // minutos que faltan en `error`, que los tres logins muestran tal cual.
+    const r = await intentarLogin({ vendedorId, pin, soloAdmin, ip: req.ip }, () => vendedoresStore.listar());
+    if (r.status !== 200) return res.status(r.status).json({ error: r.error });
+    const v = r.vendedor;
     const token = jwt.sign({ id: v.id, name: v.name, role: v.role }, JWT_SECRET, { expiresIn: '24h' });
     res.json({ token, user: { id: v.id, name: v.name, role: v.role } });
   } catch (err) {
