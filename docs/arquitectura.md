@@ -511,6 +511,7 @@ El permiso de fijar lista dejo de ser un booleano: es una MATRIZ (vendedor, list
 Dos niveles:
 
 - **Rutas del cotizador**: JWT de 30 dias. El registro de vendedores (ID + PIN) vive en el store (`lib/vendedores-store.js`, Neon con fallback al JSON). El rol `admin` desbloquea `/api/admin/*`.
+- **Login de los paneles de administracion** (#440, #449): `/admin` y `/admin/catalogo` montan el mismo `public/js/login-admin.js` (selector "Administrador" con `GET /api/vendedores` + `POST /api/login` con `soloAdmin: true`); la regla del rol vive solo en `POST /api/login`, que al no-admin le responde lo mismo que a un PIN equivocado.
 - **Rutas CSF** (`/api/crear-cliente`, `/api/buscar-cliente`, `/api/actualizar-cliente/:id`, `/api/actualizar-cliente-fiscal/:id`, `/api/log`, `/api/csf-from-url`): protegidas con `authMiddleware` igual que el resto del cotizador (la herramienta standalone `csf-upload.html` se retiro en ADR-0003).
 
 El ciclo de vida del cliente tiene tres caminos, todos autenticados:

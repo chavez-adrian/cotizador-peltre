@@ -45,6 +45,10 @@
     <h1>Maestro de art&iacute;culos</h1>
     <p class="subtitle">Panel de administraci&oacute;n</p>
     <div class="form-group">
+      <label>Administrador</label>
+      <select id="admin-vendedor"></select>
+    </div>
+    <div class="form-group">
       <label>PIN de administrador</label>
       <input type="password" id="admin-pin" maxlength="4" inputmode="numeric">
     </div>
@@ -114,25 +118,9 @@ function adminApi(url, opts = {}) {
   return fetch(url, { ...opts, headers });
 }
 
-async function adminLogin() {
-  const pin = document.getElementById('admin-pin').value;
-  const errEl = document.getElementById('admin-error');
-  errEl.style.display = 'none';
-
-  const res = await fetch('/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vendedorId: 1, pin }),
-  });
-  const data = await res.json();
-  if (!res.ok || data.user?.role !== 'admin') {
-    errEl.textContent = 'PIN incorrecto o no es administrador';
-    errEl.style.display = 'block';
-    return;
-  }
-  adminToken = data.token;
-  document.getElementById('admin-login').style.display = 'none';
-  document.getElementById('admin-app').style.display = 'block';
+// #449: el mismo login de /admin (selector Administrador + soloAdmin).
+function alEntrarAdmin(token) {
+  adminToken = token;
   cargarModelos();
 }
 
@@ -230,8 +218,11 @@ async function guardarFila(i) {
   }
 }
 
-document.getElementById('admin-login-btn').addEventListener('click', adminLogin);
-document.getElementById('admin-pin').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
+import('/js/login-admin.js').then(({ montarLoginAdmin }) => montarLoginAdmin(alEntrarAdmin)).catch(() => {
+  const errEl = document.getElementById('admin-error');
+  errEl.textContent = 'No se pudo cargar el login. Recarga la pagina.';
+  errEl.style.display = 'block';
+});
 document.getElementById('admin-logout').addEventListener('click', () => location.reload());
 document.getElementById('modelos-cuerpo').addEventListener('click', e => {
   const boton = e.target.closest('[data-guardar]');

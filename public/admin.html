@@ -418,38 +418,10 @@
 <script>
 let adminToken = null;
 
-// #440: la misma lista publica del login de / (id y nombre); el rol lo valida
-// el servidor con `soloAdmin`, asi el login no expone quien es admin.
-async function cargarVendedoresLogin() {
-  const sel = document.getElementById('admin-vendedor');
-  try {
-    const res = await fetch('/api/vendedores');
-    if (!res.ok) return;
-    const vendedores = await res.json();
-    sel.replaceChildren(...vendedores.map(v => new Option(v.name, v.id)));
-  } catch (e) { /* sin red no hay login */ }
-}
-
-async function adminLogin() {
-  const vendedorId = parseInt(document.getElementById('admin-vendedor').value);
-  const pin = document.getElementById('admin-pin').value;
-  const errEl = document.getElementById('admin-error');
-  errEl.style.display = 'none';
-
-  const res = await fetch('/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vendedorId, pin, soloAdmin: true }),
-  });
-  const data = await res.json();
-  if (!res.ok || data.user?.role !== 'admin') {
-    errEl.textContent = 'PIN incorrecto o no es administrador';
-    errEl.style.display = 'block';
-    return;
-  }
-  adminToken = data.token;
-  document.getElementById('admin-login').style.display = 'none';
-  document.getElementById('admin-app').style.display = 'block';
+// #440/#449: el login (selector Administrador + soloAdmin) vive en
+// /js/login-admin.js, el mismo que monta /admin/catalogo.
+function alEntrarAdmin(token) {
+  adminToken = token;
   loadVendedores();
   loadCotizaciones();
   loadConfig();
@@ -1463,9 +1435,11 @@ async function cargarParidadCatalogo() {
 }
 
 // --- Events ---
-cargarVendedoresLogin();
-document.getElementById('admin-login-btn').addEventListener('click', adminLogin);
-document.getElementById('admin-pin').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
+import('/js/login-admin.js').then(({ montarLoginAdmin }) => montarLoginAdmin(alEntrarAdmin)).catch(() => {
+  const errEl = document.getElementById('admin-error');
+  errEl.textContent = 'No se pudo cargar el login. Recarga la pagina.';
+  errEl.style.display = 'block';
+});
 document.getElementById('admin-logout').addEventListener('click', () => location.reload());
 document.getElementById('btn-preview').addEventListener('click', previewExcel);
 document.getElementById('btn-apply').addEventListener('click', applyExcel);

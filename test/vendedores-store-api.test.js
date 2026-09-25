@@ -103,6 +103,76 @@ test('#440 login de /admin: un vendedor sin rol admin no entra aunque su PIN sea
   assert.strictEqual(enCotizador.status, 200, 'el login de / sigue aceptando al vendedor');
 });
 
+// #449: el login del Maestro de articulos (/admin/catalogo) mandaba siempre el
+// vendedor 1, como /admin antes de #440. Los dos paneles entran ahora por el
+// MISMO modulo del navegador (public/js/login-admin.js), que llama a
+// POST /api/login con `soloAdmin`: la regla del rol vive una sola vez, en el
+// servidor. Estas pruebas corren ese modulo contra la app real con un fetch que
+// traduce a supertest.
+async function fetchContraApp(url, opts = {}) {
+  let peticion = supertest(app)[(opts.method || 'GET').toLowerCase()](url);
+  for (const [llave, valor] of Object.entries(opts.headers || {})) peticion = peticion.set(llave, valor);
+  if (opts.body !== undefined) peticion = peticion.send(opts.body);
+  const res = await peticion;
+  return { ok: res.status >= 200 && res.status < 300, status: res.status, json: async () => res.body };
+}
+
+test('#449 login de /admin/catalogo: entra un admin distinto del 1 con su PIN', async () => {
+  escribirRegistro(REGISTRO_DOS_ADMINS);
+  const { entrarComoAdmin } = await import('../public/js/login-admin.js');
+  // El value del <select> llega como texto.
+  const agente = await entrarComoAdmin(fetchContraApp, '7', '9007');
+  assert.strictEqual(agente.error, undefined);
+  assert.deepStrictEqual(agente.user, { id: 7, name: 'Agente Test', role: 'admin' });
+  const token = jwt.verify(agente.token, JWT_SECRET);
+  assert.strictEqual(token.id, 7);
+  assert.strictEqual(token.role, 'admin');
+});
+
+test('#449 login de /admin/catalogo: el no-admin con su PIN correcto ve lo mismo que con un PIN equivocado', async () => {
+  escribirRegistro(REGISTRO_DOS_ADMINS);
+  const { entrarComoAdmin } = await import('../public/js/login-admin.js');
+  // El rechazo tiene que venir del SERVIDOR: sin `soloAdmin` la ruta aceptaria
+  // al vendedor (200 con token) y solo el filtro del navegador lo taparia.
+  const logins = [];
+  const fetchEspia = async (url, opts = {}) => {
+    const res = await fetchContraApp(url, opts);
+    if (url === '/api/login') logins.push({ body: JSON.parse(opts.body), status: res.status });
+    return res;
+  };
+  const noAdmin = await entrarComoAdmin(fetchEspia, '2', '9002');
+  assert.strictEqual(logins.length, 1);
+  assert.strictEqual(logins[0].body.soloAdmin, true, 'el modulo pide login de administrador');
+  assert.strictEqual(logins[0].status, 401, 'el servidor rechaza al no-admin con PIN correcto');
+  assert.deepStrictEqual(noAdmin, { error: 'PIN incorrecto o no es administrador' });
+  const pinMalo = await entrarComoAdmin(fetchContraApp, '2', '0001');
+  assert.deepStrictEqual(pinMalo, noAdmin, 'no distingue PIN correcto de PIN equivocado');
+});
+
+test('#449 el selector "Administrador" ofrece a todo el registro por id y nombre, sin PIN ni rol', async () => {
+  escribirRegistro(REGISTRO_DOS_ADMINS);
+  const { vendedoresLoginAdmin } = await import('../public/js/login-admin.js');
+  assert.deepStrictEqual(await vendedoresLoginAdmin(fetchContraApp), [
+    { id: 1, name: 'Jefa Test' },
+    { id: 2, name: 'Vendedor Test' },
+    { id: 3, name: 'Sin Operam Test' },
+    { id: 7, name: 'Agente Test' },
+  ]);
+});
+
+// Sin DOM en las pruebas: lo que se afirma del HTML es que los dos paneles montan
+// el modulo compartido y que ninguno conserva su propia llamada al login.
+test('#449 /admin y /admin/catalogo montan el mismo login de administrador', async () => {
+  for (const ruta of ['/admin', '/admin/catalogo']) {
+    const res = await supertest(app).get(ruta);
+    assert.strictEqual(res.status, 200, ruta);
+    assert.match(res.text, /<select id="admin-vendedor"><\/select>/, `${ruta} muestra el selector Administrador`);
+    assert.match(res.text, /import\('\/js\/login-admin\.js'\)/, `${ruta} usa el modulo compartido`);
+    assert.doesNotMatch(res.text, /\/api\/login/, `${ruta} no tiene una segunda copia del login`);
+    assert.doesNotMatch(res.text, /vendedorId: 1\b/, `${ruta} ya no fija al vendedor 1`);
+  }
+});
+
 test('GET /api/vendedores lista el registro sin exponer el PIN', async () => {
   escribirRegistro(REGISTRO);
   const res = await supertest(app).get('/api/vendedores');
