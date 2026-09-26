@@ -172,6 +172,37 @@ test('el uso de CFDI elegido queda escrito por el PUT, que es el unico que Opera
   assert.equal(operam.cliente(res.clienteId).timbrado_uso_cfdi, 'G03');
 });
 
+// #391: el POST ignora el IdCIF igual que el uso de CFDI (el 522 nacio sin el
+// aunque su CSF lo traia); el PUT si lo guarda (medido en vivo 2026-09-25 sobre
+// el cliente 15). La senal es el cuerpo del PUT: el adaptador guarda el POST
+// entero y no distingue.
+test('alta con constancia: el IdCIF de la Solicitud viaja en el PUT posterior al POST', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitudFiscal(), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const put = operam.pedidos('actualizarClienteDirecto').find(l => l.args[1].dimension_id != null);
+  assert.equal(put.args[1].idcif, '12345678901');
+  assert.equal(paso(res, 'PUT customer (dimensiones)').status, 'ok');
+});
+
+// La API no relee el IdCIF (#373): el eco del PUT es su unica verificacion. Si no
+// vuelve, el paso avisa sin tumbar el alta y sin afirmar con que valor se quedo
+// Operam, que nadie midio.
+test('alta con constancia: si el eco del PUT no trae el IdCIF, el paso avisa en dos capas sin inventar un valor anterior', async () => {
+  const operam = operamEnMemoria({ ignoraCliente: ['idcif'] });
+  const res = await darDeAlta(solicitudFiscal(), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const p = paso(res, 'PUT customer (dimensiones)');
+  assert.equal(p.status, 'warn');
+  assert.match(p.mensaje, /IdCIF/);
+  assert.match(p.mensaje, /12345678901/);
+  assert.doesNotMatch(p.mensaje, /vacio|quedo en/i);
+  assert.match(p.detalle, /idcif/);
+  assert.match(p.detalle, /ignoro/i);
+});
+
 test('sin datos fiscales el PUT lleva el uso de CFDI que impone el RFC generico, no el capturado', async () => {
   const operam = operamEnMemoria();
   const res = await darDeAlta(solicitud({
@@ -181,6 +212,7 @@ test('sin datos fiscales el PUT lleva el uso de CFDI que impone el RFC generico,
   assert.equal(res.tipo, 'lograda');
   const put = operam.pedidos('actualizarClienteDirecto').find(l => l.args[1].dimension_id != null);
   assert.equal(put.args[1].timbrado_uso_cfdi, 'S01');
+  assert.equal('idcif' in put.args[1], false, 'sin constancia no hay IdCIF que mandar (#391)');
 });
 
 test('sobre el Cliente Operam que el vendedor eligio no se escribe ningun domicilio de entrega', async () => {
