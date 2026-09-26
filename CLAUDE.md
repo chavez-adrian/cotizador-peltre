@@ -146,6 +146,17 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 - **Ninguna suite hereda ni deja `data/*.json` (#411)**: el par vive en `test/helpers/datos-aislados.js` -- `fotoDatos([rutas])` en el `before()` guarda existencia y TEXTO de lo que se encontro y devuelve la restauracion (el archivo que no existia se BORRA, no queda en `[]`), y `fijarDatos(ruta, valor)` escribe el punto de partida, aunque sea la lista vacia. Guardar y restaurar NO basta: lo que evita heredar es FIJAR. El fixture que `operam-generico` deja en `data/prospectos.json` cuando su `after()` no corre le daba a MX4 (moneda extranjera) un 428 `CONFIRMAR_OTRA_RAZON_SOCIAL` en vez del 422 del gate de moneda, y `.gitignore` mantiene ese estado fuera de `git status`.
 - Testear PDFs: pasar `_compress: false` y buscar strings con `buffer.toString('latin1').includes(str)`.
 
+## Estandares para cambios (lo que revisa /code-review; la Cola nocturna no fusiona sin esto)
+
+- Nucleos PUROS sin IO en `lib/*-logica.js` / `public/js/*-logica.js` y el IO en `server.js` o `*-io.js` (patron de la casa, ver Arquitectura y `docs/arquitectura.md`); un cambio sigue la convencion del modulo vecino mas parecido.
+- Cada criterio de aceptacion (AC) automatizable tiene un test en su costura publica (rutas HTTP con supertest, funciones exportadas de los nucleos) que fallaria si el comportamiento se rompiera; el valor esperado sale del issue o de un ejemplo conocido, nunca de recomputar lo que hace el codigo (tautologico no cuenta). Lo que solo un humano puede verificar (navegador, Operam en vivo, deploy) se declara como AC HITL; no se implementa a ciegas ni se marca hecho.
+- Solo lo que el issue pide: sin refactors, sin reformateo, sin features adyacentes. Un cambio de comportamiento existente que el issue no pide es un defecto.
+- Commits: conventional commits en ASCII (`feat: ... (#N)`, `fix: ... (#N)`, `test:`, `docs:`). La rama termina con UN commit final (o pocos, logicos) y ninguno `wip:`; se stagea por nombre, nunca `add .` ni `add -A`; `git status` queda limpio (sin logs ni temporales).
+- Trailer del commit final: `Closes #N` SOLO si TODOS los AC quedaron cubiertos por tests automatizados; con algun AC HITL, `Refs #N` y la lista de lo que queda para verificacion humana en el cuerpo.
+- Un modulo, una regla no obvia o una trampa nueva agregan UNA linea a la tabla o seccion correspondiente de este archivo o de `docs/arquitectura.md`, con el estilo vecino. Los dos son CRLF en disco: tras editarlos con node o sed, `git diff --stat` debe mostrar pocas lineas; si muestra el archivo entero, normaliza los finales de linea antes de commitear.
+- `data/*.json` no cambian de forma permanente: el test que los escribe los fija y restaura (ver Tests, `datos-aislados.js`). El `.env` de un worktree lleva credenciales falsas y JAMAS `DATABASE_URL`.
+- Un simbolo por nombre y lo invocado desde `onclick` expuesto a `window` junto a su declaracion (ver Trampas); `lib/fs-reintento.js` para `data/*.json`; ASCII estricto en codigo, tests, docs y commits (los textos visibles al usuario llevan acentos via entidades HTML o escapes Unicode, nunca mutilados).
+
 ## Integraciones externas
 
 - **Operam ERP v3**: `OPERAM_URL` + `OPERAM_USER` + `OPERAM_PASSWORD`. Company ID: `346`. Bearer token.
