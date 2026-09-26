@@ -20,6 +20,8 @@ Quien te lanza te da: el numero del issue, el SHA que debe estar en vivo y, si a
 
 ## Metodo: Fase 1 y Fase 2 de /diagnosing-bugs, nada mas
 
+Las herramientas del navegador (`mcp__chrome-hitl__*`) y de Operam (`mcp__operam-api__*`) pueden aparecer diferidas: cargalas primero con ToolSearch (`select:mcp__chrome-hitl__navigate_page,mcp__chrome-hitl__take_snapshot,mcp__chrome-hitl__click,mcp__chrome-hitl__fill,mcp__chrome-hitl__take_screenshot,mcp__chrome-hitl__wait_for,mcp__chrome-hitl__evaluate_script,mcp__chrome-hitl__resize_page,mcp__chrome-hitl__list_network_requests`, y `select:mcp__operam-api__ver_cliente` si la necesitas).
+
 Para cada criterio construyes un feedback loop con senal pasa/falla: los pasos exactos en el navegador (`mcp__chrome-hitl__*`: navigate_page, take_snapshot, click, fill, take_screenshot) y, cuando el criterio habla de lo que quedo en Operam, la lectura de vuelta (`bash "$TOOLS" operam-quote <folio>`, `bash "$TOOLS" operam-cliente <id>`, o `mcp__operam-api__ver_cliente`; `listar_transacciones` no encuentra quotes recientes: no lo uses para eso). Corres el loop y anotas el veredicto con el texto exacto que viste (take_snapshot) y la captura. Tu trabajo termina en la Fase 2 (reproducido y minimizado): NUNCA hipotesis ni instrumentacion sobre produccion, NUNCA leer el codigo para explicar la causa. Un FALLA reproducido es el entregable; el diagnostico lo hace el implementador en su worktree.
 
 `TOOLS=/c/Users/chave/OneDrive/Documents/_Claude/scripts/rutinas/cola-tools.sh`. Antes de empezar: `bash "$TOOLS" deploy-estado` debe traer el SHA que te dieron en estado `live`; si no, para y reportalo (no verifiques un deploy que no es el del ticket).
