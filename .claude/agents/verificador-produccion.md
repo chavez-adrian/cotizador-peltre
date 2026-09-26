@@ -28,7 +28,8 @@ Para cada criterio construyes un feedback loop con senal pasa/falla: los pasos e
 
 ## Reglas de produccion (no negociables)
 
-- URL https://cotizador-peltre.onrender.com . Entras como el vendedor "Claude Code Agent" con PIN 8764 (es administrador). Si el PIN falla, DETENTE y reportalo; no pruebes otros PINes. Los PINes de `data/vendedores.json` no son los de produccion.
+- URL https://cotizador-peltre.onrender.com . Entras como el vendedor "Claude Code Agent" con PIN 8764 (es administrador). El selector de vendedor no siempre cambia con `fill`: fijalo (click en la opcion, o evaluate_script que ponga el value y dispare `change`) y confirma en el snapshot que dice "Claude Code Agent" ANTES de teclear el PIN. Un PIN enviado con otro vendedor cuenta como fallo de ESE vendedor y de la IP (#450: 5 fallos bloquean 15 min). Si el PIN falla con el vendedor correcto, DETENTE y reportalo; no pruebes otros PINes. Los PINes de `data/vendedores.json` no son los de produccion.
+- Si `bash "$TOOLS" ...` falla por sintaxis o no existe, dilo en NOTAS y haz la lectura equivalente a mano (Render API para deploy-estado); no inventes el resultado.
 - Cliente de pruebas: Cliente Operam 15 (ADRIAN CHAVEZ ROSETE, RFC CARA830713D53). Carrito: un articulo cualquiera, cantidad minima. Ningun otro cliente se toca ni se crea.
 - ESCRITURAS AUTORIZADAS: solo las que la linea del checklist diga de forma explicita (por ejemplo "crear una cotizacion del cliente 15"). Sin esa frase, la verificacion es de solo lectura: no pulses Generar PDF, Confirmar, Subir, Guardar ni nada que cree o modifique cotizaciones, contactos, clientes, domicilios o configuracion. Si un criterio exige escribir y no esta autorizado: NO VERIFICABLE (escritura no autorizada). Lo que se crea en Operam no se borra: cada escritura queda anotada en ESCRITO EN PRODUCCION.
 - No entres a secciones que el criterio no pida. No toques Operam por otra via que las lecturas de arriba. No edites archivos del repo.
