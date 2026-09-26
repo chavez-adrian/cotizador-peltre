@@ -2962,6 +2962,25 @@ app.get('/api/contactos/buscar', authMiddleware, async (req, res) => {
   }
 });
 
+// Los Clientes Operam de UN Contacto (#393), para su panel "Cotizaciones
+// previas": las ligas persistidas MAS la derivada del indice de telefonos, la
+// misma union que la vista Clientes (`conLigaDerivada`, #345). Se pide por el
+// celular, que es la identidad del Contacto (ADR-0016), porque el paso Cliente
+// lo elige desde filas de formas distintas (Oportunidad, Contacto) y no todas
+// traen el id del Contacto. GET /api/prospectos no la calcula por fila a
+// proposito: seria un matchCliente por cada Contacto visible. Solo lectura; con
+// el indice frio o caido matchCliente da null y salen solo las persistidas.
+app.get('/api/contactos/clientes-operam', authMiddleware, async (req, res) => {
+  const llave = ultimos10(req.query.celular);
+  const contacto = llave.length === 10
+    ? (await contactosVisiblesPara(req.user)).find(c => ultimos10(c.celular) === llave)
+    : null;
+  if (!contacto) return res.status(404).json({ error: 'Contacto no encontrado' });
+  const derivada = await matchCliente(contacto.celular);
+  const ligas = conLigaDerivada(ligasDeContacto(contacto.data), derivada?.customer_id ?? null);
+  res.json({ clientesOperam: ligas.map(l => String(l.cliente_id)) });
+});
+
 // Precarga de la configuracion comercial visible del cliente (issue #197): la
 // Seccion 2 del upgrade fiscal se abre con lo que Operam tiene HOY, para que
 // confirmar sin tocar nada no mande los defaults del panel encima de datos reales.

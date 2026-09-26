@@ -902,6 +902,30 @@ test('#404-C4: el paso Cliente y la carga del historial comparten UN camino a la
     'el panel lo pinta su declaracion y un solo llamador');
 });
 
+// #393: elegir un Contacto en el paso Cliente es el tercer punto donde el
+// cliente de la sesion cambia, y pide sus previas por el MISMO camino, con el
+// cliente ya armado del Contacto (su celular y sus Clientes Operam ligados).
+test('#393-C1: elegir un Contacto pide sus previas por el mismo camino, con el cliente del Contacto', () => {
+  const cuerpo = cuerpoDeFuncion(fuenteApp(), 'function pcElegirProspecto(');
+  const arma = cuerpo.indexOf('pcState.cliente = cliente');
+  assert.ok(arma > 0, 'si el cliente del Contacto deja de armarse aqui, este test ya no cuida nada: revisarlo');
+  assert.ok(cuerpo.indexOf('pcCargarPreviasDelCliente(cliente)') > arma,
+    'las previas se piden para el cliente del Contacto, despues de armarlo');
+});
+
+// #393: la liga derivada del indice de Operam no viaja en /api/prospectos (seria
+// un matchCliente por fila); el camino la lee solo para el Contacto elegido y
+// la suma a sus ligas ANTES de decidir cuales son suyas.
+test('#393-C2: el camino suma la liga derivada del Contacto antes de filtrar sus previas', () => {
+  const src = fuenteApp();
+  assert.ok(cuerpoDeFuncion(src, 'async function pcLigasLeidasDelContacto(').includes('/api/contactos/clientes-operam'),
+    'la derivada se lee por la ruta de un solo Contacto');
+  const cuerpo = cuerpoDeFuncion(src, 'async function pcCargarPreviasDelCliente(');
+  const suma = cuerpo.indexOf('conClientesOperamLigados(cliente, leidas)');
+  assert.ok(cuerpo.includes('pcLigasLeidasDelContacto(cliente)') && suma > 0, 'el camino pide y suma las ligas leidas');
+  assert.ok(suma < cuerpo.indexOf('cotizacionesPreviasDelCliente('), 'se suman antes de filtrar');
+});
+
 test('#404-C5: el camino apaga el panel del cliente anterior antes de pedir las nuevas', () => {
   const cuerpo = cuerpoDeFuncion(fuenteApp(), 'async function pcCargarPreviasDelCliente(');
   const apaga = cuerpo.indexOf("getElementById('historial-cliente-panel')");

@@ -1188,6 +1188,27 @@ export function buildClienteDesdeContactoNuevo(campos) {
   };
 }
 
+// Los Clientes Operam ligados a un Contacto (#393), como texto y sin repetidos:
+// la singular `data.cliente_id` mas la lista `data.clientes_operam` (#345). Es
+// el gemelo browser de `ligasDeContacto` (lib/ligas-contacto.js), que public/js
+// no puede importar. No filtra por `fuente`: toda liga cuenta.
+function idsClientesOperamLigados(data) {
+  const d = data || {};
+  const crudos = [d.cliente_id, ...(Array.isArray(d.clientes_operam) ? d.clientes_operam : []).map(l => l && l.cliente_id)];
+  return [...new Set(crudos.filter(id => id != null && id !== '').map(String))];
+}
+
+// El Contacto elegido con las ligas que se LEEN aparte (#393): la derivada del
+// indice de Operam no vive en su `data` y la trae GET /api/contactos/clientes-operam
+// solo para el. Se suman a las persistidas sin repetidos; sin lectura, quedan
+// las suyas.
+export function conClientesOperamLigados(cliente, ids) {
+  const c = cliente || {};
+  const propias = Array.isArray(c.clientesOperamLigados) ? c.clientesOperamLigados : [];
+  const leidas = (Array.isArray(ids) ? ids : []).filter(id => id != null && id !== '');
+  return { ...c, clientesOperamLigados: [...new Set([...propias, ...leidas].map(String))] };
+}
+
 export function clienteDesdeProspecto(prospecto) {
   const p = prospecto || {};
   const ciudad = p.ciudad || '';
@@ -1198,6 +1219,7 @@ export function clienteDesdeProspecto(prospecto) {
     // customer_id del cliente generico si el prospecto ya cotizo (ligarCliente, #81):
     // destino del PUT del upgrade fiscal (#85). null = nunca cotizo, no hay contra que actualizar.
     clienteOperamId: (p.data && p.data.cliente_id != null) ? p.data.cliente_id : null,
+    clientesOperamLigados: idsClientesOperamLigados(p.data),
     name: p.nombre || '',
     ref: p.nombre || '',
     rfc: '',
@@ -1368,8 +1390,14 @@ export function cotizacionesPreviasDelCliente(cotizaciones, cliente) {
   const celulares = new Set(
     (Array.isArray(c.telefonos) && c.telefonos.length ? c.telefonos : [c.telefono])
       .map(llaveCelularOrigen).filter(t => t.length === 10));
+  const ligados = Array.isArray(c.clientesOperamLigados) ? new Set(c.clientesOperamLigados.map(String)) : null;
   return (cotizaciones || []).filter(cot => {
     if (!cot) return false;
+    if (ligados) {
+      if (cot.customerId != null && ligados.has(String(cot.customerId))) return true;
+      const cel = llaveCelularOrigen(cot.contactoCelular);
+      return cel.length === 10 && celulares.has(cel);
+    }
     if (cot.customerId != null) return clienteId !== null && String(cot.customerId) === clienteId;
     const rfcCot = esRfcGenerico(cot.rfc) ? '' : llaveRfc(cot.rfc);
     if (rfcCliente && rfcCot === rfcCliente) return true;

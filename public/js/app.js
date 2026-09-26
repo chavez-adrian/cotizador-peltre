@@ -24,6 +24,7 @@ import {
   mezclarResultadosBusqueda,
   recientesDesdeCotizaciones,
   cotizacionesPreviasDelCliente,
+  conClientesOperamLigados,
   chipsCompletitud,
   contactoAccionable,
   buildClienteDesdeContactoNuevo,
@@ -3684,6 +3685,11 @@ function pcElegirProspecto(raw) {
   pcLlenarCamposContacto(cliente);
   pcState.cliente = cliente;
   pcRenderTarjeta();
+  // Sus "Cotizaciones previas" por el camino unico (#404): las de su celular y
+  // las de sus Clientes Operam ligados, derivada incluida (#393). Sin await,
+  // como en cargarCotizacion, para no retrasar sus domicilios mientras llega la
+  // liga derivada; el camino se traga sus propios errores.
+  pcCargarPreviasDelCliente(cliente);
   // Un prospecto que ya cotizo lleva puesto su Cliente Operam (clienteOperamId,
   // #81) y por lo tanto tiene domicilios que ofrecer, igual que la fila 'operam'
   // del mismo buscador -- que sale AL LADO de la suya, porque
@@ -4541,11 +4547,24 @@ async function pcEjecutarUpgradeFiscal(datos) {
   }
 }
 
+// Las ligas de un Contacto que no viven en su `data`: la derivada del indice de
+// telefonos de Operam (#345), leida solo para el Contacto elegido
+// (GET /api/contactos/clientes-operam, #393) y no por fila en /api/prospectos.
+// Si la lectura falla, el panel sigue con su celular y sus ligas persistidas.
+async function pcLigasLeidasDelContacto(cliente) {
+  if (!Array.isArray(cliente?.clientesOperamLigados) || !cliente.telefono) return [];
+  try {
+    const r = await api(`/api/contactos/clientes-operam?celular=${encodeURIComponent(cliente.telefono)}`);
+    return r.ok ? ((await r.json()).clientesOperam || []) : [];
+  } catch { return []; }
+}
+
 // EL camino a "Cotizaciones previas" (#389, #404). El panel es un satelite del
 // cliente de la sesion -- como window._operamDomicilios y los contactos leidos
-// de Operam -- y cambia en los DOS puntos donde ese cliente cambia: elegirlo a
-// mano en el paso Cliente (seleccionarClienteOperam) y cargar una cotizacion del
-// historial (cargarCotizacion, Editar y Copiar). Hasta #404 solo lo llenaba el
+// de Operam -- y cambia en los TRES puntos donde ese cliente cambia: elegirlo a
+// mano en el paso Cliente (seleccionarClienteOperam), elegir un Contacto
+// (pcElegirProspecto, #393) y cargar una cotizacion del historial
+// (cargarCotizacion, Editar y Copiar). Hasta #404 solo lo llenaba el
 // primero: cargada la 1284 de Adrian con Jorge Orea elegido antes, la tarjeta
 // pasaba a Adrian (#394) y debajo seguia la cotizacion previa de Jorge, con sus
 // botones Editar y Copiar cotizacion encima.
@@ -4556,13 +4575,18 @@ async function pcEjecutarUpgradeFiscal(datos) {
 // #389): identidad -- customerId de Operam, RFC real exacto o Contacto --, nunca
 // el prefijo del nombre; con el, "maria del " empataba a cualquier "Maria del
 // ..." y el panel ofrecia Editar y Copiar cotizacion sobre las de otro cliente.
+//
+// Un Contacto (el unico cliente que trae `clientesOperamLigados`) suma la liga
+// derivada del indice de Operam, que no vive en su `data`: se pide junto con el
+// listado (pcLigasLeidasDelContacto, #393).
 async function pcCargarPreviasDelCliente(cliente) {
   const panel = document.getElementById('historial-cliente-panel');
   if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
   try {
-    const r = await api('/api/cotizaciones');
+    const [r, leidas] = await Promise.all([api('/api/cotizaciones'), pcLigasLeidasDelContacto(cliente)]);
     const todas = await r.json();
-    const previas = cotizacionesPreviasDelCliente(todas, cliente);
+    const suyo = Array.isArray(cliente?.clientesOperamLigados) ? conClientesOperamLigados(cliente, leidas) : cliente;
+    const previas = cotizacionesPreviasDelCliente(todas, suyo);
     if (previas.length > 0) renderHistorialCliente(previas);
   } catch {}
 }

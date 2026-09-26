@@ -13,7 +13,8 @@ let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud, con
   contactosEntregaDisponibles, etiquetaTagContacto, nombreConCorto,
   contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente, etiquetaPapelesContacto,
   clienteDesdeCotizacionReciente, ofreceCrearContacto, accionChipFiscal,
-  prellenadoAltaDesdePasoCliente, camposPrecargaIntactos, valoresBorradorSinPrecarga, serializarBorradorFormulario;
+  prellenadoAltaDesdePasoCliente, camposPrecargaIntactos, valoresBorradorSinPrecarga, serializarBorradorFormulario,
+  conClientesOperamLigados;
 
 before(async () => {
   ({
@@ -24,6 +25,7 @@ before(async () => {
     contactoEntregaDelCliente, seleccionContactoEntrega, cotizacionesPreviasDelCliente, etiquetaPapelesContacto,
     clienteDesdeCotizacionReciente, ofreceCrearContacto, accionChipFiscal,
     prellenadoAltaDesdePasoCliente, camposPrecargaIntactos, valoresBorradorSinPrecarga,
+    conClientesOperamLigados,
   } = await import('../alta-logica.js'));
   ({ serializarBorradorFormulario } = await import('../borrador-form-logica.js'));
 });
@@ -1136,4 +1138,84 @@ test('H8: tolera listas y cliente nulos', () => {
   assert.deepStrictEqual(cotizacionesPreviasDelCliente(null, CLIENTE_44), []);
   assert.deepStrictEqual(cotizacionesPreviasDelCliente(PREVIAS_248, null), []);
   assert.deepStrictEqual(cotizacionesPreviasDelCliente([null, undefined], CLIENTE_44), []);
+});
+
+// === Las previas de un CONTACTO (#393) ===
+// Elegir un Contacto en el paso Cliente (pcElegirProspecto) no pintaba el panel,
+// y aunque lo pintara, la regla de #389 descartaba toda cotizacion con
+// customerId cuando el elegido no trae id de Cliente Operam. El Contacto ES su
+// celular (ADR-0016): sus cotizaciones son las de su celular por ultimos10,
+// tengan o no customerId, MAS las de todos sus Clientes Operam ligados
+// (decision de Adrian 2026-09-25), en una sola lista sin duplicados.
+
+test('H9: Contacto sin liga -> las cotizaciones de su celular aparecen aunque traigan customerId', () => {
+  const contacto = clienteDesdeProspecto({ id: 300, nombre: 'Rosa Paredes', celular: '+52 55 7001 4455', data: {} });
+  const suya = { id: 70, fecha: '2026-08-01T18:00:00.000Z', cliente: 'RESTAURANTE LA ROSA', customerId: 640, rfc: 'RLR0101019A1', contactoCelular: '5570014455', total: 3100 };
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([...PREVIAS_248, suya], contacto), [suya]);
+});
+
+test('H10: las cotizaciones de sus Clientes Operam ligados entran aunque las cotizara otro celular', () => {
+  const contacto = clienteDesdeProspecto({
+    id: 301, nombre: 'Rosa Paredes', celular: '+52 55 7001 4455',
+    data: { cliente_id: 640, clientes_operam: [{ cliente_id: 640, fuente: 'cotizador' }, { cliente_id: 712, fuente: 'cotizador' }] },
+  });
+  const deLaCompradora = { id: 71, fecha: '2026-08-05T18:00:00.000Z', cliente: 'GRUPO ROSA MATRIZ', customerId: '712', rfc: 'GRM0202029B2', contactoCelular: '5566778899', total: 5400 };
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([PREVIAS_248[0], deLaCompradora], contacto), [deLaCompradora]);
+});
+
+// El caso del HITL de #389: Luis Emilio Zarabozo, cuyo Cliente Operam desde el
+// upgrade fiscal es el 517 (ROYAL TABLE). La 1261 y la 1263 (ids 89 y 90) se
+// subieron al 517 con su celular, y buscando "Zarabozo" solo sale su Contacto.
+const ZARABOZO = {
+  id: 410, nombre: 'Luis Emilio Zarabozo', celular: '+52 55 6120 3344', ciudad: 'CDMX',
+  data: { cliente_id: 517, clientes_operam: [{ cliente_id: 517, fuente: 'cotizador' }] },
+};
+const PREVIAS_ZARABOZO = [
+  { id: 89, folioOperam: 1261, fecha: '2026-09-10T18:00:00.000Z', cliente: 'ROYAL TABLE', customerId: 517, rfc: 'RTA1505125K3', contactoCelular: '5561203344', total: 12800 },
+  { id: 90, folioOperam: 1263, fecha: '2026-09-12T18:00:00.000Z', cliente: 'ROYAL TABLE', customerId: 517, rfc: 'RTA1505125K3', contactoCelular: '5561203344', total: 9350 },
+];
+
+test('H11: elegir el Contacto Luis Emilio Zarabozo -> la 1261 y la 1263, una vez cada una', () => {
+  const previas = cotizacionesPreviasDelCliente([...PREVIAS_248, ...PREVIAS_ZARABOZO], clienteDesdeProspecto(ZARABOZO));
+  assert.deepStrictEqual(previas.map(c => c.folioOperam), [1261, 1263]);
+});
+
+test('H12: un Contacto sin cotizaciones -> lista vacia (el panel no se pinta)', () => {
+  const nuevo = clienteDesdeProspecto({ id: 411, nombre: 'Sin Cotizar', celular: '+52 55 1000 2000', data: {} });
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente([...PREVIAS_248, ...PREVIAS_ZARABOZO], nuevo), []);
+});
+
+test('H13: las de otro Contacto con nombre parecido no aparecen', () => {
+  const parecido = clienteDesdeProspecto({
+    id: 412, nombre: 'Luis Emilio Zaragoza', celular: '+52 55 6120 9988',
+    data: { cliente_id: 530, clientes_operam: [{ cliente_id: 530, fuente: 'cotizador' }] },
+  });
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(PREVIAS_ZARABOZO, parecido), []);
+});
+
+// Las ligas derivadas del indice de Operam son de lectura y tambien cuentan
+// (decision de Adrian 2026-09-25): la fuente de la liga no filtra.
+test('H14: una liga con fuente operam cuenta igual que la del cotizador', () => {
+  const contacto = clienteDesdeProspecto({
+    id: 413, nombre: 'Rosa Paredes', celular: '+52 55 7001 4455',
+    data: { clientes_operam: [{ cliente_id: 517, fuente: 'operam' }] },
+  });
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(PREVIAS_ZARABOZO, contacto), PREVIAS_ZARABOZO);
+});
+
+// La liga DERIVADA del indice de Operam no esta en data.clientes_operam: la lee
+// GET /api/contactos/clientes-operam solo para el Contacto elegido, y se suma a
+// sus ligas antes de filtrar (decision de Adrian 2026-09-25).
+test('H15: la liga derivada de un Contacto sin ligas persistidas trae sus cotizaciones', () => {
+  const contacto = clienteDesdeProspecto({ id: 414, nombre: 'Luis Emilio Zarabozo', celular: '+52 55 6120 3344', data: {} });
+  const deOtroCelular = PREVIAS_ZARABOZO.map(c => ({ ...c, contactoCelular: '5599887766' }));
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(deOtroCelular, contacto), []);
+  const conDerivada = conClientesOperamLigados(contacto, ['517']);
+  assert.deepStrictEqual(cotizacionesPreviasDelCliente(deOtroCelular, conDerivada).map(c => c.folioOperam), [1261, 1263]);
+});
+
+test('H16: sumar las ligas leidas no repite las persistidas ni pierde las suyas', () => {
+  const contacto = clienteDesdeProspecto(ZARABOZO);
+  assert.deepStrictEqual(conClientesOperamLigados(contacto, [517, '780']).clientesOperamLigados, ['517', '780']);
+  assert.deepStrictEqual(conClientesOperamLigados(contacto, null).clientesOperamLigados, ['517']);
 });
