@@ -3966,7 +3966,7 @@ function pcRenderTarjeta() {
     `<div class="pc-cli-nombre">${escapeHtml(nombreTarjeta)}</div>` +
     `<div class="pc-cli-sub">${sub}</div>` +
     `<div class="pc-chips">${pcChipsHtml(chips, accionChipFiscal(c), contactoAccionable(c))}</div>` +
-    (esOperam ? '' : '<div class="pc-cli-hint">Puedes cotizar y mandar por WhatsApp con esto. La direccion se pide en Envio; los datos fiscales (CSF) solo si subes el cliente a Operam.</div>') +
+    (esOperam ? '' : '<div class="pc-cli-hint">Con esto ya puedes cotizar y mandar por WhatsApp. La direccion se captura en el paso Envio. Si el cliente necesita factura, sube su constancia fiscal (CSF) con el boton Fiscal, en cualquier momento.</div>') +
     (bloqueoMoneda
       ? `<div class="pc-cli-bloqueo">${escapeHtml(bloqueoMoneda.mensaje)}</div>`
       : '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>') +
