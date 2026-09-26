@@ -9,11 +9,11 @@ const assert = require('node:assert/strict');
 // implementacion: si el codigo y el catalogo discrepan, el test debe fallar.
 
 let CATALOGO_REGIMENES, labelRegimen, esRegimenValido, tipoPersonaRfc,
-  regimenesParaRfc, opcionesRegimenHtml;
+  regimenesParaRfc, opcionesRegimenHtml, avisoVariosRegimenes;
 before(async () => {
   ({
     CATALOGO_REGIMENES, labelRegimen, esRegimenValido, tipoPersonaRfc,
-    regimenesParaRfc, opcionesRegimenHtml,
+    regimenesParaRfc, opcionesRegimenHtml, avisoVariosRegimenes,
   } = await import('../regimen-fiscal-logica.js'));
 });
 
@@ -126,7 +126,7 @@ test('F6: un "seleccionado" que no existe en el catalogo no se inventa', () => {
 
 // --- opcionesRegimenHtml ------------------------------------------------------
 
-test('O1: la primera opcion es la vacia (el campo es opcional en la pestana CSF)', () => {
+test('O1: la primera opcion es la vacia (sin elegir; la validacion de la pestana la rechaza)', () => {
   const html = opcionesRegimenHtml('', '');
   assert.match(html, /^<option value="">/);
 });
@@ -148,4 +148,31 @@ test('O3: ninguna opcion sale marcada como selected, ni siquiera la ya capturada
 test('O4: el valor ya capturado sigue estando entre las opciones aunque el filtro lo excluya', () => {
   const html = opcionesRegimenHtml('SMS200716NZ4', '612');
   assert.match(html, /<option value="612">/);
+});
+
+// --- Varios regimenes en la constancia (issue #390) ---------------------------
+// Con mas de un regimen detectado el selector ofrece SOLO esos, en el orden en que
+// el SAT los lista: el primero es el preseleccionado y el vendedor confirma.
+
+test('V1: con varios regimenes detectados solo se ofrecen esos, en el orden de la constancia', () => {
+  const html = opcionesRegimenHtml('PEGJ850214HN2', '611', ['611', '605']);
+  const valores = [...html.matchAll(/<option value="(\d*)">/g)].map(m => m[1]);
+  assert.deepStrictEqual(valores, ['', '611', '605']);
+});
+
+test('V2: con un solo regimen detectado el selector ofrece el catalogo de su tipo, como hoy', () => {
+  assert.strictEqual(opcionesRegimenHtml('PEGJ850214HN2', '626', ['626']), opcionesRegimenHtml('PEGJ850214HN2', '626'));
+});
+
+// Texto de la decision de Adrian en el issue: numero de regimenes, codigos en el
+// orden de la constancia y la pregunta. Los acentos van como escapes (ASCII).
+test('V3: con varios regimenes el aviso los nombra y pide confirmar con cual se factura', () => {
+  assert.strictEqual(avisoVariosRegimenes(['605', '611']),
+    'Esta constancia trae 2 reg\u00edmenes: 605, 611 \u2014 confirma con cu\u00e1l se factura');
+});
+
+test('V4: con un solo regimen, o ninguno, no hay aviso', () => {
+  assert.strictEqual(avisoVariosRegimenes(['626']), '');
+  assert.strictEqual(avisoVariosRegimenes([]), '');
+  assert.strictEqual(avisoVariosRegimenes(undefined), '');
 });

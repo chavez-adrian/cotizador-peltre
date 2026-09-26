@@ -118,36 +118,6 @@ test('C12: buildCsfDatosExtraidos campos opcionales ausentes no generan error', 
   assert.strictEqual(payload.regimenFiscal, '');
 });
 
-// ─── validarCsfCampos ─────────────────────────────────────────────────────────
-const { validarCsfCampos } = require('./helpers.cjs');
-
-test('C13: validarCsfCampos con todos los campos requeridos retorna null', () => {
-  const getVal = id => ({ 'csf-rfc': 'BMF821130AR3', 'csf-razon-social': 'BANCO DE MEXICO', 'csf-nombre-corto': 'BANCO' })[id] || '';
-  const err = validarCsfCampos(getVal);
-  assert.strictEqual(err, null);
-});
-
-test('C14: validarCsfCampos sin RFC retorna mensaje de error con "RFC"', () => {
-  const getVal = id => ({ 'csf-razon-social': 'BANCO DE MEXICO', 'csf-nombre-corto': 'BANCO' })[id] || '';
-  const err = validarCsfCampos(getVal);
-  assert.ok(err, 'debe retornar error');
-  assert.ok(err.includes('RFC'), 'menciona RFC');
-});
-
-test('C15: validarCsfCampos sin razon social retorna mensaje de error', () => {
-  const getVal = id => ({ 'csf-rfc': 'BMF821130AR3', 'csf-nombre-corto': 'BANCO' })[id] || '';
-  const err = validarCsfCampos(getVal);
-  assert.ok(err, 'debe retornar error');
-  assert.ok(err.toLowerCase().includes('razon'), 'menciona razon social');
-});
-
-test('C16: validarCsfCampos sin nombre corto retorna mensaje de error', () => {
-  const getVal = id => ({ 'csf-rfc': 'BMF821130AR3', 'csf-razon-social': 'BANCO DE MEXICO' })[id] || '';
-  const err = validarCsfCampos(getVal);
-  assert.ok(err, 'debe retornar error');
-  assert.ok(err.toLowerCase().includes('nombre corto') || err.toLowerCase().includes('nombre'), 'menciona nombre corto');
-});
-
 // ─── buildCsfConfirmarPayload ─────────────────────────────────────────────────
 const { buildCsfConfirmarPayload } = require('./helpers.cjs');
 
@@ -221,14 +191,6 @@ test('C21: altaDesbloqueaSeccion retorna secciones desbloqueadas al completar la
   // Completar seccion 3 desbloquea seccion 4
   const locked3 = altaDesbloqueaSeccion([4], 3);
   assert.deepStrictEqual(locked3, []);
-});
-
-test('C22: validarCsfCampos con RFC vacio retorna error aunque otros campos esten llenos', () => {
-  const { validarCsfCampos } = require('./helpers.cjs');
-  const getVal = id => ({ 'csf-razon-social': 'EMPRESA SA', 'csf-nombre-corto': 'EMPRESA' })[id] || '';
-  const err = validarCsfCampos(getVal);
-  assert.ok(err, 'debe haber error');
-  assert.ok(err.toUpperCase().includes('RFC'), 'error menciona RFC');
 });
 
 // ─── buildCsfDatosDesdeRespuesta: maneja respuesta de POST /api/parsear-csf (issue #34) ──

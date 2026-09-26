@@ -860,6 +860,20 @@ export function validarAltaManualMinimos(datos) {
   return null;
 }
 
+// Validacion de la pestana CSF (alta y upgrade fiscal, el mismo panel). El regimen
+// es obligatorio desde el issue #390: con varios regimenes en la constancia el
+// vendedor confirma con cual se factura, y uno vacio que llegara al alta lo
+// rellenaria buildClienteBody en silencio con 612.
+export function validarCamposCsf(datos) {
+  const d = datos || {};
+  if (!String(d.rfc || '').trim()) return 'El RFC es obligatorio';
+  if (!String(d.razonSocial || '').trim()) return 'La razon social es obligatoria';
+  if (!String(d.nombreCorto || '').trim()) return 'El nombre corto es obligatorio';
+  if (!String(d.regimenFiscal || '').trim()) return 'El regimen fiscal es obligatorio';
+  if (!esRegimenValido(d.regimenFiscal)) return 'El regimen fiscal no es una clave del catalogo del SAT';
+  return null;
+}
+
 // Tax ID extranjero -> notas del cliente (issue #95 regla 5): no hay campo dedicado
 // en la API v3 de Operam para eso, asi que se antepone una linea con prefijo claro
 // a las notas EXISTENTES en Operam (nunca se sobreescriben: notas trae actividades

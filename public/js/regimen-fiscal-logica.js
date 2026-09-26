@@ -71,17 +71,36 @@ export function regimenesParaRfc(rfc, seleccionado) {
 
 // Las opciones muestran codigo Y descripcion: el pedido de Adrian era exactamente
 // que nadie tenga que recordar los regimenes por codigo. La primera opcion vacia
-// mantiene el campo opcional en la pestana CSF (donde el parser lo autollena).
+// es la de "sin elegir"; que no viaje asi lo impide la validacion de cada pestana
+// (en la CSF, validarCamposCsf de alta-logica.js, #390).
 //
 // `seleccionado` solo sirve para que un valor ya capturado no se caiga de la lista
 // al filtrar; NINGUNA opcion sale con el atributo `selected`. Marcarlo romperia el
 // borrador de formulario (#185), que decide "esto es captura o es el default" con
 // option[selected]: lo capturado pasaria por default y no se guardaria. Quien
 // repuebla el <select> le pone el valor por JS despues (altaPoblarRegimen).
-export function opcionesRegimenHtml(rfc, seleccionado) {
+//
+// `detectados` son los regimenes que el parser encontro en la constancia, en el
+// orden del SAT (issue #390). Con mas de uno, el vendedor elige SOLO entre ellos y
+// en ese orden; con uno o ninguno, el selector es el de siempre.
+function regimenesDetectados(detectados) {
+  return (detectados || [])
+    .map(codigo => CATALOGO_REGIMENES.find(r => r.codigo === String(codigo || '').trim()))
+    .filter(Boolean);
+}
+
+export function avisoVariosRegimenes(detectados) {
+  const codigos = regimenesDetectados(detectados).map(r => r.codigo);
+  if (codigos.length < 2) return '';
+  return `Esta constancia trae ${codigos.length} reg\u00edmenes: ${codigos.join(', ')} \u2014 confirma con cu\u00e1l se factura`;
+}
+
+export function opcionesRegimenHtml(rfc, seleccionado, detectados) {
   const elegido = String(seleccionado || '').trim();
+  const soloDetectados = regimenesDetectados(detectados);
+  const lista = soloDetectados.length > 1 ? soloDetectados : regimenesParaRfc(rfc, elegido);
   return '<option value="">-- Selecciona --</option>' +
-    regimenesParaRfc(rfc, elegido).map(r =>
+    lista.map(r =>
       `<option value="${r.codigo}">${r.codigo} - ${r.descripcion}</option>`
     ).join('');
 }

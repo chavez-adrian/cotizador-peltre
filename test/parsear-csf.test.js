@@ -332,3 +332,59 @@ describe('etiquetas cortas dentro de un valor (issue #378)', () => {
     assert.equal(d.cp, '06000');
   });
 });
+
+// issue #390: Operam guarda UN regimen por cliente y la constancia puede traer
+// varios. El parser entrega la LISTA en el orden en que el SAT la imprime y
+// preselecciona el primero; el panel pide al vendedor confirmar cual se factura.
+// Antes ganaba la descripcion mas larga, sin importar el orden del documento.
+const regimenQR = (desc, alta) => ` Regimen: \n ${desc}\n Fecha de alta: \n ${alta}`;
+const REG_605 = 'Regimen de Sueldos y Salarios e Ingresos Asimilados a Salarios';
+const REG_611 = 'Regimen de Ingresos por Dividendos (socios y accionistas)';
+
+describe('varios regimenes en la constancia (issue #390)', () => {
+  it('605 y 611 (la CSF de Adrian en el validador QR): lista en orden, preselecciona 605', () => {
+    const d = parsearCSF(`RFC: PEGJ850214HN2\n Caracteristicas fiscales (vigente)\n${regimenQR(REG_605, '16-01-2006')}\n${regimenQR(REG_611, '10-03-2025')}`);
+    assert.deepEqual(d.regimenesFiscales, ['605', '611']);
+    assert.equal(d.regimenFiscal, '605');
+  });
+
+  it('611 y 605: el orden del documento manda, preselecciona 611', () => {
+    const d = parsearCSF(`RFC: PEGJ850214HN2\n Caracteristicas fiscales (vigente)\n${regimenQR(REG_611, '10-03-2025')}\n${regimenQR(REG_605, '16-01-2006')}`);
+    assert.deepEqual(d.regimenesFiscales, ['611', '605']);
+    assert.equal(d.regimenFiscal, '611');
+  });
+
+  // Tabla "Regimenes" de la CSF en PDF tal como la aplana pdf.js (ver CSF_UNA_LINEA).
+  const tablaPDF = (...filas) => `RFC: PEGJ850214HN2 Regímenes: Régimen Fecha Inicio Fecha Fin ${filas.join(' ')} Obligaciones: `;
+  const PDF_605 = 'Régimen de Sueldos y Salarios e Ingresos Asimilados a Salarios 16/01/2006';
+  const PDF_626 = 'Régimen Simplificado de Confianza 01/01/2022';
+  const PDF_612 = 'Régimen de las Personas Físicas con Actividades Empresariales y Profesionales 01/07/2015';
+
+  it('605 y 626 (RESICO): preselecciona 605, que el SAT lista primero', () => {
+    const d = parsearCSF(tablaPDF(PDF_605, PDF_626));
+    assert.deepEqual(d.regimenesFiscales, ['605', '626']);
+    assert.equal(d.regimenFiscal, '605');
+  });
+
+  it('626 y 605: preselecciona 626 (antes ganaba 605 por tener la descripcion mas larga)', () => {
+    const d = parsearCSF(tablaPDF(PDF_626, PDF_605));
+    assert.deepEqual(d.regimenesFiscales, ['626', '605']);
+    assert.equal(d.regimenFiscal, '626');
+  });
+
+  it('605 y 612: preselecciona 605 (antes ganaba 612 por tener la descripcion mas larga)', () => {
+    const d = parsearCSF(tablaPDF(PDF_605, PDF_612));
+    assert.deepEqual(d.regimenesFiscales, ['605', '612']);
+    assert.equal(d.regimenFiscal, '605');
+  });
+
+  it('con un solo regimen la lista trae solo ese', () => {
+    assert.deepEqual(parsearCSF(tablaPDF(PDF_626)).regimenesFiscales, ['626']);
+  });
+
+  it('sin regimen reconocible la lista va vacia y el elegido tambien', () => {
+    const d = parsearCSF('RFC: XAXX010101000');
+    assert.deepEqual(d.regimenesFiscales, []);
+    assert.equal(d.regimenFiscal, '');
+  });
+});

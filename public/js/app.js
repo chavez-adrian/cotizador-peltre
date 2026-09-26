@@ -39,6 +39,7 @@ import {
   camposPrecargaIntactos,
   valoresBorradorSinPrecarga,
   validarAltaManualMinimos,
+  validarCamposCsf,
   emailFacturaParaUpgrade,
   contactosEntregaDisponibles,
   contactoEntregaDelCliente,
@@ -174,6 +175,7 @@ import {
 } from './bandeja-logica.js';
 import {
   opcionesRegimenHtml,
+  avisoVariosRegimenes,
   esRegimenValido,
 } from './regimen-fiscal-logica.js';
 import {
@@ -4245,6 +4247,8 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   altaCsfState.upgradeOrigen = origen || null;
   altaCsfState.datos = null;
   altaCsfState.pdfBase64 = null;
+  altaCsfState.regimenesDetectados = null;
+  altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
   // Banner de contexto (#94): visible siempre que modoUpgrade este activo. Hace
   // visible CONTRA QUIEN se actualiza (hoy ese contexto es invisible). Aplica
   // tanto al upgrade desde el paso Cliente como desde la vista Clientes.
@@ -7730,13 +7734,30 @@ function altaLeerComercialUpgrade() {
 // fisica; sin RFC valido, el catalogo entero) y conserva lo ya elegido, que puede
 // venir del parseo de la CSF o del borrador de #185. El valor se pone por JS y no
 // como atributo `selected` en el HTML -- ver opcionesRegimenHtml.
+//
+// Varios regimenes en la constancia (#390): el select de la pestana CSF ofrece solo
+// los detectados, en el orden del SAT, y avisa que hay que confirmar uno. La lista
+// vale mientras el RFC de la pestana sea el de ESA constancia: vaciar el panel,
+// cambiar el RFC o cargar otra constancia la sueltan.
+function altaCsfRegimenesVigentes() {
+  const detectados = altaCsfState.regimenesDetectados;
+  const rfc = (document.getElementById('csf-rfc')?.value || '').trim().toUpperCase();
+  return detectados && rfc && detectados.rfc === rfc ? detectados.codigos : [];
+}
+
 function altaPoblarRegimen(idSelect, idRfc, seleccion) {
   const sel = document.getElementById(idSelect);
   if (!sel) return;
   const rfc = document.getElementById(idRfc)?.value || '';
   const elegido = seleccion !== undefined ? String(seleccion || '') : sel.value;
-  sel.innerHTML = opcionesRegimenHtml(rfc, elegido);
+  const detectados = idSelect === 'csf-regimen-fiscal' ? altaCsfRegimenesVigentes() : [];
+  sel.innerHTML = opcionesRegimenHtml(rfc, elegido, detectados);
   sel.value = esRegimenValido(elegido) ? elegido : '';
+  if (idSelect !== 'csf-regimen-fiscal') return;
+  const aviso = document.getElementById('csf-regimen-aviso');
+  if (!aviso) return;
+  aviso.textContent = avisoVariosRegimenes(detectados);
+  aviso.style.display = aviso.textContent ? '' : 'none';
 }
 
 function altaPoblarRegimenes() {
@@ -7869,6 +7890,8 @@ function altaReiniciarPanel() {
   altaCsfState.datos = null;
   altaCsfState.confirmado = false;
   altaCsfState.pdfBase64 = null;
+  altaCsfState.regimenesDetectados = null;
+  altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
   altaCsfState.rfc = null;
   altaCsfState.fileName = null;
   altaCsfSetStatus('idle');
@@ -7977,6 +8000,9 @@ const altaCsfState = {
   datos: null,
   modoUpgrade: null, // customer_id destino cuando el flujo CSF se abre en modo upgrade (#85)
   pdfBase64: null,
+  // Regimenes de la ultima constancia leida, en el orden del SAT, con el RFC al que
+  // pertenecen (#390): { rfc, codigos } o null. Ver altaCsfRegimenesVigentes.
+  regimenesDetectados: null,
   // Linea base de la Seccion 2 al abrir el upgrade (#197). undefined = no hay panel
   // comercial (los datos viajan tal cual, camino de "Actualizar este"); null = la
   // precarga fallo (no viaja nada comercial); objeto = solo viaja lo que cambio.
@@ -8139,6 +8165,10 @@ async function altaCsfProcesarArchivo(file) {
     const { respuesta, resultadoQR } = await altaCsfLeerPDF(file);
     const resultado = altaCsfResultadoParseo(respuesta, file.name, resultadoQR);
     altaCsfState.datos = resultado.datos;
+    altaCsfState.regimenesDetectados = {
+      rfc: String(resultado.datos.rfc || '').trim().toUpperCase(),
+      codigos: resultado.datos.regimenesFiscales || [],
+    };
     altaCsfPonerDatos(resultado.datos);
     altaCsfSetStatus(resultado.status, { bannerText: resultado.bannerText });
     if (resultado.datos.rfc) {
@@ -8161,11 +8191,7 @@ async function altaCsfProcesarArchivo(file) {
 }
 
 function altaCsfValidarCampos() {
-  const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-  if (!getVal('csf-rfc')) return 'El RFC es obligatorio';
-  if (!getVal('csf-razon-social')) return 'La razon social es obligatoria';
-  if (!getVal('csf-nombre-corto')) return 'El nombre corto es obligatorio';
-  return null;
+  return validarCamposCsf(altaCsfLeerFormulario());
 }
 
 function altaCsfLeerFormulario() {

@@ -155,11 +155,13 @@
                   </div>
                   <!-- Selector del catalogo c_RegimenFiscal del SAT (#191). Lo puebla
                        app.js (altaPoblarRegimenes) filtrado por el tipo de RFC ya
-                       capturado; sigue siendo opcional y editable en esta pestana
-                       porque el parser de la CSF lo autollena. -->
+                       capturado; el parser de la CSF lo autollena y es obligatorio
+                       (#390). Con varios regimenes en la constancia solo ofrece los
+                       detectados y csf-regimen-aviso pide confirmar uno. -->
                   <div class="form-group">
                     <label>Regimen fiscal</label>
                     <select id="csf-regimen-fiscal"><option value="">-- Selecciona --</option></select>
+                    <div id="csf-regimen-aviso" style="display:none;margin-top:6px;color:var(--danger);font-size:12px"></div>
                   </div>
                   <div class="form-group">
                     <label>Calle</label>

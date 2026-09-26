@@ -42,13 +42,6 @@ function altaDesbloqueaSeccion(locked, seccionCompletada) {
   return locked.filter(s => s !== siguiente);
 }
 
-function validarCsfCampos(getVal) {
-  if (!getVal('csf-rfc')) return 'El RFC es obligatorio';
-  if (!getVal('csf-razon-social')) return 'La razon social es obligatoria';
-  if (!getVal('csf-nombre-corto')) return 'El nombre corto es obligatorio';
-  return null;
-}
-
 function buildCsfConfirmarPayload(getVal) {
   return {
     rfc: getVal('csf-rfc'),
@@ -251,4 +244,4 @@ function buildDedupCandidatosHtml(candidatos) {
     '</div>';
 }
 
-module.exports = { buildAltaSelectoresOpts, altaToggleSeccionState, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, validarCsfCampos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, buildAltaDomicilioPayload, validarAltaDomicilio, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };
+module.exports = { buildAltaSelectoresOpts, altaToggleSeccionState, buildAltaComercialPayload, buildCsfDropzoneState, buildCsfDatosExtraidos, buildCsfConfirmarPayload, altaCheckpointState, altaDesbloqueaSeccion, buildCsfDatosDesdeRespuesta, buildAltaDomicilioPayload, validarAltaDomicilio, validarRfcManual, buildManualDatosExtraidos, buildManualConfirmarPayload, buildDedupExactoHtml, buildDedupDomiciliosHtml, buildDedupCandidatosHtml, resolveClienteId };
