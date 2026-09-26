@@ -405,10 +405,10 @@ export function avisoTopeDisenos(lineasProducto) {
 // gestiones reales con el proveedor.
 export function estadoMarcaDecorado({ hayCalca, marcaActual } = {}) {
   if (hayCalca) {
-    return { valor: true, editable: false, motivo: 'Lo determina la calca del carrito. Entrega a 6 semanas.' };
+    return { valor: true, editable: false, motivo: 'Lo determina la calca del carrito. Tiempo de producci\u00f3n con la tabla de calca.' };
   }
   if (marcaActual) {
-    return { valor: true, editable: true, motivo: 'Marcado a mano (decorado sin línea de calca). Entrega a 6 semanas.' };
+    return { valor: true, editable: true, motivo: 'Marcado a mano (decorado sin l\u00ednea de calca). Tiempo de producci\u00f3n con la tabla de calca.' };
   }
-  return { valor: false, editable: true, motivo: 'Sin decorado: entrega a 4 semanas.' };
+  return { valor: false, editable: true, motivo: 'Sin decorado: tiempo de producci\u00f3n con la tabla normal.' };
 }

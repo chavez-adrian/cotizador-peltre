@@ -75,6 +75,7 @@ import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuent
 import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
 import { validarOperamIds } from './public/js/vendedores-logica.js';
 import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
+import { condicionesComerciales, validarCondiciones } from './public/js/condiciones-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -373,6 +374,8 @@ app.get('/api/precios', authMiddleware, async (req, res) => {
       ...precios, config, familias,
       // #447: el selector de envio ofrece solo las lineas de transporte activas.
       lineasTransporte: lineasTransporte(configStore.leer()),
+      // #324: las condiciones comerciales con las que arranca la cotizacion.
+      condicionesComerciales: condicionesComerciales(configStore.leer()),
       topeDescuento: await topeDescuentoDeUsuario(req.user),
       listasHabilitadas: permisoListas.esAdmin ? listasDelCatalogo() : permisoListas.listasHabilitadas,
       puedePrecioCalca: await puedePrecioCalcaDeUsuario(req.user),
@@ -2058,6 +2061,29 @@ app.put('/api/admin/lineas-transporte', authMiddleware, adminMiddleware, async (
     return res.status(500).json({ error: 'Configuracion no disponible: ' + err.message });
   }
   res.json({ lineas });
+});
+
+// Condiciones comerciales por omision y tablas de Tiempo de produccion (#324): en
+// la configuracion del panel (#276) bajo `condicionesComerciales` (llave ausente =
+// semilla). Mismo contrato que las lineas de transporte: el PUT reemplaza el
+// bloque completo con el merge-desde-la-base y valida ANTES de guardar con la
+// regla que comparte el panel. Las cotizaciones ya generadas no se tocan: sus
+// notas viven como texto en su registro.
+app.get('/api/admin/condiciones', authMiddleware, adminMiddleware, (_req, res) => {
+  res.json({ condiciones: condicionesComerciales(configStore.leer()) });
+});
+
+app.put('/api/admin/condiciones', authMiddleware, adminMiddleware, async (req, res) => {
+  const { condiciones, error } = validarCondiciones(req.body);
+  if (error) return res.status(400).json({ error });
+  try {
+    await configStore.cargar();
+    const actual = configStore.leer() || {};
+    await configStore.guardar({ ...actual, condicionesComerciales: condiciones });
+  } catch (err) {
+    return res.status(500).json({ error: 'Configuracion no disponible: ' + err.message });
+  }
+  res.json({ condiciones });
 });
 
 // La matriz de listas habilitadas se pinta con lo que este GET devuelve, asi

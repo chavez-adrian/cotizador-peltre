@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 let validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml;
 let sincronizarCorreoFactura;
 let debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO;
-let notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia;
+let formatTiempoEntrega, formatDescripcionEnvioEnvia;
 let notaPreciosEnvio, aplicarNotaEnvio, cotizacionLlevaEnvio;
 let buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml;
 let debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo;
@@ -17,7 +17,7 @@ before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
     debeInvalidarEnvioPorCantidad, bloqueaGeneracionPorEnvioInvalidado, MENSAJE_ENVIO_INVALIDADO,
-    notaTiempoEntrega, aplicarNotaTiempoEntrega, formatTiempoEntrega, formatDescripcionEnvioEnvia,
+    formatTiempoEntrega, formatDescripcionEnvioEnvia,
     notaPreciosEnvio, aplicarNotaEnvio, cotizacionLlevaEnvio,
     buildEnvioEstructurado, restaurarEnvioDesdeCotizacion, debeAutoCotizarEnvia, buildEnviaRateRestauradaHtml,
     debeProponerEnvia, cpListoParaCotizarEnvia, avisoEnvioPasoCotizacion, pasoEnvioListo,
@@ -293,56 +293,13 @@ test('#89-6: mensaje de aviso visible cuando el envio se invalida', () => {
   assert.strictEqual(MENSAJE_ENVIO_INVALIDADO, 'Las cantidades cambiaron, vuelve a cotizar el envío');
 });
 
-// === #90: nota de tiempo de entrega -- default 4 semanas, 6 si lleva calca/decorado ===
-test('#90-1: notaTiempoEntrega(false) -> 4 semanas (default, producto normal)', () => {
-  assert.strictEqual(
-    notaTiempoEntrega(false),
-    '- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.'
-  );
-});
-
-test('#90-2: notaTiempoEntrega(true) -> 6 semanas (lleva calca/decorado)', () => {
-  assert.strictEqual(
-    notaTiempoEntrega(true),
-    '- Tiempo de entrega: 6 semanas contadas a partir del pago del anticipo.'
-  );
-});
-
+// #90 (4 semanas, 6 con calca o decorado) paso a condiciones-logica.js con #324:
+// el Tiempo de produccion sale de las tablas del panel (condiciones-logica.test.cjs).
 const NOTAS_DEFAULT_4 = `- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.
 - Envio a costo y riesgo del cliente.
-- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.
+- Tiempo de produccion: 4 semanas contadas a partir del pago del anticipo.
 - Se requiere 50% de anticipo para comenzar la produccion.
 - Pago del saldo previo a la entrega.`;
-
-test('#90-3: aplicarNotaTiempoEntrega marca decorado -> reemplaza la linea a 6 semanas, preserva el resto', () => {
-  const r = aplicarNotaTiempoEntrega(NOTAS_DEFAULT_4, true);
-  assert.ok(r.includes('- Tiempo de entrega: 6 semanas contadas a partir del pago del anticipo.'));
-  assert.ok(!r.includes('4 semanas'));
-  assert.ok(r.includes('- Precios EXW Ixtapaluca'));
-  assert.ok(r.includes('- Pago del saldo previo a la entrega.'));
-});
-
-test('#90-4: aplicarNotaTiempoEntrega desmarca decorado -> vuelve a 4 semanas', () => {
-  const notasCon6 = aplicarNotaTiempoEntrega(NOTAS_DEFAULT_4, true);
-  const r = aplicarNotaTiempoEntrega(notasCon6, false);
-  assert.ok(r.includes('- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.'));
-  assert.ok(!r.includes('6 semanas'));
-});
-
-test('#90-5: si el vendedor edito la linea a mano (texto que no coincide con ninguna version auto), no se pisotea', () => {
-  const notasEditadas = NOTAS_DEFAULT_4.replace(
-    '- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.',
-    '- Tiempo de entrega: 10 dias habiles, urge.'
-  );
-  const r = aplicarNotaTiempoEntrega(notasEditadas, true);
-  assert.strictEqual(r, notasEditadas);
-});
-
-test('#90-6: si el vendedor borro la linea por completo, no se vuelve a agregar', () => {
-  const sinLinea = NOTAS_DEFAULT_4.split('\n').filter(l => !l.includes('Tiempo de entrega')).join('\n');
-  const r = aplicarNotaTiempoEntrega(sinLinea, true);
-  assert.strictEqual(r, sinLinea);
-});
 
 // === #436: la nota de precios dice "No incluye envio." solo sin envio con costo ===
 test('#436-1: notaPreciosEnvio -- con envio conserva EXW y quita "No incluye envio."; sin envio la lleva', () => {
@@ -352,7 +309,7 @@ test('#436-1: notaPreciosEnvio -- con envio conserva EXW y quita "No incluye env
 
 const NOTAS_CON_ENVIO = `- Precios EXW Ixtapaluca, Estado de Mexico.
 - Envio a costo y riesgo del cliente.
-- Tiempo de entrega: 4 semanas contadas a partir del pago del anticipo.
+- Tiempo de produccion: 4 semanas contadas a partir del pago del anticipo.
 - Se requiere 50% de anticipo para comenzar la produccion.
 - Pago del saldo previo a la entrega.`;
 
@@ -405,16 +362,22 @@ test('#436-9: cotizacionLlevaEnvio -- Sin envio, sin tarifa elegida o costo 0 no
   assert.strictEqual(cotizacionLlevaEnvio(undefined, 300), false);
 });
 
-test('#436-10: las notas por defecto del resumen nacen con la version sin envio, que es la que se ajusta sola', () => {
+// #324: las notas por omision ya no son un literal del formulario: salen de las
+// condiciones del panel (condiciones-logica.js). La semilla nace sin envio, que
+// es la version que se ajusta sola (#436).
+test('#436-10: las notas por omision nacen con la version sin envio, que es la que se ajusta sola', async () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
   const m = html.match(/<textarea id="resumen-notas"[^>]*>([\s\S]*?)<\/textarea>/);
   assert.ok(m, 'falta #resumen-notas');
-  const lineas = m[1].split(/\r?\n/).map(l => l.trim());
+  assert.strictEqual(m[1].trim(), '', 'el formulario ya no trae las condiciones clavadas');
+  const { notasPorOmision, condicionesComerciales } = await import('../condiciones-logica.js');
+  const notas = notasPorOmision(condicionesComerciales(null), { items: [], conEnvio: false });
+  const lineas = notas.split('\n');
   assert.ok(lineas.includes('- Precios EXW Ixtapaluca, Estado de Mexico. No incluye envio.'));
   assert.ok(lineas.includes('- Envio a costo y riesgo del cliente.'));
-  const conEnvio = aplicarNotaEnvio(m[1].replace(/\r\n/g, '\n'), true).split('\n');
+  const conEnvio = aplicarNotaEnvio(notas, true).split('\n');
   assert.ok(conEnvio.includes('- Precios EXW Ixtapaluca, Estado de Mexico.'));
   assert.ok(conEnvio.includes('- Envio a costo y riesgo del cliente.'));
 });

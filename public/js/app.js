@@ -191,7 +191,6 @@ import {
   debeInvalidarEnvioPorCantidad,
   bloqueaGeneracionPorEnvioInvalidado,
   MENSAJE_ENVIO_INVALIDADO,
-  aplicarNotaTiempoEntrega,
   aplicarNotaEnvio,
   cotizacionLlevaEnvio,
   formatDescripcionEnvioEnvia,
@@ -216,6 +215,7 @@ import {
   sincronizarCorreoFactura,
 } from './cotizar-logica.js';
 import { opcionesSelectorEnvio } from './lineas-transporte-logica.js';
+import { condicionesComerciales, notasPorOmision, aplicarNotaTiempoProduccion } from './condiciones-logica.js';
 import {
   puedeDescontar,
   validarDescuentoLinea,
@@ -609,6 +609,9 @@ async function showApp() {
   // filtrando datos de la anterior.
   decoradoManual = false;
   aplicarEnvioRestaurado(undefined);
+  // Las notas arrancan de las condiciones del panel (#324); el borrador no las
+  // guarda (#436), asi que siguen al carrito y al envio que restaure.
+  reponerNotasPorOmision();
   sincronizarNotaEnvio();
   // El borrador se restaura DESPUES del catalogo (cada linea se re-resuelve
   // contra el vigente) y ANTES de pintar, para que los renders de abajo ya
@@ -2173,7 +2176,39 @@ function sincronizarNotaEnvio() {
     document.getElementById('shipping-option').value,
     document.getElementById('shipping-cost').value,
   );
-  notasEl.value = aplicarNotaEnvio(notasEl.value, conEnvio);
+  notasEl.value = aplicarNotaEnvio(notasEl.value, conEnvio, condicionesVigentes());
+}
+
+// Condiciones comerciales por omision (#324): vienen del panel en /api/precios;
+// sin ellas (catalogo viejo en memoria) rige la semilla del nucleo.
+function condicionesVigentes() {
+  return condicionesComerciales(state.precios);
+}
+
+// La linea del Tiempo de produccion se re-deriva cuando cambia lo que la decide
+// (piezas de producto, o tabla normal contra tabla de calca), no en cada repintado:
+// asi una cotizacion cargada del historial conserva el texto con el que se genero
+// hasta que el vendedor mueva el carrito o la marca de decorado.
+let firmaTiempoProduccion = null;
+
+function firmaTiempo(decorado) {
+  return `${decorado ? 'calca' : 'normal'}|${getPiezasProducto()}`;
+}
+
+function sincronizarNotaTiempo(decorado) {
+  const notasEl = document.getElementById('resumen-notas');
+  if (!notasEl) return;
+  const firma = firmaTiempo(decorado);
+  if (firma === firmaTiempoProduccion) return;
+  firmaTiempoProduccion = firma;
+  notasEl.value = aplicarNotaTiempoProduccion(notasEl.value, condicionesVigentes(), { items: itemsDelCarrito(), decorado });
+}
+
+function reponerNotasPorOmision() {
+  const notasEl = document.getElementById('resumen-notas');
+  if (!notasEl) return;
+  notasEl.value = notasPorOmision(condicionesVigentes(), { items: itemsDelCarrito(), decorado: false, conEnvio: false });
+  firmaTiempoProduccion = null;
 }
 
 window.cotizarEnvia = cotizarEnvia;
@@ -2197,12 +2232,11 @@ function sincronizarMarcaDecorado() {
   if (hayCalca) decoradoManual = true;
 
   const estado = estadoMarcaDecorado({ hayCalca, marcaActual: decoradoManual });
-  if (chk.checked !== estado.valor) {
-    chk.checked = estado.valor;
-    const notasEl = document.getElementById('resumen-notas');
-    if (notasEl) notasEl.value = aplicarNotaTiempoEntrega(notasEl.value, estado.valor);
-  }
+  if (chk.checked !== estado.valor) chk.checked = estado.valor;
   chk.disabled = !estado.editable;
+  // La marca (calca en el carrito o decorado a mano) elige la tabla de calca del
+  // Tiempo de produccion (#324); sin ella, la tabla normal.
+  sincronizarNotaTiempo(estado.valor);
 
   const motivo = document.getElementById('resumen-decorado-motivo');
   if (motivo) motivo.textContent = estado.motivo;
@@ -3093,8 +3127,9 @@ function nuevaCotizacion() {
   // La marca de decorado es de la cotizacion, no del vendedor (#91): una nueva
   // arranca sin ella y el checkbox vuelve a estar disponible.
   decoradoManual = false;
-  const notasNuevas = document.getElementById('resumen-notas');
-  if (notasNuevas) notasNuevas.value = aplicarNotaTiempoEntrega(notasNuevas.value, false);
+  // Una cotizacion nueva arranca con las condiciones por omision del panel
+  // (#324), no con las notas de la anterior.
+  reponerNotasPorOmision();
   sincronizarNotaEnvio();
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
@@ -7217,6 +7252,9 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // se guardo para no apagarla al Cargar. Con calca en el carrito la
     // sincronizacion la vuelve a fijar de todos modos (ADR-0010).
     decoradoManual = cot.decorado === true;
+    // Sus notas son las que se generaron (#324): el Tiempo de produccion no se
+    // re-deriva al cargar, solo cuando el vendedor mueva piezas, calca o marca.
+    firmaTiempoProduccion = firmaTiempo(hayCalcaEnCarrito(itemsDelCarrito()) || decoradoManual);
 
     // Que pasa al generar desde aqui (#104, ADR-0008 -- revierte de forma explicita
     // la decision de #83 F1, que reseteaba esto siempre):
@@ -7390,14 +7428,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // propio se perderia al recargar.
   document.getElementById('cl-referencia')?.addEventListener('input', autoguardarBorrador);
 
-  // Nota de tiempo de entrega (#90): togglear el checkbox actualiza SOLO esa
-  // linea del textarea de notas, sin pisotear ediciones manuales del vendedor.
-  // Desde #91 el checkbox tambien lleva la marca de decorado del vendedor
-  // (decoradoManual); con calca en el carrito va disabled y no llega aqui.
+  // Marca de decorado (#90/#91): togglearla cambia la tabla del Tiempo de
+  // produccion (#324) y actualiza SOLO esa linea del textarea de notas, sin
+  // pisotear ediciones manuales del vendedor. Con calca en el carrito va
+  // disabled y no llega aqui.
   document.getElementById('resumen-decorado').addEventListener('change', e => {
     decoradoManual = e.target.checked;
-    const notasEl = document.getElementById('resumen-notas');
-    notasEl.value = aplicarNotaTiempoEntrega(notasEl.value, e.target.checked);
     sincronizarMarcaDecorado();
   });
 
