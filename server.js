@@ -59,7 +59,7 @@ import * as modelosStore from './lib/modelos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
-import { contactosDelDomicilio } from './lib/contactos-domicilio-io.js';
+import { contactosDelDomicilio, refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
 import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
@@ -4491,6 +4491,13 @@ if (isMain) {
   // pedido. Fire-and-forget; un fallo deja el cache vacio y la respuesta lo
   // declara como fuente incompleta.
   refrescarActividad().catch(err => console.warn('[actividad-operam] warm de arranque fallo:', err.message));
+  // Y para los Contactos en Operam de cada domicilio de entrega (#397, decision de
+  // Adrian del 2026-09-25): sin padron el selector "Contacto de entrega" del primer
+  // paso Envio tras un deploy solo ofrece los del Cliente Operam. Son ~21 lecturas
+  // secuenciales a su propio ritmo (lib/contactos-domicilio-io.js); arranca unos
+  // segundos despues para no competir con los dos warms de arriba, como el sondeo
+  // de Shopify. Nunca rechaza: un fallo queda en el log y la cache sigue fria.
+  setTimeout(() => { refrescarContactosDomicilio(); }, 10 * 1000).unref();
   // Aviso UNA VEZ al arrancar (issue #162), no por request: la verificacion en
   // POST /api/prospectos/publico se omite mientras falte la llave.
   if (!turnstileConfigurado()) {

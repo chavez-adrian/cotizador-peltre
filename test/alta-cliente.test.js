@@ -1544,3 +1544,44 @@ test('sin paso de cartera (cliente recien creado) la fila del vendedor del domic
   assert.equal(filas.find(f => f.fila === ALTA_PASO_FILA['vendedor branch']).oculta, true);
   assert.equal(filas.find(f => f.fila === ALTA_PASO_FILA['POST customer']).status, 'ok', 'el cliente si nacio en esta alta');
 });
+
+// #397: escribir un domicilio de entrega es escribir sus Contactos en Operam, y
+// esos solo salen del padron de contact_list (lib/contactos-domicilio-io.js). El
+// alta lo manda releer al terminar para que el selector "Contacto de entrega" del
+// paso Envio no espere hasta una hora a verlos.
+test('tras escribir el domicilio de entrega de un Cliente Operam nuevo se relee el padron de contactos de domicilio', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 1);
+  assert.equal(operam.pedidos('releerContactosDomicilioTrasEscribir').length, 1);
+});
+
+test('tras crear otro domicilio de entrega se relee el padron de contactos de domicilio', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{
+      customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
+      branches: [{ branch_code: 7, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' }],
+    }],
+  });
+  const res = await darDeAlta(solicitud({
+    domicilioEntrega: DOMICILIO,
+    decision: { tipo: 'otro-domicilio', clienteId: 41 },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente').length, 1);
+  assert.equal(operam.pedidos('releerContactosDomicilioTrasEscribir').length, 1);
+});
+
+test('sin escribir ningun domicilio de entrega no se relee el padron de contactos de domicilio', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000', branches: [{ branch_code: 7, br_name: 'HOTEL AZUL' }] }],
+  });
+  const res = await darDeAlta(solicitud({ decision: { tipo: 'usar', clienteId: 41 } }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente').length + operam.pedidos('actualizarBranchCliente').length, 0);
+  assert.equal(operam.pedidos('releerContactosDomicilioTrasEscribir').length, 0);
+});

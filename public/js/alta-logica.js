@@ -1548,6 +1548,12 @@ export const CEL_CODE_POR_ISO2 = { mx: '+52', us: '+1', ca: '+1-CA' };
 // a esa direccion; los contactos del cliente (contacts[], con su tag de Operam:
 // general/invoice/delivery) le siguen en el orden que trae la API.
 //
+// Entre los dos van los Contactos en Operam del domicilio elegido (#397,
+// `domicilio.contactos`, del padron de contact_list de #105): primero los del
+// domicilio, luego los del Cliente Operam (decision de Adrian, 2026-09-25). Sin
+// padron todavia (`null`: cache fria u Operam caido) no se agrega nada y el
+// selector es el de antes, en silencio.
+//
 // El Contacto de la cotizacion (la persona del celular, tercera fuente desde #353)
 // va AL FINAL: cotizando para un Contacto sin Cliente Operam con contactos las dos
 // fuentes de Operam quedan vacias, no se pintaba selector y "Entregar a" se tecleaba
@@ -1566,6 +1572,9 @@ export function contactosEntregaDisponibles(domicilio, contactosCliente, contact
   const d = domicilio || {};
   if (d.contacto || d.telefono || d.email) {
     candidatos.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '' });
+  }
+  for (const c of Array.isArray(d.contactos) ? d.contactos : []) {
+    if (c && (c.nombre || c.telefono || c.email)) candidatos.push(c);
   }
   for (const c of contactosCliente || []) {
     if (c && (c.nombre || c.telefono || c.email)) candidatos.push(c);

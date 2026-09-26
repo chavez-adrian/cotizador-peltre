@@ -96,6 +96,13 @@ export function operamEnMemoria({
       registrar('refrescarIndice');
       estado.refrescos++;
     },
+    // El padron de contactos de domicilio (#397): el alta lo manda releer tras
+    // escribir un domicilio de entrega. Solo se registra: el barrido real vive en
+    // lib/contactos-domicilio-io.js y tiene sus propias pruebas.
+    releerContactosDomicilioTrasEscribir() {
+      registrar('releerContactosDomicilioTrasEscribir');
+      return Promise.resolve();
+    },
     async crearClienteDirecto(body) {
       registrar('crearClienteDirecto', body);
       const customer_id = estado.proximoCliente++;

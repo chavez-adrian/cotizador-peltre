@@ -6,7 +6,7 @@ import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 const io = await import('../lib/contactos-domicilio-io.js');
-const { contactosDelDomicilio, refrescarContactosDomicilio, _esperarRefresco, _setIo, _reiniciar } = io;
+const { contactosDelDomicilio, refrescarContactosDomicilio, releerContactosDomicilioTrasEscribir, _esperarRefresco, _setIo, _reiniciar } = io;
 
 function relojFalso() {
   const reloj = { t: 1_000_000, esperas: [] };
@@ -36,12 +36,12 @@ function contactListMemoria({ total, reloj, filasExtra = [], falla = null, bloqu
       if (bloquear) await bloqueo;
       await new Promise(r => setImmediate(r));
       if (falla && falla(skip)) throw new Error('Operam 429');
-      return { filas: todas.slice(skip, skip + 100), total };
+      return { filas: todas.slice(skip, skip + 100), total: todas.length };
     } finally {
       enVuelo--;
     }
   };
-  return { leerPaginaContactos, lecturas, soltar, maxEnVuelo: () => maxEnVuelo };
+  return { leerPaginaContactos, lecturas, todas, soltar, maxEnVuelo: () => maxEnVuelo };
 }
 
 const FACTURA_564 = fila(9999, { action: 'invoice', entity_id: '564', name: 'Cuentas Bosques', email: 'cxp.bosques@cliente.mx' });
@@ -170,6 +170,128 @@ test('una lectura completa sin ninguna fila cuenta como fallo: el padron sigue s
     await refrescarContactosDomicilio();
     assert.equal(contactosDelDomicilio('564'), null);
     assert.ok(log.some(l => l.includes('[contactos-domicilio]')), log.join('\n'));
+  } finally {
+    console.warn = warn;
+  }
+});
+
+// #397 (revision): la decision de Adrian pide refresco puntual tras escribir. Un
+// domicilio escrito mientras ya corre un barrido (el warm, un refresco por TTL) no
+// entra en ese barrido si su pagina ya se leyo; por eso se agenda UNA relectura mas
+// al terminar el barrido en vuelo. Aqui la fila nueva entra al frente de la lista
+// cuando el primer barrido ya leyo la pagina 0: ese barrido no puede verla.
+const FACTURA_777 = fila(7777, { action: 'invoice', entity_id: '777', name: 'Cuentas Nuevo', email: 'cxp.nuevo@cliente.mx' });
+
+test('pedir releer tras escribir mientras corre un barrido agenda UNA relectura al terminar, a su ritmo y nunca en paralelo', async () => {
+  const reloj = relojFalso();
+  const op = contactListMemoria({ total: 250, reloj, filasExtra: [FACTURA_564] });
+  const pedidos = [];
+  const leer = async (skip) => {
+    const pagina = await op.leerPaginaContactos(skip);
+    if (op.lecturas.length === 1) {
+      op.todas.unshift(FACTURA_777);
+      pedidos.push(releerContactosDomicilioTrasEscribir(), releerContactosDomicilioTrasEscribir(), releerContactosDomicilioTrasEscribir());
+    }
+    return pagina;
+  };
+  _setIo({ leerPaginaContactos: leer, intervaloMs: 1100, ahora: reloj.ahora, esperar: reloj.esperar });
+
+  const primero = refrescarContactosDomicilio();
+  await primero;
+  assert.deepEqual(contactosDelDomicilio('777'), [], 'el barrido en vuelo no alcanzo a ver el domicilio recien escrito');
+
+  await Promise.all(pedidos);
+  assert.deepEqual(op.lecturas.map(l => l.skip), [0, 100, 200, 0, 100, 200], 'tres peticiones, una sola relectura');
+  assert.equal(op.maxEnVuelo(), 1, 'nunca dos lecturas a la vez');
+  assert.ok(op.lecturas[3].t - op.lecturas[2].t >= 1100, 'la relectura guarda el ritmo desde la ultima pagina del barrido anterior');
+  assert.deepEqual(contactosDelDomicilio('777'), [
+    { tag: 'invoice', nombre: 'Cuentas Nuevo', telefono: '', email: 'cxp.nuevo@cliente.mx' },
+  ]);
+});
+
+test('sin barrido en vuelo, releer tras escribir barre una vez', async () => {
+  const reloj = relojFalso();
+  const op = contactListMemoria({ total: 150, reloj, filasExtra: [FACTURA_564] });
+  _setIo({ leerPaginaContactos: op.leerPaginaContactos, intervaloMs: 0, ahora: reloj.ahora, esperar: reloj.esperar });
+
+  await releerContactosDomicilioTrasEscribir();
+  await _esperarRefresco();
+
+  assert.deepEqual(op.lecturas.map(l => l.skip), [0, 100]);
+  assert.equal(contactosDelDomicilio('564').length, 1);
+});
+
+test('si el barrido en vuelo falla, la relectura pedida espera el respiro de 5 min y sale en la primera consulta despues', async () => {
+  const reloj = relojFalso();
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    let fallar = false;
+    const op = contactListMemoria({ total: 150, reloj, filasExtra: [FACTURA_564], falla: (skip) => fallar && skip === 100 });
+    let pedido = null;
+    const leer = async (skip) => {
+      const pagina = await op.leerPaginaContactos(skip);
+      if (fallar && skip === 0 && !pedido) pedido = releerContactosDomicilioTrasEscribir();
+      return pagina;
+    };
+    _setIo({ leerPaginaContactos: leer, intervaloMs: 0, ahora: reloj.ahora, esperar: reloj.esperar });
+    await refrescarContactosDomicilio();
+    assert.equal(op.lecturas.length, 2);
+
+    fallar = true;
+    reloj.t += 10 * 60 * 1000;
+    await releerContactosDomicilioTrasEscribir();
+    await pedido;
+    await _esperarRefresco();
+    assert.equal(op.lecturas.length, 4, 'el barrido fallo y la relectura no salio en rafaga');
+
+    fallar = false;
+    reloj.t += 2 * 60 * 1000;
+    contactosDelDomicilio('564');
+    await _esperarRefresco();
+    assert.equal(op.lecturas.length, 4, 'dentro del respiro no se relee');
+
+    reloj.t += 4 * 60 * 1000;
+    assert.equal(contactosDelDomicilio('564')[0].email, 'cxp.bosques@cliente.mx', 'mientras, responde el padron anterior');
+    await _esperarRefresco();
+    assert.equal(op.lecturas.length, 6, 'pasado el respiro, la relectura pendiente sale aunque el padron no haya vencido');
+
+    contactosDelDomicilio('564');
+    await _esperarRefresco();
+    assert.equal(op.lecturas.length, 6, 'una vez leido, no queda pendiente');
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test('sin barrido en vuelo pero dentro del respiro de un fallo, releer tras escribir no barre; sale en la primera consulta pasado el respiro', async () => {
+  const reloj = relojFalso();
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    let fallar = true;
+    const op = contactListMemoria({ total: 150, reloj, filasExtra: [FACTURA_564], falla: (skip) => fallar && skip === 100 });
+    _setIo({ leerPaginaContactos: op.leerPaginaContactos, intervaloMs: 0, ahora: reloj.ahora, esperar: reloj.esperar });
+    await refrescarContactosDomicilio();
+    await _esperarRefresco();
+    assert.equal(op.lecturas.length, 2, 'el barrido fallo en la segunda pagina y ya no hay nada en vuelo');
+
+    fallar = false;
+    reloj.t += 60 * 1000;
+    await releerContactosDomicilioTrasEscribir();
+    await releerContactosDomicilioTrasEscribir();
+    await _esperarRefresco();
+    assert.equal(op.lecturas.length, 2, 'dos escrituras dentro del respiro no disparan ningun barrido');
+
+    contactosDelDomicilio('564');
+    await _esperarRefresco();
+    assert.equal(op.lecturas.length, 2, 'una consulta dentro del respiro tampoco');
+
+    reloj.t += 5 * 60 * 1000;
+    contactosDelDomicilio('564');
+    await _esperarRefresco();
+    assert.equal(op.lecturas.length, 4, 'pasado el respiro la relectura pendiente sale una sola vez');
+    assert.equal(contactosDelDomicilio('564')[0].email, 'cxp.bosques@cliente.mx');
   } finally {
     console.warn = warn;
   }
