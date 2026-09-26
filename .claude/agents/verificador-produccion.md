@@ -2,7 +2,7 @@
 name: verificador-produccion
 description: Verifica en PRODUCCION (https://cotizador-peltre.onrender.com) los criterios de aceptacion AFK de un issue ya fusionado y desplegado de chavez-adrian/cotizador-peltre, con un Chrome sin ventana y lecturas de Operam. Emite PASA / FALLA / NO VERIFICABLE por criterio, con evidencia. Lo lanza la Cola nocturna despues del deploy, o Adrian a mano. No edita codigo ni cierra issues.
 model: claude-opus-5-5
-effort: high
+effort: medium
 skills:
   - diagnosing-bugs
 disallowedTools: Edit, Write, NotebookEdit, Agent
