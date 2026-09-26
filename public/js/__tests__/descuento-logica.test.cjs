@@ -4,12 +4,12 @@ const assert = require('node:assert/strict');
 
 let normalizarTope, topeDescuentoVendedor, puedeDescontar, validarDescuentoLinea,
   validarDescuentosCotizacion, mensajeTopeExcedido, MENSAJE_SIN_TOPE, TOPE_ADMIN, partidasConDescuento,
-  descuentoGlobalVigente;
+  descuentoGlobalVigente, decidirDescuentoGlobal;
 before(async () => {
   ({
     normalizarTope, topeDescuentoVendedor, puedeDescontar, validarDescuentoLinea,
     validarDescuentosCotizacion, mensajeTopeExcedido, MENSAJE_SIN_TOPE, TOPE_ADMIN, partidasConDescuento,
-    descuentoGlobalVigente,
+    descuentoGlobalVigente, decidirDescuentoGlobal,
   } = await import('../descuento-logica.js'));
 });
 
@@ -158,4 +158,33 @@ test('#138-5: el envio cuenta como una partida mas para el campo global', () => 
 test('#138-6: un % corrupto no se lee como 0 -> sin valor comun', () => {
   assert.strictEqual(descuentoGlobalVigente([{ descuento: 150 }, { descuento: 0 }]), null);
   assert.strictEqual(descuentoGlobalVigente([{ descuento: 'abc' }]), null);
+});
+
+// === Boton "Aplicar" del atajo global (#423): el boton y Enter se suman al change ===
+
+test('#423-1: el boton Aplicar y el change frenan en el tope con el mismo mensaje que la captura', () => {
+  const partidas = [{ descuento: 0 }, { descuento: 0 }];
+  for (const gesto of ['boton', 'change']) {
+    assert.deepStrictEqual(decidirDescuentoGlobal('20', 15, partidas, gesto),
+      { accion: 'rechazar', mensaje: 'Tu tope de descuento es 15%.' });
+    assert.deepStrictEqual(decidirDescuentoGlobal('5', 0, partidas, gesto),
+      { accion: 'rechazar', mensaje: 'No tienes permiso para aplicar descuentos; pidelo al administrador.' });
+  }
+});
+
+test('#423-2: el boton Aplicar (o Enter) con el % que ya tienen todas no lo vuelve a aplicar (no suelta la tarifa de envio)', () => {
+  assert.deepStrictEqual(decidirDescuentoGlobal('10', 15, [{ descuento: 10 }, { descuento: 10 }], 'boton'), { accion: 'sin-cambio' });
+  assert.deepStrictEqual(decidirDescuentoGlobal('', 15, [{ descuento: 0 }, {}], 'boton'), { accion: 'sin-cambio' });
+});
+
+test('#423-3: un % distinto del vigente, o partidas afinadas aparte, se aplica como numero', () => {
+  assert.deepStrictEqual(decidirDescuentoGlobal('8', 15, [{ descuento: 0 }, { descuento: 0 }], 'boton'), { accion: 'aplicar', valor: 8 });
+  assert.deepStrictEqual(decidirDescuentoGlobal('10', 15, [{ descuento: 10 }, { descuento: 7 }], 'boton'), { accion: 'aplicar', valor: 10 });
+  assert.deepStrictEqual(decidirDescuentoGlobal('0', 15, [{ descuento: 10 }, { descuento: 10 }], 'boton'), { accion: 'aplicar', valor: 0 });
+});
+
+test('#423-4: el change al salir del campo conserva su comportamiento previo: siempre aplica, aun con el % vigente', () => {
+  assert.deepStrictEqual(decidirDescuentoGlobal('10', 15, [{ descuento: 10 }, { descuento: 10 }], 'change'), { accion: 'aplicar', valor: 10 });
+  assert.deepStrictEqual(decidirDescuentoGlobal('', 15, [{ descuento: 0 }, {}], 'change'), { accion: 'aplicar', valor: 0 });
+  assert.deepStrictEqual(decidirDescuentoGlobal('10', 15, [{ descuento: 10 }, { descuento: 10 }]), { accion: 'aplicar', valor: 10 });
 });

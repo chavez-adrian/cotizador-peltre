@@ -223,6 +223,7 @@ import {
   puedeDescontar,
   validarDescuentoLinea,
   descuentoGlobalVigente,
+  decidirDescuentoGlobal,
 } from './descuento-logica.js';
 import {
   MAX_DESCRIPCION,
@@ -1533,23 +1534,45 @@ function renderDescuentoGlobal() {
     <label for="desc-global">Aplicar % de descuento a todo</label>
     <input id="desc-global" class="desc-input" type="number" min="0" max="${state.topeDescuento}" step="1"
       value="${vigente || ''}" placeholder="0" inputmode="numeric"
-      onchange="aplicarDescuentoATodo(this.value)">
+      onchange="aplicarDescuentoGlobalDesde(this, 'change')"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();aplicarDescuentoGlobalDesde(this, 'boton')}">
+    <button type="button" class="btn btn-secondary btn-sm" onmousedown="event.preventDefault()"
+      onclick="aplicarDescuentoGlobalDesde(document.getElementById('desc-global'), 'boton')">Aplicar</button>
   `;
 }
+
+// Tres gestos aplican el atajo (#423): el boton Aplicar y Enter (gesto 'boton')
+// y el change al salir del campo (Siguiente incluido), que conserva su
+// comportamiento de siempre. El boton repinta el campo en todos los casos, asi
+// que un segundo disparo llega desde el input ya reemplazado: se descarta para
+// no aplicar ni avisar el tope dos veces.
+function aplicarDescuentoGlobalDesde(campo, gesto) {
+  if (!campo?.isConnected) return;
+  aplicarDescuentoATodo(campo.value, gesto);
+}
+window.aplicarDescuentoGlobalDesde = aplicarDescuentoGlobalDesde;
 
 // El atajo: un % una sola vez y todas las partidas quedan con el, envio incluido,
 // sobreescribiendo lo capturado antes. Despues se afina linea por linea. Pasa por
 // el MISMO freno que la captura de una linea (validarDescuentoLinea) -- no hay
 // regla nueva que el servidor tenga que aprender.
-function aplicarDescuentoATodo(valor) {
-  const r = validarDescuentoLinea(valor, state.topeDescuento);
-  if (!r.ok) {
-    alert(r.mensaje);
+function aplicarDescuentoATodo(valor, gesto) {
+  const d = decidirDescuentoGlobal(valor, state.topeDescuento, partidasDelCarrito(), gesto);
+  if (d.accion === 'rechazar') {
+    alert(d.mensaje);
     renderCartLines();
     return;
   }
-  for (const item of state.cart.values()) item.descuento = r.valor;
-  envioDescuento = r.valor;
+  // El boton con el % que ya tienen todas no lo reescribe: soltaria la tarifa de
+  // envia.com sin que nada cambiara. Pero SI repinta: deja el campo con el valor
+  // canonico ("07" -> 7) y reemplaza el input, asi el change que llegaria al
+  // salir del campo cae en un nodo desconectado y no aplica por su cuenta.
+  if (d.accion === 'sin-cambio') {
+    renderCartLines();
+    return;
+  }
+  for (const item of state.cart.values()) item.descuento = d.valor;
+  envioDescuento = d.valor;
   // Mismo motivo que en la captura por linea: cambio el valor declarado a la
   // paqueteria para el seguro, asi que la tarifa vigente de envia.com ya no vale.
   invalidarEnvioSiAplica();
@@ -1557,7 +1580,6 @@ function aplicarDescuentoATodo(valor) {
   updateResumen();
   renderCartLines();
 }
-window.aplicarDescuentoATodo = aplicarDescuentoATodo;
 
 // Lo que el vendedor NEGOCIO sobre una partida -- su % de descuento (#137) y su
 // descripcion (#139) -- sobrevive a cambiar la cantidad o a volver a agregar el mismo

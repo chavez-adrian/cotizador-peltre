@@ -81,6 +81,18 @@ export function descuentoGlobalVigente(partidas) {
   return lista.every(p => porcentaje(p?.descuento) === primero) ? primero : null;
 }
 
+// Que hace el atajo global con lo tecleado (#423). Lo disparan tres gestos -- el
+// boton Aplicar, Enter (gesto 'boton') y el change al salir del campo -- y el
+// mismo tope frena a los tres con el mensaje de la captura por linea. Solo el
+// boton puede ser 'sin-cambio' (pulsarlo con el % que ya tienen todas no suelta
+// la tarifa de envio); el change conserva lo de antes y siempre aplica.
+export function decidirDescuentoGlobal(valor, tope, partidas, gesto) {
+  const r = validarDescuentoLinea(valor, tope);
+  if (!r.ok) return { accion: 'rechazar', mensaje: r.mensaje };
+  if (gesto === 'boton' && r.valor === descuentoGlobalVigente(partidas)) return { accion: 'sin-cambio' };
+  return { accion: 'aplicar', valor: r.valor };
+}
+
 // La cotizacion completa (incluida la partida ENVIO): la primera partida fuera
 // del tope la tumba, nombrandola para que el vendedor sepa cual corregir.
 export function validarDescuentosCotizacion(items, tope) {
