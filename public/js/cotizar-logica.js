@@ -156,6 +156,18 @@ export function esOpcionConCosto(shippingOpt) {
   return shippingOpt === 'manual' || esOpcionTarifa(shippingOpt);
 }
 
+// La opcion propia de cada integracion por el carrier de su tarjeta (#454): las
+// cotizaciones de Lalamove anteriores a su opcion propia (1296, 1302) se
+// guardaron con la opcion de paqueteria y el carrier de la integracion.
+const OPCION_DE_CARRIER = { lalamove: 'lalamove', tresguerras: 'tresguerras' };
+function opcionDeIntegracion(carrier) {
+  return OPCION_DE_CARRIER[String(carrier ?? '').trim().toLowerCase()] || null;
+}
+function opcionDeEnvioGuardado(envio) {
+  if (!esOpcionTarifa(envio.opcion)) return envio.opcion;
+  return opcionDeIntegracion(envio.carrier) || envio.opcion;
+}
+
 export function endpointTarifas(shippingOpt) {
   return ENDPOINT_TARIFAS[shippingOpt] || '/api/cotizacion/envio';
 }
@@ -274,7 +286,7 @@ export function restaurarEnvioDesdeCotizacion(envio) {
   const desc = envio.descripcion || 'Envio';
   const cost = typeof envio.precio === 'number' ? envio.precio.toFixed(2) : '';
   return {
-    opcion: envio.opcion,
+    opcion: opcionDeEnvioGuardado(envio),
     mostrarEnvia: esOpcionTarifa(envio.opcion),
     mostrarManual: envio.opcion === 'manual',
     cost, desc,
@@ -366,9 +378,15 @@ export function envioTrasCambioDeCp({ shippingOpt, enviaRateSeleccionado, cpAnte
 // listener de click -- no hay tarifas alternativas que ofrecer sin re-consultar.
 // #444: recibe el enviaRateSeleccionado que arma restaurarEnvioDesdeCotizacion,
 // asi que el monto viene en `cost`; leerlo de `precio` pintaba $0.00.
+// #454: la de una integracion propia nombra la linea y su servicio
+// ("Lalamove - Hatchback"); la de paqueteria sigue igual.
 export function buildEnviaRateRestauradaHtml({ carrier, servicio, cost }) {
   const money = (typeof cost === 'number' ? cost : 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const { titulo, detalle } = contenidoTarjeta({ carrier, service: servicio });
+  const contenido = contenidoTarjeta({ carrier, service: servicio });
+  const { detalle } = contenido;
+  const titulo = opcionDeIntegracion(carrier)
+    ? [formatCarrier(carrier), contenido.titulo].filter(Boolean).join(' - ')
+    : contenido.titulo;
   return `
     <div class="envia-rate-card selected">
       <div class="envia-rate-info">

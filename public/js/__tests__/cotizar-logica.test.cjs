@@ -214,7 +214,7 @@ test('#437: una tarifa de Tresguerras se persiste, se restaura, se invalida y en
   assert.deepStrictEqual(buildItemEnvio({ shippingOpt: 'tresguerras', shippingCost: 3930.95, shippingDesc: rate.desc, shippingDescuento: 0 }),
     { codigo: 'ENVIO', descripcion: rate.desc, cantidad: 1, unidad: 'ACT', precio: 3930.95, descuento: 0 });
   const html = buildEnviaRateRestauradaHtml({ carrier: 'tresguerras', servicio: 'Puerta a puerta', cost: 3930.95 });
-  assert.match(html, /envia-rate-carrier">Puerta a puerta</);
+  assert.match(html, /envia-rate-carrier">Tresguerras - Puerta a puerta</);
   assert.match(html, /envia-rate-servicio">Tarifa estimada</);
 });
 
@@ -554,11 +554,20 @@ test('#102-15: buildEnviaRateRestauradaHtml muestra carrier/servicio/precio form
   assert.ok(html.includes('selected'));
 });
 
-test('#72: la tarjeta restaurada de Lalamove lleva el vehiculo de titulo, sin repetir la marca', () => {
-  const html = buildEnviaRateRestauradaHtml({ carrier: 'lalamove', servicio: 'Van', cost: 984.23 });
-  assert.match(html, /envia-rate-carrier">Van</);
-  assert.ok(!html.includes('Lalamove'));
-  assert.ok(html.includes('984.23'));
+// #454 supera a #72 en la tarjeta RESTAURADA: sin desglose que pintar, el titulo
+// nombra la linea y el vehiculo (decision de Adrian 2026-09-25). Las tarjetas en
+// vivo siguen con el vehiculo solo (contenidoTarjeta).
+test('#454: la tarjeta restaurada de una integracion nombra la linea y su servicio', () => {
+  const html = buildEnviaRateRestauradaHtml({ carrier: 'lalamove', servicio: 'Hatchback', cost: 359.9 });
+  assert.match(html, /envia-rate-carrier">Lalamove - Hatchback</);
+  assert.ok(html.includes('envia-rate-precio">$359.90<'));
+  const tg = buildEnviaRateRestauradaHtml({ carrier: 'tresguerras', servicio: 'Puerta a puerta', cost: 424.56 });
+  assert.match(tg, /envia-rate-carrier">Tresguerras - Puerta a puerta</);
+  assert.match(tg, /envia-rate-servicio">Tarifa estimada</);
+  const fedex = buildEnviaRateRestauradaHtml({ carrier: 'fedex', servicio: 'ground', cost: 268 });
+  assert.match(fedex, /envia-rate-carrier">FedEx</);
+  assert.match(fedex, /envia-rate-servicio">Ground</);
+  assert.deepStrictEqual(contenidoTarjeta({ carrier: 'lalamove', service: 'Hatchback' }).titulo, 'Hatchback');
 });
 
 // #444: la tarjeta restaurada en Editar/Copiar salia en $0.00 -- la restauracion
@@ -575,6 +584,31 @@ test('#444: Editar/Copiar pintan en la tarjeta restaurada el mismo monto que la 
     const html = buildEnviaRateRestauradaHtml(r.enviaRateSeleccionado);
     assert.ok(html.includes(`envia-rate-precio">${monto}<`), `${envio.opcion}: ${html}`);
     assert.strictEqual(r.cost, monto.slice(1), envio.opcion);
+  }
+});
+
+// #454: las cotizaciones de Lalamove anteriores a su opcion propia (1296, 1302)
+// se guardaron con la opcion de paqueteria y el carrier de la integracion. Al
+// restaurarlas (Editar y Copiar) el selector vuelve a SU opcion y Cotizar
+// consulta la integracion, no envia.com (decision de Adrian 2026-09-25).
+test('#454: Editar/Copiar de un envio de integracion guardado como paqueteria vuelve a la opcion de su integracion', async () => {
+  const { opcionesSelectorEnvio, lineasTransporte } = await import('../lineas-transporte-logica.js');
+  const casos = [
+    { envio: { opcion: 'envia', carrier: 'lalamove', servicio: 'Hatchback', precio: 359.9, descripcion: 'Envio Lalamove Hatchback (hasta 100 kg)' },
+      opcion: 'lalamove', endpoint: '/api/cotizacion/envio/lalamove', texto: 'Cotizar con Lalamove (envio local)' },
+    { envio: { opcion: 'envia', carrier: 'tresguerras', servicio: 'Puerta a puerta', precio: 424.56, descripcion: 'Tresguerras puerta a puerta' },
+      opcion: 'tresguerras', endpoint: '/api/cotizacion/envio/tresguerras', texto: 'Cotizar con Tresguerras (carga consolidada)' },
+    { envio: { opcion: 'envia', carrier: 'fedex', servicio: 'ground', precio: 268, descripcion: 'FedEx Ground' },
+      opcion: 'envia', endpoint: '/api/cotizacion/envio', texto: 'Cotizar paqueteria (FedEx, DHL, Estafeta via envia.com)' },
+  ];
+  for (const { envio, opcion, endpoint, texto } of casos) {
+    const r = restaurarEnvioDesdeCotizacion({ ...envio, descuento: 0 });
+    assert.strictEqual(r.opcion, opcion, envio.carrier);
+    assert.strictEqual(r.mostrarEnvia, true, envio.carrier);
+    assert.strictEqual(r.enviaRateSeleccionado.carrier, envio.carrier);
+    assert.strictEqual(endpointTarifas(r.opcion), endpoint, envio.carrier);
+    const ofrecida = opcionesSelectorEnvio(lineasTransporte(null), r.opcion).find(o => o.value === r.opcion);
+    assert.strictEqual(ofrecida?.texto, texto, envio.carrier);
   }
 });
 
