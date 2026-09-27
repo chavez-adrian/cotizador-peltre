@@ -217,12 +217,12 @@
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:var(--bg);text-align:left">
-              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Nombre</th>
-              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Fuente</th>
-              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Codigo envia.com</th>
-              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Transportista de Operam</th>
-              <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Activa</th>
-              <th style="padding:6px 8px;border-bottom:1px solid var(--border)"></th>
+              <th style="padding:6px 4px;border-bottom:1px solid var(--border)">Nombre</th>
+              <th style="padding:6px 4px;border-bottom:1px solid var(--border)">Fuente</th>
+              <th style="padding:6px 4px;border-bottom:1px solid var(--border)">Codigo envia.com</th>
+              <th style="padding:6px 4px;border-bottom:1px solid var(--border)">Transportista de Operam</th>
+              <th style="padding:6px 4px;border-bottom:1px solid var(--border)">Activa</th>
+              <th style="padding:6px 4px;border-bottom:1px solid var(--border)"></th>
             </tr>
           </thead>
           <tbody id="lineas-rows"></tbody>
@@ -925,20 +925,20 @@ async function loadLineasTransporte() {
 }
 
 function renderLineasTransporte() {
-  const celda = 'padding:6px 8px;border-bottom:1px solid var(--border)';
+  const celda = 'padding:6px 4px;border-bottom:1px solid var(--border)';
   const input = 'border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px';
   document.getElementById('lineas-rows').innerHTML = lineasData.map((l, i) => `
     <tr>
-      <td style="${celda}"><input type="text" data-i="${i}" data-campo="nombre" value="${lineaEsc(l.nombre)}" placeholder="Nombre que ve el vendedor" style="width:100%;${input}"></td>
+      <td style="${celda}"><input type="text" data-i="${i}" data-campo="nombre" value="${lineaEsc(l.nombre)}" placeholder="Nombre que ve el vendedor" style="width:100%;min-width:21ch;${input}"></td>
       <td style="${celda}">
-        <select data-i="${i}" data-campo="fuente" style="${input}">
+        <select data-i="${i}" data-campo="fuente" style="${input};padding:3px 2px">
           ${['envia', 'lalamove', 'tresguerras'].map(f => `<option value="${f}"${l.fuente === f ? ' selected' : ''}>${f}</option>`).join('')}
         </select>
       </td>
-      <td style="${celda}"><input type="text" data-i="${i}" data-campo="codigo" value="${lineaEsc(l.codigo)}" placeholder="${l.fuente === 'envia' ? 'ej. paquetexpress' : 'no aplica'}"${l.fuente === 'envia' ? '' : ' disabled'} style="width:120px;${input}"></td>
+      <td style="${celda}"><input type="text" data-i="${i}" data-campo="codigo" value="${lineaEsc(l.codigo)}" placeholder="${l.fuente === 'envia' ? 'paquetexpress' : 'no aplica'}"${l.fuente === 'envia' ? '' : ' disabled'} style="width:96px;${input}"></td>
       <td style="${celda}"><input type="text" inputmode="numeric" data-i="${i}" data-campo="shipVia" value="${lineaEsc(l.shipVia)}" placeholder="vacio" style="width:70px;${input}"></td>
       <td style="${celda};text-align:center"><input type="checkbox" data-i="${i}" data-campo="activa"${l.activa ? ' checked' : ''}></td>
-      <td style="${celda}"><button class="btn btn-secondary btn-sm" data-quitar="${i}">Quitar</button></td>
+      <td style="${celda}"><button class="btn btn-secondary btn-sm" data-quitar="${i}" style="padding:5px 8px">Quitar</button></td>
     </tr>
   `).join('');
 }
