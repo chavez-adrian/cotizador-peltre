@@ -189,6 +189,7 @@ import {
   esOpcionTarifa,
   esOpcionConCosto,
   endpointTarifas,
+  cuerpoTarifas,
   cpValido,
   buildConfirmarVendedorModalHtml,
   debeInvalidarEnvioPorCantidad,
@@ -2088,7 +2089,15 @@ async function cotizarEnvia() {
   try {
     const res = await api(endpointTarifas(document.getElementById('shipping-option').value), {
       method: 'POST',
-      body: { cpDestino: cp, paisDestino: pais, items, totalConIVA },
+      body: cuerpoTarifas({
+        cp, pais, items, totalConIVA,
+        domicilio: {
+          calle: document.getElementById('cl-calle')?.value,
+          colonia: document.getElementById('cl-colonia')?.value,
+          municipio: document.getElementById('cl-municipio')?.value,
+          estado: document.getElementById('cl-estado')?.value,
+        },
+      }),
     });
     const data = await res.json();
 

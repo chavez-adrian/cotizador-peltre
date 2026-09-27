@@ -160,6 +160,19 @@ export function endpointTarifas(shippingOpt) {
   return ENDPOINT_TARIFAS[shippingOpt] || '/api/cotizacion/envio';
 }
 
+// Cuerpo de la consulta de tarifas (#453): ademas del CP viaja el domicilio de
+// entrega capturado, que envia.com necesita para DHL y Estafeta (sin calle no
+// cotizan). Lalamove y Tresguerras reciben el mismo cuerpo e ignoran esos campos.
+const CAMPOS_DOMICILIO_TARIFAS = ['calle', 'colonia', 'municipio', 'estado'];
+export function cuerpoTarifas({ cp, pais, items, totalConIVA, domicilio = {} }) {
+  const cuerpo = { cpDestino: cp, paisDestino: pais, items, totalConIVA };
+  for (const campo of CAMPOS_DOMICILIO_TARIFAS) {
+    const valor = String(domicilio?.[campo] ?? '').trim();
+    if (valor) cuerpo[campo] = valor;
+  }
+  return cuerpo;
+}
+
 // Tiempo estimado de entrega de una tarifa de envia.com (issue #88). El shape
 // real de api.envia.com/ship/rate/ (verificado en vivo, FedEx/UPS, destino
 // CP 78000) NO trae `rate.days` -- ese campo nunca aparecio en la respuesta real.

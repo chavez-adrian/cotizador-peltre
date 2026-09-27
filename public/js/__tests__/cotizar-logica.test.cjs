@@ -13,6 +13,7 @@ let envioTrasCambioDeCp;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA;
+let cuerpoTarifas;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
@@ -25,7 +26,7 @@ before(async () => {
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA,
-    sincronizarCorreoFactura,
+    sincronizarCorreoFactura, cuerpoTarifas,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -1180,4 +1181,26 @@ test('#441-5: app.js suelta la tarifa por el nucleo al teclear el CP, al cambiar
   for (const prohibida of ['soltarTarifaSiCambioElCp(', 'pcPrepararSeleccion(']) {
     assert.ok(!cargar.includes(prohibida), `Editar/Copiar restauran tarifa y CP juntos: cargarCotizacion no llama ${prohibida}`);
   }
+});
+
+// #453: el paso Envio manda a /api/cotizacion/envio el domicilio de entrega que
+// capturo el vendedor (sin calle, DHL y Estafeta no cotizan). Los nombres son los
+// que destructura el servidor; un campo vacio no viaja.
+test('#453: cuerpoTarifas lleva calle, colonia, municipio y estado capturados junto al CP', () => {
+  const items = [{ codigo: 'PV08', cantidad: 2 }];
+  const cuerpo = cuerpoTarifas({
+    cp: '11700', pais: 'MX', items, totalConIVA: 1160,
+    domicilio: { calle: ' Av. Paseo de la Reforma 2620 ', colonia: 'Lomas Altas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico' },
+  });
+  assert.deepStrictEqual(cuerpo, {
+    cpDestino: '11700', paisDestino: 'MX', items, totalConIVA: 1160,
+    calle: 'Av. Paseo de la Reforma 2620', colonia: 'Lomas Altas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
+  });
+});
+
+test('#453: cuerpoTarifas sin domicilio capturado manda solo lo de antes', () => {
+  const items = [{ codigo: 'PV08', cantidad: 1 }];
+  assert.deepStrictEqual(
+    cuerpoTarifas({ cp: '78701', pais: 'US', items, totalConIVA: 500, domicilio: { calle: '', colonia: '  ' } }),
+    { cpDestino: '78701', paisDestino: 'US', items, totalConIVA: 500 });
 });

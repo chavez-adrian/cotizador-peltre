@@ -76,6 +76,7 @@ import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuent
 import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
 import { validarOperamIds } from './public/js/vendedores-logica.js';
 import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
+import { destinoEnvia, carriersParaPais, sugerenciaSinCalle } from './lib/envia-destino-logica.js';
 import { condicionesComerciales, validarCondiciones } from './public/js/condiciones-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
@@ -2185,7 +2186,7 @@ function responderLineaInactiva(res, fuente) {
 }
 
 app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
-  const { cpDestino, paisDestino, items, totalConIVA } = req.body;
+  const { cpDestino, paisDestino, items, totalConIVA, calle, colonia, municipio, estado } = req.body;
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });
   if (!items?.length) return res.status(400).json({ error: 'Carrito vacio' });
   if (rechazarCpDestino(res, paisDestino, cpDestino)) return;
@@ -2198,14 +2199,21 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: err.message });
   }
   if (packages.length === 0) return res.status(400).json({ error: 'No se calcularon paquetes', warnings });
-  const destination = { name: 'Destinatario', city: 'Destino', state: 'DF', country: paisDestino || 'MX', postalCode: cpDestino };
+  // #453: el domicilio capturado en el paso Envio; ciudad y estado que falten salen
+  // del indice de CP (el mismo de GET /api/cp). Sin calle no se inventa una.
+  const { resultado: cpResuelto } = resolverCP(paisDestino || 'MX', cpDestino);
+  const destination = destinoEnvia({ pais: paisDestino, cp: cpDestino, calle, colonia, municipio, estado }, cpResuelto);
   // #447: solo los carriers de las lineas `envia` activas del panel /admin. Un
   // codigo que envia.com no reconoce (o un carrier que falla) sale como aviso con
   // el nombre de la linea: las demas cotizan igual.
-  const CARRIERS = carriersEnvia(lineasTransporte(configStore.leer()));
-  if (CARRIERS.length === 0) {
+  const activos = carriersEnvia(lineasTransporte(configStore.leer()));
+  if (activos.length === 0) {
     return res.json({ rates: [], resumen, warnings: warnings.concat('No hay paqueterias de envia.com activas en las lineas de transporte de /admin') });
   }
+  // #453: Estafeta no hace envios internacionales; fuera de MX no se consulta.
+  const { carriers: CARRIERS, avisos: avisosPais } = carriersParaPais(activos, destination.country);
+  warnings.push(...avisosPais);
+  if (CARRIERS.length === 0) return res.json({ rates: [], resumen, warnings });
   const queryCarrier = async ({ codigo, nombre }) => {
     const payload = { origin: ENVIA_ORIGIN, destination, packages, shipment: { carrier: codigo, type: 1 } };
     try {
@@ -2228,6 +2236,8 @@ app.post('/api/cotizacion/envio', authMiddleware, async (req, res) => {
     const results = await Promise.all(CARRIERS.map(queryCarrier));
     const rates = results.flatMap(r => r.rates);
     for (const r of results) if (r.aviso) warnings.push(r.aviso);
+    const sugerencia = sugerenciaSinCalle(destination, results.some(r => r.aviso));
+    if (sugerencia) warnings.push(sugerencia);
     rates.sort((a, b) => (a.totalPrice ?? a.rate ?? 0) - (b.totalPrice ?? b.rate ?? 0));
     if (rates.length === 0 && warnings.length === 0) warnings.push('No se obtuvieron tarifas de ninguna paqueteria');
     res.json({ rates, resumen, warnings });
