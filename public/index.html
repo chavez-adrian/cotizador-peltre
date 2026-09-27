@@ -85,7 +85,7 @@
            altaCsfState.modoUpgrade este activo (paso Cliente o vista Clientes).
            Vive DENTRO del panel para viajar con el al re-parentar la vista. -->
       <div id="alta-upgrade-banner" style="display:none"></div>
-      <div style="display:flex;gap:16px;align-items:flex-start">
+      <div id="alta-layout">
         <!-- Acordeon columna izquierda -->
         <div style="flex:1" id="alta-acordeon">
 
@@ -193,7 +193,7 @@
                   </div>
                 </div>
                 <div id="csf-campos-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
-                <button class="btn btn-primary" id="csf-btn-confirmar" style="margin-top:16px;width:100%" onclick="altaCsfConfirmar()">
+                <button class="btn btn-primary accion-fija" id="csf-btn-confirmar" style="margin-top:16px;width:100%" onclick="altaCsfConfirmar()">
                   Confirmar datos fiscales
                 </button>
               </details>
@@ -268,7 +268,7 @@
                   </div>
                 </div>
                 <div id="manual-campos-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
-                <button class="btn btn-primary" id="manual-btn-confirmar" style="margin-top:16px;width:100%" onclick="altaManualConfirmar()">
+                <button class="btn btn-primary accion-fija" id="manual-btn-confirmar" style="margin-top:16px;width:100%" onclick="altaManualConfirmar()">
                   Verificar y confirmar
                 </button>
               </div><!-- /alta-panel-manual -->
@@ -345,7 +345,7 @@
                    y ahi este aviso desapareceria con un clic aunque la seccion siga sin
                    poder actualizarse. -->
               <div id="alta-comercial-precarga-aviso" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
-              <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="altaConfirmarComercial()">
+              <button class="btn btn-primary accion-fija" style="margin-top:16px;width:100%" onclick="altaConfirmarComercial()">
                 Confirmar config comercial
               </button>
             </div>
@@ -439,7 +439,7 @@
               </div>
               <div id="alta-domicilio-error" style="display:none;margin-top:8px;color:var(--danger);font-size:12px"></div>
               </div>
-              <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="altaConfirmarDomicilio()">
+              <button class="btn btn-primary accion-fija" style="margin-top:16px;width:100%" onclick="altaConfirmarDomicilio()">
                 Confirmar domicilio
               </button>
             </div>
@@ -557,11 +557,11 @@
 
         </div>
 
-        <!-- Sidebar sticky de progreso -->
-        <div id="alta-sidebar" style="width:210px;flex-shrink:0;position:sticky;top:16px">
+        <!-- Sidebar sticky de progreso (en telefono, tira arriba del formulario: #442) -->
+        <div id="alta-sidebar">
           <div style="background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:16px">
             <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px">Progreso del alta</div>
-            <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="alta-checkpoints">
               <div class="alta-checkpoint" id="chk-1">
                 <div class="alta-chk-dot" id="chkdot-1"></div>
                 <span class="alta-chk-label">RFC y datos fiscales</span>
@@ -714,7 +714,7 @@
         </div>
         <div class="cart-lines-subtotal" id="cart-lines-subtotal"></div>
       </div>
-      <button class="btn btn-primary btn-block" id="btn-sig-productos" style="margin-top:16px">Siguiente &rsaquo;</button>
+      <button class="btn btn-primary btn-block accion-fija" id="btn-sig-productos" style="margin-top:16px">Siguiente &rsaquo;</button>
     </div>
   </div>
 
@@ -846,7 +846,7 @@
         <input type="number" id="shipping-cost" min="0" step="0.01" placeholder="0.00">
       </div>
     </div>
-    <button class="btn btn-primary btn-block" id="btn-sig-envio" style="margin-top:16px">Siguiente &rsaquo;</button>
+    <button class="btn btn-primary btn-block accion-fija" id="btn-sig-envio" style="margin-top:16px">Siguiente &rsaquo;</button>
   </div>
 
   <!-- TAB: RESUMEN -->
@@ -913,7 +913,7 @@
           Incluir fotos en la cotizacion (cuando esten disponibles)
         </label>
       </div>
-      <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+      <div class="accion-fija" style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;background:var(--bg)">
         <button class="btn btn-primary" id="btn-pdf" style="flex:1">Generar PDF</button>
         <button class="btn btn-secondary" id="btn-html" style="flex:1">Generar HTML</button>
         <button class="btn btn-success" id="btn-whatsapp" style="flex:1" disabled title="Sin número de cotización no se puede compartir; se habilita en cuanto Operam lo asigne">WhatsApp</button>

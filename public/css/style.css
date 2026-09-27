@@ -36,6 +36,13 @@
   --etapa-no_util-texto: oklch(0.4 0.015 75);
   --col-vencida: oklch(0.86 0.07 28);
   --col-vencida-texto: oklch(0.36 0.11 28);
+
+  /* Pie de la pantalla (#442): la bottom-nav fija y, en #app-view, la barra
+     del total del carrito encima de ella. --pie-fijo es donde se apoya un
+     boton de accion sticky para no quedar debajo de ninguna de las dos. */
+  --alto-barra-inferior: 64px;
+  --alto-total-carrito: 62px;
+  --pie-fijo: var(--alto-barra-inferior);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -649,9 +656,13 @@ body {
 }
 
 /* === CART SUMMARY (barra inferior fija) === */
+/* Se apoya ARRIBA de la bottom-nav (#442): con bottom 0 quedaba debajo de
+   ella (z-index 50 contra 900), igual que .expo-guardar-fijo. Su alto es fijo
+   para que los botones .accion-fija se apoyen justo encima de ella. */
 .cart-summary {
   position: sticky;
-  bottom: 0;
+  bottom: var(--alto-barra-inferior);
+  height: var(--alto-total-carrito);
   background: var(--white);
   border-top: 1px solid var(--border);
   padding: 10px 16px;
@@ -660,6 +671,13 @@ body {
   justify-content: space-between;
   z-index: 50;
   box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+}
+
+/* Con el total a la vista (updateCartSummary le escribe display flex/none),
+   los botones de accion de #app-view se apoyan arriba de el. Fuera de
+   #app-view (el alta re-parentada a Clientes) no hay total: sigue la raiz. */
+#app-view:has(> #cart-summary:not([style*="none"])) {
+  --pie-fijo: calc(var(--alto-barra-inferior) + var(--alto-total-carrito));
 }
 
 .cart-total {
@@ -671,6 +689,7 @@ body {
 .cart-count {
   font-size: 11px;
   color: var(--text-light);
+  white-space: nowrap;
 }
 
 /* === CART ITEMS (en tab resumen) === */
@@ -1282,7 +1301,7 @@ body {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 64px;
+  bottom: var(--alto-barra-inferior);
   padding: 10px 16px;
   background: var(--white);
   border-top: 1px solid var(--border);
@@ -1651,8 +1670,19 @@ body {
   margin-bottom: 8px;
   border: 2px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
+  /* clip y no hidden (#442): hidden hace de la seccion un contenedor de scroll
+     y el boton .accion-fija dejaria de pegarse a la pantalla. */
+  overflow: clip;
   transition: border-color 0.15s;
+}
+
+/* Boton de accion (#442): el que confirma cada seccion del alta, "Siguiente"
+   de los pasos y la fila de Generar PDF. Mientras lo que cierra sigue abajo,
+   se queda a la vista ARRIBA de la bottom-nav y del total del carrito. */
+.accion-fija {
+  position: sticky;
+  bottom: var(--pie-fijo);
+  z-index: 1;
 }
 
 .alta-seccion.alta-sec-activa {
@@ -1756,6 +1786,46 @@ body {
 
 .alta-chk-dot.done + .alta-chk-label {
   color: var(--text);
+}
+
+/* Acordeon y lateral "Progreso del alta" lado a lado; en telefono el lateral
+   pasa a una tira compacta ARRIBA del formulario (#442): con su ancho fijo de
+   210px desbordaba la pantalla a 412px y la pagina se desplazaba de lado. */
+#alta-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+#alta-sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 16px;
+}
+
+.alta-checkpoints {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  #alta-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  #alta-sidebar {
+    order: -1;
+    width: 100%;
+    position: static;
+  }
+  .alta-checkpoints {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
 }
 
 /* === CSF DROPZONE (issue #28) === */
@@ -2022,7 +2092,7 @@ body {
 }
 /* Deja espacio para que la barra fija no tape el contenido. */
 body {
-  padding-bottom: 64px;
+  padding-bottom: var(--alto-barra-inferior);
 }
 
 /* ============================================================
