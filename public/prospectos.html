@@ -14,7 +14,7 @@
   .leads-filtro { display: flex; flex-direction: column; gap: 4px; flex: 1 1 150px; min-width: 0; }
   .leads-filtro label { font-size: 11px; color: var(--text-muted); text-transform: uppercase;
     letter-spacing: 0.04em; }
-  .leads-filtro select, .leads-filtro input { padding: 7px 10px; border: 1px solid var(--border);
+  .leads-filtro input { padding: 7px 10px; border: 1px solid var(--border);
     border-radius: var(--radius-input); font-size: 13px; font-family: inherit; min-width: 0; }
   .leads-titulo { font-size: 15px; font-weight: 600; color: var(--primary-dark); margin: 0 0 10px; }
   .leads-resumen { font-size: 13px; color: var(--text-muted); margin-top: 10px; }
@@ -125,46 +125,11 @@
 <div id="leads-app" class="leads-container" style="display:none">
   <h2 class="leads-titulo" id="leads-titulo">Prospectos</h2>
   <div class="leads-barra">
+    <div id="leads-filtros"></div>
     <div class="leads-filtros">
       <div class="leads-filtro">
-        <label for="f-evento">Evento</label>
-        <select id="f-evento"></select>
-      </div>
-      <div class="leads-filtro">
-        <label for="f-origen">Origen</label>
-        <select id="f-origen"></select>
-      </div>
-      <div class="leads-filtro">
-        <label for="f-vendedor">Vendedor</label>
-        <select id="f-vendedor"></select>
-      </div>
-      <div class="leads-filtro">
-        <label for="f-tipo">Tipo de cliente</label>
-        <select id="f-tipo"></select>
-      </div>
-      <div class="leads-filtro">
-        <label for="f-area">Área de interés</label>
-        <select id="f-area"></select>
-      </div>
-      <div class="leads-filtro">
-        <label for="f-gafete">Gafete</label>
-        <select id="f-gafete"></select>
-      </div>
-      <div class="leads-filtro">
-        <label for="f-estado">Estado</label>
-        <select id="f-estado"></select>
-      </div>
-      <div class="leads-filtro">
-        <label for="f-pendientes">Pendientes</label>
-        <select id="f-pendientes">
-          <option value="">Todos</option>
-          <option value="con">Con pendientes</option>
-          <option value="sin">Sin pendientes</option>
-        </select>
-      </div>
-      <div class="leads-filtro">
         <label for="f-texto">Buscar</label>
-        <input type="search" id="f-texto" placeholder="nombre, empresa, ciudad">
+        <input type="search" id="f-texto" placeholder="nombre, empresa, ciudad, celular">
       </div>
     </div>
     <div class="leads-resumen" id="leads-resumen"></div>
@@ -182,7 +147,10 @@
 </div>
 
 <script type="module">
-import { buildWaLinkProspecto, CANALES } from '/js/prospectos-logica.js';
+// #458: la tabla filtra y busca con el nucleo compartido (filtrarPorCriterio,
+// via su declaracion BUSCABLES_TABLA_PROSPECTO) y pinta la rejilla compartida.
+import { buildWaLinkProspecto, filtrarTablaProspectos, BUSCABLES_TABLA_PROSPECTO, GAFETES } from '/js/prospectos-logica.js';
+import { buildFiltrosSelectorHtml } from '/js/filtros-logica.js';
 // #319: las etiquetas de etapa del pipeline, para que el detalle nombre la
 // etapa de cada cotizacion igual que el tablero.
 import { COLUMNA_LABELS } from '/js/pipeline-logica.js';
@@ -209,15 +177,10 @@ const ESTADOS = {
 };
 // #316: el rango es el orden de CONTEXT.md "Gafete" (RANGO_GAFETE de
 // lib/tabla-prospectos.js), no el alfabetico -- los de solo gafete quedan
-// arriba porque son los unicos sin siguiente paso acordado. La pagina no
-// importa del nucleo (cross-import server<->public/js es para modulos
-// compartidos, no para una copia local de un arreglo de tres literales).
-const RANGO_GAFETE = ['solo_gafete', 'gafete_y_stand', 'sin_gafete'];
-const GAFETES = {
-  solo_gafete: 'Solo gafete',
-  gafete_y_stand: 'Gafete + stand',
-  sin_gafete: 'Sin gafete',
-};
+// arriba porque son los unicos sin siguiente paso acordado. Desde #458 sale de
+// GAFETES (prospectos-logica.js), las opciones del filtro, en ese mismo orden.
+const RANGO_GAFETE = GAFETES.map(g => g.valor);
+const TEXTO_GAFETE = Object.fromEntries(GAFETES.map(g => [g.valor, g.texto]));
 // Las cuatro llaves de LLAVES_QUE_FALTA desde hoy (#321), aunque el servidor
 // hoy solo emita 'calificacion' y 'correo': asi #322 no toca esta pagina.
 const ETIQUETAS_QUE_FALTA = {
@@ -248,7 +211,7 @@ const COLUMNAS = [
   { llave: 'tamano', titulo: 'Tamaño', valor: p => p.data.tamano || '' },
   { llave: 'vendedor', titulo: 'Vendedor', valor: p => p.vendedor || '' },
   { llave: 'gafete', titulo: 'Gafete', valor: p => RANGO_GAFETE.indexOf(p.gafete),
-    texto: p => GAFETES[p.gafete] },
+    texto: p => TEXTO_GAFETE[p.gafete] },
   // Vacio (nada falta) cuenta como '' para que la regla de siempre -- lo vacio
   // al final -- lo empuje al fondo en vez de ordenarlo como un cero numerico.
   { llave: 'queFalta', titulo: 'Qué falta', valor: p => p.queFalta.length || '',
@@ -261,6 +224,8 @@ const estado = {
   ligas: { catalogoUrl: '', sitioUrl: '', operamUrl: '' },
   orden: { llave: 'estado', asc: true },
   abierta: null,
+  // Filtros y busqueda en memoria, como el criterio de las demas vistas (#458).
+  criterio: { texto: '', filtros: {} },
 };
 
 function el(id) { return document.getElementById(id); }
@@ -277,47 +242,19 @@ function fechaCorta(iso) {
   return fechaLocal(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
 }
 
-// El area de interes es multi-valor separado por punto y coma
-// ("Alimentos; Cristalería - Vajillas"): el filtro es por valor suelto.
-function areasDe(p) {
-  return String(p.data.area_interes || '').split(';').map(a => a.trim()).filter(Boolean);
-}
-
 function prepara(p) {
   p.data = p.data || {};
-  p._areas = areasDe(p);
-  p._busqueda = [p.nombre, p.data.empresa, p.ciudad, p.data.puesto].filter(Boolean).join(' ').toLowerCase();
   return p;
 }
 
 // --- Filtros ---
 
-function opciones(sel, valores, etiquetaTodos) {
-  sel.innerHTML = `<option value="">${escapeHtml(etiquetaTodos)}</option>` +
-    valores.map(v => `<option value="${escapeHtml(v.valor)}">${escapeHtml(v.texto)}</option>`).join('');
-}
-
-function unicos(lista) {
-  return [...new Set(lista.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
-}
-
-function poblarFiltros() {
-  const ps = estado.prospectos;
-  opciones(el('f-evento'), unicos(ps.map(p => p.data.evento)).map(v => ({ valor: v, texto: v })), 'Todos');
-  opciones(el('f-tipo'), unicos(ps.map(p => p.data.tipo_cliente)).map(v => ({ valor: v, texto: v })), 'Todos');
-  opciones(el('f-area'), unicos(ps.flatMap(p => p._areas)).map(v => ({ valor: v, texto: v })), 'Todas');
-  opciones(el('f-gafete'), RANGO_GAFETE.map(valor => ({ valor, texto: GAFETES[valor] })), 'Todos');
-  // El Origen se ofrece completo (catalogo cerrado del glosario), no solo los
-  // valores presentes: la lista es corta y estable, y asi no cambia de tamano
-  // segun a quien tenga cargado el vendedor.
-  opciones(el('f-origen'), CANALES.map(v => ({ valor: v, texto: v })), 'Todos');
-  opciones(el('f-estado'), Object.entries(ESTADOS).map(([valor, e]) => ({ valor, texto: e.etiqueta })), 'Todos');
-
-  const vendedores = unicos(ps.map(p => p.vendedor));
-  const filtroVendedor = el('f-vendedor').closest('.leads-filtro');
-  // Con un solo vendedor a la vista el filtro no decide nada: estorba.
-  filtroVendedor.style.display = vendedores.length > 1 ? '' : 'none';
-  opciones(el('f-vendedor'), vendedores.map(v => ({ valor: v, texto: v })), 'Todos');
+// La rejilla compartida (#458): la arma buildFiltrosSelectorHtml con la
+// declaracion de la tabla -- Origen y Estado completos, Vendedor solo con mas
+// de una persona a la vista -- y conserva la seleccion en curso al repintar.
+function pintaFiltros() {
+  el('leads-filtros').innerHTML = buildFiltrosSelectorHtml(
+    estado.prospectos, BUSCABLES_TABLA_PROSPECTO.filtros, estado.criterio.filtros, 'leads');
 }
 
 // #317: el titulo dice de que es la tabla. Sin filtro de evento es la de todos
@@ -325,31 +262,9 @@ function poblarFiltros() {
 // tiene que verse tambien en la pestana (la tabla se abre desde el telefono con
 // varias pestanas del cotizador encima).
 function pintaTitulo() {
-  const evento = el('f-evento').value;
+  const evento = estado.criterio.filtros.evento || '';
   el('leads-titulo').textContent = evento || 'Prospectos';
   document.title = `${evento || 'Prospectos'} - Cotizador Peltre Nacional`;
-}
-
-function filtrados() {
-  const evento = el('f-evento').value;
-  const vendedor = el('f-vendedor').value;
-  const tipo = el('f-tipo').value;
-  const area = el('f-area').value;
-  const gafete = el('f-gafete').value;
-  const origen = el('f-origen').value;
-  const est = el('f-estado').value;
-  const pendientes = el('f-pendientes').value;
-  const texto = el('f-texto').value.trim().toLowerCase();
-  return estado.prospectos.filter(p =>
-    (!evento || p.data.evento === evento) &&
-    (!vendedor || p.vendedor === vendedor) &&
-    (!tipo || p.data.tipo_cliente === tipo) &&
-    (!area || p._areas.includes(area)) &&
-    (!gafete || p.gafete === gafete) &&
-    (!origen || p.origen === origen) &&
-    (!est || p.estado === est) &&
-    (!pendientes || (pendientes === 'con' ? p.queFalta.length > 0 : p.queFalta.length === 0)) &&
-    (!texto || p._busqueda.includes(texto)));
 }
 
 // --- Render ---
@@ -409,7 +324,7 @@ function filaDetalle(p) {
     ['Valora', (cal.valora || []).join(', ')],
     ['Concepto', cal.concepto],
     ['Piezas estimadas', p.data.piezas_estimadas],
-    ['Gafete', GAFETES[p.gafete]],
+    ['Gafete', TEXTO_GAFETE[p.gafete]],
     // #342: el Contacto que la migracion creo para que una cotizacion historica
     // tuviera de quien ser. Nadie lo capturo: se dice, para que no se lea como
     // un prospecto trabajado.
@@ -430,7 +345,7 @@ function filaDetalle(p) {
 
 function pinta() {
   pintaTitulo();
-  const lista = ordena(filtrados());
+  const lista = ordena(filtrarTablaProspectos(estado.prospectos, estado.criterio));
   pintaCabeceras();
   el('leads-cuerpo').innerHTML = lista.map(p => {
     const celdas = COLUMNAS.map(c => {
@@ -465,10 +380,13 @@ function pinta() {
 // --- Eventos de la pantalla (sin onclick inline, trampa #112) ---
 
 function conectaEventos() {
-  for (const id of ['f-evento', 'f-vendedor', 'f-tipo', 'f-area', 'f-gafete', 'f-origen', 'f-estado', 'f-pendientes']) {
-    el(id).addEventListener('change', pinta);
-  }
-  el('f-texto').addEventListener('input', pinta);
+  el('leads-filtros').addEventListener('change', e => {
+    const campo = e.target?.dataset?.filtro;
+    if (!campo) return;
+    estado.criterio.filtros = { ...estado.criterio.filtros, [campo]: e.target.value };
+    pinta();
+  });
+  el('f-texto').addEventListener('input', e => { estado.criterio.texto = e.target.value; pinta(); });
 
   el('leads-cabeceras').addEventListener('click', e => {
     const th = e.target.closest('th[data-orden]');
@@ -540,7 +458,7 @@ async function cargar() {
     estado.ligas = { catalogoUrl: c.catalogoUrl || '', sitioUrl: c.sitioUrl || '', operamUrl: c.operamUrl || '' };
   }
   estado.prospectos = filas;
-  poblarFiltros();
+  pintaFiltros();
   pinta();
   el('leads-login').style.display = 'none';
   el('leads-app').style.display = 'block';

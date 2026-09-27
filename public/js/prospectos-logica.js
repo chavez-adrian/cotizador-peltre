@@ -559,6 +559,49 @@ export function filtrarProspectos(prospectos, criterio) {
   return filtrarPorCriterio(prospectos, criterio, BUSCABLES_PROSPECTO);
 }
 
+// La Tabla de prospectos (/prospectos, #306) sobre el MISMO nucleo y la MISMA
+// rejilla que las demas vistas (#458, spec #398): antes filtraba y buscaba con
+// codigo propio dentro de su pagina. La fila es la de GET /api/prospectos/tabla
+// (filaTabla), que trae el Origen YA resuelto en `origen`, por eso no se reusa
+// BUSCABLES_PROSPECTO (lee `canal` y busca el Origen por texto).
+//
+// La busqueda adopta la del nucleo (decision de Adrian, 2026-09-25): gana
+// acentos y digitos del celular, y pierde el puesto. Evento, Tipo de cliente y
+// Area de interes solo los traen los prospectos de expo: con una sola opcion SI
+// deciden (`pintarConUnaOpcion`, como el Evento de #457). El Area de interes es
+// multi-valor separada por punto y coma y casa por pertenencia.
+export const GAFETES = [
+  { valor: 'solo_gafete', texto: 'Solo gafete' },
+  { valor: 'gafete_y_stand', texto: 'Gafete + stand' },
+  { valor: 'sin_gafete', texto: 'Sin gafete' },
+];
+
+export function areasDeInteres(p) {
+  return String(p?.data?.area_interes || '').split(';').map(a => a.trim()).filter(Boolean);
+}
+
+export const BUSCABLES_TABLA_PROSPECTO = {
+  camposDe: p => [p?.nombre, p?.data?.empresa, p?.ciudad],
+  digitosDe: p => p?.celular,
+  filtros: {
+    evento: { etiqueta: 'Evento', lee: p => p?.data?.evento, procedencia: 'datos', pintarConUnaOpcion: true },
+    origen: { etiqueta: 'Origen', lee: p => p?.origen, procedencia: 'catalogo', valores: CANALES },
+    vendedor: { etiqueta: 'Vendedor', lee: p => p?.vendedor, procedencia: 'datos' },
+    tipo: { etiqueta: 'Tipo de cliente', lee: p => p?.data?.tipo_cliente, procedencia: 'datos', pintarConUnaOpcion: true },
+    area: { etiqueta: '\u00c1rea de inter\u00e9s', lee: areasDeInteres, procedencia: 'datos', pintarConUnaOpcion: true },
+    gafete: { etiqueta: 'Gafete', lee: p => p?.gafete, procedencia: 'vista', valores: GAFETES },
+    estado: { etiqueta: 'Estado', lee: p => p?.estado, procedencia: 'catalogo', valores: ESTADOS_PROSPECTO },
+    pendientes: {
+      etiqueta: 'Pendientes', lee: p => (p?.queFalta?.length ? 'con' : 'sin'), procedencia: 'vista',
+      valores: [{ valor: 'con', texto: 'Con pendientes' }, { valor: 'sin', texto: 'Sin pendientes' }],
+    },
+  },
+};
+
+export function filtrarTablaProspectos(filas, criterio) {
+  return filtrarPorCriterio(filas, criterio, BUSCABLES_TABLA_PROSPECTO);
+}
+
 // Seccion "Que toca hoy" (issue #44): la cola llega ya ordenada por urgencia
 // desde GET /api/prospectos/cola. La sugerencia de No util tras 3 toques abre
 // la confirmacion del vendedor (sugerirNoUtilProspecto en app.js) -- nunca se
