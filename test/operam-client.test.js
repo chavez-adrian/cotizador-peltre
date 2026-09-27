@@ -1256,13 +1256,15 @@ test('subirCotizacionOperam: RFC con match unico -> usa ESE customer_id (no clie
     },
   });
   try {
-    const folio = await subirCotizacionOperam({
+    const { folio, customerId } = await subirCotizacionOperam({
       fecha: '2026-06-17',
       cliente: { rfc: 'CPE921211N76', razonSocial: 'Cafebreria El Pendulo' },
       items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
     });
     assert.equal(folio, 1200);
     assert.equal(quoteBody.customer_id, 314, 'debe usar el customer_id del cliente que matchea por RFC exacto');
+    // #460: quien liga el Contacto necesita saber a que Cliente Operam se subio.
+    assert.equal(customerId, 314, 'devuelve el Cliente Operam resuelto por RFC');
   } finally {
     restore();
   }
@@ -1286,7 +1288,7 @@ test('subirCotizacionOperam: cuando la cotizacion trae customer_id del cliente, 
     },
   });
   try {
-    const folio = await subirCotizacionOperam({
+    const { folio } = await subirCotizacionOperam({
       fecha: '2026-06-17',
       cliente: { rfc: 'CPE921211N76', customerId: 500, branchId: 77 },
       items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 1, precio: 100 }],
@@ -2019,7 +2021,7 @@ test('subirCotizacionOperam: devuelve el folio real del quote (added_trans_no)',
     }),
   });
   try {
-    const folio = await subirCotizacionOperam({
+    const { folio } = await subirCotizacionOperam({
       fecha: '2026-06-18',
       cliente: { rfc: 'XAXX010101000', razonSocial: 'PUBLICO EN GENERAL', cpEntrega: '06700' },
       items: [{ codigo: 'PV08P3001120', descripcion: 'Portavasos', cantidad: 10, precio: 45.26, descuento: 0 }],

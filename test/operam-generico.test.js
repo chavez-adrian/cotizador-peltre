@@ -555,6 +555,94 @@ test('#345-4: "Ya lo conozco" con un celular ya ligado a otro Cliente Operam pre
   ]);
 });
 
+// #460 (hallazgo de #345): la cotizacion sin customerId pero con RFC real sube por
+// el camino normal y su Cliente Operam se resuelve por RFC. Ese Cliente Operam
+// tambien se liga al Contacto, con la misma decision que cuando el vendedor lo
+// eligio: antes la liga se perdia en silencio.
+function mockCaminoNormalPorRfc({ onQuote = () => {} } = {}) {
+  const base = mockCaminoNormal({ onQuote });
+  return {
+    ...base,
+    '/api/v3/sales/customers': (u, opts) => {
+      if (u.includes('tax_id=HAZ010203AB1')) {
+        onQuote('GET tax_id');
+        return jsonResponse({ total: 1, data: [{ customer_id: 10, CustName: 'HOTEL AZUL SA DE CV', tax_id: 'HAZ010203AB1', branches: [{ branch_code: 20 }] }] });
+      }
+      return base['/api/v3/sales/customers'](u, opts);
+    },
+  };
+}
+
+test('#460-1: sin customerId y con RFC que resuelve a un Cliente Operam, el Contacto queda ligado a el', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({ rfc: 'HAZ010203AB1' });
+  const llamadas = [];
+  let quoteBody = null;
+  mockOperamFetch(mockCaminoNormalPorRfc({ onQuote: (n, body) => { llamadas.push(n); if (body) quoteBody = body; } }));
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.folio, 1712);
+  assert.equal(quoteBody.customer_id, 10);
+  assert.ok(!llamadas.includes('POST customer'), 'no se da de alta ningun Cliente Operam');
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.deepEqual(p.data.clientes_operam, [{ cliente_id: 10, fuente: 'cotizador' }]);
+  assert.equal(p.data.cliente_id, 10);
+});
+
+// La pregunta sale ANTES de escribir el quote: si saliera despues, el quote ya
+// existiria sin la confirmacion y el reintento tendria que evitar duplicarlo.
+test('#460-2: RFC que resuelve a otro Cliente Operam del ya ligado pregunta antes de subir y al confirmar agrega la liga', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase({ cliente_id: 555 })]);
+  const id = nuevaCotizacion({ rfc: 'HAZ010203AB1' });
+  const llamadas = [];
+  mockOperamFetch(mockCaminoNormalPorRfc({ onQuote: (n) => llamadas.push(n) }));
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 428);
+  assert.equal(res.body.codigo, CODIGO_OTRA_RAZON_SOCIAL);
+  assert.equal(String(res.body.elegido.customerId), '10');
+  assert.equal(res.body.elegido.nombre, 'HOTEL AZUL SA DE CV');
+  assert.deepEqual(res.body.ligado.map(c => String(c.customerId)), ['555']);
+  assert.ok(!llamadas.includes('POST quote'), 'sin confirmacion no se sube nada');
+  assert.deepEqual(res.body.reintentar, { otraRazonSocial: true });
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.ok(cot.folioOperam == null || cot.folioOperam === '');
+
+  const ok = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({ otraRazonSocial: true });
+  assert.equal(ok.status, 200);
+  assert.equal(llamadas.filter(n => n === 'POST quote').length, 1, 'un solo quote en Operam');
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.deepEqual(p.data.clientes_operam, [
+    { cliente_id: 555, fuente: 'cotizador' },
+    { cliente_id: 10, fuente: 'cotizador' },
+  ]);
+  assert.equal(p.data.cliente_id, 555, 'la liga anterior queda intacta');
+});
+
+// Un RFC sin Cliente Operam sigue siendo el 422 claro de #68, ahora que se
+// resuelve antes del POST: ni quote ni liga.
+test('#460-3: RFC que no resuelve a ningun Cliente Operam responde 422 sin subir ni ligar', async () => {
+  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
+  const id = nuevaCotizacion({ rfc: 'NOE010203AB1' });
+  const llamadas = [];
+  mockOperamFetch(mockCaminoNormalPorRfc({ onQuote: (n) => llamadas.push(n) }));
+
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
+    .set('Authorization', `Bearer ${TOKEN}`).send({});
+
+  assert.equal(res.status, 422);
+  assert.match(res.body.error, /identificar el cliente/i);
+  assert.ok(!llamadas.includes('POST quote'));
+  const p = readJson(PROSPECTOS_PATH).find(x => x.id === 1);
+  assert.equal(p.data.clientes_operam, undefined);
+});
+
 test('G4: reintento con customerId elegido tras candidatos -> reutiliza, liga el prospecto y sube', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase()]);
   const id = nuevaCotizacion();

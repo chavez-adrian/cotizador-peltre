@@ -8,7 +8,7 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
+import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, resolverClienteDeCotizacion, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { puedeActualizarCotizacion, ligaClienteAlGuardar, vendedorAlGuardar } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
@@ -3312,7 +3312,7 @@ async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creado
     // (buildClienteGenerico): releerlo solo para comprobarlo seria una lectura de
     // mas dentro del camino critico de la subida (#285). El cliente reusado o
     // elegido si se checa: puede llevar anos sin lista.
-    const folio = await subirCotizacionOperam(dataSubida, { verificarListaPrecios: !creadoNuevo });
+    const { folio } = await subirCotizacionOperam(dataSubida, { verificarListaPrecios: !creadoNuevo });
     if (folio != null && folio !== '') {
       await cotStore.setFolioOperam(id, folio);
       await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida, opcionesHuellaQuote(entry)) });
@@ -3718,18 +3718,24 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     // ligarlo era dar de alta uno sin datos fiscales que duplicaba al que ya
     // existia. Con el Contacto ya ligado a OTRO Cliente Operam se pregunta,
     // exactamente igual que en el alta generica.
-    // Sin customerId en la cotizacion (cliente resuelto por RFC dentro de
-    // subirCotizacionOperam) no hay a quien ligar todavia: no se inventa.
     const contactoSubida = await contactoDeLaSubida(entry);
     const ligasSubida = ligasDeContacto(contactoSubida?.data);
-    const decisionLiga = decidirLiga(ligasSubida, entry.data?.cliente?.customerId ?? null, { confirmado: otraRazonSocial });
-    if (decisionLiga.accion === 'confirmar') {
-      return await responderConfirmarOtraRazonSocial(res, {
-        contacto: contactoSubida, ligadas: ligasSubida, clienteId: entry.data.cliente.customerId,
-      });
-    }
     try {
-      const folio = await subirCotizacionOperam(entry.data);
+      // Sin customerId en la cotizacion el Cliente Operam sale del RFC (#460). Se
+      // resuelve AQUI, antes del POST, y no dentro de la subida: la pregunta 428
+      // tiene que llegar sin quote escrito ("sin confirmar no se sube nada"), asi
+      // que un reintento tras la pregunta no encuentra nada que duplicar.
+      const resuelto = await resolverClienteDeCotizacion(entry.data);
+      const decisionLiga = decidirLiga(ligasSubida, resuelto.customerId, { confirmado: otraRazonSocial });
+      if (decisionLiga.accion === 'confirmar') {
+        return await responderConfirmarOtraRazonSocial(res, {
+          contacto: contactoSubida, ligadas: ligasSubida, clienteId: resuelto.customerId,
+        });
+      }
+      // La subida recibe el cliente ya resuelto para no volver a buscar el RFC. La
+      // huella de abajo sigue saliendo de entry.data: la cotizacion no guarda este id.
+      const dataSubida = { ...entry.data, cliente: { ...entry.data.cliente, customerId: resuelto.customerId, branchId: resuelto.branchId } };
+      const { folio, customerId } = await subirCotizacionOperam(dataSubida);
       // Persistir el folio: la cotizacion deja de ser pre-cotizacion (#63).
       if (folio != null && folio !== '') {
         await cotStore.setFolioOperam(id, folio);
@@ -3744,7 +3750,7 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
       // que ligar, y el reintento vuelve a pasar por aqui.
       const pasosLiga = [];
       if (folio != null && folio !== '' && contactoSubida && decisionLiga.accion === 'agregar') {
-        await agregarLigaAlContacto(contactoSubida, entry.data.cliente.customerId, entry, pasosLiga);
+        await agregarLigaAlContacto(contactoSubida, customerId, entry, pasosLiga);
       }
       res.json({ ok: true, folio, steps: [...pasosPostFix, ...pasosLiga] });
     } catch (err) {
