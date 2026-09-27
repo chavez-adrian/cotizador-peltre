@@ -322,3 +322,38 @@ test('#344: con Operam caido la tarjeta viaja sin Cliente Operam, no con uno inv
   assert.equal(res.body.find(o => o.id === 'c10').clienteOperam, null);
   assert.deepEqual(res.body.find(o => o.id === 'c10').etiquetas, ['prospecto', 'cotizado']);
 });
+
+// === #461: Perdida sobre una cotizacion mueve tambien su etapa ===
+// El boton Perdida de la tarjeta (cerrarPerdidaTablero) va por
+// PATCH /api/cotizacion/:id/estado. Escribia `estado` y no `etapa`, y la
+// tarjeta -- que se reparte por etapa -- se quedaba en Seguimiento.
+const marcarEstado = (id, estado, token = MEMO_TOKEN) => supertest(app)
+  .patch(`/api/cotizacion/${id}/estado`).set('Authorization', `Bearer ${token}`).send({ estado });
+
+test('#461: marcar Perdida una cotizacion en Seguimiento saca su tarjeta de Seguimiento', async () => {
+  const res = await marcarEstado(12, 'perdida');
+  assert.equal(res.status, 200);
+  const tablero = await pedir(ADMIN_TOKEN);
+  assert.equal(tablero.body.find(o => o.id === 'c12').etapa, 'perdida');
+});
+
+// Reabrir (PATCH estado abierta) es el camino de vuelta: la tarjeta regresa a
+// la etapa de la que salio, la que anoto el evento de la Perdida.
+test('#461: reabrir una cotizacion Perdida devuelve su tarjeta a la etapa de la que salio', async () => {
+  writeJson(COTS_PATH, [{ ...COT_HUERFANA, etapa: 'anticipo_pagado' }]);
+  await marcarEstado(12, 'perdida');
+  const res = await marcarEstado(12, 'abierta');
+  assert.equal(res.status, 200);
+  const tablero = await pedir(ADMIN_TOKEN);
+  assert.equal(tablero.body.find(o => o.id === 'c12').etapa, 'anticipo_pagado');
+});
+
+// La Perdida migrada (etapaCotizacionMigrada) no trae evento de donde salio:
+// vuelve a Seguimiento, la etapa de toda cotizacion viva.
+test('#461: reabrir una Perdida sin evento de salida la devuelve a Seguimiento', async () => {
+  writeJson(COTS_PATH, [{ ...COT_HUERFANA, etapa: 'perdida', estado: 'perdida' }]);
+  const res = await marcarEstado(12, 'abierta');
+  assert.equal(res.status, 200);
+  const tablero = await pedir(ADMIN_TOKEN);
+  assert.equal(tablero.body.find(o => o.id === 'c12').etapa, 'seguimiento');
+});

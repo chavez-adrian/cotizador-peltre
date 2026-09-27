@@ -320,6 +320,7 @@ Nucleo puro que arma la lista de tarjetas del Tablero del pipeline (CONTEXT.md "
 - **La supresion se decide con lo que el que pregunta VE**: la ruta filtra primero por visibilidad y solo entonces llama al nucleo, para que la cotizacion de otro vendedor no borre la tarjeta que este si ve.
 - `prospectoAOportunidad` y `cotizacionAOportunidad` son los dos mapeos a la forma homogenea que pinta `pipeline-logica.js` (`tipo`, `id` prefijado + `refId` numerico, etapa, folio, decorado, espejo de Operam, telefono del buscador). Vivian en `app.js` hasta #340; la de cotizacion lee el registro del store, no la fila aplanada del Historial.
 - El Origen lo anota la ruta con `anotarOrigen` sobre el indice de los prospectos visibles, igual que el Historial y la cola Hoy.
+- **La tarjeta de una cotizacion se reparte por `etapa`, nunca por `estado`** (#461): Perdida (`PATCH /api/cotizacion/:id/estado` y `reunion-resultado`) escribe los dos en la misma peticion con un evento `{tipo:'etapa', de, a:'perdida'}`, y reabrir (`estado: 'abierta'`) devuelve la etapa de ese evento (`etapaAlReabrirCotizacion`, `lib/pipeline.js`; sin evento -- las migradas -- Seguimiento). Con la etapa en Perdida la cotizacion deja de ser viva, asi que la Oportunidad pre-cotizacion que la origino vuelve a tener tarjeta propia en su etapa (la regla de arriba).
 
 ### oportunidad-pre.js / oportunidades-store.js / oportunidad-pre-io.js (#343) -- la Oportunidad vive aparte del Contacto
 

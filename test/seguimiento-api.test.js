@@ -228,6 +228,20 @@ test('CR5: reunion-resultado perdida cierra la cotizacion como Perdida (Modelo A
   assert.equal(readCots().find(c => c.id === 1).estado, 'perdida');
 });
 
+// #461: la otra puerta a Perdida de una cotizacion. La tarjeta del tablero se
+// reparte por etapa, asi que cerrar sin moverla la dejaba en Seguimiento.
+test('#461: reunion-resultado perdida saca la tarjeta de Seguimiento en el tablero', async () => {
+  const cots = fixture();
+  cots[0].etapa = 'seguimiento';
+  cots[0].seguimientos = [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Memo' }];
+  writeCots(cots);
+  const res = await supertest(app).post('/api/cotizacion/1/reunion-resultado')
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'perdida' });
+  assert.equal(res.status, 200);
+  const tablero = await supertest(app).get('/api/oportunidades').set('Authorization', `Bearer ${MEMO_TOKEN}`);
+  assert.equal(tablero.body.find(o => o.id === 'c1').etapa, 'perdida');
+});
+
 test('CR6: reunion-resultado no_util es invalido para una cotizacion (Modelo A: solo Perdida)', async () => {
   const cots = fixture();
   cots[0].seguimientos = [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Memo' }];

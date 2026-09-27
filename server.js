@@ -61,7 +61,7 @@ import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
 import { contactosDelDomicilio, refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
-import { transicionPorCotizacion, transicionPorAsignacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
+import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
 import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
 import { monedaDelCliente, ErrorClienteMonedaExtranjera, CODIGO_MONEDA_EXTRANJERA } from './public/js/moneda-cliente-logica.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
@@ -878,6 +878,20 @@ app.post('/api/seguimiento/:id', authMiddleware, async (req, res) => {
 
 const ESTADOS_VALIDOS = new Set(['abierta', 'ganada', 'perdida', 'descartada']);
 
+// #461: el tablero reparte la tarjeta por `etapa`, no por `estado`, asi que
+// cerrar como Perdida escribe los dos en la misma peticion, con su evento, y
+// reabrir devuelve la tarjeta a la etapa de la que salio.
+async function cambiarEstadoCotizacion(entry, estado, vendedor) {
+  await cotStore.setEstado(entry.id, estado);
+  const destino = estado === 'perdida' ? 'perdida'
+    : estado === 'abierta' && entry.etapa === 'perdida' ? etapaAlReabrirCotizacion(entry.eventos)
+    : null;
+  if (!destino || destino === entry.etapa) return;
+  await cotStore.cambiarEtapa(entry.id, destino, {
+    tipo: 'etapa', de: entry.etapa ?? null, a: destino, fecha: new Date().toISOString(), vendedor,
+  });
+}
+
 app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
   const { estado } = req.body;
   if (!ESTADOS_VALIDOS.has(estado)) return res.status(400).json({ error: 'Estado invalido' });
@@ -886,7 +900,7 @@ app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
-  await cotStore.setEstado(entry.id, estado);
+  await cambiarEstadoCotizacion(entry, estado, req.user.name);
   res.json({ ok: true, estado });
 });
 
@@ -994,7 +1008,7 @@ app.post('/api/cotizacion/:id/reunion-resultado', authMiddleware, async (req, re
     return res.json({ ok: true });
   }
   if (resultado === 'perdida') {
-    await cotStore.setEstado(entry.id, 'perdida');
+    await cambiarEstadoCotizacion(entry, 'perdida', req.user.name);
     return res.json({ ok: true, estado: 'perdida' });
   }
   res.status(400).json({ error: 'Resultado inválido: avance o perdida' });
