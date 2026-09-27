@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync, borrarArchivoSync } from '../lib/fs-reintento.js';
-import { fotoDatos } from './helpers/datos-aislados.js';
+import { fotoDatos, fijarDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -48,13 +48,50 @@ function writeCots(data) {
   escribirArchivoSync(COTS_PATH, JSON.stringify(data, null, 2));
 }
 
+// #462: el id que una prueba inyecta sale del MAXIMO, no de la longitud: un
+// archivo con ids por encima de su longitud hacia chocar length + 1 con un
+// registro ajeno.
+function idLibre(cots) {
+  return cots.reduce((m, c) => Math.max(m, c.id), 0) + 1;
+}
+
 // #411: los data/*.json que esta suite escribe quedan como se los encontro, el
 // ausente incluido. El registro de subidas a Dropbox (#356) entra aqui porque es
 // fire-and-forget: los tests de la CSF le agregan filas sin pedirlo y el archivo
 // esta en .gitignore, asi que el residuo no sale en git status.
 let restaurarDatos;
-before(() => { restaurarDatos = fotoDatos([COTS_PATH, DROPBOX_SUBIDAS_PATH, COLA_POSTFIX_PATH]); });
+before(() => {
+  restaurarDatos = fotoDatos([COTS_PATH, DROPBOX_SUBIDAS_PATH, COLA_POSTFIX_PATH]);
+  fijarDatos(COTS_PATH, []);
+});
 after(() => { restaurarDatos(); });
+
+// #462: con datos de dev en data/cotizaciones.json (ids por encima de la longitud
+// del archivo) el id que un test inyectaba chocaba con un registro ajeno y el GET
+// devolvia ese. Esta prueba va PRIMERO: afirma el punto de partida antes de que
+// cualquier otra escriba.
+test('#462: la suite arranca de un cotizaciones.json fijado, no del que encontro en el disco', () => {
+  assert.deepEqual(readCots(), []);
+});
+
+test('#462: el registro que inyecta una prueba se lee por su id aunque el archivo traiga ids de dev por encima de su longitud', async () => {
+  const snap = readCots();
+  const n = snap.length;
+  const deDev = [n + 3, n + 4].map(id => ({
+    id, fecha: new Date().toISOString(), vendedor: 'Dev', cliente: 'Registro de dev',
+    totalPiezas: 0, total: 0, tier: '', data: { cliente: { razonSocial: 'Registro de dev' }, items: [] },
+  }));
+  const conDev = [...snap, ...deDev];
+  const id = idLibre(conDev);
+  writeCots([...conDev, {
+    id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Registro inyectado',
+    totalPiezas: 0, total: 0, tier: '', data: { cliente: { razonSocial: 'Registro inyectado' }, items: [] },
+  }]);
+  const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+  writeCots(snap);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.cliente.razonSocial, 'Registro inyectado');
+});
 
 test('B1: POST /api/cotizacion persiste cliente.pais', async () => {
   const snap = readCots();
@@ -117,9 +154,8 @@ test('#175: POST /api/cotizacion acepta un telefono internacional de 10 digitos'
   const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send(body);
   assert.strictEqual(res.status, 200);
   assert.ok(readCots().length > snap.length);
-  // Se restaura el archivo: otros tests de esta suite derivan el id de la
-  // LONGITUD de cotizaciones.json (ej. #111-1), asi que dejar un registro de
-  // mas les cambia el id bajo los pies y los vuelve flaky.
+  // Se restaura el archivo: el registro que guardo esta prueba no le toca a las
+  // que siguen (sus ids salen de idLibre, #462).
   writeCots(snap);
 });
 
@@ -136,7 +172,7 @@ test('B1d: POST /api/cotizacion sin telefono valido retorna 400', async () => {
 
 test('B2: GET /api/cotizaciones/:id sin campo pais no falla', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, { id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin nombre', totalPiezas: 0, total: 0, tier: '', data: { cliente: { razonSocial: 'Sin pais' }, items: [] } }]);
   const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
   assert.strictEqual(res.status, 200);
@@ -166,7 +202,7 @@ test('#102-1: POST /api/cotizacion persiste data.envio estructurado', async () =
 // de la columna de primer nivel del registro (no de data, que no lo contiene).
 test('#109-1: GET /api/cotizaciones/:id incluye folioOperam (columna de primer nivel, no vive en data)', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Con folio',
     totalPiezas: 0, total: 0, tier: '', folioOperam: '1200',
@@ -179,7 +215,7 @@ test('#109-1: GET /api/cotizaciones/:id incluye folioOperam (columna de primer n
 
 test('#109-2: GET /api/cotizaciones/:id sin folioOperam (PRE) lo expone como null, no undefined', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin folio',
     totalPiezas: 0, total: 0, tier: '',
@@ -192,7 +228,7 @@ test('#109-2: GET /api/cotizaciones/:id sin folioOperam (PRE) lo expone como nul
 
 test('#102-2: GET /api/cotizaciones/:id de un registro viejo sin data.envio no rompe (degrada con gracia)', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, { id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin envio', totalPiezas: 0, total: 0, tier: '', data: { cliente: { razonSocial: 'Sin envio' }, items: [{ codigo: 'ENVIO', descripcion: 'FedEx Ground', cantidad: 1, unidad: 'ACT', precio: 259, descuento: 0 }] } }]);
   const res = await supertest(app).get(`/api/cotizaciones/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
   assert.strictEqual(res.status, 200);
@@ -204,7 +240,7 @@ test('#102-2: GET /api/cotizaciones/:id de un registro viejo sin data.envio no r
 // authMiddleware a proposito (se comparten por WhatsApp).
 test('#103-1: GET /api/cotizacion/pdf/:id regenera el PDF desde data del registro guardado', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente Regenerado',
     totalPiezas: 1, total: 116, tier: 'Mayoreo',
@@ -230,7 +266,7 @@ test('#103-2: GET /api/cotizacion/pdf/:id de un id inexistente da 404', async ()
 
 test('#103-3: GET /api/cotizacion/pdf/:id regenera igual aunque el archivo de disco ya no exista (disco efimero de Render)', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Sin Disco',
     totalPiezas: 1, total: 116, tier: 'Mayoreo',
@@ -250,7 +286,7 @@ test('#103-3: GET /api/cotizacion/pdf/:id regenera igual aunque el archivo de di
 
 test('#103-4: GET /api/cotizacion/html/:id regenera el HTML desde data del registro guardado', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Cliente HTML',
     totalPiezas: 1, total: 116, tier: 'Mayoreo',
@@ -295,7 +331,7 @@ function registroConFolio(id, folioOperam) {
 
 test('#110-1: el PDF y el HTML del mismo registro muestran el MISMO numero, y es el folio de Operam', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, registroConFolio(id, '57310')]);
 
   const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
@@ -320,7 +356,7 @@ test('#110-1: el PDF y el HTML del mismo registro muestran el MISMO numero, y es
 // nadie lo confunda con una cotizacion registrada en el ERP.
 test('#111-1: sin folio de Operam el documento no lleva numero y se identifica como pre-cotizacion', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, registroConFolio(id, null)]);
 
   const pdf = await supertest(app).get(`/api/cotizacion/pdf/${id}`);
@@ -343,8 +379,8 @@ test('#111-1: sin folio de Operam el documento no lleva numero y se identifica c
 // documento inline.
 test('#111-2: el Content-Disposition nombra el archivo por folio y respeta ?descargar=1', async () => {
   const snap = readCots();
-  const conFolio = snap.length + 1;
-  const sinFolio = snap.length + 2;
+  const conFolio = idLibre(snap);
+  const sinFolio = conFolio + 1;
   writeCots([...snap, registroConFolio(conFolio, '57310'), registroConFolio(sinFolio, null)]);
 
   const descarga = await supertest(app).get(`/api/cotizacion/pdf/${conFolio}?descargar=1`);
@@ -394,7 +430,7 @@ test('#111-4: POST /api/cotizacion hereda el bloqueo por telefono invalido (400,
 
 test('#111-5: POST /api/cotizacion sobre un registro con folio lo devuelve (modo actualizacion no re-numera)', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, registroConFolio(id, '57310')]);
   const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`).send({
     cotizacionId: id, fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Mayoreo',
@@ -416,7 +452,7 @@ test('#111-6: los POST por formato ya no existen: generar documento es solo de l
 
 test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si hay algo que regenerar', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Con Data',
     totalPiezas: 1, total: 116, tier: 'Mayoreo',
@@ -434,7 +470,7 @@ test('#103-6: GET /api/cotizaciones expone hasData (no hasPdf) para decidir si h
 // amplie el matching del buscador del Historial mas alla de razon social/folio.
 test('#147-1: GET /api/cotizaciones expone nombreCorto y contactoEntrega desde data.cliente', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Hotel Azul Centro SA de CV',
     totalPiezas: 1, total: 116, tier: 'Mayoreo',
@@ -449,7 +485,7 @@ test('#147-1: GET /api/cotizaciones expone nombreCorto y contactoEntrega desde d
 
 test('#147-2: GET /api/cotizaciones sin data expone nombreCorto y contactoEntrega como null (no rompe)', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Historica',
     totalPiezas: 1, total: 50, tier: 'Menudeo',
@@ -467,7 +503,7 @@ test('#147-2: GET /api/cotizaciones sin data expone nombreCorto y contactoEntreg
 // descripcionEditada, precioManual) no tiene por que viajar en cada fila.
 test('#312-1: GET /api/cotizaciones expone vigencia y los items proyectados que agrupa el resumen', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Hotel Ejemplo',
     totalPiezas: 144, total: 4608, tier: 'Mayoreo',
@@ -490,7 +526,7 @@ test('#312-1: GET /api/cotizaciones expone vigencia y los items proyectados que 
 
 test('#312-2: GET /api/cotizaciones sin data expone vigencia null e items vacios (no rompe)', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Historica',
     totalPiezas: 1, total: 50, tier: 'Menudeo',
@@ -507,7 +543,7 @@ test('#312-2: GET /api/cotizaciones sin data expone vigencia null e items vacios
 // traer de que Cliente Operam es cada cotizacion y con que RFC se subio.
 test('#389-1: GET /api/cotizaciones expone customerId y rfc desde data.cliente', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'MARIA DEL PILAR ROSETE MELGOZA',
     totalPiezas: 1, total: 116, tier: 'Mayoreo',
@@ -522,7 +558,7 @@ test('#389-1: GET /api/cotizaciones expone customerId y rfc desde data.cliente',
 
 test('#389-2: GET /api/cotizaciones sin data expone customerId y rfc como null (no rompe)', async () => {
   const snap = readCots();
-  const id = snap.length + 1;
+  const id = idLibre(snap);
   writeCots([...snap, {
     id, fecha: new Date().toISOString(), vendedor: 'Tester', cliente: 'Historica',
     totalPiezas: 1, total: 50, tier: 'Menudeo',
