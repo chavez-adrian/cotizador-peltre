@@ -1265,7 +1265,8 @@ test('excluidoManual: planearBackfill SKIP excluido manual -- folio 1129 no se i
 test('constantes decididas: DEBTORS_GENERICOS (fuente unica en deduplicacion.js) mas DEBTORS_SOCIOS y FOLIOS_EXCLUIDOS_MANUAL (propias del backfill)', () => {
   // #127: los genericos se afirman contra la FUENTE UNICA (lib/deduplicacion.js, numeros).
   // #201: se agrego 14 (PUBLICO EN GENERAL, factura global de bazar).
-  assert.deepEqual([...DEBTORS_GENERICOS].sort(), [14, 143, 183, 184, 256, 449]);
+  // #459: se agrego 417 (BAZAAR SABADO, decision de Adrian 2026-09-25).
+  assert.deepEqual([...DEBTORS_GENERICOS].sort(), [14, 143, 183, 184, 256, 417, 449]);
   assert.deepEqual([...DEBTORS_SOCIOS].sort(), ['132', '15', '9']);
   assert.deepEqual([...FOLIOS_EXCLUIDOS_MANUAL].sort(), ['1129', '1189', '1195', '1196']);
 });

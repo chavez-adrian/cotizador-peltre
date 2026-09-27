@@ -84,11 +84,20 @@ export function planDomicilioAsistido(actuales, delSelector, valores, delIndiceC
 // `branchId` al subirse: al reabrirla, el selector tiene que abrir en ESE y no
 // en el primero de la lista. Sin senal usable -- sin branchId, con uno que este
 // cliente ya no tiene, o sin lista -- el primero, que es el default de siempre.
+// #459: "el primero" salta el domicilio que el servidor marco `sinEntrega` (sin
+// calle y con el CP fiscal generico en un cliente no generico): no es una
+// direccion a la que se entregue. Si todos lo son no hay default y sale null,
+// que es "este cliente no tiene domicilio de entrega registrado". El branchId que
+// SI lo senala se respeta: sigue siendo elegible a mano.
 export function indiceDeDomicilio(domicilios, branchId) {
   const lista = Array.isArray(domicilios) ? domicilios : [];
-  if (branchId == null || branchId === '') return 0;
-  const i = lista.findIndex(d => d && d.branch_code != null && String(d.branch_code) === String(branchId));
-  return i >= 0 ? i : 0;
+  if (branchId != null && branchId !== '') {
+    const i = lista.findIndex(d => d && d.branch_code != null && String(d.branch_code) === String(branchId));
+    if (i >= 0) return i;
+  }
+  if (lista.length === 0) return 0;
+  const primero = lista.findIndex(d => !(d && d.sinEntrega));
+  return primero >= 0 ? primero : null;
 }
 
 // La traduccion de vuelta: que domicilio es el que esta elegido. Vive junto a su
@@ -97,9 +106,17 @@ export function indiceDeDomicilio(domicilios, branchId) {
 // dos direcciones separadas es como el indice se cuela a un lugar donde el orden
 // de la lista no es una promesa.
 export function branchIdDeIndice(domicilios, indice) {
-  const lista = Array.isArray(domicilios) ? domicilios : [];
-  const d = lista[Number(indice) || 0];
+  const d = domicilioDeIndice(domicilios, indice);
   return d && d.branch_code != null ? d.branch_code : null;
+}
+
+// El domicilio elegido. `null` es "ninguno" (#459: el cliente no tiene domicilio
+// de entrega registrado) y NO cae al primero: ese primero es justo el branch sin
+// entrega que el selector decidio no proponer.
+export function domicilioDeIndice(domicilios, indice) {
+  if (indice === null) return null;
+  const lista = Array.isArray(domicilios) ? domicilios : [];
+  return lista[Number(indice) || 0] || null;
 }
 
 // El nombre con el que el vendedor reconoce un domicilio de Operam: el de su
@@ -115,9 +132,17 @@ function nombreDomicilio(domicilio, indice) {
 // vendedor concluyo que el cotizador no correspondia a Operam). Ahora se lee en
 // solo lectura, en el mismo lugar que el selector; con varios, el selector de
 // siempre. Sin Cliente Operam o sin domicilios no hay nada que mostrar.
+// #459: si NINGUN domicilio es de entrega (todos `sinEntrega`), el selector abre
+// en una opcion vacia que lo dice y los branches siguen en la lista para elegirlos
+// a mano; con uno solo tampoco cabe la lectura 'unico', que lo daria por bueno.
+export const AVISO_SIN_DOMICILIO_ENTREGA = 'Este cliente no tiene domicilio de entrega registrado';
+
 export function vistaDomicilioEntrega(domicilios, esClienteOperam) {
   const lista = Array.isArray(domicilios) ? domicilios : [];
   if (!esClienteOperam || lista.length === 0) return { tipo: 'nada' };
+  if (lista.every(d => d && d.sinEntrega)) {
+    return { tipo: 'selector', opcionVacia: AVISO_SIN_DOMICILIO_ENTREGA, opciones: lista.map((d, i) => nombreDomicilio(d, i)) };
+  }
   if (lista.length === 1) return { tipo: 'unico', texto: 'Domicilio en Operam: ' + nombreDomicilio(lista[0], 0) };
   return { tipo: 'selector', opciones: lista.map((d, i) => nombreDomicilio(d, i)) };
 }

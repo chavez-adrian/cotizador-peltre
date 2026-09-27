@@ -260,6 +260,16 @@ test('un candidato de debtor generico NO se acepta como cotizacion, aunque su ti
   assert.equal((await obtener('952')).estado, 'pendiente');
 });
 
+test('#459: un candidato del 417 (BAZAAR SABADO) tampoco se acepta como cotizacion', async () => {
+  await proponer({ ...CANDIDATO_COTIZACION, folio: 958, debtorId: 417, debtorNombre: 'BAZAAR SABADO' });
+  const res = await supertest(app).post('/api/admin/bandeja/958/aceptar')
+    .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({ vendedor: 'Oswaldo Ch\u00e1vez' });
+  assert.equal(res.status, 422);
+  assert.match(res.body.error, /prospecto/i);
+  assert.equal((await cotStore.listar()).length, 0);
+  assert.equal((await obtener('958')).estado, 'pendiente');
+});
+
 test('un candidato tipo cotizacion sin el detalle del quote no crea una oportunidad vacia', async () => {
   await proponer({ ...CANDIDATO_COTIZACION, folio: 953, quote: undefined });
   const res = await supertest(app).post('/api/admin/bandeja/953/aceptar')

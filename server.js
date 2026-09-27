@@ -24,7 +24,7 @@ import { encolarPostFix, procesarColaPostFix, barrerQuotesPostFix, sacarDeLaCola
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
-import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, normalizarRfc, tieneFormaDeRfc, poolClientesParaDedup } from './lib/deduplicacion.js';
+import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, domicilioSinEntregaRegistrada, normalizarRfc, tieneFormaDeRfc, poolClientesParaDedup } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
 import { folioMaximoConocido, planearDescubrimiento } from './lib/descubrimiento-operam.mjs';
@@ -3024,10 +3024,15 @@ app.get('/api/operam/clientes/:id/comercial', authMiddleware, async (req, res) =
 
 // Cada domicilio lleva sus Contactos en Operam (#105) del padron cacheado de
 // contact_list: nunca espera a Operam, y sin padron todavia salen en null (no se sabe).
+// `sinEntrega` (#459): el branch que Operam auto-crea en el alta generica no es un
+// domicilio de entrega; el navegador no prellena Envio desde el ni lo propone.
 app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) => {
   try {
     const r = await obtenerDomicilios(req.params.id);
-    for (const d of r.domicilios) d.contactos = contactosDelDomicilio(d.branch_code);
+    for (const d of r.domicilios) {
+      d.contactos = contactosDelDomicilio(d.branch_code);
+      d.sinEntrega = domicilioSinEntregaRegistrada(req.params.id, d);
+    }
     res.json(r);
   } catch {
     res.status(503).json({ error: 'Operam no disponible' });

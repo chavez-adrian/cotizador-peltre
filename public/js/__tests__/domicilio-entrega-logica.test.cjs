@@ -3,11 +3,11 @@ const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 let CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-  indiceDeDomicilio, branchIdDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio, vistaDomicilioEntrega;
+  indiceDeDomicilio, branchIdDeIndice, domicilioDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio, vistaDomicilioEntrega, AVISO_SIN_DOMICILIO_ENTREGA;
 
 before(async () => {
   ({ CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-    indiceDeDomicilio, branchIdDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio, vistaDomicilioEntrega } = await import('../domicilio-entrega-logica.js'));
+    indiceDeDomicilio, branchIdDeIndice, domicilioDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio, vistaDomicilioEntrega, AVISO_SIN_DOMICILIO_ENTREGA } = await import('../domicilio-entrega-logica.js'));
 });
 
 const DOM_A = {
@@ -160,6 +160,26 @@ test('sin branchId, ajeno o sin lista, el selector arranca en el primero', () =>
   assert.equal(indiceDeDomicilio(null, 15), 0);
 });
 
+// #459: el branch sin calle y con el CP fiscal generico de un cliente no generico
+// (lo marca el servidor como `sinEntrega`, caso real: branch 563 del cliente 517)
+// no es un domicilio de entrega: el selector no lo propone como default.
+const SIN_ENTREGA = { branch_code: 563, descripcion: 'ROYAL TABLE', calle: '', cp: '56577', sinEntrega: true };
+
+test('#459: sin branchId el selector no arranca en un domicilio sin entrega registrada', () => {
+  assert.equal(indiceDeDomicilio([SIN_ENTREGA, DOM_A], null), 1);
+  assert.equal(indiceDeDomicilio([SIN_ENTREGA, DOM_A], 999), 1);
+});
+
+test('#459: si todos los domicilios son sin entrega no hay default (null)', () => {
+  assert.equal(indiceDeDomicilio([SIN_ENTREGA], null), null);
+});
+
+// Elegible a mano: la cotizacion que ya lo senala abre en el.
+test('#459: un branchId que senala al domicilio sin entrega se respeta', () => {
+  assert.equal(indiceDeDomicilio([SIN_ENTREGA, DOM_A], 563), 0);
+  assert.equal(indiceDeDomicilio([SIN_ENTREGA], '563'), 0);
+});
+
 test('branchIdDeIndice es la vuelta: del indice del select al branch_code que se guarda', () => {
   assert.equal(branchIdDeIndice([DOM_A, DOM_B], 1), 15);
   assert.equal(branchIdDeIndice([DOM_A, DOM_B], 0), 564);
@@ -167,6 +187,22 @@ test('branchIdDeIndice es la vuelta: del indice del select al branch_code que se
   assert.equal(branchIdDeIndice([], 0), null);
   assert.equal(branchIdDeIndice(null, 0), null);
   assert.equal(branchIdDeIndice([DOM_A], 5), null);
+});
+
+// Sin default (null) no hay domicilio elegido: ni branch_code que guardar ni
+// domicilio del que salgan almacen, contactos o correos de factura. Con `|| 0`
+// el null volvia a leer el primero, que es justo el domicilio sin entrega.
+test('#459: sin domicilio elegido (null) no hay branch_code ni domicilio', () => {
+  assert.equal(branchIdDeIndice([SIN_ENTREGA], null), null);
+  assert.equal(domicilioDeIndice([SIN_ENTREGA], null), null);
+  assert.equal(branchIdDeIndice([SIN_ENTREGA], indiceDeDomicilio([SIN_ENTREGA], null)), null);
+});
+
+test('domicilioDeIndice devuelve el domicilio del indice elegido', () => {
+  assert.equal(domicilioDeIndice([DOM_A, DOM_B], 1), DOM_B);
+  assert.equal(domicilioDeIndice([DOM_A, DOM_B], 0), DOM_A);
+  assert.equal(domicilioDeIndice([DOM_A], 5), null);
+  assert.equal(domicilioDeIndice(null, 0), null);
 });
 
 test('las dos direcciones cierran el circulo sobre el mismo domicilio', () => {
@@ -237,6 +273,22 @@ test('un domicilio unico sin nombre se lee por su calle', () => {
 test('con varios domicilios el selector se queda como esta', () => {
   assert.deepEqual(vistaDomicilioEntrega([DOM_A, DOM_B, { branch_code: 99 }], true),
     { tipo: 'selector', opciones: ['Bosques de Europa', 'Pestalozzi', 'Domicilio 3'] });
+});
+
+// #459: si ningun domicilio es de entrega (30 de los 33 medidos en #330 son el
+// UNICO branch de su cliente) el bloque no puede ser la lectura 'unico': el
+// vendedor tiene que leer que no hay domicilio de entrega y poder elegir el
+// branch a mano. Selector con una primera opcion vacia que lo dice.
+test('#459: con solo domicilios sin entrega el selector abre en la opcion vacia que lo dice', () => {
+  assert.deepEqual(vistaDomicilioEntrega([SIN_ENTREGA], true), {
+    tipo: 'selector', opcionVacia: 'Este cliente no tiene domicilio de entrega registrado', opciones: ['ROYAL TABLE'],
+  });
+  assert.equal(AVISO_SIN_DOMICILIO_ENTREGA, 'Este cliente no tiene domicilio de entrega registrado');
+});
+
+test('#459: con algun domicilio de entrega el selector es el de siempre (el sin entrega sigue en la lista)', () => {
+  assert.deepEqual(vistaDomicilioEntrega([SIN_ENTREGA, DOM_A], true),
+    { tipo: 'selector', opciones: ['ROYAL TABLE', 'Bosques de Europa'] });
 });
 
 test('sin Cliente Operam o sin domicilios el bloque no muestra nada', () => {

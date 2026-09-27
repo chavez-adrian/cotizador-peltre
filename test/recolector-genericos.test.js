@@ -144,8 +144,8 @@ test('evaluarQuote: un quote de debtor NO generico no es de este lote', () => {
   assert.equal(r.candidato, null);
 });
 
-test('evaluarQuote: los 6 debtors genericos entran (14, 143, 183, 184, 256, 449; el 14 desde #201)', () => {
-  for (const debtor of ['14', '143', '183', '184', '256', '449']) {
+test('evaluarQuote: los 7 debtors genericos entran (14, 143, 183, 184, 256, 417, 449; el 14 desde #201, el 417 desde #459)', () => {
+  for (const debtor of ['14', '143', '183', '184', '256', '417', '449']) {
     const r = evaluar({ quote: { ...QUOTE_1089, debtor_no: debtor }, clientes: [] });
     assert.equal(r.motivo, null, `debtor ${debtor} deberia entrar`);
   }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarRfc, tieneFormaDeRfc, normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico, coincideCustRef, agregarCandidatosPorCustRef } from '../lib/deduplicacion.js';
+import { normalizarRfc, tieneFormaDeRfc, normalizarNombre, detectarDuplicados, hechosCandidato, esDebtorGenerico, domicilioSinEntregaRegistrada, coincideCustRef, agregarCandidatosPorCustRef } from '../lib/deduplicacion.js';
 
 // N1: quita acentos
 test('N1: normalizarNombre quita acentos', () => {
@@ -469,6 +469,39 @@ test('D22: detectarDuplicados sin telefono no marca candidato aunque la ficha co
 test('D23: esDebtorGenerico reconoce el debtor 14 (PUBLICO EN GENERAL, factura global de bazar) como numero y como string', () => {
   assert.strictEqual(esDebtorGenerico(14), true);
   assert.strictEqual(esDebtorGenerico('14'), true);
+});
+
+// D24 (#459, decision de Adrian 2026-09-25): el 417 BAZAAR SABADO (RFC
+// XAXX010101000) es una cubeta compartida como los otros cajones: su branch sin
+// calle y con el CP fiscal generico es correcto por diseno, no un dano.
+test('D24: esDebtorGenerico reconoce el debtor 417 (BAZAAR SABADO) como numero y como string', () => {
+  assert.strictEqual(esDebtorGenerico(417), true);
+  assert.strictEqual(esDebtorGenerico('417'), true);
+});
+
+// === Domicilio sin entrega registrada (#459, decision de Adrian 2026-09-25) ===
+// El branch que Operam auto-crea con el alta de RFC generico queda sin calle y con
+// el CP fiscal generico (56577). En un cliente NO generico eso no es un domicilio
+// de entrega; en una cubeta (DEBTORS_GENERICOS) es correcto por diseno. Casos
+// medidos en #330: branch 563 del cliente 517 (danado) y branch 452 del 417 (cubeta).
+test('#459: un cliente generico con el patron (sin calle + 56577) NO es domicilio sin entrega', () => {
+  assert.strictEqual(domicilioSinEntregaRegistrada(417, { branch_code: 452, calle: '', cp: '56577' }), false);
+  assert.strictEqual(domicilioSinEntregaRegistrada('184', { branch_code: 203, calle: '', cp: '56577' }), false);
+});
+
+test('#459: un cliente no generico sin calle y con CP 56577 es domicilio sin entrega', () => {
+  assert.strictEqual(domicilioSinEntregaRegistrada(517, { branch_code: 563, calle: '', cp: '56577' }), true);
+  assert.strictEqual(domicilioSinEntregaRegistrada('517', { branch_code: 563, calle: '  ', cp: ' 56577 ' }), true);
+});
+
+test('#459: con calle y CP 56577 es un domicilio real de la zona, no sin entrega', () => {
+  assert.strictEqual(domicilioSinEntregaRegistrada(517, { calle: 'Av. Cuauhtemoc 12', cp: '56577' }), false);
+});
+
+test('#459: sin calle con otro CP (o sin CP) no es el patron', () => {
+  assert.strictEqual(domicilioSinEntregaRegistrada(517, { calle: '', cp: '11700' }), false);
+  assert.strictEqual(domicilioSinEntregaRegistrada(517, { calle: '', cp: '' }), false);
+  assert.strictEqual(domicilioSinEntregaRegistrada(517, null), false);
 });
 
 // === Los dos RFC genericos son UN SOLO conjunto (#244) ===

@@ -77,7 +77,7 @@ import { ciudadPorCP } from './cp-ciudad.js';
 import { planAutollenadoCP, paisTieneIndiceCP } from './cp-autollenado.js';
 import {
   camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
-  indiceDeDomicilio, branchIdDeIndice, avisoAlmacenDomicilio, vistaDomicilioEntrega,
+  indiceDeDomicilio, branchIdDeIndice, domicilioDeIndice, avisoAlmacenDomicilio, vistaDomicilioEntrega,
 } from './domicilio-entrega-logica.js';
 import {
   CANALES,
@@ -3291,8 +3291,12 @@ async function pcCargarSatelitesDelCliente(clienteId, { aplicar = false, branchI
   window._operamDomicilios = domicilios;
   window._operamContactosCliente = contacts;
   pcState.domicilioIdx = indiceDeDomicilio(domicilios, branchId);
+  // Sin default (#459: todos los domicilios son sin entrega registrada) se aplica
+  // NINGUNO: aplicarDomicilio(null) borra lo que puso el sistema -- el CP 56577
+  // que el registro de un cliente de RFC generico trae como override fiscal
+  // incluido -- y respeta lo tecleado. Envio queda vacio.
   if (aplicar && domicilios.length >= 1) {
-    aplicarDomicilio(domicilios[pcState.domicilioIdx]);
+    aplicarDomicilio(domicilioDeIndice(domicilios, pcState.domicilioIdx));
   }
   pcPintarCorreosFactura();
   // Quinto enganche del autosave (#409): la lista llega SEGUNDOS despues de que
@@ -3352,9 +3356,13 @@ function olvidarDomicilioAsistido() {
 // del `if (val)` de antes, que solo sabia escribir: el campo que el domicilio
 // nuevo no trae se BORRA cuando lo habia puesto este mismo selector, para que
 // cambiar de domicilio no deje la calle del nuevo con el CP del anterior.
+//
+// Sin domicilio (null, #459) no hay direccion que aplicar, tampoco la del
+// respaldo: el cliente no tiene domicilio de entrega registrado y los campos que
+// habia puesto el sistema se vacian por la misma regla de no pisar.
 function aplicarDomicilio(d) {
   const plan = planDomicilioAsistido(
-    camposDomicilioEnPantalla(), domicilioDelSelector, valoresDeDomicilio(d, domicilioRespaldo),
+    camposDomicilioEnPantalla(), domicilioDelSelector, d ? valoresDeDomicilio(d, domicilioRespaldo) : camposDomicilioVacios(),
     // La memoria del OTRO escritor del sistema (#291): el municipio y el estado
     // que el indice del CP dejo puestos no son captura a mano, y sin decirselo
     // el selector los conservaria pegados a la calle del domicilio siguiente.
@@ -4071,7 +4079,8 @@ function pcRenderDomSelect() {
     // pcState.domicilioIdx lo fijo pcCargarSatelitesDelCliente con el branchId
     // del registro. Sin el `selected` el <select> abre siempre en el primero y
     // la pantalla contradice al documento que se va a regenerar.
-    const idx = pcState.domicilioIdx || 0;
+    // null = ninguno elegido (#459): abre en la opcion vacia.
+    const idx = pcState.domicilioIdx;
     // El almacen del que entrega el domicilio elegido (#409): Operam lo deriva del
     // domicilio al escribir el quote y el pedido lo hereda, asi que un domicilio mal
     // configurado manda la mercancia desde otro lado sin que nadie lo pida. Solo se
@@ -4079,6 +4088,7 @@ function pcRenderDomSelect() {
     // leerse. Lo vio Adrian en la 1288, que acabo saliendo de Almacen MP.
     slot.innerHTML = '<div class="form-group pc-dom"><label>Domicilio de entrega</label>' +
       '<select id="pc-dom-select" onchange="pcCambiarDomicilio()">' +
+      (vista.opcionVacia ? `<option value=""${idx === null ? ' selected' : ''}>${escapeHtml(vista.opcionVacia)}</option>` : '') +
       vista.opciones.map((texto, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${escapeHtml(texto)}</option>`).join('') +
       '</select><div id="pc-dom-aviso" class="pc-dom-aviso"></div></div>';
     pcPintarAvisoAlmacen();
@@ -4101,19 +4111,21 @@ function pcRenderDomSelect() {
 function pcPintarAvisoAlmacen() {
   const nodo = document.getElementById('pc-dom-aviso');
   if (!nodo) return;
-  const aviso = avisoAlmacenDomicilio(window._operamDomicilios?.[pcState.domicilioIdx || 0]);
+  const aviso = avisoAlmacenDomicilio(domicilioDeIndice(window._operamDomicilios, pcState.domicilioIdx));
   nodo.textContent = aviso ? aviso.mensaje : '';
   nodo.style.display = aviso ? 'block' : 'none';
 }
 
 function pcCambiarDomicilio() {
-  const idx = parseInt(document.getElementById('pc-dom-select')?.value) || 0;
+  // La opcion vacia (#459, value '') es "sin domicilio de entrega": null, no el primero.
+  const valor = document.getElementById('pc-dom-select')?.value;
+  const idx = valor === '' ? null : (parseInt(valor) || 0);
   // Las opciones del domicilio ANTERIOR dicen si el contacto de los campos lo puso
   // el selector (y se reemplaza) o lo tecleo el vendedor (y se queda) (#422).
   const contactosAntes = pcContactosDisponibles();
   pcState.domicilioIdx = idx;
   const cpAntes = document.getElementById('cl-cp-entrega')?.value || '';
-  aplicarDomicilio(window._operamDomicilios?.[idx]);
+  aplicarDomicilio(domicilioDeIndice(window._operamDomicilios, idx));
   // Otro domicilio con otro CP suelta la tarifa elegida (#441).
   soltarTarifaSiCambioElCp(cpAntes);
   // El domicilio nuevo puede entregar de otro almacen (#409): el aviso se repinta
@@ -4141,7 +4153,7 @@ window.pcCambiarDomicilio = pcCambiarDomicilio;
 // Tercera fuente desde #353: el Contacto de la cotizacion (pcState.cliente), que es
 // la unica que hay cuando se cotiza para una persona sin Cliente Operam con contactos.
 function pcContactosDisponibles() {
-  const dom = window._operamDomicilios?.[pcState.domicilioIdx || 0];
+  const dom = domicilioDeIndice(window._operamDomicilios, pcState.domicilioIdx);
   return contactosEntregaDisponibles(dom, window._operamContactosCliente, contactoEntregaDelCliente(pcState.cliente));
 }
 
@@ -4232,7 +4244,7 @@ function pcPintarCorreosFactura() {
     nodo.style.display = 'none';
     return;
   }
-  const aviso = avisoCorreosFactura(window._operamDomicilios?.[pcState.domicilioIdx || 0], window._operamContactosCliente);
+  const aviso = avisoCorreosFactura(domicilioDeIndice(window._operamDomicilios, pcState.domicilioIdx), window._operamContactosCliente);
   nodo.textContent = aviso || '';
   nodo.style.display = aviso ? 'block' : 'none';
 }
