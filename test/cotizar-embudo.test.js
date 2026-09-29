@@ -397,7 +397,7 @@ test('F1: formalizar una pre-cotizacion da de alta el cliente y registra la coti
   });
   const alta = await supertest(app).post('/api/crear-cliente')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', entrega: {} });
+    .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', salesman: 2, entrega: {} });
   assert.equal(alta.status, 200);
   assert.equal(alta.body.ok, true);
   assert.equal(alta.body.duplicado, false);

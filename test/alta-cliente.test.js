@@ -1482,8 +1482,10 @@ test('el aviso de la cartera nombra por su id al vendedor pedido que el registro
 });
 
 // Un vendedor del registro sin operam_id (Jaime Abaroa) no resuelve ningun
-// `salesman`: el domicilio viaja sin vendedor, como antes de #414, y el aviso lo dice.
-test('sin vendedor que escribir y sin persona unica el aviso dice que el domicilio nuevo queda sin vendedor', async () => {
+// `salesman`, y sin persona unica en la cartera no hay a quien heredar: el
+// domicilio nuevo NO se crea (#466, confirmado por Adrian 2026-09-25) y el paso lo
+// dice en dos capas, con lo que la cartera tenia.
+test('sin vendedor con ID de Operam y sin persona unica en la cartera el domicilio nuevo se bloquea antes del POST', async () => {
   const operam = operamEnMemoria({
     vendedores: REGISTRO,
     clientes: [clienteConCartera([
@@ -1493,10 +1495,21 @@ test('sin vendedor que escribir y sin persona unica el aviso dice que el domicil
   });
   const res = await darDeAlta(otroDomicilioPedidoPor('Jaime Abaroa'), operam.deps);
 
-  assert.equal(res.tipo, 'lograda');
-  assert.ok(!('salesman' in operam.pedidos('crearBranchCliente')[0].args[1]));
-  assert.equal(paso(res, 'vendedor branch').mensaje,
-    'El domicilio nuevo queda sin vendedor: el cliente no tiene un vendedor unico en sus domicilios');
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'sin-vendedor-operam');
+  assert.ok(!('clienteId' in res));
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0);
+  assert.equal(operam.pedidos('actualizarBranchCliente').length, 0);
+  assert.equal(operam.pedidos('actualizarClienteDirecto').length, 0);
+  assert.equal(res.mensaje,
+    'No se puede crear el domicilio de entrega nuevo: Jaime Abaroa no tiene ID de Operam y el cliente no tiene un vendedor \u00fanico en sus domicilios. ' +
+    'P\u00eddele al administrador que se lo asigne en /admin.');
+  const bloqueo = paso(res, 'vendedor branch');
+  assert.equal(bloqueo.status, 'error');
+  assert.equal(bloqueo.mensaje, res.mensaje);
+  assert.match(bloqueo.detalle, /vendedor "Jaime Abaroa"/);
+  assert.match(bloqueo.detalle, /varias-personas en el cliente 41/);
+  assert.match(bloqueo.detalle, /475=1 Adrian Chavez/);
 });
 
 // #433, de punta a punta: los pasos que el MODULO emite al crear otro domicilio
@@ -1584,4 +1597,181 @@ test('sin escribir ningun domicilio de entrega no se relee el padron de contacto
   assert.equal(res.tipo, 'lograda');
   assert.equal(operam.pedidos('crearBranchCliente').length + operam.pedidos('actualizarBranchCliente').length, 0);
   assert.equal(operam.pedidos('releerContactosDomicilioTrasEscribir').length, 0);
+});
+
+// === #466: sin vendedor con ID de Operam el alta no escribe nada ===============
+// El PUT /branches del alta es REPLACE: sin `salesman` el domicilio de entrega
+// queda en 0 = sin vendedor y fuera del Reporte de Comisiones (#414). Reenviar el
+// vendedor que Operam puso por omision al domicilio auto-creado no es una decision
+// de nadie, asi que el alta se BLOQUEA antes de cualquier escritura cuando el
+// vendedor no se resuelve a un operam_id (decision de Adrian, 2026-09-25).
+
+const ESCRITURAS = ['crearClienteDirecto', 'actualizarClienteDirecto', 'crearBranchCliente', 'actualizarBranchCliente', 'actualizarSegmentoClienteWeb'];
+
+function escrituras(operam) {
+  return ESCRITURAS.flatMap(dep => operam.pedidos(dep));
+}
+
+function comercialDe(vendedor, extra = {}) {
+  return { vendedor, tier: 'M100', salesTypeId: 15, segmentoId: null, correoFacturacion: '', usoCfdi: '', ...extra };
+}
+
+test('el cliente nuevo de un vendedor sin ID de Operam se bloquea sin escribir nada en Operam', async () => {
+  const operam = operamEnMemoria({ vendedores: REGISTRO });
+  const res = await darDeAlta(solicitud({ comercial: comercialDe('Jaime Abaroa'), domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'sin-vendedor-operam');
+  assert.ok(!('clienteId' in res), 'no se creo ningun Cliente Operam');
+  assert.equal(res.mensaje,
+    'No se puede dar de alta el cliente: Jaime Abaroa no tiene ID de Operam. P\u00eddele al administrador que se lo asigne en /admin.');
+  assert.match(res.detalle, /salesmanId \(ninguno\)/);
+  assert.match(res.detalle, /vendedor "Jaime Abaroa"/);
+  assert.match(res.detalle, /sin operam_id en el registro de vendedores/);
+  assert.deepEqual(escrituras(operam), []);
+});
+
+test('el cliente nuevo de un vendedor que ya no esta en el registro se bloquea y lo dice asi', async () => {
+  const operam = operamEnMemoria({ vendedores: REGISTRO });
+  const res = await darDeAlta(solicitud({ comercial: comercialDe('Pilar Historica'), domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'sin-vendedor-operam');
+  assert.equal(res.mensaje,
+    'No se puede dar de alta el cliente: Pilar Historica no est\u00e1 en el registro de vendedores, as\u00ed que no tiene ID de Operam. ' +
+    'P\u00eddele al administrador que lo revise en /admin.');
+  assert.match(res.detalle, /vendedor "Pilar Historica": no esta en el registro de vendedores/);
+  assert.deepEqual(escrituras(operam), []);
+});
+
+// Fe de erratas del brief: con DATABASE_URL, si Neon falla, listar() lanza. Eso no
+// dice nada del ID del vendedor, asi que el mensaje no puede afirmar que falta.
+test('con el registro de vendedores ilegible el cliente nuevo no se crea y el mensaje no afirma que falte el ID', async () => {
+  const operam = operamEnMemoria({ vendedores: REGISTRO, falla: { listar: 'Neon no responde' } });
+  const res = await darDeAlta(solicitud({ comercial: comercialDe('Alejandro Chavez'), domicilioEntrega: DOMICILIO }), operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'registro-vendedores-ilegible');
+  assert.ok(!('clienteId' in res));
+  assert.equal(res.mensaje, 'No se pudo revisar el registro de vendedores: intenta de nuevo. No se escribi\u00f3 nada en Operam.');
+  assert.doesNotMatch(res.mensaje, /ID de Operam/);
+  assert.match(res.detalle, /Neon no responde/);
+  assert.deepEqual(escrituras(operam), []);
+});
+
+test('el cliente nuevo con el vendedor elegido en el selector nace con ese salesman aunque quien lo pide no tenga ID', async () => {
+  const operam = operamEnMemoria({ vendedores: REGISTRO });
+  const res = await darDeAlta(solicitud({
+    comercial: comercialDe('Jaime Abaroa', { salesmanId: '2' }),
+    domicilioEntrega: DOMICILIO,
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearClienteDirecto')[0].args[0].salesman, '2');
+  assert.equal(operam.pedidos('actualizarBranchCliente')[0].args[2].salesman, '2');
+  assert.equal(operam.pedidos('listar').length, 0, 'con el id ya resuelto no se lee el registro');
+});
+
+test('con persona unica en la cartera el domicilio nuevo no se bloquea aunque quien lo pide no tenga ID de Operam', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '7', br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000', salesman: '2', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Jaime Abaroa'), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('crearBranchCliente')[0].args[1].salesman, 2);
+  assert.equal(paso(res, 'vendedor branch').status, 'ok');
+});
+
+test('con el registro de vendedores ilegible el domicilio nuevo no se crea y el mensaje no afirma que falte el ID', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    falla: { listar: 'Neon no responde' },
+    clientes: [clienteConCartera([
+      { branch_code: '7', br_name: 'Matriz', salesman: '2', inactive: '0' },
+    ])],
+  });
+  const res = await darDeAlta(otroDomicilioPedidoPor('Alejandro Chavez'), operam.deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'registro-vendedores-ilegible');
+  assert.doesNotMatch(res.mensaje, /ID de Operam/);
+  assert.equal(paso(res, 'vendedor branch').status, 'error');
+  assert.deepEqual(escrituras(operam), []);
+});
+
+// El registro se lee dos veces en este camino (el vendedor pedido y la cartera):
+// si la segunda lectura falla no se sabe si el cliente tiene persona unica, asi
+// que tampoco se puede afirmar que el bloqueo sea por el ID.
+test('si el registro deja de leerse al revisar la cartera, el domicilio nuevo se bloquea por falla', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [clienteConCartera([
+      { branch_code: '475', br_name: 'Estudio', salesman: '1', inactive: '0' },
+    ])],
+  });
+  let lecturas = 0;
+  const deps = {
+    ...operam.deps,
+    async listar() {
+      lecturas++;
+      if (lecturas > 1) throw new Error('Neon se cayo a medio camino');
+      return REGISTRO;
+    },
+  };
+  const res = await darDeAlta(otroDomicilioPedidoPor('Jaime Abaroa'), deps);
+
+  assert.equal(res.tipo, 'bloqueo');
+  assert.equal(res.motivo, 'registro-vendedores-ilegible');
+  assert.match(res.detalle, /Neon se cayo a medio camino/);
+  assert.equal(operam.pedidos('crearBranchCliente').length, 0);
+});
+
+test('reutilizar un Cliente Operam sin domicilio nuevo no se bloquea aunque quien lo pide no tenga ID de Operam', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [{ customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000', sales_type: '15', branches: [{ branch_code: 7, br_name: 'HOTEL AZUL' }] }],
+  });
+  const res = await darDeAlta(solicitud({ comercial: comercialDe('Jaime Abaroa'), decision: { tipo: 'usar', clienteId: 41 } }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.clienteId, 41);
+});
+
+test('el Cliente Operam ligado al celular se reutiliza aunque quien lo pide no tenga ID de Operam', async () => {
+  const operam = operamEnMemoria({
+    vendedores: REGISTRO,
+    clientes: [{ customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000', sales_type: '15', branches: [{ branch_code: 7, br_name: 'HOTEL AZUL' }] }],
+  });
+  const res = await darDeAlta(solicitud({
+    comercial: comercialDe('Jaime Abaroa'),
+    contacto: { celular: CELULAR, prospecto: null, ligas: [{ cliente_id: 41, fuente: 'cotizador' }] },
+  }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.clienteId, 41);
+  assert.equal(operam.pedidos('crearClienteDirecto').length, 0);
+});
+
+// #414 + #466: el bloqueo pasa por el panel del alta completa y por el slot de la
+// subida con sus dos capas: el mensaje se lee, el detalle va plegado.
+test('el bloqueo sin vendedor se lee en dos capas en el panel del alta y en la subida', async () => {
+  const { interpretarRespuestaAlta, ALTA_PASO_FILA } = await import('../public/js/alta-logica.js');
+  const { pasosParaMostrar } = await import('../public/js/pipeline-logica.js');
+  const operam = operamEnMemoria({ vendedores: REGISTRO });
+  const res = await darDeAlta(solicitud({ comercial: comercialDe('Jaime Abaroa'), domicilioEntrega: DOMICILIO }), operam.deps);
+  assert.equal(res.tipo, 'bloqueo');
+
+  const panel = interpretarRespuestaAlta({ ok: false, error: res.mensaje, detalle: res.detalle, steps: res.pasos, codigo: 'VENDEDOR_SIN_ID_OPERAM' });
+  assert.equal(panel.mensajeError, res.mensaje);
+  const arriba = panel.filas.find(f => f.fila === ALTA_PASO_FILA['POST customer']);
+  assert.equal(arriba.status, 'error');
+  assert.equal(arriba.msg, res.mensaje);
+  assert.match(arriba.detalle, /sin operam_id en el registro de vendedores/);
+
+  const subida = pasosParaMostrar(res.pasos);
+  assert.ok(subida.some(p => p.estado === 'error' && p.mensaje === res.mensaje && /Jaime Abaroa/.test(p.detalle)), JSON.stringify(subida));
 });

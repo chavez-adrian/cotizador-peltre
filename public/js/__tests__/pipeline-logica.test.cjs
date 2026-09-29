@@ -171,6 +171,18 @@ test('Q16b: el chip de la PRE por cliente sin lista dice el motivo en vez de "PR
   assert.match(badgeFolioOperamHtml({ folioOperam: '900', motivoPre: 'sin-lista' }), /Cotización 900/);
 });
 
+// #466: el alta que se bloqueo porque el vendedor no tiene ID de Operam deja la
+// PRE con su propio motivo, igual que el cliente sin lista: el arreglo lo hace un
+// administrador en /admin, y el chip lo dice en vez del "PRE" mudo.
+test('Q16c: el chip de la PRE por vendedor sin ID de Operam dice el motivo en vez de "PRE"', () => {
+  const html = badgeFolioOperamHtml({ folioOperam: null, motivoPre: 'sin-vendedor' });
+  assert.match(html, /badge-pre/);
+  assert.match(html, /PRE: vendedor sin ID de Operam/);
+  assert.equal(html.includes('>PRE<'), false);
+  assert.match(badgeFolioOperamHtml({ folioOperam: null, data: { motivoPre: 'sin-vendedor' } }), /vendedor sin ID de Operam/);
+  assert.match(badgeFolioOperamHtml({ folioOperam: '900', motivoPre: 'sin-vendedor' }), /900/);
+});
+
 // Formalizar una pre-cotizacion desde su tarjeta (issue #66, AC1): el boton
 // "Completar" solo aplica sobre una cotizacion que todavia es PRE (sin folio y
 // no historica de registro desconocido). Una cotizacion ya registrada

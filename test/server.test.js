@@ -1328,7 +1328,7 @@ test('POST /api/crear-cliente registra el telefono sospechoso sin rechazar el al
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
       .send({
-        tax_id: 'SOS010101ABC', CustName: 'Sospechoso SA', phone: '+52 0000000000',
+        tax_id: 'SOS010101ABC', CustName: 'Sospechoso SA', phone: '+52 0000000000', salesman: 2,
         entrega: { br_name: 'Almacen', br_ref: 'ALM', addr_street: 'Calle', addr_zip: '06600', addr_city: 'CDMX', addr_state: 'CDMX', phone: '+52 5512345678', email: '', pais: 'MX' },
       });
     assert.strictEqual(res.status, 200);

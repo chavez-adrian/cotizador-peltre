@@ -35,9 +35,14 @@ export function documentoBloqueado(cot) {
 // llega en data.motivoPre (entrada completa) o plano (fila del Historial): el
 // mismo campo a dos alturas que ya maneja documentoBloqueado.
 export const LEYENDA_PRE_SIN_LISTA = 'PRE: Cliente Operam sin lista de precios';
+// #466: el alta se bloqueo porque el vendedor no tiene ID de Operam. Mismo trato
+// que la lista: el arreglo lo hace un administrador en /admin, no la cotizacion.
+export const LEYENDA_PRE_SIN_VENDEDOR = 'PRE: vendedor sin ID de Operam';
+
+const LEYENDAS_PRE = { 'sin-lista': LEYENDA_PRE_SIN_LISTA, 'sin-vendedor': LEYENDA_PRE_SIN_VENDEDOR };
 
 export function leyendaPre(cot) {
-  return (cot?.data?.motivoPre ?? cot?.motivoPre ?? null) === 'sin-lista' ? LEYENDA_PRE_SIN_LISTA : '';
+  return LEYENDAS_PRE[cot?.data?.motivoPre ?? cot?.motivoPre ?? null] || '';
 }
 
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,

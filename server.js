@@ -14,7 +14,7 @@ import { puedeActualizarCotizacion, ligaClienteAlGuardar, vendedorAlGuardar } fr
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
-import { darDeAlta, upgradeFiscal } from './lib/alta-cliente.js';
+import { darDeAlta, upgradeFiscal, MOTIVO_SIN_VENDEDOR_OPERAM, CODIGO_VENDEDOR_SIN_ID_OPERAM } from './lib/alta-cliente.js';
 import { logCliente, marcarDropbox } from './lib/clientes-log.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
@@ -61,7 +61,7 @@ import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
 import { contactosDelDomicilio, refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
-import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA } from './lib/pipeline.js';
+import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA, MOTIVO_PRE_SIN_VENDEDOR } from './lib/pipeline.js';
 import { esErrorRateMoneda, ErrorClienteSinLista, MENSAJE_CLIENTE_SIN_LISTA, CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
 import { monedaDelCliente, ErrorClienteMonedaExtranjera, CODIGO_MONEDA_EXTRANJERA } from './public/js/moneda-cliente-logica.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
@@ -3273,6 +3273,9 @@ const MOTIVO_PRE_DE_BLOQUEO = {
   // tiene que resolver, igual que los candidatos: el documento queda bajo candado.
   fusion: MOTIVO_PRE_DEDUP,
   'sin-lista-precios': MOTIVO_PRE_SIN_LISTA,
+  // El vendedor sin ID de Operam (#466): mismo trato que el cliente sin lista -- el
+  // documento sale igual y el arreglo lo hace un administrador en /admin.
+  [MOTIVO_SIN_VENDEDOR_OPERAM]: MOTIVO_PRE_SIN_VENDEDOR,
 };
 
 // Un bloqueo del alta -> la MISMA respuesta HTTP de siempre. El codigo de estado lo pone
@@ -3293,6 +3296,9 @@ function responderBloqueoAlta(res, bloqueo) {
   }
   if (motivo === 'sin-lista-precios') {
     return res.status(422).json({ error: mensaje, codigo: CODIGO_CLIENTE_SIN_LISTA, ...cliente, steps: pasos });
+  }
+  if (motivo === MOTIVO_SIN_VENDEDOR_OPERAM) {
+    return res.status(422).json({ error: mensaje, detalle: bloqueo.detalle, codigo: CODIGO_VENDEDOR_SIN_ID_OPERAM, ...cliente, steps: pasos });
   }
   return res.status(503).json({ error: mensaje, ...cliente, steps: pasos });
 }
@@ -4286,6 +4292,9 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     // El mismo RFC real de otro Cliente Operam (#377) es un conflicto que el vendedor
     // resuelve, no una falla de Operam: 409 como la liga fija, jamas el 503 del ERP.
     if (alta.motivo === 'fusion') return res.status(409).json(cuerpo);
+    // El vendedor sin ID de Operam (#466) no es una falla del ERP: lo arregla un
+    // administrador en /admin, o el vendedor eligiendo a quien asignarlo.
+    if (alta.motivo === MOTIVO_SIN_VENDEDOR_OPERAM) return res.status(422).json({ ...cuerpo, codigo: CODIGO_VENDEDOR_SIN_ID_OPERAM });
     return res.status(503).json(cuerpo);
   }
 
