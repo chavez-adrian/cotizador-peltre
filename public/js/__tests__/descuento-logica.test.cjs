@@ -4,12 +4,12 @@ const assert = require('node:assert/strict');
 
 let normalizarTope, topeDescuentoVendedor, puedeDescontar, validarDescuentoLinea,
   validarDescuentosCotizacion, mensajeTopeExcedido, MENSAJE_SIN_TOPE, TOPE_ADMIN, partidasConDescuento,
-  descuentoGlobalVigente, decidirDescuentoGlobal;
+  descuentoGlobalVigente, decidirDescuentoGlobal, unIntentoALaVez;
 before(async () => {
   ({
     normalizarTope, topeDescuentoVendedor, puedeDescontar, validarDescuentoLinea,
     validarDescuentosCotizacion, mensajeTopeExcedido, MENSAJE_SIN_TOPE, TOPE_ADMIN, partidasConDescuento,
-    descuentoGlobalVigente, decidirDescuentoGlobal,
+    descuentoGlobalVigente, decidirDescuentoGlobal, unIntentoALaVez,
   } = await import('../descuento-logica.js'));
 });
 
@@ -187,4 +187,45 @@ test('#423-4: el change al salir del campo conserva su comportamiento previo: si
   assert.deepStrictEqual(decidirDescuentoGlobal('10', 15, [{ descuento: 10 }, { descuento: 10 }], 'change'), { accion: 'aplicar', valor: 10 });
   assert.deepStrictEqual(decidirDescuentoGlobal('', 15, [{ descuento: 0 }, {}], 'change'), { accion: 'aplicar', valor: 0 });
   assert.deepStrictEqual(decidirDescuentoGlobal('10', 15, [{ descuento: 10 }, { descuento: 10 }]), { accion: 'aplicar', valor: 10 });
+});
+
+// === Un solo aviso por intento del atajo global (#472) ===
+// En Chrome el change del MISMO campo vuelve a entrar mientras el boton o Enter
+// siguen avisando o repintando; aqui ese reingreso lo simula el propio aviso.
+
+test('#472-1: el change que reentra mientras el boton (o Enter) avisa el rechazo no da un segundo aviso', () => {
+  const avisos = [];
+  let aplicarDesde;
+  aplicarDesde = unIntentoALaVez((valor, gesto) => {
+    const d = decidirDescuentoGlobal(valor, 100, [{ descuento: 5 }, { descuento: 5 }], gesto);
+    if (d.accion === 'rechazar') {
+      avisos.push(d.mensaje);
+      if (gesto === 'boton') aplicarDesde(valor, 'change');
+    }
+  });
+  aplicarDesde('101', 'boton');
+  assert.deepStrictEqual(avisos, ['El descuento debe ser un porcentaje entre 0 y 100.']);
+});
+
+test('#472-2: cada intento posterior avisa otra vez: salir del campo y un segundo Enter no quedan bloqueados', () => {
+  const avisos = [];
+  const aplicarDesde = unIntentoALaVez((valor, gesto) => {
+    const d = decidirDescuentoGlobal(valor, 100, [{ descuento: 5 }], gesto);
+    if (d.accion === 'rechazar') avisos.push(gesto);
+  });
+  aplicarDesde('101', 'change');
+  aplicarDesde('101', 'boton');
+  aplicarDesde('101', 'boton');
+  assert.deepStrictEqual(avisos, ['change', 'boton', 'boton']);
+});
+
+test('#472-3: un intento que falla a medias no deja muerto el atajo', () => {
+  let intentos = 0;
+  const aplicarDesde = unIntentoALaVez(() => {
+    intentos += 1;
+    if (intentos === 1) throw new Error('repintado roto');
+  });
+  assert.throws(() => aplicarDesde('101', 'boton'), /repintado roto/);
+  aplicarDesde('101', 'boton');
+  assert.strictEqual(intentos, 2);
 });

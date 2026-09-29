@@ -225,6 +225,7 @@ import {
   validarDescuentoLinea,
   descuentoGlobalVigente,
   decidirDescuentoGlobal,
+  unIntentoALaVez,
 } from './descuento-logica.js';
 import {
   MAX_DESCRIPCION,
@@ -1546,11 +1547,13 @@ function renderDescuentoGlobal() {
 // y el change al salir del campo (Siguiente incluido), que conserva su
 // comportamiento de siempre. El boton repinta el campo en todos los casos, asi
 // que un segundo disparo llega desde el input ya reemplazado: se descarta para
-// no aplicar ni avisar el tope dos veces.
-function aplicarDescuentoGlobalDesde(campo, gesto) {
+// no aplicar ni avisar el tope dos veces. Y el change que Chrome despacha DENTRO
+// del intento, con el campo aun enfocado y conectado (al avisar o al repintar),
+// lo descarta unIntentoALaVez (#472).
+const aplicarDescuentoGlobalDesde = unIntentoALaVez((campo, gesto) => {
   if (!campo?.isConnected) return;
   aplicarDescuentoATodo(campo.value, gesto);
-}
+});
 window.aplicarDescuentoGlobalDesde = aplicarDescuentoGlobalDesde;
 
 // El atajo: un % una sola vez y todas las partidas quedan con el, envio incluido,

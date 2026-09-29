@@ -93,6 +93,23 @@ export function decidirDescuentoGlobal(valor, tope, partidas, gesto) {
   return { accion: 'aplicar', valor: r.valor };
 }
 
+// Un intento del atajo global a la vez (#472). Con el boton o Enter el campo
+// sigue enfocado y conectado mientras se avisa el rechazo y se repinta, y Chrome
+// despacha ahi mismo el change del MISMO campo: una llamada anidada que el guard
+// de input reemplazado no detiene. Lo que llegue durante el intento se descarta.
+export function unIntentoALaVez(fn) {
+  let enCurso = false;
+  return (...args) => {
+    if (enCurso) return;
+    enCurso = true;
+    try {
+      fn(...args);
+    } finally {
+      enCurso = false;
+    }
+  };
+}
+
 // La cotizacion completa (incluida la partida ENVIO): la primera partida fuera
 // del tope la tumba, nombrandola para que el vendedor sepa cual corregir.
 export function validarDescuentosCotizacion(items, tope) {
