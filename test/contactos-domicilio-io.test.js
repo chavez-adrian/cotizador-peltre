@@ -296,3 +296,54 @@ test('sin barrido en vuelo pero dentro del respiro de un fallo, releer tras escr
     console.warn = warn;
   }
 });
+
+// #473: el barrido deja rastro en los logs de Render, como [almacen-domicilios]: una
+// linea al iniciar y una al terminar, ninguna por pagina (el ritmo se comprueba con
+// la duracion total).
+function capturarConsola() {
+  const cap = { log: [], warn: [] };
+  const orig = { log: console.log, warn: console.warn };
+  console.log = (...a) => cap.log.push(a.join(' '));
+  console.warn = (...a) => cap.warn.push(a.join(' '));
+  cap.soltar = () => { console.log = orig.log; console.warn = orig.warn; };
+  cap.propias = (tipo) => cap[tipo].filter(l => l.includes('[contactos-domicilio]'));
+  return cap;
+}
+
+test('un barrido completo escribe una linea de inicio y una de fin con paginas, segundos y conteos, y ninguna por pagina', async () => {
+  const reloj = relojFalso();
+  const PAGO_564 = fila(9998, { action: 'payment', entity_id: '564', name: 'Pagos Bosques' });
+  const op = contactListMemoria({ total: 250, reloj, filasExtra: [FACTURA_564, PAGO_564] });
+  _setIo({ leerPaginaContactos: op.leerPaginaContactos, intervaloMs: 1100, ahora: reloj.ahora, esperar: reloj.esperar });
+  const cap = capturarConsola();
+  try {
+    await refrescarContactosDomicilio();
+  } finally {
+    cap.soltar();
+  }
+
+  assert.deepEqual(cap.propias('log'), [
+    '[contactos-domicilio] barrido iniciado: contact_list en paginas de 100, una lectura cada 1100 ms',
+    '[contactos-domicilio] barrido terminado en 2 s: 3 paginas, 250 filas, 249 domicilios con contactos',
+  ]);
+  assert.deepEqual(cap.propias('warn'), []);
+});
+
+test('un barrido que falla en la primera pagina escribe la linea de inicio y el aviso de fallo, sin linea de fin', async () => {
+  const reloj = relojFalso();
+  const op = contactListMemoria({ total: 250, reloj, falla: () => true });
+  _setIo({ leerPaginaContactos: op.leerPaginaContactos, intervaloMs: 1100, ahora: reloj.ahora, esperar: reloj.esperar });
+  const cap = capturarConsola();
+  try {
+    await refrescarContactosDomicilio();
+  } finally {
+    cap.soltar();
+  }
+
+  assert.deepEqual(cap.propias('log'), [
+    '[contactos-domicilio] barrido iniciado: contact_list en paginas de 100, una lectura cada 1100 ms',
+  ]);
+  assert.deepEqual(cap.propias('warn'), [
+    '[contactos-domicilio] no se pudo leer contact_list de Operam: Operam 429',
+  ]);
+});
