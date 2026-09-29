@@ -951,10 +951,12 @@ export function buildMoverSeguimientoControlHtml(o) {
 // solo Perdida (una cotizacion real sale del embudo solo por Perdida, no por No
 // util; los motivos de No util son de descalificacion de prospecto). Usa el id
 // numerico (refId), nunca el prefijado ("p7"/"c10"), leccion del bug de #57.
+// Perdida lleva ademas el TIPO (#478): prospectos y cotizaciones comparten
+// numeros de refId, y con el id solo la accion cerraba al prospecto homonimo.
 export function buildSalidaControlHtml(o) {
   if (!o || esSalida(o.etapa)) return '';
   const id = o.refId ?? o.id;
-  const perdida = `<button class="btn btn-secondary btn-sm" onclick="cerrarPerdidaTablero(${id})">Perdida</button>`;
+  const perdida = `<button class="btn btn-secondary btn-sm" onclick="cerrarPerdidaTablero('${o.tipo === 'cotizacion' ? 'cotizacion' : 'prospecto'}', ${id})">Perdida</button>`;
   if (o.tipo === 'cotizacion') {
     return `<div class="cot-card-actions tablero-salida">${perdida}</div>`;
   }
@@ -966,6 +968,15 @@ export function buildSalidaControlHtml(o) {
     <button class="btn btn-secondary btn-sm" onclick="marcarNoUtilTablero(${id})">No útil</button>
     ${perdida}
   </div>`;
+}
+
+// La peticion de Perdida se decide por el tipo que pinto la tarjeta (#478), nunca
+// por el que se encuentre con ese refId: el prospecto y la cotizacion pueden
+// compartir numero y cerrar uno por el otro deja viva a la de la tarjeta.
+export function peticionPerdidaTablero(tipo, id) {
+  if (tipo === 'cotizacion') return { url: `/api/cotizacion/${id}/estado`, body: { estado: 'perdida' } };
+  if (tipo === 'prospecto') return { url: `/api/prospectos/${id}/etapa`, body: { etapa: 'perdida' } };
+  return null;
 }
 
 // Control de producto decorado / calca en la tarjeta de cotizacion (issue #61,

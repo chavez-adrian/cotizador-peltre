@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar, peticionPerdidaTablero;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar, peticionPerdidaTablero } =
     await import('../pipeline-logica.js'));
 });
 
@@ -1079,12 +1079,12 @@ test('Q40: buildSalidaControlHtml de un prospecto activo ofrece No util con moti
   for (const m of ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta']) {
     assert.ok(html.includes(m), `falta motivo ${m}`);
   }
-  assert.match(html, /cerrarPerdidaTablero\(5\)/);
+  assert.ok(html.includes(`cerrarPerdidaTablero('prospecto', 5)`));
 });
 
 test('Q41: buildSalidaControlHtml de una cotizacion activa ofrece solo Perdida, no No util (Modelo A)', () => {
   const html = buildSalidaControlHtml(cotizacion({ id: 10, etapa: 'seguimiento' }));
-  assert.match(html, /cerrarPerdidaTablero\(10\)/);
+  assert.ok(html.includes(`cerrarPerdidaTablero('cotizacion', 10)`));
   assert.equal(html.includes('marcarNoUtilTablero'), false);
   assert.equal(html.includes('salida-motivo'), false);
 });
@@ -1098,12 +1098,12 @@ test('Q42: buildSalidaControlHtml no pinta nada para una oportunidad ya en salid
 test('Q43: buildSalidaControlHtml usa el id numerico (refId) con la oportunidad prefijada (#57)', () => {
   const pros = buildSalidaControlHtml({ tipo: 'prospecto', id: 'p7', refId: 7, etapa: 'por_cotizar' });
   assert.match(pros, /marcarNoUtilTablero\(7\)/);
-  assert.match(pros, /cerrarPerdidaTablero\(7\)/);
+  assert.ok(pros.includes(`cerrarPerdidaTablero('prospecto', 7)`));
   assert.match(pros, /id="salida-motivo-7"/);
   assert.equal(pros.includes('(p7)'), false);
   assert.equal(pros.includes('salida-motivo-p7'), false);
   const cot = buildSalidaControlHtml({ tipo: 'cotizacion', id: 'c10', refId: 10, etapa: 'seguimiento' });
-  assert.match(cot, /cerrarPerdidaTablero\(10\)/);
+  assert.ok(cot.includes(`cerrarPerdidaTablero('cotizacion', 10)`));
   assert.equal(cot.includes('(c10)'), false);
 });
 
@@ -1113,10 +1113,45 @@ test('Q44: el tablero pinta los controles de salida en las tarjetas activas, no 
     cotizacion({ id: 10, etapa: 'seguimiento' }),
   ]);
   assert.match(html, /marcarNoUtilTablero\(7\)/);
-  assert.match(html, /cerrarPerdidaTablero\(7\)/);
-  assert.match(html, /cerrarPerdidaTablero\(10\)/);
+  assert.ok(html.includes(`cerrarPerdidaTablero('prospecto', 7)`));
+  assert.ok(html.includes(`cerrarPerdidaTablero('cotizacion', 10)`));
   // una cotizacion no ofrece No util (Modelo A)
   assert.equal(html.includes('marcarNoUtilTablero(10)'), false);
+});
+
+// === Issue #478: prospectos y cotizaciones comparten numeros de refId ===
+// Caso de produccion: la Cotizacion 1303 (c126, Adrian Chavez Rosete) y el
+// prospecto p126 (Ricardo Suarez) viven en el mismo tablero. El boton Perdida de
+// la cotizacion abria la confirmacion del prospecto y lo cerraba a EL.
+
+test('Q44b: con un prospecto y una cotizacion del mismo refId, el Perdida de cada tarjeta apunta a la suya (#478)', () => {
+  const html = buildTableroPipelineHtml([
+    { tipo: 'prospecto', id: 'p126', refId: 126, nombre: 'Ricardo Suarez', etapa: 'por_cotizar' },
+    { tipo: 'cotizacion', id: 'c126', refId: 126, nombre: 'Adrian Chavez Rosete', etapa: 'seguimiento', folioOperam: 1303 },
+  ]);
+  const tarjeta = dataId => {
+    const desde = html.indexOf(`data-id="${dataId}"`);
+    assert.ok(desde >= 0, `no se pinto la tarjeta ${dataId}`);
+    const hasta = html.indexOf('class="tablero-card"', desde);
+    return html.slice(desde, hasta < 0 ? html.length : hasta);
+  };
+  const pros = tarjeta('p126');
+  const cot = tarjeta('c126');
+  assert.ok(pros.includes(`cerrarPerdidaTablero('prospecto', 126)`), 'el Perdida del prospecto no apunta al prospecto');
+  assert.equal(pros.includes(`cerrarPerdidaTablero('cotizacion'`), false);
+  assert.ok(cot.includes(`cerrarPerdidaTablero('cotizacion', 126)`), 'el Perdida de la cotizacion no apunta a la cotizacion');
+  assert.equal(cot.includes(`cerrarPerdidaTablero('prospecto'`), false);
+});
+
+test('Q44c: la Perdida se pide a la ruta del tipo de la tarjeta, no a la del homonimo (#478)', () => {
+  assert.deepEqual(peticionPerdidaTablero('cotizacion', 126), {
+    url: '/api/cotizacion/126/estado', body: { estado: 'perdida' },
+  });
+  assert.deepEqual(peticionPerdidaTablero('prospecto', 126), {
+    url: '/api/prospectos/126/etapa', body: { etapa: 'perdida' },
+  });
+  // sin tipo conocido no se adivina una ruta
+  assert.equal(peticionPerdidaTablero(undefined, 126), null);
 });
 
 // === Issue #59 (AC3): filtro/historial de cerradas (No util / Perdida) ===

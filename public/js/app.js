@@ -169,6 +169,7 @@ import {
   fichaContactoHtml,
   bannerUpgradeHtml,
   rotuloPanelUpgrade,
+  peticionPerdidaTablero,
 } from './pipeline-logica.js';
 import {
   buildBandejaHtml,
@@ -6496,9 +6497,8 @@ async function abrirNuevaOportunidad(celular) {
 window.abrirNuevaOportunidad = abrirNuevaOportunidad;
 
 // Salidas del embudo desde la tarjeta del tablero (issue #59, Modelo A). El
-// control pinta el id numerico (refId); aqui se ubica la oportunidad por ese id
-// para conocer su tipo (la salida de un prospecto y la de una cotizacion pegan a
-// rutas distintas).
+// control pinta el id numerico (refId) y, desde #478, el tipo: el refId solo no
+// identifica la oportunidad (prospecto y cotizacion comparten numeros).
 function oportunidadDeTablero(tipo, id) {
   return ultimasOportunidades.find(o => o.tipo === tipo && (o.refId ?? o.id) === id);
 }
@@ -6529,17 +6529,16 @@ window.marcarNoUtilTablero = marcarNoUtilTablero;
 // Perdida (prospecto o cotizacion): pide confirmacion (AC2). Si el vendedor
 // cancela la confirmacion, no se llama al servidor. El prospecto cierra via
 // PATCH .../etapa {perdida}; la cotizacion via PATCH .../estado {perdida} (ruta
-// existente, Modelo A: una cotizacion sale del embudo solo por Perdida).
-async function cerrarPerdidaTablero(id) {
-  const o = oportunidadDeTablero('prospecto', id) || oportunidadDeTablero('cotizacion', id);
+// existente, Modelo A: una cotizacion sale del embudo solo por Perdida). El tipo
+// llega de la tarjeta (#478): prospecto y cotizacion comparten numeros de refId.
+async function cerrarPerdidaTablero(tipo, id) {
+  const peticion = peticionPerdidaTablero(tipo, id);
+  if (!peticion) return;
+  const o = oportunidadDeTablero(tipo, id);
   const nombre = o ? (o.nombre || 'esta oportunidad') : 'esta oportunidad';
   if (!confirm(`¿Cerrar como Perdida ${nombre}? Sale del tablero y queda en el historial.`)) return;
-  const esCot = o && o.tipo === 'cotizacion';
-  const req = esCot
-    ? api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado: 'perdida' } })
-    : api(`/api/prospectos/${id}/etapa`, { method: 'PATCH', body: { etapa: 'perdida' } });
   try {
-    const res = await req;
+    const res = await api(peticion.url, { method: 'PATCH', body: peticion.body });
     if (!res.ok) {
       let data = {};
       try { data = await res.json(); } catch {}
