@@ -127,8 +127,9 @@ test('H10: la tarjeta sin dueno encabeza la cola por encima de cualquier otra ur
   const prospReunion = prospecto({
     eventos: [{ tipo: 'reunion', fecha: '2026-06-05T18:00:00Z', fecha_reunion: '2026-06-09T18:00:00Z', vendedor: 'Memo' }],
   });
-  // Recien capturada (0 horas de espera): aun asi va primero.
-  const cola = calcularColaHoy([prospReunion, sinDueno({ fecha: '2026-06-10T18:00:00Z' })], [cotVencida], AHORA);
+  // Recien capturada (0 horas de espera): aun asi va primero. Otro celular: con
+  // el de la cotizacion seria la misma persona ya cotizada (#465) y no entraria.
+  const cola = calcularColaHoy([prospReunion, sinDueno({ fecha: '2026-06-10T18:00:00Z', celular: '+52 5598765432' })], [cotVencida], AHORA);
   assert.equal(cola[0].tipo, 'no_asignado');
   assert.equal(cola[0].sinDueno, true);
 });
@@ -189,4 +190,43 @@ test('H13c: la cotizacion de otro Contacto no calla la etiqueta', () => {
   });
   const cola = calcularColaHoy([p], [ajena], AHORA);
   assert.equal(cola.find(i => i.id === p.id).faltaCotizar, true);
+});
+
+// === #465: una Oportunidad sin dueno que ya tiene cotizacion no es un pendiente de asignar ===
+// Hallado en el HITL de #348: la Oportunidad 226 (registro propio, liga por el
+// evento 'cotizacion') seguia en No Asignado con la cotizacion 99 en
+// Seguimiento, y Hoy la ofrecia para asignar aunque el tablero la callaba.
+
+test('H14: la Oportunidad sin dueno cuya cotizacion nacio de ella no sale en "sin asignar"', () => {
+  const op = sinDueno({
+    id: 226, propia: true, nombre: 'Humberto Sanchez', celular: '+52 5511112222',
+    eventos: [{ tipo: 'cotizacion', cotizacion_id: 99, de: 'no_asignado', fecha: '2026-06-09T18:00:00Z', vendedor: 'Alejandro' }],
+  });
+  const cot = cotizacion({
+    id: 99, etapa: 'seguimiento', vendedor: 'Alejandro',
+    data: { cliente: { razonSocial: 'HUMBERTO SANCHEZ', telefono: '5533334444' }, items: [] },
+  });
+  const cola = calcularColaHoy([op], [cot], AHORA);
+  assert.equal(cola.some(i => i.tipo === 'no_asignado'), false);
+  assert.equal(cola.some(i => i.tipo === 'cotizacion' && i.id === 99), true);
+});
+
+test('H14b: la cotizacion de otra Oportunidad no la calla: sigue en "sin asignar"', () => {
+  const op = sinDueno({ id: 227, propia: true, celular: '+52 5511112222', eventos: [] });
+  const ajena = cotizacion({
+    id: 98, etapa: 'seguimiento',
+    data: { cliente: { razonSocial: 'OTRA', telefono: '5511112222' }, items: [] },
+  });
+  const cola = calcularColaHoy([op], [ajena], AHORA);
+  assert.equal(cola.filter(i => i.tipo === 'no_asignado').length, 1);
+});
+
+test('H14c: la cotizacion Perdida ya no la representa: la Oportunidad vuelve a "sin asignar" como en el tablero', () => {
+  const op = sinDueno({
+    id: 228, propia: true,
+    eventos: [{ tipo: 'cotizacion', cotizacion_id: 97, de: 'no_asignado', fecha: '2026-06-09T18:00:00Z', vendedor: 'Memo' }],
+  });
+  const perdida = cotizacion({ id: 97, etapa: 'perdida' });
+  const cola = calcularColaHoy([op], [perdida], AHORA);
+  assert.equal(cola.filter(i => i.tipo === 'no_asignado').length, 1);
 });
