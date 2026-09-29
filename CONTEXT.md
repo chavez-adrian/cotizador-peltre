@@ -32,7 +32,7 @@ Un Contacto ya ligado a un Cliente Operam no se vuelve a capturar como prospecto
 
 ## Etapas del pipeline
 
-`No Asignado → Por Cotizar → Seguimiento → Anticipo pagado → Pedido liberado → Saldo pagado → Producto entregado`. Dos salidas desde cualquier etapa activa: **No útil** (con motivo obligatorio de catálogo) y **Perdida** (con confirmación); ambas viven en filtro/historial, fuera del tablero activo.
+`No Asignado → Por Cotizar → Seguimiento → Anticipo pagado → Pedido liberado → Saldo pagado → Producto entregado`. Tres salidas, que viven en filtro/historial, fuera del tablero activo: **No útil** (con motivo obligatorio de catálogo), **Perdida** (con Motivo de Perdida, solo mientras la oportunidad no tiene pedido) y **Cancelada** (solo con pedido y solo el admin).
 
 - **No Asignado**: la oportunidad entró sin vendedor. Ocurre con prospectos que llegan del formulario web "Peltre de Mayoreo" o, a futuro, de un bot (WhatsApp, redes, correo). Requiere asignar un vendedor; al asignarlo, la tarjeta pasa automáticamente a Por Cotizar.
 - **Por Cotizar**: la oportunidad ya tiene dueño y aún no se cotiza. Cuando el vendedor crea el prospecto a mano, nace aquí auto-asignado. Es donde corre la cadencia de prospecto en horas hábiles y donde se agenda la reunión de diagnóstico.
@@ -255,7 +255,7 @@ Actividad con fecha sobre una oportunidad en Por Cotizar o Seguimiento (no es et
 
 ## Tablero del pipeline
 
-Vista kanban única de las oportunidades, con las 7 etapas como columnas (las salidas No útil y Perdida viven en filtro/historial, no como columnas activas). Reemplaza los dos tableros separados del modelo previo (prospectos y cotizaciones). Conmutable con la vista de lista; la cola Hoy permanece fija sobre ambas. Muestra la suma en pesos por columna. El arrastre respeta las reglas del dominio del módulo de pipeline: un paso a la vez; soltar en No útil exige motivo; el paso manual a Seguimiento exige el número de cotización; las etapas post-venta no se arrastran porque las mueve Operam. Funciona también en el teléfono (desplazamiento horizontal por columna; en táctil las transiciones pueden ser por botón). Término canónico del destino y del tablero: **Pipeline**.
+Vista kanban única de las oportunidades, con las 7 etapas como columnas (las salidas No útil, Perdida y Cancelada viven en filtro/historial, no como columnas activas). Reemplaza los dos tableros separados del modelo previo (prospectos y cotizaciones). Conmutable con la vista de lista; la cola Hoy permanece fija sobre ambas. Muestra la suma en pesos por columna. El arrastre respeta las reglas del dominio del módulo de pipeline: un paso a la vez; soltar en No útil exige motivo; el paso manual a Seguimiento exige el número de cotización; las etapas post-venta no se arrastran porque las mueve Operam. Funciona también en el teléfono (desplazamiento horizontal por columna; en táctil las transiciones pueden ser por botón). Término canónico del destino y del tablero: **Pipeline**.
 
 ## Sincronización post-venta con Operam
 
@@ -266,6 +266,21 @@ El mapeo real de Operam (corre sobre FrontAccounting; ver `peltre-operam.md` §1
 **En el pipeline manda el cumplimiento, no la cobranza** (decisión de Adrián, issue #77): una remisión lleva la tarjeta a Producto entregado aunque el pago no esté registrado (la contadora lo captura a mano con días de desfase). La tarjeta entregada-impaga muestra el badge **"Pago sin registrar"** hasta que la señal de pago aparece (`allocated ~ total`), y sigue siendo candidata de reconciliación mientras el badge esté vivo — el pago tardío lo apaga; una entregada ya pagada es terminal para el sync.
 
 El sync corre por dos vías sobre el mismo motor de reconciliación (`lib/sync-operam-io.js`): un **webhook** de Operam (`POST /api/webhooks/operam`, auth por header secreto) tratado como mera señal — no se confía en su payload —, y una **reconciliación on-demand** (`POST /api/sync-operam`) como red de seguridad. Ambas leen el estado real por API (`listarTransacciones` por RFC + `listarPedidos` por cliente), normalizan a hechos y aplican el núcleo puro. El motor liga la oportunidad a su cadena por el número de pedido (`order_`) cuando se conoce (`data.orderOperam`); **el número de cotización nunca es igual al número de pedido en Operam**, así que el folio de la cotización (`folioOperam`) no sirve como `order_` (usarlo arriesgaría un falso match con el pedido de otra cadena). Sin `order_` explícito, agrega por cliente (correcto cuando el cliente tiene una sola oportunidad activa).
+
+## Perdida
+
+Salida de una Oportunidad que no llegó a pedido: el Contacto no compró. Solo existe mientras la oportunidad no tiene pedido en Operam: una tarjeta en etapa post-venta, o cuyo pedido ya existe aunque el candado de calca la retenga en Seguimiento, ya se cerró y no se puede perder (decisión 2026-09-28, a sugerencia de Alejandro). Lleva siempre un **Motivo de Perdida** de un catálogo corto (el precio, el momento, la competencia, el tiempo de producción, la falta de respuesta, u otro con nota) para poder medir por qué se pierde. No se confunde con No útil, que descalifica a un prospecto antes de cotizar y tiene su propio catálogo aunque compartan alguna palabra ("sin respuesta").
+_Evitar_: Perdida para una venta que ya tiene pedido (ésa es Cancelada).
+
+## Cancelada
+
+Salida de una Oportunidad que sí llegó a pedido y después se cayó: el Contacto pagó y se echó para atrás. Es la única salida posible con pedido, la decide solo el admin y lleva motivo (decisión 2026-09-28). No cancela nada en Operam: el pedido y los pagos se resuelven allá por proceso, y la tarjeta deja de esperar un avance que no va a llegar. Como toda salida, el sync post-venta no la mueve.
+_Evitar_: "cancelado" a secas, que en este repo nombra el documento anulado en Operam, no la Oportunidad.
+
+## Comprobante de pago
+
+El archivo (imagen o PDF) que el Contacto envía como prueba de un pago, la transferencia o el depósito, archivado en el Dropbox de la empresa para consultarlo. Hay a lo sumo dos por Oportunidad, uno por pago, y cada uno admite varios archivos: el del **primer pago** se sube en Seguimiento; el del **saldo**, en Pedido liberado y solo si hubo anticipo (una venta que se liquidó de una vez lleva uno solo). Lo sube el dueño de la tarjeta o el admin. No es candado: el tablero sigue a Operam, y la tarjeta que avanzó sin él muestra **"Falta comprobante"** hasta que se sube (decisión 2026-09-28). Es el aviso inverso de "Pago sin registrar": ahí a Operam le falta el pago; aquí Operam ya lo tiene y al cotizador le falta la prueba.
+_Evitar_: recibo, voucher, comprobante fiscal (el CFDI es la factura, no esto).
 
 ## Alta de cliente
 
