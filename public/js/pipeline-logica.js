@@ -1182,6 +1182,23 @@ export function buildColaCotizacionItemHtml(item) {
   `;
 }
 
+// Espera sin asignar legible (#464): `item.horas` son horas HABILES con decimales
+// (lib/cola-hoy.js). Se redondea PRIMERO a horas enteras y, desde una jornada
+// L-V completa (8 h, el umbral rojo de correo y formulario), se lee en dias
+// habiles + horas. El dia habil es la jornada de 8 h: el sabado corto (4 h)
+// cuenta como media jornada, aproximacion aceptada; nunca dias naturales, que son
+// el reloj de la cotizacion (CONTEXT.md "Horas habiles").
+const HORAS_JORNADA = 8;
+
+function esperaSinAsignarTexto(horas) {
+  const enteras = Math.round(horas);
+  if (enteras < HORAS_JORNADA) return `${enteras} h`;
+  const dias = Math.floor(enteras / HORAS_JORNADA);
+  const resto = enteras % HORAS_JORNADA;
+  const textoDias = dias === 1 ? '1 d\u00eda h\u00e1bil' : `${dias} d\u00edas h\u00e1biles`;
+  return resto ? `${textoDias} y ${resto} h` : textoDias;
+}
+
 // Item de tarjeta No Asignado en la cola Hoy (#156, spec #155, CONTEXT.md "Cola
 // Hoy"): un lead sin dueno es un pendiente del dia. Solo llega a quien tiene el
 // permiso de asignacion (lo filtra GET /api/hoy), y su unico pendiente es
@@ -1190,7 +1207,7 @@ export function buildColaCotizacionItemHtml(item) {
 // ofrece registrar contacto ni la sugerencia de No util: esa cadencia mide la
 // espera del vendedor, y aqui todavia no hay vendedor.
 export function buildColaNoAsignadoItemHtml(item, vendedores, tienePermiso) {
-  const espera = item.horas != null ? ` · ${item.horas} h sin asignar` : '';
+  const espera = item.horas != null ? ` · ${esperaSinAsignarTexto(item.horas)} sin asignar` : '';
   const meta = [item.ciudad, item.celular].filter(Boolean).map(escapeHtml).join(' · ');
   const asignar = buildAsignarControlHtml({ ...item, refId: item.id }, vendedores, tienePermiso, 'hoy');
   return `

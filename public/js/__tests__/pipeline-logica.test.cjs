@@ -713,6 +713,32 @@ test('Q24e: buildColaHoyHtml preserva el orden del backend con los tres tipos', 
   assert.ok(html.indexOf('Hotel Azul') < html.indexOf('Laura'));
 });
 
+// === #464: la espera sin asignar sale redondeada, no con 14 decimales ===
+// Hallado en el HITL de #348: "181.02916666666667 h sin asignar". Son horas
+// HABILES; pasada una jornada (8 h) se lee en dias habiles + horas.
+test('HS1: la espera sin asignar de 181.029 h habiles sale en dias habiles y horas enteras', () => {
+  const html = buildColaNoAsignadoItemHtml(itemNoAsignado({ horas: 181.02916666666667 }), VENDEDORES_HOY, true);
+  assert.equal(html.includes('181.029'), false);
+  assert.match(html, /22 d\u00edas h\u00e1biles y 5 h sin asignar/);
+});
+
+test('HS2: bajo una jornada la espera sin asignar sale en horas enteras', () => {
+  const html = buildColaNoAsignadoItemHtml(itemNoAsignado({ horas: 5.4 }), VENDEDORES_HOY, true);
+  assert.match(html, /Sin vendedor \u00b7 5 h sin asignar/);
+});
+
+test('HS3: la frontera de la jornada redondea primero y no pinta horas en cero', () => {
+  assert.match(buildColaNoAsignadoItemHtml(itemNoAsignado({ horas: 7.4 }), VENDEDORES_HOY, true), /\u00b7 7 h sin asignar/);
+  assert.match(buildColaNoAsignadoItemHtml(itemNoAsignado({ horas: 7.6 }), VENDEDORES_HOY, true), /\u00b7 1 d\u00eda h\u00e1bil sin asignar/);
+  assert.match(buildColaNoAsignadoItemHtml(itemNoAsignado({ horas: 9 }), VENDEDORES_HOY, true), /\u00b7 1 d\u00eda h\u00e1bil y 1 h sin asignar/);
+  assert.match(buildColaNoAsignadoItemHtml(itemNoAsignado({ horas: 16 }), VENDEDORES_HOY, true), /\u00b7 2 d\u00edas h\u00e1biles sin asignar/);
+});
+
+test('HS4: sin horas no se pinta la espera', () => {
+  const html = buildColaNoAsignadoItemHtml(itemNoAsignado({ horas: null }), VENDEDORES_HOY, true);
+  assert.equal(html.includes('sin asignar'), false);
+});
+
 test('Q24f: buildColaNoAsignadoItemHtml escapa el nombre capturado por el publico', () => {
   const html = buildColaNoAsignadoItemHtml(itemNoAsignado({ nombre: '<img src=x onerror=alert(1)>' }), VENDEDORES_HOY, true);
   assert.equal(html.includes('<img src=x'), false);
