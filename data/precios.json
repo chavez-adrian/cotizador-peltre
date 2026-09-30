@@ -1,6 +1,6 @@
 {
   "version": "2026.ABRIL",
-  "extracted": "2026-09-09T02:49:55.252Z",
+  "extracted": "2026-09-30T19:01:34.824Z",
   "products": [
     {
       "key": "VA08B",
@@ -16506,6 +16506,32 @@
       "colorRiso": null,
       "priceKey": "VA05B",
       "nombre": "Taza 5 verde interior blanco s/filetes"
+    },
+    {
+      "sku": "VA08N2N11211",
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "N2",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "N1",
+      "colorRiso": 1,
+      "priceKey": "VA08B",
+      "nombre": "Taza 8 negro mate interior negro filete negro"
+    },
+    {
+      "sku": "VA08N2B11211",
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "N2",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "B1",
+      "colorRiso": 1,
+      "priceKey": "VA08B",
+      "nombre": "Taza 8 negro mate interior blanco filete negro"
     }
   ],
   "colores": {
