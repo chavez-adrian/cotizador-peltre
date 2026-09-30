@@ -46,6 +46,32 @@ export function valoresDeDomicilio(domicilio, respaldo) {
   return out;
 }
 
+// CP fiscal con el que nace todo cliente de RFC generico (#121): lo fija
+// buildClienteBody (lib/operam-client.js) y el branch que Operam auto-crea lo
+// hereda. Vive aqui porque lo leen los dos lados -- el servidor para marcar el
+// domicilio `sinEntrega` (lib/deduplicacion.js lo cross-importa) y el navegador
+// para juzgar la direccion del registro.
+export const CP_FISCAL_GENERICO = '56577';
+
+// Lo que NO es una direccion a la que se entregue (#459, #330): sin calle y con
+// el CP fiscal generico. Es el relleno del alta de RFC generico, igual en el
+// branch que Operam auto-crea que en el registro del cliente.
+export function sinCalleConCpGenerico(direccion) {
+  const d = direccion || {};
+  return texto(d.calle) === '' && texto(d.cp) === CP_FISCAL_GENERICO;
+}
+
+// Lo que queda en Envio cuando NINGUN domicilio es de entrega (#459, decision
+// de Adrian 2026-09-30): la direccion del REGISTRO del cliente, completa -- la
+// misma que el respaldo ya aporta a cualquier branch vacio, y la unica conocida
+// de quien hizo su upgrade fiscal con el branch todavia de relleno. Si el
+// registro trae ese mismo relleno no hay direccion que conservar y Envio queda
+// vacio: dejarlo seria proponer el 56577 que el selector acaba de descartar.
+export function valoresSinDomicilio(respaldo) {
+  if (sinCalleConCpGenerico(respaldo)) return camposDomicilioVacios();
+  return valoresDeDomicilio(null, respaldo);
+}
+
 // De quien es lo que hay AHORA en el campo. El sistema tiene DOS escritores en
 // el paso Envio -- este selector y el indice del CP (#291) -- y cada uno lleva
 // su propia memoria, asi que hay que preguntarle a los dos: un municipio que

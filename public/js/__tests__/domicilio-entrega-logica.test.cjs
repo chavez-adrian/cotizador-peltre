@@ -2,11 +2,11 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
+let CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, valoresSinDomicilio, planDomicilioAsistido,
   indiceDeDomicilio, branchIdDeIndice, domicilioDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio, vistaDomicilioEntrega, AVISO_SIN_DOMICILIO_ENTREGA;
 
 before(async () => {
-  ({ CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
+  ({ CAMPOS_DOMICILIO, camposDomicilioVacios, valoresDeDomicilio, valoresSinDomicilio, planDomicilioAsistido,
     indiceDeDomicilio, branchIdDeIndice, domicilioDeIndice, ALMACEN_ESPERADO, avisoAlmacenDomicilio, vistaDomicilioEntrega, AVISO_SIN_DOMICILIO_ENTREGA } = await import('../domicilio-entrega-logica.js'));
 });
 
@@ -196,6 +196,36 @@ test('#459: sin domicilio elegido (null) no hay branch_code ni domicilio', () =>
   assert.equal(branchIdDeIndice([SIN_ENTREGA], null), null);
   assert.equal(domicilioDeIndice([SIN_ENTREGA], null), null);
   assert.equal(branchIdDeIndice([SIN_ENTREGA], indiceDeDomicilio([SIN_ENTREGA], null)), null);
+});
+
+// Decision de Adrian 2026-09-30: sin domicilio de entrega, Envio conserva la
+// direccion del REGISTRO del cliente completa (la fiscal de quien hizo su
+// upgrade con el branch todavia de relleno), no queda vacio.
+test('#459: sin domicilio elegido queda la direccion del registro, completa', () => {
+  const registro = { calle: 'Av. Cuauhtemoc 12', colonia: 'Roma Norte', cp: '06700', municipio: 'Cuauhtemoc', estado: 'Ciudad de Mexico' };
+  assert.deepEqual(valoresSinDomicilio(registro), {
+    calle: 'Av. Cuauhtemoc 12', numInt: '', colonia: 'Roma Norte', cp: '06700', municipio: 'Cuauhtemoc', estado: 'Ciudad de Mexico',
+  });
+  // Lo que el registro prelleno sigue en pantalla al aplicar "ninguno".
+  const enPantalla = { ...camposDomicilioVacios(), ...registro };
+  const plan = planDomicilioAsistido(enPantalla, enPantalla, valoresSinDomicilio(registro));
+  assert.equal(plan.valores.calle, 'Av. Cuauhtemoc 12');
+  assert.equal(plan.valores.cp, '06700');
+});
+
+// El registro de un cliente de RFC generico trae el mismo relleno que su branch
+// (sin calle, CP 56577): eso no es direccion y no se conserva.
+test('#459: si el registro solo trae el relleno del RFC generico, Envio queda vacio', () => {
+  const registro = { calle: '', cp: '56577', municipio: 'Ixtapaluca', estado: 'Mexico' };
+  assert.deepEqual(valoresSinDomicilio(registro), camposDomicilioVacios());
+  const enPantalla = { ...camposDomicilioVacios(), ...registro };
+  const plan = planDomicilioAsistido(enPantalla, enPantalla, valoresSinDomicilio(registro));
+  assert.equal(plan.valores.cp, '');
+  assert.equal(plan.valores.municipio, '');
+});
+
+test('#459: sin registro tampoco hay direccion que conservar', () => {
+  assert.deepEqual(valoresSinDomicilio(null), camposDomicilioVacios());
 });
 
 test('domicilioDeIndice devuelve el domicilio del indice elegido', () => {

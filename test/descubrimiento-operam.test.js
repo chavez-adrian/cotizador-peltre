@@ -206,6 +206,14 @@ test('planearDescubrimiento: el debtor 14 (PUBLICO EN GENERAL) es cajon desde #2
   assert.equal(plan.candidatos[0].candidato.tipo, 'prospecto');
 });
 
+// El 417 (BAZAAR SABADO) es cajon desde #459: sin eso entraba por el camino de
+// cliente real y su quote se proponia como cotizacion del pipeline.
+test('planearDescubrimiento: el debtor 417 (BAZAAR SABADO) es cajon desde #459 y se propone como prospecto', async () => {
+  const { plan } = await base({ 1001: quoteGenerico({ debtor_no: '417' }) });
+  assert.equal(plan.candidatos.length, 1);
+  assert.equal(plan.candidatos[0].candidato.tipo, 'prospecto');
+});
+
 test('planearDescubrimiento: debtor socio (9/15/132) se salta', async () => {
   const { plan } = await base({ 1001: quoteReal({ debtor_no: '15' }) });
   assert.equal(plan.candidatos.length, 0);

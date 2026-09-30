@@ -76,7 +76,7 @@ import {
 import { ciudadPorCP } from './cp-ciudad.js';
 import { planAutollenadoCP, paisTieneIndiceCP } from './cp-autollenado.js';
 import {
-  camposDomicilioVacios, valoresDeDomicilio, planDomicilioAsistido,
+  camposDomicilioVacios, valoresDeDomicilio, valoresSinDomicilio, planDomicilioAsistido,
   indiceDeDomicilio, branchIdDeIndice, domicilioDeIndice, avisoAlmacenDomicilio, vistaDomicilioEntrega,
 } from './domicilio-entrega-logica.js';
 import {
@@ -3292,9 +3292,9 @@ async function pcCargarSatelitesDelCliente(clienteId, { aplicar = false, branchI
   window._operamContactosCliente = contacts;
   pcState.domicilioIdx = indiceDeDomicilio(domicilios, branchId);
   // Sin default (#459: todos los domicilios son sin entrega registrada) se aplica
-  // NINGUNO: aplicarDomicilio(null) borra lo que puso el sistema -- el CP 56577
-  // que el registro de un cliente de RFC generico trae como override fiscal
-  // incluido -- y respeta lo tecleado. Envio queda vacio.
+  // NINGUNO: aplicarDomicilio(null) deja la direccion del registro del cliente,
+  // completa, y respeta lo tecleado. Si el registro solo trae el relleno del RFC
+  // generico (sin calle, CP 56577) lo borra y Envio queda vacio.
   if (aplicar && domicilios.length >= 1) {
     aplicarDomicilio(domicilioDeIndice(domicilios, pcState.domicilioIdx));
   }
@@ -3357,12 +3357,12 @@ function olvidarDomicilioAsistido() {
 // nuevo no trae se BORRA cuando lo habia puesto este mismo selector, para que
 // cambiar de domicilio no deje la calle del nuevo con el CP del anterior.
 //
-// Sin domicilio (null, #459) no hay direccion que aplicar, tampoco la del
-// respaldo: el cliente no tiene domicilio de entrega registrado y los campos que
-// habia puesto el sistema se vacian por la misma regla de no pisar.
+// Sin domicilio (null, #459) el cliente no tiene domicilio de entrega registrado:
+// queda la direccion de su registro (valoresSinDomicilio), por la misma regla de
+// no pisar.
 function aplicarDomicilio(d) {
   const plan = planDomicilioAsistido(
-    camposDomicilioEnPantalla(), domicilioDelSelector, d ? valoresDeDomicilio(d, domicilioRespaldo) : camposDomicilioVacios(),
+    camposDomicilioEnPantalla(), domicilioDelSelector, d ? valoresDeDomicilio(d, domicilioRespaldo) : valoresSinDomicilio(domicilioRespaldo),
     // La memoria del OTRO escritor del sistema (#291): el municipio y el estado
     // que el indice del CP dejo puestos no son captura a mano, y sin decirselo
     // el selector los conservaria pegados a la calle del domicilio siguiente.
