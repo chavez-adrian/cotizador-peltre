@@ -184,6 +184,7 @@ import {
   estadoStepper,
   textoProgreso,
 } from './stepper-logica.js';
+import { identidadFranja, franjaCliente } from './franja-cliente-logica.js';
 import {
   validarDomicilioEntrega,
   contenidoTarjeta,
@@ -907,6 +908,7 @@ function aplicarBorrador(borrador) {
     state.lastCotizacionId = String(borrador.cotizacionId);
     state.folioOperam = borrador.folioOperam;
     aplicarEstadoWhatsApp();
+    pintarFranjaCliente();
     const operamStatus = document.getElementById('operam-status-cotizar');
     if (operamStatus) operamStatus.innerHTML = buildAvisoModoActualizacion(state.folioOperam);
     aplicarEtiquetasBotonesGenerar();
@@ -1146,6 +1148,24 @@ function updateTabIndicators() {
   if (texto) texto.textContent = textoProgreso(vista.actual);
   const fill = document.getElementById('stepper-progress-fill');
   if (fill) fill.style.width = `${Math.round(vista.progreso.fraccion * 100)}%`;
+  pintarFranjaCliente();
+}
+
+// Franja de a quien se cotiza (#480), visible en los 4 pasos. Pasa por aqui
+// todo lo que repinta el stepper (elegir cliente, cambiar de paso, Editar y
+// Copiar via pcRenderTarjeta) y ademas los tres puntos donde llega el folio.
+// La identidad es la MISMA que se guarda y se sube: pcState.cliente junto con
+// leerClienteFormulario, nunca un campo suelto.
+function pintarFranjaCliente() {
+  const el = document.getElementById('franja-cliente');
+  if (!el) return;
+  const vista = franjaCliente(identidadFranja(pcState.cliente, leerClienteFormulario(''), state.folioOperam));
+  el.classList.toggle('vacia', vista.vacia);
+  el.innerHTML = vista.vacia
+    ? escapeHtml(vista.texto)
+    : vista.partes.map(p => '<span class="franja-parte">' +
+      (p.etiqueta ? `<span class="franja-etiqueta">${escapeHtml(p.etiqueta)}</span> ` : '') +
+      `<span class="franja-valor">${escapeHtml(p.valor)}</span></span>`).join('');
 }
 
 // === PRODUCTS / BUSCADOR TIPO OPERAM ===
@@ -2730,6 +2750,7 @@ async function guardarYNumerarCotizacion(body, progreso) {
   // existiera.
   if (folioOperam != null && folioOperam !== '') state.folioOperam = folioOperam;
   aplicarEstadoWhatsApp();
+  pintarFranjaCliente();
   // La cotizacion ya esta guardada en el servidor: el borrador cumplio su
   // funcion y muere aqui (#179), pasa lo que pase despues con Operam. Es el
   // unico punto por el que salen las dos generaciones (PDF y HTML).
@@ -4745,6 +4766,7 @@ async function autoSubirOperam(id, slot, extraBody) {
   // el vendedor pudo haber empezado otra mientras esta subida seguia en vuelo.
   if (vista.folio != null && vista.folio !== '' && key === String(state.lastCotizacionId)) {
     state.folioOperam = vista.folio;
+    pintarFranjaCliente();
   }
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
   // #204: candidatos sin resolver = documento bajo candado. Cualquier otro
@@ -4799,6 +4821,7 @@ async function actualizarQuoteEnOperam(id, slot) {
   // boton de WhatsApp se enciende igual que tras una subida nueva.
   if (vista.folio != null && vista.folio !== '' && key === String(state.lastCotizacionId)) {
     state.folioOperam = vista.folio;
+    pintarFranjaCliente();
   }
   aplicarEstadoWhatsApp();
   if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);

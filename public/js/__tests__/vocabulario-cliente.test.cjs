@@ -33,6 +33,7 @@ const ARCHIVOS = [
   'cotizaciones-logica.js',
   'decorados-logica.js',
   'estado-cliente-logica.js',
+  'franja-cliente-logica.js',
   'importar-expo-logica.js',
   'mayoreo-logica.js',
   'pipeline-logica.js',

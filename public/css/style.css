@@ -311,6 +311,32 @@ body {
   width: 25%;
 }
 
+/* A quien se cotiza (#480): fija debajo de la barra de progreso (84px de
+   header y stepper + ~32px de la barra). */
+.franja-cliente {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  padding: 6px 14px;
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  position: sticky;
+  top: 116px;
+  z-index: 97;
+}
+.franja-cliente.vacia {
+  color: var(--text-light);
+  font-style: italic;
+}
+.franja-etiqueta {
+  font-size: 11px;
+  color: var(--text-light);
+}
+.franja-valor {
+  font-weight: 600;
+}
+
 /* === SEARCH (tipo Operam) === */
 .search-container {
   position: relative;
