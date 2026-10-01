@@ -1403,6 +1403,9 @@ body {
 .badge-operam { background: var(--primary-light); color: var(--primary-dark); }
 /* Pago sin registrar (issue #77): tarjeta entregada con cobranza pendiente (rojo). */
 .badge-impago { background: oklch(0.9 0.06 25); color: oklch(0.42 0.13 25); }
+/* Falta comprobante (#485): la prueba del pago, no el pago -- ambar como sin Contacto. */
+.badge-falta-comprobante { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); }
+.comprobante-pago-archivos { font-size: 12px; color: var(--text-light); margin-bottom: 4px; }
 /* Oportunidad sin Contacto (#342): falta la persona, no el dinero -- ambar. */
 .badge-sin-contacto { background: oklch(0.89 0.1 80); color: oklch(0.36 0.08 70); margin-left: 0; }
 /* Estados del Cliente Operam de la Oportunidad (#344, ADR-0016): rojo cuando

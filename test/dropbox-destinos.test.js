@@ -38,6 +38,7 @@ const VARS_DESTINO = [
   'DROPBOX_NS_CSF', 'DROPBOX_PATH_CSF',
   'DROPBOX_NS_CALCA', 'DROPBOX_PATH_CALCA',
   'DROPBOX_NS_BITRIX', 'DROPBOX_PATH_BITRIX',
+  'DROPBOX_NS_PAGO', 'DROPBOX_PATH_PAGO',
   'BITRIX_EXPORT_DROPBOX_PATH',
 ];
 
@@ -249,11 +250,56 @@ test('bitrix sin variables nuevas sigue respetando BITRIX_EXPORT_DROPBOX_PATH, c
   assert.equal(argDe(subidas[0]).path, '/OTRO DESTINO/BITRIX/2026-08-16/leads.json');
 });
 
+// --- Flujo del Comprobante de pago (#485). Nace con namespace: no tiene ruta
+// heredada que conservar, asi que su respaldo sin configurar es una carpeta
+// que se ve sandbox y NO copia el arbol de la empresa (la replica fantasma de
+// #354 nacio justo de rutas que imitaban ese arbol).
+
+const PAGO_SANDBOX = '/cotizador-sandbox/comprobantes-de-pago';
+
+test('pago configurado contra la raiz de su namespace: header y ruta relativa a la raiz', async () => {
+  process.env.DROPBOX_NS_PAGO = '1111111111';
+  process.env.DROPBOX_PATH_PAGO = '/';
+  mockDropbox();
+  await upload({ flujo: 'pago', archivo: 'Cotizacion 1234 - Primer pago.pdf' }, 'pdf', 'add');
+  assert.equal(subidas.length, 1);
+  assert.equal(subidas[0].headers['Dropbox-API-Path-Root'], '{".tag":"namespace_id","namespace_id":"1111111111"}');
+  assert.equal(argDe(subidas[0]).path, '/Cotizacion 1234 - Primer pago.pdf');
+});
+
+test('pago sin sus dos variables cae al sandbox con aviso, sin header y fuera del arbol de la empresa', async () => {
+  process.env.DROPBOX_NS_PAGO = '1111111111';
+  mockDropbox();
+  const { avisos, restaurar } = capturarAvisos();
+  try {
+    await upload({ flujo: 'pago', archivo: 'Cotizacion 1234 - Primer pago.pdf' }, 'pdf', 'add');
+  } finally { restaurar(); }
+  assert.equal(subidas[0].headers['Dropbox-API-Path-Root'], undefined);
+  const ruta = argDe(subidas[0]).path;
+  assert.equal(ruta, `${PAGO_SANDBOX}/Cotizacion 1234 - Primer pago.pdf`);
+  assert.doesNotMatch(ruta, /ADMINISTRACI|CONTABILIDAD|PELTRE NACIONAL/i);
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /pago/);
+  assert.match(avisos[0], /DROPBOX_NS_PAGO/);
+  assert.match(avisos[0], /sandbox/);
+});
+
+test('pago configurado y Dropbox responde error: rechaza y no reintenta contra el sandbox', async () => {
+  process.env.DROPBOX_NS_PAGO = '1111111111';
+  process.env.DROPBOX_PATH_PAGO = '/';
+  mockDropbox({ status: 409, cuerpo: { error_summary: 'path/no_write_permission/' } });
+  await assert.rejects(
+    () => upload({ flujo: 'pago', archivo: 'Cotizacion 1234 - Primer pago.pdf' }, 'pdf', 'add'),
+    /Dropbox 409/
+  );
+  assert.equal(subidas.length, 1);
+});
+
 // AC "ninguna ruta absoluta de destino queda incrustada en el codigo": las
 // rutas heredadas viven SOLO en lib/dropbox-destinos.js, que es quien las
 // declara como respaldo por ausencia de configuracion.
 test('ningun flujo lleva su ruta de destino incrustada', () => {
-  const fragmentos = ['PELTRE NACIONAL/3.0', 'OT Decorado', 'BACKUP BITRIX24', 'CONSTANCIA SITUACION FISCAL CLIENTES'];
+  const fragmentos = ['PELTRE NACIONAL/3.0', 'OT Decorado', 'BACKUP BITRIX24', 'CONSTANCIA SITUACION FISCAL CLIENTES', 'cotizador-sandbox'];
   for (const archivo of ['server.js', 'lib/dropbox.js', 'scripts/export-bitrix.mjs']) {
     const fuente = readFileSync(join(__dirname, '..', archivo), 'utf8');
     for (const fragmento of fragmentos) {

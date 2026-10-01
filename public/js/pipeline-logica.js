@@ -16,6 +16,7 @@ import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nom
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
 import { puedeCancelar } from './cancelada-logica.js';
+import { faltaComprobante, comprobanteDe, puedeSubirComprobante, ACCEPT_COMPROBANTE } from './comprobante-pago-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -856,6 +857,37 @@ export function badgePagoSinRegistrarHtml(o) {
   return '<span class="cot-badge badge-impago">Pago sin registrar</span>';
 }
 
+// Badge "Falta comprobante" (#485, CONTEXT.md "Comprobante de pago"): la tarjeta
+// ya paso de Seguimiento sin el comprobante del primer pago. Aviso, no candado:
+// la etapa la sigue moviendo Operam. Convive con "Pago sin registrar" (#77).
+export function badgeFaltaComprobanteHtml(o) {
+  if (!faltaComprobante(o)) return '';
+  return '<span class="cot-badge badge-falta-comprobante">Falta comprobante</span>';
+}
+
+function diaDelComprobante(fecha) {
+  const d = fechaLocal(fecha);
+  if (isNaN(d)) return '';
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+// El comprobante del primer pago en la tarjeta (#485): sus archivos y su fecha,
+// y el selector para subirlo desde Seguimiento o despues (corregir un faltante).
+// Solo COTIZACIONES, con el id numerico (refId), leccion del bug de #57.
+export function buildComprobantePagoHtml(o) {
+  if (!o || o.tipo !== 'cotizacion' || !puedeSubirComprobante(o)) return '';
+  const id = o.refId ?? o.id;
+  const c = comprobanteDe(o, 'primer');
+  const archivos = c
+    ? `<div class="comprobante-pago-archivos">Comprobante del primer pago (${escapeHtml(diaDelComprobante(c.fecha))}): ${c.archivos.map(a => escapeHtml(a.nombre)).join(', ')}</div>`
+    : '';
+  return `<div class="cot-card-actions comprobante-pago-control">
+    ${archivos}
+    <input type="file" id="comprobante-pago-${id}" class="btn-sm" accept="${ACCEPT_COMPROBANTE}" multiple>
+    <button class="btn btn-sm btn-secondary" onclick="subirComprobantePago(${id})">${c ? 'Agregar al comprobante' : 'Subir comprobante de pago'}</button>
+  </div>`;
+}
+
 // Los dos estados del Cliente Operam de la Oportunidad, en la tarjeta (#344,
 // spec #337 user stories 8-10). Los manda el servidor ya derivados de Operam:
 // aqui NO se recalcula nada -- el RFC de la cotizacion puede ser el de antes de
@@ -1131,13 +1163,14 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
   const mover = buildMoverSeguimientoControlHtml(o);
   const salida = buildSalidaControlHtml(o, { esAdmin });
   const decorado = buildDecoradoControlHtml(o);
+  const comprobante = buildComprobantePagoHtml(o);
   const sinContacto = buildSinContactoControlHtml(o);
   const nuevaOportunidad = buildNuevaOportunidadControlHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}${badgeClienteOperamHtml(o)}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}${badgeFaltaComprobanteHtml(o)}${badgeClienteOperamHtml(o)}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
           <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
         </div>
@@ -1148,6 +1181,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
       ${asignar}
       ${mover}
       ${decorado}
+      ${comprobante}
       ${nuevaOportunidad}
       ${salida}
     </div>

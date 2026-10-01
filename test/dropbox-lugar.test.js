@@ -8,9 +8,9 @@ import { estadoDeFlujos, lugarDeSubida } from '../lib/dropbox-destinos.js';
 
 const CSF_SANDBOX = '/PELTRE NACIONAL/3.0 ADMINISTRACI\u00d3N/CONTABILIDAD/PNA170810CF1/CONSTANCIA SITUACION FISCAL CLIENTES';
 
-test('estadoDeFlujos devuelve los tres flujos, configurados o no, con su base', () => {
+test('estadoDeFlujos devuelve los cuatro flujos, configurados o no, con su base', () => {
   const flujos = estadoDeFlujos({ DROPBOX_NS_CSF: '123', DROPBOX_PATH_CSF: '/CSF/' });
-  assert.deepEqual(flujos.map(f => f.flujo), ['csf', 'calca', 'bitrix']);
+  assert.deepEqual(flujos.map(f => f.flujo), ['csf', 'calca', 'bitrix', 'pago']);
   assert.deepEqual(flujos[0], { flujo: 'csf', configurado: true, namespace: '123', base: '/CSF' });
   assert.equal(flujos[1].configurado, false);
   assert.equal(flujos[1].namespace, null);

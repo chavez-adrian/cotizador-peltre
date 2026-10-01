@@ -127,6 +127,8 @@ import { bloqueoMonedaCliente } from './moneda-cliente-logica.js';
 // Motivo de Perdida (#483): el MISMO catalogo y la MISMA validacion del servidor.
 import { MOTIVOS_PERDIDA, errorMotivoPerdida, notaLimpia } from './perdida-logica.js';
 import { errorMotivoCancelada } from './cancelada-logica.js';
+// Comprobante de pago (#485): la MISMA validacion de archivos que la ruta.
+import { errorArchivosComprobante } from './comprobante-pago-logica.js';
 import {
   puedeArrastrarCotizacion, avisoArrastreCotizacion,
   buildTableroCotizacionesHtml,
@@ -154,6 +156,7 @@ import {
   badgeFolioOperamProspectoHtml,
   cadenaOperamHtml,
   badgePagoSinRegistrarHtml,
+  badgeFaltaComprobanteHtml,
   botonCompletarHtml,
   interpretarSubidaOperam,
   buildOperamStatusHtml,
@@ -6441,7 +6444,7 @@ function renderPipeline() {
     const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
     const cadena = cadenaOperamHtml(o.espejoOperam);
     return `<div class="cot-card"><div class="cot-card-header"><div>
-      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgePagoSinRegistrarHtml(o)}</div>
+      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgePagoSinRegistrarHtml(o)}${badgeFaltaComprobanteHtml(o)}</div>
       <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
       <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
       ${cadena}
@@ -6699,6 +6702,30 @@ async function subirCalcaArchivos(id) {
   } catch (e) { avisoTablero('Error de conexion'); }
 }
 window.subirCalcaArchivos = subirCalcaArchivos;
+
+// Comprobante de pago del primer pago (#485). A diferencia de la calca, la
+// subida SE ESPERA: el servidor responde lo que Dropbox confirmo y solo eso
+// queda en la tarjeta. El navegador valida antes con la MISMA regla que la ruta.
+async function subirComprobantePago(id) {
+  const input = document.getElementById(`comprobante-pago-${id}`);
+  const files = input && input.files ? Array.from(input.files) : [];
+  const invalido = errorArchivosComprobante(files.map(f => ({ nombre: f.name, tamano: f.size })));
+  if (invalido) { alert(invalido); return; }
+  const form = new FormData();
+  for (const f of files) form.append('archivos', f, f.name);
+  try {
+    const res = await api(`/api/cotizacion/${id}/comprobante-pago/primer`, { method: 'POST', body: form });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(body.error || 'No se pudo subir el comprobante de pago: vuelve a intentarlo.');
+      if (body.comprobante) recargarPipeline();
+      return;
+    }
+    avisoTablero(body.mensaje || 'Comprobante de pago subido');
+    recargarPipeline();
+  } catch (e) { avisoTablero('Error de conexion'); }
+}
+window.subirComprobantePago = subirComprobantePago;
 
 function setModoPipeline(modo) {
   pipelineModo = modo;

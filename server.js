@@ -77,6 +77,7 @@ import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHab
 import { validarOperamIds } from './public/js/vendedores-logica.js';
 import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO, errorMotivoPerdida, notaLimpia, camposMotivoPerdida } from './public/js/perdida-logica.js';
 import { errorMotivoCancelada, camposMotivoCancelada, MENSAJE_CANCELADA_SOLO_ADMIN, MENSAJE_CANCELADA_SIN_PEDIDO, MENSAJE_CANCELADA_NO_CAMBIA, esCancelada } from './public/js/cancelada-logica.js';
+import { PAGOS_COMPROBANTE, LIMITE_BYTES_COMPROBANTE, MAX_ARCHIVOS_COMPROBANTE, errorArchivosComprobante, mensajeArchivoGrande, MENSAJE_DEMASIADOS_ARCHIVOS, nombreArchivoComprobante, comprobanteConArchivos, mensajeSubidaIncompleta, mensajeSubidaCompleta, puedeSubirComprobante, MENSAJE_COMPROBANTE_FUERA_DE_ETAPA } from './public/js/comprobante-pago-logica.js';
 import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
 import { destinoEnvia, carriersParaPais, sugerenciaSinCalle } from './lib/envia-destino-logica.js';
 import { condicionesComerciales, validarCondiciones } from './public/js/condiciones-logica.js';
@@ -100,7 +101,7 @@ import { credencialesConfiguradas as googleConfigurado } from './lib/google-cont
 import { registrarBarrido as registrarBarridoContactos } from './lib/contactos-observabilidad-io.js';
 import { listarTodos as listarBarridosContactos } from './lib/contactos-observabilidad-store.js';
 import { listarRecientes as listarSubidasDropbox } from './lib/dropbox-subidas-store.js';
-import { estadoDeFlujos as estadoFlujosDropbox, lugarDeSubida as lugarSubidaDropbox } from './lib/dropbox-destinos.js';
+import { estadoDeFlujos as estadoFlujosDropbox, lugarDeSubida as lugarSubidaDropbox, destinoDeFlujo } from './lib/dropbox-destinos.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -1163,6 +1164,78 @@ function subirCalcaDropbox(entry, archivos) {
     }
   }).catch(err => console.error('[dropbox][calca]', err.message));
 }
+
+// --- Comprobante de pago (#485, CONTEXT.md "Comprobante de pago") ---
+// A diferencia de la posicion de calca, la subida SE ESPERA: el comprobante
+// cuenta como subido solo con lo que Dropbox confirmo, y solo eso se guarda. El
+// destino es el flujo `pago` (lib/dropbox-destinos.js); `upload` deja cada
+// intento en el registro de /admin. Es aviso, no candado: nada de esto toca la
+// etapa ni el sync post-venta.
+const subidaComprobante = multer({
+  storage: multer.memoryStorage(),
+  // El navegador manda el nombre del archivo en UTF-8; el default de multer
+  // (latin1) le rompia los acentos al nombre que se guarda.
+  defParamCharset: 'utf8',
+  limits: { fileSize: LIMITE_BYTES_COMPROBANTE, files: MAX_ARCHIVOS_COMPROBANTE },
+}).array('archivos');
+
+function recibirArchivosComprobante(req, res) {
+  return new Promise(resolve => subidaComprobante(req, res, err => resolve(err || null)));
+}
+
+function errorMulterComprobante(err) {
+  if (err.code === 'LIMIT_FILE_SIZE') return mensajeArchivoGrande();
+  if (err.code === 'LIMIT_FILE_COUNT') return MENSAJE_DEMASIADOS_ARCHIVOS;
+  return 'No se pudieron leer los archivos del comprobante: vuelve a elegirlos.';
+}
+
+// Sube los archivos de UN comprobante y devuelve { confirmados, fallidos }. La
+// pieza que reutiliza el comprobante del saldo: el pago solo cambia el nombre.
+async function subirArchivosComprobante(entry, pago, archivos) {
+  const { upload } = await import('./lib/dropbox.js');
+  const confirmados = [];
+  const fallidos = [];
+  for (const [indice, a] of archivos.entries()) {
+    const archivo = nombreArchivoComprobante({
+      folio: entry.folioOperam, id: entry.id, cliente: entry.cliente, pago,
+      indice, total: archivos.length, nombreOriginal: a.originalname,
+    });
+    try {
+      const data = await upload({ flujo: 'pago', archivo }, a.buffer, 'add');
+      confirmados.push({ nombre: a.originalname, ruta: data?.path_display || archivo });
+    } catch (err) {
+      console.error('[dropbox][pago]', err.message);
+      fallidos.push({ nombre: a.originalname, error: err.message });
+    }
+  }
+  return { confirmados, fallidos };
+}
+
+app.post('/api/cotizacion/:id/comprobante-pago/:pago', authMiddleware, async (req, res) => {
+  const pago = req.params.pago;
+  if (!PAGOS_COMPROBANTE[pago]) return res.status(404).json({ error: 'Pago sin comprobante' });
+  const entry = await cotizacionOperable(req, res);
+  if (!entry) return;
+  if (!puedeSubirComprobante(entry)) return res.status(409).json({ error: MENSAJE_COMPROBANTE_FUERA_DE_ETAPA });
+  const errMulter = await recibirArchivosComprobante(req, res);
+  if (errMulter) return res.status(400).json({ error: errorMulterComprobante(errMulter) });
+  const archivos = req.files || [];
+  const invalido = errorArchivosComprobante(archivos.map(f => ({ nombre: f.originalname, tamano: f.size })));
+  if (invalido) return res.status(400).json({ error: invalido });
+  const { confirmados, fallidos } = await subirArchivosComprobante(entry, pago, archivos);
+  // Se relee: la subida tarda y el registro pudo cambiar mientras tanto.
+  const previos = (await cotStore.obtener(entry.id))?.data?.comprobantesPago || {};
+  let comprobante = previos[pago] || null;
+  if (confirmados.length) {
+    comprobante = comprobanteConArchivos(comprobante, confirmados, new Date().toISOString());
+    await cotStore.actualizarDatos(entry.id, { comprobantesPago: { ...previos, [pago]: comprobante } });
+  }
+  if (!fallidos.length) {
+    const sandbox = !destinoDeFlujo('pago').configurado;
+    return res.json({ ok: true, comprobante, mensaje: mensajeSubidaCompleta(confirmados.length, { sandbox }) });
+  }
+  res.status(502).json({ ok: false, comprobante, confirmados, fallidos, error: mensajeSubidaIncompleta(confirmados, fallidos) });
+});
 
 // Gate a Pedido liberado (issue #61, AC3). Punto de enforcement MINIMO: una
 // cotizacion decorada con el checklist incompleto NO avanza (409); no decorada o
@@ -2518,9 +2591,10 @@ app.get('/api/admin/sync-contactos-google', authMiddleware, adminMiddleware, asy
   res.json({ barridos, sinDb: !process.env.DATABASE_URL });
 });
 
-// Intentos de subida a Dropbox (issue #356, hijo de #354): las tres subidas del
-// repo son fire-and-forget y su fallo solo llegaba a console.error. Esta es la
-// superficie donde se ve, con la mas reciente primero. El store se traga sus
+// Intentos de subida a Dropbox (issue #356, hijo de #354): la constancia, la calca
+// y el backup de Bitrix son fire-and-forget y su fallo solo llegaba a
+// console.error; el comprobante de pago (#485) si espera la confirmacion y la
+// responde. Esta es la superficie donde se ve, con la mas reciente primero. El store se traga sus
 // propios fallos y devuelve lista vacia, asi que aqui no hay sinDb que reportar:
 // sin DATABASE_URL el registro cae al JSON de disco y se muestra igual.
 // #399: cada fila sale con su `lugar` (Dropbox real o sandbox de la app) y,

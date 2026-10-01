@@ -435,9 +435,10 @@
     <div class="admin-section">
       <h2>Subidas a Dropbox</h2>
       <p style="font-size:12px;color:var(--text-light);margin-bottom:12px">
-        Cada intento de subida a Dropbox -- constancia fiscal, posicion de calca y backup del export de Bitrix24 --
-        con su destino y su resultado. Las subidas son fire-and-forget: un fallo no rompe nada y por eso, sin esta
-        vista, no se nota. Los renglones marcados son los que fallaron. "Subido" no basta: la columna Lugar dice si la
+        Cada intento de subida a Dropbox -- constancia fiscal, posicion de calca, backup del export de Bitrix24 y
+        comprobante de pago -- con su destino y su resultado. Las tres primeras son fire-and-forget: un fallo no rompe
+        nada y por eso, sin esta vista, no se nota. El comprobante de pago si espera a Dropbox y el vendedor ve el
+        resultado al subirlo. Los renglones marcados son los que fallaron. "Subido" no basta: la columna Lugar dice si la
         peticion viajo contra el Dropbox real (un namespace) o contra el sandbox de la app; en un renglon fallido es
         a donde iba, no a donde llego.
       </p>
@@ -1410,6 +1411,7 @@ const DROPBOX_FLUJO_NOMBRES = {
   csf: 'Constancia de situacion fiscal',
   calca: 'Posicion de calca',
   bitrix: 'Backup del export de Bitrix24',
+  pago: 'Comprobante de pago',
   desconocido: 'Sin declarar',
 };
 

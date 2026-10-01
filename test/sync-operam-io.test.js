@@ -435,6 +435,24 @@ test('reconciliarOportunidad: idempotente -- si la etapa ya es la calculada, no 
   assert.equal(deps.movimientos.length, 0);
 });
 
+// #485: el Comprobante de pago es aviso, no candado. Sin el comprobante del
+// primer pago el sync mueve la tarjeta con lo que registra Operam, igual que con
+// el; lo que falte lo dice el badge "Falta comprobante", no la etapa.
+test('reconciliarOportunidad: sin comprobante de pago el sync avanza igual (#485, aviso y no candado)', async () => {
+  const transacciones = [
+    { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
+  ];
+  const sinComprobante = depsMock({ transacciones, pedidos: [] });
+  const res = await reconciliarOportunidad({ id: 13, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } }, sinComprobante);
+  assert.equal(res.etapa, 'anticipo_pagado');
+  assert.deepEqual(sinComprobante.movimientos.map(m => m.etapa), ['anticipo_pagado']);
+
+  const conComprobante = depsMock({ transacciones, pedidos: [] });
+  const comprobantesPago = { primer: { fecha: '2026-09-30T12:00:00.000Z', archivos: [{ nombre: 'a.pdf', ruta: '/a.pdf', fecha: '2026-09-30T12:00:00.000Z' }] } };
+  const res2 = await reconciliarOportunidad({ id: 14, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, comprobantesPago } }, conComprobante);
+  assert.equal(res2.etapa, 'anticipo_pagado');
+});
+
 test('reconciliarOportunidad: respeta el gate de decorados (#61) -- no libera con checklist incompleto', async () => {
   // Operam dice pedido + anticipo parcial; pero la oportunidad es decorada con
   // checklist vacio: el gate la topa en anticipo_pagado (no pedido_liberado).
