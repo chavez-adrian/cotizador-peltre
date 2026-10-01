@@ -269,7 +269,7 @@ El sync corre por dos vías sobre el mismo motor de reconciliación (`lib/sync-o
 
 ## Perdida
 
-Salida de una Oportunidad que no llegó a pedido: el Contacto no compró. Solo existe mientras la oportunidad no tiene pedido en Operam: una tarjeta en etapa post-venta, o cuyo pedido ya existe aunque el candado de calca la retenga en Seguimiento, ya se cerró y no se puede perder (decisión 2026-09-28, a sugerencia de Alejandro). Lleva siempre un **Motivo de Perdida** de un catálogo corto (el precio, el momento, la competencia, el tiempo de producción, la falta de respuesta, u otro con nota) para poder medir por qué se pierde. No se confunde con No útil, que descalifica a un prospecto antes de cotizar y tiene su propio catálogo aunque compartan alguna palabra ("sin respuesta").
+Salida de una Oportunidad que no llegó a pedido: el Contacto no compró. Solo existe mientras la oportunidad no tiene pedido en Operam: una tarjeta en etapa post-venta, o cuyo pedido ya existe aunque el candado de calca la retenga en Seguimiento, ya se cerró y no se puede perder (decisión 2026-09-28, a sugerencia de Alejandro). Lleva siempre un **Motivo de Perdida** de un catálogo corto (precio, proyecto pospuesto, competencia, tiempo de producción, sin respuesta, no cumple los requerimientos, u otro con nota) para poder medir por qué se pierde. "No cumple los requerimientos" es que lo cotizado no resolvía lo que el Contacto necesitaba, no una descalificación del prospecto. No se confunde con No útil, que descalifica a un prospecto antes de cotizar y tiene su propio catálogo aunque compartan alguna palabra ("sin respuesta").
 _Evitar_: Perdida para una venta que ya tiene pedido (ésa es Cancelada).
 
 ## Cancelada
