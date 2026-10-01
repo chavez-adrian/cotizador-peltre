@@ -1216,8 +1216,8 @@ app.post('/api/cotizacion/:id/comprobante-pago/:pago', authMiddleware, async (re
   if (!PAGOS_COMPROBANTE[pago]) return res.status(404).json({ error: 'Pago sin comprobante' });
   const entry = await cotizacionOperable(req, res);
   if (!entry) return;
-  const fueraDeEtapa = motivoSinComprobante(entry, pago);
-  if (fueraDeEtapa) return res.status(409).json({ error: fueraDeEtapa });
+  const motivo = motivoSinComprobante(entry, pago);
+  if (motivo) return res.status(409).json({ error: motivo });
   const errMulter = await recibirArchivosComprobante(req, res);
   if (errMulter) return res.status(400).json({ error: errorMulterComprobante(errMulter) });
   const archivos = req.files || [];

@@ -461,13 +461,13 @@ test('reconciliarOportunidad: anota huboAnticipo al ver un pago parcial y el pag
   const parcial = depsMock({ transacciones: [
     { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
   ] });
-  await reconciliarOportunidad({ id: 15, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } }, parcial);
+  await reconciliarOportunidad({ id: 15, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } }, parcial);
   assert.equal(parcial.datos.find(d => d.id === 15).campos.huboAnticipo, true);
 
   const liquida = depsMock({ transacciones: [
     { type: '10', order_: '7400', total_amount: '2000', allocated: '2000', outstanding: '0', debtor_no: '345' },
   ] });
-  await reconciliarOportunidad({ id: 15, etapa: 'anticipo_pagado', data: { cliente: { rfc: 'ABC010101AAA' }, huboAnticipo: true } }, liquida);
+  await reconciliarOportunidad({ id: 15, etapa: 'anticipo_pagado', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400', huboAnticipo: true } }, liquida);
   for (const d of liquida.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
 });
 
@@ -475,7 +475,19 @@ test('reconciliarOportunidad: pago unico (directo a liquidado) no anota huboAnti
   const deps = depsMock({ transacciones: [
     { type: '10', order_: '7400', total_amount: '2000', allocated: '2000', outstanding: '0', debtor_no: '345' },
   ] });
-  await reconciliarOportunidad({ id: 16, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } }, deps);
+  await reconciliarOportunidad({ id: 16, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } }, deps);
+  for (const d of deps.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
+});
+
+// #486: sin binding preciso el sync suma las facturas de TODO el cliente; una
+// venta vieja pagada y otra nueva sin pagar se leen como pago parcial. La marca
+// no se borra nunca, asi que de ese agregado no se anota.
+test('reconciliarOportunidad: el agregado por cliente (sin liga a su pedido) no anota huboAnticipo (#486)', async () => {
+  const deps = depsMock({ transacciones: [
+    { type: '10', order_: '7100', total_amount: '1000', allocated: '1000', outstanding: '0', debtor_no: '345' },
+    { type: '10', order_: '7400', total_amount: '2000', allocated: '0', outstanding: '2000', debtor_no: '345' },
+  ] });
+  await reconciliarOportunidad({ id: 17, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } }, deps);
   for (const d of deps.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
 });
 
