@@ -2054,16 +2054,17 @@ test('#484: la ventana del motivo sin catalogo pide el motivo como texto libre, 
 });
 
 // === #502: Editar desde el Pipeline ===
-// Toda tarjeta de cotizacion (tablero Y lista) pinta UN boton Editar con el gate
-// del Historial (puedeActualizarCotizacion). El onclick lleva el id REAL
-// (refId), nunca el `c<id>` prefijado de la tarjeta. Los motivos son los del
-// gate, escritos aqui tal cual los dice el issue.
-const MOTIVO_SIN_FOLIO = 'La cotizaci\u00f3n todav\u00eda no est\u00e1 registrada en Operam: primero completa la subida';
-const MOTIVO_CON_PEDIDO = 'La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n';
+// La tarjeta de cotizacion (tablero Y lista) pinta UN boton Editar con el gate
+// del Historial (puedeActualizarCotizacion), solo en Seguimiento y Anticipo
+// pagado y nunca con pedido: ahi ya no se puede editar y el boton se OCULTA
+// (decision de Adrian 2026-10-01). El onclick lleva el id REAL (refId), nunca
+// el `c<id>` prefijado de la tarjeta.
+const MOTIVO_SIN_FOLIO = 'La cotización todavía no está registrada en Operam: primero completa la subida';
+const ETAPAS_CON_EDITAR = ['seguimiento', 'anticipo_pagado'];
 
 const CASOS_EDITAR_502 = {
   editable: { id: 'c41', refId: 41, hasData: true, folioOperam: '1300', orderOperam: null },
-  conPedido: { id: 'c41', refId: 41, hasData: true, folioOperam: '1300', orderOperam: '7077', etapa: 'anticipo_pagado' },
+  conPedido: { id: 'c41', refId: 41, hasData: true, folioOperam: '1300', orderOperam: '7077' },
   sinFolio: { id: 'c41', refId: 41, hasData: true, folioOperam: null, orderOperam: null },
   sinDetalle: { id: 'c41', refId: 41, hasData: false, folioOperam: '900', orderOperam: null },
 };
@@ -2074,6 +2075,11 @@ function botonEditar(html) {
   return m[0];
 }
 
+function sinEditar(html, msg) {
+  assert.equal(/>Editar<\/button>/.test(html), false, msg);
+  assert.equal(html.includes('cargarCotizacion('), false, msg);
+}
+
 async function superficies502() {
   const { buildFilaListaPipelineHtml } = await import('../pipeline-logica.js');
   return {
@@ -2082,24 +2088,42 @@ async function superficies502() {
   };
 }
 
-test('#502: la tarjeta de una cotizacion editable ofrece Editar habilitado con el id real', async () => {
+test('#502: en Seguimiento y Anticipo pagado la cotizacion editable ofrece Editar habilitado con el id real', async () => {
   for (const [nombre, pinta] of Object.entries(await superficies502())) {
-    const boton = botonEditar(pinta(cotizacion(CASOS_EDITAR_502.editable)));
-    assert.ok(boton.includes(`onclick="cargarCotizacion(41, 'actualizar')"`), nombre);
-    assert.ok(boton.includes('btn-primary'), nombre);
-    assert.equal(boton.includes('disabled'), false, nombre);
+    for (const etapa of ETAPAS_CON_EDITAR) {
+      const boton = botonEditar(pinta(cotizacion({ ...CASOS_EDITAR_502.editable, etapa })));
+      assert.ok(boton.includes(`onclick="cargarCotizacion(41, 'actualizar')"`), `${nombre} ${etapa}`);
+      assert.ok(boton.includes('btn-primary'), `${nombre} ${etapa}`);
+      assert.equal(boton.includes('disabled'), false, `${nombre} ${etapa}`);
+    }
   }
 });
 
-test('#502: con pedido o sin folio Editar sale apagado, sin onclick y con el motivo del gate', async () => {
+test('#502: con pedido asociado el boton Editar no se pinta', async () => {
   for (const [nombre, pinta] of Object.entries(await superficies502())) {
-    for (const [caso, motivo] of [['conPedido', MOTIVO_CON_PEDIDO], ['sinFolio', MOTIVO_SIN_FOLIO]]) {
-      const html = pinta(cotizacion(CASOS_EDITAR_502[caso]));
-      const boton = botonEditar(html);
-      assert.ok(boton.includes('disabled'), `${nombre} ${caso}`);
-      assert.ok(boton.includes(`title="${motivo}"`), `${nombre} ${caso}`);
-      assert.equal(html.includes('cargarCotizacion('), false, `${nombre} ${caso}`);
+    for (const etapa of ETAPAS_CON_EDITAR) {
+      sinEditar(pinta(cotizacion({ ...CASOS_EDITAR_502.conPedido, etapa })), `${nombre} ${etapa}`);
     }
+  }
+});
+
+test('#502: fuera de Seguimiento y Anticipo pagado el boton Editar no se pinta', async () => {
+  const otras = COLUMNAS_PIPELINE.filter(e => !ETAPAS_CON_EDITAR.includes(e));
+  assert.deepEqual(otras, ['no_asignado', 'por_cotizar', 'pedido_liberado', 'saldo_pagado', 'producto_entregado']);
+  for (const [nombre, pinta] of Object.entries(await superficies502())) {
+    for (const etapa of otras) {
+      sinEditar(pinta(cotizacion({ ...CASOS_EDITAR_502.editable, etapa })), `${nombre} ${etapa}`);
+    }
+  }
+});
+
+test('#502: sin folio Editar sale apagado, sin onclick y con el motivo del gate', async () => {
+  for (const [nombre, pinta] of Object.entries(await superficies502())) {
+    const html = pinta(cotizacion(CASOS_EDITAR_502.sinFolio));
+    const boton = botonEditar(html);
+    assert.ok(boton.includes('disabled'), nombre);
+    assert.ok(boton.includes(`title="${MOTIVO_SIN_FOLIO}"`), nombre);
+    assert.equal(html.includes('cargarCotizacion('), false, nombre);
   }
 });
 
@@ -2115,9 +2139,7 @@ test('#502: sin detalle guardado Editar sale apagado con "Datos no disponibles"'
 
 test('#502: la tarjeta de prospecto no ofrece Editar', async () => {
   for (const [nombre, pinta] of Object.entries(await superficies502())) {
-    const html = pinta(prospecto({ id: 'p1', refId: 1, etapa: 'seguimiento', folioOperam: '1300', hasData: true }));
-    assert.equal(html.includes('cargarCotizacion('), false, nombre);
-    assert.equal(/>Editar<\/button>/.test(html), false, nombre);
+    sinEditar(pinta(prospecto({ id: 'p1', refId: 1, etapa: 'seguimiento', folioOperam: '1300', hasData: true })), nombre);
   }
 });
 
@@ -2131,14 +2153,6 @@ test('#502: ninguna tarjeta del Pipeline ofrece Copiar cotizacion', async () => 
     const fila = buildFilaListaPipelineHtml(o);
     assert.equal(fila.includes('Copiar cotizaci'), false);
     assert.equal(fila.includes("'nueva')"), false);
-  }
-});
-
-test('#502: Editar sale en las 7 etapas del tablero', () => {
-  const ops = COLUMNAS_PIPELINE.map((etapa, i) => cotizacion({ ...CASOS_EDITAR_502.editable, id: `c${50 + i}`, refId: 50 + i, etapa }));
-  const html = buildTableroPipelineHtml(ops);
-  for (let i = 0; i < COLUMNAS_PIPELINE.length; i++) {
-    assert.ok(html.includes(`cargarCotizacion(${50 + i}, 'actualizar')`), COLUMNAS_PIPELINE[i]);
   }
 });
 

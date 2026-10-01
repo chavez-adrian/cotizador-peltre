@@ -17,13 +17,20 @@ import { escapeHtml } from './prospectos-logica.js';
 //     Operam mismo deshabilita su edicion, y el gate del cotizador es consistente.
 // Lo usa la UI para decidir que boton habilitar y server.js como autoridad real
 // antes de tocar Operam: una sola definicion, sin que la UI sea la que "permite".
+// El quote ya se convirtio en pedido (data.orderOperam, sync #62): la condicion
+// del gate que el Pipeline usa ademas para OCULTAR Editar (#502).
+export function tienePedidoAsociado(cot) {
+  const order = cot?.orderOperam;
+  return order != null && order !== '';
+}
+
 export function puedeActualizarCotizacion(cot) {
   const c = cot || {};
   if (!c.hasData) return { puede: false, motivo: 'Esta cotizaci\u00f3n no guarda su detalle: no hay nada que actualizar' };
   if (c.folioOperam == null || c.folioOperam === '') {
     return { puede: false, motivo: 'La cotizaci\u00f3n todav\u00eda no est\u00e1 registrada en Operam: primero completa la subida' };
   }
-  if (c.orderOperam != null && c.orderOperam !== '') {
+  if (tienePedidoAsociado(c)) {
     return { puede: false, motivo: 'La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n' };
   }
   return { puede: true };

@@ -17,7 +17,7 @@ import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
 import { puedeCancelar } from './cancelada-logica.js';
 import { faltaComprobante, comprobanteDe, puedeSubirComprobante, ACCEPT_COMPROBANTE } from './comprobante-pago-logica.js';
-import { buildBotonEditarHtml } from './editar-cotizacion-logica.js';
+import { buildBotonEditarHtml, tienePedidoAsociado } from './editar-cotizacion-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -1169,12 +1169,16 @@ export function buildNuevaOportunidadControlHtml(o) {
   </div>`;
 }
 
-// Editar desde el Pipeline (#502): toda tarjeta de cotizacion, en el tablero y
-// en la lista, lleva el Editar del Historial con su mismo gate -- solo Editar,
-// sin Copiar (decision de Adrian). El id del onclick es el REAL (refId), no el
-// `c<id>` de la tarjeta. Un prospecto no tiene cotizacion que cargar.
+// Editar desde el Pipeline (#502): la tarjeta de cotizacion, en el tablero y en
+// la lista, lleva el Editar del Historial con su mismo gate -- solo Editar, sin
+// Copiar -- y SOLO en Seguimiento y Anticipo pagado; con pedido ya no se puede
+// editar y el boton se oculta en vez de apagarse (decisiones de Adrian
+// 2026-10-01). El id del onclick es el REAL (refId), no el `c<id>` de la
+// tarjeta. Un prospecto no tiene cotizacion que cargar.
+const ETAPAS_CON_EDITAR = new Set(['seguimiento', 'anticipo_pagado']);
+
 export function buildEditarOportunidadHtml(o) {
-  if (o?.tipo !== 'cotizacion') return '';
+  if (o?.tipo !== 'cotizacion' || !ETAPAS_CON_EDITAR.has(o.etapa) || tienePedidoAsociado(o)) return '';
   const boton = buildBotonEditarHtml({ id: o.refId, hasData: o.hasData, folioOperam: o.folioOperam, orderOperam: o.orderOperam });
   return `<div class="cot-card-actions tablero-editar">${boton}</div>`;
 }
