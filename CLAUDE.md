@@ -175,4 +175,4 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 
 Render.com (plan Starter: no duerme, UNA instancia). Auto-deploy desde `main`. Config en `render.yaml`; las env vars viven en el dashboard de Render, no en el yaml.
 
-> Varias piezas asumen **un solo proceso Node**: el lock `subidasOperamEnCurso`, la cola de post-fixes de vigencia (la serializacion de la sesion web) y el lock del reintento de #380 viven en memoria (la cola de REINTENTOS si esta en Neon). Con varias instancias habria que moverlas a Neon o a un lock distribuido.
+> Varias piezas asumen **un solo proceso Node**: el lock `subidasOperamEnCurso`, la cola de post-fixes de vigencia (la serializacion de la sesion web) el lock del reintento de #380 y el de los comprobantes de pago por cotizacion (`conLockComprobantes`) viven en memoria (la cola de REINTENTOS si esta en Neon). Con varias instancias habria que moverlas a Neon o a un lock distribuido.

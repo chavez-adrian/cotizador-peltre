@@ -1211,6 +1211,20 @@ async function subirArchivosComprobante(entry, pago, archivos) {
   return { confirmados, fallidos };
 }
 
+// Lock en memoria por cotizacion para guardar comprobantes: Map<id, Promise> como
+// cola FIFO, mismo patron que conLockPorRfc (lib/alta-cliente.js) y la misma
+// asuncion de UN SOLO proceso Node. Solo cubre releer y escribir, no la subida.
+const comprobantesEnCursoPorId = new Map();
+
+function conLockComprobantes(id, tarea) {
+  const previa = comprobantesEnCursoPorId.get(id);
+  const actual = (previa ? previa.catch(() => {}) : Promise.resolve()).then(tarea);
+  comprobantesEnCursoPorId.set(id, actual);
+  return actual.finally(() => {
+    if (comprobantesEnCursoPorId.get(id) === actual) comprobantesEnCursoPorId.delete(id);
+  });
+}
+
 app.post('/api/cotizacion/:id/comprobante-pago/:pago', authMiddleware, async (req, res) => {
   const pago = req.params.pago;
   if (!PAGOS_COMPROBANTE[pago]) return res.status(404).json({ error: 'Pago sin comprobante' });
@@ -1224,13 +1238,17 @@ app.post('/api/cotizacion/:id/comprobante-pago/:pago', authMiddleware, async (re
   const invalido = errorArchivosComprobante(archivos.map(f => ({ nombre: f.originalname, tamano: f.size })));
   if (invalido) return res.status(400).json({ error: invalido });
   const { confirmados, fallidos } = await subirArchivosComprobante(entry, pago, archivos);
-  // Se relee: la subida tarda y el registro pudo cambiar mientras tanto.
-  const previos = (await cotStore.obtener(entry.id))?.data?.comprobantesPago || {};
-  let comprobante = previos[pago] || null;
-  if (confirmados.length) {
-    comprobante = comprobanteConArchivos(comprobante, confirmados, new Date().toISOString());
-    await cotStore.actualizarDatos(entry.id, { comprobantesPago: { ...previos, [pago]: comprobante } });
-  }
+  // Se relee: la subida tarda y el registro pudo cambiar mientras tanto. La
+  // relectura y la escritura van bajo el lock de la cotizacion: el merge de
+  // actualizarDatos reemplaza comprobantesPago ENTERO, y dos subidas
+  // simultaneas (primer pago y saldo, o dos del mismo) se pisaban.
+  const comprobante = await conLockComprobantes(entry.id, async () => {
+    const previos = (await cotStore.obtener(entry.id))?.data?.comprobantesPago || {};
+    if (!confirmados.length) return previos[pago] || null;
+    const nuevo = comprobanteConArchivos(previos[pago] || null, confirmados, new Date().toISOString());
+    await cotStore.actualizarDatos(entry.id, { comprobantesPago: { ...previos, [pago]: nuevo } });
+    return nuevo;
+  });
   if (!fallidos.length) {
     const sandbox = !destinoDeFlujo('pago').configurado;
     return res.json({ ok: true, comprobante, mensaje: mensajeSubidaCompleta(confirmados.length, { sandbox }) });

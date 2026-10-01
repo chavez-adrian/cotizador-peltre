@@ -319,6 +319,52 @@ test('CP21: la tarjeta del tablero trae la marca de anticipo', async () => {
   assert.equal(lista.find(o => o.id === 'c30').huboAnticipo, true);
 });
 
+// Subidas simultaneas a la MISMA cotizacion: cada una relee data.comprobantesPago
+// despues de su subida y lo vuelve a escribir entero; sin serializar esa
+// relectura y escritura, la ultima en escribir pisaba lo que la otra guardo.
+// Dropbox retiene las subidas hasta que llegan todas, para que terminen juntas.
+function mockDropboxRetenido(esperadas) {
+  const pendientes = [];
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.includes('oauth2/token')) return { ok: true, json: async () => ({ access_token: 'dbx', expires_in: 0 }) };
+    if (u.includes('files/upload')) {
+      const { path } = JSON.parse(opts.headers['Dropbox-API-Arg']);
+      await new Promise(soltar => {
+        pendientes.push(soltar);
+        if (pendientes.length === esperadas) pendientes.forEach(s => s());
+      });
+      return { ok: true, json: async () => ({ path_display: path }) };
+    }
+    throw new Error('Unmocked fetch: ' + u);
+  };
+}
+
+test('CP22: el primer pago y el saldo subidos al mismo tiempo se guardan los dos', async () => {
+  fijarDatos(COTS_PATH, [conAnticipo('pedido_liberado')]);
+  mockDropboxRetenido(2);
+  const [a, b] = await Promise.all([
+    subir(MEMO, [['anticipo.pdf', '%PDF-1.4']]),
+    subirSaldo(MEMO, [['liquidacion.pdf', '%PDF-1.4']]),
+  ]);
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+  assert.equal(b.status, 200, JSON.stringify(b.body));
+  const pagos = readJson(COTS_PATH).find(c => c.id === 30).data.comprobantesPago;
+  assert.deepEqual(pagos.primer?.archivos.map(x => x.nombre), ['anticipo.pdf']);
+  assert.deepEqual(pagos.saldo?.archivos.map(x => x.nombre), ['liquidacion.pdf']);
+});
+
+test('CP23: dos subidas simultaneas del mismo comprobante acumulan los archivos de las dos', async () => {
+  mockDropboxRetenido(2);
+  const [a, b] = await Promise.all([
+    subir(MEMO, [['transferencia.pdf', '%PDF-1.4']]),
+    subir(MEMO, [['ticket.jpg', 'jpg']]),
+  ]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.deepEqual(comprobanteGuardado().archivos.map(x => x.nombre).sort(), ['ticket.jpg', 'transferencia.pdf']);
+});
+
 test('CP15: sin DROPBOX_NS_PAGO/DROPBOX_PATH_PAGO el archivo cae al sandbox y la respuesta lo dice en vez de afirmar la carpeta de la empresa', async () => {
   const ns = process.env.DROPBOX_NS_PAGO;
   delete process.env.DROPBOX_NS_PAGO;
