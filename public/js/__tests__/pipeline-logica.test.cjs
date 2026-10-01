@@ -2107,6 +2107,18 @@ test('#502: con pedido asociado el boton Editar no se pinta', async () => {
   }
 });
 
+// Lo que se vio en produccion (Cotizacion 1293, Anticipo pagado): el pedido
+// lo trae el ESPEJO de Operam que anota el sync (Pedido #7722 en la cadena)
+// sin data.orderOperam, y la tarjeta seguia ofreciendo Editar.
+test('#502: con el pedido solo en el espejo de Operam el boton Editar no se pinta', async () => {
+  for (const [nombre, pinta] of Object.entries(await superficies502())) {
+    for (const etapa of ETAPAS_CON_EDITAR) {
+      const o = cotizacion({ ...CASOS_EDITAR_502.editable, etapa, espejoOperam: { cotizacion: '1293', pedido: '7722' } });
+      sinEditar(pinta(o), `${nombre} ${etapa}`);
+    }
+  }
+});
+
 test('#502: fuera de Seguimiento y Anticipo pagado el boton Editar no se pinta', async () => {
   const otras = COLUMNAS_PIPELINE.filter(e => !ETAPAS_CON_EDITAR.includes(e));
   assert.deepEqual(otras, ['no_asignado', 'por_cotizar', 'pedido_liberado', 'saldo_pagado', 'producto_entregado']);
