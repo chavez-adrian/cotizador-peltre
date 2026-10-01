@@ -2058,8 +2058,8 @@ test('#484: la ventana del motivo sin catalogo pide el motivo como texto libre, 
 // del Historial (puedeActualizarCotizacion). El onclick lleva el id REAL
 // (refId), nunca el `c<id>` prefijado de la tarjeta. Los motivos son los del
 // gate, escritos aqui tal cual los dice el issue.
-const MOTIVO_SIN_FOLIO = 'La cotización todavía no está registrada en Operam: primero completa la subida';
-const MOTIVO_CON_PEDIDO = 'La cotización ya tiene un pedido asociado en Operam: copia la cotización';
+const MOTIVO_SIN_FOLIO = 'La cotizaci\u00f3n todav\u00eda no est\u00e1 registrada en Operam: primero completa la subida';
+const MOTIVO_CON_PEDIDO = 'La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n';
 
 const CASOS_EDITAR_502 = {
   editable: { id: 'c41', refId: 41, hasData: true, folioOperam: '1300', orderOperam: null },
@@ -2148,7 +2148,7 @@ test('#502: la fila de la lista conserva nombre, etapa, meta, total y badge', as
   const { buildFilaListaPipelineHtml } = await import('../pipeline-logica.js');
   const html = buildFilaListaPipelineHtml(cotizacion({ ...CASOS_EDITAR_502.editable, nombre: 'Hotel <Azul>', ciudad: 'Puebla', total: 1234.5 }));
   assert.ok(html.includes('Hotel &lt;Azul&gt;'));
-  assert.ok(html.includes('<div class="cot-card-meta">Seguimiento · Memo · Puebla</div>'));
+  assert.ok(html.includes('<div class="cot-card-meta">Seguimiento \u00b7 Memo \u00b7 Puebla</div>'));
   assert.ok(html.includes('$1,234.50'));
   assert.ok(html.includes('Cotizaci'));
   const sinNombre = buildFilaListaPipelineHtml(prospecto({ nombre: '', etapa: 'producto_entregado', total: 0 }));

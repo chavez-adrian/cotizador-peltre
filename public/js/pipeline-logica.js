@@ -1237,11 +1237,11 @@ export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsign
 export function buildFilaListaPipelineHtml(o) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   // El Origen sale de la linea gris y se lee en su chip (#287).
-  const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
+  const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' \u00b7 ');
   const cadena = cadenaOperamHtml(o.espejoOperam);
   return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badgeFolioOperam(o)}${badgePagoSinRegistrarHtml(o)}${badgeFaltaComprobanteHtml(o)}</div>
-      <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
+      <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[o.etapa] || o.etapa)}${meta ? ' \u00b7 ' + meta : ''}</div>
       <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
       ${cadena}
     </div>${total}</div>${buildEditarOportunidadHtml(o)}</div>`;

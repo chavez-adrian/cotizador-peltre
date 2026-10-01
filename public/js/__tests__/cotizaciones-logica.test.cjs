@@ -1188,3 +1188,21 @@ test('#502: buildBotonEditarHtml es el Editar de buildAccionesCargaHtml', async 
     assert.ok(buildAccionesCargaHtml(c).startsWith(editar + ' '), JSON.stringify(extra));
   }
 });
+
+// #502 AC8: el Historial no cambia. Salida de buildAccionesCargaHtml capturada
+// ANTES de componerla con buildBotonEditarHtml, en los cuatro casos del gate.
+test('#502: buildAccionesCargaHtml devuelve exactamente lo de antes', () => {
+  const casos = [
+    { id: 7, hasData: true, folioOperam: '1200' },
+    { id: 7, hasData: true, folioOperam: '1200', orderOperam: '7077' },
+    { id: 7, hasData: true, folioOperam: null },
+    { id: 7, hasData: false },
+  ];
+  const esperado = [
+    '<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(7, \'actualizar\')">Editar</button> <button class="btn btn-secondary btn-sm" onclick="cargarCotizacion(7, \'nueva\')">Copiar cotizaci\u00f3n</button>',
+    '<button class="btn btn-secondary btn-sm" disabled title="La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n">Editar</button> <button class="btn btn-primary btn-sm" onclick="cargarCotizacion(7, \'nueva\')">Copiar cotizaci\u00f3n</button>',
+    '<button class="btn btn-secondary btn-sm" disabled title="La cotizaci\u00f3n todav\u00eda no est\u00e1 registrada en Operam: primero completa la subida">Editar</button> <button class="btn btn-primary btn-sm" onclick="cargarCotizacion(7, \'nueva\')">Copiar cotizaci\u00f3n</button>',
+    '<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Editar</button> <button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Copiar cotizaci\u00f3n</button>',
+  ];
+  casos.forEach((c, i) => assert.equal(buildAccionesCargaHtml(c), esperado[i], JSON.stringify(c)));
+});
