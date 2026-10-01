@@ -11,6 +11,7 @@ import { nombreConCorto, clienteDesdeCotizacionReciente } from './alta-logica.js
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import { MENSAJE_COPIA_LISTA_FIJADA } from './tier-logica.js';
+import { tienePedido } from './perdida-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -56,7 +57,10 @@ export function agruparTableroCotizaciones(cotizaciones, hoy = new Date()) {
 
 // El tiempo no se arrastra: solo se puede soltar en Ganada o Perdida, y solo
 // desde una columna de cadencia (una cerrada no se reabre arrastrando).
-export function puedeArrastrarCotizacion(de, a) {
+// #482: la cotizacion arrastrada, si se conoce, no se suelta en Perdida con
+// pedido (tienePedido): esa venta ya se cerro.
+export function puedeArrastrarCotizacion(de, a, cot) {
+  if (a === 'perdida' && tienePedido(cot)) return false;
   return CERRADAS.has(a) && !CERRADAS.has(de);
 }
 
@@ -84,7 +88,7 @@ function buildCotizacionCardHtml(c, col, hoy) {
   // Adrian en la revision movil 2026-06-12).
   if (abierta) {
     acciones.push(`<button class="btn btn-secondary btn-sm" onclick="cerrarCotizacionTablero(${c.id}, 'ganada')">Ganada</button>`);
-    acciones.push(`<button class="btn btn-secondary btn-sm" onclick="cerrarCotizacionTablero(${c.id}, 'perdida')">Perdida</button>`);
+    if (!tienePedido(c)) acciones.push(`<button class="btn btn-secondary btn-sm" onclick="cerrarCotizacionTablero(${c.id}, 'perdida')">Perdida</button>`);
   }
   return `<div class="tablero-card" draggable="${abierta}" data-id="${c.id}" data-col="${col}">
     <div class="cot-card">

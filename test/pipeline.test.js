@@ -213,6 +213,13 @@ test('P2b: la reexpresion frontend del candado coincide con la de lib/', async (
   }
 });
 
+// #482: perdida-logica.js reexpresa las cuatro etapas post-venta (es modulo hoja
+// y no puede importar de lib/). No pueden divergir del embudo canonico.
+test('P2e: las etapas post-venta de perdida-logica coinciden con las de lib/', async () => {
+  const { ETAPAS_POST_VENTA } = await import('../public/js/perdida-logica.js');
+  assert.deepEqual(ETAPAS_POST_VENTA, ETAPAS.slice(ETAPAS.indexOf('anticipo_pagado')));
+});
+
 // La reexpresion browser-safe de etiquetaFolioOperam (public/js/pipeline-logica.js)
 // no puede divergir del vocabulario de lib/pipeline.js: mismo folio, misma
 // etiqueta, en las dos caras (#309).

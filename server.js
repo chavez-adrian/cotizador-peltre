@@ -75,6 +75,7 @@ import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPar
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
 import { validarOperamIds } from './public/js/vendedores-logica.js';
+import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO } from './public/js/perdida-logica.js';
 import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
 import { destinoEnvia, carriersParaPais, sugerenciaSinCalle } from './lib/envia-destino-logica.js';
 import { condicionesComerciales, validarCondiciones } from './public/js/condiciones-logica.js';
@@ -934,6 +935,7 @@ app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
+  if (estado === 'perdida' && tienePedido(entry)) return res.status(409).json({ error: MENSAJE_PERDIDA_CON_PEDIDO });
   await cambiarEstadoCotizacion(entry, estado, req.user.name);
   res.json({ ok: true, estado });
 });
@@ -1042,6 +1044,7 @@ app.post('/api/cotizacion/:id/reunion-resultado', authMiddleware, async (req, re
     return res.json({ ok: true });
   }
   if (resultado === 'perdida') {
+    if (tienePedido(entry)) return res.status(409).json({ error: MENSAJE_PERDIDA_CON_PEDIDO });
     await cambiarEstadoCotizacion(entry, 'perdida', req.user.name);
     return res.json({ ok: true, estado: 'perdida' });
   }

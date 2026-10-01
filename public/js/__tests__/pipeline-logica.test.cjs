@@ -1896,3 +1896,48 @@ test('#428-P4: la cola Hoy pinta el ISO a medianoche UTC en su dia (1128, 1155, 
     assert.match(buildColaCotizacionItemHtml(itemCotizacion({ id: 35, folioOperam: '1166', fecha: '2026-06-29T00:00:00.000Z' })), /cotizada el 29 jun \(/);
   });
 });
+
+// === Issue #482: Perdida no se ofrece a una Oportunidad que ya tiene pedido ===
+// "Tiene pedido" = etapa post-venta O espejo de Operam con pedido (la decorada
+// que el candado de calca retiene en Seguimiento).
+const ESPEJO_CON_PEDIDO = { cotizacion: '1240', pedido: '873', remisiones: [] };
+
+test('#482: la tarjeta del tablero no ofrece Perdida a una cotizacion en Anticipo pagado o posterior', () => {
+  for (const etapa of ['anticipo_pagado', 'pedido_liberado', 'saldo_pagado', 'producto_entregado']) {
+    const html = buildSalidaControlHtml(cotizacion({ id: 10, refId: 10, etapa }));
+    assert.equal(html.includes('cerrarPerdidaTablero'), false, etapa);
+  }
+});
+
+test('#482: la tarjeta del tablero no ofrece Perdida en Seguimiento con pedido en el espejo de Operam', () => {
+  const html = buildSalidaControlHtml(cotizacion({ id: 10, refId: 10, etapa: 'seguimiento', espejoOperam: ESPEJO_CON_PEDIDO }));
+  assert.equal(html.includes('cerrarPerdidaTablero'), false);
+  const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'seguimiento', espejoOperam: ESPEJO_CON_PEDIDO })]);
+  assert.equal(tablero.includes('cerrarPerdidaTablero'), false);
+});
+
+test('#482: sin pedido la tarjeta del tablero sigue ofreciendo Perdida', () => {
+  const html = buildSalidaControlHtml(cotizacion({ id: 10, refId: 10, etapa: 'seguimiento', espejoOperam: { cotizacion: '1240', remisiones: [] } }));
+  assert.ok(html.includes("cerrarPerdidaTablero('cotizacion', 10)"));
+});
+
+test('#482: la tarjeta de Hoy no ofrece Perdida a una cotizacion con pedido', () => {
+  for (const extra of [{ etapa: 'anticipo_pagado' }, { etapa: 'seguimiento', espejoOperam: ESPEJO_CON_PEDIDO }]) {
+    const html = buildColaCotizacionItemHtml(itemCotizacion({ id: 10, ...extra }));
+    assert.equal(html.includes("cambiarEstadoCotizacion(10, 'perdida')"), false, JSON.stringify(extra));
+    assert.ok(html.includes("marcarSeguimiento(10, 'dia7')"));
+  }
+  const sinPedido = buildColaCotizacionItemHtml(itemCotizacion({ id: 10, etapa: 'seguimiento', espejoOperam: null }));
+  assert.ok(sinPedido.includes("cambiarEstadoCotizacion(10, 'perdida')"));
+});
+
+test('#482: el resultado de una reunion vencida no ofrece Perdida a una cotizacion con pedido', () => {
+  const vencida = { reunionVencida: true, fechaReunion: '2026-06-09T17:00:00Z' };
+  for (const extra of [{ etapa: 'pedido_liberado' }, { etapa: 'seguimiento', espejoOperam: ESPEJO_CON_PEDIDO }]) {
+    const html = buildColaCotizacionItemHtml(itemCotizacion({ id: 10, ...vencida, ...extra }));
+    assert.equal(html.includes("resultadoReunionCotizacion(10, 'perdida')"), false, JSON.stringify(extra));
+    assert.ok(html.includes("resultadoReunionCotizacion(10, 'avance')"));
+  }
+  const sinPedido = buildColaCotizacionItemHtml(itemCotizacion({ id: 10, ...vencida, etapa: 'seguimiento' }));
+  assert.ok(sinPedido.includes("resultadoReunionCotizacion(10, 'perdida')"));
+});

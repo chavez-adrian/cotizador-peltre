@@ -59,6 +59,18 @@ test('cada item de la cola expone el folio de Operam (null si es pre-cotizacion)
   assert.equal(registrada[0].folioOperam, '55123');
 });
 
+// #482: la tarjeta de Hoy decide si ofrece Perdida con la regla "tiene pedido"
+// (perdida-logica.js), que lee la etapa y el espejo de Operam: el item los trae.
+test('#482: cada item de la cola trae su etapa y el espejo de Operam', () => {
+  const espejo = { cotizacion: '1240', pedido: '873', remisiones: [] };
+  const [conPedido] = calcularCola([cot({ etapa: 'seguimiento', data: { ...cot().data, espejoOperam: espejo } })], HOY);
+  assert.equal(conPedido.etapa, 'seguimiento');
+  assert.deepEqual(conPedido.espejoOperam, espejo);
+  const [postVenta] = calcularCola([cot({ etapa: 'anticipo_pagado' })], HOY);
+  assert.equal(postVenta.etapa, 'anticipo_pagado');
+  assert.equal(postVenta.espejoOperam, null);
+});
+
 test('cotizaciones ganadas, perdidas o descartadas no aparecen', () => {
   const cola = calcularCola([
     cot({ id: 1, estado: 'ganada' }),

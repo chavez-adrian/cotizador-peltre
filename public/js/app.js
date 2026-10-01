@@ -123,6 +123,8 @@ import { sugerirDominioCorreo } from './mayoreo-logica.js';
 // Moneda del cliente (#297, ADR-0015): el MISMO juicio que aplica el servidor al
 // subir el quote. Aqui se usa para avisar al seleccionar y no dejar cotizar.
 import { bloqueoMonedaCliente } from './moneda-cliente-logica.js';
+// Perdida con pedido (#482): la MISMA regla con la que el servidor responde 409.
+import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO } from './perdida-logica.js';
 import {
   puedeArrastrarCotizacion,
   buildTableroCotizacionesHtml,
@@ -5235,18 +5237,23 @@ function setModoCotizaciones(modo) {
 // existente. El tiempo no se arrastra: los drops a cadencia rebotan sin
 // llamar al servidor.
 async function soltarEnColumnaCotizacion(origen, destino) {
-  if (!puedeArrastrarCotizacion(origen.col, destino)) {
-    avisoTablero(origen.col === 'ganada' || origen.col === 'perdida'
-      ? 'Una cotización cerrada no se reabre arrastrando'
-      : 'El tiempo no se arrastra: las tarjetas avanzan solas con los días');
+  const cot = ultimasCotizaciones.find(c => c.id === origen.id);
+  if (!puedeArrastrarCotizacion(origen.col, destino, cot)) {
+    avisoTablero(destino === 'perdida' && tienePedido(cot) ? MENSAJE_PERDIDA_CON_PEDIDO
+      : origen.col === 'ganada' || origen.col === 'perdida'
+        ? 'Una cotización cerrada no se reabre arrastrando'
+        : 'El tiempo no se arrastra: las tarjetas avanzan solas con los días');
     return;
   }
   const label = destino === 'ganada' ? 'Ganada' : 'Perdida';
-  const cot = ultimasCotizaciones.find(c => c.id === origen.id);
   if (!confirm(`¿Marcar la cotización de ${cot?.cliente || 'este cliente'} como ${label}?`)) return;
   try {
     const res = await api(`/api/cotizacion/${origen.id}/estado`, { method: 'PATCH', body: { estado: destino } });
-    if (!res.ok) { avisoTablero('No se pudo actualizar el estado'); return; }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      avisoTablero(data.error || 'No se pudo actualizar el estado');
+      return;
+    }
     recargarHistorial();
   } catch (e) {
     avisoTablero('Error de conexion');
@@ -5275,7 +5282,11 @@ async function marcarSeguimiento(id, paso) {
 async function cambiarEstadoCotizacion(id, estado) {
   try {
     const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
-    if (!res.ok) { alert('No se pudo actualizar el estado'); return; }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo actualizar el estado');
+      return;
+    }
     recargarHoy();
   } catch (e) {
     alert('Error de conexion');
@@ -6863,7 +6874,7 @@ function initDragEnTablero(containerId, { atributo, puedeSoltar, alSoltar }) {
     e.dataTransfer.setData('text/plain', card.dataset.id);
     tablero.querySelectorAll('.tablero-col').forEach(c => {
       const destino = c.dataset[atributo];
-      c.classList.toggle('drop-valido', destino !== dragOrigen.col && puedeSoltar(dragOrigen.col, destino));
+      c.classList.toggle('drop-valido', destino !== dragOrigen.col && puedeSoltar(dragOrigen.col, destino, dragOrigen));
     });
     tablero.classList.add('arrastrando');
   });
@@ -6871,7 +6882,7 @@ function initDragEnTablero(containerId, { atributo, puedeSoltar, alSoltar }) {
     const col = e.target.closest('.tablero-col');
     if (!col || !dragOrigen) return;
     e.preventDefault();
-    const valido = puedeSoltar(dragOrigen.col, col.dataset[atributo]);
+    const valido = puedeSoltar(dragOrigen.col, col.dataset[atributo], dragOrigen);
     e.dataTransfer.dropEffect = valido ? 'move' : 'none';
     col.classList.toggle('drop-ok', valido);
   });
@@ -7187,7 +7198,11 @@ window.cerrarCotizacionTablero = async (id, estado) => {
   if (!confirm(`¿Marcar la cotización de ${cot ? cot.cliente : 'este cliente'} como ${label}?`)) return;
   try {
     const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
-    if (!res.ok) { alert('No se pudo actualizar el estado'); return; }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo actualizar el estado');
+      return;
+    }
     recargarHistorial();
   } catch (e) {
     alert('Error de conexion');
@@ -7642,7 +7657,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   conectarCriterioVista('hoy', hoyCriterio, renderHoy);
   initDragEnTablero('cotizaciones-tablero', {
     atributo: 'col',
-    puedeSoltar: puedeArrastrarCotizacion,
+    // #482: la cotizacion arrastrada decide si Perdida es un destino valido.
+    puedeSoltar: (de, a, origen) => puedeArrastrarCotizacion(de, a, ultimasCotizaciones.find(c => c.id === origen.id)),
     alSoltar: soltarEnColumnaCotizacion,
   });
 

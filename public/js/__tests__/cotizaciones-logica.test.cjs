@@ -124,6 +124,31 @@ test('Q7: puedeArrastrarCotizacion rechaza todo lo demas: el tiempo no se arrast
   assert.equal(puedeArrastrarCotizacion('perdida', 'perdida'), false);
 });
 
+// #482 (CONTEXT.md "Perdida"): una cotizacion con pedido -- etapa post-venta o
+// espejo de Operam con pedido -- ya se cerro y no se puede perder. En el tablero
+// del Historial ni el boton ni el arrastre la llevan a Perdida; Ganada sigue.
+const ESPEJO_CON_PEDIDO = { cotizacion: '1240', pedido: '873', remisiones: [] };
+
+test('#482: el arrastre no deja soltar en Perdida una cotizacion con pedido, y en Ganada si', () => {
+  for (const conPedido of [cot(3, { etapa: 'anticipo_pagado' }), cot(3, { etapa: 'seguimiento', espejoOperam: ESPEJO_CON_PEDIDO })]) {
+    assert.equal(puedeArrastrarCotizacion('dia2', 'perdida', conPedido), false, JSON.stringify(conPedido));
+    assert.equal(puedeArrastrarCotizacion('dia2', 'ganada', conPedido), true);
+  }
+  assert.equal(puedeArrastrarCotizacion('dia2', 'perdida', cot(3, { etapa: 'seguimiento' })), true);
+});
+
+test('#482: la tarjeta del Historial no ofrece Perdida a una cotizacion con pedido', () => {
+  const html = buildTableroCotizacionesHtml([
+    cot(3, { id: 21, etapa: 'producto_entregado' }),
+    cot(3, { id: 22, etapa: 'seguimiento', espejoOperam: ESPEJO_CON_PEDIDO }),
+    cot(3, { id: 23, etapa: 'seguimiento' }),
+  ], HOY);
+  assert.equal(html.includes("cerrarCotizacionTablero(21, 'perdida')"), false);
+  assert.equal(html.includes("cerrarCotizacionTablero(22, 'perdida')"), false);
+  assert.ok(html.includes("cerrarCotizacionTablero(21, 'ganada')"));
+  assert.ok(html.includes("cerrarCotizacionTablero(23, 'perdida')"));
+});
+
 test('Q8: buildTableroCotizacionesHtml pinta las 7 columnas con label, contador y data-col', () => {
   const html = buildTableroCotizacionesHtml([cot(0, { id: 1 }), cot(3, { id: 2 }), cot(4, { id: 3 })], HOY);
   for (const col of COLUMNAS_COTIZACIONES) {

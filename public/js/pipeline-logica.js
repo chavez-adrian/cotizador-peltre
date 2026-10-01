@@ -14,6 +14,7 @@ import { escapeHtml, CANALES, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdi
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
+import { tienePedido } from './perdida-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -958,12 +959,14 @@ export function buildMoverSeguimientoControlHtml(o) {
 // numerico (refId), nunca el prefijado ("p7"/"c10"), leccion del bug de #57.
 // Perdida lleva ademas el TIPO (#478): prospectos y cotizaciones comparten
 // numeros de refId, y con el id solo la accion cerraba al prospecto homonimo.
+// #482: con pedido (tienePedido) Perdida no se ofrece: esa venta ya se cerro.
 export function buildSalidaControlHtml(o) {
   if (!o || esSalida(o.etapa)) return '';
   const id = o.refId ?? o.id;
-  const perdida = `<button class="btn btn-secondary btn-sm" onclick="cerrarPerdidaTablero('${o.tipo === 'cotizacion' ? 'cotizacion' : 'prospecto'}', ${id})">Perdida</button>`;
+  const perdida = tienePedido(o) ? ''
+    : `<button class="btn btn-secondary btn-sm" onclick="cerrarPerdidaTablero('${o.tipo === 'cotizacion' ? 'cotizacion' : 'prospecto'}', ${id})">Perdida</button>`;
   if (o.tipo === 'cotizacion') {
-    return `<div class="cot-card-actions tablero-salida">${perdida}</div>`;
+    return perdida ? `<div class="cot-card-actions tablero-salida">${perdida}</div>` : '';
   }
   const motivos = MOTIVOS_NO_UTIL
     .map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
@@ -1162,18 +1165,24 @@ export function buildColaCotizacionItemHtml(item) {
   // seguimiento normal (marcar Hecho) cede el paso al cierre de la reunion. Si la
   // cotizacion reaparece solo por la reunion (sin paso de cadencia pendiente), no
   // se pinta "Hecho" (no hay paso que marcar).
+  // #482: con pedido (tienePedido) Perdida no se ofrece en ninguna de las dos.
+  const conPedido = tienePedido(item);
   let acciones;
   if (item.reunionVencida) {
+    const btnPerdida = conPedido ? ''
+      : `<button class="btn btn-secondary btn-sm" onclick="resultadoReunionCotizacion(${item.id}, 'perdida')">Perdida</button>`;
     acciones = `${btnWa} ${agendar}
       <button class="btn btn-secondary btn-sm" onclick="resultadoReunionCotizacion(${item.id}, 'avance')">✓ Hecho</button>
-      <button class="btn btn-secondary btn-sm" onclick="resultadoReunionCotizacion(${item.id}, 'perdida')">Perdida</button>`;
+      ${btnPerdida}`;
   } else {
     const btnHecho = item.paso
       ? `<button class="btn btn-secondary btn-sm" onclick="marcarSeguimiento(${item.id}, '${item.paso}')">✓ Hecho</button>`
       : '';
+    const btnPerdida = conPedido ? ''
+      : `<button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'perdida')">Perdida</button>`;
     acciones = `${btnWa} ${agendar} ${btnHecho}
       <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'ganada')">Ganada</button>
-      <button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCotizacion(${item.id}, 'perdida')">Perdida</button>`;
+      ${btnPerdida}`;
   }
   const reunionBadge = item.reunionVencida
     ? `<div style="margin-top:4px"><span class="reunion-badge">Reunión del ${escapeHtml(new Date(item.fechaReunion).toLocaleString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))} — registrar resultado</span></div>`
