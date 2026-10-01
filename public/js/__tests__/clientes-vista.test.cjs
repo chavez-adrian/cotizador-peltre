@@ -124,9 +124,10 @@ test('T4: el estado fiscal que manda el servidor gana sobre el RFC de la fila (#
   assert.doesNotMatch(html, /Sin datos fiscales/);
 });
 
-test('T5: el Cliente Operam con pedido lo dice, y el que no tiene no dice nada (#344)', () => {
+test('T5: el Cliente Operam que ya compro lo dice, y el que no tiene no dice nada (#344, #500)', () => {
   assert.match(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'con_pedido' }), /pc-tag con-pedido/);
-  assert.match(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'con_pedido' }), /con pedido/);
+  assert.match(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'con_pedido' }), />Ya compr\u00f3</);
+  assert.doesNotMatch(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'con_pedido' }), /con pedido/);
   assert.equal(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'cotizado' }), '');
   assert.equal(tagPedidoClienteHtml({ tipo: 'operam', comercial: 'sin_actividad' }), '');
   assert.equal(tagPedidoClienteHtml({ tipo: 'operam' }), '');
@@ -136,7 +137,8 @@ test('T6: la fila de resultado pinta los dos estados juntos (#344)', () => {
   const html = filaResultadoClienteHtml(
     { tipo: 'operam', nombre: 'Jorge Orea', sub: '', rfc: 'XAXX010101000', fiscal: 'sin_datos_fiscales', comercial: 'con_pedido' }, 0);
   assert.match(html, /Sin datos fiscales/);
-  assert.match(html, /con pedido/);
+  assert.match(html, /Ya compr\u00f3/);
+  assert.doesNotMatch(html, /con pedido/);
 });
 
 // === filaResultadoClienteHtml / filaCrearClienteHtml ===
@@ -420,7 +422,8 @@ test('CT2: la ficha pinta las etiquetas del Contacto con su texto de pantalla', 
   const html = fichaContactoHtml(CONTACTO);
   assert.match(html, />Prospecto</);
   assert.match(html, />Cotizado</);
-  assert.match(html, />con pedido</);
+  assert.match(html, />Ya compr\u00f3</);
+  assert.doesNotMatch(html, /con pedido/);
 });
 
 test('CT3: la ficha lista TODAS sus Oportunidades con su folio y su etapa', () => {

@@ -1746,15 +1746,17 @@ test('#343: el boton viaja en la tarjeta del tablero', () => {
 // === #344: los estados del Cliente Operam en la tarjeta ===
 //
 // El servidor los deriva de lo que Operam registra (ADR-0016) y la tarjeta los
-// lee: "Sin datos fiscales" le dice al vendedor que pida la constancia, "con
-// pedido" que esa persona ya nos compro. Nada se recalcula aqui.
+// lee: "Sin datos fiscales" le dice al vendedor que pida la constancia, "Ya
+// compro" que esa persona ya nos compro alguna vez (#500: "con pedido" es de la
+// Oportunidad desde #482). Nada se recalcula aqui.
 
-test('EC1: la tarjeta dice Sin datos fiscales y con pedido', () => {
+test('EC1: la tarjeta dice Sin datos fiscales y Ya compro (#500)', () => {
   const html = badgeClienteOperamHtml(cotizacion({
     clienteOperam: { id: 514, fiscal: 'sin_datos_fiscales', comercial: 'con_pedido', fuenteIncompleta: false },
   }));
   assert.match(html, /Sin datos fiscales/);
-  assert.match(html, /con pedido/);
+  assert.match(html, /Ya compr\u00f3/);
+  assert.doesNotMatch(html, /con pedido/);
 });
 
 test('EC2: el Cliente Operam con datos fiscales lo dice, y sin pedido no promete nada', () => {
@@ -1762,7 +1764,7 @@ test('EC2: el Cliente Operam con datos fiscales lo dice, y sin pedido no promete
     clienteOperam: { id: 520, fiscal: 'con_datos_fiscales', comercial: 'cotizado', fuenteIncompleta: false },
   }));
   assert.match(html, /Con datos fiscales/);
-  assert.doesNotMatch(html, /con pedido/);
+  assert.doesNotMatch(html, /Ya compr/);
 });
 
 // Sin Cliente Operam (o con uno que el cache de Operam no conoce) la tarjeta no

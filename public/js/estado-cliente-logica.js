@@ -8,8 +8,13 @@
 // pintando una etiqueta que el otro ya no manda.
 //
 // "Sin datos fiscales" no es un pendiente ni una espera: para quien no factura
-// es un estado legitimo y permanente. Y "ya compro" se dice "con pedido":
-// "cliente" nunca va a secas (ADR-0016).
+// es un estado legitimo y permanente. "cliente" nunca va a secas (ADR-0016).
+//
+// El valor `con_pedido` se pinta "Ya compro" (#500): algun pedido vivo en Operam,
+// de cuando sea. "con pedido" / "tiene pedido" en pantalla es de la Oportunidad
+// (#482, perdida-logica.js), y la misma palabra para las dos cosas hacia que la
+// tarjeta de una cotizacion sin pedido propio dijera "con pedido". El VALOR no
+// cambia: lo leen servidor, navegador y filtros.
 
 export const SIN_DATOS_FISCALES = 'sin_datos_fiscales';
 export const CON_DATOS_FISCALES = 'con_datos_fiscales';
@@ -26,7 +31,7 @@ export const ETIQUETA_FISCAL = {
 export const ETIQUETA_COMERCIAL = {
   [SIN_ACTIVIDAD]: 'sin actividad',
   [COTIZADO]: 'cotizado',
-  [CON_PEDIDO]: 'con pedido',
+  [CON_PEDIDO]: 'Ya compr\u00f3',
 };
 
 // Las etiquetas del CONTACTO (#344/#346, ADR-0016, CONTEXT.md "Contacto"), aqui
@@ -35,7 +40,7 @@ export const ETIQUETA_COMERCIAL = {
 // Oportunidad Perdida no le quita ninguna al Contacto -- y el orden es el de la
 // historia de la persona, que es el que lee la pantalla.
 //
-// `cotizado` y `con pedido` son literalmente los mismos valores del estado
+// `cotizado` y `con_pedido` son literalmente los mismos valores del estado
 // comercial del Cliente Operam: la persona los hereda de sus entidades, y
 // duplicar la cadena seria abrir la puerta a que un dia dejaran de coincidir.
 export const PROSPECTO = 'prospecto';
@@ -46,6 +51,6 @@ export const ETIQUETAS_CONTACTO_ORDEN = [PROSPECTO, COTIZADO, CON_PEDIDO, CLIENT
 export const ETIQUETA_CONTACTO = {
   [PROSPECTO]: 'Prospecto',
   [COTIZADO]: 'Cotizado',
-  [CON_PEDIDO]: 'con pedido',
+  [CON_PEDIDO]: 'Ya compr\u00f3',
   [CLIENTE_EN_LINEA]: 'Cliente en linea',
 };

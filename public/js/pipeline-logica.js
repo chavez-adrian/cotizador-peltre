@@ -586,7 +586,7 @@ export function tagResultadoClienteHtml(r) {
 }
 
 // El estado COMERCIAL de la fila, y solo cuando dice algo que el vendedor tiene
-// que ver: "con pedido". "cotizado" y "sin actividad" no se pintan -- una fila
+// que ver: "Ya compro" (#500; el valor sigue siendo con_pedido). "cotizado" y "sin actividad" no se pintan -- una fila
 // con tres etiquetas deja de leerse de un vistazo, y el hueco de los quotes web
 // (fuenteIncompleta) haria de "sin actividad" una afirmacion que no se sostiene.
 export function tagPedidoClienteHtml(r) {
@@ -910,7 +910,7 @@ export function buildComprobantePagoHtml(o) {
 //
 // Sin Cliente Operam ligado (o con uno que el cache no conoce) no se pinta nada:
 // una tarjeta sin etiqueta es mejor que una con la etiqueta equivocada. El
-// estado comercial solo se pinta cuando es "con pedido", por lo mismo que en la
+// estado comercial solo se pinta cuando es "Ya compro" (#500), por lo mismo que en la
 // fila de resultado.
 export function badgeClienteOperamHtml(o) {
   const cli = o && o.clienteOperam;
