@@ -2059,7 +2059,7 @@ test('#484: la ventana del motivo sin catalogo pide el motivo como texto libre, 
 // pagado y nunca con pedido: ahi ya no se puede editar y el boton se OCULTA
 // (decision de Adrian 2026-10-01). El onclick lleva el id REAL (refId), nunca
 // el `c<id>` prefijado de la tarjeta.
-const MOTIVO_SIN_FOLIO = 'La cotización todavía no está registrada en Operam: primero completa la subida';
+const MOTIVO_SIN_FOLIO = 'La cotizaci\u00f3n todav\u00eda no est\u00e1 registrada en Operam: primero completa la subida';
 const ETAPAS_CON_EDITAR = ['seguimiento', 'anticipo_pagado'];
 
 const CASOS_EDITAR_502 = {
