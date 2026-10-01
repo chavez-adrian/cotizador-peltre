@@ -37,7 +37,7 @@ import { calcularCola, telefonoValido, telefonoWa } from './lib/seguimiento.js';
 import { calcularColaProspectos } from './lib/seguimiento-prospectos.js';
 import { filaTabla, cotizacionesDelProspecto } from './lib/tabla-prospectos.js';
 import { calcularColaHoy } from './lib/cola-hoy.js';
-import { tarjetasOportunidades, cotizacionesDeLaOportunidad, oportunidadesQueFaltaCotizar, estadosDeOportunidades, prospectoAOportunidad } from './lib/oportunidades.js';
+import { tarjetasOportunidades, cotizacionesDeLaOportunidad, oportunidadesQueFaltaCotizar, estadosDeOportunidades, prospectoAOportunidad, oportunidadesQueCierraLaPerdida } from './lib/oportunidades.js';
 import { oportunidadesDeContactos, principalPorContacto, oportunidadQueCotiza } from './lib/oportunidad-pre.js';
 import * as oportunidadPreIo from './lib/oportunidad-pre-io.js';
 import { celularAlNacer, celularesDeCruce, llaveContacto } from './lib/contacto-cotizacion.js';
@@ -896,10 +896,34 @@ async function cambiarEstadoCotizacion(entry, estado, vendedor) {
   const destino = estado === 'perdida' ? 'perdida'
     : estado === 'abierta' && entry.etapa === 'perdida' ? etapaAlReabrirCotizacion(entry.eventos)
     : null;
-  if (!destino || destino === entry.etapa) return;
-  await cotStore.cambiarEtapa(entry.id, destino, {
-    tipo: 'etapa', de: entry.etapa ?? null, a: destino, fecha: new Date().toISOString(), vendedor,
-  });
+  if (destino && destino !== entry.etapa) {
+    await cotStore.cambiarEtapa(entry.id, destino, {
+      tipo: 'etapa', de: entry.etapa ?? null, a: destino, fecha: new Date().toISOString(), vendedor,
+    });
+  }
+  if (estado === 'perdida') await cerrarOportunidadesDeLaCotizacion(entry, vendedor);
+}
+
+// #481: perder la cotizacion cierra TAMBIEN la Oportunidad de la que nacio; si
+// no, su tarjeta volvia a Seguimiento. Cuales se cierran lo decide el nucleo
+// (oportunidadesQueCierraLaPerdida) y la escritura va a donde la Oportunidad
+// vive (oportunidad-pre-io). Reabrir la cotizacion NO la revive: si el cliente
+// vuelve se abre una Nueva oportunidad. Corre DESPUES de escribir la etapa de
+// la cotizacion: si esa escritura falla, la Oportunidad no queda Perdida con la
+// cotizacion viva. Best effort, como el hook del embudo: un fallo aqui no impide
+// cerrar la cotizacion.
+async function cerrarOportunidadesDeLaCotizacion(entry, vendedor) {
+  try {
+    const filas = oportunidadesDeContactos(await prospectosStore.listar(), await oportunidadesStore.listar());
+    const fecha = new Date().toISOString();
+    for (const op of oportunidadesQueCierraLaPerdida(filas, entry, await cotStore.listar())) {
+      await oportunidadPreIo.cambiarEtapa(op, 'perdida', {
+        tipo: 'etapa', de: op.etapa, a: 'perdida', cotizacion_id: entry.id, fecha, vendedor,
+      });
+    }
+  } catch (err) {
+    console.warn('[oportunidades] no se pudo cerrar la Oportunidad de la cotizacion', entry.id, err.message);
+  }
 }
 
 app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
