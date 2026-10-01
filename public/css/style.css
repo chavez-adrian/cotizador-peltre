@@ -42,6 +42,7 @@
      boton de accion sticky para no quedar debajo de ninguna de las dos. */
   --alto-barra-inferior: 64px;
   --alto-total-carrito: 62px;
+  --alto-siguiente-envio: 38px;
   --pie-fijo: var(--alto-barra-inferior);
 }
 
@@ -1709,6 +1710,16 @@ body {
   position: sticky;
   bottom: var(--pie-fijo);
   z-index: 1;
+}
+
+/* Cotizar de Envio (#488): se apila arriba del "Siguiente" de Envio, que
+   tambien es sticky; si compartieran --pie-fijo, el Siguiente lo taparia.
+   #shipping-envia sin caja: el sticky no sale de su bloque contenedor y asi
+   ese bloque es el paso Envio entero (app.js lo muestra con display ''). */
+#shipping-envia { display: contents; }
+#btn-sig-envio { height: var(--alto-siguiente-envio); }
+#shipping-envia > .accion-fija {
+  bottom: calc(var(--pie-fijo) + var(--alto-siguiente-envio));
 }
 
 .alta-seccion.alta-sec-activa {

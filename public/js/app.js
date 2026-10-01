@@ -2857,7 +2857,7 @@ function aplicarEnvioRestaurado(envio, { decidido = false } = {}) {
   const envioRestore = restaurarEnvioDesdeCotizacion(envio);
   pintarOpcionesEnvio(envioRestore.opcion);
   document.getElementById('shipping-option').value = envioRestore.opcion;
-  document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? 'block' : 'none';
+  document.getElementById('shipping-envia').style.display = envioRestore.mostrarEnvia ? '' : 'none';
   document.getElementById('shipping-manual').style.display = envioRestore.mostrarManual ? 'block' : 'none';
   document.getElementById('shipping-cost').value = envioRestore.cost;
   document.getElementById('shipping-desc').value = envioRestore.desc;
@@ -4901,7 +4901,7 @@ function switchTab(name) {
     const ofrecePaqueteria = !!opt?.querySelector('option[value="envia"]');
     if (opt && ofrecePaqueteria && debeProponerEnvia({ envioDecidido, shippingOpt: opt.value, cp: cpCliente, cartSize: state.cart.size })) {
       opt.value = 'envia';
-      document.getElementById('shipping-envia').style.display = 'block';
+      document.getElementById('shipping-envia').style.display = '';
       document.getElementById('shipping-manual').style.display = 'none';
     }
     // #102: si ya hay una tarifa elegida (restaurada del historial o de la
@@ -7584,7 +7584,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Shipping option toggle
   document.getElementById('shipping-option').addEventListener('change', e => {
     const val = e.target.value;
-    document.getElementById('shipping-envia').style.display = esOpcionTarifa(val) ? 'block' : 'none';
+    document.getElementById('shipping-envia').style.display = esOpcionTarifa(val) ? '' : 'none';
     document.getElementById('shipping-manual').style.display = val === 'manual' ? 'block' : 'none';
     // Limpiar costo si cambia la opción
     if (!esOpcionConCosto(val)) {

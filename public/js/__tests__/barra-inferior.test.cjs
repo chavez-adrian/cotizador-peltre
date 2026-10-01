@@ -69,8 +69,8 @@ function px(valor, vars = VARS_BASE) {
   for (let i = 0; i < 10 && v.includes('var('); i++) {
     v = v.replace(/var\(\s*(--[\w-]+)\s*\)/g, (_, nombre) => (vars.has(nombre) ? vars.get(nombre) : 'NaN'));
   }
-  const calc = /^calc\((.*)\)$/.exec(v);
-  if (calc) return calc[1].split('+').reduce((suma, t) => suma + px(t, vars), 0);
+  // calc anidado (un --pie-fijo que ya es calc dentro de otro calc): solo hay sumas, se aplana.
+  if (v.startsWith('calc(')) return v.replace(/calc\(|[()]/g, '').split('+').reduce((suma, t) => suma + px(t, vars), 0);
   if (v === '0') return 0;
   const m = /^(-?\d+(?:\.\d+)?)px$/.exec(v);
   return m ? Number(m[1]) : NaN;
@@ -155,6 +155,8 @@ const BOTONES_PASOS = [
   { nombre: 'Siguiente de Productos', etiqueta: etiquetaDe('id="btn-sig-productos"') },
   { nombre: 'Siguiente de Envio', etiqueta: etiquetaDe('id="btn-sig-envio"') },
   { nombre: 'fila de Generar PDF', etiqueta: padreDe('id="btn-pdf"') },
+  // #488: el boton de consultar tarifas de Envio tambien quedo bajo la barra a 1280x900.
+  { nombre: 'fila de Cotizar de Envio', etiqueta: padreDe('id="btn-cotizar-envia"') },
 ];
 
 test('#442: "Siguiente" de los pasos y la fila de Generar PDF se quedan a la vista arriba de la barra inferior', () => {
@@ -173,6 +175,40 @@ test('#442: con el total del carrito a la vista, los botones de accion se apoyan
     const bottom = px(reglaPegadaDe(etiqueta).decl.get('bottom'), VARS_CON_TOTAL);
     assert.ok(bottom >= techoDelTotal, `${nombre}: bottom ${bottom}px, el total del carrito llega a ${techoDelTotal}px`);
   }
+});
+
+function ultimaReglaCon(prop, etiqueta, contenedor) {
+  const clases = clasesDe(etiqueta).map((c) => '.' + c);
+  const id = /\sid="([^"]*)"/.exec(etiqueta);
+  const propios = id ? [...clases, '#' + id[1]] : clases;
+  const candidatos = [...propios, ...propios.map((s) => `${contenedor} > ${s}`)];
+  const r = reglas.filter((x) => !x.media && x.decl.has(prop) && x.selectores.some((s) => candidatos.includes(s)));
+  assert.ok(r.length > 0, `ninguna regla le da ${prop}: ${etiqueta}`);
+  return r[r.length - 1];
+}
+
+test('#488: la fila de Cotizar de Envio se apoya arriba del "Siguiente" sticky (no queda debajo de el)', () => {
+  const fila = padreDe('id="btn-cotizar-envia"');
+  const siguiente = etiquetaDe('id="btn-sig-envio"');
+  const contenedor = '#shipping-envia';
+  const altoSiguiente = ultimaReglaCon('height', siguiente, '#tab-envio').decl.get('height');
+  for (const vars of [VARS_BASE, VARS_CON_TOTAL]) {
+    const techoSiguiente = px(ultimaReglaCon('bottom', siguiente, '#tab-envio').decl.get('bottom'), vars) + px(altoSiguiente, vars);
+    const bottomFila = px(ultimaReglaCon('bottom', fila, contenedor).decl.get('bottom'), vars);
+    assert.ok(bottomFila >= techoSiguiente, `fila de Cotizar: bottom ${bottomFila}px, el Siguiente llega a ${techoSiguiente}px`);
+  }
+});
+
+// Un sticky no sale de su bloque contenedor: dentro de #shipping-envia la fila
+// solo subiria lo que mide la nota de arriba. Con display: contents el bloque
+// pasa a ser el paso Envio entero, como el del Siguiente.
+test('#488: el bloque de paqueteria no genera caja, asi la fila de Cotizar se pega en todo el paso Envio', () => {
+  assert.equal(reglaDe('#shipping-envia').decl.get('display'), 'contents');
+  const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  const escrituras = app.match(/getElementById\('shipping-envia'\)\.style\.display\s*=[^;]*/g) || [];
+  assert.ok(escrituras.length > 0, 'app.js ya no muestra/oculta #shipping-envia: revisar esta prueba');
+  const conDisplayEnLinea = escrituras.filter((e) => /'(block|flex|grid|inline[\w-]*)'/.test(e));
+  assert.deepEqual(conDisplayEnLinea, [], 'mostrarlo con un display en linea le gana al display: contents del CSS');
 });
 
 function coincideConTotalALaVista(estilo) {
