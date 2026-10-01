@@ -2672,6 +2672,13 @@ function aplicarCandadoDocumento(bloqueado) {
 // congelado; la accion vieja, al terminar, ya no es la vigente y no toca nada.
 let accionDocumentoEnCurso = null;
 
+// Sesion de cotizacion en pantalla: sube en cada frontera
+// (limpiarConfirmacionDocumento). Un guardado que la ve cambiar ya no es de la
+// pantalla: sin esto, Nueva cotizacion durante "Guardando..." dejaba que la
+// respuesta del guardado viejo escribiera su id, su folio y su cuerpo en la
+// sesion nueva (#504; la carrera venia de #83 F1).
+let sesionCotizacion = 0;
+
 function estadoBotonesActual() {
   let cuerpoActual = null;
   if (state.documentoConfirmado && state.cuerpoGuardado != null) {
@@ -2713,6 +2720,7 @@ function anotarConfirmacionDocumento(key, confirma) {
 // confirmado. El candado de #204 era de la cotizacion que se deja: se suelta
 // con ella.
 function limpiarConfirmacionDocumento() {
+  sesionCotizacion++;
   accionDocumentoEnCurso?.progreso?.terminar();
   accionDocumentoEnCurso = null;
   state.cuerpoGuardado = null;
@@ -2786,6 +2794,8 @@ async function esperarOperamEnVuelo(key, ms = TIMEOUT_OPERAM_MS) {
 // recuerda como guardado; `sobre` (canal, cotizacionId) solo viaja en el POST.
 // Devuelve si quedo confirmada; false tambien si el guardado fallo.
 async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
+  const sesion = sesionCotizacion;
+  const sigueEnPantalla = () => sesion === sesionCotizacion;
   // #116: si la generacion anterior dejo una operacion de Operam en vuelo para ESTA
   // cotizacion (la reescritura del quote de #114, que tarda segundos por la web
   // legacy), hay que esperarla ANTES de guardar. Si no, el servidor compara contra la
@@ -2797,16 +2807,28 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
   if (enVuelo && subidasOperamEnVuelo.has(enVuelo)) {
     progreso('Esperando a Operam...');
     await esperarOperamEnVuelo(enVuelo);
+    // El vendedor dejo esta cotizacion mientras se esperaba: todavia no se
+    // guardo nada, y ya acepto perderla.
+    if (!sigueEnPantalla()) return false;
   }
   progreso('Guardando...');
   const res = await api('/api/cotizacion', { method: 'POST', body: { ...cuerpo, ...sobre } });
   if (!res.ok) {
     let err = {};
     try { err = await res.json(); } catch {}
-    alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
+    if (sigueEnPantalla()) alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
     return false;
   }
   const { id, requiereActualizacionOperam, folioOperam } = await res.json();
+  if (!sigueEnPantalla()) {
+    // Ya se guardo en el servidor: la cotizacion existe y termina su viaje a
+    // Operam como si el vendedor hubiera esperado, pero sin slot y sin tocar el
+    // estado, el borrador ni los botones de la sesion nueva. Queda en el
+    // historial con su folio o como PRE con su Reintentar.
+    if (requiereActualizacionOperam) actualizarQuoteEnOperam(id, null);
+    else autoSubirOperam(id, null);
+    return false;
+  }
   state.lastCotizacionId = String(id);
   // #504: lo recien guardado es contra lo que se decide si la cotizacion cambio;
   // queda sin confirmar hasta que Operam responda. Copia por JSON: es la forma
@@ -4776,8 +4798,10 @@ async function autoSubirOperam(id, slot, extraBody) {
   // la cotizacion en pantalla quedo confirmada.
   anotarConfirmacionDocumento(key, subidaConfirma(vista));
   // #204: candidatos sin resolver = documento bajo candado. Cualquier otro
-  // desenlace (folio, PRE por Operam, sin datos) lo libera.
-  aplicarCandadoDocumento(vista.estado === 'candidatos');
+  // desenlace (folio, PRE por Operam, sin datos) lo libera. Solo para la
+  // cotizacion en pantalla (#504): la subida de una que el vendedor ya dejo, o
+  // un Reintentar del historial sobre otra, no le pone ni le quita el candado.
+  if (key === String(state.lastCotizacionId)) aplicarCandadoDocumento(vista.estado === 'candidatos');
   return vista;
 }
 // Actualizacion del quote conservando el folio (#104, ADR-0008). Se dispara al
