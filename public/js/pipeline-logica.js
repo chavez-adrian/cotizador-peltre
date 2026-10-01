@@ -152,7 +152,7 @@ export function interpretarSubidaOperam(resultado) {
     return { estado: 'pre', mensaje: 'Ya hay una subida a Operam en curso para esta cotizacion: el documento sale como pre-cotizacion. Reintenta cuando termine.' };
   }
   if (r.timeout) {
-    return { estado: 'pre', mensaje: 'Operam no respondio a tiempo: el documento se entrega como pre-cotizacion, sin numero. Si la subida termina sola, vuelve a compartirlo desde el historial.' };
+    return { estado: 'pre', mensaje: 'Operam no respondio a tiempo: el documento se entrega como pre-cotizacion, sin numero. Si la subida termina sola, el documento numerado queda en Ver HTML / Descargar PDF (o en el historial).' };
   }
   // yaSubida (#83 F1c): la cotizacion ya tenia folio y el endpoint NO re-subio
   // (los quotes de Operam no se editan por API): folio + nota de que una

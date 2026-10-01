@@ -250,7 +250,7 @@ export function vendedorAlGuardar(registroPrevio, quienGuarda) {
   return original || quienGuarda;
 }
 
-// Las dos acciones de carga del historial (#104): "Actualizar cotizaci\u00f3n" (mismo
+// Las dos acciones de carga del historial (#104): "Actualizar cotización" (mismo
 // registro, mismo folio de Operam) y "Crear nueva a partir de ésta" (lo que "Cargar"
 // hacia hasta hoy, ahora con nombre honesto). Actualizar es el default cuando se
 // puede; si no, queda deshabilitado CON el motivo en el title -- deshabilitar sin

@@ -2664,9 +2664,13 @@ function aplicarCandadoDocumento(bloqueado) {
 // contra la cual compararlo.
 //
 // Mientras una accion esta en curso el boton es del contador de segundos: un
-// tecleo en otro paso dispara el autoguardado, que repinta, y sin esta bandera
-// el boton volvia a "Actualizar cotizacion" habilitado a media espera.
-let accionDocumentoEnCurso = false;
+// tecleo en otro paso dispara el autoguardado, que repinta, y sin esta marca el
+// boton volvia a "Actualizar cotizacion" habilitado a media espera. Es la accion
+// MISMA (con su contador) y no un booleano: actualizar espera sin tope, y si el
+// vendedor deja esa cotizacion (Nueva, cambio de cliente, Editar/Copiar),
+// limpiarConfirmacionDocumento la suelta para que la nueva no herede un boton
+// congelado; la accion vieja, al terminar, ya no es la vigente y no toca nada.
+let accionDocumentoEnCurso = null;
 
 function estadoBotonesActual() {
   let cuerpoActual = null;
@@ -2709,6 +2713,8 @@ function anotarConfirmacionDocumento(key, confirma) {
 // confirmado. El candado de #204 era de la cotizacion que se deja: se suelta
 // con ella.
 function limpiarConfirmacionDocumento() {
+  accionDocumentoEnCurso?.progreso?.terminar();
+  accionDocumentoEnCurso = null;
   state.cuerpoGuardado = null;
   state.documentoConfirmado = false;
   documentoBajoCandado = false;
@@ -2980,14 +2986,17 @@ function cuerpoCotizacionActual() {
 
 // Contador del boton mientras se espera (#504): la etapa real y los segundos
 // que van, repintados cada segundo para que una espera larga no parezca colgada.
+// Terminado, ya no escribe: la accion soltada por limpiarConfirmacionDocumento
+// sigue avanzando de etapa y no puede pintar sobre los botones de la nueva.
 function progresoConSegundos(btn) {
   const t0 = Date.now();
   let etapa = '';
-  const pintar = () => { btn.textContent = textoProgresoDocumento(etapa, Date.now() - t0); };
+  let vivo = true;
+  const pintar = () => { if (vivo) btn.textContent = textoProgresoDocumento(etapa, Date.now() - t0); };
   const reloj = setInterval(pintar, 1000);
   return {
     avanzar: e => { etapa = e; pintar(); },
-    terminar: () => clearInterval(reloj),
+    terminar: () => { vivo = false; clearInterval(reloj); },
   };
 }
 
@@ -3027,12 +3036,12 @@ async function crearOActualizarCotizacion() {
   }
   if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-html');
-  accionDocumentoEnCurso = true;
+  const accion = { progreso: null };
+  accionDocumentoEnCurso = accion;
   btn.disabled = true;
   const btnPdf = document.getElementById('btn-pdf');
   if (btnPdf) btnPdf.disabled = true;
   btn.textContent = 'Guardando...';
-  let progreso = null;
 
   try {
     const cuerpo = cuerpoCotizacionActual();
@@ -3042,14 +3051,17 @@ async function crearOActualizarCotizacion() {
     // Misma sesion de cotizacion (#83, F1): el id del primer guardado se reenvia y
     // el server actualiza el entry en vez de crear otro.
     if (state.lastCotizacionId) sobre.cotizacionId = state.lastCotizacionId;
-    progreso = progresoConSegundos(btn);
-    await guardarYNumerarCotizacion(cuerpo, sobre, progreso.avanzar);
+    if (accionDocumentoEnCurso !== accion) return;
+    accion.progreso = progresoConSegundos(btn);
+    await guardarYNumerarCotizacion(cuerpo, sobre, accion.progreso.avanzar);
   } catch (e) {
     alert('Error guardando la cotizacion: ' + e.message);
   } finally {
-    progreso?.terminar();
-    accionDocumentoEnCurso = false;
-    pintarBotonesDocumento();
+    accion.progreso?.terminar();
+    if (accionDocumentoEnCurso === accion) {
+      accionDocumentoEnCurso = null;
+      pintarBotonesDocumento();
+    }
   }
 }
 
