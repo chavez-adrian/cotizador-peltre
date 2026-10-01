@@ -250,7 +250,7 @@ export function vendedorAlGuardar(registroPrevio, quienGuarda) {
   return original || quienGuarda;
 }
 
-// Las dos acciones de carga del historial (#104): "Actualizar cotización" (mismo
+// Las dos acciones de carga del historial (#104): "Actualizar cotizaci\u00f3n" (mismo
 // registro, mismo folio de Operam) y "Crear nueva a partir de ésta" (lo que "Cargar"
 // hacia hasta hoy, ahora con nombre honesto). Actualizar es el default cuando se
 // puede; si no, queda deshabilitado CON el motivo en el title -- deshabilitar sin
@@ -272,14 +272,14 @@ export function buildAccionesCargaHtml(cot) {
 // de pipeline-logica.js, issue #63) -- nunca por el id interno del registro. Ese
 // era el bug reportado por Adrian en la verificacion de #104: "se actualizara la
 // cotizacion #16 y su quote en Operam (mismo folio)" se lee como si 16 y el folio
-// real fueran el mismo numero. Describe la accion en terminos de los botones que
-// el vendedor va a oprimir (Actualizar y ver PDF / Actualizar y ver HTML), no
-// de un "generar" generico. El folio SIEMPRE existe en este modo (gate
+// real fueran el mismo numero. Describe la accion en terminos del boton que el
+// vendedor va a oprimir (Actualizar cotizacion, #504), no de un "generar"
+// generico. El folio SIEMPRE existe en este modo (gate
 // puedeActualizarCotizacion exige folioOperam), asi que no hay caso "sin
 // folio" que resolver aqui.
 export function buildAvisoModoActualizacion(folioOperam) {
   const badge = etiquetaFolioOperam({ folioOperam });
-  return `<span class="operam-status"><span>Al actualizar el PDF o el HTML, la cotizaci&oacute;n <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span></span>`;
+  return `<span class="operam-status"><span>Con &laquo;Actualizar cotizaci&oacute;n&raquo;, la <strong>${escapeHtml(badge)}</strong> se actualizar&aacute; en Operam.</span></span>`;
 }
 
 // Avisos al cambiar de cliente (#385): el `aviso` que devuelve
@@ -301,15 +301,87 @@ export function buildAvisoCambioClienteHtml(aviso) {
   return partes.map(m => `<span class="operam-status">${m}</span>`).join(' ');
 }
 
-// Etiquetas de los botones de generacion segun el modo (#109): en modo
-// actualizacion el tap reescribe la cotizacion (registro del cotizador y
-// quote en Operam conservando folio) antes de mostrar el documento, de ahi
-// "Actualizar y ver". Fuera de ese modo son simetricas ("Generar PDF/HTML")
-// sin que el texto oculte que el tap tambien guarda y sube. El flujo no
-// cambia, solo la etiqueta.
-export function textoBotonGenerar(tipo, modoActualizacion) {
-  if (tipo === 'html') return modoActualizacion ? 'Actualizar y ver HTML' : 'Generar HTML';
-  return modoActualizacion ? 'Actualizar y ver PDF' : 'Generar PDF';
+// Etiquetas de los botones del paso Cotizacion en su estado de ACCION (#504,
+// antes #109): el del HTML guarda y sube -- "Crear cotizacion" sin folio,
+// "Actualizar cotizacion" con el --, y el del PDF solo descarga. Crear vs
+// Actualizar sale de si la cotizacion tiene folio, no del modo actualizacion:
+// una cotizacion creada en la sesion con folio ya se actualiza, y una PRE se
+// vuelve a crear.
+export function textoBotonGenerar(tipo, tieneFolio) {
+  if (tipo === 'html') return tieneFolio ? 'Actualizar cotizaci\u00f3n' : 'Crear cotizaci\u00f3n';
+  return 'Descargar PDF';
+}
+
+const MOTIVO_PDF_SIN_CONFIRMAR = 'Primero crea o actualiza la cotizaci\u00f3n';
+
+// Forma canonica para comparar dos cuerpos del POST: llaves ordenadas en todos
+// los niveles y las que valen undefined fuera, que es exactamente lo que el
+// JSON del POST hace con ellas. El orden de los arreglos SI cuenta (partidas).
+function canonico(v) {
+  if (Array.isArray(v)) return v.map(canonico);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v).sort()) if (v[k] !== undefined) o[k] = canonico(v[k]);
+    return o;
+  }
+  return v;
+}
+
+// "La cotizacion cambio" (#504): el MISMO cuerpo que se manda en
+// POST /api/cotizacion contra el ultimo que se guardo, nunca una lista a mano
+// de campos del formulario -- un campo nuevo del cuerpo entra solo.
+export function cuerposIguales(a, b) {
+  if (a == null || b == null) return false;
+  return JSON.stringify(canonico(a)) === JSON.stringify(canonico(b));
+}
+
+// Que desenlace de Operam deja la cotizacion CONFIRMADA (ADR-0009, nota del
+// 2026-10-01). Al crear, folio y pre-cotizacion (falla o vencimiento) cuentan:
+// el documento se entrega numerado o como PRE explicita. La excepcion son los
+// candidatos de duplicado sin resolver (#204), que ademas ponen el candado.
+export function subidaConfirma(vista) {
+  return !!vista && !!vista.estado && vista.estado !== 'candidatos';
+}
+
+// Al actualizar solo `actualizada` confirma: bloqueada, desactualizado y
+// revisar dejarian un documento numerado distinto de lo que Operam tiene con
+// ese numero. Los pasos secundarios en aviso (#403, #448, #106) no cuentan.
+export function actualizacionConfirma(vista) {
+  return vista?.estado === 'actualizada';
+}
+
+// Estado de los dos botones del paso Cotizacion (#504). Visores (Ver HTML /
+// Descargar PDF, sin volver a guardar) solo con la cotizacion confirmada Y el
+// cuerpo en pantalla igual al guardado; si no, el del HTML es la accion y el
+// PDF espera deshabilitado. El candado de #204 manda sobre todo.
+export function estadoBotonesDocumento({ tieneFolio, confirmada, cuerpoActual, cuerpoGuardado, candado }) {
+  const accion = textoBotonGenerar('html', tieneFolio);
+  const pdf = textoBotonGenerar('pdf', tieneFolio);
+  if (candado) {
+    return {
+      visores: false,
+      html: { texto: accion, habilitado: false, titulo: LEYENDA_DEDUP_PENDIENTE },
+      pdf: { texto: pdf, habilitado: false, titulo: LEYENDA_DEDUP_PENDIENTE },
+    };
+  }
+  if (confirmada && cuerposIguales(cuerpoActual, cuerpoGuardado)) {
+    return {
+      visores: true,
+      html: { texto: 'Ver HTML', habilitado: true, titulo: '' },
+      pdf: { texto: pdf, habilitado: true, titulo: '' },
+    };
+  }
+  return {
+    visores: false,
+    html: { texto: accion, habilitado: true, titulo: '' },
+    pdf: { texto: pdf, habilitado: false, titulo: MOTIVO_PDF_SIN_CONFIRMAR },
+  };
+}
+
+// Progreso del boton mientras se espera a Operam (#504): la etapa real y los
+// segundos transcurridos, para que una espera larga no parezca colgada.
+export function textoProgresoDocumento(etapa, ms) {
+  return `${etapa} ${Math.max(0, Math.floor(ms / 1000))} s`;
 }
 
 // Buscador del Historial (#146, ampliado #147, rango de fechas #148). Nucleo

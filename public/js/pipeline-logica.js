@@ -494,11 +494,11 @@ export function buildActualizacionStatusHtml(id, vista) {
     const folio = v.folio != null && v.folio !== '' ? ` — <strong>${escapeHtml(etiquetaFolioOperam({ folioOperam: v.folio }))}</strong>` : '';
     return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>${pasos}`;
   }
-  // Bloqueada = el quote ya se convirtio en pedido y Operam no deja editarlo. Es el
-  // peor momento para callarse (#114): el documento ya salio numerado con ese folio y
-  // el quote se queda con el contenido viejo, asi que ademas del motivo se ofrece la
-  // UNICA salida real, la misma que da el historial -- crear una cotizacion nueva a
-  // partir de esta. Se reusa cargarCotizacion(id, 'nueva') en vez de inventar un
+  // Bloqueada = el quote ya se convirtio en pedido y Operam no deja editarlo. Desde
+  // #504 no se entrega documento (seria un folio con un contenido que el quote no
+  // tiene), y el quote se queda con el contenido viejo, asi que ademas del motivo se
+  // ofrece la UNICA salida real, la misma que da el historial -- crear una
+  // cotizacion nueva a partir de esta. Se reusa cargarCotizacion(id, 'nueva') en vez de inventar un
   // simbolo nuevo para el onclick (trampa de #112).
   if (v.estado === 'bloqueada') {
     return `<span class="operam-status operam-status-pre"><span class="cot-badge badge-pre">Operam desactualizado</span> ${escapeHtml(v.mensaje || '')}</span>` +

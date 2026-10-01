@@ -136,7 +136,10 @@ import {
   buildAccionesCargaHtml,
   buildAvisoModoActualizacion,
   buildAvisoCambioClienteHtml,
-  textoBotonGenerar,
+  estadoBotonesDocumento,
+  subidaConfirma,
+  actualizacionConfirma,
+  textoProgresoDocumento,
   filtrarCotizaciones,
   BUSCABLES_COTIZACION,
   clienteAlCargarCotizacion,
@@ -464,6 +467,13 @@ const state = {
   // puntos que lastCotizacionId: cotizacion nueva, cambio de cliente y cargar del
   // historial -- los unicos en que puede cambiar quien queda estampado.
   vendedorConfirmado: false,
+  // Confirmacion del documento (#504, ADR-0009 nota 2026-10-01): el cuerpo del
+  // ultimo POST /api/cotizacion que salio bien y si Operam ya lo confirmo (folio
+  // o PRE al crear, `actualizada` al actualizar). Con los dos, y el cuerpo en
+  // pantalla igual al guardado, los botones del paso Cotizacion son visores.
+  // Se apagan en los mismos puntos que lastCotizacionId.
+  cuerpoGuardado: null,
+  documentoConfirmado: false,
 };
 
 let searchSelected = null; // { key, sku, product }
@@ -612,6 +622,7 @@ async function showApp() {
   state.tierFijado = '';
   state.modoActualizacion = false;
   state.folioOperam = null;
+  limpiarConfirmacionDocumento();
   state.avisoCambioCliente = null;
   pcRenderInicio();
   // Decorado y envio son de la COTIZACION, no del vendedor (#91/#102, mismo
@@ -737,6 +748,9 @@ function leerContactoNuevoParaBorrador() {
 }
 
 function autoguardarBorrador() {
+  // #504: por aqui pasan los cambios de lo que se guardaria (carrito, envio,
+  // vigencia, resumen): los botones del paso Cotizacion se repintan aqui mismo.
+  pintarBotonesDocumento();
   if (!borradorListo) return;
   const llave = llaveBorradorActual();
   if (!llave) return;
@@ -919,7 +933,7 @@ function aplicarBorrador(borrador) {
     pintarFranjaCliente();
     const operamStatus = document.getElementById('operam-status-cotizar');
     if (operamStatus) operamStatus.innerHTML = buildAvisoModoActualizacion(state.folioOperam);
-    aplicarEtiquetasBotonesGenerar();
+    limpiarConfirmacionDocumento();
   }
 }
 
@@ -2627,37 +2641,78 @@ async function canalParaCotizacion(telefono) {
   }
 }
 
-// Etiquetas de los botones de generacion segun el modo (#109). Un solo lugar:
-// el bloque vivia repetido en cada punto que entra o sale del modo actualizacion,
-// y olvidar uno reintroduce exactamente el bug que #109 arreglo. Lee
-// state.modoActualizacion en vez de recibirlo, para que no pueda mentir.
-function aplicarEtiquetasBotonesGenerar() {
-  const btnPdf = document.getElementById('btn-pdf');
-  if (btnPdf) btnPdf.textContent = textoBotonGenerar('pdf', state.modoActualizacion);
-  const btnHtml = document.getElementById('btn-html');
-  if (btnHtml) btnHtml.textContent = textoBotonGenerar('html', state.modoActualizacion);
-}
-
 // Candado del documento en el panel de resultado (#204). Mientras haya un
-// duplicado sin resolver, Generar PDF / Generar HTML quedan deshabilitados con el
-// motivo a la vista; en cuanto la subida se resuelve (folio) vuelven a su estado
-// normal. Espejo en la UI del candado real, que lo aplican los GET del servidor.
-// bloqueado = la vista de interpretarSubidaOperam trae candidatos.
-//
-// El estado se RECUERDA porque los generadores lo pisan: generatePDF y
-// generateHTML hacen `btn.disabled = false` en su finally, que corre DESPUES de
-// que la subida (dentro del try) haya aplicado el candado. Sin esta memoria, el
-// boton que disparo la generacion quedaba habilitado con el tooltip puesto --
-// solo visible EJECUTANDO en navegador, ningun test .cjs lo ve.
+// duplicado sin resolver, los dos botones del paso Cotizacion quedan
+// deshabilitados con el motivo a la vista; en cuanto la subida se resuelve
+// (folio) vuelven a su estado normal. Espejo en la UI del candado real, que lo
+// aplican los GET del servidor. bloqueado = la vista de interpretarSubidaOperam
+// trae candidatos. Solo anota y repinta: quien escribe los botones es
+// pintarBotonesDocumento, que no los toca mientras una accion esta en curso.
 let documentoBajoCandado = false;
 function aplicarCandadoDocumento(bloqueado) {
   documentoBajoCandado = !!bloqueado;
-  for (const btn of [document.getElementById('btn-pdf'), document.getElementById('btn-html')]) {
+  pintarBotonesDocumento();
+  aplicarEstadoWhatsApp();
+}
+
+// Los dos botones del paso Cotizacion (#504; antes las etiquetas de #109): el
+// del HTML es la accion -- Crear / Actualizar cotizacion -- hasta que Operam
+// confirma, y entonces los dos son visores (Ver HTML / Descargar PDF) mientras
+// la cotizacion en pantalla siga igual a la guardada. El juicio es
+// estadoBotonesDocumento (cotizaciones-logica.js); aqui solo se arma su entrada
+// y se pinta. El cuerpo en pantalla se arma SOLO cuando hay una confirmacion
+// contra la cual compararlo.
+//
+// Mientras una accion esta en curso el boton es del contador de segundos: un
+// tecleo en otro paso dispara el autoguardado, que repinta, y sin esta bandera
+// el boton volvia a "Actualizar cotizacion" habilitado a media espera.
+let accionDocumentoEnCurso = false;
+
+function estadoBotonesActual() {
+  let cuerpoActual = null;
+  if (state.documentoConfirmado && state.cuerpoGuardado != null) {
+    try { cuerpoActual = cuerpoCotizacionActual(); } catch {}
+  }
+  return estadoBotonesDocumento({
+    tieneFolio: state.folioOperam != null && state.folioOperam !== '',
+    confirmada: state.documentoConfirmado,
+    cuerpoActual,
+    cuerpoGuardado: state.cuerpoGuardado,
+    candado: documentoBajoCandado,
+  });
+}
+
+function pintarBotonesDocumento() {
+  if (accionDocumentoEnCurso) return;
+  const estado = estadoBotonesActual();
+  for (const [id, b] of [['btn-html', estado.html], ['btn-pdf', estado.pdf]]) {
+    const btn = document.getElementById(id);
     if (!btn) continue;
-    btn.disabled = documentoBajoCandado;
-    if (documentoBajoCandado) btn.title = LEYENDA_DEDUP_PENDIENTE;
+    btn.textContent = b.texto;
+    btn.disabled = !b.habilitado;
+    if (b.titulo) btn.title = b.titulo;
     else btn.removeAttribute('title');
   }
+}
+
+// Lo que Operam respondio para la cotizacion `key`. Solo cuenta si sigue siendo
+// la que esta en pantalla: un Reintentar del Historial sobre otra cotizacion no
+// le cambia los botones a esta.
+function anotarConfirmacionDocumento(key, confirma) {
+  if (key !== String(state.lastCotizacionId)) return;
+  state.documentoConfirmado = !!confirma;
+  pintarBotonesDocumento();
+}
+
+// Las fronteras de la sesion de cotizacion (arranque, Nueva cotizacion, cambio
+// de cliente, Editar/Copiar, borrador en modo Editar) empiezan sin nada
+// confirmado. El candado de #204 era de la cotizacion que se deja: se suelta
+// con ella.
+function limpiarConfirmacionDocumento() {
+  state.cuerpoGuardado = null;
+  state.documentoConfirmado = false;
+  documentoBajoCandado = false;
+  pintarBotonesDocumento();
   aplicarEstadoWhatsApp();
 }
 
@@ -2708,40 +2763,50 @@ async function esperarOperamEnVuelo(key, ms = TIMEOUT_OPERAM_MS) {
   return !subidasOperamEnVuelo.has(key);
 }
 
-// Guardar -> subir a Operam esperando el folio -> generar el documento (ADR-0009).
-// Es la INVERSION del orden de #83: antes se generaba el documento y la subida
-// ocurria despues, asi que cuando el PDF ya estaba descargado el folio -- que es
-// el numero de la cotizacion -- todavia no existia. Ahora la generacion espera al
-// folio, con progreso real en el boton, y degrada a pre-cotizacion en vez de
-// bloquear: fallo, timeout o subida en vuelo entregan el documento igual, sin
-// numero, con el estado y el Reintentar de siempre (#63/#83) pintados en el slot.
-// Devuelve el id del registro (con el que los GET arman el documento) o null si
-// el guardado fallo, unico caso en que no hay nada que entregar.
-async function guardarYNumerarCotizacion(body, progreso) {
+// Guardar -> subir a Operam esperando su respuesta (ADR-0009). Es la INVERSION
+// del orden de #83: antes se generaba el documento y la subida ocurria despues,
+// asi que cuando el PDF ya estaba descargado el folio -- que es el numero de la
+// cotizacion -- todavia no existia. Desde #504 aqui no se entrega nada: se
+// guarda, se espera a Operam con progreso real en el boton y se anota si la
+// cotizacion quedo CONFIRMADA; los visores entregan despues, con un gesto
+// nuevo del vendedor.
+//   Crear: se espera hasta TIMEOUT_OPERAM_MS. Folio, fallo o vencimiento
+//     confirman (el documento sale numerado o como pre-cotizacion explicita, con
+//     el estado y el Reintentar de siempre en el slot).
+//   Actualizar: se espera SIN tope y solo `actualizada` confirma (nota
+//     2026-10-01 de ADR-0009): un documento numerado distinto del quote no debe
+//     existir.
+// `cuerpo` es lo que arma el formulario (cuerpoCotizacionActual) y es lo que se
+// recuerda como guardado; `sobre` (canal, cotizacionId) solo viaja en el POST.
+// Devuelve si quedo confirmada; false tambien si el guardado fallo.
+async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
   // #116: si la generacion anterior dejo una operacion de Operam en vuelo para ESTA
   // cotizacion (la reescritura del quote de #114, que tarda segundos por la web
   // legacy), hay que esperarla ANTES de guardar. Si no, el servidor compara contra la
   // huella vieja -- la reescritura todavia no la persistio -- pide actualizar otra vez
-  // y se choca con su propia guarda: el vendedor veia "ya hay una operacion en curso,
-  // reintenta" en el flujo mas comun que existe (PDF para archivo, HTML para WhatsApp).
-  // Esperando, la huella ya esta al dia y el servidor responde por si mismo que no hay
-  // nada que actualizar. Acotado: si no termina, se sigue y el aviso queda como red de
-  // seguridad -- nunca se deja al vendedor sin documento (ADR-0009).
+  // y se choca con su propia guarda. Esperando, la huella ya esta al dia y el servidor
+  // responde por si mismo que no hay nada que actualizar. Acotado: si no termina, se
+  // sigue y el aviso de "operacion en curso" queda como red de seguridad.
   const enVuelo = state.lastCotizacionId ? String(state.lastCotizacionId) : null;
   if (enVuelo && subidasOperamEnVuelo.has(enVuelo)) {
     progreso('Esperando a Operam...');
     await esperarOperamEnVuelo(enVuelo);
   }
   progreso('Guardando...');
-  const res = await api('/api/cotizacion', { method: 'POST', body });
+  const res = await api('/api/cotizacion', { method: 'POST', body: { ...cuerpo, ...sobre } });
   if (!res.ok) {
     let err = {};
     try { err = await res.json(); } catch {}
     alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
-    return null;
+    return false;
   }
   const { id, requiereActualizacionOperam, folioOperam } = await res.json();
   state.lastCotizacionId = String(id);
+  // #504: lo recien guardado es contra lo que se decide si la cotizacion cambio;
+  // queda sin confirmar hasta que Operam responda. Copia por JSON: es la forma
+  // en que viajo.
+  state.cuerpoGuardado = JSON.parse(JSON.stringify(cuerpo));
+  state.documentoConfirmado = false;
   // La cotizacion nueva que anunciaba el aviso de cambio de cliente (#385) ya
   // se creo: el aviso cumplio. El slot del paso Cotizacion lo vuelve a pintar
   // la subida en todas sus ramas.
@@ -2756,53 +2821,40 @@ async function guardarYNumerarCotizacion(body, progreso) {
   pintarFranjaCliente();
   // La cotizacion ya esta guardada en el servidor: el borrador cumplio su
   // funcion y muere aqui (#179), pasa lo que pase despues con Operam. Es el
-  // unico punto por el que salen las dos generaciones (PDF y HTML).
+  // unico punto por el que sale el guardado del paso Cotizacion.
   matarBorrador(EVENTOS_BORRADOR.GENERACION_EXITOSA);
   const slot = document.getElementById('operam-status-cotizar');
-  // Modo actualizacion (#104, ADR-0008): aqui NO hay inversion que hacer. El folio
-  // ya existe -- el gate puedeActualizarCotizacion lo exige -- asi que el documento
-  // se genera directo con el y la reescritura del quote sigue su curso sin
-  // bloquearlo; si falla, el registro queda marcado con Reintentar.
-  // requiereActualizacionOperam (#114) entra por la MISMA puerta: regenerar en la
-  // misma sesion una cotizacion que ya tiene folio, con el contenido cambiado, es la
-  // misma operacion que "Actualizar cotizacion" -- solo que sin pasar por el
-  // historial. Converge aqui a proposito: un camino paralelo tendria su propio gate,
-  // su propio lock y su propia forma de fallar. Si el contenido NO cambio, el
-  // servidor no lo pide y la subida idempotente responde el folio sin tocar Operam.
-  //
-  // #116: la señal del servidor manda TAMBIEN en modo actualizacion. Antes el modo
-  // forzaba la reescritura, y con la espera de arriba eso reescribia el quote DOS veces
-  // con el contenido identico (el PDF y luego el HTML del mismo carrito): la guarda de
-  // "operacion en curso" lo frenaba por accidente, no por diseño. Si la huella dice que
-  // el quote ya coincide, no hay nada que reescribir -- ni entrando por "Actualizar
-  // cotizacion" desde el historial. Sin folio (o sin huella, cotizaciones previas a
-  // #114) el servidor responde que si hace falta, asi que #104 sigue cubierto.
+  const key = String(id);
+  // Modo actualizacion (#104, ADR-0008) y regeneracion de una cotizacion ya subida
+  // (#114) convergen aqui a proposito: la senal es requiereActualizacionOperam, que
+  // manda TAMBIEN en modo actualizacion (#116: forzarla reescribia el quote dos
+  // veces con el contenido identico). Sin folio (o sin huella, cotizaciones previas
+  // a #114) el servidor responde que si hace falta, asi que #104 sigue cubierto.
   if (state.modoActualizacion && !requiereActualizacionOperam) {
-    // Acuse de que no habia nada que hacer. Sin esto el slot se quedaba con el aviso
-    // PREVIO ("al actualizar... se actualizara en Operam"), asi que el vendedor generaba
-    // y no veia si su cotizacion habia viajado o no. Se reusa la misma vista que el
-    // camino de subida da para yaSubida -- folio + "el contenido no cambio" -- en vez de
-    // inventar un mensaje nuevo para el mismo hecho.
+    // Acuse de que no habia nada que hacer (regla 4 de #504: confirmada en cuanto
+    // responde el guardado). Se reusa la misma vista que el camino de subida da
+    // para yaSubida -- folio + "el contenido no cambio".
     if (slot) slot.innerHTML = buildOperamStatusHtml(id, interpretarSubidaOperam({ ok: true, folio: folioOperam ?? null, yaSubida: true }));
-    return id;
+    anotarConfirmacionDocumento(key, true);
+    return true;
   }
   if (requiereActualizacionOperam) {
-    actualizarQuoteEnOperam(id, slot);
-    return id;
+    progreso('Actualizando en Operam...');
+    return actualizacionConfirma(await actualizarQuoteEnOperam(id, slot));
   }
   progreso('Subiendo a Operam...');
-  await conLimiteDeTiempo(autoSubirOperam(id, slot), TIMEOUT_OPERAM_MS, () => {
+  const vista = await conLimiteDeTiempo(autoSubirOperam(id, slot), TIMEOUT_OPERAM_MS, () => {
     const vencida = interpretarSubidaOperam({ timeout: true });
     if (slot) slot.innerHTML = buildOperamStatusHtml(id, vencida);
+    anotarConfirmacionDocumento(key, subidaConfirma(vencida));
     return vencida;
   });
-  progreso('Generando documento...');
-  return id;
+  return subidaConfirma(vista);
 }
 
 // cartEntries + envio capturado en el DOM (#135): la unica parte del payload de
-// items que generatePDF/generateHTML no pueden compartir via cotizar-logica.js
-// (nucleo puro sin IO) porque lee state.cart y el formulario.
+// items que cuerpoCotizacionActual no puede tomar de cotizar-logica.js (nucleo
+// puro sin IO) porque lee state.cart y el formulario.
 function cartEntriesDesdeEstado() {
   const cartEntries = [];
   for (const [key, { product, cantidad, descuento, descripcion, precioManual }] of state.cart) {
@@ -2892,110 +2944,59 @@ function bloqueaGeneracionPorMoneda() {
   return true;
 }
 
-async function generatePDF() {
-  if (bloqueaGeneracionPorMoneda()) return;
-  const telErr = validarTelefonosCotizacion();
-  if (telErr) {
-    alert(telErr.mensaje);
-    irAlTelefono(telErr.campo);
-    return;
-  }
-  const sinConfirmar = await telefonoSinConfirmar();
-  if (sinConfirmar) { irAlTelefono(sinConfirmar); return; }
-  const domio = validarDomicilioCotizacion();
-  if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
-    alert(MENSAJE_ENVIO_INVALIDADO);
-    switchTab('resumen');
-    return;
-  }
-  const motivoCalca = motivoCalcaInvalidaActual();
-  if (bloqueaGeneracionPorCalcaSinPrecio(motivoCalca !== null)) {
-    alert(avisoCalcaInvalida(puedePrecioCalca()));
-    switchTab('productos');
-    return;
-  }
-  // Partida restaurada de un borrador cuyo codigo ya no existe (#179): mismo
-  // freno que la calca sin precio -- sin el, getPrice la cotizaria en cero.
-  const codigosMuertos = partidasSinCatalogo();
-  if (bloqueaGeneracionPorPartidaSinCatalogo(codigosMuertos)) {
-    alert(avisoPartidaSinCatalogo(codigosMuertos));
-    switchTab('productos');
-    return;
-  }
-  if (!(await pedirConfirmarVendedor())) return;
-  const btn = document.getElementById('btn-pdf');
-  btn.disabled = true;
-  btn.textContent = 'Generando...';
-
-  try {
-    const tier = getCurrentTier();
-    const cartEntries = cartEntriesDesdeEstado();
-    const envioForm = envioCapturadoEnFormulario();
-    const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
-
-    // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
-    // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
-    // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
-    // se deriva de ella con aritmetica de fechas planas para que no puedan diferir.
-    const fechaEmision = fechaEmisionHoy();
-
-    const notasText = document.getElementById('resumen-notas').value;
-    const notas = notasText.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
-
-    const body = {
-      fecha: fechaEmision,
-      vigencia: vigenciaDesdeFormulario(fechaEmision),
-      tier: tier.id,
-      cliente: leerClienteFormulario(domio.leyenda),
-      condicionesPago: document.getElementById('cl-condiciones').value,
-      items,
-      subtotal,
-      iva,
-      total,
-      notas,
-      // Envio estructurado {carrier, servicio, precio} (#102): prefactor para
-      // restaurarlo tal cual al Cargar desde historial, sin re-cotizar envia.com.
-      envio: buildEnvioEstructurado({ ...envioForm, enviaRateSeleccionado }),
-      // Marca de producto decorado (ADR-0010): la calca del carrito la fija.
-      decorado: marcaDecoradoParaGuardar(),
-    };
-
-    body.incluirFotos = document.getElementById('incluir-fotos')?.checked || false;
-
-    const canal = await canalParaCotizacion(body.cliente.telefono);
-    if (canal) body.canal = canal;
-
-    // Regeneracion en la misma sesion de cotizacion (#83, F1): PDF + HTML del
-    // mismo carrito son UNA cotizacion. El id de la primera generacion se reenvia
-    // y el server actualiza el entry en vez de crear otro.
-    if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
-
-    const cotizacionId = await guardarYNumerarCotizacion(body, texto => { btn.textContent = texto; });
-    if (!cotizacionId) return;
-
-    // El documento lo genera SIEMPRE el GET (unico generador desde ADR-0009): el
-    // servidor decide el numero -- el folio de Operam -- y el nombre del archivo
-    // (?descargar=1 = attachment). Sin `download` a proposito: el nombre lo pone
-    // el Content-Disposition, para no volver a tenerlo definido en dos lugares.
-    const a = document.createElement('a');
-    a.href = `/api/cotizacion/pdf/${cotizacionId}?descargar=1`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  } catch (e) {
-    alert('Error generando PDF: ' + e.message);
-  } finally {
-    // Rehabilita salvo que la subida haya dejado el documento bajo candado (#204):
-    // este finally corre despues de ella.
-    aplicarCandadoDocumento(documentoBajoCandado);
-    // #109: el texto idle depende del modo -- sin esto el boton volvia a decir
-    // "Generar PDF" tras la primera actualizacion aunque se siguiera en modo
-    // actualizacion.
-    aplicarEtiquetasBotonesGenerar();
-  }
+// El cuerpo de POST /api/cotizacion tal como lo arma el formulario (#504): uno
+// solo para guardar y para decidir si la cotizacion cambio desde el ultimo
+// guardado (antes vivia copiado en los dos generadores). `canal` y
+// `cotizacionId` son del sobre del POST y no entran.
+function cuerpoCotizacionActual() {
+  const envioForm = envioCapturadoEnFormulario();
+  const { items, subtotal, iva, total } = buildItemsYTotales(cartEntriesDesdeEstado(), envioForm);
+  // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
+  // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
+  // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
+  // se deriva de ella con aritmetica de fechas planas para que no puedan diferir.
+  const fechaEmision = fechaEmisionHoy();
+  const notasText = document.getElementById('resumen-notas').value;
+  const notas = notasText.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
+  return {
+    fecha: fechaEmision,
+    vigencia: vigenciaDesdeFormulario(fechaEmision),
+    tier: getCurrentTier().id,
+    incluirFotos: document.getElementById('incluir-fotos')?.checked || false,
+    cliente: leerClienteFormulario(validarDomicilioCotizacion().leyenda),
+    condicionesPago: document.getElementById('cl-condiciones').value,
+    items,
+    subtotal,
+    iva,
+    total,
+    notas,
+    // Envio estructurado {carrier, servicio, precio} (#102): prefactor para
+    // restaurarlo tal cual al Cargar desde historial, sin re-cotizar envia.com.
+    envio: buildEnvioEstructurado({ ...envioForm, enviaRateSeleccionado }),
+    // Marca de producto decorado (ADR-0010): la calca del carrito la fija.
+    decorado: marcaDecoradoParaGuardar(),
+  };
 }
 
-async function generateHTML() {
+// Contador del boton mientras se espera (#504): la etapa real y los segundos
+// que van, repintados cada segundo para que una espera larga no parezca colgada.
+function progresoConSegundos(btn) {
+  const t0 = Date.now();
+  let etapa = '';
+  const pintar = () => { btn.textContent = textoProgresoDocumento(etapa, Date.now() - t0); };
+  const reloj = setInterval(pintar, 1000);
+  return {
+    avanzar: e => { etapa = e; pintar(); },
+    terminar: () => clearInterval(reloj),
+  };
+}
+
+// La accion del paso Cotizacion (#504): Crear / Actualizar cotizacion. Guarda y
+// espera a Operam sin abrir ni descargar nada -- el vendedor se queda en el
+// cotizador mirando el progreso -- y al terminar los botones dicen si ya hay
+// documento que ver. Las compuertas de antes de guardar son las mismas que
+// tenia "Generar".
+async function crearOActualizarCotizacion() {
   if (bloqueaGeneracionPorMoneda()) return;
   const telErr = validarTelefonosCotizacion();
   if (telErr) {
@@ -3005,7 +3006,6 @@ async function generateHTML() {
   }
   const sinConfirmar = await telefonoSinConfirmar();
   if (sinConfirmar) { irAlTelefono(sinConfirmar); return; }
-  const domio = validarDomicilioCotizacion();
   if (bloqueaGeneracionPorEnvioInvalidado(envioInvalidadoPorCantidad)) {
     alert(MENSAJE_ENVIO_INVALIDADO);
     switchTab('resumen');
@@ -3027,72 +3027,56 @@ async function generateHTML() {
   }
   if (!(await pedirConfirmarVendedor())) return;
   const btn = document.getElementById('btn-html');
+  accionDocumentoEnCurso = true;
   btn.disabled = true;
-  btn.textContent = 'Generando...';
-
-  // La pestana del HTML se reserva AHORA, con el gesto del vendedor todavia
-  // fresco: desde ADR-0009 abrir el documento ocurre despues de esperar a Operam
-  // (hasta TIMEOUT_OPERAM_MS) y un window.open tan tarde se lo come el bloqueador
-  // de popups. Si algo falla se cierra.
-  const ventana = window.open('', '_blank');
-  if (ventana) ventana.document.write('<p style="font-family:Arial;padding:24px">Generando la cotizacion...</p>');
+  const btnPdf = document.getElementById('btn-pdf');
+  if (btnPdf) btnPdf.disabled = true;
+  btn.textContent = 'Guardando...';
+  let progreso = null;
 
   try {
-    const tier = getCurrentTier();
-    const cartEntries = cartEntriesDesdeEstado();
-    const envioForm = envioCapturadoEnFormulario();
-    const { items, subtotal, iva, total } = buildItemsYTotales(cartEntries, envioForm);
-
-    // Fecha de emision del calendario del negocio, no la de UTC (#284): armada con
-    // toISOString(), de 18:00 a 23:59 hora del centro salia con la fecha de manana
-    // y Operam rechazaba el quote (sin rate de moneda para esa fecha). La vigencia
-    // se deriva de ella con aritmetica de fechas planas para que no puedan diferir.
-    const fechaEmision = fechaEmisionHoy();
-
-    const notasText = document.getElementById('resumen-notas').value;
-    const notas = notasText.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
-
-    const body = {
-      fecha: fechaEmision,
-      vigencia: vigenciaDesdeFormulario(fechaEmision),
-      tier: tier.id,
-      incluirFotos: document.getElementById('incluir-fotos')?.checked || false,
-      cliente: leerClienteFormulario(domio.leyenda),
-      condicionesPago: document.getElementById('cl-condiciones').value,
-      items,
-      subtotal,
-      iva,
-      total,
-      notas,
-      envio: buildEnvioEstructurado({ ...envioForm, enviaRateSeleccionado }),
-      // Marca de producto decorado (ADR-0010): la calca del carrito la fija.
-      decorado: marcaDecoradoParaGuardar(),
-    };
-
-    const canal = await canalParaCotizacion(body.cliente.telefono);
-    if (canal) body.canal = canal;
-
-    // Misma sesion de cotizacion (#83, F1): reusar el entry ya creado por el PDF
-    // (o una generacion previa) en vez de duplicar la cotizacion.
-    if (state.lastCotizacionId) body.cotizacionId = state.lastCotizacionId;
-
-    const cotizacionId = await guardarYNumerarCotizacion(body, texto => { btn.textContent = texto; });
-    if (!cotizacionId) { ventana?.close(); return; }
-
-    // Mismo criterio que el PDF: el HTML lo regenera el GET con el folio ya
-    // persistido (unico generador, ADR-0009).
-    const url = `/api/cotizacion/html/${cotizacionId}`;
-    if (ventana) ventana.location = url;
-    else window.open(url, '_blank');
+    const cuerpo = cuerpoCotizacionActual();
+    const sobre = {};
+    const canal = await canalParaCotizacion(cuerpo.cliente.telefono);
+    if (canal) sobre.canal = canal;
+    // Misma sesion de cotizacion (#83, F1): el id del primer guardado se reenvia y
+    // el server actualiza el entry en vez de crear otro.
+    if (state.lastCotizacionId) sobre.cotizacionId = state.lastCotizacionId;
+    progreso = progresoConSegundos(btn);
+    await guardarYNumerarCotizacion(cuerpo, sobre, progreso.avanzar);
   } catch (e) {
-    ventana?.close();
-    alert('Error generando HTML: ' + e.message);
+    alert('Error guardando la cotizacion: ' + e.message);
   } finally {
-    // Ver generatePDF: el candado (#204) manda sobre el rehabilitado.
-    aplicarCandadoDocumento(documentoBajoCandado);
-    // #109: mismo criterio que btn-pdf -- el texto idle depende del modo.
-    aplicarEtiquetasBotonesGenerar();
+    progreso?.terminar();
+    accionDocumentoEnCurso = false;
+    pintarBotonesDocumento();
   }
+}
+
+// Boton del HTML (#504): visor si la cotizacion esta confirmada y sin cambios,
+// accion si no. El estado se recalcula al clic -- no se confia en la etiqueta
+// pintada --, y el visor abre la pestana con el gesto del vendedor todavia
+// fresco, sin volver a guardar (el GET regenera el documento, ADR-0009).
+function alClicBotonHtml() {
+  if (accionDocumentoEnCurso) return;
+  if (estadoBotonesActual().visores) {
+    window.open(`/api/cotizacion/html/${state.lastCotizacionId}`, '_blank');
+    return;
+  }
+  crearOActualizarCotizacion();
+}
+
+// Boton del PDF (#504): solo descarga, y solo con la cotizacion confirmada y sin
+// cambios. Sin `download` a proposito: el nombre lo pone el Content-Disposition
+// del GET (?descargar=1 = attachment), para no tenerlo definido en dos lugares.
+function alClicBotonPdf() {
+  if (accionDocumentoEnCurso) return;
+  if (!estadoBotonesActual().visores) { pintarBotonesDocumento(); return; }
+  const a = document.createElement('a');
+  a.href = `/api/cotizacion/pdf/${state.lastCotizacionId}?descargar=1`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 // El texto lo arma el nucleo del Resumen de la cotizacion (#307), el mismo que
@@ -3144,7 +3128,7 @@ function nuevaCotizacion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
-  aplicarEstadoWhatsApp();
+  limpiarConfirmacionDocumento();
   state.vendedorConfirmado = false;
   state.tierFijado = '';
   // Empezar de cero es una sesion nueva: no hay edicion que abandonar ni lista
@@ -3195,8 +3179,6 @@ function nuevaCotizacion() {
   sincronizarNotaEnvio();
   const operamStatus = document.getElementById('operam-status-cotizar');
   if (operamStatus) operamStatus.innerHTML = '';
-  // #109: salir de modo actualizacion devuelve los botones a su texto normal.
-  aplicarEtiquetasBotonesGenerar();
   // Reinicia la entrada del paso Cliente (variante B, #82) a los dos caminos;
   // pcRenderInicio ya limpia los campos del cliente y de entrega via
   // pcPrepararSeleccion (el bloque de entrega vive en el paso Envio desde #84).
@@ -3521,13 +3503,12 @@ function pcPrepararSeleccion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
-  aplicarEstadoWhatsApp();
+  // #504: lo confirmado era de la cotizacion del cliente anterior.
+  limpiarConfirmacionDocumento();
   state.vendedorConfirmado = false;
   state.tierFijado = cambio.tierFijado;
   state.avisoCambioCliente = cambio.aviso;
   pintarAvisoCambioCliente();
-  // #109: cambio de cliente tambien sale de modo actualizacion.
-  aplicarEtiquetasBotonesGenerar();
   // Pantalla y estado nunca divergen (#385): sin esto Productos, el selector y
   // el aviso de lista se quedaban con el render del cliente anterior mientras
   // el paso Cotizacion y el quote ya salian con otra lista. Mismo cuarteto que
@@ -4723,6 +4704,7 @@ async function autoSubirOperam(id, slot, extraBody) {
   if (subidasOperamEnVuelo.has(key)) {
     const enVuelo = interpretarSubidaOperam({ enVuelo: true });
     if (slot) slot.innerHTML = buildOperamStatusHtml(id, enVuelo);
+    anotarConfirmacionDocumento(key, subidaConfirma(enVuelo));
     return enVuelo;
   }
   subidasOperamEnVuelo.add(key);
@@ -4762,6 +4744,11 @@ async function autoSubirOperam(id, slot, extraBody) {
   if (vista.customerId != null && key === String(state.lastCotizacionId) &&
       pcState.cliente && pcState.cliente.tipo !== 'operam') {
     pcState.cliente.clienteOperamId = vista.customerId;
+    // #504: el servidor ya anoto ese Cliente Operam en el registro, asi que es
+    // parte de lo guardado y no un cambio del vendedor. Sin esto el cuerpo en
+    // pantalla dejaba de coincidir justo al confirmar y los botones regresaban
+    // a "Actualizar cotizacion".
+    if (state.cuerpoGuardado?.cliente) state.cuerpoGuardado.cliente.customerId = customerIdFiscal(pcState.cliente);
     if (pcEl()?.querySelector('.pc-cli-card')) pcRenderChips();
   }
   // #311: el folio recien asignado enciende el boton de WhatsApp. Solo si el
@@ -4772,15 +4759,20 @@ async function autoSubirOperam(id, slot, extraBody) {
     pintarFranjaCliente();
   }
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
+  // #504: la generacion y todos los Reintentar (elegir candidato, sucursal,
+  // otra razon social, crear nuevo) pasan por aqui, asi que aqui se anota si
+  // la cotizacion en pantalla quedo confirmada.
+  anotarConfirmacionDocumento(key, subidaConfirma(vista));
   // #204: candidatos sin resolver = documento bajo candado. Cualquier otro
   // desenlace (folio, PRE por Operam, sin datos) lo libera.
   aplicarCandadoDocumento(vista.estado === 'candidatos');
   return vista;
 }
-// Actualizacion del quote conservando el folio (#104, ADR-0008). Se dispara tras
-// generar el documento cuando la sesion venia de "Actualizar cotizacion": el registro
-// del cotizador ya lo reescribio la generacion (crearOActualizarCotizacion honra
-// cotizacionId), aqui se reescribe el quote en Operam. Comparte la guarda de subidas
+// Actualizacion del quote conservando el folio (#104, ADR-0008). Se dispara al
+// guardar una cotizacion con folio cuyo contenido cambio, y la accion "Actualizar
+// cotizacion" la ESPERA (#504): el registro del cotizador ya lo reescribio el
+// guardado (crearOActualizarCotizacion del servidor honra cotizacionId), aqui se
+// reescribe el quote en Operam. Comparte la guarda de subidas
 // en vuelo con autoSubirOperam: las dos operaciones se pisarian el carrito de FA, y
 // el servidor ademas tiene su lock por id (la proteccion real).
 async function actualizarQuoteEnOperam(id, slot) {
@@ -4788,8 +4780,7 @@ async function actualizarQuoteEnOperam(id, slot) {
   const key = String(id);
   // Ya en vuelo: era un `return` mudo, tolerable mientras esto solo lo disparaba el
   // boton del historial. Desde #114 la reescritura del quote esta en la ruta critica
-  // de CADA generacion (Generar PDF y enseguida Ver HTML la disparan dos veces), y un
-  // silencio aqui deja el quote con lo viejo mientras el documento ya salio numerado.
+  // del guardado, y un silencio aqui deja el quote con lo viejo sin decir por que.
   // Se pinta el mismo aviso que da el 425 del servidor, con su Reintentar.
   if (subidasOperamEnVuelo.has(key)) {
     const enCurso = interpretarActualizacionOperam({
@@ -4797,6 +4788,7 @@ async function actualizarQuoteEnOperam(id, slot) {
       error: 'Ya hay una operacion de Operam en curso para esta cotizacion: reintenta cuando termine.',
     });
     if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, enCurso);
+    anotarConfirmacionDocumento(key, actualizacionConfirma(enCurso));
     return enCurso;
   }
   subidasOperamEnVuelo.add(key);
@@ -4828,16 +4820,11 @@ async function actualizarQuoteEnOperam(id, slot) {
   }
   aplicarEstadoWhatsApp();
   if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);
-  // #114: bloqueada = el quote ya tiene pedido y Operam no deja editarlo, asi que el
-  // documento recien generado lleva un folio cuyo quote conserva el contenido viejo.
-  // El slot solo no basta: el vendedor acaba de descargar el PDF y su siguiente gesto
-  // es mandarselo al cliente. Aqui NO vale entregar callado un documento numerado que
-  // diverge (decision de Adrian), y este es el unico aviso que se cruza en el camino.
-  if (vista.estado === 'bloqueada') {
-    alert('OJO: el documento ya lleva el folio de Operam, pero la cotizacion en Operam NO se actualizo.\n\n' +
-      (vista.mensaje || '') +
-      '\n\nUsa "Copiar cotizacion" antes de enviarsela al cliente.');
-  }
+  // #504: solo `actualizada` entrega. Bloqueada (el quote ya tiene pedido),
+  // desactualizado y revisar dejan los botones en la accion y el slot dice por
+  // que, con Reintentar o Copiar cotizacion. El `alert` de #114 ("el documento ya
+  // lleva el folio...") se fue con el documento que ya no se entrega.
+  anotarConfirmacionDocumento(key, actualizacionConfirma(vista));
   return vista;
 }
 window.reintentarActualizacionOperam = (id, el) => actualizarQuoteEnOperam(id, slotOperamDesde(el));
@@ -7508,9 +7495,10 @@ async function cargarCotizacion(id, modo = 'nueva') {
         ? buildAvisoModoActualizacion(cot.folioOperam)
         : avisosCopia.map(m => `<span class="operam-status">${m}</span>`).join(' ');
     }
-    // Etiquetas de los botones (#109): en modo actualizacion comunican que
-    // reescriben el documento/quote existente, no que crean uno nuevo.
-    aplicarEtiquetasBotonesGenerar();
+    // Los botones arrancan en la accion (#504): Editar en "Actualizar
+    // cotizacion" con el PDF deshabilitado (el cuerpo lleva la fecha de hoy y
+    // nunca coincide con lo cargado), Copiar en "Crear cotizacion".
+    limpiarConfirmacionDocumento();
 
     // Volver a la app
     // Se llega desde el Historial, "Cotizaciones previas" o el Pipeline (#502):
@@ -7659,9 +7647,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('cal-tintas')?.addEventListener('change', renderCalcas);
   document.getElementById('btn-agregar-calca')?.addEventListener('click', agregarCalca);
 
-  // PDF, HTML & WhatsApp
-  document.getElementById('btn-pdf').addEventListener('click', generatePDF);
-  document.getElementById('btn-html').addEventListener('click', generateHTML);
+  // Accion / visores del documento (#504) y WhatsApp
+  document.getElementById('btn-pdf').addEventListener('click', alClicBotonPdf);
+  document.getElementById('btn-html').addEventListener('click', alClicBotonHtml);
+  // Notas, domicilio, condiciones o fotos no pasan por el autoguardado ni por el
+  // resumen: sin esto "Ver HTML" se quedaba pintado sobre una cotizacion que ya
+  // cambio. pintarBotonesDocumento solo arma el cuerpo cuando hay confirmacion.
+  document.addEventListener('input', pintarBotonesDocumento);
+  document.addEventListener('change', pintarBotonesDocumento);
+  pintarBotonesDocumento();
   document.getElementById('btn-whatsapp').addEventListener('click', shareWhatsApp);
   aplicarEstadoWhatsApp();
   document.getElementById('btn-nueva').addEventListener('click', nuevaCotizacion);

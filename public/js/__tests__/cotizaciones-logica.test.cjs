@@ -11,7 +11,12 @@ let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
 let MENSAJE_COPIA_LISTA_FIJADA;
 let clienteAlCargarCotizacion, ligaClienteAlGuardar, customerIdFiscal, cotizacionesPreviasDelCliente;
 let vendedorAlGuardar, avisoArrastreCotizacion;
+let estadoBotonesDocumento, cuerposIguales, subidaConfirma, actualizacionConfirma, textoProgresoDocumento;
+let interpretarSubidaOperam, interpretarActualizacionOperam, LEYENDA_DEDUP_PENDIENTE;
 before(async () => {
+  ({ estadoBotonesDocumento, cuerposIguales, subidaConfirma, actualizacionConfirma,
+    textoProgresoDocumento } = await import('../cotizaciones-logica.js'));
+  ({ interpretarSubidaOperam, interpretarActualizacionOperam, LEYENDA_DEDUP_PENDIENTE } = await import('../pipeline-logica.js'));
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
     buildHistorialAccionesHtml, buildWhatsAppLinkHistorial,
@@ -471,9 +476,10 @@ test('Q28: buildAvisoModoActualizacion nombra el folio real de Operam con la eti
   assert.ok(!html.includes('#16'));
 });
 
-test('Q29: buildAvisoModoActualizacion describe la accion en terminos de los botones (actualizar PDF/HTML)', () => {
+test('Q29 #504: buildAvisoModoActualizacion describe la accion en terminos del boton (Actualizar cotizacion)', () => {
   const html = buildAvisoModoActualizacion('1200');
-  assert.match(html, /actualizar el pdf o el html/i);
+  assert.match(html, /Actualizar cotizaci&oacute;n/);
+  assert.doesNotMatch(html, /pdf o el html/i);
   assert.match(html, /se actualizar.* en operam/i);
 });
 
@@ -516,17 +522,158 @@ test('buildAvisoCambioClienteHtml: las dos cosas a la vez salen como dos avisos'
   assert.ok(html.includes(MENSAJE_COPIA_LISTA_FIJADA));
 });
 
-// === #109: los botones comunican que actualizan (no "generar" generico) en
-// modo actualizacion, y conservan el texto historico fuera de ese modo.
+// === #504: el boton del HTML es la ACCION (Crear / Actualizar cotizacion) y el
+// del PDF solo descarga. Crear vs Actualizar sale de si la cotizacion tiene
+// folio, no del modo: una creada en la sesion con folio ya se actualiza y una
+// PRE se vuelve a crear.
 
-test('Q30: textoBotonGenerar devuelve las etiquetas normales fuera de modo actualizacion', () => {
-  assert.equal(textoBotonGenerar('pdf', false), 'Generar PDF');
-  assert.equal(textoBotonGenerar('html', false), 'Generar HTML');
+test('Q30 #504: sin folio el boton del HTML dice Crear cotizacion; el del PDF, Descargar PDF', () => {
+  assert.equal(textoBotonGenerar('html', false), 'Crear cotizaci\u00f3n');
+  assert.equal(textoBotonGenerar('pdf', false), 'Descargar PDF');
 });
 
-test('Q31: textoBotonGenerar devuelve etiquetas de actualizar en modo actualizacion', () => {
-  assert.equal(textoBotonGenerar('pdf', true), 'Actualizar y ver PDF');
-  assert.equal(textoBotonGenerar('html', true), 'Actualizar y ver HTML');
+test('Q31 #504: con folio el boton del HTML dice Actualizar cotizacion; el del PDF sigue en Descargar PDF', () => {
+  assert.equal(textoBotonGenerar('html', true), 'Actualizar cotizaci\u00f3n');
+  assert.equal(textoBotonGenerar('pdf', true), 'Descargar PDF');
+});
+
+const CUERPO_504 = {
+  fecha: '2026-10-01',
+  vigencia: '2026-10-31',
+  tier: 'menudeo',
+  cliente: { customerId: 15, branchId: null, razonSocial: 'Adrian Chavez Rosete', telefono: '5512345678', calle: 'Av. Reforma 123' },
+  condicionesPago: 'contado',
+  items: [{ codigo: 'CO16', cantidad: 12, precio: 100, descuento: 0 }],
+  subtotal: 1200, iva: 192, total: 1392,
+  notas: ['Precios EXW Ixtapaluca, Estado de Mexico.'],
+  envio: { carrier: 'fedex', servicio: 'express', precio: 300 },
+  decorado: undefined,
+  incluirFotos: false,
+};
+const copia504 = () => JSON.parse(JSON.stringify(CUERPO_504));
+
+test('#504 estadoBotonesDocumento: confirmada y con el mismo cuerpo = visores (Ver HTML y Descargar PDF habilitados)', () => {
+  const e = estadoBotonesDocumento({ tieneFolio: true, confirmada: true, cuerpoActual: copia504(), cuerpoGuardado: copia504(), candado: false });
+  assert.equal(e.visores, true);
+  assert.equal(e.html.texto, 'Ver HTML');
+  assert.equal(e.html.habilitado, true);
+  assert.equal(e.pdf.texto, 'Descargar PDF');
+  assert.equal(e.pdf.habilitado, true);
+});
+
+test('#504 estadoBotonesDocumento: una PRE confirmada sin folio tambien entrega por los visores', () => {
+  const e = estadoBotonesDocumento({ tieneFolio: false, confirmada: true, cuerpoActual: copia504(), cuerpoGuardado: copia504(), candado: false });
+  assert.equal(e.visores, true);
+  assert.equal(e.html.texto, 'Ver HTML');
+});
+
+test('#504 estadoBotonesDocumento: confirmada pero con el cuerpo cambiado regresa a la accion', () => {
+  const cambios = {
+    cantidad: c => { c.items[0].cantidad = 13; },
+    descuento: c => { c.items[0].descuento = 5; },
+    envio: c => { c.envio = null; },
+    notas: c => { c.notas.push('Entrega en una semana.'); },
+    cliente: c => { c.cliente.razonSocial = 'Sofia Rodriguez'; },
+  };
+  for (const [nombre, cambiar] of Object.entries(cambios)) {
+    const actual = copia504();
+    cambiar(actual);
+    const conFolio = estadoBotonesDocumento({ tieneFolio: true, confirmada: true, cuerpoActual: actual, cuerpoGuardado: copia504(), candado: false });
+    assert.equal(conFolio.visores, false, nombre);
+    assert.equal(conFolio.html.texto, 'Actualizar cotizaci\u00f3n', nombre);
+    assert.equal(conFolio.html.habilitado, true, nombre);
+    assert.equal(conFolio.pdf.texto, 'Descargar PDF', nombre);
+    assert.equal(conFolio.pdf.habilitado, false, nombre);
+    const sinFolio = estadoBotonesDocumento({ tieneFolio: false, confirmada: true, cuerpoActual: actual, cuerpoGuardado: copia504(), candado: false });
+    assert.equal(sinFolio.html.texto, 'Crear cotizaci\u00f3n', nombre);
+  }
+});
+
+test('#504 estadoBotonesDocumento: sin confirmar es la accion aunque el cuerpo sea el mismo', () => {
+  const e = estadoBotonesDocumento({ tieneFolio: true, confirmada: false, cuerpoActual: copia504(), cuerpoGuardado: copia504(), candado: false });
+  assert.equal(e.visores, false);
+  assert.equal(e.html.texto, 'Actualizar cotizaci\u00f3n');
+  assert.equal(e.pdf.habilitado, false);
+});
+
+test('#504 estadoBotonesDocumento: cotizacion nueva (nada guardado) = Crear cotizacion con el PDF deshabilitado', () => {
+  const e = estadoBotonesDocumento({ tieneFolio: false, confirmada: false, cuerpoActual: copia504(), cuerpoGuardado: null, candado: false });
+  assert.equal(e.html.texto, 'Crear cotizaci\u00f3n');
+  assert.equal(e.html.habilitado, true);
+  assert.equal(e.pdf.texto, 'Descargar PDF');
+  assert.equal(e.pdf.habilitado, false);
+  assert.ok(e.pdf.titulo, 'el PDF deshabilitado dice por que');
+});
+
+test('#504 estadoBotonesDocumento: el candado de #204 deshabilita los dos, aun confirmada y sin cambios', () => {
+  const e = estadoBotonesDocumento({ tieneFolio: false, confirmada: true, cuerpoActual: copia504(), cuerpoGuardado: copia504(), candado: true });
+  assert.equal(e.visores, false);
+  assert.equal(e.html.habilitado, false);
+  assert.equal(e.pdf.habilitado, false);
+  assert.equal(e.html.titulo, LEYENDA_DEDUP_PENDIENTE);
+  assert.equal(e.pdf.titulo, LEYENDA_DEDUP_PENDIENTE);
+});
+
+test('#504 cuerposIguales: no depende del orden de las llaves, ni arriba ni anidadas', () => {
+  const a = copia504();
+  const b = {
+    incluirFotos: false,
+    envio: { precio: 300, servicio: 'express', carrier: 'fedex' },
+    notas: ['Precios EXW Ixtapaluca, Estado de Mexico.'],
+    total: 1392, iva: 192, subtotal: 1200,
+    items: [{ descuento: 0, precio: 100, cantidad: 12, codigo: 'CO16' }],
+    condicionesPago: 'contado',
+    cliente: { calle: 'Av. Reforma 123', telefono: '5512345678', razonSocial: 'Adrian Chavez Rosete', branchId: null, customerId: 15 },
+    tier: 'menudeo',
+    vigencia: '2026-10-31',
+    fecha: '2026-10-01',
+  };
+  assert.equal(cuerposIguales(a, b), true);
+});
+
+test('#504 cuerposIguales: una llave en undefined es lo mismo que no traerla (asi viaja en el POST)', () => {
+  const sinDecorado = copia504();
+  delete sinDecorado.decorado;
+  assert.equal(cuerposIguales({ ...CUERPO_504, decorado: undefined }, sinDecorado), true);
+  assert.equal(cuerposIguales({ ...CUERPO_504, decorado: true }, sinDecorado), false);
+});
+
+test('#504 cuerposIguales: el orden de las partidas SI cuenta y la fecha de hoy tambien', () => {
+  const dos = { ...copia504(), items: [{ codigo: 'A', cantidad: 1 }, { codigo: 'B', cantidad: 2 }] };
+  const invertidas = { ...copia504(), items: [{ codigo: 'B', cantidad: 2 }, { codigo: 'A', cantidad: 1 }] };
+  assert.equal(cuerposIguales(dos, invertidas), false);
+  assert.equal(cuerposIguales(copia504(), { ...copia504(), fecha: '2026-10-02' }), false);
+  assert.equal(cuerposIguales(copia504(), null), false);
+});
+
+test('#504 subidaConfirma: al crear confirman el folio, la PRE por falla y la PRE por vencimiento; los candidatos no', () => {
+  assert.equal(subidaConfirma(interpretarSubidaOperam({ ok: true, folio: '1300' })), true);
+  assert.equal(subidaConfirma(interpretarSubidaOperam({ ok: true, folio: '1300', yaSubida: true })), true);
+  assert.equal(subidaConfirma(interpretarSubidaOperam({ ok: false, status: 502, error: 'Operam 502' })), true);
+  assert.equal(subidaConfirma(interpretarSubidaOperam({ ok: false, status: 0, error: 'Failed to fetch' })), true);
+  assert.equal(subidaConfirma(interpretarSubidaOperam({ timeout: true })), true);
+  assert.equal(subidaConfirma(interpretarSubidaOperam({ ok: false, status: 422, error: 'Faltan datos' })), true);
+  assert.equal(subidaConfirma(interpretarSubidaOperam({ ok: false, status: 409, error: 'similar', candidatos: [{ id: 10, CustName: 'X' }] })), false);
+  assert.equal(subidaConfirma(null), false);
+});
+
+test('#504 actualizacionConfirma: solo la actualizacion confirmada entrega; bloqueada, desactualizado y revisar no', () => {
+  assert.equal(actualizacionConfirma(interpretarActualizacionOperam({ ok: true, status: 200, folio: '1200' })), true);
+  assert.equal(actualizacionConfirma(interpretarActualizacionOperam({
+    ok: true, status: 200, folio: '1200',
+    steps: [{ step: 'lista-encabezado', status: 'warn', mensaje: 'La lista no quedo' }],
+  })), true, 'un paso secundario en warn no cuenta como falla');
+  assert.equal(actualizacionConfirma(interpretarActualizacionOperam({ status: 409, error: 'ya tiene un pedido asociado' })), false);
+  assert.equal(actualizacionConfirma(interpretarActualizacionOperam({ ok: false, status: 200, escrito: false, error: 'no se agrego la partida' })), false);
+  assert.equal(actualizacionConfirma(interpretarActualizacionOperam({ ok: false, status: 200, escrito: true, verificado: true, discrepancias: [{ campo: 'precio' }] })), false);
+  assert.equal(actualizacionConfirma(interpretarActualizacionOperam({ ok: false, status: 425, escrito: false, error: 'en curso' })), false);
+  assert.equal(actualizacionConfirma(null), false);
+});
+
+test('#504 textoProgresoDocumento: la etapa real con los segundos transcurridos', () => {
+  assert.equal(textoProgresoDocumento('Guardando...', 0), 'Guardando... 0 s');
+  assert.equal(textoProgresoDocumento('Subiendo a Operam...', 7400), 'Subiendo a Operam... 7 s');
+  assert.equal(textoProgresoDocumento('Actualizando en Operam...', 61999), 'Actualizando en Operam... 61 s');
 });
 
 // === #146: buscador del Historial. Nucleo puro que recibe el arreglo ya

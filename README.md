@@ -86,7 +86,7 @@ test/                  # tests de backend (supertest + node:test)
 2. Paso Cliente: "Ya lo conozco" (buscar en Operam o en prospectos propios, con recientes) o "Contacto nuevo" (celular, nombre, ciudad, origen — crea/usa el prospecto, issue #82)
 3. Agregar productos al carrito (tier de precio calculado automaticamente)
 4. Cotizar envio con envia.com (opcional; direccion de entrega se captura en el paso Envio)
-5. Generar PDF o HTML, compartir por WhatsApp — la cotizacion se sube sola a Operam (issue #83); si la oportunidad no tenia cliente en Operam, primero se crea el cliente generico (issue #81, ADR-0006)
+5. Crear (o actualizar) la cotizacion y, ya confirmada en Operam, ver el HTML o descargar el PDF; compartir por WhatsApp — la cotizacion se sube sola a Operam (issue #83); si la oportunidad no tenia cliente en Operam, primero se crea el cliente generico (issue #81, ADR-0006)
 
 ### CSF como upgrade del cliente generico (chip "Fiscal" de la tarjeta, autenticado)
 1. En la tarjeta del cliente seleccionado, si ya existe un cliente en Operam con RFC generico, el chip "Fiscal" es clickeable
