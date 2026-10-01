@@ -185,6 +185,14 @@ export function cuerpoTarifas({ cp, pais, items, totalConIVA, domicilio = {} }) 
   return cuerpo;
 }
 
+// Valor declarado a la paqueteria en la consulta de tarifas (#487): la mercancia
+// con su descuento (#137, ya aplicado en el subtotal) y con IVA, en centavos. La
+// partida de envio vigente NO entra: sumarla hacia que una re-consulta declarara
+// el flete de la consulta anterior como mercancia asegurada.
+export function valorDeclaradoEnvio(subtotalMercancia) {
+  return Math.round((subtotalMercancia || 0) * 116) / 100;
+}
+
 // Tiempo estimado de entrega de una tarifa de envia.com (issue #88). El shape
 // real de api.envia.com/ship/rate/ (verificado en vivo, FedEx/UPS, destino
 // CP 78000) NO trae `rate.days` -- ese campo nunca aparecio en la respuesta real.

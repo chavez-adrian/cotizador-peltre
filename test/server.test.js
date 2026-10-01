@@ -704,7 +704,8 @@ test('#72: POST /api/cotizacion/envio (envia.com) ya no consulta Lalamove', asyn
 
 // #437: "Cotizar con Tresguerras" es otra opcion propia del selector: su endpoint
 // consulta SOLO el cotizador publico de Tresguerras, con las cajas de
-// calcularPaquetes y el total de la cotizacion como valor declarado.
+// calcularPaquetes y la mercancia con descuento e IVA, sin la partida de envio,
+// como valor declarado (#487).
 const FIXTURES_TG = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 function mockTresguerrasServer() {
   const llamadas = { tresguerras: [], otras: [] };

@@ -2380,8 +2380,9 @@ app.post('/api/cotizacion/envio/lalamove', authMiddleware, async (req, res) => {
 
 // "Cotizar con Tresguerras" (#437): opcion propia del selector de envio, con la
 // tarifa PUERTA A PUERTA del cotizador publico de Tresguerras (recoleccion en la
-// fabrica). Las cajas de calcularPaquetes van con su peso POR BULTO y el total de
-// la cotizacion como valor declarado (el seguro sale dentro de la tarifa).
+// fabrica). Las cajas de calcularPaquetes van con su peso POR BULTO y la mercancia
+// con descuento e IVA, sin la partida de envio, como valor declarado (#487; el
+// seguro sale dentro de la tarifa).
 app.post('/api/cotizacion/envio/tresguerras', authMiddleware, async (req, res) => {
   const { cpDestino, paisDestino, items, totalConIVA } = req.body;
   if (!cpDestino) return res.status(400).json({ error: 'CP destino requerido' });

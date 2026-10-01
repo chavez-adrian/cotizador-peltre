@@ -199,6 +199,7 @@ import {
   esOpcionConCosto,
   endpointTarifas,
   cuerpoTarifas,
+  valorDeclaradoEnvio,
   cpValido,
   buildConfirmarVendedorModalHtml,
   debeInvalidarEnvioPorCantidad,
@@ -2108,14 +2109,9 @@ async function cotizarEnvia() {
 
   // Total con IVA para calcular seguro (25%). Con descuento se declara el valor
   // CON descuento (#137): es lo que el cliente paga y lo que dira la factura si
-  // hay que reclamarle a la paqueteria. calcSubtotal ya viene descontado.
-  const subtotal = calcSubtotal();
-  const shippingCost = importeLinea({
-    cantidad: 1,
-    precio: parseFloat(document.getElementById('shipping-cost')?.value || 0) || 0,
-    descuento: envioDescuento,
-  });
-  const totalConIVA = (subtotal + shippingCost) * 1.16;
+  // hay que reclamarle a la paqueteria. calcSubtotal ya viene descontado y no
+  // lleva la partida de envio (#487).
+  const totalConIVA = valorDeclaradoEnvio(calcSubtotal());
 
   try {
     const res = await api(endpointTarifas(document.getElementById('shipping-option').value), {

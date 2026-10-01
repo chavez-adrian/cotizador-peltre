@@ -13,7 +13,7 @@ let envioTrasCambioDeCp;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA;
-let cuerpoTarifas;
+let cuerpoTarifas, valorDeclaradoEnvio;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
@@ -26,7 +26,7 @@ before(async () => {
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA,
-    sincronizarCorreoFactura, cuerpoTarifas,
+    sincronizarCorreoFactura, cuerpoTarifas, valorDeclaradoEnvio,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -1237,4 +1237,24 @@ test('#453: cuerpoTarifas sin domicilio capturado manda solo lo de antes', () =>
   assert.deepStrictEqual(
     cuerpoTarifas({ cp: '78701', pais: 'US', items, totalConIVA: 500, domicilio: { calle: '', colonia: '  ' } }),
     { cpDestino: '78701', paisDestino: 'US', items, totalConIVA: 500 });
+});
+
+// #487: el valor declarado a la paqueteria es la mercancia con IVA y nada mas.
+// Medido en produccion: con 430.00 de mercancia y una tarifa de 98.69 ya elegida,
+// la re-consulta declaraba 613.28 = (430.00 + 98.69) x 1.16; lo correcto es 498.80
+// en la primera consulta y en cualquier re-consulta.
+test('#487: valorDeclaradoEnvio de 430.00 de mercancia declara 498.80 con IVA', () => {
+  assert.strictEqual(valorDeclaradoEnvio(430), 498.8);
+});
+
+test('#487: cuerpoTarifas con el valor declarado de 430.00 de mercancia manda totalConIVA 498.80', () => {
+  const items = [{ codigo: 'PV08', cantidad: 2 }];
+  const cuerpo = cuerpoTarifas({ cp: '11700', pais: 'MX', items, totalConIVA: valorDeclaradoEnvio(430) });
+  assert.strictEqual(cuerpo.totalConIVA, 498.8);
+});
+
+test('#487: con 10% de descuento sobre 430.00 de mercancia el valor declarado es 448.92', () => {
+  const subtotal = subtotalLineas([{ cantidad: 1, precio: 430, descuento: 10 }]);
+  const cuerpo = cuerpoTarifas({ cp: '11700', pais: 'MX', items: [], totalConIVA: valorDeclaradoEnvio(subtotal) });
+  assert.strictEqual(cuerpo.totalConIVA, 448.92);
 });
