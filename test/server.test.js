@@ -2724,6 +2724,21 @@ test('A104: una cotizacion con pedido asociado NO se puede actualizar (409, sin 
   }
 });
 
+test('#502: con el pedido solo en el espejo de Operam tampoco se actualiza (409, sin tocar Operam)', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({ espejoOperam: { cotizacion: '1200', pedido: '7722' } });
+  const { restore, bitacora } = mockOperamWebLegacy();
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.error, /pedido/i);
+    assert.deepStrictEqual(bitacora, [], 'no debe tocar la web legacy');
+  } finally {
+    restore();
+  }
+});
+
 test('A104: una cotizacion PRE (sin folio) no se actualiza: primero hay que subirla', async () => {
   const snap = readCots();
   const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;

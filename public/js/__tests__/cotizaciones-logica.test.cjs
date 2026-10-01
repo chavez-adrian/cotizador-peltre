@@ -1190,3 +1190,24 @@ test('#502: buildAccionesCargaHtml devuelve exactamente lo de antes', () => {
   ];
   casos.forEach((c, i) => assert.equal(buildAccionesCargaHtml(c), esperado[i], JSON.stringify(c)));
 });
+
+// #502 (decision de Adrian 2026-10-01): una cotizacion con pedido ya no se
+// edita, solo se copia. El pedido puede estar SOLO en el espejo de Operam que
+// anota el sync -- la 1293 traia Pedido #7722 sin data.orderOperam -- y el
+// gate lo dejaba pasar: el Historial ofrecia Editar y el servidor reescribia.
+test('#502: puedeActualizarCotizacion bloquea con el pedido solo en el espejo de Operam', () => {
+  const fila = { hasData: true, folioOperam: '1293', orderOperam: null, espejoOperam: { cotizacion: '1293', pedido: '7722' } };
+  const r = puedeActualizarCotizacion(fila);
+  assert.equal(r.puede, false);
+  assert.match(r.motivo, /pedido/i);
+  const entrada = { hasData: true, folioOperam: '1293', data: { espejoOperam: { pedido: '7722' } } };
+  assert.equal(puedeActualizarCotizacion(entrada).puede, false, 'el espejo a la altura de la entrada completa');
+  assert.equal(puedeActualizarCotizacion({ ...fila, espejoOperam: { cotizacion: '1293' } }).puede, true,
+    'un espejo sin pedido no bloquea');
+});
+
+test('#502: en el Historial la cotizacion con pedido en el espejo ofrece Editar apagado y Copiar', () => {
+  const html = buildAccionesCargaHtml(cot(3, { id: 7, hasData: true, folioOperam: '1293', espejoOperam: { pedido: '7722' } }));
+  assert.equal(html, '<button class="btn btn-secondary btn-sm" disabled title="La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n">Editar</button>'
+    + ' <button class="btn btn-primary btn-sm" onclick="cargarCotizacion(7, \'nueva\')">Copiar cotizaci\u00f3n</button>');
+});

@@ -509,6 +509,18 @@ test('procesarColaPostFix: la cotizacion que ya tiene pedido no se repostea', as
   assert.equal(correos.length, 0);
 });
 
+test('procesarColaPostFix: la cotizacion con el pedido solo en el espejo de Operam no se repostea (#502)', async () => {
+  const corregir = corregirFalso(R_VERIFICADO);
+  const { deps, correos } = depsBase({
+    store: storeEnMemoria([pendiente()]), corregirVigenciaQuote: corregir,
+    obtenerCotizacion: async () => registro41({}, { espejoOperam: { cotizacion: '1263', pedido: '7722' } }),
+  });
+  await procesarColaPostFix(deps);
+  assert.equal(corregir.llamadas.length, 0);
+  assert.deepEqual(await deps.store.listar(), []);
+  assert.equal(correos.length, 0);
+});
+
 test('procesarColaPostFix: la cotizacion con el quote desactualizado no se repostea', async () => {
   const corregir = corregirFalso(R_VERIFICADO);
   const { deps } = depsBase({

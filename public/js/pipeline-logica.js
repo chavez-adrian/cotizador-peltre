@@ -14,7 +14,7 @@ import { escapeHtml, CANALES, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdi
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
-import { tienePedido, textoMotivoPerdida, pedidoEnEspejo } from './perdida-logica.js';
+import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
 import { puedeCancelar } from './cancelada-logica.js';
 import { faltaComprobante, comprobanteDe, puedeSubirComprobante, ACCEPT_COMPROBANTE } from './comprobante-pago-logica.js';
 import { buildBotonEditarHtml, tienePedidoAsociado } from './editar-cotizacion-logica.js';
@@ -1173,16 +1173,15 @@ export function buildNuevaOportunidadControlHtml(o) {
 // la lista, lleva el Editar del Historial con su mismo gate -- solo Editar, sin
 // Copiar -- y SOLO en Seguimiento y Anticipo pagado; con pedido ya no se puede
 // editar y el boton se oculta en vez de apagarse (decisiones de Adrian
-// 2026-10-01). Con pedido = el del gate (orderOperam) O el del espejo de Operam:
-// el sync puede anotar solo el espejo, y asi la 1293 con su Pedido #7722
-// seguia ofreciendo Editar. No es `tienePedido`, que cuenta toda etapa
-// post-venta y dejaria Anticipo pagado sin boton. El id del onclick es el REAL (refId), no el `c<id>` de la
+// 2026-10-01). Con pedido = `tienePedidoAsociado`, la condicion del gate
+// (orderOperam o el pedido del espejo de Operam); no `tienePedido`, que cuenta
+// toda etapa post-venta y dejaria Anticipo pagado sin boton. El id del onclick es el REAL (refId), no el `c<id>` de la
 // tarjeta. Un prospecto no tiene cotizacion que cargar.
 const ETAPAS_CON_EDITAR = new Set(['seguimiento', 'anticipo_pagado']);
 
 export function buildEditarOportunidadHtml(o) {
-  if (o?.tipo !== 'cotizacion' || !ETAPAS_CON_EDITAR.has(o.etapa) || tienePedidoAsociado(o) || pedidoEnEspejo(o)) return '';
-  const boton = buildBotonEditarHtml({ id: o.refId, hasData: o.hasData, folioOperam: o.folioOperam, orderOperam: o.orderOperam });
+  if (o?.tipo !== 'cotizacion' || !ETAPAS_CON_EDITAR.has(o.etapa) || tienePedidoAsociado(o)) return '';
+  const boton = buildBotonEditarHtml({ id: o.refId, hasData: o.hasData, folioOperam: o.folioOperam, orderOperam: o.orderOperam, espejoOperam: o.espejoOperam });
   return `<div class="cot-card-actions tablero-editar">${boton}</div>`;
 }
 

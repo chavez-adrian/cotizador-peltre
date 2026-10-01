@@ -3999,6 +3999,7 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
       hasData: !!entry.data,
       folioOperam: entry.folioOperam,
       orderOperam: entry.data?.orderOperam ?? null,
+      espejoOperam: entry.data?.espejoOperam ?? null,
     });
     if (!gate.puede) return res.status(409).json({ error: gate.motivo });
 

@@ -31,8 +31,8 @@ export function tienePedido(o) {
 }
 
 // El pedido que el sync anoto en el espejo de Operam, a las dos alturas. Lo usa
-// tambien el Editar del Pipeline (#502): el pedido puede estar solo aqui, sin
-// data.orderOperam (Cotizacion 1293 con Pedido #7722).
+// tambien el gate de Editar (#502, editar-cotizacion-logica.js): el pedido puede
+// estar solo aqui, sin data.orderOperam (Cotizacion 1293 con Pedido #7722).
 export function pedidoEnEspejo(o) {
   const pedido = (o?.data?.espejoOperam ?? o?.espejoOperam)?.pedido;
   return pedido != null && pedido !== '';

@@ -5,6 +5,7 @@
 // pipeline-logica.js, vivir en cualquiera de los dos cerraria un ciclo.
 
 import { escapeHtml } from './prospectos-logica.js';
+import { pedidoEnEspejo } from './perdida-logica.js';
 
 // Gate de "Actualizar cotizacion" (#104, ADR-0008). Hasta ahora "Cargar" hacia dos
 // cosas a la vez: restaurar el carrito y, calladamente, empezar una cotizacion NUEVA
@@ -15,13 +16,17 @@ import { escapeHtml } from './prospectos-logica.js';
 //   - sin folio no existe el quote (PRE): lo que toca es completar la subida;
 //   - con pedido asociado (data.orderOperam, sync #62) el quote ya se convirtio --
 //     Operam mismo deshabilita su edicion, y el gate del cotizador es consistente.
+//     Desde #502 tambien con el pedido en el espejo de Operam (data.espejoOperam):
+//     el sync puede anotar solo el espejo, y la 1293 con su Pedido #7722 se
+//     podia editar desde el Historial y reescribir en Operam.
 // Lo usa la UI para decidir que boton habilitar y server.js como autoridad real
 // antes de tocar Operam: una sola definicion, sin que la UI sea la que "permite".
-// El quote ya se convirtio en pedido (data.orderOperam, sync #62): la condicion
-// del gate que el Pipeline usa ademas para OCULTAR Editar (#502).
+// El quote ya se convirtio en pedido: data.orderOperam (sync #62) o el pedido del
+// espejo de Operam, a cualquiera de sus dos alturas (#502). La condicion del gate
+// que el Pipeline usa ademas para OCULTAR Editar.
 export function tienePedidoAsociado(cot) {
   const order = cot?.orderOperam;
-  return order != null && order !== '';
+  return (order != null && order !== '') || pedidoEnEspejo(cot);
 }
 
 export function puedeActualizarCotizacion(cot) {
