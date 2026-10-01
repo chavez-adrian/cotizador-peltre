@@ -151,12 +151,9 @@ import { buildFiltrosSelectorHtml, buildContadorHtml } from './filtros-logica.js
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import {
   buildTableroPipelineHtml,
+  buildFilaListaPipelineHtml,
   oportunidadesActivas,
   badgeFolioOperamHtml,
-  badgeFolioOperamProspectoHtml,
-  cadenaOperamHtml,
-  badgePagoSinRegistrarHtml,
-  badgeFaltaComprobanteHtml,
   botonCompletarHtml,
   interpretarSubidaOperam,
   buildOperamStatusHtml,
@@ -6437,27 +6434,8 @@ function renderPipeline() {
       : '<div class="empty-state"><p>Sin oportunidades en el pipeline.</p></div>';
     return;
   }
-  listEl.innerHTML = activas.map(o => {
-    const total = o.total ? `<div class="cot-card-total">$${fmt(o.total)}</div>` : '';
-    // El Origen sale de la linea gris y se lee en su chip (#287).
-    const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
-    const badge = o.tipo === 'cotizacion' ? badgeFolioOperamHtml(o) : badgeFolioOperamProspectoHtml(o);
-    const cadena = cadenaOperamHtml(o.espejoOperam);
-    return `<div class="cot-card"><div class="cot-card-header"><div>
-      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badge}${badgePagoSinRegistrarHtml(o)}${badgeFaltaComprobanteHtml(o)}</div>
-      <div class="cot-card-meta">${escapeHtml(PIPELINE_LABEL[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
-      <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
-      ${cadena}
-    </div>${total}</div></div>`;
-  }).join('');
+  listEl.innerHTML = activas.map(buildFilaListaPipelineHtml).join('');
 }
-
-const PIPELINE_LABEL = {
-  no_asignado: 'No Asignado', por_cotizar: 'Por Cotizar', seguimiento: 'Seguimiento',
-  anticipo_pagado: 'Anticipo pagado', pedido_liberado: 'Pedido liberado',
-  saldo_pagado: 'Saldo pagado', producto_entregado: 'Producto entregado',
-  no_util: 'No útil', perdida: 'Perdida', cancelada: 'Cancelada',
-};
 
 // Asignar vendedor a una tarjeta No Asignado desde el tablero (issue #57): la
 // PRIMERA accion de tarjeta (el tablero era solo-lectura hasta #53). Lee el
@@ -7535,7 +7513,9 @@ async function cargarCotizacion(id, modo = 'nueva') {
     aplicarEtiquetasBotonesGenerar();
 
     // Volver a la app
-    document.getElementById('historial-view').style.display = 'none';
+    // Se llega desde el Historial, "Cotizaciones previas" o el Pipeline (#502):
+    // esconder solo el Historial dejaba el tablero visible debajo del cotizador.
+    ocultarTodasLasVistas();
     document.getElementById('app-view').style.display = 'block';
     // La barra inferior sigue a la vista (#432): se llego al Historial desde "Mas".
     marcarNavActivo('nav-cotizar');

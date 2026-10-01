@@ -17,6 +17,7 @@ import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
 import { puedeCancelar } from './cancelada-logica.js';
 import { faltaComprobante, comprobanteDe, puedeSubirComprobante, ACCEPT_COMPROBANTE } from './comprobante-pago-logica.js';
+import { buildBotonEditarHtml } from './editar-cotizacion-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -1168,6 +1169,16 @@ export function buildNuevaOportunidadControlHtml(o) {
   </div>`;
 }
 
+// Editar desde el Pipeline (#502): toda tarjeta de cotizacion, en el tablero y
+// en la lista, lleva el Editar del Historial con su mismo gate -- solo Editar,
+// sin Copiar (decision de Adrian). El id del onclick es el REAL (refId), no el
+// `c<id>` de la tarjeta. Un prospecto no tiene cotizacion que cargar.
+export function buildEditarOportunidadHtml(o) {
+  if (o?.tipo !== 'cotizacion') return '';
+  const boton = buildBotonEditarHtml({ id: o.refId, hasData: o.hasData, folioOperam: o.folioOperam, orderOperam: o.orderOperam });
+  return `<div class="cot-card-actions tablero-editar">${boton}</div>`;
+}
+
 function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   // El Origen sale de la linea gris y se lee en su chip (#287).
@@ -1181,6 +1192,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
   const comprobante = buildComprobantePagoHtml(o);
   const sinContacto = buildSinContactoControlHtml(o);
   const nuevaOportunidad = buildNuevaOportunidadControlHtml(o);
+  const editar = buildEditarOportunidadHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -1192,6 +1204,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
         ${total}
       </div>
       ${cadena}
+      ${editar}
       ${sinContacto}
       ${asignar}
       ${mover}
@@ -1216,6 +1229,22 @@ export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsign
       </div>
     `;
   }).join('');
+}
+
+// Fila de la vista lista del Pipeline: las mismas oportunidades del tablero, con
+// su etapa en la linea gris. Vivia inline en app.js hasta #502, que la saco aqui
+// para probar su boton Editar.
+export function buildFilaListaPipelineHtml(o) {
+  const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
+  // El Origen sale de la linea gris y se lee en su chip (#287).
+  const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
+  const cadena = cadenaOperamHtml(o.espejoOperam);
+  return `<div class="cot-card"><div class="cot-card-header"><div>
+      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badgeFolioOperam(o)}${badgePagoSinRegistrarHtml(o)}${badgeFaltaComprobanteHtml(o)}</div>
+      <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[o.etapa] || o.etapa)}${meta ? ' · ' + meta : ''}</div>
+      <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
+      ${cadena}
+    </div>${total}</div>${buildEditarOportunidadHtml(o)}</div>`;
 }
 
 // Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): la cola del dia mezcla

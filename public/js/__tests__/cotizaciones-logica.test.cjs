@@ -1159,3 +1159,32 @@ test('#484: el filtro Estado del Historial ofrece Cancelada', async () => {
   const { ESTADOS_COTIZACION } = await import('../cotizaciones-logica.js');
   assert.ok(ESTADOS_COTIZACION.some(e => e.valor === 'cancelada' && e.texto === 'Cancelada'));
 });
+
+// #502: Editar ya se llama tambien desde el Pipeline. cargarCotizacion solo
+// escondia historial-view, asi que desde el tablero el pipeline quedaba visible
+// debajo del cotizador: al volver esconde TODAS las vistas. Verlo es HITL.
+test('#502: cargarCotizacion esconde todas las vistas antes de mostrar el cotizador', () => {
+  const cuerpo = cuerpoDeFuncion(fuenteApp(), 'async function cargarCotizacion(');
+  const oculta = cuerpo.indexOf('ocultarTodasLasVistas()');
+  const muestra = cuerpo.indexOf("document.getElementById('app-view').style.display = 'block'");
+  assert.ok(oculta > 0, 'el regreso al cotizador pasa por ocultarTodasLasVistas');
+  assert.ok(muestra > oculta, 'se esconde todo ANTES de mostrar el cotizador (ocultar tambien esconde app-view)');
+  assert.equal(cuerpo.includes("getElementById('historial-view').style.display = 'none'"), false,
+    'esconder solo el Historial dejaba el Pipeline debajo');
+});
+
+// #502: el boton Editar del Pipeline sale de la MISMA definicion que el del
+// Historial; buildAccionesCargaHtml se compone con el y su salida no cambia.
+test('#502: buildBotonEditarHtml es el Editar de buildAccionesCargaHtml', async () => {
+  const { buildBotonEditarHtml } = await import('../editar-cotizacion-logica.js');
+  for (const extra of [
+    { hasData: true, folioOperam: '1200' },
+    { hasData: true, folioOperam: '1200', orderOperam: '7077' },
+    { hasData: true, folioOperam: null },
+    { hasData: false },
+  ]) {
+    const c = cot(3, { id: 7, ...extra });
+    const editar = buildBotonEditarHtml(c);
+    assert.ok(buildAccionesCargaHtml(c).startsWith(editar + ' '), JSON.stringify(extra));
+  }
+});

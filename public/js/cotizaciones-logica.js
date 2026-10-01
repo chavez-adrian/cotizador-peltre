@@ -12,6 +12,12 @@ import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import { MENSAJE_COPIA_LISTA_FIJADA } from './tier-logica.js';
 import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO } from './perdida-logica.js';
+import { puedeActualizarCotizacion, buildBotonEditarHtml } from './editar-cotizacion-logica.js';
+
+// El gate de Editar vive en un modulo HOJA desde #502 (lo importa tambien
+// pipeline-logica.js, que este modulo importa: aqui cerraria un ciclo); se
+// reexporta para que server.js y lib/postfix-reintento.js no cambien.
+export { puedeActualizarCotizacion };
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -177,29 +183,6 @@ export function buildHistorialAccionesHtml(c, origin = '', indiceFamilias = {}) 
     ` ${whatsappHtml}`;
 }
 
-// Gate de "Actualizar cotizacion" (#104, ADR-0008). Hasta ahora "Cargar" hacia dos
-// cosas a la vez: restaurar el carrito y, calladamente, empezar una cotizacion NUEVA
-// (#83 F1 reseteaba lastCotizacionId a proposito). Actualizar reusa el registro Y
-// reescribe el quote de Operam conservando el folio, asi que solo aplica cuando hay
-// un quote que editar y nadie lo ha convertido todavia:
-//   - sin data persistida no hay carrito que reescribir (registro historico);
-//   - sin folio no existe el quote (PRE): lo que toca es completar la subida;
-//   - con pedido asociado (data.orderOperam, sync #62) el quote ya se convirtio --
-//     Operam mismo deshabilita su edicion, y el gate del cotizador es consistente.
-// Lo usa la UI para decidir que boton habilitar y server.js como autoridad real
-// antes de tocar Operam: una sola definicion, sin que la UI sea la que "permite".
-export function puedeActualizarCotizacion(cot) {
-  const c = cot || {};
-  if (!c.hasData) return { puede: false, motivo: 'Esta cotización no guarda su detalle: no hay nada que actualizar' };
-  if (c.folioOperam == null || c.folioOperam === '') {
-    return { puede: false, motivo: 'La cotización todavía no está registrada en Operam: primero completa la subida' };
-  }
-  if (c.orderOperam != null && c.orderOperam !== '') {
-    return { puede: false, motivo: 'La cotización ya tiene un pedido asociado en Operam: copia la cotización' };
-  }
-  return { puede: true };
-}
-
 // Cliente de la sesion al CARGAR una cotizacion del historial, en los dos modos
 // -- Editar y Copiar (#394). cargarCotizacion llenaba los campos cl-* con la
 // cotizacion y dejaba el cliente de la sesion como estaba, asi que el customerId
@@ -276,13 +259,10 @@ export function vendedorAlGuardar(registroPrevio, quienGuarda) {
 export function buildAccionesCargaHtml(cot) {
   const c = cot || {};
   const gate = puedeActualizarCotizacion(c);
+  const actualizar = buildBotonEditarHtml(c);
   if (!c.hasData) {
-    return `<button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Editar</button>` +
-      ` <button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Copiar cotización</button>`;
+    return `${actualizar} <button class="btn btn-secondary btn-sm" disabled title="Datos no disponibles">Copiar cotización</button>`;
   }
-  const actualizar = gate.puede
-    ? `<button class="btn btn-primary btn-sm" onclick="cargarCotizacion(${c.id}, 'actualizar')">Editar</button>`
-    : `<button class="btn btn-secondary btn-sm" disabled title="${escapeHtml(gate.motivo)}">Editar</button>`;
   const nueva = `<button class="btn ${gate.puede ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="cargarCotizacion(${c.id}, 'nueva')">Copiar cotización</button>`;
   return `${actualizar} ${nueva}`;
 }

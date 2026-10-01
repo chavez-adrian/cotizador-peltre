@@ -357,3 +357,29 @@ test('#461: reabrir una Perdida sin evento de salida la devuelve a Seguimiento',
   const tablero = await pedir(ADMIN_TOKEN);
   assert.equal(tablero.body.find(o => o.id === 'c12').etapa, 'seguimiento');
 });
+
+// === #502: Editar desde el Pipeline ===
+// El boton Editar de la tarjeta sigue el gate del Historial
+// (puedeActualizarCotizacion), que necesita hasData y orderOperam: la tarjeta
+// de cotizacion los trae con la MISMA semantica que la fila de GET
+// /api/cotizaciones (hasData = hay data persistida).
+test('#502: la tarjeta de cotizacion trae hasData y orderOperam', async () => {
+  const conPedido = { ...COT_JORGE, data: { ...COT_JORGE.data, orderOperam: '7077' } };
+  const sinData = { ...COT_HUERFANA, data: undefined };
+  writeJson(COTS_PATH, [conPedido, sinData]);
+  const res = await pedir(ADMIN_TOKEN);
+  assert.equal(res.status, 200);
+  const c10 = res.body.find(o => o.id === 'c10');
+  assert.equal(c10.hasData, true);
+  assert.equal(c10.orderOperam, '7077');
+  const c12 = res.body.find(o => o.id === 'c12');
+  assert.equal(c12.hasData, false);
+  assert.equal(c12.orderOperam, null);
+});
+
+test('#502: con data y sin pedido la tarjeta trae hasData verdadero y orderOperam null', async () => {
+  const res = await pedir(ADMIN_TOKEN);
+  const c11 = res.body.find(o => o.id === 'c11');
+  assert.equal(c11.hasData, true);
+  assert.equal(c11.orderOperam, null);
+});

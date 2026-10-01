@@ -2052,3 +2052,107 @@ test('#484: la ventana del motivo sin catalogo pide el motivo como texto libre, 
   assert.match(html, /id="motivo-salida-nota"[^>]*placeholder="Motivo"/);
   assert.match(html, /id="motivo-salida-confirmar"/);
 });
+
+// === #502: Editar desde el Pipeline ===
+// Toda tarjeta de cotizacion (tablero Y lista) pinta UN boton Editar con el gate
+// del Historial (puedeActualizarCotizacion). El onclick lleva el id REAL
+// (refId), nunca el `c<id>` prefijado de la tarjeta. Los motivos son los del
+// gate, escritos aqui tal cual los dice el issue.
+const MOTIVO_SIN_FOLIO = 'La cotización todavía no está registrada en Operam: primero completa la subida';
+const MOTIVO_CON_PEDIDO = 'La cotización ya tiene un pedido asociado en Operam: copia la cotización';
+
+const CASOS_EDITAR_502 = {
+  editable: { id: 'c41', refId: 41, hasData: true, folioOperam: '1300', orderOperam: null },
+  conPedido: { id: 'c41', refId: 41, hasData: true, folioOperam: '1300', orderOperam: '7077', etapa: 'anticipo_pagado' },
+  sinFolio: { id: 'c41', refId: 41, hasData: true, folioOperam: null, orderOperam: null },
+  sinDetalle: { id: 'c41', refId: 41, hasData: false, folioOperam: '900', orderOperam: null },
+};
+
+function botonEditar(html) {
+  const m = html.match(/<button[^>]*>Editar<\/button>/g) || [];
+  assert.equal(m.length, 1, 'un solo boton Editar por tarjeta');
+  return m[0];
+}
+
+async function superficies502() {
+  const { buildFilaListaPipelineHtml } = await import('../pipeline-logica.js');
+  return {
+    tablero: (o) => buildTableroPipelineHtml([o]),
+    lista: (o) => buildFilaListaPipelineHtml(o),
+  };
+}
+
+test('#502: la tarjeta de una cotizacion editable ofrece Editar habilitado con el id real', async () => {
+  for (const [nombre, pinta] of Object.entries(await superficies502())) {
+    const boton = botonEditar(pinta(cotizacion(CASOS_EDITAR_502.editable)));
+    assert.ok(boton.includes(`onclick="cargarCotizacion(41, 'actualizar')"`), nombre);
+    assert.ok(boton.includes('btn-primary'), nombre);
+    assert.equal(boton.includes('disabled'), false, nombre);
+  }
+});
+
+test('#502: con pedido o sin folio Editar sale apagado, sin onclick y con el motivo del gate', async () => {
+  for (const [nombre, pinta] of Object.entries(await superficies502())) {
+    for (const [caso, motivo] of [['conPedido', MOTIVO_CON_PEDIDO], ['sinFolio', MOTIVO_SIN_FOLIO]]) {
+      const html = pinta(cotizacion(CASOS_EDITAR_502[caso]));
+      const boton = botonEditar(html);
+      assert.ok(boton.includes('disabled'), `${nombre} ${caso}`);
+      assert.ok(boton.includes(`title="${motivo}"`), `${nombre} ${caso}`);
+      assert.equal(html.includes('cargarCotizacion('), false, `${nombre} ${caso}`);
+    }
+  }
+});
+
+test('#502: sin detalle guardado Editar sale apagado con "Datos no disponibles"', async () => {
+  for (const [nombre, pinta] of Object.entries(await superficies502())) {
+    const html = pinta(cotizacion(CASOS_EDITAR_502.sinDetalle));
+    const boton = botonEditar(html);
+    assert.ok(boton.includes('disabled'), nombre);
+    assert.ok(boton.includes('title="Datos no disponibles"'), nombre);
+    assert.equal(html.includes('cargarCotizacion('), false, nombre);
+  }
+});
+
+test('#502: la tarjeta de prospecto no ofrece Editar', async () => {
+  for (const [nombre, pinta] of Object.entries(await superficies502())) {
+    const html = pinta(prospecto({ id: 'p1', refId: 1, etapa: 'seguimiento', folioOperam: '1300', hasData: true }));
+    assert.equal(html.includes('cargarCotizacion('), false, nombre);
+    assert.equal(/>Editar<\/button>/.test(html), false, nombre);
+  }
+});
+
+test('#502: ninguna tarjeta del Pipeline ofrece Copiar cotizacion', async () => {
+  const { buildFilaListaPipelineHtml } = await import('../pipeline-logica.js');
+  const ops = [...Object.values(CASOS_EDITAR_502).map(c => cotizacion(c)), prospecto({ id: 'p1', etapa: 'por_cotizar' })];
+  const tablero = buildTableroPipelineHtml(ops);
+  assert.equal(tablero.includes('Copiar cotizaci'), false);
+  assert.equal(tablero.includes("'nueva')"), false);
+  for (const o of ops) {
+    const fila = buildFilaListaPipelineHtml(o);
+    assert.equal(fila.includes('Copiar cotizaci'), false);
+    assert.equal(fila.includes("'nueva')"), false);
+  }
+});
+
+test('#502: Editar sale en las 7 etapas del tablero', () => {
+  const ops = COLUMNAS_PIPELINE.map((etapa, i) => cotizacion({ ...CASOS_EDITAR_502.editable, id: `c${50 + i}`, refId: 50 + i, etapa }));
+  const html = buildTableroPipelineHtml(ops);
+  for (let i = 0; i < COLUMNAS_PIPELINE.length; i++) {
+    assert.ok(html.includes(`cargarCotizacion(${50 + i}, 'actualizar')`), COLUMNAS_PIPELINE[i]);
+  }
+});
+
+// La fila de la lista se movio de app.js a un constructor puro: lo que ya
+// pintaba (nombre, etapa, vendedor, total, badge) se sigue pintando.
+test('#502: la fila de la lista conserva nombre, etapa, meta, total y badge', async () => {
+  const { buildFilaListaPipelineHtml } = await import('../pipeline-logica.js');
+  const html = buildFilaListaPipelineHtml(cotizacion({ ...CASOS_EDITAR_502.editable, nombre: 'Hotel <Azul>', ciudad: 'Puebla', total: 1234.5 }));
+  assert.ok(html.includes('Hotel &lt;Azul&gt;'));
+  assert.ok(html.includes('<div class="cot-card-meta">Seguimiento · Memo · Puebla</div>'));
+  assert.ok(html.includes('$1,234.50'));
+  assert.ok(html.includes('Cotizaci'));
+  const sinNombre = buildFilaListaPipelineHtml(prospecto({ nombre: '', etapa: 'producto_entregado', total: 0 }));
+  assert.ok(sinNombre.includes('Sin nombre'));
+  assert.ok(sinNombre.includes('Producto entregado'));
+  assert.equal(sinNombre.includes('cot-card-total'), false);
+});
