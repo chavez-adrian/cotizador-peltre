@@ -325,13 +325,13 @@ test('ADM3: cada fila dice si cayo en el Dropbox real o en el sandbox', async ()
   assert.deepEqual(sandbox.lugar, { tipo: 'sandbox', namespace: null, inferido: true });
 });
 
-test('ADM4: la respuesta trae el estado de configuracion de los tres flujos', async () => {
+test('ADM4: la respuesta trae el estado de configuracion de los cuatro flujos', async () => {
   const previo = { ns: process.env.DROPBOX_NS_CSF, path: process.env.DROPBOX_PATH_CSF };
   process.env.DROPBOX_NS_CSF = '5835633';
   process.env.DROPBOX_PATH_CSF = '/';
   try {
     const res = await supertest(app).get('/api/admin/dropbox-subidas').set('Authorization', `Bearer ${ADMIN}`);
-    assert.deepEqual(res.body.flujos.map(f => f.flujo), ['csf', 'calca', 'bitrix']);
+    assert.deepEqual(res.body.flujos.map(f => f.flujo), ['csf', 'calca', 'bitrix', 'pago']);
     assert.deepEqual(res.body.flujos[0], { flujo: 'csf', configurado: true, namespace: '5835633', base: '/' });
   } finally {
     if (previo.ns === undefined) delete process.env.DROPBOX_NS_CSF; else process.env.DROPBOX_NS_CSF = previo.ns;
