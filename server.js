@@ -404,9 +404,11 @@ function validarTelefonoCotizacion(req, res) {
 // unificado, issue #53; regla de dominio formal, issue #55): la transicion la
 // gobierna transicionPorCotizacion (lib/pipeline.js), el mismo disparador que
 // usara el sync de Operam (#62). Desde Por Cotizar/No util -> Seguimiento; si ya
-// esta en Seguimiento (idempotente) o la regla no permite mover (No Asignado sin
-// vendedor, etapas post-venta que mueve Operam, Perdida) solo se acumula el
-// evento sin cambiar la etapa. Celular libre con canal del catalogo -> auto-crea
+// esta en Seguimiento (idempotente) o la regla no permite mover (etapas post-venta
+// que mueve Operam, Perdida) solo se acumula el evento sin cambiar la etapa.
+// Desde No Asignado (#465) quien cotiza primero la toma -- la misma asignacion
+// de transicionPorAsignacion, con su evento -- y de Por Cotizar sigue a
+// Seguimiento: sin eso la tarjeta se quedaba sin dueno con su cotizacion viva. Celular libre con canal del catalogo -> auto-crea
 // el prospecto directo en Seguimiento con los datos de la cotizacion (sin canal
 // no se crea: el frontend siempre lo manda, la API directa sin canal no genera
 // prospecto); celular de cliente Operam -> nada. Best effort: un fallo aqui jamas
@@ -417,10 +419,18 @@ async function pasarProspectoASeguimiento(contacto, cotizacionId, vendedor) {
   // misma persona saldria dos veces en la cola Hoy. Con varias, la regla de cual
   // avanza vive en el nucleo puro (oportunidadQueCotiza), no aqui.
   const filas = oportunidadesDeContactos([contacto], await oportunidadesStore.listar());
-  const op = oportunidadQueCotiza(filas, vendedor);
+  let op = oportunidadQueCotiza(filas, vendedor);
+  const fecha = new Date().toISOString();
+  const alAsignar = vendedor ? transicionPorAsignacion(op.etapa) : null;
+  if (alAsignar) {
+    await oportunidadPreIo.asignarVendedor(op, contacto, vendedor, alAsignar, {
+      tipo: 'asignacion', de: op.etapa, a: vendedor, fecha, vendedor,
+    });
+    op = { ...op, etapa: alAsignar, vendedor };
+  }
   const evento = {
     tipo: 'cotizacion', cotizacion_id: cotizacionId, de: op.etapa,
-    fecha: new Date().toISOString(), vendedor,
+    fecha, vendedor,
   };
   const destino = transicionPorCotizacion(op.etapa);
   if (destino && destino !== op.etapa) await oportunidadPreIo.cambiarEtapa(op, destino, evento);

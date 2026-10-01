@@ -2,7 +2,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
 import { leerArchivoSync, escribirArchivoSync } from '../lib/fs-reintento.js';
-import { fotoDatos } from './helpers/datos-aislados.js';
+import { fotoDatos, fijarDatos } from './helpers/datos-aislados.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
@@ -11,6 +11,7 @@ import supertest from 'supertest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTOS_PATH = join(__dirname, '..', 'data', 'prospectos.json');
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
+const OPORTUNIDADES_PATH = join(__dirname, '..', 'data', 'oportunidades.json');
 // #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
 const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 
@@ -85,7 +86,7 @@ function prospectoDe(vendedor, etapa = 'por_cotizar', extra = {}) {
 // incluido: restaurar una re-serializacion CREA el archivo donde no habia uno.
 let restaurarDatos;
 before(() => {
-  restaurarDatos = fotoDatos([PROSPECTOS_PATH, COTS_PATH, COLA_POSTFIX_PATH]);
+  restaurarDatos = fotoDatos([PROSPECTOS_PATH, COTS_PATH, COLA_POSTFIX_PATH, OPORTUNIDADES_PATH]);
   globalThis.fetch = fetchBloqueado;
 });
 after(() => {
@@ -320,6 +321,46 @@ test('H10: el hook tambien corre al generar PDF', async () => {
   const p = readProspectos()[0];
   assert.equal(p.etapa, 'seguimiento');
   assert.ok(p.eventos.some(e => e.tipo === 'cotizacion'));
+});
+
+// === #465: cotizar desde una Oportunidad No Asignado la deja en Seguimiento ===
+// Hallado en el HITL de #348: la Oportunidad 226 recibio el evento de su
+// cotizacion (`de: no_asignado`) pero su etapa se quedo en No Asignado y sin
+// vendedor. La cotizacion ES el trabajo sobre la tarjeta: quien cotiza la toma
+// (asignacion) y la tarjeta sigue a Seguimiento como desde Por Cotizar.
+
+test('H12: cotizar el celular de un Contacto No Asignado se lo asigna a quien cotiza y lo pasa a Seguimiento', async () => {
+  fijarDatos(OPORTUNIDADES_PATH, []);
+  writeProspectos([prospectoDe(null, 'no_asignado', { canal: 'Formulario web' })]);
+  const res = await cotizar(MEMO_TOKEN, bodyCotizacion('+52 5512345678'));
+  assert.equal(res.status, 200);
+  const p = readProspectos()[0];
+  assert.equal(p.etapa, 'seguimiento');
+  assert.equal(p.vendedor, 'Memo');
+  const asignacion = p.eventos.find(e => e.tipo === 'asignacion');
+  assert.ok(asignacion, 'queda el rastro de la asignacion');
+  assert.equal(asignacion.de, 'no_asignado');
+  assert.equal(asignacion.a, 'Memo');
+  const ev = p.eventos.find(e => e.tipo === 'cotizacion');
+  assert.equal(ev.cotizacion_id, res.body.id);
+  assert.equal(ev.de, 'por_cotizar');
+});
+
+test('H13: la Oportunidad separada No Asignado (la forma de la 226) avanza a Seguimiento con dueno al cotizar', async () => {
+  writeProspectos([prospectoDe(null, 'no_asignado', { id: 225, canal: 'Formulario web' })]);
+  fijarDatos(OPORTUNIDADES_PATH, [{
+    id: 226, fecha: '2026-06-01T00:00:00Z', contactoId: 225, contacto10: '5512345678',
+    vendedor: null, etapa: 'no_asignado', eventos: [], data: {},
+  }]);
+  const res = await cotizar(ANA_TOKEN, bodyCotizacion('+52 5512345678'));
+  assert.equal(res.status, 200);
+  const op = JSON.parse(leerArchivoSync(OPORTUNIDADES_PATH)).find(o => o.id === 226);
+  assert.equal(op.etapa, 'seguimiento');
+  assert.equal(op.vendedor, 'Ana');
+  assert.equal(op.eventos.find(e => e.tipo === 'cotizacion').cotizacion_id, res.body.id);
+  // Como al asignar a mano (#343): el Contacto sin dueno deja de ser invisible
+  // para el vendedor que ahora trabaja su unica Oportunidad.
+  assert.equal(readProspectos()[0].vendedor, 'Ana');
 });
 
 // === Subir a Operam guarda el folio (issue #63: la cotizacion deja de ser PRE) ===
