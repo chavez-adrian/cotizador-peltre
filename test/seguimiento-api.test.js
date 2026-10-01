@@ -223,7 +223,7 @@ test('CR5: reunion-resultado perdida cierra la cotizacion como Perdida (Modelo A
   cots[0].seguimientos = [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Memo' }];
   writeCots(cots);
   const res = await supertest(app).post('/api/cotizacion/1/reunion-resultado')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'perdida' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'perdida', motivo: 'precio' });
   assert.equal(res.status, 200);
   assert.equal(readCots().find(c => c.id === 1).estado, 'perdida');
 });
@@ -236,7 +236,7 @@ test('#461: reunion-resultado perdida saca la tarjeta de Seguimiento en el table
   cots[0].seguimientos = [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Memo' }];
   writeCots(cots);
   const res = await supertest(app).post('/api/cotizacion/1/reunion-resultado')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'perdida' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ resultado: 'perdida', motivo: 'precio' });
   assert.equal(res.status, 200);
   const tablero = await supertest(app).get('/api/oportunidades').set('Authorization', `Bearer ${MEMO_TOKEN}`);
   assert.equal(tablero.body.find(o => o.id === 'c1').etapa, 'perdida');

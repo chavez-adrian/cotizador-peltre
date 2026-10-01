@@ -6,7 +6,7 @@
 // prospectos-logica.js: lo consumen app.js y los tests .cjs via import().
 
 import { escapeHtml, chipOrigenHtml, CANALES } from './prospectos-logica.js';
-import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE } from './pipeline-logica.js';
+import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE, motivoPerdidaHtml } from './pipeline-logica.js';
 import { nombreConCorto, clienteDesdeCotizacionReciente } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
@@ -64,6 +64,14 @@ export function puedeArrastrarCotizacion(de, a, cot) {
   return CERRADAS.has(a) && !CERRADAS.has(de);
 }
 
+// La linea del Motivo de Perdida en la tarjeta del Historial (#483), en el
+// tablero y en la lista: solo en una cotizacion Perdida que lo trae. La Perdida
+// anterior al catalogo no pinta nada, como antes.
+export function lineaMotivoPerdidaHtml(c) {
+  if (!c || c.estado !== 'perdida' || !c.motivoPerdida) return '';
+  return `<div class="cot-card-meta">${COLUMNA_LABELS.perdida}${motivoPerdidaHtml(c)}</div>`;
+}
+
 function fmtMoneda(n) {
   if (n == null) return '0.00';
   return n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -96,6 +104,7 @@ function buildCotizacionCardHtml(c, col, hoy) {
         <div>
           <div class="cot-card-cliente">${escapeHtml(nombreConCorto(c.cliente || 'Sin nombre', c.nombreCorto))}${badgeFolioOperamHtml(c)}</div>
           <div class="cot-card-meta">${fechaCorta(c.fecha)} · hace ${dias} días · ${escapeHtml(c.vendedor)} · ${c.totalPiezas} pzs</div>
+          ${lineaMotivoPerdidaHtml(c)}
           <div style="margin-top:4px">${chipOrigenHtml(c)}</div>
         </div>
         <div class="cot-card-total">$${fmtMoneda(c.total)}</div>

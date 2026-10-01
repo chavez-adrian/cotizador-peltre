@@ -364,10 +364,17 @@ test('T6: validarTransicion rechaza No util sin motivo o con motivo fuera de cat
   assert.ok(validarTransicion('no_util', 'seguimiento'));
 });
 
-test('T6b: validarTransicion permite Perdida desde cualquier etapa activa sin motivo (#59)', () => {
+test('T6b: validarTransicion permite Perdida desde cualquier etapa activa con Motivo de Perdida (#59, #483)', () => {
   for (const etapa of ['no_asignado', 'por_cotizar', 'seguimiento', 'anticipo_pagado', 'pedido_liberado', 'saldo_pagado', 'producto_entregado']) {
-    assert.equal(validarTransicion(etapa, 'perdida'), null, `Perdida debio permitirse desde ${etapa}`);
+    assert.equal(validarTransicion(etapa, 'perdida', 'precio'), null, `Perdida debio permitirse desde ${etapa}`);
   }
+});
+
+test('#483: validarTransicion rechaza Perdida sin Motivo de Perdida, fuera de catalogo u Otro sin nota', () => {
+  assert.match(validarTransicion('por_cotizar', 'perdida'), /motivo/i);
+  assert.match(validarTransicion('por_cotizar', 'perdida', 'spam'), /motivo/i);
+  assert.match(validarTransicion('por_cotizar', 'perdida', 'otro', undefined, ' '), /nota/i);
+  assert.equal(validarTransicion('por_cotizar', 'perdida', 'otro', undefined, 'Se mudo de ciudad'), null);
 });
 
 test('T6c: validarTransicion rechaza Perdida desde una salida (ya salio del embudo) (#59)', () => {

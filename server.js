@@ -75,7 +75,7 @@ import { piezasDeProducto, validarPreciosManualesCalca, aplicarPrecioManualEnPar
 import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuento, normalizarTope } from './public/js/descuento-logica.js';
 import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
 import { validarOperamIds } from './public/js/vendedores-logica.js';
-import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO } from './public/js/perdida-logica.js';
+import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO, errorMotivoPerdida, notaLimpia, camposMotivoPerdida } from './public/js/perdida-logica.js';
 import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
 import { destinoEnvia, carriersParaPais, sugerenciaSinCalle } from './lib/envia-destino-logica.js';
 import { condicionesComerciales, validarCondiciones } from './public/js/condiciones-logica.js';
@@ -696,10 +696,13 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
   // para quien pregunta, la misma puerta que usa el pipeline en el navegador
   // (GET /api/prospectos): las dos vistas dicen lo mismo del mismo cliente.
   const indiceOrigen = indiceOrigenPorCelular(await contactosVisiblesPara(req.user));
-  res.json(anotarOrigen(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido, contactoCelular }) => ({
+  res.json(anotarOrigen(filtradas.map(({ id, fecha, vendedor, cliente, totalPiezas, total, tier, data, estado, etapa, folioOperam, registroDesconocido, contactoCelular, eventos }) => ({
     id, fecha, vendedor, cliente, totalPiezas, total, tier,
     estado: estado || 'abierta',
     etapa,
+    // Motivo de Perdida y su nota (#483): salen del evento del cierre; null en
+    // una Perdida anterior al catalogo.
+    ...camposMotivoPerdida(eventos),
     // El Contacto de la Oportunidad (#342): por AQUI se hereda el Origen, no por
     // el telefono tecleado, que es dato del documento y puede corregirse.
     contactoCelular: contactoCelular ?? null,
@@ -892,17 +895,22 @@ const ESTADOS_VALIDOS = new Set(['abierta', 'ganada', 'perdida', 'descartada']);
 // #461: el tablero reparte la tarjeta por `etapa`, no por `estado`, asi que
 // cerrar como Perdida escribe los dos en la misma peticion, con su evento, y
 // reabrir devuelve la tarjeta a la etapa de la que salio.
-async function cambiarEstadoCotizacion(entry, estado, vendedor) {
+// #483: el Motivo de Perdida (y su nota) viaja en el evento del cierre, de donde
+// lo leen el tablero y el Historial (camposMotivoPerdida).
+async function cambiarEstadoCotizacion(entry, estado, vendedor, salida = {}) {
   await cotStore.setEstado(entry.id, estado);
   const destino = estado === 'perdida' ? 'perdida'
     : estado === 'abierta' && entry.etapa === 'perdida' ? etapaAlReabrirCotizacion(entry.eventos)
     : null;
+  // Ya en etapa perdida no se escribe evento nuevo: el motivo re-enviado se descarta (como #461).
   if (destino && destino !== entry.etapa) {
     await cotStore.cambiarEtapa(entry.id, destino, {
-      tipo: 'etapa', de: entry.etapa ?? null, a: destino, fecha: new Date().toISOString(), vendedor,
+      tipo: 'etapa', de: entry.etapa ?? null, a: destino,
+      ...(destino === 'perdida' ? salida : {}),
+      fecha: new Date().toISOString(), vendedor,
     });
   }
-  if (estado === 'perdida') await cerrarOportunidadesDeLaCotizacion(entry, vendedor);
+  if (estado === 'perdida') await cerrarOportunidadesDeLaCotizacion(entry, vendedor, salida);
 }
 
 // #481: perder la cotizacion cierra TAMBIEN la Oportunidad de la que nacio; si
@@ -912,19 +920,29 @@ async function cambiarEstadoCotizacion(entry, estado, vendedor) {
 // vuelve se abre una Nueva oportunidad. Corre DESPUES de escribir la etapa de
 // la cotizacion: si esa escritura falla, la Oportunidad no queda Perdida con la
 // cotizacion viva. Best effort, como el hook del embudo: un fallo aqui no impide
-// cerrar la cotizacion.
-async function cerrarOportunidadesDeLaCotizacion(entry, vendedor) {
+// cerrar la cotizacion. #483: la Oportunidad se cierra con el MISMO Motivo de
+// Perdida (y nota) que la cotizacion.
+async function cerrarOportunidadesDeLaCotizacion(entry, vendedor, salida = {}) {
   try {
     const filas = oportunidadesDeContactos(await prospectosStore.listar(), await oportunidadesStore.listar());
     const fecha = new Date().toISOString();
     for (const op of oportunidadesQueCierraLaPerdida(filas, entry, await cotStore.listar())) {
       await oportunidadPreIo.cambiarEtapa(op, 'perdida', {
-        tipo: 'etapa', de: op.etapa, a: 'perdida', cotizacion_id: entry.id, fecha, vendedor,
+        tipo: 'etapa', de: op.etapa, a: 'perdida', ...salida, cotizacion_id: entry.id, fecha, vendedor,
       });
     }
   } catch (err) {
     console.warn('[oportunidades] no se pudo cerrar la Oportunidad de la cotizacion', entry.id, err.message);
   }
+}
+
+// #483 (CONTEXT.md "Perdida"): cerrar como Perdida pide un Motivo de Perdida de
+// catalogo (y nota si es Otro). Se valida DESPUES del 409 de #482: con pedido la
+// Oportunidad ya no se puede perder y ese es el texto que el vendedor necesita.
+function salidaPerdidaDelCuerpo(body) {
+  const { motivo, nota } = body || {};
+  const error = errorMotivoPerdida(motivo, nota);
+  return error ? { error } : { evento: { motivo, nota: notaLimpia(nota) } };
 }
 
 app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
@@ -936,7 +954,9 @@ app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
     return res.status(403).json({ error: 'Sin acceso' });
   }
   if (estado === 'perdida' && tienePedido(entry)) return res.status(409).json({ error: MENSAJE_PERDIDA_CON_PEDIDO });
-  await cambiarEstadoCotizacion(entry, estado, req.user.name);
+  const salida = estado === 'perdida' ? salidaPerdidaDelCuerpo(req.body) : null;
+  if (salida?.error) return res.status(400).json({ error: salida.error });
+  await cambiarEstadoCotizacion(entry, estado, req.user.name, salida?.evento);
   res.json({ ok: true, estado });
 });
 
@@ -1045,7 +1065,9 @@ app.post('/api/cotizacion/:id/reunion-resultado', authMiddleware, async (req, re
   }
   if (resultado === 'perdida') {
     if (tienePedido(entry)) return res.status(409).json({ error: MENSAJE_PERDIDA_CON_PEDIDO });
-    await cambiarEstadoCotizacion(entry, 'perdida', req.user.name);
+    const salida = salidaPerdidaDelCuerpo(req.body);
+    if (salida.error) return res.status(400).json({ error: salida.error });
+    await cambiarEstadoCotizacion(entry, 'perdida', req.user.name, salida.evento);
     return res.json({ ok: true, estado: 'perdida' });
   }
   res.status(400).json({ error: 'Resultado inválido: avance o perdida' });
@@ -1775,13 +1797,13 @@ app.patch('/api/prospectos/:id/asignar', authMiddleware, asignacionMiddleware, a
 });
 
 app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
-  const { etapa, motivo, folio } = req.body || {};
+  const { etapa, motivo, folio, nota } = req.body || {};
   // Unica ruta que acepta tarjetas sin dueno para quien tiene el permiso de
   // asignacion: desde no_asignado el dominio solo deja descartar (#156).
   const operable = await oportunidadOperable(req, res, { incluyeSinDueno: true });
   if (!operable) return;
   const { op } = operable;
-  const error = validarTransicion(op.etapa, etapa, motivo, folio);
+  const error = validarTransicion(op.etapa, etapa, motivo, folio, nota);
   if (error) return res.status(400).json({ error });
   const fecha = new Date().toISOString();
   // Mover a Seguimiento a mano (issue #56): el vendedor cotizo por fuera, asi
@@ -1795,9 +1817,12 @@ app.patch('/api/prospectos/:id/etapa', authMiddleware, async (req, res) => {
     });
     return res.json({ ok: true, etapa, folio: folioLimpio });
   }
+  // #483: la Perdida guarda su Motivo de Perdida (y nota) en el evento del cierre.
   const evento = etapa === 'no_util'
     ? { tipo: 'no_util', motivo, fecha, vendedor: req.user.name }
-    : { tipo: 'etapa', de: op.etapa, a: etapa, fecha, vendedor: req.user.name };
+    : etapa === 'perdida'
+      ? { tipo: 'etapa', de: op.etapa, a: etapa, motivo, nota: notaLimpia(nota), fecha, vendedor: req.user.name }
+      : { tipo: 'etapa', de: op.etapa, a: etapa, fecha, vendedor: req.user.name };
   await oportunidadPreIo.cambiarEtapa(op, etapa, evento);
   res.json({ ok: true, etapa });
 });

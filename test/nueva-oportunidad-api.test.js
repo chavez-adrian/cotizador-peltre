@@ -228,7 +228,7 @@ test('#343: la tarjeta nueva se trabaja por las rutas de siempre y no mueve a la
   assert.equal(toque.status, 200);
   assert.equal(toque.body.eventos.filter(e => e.tipo === 'toque').length, 1);
   const salida = await supertest(app).patch(`/api/prospectos/${id}/etapa`)
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'perdida' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'perdida', motivo: 'precio' });
   assert.equal(salida.status, 200);
   const guardadas = readJson(OPORTUNIDADES_PATH);
   assert.equal(guardadas.find(o => o.id === id).etapa, 'perdida');

@@ -8,6 +8,7 @@ import { validarTelefono, combinarTelefonoConCodigo } from './alta-logica.js';
 import { aTitulo } from './titulo-logica.js';
 import { filtrarPorCriterio } from './busqueda-logica.js';
 import { origenDe } from './origen-logica.js';
+import { errorMotivoPerdida } from './perdida-logica.js';
 
 // Origen del prospecto -- catalogo cerrado (CONTEXT.md "Origen"; el campo en
 // codigo, API y BD se sigue llamando `canal`, solo cambio la palabra visible).
@@ -226,7 +227,7 @@ export function siguienteEtapa() {
 // transicion a Seguimiento sigue siendo invalida (Por Cotizar -> Seguimiento es
 // la unica arista manual forward). El resto del avance entre etapas lo dirigen
 // la cotizacion en el sistema y Operam.
-export function validarTransicion(actual, nueva, motivo, folio) {
+export function validarTransicion(actual, nueva, motivo, folio, nota) {
   if (nueva === 'no_util') {
     if (actual === 'no_util') return 'El prospecto ya salió a No útil';
     if (!MOTIVOS_NO_UTIL.includes(motivo)) return 'El motivo de No útil es obligatorio (catálogo cerrado)';
@@ -237,11 +238,11 @@ export function validarTransicion(actual, nueva, motivo, folio) {
     return null;
   }
   // Salida a Perdida (issue #59, Modelo A): se cierra una oportunidad desde
-  // cualquier etapa ACTIVA, sin motivo (la confirmacion es del frontend). Una que
-  // ya salio del embudo (No util / Perdida) no se vuelve a cerrar.
+  // cualquier etapa ACTIVA. Una que ya salio del embudo (No util / Perdida) no se
+  // vuelve a cerrar. #483: lleva un Motivo de Perdida de catalogo (y nota con Otro).
   if (nueva === 'perdida') {
     if (!ETAPAS_ACTIVAS.has(actual)) return 'El prospecto ya salió del pipeline';
-    return null;
+    return errorMotivoPerdida(motivo, nota);
   }
   return `Transición inválida: ${ETAPA_LABELS[actual] || actual} → ${ETAPA_LABELS[nueva] || nueva}`;
 }

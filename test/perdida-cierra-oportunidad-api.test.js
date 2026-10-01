@@ -72,7 +72,7 @@ beforeEach(() => {
 });
 
 const perder = (id) => supertest(app).patch(`/api/cotizacion/${id}/estado`)
-  .set('Authorization', MEMO).send({ estado: 'perdida' });
+  .set('Authorization', MEMO).send({ estado: 'perdida', motivo: 'precio' });
 const tablero = () => supertest(app).get('/api/oportunidades').set('Authorization', MEMO);
 
 test('#481: perder la cotizacion cierra como Perdida la Oportunidad de la que nacio', async () => {
@@ -211,7 +211,7 @@ test('#481: perder desde el resultado de la reunion tambien cierra la Oportunida
     ...COT_JORGE, seguimientos: [{ tipo: 'reunion', fecha_reunion: hace(1), fecha: hace(2), vendedor: 'Memo' }],
   }]);
   const res = await supertest(app).post('/api/cotizacion/10/reunion-resultado')
-    .set('Authorization', MEMO).send({ resultado: 'perdida' });
+    .set('Authorization', MEMO).send({ resultado: 'perdida', motivo: 'precio' });
   assert.equal(res.status, 200);
   assert.equal(readJson(OPORTUNIDADES_PATH).find(o => o.id === 101).etapa, 'perdida');
 });

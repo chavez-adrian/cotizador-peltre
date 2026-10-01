@@ -28,3 +28,70 @@ export function tienePedido(o) {
   const pedido = (o.data?.espejoOperam ?? o.espejoOperam)?.pedido;
   return pedido != null && pedido !== '';
 }
+
+// #483 (CONTEXT.md "Perdida"; lista final de Adrian 2026-09-30, base HubSpot):
+// cerrar como Perdida pide un Motivo de Perdida, para medir por que se pierde.
+// Catalogo PROPIO, distinto del de No util aunque compartan "sin respuesta": "No
+// cumple los requerimientos" es que lo cotizado no resolvia lo que el Contacto
+// necesitaba, no descalificar a un prospecto. `valor` es lo que se guarda y viaja;
+// `texto`, lo que se pinta. `exigeNota` marca el motivo que no se entiende sin una
+// nota (Otro). La forma la comparte cualquier catalogo de salida que pida nota.
+export const MOTIVOS_PERDIDA = [
+  { valor: 'precio', texto: 'Precio' },
+  { valor: 'proyecto_pospuesto', texto: 'Proyecto pospuesto' },
+  { valor: 'competencia', texto: 'Competencia' },
+  { valor: 'tiempo_produccion', texto: 'Tiempo de producci\u00f3n' },
+  { valor: 'sin_respuesta', texto: 'Sin respuesta' },
+  { valor: 'no_cumple_requerimientos', texto: 'No cumple los requerimientos' },
+  { valor: 'otro', texto: 'Otro', exigeNota: true },
+];
+
+export const MENSAJE_SIN_MOTIVO_PERDIDA = 'Elige el Motivo de Perdida (cat\u00e1logo cerrado)';
+export const MENSAJE_PERDIDA_SIN_NOTA = 'Con el motivo Otro, escribe una nota que diga por qu\u00e9 se perdi\u00f3';
+
+// El juicio de un motivo de salida contra SU catalogo: null si procede, el texto
+// del error si no. Lo comparten el servidor (400) y la ventana del navegador.
+export function errorMotivoDeCatalogo(catalogo, motivo, nota, mensajes) {
+  const entrada = catalogo.find(m => m.valor === motivo);
+  if (!entrada) return mensajes.sinMotivo;
+  if (entrada.exigeNota && !notaLimpia(nota)) return mensajes.sinNota;
+  return null;
+}
+
+export function errorMotivoPerdida(motivo, nota) {
+  return errorMotivoDeCatalogo(MOTIVOS_PERDIDA, motivo, nota,
+    { sinMotivo: MENSAJE_SIN_MOTIVO_PERDIDA, sinNota: MENSAJE_PERDIDA_SIN_NOTA });
+}
+
+// La nota tal como se guarda: texto recortado, o null si no hay nada que decir.
+export function notaLimpia(nota) {
+  const texto = typeof nota === 'string' ? nota.trim() : '';
+  return texto || null;
+}
+
+// El Motivo de Perdida de una Oportunidad vive en el evento con el que se cerro
+// (etapa -> perdida), como el de No util vive en su evento. Manda el ULTIMO
+// cierre: una cotizacion reabierta y vuelta a perder dice por que se perdio la
+// segunda vez, y una reabierta (etapa desde perdida) ya no tiene motivo. Una
+// Perdida anterior a #483 no trae motivo: null, y se pinta igual que antes.
+export function motivoPerdidaDe(eventos) {
+  let cierre = null;
+  for (const e of eventos || []) {
+    if (!e || e.tipo !== 'etapa') continue;
+    if (e.a === 'perdida') cierre = e;
+    else if (e.de === 'perdida') cierre = null;
+  }
+  if (!cierre || !cierre.motivo) return null;
+  return { motivo: cierre.motivo, nota: notaLimpia(cierre.nota) };
+}
+
+// Los dos campos con los que una tarjeta o una fila del Historial lleva su Motivo
+// de Perdida; null en los dos si no hay (sin perder, o Perdida anterior a #483).
+export function camposMotivoPerdida(eventos) {
+  const perdida = motivoPerdidaDe(eventos);
+  return { motivoPerdida: perdida?.motivo ?? null, notaPerdida: perdida?.nota ?? null };
+}
+
+export function textoMotivoPerdida(valor) {
+  return MOTIVOS_PERDIDA.find(m => m.valor === valor)?.texto ?? valor;
+}

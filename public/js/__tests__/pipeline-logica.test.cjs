@@ -1941,3 +1941,54 @@ test('#482: el resultado de una reunion vencida no ofrece Perdida a una cotizaci
   const sinPedido = buildColaCotizacionItemHtml(itemCotizacion({ id: 10, ...vencida, etapa: 'seguimiento' }));
   assert.ok(sinPedido.includes("resultadoReunionCotizacion(10, 'perdida')"));
 });
+
+// === #483: Motivo de Perdida (CONTEXT.md "Perdida") ===
+// La vista de Cerradas dice por que se perdio cada Oportunidad: el motivo con
+// su texto de pantalla y la nota. La Perdida anterior al catalogo se sigue
+// pintando, sin motivo y sin separadores sueltos.
+test('#483: Cerradas muestra el Motivo de Perdida con su texto de pantalla y la nota', () => {
+  const html = buildCerradasHtml([
+    cotizacion({ id: 10, cliente: 'Hotel Azul', etapa: 'perdida', motivoPerdida: 'tiempo_produccion', notaPerdida: null }),
+    prospecto({ id: 2, nombre: 'Pedro', etapa: 'perdida', motivoPerdida: 'otro', notaPerdida: 'Compro <b>en</b> el extranjero' }),
+  ]);
+  assert.match(html, /Perdida \u00b7 Tiempo de producci\u00f3n \u00b7 Memo/);
+  assert.match(html, /Perdida \u00b7 Otro: Compro &lt;b&gt;en&lt;\/b&gt; el extranjero \u00b7 Memo/);
+});
+
+test('#483: una Perdida anterior sin motivo se pinta como antes', () => {
+  const html = buildCerradasHtml([cotizacion({ id: 10, cliente: 'Hotel Azul', etapa: 'perdida', motivoPerdida: null, notaPerdida: null })]);
+  assert.match(html, /Hotel Azul/);
+  assert.match(html, /<div class="cot-card-meta">Perdida \u00b7 Memo<\/div>/);
+  assert.equal(html.includes('null'), false);
+  assert.equal(html.includes('undefined'), false);
+});
+
+test('#483: la peticion de Perdida del tablero lleva el motivo y la nota elegidos', () => {
+  assert.deepEqual(peticionPerdidaTablero('cotizacion', 126, { motivo: 'precio', nota: null }), {
+    url: '/api/cotizacion/126/estado', body: { estado: 'perdida', motivo: 'precio', nota: null },
+  });
+  assert.deepEqual(peticionPerdidaTablero('prospecto', 126, { motivo: 'otro', nota: 'Cerro' }), {
+    url: '/api/prospectos/126/etapa', body: { etapa: 'perdida', motivo: 'otro', nota: 'Cerro' },
+  });
+});
+
+// La ventana que piden los cinco caminos antes de llamar al servidor: el
+// catalogo en su orden, con su texto de pantalla, y un campo de nota. Es la
+// misma ventana para cualquier salida con motivo de catalogo (titulo y catalogo
+// los pone quien la abre).
+test('#483: la ventana del motivo ofrece el catalogo en su orden y un campo de nota', async () => {
+  const { buildMotivoSalidaModalHtml } = await import('../pipeline-logica.js');
+  const { MOTIVOS_PERDIDA } = await import('../perdida-logica.js');
+  const html = buildMotivoSalidaModalHtml({ titulo: 'Cerrar como Perdida <Hotel Azul>', catalogo: MOTIVOS_PERDIDA });
+  assert.match(html, /Cerrar como Perdida &lt;Hotel Azul&gt;/);
+  const opciones = [...html.matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(m => [m[1], m[2]]);
+  assert.deepEqual(opciones, [
+    ['', '-- Selecciona el motivo --'],
+    ['precio', 'Precio'], ['proyecto_pospuesto', 'Proyecto pospuesto'], ['competencia', 'Competencia'],
+    ['tiempo_produccion', 'Tiempo de producci\u00f3n'], ['sin_respuesta', 'Sin respuesta'],
+    ['no_cumple_requerimientos', 'No cumple los requerimientos'], ['otro', 'Otro'],
+  ]);
+  assert.match(html, /id="motivo-salida-nota"/);
+  assert.match(html, /id="motivo-salida-cancelar"/);
+  assert.match(html, /id="motivo-salida-confirmar"/);
+});

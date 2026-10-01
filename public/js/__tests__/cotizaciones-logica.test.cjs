@@ -149,6 +149,32 @@ test('#482: la tarjeta del Historial no ofrece Perdida a una cotizacion con pedi
   assert.ok(html.includes("cerrarCotizacionTablero(23, 'perdida')"));
 });
 
+// #483: el Historial dice por que se perdio cada cotizacion -- la linea del
+// Motivo de Perdida, con su nota --, en el tablero y en la lista. La Perdida
+// anterior al catalogo no trae motivo y se pinta como antes.
+test('#483: el Historial muestra el Motivo de Perdida y la nota de una cotizacion Perdida', async () => {
+  const { lineaMotivoPerdidaHtml } = await import('../cotizaciones-logica.js');
+  const perdida = cot(40, { id: 31, estado: 'perdida', motivoPerdida: 'otro', notaPerdida: 'Compro en <USA>' });
+  const linea = '<div class="cot-card-meta">Perdida \u00b7 Otro: Compro en &lt;USA&gt;</div>';
+  assert.equal(lineaMotivoPerdidaHtml(perdida), linea);
+  assert.ok(buildTableroCotizacionesHtml([perdida], HOY).includes(linea));
+});
+
+test('#483: la tarjeta del tablero del Historial muestra el total con signo de pesos', () => {
+  const html = buildTableroCotizacionesHtml([cot(3, { id: 34, total: 1500 })], HOY);
+  assert.ok(html.includes('<div class="cot-card-total">$1,500.00</div>'));
+});
+
+test('#483: sin motivo, o si ya no esta Perdida, el Historial no pinta linea de motivo', async () => {
+  const { lineaMotivoPerdidaHtml } = await import('../cotizaciones-logica.js');
+  const anterior = cot(40, { id: 32, estado: 'perdida', motivoPerdida: null, notaPerdida: null });
+  assert.equal(lineaMotivoPerdidaHtml(anterior), '');
+  assert.equal(lineaMotivoPerdidaHtml(cot(3, { id: 33, estado: 'abierta', motivoPerdida: 'precio' })), '');
+  const html = buildTableroCotizacionesHtml([anterior], HOY);
+  assert.ok(html.includes('data-id="32" data-col="perdida"'));
+  assert.equal(html.includes('null'), false);
+});
+
 test('Q8: buildTableroCotizacionesHtml pinta las 7 columnas con label, contador y data-col', () => {
   const html = buildTableroCotizacionesHtml([cot(0, { id: 1 }), cot(3, { id: 2 }), cot(4, { id: 3 })], HOY);
   for (const col of COLUMNAS_COTIZACIONES) {

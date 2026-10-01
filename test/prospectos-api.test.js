@@ -413,7 +413,7 @@ test('#156: el vendedor con permiso descarta a Perdida una tarjeta sin dueno', a
   writeProspectos([noAsignado({ id: 1 })]);
   await conPermisoDeAsignacion(2, async () => {
     const res = await supertest(app).patch('/api/prospectos/1/etapa')
-      .set('Authorization', `Bearer ${GERENTE_TOKEN}`).send({ etapa: 'perdida' });
+      .set('Authorization', `Bearer ${GERENTE_TOKEN}`).send({ etapa: 'perdida', motivo: 'sin_respuesta' });
     assert.equal(res.status, 200);
     assert.equal(readProspectos()[0].etapa, 'perdida');
   });
@@ -597,12 +597,12 @@ test('PATCH etapa a Seguimiento desde una etapa que no es Por Cotizar sigue inva
   assert.equal(readProspectos()[0].etapa, 'no_asignado');
 });
 
-// === Issue #59: salida a Perdida (sin motivo, con confirmacion en el frontend) ===
+// === Issue #59: salida a Perdida (desde #483, con Motivo de Perdida) ===
 
-test('PATCH etapa a Perdida cierra la tarjeta sin motivo y registra el evento (#59)', async () => {
+test('PATCH etapa a Perdida cierra la tarjeta y registra el evento con su Motivo de Perdida (#59, #483)', async () => {
   writeProspectos([prospectoDe('Memo', 'por_cotizar')]);
   const res = await supertest(app).patch('/api/prospectos/1/etapa')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'perdida' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ etapa: 'perdida', motivo: 'sin_respuesta' });
   assert.equal(res.status, 200);
   assert.equal(res.body.etapa, 'perdida');
   const guardado = readProspectos()[0];
@@ -610,7 +610,8 @@ test('PATCH etapa a Perdida cierra la tarjeta sin motivo y registra el evento (#
   const ev = guardado.eventos.find(e => e.tipo === 'etapa');
   assert.equal(ev.a, 'perdida');
   assert.equal(ev.vendedor, 'Memo');
-  assert.equal(ev.motivo, undefined);
+  assert.equal(ev.motivo, 'sin_respuesta');
+  assert.equal(ev.nota, null);
 });
 
 test('PATCH etapa a Perdida desde una salida se rechaza server-side (#59)', async () => {

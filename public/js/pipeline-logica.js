@@ -14,7 +14,7 @@ import { escapeHtml, CANALES, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdi
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
-import { tienePedido } from './perdida-logica.js';
+import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -981,10 +981,37 @@ export function buildSalidaControlHtml(o) {
 // La peticion de Perdida se decide por el tipo que pinto la tarjeta (#478), nunca
 // por el que se encuentre con ese refId: el prospecto y la cotizacion pueden
 // compartir numero y cerrar uno por el otro deja viva a la de la tarjeta.
-export function peticionPerdidaTablero(tipo, id) {
-  if (tipo === 'cotizacion') return { url: `/api/cotizacion/${id}/estado`, body: { estado: 'perdida' } };
-  if (tipo === 'prospecto') return { url: `/api/prospectos/${id}/etapa`, body: { etapa: 'perdida' } };
+// #483: el cuerpo lleva el Motivo de Perdida (y la nota) que el vendedor eligio
+// en la ventana del motivo.
+export function peticionPerdidaTablero(tipo, id, salida) {
+  if (tipo === 'cotizacion') return { url: `/api/cotizacion/${id}/estado`, body: { estado: 'perdida', ...salida } };
+  if (tipo === 'prospecto') return { url: `/api/prospectos/${id}/etapa`, body: { etapa: 'perdida', ...salida } };
   return null;
+}
+
+// Ventana del motivo de una salida (#483): la abren los cinco caminos que
+// ofrecen Perdida ANTES de llamar al servidor, y cancelar no llama. Titulo y
+// catalogo ({ valor, texto, exigeNota }) los pone quien la abre, asi otra salida
+// con motivo de catalogo usa la misma ventana. La nota es opcional salvo en el
+// motivo que la exige; la validacion es la misma del servidor.
+export function buildMotivoSalidaModalHtml({ titulo, catalogo }) {
+  const conNota = catalogo.filter(m => m.exigeNota).map(m => m.texto).join(', ');
+  return `
+    <div style="background:#fff;border-radius:8px;padding:20px;max-width:360px;width:90%">
+      <div style="font-weight:600;margin-bottom:4px">${escapeHtml(titulo)}</div>
+      <div class="cot-card-meta" style="margin-bottom:8px">El motivo es obligatorio (cat\u00e1logo cerrado)${conNota ? `; con ${escapeHtml(conNota)} escribe una nota` : ''}. Cancelar no cambia nada.</div>
+      <select id="motivo-salida-select" style="width:100%;margin-bottom:8px">
+        <option value="">-- Selecciona el motivo --</option>
+        ${catalogo.map(m => `<option value="${escapeHtml(m.valor)}">${escapeHtml(m.texto)}</option>`).join('')}
+      </select>
+      <textarea id="motivo-salida-nota" rows="2" placeholder="Nota" style="width:100%;margin-bottom:8px"></textarea>
+      <div id="motivo-salida-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" id="motivo-salida-cancelar">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="motivo-salida-confirmar">Confirmar</button>
+      </div>
+    </div>
+  `;
 }
 
 // Control de producto decorado / calca en la tarjeta de cotizacion (issue #61,
@@ -1267,13 +1294,24 @@ export function buildColaHoyHtml(cola, { vendedores, puedeAsignar: tienePermiso 
 // "que es salida" que el tablero (esSalida).
 const SALIDA_LABELS = { no_util: 'No útil', perdida: 'Perdida' };
 
+// El Motivo de Perdida y su nota como segmento de la linea de metadatos (#483):
+// el texto del motivo tras el separador, con ": la nota" si la hay. La Perdida
+// anterior al catalogo no trae motivo y no pinta nada. Lo comparten Cerradas y el
+// Historial.
+export function motivoPerdidaHtml(o) {
+  if (!o || !o.motivoPerdida) return '';
+  const nota = o.notaPerdida ? `: ${escapeHtml(o.notaPerdida)}` : '';
+  return ` \u00b7 ${escapeHtml(textoMotivoPerdida(o.motivoPerdida))}${nota}`;
+}
+
 export function buildCerradasHtml(oportunidades) {
   const cerradas = (oportunidades || []).filter(o => esSalida(o.etapa))
     .slice().sort((a, b) => fechaLocal(b.fecha || 0) - fechaLocal(a.fecha || 0));
   if (!cerradas.length) return '<div class="cot-card-meta">Sin oportunidades cerradas.</div>';
   return cerradas.map(o => {
     const cierre = SALIDA_LABELS[o.etapa] || o.etapa;
-    const motivo = o.etapa === 'no_util' && o.motivoNoUtil ? ` · ${escapeHtml(o.motivoNoUtil)}` : '';
+    const motivo = o.etapa === 'no_util' && o.motivoNoUtil ? ` · ${escapeHtml(o.motivoNoUtil)}`
+      : o.etapa === 'perdida' ? motivoPerdidaHtml(o) : '';
     const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}</div>

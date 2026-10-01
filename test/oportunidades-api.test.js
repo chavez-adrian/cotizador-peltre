@@ -328,7 +328,7 @@ test('#344: con Operam caido la tarjeta viaja sin Cliente Operam, no con uno inv
 // PATCH /api/cotizacion/:id/estado. Escribia `estado` y no `etapa`, y la
 // tarjeta -- que se reparte por etapa -- se quedaba en Seguimiento.
 const marcarEstado = (id, estado, token = MEMO_TOKEN) => supertest(app)
-  .patch(`/api/cotizacion/${id}/estado`).set('Authorization', `Bearer ${token}`).send({ estado });
+  .patch(`/api/cotizacion/${id}/estado`).set('Authorization', `Bearer ${token}`).send(estado === 'perdida' ? { estado, motivo: 'precio' } : { estado });
 
 test('#461: marcar Perdida una cotizacion en Seguimiento saca su tarjeta de Seguimiento', async () => {
   const res = await marcarEstado(12, 'perdida');

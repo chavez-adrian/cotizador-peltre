@@ -124,7 +124,8 @@ import { sugerirDominioCorreo } from './mayoreo-logica.js';
 // subir el quote. Aqui se usa para avisar al seleccionar y no dejar cotizar.
 import { bloqueoMonedaCliente } from './moneda-cliente-logica.js';
 // Perdida con pedido (#482): la MISMA regla con la que el servidor responde 409.
-import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO } from './perdida-logica.js';
+// Motivo de Perdida (#483): el MISMO catalogo y la MISMA validacion del servidor.
+import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO, MOTIVOS_PERDIDA, errorMotivoPerdida, notaLimpia } from './perdida-logica.js';
 import {
   puedeArrastrarCotizacion,
   buildTableroCotizacionesHtml,
@@ -136,6 +137,7 @@ import {
   filtrarCotizaciones,
   BUSCABLES_COTIZACION,
   clienteAlCargarCotizacion,
+  lineaMotivoPerdidaHtml,
 } from './cotizaciones-logica.js';
 // Filtros por selector (#456, spec #398): la rejilla etiqueta+selector y el
 // contador tras filtrar. Cada vista declara sus filtros en su BUSCABLES_*.
@@ -172,6 +174,7 @@ import {
   bannerUpgradeHtml,
   rotuloPanelUpgrade,
   peticionPerdidaTablero,
+  buildMotivoSalidaModalHtml,
 } from './pipeline-logica.js';
 import {
   buildBandejaHtml,
@@ -5208,6 +5211,7 @@ function renderHistorial() {
           <div>
             <div class="cot-card-cliente">${escapeHtml(nombreConCorto(c.cliente || 'Sin nombre', c.nombreCorto))}${badge}</div>
             <div class="cot-card-meta">${fecha} · ${c.vendedor} · ${c.totalPiezas} pzs</div>
+            ${lineaMotivoPerdidaHtml(c)}
             <div style="margin-top:4px">${chipOrigenHtml(c)}</div>
           </div>
           <div>
@@ -5245,10 +5249,15 @@ async function soltarEnColumnaCotizacion(origen, destino) {
         : 'El tiempo no se arrastra: las tarjetas avanzan solas con los días');
     return;
   }
-  const label = destino === 'ganada' ? 'Ganada' : 'Perdida';
-  if (!confirm(`¿Marcar la cotización de ${cot?.cliente || 'este cliente'} como ${label}?`)) return;
+  // #483: Perdida pide su Motivo de Perdida en lugar de la confirmacion;
+  // cancelar la ventana no llama al servidor.
+  let salida = null;
+  if (destino === 'perdida') {
+    salida = await pedirMotivoPerdida(cot?.cliente || 'esta cotizaci\u00f3n');
+    if (!salida) return;
+  } else if (!confirm(`¿Marcar la cotización de ${cot?.cliente || 'este cliente'} como Ganada?`)) return;
   try {
-    const res = await api(`/api/cotizacion/${origen.id}/estado`, { method: 'PATCH', body: { estado: destino } });
+    const res = await api(`/api/cotizacion/${origen.id}/estado`, { method: 'PATCH', body: { estado: destino, ...salida } });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       avisoTablero(data.error || 'No se pudo actualizar el estado');
@@ -5279,9 +5288,17 @@ async function marcarSeguimiento(id, paso) {
   }
 }
 
+// #483: desde la tarjeta de Hoy, Perdida pide su Motivo de Perdida antes de
+// llamar al servidor; cancelar la ventana no cambia nada.
 async function cambiarEstadoCotizacion(id, estado) {
+  let salida = null;
+  if (estado === 'perdida') {
+    const item = ultimaColaHoy.find(i => i.tipo === 'cotizacion' && i.id === id);
+    salida = await pedirMotivoPerdida(item?.cliente || 'esta cotizaci\u00f3n');
+    if (!salida) return;
+  }
   try {
-    const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
+    const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado, ...salida } });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       alert(data.error || 'No se pudo actualizar el estado');
@@ -5315,10 +5332,18 @@ async function agendarReunionCotizacion(id) {
   }
 }
 
+// #483: el resultado Perdida de la reunion vencida pide su Motivo de Perdida
+// antes de llamar al servidor; cancelar la ventana no cambia nada.
 async function resultadoReunionCotizacion(id, resultado) {
+  let salida = null;
+  if (resultado === 'perdida') {
+    const item = ultimaColaHoy.find(i => i.tipo === 'cotizacion' && i.id === id);
+    salida = await pedirMotivoPerdida(item?.cliente || 'esta cotizaci\u00f3n');
+    if (!salida) return;
+  }
   try {
     const res = await api(`/api/cotizacion/${id}/reunion-resultado`, {
-      method: 'POST', body: { resultado },
+      method: 'POST', body: { resultado, ...salida },
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -6577,12 +6602,15 @@ window.marcarNoUtilTablero = marcarNoUtilTablero;
 // PATCH .../etapa {perdida}; la cotizacion via PATCH .../estado {perdida} (ruta
 // existente, Modelo A: una cotizacion sale del embudo solo por Perdida). El tipo
 // llega de la tarjeta (#478): prospecto y cotizacion comparten numeros de refId.
+// #483: la confirmacion es la ventana del Motivo de Perdida; cancelarla no llama
+// al servidor.
 async function cerrarPerdidaTablero(tipo, id) {
-  const peticion = peticionPerdidaTablero(tipo, id);
-  if (!peticion) return;
+  if (!peticionPerdidaTablero(tipo, id)) return;
   const o = oportunidadDeTablero(tipo, id);
   const nombre = o ? (o.nombre || 'esta oportunidad') : 'esta oportunidad';
-  if (!confirm(`¿Cerrar como Perdida ${nombre}? Sale del tablero y queda en el historial.`)) return;
+  const salida = await pedirMotivoPerdida(nombre);
+  if (!salida) return;
+  const peticion = peticionPerdidaTablero(tipo, id, salida);
   try {
     const res = await api(peticion.url, { method: 'PATCH', body: peticion.body });
     if (!res.ok) {
@@ -6930,6 +6958,42 @@ function pedirMotivoNoUtil() {
   });
 }
 
+// Ventana del motivo de una salida (#483): la abren los cinco caminos que ofrecen
+// Perdida ANTES de llamar al servidor (tarjeta del Pipeline, Hoy, reunion vencida,
+// boton y arrastre del Historial). Resuelve { motivo, nota } o null si el vendedor
+// cancela, y entonces no se llama al servidor. Titulo, catalogo y validacion los
+// pone quien la abre; la validacion es la misma del servidor.
+function pedirMotivoSalida({ titulo, catalogo, validar }) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+    overlay.innerHTML = buildMotivoSalidaModalHtml({ titulo, catalogo });
+    document.body.appendChild(overlay);
+    const cerrar = salida => { overlay.remove(); resolve(salida); };
+    document.getElementById('motivo-salida-confirmar').addEventListener('click', () => {
+      const motivo = document.getElementById('motivo-salida-select').value;
+      const nota = document.getElementById('motivo-salida-nota').value;
+      const error = validar(motivo, nota);
+      if (error) {
+        const errEl = document.getElementById('motivo-salida-error');
+        errEl.textContent = error;
+        errEl.style.display = 'block';
+        return;
+      }
+      cerrar({ motivo, nota: notaLimpia(nota) });
+    });
+    document.getElementById('motivo-salida-cancelar').addEventListener('click', () => cerrar(null));
+  });
+}
+
+function pedirMotivoPerdida(nombre) {
+  return pedirMotivoSalida({
+    titulo: `Cerrar como Perdida ${nombre}: \u00bfcu\u00e1l es el motivo?`,
+    catalogo: MOTIVOS_PERDIDA,
+    validar: errorMotivoPerdida,
+  });
+}
+
 function avisoTablero(msg) {
   const aviso = document.createElement('div');
   aviso.className = 'tablero-aviso';
@@ -7192,12 +7256,17 @@ window.cotizarProspecto = id => {
   if (!p) return;
   abrirCotizadorConProspecto(p);
 };
+// #483: Perdida pide su Motivo de Perdida en lugar de la confirmacion; cancelar
+// la ventana no llama al servidor.
 window.cerrarCotizacionTablero = async (id, estado) => {
   const cot = ultimasCotizaciones.find(c => c.id === id);
-  const label = estado === 'ganada' ? 'Ganada' : 'Perdida';
-  if (!confirm(`¿Marcar la cotización de ${cot ? cot.cliente : 'este cliente'} como ${label}?`)) return;
+  let salida = null;
+  if (estado === 'perdida') {
+    salida = await pedirMotivoPerdida(cot ? cot.cliente : 'esta cotizaci\u00f3n');
+    if (!salida) return;
+  } else if (!confirm(`¿Marcar la cotización de ${cot ? cot.cliente : 'este cliente'} como Ganada?`)) return;
   try {
-    const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado } });
+    const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado, ...salida } });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       alert(data.error || 'No se pudo actualizar el estado');

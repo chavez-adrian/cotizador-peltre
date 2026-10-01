@@ -67,7 +67,7 @@ function fijar(cot) {
 beforeEach(() => fijar(COT_JORGE));
 
 const perder = (id) => supertest(app).patch(`/api/cotizacion/${id}/estado`)
-  .set('Authorization', MEMO).send({ estado: 'perdida' });
+  .set('Authorization', MEMO).send({ estado: 'perdida', motivo: 'precio' });
 
 function assertNadaCambio(cot) {
   assert.deepEqual(readJson(COTS_PATH), [cot], 'la cotizacion no cambia');
@@ -120,7 +120,7 @@ test('#482: el resultado Perdida de una reunion vencida con pedido responde 409 
   const cot = { ...COT_JORGE, etapa: 'anticipo_pagado', seguimientos: REUNION_VENCIDA };
   fijar(cot);
   const res = await supertest(app).post('/api/cotizacion/10/reunion-resultado')
-    .set('Authorization', MEMO).send({ resultado: 'perdida' });
+    .set('Authorization', MEMO).send({ resultado: 'perdida', motivo: 'precio' });
   assert.equal(res.status, 409);
   assert.match(res.body.error, /ya tiene pedido en Operam/);
   assertNadaCambio(cot);
@@ -129,7 +129,7 @@ test('#482: el resultado Perdida de una reunion vencida con pedido responde 409 
 test('#482: el resultado Perdida de una reunion vencida sin pedido sigue cerrando', async () => {
   fijar({ ...COT_JORGE, seguimientos: REUNION_VENCIDA });
   const res = await supertest(app).post('/api/cotizacion/10/reunion-resultado')
-    .set('Authorization', MEMO).send({ resultado: 'perdida' });
+    .set('Authorization', MEMO).send({ resultado: 'perdida', motivo: 'precio' });
   assert.equal(res.status, 200);
   assert.equal(readJson(COTS_PATH).find(c => c.id === 10).estado, 'perdida');
 });

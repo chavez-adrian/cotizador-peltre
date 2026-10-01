@@ -35,3 +35,52 @@ test('#482: un espejo sin pedido no cuenta', () => {
   assert.equal(tienePedido({ etapa: 'seguimiento', espejoOperam: { cotizacion: '1240', pedido: '' } }), false);
   assert.equal(tienePedido({ etapa: 'seguimiento', espejoOperam: null }), false);
 });
+
+// #483 (CONTEXT.md "Perdida"; lista final de Adrian 2026-09-30): cerrar como
+// Perdida pide un Motivo de Perdida de un catalogo propio, en este orden; Otro
+// exige una nota. El catalogo vive aqui para que servidor y navegador no diverjan.
+test('#483: el catalogo de Motivos de Perdida es la lista final, en su orden y con acentos en pantalla', async () => {
+  const { MOTIVOS_PERDIDA } = await import('../perdida-logica.js');
+  assert.deepEqual(MOTIVOS_PERDIDA.map(m => m.texto), [
+    'Precio', 'Proyecto pospuesto', 'Competencia', 'Tiempo de producci\u00f3n',
+    'Sin respuesta', 'No cumple los requerimientos', 'Otro',
+  ]);
+  assert.equal(MOTIVOS_PERDIDA.find(m => m.texto === 'Otro').valor, 'otro');
+});
+
+test('#483: sin motivo o con uno fuera del catalogo no se cierra como Perdida', async () => {
+  const { errorMotivoPerdida } = await import('../perdida-logica.js');
+  assert.match(errorMotivoPerdida(undefined), /motivo/i);
+  assert.match(errorMotivoPerdida(''), /motivo/i);
+  assert.match(errorMotivoPerdida('se fue con otro'), /motivo/i);
+  assert.match(errorMotivoPerdida('menudeo'), /motivo/i, 'un motivo de No util no es Motivo de Perdida');
+});
+
+test('#483: Otro exige una nota; los demas motivos no', async () => {
+  const { errorMotivoPerdida, MOTIVOS_PERDIDA } = await import('../perdida-logica.js');
+  assert.match(errorMotivoPerdida('otro'), /nota/i);
+  assert.match(errorMotivoPerdida('otro', '   '), /nota/i);
+  assert.equal(errorMotivoPerdida('otro', 'El cliente cerro su negocio'), null);
+  for (const { valor } of MOTIVOS_PERDIDA.filter(m => m.valor !== 'otro')) {
+    assert.equal(errorMotivoPerdida(valor), null, valor);
+  }
+});
+
+test('#483: el motivo de una Perdida sale de su ultimo evento de cierre; una Perdida anterior sin motivo da null', async () => {
+  const { motivoPerdidaDe, textoMotivoPerdida } = await import('../perdida-logica.js');
+  assert.deepEqual(motivoPerdidaDe([
+    { tipo: 'etapa', de: 'seguimiento', a: 'perdida', motivo: 'precio', nota: null },
+    { tipo: 'etapa', de: 'perdida', a: 'seguimiento' },
+    { tipo: 'etapa', de: 'seguimiento', a: 'perdida', motivo: 'competencia', nota: null },
+    { tipo: 'toque' },
+  ]), { motivo: 'competencia', nota: null });
+  assert.deepEqual(motivoPerdidaDe([{ tipo: 'etapa', de: 'seguimiento', a: 'perdida', motivo: 'otro', nota: 'Cerro su negocio' }]),
+    { motivo: 'otro', nota: 'Cerro su negocio' });
+  assert.equal(motivoPerdidaDe([{ tipo: 'etapa', de: 'seguimiento', a: 'perdida', fecha: '2026-09-01' }]), null);
+  assert.equal(motivoPerdidaDe(undefined), null);
+  assert.equal(motivoPerdidaDe([
+    { tipo: 'etapa', de: 'seguimiento', a: 'perdida', motivo: 'precio', nota: null },
+    { tipo: 'etapa', de: 'perdida', a: 'seguimiento' },
+  ]), null, 'reabierta ya no esta Perdida');
+  assert.equal(textoMotivoPerdida('tiempo_produccion'), 'Tiempo de producci\u00f3n');
+});
