@@ -2679,6 +2679,24 @@ let accionDocumentoEnCurso = null;
 // sesion nueva (#504; la carrera venia de #83 F1).
 let sesionCotizacion = 0;
 
+// Quien escribe en un slot de estado de Operam. El del paso Cotizacion
+// (#operam-status-cotizar) es el MISMO nodo para la sesion siguiente: una
+// subida o actualizacion que sigue en vuelo cuando el vendedor pasa a otra
+// cotizacion (guardado abandonado, o un Reintentar de ese slot) pintaba su
+// resultado sobre la nueva -- "Cotizacion actualizada en Operam -- Cotizacion
+// 1314" debajo de "Crear cotizacion" (#504, hallado en la verificacion en
+// produccion). Ese slot solo se escribe mientras siga la sesion que lo pidio;
+// los de las tarjetas del historial son de su cotizacion y se escriben siempre.
+function pintorDeSlot(slot) {
+  const sesion = sesionCotizacion;
+  const delPaso = slot?.id === 'operam-status-cotizar';
+  return html => {
+    if (!slot) return;
+    if (delPaso && sesion !== sesionCotizacion) return;
+    slot.innerHTML = html;
+  };
+}
+
 function estadoBotonesActual() {
   let cuerpoActual = null;
   if (state.documentoConfirmado && state.cuerpoGuardado != null) {
@@ -2852,6 +2870,7 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
   // unico punto por el que sale el guardado del paso Cotizacion.
   matarBorrador(EVENTOS_BORRADOR.GENERACION_EXITOSA);
   const slot = document.getElementById('operam-status-cotizar');
+  const pintar = pintorDeSlot(slot);
   const key = String(id);
   // Modo actualizacion (#104, ADR-0008) y regeneracion de una cotizacion ya subida
   // (#114) convergen aqui a proposito: la senal es requiereActualizacionOperam, que
@@ -2862,7 +2881,7 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
     // Acuse de que no habia nada que hacer (regla 4 de #504: confirmada en cuanto
     // responde el guardado). Se reusa la misma vista que el camino de subida da
     // para yaSubida -- folio + "el contenido no cambio".
-    if (slot) slot.innerHTML = buildOperamStatusHtml(id, interpretarSubidaOperam({ ok: true, folio: folioOperam ?? null, yaSubida: true }));
+    pintar(buildOperamStatusHtml(id, interpretarSubidaOperam({ ok: true, folio: folioOperam ?? null, yaSubida: true })));
     anotarConfirmacionDocumento(key, true);
     return true;
   }
@@ -2873,7 +2892,7 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
   progreso('Subiendo a Operam...');
   const vista = await conLimiteDeTiempo(autoSubirOperam(id, slot), TIMEOUT_OPERAM_MS, () => {
     const vencida = interpretarSubidaOperam({ timeout: true });
-    if (slot) slot.innerHTML = buildOperamStatusHtml(id, vencida);
+    pintar(buildOperamStatusHtml(id, vencida));
     anotarConfirmacionDocumento(key, subidaConfirma(vencida));
     return vencida;
   });
@@ -4728,6 +4747,7 @@ function slotOperamDesde(el) {
 const subidasOperamEnVuelo = new Set();
 
 async function autoSubirOperam(id, slot, extraBody) {
+  const pintar = pintorDeSlot(slot);
   if (!id) return null;
   const key = String(id);
   // Ya en vuelo: antes esto era un `return` mudo, inofensivo mientras la subida
@@ -4737,12 +4757,12 @@ async function autoSubirOperam(id, slot, extraBody) {
   // explicito, distinto de un fallo, con el Reintentar de siempre.
   if (subidasOperamEnVuelo.has(key)) {
     const enVuelo = interpretarSubidaOperam({ enVuelo: true });
-    if (slot) slot.innerHTML = buildOperamStatusHtml(id, enVuelo);
+    pintar(buildOperamStatusHtml(id, enVuelo));
     anotarConfirmacionDocumento(key, subidaConfirma(enVuelo));
     return enVuelo;
   }
   subidasOperamEnVuelo.add(key);
-  if (slot) slot.innerHTML = '<span class="operam-status">Subiendo a Operam...</span>';
+  pintar('<span class="operam-status">Subiendo a Operam...</span>');
   let resultado;
   try {
     const opts = { method: 'POST' };
@@ -4792,7 +4812,7 @@ async function autoSubirOperam(id, slot, extraBody) {
     state.folioOperam = vista.folio;
     pintarFranjaCliente();
   }
-  if (slot) slot.innerHTML = buildOperamStatusHtml(id, vista);
+  pintar(buildOperamStatusHtml(id, vista));
   // #504: la generacion y todos los Reintentar (elegir candidato, sucursal,
   // otra razon social, crear nuevo) pasan por aqui, asi que aqui se anota si
   // la cotizacion en pantalla quedo confirmada.
@@ -4812,6 +4832,7 @@ async function autoSubirOperam(id, slot, extraBody) {
 // en vuelo con autoSubirOperam: las dos operaciones se pisarian el carrito de FA, y
 // el servidor ademas tiene su lock por id (la proteccion real).
 async function actualizarQuoteEnOperam(id, slot) {
+  const pintar = pintorDeSlot(slot);
   if (!id) return;
   const key = String(id);
   // Ya en vuelo: era un `return` mudo, tolerable mientras esto solo lo disparaba el
@@ -4823,12 +4844,12 @@ async function actualizarQuoteEnOperam(id, slot) {
       ok: false, status: 425, escrito: false,
       error: 'Ya hay una operacion de Operam en curso para esta cotizacion: reintenta cuando termine.',
     });
-    if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, enCurso);
+    pintar(buildActualizacionStatusHtml(id, enCurso));
     anotarConfirmacionDocumento(key, actualizacionConfirma(enCurso));
     return enCurso;
   }
   subidasOperamEnVuelo.add(key);
-  if (slot) slot.innerHTML = '<span class="operam-status">Actualizando en Operam...</span>';
+  pintar('<span class="operam-status">Actualizando en Operam...</span>');
   let resultado;
   try {
     const res = await api(`/api/cotizacion/operam/${id}/actualizar`, { method: 'POST' });
@@ -4855,7 +4876,7 @@ async function actualizarQuoteEnOperam(id, slot) {
     pintarFranjaCliente();
   }
   aplicarEstadoWhatsApp();
-  if (slot) slot.innerHTML = buildActualizacionStatusHtml(id, vista);
+  pintar(buildActualizacionStatusHtml(id, vista));
   // #504: solo `actualizada` entrega. Bloqueada (el quote ya tiene pedido),
   // desactualizado y revisar dejan los botones en la accion y el slot dice por
   // que, con Reintentar o Copiar cotizacion. El `alert` de #114 ("el documento ya
