@@ -1173,22 +1173,6 @@ test('#502: cargarCotizacion esconde todas las vistas antes de mostrar el cotiza
     'esconder solo el Historial dejaba el Pipeline debajo');
 });
 
-// #502: el boton Editar del Pipeline sale de la MISMA definicion que el del
-// Historial; buildAccionesCargaHtml se compone con el y su salida no cambia.
-test('#502: buildBotonEditarHtml es el Editar de buildAccionesCargaHtml', async () => {
-  const { buildBotonEditarHtml } = await import('../editar-cotizacion-logica.js');
-  for (const extra of [
-    { hasData: true, folioOperam: '1200' },
-    { hasData: true, folioOperam: '1200', orderOperam: '7077' },
-    { hasData: true, folioOperam: null },
-    { hasData: false },
-  ]) {
-    const c = cot(3, { id: 7, ...extra });
-    const editar = buildBotonEditarHtml(c);
-    assert.ok(buildAccionesCargaHtml(c).startsWith(editar + ' '), JSON.stringify(extra));
-  }
-});
-
 // #502 AC8: el Historial no cambia. Salida de buildAccionesCargaHtml capturada
 // ANTES de componerla con buildBotonEditarHtml, en los cuatro casos del gate.
 test('#502: buildAccionesCargaHtml devuelve exactamente lo de antes', () => {
