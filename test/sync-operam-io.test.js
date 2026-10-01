@@ -453,6 +453,32 @@ test('reconciliarOportunidad: sin comprobante de pago el sync avanza igual (#485
   assert.equal(res2.etapa, 'anticipo_pagado');
 });
 
+// #486: "hubo anticipo" decide si la venta lleva comprobante del saldo. El espejo
+// sobrescribe `anticipo` con `pagado`, asi que la marca se anota aparte la primera
+// vez que el sync ve el pago parcial y un pago posterior que liquida no la borra
+// (actualizarDatos es un merge: escribir false la apagaria).
+test('reconciliarOportunidad: anota huboAnticipo al ver un pago parcial y el pago que liquida no la borra (#486)', async () => {
+  const parcial = depsMock({ transacciones: [
+    { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
+  ] });
+  await reconciliarOportunidad({ id: 15, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } }, parcial);
+  assert.equal(parcial.datos.find(d => d.id === 15).campos.huboAnticipo, true);
+
+  const liquida = depsMock({ transacciones: [
+    { type: '10', order_: '7400', total_amount: '2000', allocated: '2000', outstanding: '0', debtor_no: '345' },
+  ] });
+  await reconciliarOportunidad({ id: 15, etapa: 'anticipo_pagado', data: { cliente: { rfc: 'ABC010101AAA' }, huboAnticipo: true } }, liquida);
+  for (const d of liquida.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
+});
+
+test('reconciliarOportunidad: pago unico (directo a liquidado) no anota huboAnticipo (#486)', async () => {
+  const deps = depsMock({ transacciones: [
+    { type: '10', order_: '7400', total_amount: '2000', allocated: '2000', outstanding: '0', debtor_no: '345' },
+  ] });
+  await reconciliarOportunidad({ id: 16, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } }, deps);
+  for (const d of deps.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
+});
+
 test('reconciliarOportunidad: respeta el gate de decorados (#61) -- no libera con checklist incompleto', async () => {
   // Operam dice pedido + anticipo parcial; pero la oportunidad es decorada con
   // checklist vacio: el gate la topa en anticipo_pagado (no pedido_liberado).

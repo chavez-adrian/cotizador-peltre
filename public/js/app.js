@@ -6706,15 +6706,16 @@ window.subirCalcaArchivos = subirCalcaArchivos;
 // Comprobante de pago del primer pago (#485). A diferencia de la calca, la
 // subida SE ESPERA: el servidor responde lo que Dropbox confirmo y solo eso
 // queda en la tarjeta. El navegador valida antes con la MISMA regla que la ruta.
-async function subirComprobantePago(id) {
-  const input = document.getElementById(`comprobante-pago-${id}`);
+// #486: `pago` = 'saldo' para el comprobante del saldo (venta con anticipo).
+async function subirComprobantePago(id, pago = 'primer') {
+  const input = document.getElementById(pago === 'primer' ? `comprobante-pago-${id}` : `comprobante-pago-${id}-${pago}`);
   const files = input && input.files ? Array.from(input.files) : [];
   const invalido = errorArchivosComprobante(files.map(f => ({ nombre: f.name, tamano: f.size })));
   if (invalido) { alert(invalido); return; }
   const form = new FormData();
   for (const f of files) form.append('archivos', f, f.name);
   try {
-    const res = await api(`/api/cotizacion/${id}/comprobante-pago/primer`, { method: 'POST', body: form });
+    const res = await api(`/api/cotizacion/${id}/comprobante-pago/${pago}`, { method: 'POST', body: form });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       alert(body.error || 'No se pudo subir el comprobante de pago: vuelve a intentarlo.');

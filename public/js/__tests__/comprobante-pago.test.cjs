@@ -78,6 +78,57 @@ test('#485: el tablero pinta Falta comprobante y convive con Pago sin registrar'
   assert.doesNotMatch(deLaTarjeta('c31'), /Falta comprobante/);
 });
 
+// #486: el comprobante del SALDO solo cuando la venta va a dos pagos, es decir
+// cuando el sync vio alguna vez un anticipo (marca huboAnticipo).
+const SALDO = {
+  fecha: MEDIODIA,
+  archivos: [{ nombre: 'liquidacion.pdf', ruta: '/Cotizacion 1250 - LUPITA - Saldo.pdf', fecha: MEDIODIA }],
+};
+const dosPagos = (etapa, extra = {}) => tarjeta(etapa, { huboAnticipo: true, comprobantesPago: COMPROBANTE, ...extra });
+
+test('#486: con anticipo, la tarjeta ofrece el comprobante del saldo desde Pedido liberado y despues', () => {
+  for (const etapa of ['pedido_liberado', 'saldo_pagado', 'producto_entregado']) {
+    const html = buildComprobantePagoHtml(dosPagos(etapa));
+    assert.match(html, /subirComprobantePago\(30, 'saldo'\)/, etapa);
+    assert.match(html, /id="comprobante-pago-30-saldo"/, etapa);
+  }
+  for (const etapa of ['seguimiento', 'anticipo_pagado']) {
+    assert.doesNotMatch(buildComprobantePagoHtml(dosPagos(etapa)), /'saldo'/, etapa);
+  }
+});
+
+test('#486: sin anticipo (pago unico) nunca se ofrece el comprobante del saldo ni su aviso', () => {
+  for (const etapa of ['pedido_liberado', 'saldo_pagado', 'producto_entregado']) {
+    const t = tarjeta(etapa, { comprobantesPago: COMPROBANTE });
+    assert.doesNotMatch(buildComprobantePagoHtml(t), /saldo/i, etapa);
+    assert.equal(faltaComprobante(t, 'saldo'), false, etapa);
+    assert.equal(badgeFaltaComprobanteHtml(t), '', etapa);
+  }
+});
+
+test('#486: con anticipo, Falta comprobante del saldo en Saldo pagado o Producto entregado sin ese comprobante', () => {
+  for (const etapa of ['saldo_pagado', 'producto_entregado']) {
+    assert.equal(faltaComprobante(dosPagos(etapa), 'saldo'), true, etapa);
+    assert.match(badgeFaltaComprobanteHtml(dosPagos(etapa)), /Falta comprobante del saldo/, etapa);
+    const conSaldo = dosPagos(etapa, { comprobantesPago: { ...COMPROBANTE, saldo: SALDO } });
+    assert.equal(faltaComprobante(conSaldo, 'saldo'), false, etapa);
+    assert.equal(badgeFaltaComprobanteHtml(conSaldo), '', etapa);
+  }
+  assert.equal(faltaComprobante(dosPagos('pedido_liberado'), 'saldo'), false, 'en Pedido liberado se ofrece, aun no falta');
+});
+
+test('#486: la marca se lee tambien de la entrada completa (data)', () => {
+  const entrada = { tipo: 'cotizacion', id: 30, etapa: 'saldo_pagado', data: { huboAnticipo: true, comprobantesPago: COMPROBANTE } };
+  assert.equal(faltaComprobante(entrada, 'saldo'), true);
+});
+
+test('#486: la tarjeta distingue los archivos del primer pago y los del saldo', () => {
+  const html = buildComprobantePagoHtml(dosPagos('producto_entregado', { comprobantesPago: { ...COMPROBANTE, saldo: SALDO } }));
+  assert.match(html, /Comprobante del primer pago \(30\/09\/2026\): transferencia\.pdf, ticket\.jpg/);
+  assert.match(html, /Comprobante del saldo \(30\/09\/2026\): liquidacion\.pdf/);
+  assert.doesNotMatch(html.split('Comprobante del saldo')[1], /transferencia\.pdf/);
+});
+
 test('#485: el navegador valida con la misma regla que la ruta (tipo y tamano)', () => {
   assert.equal(errorArchivosComprobante([{ nombre: 'foto.HEIC', tamano: 2_000_000 }]), null);
   assert.match(errorArchivosComprobante([{ nombre: 'nota.txt', tamano: 10 }]), /nota\.txt/);

@@ -246,6 +246,79 @@ test('CP14: el nombre del archivo con acentos llega intacto al registro', async 
   assert.deepEqual(comprobanteGuardado().archivos.map(a => a.nombre), ['dep\u00f3sito a\u00f1o.png']);
 });
 
+// #486: el comprobante del SALDO, por la misma ruta, con los mismos permisos y la
+// misma confirmacion de Dropbox, solo en una venta con anticipo y desde Pedido
+// liberado. Se guarda aparte del primer pago.
+const subirSaldo = (token, archivos, id = 30) => {
+  let req = supertest(app).post(`/api/cotizacion/${id}/comprobante-pago/saldo`).set('Authorization', token);
+  for (const [nombre, contenido] of archivos) req = req.attach('archivos', Buffer.from(contenido), nombre);
+  return req;
+};
+const conAnticipo = (etapa, extra = {}) => ({ ...structuredClone(COT), etapa, data: { ...COT.data, huboAnticipo: true, ...extra } });
+const PRIMER_PREVIO = { fecha: '2026-09-29T15:00:00.000Z', archivos: [{ nombre: 'anticipo.pdf', ruta: '/Cotizacion 1250 - RESTAURANTE LA LUPITA - Primer pago.pdf', fecha: '2026-09-29T15:00:00.000Z' }] };
+
+test('CP16: con anticipo, el dueno sube el comprobante del saldo en Pedido liberado y queda aparte del primer pago', async () => {
+  fijarDatos(COTS_PATH, [conAnticipo('pedido_liberado', { comprobantesPago: { primer: PRIMER_PREVIO } })]);
+  const subidas = mockDropbox();
+  const res = await subirSaldo(MEMO, [['liquidacion.pdf', '%PDF-1.4']]);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(subidas[0].path, '/Cotizacion 1250 - RESTAURANTE LA LUPITA - Saldo.pdf');
+  assert.equal(subidas[0].headers['Dropbox-API-Path-Root'], '{".tag":"namespace_id","namespace_id":"1111111111"}');
+  const pagos = readJson(COTS_PATH).find(c => c.id === 30).data.comprobantesPago;
+  assert.deepEqual(pagos.saldo.archivos.map(a => a.nombre), ['liquidacion.pdf']);
+  assert.deepEqual(pagos.primer, PRIMER_PREVIO);
+  assert.deepEqual(res.body.comprobante, pagos.saldo);
+});
+
+test('CP17: sin anticipo (pago unico) el comprobante del saldo no se recibe y nada sale a Dropbox', async () => {
+  for (const etapa of ['pedido_liberado', 'saldo_pagado']) {
+    fijarDatos(COTS_PATH, [{ ...structuredClone(COT), etapa }]);
+    const subidas = mockDropbox();
+    const res = await subirSaldo(MEMO, [['liquidacion.pdf', '%PDF-1.4']]);
+    assert.equal(res.status, 409, etapa);
+    assert.match(res.body.error, /anticipo/);
+    assert.equal(subidas.length, 0, etapa);
+  }
+});
+
+test('CP18: con anticipo, antes de Pedido liberado el comprobante del saldo no se recibe', async () => {
+  for (const etapa of ['seguimiento', 'anticipo_pagado']) {
+    fijarDatos(COTS_PATH, [conAnticipo(etapa)]);
+    const subidas = mockDropbox();
+    const res = await subirSaldo(MEMO, [['liquidacion.pdf', '%PDF-1.4']]);
+    assert.equal(res.status, 409, etapa);
+    assert.match(res.body.error, /Pedido liberado/);
+    assert.equal(subidas.length, 0, etapa);
+  }
+});
+
+test('CP19: el comprobante del saldo tiene los mismos permisos: otro vendedor 403, el admin si', async () => {
+  fijarDatos(COTS_PATH, [conAnticipo('producto_entregado')]);
+  const subidas = mockDropbox();
+  const ajeno = await subirSaldo(ANA, [['liquidacion.pdf', '%PDF-1.4']]);
+  assert.equal(ajeno.status, 403);
+  assert.equal(subidas.length, 0);
+  const admin = await subirSaldo(ADMIN, [['liquidacion.pdf', '%PDF-1.4']]);
+  assert.equal(admin.status, 200, JSON.stringify(admin.body));
+});
+
+test('CP20: si Dropbox no confirma, el comprobante del saldo sigue faltando', async () => {
+  fijarDatos(COTS_PATH, [conAnticipo('saldo_pagado')]);
+  mockDropbox({ fallar: () => true });
+  const res = await subirSaldo(MEMO, [['liquidacion.pdf', '%PDF-1.4']]);
+  assert.equal(res.status, 502);
+  assert.equal(readJson(COTS_PATH).find(c => c.id === 30).data.comprobantesPago?.saldo ?? null, null);
+});
+
+test('CP21: la tarjeta del tablero trae la marca de anticipo', async () => {
+  fijarDatos(PROSPECTOS_PATH, []);
+  fijarDatos(OPORTUNIDADES_PATH, []);
+  fijarDatos(COTS_PATH, [conAnticipo('saldo_pagado')]);
+  const res = await supertest(app).get('/api/oportunidades').set('Authorization', MEMO);
+  const lista = Array.isArray(res.body) ? res.body : res.body.oportunidades;
+  assert.equal(lista.find(o => o.id === 'c30').huboAnticipo, true);
+});
+
 test('CP15: sin DROPBOX_NS_PAGO/DROPBOX_PATH_PAGO el archivo cae al sandbox y la respuesta lo dice en vez de afirmar la carpeta de la empresa', async () => {
   const ns = process.env.DROPBOX_NS_PAGO;
   delete process.env.DROPBOX_NS_PAGO;

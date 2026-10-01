@@ -8,13 +8,18 @@
 // Vive en `data.comprobantesPago.<pago>` = { fecha, archivos: [{ nombre, ruta,
 // fecha }] }: `nombre` es el del archivo que eligio el vendedor y `ruta` la que
 // Dropbox CONFIRMO (path_display). Un archivo que Dropbox no confirmo no se
-// guarda nunca. `PAGOS_COMPROBANTE` declara los pagos que admiten comprobante;
-// hoy solo el primero.
+// guarda nunca. `PAGOS_COMPROBANTE` declara los pagos que admiten comprobante: el
+// primero y, desde #486, el del saldo cuando la venta va a dos pagos.
+//
+// #486: la venta va a dos pagos si el sync vio alguna vez un pago parcial: la
+// marca `data.huboAnticipo` (lib/sync-operam-io.js) que nunca se borra. Una venta
+// que paso directo a Saldo pagado lleva un solo comprobante.
 
 import { ETAPAS_POST_VENTA } from './perdida-logica.js';
 
 export const PAGOS_COMPROBANTE = {
   primer: { texto: 'Primer pago' },
+  saldo: { texto: 'Saldo' },
 };
 
 export const LIMITE_MB_COMPROBANTE = 10;
@@ -99,10 +104,31 @@ const ETAPAS_CON_COMPROBANTE = new Set(['seguimiento', ...ETAPAS_POST_VENTA]);
 
 export const MENSAJE_COMPROBANTE_FUERA_DE_ETAPA = 'El comprobante de pago se sube desde Seguimiento o despu\u00e9s, y no en una oportunidad cerrada.';
 
-// Se ofrece desde Seguimiento y se puede subir despues, en cualquier etapa
-// post-venta, para corregir un faltante.
-export function puedeSubirComprobante(o) {
-  return !!o && ETAPAS_CON_COMPROBANTE.has(o.etapa);
+export const MENSAJE_SALDO_SIN_ANTICIPO = 'Esta venta no registr\u00f3 anticipo en Operam: lleva un solo comprobante de pago, el del primer pago.';
+export const MENSAJE_SALDO_FUERA_DE_ETAPA = 'El comprobante del saldo se sube desde Pedido liberado o despu\u00e9s.';
+
+const ETAPAS_CON_SALDO = new Set(['pedido_liberado', 'saldo_pagado', 'producto_entregado']);
+const ETAPAS_FALTA_SALDO = new Set(['saldo_pagado', 'producto_entregado']);
+
+// La marca de anticipo en la entrada completa (data) o en la tarjeta aplanada.
+export function huboAnticipoDe(o) {
+  return (o?.data?.huboAnticipo ?? o?.huboAnticipo) === true;
+}
+
+// Por que no se puede subir el comprobante de ese pago (texto para el 409), o
+// null si se puede. El primero se ofrece desde Seguimiento y el del saldo desde
+// Pedido liberado, solo con anticipo; los dos se pueden subir despues, en
+// cualquier etapa post-venta, para corregir un faltante.
+export function motivoSinComprobante(o, pago = 'primer') {
+  if (pago === 'saldo') {
+    if (!huboAnticipoDe(o)) return MENSAJE_SALDO_SIN_ANTICIPO;
+    return ETAPAS_CON_SALDO.has(o?.etapa) ? null : MENSAJE_SALDO_FUERA_DE_ETAPA;
+  }
+  return !!o && ETAPAS_CON_COMPROBANTE.has(o.etapa) ? null : MENSAJE_COMPROBANTE_FUERA_DE_ETAPA;
+}
+
+export function puedeSubirComprobante(o, pago = 'primer') {
+  return !!o && motivoSinComprobante(o, pago) === null;
 }
 
 // El `accept` del selector de archivos: la misma lista que valida la ruta.
@@ -117,7 +143,10 @@ export function comprobanteDe(o, pago = 'primer') {
 
 // "Falta comprobante": la tarjeta ya paso de Seguimiento (Anticipo pagado o
 // posterior) y no tiene comprobante del primer pago. Es el aviso inverso de
-// "Pago sin registrar" (#77) y conviven.
-export function faltaComprobante(o) {
-  return !!o && ETAPAS_POST_VENTA.includes(o.etapa) && !comprobanteDe(o, 'primer');
+// "Pago sin registrar" (#77) y conviven. El del saldo (#486) falta en Saldo
+// pagado o Producto entregado, y solo en una venta con anticipo.
+export function faltaComprobante(o, pago = 'primer') {
+  if (!o || comprobanteDe(o, pago)) return false;
+  if (pago === 'saldo') return huboAnticipoDe(o) && ETAPAS_FALTA_SALDO.has(o.etapa);
+  return ETAPAS_POST_VENTA.includes(o.etapa);
 }

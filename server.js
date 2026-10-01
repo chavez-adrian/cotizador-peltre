@@ -77,7 +77,7 @@ import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHab
 import { validarOperamIds } from './public/js/vendedores-logica.js';
 import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO, errorMotivoPerdida, notaLimpia, camposMotivoPerdida } from './public/js/perdida-logica.js';
 import { errorMotivoCancelada, camposMotivoCancelada, MENSAJE_CANCELADA_SOLO_ADMIN, MENSAJE_CANCELADA_SIN_PEDIDO, MENSAJE_CANCELADA_NO_CAMBIA, esCancelada } from './public/js/cancelada-logica.js';
-import { PAGOS_COMPROBANTE, LIMITE_BYTES_COMPROBANTE, MAX_ARCHIVOS_COMPROBANTE, errorArchivosComprobante, mensajeArchivoGrande, MENSAJE_DEMASIADOS_ARCHIVOS, nombreArchivoComprobante, comprobanteConArchivos, mensajeSubidaIncompleta, mensajeSubidaCompleta, puedeSubirComprobante, MENSAJE_COMPROBANTE_FUERA_DE_ETAPA } from './public/js/comprobante-pago-logica.js';
+import { PAGOS_COMPROBANTE, LIMITE_BYTES_COMPROBANTE, MAX_ARCHIVOS_COMPROBANTE, errorArchivosComprobante, mensajeArchivoGrande, MENSAJE_DEMASIADOS_ARCHIVOS, nombreArchivoComprobante, comprobanteConArchivos, mensajeSubidaIncompleta, mensajeSubidaCompleta, motivoSinComprobante } from './public/js/comprobante-pago-logica.js';
 import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
 import { destinoEnvia, carriersParaPais, sugerenciaSinCalle } from './lib/envia-destino-logica.js';
 import { condicionesComerciales, validarCondiciones } from './public/js/condiciones-logica.js';
@@ -1216,7 +1216,8 @@ app.post('/api/cotizacion/:id/comprobante-pago/:pago', authMiddleware, async (re
   if (!PAGOS_COMPROBANTE[pago]) return res.status(404).json({ error: 'Pago sin comprobante' });
   const entry = await cotizacionOperable(req, res);
   if (!entry) return;
-  if (!puedeSubirComprobante(entry)) return res.status(409).json({ error: MENSAJE_COMPROBANTE_FUERA_DE_ETAPA });
+  const fueraDeEtapa = motivoSinComprobante(entry, pago);
+  if (fueraDeEtapa) return res.status(409).json({ error: fueraDeEtapa });
   const errMulter = await recibirArchivosComprobante(req, res);
   if (errMulter) return res.status(400).json({ error: errorMulterComprobante(errMulter) });
   const archivos = req.files || [];

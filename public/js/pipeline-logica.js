@@ -860,9 +860,11 @@ export function badgePagoSinRegistrarHtml(o) {
 // Badge "Falta comprobante" (#485, CONTEXT.md "Comprobante de pago"): la tarjeta
 // ya paso de Seguimiento sin el comprobante del primer pago. Aviso, no candado:
 // la etapa la sigue moviendo Operam. Convive con "Pago sin registrar" (#77).
+// #486: el del saldo lleva su propio badge, solo en una venta con anticipo.
 export function badgeFaltaComprobanteHtml(o) {
-  if (!faltaComprobante(o)) return '';
-  return '<span class="cot-badge badge-falta-comprobante">Falta comprobante</span>';
+  const primer = faltaComprobante(o) ? '<span class="cot-badge badge-falta-comprobante">Falta comprobante</span>' : '';
+  const saldo = faltaComprobante(o, 'saldo') ? '<span class="cot-badge badge-falta-comprobante">Falta comprobante del saldo</span>' : '';
+  return primer + saldo;
 }
 
 function diaDelComprobante(fecha) {
@@ -874,18 +876,31 @@ function diaDelComprobante(fecha) {
 // El comprobante del primer pago en la tarjeta (#485): sus archivos y su fecha,
 // y el selector para subirlo desde Seguimiento o despues (corregir un faltante).
 // Solo COTIZACIONES, con el id numerico (refId), leccion del bug de #57.
-export function buildComprobantePagoHtml(o) {
-  if (!o || o.tipo !== 'cotizacion' || !puedeSubirComprobante(o)) return '';
-  const id = o.refId ?? o.id;
-  const c = comprobanteDe(o, 'primer');
+// #486: con anticipo, un bloque aparte para el del saldo desde Pedido liberado,
+// con sus propios archivos, selector y boton.
+const COMPROBANTE_TARJETA = {
+  primer: { titulo: 'Comprobante del primer pago', subir: 'Subir comprobante de pago', sufijo: '', arg: '' },
+  saldo: { titulo: 'Comprobante del saldo', subir: 'Subir comprobante del saldo', sufijo: '-saldo', arg: ", 'saldo'" },
+};
+
+function comprobantePagoBloqueHtml(o, id, pago) {
+  if (!puedeSubirComprobante(o, pago)) return '';
+  const t = COMPROBANTE_TARJETA[pago];
+  const c = comprobanteDe(o, pago);
   const archivos = c
-    ? `<div class="comprobante-pago-archivos">Comprobante del primer pago (${escapeHtml(diaDelComprobante(c.fecha))}): ${c.archivos.map(a => escapeHtml(a.nombre)).join(', ')}</div>`
+    ? `<div class="comprobante-pago-archivos">${t.titulo} (${escapeHtml(diaDelComprobante(c.fecha))}): ${c.archivos.map(a => escapeHtml(a.nombre)).join(', ')}</div>`
     : '';
   return `<div class="cot-card-actions comprobante-pago-control">
     ${archivos}
-    <input type="file" id="comprobante-pago-${id}" class="btn-sm" accept="${ACCEPT_COMPROBANTE}" multiple>
-    <button class="btn btn-sm btn-secondary" onclick="subirComprobantePago(${id})">${c ? 'Agregar al comprobante' : 'Subir comprobante de pago'}</button>
+    <input type="file" id="comprobante-pago-${id}${t.sufijo}" class="btn-sm" accept="${ACCEPT_COMPROBANTE}" multiple>
+    <button class="btn btn-sm btn-secondary" onclick="subirComprobantePago(${id}${t.arg})">${c ? 'Agregar al comprobante' : t.subir}</button>
   </div>`;
+}
+
+export function buildComprobantePagoHtml(o) {
+  if (!o || o.tipo !== 'cotizacion') return '';
+  const id = o.refId ?? o.id;
+  return comprobantePagoBloqueHtml(o, id, 'primer') + comprobantePagoBloqueHtml(o, id, 'saldo');
 }
 
 // Los dos estados del Cliente Operam de la Oportunidad, en la tarjeta (#344,
