@@ -14,7 +14,7 @@ export const ETAPAS_POST_VENTA = ['anticipo_pagado', 'pedido_liberado', 'saldo_p
 
 const POST_VENTA = new Set(ETAPAS_POST_VENTA);
 
-export const MENSAJE_PERDIDA_CON_PEDIDO = 'Esta oportunidad ya tiene pedido en Operam: ya no se puede cerrar como Perdida. Si la venta se cay\u00f3, avisa al administrador.';
+export const MENSAJE_PERDIDA_CON_PEDIDO = 'Esta oportunidad ya tiene pedido en Operam: ya no se puede cerrar como Perdida. Si la venta se cay\u00f3, avisa al administrador para que la cierre como Cancelada.';
 
 // "Tiene pedido": la etapa es post-venta O el espejo de Operam que persiste el
 // sync (data.espejoOperam, #67) ya trae pedido. El segundo caso es la decorada
@@ -22,9 +22,11 @@ export const MENSAJE_PERDIDA_CON_PEDIDO = 'Esta oportunidad ya tiene pedido en O
 // calca (#61) la retiene en Seguimiento aunque Operam ya tenga el pedido. El
 // espejo llega a dos alturas -- la entrada completa (server) y la fila aplanada
 // de las listas (navegador) --, como motivoPre.
+// #484: una Cancelada (CONTEXT.md "Cancelada") llego a pedido por definicion,
+// aunque su espejo no exista: tampoco se puede perder.
 export function tienePedido(o) {
   if (!o) return false;
-  if (POST_VENTA.has(o.etapa)) return true;
+  if (POST_VENTA.has(o.etapa) || o.etapa === 'cancelada') return true;
   const pedido = (o.data?.espejoOperam ?? o.espejoOperam)?.pedido;
   return pedido != null && pedido !== '';
 }
@@ -74,15 +76,20 @@ export function notaLimpia(nota) {
 // cierre: una cotizacion reabierta y vuelta a perder dice por que se perdio la
 // segunda vez, y una reabierta (etapa desde perdida) ya no tiene motivo. Una
 // Perdida anterior a #483 no trae motivo: null, y se pinta igual que antes.
-export function motivoPerdidaDe(eventos) {
+// #484: la misma lectura sirve a cualquier salida con motivo (Cancelada).
+export function motivoDeSalida(eventos, salida) {
   let cierre = null;
   for (const e of eventos || []) {
     if (!e || e.tipo !== 'etapa') continue;
-    if (e.a === 'perdida') cierre = e;
-    else if (e.de === 'perdida') cierre = null;
+    if (e.a === salida) cierre = e;
+    else if (e.de === salida) cierre = null;
   }
   if (!cierre || !cierre.motivo) return null;
   return { motivo: cierre.motivo, nota: notaLimpia(cierre.nota) };
+}
+
+export function motivoPerdidaDe(eventos) {
+  return motivoDeSalida(eventos, 'perdida');
 }
 
 // Los dos campos con los que una tarjeta o una fila del Historial lleva su Motivo

@@ -10,7 +10,7 @@ let COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
   buildAvisoCambioClienteHtml;
 let MENSAJE_COPIA_LISTA_FIJADA;
 let clienteAlCargarCotizacion, ligaClienteAlGuardar, customerIdFiscal, cotizacionesPreviasDelCliente;
-let vendedorAlGuardar;
+let vendedorAlGuardar, avisoArrastreCotizacion;
 before(async () => {
   ({ COLUMNAS_COTIZACIONES, columnaCotizacion, agruparTableroCotizaciones,
     puedeArrastrarCotizacion, buildTableroCotizacionesHtml,
@@ -19,7 +19,7 @@ before(async () => {
     buildAvisoModoActualizacion, textoBotonGenerar,
     filtrarCotizaciones, buildAvisoCambioClienteHtml,
     clienteAlCargarCotizacion, ligaClienteAlGuardar,
-    vendedorAlGuardar } = await import('../cotizaciones-logica.js'));
+    vendedorAlGuardar, avisoArrastreCotizacion } = await import('../cotizaciones-logica.js'));
   ({ MENSAJE_COPIA_LISTA_FIJADA } = await import('../tier-logica.js'));
   ({ customerIdFiscal, cotizacionesPreviasDelCliente } = await import('../alta-logica.js'));
 });
@@ -69,7 +69,7 @@ test('Q3: los estados cerrados mandan sobre la edad y descartada sale del tabler
   assert.equal(columnaCotizacion(cot(3, { estado: undefined }), HOY), 'dia2');
 });
 
-test('Q4: agruparTableroCotizaciones devuelve las 7 columnas en orden y reparte', () => {
+test('Q4: agruparTableroCotizaciones devuelve las 8 columnas en orden y reparte (#484: Cancelada)', () => {
   const cols = agruparTableroCotizaciones([
     cot(0, { id: 1 }),
     cot(3, { id: 2 }),
@@ -82,7 +82,7 @@ test('Q4: agruparTableroCotizaciones devuelve las 7 columnas en orden y reparte'
   ], HOY);
   assert.deepEqual(Object.keys(cols), COLUMNAS_COTIZACIONES);
   assert.deepEqual(COLUMNAS_COTIZACIONES,
-    ['reciente', 'dia2', 'dia7', 'por_vencer', 'vencida', 'ganada', 'perdida']);
+    ['reciente', 'dia2', 'dia7', 'por_vencer', 'vencida', 'ganada', 'perdida', 'cancelada']);
   assert.deepEqual(cols.reciente.map(c => c.id), [1]);
   assert.deepEqual(cols.dia2.map(c => c.id), [2]);
   assert.deepEqual(cols.dia7.map(c => c.id), [3]);
@@ -135,6 +135,19 @@ test('#482: el arrastre no deja soltar en Perdida una cotizacion con pedido, y e
     assert.equal(puedeArrastrarCotizacion('dia2', 'ganada', conPedido), true);
   }
   assert.equal(puedeArrastrarCotizacion('dia2', 'perdida', cot(3, { etapa: 'seguimiento' })), true);
+});
+
+// #484: el aviso del arrastre que rebota. Una cerrada -- Cancelada incluida --
+// no se reabre arrastrando, aunque tenga pedido: el aviso de Perdida con pedido
+// manda pedirle Cancelada al admin, y esa ya lo es.
+test('#484: arrastrar desde Cancelada avisa que una cerrada no se reabre, como desde Ganada o Perdida', () => {
+  const cancelada = cot(3, { estado: 'cancelada', etapa: 'cancelada' });
+  for (const a of ['ganada', 'perdida', 'dia2']) {
+    assert.equal(avisoArrastreCotizacion('cancelada', a, cancelada), 'Una cotizaci\u00f3n cerrada no se reabre arrastrando', a);
+  }
+  assert.equal(avisoArrastreCotizacion('ganada', 'perdida', cot(3)), 'Una cotizaci\u00f3n cerrada no se reabre arrastrando');
+  assert.match(avisoArrastreCotizacion('dia2', 'perdida', cot(3, { etapa: 'anticipo_pagado' })), /ya tiene pedido en Operam/);
+  assert.match(avisoArrastreCotizacion('dia2', 'dia7', cot(3)), /^El tiempo no se arrastra/);
 });
 
 test('#482: la tarjeta del Historial no ofrece Perdida a una cotizacion con pedido', () => {
@@ -1117,4 +1130,32 @@ test('#428-H6: el Historial pinta y filtra el ISO a medianoche UTC en su dia (11
     assert.ok(buildTableroCotizacionesHtml([COT_1128_NEON], new Date(2026, 4, 10, 20, 0))
       .includes('8 may 2026 \u00b7 hace 2 d\u00edas'), 'hace N dias cuenta desde el 8');
   });
+});
+
+// #484 (CONTEXT.md "Cancelada"): la Cancelada aparece en el Historial con su
+// motivo y una etiqueta propia, distinta de Perdida, en su propia columna
+// cerrada del tablero; no se arrastra ni hacia ella ni desde ella.
+test('#484: el Historial pinta la Cancelada en su columna, con etiqueta propia y su motivo', async () => {
+  const { lineaMotivoCanceladaHtml } = await import('../cotizaciones-logica.js');
+  const cancelada = cot(40, { id: 41, estado: 'cancelada', etapa: 'cancelada', motivoCancelada: 'Pago y se echo <para> atras' });
+  assert.equal(columnaCotizacion(cancelada, HOY), 'cancelada');
+  const linea = '<div class="cot-card-meta">Cancelada \u00b7 Pago y se echo &lt;para&gt; atras</div>';
+  assert.equal(lineaMotivoCanceladaHtml(cancelada), linea);
+  const html = buildTableroCotizacionesHtml([cancelada], HOY);
+  assert.ok(html.includes('data-id="41" data-col="cancelada"'));
+  assert.ok(html.includes('draggable="false"'));
+  assert.ok(html.includes(linea));
+  assert.equal(html.includes("cerrarCotizacionTablero(41, 'perdida')"), false);
+  assert.equal(lineaMotivoCanceladaHtml(cot(3, { id: 42, estado: 'perdida', motivoCancelada: 'x' })), '');
+});
+
+test('#484: en el Historial nada se arrastra a Cancelada ni desde ella', () => {
+  assert.equal(puedeArrastrarCotizacion('dia7', 'cancelada', cot(8, { etapa: 'anticipo_pagado' })), false);
+  assert.equal(puedeArrastrarCotizacion('cancelada', 'ganada'), false);
+  assert.equal(puedeArrastrarCotizacion('cancelada', 'perdida'), false);
+});
+
+test('#484: el filtro Estado del Historial ofrece Cancelada', async () => {
+  const { ESTADOS_COTIZACION } = await import('../cotizaciones-logica.js');
+  assert.ok(ESTADOS_COTIZACION.some(e => e.valor === 'cancelada' && e.texto === 'Cancelada'));
 });

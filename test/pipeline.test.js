@@ -18,8 +18,8 @@ test('ETAPAS son las 7 etapas canonicas en orden del embudo', () => {
   ]);
 });
 
-test('SALIDAS son las dos salidas del pipeline', () => {
-  assert.deepEqual(SALIDAS, ['no_util', 'perdida']);
+test('SALIDAS son las tres salidas del pipeline (#484: Cancelada)', () => {
+  assert.deepEqual(SALIDAS, ['no_util', 'perdida', 'cancelada']);
 });
 
 test('ETAPA_LABELS tiene una etiqueta legible para cada etapa y cada salida', () => {
@@ -32,6 +32,7 @@ test('ETAPA_LABELS tiene una etiqueta legible para cada etapa y cada salida', ()
   assert.equal(ETAPA_LABELS.producto_entregado, 'Producto entregado');
   assert.equal(ETAPA_LABELS.no_util, 'No útil');
   assert.equal(ETAPA_LABELS.perdida, 'Perdida');
+  assert.equal(ETAPA_LABELS.cancelada, 'Cancelada');
   for (const k of [...ETAPAS, ...SALIDAS]) {
     assert.ok(ETAPA_LABELS[k], `falta label para ${k}`);
   }

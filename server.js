@@ -76,6 +76,7 @@ import { topeDescuentoVendedor, validarDescuentosCotizacion, partidasConDescuent
 import { validarTierCotizacion, listasHabilitadasDeVendedor, normalizarListasHabilitadas, normalizarPuedeFijarLista, esEscalonDeVolumen, validarListaCliente, listaIdDeTier } from './public/js/tier-logica.js';
 import { validarOperamIds } from './public/js/vendedores-logica.js';
 import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO, errorMotivoPerdida, notaLimpia, camposMotivoPerdida } from './public/js/perdida-logica.js';
+import { errorMotivoCancelada, camposMotivoCancelada, MENSAJE_CANCELADA_SOLO_ADMIN, MENSAJE_CANCELADA_SIN_PEDIDO, MENSAJE_CANCELADA_NO_CAMBIA, esCancelada } from './public/js/cancelada-logica.js';
 import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
 import { destinoEnvia, carriersParaPais, sugerenciaSinCalle } from './lib/envia-destino-logica.js';
 import { condicionesComerciales, validarCondiciones } from './public/js/condiciones-logica.js';
@@ -703,6 +704,8 @@ app.get('/api/cotizaciones', authMiddleware, async (req, res) => {
     // Motivo de Perdida y su nota (#483): salen del evento del cierre; null en
     // una Perdida anterior al catalogo.
     ...camposMotivoPerdida(eventos),
+    // El motivo de la Cancelada (#484), del evento de su cierre.
+    ...camposMotivoCancelada(eventos),
     // El Contacto de la Oportunidad (#342): por AQUI se hereda el Origen, no por
     // el telefono tecleado, que es dato del documento y puede corregirse.
     contactoCelular: contactoCelular ?? null,
@@ -890,27 +893,33 @@ app.post('/api/seguimiento/:id', authMiddleware, async (req, res) => {
   res.json({ ok: true, seguimientos });
 });
 
-const ESTADOS_VALIDOS = new Set(['abierta', 'ganada', 'perdida', 'descartada']);
+const ESTADOS_VALIDOS = new Set(['abierta', 'ganada', 'perdida', 'descartada', 'cancelada']);
+
+// Los estados que son ademas una SALIDA del embudo con motivo: la cotizacion y la
+// Oportunidad de la que nacio se cierran en esa misma etapa (#461, #481, #484).
+const SALIDAS_CON_MOTIVO = new Set(['perdida', 'cancelada']);
 
 // #461: el tablero reparte la tarjeta por `etapa`, no por `estado`, asi que
 // cerrar como Perdida escribe los dos en la misma peticion, con su evento, y
 // reabrir devuelve la tarjeta a la etapa de la que salio.
 // #483: el Motivo de Perdida (y su nota) viaja en el evento del cierre, de donde
 // lo leen el tablero y el Historial (camposMotivoPerdida).
+// #484: Cancelada (solo admin, con pedido) se cierra igual, con su motivo libre.
 async function cambiarEstadoCotizacion(entry, estado, vendedor, salida = {}) {
   await cotStore.setEstado(entry.id, estado);
-  const destino = estado === 'perdida' ? 'perdida'
+  const esSalidaConMotivo = SALIDAS_CON_MOTIVO.has(estado);
+  const destino = esSalidaConMotivo ? estado
     : estado === 'abierta' && entry.etapa === 'perdida' ? etapaAlReabrirCotizacion(entry.eventos)
     : null;
-  // Ya en etapa perdida no se escribe evento nuevo: el motivo re-enviado se descarta (como #461).
+  // Ya en esa salida no se escribe evento nuevo: el motivo re-enviado se descarta (como #461).
   if (destino && destino !== entry.etapa) {
     await cotStore.cambiarEtapa(entry.id, destino, {
       tipo: 'etapa', de: entry.etapa ?? null, a: destino,
-      ...(destino === 'perdida' ? salida : {}),
+      ...(esSalidaConMotivo ? salida : {}),
       fecha: new Date().toISOString(), vendedor,
     });
   }
-  if (estado === 'perdida') await cerrarOportunidadesDeLaCotizacion(entry, vendedor, salida);
+  if (esSalidaConMotivo) await cerrarOportunidadesDeLaCotizacion(entry, vendedor, estado, salida);
 }
 
 // #481: perder la cotizacion cierra TAMBIEN la Oportunidad de la que nacio; si
@@ -921,14 +930,16 @@ async function cambiarEstadoCotizacion(entry, estado, vendedor, salida = {}) {
 // la cotizacion: si esa escritura falla, la Oportunidad no queda Perdida con la
 // cotizacion viva. Best effort, como el hook del embudo: un fallo aqui no impide
 // cerrar la cotizacion. #483: la Oportunidad se cierra con el MISMO Motivo de
-// Perdida (y nota) que la cotizacion.
-async function cerrarOportunidadesDeLaCotizacion(entry, vendedor, salida = {}) {
+// Perdida (y nota) que la cotizacion. #484: cancelar la cotizacion cierra la
+// Oportunidad como Cancelada, con el mismo motivo, por la misma razon: si no,
+// volveria a Seguimiento en cuanto la cotizacion sale del embudo.
+async function cerrarOportunidadesDeLaCotizacion(entry, vendedor, destino, salida = {}) {
   try {
     const filas = oportunidadesDeContactos(await prospectosStore.listar(), await oportunidadesStore.listar());
     const fecha = new Date().toISOString();
     for (const op of oportunidadesQueCierraLaPerdida(filas, entry, await cotStore.listar())) {
-      await oportunidadPreIo.cambiarEtapa(op, 'perdida', {
-        tipo: 'etapa', de: op.etapa, a: 'perdida', ...salida, cotizacion_id: entry.id, fecha, vendedor,
+      await oportunidadPreIo.cambiarEtapa(op, destino, {
+        tipo: 'etapa', de: op.etapa, a: destino, ...salida, cotizacion_id: entry.id, fecha, vendedor,
       });
     }
   } catch (err) {
@@ -945,6 +956,14 @@ function salidaPerdidaDelCuerpo(body) {
   return error ? { error } : { evento: { motivo, nota: notaLimpia(nota) } };
 }
 
+// #484 (CONTEXT.md "Cancelada"): el motivo es texto libre obligatorio y se guarda
+// recortado. Sin nota: el motivo ya es el texto.
+function salidaCanceladaDelCuerpo(body) {
+  const { motivo } = body || {};
+  const error = errorMotivoCancelada(motivo);
+  return error ? { error } : { evento: { motivo: notaLimpia(motivo) } };
+}
+
 app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
   const { estado } = req.body;
   if (!ESTADOS_VALIDOS.has(estado)) return res.status(400).json({ error: 'Estado invalido' });
@@ -953,8 +972,18 @@ app.patch('/api/cotizacion/:id/estado', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin' && entry.vendedor !== req.user.name) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
+  // #484: una Cancelada no cambia de estado, ni para el admin: el estado cambiaria
+  // y la etapa se quedaria en cancelada. Re-enviar cancelada no escribe nada.
+  if (esCancelada(entry) && estado !== 'cancelada') return res.status(409).json({ error: MENSAJE_CANCELADA_NO_CAMBIA });
   if (estado === 'perdida' && tienePedido(entry)) return res.status(409).json({ error: MENSAJE_PERDIDA_CON_PEDIDO });
-  const salida = estado === 'perdida' ? salidaPerdidaDelCuerpo(req.body) : null;
+  // #484: Cancelada la decide solo el admin y solo con pedido; sin pedido es Perdida.
+  if (estado === 'cancelada') {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: MENSAJE_CANCELADA_SOLO_ADMIN });
+    if (!tienePedido(entry)) return res.status(409).json({ error: MENSAJE_CANCELADA_SIN_PEDIDO });
+  }
+  const salida = estado === 'perdida' ? salidaPerdidaDelCuerpo(req.body)
+    : estado === 'cancelada' ? salidaCanceladaDelCuerpo(req.body)
+    : null;
   if (salida?.error) return res.status(400).json({ error: salida.error });
   await cambiarEstadoCotizacion(entry, estado, req.user.name, salida?.evento);
   res.json({ ok: true, estado });
@@ -1048,12 +1077,14 @@ app.post('/api/cotizacion/:id/contacto', authMiddleware, async (req, res) => {
 // Resultado de la reunion pasada sobre una cotizacion (issue #65, Modelo A #59):
 // el avance pertinente registra un evento posterior a la reunion (que limpia el
 // pendiente, lib/seguimiento.js), o se cierra la cotizacion como Perdida. NO hay
-// salida a No util para una cotizacion (Modelo A: una cotizacion sale del embudo
-// solo por Perdida; No util es para descalificar prospectos sin cotizar).
+// salida a No util para una cotizacion (Modelo A: No util es para descalificar
+// prospectos sin cotizar). #484: sobre una Cancelada no hay resultado que
+// registrar: ya salio del tablero.
 app.post('/api/cotizacion/:id/reunion-resultado', authMiddleware, async (req, res) => {
   const { resultado } = req.body || {};
   const entry = await cotizacionOperable(req, res);
   if (!entry) return;
+  if (esCancelada(entry)) return res.status(409).json({ error: MENSAJE_CANCELADA_NO_CAMBIA });
   if (!reunionPendienteResultadoDe(entry.seguimientos || [], new Date())) {
     return res.status(400).json({ error: 'No hay reunión pendiente de resultado' });
   }

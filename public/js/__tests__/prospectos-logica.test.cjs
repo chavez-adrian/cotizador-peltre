@@ -314,7 +314,7 @@ test('ED4: la card de un prospecto en cualquier etapa activa ofrece Editar; en u
     const html = buildProspectoCardHtml({ ...PROSPECTO, etapa }, null, new Date(), { compacta: true });
     assert.match(html, /abrirEdicionProspecto\(3\)/, `etapa activa ${etapa} debe ofrecer Editar`);
   }
-  for (const etapa of ['no_util', 'perdida']) {
+  for (const etapa of ['no_util', 'perdida', 'cancelada']) {
     const html = buildProspectoCardHtml({ ...PROSPECTO, etapa });
     assert.equal(html.includes('abrirEdicionProspecto'), false, `salida ${etapa} no edita`);
   }
@@ -1561,4 +1561,15 @@ test('#343: el 409 de un Contacto propio ofrece abrirle una Nueva oportunidad', 
 test('#343: el 409 de un Contacto de otro vendedor no ofrece nada', () => {
   assert.equal(buildOfertaNuevaOportunidadHtml({ tipo: 'prospecto_ajeno' }), '');
   assert.equal(buildProspectoExistenteHtml({ tipo: 'prospecto_ajeno' }), '');
+});
+
+// #484 (CONTEXT.md "Cancelada"): la Cancelada es una salida con etiqueta propia;
+// una Oportunidad Cancelada ya salio del embudo y no se vuelve a cerrar como
+// Perdida, y la ruta de etapa de la Oportunidad pre-cotizacion (que nunca tiene
+// pedido) no la acepta.
+test('#484: la Cancelada tiene etiqueta propia, no se pierde despues y no entra por la ruta de etapa', async () => {
+  const { ETAPA_LABELS } = await import('../prospectos-logica.js');
+  assert.equal(ETAPA_LABELS.cancelada, 'Cancelada');
+  assert.match(validarTransicion('cancelada', 'perdida', 'precio'), /ya sali/);
+  assert.match(validarTransicion('seguimiento', 'cancelada', 'Se echo para atras'), /Transici/);
 });

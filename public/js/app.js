@@ -125,9 +125,10 @@ import { sugerirDominioCorreo } from './mayoreo-logica.js';
 import { bloqueoMonedaCliente } from './moneda-cliente-logica.js';
 // Perdida con pedido (#482): la MISMA regla con la que el servidor responde 409.
 // Motivo de Perdida (#483): el MISMO catalogo y la MISMA validacion del servidor.
-import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO, MOTIVOS_PERDIDA, errorMotivoPerdida, notaLimpia } from './perdida-logica.js';
+import { MOTIVOS_PERDIDA, errorMotivoPerdida, notaLimpia } from './perdida-logica.js';
+import { errorMotivoCancelada } from './cancelada-logica.js';
 import {
-  puedeArrastrarCotizacion,
+  puedeArrastrarCotizacion, avisoArrastreCotizacion,
   buildTableroCotizacionesHtml,
   buildHistorialAccionesHtml,
   buildAccionesCargaHtml,
@@ -138,6 +139,7 @@ import {
   BUSCABLES_COTIZACION,
   clienteAlCargarCotizacion,
   lineaMotivoPerdidaHtml,
+  lineaMotivoCanceladaHtml,
 } from './cotizaciones-logica.js';
 // Filtros por selector (#456, spec #398): la rejilla etiqueta+selector y el
 // contador tras filtrar. Cada vista declara sus filtros en su BUSCABLES_*.
@@ -5212,6 +5214,7 @@ function renderHistorial() {
             <div class="cot-card-cliente">${escapeHtml(nombreConCorto(c.cliente || 'Sin nombre', c.nombreCorto))}${badge}</div>
             <div class="cot-card-meta">${fecha} · ${c.vendedor} · ${c.totalPiezas} pzs</div>
             ${lineaMotivoPerdidaHtml(c)}
+            ${lineaMotivoCanceladaHtml(c)}
             <div style="margin-top:4px">${chipOrigenHtml(c)}</div>
           </div>
           <div>
@@ -5243,10 +5246,7 @@ function setModoCotizaciones(modo) {
 async function soltarEnColumnaCotizacion(origen, destino) {
   const cot = ultimasCotizaciones.find(c => c.id === origen.id);
   if (!puedeArrastrarCotizacion(origen.col, destino, cot)) {
-    avisoTablero(destino === 'perdida' && tienePedido(cot) ? MENSAJE_PERDIDA_CON_PEDIDO
-      : origen.col === 'ganada' || origen.col === 'perdida'
-        ? 'Una cotización cerrada no se reabre arrastrando'
-        : 'El tiempo no se arrastra: las tarjetas avanzan solas con los días');
+    avisoTablero(avisoArrastreCotizacion(origen.col, destino, cot));
     return;
   }
   // #483: Perdida pide su Motivo de Perdida en lugar de la confirmacion;
@@ -6410,20 +6410,21 @@ function renderPipeline() {
   listEl.style.display = esTablero ? 'none' : 'block';
   if (esTablero) {
     listEl.innerHTML = '';
+    // #484: Cancelada solo se le pinta al admin (el servidor responde 403 al resto).
     tableroEl.innerHTML = buildTableroPipelineHtml(oportunidades, {
-      vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline,
+      vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline, esAdmin: state.user?.role === 'admin',
     });
     return;
   }
   tableroEl.innerHTML = '';
-  // Modo Cerradas (issue #59, AC3): las salidas No util/Perdida que el tablero y
-  // la lista ocultan viven aqui, con su tipo de cierre y, para No util, el motivo.
+  // Modo Cerradas (issue #59, AC3): las salidas No util/Perdida/Cancelada que el
+  // tablero y la lista ocultan viven aqui, con su tipo de cierre y su motivo.
   if (esCerradas) {
     listEl.innerHTML = buildCerradasHtml(oportunidades);
     return;
   }
   // Vista lista: las mismas oportunidades que pinta el tablero (sus 7 columnas),
-  // mas reciente primero. Las salidas No util/Perdida NO se muestran aqui: viven
+  // mas reciente primero. Las salidas No util/Perdida/Cancelada NO se muestran aqui: viven
   // en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
   const activas = oportunidadesActivas(oportunidades)
     .slice().sort((a, b) => fechaLocal(b.fecha || 0) - fechaLocal(a.fecha || 0));
@@ -6456,7 +6457,7 @@ const PIPELINE_LABEL = {
   no_asignado: 'No Asignado', por_cotizar: 'Por Cotizar', seguimiento: 'Seguimiento',
   anticipo_pagado: 'Anticipo pagado', pedido_liberado: 'Pedido liberado',
   saldo_pagado: 'Saldo pagado', producto_entregado: 'Producto entregado',
-  no_util: 'No útil', perdida: 'Perdida',
+  no_util: 'No útil', perdida: 'Perdida', cancelada: 'Cancelada',
 };
 
 // Asignar vendedor a una tarjeta No Asignado desde el tablero (issue #57): la
@@ -6626,6 +6627,34 @@ async function cerrarPerdidaTablero(tipo, id) {
   }
 }
 window.cerrarPerdidaTablero = cerrarPerdidaTablero;
+
+// Cancelada (#484, CONTEXT.md "Cancelada"): la Oportunidad con pedido que se
+// cayo. Solo el admin la ve y solo sobre una cotizacion con pedido; pide el
+// motivo en texto libre (cancelar la ventana no llama al servidor). No cancela
+// nada en Operam: solo saca la tarjeta del tablero.
+async function cerrarCanceladaTablero(id) {
+  const o = oportunidadDeTablero('cotizacion', id);
+  const nombre = o ? (o.nombre || 'esta oportunidad') : 'esta oportunidad';
+  const salida = await pedirMotivoSalida({
+    titulo: `Cerrar como Cancelada ${nombre}: \u00bfpor qu\u00e9 se cay\u00f3 la venta? (no cancela nada en Operam)`,
+    validar: errorMotivoCancelada,
+  });
+  if (!salida) return;
+  try {
+    const res = await api(`/api/cotizacion/${id}/estado`, { method: 'PATCH', body: { estado: 'cancelada', motivo: salida.motivo } });
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch {}
+      avisoTablero(data.error || 'No se pudo cerrar como Cancelada');
+      return;
+    }
+    avisoTablero('Cerrada como Cancelada');
+    recargarPipeline();
+  } catch (e) {
+    avisoTablero('Error de conexion');
+  }
+}
+window.cerrarCanceladaTablero = cerrarCanceladaTablero;
 
 // Producto decorado / calca (issue #61). Acciones de la tarjeta de cotizacion:
 // marcar/desmarcar decorada (activa el checklist 0/6), togglear un paso del
@@ -6963,6 +6992,7 @@ function pedirMotivoNoUtil() {
 // boton y arrastre del Historial). Resuelve { motivo, nota } o null si el vendedor
 // cancela, y entonces no se llama al servidor. Titulo, catalogo y validacion los
 // pone quien la abre; la validacion es la misma del servidor.
+// #484: sin catalogo (Cancelada) no hay selector y el texto ES el motivo.
 function pedirMotivoSalida({ titulo, catalogo, validar }) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
@@ -6971,8 +7001,10 @@ function pedirMotivoSalida({ titulo, catalogo, validar }) {
     document.body.appendChild(overlay);
     const cerrar = salida => { overlay.remove(); resolve(salida); };
     document.getElementById('motivo-salida-confirmar').addEventListener('click', () => {
-      const motivo = document.getElementById('motivo-salida-select').value;
-      const nota = document.getElementById('motivo-salida-nota').value;
+      const select = document.getElementById('motivo-salida-select');
+      const texto = document.getElementById('motivo-salida-nota').value;
+      const motivo = select ? select.value : texto;
+      const nota = select ? texto : null;
       const error = validar(motivo, nota);
       if (error) {
         const errEl = document.getElementById('motivo-salida-error');
@@ -6980,7 +7012,7 @@ function pedirMotivoSalida({ titulo, catalogo, validar }) {
         errEl.style.display = 'block';
         return;
       }
-      cerrar({ motivo, nota: notaLimpia(nota) });
+      cerrar(select ? { motivo, nota: notaLimpia(nota) } : { motivo: notaLimpia(motivo) });
     });
     document.getElementById('motivo-salida-cancelar').addEventListener('click', () => cerrar(null));
   });

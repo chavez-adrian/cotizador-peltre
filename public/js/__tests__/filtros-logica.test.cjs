@@ -128,7 +128,7 @@ test('FH1: el Historial ofrece Vendedor, Origen y Estado, en ese orden', () => {
   // el Origen es el catalogo cerrado completo, no solo el que trae el listado
   assert.deepEqual(selectDe(html, 'origen').map(o => o.valor).slice(1), CANALES);
   assert.deepEqual(selectDe(html, 'estado').map(o => [o.valor, o.texto]),
-    [['', 'Todos'], ['abierta', 'Abierta'], ['ganada', 'Ganada'], ['perdida', 'Perdida']]);
+    [['', 'Todos'], ['abierta', 'Abierta'], ['ganada', 'Ganada'], ['perdida', 'Perdida'], ['cancelada', 'Cancelada']]);
 });
 
 test('FH2: el vendedor que solo ve sus cotizaciones no recibe selector de Vendedor', () => {

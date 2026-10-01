@@ -15,6 +15,7 @@ import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
+import { puedeCancelar } from './cancelada-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -47,7 +48,7 @@ export function leyendaPre(cot) {
 }
 
 // Las 7 etapas del embudo son las columnas del tablero. Las salidas (No util,
-// Perdida) NO son columnas: viven en filtro/historial.
+// Perdida, Cancelada) NO son columnas: viven en filtro/historial.
 export const COLUMNAS_PIPELINE = [
   'no_asignado', 'por_cotizar', 'seguimiento', 'anticipo_pagado',
   'pedido_liberado', 'saldo_pagado', 'producto_entregado',
@@ -63,7 +64,7 @@ export const COLUMNA_LABELS = {
   producto_entregado: 'Producto entregado',
 };
 
-const SALIDAS = new Set(['no_util', 'perdida']);
+const SALIDAS = new Set(['no_util', 'perdida', 'cancelada']);
 
 export function esSalida(etapa) {
   return SALIDAS.has(etapa);
@@ -612,7 +613,7 @@ export function tagPedidoClienteHtml(r) {
 // uno igual de cerrado, asi que un formulario abierto se pierde con el
 // siguiente render (decision de #198: aceptable y simple, no hay estado de
 // "esta fila esta editandose" que preservar). Un prospecto en etapa de salida
-// (no_util/perdida) no ofrece la accion: el servidor ya rechaza esa edicion
+// (no_util/perdida/cancelada) no ofrece la accion: el servidor ya rechaza esa edicion
 // con 400 (#66).
 function botonEditarFilaHtml(onclick, texto) {
   return '<div style="margin:-2px 0 8px 4px">' +
@@ -742,7 +743,7 @@ export function cardClienteHtml(cliente) {
 }
 
 // Las oportunidades que viven en el pipeline (las 7 columnas): excluye las
-// salidas No util y Perdida, que viven en filtro/historial. Es la misma regla
+// salidas No util, Perdida y Cancelada, que viven en filtro/historial. Es la misma regla
 // que aplica el tablero (agruparPipeline ignora las salidas); la vista lista la
 // usa para no mostrar lo que el tablero oculta. Una sola fuente de "que es
 // activo".
@@ -960,13 +961,17 @@ export function buildMoverSeguimientoControlHtml(o) {
 // Perdida lleva ademas el TIPO (#478): prospectos y cotizaciones comparten
 // numeros de refId, y con el id solo la accion cerraba al prospecto homonimo.
 // #482: con pedido (tienePedido) Perdida no se ofrece: esa venta ya se cerro.
-export function buildSalidaControlHtml(o) {
+// #484: con pedido la unica salida es Cancelada, y solo se le pinta al admin.
+export function buildSalidaControlHtml(o, { esAdmin = false } = {}) {
   if (!o || esSalida(o.etapa)) return '';
   const id = o.refId ?? o.id;
   const perdida = tienePedido(o) ? ''
     : `<button class="btn btn-secondary btn-sm" onclick="cerrarPerdidaTablero('${o.tipo === 'cotizacion' ? 'cotizacion' : 'prospecto'}', ${id})">Perdida</button>`;
   if (o.tipo === 'cotizacion') {
-    return perdida ? `<div class="cot-card-actions tablero-salida">${perdida}</div>` : '';
+    const cancelada = puedeCancelar(o, esAdmin)
+      ? `<button class="btn btn-secondary btn-sm" onclick="cerrarCanceladaTablero(${id})">Cancelada</button>` : '';
+    const acciones = perdida + cancelada;
+    return acciones ? `<div class="cot-card-actions tablero-salida">${acciones}</div>` : '';
   }
   const motivos = MOTIVOS_NO_UTIL
     .map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
@@ -994,7 +999,23 @@ export function peticionPerdidaTablero(tipo, id, salida) {
 // catalogo ({ valor, texto, exigeNota }) los pone quien la abre, asi otra salida
 // con motivo de catalogo usa la misma ventana. La nota es opcional salvo en el
 // motivo que la exige; la validacion es la misma del servidor.
+// #484: sin catalogo (Cancelada) el motivo es texto libre: no hay selector y el
+// campo de texto ES el motivo.
 export function buildMotivoSalidaModalHtml({ titulo, catalogo }) {
+  if (!catalogo) {
+    return `
+    <div style="background:#fff;border-radius:8px;padding:20px;max-width:360px;width:90%">
+      <div style="font-weight:600;margin-bottom:4px">${escapeHtml(titulo)}</div>
+      <div class="cot-card-meta" style="margin-bottom:8px">El motivo es obligatorio. Cancelar no cambia nada.</div>
+      <textarea id="motivo-salida-nota" rows="3" placeholder="Motivo" style="width:100%;margin-bottom:8px"></textarea>
+      <div id="motivo-salida-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" id="motivo-salida-cancelar">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="motivo-salida-confirmar">Confirmar</button>
+      </div>
+    </div>
+  `;
+  }
   const conNota = catalogo.filter(m => m.exigeNota).map(m => m.texto).join(', ');
   return `
     <div style="background:#fff;border-radius:8px;padding:20px;max-width:360px;width:90%">
@@ -1100,7 +1121,7 @@ export function buildNuevaOportunidadControlHtml(o) {
   </div>`;
 }
 
-function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
+function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   // El Origen sale de la linea gris y se lee en su chip (#287).
   const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
@@ -1108,7 +1129,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   const cadena = cadenaOperamHtml(o.espejoOperam);
   const asignar = buildAsignarControlHtml(o, vendedores, tienePermiso);
   const mover = buildMoverSeguimientoControlHtml(o);
-  const salida = buildSalidaControlHtml(o);
+  const salida = buildSalidaControlHtml(o, { esAdmin });
   const decorado = buildDecoradoControlHtml(o);
   const sinContacto = buildSinContactoControlHtml(o);
   const nuevaOportunidad = buildNuevaOportunidadControlHtml(o);
@@ -1133,10 +1154,10 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso) {
   </div>`;
 }
 
-export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsignar: tienePermiso } = {}) {
+export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsignar: tienePermiso, esAdmin = false } = {}) {
   const cols = agruparPipeline(oportunidades);
   return COLUMNAS_PIPELINE.map(etapa => {
-    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, tienePermiso)).join('');
+    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin)).join('');
     const suma = cols[etapa].reduce((s, o) => s + (o.total || 0), 0);
     return `
       <div class="tablero-col" data-etapa="${etapa}">
@@ -1288,11 +1309,11 @@ export function buildColaHoyHtml(cola, { vendedores, puedeAsignar: tienePermiso 
 
 // Filtro/historial de cerradas (issue #59, AC3, CONTEXT.md "Etapas del pipeline":
 // las salidas viven en filtro/historial, fuera del tablero activo). Lista las
-// oportunidades en salida (No util / Perdida) mostrando su nombre, el tipo de
-// cierre y, para No util, el motivo del catalogo (o.motivoNoUtil, derivado del
-// ultimo evento no_util por prospectoAOportunidad). Reusa el mismo criterio de
+// oportunidades en salida (No util / Perdida / Cancelada) mostrando su nombre,
+// el tipo de cierre y su motivo (para No util, el del catalogo: o.motivoNoUtil,
+// derivado del ultimo evento no_util por prospectoAOportunidad). Reusa el mismo criterio de
 // "que es salida" que el tablero (esSalida).
-const SALIDA_LABELS = { no_util: 'No útil', perdida: 'Perdida' };
+const SALIDA_LABELS = { no_util: 'No útil', perdida: 'Perdida', cancelada: 'Cancelada' };
 
 // El Motivo de Perdida y su nota como segmento de la linea de metadatos (#483):
 // el texto del motivo tras el separador, con ": la nota" si la hay. La Perdida
@@ -1304,6 +1325,12 @@ export function motivoPerdidaHtml(o) {
   return ` \u00b7 ${escapeHtml(textoMotivoPerdida(o.motivoPerdida))}${nota}`;
 }
 
+// #484: el motivo libre de la Cancelada, en el mismo lugar que el de Perdida.
+// Lo comparten Cerradas y el Historial.
+export function motivoCanceladaHtml(o) {
+  return o && o.motivoCancelada ? ` \u00b7 ${escapeHtml(o.motivoCancelada)}` : '';
+}
+
 export function buildCerradasHtml(oportunidades) {
   const cerradas = (oportunidades || []).filter(o => esSalida(o.etapa))
     .slice().sort((a, b) => fechaLocal(b.fecha || 0) - fechaLocal(a.fecha || 0));
@@ -1311,7 +1338,8 @@ export function buildCerradasHtml(oportunidades) {
   return cerradas.map(o => {
     const cierre = SALIDA_LABELS[o.etapa] || o.etapa;
     const motivo = o.etapa === 'no_util' && o.motivoNoUtil ? ` · ${escapeHtml(o.motivoNoUtil)}`
-      : o.etapa === 'perdida' ? motivoPerdidaHtml(o) : '';
+      : o.etapa === 'perdida' ? motivoPerdidaHtml(o)
+      : o.etapa === 'cancelada' ? motivoCanceladaHtml(o) : '';
     const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
     return `<div class="cot-card"><div class="cot-card-header"><div>
       <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}</div>

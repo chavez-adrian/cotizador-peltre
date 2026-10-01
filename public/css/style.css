@@ -1523,7 +1523,7 @@ body {
 .col-pill-contactado, .col-pill-reciente { background: var(--etapa-contactado); color: var(--etapa-contactado-texto); }
 .col-pill-calificado, .col-pill-dia2 { background: var(--etapa-calificado); color: var(--etapa-calificado-texto); }
 .col-pill-cotizado, .col-pill-ganada { background: var(--etapa-cotizado); color: var(--etapa-cotizado-texto); }
-.col-pill-no_util, .col-pill-perdida { background: var(--etapa-no_util); color: var(--etapa-no_util-texto); }
+.col-pill-no_util, .col-pill-perdida, .col-pill-cancelada { background: var(--etapa-no_util); color: var(--etapa-no_util-texto); }
 .col-pill-por_vencer, .col-pill-vencida { background: var(--col-vencida); color: var(--col-vencida-texto); }
 .tablero-col-count {
   background: oklch(0 0 0 / 0.12);

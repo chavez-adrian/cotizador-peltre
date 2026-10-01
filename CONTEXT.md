@@ -2,7 +2,7 @@
 
 ## Pipeline
 
-El embudo comercial único, del primer interés al producto entregado. Reemplaza el modelo previo de dos mundos separados (etapas de prospecto por un lado, tablero de cotizaciones por otro). Una sola secuencia de etapas con dos salidas. La unidad que avanza por el pipeline es la **oportunidad**. Ver ADR-0005.
+El embudo comercial único, del primer interés al producto entregado. Reemplaza el modelo previo de dos mundos separados (etapas de prospecto por un lado, tablero de cotizaciones por otro). Una sola secuencia de etapas con tres salidas. La unidad que avanza por el pipeline es la **oportunidad**. Ver ADR-0005.
 
 ## Oportunidad
 

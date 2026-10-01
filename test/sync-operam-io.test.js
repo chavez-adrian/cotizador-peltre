@@ -570,3 +570,27 @@ test('reconciliarPorIdentificador: ignora oportunidades terminadas/salidas', asy
   const res = await reconciliarPorIdentificador({ rfc: 'AAA010101AAA' }, oportunidades, deps);
   assert.deepEqual(res, []);
 });
+
+// #484 (CONTEXT.md "Cancelada"): la Oportunidad con pedido que el admin cerro
+// como Cancelada es una salida; el sync post-venta no la mueve ni la revive
+// aunque Operam registre pagos o remisiones despues.
+test('#484: una Cancelada no es candidata del sync post-venta', () => {
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'cancelada' }), false);
+  assert.equal(esActivaPostVentaCandidata({ etapa: 'cancelada', data: { pagoSinRegistrar: true } }), false);
+});
+
+test('#484: el webhook no mueve una Cancelada aunque Operam traiga pago liquidado y remision', async () => {
+  const deps = depsMock({
+    transacciones: [
+      { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
+      { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
+    ],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+  });
+  const oportunidades = [{ id: 7, etapa: 'cancelada', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } }];
+  const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7077' }, oportunidades, deps);
+  assert.deepEqual(res, []);
+  assert.equal(deps.movimientos.length, 0);
+  assert.equal(deps.espejos.length, 0);
+  assert.equal(deps.datos.length, 0);
+});

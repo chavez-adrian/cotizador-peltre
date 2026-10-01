@@ -157,7 +157,7 @@ test('GET /api/cotizaciones expone estado y telefono wa para el tablero (#50)', 
 test('PATCH estado invalido responde 400 y ajeno 403', async () => {
   writeCots(fixture());
   const inv = await supertest(app).patch('/api/cotizacion/1/estado')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ estado: 'cancelada' });
+    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ estado: 'inexistente' });
   assert.equal(inv.status, 400);
   const ajeno = await supertest(app).patch('/api/cotizacion/2/estado')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({ estado: 'ganada' });

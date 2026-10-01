@@ -197,17 +197,19 @@ export const ETAPA_LABELS = {
   producto_entregado: 'Producto entregado',
   no_util: 'No útil',
   perdida: 'Perdida',
+  cancelada: 'Cancelada',
 };
 
 // Salida a No util -- motivo obligatorio de catalogo cerrado (CONTEXT.md,
 // Etapas del pipeline).
 export const MOTIVOS_NO_UTIL = ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta'];
 
-// Las 7 etapas activas del embudo: las salidas (no_util, perdida) viven en
-// filtro/historial, no son etapas activas. Las dos salidas se descartan
-// derivandolas del catalogo de labels.
+// Las 7 etapas activas del embudo: las salidas (no_util, perdida, cancelada --
+// #484) viven en filtro/historial, no son etapas activas. Las salidas se
+// descartan derivandolas del catalogo de labels.
+const SALIDAS_EMBUDO = new Set(['no_util', 'perdida', 'cancelada']);
 const ETAPAS_ACTIVAS = new Set(
-  Object.keys(ETAPA_LABELS).filter(e => e !== 'no_util' && e !== 'perdida')
+  Object.keys(ETAPA_LABELS).filter(e => !SALIDAS_EMBUDO.has(e))
 );
 
 // En el pipeline unificado no hay avance manual de etapa antes de cotizar:
@@ -238,7 +240,8 @@ export function validarTransicion(actual, nueva, motivo, folio, nota) {
     return null;
   }
   // Salida a Perdida (issue #59, Modelo A): se cierra una oportunidad desde
-  // cualquier etapa ACTIVA. Una que ya salio del embudo (No util / Perdida) no se
+  // cualquier etapa ACTIVA. Una que ya salio del embudo (No util / Perdida /
+  // Cancelada) no se
   // vuelve a cerrar. #483: lleva un Motivo de Perdida de catalogo (y nota con Otro).
   if (nueva === 'perdida') {
     if (!ETAPAS_ACTIVAS.has(actual)) return 'El prospecto ya salió del pipeline';
@@ -442,10 +445,10 @@ export function buildProspectoCardHtml(p, colaItem, ahora = new Date(), { compac
   // la cotizacion (otro tipo de tarjeta). El avance entre etapas ya no es manual.
   const activo = p.etapa === 'por_cotizar';
   // Editar/complementar el prospecto (issue #66) se permite en cualquier etapa
-  // activa (las 7 del embudo), no en una salida (No util/Perdida viven en
-  // historial). Distinto de `activo`, que habilita el trabajo de prospeccion
+  // activa (las 7 del embudo), no en una salida (No util/Perdida/Cancelada
+  // viven en historial). Distinto de `activo`, que habilita el trabajo de prospeccion
   // (toques, reunion) solo en Por Cotizar.
-  const editable = !['no_util', 'perdida'].includes(p.etapa);
+  const editable = !SALIDAS_EMBUDO.has(p.etapa);
   const wa = buildWaLinkProspecto(p, ligas);
   // Reunion futura (issue #45): la cadencia esta suprimida (el prospecto no
   // viene en la cola) pero la card lo dice con su propia etiqueta.

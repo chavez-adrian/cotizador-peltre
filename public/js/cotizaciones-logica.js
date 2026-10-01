@@ -6,16 +6,16 @@
 // prospectos-logica.js: lo consumen app.js y los tests .cjs via import().
 
 import { escapeHtml, chipOrigenHtml, CANALES } from './prospectos-logica.js';
-import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE, motivoPerdidaHtml } from './pipeline-logica.js';
+import { etiquetaFolioOperam, badgeFolioOperamHtml, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE, motivoPerdidaHtml, motivoCanceladaHtml } from './pipeline-logica.js';
 import { nombreConCorto, clienteDesdeCotizacionReciente } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import { MENSAJE_COPIA_LISTA_FIJADA } from './tier-logica.js';
-import { tienePedido } from './perdida-logica.js';
+import { tienePedido, MENSAJE_PERDIDA_CON_PEDIDO } from './perdida-logica.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
-export const COLUMNAS_COTIZACIONES = ['reciente', 'dia2', 'dia7', 'por_vencer', 'vencida', 'ganada', 'perdida'];
+export const COLUMNAS_COTIZACIONES = ['reciente', 'dia2', 'dia7', 'por_vencer', 'vencida', 'ganada', 'perdida', 'cancelada'];
 
 const COLUMNA_LABELS = {
   reciente: 'Recién enviada',
@@ -25,9 +25,13 @@ const COLUMNA_LABELS = {
   vencida: 'Vencida',
   ganada: 'Ganada',
   perdida: 'Perdida',
+  cancelada: 'Cancelada',
 };
 
-const CERRADAS = new Set(['ganada', 'perdida']);
+// #484: Cancelada es una columna cerrada mas, pero no se llega arrastrando: la
+// decide el admin, con motivo, desde la tarjeta del Pipeline.
+const CERRADAS = new Set(['ganada', 'perdida', 'cancelada']);
+const DESTINOS_ARRASTRE = new Set(['ganada', 'perdida']);
 
 // Columna de una cotizacion hoy. Los estados cerrados mandan sobre la edad;
 // descartada queda fuera del tablero (es accion de tarjeta, no columna).
@@ -61,7 +65,16 @@ export function agruparTableroCotizaciones(cotizaciones, hoy = new Date()) {
 // pedido (tienePedido): esa venta ya se cerro.
 export function puedeArrastrarCotizacion(de, a, cot) {
   if (a === 'perdida' && tienePedido(cot)) return false;
-  return CERRADAS.has(a) && !CERRADAS.has(de);
+  return DESTINOS_ARRASTRE.has(a) && !CERRADAS.has(de);
+}
+
+// El aviso del arrastre que rebota. Una cerrada (Ganada, Perdida o Cancelada,
+// #484) no se reabre: eso manda sobre el aviso de Perdida con pedido, que pide
+// Cancelada al admin.
+export function avisoArrastreCotizacion(de, a, cot) {
+  if (CERRADAS.has(de)) return 'Una cotizaci\u00f3n cerrada no se reabre arrastrando';
+  if (a === 'perdida' && tienePedido(cot)) return MENSAJE_PERDIDA_CON_PEDIDO;
+  return 'El tiempo no se arrastra: las tarjetas avanzan solas con los d\u00edas';
 }
 
 // La linea del Motivo de Perdida en la tarjeta del Historial (#483), en el
@@ -70,6 +83,12 @@ export function puedeArrastrarCotizacion(de, a, cot) {
 export function lineaMotivoPerdidaHtml(c) {
   if (!c || c.estado !== 'perdida' || !c.motivoPerdida) return '';
   return `<div class="cot-card-meta">${COLUMNA_LABELS.perdida}${motivoPerdidaHtml(c)}</div>`;
+}
+
+// #484: la linea de la Cancelada, con su etiqueta propia y su motivo libre.
+export function lineaMotivoCanceladaHtml(c) {
+  if (!c || c.estado !== 'cancelada' || !c.motivoCancelada) return '';
+  return `<div class="cot-card-meta">${COLUMNA_LABELS.cancelada}${motivoCanceladaHtml(c)}</div>`;
 }
 
 function fmtMoneda(n) {
@@ -105,6 +124,7 @@ function buildCotizacionCardHtml(c, col, hoy) {
           <div class="cot-card-cliente">${escapeHtml(nombreConCorto(c.cliente || 'Sin nombre', c.nombreCorto))}${badgeFolioOperamHtml(c)}</div>
           <div class="cot-card-meta">${fechaCorta(c.fecha)} · hace ${dias} días · ${escapeHtml(c.vendedor)} · ${c.totalPiezas} pzs</div>
           ${lineaMotivoPerdidaHtml(c)}
+          ${lineaMotivoCanceladaHtml(c)}
           <div style="margin-top:4px">${chipOrigenHtml(c)}</div>
         </div>
         <div class="cot-card-total">$${fmtMoneda(c.total)}</div>
@@ -345,6 +365,7 @@ export const ESTADOS_COTIZACION = [
   { valor: 'abierta', texto: 'Abierta' },
   { valor: 'ganada', texto: 'Ganada' },
   { valor: 'perdida', texto: 'Perdida' },
+  { valor: 'cancelada', texto: 'Cancelada' },
 ];
 
 export const BUSCABLES_COTIZACION = {

@@ -80,6 +80,12 @@ test('cotizaciones ganadas, perdidas o descartadas no aparecen', () => {
   assert.equal(cola.length, 0);
 });
 
+// #484: la Cancelada sale del embudo; Hoy deja de pedir su seguimiento.
+test('#484: una cotizacion Cancelada no aparece en la cola Hoy', () => {
+  const cola = calcularCola([cot({ id: 1, estado: 'cancelada', etapa: 'cancelada' })], HOY);
+  assert.equal(cola.length, 0);
+});
+
 test('cada item de cola trae cliente, vendedor, total, mensaje y waLink', () => {
   const cola = calcularCola([cot()], HOY);
   const item = cola[0];

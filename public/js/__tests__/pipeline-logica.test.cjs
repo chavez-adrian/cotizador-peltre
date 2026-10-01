@@ -1992,3 +1992,61 @@ test('#483: la ventana del motivo ofrece el catalogo en su orden y un campo de n
   assert.match(html, /id="motivo-salida-cancelar"/);
   assert.match(html, /id="motivo-salida-confirmar"/);
 });
+
+// === #484: Cancelada (CONTEXT.md "Cancelada") ===
+// La unica salida con pedido: solo el admin la ve sobre la tarjeta de una
+// cotizacion con pedido; al vendedor no se le pinta. Sale del tablero activo y
+// vive en Cerradas con etiqueta propia y su motivo libre.
+test('#484: al admin la tarjeta de una cotizacion con pedido le ofrece Cancelada', () => {
+  for (const extra of [{ etapa: 'anticipo_pagado' }, { etapa: 'producto_entregado' }, { etapa: 'seguimiento', espejoOperam: ESPEJO_CON_PEDIDO }]) {
+    const html = buildSalidaControlHtml(cotizacion({ id: 'c10', refId: 10, ...extra }), { esAdmin: true });
+    assert.ok(html.includes('cerrarCanceladaTablero(10)'), JSON.stringify(extra));
+    assert.match(html, />Cancelada</);
+  }
+  const tablero = buildTableroPipelineHtml([cotizacion({ id: 'c10', refId: 10, etapa: 'anticipo_pagado' })], { esAdmin: true });
+  assert.ok(tablero.includes('cerrarCanceladaTablero(10)'));
+});
+
+test('#484: al vendedor la tarjeta con pedido no le pinta Cancelada', () => {
+  const conPedido = cotizacion({ id: 'c10', refId: 10, etapa: 'anticipo_pagado' });
+  assert.equal(buildSalidaControlHtml(conPedido).includes('cerrarCanceladaTablero'), false);
+  assert.equal(buildSalidaControlHtml(conPedido, { esAdmin: false }).includes('cerrarCanceladaTablero'), false);
+  assert.equal(buildTableroPipelineHtml([conPedido], { esAdmin: false }).includes('cerrarCanceladaTablero'), false);
+});
+
+test('#484: sin pedido, ya cerrada o sobre un prospecto Cancelada no se ofrece ni al admin', () => {
+  const sinPedido = buildSalidaControlHtml(cotizacion({ id: 'c10', refId: 10, etapa: 'seguimiento' }), { esAdmin: true });
+  assert.equal(sinPedido.includes('cerrarCanceladaTablero'), false);
+  assert.ok(sinPedido.includes("cerrarPerdidaTablero('cotizacion', 10)"), 'sin pedido la salida es Perdida');
+  const yaCancelada = cotizacion({ id: 'c10', refId: 10, etapa: 'cancelada', espejoOperam: ESPEJO_CON_PEDIDO });
+  assert.equal(buildSalidaControlHtml(yaCancelada, { esAdmin: true }), '');
+  assert.equal(buildSalidaControlHtml(prospecto({ id: 5, etapa: 'por_cotizar' }), { esAdmin: true }).includes('cerrarCanceladaTablero'), false);
+});
+
+test('#484: una Cancelada es salida y no ocupa columna del tablero activo', () => {
+  assert.equal(esSalida('cancelada'), true);
+  const cancelada = cotizacion({ id: 'c10', refId: 10, etapa: 'cancelada' });
+  assert.deepEqual(oportunidadesActivas([cancelada]), []);
+  const cols = agruparPipeline([cancelada]);
+  for (const etapa of COLUMNAS_PIPELINE) assert.deepEqual(cols[etapa], [], etapa);
+});
+
+test('#484: Cerradas pinta la Cancelada con etiqueta propia y su motivo', () => {
+  const html = buildCerradasHtml([
+    cotizacion({ id: 10, nombre: 'Hotel Azul', etapa: 'cancelada', motivoCancelada: 'Pago el anticipo y se <b>echo</b> para atras' }),
+  ]);
+  assert.match(html, /Hotel Azul/);
+  assert.match(html, /<div class="cot-card-meta">Cancelada \u00b7 Pago el anticipo y se &lt;b&gt;echo&lt;\/b&gt; para atras \u00b7 Memo<\/div>/);
+  assert.equal(html.includes('Perdida'), false);
+});
+
+// Cancelada reutiliza la ventana del motivo sin catalogo: el motivo es texto libre.
+test('#484: la ventana del motivo sin catalogo pide el motivo como texto libre, sin selector', async () => {
+  const { buildMotivoSalidaModalHtml } = await import('../pipeline-logica.js');
+  const html = buildMotivoSalidaModalHtml({ titulo: 'Cancelar <Hotel Azul>' });
+  assert.match(html, /Cancelar &lt;Hotel Azul&gt;/);
+  assert.equal(html.includes('motivo-salida-select'), false);
+  assert.equal(html.includes('cat\u00e1logo'), false);
+  assert.match(html, /id="motivo-salida-nota"[^>]*placeholder="Motivo"/);
+  assert.match(html, /id="motivo-salida-confirmar"/);
+});
