@@ -530,7 +530,7 @@ test('crearCliente: crea cliente nuevo y retorna { duplicado:false, cliente_id, 
     },
   });
   try {
-    const res = await crearCliente({ tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV' });
+    const res = await crearCliente({ tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV', cfdi_regimen_fiscal: '601' });
     assert.equal(res.duplicado, false);
     assert.equal(res.cliente_id, 999);
     assert.ok(res.nombre);
@@ -597,7 +597,7 @@ test('crearCliente: un RFC nuevo en minusculas se manda normalizado en el body d
     },
   });
   try {
-    const res = await crearCliente({ tax_id: 'nvo 010101 abc', CustName: 'Nuevo SA de CV' });
+    const res = await crearCliente({ tax_id: 'nvo 010101 abc', CustName: 'Nuevo SA de CV', cfdi_regimen_fiscal: '601' });
     assert.equal(res.duplicado, false);
     assert.ok(postBody, 'debe haberse capturado el body del POST /customers');
     assert.strictEqual(postBody.tax_id, 'NVO010101ABC');
@@ -609,27 +609,27 @@ test('crearCliente: un RFC nuevo en minusculas se manda normalizado en el body d
 // === buildClienteBody() — campos nuevos (issue #29) ===
 
 test('buildClienteBody: area derivada MX -> 1', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'MX' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', pais: 'MX' });
   assert.strictEqual(body.area, 1, 'area debe ser entero 1 para MX');
 });
 
 test('buildClienteBody: area derivada US -> 5', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'US' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', pais: 'US' });
   assert.strictEqual(body.area, 5, 'area debe ser entero 5 para US');
 });
 
 test('buildClienteBody: area derivada CA -> 7', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'CA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', pais: 'CA' });
   assert.strictEqual(body.area, 7, 'area debe ser entero 7 para CA');
 });
 
 test('buildClienteBody: area derivada pais desconocido -> 6', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'DE' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', pais: 'DE' });
   assert.strictEqual(body.area, 6, 'area debe ser entero 6 para pais desconocido');
 });
 
 test('buildClienteBody: area default (sin pais) -> 1', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(body.area, 1, 'area default debe ser 1 (MX)');
 });
 
@@ -639,37 +639,37 @@ test('buildClienteBody: area default (sin pais) -> 1', () => {
 // fijo, sin importar el pais real capturado en cl-pais.
 
 test('buildClienteBody: pais US sin country explicito -> country "Estados Unidos"', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'US' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', pais: 'US' });
   assert.strictEqual(body.country, 'Estados Unidos');
 });
 
 test('buildClienteBody: pais CA sin country explicito -> country "Canada"', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'CA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', pais: 'CA' });
   assert.strictEqual(body.country, 'Canada');
 });
 
 test('buildClienteBody: pais MX sin country explicito -> country "Mexico"', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'MX' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', pais: 'MX' });
   assert.strictEqual(body.country, 'Mexico');
 });
 
 test('buildClienteBody: country explicito se respeta aunque venga pais distinto', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', pais: 'US', country: 'Panama' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', pais: 'US', country: 'Panama' });
   assert.strictEqual(body.country, 'Panama');
 });
 
 test('buildClienteBody: sin pais ni country -> default "Mexico" (comportamiento previo a #245)', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(body.country, 'Mexico');
 });
 
 test('buildClienteBody: incluye sales_type desde input', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', sales_type: 'M350' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', sales_type: 'M350' });
   assert.strictEqual(body.sales_type, 'M350', 'sales_type debe venir del input');
 });
 
 test('buildClienteBody: incluye segmento_id desde input', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', segmento_id: '3' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', segmento_id: '3' });
   assert.strictEqual(body.segmento_id, '3', 'segmento_id debe venir del input');
 });
 
@@ -678,32 +678,32 @@ test('buildClienteBody: incluye segmento_id desde input', () => {
 // toda cotizacion suya rota hasta que alguien lo note. La llave se OMITE.
 test('buildClienteBody: omite sales_type y segmento_id vacios en vez de mandar ""', () => {
   for (const vacio of ['', null, undefined]) {
-    const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', sales_type: vacio, segmento_id: vacio });
+    const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', sales_type: vacio, segmento_id: vacio });
     assert.strictEqual('sales_type' in body, false, `sales_type ${JSON.stringify(vacio)} no debe viajar`);
     assert.strictEqual('segmento_id' in body, false, `segmento_id ${JSON.stringify(vacio)} no debe viajar`);
   }
-  const sinCampos = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  const sinCampos = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601' });
   assert.strictEqual('sales_type' in sinCampos, false);
   assert.strictEqual('segmento_id' in sinCampos, false);
 });
 
 test('buildClienteBody: salesman usa operam_id, no id interno', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', salesman: 47 });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', salesman: 47 });
   assert.strictEqual(body.salesman, 47, 'salesman debe usar operam_id pasado como campo salesman');
 });
 
 test('buildClienteBody: timbrado_uso_cfdi desde input cuando viene', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', timbrado_uso_cfdi: 'G03' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', timbrado_uso_cfdi: 'G03' });
   assert.strictEqual(body.timbrado_uso_cfdi, 'G03', 'timbrado_uso_cfdi debe ser el del input');
 });
 
 test('buildClienteBody: timbrado_uso_cfdi fallback S01 cuando viene vacio', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', timbrado_uso_cfdi: '' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', timbrado_uso_cfdi: '' });
   assert.strictEqual(body.timbrado_uso_cfdi, 'S01', 'fallback S01 cuando timbrado_uso_cfdi es string vacio');
 });
 
 test('buildClienteBody: timbrado_uso_cfdi fallback S01 cuando no viene', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(body.timbrado_uso_cfdi, 'S01', 'fallback S01 cuando timbrado_uso_cfdi no esta en input');
 });
 
@@ -740,11 +740,24 @@ test('buildClienteBody: RFC generico -> ignora overrides explicitos de CP/regime
   assert.strictEqual(body.timbrado_uso_cfdi, 'S01');
 });
 
-test('buildClienteBody: RFC real -> sin overrides de RFC generico (comportamiento actual)', () => {
-  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro', postal_code: '01000' });
+test('buildClienteBody: RFC real -> sin overrides de RFC generico, con el regimen que se eligio', () => {
+  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro', postal_code: '01000', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(body.postal_code, '01000');
-  assert.strictEqual(body.cfdi_regimen_fiscal, '612');
+  assert.strictEqual(body.cfdi_regimen_fiscal, '601');
   assert.strictEqual(body.timbrado_uso_cfdi, 'S01');
+});
+
+// #492: el regimen es el del receptor en las facturas. Con RFC real y sin regimen
+// ya no se rellena 612 en silencio: el mapeo se niega.
+test('buildClienteBody: RFC real sin regimen fiscal -> se rechaza, no inventa 612 (#492)', () => {
+  assert.throws(
+    () => buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro', postal_code: '01000' }),
+    /regimen fiscal/i,
+  );
+  assert.throws(
+    () => buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro', cfdi_regimen_fiscal: '  ' }),
+    /regimen fiscal/i,
+  );
 });
 
 // Convencion de Operam (Adrian, 2026-09-02, issue #293): la razon social va
@@ -752,38 +765,38 @@ test('buildClienteBody: RFC real -> sin overrides de RFC generico (comportamient
 // #293 solo se forzaba con RFC generico y con RFC real viajaba como llegara (del
 // SAT en mayusculas, del alta completa como la tecleara el vendedor).
 test('buildClienteBody: cust_name en MAYUSCULAS con RFC real, no solo con generico (#293)', () => {
-  const real = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro' });
+  const real = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'hotel azul centro', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(real.cust_name, 'HOTEL AZUL CENTRO');
   const generico = buildClienteBody({ tax_id: 'XAXX010101000', CustName: 'hotel azul centro' });
   assert.strictEqual(generico.cust_name, 'HOTEL AZUL CENTRO');
 });
 
 test('buildClienteBody: el nombre corto derivado sigue en Titulo, no en mayusculas (#293)', () => {
-  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'HOTEL AZUL CENTRO' });
+  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'HOTEL AZUL CENTRO', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(body.cust_ref, 'Hotel Azul Centro');
 });
 
 test('buildClienteBody: el nombre corto explicito manda sobre el derivado', () => {
-  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'HOTEL AZUL CENTRO', cust_ref: 'Azul Centro' });
+  const body = buildClienteBody({ tax_id: 'PNA010203ABC', CustName: 'HOTEL AZUL CENTRO', cust_ref: 'Azul Centro', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(body.cust_ref, 'Azul Centro');
 });
 
 // === buildClienteBody() — campos huerfanos #17/#18 y contacto principal #16 (issue #26) ===
 
 test('buildClienteBody: invoice_email se concatena en notes (issue #17)', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', invoice_email: 'facturacion@empresa.com' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', invoice_email: 'facturacion@empresa.com' });
   assert.ok(body.notes.includes('facturacion@empresa.com'), 'notes debe incluir el email de facturacion');
   assert.ok(/email de facturaci[oó]n/i.test(body.notes), 'notes debe rotular el campo como email de facturacion');
 });
 
 test('buildClienteBody: celular_nota se concatena en notes (issue #18)', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', celular_nota: '5512345678' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', celular_nota: '5512345678' });
   assert.ok(body.notes.includes('5512345678'), 'notes debe incluir el celular');
   assert.ok(/celular/i.test(body.notes), 'notes debe rotular el campo como celular');
 });
 
 test('buildClienteBody: sin invoice_email ni celular_nota no agrega lineas vacias a notes', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601' });
   assert.ok(!/email de facturaci[oó]n/i.test(body.notes), 'no debe mencionar email de facturacion si no vino');
   assert.ok(!/celular/i.test(body.notes), 'no debe mencionar celular si no vino');
 });
@@ -791,13 +804,13 @@ test('buildClienteBody: sin invoice_email ni celular_nota no agrega lineas vacia
 // === buildClienteBody() — actividades economicas de la CSF (issue #171) ===
 
 test('buildClienteBody: sin actividades, la seccion "Actividades economicas" no aparece en notes', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601' });
   assert.ok(!/Actividades economicas/i.test(body.notes), 'sin actividades no debe imprimir la seccion (antes salia vacia)');
 });
 
 test('buildClienteBody: con actividades, la seccion incluye la fecha de la CSF y cada actividad como bullet', () => {
   const body = buildClienteBody({
-    tax_id: 'RFC000001ABC', CustName: 'Test SA',
+    tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601',
     actividades: ['Comercio al por menor', 'Servicios de consultoria (40%)'],
     csf_fecha: '8 DE MAYO DE 2026',
   });
@@ -808,7 +821,7 @@ test('buildClienteBody: con actividades, la seccion incluye la fecha de la CSF y
 
 test('buildClienteBody: con actividades pero sin csf_fecha (CSF sin "Fecha de emision"), el encabezado NO deja "(CSF ):" vacio', () => {
   const body = buildClienteBody({
-    tax_id: 'RFC000001ABC', CustName: 'Test SA',
+    tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601',
     actividades: ['Otros intermediarios del comercio al por menor'], csf_fecha: '',
   });
   assert.ok(!body.notes.includes('(CSF )'), 'nunca debe imprimir el parentesis vacio');
@@ -817,14 +830,14 @@ test('buildClienteBody: con actividades pero sin csf_fecha (CSF sin "Fecha de em
 
 test('buildClienteBody: notes combina Tax ID, celular y actividades sin lineas huerfanas', () => {
   const body = buildClienteBody({
-    tax_id: 'RFC000001ABC', CustName: 'Test SA', celular_nota: '5512345678',
+    tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', celular_nota: '5512345678',
     actividades: ['Comercio al por menor'], csf_fecha: '2026-05-08',
   });
   assert.equal(body.notes, 'Celular: 5512345678\nActividades economicas (CSF 2026-05-08):\n- Comercio al por menor');
 });
 
 test('buildClienteBody: phone/email a nivel cliente vienen del input (issue #16)', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', phone: '5512345678', email: 'contacto@empresa.com' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601', phone: '5512345678', email: 'contacto@empresa.com' });
   assert.strictEqual(body.phone, '5512345678', 'phone a nivel cliente debe venir del input');
   assert.strictEqual(body.email, 'contacto@empresa.com', 'email a nivel cliente debe venir del input');
 });
@@ -837,12 +850,12 @@ test('buildClienteBody: phone/email a nivel cliente vienen del input (issue #16)
 // D2=5 (CORPORATIVO).
 
 test('buildClienteBody: dimension_id=1 (D1 TALLER CASINO DE LA SELVA) (issue #74)', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(body.dimension_id, 1, 'dimension_id debe ser 1 (D1 TALLER CASINO DE LA SELVA, SOP paso 19)');
 });
 
 test('buildClienteBody: dimension2_id=5 (D2 CORPORATIVO) (issue #74)', () => {
-  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA' });
+  const body = buildClienteBody({ tax_id: 'RFC000001ABC', CustName: 'Test SA', cfdi_regimen_fiscal: '601' });
   assert.strictEqual(body.dimension2_id, 5, 'dimension2_id debe ser 5 (D2 CORPORATIVO, SOP paso 20)');
 });
 
@@ -863,7 +876,7 @@ test('crearCliente: el POST /customers envia dimension_id=1 y dimension2_id=5 (i
     },
   });
   try {
-    await crearCliente({ tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV' });
+    await crearCliente({ tax_id: 'NVO010101ABC', CustName: 'Nuevo SA de CV', cfdi_regimen_fiscal: '601' });
     assert.ok(postBody, 'debe haberse capturado el body del POST /customers');
     assert.strictEqual(postBody.dimension_id, 1, 'el POST debe enviar dimension_id=1');
     assert.strictEqual(postBody.dimension2_id, 5, 'el POST debe enviar dimension2_id=5');

@@ -192,7 +192,7 @@ function mocksAltaClienteOk(customerId, branchId, extra = {}) {
 const altaCompleta = (rfc, nombre) => supertest(app).post('/api/crear-cliente')
   .set('Authorization', `Bearer ${ADMIN}`)
   .send({
-    tax_id: rfc, CustName: nombre, pdf_base64: Buffer.from('%PDF-1.4').toString('base64'),
+    tax_id: rfc, CustName: nombre, cfdi_regimen_fiscal: '601', pdf_base64: Buffer.from('%PDF-1.4').toString('base64'),
     entrega: {
       br_name: 'CSF', br_ref: 'CSF', addr_street: 'Calle', addr_exterior: '1', addr_interior: '',
       addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600',

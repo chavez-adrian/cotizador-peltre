@@ -14,7 +14,7 @@ import { puedeActualizarCotizacion, ligaClienteAlGuardar, vendedorAlGuardar } fr
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
-import { darDeAlta, upgradeFiscal, MOTIVO_SIN_VENDEDOR_OPERAM, CODIGO_VENDEDOR_SIN_ID_OPERAM } from './lib/alta-cliente.js';
+import { darDeAlta, upgradeFiscal, MOTIVO_SIN_VENDEDOR_OPERAM, CODIGO_VENDEDOR_SIN_ID_OPERAM, MOTIVO_SIN_REGIMEN_FISCAL, CODIGO_REGIMEN_FISCAL_REQUERIDO } from './lib/alta-cliente.js';
 import { logCliente, marcarDropbox } from './lib/clientes-log.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
@@ -4542,6 +4542,8 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     // El vendedor sin ID de Operam (#466) no es una falla del ERP: lo arregla un
     // administrador en /admin, o el vendedor eligiendo a quien asignarlo.
     if (alta.motivo === MOTIVO_SIN_VENDEDOR_OPERAM) return res.status(422).json({ ...cuerpo, codigo: CODIGO_VENDEDOR_SIN_ID_OPERAM });
+    // RFC real sin regimen fiscal (#492): falta un dato de la solicitud, no fallo Operam.
+    if (alta.motivo === MOTIVO_SIN_REGIMEN_FISCAL) return res.status(400).json({ ...cuerpo, codigo: CODIGO_REGIMEN_FISCAL_REQUERIDO });
     return res.status(503).json(cuerpo);
   }
 
