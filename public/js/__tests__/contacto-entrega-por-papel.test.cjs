@@ -95,3 +95,46 @@ test('CP8: lo tecleado a mano sobrevive al cambio de domicilio aunque haya a qui
   assert.deepStrictEqual(contactoAlCambiarDomicilio(antes, despues, tecleado, false), { indice: null, aplicar: false });
   assert.deepStrictEqual(contactoAlCambiarDomicilio(antes, despues, VACIO, true), { indice: null, aplicar: false });
 });
+
+// Regla cruzada con #397 (decision de Adrian, 2026-10-02): con un domicilio elegido
+// MANDA EL DOMICILIO. Si el domicilio tiene contactos se propone el mejor de ELLOS
+// por papel, aunque el Cliente Operam tenga uno de Entrega: ese puede ser el de otra
+// bodega. Los del Cliente Operam solo se proponen si el domicilio no tiene ninguno.
+const ANA_DOMICILIO = { tag: 'general', nombre: 'Ana Bodega Norte', telefono: '55 5555 0000', email: '' };
+const conDomicilio = (contactos, contactosCliente) =>
+  contactosEntregaDisponibles({ contactos }, contactosCliente);
+
+test('CP9: un General del domicilio gana a un Entrega del Cliente Operam', () => {
+  const contactos = conDomicilio([ANA_DOMICILIO], [FACTURACION, ENTREGA]);
+  const r = seleccionContactoEntrega(contactos, VACIO);
+  assert.equal(contactos[r.indice].nombre, 'Ana Bodega Norte');
+});
+
+test('CP10: entre los del domicilio deciden los papeles', () => {
+  const marta = { ...FACTURACION, nombre: 'Marta Bodega Norte' };
+  const contactos = conDomicilio([marta, ANA_DOMICILIO], [ENTREGA]);
+  const r = seleccionContactoEntrega(contactos, VACIO);
+  assert.equal(contactos[r.indice].nombre, 'Ana Bodega Norte');
+});
+
+test('CP11: aunque el unico del domicilio sea de Facturacion, se propone el del domicilio', () => {
+  const marta = { ...FACTURACION, nombre: 'Marta Bodega Norte' };
+  const contactos = conDomicilio([marta], [GENERAL, ENTREGA]);
+  const r = seleccionContactoEntrega(contactos, VACIO);
+  assert.equal(contactos[r.indice].nombre, 'Marta Bodega Norte');
+});
+
+test('CP12: un domicilio sin contactos deja decidir a los del Cliente Operam por papel', () => {
+  const contactos = conDomicilio([], [FACTURACION, GENERAL, ENTREGA]);
+  const r = seleccionContactoEntrega(contactos, VACIO);
+  assert.equal(contactos[r.indice].nombre, 'Pedro Almacen');
+});
+
+test('CP13: al cambiar a un domicilio con contactos, lo que puso el selector se reemplaza por el del domicilio', () => {
+  const antes = sinDomicilio([FACTURACION, GENERAL, ENTREGA]);
+  const despues = conDomicilio([ANA_DOMICILIO], [FACTURACION, GENERAL, ENTREGA]);
+  const puesto = { nombre: ENTREGA.nombre, telefono: ENTREGA.telefono, email: ENTREGA.email };
+  const r = contactoAlCambiarDomicilio(antes, despues, puesto, false);
+  assert.equal(r.aplicar, true);
+  assert.equal(despues[r.indice].nombre, 'Ana Bodega Norte');
+});

@@ -1620,10 +1620,10 @@ export function contactosEntregaDisponibles(domicilio, contactosCliente, contact
   const candidatos = [];
   const d = domicilio || {};
   if (d.contacto || d.telefono || d.email) {
-    candidatos.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '' });
+    candidatos.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '', delDomicilio: true });
   }
   for (const c of Array.isArray(d.contactos) ? d.contactos : []) {
-    if (c && (c.nombre || c.telefono || c.email)) candidatos.push(c);
+    if (c && (c.nombre || c.telefono || c.email)) candidatos.push({ ...c, delDomicilio: true });
   }
   for (const c of contactosCliente || []) {
     if (c && (c.nombre || c.telefono || c.email)) candidatos.push(c);
@@ -1677,7 +1677,10 @@ const TAGS_CONTACTO = {
 // Facturacion solo si no hay otro. El contacto propio del branch (`domicilio`) es
 // la persona de ESA direccion y va con Entrega: sigue proponiendose como siempre.
 // Una opcion con varios papeles (#424) cuenta por el mejor; entre iguales, el
-// orden de la lista (los del domicilio primero, #397).
+// orden de la lista (los del domicilio primero, #397). Con un domicilio elegido
+// MANDA EL DOMICILIO (decision de Adrian, 2026-10-02): si tiene contactos se propone
+// el mejor de ELLOS (`delDomicilio`), aunque el Cliente Operam tenga uno de Entrega,
+// que puede ser el de otra bodega; los del Cliente Operam solo sin ninguno del domicilio.
 const RANGO_PROPUESTA_CONTACTO = { delivery: 0, domicilio: 0, general: 1, invoice: 3 };
 
 function rangoPropuestaContacto(c) {
@@ -1685,11 +1688,13 @@ function rangoPropuestaContacto(c) {
 }
 
 function indiceContactoPropuesto(lista) {
-  let mejor = 0;
-  for (let i = 1; i < lista.length; i++) {
-    if (rangoPropuestaContacto(lista[i]) < rangoPropuestaContacto(lista[mejor])) mejor = i;
+  const soloDomicilio = lista.some(c => c.delDomicilio);
+  let mejor = null;
+  for (let i = 0; i < lista.length; i++) {
+    if (soloDomicilio && !lista[i].delDomicilio) continue;
+    if (mejor === null || rangoPropuestaContacto(lista[i]) < rangoPropuestaContacto(lista[mejor])) mejor = i;
   }
-  return mejor;
+  return mejor ?? 0;
 }
 
 export function etiquetaTagContacto(tag) {
