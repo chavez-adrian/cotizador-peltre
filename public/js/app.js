@@ -51,6 +51,9 @@ import {
   usoCfdiPorDefecto,
   usoCfdiCuentaComoElegido,
   estadoAltaAlAbrirPanel,
+  constanciaAlAbrirAlta,
+  constanciaViva,
+  sinConstancia,
   nombreConCorto,
   datosUpgradeConComercial,
   modoComercialUpgrade,
@@ -310,6 +313,7 @@ import {
   RESTAURACION_SUPERFICIE,
   AVISO_CONSTANCIA,
   planRestauracionFormulario,
+  esCampoDeConstancia,
 } from './borrador-form-logica.js';
 
 // === TELEFONOS (widget internacional + bloqueo duro con codigo de pais) ===
@@ -4359,6 +4363,9 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   // Origen del upgrade ('paso' | 'clientes'): decide si cl-email-factura es
   // confiable (ver emailFacturaParaUpgrade en alta-logica.js).
   altaCsfState.upgradeOrigen = origen || null;
+  // Lo que se cargue en este panel desde aqui es del upgrade (#491): el alta que se
+  // abra despues en la misma pestana no lo hereda (constanciaAlAbrirAlta).
+  altaCsfState.constanciaDeUpgrade = customerId;
   altaCsfState.datos = null;
   altaCsfState.pdfBase64 = null;
   altaCsfState.regimenesDetectados = null;
@@ -4612,6 +4619,9 @@ async function pcEjecutarUpgradeFiscal(datos) {
     vaciarCamposSuperficie(formIdUpgrade);
     cerrarFormularioBorrador(formIdUpgrade, EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO);
     altaCsfState.modoUpgrade = null; altaCsfState.upgradeOrigen = null;
+    // La constancia ya quedo escrita en ESTE cliente (#491). Por "Actualizar este" la
+    // habia cargado el alta, y sin la marca el siguiente alta la arrastraria.
+    altaCsfState.constanciaDeUpgrade = customerId;
     // La Seccion 2 se limpia y vuelve al modo alta (#197), por la misma razon que lo
     // demas de aqui: que el proximo cliente abierto en esta pestana no herede la
     // configuracion del que se acaba de actualizar.
@@ -5477,6 +5487,9 @@ const SUPERFICIES_BORRADOR = {
     alVaciar: () => { altaLimpiarAvisosAlta(); olvidarCpAsistido('alta'); altaPrecargaChip = null; },
     // Lo que precargo el chip Fiscal (#166) y nadie toco no es captura: no se guarda.
     alGuardar: valores => valoresBorradorSinPrecarga(valores, altaPrecargaChip),
+    // #491: el borrador no guarda la constancia, pero la pestana puede seguir teniendola.
+    constanciaViva: () => constanciaViva(altaCsfState),
+    vaciarConstancia: () => altaVaciarConstancia(),
   },
   // Upgrade fiscal (issue #185, #85) NO vive aqui: es por-instancia (por
   // customer_id, ver DEF_UPGRADE_FISCAL + defSuperficie abajo) -- un intento de
@@ -5694,7 +5707,11 @@ async function restaurarBorradorFormulario(formId) {
     borrador,
     idsPresentes: campos.map(c => c.id),
     superficie: def.restauracion,
+    // La constancia viva en esta pestana no quedo vacia (#491): el aviso seria falso.
+    constanciaViva: def.constanciaViva?.() === true,
   });
+  // Y sin ella, el panel lo hace cierto antes de pintar el aviso (#491).
+  if (plan.vaciarConstancia) def.vaciarConstancia?.();
   // Solo se prellena el campo que sigue en su default: esperar `esperarListo`
   // deja una ventana en la que el vendedor ya puede estar tecleando (abrir la
   // captura rapida enfoca el celular de inmediato), y prellenar encima le
@@ -8094,6 +8111,11 @@ function abrirAcordeonAlta() {
   const { estado, reiniciado } = estadoAltaAlAbrirPanel(altaState);
   Object.assign(altaState, estado);
   if (reiniciado) altaReiniciarPanel();
+  // La constancia que dejo un upgrade de esta pestana no es de este alta (#491): ni su
+  // RFC, ni sus regimenes, ni su PDF en el POST. La que cargo el alta se conserva.
+  const constancia = constanciaAlAbrirAlta(altaCsfState);
+  Object.assign(altaCsfState, constancia.estado);
+  if (constancia.descartada) altaPintarConstanciaVacia();
   // El default del uso de CFDI depende del modo (#193) y se fija ANTES de
   // restaurar: el borrador solo prellena el campo que sigue en su default.
   altaFijarDefaultUsoCfdi(null);
@@ -8187,6 +8209,25 @@ function altaReiniciarPanel() {
   // decide sobre que cliente aplica el alta.
   altaCandarSeccionesAvanzadas();
   altaLimpiarAvisosAlta();
+}
+
+// La pestana CSF cuando no hay constancia en memoria (#491): campos de la constancia
+// en su default, el <select> de regimen sin los detectados (y sin su aviso de varios
+// regimenes) y la zona para soltar el PDF a la vista. El input de archivo se limpia
+// para que volver a elegir el MISMO PDF dispare `change`.
+function altaPintarConstanciaVacia() {
+  for (const campo of camposSuperficie('alta-completa')) {
+    if (esCampoDeConstancia(campo.id)) escribirCampoSuperficie(campo, valorDefaultCampo(campo));
+  }
+  const input = document.getElementById('csf-input');
+  if (input) input.value = '';
+  altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
+  altaCsfSetStatus('idle');
+}
+
+function altaVaciarConstancia() {
+  Object.assign(altaCsfState, sinConstancia(altaCsfState));
+  altaPintarConstanciaVacia();
 }
 
 // esperarListo del borrador de 'alta-completa' Y del upgrade fiscal (#185):
@@ -8283,6 +8324,9 @@ const altaCsfState = {
   // Regimenes de la ultima constancia leida, en el orden del SAT, con el RFC al que
   // pertenecen (#390): { rfc, codigos } o null. Ver altaCsfRegimenesVigentes.
   regimenesDetectados: null,
+  // customer_id del upgrade que se adueno de la constancia en memoria (#491), o null si
+  // es del alta. Ver constanciaAlAbrirAlta.
+  constanciaDeUpgrade: null,
   // Linea base de la Seccion 2 al abrir el upgrade (#197). undefined = no hay panel
   // comercial (los datos viajan tal cual, camino de "Actualizar este"); null = la
   // precarga fallo (no viaja nada comercial); objeto = solo viaja lo que cambio.
