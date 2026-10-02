@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 
 // === validarCamposCsf (issue #390) ===
 // La pestana CSF del panel (alta Y upgrade fiscal, mismo nodo) exige el regimen
-// fiscal: si llega vacio al alta, buildClienteBody lo rellena EN SILENCIO con 612.
+// fiscal: si llega vacio al alta, el servidor lo rechaza con 400 (#492).
 // Con varios regimenes en la constancia el vendedor confirma uno; "no elegir" nunca
 // puede viajar vacio.
 

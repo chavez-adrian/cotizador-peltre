@@ -900,7 +900,7 @@ test('POST /api/crear-cliente con pdf_base64: fallo Dropbox no rompe respuesta 2
   try {
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ tax_id: 'DRB010101ABC', CustName: 'Dropbox Test SA', pdf_base64: 'AAAA',
+      .send({ tax_id: 'DRB010101ABC', CustName: 'Dropbox Test SA', cfdi_regimen_fiscal: '601', pdf_base64: 'AAAA',
               entrega: { br_name: 'DRB', br_ref: 'DRB', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
               salesman: 47 });
     assert.strictEqual(res.status, 200);
@@ -941,7 +941,7 @@ test('POST /api/crear-cliente con pdf_base64: respalda la CSF en Dropbox con RFC
   try {
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ tax_id: 'OGA140604560', CustName: 'Operadora Gastronomica Agua Blanca', pdf_base64: Buffer.from('%PDF-1.4').toString('base64'),
+      .send({ tax_id: 'OGA140604560', CustName: 'Operadora Gastronomica Agua Blanca', cfdi_regimen_fiscal: '601', pdf_base64: Buffer.from('%PDF-1.4').toString('base64'),
               entrega: { br_name: 'OGA', br_ref: 'OGA', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
               salesman: 47 });
     assert.strictEqual(res.status, 200);
@@ -969,7 +969,7 @@ test('POST /api/crear-cliente acepta la CSF escaneada que no cabia en el limite 
   try {
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
-      .send({ tax_id: 'ESC010101ABC', CustName: 'Escaneada SA', pdf_base64: 'A'.repeat(2 * 1024 * 1024),
+      .send({ tax_id: 'ESC010101ABC', CustName: 'Escaneada SA', cfdi_regimen_fiscal: '601', pdf_base64: 'A'.repeat(2 * 1024 * 1024),
               entrega: { br_name: 'ESC', br_ref: 'ESC', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
               salesman: 47 });
     assert.strictEqual(res.status, 200, 'un PDF grande no puede tumbar el alta');
@@ -1332,7 +1332,7 @@ test('POST /api/crear-cliente registra el telefono sospechoso sin rechazar el al
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${TEST_TOKEN}`)
       .send({
-        tax_id: 'SOS010101ABC', CustName: 'Sospechoso SA', phone: '+52 0000000000', salesman: 2,
+        tax_id: 'SOS010101ABC', CustName: 'Sospechoso SA', cfdi_regimen_fiscal: '601', phone: '+52 0000000000', salesman: 2,
         entrega: { br_name: 'Almacen', br_ref: 'ALM', addr_street: 'Calle', addr_zip: '06600', addr_city: 'CDMX', addr_state: 'CDMX', phone: '+52 5512345678', email: '', pais: 'MX' },
       });
     assert.strictEqual(res.status, 200);
@@ -1823,7 +1823,7 @@ test('#246-5: lista ya cargada + fallo en un cargarListasPrecios forzado NO la p
 const BASE_CLIENTE = {
   tax_id: 'NUE010101ABC', CustName: 'Nueva SA de CV',
   pais: 'MX', sales_type: '15', segmento_id: '3', salesman: 47,
-  timbrado_uso_cfdi: 'G03',
+  timbrado_uso_cfdi: 'G03', cfdi_regimen_fiscal: '601',
   entrega: {
     br_name: 'Almacen Central', br_ref: 'ALMCEN',
     addr_street: 'Reforma', addr_exterior: '1', addr_interior: '',

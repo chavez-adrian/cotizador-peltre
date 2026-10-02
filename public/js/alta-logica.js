@@ -912,7 +912,7 @@ export function validarAltaManualMinimos(datos) {
 // Validacion de la pestana CSF (alta y upgrade fiscal, el mismo panel). El regimen
 // es obligatorio desde el issue #390: con varios regimenes en la constancia el
 // vendedor confirma con cual se factura, y uno vacio que llegara al alta lo
-// rellenaria buildClienteBody en silencio con 612.
+// rechaza el servidor con 400 REGIMEN_FISCAL_REQUERIDO (#492).
 export function validarCamposCsf(datos) {
   const d = datos || {};
   if (!String(d.rfc || '').trim()) return 'El RFC es obligatorio';

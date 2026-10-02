@@ -438,7 +438,7 @@ test('F1: formalizar una pre-cotizacion da de alta el cliente y registra la coti
   });
   const alta = await supertest(app).post('/api/crear-cliente')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', salesman: 2, entrega: {} });
+    .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', cfdi_regimen_fiscal: '601', salesman: 2, entrega: {} });
   assert.equal(alta.status, 200);
   assert.equal(alta.body.ok, true);
   assert.equal(alta.body.duplicado, false);
@@ -477,7 +477,7 @@ test('F2: el alta del paso de formalizacion conserva el guardrail de deduplicaci
   });
   const alta = await supertest(app).post('/api/crear-cliente')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', entrega: {} });
+    .send({ tax_id: 'LAU010101AAA', CustName: 'LAURA SA DE CV', cfdi_regimen_fiscal: '601', entrega: {} });
   assert.equal(alta.status, 428, 'el guardrail detecta el RFC existente y pregunta');
   assert.equal(alta.body.codigo, 'POSIBLE_DUPLICADO');
   assert.deepEqual(alta.body.candidatos.map(c => c.id), [500], 'nombra al Cliente Operam que ya tiene ese RFC');

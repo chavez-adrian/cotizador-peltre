@@ -114,7 +114,7 @@ function mocksAlta(customerId, branchId, escrituras) {
 
 function altaCon(token, salesType, rfc) {
   const body = {
-    tax_id: rfc, CustName: 'Alta Con Lista SA', cust_ref: rfc,
+    tax_id: rfc, CustName: 'Alta Con Lista SA', cust_ref: rfc, cfdi_regimen_fiscal: '601',
     entrega: {
       br_name: 'ALTA', br_ref: 'ALTA', addr_street: 'Calle', addr_exterior: '1', addr_interior: '',
       addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600',
@@ -507,7 +507,7 @@ test('L16: "usar este cliente" conserva la lista que ese cliente ya tiene, sin l
     const res = await supertest(app).post('/api/crear-cliente')
       .set('Authorization', `Bearer ${tokenVendedor}`)
       .send({
-        tax_id: 'LCP010101AA8', CustName: 'Cliente Con Segundas SA', cust_ref: 'Segundas SA',
+        tax_id: 'LCP010101AA8', CustName: 'Cliente Con Segundas SA', cust_ref: 'Segundas SA', cfdi_regimen_fiscal: '601',
         sales_type: LISTA_SEGUNDAS, decision: { tipo: 'usar', clienteId: 808 },
         entrega: { br_name: 'ALTA', br_ref: 'ALTA', addr_street: 'Calle', addr_exterior: '1', addr_interior: '', addr_colony: 'Col', addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', addr_reference: '', phone: '', email: '', pais: 'MX' },
         salesman: 2,

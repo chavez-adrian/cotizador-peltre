@@ -1034,7 +1034,7 @@ test('al completar el alta de cliente, el prospecto con ese celular queda ligado
   mockAltaCliente();
   const res = await supertest(app).post('/api/crear-cliente')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', phone: '55 1234 5678', salesman: 2, entrega: {} });
+    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', cfdi_regimen_fiscal: '601', phone: '55 1234 5678', salesman: 2, entrega: {} });
   assert.equal(res.status, 200);
   assert.equal(res.body.ok, true);
   const guardado = await esperarEventoCliente();
@@ -1052,7 +1052,7 @@ test('la conversion tambien liga por celular_nota cuando el payload no trae phon
   mockAltaCliente();
   const res = await supertest(app).post('/api/crear-cliente')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', celular_nota: '+52 55 1234 5678', salesman: 2, entrega: {} });
+    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', cfdi_regimen_fiscal: '601', celular_nota: '+52 55 1234 5678', salesman: 2, entrega: {} });
   assert.equal(res.status, 200);
   const guardado = await esperarEventoCliente();
   assert.ok(guardado.eventos.some(e => e.tipo === 'cliente' && e.cliente_id === 88));
@@ -1063,7 +1063,7 @@ test('un fallo del store de prospectos no rompe el alta de cliente (fire-and-for
   mockAltaCliente();
   const res = await supertest(app).post('/api/crear-cliente')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`)
-    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', phone: '55 1234 5678', salesman: 2, entrega: {} });
+    .send({ tax_id: 'AAA010101AA1', CustName: 'LAURA SA DE CV', cfdi_regimen_fiscal: '601', phone: '55 1234 5678', salesman: 2, entrega: {} });
   assert.equal(res.status, 200);
   assert.equal(res.body.ok, true);
   writeProspectos([]);
