@@ -122,6 +122,8 @@ test('en seco sobre la 1309: nombra el pedido 7762, dice lo que haria y no cambi
   assert.equal(res.body.etapaDespues, 'producto_entregado');
   assert.deepEqual(res.body.banderas, [{ campo: 'pagoSinRegistrar', antes: false, despues: true }]);
   assert.equal(res.body.motivo, undefined);
+  assert.equal(res.body.espejo.pedido, '7762');
+  assert.equal(res.body.espejoAntes, null);
   assert.deepEqual(cotizaciones(), antes);
 });
 

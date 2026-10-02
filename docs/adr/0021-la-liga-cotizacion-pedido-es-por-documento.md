@@ -20,7 +20,7 @@ El pedido, en cambio, sí dice de qué cotización nació: `trans_no_from` es el
 ## Decision
 
 - **La liga cotización-pedido es por documento.** El pedido de una cotización se busca en el listado de pedidos de Operam por su documento de origen (`trans_no_from` = folio), **sin filtrar por el RFC ni por el Cliente Operam del registro**. La cadena (factura, remisión, pagos) se lee con el cliente DEL PEDIDO.
-- `data.orderOperam` explícito conserva la prioridad: ancla la liga. Los pedidos hermanos del mismo documento entran a los hechos (un folio puede tener dos pedidos: 836, 861), y el principal no es uno de total cero habiendo otro con total.
+- `data.orderOperam` explícito conserva la prioridad: ancla la liga. Los pedidos hermanos del folio entran a los hechos (un folio puede tener dos pedidos: 836, 861); con explícito, solo si el explícito nació de ese mismo folio, para que un pedido de otra cotización no arrastre los de aquella. El principal no es uno de total cero habiendo otro con total.
 - Una venta directa (`trans_no_from` vacío) nunca se liga.
 - El listado se lee en una ventana que arranca 60 días antes de la fecha de la cotización (el pedido nace de ella; lo medido: la peor de 43 ligas reales tiene el pedido 3 días antes), con ritmo propio (una lectura cada 1.1 s, sin el throttle global) y compartido dentro de un lote.
 - Existe la herramienta acotada: `POST /api/admin/cotizaciones/:id/reconciliar-operam` reconcilia UNA cotización, con modo en seco que responde el mismo plan sin escribir.

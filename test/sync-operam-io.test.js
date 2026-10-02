@@ -1,7 +1,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hechosDeOperam, reconciliarOportunidad, reconciliarPorIdentificador, esActivaPostVentaCandidata, pedidosDeLaCotizacion, construirEspejoOperam, _setRitmo, _reiniciarRitmo } from '../lib/sync-operam-io.js';
+import { hechosDeOperam, reconciliarOportunidad, reconciliarPorIdentificador, esActivaPostVentaCandidata, construirEspejoOperam, _setRitmo, _reiniciarRitmo } from '../lib/sync-operam-io.js';
+import { pedidosDeLaCotizacion } from '../lib/sync-operam.js';
 
 // Motor de reconciliacion del sync post-venta (issue #62, AC2). Lee Operam
 // (read-only), normaliza a hechos con el mapeo real (peltre-operam.md 12) y mueve

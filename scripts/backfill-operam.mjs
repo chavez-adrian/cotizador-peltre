@@ -47,7 +47,7 @@ if (APPLY && !process.env.DATABASE_URL) {
 
 const { listarPedidos, listarTransacciones, obtenerQuote, obtenerCliente, obtenerPedido, _setMinInterval } = await import('../lib/operam-client.js');
 const { planearBackfill, planearBackfillSinPedido, descubrirFolioMax, memoizarPorClave, VENTANA_VARIANTE_DIAS, GRACIA_VARIANTE_DIAS, BANDA_VARIANTE, MONTO_MINIMO_B } = await import('../lib/backfill-operam.mjs');
-const { hechosDeOperam } = await import('../lib/sync-operam-io.js');
+const { hechosDeOperam, crearLecturas } = await import('../lib/sync-operam-io.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
 
 // Throttle PROACTIVO (issue #76): el backfill hace ~800-1000 lecturas y el rate-limit
@@ -89,9 +89,10 @@ async function obtenerDebtor(debtorNo) {
   return c;
 }
 
-// Control de VOLUMEN (issue #76, blocker 429): hechosDeOperam re-lee
-// transacciones (por customer_id/RFC) y pedidos (por debtor_no) POR candidato, y
-// muchos candidatos comparten el mismo cliente. Memoizamos ambas lecturas por su
+// Control de VOLUMEN (issue #76, blocker 429): hechosDeOperam lee POR candidato
+// las transacciones del cliente de su pedido y, desde #508, barre los pedidos SIN
+// cliente por ventana (una sola barrida para toda la corrida: `lecturasHechos`
+// abajo), y muchos candidatos comparten el mismo cliente. Memoizamos ambas lecturas por su
 // clave para que un mismo cliente se lea UNA sola vez en toda la corrida (igual que
 // ya se cachea obtenerCliente con debtorCache). Esto recorta las ~840 lecturas en
 // rafaga que disparaban el 429. La clave incluye el `skip` de pagina: hechosDeOperam
@@ -113,8 +114,8 @@ const obtenerPedidoMemo = memoizarPorClave(obtenerPedido, (orderNo) => `det:${or
 // Pedidos del cliente para la heuristica de VARIANTE CERRADA de la parte B (#76): una
 // cotizacion sin pedido propio queda cerrada si el cliente ordeno algo cercano en fecha y
 // de monto comparable (el pedido de la variante autorizada, que no quedo ligado por
-// trans_no_from). Reusa el MISMO memo `ped:` que hechosDeOperam y el mismo rango de 2
-// anios, asi que la primera lectura por debtor es la unica que toca la red. Pagina la
+// trans_no_from). Usa el memo `ped:` por debtor con el rango de 2 anios, asi que la
+// primera lectura por debtor es la unica que toca la red. Pagina la
 // cuenta completa: un cliente con >100 pedidos no cabe en una pagina.
 async function listarPedidosDeCliente(debtorNo) {
   const todos = [];
@@ -134,12 +135,13 @@ async function listarPedidosDeCliente(debtorNo) {
 // ya NO calcula la etapa. Si hechosDeOperam devuelve null (sin pedido
 // propio), se trata como hechos vacios (sin remision ni pago) -> no cerrado, etapa
 // seguimiento.
+const lecturasHechos = crearLecturas({
+  listarTransacciones: listarTransaccionesMemo,
+  listarPedidos: listarPedidosMemo,
+});
 const HECHOS_VACIO ={ pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
 async function obtenerHechos(op) {
-  const hechos = await hechosDeOperam(op, {
-    listarTransacciones: listarTransaccionesMemo,
-    listarPedidos: listarPedidosMemo,
-  });
+  const hechos = await hechosDeOperam(op, { lecturas: lecturasHechos });
   return hechos || HECHOS_VACIO;
 }
 

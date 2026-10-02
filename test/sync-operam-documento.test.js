@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   reconciliarOportunidad, reconciliarPorIdentificador, planearReconciliacion, aplicarReconciliacion,
-  pedidosDeLaCotizacion, _setRitmo, _reiniciarRitmo,
+  _setRitmo, _reiniciarRitmo,
 } from '../lib/sync-operam-io.js';
+import { pedidosDeLaCotizacion } from '../lib/sync-operam.js';
 
 // #508 (ADR-0021): la liga cotizacion-pedido es por DOCUMENTO. El pedido se busca
 // en el listado de pedidos de Operam por su documento de origen (`trans_no_from`
@@ -172,6 +173,13 @@ test('pedidosDeLaCotizacion: explicito ancla, documento por folio, venta directa
   assert.deepEqual(explicito.pedidos.map(p => p.order_no), ['7300']);
   // Un explicito que el listado no trae no es liga.
   assert.equal(pedidosDeLaCotizacion(pedidos, { folio: '1141', explicito: '9999' }), null);
+  // Un explicito que nacio de OTRA cotizacion no arrastra los pedidos de aquella
+  // (la 1114 apuntando al 6282, que nacio de la 965).
+  const otraCotizacion = [
+    { order_no: '6282', debtor_no: '77', trans_no_from: '965', total: '11233.90' },
+    { order_no: '6290', debtor_no: '77', trans_no_from: '965', total: '900' },
+  ];
+  assert.deepEqual(pedidosDeLaCotizacion(otraCotizacion, { folio: '1114', explicito: '6282' }).pedidos.map(p => p.order_no), ['6282']);
   // El folio de una cotizacion que nunca fue pedido no se liga a la venta directa.
   assert.equal(pedidosDeLaCotizacion(pedidos, { folio: '1309' }), null);
   assert.equal(pedidosDeLaCotizacion(pedidos, {}), null);
@@ -201,6 +209,24 @@ test('un lote comparte la lectura de pedidos (una barrida para varias cotizacion
   const res = await reconciliarPorIdentificador({ rfc: 'XAXX010101000' }, oportunidades, deps);
   assert.deepEqual(res.map(r => r.etapa), ['pedido_liberado', 'pedido_liberado']);
   assert.equal(deps.consultasPed.length, 1);
+});
+
+test('en un lote, una cotizacion con ventana anterior solo lee el tramo que falta', async () => {
+  const deps = depsGrabando({
+    pedidos: [
+      { order_no: '7762', trans_type: '30', debtor_no: '537', trans_no_from: '1309', total: '1' },
+      { order_no: '7414', trans_type: '30', debtor_no: '290', trans_no_from: '1186', total: '1' },
+    ],
+  });
+  const oportunidades = [
+    { id: 58, etapa: 'seguimiento', folioOperam: '1309', fecha: '2026-09-30T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
+    { id: 59, etapa: 'seguimiento', folioOperam: '1186', fecha: '2026-06-22T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
+  ];
+  const res = await reconciliarPorIdentificador({ rfc: 'XAXX010101000' }, oportunidades, deps);
+  assert.deepEqual(res.map(r => r.etapa), ['pedido_liberado', 'pedido_liberado']);
+  assert.equal(deps.consultasPed.length, 2);
+  assert.equal(deps.consultasPed[0].desde, '2026-08-01');
+  assert.deepEqual([deps.consultasPed[1].desde, deps.consultasPed[1].hasta], ['2026-04-23', '2026-08-01']);
 });
 
 test('AC8: planearReconciliacion no escribe nada y dice exactamente lo que haria', async () => {

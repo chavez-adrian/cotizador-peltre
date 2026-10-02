@@ -4139,10 +4139,10 @@ app.post('/api/admin/cotizaciones/:id/reconciliar-operam', authMiddleware, admin
     console.error('[reconciliar-operam]', op.id, err.message);
     return res.status(502).json({ error: 'No se pudo leer Operam: ' + err.message });
   }
-  const escribe = !seco && Boolean(plan.espejo);
-  if (escribe) {
+  let escrito = false;
+  if (!seco) {
     try {
-      await aplicarReconciliacion(op, plan);
+      escrito = await aplicarReconciliacion(op, plan);
     } catch (err) {
       console.error('[reconciliar-operam] escritura', op.id, err.message);
       return res.status(500).json({ error: 'No se pudo guardar la reconciliacion: ' + err.message });
@@ -4153,7 +4153,7 @@ app.post('/api/admin/cotizaciones/:id/reconciliar-operam', authMiddleware, admin
     id: op.id,
     folio: op.folioOperam ?? null,
     seco,
-    escrito: escribe,
+    escrito,
     pedido: plan.pedido ?? null,
     pedidos: plan.pedidos ?? [],
     cliente: plan.cliente ?? null,
@@ -4162,6 +4162,7 @@ app.post('/api/admin/cotizaciones/:id/reconciliar-operam', authMiddleware, admin
     banderas: plan.banderas,
     motivo: plan.motivo,
     espejo: plan.espejo ?? null,
+    espejoAntes: plan.espejoAntes ?? null,
   });
 });
 
