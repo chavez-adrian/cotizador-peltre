@@ -593,10 +593,40 @@ test('#91-24: con calca en el carrito la marca es true y no editable', () => {
 
 // === Decision 5: quitar la calca NO destruye nada -- la marca conserva su valor
 // y vuelve a ser editable (los pasos del checklist son gestiones reales) ===
+// #498: la marca que dejo la calca dice que viene de la calca, no "a mano".
 test('#91-25: sin calca, la marca conserva su valor y vuelve a ser editable', () => {
-  const e = estadoMarcaDecorado({ hayCalca: false, marcaActual: true });
+  const e = estadoMarcaDecorado({ hayCalca: false, marcaActual: true, origen: 'calca' });
   assert.strictEqual(e.valor, true, 'quitar la calca no apaga la marca');
   assert.strictEqual(e.editable, true, 'apagarla es acto explicito del vendedor');
+  assert.doesNotMatch(e.motivo, /a mano/, 'el vendedor nunca la marco');
+  assert.match(e.motivo, /calca que quitaste/);
+});
+
+test('#498-1: la marca puesta a mano sigue diciendo "Marcado a mano"', () => {
+  const e = estadoMarcaDecorado({ hayCalca: false, marcaActual: true, origen: 'manual' });
+  assert.strictEqual(e.valor, true);
+  assert.strictEqual(e.editable, true);
+  assert.match(e.motivo, /^Marcado a mano/);
+});
+
+test('#498-2: con calca en el carrito el origen no cambia nada', () => {
+  for (const origen of ['calca', 'manual', 'guardado', undefined]) {
+    const e = estadoMarcaDecorado({ hayCalca: true, marcaActual: true, origen });
+    assert.strictEqual(e.valor, true, String(origen));
+    assert.strictEqual(e.editable, false, String(origen));
+    assert.match(e.motivo, /^Lo determina la calca del carrito/, String(origen));
+  }
+});
+
+test('#498-3: la marca que viene de lo guardado no dice "a mano" ni que hubo calca', () => {
+  for (const origen of ['guardado', undefined, null]) {
+    const e = estadoMarcaDecorado({ hayCalca: false, marcaActual: true, origen });
+    assert.strictEqual(e.valor, true, String(origen));
+    assert.strictEqual(e.editable, true, String(origen));
+    assert.doesNotMatch(e.motivo, /a mano/, String(origen));
+    assert.doesNotMatch(e.motivo, /quitaste/, String(origen));
+    assert.match(e.motivo, /guardad/, String(origen));
+  }
 });
 
 test('#91-26: sin calca y sin marca previa -> apagada y editable (decorado a mano, #90)', () => {

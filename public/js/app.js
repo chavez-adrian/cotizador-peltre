@@ -640,6 +640,7 @@ async function showApp() {
   // borrador por vendedor no sirve de nada si la sesion en memoria sigue
   // filtrando datos de la anterior.
   decoradoManual = false;
+  origenMarcaDecorado = null;
   aplicarEnvioRestaurado(undefined);
   // Las notas arrancan de las condiciones del panel (#324); el borrador no las
   // guarda (#436), asi que siguen al carrito y al envio que restaure.
@@ -889,7 +890,10 @@ function aplicarBorrador(borrador) {
   }
   // La marca de decorado viaja solo en true (#91): un borrador sin ella no
   // apaga la que pudiera venir de otro lado.
-  if (borrador.decorado === true) decoradoManual = true;
+  if (borrador.decorado === true) {
+    decoradoManual = true;
+    origenMarcaDecorado = 'guardado';
+  }
 
   // Cliente elegido o contacto nuevo a medio capturar (#180): mutuamente
   // excluyentes, igual que en la captura en vivo.
@@ -2295,6 +2299,9 @@ window.cotizarEnvia = cotizarEnvia;
 // vendedor -- el decorado a mano y las texturas decoradas son decorado real y no
 // producen partida. La calca es piso, no techo.
 let decoradoManual = false;
+// De donde viene la marca (#498): 'calca', 'manual' (la casilla) o 'guardado'
+// (cotizacion del Historial o borrador). Solo cambia el motivo que se lee.
+let origenMarcaDecorado = null;
 
 function sincronizarMarcaDecorado() {
   const chk = document.getElementById('resumen-decorado');
@@ -2303,10 +2310,14 @@ function sincronizarMarcaDecorado() {
   const hayCalca = hayCalcaEnCarrito(itemsDelCarrito());
   // Con calca la marca se asienta tambien en el estado propio: asi, al quitarla,
   // CONSERVA su valor y solo vuelve a ser editable (decision 5). Apagarla es un
-  // acto explicito del vendedor, no un derivado del carrito.
-  if (hayCalca) decoradoManual = true;
+  // acto explicito del vendedor, no un derivado del carrito. La calca se queda
+  // con el origen solo si fue ella quien la encendio (#498).
+  if (hayCalca) {
+    if (!decoradoManual) origenMarcaDecorado = 'calca';
+    decoradoManual = true;
+  }
 
-  const estado = estadoMarcaDecorado({ hayCalca, marcaActual: decoradoManual });
+  const estado = estadoMarcaDecorado({ hayCalca, marcaActual: decoradoManual, origen: origenMarcaDecorado });
   if (chk.checked !== estado.valor) chk.checked = estado.valor;
   chk.disabled = !estado.editable;
   // La marca (calca en el carrito o decorado a mano) elige la tabla de calca del
@@ -2323,7 +2334,7 @@ function sincronizarMarcaDecorado() {
 // donde se apaga, con el aviso de que deja de exigir las 6 autorizaciones.
 function marcaDecoradoParaGuardar() {
   const hayCalca = hayCalcaEnCarrito(itemsDelCarrito());
-  return estadoMarcaDecorado({ hayCalca, marcaActual: decoradoManual }).valor ? true : undefined;
+  return estadoMarcaDecorado({ hayCalca, marcaActual: decoradoManual, origen: origenMarcaDecorado }).valor ? true : undefined;
 }
 
 // === RESUMEN ===
@@ -3226,6 +3237,7 @@ function nuevaCotizacion() {
   // La marca de decorado es de la cotizacion, no del vendedor (#91): una nueva
   // arranca sin ella y el checkbox vuelve a estar disponible.
   decoradoManual = false;
+  origenMarcaDecorado = null;
   // Una cotizacion nueva arranca con las condiciones por omision del panel
   // (#324), no con las notas de la anterior.
   reponerNotasPorOmision();
@@ -7541,6 +7553,7 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // se guardo para no apagarla al Cargar. Con calca en el carrito la
     // sincronizacion la vuelve a fijar de todos modos (ADR-0010).
     decoradoManual = cot.decorado === true;
+    origenMarcaDecorado = decoradoManual ? 'guardado' : null;
     // Sus notas son las que se generaron (#324): el Tiempo de produccion no se
     // re-deriva al cargar, solo cuando el vendedor mueva piezas, calca o marca.
     firmaTiempoProduccion = firmaTiempo(hayCalcaEnCarrito(itemsDelCarrito()) || decoradoManual);
@@ -7726,6 +7739,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // disabled y no llega aqui.
   document.getElementById('resumen-decorado').addEventListener('change', e => {
     decoradoManual = e.target.checked;
+    origenMarcaDecorado = e.target.checked ? 'manual' : null;
     sincronizarMarcaDecorado();
   });
 

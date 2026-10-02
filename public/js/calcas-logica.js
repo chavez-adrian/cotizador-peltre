@@ -403,12 +403,20 @@ export function avisoTopeDisenos(lineasProducto) {
 // de #61 justo donde mas importa. Sin calca la marca conserva su valor y vuelve
 // a ser editable: quitar la calca no descarta el checklist, porque sus pasos son
 // gestiones reales con el proveedor.
-export function estadoMarcaDecorado({ hayCalca, marcaActual } = {}) {
+// El motivo dice de donde viene la marca (#498): 'calca' (la encendio una calca
+// que ya no esta), 'manual' (la casilla) o lo guardado (cotizacion o borrador).
+export function estadoMarcaDecorado({ hayCalca, marcaActual, origen } = {}) {
   if (hayCalca) {
     return { valor: true, editable: false, motivo: 'Lo determina la calca del carrito. Tiempo de producci\u00f3n con la tabla de calca.' };
   }
-  if (marcaActual) {
+  if (marcaActual && origen === 'calca') {
+    return { valor: true, editable: true, motivo: 'Se conserva de la calca que quitaste; desm\u00e1rcala si ya no lleva decorado. Tiempo de producci\u00f3n con la tabla de calca.' };
+  }
+  if (marcaActual && origen === 'manual') {
     return { valor: true, editable: true, motivo: 'Marcado a mano (decorado sin l\u00ednea de calca). Tiempo de producci\u00f3n con la tabla de calca.' };
+  }
+  if (marcaActual) {
+    return { valor: true, editable: true, motivo: 'Viene marcada de la cotizaci\u00f3n guardada o del borrador; desm\u00e1rcala si ya no lleva decorado. Tiempo de producci\u00f3n con la tabla de calca.' };
   }
   return { valor: false, editable: true, motivo: 'Sin decorado: tiempo de producci\u00f3n con la tabla normal.' };
 }
