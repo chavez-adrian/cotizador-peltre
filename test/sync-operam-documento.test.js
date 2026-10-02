@@ -229,6 +229,15 @@ test('en un lote, una cotizacion con ventana anterior solo lee el tramo que falt
   assert.deepEqual([deps.consultasPed[1].desde, deps.consultasPed[1].hasta], ['2026-04-23', '2026-08-01']);
 });
 
+test('la cadena de un pedido anterior a la ventana propia se lee desde la fecha del pedido', async () => {
+  const deps = depsGrabando({
+    pedidos: [{ order_no: '7321', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '1', ord_date: '2025-03-01' }],
+  });
+  const op = { id: 60, etapa: 'seguimiento', folioOperam: '861', fecha: '2025-06-18T00:00:00.000Z', data: {} };
+  await planearReconciliacion(op, deps);
+  assert.equal(deps.consultasTx[0].desde, '2025-03-01');
+});
+
 test('AC8: planearReconciliacion no escribe nada y dice exactamente lo que haria', async () => {
   const deps = depsGrabando({
     transacciones: [
