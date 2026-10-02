@@ -44,6 +44,13 @@
 
   /* Las tablas del panel scrollean dentro de su tarjeta, nunca el documento (#286). */
   .cajas-tabla-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Rejilla de notas de Condiciones comerciales (#497). Con max-content 1fr la
+     etiqueta de "Sin envio" fijaba la primera columna y a 375px la pagina se
+     movia a los lados. La etiqueta se parte cuando no cabe y el campo conserva
+     10em; en escritorio la etiqueta sigue en un renglon. */
+  .condiciones-notas { display: grid; grid-template-columns: minmax(0, max-content) minmax(10em, 1fr); gap: 6px 10px; align-items: center; font-size: 12px; max-width: 760px; }
+  .condiciones-notas input { min-width: 0; width: 100%; }
 </style>
 </head>
 <body>
@@ -253,7 +260,7 @@
       </p>
       <div id="condiciones-loading" style="color:var(--text-light);font-size:13px">Cargando...</div>
       <div id="condiciones-content" style="display:none">
-        <div style="display:grid;grid-template-columns:max-content 1fr;gap:6px 10px;align-items:center;font-size:12px;max-width:760px">
+        <div class="condiciones-notas">
           <label for="cond-precios">Precios</label>
           <input type="text" id="cond-precios" style="border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">
           <label for="cond-sinEnvio">Sin envio (se agrega a Precios cuando la cotizacion no lleva envio)</label>
