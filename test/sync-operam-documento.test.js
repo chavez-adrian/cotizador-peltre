@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   reconciliarOportunidad, reconciliarPorIdentificador, planearReconciliacion, aplicarReconciliacion,
+  crearLecturas, hechosDeOperam,
   _setRitmo, _reiniciarRitmo,
 } from '../lib/sync-operam-io.js';
-import { pedidosDeLaCotizacion } from '../lib/sync-operam.js';
+import { pedidosDeLaCotizacion, pedidosPorVerificarAnulacion } from '../lib/sync-operam.js';
 
 // #508 (ADR-0021): la liga cotizacion-pedido es por DOCUMENTO. El pedido se busca
 // en el listado de pedidos de Operam por su documento de origen (`trans_no_from`
@@ -16,16 +17,32 @@ import { pedidosDeLaCotizacion } from '../lib/sync-operam.js';
 before(() => _setRitmo({ intervaloMs: 0 }));
 after(() => _reiniciarRitmo());
 
-function depsGrabando({ transacciones = [], pedidos = [] } = {}) {
+// La vista del pedido en la web legacy (#512): la unica que dice si esta anulado.
+// La sonda 5960 es un pedido anulado conocido: si no sale anulado, el detector no
+// es confiable.
+const HTML_ANULADO = '<div class="err_msg">Este pedido ha sido cancelado</div>';
+const HTML_VIVO = '<table><tr><td>Pedido de venta</td></tr></table>';
+const HTML_LOGIN = '<form><input name="user_name_entry_field"><input name="password"></form>';
+
+function depsGrabando({ transacciones = [], pedidos = [], anulados = [] } = {}) {
   const deps = {
     movimientos: [],
     espejos: [],
     datos: [],
     consultasTx: [],
     consultasPed: [],
+    consultasWeb: [],
+    sesionesWeb: 0,
   };
   deps.listarTransacciones = async (q) => { deps.consultasTx.push(q); return transacciones; };
   deps.listarPedidos = async (q) => { deps.consultasPed.push(q); return pedidos; };
+  deps.abrirSesionWeb = async () => {
+    deps.sesionesWeb++;
+    return async (transNo, transType) => {
+      deps.consultasWeb.push({ transNo: String(transNo), transType });
+      return String(transNo) === '5960' || anulados.includes(String(transNo)) ? HTML_ANULADO : HTML_VIVO;
+    };
+  };
   deps.cambiarEtapa = async (id, etapa, evento) => { deps.movimientos.push({ id, etapa, evento }); return true; };
   deps.setEspejoOperam = async (id, espejo) => { deps.espejos.push({ id, espejo }); return true; };
   deps.actualizarDatos = async (id, campos) => { deps.datos.push({ id, campos }); return true; };
@@ -123,6 +140,7 @@ test('AC6: una venta directa nunca se liga, aunque sea del mismo Cliente Operam'
 
 test('AC7: la 861 no queda ligada al pedido 7321 de total cero habiendo el 7282 con total', async () => {
   // El registro trae el explicito 7321 (lo puso el backfill) y el folio tiene otro pedido.
+  // Aqui el 7321 esta VIVO; el caso real (anulado) es el de #512 mas abajo.
   const deps = depsGrabando({
     transacciones: [
       { type: '10', order_: '7282', trans_no: '6100', reference: 'A1700', total_amount: '251.77', allocated: '251.77', outstanding: '0', debtor_no: '158' },
@@ -183,6 +201,41 @@ test('pedidosDeLaCotizacion: explicito ancla, documento por folio, venta directa
   // El folio de una cotizacion que nunca fue pedido no se liga a la venta directa.
   assert.equal(pedidosDeLaCotizacion(pedidos, { folio: '1309' }), null);
   assert.equal(pedidosDeLaCotizacion(pedidos, {}), null);
+});
+
+test('#512 pedidosDeLaCotizacion: un pedido anulado no entra a la cadena', () => {
+  const pedidos861 = [
+    { order_no: '7321', debtor_no: '158', trans_no_from: '861', total: '0' },
+    { order_no: '7282', debtor_no: '158', trans_no_from: '861', total: '251.77' },
+  ];
+  const mixto = pedidosDeLaCotizacion(pedidos861, { folio: '861', anulados: ['7321'] });
+  assert.deepEqual(mixto.pedidos.map(p => p.order_no), ['7282']);
+  // Un explicito anulado no ancla: la liga cae al pedido vivo del folio.
+  const explicito = pedidosDeLaCotizacion(pedidos861, { folio: '861', explicito: '7321', anulados: new Set(['7321']) });
+  assert.equal(explicito.principal.order_no, '7282');
+  assert.deepEqual(explicito.pedidos.map(p => p.order_no), ['7282']);
+  // Todos anulados: no hay liga.
+  const p1239 = [{ order_no: '7616', debtor_no: '256', trans_no_from: '1239', total: '0' }];
+  assert.equal(pedidosDeLaCotizacion(p1239, { folio: '1239', anulados: ['7616'] }), null);
+  // Sin anulados todo sigue igual.
+  assert.deepEqual(pedidosDeLaCotizacion(pedidos861, { folio: '861' }).pedidos.map(p => p.order_no), ['7282', '7321']);
+});
+
+test('#512 pedidosPorVerificarAnulacion: solo los candidatos sin total positivo', () => {
+  const pedidos = [
+    { order_no: '7321', trans_no_from: '861', total: '0' },
+    { order_no: '7282', trans_no_from: '861', total: '251.77' },
+    { order_no: '7400', trans_no_from: '999', total: '0' },
+    { order_no: '7500', trans_no_from: '', total: '0' },
+    { order_no: '7600', trans_no_from: '1100', total: '0' },
+  ];
+  assert.deepEqual(pedidosPorVerificarAnulacion(pedidos, { folio: '861' }), ['7321']);
+  // El explicito tambien es candidato, aunque haya nacido de otro folio.
+  assert.deepEqual(pedidosPorVerificarAnulacion(pedidos, { folio: '861', explicito: '7600' }).sort(), ['7321', '7600']);
+  // Un total ilegible no se puede clasificar: se consulta.
+  assert.deepEqual(pedidosPorVerificarAnulacion([{ order_no: '1', trans_no_from: '5' }], { folio: '5' }), ['1']);
+  assert.deepEqual(pedidosPorVerificarAnulacion([{ order_no: '2', trans_no_from: '5', total: '10' }], { folio: '5' }), []);
+  assert.deepEqual(pedidosPorVerificarAnulacion(pedidos, {}), []);
 });
 
 test('el pedido se busca en una ventana que arranca 60 dias antes de la cotizacion, sin filtrar cliente', async () => {
@@ -318,4 +371,216 @@ test('AC11: las lecturas van a su propio ritmo (una cada 1100 ms), tambien entre
     _reiniciarRitmo();
     _setRitmo({ intervaloMs: 0 });
   }
+});
+
+// --- #512: un pedido ANULADO en Operam no cuenta como pedido propio ------------
+
+test('#512 AC1: la 1239 con su unico pedido 7616 anulado no se mueve ni recibe escrituras', async () => {
+  const deps = depsGrabando({
+    transacciones: [{ type: '13', order_: '7616', trans_no: '1', reference: '9', debtor_no: '256' }],
+    pedidos: [{ order_no: '7616', trans_type: '30', debtor_no: '256', trans_no_from: '1239', total: '0', ord_date: '2026-08-31' }],
+    anulados: ['7616'],
+  });
+  const op = { id: 70, etapa: 'seguimiento', folioOperam: '1239', fecha: '2026-08-28T00:00:00.000Z', data: { cliente: { customerId: '499', rfc: 'XAXX010101000' } } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.movida, false);
+  assert.equal(res.motivo, 'pedido-anulado');
+  sinEscrituras(deps);
+  // Sin pedido vivo ni se lee la cadena.
+  assert.equal(deps.consultasTx.length, 0);
+
+  const plan = await planearReconciliacion(op, depsGrabando({
+    pedidos: [{ order_no: '7616', trans_type: '30', debtor_no: '256', trans_no_from: '1239', total: '0', ord_date: '2026-08-31' }],
+    anulados: ['7616'],
+  }));
+  assert.equal(plan.etapaDespues, 'seguimiento');
+  assert.equal(plan.motivo, 'pedido-anulado');
+  assert.deepEqual(plan.anulados, ['7616']);
+});
+
+test('#512 AC2: el pedido 7764 de total cero VIVO sigue contando: la 1294 pasa a Pedido liberado', async () => {
+  const deps = depsGrabando({
+    pedidos: [{ order_no: '7764', trans_type: '30', debtor_no: '640', trans_no_from: '1294', total: '0', ord_date: '2026-09-30' }],
+  });
+  const op = { id: 71, etapa: 'seguimiento', folioOperam: '1294', fecha: '2026-09-26T00:00:00.000Z', data: {} };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.etapa, 'pedido_liberado');
+  assert.deepEqual(deps.consultasWeb.filter(c => c.transNo === '7764'), [{ transNo: '7764', transType: 30 }]);
+});
+
+test('#512 AC3: la 861 con el 7321 anulado y el 7282 vivo: hechos y espejo solo del vivo', async () => {
+  const deps = depsGrabando({
+    transacciones: [
+      { type: '10', order_: '7282', trans_no: '6100', reference: 'A1700', total_amount: '251.77', allocated: '251.77', outstanding: '0', debtor_no: '158' },
+      { type: '13', order_: '7321', trans_no: '7400', reference: '2300', debtor_no: '158' },
+    ],
+    pedidos: [
+      { order_no: '7321', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '0', ord_date: '2026-06-29' },
+      { order_no: '7282', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '251.77', ord_date: '2026-06-24' },
+    ],
+    anulados: ['7321'],
+  });
+  const op = { id: 72, etapa: 'seguimiento', folioOperam: '861', fecha: '2025-06-18T00:00:00.000Z', data: {} };
+  const plan = await planearReconciliacion(op, deps);
+  assert.equal(plan.pedido, '7282');
+  assert.deepEqual(plan.pedidos, ['7282']);
+  assert.deepEqual(plan.anulados, ['7321']);
+  // La remision del 7321 anulado ya no cuenta: factura liquidada sin remision.
+  assert.equal(plan.etapaDespues, 'saldo_pagado');
+  assert.equal(plan.espejo.pedido, '7282');
+  assert.deepEqual(plan.espejo.remisiones, []);
+});
+
+test('#512 AC4: un explicito anulado no cuenta; con otro pedido vivo del folio queda ligada a ese', async () => {
+  const deps = depsGrabando({
+    pedidos: [
+      { order_no: '7321', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '0', ord_date: '2026-06-29' },
+      { order_no: '7282', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '251.77', ord_date: '2026-06-24' },
+    ],
+    anulados: ['7321'],
+  });
+  const op = { id: 73, etapa: 'seguimiento', folioOperam: '861', fecha: '2025-06-18T00:00:00.000Z', data: { orderOperam: '7321' } };
+  const plan = await planearReconciliacion(op, deps);
+  assert.equal(plan.pedido, '7282');
+  assert.deepEqual(plan.pedidos, ['7282']);
+  assert.equal(plan.etapaDespues, 'pedido_liberado');
+
+  // Sin pedido vivo en el folio, el explicito anulado deja la cotizacion quieta.
+  const solo = depsGrabando({
+    pedidos: [{ order_no: '7321', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '0' }],
+    anulados: ['7321'],
+  });
+  const res = await reconciliarOportunidad({ ...op, id: 74 }, solo);
+  assert.equal(res.motivo, 'pedido-anulado');
+  sinEscrituras(solo);
+});
+
+test('#512 AC5: un pedido con total mayor a cero no dispara ninguna consulta de anulacion', async () => {
+  const deps = depsGrabando({
+    pedidos: [
+      { order_no: '7762', trans_type: '30', debtor_no: '537', trans_no_from: '1309', total: '3675.46' },
+      { order_no: '7800', trans_type: '30', debtor_no: '537', trans_no_from: '1400', total: '0' },
+    ],
+  });
+  const op = { id: 75, etapa: 'seguimiento', folioOperam: '1309', fecha: '2026-09-30T00:00:00.000Z', data: {} };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.etapa, 'pedido_liberado');
+  assert.equal(deps.sesionesWeb, 0);
+  assert.deepEqual(deps.consultasWeb, []);
+});
+
+test('#512 AC6: si la consulta de anulacion falla, nada se escribe', async () => {
+  const pedidos = [{ order_no: '7764', trans_type: '30', debtor_no: '640', trans_no_from: '1294', total: '0' }];
+  const op = { id: 76, etapa: 'seguimiento', folioOperam: '1294', fecha: '2026-09-26T00:00:00.000Z', data: {} };
+
+  const caida = depsGrabando({ pedidos });
+  caida.abrirSesionWeb = async () => { throw new Error('ECONNRESET'); };
+  await assert.rejects(() => reconciliarOportunidad(op, caida), /ECONNRESET/);
+  sinEscrituras(caida);
+
+  // La sesion caduca y el re-login falla: la web devuelve el login, no la vista. Eso
+  // no es "vivo".
+  const sinSesion = depsGrabando({ pedidos });
+  sinSesion.abrirSesionWeb = async () => async (n) => (String(n) === '5960' ? HTML_ANULADO : HTML_LOGIN);
+  await assert.rejects(() => reconciliarOportunidad(op, sinSesion), /anulad/i);
+  sinEscrituras(sinSesion);
+
+  // Si la sonda (un pedido anulado conocido) no sale anulada, el detector no es confiable.
+  const sinSonda = depsGrabando({ pedidos });
+  sinSonda.abrirSesionWeb = async () => async () => HTML_VIVO;
+  await assert.rejects(() => reconciliarOportunidad(op, sinSonda), /sonda/i);
+  sinEscrituras(sinSonda);
+
+  const vacia = depsGrabando({ pedidos });
+  vacia.abrirSesionWeb = async () => async (n) => (String(n) === '5960' ? HTML_ANULADO : '');
+  await assert.rejects(() => reconciliarOportunidad(op, vacia), /anulad/i);
+  sinEscrituras(vacia);
+});
+
+test('#512 AC6: en un lote, la cotizacion cuya consulta falla sale con su error y las demas siguen', async () => {
+  const deps = depsGrabando({
+    pedidos: [
+      { order_no: '7764', trans_type: '30', debtor_no: '640', trans_no_from: '1294', total: '0' },
+      { order_no: '7762', trans_type: '30', debtor_no: '537', trans_no_from: '1309', total: '3675.46' },
+    ],
+  });
+  deps.abrirSesionWeb = async () => { throw new Error('web legacy caida'); };
+  const oportunidades = [
+    { id: 77, etapa: 'seguimiento', folioOperam: '1294', fecha: '2026-09-26T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
+    { id: 78, etapa: 'seguimiento', folioOperam: '1309', fecha: '2026-09-30T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
+  ];
+  const res = await reconciliarPorIdentificador({ rfc: 'XAXX010101000' }, oportunidades, deps);
+  assert.equal(res.length, 2);
+  assert.equal(res[0].id, 77);
+  assert.equal(res[0].movida, false);
+  assert.match(res[0].error, /web legacy caida/);
+  assert.deepEqual({ id: res[1].id, etapa: res[1].etapa }, { id: 78, etapa: 'pedido_liberado' });
+  assert.deepEqual(deps.movimientos.map(m => m.id), [78]);
+});
+
+test('#512 AC7: dentro de un lote un pedido no se consulta dos veces (ni la sesion se abre dos veces)', async () => {
+  const deps = depsGrabando({
+    pedidos: [
+      { order_no: '7321', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '0' },
+      { order_no: '7282', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '251.77' },
+      { order_no: '7764', trans_type: '30', debtor_no: '640', trans_no_from: '1294', total: '0' },
+    ],
+    anulados: ['7321'],
+  });
+  const oportunidades = [
+    { id: 79, etapa: 'seguimiento', folioOperam: '861', fecha: '2025-06-18T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
+    { id: 80, etapa: 'seguimiento', folioOperam: '861', fecha: '2025-06-18T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' }, orderOperam: '7321' } },
+    { id: 81, etapa: 'seguimiento', folioOperam: '1294', fecha: '2026-09-26T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
+  ];
+  await reconciliarPorIdentificador({ rfc: 'XAXX010101000' }, oportunidades, deps);
+  assert.equal(deps.sesionesWeb, 1);
+  assert.deepEqual(deps.consultasWeb.map(c => c.transNo), ['5960', '7321', '7764']);
+});
+
+test('#512 AC7: la consulta de anulacion va en fila con las demas lecturas, al mismo ritmo', async () => {
+  let reloj = 0;
+  const esperas = [];
+  _reiniciarRitmo();
+  _setRitmo({ intervaloMs: 1100, ahora: () => reloj, esperar: async (ms) => { esperas.push(ms); reloj += ms; } });
+  try {
+    const deps = depsGrabando({
+      pedidos: [{ order_no: '7764', trans_type: '30', debtor_no: '640', trans_no_from: '1294', total: '0' }],
+    });
+    const op = { id: 82, etapa: 'seguimiento', folioOperam: '1294', fecha: '2026-09-26T00:00:00.000Z', data: {} };
+    await planearReconciliacion(op, deps);
+    // Pedidos, sesion web, sonda, la vista del 7764 y las transacciones: cinco lecturas en fila.
+    assert.deepEqual(esperas, [1100, 1100, 1100, 1100]);
+  } finally {
+    _reiniciarRitmo();
+    _setRitmo({ intervaloMs: 0 });
+  }
+});
+
+test('#512 AC8: la 1145 en Pedido liberado por el 7267 anulado no retrocede; el plan lo dice', async () => {
+  const deps = depsGrabando({
+    pedidos: [{ order_no: '7267', trans_type: '30', debtor_no: '300', trans_no_from: '1145', total: '0', ord_date: '2026-06-20' }],
+    anulados: ['7267'],
+  });
+  const op = { id: 83, etapa: 'pedido_liberado', folioOperam: '1145', fecha: '2026-06-15T00:00:00.000Z', data: { espejoOperam: { pedido: '7267' } } };
+  const plan = await planearReconciliacion(op, deps);
+  assert.equal(plan.etapaAntes, 'pedido_liberado');
+  assert.equal(plan.etapaDespues, 'pedido_liberado');
+  assert.equal(plan.motivo, 'pedido-anulado');
+  assert.deepEqual(plan.anulados, ['7267']);
+  assert.equal(await aplicarReconciliacion(op, plan, deps), false);
+  sinEscrituras(deps);
+});
+
+test('#512 el backfill usa la lista conocida de anulados (data/cancelados.json) y no abre la web', async () => {
+  const deps = depsGrabando({
+    pedidos: [{ order_no: '7616', trans_type: '30', debtor_no: '256', trans_no_from: '1239', total: '0' }],
+  });
+  const lecturas = crearLecturas({ ...deps, anuladosConocidos: ['7616'] });
+  const op = { id: 84, etapa: 'seguimiento', folioOperam: '1239', fecha: '2026-08-28T00:00:00.000Z', data: {} };
+  assert.equal(await hechosDeOperam(op, { lecturas }), null);
+  assert.equal(deps.sesionesWeb, 0);
+
+  const viva = crearLecturas({ ...deps, anuladosConocidos: [] });
+  assert.equal((await hechosDeOperam(op, { lecturas: viva })).tienePedido, true);
+  assert.equal(deps.sesionesWeb, 0);
 });

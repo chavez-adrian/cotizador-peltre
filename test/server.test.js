@@ -2369,7 +2369,7 @@ test('W4: POST /api/webhooks/operam liga por RFC y mueve la oportunidad leyendo 
       { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
     ] }) }),
     '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
-      { order_no: '7077', trans_type: '30', debtor_no: '345' },
+      { order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' },
     ] }) }),
   });
   try {
@@ -2429,7 +2429,7 @@ test('S2: POST /api/sync-operam reconcilia las oportunidades activas y mueve las
       { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
     ] }) }),
     '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
-      { order_no: '7400', trans_type: '30', debtor_no: '345' },
+      { order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' },
     ] }) }),
   });
   try {
@@ -2440,6 +2440,36 @@ test('S2: POST /api/sync-operam reconcilia las oportunidades activas y mueve las
     assert.strictEqual(movida.etapa, 'pedido_liberado');
     // No movio la terminada.
     assert.strictEqual(readCots().find(c => c.id === 6003).etapa, 'producto_entregado');
+  } finally {
+    restore();
+  }
+});
+
+test('#512: POST /api/sync-operam reporta la cotizacion cuya consulta de anulacion fallo y sigue con las demas', async () => {
+  writeCots([
+    { id: 6201, fecha: '2026-09-26T00:00:00Z', vendedor: 'Memo', cliente: 'TOTAL CERO',
+      etapa: 'seguimiento', folioOperam: '1294', data: { cliente: { rfc: 'CPE921211N76' } } },
+    { id: 6202, fecha: '2026-09-30T00:00:00Z', vendedor: 'Memo', cliente: 'CON TOTAL',
+      etapa: 'seguimiento', folioOperam: '1309', data: { cliente: { rfc: 'CPE921211N76' } } },
+  ]);
+  const restore = mockOperamFetch({
+    '/sales/view/view_sales_order.php': () => { throw new Error('web legacy caida'); },
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [] }) }),
+    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
+      { order_no: '7764', trans_type: '30', debtor_no: '640', trans_no_from: '1294', total: '0' },
+      { order_no: '7762', trans_type: '30', debtor_no: '537', trans_no_from: '1309', total: '3675.46' },
+    ] }) }),
+  });
+  try {
+    const res = await supertest(app).post('/api/sync-operam').set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(res.body.movidas, [{ id: 6202, etapa: 'pedido_liberado' }]);
+    assert.strictEqual(res.body.errores.length, 1);
+    assert.strictEqual(res.body.errores[0].id, 6201);
+    assert.match(res.body.errores[0].error, /web legacy caida/);
+    assert.strictEqual(readCots().find(c => c.id === 6201).etapa, 'seguimiento');
+    assert.strictEqual(readCots().find(c => c.id === 6201).data.espejoOperam, undefined);
   } finally {
     restore();
   }
@@ -2456,7 +2486,7 @@ function mockOtraVentaEntregada() {
       { type: '13', order_: '7100', debtor_no: '345' },
     ] }) }),
     '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
-      { order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050' },
+      { order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050', total: '100' },
     ] }) }),
   });
 }

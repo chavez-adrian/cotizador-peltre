@@ -135,9 +135,12 @@ async function listarPedidosDeCliente(debtorNo) {
 // ya NO calcula la etapa. Si hechosDeOperam devuelve null (sin pedido
 // propio), se trata como hechos vacios (sin remision ni pago) -> no cerrado, etapa
 // seguimiento.
+// #512: un pedido anulado no cuenta en los hechos; aqui sale de data/cancelados.json,
+// no de la web.
 const lecturasHechos = crearLecturas({
   listarTransacciones: listarTransaccionesMemo,
   listarPedidos: listarPedidosMemo,
+  anuladosConocidos: cancelados.orders || [],
 });
 const HECHOS_VACIO ={ pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
 async function obtenerHechos(op) {

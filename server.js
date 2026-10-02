@@ -4105,15 +4105,17 @@ app.post('/api/sync-operam', authMiddleware, async (req, res) => {
   );
   const lote = { lecturas: crearLecturasSync() };
   const movidas = [];
+  const errores = [];
   for (const op of candidatas) {
     try {
       const r = await reconciliarOportunidad(op, lote);
       if (r.movida) movidas.push({ id: op.id, etapa: r.etapa });
     } catch (err) {
       console.error('[sync-operam] oportunidad', op.id, err.message);
+      errores.push({ id: op.id, error: err.message });
     }
   }
-  res.json({ ok: true, revisadas: candidatas.length, movidas });
+  res.json({ ok: true, revisadas: candidatas.length, movidas, errores });
 });
 
 // Reconciliar UNA cotizacion (#508): la herramienta acotada que faltaba. Encuentra
@@ -4121,7 +4123,9 @@ app.post('/api/sync-operam', authMiddleware, async (req, res) => {
 // Cliente Operam del registro), lee la cadena con el cliente del pedido y aplica
 // las reglas de etapa de siempre. `seco: true` responde el mismo plan sin
 // escribir. Todo se lee antes de escribir: un error de Operam es un 502 sin
-// escrituras. Una salida no se mueve ni lee Operam.
+// escrituras. Una salida no se mueve ni lee Operam. #512: `anulados` son los
+// pedidos del folio que la web de Operam dice anulados; no cuentan, y si eran los
+// unicos el motivo es `pedido-anulado` (la etapa no retrocede sola).
 app.post('/api/admin/cotizaciones/:id/reconciliar-operam', authMiddleware, adminMiddleware, async (req, res) => {
   const seco = req.body?.seco === true;
   let op;
@@ -4157,6 +4161,7 @@ app.post('/api/admin/cotizaciones/:id/reconciliar-operam', authMiddleware, admin
     pedido: plan.pedido ?? null,
     pedidos: plan.pedidos ?? [],
     cliente: plan.cliente ?? null,
+    anulados: plan.anulados ?? [],
     etapaAntes: plan.etapaAntes,
     etapaDespues: plan.etapaDespues,
     banderas: plan.banderas,

@@ -55,13 +55,32 @@ const TRANSACCIONES_537 = [
   { type: '13', order_: '7762', trans_no: '7700', reference: '2400', debtor_no: '537' },
 ];
 
-function operam({ fallaTransacciones = false } = {}) {
+// #512: la 1239 y su unico pedido 7616, anulado en Operam (total 0 en la API).
+const COT_1239 = {
+  id: 140, fecha: '2026-08-28T18:00:00.000Z', vendedor: 'Memo', cliente: 'CLIENTE 1239',
+  totalPiezas: 10, total: 1200, etapa: 'seguimiento', folioOperam: '1239',
+  data: { cliente: { customerId: '499', rfc: 'XAXX010101000' } },
+};
+const PEDIDO_7616 = { order_no: '7616', trans_type: '30', debtor_no: '256', trans_no_from: '1239', total: '0', ord_date: '2026-08-31' };
+
+// La web legacy (FA): login y la vista del pedido, la unica que dice si esta anulado.
+// La sonda 5960 es un pedido anulado conocido.
+function htmlResponse(html) {
+  return { ok: true, status: 200, headers: new Headers(), text: async () => html, json: async () => ({}) };
+}
+
+function operam({ fallaTransacciones = false, pedidos = PEDIDOS, anulados = [], webCaida = false } = {}) {
   const lecturas = [];
   globalThis.fetch = async (url) => {
     const u = String(url);
     lecturas.push(u);
+    if (u.includes('/sales/view/view_sales_order.php')) {
+      if (webCaida) throw new Error('ECONNRESET');
+      const n = new URL(u).searchParams.get('trans_no');
+      return htmlResponse(n === '5960' || anulados.includes(n) ? '<div>Este pedido ha sido cancelado</div>' : '<table><tr><td>Pedido</td></tr></table>');
+    }
     if (u.includes('/api/v3/login')) return jsonResponse({ token: 'tok', result: true });
-    if (u.includes('/api/v3/sales/sales_orders')) return jsonResponse({ data: PEDIDOS });
+    if (u.includes('/api/v3/sales/sales_orders')) return jsonResponse({ data: pedidos });
     if (u.includes('/api/v3/sales/transactions')) {
       if (fallaTransacciones) return jsonResponse({ message: 'error interno' }, 500);
       return jsonResponse({ data: u.includes('customer_id=537') ? TRANSACCIONES_537 : [] });
@@ -178,4 +197,48 @@ test('un error de Operam sale como error en la respuesta y no deja escrituras', 
   assert.equal(res.status, 502, JSON.stringify(res.body));
   assert.match(res.body.error, /Operam/);
   assert.deepEqual(cotizaciones(), antes);
+});
+
+test('#512 en seco sobre la 1239: dice que su pedido 7616 esta anulado, destino Seguimiento y nada cambia', async () => {
+  fijarDatos(COTS_PATH, [COT_1239]);
+  operam({ pedidos: [PEDIDO_7616], anulados: ['7616'] });
+  const antes = cotizaciones();
+  const res = await supertest(app).post(RUTA(140)).set('Authorization', ADMIN).send({ seco: true });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(res.body.anulados, ['7616']);
+  assert.equal(res.body.motivo, 'pedido-anulado');
+  assert.equal(res.body.pedido, null);
+  assert.equal(res.body.etapaAntes, 'seguimiento');
+  assert.equal(res.body.etapaDespues, 'seguimiento');
+  assert.equal(res.body.escrito, false);
+  assert.deepEqual(cotizaciones(), antes);
+});
+
+test('#512 sin seco, la 1239 con su pedido anulado tampoco recibe escrituras', async () => {
+  fijarDatos(COTS_PATH, [COT_1239]);
+  operam({ pedidos: [PEDIDO_7616], anulados: ['7616'] });
+  const antes = cotizaciones();
+  const res = await supertest(app).post(RUTA(140)).set('Authorization', ADMIN).send({});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.escrito, false);
+  assert.equal(res.body.motivo, 'pedido-anulado');
+  assert.deepEqual(cotizaciones(), antes);
+});
+
+test('#512 si la consulta de anulacion falla, la ruta responde error y no escribe', async () => {
+  fijarDatos(COTS_PATH, [COT_1239]);
+  operam({ pedidos: [PEDIDO_7616], webCaida: true });
+  const antes = cotizaciones();
+  const res = await supertest(app).post(RUTA(140)).set('Authorization', ADMIN).send({});
+  assert.equal(res.status, 502, JSON.stringify(res.body));
+  assert.match(res.body.error, /ECONNRESET/);
+  assert.deepEqual(cotizaciones(), antes);
+});
+
+test('#512 un pedido con total no abre la web de Operam', async () => {
+  const lecturas = operam();
+  const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({ seco: true });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(res.body.anulados, []);
+  assert.equal(lecturas.filter(u => u.includes('view_sales_order')).length, 0);
 });

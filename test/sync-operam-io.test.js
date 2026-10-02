@@ -61,7 +61,7 @@ test('hechosDeOperam: tienePedido viene de listar_pedidos (Sales Order 30), no d
     transacciones: [
       { type: '10', order_: '7400', total_amount: '1000', allocated: '500', outstanding: '500', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } };
   const hechos = await hechosDeOperam(op, deps);
@@ -82,7 +82,7 @@ test('hechosDeOperam: con customerId liga por customer_id, no por el RFC generic
   let q = null;
   const deps = {
     listarTransacciones: async (query) => { q = query; return [{ type: '10', order_: '7251', total_amount: '1935', allocated: '1935', debtor_no: '461' }]; },
-    listarPedidos: async () => [{ order_no: '7251', trans_type: '30', debtor_no: '461' }],
+    listarPedidos: async () => [{ order_no: '7251', trans_type: '30', debtor_no: '461', total: '100' }],
   };
   const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'XAXX010101000', customerId: '461' }, orderOperam: '7251' } };
   const hechos = await hechosDeOperam(op, deps);
@@ -95,7 +95,7 @@ test('hechosDeOperam: la cadena se lee con el cliente del PEDIDO, no con el RFC 
   let q = null;
   const deps = {
     listarTransacciones: async (query) => { q = query; return []; },
-    listarPedidos: async () => [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+    listarPedidos: async () => [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' }],
   };
   const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
   await hechosDeOperam(op, deps);
@@ -113,8 +113,8 @@ test('hechosDeOperam: con data.orderOperam filtra la cadena a ese order_', async
       { type: '10', order_: '7230', total_amount: '6153', allocated: '3000', outstanding: '3153', debtor_no: '345' },
     ],
     pedidos: [
-      { order_no: '7077', trans_type: '30', debtor_no: '345' },
-      { order_no: '7230', trans_type: '30', debtor_no: '345' },
+      { order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' },
+      { order_no: '7230', trans_type: '30', debtor_no: '345', total: '100' },
     ],
   });
   const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
@@ -139,8 +139,8 @@ test('hechosDeOperam: el folio de cotizacion NO se usa como order_ (cotizacion !
       { type: '10', order_: '8888', total_amount: '500', allocated: '100', outstanding: '400', debtor_no: '345' },
     ],
     pedidos: [
-      { order_no: '7077', trans_type: '30', debtor_no: '345' },
-      { order_no: '8888', trans_type: '30', debtor_no: '345' },
+      { order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' },
+      { order_no: '8888', trans_type: '30', debtor_no: '345', total: '100' },
     ],
   });
   const op = { id: 1, etapa: 'seguimiento', folioOperam: '8888', data: { cliente: { rfc: 'CPE921211N76' } } };
@@ -167,8 +167,8 @@ test('hechosDeOperam: pagina la cuenta del cliente para hallar la cadena fuera d
   ];
   const todasTx = [...ruido, ...cadena];
   const todosPed = [
-    ...Array.from({ length: 100 }, (_, i) => ({ order_no: String(900000 + i), trans_type: '30', debtor_no: '184' })),
-    { order_no: ORDER, trans_type: '30', debtor_no: '184' },
+    ...Array.from({ length: 100 }, (_, i) => ({ order_no: String(900000 + i), trans_type: '30', debtor_no: '184', total: '100' })),
+    { order_no: ORDER, trans_type: '30', debtor_no: '184', total: '100' },
   ];
   const paginado = (arr) => async ({ skip = 0, limit = 100 } = {}) => arr.slice(skip, skip + limit);
   const deps = { listarTransacciones: paginado(todasTx), listarPedidos: paginado(todosPed) };
@@ -195,8 +195,8 @@ test('AC2: resuelve el order_ por trans_no_from === folioOperam (filtra a esa ca
       { type: '10', order_: '7300', total_amount: '500', allocated: '100', outstanding: '400', debtor_no: '394' },
     ],
     pedidos: [
-      { order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141' },
-      { order_no: '7300', trans_type: '30', debtor_no: '394', trans_no_from: '1150' },
+      { order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141', total: '100' },
+      { order_no: '7300', trans_type: '30', debtor_no: '394', trans_no_from: '1150', total: '100' },
     ],
   });
   const op = { id: 1, etapa: 'seguimiento', folioOperam: '1141', data: { cliente: { rfc: 'CPE921211N76' } } };
@@ -216,8 +216,8 @@ test('AC2: folioOperam numerico (no-string) tambien resuelve contra trans_no_fro
       { type: '10', order_: '7300', total_amount: '500', allocated: '0', outstanding: '500', debtor_no: '394' },
     ],
     pedidos: [
-      { order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141' },
-      { order_no: '7300', trans_type: '30', debtor_no: '394', trans_no_from: '1150' },
+      { order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141', total: '100' },
+      { order_no: '7300', trans_type: '30', debtor_no: '394', trans_no_from: '1150', total: '100' },
     ],
   });
   const op = { id: 1, etapa: 'seguimiento', folioOperam: 1141, data: { cliente: { rfc: 'CPE921211N76' } } };
@@ -235,8 +235,8 @@ test('AC2: data.orderOperam explicito tiene prioridad sobre trans_no_from', asyn
       { type: '10', order_: '7300', total_amount: '500', allocated: '100', outstanding: '400', debtor_no: '394' },
     ],
     pedidos: [
-      { order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141' },
-      { order_no: '7300', trans_type: '30', debtor_no: '394', trans_no_from: '1150' },
+      { order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141', total: '100' },
+      { order_no: '7300', trans_type: '30', debtor_no: '394', trans_no_from: '1150', total: '100' },
     ],
   });
   const op = { id: 1, etapa: 'seguimiento', folioOperam: '1141', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7300' } };
@@ -256,7 +256,7 @@ test('AC2: venta directa (trans_no_from vacio) NO se liga a una oportunidad con 
       { type: '10', order_: '9001', total_amount: '300', allocated: '0', outstanding: '300', debtor_no: '500' },
     ],
     pedidos: [
-      { order_no: '9001', trans_type: '30', debtor_no: '500', trans_no_from: '' },
+      { order_no: '9001', trans_type: '30', debtor_no: '500', trans_no_from: '', total: '100' },
     ],
   });
   // La resolucion precisa por documento NO encuentra match (trans_no_from vacio).
@@ -278,7 +278,7 @@ test('AC3: construirEspejoOperam arma la cadena de folios desde trans + pedidos 
     { type: '10', order_: '7269', trans_no: '6735', reference: 'A1907', total_amount: '16954', allocated: '16954', outstanding: '0' },
     { type: '13', order_: '7269', trans_no: '7329', reference: '2142' },
   ];
-  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141' }];
+  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141', total: '100' }];
   const espejo = construirEspejoOperam(trans, pedidos, '1141');
   assert.equal(espejo.cotizacion, '1141');
   assert.equal(espejo.pedido, '7269');
@@ -294,14 +294,14 @@ test('AC3: construirEspejoOperam deriva pago "anticipo" con pago parcial de la f
   const trans = [
     { type: '10', order_: '7269', trans_no: '6735', reference: 'A1907', total_amount: '1000', allocated: '300', outstanding: '700' },
   ];
-  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141' }];
+  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141', total: '100' }];
   const espejo = construirEspejoOperam(trans, pedidos, '1141');
   assert.equal(espejo.pago, 'anticipo');
 });
 
 test('AC3: construirEspejoOperam solo incluye lo que existe (sin factura/remision/etc no inventa campos)', () => {
   const trans = []; // solo pedido, sin documentos colgando aun
-  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141' }];
+  const pedidos = [{ order_no: '7269', trans_type: '30', trans_no_from: '1141', total: '100' }];
   const espejo = construirEspejoOperam(trans, pedidos, '1141');
   assert.equal(espejo.cotizacion, '1141');
   assert.equal(espejo.pedido, '7269');
@@ -316,7 +316,7 @@ test('AC3: reconciliarOportunidad persiste el espejo con la cadena resuelta por 
       { type: '10', order_: '7269', trans_no: '6735', reference: 'A1907', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '394' },
       { type: '13', order_: '7269', trans_no: '7329', reference: '2142', debtor_no: '394' },
     ],
-    pedidos: [{ order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141' }],
+    pedidos: [{ order_no: '7269', trans_type: '30', debtor_no: '394', trans_no_from: '1141', total: '100' }],
   });
   const op = { id: 5, etapa: 'seguimiento', folioOperam: '1141', data: { cliente: { rfc: 'CPE921211N76' } } };
   await reconciliarOportunidad(op, deps);
@@ -339,7 +339,7 @@ test('AC3: venta directa (trans_no_from vacio) NO persiste un espejo ligado por 
     transacciones: [
       { type: '10', order_: '9001', trans_no: '5000', ref: 'A2000', total_amount: '300', allocated: '300', outstanding: '0', debtor_no: '500' },
     ],
-    pedidos: [{ order_no: '9001', trans_type: '30', debtor_no: '500', trans_no_from: '' }],
+    pedidos: [{ order_no: '9001', trans_type: '30', debtor_no: '500', trans_no_from: '', total: '100' }],
   });
   const op = { id: 6, etapa: 'seguimiento', folioOperam: '1141', data: { cliente: { rfc: 'VDX010101AAA' } } };
   await reconciliarOportunidad(op, deps);
@@ -361,7 +361,7 @@ test('reconciliarOportunidad: mueve a producto_entregado cuando hay factura liqu
       { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
       { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const op = { id: 7, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
   const res = await reconciliarOportunidad(op, deps);
@@ -378,7 +378,7 @@ test('reconciliarOportunidad: anticipo parcial con su pedido lleva a pedido_libe
     transacciones: [
       { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const op = { id: 8, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } };
   const res = await reconciliarOportunidad(op, deps);
@@ -404,7 +404,7 @@ test('reconciliarOportunidad: idempotente -- si la etapa ya es la calculada, no 
     transacciones: [
       { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const op = { id: 10, etapa: 'pedido_liberado', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } };
   const res = await reconciliarOportunidad(op, deps);
@@ -419,7 +419,7 @@ test('reconciliarOportunidad: sin comprobante de pago el sync avanza igual (#485
   const transacciones = [
     { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
   ];
-  const pedidos = [{ order_no: '7400', trans_type: '30', debtor_no: '345' }];
+  const pedidos = [{ order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' }];
   const sinComprobante = depsMock({ transacciones, pedidos });
   const res = await reconciliarOportunidad({ id: 13, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } }, sinComprobante);
   assert.equal(res.etapa, 'pedido_liberado');
@@ -438,13 +438,13 @@ test('reconciliarOportunidad: sin comprobante de pago el sync avanza igual (#485
 test('reconciliarOportunidad: anota huboAnticipo al ver un pago parcial y el pago que liquida no la borra (#486)', async () => {
   const parcial = depsMock({ transacciones: [
     { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
-  ], pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }] });
+  ], pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' }] });
   await reconciliarOportunidad({ id: 15, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } }, parcial);
   assert.equal(parcial.datos.find(d => d.id === 15).campos.huboAnticipo, true);
 
   const liquida = depsMock({ transacciones: [
     { type: '10', order_: '7400', total_amount: '2000', allocated: '2000', outstanding: '0', debtor_no: '345' },
-  ], pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }] });
+  ], pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' }] });
   await reconciliarOportunidad({ id: 15, etapa: 'anticipo_pagado', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400', huboAnticipo: true } }, liquida);
   for (const d of liquida.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
 });
@@ -452,7 +452,7 @@ test('reconciliarOportunidad: anota huboAnticipo al ver un pago parcial y el pag
 test('reconciliarOportunidad: pago unico (directo a liquidado) no anota huboAnticipo (#486)', async () => {
   const deps = depsMock({ transacciones: [
     { type: '10', order_: '7400', total_amount: '2000', allocated: '2000', outstanding: '0', debtor_no: '345' },
-  ], pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }] });
+  ], pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' }] });
   await reconciliarOportunidad({ id: 16, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } }, deps);
   for (const d of deps.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
 });
@@ -469,7 +469,7 @@ const OTRA_VENTA_ENTREGADA = {
     { type: '10', order_: '7100', trans_no: '6001', reference: 'A1800', total_amount: '5000', allocated: '5000', outstanding: '0', debtor_no: '345' },
     { type: '13', order_: '7100', trans_no: '7001', reference: '2100', debtor_no: '345' },
   ],
-  pedidos: [{ order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050' }],
+  pedidos: [{ order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050', total: '100' }],
 };
 
 test('#507: la venta de OTRA cotizacion del cliente no mueve ni marca a la que no tiene pedido propio', async () => {
@@ -492,7 +492,7 @@ test('#507: una decorada con checklist incompleto y sin pedido propio no recibe 
       { type: '10', order_: '7100', total_amount: '5000', allocated: '0', outstanding: '5000', debtor_no: '345' },
       { type: '13', order_: '7100', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050' }],
+    pedidos: [{ order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050', total: '100' }],
   });
   const op = { id: 31, etapa: 'seguimiento', folioOperam: '1288', decorado: true, data: { cliente: { rfc: 'CPE921211N76' }, calcaChecklist: [] } };
   const res = await reconciliarOportunidad(op, deps);
@@ -566,7 +566,7 @@ test('reconciliarOportunidad: respeta el gate de decorados (#61) -- no libera co
     transacciones: [
       { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const op = { id: 11, etapa: 'seguimiento', decorado: true, data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400', calcaChecklist: [] } };
   const res = await reconciliarOportunidad(op, deps);
@@ -592,7 +592,7 @@ test('#77: reconciliarOportunidad persiste pagoSinRegistrar=true cuando entrego 
       { type: '10', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '16954', debtor_no: '345' },
       { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const op = { id: 20, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
   const res = await reconciliarOportunidad(op, deps);
@@ -609,7 +609,7 @@ test('#77: reconciliarOportunidad persiste pagoSinRegistrar=false cuando ya se l
       { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
       { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const op = { id: 21, etapa: 'producto_entregado', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077', pagoSinRegistrar: true } };
   await reconciliarOportunidad(op, deps);
@@ -647,7 +647,7 @@ test('reconciliarPorIdentificador: reconcilia la oportunidad del RFC del webhook
       { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
       { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const oportunidades = [
     { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } },
@@ -665,7 +665,7 @@ test('reconciliarPorIdentificador: prioriza la oportunidad con order_ exacto cua
     transacciones: [
       { type: '10', order_: '7230', total_amount: '6153', allocated: '6153', outstanding: '0', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7230', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7230', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const oportunidades = [
     { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } },
@@ -687,7 +687,7 @@ test('reconciliarPorIdentificador: sin candidata (RFC desconocido) devuelve vaci
 test('reconciliarPorIdentificador: ignora oportunidades terminadas/salidas', async () => {
   const deps = depsMock({
     transacciones: [{ type: '10', order_: '1', total_amount: '100', allocated: '100', outstanding: '0', debtor_no: '9' }],
-    pedidos: [{ order_no: '1', trans_type: '30', debtor_no: '9' }],
+    pedidos: [{ order_no: '1', trans_type: '30', debtor_no: '9', total: '100' }],
   });
   const oportunidades = [
     { id: 1, etapa: 'producto_entregado', data: { cliente: { rfc: 'AAA010101AAA' } } },
@@ -711,7 +711,7 @@ test('#484: el webhook no mueve una Cancelada aunque Operam traiga pago liquidad
       { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
       { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
     ],
-    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
+    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const oportunidades = [{ id: 7, etapa: 'cancelada', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } }];
   const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7077' }, oportunidades, deps);
