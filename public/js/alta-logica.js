@@ -1621,6 +1621,28 @@ const TAGS_CONTACTO = {
   general: 'General', invoice: 'Facturacion', delivery: 'Entrega', order: 'Pedido', domicilio: 'Domicilio', contacto: 'Contacto',
 };
 
+// El contacto de entrega que PROPONE el cotizador cuando nadie eligio (#494, criterio
+// del triage del 2026-09-30 sin objecion de Adrian): el de Facturacion no suele ser
+// quien recibe la mercancia y, con el domicilio en la opcion vacia (#459), abria en
+// el cuando Operam lo devolvia primero. Primero Entrega, luego General, y
+// Facturacion solo si no hay otro. El contacto propio del branch (`domicilio`) es
+// la persona de ESA direccion y va con Entrega: sigue proponiendose como siempre.
+// Una opcion con varios papeles (#424) cuenta por el mejor; entre iguales, el
+// orden de la lista (los del domicilio primero, #397).
+const RANGO_PROPUESTA_CONTACTO = { delivery: 0, domicilio: 0, general: 1, invoice: 3 };
+
+function rangoPropuestaContacto(c) {
+  return Math.min(...(c.tags?.length ? c.tags : [c.tag]).map(t => RANGO_PROPUESTA_CONTACTO[t] ?? 2));
+}
+
+function indiceContactoPropuesto(lista) {
+  let mejor = 0;
+  for (let i = 1; i < lista.length; i++) {
+    if (rangoPropuestaContacto(lista[i]) < rangoPropuestaContacto(lista[mejor])) mejor = i;
+  }
+  return mejor;
+}
+
 export function etiquetaTagContacto(tag) {
   return TAGS_CONTACTO[tag] || tag || '';
 }
@@ -1696,7 +1718,7 @@ export function seleccionContactoEntrega(contactos, capturado, capturaManual) {
   if (lista.length === 0) return { indice: null, aplicar: false };
   if (capturaManual) return { indice: null, aplicar: false };
   const cap = capturado || {};
-  if (!cap.nombre && !cap.telefono && !cap.email) return { indice: 0, aplicar: true };
+  if (!cap.nombre && !cap.telefono && !cap.email) return { indice: indiceContactoPropuesto(lista), aplicar: true };
   const i = lista.findIndex(c => contactoExplicaLoCapturado(c, cap));
   return i === -1 ? { indice: null, aplicar: false } : { indice: i, aplicar: true };
 }
@@ -1720,7 +1742,7 @@ export function contactoAlCambiarDomicilio(contactosAntes, contactosDespues, cap
   const cap = capturado || {};
   const hayCaptura = !!(cap.nombre || cap.telefono || cap.email);
   const loPusoElSelector = hayCaptura && (contactosAntes || []).some(c => contactoExplicaLoCapturado(c, cap));
-  if (loPusoElSelector) return { indice: (contactosDespues || []).length ? 0 : null, aplicar: true };
+  if (loPusoElSelector) return { indice: (contactosDespues || []).length ? indiceContactoPropuesto(contactosDespues) : null, aplicar: true };
   return seleccionContactoEntrega(contactosDespues, capturado, false);
 }
 
