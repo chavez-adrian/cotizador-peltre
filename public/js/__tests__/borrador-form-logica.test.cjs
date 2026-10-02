@@ -272,6 +272,61 @@ test('el alta del camino CSF no repone los campos fiscales: el archivo no sobrev
   assert.equal(plan.aviso, AVISO_CONSTANCIA.ALTA);
 });
 
+// #491: el aviso "los datos fiscales quedaron vacios" solo es cierto si la constancia
+// ya no esta en memoria. Cancelar el alta y reabrirla en la misma pestana la encontraba
+// viva -- campos llenos, regimenes, zona del PDF oculta -- junto al aviso que decia lo
+// contrario.
+const BORRADOR_ALTA_CON_CSF = {
+  'csf-rfc': 'OGA140604560',
+  'csf-razon-social': 'OPERADORA GASTRONOMICA',
+  'alta-lista-precios': '3',
+};
+
+test('#491: con la constancia viva en memoria, reabrir el alta no dice que quedo vacia', () => {
+  const plan = planRestauracionFormulario({
+    borrador: borradorGuardado('alta-completa', BORRADOR_ALTA_CON_CSF),
+    idsPresentes: CAMPOS_ALTA,
+    superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+    constanciaViva: true,
+  });
+  assert.equal(plan.aviso, null);
+  assert.equal(plan.vaciarConstancia, false, 'la constancia viva se queda en pantalla');
+  assert.deepEqual(plan.valores, { 'alta-lista-precios': '3' });
+});
+
+test('#491: sin constancia en memoria, el aviso sale y pide la Seccion 1 vacia con la zona del PDF', () => {
+  const plan = planRestauracionFormulario({
+    borrador: borradorGuardado('alta-completa', BORRADOR_ALTA_CON_CSF),
+    idsPresentes: CAMPOS_ALTA,
+    superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+    constanciaViva: false,
+  });
+  assert.equal(plan.aviso, AVISO_CONSTANCIA.ALTA);
+  assert.equal(plan.vaciarConstancia, true);
+});
+
+test('#491: en el borrador mixto no hay aviso, pero sin constancia en memoria la pestana CSF igual queda vacia', () => {
+  const plan = planRestauracionFormulario({
+    borrador: borradorGuardado('alta-completa', { 'csf-rfc': 'OGA140604560', 'manual-rfc': 'XAXX010101000' }),
+    idsPresentes: CAMPOS_ALTA,
+    superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+    constanciaViva: false,
+  });
+  assert.equal(plan.aviso, null);
+  assert.equal(plan.vaciarConstancia, true);
+});
+
+test('#491: un borrador sin campos de la constancia no pide vaciar nada', () => {
+  const plan = planRestauracionFormulario({
+    borrador: borradorGuardado('alta-completa', { 'alta-lista-precios': '3' }),
+    idsPresentes: CAMPOS_ALTA,
+    superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+    constanciaViva: false,
+  });
+  assert.equal(plan.aviso, null);
+  assert.equal(plan.vaciarConstancia, false);
+});
+
 test('un alta que nunca vio una constancia se restaura completa y sin aviso', () => {
   const borrador = borradorGuardado('alta-completa', {
     'alta-lista-precios': '3', 'env-calle': 'Bodega 4',

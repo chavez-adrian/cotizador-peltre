@@ -11,9 +11,15 @@ const assert = require('node:assert/strict');
 //     COMPLETADA (rastro que corrompe al cliente anterior si sobrevive) de un
 //     alta a medias que el borrador de #185 restaura a proposito.
 
-let usoCfdiPorDefecto, estadoAltaAlAbrirPanel;
+let usoCfdiPorDefecto, estadoAltaAlAbrirPanel, constanciaAlAbrirAlta, constanciaViva, buildAltaDarDeAltaPayload;
+let planRestauracionFormulario, RESTAURACION_SUPERFICIE, serializarBorradorFormulario, deserializarBorradorFormulario;
 before(async () => {
-  ({ usoCfdiPorDefecto, estadoAltaAlAbrirPanel } = await import('../alta-logica.js'));
+  ({
+    usoCfdiPorDefecto, estadoAltaAlAbrirPanel, constanciaAlAbrirAlta, constanciaViva, buildAltaDarDeAltaPayload,
+  } = await import('../alta-logica.js'));
+  ({
+    planRestauracionFormulario, RESTAURACION_SUPERFICIE, serializarBorradorFormulario, deserializarBorradorFormulario,
+  } = await import('../borrador-form-logica.js'));
 });
 
 // --- usoCfdiPorDefecto (#193) -------------------------------------------------
@@ -132,4 +138,125 @@ test('#432-3: el reinicio tras un alta completada y el upgrade comparten UNA lim
     'el reinicio de #192 limpia por el mismo camino, no por una copia');
   assert.strictEqual((src.match(/classList\.remove\('done'\)/g) || []).length, 1,
     'las palomas se limpian en un solo lugar');
+});
+
+// --- La constancia en memoria al abrir el alta (#491) ------------------------
+// altaCsfState es UNO para el alta y el upgrade fiscal (el panel es el mismo nodo,
+// #376). Tras un upgrade con constancia, "+ > Nuevo Cliente Operam" en la misma
+// pestana abria la Seccion 1 con el RFC, los regimenes y el PDF del upgrade, y el
+// POST del alta toma `altaState.datos || altaCsfState.datos` y ese `pdfBase64`.
+const CONSTANCIA_DEL_UPGRADE = {
+  status: 'success',
+  rfc: 'OGA140604560',
+  fileName: 'csf-operadora.pdf',
+  datos: { rfc: 'OGA140604560', razonSocial: 'OPERADORA GASTRONOMICA', regimenFiscal: '605' },
+  pdfBase64: 'JVBERi0xLjQK',
+  regimenesDetectados: { rfc: 'OGA140604560', codigos: ['605', '611'] },
+  confirmado: true,
+  modoUpgrade: null,
+  constanciaDeUpgrade: 15,
+};
+
+test('#491-1: abrir el alta despues de un upgrade con constancia arranca en idle y sin sus datos fiscales', () => {
+  const { estado, descartada } = constanciaAlAbrirAlta(CONSTANCIA_DEL_UPGRADE);
+  assert.strictEqual(descartada, true);
+  assert.strictEqual(estado.status, 'idle', 'idle es lo que vuelve a mostrar la zona para soltar el PDF');
+  assert.strictEqual(estado.datos, null);
+  assert.strictEqual(estado.rfc, null);
+  assert.strictEqual(estado.fileName, null);
+  assert.strictEqual(estado.pdfBase64, null);
+  assert.strictEqual(estado.regimenesDetectados, null, 'el aviso de varios regimenes sale de aqui');
+  assert.strictEqual(estado.confirmado, false);
+  assert.strictEqual(estado.constanciaDeUpgrade, null);
+  assert.strictEqual(constanciaViva(estado), false);
+});
+
+test('#491-2: el POST del alta que se abre despues no lleva la constancia del upgrade', () => {
+  const { estado } = constanciaAlAbrirAlta(CONSTANCIA_DEL_UPGRADE);
+  // Las mismas fuentes que lee altaDarDeAlta: altaState.datos (null en un alta nueva)
+  // o altaCsfState.datos, y el PDF con el RFC del que salio.
+  const datosDelAltaNueva = null;
+  const payload = buildAltaDarDeAltaPayload(datosDelAltaNueva || estado.datos || {}, {}, {}, null, null, {
+    pdfBase64: estado.pdfBase64,
+    pdfRfc: estado.rfc,
+  });
+  assert.strictEqual(payload.pdf_base64, undefined);
+  assert.strictEqual(payload.tax_id, '');
+  assert.strictEqual(payload.CustName, '');
+  assert.strictEqual(payload.cfdi_regimen_fiscal, '');
+});
+
+test('#491-3: la constancia que el ALTA cargo sigue viva al reabrir el panel en la misma pestana', () => {
+  const delAlta = { ...CONSTANCIA_DEL_UPGRADE, constanciaDeUpgrade: null };
+  const { estado, descartada } = constanciaAlAbrirAlta(delAlta);
+  assert.strictEqual(descartada, false);
+  assert.deepStrictEqual(estado, delAlta);
+  assert.strictEqual(constanciaViva(estado), true);
+});
+
+test('#491-4: sin PDF, o con uno que fallo, no hay constancia viva', () => {
+  assert.strictEqual(constanciaViva({ status: 'idle', datos: null }), false);
+  assert.strictEqual(constanciaViva({ status: 'error', datos: { rfc: 'OGA140604560' } }), false,
+    'un PDF que fallo no deja una constancia detras');
+  assert.strictEqual(constanciaViva(undefined), false);
+});
+
+// La restauracion del borrador espera los catalogos (esperarListo) ANTES de preguntar
+// por la constancia, y en esa ventana el vendedor ya puede haber soltado el PDF: con
+// el spinner en pantalla, vaciar la constancia pisaria la lectura con 'idle' y el
+// aviso diria "quedaron vacios" mientras el PDF se esta leyendo.
+test('#491-9: una constancia que se esta leyendo no se vacia ni recibe el aviso de que quedo vacia', () => {
+  const leyendose = { status: 'loading', datos: null, pdfBase64: 'JVBERi0xLjQK' };
+  const borrador = deserializarBorradorFormulario(JSON.stringify(serializarBorradorFormulario({
+    formId: 'alta-completa',
+    valores: { 'csf-rfc': 'OGA140604560', 'csf-razon-social': 'OPERADORA GASTRONOMICA', 'alta-lista-precios': '3' },
+    ahora: Date.now(),
+  })), 'alta-completa');
+  const plan = planRestauracionFormulario({
+    borrador,
+    idsPresentes: ['csf-rfc', 'csf-razon-social', 'alta-lista-precios'],
+    superficie: RESTAURACION_SUPERFICIE.SIN_CONSTANCIA,
+    constanciaViva: constanciaViva(leyendose),
+  });
+  assert.strictEqual(plan.vaciarConstancia, false, 'la lectura en curso no se pisa con idle');
+  assert.strictEqual(plan.aviso, null, 'el aviso no dice vacio mientras el PDF se lee');
+  assert.deepStrictEqual(plan.valores, { 'alta-lista-precios': '3' });
+});
+
+test('#491-5: descartar la constancia no muta el estado recibido', () => {
+  const original = { ...CONSTANCIA_DEL_UPGRADE };
+  constanciaAlAbrirAlta(original);
+  assert.strictEqual(original.pdfBase64, 'JVBERi0xLjQK');
+  assert.strictEqual(original.constanciaDeUpgrade, 15);
+});
+
+// El pegamento de #491 vive en app.js, que no se importa en Node: se cuida el fuente,
+// como #432-2. Ver la Seccion 1 limpia en pantalla es HITL.
+test('#491-6: abrir el alta pasa la constancia por constanciaAlAbrirAlta antes de restaurar el borrador', () => {
+  const abrir = cuerpoDeFuncion(fuenteApp(), 'function abrirAcordeonAlta(');
+  const plegar = abrir.indexOf("cerrarFormularioBorrador('alta-completa', null)");
+  assert.ok(plegar > 0, 'la rama de plegar debe existir: si no, este test ya no cuida nada');
+  const decide = abrir.indexOf('constanciaAlAbrirAlta(altaCsfState)');
+  assert.ok(decide > plegar, 'se decide al ABRIR, no al plegar el panel (plegar no es cancelar, #185)');
+  assert.ok(decide < abrir.indexOf("abrirFormularioBorrador('alta-completa')"),
+    'antes de restaurar: el plan del borrador lee la constancia ya decidida');
+});
+
+test('#491-7: el upgrade marca la constancia como suya al abrirse y al lograrse', () => {
+  const src = fuenteApp();
+  assert.ok(cuerpoDeFuncion(src, 'async function pcAbrirUpgradeFiscal(').includes('altaCsfState.constanciaDeUpgrade = customerId'),
+    'lo que se cargue en el panel del upgrade es del upgrade');
+  assert.ok(cuerpoDeFuncion(src, 'async function pcEjecutarUpgradeFiscal(').includes('altaCsfState.constanciaDeUpgrade = customerId'),
+    '"Actualizar este" del alta tambien entrega la constancia al cliente actualizado');
+});
+
+test('#491-8: el alta completa le dice al plan si la constancia sigue viva y vacia la Seccion 1 cuando no', () => {
+  const src = fuenteApp();
+  const restaurar = cuerpoDeFuncion(src, 'async function restaurarBorradorFormulario(');
+  assert.ok(restaurar.includes('constanciaViva: def.constanciaViva?.() === true'));
+  assert.ok(restaurar.includes('if (plan.vaciarConstancia) def.vaciarConstancia?.()'));
+  const inicio = src.indexOf("  'alta-completa': {");
+  const def = src.slice(inicio, src.indexOf('\n  },', inicio));
+  assert.ok(def.includes('constanciaViva: () => constanciaViva(altaCsfState)'));
+  assert.ok(def.includes('vaciarConstancia: () => altaVaciarConstancia()'));
 });

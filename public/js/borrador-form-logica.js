@@ -153,13 +153,18 @@ export function esCampoDeCapturaManual(id) {
 // Borrador + campos del formulario de hoy -> que se escribe, que se omitio y que
 // aviso toca. `omitidos` es informacion para quien quiera explicarlo; el aviso es
 // lo que decide si se pinta algo.
-export function planRestauracionFormulario({ borrador, idsPresentes, superficie } = {}) {
+// #491: el borrador no es la unica memoria. En la MISMA pestana la constancia puede
+// seguir cargada (`constanciaViva`, la decide alta-logica.js): entonces los campos
+// que la constancia llena siguen en pantalla con su PDF detras y decir que quedaron
+// vacios es falso. Sin ella, `vaciarConstancia` pide que el panel lo haga cierto:
+// pestana CSF vacia y la zona para soltar el PDF a la vista.
+export function planRestauracionFormulario({ borrador, idsPresentes, superficie, constanciaViva = false } = {}) {
   const aplicables = valoresAplicables(borrador, idsPresentes);
   const campos = Object.keys(aplicables);
-  if (campos.length === 0) return { valores: {}, omitidos: [], aviso: null };
+  if (campos.length === 0) return { valores: {}, omitidos: [], aviso: null, vaciarConstancia: false };
 
   if (superficie === RESTAURACION_SUPERFICIE.SIN_PRELLENADO) {
-    return { valores: {}, omitidos: campos, aviso: AVISO_CONSTANCIA.UPGRADE };
+    return { valores: {}, omitidos: campos, aviso: AVISO_CONSTANCIA.UPGRADE, vaciarConstancia: false };
   }
   if (superficie === RESTAURACION_SUPERFICIE.SIN_CONSTANCIA) {
     const omitidos = [];
@@ -174,10 +179,11 @@ export function planRestauracionFormulario({ borrador, idsPresentes, superficie 
     // que los campos de la constancia se queden vacios: reponerlos dejaria la pestana
     // CSF completa, sin archivo detras, a un clic de dar de alta sin respaldo.
     const hayCapturaManual = campos.some(esCampoDeCapturaManual);
-    const aviso = !hayCapturaManual && omitidos.length ? AVISO_CONSTANCIA.ALTA : null;
-    return { valores, omitidos, aviso };
+    const vaciarConstancia = !constanciaViva && omitidos.length > 0;
+    const aviso = vaciarConstancia && !hayCapturaManual ? AVISO_CONSTANCIA.ALTA : null;
+    return { valores, omitidos, aviso, vaciarConstancia };
   }
-  return { valores: aplicables, omitidos: [], aviso: null };
+  return { valores: aplicables, omitidos: [], aviso: null, vaciarConstancia: false };
 }
 
 // Campos que el borrador nunca toca. El input de archivo porque el navegador no

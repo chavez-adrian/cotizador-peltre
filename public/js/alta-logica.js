@@ -353,6 +353,45 @@ export function estadoAltaAlAbrirPanel(estado) {
   };
 }
 
+// La constancia en memoria (altaCsfState) al abrir el alta (#491). Es UNA para el alta
+// y el upgrade fiscal -- el panel es el mismo nodo (#376) --, asi que la que cargo o
+// consumio un upgrade seguia ahi al abrir "Nuevo cliente" en la misma pestana: la
+// Seccion 1 con el RFC y los regimenes del upgrade, y el POST del alta con su PDF.
+// `constanciaDeUpgrade` es el customer_id del upgrade que se adueno de la constancia
+// (lo marca app.js al abrirlo y al lograrlo); sin marca, la constancia es del alta y
+// se conserva igual que el alta a medias de #192.
+export function constanciaAlAbrirAlta(csf) {
+  const base = csf || {};
+  if (base.constanciaDeUpgrade == null) return { estado: base, descartada: false };
+  return { estado: sinConstancia(base), descartada: true };
+}
+
+// La ranura de la constancia vacia: lo que el PDF trajo consigo (datos, RFC dueno, el
+// archivo, sus regimenes) fuera, y `idle`, que es lo que vuelve a mostrar la zona para
+// soltar el PDF. Lo demas de altaCsfState (modo, precarga comercial) no es de la constancia.
+export function sinConstancia(csf) {
+  return {
+    ...(csf || {}),
+    status: 'idle',
+    datos: null,
+    rfc: null,
+    fileName: null,
+    pdfBase64: null,
+    regimenesDetectados: null,
+    confirmado: false,
+    constanciaDeUpgrade: null,
+  };
+}
+
+// "Hay constancia en esta pestana" (#491): leida con datos, o leyendose -- el spinner
+// esta en pantalla y el resultado va a llenar la Seccion 1; vaciarla la pisaria con
+// 'idle'. Un PDF que fallo no deja constancia detras. Con ella viva, el aviso del
+// borrador de que los datos fiscales quedaron vacios seria falso.
+export function constanciaViva(csf) {
+  if (!csf) return false;
+  return csf.status === 'loading' || (csf.status === 'success' && !!csf.datos);
+}
+
 // `noLegible` marca los campos que Operam NO devuelve en NINGUNA lectura de la API v3
 // (medido en vivo 2026-09-15, cliente 522, Operam 3.26.36: el detalle GET /customers/:id
 // y el listado por ?tax_id= traen EXACTAMENTE las mismas 43 llaves, y ni idcif ni
