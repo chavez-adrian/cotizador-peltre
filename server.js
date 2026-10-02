@@ -22,8 +22,10 @@ import { reporteAlmacenDomicilios, excepcionesAlmacen, marcarAsiVaBien, desmarca
 import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes, avanceBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
 import { encolarPostFix, procesarColaPostFix, barrerQuotesPostFix, sacarDeLaColaPostFix } from './lib/postfix-reintento-io.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
-import { reconciliarPorIdentificador, planearReconciliacion, aplicarReconciliacion, barrerSyncOperam, ultimoBarridoSync, barridoSyncEnCurso, programarBarridoSync } from './lib/sync-operam-io.js';
-import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
+import { encolarAviso, planearReconciliacion, aplicarReconciliacion, barrerSyncOperam, ultimoBarridoSync, barridoSyncEnCurso, programarBarridoSync } from './lib/sync-operam-io.js';
+import { interpretarAviso } from './lib/sync-operam-webhook.js';
+import { registrarAviso } from './lib/operam-webhooks-store.js';
+import { modoDeReconciliacion } from './lib/sync-operam.js';
 import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, domicilioSinEntregaRegistrada, normalizarRfc, tieneFormaDeRfc, poolClientesParaDedup } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
 import { depositarCandidatos, MESES_VENTANA, fechaCorteMeses } from './lib/recolector-genericos.mjs';
@@ -4044,13 +4046,16 @@ app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, re
   }
 });
 
-// --- Webhook de Operam: sync post-venta (#62) ---
+// --- Webhook de Operam: sync post-venta (#62; avisos por tipo desde #510) ---
 // Operam dispara webhooks salientes (admin/web_hooks.php) en cada Pago / Pedido /
-// Remision. El webhook es solo una SENAL: aqui NO se confia en su payload (formato
-// aun no fijado); se loguea idempotentemente, se extrae un identificador de forma
-// defensiva y la RECONCILIACION lee el estado real por API y mueve la tarjeta.
-// Auth por header secreto (Operam no tiene el JWT del cotizador). Responde 200
-// aunque no se ligue a una oportunidad o Operam este caido (no truena el webhook).
+// Remision. El aviso es una SENAL: dice que cotizaciones mirar (por documento, por
+// cliente o las que ya tienen pedido, lib/sync-operam-io.js#cotizacionesDelAviso)
+// y la reconciliacion lee la verdad por API. Auth por header secreto (Operam no
+// tiene el JWT del cotizador). Se espera solo el registro en el log (hay que saber
+// si es repetido) y se responde al instante; la atencion sigue en la fila de
+// avisos. Un repetido no se atiende salvo que el anterior haya fallado. Si el log
+// no se puede escribir el aviso se atiende igual: reconciliar dos veces no mueve
+// nada de mas.
 app.post('/api/webhooks/operam', async (req, res) => {
   const secret = process.env.OPERAM_WEBHOOK_SECRET;
   const recibido = req.headers['x-operam-webhook-secret'];
@@ -4058,35 +4063,18 @@ app.post('/api/webhooks/operam', async (req, res) => {
     return res.status(401).json({ error: 'No autorizado' });
   }
   const payload = req.body || {};
-  let event_key = null;
+  const aviso = interpretarAviso(payload);
+  let registro = { atender: true, repetido: false, reintento: false };
   try {
-    // Log idempotente: si el evento ya se registro, no reprocesar (la monotonia del
-    // nucleo tambien lo cubre, pero asi se evita la lectura/escritura de mas).
-    const reg = await registrarEventoWebhook(payload);
-    event_key = reg.event_key;
-    if (!reg.nuevo) {
-      return res.json({ ok: true, duplicado: true, reconciliadas: [] });
-    }
+    registro = await registrarAviso(aviso, payload);
   } catch (err) {
     console.error('[webhook][operam] log:', err.message);
   }
-
-  let reconciliadas = [];
-  try {
-    const identificador = extraerIdentificador(payload);
-    const oportunidades = await cotStore.listar();
-    reconciliadas = await reconciliarPorIdentificador(identificador, oportunidades);
-  } catch (err) {
-    // Operam caido / lectura fallida: el webhook no truena. La red de seguridad es
-    // el barrido del sync (#509): diario si SYNC_OPERAM_BARRIDO_DIARIO esta
-    // encendida, o a pedido de un admin.
-    console.error('[webhook][operam] reconciliacion:', err.message);
+  if (!registro.atender) {
+    return res.json({ ok: true, clave: aviso.clave, duplicado: true });
   }
-  if (event_key) {
-    marcarProcesado(event_key, `reconciliadas:${reconciliadas.length}`)
-      .catch(err => console.error('[webhook][operam] marcar:', err.message));
-  }
-  res.json({ ok: true, reconciliadas });
+  encolarAviso(aviso).catch(err => console.error('[webhook][operam] atencion:', err.message));
+  res.json({ ok: true, clave: aviso.clave, encolado: true, reintento: registro.reintento === true });
 });
 
 // Barrido del sync post-venta (#509): la red de seguridad por si un aviso de Operam
@@ -4094,13 +4082,16 @@ app.post('/api/webhooks/operam', async (req, res) => {
 // tragaba los errores y exigia RFC. Lee los pedidos una vez, liga por documento
 // todas las cotizaciones activas y reconcilia las que tienen pedido (la regla vive en
 // lib/sync-operam-io.js). `seco: true` espera el plan completo y lo responde sin
-// escribir; aplicado responde 202 al instante y trabaja en segundo plano. Uno a la
-// vez: con otro en curso, 409. El GET dice si hay uno en curso, la ultima corrida
+// escribir; `aplicar: true` responde 202 al instante y trabaja en segundo plano
+// (#510: cualquier otra peticion, 400 sin leer Operam). Uno a la vez: con otro en
+// curso, 409. El GET dice si hay uno en curso, la ultima corrida
 // y la ultima APLICADA (un seco no la borra). El seco que no pudo leer las
 // cotizaciones o los pedidos responde 502 con su resultado, nunca un exito.
 const MENSAJE_BARRIDO_EN_CURSO = 'Ya hay un barrido del sync en curso; consulta su resultado cuando termine.';
 app.post('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, async (req, res) => {
-  const seco = req.body?.seco === true;
+  const modo = modoDeReconciliacion(req.body);
+  if (modo.error) return res.status(400).json({ error: modo.error });
+  const { seco } = modo;
   if (barridoSyncEnCurso()) return res.status(409).json({ error: MENSAJE_BARRIDO_EN_CURSO });
   if (!seco) {
     barrerSyncOperam().catch(err => console.error('[sync-operam] barrido a pedido fallo:', err.message));
@@ -4125,12 +4116,15 @@ app.get('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, (req,
 // el pedido por su documento (`trans_no_from` = folio, sin depender del RFC ni del
 // Cliente Operam del registro), lee la cadena con el cliente del pedido y aplica
 // las reglas de etapa de siempre. `seco: true` responde el mismo plan sin
-// escribir. Todo se lee antes de escribir: un error de Operam es un 502 sin
+// escribir y `aplicar: true` lo escribe (#510: cualquier otra peticion, 400 sin
+// leer nada). Todo se lee antes de escribir: un error de Operam es un 502 sin
 // escrituras. Una salida no se mueve ni lee Operam. #512: `anulados` son los
 // pedidos del folio que la web de Operam dice anulados; no cuentan, y si eran los
 // unicos el motivo es `pedido-anulado` (la etapa no retrocede sola).
 app.post('/api/admin/cotizaciones/:id/reconciliar-operam', authMiddleware, adminMiddleware, async (req, res) => {
-  const seco = req.body?.seco === true;
+  const modo = modoDeReconciliacion(req.body);
+  if (modo.error) return res.status(400).json({ error: modo.error });
+  const { seco } = modo;
   let op;
   try {
     op = await cotStore.obtener(Number(req.params.id));

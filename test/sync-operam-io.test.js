@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hechosDeOperam, reconciliarOportunidad, reconciliarPorIdentificador, esActivaPostVentaCandidata, construirEspejoOperam, _setRitmo, _reiniciarRitmo } from '../lib/sync-operam-io.js';
+import { hechosDeOperam, reconciliarOportunidad, reconciliarAviso, esActivaPostVentaCandidata, construirEspejoOperam, _setRitmo, _reiniciarRitmo } from '../lib/sync-operam-io.js';
 import { pedidosDeLaCotizacion } from '../lib/sync-operam.js';
 
 // Motor de reconciliacion del sync post-venta (issue #62, AC2). Lee Operam
@@ -639,63 +639,8 @@ test('#77: producto_entregado ya pagada (sin flag) es terminal para el sync', ()
   assert.equal(esActivaPostVentaCandidata({ etapa: 'producto_entregado', data: {} }), false);
 });
 
-// --- reconciliarPorIdentificador (webhook -> oportunidades) ---
-
-test('reconciliarPorIdentificador: reconcilia la oportunidad del RFC del webhook', async () => {
-  const deps = depsMock({
-    transacciones: [
-      { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
-      { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
-    ],
-    pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' }],
-  });
-  const oportunidades = [
-    { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } },
-    { id: 2, etapa: 'seguimiento', data: { cliente: { rfc: 'OTRO010101AAA' } } }, // no matchea
-  ];
-  const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7077' }, oportunidades, deps);
-  assert.equal(res.length, 1);
-  assert.equal(res[0].id, 1);
-  assert.equal(res[0].etapa, 'producto_entregado');
-  assert.equal(deps.movimientos.length, 1);
-});
-
-test('reconciliarPorIdentificador: prioriza la oportunidad con order_ exacto cuando varias comparten RFC', async () => {
-  const deps = depsMock({
-    transacciones: [
-      { type: '10', order_: '7230', total_amount: '6153', allocated: '6153', outstanding: '0', debtor_no: '345' },
-    ],
-    pedidos: [{ order_no: '7230', trans_type: '30', debtor_no: '345', total: '100' }],
-  });
-  const oportunidades = [
-    { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } },
-    { id: 2, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7230' } },
-  ];
-  const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7230' }, oportunidades, deps);
-  assert.equal(res.length, 1);
-  assert.equal(res[0].id, 2);
-});
-
-test('reconciliarPorIdentificador: sin candidata (RFC desconocido) devuelve vacio, no truena', async () => {
-  const deps = depsMock({});
-  const oportunidades = [{ id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'AAA010101AAA' } } }];
-  const res = await reconciliarPorIdentificador({ rfc: 'ZZZ999999ZZZ' }, oportunidades, deps);
-  assert.deepEqual(res, []);
-  assert.equal(deps.movimientos.length, 0);
-});
-
-test('reconciliarPorIdentificador: ignora oportunidades terminadas/salidas', async () => {
-  const deps = depsMock({
-    transacciones: [{ type: '10', order_: '1', total_amount: '100', allocated: '100', outstanding: '0', debtor_no: '9' }],
-    pedidos: [{ order_no: '1', trans_type: '30', debtor_no: '9', total: '100' }],
-  });
-  const oportunidades = [
-    { id: 1, etapa: 'producto_entregado', data: { cliente: { rfc: 'AAA010101AAA' } } },
-    { id: 2, etapa: 'perdida', data: { cliente: { rfc: 'AAA010101AAA' } } },
-  ];
-  const res = await reconciliarPorIdentificador({ rfc: 'AAA010101AAA' }, oportunidades, deps);
-  assert.deepEqual(res, []);
-});
+// La seleccion de cotizaciones por aviso de Operam (#510) se prueba en
+// test/sync-operam-avisos.test.js.
 
 // #484 (CONTEXT.md "Cancelada"): la Oportunidad con pedido que el admin cerro
 // como Cancelada es una salida; el sync post-venta no la mueve ni la revive
@@ -714,7 +659,7 @@ test('#484: el webhook no mueve una Cancelada aunque Operam traiga pago liquidad
     pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' }],
   });
   const oportunidades = [{ id: 7, etapa: 'cancelada', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } }];
-  const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7077' }, oportunidades, deps);
+  const res = await reconciliarAviso({ tipo: 'remision' }, oportunidades, deps);
   assert.deepEqual(res, []);
   assert.equal(deps.movimientos.length, 0);
   assert.equal(deps.espejos.length, 0);

@@ -130,8 +130,8 @@ test/                  # tests de backend (supertest + node:test)
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
-| POST | `/api/webhooks/operam` | Webhook de Operam (Pago de Cliente / Pedido / Remision -> Nuevo). Auth por header `X-Operam-Webhook-Secret`; log idempotente en Neon; reconcilia la oportunidad y mueve su etapa post-venta |
-| GET/POST | `/api/admin/sync-operam/barrido` | Barrido del sync post-venta (red de seguridad, #509): `seco: true` responde el plan sin escribir; aplicado corre en segundo plano y el GET da la ultima corrida (admin) |
+| POST | `/api/webhooks/operam` | Webhook de Operam (Pago de Cliente / Pedido / Remision -> Nuevo). Auth por header `X-Operam-Webhook-Secret`; log idempotente en Neon con clave propia por aviso (#510) y rastro de los repetidos; responde al instante y reconcilia despues, en fila: el Pedido, la cotizacion de su documento de origen; el Pago, las cotizaciones con pedido de ese cliente; la Remision, las que ya tienen pedido |
+| GET/POST | `/api/admin/sync-operam/barrido` | Barrido del sync post-venta (red de seguridad, #509): `seco: true` responde el plan sin escribir; `aplicar: true` corre en segundo plano (#510: cualquier otro cuerpo, 400) y el GET da la ultima corrida (admin) |
 
 > El resto de rutas del pipeline (prospectos, asignacion, etapas, salidas, seguimiento, decorados) viven en `server.js`; el modelo de dominio esta en `CONTEXT.md` y el detalle del PRD en `PROGRESS.md`.
 

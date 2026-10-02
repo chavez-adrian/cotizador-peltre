@@ -1,57 +1,74 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extraerIdentificador, claveEvento } from '../lib/sync-operam-webhook.js';
+import { interpretarAviso, claveEvento, resultadoDelAviso } from '../lib/sync-operam-webhook.js';
+import { avisoPedido, avisoPago, avisoRemision } from './helpers/avisos-operam.js';
 
-// Extraccion defensiva del identificador del payload de webhook de Operam y clave
-// idempotente del evento (issue #62, F3). El formato exacto del webhook aun no se
-// captura; estas funciones toleran varias formas/anidamientos.
+// #510: que dice cada aviso de Operam y su clave idempotente, con las formas
+// reales del log de produccion (test/helpers/avisos-operam.js). Hasta #510 todos
+// los pedidos daban `Order:ev:[object Object]` y todas las remisiones
+// `CustDelivery:ev:sin-id`.
 
-test('extraerIdentificador: lee order_ del payload raiz', () => {
-  const id = extraerIdentificador({ order_: '7077', tax_id: 'CPE921211N76', debtor_no: '345' });
-  assert.equal(id.order, '7077');
-  assert.equal(id.rfc, 'CPE921211N76');
-  assert.equal(id.customerId, '345');
-});
-
-test('extraerIdentificador: lee order_no anidado en data', () => {
-  const id = extraerIdentificador({ model: 'Pedido', event: 'ADD', data: { order_no: '7230', debtor_no: '345' } });
-  assert.equal(id.order, '7230');
-  assert.equal(id.customerId, '345');
-  assert.equal(id.modelo, 'Pedido');
-  assert.equal(id.evento, 'ADD');
-});
-
-test('extraerIdentificador: order_=0 (pago/nota credito) no cuenta como order resoluble', () => {
-  const id = extraerIdentificador({ type: '12', order_: '0', tax_id: 'ABC010101AAA' });
-  assert.equal(id.order, null);
-  assert.equal(id.rfc, 'ABC010101AAA');
-});
-
-test('extraerIdentificador: payload vacio o no objeto devuelve todo null', () => {
-  const vacio = extraerIdentificador(null);
-  assert.equal(vacio.order, null);
-  assert.equal(vacio.rfc, null);
-  assert.equal(vacio.customerId, null);
-});
-
-test('claveEvento: usa el id externo cuando viene (idempotencia por evento)', () => {
-  const k1 = claveEvento({ model: 'Payment', event: 'ADD', id: 'evt-99', order_: '7077' });
-  const k2 = claveEvento({ model: 'Payment', event: 'ADD', id: 'evt-99', order_: '7077' });
-  assert.equal(k1, k2); // mismo evento -> misma clave
-  assert.ok(k1.includes('evt-99'));
-});
-
-test('claveEvento: sin id externo deriva una clave estable de modelo+evento+identificador', () => {
-  const k = claveEvento({ model: 'CustDelivery', event: 'ADD', order_: '7077' });
-  assert.ok(k.includes('CustDelivery'));
-  assert.ok(k.includes('7077'));
-  // Estable: dos llamadas iguales -> misma clave.
-  assert.equal(k, claveEvento({ model: 'CustDelivery', event: 'ADD', order_: '7077' }));
-});
-
-test('claveEvento: eventos distintos producen claves distintas', () => {
-  const a = claveEvento({ model: 'Payment', event: 'ADD', trans_no: '6735' });
-  const b = claveEvento({ model: 'Payment', event: 'ADD', trans_no: '6800' });
+test('dos avisos de Pedido distintos tienen claves distintas; el mismo reenviado, la misma', () => {
+  const a = claveEvento(avisoPedido({ reference: '2606741', transNoFrom: '1141' }));
+  const b = claveEvento(avisoPedido({ reference: '2609812', transNoFrom: '1309' }));
   assert.notEqual(a, b);
+  assert.equal(a, claveEvento(avisoPedido({ reference: '2606741', transNoFrom: '1141' })));
+  assert.doesNotMatch(a, /object Object/);
+});
+
+test('dos avisos de Remision distintos tienen claves distintas; el mismo reenviado, la misma', () => {
+  const a = claveEvento(avisoRemision(2400));
+  const b = claveEvento(avisoRemision(2401));
+  assert.notEqual(a, b);
+  assert.equal(a, claveEvento(avisoRemision(2400)));
+  assert.doesNotMatch(a, /sin-id/);
+});
+
+test('la clave del Pago no cambia de criterio: su trans_no', () => {
+  assert.notEqual(claveEvento(avisoPago({ transNo: '7694' })), claveEvento(avisoPago({ transNo: '7695' })));
+  assert.match(claveEvento(avisoPago({ transNo: '7695' })), /^Payment:ADD:7695$/);
+});
+
+test('un aviso sin identificador propio usa la huella del aviso completo, nunca una constante', () => {
+  const a = claveEvento({ type: 'ADD', model: 'Otro', data: { x: 1 } });
+  const b = claveEvento({ type: 'ADD', model: 'Otro', data: { x: 2 } });
+  assert.notEqual(a, b);
+  assert.equal(a, claveEvento({ type: 'ADD', model: 'Otro', data: { x: 1 } }));
+});
+
+test('el aviso de Pedido trae el documento de origen; el de Pago, el cliente', () => {
+  const pedido = interpretarAviso(avisoPedido({ transNoFrom: '1309', customerId: '537' }));
+  assert.equal(pedido.tipo, 'pedido');
+  assert.equal(pedido.documento, '1309');
+  assert.equal(pedido.cliente, null);
+
+  const pago = interpretarAviso(avisoPago({ debtorNo: '537', taxId: 'XAXX010101000' }));
+  assert.equal(pago.tipo, 'pago');
+  assert.equal(pago.cliente, '537');
+  assert.equal(pago.documento, null);
+
+  assert.equal(interpretarAviso(avisoRemision(2400)).tipo, 'remision');
+});
+
+test('un Pedido de venta directa (sin documento de origen) no trae documento', () => {
+  assert.equal(interpretarAviso(avisoPedido({ transNoFrom: '' })).documento, null);
+});
+
+test('un payload vacio o que no es objeto no truena', () => {
+  for (const p of [null, undefined, 'x', 3]) {
+    const a = interpretarAviso(p);
+    assert.equal(a.tipo, null);
+    assert.match(a.clave, /^op:ev:h[0-9a-f]{16}$/);
+  }
+});
+
+test('resultadoDelAviso: con un error, o con una cotizacion que fallo, no queda procesado', () => {
+  assert.deepEqual(resultadoDelAviso([{ id: 1, movida: true }], null), { ok: true, resultado: 'reconciliadas:1' });
+  assert.deepEqual(resultadoDelAviso([], null), { ok: true, resultado: 'reconciliadas:0' });
+  assert.deepEqual(resultadoDelAviso([], 'Operam 429'), { ok: false, resultado: 'error: Operam 429' });
+  assert.deepEqual(
+    resultadoDelAviso([{ id: 1, movida: true }, { id: 2, error: 'timeout' }], null),
+    { ok: false, resultado: 'error: 2: timeout' },
+  );
 });

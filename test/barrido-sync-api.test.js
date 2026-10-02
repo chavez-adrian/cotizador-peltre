@@ -120,6 +120,34 @@ test('solo admin: vendedor 403 y sin token 401, en el POST y en el GET', async (
   assert.deepEqual(cotizaciones(), [COT_1309, COT_1197, COT_1239]);
 });
 
+const PETICIONES_SIN_MODO_EXPRESO = [
+  ['sin cuerpo', undefined],
+  ['cuerpo vacio', {}],
+  ['seco en false', { seco: false }],
+  ['seco como texto', { seco: 'true' }],
+  ['aplicar como texto', { aplicar: 'true' }],
+  ['aplicar en 1', { aplicar: 1 }],
+  ['los dos a la vez', { seco: true, aplicar: true }],
+  ['aplicar con seco en false', { aplicar: true, seco: false }],
+];
+
+// #510: escribir se pide de forma expresa. Hasta aqui todo lo que no fuera
+// `seco: true` aplicaba sobre todas las cotizaciones con pedido.
+for (const [caso, cuerpo] of PETICIONES_SIN_MODO_EXPRESO) {
+  test(`#510: ${caso} responde 400 sin leer Operam ni escribir`, async () => {
+    const lecturas = operam();
+    const antes = cotizaciones();
+    const peticion = supertest(app).post(RUTA).set('Authorization', ADMIN);
+    const res = cuerpo === undefined ? await peticion : await peticion.send(cuerpo);
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /aplicar/);
+    await syncIo._esperarBarridoSync();
+    assert.equal(lecturas.length, 0);
+    assert.deepEqual(cotizaciones(), antes);
+    assert.equal((await supertest(app).get(RUTA).set('Authorization', ADMIN)).body.enCurso, false);
+  });
+}
+
 test('AC10: la reconciliacion global POST /api/sync-operam ya no existe', async () => {
   operam();
   const res = await supertest(app).post('/api/sync-operam').set('Authorization', ADMIN);
@@ -150,7 +178,7 @@ test('AC6: en seco responde el plan completo y no escribe nada', async () => {
 
 test('AC7/AC9: aplicado responde 202 al instante y el GET da el resultado; la etapa lleva su evento sync_operam', async () => {
   operam();
-  const res = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({});
+  const res = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ aplicar: true });
   assert.equal(res.status, 202);
   assert.equal(res.body.enCurso, true);
   await syncIo._esperarBarridoSync();
@@ -181,7 +209,7 @@ test('AC7/AC9: aplicado responde 202 al instante y el GET da el resultado; la et
 
 test('un seco despues de un aplicado no borra la ultima corrida aplicada', async () => {
   operam();
-  await supertest(app).post(RUTA).set('Authorization', ADMIN).send({});
+  await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ aplicar: true });
   await syncIo._esperarBarridoSync();
   fijarDatos(COTS_PATH, [COT_1309, COT_1197, COT_1239]);
   const seco = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ seco: true });
@@ -209,7 +237,7 @@ test('en seco, si no se pueden leer los pedidos de Operam responde 502 con el er
 
 test('AC5: la cotizacion cuya consulta de anulacion fallo queda en errores y las demas siguen', async () => {
   operam({ webCaida: true });
-  await supertest(app).post(RUTA).set('Authorization', ADMIN).send({});
+  await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ aplicar: true });
   await syncIo._esperarBarridoSync();
   const { ultima } = (await supertest(app).get(RUTA).set('Authorization', ADMIN)).body;
   assert.equal(ultima.errores.length, 1);
@@ -225,7 +253,7 @@ test('AC3: con un barrido del sync en curso, otro responde 409 sin leer Operam',
   let soltar;
   const enCurso = enTurno(TURNO_SYNC_OPERAM, () => new Promise(res => { soltar = res; }));
   try {
-    const aplicado = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({});
+    const aplicado = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ aplicar: true });
     assert.equal(aplicado.status, 409);
     const seco = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ seco: true });
     assert.equal(seco.status, 409);

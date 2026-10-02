@@ -119,6 +119,32 @@ test('solo admin: vendedor 403, sin token 401', async () => {
   assert.equal(sinToken.status, 401);
 });
 
+const PETICIONES_SIN_MODO_EXPRESO = [
+  ['sin cuerpo', undefined],
+  ['cuerpo vacio', {}],
+  ['seco en false', { seco: false }],
+  ['seco como texto', { seco: 'true' }],
+  ['aplicar como texto', { aplicar: 'true' }],
+  ['aplicar en 1', { aplicar: 1 }],
+  ['los dos a la vez', { seco: true, aplicar: true }],
+  ['aplicar con seco en false', { aplicar: true, seco: false }],
+];
+
+// #510: escribir se pide de forma expresa. Hasta aqui todo lo que no fuera
+// `seco: true` aplicaba.
+for (const [caso, cuerpo] of PETICIONES_SIN_MODO_EXPRESO) {
+  test(`#510: ${caso} responde 400 sin leer Operam ni escribir`, async () => {
+    const lecturas = operam();
+    const antes = cotizaciones();
+    const peticion = supertest(app).post(RUTA(132)).set('Authorization', ADMIN);
+    const res = cuerpo === undefined ? await peticion : await peticion.send(cuerpo);
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /aplicar/);
+    assert.equal(lecturas.length, 0);
+    assert.deepEqual(cotizaciones(), antes);
+  });
+}
+
 test('una cotizacion inexistente responde 404 sin leer Operam', async () => {
   const lecturas = operam();
   const res = await supertest(app).post(RUTA(999)).set('Authorization', ADMIN).send({ seco: true });
@@ -146,10 +172,10 @@ test('en seco sobre la 1309: nombra el pedido 7762, dice lo que haria y no cambi
   assert.deepEqual(cotizaciones(), antes);
 });
 
-test('sin seco escribe exactamente lo que el seco anuncio', async () => {
+test('con aplicar escribe exactamente lo que el seco anuncio', async () => {
   operam();
   const seco = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({ seco: true });
-  const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({});
+  const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({ aplicar: true });
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.escrito, true);
   for (const campo of ['pedido', 'pedidos', 'cliente', 'etapaAntes', 'etapaDespues', 'banderas']) {
@@ -167,7 +193,7 @@ test('sin pedido propio responde el motivo y no escribe', async () => {
   fijarDatos(COTS_PATH, [{ ...COT_1309, folioOperam: '1197' }]);
   operam();
   const antes = cotizaciones();
-  const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({});
+  const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({ aplicar: true });
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.pedido, null);
   assert.equal(res.body.motivo, 'sin-pedido-propio');
@@ -181,7 +207,7 @@ test('una salida (Perdida, Cancelada) no se mueve ni lee Operam', async () => {
     fijarDatos(COTS_PATH, [{ ...COT_1309, etapa }]);
     const lecturas = operam();
     const antes = cotizaciones();
-    const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({});
+    const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({ aplicar: true });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.motivo, 'salida');
     assert.equal(res.body.etapaDespues, etapa);
@@ -193,7 +219,7 @@ test('una salida (Perdida, Cancelada) no se mueve ni lee Operam', async () => {
 test('un error de Operam sale como error en la respuesta y no deja escrituras', async () => {
   operam({ fallaTransacciones: true });
   const antes = cotizaciones();
-  const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({});
+  const res = await supertest(app).post(RUTA(132)).set('Authorization', ADMIN).send({ aplicar: true });
   assert.equal(res.status, 502, JSON.stringify(res.body));
   assert.match(res.body.error, /Operam/);
   assert.deepEqual(cotizaciones(), antes);
@@ -218,7 +244,7 @@ test('#512 sin seco, la 1239 con su pedido anulado tampoco recibe escrituras', a
   fijarDatos(COTS_PATH, [COT_1239]);
   operam({ pedidos: [PEDIDO_7616], anulados: ['7616'] });
   const antes = cotizaciones();
-  const res = await supertest(app).post(RUTA(140)).set('Authorization', ADMIN).send({});
+  const res = await supertest(app).post(RUTA(140)).set('Authorization', ADMIN).send({ aplicar: true });
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.escrito, false);
   assert.equal(res.body.motivo, 'pedido-anulado');
@@ -229,7 +255,7 @@ test('#512 si la consulta de anulacion falla, la ruta responde error y no escrib
   fijarDatos(COTS_PATH, [COT_1239]);
   operam({ pedidos: [PEDIDO_7616], webCaida: true });
   const antes = cotizaciones();
-  const res = await supertest(app).post(RUTA(140)).set('Authorization', ADMIN).send({});
+  const res = await supertest(app).post(RUTA(140)).set('Authorization', ADMIN).send({ aplicar: true });
   assert.equal(res.status, 502, JSON.stringify(res.body));
   assert.match(res.body.error, /ECONNRESET/);
   assert.deepEqual(cotizaciones(), antes);

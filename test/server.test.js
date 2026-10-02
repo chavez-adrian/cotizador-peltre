@@ -2319,9 +2319,7 @@ test('E9: el pool de genericos del rescate #78 tambien se pide por tax_id (#194)
 });
 
 // === Webhook de Operam (sync post-venta, #62) ===
-// Auth por header secreto (NO el JWT del cotizador: Operam no lo tiene). El webhook
-// es solo una señal; la reconciliacion lee la verdad por API. Sin DATABASE_URL el
-// log es graceful (no rompe). Responde 200 aunque no se ligue a una oportunidad.
+// Auth por header secreto (NO el JWT del cotizador: Operam no lo tiene).
 
 const WEBHOOK_SECRET = 'test-webhook-secret';
 
@@ -2340,105 +2338,8 @@ test('W2: POST /api/webhooks/operam con header secreto incorrecto retorna 401', 
   assert.strictEqual(res.status, 401);
 });
 
-test('W3: POST /api/webhooks/operam con secreto correcto pero RFC desconocido responde 200 sin mover nada', async () => {
-  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
-  const snap = readCots();
-  const res = await supertest(app)
-    .post('/api/webhooks/operam')
-    .set('X-Operam-Webhook-Secret', WEBHOOK_SECRET)
-    .send({ model: 'Payment', event: 'ADD', tax_id: 'ZZZ999999ZZZ', order_: '0' });
-  assert.strictEqual(res.status, 200);
-  assert.strictEqual(res.body.ok, true);
-  // No se ligo a ninguna oportunidad.
-  assert.ok(Array.isArray(res.body.reconciliadas));
-  assert.strictEqual(res.body.reconciliadas.length, 0);
-  // No toco el store.
-  assert.deepEqual(readCots(), snap);
-});
-
-test('W4: POST /api/webhooks/operam liga por RFC y mueve la oportunidad leyendo Operam', async () => {
-  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
-  // Oportunidad en seguimiento del RFC del webhook.
-  writeCots([{ id: 5001, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'EL PENDULO',
-    etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } }]);
-  // Operam: factura (10) liquidada + remision (13) + pedido (30) -> producto_entregado.
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [
-      { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
-      { type: '13', order_: '7077', total_amount: '16954', allocated: '0', outstanding: '0', debtor_no: '345' },
-    ] }) }),
-    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
-      { order_no: '7077', trans_type: '30', debtor_no: '345', total: '100' },
-    ] }) }),
-  });
-  try {
-    const res = await supertest(app)
-      .post('/api/webhooks/operam')
-      .set('X-Operam-Webhook-Secret', WEBHOOK_SECRET)
-      .send({ model: 'CustDelivery', event: 'ADD', tax_id: 'CPE921211N76', order_: '7077' });
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.reconciliadas.length, 1);
-    assert.strictEqual(res.body.reconciliadas[0].etapa, 'producto_entregado');
-    const movida = readCots().find(c => c.id === 5001);
-    assert.strictEqual(movida.etapa, 'producto_entregado');
-  } finally {
-    restore();
-  }
-});
-
-test('W5: POST /api/webhooks/operam con Operam caido responde 200 (no truena el webhook)', async () => {
-  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
-  writeCots([{ id: 5002, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'X',
-    etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } }]);
-  const restore = mockOperamFetch({ '/api/v3/login': () => { throw new Error('timeout'); } });
-  try {
-    const res = await supertest(app)
-      .post('/api/webhooks/operam')
-      .set('X-Operam-Webhook-Secret', WEBHOOK_SECRET)
-      .send({ model: 'Payment', event: 'ADD', tax_id: 'CPE921211N76', order_: '7077' });
-    assert.strictEqual(res.status, 200);
-  } finally {
-    restore();
-  }
-});
-
-// #507: el webhook solo mueve una cotizacion por SU pedido (el barrido, en
-// test/barrido-sync-api.test.js).
-// El cliente tiene otra venta (pedido 7100, nacido de la cotizacion 1050)
-// entregada y liquidada; la 1197 nunca se volvio pedido y se queda como estaba.
-function mockOtraVentaEntregada() {
-  return mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [
-      { type: '10', order_: '7100', total_amount: '5000', allocated: '5000', outstanding: '0', debtor_no: '345' },
-      { type: '13', order_: '7100', debtor_no: '345' },
-    ] }) }),
-    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
-      { order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050', total: '100' },
-    ] }) }),
-  });
-}
-const SIN_PEDIDO_PROPIO = { id: 6101, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'EL PENDULO',
-  etapa: 'seguimiento', folioOperam: '1197', data: { cliente: { rfc: 'CPE921211N76' } } };
-
-test('#507: el aviso de Pago no mueve ni marca una cotizacion sin pedido propio', async () => {
-  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
-  writeCots([SIN_PEDIDO_PROPIO]);
-  const antes = readCots();
-  const restore = mockOtraVentaEntregada();
-  try {
-    const res = await supertest(app)
-      .post('/api/webhooks/operam')
-      .set('X-Operam-Webhook-Secret', WEBHOOK_SECRET)
-      .send({ model: 'Payment', event: 'ADD', id: 'pago-507', tax_id: 'CPE921211N76', order_: '0' });
-    assert.strictEqual(res.status, 200);
-    assert.deepEqual(res.body.reconciliadas, [{ id: 6101, movida: false, etapa: null, motivo: 'sin-pedido-propio' }]);
-    assert.deepEqual(readCots(), antes);
-  } finally {
-    restore();
-  }
-});
+// La atencion de los avisos (formas reales, repetidos, reintento, respuesta
+// inmediata) va en test/webhook-operam-api.test.js (#510).
 
 // === POST /api/cotizacion/operam/:id — issue #68 ===
 // Un cliente no identificado NO es un fallo de disponibilidad de Operam (503): es un

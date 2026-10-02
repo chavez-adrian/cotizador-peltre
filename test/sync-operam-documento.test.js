@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  reconciliarOportunidad, reconciliarPorIdentificador, planearReconciliacion, aplicarReconciliacion,
+  reconciliarOportunidad, reconciliarLote, planearReconciliacion, aplicarReconciliacion,
   crearLecturas, hechosDeOperam,
   _setRitmo, _reiniciarRitmo,
 } from '../lib/sync-operam-io.js';
@@ -258,7 +258,7 @@ test('un lote comparte la lectura de pedidos (una barrida para varias cotizacion
     { id: 49, etapa: 'seguimiento', folioOperam: '1309', fecha: '2026-09-30T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
     { id: 50, etapa: 'seguimiento', folioOperam: '1282', fecha: '2026-09-30T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
   ];
-  const res = await reconciliarPorIdentificador({ rfc: 'XAXX010101000' }, oportunidades, deps);
+  const res = await reconciliarLote(oportunidades, deps);
   assert.deepEqual(res.map(r => r.etapa), ['pedido_liberado', 'pedido_liberado']);
   assert.equal(deps.consultasPed.length, 1);
 });
@@ -274,7 +274,7 @@ test('en un lote, una cotizacion con ventana anterior solo lee el tramo que falt
     { id: 58, etapa: 'seguimiento', folioOperam: '1309', fecha: '2026-09-30T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
     { id: 59, etapa: 'seguimiento', folioOperam: '1186', fecha: '2026-06-22T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
   ];
-  const res = await reconciliarPorIdentificador({ rfc: 'XAXX010101000' }, oportunidades, deps);
+  const res = await reconciliarLote(oportunidades, deps);
   assert.deepEqual(res.map(r => r.etapa), ['pedido_liberado', 'pedido_liberado']);
   assert.equal(deps.consultasPed.length, 2);
   assert.equal(deps.consultasPed[0].desde, '2026-08-01');
@@ -508,7 +508,7 @@ test('#512 AC6: en un lote, la cotizacion cuya consulta falla sale con su error 
     { id: 77, etapa: 'seguimiento', folioOperam: '1294', fecha: '2026-09-26T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
     { id: 78, etapa: 'seguimiento', folioOperam: '1309', fecha: '2026-09-30T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
   ];
-  const res = await reconciliarPorIdentificador({ rfc: 'XAXX010101000' }, oportunidades, deps);
+  const res = await reconciliarLote(oportunidades, deps);
   assert.equal(res.length, 2);
   assert.equal(res[0].id, 77);
   assert.equal(res[0].movida, false);
@@ -531,7 +531,7 @@ test('#512 AC7: dentro de un lote un pedido no se consulta dos veces (ni la sesi
     { id: 80, etapa: 'seguimiento', folioOperam: '861', fecha: '2025-06-18T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' }, orderOperam: '7321' } },
     { id: 81, etapa: 'seguimiento', folioOperam: '1294', fecha: '2026-09-26T00:00:00.000Z', data: { cliente: { rfc: 'XAXX010101000' } } },
   ];
-  await reconciliarPorIdentificador({ rfc: 'XAXX010101000' }, oportunidades, deps);
+  await reconciliarLote(oportunidades, deps);
   assert.equal(deps.sesionesWeb, 1);
   assert.deepEqual(deps.consultasWeb.map(c => c.transNo), ['5960', '7321', '7764']);
 });
