@@ -4095,19 +4095,21 @@ app.post('/api/webhooks/operam', async (req, res) => {
 // todas las cotizaciones activas y reconcilia las que tienen pedido (la regla vive en
 // lib/sync-operam-io.js). `seco: true` espera el plan completo y lo responde sin
 // escribir; aplicado responde 202 al instante y trabaja en segundo plano. Uno a la
-// vez: con otro en curso, 409. El GET dice si hay uno en curso y la ultima corrida.
+// vez: con otro en curso, 409. El GET dice si hay uno en curso, la ultima corrida
+// y la ultima APLICADA (un seco no la borra). El seco que no pudo leer las
+// cotizaciones o los pedidos responde 502 con su resultado, nunca un exito.
+const MENSAJE_BARRIDO_EN_CURSO = 'Ya hay un barrido del sync en curso; consulta su resultado cuando termine.';
 app.post('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, async (req, res) => {
   const seco = req.body?.seco === true;
-  if (barridoSyncEnCurso()) {
-    return res.status(409).json({ error: 'Ya hay un barrido del sync en curso; consulta su resultado cuando termine.' });
-  }
+  if (barridoSyncEnCurso()) return res.status(409).json({ error: MENSAJE_BARRIDO_EN_CURSO });
   if (!seco) {
     barrerSyncOperam().catch(err => console.error('[sync-operam] barrido a pedido fallo:', err.message));
     return res.status(202).json({ ok: true, seco, enCurso: true });
   }
   try {
     const r = await barrerSyncOperam({ seco: true });
-    if (r.omitido) return res.status(409).json({ error: 'Ya hay un barrido del sync en curso; consulta su resultado cuando termine.' });
+    if (r.omitido) return res.status(409).json({ error: MENSAJE_BARRIDO_EN_CURSO });
+    if (r.error) return res.status(502).json({ ...r, ok: false, error: 'No se pudieron leer las cotizaciones o los pedidos de Operam: ' + r.error });
     res.json({ ok: true, ...r });
   } catch (err) {
     console.error('[sync-operam] barrido en seco fallo:', err.message);
@@ -4116,7 +4118,7 @@ app.post('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, asyn
 });
 
 app.get('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, (req, res) => {
-  res.json({ enCurso: barridoSyncEnCurso(), ultima: ultimoBarridoSync() });
+  res.json({ enCurso: barridoSyncEnCurso(), ...ultimoBarridoSync() });
 });
 
 // Reconciliar UNA cotizacion (#508): la herramienta acotada que faltaba. Encuentra
@@ -4824,7 +4826,9 @@ if (isMain) {
   // encendida corre una vez al dia a las 03:00 de la Ciudad de Mexico y comparte
   // turno con el barrido de post-fixes de arriba (lib/turno-barridos.js).
   const programado = programarBarridoSync({
-    barrer: () => barrerSyncOperam().catch(err => console.error('[sync-operam] barrido diario fallo:', err.message)),
+    barrer: () => barrerSyncOperam()
+      .then(r => { if (r?.omitido) console.error('[sync-operam] barrido diario omitido: ya habia otro barrido del sync en curso'); })
+      .catch(err => console.error('[sync-operam] barrido diario fallo:', err.message)),
   });
   console.log(`[sync-operam] barrido diario ${programado ? 'programado a las 03:00 (CDMX)' : 'apagado (SYNC_OPERAM_BARRIDO_DIARIO)'}`);
 

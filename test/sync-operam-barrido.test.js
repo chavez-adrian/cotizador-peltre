@@ -6,7 +6,7 @@ import {
   barridoDiarioEncendido, msHastaProximoBarrido, programarBarridoSync, VARIABLE_BARRIDO_DIARIO,
   _setRitmo, _reiniciarRitmo,
 } from '../lib/sync-operam-io.js';
-import { enTurno } from '../lib/turno-barridos.js';
+import { enTurno, TURNO_POSTFIX_QUOTES } from '../lib/turno-barridos.js';
 
 // #509: el barrido del sync post-venta es la red de seguridad que no depende de que
 // los avisos de Operam lleguen. Lee los pedidos UNA vez por corrida, liga por
@@ -127,8 +127,9 @@ test('AC7/AC9: aplicado escribe espejo y etapa con su evento sync_operam fechado
   }
   assert.deepEqual(d.espejos.map(e => e.id).sort(), [132, 40]);
   assert.equal(fila(r, '1309').escrito, true);
-  const ultima = ultimoBarridoSync();
+  const { ultima, ultimaAplicada } = ultimoBarridoSync();
   assert.equal(ultima, r);
+  assert.equal(ultimaAplicada, r);
   assert.ok(ultima.inicio && ultima.fin);
 });
 
@@ -166,7 +167,7 @@ test('si no se pueden leer los pedidos la corrida termina con su error y sin esc
 
 test('AC3: nunca dos barridos del sync a la vez, y espera el turno del barrido de post-fixes', async () => {
   let soltar;
-  const postfix = enTurno('postfix-quotes', () => new Promise(res => { soltar = res; }));
+  const postfix = enTurno(TURNO_POSTFIX_QUOTES, () => new Promise(res => { soltar = res; }));
   const d = deps();
   const corrida = barrerSyncOperam({ seco: true }, d);
   assert.equal(barridoSyncEnCurso(), true);

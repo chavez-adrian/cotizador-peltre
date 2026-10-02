@@ -28,7 +28,7 @@ delete process.env.DATABASE_URL;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const syncIo = await import('../lib/sync-operam-io.js');
-const { enTurno } = await import('../lib/turno-barridos.js');
+const { enTurno, TURNO_SYNC_OPERAM } = await import('../lib/turno-barridos.js');
 const { resetSession } = await import('../lib/operam-client.js');
 const { app } = await import('../server.js');
 
@@ -179,6 +179,34 @@ test('AC7/AC9: aplicado responde 202 al instante y el GET da el resultado; la et
   assert.deepEqual(porId(73), COT_1239);
 });
 
+test('un seco despues de un aplicado no borra la ultima corrida aplicada', async () => {
+  operam();
+  await supertest(app).post(RUTA).set('Authorization', ADMIN).send({});
+  await syncIo._esperarBarridoSync();
+  fijarDatos(COTS_PATH, [COT_1309, COT_1197, COT_1239]);
+  const seco = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ seco: true });
+  assert.equal(seco.status, 200);
+  const { ultima, ultimaAplicada } = (await supertest(app).get(RUTA).set('Authorization', ADMIN)).body;
+  assert.equal(ultima.seco, true);
+  assert.equal(ultimaAplicada.seco, false);
+  assert.equal(ultimaAplicada.movidas, 1);
+});
+
+test('en seco, si no se pueden leer los pedidos de Operam responde 502 con el error, no un exito', async () => {
+  operam();
+  const base = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/api/v3/sales/sales_orders')) return jsonResponse({ message: 'Too Many Requests' }, 400);
+    return base(url);
+  };
+  const antes = cotizaciones();
+  const res = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ seco: true });
+  assert.equal(res.status, 502);
+  assert.match(res.body.error, /pedidos|Operam/);
+  assert.equal(res.body.revisadas, 0);
+  assert.deepEqual(cotizaciones(), antes);
+});
+
 test('AC5: la cotizacion cuya consulta de anulacion fallo queda en errores y las demas siguen', async () => {
   operam({ webCaida: true });
   await supertest(app).post(RUTA).set('Authorization', ADMIN).send({});
@@ -195,7 +223,7 @@ test('AC5: la cotizacion cuya consulta de anulacion fallo queda en errores y las
 test('AC3: con un barrido del sync en curso, otro responde 409 sin leer Operam', async () => {
   const lecturas = operam();
   let soltar;
-  const enCurso = enTurno('sync-operam', () => new Promise(res => { soltar = res; }));
+  const enCurso = enTurno(TURNO_SYNC_OPERAM, () => new Promise(res => { soltar = res; }));
   try {
     const aplicado = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({});
     assert.equal(aplicado.status, 409);

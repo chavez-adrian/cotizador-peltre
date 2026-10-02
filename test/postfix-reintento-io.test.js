@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { encolarPostFix, procesarColaPostFix, barrerQuotesPostFix } from '../lib/postfix-reintento-io.js';
-import { enTurno } from '../lib/turno-barridos.js';
+import { enTurno, TURNO_SYNC_OPERAM } from '../lib/turno-barridos.js';
 
 // IO del reintento del post-fix web del quote (#380) con adaptadores EN MEMORIA: la
 // cola, Operam (el post-fix y la lectura del quote), el detector de cancelados, el
@@ -378,7 +378,7 @@ test('barrerQuotesPostFix: no corre mientras la cola se esta procesando (un solo
 // 2026-10-01 corrieron juntos y los dos recibieron 429); la cola del worker no.
 test('barrerQuotesPostFix: espera su turno mientras corre el barrido del sync post-venta', async () => {
   let soltar;
-  const sync = enTurno('sync-operam', () => new Promise(res => { soltar = res; }));
+  const sync = enTurno(TURNO_SYNC_OPERAM, () => new Promise(res => { soltar = res; }));
   const { deps, lecturas } = depsBarrido();
   const barrido = barrerQuotesPostFix(deps);
   await new Promise(res => setImmediate(res));
@@ -392,7 +392,7 @@ test('barrerQuotesPostFix: espera su turno mientras corre el barrido del sync po
 
 test('procesarColaPostFix: el worker de la cola no espera el turno de los barridos', async () => {
   let soltar;
-  const sync = enTurno('sync-operam', () => new Promise(res => { soltar = res; }));
+  const sync = enTurno(TURNO_SYNC_OPERAM, () => new Promise(res => { soltar = res; }));
   const { deps } = depsBase({ store: storeEnMemoria([pendiente()]), corregirVigenciaQuote: corregirFalso(R_VERIFICADO) });
   const r = await procesarColaPostFix(deps);
   assert.equal(r.verificados, 1);
