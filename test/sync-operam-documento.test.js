@@ -140,7 +140,6 @@ test('AC6: una venta directa nunca se liga, aunque sea del mismo Cliente Operam'
 
 test('AC7: la 861 no queda ligada al pedido 7321 de total cero habiendo el 7282 con total', async () => {
   // El registro trae el explicito 7321 (lo puso el backfill) y el folio tiene otro pedido.
-  // Aqui el 7321 esta VIVO; el caso real (anulado) es el de #512 mas abajo.
   const deps = depsGrabando({
     transacciones: [
       { type: '10', order_: '7282', trans_no: '6100', reference: 'A1700', total_amount: '251.77', allocated: '251.77', outstanding: '0', debtor_no: '158' },
@@ -583,4 +582,17 @@ test('#512 el backfill usa la lista conocida de anulados (data/cancelados.json) 
   const viva = crearLecturas({ ...deps, anuladosConocidos: [] });
   assert.equal((await hechosDeOperam(op, { lecturas: viva })).tienePedido, true);
   assert.equal(deps.sesionesWeb, 0);
+});
+
+test('#512 el motivo pedido-anulado es solo si la liga existia y la quitaron los anulados', async () => {
+  // Explicito vivo que el listado no trae y un hermano del folio anulado: el pedido
+  // propio no se encontro, no "esta anulado".
+  const deps = depsGrabando({
+    pedidos: [{ order_no: '7321', trans_type: '30', debtor_no: '158', trans_no_from: '861', total: '0' }],
+    anulados: ['7321'],
+  });
+  const op = { id: 85, etapa: 'seguimiento', folioOperam: '861', fecha: '2025-06-18T00:00:00.000Z', data: { orderOperam: '9999' } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.motivo, 'sin-pedido-propio');
+  sinEscrituras(deps);
 });

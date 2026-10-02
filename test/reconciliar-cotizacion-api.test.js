@@ -242,3 +242,17 @@ test('#512 un pedido con total no abre la web de Operam', async () => {
   assert.deepEqual(res.body.anulados, []);
   assert.equal(lecturas.filter(u => u.includes('view_sales_order')).length, 0);
 });
+
+test('#512 en seco sobre la 1145 (Pedido liberado por el 7267 anulado): no retrocede y lo reporta', async () => {
+  const cot1145 = { ...COT_1239, id: 141, folioOperam: '1145', fecha: '2026-06-15T00:00:00.000Z', etapa: 'pedido_liberado', data: { espejoOperam: { pedido: '7267' } } };
+  fijarDatos(COTS_PATH, [cot1145]);
+  operam({ pedidos: [{ order_no: '7267', trans_type: '30', debtor_no: '300', trans_no_from: '1145', total: '0', ord_date: '2026-06-20' }], anulados: ['7267'] });
+  const antes = cotizaciones();
+  const res = await supertest(app).post(RUTA(141)).set('Authorization', ADMIN).send({ seco: true });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(res.body.anulados, ['7267']);
+  assert.equal(res.body.motivo, 'pedido-anulado');
+  assert.equal(res.body.etapaAntes, 'pedido_liberado');
+  assert.equal(res.body.etapaDespues, 'pedido_liberado');
+  assert.deepEqual(cotizaciones(), antes);
+});
