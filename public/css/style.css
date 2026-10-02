@@ -1723,6 +1723,8 @@ body {
 #btn-sig-envio { height: var(--alto-siguiente-envio); }
 #shipping-envia > .accion-fija {
   bottom: calc(var(--pie-fijo) + var(--alto-siguiente-envio));
+  /* #513: hueco opaco (fondo en linea) entre Cotizar y el Siguiente. */
+  padding-bottom: 10px;
 }
 
 .alta-seccion.alta-sec-activa {

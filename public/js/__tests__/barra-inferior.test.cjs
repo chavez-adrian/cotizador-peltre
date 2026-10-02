@@ -199,6 +199,25 @@ test('#488: la fila de Cotizar de Envio se apoya arriba del "Siguiente" sticky (
   }
 });
 
+// #513: pegada al Siguiente, el borde de Cotizar tocaba el de Siguiente. Entre
+// los dos queda el hueco de los botones apilados (gap de .form-row, 10px). El
+// sticky coloca la caja, no el margen: el hueco sale de un bottom mayor o de un
+// padding-bottom de la fila (opaco, con su fondo en linea).
+test('#513: entre la fila de Cotizar de Envio y el "Siguiente" sticky queda un hueco de 10px', () => {
+  const fila = padreDe('id="btn-cotizar-envia"');
+  const siguiente = etiquetaDe('id="btn-sig-envio"');
+  const contenedor = '#shipping-envia';
+  const altoSiguiente = ultimaReglaCon('height', siguiente, '#tab-envio').decl.get('height');
+  const conPadding = reglas.filter((x) => !x.media && x.decl.has('padding-bottom')
+    && x.selectores.some((s) => s === `${contenedor} > .accion-fija`));
+  const paddingFila = conPadding.length ? px(conPadding[conPadding.length - 1].decl.get('padding-bottom')) : 0;
+  for (const vars of [VARS_BASE, VARS_CON_TOTAL]) {
+    const techoSiguiente = px(ultimaReglaCon('bottom', siguiente, '#tab-envio').decl.get('bottom'), vars) + px(altoSiguiente, vars);
+    const bordeCotizar = px(ultimaReglaCon('bottom', fila, contenedor).decl.get('bottom'), vars) + paddingFila;
+    assert.ok(bordeCotizar - techoSiguiente >= 10, `Cotizar a ${bordeCotizar - techoSiguiente}px del Siguiente`);
+  }
+});
+
 // Un sticky no sale de su bloque contenedor: dentro de #shipping-envia la fila
 // solo subiria lo que mide la nota de arriba. Con display: contents el bloque
 // pasa a ser el paso Envio entero, como el del Siguiente.
