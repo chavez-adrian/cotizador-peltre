@@ -3585,6 +3585,9 @@ function pintarAvisoCambioCliente() {
 
 // --- Entrada: dos caminos ---
 function pcRenderInicio() {
+  // Soltar al cliente recoge el panel del alta/upgrade (#489, regla de #412): el
+  // panel es hermano de la raiz del paso y modoUpgrade apuntaria al anterior.
+  devolverPanelACasa();
   pcPrepararSeleccion();
   pcProspectosCache = null; // se refrescan al abrir una nueva captura/busqueda
   const root = pcEl();
@@ -5907,6 +5910,9 @@ function cvRenderBusqueda() {
   const root = cvRoot();
   if (!root) return;
   cvState.seleccion = null;
+  // Soltar al cliente recoge el panel del alta/upgrade que la vista tenia prestado
+  // (#489): "Buscar otro", "Cancelar" y la tarjeta sin seleccion pasan por aqui.
+  devolverPanelACasa();
   // El reporte del upgrade se inserta junto al panel, fuera de #clientes-root, y
   // sobrevive a los repintados de la vista (#407): al soltar el cliente hay que
   // quitarlo a mano o se queda hablando del anterior sobre la busqueda del siguiente.
@@ -6053,6 +6059,16 @@ function cvRenderTarjeta(aviso) {
 }
 window.cvRenderTarjeta = cvRenderTarjeta;
 
+// "Volver al cliente" / "Volver al Contacto" desde el panel del upgrade (#489): se
+// sale del panel, asi que se recoge (apaga modoUpgrade) antes de repintar. No vive en
+// cvRenderTarjeta porque el exito del upgrade la repinta y DESPUES inserta su reporte
+// junto al panel (#407): devolverlo a casa ahi mandaria el reporte al paso Cliente.
+function cvVolverATarjeta() {
+  devolverPanelACasa();
+  cvRenderTarjeta();
+}
+window.cvVolverATarjeta = cvVolverATarjeta;
+
 // Lo que quedo escrito en Operam entra a la seleccion viva de la vista ANTES de
 // repintarla (#407), para que el RFC y la razon social que el vendedor ve sean los
 // que acaba de confirmar y no los de antes de la CSF. Las dos formas de la
@@ -6086,7 +6102,7 @@ function cvUpgradeClienteOperam(id) {
   if (root) {
     root.innerHTML =
       '<div class="pc-pregunta">' + escapeHtml(rotuloPanelUpgrade(false)) + '</div>' +
-      '<button type="button" class="pc-back" onclick="cvRenderTarjeta()">&lsaquo; Volver al Contacto</button>';
+      '<button type="button" class="pc-back" onclick="cvVolverATarjeta()">&lsaquo; Volver al Contacto</button>';
   }
   moverPanelA(document.getElementById('clientes-panel-slot'));
   pcAbrirUpgradeFiscal(cliente.id, { nombre: cliente.name || cliente.ref || '', rfc: cliente.rfc || '' }, 'clientes');
@@ -6127,7 +6143,7 @@ function cvAbrirUpgrade(editar) {
   if (root) {
     root.innerHTML =
       '<div class="pc-pregunta">' + escapeHtml(rotuloPanelUpgrade(editar)) + '</div>' +
-      '<button type="button" class="pc-back" onclick="cvRenderTarjeta()">&lsaquo; Volver al cliente</button>';
+      '<button type="button" class="pc-back" onclick="cvVolverATarjeta()">&lsaquo; Volver al cliente</button>';
   }
   moverPanelA(document.getElementById('clientes-panel-slot'));
   pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' }, 'clientes');

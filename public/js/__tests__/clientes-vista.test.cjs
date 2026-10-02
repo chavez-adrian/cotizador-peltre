@@ -608,6 +608,48 @@ test('AD7: el cierre devuelve el panel a su casa en las dos pantallas y lleva al
     'ocultarTodasLasVistas es quien devuelve el panel en la rama del cotizador: revisar este test si deja de hacerlo');
 });
 
+// === Salir del cliente recoge el panel del alta/upgrade (#489) ===
+// El panel es UN nodo que viaja (#376/#412) y modoUpgrade guarda el id del cliente
+// al que pertenece. "Cambiar de cliente" (paso Cliente) y "Volver al cliente",
+// "Volver al Contacto" y "Buscar otro" (vista Clientes) solo repintaban su raiz: el
+// panel seguia a la vista y confirmar la constancia ahi escribia sobre el cliente
+// ANTERIOR. app.js no se importa en Node: el ancla es la etiqueta del boton, no el
+// nombre del handler, para que renombrarlo no deje el test cuidando nada.
+const SALIDAS_DEL_CLIENTE = ['Cambiar de cliente', 'Volver al cliente', 'Volver al Contacto', 'Buscar otro'];
+
+test('#489-1: cada boton que saca al vendedor del cliente recoge el panel con devolverPanelACasa', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+  for (const etiqueta of SALIDAS_DEL_CLIENTE) {
+    const m = src.match(new RegExp(`onclick="(\\w+)\\(\\)">&lsaquo; ${etiqueta}<`));
+    assert.ok(m, `el boton "${etiqueta}" debe seguir existiendo: si no, este test ya no cuida nada`);
+    const cuerpo = cuerpoDeFuncionApp(`function ${m[1]}(`);
+    assert.ok(cuerpo.includes('devolverPanelACasa()'),
+      `"${etiqueta}" (${m[1]}) tiene que recoger el panel del alta/upgrade (#489)`);
+  }
+});
+
+test('#489-2: la vuelta a la busqueda sin cliente elegido tambien recoge el panel', () => {
+  const tarjeta = cuerpoDeFuncionApp('function cvRenderTarjeta(');
+  assert.ok(tarjeta.includes('if (!sel) { cvRenderBusqueda(); return; }'),
+    'sin seleccion la tarjeta cae a la busqueda');
+  assert.ok(cuerpoDeFuncionApp('function cvRenderBusqueda(').includes('devolverPanelACasa()'),
+    'la busqueda suelta al cliente: el panel no puede seguir colgado de la vista');
+  // El exito del upgrade desde la vista Clientes repinta la tarjeta y DESPUES inserta
+  // su reporte junto al panel (#407): si la tarjeta devolviera el panel a casa, el
+  // reporte se iria al paso Cliente. Por eso recogen los botones, no la tarjeta.
+  assert.ok(!tarjeta.includes('devolverPanelACasa()'),
+    'cvRenderTarjeta no recoge el panel: lo hace el handler de "Volver al cliente"/"Volver al Contacto"');
+});
+
+test('#489-3: recoger el panel apaga modoUpgrade y lo oculta', () => {
+  const casa = cuerpoDeFuncionApp('function devolverPanelACasa(');
+  assert.ok(casa.includes('altaCsfState.modoUpgrade = null'),
+    'salir del cliente A no puede dejar el upgrade apuntando a A');
+  assert.ok(casa.includes("panel.style.display = 'none'"), 'el panel deja de verse');
+});
+
 // === Que adopta la tarjeta del Cliente Operam tras el upgrade (#407) ===
 // Misma regla que ya aplicaba el paso Cliente en app.js: solo se adopta lo que
 // Operam SI guardo (quirk #74), para no mostrar un dato que alla no existe. Se
