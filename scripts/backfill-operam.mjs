@@ -99,8 +99,10 @@ async function obtenerDebtor(debtorNo) {
 // generico), asi cada pagina se cachea por separado y un segundo candidato del mismo
 // cliente reusa TODAS sus paginas sin re-leer (sin el skip en la clave las paginas
 // colisionarian y la paginacion entraria en loop).
-const listarTransaccionesMemo = memoizarPorClave(listarTransacciones, ({ customerId, rfc, skip = 0 }) => `tx:${customerId ?? rfc}:${skip}`);
-const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo, skip = 0 }) => `ped:${debtorNo}:${skip}`);
+// #508: la ventana entra a la clave: el sync barre los pedidos SIN cliente y desde la
+// fecha de cada cotizacion, y dos ventanas distintas no pueden compartir pagina.
+const listarTransaccionesMemo = memoizarPorClave(listarTransacciones, ({ customerId, rfc, desde: d, hasta: h, skip = 0 }) => `tx:${customerId ?? rfc}:${d}:${h}:${skip}`);
+const listarPedidosMemo = memoizarPorClave(listarPedidos, ({ debtorNo, desde: d, hasta: h, skip = 0 }) => `ped:${debtorNo}:${d}:${h}:${skip}`);
 // El quote tambien se memoiza: la parte A lo lee por trans_no_from y la parte B
 // camina ids; un mismo folio no se lee dos veces entre ambas partes.
 const obtenerQuoteMemo = memoizarPorClave(obtenerQuote, (id) => `q:${id}`);
@@ -129,7 +131,7 @@ async function listarPedidosDeCliente(debtorNo) {
 // (read-only) con binding PRECISO (op.data.orderOperam = order_no del pedido) y
 // devuelve { pago, tienePedido, tieneRemision }. planearBackfill deriva el gate de
 // cerrado (esCerrado) y la etapa (etapaBackfill) a partir de estos hechos; el script
-// ya NO calcula la etapa. Si hechosDeOperam devuelve null (sin RFC o sin pedido
+// ya NO calcula la etapa. Si hechosDeOperam devuelve null (sin pedido
 // propio), se trata como hechos vacios (sin remision ni pago) -> no cerrado, etapa
 // seguimiento.
 const HECHOS_VACIO ={ pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };

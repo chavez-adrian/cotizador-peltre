@@ -37,6 +37,9 @@ function toHex(s) {
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const { app, cargarListasPrecios, obtenerListasPrecios, _resetListasPrecios, _setEnfriamientoListasMs } = await import('../server.js');
 const { _resetSesionWeb } = await import('../lib/operam-web.js');
+// Sin el ritmo de 1.1 s del sync post-venta (#508): se mide en test/sync-operam-documento.test.js.
+const { _setRitmo: _setRitmoSync } = await import('../lib/sync-operam-io.js');
+_setRitmoSync({ intervaloMs: 0 });
 const TEST_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 
 function readCots() {
@@ -2425,14 +2428,16 @@ test('S2: POST /api/sync-operam reconcilia las oportunidades activas y mueve las
     '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [
       { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
     ] }) }),
-    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [] }) }),
+    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
+      { order_no: '7400', trans_type: '30', debtor_no: '345' },
+    ] }) }),
   });
   try {
     const res = await supertest(app).post('/api/sync-operam').set('Authorization', `Bearer ${TEST_TOKEN}`);
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true);
     const movida = readCots().find(c => c.id === 6001);
-    assert.strictEqual(movida.etapa, 'anticipo_pagado');
+    assert.strictEqual(movida.etapa, 'pedido_liberado');
     // No movio la terminada.
     assert.strictEqual(readCots().find(c => c.id === 6003).etapa, 'producto_entregado');
   } finally {

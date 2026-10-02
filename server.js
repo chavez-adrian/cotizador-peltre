@@ -22,7 +22,7 @@ import { reporteAlmacenDomicilios, excepcionesAlmacen, marcarAsiVaBien, desmarca
 import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes, avanceBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
 import { encolarPostFix, procesarColaPostFix, barrerQuotesPostFix, sacarDeLaColaPostFix } from './lib/postfix-reintento-io.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
-import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata } from './lib/sync-operam-io.js';
+import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata, planearReconciliacion, aplicarReconciliacion, crearLecturas as crearLecturasSync } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
 import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, domicilioSinEntregaRegistrada, normalizarRfc, tieneFormaDeRfc, poolClientesParaDedup } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
@@ -4103,16 +4103,66 @@ app.post('/api/sync-operam', authMiddleware, async (req, res) => {
   const candidatas = cotizaciones.filter(c =>
     esActivaPostVentaCandidata(c) && c?.data?.cliente?.rfc
   );
+  const lote = { lecturas: crearLecturasSync() };
   const movidas = [];
   for (const op of candidatas) {
     try {
-      const r = await reconciliarOportunidad(op);
+      const r = await reconciliarOportunidad(op, lote);
       if (r.movida) movidas.push({ id: op.id, etapa: r.etapa });
     } catch (err) {
       console.error('[sync-operam] oportunidad', op.id, err.message);
     }
   }
   res.json({ ok: true, revisadas: candidatas.length, movidas });
+});
+
+// Reconciliar UNA cotizacion (#508): la herramienta acotada que faltaba. Encuentra
+// el pedido por su documento (`trans_no_from` = folio, sin depender del RFC ni del
+// Cliente Operam del registro), lee la cadena con el cliente del pedido y aplica
+// las reglas de etapa de siempre. `seco: true` responde el mismo plan sin
+// escribir. Todo se lee antes de escribir: un error de Operam es un 502 sin
+// escrituras. Una salida no se mueve ni lee Operam.
+app.post('/api/admin/cotizaciones/:id/reconciliar-operam', authMiddleware, adminMiddleware, async (req, res) => {
+  const seco = req.body?.seco === true;
+  let op;
+  try {
+    op = await cotStore.obtener(Number(req.params.id));
+  } catch (err) {
+    return res.status(500).json({ error: 'No se pudo leer la cotizacion: ' + err.message });
+  }
+  if (!op) return res.status(404).json({ error: 'Cotizacion no encontrada' });
+
+  let plan;
+  try {
+    plan = await planearReconciliacion(op);
+  } catch (err) {
+    console.error('[reconciliar-operam]', op.id, err.message);
+    return res.status(502).json({ error: 'No se pudo leer Operam: ' + err.message });
+  }
+  const escribe = !seco && Boolean(plan.espejo);
+  if (escribe) {
+    try {
+      await aplicarReconciliacion(op, plan);
+    } catch (err) {
+      console.error('[reconciliar-operam] escritura', op.id, err.message);
+      return res.status(500).json({ error: 'No se pudo guardar la reconciliacion: ' + err.message });
+    }
+  }
+  res.json({
+    ok: true,
+    id: op.id,
+    folio: op.folioOperam ?? null,
+    seco,
+    escrito: escribe,
+    pedido: plan.pedido ?? null,
+    pedidos: plan.pedidos ?? [],
+    cliente: plan.cliente ?? null,
+    etapaAntes: plan.etapaAntes,
+    etapaDespues: plan.etapaDespues,
+    banderas: plan.banderas,
+    motivo: plan.motivo,
+    espejo: plan.espejo ?? null,
+  });
 });
 
 // --- CSF: proxy QR del SAT ---

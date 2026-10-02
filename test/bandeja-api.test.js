@@ -29,7 +29,9 @@ const { app } = await import('../server.js');
 const { proponer, obtener } = await import('../lib/bandeja-store.js');
 const { listar: listarProspectos, crear: crearProspecto } = await import('../lib/prospectos-store.js');
 const cotStore = await import('../lib/cotizaciones-store.js');
-const { reconciliarOportunidad } = await import('../lib/sync-operam-io.js');
+const { reconciliarOportunidad, _setRitmo: _setRitmoSync } = await import('../lib/sync-operam-io.js');
+// Sin el ritmo de 1.1 s del sync (#508): se mide en test/sync-operam-documento.test.js.
+_setRitmoSync({ intervaloMs: 0 });
 const ADMIN_TOKEN = jwt.sign({ id: 99, name: 'Tester', role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
 const MEMO_TOKEN = jwt.sign({ id: 7, name: 'Memo', role: 'vendedor' }, JWT_SECRET, { expiresIn: '1h' });
 
@@ -358,8 +360,9 @@ test('la cotizacion aceptada la liga el sync por su folio y avanza de etapa', as
   };
   const resultado = await reconciliarOportunidad(op, deps);
 
-  // liga por el RFC del debtor que viajaba en el payload del quote
-  assert.equal(consulta.rfc, 'HVA160305MX8');
+  // #508: la cadena se lee con el cliente del PEDIDO, no con el RFC del registro
+  assert.equal(consulta.customerId, '512');
+  assert.equal(consulta.rfc, undefined);
   assert.equal(resultado.movida, true);
   assert.equal(resultado.etapa, 'producto_entregado');
 
