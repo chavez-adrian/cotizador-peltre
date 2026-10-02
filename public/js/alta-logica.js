@@ -359,11 +359,13 @@ export function estadoAltaAlAbrirPanel(estado) {
 // Seccion 1 con el RFC y los regimenes del upgrade, y el POST del alta con su PDF.
 // `constanciaDeUpgrade` es el customer_id del upgrade que se adueno de la constancia
 // (lo marca app.js al abrirlo y al lograrlo); sin marca, la constancia es del alta y
-// se conserva igual que el alta a medias de #192.
-export function constanciaAlAbrirAlta(csf) {
+// se conserva igual que el alta a medias de #192. `datosAlta` es la copia CONFIRMADA de
+// la Seccion 1 (altaState.datos), que el POST lee antes que la constancia: si la
+// constancia se descarta, esa copia se va con ella (tras "Actualizar este" es la misma).
+export function constanciaAlAbrirAlta(csf, datosAlta = null) {
   const base = csf || {};
-  if (base.constanciaDeUpgrade == null) return { estado: base, descartada: false };
-  return { estado: sinConstancia(base), descartada: true };
+  if (base.constanciaDeUpgrade == null) return { estado: base, descartada: false, datosAlta };
+  return { estado: sinConstancia(base), descartada: true, datosAlta: null };
 }
 
 // La ranura de la constancia vacia: lo que el PDF trajo consigo (datos, RFC dueno, el
@@ -380,7 +382,15 @@ export function sinConstancia(csf) {
     regimenesDetectados: null,
     confirmado: false,
     constanciaDeUpgrade: null,
+    lectura: null,
   };
+}
+
+// La lectura del PDF en curso (#491): app.js marca cada una con un numero al empezar y
+// solo escribe su resultado si sigue siendo la vigente. Vaciar la constancia o soltar
+// otro PDF la deja huerfana, y su resultado llegaria al flujo equivocado.
+export function lecturaVigente(csf, lectura) {
+  return !!csf && csf.lectura != null && csf.lectura === lectura;
 }
 
 // "Hay constancia en esta pestana" (#491): leida con datos, o leyendose -- el spinner

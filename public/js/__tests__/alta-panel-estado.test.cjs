@@ -12,10 +12,12 @@ const assert = require('node:assert/strict');
 //     alta a medias que el borrador de #185 restaura a proposito.
 
 let usoCfdiPorDefecto, estadoAltaAlAbrirPanel, constanciaAlAbrirAlta, constanciaViva, buildAltaDarDeAltaPayload;
+let lecturaVigente, sinConstancia;
 let planRestauracionFormulario, RESTAURACION_SUPERFICIE, serializarBorradorFormulario, deserializarBorradorFormulario;
 before(async () => {
   ({
     usoCfdiPorDefecto, estadoAltaAlAbrirPanel, constanciaAlAbrirAlta, constanciaViva, buildAltaDarDeAltaPayload,
+    lecturaVigente, sinConstancia,
   } = await import('../alta-logica.js'));
   ({
     planRestauracionFormulario, RESTAURACION_SUPERFICIE, serializarBorradorFormulario, deserializarBorradorFormulario,
@@ -171,12 +173,14 @@ test('#491-1: abrir el alta despues de un upgrade con constancia arranca en idle
   assert.strictEqual(constanciaViva(estado), false);
 });
 
+// "Actualizar este" del alta confirma la Seccion 1 en altaState.datos y con ESOS datos
+// corre el upgrade: al lograrse, la copia confirmada del alta es la constancia del
+// upgrade, y el POST del alta toma `altaState.datos || altaCsfState.datos`.
 test('#491-2: el POST del alta que se abre despues no lleva la constancia del upgrade', () => {
-  const { estado } = constanciaAlAbrirAlta(CONSTANCIA_DEL_UPGRADE);
-  // Las mismas fuentes que lee altaDarDeAlta: altaState.datos (null en un alta nueva)
-  // o altaCsfState.datos, y el PDF con el RFC del que salio.
-  const datosDelAltaNueva = null;
-  const payload = buildAltaDarDeAltaPayload(datosDelAltaNueva || estado.datos || {}, {}, {}, null, null, {
+  const datosConfirmadosDelUpgrade = { ...CONSTANCIA_DEL_UPGRADE.datos };
+  const { estado, datosAlta } = constanciaAlAbrirAlta(CONSTANCIA_DEL_UPGRADE, datosConfirmadosDelUpgrade);
+  assert.strictEqual(datosAlta, null, 'la copia confirmada del alta se va con la constancia');
+  const payload = buildAltaDarDeAltaPayload(datosAlta || estado.datos || {}, {}, {}, null, null, {
     pdfBase64: estado.pdfBase64,
     pdfRfc: estado.rfc,
   });
@@ -184,6 +188,13 @@ test('#491-2: el POST del alta que se abre despues no lleva la constancia del up
   assert.strictEqual(payload.tax_id, '');
   assert.strictEqual(payload.CustName, '');
   assert.strictEqual(payload.cfdi_regimen_fiscal, '');
+});
+
+test('#491-2b: la Seccion 1 que el ALTA confirmo sigue viva al reabrir el panel', () => {
+  const delAlta = { ...CONSTANCIA_DEL_UPGRADE, constanciaDeUpgrade: null };
+  const confirmados = { ...CONSTANCIA_DEL_UPGRADE.datos };
+  const { datosAlta } = constanciaAlAbrirAlta(delAlta, confirmados);
+  assert.strictEqual(datosAlta, confirmados);
 });
 
 test('#491-3: la constancia que el ALTA cargo sigue viva al reabrir el panel en la misma pestana', () => {
@@ -236,7 +247,7 @@ test('#491-6: abrir el alta pasa la constancia por constanciaAlAbrirAlta antes d
   const abrir = cuerpoDeFuncion(fuenteApp(), 'function abrirAcordeonAlta(');
   const plegar = abrir.indexOf("cerrarFormularioBorrador('alta-completa', null)");
   assert.ok(plegar > 0, 'la rama de plegar debe existir: si no, este test ya no cuida nada');
-  const decide = abrir.indexOf('constanciaAlAbrirAlta(altaCsfState)');
+  const decide = abrir.indexOf('constanciaAlAbrirAlta(altaCsfState, altaState.datos)');
   assert.ok(decide > plegar, 'se decide al ABRIR, no al plegar el panel (plegar no es cancelar, #185)');
   assert.ok(decide < abrir.indexOf("abrirFormularioBorrador('alta-completa')"),
     'antes de restaurar: el plan del borrador lee la constancia ya decidida');
@@ -259,4 +270,42 @@ test('#491-8: el alta completa le dice al plan si la constancia sigue viva y vac
   const def = src.slice(inicio, src.indexOf('\n  },', inicio));
   assert.ok(def.includes('constanciaViva: () => constanciaViva(altaCsfState)'));
   assert.ok(def.includes('vaciarConstancia: () => altaVaciarConstancia()'));
+});
+
+// Una lectura del PDF tarda segundos (y mas si entra el respaldo por QR del SAT). Si en
+// esa ventana el vendedor sale del upgrade y abre el alta -- o al reves --, o suelta
+// otro PDF, el resultado de la lectura vieja ya no es de nadie: escribirlo dejaria la
+// constancia de un flujo como la del otro.
+test('#491-10: una lectura solo escribe si sigue siendo la vigente', () => {
+  const leyendo = { status: 'loading', lectura: 7 };
+  assert.strictEqual(lecturaVigente(leyendo, 7), true);
+  assert.strictEqual(lecturaVigente(sinConstancia(leyendo), 7), false,
+    'vaciar la constancia (abrir el alta tras un upgrade) deja huerfana la lectura en curso');
+  assert.strictEqual(lecturaVigente({ ...leyendo, lectura: 8 }, 7), false, 'un PDF nuevo reemplaza al que se leia');
+  assert.strictEqual(lecturaVigente(undefined, 7), false);
+});
+
+test('#491-11: el procesado del PDF descarta su resultado si la lectura dejo de ser vigente', () => {
+  const src = fuenteApp();
+  const procesar = cuerpoDeFuncion(src, 'async function altaCsfProcesarArchivo(');
+  const marca = procesar.indexOf('altaCsfState.lectura = lectura');
+  assert.ok(marca > 0 && marca < procesar.indexOf('await '), 'la lectura se marca antes de ceder el hilo');
+  const despuesDeLeer = procesar.slice(procesar.indexOf('await altaCsfLeerPDF('));
+  assert.ok(despuesDeLeer.indexOf('lecturaVigente(altaCsfState, lectura)') < despuesDeLeer.indexOf('altaCsfState.datos ='),
+    'el resultado se revisa antes de escribir los datos');
+  assert.ok(despuesDeLeer.indexOf('altaCsfState.pdfBase64 =') > despuesDeLeer.indexOf('lecturaVigente(altaCsfState, lectura)'),
+    'el PDF tampoco se escribe de una lectura vieja');
+  const atrapa = procesar.slice(procesar.indexOf('} catch (err) {'));
+  assert.ok(atrapa.indexOf('lecturaVigente(altaCsfState, lectura)') < atrapa.indexOf("altaCsfSetStatus('error'"),
+    'el error de una lectura vieja no pinta encima de la vigente');
+  assert.ok(cuerpoDeFuncion(src, 'async function pcAbrirUpgradeFiscal(').includes('altaCsfState.lectura = null'),
+    'abrir el upgrade deja huerfana la lectura que habia empezado el alta');
+});
+
+test('#491-12: el upgrade logrado consume la Seccion 1 que el alta habia confirmado', () => {
+  const ejecutar = cuerpoDeFuncion(fuenteApp(), 'async function pcEjecutarUpgradeFiscal(');
+  const marca = ejecutar.indexOf('altaCsfState.constanciaDeUpgrade = customerId');
+  assert.ok(marca > 0);
+  assert.ok(ejecutar.indexOf('altaState.datos = null') > ejecutar.indexOf("vista.tipo !== 'lograda'"),
+    'solo al lograrse: si el upgrade falla, "Actualizar este" se reintenta con esos datos');
 });

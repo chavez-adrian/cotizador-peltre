@@ -52,6 +52,7 @@ import {
   usoCfdiCuentaComoElegido,
   estadoAltaAlAbrirPanel,
   constanciaAlAbrirAlta,
+  lecturaVigente,
   constanciaViva,
   sinConstancia,
   nombreConCorto,
@@ -4366,6 +4367,7 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   // Lo que se cargue en este panel desde aqui es del upgrade (#491): el alta que se
   // abra despues en la misma pestana no lo hereda (constanciaAlAbrirAlta).
   altaCsfState.constanciaDeUpgrade = customerId;
+  altaCsfState.lectura = null;
   altaCsfState.datos = null;
   altaCsfState.pdfBase64 = null;
   altaCsfState.regimenesDetectados = null;
@@ -4622,6 +4624,7 @@ async function pcEjecutarUpgradeFiscal(datos) {
     // La constancia ya quedo escrita en ESTE cliente (#491). Por "Actualizar este" la
     // habia cargado el alta, y sin la marca el siguiente alta la arrastraria.
     altaCsfState.constanciaDeUpgrade = customerId;
+    altaState.datos = null;
     // La Seccion 2 se limpia y vuelve al modo alta (#197), por la misma razon que lo
     // demas de aqui: que el proximo cliente abierto en esta pestana no herede la
     // configuracion del que se acaba de actualizar.
@@ -8113,8 +8116,9 @@ function abrirAcordeonAlta() {
   if (reiniciado) altaReiniciarPanel();
   // La constancia que dejo un upgrade de esta pestana no es de este alta (#491): ni su
   // RFC, ni sus regimenes, ni su PDF en el POST. La que cargo el alta se conserva.
-  const constancia = constanciaAlAbrirAlta(altaCsfState);
+  const constancia = constanciaAlAbrirAlta(altaCsfState, altaState.datos);
   Object.assign(altaCsfState, constancia.estado);
+  altaState.datos = constancia.datosAlta;
   if (constancia.descartada) altaPintarConstanciaVacia();
   // El default del uso de CFDI depende del modo (#193) y se fija ANTES de
   // restaurar: el borrador solo prellena el campo que sigue en su default.
@@ -8189,6 +8193,7 @@ function altaLimpiarProgreso() {
 }
 
 function altaReiniciarPanel() {
+  altaCsfState.lectura = null;
   altaCsfState.datos = null;
   altaCsfState.confirmado = false;
   altaCsfState.pdfBase64 = null;
@@ -8327,6 +8332,8 @@ const altaCsfState = {
   // customer_id del upgrade que se adueno de la constancia en memoria (#491), o null si
   // es del alta. Ver constanciaAlAbrirAlta.
   constanciaDeUpgrade: null,
+  // Numero de la lectura del PDF en curso (#491). Ver lecturaVigente.
+  lectura: null,
   // Linea base de la Seccion 2 al abrir el upgrade (#197). undefined = no hay panel
   // comercial (los datos viajan tal cual, camino de "Actualizar este"); null = la
   // precarga fallo (no viaja nada comercial); objeto = solo viaja lo que cambio.
@@ -8481,12 +8488,19 @@ async function altaCsfLeerPDF(file) {
   return { respuesta, resultadoQR: RESULTADO_QR.SIN_RFC };
 }
 
+let altaCsfLecturas = 0;
+
 async function altaCsfProcesarArchivo(file) {
+  const lectura = ++altaCsfLecturas;
+  altaCsfState.lectura = lectura;
   altaCsfSetStatus('loading', { spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' });
   try {
     // Base64 del PDF para respaldarlo en Dropbox al confirmar el upgrade fiscal (#85).
-    altaCsfState.pdfBase64 = await leerArchivoBase64(file).catch(() => null);
+    const pdfBase64 = await leerArchivoBase64(file).catch(() => null);
     const { respuesta, resultadoQR } = await altaCsfLeerPDF(file);
+    // Mientras se leia, el vendedor pudo cambiar de flujo o soltar otro PDF (#491).
+    if (!lecturaVigente(altaCsfState, lectura)) return;
+    altaCsfState.pdfBase64 = pdfBase64;
     const resultado = altaCsfResultadoParseo(respuesta, file.name, resultadoQR);
     altaCsfState.datos = resultado.datos;
     altaCsfState.regimenesDetectados = {
@@ -8510,6 +8524,7 @@ async function altaCsfProcesarArchivo(file) {
     // pantalla en cuanto deja de ser cierto.
     pintarAvisoConstancia(formIdCsf, null);
   } catch (err) {
+    if (!lecturaVigente(altaCsfState, lectura)) return;
     altaCsfSetStatus('error', { mensaje: 'Error al leer el PDF: ' + err.message });
   }
 }
