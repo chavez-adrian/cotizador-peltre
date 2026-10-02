@@ -224,6 +224,39 @@ test('#459: si el registro solo trae el relleno del RFC generico, Envio queda va
   assert.equal(plan.valores.municipio, '');
 });
 
+// #493: el domicilio sin entrega elegido A MANO no mezcla su CP 56577 con la
+// calle del registro: da la misma direccion que "ninguno", la del registro completa.
+test('#493: elegir a mano un domicilio sin entrega deja la direccion del registro completa', () => {
+  const registro = { calle: 'Av. Cuauhtemoc 12', colonia: 'Roma Norte', cp: '06700', municipio: 'Cuauhtemoc', estado: 'Ciudad de Mexico' };
+  assert.deepEqual(valoresDeDomicilio(SIN_ENTREGA, registro), {
+    calle: 'Av. Cuauhtemoc 12', numInt: '', colonia: 'Roma Norte', cp: '06700', municipio: 'Cuauhtemoc', estado: 'Ciudad de Mexico',
+  });
+});
+
+// El flujo del selector: de un domicilio con datos al sin entrega. Lo que puso
+// el selector cede a la direccion del registro; lo tecleado a mano se respeta.
+test('#493: pasar a mano al domicilio sin entrega no deja el 56577 y respeta lo tecleado', () => {
+  const registro = { calle: 'Av. Cuauhtemoc 12', colonia: 'Roma Norte', cp: '06700', municipio: 'Cuauhtemoc', estado: 'Ciudad de Mexico' };
+  const previo = planDomicilioAsistido(camposDomicilioVacios(), camposDomicilioVacios(), valoresDeDomicilio(DOM_A, registro));
+  const aMano = { ...previo.valores, numInt: 'Bodega 2' };
+  const plan = planDomicilioAsistido(aMano, previo.delSelector, valoresDeDomicilio(SIN_ENTREGA, registro));
+  assert.deepEqual(plan.valores, {
+    calle: 'Av. Cuauhtemoc 12', numInt: 'Bodega 2', colonia: 'Roma Norte', cp: '06700', municipio: 'Cuauhtemoc', estado: 'Ciudad de Mexico',
+  });
+});
+
+// La marca la pone el servidor solo fuera del cliente generico: el mismo patron
+// sin marca (la cubeta generica, #459) sigue aportando su CP.
+test('#493: sin la marca sinEntrega el branch sin calle conserva su CP', () => {
+  const registro = { calle: '', cp: '56577', municipio: 'Ixtapaluca', estado: 'Mexico' };
+  assert.equal(valoresDeDomicilio({ branch_code: 452, calle: '', cp: '56577' }, registro).cp, '56577');
+});
+
+test('#493: un domicilio sin entrega con el registro de relleno deja Envio vacio', () => {
+  const registro = { calle: '', cp: '56577', municipio: 'Ixtapaluca', estado: 'Mexico' };
+  assert.deepEqual(valoresDeDomicilio(SIN_ENTREGA, registro), camposDomicilioVacios());
+});
+
 test('#459: sin registro tampoco hay direccion que conservar', () => {
   assert.deepEqual(valoresSinDomicilio(null), camposDomicilioVacios());
 });

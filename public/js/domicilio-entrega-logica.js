@@ -38,8 +38,13 @@ export function camposDomicilioVacios() {
 // registro del cliente trajo antes (seleccionarClienteOperam prellena los cl-*
 // con ella), y con branches sin calle ni CP en el ERP -- 33 medidos, #330 -- es
 // lo unico que hay. Nunca pisa lo que el domicilio si trae.
+// #493: el domicilio `sinEntrega` (#459) elegido a mano no aporta nada: su CP
+// 56577 junto a la calle del registro seria una direccion que no existe. Da lo
+// mismo que "ninguno" (valoresSinDomicilio). La marca la pone el servidor y ya
+// excluye al cliente generico, en cuya cubeta ese branch si es correcto.
 export function valoresDeDomicilio(domicilio, respaldo) {
   const d = domicilio || {};
+  if (d.sinEntrega) return valoresSinDomicilio(respaldo);
   const r = respaldo || {};
   const out = {};
   for (const campo of CAMPOS_DOMICILIO) out[campo] = texto(d[campo]) || texto(r[campo]);
