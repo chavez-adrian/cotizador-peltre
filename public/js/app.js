@@ -214,7 +214,7 @@ import {
   MENSAJE_ENVIO_INVALIDADO,
   aplicarNotaEnvio,
   cotizacionLlevaEnvio,
-  formatDescripcionEnvioEnvia,
+  tarifaElegida,
   buildEnvioEstructurado,
   restaurarEnvioDesdeCotizacion,
   debeAutoCotizarEnvia,
@@ -2065,7 +2065,7 @@ function updateShippingSummary() {
 }
 
 // === ENVIA.COM ===
-let enviaRateSeleccionado = null; // { carrier, servicio, desc, cost }
+let enviaRateSeleccionado = null; // tarifaElegida: { carrier, servicio, desc, cost, cargaKg?, medidasCm? }
 let envioInvalidadoPorCantidad = false; // issue #89: cambio de cantidad invalido la tarifa vigente
 // issue #419: hay decision de envio (el motivo, en debeProponerEnvia). Es de la
 // COTIZACION, no del vendedor: nace apagada y vuelve a apagarse con una nueva.
@@ -2198,8 +2198,6 @@ async function cotizarEnvia() {
 
     sorted.forEach((rate, idx) => {
       const precio = rate.totalPrice ?? rate.rate ?? 0;
-      const carrier = rate.carrier ?? '';
-      const servicio = rate.service ?? rate.serviceType ?? '';
       const { titulo, detalle } = contenidoTarjeta(rate);
       const esRecomendado = idx === 0;
 
@@ -2212,11 +2210,11 @@ async function cotizarEnvia() {
         </div>
         <div class="envia-rate-precio">$${fmt(precio)}</div>
       `;
-      card.addEventListener('click', () => seleccionarEnviaRate(card, rate, carrier, servicio, precio));
+      card.addEventListener('click', () => seleccionarEnviaRate(card, rate));
       resultsEl.appendChild(card);
 
       // Auto-seleccionar el primero (recomendado)
-      if (esRecomendado) seleccionarEnviaRate(card, rate, carrier, servicio, precio);
+      if (esRecomendado) seleccionarEnviaRate(card, rate);
     });
 
   } catch (e) {
@@ -2229,14 +2227,11 @@ async function cotizarEnvia() {
   }
 }
 
-function seleccionarEnviaRate(card, rate, carrier, servicio, precio) {
+function seleccionarEnviaRate(card, rate) {
   document.querySelectorAll('.envia-rate-card').forEach(c => c.classList.remove('selected'));
   card.classList.add('selected');
-  enviaRateSeleccionado = {
-    carrier, servicio,
-    desc: formatDescripcionEnvioEnvia(rate),
-    cost: precio,
-  };
+  enviaRateSeleccionado = tarifaElegida(rate);
+  const precio = enviaRateSeleccionado.cost;
   envioInvalidadoPorCantidad = false;
   // Sincronizar con los campos manuales para que updateResumen los tome
   document.getElementById('shipping-desc').value = enviaRateSeleccionado.desc;

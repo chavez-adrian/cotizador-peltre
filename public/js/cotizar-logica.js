@@ -100,9 +100,45 @@ export function formatServicio(servicio) {
   return tituloPalabras(servicio);
 }
 
+// Titulo "Linea - servicio" (#454/#495): el UNICO que comparten la tarjeta nueva
+// de Lalamove y la restaurada de una integracion, para que digan lo mismo.
+function tituloConLinea(carrier, servicio) {
+  return [formatCarrier(carrier), servicio].filter(Boolean).join(' - ');
+}
+
+// Carga y medidas maximas del vehiculo de Lalamove (#72), solo si la tarjeta las
+// trae: son las que pinta el detalle y las que guarda la tarifa elegida (#495).
+function cargaKgDe(rate) {
+  return rate?.cargaKg > 0 ? rate.cargaKg : null;
+}
+function medidasCmDe(rate) {
+  return Array.isArray(rate?.medidasCm) && rate.medidasCm.length === 3 ? rate.medidasCm : null;
+}
+function cargaYMedidas(rate) {
+  const r = {};
+  const cargaKg = cargaKgDe(rate);
+  const medidasCm = medidasCmDe(rate);
+  if (cargaKg) r.cargaKg = cargaKg;
+  if (medidasCm) r.medidasCm = medidasCm;
+  return r;
+}
+
+// La tarifa elegida (enviaRateSeleccionado) a partir de la tarjeta que el
+// vendedor eligio. #495: guarda tambien carga y medidas cuando la tarjeta las
+// trae, para que la tarjeta restaurada pinte el mismo detalle que la nueva.
+export function tarifaElegida(rate) {
+  return {
+    carrier: rate?.carrier ?? '',
+    servicio: rate?.service ?? rate?.serviceType ?? '',
+    desc: formatDescripcionEnvioEnvia(rate),
+    cost: rate?.totalPrice ?? rate?.rate ?? 0,
+    ...cargaYMedidas(rate),
+  };
+}
+
 // Lo que pinta una tarjeta de tarifa: titulo (negritas, azul oscuro) y detalle
-// (chico, gris). En Lalamove (#72) el selector ya dice que se cotiza Lalamove,
-// asi que el titulo es el VEHICULO -- tal como lo nombra lib/lalamove-logica.js,
+// (chico, gris). En Lalamove (#72) el titulo nombra la linea y el VEHICULO
+// ("Lalamove - Hatchback", #495) -- tal como lo nombra lib/lalamove-logica.js,
 // sin Title Case ("SUV", no "Suv") -- y el detalle su carga y medidas maximas,
 // para que el vendedor vea en que se va la carga. Paqueteria: carrier arriba,
 // servicio y tiempo estimado abajo.
@@ -110,9 +146,11 @@ export function contenidoTarjeta(rate) {
   const servicio = rate?.service ?? rate?.serviceType ?? '';
   if (/lalamove/i.test(rate?.carrier || '')) {
     const partes = [];
-    if (rate.cargaKg > 0) partes.push(`Hasta ${Number(rate.cargaKg).toLocaleString('en-US')} kg`);
-    if (Array.isArray(rate.medidasCm) && rate.medidasCm.length === 3) partes.push(`${rate.medidasCm.join(' x ')} cm`);
-    return { titulo: servicio, detalle: partes.join(' · ') };
+    const cargaKg = cargaKgDe(rate);
+    const medidasCm = medidasCmDe(rate);
+    if (cargaKg) partes.push(`Hasta ${Number(cargaKg).toLocaleString('en-US')} kg`);
+    if (medidasCm) partes.push(`${medidasCm.join(' x ')} cm`);
+    return { titulo: tituloConLinea(rate.carrier, servicio), detalle: partes.join(' \u00b7 ') };
   }
   if (/tresguerras/i.test(rate?.carrier || '')) return contenidoTarjetaTresguerras(rate, servicio);
   const dias = formatTiempoEntrega(rate);
@@ -279,6 +317,7 @@ export function buildEnvioEstructurado({ shippingOpt, shippingCost, shippingDesc
     // El descuento del flete (#137) se persiste aqui por el mismo motivo que el
     // carrier: sin el, Cargar del historial perderia la bonificacion negociada.
     descuento: shippingDescuento || 0,
+    ...(esOpcionTarifa(shippingOpt) ? cargaYMedidas(enviaRateSeleccionado) : {}),
   };
 }
 
@@ -300,7 +339,7 @@ export function restaurarEnvioDesdeCotizacion(envio) {
     cost, desc,
     descuento: envio.descuento || 0,
     enviaRateSeleccionado: esOpcionTarifa(envio.opcion)
-      ? { carrier: envio.carrier ?? null, servicio: envio.servicio ?? null, desc, cost: envio.precio }
+      ? { carrier: envio.carrier ?? null, servicio: envio.servicio ?? null, desc, cost: envio.precio, ...cargaYMedidas(envio) }
       : null,
   };
 }
@@ -387,14 +426,14 @@ export function envioTrasCambioDeCp({ shippingOpt, enviaRateSeleccionado, cpAnte
 // #444: recibe el enviaRateSeleccionado que arma restaurarEnvioDesdeCotizacion,
 // asi que el monto viene en `cost`; leerlo de `precio` pintaba $0.00.
 // #454: la de una integracion propia nombra la linea y su servicio
-// ("Lalamove - Hatchback"); la de paqueteria sigue igual.
-export function buildEnviaRateRestauradaHtml({ carrier, servicio, cost }) {
+// ("Lalamove - Hatchback"); la de paqueteria sigue igual. #495: con la carga y
+// las medidas guardadas pinta el mismo detalle que la tarjeta nueva; un envio
+// guardado sin ellas sale sin detalle.
+export function buildEnviaRateRestauradaHtml({ carrier, servicio, cost, cargaKg, medidasCm }) {
   const money = (typeof cost === 'number' ? cost : 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const contenido = contenidoTarjeta({ carrier, service: servicio });
+  const contenido = contenidoTarjeta({ carrier, service: servicio, cargaKg, medidasCm });
   const { detalle } = contenido;
-  const titulo = opcionDeIntegracion(carrier)
-    ? [formatCarrier(carrier), contenido.titulo].filter(Boolean).join(' - ')
-    : contenido.titulo;
+  const titulo = opcionDeIntegracion(carrier) ? tituloConLinea(carrier, servicio) : contenido.titulo;
   return `
     <div class="envia-rate-card selected">
       <div class="envia-rate-info">

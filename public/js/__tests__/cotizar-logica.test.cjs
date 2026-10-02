@@ -13,7 +13,7 @@ let envioTrasCambioDeCp;
 let nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea;
 let importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas;
 let fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA;
-let cuerpoTarifas, valorDeclaradoEnvio;
+let cuerpoTarifas, valorDeclaradoEnvio, tarifaElegida;
 before(async () => {
   ({
     validarDomicilioEntrega, formatCarrier, formatServicio, cpValido, buildConfirmarVendedorModalHtml,
@@ -26,7 +26,7 @@ before(async () => {
     nombreVisibleProducto, buildItemEnvio, calcularTotalesItems, buildItemsYTotales, importeLinea,
     importeLineaOAusente, textoImporteLinea, AUSENCIA_IMPORTE, subtotalLineas,
     fechaEmisionHoy, sumarDiasFecha, contenidoTarjeta, esOpcionTarifa, endpointTarifas, OPCIONES_TARIFA,
-    sincronizarCorreoFactura, cuerpoTarifas, valorDeclaradoEnvio,
+    sincronizarCorreoFactura, cuerpoTarifas, valorDeclaradoEnvio, tarifaElegida,
   } = await import('../cotizar-logica.js'));
 });
 
@@ -132,15 +132,15 @@ test('#72: tarjeta Lalamove -> carrier presentable y descripcion con el vehiculo
   assert.strictEqual(formatDescripcionEnvioEnvia(rate), 'Lalamove Van (hasta 1000 kg)');
 });
 
-// #72: el selector ya dice que se cotiza Lalamove, asi que su tarjeta no repite
-// la marca: el titulo es el vehiculo (sin el Title Case que daba "Suv") y el
-// detalle, su carga y medidas maximas. La de paqueteria no cambia.
-test('#72: contenidoTarjeta de Lalamove = vehiculo + carga y medidas maximas', () => {
+// #72: el titulo de la tarjeta de Lalamove lleva el vehiculo (sin el Title Case
+// que daba "Suv") y el detalle, su carga y medidas maximas. #495: el titulo
+// antepone la linea, igual que la tarjeta restaurada. La de paqueteria no cambia.
+test('#72: contenidoTarjeta de Lalamove = linea y vehiculo + carga y medidas maximas', () => {
   assert.deepStrictEqual(contenidoTarjeta({ carrier: 'lalamove', service: 'Camion', cargaKg: 1000, medidasCm: [200, 200, 170] }),
-    { titulo: 'Camion', detalle: 'Hasta 1,000 kg · 200 x 200 x 170 cm' });
+    { titulo: 'Lalamove - Camion', detalle: 'Hasta 1,000 kg \u00b7 200 x 200 x 170 cm' });
   assert.deepStrictEqual(contenidoTarjeta({ carrier: 'lalamove', service: 'SUV', cargaKg: 300, medidasCm: null }),
-    { titulo: 'SUV', detalle: 'Hasta 300 kg' });
-  assert.deepStrictEqual(contenidoTarjeta({ carrier: 'lalamove', service: 'Van' }), { titulo: 'Van', detalle: '' });
+    { titulo: 'Lalamove - SUV', detalle: 'Hasta 300 kg' });
+  assert.deepStrictEqual(contenidoTarjeta({ carrier: 'lalamove', service: 'Van' }), { titulo: 'Lalamove - Van', detalle: '' });
 });
 
 test('#72: contenidoTarjeta de paqueteria = carrier + servicio y tiempo, como antes', () => {
@@ -555,8 +555,8 @@ test('#102-15: buildEnviaRateRestauradaHtml muestra carrier/servicio/precio form
 });
 
 // #454 supera a #72 en la tarjeta RESTAURADA: sin desglose que pintar, el titulo
-// nombra la linea y el vehiculo (decision de Adrian 2026-09-25). Las tarjetas en
-// vivo siguen con el vehiculo solo (contenidoTarjeta).
+// nombra la linea y el vehiculo (decision de Adrian 2026-09-25). Desde #495 la
+// tarjeta en vivo de Lalamove (contenidoTarjeta) dice lo mismo.
 test('#454: la tarjeta restaurada de una integracion nombra la linea y su servicio', () => {
   const html = buildEnviaRateRestauradaHtml({ carrier: 'lalamove', servicio: 'Hatchback', cost: 359.9 });
   assert.match(html, /envia-rate-carrier">Lalamove - Hatchback</);
@@ -567,7 +567,56 @@ test('#454: la tarjeta restaurada de una integracion nombra la linea y su servic
   const fedex = buildEnviaRateRestauradaHtml({ carrier: 'fedex', servicio: 'ground', cost: 268 });
   assert.match(fedex, /envia-rate-carrier">FedEx</);
   assert.match(fedex, /envia-rate-servicio">Ground</);
-  assert.deepStrictEqual(contenidoTarjeta({ carrier: 'lalamove', service: 'Hatchback' }).titulo, 'Hatchback');
+  assert.deepStrictEqual(contenidoTarjeta({ carrier: 'lalamove', service: 'Hatchback' }).titulo, 'Lalamove - Hatchback');
+});
+
+// #495: la tarjeta nueva de Lalamove titulaba solo el vehiculo y la restaurada
+// "Lalamove - Hatchback" (#454). Criterio del triage: las dos dicen
+// "Lalamove - <vehiculo>"; envia.com y Tresguerras no cambian de titulo.
+test('#495: la tarjeta nueva de una tarifa de Lalamove y la restaurada tienen el mismo titulo', () => {
+  const tarjeta = { carrier: 'lalamove', service: 'Hatchback', totalPrice: 359.9, cargaKg: 100, medidasCm: [100, 60, 50] };
+  assert.strictEqual(contenidoTarjeta(tarjeta).titulo, 'Lalamove - Hatchback');
+  const html = buildEnviaRateRestauradaHtml({ carrier: 'lalamove', servicio: 'Hatchback', cost: 359.9 });
+  assert.match(html, /envia-rate-carrier">Lalamove - Hatchback</);
+});
+
+// #495: la tarifa elegida solo guardaba {carrier, servicio, cost}, asi que la
+// tarjeta restaurada salia sin el renglon de carga y medidas. La tarjeta tiene la
+// forma de lib/lalamove-logica.js (tarifaDesdeCotizacion); el envio guardado pasa
+// por JSON como en data jsonb.
+test('#495: una tarifa de Lalamove elegida con carga y medidas, guardada y restaurada, pinta el mismo detalle que la nueva', () => {
+  const tarjeta = { carrier: 'lalamove', service: 'Camion', serviceDescription: 'Lalamove Camion (hasta 1000 kg)',
+    totalPrice: 984.23, currency: 'MXN', cargaKg: 1000, medidasCm: [200, 200, 170], distanciaKm: 12.3 };
+  const elegida = tarifaElegida(tarjeta);
+  const envio = buildEnvioEstructurado({ shippingOpt: 'lalamove', shippingCost: elegida.cost, shippingDesc: elegida.desc, shippingDescuento: 0, enviaRateSeleccionado: elegida });
+  const guardado = JSON.parse(JSON.stringify(envio));
+  const r = restaurarEnvioDesdeCotizacion(guardado);
+  const html = buildEnviaRateRestauradaHtml(r.enviaRateSeleccionado);
+  assert.match(html, /envia-rate-carrier">Lalamove - Camion</);
+  assert.match(html, /envia-rate-servicio">Hasta 1,000 kg \u00b7 200 x 200 x 170 cm</);
+  assert.ok(html.includes(`envia-rate-servicio">${contenidoTarjeta(tarjeta).detalle}<`));
+  assert.ok(html.includes('envia-rate-precio">$984.23<'));
+});
+
+// La forma del envio guardado antes de #495 (la de los casos de #444).
+test('#495: un envio de Lalamove guardado sin carga ni medidas restaura sin detalle y sin error', () => {
+  const guardado = { opcion: 'lalamove', carrier: 'lalamove', servicio: 'Hatchback', precio: 359.9,
+    descripcion: 'Envio Lalamove Hatchback (hasta 100 kg)', descuento: 0 };
+  const r = restaurarEnvioDesdeCotizacion(guardado);
+  assert.deepStrictEqual(r.enviaRateSeleccionado,
+    { carrier: 'lalamove', servicio: 'Hatchback', desc: 'Envio Lalamove Hatchback (hasta 100 kg)', cost: 359.9 });
+  const html = buildEnviaRateRestauradaHtml(r.enviaRateSeleccionado);
+  assert.match(html, /envia-rate-carrier">Lalamove - Hatchback</);
+  assert.match(html, /envia-rate-servicio"><\/div>/);
+  assert.ok(html.includes('envia-rate-precio">$359.90<'));
+});
+
+test('#495: las tarjetas de envia.com y Tresguerras no cambian de titulo', () => {
+  assert.strictEqual(contenidoTarjeta({ carrier: 'fedex', service: 'ground' }).titulo, 'FedEx');
+  assert.strictEqual(contenidoTarjeta({ carrier: 'tresguerras', service: 'Puerta a puerta' }).titulo, 'Puerta a puerta');
+  assert.match(buildEnviaRateRestauradaHtml({ carrier: 'fedex', servicio: 'ground', cost: 268 }), /envia-rate-carrier">FedEx</);
+  assert.match(buildEnviaRateRestauradaHtml({ carrier: 'tresguerras', servicio: 'Puerta a puerta', cost: 424.56 }),
+    /envia-rate-carrier">Tresguerras - Puerta a puerta</);
 });
 
 // #444: la tarjeta restaurada en Editar/Copiar salia en $0.00 -- la restauracion
