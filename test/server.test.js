@@ -2403,79 +2403,8 @@ test('W5: POST /api/webhooks/operam con Operam caido responde 200 (no truena el 
   }
 });
 
-// === Reconciliacion on-demand (#62 F4, red de seguridad) ===
-// Ruta autenticada con el JWT del cotizador que reconcilia las oportunidades
-// activas no terminadas leyendo Operam. No recorre el historico, solo candidatas.
-
-test('S1: POST /api/sync-operam sin token retorna 401', async () => {
-  const res = await supertest(app).post('/api/sync-operam');
-  assert.strictEqual(res.status, 401);
-});
-
-test('S2: POST /api/sync-operam reconcilia las oportunidades activas y mueve las que avanzan', async () => {
-  writeCots([
-    { id: 6001, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'EL PENDULO',
-      etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7400' } },
-    // Sin RFC: no es candidata a Operam, se ignora sin tronar.
-    { id: 6002, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'SIN RFC',
-      etapa: 'seguimiento', data: { cliente: {} } },
-    // Terminada: no se reconcilia.
-    { id: 6003, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'ENTREGADA',
-      etapa: 'producto_entregado', data: { cliente: { rfc: 'OTRO010101AAA' } } },
-  ]);
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [
-      { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
-    ] }) }),
-    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
-      { order_no: '7400', trans_type: '30', debtor_no: '345', total: '100' },
-    ] }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/sync-operam').set('Authorization', `Bearer ${TEST_TOKEN}`);
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.body.ok, true);
-    const movida = readCots().find(c => c.id === 6001);
-    assert.strictEqual(movida.etapa, 'pedido_liberado');
-    // No movio la terminada.
-    assert.strictEqual(readCots().find(c => c.id === 6003).etapa, 'producto_entregado');
-  } finally {
-    restore();
-  }
-});
-
-test('#512: POST /api/sync-operam reporta la cotizacion cuya consulta de anulacion fallo y sigue con las demas', async () => {
-  writeCots([
-    { id: 6201, fecha: '2026-09-26T00:00:00Z', vendedor: 'Memo', cliente: 'TOTAL CERO',
-      etapa: 'seguimiento', folioOperam: '1294', data: { cliente: { rfc: 'CPE921211N76' } } },
-    { id: 6202, fecha: '2026-09-30T00:00:00Z', vendedor: 'Memo', cliente: 'CON TOTAL',
-      etapa: 'seguimiento', folioOperam: '1309', data: { cliente: { rfc: 'CPE921211N76' } } },
-  ]);
-  const restore = mockOperamFetch({
-    '/sales/view/view_sales_order.php': () => { throw new Error('web legacy caida'); },
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [] }) }),
-    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
-      { order_no: '7764', trans_type: '30', debtor_no: '640', trans_no_from: '1294', total: '0' },
-      { order_no: '7762', trans_type: '30', debtor_no: '537', trans_no_from: '1309', total: '3675.46' },
-    ] }) }),
-  });
-  try {
-    const res = await supertest(app).post('/api/sync-operam').set('Authorization', `Bearer ${TEST_TOKEN}`);
-    assert.strictEqual(res.status, 200);
-    assert.deepEqual(res.body.movidas, [{ id: 6202, etapa: 'pedido_liberado' }]);
-    assert.strictEqual(res.body.errores.length, 1);
-    assert.strictEqual(res.body.errores[0].id, 6201);
-    assert.match(res.body.errores[0].error, /web legacy caida/);
-    assert.strictEqual(readCots().find(c => c.id === 6201).etapa, 'seguimiento');
-    assert.strictEqual(readCots().find(c => c.id === 6201).data.espejoOperam, undefined);
-  } finally {
-    restore();
-  }
-});
-
-// #507: los dos caminos que reconcilian solo mueven una cotizacion por SU pedido.
+// #507: el webhook solo mueve una cotizacion por SU pedido (el barrido, en
+// test/barrido-sync-api.test.js).
 // El cliente tiene otra venta (pedido 7100, nacido de la cotizacion 1050)
 // entregada y liquidada; la 1197 nunca se volvio pedido y se queda como estaba.
 function mockOtraVentaEntregada() {
@@ -2505,20 +2434,6 @@ test('#507: el aviso de Pago no mueve ni marca una cotizacion sin pedido propio'
       .send({ model: 'Payment', event: 'ADD', id: 'pago-507', tax_id: 'CPE921211N76', order_: '0' });
     assert.strictEqual(res.status, 200);
     assert.deepEqual(res.body.reconciliadas, [{ id: 6101, movida: false, etapa: null, motivo: 'sin-pedido-propio' }]);
-    assert.deepEqual(readCots(), antes);
-  } finally {
-    restore();
-  }
-});
-
-test('#507: POST /api/sync-operam no mueve ni marca una cotizacion sin pedido propio', async () => {
-  writeCots([SIN_PEDIDO_PROPIO]);
-  const antes = readCots();
-  const restore = mockOtraVentaEntregada();
-  try {
-    const res = await supertest(app).post('/api/sync-operam').set('Authorization', `Bearer ${TEST_TOKEN}`);
-    assert.strictEqual(res.status, 200);
-    assert.deepEqual(res.body.movidas, []);
     assert.deepEqual(readCots(), antes);
   } finally {
     restore();

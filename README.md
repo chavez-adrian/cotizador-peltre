@@ -131,7 +131,7 @@ test/                  # tests de backend (supertest + node:test)
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
 | POST | `/api/webhooks/operam` | Webhook de Operam (Pago de Cliente / Pedido / Remision -> Nuevo). Auth por header `X-Operam-Webhook-Secret`; log idempotente en Neon; reconcilia la oportunidad y mueve su etapa post-venta |
-| POST | `/api/sync-operam` | Reconciliacion on-demand (red de seguridad): lee Operam y mueve las oportunidades activas que avanzaron (JWT) |
+| GET/POST | `/api/admin/sync-operam/barrido` | Barrido del sync post-venta (red de seguridad, #509): `seco: true` responde el plan sin escribir; aplicado corre en segundo plano y el GET da la ultima corrida (admin) |
 
 > El resto de rutas del pipeline (prospectos, asignacion, etapas, salidas, seguimiento, decorados) viven en `server.js`; el modelo de dominio esta en `CONTEXT.md` y el detalle del PRD en `PROGRESS.md`.
 
@@ -165,4 +165,4 @@ npm test
 - El cliente generico (RFC `XAXX010101000`/`XEXX010101000`) nace server-side al generar la primera cotizacion de una oportunidad sin cliente en Operam, con dedup en capas (celular, luego nombre normalizado) antes de crear — nunca al capturar el contacto (`POST /api/cotizacion/operam/:id`, issue #81, ADR-0006).
 - `lib/db.js` retorna `null` si `DATABASE_URL` no esta configurada (graceful degradation para desarrollo local).
 - El schema de `clientes_log` (y `operam_webhooks_log`) se auto-crea al iniciar el servidor si hay `DATABASE_URL`.
-- **Sync post-venta**: el webhook de Operam es solo una *senal*; la logica corre en un motor de reconciliacion (`lib/sync-operam-io.js`) que lee el estado real por API y aplica el nucleo puro (`lib/sync-operam.js`). El mismo motor sirve al webhook y a la reconciliacion on-demand. El mapeo real de Operam (los tipos de transaccion, que el MCP etiqueta mal) esta en `peltre-operam.md` (raiz `_Claude/`).
+- **Sync post-venta**: el webhook de Operam es solo una *senal*; la logica corre en un motor de reconciliacion (`lib/sync-operam-io.js`) que lee el estado real por API y aplica el nucleo puro (`lib/sync-operam.js`). El mismo motor sirve al webhook, al barrido de red de seguridad (`SYNC_OPERAM_BARRIDO_DIARIO`, apagado por defecto) y a la reconciliacion de una cotizacion. El mapeo real de Operam (los tipos de transaccion, que el MCP etiqueta mal) esta en `peltre-operam.md` (raiz `_Claude/`).

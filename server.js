@@ -22,7 +22,7 @@ import { reporteAlmacenDomicilios, excepcionesAlmacen, marcarAsiVaBien, desmarca
 import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes, avanceBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
 import { encolarPostFix, procesarColaPostFix, barrerQuotesPostFix, sacarDeLaColaPostFix } from './lib/postfix-reintento-io.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
-import { reconciliarPorIdentificador, reconciliarOportunidad, esActivaPostVentaCandidata, planearReconciliacion, aplicarReconciliacion, crearLecturas as crearLecturasSync } from './lib/sync-operam-io.js';
+import { reconciliarPorIdentificador, planearReconciliacion, aplicarReconciliacion, barrerSyncOperam, ultimoBarridoSync, barridoSyncEnCurso, programarBarridoSync } from './lib/sync-operam-io.js';
 import { extraerIdentificador, registrarEvento as registrarEventoWebhook, marcarProcesado } from './lib/sync-operam-webhook.js';
 import { detectarDuplicados, RFC_GENERICOS, esDebtorGenerico, domicilioSinEntregaRegistrada, normalizarRfc, tieneFormaDeRfc, poolClientesParaDedup } from './lib/deduplicacion.js';
 import { construirEntradaCotizacion } from './lib/backfill-operam.mjs';
@@ -4078,7 +4078,8 @@ app.post('/api/webhooks/operam', async (req, res) => {
     reconciliadas = await reconciliarPorIdentificador(identificador, oportunidades);
   } catch (err) {
     // Operam caido / lectura fallida: el webhook no truena. La red de seguridad es
-    // POST /api/sync-operam, que nadie dispara solo: no hay reintento automatico.
+    // el barrido del sync (#509): diario si SYNC_OPERAM_BARRIDO_DIARIO esta
+    // encendida, o a pedido de un admin.
     console.error('[webhook][operam] reconciliacion:', err.message);
   }
   if (event_key) {
@@ -4088,34 +4089,34 @@ app.post('/api/webhooks/operam', async (req, res) => {
   res.json({ ok: true, reconciliadas });
 });
 
-// Reconciliacion on-demand (#62 F4): red de seguridad por si un webhook se pierde
-// o no esta configurado. Recorre SOLO las oportunidades activas no terminadas con
-// RFC (las candidatas a tener movimiento post-venta en Operam), lee la verdad por
-// API y mueve las que avanzan. Autenticada con el JWT del cotizador. Best-effort:
-// el fallo de una oportunidad no aborta el resto.
-app.post('/api/sync-operam', authMiddleware, async (req, res) => {
-  let cotizaciones = [];
+// Barrido del sync post-venta (#509): la red de seguridad por si un aviso de Operam
+// no llega. Sustituye a POST /api/sync-operam (#62 F4), que no tenia ritmo, se
+// tragaba los errores y exigia RFC. Lee los pedidos una vez, liga por documento
+// todas las cotizaciones activas y reconcilia las que tienen pedido (la regla vive en
+// lib/sync-operam-io.js). `seco: true` espera el plan completo y lo responde sin
+// escribir; aplicado responde 202 al instante y trabaja en segundo plano. Uno a la
+// vez: con otro en curso, 409. El GET dice si hay uno en curso y la ultima corrida.
+app.post('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, async (req, res) => {
+  const seco = req.body?.seco === true;
+  if (barridoSyncEnCurso()) {
+    return res.status(409).json({ error: 'Ya hay un barrido del sync en curso; consulta su resultado cuando termine.' });
+  }
+  if (!seco) {
+    barrerSyncOperam().catch(err => console.error('[sync-operam] barrido a pedido fallo:', err.message));
+    return res.status(202).json({ ok: true, seco, enCurso: true });
+  }
   try {
-    cotizaciones = await cotStore.listar();
+    const r = await barrerSyncOperam({ seco: true });
+    if (r.omitido) return res.status(409).json({ error: 'Ya hay un barrido del sync en curso; consulta su resultado cuando termine.' });
+    res.json({ ok: true, ...r });
   } catch (err) {
-    return res.status(503).json({ error: 'No se pudieron leer las cotizaciones: ' + err.message });
+    console.error('[sync-operam] barrido en seco fallo:', err.message);
+    res.status(500).json({ error: 'El barrido en seco fallo: ' + err.message });
   }
-  const candidatas = cotizaciones.filter(c =>
-    esActivaPostVentaCandidata(c) && c?.data?.cliente?.rfc
-  );
-  const lote = { lecturas: crearLecturasSync() };
-  const movidas = [];
-  const errores = [];
-  for (const op of candidatas) {
-    try {
-      const r = await reconciliarOportunidad(op, lote);
-      if (r.movida) movidas.push({ id: op.id, etapa: r.etapa });
-    } catch (err) {
-      console.error('[sync-operam] oportunidad', op.id, err.message);
-      errores.push({ id: op.id, error: err.message });
-    }
-  }
-  res.json({ ok: true, revisadas: candidatas.length, movidas, errores });
+});
+
+app.get('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, (req, res) => {
+  res.json({ enCurso: barridoSyncEnCurso(), ultima: ultimoBarridoSync() });
 });
 
 // Reconciliar UNA cotizacion (#508): la herramienta acotada que faltaba. Encuentra
@@ -4810,6 +4811,7 @@ if (isMain) {
   // relee los quotes del cotizador de los ultimos 30 dias y encola los desfasados.
   // Los dos comparten UN lock y su ritmo propio (lib/postfix-reintento-io.js): nunca
   // corren a la vez ni en rafaga. Como los demas barridos, ASUME UNA SOLA INSTANCIA.
+  // El barrido ademas espera su turno si corre el del sync post-venta (#509).
   // El barrido espera 15 min al arrancar: compite con el warm del indice y no tiene prisa.
   const reintentarPostFixes = () => procesarColaPostFix()
     .catch(err => console.error('[post-fix reintento] worker fallo:', err.message));
@@ -4817,6 +4819,14 @@ if (isMain) {
   const barrerPostFixes = () => barrerQuotesPostFix().catch(err => console.error('[post-fix reintento] barrido diario fallo:', err.message));
   setTimeout(barrerPostFixes, 15 * 60 * 1000).unref();
   setInterval(barrerPostFixes, 24 * 3600 * 1000).unref();
+
+  // Barrido del sync post-venta (#509): nace APAGADO. Con SYNC_OPERAM_BARRIDO_DIARIO
+  // encendida corre una vez al dia a las 03:00 de la Ciudad de Mexico y comparte
+  // turno con el barrido de post-fixes de arriba (lib/turno-barridos.js).
+  const programado = programarBarridoSync({
+    barrer: () => barrerSyncOperam().catch(err => console.error('[sync-operam] barrido diario fallo:', err.message)),
+  });
+  console.log(`[sync-operam] barrido diario ${programado ? 'programado a las 03:00 (CDMX)' : 'apagado (SYNC_OPERAM_BARRIDO_DIARIO)'}`);
 
   // Sincronizacion de prospectos y clientes a la libreta de Contactos de Google
   // (spec #224, tickets #227 y #228): quien atiende el WhatsApp comercial ve el
