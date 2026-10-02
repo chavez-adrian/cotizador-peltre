@@ -129,8 +129,9 @@ async function listarPedidosDeCliente(debtorNo) {
 // (read-only) con binding PRECISO (op.data.orderOperam = order_no del pedido) y
 // devuelve { pago, tienePedido, tieneRemision }. planearBackfill deriva el gate de
 // cerrado (esCerrado) y la etapa (etapaBackfill) a partir de estos hechos; el script
-// ya NO calcula la etapa. Si hechosDeOperam devuelve null (sin RFC), se trata como
-// hechos vacios (sin remision ni pago) -> no cerrado, etapa seguimiento.
+// ya NO calcula la etapa. Si hechosDeOperam devuelve null (sin RFC o sin pedido
+// propio), se trata como hechos vacios (sin remision ni pago) -> no cerrado, etapa
+// seguimiento.
 const HECHOS_VACIO ={ pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: false, tieneRemision: false };
 async function obtenerHechos(op) {
   const hechos = await hechosDeOperam(op, {

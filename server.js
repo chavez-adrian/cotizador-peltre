@@ -2727,9 +2727,10 @@ app.post('/api/admin/bandeja/:folio/aceptar', authMiddleware, adminMiddleware, a
 // Operam como columna de primer nivel (por ahi liga el sync su pedido).
 async function aceptarComoCotizacion(candidato, vendedor, res) {
   // RESTRICCION DURA: un debtor GENERICO jamas puede volverse cotizacion del
-  // pipeline. El fallback "agregado por cliente" del binding del sync (#67,
-  // prioridad 3) mezclaria las transacciones de todos los contactos que comparten
-  // el debtor y cerraria esas tarjetas en masa. Se valida en el SERVIDOR y por
+  // pipeline. Nacio contra el fallback "agregado por cliente" del binding del sync
+  // (#67), que mezclaba las transacciones de todos los contactos que comparten el
+  // debtor y cerraba esas tarjetas en masa; #507 lo quito y la restriccion se
+  // queda (el debtor es un cajon, no un cliente). Se valida en el SERVIDOR y por
   // debtorId: aunque un run defectuoso marcara tipo 'cotizacion' a un generico,
   // aqui se frena. Esos quotes se rescatan como PROSPECTO (#124).
   if (esDebtorGenerico(candidato.debtorId)) {
@@ -4076,8 +4077,8 @@ app.post('/api/webhooks/operam', async (req, res) => {
     const oportunidades = await cotStore.listar();
     reconciliadas = await reconciliarPorIdentificador(identificador, oportunidades);
   } catch (err) {
-    // Operam caido / lectura fallida: el webhook no truena. La reconciliacion
-    // on-demand (al abrir Pipeline/Hoy) es la red de seguridad.
+    // Operam caido / lectura fallida: el webhook no truena. La red de seguridad es
+    // POST /api/sync-operam, que nadie dispara solo: no hay reintento automatico.
     console.error('[webhook][operam] reconciliacion:', err.message);
   }
   if (event_key) {

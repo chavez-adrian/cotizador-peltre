@@ -44,7 +44,7 @@ test('hechosDeOperam: factura (10) liquidada + remision (13) + pedido (30) -> pr
     ],
     pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345', total: '16954' }],
   });
-  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } };
+  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
   const hechos = await hechosDeOperam(op, deps);
   assert.equal(hechos.pago.allocated, 16954);
   assert.equal(hechos.pago.outstanding, 0);
@@ -59,14 +59,14 @@ test('hechosDeOperam: tienePedido viene de listar_pedidos (Sales Order 30), no d
     ],
     pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }],
   });
-  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } };
+  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } };
   const hechos = await hechosDeOperam(op, deps);
   assert.equal(hechos.tienePedido, true);
 });
 
 test('hechosDeOperam: sin RFC en la oportunidad devuelve null (no se puede ligar)', async () => {
   const deps = depsMock({});
-  const op = { id: 1, etapa: 'seguimiento', data: { cliente: {} } };
+  const op = { id: 1, etapa: 'seguimiento', data: { cliente: {}, orderOperam: '7077' } };
   assert.equal(await hechosDeOperam(op, deps), null);
 });
 
@@ -93,7 +93,7 @@ test('hechosDeOperam: sin customerId sigue ligando por RFC (comportamiento previ
     listarTransacciones: async (query) => { q = query; return []; },
     listarPedidos: async () => [],
   };
-  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } };
+  const op = { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
   await hechosDeOperam(op, deps);
   assert.equal(q.rfc, 'CPE921211N76');
   assert.equal(q.customerId, undefined);
@@ -125,8 +125,9 @@ test('hechosDeOperam: el folio de cotizacion NO se usa como order_ (cotizacion !
   // El cliente tiene dos cadenas: order_ 7077 (entregada, liquidada) y order_ 8888
   // (otra, con saldo). La oportunidad tiene folioOperam '8888' -- su numero de
   // COTIZACION -- que coincide numericamente con el order_ de la OTRA cadena. Como
-  // el numero de cotizacion nunca es el de pedido, el folio NO debe filtrar a 8888;
-  // sin data.orderOperam se agrega por cliente (ambas cadenas).
+  // el numero de cotizacion nunca es el de pedido, el folio NO debe filtrar a 8888.
+  // Ningun pedido nacio del folio 8888, asi que la oportunidad no tiene pedido
+  // propio y no hay hechos (#507: ya no se agrega por cliente).
   const deps = depsMock({
     transacciones: [
       { type: '10', order_: '7077', total_amount: '16954', allocated: '16954', outstanding: '0', debtor_no: '345' },
@@ -139,10 +140,7 @@ test('hechosDeOperam: el folio de cotizacion NO se usa como order_ (cotizacion !
     ],
   });
   const op = { id: 1, etapa: 'seguimiento', folioOperam: '8888', data: { cliente: { rfc: 'CPE921211N76' } } };
-  const hechos = await hechosDeOperam(op, deps);
-  // Agregado por cliente: ve la remision de 7077 (si filtrara por el folio 8888 no la veria).
-  assert.equal(hechos.tieneRemision, true);
-  assert.equal(hechos.pago.allocated, 16954 + 100);
+  assert.equal(await hechosDeOperam(op, deps), null);
 });
 
 // Paginacion (#76): un cliente con >100 transacciones (el generico, 728 reales) tiene
@@ -248,9 +246,7 @@ test('AC2: venta directa (trans_no_from vacio) NO se liga a una oportunidad con 
   // El cliente tiene UNA cadena: pedido 9001 que NO nacio de cotizacion (venta
   // directa, trans_no_from vacio). La oportunidad tiene folioOperam '1141' (su
   // cotizacion, que NUNCA se convirtio en pedido). No hay match por documento ->
-  // NO debe ligarse por error a la venta directa. Sin liga por documento, el
-  // fallback por cliente igual ve la cadena (caso comun: una sola cadena), pero la
-  // liga por documento (precisa) NO debe inventar el match.
+  // NO debe ligarse por error a la venta directa.
   const deps = depsMock({
     transacciones: [
       { type: '10', order_: '9001', total_amount: '300', allocated: '0', outstanding: '300', debtor_no: '500' },
@@ -263,7 +259,7 @@ test('AC2: venta directa (trans_no_from vacio) NO se liga a una oportunidad con 
   const res = await resolverOrderDeOportunidad(op, deps.listarTransacciones, deps.listarPedidos);
   // La resolucion precisa por documento NO encuentra match (trans_no_from vacio).
   assert.equal(res.order, null);
-  assert.equal(res.fuente, 'cliente');
+  assert.equal(res.fuente, null);
 });
 
 test('AC2: resolverOrderDeOportunidad reporta la fuente del binding', async () => {
@@ -386,7 +382,7 @@ test('reconciliarOportunidad: mueve a producto_entregado cuando hay factura liqu
     ],
     pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
   });
-  const op = { id: 7, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } };
+  const op = { id: 7, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
   const res = await reconciliarOportunidad(op, deps);
   assert.equal(res.movida, true);
   assert.equal(res.etapa, 'producto_entregado');
@@ -403,7 +399,7 @@ test('reconciliarOportunidad: anticipo parcial mueve a anticipo_pagado', async (
     ],
     pedidos: [],
   });
-  const op = { id: 8, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } };
+  const op = { id: 8, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } };
   const res = await reconciliarOportunidad(op, deps);
   assert.equal(res.etapa, 'anticipo_pagado');
 });
@@ -415,7 +411,7 @@ test('reconciliarOportunidad: sin hecho post-venta no mueve la tarjeta', async (
     ],
     pedidos: [],
   });
-  const op = { id: 9, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } };
+  const op = { id: 9, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } };
   const res = await reconciliarOportunidad(op, deps);
   assert.equal(res.movida, false);
   assert.equal(res.etapa, null);
@@ -429,7 +425,7 @@ test('reconciliarOportunidad: idempotente -- si la etapa ya es la calculada, no 
     ],
     pedidos: [],
   });
-  const op = { id: 10, etapa: 'anticipo_pagado', data: { cliente: { rfc: 'ABC010101AAA' } } };
+  const op = { id: 10, etapa: 'anticipo_pagado', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } };
   const res = await reconciliarOportunidad(op, deps);
   assert.equal(res.movida, false);
   assert.equal(deps.movimientos.length, 0);
@@ -443,13 +439,13 @@ test('reconciliarOportunidad: sin comprobante de pago el sync avanza igual (#485
     { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
   ];
   const sinComprobante = depsMock({ transacciones, pedidos: [] });
-  const res = await reconciliarOportunidad({ id: 13, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } }, sinComprobante);
+  const res = await reconciliarOportunidad({ id: 13, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400' } }, sinComprobante);
   assert.equal(res.etapa, 'anticipo_pagado');
   assert.deepEqual(sinComprobante.movimientos.map(m => m.etapa), ['anticipo_pagado']);
 
   const conComprobante = depsMock({ transacciones, pedidos: [] });
   const comprobantesPago = { primer: { fecha: '2026-09-30T12:00:00.000Z', archivos: [{ nombre: 'a.pdf', ruta: '/a.pdf', fecha: '2026-09-30T12:00:00.000Z' }] } };
-  const res2 = await reconciliarOportunidad({ id: 14, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, comprobantesPago } }, conComprobante);
+  const res2 = await reconciliarOportunidad({ id: 14, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400', comprobantesPago } }, conComprobante);
   assert.equal(res2.etapa, 'anticipo_pagado');
 });
 
@@ -479,16 +475,106 @@ test('reconciliarOportunidad: pago unico (directo a liquidado) no anota huboAnti
   for (const d of deps.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
 });
 
-// #486: sin binding preciso el sync suma las facturas de TODO el cliente; una
-// venta vieja pagada y otra nueva sin pagar se leen como pago parcial. La marca
-// no se borra nunca, asi que de ese agregado no se anota.
-test('reconciliarOportunidad: el agregado por cliente (sin liga a su pedido) no anota huboAnticipo (#486)', async () => {
-  const deps = depsMock({ transacciones: [
-    { type: '10', order_: '7100', total_amount: '1000', allocated: '1000', outstanding: '0', debtor_no: '345' },
-    { type: '10', order_: '7400', total_amount: '2000', allocated: '0', outstanding: '2000', debtor_no: '345' },
-  ] });
-  await reconciliarOportunidad({ id: 17, etapa: 'seguimiento', data: { cliente: { rfc: 'ABC010101AAA' } } }, deps);
-  for (const d of deps.datos) assert.ok(!('huboAnticipo' in d.campos), JSON.stringify(d.campos));
+// --- #507: solo los hechos de SU pedido mueven una cotizacion ---
+// Antes, sin pedido propio, el motor calculaba la etapa con las ventas de TODO el
+// cliente (el "agregado por cliente"): asi llegaron a Producto entregado 31
+// cotizaciones que nunca vendieron. Sin pedido propio no se escribe nada.
+
+// El cliente tiene OTRA venta (pedido 7100, nacido de la cotizacion 1050) con
+// remision y factura liquidada; la cotizacion 1197 nunca se volvio pedido.
+const OTRA_VENTA_ENTREGADA = {
+  transacciones: [
+    { type: '10', order_: '7100', trans_no: '6001', reference: 'A1800', total_amount: '5000', allocated: '5000', outstanding: '0', debtor_no: '345' },
+    { type: '13', order_: '7100', trans_no: '7001', reference: '2100', debtor_no: '345' },
+  ],
+  pedidos: [{ order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050' }],
+};
+
+test('#507: la venta de OTRA cotizacion del cliente no mueve ni marca a la que no tiene pedido propio', async () => {
+  const deps = depsMock(OTRA_VENTA_ENTREGADA);
+  const op = { id: 30, etapa: 'seguimiento', folioOperam: '1197', data: { cliente: { rfc: 'CPE921211N76', customerId: '345' } } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.movida, false);
+  assert.equal(res.etapa, null);
+  assert.equal(res.motivo, 'sin-pedido-propio');
+  assert.deepEqual(deps.movimientos, []);
+  assert.deepEqual(deps.espejos, []);
+  assert.deepEqual(deps.datos, []);
+});
+
+test('#507: una decorada con checklist incompleto y sin pedido propio no recibe "Pago sin registrar"', async () => {
+  // La otra venta del cliente esta entregada SIN pagar: con el agregado, el gate
+  // frenaba la etapa pero la bandera se escribia igual.
+  const deps = depsMock({
+    transacciones: [
+      { type: '10', order_: '7100', total_amount: '5000', allocated: '0', outstanding: '5000', debtor_no: '345' },
+      { type: '13', order_: '7100', debtor_no: '345' },
+    ],
+    pedidos: [{ order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050' }],
+  });
+  const op = { id: 31, etapa: 'seguimiento', folioOperam: '1288', decorado: true, data: { cliente: { rfc: 'CPE921211N76' }, calcaChecklist: [] } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.motivo, 'sin-pedido-propio');
+  assert.equal(deps.datos.some(d => 'pagoSinRegistrar' in d.campos), false);
+  assert.deepEqual(deps.movimientos, []);
+});
+
+test('#507: sin folio y sin pedido explicito no se mueve, no se marca y ni siquiera lee Operam', async () => {
+  let lecturas = 0;
+  const deps = depsMock(OTRA_VENTA_ENTREGADA);
+  const leerTx = deps.listarTransacciones;
+  const leerPed = deps.listarPedidos;
+  deps.listarTransacciones = async (q) => { lecturas++; return leerTx(q); };
+  deps.listarPedidos = async (q) => { lecturas++; return leerPed(q); };
+  const op = { id: 32, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76', customerId: '345' } } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.movida, false);
+  assert.equal(res.motivo, 'sin-pedido-propio');
+  assert.equal(lecturas, 0);
+  assert.deepEqual(deps.movimientos, []);
+  assert.deepEqual(deps.espejos, []);
+  assert.deepEqual(deps.datos, []);
+});
+
+test('#507: un pedido explicito que no aparece en las lecturas de Operam no dispara el agregado', async () => {
+  const deps = depsMock(OTRA_VENTA_ENTREGADA);
+  const op = { id: 33, etapa: 'seguimiento', folioOperam: '1197', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '9999' } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.movida, false);
+  assert.equal(res.motivo, 'sin-pedido-propio');
+  assert.deepEqual(deps.movimientos, []);
+  assert.deepEqual(deps.espejos, []);
+  assert.deepEqual(deps.datos, []);
+});
+
+test('#507: con pedido propio por documento de origen todo sigue: etapa, espejo y "Pago sin registrar"', async () => {
+  // La cotizacion 1050 SI es el origen del pedido 7100: entregado y liquidado.
+  const deps = depsMock(OTRA_VENTA_ENTREGADA);
+  const op = { id: 34, etapa: 'seguimiento', folioOperam: '1050', data: { cliente: { rfc: 'CPE921211N76' } } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.movida, true);
+  assert.equal(res.etapa, 'producto_entregado');
+  assert.equal(res.motivo, undefined);
+  assert.equal(deps.espejos[0].espejo.pedido, '7100');
+  assert.equal(deps.datos.find(d => d.id === 34).campos.pagoSinRegistrar, false);
+});
+
+test('#507: una entregada sin pago con pedido propio por documento apaga "Pago sin registrar" cuando el pago aparece', async () => {
+  const deps = depsMock(OTRA_VENTA_ENTREGADA);
+  const op = { id: 35, etapa: 'producto_entregado', folioOperam: '1050', data: { cliente: { rfc: 'CPE921211N76' }, pagoSinRegistrar: true } };
+  const res = await reconciliarOportunidad(op, deps);
+  assert.equal(res.movida, false);
+  assert.equal(deps.datos.find(d => d.id === 35).campos.pagoSinRegistrar, false);
+});
+
+test('#507: con pedido propio y la etapa ya al dia el motivo es "sin cambios", no "sin pedido propio"', async () => {
+  const conPedido = depsMock(OTRA_VENTA_ENTREGADA);
+  const alDia = await reconciliarOportunidad({ id: 36, etapa: 'producto_entregado', folioOperam: '1050', data: { cliente: { rfc: 'CPE921211N76' }, pagoSinRegistrar: true } }, conPedido);
+  assert.equal(alDia.motivo, 'sin-cambios');
+
+  const sinPedido = depsMock(OTRA_VENTA_ENTREGADA);
+  const ajena = await reconciliarOportunidad({ id: 37, etapa: 'seguimiento', folioOperam: '1197', data: { cliente: { rfc: 'CPE921211N76' } } }, sinPedido);
+  assert.equal(ajena.motivo, 'sin-pedido-propio');
 });
 
 test('reconciliarOportunidad: respeta el gate de decorados (#61) -- no libera con checklist incompleto', async () => {
@@ -500,17 +586,19 @@ test('reconciliarOportunidad: respeta el gate de decorados (#61) -- no libera co
     ],
     pedidos: [{ order_no: '7400', trans_type: '30', debtor_no: '345' }],
   });
-  const op = { id: 11, etapa: 'seguimiento', decorado: true, data: { cliente: { rfc: 'ABC010101AAA' }, calcaChecklist: [] } };
+  const op = { id: 11, etapa: 'seguimiento', decorado: true, data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400', calcaChecklist: [] } };
   const res = await reconciliarOportunidad(op, deps);
   assert.equal(res.etapa, 'anticipo_pagado');
 });
 
 test('reconciliarOportunidad: sin RFC no mueve ni truena', async () => {
   const deps = depsMock({});
-  const op = { id: 12, etapa: 'seguimiento', data: { cliente: {} } };
+  const op = { id: 12, etapa: 'seguimiento', data: { cliente: {}, orderOperam: '7077' } };
   const res = await reconciliarOportunidad(op, deps);
   assert.equal(res.movida, false);
+  assert.equal(res.motivo, 'sin-identificador-operam');
   assert.equal(deps.movimientos.length, 0);
+  assert.deepEqual(deps.datos, []);
 });
 
 // --- Pago sin registrar (issue #77): persistencia del flag + candidatura ---
@@ -524,7 +612,7 @@ test('#77: reconciliarOportunidad persiste pagoSinRegistrar=true cuando entrego 
     ],
     pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
   });
-  const op = { id: 20, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } };
+  const op = { id: 20, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } };
   const res = await reconciliarOportunidad(op, deps);
   assert.equal(res.etapa, 'producto_entregado');
   const marca = deps.datos.find(d => d.id === 20 && 'pagoSinRegistrar' in d.campos);
@@ -541,7 +629,7 @@ test('#77: reconciliarOportunidad persiste pagoSinRegistrar=false cuando ya se l
     ],
     pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
   });
-  const op = { id: 21, etapa: 'producto_entregado', data: { cliente: { rfc: 'CPE921211N76' }, pagoSinRegistrar: true } };
+  const op = { id: 21, etapa: 'producto_entregado', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077', pagoSinRegistrar: true } };
   await reconciliarOportunidad(op, deps);
   const marca = deps.datos.find(d => d.id === 21 && 'pagoSinRegistrar' in d.campos);
   assert.ok(marca, 'debe persistir el flag');
@@ -580,7 +668,7 @@ test('reconciliarPorIdentificador: reconcilia la oportunidad del RFC del webhook
     pedidos: [{ order_no: '7077', trans_type: '30', debtor_no: '345' }],
   });
   const oportunidades = [
-    { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } },
+    { id: 1, etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } },
     { id: 2, etapa: 'seguimiento', data: { cliente: { rfc: 'OTRO010101AAA' } } }, // no matchea
   ];
   const res = await reconciliarPorIdentificador({ rfc: 'CPE921211N76', order: '7077' }, oportunidades, deps);

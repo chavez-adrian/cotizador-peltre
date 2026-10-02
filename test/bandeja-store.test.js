@@ -151,8 +151,8 @@ test('aceptar como cotizacion liga la cotizacion creada, no un prospecto', async
 });
 
 // El debtor generico (cliente-cajon que agrupa contactos sin alta propia) NO puede
-// volverse cotizacion del pipeline (#125): el fallback por cliente del binding del
-// sync mezclaria las transacciones de todos los contactos que comparten el debtor.
+// volverse cotizacion del pipeline (#125): agrupa a muchos contactos (la regla
+// nacio contra el fallback por cliente del binding del sync, quitado en #507).
 // La marca la deriva el store del debtorId (misma lista que lib/deduplicacion.js),
 // para que servidor y vista lean el MISMO dato.
 test('el candidato de un debtor generico viaja marcado como generico', async () => {

@@ -2357,7 +2357,7 @@ test('W4: POST /api/webhooks/operam liga por RFC y mueve la oportunidad leyendo 
   process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
   // Oportunidad en seguimiento del RFC del webhook.
   writeCots([{ id: 5001, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'EL PENDULO',
-    etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } }]);
+    etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } }]);
   // Operam: factura (10) liquidada + remision (13) + pedido (30) -> producto_entregado.
   const restore = mockOperamFetch({
     '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
@@ -2387,7 +2387,7 @@ test('W4: POST /api/webhooks/operam liga por RFC y mueve la oportunidad leyendo 
 test('W5: POST /api/webhooks/operam con Operam caido responde 200 (no truena el webhook)', async () => {
   process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
   writeCots([{ id: 5002, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'X',
-    etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } }]);
+    etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7077' } }]);
   const restore = mockOperamFetch({ '/api/v3/login': () => { throw new Error('timeout'); } });
   try {
     const res = await supertest(app)
@@ -2412,7 +2412,7 @@ test('S1: POST /api/sync-operam sin token retorna 401', async () => {
 test('S2: POST /api/sync-operam reconcilia las oportunidades activas y mueve las que avanzan', async () => {
   writeCots([
     { id: 6001, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'EL PENDULO',
-      etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' } } },
+      etapa: 'seguimiento', data: { cliente: { rfc: 'CPE921211N76' }, orderOperam: '7400' } },
     // Sin RFC: no es candidata a Operam, se ignora sin tronar.
     { id: 6002, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'SIN RFC',
       etapa: 'seguimiento', data: { cliente: {} } },
@@ -2435,6 +2435,56 @@ test('S2: POST /api/sync-operam reconcilia las oportunidades activas y mueve las
     assert.strictEqual(movida.etapa, 'anticipo_pagado');
     // No movio la terminada.
     assert.strictEqual(readCots().find(c => c.id === 6003).etapa, 'producto_entregado');
+  } finally {
+    restore();
+  }
+});
+
+// #507: los dos caminos que reconcilian solo mueven una cotizacion por SU pedido.
+// El cliente tiene otra venta (pedido 7100, nacido de la cotizacion 1050)
+// entregada y liquidada; la 1197 nunca se volvio pedido y se queda como estaba.
+function mockOtraVentaEntregada() {
+  return mockOperamFetch({
+    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
+    '/api/v3/sales/transactions': () => ({ ok: true, json: async () => ({ data: [
+      { type: '10', order_: '7100', total_amount: '5000', allocated: '5000', outstanding: '0', debtor_no: '345' },
+      { type: '13', order_: '7100', debtor_no: '345' },
+    ] }) }),
+    '/api/v3/sales/sales_orders': () => ({ ok: true, json: async () => ({ data: [
+      { order_no: '7100', trans_type: '30', debtor_no: '345', trans_no_from: '1050' },
+    ] }) }),
+  });
+}
+const SIN_PEDIDO_PROPIO = { id: 6101, fecha: '2026-06-01T00:00:00Z', vendedor: 'Memo', cliente: 'EL PENDULO',
+  etapa: 'seguimiento', folioOperam: '1197', data: { cliente: { rfc: 'CPE921211N76' } } };
+
+test('#507: el aviso de Pago no mueve ni marca una cotizacion sin pedido propio', async () => {
+  process.env.OPERAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  writeCots([SIN_PEDIDO_PROPIO]);
+  const antes = readCots();
+  const restore = mockOtraVentaEntregada();
+  try {
+    const res = await supertest(app)
+      .post('/api/webhooks/operam')
+      .set('X-Operam-Webhook-Secret', WEBHOOK_SECRET)
+      .send({ model: 'Payment', event: 'ADD', id: 'pago-507', tax_id: 'CPE921211N76', order_: '0' });
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(res.body.reconciliadas, [{ id: 6101, movida: false, etapa: null, motivo: 'sin-pedido-propio' }]);
+    assert.deepEqual(readCots(), antes);
+  } finally {
+    restore();
+  }
+});
+
+test('#507: POST /api/sync-operam no mueve ni marca una cotizacion sin pedido propio', async () => {
+  writeCots([SIN_PEDIDO_PROPIO]);
+  const antes = readCots();
+  const restore = mockOtraVentaEntregada();
+  try {
+    const res = await supertest(app).post('/api/sync-operam').set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(res.body.movidas, []);
+    assert.deepEqual(readCots(), antes);
   } finally {
     restore();
   }

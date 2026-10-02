@@ -169,8 +169,8 @@ function selectVendedorHtml(c, vendedores) {
 
 // Motivo por el que un candidato tipo cotizacion NO puede entrar al pipeline como
 // oportunidad, o '' si si puede (#125). El unico caso es el debtor GENERICO: el
-// cajon agrupa a muchos contactos y el fallback por cliente del binding del sync
-// cerraria en masa las tarjetas de todos ellos. Su quote se rescata como prospecto
+// cajon agrupa a muchos contactos (la regla nacio contra el fallback por cliente
+// del binding del sync, quitado en #507). Su quote se rescata como prospecto
 // (#124). La marca la deriva el servidor del debtorId y viaja en el candidato; el
 // gate REAL vive alla, aqui solo se pinta.
 function motivoNoCotizacion(c) {
