@@ -198,3 +198,15 @@ test('#507/AC4: el aviso de Pago no toca una cotizacion sin pedido propio aunque
   assert.deepEqual(leer(COTS_PATH), antes);
   assert.equal(fila('Payment:ADD:6735').resultado, 'reconciliadas:0');
 });
+
+test('el reenvio de un aviso que quedo en cola (un deploy a media fila) se vuelve a atender', async () => {
+  operam();
+  fijarDatos(LOG_PATH, [{ id: 1, created_at: '2026-10-02T10:00:00.000Z', event_key: 'Order:ADD:2609812', modelo: 'Order',
+    identificador: '1309', payload: null, procesado_en: null, resultado: null, repeticiones: 0, ultima_repeticion: null }]);
+  const res = await enviar(avisoPedido({ reference: '2609812', transNoFrom: '1309' }));
+  assert.equal(res.body.encolado, true);
+  await syncIo._esperarAvisos();
+  assert.equal(fila('Order:ADD:2609812').resultado, 'reconciliadas:1');
+  assert.equal(fila('Order:ADD:2609812').repeticiones, 1);
+  assert.equal(porId(132).etapa, 'pedido_liberado');
+});

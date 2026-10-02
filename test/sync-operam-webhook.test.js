@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { interpretarAviso, claveEvento, resultadoDelAviso } from '../lib/sync-operam-webhook.js';
+import { interpretarAviso, resultadoDelAviso } from '../lib/sync-operam-webhook.js';
 import { avisoPedido, avisoPago, avisoRemision } from './helpers/avisos-operam.js';
+
+const claveEvento = (payload) => interpretarAviso(payload).clave;
 
 // #510: que dice cada aviso de Operam y su clave idempotente, con las formas
 // reales del log de produccion (test/helpers/avisos-operam.js). Hasta #510 todos
@@ -25,7 +27,7 @@ test('dos avisos de Remision distintos tienen claves distintas; el mismo reenvia
   assert.doesNotMatch(a, /sin-id/);
 });
 
-test('la clave del Pago no cambia de criterio: su trans_no', () => {
+test('la clave del Pago sale de su trans_no (antes Payment:ev:N, ahora con el evento)', () => {
   assert.notEqual(claveEvento(avisoPago({ transNo: '7694' })), claveEvento(avisoPago({ transNo: '7695' })));
   assert.match(claveEvento(avisoPago({ transNo: '7695' })), /^Payment:ADD:7695$/);
 });
