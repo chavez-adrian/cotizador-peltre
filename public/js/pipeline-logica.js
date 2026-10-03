@@ -10,7 +10,7 @@
 // lib/pipeline.js (lo usan stores/server/migracion); aqui se reexpresa para el
 // frontend, alineado a ese glosario.
 
-import { escapeHtml, CANALES, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS } from './prospectos-logica.js';
+import { escapeHtml, CANALES, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS, buildWaLink } from './prospectos-logica.js';
 import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
@@ -18,6 +18,7 @@ import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
 import { puedeCancelar } from './cancelada-logica.js';
 import { faltaComprobante, comprobanteDe, puedeSubirComprobante, ACCEPT_COMPROBANTE } from './comprobante-pago-logica.js';
 import { buildBotonEditarHtml, tienePedidoAsociado } from './editar-cotizacion-logica.js';
+import { ICONO_WHATSAPP, ICONO_CORREO } from './iconos.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -1173,6 +1174,32 @@ export function buildNuevaOportunidadControlHtml(o) {
   </div>`;
 }
 
+// WhatsApp y Correo desde la Oportunidad (#519): dos accesos con icono que
+// llevan la tarjeta del tablero y la fila abierta de la lista, con este UNICO
+// constructor. El numero es el del Contacto (celularDeContacto, con el enlace de
+// Prospectos); el mensaje de seguimiento y el correo los resuelve el servidor
+// (lib/oportunidades.js), porque el mensaje es el de la cola Hoy y vive en lib/.
+// El texto solo viaja en Seguimiento: post-venta abre la conversacion sin texto.
+// Sin el dato el acceso sale apagado con su aviso, nunca se omite: el vendedor
+// ve que falta.
+const FORMA_CORREO = /^[^\s@]+@[^\s@]+$/;
+
+function accesoContactoHtml(nombre, clase, href, aviso, icono) {
+  if (!href) return `<button type="button" class="btn-contacto btn-contacto-${clase}" disabled aria-label="${nombre}" title="${aviso}">${icono}</button>`;
+  return `<a class="btn-contacto btn-contacto-${clase}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" aria-label="${nombre}" title="${nombre}">${icono}</a>`;
+}
+
+export function buildContactoDirectoHtml(o) {
+  const wa = buildWaLink(celularDeContacto(o));
+  const mensaje = o && o.tipo === 'cotizacion' && o.etapa === 'seguimiento' ? o.mensajeSeguimiento : null;
+  const correo = String((o && o.correo) || '').trim();
+  return `<div class="cot-card-actions contacto-directo">${
+    accesoContactoHtml('WhatsApp', 'wa', wa && (mensaje ? `${wa}?text=${encodeURIComponent(mensaje)}` : wa), 'Sin telefono registrado', ICONO_WHATSAPP)
+  }${
+    accesoContactoHtml('Correo', 'correo', FORMA_CORREO.test(correo) ? `mailto:${correo}` : null, 'Sin correo registrado', ICONO_CORREO)
+  }</div>`;
+}
+
 // Editar desde el Pipeline (#502): la tarjeta de cotizacion, en el tablero y en
 // la lista, lleva el Editar del Historial con su mismo gate -- solo Editar, sin
 // Copiar -- y SOLO en Seguimiento y Anticipo pagado; con pedido ya no se puede
@@ -1203,6 +1230,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
   const sinContacto = buildSinContactoControlHtml(o);
   const nuevaOportunidad = buildNuevaOportunidadControlHtml(o);
   const editar = buildEditarOportunidadHtml(o);
+  const contactoDirecto = buildContactoDirectoHtml(o);
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -1214,6 +1242,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
         ${total}
       </div>
       ${cadena}
+      ${contactoDirecto}
       ${editar}
       ${sinContacto}
       ${asignar}
@@ -1298,6 +1327,7 @@ export function buildDetalleListaPipelineHtml(o, { vendedores, puedeAsignar: tie
     falta ? 'Falta' : (subido ? 'Subido' : 'Opcional'), falta ? 'alerta' : (subido ? 'ok' : 'pend'),
     buildComprobantePagoHtml(o), falta, plegables);
   const acciones = [
+    buildContactoDirectoHtml(o),
     buildEditarOportunidadHtml(o),
     buildMoverSeguimientoControlHtml(o),
     buildNuevaOportunidadControlHtml(o),

@@ -856,7 +856,7 @@ app.get('/api/oportunidades', authMiddleware, async (req, res) => {
     const cotizacionesVisibles = req.user.role === 'admin'
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
-    const tarjetas = tarjetasOportunidades(embudo.oportunidades, cotizacionesVisibles);
+    const tarjetas = tarjetasOportunidades(embudo.oportunidades, cotizacionesVisibles, { contactos: embudo.contactos });
     // Los estados del Cliente Operam y las etiquetas del Contacto (#344): se
     // DERIVAN aqui, nunca se guardan. Todo es best effort -- si el cache de
     // Operam o la tabla de la tienda no responden, la tarjeta viaja sin
