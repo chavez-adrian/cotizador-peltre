@@ -383,3 +383,15 @@ test('#502: con data y sin pedido la tarjeta trae hasData verdadero y orderOpera
   assert.equal(c11.hasData, true);
   assert.equal(c11.orderOperam, null);
 });
+
+// #519 (decision de Adrian 2026-10-03): el correo de la tarjeta sale del
+// Contacto de la Oportunidad aunque ese Contacto sea de otro vendedor; la
+// visibilidad acota las TARJETAS, no el dato de contacto de la propia cotizacion.
+test('#519: la cotizacion de Memo trae el correo del Contacto de Ana, que Memo no ve', async () => {
+  writeJson(PROSPECTOS_PATH, [LAURA, JORGE, SIN_DUENO, { ...PEDRO, data: { correo: 'pedro@hotel.mx' } }]);
+  writeJson(COTS_PATH, [COT_JORGE, COT_ANA, COT_HUERFANA, { ...COT_CRUZADA, contactoCelular: '+525599999999' }]);
+  const res = await pedir(MEMO_TOKEN);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.some(o => o.id === 'p4'), false, 'la tarjeta de Pedro sigue siendo de Ana');
+  assert.equal(res.body.find(o => o.id === 'c13').correo, 'pedro@hotel.mx');
+});

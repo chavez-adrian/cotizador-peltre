@@ -856,7 +856,7 @@ app.get('/api/oportunidades', authMiddleware, async (req, res) => {
     const cotizacionesVisibles = req.user.role === 'admin'
       ? cotizaciones
       : cotizaciones.filter(c => c.vendedor === req.user.name);
-    const tarjetas = tarjetasOportunidades(embudo.oportunidades, cotizacionesVisibles, { contactos: embudo.contactos });
+    const tarjetas = tarjetasOportunidades(embudo.oportunidades, cotizacionesVisibles, { contactos: embudo.todos });
     // Los estados del Cliente Operam y las etiquetas del Contacto (#344): se
     // DERIVAN aqui, nunca se guardan. Todo es best effort -- si el cache de
     // Operam o la tabla de la tienda no responden, la tarjeta viaja sin
@@ -1753,13 +1753,16 @@ function oportunidadPrincipalDe(contacto, oportunidades) {
 async function embudoVisiblePara(user) {
   const contactos = await prospectosStore.listar();
   const filas = oportunidadesDeContactos(contactos, await oportunidadesStore.listar());
-  if (user.role === 'admin') return { contactos, oportunidades: filas };
+  // `todos` (#519): las fichas sin filtro, SOLO para el correo de la tarjeta de
+  // una cotizacion propia cuyo Contacto es de otro vendedor.
+  if (user.role === 'admin') return { contactos, oportunidades: filas, todos: contactos };
   const asigna = await puedeAsignarDeUsuario(user);
   const oportunidades = filas.filter(o => o.vendedor === user.name || (asigna && o.etapa === 'no_asignado'));
   const conTarjetaVisible = new Set(oportunidades.map(o => o.contactoId));
   return {
     contactos: contactos.filter(c => c.vendedor === user.name || conTarjetaVisible.has(c.id)),
     oportunidades,
+    todos: contactos,
   };
 }
 
