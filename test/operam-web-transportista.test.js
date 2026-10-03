@@ -18,7 +18,6 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   parsearFormularioQuote, serializarBodyQuote,
-  opcionesTransportistaQuote, decidirTransportistaQuote,
   corregirVigenciaQuote, actualizarQuoteOperam, _resetSesionWeb,
 } from '../lib/operam-web.js';
 
@@ -30,52 +29,8 @@ const DIR_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const FORM_1216 = readFileSync(join(DIR_FIXTURES, 'quote-1216-form-edicion.html'), 'utf8');
 
 // --- Piezas puras contra el formulario REAL -----------------------------------
-
-// El formulario real de edicion del quote 1216 ofrece "Compania de Transporte" como
-// <select name='ship_via'> con los ids de Operam: 1 Default, 2 FedEx, 3 LalaMove.
-test('#448 opcionesTransportistaQuote: los transportistas salen del formulario real', () => {
-  const ops = opcionesTransportistaQuote(FORM_1216);
-  assert.deepEqual(ops.map(o => o.id), ['1', '2', '3']);
-  assert.match(ops[1].nombre, /FedEx/);
-  assert.match(ops[2].nombre, /LalaMove/);
-});
-
-test('#448 opcionesTransportistaQuote: sin el select no hay opciones (y entonces no se escribe nada)', () => {
-  assert.deepEqual(opcionesTransportistaQuote('<html><body>otra pagina</body></html>'), []);
-  assert.deepEqual(opcionesTransportistaQuote(null), []);
-});
-
-const TRANSPORTISTAS = [{ id: '1', nombre: 'Default' }, { id: '2', nombre: 'FedEx' }, { id: '3', nombre: 'LalaMove' }];
-
-test('#448 decidirTransportistaQuote: el de la linea elegida distinto del del quote SI se escribe', () => {
-  const d = decidirTransportistaQuote({ esperado: 3, actual: '1', opciones: TRANSPORTISTAS });
-  assert.equal(d.escribir, true);
-  assert.equal(d.shipVia, '3');
-});
-
-test('#448 decidirTransportistaQuote: el quote que ya tiene ese transportista no se repostea', () => {
-  const d = decidirTransportistaQuote({ esperado: 2, actual: '2', opciones: TRANSPORTISTAS });
-  assert.equal(d.escribir, false);
-  assert.equal(d.yaCorrecto, true);
-});
-
-// Los motivos de abstencion. El que importa de verdad es el tercero: un id que el
-// formulario no ofrece (capturado mal en /admin, o transportista dado de baja en
-// Operam) haria que FA rechazara el ProcessOrder ENTERO, con la vigencia adentro.
-test('#448 decidirTransportistaQuote: sin transportista, sin campo o ajeno al formulario no se escribe y se da el motivo', () => {
-  const sin = decidirTransportistaQuote({ esperado: null, actual: '1', opciones: TRANSPORTISTAS });
-  assert.equal(sin.escribir, false);
-  assert.match(sin.motivo, /transportista/);
-
-  const sinCampo = decidirTransportistaQuote({ esperado: 3, actual: undefined, opciones: TRANSPORTISTAS });
-  assert.equal(sinCampo.escribir, false);
-  assert.match(sinCampo.motivo, /ship_via/);
-
-  const ajeno = decidirTransportistaQuote({ esperado: 6, actual: '1', opciones: TRANSPORTISTAS });
-  assert.equal(ajeno.escribir, false);
-  assert.match(ajeno.motivo, /6/);
-  assert.match(ajeno.motivo, /1, 2, 3/);
-});
+// Las opciones y la decision del transportista viven en la bateria por fila de
+// test/postfix-encabezado-quote.test.js (#521); aqui queda el body.
 
 test('#448 serializarBodyQuote: shipVia sustituye ship_via y no toca nada mas', () => {
   const { campos } = parsearFormularioQuote(FORM_1216);

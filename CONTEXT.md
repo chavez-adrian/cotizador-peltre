@@ -338,6 +338,11 @@ A esa búsqueda por nombre se suma una segunda, con otra naturaleza: el **nombre
 Dirección operativa donde se entrega el pedido al Cliente Operam. Un Cliente Operam puede tener múltiples domicilios de entrega en Operam. Cada domicilio tiene un nombre largo y un nombre corto. No confundir con el domicilio fiscal. Al detectar un posible duplicado, el vendedor puede seleccionar un Cliente Operam existente y elegir o crear un domicilio de entrega, en vez de crear un cliente duplicado. Es la palabra de la pantalla de Operam; en la API v3 viaja como `branch` (`POST/PUT /branches`, `branch_code`), y ese nombre se queda en el código y en el detalle técnico, nunca en lo que lee el vendedor (decisión 2026-09-09).
 _Evitar_: sucursal, branch (en texto para el vendedor).
 
+## Post-fix del encabezado del quote
+
+El encabezado del quote es lo que aplica al documento completo, frente a las partidas. Cuatro de sus datos (vigencia, lista de precios, domicilio de entrega y transportista) no los escribe la API v3 de Operam: viajan por la web legacy en el mismo ProcessOrder y se releen para confirmar que quedaron. El pedido que se derive del quote hereda ese encabezado, así que un dato que no quedó sobrevive al documento. Cada dato se declara una sola vez, como una fila de la tabla del post-fix (#521).
+_Evitar_: gemelos (para nombrar estos datos).
+
 ## Almacén predeterminado
 
 Siempre `PT` (producto terminado) para todos los clientes de mayoreo, sin excepción. Se asigna automáticamente al crear el cliente — no requiere selección del vendedor.

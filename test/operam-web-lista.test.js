@@ -9,8 +9,9 @@
 //
 // Aqui se prueba la ORQUESTACION de los dos caminos que ya reposteaban el quote: el
 // post-fix de la vigencia (#106) al crear y la actualizacion (#104). Las piezas puras
-// (opcionesListaQuote / decidirListaQuote / serializarBodyQuote) estan cubiertas
-// contra el HTML real en test/operam-web.test.js.
+// (las opciones y la decision de la fila lista, y serializarBodyQuote) estan
+// cubiertas contra el HTML real en test/postfix-encabezado-quote.test.js y
+// test/operam-web.test.js.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
