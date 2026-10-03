@@ -234,11 +234,10 @@ import {
   subtotalLineas,
   nombreVisibleProducto,
   fechaEmisionHoy,
-  sumarDiasFecha,
   sincronizarCorreoFactura,
 } from './cotizar-logica.js';
 import { opcionesSelectorEnvio } from './lineas-transporte-logica.js';
-import { condicionesComerciales, notasPorOmision, aplicarNotaTiempoProduccion } from './condiciones-logica.js';
+import { condicionesComerciales, notasPorOmision, aplicarNotaTiempoProduccion, vigenciaAlGuardar, avisoDeVigencia } from './condiciones-logica.js';
 import {
   puedeDescontar,
   validarDescuentoLinea,
@@ -481,6 +480,13 @@ const state = {
   // Se apagan en los mismos puntos que lastCotizacionId.
   cuerpoGuardado: null,
   documentoConfirmado: false,
+  // Vigencia (#505): la cotizacion guardada que se edita ({ vigencia,
+  // fechaCreacion, items, decorado }; null = nueva o Copiar), el "Recalcular
+  // vigencia" pedido para el proximo guardado y el aviso de la vencida que el
+  // servidor recalculo. Se apagan en los mismos puntos que lastCotizacionId.
+  vigenciaPrevia: null,
+  recalcularVigencia: false,
+  avisoVigencia: null,
 };
 
 let searchSelected = null; // { key, sku, product }
@@ -629,6 +635,7 @@ async function showApp() {
   state.tierFijado = '';
   state.modoActualizacion = false;
   state.folioOperam = null;
+  olvidarVigenciaPrevia();
   limpiarConfirmacionDocumento();
   state.avisoCambioCliente = null;
   pcRenderInicio();
@@ -790,13 +797,15 @@ function autoguardarBorrador() {
       // nunca la tarifa re-cotizada.
       envio: buildEnvioEstructurado({ ...envioCapturadoEnFormulario(), enviaRateSeleccionado }),
       tierFijado: state.tierFijado,
-      vigenciaDias: parseInt(document.getElementById('resumen-vigencia')?.value) || null,
       vendedorConfirmado: state.vendedorConfirmado === true,
       // Modo Editar (#104/#184): el binding al registro y al folio originales,
       // para que generar desde la sesion restaurada reescriba el MISMO quote.
       modoActualizacion: state.modoActualizacion === true,
       cotizacionId: state.lastCotizacionId,
       folioOperam: state.folioOperam,
+      // #505: la vigencia de la cotizacion que se edita y el Recalcular pedido.
+      vigenciaPrevia: state.vigenciaPrevia,
+      recalcularVigencia: state.recalcularVigencia,
     });
     localStorage.setItem(llave, JSON.stringify(borrador));
   } catch {
@@ -913,12 +922,6 @@ function aplicarBorrador(borrador) {
   // borrador (borradorMuerePorEvento) y ademas resetean state.tierFijado.
   if (borrador.tierFijado) state.tierFijado = borrador.tierFijado;
 
-  // Vigencia capturada (#180).
-  if (borrador.vigenciaDias) {
-    const vigEl = document.getElementById('resumen-vigencia');
-    if (vigEl) vigEl.value = borrador.vigenciaDias;
-  }
-
   // Vendedor confirmado (#87/#113, #180): la recarga no vuelve a preguntar
   // quien cotiza.
   if (borrador.vendedorConfirmado === true) state.vendedorConfirmado = true;
@@ -940,6 +943,11 @@ function aplicarBorrador(borrador) {
     state.modoActualizacion = true;
     state.lastCotizacionId = String(borrador.cotizacionId);
     state.folioOperam = borrador.folioOperam;
+    // #505: la vigencia de la cotizacion que se editaba (un borrador anterior a
+    // #505 no la trae: el paso Cotizacion la muestra como nueva y el servidor
+    // decide la buena al guardar).
+    state.vigenciaPrevia = borrador.vigenciaPrevia ?? null;
+    state.recalcularVigencia = borrador.recalcularVigencia === true;
     aplicarEstadoWhatsApp();
     pintarFranjaCliente();
     const operamStatus = document.getElementById('operam-status-cotizar');
@@ -2363,6 +2371,7 @@ function updateResumen() {
   if (vendedorEl) vendedorEl.textContent = state.user ? `Cotización a nombre de: ${state.user.name}` : '';
 
   sincronizarMarcaDecorado();
+  pintarVigencia();
 
   // Tercer enganche del autosave (#180): por aqui pasan los cambios de envio,
   // lista fijada y vigencia -- ninguno mueve el carrito, asi que no llegan a
@@ -2850,7 +2859,7 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
     if (sigueEnPantalla()) alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
     return false;
   }
-  const { id, requiereActualizacionOperam, folioOperam } = await res.json();
+  const { id, requiereActualizacionOperam, folioOperam, vigencia, avisoVigencia } = await res.json();
   if (!sigueEnPantalla()) {
     // Ya se guardo en el servidor: la cotizacion existe y termina su viaje a
     // Operam como si el vendedor hubiera esperado, pero sin slot y sin tocar el
@@ -2866,6 +2875,21 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
   // en que viajo.
   state.cuerpoGuardado = JSON.parse(JSON.stringify(cuerpo));
   state.documentoConfirmado = false;
+  // #505: la vigencia que vale es la que decidio el servidor. Desde aqui la
+  // cotizacion guardada es la previa (editar ya no la mueve), el Recalcular se
+  // cumplio y el aviso de la vencida se queda a la vista.
+  if (vigencia) {
+    state.cuerpoGuardado.vigencia = vigencia;
+    state.vigenciaPrevia = {
+      vigencia,
+      fechaCreacion: state.vigenciaPrevia?.fechaCreacion ?? cuerpo.fecha,
+      items: (cuerpo.items || []).map(i => ({ codigo: i.codigo, cantidad: i.cantidad })),
+      decorado: cuerpo.decorado === true,
+    };
+  }
+  state.recalcularVigencia = false;
+  state.avisoVigencia = avisoVigencia || state.avisoVigencia;
+  pintarVigencia();
   // La cotizacion nueva que anunciaba el aviso de cambio de cliente (#385) ya
   // se creo: el aviso cumplio. El slot del paso Cotizacion lo vuelve a pintar
   // la subida en todas sus ramas.
@@ -2923,14 +2947,49 @@ function cartEntriesDesdeEstado() {
   return cartEntries;
 }
 
-// Vigencia capturada en el Resumen, resuelta a fecha plana. Recibe la fecha de
-// emision en vez de pedirla: el #284 la deriva de ella A PROPOSITO para que no
-// puedan diferir, y ese amarre se conserva. Vive aparte desde #312, donde el
-// Resumen de la cotizacion la necesita para anunciar la MISMA vigencia que se
-// guarda, sin que exista una tercera copia de la aritmetica.
-function vigenciaDesdeFormulario(fechaEmision) {
-  const dias = parseInt(document.getElementById('resumen-vigencia').value) || 30;
-  return sumarDiasFecha(fechaEmision, dias);
+// La Vigencia que se va a guardar (#505): fecha de creacion + Tiempo de produccion
+// + 14 dias, con la MISMA regla que aplica el servidor al guardar
+// (vigenciaAlGuardar, condiciones-logica.js) -- el vendedor ya no la teclea. Aqui
+// solo se previsualiza: la que vale es la que responde el POST. La comparten el
+// paso Cotizacion, el cuerpo del guardado y el Resumen de WhatsApp (#312).
+function vigenciaEnPantalla() {
+  return vigenciaAlGuardar(condicionesVigentes(), {
+    hoy: fechaEmisionHoy(),
+    items: itemsDelCarrito(),
+    decorado: marcaDecoradoParaGuardar() === true,
+    previa: state.vigenciaPrevia,
+    recalcular: state.recalcularVigencia,
+  });
+}
+
+// La fecha en solo lectura, el boton "Recalcular vigencia" (solo al editar una
+// cotizacion ya guardada) y el aviso de la vencida: el que se ve ANTES de guardar
+// (la previsualizacion) o el que el servidor devolvio al guardar.
+function pintarVigencia() {
+  const { vigencia, motivo } = vigenciaEnPantalla();
+  const fecha = document.getElementById('resumen-vigencia-fecha');
+  if (fecha) fecha.textContent = vigencia;
+  const btn = document.getElementById('btn-recalcular-vigencia');
+  if (btn) btn.style.display = state.vigenciaPrevia ? '' : 'none';
+  const aviso = document.getElementById('resumen-vigencia-aviso');
+  if (aviso) {
+    const texto = avisoDeVigencia(motivo) || state.avisoVigencia;
+    aviso.textContent = texto || '';
+    aviso.style.display = texto ? 'block' : 'none';
+  }
+}
+
+function olvidarVigenciaPrevia() {
+  state.vigenciaPrevia = null;
+  state.recalcularVigencia = false;
+  state.avisoVigencia = null;
+}
+
+// "Recalcular vigencia" (#505): con base HOY, en el proximo guardado. Cambia la
+// fecha en pantalla, asi que los botones pasan a "Actualizar cotizacion".
+function recalcularVigencia() {
+  state.recalcularVigencia = true;
+  updateResumen();
 }
 
 function envioCapturadoEnFormulario() {
@@ -3020,7 +3079,7 @@ function cuerpoCotizacionActual() {
   const notas = notasText.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
   return {
     fecha: fechaEmision,
-    vigencia: vigenciaDesdeFormulario(fechaEmision),
+    vigencia: vigenciaEnPantalla().vigencia,
     tier: getCurrentTier().id,
     incluirFotos: document.getElementById('incluir-fotos')?.checked || false,
     cliente: leerClienteFormulario(validarDomicilioCotizacion().leyenda),
@@ -3105,6 +3164,9 @@ async function crearOActualizarCotizacion() {
     // Misma sesion de cotizacion (#83, F1): el id del primer guardado se reenvia y
     // el server actualiza el entry en vez de crear otro.
     if (state.lastCotizacionId) sobre.cotizacionId = state.lastCotizacionId;
+    // "Recalcular vigencia" (#505) viaja en el sobre, como el cotizacionId: es una
+    // orden para este guardado, no contenido de la cotizacion.
+    if (state.recalcularVigencia) sobre.recalcularVigencia = true;
     if (accionDocumentoEnCurso !== accion) return;
     accion.progreso = progresoConSegundos(btn);
     await guardarYNumerarCotizacion(cuerpo, sobre, accion.progreso.avanzar);
@@ -3158,7 +3220,7 @@ function shareWhatsApp() {
       folioOperam: state.folioOperam,
       cliente: document.getElementById('cl-razon-social').value,
       nombreCorto: document.getElementById('cl-nombre-corto').value,
-      vigencia: vigenciaDesdeFormulario(fechaEmisionHoy()),
+      vigencia: vigenciaEnPantalla().vigencia,
       total,
       items,
     },
@@ -3194,6 +3256,7 @@ function nuevaCotizacion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
+  olvidarVigenciaPrevia();
   limpiarConfirmacionDocumento();
   state.vendedorConfirmado = false;
   state.tierFijado = '';
@@ -3570,6 +3633,8 @@ function pcPrepararSeleccion() {
   state.lastCotizacionId = null;
   state.modoActualizacion = false;
   state.folioOperam = null;
+  // #505: Copiar sobre el carrito actual es una cotizacion nueva: base hoy.
+  olvidarVigenciaPrevia();
   // #504: lo confirmado era de la cotizacion del cliente anterior.
   limpiarConfirmacionDocumento();
   state.vendedorConfirmado = false;
@@ -7569,6 +7634,17 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // (puedeActualizarCotizacion) y lo hace valer el servidor.
     state.modoActualizacion = modo === 'actualizar';
     state.lastCotizacionId = state.modoActualizacion ? String(id) : null;
+    // Vigencia (#505): Editar parte de la guardada y la conserva salvo Recalcular,
+    // vencida o cambio de Tiempo de produccion; Copiar es nueva (base hoy).
+    olvidarVigenciaPrevia();
+    if (state.modoActualizacion) {
+      state.vigenciaPrevia = {
+        vigencia: cot.vigencia ?? null,
+        fechaCreacion: cot.fechaCreacion ?? null,
+        items: (cot.items || []).map(i => ({ codigo: i.codigo, cantidad: i.cantidad })),
+        decorado: cot.decorado === true,
+      };
+    }
     // Folio de Operam del binding (#184): viaja con el modo actualizacion, solo
     // para reconstruir el aviso si la sesion se restaura de un borrador.
     state.folioOperam = state.modoActualizacion ? (cot.folioOperam ?? null) : null;
@@ -7727,12 +7803,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateResumen();
   });
   document.getElementById('shipping-desc').addEventListener('input', () => updateResumen());
-  // Vigencia capturada (#180): sin listener propio, escribirla no dispara
-  // ningun otro enganche del autosave (no mueve carrito, envio ni cliente).
-  document.getElementById('resumen-vigencia')?.addEventListener('input', autoguardarBorrador);
-  // Referencia del cliente (#241): mismo caso que la vigencia -- se captura en el
-  // paso Cotizacion y no mueve carrito, envio ni cliente, asi que sin listener
-  // propio se perderia al recargar.
+  // "Recalcular vigencia" (#505): por listener, nunca onclick inline (#112).
+  document.getElementById('btn-recalcular-vigencia')?.addEventListener('click', recalcularVigencia);
+  // Referencia del cliente (#241): se captura en el paso Cotizacion y no mueve
+  // carrito, envio ni cliente, asi que sin listener propio se perderia al recargar.
   document.getElementById('cl-referencia')?.addEventListener('input', autoguardarBorrador);
 
   // Marca de decorado (#90/#91): togglearla cambia la tabla del Tiempo de
@@ -7743,6 +7817,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     decoradoManual = e.target.checked;
     origenMarcaDecorado = e.target.checked ? 'manual' : null;
     sincronizarMarcaDecorado();
+    // La marca elige la tabla del Tiempo de produccion, y con ella la vigencia (#505).
+    pintarVigencia();
   });
 
   // Calcas (issue #91): el selector recalcula codigo y precio; agregar mete la

@@ -904,10 +904,16 @@
         <textarea id="resumen-notas" rows="5" style="width:100%"></textarea>
       </div>
 
+      <!-- Vigencia (#505): fecha derivada (creacion + Tiempo de produccion + 14 dias),
+           solo lectura; la pinta app.js (pintarVigencia). -->
       <div class="form-row" style="margin-top:12px">
         <div class="form-group">
-          <label>Vigencia (dias)</label>
-          <input type="number" id="resumen-vigencia" value="30" min="1">
+          <label>Vigencia (v&aacute;lido hasta)</label>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong id="resumen-vigencia-fecha"></strong>
+            <button type="button" class="btn btn-secondary" id="btn-recalcular-vigencia" style="display:none">Recalcular vigencia</button>
+          </div>
+          <div id="resumen-vigencia-aviso" class="alert alert-warning" style="display:none;margin-top:6px"></div>
         </div>
       </div>
 

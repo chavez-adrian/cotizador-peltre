@@ -64,7 +64,8 @@ const ENVIO_FEDEX = { opcion: 'envia', carrier: 'fedex', servicio: 'FedEx Ground
 
 function dataCotizacion(envio, extra = {}) {
   return {
-    fecha: '2026-09-24', vigencia: '2026-10-24',
+    // #505: vigencia futura -- una ya pasada se recalcula al editar y pide actualizar.
+    fecha: '2026-09-24', vigencia: '2099-10-24',
     cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', telefono: '+52 5551234567' },
     items: [
       { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },

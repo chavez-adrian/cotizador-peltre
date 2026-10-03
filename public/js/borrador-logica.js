@@ -54,8 +54,8 @@ function normalizarLinea(linea) {
 
 export function serializarBorrador({
   carrito, decorado, ahora,
-  cliente, contactoNuevo, envio, tierFijado, vigenciaDias, vendedorConfirmado,
-  modoActualizacion, cotizacionId, folioOperam,
+  cliente, contactoNuevo, envio, tierFijado, vendedorConfirmado,
+  modoActualizacion, cotizacionId, folioOperam, vigenciaPrevia, recalcularVigencia,
 } = {}) {
   const lineas = (carrito || []).map(normalizarLinea).filter(Boolean);
   const borrador = { v: VERSION_BORRADOR, actualizado: Number(ahora) || 0, carrito: lineas };
@@ -76,8 +76,8 @@ export function serializarBorrador({
   // Lista fijada (#151): '' (Auto) no se guarda porque es identico a la
   // ausencia de la llave -- ambos restauran a Auto.
   if (tierFijado) borrador.tierFijado = tierFijado;
-  const vig = Number(vigenciaDias);
-  if (Number.isFinite(vig) && vig > 0) borrador.vigenciaDias = vig;
+  // La vigencia ya no se captura en dias (#505): es una fecha derivada, asi que no
+  // viaja. Un borrador viejo con `vigenciaDias` se sigue leyendo (la llave se ignora).
   // vendedorConfirmado viaja SOLO en true, mismo patron que decorado: false es
   // el default implicito de la ausencia de la llave.
   if (vendedorConfirmado === true) borrador.vendedorConfirmado = true;
@@ -97,8 +97,24 @@ export function serializarBorrador({
     borrador.modoActualizacion = true;
     borrador.cotizacionId = String(cotizacionId);
     borrador.folioOperam = folioOperam;
+    // #505: la vigencia de la cotizacion que se edita, para que el paso Cotizacion
+    // restaurado muestre la fecha que se va a guardar, y el Recalcular ya pedido.
+    if (vigenciaPrevia && typeof vigenciaPrevia === 'object') borrador.vigenciaPrevia = normalizarVigenciaPrevia(vigenciaPrevia);
+    if (recalcularVigencia === true) borrador.recalcularVigencia = true;
   }
   return borrador;
+}
+
+// Lo que decide la vigencia al editar (#505, vigenciaAlGuardar de
+// condiciones-logica.js): la fecha guardada, la de creacion y el carrito que dio su
+// Tiempo de produccion -- solo codigo y cantidad, que es lo que cuenta piezas.
+function normalizarVigenciaPrevia(p) {
+  return {
+    vigencia: p.vigencia ?? null,
+    fechaCreacion: p.fechaCreacion ?? null,
+    decorado: p.decorado === true,
+    items: (Array.isArray(p.items) ? p.items : []).map(i => ({ codigo: String(i?.codigo ?? ''), cantidad: Number(i?.cantidad) || 0 })),
+  };
 }
 
 // Texto de localStorage (u objeto ya parseado) -> borrador utilizable, o null.

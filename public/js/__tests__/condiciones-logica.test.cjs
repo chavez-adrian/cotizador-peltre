@@ -268,3 +268,115 @@ test('una cotizacion cargada con la linea vieja ("Tiempo de entrega") conserva s
   const vieja = NOTAS_DE_HOY.replace('Tiempo de produccion', 'Tiempo de entrega');
   assert.equal(aplicarNotaTiempoProduccion(vieja, condicionesComerciales(null), { items: [], decorado: true }), vieja);
 });
+
+// === #505: la vigencia es una fecha DERIVADA del Tiempo de produccion ===
+// Vigencia = fecha de creacion + Tiempo de produccion + 14 dias naturales
+// (decision de Adrian 2026-10-01). Fechas esperadas contadas a mano en el
+// calendario: 2026-10-01 + 35 dias = 2026-11-05, + 42 = 2026-11-12, + 49 = 2026-11-19.
+let vigenciaDerivada;
+before(async () => {
+  ({ vigenciaDerivada } = await import('../condiciones-logica.js'));
+});
+
+test('#505 vigencia: tabla normal, 3 semanas + 14 dias desde la creacion', () => {
+  const items = [{ codigo: 'PV08B1N1', cantidad: 40 }];
+  assert.equal(vigenciaDerivada('2026-10-01', CONDICIONES_ISSUE, { items, decorado: false }), '2026-11-05');
+});
+
+test('#505 vigencia: el carrito que cruza un escalon cambia el plazo (99 -> 100 piezas)', () => {
+  assert.equal(vigenciaDerivada('2026-10-01', CONDICIONES_ISSUE, { items: [{ codigo: 'PV08B1N1', cantidad: 99 }] }), '2026-11-05');
+  assert.equal(vigenciaDerivada('2026-10-01', CONDICIONES_ISSUE, { items: [{ codigo: 'PV08B1N1', cantidad: 100 }] }), '2026-11-12');
+});
+
+test('#505 vigencia: con calca en el carrito usa la tabla de calca (5 semanas)', () => {
+  const items = [{ codigo: 'PV08B1N1', cantidad: 40 }, { codigo: 'CAL1100', cantidad: 500 }];
+  assert.equal(vigenciaDerivada('2026-10-01', CONDICIONES_ISSUE, { items, decorado: false }), '2026-11-19');
+});
+
+test('#505 vigencia: la marca de decorado sin calca tambien usa la tabla de calca', () => {
+  const items = [{ codigo: 'PV08B1N1', cantidad: 40 }];
+  assert.equal(vigenciaDerivada('2026-10-01', CONDICIONES_ISSUE, { items, decorado: true }), '2026-11-19');
+});
+
+test('#505 vigencia: un plazo en dias suma dias, y la fecha cruza de ano', () => {
+  const enDias = { tiempoProduccion: [{ desde: 0, cantidad: 10, unidad: 'dias' }], tiempoProduccionCalca: TABLA_CALCA_ISSUE };
+  assert.equal(vigenciaDerivada('2026-10-01', enDias, { items: [] }), '2026-10-25');
+  assert.equal(vigenciaDerivada('2026-12-20', CONDICIONES_ISSUE, { items: [] }), '2027-01-24');
+});
+
+// === #505: que pasa con la vigencia al guardar (nueva, editar, recalcular) ===
+// previa = la cotizacion guardada que se edita: { vigencia, fechaCreacion, items,
+// decorado }. Fechas contadas a mano: 2026-10-08 + 35 = 2026-11-12,
+// 2026-11-06 + 35 = 2026-12-11, 2026-11-10 + 35 = 2026-12-15.
+let vigenciaAlGuardar;
+before(async () => {
+  ({ vigenciaAlGuardar } = await import('../condiciones-logica.js'));
+});
+
+const CARRITO_40 = [{ codigo: 'PV08B1N1', cantidad: 40 }];
+const PREVIA_1OCT = { vigencia: '2026-11-05', fechaCreacion: '2026-10-01', items: CARRITO_40, decorado: false };
+
+test('#505 al guardar: una cotizacion nueva toma hoy como fecha de creacion', () => {
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-10-01', items: CARRITO_40, previa: null }),
+    { vigencia: '2026-11-05', motivo: 'nueva' });
+});
+
+test('#505 al guardar: editar sin cambiar el Tiempo de produccion conserva la vigencia', () => {
+  const items = [{ codigo: 'PV08B1N1', cantidad: 60 }];
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-10-08', items, decorado: false, previa: PREVIA_1OCT }),
+    { vigencia: '2026-11-05', motivo: 'conservada' });
+});
+
+test('#505 al guardar: el mismo dia de la vigencia la cotizacion sigue vigente', () => {
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-11-05', items: CARRITO_40, previa: PREVIA_1OCT }),
+    { vigencia: '2026-11-05', motivo: 'conservada' });
+});
+
+test('#505 al guardar: Recalcular vigencia la deriva con base hoy', () => {
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-10-08', items: CARRITO_40, previa: PREVIA_1OCT, recalcular: true }),
+    { vigencia: '2026-11-12', motivo: 'recalculada' });
+});
+
+test('#505 al guardar: cruzar un escalon recalcula con base en la creacion original', () => {
+  const items = [{ codigo: 'PV08B1N1', cantidad: 100 }];
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-10-20', items, previa: PREVIA_1OCT }),
+    { vigencia: '2026-11-12', motivo: 'tiempo-produccion' });
+});
+
+test('#505 al guardar: agregar calca (tabla de calca) recalcula con base en la creacion original', () => {
+  const items = [...CARRITO_40, { codigo: 'CAL1100', cantidad: 500 }];
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-10-20', items, previa: PREVIA_1OCT }),
+    { vigencia: '2026-11-19', motivo: 'tiempo-produccion' });
+});
+
+test('#505 al guardar: marcar decorado a mano tambien es cambio de Tiempo de produccion', () => {
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-10-20', items: CARRITO_40, decorado: true, previa: PREVIA_1OCT }),
+    { vigencia: '2026-11-19', motivo: 'tiempo-produccion' });
+});
+
+test('#505 al guardar: editar una cotizacion vencida la recalcula con base hoy', () => {
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-11-06', items: CARRITO_40, previa: PREVIA_1OCT }),
+    { vigencia: '2026-12-11', motivo: 'vencida' });
+});
+
+test('#505 al guardar: el cambio de plazo que con la base original ya quedo vencido aplica la regla de vencida', () => {
+  const previa = { vigencia: '2026-12-20', fechaCreacion: '2026-10-01', items: [{ codigo: 'PV08B1N1', cantidad: 100 }], decorado: false };
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-11-10', items: CARRITO_40, previa }),
+    { vigencia: '2026-12-15', motivo: 'vencida' });
+});
+
+test('#505 al guardar: la cotizacion guardada sin vigencia la deriva de su creacion', () => {
+  const previa = { ...PREVIA_1OCT, vigencia: undefined };
+  assert.deepEqual(
+    vigenciaAlGuardar(CONDICIONES_ISSUE, { hoy: '2026-10-08', items: CARRITO_40, previa }),
+    { vigencia: '2026-11-05', motivo: 'derivada' });
+});

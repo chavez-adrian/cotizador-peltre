@@ -221,12 +221,15 @@ test('procesarColaPostFix: un solo worker a la vez -- la segunda corrida simulta
 
 // --- barrerQuotesPostFix: el barrido diario de los ultimos 30 dias ---
 
+// La vigencia que el cotizador ESCRIBIO en cada quote (#505), tal como quedo en su huella.
+const VIGENCIA_ESCRITA = { 1263: '2026-10-04', 1264: '2026-10-03' };
+
 // Registros del cotizador tal como los devuelve cotStore.listar().
 function cotizacion(id, folio, extra = {}) {
-  return { id, fecha: '2026-09-20T17:00:00.000Z', vendedor: 'Alejandro Chavez', folioOperam: folio, tier: 'M100', data: { fecha: '2026-09-02', huellaQuote: huella({ listaId: '9' }) }, ...extra };
+  return { id, fecha: '2026-09-20T17:00:00.000Z', vendedor: 'Alejandro Chavez', folioOperam: folio, tier: 'M100', data: { fecha: '2026-09-02', huellaQuote: huella({ listaId: '9', vigencia: VIGENCIA_ESCRITA[folio] }) }, ...extra };
 }
 
-// La huella que la subida guardo (#114): lista y transportista que se INTENTARON.
+// La huella que la subida guardo (#114): lista, transportista y vigencia que se INTENTARON.
 function huella(campos) {
   return JSON.stringify({ items: [], ...campos });
 }
@@ -250,7 +253,7 @@ function depsBarrido(extra = {}) {
   return { deps, correos, lecturas };
 }
 
-test('barrerQuotesPostFix: encola el quote desfasado (el 1263) con la vigencia que LLEVA en comments', async () => {
+test('barrerQuotesPostFix: encola el quote desfasado (el 1263) con la vigencia que el cotizador escribio', async () => {
   const { deps, lecturas } = depsBarrido();
   const r = await barrerQuotesPostFix(deps);
   assert.deepEqual(lecturas, ['1263', '1264']);
@@ -268,11 +271,31 @@ test('barrerQuotesPostFix: encola el quote desfasado (el 1263) con la vigencia q
   assert.equal(r.encolados, 1);
 });
 
-test('barrerQuotesPostFix: la vigencia esperada NO sale de la cotizacion regenerada sino del quote', async () => {
-  // Regenerar el documento reemplaza data.vigencia sin reescribir el quote: el 1264
-  // esta bien aunque la cotizacion diga hoy otra fecha.
+// #505: lo esperado es la vigencia que el cotizador ESCRIBIO (la de su huella), nunca la
+// linea "Valido hasta" de comments: las notas del quote se editan a mano en Operam.
+test('barrerQuotesPostFix: el quote con la vigencia escrita no se encola aunque su linea Valido hasta diga otra', async () => {
   const { deps } = depsBarrido({
-    listarCotizaciones: async () => [cotizacion(42, '1264', { data: { fecha: '2026-09-20', vigencia: '2026-10-20' } })],
+    listarCotizaciones: async () => [cotizacion(42, '1264')],
+    obtenerQuote: async () => ({ ...QUOTES[1264], comments: 'Valido hasta: 2026-12-31' }),
+  });
+  await barrerQuotesPostFix(deps);
+  assert.deepEqual(await deps.store.listar(), []);
+});
+
+test('barrerQuotesPostFix: el quote con otra vigencia SI se encola aunque su linea Valido hasta coincida con ella', async () => {
+  const { deps } = depsBarrido({
+    listarCotizaciones: async () => [cotizacion(41, '1263')],
+    obtenerQuote: async () => ({ ...QUOTES[1263], comments: 'Valido hasta: 2026-09-05' }),
+  });
+  await barrerQuotesPostFix(deps);
+  const [p] = await deps.store.listar();
+  assert.equal(p.folio, '1263');
+  assert.equal(p.vigencia, '2026-10-04');
+});
+
+test('barrerQuotesPostFix: la vigencia esperada sale de la huella, no de data.vigencia', async () => {
+  const { deps } = depsBarrido({
+    listarCotizaciones: async () => [cotizacion(42, '1264', { data: { fecha: '2026-09-20', vigencia: '2026-10-20', huellaQuote: huella({ listaId: '9', vigencia: '2026-10-03' }) } })],
   });
   await barrerQuotesPostFix(deps);
   assert.deepEqual(await deps.store.listar(), []);
@@ -301,10 +324,9 @@ test('barrerQuotesPostFix: un quote que no se pudo leer no tumba el barrido', as
   assert.equal(r.sinLeer, 1);
 });
 
-test('barrerQuotesPostFix: el quote sin linea Valido hasta no se juzga por la vigencia', async () => {
+test('barrerQuotesPostFix: una huella anterior a #505 (sin vigencia) no se juzga por la vigencia', async () => {
   const { deps } = depsBarrido({
-    obtenerQuote: async () => ({ ...QUOTES[1263], comments: 'sin vigencia' }),
-    listarCotizaciones: async () => [cotizacion(41, '1263')],
+    listarCotizaciones: async () => [cotizacion(41, '1263', { data: { fecha: '2026-09-02', huellaQuote: huella({ listaId: '9' }) } })],
   });
   await barrerQuotesPostFix(deps);
   assert.deepEqual(await deps.store.listar(), []);
@@ -414,13 +436,24 @@ test('procesarColaPostFix: si el quote ya tiene lo esperado no se escribe nada y
   assert.equal(r.verificados, 1);
 });
 
-test('procesarColaPostFix: si el quote se reescribio despues de encolar (otra vigencia en comments) no se pisa', async () => {
-  // El vendedor actualizo la cotizacion (#104) entre el fallo y el reintento: el
-  // reintento traeria la vigencia VIEJA y regresaria el documento.
+// #505: el worker no lee comments. Lo que dice si el quote se reescribio despues de
+// encolar es el REGISTRO: la vigencia de su huella (lo que el cotizador escribio).
+test('procesarColaPostFix: otra vigencia en la linea Valido hasta de comments no detiene el reintento', async () => {
+  const corregir = corregirFalso(R_VERIFICADO);
+  const { deps } = depsBase({
+    store: storeEnMemoria([pendiente({ origen: 'barrido' })]), corregirVigenciaQuote: corregir,
+    obtenerQuote: async () => ({ order_no: '1263', ord_date: '2026-09-02', delivery_date: '2026-09-05', order_type: '9', ship_via: '1', comments: 'Valido hasta: 2026-10-20' }),
+  });
+  await procesarColaPostFix(deps);
+  assert.equal(corregir.llamadas.length, 1);
+  assert.equal(corregir.llamadas[0].vigencia, '2026-10-04');
+});
+
+test('procesarColaPostFix: si la huella del registro ya trae otra vigencia (se reescribio despues de encolar) no se pisa', async () => {
   const corregir = corregirFalso(R_VERIFICADO);
   const { deps, correos } = depsBase({
-    store: storeEnMemoria([pendiente()]), corregirVigenciaQuote: corregir,
-    obtenerQuote: async () => ({ order_no: '1263', ord_date: '2026-09-02', delivery_date: '2026-09-05', order_type: '9', ship_via: '1', comments: 'Valido hasta: 2026-10-20' }),
+    store: storeEnMemoria([pendiente({ origen: 'barrido' })]), corregirVigenciaQuote: corregir,
+    obtenerCotizacion: async () => registro41({}, { huellaQuote: JSON.stringify({ items: [], listaId: '9', branchId: null, shipVia: null, vigencia: '2026-10-20' }) }),
   });
   await procesarColaPostFix(deps);
   assert.equal(corregir.llamadas.length, 0);

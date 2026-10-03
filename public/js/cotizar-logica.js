@@ -35,6 +35,19 @@ export function fechaEmisionHoy(ahora = new Date()) {
   return `${partes.year}-${partes.month}-${partes.day}`;
 }
 
+// El dia del calendario del negocio de un instante guardado (#505: la fecha de
+// creacion de la cotizacion, base de la Vigencia). La fecha sin hora y la
+// medianoche UTC exacta son ese dia calendario (la `ord_date` que guardan el
+// backfill y los rescates, #428), no el anterior. null si no es fecha.
+const DIA_CALENDARIO = /^(\d{4}-\d{2}-\d{2})(?:T00:00:00(?:\.000)?Z)?$/;
+export function fechaNegocioDe(valor) {
+  const dia = typeof valor === 'string' ? DIA_CALENDARIO.exec(valor) : null;
+  if (dia) return dia[1];
+  if (valor == null || valor === '') return null;
+  const instante = new Date(valor);
+  return Number.isNaN(instante.getTime()) ? null : fechaEmisionHoy(instante);
+}
+
 // Suma 'dias' naturales a una fecha plana YYYY-MM-DD y devuelve YYYY-MM-DD. Se
 // resuelve en UTC A PROPOSITO: una fecha plana no es un instante, y anclarla a
 // las 00:00Z de si misma es lo que impide que la zona de quien corre el codigo
