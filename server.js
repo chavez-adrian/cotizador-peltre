@@ -511,8 +511,13 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
   delete data.cotizacionId; // campo de control: no persistirlo dentro de data
   const recalcularVigencia = data.recalcularVigencia === true;
   delete data.recalcularVigencia;
-  const reglaVigencia = (previa) => vigenciaAlGuardar(condicionesComerciales(configStore.leer()), {
-    hoy: fechaEmisionHoy(), items: data.items, decorado: data.decorado === true, recalcular: recalcularVigencia, previa,
+  // La marca de decorado con la que se deriva es la que QUEDA guardada: el data se
+  // mergea por la raiz y el navegador solo manda `decorado` en true, asi que sin la
+  // llave sobrevive la del registro previo.
+  const reglaVigencia = (previa, decoradoGuardado) => vigenciaAlGuardar(condicionesComerciales(configStore.leer()), {
+    hoy: fechaEmisionHoy(), items: data.items,
+    decorado: Object.hasOwn(data, 'decorado') ? data.decorado === true : decoradoGuardado === true,
+    recalcular: recalcularVigencia, previa,
   });
   const entry = {
     fecha: new Date().toISOString(), vendedor,
@@ -542,7 +547,7 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
       const vigencia = reglaVigencia({
         vigencia: prev.data?.vigencia, fechaCreacion: fechaNegocioDe(prev.fecha),
         items: prev.data?.items, decorado: prev.data?.decorado === true,
-      });
+      }, prev.data?.decorado);
       data.vigencia = vigencia.vigencia;
       const yaEnOperam = prev.folioOperam != null && prev.folioOperam !== '';
       // La lista del encabezado entra a la comparacion desde #403: con el mismo
@@ -560,7 +565,7 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
   // de actualizacion de arriba ni siquiera lo menciona. Corregir un telefono mal
   // tecleado deja de mover la tarjeta a otra persona.
   entry.contactoCelular = celularAlNacer(data.cliente);
-  const vigencia = reglaVigencia(null);
+  const vigencia = reglaVigencia(null, false);
   data.vigencia = vigencia.vigencia;
   const id = await cotStore.crear(entry);
   await actualizarEmbudoPorCotizacion(data, id, vendedor);

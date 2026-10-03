@@ -71,9 +71,9 @@ function contenido(extra = {}) {
 
 // Una cotizacion ya subida a Operam, creada `diasAtras` dias antes de hoy (la
 // columna `fecha` es el instante de creacion: las 17:00 Z son las 11:00 en CDMX).
-function subida({ diasAtras = 3, vigencia, huella } = {}) {
+function subida({ diasAtras = 3, vigencia, huella, decorado = false } = {}) {
   const creacion = sumarDiasFecha(HOY, -diasAtras);
-  const data = contenido({ fecha: creacion, vigencia: vigencia ?? sumarDiasFecha(creacion, 42) });
+  const data = contenido({ fecha: creacion, vigencia: vigencia ?? sumarDiasFecha(creacion, decorado ? 56 : 42), ...(decorado ? { decorado: true } : {}) });
   const snap = readCots();
   const id = snap.reduce((m, c) => Math.max(m, c.id), 0) + 1;
   writeCots([...snap, {
@@ -129,6 +129,19 @@ test('#505: un cambio de Tiempo de produccion recalcula con base en la creacion 
   const res = await guardar({ ...contenido({ decorado: true }), cotizacionId: String(id) });
   assert.equal(res.body.requiereActualizacionOperam, true);
   assert.equal(guardada(id).data.vigencia, sumarDiasFecha(creacion, 56));
+});
+
+// El navegador manda `decorado` solo en true y el data se mergea por la raiz: sin
+// la llave, la marca del registro sobrevive. La vigencia se deriva con ESA marca,
+// la que queda guardada; si no, cada edicion veria un cambio de plazo fantasma.
+test('#505: editar una cotizacion decorada sin mandar la marca conserva la vigencia de la tabla de calca', async () => {
+  const { id, creacion } = subida({ diasAtras: 3, decorado: true });
+  for (let vez = 1; vez <= 2; vez++) {
+    const res = await guardar({ ...contenido(), cotizacionId: String(id) });
+    assert.equal(res.body.requiereActualizacionOperam, false, `edicion ${vez}`);
+    assert.equal(guardada(id).data.vigencia, sumarDiasFecha(creacion, 56), `edicion ${vez}`);
+    assert.equal(guardada(id).data.decorado, true, `edicion ${vez}`);
+  }
 });
 
 test('#505: editar una cotizacion vencida la recalcula con base hoy y lo avisa', async () => {
