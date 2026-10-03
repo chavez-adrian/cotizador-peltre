@@ -2884,7 +2884,7 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
       vigencia,
       fechaCreacion: state.vigenciaPrevia?.fechaCreacion ?? cuerpo.fecha,
       items: (cuerpo.items || []).map(i => ({ codigo: i.codigo, cantidad: i.cantidad })),
-      decorado: cuerpo.decorado === true,
+      decorado: cuerpo.decorado === true || state.vigenciaPrevia?.decorado === true,
     };
   }
   state.recalcularVigencia = false;
@@ -2956,7 +2956,9 @@ function vigenciaEnPantalla() {
   return vigenciaAlGuardar(condicionesVigentes(), {
     hoy: fechaEmisionHoy(),
     items: itemsDelCarrito(),
-    decorado: marcaDecoradoParaGuardar() === true,
+    // La marca que quedara guardada, como la deriva el servidor: false no viaja,
+    // asi que al editar sobrevive la del registro.
+    decorado: marcaDecoradoParaGuardar() === true || state.vigenciaPrevia?.decorado === true,
     previa: state.vigenciaPrevia,
     recalcular: state.recalcularVigencia,
   });
