@@ -10,6 +10,7 @@ import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, resolverClienteDeCotizacion, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
+import { filaEncabezado, pasoEncabezadoQuote } from './lib/postfix-encabezado-quote.js';
 import { puedeActualizarCotizacion, ligaClienteAlGuardar, vendedorAlGuardar } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
@@ -3791,96 +3792,35 @@ async function postFixQuote(folio, entry) {
   } catch (err) {
     console.error('[post-fix vigencia] fallo en el quote', folio, err.message);
     encolarPostFix({ ...esperado, error: err.message });
-    // El post-fix no llego a escribir NADA, asi que la lista tampoco: se nombra con su
-    // motivo real en vez de callarla -- desde #403 el vendedor espera un paso por cada
-    // uno de los dos campos, y el silencio se leeria como "la lista si quedo".
-    const lista = listaDelQuote(entry);
+    // El post-fix no llego a escribir NADA, asi que la lista y el transportista
+    // tampoco: cada uno se nombra con su motivo real en vez de callarlo -- desde #403 el
+    // vendedor espera un paso por campo, y el silencio se leeria como "si quedo". Los
+    // que no tenian valor que mandar no se pintan.
+    const noEnviado = (esperadoCampo) => ({
+      aplica: true, esperado: String(esperadoCampo), escrita: false, yaCorrecto: false,
+      ok: false, verificado: false, encontrado: null,
+      motivo: 'el post-fix fallo antes de escribir: ' + err.message,
+    });
     return [{
       name: 'post-fix vigencia', status: 'error',
       mensaje: 'No se pudo corregir la vigencia de la cotizacion en Operam',
       detalle: 'quote ' + folio + ': ' + err.message,
-    }, ...(lista == null ? [] : [{
-      name: 'lista del quote', status: 'warn',
-      mensaje: 'Revisa la lista de precios de la cotizacion en Operam: pudo quedar con la del cliente',
-      detalle: 'quote ' + folio + ': se esperaba la lista ' + lista + ' y no se envio -- el post-fix fallo antes de escribir: ' + err.message,
-      verificado: false, esperado: lista, encontrado: null,
-    }]), ...(transportista.shipVia == null ? [] : [{
-      name: 'transportista del quote', status: 'warn',
-      mensaje: `Revisa el transportista de la cotizacion en Operam: pudo quedar con el del domicilio en vez de ${transportista.linea}`,
-      detalle: 'quote ' + folio + ': se esperaba el transportista ' + transportista.shipVia + ' y no se envio -- el post-fix fallo antes de escribir: ' + err.message,
-      verificado: false, esperado: String(transportista.shipVia), encontrado: null,
-    }]),];
+    }, ...(esperado.lista == null ? [] : [pasoListaQuote(folio, noEnviado(esperado.lista))]),
+    ...(esperado.transportista == null ? [] : [pasoTransportistaQuote(folio, noEnviado(esperado.transportista), transportista)]),];
   }
 }
 
-// El paso de la lista del encabezado (#403), en dos capas como los demas. Los tres
-// desenlaces son distintos a proposito: escrita y verificada, no aplicaba (la
-// cotizacion no resuelve lista y el quote se queda con la del cliente, que es lo que
-// pasaba siempre antes de #403) y "no quedo", que es lo unico que el vendedor tiene
-// que ir a revisar. El detalle dice si se escribio y no pego o si ni se intento, con
-// el motivo real -- nunca "Operam lo ignoro" sobre un campo que no viajo (#379).
+// Los pasos de la lista (#403) y del transportista (#448) del encabezado: UN solo
+// constructor (`pasoEncabezadoQuote`, lib/postfix-encabezado-quote.js) con los textos
+// de cada fila. `t` es el mapeo de la linea (transportistaDelQuote): cuando no habia
+// transportista que mandar, el motivo util es el del mapeo -- sin envio, envio manual,
+// linea sin id --, no el "no hay nada que escribir" de la web.
 function pasoListaQuote(folio, lista) {
-  if (!lista) return null;
-  const nombre = 'lista del quote';
-  if (!lista.aplica) {
-    return {
-      name: nombre, status: 'omitido',
-      mensaje: 'La cotizacion quedo en Operam con la lista de precios que ya tenia el cliente',
-      detalle: 'quote ' + folio + ': ' + (lista.motivo ?? 'no habia lista que escribir'),
-    };
-  }
-  if (lista.ok) {
-    return {
-      name: nombre, status: 'ok',
-      mensaje: lista.yaCorrecto
-        ? 'La cotizacion ya estaba en Operam con la lista de precios cotizada'
-        : 'La lista de precios de la cotizacion quedo corregida en Operam',
-      detalle: 'quote ' + folio + ' lista ' + lista.esperado,
-    };
-  }
-  return {
-    name: nombre, status: 'warn',
-    mensaje: 'Revisa la lista de precios de la cotizacion en Operam: pudo quedar con la del cliente',
-    detalle: 'quote ' + folio + ': se esperaba la lista ' + (lista.esperado ?? '(sin dato)') + (lista.escrita
-      // Escrita y sin confirmar: el motivo dice si la relectura fallo (y por que) o si
-      // Operam contesto con otra lista. Sin el, "se leyo (sin dato)" tapaba la causa.
-      ? ' y se leyo ' + (lista.encontrado ?? '(sin dato)') + (lista.motivo ? ' -- ' + lista.motivo : '')
-      : ' y no se envio -- ' + (lista.motivo ?? 'sin motivo')),
-    verificado: lista.verificado, esperado: lista.esperado, encontrado: lista.encontrado,
-  };
+  return pasoEncabezadoQuote(filaEncabezado('lista'), folio, lista);
 }
 
-// El paso del transportista del encabezado (#448), gemelo del de la lista. `r` es lo
-// que devolvio la web legacy y `t` el mapeo de la linea (transportistaDelQuote):
-// cuando no habia transportista que mandar, el motivo util es el del mapeo -- sin
-// envio, envio manual, linea sin id --, no el "no hay nada que escribir" de la web.
 function pasoTransportistaQuote(folio, r, t) {
-  if (!r) return null;
-  const nombre = 'transportista del quote';
-  if (!r.aplica) {
-    return {
-      name: nombre, status: 'omitido',
-      mensaje: 'La cotizacion quedo en Operam con el transportista que ya tenia (el del domicilio)',
-      detalle: 'quote ' + folio + ': ' + (t?.motivo ?? r.motivo ?? 'no habia transportista que escribir'),
-    };
-  }
-  if (r.ok) {
-    return {
-      name: nombre, status: 'ok',
-      mensaje: r.yaCorrecto
-        ? `La cotizacion ya tenia en Operam el transportista de ${t?.linea ?? 'la linea de envio'}`
-        : `El transportista de la cotizacion quedo en Operam: ${t?.linea ?? r.esperado}`,
-      detalle: 'quote ' + folio + ' ship_via ' + r.esperado,
-    };
-  }
-  return {
-    name: nombre, status: 'warn',
-    mensaje: `Revisa el transportista de la cotizacion en Operam: pudo quedar con el del domicilio en vez de ${t?.linea ?? r.esperado}`,
-    detalle: 'quote ' + folio + ': se esperaba el transportista ' + (r.esperado ?? '(sin dato)') + (r.escrita
-      ? ' y se leyo ' + (r.encontrado ?? '(sin dato)') + (r.motivo ? ' -- ' + r.motivo : '')
-      : ' y no se envio -- ' + (r.motivo ?? 'sin motivo')),
-    verificado: r.verificado, esperado: r.esperado, encontrado: r.encontrado,
-  };
+  return pasoEncabezadoQuote(filaEncabezado('transportista'), folio, r, t);
 }
 
 // El almacen del que se entrega, cuando el domicilio nuevo lo movio (#409). NO es un
