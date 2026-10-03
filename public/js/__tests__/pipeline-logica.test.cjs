@@ -2183,3 +2183,28 @@ test('#502: la fila de la lista conserva nombre, meta, total y badge', async () 
   assert.ok(sinNombre.includes('Sin nombre'));
   assert.ok(sinNombre.includes('Sin cotizar'));
 });
+
+// #520: sin eleccion guardada el Pipeline abre en lista en el telefono y en
+// tablero en escritorio; la eleccion guardada valida gana en cualquier ancho.
+test('#520: modoInicialPipeline decide el modo inicial por ancho y eleccion guardada', async () => {
+  const { modoInicialPipeline } = await import('../pipeline-logica.js');
+  assert.equal(modoInicialPipeline(390, null), 'lista');
+  assert.equal(modoInicialPipeline(899, null), 'lista');
+  assert.equal(modoInicialPipeline(900, null), 'tablero');
+  assert.equal(modoInicialPipeline(1440, null), 'tablero');
+  for (const guardado of ['lista', 'tablero', 'cerradas']) {
+    assert.equal(modoInicialPipeline(390, guardado), guardado);
+    assert.equal(modoInicialPipeline(1440, guardado), guardado);
+  }
+  assert.equal(modoInicialPipeline(390, 'kanban'), 'lista');
+  assert.equal(modoInicialPipeline(1440, ''), 'tablero');
+  assert.equal(modoInicialPipeline(1440, 'undefined'), 'tablero');
+});
+
+test('#520: el punto de corte del modo inicial es el mismo del layout de escritorio de la lista', async () => {
+  const { ANCHO_ESCRITORIO_PIPELINE } = await import('../pipeline-logica.js');
+  const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', '..', 'css', 'style.css'), 'utf8');
+  const m = css.match(/@media \(min-width: (\d+)px\) \{\s*\.pl \{/);
+  assert.ok(m, 'no se encontro el @media de escritorio de la lista del Pipeline');
+  assert.equal(Number(m[1]), ANCHO_ESCRITORIO_PIPELINE);
+});

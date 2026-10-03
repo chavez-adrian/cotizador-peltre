@@ -73,6 +73,18 @@ export function esSalida(etapa) {
   return SALIDAS.has(etapa);
 }
 
+// Modo inicial del Pipeline (#520): la eleccion guardada valida gana en
+// cualquier ancho; sin ella, por debajo del layout de escritorio de la lista
+// (el @media de .pl en style.css, atado por prueba) abre en lista. Solo decide
+// el estado inicial: girar o redimensionar no cambia el modo ya pintado.
+export const PIPELINE_MODOS = new Set(['tablero', 'lista', 'cerradas']);
+export const ANCHO_ESCRITORIO_PIPELINE = 900;
+
+export function modoInicialPipeline(ancho, guardado) {
+  if (PIPELINE_MODOS.has(guardado)) return guardado;
+  return ancho < ANCHO_ESCRITORIO_PIPELINE ? 'lista' : 'tablero';
+}
+
 // Estado PRE / folio Operam (issue #63, CONTEXT.md "Pre-cotizacion"): la
 // ausencia del folio define el estado "PRE"; con folio la cotizacion muestra
 // "Cotizacion N". Reexpresion browser-safe de lib/pipeline.etiquetaFolioOperam

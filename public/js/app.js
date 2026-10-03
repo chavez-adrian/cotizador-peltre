@@ -188,6 +188,7 @@ import {
   rotuloPanelUpgrade,
   peticionPerdidaTablero,
   buildMotivoSalidaModalHtml,
+  modoInicialPipeline,
 } from './pipeline-logica.js';
 import {
   buildBandejaHtml,
@@ -6468,8 +6469,7 @@ window.bandejaBuscarNuevas = bandejaBuscarNuevas;
 // viene migrada del store); al cotizar, la cotizacion lleva la oportunidad por
 // el resto del embudo (su etapa la deriva el store del estado). El tablero las
 // reparte en sus 7 columnas; las salidas viven fuera. Conmutador lista/tablero.
-const PIPELINE_MODOS = new Set(['tablero', 'lista', 'cerradas']);
-let pipelineModo = PIPELINE_MODOS.has(localStorage.getItem('pipelineModo')) ? localStorage.getItem('pipelineModo') : 'tablero';
+let pipelineModo = modoInicialPipeline(window.innerWidth, localStorage.getItem('pipelineModo'));
 let ultimasOportunidades = [];
 // Criterio del buscador (#289) y de los selectores Origen / Evento / Vendedor
 // (#457; el Evento es el filtro de #261): todo con AND y en los tres modos. Vive
