@@ -82,7 +82,8 @@ import { errorMotivoCancelada, camposMotivoCancelada, MENSAJE_CANCELADA_SOLO_ADM
 import { PAGOS_COMPROBANTE, LIMITE_BYTES_COMPROBANTE, MAX_ARCHIVOS_COMPROBANTE, errorArchivosComprobante, mensajeArchivoGrande, MENSAJE_DEMASIADOS_ARCHIVOS, nombreArchivoComprobante, comprobanteConArchivos, mensajeSubidaIncompleta, mensajeSubidaCompleta, motivoSinComprobante } from './public/js/comprobante-pago-logica.js';
 import { lineasTransporte, carriersEnvia, avisoLineaInactiva, validarLineasTransporte, transportistaDeEnvio } from './public/js/lineas-transporte-logica.js';
 import { destinoEnvia, carriersParaPais, sugerenciaSinCalle } from './lib/envia-destino-logica.js';
-import { condicionesComerciales, validarCondiciones } from './public/js/condiciones-logica.js';
+import { condicionesComerciales, validarCondiciones, vigenciaAlGuardar, avisoDeVigencia } from './public/js/condiciones-logica.js';
+import { fechaEmisionHoy, fechaNegocioDe } from './public/js/cotizar-logica.js';
 import { validarDescripcionesCotizacion } from './public/js/descripcion-logica.js';
 import { validarMayoreo, buildCapturaMayoreo } from './public/js/mayoreo-logica.js';
 import { aTitulo } from './public/js/titulo-logica.js';
@@ -497,9 +498,22 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
 // prevConocido (#154): el caller puede pasar el registro previo si ya lo leyo
 // (validacion del tier fijado) para no repetir la misma consulta al store en
 // el mismo request. undefined => se lee aqui, como siempre.
+//
+// La VIGENCIA la decide aqui el servidor (#505), nunca la que manda el navegador:
+// creacion + Tiempo de produccion + 14 dias (vigenciaAlGuardar,
+// public/js/condiciones-logica.js). La fecha de creacion es la columna `fecha` del
+// registro -- `data.fecha` se mueve en cada guardado --, y editar la conserva salvo
+// Recalcular (`recalcularVigencia`, campo de control), vencida o cambio de Tiempo de
+// produccion. Una vigencia que se movio pide actualizar el quote aunque la huella
+// guardada (anterior a #505) no la traiga.
 async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
   const idPrevio = parseInt(data.cotizacionId, 10);
   delete data.cotizacionId; // campo de control: no persistirlo dentro de data
+  const recalcularVigencia = data.recalcularVigencia === true;
+  delete data.recalcularVigencia;
+  const reglaVigencia = (previa) => vigenciaAlGuardar(condicionesComerciales(configStore.leer()), {
+    hoy: fechaEmisionHoy(), items: data.items, decorado: data.decorado === true, recalcular: recalcularVigencia, previa,
+  });
   const entry = {
     fecha: new Date().toISOString(), vendedor,
     cliente: data.cliente?.nombreCorto || data.cliente?.razonSocial || 'Sin nombre',
@@ -525,13 +539,19 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
             '- se ignoro el', liga.customerIdIgnorado, 'que llego al guardar');
         }
       }
+      const vigencia = reglaVigencia({
+        vigencia: prev.data?.vigencia, fechaCreacion: fechaNegocioDe(prev.fecha),
+        items: prev.data?.items, decorado: prev.data?.decorado === true,
+      });
+      data.vigencia = vigencia.vigencia;
       const yaEnOperam = prev.folioOperam != null && prev.folioOperam !== '';
       // La lista del encabezado entra a la comparacion desde #403: con el mismo
       // precio en dos listas nada mas se movia y el quote se quedaba con la vieja.
       // El transportista de la linea de envio entra igual desde #448.
-      const requiereActualizacionOperam = yaEnOperam && contenidoQuoteCambio(data, prev.data?.huellaQuote, opcionesHuellaQuote(entry));
+      const requiereActualizacionOperam = yaEnOperam
+        && (vigencia.vigencia !== prev.data?.vigencia || contenidoQuoteCambio(data, prev.data?.huellaQuote, opcionesHuellaQuote(entry)));
       await cotStore.actualizarCotizacion(idPrevio, entry);
-      return { id: idPrevio, requiereActualizacionOperam };
+      return { id: idPrevio, requiereActualizacionOperam, vigencia };
     }
   }
   // La Oportunidad nace ligada a su Contacto (#342, ADR-0016, CONTEXT.md
@@ -540,9 +560,11 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
   // de actualizacion de arriba ni siquiera lo menciona. Corregir un telefono mal
   // tecleado deja de mover la tarjeta a otra persona.
   entry.contactoCelular = celularAlNacer(data.cliente);
+  const vigencia = reglaVigencia(null);
+  data.vigencia = vigencia.vigencia;
   const id = await cotStore.crear(entry);
   await actualizarEmbudoPorCotizacion(data, id, vendedor);
-  return { id, requiereActualizacionOperam: false };
+  return { id, requiereActualizacionOperam: false, vigencia };
 }
 
 // Guardar la cotizacion. NO genera documento (ADR-0009): devuelve el id del
@@ -614,9 +636,12 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
     // nueva (prevEntry null, tambien en Copiar) sigue siendo quien la crea.
     const vendedor = vendedorAlGuardar(prevEntry, req.user.name);
     data.vendedor = vendedor;
-    const { id, requiereActualizacionOperam } = await crearOActualizarCotizacion(data, vendedor, prevEntry);
+    const { id, requiereActualizacionOperam, vigencia } = await crearOActualizarCotizacion(data, vendedor, prevEntry);
     const entry = await cotStore.obtener(id);
-    res.json({ id, folioOperam: entry?.folioOperam ?? null, requiereActualizacionOperam });
+    res.json({
+      id, folioOperam: entry?.folioOperam ?? null, requiereActualizacionOperam,
+      vigencia: vigencia.vigencia, vigenciaMotivo: vigencia.motivo, avisoVigencia: avisoDeVigencia(vigencia.motivo),
+    });
   } catch (err) {
     console.error('Error guardando cotizacion:', err);
     res.status(500).json({ error: 'Error guardando la cotizacion' });
@@ -769,7 +794,9 @@ app.get('/api/cotizaciones/:id', authMiddleware, async (req, res) => {
   // folioOperam (#109): columna de primer nivel del registro, no vive en data.
   // La vista de cotizacion (cargarCotizacion) lo necesita para el aviso de modo
   // actualizacion sin adivinarlo ni pedirlo aparte; el listado ya lo exponia.
-  res.json({ ...entry.data, folioOperam: entry.folioOperam ?? null });
+  // fechaCreacion (#505): la base de la Vigencia, que Editar necesita para mostrar
+  // la fecha que se va a guardar; `data.fecha` se mueve en cada guardado.
+  res.json({ ...entry.data, folioOperam: entry.folioOperam ?? null, fechaCreacion: fechaNegocioDe(entry.fecha) });
 });
 
 app.get('/api/seguimiento', authMiddleware, async (req, res) => {

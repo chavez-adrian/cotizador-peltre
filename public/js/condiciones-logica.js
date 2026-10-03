@@ -9,6 +9,7 @@
 // escalones "desde N piezas", y la cotizacion decorada usa su PROPIA tabla.
 
 import { piezasDeProducto, hayCalcaEnCarrito } from './calcas-logica.js';
+import { sumarDiasFecha } from './cotizar-logica.js';
 
 // El escalon mas alto cuyo umbral no rebasa las piezas; por debajo del primer
 // umbral, el primer escalon: no existe la cotizacion "sin tiempo de produccion".
@@ -41,13 +42,76 @@ const PARTICIPIO = {
 // sale de sus piezas de PRODUCTO y la calca en el carrito elige la tabla de calca
 // sola; `decorado` es la marca del vendedor (decorado sin partida de calca,
 // ADR-0010), que tambien la elige.
-export function notaTiempoProduccion(condiciones, { items, decorado } = {}) {
+export function tiempoProduccion(condiciones, { items, decorado } = {}) {
   const conCalca = !!decorado || hayCalcaEnCarrito(items);
   const tabla = conCalca ? condiciones.tiempoProduccionCalca : condiciones.tiempoProduccion;
-  const escalon = escalonDePiezas(tabla, piezasDeProducto(items));
+  return escalonDePiezas(tabla, piezasDeProducto(items));
+}
+
+export function notaTiempoProduccion(condiciones, { items, decorado } = {}) {
+  const escalon = tiempoProduccion(condiciones, { items, decorado });
   const [singular, plural] = PARTICIPIO[escalon.unidad];
   const contadas = escalon.cantidad === 1 ? singular : plural;
   return `- Tiempo de produccion: ${plazoTexto(escalon)} ${contadas} a partir del pago del anticipo.`;
+}
+
+// La Vigencia (#505, decision de Adrian 2026-10-01): fecha de creacion + Tiempo
+// de produccion + 14 dias naturales. El plazo es el MISMO escalon que escribe la
+// nota de arriba: una sola regla para la nota y la fecha.
+export const DIAS_NATURALES_VIGENCIA = 14;
+
+const DIAS_POR_UNIDAD = { semanas: 7, dias: 1 };
+
+export function vigenciaDerivada(fechaBase, condiciones, { items, decorado } = {}) {
+  const { cantidad, unidad } = tiempoProduccion(condiciones, { items, decorado });
+  return sumarDiasFecha(fechaBase, cantidad * DIAS_POR_UNIDAD[unidad] + DIAS_NATURALES_VIGENCIA);
+}
+
+export const MOTIVOS_VIGENCIA = Object.freeze({
+  NUEVA: 'nueva',
+  CONSERVADA: 'conservada',
+  RECALCULADA: 'recalculada',
+  TIEMPO_PRODUCCION: 'tiempo-produccion',
+  VENCIDA: 'vencida',
+  DERIVADA: 'derivada',
+});
+
+// Lo que se le dice al vendedor cuando la cotizacion que edita ya estaba vencida.
+export const AVISO_VIGENCIA_VENCIDA = 'Esta cotizaci\u00f3n estaba vencida, la fecha de vigencia se recalcul\u00f3';
+
+export function avisoDeVigencia(motivo) {
+  return motivo === MOTIVOS_VIGENCIA.VENCIDA ? AVISO_VIGENCIA_VENCIDA : null;
+}
+
+const FECHA_PLANA = /^\d{4}-\d{2}-\d{2}$/;
+
+function mismoPlazo(a, b) {
+  return a.cantidad === b.cantidad && a.unidad === b.unidad;
+}
+
+// La vigencia que se guarda (#505). `previa` es la cotizacion que se edita
+// ({ vigencia, fechaCreacion, items, decorado }) o null si es nueva (Copiar
+// tambien es nueva). Editar NO la mueve, salvo: "Recalcular vigencia" (base
+// hoy), la cotizacion ya vencida (vigencia guardada anterior a hoy: base hoy) y
+// un cambio de Tiempo de produccion (escalon o tabla de calca), que la re-deriva
+// con base en la creacion ORIGINAL y, si asi ya quedo vencida, cae a la regla de
+// vencida. Fechas yyyy-mm-dd: el orden de texto es el del calendario.
+export function vigenciaAlGuardar(condiciones, { hoy, items, decorado, previa = null, recalcular = false } = {}) {
+  const carrito = { items, decorado };
+  const conBaseHoy = (motivo) => ({ vigencia: vigenciaDerivada(hoy, condiciones, carrito), motivo });
+  if (!previa) return conBaseHoy(MOTIVOS_VIGENCIA.NUEVA);
+  if (recalcular) return conBaseHoy(MOTIVOS_VIGENCIA.RECALCULADA);
+  const guardada = FECHA_PLANA.test(String(previa.vigencia ?? '')) ? previa.vigencia : null;
+  if (guardada !== null && guardada < hoy) return conBaseHoy(MOTIVOS_VIGENCIA.VENCIDA);
+  const cambioPlazo = !mismoPlazo(
+    tiempoProduccion(condiciones, { items: previa.items, decorado: previa.decorado }),
+    tiempoProduccion(condiciones, carrito),
+  );
+  if (guardada !== null && !cambioPlazo) return { vigencia: guardada, motivo: MOTIVOS_VIGENCIA.CONSERVADA };
+  const base = FECHA_PLANA.test(String(previa.fechaCreacion ?? '')) ? previa.fechaCreacion : hoy;
+  const vigencia = vigenciaDerivada(base, condiciones, carrito);
+  if (vigencia < hoy) return conBaseHoy(MOTIVOS_VIGENCIA.VENCIDA);
+  return { vigencia, motivo: guardada === null ? MOTIVOS_VIGENCIA.DERIVADA : MOTIVOS_VIGENCIA.TIEMPO_PRODUCCION };
 }
 
 // Vive en la configuracion del panel (config-store, #276) bajo

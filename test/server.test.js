@@ -2720,9 +2720,11 @@ test('O68: subir a Operam sin match de cliente responde 422 y NO sube ni persist
 // contenido cambio. Para saberlo hace falta una huella persistida de lo que se subio.
 const { huellaContenidoQuote: huella114 } = await import('../lib/operam-client.js');
 
+// #505: la vigencia guardada va lejos en el futuro -- una ya pasada hace VENCIDA la
+// cotizacion, y editarla la recalcula y pide actualizar el quote.
 function contenido114(extra = {}) {
   return {
-    fecha: '2026-07-29', vigencia: '2026-08-28', tier: 'Mayoreo',
+    fecha: '2026-07-29', vigencia: '2099-08-28', tier: 'Mayoreo',
     cliente: { razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', telefono: '+52 5551234567', cpEntrega: '56530', customerId: 376 },
     items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 1000, iva: 160, total: 1160, notas: [],
@@ -2784,17 +2786,18 @@ test('#115-3: editar las notas SI pide actualizar el quote (van en comments)', a
   assert.strictEqual(res.body.requiereActualizacionOperam, true);
 });
 
-// #115 corrige la regla de #114 en un punto: la vigencia quedaba fuera junto a las
-// notas, pero SI viaja al quote (comments y "Valido hasta"), asi que cambiar el plazo
-// tiene que reescribirlo. Lo que sigue sin contar es la fecha absoluta.
-test('#115-1: cambiar el plazo de vigencia SI pide actualizar el quote', async () => {
+// #505 retira el plazo en dias de #115: la vigencia la decide el servidor, asi que la
+// que mande el navegador no mueve nada (lo que si la mueve vive en
+// test/vigencia-cotizacion-api.test.js).
+test('#505: la vigencia que manda el navegador no decide ni pide actualizar el quote', async () => {
   const id = cotizacionSubida114();
   const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
     .send({ ...contenido114({ vigencia: '2026-12-31' }), cotizacionId: String(id) });
-  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+  assert.strictEqual(readCots().find(c => c.id === id).data.vigencia, '2099-08-28');
 });
 
-test('#115-2: regenerar el mismo plazo en otra fecha NO pide actualizar el quote', async () => {
+test('#115-2: regenerar en otra fecha NO pide actualizar el quote', async () => {
   const id = cotizacionSubida114();
   const base = contenido114();
   // el frontend manda la fecha del dia y recalcula la vigencia: ambas se corren juntas
@@ -2859,9 +2862,10 @@ test('#114-6: subir a Operam persiste la huella de lo que quedo en el quote', as
 test('#114-7: actualizar el quote con exito reescribe la huella con lo que quedo en Operam', async () => {
   const { _resetSesionWeb } = await import('../lib/operam-web.js');
   _resetSesionWeb();
+  // #505: vigencia futura, para que regenerar no la recalcule como vencida.
   const id = cotizacionActualizable({
     cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', telefono: '+52 5551234567' },
-    huellaQuote: 'huella-vieja',
+    huellaQuote: 'huella-vieja', vigencia: '2099-08-27',
   });
   const { restore } = mockOperamWebLegacy();
   try {

@@ -158,12 +158,18 @@ test('#180-7: la lista fijada se guarda solo si no es Auto (#151)', () => {
   assert.equal('tierFijado' in serializarBorrador({ carrito: [], ahora: 1 }), false);
 });
 
-test('#180-8: la vigencia capturada se guarda solo si es un numero de dias util', () => {
-  assert.equal(serializarBorrador({ carrito: [], vigenciaDias: 15, ahora: 1 }).vigenciaDias, 15);
-  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], vigenciaDias: 0, ahora: 1 }), false);
-  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], vigenciaDias: -5, ahora: 1 }), false);
-  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], vigenciaDias: NaN, ahora: 1 }), false);
-  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], ahora: 1 }), false);
+// #505: el vendedor ya no teclea dias de vigencia -- es una fecha derivada --, asi que
+// el borrador deja de guardarlos.
+test('#505: el borrador ya no guarda dias de vigencia', () => {
+  assert.equal('vigenciaDias' in serializarBorrador({ carrito: [], vigenciaDias: 15, ahora: 1 }), false);
+});
+
+test('#505: un borrador viejo con vigenciaDias se sigue restaurando', () => {
+  const viejo = JSON.stringify({ v: 1, actualizado: 1755400000000, carrito: [{ codigo: 'CO16', cantidad: 2 }], tierFijado: 'M350', vigenciaDias: 45 });
+  const leido = deserializarBorrador(viejo);
+  assert.notEqual(leido, null);
+  assert.deepEqual(leido.carrito, [{ codigo: 'CO16', cantidad: 2 }]);
+  assert.equal(leido.tierFijado, 'M350');
 });
 
 test('#180-9: vendedorConfirmado viaja SOLO en true (mismo patron que decorado, #91)', () => {
@@ -180,7 +186,6 @@ test('#180-10: la sesion completa hace ida y vuelta por localStorage sin perder 
     cliente,
     envio,
     tierFijado: 'M350',
-    vigenciaDias: 45,
     vendedorConfirmado: true,
     ahora: 1755400000000,
   }));
@@ -190,7 +195,6 @@ test('#180-10: la sesion completa hace ida y vuelta por localStorage sin perder 
   assert.deepEqual(leido.cliente, cliente);
   assert.deepEqual(leido.envio, envio);
   assert.equal(leido.tierFijado, 'M350');
-  assert.equal(leido.vigenciaDias, 45);
   assert.equal(leido.vendedorConfirmado, true);
 });
 
@@ -647,4 +651,30 @@ test('#282-4: una calca desaparecida del catalogo con manual sigue marcando SIN_
   assert.deepEqual(codigosSinCatalogo, ['CAL8200S']);
   assert.equal(lineas[0].motivo, MOTIVOS_LINEA_INVALIDA.SIN_CATALOGO);
   assert.equal(lineas[0].precioManual, 137.5);
+});
+
+// === #505: en modo Editar viaja la vigencia de la cotizacion que se edita ===
+// Con ella el paso Cotizacion restaurado sigue mostrando la fecha que se va a
+// guardar (conservada, vencida o con el Recalcular que el vendedor ya pidio).
+const VIGENCIA_PREVIA = {
+  vigencia: '2026-11-05', fechaCreacion: '2026-10-01', decorado: false,
+  items: [{ codigo: 'PV08B1N1', cantidad: 40, precio: 100, descripcion: 'Plato' }],
+};
+
+test('#505: en modo Editar el borrador guarda la vigencia previa y el Recalcular pendiente', () => {
+  const borrador = serializarBorrador({
+    carrito: [], ahora: 1, modoActualizacion: true, cotizacionId: '41', folioOperam: '1263',
+    vigenciaPrevia: VIGENCIA_PREVIA, recalcularVigencia: true,
+  });
+  assert.deepEqual(borrador.vigenciaPrevia, {
+    vigencia: '2026-11-05', fechaCreacion: '2026-10-01', decorado: false,
+    items: [{ codigo: 'PV08B1N1', cantidad: 40 }],
+  });
+  assert.equal(borrador.recalcularVigencia, true);
+});
+
+test('#505: fuera de modo Editar no viaja la vigencia previa ni el Recalcular', () => {
+  const borrador = serializarBorrador({ carrito: [], ahora: 1, vigenciaPrevia: VIGENCIA_PREVIA, recalcularVigencia: true });
+  assert.equal('vigenciaPrevia' in borrador, false);
+  assert.equal('recalcularVigencia' in borrador, false);
 });

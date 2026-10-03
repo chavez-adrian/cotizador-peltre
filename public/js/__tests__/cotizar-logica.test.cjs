@@ -1307,3 +1307,28 @@ test('#487: con 10% de descuento sobre 430.00 de mercancia el valor declarado es
   const cuerpo = cuerpoTarifas({ cp: '11700', pais: 'MX', items: [], totalConIVA: valorDeclaradoEnvio(subtotal) });
   assert.strictEqual(cuerpo.totalConIVA, 448.92);
 });
+
+// #505: la Vigencia se cuenta desde la fecha de CREACION de la cotizacion, que el
+// registro guarda como instante (columna `fecha`). Es dia del calendario del
+// negocio, y la fecha sin hora o en medianoche UTC exacta (rescates del backfill,
+// #428) es ese mismo dia, no el anterior.
+let fechaNegocioDe;
+before(async () => {
+  ({ fechaNegocioDe } = await import('../cotizar-logica.js'));
+});
+
+test('#505 fechaNegocioDe: un instante de la noche de CDMX es el dia de CDMX', () => {
+  assert.strictEqual(fechaNegocioDe('2026-10-02T03:30:00.000Z'), '2026-10-01');
+  assert.strictEqual(fechaNegocioDe('2026-10-01T17:00:00.000Z'), '2026-10-01');
+});
+
+test('#505 fechaNegocioDe: la fecha sin hora y la medianoche UTC exacta son ese dia', () => {
+  assert.strictEqual(fechaNegocioDe('2026-05-08'), '2026-05-08');
+  assert.strictEqual(fechaNegocioDe('2026-05-08T00:00:00.000Z'), '2026-05-08');
+  assert.strictEqual(fechaNegocioDe('2026-05-08T00:00:00Z'), '2026-05-08');
+});
+
+test('#505 fechaNegocioDe: sin fecha legible no inventa una', () => {
+  assert.strictEqual(fechaNegocioDe(null), null);
+  assert.strictEqual(fechaNegocioDe('no es fecha'), null);
+});

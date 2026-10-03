@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clasificarPostFix, proximoIntento, vigenciaAnteriorAlDocumento, vigenciaDeComentarios, desfaseQuote, cotizacionesDelBarrido, destinatariosAvisoPostFix, mensajeAvisoPostFix } from '../lib/postfix-reintento.js';
+import { clasificarPostFix, proximoIntento, vigenciaAnteriorAlDocumento, desfaseQuote, cotizacionesDelBarrido, destinatariosAvisoPostFix, mensajeAvisoPostFix, esperadoDeHuella } from '../lib/postfix-reintento.js';
 
 // Nucleo PURO del reintento del post-fix web del quote (#380). Sin red, sin Neon,
 // sin SMTP: recibe lo que devolvio corregirVigenciaQuote (lib/operam-web.js) y
@@ -87,15 +87,21 @@ test('vigenciaAnteriorAlDocumento: sin alguna de las dos fechas no se juzga', ()
   assert.equal(vigenciaAnteriorAlDocumento(null, '2026-09-02'), false);
 });
 
-// --- vigenciaDeComentarios: la vigencia que el quote LLEVA (armarComentariosQuote) ---
+// --- esperadoDeHuella: la vigencia que el cotizador ESCRIBIO (#505) ---
+// Es la referencia del barrido y del worker, nunca la linea "Valido hasta" de comments
+// (las notas del quote se editan a mano en Operam).
 
-test('vigenciaDeComentarios: lee la linea Valido hasta que el cotizador pone al final de comments', () => {
-  assert.equal(vigenciaDeComentarios('- Precios con IVA.\nValido hasta: 2026-10-04'), '2026-10-04');
+test('esperadoDeHuella: la vigencia es la fecha que guardo la huella', () => {
+  const h = esperadoDeHuella(JSON.stringify({ items: [], listaId: '9', branchId: null, shipVia: null, vigencia: '2026-10-04' }));
+  assert.equal(h.vigencia, '2026-10-04');
+  assert.equal(h.trae.vigencia, true);
 });
 
-test('vigenciaDeComentarios: sin la linea no inventa una fecha', () => {
-  assert.equal(vigenciaDeComentarios('QUOTE DE PRUEBA - BORRAR'), null);
-  assert.equal(vigenciaDeComentarios(null), null);
+test('esperadoDeHuella: una huella anterior a #505 no trae vigencia y no se juzga', () => {
+  const h = esperadoDeHuella(JSON.stringify({ items: [], listaId: '9', branchId: null, shipVia: null }));
+  assert.equal(h.vigencia, null);
+  assert.equal(h.trae.vigencia, false);
+  assert.equal(esperadoDeHuella(null).vigencia, null);
 });
 
 // --- desfaseQuote: el quote leido por la API contra lo que el post-fix debia dejar ---

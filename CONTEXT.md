@@ -59,9 +59,11 @@ Las dos acciones de carga del historial (#104, ADR-0008; renombradas en #149). *
 
 ## Vigencia ("Válido hasta")
 
-La fecha hasta la que la cotización se sostiene, capturada en días por el vendedor (30 por omisión) y calculada sobre la fecha de emisión. Vive en tres lugares por razones distintas: el PDF/HTML que recibe el cliente (donde siempre fue correcta), el campo `comments` del quote de Operam (respaldo, porque la API no acepta la fecha) y el campo nativo "Válido hasta" de Operam, que la API v3 ignora y deja en `ord_date-1` — dejando el ERP mostrando "Esta cotizacion esta vencida" sobre cotizaciones vivas.
+La fecha hasta la que la cotizacion se sostiene: **fecha de creacion de la cotizacion + Tiempo de produccion + 14 dias naturales** (decision de Adrian 2026-10-01, #505). El Tiempo de produccion es el MISMO escalon que escribe la nota de las condiciones (piezas de producto; tabla de calca con calca en el carrito o marca de decorado): una sola regla para la nota y la fecha. El vendedor ya no la captura en dias: el paso Cotizacion la muestra como fecha, en solo lectura.
 
-El campo nativo se corrige por **post-fix contra la web legacy de Operam**, inmediatamente después de subir el quote y de forma no bloqueante (ADR-0007). La línea "Valido hasta: ..." en `comments` se conserva como respaldo deliberadamente redundante: el post-fix puede fallar y la vigencia no puede quedarse sin portador dentro de Operam.
+Editar una cotizacion NO la mueve, salvo tres casos. **Recalcular vigencia** (boton del paso Cotizacion) la vuelve a derivar con HOY como base. Un **cambio de Tiempo de produccion** (se agrega calca, o el carrito cruza un escalon) la recalcula sola con la fecha de creacion original como base; si con esa base ya quedo vencida, aplica la regla de vencida. Una cotizacion **vencida** (vigencia guardada anterior al dia de la edicion) se recalcula con base HOY y el vendedor ve "Esta cotizacion estaba vencida, la fecha de vigencia se recalculo". Copiar es una cotizacion nueva: base hoy. Cuando la vigencia se mueve es un cambio del quote y se actualiza en Operam conservando el folio.
+
+Viaja al PDF/HTML que recibe el cliente, al Resumen de WhatsApp y a Operam: al campo nativo "Válido hasta", que la API v3 ignora y deja en `ord_date-1` y se corrige por **post-fix contra la web legacy** inmediatamente despues de subir el quote, de forma no bloqueante (ADR-0007), y a la linea "Valido hasta: ..." de `comments`, que se sigue escribiendo como portador para quien lee el quote pero no es referencia de nada: las notas se editan a mano en Operam. Lo que el cotizador escribio queda en la huella del quote, y esa es la referencia del barrido de los post-fixes.
 
 ## Prospecto Mínimo
 

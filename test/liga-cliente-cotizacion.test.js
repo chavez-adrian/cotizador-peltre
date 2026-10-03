@@ -75,7 +75,8 @@ function mockOperam(handlers) {
 // caso para simular lo que manda el navegador.
 function contenido(cliente) {
   return {
-    fecha: '2026-09-18', vigencia: '2026-10-18', tier: 'Mayoreo',
+    // #505: vigencia futura -- una ya pasada se recalcula al editar y pide actualizar.
+    fecha: '2026-09-18', vigencia: '2099-10-18', tier: 'Mayoreo',
     cliente: {
       razonSocial: 'Sofia Rodriguez', nombreCorto: 'Sofia Rodriguez',
       telefono: '+52 5551234567', cpEntrega: '56530', pais: 'MX',

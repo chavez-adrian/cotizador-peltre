@@ -2147,28 +2147,31 @@ test('#114 huellaContenidoQuote: el mismo contenido produce la misma huella', ()
   assert.equal(huellaContenidoQuote(cotizacionBase()), huellaContenidoQuote(cotizacionBase()));
 });
 
-// #115: la vigencia SI viaja al quote (comments + "Valido hasta"), asi que cambiarla
-// tiene que reescribirlo. Lo que no puede contar es la FECHA absoluta, que el frontend
-// recalcula en cada generacion: cuenta el PLAZO en dias que eligio el vendedor.
-test('#115 huellaContenidoQuote: los DIAS de vigencia SI cuentan como cambio', () => {
+// #505: `data.vigencia` ya no se mueve al regenerar (es LA vigencia del cotizador),
+// asi que la huella lleva la FECHA: cuando cambia -- Recalcular, vencida, cambio de
+// Tiempo de produccion -- es un cambio del quote.
+test('#505 huellaContenidoQuote: la FECHA de vigencia cuenta como cambio', () => {
   const base = huellaContenidoQuote(cotizacionBase());
-  // misma fecha de generacion, vigencia mas larga = otro plazo elegido (30 -> 63 dias)
   assert.notEqual(huellaContenidoQuote(cotizacionBase({ vigencia: '2026-09-30' })), base);
 });
 
-test('#115 huellaContenidoQuote: el mismo plazo en otra fecha de generacion NO cuenta como cambio', () => {
+test('#505 huellaContenidoQuote: regenerar otro dia con la misma vigencia NO cuenta como cambio', () => {
   const base = huellaContenidoQuote(cotizacionBase());
-  // generar el mismo carrito al dia siguiente: fecha y vigencia se mueven juntas
-  assert.equal(huellaContenidoQuote(cotizacionBase({ fecha: '2026-07-30', vigencia: '2026-08-29' })), base);
+  assert.equal(huellaContenidoQuote(cotizacionBase({ fecha: '2026-08-05' })), base);
 });
 
-// El plazo se deriva con las mismas reglas que construyen el comments que SI se sube,
-// defaults incluidos (sin vigencia = fecha + 30). Por eso sin vigencia explicita el plazo
-// es constante y mover la fecha de generacion no es un cambio, mientras que fijar otra
-// vigencia si lo es: cambia la linea que Operam va a mostrar.
-test('#115 huellaContenidoQuote: sin vigencia explicita el plazo es el default y la fecha no lo mueve', () => {
-  const sinVigencia = (extra) => huellaContenidoQuote(cotizacionBase({ vigencia: '', ...extra }));
-  assert.equal(sinVigencia(), sinVigencia({ fecha: '2026-12-01' }));
+// La huella que dejaba la subida ANTES de #505 para cotizacionBase() con lista 9:
+// sin `vigencia` y con la linea de comments normalizada al plazo en dias. Es un
+// literal de esa version, no algo que se recalcule aqui.
+const HUELLA_ANTES_DE_505 = '{"items":[{"stock_id":"CR20-PLATO","qty":10,"price":100,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":376,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"- Precio sujeto a cambio\\nValido hasta: +30d","subtotal":1000,"iva":160,"total":1160,"listaId":"9","branchId":null,"shipVia":null}';
+
+test('#505 contenidoQuoteCambio: una huella guardada antes de #505 no declara cambio por vigencia', () => {
+  const opciones = { listaId: 9, shipVia: null };
+  assert.equal(contenidoQuoteCambio(cotizacionBase(), HUELLA_ANTES_DE_505, opciones), false);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ fecha: '2026-10-02', vigencia: '2026-11-13' }), HUELLA_ANTES_DE_505, opciones), false);
+  // Lo demas que esa huella si guardaba se sigue comparando.
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ notas: ['Otra nota'] }), HUELLA_ANTES_DE_505, opciones), true);
+  assert.equal(contenidoQuoteCambio(cotizacionBase({ total: 99 }), HUELLA_ANTES_DE_505, opciones), true);
 });
 
 test('#115 huellaContenidoQuote: fijar una vigencia distinta SI cambia la huella', () => {
@@ -2287,7 +2290,7 @@ test('#114 contenidoQuoteCambio: contra la huella de lo subido, sin cambios es f
   assert.equal(contenidoQuoteCambio(cotizacionBase({ total: 99 }), huellaContenidoQuote(data)), true);
   // #115: las notas viajan a comments, editarlas hay que llevarlo al quote
   assert.equal(contenidoQuoteCambio(cotizacionBase({ notas: ['Otra'] }), huellaContenidoQuote(data)), true);
-  // #115: otro plazo de vigencia SI es un cambio que hay que llevar al quote
+  // #505: otra fecha de vigencia SI es un cambio que hay que llevar al quote
   assert.equal(contenidoQuoteCambio(cotizacionBase({ vigencia: '2026-12-31' }), huellaContenidoQuote(data)), true);
 });
 
@@ -2718,8 +2721,8 @@ test('subirCotizacionOperam: con branchId ya ligado la sucursal no se re-resuelv
 
 // #284: cambiar COMO se arma la fecha no puede mover la huella de una cotizacion
 // que ya se subio. Su `data` trae fecha y vigencia explicitas, asi que el reloj de
-// quien la regenera es irrelevante -- lo que entra a la huella es el PLAZO en dias
-// (#115), no la fecha. El guardia mide justo eso: la misma cotizacion evaluada de
+// quien la regenera es irrelevante -- lo que entra a la huella es la vigencia
+// guardada (#505). El guardia mide justo eso: la misma cotizacion evaluada de
 // noche (cuando la fecha UTC ya era la de manana) y de dia da la misma huella.
 test('#284 huellaContenidoQuote: la huella de una cotizacion ya subida no depende del reloj', () => {
   const deNoche = conRelojFijado('2026-09-02T01:07:48Z', () => huellaContenidoQuote(cotizacionBase()));
@@ -2727,9 +2730,9 @@ test('#284 huellaContenidoQuote: la huella de una cotizacion ya subida no depend
   assert.equal(deNoche, deDia);
 });
 
-// El mismo guardia para el caso que SI toca el fallback: sin vigencia explicita el
-// plazo sale de fecha + 30, y esa suma tampoco puede depender del reloj.
-test('#284 huellaContenidoQuote: sin vigencia explicita el plazo derivado tampoco depende del reloj', () => {
+// El mismo guardia para el caso que SI toca el fallback: sin vigencia explicita la
+// fecha sale de fecha + 30, y esa suma tampoco puede depender del reloj.
+test('#284 huellaContenidoQuote: sin vigencia explicita la fecha derivada tampoco depende del reloj', () => {
   const sinVigencia = () => huellaContenidoQuote(cotizacionBase({ vigencia: '' }));
   assert.equal(
     conRelojFijado('2026-09-02T01:07:48Z', sinVigencia),
