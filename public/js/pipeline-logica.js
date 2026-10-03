@@ -1193,7 +1193,7 @@ export function buildContactoDirectoHtml(o) {
   const wa = buildWaLink(celularDeContacto(o));
   const mensaje = o && o.tipo === 'cotizacion' && o.etapa === 'seguimiento' ? o.mensajeSeguimiento : null;
   const correo = String((o && o.correo) || '').trim();
-  return `<div class="cot-card-actions contacto-directo">${
+  return `<div class="contacto-directo">${
     accesoContactoHtml('WhatsApp', 'wa', wa && (mensaje ? `${wa}?text=${encodeURIComponent(mensaje)}` : wa), 'Sin telefono registrado', ICONO_WHATSAPP)
   }${
     accesoContactoHtml('Correo', 'correo', FORMA_CORREO.test(correo) ? `mailto:${correo}` : null, 'Sin correo registrado', ICONO_CORREO)
@@ -1239,10 +1239,9 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
           <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
         </div>
-        ${total}
+        <div class="cot-card-lado">${total}${contactoDirecto}</div>
       </div>
       ${cadena}
-      ${contactoDirecto}
       ${editar}
       ${sinContacto}
       ${asignar}
@@ -1327,7 +1326,6 @@ export function buildDetalleListaPipelineHtml(o, { vendedores, puedeAsignar: tie
     falta ? 'Falta' : (subido ? 'Subido' : 'Opcional'), falta ? 'alerta' : (subido ? 'ok' : 'pend'),
     buildComprobantePagoHtml(o), falta, plegables);
   const acciones = [
-    buildContactoDirectoHtml(o),
     buildEditarOportunidadHtml(o),
     buildMoverSeguimientoControlHtml(o),
     buildNuevaOportunidadControlHtml(o),
@@ -1337,7 +1335,7 @@ export function buildDetalleListaPipelineHtml(o, { vendedores, puedeAsignar: tie
   ].join('');
   const salida = buildSalidaControlHtml(o, { esAdmin });
   return `<div class="pl-detalle">
-      <div class="pl-info">${chipOrigenHtml(o)}${badgeClienteOperamHtml(o)}${cadenaOperamHtml(o.espejoOperam)}</div>
+      <div class="pl-info">${chipOrigenHtml(o)}${badgeClienteOperamHtml(o)}${cadenaOperamHtml(o.espejoOperam)}${buildContactoDirectoHtml(o)}</div>
       ${acciones ? `<div class="pl-acciones">${acciones}</div>` : ''}
       ${calca}${comprobante}
       ${salida ? `<div class="pl-salida"><span class="pl-salida-tit">Cerrar oportunidad</span>${salida}</div>` : ''}
