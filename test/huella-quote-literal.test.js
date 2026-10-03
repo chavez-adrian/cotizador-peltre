@@ -1,0 +1,48 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+// #522: la huella del quote fijada como LITERAL antes de que huella y reintento lean
+// la tabla del Post-fix del encabezado del quote. contenidoQuoteCambio compara cadenas:
+// si la forma de la huella se mueve un byte, toda cotizacion ya subida se lee como
+// "cambio" y su primera regeneracion reescribe el quote en Operam.
+const { huellaContenidoQuote, contenidoQuoteCambio } = await import('../lib/operam-client.js');
+
+function cotizacion() {
+  return {
+    fecha: '2026-07-29',
+    vigencia: '2026-08-28',
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', customerId: 376, branchId: 412 },
+    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
+    notas: ['Precio sujeto a cambio'],
+    subtotal: 1000, iva: 160, total: 1160,
+  };
+}
+
+// Capturada con el codigo de 9aa56f0 (antes de #522) para cotizacion() con lista 9 y
+// transportista 3: los cuatro campos del encabezado al FINAL, en ese orden.
+const HUELLA_COMPLETA = '{"items":[{"stock_id":"CR20-PLATO","qty":10,"price":100,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":376,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"- Precio sujeto a cambio","subtotal":1000,"iva":160,"total":1160,"listaId":"9","branchId":"412","shipVia":"3","vigencia":"2026-08-28"}';
+
+// Misma captura con lista y transportista null explicito (se escriben como null).
+const HUELLA_NULLS = '{"items":[{"stock_id":"CR20-PLATO","qty":10,"price":100,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":376,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"- Precio sujeto a cambio","subtotal":1000,"iva":160,"total":1160,"listaId":null,"branchId":"412","shipVia":null,"vigencia":"2026-08-28"}';
+
+// Misma captura sin opciones (lista y transportista undefined: se omiten).
+const HUELLA_SIN_OPCIONES = '{"items":[{"stock_id":"CR20-PLATO","qty":10,"price":100,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":376,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"- Precio sujeto a cambio","subtotal":1000,"iva":160,"total":1160,"branchId":"412","vigencia":"2026-08-28"}';
+
+// La forma que guardaba la subida ANTES de #403: sin ninguno de los cuatro campos
+// tardios y con la vigencia como linea "Valido hasta: +30d" de comments (antes de #505).
+const HUELLA_ANTES_DE_403 = '{"items":[{"stock_id":"CR20-PLATO","qty":10,"price":100,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":376,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"- Precio sujeto a cambio\\nValido hasta: +30d","subtotal":1000,"iva":160,"total":1160}';
+
+test('#522 huellaContenidoQuote: con lista, domicilio, transportista y vigencia sale byte-identica', () => {
+  assert.equal(huellaContenidoQuote(cotizacion(), { listaId: 9, shipVia: 3 }), HUELLA_COMPLETA);
+  assert.equal(contenidoQuoteCambio(cotizacion(), HUELLA_COMPLETA, { listaId: 9, shipVia: 3 }), false);
+});
+
+test('#522 huellaContenidoQuote: null explicito se escribe y undefined se omite', () => {
+  assert.equal(huellaContenidoQuote(cotizacion(), { listaId: null, shipVia: null }), HUELLA_NULLS);
+  assert.equal(huellaContenidoQuote(cotizacion()), HUELLA_SIN_OPCIONES);
+});
+
+test('#522 contenidoQuoteCambio: una huella anterior a #403 sin los campos tardios no declara cambio', () => {
+  assert.equal(contenidoQuoteCambio(cotizacion(), HUELLA_ANTES_DE_403, { listaId: 9, shipVia: 3 }), false);
+  assert.equal(contenidoQuoteCambio({ ...cotizacion(), total: 99 }, HUELLA_ANTES_DE_403, { listaId: 9, shipVia: 3 }), true);
+});
