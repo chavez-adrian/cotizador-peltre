@@ -386,6 +386,32 @@ export function sinConstancia(csf) {
   };
 }
 
+// La constancia cuyo PDF no se pudo leer (#516): la ranura queda vacia como en
+// sinConstancia -- nada de un PDF anterior sigue en memoria con la pantalla diciendo
+// "error" --, pero en 'error' y con el mensaje que pinta el banner. Vacia la constancia,
+// no el flujo: la marca del upgrade se queda para que la CSF que se suelte despues en
+// ese mismo upgrade siga siendo suya.
+export function estadoTrasErrorLectura(csf, mensaje) {
+  return {
+    ...sinConstancia(csf),
+    status: 'error',
+    mensaje,
+    constanciaDeUpgrade: (csf || {}).constanciaDeUpgrade ?? null,
+  };
+}
+
+// Que se ve en el panel de la constancia segun su estado (#516). En 'error' la zona
+// para soltar el PDF sigue a la vista junto al banner: es la unica salida del panel.
+export function visibilidadPanelCsf(status) {
+  return {
+    dropzone: status === 'idle' || status === 'error',
+    spinner: status === 'loading',
+    bannerOk: status === 'success',
+    bannerErr: status === 'error',
+    detalles: status === 'success',
+  };
+}
+
 // La lectura del PDF en curso (#491): app.js marca cada una con un numero al empezar y
 // solo escribe su resultado si sigue siendo la vigente. Vaciar la constancia o soltar
 // otro PDF la deja huerfana, y su resultado llegaria al flujo equivocado.

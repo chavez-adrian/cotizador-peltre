@@ -55,6 +55,8 @@ import {
   lecturaVigente,
   constanciaViva,
   sinConstancia,
+  estadoTrasErrorLectura,
+  visibilidadPanelCsf,
   nombreConCorto,
   datosUpgradeConComercial,
   modoComercialUpgrade,
@@ -8357,11 +8359,12 @@ function altaCsfSetStatus(status, opts = {}) {
   const bannerErr = document.getElementById('csf-banner-err');
   const detalles = document.getElementById('csf-detalles');
 
-  if (dropzone) dropzone.style.display = status === 'idle' ? '' : 'none';
-  if (spinner) spinner.style.display = status === 'loading' ? '' : 'none';
-  if (bannerOk) bannerOk.style.display = status === 'success' ? '' : 'none';
-  if (bannerErr) bannerErr.style.display = status === 'error' ? '' : 'none';
-  if (detalles) detalles.style.display = status === 'success' ? '' : 'none';
+  const visible = visibilidadPanelCsf(status);
+  if (dropzone) dropzone.style.display = visible.dropzone ? '' : 'none';
+  if (spinner) spinner.style.display = visible.spinner ? '' : 'none';
+  if (bannerOk) bannerOk.style.display = visible.bannerOk ? '' : 'none';
+  if (bannerErr) bannerErr.style.display = visible.bannerErr ? '' : 'none';
+  if (detalles) detalles.style.display = visible.detalles ? '' : 'none';
   // Leida la CSF, los campos y el boton "Confirmar datos fiscales" se ven sin un
   // clic extra en el resumen del <details>.
   if (detalles && status === 'success') detalles.open = true;
@@ -8534,7 +8537,14 @@ async function altaCsfProcesarArchivo(file) {
     pintarAvisoConstancia(formIdCsf, null);
   } catch (err) {
     if (!lecturaVigente(altaCsfState, lectura)) return;
-    altaCsfSetStatus('error', { mensaje: 'Error al leer el PDF: ' + err.message });
+    // Un PDF que no se pudo leer no deja constancia detras, y la zona para soltar otro
+    // sigue a la vista (#516). Sin limpiar el input, elegir el MISMO archivo ya
+    // corregido no dispararia 'change'.
+    const mensaje = 'Error al leer el PDF: ' + err.message;
+    Object.assign(altaCsfState, estadoTrasErrorLectura(altaCsfState, mensaje));
+    altaCsfSetStatus('error', { mensaje });
+    const input = document.getElementById('csf-input');
+    if (input) input.value = '';
   }
 }
 

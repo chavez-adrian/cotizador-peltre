@@ -12,12 +12,12 @@ const assert = require('node:assert/strict');
 //     alta a medias que el borrador de #185 restaura a proposito.
 
 let usoCfdiPorDefecto, estadoAltaAlAbrirPanel, constanciaAlAbrirAlta, constanciaViva, buildAltaDarDeAltaPayload;
-let lecturaVigente, sinConstancia;
+let lecturaVigente, sinConstancia, visibilidadPanelCsf, estadoTrasErrorLectura;
 let planRestauracionFormulario, RESTAURACION_SUPERFICIE, serializarBorradorFormulario, deserializarBorradorFormulario;
 before(async () => {
   ({
     usoCfdiPorDefecto, estadoAltaAlAbrirPanel, constanciaAlAbrirAlta, constanciaViva, buildAltaDarDeAltaPayload,
-    lecturaVigente, sinConstancia,
+    lecturaVigente, sinConstancia, visibilidadPanelCsf, estadoTrasErrorLectura,
   } = await import('../alta-logica.js'));
   ({
     planRestauracionFormulario, RESTAURACION_SUPERFICIE, serializarBorradorFormulario, deserializarBorradorFormulario,
@@ -308,4 +308,67 @@ test('#491-12: el upgrade logrado consume la Seccion 1 que el alta habia confirm
   assert.ok(marca > 0);
   assert.ok(ejecutar.indexOf('altaState.datos = null') > ejecutar.indexOf("vista.tipo !== 'lograda'"),
     'solo al lograrse: si el upgrade falla, "Actualizar este" se reintenta con esos datos');
+});
+
+// --- La constancia que falla al leerse (#516) ---------------------------------
+// Un PDF danado o un fallo de red al parsear terminaban en 'error' con la zona para
+// soltar el PDF oculta y sin reintento: la unica salida era cerrar el panel. El panel
+// es el mismo nodo para el alta y el upgrade fiscal (#376), asi que vale en los dos.
+
+test('#516-1: tras un error se ven el banner del error Y la zona para soltar otro PDF', () => {
+  assert.deepStrictEqual(visibilidadPanelCsf('error'),
+    { dropzone: true, spinner: false, bannerOk: false, bannerErr: true, detalles: false });
+});
+
+test('#516-2: idle, loading y success se ven igual que antes de #516', () => {
+  assert.deepStrictEqual(visibilidadPanelCsf('idle'),
+    { dropzone: true, spinner: false, bannerOk: false, bannerErr: false, detalles: false });
+  assert.deepStrictEqual(visibilidadPanelCsf('loading'),
+    { dropzone: false, spinner: true, bannerOk: false, bannerErr: false, detalles: false });
+  assert.deepStrictEqual(visibilidadPanelCsf('success'),
+    { dropzone: false, spinner: false, bannerOk: true, bannerErr: false, detalles: true },
+    'tras una lectura buena la zona del PDF se oculta: no hay "Cambiar PDF" (fuera de #516)');
+});
+
+// Tras un error la ranura de la constancia queda vacia: nada de un PDF anterior sigue
+// en memoria con la pantalla diciendo "error" (la misma clase de bug que #491).
+test('#516-3: un error de lectura descarta la constancia entera y guarda el mensaje', () => {
+  const estado = estadoTrasErrorLectura(CONSTANCIA_DEL_UPGRADE, 'Error al leer el PDF: Invalid PDF structure');
+  assert.strictEqual(estado.status, 'error');
+  assert.strictEqual(estado.mensaje, 'Error al leer el PDF: Invalid PDF structure');
+  assert.strictEqual(estado.datos, null);
+  assert.strictEqual(estado.rfc, null);
+  assert.strictEqual(estado.fileName, null);
+  assert.strictEqual(estado.pdfBase64, null, 'el POST no puede llevar el PDF de la constancia anterior');
+  assert.strictEqual(estado.regimenesDetectados, null);
+  assert.strictEqual(estado.confirmado, false);
+});
+
+// El panel es el mismo nodo para el alta y el upgrade fiscal (#376): el error vacia la
+// constancia, no el flujo. Si perdiera `constanciaDeUpgrade`, la CSF buena que el
+// vendedor suelte despues en el upgrade pasaria por la del alta y la heredaria el
+// "Nuevo cliente" que se abra en la misma pestana (#491).
+test('#516-4: en el upgrade fiscal el error conserva el modo, su origen, la precarga comercial y la marca del upgrade', () => {
+  const comercial = { salesType: '3', segmento: '12' };
+  const enUpgrade = {
+    ...CONSTANCIA_DEL_UPGRADE,
+    modoUpgrade: 15,
+    upgradeOrigen: 'clientes',
+    comercialPrecargado: comercial,
+    constanciaDeUpgrade: 15,
+  };
+  const estado = estadoTrasErrorLectura(enUpgrade, 'Error al leer el PDF: Failed to fetch');
+  assert.strictEqual(estado.modoUpgrade, 15);
+  assert.strictEqual(estado.upgradeOrigen, 'clientes');
+  assert.strictEqual(estado.comercialPrecargado, comercial);
+  assert.strictEqual(estado.constanciaDeUpgrade, 15);
+});
+
+test('#516-5: tras un error no hay constancia viva y el estado recibido no se toca', () => {
+  const original = { ...CONSTANCIA_DEL_UPGRADE };
+  const estado = estadoTrasErrorLectura(original, 'Error al leer el PDF: Invalid PDF structure');
+  assert.strictEqual(constanciaViva(estado), false,
+    'el aviso del borrador de que los datos fiscales quedaron vacios sigue siendo cierto');
+  assert.strictEqual(original.status, 'success');
+  assert.strictEqual(original.pdfBase64, 'JVBERi0xLjQK');
 });
