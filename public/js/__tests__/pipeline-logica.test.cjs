@@ -2084,7 +2084,8 @@ async function superficies502() {
   const { buildFilaListaPipelineHtml } = await import('../pipeline-logica.js');
   return {
     tablero: (o) => buildTableroPipelineHtml([o]),
-    lista: (o) => buildFilaListaPipelineHtml(o),
+    // #518: las acciones viven en la fila ABIERTA de la lista.
+    lista: (o) => buildFilaListaPipelineHtml(o, { abierta: true }),
   };
 }
 
@@ -2162,23 +2163,23 @@ test('#502: ninguna tarjeta del Pipeline ofrece Copiar cotizacion', async () => 
   assert.equal(tablero.includes('Copiar cotizaci'), false);
   assert.equal(tablero.includes("'nueva')"), false);
   for (const o of ops) {
-    const fila = buildFilaListaPipelineHtml(o);
+    const fila = buildFilaListaPipelineHtml(o, { abierta: true });
     assert.equal(fila.includes('Copiar cotizaci'), false);
     assert.equal(fila.includes("'nueva')"), false);
   }
 });
 
 // La fila de la lista se movio de app.js a un constructor puro: lo que ya
-// pintaba (nombre, etapa, vendedor, total, badge) se sigue pintando.
-test('#502: la fila de la lista conserva nombre, etapa, meta, total y badge', async () => {
+// pintaba (nombre, vendedor, total, badge) se sigue pintando. Desde #518 la
+// etapa la dice el encabezado de su seccion, no la linea gris.
+test('#502: la fila de la lista conserva nombre, meta, total y badge', async () => {
   const { buildFilaListaPipelineHtml } = await import('../pipeline-logica.js');
-  const html = buildFilaListaPipelineHtml(cotizacion({ ...CASOS_EDITAR_502.editable, nombre: 'Hotel <Azul>', ciudad: 'Puebla', total: 1234.5 }));
+  const html = buildFilaListaPipelineHtml(cotizacion({ ...CASOS_EDITAR_502.editable, nombre: 'Hotel <Azul>', ciudad: 'Puebla', total: 1234.5, fecha: null }));
   assert.ok(html.includes('Hotel &lt;Azul&gt;'));
-  assert.ok(html.includes('<div class="cot-card-meta">Seguimiento \u00b7 Memo \u00b7 Puebla</div>'));
+  assert.ok(html.includes('<span class="pl-meta">Memo \u00b7 Puebla</span>'));
   assert.ok(html.includes('$1,234.50'));
   assert.ok(html.includes('Cotizaci'));
   const sinNombre = buildFilaListaPipelineHtml(prospecto({ nombre: '', etapa: 'producto_entregado', total: 0 }));
   assert.ok(sinNombre.includes('Sin nombre'));
-  assert.ok(sinNombre.includes('Producto entregado'));
-  assert.equal(sinNombre.includes('cot-card-total'), false);
+  assert.ok(sinNombre.includes('Sin cotizar'));
 });

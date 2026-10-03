@@ -1135,8 +1135,12 @@ export function buildDecoradoControlHtml(o) {
 // Solo aplica a COTIZACIONES: el celular de un prospecto ES su identidad, no
 // puede faltar. Usa el id numerico (refId), nunca el prefijado ("c51"), leccion
 // del bug de #57.
+export function oportunidadSinContacto(o) {
+  return !!o && o.tipo === 'cotizacion' && !o.contactoCelular;
+}
+
 export function buildSinContactoControlHtml(o) {
-  if (!o || o.tipo !== 'cotizacion' || o.contactoCelular) return '';
+  if (!oportunidadSinContacto(o)) return '';
   const id = o.refId ?? o.id;
   return `<div class="cot-card-actions tablero-sin-contacto">
     <span class="cot-badge badge-sin-contacto">Sin Contacto</span>
@@ -1237,20 +1241,133 @@ export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsign
   }).join('');
 }
 
-// Fila de la vista lista del Pipeline: las mismas oportunidades del tablero, con
-// su etapa en la linea gris. Vivia inline en app.js hasta #502, que la saco aqui
-// para probar su boton Editar.
-export function buildFilaListaPipelineHtml(o) {
-  const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
-  // El Origen sale de la linea gris y se lee en su chip (#287).
-  const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' \u00b7 ');
-  const cadena = cadenaOperamHtml(o.espejoOperam);
-  return `<div class="cot-card"><div class="cot-card-header"><div>
-      <div class="cot-card-cliente">${escapeHtml(o.nombre || 'Sin nombre')}${badgeFolioOperam(o)}${badgePagoSinRegistrarHtml(o)}${badgeFaltaComprobanteHtml(o)}</div>
-      <div class="cot-card-meta">${escapeHtml(ETAPA_LABELS[o.etapa] || o.etapa)}${meta ? ' \u00b7 ' + meta : ''}</div>
-      <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
-      ${cadena}
-    </div>${total}</div>${buildEditarOportunidadHtml(o)}</div>`;
+// Vista lista del Pipeline (#518): un acordeon por etapa, en el orden del
+// tablero, con la fila que se expande. Trae la MISMA informacion y las MISMAS
+// acciones que la tarjeta del tablero porque llama a sus mismos constructores;
+// aqui solo se decide como se acomodan. El pliegue (etapas abiertas, fila
+// abierta) lo guarda app.js en memoria y llega en el contexto; los botones del
+// acordeon NO llevan onclick: app.js los atiende por delegacion con los
+// atributos data-lista-*.
+export const ETAPAS_ABIERTAS_AL_ENTRAR = ['no_asignado', 'por_cotizar', 'seguimiento'];
+
+const CHEVRON_LISTA = '<svg class="pl-chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function diaCalendario(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+// "hoy" / "ayer" / "hace N d" por dia calendario local; la fecha se lee con
+// fechaLocal (#428): un dia de Operam sin hora es ese dia y no el anterior.
+export function antiguedadOportunidad(fecha, ahora = new Date()) {
+  if (!fecha) return '';
+  const d = fechaLocal(fecha);
+  if (isNaN(d)) return '';
+  const dias = Math.max(0, Math.round((diaCalendario(ahora) - diaCalendario(d)) / 86400000));
+  if (dias === 0) return 'hoy';
+  if (dias === 1) return 'ayer';
+  return `hace ${dias} d`;
+}
+
+// Bloque plegable del detalle: el resumen dice el estado y el cuerpo es el
+// control de la tarjeta tal cual. Lo que el vendedor abrio o cerro a mano
+// (contexto.plegables, por "<id de tarjeta>:<bloque>") gana al estado inicial:
+// asi marcar un paso de la calca, que repinta la lista, no lo vuelve a plegar.
+function plegableListaHtml(o, bloque, titulo, estado, tono, contenido, abiertoAlNacer, plegables) {
+  if (!contenido) return '';
+  const llave = `${o.id}:${bloque}`;
+  const abierto = plegables && llave in plegables ? plegables[llave] : abiertoAlNacer;
+  return `<details class="pl-pleg pl-${bloque}" data-lista-plegable="${escapeHtml(llave)}"${abierto ? ' open' : ''}><summary><span>${titulo}</span><span class="pl-estado pl-estado-${tono}">${estado}</span>${CHEVRON_LISTA}</summary>
+      <div class="pl-pleg-cuerpo">${contenido}</div>
+    </details>`;
+}
+
+// El detalle de la fila abierta: informacion, acciones, Calca y Comprobante
+// plegables con su estado, y al final las salidas. El estado de cada plegable
+// sale de los predicados de siempre (esDecorada, progresoDecorado,
+// faltaComprobante, comprobanteDe), nunca de una regla nueva.
+export function buildDetalleListaPipelineHtml(o, { vendedores, puedeAsignar: tienePermiso, esAdmin = false, plegables } = {}) {
+  const decorada = esDecorada(o);
+  let calca = '';
+  if (decorada) {
+    const { completos, total } = progresoDecorado(o.calcaChecklist || (o.data && o.data.calcaChecklist));
+    calca = plegableListaHtml(o, 'calca', 'Calca', `${completos} de ${total}`, completos === total ? 'ok' : 'pend', buildDecoradoControlHtml(o), false, plegables);
+  }
+  const falta = faltaComprobante(o) || faltaComprobante(o, 'saldo');
+  const subido = comprobanteDe(o) || comprobanteDe(o, 'saldo');
+  const comprobante = plegableListaHtml(o, 'comprobante', 'Comprobante de pago',
+    falta ? 'Falta' : (subido ? 'Subido' : 'Opcional'), falta ? 'alerta' : (subido ? 'ok' : 'pend'),
+    buildComprobantePagoHtml(o), falta, plegables);
+  const acciones = [
+    buildEditarOportunidadHtml(o),
+    buildMoverSeguimientoControlHtml(o),
+    buildNuevaOportunidadControlHtml(o),
+    buildAsignarControlHtml(o, vendedores, tienePermiso, 'lista'),
+    buildSinContactoControlHtml(o),
+    decorada ? '' : buildDecoradoControlHtml(o),
+  ].join('');
+  const salida = buildSalidaControlHtml(o, { esAdmin });
+  return `<div class="pl-detalle">
+      <div class="pl-info">${chipOrigenHtml(o)}${badgeClienteOperamHtml(o)}${cadenaOperamHtml(o.espejoOperam)}</div>
+      ${acciones ? `<div class="pl-acciones">${acciones}</div>` : ''}
+      ${calca}${comprobante}
+      ${salida ? `<div class="pl-salida"><span class="pl-salida-tit">Cerrar oportunidad</span>${salida}</div>` : ''}
+    </div>`;
+}
+
+// Fila de la lista (#502 la saco de app.js; #518 la iguala a la tarjeta).
+// Cerrada: nombre (mismo respaldo que la tarjeta), total o "Sin cotizar", SOLO
+// los chips que piden atencion y vendedor - ciudad - antiguedad; la etapa la
+// dice su seccion. Abierta: ademas, el detalle completo.
+export function buildFilaListaPipelineHtml(o, contexto = {}) {
+  const { abierta = false, ahora = new Date() } = contexto;
+  const total = o.total
+    ? `<span class="pl-total">$${fmtMoneda(o.total)}</span>`
+    : '<span class="pl-total pl-sin-total">Sin cotizar</span>';
+  const sinContacto = oportunidadSinContacto(o)
+    ?'<span class="cot-badge badge-sin-contacto">Sin Contacto</span>' : '';
+  const chips = badgeFolioOperam(o) + badgePagoSinRegistrarHtml(o) + badgeFaltaComprobanteHtml(o) + sinContacto;
+  const meta = [o.vendedor, o.ciudad, antiguedadOportunidad(o.fecha, ahora)].filter(Boolean).map(escapeHtml).join(' \u00b7 ');
+  return `<div class="pl-fila${abierta ? ' pl-abierta' : ''}" id="pl-fila-${escapeHtml(o.id)}">
+      <button type="button" class="pl-fila-cab" data-lista-fila="${escapeHtml(o.id)}" aria-expanded="${abierta}">
+        <span class="pl-nombre">${escapeHtml(nombreOportunidad(o))}</span>
+        ${total}
+        ${chips ? `<span class="pl-chips">${chips}</span>` : ''}
+        ${meta ? `<span class="pl-meta">${meta}</span>` : ''}
+        ${CHEVRON_LISTA}
+      </button>
+      ${abierta ? buildDetalleListaPipelineHtml(o, contexto) : ''}
+    </div>`;
+}
+
+// Una seccion por etapa: encabezado con nombre, conteo y la MISMA suma que la
+// columna del tablero. La etapa vacia se pinta inerte.
+function buildSeccionListaPipelineHtml(etapa, lista, contexto) {
+  const { etapasAbiertas, filaAbierta } = contexto;
+  const vacia = lista.length === 0;
+  const abierta = !vacia && etapasAbiertas.has(etapa);
+  const suma = lista.reduce((s, o) => s + (o.total || 0), 0);
+  const filas = abierta
+    ? `<div class="pl-filas">${lista.map(o => buildFilaListaPipelineHtml(o, { ...contexto, abierta: o.id === filaAbierta })).join('')}</div>`
+    : '';
+  return `<section class="pl-sec etapa-${etapa}${abierta ? ' pl-sec-abierta' : ''}${vacia ? ' pl-sec-vacia' : ''}" data-etapa="${etapa}">
+      <button type="button" class="pl-sec-cab" data-lista-etapa="${etapa}" aria-expanded="${abierta}"${vacia ? ' disabled' : ''}>
+        <span class="pl-sec-nom">${escapeHtml(COLUMNA_LABELS[etapa])}</span>
+        <span class="pl-sec-n">${lista.length}</span>
+        <span class="pl-sec-suma">$${fmtMoneda(suma)}</span>
+        ${vacia ? '' : CHEVRON_LISTA}
+      </button>
+      ${filas}
+    </section>`;
+}
+
+export function buildListaPipelineHtml(oportunidades, contexto = {}) {
+  const ctx = { ...contexto, etapasAbiertas: contexto.etapasAbiertas || new Set(ETAPAS_ABIERTAS_AL_ENTRAR) };
+  const cols = agruparPipeline(oportunidades);
+  const hayAbiertas = COLUMNAS_PIPELINE.some(e => ctx.etapasAbiertas.has(e) && cols[e].length);
+  return `<div class="pl">
+      <div class="pl-barra"><button type="button" class="pl-todo" data-lista-accion="todas">${hayAbiertas ? 'Plegar todo' : 'Abrir todo'}</button></div>
+      ${COLUMNAS_PIPELINE.map(etapa => buildSeccionListaPipelineHtml(etapa, cols[etapa], ctx)).join('')}
+    </div>`;
 }
 
 // Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): la cola del dia mezcla

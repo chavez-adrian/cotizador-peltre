@@ -160,7 +160,9 @@ import { buildFiltrosSelectorHtml, buildContadorHtml } from './filtros-logica.js
 import { mensajeCotizacion, motivoSinResumen } from './resumen-cotizacion-logica.js';
 import {
   buildTableroPipelineHtml,
-  buildFilaListaPipelineHtml,
+  buildListaPipelineHtml,
+  ETAPAS_ABIERTAS_AL_ENTRAR,
+  COLUMNAS_PIPELINE,
   oportunidadesActivas,
   badgeFolioOperamHtml,
   botonCompletarHtml,
@@ -6473,6 +6475,15 @@ let ultimasOportunidades = [];
 // (#457; el Evento es el filtro de #261): todo con AND y en los tres modos. Vive
 // en memoria; entrar a la vista lo limpia.
 let pipelineCriterio = { texto: '', desde: '', hasta: '', filtros: {} };
+// Pliegue de la vista lista (#518): etapas abiertas y la UNICA fila abierta (por
+// el id de la tarjeta, "p7"/"c41": prospecto y cotizacion comparten refId). Vive
+// en memoria; entrar a la vista lo devuelve al estado inicial y las acciones de
+// la fila, que recargan el pipeline, lo conservan.
+let pipelineEtapasAbiertas = new Set(ETAPAS_ABIERTAS_AL_ENTRAR);
+let pipelineFilaAbierta = null;
+// Calca y Comprobante que el vendedor abrio o cerro a mano, para que el repintado
+// tras una accion de la fila no los devuelva a su estado inicial.
+let pipelinePlegables = {};
 // Catalogo de vendedores para el control de asignar de la tarjeta No Asignado
 // (issue #57) y el permiso vigente de asignacion (#156): quien puede asignar ya
 // no es solo el admin, sino tambien el vendedor con el checkbox de /admin. El
@@ -6510,6 +6521,9 @@ async function showPipeline() {
   ocultarTodasLasVistas();
   document.getElementById('pipeline-view').style.display = 'block';
   limpiarCriterioVista('pipeline', pipelineCriterio);
+  pipelineEtapasAbiertas = new Set(ETAPAS_ABIERTAS_AL_ENTRAR);
+  pipelineFilaAbierta = null;
+  pipelinePlegables = {};
   await recargarPipeline();
 }
 
@@ -6575,11 +6589,10 @@ function renderPipeline() {
     listEl.innerHTML = buildCerradasHtml(oportunidades);
     return;
   }
-  // Vista lista: las mismas oportunidades que pinta el tablero (sus 7 columnas),
-  // mas reciente primero. Las salidas No util/Perdida/Cancelada NO se muestran aqui: viven
-  // en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
-  const activas = oportunidadesActivas(oportunidades)
-    .slice().sort((a, b) => fechaLocal(b.fecha || 0) - fechaLocal(a.fecha || 0));
+  // Vista lista (#518): las mismas oportunidades que pinta el tablero, en un
+  // acordeon por etapa. Las salidas No util/Perdida/Cancelada NO se muestran aqui:
+  // viven en filtro/historial, igual que el tablero las excluye (oportunidadesActivas).
+  const activas = oportunidadesActivas(oportunidades);
   if (!activas.length) {
     // "No hay resultados" no es "no hay oportunidades" (#289): si el listado
     // completo trae activas, lo que dejo la lista vacia fue un filtro -- el de
@@ -6590,7 +6603,38 @@ function renderPipeline() {
       : '<div class="empty-state"><p>Sin oportunidades en el pipeline.</p></div>';
     return;
   }
-  listEl.innerHTML = activas.map(buildFilaListaPipelineHtml).join('');
+  listEl.innerHTML = buildListaPipelineHtml(activas, {
+    vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline, esAdmin: state.user?.role === 'admin',
+    etapasAbiertas: pipelineEtapasAbiertas, filaAbierta: pipelineFilaAbierta, plegables: pipelinePlegables,
+  });
+}
+
+// Acordeon de la lista (#518): sus botones no llevan onclick (no se cruzan con
+// las acciones de la tarjeta, que si lo llevan); los atiende esta delegacion.
+function clickListaPipeline(e) {
+  // Calca y Comprobante: se anota SOLO lo que el vendedor toco (el clic llega
+  // antes de que el <details> cambie), no el estado con el que nacio el bloque.
+  const plegable = e.target.closest('summary')?.parentElement;
+  if (plegable?.dataset.listaPlegable) {
+    pipelinePlegables[plegable.dataset.listaPlegable] = !plegable.open;
+    return;
+  }
+  const objetivo = e.target.closest('[data-lista-fila], [data-lista-etapa], [data-lista-accion]');
+  if (!objetivo || objetivo.disabled) return;
+  const { listaFila, listaEtapa, listaAccion } = objetivo.dataset;
+  if (listaAccion === 'todas') {
+    const hayAbiertas = !!document.querySelector('#pipeline-list .pl-sec-abierta');
+    pipelineEtapasAbiertas = hayAbiertas ? new Set() : new Set(COLUMNAS_PIPELINE);
+  } else if (listaEtapa) {
+    if (pipelineEtapasAbiertas.has(listaEtapa)) pipelineEtapasAbiertas.delete(listaEtapa);
+    else pipelineEtapasAbiertas.add(listaEtapa);
+  } else {
+    pipelineFilaAbierta = pipelineFilaAbierta === listaFila ? null : listaFila;
+  }
+  renderPipeline();
+  if (listaFila && pipelineFilaAbierta) {
+    document.getElementById(`pl-fila-${pipelineFilaAbierta}`)?.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 // Asignar vendedor a una tarjeta No Asignado desde el tablero (issue #57): la
@@ -7894,7 +7938,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     marcarNavActivo('nav-cotizar');
   });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
-  document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
+  document.getElementById('pipeline-list')?.addEventListener('click', clickListaPipeline);  document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
   document.getElementById('btn-pipeline-modo-cerradas')?.addEventListener('click', () => setModoPipeline('cerradas'));
 
   // Volver a Cotizar desde Historial (la navegacion vive en el bottom-nav, issue #53)
