@@ -554,3 +554,129 @@ test('clasificarErrorQuote: cada error del quote con su motivo', () => {
 test('marcarMotivoPre: un store que falla no lanza', async () => {
   await marcarMotivoPre(21, 'operam', { actualizarDatos: async () => { throw new Error('caido'); } });
 });
+
+// --- Entrada unica (#528): subirQuote decide crear, actualizar o nada -------
+// Con folio la decision la toma la MARCA que dejo el guardado
+// (data.quoteDesactualizado): con marca recorre la secuencia de actualizar dentro
+// del MISMO candado, sin marca es "ya subida". Sin folio, crear (las pruebas de
+// arriba no cambian).
+
+const MARCA_PENDIENTE = { fecha: '2026-10-04T10:00:00.000Z', pendiente: true };
+
+test('#528 con folio y marca: actualiza con una sola lectura para decidir y devuelve operacion actualizar', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ quoteDesactualizado: MARCA_PENDIENTE })], cola: ['1200'] });
+  const r = await subirQuote(7, {}, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.equal(r.operacion, 'actualizar');
+  assert.equal(r.folio, '1200');
+  assert.deepEqual(r.pasos[0], { name: 'actualizar quote', status: 'ok' });
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 1);
+  assert.deepEqual(m.llamadas.actualizarQuoteOperam[0][2], { lista: '15', transportista: 3 });
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+  assert.equal(m.llamadas.darDeAlta.length, 0);
+  assert.equal(nombres(m.secuencia)[0], 'obtener');
+  assert.equal(nombres(m.secuencia).filter((n) => n === 'obtener').length, 2, 'una lectura decide y la otra es la relectura al lograrse');
+  const reg = m.registro(7);
+  assert.equal(reg.data.quoteDesactualizado, null, 'la lograda quita la marca');
+  assert.notEqual(reg.data.huellaQuote, 'huella-previa');
+  assert.deepEqual(m.llamadas.sacarDeLaColaPostFix, ['1200']);
+});
+
+test('#528 con folio y marca: la no actualizada sale con operacion y la marca de fallo', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion({ quoteDesactualizado: MARCA_PENDIENTE })], actualizar: RESULTADOS_ACTUALIZAR.escritoSinVerificar(),
+  });
+  const r = await subirQuote(7, {}, m.deps);
+  assert.equal(r.tipo, 'no-actualizada');
+  assert.equal(r.operacion, 'actualizar');
+  assert.equal(r.escrito, true);
+  assert.deepEqual(m.registro(7).data.quoteDesactualizado, {
+    fecha: '2026-10-03T12:00:00.000Z', escrito: true, error: 'El quote quedo distinto de lo esperado',
+    discrepancias: ['partida SKU-NUEVO: cantidad 2 en Operam, se esperaba 3'],
+  });
+});
+
+test('#528 con folio y marca de fallo previa: tambien cae en actualizar', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion({ quoteDesactualizado: { fecha: '2026-07-01T00:00:00Z', escrito: false, error: 'previo', discrepancias: [] } })],
+  });
+  const r = await subirQuote(7, {}, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.equal(r.operacion, 'actualizar');
+});
+
+test('#528 con folio, marca y pedido: bloqueo no-actualizable sin tocar Operam y la marca se conserva', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ quoteDesactualizado: MARCA_PENDIENTE, orderOperam: '7077' })] });
+  const r = await subirQuote(7, {}, m.deps);
+  assert.deepEqual(r, {
+    tipo: 'bloqueo', operacion: 'actualizar', motivo: 'no-actualizable',
+    mensaje: 'La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n',
+  });
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 0);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+  assert.deepEqual(m.registro(7).data.quoteDesactualizado, MARCA_PENDIENTE);
+});
+
+test('#528 con folio y sin marca: ya subida sin llamar a ningun doble de Operam', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ quoteDesactualizado: null })] });
+  const r = await subirQuote(7, {}, m.deps);
+  assert.deepEqual(r, { tipo: 'ya-subida', folio: '1200', clienteId: null });
+  assert.deepEqual(nombres(m.secuencia), ['obtener']);
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 0);
+  assert.equal(m.llamadas.sacarDeLaColaPostFix.length, 0);
+});
+
+test('#528 un solo candado: con la actualizacion en vuelo una segunda llamada recibe ocupado', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ quoteDesactualizado: MARCA_PENDIENTE })] });
+  const colgada = m.colgarActualizar();
+  const primera = subirQuote(7, {}, m.deps);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(await subirQuote(7, {}, m.deps), OCUPADO);
+  assert.equal(await actualizarQuote(7, m.deps), OCUPADO);
+  colgada.soltar(RESULTADOS_ACTUALIZAR.exito());
+  assert.equal((await primera).tipo, 'actualizada');
+});
+
+// La carrera guardado / actualizacion en vuelo: guardar B mientras la
+// actualizacion de A esta en vuelo deja el registro en B y el quote en A. Al
+// lograrse se relee el registro: solo si su huella es la que se acaba de escribir
+// se quita la marca.
+test('#528 lograda con el registro cambiado durante la escritura: guarda la huella de lo escrito y conserva la marca', async () => {
+  let m;
+  m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion({ quoteDesactualizado: MARCA_PENDIENTE })],
+    actualizar: async () => {
+      await m.deps.actualizarDatos(7, { items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 5, precio: 99.5, descuento: 0 }] });
+      return RESULTADOS_ACTUALIZAR.exito();
+    },
+  });
+  const r = await subirQuote(7, {}, m.deps);
+  assert.equal(r.tipo, 'actualizada', 'lo escrito se escribio');
+  const reg = m.registro(7);
+  assert.deepEqual(reg.data.quoteDesactualizado, MARCA_PENDIENTE, 'la marca se conserva');
+  assert.match(reg.data.huellaQuote, /"qty":3/, 'la huella es la de lo escrito, no la del registro actual');
+  const siguiente = await subirQuote(7, {}, m.deps);
+  assert.equal(siguiente.operacion, 'actualizar', 'la siguiente llamada vuelve a actualizar');
+  assert.equal(m.llamadas.actualizarQuoteOperam[1][1].items[0].cantidad, 5);
+});
+
+test('#528 lograda con el registro cambiado y sin marca: pone la pendiente', async () => {
+  let m;
+  m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion()],
+    actualizar: async () => {
+      await m.deps.actualizarDatos(7, { items: [{ codigo: 'SKU-OTRO', descripcion: 'Taza', cantidad: 1, precio: 50, descuento: 0 }] });
+      return RESULTADOS_ACTUALIZAR.exito();
+    },
+  });
+  await actualizarQuote(7, m.deps);
+  assert.deepEqual(m.registro(7).data.quoteDesactualizado, { fecha: '2026-10-03T12:00:00.000Z', pendiente: true });
+});
+
+test('#528 lograda con el registro sin cambio: la relectura confirma y quita la marca', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ quoteDesactualizado: MARCA_PENDIENTE })] });
+  await subirQuote(7, {}, m.deps);
+  assert.equal(nombres(m.secuencia).filter((n) => n === 'obtener').length, 2, 'decidir y releer al lograrse');
+  assert.equal(m.registro(7).data.quoteDesactualizado, null);
+  assert.equal((await subirQuote(7, {}, m.deps)).tipo, 'ya-subida');
+});

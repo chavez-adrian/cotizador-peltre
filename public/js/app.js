@@ -145,6 +145,7 @@ import {
   estadoBotonesDocumento,
   subidaConfirma,
   actualizacionConfirma,
+  interpreteOperam,
   textoProgresoDocumento,
   filtrarCotizaciones,
   BUSCABLES_COTIZACION,
@@ -2862,14 +2863,16 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
     if (sigueEnPantalla()) alert('Error: ' + (err.error || 'No se pudo guardar la cotizacion'));
     return false;
   }
-  const { id, requiereActualizacionOperam, folioOperam, vigencia, avisoVigencia } = await res.json();
+  // #528: requiereActualizacionOperam ya no decide nada aqui (el servidor la sigue
+  // mandando para las pestanas con el app.js anterior): crear, actualizar o dejar
+  // lo decide la entrada unica con el registro.
+  const { id, folioOperam, vigencia, avisoVigencia } = await res.json();
   if (!sigueEnPantalla()) {
     // Ya se guardo en el servidor: la cotizacion existe y termina su viaje a
     // Operam como si el vendedor hubiera esperado, pero sin slot y sin tocar el
     // estado, el borrador ni los botones de la sesion nueva. Queda en el
     // historial con su folio o como PRE con su Reintentar.
-    if (requiereActualizacionOperam) actualizarQuoteEnOperam(id, null);
-    else autoSubirOperam(id, null);
+    operarEnOperam(id, null, { conFolio: folioOperam != null && folioOperam !== '' });
     return false;
   }
   state.lastCotizacionId = String(id);
@@ -2912,31 +2915,23 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
   const slot = document.getElementById('operam-status-cotizar');
   const pintar = pintorDeSlot(slot);
   const key = String(id);
-  // Modo actualizacion (#104, ADR-0008) y regeneracion de una cotizacion ya subida
-  // (#114) convergen aqui a proposito: la senal es requiereActualizacionOperam, que
-  // manda TAMBIEN en modo actualizacion (#116: forzarla reescribia el quote dos
-  // veces con el contenido identico). Sin folio (o sin huella, cotizaciones previas
-  // a #114) el servidor responde que si hace falta, asi que #104 sigue cubierto.
-  if (state.modoActualizacion && !requiereActualizacionOperam) {
-    // Acuse de que no habia nada que hacer (regla 4 de #504: confirmada en cuanto
-    // responde el guardado). Se reusa la misma vista que el camino de subida da
-    // para yaSubida -- folio + "el contenido no cambio".
-    pintar(buildOperamStatusHtml(id, interpretarSubidaOperam({ ok: true, folio: folioOperam ?? null, yaSubida: true })));
-    anotarConfirmacionDocumento(key, true);
-    return true;
-  }
-  if (requiereActualizacionOperam) {
+  // #528: SIEMPRE la entrada unica. Con folio el servidor actualiza si el guardado
+  // dejo la marca, o responde yaSubida ("el contenido no cambio", confirmada) si no;
+  // se espera sin tope porque solo `actualizada` entrega. Sin folio sube, con el
+  // tope de ADR-0009 y la PRE explicita si vence.
+  if (folioOperam != null && folioOperam !== '') {
     progreso('Actualizando en Operam...');
-    return actualizacionConfirma(await actualizarQuoteEnOperam(id, slot));
+    return (await operarEnOperam(id, slot, { conFolio: true })).confirma;
   }
   progreso('Subiendo a Operam...');
-  const vista = await conLimiteDeTiempo(autoSubirOperam(id, slot), TIMEOUT_OPERAM_MS, () => {
+  const r = await conLimiteDeTiempo(operarEnOperam(id, slot), TIMEOUT_OPERAM_MS, () => {
     const vencida = interpretarSubidaOperam({ timeout: true });
     pintar(buildOperamStatusHtml(id, vencida));
-    anotarConfirmacionDocumento(key, subidaConfirma(vencida));
-    return vencida;
+    const confirma = subidaConfirma(vencida);
+    anotarConfirmacionDocumento(key, confirma);
+    return { vista: vencida, confirma };
   });
-  return subidaConfirma(vista);
+  return r.confirma;
 }
 
 // cartEntries + envio capturado en el DOM (#135): la unica parte del payload de
@@ -4826,65 +4821,104 @@ function slotOperamDesde(el) {
     el.closest('.cot-card, .cot-mini')?.querySelector('.operam-status-slot') || null;
 }
 
-// Auto-subida a Operam (#83, ADR-0006): al generar una cotizacion (PDF/HTML) se
-// sube sola via el endpoint idempotente de #81 -- sin boton manual. La misma
-// funcion sirve para el reintento y para resolver la dedup por nombre (extraBody
-// = { customerId }). El resultado se pinta en el slot (nodo DOM) con la vista
-// pura interpretarSubidaOperam + buildOperamStatusHtml (folio | PRE + Reintentar
-// | candidatos inline | PRE sin datos). Desde ADR-0009 la generacion ESPERA a
-// esta subida para imprimir el folio, pero un fallo sigue sin bloquear el
-// documento: degrada a PRE (sin numero) en vez de dejar al vendedor sin nada.
-// Subidas en vuelo por id (F3 de la revision): un doble click en Reintentar /
-// Elegir, o un Reintentar con la auto-subida original aun en vuelo, no dispara
-// un segundo POST (el server ademas tiene su lock por id, que es la proteccion
+// La entrada unica de Operam (#528): POST /api/cotizacion/operam/:id, que decide
+// con el registro crear el quote, actualizarlo conservando el folio o dejarlo (ya
+// coincide). Es la UNICA funcion de llamada: la usan el guardado, todos los
+// Reintentar (de la subida y de la actualizacion) y la resolucion de la dedup por
+// nombre (extraBody = { customerId }, { sucursalDe }, { crearNuevo } o el cuerpo
+// de la otra razon social). `conFolio` es lo que el llamador sabe de la
+// cotizacion -- el folio que devolvio el guardado, o el Reintentar de una
+// actualizacion -- y decide que vista pinta lo que la respuesta no dice (el 425,
+// el 404, la red caida: interpreteOperam, cotizaciones-logica.js). Los dos
+// interpretes y sus pintores no cambian.
+//
+// Desde ADR-0009 la generacion ESPERA esta llamada para imprimir el folio, pero
+// un fallo de la subida sigue sin bloquear el documento: degrada a PRE (sin
+// numero) en vez de dejar al vendedor sin nada.
+// Operaciones en vuelo por id (F3 de la revision): un doble click en Reintentar /
+// Elegir, o un Reintentar con la llamada original aun en vuelo, no dispara un
+// segundo POST (el server ademas tiene su candado por id, que es la proteccion
 // real; esto evita el 425 en el caso comun). El id se normaliza a string (llega
 // como string de state.lastCotizacionId y como numero de los onclick).
+// Devuelve { vista, confirma }: confirma es el juicio de #504 que corresponde al
+// interprete (subidaConfirma o actualizacionConfirma).
 const subidasOperamEnVuelo = new Set();
 
-async function autoSubirOperam(id, slot, extraBody) {
+async function operarEnOperam(id, slot, { conFolio = false, extraBody } = {}) {
   const pintar = pintorDeSlot(slot);
-  if (!id) return null;
+  if (!id) return { vista: null, confirma: false };
   const key = String(id);
   // Ya en vuelo: antes esto era un `return` mudo, inofensivo mientras la subida
-  // era secundaria. Con ADR-0009 la subida esta en la ruta critica de la
-  // generacion, asi que un silencio aqui produce justo lo que el ADR prohibe --
-  // un documento sin numero sin decir por que. Se devuelve (y se pinta) un PRE
-  // explicito, distinto de un fallo, con el Reintentar de siempre.
+  // era secundaria. Con ADR-0009 esta llamada esta en la ruta critica de la
+  // generacion, asi que un silencio aqui produce justo lo que el ADR prohibe -- un
+  // documento sin numero, o el quote con lo viejo, sin decir por que. Se pinta
+  // (con su Reintentar) la vista de la operacion que se esperaba: con folio el
+  // mismo aviso que da el 425 del servidor; sin folio un PRE explicito, distinto
+  // de un fallo.
   if (subidasOperamEnVuelo.has(key)) {
+    if (conFolio) {
+      return terminarActualizacion(id, key, pintar, {
+        ok: false, status: 425, escrito: false,
+        error: 'Ya hay una operacion de Operam en curso para esta cotizacion: reintenta cuando termine.',
+      });
+    }
     const enVuelo = interpretarSubidaOperam({ enVuelo: true });
     pintar(buildOperamStatusHtml(id, enVuelo));
-    anotarConfirmacionDocumento(key, subidaConfirma(enVuelo));
-    return enVuelo;
+    const confirma = subidaConfirma(enVuelo);
+    anotarConfirmacionDocumento(key, confirma);
+    return { vista: enVuelo, confirma };
   }
   subidasOperamEnVuelo.add(key);
-  pintar('<span class="operam-status">Subiendo a Operam...</span>');
-  let resultado;
+  pintar(`<span class="operam-status">${conFolio ? 'Actualizando en Operam...' : 'Subiendo a Operam...'}</span>`);
+  let status = 0;
+  let okHttp = false;
+  let data = null;
+  let errorRed = null;
   try {
     const opts = { method: 'POST' };
     if (extraBody) opts.body = extraBody;
     const res = await api(`/api/cotizacion/operam/${id}`, opts);
-    let data = {};
+    status = res.status;
+    okHttp = res.ok;
+    data = {};
     try { data = await res.json(); } catch {}
-    resultado = {
-      ok: res.ok, status: res.status, folio: data.folio, yaSubida: data.yaSubida,
-      error: data.error, candidatos: data.candidatos,
-      // #242: el 409 por nombre corto repetido se clasifica por codigo, no por el
-      // texto del error (misma disciplina que el resto de interpretarSubidaOperam).
-      codigo: data.codigo, nombreCorto: data.nombreCorto,
-      // #345: la pregunta por la otra razon social trae a los dos Clientes Operam
-      // y el cuerpo con el que se reintenta al confirmar.
-      ligado: data.ligado, elegido: data.elegido, reintentar: data.reintentar,
-      customerId: data.customer_id, clienteGenerico: data.clienteGenerico,
-      // #106: los steps traen el resultado del post-fix de la vigencia; sin esto un
-      // fallo solo viviria en los logs del servidor y el vendedor mandaria la
-      // cotizacion sin saber que en Operam se ve vencida.
-      steps: data.steps,
-    };
   } catch (e) {
-    resultado = { ok: false, status: 0, error: e.message };
+    errorRed = e.message;
   } finally {
     subidasOperamEnVuelo.delete(key);
   }
+  if (interpreteOperam(data, conFolio) === 'actualizacion') {
+    return terminarActualizacion(id, key, pintar, errorRed != null ? { ok: false, status: 0, error: errorRed } : {
+      ok: data.ok === true, status, folio: data.folio,
+      escrito: data.escrito, verificado: data.verificado,
+      error: data.error, discrepancias: data.discrepancias,
+      // #403: los pasos que hay que leer (la lista del encabezado puede no quedar
+      // sin que la actualizacion falle). Descartarlos aqui los volvia invisibles.
+      steps: data.steps,
+    });
+  }
+  return terminarSubida(id, key, pintar, errorRed != null ? { ok: false, status: 0, error: errorRed } : {
+    ok: okHttp, status, folio: data.folio, yaSubida: data.yaSubida,
+    error: data.error, candidatos: data.candidatos,
+    // #242: el 409 por nombre corto repetido se clasifica por codigo, no por el
+    // texto del error (misma disciplina que el resto de interpretarSubidaOperam).
+    codigo: data.codigo, nombreCorto: data.nombreCorto,
+    // #345: la pregunta por la otra razon social trae a los dos Clientes Operam
+    // y el cuerpo con el que se reintenta al confirmar.
+    ligado: data.ligado, elegido: data.elegido, reintentar: data.reintentar,
+    customerId: data.customer_id, clienteGenerico: data.clienteGenerico,
+    // #106: los steps traen el resultado del post-fix de la vigencia; sin esto un
+    // fallo solo viviria en los logs del servidor y el vendedor mandaria la
+    // cotizacion sin saber que en Operam se ve vencida.
+    steps: data.steps,
+  });
+}
+
+// Lo que sigue a una respuesta con la forma de la subida (#83, ADR-0006): la vista
+// pura interpretarSubidaOperam + buildOperamStatusHtml (folio | PRE + Reintentar |
+// candidatos inline | PRE sin datos). Tambien el acuse "el contenido no cambio"
+// (yaSubida) de una cotizacion con folio que no hubo que actualizar.
+function terminarSubida(id, key, pintar, resultado) {
   const vista = interpretarSubidaOperam(resultado);
   // #93: la cotizacion recien subida (misma sesion, mismo cliente del paso
   // Cliente) trae el customer_id del alta generica -- se refresca pcState al
@@ -4911,58 +4945,20 @@ async function autoSubirOperam(id, slot, extraBody) {
   // #504: la generacion y todos los Reintentar (elegir candidato, sucursal,
   // otra razon social, crear nuevo) pasan por aqui, asi que aqui se anota si
   // la cotizacion en pantalla quedo confirmada.
-  anotarConfirmacionDocumento(key, subidaConfirma(vista));
+  const confirma = subidaConfirma(vista);
+  anotarConfirmacionDocumento(key, confirma);
   // #204: candidatos sin resolver = documento bajo candado. Cualquier otro
   // desenlace (folio, PRE por Operam, sin datos) lo libera. Solo para la
   // cotizacion en pantalla (#504): la subida de una que el vendedor ya dejo, o
   // un Reintentar del historial sobre otra, no le pone ni le quita el candado.
   if (key === String(state.lastCotizacionId)) aplicarCandadoDocumento(vista.estado === 'candidatos');
-  return vista;
+  return { vista, confirma };
 }
-// Actualizacion del quote conservando el folio (#104, ADR-0008). Se dispara al
-// guardar una cotizacion con folio cuyo contenido cambio, y la accion "Actualizar
-// cotizacion" la ESPERA (#504): el registro del cotizador ya lo reescribio el
-// guardado (crearOActualizarCotizacion del servidor honra cotizacionId), aqui se
-// reescribe el quote en Operam. Comparte la guarda de subidas
-// en vuelo con autoSubirOperam: las dos operaciones se pisarian el carrito de FA, y
-// el servidor ademas tiene su lock por id (la proteccion real).
-async function actualizarQuoteEnOperam(id, slot) {
-  const pintar = pintorDeSlot(slot);
-  if (!id) return;
-  const key = String(id);
-  // Ya en vuelo: era un `return` mudo, tolerable mientras esto solo lo disparaba el
-  // boton del historial. Desde #114 la reescritura del quote esta en la ruta critica
-  // del guardado, y un silencio aqui deja el quote con lo viejo sin decir por que.
-  // Se pinta el mismo aviso que da el 425 del servidor, con su Reintentar.
-  if (subidasOperamEnVuelo.has(key)) {
-    const enCurso = interpretarActualizacionOperam({
-      ok: false, status: 425, escrito: false,
-      error: 'Ya hay una operacion de Operam en curso para esta cotizacion: reintenta cuando termine.',
-    });
-    pintar(buildActualizacionStatusHtml(id, enCurso));
-    anotarConfirmacionDocumento(key, actualizacionConfirma(enCurso));
-    return enCurso;
-  }
-  subidasOperamEnVuelo.add(key);
-  pintar('<span class="operam-status">Actualizando en Operam...</span>');
-  let resultado;
-  try {
-    const res = await api(`/api/cotizacion/operam/${id}/actualizar`, { method: 'POST' });
-    let data = {};
-    try { data = await res.json(); } catch {}
-    resultado = {
-      ok: data.ok === true, status: res.status, folio: data.folio,
-      escrito: data.escrito, verificado: data.verificado,
-      error: data.error, discrepancias: data.discrepancias,
-      // #403: los pasos que hay que leer (la lista del encabezado puede no quedar
-      // sin que la actualizacion falle). Descartarlos aqui los volvia invisibles.
-      steps: data.steps,
-    };
-  } catch (e) {
-    resultado = { ok: false, status: 0, error: e.message };
-  } finally {
-    subidasOperamEnVuelo.delete(key);
-  }
+
+// Lo que sigue a una respuesta con la forma de la actualizacion del quote
+// conservando el folio (#104, ADR-0008): el registro del cotizador ya lo reescribio
+// el guardado y el servidor reescribio el quote en Operam.
+function terminarActualizacion(id, key, pintar, resultado) {
   const vista = interpretarActualizacionOperam(resultado);
   // #311: si la actualizacion trae folio (la misma cotizacion en pantalla), el
   // boton de WhatsApp se enciende igual que tras una subida nueva.
@@ -4976,30 +4972,34 @@ async function actualizarQuoteEnOperam(id, slot) {
   // desactualizado y revisar dejan los botones en la accion y el slot dice por
   // que, con Reintentar o Copiar cotizacion. El `alert` de #114 ("el documento ya
   // lleva el folio...") se fue con el documento que ya no se entrega.
-  anotarConfirmacionDocumento(key, actualizacionConfirma(vista));
-  return vista;
+  const confirma = actualizacionConfirma(vista);
+  anotarConfirmacionDocumento(key, confirma);
+  return { vista, confirma };
 }
-window.reintentarActualizacionOperam = (id, el) => actualizarQuoteEnOperam(id, slotOperamDesde(el));
 
-window.reintentarSubidaOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el));
-window.elegirCandidatoOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { customerId });
+// El Reintentar de una actualizacion fallida (#528) tambien va por la entrada
+// unica: la marca que dejo el fallo garantiza que el servidor cae en actualizar.
+window.reintentarActualizacionOperam = (id, el) => operarEnOperam(id, slotOperamDesde(el), { conFolio: true });
+
+window.reintentarSubidaOperam = (id, el) => operarEnOperam(id, slotOperamDesde(el));
+window.elegirCandidatoOperam = (id, customerId, el) => operarEnOperam(id, slotOperamDesde(el), { extraBody: { customerId } });
 // #204: "ninguno es el mismo cliente". Reintenta la subida con el flag que salta
 // SOLO la parada por nombre similar; el server sigue reutilizando el cliente del
 // celular ya convertido y sigue frenando un customerId contradictorio, y deja el
 // forzado en clientes_log para higiene-clientes (#86).
-window.crearNuevoClienteOperam = (id, el) => autoSubirOperam(id, slotOperamDesde(el), { crearNuevo: true });
+window.crearNuevoClienteOperam = (id, el) => operarEnOperam(id, slotOperamDesde(el), { extraBody: { crearNuevo: true } });
 // #211: "es sucursal de este cliente". Reintenta la subida con el id del
 // candidato como matriz: el server crea UNA sucursal nueva bajo el (solo POST,
 // nunca PUT sobre branches existentes) con el domicilio de entrega capturado y
 // sube el quote a nombre de ese cliente. Mismas guardas que elegir candidato.
-window.marcarSucursalOperam = (id, customerId, el) => autoSubirOperam(id, slotOperamDesde(el), { sucursalDe: customerId });
+window.marcarSucursalOperam = (id, customerId, el) => operarEnOperam(id, slotOperamDesde(el), { extraBody: { sucursalDe: customerId } });
 // #345: "si, es otra razon social del mismo Contacto". El cuerpo del reintento lo
 // dicta el SERVIDOR en su respuesta (`reintentar`), no lo arma el navegador: la
 // pregunta puede venir de la eleccion de un candidato, de "es sucursal de este
 // cliente" o del camino normal, y cada uno se reintenta distinto. Con la
 // confirmacion el server agrega la liga a las que el Contacto ya tenia (nunca
 // reemplaza). Sin este click no se sube nada ni se crea ningun Cliente Operam.
-window.confirmarOtraRazonSocialOperam = (id, cuerpo, el) => autoSubirOperam(id, slotOperamDesde(el), cuerpo);
+window.confirmarOtraRazonSocialOperam = (id, cuerpo, el) => operarEnOperam(id, slotOperamDesde(el), { extraBody: cuerpo });
 window.dejarPreOperam = (id, el) => {
   const slot = slotOperamDesde(el);
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' });
@@ -5012,7 +5012,7 @@ window.dejarPreOperam = (id, el) => {
 // arrancar al vendedor al Historial seria robarle la pantalla. El folio queda
 // visible in situ; el badge de la tarjeta se actualiza en el proximo render.
 function completarPreCotizacion(id, el) {
-  return autoSubirOperam(id, slotOperamDesde(el));
+  return operarEnOperam(id, slotOperamDesde(el));
 }
 window.completarPreCotizacion = completarPreCotizacion;
 

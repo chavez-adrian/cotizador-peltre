@@ -335,6 +335,18 @@ export function cuerposIguales(a, b) {
   return JSON.stringify(canonico(a)) === JSON.stringify(canonico(b));
 }
 
+// Que interprete pinta la respuesta de la entrada unica de Operam (#528):
+// 'actualizacion' (interpretarActualizacionOperam) o 'subida'
+// (interpretarSubidaOperam). Manda la respuesta: `operacion: 'actualizar'` es la
+// rama que actualizo y `yaSubida` el acuse de "el contenido no cambio". Lo que no
+// trae ninguno de los dos -- el 425 y el 404, que el servidor responde antes de
+// leer el registro, o la red caida -- se lee por si la cotizacion ya tenia folio.
+export function interpreteOperam(respuesta, conFolio) {
+  if (respuesta?.operacion === 'actualizar') return 'actualizacion';
+  if (respuesta?.yaSubida) return 'subida';
+  return conFolio ? 'actualizacion' : 'subida';
+}
+
 // Que desenlace de Operam deja la cotizacion CONFIRMADA (ADR-0009, nota del
 // 2026-10-01). Al crear, folio y pre-cotizacion (falla o vencimiento) cuentan:
 // el documento se entrega numerado o como PRE explicita. La excepcion son los

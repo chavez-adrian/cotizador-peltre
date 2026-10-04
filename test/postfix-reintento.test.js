@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clasificarPostFix, proximoIntento, vigenciaAnteriorAlDocumento, desfaseQuote, cotizacionesDelBarrido, destinatariosAvisoPostFix, mensajeAvisoPostFix, esperadoDeHuella } from '../lib/postfix-reintento.js';
+import { clasificarPostFix, proximoIntento, vigenciaAnteriorAlDocumento, desfaseQuote, cotizacionesDelBarrido, motivoDescarteReintento, destinatariosAvisoPostFix, mensajeAvisoPostFix, esperadoDeHuella } from '../lib/postfix-reintento.js';
 
 // Nucleo PURO del reintento del post-fix web del quote (#380). Sin red, sin Neon,
 // sin SMTP: recibe lo que devolvio corregirVigenciaQuote (lib/operam-web.js) y
@@ -221,4 +221,18 @@ test('mensajeAvisoPostFix: el rechazo no transitorio dice que reintentar no lo a
 
 test('mensajeAvisoPostFix: sin destinatarios no hay mensaje', () => {
   assert.equal(mensajeAvisoPostFix({ folio: '1263' }, { causa: 'agotado' }, []), null);
+});
+
+// #528: el guardado deja la marca PENDIENTE ({ fecha, pendiente: true }) cuando el
+// contenido cambio; los dos lectores del reintento la tratan igual que la de fallo.
+const MARCA_PENDIENTE_528 = { fecha: '2026-10-04T10:00:00.000Z', pendiente: true };
+
+test('#528 cotizacionesDelBarrido: fuera la que trae la marca pendiente del guardado', () => {
+  const r = cotizacionesDelBarrido([cot(1, { data: { quoteDesactualizado: MARCA_PENDIENTE_528 } }), cot(2)], { ahora: AHORA });
+  assert.deepEqual(r.map(c => c.id), [2]);
+});
+
+test('#528 motivoDescarteReintento: la fila de una cotizacion con marca pendiente no se reintenta', () => {
+  const registro = cot(1, { data: { items: [{ codigo: 'X' }], quoteDesactualizado: MARCA_PENDIENTE_528 } });
+  assert.match(motivoDescarteReintento({ folio: '1301' }, registro), /desactualizado/);
 });

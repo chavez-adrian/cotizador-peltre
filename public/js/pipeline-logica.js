@@ -530,8 +530,13 @@ export function buildActualizacionStatusHtml(id, vista) {
 // Badge de la tarjeta del historial: el registro del cotizador se actualizo pero el
 // quote de Operam no. Se marca porque el pedido se surte contra Operam, asi que una
 // divergencia silenciosa es justo el problema que #104 vino a cerrar.
+// Con pedido (#528, decision 8) reintentar ya no sirve -- el gate lo bloquea --: la
+// etiqueta dice que se copie la cotizacion.
 export function badgeQuoteDesactualizadoHtml(cot) {
   if (!cot || !cot.quoteDesactualizado) return '';
+  if (tienePedidoAsociado(cot)) {
+    return ` <span class="cot-badge badge-pre" title="El registro del cotizador cambio pero el quote de Operam no, y ya tiene pedido: no se puede actualizar, copia la cotizacion">Operam desactualizado: copia la cotizaci&oacute;n</span>`;
+  }
   return ` <span class="cot-badge badge-pre" title="El registro del cotizador se actualizo pero el quote de Operam no: reintenta desde la cotizacion">Operam desactualizado</span>`;
 }
 

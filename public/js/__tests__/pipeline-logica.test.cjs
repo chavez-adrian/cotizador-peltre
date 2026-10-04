@@ -1443,6 +1443,22 @@ test('A104: badgeQuoteDesactualizadoHtml marca la tarjeta solo cuando hay marca 
   assert.equal(badgeQuoteDesactualizadoHtml(undefined), '');
 });
 
+// #528 (decision 8): con marca Y pedido el camino ya no es reintentar sino copiar la
+// cotizacion, y la etiqueta lo dice; sin pedido, la de siempre (tambien con la
+// marca pendiente que deja el guardado).
+test('#528: badgeQuoteDesactualizadoHtml con marca y pedido dice que se copie la cotizacion', () => {
+  const pendiente = { fecha: '2026-10-04T10:00:00Z', pendiente: true };
+  const sinPedido = '<span class="cot-badge badge-pre" title="El registro del cotizador se actualizo pero el quote de Operam no: reintenta desde la cotizacion">Operam desactualizado</span>';
+  assert.equal(badgeQuoteDesactualizadoHtml({ quoteDesactualizado: pendiente }).trim(), sinPedido);
+  assert.equal(badgeQuoteDesactualizadoHtml({ quoteDesactualizado: { fecha: '2026-07-28T00:00:00Z', escrito: false } }).trim(), sinPedido);
+  for (const conPedido of [{ orderOperam: '7077' }, { espejoOperam: { cotizacion: '1200', pedido: '7722' } }]) {
+    const html = badgeQuoteDesactualizadoHtml({ quoteDesactualizado: pendiente, ...conPedido });
+    assert.match(html, />Operam desactualizado: copia la cotizaci&oacute;n</);
+    assert.match(html, /title="[^"]*pedido[^"]*"/);
+    assert.doesNotMatch(html, /reintenta/);
+  }
+});
+
 // --- Buscador del Pipeline y de la cola Hoy (#289): el mismo control del
 // Historial (texto + Desde/Hasta), aqui sobre oportunidades y sobre la cola. ---
 let filtrarOportunidades, filtrarColaHoy;

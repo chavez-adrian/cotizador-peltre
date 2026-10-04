@@ -2980,3 +2980,121 @@ test('GET /api/admin/paridad-catalogo: Operam no disponible responde 503', async
     restore();
   }
 });
+
+// === #528: el guardado persiste la marca de quote pendiente de actualizar ===
+// "Cambio" lo sigue decidiendo el guardado y ahora lo PERSISTE en
+// data.quoteDesactualizado: { fecha, pendiente: true }. Solo la pone, nunca la quita.
+const CON_CAMBIO_528 = {
+  items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 12, unidad: 'pza', precio: 100, descuento: 0 }],
+  subtotal: 1200, iva: 192, total: 1392,
+};
+
+test('#528: guardar con cambio deja la marca pendiente y la respuesta sigue diciendo requiereActualizacionOperam', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114(CON_CAMBIO_528), cotizacionId: String(id) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+  const marca = readCots().find(c => c.id === id).data.quoteDesactualizado;
+  assert.strictEqual(marca.pendiente, true);
+  assert.ok(!Number.isNaN(Date.parse(marca.fecha)), 'la marca lleva su fecha');
+  assert.deepStrictEqual(Object.keys(marca).sort(), ['fecha', 'pendiente']);
+});
+
+test('#528: guardar sin cambio no pone la marca', async () => {
+  const id = cotizacionSubida114();
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114(), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+  assert.strictEqual(readCots().find(c => c.id === id).data.quoteDesactualizado, undefined);
+});
+
+test('#528: guardar sin cambio no quita la marca que ya habia', async () => {
+  const pendiente = { fecha: '2026-10-01T10:00:00.000Z', pendiente: true };
+  const id = cotizacionSubida114({ quoteDesactualizado: pendiente });
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114(), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+  assert.deepStrictEqual(readCots().find(c => c.id === id).data.quoteDesactualizado, pendiente);
+});
+
+test('#528: una marca de fallo previa no pierde escrito, error ni discrepancias por un guardado con cambio', async () => {
+  const fallo = { fecha: '2026-09-30T10:00:00.000Z', escrito: true, error: 'El quote quedo distinto de lo esperado', discrepancias: ['partida CR20-PLATO: cantidad 9'] };
+  const id = cotizacionSubida114({ quoteDesactualizado: fallo });
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114(CON_CAMBIO_528), cotizacionId: String(id) });
+  assert.strictEqual(res.body.requiereActualizacionOperam, true);
+  assert.deepStrictEqual(readCots().find(c => c.id === id).data.quoteDesactualizado, fallo);
+});
+
+test('#528: la marca que llega en el cuerpo del guardado se descarta (no la quita ni la falsifica)', async () => {
+  const pendiente = { fecha: '2026-10-01T10:00:00.000Z', pendiente: true };
+  const id = cotizacionSubida114({ quoteDesactualizado: pendiente });
+  await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ quoteDesactualizado: null }), cotizacionId: String(id) });
+  assert.deepStrictEqual(readCots().find(c => c.id === id).data.quoteDesactualizado, pendiente, 'null en el cuerpo no la quita');
+  const otro = cotizacionSubida114();
+  await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send({ ...contenido114({ quoteDesactualizado: { fecha: '2026-01-01', escrito: true } }), cotizacionId: String(otro) });
+  assert.strictEqual(readCots().find(c => c.id === otro).data.quoteDesactualizado, undefined, 'tampoco se puede poner a mano');
+});
+
+test('#528: el guardado sin cotizacionId tambien descarta la marca del cuerpo', async () => {
+  const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
+    .send(contenido114({ quoteDesactualizado: { fecha: '2026-01-01', pendiente: true } }));
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.requiereActualizacionOperam, false);
+  assert.strictEqual(readCots().find(c => c.id === res.body.id).data.quoteDesactualizado, undefined);
+});
+
+// #528: la rama actualizar de la entrada unica responde, por la ruta de crear, lo
+// MISMO que /actualizar mas `operacion`. Se corre cada ruta sobre una cotizacion
+// gemela con su propio doble de la web legacy; los casos sin web estan en
+// test/subida-quote-http.test.js.
+async function porLasDosRutas528(mock = {}, intervenir = () => {}) {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  const correr = async (id, ruta, body) => {
+    _resetSesionWeb();
+    const w = mockOperamWebLegacy(mock);
+    intervenir(w);
+    try {
+      const req = supertest(app).post(ruta).set('Authorization', `Bearer ${TEST_TOKEN}`);
+      return await (body ? req.send(body) : req);
+    } finally {
+      w.restore();
+    }
+  };
+  const viaActualizar = cotizacionActualizable();
+  const viaCrear = cotizacionActualizable({ quoteDesactualizado: { fecha: '2026-10-04T10:00:00.000Z', pendiente: true } });
+  const actualizar = await correr(viaActualizar, `/api/cotizacion/operam/${viaActualizar}/actualizar`);
+  const crear = await correr(viaCrear, `/api/cotizacion/operam/${viaCrear}`, {});
+  return { actualizar, crear, viaCrear };
+}
+
+test('#528 por la ruta de crear, la actualizacion lograda responde lo de /actualizar mas operacion y quita la marca', async () => {
+  const { actualizar, crear, viaCrear } = await porLasDosRutas528();
+  assert.strictEqual(actualizar.status, 200);
+  assert.strictEqual(crear.status, 200);
+  assert.strictEqual(crear.body.actualizada, true, JSON.stringify(crear.body));
+  assert.deepStrictEqual(crear.body, { ...actualizar.body, operacion: 'actualizar' });
+  assert.strictEqual(readCots().find(c => c.id === viaCrear).data.quoteDesactualizado, null);
+});
+
+test('#528 por la ruta de crear, la escrita sin verificar responde lo de /actualizar mas operacion', async () => {
+  // FA confirma el ProcessOrder pero el documento queda con otra cantidad: la
+  // relectura ve la diferencia (escrito true, verificado false).
+  const torcer = ({ doc }) => {
+    const interno = globalThis.fetch;
+    globalThis.fetch = async (u, opts) => {
+      const r = await interno(u, opts);
+      if (String(u).includes('sales_order_entry.php') && new URLSearchParams(opts?.body || '').has('ProcessOrder')) doc.lineas[0].qty = 2;
+      return r;
+    };
+  };
+  const { actualizar, crear, viaCrear } = await porLasDosRutas528({}, torcer);
+  assert.strictEqual(crear.status, 200);
+  assert.strictEqual(crear.body.ok, false, JSON.stringify(crear.body));
+  assert.strictEqual(crear.body.escrito, true);
+  assert.deepStrictEqual(crear.body, { ...actualizar.body, operacion: 'actualizar' });
+  assert.strictEqual(readCots().find(c => c.id === viaCrear).data.quoteDesactualizado.escrito, true);
+});

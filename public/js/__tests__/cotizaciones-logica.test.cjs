@@ -1358,3 +1358,21 @@ test('#502: en el Historial la cotizacion con pedido en el espejo ofrece Editar 
   assert.equal(html, '<button class="btn btn-secondary btn-sm" disabled title="La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n">Editar</button>'
     + ' <button class="btn btn-primary btn-sm" onclick="cargarCotizacion(7, \'nueva\')">Copiar cotizaci\u00f3n</button>');
 });
+
+// #528: la entrada unica (POST /api/cotizacion/operam/:id) responde con la forma de
+// la subida o con la de la actualizacion, y el navegador elige que interprete la
+// pinta: la respuesta manda (`operacion`, `yaSubida`) y lo que no la trae -- el 425
+// y el 404, que el servidor responde antes de leer el registro, y la red caida --
+// se lee por si la cotizacion ya tenia folio.
+test('#528 interpreteOperam: la operacion de la respuesta manda, si no yaSubida, si no el folio', async () => {
+  const { interpreteOperam } = await import('../cotizaciones-logica.js');
+  assert.equal(interpreteOperam({ ok: true, folio: '1200', actualizada: true, operacion: 'actualizar' }, true), 'actualizacion');
+  assert.equal(interpreteOperam({ ok: false, escrito: false, operacion: 'actualizar' }, false), 'actualizacion');
+  assert.equal(interpreteOperam({ error: 'con pedido', operacion: 'actualizar' }, true), 'actualizacion');
+  assert.equal(interpreteOperam({ ok: true, folio: '1200', yaSubida: true }, true), 'subida');
+  assert.equal(interpreteOperam({ ok: true, folio: '1330' }, false), 'subida');
+  assert.equal(interpreteOperam({ error: 'Ya hay una subida a Operam en curso' }, true), 'actualizacion');
+  assert.equal(interpreteOperam({ error: 'Ya hay una subida a Operam en curso' }, false), 'subida');
+  assert.equal(interpreteOperam({}, true), 'actualizacion');
+  assert.equal(interpreteOperam(null, false), 'subida');
+});

@@ -509,6 +509,10 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
 async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
   const idPrevio = parseInt(data.cotizacionId, 10);
   delete data.cotizacionId; // campo de control: no persistirlo dentro de data
+  // La marca de quote desactualizado (#528) la escriben el guardado y la Subida del
+  // quote, nunca el cuerpo: el data se mergea por la raiz y una llave que llegara
+  // aqui la quitaria o la falsificaria.
+  delete data.quoteDesactualizado;
   const recalcularVigencia = data.recalcularVigencia === true;
   delete data.recalcularVigencia;
   // La marca de decorado con la que se deriva es la que QUEDA guardada: el data se
@@ -555,6 +559,14 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
       // El transportista de la linea de envio entra igual desde #448.
       const requiereActualizacionOperam = yaEnOperam
         && (vigencia.vigencia !== prev.data?.vigencia || contenidoQuoteCambio(data, prev.data?.huellaQuote, opcionesHuellaQuote(entry)));
+      // #528: el "cambio" se PERSISTE con la marca, porque la senal de la respuesta
+      // es transitoria y la entrada unica (POST /api/cotizacion/operam/:id) decide
+      // con el registro. Solo se pone, nunca se quita (la quita la actualizacion
+      // lograda), y la llave viaja SIEMPRE: la previa tal cual -- la de fallo
+      // conserva escrito, error y discrepancias -- o la pendiente nueva.
+      if (requiereActualizacionOperam) {
+        data.quoteDesactualizado = prev.data?.quoteDesactualizado || { fecha: new Date().toISOString(), pendiente: true };
+      }
       await cotStore.actualizarCotizacion(idPrevio, entry);
       return { id: idPrevio, requiereActualizacionOperam, vigencia };
     }
@@ -3448,6 +3460,25 @@ export async function barrerCotizacionesDedupVencidas(ahora = new Date()) {
 // #525 en lib/subida-quote.js (postFixQuote), junto a los pasos del encabezado
 // (lista, transportista, almacen #409) que viven ahi desde #524.
 
+// La respuesta de la actualizacion del quote: la comparten /actualizar, que la
+// manda tal cual, y la entrada unica (#528), que le agrega `operacion`. Un fallo
+// responde 200 con ok:false y no 5xx: no es que la peticion fallara, es que Operam
+// quedo desalineado y hay que avisarlo con detalle, incluido si se alcanzo a
+// escribir (`escrito`).
+function respuestaActualizacion(r) {
+  if (r.tipo === 'bloqueo') return { status: 409, cuerpo: { error: r.mensaje } };
+  if (r.tipo === 'actualizada') return { status: 200, cuerpo: { ok: true, folio: r.folio, actualizada: true, steps: r.pasos } };
+  return {
+    status: 200,
+    cuerpo: {
+      ok: false, folio: r.folio, actualizada: false,
+      escrito: r.escrito, verificado: r.verificado,
+      error: r.error, discrepancias: r.discrepancias,
+      steps: r.pasos,
+    },
+  };
+}
+
 // Subir la cotizacion a Operam (#83): la secuencia vive en lib/subida-quote.js
 // (subirQuote, #525/#526, ADR-0022) y aqui solo se traduce su valor a la respuesta
 // de siempre. El modulo toma el candado, lee el registro, corta "ya subida" y
@@ -3478,7 +3509,13 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
     return res.status(425).json({ error: 'Ya hay una subida a Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
   }
   if (r.tipo === 'no-encontrada') return res.status(404).json({ error: 'Cotizacion no encontrada' });
-  // #167 causa 3: eco del customer_id ya ligado -- autoSubirOperam lo lee de esta
+  // #528: con folio y marca el modulo actualizo. Va PRIMERO: su bloqueo no trae
+  // `etapa` y abajo caeria al 503 de crear.
+  if (r.operacion === 'actualizar') {
+    const { status, cuerpo } = respuestaActualizacion(r);
+    return res.status(status).json({ ...cuerpo, operacion: 'actualizar' });
+  }
+  // #167 causa 3: eco del customer_id ya ligado -- terminarSubida (app.js) lo lee de esta
   // misma respuesta para refrescar el chip Fiscal (ver app.js #93).
   if (r.tipo === 'ya-subida') return res.json({ ok: true, folio: r.folio, yaSubida: true, customer_id: r.clienteId });
   if (r.tipo === 'pregunta' && r.motivo === 'otra-razon-social') {
@@ -3516,23 +3553,17 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
 
 // Actualizar la cotizacion ya registrada conservando el folio (#104, ADR-0008): la
 // secuencia vive en lib/subida-quote.js (actualizarQuote, #524, ADR-0022) y aqui
-// solo se traduce su valor. Un fallo responde 200 con ok:false y no 5xx: no es que
-// la peticion fallara, es que Operam quedo desalineado y hay que avisarlo con
-// detalle, incluido si se alcanzo a escribir (`escrito`).
+// solo se traduce su valor (respuestaActualizacion). Desde #528 el navegador ya no
+// la llama: queda para las pestanas abiertas con el app.js anterior y se retira
+// junto con la senal requiereActualizacionOperam.
 app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, res) => {
   const r = await actualizarQuote(parseInt(req.params.id), { listaDelQuote, transportistaDelQuote });
   if (r === OCUPADO) {
     return res.status(425).json({ error: 'Ya hay una operacion de Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
   }
   if (r.tipo === 'no-encontrada') return res.status(404).json({ error: 'Cotizacion no encontrada' });
-  if (r.tipo === 'bloqueo') return res.status(409).json({ error: r.mensaje });
-  if (r.tipo === 'actualizada') return res.json({ ok: true, folio: r.folio, actualizada: true, steps: r.pasos });
-  return res.json({
-    ok: false, folio: r.folio, actualizada: false,
-    escrito: r.escrito, verificado: r.verificado,
-    error: r.error, discrepancias: r.discrepancias,
-    steps: r.pasos,
-  });
+  const { status, cuerpo } = respuestaActualizacion(r);
+  return res.status(status).json(cuerpo);
 });
 
 // --- Webhook de Operam: sync post-venta (#62; avisos por tipo desde #510) ---

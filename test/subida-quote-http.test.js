@@ -346,3 +346,53 @@ test('quote del camino del alta con Operam caido: 503 con customer_id y steps', 
   assert.equal(res.body.steps.at(-1).name, 'POST quote');
   assert.equal(res.body.steps.at(-1).status, 'error');
 });
+
+// --- Entrada unica (#528): la rama actualizar por la ruta de crear -------------
+// Con folio y marca, POST /api/cotizacion/operam/:id actualiza y responde
+// EXACTAMENTE lo que responde /actualizar, mas `operacion: 'actualizar'`. Se
+// compara contra la otra ruta sobre una cotizacion gemela. Los casos que piden la
+// web legacy (lograda y escrita sin verificar) viven junto a su doble, en
+// test/server.test.js.
+
+const MARCA_528 = { fecha: '2026-10-04T10:00:00.000Z', pendiente: true };
+
+function marcar(id, extra) {
+  const cots = readCots();
+  const c = cots.find(x => x.id === id);
+  c.data = { ...c.data, ...extra };
+  escribirArchivoSync(COTS_PATH, JSON.stringify(cots, null, 2));
+}
+
+async function porLasDosRutas(opciones, extra = {}) {
+  const viaActualizar = agregarCotizacion(opciones);
+  marcar(viaActualizar, extra);
+  const viaCrear = agregarCotizacion(opciones);
+  marcar(viaCrear, { quoteDesactualizado: MARCA_528, ...extra });
+  const actualizar = await supertest(app).post(`/api/cotizacion/operam/${viaActualizar}/actualizar`).set('Authorization', TOKEN);
+  const crear = await supertest(app).post(`/api/cotizacion/operam/${viaCrear}`).set('Authorization', TOKEN).send({});
+  return { actualizar, crear, viaCrear };
+}
+
+test('#528 por la ruta de crear, la no actualizada sin escribir responde lo de /actualizar mas operacion', async () => {
+  const { actualizar, crear } = await porLasDosRutas({ folioOperam: '1200', items: [] });
+  assert.equal(actualizar.status, 200);
+  assert.equal(crear.status, 200);
+  assert.equal(crear.body.escrito, false);
+  assert.deepEqual(crear.body, { ...actualizar.body, operacion: 'actualizar' });
+});
+
+test('#528 por la ruta de crear, el bloqueo con pedido responde el 409 de /actualizar mas operacion y la marca se queda', async () => {
+  const { actualizar, crear, viaCrear } = await porLasDosRutas({ folioOperam: '1200' }, { orderOperam: '7077' });
+  assert.equal(actualizar.status, 409);
+  assert.equal(crear.status, 409);
+  assert.deepEqual(crear.body, { ...actualizar.body, operacion: 'actualizar' });
+  assert.deepEqual(readCots().find(c => c.id === viaCrear).data.quoteDesactualizado, MARCA_528);
+});
+
+test('#528 con folio y sin marca la ruta de crear responde yaSubida como hoy, sin tocar Operam', async () => {
+  const id = agregarCotizacion({ folioOperam: '1200', cliente: { customerId: 10 } });
+  marcar(id, { quoteDesactualizado: null });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { ok: true, folio: '1200', yaSubida: true, customer_id: 10 });
+});
