@@ -1,9 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { actualizarQuote, conCandadoSubida, OCUPADO } from '../lib/subida-quote.js';
+import {
+  actualizarQuote, subirQuote, clasificarErrorQuote, marcarMotivoPre, conCandadoSubida, OCUPADO,
+} from '../lib/subida-quote.js';
 import {
   subidaQuoteEnMemoria, RESULTADOS_ACTUALIZAR, LISTA_ESCRITA, TRANSPORTISTA_ESCRITO,
 } from './helpers/subida-quote-memoria.js';
+import { ErrorClienteSinLista } from '../lib/lista-precios-cliente.js';
+import { ErrorClienteMonedaExtranjera } from '../public/js/moneda-cliente-logica.js';
 
 // Modulo Subida del quote (#524, ADR-0022), operacion actualizar. Una regla por
 // test, contra adaptadores en memoria: ningun test de este archivo sobreescribe
@@ -248,4 +252,318 @@ test('deps: sin listaDelQuote o transportistaDelQuote lanza al entrar, sin tomar
   await assert.rejects(actualizarQuote(7, sinTransportista), /transportistaDelQuote/);
   assert.equal(m.llamadas.obtener.length, 0);
   assert.equal(await conCandadoSubida(7, () => 'libre'), 'libre');
+});
+
+// --- Crear por el camino normal (#525) ----------------------------------------
+// La cotizacion de ejemplo trae RFC real y celular: no necesita alta de cliente y
+// el Cliente Operam sale del RFC (resolverClienteDeCotizacion). Todavia sin folio.
+
+function nueva(cliente = {}, raiz = {}) {
+  return {
+    id: 21, fecha: '2026-10-03T00:00:00Z', vendedor: 'Tester', cliente: 'EL PENDULO',
+    totalPiezas: 3, total: 300, tier: 'M100', folioOperam: null,
+    data: {
+      fecha: '2026-10-03', vigencia: '2026-11-14',
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', telefono: '5512345678', cpEntrega: '56530', ...cliente },
+      items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
+    },
+    ...raiz,
+  };
+}
+
+const CONTACTO_LIGADO_A_OTRO = { id: 300, celular: '5512345678', nombre: 'Compradora', data: { cliente_id: 88 } };
+const CONTACTO_SIN_LIGAS = { id: 301, celular: '5512345678', nombre: 'Compradora', data: {} };
+
+const nombres = (secuencia) => secuencia.map(([n]) => n);
+
+test('crear deps: sin caminoAlta lanza al entrar, nombrandola, sin tomar el candado ni leer el registro', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
+  const { caminoAlta, ...sinCamino } = m.deps;
+  await assert.rejects(subirQuote(21, {}, sinCamino), /caminoAlta/);
+  assert.equal(m.llamadas.obtener.length, 0);
+  assert.equal(await conCandadoSubida(21, () => 'libre'), 'libre');
+});
+
+test('crear ocupado: con otra operacion en vuelo devuelve ocupado sin leer el registro', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
+  let soltar;
+  const otra = conCandadoSubida(21, () => new Promise((r) => { soltar = r; }));
+  assert.equal(await subirQuote(21, {}, m.deps), OCUPADO);
+  assert.equal(m.llamadas.obtener.length, 0);
+  soltar();
+  await otra;
+});
+
+test('crear no-encontrada: una cotizacion inexistente no toca Operam', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [] });
+  assert.deepEqual(await subirQuote(999, {}, m.deps), { tipo: 'no-encontrada' });
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+});
+
+test('ya subida: con folio devuelve el folio y el Cliente Operam ligado sin tocar Operam ni escribir', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ customerId: 15 }, { folioOperam: '1325' })] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(r, { tipo: 'ya-subida', folio: '1325', clienteId: 15 });
+  assert.deepEqual(nombres(m.secuencia), ['obtener']);
+});
+
+test('ya subida: sin customer_id en la cotizacion el clienteId sale null', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({}, { folioOperam: '1325' })] });
+  assert.equal((await subirQuote(21, {}, m.deps)).clienteId, null);
+});
+
+test('ya subida va ANTES de decidir el camino: con folio y datos de alta generica no se llama a caminoAlta', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '' }, { folioOperam: '1325' })] });
+  const r = await subirQuote(21, { customerIdElegido: 15, sucursalDe: 15 }, m.deps);
+  assert.equal(r.tipo, 'ya-subida');
+  assert.equal(m.llamadas.caminoAlta.length, 0);
+});
+
+test('camino del alta: sin RFC real ni customerId se espera caminoAlta y se devuelve via-alta sin subir', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '' })] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(r, { tipo: 'via-alta' });
+  assert.equal(m.llamadas.caminoAlta.length, 1);
+  assert.equal(m.llamadas.caminoAlta[0][0].id, 21);
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+  assert.equal(m.llamadas.resolverClienteDeCotizacion.length, 0);
+});
+
+test('camino del alta: un customerId o un sucursalDe elegidos por el vendedor tambien van por caminoAlta', async () => {
+  for (const solicitud of [{ customerIdElegido: 15 }, { sucursalDe: 15 }]) {
+    const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
+    assert.deepEqual(await subirQuote(21, solicitud, m.deps), { tipo: 'via-alta' });
+    assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+  }
+});
+
+test('camino del alta: caminoAlta corre DENTRO del candado (una sola toma por peticion)', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '' })] });
+  let dentro;
+  m.deps.caminoAlta = async () => { dentro = await conCandadoSubida(21, () => 'libre'); };
+  await subirQuote(21, {}, m.deps);
+  assert.equal(dentro, OCUPADO);
+});
+
+test('pregunta: el Contacto ligado a otro Cliente Operam sale como pregunta sin quote escrito ni escrituras en el registro', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], prospectos: [CONTACTO_LIGADO_A_OTRO] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'pregunta');
+  assert.equal(r.motivo, 'otra-razon-social');
+  assert.equal(r.clienteId, 15);
+  assert.equal(r.contacto.id, 300);
+  assert.deepEqual(r.ligadas.map((l) => l.cliente_id), [88]);
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+  assert.equal(m.llamadas.setFolioOperam.length, 0);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+  assert.equal(m.llamadas.ligarCliente.length, 0);
+});
+
+test('confirmada: con otraRazonSocial sube y AGREGA la liga al Contacto con el Cliente Operam que devolvio la subida', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva()], prospectos: [CONTACTO_LIGADO_A_OTRO], subir: { folio: '1330', customerId: 16 },
+  });
+  const r = await subirQuote(21, { otraRazonSocial: true }, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.folio, '1330');
+  const [contactoId, clienteId, evento] = m.llamadas.ligarCliente[0];
+  assert.equal(contactoId, 300);
+  assert.equal(clienteId, 16);
+  assert.equal(evento.cliente_id, 16);
+  assert.equal(evento.tipo, 'cliente');
+  assert.equal(evento.nombre, 'El Pendulo');
+  assert.equal(evento.vendedor, 'Tester');
+  assert.equal(evento.fecha, '2026-10-03T12:00:00.000Z');
+  assert.deepEqual(r.pasos.at(-1), { name: 'ligar prospecto', status: 'ok' });
+});
+
+test('subir: el POST lleva el Cliente Operam resuelto del RFC, sin opciones extra', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], resolver: { customerId: 15, branchId: 40 } });
+  await subirQuote(21, {}, m.deps);
+  const args = m.llamadas.subirCotizacionOperam[0];
+  assert.equal(args.length, 1);
+  assert.equal(args[0].cliente.customerId, 15);
+  assert.equal(args[0].cliente.branchId, 40);
+});
+
+test('sin folio: lograda con el folio tal como vino y sin pasos; sin huella, sin motivo, sin post-fix y sin liga', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], prospectos: [CONTACTO_SIN_LIGAS], subir: { folio: '', customerId: 15 } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(r, { tipo: 'lograda', folio: '', pasos: [] });
+  assert.equal(m.llamadas.setFolioOperam.length, 0);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+  assert.equal(m.llamadas.corregirVigenciaQuote.length, 0);
+  assert.equal(m.llamadas.encolarPostFix.length, 0);
+  assert.equal(m.llamadas.ligarCliente.length, 0);
+});
+
+test('con folio: folio, huella y motivo null se guardan ANTES del post-fix', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
+  await subirQuote(21, {}, m.deps);
+  const escrituras = m.secuencia.filter(([n]) => n === 'setFolioOperam' || n === 'actualizarDatos');
+  assert.deepEqual(escrituras.map(([n, a]) => [n, n === 'setFolioOperam' ? a : Object.keys(a[1])]), [
+    ['setFolioOperam', [21, '1330']],
+    ['actualizarDatos', ['huellaQuote']],
+    ['actualizarDatos', ['motivoPre', 'motivoPreDesde']],
+  ]);
+  const iUltimaEscritura = m.secuencia.indexOf(escrituras.at(-1));
+  assert.ok(iUltimaEscritura < nombres(m.secuencia).indexOf('corregirVigenciaQuote'), 'el motivo se levanta antes del post-fix');
+  assert.equal(m.registro(21).data.motivoPre, null);
+  assert.equal(m.registro(21).data.motivoPreDesde, null);
+});
+
+test('con folio: la huella sale de entry.data (sin el Cliente Operam resuelto) con la lista y el transportista', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], resolver: { customerId: 15, branchId: 40 } });
+  await subirQuote(21, {}, m.deps);
+  const h = JSON.parse(m.registro(21).data.huellaQuote);
+  assert.equal(h.customerId, null);
+  assert.equal(h.branchId, null);
+  assert.equal(h.listaId, '15');
+  assert.equal(h.shipVia, '3');
+});
+
+test('post-fix: escribe vigencia, lista y transportista del quote recien creado', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
+  await subirQuote(21, {}, m.deps);
+  assert.deepEqual(m.llamadas.corregirVigenciaQuote[0], ['1330', '2026-11-14', { lista: '15', transportista: 3 }]);
+});
+
+test('post-fix verificado: lograda con los pasos de vigencia, lista y transportista en ok', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(r.pasos.map((p) => [p.name, p.status]), [
+    ['post-fix vigencia', 'ok'], ['lista del quote', 'ok'], ['transportista del quote', 'ok'],
+  ]);
+});
+
+test('post-fix sin verificar: se encola con lo esperado y sale como paso warn sin tumbar la subida', async () => {
+  const sinVerificar = { ok: false, verificado: false, esperado: '2026-11-14', encontrado: null };
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], corregir: sinVerificar });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.pasos[0].name, 'post-fix vigencia');
+  assert.equal(r.pasos[0].status, 'warn');
+  const [fila] = m.llamadas.encolarPostFix[0];
+  assert.equal(fila.folio, '1330');
+  assert.equal(fila.cotizacionId, 21);
+  assert.equal(fila.vendedor, 'Tester');
+  assert.equal(fila.vigencia, '2026-11-14');
+  assert.equal(fila.lista, '15');
+  assert.equal(fila.transportista, 3);
+  assert.equal(fila.fechaDocumento, '2026-10-03');
+  assert.deepEqual(fila.resultado, sinVerificar);
+});
+
+test('post-fix que lanza: paso error y la lista y el transportista "no enviado", encolado con el error', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], corregir: () => { throw new Error('sesion web caida'); } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(r.pasos.map((p) => p.name), ['post-fix vigencia', 'lista del quote', 'transportista del quote']);
+  assert.equal(r.pasos[0].status, 'error');
+  assert.match(JSON.stringify(r.pasos[1]), /el post-fix fallo antes de escribir: sesion web caida/);
+  assert.match(JSON.stringify(r.pasos[2]), /el post-fix fallo antes de escribir: sesion web caida/);
+  assert.equal(m.llamadas.encolarPostFix[0][0].error, 'sesion web caida');
+});
+
+test('post-fix que lanza sin transportista que mandar: no se pinta el paso del transportista', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva()], corregir: () => { throw new Error('x'); },
+    transportista: { shipVia: null, linea: null, motivo: 'sin envio' },
+  });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(r.pasos.map((p) => p.name), ['post-fix vigencia', 'lista del quote']);
+});
+
+test('liga: un Contacto sin ligas recibe la liga despues del post-fix', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], prospectos: [CONTACTO_SIN_LIGAS] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(m.llamadas.ligarCliente.length, 1);
+  assert.ok(nombres(m.secuencia).indexOf('corregirVigenciaQuote') < nombres(m.secuencia).indexOf('ligarCliente'));
+  assert.equal(r.pasos.at(-1).name, 'ligar prospecto');
+});
+
+test('liga: el Contacto ya ligado a ese mismo Cliente Operam no se vuelve a ligar', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], prospectos: [{ ...CONTACTO_SIN_LIGAS, data: { cliente_id: 15 } }] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(m.llamadas.ligarCliente.length, 0);
+});
+
+test('liga: el fallo al ligar el Contacto sale como paso error y la subida sigue lograda', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], prospectos: [CONTACTO_SIN_LIGAS], ligarFalla: new Error('Neon no responde') });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.folio, '1330');
+  assert.deepEqual(r.pasos.at(-1), { name: 'ligar prospecto', status: 'error', error: 'Neon no responde' });
+});
+
+test('contacto: el fallo del store de prospectos se propaga (no es un bloqueo de Operam ni marca motivo)', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
+  m.deps.buscarPorCelular = async () => { throw new Error('store roto'); };
+  await assert.rejects(subirQuote(21, {}, m.deps), /store roto/);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+});
+
+test('bloqueo cliente-no-identificado: sin subir y sin marcar motivo de PRE', async () => {
+  const texto = 'No se pudo identificar el cliente en Operam por el RFC CPE921211N76. Verifica el RFC o da de alta el cliente antes de subir.';
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], resolver: () => { throw new Error(texto); } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(r, { tipo: 'bloqueo', motivo: 'cliente-no-identificado', mensaje: texto });
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+});
+
+test('bloqueo sin-lista-precios: marca MOTIVO_PRE_SIN_LISTA antes de devolver', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], subir: () => { throw new ErrorClienteSinLista('El Pendulo'); } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'sin-lista-precios');
+  assert.equal(r.mensaje, new ErrorClienteSinLista('El Pendulo').message);
+  assert.equal(m.registro(21).data.motivoPre, 'sin-lista');
+  assert.equal(m.registro(21).data.motivoPreDesde, '2026-10-03T12:00:00.000Z');
+});
+
+test('bloqueo sin-lista-precios: el 406 "rate de moneda" de Operam es el mismo bloqueo, con el mensaje generico', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], subir: () => { throw new Error('Operam 406: Debe haber al menos un rate de moneda'); } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.motivo, 'sin-lista-precios');
+  assert.match(r.mensaje, /lista de precios/);
+  assert.equal(m.registro(21).data.motivoPre, 'sin-lista');
+});
+
+test('bloqueo moneda-extranjera: lleva la moneda y NO marca motivo de PRE', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], subir: () => { throw new ErrorClienteMonedaExtranjera('El Pendulo', 'USD'); } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'moneda-extranjera');
+  assert.equal(r.moneda, 'USD');
+  assert.equal(r.mensaje, new ErrorClienteMonedaExtranjera('El Pendulo', 'USD').message);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+});
+
+test('bloqueo operam: marca MOTIVO_PRE_OPERAM y el mensaje dice que no se pudo subir', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], subir: () => { throw new Error('Operam 500: timeout'); } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(r, { tipo: 'bloqueo', motivo: 'operam', mensaje: 'No se pudo subir a Operam: Operam 500: timeout' });
+  assert.equal(m.registro(21).data.motivoPre, 'operam');
+});
+
+test('bloqueo operam: un fallo al guardar el folio tambien es bloqueo de Operam', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
+  m.deps.setFolioOperam = async () => { throw new Error('disco lleno'); };
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.motivo, 'operam');
+  assert.equal(r.mensaje, 'No se pudo subir a Operam: disco lleno');
+});
+
+test('clasificarErrorQuote: cada error del quote con su motivo', () => {
+  assert.equal(clasificarErrorQuote(new Error('No se pudo identificar el cliente en Operam: la cotizacion no tiene RFC.')).motivo, 'cliente-no-identificado');
+  assert.equal(clasificarErrorQuote(new ErrorClienteSinLista('X')).motivo, 'sin-lista-precios');
+  assert.equal(clasificarErrorQuote(new Error('Debe haber al menos un rate de moneda')).motivo, 'sin-lista-precios');
+  assert.equal(clasificarErrorQuote(new ErrorClienteMonedaExtranjera('X', 'USD')).moneda, 'USD');
+  assert.deepEqual(clasificarErrorQuote(new Error('boom')), { motivo: 'operam', mensaje: 'No se pudo subir a Operam: boom' });
+});
+
+test('marcarMotivoPre: un store que falla no lanza', async () => {
+  await marcarMotivoPre(21, 'operam', { actualizarDatos: async () => { throw new Error('caido'); } });
 });

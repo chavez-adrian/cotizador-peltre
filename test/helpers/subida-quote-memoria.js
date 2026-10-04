@@ -11,6 +11,15 @@
 // tipicos estan en RESULTADOS_ACTUALIZAR. `colgarActualizar()` deja la siguiente
 // llamada en vuelo hasta que se llame a `soltar(resultado)`: asi se prueba el
 // candado con dos operaciones concurrentes.
+//
+// Crear por el camino normal (#525) suma las dependencias de la subida:
+// `resolver` contesta resolverClienteDeCotizacion, `subir` contesta
+// subirCotizacionOperam y `corregir` contesta corregirVigenciaQuote (un objeto, o
+// una funcion que puede lanzar); `prospectos` son los Contactos que
+// buscarPorCelular encuentra por los ultimos 10 digitos, y `ligarFalla` hace
+// lanzar a ligarCliente. `secuencia` registra TODAS las llamadas en el orden en
+// que ocurrieron (nombre de la dependencia + argumentos): es lo que prueba que
+// el folio, la huella y el motivo se guardan antes del post-fix.
 
 const clonar = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
 
@@ -38,6 +47,14 @@ export const TRANSPORTISTA_ESCRITO = {
   aplica: true, esperado: '3', escrita: true, yaCorrecto: false, ok: true, verificado: true, encontrado: '3',
 };
 
+export const POSTFIX_VERIFICADO = {
+  ok: true, verificado: true, esperado: '2026-08-27', encontrado: '2026-08-27',
+  lista: LISTA_ESCRITA, transportista: TRANSPORTISTA_ESCRITO,
+};
+
+const ultimos10 = (x) => String(x || '').replace(/\D/g, '').slice(-10);
+const resolverValor = (v, args) => (typeof v === 'function' ? v(...args) : clonar(v));
+
 export function subidaQuoteEnMemoria({
   cotizaciones = [],
   actualizar = RESULTADOS_ACTUALIZAR.exito(),
@@ -45,19 +62,36 @@ export function subidaQuoteEnMemoria({
   transportista = { shipVia: 3, linea: 'Lalamove', motivo: null },
   cola = [],
   ahora = '2026-10-03T12:00:00.000Z',
+  resolver = { customerId: 15, branchId: 15 },
+  subir = { folio: '1330', customerId: 15 },
+  corregir = POSTFIX_VERIFICADO,
+  prospectos = [],
+  ligarFalla = null,
 } = {}) {
   const registros = new Map(cotizaciones.map((c) => [c.id, clonar(c)]));
   const enCola = new Set(cola.map(String));
-  const llamadas = { obtener: [], actualizarDatos: [], actualizarQuoteOperam: [], sacarDeLaColaPostFix: [] };
+  const llamadas = {
+    obtener: [], actualizarDatos: [], actualizarQuoteOperam: [], sacarDeLaColaPostFix: [],
+    setFolioOperam: [], resolverClienteDeCotizacion: [], subirCotizacionOperam: [],
+    corregirVigenciaQuote: [], encolarPostFix: [], buscarPorCelular: [], ligarCliente: [], caminoAlta: [],
+  };
+  const secuencia = [];
+  const anotar = (nombre, args) => {
+    const a = clonar(args);
+    llamadas[nombre].push(a);
+    secuencia.push([nombre, a]);
+  };
   let colgada = null;
 
   const deps = {
     async obtener(id) {
       llamadas.obtener.push(id);
+      secuencia.push(['obtener', id]);
       return clonar(registros.get(id) ?? null);
     },
     async actualizarDatos(id, campos) {
       llamadas.actualizarDatos.push([id, clonar(campos)]);
+      secuencia.push(['actualizarDatos', [id, clonar(campos)]]);
       const r = registros.get(id);
       if (!r) return false;
       r.data = { ...(r.data || {}), ...clonar(campos) };
@@ -76,6 +110,38 @@ export function subidaQuoteEnMemoria({
       llamadas.sacarDeLaColaPostFix.push(folio);
       enCola.delete(String(folio));
     },
+    async setFolioOperam(id, folio) {
+      anotar('setFolioOperam', [id, folio]);
+      const r = registros.get(id);
+      if (r) r.folioOperam = folio == null ? null : String(folio);
+    },
+    async resolverClienteDeCotizacion(data) {
+      anotar('resolverClienteDeCotizacion', [data]);
+      return resolverValor(resolver, [data]);
+    },
+    async subirCotizacionOperam(data, opciones) {
+      anotar('subirCotizacionOperam', opciones === undefined ? [data] : [data, opciones]);
+      return resolverValor(subir, [data, opciones]);
+    },
+    async corregirVigenciaQuote(folio, vigencia, opciones) {
+      anotar('corregirVigenciaQuote', [folio, vigencia, opciones]);
+      return resolverValor(corregir, [folio, vigencia, opciones]);
+    },
+    encolarPostFix(fila) {
+      anotar('encolarPostFix', [fila]);
+    },
+    async buscarPorCelular(celular) {
+      anotar('buscarPorCelular', [celular]);
+      return clonar(prospectos.find((p) => ultimos10(p.celular) === ultimos10(celular))) ?? undefined;
+    },
+    async ligarCliente(id, clienteId, evento) {
+      anotar('ligarCliente', [id, clienteId, evento]);
+      if (ligarFalla) throw ligarFalla;
+      return true;
+    },
+    async caminoAlta(entry) {
+      anotar('caminoAlta', [entry]);
+    },
     listaDelQuote: () => lista,
     transportistaDelQuote: () => ({ ...transportista }),
     ahora: () => new Date(ahora),
@@ -84,6 +150,7 @@ export function subidaQuoteEnMemoria({
   return {
     deps,
     llamadas,
+    secuencia,
     registro: (id) => clonar(registros.get(id) ?? null),
     enCola: (folio) => enCola.has(String(folio)),
     colgarActualizar() {
