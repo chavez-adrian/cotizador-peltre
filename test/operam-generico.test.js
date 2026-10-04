@@ -235,36 +235,6 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
   assert.equal(audit.detalle, 'cotizador-generico');
 });
 
-test('G1b: tier Menudeo (sin lista homonima en Operam) -> sales_type cae a "Precio de lista", nunca se omite (issue #92)', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion({}, 'Menudeo');
-  let clienteBody = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/sales_types': () => jsonResponse({ data: [
-      { id: '1', sales_type: 'M550', inactive: '0' },
-      { id: '12', sales_type: 'Precio de lista', inactive: '0' },
-      { id: '15', sales_type: 'M100', inactive: '0' },
-    ] }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') { clienteBody = JSON.parse(opts.body); return jsonResponse({ result: true, customer_id: 910 }); }
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/branches/911': () => jsonResponse({ result: true, data: [{}] }),
-    '/api/v3/sales/quote': (u, opts) => jsonResponse({ result: true, added_trans_no: 1701 }),
-  });
-  await cargarListasPrecios();
-
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-
-  assert.equal(res.status, 200);
-  assert.ok(clienteBody, 'se debio crear el cliente');
-  assert.equal(clienteBody.sales_type, '12', 'Menudeo sin lista homonima -> "Precio de lista" (id 12), nunca omitido');
-});
-
 test('#246-5: alta generica con listasPrecios vacia al inicio -> la recarga perezosa resuelve el sales_type del tier antes del POST customer', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase()]);
   const id = nuevaCotizacion();
@@ -1138,37 +1108,6 @@ test('C1: dos requests concurrentes al mismo id crean UN solo cliente generico (
   assert.equal(String(cot.folioOperam), '1750');
 });
 
-test('C2: el lock se libera tras un fallo (el reintento posterior NO recibe 425)', async () => {
-  writeJson(PROSPECTOS_PATH, []);
-  const id = nuevaCotizacion();
-  // Primer intento: Operam caido en el POST customer -> 503.
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ error: 'boom' }, 500);
-      return jsonResponse({ total: 0, data: [] });
-    },
-  });
-  const intento1 = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-  assert.equal(intento1.status, 503);
-  // Reintento secuencial: el lock ya no esta tomado.
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 940 });
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/940')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 941 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/branches/941': () => jsonResponse({ result: true, data: [{}] }),
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1751 }),
-  });
-  const intento2 = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-  assert.equal(intento2.status, 200, 'el lock no quedo tomado tras el fallo');
-});
-
 // --- Post-fix de la vigencia (#106, ADR-0007) --------------------------------
 // El POST del quote ignora valid_until y deja el campo nativo "Valido hasta" en
 // ord_date-1, asi que Operam marca como vencidas cotizaciones vivas. Se corrige por la
@@ -1438,42 +1377,6 @@ test('S5: cliente reutilizado por celular SIN clasificar -> recibe el segmento c
   assert.equal(web.posts.length, 1, 'estaba en "Sin segmento": aqui si se escribe');
   assert.equal(web.posts[0].get('segmento_id'), '14');
   assert.equal(web.estado.segmento, '14');
-});
-
-// AC de #365: con la preferencia 'diferido' la respuesta de la subida no espera al
-// post-fix del segmento, asi que su latencia no puede aparecer en la duracion de la
-// subida.
-//
-// TODO (#365, pendiente de decision): hoy NO se cumple, y el test lo documenta en vez
-// de esconderlo. El modulo dispara la escritura en su ultimo paso, o sea ANTES del POST
-// del quote; la cola de post-fixes de la web legacy es FIFO y compartida, y la subida SI
-// espera el post-fix de vigencia, que queda detras. Medido: 629 ms con 300 ms simulados
-// por pagina. Salidas posibles: (a) que la subida dispare la escritura diferida DESPUES
-// de responder (el modulo la devuelve en el resultado en vez de dispararla), (b) darle a
-// la escritura diferida su propia sesion de FA (como abrirSesionWeb) para que no compita
-// por la cola, o (c) aceptar el costo. Es decision del dueno, no del implementador.
-test('S6: la subida diferida no paga la latencia de la web legacy del segmento', async () => {
-  writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion({ segmentoId: '14' });
-  const LATENCIA_MS = 300;
-  const web = handlersWebFichaCliente();
-  mockOperamFetch(mockSubidaBase({
-    ...mockWebLegacy(),
-    '/sales/manage/customers.php': async (u, opts) => {
-      await new Promise(resolve => setTimeout(resolve, LATENCIA_MS));
-      return web.handlers['/sales/manage/customers.php'](u, opts);
-    },
-  }));
-  await cargarListasPrecios();
-
-  const desde = Date.now();
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
-    .set('Authorization', `Bearer ${TOKEN}`).send({});
-  const duracion = Date.now() - desde;
-  await _esperarPostFixes();
-
-  assert.equal(res.status, 200);
-  assert.ok(duracion < LATENCIA_MS, `la subida tardo ${duracion} ms y la web legacy simulada tarda ${LATENCIA_MS} ms por pagina`);
 });
 
 test('S4: la web rechaza el guardado -> la subida ya respondio con folio y nada se cae', async () => {

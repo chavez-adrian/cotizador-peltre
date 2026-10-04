@@ -188,17 +188,6 @@ test('#448 subir: con FedEx queda con ship_via 2', async () => {
   assert.equal(pasoTransportista(res).status, 'ok');
 });
 
-// La huella guarda el transportista con el que quedo el quote (y null sin envio).
-test('#448 subir: la huella guardada lleva el transportista', async () => {
-  const data = dataCotizacion(ENVIO_LALAMOVE);
-  const id = guardarCotizacion(data);
-  mockOperam({ shipVia: '1' });
-  await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN);
-
-  const guardada = readCots().find(c => c.id === id);
-  assert.equal(JSON.parse(guardada.data.huellaQuote).shipVia, '3');
-});
-
 // AC: sin envio / envio manual / linea sin id -> el quote no cambia de transportista.
 test('#448 subir: sin envio el quote conserva el transportista del domicilio', async () => {
   const id = guardarCotizacion(dataCotizacion(null));

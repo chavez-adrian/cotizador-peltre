@@ -2612,36 +2612,6 @@ test('A104: con el MISMO cliente que el quote la actualizacion procede', async (
   }
 });
 
-test('A104: una cotizacion con pedido asociado NO se puede actualizar (409, sin tocar Operam)', async () => {
-  const { _resetSesionWeb } = await import('../lib/operam-web.js');
-  _resetSesionWeb();
-  const id = cotizacionActualizable({ orderOperam: '7077' });
-  const { restore, bitacora } = mockOperamWebLegacy();
-  try {
-    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
-    assert.strictEqual(res.status, 409);
-    assert.match(res.body.error, /pedido/i);
-    assert.deepStrictEqual(bitacora, [], 'no debe tocar la web legacy');
-  } finally {
-    restore();
-  }
-});
-
-test('#502: con el pedido solo en el espejo de Operam tampoco se actualiza (409, sin tocar Operam)', async () => {
-  const { _resetSesionWeb } = await import('../lib/operam-web.js');
-  _resetSesionWeb();
-  const id = cotizacionActualizable({ espejoOperam: { cotizacion: '1200', pedido: '7722' } });
-  const { restore, bitacora } = mockOperamWebLegacy();
-  try {
-    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
-    assert.strictEqual(res.status, 409);
-    assert.match(res.body.error, /pedido/i);
-    assert.deepStrictEqual(bitacora, [], 'no debe tocar la web legacy');
-  } finally {
-    restore();
-  }
-});
-
 test('A104: una cotizacion PRE (sin folio) no se actualiza: primero hay que subirla', async () => {
   const snap = readCots();
   const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
@@ -2657,21 +2627,6 @@ test('A104: una cotizacion PRE (sin folio) no se actualiza: primero hay que subi
 test('A104: actualizar una cotizacion inexistente responde 404', async () => {
   const res = await supertest(app).post('/api/cotizacion/operam/999999/actualizar').set('Authorization', `Bearer ${TEST_TOKEN}`);
   assert.strictEqual(res.status, 404);
-});
-
-test('A104: una actualizacion exitosa limpia la marca de quote desactualizado', async () => {
-  const { _resetSesionWeb } = await import('../lib/operam-web.js');
-  _resetSesionWeb();
-  const id = cotizacionActualizable({ quoteDesactualizado: { fecha: '2026-07-01T00:00:00Z', escrito: false, error: 'previo', discrepancias: [] } });
-  const { restore } = mockOperamWebLegacy();
-  try {
-    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
-    assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
-    const guardada = readCots().find(c => c.id === id);
-    assert.strictEqual(guardada.data.quoteDesactualizado, null);
-  } finally {
-    restore();
-  }
 });
 
 test('A104: /api/cotizaciones expone orderOperam y quoteDesactualizado para el gate del historial', async () => {
@@ -2826,39 +2781,6 @@ test('#114-5: una cotizacion subida antes de esta issue (sin huella) pide actual
   const res = await supertest(app).post('/api/cotizacion').set('Authorization', `Bearer ${TEST_TOKEN}`)
     .send({ ...contenido114(), cotizacionId: String(id) });
   assert.strictEqual(res.body.requiereActualizacionOperam, true);
-});
-
-test('#114-6: subir a Operam persiste la huella de lo que quedo en el quote', async () => {
-  const snap = readCots();
-  const id = (snap.reduce((m, c) => Math.max(m, c.id), 0)) + 1;
-  const data = {
-    fecha: '2026-07-29', vigencia: '2026-08-28',
-    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530' },
-    items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
-    subtotal: 1000, iva: 160, total: 1160,
-  };
-  writeCots([...snap, { id, fecha: '2026-07-29T00:00:00Z', vendedor: 'Tester', cliente: 'Pendulo', totalPiezas: 10, total: 1160, tier: 'Mayoreo', data }]);
-  const restore = mockOperamFetch({
-    '/api/v3/login': () => ({ ok: true, json: async () => ({ token: 'tok', result: true }) }),
-    '/api/v3/sales/customers': () => ({ ok: true, json: async () => ({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', branches: [{ branch_code: 88 }] }] }) }),
-    '/api/v3/sales/quote': () => ({ ok: true, json: async () => ({ result: true, added_trans_no: 1601 }) }),
-    'trans_type=30': () => ({ headers: {}, text: async () => '<html>login</html>' }),
-    'trans_type=32': () => ({ headers: {}, text: async () => '<html></html>' }),
-    'sales_order_entry.php': () => ({ headers: {}, text: async () => '<html></html>' }),
-  });
-  try {
-    const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`);
-    assert.strictEqual(res.body.ok, true);
-    const guardada = readCots().find(c => c.id === id);
-    // #403: la huella describe tambien la LISTA del encabezado. El tier "Mayoreo" de
-    // este montaje no existe en el catalogo, asi que no hay lista resoluble y el campo
-    // va en null explicito -- que es distinto de "esta cotizacion se subio antes de
-    // #403", el caso que contenidoQuoteCambio compara en la forma vieja.
-    // #448: el transportista tambien, y sin envio va en null por la misma razon.
-    assert.strictEqual(guardada.data.huellaQuote, huella114(data, { listaId: null, shipVia: null }), 'la huella debe describir lo que se subio');
-  } finally {
-    restore();
-  }
 });
 
 test('#114-7: actualizar el quote con exito reescribe la huella con lo que quedo en Operam', async () => {

@@ -33,3 +33,11 @@ El alta de cliente ya había resuelto el mismo problema (ADR-0017): un módulo q
 - Mientras las tres tajadas no terminen, la ruta de crear sigue en `server.js` y la Subida del quote vive en dos lugares; el candado ya es uno solo.
 - Hay dos baterías de prueba sobre la misma secuencia (HTTP y del módulo) hasta el ticket que reduzca las HTTP.
 - El candado sigue asumiendo una sola instancia de Node (Render Starter); con varias habría que moverlo a Neon.
+
+## Nota 2026-10-03 (issue #527): la doble bateria ya se redujo
+
+La regla queda asi: **las reglas de la Subida del quote se prueban en el modulo** (`test/subida-quote.test.js`, `test/subida-quote-alta.test.js`) y **la ruta prueba la traduccion** (status, codigo y cuerpo por cada valor; auth; el texto del 425 de cada ruta; el `reintentar` del 428). Las pruebas HTTP que prueban reglas de OTRO modulo a traves de la ruta (el cuerpo real que llega a Operam, el ProcessOrder, el segmento por la ficha web, la cola de reintentos persistida, el cableado de `listaDelQuote`/`transportistaDelQuote`/`obtenerListasPrecios` en `server.js`) se quedan: el modulo de la subida sustituye esas dependencias por dobles y no las cubre.
+
+De 94 pruebas HTTP clasificadas se borraron 8: seis ya cubiertas por el modulo (G1b, C2, dos del gate de `/actualizar` y la marca de quote desactualizado de A104, la huella con el transportista) y dos cuya regla se escribio primero en el modulo (la huella al crear como literal con `listaId`/`shipVia` en null presentes, #114-6; la subida que no espera al segmento diferido, S6). La tabla y el sabotaje que demuestra que el modulo sostiene lo borrado viven en el issue.
+
+Las filas de la tabla valor -> respuesta que ninguna prueba HTTP afirmaba viven en `test/subida-quote-http.test.js`. Dos ramas de `responderBloqueoAlta` no se pueden alcanzar desde `POST /api/cotizacion/operam/:id` y por eso no tienen prueba HTTP: `fusion` (el alta solo marca el mismo RFC real con `datosFiscales.rfc`, y la subida siempre manda `datosFiscales: null`) y `sin-vendedor-operam` con `customer_id` (ese bloqueo ocurre antes de cualquier escritura y nunca trae `clienteId`).
