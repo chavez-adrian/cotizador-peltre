@@ -12,6 +12,7 @@ import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, actualizarClie
 import { actualizarSegmentoClienteWeb } from './lib/operam-web.js';
 import { actualizarQuote, subirQuote, OCUPADO } from './lib/subida-quote.js';
 import { ligaClienteAlGuardar, vendedorAlGuardar } from './public/js/cotizaciones-logica.js';
+import { tienePedidoAsociado, MOTIVO_CON_PEDIDO } from './public/js/editar-cotizacion-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { darDeAlta, upgradeFiscal, MOTIVO_SIN_VENDEDOR_OPERAM, CODIGO_VENDEDOR_SIN_ID_OPERAM, MOTIVO_SIN_REGIMEN_FISCAL, CODIGO_REGIMEN_FISCAL_REQUERIDO } from './lib/alta-cliente.js';
@@ -491,10 +492,9 @@ async function actualizarEmbudoPorCotizacion(data, cotizacionId, vendedor) {
 // papel que no coincide con lo que produccion ve en el ERP. Sin folio no hay quote que
 // actualizar: ese camino es la subida normal.
 //
-// Aqui NO se aplica el gate de puedeActualizarCotizacion a proposito: si la cotizacion
-// ya tiene pedido, la reescritura es imposible pero la divergencia existe igual, y
-// callarla seria peor. Se pide la actualizacion, /actualizar responde 409 con el motivo
-// y la UI lo convierte en un aviso visible con la salida (crear una nueva).
+// Una cotizacion con pedido nunca llega aqui (#529): el handler la rechaza con 409
+// antes de escribir, con el motivo del gate. El gate entero (puedeActualizarCotizacion)
+// no se aplica: tambien frena la PRE, que si se sigue guardando.
 // prevConocido (#154): el caller puede pasar el registro previo si ya lo leyo
 // (validacion del tier fijado) para no repetir la misma consulta al store en
 // el mismo request. undefined => se lee aqui, como siempre.
@@ -603,6 +603,14 @@ app.post('/api/cotizacion', authMiddleware, async (req, res) => {
   const prevEntry = Number.isInteger(idPrevio) && idPrevio > 0
     ? await cotStore.obtener(idPrevio)
     : null;
+  // #529: con pedido no se guarda NADA sobre esa cotizacion, cambie o no el
+  // quote: el registro quedaria diciendo algo que el pedido no dice. Va antes de
+  // las validaciones de precio manual de calca y de lista, de la regla de vigencia
+  // y de toda escritura; las de telefono, descuento y descripcion corren antes y
+  // tampoco escriben. La salida es Copiar (sin cotizacionId).
+  if (prevEntry && tienePedidoAsociado(prevEntry.data)) {
+    return res.status(409).json({ error: MOTIVO_CON_PEDIDO });
+  }
   const esDuenoDelPrevio = !!prevEntry && (req.user.role === 'admin' || prevEntry.vendedor === req.user.name);
   // El precio manual de calca tampoco depende de la pantalla (#279, spec #278):
   // esconder el input no frena un POST armado a mano. Dos desenlaces distintos,

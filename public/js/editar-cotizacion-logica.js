@@ -29,6 +29,9 @@ export function tienePedidoAsociado(cot) {
   return (order != null && order !== '') || pedidoEnEspejo(cot);
 }
 
+// El motivo del gate con pedido: lo responde tambien el guardado (#529, server.js).
+export const MOTIVO_CON_PEDIDO = 'La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n';
+
 export function puedeActualizarCotizacion(cot) {
   const c = cot || {};
   if (!c.hasData) return { puede: false, motivo: 'Esta cotizaci\u00f3n no guarda su detalle: no hay nada que actualizar' };
@@ -36,7 +39,7 @@ export function puedeActualizarCotizacion(cot) {
     return { puede: false, motivo: 'La cotizaci\u00f3n todav\u00eda no est\u00e1 registrada en Operam: primero completa la subida' };
   }
   if (tienePedidoAsociado(c)) {
-    return { puede: false, motivo: 'La cotizaci\u00f3n ya tiene un pedido asociado en Operam: copia la cotizaci\u00f3n' };
+    return { puede: false, motivo: MOTIVO_CON_PEDIDO };
   }
   return { puede: true };
 }

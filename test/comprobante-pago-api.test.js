@@ -381,3 +381,17 @@ test('CP15: sin DROPBOX_NS_PAGO/DROPBOX_PATH_PAGO el archivo cae al sandbox y la
     process.env.DROPBOX_NS_PAGO = ns;
   }
 });
+
+// #529: el guardado rechaza una cotizacion con pedido, pero el comprobante de pago
+// es otro escritor del registro y no cambia: con data.orderOperam responde como sin el.
+test('CP-529: con pedido (data.orderOperam) el comprobante se sube y se guarda como sin pedido', async () => {
+  fijarDatos(COTS_PATH, [{ ...structuredClone(COT), etapa: 'pedido_liberado', data: { ...COT.data, orderOperam: '7269' } }]);
+  const subidas = mockDropbox();
+  const res = await subir(MEMO, [['transferencia.pdf', '%PDF-1.4']]);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(subidas.length, 1);
+  const guardado = comprobanteGuardado();
+  assert.deepEqual(guardado.archivos.map(a => a.nombre), ['transferencia.pdf']);
+  assert.deepEqual(res.body.comprobante, guardado);
+  assert.match(res.body.mensaje, /Dropbox confirm/);
+});
