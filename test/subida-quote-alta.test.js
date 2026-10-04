@@ -385,6 +385,19 @@ test('segmento diferido: tambien se dispara una vez cuando el quote falla', asyn
   assert.equal(disparos.length, 1);
 });
 
+test('segmento diferido: cuando el quote falla, se dispara DESPUES de guardar el motivo de PRE', async () => {
+  const { m } = conSegmento({ cotizaciones: [sinCliente()], subir: () => { throw new Error('Operam 500'); } });
+  const escribir = m.deps.actualizarDatos;
+  m.deps.actualizarDatos = async (id, campos) => {
+    await new Promise((r) => setImmediate(r));
+    return escribir(id, campos);
+  };
+  await subirQuote(31, {}, m.deps);
+  const iMotivo = m.secuencia.findIndex(([n, a]) => n === 'actualizarDatos' && a[1].motivoPre === 'operam');
+  assert.ok(iMotivo >= 0);
+  assert.ok(iMotivo < nombres(m.secuencia).indexOf('segmentoDiferido'));
+});
+
 test('segmento diferido: nunca en una pregunta ni en un bloqueo del alta', async () => {
   for (const tipo of ['pregunta', 'bloqueo']) {
     const disparos = [];
