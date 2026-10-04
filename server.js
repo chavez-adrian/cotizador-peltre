@@ -8,13 +8,12 @@ import { extractPrices, diffPrices } from './lib/extract-prices.js';
 import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
-import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
+import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
 import { actualizarSegmentoClienteWeb } from './lib/operam-web.js';
-import { actualizarQuote, subirQuote, postFixQuote, marcarMotivoPre, clasificarErrorQuote, contactoDeLaSubida, OCUPADO } from './lib/subida-quote.js';
+import { actualizarQuote, subirQuote, OCUPADO } from './lib/subida-quote.js';
 import { ligaClienteAlGuardar, vendedorAlGuardar } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
-import { resolverSalesTypeId } from './lib/alta-generica.js';
 import { darDeAlta, upgradeFiscal, MOTIVO_SIN_VENDEDOR_OPERAM, CODIGO_VENDEDOR_SIN_ID_OPERAM, MOTIVO_SIN_REGIMEN_FISCAL, CODIGO_REGIMEN_FISCAL_REQUERIDO } from './lib/alta-cliente.js';
 import { logCliente, marcarDropbox } from './lib/clientes-log.js';
 import { construirReporteHigiene } from './lib/higiene-clientes.js';
@@ -64,7 +63,7 @@ import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
 import { contactosDelDomicilio, refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
-import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_DEDUP, MOTIVO_PRE_OPERAM, MOTIVO_PRE_SIN_LISTA, MOTIVO_PRE_SIN_VENDEDOR } from './lib/pipeline.js';
+import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE } from './lib/pipeline.js';
 import { CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
 import { monedaDelCliente, CODIGO_MONEDA_EXTRANJERA } from './public/js/moneda-cliente-logica.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
@@ -3327,23 +3326,10 @@ app.patch('/api/operam/clientes/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Subida de una cotizacion cuya oportunidad NO tiene cliente en Operam (issue #81,
-// ADR-0006): una sola operacion server-side con reporte de pasos (estilo
-// /api/crear-cliente, ADR-0002). Dedup en capas ANTES de crear:
-//   1. celular contra prospectos: un prospecto convertido ya mapea celular ->
-//      customer_id (data.cliente_id) y se reutiliza;
-//   2. nombre normalizado contra los genericos de Operam (ADR-0001): con
-//      candidatos la operacion SE DETIENE (409 { candidatos }); el vendedor
-//      resuelve reintentando con { customerId } elegido -- el documento local no
-//      se bloquea.
-// Desde #204 esa parada SI tiene escape: { crearNuevo: true } = "ninguno es el
-// mismo cliente". Salta la parada por nombre y NADA MAS -- la reutilizacion por
-// celular (capa 1) y las guardas del customerId contradictorio corren igual, y el
-// forzado queda en clientes_log para higiene-clientes (#86). Ver la nota fechada
-// de ADR-0001.
-// El customer_id se persiste (cotizacion y prospecto) ANTES de subir: un reintento
-// tras fallo parcial entra por el camino normal con el id persistido y NO crea un
-// segundo cliente.
+// El camino de crear con alta de cliente (#81, ADR-0006) vive desde #526 en
+// lib/subida-quote.js: decide la Solicitud de alta, anota el Cliente Operam en la
+// cotizacion y sube el quote sobre el. Aqui quedan solo los traductores a HTTP.
+
 // --- Ligas Contacto -> Cliente Operam al subir (#345, spec #337, ADR-0016) ---
 //
 // El Contacto de la cotizacion (contactoDeLaSubida) y la liga que se le agrega
@@ -3395,94 +3381,6 @@ async function responderConfirmarOtraRazonSocial(res, { contacto, ligadas, clien
   });
 }
 
-// De lo que el vendedor contesto en el body a la decision de dedup que entiende
-// el modulo (CONTEXT.md "Solicitud de alta"). Con AMBOS en el body manda el
-// elegido: reutilizar tal cual es el desenlace mas conservador (no escribe nada
-// nuevo), misma regla que customerId frente a crearNuevo.
-function decisionDeLaSubida(customerIdElegido, crearNuevo, sucursalDe) {
-  if (customerIdElegido != null) return { tipo: 'usar', clienteId: customerIdElegido };
-  if (sucursalDe != null) return { tipo: 'otro-domicilio', clienteId: sucursalDe };
-  if (crearNuevo) return { tipo: 'ninguno' };
-  return null;
-}
-
-// La Solicitud de alta armada desde la cotizacion: TODA la traduccion que hace la
-// subida hacia el modulo Alta de cliente (ADR-0017). Sin datos fiscales, porque
-// este camino siempre da de alta un Cliente Operam sin ellos (ADR-0006), y con el
-// segmento en 'diferido' -- la latencia de la subida manda, asi que el modulo
-// dispara su escritura sin esperarla y anota el fallo como segmento pendiente
-// (#365), que el administrador ve en /admin.
-//
-// salesTypeId viaja RESUELTO: el catalogo de listas de precios ya vive cacheado
-// aqui (obtenerListasPrecios, con la recarga perezosa de #246) y pasarselo le
-// ahorra al modulo una lectura a Operam dentro del camino critico del vendedor.
-function solicitudDeLaSubida(entry, { prospecto, decision, otraRazonSocial, salesTypeId }) {
-  const c = entry.data?.cliente || {};
-  return {
-    contacto: {
-      celular: c.telefono || '',
-      prospecto,
-      ligas: ligasDeContacto(prospecto?.data),
-      otraRazonSocialConfirmada: !!otraRazonSocial,
-    },
-    identidad: {
-      razonSocial: c.razonSocial || '',
-      nombreCorto: c.nombreCorto || '',
-      nombreVisible: entry.cliente || '',
-      rfc: c.rfc || '',
-      pais: c.pais || 'MX',
-    },
-    datosFiscales: null,
-    comercial: {
-      vendedor: entry.vendedor,
-      tier: entry.tier,
-      salesTypeId,
-      segmentoId: c.segmentoId,
-      correoFacturacion: c.emailFactura || '',
-      usoCfdi: c.usoCfdi,
-    },
-    domicilioEntrega: {
-      nombre: c.nombreEntrega || '',
-      calle: c.calle || '',
-      numInt: c.numInt || '',
-      colonia: c.colonia || '',
-      municipio: c.municipio || '',
-      estado: c.estado || '',
-      cp: c.cpEntrega || '',
-      referencias: c.referencias || '',
-      telefono: c.celEntrega || '',
-      correo: c.emailEntrega || '',
-    },
-    ligaFija: { clienteId: c.customerId ?? null, domicilioId: c.branchId ?? c.branch_id ?? null },
-    decision,
-    segmento: { preferencia: 'diferido' },
-  };
-}
-
-// Anotar el Cliente Operam en la cotizacion es de la SUBIDA, no del alta
-// (ADR-0017): el modulo no escribe en la cotizacion. Se llama en cuanto el
-// resultado trae un Cliente Operam y ANTES de responder -- tambien cuando el
-// desenlace es un bloqueo --, porque de eso depende que un reintento entre por el
-// camino normal y reuse ese cliente en vez de crear un segundo (idempotencia).
-async function anotarClienteEnCotizacion(id, c, customerId, branchId) {
-  await cotStore.actualizarDatos(id, { cliente: { ...c, customerId, branchId } });
-}
-
-// El motivo de PRE que le toca a cada bloqueo del alta (#204): 'dedup' deja el
-// documento bajo candado hasta que el vendedor resuelva, y los demas lo entregan
-// igual (ADR-0009). La liga fija de la cotizacion no marca motivo: no es una PRE
-// por falta de resolucion sino una cotizacion que ya pertenece a otro cliente.
-const MOTIVO_PRE_DE_BLOQUEO = {
-  'liga-fija': null,
-  // El mismo RFC real de otro Cliente Operam (#377) es un duplicado que el vendedor
-  // tiene que resolver, igual que los candidatos: el documento queda bajo candado.
-  fusion: MOTIVO_PRE_DEDUP,
-  'sin-lista-precios': MOTIVO_PRE_SIN_LISTA,
-  // El vendedor sin ID de Operam (#466): mismo trato que el cliente sin lista -- el
-  // documento sale igual y el arreglo lo hace un administrador en /admin.
-  [MOTIVO_SIN_VENDEDOR_OPERAM]: MOTIVO_PRE_SIN_VENDEDOR,
-};
-
 // Un bloqueo del alta -> la MISMA respuesta HTTP de siempre. El codigo de estado lo pone
 // aqui el handler y no el alta (ADR-0017): 409 para lo que el vendedor tiene que
 // resolver (liga fija de la cotizacion, nombre corto duplicado), 422 para el cliente mal
@@ -3508,122 +3406,6 @@ function responderBloqueoAlta(res, bloqueo) {
   return res.status(503).json({ error: mensaje, ...cliente, steps: pasos });
 }
 
-// La subida del quote sobre el Cliente Operam que dejo listo el alta, con sus post-fixes
-// (vigencia y segmento). Es la que escribe en la cotizacion lo que sale de aqui: folio,
-// huella y motivo de PRE.
-async function subirQuoteTrasAlta(res, id, entry, { customerId, branchId, creadoNuevo, pasos, segmentoDiferido }) {
-  const c = entry.data?.cliente || {};
-  try {
-    // La huella (#114) se toma de ESTE objeto, no de entry.data: el cliente recien
-    // ligado (customerId/branchId) forma parte de lo que se subio, y la siguiente
-    // regeneracion si lo trae (crearOActualizarCotizacion lo copia del registro).
-    // Calcularla sobre entry.data haria que toda regeneracion pareciera un cambio.
-    const dataSubida = { ...entry.data, cliente: { ...c, customerId, branchId } };
-    // El cliente que ACABA de crear esta alta nace con la lista de su tier
-    // (buildClienteGenerico): releerlo solo para comprobarlo seria una lectura de
-    // mas dentro del camino critico de la subida (#285). El cliente reusado o
-    // elegido si se checa: puede llevar anos sin lista.
-    const { folio } = await subirCotizacionOperam(dataSubida, { verificarListaPrecios: !creadoNuevo });
-    if (folio != null && folio !== '') {
-      await cotStore.setFolioOperam(id, folio);
-      await cotStore.actualizarDatos(id, { huellaQuote: huellaContenidoQuote(dataSubida, opcionesHuellaQuote(entry)) });
-      // Hay folio: se resolvio por el camino que sea (candidato elegido, cliente
-      // nuevo forzado o reintento) y el candado se levanta (#204).
-      await marcarMotivoPre(id, null);
-    }
-    pasos.push({
-      name: 'POST quote', status: 'ok',
-      mensaje: folio ? 'La cotizacion quedo registrada en Operam' : 'La cotizacion se envio a Operam pero volvio sin numero',
-      detalle: 'POST quote -> folio ' + (folio == null || folio === '' ? '(ninguno)' : folio),
-    });
-    pasos.push(...await postFixQuote(folio, entry, { listaDelQuote, transportistaDelQuote }));
-    // clienteGenerico (#93): este camino SIEMPRE deja el cliente con RFC generico
-    // (creado nuevo o reutilizado por celular/dedup de nombre, ambos genericos) --
-    // el frontend lo usa para refrescar el chip Fiscal y ofrecer la CSF junto al folio.
-    return res.json({ ok: true, folio, customer_id: customerId, clienteGenerico: true, steps: pasos });
-  } catch (err) {
-    pasos.push({
-      name: 'POST quote', status: 'error',
-      mensaje: 'La cotizacion no se pudo registrar en Operam',
-      detalle: 'POST quote: ' + err.message,
-    });
-    // Cliente sin lista de precios (#285): el cliente EXISTENTE que el vendedor
-    // eligio (o al que se le colgo la sucursal) puede estar sin lista; el recien
-    // creado por esta misma alta nace con la de su tier y no se checa.
-    if (await responderSiClienteSinLista(res, id, err, { customer_id: customerId, steps: pasos })) return;
-    // Moneda extranjera (#297): el cliente EXISTENTE que el vendedor eligio (o al
-    // que se le colgo la sucursal) puede cotizar en otra moneda; el recien creado
-    // por esta misma alta nace en MXN y no se checa.
-    if (responderSiMonedaExtranjera(res, err, { customer_id: customerId, steps: pasos })) return;
-    await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
-    return res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message, customer_id: customerId, steps: pasos });
-  } finally {
-    // La escritura diferida del segmento (#365) se dispara DESPUES de responder, suba el
-    // quote o no: el cliente ya existe y un reintento no vuelve a pasar por aqui. Antes
-    // del POST del quote se encolaria delante del post-fix de vigencia, que si se espera.
-    segmentoDiferido?.();
-  }
-}
-
-// Las dos mitades de este camino: primero el alta del Cliente Operam sin datos fiscales,
-// que hace el modulo y devuelve valores, y luego la subida del quote sobre lo que
-// devolvio. Aqui viven la traduccion a HTTP y las escrituras en la cotizacion, que son de
-// la subida (ADR-0017).
-async function subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial) {
-  const c = entry.data?.cliente || {};
-  const prospecto = await contactoDeLaSubida(entry);
-  const decision = decisionDeLaSubida(customerIdElegido, crearNuevo, sucursalDe);
-  const alta = await darDeAlta(solicitudDeLaSubida(entry, {
-    prospecto, decision, otraRazonSocial,
-    salesTypeId: resolverSalesTypeId(entry.tier, await obtenerListasPrecios()),
-  }));
-
-  // Idempotencia del reintento (ADR-0017): en cuanto el alta deja un Cliente Operam se
-  // anota en la cotizacion ANTES de responder, aunque el desenlace sea un bloqueo -- si
-  // no, el reintento entraria sin id persistido y crearia un SEGUNDO cliente. La
-  // pregunta queda fuera a proposito: ahi no se creo ni se escribio nada y el vendedor
-  // todavia puede elegir otro cliente.
-  if (alta.tipo !== 'pregunta' && alta.clienteId != null) {
-    await anotarClienteEnCotizacion(id, c, alta.clienteId, alta.domicilioId ?? null);
-    alta.pasos.push({
-      name: 'persistir customer_id', status: 'ok',
-      mensaje: 'La cotizacion quedo ligada a este Cliente Operam',
-      detalle: `cotizacion ${id} -> cliente ${alta.clienteId}, branch ${alta.domicilioId ?? '(sin resolver)'}`,
-    });
-  }
-
-  if (alta.tipo === 'pregunta') {
-    if (alta.motivo === 'otra-razon-social') {
-      // El cuerpo del reintento lo dicta el SERVIDOR (#345): la pregunta puede nacer de
-      // un candidato elegido, de "es otro domicilio de este cliente" o del camino
-      // normal, y cada uno se reintenta distinto.
-      return await responderConfirmarOtraRazonSocial(res, {
-        contacto: alta.contacto, ligadas: alta.ligadas, clienteId: alta.clienteId,
-        reintentar: {
-          ...(customerIdElegido != null ? { customerId: customerIdElegido } : {}),
-          ...(customerIdElegido == null && sucursalDe != null ? { sucursalDe } : {}),
-          ...(crearNuevo ? { crearNuevo: true } : {}),
-        },
-      });
-    }
-    // Sin resolver no hay documento (#204): el motivo se marca ANTES de responder para
-    // que el candado de los GET aplique de inmediato.
-    await marcarMotivoPre(id, MOTIVO_PRE_DEDUP);
-    // Las salidas las manda el MODULO (#377): con un candidato del mismo RFC real no
-    // viene "ninguno es el mismo", y el navegador no pinta el boton que no recibe.
-    return res.status(409).json({ error: alta.mensaje, candidatos: alta.candidatos, opciones: alta.opciones });
-  }
-  if (alta.tipo === 'bloqueo') {
-    const motivoPre = alta.motivo in MOTIVO_PRE_DE_BLOQUEO ? MOTIVO_PRE_DE_BLOQUEO[alta.motivo] : MOTIVO_PRE_OPERAM;
-    if (motivoPre) await marcarMotivoPre(id, motivoPre);
-    return responderBloqueoAlta(res, alta);
-  }
-  return await subirQuoteTrasAlta(res, id, entry, {
-    customerId: alta.clienteId, branchId: alta.domicilioId, creadoNuevo: alta.creadoNuevo, pasos: alta.pasos,
-    segmentoDiferido: alta.segmentoDiferido,
-  });
-}
-
 // El UNICO punto de escritura del motivo de PRE (#204), marcarMotivoPre, vive desde
 // #525 en lib/subida-quote.js.
 
@@ -3646,36 +3428,6 @@ export async function barrerCotizacionesDedupVencidas(ahora = new Date()) {
   return ids;
 }
 
-// Cliente sin lista de precios (#285). Dos entradas al mismo desenlace: el corte
-// ANTES del POST (ErrorClienteSinLista, lanzado por subirCotizacionOperam) y el
-// 406 "rate de moneda" que llegue de todos modos. No es un fallo de Operam sino
-// un cliente mal configurado, asi que va como 422 CON codigo estructurado (el
-// frontend clasifica por codigo, nunca por el texto) y SIN Reintentar: el boton
-// volveria a chocar contra lo mismo hasta que alguien le asigne una lista en
-// Operam. El motivo se guarda para que el historial lo explique en vez de
-// mostrar el PRE mudo. Devuelve true si se hizo cargo del error. La regla que
-// reconoce el error es la de la Subida del quote (clasificarErrorQuote, #525).
-async function responderSiClienteSinLista(res, id, err, extra = {}) {
-  const { motivo, mensaje } = clasificarErrorQuote(err);
-  if (motivo !== 'sin-lista-precios') return false;
-  await marcarMotivoPre(id, MOTIVO_PRE_SIN_LISTA);
-  res.status(422).json({ error: mensaje, codigo: CODIGO_CLIENTE_SIN_LISTA, ...extra });
-  return true;
-}
-
-// Cliente con moneda extranjera (#297, ADR-0015). Mismo trato que el cliente sin
-// lista: no es un fallo de Operam sino un cliente al que el cotizador todavia no
-// le puede cotizar, asi que va como 422 CON codigo estructurado y SIN Reintentar
-// -- reintentar subiria pesos etiquetados en otra moneda. No marca motivo de PRE:
-// el 422 dice el motivo completo en cada intento, y el catalogo de motivos es
-// vocabulario del pipeline. Devuelve true si se hizo cargo del error.
-function responderSiMonedaExtranjera(res, err, extra = {}) {
-  const { motivo, mensaje, moneda } = clasificarErrorQuote(err);
-  if (motivo !== 'moneda-extranjera') return false;
-  res.status(422).json({ error: mensaje, codigo: CODIGO_MONEDA_EXTRANJERA, moneda, ...extra });
-  return true;
-}
-
 // El candado por id de cotizacion (F3 de la revision de #83) vive desde #524 en
 // lib/subida-quote.js (conCandadoSubida): lo comparten la subida y la
 // actualizacion del quote, que en vuelo sobre la misma cotizacion se pisarian.
@@ -3685,15 +3437,13 @@ function responderSiMonedaExtranjera(res, err, extra = {}) {
 // comparten sus tres caminos (ADR-0017).
 
 // El post-fix del quote (vigencia #106, lista #403, transportista #448) vive desde
-// #525 en lib/subida-quote.js (postFixQuote); el camino del alta lo importa de ahi
-// con listaDelQuote y transportistaDelQuote. Los pasos del encabezado (lista,
-// transportista, almacen #409) viven ahi desde #524.
+// #525 en lib/subida-quote.js (postFixQuote), junto a los pasos del encabezado
+// (lista, transportista, almacen #409) que viven ahi desde #524.
 
 // Subir la cotizacion a Operam (#83): la secuencia vive en lib/subida-quote.js
-// (subirQuote, #525, ADR-0022) y aqui solo se traduce su valor a la respuesta de
-// siempre. El modulo toma el candado, lee el registro, corta "ya subida" y decide
-// el camino; el del alta de cliente (#81, ADR-0006) todavia vive aqui y entra como
-// `caminoAlta`, que responde el mismo dentro del candado (#526 lo mueve).
+// (subirQuote, #525/#526, ADR-0022) y aqui solo se traduce su valor a la respuesta
+// de siempre. El modulo toma el candado, lee el registro, corta "ya subida" y
+// decide el camino (normal o con alta de cliente, #81, ADR-0006).
 //
 // customerId en el body = el vendedor resolvio la dedup de nombre eligiendo un
 // candidato (ADR-0001). crearNuevo (#204) = vio los candidatos y dijo "ninguno es
@@ -3702,6 +3452,11 @@ function responderSiMonedaExtranjera(res, err, extra = {}) {
 // cliente existente mas una sucursal nueva con el domicilio de entrega.
 // otraRazonSocial (#345) = vio la pregunta y contesto que si: la liga se agrega a
 // las que ya tenia en vez de bloquear la subida.
+//
+// Las diferencias entre los dos caminos son las de siempre: el del alta responde
+// ademas customer_id y steps (y clienteGenerico al lograrse, #93: este camino
+// SIEMPRE deja el cliente con RFC generico, y el frontend lo usa para refrescar el
+// chip Fiscal y ofrecer la CSF junto al folio).
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
   const customerIdElegido = req.body?.customerId ?? null;
@@ -3709,32 +3464,46 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const sucursalDe = req.body?.sucursalDe ?? null;
   const otraRazonSocial = req.body?.otraRazonSocial === true;
   const r = await subirQuote(id, { customerIdElegido, sucursalDe, crearNuevo, otraRazonSocial }, {
-    listaDelQuote, transportistaDelQuote,
-    caminoAlta: (entry) => subirConAltaGenerica(res, id, entry, customerIdElegido, crearNuevo, sucursalDe, otraRazonSocial),
+    listaDelQuote, transportistaDelQuote, obtenerListasPrecios,
   });
   if (r === OCUPADO) {
     return res.status(425).json({ error: 'Ya hay una subida a Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
   }
-  if (r.tipo === 'via-alta') return;
   if (r.tipo === 'no-encontrada') return res.status(404).json({ error: 'Cotizacion no encontrada' });
   // #167 causa 3: eco del customer_id ya ligado -- autoSubirOperam lo lee de esta
   // misma respuesta para refrescar el chip Fiscal (ver app.js #93).
   if (r.tipo === 'ya-subida') return res.json({ ok: true, folio: r.folio, yaSubida: true, customer_id: r.clienteId });
-  if (r.tipo === 'pregunta') {
-    return await responderConfirmarOtraRazonSocial(res, { contacto: r.contacto, ligadas: r.ligadas, clienteId: r.clienteId });
+  if (r.tipo === 'pregunta' && r.motivo === 'otra-razon-social') {
+    // El cuerpo del reintento lo dicta el SERVIDOR (#345): en el camino del alta la
+    // pregunta puede nacer de un candidato elegido, de "es otro domicilio de este
+    // cliente" o de "ninguno es el mismo", y cada uno se reintenta distinto.
+    const reintentar = r.camino === 'alta' ? {
+      ...(customerIdElegido != null ? { customerId: customerIdElegido } : {}),
+      ...(customerIdElegido == null && sucursalDe != null ? { sucursalDe } : {}),
+      ...(crearNuevo ? { crearNuevo: true } : {}),
+    } : undefined;
+    return await responderConfirmarOtraRazonSocial(res, { contacto: r.contacto, ligadas: r.ligadas, clienteId: r.clienteId, reintentar });
   }
-  if (r.tipo === 'lograda') return res.json({ ok: true, folio: r.folio, steps: r.pasos });
-  // Bloqueos. En este camino los 422 y el 503 no llevan customer_id ni steps (en el
-  // del alta si). El cliente no identificado (#68) es un problema de datos de la
-  // cotizacion: 422 solo con el mensaje. El cliente sin lista (#285) y la moneda
-  // extranjera (#297) llevan su codigo estructurado. Lo demas es Operam: el
-  // documento SIGUE saliendo, sin numero (ADR-0009).
+  // Candidatos de dedup sin resolver: el modulo ya marco el motivo 'dedup' (#204).
+  // Las salidas las manda el alta (#377) y el navegador no pinta la que no recibe.
+  if (r.tipo === 'pregunta') return res.status(409).json({ error: r.mensaje, candidatos: r.candidatos, opciones: r.opciones });
+  if (r.tipo === 'bloqueo' && r.etapa === 'alta') return responderBloqueoAlta(res, r);
+  const delAlta = r.camino === 'alta' ? { customer_id: r.clienteId, steps: r.pasos } : {};
+  if (r.tipo === 'lograda') {
+    if (r.camino === 'alta') return res.json({ ok: true, folio: r.folio, customer_id: r.clienteId, clienteGenerico: true, steps: r.pasos });
+    return res.json({ ok: true, folio: r.folio, steps: r.pasos });
+  }
+  // Bloqueos del quote. El cliente no identificado (#68) es un problema de datos de
+  // la cotizacion: 422 solo con el mensaje (solo ocurre en el camino normal). El
+  // cliente sin lista (#285) y la moneda extranjera (#297) llevan su codigo
+  // estructurado y SIN Reintentar. Lo demas es Operam: el documento SIGUE saliendo,
+  // sin numero (ADR-0009).
   if (r.motivo === 'cliente-no-identificado') return res.status(422).json({ error: r.mensaje });
-  if (r.motivo === 'sin-lista-precios') return res.status(422).json({ error: r.mensaje, codigo: CODIGO_CLIENTE_SIN_LISTA });
+  if (r.motivo === 'sin-lista-precios') return res.status(422).json({ error: r.mensaje, codigo: CODIGO_CLIENTE_SIN_LISTA, ...delAlta });
   if (r.motivo === 'moneda-extranjera') {
-    return res.status(422).json({ error: r.mensaje, codigo: CODIGO_MONEDA_EXTRANJERA, moneda: r.moneda });
+    return res.status(422).json({ error: r.mensaje, codigo: CODIGO_MONEDA_EXTRANJERA, moneda: r.moneda, ...delAlta });
   }
-  return res.status(503).json({ error: r.mensaje });
+  return res.status(503).json({ error: r.mensaje, ...delAlta });
 });
 
 // Actualizar la cotizacion ya registrada conservando el folio (#104, ADR-0008): la

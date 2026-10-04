@@ -276,10 +276,10 @@ const CONTACTO_SIN_LIGAS = { id: 301, celular: '5512345678', nombre: 'Compradora
 
 const nombres = (secuencia) => secuencia.map(([n]) => n);
 
-test('crear deps: sin caminoAlta lanza al entrar, nombrandola, sin tomar el candado ni leer el registro', async () => {
+test('crear deps: sin obtenerListasPrecios lanza al entrar, nombrandola, sin tomar el candado ni leer el registro', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
-  const { caminoAlta, ...sinCamino } = m.deps;
-  await assert.rejects(subirQuote(21, {}, sinCamino), /caminoAlta/);
+  const { obtenerListasPrecios, ...sinListas } = m.deps;
+  await assert.rejects(subirQuote(21, {}, sinListas), /obtenerListasPrecios/);
   assert.equal(m.llamadas.obtener.length, 0);
   assert.equal(await conCandadoSubida(21, () => 'libre'), 'libre');
 });
@@ -312,37 +312,11 @@ test('ya subida: sin customer_id en la cotizacion el clienteId sale null', async
   assert.equal((await subirQuote(21, {}, m.deps)).clienteId, null);
 });
 
-test('ya subida va ANTES de decidir el camino: con folio y datos de alta generica no se llama a caminoAlta', async () => {
+test('ya subida va ANTES de decidir el camino: con folio y datos de alta generica no se llama al alta', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '' }, { folioOperam: '1325' })] });
   const r = await subirQuote(21, { customerIdElegido: 15, sucursalDe: 15 }, m.deps);
   assert.equal(r.tipo, 'ya-subida');
-  assert.equal(m.llamadas.caminoAlta.length, 0);
-});
-
-test('camino del alta: sin RFC real ni customerId se espera caminoAlta y se devuelve via-alta sin subir', async () => {
-  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '' })] });
-  const r = await subirQuote(21, {}, m.deps);
-  assert.deepEqual(r, { tipo: 'via-alta' });
-  assert.equal(m.llamadas.caminoAlta.length, 1);
-  assert.equal(m.llamadas.caminoAlta[0][0].id, 21);
-  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
-  assert.equal(m.llamadas.resolverClienteDeCotizacion.length, 0);
-});
-
-test('camino del alta: un customerId o un sucursalDe elegidos por el vendedor tambien van por caminoAlta', async () => {
-  for (const solicitud of [{ customerIdElegido: 15 }, { sucursalDe: 15 }]) {
-    const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
-    assert.deepEqual(await subirQuote(21, solicitud, m.deps), { tipo: 'via-alta' });
-    assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
-  }
-});
-
-test('camino del alta: caminoAlta corre DENTRO del candado (una sola toma por peticion)', async () => {
-  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '' })] });
-  let dentro;
-  m.deps.caminoAlta = async () => { dentro = await conCandadoSubida(21, () => 'libre'); };
-  await subirQuote(21, {}, m.deps);
-  assert.equal(dentro, OCUPADO);
+  assert.equal(m.llamadas.darDeAlta.length, 0);
 });
 
 test('pregunta: el Contacto ligado a otro Cliente Operam sale como pregunta sin quote escrito ni escrituras en el registro', async () => {
@@ -350,6 +324,7 @@ test('pregunta: el Contacto ligado a otro Cliente Operam sale como pregunta sin 
   const r = await subirQuote(21, {}, m.deps);
   assert.equal(r.tipo, 'pregunta');
   assert.equal(r.motivo, 'otra-razon-social');
+  assert.equal(r.camino, 'normal');
   assert.equal(r.clienteId, 15);
   assert.equal(r.contacto.id, 300);
   assert.deepEqual(r.ligadas.map((l) => l.cliente_id), [88]);
@@ -389,7 +364,7 @@ test('subir: el POST lleva el Cliente Operam resuelto del RFC, sin opciones extr
 test('sin folio: lograda con el folio tal como vino y sin pasos; sin huella, sin motivo, sin post-fix y sin liga', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], prospectos: [CONTACTO_SIN_LIGAS], subir: { folio: '', customerId: 15 } });
   const r = await subirQuote(21, {}, m.deps);
-  assert.deepEqual(r, { tipo: 'lograda', folio: '', pasos: [] });
+  assert.deepEqual(r, { tipo: 'lograda', camino: 'normal', folio: '', pasos: [] });
   assert.equal(m.llamadas.setFolioOperam.length, 0);
   assert.equal(m.llamadas.actualizarDatos.length, 0);
   assert.equal(m.llamadas.corregirVigenciaQuote.length, 0);
@@ -508,7 +483,7 @@ test('bloqueo cliente-no-identificado: sin subir y sin marcar motivo de PRE', as
   const texto = 'No se pudo identificar el cliente en Operam por el RFC CPE921211N76. Verifica el RFC o da de alta el cliente antes de subir.';
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], resolver: () => { throw new Error(texto); } });
   const r = await subirQuote(21, {}, m.deps);
-  assert.deepEqual(r, { tipo: 'bloqueo', motivo: 'cliente-no-identificado', mensaje: texto });
+  assert.deepEqual(r, { tipo: 'bloqueo', etapa: 'quote', camino: 'normal', motivo: 'cliente-no-identificado', mensaje: texto });
   assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
   assert.equal(m.llamadas.actualizarDatos.length, 0);
 });
@@ -544,7 +519,7 @@ test('bloqueo moneda-extranjera: lleva la moneda y NO marca motivo de PRE', asyn
 test('bloqueo operam: marca MOTIVO_PRE_OPERAM y el mensaje dice que no se pudo subir', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], subir: () => { throw new Error('Operam 500: timeout'); } });
   const r = await subirQuote(21, {}, m.deps);
-  assert.deepEqual(r, { tipo: 'bloqueo', motivo: 'operam', mensaje: 'No se pudo subir a Operam: Operam 500: timeout' });
+  assert.deepEqual(r, { tipo: 'bloqueo', etapa: 'quote', camino: 'normal', motivo: 'operam', mensaje: 'No se pudo subir a Operam: Operam 500: timeout' });
   assert.equal(m.registro(21).data.motivoPre, 'operam');
 });
 

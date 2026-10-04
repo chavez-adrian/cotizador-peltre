@@ -20,6 +20,12 @@
 // lanzar a ligarCliente. `secuencia` registra TODAS las llamadas en el orden en
 // que ocurrieron (nombre de la dependencia + argumentos): es lo que prueba que
 // el folio, la huella y el motivo se guardan antes del post-fix.
+//
+// Crear con alta de cliente (#526) suma `alta`, lo que contesta darDeAlta (un
+// objeto, o una funcion `(solicitud) => resultado`; una prueba que quiera el alta
+// REAL la compone sobre test/helpers/operam-memoria.js y la pasa aqui), y
+// `listasPrecios`, lo que contesta obtenerListasPrecios. Las dos quedan en
+// `secuencia` como el resto.
 
 const clonar = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
 
@@ -67,13 +73,15 @@ export function subidaQuoteEnMemoria({
   corregir = POSTFIX_VERIFICADO,
   prospectos = [],
   ligarFalla = null,
+  alta = { tipo: 'lograda', clienteId: 900, domicilioId: 800, creadoNuevo: true, pasos: [] },
+  listasPrecios = [{ id: 12, nombre: 'Precio de lista' }, { id: 15, nombre: 'M100' }],
 } = {}) {
   const registros = new Map(cotizaciones.map((c) => [c.id, clonar(c)]));
   const enCola = new Set(cola.map(String));
   const llamadas = {
     obtener: [], actualizarDatos: [], actualizarQuoteOperam: [], sacarDeLaColaPostFix: [],
     setFolioOperam: [], resolverClienteDeCotizacion: [], subirCotizacionOperam: [],
-    corregirVigenciaQuote: [], encolarPostFix: [], buscarPorCelular: [], ligarCliente: [], caminoAlta: [],
+    corregirVigenciaQuote: [], encolarPostFix: [], buscarPorCelular: [], ligarCliente: [], darDeAlta: [], obtenerListasPrecios: [],
   };
   const secuencia = [];
   const anotar = (nombre, args) => {
@@ -139,8 +147,14 @@ export function subidaQuoteEnMemoria({
       if (ligarFalla) throw ligarFalla;
       return true;
     },
-    async caminoAlta(entry) {
-      anotar('caminoAlta', [entry]);
+    async darDeAlta(solicitud) {
+      anotar('darDeAlta', [solicitud]);
+      // Sin clonar: el resultado puede traer `segmentoDiferido`, una funcion.
+      return typeof alta === 'function' ? alta(solicitud) : { ...alta, pasos: [...(alta.pasos || [])] };
+    },
+    async obtenerListasPrecios() {
+      anotar('obtenerListasPrecios', []);
+      return clonar(listasPrecios);
     },
     listaDelQuote: () => lista,
     transportistaDelQuote: () => ({ ...transportista }),
