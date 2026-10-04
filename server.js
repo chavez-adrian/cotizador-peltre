@@ -9,9 +9,9 @@ import { generateQuotePDF } from './lib/pdf-generator.js';
 import { generateQuoteHTML } from './lib/html-generator.js';
 import { calcularPaquetes } from './lib/calcular-envio.js';
 import { buscarClientes, buscarClientesPorRfc, obtenerDomicilios, subirCotizacionOperam, resolverClienteDeCotizacion, actualizarClienteDirecto, buscarClientePorRFC, verificarRfcLibre, obtenerClientePorId, vigenciaDeCotizacion, huellaContenidoQuote, contenidoQuoteCambio, listarTodosClientes, listarPedidos, obtenerQuote, obtenerCliente, listarSalesTypes, listarPreciosCompletos, listarItemsCompletos, _setMinInterval } from './lib/operam-client.js';
-import { corregirVigenciaQuote, actualizarQuoteOperam, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
-import { filaEncabezado, pasoEncabezadoQuote } from './lib/postfix-encabezado-quote.js';
-import { puedeActualizarCotizacion, ligaClienteAlGuardar, vendedorAlGuardar } from './public/js/cotizaciones-logica.js';
+import { corregirVigenciaQuote, actualizarSegmentoClienteWeb } from './lib/operam-web.js';
+import { actualizarQuote, conCandadoSubida, OCUPADO, pasoListaQuote, pasoTransportistaQuote, pasoAlmacenQuote } from './lib/subida-quote.js';
+import { ligaClienteAlGuardar, vendedorAlGuardar } from './public/js/cotizaciones-logica.js';
 import { buscarClientesPorTexto } from './lib/indice-telefonos.js';
 import { bodyDesdeDiffFiscal, camposNoAplicados, diffSinVaciadosComerciales, precargaComercialUpgrade, contactoCoincideBusqueda, normalizarOperam, normalizarProspecto } from './public/js/alta-logica.js';
 import { necesitaAltaGenerica, resolverSalesTypeId } from './lib/alta-generica.js';
@@ -21,7 +21,7 @@ import { construirReporteHigiene } from './lib/higiene-clientes.js';
 import { filasSegmentoPendiente } from './lib/segmento-pendiente.js';
 import { reporteAlmacenDomicilios, excepcionesAlmacen, marcarAsiVaBien, desmarcarAsiVaBien } from './lib/almacen-domicilios.js';
 import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes, avanceBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
-import { encolarPostFix, procesarColaPostFix, barrerQuotesPostFix, sacarDeLaColaPostFix } from './lib/postfix-reintento-io.js';
+import { encolarPostFix, procesarColaPostFix, barrerQuotesPostFix } from './lib/postfix-reintento-io.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
 import { encolarAviso, planearReconciliacion, aplicarReconciliacion, barrerSyncOperam, ultimoBarridoSync, barridoSyncEnCurso, programarBarridoSync } from './lib/sync-operam-io.js';
 import { interpretarAviso } from './lib/sync-operam-webhook.js';
@@ -2855,7 +2855,7 @@ app.post('/api/admin/bandeja/:folio/descartar', authMiddleware, adminMiddleware,
 const THROTTLE_DESCUBRIMIENTO_MS = process.env.DESCUBRIMIENTO_THROTTLE_MS !== undefined
   ? Number(process.env.DESCUBRIMIENTO_THROTTLE_MS)
   : 1100;
-// Lock en memoria (mismo patron que subidasOperamEnCurso): una sola instancia
+// Lock en memoria (mismo patron que conCandadoSubida): una sola instancia
 // Node en Render, asi que un booleano basta. Sin el, dos clicks del boton
 // caminarian el mismo rango de folios y competirian por el throttle global de
 // operam-client (_setMinInterval es estado COMPARTIDO del modulo, de ahi que se
@@ -3718,14 +3718,9 @@ function responderSiMonedaExtranjera(res, err, extra = {}) {
   return true;
 }
 
-// Lock en memoria por id de cotizacion (F3 de la revision de #83): la
-// idempotencia de la subida cubre reintentos SECUENCIALES, no concurrencia --
-// dos requests EN VUELO al mismo id (auto-subida + Reintentar del Historial, o
-// doble click en Elegir candidato) leerian ambos customerId null y crearian DOS
-// clientes genericos. Instancia unica en Render (plan Starter): un Set basta -- con
-// varias instancias haria falta un lock compartido (Neon). El
-// segundo request recibe 425 claro y reintenta cuando el primero termine.
-const subidasOperamEnCurso = new Set();
+// El candado por id de cotizacion (F3 de la revision de #83) vive desde #524 en
+// lib/subida-quote.js (conCandadoSubida): lo comparten la subida y la
+// actualizacion del quote, que en vuelo sobre la misma cotizacion se pisarian.
 
 // El lock por RFC real del alta completa (#209) vive desde #366 en
 // lib/alta-cliente.js (conLockPorRfc): es del alta, no del handler, y asi lo
@@ -3810,43 +3805,12 @@ async function postFixQuote(folio, entry) {
   }
 }
 
-// Los pasos de la lista (#403) y del transportista (#448) del encabezado: UN solo
-// constructor (`pasoEncabezadoQuote`, lib/postfix-encabezado-quote.js) con los textos
-// de cada fila. `t` es el mapeo de la linea (transportistaDelQuote): cuando no habia
-// transportista que mandar, el motivo util es el del mapeo -- sin envio, envio manual,
-// linea sin id --, no el "no hay nada que escribir" de la web.
-function pasoListaQuote(folio, lista) {
-  return pasoEncabezadoQuote(filaEncabezado('lista'), folio, lista);
-}
-
-function pasoTransportistaQuote(folio, r, t) {
-  return pasoEncabezadoQuote(filaEncabezado('transportista'), folio, r, t);
-}
-
-// El almacen del que se entrega, cuando el domicilio nuevo lo movio (#409). NO es un
-// error del cotizador ni de la subida: FA lo deriva del `default_location` del
-// DOMICILIO, asi que un domicilio mal configurado en Operam arrastra el almacen sin
-// que nadie lo pida -- y el pedido que se derive lo hereda. Por eso sale como `warn`
-// accionable y nombra el almacen (el vendedor reconoce "Almacen MP", no un loc_code).
-// Sin cambio no se pinta ningun paso: un aviso que aparece siempre deja de leerse.
-function pasoAlmacenQuote(folio, almacen) {
-  if (!almacen || !almacen.cambio) return null;
-  return {
-    name: 'almacen de entrega',
-    status: 'warn',
-    mensaje: `El domicilio elegido cambio el almacen de entrega a "${almacen.a}". Si no es el correcto, el domicilio esta mal configurado en Operam.`,
-    detalle: 'quote ' + folio + ': el almacen paso de ' + almacen.de + ' a ' + almacen.a +
-      ' porque Operam lo toma del domicilio (default_location del branch)',
-  };
-}
+// Los pasos del encabezado (lista #403, transportista #448, almacen #409) viven
+// desde #524 en lib/subida-quote.js; postFixQuote los importa de ahi.
 
 app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const id = parseInt(req.params.id);
-  if (subidasOperamEnCurso.has(id)) {
-    return res.status(425).json({ error: 'Ya hay una subida a Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
-  }
-  subidasOperamEnCurso.add(id);
-  try {
+  const r = await conCandadoSubida(id, async () => {
     const entry = await cotStore.obtener(id);
     if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
     // Ya subida (#83, F1c): los quotes de Operam no se editan por API -- re-subir
@@ -3944,81 +3908,31 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
       await marcarMotivoPre(id, MOTIVO_PRE_OPERAM);
       res.status(503).json({ error: 'No se pudo subir a Operam: ' + err.message });
     }
-  } finally {
-    subidasOperamEnCurso.delete(id);
+  });
+  if (r === OCUPADO) {
+    return res.status(425).json({ error: 'Ya hay una subida a Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
   }
 });
 
-// Actualizar la cotizacion ya registrada conservando el folio (#104, ADR-0008).
-// El REGISTRO del cotizador ya lo actualizo la generacion del documento
-// (crearOActualizarCotizacion honra cotizacionId): aqui solo se reescribe el quote
-// en Operam, que no tiene PUT en la API v3 (501) y solo se puede editar por la web
-// legacy. Comparte el lock por id con la subida: una subida y una actualizacion en
-// vuelo sobre la misma cotizacion se pisarian el carrito de FA.
-//
-// Si la edicion falla, el registro del cotizador NO se revierte -- es la fuente del
-// PDF/HTML que el cliente ya tiene -- y la cotizacion queda marcada con
-// data.quoteDesactualizado para que el historial ofrezca reintentar (analogo al
-// estado PRE de la subida). Por eso un fallo responde 200 con ok:false y no 5xx:
-// no es que la peticion fallara, es que Operam quedo desalineado y hay que avisarlo
-// con detalle, incluido si se alcanzo a escribir (`escrito`).
+// Actualizar la cotizacion ya registrada conservando el folio (#104, ADR-0008): la
+// secuencia vive en lib/subida-quote.js (actualizarQuote, #524, ADR-0022) y aqui
+// solo se traduce su valor. Un fallo responde 200 con ok:false y no 5xx: no es que
+// la peticion fallara, es que Operam quedo desalineado y hay que avisarlo con
+// detalle, incluido si se alcanzo a escribir (`escrito`).
 app.post('/api/cotizacion/operam/:id/actualizar', authMiddleware, async (req, res) => {
-  const id = parseInt(req.params.id);
-  if (subidasOperamEnCurso.has(id)) {
+  const r = await actualizarQuote(parseInt(req.params.id), { listaDelQuote, transportistaDelQuote });
+  if (r === OCUPADO) {
     return res.status(425).json({ error: 'Ya hay una operacion de Operam en curso para esta cotizacion; espera a que termine y revisa el estado' });
   }
-  subidasOperamEnCurso.add(id);
-  try {
-    const entry = await cotStore.obtener(id);
-    if (!entry) return res.status(404).json({ error: 'Cotizacion no encontrada' });
-    // El gate es el MISMO que decide los botones en el historial, pero la autoridad
-    // esta aqui: la UI no es la que permite escribir en el ERP.
-    const gate = puedeActualizarCotizacion({
-      hasData: !!entry.data,
-      folioOperam: entry.folioOperam,
-      orderOperam: entry.data?.orderOperam ?? null,
-      espejoOperam: entry.data?.espejoOperam ?? null,
-    });
-    if (!gate.puede) return res.status(409).json({ error: gate.motivo });
-
-    // El transportista de la linea de envio viaja en el mismo ProcessOrder (#448).
-    const transportista = transportistaDelQuote(entry);
-    const r = await actualizarQuoteOperam(entry.folioOperam, entry.data, { lista: listaDelQuote(entry), transportista: transportista.shipVia });
-    const pasoLista = pasoListaQuote(entry.folioOperam, r.lista);
-    const pasoTransportista = pasoTransportistaQuote(entry.folioOperam, r.transportista, transportista);
-    const pasoAlmacen = pasoAlmacenQuote(entry.folioOperam, r.almacen);
-    if (r.ok) {
-      // Nueva huella (#114): el quote acaba de quedar con ESTE contenido, asi que
-      // regenerar el mismo carrito (otro formato) ya no debe reescribir nada.
-      await cotStore.actualizarDatos(id, { quoteDesactualizado: null, huellaQuote: huellaContenidoQuote(entry.data, opcionesHuellaQuote(entry)) });
-      // Lo encolado antes (#380) traeria lista/transportista/vigencia VIEJOS.
-      await sacarDeLaColaPostFix(entry.folioOperam);
-      return res.json({
-        ok: true, folio: entry.folioOperam, actualizada: true,
-        steps: [{ name: 'actualizar quote', status: 'ok' }, ...(pasoLista ? [pasoLista] : []), ...(pasoTransportista ? [pasoTransportista] : []), ...(pasoAlmacen ? [pasoAlmacen] : [])],
-      });
-    }
-    const marca = {
-      fecha: new Date().toISOString(),
-      escrito: !!r.escrito,
-      error: r.error ?? null,
-      discrepancias: r.discrepancias ?? [],
-    };
-    await cotStore.actualizarDatos(id, { quoteDesactualizado: marca });
-    return res.json({
-      ok: false, folio: entry.folioOperam, actualizada: false,
-      escrito: !!r.escrito, verificado: !!r.verificado,
-      error: r.error ?? null, discrepancias: r.discrepancias ?? [],
-      steps: [
-        { name: 'actualizar quote', status: 'error', error: r.error ?? null, discrepancias: r.discrepancias ?? [] },
-        ...(pasoLista ? [pasoLista] : []),
-        ...(pasoTransportista ? [pasoTransportista] : []),
-        ...(pasoAlmacen ? [pasoAlmacen] : []),
-      ],
-    });
-  } finally {
-    subidasOperamEnCurso.delete(id);
-  }
+  if (r.tipo === 'no-encontrada') return res.status(404).json({ error: 'Cotizacion no encontrada' });
+  if (r.tipo === 'bloqueo') return res.status(409).json({ error: r.mensaje });
+  if (r.tipo === 'actualizada') return res.json({ ok: true, folio: r.folio, actualizada: true, steps: r.pasos });
+  return res.json({
+    ok: false, folio: r.folio, actualizada: false,
+    escrito: r.escrito, verificado: r.verificado,
+    error: r.error, discrepancias: r.discrepancias,
+    steps: r.pasos,
+  });
 });
 
 // --- Webhook de Operam: sync post-venta (#62; avisos por tipo desde #510) ---
@@ -4767,7 +4681,7 @@ if (isMain) {
     console.warn('[turnstile] TURNSTILE_SECRET_KEY no configurada: la verificacion se omite (dev)');
   }
   // Barrido de cotizaciones detenidas por duplicado sin resolver (#204): al
-  // arrancar y cada hora. Como el lock subidasOperamEnCurso y la cola de
+  // arrancar y cada hora. Como el candado conCandadoSubida y la cola de
   // post-fixes de vigencia, ASUME UNA SOLA INSTANCIA (Render plan Starter): con
   // varias, todas barrerian a la vez sobre la misma tabla. Es idempotente (borrar
   // dos veces el mismo id no hace dano), asi que el peor caso concurrente es
