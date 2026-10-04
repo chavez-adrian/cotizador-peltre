@@ -397,6 +397,18 @@ test('con folio: la huella sale de entry.data (sin el Cliente Operam resuelto) c
   assert.equal(h.shipVia, '3');
 });
 
+// #114-6 (desde la prueba HTTP, #527): sin lista resoluble y sin transportista que
+// mandar, la huella guarda los dos campos en null EXPLICITO (#403, #448). Ausentes
+// significarian "huella anterior al campo", que la comparacion exenta.
+test('con folio: la huella guardada es literal, con listaId y shipVia en null presentes cuando no hay lista ni transportista', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva()], resolver: { customerId: 15, branchId: 40 },
+    lista: null, transportista: { shipVia: null, linea: null, motivo: 'sin envio' },
+  });
+  await subirQuote(21, {}, m.deps);
+  assert.equal(m.registro(21).data.huellaQuote, '{"items":[{"stock_id":"SKU-NUEVO","qty":3,"price":99.5,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":null,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"","subtotal":0,"iva":0,"total":0,"listaId":null,"branchId":null,"shipVia":null,"vigencia":"2026-11-14"}');
+});
+
 test('post-fix: escribe vigencia, lista y transportista del quote recien creado', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
   await subirQuote(21, {}, m.deps);

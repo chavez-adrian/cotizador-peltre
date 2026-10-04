@@ -378,6 +378,31 @@ test('segmento diferido: se dispara una vez, DESPUES del post-fix, cuando el quo
   assert.ok(n.indexOf('corregirVigenciaQuote') < n.indexOf('segmentoDiferido'));
 });
 
+// S6 (desde la prueba HTTP, #527): la subida NO espera la escritura del segmento,
+// que paga la latencia de la web legacy. La promesa la suelta la prueba DESPUES de
+// mirar el valor; si la subida la esperara, la carrera la reporta en vez de colgar
+// la suite.
+test('segmento diferido: la subida devuelve lograda sin esperar la escritura del segmento', async () => {
+  let soltarSegmento;
+  let segmentoPendiente = false;
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [sinCliente()],
+    alta: lograda({
+      segmentoDiferido: () => {
+        segmentoPendiente = true;
+        return new Promise((r) => { soltarSegmento = () => { segmentoPendiente = false; r(); }; });
+      },
+    }),
+  });
+  const subida = subirQuote(31, {}, m.deps);
+  const r = await Promise.race([subida, new Promise((res) => setTimeout(() => res('esperando al segmento'), 1000))]);
+  const pendienteAlDevolver = segmentoPendiente;
+  soltarSegmento?.();
+  await subida;
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(pendienteAlDevolver, true, 'el valor llego con el segmento todavia sin escribir');
+});
+
 test('segmento diferido: tambien se dispara una vez cuando el quote falla', async () => {
   const { m, disparos } = conSegmento({ cotizaciones: [sinCliente()], subir: () => { throw new Error('Operam 500'); } });
   const r = await subirQuote(31, {}, m.deps);

@@ -2498,6 +2498,8 @@ test('A104: actualizar reescribe el quote (borra las viejas, agrega las nuevas) 
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.ok, true, JSON.stringify(res.body));
     assert.strictEqual(res.body.folio, '1200', 'el folio se conserva');
+    assert.strictEqual(res.body.actualizada, true);
+    assert.strictEqual(res.body.steps[0].name, 'actualizar quote');
     assert.deepStrictEqual(bitacora, ['Delete0', 'Delete0', 'AddItem', 'ProcessOrder']);
     assert.deepStrictEqual(doc.lineas.map(l => l.stockId), ['SKU-NUEVO']);
     assert.strictEqual(doc.lineas[0].qty, 3);
