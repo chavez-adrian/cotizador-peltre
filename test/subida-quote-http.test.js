@@ -116,7 +116,9 @@ test('actualizar sin token responde 401', async () => {
 
 // --- 425 ---------------------------------------------------------------------
 // Operam retiene a la primera peticion hasta que la prueba la suelta: la segunda
-// llega con el candado tomado.
+// llega con el candado tomado. Si el candado se rompiera, la segunda tambien
+// quedaria retenida: la carrera con el tope la reporta en un segundo en vez de
+// colgar la suite, y `soltar` corre siempre para que ninguna peticion quede viva.
 function operamRetenido() {
   let avisarLlamada;
   const llamado = new Promise(r => { avisarLlamada = r; });
@@ -130,26 +132,47 @@ function operamRetenido() {
   return { llamado, soltar };
 }
 
+const SIN_RESPUESTA = 'la segunda peticion no respondio en 1 s';
+
+async function segundaPeticionConTope(peticion) {
+  let tope;
+  const limite = new Promise(r => { tope = setTimeout(() => r(SIN_RESPUESTA), 1000); });
+  try {
+    return await Promise.race([peticion, limite]);
+  } finally {
+    clearTimeout(tope);
+  }
+}
+
+// supertest no manda la peticion hasta que alguien llama a `then`: el `.then(r => r)`
+// la arranca sin esperarla.
+async function dosPeticionesEnVuelo(enviar) {
+  const { llamado, soltar } = operamRetenido();
+  const primera = enviar().then(r => r);
+  let segunda;
+  try {
+    await llamado;
+    segunda = enviar().then(r => r);
+    return await segundaPeticionConTope(segunda);
+  } finally {
+    soltar();
+    await primera;
+    await segunda;
+  }
+}
+
 test('crear con otra operacion en vuelo responde 425 con su texto', async () => {
   const id = agregarCotizacion();
-  const { llamado, soltar } = operamRetenido();
-  const primera = supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({}).then(r => r);
-  await llamado;
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
-  soltar();
-  await primera;
+  const res = await dosPeticionesEnVuelo(() => supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({}));
+  assert.notEqual(res, SIN_RESPUESTA, SIN_RESPUESTA);
   assert.equal(res.status, 425);
   assert.deepEqual(res.body, { error: TEXTO_425_CREAR });
 });
 
 test('actualizar con otra operacion en vuelo responde 425 con su texto', async () => {
   const id = agregarCotizacion({ folioOperam: '1200' });
-  const { llamado, soltar } = operamRetenido();
-  const primera = supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', TOKEN).then(r => r);
-  await llamado;
-  const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', TOKEN);
-  soltar();
-  await primera;
+  const res = await dosPeticionesEnVuelo(() => supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', TOKEN));
+  assert.notEqual(res, SIN_RESPUESTA, SIN_RESPUESTA);
   assert.equal(res.status, 425);
   assert.deepEqual(res.body, { error: TEXTO_425_ACTUALIZAR });
 });
