@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { actualizarQuote, conCandadoSubida, OCUPADO } from '../lib/subida-quote.js';
-import { huellaContenidoQuote } from '../lib/operam-client.js';
 import {
   subidaQuoteEnMemoria, RESULTADOS_ACTUALIZAR, LISTA_ESCRITA, TRANSPORTISTA_ESCRITO,
 } from './helpers/subida-quote-memoria.js';
@@ -123,7 +122,8 @@ test('exito: devuelve actualizada con el folio y guarda la huella con la lista y
   assert.equal(r.folio, '1200');
   const guardada = m.registro(7).data.huellaQuote;
   assert.notEqual(guardada, 'huella-previa');
-  assert.equal(guardada, huellaContenidoQuote(cotizacion().data, { listaId: '15', shipVia: 3 }));
+  // Literal (como #522): la lista 15 y el transportista 3 de los resolutores entran a la huella.
+  assert.equal(guardada, '{"items":[{"stock_id":"SKU-NUEVO","qty":3,"price":99.5,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":null,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"","subtotal":0,"iva":0,"total":0,"listaId":"15","branchId":null,"shipVia":"3","vigencia":"2026-08-27"}');
 });
 
 test('exito: limpia la marca quoteDesactualizado', async () => {

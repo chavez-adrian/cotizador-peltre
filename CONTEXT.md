@@ -294,7 +294,7 @@ Los tres caminos son **una sola operación** con distinta riqueza de datos, no t
 
 ## Subida del quote
 
-Dejar la cotización registrada en Operam como quote con su folio (**crear**) o reescribir ese quote conservando el folio (**actualizar**). Incluye el **Alta de cliente** cuando el Cliente Operam todavía no existe, el **Post-fix del encabezado del quote**, la huella de lo que quedó en Operam y el reporte de pasos en dos capas (**Mensaje en dos capas**). Termina en uno de cuatro desenlaces: lograda (con su folio), pregunta al vendedor, bloqueo con motivo, o **Pre-cotización** (el documento sale sin número cuando Operam no responde). A diferencia del alta, la subida sí escribe en el registro de la cotización: el folio, la huella y la marca de quote desactualizado son suyos (ADR-0022).
+Dejar la cotización registrada en Operam como quote con su folio (**crear**) o reescribir ese quote conservando el folio (**actualizar**). Incluye el **Alta de cliente** cuando el Cliente Operam todavía no existe, el **Post-fix del encabezado del quote**, la huella de lo que quedó en Operam y el reporte de pasos en dos capas (**Mensaje en dos capas**). Termina en uno de cuatro desenlaces: lograda (con su folio), pregunta al vendedor, bloqueo con motivo, o **Pre-cotización**. A diferencia del alta, la subida sí escribe en el registro de la cotización: el folio, la huella y la marca de quote desactualizado son suyos (ADR-0022).
 _Evitar_: sincronizar, exportar (la subida no lee de Operam para traer datos: los manda).
 
 ## Solicitud de alta
