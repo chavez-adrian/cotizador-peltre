@@ -1717,6 +1717,19 @@ body {
   .pl-info, .pl-salida { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { .pl-chev { transition: none; } }
+/* Fecha de entrega del pedido (#531, variante A): renglon con camion bajo el
+   encabezado de la tarjeta y en la fila cerrada de la lista. Sin color por
+   atraso; la cuenta de dias va en negritas cuando es hoy o ya vencio. */
+.entrega-pedido { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px; font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; }
+.entrega-pedido svg { width: 18px; height: 18px; flex: 0 0 18px; color: var(--text-light); }
+.entrega-pedido b { font-weight: 700; }
+.entrega-pedido-dias { color: var(--text-light); }
+.entrega-pedido-dias.entrega-pedido-ya { color: var(--text); font-weight: 700; }
+.pl .entrega-pedido { grid-area: ent; margin: 0; font-size: 15px; }
+.pl-fila-cab:has(.entrega-pedido) { grid-template-areas: "nom tot chev" "ent ent ent" "chips chips chips" "meta meta meta"; }
+@media (min-width: 900px) {
+  .pl-sec:is(.etapa-anticipo_pagado, .etapa-pedido_liberado, .etapa-saldo_pagado, .etapa-producto_entregado) .pl-fila-cab { grid-template-columns: minmax(0, 1.4fr) 300px minmax(0, 1.1fr) minmax(0, 1.1fr) 120px 18px; grid-template-areas: "nom ent chips meta tot chev"; }
+}
 
 /* === RESPONSIVE === */
 @media (max-width: 480px) {

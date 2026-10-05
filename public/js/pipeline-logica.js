@@ -18,7 +18,8 @@ import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
 import { puedeCancelar } from './cancelada-logica.js';
 import { faltaComprobante, comprobanteDe, puedeSubirComprobante, ACCEPT_COMPROBANTE } from './comprobante-pago-logica.js';
 import { buildBotonEditarHtml, tienePedidoAsociado } from './editar-cotizacion-logica.js';
-import { ICONO_WHATSAPP, ICONO_CORREO } from './iconos.js';
+import { ICONO_WHATSAPP, ICONO_CORREO, ICONO_CAMION } from './iconos.js';
+import { entregaPedido } from './entrega-pedido-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -1233,7 +1234,19 @@ export function buildEditarOportunidadHtml(o) {
   return `<div class="cot-card-actions tablero-editar">${boton}</div>`;
 }
 
-function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
+// La fecha de entrega del pedido (#531): la decide entrega-pedido-logica.js y aqui
+// solo se pinta, igual en la tarjeta del tablero (renglon propio bajo el
+// encabezado) y en la fila CERRADA de la lista (dentro de su boton, por eso
+// `etiqueta` = span). Vacio cuando no aplica.
+export function entregaPedidoHtml(o, ahora = new Date(), etiqueta = 'div') {
+  const e = entregaPedido(o, ahora);
+  if (!e) return '';
+  const ya = e.estado === 'hoy' || e.estado === 'vencida' ? ' entrega-pedido-ya' : '';
+  const dias = e.relativo ? ` <span class="entrega-pedido-dias${ya}">\u00b7 ${escapeHtml(e.relativo)}</span>` : '';
+  return `<${etiqueta} class="entrega-pedido">${ICONO_CAMION}<span>${e.rotulo} <b>${escapeHtml(e.fecha)}</b>${dias}</span></${etiqueta}>`;
+}
+
+function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   // El Origen sale de la linea gris y se lee en su chip (#287).
   const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
@@ -1258,6 +1271,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
         </div>
         <div class="cot-card-lado">${total}${contactoDirecto}</div>
       </div>
+      ${entregaPedidoHtml(o, ahora)}
       ${cadena}
       ${editar}
       ${sinContacto}
@@ -1271,10 +1285,10 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin) {
   </div>`;
 }
 
-export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsignar: tienePermiso, esAdmin = false } = {}) {
+export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsignar: tienePermiso, esAdmin = false, ahora = new Date() } = {}) {
   const cols = agruparPipeline(oportunidades);
   return COLUMNAS_PIPELINE.map(etapa => {
-    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin)).join('');
+    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora)).join('');
     const suma = cols[etapa].reduce((s, o) => s + (o.total || 0), 0);
     return `
       <div class="tablero-col" data-etapa="${etapa}">
@@ -1375,6 +1389,7 @@ export function buildFilaListaPipelineHtml(o, contexto = {}) {
   return `<div class="pl-fila${abierta ? ' pl-abierta' : ''}" id="pl-fila-${escapeHtml(o.id)}">
       <button type="button" class="pl-fila-cab" data-lista-fila="${escapeHtml(o.id)}" aria-expanded="${abierta}">
         <span class="pl-nombre">${escapeHtml(nombreOportunidad(o))}</span>
+        ${entregaPedidoHtml(o, ahora, 'span')}
         ${total}
         ${chips ? `<span class="pl-chips">${chips}</span>` : ''}
         ${meta ? `<span class="pl-meta">${meta}</span>` : ''}

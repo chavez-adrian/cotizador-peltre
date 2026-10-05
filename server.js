@@ -23,7 +23,7 @@ import { reporteAlmacenDomicilios, excepcionesAlmacen, marcarAsiVaBien, desmarca
 import { barrerAlmacenesDomicilios, ultimoBarridoAlmacenes, avanceBarridoAlmacenes } from './lib/almacen-domicilios-io.js';
 import { procesarColaPostFix, barrerQuotesPostFix } from './lib/postfix-reintento-io.js';
 import { construirCatalogo, productosSinCaja } from './lib/catalogo-operam.js';
-import { encolarAviso, planearReconciliacion, aplicarReconciliacion, barrerSyncOperam, ultimoBarridoSync, barridoSyncEnCurso, programarBarridoSync } from './lib/sync-operam-io.js';
+import { encolarAviso, planearReconciliacion, aplicarReconciliacion, barrerSyncOperam, ultimoBarridoSync, barridoSyncEnCurso, programarBarridoSync, cargarFechasEntrega, cargaFechasEntregaEnCurso, ultimaCargaFechasEntrega } from './lib/sync-operam-io.js';
 import { interpretarAviso } from './lib/sync-operam-webhook.js';
 import { registrarAviso } from './lib/operam-webhooks-store.js';
 import { modoDeReconciliacion } from './lib/sync-operam.js';
@@ -3630,6 +3630,35 @@ app.post('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, asyn
 
 app.get('/api/admin/sync-operam/barrido', authMiddleware, adminMiddleware, (req, res) => {
   res.json({ enCurso: barridoSyncEnCurso(), ...ultimoBarridoSync() });
+});
+
+// La carga de la fecha de entrega de las cotizaciones que ya tenian pedido (#531):
+// escribe SOLO `data.espejoOperam.fechaEntrega`, ninguna etapa. Mismo contrato que
+// el barrido: el modo se pide expreso (#510), `seco: true` responde el plan,
+// `aplicar: true` responde 202 y trabaja en segundo plano, otra en curso es 409 y
+// el GET da la ultima corrida.
+const MENSAJE_CARGA_FECHAS_EN_CURSO = 'Ya hay una carga de fechas de entrega en curso; consulta su resultado cuando termine.';
+app.post('/api/admin/sync-operam/fechas-entrega', authMiddleware, adminMiddleware, async (req, res) => {
+  const modo = modoDeReconciliacion(req.body);
+  if (modo.error) return res.status(400).json({ error: modo.error });
+  if (cargaFechasEntregaEnCurso()) return res.status(409).json({ error: MENSAJE_CARGA_FECHAS_EN_CURSO });
+  if (!modo.seco) {
+    cargarFechasEntrega({ seco: false }).catch(err => console.error('[fechas-entrega] carga aplicada fallo:', err.message));
+    return res.status(202).json({ ok: true, seco: false, enCurso: true });
+  }
+  try {
+    const r = await cargarFechasEntrega({ seco: true });
+    if (r.omitido) return res.status(409).json({ error: MENSAJE_CARGA_FECHAS_EN_CURSO });
+    if (r.error) return res.status(502).json({ ...r, ok: false, error: 'No se pudieron leer las cotizaciones o los pedidos de Operam: ' + r.error });
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    console.error('[fechas-entrega] carga en seco fallo:', err.message);
+    res.status(500).json({ error: 'La carga en seco fallo: ' + err.message });
+  }
+});
+
+app.get('/api/admin/sync-operam/fechas-entrega', authMiddleware, adminMiddleware, (req, res) => {
+  res.json({ enCurso: cargaFechasEntregaEnCurso(), ultima: ultimaCargaFechasEntrega() });
 });
 
 // Reconciliar UNA cotizacion (#508): la herramienta acotada que faltaba. Encuentra
