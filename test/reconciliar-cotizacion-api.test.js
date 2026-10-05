@@ -81,6 +81,7 @@ function operam({ fallaTransacciones = false, pedidos = PEDIDOS, anulados = [], 
     }
     if (u.includes('/api/v3/login')) return jsonResponse({ token: 'tok', result: true });
     if (u.includes('/api/v3/sales/sales_orders')) return jsonResponse({ data: pedidos });
+    if (u.includes('/api/v3/sales/sales_order/')) return jsonResponse({ data: { detalles: [{ quantity: '1', qty_sent: '1' }] } });
     if (u.includes('/api/v3/sales/transactions')) {
       if (fallaTransacciones) return jsonResponse({ message: 'error interno' }, 500);
       return jsonResponse({ data: u.includes('customer_id=537') ? TRANSACCIONES_537 : [] });

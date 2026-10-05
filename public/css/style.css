@@ -1725,6 +1725,9 @@ body {
 .entrega-pedido b { font-weight: 700; }
 .entrega-pedido-dias { color: var(--text-light); }
 .entrega-pedido-dias.entrega-pedido-ya { color: var(--text); font-weight: 700; }
+/* #534: Entregado parcialmente es un aviso dentro de Producto entregado; naranja
+   oscuro (el tono de --warning, legible como texto sobre blanco). */
+.entrega-pedido.entrega-pedido-parcial, .entrega-pedido.entrega-pedido-parcial svg { color: oklch(0.52 0.14 55); }
 .pl .entrega-pedido { grid-area: ent; margin: 0; font-size: 15px; }
 .pl-fila-cab:has(.entrega-pedido) { grid-template-areas: "nom tot chev" "ent ent ent" "chips chips chips" "meta meta meta"; }
 @media (min-width: 900px) {

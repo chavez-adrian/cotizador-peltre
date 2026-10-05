@@ -35,6 +35,7 @@ function depsGrabando({ transacciones = [], pedidos = [], anulados = [] } = {}) 
     sesionesWeb: 0,
   };
   deps.listarTransacciones = async (q) => { deps.consultasTx.push(q); return transacciones; };
+  deps.obtenerPedido = async () => ({ detalles: [{ quantity: '1', qty_sent: '1' }] });
   deps.listarPedidos = async (q) => { deps.consultasPed.push(q); return pedidos; };
   deps.abrirSesionWeb = async () => {
     deps.sesionesWeb++;

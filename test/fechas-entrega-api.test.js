@@ -56,6 +56,7 @@ function operam() {
     lecturas.push(u);
     if (u.includes('/api/v3/login')) return jsonResponse({ token: 'tok', result: true });
     if (u.includes('/api/v3/sales/sales_orders')) return jsonResponse({ data: PEDIDOS });
+    if (u.includes('/transactions')) return jsonResponse({ data: [] });
     throw new Error('Unmocked fetch: ' + u);
   };
   return lecturas;
@@ -105,7 +106,8 @@ test('en seco responde lo que escribiria y no escribe nada', async () => {
   const res = await supertest(app).post(RUTA).set('Authorization', ADMIN).send({ seco: true });
   assert.equal(res.status, 200);
   assert.equal(res.body.seco, true);
-  assert.deepEqual(res.body.plan, [{ id: 61, folio: '1251', etapa: 'producto_entregado', pedido: '7702', fechaAntes: null, fechaDespues: '2026-09-28', accion: 'escribir' }]);
+  assert.deepEqual(res.body.plan, [{ id: 61, folio: '1251', etapa: 'producto_entregado', pedido: '7702', fechaAntes: null, fechaDespues: '2026-09-28',
+    despachoAntes: null, despachoDespues: null, completaAntes: null, completaDespues: null, accion: 'escribir', campos: { fechaEntrega: '2026-09-28' } }]);
   assert.deepEqual(cotizaciones(), [COT_1251]);
 });
 

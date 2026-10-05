@@ -82,6 +82,7 @@ function operam({ webCaida = false } = {}) {
     }
     if (u.includes('/api/v3/login')) return jsonResponse({ token: 'tok', result: true });
     if (u.includes('/api/v3/sales/sales_orders')) return jsonResponse({ data: PEDIDOS });
+    if (u.includes('/api/v3/sales/sales_order/')) return jsonResponse({ data: { detalles: [{ quantity: '1', qty_sent: '1' }] } });
     if (u.includes('/api/v3/sales/transactions')) {
       const cliente = new URL(u).searchParams.get('customer_id');
       return jsonResponse({ data: TRANSACCIONES[cliente] || [] });

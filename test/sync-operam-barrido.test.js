@@ -48,6 +48,7 @@ function deps({ cotizaciones = Object.values(COT), pedidos = PEDIDOS, falla = {}
   d.listarCotizaciones = async () => cotizaciones;
   d.listarPedidos = async (q) => { d.consultasPed.push(q); return pedidos; };
   d.listarTransacciones = async (q) => { d.consultasTx.push(q); return TRANSACCIONES[q.customerId] || []; };
+  d.obtenerPedido = async () => ({ detalles: [{ quantity: '1', qty_sent: '1' }] });
   d.abrirSesionWeb = async () => async (transNo) => {
     d.consultasWeb.push(String(transNo));
     if (falla.web) throw new Error('web legacy caida');

@@ -92,8 +92,9 @@ test('un pedido sin fecha no guarda la llave y no rompe la reconciliacion', asyn
 //
 // El barrido del sync salta Producto entregado ya pagado, asi que esas no
 // recibirian nunca la fecha. La carga lee los pedidos UNA vez, liga cada
-// cotizacion por documento (la misma regla del sync, ADR-0021) y escribe SOLO
-// `data.espejoOperam.fechaEntrega`: ni etapa, ni el resto del espejo, ni banderas.
+// cotizacion por documento (la misma regla del sync, ADR-0021) y escribe SOLO las
+// llaves de la entrega del espejo: ni etapa, ni el resto del espejo, ni banderas.
+// La fecha de despacho y la completitud (#534) se prueban en despacho-pedido.test.js.
 
 const PEDIDOS_CARGA = [
   // 1251 entregada y pagada: el barrido la salta, la carga no.
@@ -127,9 +128,11 @@ function depsCarga(cotizaciones) {
   const deps = { escrituras: [] };
   deps.listarCotizaciones = async () => cotizaciones;
   deps.listarPedidos = async () => PEDIDOS_CARGA;
-  deps.listarTransacciones = async () => { throw new Error('la carga no lee transacciones'); };
+  // Sin remisiones: la carga lee la cadena como el sync, y sin remision no hay detalle.
+  deps.listarTransacciones = async () => [];
+  deps.obtenerPedido = async () => { throw new Error('sin remision no se lee el detalle'); };
   deps.abrirSesionWeb = async () => async (transNo) => (String(transNo) === '5960' ? HTML_ANULADO : HTML_VIVO);
-  deps.setFechaEntregaPedido = async (id, fecha) => { deps.escrituras.push({ id, fecha }); return true; };
+  deps.setEntregaPedido = async (id, campos) => { deps.escrituras.push({ id, campos }); return true; };
   deps.cambiarEtapa = async () => { throw new Error('la carga no mueve etapas'); };
   deps.setEspejoOperam = async () => { throw new Error('la carga no reescribe el espejo'); };
   deps.actualizarDatos = async () => { throw new Error('la carga no escribe otros datos'); };
@@ -142,7 +145,8 @@ test('carga en seco: lista que escribiria, por cotizacion, y no escribe nada', a
   assert.equal(r.seco, true);
   assert.deepEqual(deps.escrituras, []);
   const porId = Object.fromEntries(r.plan.map(f => [f.id, f]));
-  assert.deepEqual(porId[1], { id: 1, folio: '1251', etapa: 'producto_entregado', pedido: '7702', fechaAntes: null, fechaDespues: '2026-09-28', accion: 'escribir' });
+  assert.deepEqual(porId[1], { id: 1, folio: '1251', etapa: 'producto_entregado', pedido: '7702', fechaAntes: null, fechaDespues: '2026-09-28',
+    despachoAntes: null, despachoDespues: null, completaAntes: null, completaDespues: null, accion: 'escribir', campos: { fechaEntrega: '2026-09-28' } });
   assert.equal(porId[2].accion, 'igual');
   assert.equal(porId[3].accion, 'sin-fecha');
   assert.deepEqual([porId[4].fechaAntes, porId[4].fechaDespues, porId[4].accion], ['2026-10-15', '2026-10-20', 'escribir']);
@@ -155,7 +159,7 @@ test('carga en seco: lista que escribiria, por cotizacion, y no escribe nada', a
 test('carga aplicada: escribe solo las de accion escribir', async () => {
   const deps = depsCarga(cotizacionesCarga());
   const r = await cargarFechasEntrega({ seco: false }, deps);
-  assert.deepEqual(deps.escrituras, [{ id: 1, fecha: '2026-09-28' }, { id: 4, fecha: '2026-10-20' }]);
+  assert.deepEqual(deps.escrituras, [{ id: 1, campos: { fechaEntrega: '2026-09-28' } }, { id: 4, campos: { fechaEntrega: '2026-10-20' } }]);
   assert.equal(r.escritas, 2);
   assert.equal(r.plan.find(f => f.id === 1).escrito, true);
 });
@@ -186,7 +190,7 @@ test('carga aplicada sobre el store: solo cambia la fecha de entrega, ninguna et
   fijarDatos(ruta, antes);
   const deps = depsCarga([]);
   delete deps.listarCotizaciones;
-  delete deps.setFechaEntregaPedido;
+  delete deps.setEntregaPedido;
 
   const seco = await cargarFechasEntrega({ seco: true }, deps);
   assert.equal(seco.resumen.escribir, 2);

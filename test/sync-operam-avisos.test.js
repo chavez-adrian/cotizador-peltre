@@ -32,6 +32,7 @@ function depsGrabando({ pedidos = PEDIDOS, transacciones = [], filtraCliente = t
     return filtraCliente && q.debtorNo != null ? pedidos.filter(p => p.debtor_no === String(q.debtorNo)) : pedidos;
   };
   deps.listarTransacciones = async (q) => { deps.consultasTx.push(q); return transacciones; };
+  deps.obtenerPedido = async () => ({ detalles: [{ quantity: '1', qty_sent: '1' }] });
   deps.abrirSesionWeb = async () => { throw new Error('no deberia consultar la web: todos los pedidos tienen total'); };
   deps.cambiarEtapa = async (id, etapa, evento) => { deps.movimientos.push({ id, etapa, evento }); return true; };
   deps.setEspejoOperam = async (id, espejo) => { deps.espejos.push({ id, espejo }); return true; };

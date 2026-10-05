@@ -357,6 +357,8 @@ test('la cotizacion aceptada la liga el sync por su folio y avanza de etapa', as
       { order_no: '7300', trans_type: '30', debtor_no: '512', trans_no_from: '951', total: '48250' },
       { order_no: '7999', trans_type: '30', debtor_no: '512', trans_no_from: '888', total: '10000' },
     ],
+    // #534: con remision se lee el detalle del pedido; aqui, entregado completo.
+    obtenerPedido: async () => ({ detalles: [{ quantity: '1', qty_sent: '1' }] }),
   };
   const resultado = await reconciliarOportunidad(op, deps);
 

@@ -1234,16 +1234,20 @@ export function buildEditarOportunidadHtml(o) {
   return `<div class="cot-card-actions tablero-editar">${boton}</div>`;
 }
 
-// La fecha de entrega del pedido (#531): la decide entrega-pedido-logica.js y aqui
+// La fecha del pedido (#531, #534): la decide entrega-pedido-logica.js y aqui
 // solo se pinta, igual en la tarjeta del tablero (renglon propio bajo el
 // encabezado) y en la fila CERRADA de la lista (dentro de su boton, por eso
-// `etiqueta` = span). Vacio cuando no aplica.
+// `etiqueta` = span). Entregado parcialmente lleva el signo de advertencia y el
+// color de aviso. Vacio cuando no aplica.
 export function entregaPedidoHtml(o, ahora = new Date(), etiqueta = 'div') {
   const e = entregaPedido(o, ahora);
   if (!e) return '';
   const ya = e.estado === 'hoy' || e.estado === 'vencida' ? ' entrega-pedido-ya' : '';
   const dias = e.relativo ? ` <span class="entrega-pedido-dias${ya}">\u00b7 ${escapeHtml(e.relativo)}</span>` : '';
-  return `<${etiqueta} class="entrega-pedido">${ICONO_CAMION}<span>${e.rotulo} <b>${escapeHtml(e.fecha)}</b>${dias}</span></${etiqueta}>`;
+  const parcial = e.estado === 'parcial';
+  const clase = parcial ? 'entrega-pedido entrega-pedido-parcial' : 'entrega-pedido';
+  const aviso = parcial ? '\u26a0\ufe0f ' : '';
+  return `<${etiqueta} class="${clase}">${ICONO_CAMION}<span>${aviso}${e.rotulo} <b>${escapeHtml(e.fecha)}</b>${dias}</span></${etiqueta}>`;
 }
 
 function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora) {

@@ -22,6 +22,8 @@ function depsMock({ transacciones = [], pedidos = [], onCambiarEtapa } = {}) {
     datos,
     listarTransacciones: async () => transacciones,
     listarPedidos: async () => pedidos,
+    // #534: con remision se lee el detalle del pedido; aqui, entregado completo.
+    obtenerPedido: async () => ({ detalles: [{ quantity: '1', qty_sent: '1' }] }),
     cambiarEtapa: async (id, etapa, evento) => {
       movimientos.push({ id, etapa, evento });
       if (onCambiarEtapa) onCambiarEtapa(id, etapa, evento);
