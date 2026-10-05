@@ -1,6 +1,6 @@
 {
   "version": "2026.ABRIL",
-  "extracted": "2026-09-30T19:01:34.824Z",
+  "extracted": "2026-10-05T18:31:36.257Z",
   "products": [
     {
       "key": "VA08B",
@@ -16532,6 +16532,97 @@
       "colorRiso": 1,
       "priceKey": "VA08B",
       "nombre": "Taza 8 negro mate interior blanco filete negro"
+    },
+    {
+      "sku": "VT05A6B11211",
+      "tipo": "VT",
+      "tamano": "05",
+      "color1": "A6",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "B1",
+      "colorRiso": 1,
+      "priceKey": "VT05B",
+      "nombre": "Tequilero capri interior blanco filete negro"
+    },
+    {
+      "sku": "VA05A6B11211",
+      "tipo": "VA",
+      "tamano": "05",
+      "color1": "A6",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "B1",
+      "colorRiso": 1,
+      "priceKey": "VA05B",
+      "nombre": "Taza 5 capri interior blanco filete negro"
+    },
+    {
+      "sku": "VA08A6B11211",
+      "tipo": "VA",
+      "tamano": "08",
+      "color1": "A6",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "B1",
+      "colorRiso": 1,
+      "priceKey": "VA08B",
+      "nombre": "Taza 8 capri interior blanco filete negro"
+    },
+    {
+      "sku": "SA08A6B11211",
+      "tipo": "SA",
+      "tamano": "08",
+      "color1": "A6",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "B1",
+      "colorRiso": 1,
+      "priceKey": "SA08B",
+      "nombre": "Salsera 8 capri interior blanco filete negro"
+    },
+    {
+      "sku": "TA14A6B11211",
+      "tipo": "TA",
+      "tamano": "14",
+      "color1": "A6",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "B1",
+      "colorRiso": 1,
+      "priceKey": "TA14B",
+      "nombre": "Tazón 14 capri interior blanco filete negro"
+    },
+    {
+      "sku": "VA09A6B11211",
+      "tipo": "VA",
+      "tamano": "09",
+      "color1": "A6",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "B1",
+      "colorRiso": 1,
+      "priceKey": "VA09B",
+      "nombre": "Pocillo 9 capri interior blanco filete negro"
+    },
+    {
+      "sku": "PH20A6B11211",
+      "tipo": "PH",
+      "tamano": "20",
+      "color1": "A6",
+      "textura": 1,
+      "capas": 2,
+      "filetes": 1,
+      "color2": "B1",
+      "colorRiso": 1,
+      "priceKey": "PH20B",
+      "nombre": "Plato 20 hondo capri interior blanco filete negro"
     }
   ],
   "colores": {
