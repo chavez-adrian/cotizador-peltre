@@ -1708,8 +1708,8 @@ body {
 .menu-mas-lista[hidden] { display: none; }
 .menu-mas-opcion { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; width: 100%; min-height: 48px; padding: 6px 12px; border: 0; border-radius: 6px; background: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--text); text-align: left; cursor: pointer; }
 .menu-mas-opcion small { font-size: 12px; font-weight: 500; color: var(--text-light); }
-.menu-mas-opcion:hover, .menu-mas-opcion:focus-visible { background: var(--bg); outline: 2px solid var(--primary); outline-offset: -2px; }
-.menu-mas-opcion:hover { outline: none; }
+.menu-mas-opcion:hover { background: var(--bg); }
+.menu-mas-opcion:focus-visible { background: var(--bg); outline: 2px solid var(--primary); outline-offset: -2px; }
 .menu-mas-peligro { color: var(--danger); }
 .pl-pleg { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
 .pl-pleg summary { list-style: none; display: grid; grid-template-columns: 1fr auto 18px; gap: 10px; align-items: center; min-height: 50px; padding: 0 12px; font-size: 15px; font-weight: 700; cursor: pointer; }

@@ -2030,18 +2030,19 @@ test('#484: al admin la tarjeta de una cotizacion con pedido le ofrece Cancelada
 
 test('#484: al vendedor la tarjeta con pedido no le pinta Cancelada', () => {
   const conPedido = cotizacion({ id: 'c10', refId: 10, etapa: 'anticipo_pagado' });
-  assert.equal(buildSalidaControlHtml(conPedido).includes('cerrarCanceladaTablero'), false);
-  assert.equal(buildSalidaControlHtml(conPedido, { esAdmin: false }).includes('cerrarCanceladaTablero'), false);
+  assert.equal(buildMenuMasHtml(conPedido).includes('cerrarCanceladaTablero'), false);
+  assert.equal(buildMenuMasHtml(conPedido, { esAdmin: false }).includes('cerrarCanceladaTablero'), false);
   assert.equal(buildTableroPipelineHtml([conPedido], { esAdmin: false }).includes('cerrarCanceladaTablero'), false);
 });
 
 test('#484: sin pedido, ya cerrada o sobre un prospecto Cancelada no se ofrece ni al admin', () => {
-  const sinPedido = buildSalidaControlHtml(cotizacion({ id: 'c10', refId: 10, etapa: 'seguimiento' }), { esAdmin: true });
-  assert.equal(sinPedido.includes('cerrarCanceladaTablero'), false);
-  assert.ok(sinPedido.includes("cerrarPerdidaTablero('cotizacion', 10)"), 'sin pedido la salida es Perdida');
+  const enSeguimiento = cotizacion({ id: 'c10', refId: 10, etapa: 'seguimiento' });
+  assert.equal(buildMenuMasHtml(enSeguimiento, { esAdmin: true }).includes('cerrarCanceladaTablero'), false);
+  assert.ok(buildSalidaControlHtml(enSeguimiento).includes("cerrarPerdidaTablero('cotizacion', 10)"), 'sin pedido la salida es Perdida');
   const yaCancelada = cotizacion({ id: 'c10', refId: 10, etapa: 'cancelada', espejoOperam: ESPEJO_CON_PEDIDO });
-  assert.equal(buildSalidaControlHtml(yaCancelada, { esAdmin: true }), '');
-  assert.equal(buildSalidaControlHtml(prospecto({ id: 5, etapa: 'por_cotizar' }), { esAdmin: true }).includes('cerrarCanceladaTablero'), false);
+  assert.equal(buildSalidaControlHtml(yaCancelada), '');
+  assert.equal(buildMenuMasHtml(yaCancelada, { esAdmin: true }).includes('cerrarCanceladaTablero'), false);
+  assert.equal(buildMenuMasHtml(prospecto({ id: 5, etapa: 'por_cotizar' }), { esAdmin: true }).includes('cerrarCanceladaTablero'), false);
 });
 
 test('#484: una Cancelada es salida y no ocupa columna del tablero activo', () => {

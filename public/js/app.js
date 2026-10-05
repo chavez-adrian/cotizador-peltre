@@ -6624,7 +6624,11 @@ function anotarPlegablePipeline(e) {
 // lleva onclick; esta delegacion lo abre y lo cierra -- clic fuera, Escape o
 // elegir una opcion (el onclick de la opcion ya corrio cuando el clic llega
 // aqui). La lista flota (position fixed) para que no la tape la tarjeta vecina
-// ni el borde de la columna, y por eso se cierra al desplazar o redimensionar.
+// ni el borde de la columna, y por eso se cierra al desplazar o al cambiar el
+// ANCHO de la ventana (en el telefono la barra de direcciones solo cambia el
+// alto y no debe cerrarlo).
+let anchoMenusMas = 0;
+
 function cerrarMenusMas(salvo) {
   document.querySelectorAll('[data-menu-mas][aria-expanded="true"]').forEach(b => {
     if (b === salvo) return;
@@ -6646,6 +6650,7 @@ function alternarMenuMas(boton) {
   boton.setAttribute('aria-expanded', String(abrir));
   lista.hidden = !abrir;
   if (!abrir) return;
+  anchoMenusMas = innerWidth;
   const r = boton.getBoundingClientRect();
   const alto = lista.offsetHeight;
   const arriba = r.bottom + alto + 8 > innerHeight && r.top > alto + 8;
@@ -8005,7 +8010,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('click', clickMenuMas);
   document.addEventListener('keydown', teclaMenuMas);
   addEventListener('scroll', () => cerrarMenusMas(), true);
-  addEventListener('resize', () => cerrarMenusMas());
+  addEventListener('resize', () => { if (innerWidth !== anchoMenusMas) cerrarMenusMas(); });
   document.getElementById('btn-pipeline-modo-cerradas')?.addEventListener('click', () => setModoPipeline('cerradas'));
 
   // Volver a Cotizar desde Historial (la navegacion vive en el bottom-nav, issue #53)
