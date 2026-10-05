@@ -1695,6 +1695,22 @@ body {
 .btn-contacto-wa { color: #128C7E; }
 .btn-contacto:hover { background: var(--bg); }
 .btn-contacto:disabled { color: var(--text); opacity: .3; cursor: not-allowed; background: none; }
+/* Menu de tres puntos (#533, variante A de #531): en el renglon de WhatsApp y correo; la lista flota (position fixed, la coloca app.js) para que no la tape la tarjeta vecina ni el borde de la columna. */
+.contacto-fila { display: flex; align-items: center; }
+.cot-card-total + .contacto-fila { margin-top: -6px; }
+.pl-info .contacto-fila { margin-left: auto; }
+.contacto-fila .contacto-directo { margin-right: 0; }
+.menu-mas { display: flex; margin: -10px -10px -10px 0; }
+.menu-mas-boton { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--text-light); cursor: pointer; }
+.menu-mas-boton:hover, .menu-mas-boton[aria-expanded="true"] { background: var(--bg); color: var(--text); }
+.menu-mas-boton:focus-visible { outline: 3px solid var(--primary); outline-offset: -3px; }
+.menu-mas-lista { position: fixed; z-index: 120; min-width: 210px; padding: 6px; border-radius: 10px; background: var(--white); box-shadow: 0 8px 24px oklch(0.25 0.03 255 / 0.22), 0 0 0 1px var(--border); }
+.menu-mas-lista[hidden] { display: none; }
+.menu-mas-opcion { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; width: 100%; min-height: 48px; padding: 6px 12px; border: 0; border-radius: 6px; background: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--text); text-align: left; cursor: pointer; }
+.menu-mas-opcion small { font-size: 12px; font-weight: 500; color: var(--text-light); }
+.menu-mas-opcion:hover, .menu-mas-opcion:focus-visible { background: var(--bg); outline: 2px solid var(--primary); outline-offset: -2px; }
+.menu-mas-opcion:hover { outline: none; }
+.menu-mas-peligro { color: var(--danger); }
 .pl-pleg { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
 .pl-pleg summary { list-style: none; display: grid; grid-template-columns: 1fr auto 18px; gap: 10px; align-items: center; min-height: 50px; padding: 0 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
 .pl-pleg summary::-webkit-details-marker { display: none; }

@@ -2,9 +2,9 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar, peticionPerdidaTablero;
+let COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildMenuMasHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar, peticionPerdidaTablero;
 before(async () => {
-  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildNuevaOportunidadControlHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar, peticionPerdidaTablero } =
+  ({ COLUMNAS_PIPELINE, COLUMNA_LABELS, agruparPipeline, buildTableroPipelineHtml, esSalida, oportunidadesActivas, etiquetaFolioOperam, badgeFolioOperamHtml, badgeFolioOperamProspectoHtml, puedeCompletarPreCotizacion, botonCompletarHtml, interpretarSubidaOperam, buildOperamStatusHtml, buildCandidatosOperamHtml, buildCandidatosAltaHtml, buildColaHoyHtml, buildColaCotizacionItemHtml, ACCIONES_NUEVO, buildMenuNuevoHtml, esAsignable, buildAsignarControlHtml, buildMoverSeguimientoControlHtml, buildSalidaControlHtml, buildCerradasHtml, buildDecoradoControlHtml, cadenaOperamTexto, cadenaOperamHtml, badgePagoSinRegistrarHtml, interpretarActualizacionOperam, buildActualizacionStatusHtml, badgeQuoteDesactualizadoHtml, puedeAsignar, normalizarPuedeAsignar, buildColaNoAsignadoItemHtml, buildSinContactoControlHtml, buildMenuMasHtml, puedeAbrirNuevaOportunidad, badgeClienteOperamHtml, pasosParaMostrar, peticionPerdidaTablero } =
     await import('../pipeline-logica.js'));
 });
 
@@ -1737,14 +1737,14 @@ test('CT4: el tablero pinta el aviso dentro de la tarjeta de la cotizacion sin C
 // se puede capturar otra vez, asi que el interes nuevo se abre desde la tarjeta.
 
 test('#343: la tarjeta de una cotizacion con Contacto ofrece abrir una Oportunidad nueva', () => {
-  const html = buildNuevaOportunidadControlHtml(cotizacion({ contactoCelular: '5555550001' }));
+  const html = buildMenuMasHtml(cotizacion({ contactoCelular: '5555550001' }));
   assert.ok(html.includes('Nueva oportunidad'));
   assert.ok(html.includes("abrirNuevaOportunidad('5555550001')"));
 });
 
 test('#343: una cotizacion sin Contacto no puede abrir nada (no se sabe de quien es)', () => {
   assert.equal(puedeAbrirNuevaOportunidad(cotizacion({ contactoCelular: null })), false);
-  assert.equal(buildNuevaOportunidadControlHtml(cotizacion({ contactoCelular: null })), '');
+  assert.equal(buildMenuMasHtml(cotizacion({ contactoCelular: null })), '');
 });
 
 // Un Contacto, varias tarjetas: la etapa de la tarjeta que se tiene enfrente no
@@ -1752,13 +1752,13 @@ test('#343: una cotizacion sin Contacto no puede abrir nada (no se sabe de quien
 test('#343: la tarjeta de un prospecto tambien ofrece abrirle una Oportunidad nueva, en cualquier etapa', () => {
   for (const etapa of ['por_cotizar', 'no_asignado', 'no_util']) {
     assert.equal(puedeAbrirNuevaOportunidad(prospecto({ etapa })), true, etapa);
-    assert.ok(buildNuevaOportunidadControlHtml(prospecto({ etapa })).includes("abrirNuevaOportunidad('+525512345678')"), etapa);
+    assert.ok(buildMenuMasHtml(prospecto({ etapa })).includes("abrirNuevaOportunidad('+525512345678')"), etapa);
   }
 });
 
-test('#343: el boton viaja en la tarjeta del tablero', () => {
+test('#343: el boton viaja en la tarjeta del tablero (#533: en su menu de tres puntos)', () => {
   const html = buildTableroPipelineHtml([cotizacion({ contactoCelular: '5555550001' })], {});
-  assert.ok(html.includes('tablero-nueva-oportunidad'));
+  assert.ok(html.includes('menu-mas-lista'));
   assert.ok(html.includes('Nueva oportunidad'));
 });
 
@@ -2018,9 +2018,9 @@ test('#483: la ventana del motivo ofrece el catalogo en su orden y un campo de n
 // La unica salida con pedido: solo el admin la ve sobre la tarjeta de una
 // cotizacion con pedido; al vendedor no se le pinta. Sale del tablero activo y
 // vive en Cerradas con etiqueta propia y su motivo libre.
-test('#484: al admin la tarjeta de una cotizacion con pedido le ofrece Cancelada', () => {
+test('#484: al admin la tarjeta de una cotizacion con pedido le ofrece Cancelada (#533: en su menu de tres puntos)', () => {
   for (const extra of [{ etapa: 'anticipo_pagado' }, { etapa: 'producto_entregado' }, { etapa: 'seguimiento', espejoOperam: ESPEJO_CON_PEDIDO }]) {
-    const html = buildSalidaControlHtml(cotizacion({ id: 'c10', refId: 10, ...extra }), { esAdmin: true });
+    const html = buildMenuMasHtml(cotizacion({ id: 'c10', refId: 10, ...extra }), { esAdmin: true });
     assert.ok(html.includes('cerrarCanceladaTablero(10)'), JSON.stringify(extra));
     assert.match(html, />Cancelada</);
   }

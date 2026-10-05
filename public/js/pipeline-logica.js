@@ -18,7 +18,7 @@ import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
 import { puedeCancelar } from './cancelada-logica.js';
 import { faltaComprobante, comprobanteDe, puedeSubirComprobante, ACCEPT_COMPROBANTE } from './comprobante-pago-logica.js';
 import { buildBotonEditarHtml, tienePedidoAsociado } from './editar-cotizacion-logica.js';
-import { ICONO_WHATSAPP, ICONO_CORREO, ICONO_CAMION } from './iconos.js';
+import { ICONO_WHATSAPP, ICONO_CORREO, ICONO_CAMION, ICONO_TRES_PUNTOS } from './iconos.js';
 import { entregaPedido } from './entrega-pedido-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
@@ -1028,17 +1028,15 @@ export function buildMoverSeguimientoControlHtml(o) {
 // Perdida lleva ademas el TIPO (#478): prospectos y cotizaciones comparten
 // numeros de refId, y con el id solo la accion cerraba al prospecto homonimo.
 // #482: con pedido (tienePedido) Perdida no se ofrece: esa venta ya se cerro.
-// #484: con pedido la unica salida es Cancelada, y solo se le pinta al admin.
-export function buildSalidaControlHtml(o, { esAdmin = false } = {}) {
+// #484: con pedido la unica salida es Cancelada, y solo se le pinta al admin;
+// desde #533 vive en el menu de tres puntos (buildMenuMasHtml), no aqui.
+export function buildSalidaControlHtml(o) {
   if (!o || esSalida(o.etapa)) return '';
   const id = o.refId ?? o.id;
   const perdida = tienePedido(o) ? ''
     : `<button class="btn btn-secondary btn-sm" onclick="cerrarPerdidaTablero('${o.tipo === 'cotizacion' ? 'cotizacion' : 'prospecto'}', ${id})">Perdida</button>`;
   if (o.tipo === 'cotizacion') {
-    const cancelada = puedeCancelar(o, esAdmin)
-      ? `<button class="btn btn-secondary btn-sm" onclick="cerrarCanceladaTablero(${id})">Cancelada</button>` : '';
-    const acciones = perdida + cancelada;
-    return acciones ? `<div class="cot-card-actions tablero-salida">${acciones}</div>` : '';
+    return perdida ? `<div class="cot-card-actions tablero-salida">${perdida}</div>` : '';
   }
   const motivos = MOTIVOS_NO_UTIL
     .map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
@@ -1187,11 +1185,38 @@ export function puedeAbrirNuevaOportunidad(o) {
   return !!celularDeContacto(o);
 }
 
-export function buildNuevaOportunidadControlHtml(o) {
-  if (!puedeAbrirNuevaOportunidad(o)) return '';
-  return `<div class="cot-card-actions tablero-nueva-oportunidad">
-    <button class="btn btn-secondary btn-sm" onclick="abrirNuevaOportunidad('${escapeHtml(celularDeContacto(o))}')">Nueva oportunidad</button>
-  </div>`;
+// Menu de tres puntos (#533, variante A de #531): Nueva oportunidad y
+// Cancelada se usan rara vez, asi que dejan su fila de botones y viven en un
+// menu junto a WhatsApp y correo, igual en la tarjeta del tablero y en la fila
+// abierta de la lista. Las reglas no cambian: Nueva oportunidad con celular del
+// Contacto, Cancelada solo al admin y con pedido. Sin ninguna, no hay menu.
+// El boton no lleva onclick: lo abre y lo cierra la delegacion de app.js
+// (data-menu-mas); las opciones si, y son las mismas de antes. La superficie
+// separa el id de la lista entre tablero y lista.
+
+function opcionMenuMasHtml(onclick, texto, ayuda, peligro) {
+  return `<button type="button" role="menuitem" class="menu-mas-opcion${peligro ? ' menu-mas-peligro' : ''}" onclick="${onclick}">${texto}<small>${ayuda}</small></button>`;
+}
+
+export function buildMenuMasHtml(o, { esAdmin = false, superficie = 'tablero' } = {}) {
+  if (!o) return '';
+  const opciones = [];
+  if (puedeAbrirNuevaOportunidad(o)) {
+    opciones.push(opcionMenuMasHtml(`abrirNuevaOportunidad('${escapeHtml(celularDeContacto(o))}')`, 'Nueva oportunidad', 'Otra tarjeta para el mismo Contacto'));
+  }
+  if (o.tipo === 'cotizacion' && !esSalida(o.etapa) && puedeCancelar(o, esAdmin)) {
+    opciones.push(opcionMenuMasHtml(`cerrarCanceladaTablero(${o.refId ?? o.id})`, 'Cancelada', 'Ya hay pedido; solo admin', true));
+  }
+  if (!opciones.length) return '';
+  const lista = `menu-mas-${superficie}-${escapeHtml(o.id)}`;
+  return `<div class="menu-mas"><button type="button" class="menu-mas-boton" data-menu-mas aria-haspopup="menu" aria-expanded="false" aria-controls="${lista}" aria-label="M\u00e1s acciones" title="M\u00e1s acciones">${ICONO_TRES_PUNTOS}</button><div id="${lista}" class="menu-mas-lista" role="menu" hidden>${opciones.join('')}</div></div>`;
+}
+
+// WhatsApp, correo y, si hay, el menu: un solo renglon. Sin menu el par queda
+// tal cual (#519).
+function contactoYMenuHtml(o, menu) {
+  const contacto = buildContactoDirectoHtml(o);
+  return menu ? `<div class="contacto-fila">${contacto}${menu}</div>` : contacto;
 }
 
 // WhatsApp y Correo desde la Oportunidad (#519): dos accesos con icono que
@@ -1260,13 +1285,12 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora, p
   const cadena = cadenaOperamHtml(o.espejoOperam);
   const asignar = buildAsignarControlHtml(o, vendedores, tienePermiso);
   const mover = buildMoverSeguimientoControlHtml(o);
-  const salida = buildSalidaControlHtml(o, { esAdmin });
+  const salida = buildSalidaControlHtml(o);
   const decorado = buildDecoradoControlHtml(o, plegables);
   const comprobante = buildComprobantePagoHtml(o);
   const sinContacto = buildSinContactoControlHtml(o);
-  const nuevaOportunidad = buildNuevaOportunidadControlHtml(o);
   const editar = buildEditarOportunidadHtml(o);
-  const contactoDirecto = buildContactoDirectoHtml(o);
+  const contactoDirecto = contactoYMenuHtml(o, buildMenuMasHtml(o, { esAdmin, superficie: 'tablero' }));
   return `<div class="tablero-card" data-id="${o.id}" data-etapa="${escapeHtml(o.etapa)}">
     <div class="cot-card">
       <div class="cot-card-header">
@@ -1285,7 +1309,6 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora, p
       ${mover}
       ${decorado}
       ${comprobante}
-      ${nuevaOportunidad}
       ${salida}
     </div>
   </div>`;
@@ -1365,14 +1388,13 @@ export function buildDetalleListaPipelineHtml(o, { vendedores, puedeAsignar: tie
   const acciones = [
     buildEditarOportunidadHtml(o),
     buildMoverSeguimientoControlHtml(o),
-    buildNuevaOportunidadControlHtml(o),
     buildAsignarControlHtml(o, vendedores, tienePermiso, 'lista'),
     buildSinContactoControlHtml(o),
     decorada ? '' : buildDecoradoControlHtml(o),
   ].join('');
-  const salida = buildSalidaControlHtml(o, { esAdmin });
+  const salida = buildSalidaControlHtml(o);
   return `<div class="pl-detalle">
-      <div class="pl-info">${chipOrigenHtml(o)}${badgeClienteOperamHtml(o)}${cadenaOperamHtml(o.espejoOperam)}${buildContactoDirectoHtml(o)}</div>
+      <div class="pl-info">${chipOrigenHtml(o)}${badgeClienteOperamHtml(o)}${cadenaOperamHtml(o.espejoOperam)}${contactoYMenuHtml(o, buildMenuMasHtml(o, { esAdmin, superficie: 'lista' }))}</div>
       ${acciones ? `<div class="pl-acciones">${acciones}</div>` : ''}
       ${calca}${comprobante}
       ${salida ? `<div class="pl-salida"><span class="pl-salida-tit">Cerrar oportunidad</span>${salida}</div>` : ''}

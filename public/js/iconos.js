@@ -9,4 +9,7 @@ export const ICONO_WHATSAPP = '<svg aria-hidden="true" focusable="false" viewBox
 // #531: la fecha de entrega del pedido en la tarjeta del Pipeline.
 export const ICONO_CAMION = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18"><path d="M3 6.5h11v9H3zM14 9.5h3.6l2.9 3.2v2.8H14z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17" cy="17" r="1.9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
 
+// #533: el menu de tres puntos de la tarjeta del Pipeline.
+export const ICONO_TRES_PUNTOS = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="5" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="19" r="2" fill="currentColor"/></svg>';
+
 export const ICONO_CORREO = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.8 7l8.2 6 8.2-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';

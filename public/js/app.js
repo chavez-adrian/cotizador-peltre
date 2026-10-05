@@ -6620,6 +6620,61 @@ function anotarPlegablePipeline(e) {
   return true;
 }
 
+// Menu de tres puntos de la tarjeta y de la fila abierta (#533): su boton no
+// lleva onclick; esta delegacion lo abre y lo cierra -- clic fuera, Escape o
+// elegir una opcion (el onclick de la opcion ya corrio cuando el clic llega
+// aqui). La lista flota (position fixed) para que no la tape la tarjeta vecina
+// ni el borde de la columna, y por eso se cierra al desplazar o redimensionar.
+function cerrarMenusMas(salvo) {
+  document.querySelectorAll('[data-menu-mas][aria-expanded="true"]').forEach(b => {
+    if (b === salvo) return;
+    b.setAttribute('aria-expanded', 'false');
+    const lista = document.getElementById(b.getAttribute('aria-controls'));
+    if (lista) lista.hidden = true;
+  });
+}
+
+function opcionesMenuMas(boton) {
+  return [...(document.getElementById(boton.getAttribute('aria-controls'))?.querySelectorAll('[role="menuitem"]') || [])];
+}
+
+function alternarMenuMas(boton) {
+  const lista = document.getElementById(boton.getAttribute('aria-controls'));
+  if (!lista) return;
+  cerrarMenusMas(boton);
+  const abrir = boton.getAttribute('aria-expanded') !== 'true';
+  boton.setAttribute('aria-expanded', String(abrir));
+  lista.hidden = !abrir;
+  if (!abrir) return;
+  const r = boton.getBoundingClientRect();
+  const alto = lista.offsetHeight;
+  const arriba = r.bottom + alto + 8 > innerHeight && r.top > alto + 8;
+  lista.style.top = `${arriba ? r.top - alto - 4 : r.bottom + 4}px`;
+  lista.style.left = `${Math.max(8, Math.min(r.right - lista.offsetWidth, innerWidth - lista.offsetWidth - 8))}px`;
+  opcionesMenuMas(boton)[0]?.focus({ preventScroll: true });
+}
+
+function clickMenuMas(e) {
+  const boton = e.target.closest('[data-menu-mas]');
+  if (boton) { alternarMenuMas(boton); return; }
+  if (e.target.closest('.menu-mas-lista') && !e.target.closest('[role="menuitem"]')) return;
+  cerrarMenusMas();
+}
+
+function teclaMenuMas(e) {
+  const boton = document.querySelector('[data-menu-mas][aria-expanded="true"]');
+  if (!boton) return;
+  if (e.key === 'Escape') { cerrarMenusMas(); boton.focus(); return; }
+  if (e.key === 'Tab') { cerrarMenusMas(); return; }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const opciones = opcionesMenuMas(boton);
+  if (!opciones.length) return;
+  e.preventDefault();
+  const i = opciones.indexOf(document.activeElement);
+  const paso = e.key === 'ArrowDown' ? 1 : -1;
+  opciones[(i + paso + opciones.length) % opciones.length].focus({ preventScroll: true });
+}
+
 // Acordeon de la lista (#518): sus botones no llevan onclick (no se cruzan con
 // las acciones de la tarjeta, que si lo llevan); los atiende esta delegacion.
 function clickListaPipeline(e) {
@@ -6725,7 +6780,7 @@ window.capturarContactoTablero = capturarContactoTablero;
 // Cotizar. NO pide origen: lo hereda del Contacto (#287).
 //
 // La disparan DOS superficies -- la tarjeta del tablero
-// (buildNuevaOportunidadControlHtml) y el guardrail de la captura
+// (su menu de tres puntos, buildMenuMasHtml) y el guardrail de la captura
 // (buildOfertaNuevaOportunidadHtml) -- asi que refresca la que este a la vista.
 // Se expone a `window` junto a su declaracion: los onclick inline resuelven
 // contra window (trampa de #112).
@@ -7947,6 +8002,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('pipeline-list')?.addEventListener('click', clickListaPipeline);  document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
   document.getElementById('pipeline-tablero')?.addEventListener('click', anotarPlegablePipeline);
+  document.addEventListener('click', clickMenuMas);
+  document.addEventListener('keydown', teclaMenuMas);
+  addEventListener('scroll', () => cerrarMenusMas(), true);
+  addEventListener('resize', () => cerrarMenusMas());
   document.getElementById('btn-pipeline-modo-cerradas')?.addEventListener('click', () => setModoPipeline('cerradas'));
 
   // Volver a Cotizar desde Historial (la navegacion vive en el bottom-nav, issue #53)
