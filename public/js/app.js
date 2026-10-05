@@ -6579,6 +6579,7 @@ function renderPipeline() {
     // #484: Cancelada solo se le pinta al admin (el servidor responde 403 al resto).
     tableroEl.innerHTML = buildTableroPipelineHtml(oportunidades, {
       vendedores: vendedoresPipeline, puedeAsignar: puedeAsignarPipeline, esAdmin: state.user?.role === 'admin',
+      plegables: pipelinePlegables,
     });
     return;
   }
@@ -6609,16 +6610,20 @@ function renderPipeline() {
   });
 }
 
+// Calca y Comprobante: se anota SOLO lo que el vendedor toco (el clic llega
+// antes de que el <details> cambie), no el estado con el que nacio el bloque.
+// Lo comparten la lista y el tablero (#532): la llave es por oportunidad.
+function anotarPlegablePipeline(e) {
+  const plegable = e.target.closest('summary')?.parentElement;
+  if (!plegable?.dataset.listaPlegable) return false;
+  pipelinePlegables[plegable.dataset.listaPlegable] = !plegable.open;
+  return true;
+}
+
 // Acordeon de la lista (#518): sus botones no llevan onclick (no se cruzan con
 // las acciones de la tarjeta, que si lo llevan); los atiende esta delegacion.
 function clickListaPipeline(e) {
-  // Calca y Comprobante: se anota SOLO lo que el vendedor toco (el clic llega
-  // antes de que el <details> cambie), no el estado con el que nacio el bloque.
-  const plegable = e.target.closest('summary')?.parentElement;
-  if (plegable?.dataset.listaPlegable) {
-    pipelinePlegables[plegable.dataset.listaPlegable] = !plegable.open;
-    return;
-  }
+  if (anotarPlegablePipeline(e)) return;
   const objetivo = e.target.closest('[data-lista-fila], [data-lista-etapa], [data-lista-accion]');
   if (!objetivo || objetivo.disabled) return;
   const { listaFila, listaEtapa, listaAccion } = objetivo.dataset;
@@ -6850,9 +6855,11 @@ window.marcarDecorada = marcarDecorada;
 async function toggleCalcaPaso(id, paso, completo) {
   try {
     const res = await api(`/api/cotizacion/${id}/calca-paso`, { method: 'PATCH', body: { paso, completo: !!completo } });
-    if (!res.ok) { avisoTablero('No se pudo actualizar el paso de calca'); return; }
-    recargarPipeline();
+    if (!res.ok) avisoTablero('No se pudo actualizar el paso de calca');
   } catch (e) { avisoTablero('Error de conexion'); }
+  // #532: la casilla ya cambio en pantalla; si el PATCH no paso, el repintado
+  // la devuelve a lo que el servidor guardo.
+  recargarPipeline();
 }
 window.toggleCalcaPaso = toggleCalcaPaso;
 
@@ -7939,6 +7946,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('btn-pipeline-modo-lista')?.addEventListener('click', () => setModoPipeline('lista'));
   document.getElementById('pipeline-list')?.addEventListener('click', clickListaPipeline);  document.getElementById('btn-pipeline-modo-tablero')?.addEventListener('click', () => setModoPipeline('tablero'));
+  document.getElementById('pipeline-tablero')?.addEventListener('click', anotarPlegablePipeline);
   document.getElementById('btn-pipeline-modo-cerradas')?.addEventListener('click', () => setModoPipeline('cerradas'));
 
   // Volver a Cotizar desde Historial (la navegacion vive en el bottom-nav, issue #53)

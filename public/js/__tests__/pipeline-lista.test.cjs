@@ -49,7 +49,7 @@ const CASOS = {
 };
 
 function onclicks(html) {
-  return [...html.matchAll(/onclick="([^"]*)"/g)].map(m => m[1]).sort();
+  return [...html.matchAll(/on(?:click|change)="([^"]*)"/g)].map(m => m[1]).sort();
 }
 
 function ctx(extra) {

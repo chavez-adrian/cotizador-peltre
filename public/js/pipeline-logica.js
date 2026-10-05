@@ -1105,11 +1105,12 @@ export function buildMotivoSalidaModalHtml({ titulo, catalogo }) {
 // Control de producto decorado / calca en la tarjeta de cotizacion (issue #61,
 // CONTEXT.md "Producto decorado (calca)"). Solo aplica a COTIZACIONES (un
 // prospecto sin cotizar no lleva calca). Una cotizacion no decorada ofrece
-// marcarla; una decorada muestra el checklist de 6 pasos con su progreso (p. ej.
-// 3/6), cada paso togglable. El paso 6 (archivos_dropbox) ofrece un input de
-// archivo que sube la posicion de calca a Dropbox. Usa el id numerico (refId),
-// nunca el prefijado ("c10"), leccion del bug de #57.
-export function buildDecoradoControlHtml(o) {
+// marcarla; una decorada pinta la calca PLEGADA (#532) con su avance en el
+// resumen (p. ej. 3/6). Lo que el vendedor abrio o cerro (plegables, por
+// "<id de tarjeta>:calca", la misma llave que la lista) sobrevive al repintado
+// que sigue a marcar una casilla. Usa el id numerico (refId), nunca el
+// prefijado ("c10"), leccion del bug de #57.
+export function buildDecoradoControlHtml(o, plegables) {
   if (!o || o.tipo !== 'cotizacion') return '';
   const id = o.refId ?? o.id;
   if (!esDecorada(o)) {
@@ -1117,31 +1118,32 @@ export function buildDecoradoControlHtml(o) {
       <button class="btn btn-secondary btn-sm" onclick="marcarDecorada(${id}, true)">Marcar decorada (calca)</button>
     </div>`;
   }
+  const { completos, total } = progresoDecorado(o.calcaChecklist || (o.data && o.data.calcaChecklist));
+  const llave = `${o.id}:calca`;
+  const abierto = !!(plegables && plegables[llave]);
+  return `<details class="decorado-control calca-pleg" data-lista-plegable="${escapeHtml(llave)}"${abierto ? ' open' : ''}><summary>Calca <span class="pl-estado pl-estado-${completos === total ? 'ok' : 'pend'}">${completos}/${total}</span>${CHEVRON_LISTA}</summary>
+    ${buildCalcaPasosHtml(o)}
+  </details>`;
+}
+
+// El cuerpo de la calca abierta (#532), el mismo en la tarjeta y en la fila de
+// la lista: una casilla por paso con su texto. Marcarla o desmarcarla es el
+// Marcar / Revertir de siempre (toggleCalcaPaso, mismo PATCH). El paso 6
+// (archivos_dropbox) conserva el input de archivo que sube la posicion de calca.
+export function buildCalcaPasosHtml(o) {
+  const id = o.refId ?? o.id;
   const checklist = o.calcaChecklist || (o.data && o.data.calcaChecklist);
-  const { completos, total } = progresoDecorado(checklist);
-  const completoDe = clave => {
-    const ch = Array.isArray(checklist) ? checklist : [];
-    const hit = ch.find(p => p && p.clave === clave);
-    return !!(hit && hit.completo);
-  };
+  const ch = Array.isArray(checklist) ? checklist : [];
   const pasos = PASOS_DECORADO.map(p => {
-    const hecho = completoDe(p.clave);
-    const toggle = `<button class="btn btn-sm ${hecho ? 'btn-secondary' : 'btn-primary'}" onclick="toggleCalcaPaso(${id}, '${p.clave}', ${hecho ? 'false' : 'true'})">${hecho ? 'Revertir' : 'Marcar'}</button>`;
+    const hit = ch.find(x => x && x.clave === p.clave);
+    const hecho = !!(hit && hit.completo);
     const archivos = p.clave === 'archivos_dropbox'
-      ? `<input type="file" id="calca-archivos-${id}" class="btn-sm" multiple>
-         <button class="btn btn-sm btn-primary" onclick="subirCalcaArchivos(${id})">Subir a Dropbox</button>`
+      ? `<div class="calca-dropbox"><input type="file" id="calca-archivos-${id}" multiple><button class="btn btn-sm btn-primary" onclick="subirCalcaArchivos(${id})">Subir a Dropbox</button></div>`
       : '';
-    return `<li class="calca-paso ${hecho ? 'calca-paso-hecho' : ''}">
-      <span class="calca-paso-label">${hecho ? 'OK ' : ''}${escapeHtml(p.label)}</span>
-      ${toggle}${archivos}
-    </li>`;
+    return `<li class="calca-paso${hecho ? ' calca-paso-hecho' : ''}"><label class="calca-check"><input type="checkbox"${hecho ? ' checked' : ''} onchange="toggleCalcaPaso(${id}, '${p.clave}', this.checked)"><span>${escapeHtml(p.label)}</span></label>${archivos}</li>`;
   }).join('');
-  return `<div class="cot-card-actions decorado-control">
-    <div class="decorado-progreso">Calca ${completos}/${total}
-      <button class="btn btn-secondary btn-sm" onclick="marcarDecorada(${id}, false)">Quitar decorada</button>
-    </div>
-    <ol class="calca-checklist">${pasos}</ol>
-  </div>`;
+  return `<ul class="calca-checklist">${pasos}</ul>
+    <button type="button" class="calca-quitar" onclick="marcarDecorada(${id}, false)">Quitar decorada</button>`;
 }
 
 // Oportunidad sin Contacto (#342, spec #337 user story 22, ADR-0016): la
@@ -1250,7 +1252,7 @@ export function entregaPedidoHtml(o, ahora = new Date(), etiqueta = 'div') {
   return `<${etiqueta} class="${clase}">${ICONO_CAMION}<span>${aviso}${e.rotulo} <b>${escapeHtml(e.fecha)}</b>${dias}</span></${etiqueta}>`;
 }
 
-function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora) {
+function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora, plegables) {
   const total = o.total ? `<div class="cot-card-total">$${fmtMoneda(o.total)}</div>` : '';
   // El Origen sale de la linea gris y se lee en su chip (#287).
   const meta = [o.vendedor, o.ciudad].filter(Boolean).map(escapeHtml).join(' · ');
@@ -1259,7 +1261,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora) {
   const asignar = buildAsignarControlHtml(o, vendedores, tienePermiso);
   const mover = buildMoverSeguimientoControlHtml(o);
   const salida = buildSalidaControlHtml(o, { esAdmin });
-  const decorado = buildDecoradoControlHtml(o);
+  const decorado = buildDecoradoControlHtml(o, plegables);
   const comprobante = buildComprobantePagoHtml(o);
   const sinContacto = buildSinContactoControlHtml(o);
   const nuevaOportunidad = buildNuevaOportunidadControlHtml(o);
@@ -1289,10 +1291,10 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora) {
   </div>`;
 }
 
-export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsignar: tienePermiso, esAdmin = false, ahora = new Date() } = {}) {
+export function buildTableroPipelineHtml(oportunidades, { vendedores, puedeAsignar: tienePermiso, esAdmin = false, ahora = new Date(), plegables } = {}) {
   const cols = agruparPipeline(oportunidades);
   return COLUMNAS_PIPELINE.map(etapa => {
-    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora)).join('');
+    const tarjetas = cols[etapa].map(o => buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora, plegables)).join('');
     const suma = cols[etapa].reduce((s, o) => s + (o.total || 0), 0);
     return `
       <div class="tablero-col" data-etapa="${etapa}">
@@ -1353,7 +1355,7 @@ export function buildDetalleListaPipelineHtml(o, { vendedores, puedeAsignar: tie
   let calca = '';
   if (decorada) {
     const { completos, total } = progresoDecorado(o.calcaChecklist || (o.data && o.data.calcaChecklist));
-    calca = plegableListaHtml(o, 'calca', 'Calca', `${completos} de ${total}`, completos === total ? 'ok' : 'pend', buildDecoradoControlHtml(o), false, plegables);
+    calca = plegableListaHtml(o, 'calca', 'Calca', `${completos} de ${total}`, completos === total ? 'ok' : 'pend', buildCalcaPasosHtml(o), false, plegables);
   }
   const falta = faltaComprobante(o) || faltaComprobante(o, 'saldo');
   const subido = comprobanteDe(o) || comprobanteDe(o, 'saldo');

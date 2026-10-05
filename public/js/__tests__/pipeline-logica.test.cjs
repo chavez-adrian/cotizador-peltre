@@ -1229,8 +1229,11 @@ test('Q49: una cotizacion decorada muestra el checklist de 6 pasos con su progre
 test('Q50: el control de decorado usa el id numerico (refId) con la oportunidad prefijada (#57)', () => {
   const o = cotizacion({ id: 'c10', refId: 10, decorado: true, calcaChecklist: [{ clave: 'arte_final', completo: false }] });
   const html = buildDecoradoControlHtml(o);
-  // las acciones togglean por id numerico 10, nunca por "c10"
-  assert.equal(html.includes('c10'), false);
+  // las acciones togglean por id numerico 10, nunca por "c10"; la llave del
+  // plegable (#532) si es la de la tarjeta, como en la lista
+  const acciones = [...html.matchAll(/on(?:click|change)="([^"]*)"/g)].map(m => m[1]);
+  assert.ok(acciones.length > 0);
+  assert.equal(acciones.some(a => a.includes('c10')), false);
   assert.match(html, /\(10/);
 });
 
