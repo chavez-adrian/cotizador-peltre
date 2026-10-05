@@ -327,9 +327,9 @@ test('#536 la fila de una cotizacion con total 0 dice $0.00, no Sin cotizar', ()
 // no se parte por dentro ("en 15 / d"), en la tarjeta y en la fila.
 test('#536 el total de la tarjeta no se encoge, el nombre si, y la cuenta de dias no se parte', () => {
   const css = fs.readFileSync(path.join(__dirname, '..', '..', 'css', 'style.css'), 'utf8');
-  assert.match(css, /\.cot-card-lado\s*\{[^}]*flex-shrink:\s*0/);
-  assert.match(css, /\.cot-card-header\s*>\s*:first-child\s*\{[^}]*min-width:\s*0/);
-  assert.match(css, /\.cot-card-cliente\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  assert.match(css, /\.tablero-card \.cot-card-lado\s*\{[^}]*flex-shrink:\s*0/);
+  assert.match(css, /\.tablero-card \.cot-card-header\s*>\s*:first-child\s*\{[^}]*min-width:\s*0/);
+  assert.match(css, /\.tablero-card \.cot-card-cliente\s*\{[^}]*overflow-wrap:\s*anywhere/);
   assert.match(css, /\.entrega-pedido-dias\s*\{[^}]*white-space:\s*nowrap/);
   const html = L.entregaPedidoHtml(cotizacion({ etapa: 'pedido_liberado', espejoOperam: { pedido: '7758', fechaEntrega: '2026-10-20' } }), new Date(2026, 9, 5, 12));
   assert.match(html, /<span class="entrega-pedido-dias">\u00b7 en 15 d<\/span>/);
