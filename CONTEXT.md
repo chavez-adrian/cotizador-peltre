@@ -426,6 +426,21 @@ El texto que describe cada línea de la cotización, con un máximo de 1000 cara
 
 La partida de **envío** es un caso aparte: su descripción no sale de ningún catálogo — la arma el cotizador con el servicio y el tiempo literales de la paquetería —, así que siempre se impone en Operam aunque el vendedor no la haya tecleado. El vendedor no la edita desde el carrito; sale de la tarifa elegida.
 
+## Fecha compromiso de despacho
+
+El día en que la fábrica se compromete a despachar el pedido; en Operam es el campo "Requerido para" / "Entrega solicitada" del pedido. No es el día en que el cliente recibe: para eso se suma el Tiempo de entrega (los días de tránsito). Se captura con la fecha real comprometida (regla de operación), así que una fecha ya pasada sin despacho es un atraso real, no un dato por omisión (decisión de Adrián 2026-10-05). En la tarjeta del Pipeline se rotula "Despacho".
+_Evitar_: "fecha de entrega" a secas, "entrega solicitada" (el nombre de Operam, que sugiere la recepción del cliente).
+
+## Fecha de despacho
+
+La fecha de una Nota de entrega (la remisión de Operam): el día en que la mercancía salió efectivamente. Un pedido despachado en varias remisiones tiene varias fechas de despacho. La que representa al pedido es la de la última remisión, tanto Entregado como Entregado parcialmente (decisión de Adrián 2026-10-05). Como toda fecha de Operam, se captura con el día real en que ocurrió (decisión de Adrián 2026-10-05).
+_Evitar_: "fecha de entrega" (el día en que el cliente recibe no lo registra nadie).
+
+## Entregado / Entregado parcialmente
+
+Estado del cumplimiento de un pedido según sus Notas de entrega: **Entregado** cuando las remisiones cubren el 100% de lo pedido; **Entregado parcialmente** cuando hay al menos una remisión pero falta mercancía por despachar (decisión de Adrián 2026-10-05). Se mide contra el pedido, no contra la cotización. La etapa Producto entregado empieza con la primera remisión, así que una tarjeta Entregado parcialmente ya está en esa etapa y lo dice como aviso: la venta no ha terminado de cumplirse (decisión de Adrián 2026-10-05).
+_Evitar_: "Entregado" para un pedido con una sola remisión parcial.
+
 ## Tiempo de entrega (envío cotizado)
 
 El estimado que la paquetería reporta al cotizar el envío. Se promete al cliente en la descripción de la partida de envío usando el nombre del servicio y el estimado **literales** de la paquetería, con la precisión "hábiles" cuando el estimado viene en días (p. ej. "FedEx Nacional Económico — entrega estimada 1-2 días hábiles"). Esa misma promesa es la que queda escrita en la partida de envío del quote de Operam, tanto al crearlo como al actualizarlo.
