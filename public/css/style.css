@@ -971,7 +971,9 @@ body {
   align-items: flex-start;
   margin-bottom: 6px;
 }
-.cot-card-cliente { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.3; }
+.cot-card-cliente { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.3; overflow-wrap: anywhere; hyphens: auto; }
+/* #536: el importe nunca se corta; cede el nombre ("PARKS CONCENTRADORA" empujaba el total fuera de la tarjeta). */
+.cot-card-header > :first-child { min-width: 0; }
 .cot-card-meta { font-size: 11px; color: var(--text-light); }
 .cot-cadena-operam { font-size: 11px; color: var(--primary-dark); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .cot-card-total { font-size: 17px; font-weight: 700; color: var(--primary-dark); text-align: right; font-variant-numeric: tabular-nums; }
@@ -1686,7 +1688,7 @@ body {
 .pl-acciones select { flex: 1 1 100%; }
 .pl-acciones .badge-sin-contacto { display: none; }
 /* WhatsApp y Correo de la Oportunidad (#519): el mismo par en la tarjeta y en la fila abierta; el icono es chico pero el blanco de toque mide 44 px. */
-.cot-card-lado { display: flex; flex-direction: column; align-items: flex-end; }
+.cot-card-lado { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
 .contacto-directo { display: flex; margin: -10px -10px -10px 0; }
 .cot-card-total + .contacto-directo { margin-top: -6px; }
 .pl-info .contacto-directo { margin-left: auto; }
@@ -1744,7 +1746,7 @@ body {
 .entrega-pedido { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px; font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; }
 .entrega-pedido svg { width: 18px; height: 18px; flex: 0 0 18px; color: var(--text-light); }
 .entrega-pedido b { font-weight: 700; }
-.entrega-pedido-dias { color: var(--text-light); }
+.entrega-pedido-dias { color: var(--text-light); white-space: nowrap; } /* #536: baja completa, nunca "en 15 / d" */
 .entrega-pedido-dias.entrega-pedido-ya { color: var(--text); font-weight: 700; }
 /* #534: Entregado parcialmente es un aviso dentro de Producto entregado; naranja
    oscuro (el tono de --warning, legible como texto sobre blanco). */

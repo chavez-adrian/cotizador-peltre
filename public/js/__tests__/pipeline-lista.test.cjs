@@ -306,3 +306,31 @@ test('#518 color por etapa: las 7 variables con la paleta A3c y la pastilla del 
     assert.ok(regla.test(css), `.col-pill-${etapa}`);
   }
 });
+
+// #536: una cotizacion con total 0 (las pruebas 1294 y 1316, con 100% de
+// descuento) ya esta cotizada: la fila dice $0.00, y "Sin cotizar" queda para
+// la Oportunidad que no es cotizacion. La tarjeta del tablero no cambia.
+test('#536 la fila de una cotizacion con total 0 dice $0.00, no Sin cotizar', () => {
+  for (const total of [0, null, undefined]) {
+    const html = filaCerrada(cotizacion({ etapa: 'pedido_liberado', total }));
+    assert.ok(html.includes('<span class="pl-total">$0.00</span>'), `total ${total}`);
+    assert.ok(!html.includes('Sin cotizar'), `total ${total}`);
+  }
+  assert.ok(filaCerrada(prospecto({ total: 0 })).includes('Sin cotizar'));
+  const tarjeta = L.buildTableroPipelineHtml([cotizacion({ etapa: 'pedido_liberado', total: 0 })], { vendedores: VENDEDORES, puedeAsignar: false, ahora: AHORA });
+  assert.ok(!tarjeta.includes('cot-card-total'));
+  assert.ok(!tarjeta.includes('Sin cotizar'));
+});
+
+// #536: el importe de la tarjeta nunca se corta (cede el nombre, como
+// "PARKS CONCENTRADORA" en la 1169) y la cuenta de dias de la fecha del pedido
+// no se parte por dentro ("en 15 / d"), en la tarjeta y en la fila.
+test('#536 el total de la tarjeta no se encoge, el nombre si, y la cuenta de dias no se parte', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', '..', 'css', 'style.css'), 'utf8');
+  assert.match(css, /\.cot-card-lado\s*\{[^}]*flex-shrink:\s*0/);
+  assert.match(css, /\.cot-card-header\s*>\s*:first-child\s*\{[^}]*min-width:\s*0/);
+  assert.match(css, /\.cot-card-cliente\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  assert.match(css, /\.entrega-pedido-dias\s*\{[^}]*white-space:\s*nowrap/);
+  const html = L.entregaPedidoHtml(cotizacion({ etapa: 'pedido_liberado', espejoOperam: { pedido: '7758', fechaEntrega: '2026-10-20' } }), new Date(2026, 9, 5, 12));
+  assert.match(html, /<span class="entrega-pedido-dias">\u00b7 en 15 d<\/span>/);
+});

@@ -1402,13 +1402,14 @@ export function buildDetalleListaPipelineHtml(o, { vendedores, puedeAsignar: tie
 }
 
 // Fila de la lista (#502 la saco de app.js; #518 la iguala a la tarjeta).
-// Cerrada: nombre (mismo respaldo que la tarjeta), total o "Sin cotizar", SOLO
+// Cerrada: nombre (mismo respaldo que la tarjeta), total -- $0.00 en una
+// cotizacion con total 0 (#536); "Sin cotizar" solo si no es cotizacion --, SOLO
 // los chips que piden atencion y vendedor - ciudad - antiguedad; la etapa la
 // dice su seccion. Abierta: ademas, el detalle completo.
 export function buildFilaListaPipelineHtml(o, contexto = {}) {
   const { abierta = false, ahora = new Date() } = contexto;
-  const total = o.total
-    ? `<span class="pl-total">$${fmtMoneda(o.total)}</span>`
+  const total = o.total || o.tipo === 'cotizacion'
+    ? `<span class="pl-total">$${fmtMoneda(o.total || 0)}</span>`
     : '<span class="pl-total pl-sin-total">Sin cotizar</span>';
   const sinContacto = oportunidadSinContacto(o)
     ?'<span class="cot-badge badge-sin-contacto">Sin Contacto</span>' : '';
