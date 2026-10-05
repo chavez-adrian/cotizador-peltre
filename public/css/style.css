@@ -1703,10 +1703,11 @@ body {
 .pl-estado-pend { background: var(--primary-light); color: var(--primary-dark); }
 .pl-estado-ok { background: oklch(0.92 0.06 150); color: oklch(0.32 0.09 150); }
 .pl-pleg-cuerpo { padding: 0 12px 12px; }
-.pl-pleg .cot-card-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 0; padding: 0; border: none; }
+.pl-pleg .cot-card-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 0; padding: 0; border: none; }
 .pl-pleg .calca-check { font-size: 13px; min-height: 34px; }
-.pl-pleg input[type=file] { width: 100%; font-size: 14px; color: var(--text-light); font-family: inherit; }
-.pl-pleg input[type=file]::file-selector-button { min-height: 44px; margin-right: 10px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--white); color: var(--primary-dark); font-weight: 700; font-family: inherit; }
+.pl-pleg .btn { min-height: 34px; font-size: 13px; padding: 0 12px; }
+.pl-pleg input[type=file] { width: 100%; font-size: 13px; padding: 0; color: var(--text-light); font-family: inherit; }
+.pl-pleg input[type=file]::file-selector-button { min-height: 32px; margin-right: 10px; padding: 0 10px; font-size: 13px; border-radius: 6px; border: 1px solid var(--border); background: var(--white); color: var(--primary-dark); font-weight: 700; font-family: inherit; }
 .pl-pleg .comprobante-pago-archivos { font-size: 14px; color: var(--text-light); }
 .pl-salida { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
 .pl-salida-tit { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-light); }
